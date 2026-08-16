@@ -41,19 +41,19 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
   }
 
   ipcMain.handle(
-    'deskagent:sprite:set-ignore-mouse-events',
+    'spiritagent:sprite:set-ignore-mouse-events',
     async (_event, payload?: { forward?: boolean; ignore: boolean }) => {
       const ignore = Boolean(payload?.ignore)
       withWindow(win => win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false }))
     }
   )
 
-  ipcMain.handle('deskagent:sprite:set-always-on-top', async (_event, payload?: { on: boolean }) => {
+  ipcMain.handle('spiritagent:sprite:set-always-on-top', async (_event, payload?: { on: boolean }) => {
     const on = Boolean(payload?.on)
     withWindow(win => win.setAlwaysOnTop(on, on ? 'floating' : undefined))
   })
 
-  ipcMain.handle('deskagent:sprite:get-position', async () => {
+  ipcMain.handle('spiritagent:sprite:get-position', async () => {
     const dir = getUserDataDir()
 
     if (!dir) {
@@ -63,7 +63,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     return readRestPosition(dir)
   })
 
-  ipcMain.handle('deskagent:sprite:set-position', async (_event, payload?: { x: number; y: number }) => {
+  ipcMain.handle('spiritagent:sprite:set-position', async (_event, payload?: { x: number; y: number }) => {
     if (!payload || typeof payload.x !== 'number' || typeof payload.y !== 'number') {
       return
     }

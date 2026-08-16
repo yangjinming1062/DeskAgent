@@ -1,12 +1,12 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: deskagent-postgres
+    container_name: spiritagent-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: deskagent
+      POSTGRES_DB: spiritagent
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -22,7 +22,7 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
       target: backend
-    container_name: deskagent-backend
+    container_name: spiritagent-backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -31,7 +31,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/spiritagent
     ports:
       - "10620:10620"
     volumes:
@@ -53,7 +53,7 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
       target: worker
-    container_name: deskagent-worker
+    container_name: spiritagent-worker
     restart: unless-stopped
     depends_on:
       postgres:
@@ -64,7 +64,7 @@ services:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/deskagent
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/spiritagent
       BLENDER_SANDBOX_ENABLED: "true"
     volumes:
       - ./config.toml:/app/config.toml:ro
@@ -78,7 +78,7 @@ services:
       context: ..
       dockerfile: backend/Dockerfile
       target: sandbox
-    image: deskagent-blender-sandbox:latest
+    image: spiritagent-blender-sandbox:latest
     profiles:
       - build
     command: ["true"]
@@ -86,7 +86,7 @@ services:
   # Optional Prometheus metrics observability platform (--profile monitoring)
   prometheus:
     image: prom/prometheus:v2.51.0
-    container_name: deskagent-prometheus
+    container_name: spiritagent-prometheus
     restart: unless-stopped
     profiles:
       - monitoring

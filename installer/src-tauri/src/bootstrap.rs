@@ -3,7 +3,7 @@
 //! Direct port of `runBootstrap` from `client/main/lifecycle/platform.cjs`.
 //! Drives install.ps1 / install.sh stage-by-stage, emits progress events
 //! over the Tauri `bootstrap` channel, writes a forensic log to
-//! DESKAGENT_HOME/logs/bootstrap-<timestamp>.log.
+//! SPIRITAGENT_HOME/logs/bootstrap-<timestamp>.log.
 //!
 //! Lifecycle:
 //!   1. `start_bootstrap` (Tauri command) → spawns the worker task.
@@ -45,9 +45,9 @@ pub struct StartBootstrapArgs {
     /// so the frontend can still pass it without 400s. Defaults to false.
     #[serde(default)]
     pub include_desktop: bool,
-    /// Optional override for DESKAGENT_HOME. Tests use this; production
+    /// Optional override for SPIRITAGENT_HOME. Tests use this; production
     /// almost always falls back to the OS default.
-    pub deskagent_home: Option<String>,
+    pub spiritagent_home: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -154,7 +154,7 @@ pub async fn get_bootstrap_status(
     })
 }
 
-/// Spawn the locally-built DeskAgent desktop binary, then close the installer
+/// Spawn the locally-built SpiritAgent desktop binary, then close the installer
 /// window. The desktop path is resolved from the platform's standard install
 /// location (set by Stage-UnpackDesktop of install.{sh,ps1}).
 ///
@@ -162,18 +162,18 @@ pub async fn get_bootstrap_status(
 /// (e.g. when Stage-UnpackDesktop was skipped) so the frontend can present
 /// actionable failure UI rather than silently doing nothing.
 #[tauri::command]
-pub async fn launch_deskagent_desktop(app: AppHandle) -> Result<(), String> {
-    let exe_path = resolve_deskagent_desktop_exe().ok_or_else(|| {
+pub async fn launch_spiritagent_desktop(app: AppHandle) -> Result<(), String> {
+    let exe_path = resolve_spiritagent_desktop_exe().ok_or_else(|| {
         format!(
-            "在预期的平台位置 ({}) 未找到已安装的 DeskAgent 桌面应用。请重新运行 DeskAgent-Setup 以安装桌面组件。",
+            "在预期的平台位置 ({}) 未找到已安装的 SpiritAgent 桌面应用。请重新运行 SpiritAgent-Setup 以安装桌面组件。",
             desktop_install_root().display()
         )
     })?;
 
-    tracing::info!(?exe_path, "launching DeskAgent desktop");
+    tracing::info!(?exe_path, "launching SpiritAgent desktop");
 
     // Detach from us — the installer is about to exit. On macOS launch the
-    // bundle through LaunchServices instead of exec'ing Contents/MacOS/DeskAgent
+    // bundle through LaunchServices instead of exec'ing Contents/MacOS/SpiritAgent
     // directly; this matches user double-click/open behavior and avoids cwd /
     // quarantine oddities after a self-update rebuild.
     let mut cmd = desktop_launch_command(&exe_path);
@@ -197,7 +197,7 @@ pub async fn launch_deskagent_desktop(app: AppHandle) -> Result<(), String> {
 }
 
 /// Test-only override for `desktop_install_root()`. Production paths are
-/// platform-canonical (`/Applications/DeskAgent.app` etc); tests need to redirect
+/// platform-canonical (`/Applications/SpiritAgent.app` etc); tests need to redirect
 /// to a tmp dir because the production paths aren't writable in CI.
 #[cfg(test)]
 static DESKTOP_ROOT_OVERRIDE: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
@@ -207,7 +207,7 @@ pub(crate) fn set_desktop_root_override_for_test(p: PathBuf) {
     let _ = DESKTOP_ROOT_OVERRIDE.set(p);
 }
 
-/// The platform-canonical directory DeskAgent desktop installs to. Mirrors
+/// The platform-canonical directory SpiritAgent desktop installs to. Mirrors
 /// install.{sh,ps1} Stage-UnpackDesktop.
 pub(crate) fn desktop_install_root() -> PathBuf {
     #[cfg(test)]
@@ -218,15 +218,15 @@ pub(crate) fn desktop_install_root() -> PathBuf {
     }
     #[cfg(target_os = "macos")]
     {
-        PathBuf::from("/Applications/DeskAgent.app")
+        PathBuf::from("/Applications/SpiritAgent.app")
     }
     #[cfg(target_os = "windows")]
     {
-        // %LOCALAPPDATA%\Programs\DeskAgent — matches the NSIS /D= path the
+        // %LOCALAPPDATA%\Programs\SpiritAgent — matches the NSIS /D= path the
         // slim install.ps1 uses in Stage-UnpackDesktop.
         dirs::data_local_dir()
-            .map(|p| p.join("Programs").join("DeskAgent"))
-            .unwrap_or_else(|| PathBuf::from("C:/Program Files/DeskAgent"))
+            .map(|p| p.join("Programs").join("SpiritAgent"))
+            .unwrap_or_else(|| PathBuf::from("C:/Program Files/SpiritAgent"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -239,25 +239,25 @@ pub(crate) fn desktop_install_root() -> PathBuf {
 
 /// Resolves the installed desktop binary at its platform-canonical path.
 /// Returns the .app bundle on macOS, the .exe on Windows.
-pub(crate) fn resolve_deskagent_desktop_exe() -> Option<PathBuf> {
+pub(crate) fn resolve_spiritagent_desktop_exe() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
-        let exe = desktop_install_root().join("Contents").join("MacOS").join("DeskAgent");
+        let exe = desktop_install_root().join("Contents").join("MacOS").join("SpiritAgent");
         if exe.exists() {
             return Some(exe);
         }
     }
     #[cfg(target_os = "windows")]
     {
-        let exe = desktop_install_root().join("DeskAgent.exe");
+        let exe = desktop_install_root().join("SpiritAgent.exe");
         if exe.exists() {
             return Some(exe);
         }
-        // Fallback for ZIP layout unpacked into $DESKAGENT_HOME/apps/DeskAgent/DeskAgent.exe
-        let zip_exe = crate::paths::deskagent_home()
+        // Fallback for ZIP layout unpacked into $SPIRITAGENT_HOME/apps/SpiritAgent/SpiritAgent.exe
+        let zip_exe = crate::paths::spiritagent_home()
             .join("apps")
-            .join("DeskAgent")
-            .join("DeskAgent.exe");
+            .join("SpiritAgent")
+            .join("SpiritAgent.exe");
         if zip_exe.exists() {
             return Some(zip_exe);
         }
@@ -266,11 +266,11 @@ pub(crate) fn resolve_deskagent_desktop_exe() -> Option<PathBuf> {
 }
 
 #[allow(dead_code)]
-pub(crate) fn resolve_deskagent_desktop_app() -> Option<PathBuf> {
-    let exe = resolve_deskagent_desktop_exe()?;
+pub(crate) fn resolve_spiritagent_desktop_app() -> Option<PathBuf> {
+    let exe = resolve_spiritagent_desktop_exe()?;
     #[cfg(target_os = "macos")]
     {
-        // .../DeskAgent.app/Contents/MacOS/DeskAgent -> .../DeskAgent.app
+        // .../SpiritAgent.app/Contents/MacOS/SpiritAgent -> .../SpiritAgent.app
         let app = exe.parent()?.parent()?.parent()?.to_path_buf();
         if app.extension().and_then(|e| e.to_str()) == Some("app") && app.is_dir() {
             return Some(app);
@@ -284,7 +284,7 @@ pub(crate) fn resolve_deskagent_desktop_app() -> Option<PathBuf> {
     None
 }
 
-/// Gates `deskagent_is_installed` so a broken venv can never satisfy the
+/// Gates `spiritagent_is_installed` so a broken venv can never satisfy the
 /// macOS launcher fast-path. The import chain must match
 /// `client/main/runner-updater.cjs::_probeVenvIntegrity` so the
 /// two gates never disagree on what "venv is healthy" means.
@@ -309,14 +309,14 @@ fn runner_venv_is_healthy() -> bool {
 /// True when a prior install completed (bootstrap-complete marker present) AND a
 /// launchable desktop app exists on disk AND the Runner venv is intact
 /// (`runner_venv_is_healthy`). Used by the installer's launcher fast path
-/// so a bare re-open just opens DeskAgent instead of re-running setup — and
+/// so a bare re-open just opens SpiritAgent instead of re-running setup — and
 /// conversely, so a stale marker over a broken venv can never silently
 /// skip the install protocol.
-pub(crate) fn deskagent_is_installed() -> bool {
-    crate::paths::deskagent_home()
-        .join(".deskagent-bootstrap-complete")
+pub(crate) fn spiritagent_is_installed() -> bool {
+    crate::paths::spiritagent_home()
+        .join(".spiritagent-bootstrap-complete")
         .exists()
-        && resolve_deskagent_desktop_exe().is_some()
+        && resolve_spiritagent_desktop_exe().is_some()
         && runner_venv_is_healthy()
 }
 
@@ -324,15 +324,15 @@ pub(crate) fn deskagent_is_installed() -> bool {
 /// exists or the spawn fails, so the caller can fall back to showing the
 /// installer UI.
 pub(crate) fn spawn_installed_desktop() -> std::io::Result<()> {
-    let exe = resolve_deskagent_desktop_exe().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::NotFound, "no installed DeskAgent desktop app")
+    let exe = resolve_spiritagent_desktop_exe().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "no installed SpiritAgent desktop app")
     })?;
     let mut cmd = desktop_launch_command_std(&exe);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         // DETACHED_PROCESS = 0x00000008 — keep the desktop alive after the
-        // installer exits, mirroring launch_deskagent_desktop. Kept correct here
+        // installer exits, mirroring launch_spiritagent_desktop. Kept correct here
         // even though the only caller is macOS-gated today, so future reuse on
         // Windows doesn't reintroduce the relaunch race.
         cmd.creation_flags(0x0000_0008);
@@ -344,7 +344,7 @@ pub(crate) fn spawn_installed_desktop() -> std::io::Result<()> {
 pub(crate) fn open_macos_app_detached(app_bundle: &std::path::Path) -> std::io::Result<()> {
     let mut cmd = std::process::Command::new("/usr/bin/open");
     cmd.arg(app_bundle);
-    cmd.current_dir(crate::paths::deskagent_home());
+    cmd.current_dir(crate::paths::spiritagent_home());
     cmd.spawn().map(|_child| ())
 }
 
@@ -364,7 +364,7 @@ fn desktop_launch_command(exe_path: &std::path::Path) -> tokio::process::Command
         if let Some(app_bundle) = app_bundle_for_exe(exe_path) {
             let mut cmd = tokio::process::Command::new("/usr/bin/open");
             cmd.arg(app_bundle);
-            cmd.current_dir(crate::paths::deskagent_home());
+            cmd.current_dir(crate::paths::spiritagent_home());
             return cmd;
         }
     }
@@ -380,7 +380,7 @@ fn desktop_launch_command_std(exe_path: &std::path::Path) -> std::process::Comma
         if let Some(app_bundle) = app_bundle_for_exe(exe_path) {
             let mut cmd = std::process::Command::new("/usr/bin/open");
             cmd.arg(app_bundle);
-            cmd.current_dir(crate::paths::deskagent_home());
+            cmd.current_dir(crate::paths::spiritagent_home());
             return cmd;
         }
     }
@@ -438,7 +438,7 @@ async fn run_bootstrap(
         tracing::info!(target: "bootstrap.log", "{line}");
     };
 
-    // 1. Resolve install.{ps1,sh} — either from $DESKAGENT_SETUP_DEV_REPO_ROOT
+    // 1. Resolve install.{ps1,sh} — either from $SPIRITAGENT_SETUP_DEV_REPO_ROOT
     // (dev shortcut) or from the Tauri bundle.resources (production). The
     // installer binary is self-contained; no network fallback.
     let script = install_script::resolve(&app, kind, &emit_log)
@@ -484,7 +484,7 @@ async fn run_bootstrap(
         &app,
         &script.path,
         &manifest_args,
-        args.deskagent_home.as_deref(),
+        args.spiritagent_home.as_deref(),
         &bundle_ctx,
         None,
         Some("__manifest__".to_string()),
@@ -571,7 +571,7 @@ async fn run_bootstrap(
             &app,
             &script.path,
             &stage_args,
-            args.deskagent_home.as_deref(),
+            args.spiritagent_home.as_deref(),
             &bundle_ctx,
             local_cancel_rx,
             Some(stage.name.clone()),
@@ -691,21 +691,21 @@ async fn run_bootstrap(
     }
 
     // 4. Resolve install_root. The slim 5-stage install.{sh,ps1} no longer
-    // clones the repo into a `<deskagent_home>/deskagent-agent/` subdir — payload goes
-    // straight into $DESKAGENT_HOME (bin/, skills/, .deskagent-bootstrap-
-    // complete). So install_root IS deskagent_home.
-    let deskagent_home = args
-        .deskagent_home
+    // clones the repo into a `<spiritagent_home>/spiritagent-agent/` subdir — payload goes
+    // straight into $SPIRITAGENT_HOME (bin/, skills/, .spiritagent-bootstrap-
+    // complete). So install_root IS spiritagent_home.
+    let spiritagent_home = args
+        .spiritagent_home
         .clone()
-        .unwrap_or_else(|| crate::paths::deskagent_home().to_string_lossy().into_owned());
-    let install_root = PathBuf::from(&deskagent_home);
+        .unwrap_or_else(|| crate::paths::spiritagent_home().to_string_lossy().into_owned());
+    let install_root = PathBuf::from(&spiritagent_home);
 
-    // Copy ourselves to DESKAGENT_HOME/deskagent-setup.exe so start-menu / desktop
+    // Copy ourselves to SPIRITAGENT_HOME/spiritagent-setup.exe so start-menu / desktop
     // shortcuts have a stable target. This is a one-shot install concern;
     // a prior copy is detected and the self-copy is skipped. Best-effort —
     // a failure here must not fail an otherwise-successful install.
-    if let Err(err) = crate::paths::copy_self_to_deskagent_home() {
-        tracing::warn!(?err, "failed to copy installer into DESKAGENT_HOME (non-fatal)");
+    if let Err(err) = crate::paths::copy_self_to_spiritagent_home() {
+        tracing::warn!(?err, "failed to copy installer into SPIRITAGENT_HOME (non-fatal)");
         emit_log(&format!(
             "[bootstrap] warning: could not stage installer binary: {err}"
         ));
@@ -738,7 +738,7 @@ async fn run_install_script(
     app: &AppHandle,
     script_path: &std::path::Path,
     args: &[String],
-    deskagent_home_override: Option<&str>,
+    spiritagent_home_override: Option<&str>,
     bundle: &BundleContext,
     cancel_rx: Option<mpsc::Receiver<()>>,
     stage_name: Option<String>,
@@ -791,7 +791,7 @@ async fn run_install_script(
         }),
     };
 
-    powershell::run_script(script_path, args, sink, deskagent_home_override, bundle, cancel_rx)
+    powershell::run_script(script_path, args, sink, spiritagent_home_override, bundle, cancel_rx)
         .await
         .map_err(|e| {
             tracing::error!(?e, "install script invocation failed");
@@ -895,7 +895,7 @@ mod tests {
 
     fn unique_tmp_dir(tag: &str) -> PathBuf {
         let base = std::env::temp_dir().join(format!(
-            "deskagent-bootstrap-test-{tag}-{}-{}",
+            "spiritagent-bootstrap-test-{tag}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -916,25 +916,25 @@ mod tests {
                 .join("Contents")
                 .join("MacOS");
             std::fs::create_dir_all(&macos_dir).unwrap();
-            std::fs::write(macos_dir.join("DeskAgent"), b"#!/bin/sh\n").unwrap();
+            std::fs::write(macos_dir.join("SpiritAgent"), b"#!/bin/sh\n").unwrap();
         } else {
-            std::fs::write(install_root.join("DeskAgent.exe"), b"stub").unwrap();
+            std::fs::write(install_root.join("SpiritAgent.exe"), b"stub").unwrap();
         }
         install_root.to_path_buf()
     }
 
     /// The relaunch target is the platform-canonical installed desktop.
     /// On macOS this MUST resolve to the .app bundle (what `open` relaunches
-    /// and what electron-updater replaces at /Applications/DeskAgent.app). A
+    /// and what electron-updater replaces at /Applications/SpiritAgent.app). A
     /// regression in this derivation breaks the post-install auto-relaunch,
     /// so guard it.
     #[test]
-    fn resolve_deskagent_desktop_app_finds_installed_bundle() {
+    fn resolve_spiritagent_desktop_app_finds_installed_bundle() {
         let root = unique_tmp_dir("app-ok");
         set_desktop_root_override_for_test(root.clone());
         make_installed_desktop(&root);
 
-        let resolved = resolve_deskagent_desktop_app()
+        let resolved = resolve_spiritagent_desktop_app()
             .expect("should resolve the installed desktop app");
 
         #[cfg(target_os = "macos")]
@@ -954,12 +954,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_deskagent_desktop_app_is_none_without_install() {
+    fn resolve_spiritagent_desktop_app_is_none_without_install() {
         let root = unique_tmp_dir("app-none");
         set_desktop_root_override_for_test(root.clone());
         // No installed desktop created.
         assert!(
-            resolve_deskagent_desktop_app().is_none(),
+            resolve_spiritagent_desktop_app().is_none(),
             "no resolved app when nothing has been installed"
         );
         let _ = std::fs::remove_dir_all(&root);
@@ -967,14 +967,14 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "windows")]
-    fn test_resolve_deskagent_desktop_exe_zip_fallback() {
-        let home = crate::paths::deskagent_home();
-        let zip_dir = home.join("apps").join("DeskAgent");
+    fn test_resolve_spiritagent_desktop_exe_zip_fallback() {
+        let home = crate::paths::spiritagent_home();
+        let zip_dir = home.join("apps").join("SpiritAgent");
         let _ = std::fs::create_dir_all(&zip_dir);
-        let zip_exe = zip_dir.join("DeskAgent.exe");
+        let zip_exe = zip_dir.join("SpiritAgent.exe");
         let _ = std::fs::write(&zip_exe, b"stub");
 
-        let resolved = resolve_deskagent_desktop_exe();
+        let resolved = resolve_spiritagent_desktop_exe();
         assert!(resolved.is_some(), "should resolve desktop exe in zip_layout path");
         assert_eq!(resolved.unwrap(), zip_exe);
 

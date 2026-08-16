@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
-import { getDeskAgentConfig } from '@/shared/deskagent'
+import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
 type Options = {
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
@@ -31,7 +31,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
   const stopRef = useRef<() => Promise<void>>(async () => {})
 
   useEffect(() => {
-    void getDeskAgentConfig()
+    void getSpiritAgentConfig()
       .then(c => {
         configRef.current = { voice: c.voice }
       })
@@ -82,7 +82,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
         reader.readAsDataURL(blob)
       })
 
-      const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
+      const res = await window.spiritagent.media.stt({ dataUrl, filename: 'voice.webm' })
       const text = (res.text ?? '').trim()
 
       return text || null

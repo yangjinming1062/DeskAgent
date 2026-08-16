@@ -16,13 +16,13 @@ const PLATFORM = process.platform
 // Platform-specific packaged-app layout. The packaged desktop ships an
 // Electron app shell plus extraResources (install-stamp.json + native-deps/).
 // The desktop does not drive install / update / uninstall — that's owned by
-// the installer module's Tauri `DeskAgent-Setup` binary (see installer/CLAUDE.md).
+// the installer module's Tauri `SpiritAgent-Setup` binary (see installer/CLAUDE.md).
 const APP = (() => {
   if (PLATFORM === 'darwin') {
-    const appPath = path.join(RELEASE_ROOT, `mac-${ARCH}`, 'DeskAgent.app')
+    const appPath = path.join(RELEASE_ROOT, `mac-${ARCH}`, 'SpiritAgent.app')
     return {
       appPath,
-      binary: path.join(appPath, 'Contents', 'MacOS', 'DeskAgent'),
+      binary: path.join(appPath, 'Contents', 'MacOS', 'SpiritAgent'),
       resourcesPath: path.join(appPath, 'Contents', 'Resources'),
       asarPath: path.join(appPath, 'Contents', 'Resources', 'app.asar'),
       unpackedDistIndex: path.join(appPath, 'Contents', 'Resources', 'app.asar.unpacked', 'dist', 'index.html')
@@ -32,7 +32,7 @@ const APP = (() => {
     const unpacked = path.join(RELEASE_ROOT, 'win-unpacked')
     return {
       appPath: unpacked,
-      binary: path.join(unpacked, 'DeskAgent.exe'),
+      binary: path.join(unpacked, 'SpiritAgent.exe'),
       resourcesPath: path.join(unpacked, 'resources'),
       asarPath: path.join(unpacked, 'resources', 'app.asar'),
       unpackedDistIndex: path.join(unpacked, 'resources', 'app.asar.unpacked', 'dist', 'index.html')
@@ -42,25 +42,25 @@ const APP = (() => {
 })()
 
 const _require = createRequire(import.meta.url)
-let deskagentHome
+let spiritagentHome
 try {
-  deskagentHome = _require('../dist-electron/security/paths.cjs').deskagentHome
+  spiritagentHome = _require('../dist-electron/security/paths.cjs').spiritagentHome
 } catch {
-  deskagentHome = () => {
+  spiritagentHome = () => {
     if (process.platform === 'win32') {
       const local = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
-      return path.join(local, 'DeskAgent')
+      return path.join(local, 'SpiritAgent')
     }
     if (process.platform === 'darwin') {
-      return path.join(os.homedir(), 'Library', 'Application Support', 'DeskAgent')
+      return path.join(os.homedir(), 'Library', 'Application Support', 'SpiritAgent')
     }
-    return path.join(os.homedir(), '.deskagent')
+    return path.join(os.homedir(), '.spiritagent')
   }
 }
 
-const DEFAULT_DESKAGENT_HOME = deskagentHome()
-const VENV_ROOT = path.join(DEFAULT_DESKAGENT_HOME, 'runner', '.venv')
-const FRESH_SANDBOX_ROOT = path.join(os.tmpdir(), 'deskagent-desktop-fresh-install')
+const DEFAULT_SPIRITAGENT_HOME = spiritagentHome()
+const VENV_ROOT = path.join(DEFAULT_SPIRITAGENT_HOME, 'runner', '.venv')
+const FRESH_SANDBOX_ROOT = path.join(os.tmpdir(), 'spiritagent-desktop-fresh-install')
 
 function die(message) {
   console.error(`\n${message}`)
@@ -106,7 +106,7 @@ function ensurePlatformBuilds() {
 }
 
 function ensurePackagedApp() {
-  if (process.env.DESKAGENT_DESKTOP_SKIP_BUILD === '1' && exists(APP.binary)) {
+  if (process.env.SPIRITAGENT_DESKTOP_SKIP_BUILD === '1' && exists(APP.binary)) {
     return
   }
 
@@ -115,10 +115,10 @@ function ensurePackagedApp() {
 
 function resolveDmgPath() {
   if (!exists(RELEASE_ROOT)) {
-    return path.join(RELEASE_ROOT, `DeskAgent-${PACKAGE_JSON.version}-${ARCH}.dmg`)
+    return path.join(RELEASE_ROOT, `SpiritAgent-${PACKAGE_JSON.version}-${ARCH}.dmg`)
   }
 
-  const prefix = `DeskAgent-${PACKAGE_JSON.version}`
+  const prefix = `SpiritAgent-${PACKAGE_JSON.version}`
   const candidates = fs
     .readdirSync(RELEASE_ROOT)
     .filter(name => name.endsWith('.dmg'))
@@ -132,11 +132,11 @@ function resolveDmgPath() {
 
   return candidates.length > 0
     ? path.join(RELEASE_ROOT, candidates[0])
-    : path.join(RELEASE_ROOT, `DeskAgent-${PACKAGE_JSON.version}-${ARCH}.dmg`)
+    : path.join(RELEASE_ROOT, `SpiritAgent-${PACKAGE_JSON.version}-${ARCH}.dmg`)
 }
 
 function resolveNsisPath() {
-  // electron-builder NSIS artifactName template is 'DeskAgent-${version}-${os}-${arch}.${ext}'
+  // electron-builder NSIS artifactName template is 'SpiritAgent-${version}-${os}-${arch}.${ext}'
   if (!exists(RELEASE_ROOT)) return null
   const candidates = fs
     .readdirSync(RELEASE_ROOT)
@@ -153,7 +153,7 @@ function ensureDmg() {
   if (PLATFORM !== 'darwin') {
     die('DMG mode is macOS-only; on Windows use the `nsis` mode instead.')
   }
-  if (process.env.DESKAGENT_DESKTOP_SKIP_BUILD === '1' && exists(resolveDmgPath())) {
+  if (process.env.SPIRITAGENT_DESKTOP_SKIP_BUILD === '1' && exists(resolveDmgPath())) {
     return
   }
   run('pnpm', ['run', 'dist:mac:dmg'])
@@ -163,7 +163,7 @@ function ensureNsis() {
   if (PLATFORM !== 'win32') {
     die('NSIS mode is win32-only; on macOS use the `dmg` mode instead.')
   }
-  if (process.env.DESKAGENT_DESKTOP_SKIP_BUILD === '1' && resolveNsisPath()) {
+  if (process.env.SPIRITAGENT_DESKTOP_SKIP_BUILD === '1' && resolveNsisPath()) {
     return
   }
   run('pnpm', ['run', 'dist:win:nsis'])
@@ -231,7 +231,7 @@ function launchFresh() {
 
   const sandbox = fs.mkdtempSync(`${FRESH_SANDBOX_ROOT}-`)
   const userDataDir = path.join(sandbox, 'electron-user-data')
-  const deskagentHome = path.join(userDataDir, 'deskagent-home')
+  const spiritagentHome = path.join(userDataDir, 'spiritagent-home')
   const cwd = path.join(sandbox, 'workspace')
 
   fs.mkdirSync(userDataDir, { recursive: true })
@@ -243,10 +243,10 @@ function launchFresh() {
     env[key] = value
   }
 
-  env.DESKAGENT_DESKTOP_CWD = cwd
-  env.DESKAGENT_DESKTOP_IGNORE_EXISTING = '1'
-  env.DESKAGENT_DESKTOP_TEST_MODE = 'fresh-install'
-  env.DESKAGENT_DESKTOP_USER_DATA_DIR = userDataDir
+  env.SPIRITAGENT_DESKTOP_CWD = cwd
+  env.SPIRITAGENT_DESKTOP_IGNORE_EXISTING = '1'
+  env.SPIRITAGENT_DESKTOP_TEST_MODE = 'fresh-install'
+  env.SPIRITAGENT_DESKTOP_USER_DATA_DIR = userDataDir
 
   const child = spawn(APP.binary, [], {
     cwd: os.homedir(),
@@ -258,15 +258,15 @@ function launchFresh() {
 
   console.log('\nFresh install sandbox:')
   console.log(`  root: ${sandbox}`)
-  console.log(`  DESKAGENT_HOME: ${deskagentHome}`)
+  console.log(`  SPIRITAGENT_HOME: ${spiritagentHome}`)
   console.log(`  cwd: ${cwd}`)
 
-  return { runtimeRoot: path.join(deskagentHome, 'runner', '.venv') }
+  return { runtimeRoot: path.join(spiritagentHome, 'runner', '.venv') }
 }
 
 // Validate the packaged bundle matches the desktop architecture:
-//   - The DeskAgent Agent Python payload is NOT shipped (it's installed by the
-//     installer module's Tauri `DeskAgent-Setup` binary on first launch — see
+//   - The SpiritAgent Agent Python payload is NOT shipped (it's installed by the
+//     installer module's Tauri `SpiritAgent-Setup` binary on first launch — see
 //     installer/CLAUDE.md).
 //   - install-stamp.json IS shipped in resources/ with a valid commit + branch.
 //   - native-deps/@homebridge/node-pty-prebuilt-multiarch/ IS shipped with
@@ -280,9 +280,9 @@ function validateBundle() {
   }
 
   // Negative assertion: the OLD fat-installer factory payload must NOT be
-  // present anymore. If a stray ship of deskagent_cli sneaks back in we want
+  // present anymore. If a stray ship of spiritagent_cli sneaks back in we want
   // to fail loudly rather than re-introduce the 400MB delta we just removed.
-  const staleFactoryMarker = path.join(APP.resourcesPath, 'deskagent-agent', 'deskagent_cli', 'main.py')
+  const staleFactoryMarker = path.join(APP.resourcesPath, 'spiritagent-agent', 'spiritagent_cli', 'main.py')
   if (exists(staleFactoryMarker)) {
     die(`Thin-installer regression: factory-payload file should NOT be in the package: ${staleFactoryMarker}`)
   }
@@ -346,14 +346,14 @@ function printArtifacts(options = {}) {
 
 function help() {
   console.log(`Usage:
-  node scripts/test-desktop.mjs existing   # build packaged app, launch with normal PATH/existing DeskAgent
-  node scripts/test-desktop.mjs fresh      # build packaged app, launch with temp userData + DESKAGENT_HOME
+  node scripts/test-desktop.mjs existing   # build packaged app, launch with normal PATH/existing SpiritAgent
+  node scripts/test-desktop.mjs fresh      # build packaged app, launch with temp userData + SPIRITAGENT_HOME
   node scripts/test-desktop.mjs dmg        # (macOS only) build DMG and open it
   node scripts/test-desktop.mjs nsis       # (win32 only) build NSIS installer
   pnpm run test:desktop:all                # build installer, validate app payload, print paths
 
 Fast rerun (skip rebuild if the packaged app already exists):
-  DESKAGENT_DESKTOP_SKIP_BUILD=1 node scripts/test-desktop.mjs fresh
+  SPIRITAGENT_DESKTOP_SKIP_BUILD=1 node scripts/test-desktop.mjs fresh
 `)
 }
 

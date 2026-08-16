@@ -17,12 +17,12 @@ interface WindowGeom {
 export type { WindowGeom }
 
 export async function findWindowByKeyword(keyword: string): Promise<WindowGeom | null> {
-  if (!window.deskagent?.runnerInvoke) {
+  if (!window.spiritagent?.runnerInvoke) {
     return null
   }
 
   try {
-    const result = await window.deskagent.runnerInvoke('system.get_windows', {})
+    const result = await window.spiritagent.runnerInvoke('system.get_windows', {})
     const windows = (result as { windows?: Array<{ name: string; title: string } & WindowGeom> }).windows ?? []
     const kw = keyword.toLowerCase()
 
@@ -71,8 +71,8 @@ export async function performRitualWalk<T>(
   const targetCenterX = Math.round(geom.x + geom.w / 2)
   const targetCenterY = Math.round(geom.y + geom.h / 2)
 
-  if (window.deskagent?.runnerInvoke) {
-    window.deskagent.runnerInvoke('system.click_at', { x: targetCenterX, y: targetCenterY }).catch(() => {})
+  if (window.spiritagent?.runnerInvoke) {
+    window.spiritagent.runnerInvoke('system.click_at', { x: targetCenterX, y: targetCenterY }).catch(() => {})
   }
 
   await sleep(400)

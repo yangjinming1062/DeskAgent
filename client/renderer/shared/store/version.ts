@@ -9,7 +9,7 @@ const $desktopVersion = atom<DesktopVersionInfo | null>(null)
 
 async function refreshDesktopVersion(): Promise<void> {
   try {
-    const next = await window.deskagent?.getVersion()
+    const next = await window.spiritagent?.getVersion()
 
     if (next) {
       $desktopVersion.set(next)

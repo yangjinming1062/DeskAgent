@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import IO, Protocol
 
-from utils import CREATE_NO_WINDOW, cfg_get, get_deskagent_home, load_config
+from utils import CREATE_NO_WINDOW, cfg_get, get_spiritagent_home, load_config
 
 from ..interrupt import is_interrupted
 from ._cmd_rewrite import _rewrite_compound_background, _transform_sudo_command
@@ -62,7 +62,7 @@ def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
 
 def get_sandbox_dir() -> Path:
     override = cfg_get(load_config(), "terminal", "sandbox_dir")
-    base = Path(str(override)) if override else (get_deskagent_home() / "sandboxes")
+    base = Path(str(override)) if override else (get_spiritagent_home() / "sandboxes")
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -99,7 +99,7 @@ class ProcessHandle(Protocol):
 
 
 def _cwd_marker(session_id: str) -> str:
-    return f"DESKAGENT_CWD_{session_id}__"
+    return f"SPIRITAGENT_CWD_{session_id}__"
 
 
 class BaseEnvironment(ABC):
@@ -115,8 +115,8 @@ class BaseEnvironment(ABC):
         self.env = env or {}
         self._session_id = uuid.uuid4().hex[:12]
         temp_dir = self.get_temp_dir().rstrip("/") or "/"
-        self._snapshot_path = f"{temp_dir}/deskagent-snap-{self._session_id}.sh"
-        self._cwd_file = f"{temp_dir}/deskagent-cwd-{self._session_id}.txt"
+        self._snapshot_path = f"{temp_dir}/spiritagent-snap-{self._session_id}.sh"
+        self._cwd_file = f"{temp_dir}/spiritagent-cwd-{self._session_id}.txt"
         self._cwd_marker = _cwd_marker(self._session_id)
         self._snapshot_ready = False
 
@@ -160,17 +160,17 @@ class BaseEnvironment(ABC):
             parts.append(f"source {_quoted_snap} >/dev/null 2>&1 || true")
         parts.append(f"builtin cd -- {self._quote_cwd_for_cd(cwd)} || exit 126")
         parts.append(f"eval '{escaped}'")
-        parts.append("__deskagent_ec=$?")
+        parts.append("__spiritagent_ec=$?")
         if self._snapshot_ready:
             parts.append(f"export -p > {_quoted_snap} 2>/dev/null || true")
         parts.append(f"pwd -P > {_quoted_cwd_file} 2>/dev/null || true")
         parts.append(f"printf '\\n{self._cwd_marker}%s{self._cwd_marker}\\n' \"$(pwd -P)\"")
-        parts.append("exit $__deskagent_ec")
+        parts.append("exit $__spiritagent_ec")
         return "\n".join(parts)
 
     @staticmethod
     def _embed_stdin_heredoc(command: str, stdin_data: str) -> str:
-        delimiter = f"DESKAGENT_STDIN_{uuid.uuid4().hex[:12]}"
+        delimiter = f"SPIRITAGENT_STDIN_{uuid.uuid4().hex[:12]}"
         return f"{command} << '{delimiter}'\n{stdin_data}\n{delimiter}"
 
     def _wait_for_process(self, proc: ProcessHandle, timeout: int = 120) -> dict:

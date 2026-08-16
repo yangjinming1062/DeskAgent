@@ -201,7 +201,7 @@ def system_activity_available() -> bool:
 
 
 def network_reachable(host: str = "1.1.1.1", port: int = 443, timeout: float = 1.5) -> bool:
-    """Best-effort reachability check used by ``deskagent.info`` to surface
+    """Best-effort reachability check used by ``spiritagent.info`` to surface
     connectivity state to the Desktop. Avoids hanging the handshake."""
     try:
         with socket.create_connection((host, port), timeout=timeout):

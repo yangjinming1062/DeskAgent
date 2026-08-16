@@ -18,17 +18,17 @@ const spriteResponse = (
   generated: true
 })
 
-interface DeskagentMock {
+interface SpiritagentMock {
   api: ReturnType<typeof vi.fn>
   apiAsset: ReturnType<typeof vi.fn>
 }
 
-function setWindowDeskagent(mock: DeskagentMock): void {
-  ;(window as { deskagent?: unknown }).deskagent = { api: mock.api, apiAsset: mock.apiAsset }
+function setWindowSpiritagent(mock: SpiritagentMock): void {
+  ;(window as { spiritagent?: unknown }).spiritagent = { api: mock.api, apiAsset: mock.apiAsset }
 }
 
-function restoreWindowDeskagent(): void {
-  delete (window as { deskagent?: unknown }).deskagent
+function restoreWindowSpiritagent(): void {
+  delete (window as { spiritagent?: unknown }).spiritagent
 }
 
 function setModel(assetUrl: string | null, status: string): void {
@@ -49,16 +49,16 @@ describe('sprite-store', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-    restoreWindowDeskagent()
+    restoreWindowSpiritagent()
   })
 
   it('publishes the resolved sprite and caches by content_hash', async () => {
-    const mock: DeskagentMock = {
+    const mock: SpiritagentMock = {
       api: vi.fn().mockResolvedValue(spriteResponse('h1', '等待')),
       apiAsset: vi.fn().mockResolvedValue('data:image/png;base64,AAA')
     }
 
-    setWindowDeskagent(mock)
+    setWindowSpiritagent(mock)
 
     await requestSprite(WAITING_REQUEST, 'waiting')
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,AAA', tag: '等待' })
@@ -70,24 +70,24 @@ describe('sprite-store', () => {
   })
 
   it('dedupes concurrent identical requests into one POST', async () => {
-    const mock: DeskagentMock = {
+    const mock: SpiritagentMock = {
       api: vi.fn().mockResolvedValue(spriteResponse('h2', '等待')),
       apiAsset: vi.fn().mockResolvedValue('data:AAA')
     }
 
-    setWindowDeskagent(mock)
+    setWindowSpiritagent(mock)
 
     await Promise.all([requestSprite('同一个请求'), requestSprite('同一个请求')])
     expect(mock.api).toHaveBeenCalledTimes(1)
   })
 
   it('keeps the current image when the backend fails', async () => {
-    const mock: DeskagentMock = {
+    const mock: SpiritagentMock = {
       api: vi.fn().mockResolvedValueOnce(spriteResponse('h3', '等待')).mockRejectedValueOnce(new Error('down')),
       apiAsset: vi.fn().mockResolvedValue('data:AAA')
     }
 
-    setWindowDeskagent(mock)
+    setWindowSpiritagent(mock)
 
     await requestSprite(WAITING_REQUEST, 'waiting')
     const before = $activeSprite.get()
@@ -97,12 +97,12 @@ describe('sprite-store', () => {
   })
 
   it('spaces distinct requests by 1.5s', async () => {
-    const mock: DeskagentMock = {
+    const mock: SpiritagentMock = {
       api: vi.fn().mockResolvedValue(spriteResponse('h4', '等待')),
       apiAsset: vi.fn().mockResolvedValue('data:AAA')
     }
 
-    setWindowDeskagent(mock)
+    setWindowSpiritagent(mock)
 
     await requestSprite('第一个请求')
     await requestSprite('第二个请求')
@@ -114,12 +114,12 @@ describe('sprite-store', () => {
   })
 
   it('resetSpriteAlbum drops caches so identical requests re-fetch', async () => {
-    const mock: DeskagentMock = {
+    const mock: SpiritagentMock = {
       api: vi.fn().mockResolvedValue(spriteResponse('h5', '等待')),
       apiAsset: vi.fn().mockResolvedValue('data:AAA')
     }
 
-    setWindowDeskagent(mock)
+    setWindowSpiritagent(mock)
 
     await requestSprite(WAITING_REQUEST, 'waiting')
     resetSpriteAlbum()

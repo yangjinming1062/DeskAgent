@@ -51,15 +51,15 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
           : '准备中…'
 
   return (
-    <div className="deskagent-fade-in relative isolate flex h-full flex-col overflow-hidden bg-background">
+    <div className="spiritagent-fade-in relative isolate flex h-full flex-col overflow-hidden bg-background">
       {/* Background ambient glow */}
-      <span aria-hidden="true" className="deskagent-glow" />
+      <span aria-hidden="true" className="spiritagent-glow" />
 
       {/* Region A: Top Step Header */}
       <div className="flex shrink-0 items-center justify-between px-8 pt-6 pb-2">
         <div className="flex items-center gap-2">
           <span className="font-['Collapse'] text-lg font-bold tracking-[0.08em] text-primary">
-            DESKAGENT
+            SPIRITAGENT
           </span>
           <span className="text-xs text-muted-foreground/60">|</span>
           <span className="text-xs font-medium text-foreground/80">

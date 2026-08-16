@@ -6,12 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import cfg_get, load_config
-from .constants import IS_WINDOWS, get_deskagent_home
+from .constants import IS_WINDOWS, get_spiritagent_home
 
 _BLOCKED_PROJECT_ENV_BASENAMES: set[str] = {".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"}
 PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
 _SANDBOX_BACKEND_DIR = "sandboxes"
-_SANDBOX_HOME_SUFFIX = ("home", ".deskagent")
+_SANDBOX_HOME_SUFFIX = ("home", ".spiritagent")
 
 
 def validate_within_dir(path: Path, root: Path) -> str | None:
@@ -27,11 +27,11 @@ def has_traversal_component(path_str: str) -> bool:
     return ".." in Path(path_str).parts
 
 
-def _deskagent_home_path() -> Path:
+def _spiritagent_home_path() -> Path:
     try:
-        return get_deskagent_home()
+        return get_spiritagent_home()
     except Exception:
-        return Path(os.path.expanduser("~/.deskagent"))
+        return Path(os.path.expanduser("~/.spiritagent"))
 
 
 _denied_paths_cache: tuple[str, set[str]] | None = None
@@ -43,7 +43,7 @@ def build_write_denied_paths(home: str) -> set[str]:
     global _denied_paths_cache
     if _denied_paths_cache and _denied_paths_cache[0] == home:
         return _denied_paths_cache[1]
-    deskagent, p_home = _deskagent_home_path(), Path(home)
+    spiritagent, p_home = _spiritagent_home_path(), Path(home)
     result = {
         os.path.realpath(p)
         for p in [
@@ -51,8 +51,8 @@ def build_write_denied_paths(home: str) -> set[str]:
             p_home / ".ssh/id_rsa",
             p_home / ".ssh/id_ed25519",
             p_home / ".ssh/config",
-            deskagent / ".env",
-            deskagent / "anthropic_oauth.json",
+            spiritagent / ".env",
+            spiritagent / "anthropic_oauth.json",
             p_home / ".bashrc",
             p_home / ".zshrc",
             p_home / ".profile",
@@ -345,11 +345,11 @@ def is_write_denied(path: str) -> bool:
     elif any(resolved.startswith(p) or base_resolved.startswith(p) for p in build_write_denied_prefixes(home)):
         return True
 
-    deskagent_dirs = []
+    spiritagent_dirs = []
     with contextlib.suppress(Exception):
-        deskagent_dirs.append(canonicalize_path(str(_deskagent_home_path())))
+        spiritagent_dirs.append(canonicalize_path(str(_spiritagent_home_path())))
 
-    for base_real in deskagent_dirs:
+    for base_real in spiritagent_dirs:
         base_norm = base_real.replace("\\", "/").lower() if IS_WINDOWS else base_real
         try:
             for n in ("auth.json", "desktop-settings.json", "webhook_subscriptions.json"):
@@ -405,11 +405,11 @@ def get_read_block_error(path: str) -> str | None:
     resolved_norm = resolved_str.replace("\\", "/").lower() if IS_WINDOWS else resolved_str
     base_resolved_norm = base_resolved_str.replace("\\", "/").lower() if IS_WINDOWS else base_resolved_str
 
-    deskagent_dirs = []
+    spiritagent_dirs = []
     with contextlib.suppress(Exception):
-        deskagent_dirs.append(Path(canonicalize_path(str(_deskagent_home_path()))))
+        spiritagent_dirs.append(Path(canonicalize_path(str(_spiritagent_home_path()))))
 
-    for zd in deskagent_dirs:
+    for zd in spiritagent_dirs:
         zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
         for blocked_sub in ("skills/.hub/index-cache", "skills/.hub"):
             blocked_target = zd_norm + "/" + blocked_sub if IS_WINDOWS else str(zd / blocked_sub)
@@ -419,21 +419,21 @@ def get_read_block_error(path: str) -> str | None:
                 or base_resolved_norm == blocked_target
                 or base_resolved_norm.startswith(blocked_target + "/")
             ):
-                return f"Access denied: {path} is an internal DeskAgent cache file. Use skill_view / skills_list instead."
+                return f"Access denied: {path} is an internal SpiritAgent cache file. Use skill_view / skills_list instead."
 
     credential_file_names = ("auth.json", "auth.lock", "anthropic_oauth.json", ".env", "webhook_subscriptions.json", "auth/google_oauth.json", "cache/bws_cache.json")
-    for zd in deskagent_dirs:
+    for zd in spiritagent_dirs:
         zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
         for name in credential_file_names:
             target_norm = zd_norm + "/" + name if IS_WINDOWS else str((zd / name).resolve())
             if resolved_norm == target_norm or base_resolved_norm == target_norm or resolved == (zd / name).resolve() or base_resolved == (zd / name).resolve():
-                return f"Access denied: {path} is a DeskAgent credential store and cannot be read directly."
+                return f"Access denied: {path} is a SpiritAgent credential store and cannot be read directly."
 
-    for zd in deskagent_dirs:
+    for zd in spiritagent_dirs:
         zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
         mcp_target = zd_norm + "/mcp-tokens"
         if resolved_norm == mcp_target or resolved_norm.startswith(mcp_target + "/") or base_resolved_norm == mcp_target or base_resolved_norm.startswith(mcp_target + "/"):
-            return f"Access denied: {path} is a DeskAgent MCP token file and cannot be read directly."
+            return f"Access denied: {path} is a SpiritAgent MCP token file and cannot be read directly."
 
     name_check = resolved.name.lower() if IS_WINDOWS else resolved.name
     base_name_check = base_resolved.name.lower() if IS_WINDOWS else base_resolved.name
@@ -445,12 +445,12 @@ def get_read_block_error(path: str) -> str | None:
 
 def _resolve_active_profile_name() -> str:
     try:
-        deskagent_real = _deskagent_home_path().resolve()
-        profiles_root = deskagent_real / "profiles"
+        spiritagent_real = _spiritagent_home_path().resolve()
+        profiles_root = spiritagent_real / "profiles"
         if not profiles_root.is_dir():
             return "default"
         try:
-            rel = deskagent_real.relative_to(profiles_root)
+            rel = spiritagent_real.relative_to(profiles_root)
         except ValueError:
             return "default"
         if rel.parts:
@@ -478,7 +478,7 @@ class MirrorTarget:
 def classify_cross_profile_target(path: str) -> CrossProfileTarget | None:
     try:
         target = Path(os.path.expanduser(str(path))).resolve()
-        root_real = _deskagent_home_path().resolve()
+        root_real = _spiritagent_home_path().resolve()
         rel = target.relative_to(root_real)
         parts = rel.parts
         if not parts:

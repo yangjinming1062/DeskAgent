@@ -52,7 +52,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
       ref={overlayRef}
     >
       <form
-        className="deskagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
+        className="spiritagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
         onSubmit={onSubmit}
       >
         <div className="mb-5 flex items-center gap-3">
@@ -60,7 +60,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
             <Sparkles className="size-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold tracking-tight">激活 DeskAgent</h2>
+            <h2 className="text-lg font-semibold tracking-tight">激活 SpiritAgent</h2>
             <p className="text-sm text-muted-foreground">粘贴您收到的激活码以开始使用。</p>
           </div>
         </div>

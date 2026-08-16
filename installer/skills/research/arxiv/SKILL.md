@@ -2,11 +2,11 @@
 name: arxiv
 description: "Search arXiv papers by keyword, author, category, or ID."
 version: 1.0.0
-author: DeskAgent Agent
+author: SpiritAgent Agent
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  deskagent:
+  spiritagent:
     tags: [Research, Arxiv, Papers, Academic, Science, API]
     related_skills: [ocr-and-documents]
 ---

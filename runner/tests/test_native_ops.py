@@ -175,13 +175,13 @@ def test_bom_preservation(tmp_cwd):
 def test_search_inside_dotdir_root(tmp_cwd):
     """A search root that itself sits under a dot-dir is not wholesale skipped."""
     ops, cwd = tmp_cwd
-    hidden_root = cwd / ".deskagent"
+    hidden_root = cwd / ".spiritagent"
     hidden_root.mkdir()
     (hidden_root / "file1.txt").write_text("target", encoding="utf-8")
     (hidden_root / ".hidden").mkdir()
     (hidden_root / ".hidden" / "file2.txt").write_text("target", encoding="utf-8")
 
-    result = ops.search("target", path=".deskagent")
+    result = ops.search("target", path=".spiritagent")
     assert result.error is None
     assert result.total_count == 1
     assert {m.path.replace("\\", "/") for m in result.matches} == {"file1.txt"}

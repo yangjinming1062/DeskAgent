@@ -7,7 +7,7 @@ import test from 'node:test'
 import { createBackendSession, decodeActivationCode, SessionError } from './session'
 
 function tmpUserData(tag: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `deskagent-session-test-${tag}-`))
+  return fs.mkdtempSync(path.join(os.tmpdir(), `spiritagent-session-test-${tag}-`))
 }
 
 function identitySafeStorage() {

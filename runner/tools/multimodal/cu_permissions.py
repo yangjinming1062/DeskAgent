@@ -19,7 +19,7 @@ _MACOS_PERMISSION_PROBES: tuple[tuple[str, str, str], ...] = (
         "Screen Recording",
         # /tmp path so we don't depend on the user's TMPDIR; output is deleted
         # immediately after read so we don't litter the system.
-        "do shell script \"screencapture -x -t png -R 0,0,1,1 /tmp/.deskagent_cu_sr_probe.png && wc -c < /tmp/.deskagent_cu_sr_probe.png | tr -d ' \\n'\"",
+        "do shell script \"screencapture -x -t png -R 0,0,1,1 /tmp/.spiritagent_cu_sr_probe.png && wc -c < /tmp/.spiritagent_cu_sr_probe.png | tr -d ' \\n'\"",
     ),
     # Accessibility / Automation is what gates CGEventPost and the AX APIs
     # that cua-driver uses for clicks and key injection. We probe it by

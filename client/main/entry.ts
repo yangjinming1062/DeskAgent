@@ -63,22 +63,22 @@ import {
   resolveReadableFileForIpc,
   resolveTimeoutMs
 } from './security/hardening'
-import { deskagentHome } from './security/paths'
+import { spiritagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
 import { resolveBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
-import type { DeskAgentConnection, DesktopBootProgress } from './shared/ipc-contracts'
+import type { DesktopBootProgress, SpiritAgentConnection } from './shared/ipc-contracts'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
 import { atomicWriteFile, directoryExists, fileExists, sendToMain, sleep } from './shared/utils'
 
-const USER_DATA_OVERRIDE = process.env.DESKAGENT_DESKTOP_USER_DATA_DIR
+const USER_DATA_OVERRIDE = process.env.SPIRITAGENT_DESKTOP_USER_DATA_DIR
 
-const DEV_SERVER = process.env.DESKAGENT_DESKTOP_DEV_SERVER
+const DEV_SERVER = process.env.SPIRITAGENT_DESKTOP_DEV_SERVER
 const IS_PACKAGED = app.isPackaged
 const IS_MAC = process.platform === 'darwin'
 const APP_ROOT = app.getAppPath()
 
-if (process.env.DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
+if (process.env.SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK !== '1') {
   if (!app.requestSingleInstanceLock()) {
     app.exit(0)
   }
@@ -90,7 +90,7 @@ if (REMOTE_DISPLAY_REASON) {
   app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu-compositing')
   console.log(
-    `[deskagent] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
+    `[spiritagent] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
   )
 }
 
@@ -98,21 +98,21 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
-function resolveDeskAgentHome(): string {
+function resolveSpiritAgentHome(): string {
   if (USER_DATA_OVERRIDE) {
-    return path.join(path.resolve(USER_DATA_OVERRIDE), 'deskagent-home')
+    return path.join(path.resolve(USER_DATA_OVERRIDE), 'spiritagent-home')
   }
 
-  return deskagentHome()
+  return spiritagentHome()
 }
 
-const DESKAGENT_HOME = resolveDeskAgentHome()
-fs.mkdirSync(DESKAGENT_HOME, { recursive: true })
-app.setPath('userData', DESKAGENT_HOME)
+const SPIRITAGENT_HOME = resolveSpiritAgentHome()
+fs.mkdirSync(SPIRITAGENT_HOME, { recursive: true })
+app.setPath('userData', SPIRITAGENT_HOME)
 
-runnerConfigStore.init({ deskagentHome: DESKAGENT_HOME })
+runnerConfigStore.init({ spiritagentHome: SPIRITAGENT_HOME })
 
-const APP_NAME = 'DeskAgent'
+const APP_NAME = 'SpiritAgent'
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
 
@@ -156,16 +156,16 @@ function getTitleBarOverlayOptions() {
 app.setName(APP_NAME)
 
 if (process.platform === 'win32') {
-  app.setAppUserModelId('io.deskagent.agent')
+  app.setAppUserModelId('io.spiritagent.agent')
 }
 
 app.setAboutPanelOptions({
   applicationName: APP_NAME,
-  applicationVersion: resolveDeskAgentVersion(),
-  copyright: 'Copyright © 2026 DeskAgent'
+  applicationVersion: resolveSpiritAgentVersion(),
+  copyright: 'Copyright © 2026 SpiritAgent'
 })
 
-const MEDIA_PROTOCOL = 'deskagent-media'
+const MEDIA_PROTOCOL = 'spiritagent-media'
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -212,7 +212,7 @@ const RENDERER_RELOAD_MAX = 3
 let rendererReloadTimes: number[] = []
 
 const desktopLogger = createDesktopLogger({
-  deskagentHome: DESKAGENT_HOME,
+  spiritagentHome: SPIRITAGENT_HOME,
   isPackaged: IS_PACKAGED
 })
 
@@ -223,7 +223,7 @@ let nativeThemeListenerInstalled = false
 let bootProgressState: DesktopBootProgress = {
   error: null,
   fakeMode: false,
-  message: 'Waiting to start DeskAgent backend',
+  message: 'Waiting to start SpiritAgent backend',
   phase: 'idle',
   progress: 0,
   running: false,
@@ -295,7 +295,7 @@ function clampBootProgress(value: any): number {
 }
 
 function broadcastBootProgress(): void {
-  sendToMain(mainWindow, 'deskagent:boot-progress', bootProgressState)
+  sendToMain(mainWindow, 'spiritagent:boot-progress', bootProgressState)
 }
 
 function updateBootProgress(update: any, options: { allowDecrease?: boolean } = {}): void {
@@ -334,7 +334,7 @@ function unpackedPathFor(filePath: string): string {
 }
 
 function resolveWebDist(): string {
-  const override = process.env.DESKAGENT_DESKTOP_WEB_DIST
+  const override = process.env.SPIRITAGENT_DESKTOP_WEB_DIST
 
   if (override && directoryExists(path.resolve(override))) {
     return path.resolve(override)
@@ -352,7 +352,7 @@ function resolveWebDist(): string {
     rememberLog(
       `[web-dist] dashboard frontend dir resolved to an asar-internal path that ` +
         `is not a real directory: ${fallback}. Static routes will 404. ` +
-        'Ensure dist/** is unpacked (asarUnpack) or set DESKAGENT_DESKTOP_WEB_DIST.'
+        'Ensure dist/** is unpacked (asarUnpack) or set SPIRITAGENT_DESKTOP_WEB_DIST.'
     )
   }
 
@@ -371,13 +371,13 @@ function resolveRendererIndex(): string {
     `[renderer] index.html not found — the desktop app was packaged without a ` +
       'renderer bundle. Tried: ' +
       candidates.join(', ') +
-      '. Rebuild via the Tauri DeskAgent-Setup installer.'
+      '. Rebuild via the Tauri SpiritAgent-Setup installer.'
   )
 
   return candidates[0]
 }
 
-function resolveDeskAgentVersion(): string {
+function resolveSpiritAgentVersion(): string {
   return app.getVersion()
 }
 
@@ -389,7 +389,7 @@ function fetchJson(url: string, token?: string, options: any = {}): Promise<any>
     const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
 
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported DeskAgent backend URL protocol: ${parsed.protocol}`))
+      reject(new Error(`Unsupported SpiritAgent backend URL protocol: ${parsed.protocol}`))
 
       return
     }
@@ -430,7 +430,7 @@ function fetchJson(url: string, token?: string, options: any = {}): Promise<any>
             reject(
               new Error(
                 `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                  'The endpoint is likely missing on the DeskAgent backend.'
+                  'The endpoint is likely missing on the SpiritAgent backend.'
               )
             )
 
@@ -448,7 +448,7 @@ function fetchJson(url: string, token?: string, options: any = {}): Promise<any>
 
     req.on('error', reject)
     req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to DeskAgent backend after ${timeoutMs}ms`))
+      req.destroy(new Error(`Timed out connecting to SpiritAgent backend after ${timeoutMs}ms`))
     })
 
     if (body) {
@@ -569,7 +569,7 @@ async function writeComposerImage(buffer: Buffer, ext = '.png'): Promise<string>
   return filePath
 }
 
-async function waitForDeskAgent(baseUrl: string, token?: string): Promise<void> {
+async function waitForSpiritAgent(baseUrl: string, token?: string): Promise<void> {
   const deadline = Date.now() + 45_000
   let lastError: any = null
 
@@ -584,7 +584,7 @@ async function waitForDeskAgent(baseUrl: string, token?: string): Promise<void> 
     }
   }
 
-  throw new Error(`DeskAgent backend did not become ready: ${lastError?.message || 'timeout'}`)
+  throw new Error(`SpiritAgent backend did not become ready: ${lastError?.message || 'timeout'}`)
 }
 
 function getWindowButtonPosition(): { x: number; y: number } | null {
@@ -612,11 +612,11 @@ function sameWindowButtonPosition(a: any, b: any): boolean {
 }
 
 function sendClosePreviewRequested(): void {
-  sendToMain(mainWindow, 'deskagent:close-preview-requested')
+  sendToMain(mainWindow, 'spiritagent:close-preview-requested')
 }
 
 function sendPowerResume(): void {
-  sendToMain(mainWindow, 'deskagent:power-resume')
+  sendToMain(mainWindow, 'spiritagent:power-resume')
 }
 
 let powerResumeRegistered = false
@@ -651,7 +651,7 @@ function sendWindowStateChanged(nextIsFullscreen?: boolean): void {
     state.isFullscreen = nextIsFullscreen
   }
 
-  sendToMain(mainWindow, 'deskagent:window-state-changed', state)
+  sendToMain(mainWindow, 'spiritagent:window-state-changed', state)
 }
 
 function buildApplicationMenu(): Menu {
@@ -793,7 +793,7 @@ function installPreviewShortcut(targetWin: BrowserWindow): void {
   })
 }
 
-const ZOOM_STORAGE_KEY = 'deskagent:desktop:zoomLevel'
+const ZOOM_STORAGE_KEY = 'spiritagent:desktop:zoomLevel'
 
 function clampZoomLevel(value: number): number {
   if (!Number.isFinite(value)) {
@@ -1030,7 +1030,7 @@ function setupAutoUpdater(): void {
   autoUpdater.autoInstallOnAppQuit = false
   autoUpdater.logger = log
 
-  const baseUrl = resolveNormalizedBackendUrl(DESKAGENT_HOME)
+  const baseUrl = resolveNormalizedBackendUrl(SPIRITAGENT_HOME)
 
   if (!baseUrl) {
     log.info('no backend URL configured; auto-updater disabled until activation')
@@ -1098,13 +1098,13 @@ function getBundledPublicKeyPath(): null | string {
 }
 
 async function resolveRemoteBackend(): Promise<null | { baseUrl: string }> {
-  const url = resolveNormalizedBackendUrl(DESKAGENT_HOME)
+  const url = resolveNormalizedBackendUrl(SPIRITAGENT_HOME)
 
   return url ? { baseUrl: url } : null
 }
 
 let getAuthToken = (): string | null => null
-let cachedBackend: DeskAgentConnection | null = null
+let cachedBackend: SpiritAgentConnection | null = null
 
 function resetBackendCache(): void {
   cachedBackend = null
@@ -1129,7 +1129,7 @@ async function mintWsTicket(baseUrl: string, token: string | null): Promise<stri
   }
 }
 
-async function ensureBackend(): Promise<DeskAgentConnection> {
+async function ensureBackend(): Promise<SpiritAgentConnection> {
   if (cachedBackend) {
     const token = getAuthToken()
     const tokenChanged = token !== cachedBackend.token
@@ -1156,16 +1156,16 @@ async function ensureBackend(): Promise<DeskAgentConnection> {
     return cachedBackend
   }
 
-  await advanceBootProgress('backend.resolve', 'Resolving DeskAgent backend', 8)
+  await advanceBootProgress('backend.resolve', 'Resolving SpiritAgent backend', 8)
   const remote = await resolveRemoteBackend()
 
   if (remote) {
     const token = getAuthToken()
-    await advanceBootProgress('backend.remote', `Connecting to remote DeskAgent backend at ${remote.baseUrl}`, 24)
-    await waitForDeskAgent(remote.baseUrl, token || undefined)
+    await advanceBootProgress('backend.remote', `Connecting to remote SpiritAgent backend at ${remote.baseUrl}`, 24)
+    await waitForSpiritAgent(remote.baseUrl, token || undefined)
     updateBootProgress({
       error: null,
-      message: 'Remote DeskAgent backend is ready',
+      message: 'Remote SpiritAgent backend is ready',
       phase: 'backend.ready',
       progress: 94,
       running: true
@@ -1186,7 +1186,7 @@ async function ensureBackend(): Promise<DeskAgentConnection> {
     return cachedBackend
   }
 
-  throw new Error('No remote DeskAgent backend configured.')
+  throw new Error('No remote SpiritAgent backend configured.')
 }
 
 function rendererUrlFor(role: string): string {
@@ -1265,7 +1265,7 @@ function createToolWindow(): void {
     icon,
     minHeight: 620,
     minWidth: 400,
-    title: 'DeskAgent',
+    title: 'SpiritAgent',
     titleBarOverlay: getTitleBarOverlayOptions(),
     titleBarStyle: 'hidden',
     trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
@@ -1404,7 +1404,7 @@ function broadcastAuthChanged(snapshot: any): void {
 
   for (const win of [mainWindow, toolWindow]) {
     if (win && !win.isDestroyed()) {
-      win.webContents.send('deskagent:auth:changed', payload)
+      win.webContents.send('spiritagent:auth:changed', payload)
     }
   }
 }
@@ -1436,12 +1436,12 @@ registerFilesIpc({
 registerOnboardingAudioIpc({
   app,
   appRoot: APP_ROOT,
-  deskagentHome: DESKAGENT_HOME,
+  spiritagentHome: SPIRITAGENT_HOME,
   hardening: { resolveReadableFileForIpc },
   ipcMain,
   mimeTypeForPath
 })
-const modelDiskCache = createModelDiskCache({ deskagentHome: DESKAGENT_HOME })
+const modelDiskCache = createModelDiskCache({ spiritagentHome: SPIRITAGENT_HOME })
 registerConnectionIpc({
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
   ensureBackend,
@@ -1454,7 +1454,7 @@ registerConnectionIpc({
   resolveTimeoutMs
 })
 registerMediaIpc({
-  deskagentHome: DESKAGENT_HOME,
+  spiritagentHome: SPIRITAGENT_HOME,
   ensureBackend,
   getEnginePrefs: createEnginePrefsCache({ ensureBackend }),
   getRunnerBridge: () => bridgeDeps.runnerBridge,
@@ -1466,7 +1466,7 @@ function showAboutPanelFresh(): void {
   app.setAboutPanelOptions({
     applicationName: APP_NAME,
     applicationVersion: app.getVersion(),
-    copyright: 'Copyright © 2026 DeskAgent'
+    copyright: 'Copyright © 2026 SpiritAgent'
   })
   app.showAboutPanel()
 }
@@ -1480,15 +1480,15 @@ const bridgeDeps: any = {
   broadcastAuthChanged,
   buildClientContext: () =>
     buildClientContext({
-      deskagentHome: DESKAGENT_HOME,
-      desktopVersion: resolveDeskAgentVersion()
+      spiritagentHome: SPIRITAGENT_HOME,
+      desktopVersion: resolveSpiritAgentVersion()
     }),
   createBackendSession,
   createReverseRpc,
   createRunnerBridge,
   createRunnerProcess,
   createRunnerWsServer,
-  deskagentHome: DESKAGENT_HOME,
+  spiritagentHome: SPIRITAGENT_HOME,
   electronNet,
   ensureBackendSession: () => {
     if (bridgeDeps.backendSession) {
@@ -1496,8 +1496,8 @@ const bridgeDeps: any = {
     }
 
     bridgeDeps.backendSession = createBackendSession({
-      appVersion: resolveDeskAgentVersion(),
-      defaultBaseUrl: resolveBackendUrl(DESKAGENT_HOME) || null,
+      appVersion: resolveSpiritAgentVersion(),
+      defaultBaseUrl: resolveBackendUrl(SPIRITAGENT_HOME) || null,
       fetchImpl: (url: string, options: any) => electronNet.fetch(url, options),
       log: (chunk: string) => rememberLog(chunk),
       safeStorage,
@@ -1522,7 +1522,7 @@ const bridgeDeps: any = {
   rebuildTrayMenu: () => rebuildTrayMenu(),
   rememberLog,
   resetBackendCache,
-  resolveDeskAgentVersion,
+  resolveSpiritAgentVersion,
   rewireAuthToken: () => {
     getAuthToken = () => bridgeDeps.ensureBackendSession().getToken() ?? null
   },
@@ -1535,7 +1535,7 @@ const bridgeDeps: any = {
 registerAuthIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerIpc({ deps: bridgeDeps, ipcMain })
 registerRunnerConfigIpc({ ipcMain })
-registerSkillsIpc({ deskagentHome: DESKAGENT_HOME, getRunnerBridge: () => bridgeDeps.runnerBridge, ipcMain })
+registerSkillsIpc({ spiritagentHome: SPIRITAGENT_HOME, getRunnerBridge: () => bridgeDeps.runnerBridge, ipcMain })
 registerUpdateIpc({
   electron: { app },
   getMainWindow: () => mainWindow,
@@ -1548,11 +1548,11 @@ registerSpriteIpc({
   ipcMain
 })
 
-ipcMain.handle('deskagent:window:show-tool', async () => {
+ipcMain.handle('spiritagent:window:show-tool', async () => {
   showToolWindow()
 })
 
-ipcMain.handle('deskagent:runner:get-tools', async () => {
+ipcMain.handle('spiritagent:runner:get-tools', async () => {
   const deadline = Date.now() + 5000
 
   while (!bridgeDeps.runnerBridge && Date.now() < deadline) {

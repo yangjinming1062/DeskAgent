@@ -7,8 +7,8 @@ from components import SETTINGS, get_logger
 
 logger = get_logger(__name__)
 
-CONTAINER_LABEL = "deskagent-worker"
-CONTAINER_PREFIX = "deskagent-job-"
+CONTAINER_LABEL = "spiritagent-worker"
+CONTAINER_PREFIX = "spiritagent-job-"
 
 
 def _docker_cmd(container: str, io_dir: Path, script_name: str, args: Sequence[str]) -> list[str]:

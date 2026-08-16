@@ -32,7 +32,7 @@ STARTUP_IMPORTS = [
     ),
     ("utils.core", "from utils import pid_exists, set_handler"),
     ("utils.capabilities", "from utils.capabilities import snapshot"),
-    ("utils.constants", "from utils.constants import get_deskagent_home"),
+    ("utils.constants", "from utils.constants import get_spiritagent_home"),
 ]
 
 

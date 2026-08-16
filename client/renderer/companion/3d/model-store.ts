@@ -233,7 +233,7 @@ export function refreshEquippedAndApply(): WardrobeItem[] {
 // doesn't go unnoticed in production.
 export async function hydrateModel(): Promise<void> {
   try {
-    const res = await window.deskagent.api<CompanionModelResponse>({
+    const res = await window.spiritagent.api<CompanionModelResponse>({
       path: '/api/companion/model'
     })
 
@@ -266,7 +266,7 @@ export async function hydrateModel(): Promise<void> {
 // lifecycle=ready hydration and the ``wardrobe.updated`` WS event handler.
 export async function hydrateWardrobe(): Promise<void> {
   try {
-    const res = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+    const res = await window.spiritagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
     setWardrobe(res ?? [])
   } catch (error) {
     if (!isClientErrorIpc(error)) {
@@ -287,7 +287,7 @@ async function hydrateArray<T>(
   label: string
 ): Promise<void> {
   try {
-    const res = await window.deskagent.api<Record<string, unknown>>({ path })
+    const res = await window.spiritagent.api<Record<string, unknown>>({ path })
     const arr = res?.[arrayKey]
 
     if (Array.isArray(arr)) {

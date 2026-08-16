@@ -22,7 +22,7 @@ def test_metrics_endpoint_public_by_default(monkeypatch):
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "text/plain" in response.headers.get("content-type", "")
-    assert "deskagent_rpc_requests_total" in response.text or "python_info" in response.text or "process_cpu_seconds_total" in response.text
+    assert "spiritagent_rpc_requests_total" in response.text or "python_info" in response.text or "process_cpu_seconds_total" in response.text
 
 
 def test_metrics_endpoint_token_authentication(monkeypatch):

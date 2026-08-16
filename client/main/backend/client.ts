@@ -173,7 +173,7 @@ export function createBackendClient(options: BackendClientOptions = {}): Backend
   const fetchImpl = options.fetch
   const baseUrl = normalizeBaseUrl(options.baseUrl)
   const defaultTimeoutMs = resolveTimeoutMs(options.timeoutMs)
-  const userAgent = options.userAgent || 'DeskAgentDesktop/0.15 (Electron)'
+  const userAgent = options.userAgent || 'SpiritAgentDesktop/0.15 (Electron)'
 
   async function request<T = unknown>(
     method: string,

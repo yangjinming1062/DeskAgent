@@ -14,26 +14,26 @@ CREATE_NO_WINDOW: int = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
 """Windows subprocess flag for ``creationflags``; 0 on POSIX (no-op)."""
 
 
-def get_deskagent_home() -> Path:
-    if override := os.environ.get("DESKAGENT_HOME"):
+def get_spiritagent_home() -> Path:
+    if override := os.environ.get("SPIRITAGENT_HOME"):
         return Path(override)
     if sys.platform == "win32" and (local_appdata := os.environ.get("LOCALAPPDATA")):
-        return Path(local_appdata) / "DeskAgent"
+        return Path(local_appdata) / "SpiritAgent"
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "DeskAgent"
-    return Path.home() / ".deskagent"
+        return Path.home() / "Library" / "Application Support" / "SpiritAgent"
+    return Path.home() / ".spiritagent"
 
 
-def get_deskagent_home_override() -> str | None:
-    return os.environ.get("DESKAGENT_HOME") or None
+def get_spiritagent_home_override() -> str | None:
+    return os.environ.get("SPIRITAGENT_HOME") or None
 
 
 def get_subprocess_home() -> Path:
-    return Path(override) if (override := os.environ.get("DESKAGENT_SUBPROCESS_HOME")) else get_deskagent_home()
+    return Path(override) if (override := os.environ.get("SPIRITAGENT_SUBPROCESS_HOME")) else get_spiritagent_home()
 
 
-def get_deskagent_dir(new_subpath: str | None = None, old_name: str | None = None) -> Path:
-    base = get_deskagent_home()
+def get_spiritagent_dir(new_subpath: str | None = None, old_name: str | None = None) -> Path:
+    base = get_spiritagent_home()
     new_path = base / new_subpath if new_subpath else None
     old_path = base / old_name if old_name else None
     if new_path and new_path.is_dir():
@@ -44,7 +44,7 @@ def get_deskagent_dir(new_subpath: str | None = None, old_name: str | None = Non
 
 
 def get_skills_dir() -> Path:
-    return get_deskagent_home() / "skills"
+    return get_spiritagent_home() / "skills"
 
 
 def secure_parent_dir(path: str | Path) -> None:

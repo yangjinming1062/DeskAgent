@@ -11,7 +11,7 @@ export const MAX_BYTES = 256 * 1024
 export interface OnboardingAudioIpcDeps {
   app?: null | Partial<App>
   appRoot?: string
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   devAudioRoot?: string
   hardening: {
     resolveReadableFileForIpc: (
@@ -26,7 +26,7 @@ export interface OnboardingAudioIpcDeps {
 export function registerOnboardingAudioIpc({
   app,
   appRoot,
-  deskagentHome,
+  spiritagentHome,
   devAudioRoot: explicitDevAudioRoot,
   hardening,
   ipcMain,
@@ -36,15 +36,15 @@ export function registerOnboardingAudioIpc({
     throw new Error('registerOnboardingAudioIpc: hardening is required')
   }
 
-  if (!deskagentHome) {
-    throw new Error('registerOnboardingAudioIpc: deskagentHome is required')
+  if (!spiritagentHome) {
+    throw new Error('registerOnboardingAudioIpc: spiritagentHome is required')
   }
 
   if (typeof mimeTypeForPath !== 'function') {
     throw new Error('registerOnboardingAudioIpc: mimeTypeForPath is required')
   }
 
-  const audioRoot = path.resolve(deskagentHome, 'audio', 'onboarding', 'zh')
+  const audioRoot = path.resolve(spiritagentHome, 'audio', 'onboarding', 'zh')
 
   let devAudioRoot = explicitDevAudioRoot
 
@@ -64,7 +64,7 @@ export function registerOnboardingAudioIpc({
     devAudioRoot = path.resolve(repoRoot, 'installer/payload/onboarding-audio/zh')
   }
 
-  ipcMain.handle('deskagent:onboardingAudio:read', async (_event, tag: string) => {
+  ipcMain.handle('spiritagent:onboardingAudio:read', async (_event, tag: string) => {
     if (typeof tag !== 'string' || !TAG_RE.test(tag)) {
       throw new Error(`invalid onboarding audio tag: ${tag}`)
     }

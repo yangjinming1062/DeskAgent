@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 
 import { $chatMessages, $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
 import { $gateway } from '@/shared/store/gateway'
-import type { SessionInfo, SessionResumeResponse } from '@/shared/types/deskagent'
+import type { SessionInfo, SessionResumeResponse } from '@/shared/types/spiritagent'
 
 export const $sessions = atom<SessionInfo[]>([])
 export const $sessionsLoading = atom(false)
@@ -24,7 +24,7 @@ export async function fetchSessions(): Promise<void> {
   $sessionsLoading.set(true)
 
   try {
-    const res = await window.deskagent.api<{ sessions: SessionInfo[] }>({ path: '/api/v1/sessions' })
+    const res = await window.spiritagent.api<{ sessions: SessionInfo[] }>({ path: '/api/v1/sessions' })
 
     if (token === fetchToken) {
       $sessions.set(res.sessions || [])
@@ -101,7 +101,7 @@ export async function openMainSession(onMounted?: (res: SessionResumeResponse) =
 
 export async function deleteSession(sessionId: string): Promise<void> {
   try {
-    await window.deskagent.api({ method: 'DELETE', path: `/api/v1/sessions/${sessionId}` })
+    await window.spiritagent.api({ method: 'DELETE', path: `/api/v1/sessions/${sessionId}` })
   } catch (err) {
     console.error('Failed to delete session', err)
 

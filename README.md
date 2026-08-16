@@ -1,8 +1,8 @@
-# DeskAgent
+# SpiritAgent
 
 > 可定制的陪伴型桌面伙伴——你描述想要的伙伴，它生成专属形象，常驻你的桌面主动陪伴、记住你、并帮你做事。
 
-DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。首次安装时你以一颗"蛋"的形态见到它，通过一段对话式 onboarding 描述你想要的伙伴（名字、物种、性格、说话风格、外貌偏好），系统据此即时生成专属桌面形象；此后伙伴常驻桌面、能主动陪伴、也能调用本机能力帮你做事。
+SpiritAgent 是一个**根据用户描述定制的、具有专属形象的陪伴型桌面伙伴**。首次安装时你以一颗"蛋"的形态见到它，通过一段对话式 onboarding 描述你想要的伙伴（名字、物种、性格、说话风格、外貌偏好），系统据此即时生成专属桌面形象；此后伙伴常驻桌面、能主动陪伴、也能调用本机能力帮你做事。
 
 三个关键词决定一切产品与技术取舍：**定制**（形象与人格由你定义并生成）、**陪伴**（主动、持续、有记忆的关系，而非一次性问答）、**伙伴**（交互对象是"他/她/它"，工具能力只是伙伴"会做的事"，不是产品的主角）。
 
@@ -21,19 +21,19 @@ DeskAgent 是一个**根据用户描述定制的、具有专属形象的陪伴�
 ### 后端 (Backend)
 
 ```bash
-cd backend && docker compose up  # 监听 :10620，PostgreSQL 数据库；默认管理员 deskagent/deskagent@admin123（生产前修改）
+cd backend && docker compose up  # 监听 :10620，PostgreSQL 数据库；默认管理员 spiritagent/spiritagent@admin123（生产前修改）
 ```
 
 ### 桌面客户端 (Client，开发模式)
 
 ```bash
 cd client && pnpm install && pnpm dev  # Vite + Electron
-# Backend URL 在首次登录输入激活码后解包并持久化存入 $DESKAGENT_HOME/desktop-config.json
+# Backend URL 在首次登录输入激活码后解包并持久化存入 $SPIRITAGENT_HOME/desktop-config.json
 ```
 
 ### Runner
 
-由 installer 安装到 `$DESKAGENT_HOME/runner/.venv`，client 启动时自动 spawn。dev 模式手动启动见 [runner/README.md](runner/README.md)。
+由 installer 安装到 `$SPIRITAGENT_HOME/runner/.venv`，client 启动时自动 spawn。dev 模式手动启动见 [runner/README.md](runner/README.md)。
 
 ### 安装包 (Installer)
 
@@ -47,10 +47,10 @@ bash scripts/build_client.sh
 
 产物：
 
-- `release/DeskAgent-Setup-{ver}.{exe|dmg}` —— 首次安装 / 卸载 / repair
-- `release/DeskAgent-{ver}-update.zip` —— 运行期自更新 payload（走 `electron-updater` 通道）
+- `release/SpiritAgent-Setup-{ver}.{exe|dmg}` —— 首次安装 / 卸载 / repair
+- `release/SpiritAgent-{ver}-update.zip` —— 运行期自更新 payload（走 `electron-updater` 通道）
 
-发布运维：登录 `https://<your-backend>/admin/` → "版本管理" → 选 `release/DeskAgent-{ver}-update.zip` → 上传并发布。
+发布运维：登录 `https://<your-backend>/admin/` → "版本管理" → 选 `release/SpiritAgent-{ver}-update.zip` → 上传并发布。
 
 ## 文档导航
 

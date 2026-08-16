@@ -1,7 +1,7 @@
 [project]
-name = "deskagent-backend"
+name = "spiritagent-backend"
 version = "0.1.0"
-description = "DeskAgent Backend API"
+description = "SpiritAgent Backend API"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.141.1",

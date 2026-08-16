@@ -36,7 +36,7 @@ export function SkillsSettings(): React.JSX.Element {
   const loadErrorLabelRef = useLatestRef(loadErrorLabel)
 
   const loader = useAsyncLoader<SkillSummary[]>(async () => {
-    const res = await window.deskagent.skills.list()
+    const res = await window.spiritagent.skills.list()
 
     if (!res.ok) {
       notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
@@ -72,7 +72,7 @@ export function SkillsSettings(): React.JSX.Element {
     const prev = skillsRef.current
 
     try {
-      const res = await window.deskagent.skills.setEnabled({ name, enabled: nextEnabled })
+      const res = await window.spiritagent.skills.setEnabled({ name, enabled: nextEnabled })
 
       if (!res.ok || !res.skills) {
         setSkills(prev)

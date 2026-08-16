@@ -23,7 +23,7 @@ _PROVIDER_SUPPORTS_VISION: set[str] = set()
 # provider_name → vision MODEL_NAME (empty = reuse text default).
 _PROVIDER_VISION_MODELS: dict[str, str] = {}
 
-# Provider families DeskAgent ships. ``*_PROVIDER`` env vars must be one
+# Provider families SpiritAgent ships. ``*_PROVIDER`` env vars must be one
 # of these; adding a new family means registering its classes AND extending
 # the dicts below.
 KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})

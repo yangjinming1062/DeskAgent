@@ -10,7 +10,7 @@ export interface DesktopBootState extends DesktopBootProgress {
 const INITIAL_BOOT_STATE: DesktopBootState = {
   error: null,
   fakeMode: false,
-  message: strings.boot.steps.startingDeskAgentDesktop,
+  message: strings.boot.steps.startingSpiritAgentDesktop,
   phase: 'renderer.init',
   progress: 2,
   running: true,

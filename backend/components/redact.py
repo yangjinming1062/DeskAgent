@@ -29,8 +29,8 @@ _SENSITIVE_QUERY_PARAMS = frozenset(
 )
 
 # Snapshot at import time so runtime env mutations (e.g. LLM-generated
-# `export DESKAGENT_REDACT_SECRETS=false`) cannot disable redaction mid-session.
-_REDACT_ENABLED = os.getenv("DESKAGENT_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
+# `export SPIRITAGENT_REDACT_SECRETS=false`) cannot disable redaction mid-session.
+_REDACT_ENABLED = os.getenv("SPIRITAGENT_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
 _PREFIX_PATTERNS = [
     r"sk-[A-Za-z0-9_-]{10,}",  # OpenAI / OpenRouter / Anthropic

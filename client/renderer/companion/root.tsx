@@ -90,13 +90,13 @@ export function CompanionRoot(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))
+    const off = window.spiritagent.onAuthChanged(payload => applyAuthBroadcast(payload))
 
     return () => off()
   }, [])
 
   useEffect(() => {
-    const off = window.deskagent.onSessionExpired(() => void logout())
+    const off = window.spiritagent.onSessionExpired(() => void logout())
 
     return () => off()
   }, [])
@@ -105,7 +105,7 @@ export function CompanionRoot(): React.JSX.Element {
   // triggers `onSessionExpired` on the next session check, but routing this
   // explicitly keeps the UI snappy when the user clicks the tray item.
   useEffect(() => {
-    const off = window.deskagent.onTrayLogout?.(() => void logout())
+    const off = window.spiritagent.onTrayLogout?.(() => void logout())
 
     return () => off?.()
   }, [])
@@ -149,7 +149,7 @@ export function CompanionRoot(): React.JSX.Element {
     let cancelled = false
     setCompanionLifecycle('unauthed')
     Promise.all([
-      window.deskagent.api<{ is_complete?: boolean }>({ path: '/api/companion/persona' }),
+      window.spiritagent.api<{ is_complete?: boolean }>({ path: '/api/companion/persona' }),
       requestGateway<{ complete?: boolean }>('onboarding.get_state', {})
     ])
       .then(([persona, state]) => {
@@ -286,7 +286,7 @@ export function CompanionRoot(): React.JSX.Element {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
 
-    void window.deskagent
+    void window.spiritagent
       .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
       .catch(err => log.warn('companion', 'initial model generation failed:', err))
   }

@@ -101,8 +101,8 @@ _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset({
     "AUTHORITY_URL",
 })
 # Exact-match drop list for vars whose names don't contain the substrings
-# above but are still sensitive (e.g. DESKAGENT_JWT contains "JWT" so it'd be
-# caught; DESKAGENT_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept
+# above but are still sensitive (e.g. SPIRITAGENT_JWT contains "JWT" so it'd be
+# caught; SPIRITAGENT_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept
 # here as a belt-and-suspenders anchor).
 _CUA_DRIVER_DROP_EXACT: frozenset[str] = frozenset()
 
@@ -141,10 +141,10 @@ def cua_driver_binary_available() -> bool:
 def cua_driver_install_hint() -> str:
     return (
         "cua-driver is not installed. Install with one of:\n"
-        "  deskagent computer-use install\n"
+        "  spiritagent computer-use install\n"
         "Or run the upstream installer directly:\n"
         '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh)"\n'
-        "Or run `deskagent tools` and enable the Computer Use toolset to install it automatically."
+        "Or run `spiritagent tools` and enable the Computer Use toolset to install it automatically."
     )
 
 

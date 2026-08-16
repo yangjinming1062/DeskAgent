@@ -15,7 +15,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-from utils import IS_WINDOWS, cfg_get, get_deskagent_home, load_config
+from utils import IS_WINDOWS, cfg_get, get_spiritagent_home, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +66,12 @@ def _reset_spawn_warning_state() -> None:
         _warned_messages.clear()
 
 
-def _get_deskagent_home() -> str:
-    return str(get_deskagent_home())
+def _get_spiritagent_home() -> str:
+    return str(get_spiritagent_home())
 
 
 def _failure_marker_path() -> str:
-    return os.path.join(_get_deskagent_home(), ".tirith-install-failed")
+    return os.path.join(_get_spiritagent_home(), ".tirith-install-failed")
 
 
 def _read_failure_reason() -> str | None:
@@ -110,8 +110,8 @@ def _clear_install_failed() -> None:
         os.unlink(_failure_marker_path())
 
 
-def _deskagent_bin_dir() -> str:
-    os.makedirs(d := os.path.join(_get_deskagent_home(), "bin"), exist_ok=True)
+def _spiritagent_bin_dir() -> str:
+    os.makedirs(d := os.path.join(_get_spiritagent_home(), "bin"), exist_ok=True)
     return d
 
 
@@ -196,7 +196,7 @@ def _tirith_bin_names() -> tuple[str, ...]:
 def _tirith_search_paths() -> list[str]:
     names = _tirith_bin_names()
     paths: list[str] = []
-    bin_dir = _deskagent_bin_dir()
+    bin_dir = _spiritagent_bin_dir()
     for name in names:
         paths.append(name)
         paths.append(os.path.join(bin_dir, name))
@@ -264,7 +264,7 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
             if src is None:
                 return None, reason
         dest_name = "tirith.exe" if IS_WINDOWS else "tirith"
-        dest = os.path.join(_deskagent_bin_dir(), dest_name)
+        dest = os.path.join(_spiritagent_bin_dir(), dest_name)
         try:
             shutil.move(src, dest)
         except OSError:

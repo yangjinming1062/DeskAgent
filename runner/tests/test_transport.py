@@ -195,7 +195,7 @@ if IS_WINDOWS:
                         raise ConnectionError(
                             f"unexpected pre-handshake event: {event!r}"
                         )
-                    self.handshake_token = event.headers.get("X-DeskAgent-Auth")
+                    self.handshake_token = event.headers.get("X-SpiritAgent-Auth")
                     if self.handshake_token != self._expect_token:
                         # Mirror the production Desktop: reject the upgrade
                         # with plain HTTP 401 and never complete the WS
@@ -314,7 +314,7 @@ if IS_WINDOWS:
         """
 
         def __init__(self, *, path: str | None = None, token: str | None = None):
-            self.path = path or ("\\\\.\\pipe\\deskagent-test-" + uuid.uuid4().hex[:12])
+            self.path = path or ("\\\\.\\pipe\\spiritagent-test-" + uuid.uuid4().hex[:12])
             self.token = token or (uuid.uuid4().hex + uuid.uuid4().hex)
             self._handle = _create_pipe(self.path)
             self._active_session: _PipeSession | None = None
@@ -397,7 +397,7 @@ else:
 
         async def start(self) -> None:
             def process_request(connection, request):
-                if request.headers.get("X-DeskAgent-Auth") != self.token:
+                if request.headers.get("X-SpiritAgent-Auth") != self.token:
                     return Response(
                         401, "Unauthorized", Headers([("Connection", "close")]), b""
                     )
@@ -564,7 +564,7 @@ async def test_concurrent_sends_stay_serialized(desktop):
         (
             {
                 "transport": EXPECTED_TRANSPORT,
-                "path": "\\\\.\\pipe\\deskagent-runner-123"
+                "path": "\\\\.\\pipe\\spiritagent-runner-123"
                 if IS_WINDOWS
                 else "/tmp/runner.sock",
                 "token": "a" * 64,
@@ -603,7 +603,7 @@ async def test_concurrent_sends_stay_serialized(desktop):
     ],
 )
 async def test_read_endpoint_schema(tmp_path, monkeypatch, payload, expect_valid):
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     (tmp_path / "desktop-endpoint.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
@@ -618,7 +618,7 @@ async def test_read_endpoint_schema(tmp_path, monkeypatch, payload, expect_valid
 
 
 async def test_read_endpoint_missing_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     assert read_endpoint() is None
 
 
@@ -626,7 +626,7 @@ async def test_read_endpoint_stale_pid(tmp_path, monkeypatch):
     import utils.desktop_transport as transport_module
 
     monkeypatch.setattr(transport_module, "pid_exists", lambda pid: False)
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     (tmp_path / "desktop-endpoint.json").write_text(
         json.dumps({
             "transport": EXPECTED_TRANSPORT,
@@ -646,7 +646,7 @@ async def test_connect_pipe_handle_times_out_when_missing():
     with pytest.raises(TimeoutError):
         await asyncio.to_thread(
             _connect_pipe_handle,
-            "\\\\.\\pipe\\deskagent-test-absent-" + uuid.uuid4().hex[:8],
+            "\\\\.\\pipe\\spiritagent-test-absent-" + uuid.uuid4().hex[:8],
             timeout_s=0.2,
         )
 
@@ -656,7 +656,7 @@ async def test_connect_pipe_handle_times_out_when_missing():
 )
 async def test_connect_pipe_handle_waits_for_instance():
     """ERROR_PIPE_BUSY must be retried via WaitNamedPipeW, not surfaced."""
-    path = "\\\\.\\pipe\\deskagent-test-busy-" + uuid.uuid4().hex[:8]
+    path = "\\\\.\\pipe\\spiritagent-test-busy-" + uuid.uuid4().hex[:8]
     handle = _create_pipe(path)
     try:
         # Instance 1 must be in listening state for the first client to

@@ -10,7 +10,7 @@ def testredact_message_strips_paths_and_credentials():
     leak = (
         "OperationalError: (psycopg2.OperationalError) connection to server at "
         "10.0.0.5 (10.0.0.5), port 5432 failed: FATAL: password authentication "
-        'failed for user "postgres" /home/agent/DeskAgent/backend/services/chat/x.py:42'
+        'failed for user "postgres" /home/agent/SpiritAgent/backend/services/chat/x.py:42'
     )
     redacted = redact_message(leak)
     assert "OperationalError" not in redacted or "[redacted]" in redacted

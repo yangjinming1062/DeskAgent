@@ -135,7 +135,7 @@ export type SpeechEngine = 'auto' | 'local' | 'cloud'
 
 /** Shape returned by `GET /api/config`. Includes computed siblings like `*_set` / `*_fingerprint`
  * that the backend injects after stripping raw credentials. */
-export interface DeskAgentConfigResponse {
+export interface SpiritAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
     service_tier?: string
@@ -146,7 +146,7 @@ export interface DeskAgentConfigResponse {
     context_compression_threshold?: number
   }
   stt?: {
-    /** Master switch — when false, deskagent:media:stt rejects without doing
+    /** Master switch — when false, spiritagent:media:stt rejects without doing
      * any local/cloud work. See media.cjs. */
     enabled?: boolean
     engine?: SpeechEngine
@@ -175,7 +175,7 @@ export interface DeskAgentConfigResponse {
 
 /** Body shape accepted by `PUT /api/config`. Raw credentials are writable here; the computed
  * `*_set` / `*_fingerprint` siblings from the response shape are not. */
-export interface DeskAgentConfigPutRequest {
+export interface SpiritAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
     service_tier?: string
@@ -207,7 +207,7 @@ export interface DeskAgentConfigPutRequest {
   }
 }
 
-export type DeskAgentConfigRecord = Record<string, unknown>
+export type SpiritAgentConfigRecord = Record<string, unknown>
 
 /** Shape returned by `GET /api/user/model-config`. Contains only the user's
  * explicitly-set values — empty strings when nothing is stored, so the desktop

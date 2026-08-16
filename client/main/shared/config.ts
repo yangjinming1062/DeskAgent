@@ -1,21 +1,21 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-// $DESKAGENT_HOME/desktop-config.json holds the user's activated backend URL
+// $SPIRITAGENT_HOME/desktop-config.json holds the user's activated backend URL
 // (kept distinct from the encrypted session file at `agent-session.json`
 // so it survives a logout). Best-effort: missing / malformed file yields null.
 export const FILENAME = 'desktop-config.json'
 
-export function configPath(deskagentHome: string | null | undefined): string | null {
-  if (!deskagentHome) {
+export function configPath(spiritagentHome: string | null | undefined): string | null {
+  if (!spiritagentHome) {
     return null
   }
 
-  return path.join(deskagentHome, FILENAME)
+  return path.join(spiritagentHome, FILENAME)
 }
 
-export function readStoredBackendUrl(deskagentHome: string | null | undefined): string | null {
-  const target = configPath(deskagentHome)
+export function readStoredBackendUrl(spiritagentHome: string | null | undefined): string | null {
+  const target = configPath(spiritagentHome)
 
   if (!target) {
     return null
@@ -34,8 +34,8 @@ export function readStoredBackendUrl(deskagentHome: string | null | undefined): 
   return null
 }
 
-export function writeStoredBackendUrl(deskagentHome: string | null | undefined, backendUrl: string): boolean {
-  const target = configPath(deskagentHome)
+export function writeStoredBackendUrl(spiritagentHome: string | null | undefined, backendUrl: string): boolean {
+  const target = configPath(spiritagentHome)
 
   if (!target || typeof backendUrl !== 'string' || !backendUrl.trim()) {
     return false
@@ -76,17 +76,17 @@ export function writeStoredBackendUrl(deskagentHome: string | null | undefined, 
   }
 }
 
-// Resolves the active backend URL stored in $DESKAGENT_HOME/desktop-config.json
+// Resolves the active backend URL stored in $SPIRITAGENT_HOME/desktop-config.json
 // (written on successful activation code exchange).
 // Returns null if the client has not been activated yet.
-export function resolveBackendUrl(deskagentHome: string | null | undefined): string | null {
-  return readStoredBackendUrl(deskagentHome)
+export function resolveBackendUrl(spiritagentHome: string | null | undefined): string | null {
+  return readStoredBackendUrl(spiritagentHome)
 }
 
 // Coerce + trailing-slash strip for callers appending path suffixes (e.g. /api/update).
 // Returns null if no backend URL is configured.
-export function resolveNormalizedBackendUrl(deskagentHome: string | null | undefined): string | null {
-  const url = resolveBackendUrl(deskagentHome)
+export function resolveNormalizedBackendUrl(spiritagentHome: string | null | undefined): string | null {
+  const url = resolveBackendUrl(spiritagentHome)
 
   return url ? String(url).replace(/\/+$/, '') : null
 }

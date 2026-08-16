@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from utils import get_deskagent_home
+from utils import get_spiritagent_home
 
 try:
     from faster_whisper import WhisperModel  # type: ignore[import-not-found]
@@ -147,13 +147,13 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         if not blob:
             return tool_error("audio_base64 is empty")
         suffix = _suffix_for_mime(mime)
-        cache = get_deskagent_home() / "cache" / "audio" / "inbound"
+        cache = get_spiritagent_home() / "cache" / "audio" / "inbound"
         cache.mkdir(parents=True, exist_ok=True)
         cleanup_audio_cache_dir(cache)
         raw_src = cache / f"inbound_{uuid.uuid4().hex[:12]}{suffix}"
         raw_src.write_bytes(blob)
 
-    workdir = get_deskagent_home() / "cache" / "audio" / "transcode"
+    workdir = get_spiritagent_home() / "cache" / "audio" / "transcode"
     workdir.mkdir(parents=True, exist_ok=True)
     cleanup_audio_cache_dir(workdir)
     pcm_path = workdir / f"{raw_src.stem}.pcm16.wav"
@@ -172,7 +172,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         return tool_error(
             f"failed to load faster-whisper model {model_size!r}: {e}",
             success=False,
-            hint="Whisper models are downloaded on first call to $DESKAGENT_HOME/models/whisper/. Network access is required only for the very first transcription per model.",
+            hint="Whisper models are downloaded on first call to $SPIRITAGENT_HOME/models/whisper/. Network access is required only for the very first transcription per model.",
         )
     except Exception as e:
         logger.exception("speech_to_text decode failed")

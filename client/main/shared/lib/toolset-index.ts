@@ -68,7 +68,7 @@ export function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>
   return names
 }
 
-// Build the renderer-facing toolset roster. Used by `deskagent:toolsets:list`.
+// Build the renderer-facing toolset roster. Used by `spiritagent:toolsets:list`.
 export function buildToolsetRoster(schemas: Array<{ name?: string }>, disabledToolsetIds: Set<string>): ToolsetItem[] {
   const availableNames = new Set(schemas.map(s => s?.name).filter(Boolean) as string[])
 

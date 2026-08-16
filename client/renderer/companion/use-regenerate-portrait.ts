@@ -126,7 +126,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         const secondaryRef = refImage ? presentationRef : null
 
         if (primaryRef) {
-          const res = await window.deskagent.api<{
+          const res = await window.spiritagent.api<{
             asset_url?: string | null
             seed_front_url?: string | null
             seed_right_url?: string | null

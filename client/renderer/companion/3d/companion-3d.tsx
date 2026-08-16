@@ -223,7 +223,7 @@ export function Companion3D(): React.JSX.Element {
 
       if (url) {
         try {
-          const u8 = await window.deskagent.apiAssetBuffer({
+          const u8 = await window.spiritagent.apiAssetBuffer({
             url,
             contentHash: modelInfo.content_hash || undefined
           })

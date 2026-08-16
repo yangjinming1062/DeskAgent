@@ -19,7 +19,7 @@ installClipboardShim()
 // Subscribe to electron-updater events at boot. The main process auto-checks
 // ~30s after launch; this listener pumps every event into the renderer store
 // so the status bar badge, About panel, and update toast all react.
-window.deskagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
+window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   switch (payload.type) {
     case 'checking':
       setUpdateStatus({ status: 'checking' })
@@ -67,7 +67,7 @@ window.deskagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
 // Electron at startup. The desktop status bar surfaces these via the
 // $updateStatus atom (handled in main.tsx above) — runner-internal phase
 // transitions are intentionally not user-visible in the renderer.
-window.deskagent?.update?.onRunnerEvent?.(() => {
+window.spiritagent?.update?.onRunnerEvent?.(() => {
   // Intentionally a no-op: see runner-updater.cjs for the full lifecycle.
 })
 

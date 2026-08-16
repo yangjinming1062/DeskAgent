@@ -3,7 +3,7 @@ from typing import Any
 
 _TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
 
-# ``None`` until the Desktop pushes via deskagent.config.update; consumers fall back to cfg_get(default=...).
+# ``None`` until the Desktop pushes via spiritagent.config.update; consumers fall back to cfg_get(default=...).
 _INMEMORY_CONFIG: dict[str, Any] | None = None
 
 
@@ -29,7 +29,7 @@ def load_config() -> dict[str, Any]:
 
 
 def set_inmemory_config(config: dict[str, Any]) -> None:
-    """Replace the in-memory config; called by the ``deskagent.config.update`` RPC handler."""
+    """Replace the in-memory config; called by the ``spiritagent.config.update`` RPC handler."""
     global _INMEMORY_CONFIG
     if not isinstance(config, dict):
         raise TypeError(f"config must be a dict, got {type(config).__name__}")

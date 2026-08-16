@@ -27,13 +27,13 @@ export function ToolRoot(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    const off = window.deskagent.onAuthChanged(payload => applyAuthBroadcast(payload))
+    const off = window.spiritagent.onAuthChanged(payload => applyAuthBroadcast(payload))
 
     return () => off()
   }, [])
 
   useEffect(() => {
-    const off = window.deskagent.onSessionExpired(() => void logout())
+    const off = window.spiritagent.onSessionExpired(() => void logout())
 
     return () => off()
   }, [])
@@ -42,7 +42,7 @@ export function ToolRoot(): React.JSX.Element {
   // tray item actually logs the user out (the menu fires this IPC and the
   // renderer is the only place that can drive the in-app logout flow).
   useEffect(() => {
-    const off = window.deskagent.onTrayLogout?.(() => void logout())
+    const off = window.spiritagent.onTrayLogout?.(() => void logout())
 
     return () => off?.()
   }, [])

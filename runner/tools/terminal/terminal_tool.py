@@ -47,7 +47,7 @@ def _check_disk_usage_warning() -> None:
     try:
         scratch_dir = _get_scratch_dir()
         total_bytes = 0
-        for path in glob.glob(str(scratch_dir / "deskagent-*")):
+        for path in glob.glob(str(scratch_dir / "spiritagent-*")):
             for f in Path(path).rglob("*"):
                 if f.is_file():
                     try:
@@ -102,7 +102,7 @@ Foreground (default): Commands return INSTANTLY when done, even if the timeout i
 Background: Set background=true to get a session_id. Almost always pair with notify_on_complete=true — bg without notify runs SILENTLY and you have no way to learn it finished short of calling process(action='poll') yourself. Two legitimate uses:
   (1) Long-lived processes that never exit (servers, watchers, daemons) — silent is correct, there's no exit to notify on.
   (2) Long-running bounded tasks (tests, builds, deploys, CI pollers, batch jobs) — MUST set notify_on_complete=true. Without it you'll either forget to poll or sit blocked waiting for the user to surface the result.
-For servers/watchers, do NOT use shell-level background wrappers (nohup/disown/setsid/trailing '&') in foreground mode. Use background=true so DeskAgent can track lifecycle and output.
+For servers/watchers, do NOT use shell-level background wrappers (nohup/disown/setsid/trailing '&') in foreground mode. Use background=true so SpiritAgent can track lifecycle and output.
 After starting a server, verify readiness with a health check or log signal, then run tests in a separate terminal() call. Avoid blind sleep loops.
 Use process(action="poll") for progress checks, process(action="wait") to block until done.
 Working directory: Use 'workdir' for per-command cwd.
@@ -190,7 +190,7 @@ def _foreground_background_guidance(command: str) -> str | None:
     if _SHELL_LEVEL_BACKGROUND_RE.search(unquoted):
         return (
             "Foreground command uses shell-level background wrappers (nohup/disown/setsid). "
-            "Use terminal(background=true) so DeskAgent can track the process, then run "
+            "Use terminal(background=true) so SpiritAgent can track the process, then run "
             "readiness checks and tests in separate commands."
         )
     if _INLINE_BACKGROUND_AMP_RE.search(unquoted) or _TRAILING_BACKGROUND_AMP_RE.search(unquoted):
@@ -398,7 +398,7 @@ def terminal_tool(
                             "This looks like a homebrewed CI poller built from "
                             "`gh pr view --json statusCheckRollup` and/or "
                             "`gh pr checks | jq`. That shape has burned us "
-                            "repeatedly in deskagent-agent dev work (PRs #31329, "
+                            "repeatedly in spiritagent-agent dev work (PRs #31329, "
                             "#31448, #31695, #31709, #31745, #32264, #33131) — "
                             "stdout buffering kills output capture, jq null-key "
                             "edge cases silently exit the loop, conclusion-vs-"
@@ -412,7 +412,7 @@ def terminal_tool(
                             "awk-on-tabs poller "
                             '(`awk -F"\\t" "$2==\\"pending\\""`) for '
                             "sharded matrices. Load skill_view("
-                            "name='github/deskagent-agent-dev', "
+                            "name='github/spiritagent-agent-dev', "
                             "file_path='references/green-ci-policy.md') for "
                             "the verbatim snippets. If you must roll a custom "
                             "loop with rich structured output, write each tick "
@@ -423,13 +423,13 @@ def terminal_tool(
                         )
                         result_data["hint"] = existing + "\n\n" + canonical_hint if existing else canonical_hint
                 if background and (notify_on_complete or watch_patterns):
-                    _gw_platform = os.environ.get("DESKAGENT_SESSION_PLATFORM", "")
+                    _gw_platform = os.environ.get("SPIRITAGENT_SESSION_PLATFORM", "")
                     if _gw_platform:
-                        _gw_chat_id = os.environ.get("DESKAGENT_SESSION_CHAT_ID", "")
-                        _gw_thread_id = os.environ.get("DESKAGENT_SESSION_THREAD_ID", "")
-                        _gw_user_id = os.environ.get("DESKAGENT_SESSION_USER_ID", "")
-                        _gw_user_name = os.environ.get("DESKAGENT_SESSION_USER_NAME", "")
-                        _gw_message_id = os.environ.get("DESKAGENT_SESSION_MESSAGE_ID", "")
+                        _gw_chat_id = os.environ.get("SPIRITAGENT_SESSION_CHAT_ID", "")
+                        _gw_thread_id = os.environ.get("SPIRITAGENT_SESSION_THREAD_ID", "")
+                        _gw_user_id = os.environ.get("SPIRITAGENT_SESSION_USER_ID", "")
+                        _gw_user_name = os.environ.get("SPIRITAGENT_SESSION_USER_NAME", "")
+                        _gw_message_id = os.environ.get("SPIRITAGENT_SESSION_MESSAGE_ID", "")
                         proc_session.watcher_platform = _gw_platform
                         proc_session.watcher_chat_id = _gw_chat_id
                         proc_session.watcher_user_id = _gw_user_id

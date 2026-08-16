@@ -17,10 +17,10 @@ from .constants import (
     CREATE_NO_WINDOW,
     IS_MACOS,
     IS_WINDOWS,
-    get_deskagent_dir,
-    get_deskagent_home,
-    get_deskagent_home_override,
     get_skills_dir,
+    get_spiritagent_dir,
+    get_spiritagent_home,
+    get_spiritagent_home_override,
     get_subprocess_home,
     secure_parent_dir,
 )
@@ -34,7 +34,7 @@ from .credential_files import (
     register_credential_file,
 )
 from .desktop_transport import HANDSHAKE_AUTH_HEADER, PIPE_TRANSPORT, UNIX_TRANSPORT, DesktopConnection, DesktopEndpoint, connect_desktop, read_endpoint
-from .env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
+from .env_helpers import inject_context_spiritagent_home, sanitize_subprocess_env
 from .env_passthrough import get_all_passthrough, is_env_passthrough, register_env_passthrough
 from .file_io import atomic_replace
 from .file_safety import (
@@ -103,9 +103,9 @@ __all__ = [
     "get_container_mirror_warning",
     "get_credential_file_mounts",
     "get_cross_profile_warning",
-    "get_deskagent_dir",
-    "get_deskagent_home",
-    "get_deskagent_home_override",
+    "get_spiritagent_dir",
+    "get_spiritagent_home",
+    "get_spiritagent_home_override",
     "get_disabled_config_names",
     "get_env_type",
     "get_external_skills_dirs",
@@ -119,7 +119,7 @@ __all__ = [
     "has_traversal_component",
     "in_async_loop",
     "init_runner_job_object",
-    "inject_context_deskagent_home",
+    "inject_context_spiritagent_home",
     "is_always_blocked_url",
     "is_env_passthrough",
     "is_job_object_active",

@@ -19,8 +19,8 @@ export async function writeClipboardText(text: string): Promise<void> {
     return
   }
 
-  if (window.deskagent?.writeClipboard) {
-    await window.deskagent.writeClipboard(text)
+  if (window.spiritagent?.writeClipboard) {
+    await window.spiritagent.writeClipboard(text)
 
     return
   }

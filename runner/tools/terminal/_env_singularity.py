@@ -6,7 +6,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, get_credential_file_mounts, get_deskagent_home, get_skills_directory_mount, load_config
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, get_credential_file_mounts, get_skills_directory_mount, get_spiritagent_home, load_config
 
 from ._env_base import BaseEnvironment, _load_json_store, _popen_bash, _save_json_store, get_sandbox_dir
 
@@ -16,7 +16,7 @@ _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
 
-_SNAPSHOT_STORE = get_deskagent_home() / "singularity_snapshots.json"
+_SNAPSHOT_STORE = get_spiritagent_home() / "singularity_snapshots.json"
 
 
 def _find_singularity_executable() -> str:
@@ -50,7 +50,7 @@ def _get_scratch_dir() -> Path:
         (p := Path(custom_scratch)).mkdir(parents=True, exist_ok=True)
         return p
     if (scratch := Path("/scratch")).exists() and os.access(scratch, os.W_OK):
-        (user_scratch := scratch / os.getenv("USER", "deskagent") / "deskagent-agent").mkdir(parents=True, exist_ok=True)
+        (user_scratch := scratch / os.getenv("USER", "spiritagent") / "spiritagent-agent").mkdir(parents=True, exist_ok=True)
         return user_scratch
     (sandbox := get_sandbox_dir() / "singularity").mkdir(parents=True, exist_ok=True)
     return sandbox
@@ -103,7 +103,7 @@ class SingularityEnvironment(BaseEnvironment):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()
         self.image = _get_or_build_sif(image, self.executable)
-        self.instance_id = f"deskagent_{uuid.uuid4().hex[:12]}"
+        self.instance_id = f"spiritagent_{uuid.uuid4().hex[:12]}"
         self._instance_started = False
         self._persistent = persistent_filesystem
         self._task_id = task_id
@@ -111,7 +111,7 @@ class SingularityEnvironment(BaseEnvironment):
         self._cpu = cpu
         self._memory = memory
         if self._persistent:
-            overlay_base = _get_scratch_dir() / "deskagent-overlays"
+            overlay_base = _get_scratch_dir() / "spiritagent-overlays"
             overlay_base.mkdir(parents=True, exist_ok=True)
             self._overlay_dir = overlay_base / f"overlay-{task_id}"
             self._overlay_dir.mkdir(parents=True, exist_ok=True)

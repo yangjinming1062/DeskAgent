@@ -152,7 +152,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   }, [catalog.voices])
 
   useEffect(() => {
-    void window.deskagent.sprite.setAlwaysOnTop({ on: false })
+    void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
     void fetchVoiceCatalogRaw(requestGateway).then(r => {
       if (r.ok) {
         setCatalog(r.catalog)
@@ -160,7 +160,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     })
 
     return () => {
-      void window.deskagent.sprite.setAlwaysOnTop({ on: true })
+      void window.spiritagent.sprite.setAlwaysOnTop({ on: true })
     }
   }, [requestGateway])
 
@@ -190,7 +190,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   // Pull the full wardrobe catalog — called on settings open; the
   // wardrobe.updated event also refreshes on backend-side mutations.
   useEffect(() => {
-    void window.deskagent
+    void window.spiritagent
       .api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
       .then(items => setWardrobe(items ?? []))
       .catch(() => {})
@@ -198,14 +198,14 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   const equipWardrobe = async (itemId: number) => {
     try {
-      await window.deskagent.api<WardrobeItem>({
+      await window.spiritagent.api<WardrobeItem>({
         path: '/api/companion/wardrobe/equip',
         method: 'PUT',
         body: { item_id: itemId }
       })
 
       try {
-        const items = await window.deskagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
+        const items = await window.spiritagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
         setWardrobe(items ?? [])
         refreshEquippedAndApply()
       } catch (refreshErr) {

@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { Button, Input, Textarea } from '@/shared/components/ui'
-import type { DeskAgentGateway } from '@/shared/deskagent'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { Wrench } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import type { SpiritAgentGateway } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -14,7 +14,7 @@ import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 
 interface McpSettingsProps {
-  gateway?: DeskAgentGateway | null
+  gateway?: SpiritAgentGateway | null
   onConfigSaved?: () => void
 }
 
@@ -171,8 +171,8 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps): React
         await gateway.request('reload.mcp', {
           confirm: true
         })
-      } else if (typeof window.deskagent?.reloadMcp === 'function') {
-        await window.deskagent.reloadMcp()
+      } else if (typeof window.spiritagent?.reloadMcp === 'function') {
+        await window.spiritagent.reloadMcp()
       } else {
         notify({ kind: 'warning', title: m.gatewayUnavailableTitle, message: m.gatewayUnavailableMessage })
 

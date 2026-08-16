@@ -207,7 +207,7 @@ export class CharacterController {
   /** GLB: parse pre-fetched bytes + animations; falls back to procedural on error.
    * Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based
    * onto the local backend by main), so no CORS preflight against the signed
-   * URL's host. See connection.cjs::deskagent:api:asset-buffer. */
+   * URL's host. See connection.cjs::spiritagent:api:asset-buffer. */
   async load(bytes: ArrayBuffer | null, scene: THREE.Scene, rigType: string = 'biped'): Promise<LoadedModelInfo> {
     this.rigType = rigType
 
@@ -551,7 +551,7 @@ export class CharacterController {
   /** Assemble a geometric unit (garment or accessory). */
   private async assembleUnit(item: OutfitItem, spec: AssemblySpec): Promise<void> {
     const epoch = this.textureEpoch
-    const desktop = window.deskagent
+    const desktop = window.spiritagent
 
     let bytes: ArrayBuffer | null = null
 
@@ -827,7 +827,7 @@ export class CharacterController {
     targetMeshes?: THREE.Mesh[]
   ): void {
     const epoch = this.textureEpoch
-    const desktop = window.deskagent
+    const desktop = window.spiritagent
 
     void (async () => {
       // Same host-strip via IPC as the GLB path; data URL is fine for textures

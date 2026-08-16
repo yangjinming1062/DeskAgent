@@ -22,16 +22,16 @@ function makeWsServer(overrides = {}) {
 
 function makeIpcPath(): string {
   if (process.platform === 'win32') {
-    return `\\\\.\\pipe\\deskagent-test-${process.pid}-${Date.now()}`
+    return `\\\\.\\pipe\\spiritagent-test-${process.pid}-${Date.now()}`
   }
 
-  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-ws-test-')), 'runner.sock')
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-ws-test-')), 'runner.sock')
 }
 
 function wsConnect(ipcPath: string, extraHeaders: Record<string, string> = {}): WebSocket {
-  return new WebSocket('ws://deskagent/rpc', {
+  return new WebSocket('ws://spiritagent/rpc', {
     createConnection: () => net.connect(ipcPath),
-    headers: { 'x-deskagent-auth': AUTH_TOKEN, ...extraHeaders }
+    headers: { 'x-spiritagent-auth': AUTH_TOKEN, ...extraHeaders }
   })
 }
 
@@ -144,7 +144,7 @@ test('a bad handshake token gets HTTP 401 and never opens; existing connections 
   const good = wsConnect(ipcPath)
   await once(good, 'open')
 
-  const bad = wsConnect(ipcPath, { 'x-deskagent-auth': '0'.repeat(64) })
+  const bad = wsConnect(ipcPath, { 'x-spiritagent-auth': '0'.repeat(64) })
   const [error] = await once(bad, 'error')
   assert.match(String((error as any).message), /401|Unexpected server response/)
 

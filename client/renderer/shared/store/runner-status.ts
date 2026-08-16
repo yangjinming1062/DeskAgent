@@ -16,7 +16,7 @@ export const $runnerReady = computed($runnerPhase, phase => phase === 'running')
 let offRunnerStatus: (() => void) | null = null
 
 export async function hydrateRunnerStatus(): Promise<void> {
-  const desktop = window.deskagent
+  const desktop = window.spiritagent
 
   // Sync getter first — closes the "subscribed too late, missed the initial
   // running event" window. If the bridge hasn't been created yet the

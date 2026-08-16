@@ -12,9 +12,9 @@ from utils import (
     IS_WINDOWS,
     append_sane_path_entries,
     find_bash,
-    get_deskagent_home,
+    get_spiritagent_home,
     get_subprocess_home,
-    inject_context_deskagent_home,
+    inject_context_spiritagent_home,
     kill_tree,
     load_config,
     msys_to_windows_path,
@@ -36,7 +36,7 @@ def _make_run_env(env: dict) -> dict:
     run_env = {k: str(v) if v is not None else "" for k, v in (os.environ | env).items()}
     if path_key := _path_env_key(run_env):
         run_env[path_key] = append_sane_path_entries(run_env.get(path_key, ""))
-    inject_context_deskagent_home(run_env)
+    inject_context_spiritagent_home(run_env)
     if ph := get_subprocess_home():
         run_env["HOME"] = ph
     return run_env
@@ -79,9 +79,9 @@ class LocalEnvironment(BaseEnvironment):
     def get_temp_dir(self) -> str:
         if IS_WINDOWS:
             try:
-                cache_dir = get_deskagent_home() / "cache" / "terminal"
+                cache_dir = get_spiritagent_home() / "cache" / "terminal"
             except Exception:
-                cache_dir = Path(tempfile.gettempdir()) / "deskagent_terminal"
+                cache_dir = Path(tempfile.gettempdir()) / "spiritagent_terminal"
             cache_dir.mkdir(parents=True, exist_ok=True)
             return str(cache_dir).replace("\\", "/")
         for env_var in ("TMPDIR", "TMP", "TEMP"):
@@ -114,7 +114,7 @@ class LocalEnvironment(BaseEnvironment):
         )
         if not IS_WINDOWS:
             with contextlib.suppress(ProcessLookupError):
-                proc._deskagent_pgid = os.getpgid(proc.pid)
+                proc._spiritagent_pgid = os.getpgid(proc.pid)
         if stdin_data is not None:
             _pipe_stdin(proc, stdin_data)
         return proc
@@ -154,7 +154,7 @@ class LocalEnvironment(BaseEnvironment):
                 try:
                     pgid = os.getpgid(proc.pid)
                 except ProcessLookupError:
-                    if (pgid := getattr(proc, "_deskagent_pgid", None)) is None:
+                    if (pgid := getattr(proc, "_spiritagent_pgid", None)) is None:
                         raise
                 try:
                     os.killpg(pgid, signal.SIGTERM)

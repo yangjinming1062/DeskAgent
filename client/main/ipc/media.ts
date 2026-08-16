@@ -287,7 +287,7 @@ async function ttsViaBackend({
 
   const mime = res.headers.get('content-type') || 'audio/mpeg'
   const buf = Buffer.from(await res.arrayBuffer())
-  const voiceOut = res.headers.get('x-deskagent-voice') || undefined
+  const voiceOut = res.headers.get('x-spiritagent-voice') || undefined
 
   return { dataUrl: dataUrlFromBuffer(buf, mime), mimeType: mime, voiceOut }
 }
@@ -391,7 +391,7 @@ function setCachedTts(key: string, value: { dataUrl: string; mimeType: string })
 }
 
 export interface MediaIpcDeps {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
   getEnginePrefs?: () => Promise<EnginePrefs>
   getRunnerBridge?: () => RunnerBridgeLike | null | undefined
@@ -400,7 +400,7 @@ export interface MediaIpcDeps {
 }
 
 export function registerMediaIpc({
-  deskagentHome,
+  spiritagentHome,
   ensureBackend,
   getEnginePrefs,
   getRunnerBridge,
@@ -409,9 +409,9 @@ export function registerMediaIpc({
 }: MediaIpcDeps): void {
   const resolvePrefs = typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend })
   const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
-  const diskCache = createTtsDiskCache({ deskagentHome })
+  const diskCache = createTtsDiskCache({ spiritagentHome })
 
-  ipcMain.handle('deskagent:media:stt', async (_event, payload?: MediaSttPayload) => {
+  ipcMain.handle('spiritagent:media:stt', async (_event, payload?: MediaSttPayload) => {
     const sttId = ++sttSeq
     const { data, mime } = decodeDataUrl(payload?.dataUrl)
 
@@ -515,7 +515,7 @@ export function registerMediaIpc({
     throw new Error('STT failed: cloud unreachable and local STT unavailable')
   })
 
-  ipcMain.handle('deskagent:media:tts', async (_event, payload?: MediaTtsPayload) => {
+  ipcMain.handle('spiritagent:media:tts', async (_event, payload?: MediaTtsPayload) => {
     const ttsId = ++ttsSeq
     const text = String(payload?.text || '').trim()
 

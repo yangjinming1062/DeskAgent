@@ -27,7 +27,11 @@ function extractPreloadKeysFromAst(sourceText: string): Set<string> {
         const firstArg = node.arguments[0]
         const secondArg = node.arguments[1]
 
-        if (ts.isStringLiteral(firstArg) && firstArg.text === 'deskagent' && ts.isObjectLiteralExpression(secondArg)) {
+        if (
+          ts.isStringLiteral(firstArg) &&
+          firstArg.text === 'spiritagent' &&
+          ts.isObjectLiteralExpression(secondArg)
+        ) {
           for (const prop of secondArg.properties) {
             if (prop.name) {
               if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) {
@@ -59,18 +63,18 @@ function extractDeclKeysFromAst(sourceText: string): { optional: Set<string>; re
           ts.isPropertySignature(member) &&
           member.name &&
           ts.isIdentifier(member.name) &&
-          member.name.text === 'deskagent'
+          member.name.text === 'spiritagent'
         ) {
           if (member.type && ts.isTypeLiteralNode(member.type)) {
-            for (const deskagentMember of member.type.members) {
+            for (const spiritagentMember of member.type.members) {
               if (
-                ts.isPropertySignature(deskagentMember) &&
-                deskagentMember.name &&
-                ts.isIdentifier(deskagentMember.name)
+                ts.isPropertySignature(spiritagentMember) &&
+                spiritagentMember.name &&
+                ts.isIdentifier(spiritagentMember.name)
               ) {
-                const name = deskagentMember.name.text
+                const name = spiritagentMember.name.text
 
-                if (deskagentMember.questionToken) {
+                if (spiritagentMember.questionToken) {
                   optional.add(name)
                 } else {
                   required.add(name)

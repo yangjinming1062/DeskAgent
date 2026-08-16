@@ -12,14 +12,14 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/shared/components/ui'
-import type { DeskAgentGateway } from '@/shared/deskagent'
-import { getModelConfig, saveModelConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { Brain, Cpu, ImageIcon, Loader2, Mic, MonitorPlay, Plus, Volume2, X } from '@/shared/lib/icons'
 import type { IconComponent } from '@/shared/lib/icons'
+import type { SpiritAgentGateway } from '@/shared/spiritagent'
+import { getModelConfig, saveModelConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { ModelConfigPutRequest, ModelConfigResponse, ProviderSlotInput } from '@/shared/types/deskagent'
+import type { ModelConfigPutRequest, ModelConfigResponse, ProviderSlotInput } from '@/shared/types/spiritagent'
 
 import { ListRow, LoadingState, SectionHeading, SettingsContent, SettingsSubsection } from './primitives'
 
@@ -149,7 +149,7 @@ export function ModelConfigSettings({
   gateway,
   onConfigSaved
 }: {
-  gateway?: DeskAgentGateway | null
+  gateway?: SpiritAgentGateway | null
   onConfigSaved?: () => void
 } = {}): React.JSX.Element {
   const t = strings

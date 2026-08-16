@@ -11,7 +11,7 @@ from typing import Any
 
 from utils import atomic_replace, get_skills_dir
 
-from .helpers import get_deskagent_metadata, iter_skill_index_files, parse_frontmatter
+from .helpers import get_spiritagent_metadata, iter_skill_index_files, parse_frontmatter
 
 # ``fcntl`` (POSIX) and ``msvcrt`` (Windows) are stdlib — they are not and
 # must not be listed in pyproject.toml (that file is for third-party deps).
@@ -32,7 +32,7 @@ _VALID_STATES = {STATE_ACTIVE, STATE_STALE, STATE_ARCHIVED}
 
 @functools.cache
 def _load_protected_builtins() -> frozenset[str]:
-    """Skill names declaring ``metadata.deskagent.protected: true`` in their SKILL.md.
+    """Skill names declaring ``metadata.spiritagent.protected: true`` in their SKILL.md.
 
     Per-skill OSError and YAML errors are swallowed so a single malformed
     manifest doesn't disable curator protection across the board.
@@ -45,7 +45,7 @@ def _load_protected_builtins() -> frozenset[str]:
         except OSError:
             continue
         frontmatter, _ = parse_frontmatter(content)
-        if not get_deskagent_metadata(frontmatter).get("protected"):
+        if not get_spiritagent_metadata(frontmatter).get("protected"):
             continue
         name = frontmatter.get("name")
         if isinstance(name, str) and name:

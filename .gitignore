@@ -72,8 +72,8 @@ updates/
 # ---------------------------------------------------------------------------
 # Skills now live at ``<repo>/installer/bundled-skills/`` and
 # ``<repo>/installer/optional-skills/`` for the bundled source. The hub
-# state is written under the runtime install location (``~/.deskagent/skills/``,
-# ``~/.deskagent/optional-skills/``) so these ignores apply wherever the
+# state is written under the runtime install location (``~/.spiritagent/skills/``,
+# ``~/.spiritagent/optional-skills/``) so these ignores apply wherever the
 # patterns appear.
 **/skills/.hub/
 **/ignored/

@@ -9,7 +9,7 @@ description: |
 version: 1.0.0
 platforms: [macos, windows]
 metadata:
-  deskagent:
+  spiritagent:
     tags: [computer-use, desktop, automation, gui]
     category: desktop
     related_skills: []
@@ -45,7 +45,7 @@ own sub-sections that you should skim on first use.
 | Inspect via | AX tree (Accessibility) | UIA tree (UI Automation) |
 | Shortcut prefix | `cmd` / `ctrl` mapped to `cmd` on Mac | `ctrl` / `win` |
 | Hard-blocked | log out, lock screen, force empty trash, fork bombs in `type` | Alt+F4, Ctrl+Alt+Delete, Win+L, Win+D |
-| Setup | `deskagent tools` → enable Computer Use | `pip install pywinauto mss pyautogui` |
+| Setup | `spiritagent tools` → enable Computer Use | `pip install pywinauto mss pyautogui` |
 
 ## The canonical workflow (both platforms)
 
@@ -202,7 +202,7 @@ your conversation context.
 
 ## Failure modes
 
-- **"cua-driver not installed" (macOS)** — Run `deskagent tools` and enable
+- **"cua-driver not installed" (macOS)** — Run `spiritagent tools` and enable
   Computer Use; the setup will install cua-driver via its upstream script.
   Requires macOS + Accessibility + Screen Recording permissions.
 - **"computer_use backend unavailable" (Windows)** — Install the Python

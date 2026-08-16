@@ -32,13 +32,13 @@ from utils.config import (
 from utils.constants import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
-    get_deskagent_dir,
-    get_deskagent_home,
+    get_spiritagent_dir,
+    get_spiritagent_home,
     get_skills_dir,
     get_subprocess_home,
     secure_parent_dir,
 )
-from utils.env_helpers import inject_context_deskagent_home, sanitize_subprocess_env
+from utils.env_helpers import inject_context_spiritagent_home, sanitize_subprocess_env
 from utils.file_safety import (
     _strip_device_prefix,
     canonicalize_path,
@@ -61,39 +61,39 @@ from utils.reverse_rpc import call_llm, set_handler
 # ---------------------------------------------------------------------------
 
 
-class TestInjectContextDeskagentHome:
+class TestInjectContextSpiritagentHome:
     def test_injects_when_override_set(self, monkeypatch):
-        monkeypatch.setenv("DESKAGENT_HOME", "/custom/path")
+        monkeypatch.setenv("SPIRITAGENT_HOME", "/custom/path")
         env: dict = {}
-        inject_context_deskagent_home(env)
-        assert env["DESKAGENT_HOME"] == "/custom/path"
+        inject_context_spiritagent_home(env)
+        assert env["SPIRITAGENT_HOME"] == "/custom/path"
 
     def test_does_nothing_when_override_unset(self, monkeypatch):
-        monkeypatch.delenv("DESKAGENT_HOME", raising=False)
+        monkeypatch.delenv("SPIRITAGENT_HOME", raising=False)
         env: dict = {"OTHER": "x"}
-        inject_context_deskagent_home(env)
+        inject_context_spiritagent_home(env)
         assert env == {"OTHER": "x"}
 
 
 class TestSanitizeSubprocessEnv:
     def test_merges_base_and_extra(self, monkeypatch):
-        monkeypatch.setenv("DESKAGENT_HOME", "/x")
+        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
         out = sanitize_subprocess_env({"A": "1"}, {"B": "2"})
         assert out["A"] == "1" and out["B"] == "2"
 
     def test_overlay_wins_on_conflict(self, monkeypatch):
-        monkeypatch.setenv("DESKAGENT_HOME", "/x")
+        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
         out = sanitize_subprocess_env({"A": "1"}, {"A": "2"})
         assert out["A"] == "2"
 
     def test_injects_home_from_override(self, monkeypatch):
-        monkeypatch.setenv("DESKAGENT_HOME", "/x")
+        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
         out = sanitize_subprocess_env({})
-        assert out["DESKAGENT_HOME"] == "/x"
+        assert out["SPIRITAGENT_HOME"] == "/x"
 
     def test_home_is_str_not_path(self, monkeypatch):
         """HOME MUST be ``str``, not ``Path`` — child Python may not handle Path objects in os.environ."""
-        monkeypatch.setenv("DESKAGENT_HOME", "/custom")
+        monkeypatch.setenv("SPIRITAGENT_HOME", "/custom")
         out = sanitize_subprocess_env({})
         assert isinstance(out["HOME"], str)
         # Don't pin the exact string — Windows normalizes "/custom" to "\custom".
@@ -105,39 +105,39 @@ class TestSanitizeSubprocessEnv:
 # ---------------------------------------------------------------------------
 
 
-class TestGetDeskagentHome:
+class TestGetSpiritagentHome:
     def test_override_wins(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        assert get_deskagent_home() == tmp_path
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+        assert get_spiritagent_home() == tmp_path
 
     def test_subprocess_home_falls_back_to_main(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("DESKAGENT_SUBPROCESS_HOME", raising=False)
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.delenv("SPIRITAGENT_SUBPROCESS_HOME", raising=False)
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_subprocess_home() == tmp_path
 
 
 class TestGetSkillsDir:
     def test_returns_subdir_of_home(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_skills_dir() == tmp_path / "skills"
 
 
-class TestGetDeskagentDir:
+class TestGetSpiritagentDir:
     def test_prefers_new_subpath_when_present(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         (tmp_path / "new").mkdir()
-        assert get_deskagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
+        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
 
     def test_falls_back_to_old_name(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         (tmp_path / "old").mkdir()
-        assert get_deskagent_dir(new_subpath="new", old_name="old") == tmp_path / "old"
+        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "old"
 
     def test_returns_path_even_when_neither_exists(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        # Neither exists; ``get_deskagent_dir`` returns the new path
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+        # Neither exists; ``get_spiritagent_dir`` returns the new path
         # anyway so the caller can create it.
-        assert get_deskagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
+        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
 
 
 class TestSecureParentDir:
@@ -176,38 +176,38 @@ class TestIsWriteDenied:
         # ``is_write_denied`` resolves the user's $HOME via ``os.path.expanduser``;
         # point it at a tmp home with a real .bashrc so the home-relative
         # denial is observable (note: home ``.env`` is intentionally not in
-        # the write-deny list — only $DESKAGENT_HOME/.env is).
+        # the write-deny list — only $SPIRITAGENT_HOME/.env is).
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
         monkeypatch.setenv("HOME", str(tmp_path))
         bashrc = tmp_path / ".bashrc"
         bashrc.write_text("# x")
         assert is_write_denied(str(bashrc)) is True
 
-    def test_denies_path_inside_deskagent_home(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        # ``auth.json`` inside DESKAGENT_HOME is a load-bearing denial.
+    def test_denies_path_inside_spiritagent_home(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+        # ``auth.json`` inside SPIRITAGENT_HOME is a load-bearing denial.
         target = tmp_path / "auth.json"
         assert is_write_denied(str(target)) is True
 
     def test_denies_mcp_tokens_dir(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "mcp-tokens" / "github.json"
         assert is_write_denied(str(target)) is True
 
     def test_denies_pairing_dir(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "pairing" / "device.json"
         assert is_write_denied(str(target)) is True
 
     def test_allows_normal_temp_file(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path / "home"))
         target = tmp_path / "normal.txt"
         # No safe_write_root configured, so the last branch returns False.
         assert is_write_denied(str(target)) is False
 
     def test_path_traversal_does_not_bypass(self, monkeypatch, tmp_path):
         """``../auth.json`` from a tmp dir MUST still hit the denial."""
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         # The denial is resolved via ``os.path.realpath`` so traversal
         # can never land outside the denied set.
         escaped = tmp_path / ".." / tmp_path.name / "auth.json"
@@ -227,7 +227,7 @@ class TestIsWriteDenied:
         )
 
     def test_device_prefix_read_block_bypass(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         device_path = "\\\\?\\" + str(tmp_path / "auth.json")
         err = get_read_block_error(device_path)
         assert err is not None and "credential store" in err
@@ -294,22 +294,22 @@ class TestIsWriteDenied:
         not IS_WINDOWS, reason="Windows-only case-insensitive security tests"
     )
     def test_windows_case_insensitive_write_denied(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
-        # Uppercase filename inside DESKAGENT_HOME must be blocked
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+        # Uppercase filename inside SPIRITAGENT_HOME must be blocked
         assert is_write_denied(str(tmp_path / "AUTH.JSON")) is True
         assert is_write_denied(str(tmp_path / "MCP-TOKENS" / "GITHUB.JSON")) is True
 
 
 class TestGetReadBlockError:
     def test_blocks_internal_hub_cache(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "skills" / ".hub" / "index-cache"
         err = get_read_block_error(str(target))
         assert err is not None
-        assert "index-cache" in err or "internal DeskAgent" in err
+        assert "index-cache" in err or "internal SpiritAgent" in err
 
     def test_blocks_anthropic_oauth_json(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "anthropic_oauth.json"
         err = get_read_block_error(str(target))
         assert err is not None and "credential store" in err
@@ -318,7 +318,7 @@ class TestGetReadBlockError:
         not IS_WINDOWS, reason="Windows-only case-insensitive read block tests"
     )
     def test_blocks_uppercase_credentials_on_windows(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_read_block_error(str(tmp_path / "AUTH.JSON")) is not None
         assert get_read_block_error(str(tmp_path / "ANTHROPIC_OAUTH.JSON")) is not None
         assert (
@@ -326,7 +326,7 @@ class TestGetReadBlockError:
         )
 
     def test_blocks_mcp_token_file(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "mcp-tokens" / "github.json"
         err = get_read_block_error(str(target))
         assert err is not None
@@ -347,7 +347,7 @@ class TestGetReadBlockError:
         assert get_read_block_error(str(tmp_path / ".ENV.PRODUCTION")) is not None
 
     def test_allows_normal_file(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         # Real file outside the deny list.
         normal = tmp_path / "src" / "main.py"
         normal.parent.mkdir(parents=True)
@@ -357,14 +357,14 @@ class TestGetReadBlockError:
 
 class TestClassifyCrossProfileTarget:
     def test_detects_target_in_other_profile_skills(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         (tmp_path / "skills").mkdir()  # so Path(...).parts[0] = "skills"
         target = tmp_path / "skills" / "private-skill" / "SKILL.md"
         # No profile split yet → classify as same-profile, returns None.
         assert classify_cross_profile_target(str(target)) is None
 
     def test_classifies_cross_profile_target(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         (tmp_path / "profiles" / "work" / "skills").mkdir(parents=True)
         target = tmp_path / "profiles" / "work" / "skills" / "x" / "SKILL.md"
         # Active profile defaults to "default" so writing into "work"
@@ -377,14 +377,14 @@ class TestClassifyCrossProfileTarget:
 
 class TestGetCrossProfileWarning:
     def test_warning_message_mentions_profile(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         (tmp_path / "profiles" / "work" / "skills").mkdir(parents=True)
         target = tmp_path / "profiles" / "work" / "skills" / "x" / "SKILL.md"
         msg = get_cross_profile_warning(str(target))
         assert msg is not None and "work" in msg
 
     def test_no_warning_when_same_profile(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         # No profiles subdir → active is "default", same-profile writes allowed.
         target = tmp_path / "skills" / "x" / "SKILL.md"
         target.parent.mkdir(parents=True)
@@ -398,22 +398,22 @@ class TestSandboxMirror:
         assert get_sandbox_mirror_warning(str(target)) is None
 
     def test_classifies_sandbox_mirror_path(self, tmp_path):
-        # ``_find_sandbox_mirror_segments`` matches ``sandboxes/<backend>/<id>/home/.deskagent/...``.
-        # The 5-segment prefix is ``(sandboxes, backend, id, home, .deskagent)``.
+        # ``_find_sandbox_mirror_segments`` matches ``sandboxes/<backend>/<id>/home/.spiritagent/...``.
+        # The 5-segment prefix is ``(sandboxes, backend, id, home, .spiritagent)``.
         target = (
             tmp_path
             / "sandboxes"
             / "docker"
             / "abc123"
             / "home"
-            / ".deskagent"
+            / ".spiritagent"
             / "skills"
             / "x"
             / "SKILL.md"
         )
         info = classify_sandbox_mirror_target(str(target))
         assert info is not None
-        # The inner_path is everything after ``.deskagent``.
+        # The inner_path is everything after ``.spiritagent``.
         assert "skills" in info.inner_path
         assert "x" in info.inner_path
         assert "SKILL.md" in info.inner_path
@@ -789,7 +789,7 @@ class TestCheckRedirectUrlSafety:
 
 class TestStripDevicePrefix:
     def test_device_namespace_paths_pass_through(self):
-        assert _strip_device_prefix(r"\\.\pipe\deskagent") == r"\\.\pipe\deskagent"
+        assert _strip_device_prefix(r"\\.\pipe\spiritagent") == r"\\.\pipe\spiritagent"
         assert _strip_device_prefix(r"\\.\PhysicalDrive0") == r"\\.\PhysicalDrive0"
 
     def test_nt_prefixes_stripped_from_normalized_form(self):
@@ -806,7 +806,7 @@ class TestCanonicalizeDevicePath:
     def test_device_path_stays_absolute(self):
         # Stripping the \\.\ prefix used to forge a relative "pipe\..." path
         # that every downstream denylist comparison would miss.
-        assert os.path.isabs(canonicalize_path(r"\\.\pipe\deskagent"))
+        assert os.path.isabs(canonicalize_path(r"\\.\pipe\spiritagent"))
 
 
 @pytest.mark.skipif(not IS_WINDOWS, reason="Windows drive enumeration")

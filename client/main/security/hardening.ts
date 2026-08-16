@@ -69,7 +69,7 @@ export function encryptDesktopSecret(
 
   if (!encryptionAvailable) {
     throw new Error(
-      'Secure token storage is unavailable, so DeskAgent Desktop cannot save remote gateway tokens. ' +
+      'Secure token storage is unavailable, so SpiritAgent Desktop cannot save remote gateway tokens. ' +
         'Enable OS keychain access and try again.'
     )
   }

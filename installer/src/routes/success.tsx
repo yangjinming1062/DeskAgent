@@ -2,11 +2,11 @@ import type React from 'react'
 import { useState } from 'react'
 import { type CSSProperties } from 'react'
 import { Button } from '../components/button'
-import { launchDeskAgentDesktop } from '../store'
+import { launchSpiritAgentDesktop } from '../store'
 import { Rocket, AlertCircle } from 'lucide-react'
 
 /*
- * Success screen. DESKAGENT AGENT wordmark stays as the visual anchor
+ * Success screen. SpiritAgent wordmark stays as the visual anchor
  * (same Collapse Bold treatment as Welcome + the desktop chat intro),
  * with a status line below.
  *
@@ -22,7 +22,7 @@ export default function Success(): React.JSX.Element {
     setError(null)
     setLaunching(true)
     try {
-      await launchDeskAgentDesktop()
+      await launchSpiritAgentDesktop()
       // On success the installer exits — control never returns here.
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -32,8 +32,8 @@ export default function Success(): React.JSX.Element {
   }
 
   return (
-    <div className="deskagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
-      <span aria-hidden="true" className="deskagent-glow" />
+    <div className="spiritagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
+      <span aria-hidden="true" className="spiritagent-glow" />
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
           className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
@@ -46,15 +46,15 @@ export default function Success(): React.JSX.Element {
           }
         >
           <span>
-            <span>DeskAgent 已准备就绪</span>
+            <span>SpiritAgent 已准备就绪</span>
           </span>
-          <span aria-hidden="true">DeskAgent 已准备就绪</span>
+          <span aria-hidden="true">SpiritAgent 已准备就绪</span>
         </p>
 
         <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
           您可以从这里启动，也可以随时在终端中使用{' '}
           <code className="rounded bg-muted/60 px-1 py-0.5 font-mono text-sm">
-            deskagent desktop
+            spiritagent desktop
           </code>
           命令启动。
         </p>
@@ -67,7 +67,7 @@ export default function Success(): React.JSX.Element {
         className="inline-flex items-center gap-2 px-6"
       >
         <Rocket size={18} />
-        {launching ? '启动中…' : '启动 DeskAgent'}
+        {launching ? '启动中…' : '启动 SpiritAgent'}
       </Button>
 
       {error && (

@@ -24,7 +24,7 @@ export function AboutSettings(): React.JSX.Element {
     // Kick off the manual check. The status bar badge + statusLine below
     // both react to `$updateStatus` so the user sees the transition without
     // a separate dialog.
-    void window.deskagent?.update?.check?.()
+    void window.spiritagent?.update?.check?.()
   }, [])
 
   const isChecking = updateStatus.status === 'checking'

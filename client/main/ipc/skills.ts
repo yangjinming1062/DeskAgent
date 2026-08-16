@@ -7,20 +7,20 @@ import { buildSkillSummaries } from '../shared/lib/skill-index'
 import { buildToolsetRoster } from '../shared/lib/toolset-index'
 
 export interface SkillsIpcDeps {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   getRunnerBridge?: () => { getTools?: () => Record<string, unknown>[] } | null | undefined
   ipcMain: IpcMain
 }
 
-export function registerSkillsIpc({ deskagentHome, getRunnerBridge, ipcMain }: SkillsIpcDeps): void {
-  const skillsRoot = path.join(deskagentHome || '', 'skills')
+export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }: SkillsIpcDeps): void {
+  const skillsRoot = path.join(spiritagentHome || '', 'skills')
 
-  ipcMain.handle('deskagent:skills:list', () => ({
+  ipcMain.handle('spiritagent:skills:list', () => ({
     ok: true,
     skills: buildSkillSummaries(skillsRoot, store.getDisabledSet())
   }))
 
-  ipcMain.handle('deskagent:skill:set-enabled', async (_evt, payload) => {
+  ipcMain.handle('spiritagent:skill:set-enabled', async (_evt, payload) => {
     const { enabled, name } = payload ?? {}
 
     if (typeof name !== 'string' || !name) {
@@ -72,7 +72,7 @@ export function registerSkillsIpc({ deskagentHome, getRunnerBridge, ipcMain }: S
     return { ok: true, skills: buildSkillSummaries(skillsRoot, store.getDisabledSet()) }
   })
 
-  ipcMain.handle('deskagent:toolsets:list', () => {
+  ipcMain.handle('spiritagent:toolsets:list', () => {
     let schemas: Record<string, unknown>[] = []
 
     try {
@@ -86,7 +86,7 @@ export function registerSkillsIpc({ deskagentHome, getRunnerBridge, ipcMain }: S
     return { ok: true, toolsets: buildToolsetRoster(schemas, disabled) }
   })
 
-  ipcMain.handle('deskagent:toolset:set-enabled', async (_evt, payload) => {
+  ipcMain.handle('spiritagent:toolset:set-enabled', async (_evt, payload) => {
     const { enabled, id } = payload ?? {}
 
     if (typeof id !== 'string' || !id) {

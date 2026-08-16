@@ -27,8 +27,8 @@ function makeFakeIpc() {
   }
 }
 
-test('onboardingAudio:read resolves audio file from deskagentHome or dev fallback', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-audio-test-'))
+test('onboardingAudio:read resolves audio file from spiritagentHome or dev fallback', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-audio-test-'))
   const ipcMain = makeFakeIpc()
 
   const resolveReadableFileForIpc = async (filePath: string) => ({
@@ -40,7 +40,7 @@ test('onboardingAudio:read resolves audio file from deskagentHome or dev fallbac
   const devAudioRoot = path.resolve(__dirname, '../../../installer/payload/onboarding-audio/zh')
 
   registerOnboardingAudioIpc({
-    deskagentHome: tmpDir,
+    spiritagentHome: tmpDir,
     devAudioRoot,
     hardening: { resolveReadableFileForIpc },
     ipcMain: ipcMain as any,
@@ -48,23 +48,23 @@ test('onboardingAudio:read resolves audio file from deskagentHome or dev fallbac
   })
 
   // 1. Tag matching repo payload falls back when tmpDir has no files
-  const res = await ipcMain.invoke('deskagent:onboardingAudio:read', 'onboarding.q0')
+  const res = await ipcMain.invoke('spiritagent:onboardingAudio:read', 'onboarding.q0')
   assert.equal(res.tag, 'onboarding.q0')
   assert.equal(res.mimeType, 'audio/mpeg')
   assert.ok(res.dataUrl.startsWith('data:audio/mpeg;base64,'))
   assert.ok(res.bytes > 0)
 
-  // 2. Local deskagentHome file takes precedence over dev payload
+  // 2. Local spiritagentHome file takes precedence over dev payload
   const localDir = path.join(tmpDir, 'audio', 'onboarding', 'zh')
   fs.mkdirSync(localDir, { recursive: true })
   fs.writeFileSync(path.join(localDir, 'onboarding.q0.mp3'), Buffer.from('fake-mp3-content'))
 
-  const localRes = await ipcMain.invoke('deskagent:onboardingAudio:read', 'onboarding.q0')
+  const localRes = await ipcMain.invoke('spiritagent:onboardingAudio:read', 'onboarding.q0')
   assert.equal(localRes.bytes, Buffer.from('fake-mp3-content').length)
 
   // 3. Invalid tags reject
   await assert.rejects(
-    () => ipcMain.invoke('deskagent:onboardingAudio:read', '../invalid'),
+    () => ipcMain.invoke('spiritagent:onboardingAudio:read', '../invalid'),
     /invalid onboarding audio tag/
   )
 

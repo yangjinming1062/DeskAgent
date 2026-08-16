@@ -8,7 +8,7 @@ from pathlib import Path
 from shutil import copy2
 from typing import Any
 
-from utils import get_deskagent_dir
+from utils import get_spiritagent_dir
 
 try:
     import pyttsx3
@@ -72,7 +72,7 @@ TEXT_TO_SPEECH_SCHEMA = {
 
 LIST_VOICES_SCHEMA = {
     "name": "list_tts_voices",
-    "description": ("Returns the list of Piper voice ids installed under $DESKAGENT_HOME/models/piper/. Useful for the user to pick a voice in [desktop/plan §6 Settings]."),
+    "description": ("Returns the list of Piper voice ids installed under $SPIRITAGENT_HOME/models/piper/. Useful for the user to pick a voice in [desktop/plan §6 Settings]."),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -102,7 +102,7 @@ def _normalize_text(text: str) -> str:
 
 
 def _output_path(name_hint: str = "tts") -> Path:
-    base = get_deskagent_dir("cache/audio/tts", "audio_cache")
+    base = get_spiritagent_dir("cache/audio/tts", "audio_cache")
     base.mkdir(parents=True, exist_ok=True)
     cleanup_audio_cache_dir(base)
     return base / f"{name_hint}_{uuid.uuid4().hex[:10]}.wav"
@@ -274,7 +274,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
         engine_chain.append(("pyttsx3", ""))
     else:
         # Auto mode: try the requested Piper voice first; auto-download on miss so a first install
-        # that wiped $DESKAGENT_HOME keeps speaking locally.
+        # that wiped $SPIRITAGENT_HOME keeps speaking locally.
         cfg_default = default_voice_id()
         piper_voice_for_chain: str | None = None
         for candidate in (voice, *([cfg_default] if voice != cfg_default else [])):

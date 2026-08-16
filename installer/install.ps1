@@ -1,16 +1,16 @@
-# DeskAgent Agent installer (Windows / PowerShell 5.1+).
+# SpiritAgent Agent installer (Windows / PowerShell 5.1+).
 #
-# 6-stage payload release. Tauri DeskAgent-Setup.exe is the GUI shell that
+# 6-stage payload release. Tauri SpiritAgent-Setup.exe is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
 # copy the bundled runner binary, desktop app, and skills
-# into the user's $DESKAGENT_HOME (and the platform-canonical desktop install
+# into the user's $SPIRITAGENT_HOME (and the platform-canonical desktop install
 # location).
 #
 # Protocol:
 #   powershell -File install.ps1 -Manifest                 → emit manifest JSON
 #   powershell -File install.ps1 -Stage NAME -Json         → run a single stage
 #
-# Payload locations are passed via DESKAGENT_BUNDLE_* env vars (set by the Tauri
+# Payload locations are passed via SPIRITAGENT_BUNDLE_* env vars (set by the Tauri
 # installer) or via the matching --bundled-*-dir parameters (for dev/test).
 # When both are present, env wins.
 
@@ -20,7 +20,7 @@ param(
     [string]$Stage,
     [switch]$Json,
     [switch]$NonInteractive,
-    [string]$DeskAgentHome,
+    [string]$SpiritAgentHome,
     [string]$BundledRunnerDir,
     [string]$BundledDesktopDir,
     [string]$BundledSkillsDir,
@@ -36,24 +36,24 @@ $InformationPreference = 'Continue'
 $ErrorActionPreference = "Stop"
 $ProtocolVersion = 2
 $ScriptName = "install.ps1"
-$RunnerWheelGlob = "desk_agent-*.whl"
+$RunnerWheelGlob = "spirit-agent-*.whl"
 $DefaultDesktopFormat = "nsis"
 $PythonVersion = "3.13"
 $PythonFallbackVersions = @("3.12", "3.14", "3.11")
 
 # --- resolve paths: env var > param > default ------------------------------
 
-if (-not $DeskAgentHome) {
-    if ($env:DESKAGENT_HOME) { $DeskAgentHome = $env:DESKAGENT_HOME }
-    else { $DeskAgentHome = Join-Path $env:LOCALAPPDATA "DeskAgent" }
+if (-not $SpiritAgentHome) {
+    if ($env:SPIRITAGENT_HOME) { $SpiritAgentHome = $env:SPIRITAGENT_HOME }
+    else { $SpiritAgentHome = Join-Path $env:LOCALAPPDATA "SpiritAgent" }
 }
-if (-not $BundledRunnerDir -and $env:DESKAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:DESKAGENT_BUNDLED_RUNNER_DIR }
-if (-not $BundledDesktopDir -and $env:DESKAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:DESKAGENT_BUNDLED_DESKTOP_DIR }
-if (-not $BundledSkillsDir -and $env:DESKAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:DESKAGENT_BUNDLED_SKILLS_DIR }
-if (-not $BundledVoicesDir -and $env:DESKAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:DESKAGENT_BUNDLED_VOICES_DIR }
-if (-not $BundledOnboardingAudioDir -and $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR) { $BundledOnboardingAudioDir = $env:DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR }
+if (-not $BundledRunnerDir -and $env:SPIRITAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:SPIRITAGENT_BUNDLED_RUNNER_DIR }
+if (-not $BundledDesktopDir -and $env:SPIRITAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:SPIRITAGENT_BUNDLED_DESKTOP_DIR }
+if (-not $BundledSkillsDir -and $env:SPIRITAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:SPIRITAGENT_BUNDLED_SKILLS_DIR }
+if (-not $BundledVoicesDir -and $env:SPIRITAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:SPIRITAGENT_BUNDLED_VOICES_DIR }
+if (-not $BundledOnboardingAudioDir -and $env:SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR) { $BundledOnboardingAudioDir = $env:SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR }
 if (-not $InstallerFormat) {
-    if ($env:DESKAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:DESKAGENT_INSTALLER_FORMAT }
+    if ($env:SPIRITAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:SPIRITAGENT_INSTALLER_FORMAT }
     else { $InstallerFormat = $DefaultDesktopFormat }
 }
 
@@ -64,8 +64,8 @@ function Emit-Manifest {
 {"protocol_version": $ProtocolVersion, "stages": [
   {"name": "welcome", "title": "\u51c6\u5907\u5b89\u88c5", "category": "setup", "needs_user_input": false},
   {"name": "install-python", "title": "\u5b89\u88c5 Python \u8fd0\u884c\u65f6", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "\u5b89\u88c5 DeskAgent \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "\u5b89\u88c5 DeskAgent \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-runner", "title": "\u5b89\u88c5 SpiritAgent \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-desktop", "title": "\u5b89\u88c5 SpiritAgent \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "\u5b89\u88c5\u5185\u7f6e\u6280\u80fd", "category": "payload", "needs_user_input": false},
   {"name": "finalize", "title": "\u5b8c\u6210\u5b89\u88c5", "category": "finalize", "needs_user_input": false}
 ]}
@@ -92,13 +92,13 @@ function Emit-StageErr([string]$stage, [string]$reason) {
 # --- Python installation helpers --------------------------------------------
 
 function Install-Uv {
-    $managedUv = Join-Path $DeskAgentHome "bin\uv.exe"
+    $managedUv = Join-Path $SpiritAgentHome "bin\uv.exe"
     if (Test-Path $managedUv) {
         $script:UvCmd = $managedUv
         return $true
     }
 
-    $binDir = Join-Path $DeskAgentHome "bin"
+    $binDir = Join-Path $SpiritAgentHome "bin"
     if (-not (Test-Path $binDir)) {
         New-Item -ItemType Directory -Force -Path $binDir | Out-Null
     }
@@ -172,9 +172,9 @@ function Test-Python {
 # --- stage 1: welcome -------------------------------------------------------
 
 function Stage-Welcome {
-    $bin = Join-Path $DeskAgentHome "bin"
-    $skills = Join-Path $DeskAgentHome "skills"
-    $logs = Join-Path $DeskAgentHome "logs"
+    $bin = Join-Path $SpiritAgentHome "bin"
+    $skills = Join-Path $SpiritAgentHome "skills"
+    $logs = Join-Path $SpiritAgentHome "logs"
 
     foreach ($d in @($bin, $skills, $logs)) {
         if (-not (Test-Path $d)) {
@@ -182,16 +182,16 @@ function Stage-Welcome {
         }
     }
 
-    if (-not (Test-Path $DeskAgentHome -PathType Container)) {
-        Emit-StageErr "welcome" "could not create DESKAGENT_HOME: $DeskAgentHome"
+    if (-not (Test-Path $SpiritAgentHome -PathType Container)) {
+        Emit-StageErr "welcome" "could not create SPIRITAGENT_HOME: $SpiritAgentHome"
         return 1
     }
 
-    $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
+    $marker = Join-Path $SpiritAgentHome ".spiritagent-bootstrap-complete"
     $isReinstall = Test-Path $marker
 
-    $escHome = Escape-JsonString $DeskAgentHome
-    Write-Output "{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"deskagent_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
+    $escHome = Escape-JsonString $SpiritAgentHome
+    Write-Output "{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"spiritagent_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
     return 0
 }
 
@@ -219,7 +219,7 @@ function Stage-UnpackRunner {
     }
 
     if (-not $BundledRunnerDir) {
-        Emit-StageErr "unpack-runner" "--BundledRunnerDir (or DESKAGENT_BUNDLED_RUNNER_DIR) is required"
+        Emit-StageErr "unpack-runner" "--BundledRunnerDir (or SPIRITAGENT_BUNDLED_RUNNER_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledRunnerDir -PathType Container)) {
@@ -233,7 +233,7 @@ function Stage-UnpackRunner {
         return 1
     }
 
-    $runnerDir = Join-Path $DeskAgentHome "runner"
+    $runnerDir = Join-Path $SpiritAgentHome "runner"
     if (-not (Test-Path $runnerDir)) { New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null }
 
     # Copy server.py alongside the wheel (not inside it)
@@ -252,7 +252,7 @@ function Stage-UnpackRunner {
     $pipOutput = & $script:UvCmd pip install --python $pythonExe $wheel.FullName 2>&1
     if ($LASTEXITCODE) {
         # Retry with a custom or default domestic mirror to mitigate common network issues
-        $pypiIndex = $env:DESKAGENT_PYPI_INDEX_URL
+        $pypiIndex = $env:SPIRITAGENT_PYPI_INDEX_URL
         if (-not $pypiIndex) { $pypiIndex = $env:PIP_INDEX_URL }
         if (-not $pypiIndex) { $pypiIndex = "https://mirrors.aliyun.com/pypi/simple/" }
         $pipOutputRetry = & $script:UvCmd pip install --python $pythonExe $wheel.FullName --index-url $pypiIndex 2>&1
@@ -267,7 +267,7 @@ function Stage-UnpackRunner {
     # through this installer. install.ps1 stays simple.
 
     # Clean up old PyInstaller binary if present
-    $oldBin = Join-Path (Join-Path $DeskAgentHome "bin") "deskagent-runner.exe"
+    $oldBin = Join-Path (Join-Path $SpiritAgentHome "bin") "spiritagent-runner.exe"
     if (Test-Path $oldBin) { Remove-Item -Force $oldBin }
 
     # Copy bundled Piper voices (installer/payload/voices/) into the models
@@ -277,7 +277,7 @@ function Stage-UnpackRunner {
     # drop, no install-script edit.
     $voiceCount = 0
     if ($BundledVoicesDir -and (Test-Path $BundledVoicesDir -PathType Container)) {
-        $voicesTarget = Join-Path $DeskAgentHome "models\piper"
+        $voicesTarget = Join-Path $SpiritAgentHome "models\piper"
         if (-not (Test-Path $voicesTarget)) { New-Item -ItemType Directory -Force -Path $voicesTarget | Out-Null }
 
         $onnxFiles = Get-ChildItem -Path $BundledVoicesDir -Filter "*.onnx" -File -ErrorAction SilentlyContinue
@@ -292,15 +292,15 @@ function Stage-UnpackRunner {
     }
 
     # Copy bundled onboarding guidance audio — language subdirs (zh\, en\, …) map
-    # 1:1 to $DeskAgentHome\audio\onboarding\<lang>\.
+    # 1:1 to $SpiritAgentHome\audio\onboarding\<lang>\.
     $audioCount = 0
     if ($BundledOnboardingAudioDir -and (Test-Path $BundledOnboardingAudioDir -PathType Container)) {
         Get-ChildItem -Path $BundledOnboardingAudioDir -Directory | ForEach-Object {
-            $audioTarget = Join-Path (Join-Path (Join-Path $DeskAgentHome "audio") "onboarding") $_.Name
+            $audioTarget = Join-Path (Join-Path (Join-Path $SpiritAgentHome "audio") "onboarding") $_.Name
             if (-not (Test-Path $audioTarget)) { New-Item -ItemType Directory -Force -Path $audioTarget | Out-Null }
             Copy-Item -Recurse -Force (Join-Path $_.FullName "*") $audioTarget
         }
-        $audioRoot = Join-Path (Join-Path $DeskAgentHome "audio") "onboarding"
+        $audioRoot = Join-Path (Join-Path $SpiritAgentHome "audio") "onboarding"
         $audioCount = (Get-ChildItem -Path $audioRoot -Filter "*.mp3" -Recurse -File -ErrorAction SilentlyContinue).Count
     }
 
@@ -315,7 +315,7 @@ function Stage-UnpackRunner {
 
 function Stage-UnpackDesktop {
     if (-not $BundledDesktopDir) {
-        Emit-StageErr "unpack-desktop" "--BundledDesktopDir (or DESKAGENT_BUNDLED_DESKTOP_DIR) is required"
+        Emit-StageErr "unpack-desktop" "--BundledDesktopDir (or SPIRITAGENT_BUNDLED_DESKTOP_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledDesktopDir -PathType Container)) {
@@ -346,7 +346,7 @@ function Stage-UnpackDesktop {
             # NSIS /S = silent install; /D sets install dir. No console window
             # because Tauri's installer process already owns the visible window.
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
-            $installDir = Join-Path $localPrograms "DeskAgent"
+            $installDir = Join-Path $localPrograms "SpiritAgent"
             if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
             $proc = Start-Process -FilePath $artifactPath `
                                   -ArgumentList @("/S", "/D=$installDir") `
@@ -369,16 +369,16 @@ function Stage-UnpackDesktop {
                 return 1
             }
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
-            $installDir = Join-Path $localPrograms "DeskAgent"
+            $installDir = Join-Path $localPrograms "SpiritAgent"
             $escPath = Escape-JsonString $installDir
             Write-Output "{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"msi`"}}"
             return 0
         }
         "zip" {
-            # Extract ZIP to $DESKAGENT_HOME\apps\DeskAgent (NSIS-style layout) — desktop
-            # is then launched from DeskAgent.exe inside. Matches the install_root
-            # path bootstrap.rs::resolve_deskagent_desktop_exe expects on Windows.
-            $dest = Join-Path $DeskAgentHome "apps\DeskAgent"
+            # Extract ZIP to $SPIRITAGENT_HOME\apps\SpiritAgent (NSIS-style layout) — desktop
+            # is then launched from SpiritAgent.exe inside. Matches the install_root
+            # path bootstrap.rs::resolve_spiritagent_desktop_exe expects on Windows.
+            $dest = Join-Path $SpiritAgentHome "apps\SpiritAgent"
             if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
             Expand-Archive -Path $artifactPath -DestinationPath $dest -Force
             $escPath = Escape-JsonString $dest
@@ -393,7 +393,7 @@ function Stage-UnpackDesktop {
 
 function Stage-InstallSkills {
     if (-not $BundledSkillsDir) {
-        Emit-StageErr "install-skills" "--BundledSkillsDir (or DESKAGENT_BUNDLED_SKILLS_DIR) is required"
+        Emit-StageErr "install-skills" "--BundledSkillsDir (or SPIRITAGENT_BUNDLED_SKILLS_DIR) is required"
         return 1
     }
     if (-not (Test-Path $BundledSkillsDir -PathType Container)) {
@@ -402,13 +402,13 @@ function Stage-InstallSkills {
     }
 
     # Respect the .no-bundled-skills marker.
-    $noSkillsMarker = Join-Path $DeskAgentHome ".no-bundled-skills"
+    $noSkillsMarker = Join-Path $SpiritAgentHome ".no-bundled-skills"
     if (Test-Path $noSkillsMarker) {
         Emit-StageOk "install-skills" $true "user opted out via .no-bundled-skills"
         return 0
     }
 
-    $skillsDir = Join-Path $DeskAgentHome "skills"
+    $skillsDir = Join-Path $SpiritAgentHome "skills"
     if (-not (Test-Path $skillsDir)) { New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null }
 
     # robocopy /MIR mirrors (preserves user-added dirs/files that don't
@@ -427,7 +427,7 @@ function Stage-InstallSkills {
 # --- stage 6: finalize ------------------------------------------------------
 
 function Stage-Finalize {
-    $marker = Join-Path $DeskAgentHome ".deskagent-bootstrap-complete"
+    $marker = Join-Path $SpiritAgentHome ".spiritagent-bootstrap-complete"
     Set-Content -Path $marker -Value "" -NoNewline
 
     $escMarker = Escape-JsonString $marker

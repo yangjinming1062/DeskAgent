@@ -1,4 +1,4 @@
-import type { DeskAgentConnection } from '@/shared/types/global'
+import type { SpiritAgentConnection } from '@/shared/types/global'
 
 export interface ResolveGatewayWsUrlDeps {
   getGatewayWsUrl?: () => Promise<string>
@@ -6,7 +6,7 @@ export interface ResolveGatewayWsUrlDeps {
 
 export async function resolveGatewayWsUrl(
   desktop: ResolveGatewayWsUrlDeps,
-  conn: Pick<DeskAgentConnection, 'wsUrl'>
+  conn: Pick<SpiritAgentConnection, 'wsUrl'>
 ): Promise<string> {
   const mint = desktop.getGatewayWsUrl
 

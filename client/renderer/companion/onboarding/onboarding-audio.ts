@@ -5,7 +5,7 @@ import { $voicePreparing } from '../voice-state'
 
 // Pre-rendered cloud-TTS clips for the onboarding flow. Tag list mirrors
 // installer/payload/onboarding-audio/manifest.json; each tag corresponds to
-// exactly one mp3 under $DESKAGENT_HOME/audio/onboarding/zh/.
+// exactly one mp3 under $SPIRITAGENT_HOME/audio/onboarding/zh/.
 export type OnboardingAudioTag =
   | `onboarding.q${number}`
   | 'onboarding.hatching'
@@ -21,7 +21,7 @@ export async function playOnboardingAudio(tag: OnboardingAudioTag): Promise<bool
   $voicePreparing.set(true)
 
   try {
-    const res = await window.deskagent.media.onboardingAudio.read(tag)
+    const res = await window.spiritagent.media.onboardingAudio.read(tag)
 
     if (!isLatestGen(gen)) {
       return false

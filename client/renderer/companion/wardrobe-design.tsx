@@ -49,7 +49,7 @@ async function pollPreviewJob(jobId: number): Promise<WardrobePreviewResponse> {
   const deadline = Date.now() + PREVIEW_POLL_TIMEOUT_MS
 
   for (;;) {
-    const job = await window.deskagent.api<WardrobePreviewJobStatus>({
+    const job = await window.spiritagent.api<WardrobePreviewJobStatus>({
       path: `/api/companion/wardrobe/preview/${jobId}`
     })
 
@@ -76,7 +76,7 @@ interface WardrobeDesignPanelProps {
 async function discardPreviewFiles(fileIds: string[]): Promise<void> {
   await Promise.all(
     fileIds.map(id =>
-      window.deskagent
+      window.spiritagent
         .api<{ deleted: boolean }>({
           path: `/api/companion/wardrobe/preview/${id}`,
           method: 'DELETE'
@@ -174,7 +174,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     setStatusMessage(null)
 
     try {
-      const accepted = await window.deskagent.api<{ job_id: number; status: string }>({
+      const accepted = await window.spiritagent.api<{ job_id: number; status: string }>({
         path: '/api/companion/wardrobe/preview',
         method: 'POST',
         body: {
@@ -255,7 +255,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     setStatusMessage(null)
 
     try {
-      const res = await window.deskagent.api<WardrobeItem>({
+      const res = await window.spiritagent.api<WardrobeItem>({
         path: '/api/companion/wardrobe/confirm',
         method: 'POST',
         body: {
@@ -310,7 +310,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     e.stopPropagation()
 
     try {
-      await window.deskagent.api<WardrobeItem>({
+      await window.spiritagent.api<WardrobeItem>({
         path: `/api/companion/wardrobe/${itemId}/decline`,
         method: 'PUT'
       })
@@ -327,7 +327,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   const handleEquipExisting = async (itemId: number): Promise<void> => {
     try {
       void discardAllPreviewFiles()
-      await window.deskagent.api<WardrobeItem>({
+      await window.spiritagent.api<WardrobeItem>({
         path: '/api/companion/wardrobe/equip',
         method: 'PUT',
         body: { item_id: itemId }

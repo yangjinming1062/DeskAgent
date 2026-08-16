@@ -21,7 +21,7 @@ export function computeFileSha256(filePath: string): Promise<string> {
 }
 
 export interface ModelDiskCacheOptions {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   inactivityTimeoutMs?: number
 }
 
@@ -44,14 +44,14 @@ export interface ModelDiskCache {
 }
 
 export function createModelDiskCache({
-  deskagentHome,
+  spiritagentHome,
   inactivityTimeoutMs = DEFAULT_INACTIVITY_TIMEOUT_MS
 }: ModelDiskCacheOptions): ModelDiskCache {
-  if (!deskagentHome) {
-    throw new Error('createModelDiskCache: deskagentHome is required')
+  if (!spiritagentHome) {
+    throw new Error('createModelDiskCache: spiritagentHome is required')
   }
 
-  const cacheDir = path.resolve(deskagentHome, 'cache', 'models')
+  const cacheDir = path.resolve(spiritagentHome, 'cache', 'models')
   const inFlightDownloads = new Map<string, Promise<{ contentHash: string; filePath: string; fromCache: boolean }>>()
 
   async function ensureDir(): Promise<void> {

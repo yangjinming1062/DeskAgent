@@ -1,7 +1,7 @@
 import { atom } from 'nanostores'
 
 // Discriminated union — the main process forwards electron-updater events as
-// `{ type, ... }` payloads on the `deskagent:update-event` IPC channel. Each
+// `{ type, ... }` payloads on the `spiritagent:update-event` IPC channel. Each
 // variant mirrors one autoUpdater.on(...) callback.
 export type UpdateStatus =
   | { status: 'idle' }

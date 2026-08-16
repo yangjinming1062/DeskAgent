@@ -18,7 +18,7 @@ def test_docker_cmd_rejects_io_outside_data_dir(tmp_path, monkeypatch):
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     with pytest.raises(RuntimeError):
-        sandbox._docker_cmd("deskagent-job-x", outside, "s.py", [])
+        sandbox._docker_cmd("spiritagent-job-x", outside, "s.py", [])
 
 
 def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
@@ -31,7 +31,7 @@ def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
     io.mkdir()
 
     cmd = sandbox._docker_cmd(
-        "deskagent-job-7-1",
+        "spiritagent-job-7-1",
         io,
         "build_character.py",
         [
@@ -45,8 +45,8 @@ def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
     )
 
     assert cmd[:3] == ["docker", "run", "--rm"]
-    assert _flag(cmd, "--name") == "deskagent-job-7-1"
-    assert _flag(cmd, "--label") == "deskagent-worker=1"
+    assert _flag(cmd, "--name") == "spiritagent-job-7-1"
+    assert _flag(cmd, "--label") == "spiritagent-worker=1"
     assert _flag(cmd, "--network") == "none"
     assert _flag(cmd, "--cpus") == "1.5"
     assert _flag(cmd, "--memory") == "2g"
@@ -129,7 +129,7 @@ async def test_timeout_kills_container_and_returns_124(tmp_path, monkeypatch):
     )
     assert returncode == 124
     assert "timed out" in stderr
-    assert killed[0].startswith("deskagent-job-42-1-")
+    assert killed[0].startswith("spiritagent-job-42-1-")
 
 
 async def test_sweep_removes_labeled_containers(monkeypatch):
@@ -152,7 +152,7 @@ async def test_sweep_removes_labeled_containers(monkeypatch):
     monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", _fake_exec)
     assert await sandbox.sweep_orphan_containers() == 2
     assert calls[0][1:4] == ["ps", "-aq", "--filter"]
-    assert calls[0][4] == "label=deskagent-worker=1"
+    assert calls[0][4] == "label=spiritagent-worker=1"
     assert [c[1:4] for c in calls[1:]] == [
         ["rm", "-f", "abc123def456"],
         ["rm", "-f", "def789abc012"],

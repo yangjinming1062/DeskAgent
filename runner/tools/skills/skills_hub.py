@@ -22,7 +22,7 @@ import yaml
 
 from utils import cfg_get, check_website_access, get_skills_dir, is_safe_url, load_config
 
-from .helpers import get_deskagent_metadata
+from .helpers import get_spiritagent_metadata
 from .skill_usage import _load_protected_builtins
 from .skills_guard import TRUSTED_REPOS, ScanResult, content_hash
 
@@ -358,9 +358,9 @@ class GitHubSource(SkillSource):
         description = fm.get("description", "")
 
         tags = []
-        deskagent_meta = get_deskagent_metadata(fm)
-        if isinstance(deskagent_meta, dict):
-            tags = deskagent_meta.get("tags", [])
+        spiritagent_meta = get_spiritagent_metadata(fm)
+        if isinstance(spiritagent_meta, dict):
+            tags = spiritagent_meta.get("tags", [])
         if not tags:
             raw_tags = fm.get("tags", [])
             tags = raw_tags if isinstance(raw_tags, list) else []
@@ -1018,9 +1018,9 @@ class UrlSource(SkillSource):
         name = self._resolve_skill_name(fm, url)
         description = str(fm.get("description") or "")
         tags: list[str] = []
-        deskagent_meta = get_deskagent_metadata(fm)
-        if isinstance(deskagent_meta, dict):
-            raw_tags = deskagent_meta.get("tags", [])
+        spiritagent_meta = get_spiritagent_metadata(fm)
+        if isinstance(spiritagent_meta, dict):
+            raw_tags = spiritagent_meta.get("tags", [])
             if isinstance(raw_tags, list):
                 tags = [str(t) for t in raw_tags]
         return SkillMeta(
@@ -2310,7 +2310,7 @@ class LobeHubSource(SkillSource):
             f"name: {identifier}",
             f"description: {description[:500]}",
             "metadata:",
-            "  deskagent:",
+            "  spiritagent:",
             f"    tags: [{', '.join(str(t) for t in tag_list)}]",
             "  lobehub:",
             "    source: lobehub",
@@ -2811,43 +2811,43 @@ def check_for_skill_updates(name: str | None = None, *, lock: HubLockFile | None
     return results
 
 
-DESKAGENT_INDEX_URL = "https://deskagent-agent.nousresearch.com/docs/api/skills-index.json"
-DESKAGENT_INDEX_CACHE_FILE = INDEX_CACHE_DIR / "deskagent-index.json"
-DESKAGENT_INDEX_TTL = 6 * 3600  # 6 hours
+SPIRITAGENT_INDEX_URL = "https://spiritagent-agent.nousresearch.com/docs/api/skills-index.json"
+SPIRITAGENT_INDEX_CACHE_FILE = INDEX_CACHE_DIR / "spiritagent-index.json"
+SPIRITAGENT_INDEX_TTL = 6 * 3600  # 6 hours
 
 
-def _load_deskagent_index() -> dict | None:
+def _load_spiritagent_index() -> dict | None:
     """Fetch the centralized skills index, with local cache.
 
     The index is a JSON file hosted on the docs site, rebuilt daily by CI.
-    We cache it locally for DESKAGENT_INDEX_TTL seconds to avoid repeated
+    We cache it locally for SPIRITAGENT_INDEX_TTL seconds to avoid repeated
     downloads within a session.
     """
 
-    if DESKAGENT_INDEX_CACHE_FILE.exists():
+    if SPIRITAGENT_INDEX_CACHE_FILE.exists():
         try:
-            age = time.time() - DESKAGENT_INDEX_CACHE_FILE.stat().st_mtime
-            if age < DESKAGENT_INDEX_TTL:
-                return json.loads(DESKAGENT_INDEX_CACHE_FILE.read_text())
+            age = time.time() - SPIRITAGENT_INDEX_CACHE_FILE.stat().st_mtime
+            if age < SPIRITAGENT_INDEX_TTL:
+                return json.loads(SPIRITAGENT_INDEX_CACHE_FILE.read_text())
         except (OSError, json.JSONDecodeError):
             pass
 
     try:
-        resp = httpx.get(DESKAGENT_INDEX_URL, timeout=15, follow_redirects=True)
+        resp = httpx.get(SPIRITAGENT_INDEX_URL, timeout=15, follow_redirects=True)
         if resp.status_code != 200:
-            logger.debug("DeskAgent index fetch returned %d", resp.status_code)
+            logger.debug("SpiritAgent index fetch returned %d", resp.status_code)
             return _load_stale_index_cache()
         data = resp.json()
     except (httpx.HTTPError, json.JSONDecodeError) as e:
-        logger.debug("DeskAgent index fetch failed: %s", e)
+        logger.debug("SpiritAgent index fetch failed: %s", e)
         return _load_stale_index_cache()
 
     if not isinstance(data, dict) or "skills" not in data:
         return _load_stale_index_cache()
 
     try:
-        DESKAGENT_INDEX_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        DESKAGENT_INDEX_CACHE_FILE.write_text(json.dumps(data))
+        SPIRITAGENT_INDEX_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SPIRITAGENT_INDEX_CACHE_FILE.write_text(json.dumps(data))
     except OSError:
         pass
 
@@ -2856,16 +2856,16 @@ def _load_deskagent_index() -> dict | None:
 
 def _load_stale_index_cache() -> dict | None:
     """Fall back to stale cache when the network fetch fails."""
-    if DESKAGENT_INDEX_CACHE_FILE.exists():
+    if SPIRITAGENT_INDEX_CACHE_FILE.exists():
         try:
-            return json.loads(DESKAGENT_INDEX_CACHE_FILE.read_text())
+            return json.loads(SPIRITAGENT_INDEX_CACHE_FILE.read_text())
         except (OSError, json.JSONDecodeError):
             pass
     return None
 
 
-class DeskAgentIndexSource(SkillSource):
-    """Skill source backed by the centralized DeskAgent Skills Index.
+class SpiritAgentIndexSource(SkillSource):
+    """Skill source backed by the centralized SpiritAgent Skills Index.
 
     The index is a JSON catalog published to the docs site and rebuilt
     daily by CI.  It contains metadata + resolved GitHub paths for every
@@ -2886,7 +2886,7 @@ class DeskAgentIndexSource(SkillSource):
 
     def _ensure_loaded(self) -> dict:
         if not self._loaded:
-            self._index = _load_deskagent_index()
+            self._index = _load_spiritagent_index()
             self._loaded = True
         return self._index or {}
 
@@ -2896,7 +2896,7 @@ class DeskAgentIndexSource(SkillSource):
         return self._github
 
     def source_id(self) -> str:
-        return "deskagent-index"
+        return "spiritagent-index"
 
     @property
     def is_available(self) -> bool:
@@ -2949,7 +2949,7 @@ class DeskAgentIndexSource(SkillSource):
         if resolved:
             bundle = self._get_github().fetch(resolved)
             if bundle:
-                bundle.source = entry.get("source", "deskagent-index")
+                bundle.source = entry.get("source", "spiritagent-index")
                 bundle.identifier = identifier
                 return bundle
 
@@ -2960,7 +2960,7 @@ class DeskAgentIndexSource(SkillSource):
             github_id = f"{repo}/{path}"
             bundle = self._get_github().fetch(github_id)
             if bundle:
-                bundle.source = entry.get("source", "deskagent-index")
+                bundle.source = entry.get("source", "spiritagent-index")
                 bundle.identifier = identifier
                 return bundle
 
@@ -3007,7 +3007,7 @@ class DeskAgentIndexSource(SkillSource):
         return SkillMeta(
             name=entry.get("name", ""),
             description=entry.get("description", ""),
-            source=entry.get("source", "deskagent-index"),
+            source=entry.get("source", "spiritagent-index"),
             identifier=entry.get("identifier", ""),
             trust_level=entry.get("trust_level", "community"),
             repo=entry.get("repo"),
@@ -3029,7 +3029,7 @@ def create_source_router(auth: GitHubAuth | None = None) -> list[SkillSource]:
     extra_taps = taps_mgr.list_taps()
 
     sources: list[SkillSource] = [
-        DeskAgentIndexSource(auth=auth),  # Centralized index (search + resolved install paths)
+        SpiritAgentIndexSource(auth=auth),  # Centralized index (search + resolved install paths)
         SkillsShSource(auth=auth),
         WellKnownSkillSource(),
         UrlSource(),  # Direct HTTP(S) URL to a SKILL.md file
@@ -3079,7 +3079,7 @@ def parallel_search_sources(
     _api_source_ids = frozenset({"github", "skills-sh", "clawhub", "claude-marketplace", "lobehub", "well-known"})
     if source_filter == "all":
         for src in sources:
-            if src.source_id() == "deskagent-index" and getattr(src, "is_available", False):
+            if src.source_id() == "spiritagent-index" and getattr(src, "is_available", False):
                 _index_available = True
                 break
 

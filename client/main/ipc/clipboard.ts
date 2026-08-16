@@ -9,13 +9,13 @@ export interface ClipboardIpcDeps {
 export function registerClipboardIpc({ electron, ipcMain, writeComposerImage }: ClipboardIpcDeps): void {
   const { clipboard } = electron
 
-  ipcMain.handle('deskagent:writeClipboard', (_event, text) => {
+  ipcMain.handle('spiritagent:writeClipboard', (_event, text) => {
     clipboard.writeText(String(text || ''))
 
     return true
   })
 
-  ipcMain.handle('deskagent:saveClipboardImage', async () => {
+  ipcMain.handle('spiritagent:saveClipboardImage', async () => {
     const image = clipboard.readImage()
 
     if (!image || image.isEmpty()) {

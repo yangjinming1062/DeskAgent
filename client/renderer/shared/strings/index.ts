@@ -41,25 +41,25 @@ export const strings: Translations = {
   },
 
   boot: {
-    ready: 'DeskAgent 桌面版已就绪',
+    ready: 'SpiritAgent 桌面版已就绪',
     desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
     steps: {
       connectingGateway: '正在连接桌面网关',
-      loadingSettings: '正在加载 DeskAgent 设置',
+      loadingSettings: '正在加载 SpiritAgent 设置',
       loadingSessions: '正在加载最近会话',
       startingDesktopConnection: '正在启动桌面连接',
-      startingDeskAgentDesktop: '正在启动 DeskAgent 桌面版…'
+      startingSpiritAgentDesktop: '正在启动 SpiritAgent 桌面版…'
     },
     errors: {
-      backgroundExited: 'DeskAgent 后台进程已退出。',
-      backgroundExitedDuringStartup: 'DeskAgent 后台进程在启动期间退出。',
+      backgroundExited: 'SpiritAgent 后台进程已退出。',
+      backgroundExitedDuringStartup: 'SpiritAgent 后台进程在启动期间退出。',
       backendStopped: '后端已停止',
       desktopBootFailed: '桌面启动失败',
       gatewaySignInRequired: '需要登录网关',
       ipcBridgeUnavailable: '桌面 IPC 桥不可用。'
     },
     failure: {
-      title: 'DeskAgent 无法启动',
+      title: 'SpiritAgent 无法启动',
       description: '后台网关没有启动。请尝试下面的恢复步骤；这里不会删除你的对话或设置。',
       retry: '重试',
       openLogs: '打开日志',
@@ -83,7 +83,7 @@ export const strings: Translations = {
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
-      methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 DeskAgent Desktop。',
+      methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 SpiritAgent Desktop。',
       microphonePermission: '麦克风权限已被拒绝。',
       openaiRejectedApiKey: 'OpenAI 拒绝了该 API key。',
       openaiRejectedApiKeyWithStatus: status => `OpenAI 拒绝了该 API key (${status} invalid_api_key)。`,
@@ -126,7 +126,7 @@ export const strings: Translations = {
     exportConfig: '导出配置',
     importConfig: '导入配置',
     resetToDefaults: '恢复默认',
-    resetConfirm: '将所有设置恢复为 DeskAgent 默认值？',
+    resetConfirm: '将所有设置恢复为 SpiritAgent 默认值？',
     exportFailed: '导出失败',
     importFailed: '导入失败',
     resetFailed: '重置失败',
@@ -148,7 +148,7 @@ export const strings: Translations = {
       system: { label: '跟随系统', description: '跟随系统外观' }
     },
     about: {
-      heading: 'DeskAgent Desktop',
+      heading: 'SpiritAgent Desktop',
       version: value => `版本 ${value}`,
       versionUnavailable: '版本不可用',
       checkForUpdates: '检查更新',
@@ -227,16 +227,16 @@ export const strings: Translations = {
     skills: {
       title: '技能',
       intro:
-        '下方每一项对应 $DESKAGENT_HOME/skills 下的一个 category 目录。开启或关闭会即时推送给执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
+        '下方每一项对应 $SPIRITAGENT_HOME/skills 下的一个 category 目录。开启或关闭会即时推送给执行器;启用集会在每个对话轮次发给后端,让模型只看到你能调用的本地技能。',
       loading: '正在加载技能…',
       loadError: '无法从磁盘读取技能列表。',
       saveError: '无法保存技能开关。',
       refreshError: '本地已保存,但后端会话未刷新 — 下一轮对话仍可能看到旧的技能集合,请再次切换。',
       emptyTitle: '未安装任何技能',
-      emptyDesc: '请重新安装 DeskAgent 以恢复内置技能。',
+      emptyDesc: '请重新安装 SpiritAgent 以恢复内置技能。',
       hiddenByPlatformTitle: '当前操作系统没有可用技能',
       hiddenByPlatformDesc:
-        '本版本 DeskAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 DeskAgent 后再启用。'
+        '本版本 SpiritAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 SpiritAgent 后再启用。'
     },
     models: {
       heading: '模型配置',
@@ -416,7 +416,7 @@ export const strings: Translations = {
     noSkillsTitle: '未找到技能',
     noSkillsDesc: '尝试更宽泛的搜索或其他分类。',
     loadFailedTitle: '技能列表加载失败',
-    loadFailedDesc: '请稍后重试,或检查 $DESKAGENT_HOME/skills 目录。',
+    loadFailedDesc: '请稍后重试,或检查 $SPIRITAGENT_HOME/skills 目录。',
     noToolsetsTitle: '未找到工具集',
     noToolsetsDesc: '尝试更宽泛的搜索词。',
     noDescription: '暂无描述。',

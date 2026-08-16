@@ -21,7 +21,7 @@ from utils import (
 
 from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
-from .helpers import get_deskagent_metadata, get_disabled_skill_names, iter_skill_index_files, parse_frontmatter
+from .helpers import get_disabled_skill_names, get_spiritagent_metadata, iter_skill_index_files, parse_frontmatter
 from .skill_usage import bump_use, bump_view, is_excluded_skill_path
 
 logger = logging.getLogger(__name__)
@@ -289,7 +289,7 @@ def skills_list(category: str | None = None, task_id: str | None = None) -> str:
         if not SKILLS_DIR.exists():
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
             return json.dumps(
-                {"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $DESKAGENT_HOME/skills/."}, ensure_ascii=False
+                {"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $SPIRITAGENT_HOME/skills/."}, ensure_ascii=False
             )
         all_skills = _find_all_skills()
         if not all_skills:
@@ -409,7 +409,7 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
         if outside or (inj := any(p in content.lower() for p in _INJECTION_PATTERNS)):
             warns = []
             if outside:
-                warns.append(f"skill file is outside the trusted skills directory (~/.deskagent/skills/): {skill_md}")
+                warns.append(f"skill file is outside the trusted skills directory (~/.spiritagent/skills/): {skill_md}")
             if inj:
                 warns.append("skill content contains patterns that may indicate prompt injection")
             logger.warning("Skill security warning for '%s': %s", name, "; ".join(warns))
@@ -426,7 +426,7 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
         resolved_name = parsed_frontmatter.get("name", skill_md.parent.name)
         if _is_skill_disabled(resolved_name, category=_get_category_from_path(skill_md)):
             return json.dumps(
-                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `deskagent skills` or inspect the files directly on disk."}, ensure_ascii=False
+                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `spiritagent skills` or inspect the files directly on disk."}, ensure_ascii=False
             )
 
         if file_path and skill_dir:
@@ -490,9 +490,9 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
                 for ext in ["*.py", "*.sh", "*.bash", "*.js", "*.ts", "*.rb"]:
                     scr_files.extend(str(f.relative_to(skill_dir)) for f in scr_dir.glob(ext))
 
-        deskagent_meta = get_deskagent_metadata(parsed_frontmatter)
-        tags = _parse_tags(deskagent_meta.get("tags") or parsed_frontmatter.get("tags", ""))
-        related_skills = _parse_tags(deskagent_meta.get("related_skills") or parsed_frontmatter.get("related_skills", ""))
+        spiritagent_meta = get_spiritagent_metadata(parsed_frontmatter)
+        tags = _parse_tags(spiritagent_meta.get("tags") or parsed_frontmatter.get("tags", ""))
+        related_skills = _parse_tags(spiritagent_meta.get("related_skills") or parsed_frontmatter.get("related_skills", ""))
 
         linked_files = {k: v for k, v in [("references", ref_files), ("templates", tmp_files), ("assets", ast_files), ("scripts", scr_files)] if v}
 

@@ -100,7 +100,7 @@ export function encryptToken(
     throw new SessionError({
       code: 'safe-storage-unavailable',
       message:
-        'Secure token storage is unavailable, so DeskAgent Desktop cannot save the Backend token. ' +
+        'Secure token storage is unavailable, so SpiritAgent Desktop cannot save the Backend token. ' +
         'Enable OS keychain access and try again.'
     })
   }

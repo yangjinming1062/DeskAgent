@@ -7,25 +7,25 @@ import test from 'node:test'
 import { createDesktopLogger, DESKTOP_LOG_DISCARD_BYTES, DESKTOP_LOG_MAX_BYTES } from './desktop-log'
 
 test('createDesktopLogger remembers logs and flushes to disk', async () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-log-test-'))
-  const logger = createDesktopLogger({ deskagentHome: tmpDir, isPackaged: true })
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-log-test-'))
+  const logger = createDesktopLogger({ spiritagentHome: tmpDir, isPackaged: true })
 
   logger.rememberLog('first line')
   logger.rememberLog('second line')
 
   assert.equal(logger.getLogs().length, 2)
-  assert.equal(logger.getLogs()[0], '[deskagent] first line')
+  assert.equal(logger.getLogs()[0], '[spiritagent] first line')
 
   await logger.flushAsync()
 
   const content = fs.readFileSync(logger.logPath, 'utf8')
-  assert.ok(content.includes('[deskagent] first line'))
-  assert.ok(content.includes('[deskagent] second line'))
+  assert.ok(content.includes('[spiritagent] first line'))
+  assert.ok(content.includes('[spiritagent] second line'))
 })
 
 test('createDesktopLogger plans rotation correctly', () => {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-log-rot-'))
-  const logger = createDesktopLogger({ deskagentHome: tmpDir, isPackaged: true })
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-log-rot-'))
+  const logger = createDesktopLogger({ spiritagentHome: tmpDir, isPackaged: true })
 
   assert.deepEqual(logger.planRotation(100), [])
 

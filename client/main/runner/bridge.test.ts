@@ -169,7 +169,7 @@ test('start() composes process + ws-server and reaches "running" phase', async (
   assert.equal(status.runner?.pid, 9999)
   assert.match(
     status.wsServer?.path || '',
-    process.platform === 'win32' ? /\\\\\.\\pipe\\deskagent-runner-\d+/ : /runner-\d+\.sock$/
+    process.platform === 'win32' ? /\\\\\.\\pipe\\spiritagent-runner-\d+/ : /runner-\d+\.sock$/
   )
   await bridge.stop()
 })
@@ -185,19 +185,19 @@ test('start() spawns the runner with the endpoint argv contract', async () => {
   assert.equal(startArgs.authToken, wsServer.getLastAuthToken(), 'argv token must match the ws server gate')
   assert.match(
     startArgs.endpointPath,
-    process.platform === 'win32' ? /\\\\\.\\pipe\\deskagent-runner-\d+/ : /runner-\d+\.sock$/
+    process.platform === 'win32' ? /\\\\\.\\pipe\\spiritagent-runner-\d+/ : /runner-\d+\.sock$/
   )
   await bridge.stop()
 })
 
-test('start() writes the endpoint file with the IPC schema when deskagentHome is set', async () => {
-  const deskagentHome = fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-bridge-test-'))
-  const { bridge, wsServer } = makeBridge({ deskagentHome })
+test('start() writes the endpoint file with the IPC schema when spiritagentHome is set', async () => {
+  const spiritagentHome = fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-bridge-test-'))
+  const { bridge, wsServer } = makeBridge({ spiritagentHome })
 
   bridge.start({ readyTimeoutMs: 2_000 })
   await waitForPhase(bridge, 'running')
 
-  const endpointFile = path.join(deskagentHome, 'desktop-endpoint.json')
+  const endpointFile = path.join(spiritagentHome, 'desktop-endpoint.json')
   const payload = JSON.parse(fs.readFileSync(endpointFile, 'utf8'))
   assert.equal(payload.transport, process.platform === 'win32' ? 'pipe' : 'unix')
   assert.equal(payload.path, wsServer.emitter.lastPath)
@@ -207,7 +207,7 @@ test('start() writes the endpoint file with the IPC schema when deskagentHome is
 
   await bridge.stop()
   assert.equal(fs.existsSync(endpointFile), false, 'stop() must remove the endpoint file')
-  fs.rmSync(deskagentHome, { force: true, recursive: true })
+  fs.rmSync(spiritagentHome, { force: true, recursive: true })
 })
 
 test('start() fetches tools via get_tools RPC after runner_ready', async () => {

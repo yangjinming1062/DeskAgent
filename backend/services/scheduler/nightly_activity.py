@@ -64,7 +64,7 @@ _REFLECTION_MAX_WORK_MESSAGES: int = 50
 
 # ── Prompts ────────────────────────────────────────────────────────────
 
-_REFLECTION_SYSTEM_PROMPT = """You are DeskAgent's nightly reflection engine. Analyze today's conversations between the user and their AI companion to extract durable user profile updates and assess relationship/emotional dynamics.
+_REFLECTION_SYSTEM_PROMPT = """You are SpiritAgent's nightly reflection engine. Analyze today's conversations between the user and their AI companion to extract durable user profile updates and assess relationship/emotional dynamics.
 
 Today's conversations are split into two keys:
 - "today_companion_conversations": Everyday companion conversation with the user — your main source for understanding user emotions, relationships, and preferences.
@@ -107,7 +107,7 @@ Output valid JSON only, in this exact schema:
 }
 """
 
-_CONSOLIDATION_SYSTEM_PROMPT = """You are DeskAgent's memory consolidation and decay engine. You are consolidating the user's recall-pool memories with the updated inferred profile as grounding context.
+_CONSOLIDATION_SYSTEM_PROMPT = """You are SpiritAgent's memory consolidation and decay engine. You are consolidating the user's recall-pool memories with the updated inferred profile as grounding context.
 
 Instructions:
 1. Merge duplicate or overlapping memory entries.
@@ -124,7 +124,7 @@ Output valid JSON only, in this shape:
 }}
 """.format(tags=", ".join(sorted(RECALL_TAGS)))
 
-_PLANNING_SYSTEM_PROMPT = """You are DeskAgent's proactive planning engine. Review the user's profile, recent emotional/rapport state, upcoming dates, and conversation activity to decide if any proactive outreach should be scheduled for the user.
+_PLANNING_SYSTEM_PROMPT = """You are SpiritAgent's proactive planning engine. Review the user's profile, recent emotional/rapport state, upcoming dates, and conversation activity to decide if any proactive outreach should be scheduled for the user.
 
 Conservative Principle:
 - ONLY schedule an action if there is a clear, specific, and personal reason (e.g., user's birthday, exam/interview tomorrow, anniversary, or proactively reaching out with care after detecting high stress / low mood / unusual silence).
@@ -157,7 +157,7 @@ Output valid JSON only:
 }
 """
 
-_CREATION_SYSTEM_PROMPT = """You are DeskAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression, animation, or costume asset.
+_CREATION_SYSTEM_PROMPT = """You are SpiritAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression, animation, or costume asset.
 
 Conservative Principle:
 - ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional or visual expression.

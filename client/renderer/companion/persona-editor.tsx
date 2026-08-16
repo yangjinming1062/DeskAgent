@@ -52,7 +52,7 @@ export function PersonaSection(): React.JSX.Element {
     let putOk = false
 
     try {
-      await window.deskagent.api({
+      await window.spiritagent.api({
         body: {
           definition_json: JSON.stringify(
             assemblePersona(

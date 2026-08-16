@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build the DeskAgent client installer for macOS.
+# Build the SpiritAgent client installer for macOS.
 #
 # Single entry point that orchestrates:
-#   1. uv build wheel → runner/dist/deskagent-agent-*.whl
-#   2. electron-builder → client/release/DeskAgent-{ver}-mac-*.dmg
+#   1. uv build wheel → runner/dist/spiritagent-agent-*.whl
+#   2. electron-builder → client/release/SpiritAgent-{ver}-mac-*.dmg
 #   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
 #   4. Patch tauri.conf.json so bundle.resources contains the current host's
 #      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer/src-tauri/target/release/bundle/.../DeskAgent-Setup.dmg
+#   5. Tauri build → installer/src-tauri/target/release/bundle/.../SpiritAgent-Setup.dmg
 #   6. Restore tauri.conf.json (git state preserved).
 #   7. Print the final installer path under release/.
 #
@@ -22,8 +22,8 @@
 #   --target mac              Build target. Defaults to current host. macOS must
 #                             be built on its native host (electron-builder /
 #                             Tauri can't cross-build).
-#   --skip-runner             Don't build runner wheel (use existing dist/deskagent-agent-*.whl).
-#   --skip-desktop            Don't build desktop (use existing release/DeskAgent-*).
+#   --skip-runner             Don't build runner wheel (use existing dist/spiritagent-agent-*.whl).
+#   --skip-desktop            Don't build desktop (use existing release/SpiritAgent-*).
 #   --sign-identity ID        macOS code-sign identity (Developer ID Application: ...).
 #   --notary-profile NAME     macOS notarytool keychain profile.
 #   --output DIR              Output directory for the final installer. Default: release/.
@@ -102,7 +102,7 @@ if [[ "$TARGET" == "mac" && "$HOST_OS" != "Darwin" ]]; then
   exit 1
 fi
 DESKTOP_PNPM_TARGET="dist:mac:dmg"
-DESKTOP_ARTIFACT_GLOB="DeskAgent-${VERSION}-mac-*.dmg"
+DESKTOP_ARTIFACT_GLOB="SpiritAgent-${VERSION}-mac-*.dmg"
 DESKTOP_FORMAT="dmg"
 TAURI_BUNDLE_DIR="dmg"
 
@@ -182,13 +182,13 @@ stage_payload() {
   mkdir -p installer/payload/runner installer/payload/client
 
   local wheel
-  wheel=$(ls -1 runner/dist/deskagent-agent-*.whl 2>/dev/null | head -1 || true)
+  wheel=$(ls -1 runner/dist/spiritagent-agent-*.whl 2>/dev/null | head -1 || true)
   if [[ -z "$wheel" ]]; then
     echo "error: no wheel found in runner/dist/ (build runner first)" >&2
     exit 1
   fi
   cp "$wheel" "installer/payload/runner/$(basename "$wheel")"
-  # Also copy server.py into the payload so install scripts deploy it to $DESKAGENT_HOME/runner/
+  # Also copy server.py into the payload so install scripts deploy it to $SPIRITAGENT_HOME/runner/
   cp runner/server.py installer/payload/runner/server.py
 
   # Symlink skills/install scripts so they're not duplicated in the repo.
@@ -243,7 +243,7 @@ set_version "$VERSION"
 
 # 1. Build runner.
 if [[ $SKIP_RUNNER -eq 0 ]]; then
-  echo "==> Building runner (uv build wheel → dist/deskagent-agent-*.whl)"
+  echo "==> Building runner (uv build wheel → dist/spiritagent-agent-*.whl)"
   # Pre-package gate: catch the env-rot failure mode that previously
   # shipped zero-byte `typing_extensions.py` / `mcp` `.py` files inside
   # the wheel — the install-time smoke was too shallow (`import tools,
@@ -260,7 +260,7 @@ fi
 
 # 2. Build client.
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
-  echo "==> Building client (electron-builder → release/DeskAgent-${VERSION}-${TARGET}*)"
+  echo "==> Building client (electron-builder → release/SpiritAgent-${VERSION}-${TARGET}*)"
   ( cd client && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET )
 else
   echo "==> Skipping client build (--skip-desktop)"
@@ -301,7 +301,7 @@ echo "==> Tauri build"
 
 # 8. Locate final installer.
 FINAL_DIR="installer/src-tauri/target/release/bundle/$TAURI_BUNDLE_DIR"
-FINAL_GLOB="DeskAgent-Setup_${VERSION}_*.dmg"
+FINAL_GLOB="SpiritAgent-Setup_${VERSION}_*.dmg"
 FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"
 if [[ -z "$FINAL" ]]; then
   echo "error: Tauri build did not produce $FINAL_DIR/$FINAL_GLOB" >&2

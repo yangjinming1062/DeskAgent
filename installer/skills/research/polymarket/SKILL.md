@@ -2,7 +2,7 @@
 name: polymarket
 description: "Query Polymarket: markets, prices, orderbooks, history."
 version: 1.0.0
-author: DeskAgent Agent + Teknium
+author: SpiritAgent Agent + Teknium
 tags: [polymarket, prediction-markets, market-data, trading]
 platforms: [linux, macos, windows]
 ---

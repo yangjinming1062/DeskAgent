@@ -192,7 +192,7 @@ class ToolRegistry:
         toolset to Backend's LLM-facing schema list.
 
         Desktop pushes config updates over the WS protocol
-        (``deskagent.config.update``); the Runner re-reads the disabled set
+        (``spiritagent.config.update``); the Runner re-reads the disabled set
         on the next ``get_tools`` call without a process restart.
 
         MCP tools are always excluded regardless of catalog membership —

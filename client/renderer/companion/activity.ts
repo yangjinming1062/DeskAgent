@@ -253,7 +253,7 @@ interface SystemSnapshot {
 }
 
 async function pollOnce(): Promise<void> {
-  const desktop = window.deskagent
+  const desktop = window.spiritagent
 
   if (!desktop?.runnerInvoke) {
     return

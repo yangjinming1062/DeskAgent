@@ -78,7 +78,7 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
 // is expected and leaves the atoms null.
 export async function hydratePortrait(): Promise<void> {
   try {
-    const res = await window.deskagent.api<{
+    const res = await window.spiritagent.api<{
       id?: number
       asset_url?: string
       seed_front_url?: string
@@ -110,7 +110,7 @@ export async function hydratePortrait(): Promise<void> {
 // returns desc order; reverse so pushPortraitEntry lays them out chronologically.
 export async function hydratePortraitHistory(): Promise<void> {
   try {
-    const res = await window.deskagent.api<{
+    const res = await window.spiritagent.api<{
       history: Array<{
         id: number
         asset_url: string

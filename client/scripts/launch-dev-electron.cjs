@@ -8,7 +8,7 @@ const electronPath = require('electron')
 delete process.env.ELECTRON_RUN_AS_NODE
 
 // Auto-wire the local Runner so dev mode gets local STT/TTS/tools without
-// manually setting DESKAGENT_DESKTOP_PYTHON every session.
+// manually setting SPIRITAGENT_DESKTOP_PYTHON every session.
 const repoRoot = path.resolve(__dirname, '..', '..')
 const venvRoot = path.join(repoRoot, 'runner', '.venv')
 const venvPython =
@@ -40,11 +40,11 @@ function venvHasAudioStack() {
   return true
 }
 
-if (!process.env.DESKAGENT_DESKTOP_PYTHON && fs.existsSync(venvPython) && venvHasAudioStack()) {
-  process.env.DESKAGENT_DESKTOP_PYTHON = venvPython
+if (!process.env.SPIRITAGENT_DESKTOP_PYTHON && fs.existsSync(venvPython) && venvHasAudioStack()) {
+  process.env.SPIRITAGENT_DESKTOP_PYTHON = venvPython
 }
-if (!process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT && fs.existsSync(path.join(repoRoot, 'runner', 'server.py'))) {
-  process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT = repoRoot
+if (!process.env.SPIRITAGENT_DESKTOP_RUNNER_REPO_ROOT && fs.existsSync(path.join(repoRoot, 'runner', 'server.py'))) {
+  process.env.SPIRITAGENT_DESKTOP_RUNNER_REPO_ROOT = repoRoot
 }
 
 let child = null

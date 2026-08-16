@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Any
 
-from utils import cfg_get, get_deskagent_home, load_config
+from utils import cfg_get, get_spiritagent_home, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,7 @@ class DebugSession:
         self.tool_name = tool_name
         self._debug_key = env_var.lower()
         self.session_id = str(uuid.uuid4()) if self.enabled else ""
-        self.log_dir = get_deskagent_home() / "logs"
+        self.log_dir = get_spiritagent_home() / "logs"
         self._calls: list[dict[str, Any]] = []
         self._start_time = datetime.datetime.now().isoformat() if self.enabled else ""
         if self.enabled:

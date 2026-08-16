@@ -75,7 +75,7 @@ def _parse_pypi_package(token: str) -> tuple[str | None, str | None]:
 def _query_osv(package: str, ecosystem: str, version: str | None = None) -> list:
     payload = {"package": {"name": package, "ecosystem": ecosystem}} | ({"version": version} if version else {})
     req = urllib.request.Request(
-        _OSV_ENDPOINT, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "deskagent-agent-osv-check/1.0"}, method="POST"
+        _OSV_ENDPOINT, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "spiritagent-agent-osv-check/1.0"}, method="POST"
     )
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         result = json.loads(resp.read())

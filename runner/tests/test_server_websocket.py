@@ -3,8 +3,8 @@
 Bridges the gap left by ``test_runner_runtime.py`` (which only asserts payload
 shapes in isolation) and ``test_startup_imports.py`` (which only verifies
 imports): every RPC method the runner exposes to Desktop (``runner_ready``,
-``request_llm``, ``get_tools``, ``deskagent.info``, ``execute_tool``,
-``mcp.reload``, ``deskagent.cancel``, unknown-method) is exercised here
+``request_llm``, ``get_tools``, ``spiritagent.info``, ``execute_tool``,
+``mcp.reload``, ``spiritagent.cancel``, unknown-method) is exercised here
 against a real ``websockets`` wire so the JSON envelope, ID routing, future
 plumbing, error responses, and disconnect-drain machinery are validated
 together.
@@ -232,14 +232,14 @@ async def test_get_tools_returns_registry_schemas():
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
-async def test_deskagent_info_shape_via_process_request():
+async def test_spiritagent_info_shape_via_process_request():
     sent: list[dict[str, Any]] = []
 
     class _FakeWS:
         async def send(self, payload):
             sent.append(json.loads(payload))
 
-    req = {"id": "i1", "method": "deskagent.info", "params": {}}
+    req = {"id": "i1", "method": "spiritagent.info", "params": {}}
     await server.process_request(_FakeWS(), req)
     assert len(sent) == 1 and sent[0]["id"] == "i1"
     info = sent[0]["result"]
@@ -369,7 +369,7 @@ async def test_execute_tool_wraps_tool_error_as_jsonrpc_error():
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
-async def test_deskagent_cancel_returns_ok_and_sets_global_flag():
+async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
     from tools.interrupt import is_interrupted, set_global_interrupt
 
     set_global_interrupt(False)
@@ -380,7 +380,7 @@ async def test_deskagent_cancel_returns_ok_and_sets_global_flag():
             sent.append(json.loads(payload))
 
     await server.process_request(
-        _FakeWS(), {"id": "c1", "method": "deskagent.cancel", "params": {}}
+        _FakeWS(), {"id": "c1", "method": "spiritagent.cancel", "params": {}}
     )
     assert sent[0]["result"] == {"ok": True}
     assert is_interrupted() is True
@@ -390,7 +390,7 @@ async def test_deskagent_cancel_returns_ok_and_sets_global_flag():
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_non_execute_tool_request_keeps_stale_interrupt():
-    """Diagnostic polls (deskagent.info / get_tools) must NOT clear a pending
+    """Diagnostic polls (spiritagent.info / get_tools) must NOT clear a pending
     cancel — only a subsequent execute_tool does."""
     from tools.interrupt import is_interrupted, set_global_interrupt
 
@@ -490,12 +490,12 @@ def test_extract_llm_content_rejects_non_string_content():
 
 @pytest.mark.timeout(15)
 def test_read_endpoint_schema_variants(tmp_path, monkeypatch):
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     assert server.read_endpoint() is None  # missing file
 
     transport = "pipe" if IS_WINDOWS else "unix"
     sample_path = (
-        "\\\\.\\pipe\\deskagent-runner-123" if IS_WINDOWS else "/tmp/runner.sock"
+        "\\\\.\\pipe\\spiritagent-runner-123" if IS_WINDOWS else "/tmp/runner.sock"
     )
     endpoint = tmp_path / "desktop-endpoint.json"
 
@@ -637,7 +637,7 @@ async def test_process_request_survives_failing_error_reply():
             _BrokenWS(),
             {
                 "id": "c5",
-                "method": "deskagent.config.update",
+                "method": "spiritagent.config.update",
                 "params": {"config": "not-a-dict"},
             },
         )
@@ -649,7 +649,7 @@ async def test_process_request_survives_failing_error_reply():
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_config_update_resets_derived_caches():
-    """deskagent.config.update must invalidate the env_passthrough and
+    """spiritagent.config.update must invalidate the env_passthrough and
     credential_files config caches — otherwise a push never takes effect
     and a cache populated before the first push stays empty forever."""
     try:
@@ -666,7 +666,7 @@ async def test_config_update_resets_derived_caches():
                 sent.append(json.loads(payload))
 
         set_inmemory_config({"terminal": {"env_passthrough": ["CHANGED_VAR"]}})
-        await server.process_request(_FakeWS(), {"id": "c1", "method": "deskagent.config.update", "params": {"config": {"terminal": {"env_passthrough": ["CHANGED_VAR"]}}}})
+        await server.process_request(_FakeWS(), {"id": "c1", "method": "spiritagent.config.update", "params": {"config": {"terminal": {"env_passthrough": ["CHANGED_VAR"]}}}})
         assert sent[0]["result"] == {"ok": True}
         assert utils.env_passthrough.is_env_passthrough("CHANGED_VAR") is True
         assert utils.env_passthrough.is_env_passthrough("MY_LEAK") is False

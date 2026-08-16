@@ -62,7 +62,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   useInteractiveRegion('voice-call-dock', panelRef)
 
   useEffect(() => {
-    void window.deskagent.sprite.setAlwaysOnTop({ on: false })
+    void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
 
     let ctx: AudioContext | null = null
     navigator.mediaDevices
@@ -207,7 +207,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           reader.readAsDataURL(blob)
         })
 
-        const res = await window.deskagent.media.stt({ dataUrl, filename: 'voice.webm' })
+        const res = await window.spiritagent.media.stt({ dataUrl, filename: 'voice.webm' })
         text = (res.text ?? '').trim()
       } catch {
         // Surface STT failure to the user instead of silently returning to listening.
@@ -295,7 +295,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       ctx?.close().catch(() => {})
       stopSpeaking()
       setSpriteState('idle')
-      void window.deskagent.sprite.setAlwaysOnTop({ on: true })
+      void window.spiritagent.sprite.setAlwaysOnTop({ on: true })
     }
   }, [requestGateway, gatewayStateRef, onCloseRef])
 

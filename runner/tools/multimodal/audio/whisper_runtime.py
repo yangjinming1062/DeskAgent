@@ -3,7 +3,7 @@ import os
 import threading
 from typing import Any
 
-from utils import get_deskagent_home
+from utils import get_spiritagent_home
 
 try:
     from faster_whisper import WhisperModel  # type: ignore[import-not-found]
@@ -35,7 +35,7 @@ class WhisperRuntime:
             cached = self._models.get(key)
             if cached is not None:
                 return cached
-            download_root = str(get_deskagent_home() / "models" / "whisper")
+            download_root = str(get_spiritagent_home() / "models" / "whisper")
             os.makedirs(download_root, exist_ok=True)
             logger.info("loading faster-whisper model size=%s compute=%s device=%s", size, compute_type, device)
             try:

@@ -1,5 +1,5 @@
 /*
- * DeskAgent Setup — self-contained design tokens.
+ * SpiritAgent Setup — self-contained design tokens.
  *
  * The installer is an independent top-level module. It does NOT import
  * from desktop/, runner/, or backend/. This file declares the design
@@ -18,7 +18,7 @@
 
 @import 'tailwindcss';
 
-/* Collapse Bold — DeskAgent wordmark font. Shipped via @nous-research/ui, which
+/* Collapse Bold — SpiritAgent wordmark font. Shipped via @nous-research/ui, which
    is a dep of this package; the path resolves to installer/node_modules.
    The desktop uses the same font, but from its own copy of node_modules. */
 @font-face {
@@ -103,7 +103,7 @@
 }
 
 /* Installer-only additions: a fade-in animation and the companion glow. */
-@keyframes deskagent-fade-in {
+@keyframes spiritagent-fade-in {
   from {
     opacity: 0;
     transform: translateY(4px);
@@ -114,8 +114,8 @@
   }
 }
 
-.deskagent-fade-in {
-  animation: deskagent-fade-in 0.45s ease-out both;
+.spiritagent-fade-in {
+  animation: spiritagent-fade-in 0.45s ease-out both;
 }
 
 /* The installer's companion glow — breathes in lockstep with the egg the
@@ -125,7 +125,7 @@
    the very first impression — before the egg even appears — so it carries
    the same warmth the desktop login and the egg radiate. Self-contained:
    this module does not import desktop's .login-glow; the rhythm is mirrored. */
-.deskagent-glow {
+.spiritagent-glow {
   position: absolute;
   left: 50%;
   top: 42%;
@@ -138,15 +138,15 @@
   opacity: 0.6;
   pointer-events: none;
   z-index: -1;
-  animation: deskagent-glow-pulse 3.4s ease-in-out infinite;
+  animation: spiritagent-glow-pulse 3.4s ease-in-out infinite;
 }
 
-@keyframes deskagent-glow-pulse {
+@keyframes spiritagent-glow-pulse {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 0.9; }
 }
 
-@keyframes deskagent-egg-pulse {
+@keyframes spiritagent-egg-pulse {
   0%, 100% {
     transform: scale(1);
     opacity: 0.85;
@@ -158,10 +158,10 @@
 }
 
 .animate-egg-pulse {
-  animation: deskagent-egg-pulse 3.4s ease-in-out infinite;
+  animation: spiritagent-egg-pulse 3.4s ease-in-out infinite;
 }
 
-@keyframes deskagent-crack-flash {
+@keyframes spiritagent-crack-flash {
   0% {
     stroke-width: 5;
     opacity: 1;
@@ -180,10 +180,10 @@
 }
 
 .animate-crack-flash {
-  animation: deskagent-crack-flash 0.6s ease-out;
+  animation: spiritagent-crack-flash 0.6s ease-out;
 }
 
-@keyframes deskagent-egg-tremor {
+@keyframes spiritagent-egg-tremor {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   20% { transform: translate(-3px, 1px) rotate(-1.5deg); }
   40% { transform: translate(3px, -1px) rotate(1.5deg); }
@@ -192,10 +192,10 @@
 }
 
 .animate-egg-tremor {
-  animation: deskagent-egg-tremor 0.6s ease-in-out;
+  animation: spiritagent-egg-tremor 0.6s ease-in-out;
 }
 
-@keyframes deskagent-warm-glow {
+@keyframes spiritagent-warm-glow {
   0% {
     transform: scale(0.5);
     opacity: 0.3;
@@ -211,11 +211,11 @@
 }
 
 .animate-warm-glow {
-  animation: deskagent-warm-glow 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: spiritagent-warm-glow 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .deskagent-glow,
+  .spiritagent-glow,
   .animate-egg-pulse,
   .animate-crack-flash,
   .animate-egg-tremor,

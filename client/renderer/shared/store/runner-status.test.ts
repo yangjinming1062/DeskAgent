@@ -7,16 +7,16 @@ interface RunnerStatusListener {
   (ev: { type: string; [k: string]: unknown }): void
 }
 
-interface RunnerDeskagent {
+interface RunnerSpiritagent {
   runnerInvoke: ReturnType<typeof vi.fn>
   runnerGetState: ReturnType<typeof vi.fn>
   onRunnerStatus: ReturnType<typeof vi.fn>
   emit: (ev: { type: string }) => void
 }
 
-function installRunnerDeskagent(
+function installRunnerSpiritagent(
   opts: { initialState?: { phase: string }; getStateRejected?: boolean } = {}
-): RunnerDeskagent {
+): RunnerSpiritagent {
   const listeners: RunnerStatusListener[] = []
   const runnerInvoke = vi.fn().mockResolvedValue({})
 
@@ -36,7 +36,7 @@ function installRunnerDeskagent(
     }
   })
 
-  ;(window as unknown as { deskagent: unknown }).deskagent = {
+  ;(window as unknown as { spiritagent: unknown }).spiritagent = {
     runnerInvoke,
     runnerGetState,
     onRunnerStatus
@@ -61,7 +61,7 @@ describe('runner-status store', () => {
 
   afterEach(() => {
     teardownRunnerStatus()
-    ;(window as unknown as { deskagent?: unknown }).deskagent = undefined
+    ;(window as unknown as { spiritagent?: unknown }).spiritagent = undefined
   })
 
   describe('$runnerReady', () => {
@@ -86,7 +86,7 @@ describe('runner-status store', () => {
 
   describe('hydrateRunnerStatus', () => {
     it('populates the atom from the sync getter on first call', async () => {
-      installRunnerDeskagent({ initialState: { phase: 'running' } })
+      installRunnerSpiritagent({ initialState: { phase: 'running' } })
 
       await hydrateRunnerStatus()
 
@@ -94,7 +94,7 @@ describe('runner-status store', () => {
     })
 
     it('defaults to idle when the bridge has not been created yet', async () => {
-      installRunnerDeskagent({ initialState: { phase: 'idle' } })
+      installRunnerSpiritagent({ initialState: { phase: 'idle' } })
 
       await hydrateRunnerStatus()
 
@@ -102,7 +102,7 @@ describe('runner-status store', () => {
     })
 
     it('swallows sync-getter rejection and leaves atom at default', async () => {
-      installRunnerDeskagent({ getStateRejected: true })
+      installRunnerSpiritagent({ getStateRejected: true })
 
       await hydrateRunnerStatus()
 
@@ -110,7 +110,7 @@ describe('runner-status store', () => {
     })
 
     it('subscribes once — repeated hydrate calls do not stack subscriptions', async () => {
-      const spy = installRunnerDeskagent()
+      const spy = installRunnerSpiritagent()
 
       await hydrateRunnerStatus()
       await hydrateRunnerStatus()
@@ -120,7 +120,7 @@ describe('runner-status store', () => {
     })
 
     it('updates the atom when onRunnerStatus fires `running`', async () => {
-      const spy = installRunnerDeskagent({ initialState: { phase: 'starting' } })
+      const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
 
       await hydrateRunnerStatus()
       expect($runnerPhase.get()).toBe('starting')
@@ -130,7 +130,7 @@ describe('runner-status store', () => {
     })
 
     it('updates the atom when onRunnerStatus fires `stopped` / `error`', async () => {
-      const spy = installRunnerDeskagent({ initialState: { phase: 'running' } })
+      const spy = installRunnerSpiritagent({ initialState: { phase: 'running' } })
 
       await hydrateRunnerStatus()
       expect($runnerPhase.get()).toBe('running')
@@ -143,7 +143,7 @@ describe('runner-status store', () => {
     })
 
     it('treats `runner_ready` as `running` (transitions to live state)', async () => {
-      const spy = installRunnerDeskagent({ initialState: { phase: 'starting' } })
+      const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
 
       await hydrateRunnerStatus()
 
@@ -152,7 +152,7 @@ describe('runner-status store', () => {
     })
 
     it('teardownRunnerStatus detaches the onRunnerStatus subscription', async () => {
-      const spy = installRunnerDeskagent({ initialState: { phase: 'starting' } })
+      const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
 
       await hydrateRunnerStatus()
       expect(spy.onRunnerStatus).toHaveBeenCalledTimes(1)

@@ -1,24 +1,24 @@
 [package]
-name = "deskagent-bootstrap"
+name = "spiritagent-bootstrap"
 version = "0.2.0"
-description = "DeskAgent Setup — signed installer that drives installer/install.ps1"
-authors = ["DeskAgent <info@deskagent.ai>"]
+description = "SpiritAgent Setup — signed installer that drives installer/install.ps1"
+authors = ["SpiritAgent <info@spiritagent.ai>"]
 edition = "2021"
 rust-version = "1.77"
 
 # Rename the output binary so the distributed artifact is literally
-# `DeskAgent-Setup.exe` on disk — not `deskagent-bootstrap.exe`. Grandma sees
+# `SpiritAgent-Setup.exe` on disk — not `spiritagent-bootstrap.exe`. Grandma sees
 # what we hand her, period. Tauri honors [[bin]] over [package].name
 # for the produced executable name.
 [[bin]]
-name = "DeskAgent-Setup"
+name = "SpiritAgent-Setup"
 path = "src/main.rs"
 
 # The library target name MUST match the `withGlobalTauri` binding name that
 # tauri.conf.json's `app.windows[].label` references. We don't ship a separate
 # lib for now; everything is in src/.
 [lib]
-name = "deskagent_bootstrap_lib"
+name = "spiritagent_bootstrap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -41,7 +41,7 @@ futures = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# Logging — emitted to a file under DESKAGENT_HOME/logs/ and (optionally) the
+# Logging — emitted to a file under SPIRITAGENT_HOME/logs/ and (optionally) the
 # webview console via Tauri's event channel.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

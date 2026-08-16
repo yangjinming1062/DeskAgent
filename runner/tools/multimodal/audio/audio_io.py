@@ -8,7 +8,7 @@ import time
 import uuid
 from pathlib import Path
 
-from utils import get_deskagent_dir, get_deskagent_home
+from utils import get_spiritagent_dir, get_spiritagent_home
 
 try:
     import sounddevice  # type: ignore[import-not-found]
@@ -55,11 +55,11 @@ def sniff_container(data: bytes) -> str:
 def _resolve_ffmpeg_bin(preferred: str = "ffmpeg") -> str:
     if preferred != "ffmpeg" and (Path(preferred).is_file() or shutil.which(preferred)):
         return preferred
-    env_path = os.environ.get("DESKAGENT_FFMPEG_PATH")
+    env_path = os.environ.get("SPIRITAGENT_FFMPEG_PATH")
     if env_path and Path(env_path).is_file():
         return env_path
 
-    home_bin = Path(get_deskagent_home()) / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+    home_bin = Path(get_spiritagent_home()) / "bin" / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
     if home_bin.is_file():
         return str(home_bin)
     try:
@@ -163,7 +163,7 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
     try:
         subprocess.run(cmd, capture_output=True, check=True, timeout=60)
     except FileNotFoundError as e:
-        raise RuntimeError(f"ffmpeg binary not found at {resolved_bin!r}; install ffmpeg or set DESKAGENT_FFMPEG_PATH") from e
+        raise RuntimeError(f"ffmpeg binary not found at {resolved_bin!r}; install ffmpeg or set SPIRITAGENT_FFMPEG_PATH") from e
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"ffmpeg failed: {e.stderr.decode(errors='replace')[:500]}") from e
     except subprocess.TimeoutExpired as e:
@@ -222,7 +222,7 @@ def cleanup_audio_cache_dir(cache_dir: Path, max_age_hours: float = 72.0) -> Non
 
 
 def cache_audio_bytes(raw: bytes, suffix: str = ".wav") -> str:
-    cache_dir = get_deskagent_dir("cache/audio", "audio_cache")
+    cache_dir = get_spiritagent_dir("cache/audio", "audio_cache")
     cache_dir.mkdir(parents=True, exist_ok=True)
     cleanup_audio_cache_dir(cache_dir)
     path = cache_dir / f"inbound_{uuid.uuid4().hex[:12]}{suffix}"

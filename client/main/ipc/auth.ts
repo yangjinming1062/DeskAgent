@@ -12,12 +12,12 @@ export interface AuthIpcDeps {
   broadcastAuthChanged?: (session: null | SessionSnapshot) => void
   buildClientContext?: () => { client_context?: unknown }
   createBackendSession: (options: BackendSessionOptions) => BackendSession
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   electronNet: { fetch: FetchFunction }
   rebuildTrayMenu?: () => void
   rememberLog: (chunk: string) => void
   resetBackendCache?: () => void
-  resolveDeskAgentVersion: () => string
+  resolveSpiritAgentVersion: () => string
   safeStorage?: null | SafeStorageApi
 }
 
@@ -27,8 +27,8 @@ export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
   }
 
   deps.backendSession = deps.createBackendSession({
-    appVersion: deps.resolveDeskAgentVersion(),
-    defaultBaseUrl: resolveBackendUrl(deps.deskagentHome),
+    appVersion: deps.resolveSpiritAgentVersion(),
+    defaultBaseUrl: resolveBackendUrl(deps.spiritagentHome),
     fetchImpl: (url: string, options?: RequestInit) => deps.electronNet.fetch(url, options),
     log: (chunk: string) => deps.rememberLog(chunk),
     safeStorage: deps.safeStorage,
@@ -51,7 +51,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
 }
 
 export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain: IpcMain }): void {
-  ipcMain.handle('deskagent:auth:activate', async (_event, payload: DesktopActivatePayload) => {
+  ipcMain.handle('spiritagent:auth:activate', async (_event, payload: DesktopActivatePayload) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 
@@ -66,13 +66,13 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     deps.broadcastAuthChanged?.(session.getSession())
 
     if (result && result.baseUrl) {
-      writeStoredBackendUrl(deps.deskagentHome, result.baseUrl)
+      writeStoredBackendUrl(deps.spiritagentHome, result.baseUrl)
     }
 
     return result
   })
 
-  ipcMain.handle('deskagent:auth:refresh', async (_event, payload?: { clientContext?: unknown }) => {
+  ipcMain.handle('spiritagent:auth:refresh', async (_event, payload?: { clientContext?: unknown }) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 
@@ -88,7 +88,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('deskagent:auth:logout', async () => {
+  ipcMain.handle('spiritagent:auth:logout', async () => {
     const session = ensureBackendSession(deps)
     const result = await session.logout()
     deps.resetBackendCache?.()
@@ -98,13 +98,13 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('deskagent:auth:get-session', async () => {
+  ipcMain.handle('spiritagent:auth:get-session', async () => {
     const session = ensureBackendSession(deps)
 
     return session.getSession()
   })
 
-  ipcMain.handle('deskagent:auth:get-default-backend-url', async () => {
-    return resolveBackendUrl(deps.deskagentHome)
+  ipcMain.handle('spiritagent:auth:get-default-backend-url', async () => {
+    return resolveBackendUrl(deps.spiritagentHome)
   })
 }

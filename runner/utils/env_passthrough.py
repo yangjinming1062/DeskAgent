@@ -42,7 +42,7 @@ def _load_config_passthrough() -> frozenset[str]:
 
 
 def reset_cache() -> None:
-    """Drop the config-derived passthrough set (deskagent.config.update)."""
+    """Drop the config-derived passthrough set (spiritagent.config.update)."""
     global _config_passthrough
     _config_passthrough = None
 

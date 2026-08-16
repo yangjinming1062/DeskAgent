@@ -19,7 +19,7 @@ import pytest
 from tools.terminal._env_file_sync import FileSyncManager
 from utils import IS_WINDOWS
 
-_REMOTE = "/root/.deskagent/a.txt"
+_REMOTE = "/root/.spiritagent/a.txt"
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -42,16 +42,16 @@ def test_sync_back_applies_changed_file(tmp_path):
     host_file.write_bytes(b"old content")
 
     def fake_download(tar_path):
-        staged = tmp_path / "staged" / "root" / ".deskagent" / "a.txt"
+        staged = tmp_path / "staged" / "root" / ".spiritagent" / "a.txt"
         staged.parent.mkdir(parents=True, exist_ok=True)
         staged.write_bytes(b"new content")
         with tarfile.open(tar_path, "w") as tar:
-            tar.add(staged, arcname="root/.deskagent/a.txt")
+            tar.add(staged, arcname="root/.spiritagent/a.txt")
 
     manager = _make_manager([(str(host_file), _REMOTE)], fake_download)
     manager._pushed_hashes[_REMOTE] = _sha256_bytes(b"old content")
 
-    manager.sync_back(deskagent_home=tmp_path)
+    manager.sync_back(spiritagent_home=tmp_path)
 
     assert host_file.read_bytes() == b"new content"
 
@@ -62,16 +62,16 @@ def test_sync_back_keeps_unchanged_file(tmp_path):
     host_file.write_bytes(b"same content")
 
     def fake_download(tar_path):
-        staged = tmp_path / "staged" / "root" / ".deskagent" / "a.txt"
+        staged = tmp_path / "staged" / "root" / ".spiritagent" / "a.txt"
         staged.parent.mkdir(parents=True, exist_ok=True)
         staged.write_bytes(b"same content")
         with tarfile.open(tar_path, "w") as tar:
-            tar.add(staged, arcname="root/.deskagent/a.txt")
+            tar.add(staged, arcname="root/.spiritagent/a.txt")
 
     manager = _make_manager([(str(host_file), _REMOTE)], fake_download)
     manager._pushed_hashes[_REMOTE] = _sha256_bytes(b"same content")
 
-    manager.sync_back(deskagent_home=tmp_path)
+    manager.sync_back(spiritagent_home=tmp_path)
 
     assert host_file.read_bytes() == b"same content"
 

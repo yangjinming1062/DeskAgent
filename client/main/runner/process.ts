@@ -22,7 +22,7 @@ export interface RunnerProcessState {
 }
 
 export interface CreateRunnerProcessOptions {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   devPython?: null | string
   env?: Record<string, string | undefined>
   executable?: null | string
@@ -54,7 +54,7 @@ export interface RunnerProcess {
 }
 
 function resolveRunnerExecutable(options: {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   devPython?: null | string
   executable?: null | string
   fileExists: (p: string) => boolean
@@ -65,7 +65,7 @@ function resolveRunnerExecutable(options: {
   }
 
   const venvResult = resolveVenvPython({
-    deskagentHome: options.deskagentHome,
+    spiritagentHome: options.spiritagentHome,
     fileExists: options.fileExists,
     platform: process.platform
   })
@@ -151,7 +151,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
     }
 
     const resolved = resolveRunnerExecutable({
-      deskagentHome: options.deskagentHome,
+      spiritagentHome: options.spiritagentHome,
       devPython: options.devPython,
       executable: args.executable,
       fileExists,
@@ -160,7 +160,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
     if (!resolved) {
       const err = new Error(
-        'Could not resolve a Runner executable. Pass options.executable, install the Runner venv under $DESKAGENT_HOME, or set DESKAGENT_DESKTOP_PYTHON for dev mode.'
+        'Could not resolve a Runner executable. Pass options.executable, install the Runner venv under $SPIRITAGENT_HOME, or set SPIRITAGENT_DESKTOP_PYTHON for dev mode.'
       )
 
       setState({ lastError: err.message })
@@ -171,7 +171,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      ...(options.deskagentHome ? { DESKAGENT_HOME: options.deskagentHome } : {}),
+      ...(options.spiritagentHome ? { SPIRITAGENT_HOME: options.spiritagentHome } : {}),
       ...(options.env || {})
     }
 

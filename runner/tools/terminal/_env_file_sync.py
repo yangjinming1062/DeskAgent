@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeAlias
 
-from utils import get_deskagent_home
+from utils import get_spiritagent_home
 
 from ._env_base import _file_mtime_key
 
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 _sleep = time.sleep
 _SYNC_INTERVAL_SECONDS = 5.0
-_FORCE_SYNC_ENV = "DESKAGENT_FORCE_FILE_SYNC"
+_FORCE_SYNC_ENV = "SPIRITAGENT_FORCE_FILE_SYNC"
 
 UploadFn: TypeAlias = Callable[[str, str], None]
 BulkUploadFn: TypeAlias = Callable[[list[tuple[str, str]]], None]
@@ -43,9 +43,9 @@ DeleteFn: TypeAlias = Callable[[list[str]], None]
 GetFilesFn: TypeAlias = Callable[[], list[tuple[str, str]]]
 
 
-def iter_sync_files(container_base: str = "/root/.deskagent") -> list[tuple[str, str]]:
+def iter_sync_files(container_base: str = "/root/.spiritagent") -> list[tuple[str, str]]:
     return (
-        [(m["host_path"], m["container_path"].replace("/root/.deskagent", container_base, 1)) for m in get_credential_file_mounts()]
+        [(m["host_path"], m["container_path"].replace("/root/.spiritagent", container_base, 1)) for m in get_credential_file_mounts()]
         + [(m["host_path"], m["container_path"]) for m in iter_skills_files(container_base=container_base)]
         + [(m["host_path"], m["container_path"]) for m in iter_cache_files(container_base=container_base)]
     )
@@ -127,10 +127,10 @@ class FileSyncManager:
             logger.warning("file_sync: sync failed, rolled back state: %s", exc)
         self._last_sync_time = time.monotonic()
 
-    def sync_back(self, deskagent_home: Path | None = None) -> None:
+    def sync_back(self, spiritagent_home: Path | None = None) -> None:
         if not self._bulk_download_fn or (not self._pushed_hashes and not self._synced_files):
             return
-        lock_path = (deskagent_home or get_deskagent_home()) / ".sync.lock"
+        lock_path = (spiritagent_home or get_spiritagent_home()) / ".sync.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         for attempt in range(_SYNC_BACK_MAX_RETRIES):
             try:
@@ -193,7 +193,7 @@ class FileSyncManager:
             if (tar_size := os.path.getsize(tar_name)) > _SYNC_BACK_MAX_BYTES:
                 logger.warning("sync_back: remote tar %d bytes exceeds cap", tar_size)
                 return
-            with tempfile.TemporaryDirectory(prefix="deskagent-sync-back-") as staging:
+            with tempfile.TemporaryDirectory(prefix="spiritagent-sync-back-") as staging:
                 with tarfile.open(tar_name) as tar:
                     tar.extractall(staging, filter="data")
                 applied = 0

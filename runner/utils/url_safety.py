@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 
 from .config import is_truthy_value, load_config
-from .constants import get_deskagent_home
+from .constants import get_spiritagent_home
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def normalize_url_for_request(url: str) -> str:
 
 
 def _global_allow_private_urls() -> bool:
-    """Read live from config — no caching because the value can change via ``deskagent.config.update``."""
+    """Read live from config — no caching because the value can change via ``spiritagent.config.update``."""
     try:
         cfg = load_config()
         return any(isinstance(d, dict) and is_truthy_value(d.get("allow_private_urls"), default=False) for d in (cfg.get("security"), cfg.get("browser")))
@@ -260,7 +260,7 @@ def load_website_blocklist() -> dict[str, Any]:
     for shared_file in raw_shared_files:
         if isinstance(shared_file, str) and shared_file.strip():
             path = Path(shared_file).expanduser()
-            resolved = path if path.is_absolute() else (get_deskagent_home() / path).resolve()
+            resolved = path if path.is_absolute() else (get_spiritagent_home() / path).resolve()
             for normalized in _iter_blocklist_file_rules(resolved):
                 if (key := (str(resolved), normalized)) not in seen:
                     rules.append({"pattern": normalized, "source": str(resolved)})

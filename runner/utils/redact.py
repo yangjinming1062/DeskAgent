@@ -71,7 +71,7 @@ def _is_redact_enabled() -> bool:
 def redact_sensitive_text(text: str) -> str:
     """Redact likely secrets in *text*. Disabled when ``security.redact_secrets`` is falsy in config.
 
-    Reads the in-memory config on each call, so a ``deskagent.config.update``
+    Reads the in-memory config on each call, so a ``spiritagent.config.update``
     push takes effect immediately. Regex failures propagate — ``clean_output``
     is the security boundary that fails closed on them.
     """

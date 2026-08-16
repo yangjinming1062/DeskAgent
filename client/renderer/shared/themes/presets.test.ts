@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { DEFAULT_TYPOGRAPHY, deskagentTheme, EMOJI_FALLBACK } from './presets'
+import { DEFAULT_TYPOGRAPHY, EMOJI_FALLBACK, spiritagentTheme } from './presets'
 
 // #40364: none of the UI text/mono fonts carry emoji glyphs, so every font
 // stack must end with a color-emoji fallback or emoji render as tofu on
@@ -12,8 +12,8 @@ describe('theme typography emoji fallback (#40364)', () => {
       ['DEFAULT_TYPOGRAPHY.fontMono', DEFAULT_TYPOGRAPHY.fontMono],
       // A theme may override only fontMono (fontSans then falls back to the
       // default, which already carries the emoji stack), so skip undefined.
-      [`${deskagentTheme.name}.fontSans`, deskagentTheme.typography?.fontSans],
-      [`${deskagentTheme.name}.fontMono`, deskagentTheme.typography?.fontMono]
+      [`${spiritagentTheme.name}.fontSans`, spiritagentTheme.typography?.fontSans],
+      [`${spiritagentTheme.name}.fontMono`, spiritagentTheme.typography?.fontMono]
     ] as Array<[string, string | undefined]>
   ).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
 

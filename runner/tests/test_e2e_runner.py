@@ -12,7 +12,7 @@ stability, the runner must:
 3. Run ``mcp.reload`` end-to-end (RPC → reload call → cache reset →
    tools_changed notification).
 4. Route ``terminal.env_type`` through every backend factory branch.
-5. Sync bundled skills from a fake bundle into ``$DESKAGENT_HOME/skills``
+5. Sync bundled skills from a fake bundle into ``$SPIRITAGENT_HOME/skills``
    and pin the manifest + suppression behaviour.
 6. Gate vision / TTS / STT tools on their optional deps so the LLM
    never sees a broken tool.
@@ -355,7 +355,7 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
     runner's point of view) and the runner MUST reconnect and deliver a
     second ``runner_ready``.
 
-    DESKAGENT_HOME is redirected to tmp_path with an endpoint file naming
+    SPIRITAGENT_HOME is redirected to tmp_path with an endpoint file naming
     the peer (mirroring production, where the file exists while the
     Desktop is up): any transient rejection refreshes through the file
     instead of parking in the wait-for-file branch, and the test is immune
@@ -372,7 +372,7 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
         await real_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
 
     before = server._RECONNECT_COUNT
 
@@ -435,7 +435,7 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
       1. Get its upgrade rejected with HTTP 401 (it still holds the
          previous session's token against the restarted Desktop).
       2. Drop the cached endpoint/token, re-read
-         ``$DESKAGENT_HOME/desktop-endpoint.json`` between attempts
+         ``$SPIRITAGENT_HOME/desktop-endpoint.json`` between attempts
          (the Desktop wrote a new file with the fresh token).
       3. Connect with the new token and complete the ``runner_ready``
          handshake.
@@ -445,11 +445,11 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     local link's "refresh, don't exit" semantics (the Backend link's
     1008 hard-exit contract does not apply here).
 
-    Uses ``monkeypatch`` only to redirect ``DESKAGENT_HOME`` and
+    Uses ``monkeypatch`` only to redirect ``SPIRITAGENT_HOME`` and
     shorten ``asyncio.sleep``; ``read_endpoint`` runs through its
     real production code path.
     """
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     endpoint_file = tmp_path / "desktop-endpoint.json"
 
     # Shorten the reconnect backoff so the test finishes in <1s.
@@ -525,12 +525,12 @@ def test_read_endpoint_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path
     """
     import server as server_mod
 
-    monkeypatch.setenv("DESKAGENT_HOME", str(tmp_path))
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     endpoint_file = tmp_path / "desktop-endpoint.json"
     sample_path = (
-        "\\\\.\\pipe\\deskagent-runner-1234"
+        "\\\\.\\pipe\\spiritagent-runner-1234"
         if IS_WINDOWS
-        else "/tmp/deskagent-runner.sock"
+        else "/tmp/spiritagent-runner.sock"
     )
 
     # None body = keep the file absent (the "missing file" case); "" writes a
@@ -849,7 +849,7 @@ def test_create_environment_rejects_unknown_env_type():
 
 
 # ---------------------------------------------------------------------------
-# (5) Skills sync — real bundle → real DESKAGENT_HOME/skills
+# (5) Skills sync — real bundle → real SPIRITAGENT_HOME/skills
 # ---------------------------------------------------------------------------
 
 
@@ -954,7 +954,7 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
     Test: drive partial + invalid frames into the runner's reader via
     the peer's server-side handle (``runner_ws`` returned by the
     peer when the runner connected), then send a well-formed
-    ``deskagent.info`` request and confirm the runner replies.
+    ``spiritagent.info`` request and confirm the runner replies.
     """
     async with _running_runner() as peer:
         # The runner's outbound ``runner_ready`` carries its server-side
@@ -971,20 +971,20 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
         assert runner_server_ws is not None, "peer did not record runner server-side ws"
 
         for bad in (
-            b'{"jsonrpc": "2.0", "method": "deskagent.info"',
+            b'{"jsonrpc": "2.0", "method": "spiritagent.info"',
             b"this is not json {",
             b"42",
         ):
             await runner_server_ws.send(bad)
 
-        # Now send a valid ``deskagent.info`` RPC through the same wire
+        # Now send a valid ``spiritagent.info`` RPC through the same wire
         # path the runner's reader uses (server→client) — prove it's
         # still running and dispatching.
         await runner_server_ws.send(
             json.dumps({
                 "jsonrpc": "2.0",
                 "id": "after-bad",
-                "method": "deskagent.info",
+                "method": "spiritagent.info",
                 "params": {},
             }).encode()
         )
@@ -1011,7 +1011,7 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
             f"runner returned error frame after bad frames: {reply}"
         )
         assert "version" in reply["result"], (
-            f"deskagent.info result missing version: {reply}"
+            f"spiritagent.info result missing version: {reply}"
         )
 
 
@@ -1193,7 +1193,7 @@ async def test_runner_loop_does_not_swallow_unhandled_exceptions_in_dispatch():
         sent.clear()
         await server.process_request(
             _RecordingWS(),
-            {"id": "after-bug", "method": "deskagent.info", "params": {}},
+            {"id": "after-bug", "method": "spiritagent.info", "params": {}},
         )
         assert sent[-1]["id"] == "after-bug"
         assert "result" in sent[-1]

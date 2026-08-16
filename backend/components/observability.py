@@ -11,15 +11,15 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, ge
 from .config import SETTINGS
 
 # Prometheus Metrics Definitions
-HTTP_REQUESTS_TOTAL = Counter("deskagent_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
+HTTP_REQUESTS_TOTAL = Counter("spiritagent_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
 
-HTTP_REQUEST_DURATION_SECONDS = Histogram("deskagent_http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
+HTTP_REQUEST_DURATION_SECONDS = Histogram("spiritagent_http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
 
-WS_CONNECTIONS_ACTIVE = Gauge("deskagent_ws_connections_active", "Active WebSocket connections count")
+WS_CONNECTIONS_ACTIVE = Gauge("spiritagent_ws_connections_active", "Active WebSocket connections count")
 
-RPC_REQUESTS_TOTAL = Counter("deskagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
+RPC_REQUESTS_TOTAL = Counter("spiritagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
 
-RPC_REQUEST_DURATION_SECONDS = Histogram("deskagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
+RPC_REQUEST_DURATION_SECONDS = Histogram("spiritagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
 
 # ContextVar for JSON-RPC Trace Context Propagation
 _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_trace_id", default=None)

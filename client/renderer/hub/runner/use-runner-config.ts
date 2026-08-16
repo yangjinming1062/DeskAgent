@@ -52,7 +52,7 @@ export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
   const [config, setConfig] = useState<Config | null>(null)
 
   const loader = useAsyncLoader<{ ok: boolean; error?: string; content?: string }>(
-    () => window.deskagent.runnerConfig.read(),
+    () => window.spiritagent.runnerConfig.read(),
     errorKey
   )
 
@@ -68,13 +68,13 @@ export function useRunnerConfig(errorKey: string): UseRunnerConfigResult {
 
   const isLoading = loader.isLoading
 
-  const toWriteResult = (res: Awaited<ReturnType<typeof window.deskagent.runnerConfig.write>>): SaveResult =>
+  const toWriteResult = (res: Awaited<ReturnType<typeof window.spiritagent.runnerConfig.write>>): SaveResult =>
     res.ok ? { ok: true } : { ok: false, error: res.error || 'unknown error' }
 
   const write = async (content: string): Promise<SaveResult> =>
-    toWriteResult(await window.deskagent.runnerConfig.write(content))
+    toWriteResult(await window.spiritagent.runnerConfig.write(content))
 
-  const patch = async (p: Patch): Promise<SaveResult> => toWriteResult(await window.deskagent.runnerConfig.patch(p))
+  const patch = async (p: Patch): Promise<SaveResult> => toWriteResult(await window.spiritagent.runnerConfig.patch(p))
 
   return { config, setConfig, isLoading, write, patch }
 }

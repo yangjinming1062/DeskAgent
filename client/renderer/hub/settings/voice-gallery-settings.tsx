@@ -12,7 +12,7 @@ import { EmptyState, FilterPill, ListRow, LoadingState, Pill, SettingsContent, S
 // Read-only voice catalog browser for the framed tool window (hub), which has
 // no WS gateway and thus can't call the `tts.list_voices` JSON-RPC method. It
 // reaches the same backend catalog via REST (GET /api/companion/voices) and
-// previews a voice through the `deskagent:media:tts` IPC (available to both
+// previews a voice through the `spiritagent:media:tts` IPC (available to both
 // windows). Changing the active companion voice stays in the sprite window's
 // 伙伴设置 — this page only browses + 试听.
 
@@ -31,7 +31,7 @@ export function VoiceGallerySettings(): React.JSX.Element {
   const [previewingId, setPreviewingId] = useState<string | null>(null)
 
   const loader = useAsyncLoader<VoiceCatalog>(async () => {
-    return window.deskagent.api<VoiceCatalog>({ path: '/api/companion/voices' })
+    return window.spiritagent.api<VoiceCatalog>({ path: '/api/companion/voices' })
   })
 
   const [catalog, setCatalog] = useState<VoiceCatalog | null>(null)
@@ -70,7 +70,7 @@ export function VoiceGallerySettings(): React.JSX.Element {
     setPreviewingId(voice.id)
 
     try {
-      const res = await window.deskagent.media.tts({
+      const res = await window.spiritagent.media.tts({
         text: PREVIEW_LINE,
         voice: voice.id,
         context: 'gallery.preview',

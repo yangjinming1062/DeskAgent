@@ -1,5 +1,5 @@
 # scripts/lib/UpdateManifest.ps1
-# Shared signing + manifest helpers for the DeskAgent update pipeline.
+# Shared signing + manifest helpers for the SpiritAgent update pipeline.
 #
 # Imported by:
 #   - scripts/build_client.ps1 (Build-UpdateZip)
@@ -103,8 +103,8 @@ function Sign-Manifest {
     # & operator captures binary stdout as an array, not a byte stream.
     $openssl = Resolve-OpenSsl
     $payload = "$pathValue|$sha512"
-    $tmpPayload = Join-Path ([IO.Path]::GetTempPath()) "deskagent-sign-payload-$PID.tmp"
-    $tmpSig = Join-Path ([IO.Path]::GetTempPath()) "deskagent-sign-sig-$PID.tmp"
+    $tmpPayload = Join-Path ([IO.Path]::GetTempPath()) "spiritagent-sign-payload-$PID.tmp"
+    $tmpSig = Join-Path ([IO.Path]::GetTempPath()) "spiritagent-sign-sig-$PID.tmp"
     try {
         [IO.File]::WriteAllBytes($tmpPayload, [Text.Encoding]::UTF8.GetBytes($payload))
         & $openssl dgst -sha512 -sign $KeyPath -out $tmpSig $tmpPayload 2>&1 | Out-Null
@@ -181,7 +181,7 @@ function New-RunnerManifest {
     $serverPyName = Split-Path -Leaf $ServerPyPath
 
     # The Squirrel convention is for `path` to be relative to the manifest's
-    # directory. We mirror the build layout: `runner/deskagent-agent-*.whl` is
+    # directory. We mirror the build layout: `runner/spiritagent-agent-*.whl` is
     # staged under `<staging>/runner/`, so the manifest is written to the
     # staging root and `path` is `runner/<wheel>`.
     $wheelRel = "runner/$wheelName"

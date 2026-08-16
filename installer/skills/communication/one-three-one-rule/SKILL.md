@@ -14,7 +14,7 @@ author: Willard Moore
 license: MIT
 category: communication
 metadata:
-  deskagent:
+  spiritagent:
     tags: [communication, decision-making, proposals, trade-offs]
 ---
 

@@ -54,20 +54,20 @@ function toolSchema(name: string) {
 
 function setup({
   bridge = null,
-  deskagentHome = null,
+  spiritagentHome = null,
   stt = 'auto' as EngineMode,
   sttSilentFallback = true,
   tts = 'auto' as EngineMode
 }: {
   bridge?: any
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   stt?: EngineMode
   sttSilentFallback?: boolean
   tts?: EngineMode
 } = {}) {
   const ipc = makeFakeIpc()
   registerMediaIpc({
-    deskagentHome: deskagentHome ?? fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-media-test-')),
+    spiritagentHome: spiritagentHome ?? fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-media-test-')),
     ensureBackend: async () => ({ baseUrl: 'https://backend.test', token: 'tok' }),
     getEnginePrefs: async () => ({
       expiresAt: Date.now() + 10000,
@@ -105,7 +105,7 @@ test('STT auto + local available + success → uses local, base64 passed through
   const bridge = makeBridge({ invokeResult: { success: true, text: 'hello' }, tools: [toolSchema('speech_to_text')] })
   const ipc = setup({ bridge, stt: 'auto' })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL, filename: 'voice.webm' })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL, filename: 'voice.webm' })
 
   assert.equal(res.text, 'hello')
   assert.equal(bridge.calls[0].name, 'speech_to_text')
@@ -118,7 +118,7 @@ test('STT auto + local returns success:false → falls back to cloud', async () 
   const ipc = setup({ bridge, stt: 'auto' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
 })
@@ -128,7 +128,7 @@ test('STT auto + local throws → falls back to cloud', async () => {
   const ipc = setup({ bridge, stt: 'auto' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
 })
@@ -138,7 +138,7 @@ test('STT auto + local not available → cloud directly (invoke never called)', 
   const ipc = setup({ bridge, stt: 'auto' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
@@ -148,7 +148,7 @@ test('STT auto + bridge null → cloud', async () => {
   const ipc = setup({ bridge: null, stt: 'auto' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
 })
@@ -158,7 +158,7 @@ test('STT cloud → always cloud even when local available', async () => {
   const ipc = setup({ bridge, stt: 'cloud' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
@@ -172,7 +172,7 @@ test('STT local + success → uses local', async () => {
 
   const ipc = setup({ bridge, stt: 'local' })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'local-text')
 })
@@ -186,7 +186,7 @@ test('STT local + failure → throws, no cloud fallback', async () => {
   const ipc = setup({ bridge, stt: 'local' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  await assert.rejects(ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL }), /whisper oom/)
+  await assert.rejects(ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }), /whisper oom/)
 })
 
 test('STT local + unavailable → throws, no cloud fallback', async () => {
@@ -194,7 +194,7 @@ test('STT local + unavailable → throws, no cloud fallback', async () => {
   const ipc = setup({ bridge, stt: 'local' })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  await assert.rejects(ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL }), /Local STT unavailable/)
+  await assert.rejects(ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }), /Local STT unavailable/)
 })
 
 test('STT auto + silent_fallback=false + local success:false → throws, no silent cloud retry', async () => {
@@ -206,7 +206,7 @@ test('STT auto + silent_fallback=false + local success:false → throws, no sile
   const ipc = setup({ bridge, stt: 'auto', sttSilentFallback: false })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  await assert.rejects(ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL }), /low confidence/)
+  await assert.rejects(ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }), /low confidence/)
 })
 
 test('STT auto + silent_fallback=false + local unavailable → still falls back to cloud', async () => {
@@ -214,7 +214,7 @@ test('STT auto + silent_fallback=false + local unavailable → still falls back 
   const ipc = setup({ bridge, stt: 'auto', sttSilentFallback: false })
   global.fetch = cloudFetch({ json: { text: 'cloud-text' } })
 
-  const res = await ipc.invoke('deskagent:media:stt', { dataUrl: STT_DATA_URL })
+  const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
   assert.equal(res.text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
@@ -239,7 +239,7 @@ test('TTS auto + cloud available + success → uses cloud, never invokes local',
   const ipc = setup({ bridge, tts: 'auto' })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'hi', voice: 'en_US-amy-medium' })
+  const res = await ipc.invoke('spiritagent:media:tts', { text: 'hi', voice: 'en_US-amy-medium' })
 
   assert.equal(res.mimeType, 'audio/mpeg')
   assert.ok(res.dataUrl.startsWith('data:audio/mpeg;base64,'))
@@ -251,7 +251,7 @@ test('TTS auto + cloud fails → falls back to local', async () => {
   const ipc = setup({ bridge, tts: 'auto' })
   global.fetch = cloudFetch({ bytes: Buffer.from('upstream down'), contentType: 'text/plain', status: 503 })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'cloud-fails' })
+  const res = await ipc.invoke('spiritagent:media:tts', { text: 'cloud-fails' })
 
   assert.equal(res.mimeType, 'audio/wav')
   assert.ok(res.dataUrl.startsWith('data:audio/wav;base64,'))
@@ -264,7 +264,7 @@ test('TTS local invoke omits voice when empty', async () => {
   const bridge = makeBridge({ invokeResult: { path: tmpWav, success: true }, tools: [toolSchema('text_to_speech')] })
   const ipc = setup({ bridge, tts: 'local' })
 
-  await ipc.invoke('deskagent:media:tts', { text: 'omit-voice' })
+  await ipc.invoke('spiritagent:media:tts', { text: 'omit-voice' })
 
   assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
@@ -274,7 +274,7 @@ test('TTS local + cloud-throw irrelevant → still returns local wav', async () 
   const ipc = setup({ bridge, tts: 'local' })
   global.fetch = cloudFetch({ bytes: Buffer.from('unused'), status: 503 })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'local-pref' })
+  const res = await ipc.invoke('spiritagent:media:tts', { text: 'local-pref' })
 
   assert.equal(res.mimeType, 'audio/wav')
   assert.equal(bridge.calls.length, 1)
@@ -285,7 +285,7 @@ test('TTS cloud → always cloud', async () => {
   const ipc = setup({ bridge, tts: 'cloud' })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
 
-  const res = await ipc.invoke('deskagent:media:tts', { text: 'always-cloud' })
+  const res = await ipc.invoke('spiritagent:media:tts', { text: 'always-cloud' })
 
   assert.equal(res.mimeType, 'audio/mpeg')
   assert.equal(bridge.calls.length, 0)
@@ -300,7 +300,7 @@ test('TTS local + failure → throws, no cloud fallback', async () => {
   const ipc = setup({ bridge, tts: 'local' })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 
-  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'local-throws' }), /no engine/)
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: 'local-throws' }), /no engine/)
 })
 
 test('TTS local + unavailable → throws, no cloud fallback', async () => {
@@ -308,14 +308,14 @@ test('TTS local + unavailable → throws, no cloud fallback', async () => {
   const ipc = setup({ bridge, tts: 'local' })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 
-  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: 'local-missing' }), /Local TTS unavailable/)
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: 'local-missing' }), /Local TTS unavailable/)
 })
 
 test('TTS rejects empty text', async () => {
   const ipc = setup({ tts: 'cloud' })
   global.fetch = cloudFetch({ bytes: Buffer.from('audio') })
 
-  await assert.rejects(ipc.invoke('deskagent:media:tts', { text: '' }), /text is required/)
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: '' }), /text is required/)
 })
 
 test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () => {
@@ -328,8 +328,8 @@ test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () =>
   }) as any
 
   await Promise.all([
-    ipc.invoke('deskagent:media:tts', { text: 'a' }),
-    ipc.invoke('deskagent:media:tts', { text: 'b' })
+    ipc.invoke('spiritagent:media:tts', { text: 'a' }),
+    ipc.invoke('spiritagent:media:tts', { text: 'b' })
   ])
 
   assert.equal(timestamps.length, 2)
@@ -338,7 +338,7 @@ test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () =>
 })
 
 function makeHome(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-persist-test-'))
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-persist-test-'))
 }
 
 function cachedFiles(home: string, language = 'zh'): string[] {
@@ -349,7 +349,7 @@ function cachedFiles(home: string, language = 'zh'): string[] {
 
 test('TTS persist → cloud result lands on disk and the next call skips synthesis', async () => {
   const home = makeHome()
-  const ipc = setup({ deskagentHome: home, tts: 'cloud' })
+  const ipc = setup({ spiritagentHome: home, tts: 'cloud' })
   let fetches = 0
   global.fetch = (async () => {
     fetches += 1
@@ -357,12 +357,12 @@ test('TTS persist → cloud result lands on disk and the next call skips synthes
     return cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })()
   }) as any
 
-  const first = await ipc.invoke('deskagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
+  const first = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
   assert.equal(fetches, 1)
   assert.deepEqual(cachedFiles(home), [`${cacheKey('冰糖', 'persist-me')}.mp3`])
 
   ttsAudioCache.clear()
-  const second = await ipc.invoke('deskagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
+  const second = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
 
   assert.equal(fetches, 1, 'second call must be served from disk')
   assert.equal(second.dataUrl, first.dataUrl)
@@ -371,10 +371,10 @@ test('TTS persist → cloud result lands on disk and the next call skips synthes
 
 test('TTS without persist → nothing is written to disk', async () => {
   const home = makeHome()
-  const ipc = setup({ deskagentHome: home, tts: 'cloud' })
+  const ipc = setup({ spiritagentHome: home, tts: 'cloud' })
   global.fetch = cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })
 
-  await ipc.invoke('deskagent:media:tts', { text: 'ephemeral-chat-reply', voice: '冰糖' })
+  await ipc.invoke('spiritagent:media:tts', { text: 'ephemeral-chat-reply', voice: '冰糖' })
 
   assert.deepEqual(cachedFiles(home), [], 'dynamic speech must stay memory-only')
 })
@@ -382,9 +382,9 @@ test('TTS without persist → nothing is written to disk', async () => {
 test('TTS persist + local engine → Piper output is not persisted', async () => {
   const home = makeHome()
   const bridge = makeBridge({ invokeResult: { path: tmpWav, success: true }, tools: [toolSchema('text_to_speech')] })
-  const ipc = setup({ bridge, deskagentHome: home, tts: 'local' })
+  const ipc = setup({ bridge, spiritagentHome: home, tts: 'local' })
 
-  const res = await ipc.invoke('deskagent:media:tts', { persist: true, text: 'local-scripted', voice: '冰糖' })
+  const res = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'local-scripted', voice: '冰糖' })
 
   assert.equal(res.mimeType, 'audio/wav')
   assert.deepEqual(cachedFiles(home), [])
@@ -396,17 +396,17 @@ test('TTS persist → a disk hit is served even under tts.engine=local', async (
   fs.mkdirSync(dir, { recursive: true })
   fs.writeFileSync(path.join(dir, `${cacheKey('冰糖', 'already-baked')}.mp3`), Buffer.from('disk-bytes'))
 
-  const ipc = setup({ bridge: null, deskagentHome: home, tts: 'local' })
+  const ipc = setup({ bridge: null, spiritagentHome: home, tts: 'local' })
   ttsAudioCache.clear()
 
-  const res = await ipc.invoke('deskagent:media:tts', { persist: true, text: 'already-baked', voice: '冰糖' })
+  const res = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'already-baked', voice: '冰糖' })
 
   assert.equal(res.mimeType, 'audio/mpeg')
   assert.equal(res.dataUrl, `data:audio/mpeg;base64,${Buffer.from('disk-bytes').toString('base64')}`)
 })
 
 test('TTS concurrent identical calls collapse to a single synthesis', async () => {
-  const ipc = setup({ deskagentHome: makeHome(), tts: 'cloud' })
+  const ipc = setup({ spiritagentHome: makeHome(), tts: 'cloud' })
   let fetches = 0
   global.fetch = (async () => {
     fetches += 1
@@ -415,8 +415,8 @@ test('TTS concurrent identical calls collapse to a single synthesis', async () =
   }) as any
 
   const [a, b] = await Promise.all([
-    ipc.invoke('deskagent:media:tts', { text: 'spam-poke', voice: '冰糖' }),
-    ipc.invoke('deskagent:media:tts', { text: 'spam-poke', voice: '冰糖' })
+    ipc.invoke('spiritagent:media:tts', { text: 'spam-poke', voice: '冰糖' }),
+    ipc.invoke('spiritagent:media:tts', { text: 'spam-poke', voice: '冰糖' })
   ])
 
   assert.equal(fetches, 1, 'ten rapid pokes must not become ten cloud calls')

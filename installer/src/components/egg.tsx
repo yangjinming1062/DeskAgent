@@ -66,7 +66,7 @@ export function Egg({
         width={size}
         height={size}
         className="overflow-visible"
-        aria-label="DeskAgent Egg"
+        aria-label="SpiritAgent Egg"
       >
         <defs>
           {/* Ambient background glow */}

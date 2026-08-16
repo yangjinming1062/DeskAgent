@@ -21,7 +21,7 @@ from utils import (
     cfg_get,
     clean_output,
     find_bash,
-    get_deskagent_home,
+    get_spiritagent_home,
     kill_tree,
     load_config,
     pid_exists,
@@ -83,7 +83,7 @@ def _drain_pipe_peek_windows(stdout) -> str:
 logger = logging.getLogger(__name__)
 
 # Checkpoint file for crash recovery
-CHECKPOINT_PATH = get_deskagent_home() / "processes.json"
+CHECKPOINT_PATH = get_spiritagent_home() / "processes.json"
 
 MAX_OUTPUT_CHARS = 200_000  # 200KB rolling output buffer
 FINISHED_TTL_SECONDS = 1800  # Keep finished processes for 30 minutes
@@ -552,9 +552,9 @@ class ProcessRegistry:
             id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=cwd, started_at=time.time(), env_ref=env, pid_scope="sandbox"
         )
         temp_dir = self._env_temp_dir(env)
-        log_path = f"{temp_dir}/deskagent_bg_{session.id}.log"
-        pid_path = f"{temp_dir}/deskagent_bg_{session.id}.pid"
-        exit_path = f"{temp_dir}/deskagent_bg_{session.id}.exit"
+        log_path = f"{temp_dir}/spiritagent_bg_{session.id}.log"
+        pid_path = f"{temp_dir}/spiritagent_bg_{session.id}.pid"
+        exit_path = f"{temp_dir}/spiritagent_bg_{session.id}.exit"
         quoted_command = shlex.quote(command)
         quoted_temp_dir = shlex.quote(temp_dir)
         quoted_log_path = shlex.quote(log_path)

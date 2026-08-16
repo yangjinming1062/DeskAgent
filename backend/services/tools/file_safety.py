@@ -1,10 +1,10 @@
 import functools
 import os
 
-# DeskAgent control-plane files: provider credentials, OAuth tokens, HMAC secrets,
-# gateway config. Listed by basename — both ~/.deskagent/<name> and profile-scoped
-# ~/.deskagent/profiles/<profile>/<name> are blocked.
-DESKAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = ("auth.json", "auth.lock", "desktop-settings.json", "webhook_subscriptions.json", ".env")
+# SpiritAgent control-plane files: provider credentials, OAuth tokens, HMAC secrets,
+# gateway config. Listed by basename — both ~/.spiritagent/<name> and profile-scoped
+# ~/.spiritagent/profiles/<profile>/<name> are blocked.
+SPIRITAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = ("auth.json", "auth.lock", "desktop-settings.json", "webhook_subscriptions.json", ".env")
 
 # .env.example is deliberately NOT here — it's a documented-shape substitute.
 BLOCKED_PROJECT_ENV_BASENAMES: frozenset[str] = frozenset({".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"})
@@ -31,13 +31,13 @@ _WRITE_DENIED_ABSOLUTE_PATHS: tuple[str, ...] = ("/etc/sudoers", "/etc/passwd", 
 _WRITE_DENIED_PREFIXES_RELATIVE: tuple[tuple[str, ...], ...] = ((".ssh",), (".aws",), (".gnupg",), (".kube",), (".docker",), (".azure",), (".config", "gh"), (".config", "gcloud"))
 
 _WRITE_DENIED_PREFIXES_ABSOLUTE: tuple[str, ...] = ("/etc/sudoers.d", "/etc/systemd")
-_WRITE_DENIED_DESKAGENT_PREFIXES: tuple[str, ...] = ("mcp-tokens", "pairing", "skills/.hub")
+_WRITE_DENIED_SPIRITAGENT_PREFIXES: tuple[str, ...] = ("mcp-tokens", "pairing", "skills/.hub")
 
 
 @functools.lru_cache(maxsize=1)
-def _deskagent_home() -> str:
-    """Canonical ~/.deskagent path. Cached at module load — home rarely moves at runtime."""
-    return os.path.realpath(os.path.expanduser("~/.deskagent"))
+def _spiritagent_home() -> str:
+    """Canonical ~/.spiritagent path. Cached at module load — home rarely moves at runtime."""
+    return os.path.realpath(os.path.expanduser("~/.spiritagent"))
 
 
 def _join_real(base: str, *parts: str) -> str:
@@ -48,11 +48,11 @@ def _join_real(base: str, *parts: str) -> str:
 def _write_denied_paths(home: str) -> frozenset[str]:
     """Exact sensitive paths that must never be written."""
     home_real = os.path.realpath(home)
-    deskagent_home = _deskagent_home()
+    spiritagent_home = _spiritagent_home()
     return frozenset(
         {
             *(_join_real(home_real, *parts) for parts in _WRITE_DENIED_RELATIVE_PATHS),
-            *(_join_real(deskagent_home, name) for name in DESKAGENT_CONTROL_FILE_BASENAMES),
+            *(_join_real(spiritagent_home, name) for name in SPIRITAGENT_CONTROL_FILE_BASENAMES),
             *(os.path.realpath(p) for p in _WRITE_DENIED_ABSOLUTE_PATHS),
         }
     )
@@ -62,13 +62,13 @@ def _write_denied_paths(home: str) -> frozenset[str]:
 def _write_denied_prefixes(home: str) -> tuple[str, ...]:
     """Sensitive directory prefixes that must never be written."""
     home_real = os.path.realpath(home)
-    deskagent_home = _deskagent_home()
+    spiritagent_home = _spiritagent_home()
     return tuple(
         p + os.sep
         for p in (
             *(_join_real(home_real, *parts) for parts in _WRITE_DENIED_PREFIXES_RELATIVE),
             *_WRITE_DENIED_PREFIXES_ABSOLUTE,
-            *(_join_real(deskagent_home, sub) for sub in _WRITE_DENIED_DESKAGENT_PREFIXES),
+            *(_join_real(spiritagent_home, sub) for sub in _WRITE_DENIED_SPIRITAGENT_PREFIXES),
         )
     )
 
@@ -87,15 +87,15 @@ def is_write_denied(path: str) -> bool:
 @functools.lru_cache(maxsize=4)
 def _read_block_messages() -> tuple[tuple[str, str], ...]:
     """Pre-resolved (real_path, error_message) pairs for credential files."""
-    return tuple((_join_real(_deskagent_home(), name), f"Blocked: cannot read DeskAgent credential file ({name}).") for name in DESKAGENT_CONTROL_FILE_BASENAMES)
+    return tuple((_join_real(_spiritagent_home(), name), f"Blocked: cannot read SpiritAgent credential file ({name}).") for name in SPIRITAGENT_CONTROL_FILE_BASENAMES)
 
 
 @functools.lru_cache(maxsize=4)
 def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
-    deskagent_home = _deskagent_home()
+    spiritagent_home = _spiritagent_home()
     return (
-        (_join_real(deskagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/mcp-tokens/)."),
-        (_join_real(deskagent_home, "pairing") + os.sep, "Blocked: cannot read DeskAgent credential directory (~/.deskagent/pairing/)."),
+        (_join_real(spiritagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read SpiritAgent credential directory (~/.spiritagent/mcp-tokens/)."),
+        (_join_real(spiritagent_home, "pairing") + os.sep, "Blocked: cannot read SpiritAgent credential directory (~/.spiritagent/pairing/)."),
     )
 
 

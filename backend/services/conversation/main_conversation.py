@@ -1,8 +1,7 @@
+from modules.conversation import Conversation, Message
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from modules.conversation import Conversation, Message
 
 MAIN_KIND = "main"
 # Autonomous cron-driven turns run on a dedicated conversation so the renderer's

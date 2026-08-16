@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-DeskAgent is a customizable companion-type desktop partner: a cloud **Backend** (FastAPI + PostgreSQL + JWT) holding persona and assets, a native **Client** (Electron 42 + React 19 + Three.js) rendering the companion, and an isolated **Runner** (Python 3.13) executing local tools. This file is an index — it points to the authoritative docs rather than restating them.
+SpiritAgent is a customizable companion-type desktop partner: a cloud **Backend** (FastAPI + PostgreSQL + JWT) holding persona and assets, a native **Client** (Electron 42 + React 19 + Three.js) rendering the companion, and an isolated **Runner** (Python 3.13) executing local tools. This file is an index — it points to the authoritative docs rather than restating them.
 
 The repo already maintains thorough, authoritative docs in Chinese. Read **[RULES.md](RULES.md)** before any change — it is the single source for collaboration, code, doc, commit, and platform conventions. This file only routes you to the right doc.
 

@@ -9,7 +9,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
-from utils import cfg_get, get_deskagent_home, load_config
+from utils import cfg_get, get_spiritagent_home, load_config
 
 try:
     from piper import PiperVoice, SynthesisConfig  # type: ignore[import-not-found]
@@ -73,7 +73,7 @@ class PiperRuntime:
                 self._voices.move_to_end(voice_id)
                 return cached
 
-            voices_dir = Path(get_deskagent_home()) / "models" / "piper"
+            voices_dir = Path(get_spiritagent_home()) / "models" / "piper"
             voices_dir.mkdir(parents=True, exist_ok=True)
             onnx_path = voices_dir / f"{voice_id}.onnx"
             json_path = voices_dir / f"{voice_id}.onnx.json"
@@ -87,7 +87,7 @@ class PiperRuntime:
             return voice
 
     def synthesize(self, text: str, *, voice_id: str = _DEFAULT_VOICE, output_wav: Path | str, speed: float = 1.0) -> Path:
-        # Caller passes any path under ``$DESKAGENT_HOME/cache/audio/tts/`` —
+        # Caller passes any path under ``$SPIRITAGENT_HOME/cache/audio/tts/`` —
         # outside the cache we'd be writing to an attacker-influenced location.
         with self._lock:
             return self._synthesize_locked(text, voice_id=voice_id, output_wav=output_wav, speed=speed)
@@ -108,7 +108,7 @@ _runtime = PiperRuntime()
 
 
 def list_installed_voices() -> list[str]:
-    voices_dir = Path(get_deskagent_home()) / "models" / "piper"
+    voices_dir = Path(get_spiritagent_home()) / "models" / "piper"
     if not voices_dir.is_dir():
         return []
     return sorted(onnx.stem for onnx in voices_dir.glob("*.onnx") if onnx.with_suffix(".onnx.json").is_file())
@@ -124,7 +124,7 @@ def reset_runtime() -> None:
 
 
 def piper_voice_dir() -> Path:
-    return Path(get_deskagent_home()) / "models" / "piper"
+    return Path(get_spiritagent_home()) / "models" / "piper"
 
 
 def piper_available() -> bool:

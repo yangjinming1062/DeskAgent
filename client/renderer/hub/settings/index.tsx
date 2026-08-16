@@ -2,10 +2,10 @@ import { IconDownload, IconRefresh, IconUpload, IconVolume } from '@tabler/icons
 import { useRef, useState } from 'react'
 
 import { ConfirmDialog, Tip } from '@/shared/components/ui'
-import { getDeskAgentConfig, getDeskAgentConfigDefaults, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { AudioLines, Brain, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
+import { getSpiritAgentConfig, getSpiritAgentConfigDefaults, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -47,12 +47,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
       // variant — both come from the same `/api/config` endpoint, but the
       // structured shape gives us better safety on round-trip without
       // changing the JSON.stringify behaviour (B1).
-      const cfg = await getDeskAgentConfig()
+      const cfg = await getSpiritAgentConfig()
       const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'deskagent-config.json'
+      a.download = 'spiritagent-config.json'
       a.click()
       URL.revokeObjectURL(url)
       triggerHaptic('success')
@@ -83,7 +83,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
         return
       }
 
-      await saveDeskAgentConfig(parsed as Parameters<typeof saveDeskAgentConfig>[0])
+      await saveSpiritAgentConfig(parsed as Parameters<typeof saveSpiritAgentConfig>[0])
       triggerHaptic('success')
       onConfigSaved?.()
     } catch (err) {
@@ -93,7 +93,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
 
   const resetConfig = async () => {
     try {
-      await saveDeskAgentConfig(await getDeskAgentConfigDefaults())
+      await saveSpiritAgentConfig(await getSpiritAgentConfigDefaults())
       triggerHaptic('success')
       onConfigSaved?.()
     } catch (err) {

@@ -113,11 +113,11 @@ def cleanup_all_environments() -> int:
         except Exception as e:
             logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
     scratch_dir = _get_scratch_dir()
-    # Skip `deskagent-overlays/` (Singularity persistent overlays live under
+    # Skip `spiritagent-overlays/` (Singularity persistent overlays live under
     # it bound to live task_ids) — wiping this dir during cleanup will
     # silently nuke overlays that persistent sessions still use.
-    for path in glob.glob(str(scratch_dir / "deskagent-*")):
-        if path.endswith("deskagent-overlays"):
+    for path in glob.glob(str(scratch_dir / "spiritagent-*")):
+        if path.endswith("spiritagent-overlays"):
             continue
         try:
             shutil.rmtree(path, ignore_errors=True)

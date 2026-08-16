@@ -14,12 +14,12 @@ import type { CreateRunnerWsServerOptions, RunnerWsEvent, RunnerWsServer, Runner
 // macOS sun_path is capped at 104 bytes; stay under it with a margin.
 export const MAC_SOCK_PATH_BYTE_LIMIT = 100
 
-export function computeDesktopEndpoint(deskagentHome?: null | string): { path: string; transport: string } {
+export function computeDesktopEndpoint(spiritagentHome?: null | string): { path: string; transport: string } {
   if (process.platform === 'win32') {
-    return { path: `\\\\.\\pipe\\deskagent-runner-${process.pid}`, transport: 'pipe' }
+    return { path: `\\\\.\\pipe\\spiritagent-runner-${process.pid}`, transport: 'pipe' }
   }
 
-  const home = deskagentHome || os.tmpdir()
+  const home = spiritagentHome || os.tmpdir()
   const primary = path.join(home, `runner-${process.pid}.sock`)
 
   if (Buffer.byteLength(primary) <= MAC_SOCK_PATH_BYTE_LIMIT) {
@@ -29,22 +29,22 @@ export function computeDesktopEndpoint(deskagentHome?: null | string): { path: s
   const digest = crypto.createHash('sha256').update(`${home}|${process.pid}`).digest('hex').slice(0, 8)
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0
 
-  return { path: path.join(os.tmpdir(), `deskagent-${uid}-${digest}.sock`), transport: 'unix' }
+  return { path: path.join(os.tmpdir(), `spiritagent-${uid}-${digest}.sock`), transport: 'unix' }
 }
 
-export function sweepLegacySockets(deskagentHome: string): void {
+export function sweepLegacySockets(spiritagentHome: string): void {
   try {
-    for (const name of fs.readdirSync(deskagentHome)) {
+    for (const name of fs.readdirSync(spiritagentHome)) {
       if (/^runner-\d+\.sock$/.test(name)) {
         try {
-          fs.unlinkSync(path.join(deskagentHome, name))
+          fs.unlinkSync(path.join(spiritagentHome, name))
         } catch {
           /* raced away */
         }
       }
     }
   } catch {
-    /* deskagentHome missing/unreadable — nothing to sweep */
+    /* spiritagentHome missing/unreadable — nothing to sweep */
   }
 }
 
@@ -54,7 +54,7 @@ export interface RunnerBridgeStartOptions extends RunnerProcessStartArgs {
 }
 
 export interface RunnerBridgeOptions {
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   log?: (chunk: string) => void
   processFactory?: null | ((args?: RunnerBridgeStartOptions) => RunnerProcess)
   pushConfig?: null | (() => Promise<unknown> | void)
@@ -178,13 +178,13 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
   }
 
   async function writeEndpointFile(endpoint: { path: string; token: string; transport: string }): Promise<void> {
-    const deskagentHome = options.deskagentHome
+    const spiritagentHome = options.spiritagentHome
 
-    if (!deskagentHome) {
+    if (!spiritagentHome) {
       return
     }
 
-    endpointFilePath = path.join(deskagentHome, 'desktop-endpoint.json')
+    endpointFilePath = path.join(spiritagentHome, 'desktop-endpoint.json')
 
     const payload = JSON.stringify({
       path: endpoint.path,
@@ -279,10 +279,10 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     }
 
     const authToken = crypto.randomBytes(32).toString('hex')
-    const endpoint = computeDesktopEndpoint(options.deskagentHome)
+    const endpoint = computeDesktopEndpoint(options.spiritagentHome)
 
-    if (process.platform !== 'win32' && options.deskagentHome) {
-      sweepLegacySockets(options.deskagentHome)
+    if (process.platform !== 'win32' && options.spiritagentHome) {
+      sweepLegacySockets(options.spiritagentHome)
     }
 
     wsServer = wsServerFactory

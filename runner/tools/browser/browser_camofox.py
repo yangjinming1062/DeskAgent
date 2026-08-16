@@ -10,7 +10,7 @@ from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
 import requests
 
-from utils import call_llm_sync, cfg_get, get_deskagent_home, load_config, redact_sensitive_text
+from utils import call_llm_sync, cfg_get, get_spiritagent_home, load_config, redact_sensitive_text
 
 from ..multimodal import resolve_vision_params
 from ..registry import tool_error
@@ -162,7 +162,7 @@ def _get_session(task_id: str | None) -> dict[str, Any]:
                 }
             else:
                 _sessions[task_id] = {
-                    "user_id": f"deskagent_{uuid.uuid4().hex[:10]}",
+                    "user_id": f"spiritagent_{uuid.uuid4().hex[:10]}",
                     "tab_id": None,
                     "session_key": f"task_{task_id[:16]}",
                     "managed": False,
@@ -365,7 +365,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
         if not session["tab_id"]:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         resp = _get_raw(f"/tabs/{session['tab_id']}/screenshot", params={"userId": session["user_id"]})
-        screenshots_dir = get_deskagent_home() / "browser_screenshots"
+        screenshots_dir = get_spiritagent_home() / "browser_screenshots"
         screenshots_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = str(screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex[:8]}.png")
         with open(screenshot_path, "wb") as f:

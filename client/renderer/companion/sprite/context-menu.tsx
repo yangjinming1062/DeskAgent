@@ -85,7 +85,7 @@ export function SpriteContextMenu({
       <button
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
         onClick={() => {
-          void window.deskagent.showToolWindow()
+          void window.spiritagent.showToolWindow()
           onClose()
         }}
         type="button"

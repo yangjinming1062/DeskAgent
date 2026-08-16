@@ -625,7 +625,7 @@ def _register_session_handlers(
         confirm = bool(params.get("confirm"))
         if not confirm:
             return {"status": "cancelled"}
-        # MCP server configs live in $DESKAGENT_HOME/config.yaml on the runner's
+        # MCP server configs live in $SPIRITAGENT_HOME/config.yaml on the runner's
         # host. The runner reloads lazily on the next mcp_* tool call, so we
         # only need to forward the reload signal — no server list to ship.
         from .jsonrpc import redact_message

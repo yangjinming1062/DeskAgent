@@ -22,10 +22,10 @@ export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain
 
   function broadcast(event: DesktopUpdateEvent): void {
     const win = getMainWindow()
-    sendToMain(win, 'deskagent:update-event', event)
+    sendToMain(win, 'spiritagent:update-event', event)
   }
 
-  ipcMain.handle('deskagent:update:check', async () => {
+  ipcMain.handle('spiritagent:update:check', async () => {
     try {
       await autoUpdater.checkForUpdates()
     } catch (e: unknown) {

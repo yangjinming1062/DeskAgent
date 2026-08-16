@@ -1,4 +1,4 @@
-# DeskAgent 跨模块协议契约
+# SpiritAgent 跨模块协议契约
 
 > 本文收纳 Backend ↔ Client ↔ Runner 之间**跨模块共享的契约**。核心目的：当你改某个功能时，提醒你同时兼顾多个模块，避免只改一处导致遗漏。
 > 架构动机（为什么这样设计）见 [ARCHITECTURE.md](ARCHITECTURE.md)；产品设计意图见 [DESIGN.md](DESIGN.md)；实现细节、文件路径、错误码、配置项见各模块 [README.md](README.md)。
@@ -145,20 +145,20 @@ Blender 系生成分两段：web 进程入队（同步、毫秒级），Render W
 | runner_ready | Runner → Client | 启动握手，携带 version + capabilities | Runner 探测 + Client 功能门控 |
 | tools_changed | Runner → Client | 工具 schema 变更通知，Client 重拉并同步到 Backend | Runner + Client + Backend 工具表 |
 | get_tools | Client → Runner | 获取工具 schema（已过滤禁用项） | Runner 过滤 + Client + Backend |
-| deskagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
+| spiritagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
 | execute_tool | Client → Runner | 执行工具调用 | Backend 路由 + Client 中转 + Runner 执行 |
 | mcp.reload | Client → Runner | 重载 MCP server 配置 | Client 配置推送 + Runner 重载 |
-| deskagent.cancel | Client → Runner | 置全局中断标记（异步生效） | Client 中断 + Runner 轮询 |
-| deskagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
+| spiritagent.cancel | Client → Runner | 置全局中断标记（异步生效） | Client 中断 + Runner 轮询 |
+| spiritagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
 
 ### 2.3 runner_ready capabilities 与 health 状态
 
-capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `deskagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由 Client 优雅降级或提供具体故障原因 Tooltip 引导。
+capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `spiritagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由 Client 优雅降级或提供具体故障原因 Tooltip 引导。
 
 ### 2.4 配置推送所有权
 
-**Client 是配置的唯一拥有者**，经 deskagent.config.update 把完整配置 dict 推送给 Runner。Runner 持有在内存、每次工具调用读取——**不再读写磁盘配置文件**。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，Client 在下次 runner_ready 时重新推送。Client 把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
+**Client 是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 持有在内存、每次工具调用读取——**不再读写磁盘配置文件**。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，Client 在下次 runner_ready 时重新推送。Client 把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
 
 ---
 

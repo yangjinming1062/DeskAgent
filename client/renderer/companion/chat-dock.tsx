@@ -117,7 +117,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         e.preventDefault()
 
         try {
-          const path = await window.deskagent.saveClipboardImage()
+          const path = await window.spiritagent.saveClipboardImage()
 
           if (path) {
             setPendingImage(path)
@@ -156,7 +156,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
         try {
           if (!pendingImage.startsWith('data:')) {
-            const dataUrl = await window.deskagent.readFileDataUrl(pendingImage)
+            const dataUrl = await window.spiritagent.readFileDataUrl(pendingImage)
 
             if (dataUrl) {
               attachmentUrl = dataUrl
@@ -229,7 +229,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
     // session.interrupt stops the LLM stream, not a command the runner is
     // already executing; the cancel RPC flags those handlers to bail early.
-    void window.deskagent?.runnerCancel?.().catch(() => {})
+    void window.spiritagent?.runnerCancel?.().catch(() => {})
 
     // Backend cancellation aborts run_chat_turn mid-stream — no message.complete
     // arrives, so we must finalize the streaming bubble locally to avoid a

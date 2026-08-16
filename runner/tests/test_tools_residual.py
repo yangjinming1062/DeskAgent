@@ -8,7 +8,7 @@ Targets:
 - ``tools.tool_result_storage`` — preview generation + persisted-message shape
 - ``tools.system.clean`` + ``tools.system.ansi_strip`` — ANSI/fence stripping
 - ``tools.execute_code`` — ``json_parse``, ``shell_quote``, ``retry``, ``_scrub_child_env``,
-  ``generate_deskagent_tools_module``
+  ``generate_spiritagent_tools_module``
 - ``tools.browser.url_safety`` — always-blocked IPs + private-IP gate (sync)
 - ``tools.browser.website_policy`` — host-matching rules + blocklist caching
 - ``tools.toolsets`` — disabled-toolset set logic
@@ -351,10 +351,10 @@ class TestExecuteCodeHelpers:
 
     @staticmethod
     def _exec_module(enabled: list[str], transport: str, monkeypatch) -> dict:
-        monkeypatch.setenv("DESKAGENT_RPC_TOKEN", "test-token")
-        src = ec.generate_deskagent_tools_module(enabled, transport=transport)
+        monkeypatch.setenv("SPIRITAGENT_RPC_TOKEN", "test-token")
+        src = ec.generate_spiritagent_tools_module(enabled, transport=transport)
         ns: dict = {}
-        exec(compile(src, "deskagent_tools.py", "exec"), ns)
+        exec(compile(src, "spiritagent_tools.py", "exec"), ns)
         return ns
 
     def test_generated_module_uds_round_trip(self, monkeypatch):
@@ -380,7 +380,7 @@ class TestExecuteCodeHelpers:
             conn.close()
 
         threading.Thread(target=serve, daemon=True).start()
-        monkeypatch.setenv("DESKAGENT_RPC_SOCKET", f"tcp://127.0.0.1:{srv.getsockname()[1]}")
+        monkeypatch.setenv("SPIRITAGENT_RPC_SOCKET", f"tcp://127.0.0.1:{srv.getsockname()[1]}")
         ns = self._exec_module(["read_file"], "uds", monkeypatch)
         result = ns["read_file"]("/some/file")
         srv.close()
@@ -395,7 +395,7 @@ class TestExecuteCodeHelpers:
         import threading
         import time
 
-        monkeypatch.setenv("DESKAGENT_RPC_DIR", str(tmp_path))
+        monkeypatch.setenv("SPIRITAGENT_RPC_DIR", str(tmp_path))
         ns = self._exec_module(["read_file"], "file", monkeypatch)
         seen: dict = {}
 
@@ -482,21 +482,21 @@ class TestExecuteCodeHelpers:
         assert "PATH" in out
         assert "PATH_FOO" in out
 
-    def test_scrub_child_env_strips_unlisted_deskagent_vars(self):
-        """DESKAGENT_* vars not in the allow-list MUST be dropped."""
-        env = {"DESKAGENT_HOME": "/x", "DESKAGENT_FOO": "bar"}
+    def test_scrub_child_env_strips_unlisted_spiritagent_vars(self):
+        """SPIRITAGENT_* vars not in the allow-list MUST be dropped."""
+        env = {"SPIRITAGENT_HOME": "/x", "SPIRITAGENT_FOO": "bar"}
         out = ec._scrub_child_env(env, is_passthrough=lambda k: False, is_windows=False)
-        # DESKAGENT_HOME is in DESKAGENT_CHILD_ALLOWED so it's kept.
-        assert "DESKAGENT_HOME" in out
-        # DESKAGENT_FOO is NOT in the allow-list; MUST be dropped.
-        assert "DESKAGENT_FOO" not in out
+        # SPIRITAGENT_HOME is in SPIRITAGENT_CHILD_ALLOWED so it's kept.
+        assert "SPIRITAGENT_HOME" in out
+        # SPIRITAGENT_FOO is NOT in the allow-list; MUST be dropped.
+        assert "SPIRITAGENT_FOO" not in out
 
-    def test_generate_deskagent_tools_module_contains_enabled_tool(self):
-        out = ec.generate_deskagent_tools_module(["read_file"], transport="uds")
+    def test_generate_spiritagent_tools_module_contains_enabled_tool(self):
+        out = ec.generate_spiritagent_tools_module(["read_file"], transport="uds")
         assert "def read_file(" in out
 
-    def test_generate_deskagent_tools_module_handles_empty_list(self):
-        out = ec.generate_deskagent_tools_module([], transport="file")
+    def test_generate_spiritagent_tools_module_handles_empty_list(self):
+        out = ec.generate_spiritagent_tools_module([], transport="file")
         assert "def json_parse" in out  # common helpers still present
 
 

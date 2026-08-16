@@ -36,15 +36,15 @@ def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md") -> Ite
     yield from sorted(root.rglob(name))
 
 
-def get_deskagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
-    """Return ``frontmatter.metadata.deskagent`` as a dict, or ``{}`` if any link is missing/wrong type."""
+def get_spiritagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
+    """Return ``frontmatter.metadata.spiritagent`` as a dict, or ``{}`` if any link is missing/wrong type."""
     if not isinstance(frontmatter, dict):
         return {}
     metadata = frontmatter.get("metadata")
     if not isinstance(metadata, dict):
         return {}
-    deskagent = metadata.get("deskagent")
-    return deskagent if isinstance(deskagent, dict) else {}
+    spiritagent = metadata.get("spiritagent")
+    return spiritagent if isinstance(spiritagent, dict) else {}
 
 
 def get_disabled_skill_names(section: str = "skills") -> set[str]:

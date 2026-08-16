@@ -9,7 +9,7 @@ export const DESKTOP_LOG_DISCARD_BYTES = DESKTOP_LOG_MAX_BYTES * 4
 export const MAX_IN_MEMORY_LOGS = 300
 
 export interface DesktopLoggerOptions {
-  deskagentHome: string
+  spiritagentHome: string
   isPackaged?: boolean
 }
 
@@ -22,8 +22,8 @@ export interface DesktopLogger {
   rememberLog: (chunk: unknown) => void
 }
 
-export function createDesktopLogger({ deskagentHome, isPackaged = true }: DesktopLoggerOptions): DesktopLogger {
-  const logPath = path.join(deskagentHome, 'logs', 'desktop.log')
+export function createDesktopLogger({ spiritagentHome, isPackaged = true }: DesktopLoggerOptions): DesktopLogger {
+  const logPath = path.join(spiritagentHome, 'logs', 'desktop.log')
   const logBackupPath = (n: number) => `${logPath}.${n}`
 
   const inMemoryLogs: string[] = []
@@ -157,13 +157,13 @@ export function createDesktopLogger({ deskagentHome, isPackaged = true }: Deskto
       const colored = process.stdout.isTTY
 
       if (colored) {
-        process.stdout.write(`\x1b[2m[deskagent]\x1b[0m ${text}\n`)
+        process.stdout.write(`\x1b[2m[spiritagent]\x1b[0m ${text}\n`)
       } else {
-        process.stdout.write(`[deskagent] ${text}\n`)
+        process.stdout.write(`[spiritagent] ${text}\n`)
       }
     }
 
-    const lines = text.split(/\r?\n/).map(line => `[deskagent] ${line}`)
+    const lines = text.split(/\r?\n/).map(line => `[spiritagent] ${line}`)
     inMemoryLogs.push(...lines)
 
     if (inMemoryLogs.length > MAX_IN_MEMORY_LOGS) {

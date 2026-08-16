@@ -26,7 +26,7 @@ const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string; v
 }
 
 const STACK_SURFACE =
-  'pointer-events-auto border border-(--stroke-deskagent) bg-popover/95 shadow-deskagent backdrop-blur-md'
+  'pointer-events-auto border border-(--stroke-spiritagent) bg-popover/95 shadow-spiritagent backdrop-blur-md'
 
 export function NotificationStack(): React.JSX.Element | null {
   const notifications = useStore($notifications)

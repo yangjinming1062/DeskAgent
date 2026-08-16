@@ -33,8 +33,8 @@ from utils import (
     cfg_get,
     check_redirect_url_safety,
     check_website_access,
-    get_deskagent_dir,
-    get_deskagent_home,
+    get_spiritagent_dir,
+    get_spiritagent_home,
     is_always_blocked_url,
     is_safe_url,
     is_truthy_value,
@@ -101,11 +101,11 @@ def _discover_homebrew_node_dirs() -> tuple[str, ...]:
 
 def _browser_candidate_path_dirs() -> list[str]:
     """Return ordered browser CLI PATH candidates shared by discovery and execution."""
-    deskagent_home = get_deskagent_home()
-    deskagent_node_bin = str(deskagent_home / "node" / "bin")
-    deskagent_node_root = str(deskagent_home / "node")
-    deskagent_nm_bin = str(deskagent_home / "node_modules" / ".bin")
-    return [deskagent_node_bin, deskagent_node_root, deskagent_nm_bin, *list(_discover_homebrew_node_dirs()), *_SANE_PATH_DIRS]
+    spiritagent_home = get_spiritagent_home()
+    spiritagent_node_bin = str(spiritagent_home / "node" / "bin")
+    spiritagent_node_root = str(spiritagent_home / "node")
+    spiritagent_nm_bin = str(spiritagent_home / "node_modules" / ".bin")
+    return [spiritagent_node_bin, spiritagent_node_root, spiritagent_nm_bin, *list(_discover_homebrew_node_dirs()), *_SANE_PATH_DIRS]
 
 
 def _merge_browser_path(existing_path: str = "") -> str:
@@ -366,7 +366,7 @@ def _lightpanda_fallback_reason(engine: str, command: str, result: dict[str, Any
     """Return the user-visible reason a Lightpanda result needs Chrome fallback.
 
     ``None`` means no fallback should run.  The returned string is copied into
-    the fallback result so CLI/TUI/gateway users can see when DeskAgent silently
+    the fallback result so CLI/TUI/gateway users can see when SpiritAgent silently
     switched from Lightpanda to Chrome for completeness.
     """
     if engine != "lightpanda":
@@ -508,7 +508,7 @@ def _run_chrome_fallback_command(task_id: str, command: str, args: list[str], ti
             #   and that grandchild's CreateProcess dies silently
             #   ("Daemon process exited during startup with no error output")
             #   when inherited parent handles are in a weird state. Observed
-            #   in the DeskAgent CLI where sys.stdout and sys.stderr both report
+            #   in the SpiritAgent CLI where sys.stdout and sys.stderr both report
             #   fileno=1 (stderr dup'd onto stdout at the OS level).
             # * close_fds=True → block inheritance of every other handle.
             #   (Default on POSIX; must be explicit on Windows for stdio.)
@@ -688,7 +688,7 @@ def _socket_safe_tmpdir() -> str:
     """Return a short temp directory path suitable for Unix domain sockets.
 
     macOS sets ``TMPDIR`` to ``/var/folders/xx/.../T/`` (~51 chars).  When we
-    append ``agent-browser-deskagent_…`` the resulting socket path exceeds the
+    append ``agent-browser-spiritagent_…`` the resulting socket path exceeds the
     104-byte macOS limit for ``AF_UNIX`` addresses, causing agent-browser to
     fail with "Failed to create socket directory" or silent screenshot failures.
 
@@ -737,7 +737,7 @@ def _emergency_cleanup_all_sessions() -> None:
     Called on process exit or interrupt to prevent orphaned sessions.
 
     Also runs the orphan reaper to clean up daemons left behind by previously
-    crashed deskagent processes — this way every clean deskagent exit sweeps
+    crashed spiritagent processes — this way every clean spiritagent exit sweeps
     accumulated orphans, not just ones that actively used the browser tool.
     """
     global _cleanup_done
@@ -759,9 +759,9 @@ def _emergency_cleanup_all_sessions() -> None:
                 _session_last_activity.clear()
                 _recording_sessions.clear()
 
-    # Sweep orphans from other crashed deskagent processes.  Safe even if we
+    # Sweep orphans from other crashed spiritagent processes.  Safe even if we
     # never used the browser — uses owner_pid liveness to avoid reaping
-    # daemons owned by other live deskagent processes.
+    # daemons owned by other live spiritagent processes.
     try:
         _reap_orphaned_browser_sessions()
     except Exception as e:
@@ -804,10 +804,10 @@ def _cleanup_inactive_browser_sessions() -> None:
 
 
 def _write_owner_pid(socket_dir: str, session_name: str) -> None:
-    """Record the current deskagent PID as the owner of a browser socket dir.
+    """Record the current spiritagent PID as the owner of a browser socket dir.
 
     Written atomically to ``<socket_dir>/<session_name>.owner_pid`` so the
-    orphan reaper can distinguish daemons owned by a live deskagent process
+    orphan reaper can distinguish daemons owned by a live spiritagent process
     (don't reap) from daemons whose owner crashed (reap).  Best-effort —
     an OSError here just falls back to the legacy ``tracked_names``
     heuristic in the reaper.
@@ -829,13 +829,13 @@ def _reap_orphaned_browser_sessions() -> None:
 
     This function scans the tmp directory for ``agent-browser-*`` socket dirs
     left behind by previous runs, reads the daemon PID files, and kills any
-    daemons whose owning deskagent process is no longer alive.
+    daemons whose owning spiritagent process is no longer alive.
 
     Ownership detection priority:
       1. ``<session>.owner_pid`` file (written by current code) — if the
-         referenced deskagent PID is alive, leave the daemon alone regardless
+         referenced spiritagent PID is alive, leave the daemon alone regardless
          of whether it's in *this* process's ``_active_sessions``.  This is
-         cross-process safe: two concurrent deskagent instances won't reap each
+         cross-process safe: two concurrent spiritagent instances won't reap each
          other's daemons.
       2. Fallback for daemons that predate owner_pid: check
          ``_active_sessions`` in the current process.  If not tracked here,
@@ -848,10 +848,10 @@ def _reap_orphaned_browser_sessions() -> None:
     socket_dirs = glob.glob(pattern)
 
     socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-cdp_*"))
-    # Also pick up Camofox sessions (keyed by `deskagent_<uuid>` user_id; see
+    # Also pick up Camofox sessions (keyed by `spiritagent_<uuid>` user_id; see
     # browser_camofox.py — the agent-browser CLI does not own these socket
     # dirs, but cleaning them prevents stale tempfiles from accumulating.)
-    socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-deskagent_*"))
+    socket_dirs += glob.glob(os.path.join(tmpdir, "agent-browser-spiritagent_*"))
 
     if not socket_dirs:
         return
@@ -881,7 +881,7 @@ def _reap_orphaned_browser_sessions() -> None:
                 owner_alive = None  # corrupt file — fall through
 
         if owner_alive is True:
-            # Owner is alive — this session belongs to a live deskagent process.
+            # Owner is alive — this session belongs to a live spiritagent process.
             continue
 
         if owner_alive is None:
@@ -1242,7 +1242,7 @@ BROWSER_TOOL_SCHEMAS = [
     },
     {
         "name": "browser_vision",
-        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise DeskAgent falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires browser_navigate to be called first.",
+        "description": "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses important visual information. When your active model has native vision, the screenshot is attached to your context directly and you inspect it on the next turn; otherwise SpiritAgent falls back to an auxiliary vision model and returns a text analysis. Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. Requires browser_navigate to be called first.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1355,7 +1355,7 @@ def _find_agent_browser() -> str:
     """
     Find the agent-browser CLI executable.
 
-    Checks in order: current PATH, Homebrew/common bin dirs, DeskAgent-managed
+    Checks in order: current PATH, Homebrew/common bin dirs, SpiritAgent-managed
     node, local node_modules/.bin/, npx fallback.
 
     Returns:
@@ -1385,7 +1385,7 @@ def _find_agent_browser() -> str:
         _agent_browser_resolved = True
         return which_result
 
-    # Build an extended search PATH including DeskAgent-managed Node, macOS
+    # Build an extended search PATH including SpiritAgent-managed Node, macOS
     # versioned Homebrew installs, and fallback system dirs.
     extended_path = _merge_browser_path("")
     if extended_path:
@@ -1540,7 +1540,7 @@ def _run_browser_command(task_id: str, command: str, args: list[str] | None = No
         # causing "Failed to create socket directory: Permission denied" errors.
         task_socket_dir = os.path.join(_socket_safe_tmpdir(), f"agent-browser-{session_info['session_name']}")
         os.makedirs(task_socket_dir, mode=0o700, exist_ok=True)
-        # Record this deskagent PID as the session owner (cross-process safe
+        # Record this spiritagent PID as the session owner (cross-process safe
         # orphan detection — see _write_owner_pid).
         _write_owner_pid(task_socket_dir, session_info["session_name"])
         logger.debug("browser cmd=%s task=%s socket_dir=%s (%d chars)", command, task_id, task_socket_dir, len(task_socket_dir))
@@ -2606,7 +2606,7 @@ def _unlink_files_older_than(paths: Iterable[Path] | Any, cutoff_s: float) -> No
 
 def _get_downloads_dir() -> Path:
     """Return (and create) the persistent browser downloads directory."""
-    d = get_deskagent_dir("cache/downloads", "browser_downloads")
+    d = get_spiritagent_dir("cache/downloads", "browser_downloads")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -2843,7 +2843,7 @@ def browser_screenshot_element(ref: str, save_as: str | None = None, task_id: st
         return json.dumps({"success": False, "error": "browser_screenshot_element: CDP returned empty image data"}, ensure_ascii=False)
 
     img_bytes = base64.b64decode(img_b64)
-    screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
+    screenshots_dir = get_spiritagent_dir("cache/screenshots", "browser_screenshots")
     screenshots_dir.mkdir(parents=True, exist_ok=True)
     filename = _safe_save_name(save_as, f"element_{uuid.uuid4().hex[:8]}.png")
     file_path = screenshots_dir / filename
@@ -3195,13 +3195,13 @@ def _maybe_start_recording(task_id: str) -> None:
         if task_id in _recording_sessions:
             return
     try:
-        deskagent_home = get_deskagent_home()
+        spiritagent_home = get_spiritagent_home()
         record_enabled = cfg_get(load_config(), "browser", "record_sessions", default=False)
 
         if not record_enabled:
             return
 
-        recordings_dir = deskagent_home / "browser_recordings"
+        recordings_dir = spiritagent_home / "browser_recordings"
         recordings_dir.mkdir(parents=True, exist_ok=True)
         _cleanup_old_recordings(max_age_hours=72)
 
@@ -3288,7 +3288,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
 
     Captures what's visually displayed in the browser. When the active model
     supports native vision, the screenshot is attached directly to the
-    conversation so the model can inspect it on the next turn; otherwise DeskAgent
+    conversation so the model can inspect it on the next turn; otherwise SpiritAgent
     falls back to the auxiliary vision model and returns a text analysis. Useful
     for visual content the text-based snapshot may not capture (CAPTCHAs,
     verification challenges, images, complex layouts, etc.).
@@ -3308,7 +3308,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
     if is_camofox_mode():
         return camofox_vision(question, annotate, task_id)
 
-    screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
+    screenshots_dir = get_spiritagent_dir("cache/screenshots", "browser_screenshots")
     screenshot_path = screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex}.png"
     effective_task_id = _last_session_key(task_id or "default")
 
@@ -3333,7 +3333,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
             _lp_fallback_warning = fb_result.get("fallback_warning")
             fb_path = fb_result.get("data", {}).get("path", "")
             if fb_path and os.path.exists(fb_path):
-                screenshots_dir = get_deskagent_dir("cache/screenshots", "browser_screenshots")
+                screenshots_dir = get_spiritagent_dir("cache/screenshots", "browser_screenshots")
                 screenshots_dir.mkdir(parents=True, exist_ok=True)
 
                 persistent_path = screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex}.png"
@@ -3497,7 +3497,7 @@ def _cleanup_old_screenshots(screenshots_dir, max_age_hours=24) -> None:
 def _cleanup_old_recordings(max_age_hours=72) -> None:
     """Remove browser recordings older than max_age_hours to prevent disk bloat."""
     try:
-        recordings_dir = get_deskagent_home() / "browser_recordings"
+        recordings_dir = get_spiritagent_home() / "browser_recordings"
         if not recordings_dir.exists():
             return
         _unlink_files_older_than(recordings_dir.glob("session_*.webm"), time.time() - max_age_hours * 3600)
@@ -3643,7 +3643,7 @@ def _chromium_search_roots() -> list[str]:
     Order mirrors what agent-browser and Playwright actually probe:
 
     1. ``PLAYWRIGHT_BROWSERS_PATH`` when set (Docker image sets this to
-       ``/opt/deskagent/.playwright``).
+       ``/opt/spiritagent/.playwright``).
     2. ``~/.cache/ms-playwright`` — Playwright's default on macOS.
     3. ``~/Library/Caches/ms-playwright`` — Playwright's default on macOS.
     4. ``%USERPROFILE%\\AppData\\Local\\ms-playwright`` — Playwright's default

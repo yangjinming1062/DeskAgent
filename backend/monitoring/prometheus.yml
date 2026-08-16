@@ -3,7 +3,7 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
-  - job_name: "deskagent-backend"
+  - job_name: "spiritagent-backend"
     metrics_path: "/metrics"
     static_configs:
       - targets: ["backend:10620"]

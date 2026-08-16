@@ -8,7 +8,7 @@ export interface SystemIpcDeps {
 export function registerSystemIpc({ electron, ipcMain }: SystemIpcDeps): void {
   const { app } = electron
 
-  ipcMain.handle('deskagent:version', async () => ({
+  ipcMain.handle('spiritagent:version', async () => ({
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
     nodeVersion: process.versions.node,

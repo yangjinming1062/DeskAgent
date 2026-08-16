@@ -1,6 +1,6 @@
 export function installClipboardShim(): void {
   // Routes navigator.clipboard.writeText through Electron IPC
-  const ipc = window.deskagent?.writeClipboard
+  const ipc = window.spiritagent?.writeClipboard
 
   if (!ipc || !navigator.clipboard) {
     return

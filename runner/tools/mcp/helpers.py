@@ -30,7 +30,7 @@ from mcp.client.auth.utils import (
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata, OAuthToken
 from pydantic import AnyUrl
 
-from utils import get_deskagent_home, secure_parent_dir
+from utils import get_spiritagent_home, secure_parent_dir
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,9 @@ class OAuthNonInteractiveError(RuntimeError):
 
 def _get_token_dir() -> Path:
     try:
-        return Path(get_deskagent_home()) / "mcp-tokens"
+        return Path(get_spiritagent_home()) / "mcp-tokens"
     except Exception:
-        return Path.home() / ".deskagent" / "mcp-tokens"
+        return Path.home() / ".spiritagent" / "mcp-tokens"
 
 
 def _safe_filename(name: str) -> str:
@@ -101,7 +101,7 @@ def _write_json(path: Path, data: dict) -> None:
         raise
 
 
-class DeskAgentTokenStorage:
+class SpiritAgentTokenStorage:
     def __init__(self, server_name: str) -> None:
         self._server_name = _safe_filename(server_name)
         self._token_dir = _get_token_dir()
@@ -172,7 +172,7 @@ class DeskAgentTokenStorage:
 
 
 def remove_oauth_tokens(server_name: str) -> None:
-    DeskAgentTokenStorage(server_name).remove()
+    SpiritAgentTokenStorage(server_name).remove()
     logger.info("OAuth tokens removed for '%s'", server_name)
 
 
@@ -184,7 +184,7 @@ def _make_callback_handler() -> tuple[type, dict]:
             params = parse_qs(urlparse(self.path).query)
             result.update({"auth_code": params.get("code", [None])[0], "state": params.get("state", [None])[0], "error": params.get("error", [None])[0]})
             body = (
-                "<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to DeskAgent.</p></body></html>"
+                "<html><body><h2>Authorization Successful</h2><p>You can close this tab and return to SpiritAgent.</p></body></html>"
                 if result["auth_code"]
                 else f"<html><body><h2>Authorization Failed</h2><p>Error: {result['error'] or 'unknown'}</p></body></html>"
             )
@@ -266,7 +266,7 @@ def _configure_callback_port(cfg: dict) -> int:
 
 def _build_client_metadata(cfg: dict, port: int) -> OAuthClientMetadata:
     metadata_kwargs = {
-        "client_name": cfg.get("client_name", "DeskAgent Agent"),
+        "client_name": cfg.get("client_name", "SpiritAgent Agent"),
         "redirect_uris": [AnyUrl(f"http://127.0.0.1:{port}/callback")],
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
@@ -277,7 +277,7 @@ def _build_client_metadata(cfg: dict, port: int) -> OAuthClientMetadata:
     return OAuthClientMetadata.model_validate(metadata_kwargs)
 
 
-def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata, port: int) -> None:
+def _maybe_preregister_client(storage: SpiritAgentTokenStorage, cfg: dict, client_metadata: OAuthClientMetadata, port: int) -> None:
     if not (client_id := cfg.get("client_id")):
         return
     info_dict = {
@@ -293,11 +293,11 @@ def _maybe_preregister_client(storage: DeskAgentTokenStorage, cfg: dict, client_
     _write_json(storage._client_info_path(), OAuthClientInformationFull.model_validate(info_dict).model_dump(mode="json", exclude_none=True))
 
 
-def _make_deskagent_provider_class() -> type:
-    class DeskAgentMCPOAuthProvider(OAuthClientProvider):
+def _make_spiritagent_provider_class() -> type:
+    class SpiritAgentMCPOAuthProvider(OAuthClientProvider):
         def __init__(self, *args: Any, server_name: str = "", **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
-            self._deskagent_server_name = server_name
+            self._spiritagent_server_name = server_name
 
         async def _initialize(self) -> None:
             await super()._initialize()
@@ -305,16 +305,16 @@ def _make_deskagent_provider_class() -> type:
                 self.context.update_token_expiry(tokens)
 
             storage = self.context.storage
-            if isinstance(storage, DeskAgentTokenStorage) and self.context.oauth_metadata is None:
+            if isinstance(storage, SpiritAgentTokenStorage) and self.context.oauth_metadata is None:
                 if (meta := storage.load_oauth_metadata()) is not None:
                     self.context.oauth_metadata = meta
-                    logger.debug("MCP OAuth '%s': restored metadata from disk", self._deskagent_server_name)
+                    logger.debug("MCP OAuth '%s': restored metadata from disk", self._spiritagent_server_name)
 
             if tokens is not None and self.context.oauth_metadata is None:
                 try:
                     await self._prefetch_oauth_metadata()
                 except Exception as exc:
-                    logger.debug("MCP OAuth '%s': pre-flight metadata discovery failed: %s", self._deskagent_server_name, exc)
+                    logger.debug("MCP OAuth '%s': pre-flight metadata discovery failed: %s", self._spiritagent_server_name, exc)
 
         async def _prefetch_oauth_metadata(self) -> None:
             server_url = self.context.server_url
@@ -323,7 +323,7 @@ def _make_deskagent_provider_class() -> type:
                     try:
                         resp = await client.send(create_oauth_metadata_request(url))
                     except httpx.HTTPError as exc:
-                        logger.debug("MCP OAuth '%s': PRM discovery to %s failed: %s", self._deskagent_server_name, url, exc)
+                        logger.debug("MCP OAuth '%s': PRM discovery to %s failed: %s", self._spiritagent_server_name, url, exc)
                         continue
                     if prm := await handle_protected_resource_response(resp):
                         self.context.protected_resource_metadata = prm
@@ -335,22 +335,22 @@ def _make_deskagent_provider_class() -> type:
                     try:
                         resp = await client.send(create_oauth_metadata_request(url))
                     except httpx.HTTPError as exc:
-                        logger.debug("MCP OAuth '%s': ASM discovery to %s failed: %s", self._deskagent_server_name, url, exc)
+                        logger.debug("MCP OAuth '%s': ASM discovery to %s failed: %s", self._spiritagent_server_name, url, exc)
                         continue
                     ok, asm = await handle_auth_metadata_response(resp)
                     if not ok:
                         break
                     if asm:
                         self.context.oauth_metadata = asm
-                        if isinstance(storage := self.context.storage, DeskAgentTokenStorage):
+                        if isinstance(storage := self.context.storage, SpiritAgentTokenStorage):
                             storage.save_oauth_metadata(asm)
-                        logger.debug("MCP OAuth '%s': ASM discovered token_endpoint=%s", self._deskagent_server_name, asm.token_endpoint)
+                        logger.debug("MCP OAuth '%s': ASM discovered token_endpoint=%s", self._spiritagent_server_name, asm.token_endpoint)
                         break
 
         def _persist_oauth_metadata_if_changed(self) -> None:
             if (meta := self.context.oauth_metadata) is None:
                 return
-            if not isinstance(storage := self.context.storage, DeskAgentTokenStorage):
+            if not isinstance(storage := self.context.storage, SpiritAgentTokenStorage):
                 return
             existing = storage.load_oauth_metadata()
             if existing is None or str(existing.token_endpoint) != str(meta.token_endpoint):
@@ -358,9 +358,9 @@ def _make_deskagent_provider_class() -> type:
 
         async def async_auth_flow(self, request) -> None:
             try:
-                await get_manager().invalidate_if_disk_changed(self._deskagent_server_name)
+                await get_manager().invalidate_if_disk_changed(self._spiritagent_server_name)
             except Exception as exc:
-                logger.debug("MCP OAuth '%s': disk-watch failed: %s", self._deskagent_server_name, exc)
+                logger.debug("MCP OAuth '%s': disk-watch failed: %s", self._spiritagent_server_name, exc)
 
             inner = super().async_auth_flow(request)
             try:
@@ -372,10 +372,10 @@ def _make_deskagent_provider_class() -> type:
                 self._persist_oauth_metadata_if_changed()
                 return
 
-    return DeskAgentMCPOAuthProvider
+    return SpiritAgentMCPOAuthProvider
 
 
-DESKAGENT_PROVIDER_CLS = _make_deskagent_provider_class()
+SPIRITAGENT_PROVIDER_CLS = _make_spiritagent_provider_class()
 
 
 @dataclass
@@ -416,13 +416,13 @@ class MCPOAuthManager:
 
     def _build_provider(self, server_name: str, entry: _ProviderEntry) -> Any | None:
         cfg = dict(entry.oauth_config or {})
-        storage = DeskAgentTokenStorage(server_name)
+        storage = SpiritAgentTokenStorage(server_name)
         if not _is_interactive() and not storage.has_cached_tokens():
             logger.warning("MCP OAuth '%s': non-interactive and no cached tokens found.", server_name)
         port = _configure_callback_port(cfg)
         client_metadata = _build_client_metadata(cfg, port)
         _maybe_preregister_client(storage, cfg, client_metadata, port)
-        return DESKAGENT_PROVIDER_CLS(
+        return SPIRITAGENT_PROVIDER_CLS(
             server_name=server_name,
             server_url=entry.server_url,
             client_metadata=client_metadata,

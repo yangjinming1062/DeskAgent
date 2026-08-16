@@ -2,8 +2,8 @@ export {}
 
 declare global {
   interface Window {
-    deskagent: {
-      getConnection: () => Promise<DeskAgentConnection>
+    spiritagent: {
+      getConnection: () => Promise<SpiritAgentConnection>
       getGatewayWsUrl: () => Promise<string>
       getBootProgress: () => Promise<DesktopBootProgress>
       activate: (payload: DesktopActivatePayload) => Promise<DesktopAuthSnapshot>
@@ -12,13 +12,13 @@ declare global {
       getSession: () => Promise<DesktopAuthSnapshot | null>
       getDefaultBackendUrl: () => Promise<string | null>
       showToolWindow: () => Promise<void>
-      api: <T>(request: DeskAgentApiRequest) => Promise<T>
+      api: <T>(request: SpiritAgentApiRequest) => Promise<T>
       /** Fetch a backend-served binary asset as a data URL (see connection.cjs). */
       apiAsset: (request: { url: string }) => Promise<string>
       /** Fetch a backend-served binary asset as raw bytes — for large payloads (GLB) where base64 inflation is unacceptable. Supports disk cache via contentHash. */
       apiAssetBuffer: (request: { url: string; contentHash?: string }) => Promise<Uint8Array>
       readFileDataUrl: (filePath: string) => Promise<string>
-      selectPaths: (options?: DeskAgentSelectPathsOptions) => Promise<string[]>
+      selectPaths: (options?: SpiritAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>
       saveClipboardImage: () => Promise<string>
       log: (payload: { level: 'error' | 'info' | 'warn'; scope: string; args: unknown[] }) => Promise<void>
@@ -28,7 +28,7 @@ declare global {
       runnerGetState?: () => Promise<DesktopRunnerState>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
       getPathForFile: (file: File) => string
-      setTitleBarTheme?: (payload: DeskAgentTitleBarTheme) => void
+      setTitleBarTheme?: (payload: SpiritAgentTitleBarTheme) => void
       runnerConfig: {
         read: () => Promise<{ ok: boolean; content?: string; error?: string }>
         write: (configString: string) => Promise<{ ok: boolean; error?: string }>
@@ -99,7 +99,7 @@ declare global {
         getPosition: () => Promise<{ x: number; y: number } | null>
         setPosition: (payload: { x: number; y: number }) => Promise<void>
       }
-      onWindowStateChanged?: (callback: (payload: DeskAgentWindowState) => void) => () => void
+      onWindowStateChanged?: (callback: (payload: SpiritAgentWindowState) => void) => () => void
       onPowerResume?: (callback: () => void) => () => void
       onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
       onSessionExpired: (callback: () => void) => () => void
@@ -146,7 +146,7 @@ export type DesktopUpdateEvent =
   | { type: 'error'; message: string }
 
 // Runner-side update events, forwarded from main.cjs → runner-updater.cjs
-// on the `deskagent:runner-update-event` IPC channel. Phase 1 (prefetch) runs in
+// on the `spiritagent:runner-update-event` IPC channel. Phase 1 (prefetch) runs in
 // the OLD Electron after `update-downloaded`; phase 2 (install) runs in the
 // NEW Electron at startup. `recoverable: false` means the user must reinstall.
 export type DesktopRunnerUpdateEvent =
@@ -178,7 +178,7 @@ export interface RunnerCapabilities {
 }
 
 // Runner lifecycle events from runner-bridge.cjs (`running` / `stopped` /
-// `error` / `tools_changed`), forwarded over the `deskagent:runner:status` IPC
+// `error` / `tools_changed`), forwarded over the `spiritagent:runner:status` IPC
 // channel. Renderer subscribes via `onRunnerStatus`; see use-gateway-boot.ts
 // where the `running` and `tools_changed` variants both trigger a
 // tool-schema sync to backend.
@@ -223,7 +223,7 @@ export interface DesktopRunnerState {
   probeFailed?: boolean | null
 }
 
-export interface DeskAgentConnection {
+export interface SpiritAgentConnection {
   baseUrl: string
   isFullscreen: boolean
   mode?: 'local' | 'remote'
@@ -235,12 +235,12 @@ export interface DeskAgentConnection {
   windowButtonPosition: { x: number; y: number } | null
 }
 
-export interface DeskAgentTitleBarTheme {
+export interface SpiritAgentTitleBarTheme {
   background: string
   foreground: string
 }
 
-export interface DeskAgentWindowState {
+export interface SpiritAgentWindowState {
   isFullscreen: boolean
   nativeOverlayWidth: number
   windowButtonPosition: { x: number; y: number } | null
@@ -287,14 +287,14 @@ export interface DesktopAuthBroadcast {
   snapshot: DesktopAuthSnapshot | null
 }
 
-export interface DeskAgentApiRequest {
+export interface SpiritAgentApiRequest {
   body?: unknown
   method?: string
   path: string
   timeoutMs?: number
 }
 
-export interface DeskAgentSelectPathsOptions {
+export interface SpiritAgentSelectPathsOptions {
   defaultPath?: string
   directories?: boolean
   filters?: Array<{ extensions: string[]; name: string }>

@@ -6,7 +6,7 @@ author: FEUAZUR
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
-  deskagent:
+  spiritagent:
     tags: [Web Scraping, Browser, Cloudflare, Stealth, Crawling, Spider]
 prerequisites:
   commands: [scrapling, python]

@@ -9,14 +9,14 @@ from .system import DEFAULT_BUDGET, DEFAULT_PREVIEW_SIZE_CHARS, BudgetConfig
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
 PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
-STORAGE_DIR = os.path.join(tempfile.gettempdir(), "deskagent-results")
+STORAGE_DIR = os.path.join(tempfile.gettempdir(), "spiritagent-results")
 
 
 def _resolve_storage_dir(env: Any) -> str:
     if env is not None and (get_temp_dir := getattr(env, "get_temp_dir", None)) and callable(get_temp_dir):
         try:
             if temp_dir := get_temp_dir():
-                return f"{temp_dir.rstrip('/') or '/'}/deskagent-results"
+                return f"{temp_dir.rstrip('/') or '/'}/spiritagent-results"
         except Exception as exc:
             logger.debug("Could not resolve env temp dir: %s", exc)
     return STORAGE_DIR

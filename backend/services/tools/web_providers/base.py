@@ -23,7 +23,7 @@ class WebSearchProvider(abc.ABC):
 
     @property
     def display_name(self) -> str:
-        """Human-readable label shown in ``deskagent tools``."""
+        """Human-readable label shown in ``spiritagent tools``."""
         return self.name
 
     @abc.abstractmethod
@@ -31,7 +31,7 @@ class WebSearchProvider(abc.ABC):
         """Return True when this provider can service calls.
 
         Must be cheap (env var, optional dep, instance URL) — runs at
-        tool-registration time and on every ``deskagent tools`` paint. No network I/O.
+        tool-registration time and on every ``spiritagent tools`` paint. No network I/O.
         """
 
     def supports_search(self) -> bool:
@@ -64,7 +64,7 @@ class WebSearchProvider(abc.ABC):
         raise NotImplementedError(f"{self.name} does not support extract (override supports_extract)")
 
     def get_setup_schema(self) -> dict[str, Any]:
-        """Return provider metadata for the ``deskagent tools`` picker.
+        """Return provider metadata for the ``spiritagent tools`` picker.
 
         Override to expose API key prompts, badges, and instance URL fields.
         """

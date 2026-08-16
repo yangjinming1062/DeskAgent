@@ -2,15 +2,15 @@
 //! scripts the Tauri installer spawns to release its bundled payload.
 //!
 //! Resolution order:
-//!   1. Dev shortcut: a sibling repo checkout via $DESKAGENT_SETUP_DEV_REPO_ROOT.
+//!   1. Dev shortcut: a sibling repo checkout via $SPIRITAGENT_SETUP_DEV_REPO_ROOT.
 //!      Lets devs iterate on the script without re-bundling.
 //!   2. Bundled: Tauri `bundle.resources` (`payload/install.{sh,ps1}`). The
-//!      `DeskAgent-Setup` binary is self-contained — no network, no GitHub, no
+//!      `SpiritAgent-Setup` binary is self-contained — no network, no GitHub, no
 //!      cache. The script version IS the installer build version.
 //!
 //! Mirrors `client/main/lifecycle/platform.cjs`'s `resolveInstallScript`,
 //! but the dev-checkout resolution is driven by an env var rather than the
-//! Electron app's APP_ROOT/.. trick, because DeskAgent-Setup.exe is meant to
+//! Electron app's APP_ROOT/.. trick, because SpiritAgent-Setup.exe is meant to
 //! live OUTSIDE any repo checkout.
 
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ pub struct ResolvedScript {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptSource {
-    /// Loaded from a sibling repo checkout via $DESKAGENT_SETUP_DEV_REPO_ROOT.
+    /// Loaded from a sibling repo checkout via $SPIRITAGENT_SETUP_DEV_REPO_ROOT.
     DevCheckout,
     /// Loaded from the Tauri `bundle.resources` directory.
     Bundled,
@@ -69,7 +69,7 @@ pub async fn resolve(
     emit_log: &impl Fn(&str),
 ) -> Result<ResolvedScript> {
     // 1. Dev shortcut.
-    if let Ok(repo_root) = std::env::var("DESKAGENT_SETUP_DEV_REPO_ROOT") {
+    if let Ok(repo_root) = std::env::var("SPIRITAGENT_SETUP_DEV_REPO_ROOT") {
         let candidate = PathBuf::from(repo_root).join("installer").join(kind.filename());
         if candidate.exists() {
             emit_log(&format!(
@@ -116,7 +116,7 @@ fn resolve_bundled(resource_dir: &Path, kind: ScriptKind) -> Result<PathBuf> {
     }
     Err(anyhow!(
         "install script not found in Tauri bundle: {}\n\
-         The DeskAgent-Setup binary was built without `payload/{}` in its\n\
+         The SpiritAgent-Setup binary was built without `payload/{}` in its\n\
          bundle.resources. Re-build with `scripts/build_client.{{sh,ps1}}`\n\
          to stage the install scripts into `installer/payload/`.",
         script_path.display(),
@@ -131,7 +131,7 @@ mod tests {
 
     fn unique_tmp_dir(tag: &str) -> PathBuf {
         let base = std::env::temp_dir().join(format!(
-            "deskagent-install-script-test-{tag}-{}-{}",
+            "spiritagent-install-script-test-{tag}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

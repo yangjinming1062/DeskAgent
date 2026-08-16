@@ -89,7 +89,7 @@ export interface DesktopRunnerState {
   stoppedAt?: null | number
 }
 
-export interface DeskAgentConnection {
+export interface SpiritAgentConnection {
   authMode?: string
   baseUrl: string
   isFullscreen: boolean
@@ -102,12 +102,12 @@ export interface DeskAgentConnection {
   wsUrl: string
 }
 
-export interface DeskAgentTitleBarTheme {
+export interface SpiritAgentTitleBarTheme {
   background: string
   foreground: string
 }
 
-export interface DeskAgentWindowState {
+export interface SpiritAgentWindowState {
   isFullscreen: boolean
   nativeOverlayWidth: number
   windowButtonPosition: null | { x: number; y: number }
@@ -151,14 +151,14 @@ export interface DesktopAuthBroadcast {
   snapshot: DesktopAuthSnapshot | null
 }
 
-export interface DeskAgentApiRequest {
+export interface SpiritAgentApiRequest {
   body?: unknown
   method?: string
   path: string
   timeoutMs?: number
 }
 
-export interface DeskAgentSelectPathsOptions {
+export interface SpiritAgentSelectPathsOptions {
   defaultPath?: string
   directories?: boolean
   filters?: Array<{ extensions: string[]; name: string }>
@@ -204,70 +204,70 @@ export interface MediaTtsPayload {
 // 1. Request-Response (Renderer -> Main via ipcRenderer.invoke / ipcMain.handle)
 export interface IpcInvokeContract {
   // Connection & Boot
-  'deskagent:connection': () => DeskAgentConnection | Promise<DeskAgentConnection>
-  'deskagent:gateway:ws-url': () => Promise<string> | string
-  'deskagent:boot-progress:get': () => DesktopBootProgress | Promise<DesktopBootProgress>
+  'spiritagent:connection': () => SpiritAgentConnection | Promise<SpiritAgentConnection>
+  'spiritagent:gateway:ws-url': () => Promise<string> | string
+  'spiritagent:boot-progress:get': () => DesktopBootProgress | Promise<DesktopBootProgress>
 
   // Auth
-  'deskagent:auth:activate': (payload: DesktopActivatePayload) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
-  'deskagent:auth:refresh': (payload?: Record<string, unknown>) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
-  'deskagent:auth:logout': () => DesktopLogoutResult | Promise<DesktopLogoutResult>
-  'deskagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
-  'deskagent:auth:get-default-backend-url': () => null | string | Promise<null | string>
+  'spiritagent:auth:activate': (payload: DesktopActivatePayload) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
+  'spiritagent:auth:refresh': (payload?: Record<string, unknown>) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
+  'spiritagent:auth:logout': () => DesktopLogoutResult | Promise<DesktopLogoutResult>
+  'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
+  'spiritagent:auth:get-default-backend-url': () => null | string | Promise<null | string>
 
   // Windows & UI
-  'deskagent:window:show-tool': () => Promise<void> | void
+  'spiritagent:window:show-tool': () => Promise<void> | void
 
   // Backend API Proxy
-  'deskagent:api': (request: DeskAgentApiRequest) => Promise<unknown> | unknown
-  'deskagent:api:asset': (request: { url: string }) => Promise<string> | string
-  'deskagent:api:asset-cached-path': (request: {
+  'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
+  'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
+  'spiritagent:api:asset-cached-path': (request: {
     contentHash?: string
     url: string
   }) => null | string | Promise<null | string>
-  'deskagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
+  'spiritagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
 
   // File & Clipboard & Log
-  'deskagent:readFileDataUrl': (filePath: string) => Promise<string> | string
-  'deskagent:selectPaths': (options?: DeskAgentSelectPathsOptions) => Promise<string[]> | string[]
-  'deskagent:writeClipboard': (text: string) => boolean | Promise<boolean>
-  'deskagent:saveClipboardImage': () => Promise<string> | string
-  'deskagent:log:emit': (payload: {
+  'spiritagent:readFileDataUrl': (filePath: string) => Promise<string> | string
+  'spiritagent:selectPaths': (options?: SpiritAgentSelectPathsOptions) => Promise<string[]> | string[]
+  'spiritagent:writeClipboard': (text: string) => boolean | Promise<boolean>
+  'spiritagent:saveClipboardImage': () => Promise<string> | string
+  'spiritagent:log:emit': (payload: {
     args: unknown[]
     level: 'error' | 'info' | 'warn'
     scope: string
   }) => Promise<void> | void
-  'deskagent:version': () => DesktopVersionInfo | Promise<DesktopVersionInfo>
+  'spiritagent:version': () => DesktopVersionInfo | Promise<DesktopVersionInfo>
 
   // Runner
-  'deskagent:runner:invoke': (name: string, args: Record<string, unknown>) => Promise<unknown> | unknown
-  'deskagent:runner:reload-mcp': () => Promise<unknown> | unknown
-  'deskagent:runner:get-state': () => DesktopRunnerState | Promise<DesktopRunnerState>
-  'deskagent:runner:get-tools': () => Array<Record<string, unknown>> | Promise<Array<Record<string, unknown>>>
-  'deskagent:runner-config:read': () =>
+  'spiritagent:runner:invoke': (name: string, args: Record<string, unknown>) => Promise<unknown> | unknown
+  'spiritagent:runner:reload-mcp': () => Promise<unknown> | unknown
+  'spiritagent:runner:get-state': () => DesktopRunnerState | Promise<DesktopRunnerState>
+  'spiritagent:runner:get-tools': () => Array<Record<string, unknown>> | Promise<Array<Record<string, unknown>>>
+  'spiritagent:runner-config:read': () =>
     | { content?: string; error?: string; ok: boolean }
     | Promise<{ content?: string; error?: string; ok: boolean }>
-  'deskagent:runner-config:write': (
+  'spiritagent:runner-config:write': (
     configString: string
   ) => { error?: string; ok: boolean } | Promise<{ error?: string; ok: boolean }>
-  'deskagent:runner-config:patch': (
+  'spiritagent:runner-config:patch': (
     patch: RunnerConfigPatch
   ) => { error?: string; ok: boolean } | Promise<{ error?: string; ok: boolean }>
 
   // Skills & Toolsets
-  'deskagent:skills:list': () =>
+  'spiritagent:skills:list': () =>
     | { error?: string; ok: boolean; skills?: SkillItem[] }
     | Promise<{ error?: string; ok: boolean; skills?: SkillItem[] }>
-  'deskagent:skill:set-enabled': (payload: {
+  'spiritagent:skill:set-enabled': (payload: {
     enabled: boolean
     name: string
   }) =>
     | { error?: string; ok: boolean; skills?: SkillItem[] }
     | Promise<{ error?: string; ok: boolean; skills?: SkillItem[] }>
-  'deskagent:toolsets:list': () =>
+  'spiritagent:toolsets:list': () =>
     | { error?: string; ok: boolean; toolsets?: ToolsetItem[] }
     | Promise<{ error?: string; ok: boolean; toolsets?: ToolsetItem[] }>
-  'deskagent:toolset:set-enabled': (payload: {
+  'spiritagent:toolset:set-enabled': (payload: {
     enabled: boolean
     id: string
   }) =>
@@ -275,42 +275,45 @@ export interface IpcInvokeContract {
     | Promise<{ error?: string; ok: boolean; toolsets?: ToolsetItem[] }>
 
   // Media
-  'deskagent:media:stt': (payload: MediaSttPayload) => { text: string } | Promise<{ text: string }>
-  'deskagent:media:tts': (
+  'spiritagent:media:stt': (payload: MediaSttPayload) => { text: string } | Promise<{ text: string }>
+  'spiritagent:media:tts': (
     payload: MediaTtsPayload
   ) => { dataUrl: string; mimeType: string } | Promise<{ dataUrl: string; mimeType: string }>
-  'deskagent:onboardingAudio:read': (
+  'spiritagent:onboardingAudio:read': (
     tag: string
   ) =>
     | { bytes: number; dataUrl: string; mimeType: string; tag: string }
     | Promise<{ bytes: number; dataUrl: string; mimeType: string; tag: string }>
 
   // Sprite
-  'deskagent:sprite:set-ignore-mouse-events': (payload: { forward?: boolean; ignore: boolean }) => Promise<void> | void
-  'deskagent:sprite:set-always-on-top': (payload: { on: boolean }) => Promise<void> | void
-  'deskagent:sprite:get-position': () => null | { x: number; y: number } | Promise<null | { x: number; y: number }>
-  'deskagent:sprite:set-position': (payload: { x: number; y: number }) => Promise<void> | void
+  'spiritagent:sprite:set-ignore-mouse-events': (payload: {
+    forward?: boolean
+    ignore: boolean
+  }) => Promise<void> | void
+  'spiritagent:sprite:set-always-on-top': (payload: { on: boolean }) => Promise<void> | void
+  'spiritagent:sprite:get-position': () => null | { x: number; y: number } | Promise<null | { x: number; y: number }>
+  'spiritagent:sprite:set-position': (payload: { x: number; y: number }) => Promise<void> | void
 
   // Update
-  'deskagent:update:check': () => Promise<void> | void
+  'spiritagent:update:check': () => Promise<void> | void
 }
 
 // 2. Events pushed Main -> Renderer (via webContents.send / ipcRenderer.on)
 export interface IpcEventContract {
-  'deskagent:auth:changed': [payload: DesktopAuthBroadcast]
-  'deskagent:auth:session-expired': []
-  'deskagent:boot-progress': [payload: DesktopBootProgress]
-  'deskagent:power-resume': []
-  'deskagent:runner-update-event': [payload: DesktopRunnerUpdateEvent]
-  'deskagent:runner:status': [payload: DesktopRunnerStatusEvent]
-  'deskagent:tray:logout': []
-  'deskagent:update-event': [payload: DesktopUpdateEvent]
-  'deskagent:window-state-changed': [payload: DeskAgentWindowState]
+  'spiritagent:auth:changed': [payload: DesktopAuthBroadcast]
+  'spiritagent:auth:session-expired': []
+  'spiritagent:boot-progress': [payload: DesktopBootProgress]
+  'spiritagent:power-resume': []
+  'spiritagent:runner-update-event': [payload: DesktopRunnerUpdateEvent]
+  'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
+  'spiritagent:tray:logout': []
+  'spiritagent:update-event': [payload: DesktopUpdateEvent]
+  'spiritagent:window-state-changed': [payload: SpiritAgentWindowState]
 }
 
 // 3. Unidirectional messages Renderer -> Main (via ipcRenderer.send / ipcMain.on)
 export interface IpcSendContract {
-  'deskagent:titlebar-theme': [payload: DeskAgentTitleBarTheme]
+  'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
 }
 
 export type IpcChannel = keyof IpcInvokeContract

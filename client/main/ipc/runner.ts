@@ -19,7 +19,7 @@ export interface RunnerIpcDeps {
   createRunnerBridge: (options: RunnerBridgeOptions) => RunnerBridge
   createRunnerProcess: (options: CreateRunnerProcessOptions) => RunnerProcess
   createRunnerWsServer: (options: CreateRunnerWsServerOptions) => RunnerWsServer
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   ensureBackendSession: () => BackendSession
   fileExists?: (p: string) => boolean
   getMainWindow?: () => BrowserWindow | null | undefined
@@ -40,20 +40,20 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
       return Promise.resolve()
     }
 
-    return bridge.dispatch('deskagent.config.update', { config })
+    return bridge.dispatch('spiritagent.config.update', { config })
   }
 
   deps.runnerBridge = deps.createRunnerBridge({
-    deskagentHome: deps.deskagentHome,
+    spiritagentHome: deps.spiritagentHome,
     log: deps.taggedLogger('[runner-bridge]'),
     processFactory: (args?: RunnerBridgeStartOptions) =>
       deps.createRunnerProcess({
-        deskagentHome: deps.deskagentHome,
-        devPython: process.env.DESKAGENT_DESKTOP_PYTHON || null,
-        executable: args?.executable || process.env.DESKAGENT_DESKTOP_RUNNER_EXECUTABLE || null,
+        spiritagentHome: deps.spiritagentHome,
+        devPython: process.env.SPIRITAGENT_DESKTOP_PYTHON || null,
+        executable: args?.executable || process.env.SPIRITAGENT_DESKTOP_RUNNER_EXECUTABLE || null,
         fileExists: deps.fileExists,
         log: deps.taggedLogger('[runner]'),
-        repoRoot: process.env.DESKAGENT_DESKTOP_RUNNER_REPO_ROOT || null
+        repoRoot: process.env.SPIRITAGENT_DESKTOP_RUNNER_REPO_ROOT || null
       }),
     pushConfig,
     reverseRpcFactory: ({ backendSession, log: rpcLog }: ReverseRpcOptions) =>
@@ -75,7 +75,7 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
     const win = deps.getMainWindow?.()
 
     if (win && !win.isDestroyed()) {
-      win.webContents.send('deskagent:runner:status', ev)
+      win.webContents.send('spiritagent:runner:status', ev)
     }
   })
 
@@ -171,7 +171,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     return
   }
 
-  ipcMain.handle('deskagent:runner:invoke', async (_event, name: string, args?: Record<string, unknown>) => {
+  ipcMain.handle('spiritagent:runner:invoke', async (_event, name: string, args?: Record<string, unknown>) => {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
     }
@@ -185,7 +185,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
 
-  ipcMain.handle('deskagent:runner:get-state', async (): Promise<DesktopRunnerState> => {
+  ipcMain.handle('spiritagent:runner:get-state', async (): Promise<DesktopRunnerState> => {
     const bridge = deps.runnerBridge
 
     if (!bridge) {
@@ -206,15 +206,15 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     }
   })
 
-  ipcMain.handle('deskagent:runner:reload-mcp', async () => {
+  ipcMain.handle('spiritagent:runner:reload-mcp', async () => {
     const bridge = ensureRunnerBridge(deps)
 
     return bridge.dispatch('mcp.reload', {})
   })
 
-  ipcMain.handle('deskagent:runner:cancel', async () => {
+  ipcMain.handle('spiritagent:runner:cancel', async () => {
     const bridge = ensureRunnerBridge(deps)
 
-    return bridge.dispatch('deskagent.cancel', {})
+    return bridge.dispatch('spiritagent.cancel', {})
   })
 }

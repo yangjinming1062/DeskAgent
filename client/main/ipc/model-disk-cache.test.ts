@@ -9,7 +9,7 @@ import test from 'node:test'
 import { computeFileSha256, createModelDiskCache, MAX_CACHE_FILES } from './model-disk-cache'
 
 test('computeFileSha256 calculates sha256 correctly', async t => {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'deskagent-cache-test-'))
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'spiritagent-cache-test-'))
   t.after(() => fsp.rm(tempDir, { force: true, recursive: true }))
 
   const filePath = path.join(tempDir, 'sample.bin')
@@ -22,10 +22,10 @@ test('computeFileSha256 calculates sha256 correctly', async t => {
 })
 
 test('model disk cache stores downloaded model and hits on subsequent calls', async t => {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'deskagent-cache-test-'))
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'spiritagent-cache-test-'))
   t.after(() => fsp.rm(tempDir, { force: true, recursive: true }))
 
-  const cache = createModelDiskCache({ deskagentHome: tempDir })
+  const cache = createModelDiskCache({ spiritagentHome: tempDir })
   const modelBytes = Buffer.from('GLB binary content 12345')
   const sha256 = crypto.createHash('sha256').update(modelBytes).digest('hex')
 
@@ -74,10 +74,10 @@ test('model disk cache stores downloaded model and hits on subsequent calls', as
 })
 
 test('model disk cache supports Range resumable download', async t => {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'deskagent-cache-test-'))
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'spiritagent-cache-test-'))
   t.after(() => fsp.rm(tempDir, { force: true, recursive: true }))
 
-  const cache = createModelDiskCache({ deskagentHome: tempDir })
+  const cache = createModelDiskCache({ spiritagentHome: tempDir })
   const fullBytes = Buffer.from('abcdefghijklmnopqrstuvwxyz0123456789')
   const sha256 = crypto.createHash('sha256').update(fullBytes).digest('hex')
 
@@ -119,10 +119,10 @@ test('model disk cache supports Range resumable download', async t => {
 })
 
 test('model disk cache handles 416 Range Not Satisfiable by refetching from 0', async t => {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'deskagent-cache-test-'))
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'spiritagent-cache-test-'))
   t.after(() => fsp.rm(tempDir, { force: true, recursive: true }))
 
-  const cache = createModelDiskCache({ deskagentHome: tempDir })
+  const cache = createModelDiskCache({ spiritagentHome: tempDir })
   const fullBytes = Buffer.from('complete model replacement payload')
   const sha256 = crypto.createHash('sha256').update(fullBytes).digest('hex')
 
@@ -170,10 +170,10 @@ test('model disk cache handles 416 Range Not Satisfiable by refetching from 0', 
 })
 
 test('model disk cache sweep evicts oldest files when cap is reached', async t => {
-  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'deskagent-cache-test-'))
+  const tempDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'spiritagent-cache-test-'))
   t.after(() => fsp.rm(tempDir, { force: true, recursive: true }))
 
-  const cache = createModelDiskCache({ deskagentHome: tempDir })
+  const cache = createModelDiskCache({ spiritagentHome: tempDir })
   const cacheDir = path.join(tempDir, 'cache', 'models')
   await fsp.mkdir(cacheDir, { recursive: true })
 

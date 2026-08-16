@@ -18,8 +18,8 @@ from utils import (
     get_all_passthrough,
     get_cache_directory_mounts,
     get_credential_file_mounts,
-    get_deskagent_home,
     get_skills_directory_mount,
+    get_spiritagent_home,
     load_config,
 )
 
@@ -52,9 +52,9 @@ def _normalize_env_dict(env: dict | None) -> dict[str, str]:
     )
 
 
-def _load_deskagent_env_vars() -> dict[str, str]:
+def _load_spiritagent_env_vars() -> dict[str, str]:
     try:
-        if (env_path := get_deskagent_home() / ".env").is_file():
+        if (env_path := get_spiritagent_home() / ".env").is_file():
             with env_path.open("r", encoding="utf-8") as f:
                 return {
                     k.strip(): v.strip().strip('"').strip("'")
@@ -74,9 +74,9 @@ def _sanitize_label_value(value: str) -> str:
 
 def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | None = None, docker_exe: str | None = None) -> int:
     docker = docker_exe or find_docker() or "docker"
-    filters = ["--filter", "label=deskagent-agent=1", "--filter", "status=exited"]
+    filters = ["--filter", "label=spiritagent-agent=1", "--filter", "status=exited"]
     if profile_filter:
-        filters.extend(["--filter", f"label=deskagent-profile={_sanitize_label_value(profile_filter)}"])
+        filters.extend(["--filter", f"label=spiritagent-profile={_sanitize_label_value(profile_filter)}"])
     try:
         res = subprocess.run([docker, "ps", "-a", *filters, "--format", "{{.ID}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW)
         if res.returncode != 0:
@@ -304,12 +304,12 @@ class DockerEnvironment(BaseEnvironment):
         self._image_uses_s6_init = _image_uses_init_entrypoint(self._docker_exe, image)
         security_args = _build_security_args(run_as_host_user and bool(user_args), run_exec=self._image_uses_s6_init)
         self._all_run_args = security_args + user_args + writable_args + resource_args + volume_args + env_args + [arg for arg in (extra_args or []) if isinstance(arg, str)]
-        container_name = f"deskagent-{uuid.uuid4().hex[:8]}"
+        container_name = f"spiritagent-{uuid.uuid4().hex[:8]}"
         profile_name = _sanitize_label_value(cfg_get(load_config(), "profile", "name", default="default"))
         task_label = _sanitize_label_value(task_id)
-        label_args = ["--label", "deskagent-agent=1", "--label", f"deskagent-task-id={task_label}", "--label", f"deskagent-profile={profile_name}"]
+        label_args = ["--label", "spiritagent-agent=1", "--label", f"spiritagent-task-id={task_label}", "--label", f"spiritagent-profile={profile_name}"]
         self._container_name = container_name
-        self._labels = {"deskagent-agent": "1", "deskagent-task-id": task_label, "deskagent-profile": profile_name}
+        self._labels = {"spiritagent-agent": "1", "spiritagent-task-id": task_label, "spiritagent-profile": profile_name}
         reused = False
         if persist_across_processes and (existing := self._find_reusable_container(task_label, profile_name)):
             cid, state = existing
@@ -339,8 +339,8 @@ class DockerEnvironment(BaseEnvironment):
         with contextlib.suppress(Exception):
             passthrough_keys = set(get_all_passthrough())
         forward_keys = set(self._forward_env) | passthrough_keys
-        deskagent_env = _load_deskagent_env_vars() if forward_keys else {}
-        forwarded = {k: val for k in forward_keys if (val := os.getenv(k) or deskagent_env.get(k))}
+        spiritagent_env = _load_spiritagent_env_vars() if forward_keys else {}
+        forwarded = {k: val for k in forward_keys if (val := os.getenv(k) or spiritagent_env.get(k))}
         exec_env = self._env | forwarded
         return [arg for key in sorted(exec_env) for arg in ("-e", f"{key}={exec_env[key]}")]
 
@@ -361,8 +361,8 @@ class DockerEnvironment(BaseEnvironment):
     def _recreate_container(self) -> bool:
         logger.warning("Container %s appears to be gone — attempting recovery", (self._container_id or "")[:12])
         self._container_id = None
-        task_label = self._labels.get("deskagent-task-id", "")
-        profile_label = self._labels.get("deskagent-profile", "")
+        task_label = self._labels.get("spiritagent-task-id", "")
+        profile_label = self._labels.get("spiritagent-profile", "")
         if existing := self._find_reusable_container(task_label, profile_label):
             cid, state = existing
             if state == "running":
@@ -377,7 +377,7 @@ class DockerEnvironment(BaseEnvironment):
             if not self._image:
                 return False
             try:
-                new_name = f"deskagent-{uuid.uuid4().hex[:8]}"
+                new_name = f"spiritagent-{uuid.uuid4().hex[:8]}"
                 init_args = [] if self._image_uses_s6_init else ["--init"]
                 label_args = [arg for k, v in self._labels.items() for arg in ("--label", f"{k}={v}")]
                 run_cmd = [self._docker_exe, "run", "-d", *init_args, "--name", new_name, *label_args, "-w", self.cwd, *self._all_run_args, self._image, "sleep", "infinity"]
@@ -431,11 +431,11 @@ class DockerEnvironment(BaseEnvironment):
                     "ps",
                     "-a",
                     "--filter",
-                    "label=deskagent-agent=1",
+                    "label=spiritagent-agent=1",
                     "--filter",
-                    f"label=deskagent-task-id={task_label}",
+                    f"label=spiritagent-task-id={task_label}",
                     "--filter",
-                    f"label=deskagent-profile={profile_label}",
+                    f"label=spiritagent-profile={profile_label}",
                     "--format",
                     "{{.ID}}\t{{.State}}",
                 ],
@@ -483,7 +483,7 @@ class DockerEnvironment(BaseEnvironment):
             except Exception as e:
                 logger.warning("docker rm -f %s failed: %s", log_id, e)
 
-        t = threading.Thread(target=_do_cleanup, daemon=True, name=f"deskagent-cleanup-{log_id}")
+        t = threading.Thread(target=_do_cleanup, daemon=True, name=f"spiritagent-cleanup-{log_id}")
         t.start()
         self._cleanup_thread = t
         self._container_id = None

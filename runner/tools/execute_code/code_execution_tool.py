@@ -57,7 +57,7 @@ _SAFE_ENV_PREFIXES = ("PATH", "HOME", "USER", "LANG", "LC_", "TERM", "TMPDIR", "
 
 _SECRET_SUBSTRINGS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN", "WEBHOOK")
 
-DESKAGENT_CHILD_ALLOWED = frozenset({"DESKAGENT_HOME", "DESKAGENT_PROFILE", "DESKAGENT_CONFIG", "DESKAGENT_ENV"})
+SPIRITAGENT_CHILD_ALLOWED = frozenset({"SPIRITAGENT_HOME", "SPIRITAGENT_PROFILE", "SPIRITAGENT_CONFIG", "SPIRITAGENT_ENV"})
 
 _WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
     "SYSTEMROOT",
@@ -91,7 +91,7 @@ def _scrub_child_env(source_env: dict[str, str], is_passthrough: Callable[[str],
     if is_windows is None:
         is_windows = IS_WINDOWS
     scrubbed: dict[str, str] = {}
-    _dropped_deskagent = []
+    _dropped_spiritagent = []
     for k, v in source_env.items():
         if is_passthrough(k):
             scrubbed[k] = v
@@ -101,22 +101,22 @@ def _scrub_child_env(source_env: dict[str, str], is_passthrough: Callable[[str],
         if any(k.startswith(p) for p in _SAFE_ENV_PREFIXES):
             scrubbed[k] = v
             continue
-        if k in DESKAGENT_CHILD_ALLOWED:
+        if k in SPIRITAGENT_CHILD_ALLOWED:
             scrubbed[k] = v
             continue
         if is_windows and k.upper() in _WINDOWS_ESSENTIAL_ENV_VARS:
             scrubbed[k] = v
             continue
-        if k.startswith("DESKAGENT_"):
-            _dropped_deskagent.append(k)
-    if _dropped_deskagent:
+        if k.startswith("SPIRITAGENT_"):
+            _dropped_spiritagent.append(k)
+    if _dropped_spiritagent:
         logger.debug(
-            "execute_code: dropped %d non-allowlisted DESKAGENT_* var(s) from the "
+            "execute_code: dropped %d non-allowlisted SPIRITAGENT_* var(s) from the "
             "sandbox child env (%s). This is intentional hardening (#27303); if "
             "a sandbox script legitimately needs one, declare it via "
             "env_passthrough in the skill/config so it passes by explicit opt-in.",
-            len(_dropped_deskagent),
-            ", ".join(sorted(_dropped_deskagent)),
+            len(_dropped_spiritagent),
+            ", ".join(sorted(_dropped_spiritagent)),
         )
     return scrubbed
 
@@ -138,7 +138,7 @@ _TOOL_STUBS = {
     "write_file": (
         "write_file",
         "path: str, content: str, cross_profile: bool = False",
-        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-DeskAgent-profile soft guard."""',
+        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-SpiritAgent-profile soft guard."""',
         '{"path": path, "content": content, "cross_profile": cross_profile}',
     ),
     "search_files": (
@@ -150,7 +150,7 @@ _TOOL_STUBS = {
     "patch": (
         "patch",
         'path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False, mode: str = "replace", patch: str = None, cross_profile: bool = False',
-        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-DeskAgent-profile soft guard."""',
+        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-SpiritAgent-profile soft guard."""',
         '{"path": path, "old_string": old_string, "new_string": new_string, "replace_all": replace_all, "mode": mode, "patch": patch, "cross_profile": cross_profile}',
     ),
     "terminal": (
@@ -162,7 +162,7 @@ _TOOL_STUBS = {
 }
 
 
-def generate_deskagent_tools_module(enabled_tools: list[str], transport: str = "uds") -> str:
+def generate_spiritagent_tools_module(enabled_tools: list[str], transport: str = "uds") -> str:
     tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
     stub_functions = []
     export_names = []
@@ -184,7 +184,7 @@ import threading
 import time
 
 # Auth token for the parent's RPC endpoint, injected via the sandbox env.
-_RPC_TOKEN = os.environ.get("DESKAGENT_RPC_TOKEN", "")
+_RPC_TOKEN = os.environ.get("SPIRITAGENT_RPC_TOKEN", "")
 
 # Convenience helpers (avoid common scripting pitfalls)
 
@@ -230,7 +230,7 @@ _call_lock = threading.Lock()
 def _connect():
     """Connect to the parent's RPC server via the transport it picked.
 
-    DESKAGENT_RPC_SOCKET can be either:
+    SPIRITAGENT_RPC_SOCKET can be either:
       - a filesystem path (POSIX Unix domain socket — the default on
         macOS)
       - a string of the form ``tcp://127.0.0.1:<port>`` (Windows, where
@@ -238,7 +238,7 @@ def _connect():
     """
     global _sock
     if _sock is None:
-        endpoint = os.environ["DESKAGENT_RPC_SOCKET"]
+        endpoint = os.environ["SPIRITAGENT_RPC_SOCKET"]
         if endpoint.startswith("tcp://"):
             # tcp://host:port  (host is always 127.0.0.1 in practice — we
             # only bind loopback server-side)
@@ -287,7 +287,7 @@ _FILE_TRANSPORT_HEADER = (
 
 _seq = 0
 _seq_lock = threading.Lock()
-_RPC_DIR = os.environ["DESKAGENT_RPC_DIR"]
+_RPC_DIR = os.environ["SPIRITAGENT_RPC_DIR"]
 
 def _call(tool_name, args):
     """Send a tool call request via file-based RPC and wait for response."""
@@ -621,7 +621,7 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
     rpc_token = secrets.token_hex(16)
     sandbox_id = uuid.uuid4().hex[:12]
     temp_dir = _env_temp_dir(env)
-    sandbox_dir = f"{temp_dir}/deskagent_exec_{sandbox_id}"
+    sandbox_dir = f"{temp_dir}/spiritagent_exec_{sandbox_id}"
     quoted_sandbox_dir = shlex.quote(sandbox_dir)
     quoted_rpc_dir = shlex.quote(f"{sandbox_dir}/rpc")
     tool_call_log: list = []
@@ -639,8 +639,8 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
                 "duration_seconds": 0,
             })
         env.execute(f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10)
-        tools_src = generate_deskagent_tools_module(list(sandbox_tools), transport="file")
-        _ship_file_to_remote(env, f"{sandbox_dir}/deskagent_tools.py", tools_src)
+        tools_src = generate_spiritagent_tools_module(list(sandbox_tools), transport="file")
+        _ship_file_to_remote(env, f"{sandbox_dir}/spiritagent_tools.py", tools_src)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_poll_loop),
@@ -648,7 +648,7 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
             daemon=True,
         )
         rpc_thread.start()
-        env_prefix = f"DESKAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} DESKAGENT_RPC_TOKEN={rpc_token} PYTHONDONTWRITEBYTECODE=1"
+        env_prefix = f"SPIRITAGENT_RPC_DIR={shlex.quote(f'{sandbox_dir}/rpc')} SPIRITAGENT_RPC_TOKEN={rpc_token} PYTHONDONTWRITEBYTECODE=1"
         tz = str(cfg_get(load_config(), "terminal", "timezone", default="")).strip()
         if tz:
             env_prefix += f" TZ={tz}"
@@ -712,14 +712,14 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
     sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
     if not sandbox_tools:
         sandbox_tools = SANDBOX_ALLOWED_TOOLS
-    tmpdir = tempfile.mkdtemp(prefix="deskagent_sandbox_")
+    tmpdir = tempfile.mkdtemp(prefix="spiritagent_sandbox_")
     _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
     _use_tcp_rpc = IS_WINDOWS
     if _use_tcp_rpc:
         sock_path = None
         rpc_endpoint = None
     else:
-        sock_path = os.path.join(_sock_tmpdir, f"deskagent_rpc_{uuid.uuid4().hex}.sock")
+        sock_path = os.path.join(_sock_tmpdir, f"spiritagent_rpc_{uuid.uuid4().hex}.sock")
         rpc_endpoint = sock_path
     tool_call_log: list = []
     tool_call_counter = [0]
@@ -727,8 +727,8 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
     server_sock = None
     rpc_token = secrets.token_hex(16)
     try:
-        tools_src = generate_deskagent_tools_module(list(sandbox_tools))
-        with open(os.path.join(tmpdir, "deskagent_tools.py"), "w", encoding="utf-8") as f:
+        tools_src = generate_spiritagent_tools_module(list(sandbox_tools))
+        with open(os.path.join(tmpdir, "spiritagent_tools.py"), "w", encoding="utf-8") as f:
             f.write(tools_src)
         with open(os.path.join(tmpdir, "script.py"), "w", encoding="utf-8") as f:
             f.write(code)
@@ -749,21 +749,21 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
         )
         rpc_thread.start()
         child_env = _scrub_child_env(os.environ)
-        child_env["DESKAGENT_RPC_SOCKET"] = rpc_endpoint
-        child_env["DESKAGENT_RPC_TOKEN"] = rpc_token
+        child_env["SPIRITAGENT_RPC_SOCKET"] = rpc_endpoint
+        child_env["SPIRITAGENT_RPC_TOKEN"] = rpc_token
         child_env["PYTHONDONTWRITEBYTECODE"] = "1"
         child_env["PYTHONIOENCODING"] = "utf-8"
         child_env["PYTHONUTF8"] = "1"
-        _deskagent_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _spiritagent_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _existing_pp = child_env.get("PYTHONPATH", "")
-        _pp_parts = [tmpdir, _deskagent_root]
+        _pp_parts = [tmpdir, _spiritagent_root]
         if _existing_pp:
             _pp_parts.append(_existing_pp)
         child_env["PYTHONPATH"] = os.pathsep.join(_pp_parts)
         _tz_name = str(cfg_get(load_config(), "terminal", "timezone", default="")).strip()
         if _tz_name:
             child_env["TZ"] = _tz_name
-        child_env.pop("DESKAGENT_TIMEZONE", None)
+        child_env.pop("SPIRITAGENT_TIMEZONE", None)
         _profile_home = get_subprocess_home()
         if _profile_home:
             child_env["HOME"] = str(_profile_home)
@@ -1060,13 +1060,13 @@ _TOOL_DOC_LINES = [
 
 EXECUTE_CODE_SCHEMA = {
     "name": "execute_code",
-    "description": 'Run a Python script that can call DeskAgent tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (if X then Y else Z), or need to loop (fetch N pages, process N files, retry on failure).\n\nUse normal tool calls instead when: single tool call with no processing, you need to see the full result and apply complex reasoning, or the task requires interactive user input.\n\nAvailable via `from deskagent_tools import ...`:\n\n  web_search(query: str, limit: int = 5) -> dict\n    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}\n  web_extract(urls: list[str]) -> dict\n    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown\n  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}\n  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file.\n  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}\n  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file.\n  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}\n\nLimits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. terminal() is foreground-only (no background or pty).\n\nScripts run in the session\'s working directory with the active venv\'s python, so project deps (pandas, etc.) and relative paths work like in terminal().\n\nPrint your final result to stdout. Use Python stdlib (json, re, math, csv, datetime, collections, etc.) for processing between tool calls.\n\nAlso available (no import needed — built into deskagent_tools):\n  json_parse(text: str) — json.loads with strict=False; use for terminal() output with control chars\n  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures',
+    "description": 'Run a Python script that can call SpiritAgent tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (if X then Y else Z), or need to loop (fetch N pages, process N files, retry on failure).\n\nUse normal tool calls instead when: single tool call with no processing, you need to see the full result and apply complex reasoning, or the task requires interactive user input.\n\nAvailable via `from spiritagent_tools import ...`:\n\n  web_search(query: str, limit: int = 5) -> dict\n    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}\n  web_extract(urls: list[str]) -> dict\n    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown\n  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}\n  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file.\n  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}\n  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file.\n  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}\n\nLimits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. terminal() is foreground-only (no background or pty).\n\nScripts run in the session\'s working directory with the active venv\'s python, so project deps (pandas, etc.) and relative paths work like in terminal().\n\nPrint your final result to stdout. Use Python stdlib (json, re, math, csv, datetime, collections, etc.) for processing between tool calls.\n\nAlso available (no import needed — built into spiritagent_tools):\n  json_parse(text: str) — json.loads with strict=False; use for terminal() output with control chars\n  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures',
     "parameters": {
         "type": "object",
         "properties": {
             "code": {
                 "type": "string",
-                "description": "Python code to execute. Import tools with `from deskagent_tools import web_search, terminal, ...` and print your final result to stdout.",
+                "description": "Python code to execute. Import tools with `from spiritagent_tools import web_search, terminal, ...` and print your final result to stdout.",
             }
         },
         "required": ["code"],

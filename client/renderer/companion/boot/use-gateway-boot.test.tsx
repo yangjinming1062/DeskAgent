@@ -7,7 +7,7 @@ import { $gatewayState } from '@/shared/store/gateway'
 import { useGatewayBoot } from './use-gateway-boot'
 
 // End-to-end-ish repro of the "remote VPS → stuck on CONNECTING, no Settings"
-// bug that drives the REAL useGatewayBoot hook + REAL DeskAgentGateway through a
+// bug that drives the REAL useGatewayBoot hook + REAL SpiritAgentGateway through a
 // fake WebSocket we fully control. No Docker / no real port: from the desktop's
 // point of view a "remote VPS" is just a WebSocket that opens once and later
 // refuses to reopen, so that is exactly (and only) what we fake.
@@ -116,7 +116,7 @@ beforeEach(() => {
   FakeWebSocket.mode = 'open'
   FakeWebSocket.instances = []
   ;(globalThis as { WebSocket: unknown }).WebSocket = FakeWebSocket
-  ;(window as { deskagent?: unknown }).deskagent = fakeDesktop()
+  ;(window as { spiritagent?: unknown }).spiritagent = fakeDesktop()
   $gatewayState.set('idle')
   $desktopBoot.set({
     error: null,
@@ -134,7 +134,7 @@ afterEach(() => {
   cleanup()
   vi.useRealTimers()
   ;(globalThis as { WebSocket: unknown }).WebSocket = originalWebSocket
-  delete (window as { deskagent?: unknown }).deskagent
+  delete (window as { spiritagent?: unknown }).spiritagent
 })
 
 // Let pending microtasks (awaits) AND the queued 0ms socket open/error fire.
@@ -154,9 +154,9 @@ async function advanceBackoff() {
 }
 
 describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => {
-  it('INITIAL boot against a dead VPS: getConnection hangs (waitForDeskAgent) → app sits in the connecting combo, then fails', async () => {
+  it('INITIAL boot against a dead VPS: getConnection hangs (waitForSpiritAgent) → app sits in the connecting combo, then fails', async () => {
     // The report's actual path: a fresh launch pointed at an unreachable VPS.
-    // startDeskAgent()'s remote branch awaits waitForDeskAgent() for 45s before it
+    // startSpiritAgent()'s remote branch awaits waitForSpiritAgent() for 45s before it
     // throws, so the renderer's `await desktop.getConnection()` stays pending
     // that whole window. During it: gatewayState is still 'idle' (connect was
     // never reached) and boot.error is null → connecting=true → the fullscreen
@@ -169,7 +169,7 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
           rejectConn = reject
         })
     )
-    ;(window as { deskagent?: unknown }).deskagent = desktop
+    ;(window as { spiritagent?: unknown }).spiritagent = desktop
 
     render(<Harness />)
     await flushAsync()
@@ -181,10 +181,10 @@ describe('useGatewayBoot remote reconnect loop (real hook, fake socket)', () => 
     expect($desktopBoot.get().error).toBeNull()
     // ^ connecting === true here → fullscreen CONNECTING, no Settings.
 
-    // After ~45s waitForDeskAgent gives up and getConnection rejects → boot()
+    // After ~45s waitForSpiritAgent gives up and getConnection rejects → boot()
     // catch → failDesktopBoot → the BootFailureOverlay recovery surface.
     await act(async () => {
-      rejectConn(new Error('DeskAgent backend did not become ready: timeout'))
+      rejectConn(new Error('SpiritAgent backend did not become ready: timeout'))
       await vi.advanceTimersByTimeAsync(0)
     })
 

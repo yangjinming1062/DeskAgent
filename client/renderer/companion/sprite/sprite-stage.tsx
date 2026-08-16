@@ -46,9 +46,9 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       pendingToggleRef.current = null
 
       if (enable) {
-        void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: false })
+        void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
       } else {
-        void window.deskagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
+        void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
       }
     }, 50)
   }, [])

@@ -2,14 +2,14 @@ import { IconVolume } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
 import { Button, SegmentedControl, type SegmentedControlOption, Switch } from '@/shared/components/ui'
-import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { triggerHaptic } from '@/shared/lib/haptics'
+import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { $runnerPhase } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
-import type { SpeechEngine } from '@/shared/types/deskagent'
-import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
+import type { SpeechEngine } from '@/shared/types/spiritagent'
+import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
 import { ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from './primitives'
 
@@ -31,7 +31,7 @@ const DEFAULTS: SpeechFormState = {
   maxRecordingSeconds: 60
 }
 
-const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
+const readState = (config: SpiritAgentConfigResponse): SpeechFormState => ({
   sttEnabled: config.stt?.enabled ?? DEFAULTS.sttEnabled,
   sttEngine: config.stt?.engine ?? DEFAULTS.sttEngine,
   sttSilentFallback: config.stt?.silent_fallback ?? DEFAULTS.sttSilentFallback,
@@ -41,7 +41,7 @@ const readState = (config: DeskAgentConfigResponse): SpeechFormState => ({
 
 export function SpeechSettings(): React.JSX.Element {
   const s = strings.speech
-  const configLoader = useAsyncLoader<DeskAgentConfigResponse>(() => getDeskAgentConfig())
+  const configLoader = useAsyncLoader<SpiritAgentConfigResponse>(() => getSpiritAgentConfig())
   const [isSaving, setIsSaving] = useState(false)
   const [original, setOriginal] = useState<SpeechFormState>(DEFAULTS)
   const [state, setState] = useState<SpeechFormState>(DEFAULTS)
@@ -71,7 +71,7 @@ export function SpeechSettings(): React.JSX.Element {
 
     const probe = async () => {
       try {
-        const tools = await window.deskagent.runnerGetTools?.()
+        const tools = await window.spiritagent.runnerGetTools?.()
 
         if (cancelled || !Array.isArray(tools)) {
           return
@@ -119,7 +119,7 @@ export function SpeechSettings(): React.JSX.Element {
     setIsSaving(true)
 
     try {
-      const { config } = await saveDeskAgentConfig({
+      const { config } = await saveSpiritAgentConfig({
         stt: {
           enabled: state.sttEnabled,
           engine: state.sttEngine,

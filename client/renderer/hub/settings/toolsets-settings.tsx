@@ -32,7 +32,7 @@ export function ToolsetsSettings(): React.JSX.Element {
   const saveErrorLabelRef = useLatestRef(sk.toolsetsRefreshFailed)
 
   const loader = useAsyncLoader<ToolsetRosterEntry[]>(async () => {
-    const res = await window.deskagent.toolsets.list()
+    const res = await window.spiritagent.toolsets.list()
 
     if (!res.ok) {
       notifyError(res.error ?? 'load-failed', loadErrorLabelRef.current)
@@ -92,7 +92,7 @@ export function ToolsetsSettings(): React.JSX.Element {
     setSavingId(id)
 
     try {
-      const res = await window.deskagent.toolsets.setEnabled({ id, enabled: nextEnabled })
+      const res = await window.spiritagent.toolsets.setEnabled({ id, enabled: nextEnabled })
 
       if (!res.ok || !res.toolsets) {
         setToolsets(prev)

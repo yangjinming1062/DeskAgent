@@ -15,49 +15,49 @@ const SYSTEM_MONO =
 
 export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
 
-const DESKAGENT_BLUE = '#0053FD'
+const SPIRITAGENT_BLUE = '#0053FD'
 const PSYCHE_BLUE = '#1540B1'
 const PSYCHE_WARM = '#FFE6CB'
 
 // B5: collapse the two near-identical tints into one. The transparent
 // variant differs only in the second `color-mix` argument — pass it in
 // rather than carrying two copies of the same template.
-const deskagentTint = (pct: number, base: '#FFFFFF' | 'transparent' = '#FFFFFF') =>
-  `color-mix(in srgb, ${DESKAGENT_BLUE} ${pct}%, ${base})`
+const spiritagentTint = (pct: number, base: '#FFFFFF' | 'transparent' = '#FFFFFF') =>
+  `color-mix(in srgb, ${SPIRITAGENT_BLUE} ${pct}%, ${base})`
 
-/** DeskAgent — canonical desktop identity. The palette keeps the current
+/** SpiritAgent — canonical desktop identity. The palette keeps the current
  * glass geometry neutral, then lets the old bb/gui blue and psyche cream
  * return as accent seeds. */
-export const deskagentTheme: DesktopTheme = {
-  name: 'deskagent',
-  label: 'DeskAgent',
-  description: 'Glass neutrals with DeskAgent blue accents',
+export const spiritagentTheme: DesktopTheme = {
+  name: 'spiritagent',
+  label: 'SpiritAgent',
+  description: 'Glass neutrals with SpiritAgent blue accents',
   colors: {
     background: '#F8FAFF',
     foreground: '#17171A',
     card: '#FFFFFF',
     cardForeground: '#17171A',
-    muted: deskagentTint(5),
+    muted: spiritagentTint(5),
     mutedForeground: '#666678',
     popover: '#FFFFFF',
     popoverForeground: '#17171A',
-    primary: DESKAGENT_BLUE,
+    primary: SPIRITAGENT_BLUE,
     primaryForeground: '#FCFCFC',
-    secondary: deskagentTint(7),
+    secondary: spiritagentTint(7),
     secondaryForeground: '#242432',
-    accent: deskagentTint(10),
+    accent: spiritagentTint(10),
     accentForeground: '#202030',
-    border: deskagentTint(22, 'transparent'),
-    input: deskagentTint(30, 'transparent'),
-    ring: DESKAGENT_BLUE,
-    midground: DESKAGENT_BLUE,
-    composerRing: DESKAGENT_BLUE,
+    border: spiritagentTint(22, 'transparent'),
+    input: spiritagentTint(30, 'transparent'),
+    ring: SPIRITAGENT_BLUE,
+    midground: SPIRITAGENT_BLUE,
+    composerRing: SPIRITAGENT_BLUE,
     destructive: '#C72E4D',
     destructiveForeground: '#FFFFFF',
     sidebarBackground: '#F3F7FF',
-    sidebarBorder: deskagentTint(18, 'transparent'),
-    userBubble: deskagentTint(6),
-    userBubbleBorder: deskagentTint(24, 'transparent')
+    sidebarBorder: spiritagentTint(18, 'transparent'),
+    userBubble: spiritagentTint(6),
+    userBubbleBorder: spiritagentTint(24, 'transparent')
   },
   darkColors: {
     background: '#0D2F86',
@@ -77,7 +77,7 @@ export const deskagentTheme: DesktopTheme = {
     border: '#3158AD',
     input: '#0B2566',
     ring: PSYCHE_WARM,
-    midground: DESKAGENT_BLUE,
+    midground: SPIRITAGENT_BLUE,
     composerRing: PSYCHE_WARM,
     destructive: '#C0473A',
     destructiveForeground: '#FEF2F2',

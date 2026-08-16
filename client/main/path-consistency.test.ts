@@ -28,7 +28,7 @@ function extractMatch(src: string, pattern: RegExp, label: string): string {
   return m[1]
 }
 
-test('DESKAGENT_HOME: all resolvers use the same Windows directory name', () => {
+test('SPIRITAGENT_HOME: all resolvers use the same Windows directory name', () => {
   const dirs = new Set<string>()
   dirs.add(extractMatch(SOURCES['constants.py'], /Path\(local_appdata\)\s*\/\s*"([^"]+)"/, 'constants.py'))
   dirs.add(extractMatch(SOURCES['paths.ts'], /path\.join\(local,\s*'([^']+)'\)/, 'paths.ts'))
@@ -37,7 +37,7 @@ test('DESKAGENT_HOME: all resolvers use the same Windows directory name', () => 
   assert.strictEqual(dirs.size, 1, `Windows dir name drift: ${[...dirs].join(' vs ')}`)
 })
 
-test('DESKAGENT_HOME: all resolvers use the same macOS directory name', () => {
+test('SPIRITAGENT_HOME: all resolvers use the same macOS directory name', () => {
   const dirs = new Set<string>()
   dirs.add(extractMatch(SOURCES['constants.py'], /"Application Support"\s*\/\s*"([^"]+)"/, 'constants.py'))
   dirs.add(extractMatch(SOURCES['paths.ts'], /'Application Support',\s*'([^']+)'/, 'paths.ts'))

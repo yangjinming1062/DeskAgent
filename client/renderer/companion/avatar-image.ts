@@ -12,7 +12,7 @@ const MAX_IMAGE_BASE64 = 8 * 1024 * 1024
 /** `null` when the user cancels or the file is unreadable; `error` is user-facing copy. */
 export async function pickAvatarImage(title: string): Promise<{ image: PickedImage } | { error: string } | null> {
   try {
-    const [path] = await window.deskagent.selectPaths({
+    const [path] = await window.spiritagent.selectPaths({
       title,
       filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }]
     })
@@ -21,7 +21,7 @@ export async function pickAvatarImage(title: string): Promise<{ image: PickedIma
       return null
     }
 
-    const dataUrl = await window.deskagent.readFileDataUrl(path)
+    const dataUrl = await window.spiritagent.readFileDataUrl(path)
     const comma = dataUrl.indexOf(',')
     const base64 = comma > 0 ? dataUrl.slice(comma + 1) : ''
 
@@ -45,13 +45,13 @@ export async function resolvePortraitUrl(assetUrl: string | null | undefined): P
   }
 
   try {
-    return await window.deskagent.apiAsset({ url: assetUrl })
+    return await window.spiritagent.apiAsset({ url: assetUrl })
   } catch {
     return null
   }
 }
 
-const DB_NAME = 'deskagent_onboarding'
+const DB_NAME = 'spiritagent_onboarding'
 const STORE_NAME = 'draft_cache'
 const REF_IMAGE_KEY = 'ref_image'
 

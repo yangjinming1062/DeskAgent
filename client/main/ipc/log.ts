@@ -27,7 +27,7 @@ export function formatRendererLog(payload?: { args?: unknown[]; level?: string; 
 }
 
 export function registerLogIpc({ ipcMain, log }: { ipcMain: IpcMain; log: (msg: string) => void }): void {
-  ipcMain.handle('deskagent:log:emit', (_event, payload?: { args?: unknown[]; level?: string; scope?: string }) => {
+  ipcMain.handle('spiritagent:log:emit', (_event, payload?: { args?: unknown[]; level?: string; scope?: string }) => {
     log(formatRendererLog(payload))
   })
 }

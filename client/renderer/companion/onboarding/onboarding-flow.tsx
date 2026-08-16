@@ -350,7 +350,7 @@ async function generatePortrait(reference: PickedImage | null): Promise<{
   id?: number
 } | null> {
   try {
-    const res = await window.deskagent.api<{
+    const res = await window.spiritagent.api<{
       asset_url?: string
       seed_front_url?: string | null
       seed_right_url?: string | null
@@ -390,7 +390,7 @@ async function generateFullbody(
       body.reference_content_type = referenceImage.contentType
     }
 
-    const res = await window.deskagent.api<{
+    const res = await window.spiritagent.api<{
       id?: number
       seed_front_url?: string
       seed_right_url?: string
@@ -413,7 +413,7 @@ async function generateFullbody(
 
 async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise<boolean> {
   try {
-    await window.deskagent.api({
+    await window.spiritagent.api({
       path: '/api/companion/persona',
       method: 'PUT',
       body: { definition_json: JSON.stringify(payload) }
@@ -1038,7 +1038,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             nextField === 'portrait-fullbody-back'
           ) {
             try {
-              const avatarRes = await window.deskagent.api<{
+              const avatarRes = await window.spiritagent.api<{
                 asset_url?: string | null
                 seed_front_url?: string | null
                 seed_right_url?: string | null
@@ -1263,7 +1263,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const confirmPortrait = async () => {
     try {
-      await window.deskagent.api({
+      await window.spiritagent.api({
         path: '/api/companion/portrait/confirm',
         method: 'POST'
       })

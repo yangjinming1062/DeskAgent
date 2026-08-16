@@ -57,7 +57,7 @@ export type Route = 'welcome' | 'progress' | 'success' | 'failure'
 export const $route = atom<Route>('welcome')
 export const $bootstrap = atom<BootstrapStateModel>(INITIAL)
 export const $logPath = atom<string | null>(null)
-export const $deskAgentHome = atom<string | null>(null)
+export const $spiritAgentHome = atom<string | null>(null)
 
 export const $progress = computed($bootstrap, (b) => {
   const total = b.stageOrder.length
@@ -144,12 +144,12 @@ export async function initialize(): Promise<void> {
 
   // Pull static info on mount for the diagnostics footer.
   try {
-    const [logPath, deskAgentHome] = await Promise.all([
+    const [logPath, spiritAgentHome] = await Promise.all([
       invoke<string>('get_log_path'),
-      invoke<string>('get_deskagent_home')
+      invoke<string>('get_spiritagent_home')
     ])
     $logPath.set(logPath)
-    $deskAgentHome.set(deskAgentHome)
+    $spiritAgentHome.set(spiritAgentHome)
   } catch (err) {
     console.warn('failed to fetch installer paths', err)
   }
@@ -250,7 +250,7 @@ export async function startInstall(): Promise<void> {
       commit: null,
       branch: null,
       include_desktop: true,
-      deskagent_home: null
+      spiritagent_home: null
     }
   })
 }
@@ -260,11 +260,11 @@ export async function cancelInstall(): Promise<void> {
   await invoke('cancel_bootstrap')
 }
 
-export async function launchDeskAgentDesktop(): Promise<void> {
+export async function launchSpiritAgentDesktop(): Promise<void> {
   if (!$bootstrap.get().installRoot) throw new Error('no install root')
-  // launch_deskagent_desktop resolves the desktop binary from $DESKAGENT_HOME
+  // launch_spiritagent_desktop resolves the desktop binary from $SPIRITAGENT_HOME
   // on the Rust side (see src-tauri/src/bootstrap.rs).
-  await invoke('launch_deskagent_desktop')
+  await invoke('launch_spiritagent_desktop')
 }
 
 export async function openLogDir(): Promise<void> {

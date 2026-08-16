@@ -7,7 +7,7 @@ from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any
 
-from utils import call_llm, clean_output, get_deskagent_dir
+from utils import call_llm, clean_output, get_spiritagent_dir
 
 from ..debug_helpers import DebugSession
 from ..interrupt import is_interrupted
@@ -59,7 +59,7 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
         if local_path.is_file():
             temp_path, should_cleanup = local_path, False
         elif await _validate_image_url_async(image_url):
-            temp_path = get_deskagent_dir("cache/vision", "temp_vision_images") / f"temp_image_{uuid.uuid4()}.jpg"
+            temp_path = get_spiritagent_dir("cache/vision", "temp_vision_images") / f"temp_image_{uuid.uuid4()}.jpg"
             await _download_image(image_url, temp_path)
         else:
             raise ValueError("Invalid image source. Provide an HTTP/HTTPS URL or a valid local file path.")

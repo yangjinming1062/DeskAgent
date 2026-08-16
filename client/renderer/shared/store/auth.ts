@@ -19,7 +19,7 @@ function isExpiredSnapshot(snapshot: DesktopAuthSnapshot | null | undefined): bo
 
 export async function hydrateAuth(): Promise<void> {
   try {
-    const snapshot = await window.deskagent.getSession()
+    const snapshot = await window.spiritagent.getSession()
 
     if (snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
       $auth.set({ kind: 'authenticated', snapshot })
@@ -50,7 +50,7 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
 
 export async function activate(payload: { code: string }): Promise<void> {
   try {
-    const snapshot = await window.deskagent.activate(payload)
+    const snapshot = await window.spiritagent.activate(payload)
     $auth.set({ kind: 'authenticated', snapshot })
   } catch (error) {
     $auth.set({
@@ -64,13 +64,13 @@ export async function activate(payload: { code: string }): Promise<void> {
 export async function refreshSession(payload?: Record<string, unknown>): Promise<void> {
   // Refresh failure does NOT auto-logout (unlike login()): the old JWT may
   // still work, and the caller can decide whether to surface the error.
-  const snapshot = await window.deskagent.refreshSession(payload)
+  const snapshot = await window.spiritagent.refreshSession(payload)
   $auth.set({ kind: 'authenticated', snapshot })
 }
 
 export async function logout(): Promise<void> {
   try {
-    await window.deskagent.logout()
+    await window.spiritagent.logout()
   } finally {
     tearDownPrimaryGateway()
     $auth.set({ kind: 'unauthenticated' })

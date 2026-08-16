@@ -24,7 +24,7 @@ function makeDeps(bridge: any): any {
   return { runnerBridge: bridge }
 }
 
-test('runner:cancel dispatches deskagent.cancel to the bridge', async () => {
+test('runner:cancel dispatches spiritagent.cancel to the bridge', async () => {
   const dispatched: any[] = []
 
   const bridge = {
@@ -38,10 +38,10 @@ test('runner:cancel dispatches deskagent.cancel to the bridge', async () => {
   const ipc = makeFakeIpc()
   registerRunnerIpc({ deps: makeDeps(bridge), ipcMain: ipc as any })
 
-  const result = await ipc.invoke('deskagent:runner:cancel')
+  const result = await ipc.invoke('spiritagent:runner:cancel')
 
   assert.deepEqual(result, { ok: true })
-  assert.deepEqual(dispatched, [{ method: 'deskagent.cancel', params: {} }])
+  assert.deepEqual(dispatched, [{ method: 'spiritagent.cancel', params: {} }])
 })
 
 test('runner:cancel is not rate-bucketed like execute_tool', async () => {
@@ -50,6 +50,6 @@ test('runner:cancel is not rate-bucketed like execute_tool', async () => {
   registerRunnerIpc({ deps: makeDeps(bridge), ipcMain: ipc as any })
 
   for (let i = 0; i < 80; i++) {
-    await ipc.invoke('deskagent:runner:cancel')
+    await ipc.invoke('spiritagent:runner:cancel')
   }
 })

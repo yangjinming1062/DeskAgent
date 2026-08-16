@@ -15,7 +15,7 @@ const execFileP = promisify(execFile)
 
 export interface RunnerUpdaterDeps {
   bridgeDeps: {
-    deskagentHome: string
+    spiritagentHome: string
     ensureBackendSession?: () => any
     runnerBridge?: any
   }
@@ -47,7 +47,7 @@ export class RunnerUpdater {
     updateBaseUrl: string
     version: string
   }): Promise<void> {
-    const home = this.bridgeDeps.deskagentHome
+    const home = this.bridgeDeps.spiritagentHome
     const stagingDir = path.join(home, 'runner.staging')
 
     await fsp.rm(stagingDir, { force: true, recursive: true })
@@ -171,7 +171,7 @@ export class RunnerUpdater {
 
   // Phase 2: install in the NEW Electron.
   async installPending(): Promise<{ error?: string; noop?: boolean; ok: boolean }> {
-    const home = this.bridgeDeps.deskagentHome
+    const home = this.bridgeDeps.spiritagentHome
     const sentinelPath = path.join(home, '.pending-runner-update.json')
 
     if (!fs.existsSync(sentinelPath)) {
@@ -252,7 +252,7 @@ export class RunnerUpdater {
       let rollbackMarker: string | null = null
 
       try {
-        const { stdout } = await execFileP(venvPython, ['-m', 'pip', 'show', 'deskagent-agent'], {
+        const { stdout } = await execFileP(venvPython, ['-m', 'pip', 'show', 'spiritagent-agent'], {
           maxBuffer: 1 * 1024 * 1024,
           timeout: 30_000
         })
@@ -292,7 +292,7 @@ export class RunnerUpdater {
       try {
         await execFileP(
           venvPython,
-          ['-c', 'import deskagent_agent, importlib.util as u; assert u.find_spec("server") is not None'],
+          ['-c', 'import spiritagent_agent, importlib.util as u; assert u.find_spec("server") is not None'],
           { cwd: path.join(home, 'runner'), timeout: 30_000 }
         )
       } catch (err) {
@@ -395,7 +395,7 @@ export class RunnerUpdater {
 
   _emit(payload: any): void {
     if (typeof this.sendToMain === 'function') {
-      this.sendToMain(this.getMainWindow?.(), 'deskagent:runner-update-event', payload)
+      this.sendToMain(this.getMainWindow?.(), 'spiritagent:runner-update-event', payload)
     }
   }
 

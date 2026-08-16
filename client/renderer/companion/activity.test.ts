@@ -70,11 +70,11 @@ describe('classifyFocusedApp', () => {
 // activity.ts's consumer-side logic in isolation.
 import { $runnerPhase, teardownRunnerStatus } from '@/shared/store/runner-status'
 
-interface ActivityDeskagent {
+interface ActivitySpiritagent {
   runnerInvoke: ReturnType<typeof vi.fn>
 }
 
-function installActivityDeskagent(): ActivityDeskagent {
+function installActivitySpiritagent(): ActivitySpiritagent {
   const runnerInvoke = vi.fn().mockResolvedValue({
     idle_seconds: 0,
     locked: false,
@@ -82,7 +82,7 @@ function installActivityDeskagent(): ActivityDeskagent {
     fullscreen: false
   })
 
-  ;(window as unknown as { deskagent: unknown }).deskagent = { runnerInvoke }
+  ;(window as unknown as { spiritagent: unknown }).spiritagent = { runnerInvoke }
 
   return { runnerInvoke }
 }
@@ -97,11 +97,11 @@ describe('startActivityMonitor runner-gate', () => {
     stopActivityMonitor()
     teardownRunnerStatus()
     vi.useRealTimers()
-    ;(window as unknown as { deskagent?: unknown }).deskagent = undefined
+    ;(window as unknown as { spiritagent?: unknown }).spiritagent = undefined
   })
 
   it('does NOT poll while phase stays idle', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
 
     startActivityMonitor()
     await vi.advanceTimersByTimeAsync(0)
@@ -113,7 +113,7 @@ describe('startActivityMonitor runner-gate', () => {
   })
 
   it('kicks a poll the moment phase transitions to running', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
 
     startActivityMonitor()
     await vi.advanceTimersByTimeAsync(0)
@@ -126,7 +126,7 @@ describe('startActivityMonitor runner-gate', () => {
   })
 
   it('kicks immediately when phase is already running on subscribe', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
 
     // Bridge already up before subscribe — simulates a runner that reached
     // running while activity.ts wasn't watching. nanostore fires the
@@ -139,7 +139,7 @@ describe('startActivityMonitor runner-gate', () => {
   })
 
   it('keeps polling on the setInterval cadence while phase stays running', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
     $runnerPhase.set('running')
 
     startActivityMonitor()
@@ -151,7 +151,7 @@ describe('startActivityMonitor runner-gate', () => {
   })
 
   it('skips setInterval polls after a stopped transition, resumes on the next 30s tick', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
     $runnerPhase.set('running')
 
     startActivityMonitor()
@@ -178,7 +178,7 @@ describe('startActivityMonitor runner-gate', () => {
   })
 
   it('stopActivityMonitor detaches the subscription and clears the interval', async () => {
-    const { runnerInvoke } = installActivityDeskagent()
+    const { runnerInvoke } = installActivitySpiritagent()
     $runnerPhase.set('running')
 
     startActivityMonitor()

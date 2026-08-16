@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# DeskAgent Agent installer (POSIX / macOS).
+# SpiritAgent Agent installer (POSIX / macOS).
 #
-# 6-stage payload release. Tauri DeskAgent-Setup.app is the GUI shell that
+# 6-stage payload release. Tauri SpiritAgent-Setup.app is the GUI shell that
 # spawns this script; the script's job is to install Python (if needed),
 # copy the bundled runner binary, desktop app, and skills
-# into the user's $DESKAGENT_HOME (and platform-canonical locations for the
+# into the user's $SPIRITAGENT_HOME (and platform-canonical locations for the
 # desktop app).
 #
 # Protocol:
 #   install.sh -Manifest                 → emit manifest JSON, one stage list
 #   install.sh -Stage NAME -Json         → run a single stage, emit result frame
 #
-# Payload locations are passed via DESKAGENT_BUNDLE_* env vars (set by the Tauri
+# Payload locations are passed via SPIRITAGENT_BUNDLE_* env vars (set by the Tauri
 # installer) or via the matching --bundled-*-dir CLI args (for dev/test).
 # When both are present, env wins.
 
@@ -25,20 +25,20 @@ PYTHON_VERSION="3.13"
 # --- defaults ---------------------------------------------------------------
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
-  DEFAULT_DESKAGENT_HOME_UNIX="$HOME/Library/Application Support/DeskAgent"
+  DEFAULT_SPIRITAGENT_HOME_UNIX="$HOME/Library/Application Support/SpiritAgent"
 else
-  DEFAULT_DESKAGENT_HOME_UNIX="$HOME/.deskagent"
+  DEFAULT_SPIRITAGENT_HOME_UNIX="$HOME/.spiritagent"
 fi
 
 # Path to the runner binary inside the bundle. POSIX uses no extension.
-RUNNER_WHEEL_GLOB="desk_agent-*.whl"
+RUNNER_WHEEL_GLOB="spirit-agent-*.whl"
 
-# Default desktop format; overridden by $DESKAGENT_INSTALLER_FORMAT.
+# Default desktop format; overridden by $SPIRITAGENT_INSTALLER_FORMAT.
 DEFAULT_DESKTOP_FORMAT="dmg"
 
 # --- arg parsing ------------------------------------------------------------
 
-DESKAGENT_HOME_ARG=""
+SPIRITAGENT_HOME_ARG=""
 BUNDLED_RUNNER_DIR_ARG=""
 BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
@@ -52,12 +52,12 @@ NON_INTERACTIVE=0
 
 usage() {
   cat <<EOF
-$SCRIPT_NAME — DeskAgent Agent installer (6-stage payload release)
+$SCRIPT_NAME — SpiritAgent Agent installer (6-stage payload release)
 
 Usage:
   $SCRIPT_NAME -Manifest
   $SCRIPT_NAME -Stage NAME [-Json] [-NonInteractive] \\
-      [--deskagent-home PATH] \\
+      [--spiritagent-home PATH] \\
       [--bundled-runner-dir PATH] \\
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
@@ -74,7 +74,7 @@ while [[ $# -gt 0 ]]; do
     -Stage|--stage)               MODE="stage"; STAGE="$2"; shift 2 ;;
     -Json|--json)                 JSON_OUTPUT=1; shift ;;
     -NonInteractive|--non-interactive) NON_INTERACTIVE=1; shift ;;
-    --deskagent-home)                  DESKAGENT_HOME_ARG="$2"; shift 2 ;;
+    --spiritagent-home)                  SPIRITAGENT_HOME_ARG="$2"; shift 2 ;;
     --bundled-runner-dir)         BUNDLED_RUNNER_DIR_ARG="$2"; shift 2 ;;
     --bundled-desktop-dir)        BUNDLED_DESKTOP_DIR_ARG="$2"; shift 2 ;;
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
@@ -87,20 +87,20 @@ done
 
 # --- resolve paths: env var > arg > default ---------------------------------
 
-if [[ -n "${DESKAGENT_HOME:-}" ]]; then
-  DESKAGENT_HOME_RESOLVED="$DESKAGENT_HOME"
-elif [[ -n "$DESKAGENT_HOME_ARG" ]]; then
-  DESKAGENT_HOME_RESOLVED="$DESKAGENT_HOME_ARG"
+if [[ -n "${SPIRITAGENT_HOME:-}" ]]; then
+  SPIRITAGENT_HOME_RESOLVED="$SPIRITAGENT_HOME"
+elif [[ -n "$SPIRITAGENT_HOME_ARG" ]]; then
+  SPIRITAGENT_HOME_RESOLVED="$SPIRITAGENT_HOME_ARG"
 else
-  DESKAGENT_HOME_RESOLVED="$DEFAULT_DESKAGENT_HOME_UNIX"
+  SPIRITAGENT_HOME_RESOLVED="$DEFAULT_SPIRITAGENT_HOME_UNIX"
 fi
 
-BUNDLED_RUNNER_DIR="${DESKAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
-BUNDLED_DESKTOP_DIR="${DESKAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
-BUNDLED_SKILLS_DIR="${DESKAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
-BUNDLED_VOICES_DIR="${DESKAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
-BUNDLED_ONBOARDING_AUDIO_DIR="${DESKAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
-DESKTOP_FORMAT="${DESKAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
+BUNDLED_RUNNER_DIR="${SPIRITAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
+BUNDLED_DESKTOP_DIR="${SPIRITAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
+BUNDLED_SKILLS_DIR="${SPIRITAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
+BUNDLED_VOICES_DIR="${SPIRITAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
+BUNDLED_ONBOARDING_AUDIO_DIR="${SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
+DESKTOP_FORMAT="${SPIRITAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
 # --- output helpers ---------------------------------------------------------
 
@@ -109,8 +109,8 @@ emit_manifest() {
 {"protocol_version": ${PROTOCOL_VERSION}, "stages": [
   {"name": "welcome", "title": "准备安装", "category": "setup", "needs_user_input": false},
   {"name": "install-python", "title": "安装 Python 运行时", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "安装 DeskAgent 运行器", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "安装 DeskAgent 桌面应用", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-runner", "title": "安装 SpiritAgent 运行器", "category": "payload", "needs_user_input": false},
+  {"name": "unpack-desktop", "title": "安装 SpiritAgent 桌面应用", "category": "payload", "needs_user_input": false},
   {"name": "install-skills", "title": "安装内置技能", "category": "payload", "needs_user_input": false},
   {"name": "finalize", "title": "完成安装", "category": "finalize", "needs_user_input": false}
 ]}
@@ -141,18 +141,18 @@ emit_stage_err() {
 # --- Python installation helpers --------------------------------------------
 
 install_uv() {
-  local managed_uv="$DESKAGENT_HOME_RESOLVED/bin/uv"
+  local managed_uv="$SPIRITAGENT_HOME_RESOLVED/bin/uv"
   if [[ -f "$managed_uv" ]]; then
     UV_CMD="$managed_uv"
     return 0
   fi
 
-  mkdir -p "$DESKAGENT_HOME_RESOLVED/bin"
+  mkdir -p "$SPIRITAGENT_HOME_RESOLVED/bin"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$DESKAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
+    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$SPIRITAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
   elif command -v wget >/dev/null 2>&1; then
-    wget -qO- https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$DESKAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
+    wget -qO- https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$SPIRITAGENT_HOME_RESOLVED/bin" sh 2>/dev/null
   else
     return 1
   fi
@@ -198,25 +198,25 @@ test_python() {
 # --- stage 1: welcome -------------------------------------------------------
 
 stage_welcome() {
-  mkdir -p "$DESKAGENT_HOME_RESOLVED/bin" \
-           "$DESKAGENT_HOME_RESOLVED/skills" \
-           "$DESKAGENT_HOME_RESOLVED/logs"
+  mkdir -p "$SPIRITAGENT_HOME_RESOLVED/bin" \
+           "$SPIRITAGENT_HOME_RESOLVED/skills" \
+           "$SPIRITAGENT_HOME_RESOLVED/logs"
 
-  if [[ ! -d "$DESKAGENT_HOME_RESOLVED" ]]; then
-    emit_stage_err welcome "could not create DESKAGENT_HOME: $DESKAGENT_HOME_RESOLVED"
+  if [[ ! -d "$SPIRITAGENT_HOME_RESOLVED" ]]; then
+    emit_stage_err welcome "could not create SPIRITAGENT_HOME: $SPIRITAGENT_HOME_RESOLVED"
     return 1
   fi
-  if [[ ! -w "$DESKAGENT_HOME_RESOLVED" ]]; then
-    emit_stage_err welcome "DESKAGENT_HOME not writable: $DESKAGENT_HOME_RESOLVED"
+  if [[ ! -w "$SPIRITAGENT_HOME_RESOLVED" ]]; then
+    emit_stage_err welcome "SPIRITAGENT_HOME not writable: $SPIRITAGENT_HOME_RESOLVED"
     return 1
   fi
 
-  local marker="$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
+  local marker="$SPIRITAGENT_HOME_RESOLVED/.spiritagent-bootstrap-complete"
   local is_reinstall="false"
   [[ -f "$marker" ]] && is_reinstall="true"
 
-  printf '{"ok": true, "stage": "welcome", "data": {"deskagent_home": "%s", "is_reinstall": %s}}\n' \
-    "$DESKAGENT_HOME_RESOLVED" "$is_reinstall"
+  printf '{"ok": true, "stage": "welcome", "data": {"spiritagent_home": "%s", "is_reinstall": %s}}\n' \
+    "$SPIRITAGENT_HOME_RESOLVED" "$is_reinstall"
 }
 
 # --- stage 2: install-python ------------------------------------------------
@@ -235,7 +235,7 @@ stage_install_python() {
 
 stage_unpack_runner() {
   if [[ -z "$BUNDLED_RUNNER_DIR" ]]; then
-    emit_stage_err unpack-runner "--bundled-runner-dir (or DESKAGENT_BUNDLED_RUNNER_DIR) is required"
+    emit_stage_err unpack-runner "--bundled-runner-dir (or SPIRITAGENT_BUNDLED_RUNNER_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_RUNNER_DIR" ]]; then
@@ -251,7 +251,7 @@ stage_unpack_runner() {
   fi
   wheel="${wheel[0]}"
 
-  local runner_dir="$DESKAGENT_HOME_RESOLVED/runner"
+  local runner_dir="$SPIRITAGENT_HOME_RESOLVED/runner"
   mkdir -p "$runner_dir"
 
   # Copy server.py alongside the wheel
@@ -288,7 +288,7 @@ stage_unpack_runner() {
   # install.sh stays simple.
 
   # Clean up old PyInstaller binary if present
-  rm -f "$DESKAGENT_HOME_RESOLVED/bin/deskagent-runner"
+  rm -f "$SPIRITAGENT_HOME_RESOLVED/bin/spiritagent-runner"
 
   # Copy bundled Piper voices (installer/payload/voices/) into the models
   # directory so local TTS works offline on day 1. Each voice is an onnx
@@ -298,7 +298,7 @@ stage_unpack_runner() {
   # on-disk side of the contract is satisfied.
   local voice_count=0
   if [[ -n "$BUNDLED_VOICES_DIR" && -d "$BUNDLED_VOICES_DIR" ]]; then
-    local voices_target="$DESKAGENT_HOME_RESOLVED/models/piper"
+    local voices_target="$SPIRITAGENT_HOME_RESOLVED/models/piper"
     mkdir -p "$voices_target"
     shopt -s nullglob
     local voice_files=("$BUNDLED_VOICES_DIR"/*)
@@ -330,31 +330,31 @@ stage_unpack_runner() {
   fi
 
   # Copy bundled onboarding guidance audio — language subdirs (zh/, en/, …) map
-  # 1:1 to $DESKAGENT_HOME/audio/onboarding/<lang>/.
+  # 1:1 to $SPIRITAGENT_HOME/audio/onboarding/<lang>/.
   local audio_count=0
   if [[ -n "$BUNDLED_ONBOARDING_AUDIO_DIR" && -d "$BUNDLED_ONBOARDING_AUDIO_DIR" ]]; then
     for lang_dir in "$BUNDLED_ONBOARDING_AUDIO_DIR"/*/; do
       [[ -d "$lang_dir" ]] || continue
       local lang
       lang=$(basename "$lang_dir")
-      local audio_target="$DESKAGENT_HOME_RESOLVED/audio/onboarding/$lang"
+      local audio_target="$SPIRITAGENT_HOME_RESOLVED/audio/onboarding/$lang"
       mkdir -p "$audio_target"
       cp -R "$lang_dir"/. "$audio_target"/
     done
-    audio_count=$(find "$DESKAGENT_HOME_RESOLVED/audio/onboarding" -name '*.mp3' -type f | wc -l | tr -d ' ')
+    audio_count=$(find "$SPIRITAGENT_HOME_RESOLVED/audio/onboarding" -name '*.mp3' -type f | wc -l | tr -d ' ')
   fi
 
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
   printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s, "onboarding_audio_copied": %s}}\n' \
-    "$DESKAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
+    "$SPIRITAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
 }
 
 # --- stage 4: unpack-desktop ------------------------------------------------
 
 stage_unpack_desktop() {
   if [[ -z "$BUNDLED_DESKTOP_DIR" ]]; then
-    emit_stage_err unpack-desktop "--bundled-desktop-dir (or DESKAGENT_BUNDLED_DESKTOP_DIR) is required"
+    emit_stage_err unpack-desktop "--bundled-desktop-dir (or SPIRITAGENT_BUNDLED_DESKTOP_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_DESKTOP_DIR" ]]; then
@@ -387,7 +387,7 @@ stage_unpack_desktop() {
 
   case "$DESKTOP_FORMAT" in
     dmg)
-      # macOS: mount DMG, copy DeskAgent.app to /Applications, detach, strip xattrs.
+      # macOS: mount DMG, copy SpiritAgent.app to /Applications, detach, strip xattrs.
       if [[ "$(uname -s)" != "Darwin" ]]; then
         emit_stage_err unpack-desktop "dmg format requires macOS host"
         return 1
@@ -398,16 +398,16 @@ stage_unpack_desktop() {
         emit_stage_err unpack-desktop "failed to mount $artifact"
         return 1
       fi
-      if [[ ! -d "$mount_point/DeskAgent.app" ]]; then
+      if [[ ! -d "$mount_point/SpiritAgent.app" ]]; then
         hdiutil detach "$mount_point" 2>/dev/null || true
-        emit_stage_err unpack-desktop "DeskAgent.app not found in DMG $artifact"
+        emit_stage_err unpack-desktop "SpiritAgent.app not found in DMG $artifact"
         return 1
       fi
-      rm -rf /Applications/DeskAgent.app
-      cp -R "$mount_point/DeskAgent.app" /Applications/DeskAgent.app
+      rm -rf /Applications/SpiritAgent.app
+      cp -R "$mount_point/SpiritAgent.app" /Applications/SpiritAgent.app
       hdiutil detach "$mount_point" 2>/dev/null || true
-      xattr -cr /Applications/DeskAgent.app 2>/dev/null || true
-      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/DeskAgent.app", "format": "dmg"}}\n'
+      xattr -cr /Applications/SpiritAgent.app 2>/dev/null || true
+      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/SpiritAgent.app", "format": "dmg"}}\n'
       ;;
     nsis|zip)
       # install.sh doesn't run on Windows; on POSIX this format is unsupported
@@ -422,7 +422,7 @@ stage_unpack_desktop() {
 
 stage_install_skills() {
   if [[ -z "$BUNDLED_SKILLS_DIR" ]]; then
-    emit_stage_err install-skills "--bundled-skills-dir (or DESKAGENT_BUNDLED_SKILLS_DIR) is required"
+    emit_stage_err install-skills "--bundled-skills-dir (or SPIRITAGENT_BUNDLED_SKILLS_DIR) is required"
     return 1
   fi
   if [[ ! -d "$BUNDLED_SKILLS_DIR" ]]; then
@@ -430,22 +430,22 @@ stage_install_skills() {
     return 1
   fi
 
-  # Respect the .no-bundled-skills marker (set by --no-skills / deskagent profile).
-  if [[ -f "$DESKAGENT_HOME_RESOLVED/.no-bundled-skills" ]]; then
+  # Respect the .no-bundled-skills marker (set by --no-skills / spiritagent profile).
+  if [[ -f "$SPIRITAGENT_HOME_RESOLVED/.no-bundled-skills" ]]; then
     emit_stage_ok install-skills 1 "user opted out via .no-bundled-skills"
     return 0
   fi
 
   # rsync without --delete to preserve any skills the user added locally.
-  mkdir -p "$DESKAGENT_HOME_RESOLVED/skills"
+  mkdir -p "$SPIRITAGENT_HOME_RESOLVED/skills"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a "$BUNDLED_SKILLS_DIR/" "$DESKAGENT_HOME_RESOLVED/skills/"
+    rsync -a "$BUNDLED_SKILLS_DIR/" "$SPIRITAGENT_HOME_RESOLVED/skills/"
   else
-    cp -R "$BUNDLED_SKILLS_DIR/." "$DESKAGENT_HOME_RESOLVED/skills/"
+    cp -R "$BUNDLED_SKILLS_DIR/." "$SPIRITAGENT_HOME_RESOLVED/skills/"
   fi
 
   local bundled_count
-  bundled_count=$(find "$DESKAGENT_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+  bundled_count=$(find "$SPIRITAGENT_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 
   printf '{"ok": true, "stage": "install-skills", "data": {"bundled_count": %s}}\n' \
     "$bundled_count"
@@ -454,10 +454,10 @@ stage_install_skills() {
 # --- stage 6: finalize ------------------------------------------------------
 
 stage_finalize() {
-  : > "$DESKAGENT_HOME_RESOLVED/.deskagent-bootstrap-complete"
+  : > "$SPIRITAGENT_HOME_RESOLVED/.spiritagent-bootstrap-complete"
 
-  printf '{"ok": true, "stage": "finalize", "data": {"marker": "%s/.deskagent-bootstrap-complete"}}\n' \
-    "$DESKAGENT_HOME_RESOLVED"
+  printf '{"ok": true, "stage": "finalize", "data": {"marker": "%s/.spiritagent-bootstrap-complete"}}\n' \
+    "$SPIRITAGENT_HOME_RESOLVED"
 }
 
 # --- dispatch ---------------------------------------------------------------

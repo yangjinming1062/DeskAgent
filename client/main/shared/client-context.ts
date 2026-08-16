@@ -1,7 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 
-import { deskagentHome as resolveDeskAgentHome } from '../security/paths'
+import { spiritagentHome as resolveSpiritAgentHome } from '../security/paths'
 
 import * as store from './lib/runner-config-store'
 import { buildSkillSummaries } from './lib/skill-index'
@@ -10,7 +10,7 @@ export const SCHEMA_VERSION = 1
 
 export interface BuildClientContextOptions {
   arch?: string
-  deskagentHome?: null | string
+  spiritagentHome?: null | string
   desktopVersion?: string
   listSkills?: typeof buildSkillSummaries
   nodeVersion?: null | string
@@ -37,16 +37,16 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
   const nodeVersion = options.nodeVersion ?? process.versions?.node ?? null
   const desktopVersion = options.desktopVersion ?? 'unknown'
   const userAgent = options.userAgent ?? null
-  const deskagentHome = options.deskagentHome ?? resolveDeskAgentHome()
-  const skillsRoot = options.skillsRoot ?? (deskagentHome ? path.join(deskagentHome, 'skills') : '')
+  const spiritagentHome = options.spiritagentHome ?? resolveSpiritAgentHome()
+  const skillsRoot = options.skillsRoot ?? (spiritagentHome ? path.join(spiritagentHome, 'skills') : '')
   const listSkills = options.listSkills ?? buildSkillSummaries
 
   const lines = [
     `${platform} ${release}`,
     `arch=${arch}`,
-    desktopVersion !== 'unknown' ? `deskagent-desktop=${desktopVersion}` : null,
+    desktopVersion !== 'unknown' ? `spiritagent-desktop=${desktopVersion}` : null,
     nodeVersion ? `node=${nodeVersion}` : null,
-    deskagentHome ? `deskagent_home=${deskagentHome}` : null
+    spiritagentHome ? `spiritagent_home=${spiritagentHome}` : null
   ].filter(Boolean)
 
   const enabledNames = listSkills(skillsRoot, store.getDisabledSet())
@@ -60,7 +60,7 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
   return {
     client_context: {
       environment_hints: lines.join('; '),
-      platform_hints: userAgent || `DeskAgentDesktop/${desktopVersion} (${platform}; ${arch})`,
+      platform_hints: userAgent || `SpiritAgentDesktop/${desktopVersion} (${platform}; ${arch})`,
       skills: enabledNames
     },
     client_version: desktopVersion,

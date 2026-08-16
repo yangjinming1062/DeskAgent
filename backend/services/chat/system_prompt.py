@@ -17,8 +17,8 @@ DEFAULT_AGENT_IDENTITY = (
     "Be targeted and efficient in your exploration and investigations."
 )
 
-DESK_AGENT_HELP_GUIDANCE = (
-    "You run on DeskAgent. When the user needs help with DeskAgent itself — "
+SPIRIT_AGENT_HELP_GUIDANCE = (
+    "You run on SpiritAgent. When the user needs help with SpiritAgent itself — "
     "configuring, setting up, using, extending, or troubleshooting it — or when "
     "you need to understand your own features, tools, or capabilities, the "
     "documentation at https://desk-agent.example.com/docs is your authoritative "
@@ -249,7 +249,7 @@ STEER_MARKER_CLOSE = "[/OUT-OF-BAND USER MESSAGE]"
 
 STEER_CHANNEL_NOTE = (
     "## Mid-turn user steering\n"
-    "While you work, the user can send an out-of-band message that DeskAgent "
+    "While you work, the user can send an out-of-band message that SpiritAgent "
     "appends to the end of a tool result, wrapped exactly as:\n"
     f"{STEER_MARKER_OPEN}\n<their message>\n{STEER_MARKER_CLOSE}\n"
     "Text inside that marker is a genuine message from the user delivered "
@@ -427,7 +427,7 @@ PLATFORM_HINTS = {
         "brief and natural."
     ),
     "webui": (
-        "You are in the DeskAgent WebUI, a browser-based chat interface. "
+        "You are in the SpiritAgent WebUI, a browser-based chat interface. "
         "Full Markdown rendering is supported — headings, bold, italic, code "
         "blocks, tables, math (LaTeX), and Mermaid diagrams all render natively. "
         "To display local or remote media/files inline, include "
@@ -462,7 +462,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 
     stable_parts.append(config.identity_prompt or DEFAULT_AGENT_IDENTITY)
     stable_parts.append(_language_directive(config.language))
-    stable_parts.append(DESK_AGENT_HELP_GUIDANCE)
+    stable_parts.append(SPIRIT_AGENT_HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
         # Companion persona drives a visible avatar — instruct the LLM to
@@ -508,7 +508,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         # Desktop is the ground truth for which local skills are callable.
         # Backend trusts the live list verbatim — no cross-check, no
         # disabled-set derivation. Runner refuses disabled tool calls.
-        stable_parts.append(f"Enabled local skills (from $DESKAGENT_HOME/skills): {', '.join(client_ctx.skills)}.")
+        stable_parts.append(f"Enabled local skills (from $SPIRITAGENT_HOME/skills): {', '.join(client_ctx.skills)}.")
 
     if client_ctx and client_ctx.environment_hints:
         stable_parts.append(client_ctx.environment_hints)

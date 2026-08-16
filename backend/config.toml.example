@@ -1,18 +1,18 @@
 # ─────────────────────────────────────────────────────────────────────
-# DeskAgent Backend Configuration Template (config.toml.example)
-# Authoritative defaults for DeskAgent Backend. Tracked in Git.
+# SpiritAgent Backend Configuration Template (config.toml.example)
+# Authoritative defaults for SpiritAgent Backend. Tracked in Git.
 # Copy this file to `config.toml` for local modifications.
 # `config.toml` is ignored by Git.
 # Precedence: OS Env > .env > config.toml > config.toml.example
 # ─────────────────────────────────────────────────────────────────────
 
 [runtime]
-app_name = "DeskAgent Backend"
+app_name = "SpiritAgent Backend"
 api_prefix = "/api"
 
 [database]
 # SQLAlchemy URL. In Docker the service hostname is `postgres` (port 5432).
-database_url = "postgresql+psycopg://postgres:postgres@localhost:5432/deskagent"
+database_url = "postgresql+psycopg://postgres:postgres@localhost:5432/spiritagent"
 
 [auth]
 # CHANGE THIS in production! Must be ≥ 16 chars; used to sign JWTs.
@@ -23,8 +23,8 @@ access_token_expire_minutes = 480
 # HMAC key for signing companion avatar asset URLs. Required in production.
 companion_asset_signing_key = ""
 # Bootstrap admin account (created on first boot).
-admin_username = "deskagent"
-admin_password = "deskagent@admin123"
+admin_username = "spiritagent"
+admin_password = "spiritagent@admin123"
 
 [network]
 # Public URL prefix Desktop/Runner uses to fetch self-hosted media
@@ -70,7 +70,7 @@ worker_poll_interval_seconds = 5.0
 # cpu/memory caps, read-only root, only the per-job io dir mounted).
 # false = bare `blender` subprocess in the backend/worker container.
 blender_sandbox_enabled = false
-blender_sandbox_image = "deskagent-blender-sandbox:latest"
+blender_sandbox_image = "spiritagent-blender-sandbox:latest"
 blender_sandbox_docker_binary = "docker"
 blender_sandbox_cpus = 2.0
 blender_sandbox_memory = "4g"

@@ -17,7 +17,7 @@ export function registerTitlebarIpc({
   ipcMain,
   setRendererTitleBarTheme
 }: TitlebarIpcDeps): void {
-  ipcMain.on('deskagent:titlebar-theme', (_event, payload) => {
+  ipcMain.on('spiritagent:titlebar-theme', (_event, payload) => {
     if (!payload || !isHexColor(payload.background) || !isHexColor(payload.foreground)) {
       return
     }

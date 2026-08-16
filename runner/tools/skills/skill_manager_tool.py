@@ -67,7 +67,7 @@ def _containing_skills_root(skill_path: Path) -> Path:
 def _pinned_guard(name: str) -> str | None:
     try:
         if get_record(name).get("pinned"):
-            return f"Skill '{name}' is pinned and cannot be deleted by skill_manage. Ask the user to run `deskagent curator unpin {name}` if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked."
+            return f"Skill '{name}' is pinned and cannot be deleted by skill_manage. Ask the user to run `spiritagent curator unpin {name}` if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked."
     except Exception:
         pass
     return None
@@ -367,7 +367,7 @@ SKILL_MANAGE_SCHEMA = {
     "description": (
         "Manage skills (create, update, delete). Skills are your procedural "
         "memory — reusable approaches for recurring task types. "
-        "New skills go to $DESKAGENT_HOME/skills/; existing skills can be "
+        "New skills go to $SPIRITAGENT_HOME/skills/; existing skills can be "
         "modified wherever they live.\n\n"
         "Actions: create (full SKILL.md + optional category), "
         "patch (old_string/new_string — preferred for fixes), "
@@ -391,7 +391,7 @@ SKILL_MANAGE_SCHEMA = {
         "Good skills: trigger conditions, numbered steps with exact commands, "
         "pitfalls section, verification steps. Use skill_view() to see format examples.\n\n"
         "Pinned skills are protected from deletion only — skill_manage(action='delete') "
-        "will refuse with a message pointing the user to `deskagent curator unpin <name>`. "
+        "will refuse with a message pointing the user to `spiritagent curator unpin <name>`. "
         "Patches and edits go through on pinned skills so you can still improve them as "
         "pitfalls come up; pin only guards against irrecoverable loss."
     ),

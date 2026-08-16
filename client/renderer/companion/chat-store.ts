@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import { setSpriteState } from '@/companion/companion-store'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { SessionMessage } from '@/shared/types/deskagent'
+import type { SessionMessage } from '@/shared/types/spiritagent'
 
 export interface ChatMessage {
   id: string

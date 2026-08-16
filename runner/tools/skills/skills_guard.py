@@ -69,7 +69,7 @@ THREAT_PATTERNS = [
     (r"\$HOME/\.gnupg|\~/\.gnupg", "gpg_dir_access", "high", "exfiltration", "references user GPG keyring"),
     (r"\$HOME/\.kube|\~/\.kube", "kube_dir_access", "high", "exfiltration", "references Kubernetes config directory"),
     (r"\$HOME/\.docker|\~/\.docker", "docker_dir_access", "high", "exfiltration", "references Docker config (may contain registry creds)"),
-    (r"\$HOME/\.deskagent/\.env|\~/\.deskagent/\.env", "deskagent_env_access", "critical", "exfiltration", "directly references DeskAgent secrets file"),
+    (r"\$HOME/\.spiritagent/\.env|\~/\.spiritagent/\.env", "spiritagent_env_access", "critical", "exfiltration", "directly references SpiritAgent secrets file"),
     # Match `cat <secrets-file>` (reading credentials) but NOT `cat > <file>`
     # or `cat >> <file>`, which are output redirections that WRITE a file
     # (e.g. a setup doc telling the user to write their own keys into their
@@ -218,11 +218,11 @@ THREAT_PATTERNS = [
         "references agent config files (could persist malicious instructions across sessions)",
     ),
     (
-        r"\.deskagent/config\.yaml|\.deskagent/SOUL\.md|DeskAgent/desktop-settings\.json|\.deskagent/desktop-settings\.json",
-        "deskagent_config_mod",
+        r"\.spiritagent/config\.yaml|\.spiritagent/SOUL\.md|SpiritAgent/desktop-settings\.json|\.spiritagent/desktop-settings\.json",
+        "spiritagent_config_mod",
         "critical",
         "persistence",
-        "references DeskAgent configuration files directly",
+        "references SpiritAgent configuration files directly",
     ),
     (r"\.claude/settings|\.codex/config", "other_agent_config", "high", "persistence", "references other agent configuration files"),
     # ── Hardcoded secrets (credentials embedded in the skill itself) ──

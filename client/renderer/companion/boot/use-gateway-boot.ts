@@ -10,16 +10,16 @@ import {
 import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
 import { openMainSession } from '@/companion/session-list-store'
-import { DeskAgentGateway } from '@/shared/deskagent'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
+import { SpiritAgentGateway } from '@/shared/spiritagent'
 import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { RpcEvent, SessionResumeResponse } from '@/shared/types/deskagent'
-import type { DeskAgentConnection } from '@/shared/types/global'
+import type { SpiritAgentConnection } from '@/shared/types/global'
+import type { RpcEvent, SessionResumeResponse } from '@/shared/types/spiritagent'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
 // trigger logout instead of looping reconnect with a dead token.
@@ -30,7 +30,7 @@ const WS_CLOSE_POLICY_VIOLATION = 1008
 // user_preferred alone) so an immersive focus context survives the reconnect
 // — otherwise a fresh WS handshake would briefly un-mute the backend while
 // the user is still in an IDE/fullscreen window. Fire-and-forget.
-function syncDisturbanceTier(gateway: DeskAgentGateway): void {
+function syncDisturbanceTier(gateway: SpiritAgentGateway): void {
   const tier = $effectiveTier.get()
 
   if (!tier) {
@@ -40,8 +40,8 @@ function syncDisturbanceTier(gateway: DeskAgentGateway): void {
   void gateway.request('companion.set_disturbance_tier', { tier }).catch(() => {})
 }
 
-async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
-  const desktop = window.deskagent
+async function syncRunnerTools(gateway: SpiritAgentGateway): Promise<void> {
+  const desktop = window.spiritagent
 
   if (!desktop?.runnerGetTools) {
     return
@@ -71,8 +71,8 @@ async function syncRunnerTools(gateway: DeskAgentGateway): Promise<void> {
 
 interface GatewayBootOptions {
   handleGatewayEvent: (event: RpcEvent) => void
-  onConnectionReady: (connection: DeskAgentConnection | null) => void
-  onGatewayReady: (gateway: DeskAgentGateway | null) => void
+  onConnectionReady: (connection: SpiritAgentConnection | null) => void
+  onGatewayReady: (gateway: SpiritAgentGateway | null) => void
 }
 
 export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewayReady }: GatewayBootOptions): void {
@@ -82,9 +82,9 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
   useEffect(() => {
     let cancelled = false
-    const desktop = window.deskagent
+    const desktop = window.spiritagent
 
-    const publish = (next: DeskAgentConnection | null) => {
+    const publish = (next: SpiritAgentConnection | null) => {
       callbacksRef.current.onConnectionReady(next)
     }
 
@@ -216,7 +216,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       progress: 6
     })
 
-    const gateway = new DeskAgentGateway()
+    const gateway = new SpiritAgentGateway()
     callbacksRef.current.onGatewayReady(gateway)
     setPrimaryGateway(gateway)
 

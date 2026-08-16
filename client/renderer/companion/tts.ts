@@ -2,7 +2,7 @@ import { isLatestGen, nextGen, playDataUrl, stopAudio } from './audio-track'
 import { $companionVoiceId } from './prefs'
 import { $voicePreparing } from './voice-state'
 
-// Companion TTS via `deskagent:media:tts` REST IPC.
+// Companion TTS via `spiritagent:media:tts` REST IPC.
 
 export function stopSpeaking(): void {
   stopAudio()
@@ -18,7 +18,7 @@ async function synth(
   $voicePreparing.set(true)
 
   try {
-    const res = await window.deskagent.media.tts({
+    const res = await window.spiritagent.media.tts({
       text,
       voice: voice ?? $companionVoiceId.get(),
       context: context ?? null,

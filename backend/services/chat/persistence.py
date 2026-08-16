@@ -2,11 +2,10 @@ import asyncio
 import json
 from typing import Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..conversation import AFFECT_TRACE_SUBTYPE, MAIN_KIND
 from ..scheduler import auto_generate_title, run_background_memory_review

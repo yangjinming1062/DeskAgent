@@ -12,8 +12,8 @@ let _writeLock: null | Promise<any> = null
 // Set by the bridge; null pre-login. Swallowed errors = runner not connected yet.
 let _pushTarget: null | ((config: Record<string, any>) => Promise<any> | void) = null
 
-export function init({ deskagentHome }: { deskagentHome: null | string }): void {
-  _storePath = deskagentHome ? path.join(deskagentHome, FILENAME) : null
+export function init({ spiritagentHome }: { spiritagentHome: null | string }): void {
+  _storePath = spiritagentHome ? path.join(spiritagentHome, FILENAME) : null
   _loaded = false
 }
 

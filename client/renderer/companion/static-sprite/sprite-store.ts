@@ -58,7 +58,7 @@ export async function requestSprite(request: string, role?: 'waiting'): Promise<
     _lastPostAt = Date.now()
 
     try {
-      const res = await window.deskagent.api<SpriteResolveResponse>({
+      const res = await window.spiritagent.api<SpriteResolveResponse>({
         path: '/api/companion/sprite',
         method: 'POST',
         body: role ? { request, role } : { request }
@@ -68,7 +68,7 @@ export async function requestSprite(request: string, role?: 'waiting'): Promise<
       let dataUrl = _urlCache.get(cacheKey)
 
       if (!dataUrl) {
-        dataUrl = await window.deskagent.apiAsset({ url: res.url })
+        dataUrl = await window.spiritagent.apiAsset({ url: res.url })
         _urlCache.set(cacheKey, dataUrl)
       }
 

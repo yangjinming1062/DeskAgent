@@ -25,7 +25,7 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
   try {
     // All structured persona fields live INSIDE definition_json (a JSON
     // string blob), not as flat top-level keys on the wire.
-    const p = await window.deskagent.api<{
+    const p = await window.spiritagent.api<{
       definition_json?: string
       is_complete?: boolean
       personality_tags?: string[]

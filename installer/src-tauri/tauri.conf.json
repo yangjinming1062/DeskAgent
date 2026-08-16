@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DeskAgent",
+  "productName": "SpiritAgent",
   "version": "0.2.0",
-  "identifier": "io.deskagent.agent.setup",
+  "identifier": "io.spiritagent.agent.setup",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://127.0.0.1:5175",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DeskAgent",
+        "title": "SpiritAgent",
         "width": 880,
         "height": 620,
         "minWidth": 720,
@@ -34,10 +34,10 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
-    "shortDescription": "DeskAgent",
-    "longDescription": "Installs DeskAgent Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS).",
-    "publisher": "DeskAgent",
-    "copyright": "Copyright © 2026 DeskAgent",
+    "shortDescription": "SpiritAgent",
+    "longDescription": "Installs SpiritAgent Agent on your machine. Drives installer/install.ps1 (Windows) and installer/install.sh (macOS).",
+    "publisher": "SpiritAgent",
+    "copyright": "Copyright © 2026 SpiritAgent",
     "targets": [
       "app",
       "dmg"

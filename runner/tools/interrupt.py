@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 def _debug_interrupt_enabled() -> bool:
-    # Read per call: the Desktop pushes ``deskagent.config.update`` long after
+    # Read per call: the Desktop pushes ``spiritagent.config.update`` long after
     # import, so a module-level flag captured at import time would always be
     # off.
     return bool(cfg_get(load_config(), "debug", "interrupt", default=False))
@@ -37,7 +37,7 @@ def set_interrupt(active: bool, thread_id: int | None = None) -> None:
 def set_global_interrupt(active: bool) -> None:
     """Mark the runner as interrupted across all threads.
 
-    The WS message loop sets ``True`` for ``deskagent.cancel`` requests so
+    The WS message loop sets ``True`` for ``spiritagent.cancel`` requests so
     in-flight tool handlers from other requests see the flag on their
     next ``is_interrupted()`` check. ``False`` is set at the start of the
     next execute_tool to clear a stale flag from a prior cancel.

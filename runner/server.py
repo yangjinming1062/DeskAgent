@@ -25,7 +25,7 @@ from utils import (
     DesktopEndpoint,
     connect_desktop,
     disk_free_bytes,
-    get_deskagent_home,
+    get_spiritagent_home,
     init_runner_job_object,
     network_reachable,
     read_endpoint,
@@ -37,7 +37,7 @@ from utils import (
 )
 
 logging.basicConfig(level=logging.WARNING)
-logger = logging.getLogger("deskagent_runner")
+logger = logging.getLogger("spiritagent_runner")
 
 
 def _require_supported_host() -> None:
@@ -50,7 +50,7 @@ def _require_supported_host() -> None:
     with a clear message the operator / CI can act on.
     """
     if sys.platform not in {"win32", "darwin"}:
-        raise SystemExit(f"DeskAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
+        raise SystemExit(f"SpiritAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
 
 
 _ACTIVE_WS: Any | None = None
@@ -175,14 +175,14 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
     # cross-thread ``_global_interrupt`` so in-flight tool handlers
     # from other requests see the flag on their next ``is_interrupted()``
     # check. Only a subsequent execute_tool clears it — diagnostic polls
-    # (deskagent.info / get_tools) must not swallow a pending cancel.
-    if method == "deskagent.cancel":
+    # (spiritagent.info / get_tools) must not swallow a pending cancel.
+    if method == "spiritagent.cancel":
         set_global_interrupt(True)
     elif method == "execute_tool":
         set_global_interrupt(False)
     set_interrupt(False, thread_id=None)
     try:
-        if method == "deskagent.cancel":
+        if method == "spiritagent.cancel":
             await _send(ws, req_id, result={"ok": True})
             return
 
@@ -190,15 +190,15 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             await _send(ws, req_id, result={"tools": registry.get_schemas_for_llm(get_disabled_toolset_ids())})
             return
 
-        if method == "deskagent.info":
+        if method == "spiritagent.info":
             await _send(ws, req_id, result=await _build_info())
             return
 
-        if method == "deskagent.config.update":
+        if method == "spiritagent.config.update":
             # Cache resets mirror mcp.reload so derived limits pick up the new config immediately.
             config = params.get("config")
             if not isinstance(config, dict):
-                raise ValueError("deskagent.config.update requires a 'config' object")
+                raise ValueError("spiritagent.config.update requires a 'config' object")
             set_inmemory_config(config)
             reset_cache()
             reset_max_read_chars_cache()
@@ -216,7 +216,7 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             utils.credential_files.reset_cache()
             # Off-load: reload_mcp_servers joins the MCP loop thread and waits
             # up to 15s on shutdown — running it inline would block the
-            # Runner's WS event loop and starve deskagent.cancel / heartbeats.
+            # Runner's WS event loop and starve spiritagent.cancel / heartbeats.
             result = await asyncio.to_thread(reload_mcp_servers)
             await _send(ws, req_id, result=result)
             return
@@ -403,7 +403,7 @@ async def _runner_ready_payload() -> dict[str, Any]:
 
 
 async def _build_info() -> dict[str, Any]:
-    """Full snapshot returned by the ``deskagent.info`` RPC.
+    """Full snapshot returned by the ``spiritagent.info`` RPC.
 
     Captures process / OS state in addition to capabilities so the
     Desktop diagnostic panel can tell stale-process from cold-start, and
@@ -428,7 +428,7 @@ async def _build_info() -> dict[str, Any]:
     except Exception:
         tool_names = []
     # network_reachable can block up to ~1.5s; keep it off the loop so
-    # heartbeats and deskagent.cancel stay responsive during the probe.
+    # heartbeats and spiritagent.cancel stay responsive during the probe.
     reachable = await asyncio.to_thread(network_reachable)
     return {
         "version": __version__,
@@ -441,14 +441,14 @@ async def _build_info() -> dict[str, Any]:
         "tool_count": len(tool_names),
         "mcp_servers": mcp_servers,
         "network_reachable": reachable,
-        "disk_free_bytes": disk_free_bytes(get_deskagent_home()),
+        "disk_free_bytes": disk_free_bytes(get_spiritagent_home()),
     }
 
 
 def main() -> None:
     _require_supported_host()
     init_runner_job_object()
-    parser = argparse.ArgumentParser(description="DeskAgent Runner Server")
+    parser = argparse.ArgumentParser(description="SpiritAgent Runner Server")
     parser.add_argument("--desktop-endpoint", required=True, help="Desktop IPC path (Windows named pipe or Unix socket path)")
     parser.add_argument("--desktop-auth", required=True, help="Desktop handshake token (from --desktop-auth at spawn)")
     args = parser.parse_args()

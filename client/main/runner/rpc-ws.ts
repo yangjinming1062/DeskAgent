@@ -329,7 +329,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       wss = new WebSocketServer({ noServer: true })
 
       upgradeHandler = (req, socket, head) => {
-        if (req.headers['x-deskagent-auth'] !== authToken) {
+        if (req.headers['x-spiritagent-auth'] !== authToken) {
           log('[runner-ws] rejected upgrade: bad handshake token')
           socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
 

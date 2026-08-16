@@ -33,12 +33,12 @@ const baseModelResponse = {
   content_hash: 'sha256_mock_hash_123'
 }
 
-function setWindowDeskagent(api: ReturnType<typeof vi.fn>): void {
-  ;(window as { deskagent?: unknown }).deskagent = { api }
+function setWindowSpiritagent(api: ReturnType<typeof vi.fn>): void {
+  ;(window as { spiritagent?: unknown }).spiritagent = { api }
 }
 
-function restoreWindowDeskagent(): void {
-  delete (window as { deskagent?: unknown }).deskagent
+function restoreWindowSpiritagent(): void {
+  delete (window as { spiritagent?: unknown }).spiritagent
 }
 
 describe('hydrateModel', () => {
@@ -61,12 +61,12 @@ describe('hydrateModel', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-    restoreWindowDeskagent()
+    restoreWindowSpiritagent()
   })
 
   it('publishes the active model on a 200 response', async () => {
     const api = vi.fn().mockResolvedValue(baseModelResponse)
-    setWindowDeskagent(api)
+    setWindowSpiritagent(api)
 
     await hydrateModel()
 
@@ -91,7 +91,7 @@ describe('hydrateModel', () => {
     $modelInfo.set({ ...$modelInfo.get(), species: '人类' })
     const before = $modelInfo.get()
     const api = vi.fn().mockRejectedValue(new Error('404 /api/companion/model'))
-    setWindowDeskagent(api)
+    setWindowSpiritagent(api)
 
     await hydrateModel()
 
@@ -101,7 +101,7 @@ describe('hydrateModel', () => {
 
   it('warns on a 5xx so a missing model is diagnosable', async () => {
     const api = vi.fn().mockRejectedValue(new Error('500 /api/companion/model: boom'))
-    setWindowDeskagent(api)
+    setWindowSpiritagent(api)
 
     await hydrateModel()
 
@@ -140,12 +140,12 @@ describe('hydrateWardrobe', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
-    restoreWindowDeskagent()
+    restoreWindowSpiritagent()
   })
 
   it('publishes items and derives the equipped atom', async () => {
     const api = vi.fn().mockResolvedValue(sample)
-    setWindowDeskagent(api)
+    setWindowSpiritagent(api)
 
     await hydrateWardrobe()
 
@@ -156,7 +156,7 @@ describe('hydrateWardrobe', () => {
 
   it('warns on a 5xx', async () => {
     const api = vi.fn().mockRejectedValue(new Error('502 Bad Gateway'))
-    setWindowDeskagent(api)
+    setWindowSpiritagent(api)
 
     await hydrateWardrobe()
 

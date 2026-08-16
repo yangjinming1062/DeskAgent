@@ -43,7 +43,7 @@ RECENT_DIALOGS_MAX = 20
 # Magic host the injected dialog bridge XHRs to. Intercepted via the CDP
 # Fetch domain; the host never has to resolve. Keep this ASCII + URL-safe;
 # we also gate Fetch patterns on it.
-DIALOG_BRIDGE_HOST = "deskagent-dialog-bridge.invalid"
+DIALOG_BRIDGE_HOST = "spiritagent-dialog-bridge.invalid"
 DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 
 # Script injected into every frame via Page.addScriptToEvaluateOnNewDocument.
@@ -53,9 +53,9 @@ DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 # in the first place — the overrides take precedence.
 _DIALOG_BRIDGE_SCRIPT = r"""
 (() => {
-  if (window.__deskagentDialogBridgeInstalled) return;
-  window.__deskagentDialogBridgeInstalled = true;
-  const ENDPOINT = "http://deskagent-dialog-bridge.invalid/";
+  if (window.__spiritagentDialogBridgeInstalled) return;
+  window.__spiritagentDialogBridgeInstalled = true;
+  const ENDPOINT = "http://spiritagent-dialog-bridge.invalid/";
   function ask(kind, message, defaultPrompt) {
     try {
       const xhr = new XMLHttpRequest();

@@ -603,11 +603,11 @@ export function endDragAt(pos: { x: number; y: number }): void {
   $homePosition.set(pos)
   $spatialLocomotion.set('still')
   $spatialLocale.set('home')
-  void window.deskagent.sprite.setPosition(pos)
+  void window.spiritagent.sprite.setPosition(pos)
 }
 
 export function initSpatial(): () => void {
-  void window.deskagent.sprite
+  void window.spiritagent.sprite
     .getPosition()
     .then(saved => {
       if (!saved || userInteracted) {

@@ -47,7 +47,7 @@ function buildTrayMenu() {
     {
       // When unauthenticated, focus the sprite window (where activation
       // happens) instead of the tool window (which only renders Settings).
-      label: authed ? '显示 DeskAgent' : '激活...',
+      label: authed ? '显示 SpiritAgent' : '激活...',
       click: () => showMainWindow()
     }
   ]
@@ -57,11 +57,11 @@ function buildTrayMenu() {
       { type: 'separator' },
       // The framed tool window self-selects Settings (authed) from $auth.
       { click: () => trayDeps?.bridgeDeps.showToolWindow(), label: '设置...' },
-      { click: () => sendToMainWindow('deskagent:tray:logout'), label: '退出登录' }
+      { click: () => sendToMainWindow('spiritagent:tray:logout'), label: '退出登录' }
     )
   }
 
-  template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出 DeskAgent' })
+  template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出 SpiritAgent' })
 
   return trayDeps.Menu.buildFromTemplate(template)
 }
@@ -147,7 +147,7 @@ export function installTray(deps: TrayDeps): null | Tray {
     return null
   }
 
-  trayInstance.setToolTip('DeskAgent')
+  trayInstance.setToolTip('SpiritAgent')
   const menu = buildTrayMenu()
 
   if (menu) {

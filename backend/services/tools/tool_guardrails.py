@@ -111,7 +111,7 @@ def check_file_safety(tool_name: str, args: Mapping[str, Any] | None) -> "ToolGu
                 action="block",
                 code="write_denied",
                 message=(
-                    f"Blocked {tool_name}: {path} is in the write denylist (SSH credentials, DeskAgent control plane, .env files). This is a backend-side safety check before runner dispatch."
+                    f"Blocked {tool_name}: {path} is in the write denylist (SSH credentials, SpiritAgent control plane, .env files). This is a backend-side safety check before runner dispatch."
                 ),
                 tool_name=tool_name,
             )

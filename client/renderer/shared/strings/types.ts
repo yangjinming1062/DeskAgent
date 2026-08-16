@@ -53,7 +53,7 @@ export interface Translations {
       loadingSettings: string
       loadingSessions: string
       startingDesktopConnection: string
-      startingDeskAgentDesktop: string
+      startingSpiritAgentDesktop: string
     }
     errors: {
       backgroundExited: string

@@ -3,11 +3,11 @@ requires = ["setuptools>=77.0,<83"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "desk-agent"
+name = "spirit-agent"
 version = "0.2.0"
-description = "DeskAgent Runner — stateless local tool executor for the DeskAgent companion"
+description = "SpiritAgent Runner — stateless local tool executor for the SpiritAgent companion"
 requires-python = ">=3.11"
-authors = [{ name = "DeskAgent" }]
+authors = [{ name = "SpiritAgent" }]
 license = "MIT"
 dependencies = [
   "httpx[socks]==0.28.1",

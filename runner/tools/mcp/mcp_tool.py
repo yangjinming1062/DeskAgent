@@ -45,7 +45,7 @@ from mcp.types import (
     ToolUseContent,
 )
 
-from utils import IS_WINDOWS, call_llm, get_deskagent_home, kill_tree, load_config, pid_exists, safe_schedule_threadsafe
+from utils import IS_WINDOWS, call_llm, get_spiritagent_home, kill_tree, load_config, pid_exists, safe_schedule_threadsafe
 
 from ..interrupt import is_interrupted, set_interrupt
 from ..registry import registry, tool_error
@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # corrupts the display and can hang the session.
 #
 # Instead we redirect every stdio MCP subprocess's stderr into a shared
-# per-profile log file (~/.deskagent/logs/mcp-stderr.log), tagged with the
+# per-profile log file (~/.spiritagent/logs/mcp-stderr.log), tagged with the
 # server name so individual servers remain debuggable.
 #
 # Fallback is os.devnull if opening the log file fails for any reason.
@@ -85,7 +85,7 @@ def _get_mcp_stderr_log() -> Any:
         if _mcp_stderr_log_fh is not None:
             return _mcp_stderr_log_fh
         try:
-            log_dir = get_deskagent_home() / "logs"
+            log_dir = get_spiritagent_home() / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / "mcp-stderr.log"
             # Line-buffered so server output lands on disk promptly; errors=
@@ -315,13 +315,13 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
         if which_hit:
             resolved_command = which_hit
         elif resolved_command in {"npx", "npm", "node"}:
-            deskagent_home = str(get_deskagent_home())
+            spiritagent_home = str(get_spiritagent_home())
             candidates = [
-                os.path.join(deskagent_home, "node", "bin", resolved_command),
+                os.path.join(spiritagent_home, "node", "bin", resolved_command),
                 os.path.join(os.path.expanduser("~"), ".local", "bin", resolved_command),
                 # /usr/local/bin is the canonical install location for Node on
                 # macOS Homebrew (Intel) and in the upstream node:bookworm-slim
-                # image (which the DeskAgent Docker image copies node + npm +
+                # image (which the SpiritAgent Docker image copies node + npm +
                 # corepack).
                 # Without this candidate, any MCP server configured with an
                 # env.PATH that omits /usr/local/bin (a common pattern when
@@ -343,7 +343,7 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
     return resolved_command, resolved_env
 
 
-# MCP ImageContent block → DeskAgent MEDIA tag
+# MCP ImageContent block → SpiritAgent MEDIA tag
 
 _image_cache_dir: Path | None = None
 
@@ -351,7 +351,7 @@ _image_cache_dir: Path | None = None
 def _get_image_cache_dir() -> Path:
     global _image_cache_dir
     if _image_cache_dir is None:
-        _image_cache_dir = Path(tempfile.mkdtemp(prefix="deskagent-mcp-images-"))
+        _image_cache_dir = Path(tempfile.mkdtemp(prefix="spiritagent-mcp-images-"))
         atexit.register(shutil.rmtree, _image_cache_dir, ignore_errors=True)
     return _image_cache_dir
 
@@ -882,7 +882,7 @@ class MCPServerTask:
         ``ResourceListChangedNotification`` are deliberately ignored at the
         Runner level — the runner's `tools_list` / `skill_view` surface only
         reflects tools, and prompts/resources are not yet exposed through
-        any DeskAgent-side tool. Callers who need prompt/resource updates must
+        any SpiritAgent-side tool. Callers who need prompt/resource updates must
         send ``mcp.reload`` via the Desktop ``reload.mcp`` JSON-RPC path.
         """
 
@@ -1043,7 +1043,7 @@ class MCPServerTask:
 
         # (FastMCP banners, slack-mcp startup JSON, etc.) don't dump onto
         # the user's TTY and corrupt the TUI.  Preserves debuggability via
-        # ~/.deskagent/logs/mcp-stderr.log.
+        # ~/.spiritagent/logs/mcp-stderr.log.
         _write_stderr_log_header(self.name)
         _errlog = _get_mcp_stderr_log()
         try:
@@ -1603,8 +1603,8 @@ def _handle_auth_error_and_retry(server_name: str, exc: BaseException, retry_cal
         {
             "error": (
                 f"MCP server '{server_name}' requires re-authentication. "
-                f"Run `deskagent mcp login {server_name}` (or delete the tokens "
-                f"file under ~/.deskagent/mcp-tokens/ and restart). Do NOT retry "
+                f"Run `spiritagent mcp login {server_name}` (or delete the tokens "
+                f"file under ~/.spiritagent/mcp-tokens/ and restart). Do NOT retry "
                 f"this tool — ask the user to re-authenticate."
             ),
             "needs_reauth": True,
@@ -1851,7 +1851,7 @@ def _interpolate_env_vars(value: Any) -> Any:
 
 
 def _load_mcp_config() -> dict[str, dict]:
-    """Read ``mcp_servers`` from the DeskAgent config file.
+    """Read ``mcp_servers`` from the SpiritAgent config file.
 
     Returns a dict of ``{server_name: server_config}`` or empty dict.
     Server config can contain either ``command``/``args``/``env`` for stdio
@@ -1859,7 +1859,7 @@ def _load_mcp_config() -> dict[str, dict]:
     ``timeout``, ``connect_timeout``, and ``auth`` overrides.
 
     ``${ENV_VAR}`` placeholders in string values are resolved from
-    ``os.environ`` (which includes ``~/.deskagent/.env`` loaded at startup).
+    ``os.environ`` (which includes ``~/.spiritagent/.env`` loaded at startup).
     """
     try:
         config = load_config()
@@ -1955,13 +1955,13 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
 
             # include ImageContent blocks (screenshot / Blockbench / Playwright
             # etc.); cache those via the gateway's image-cache helper so they
-            # flow through DeskAgent' MEDIA: tag convention and out to messaging
+            # flow through SpiritAgent' MEDIA: tag convention and out to messaging
             # adapters that render images natively. Without this, image blocks
             # were silently dropped and the agent got an empty response.
             #
             # Distilled from #17915 (c3115644151) and #10848 (gnanirahulnutakki),
             # both too stale to cherry-pick. #10848's approach (integrate with
-            # DeskAgent' MEDIA tag + cache_image_from_bytes) was the cleaner of
+            # SpiritAgent' MEDIA tag + cache_image_from_bytes) was the cleaner of
             # the two — plugs into existing infrastructure.
             parts: list[str] = []
             for block in result.content or []:
@@ -2320,7 +2320,7 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 def sanitize_mcp_name_component(value: str) -> str:
     """Return an MCP name component safe for tool and prefix generation.
 
-    Preserves DeskAgent's historical behavior of converting hyphens to
+    Preserves SpiritAgent's historical behavior of converting hyphens to
     underscores, and also replaces any other character outside
     ``[A-Za-z0-9_]`` with ``_`` so generated tool names are compatible with
     provider validation rules.
@@ -2329,7 +2329,7 @@ def sanitize_mcp_name_component(value: str) -> str:
 
 
 def _convert_mcp_schema(server_name: str, mcp_tool: Any) -> dict[str, Any]:
-    """Convert an MCP tool listing to the DeskAgent registry schema format.
+    """Convert an MCP tool listing to the SpiritAgent registry schema format.
 
     Args:
         server_name: The logical server name for prefixing.
@@ -2823,7 +2823,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     sessions are not disrupted.
 
     Sends SIGTERM, waits 2 seconds, then escalates to SIGKILL for any
-    survivors, avoiding shared-resource collisions when multiple deskagent
+    survivors, avoiding shared-resource collisions when multiple spiritagent
     processes run on the same host (each has its own ``_stdio_pids`` dict).
 
     On POSIX, signals are sent via ``os.killpg`` to the spawn-time pgid when

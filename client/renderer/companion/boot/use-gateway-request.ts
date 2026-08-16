@@ -1,28 +1,28 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import type { DeskAgentGateway } from '@/shared/deskagent'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
+import type { SpiritAgentGateway } from '@/shared/spiritagent'
 import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
 export interface UseGatewayRequestResult {
-  gatewayRef: React.RefObject<DeskAgentGateway | null>
+  gatewayRef: React.RefObject<SpiritAgentGateway | null>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
 
 export function useGatewayRequest(): UseGatewayRequestResult {
   const gatewayState = useStore($gatewayState)
-  const gatewayRef = useRef<DeskAgentGateway | null>(null)
+  const gatewayRef = useRef<SpiritAgentGateway | null>(null)
   const gatewayStateRef = useLatestRef(gatewayState)
-  const reconnectingRef = useRef<Promise<DeskAgentGateway | null> | null>(null)
+  const reconnectingRef = useRef<Promise<SpiritAgentGateway | null> | null>(null)
 
   // Track the active gateway so outbound requests and overlay props always
   // target the focused socket.
   useEffect(
     () =>
       $gateway.subscribe(gateway => {
-        gatewayRef.current = gateway as DeskAgentGateway | null
+        gatewayRef.current = gateway as SpiritAgentGateway | null
       }),
     []
   )
@@ -43,7 +43,7 @@ export function useGatewayRequest(): UseGatewayRequestResult {
     }
 
     reconnectingRef.current = (async () => {
-      const desktop = window.deskagent
+      const desktop = window.spiritagent
 
       if (!desktop) {
         return null
@@ -74,7 +74,7 @@ export function useGatewayRequest(): UseGatewayRequestResult {
       const gateway = gatewayRef.current
 
       if (!gateway) {
-        throw new Error('DeskAgent gateway unavailable')
+        throw new Error('SpiritAgent gateway unavailable')
       }
 
       try {

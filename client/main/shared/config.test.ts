@@ -14,10 +14,10 @@ import {
 } from './config'
 
 function tmpHome(tag: string): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), `deskagent-config-test-${tag}-`))
+  return fs.mkdtempSync(path.join(os.tmpdir(), `spiritagent-config-test-${tag}-`))
 }
 
-test('configPath lives under DESKAGENT_HOME', () => {
+test('configPath lives under SPIRITAGENT_HOME', () => {
   const home = tmpHome('path')
   const target = configPath(home)
   assert.equal(target, path.join(home, FILENAME))

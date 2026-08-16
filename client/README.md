@@ -82,9 +82,9 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **`voice id` 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间；`media.cjs` 路由到本地时不传 caller 的 voice。用户在伙伴设置中选的音色仅在云端路径生效。
 - **3D 渲染栈 `WebGPURenderer` + 四层回退**：`Engine.create()` 异步工厂按 WebGPU 后端 → three 内置 WebGL2 后端（同一 API 面/场景图，零代码）→ 经典 `WebGLRenderer` → `EngineInitError`（static-sprite 层兜底，永不空白）逐级降级。经典回退必须换新 canvas——曾成功获取过 webgpu 上下文的 canvas 再也要不到 webgl2 上下文，所以 canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load/outfit effects 一律 await 引擎就绪 Promise 而非早退，避免首模型在异步 boot 窗口被静默丢弃。PMREMGenerator 按渲染器类型分支——经典版深度依赖 WebGLRenderer internals，传入 WebGPURenderer 构造期即抛。**为什么不停留在 WebGLRenderer**：混合显卡笔记本上 `powerPreference:'high-performance'` 会强制唤醒独显（桌宠场景远低于 dGPU 门槛），且 TSL compute 需要节点材质系统才能把布料物理搬进 GPU。
 - **渲染循环自研调度与能耗档位控制**：`Engine.ts` 内部通过 `scheduleNext()` 自主调度动画循环，支持 `setPowerProfile`（`active` 60fps / `idle` 30fps / `dormant` 0.5fps 低频 Timer 轮询）以及 `stop()` 彻底终止循环；不依赖 Three.js 内部循环，解决休眠档位能耗控制。
-- **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$DESKAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
+- **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$SPIRITAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
 - **主进程 TypeScript 构建**：主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验。
-- **Windows 单实例锁 dev opt-out**：`DESKAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
+- **Windows 单实例锁 dev opt-out**：`SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 
 ## 5. 与外部的契约
 
@@ -104,7 +104,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
 | 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
-| IPC 命名空间 `deskagent:*` 前缀（`deskagent:sprite:*` / `deskagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
+| IPC 命名空间 `spiritagent:*` 前缀（`spiritagent:sprite:*` / `spiritagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
 | 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费 Backend `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
 | 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
 | Companion personality tag 驱动的动画调度（`selectClipByTags`） | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |

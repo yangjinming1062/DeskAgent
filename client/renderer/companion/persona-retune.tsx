@@ -186,7 +186,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     let putOk = false
 
     try {
-      await window.deskagent.api({
+      await window.spiritagent.api({
         body: {
           definition_json: JSON.stringify(
             assemblePersona(

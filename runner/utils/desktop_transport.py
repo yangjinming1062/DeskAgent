@@ -26,15 +26,15 @@ from websockets.http11 import Response
 from websockets.protocol import SEND_EOF, State
 from websockets.uri import parse_uri
 
-from .constants import IS_WINDOWS, get_deskagent_home
+from .constants import IS_WINDOWS, get_spiritagent_home
 from .pid import pid_exists
 
-logger = logging.getLogger("deskagent_runner.transport")
+logger = logging.getLogger("spiritagent_runner.transport")
 
 PIPE_TRANSPORT = "pipe"
 UNIX_TRANSPORT = "unix"
 
-HANDSHAKE_AUTH_HEADER = "X-DeskAgent-Auth"
+HANDSHAKE_AUTH_HEADER = "X-SpiritAgent-Auth"
 
 # Reverse-RPC vision payloads are allowed up to 10 MiB (the Desktop's
 # reverse-rpc.cjs caps); the sans-I/O default of 1 MiB would abort them.
@@ -42,7 +42,7 @@ MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
 # The Host header never leaves the machine; a fixed dummy URI supplies the
 # handshake metadata the protocol builder expects.
-_DUMMY_URI = "ws://deskagent/rpc"
+_DUMMY_URI = "ws://spiritagent/rpc"
 
 _READ_CHUNK = 65536
 
@@ -95,7 +95,7 @@ class DesktopEndpoint:
 
 
 def read_endpoint() -> DesktopEndpoint | None:
-    """Read ``$DESKAGENT_HOME/desktop-endpoint.json`` into a DesktopEndpoint.
+    """Read ``$SPIRITAGENT_HOME/desktop-endpoint.json`` into a DesktopEndpoint.
 
     Returns ``None`` when the file is missing, malformed, names a transport
     that does not match this host, or was left behind by a dead Desktop —
@@ -105,7 +105,7 @@ def read_endpoint() -> DesktopEndpoint | None:
     macOS ``/tmp`` fallback for long ``sun_path``); this never re-derives it.
     """
     try:
-        endpoint_path = get_deskagent_home() / "desktop-endpoint.json"
+        endpoint_path = get_spiritagent_home() / "desktop-endpoint.json"
         if not endpoint_path.exists():
             return None
         data = json.loads(endpoint_path.read_text(encoding="utf-8"))

@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 from .config import cfg_get, load_config
-from .constants import IS_WINDOWS, get_deskagent_home
+from .constants import IS_WINDOWS, get_spiritagent_home
 
 SANE_PATH = ":".join(("/opt/homebrew/bin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"))
 
@@ -48,12 +48,12 @@ def find_bash() -> str:
         return custom
 
     lap = os.environ.get("LOCALAPPDATA", "")
-    # Check deskagent-bundled Git Bash first, then standard Git Bash paths,
+    # Check spiritagent-bundled Git Bash first, then standard Git Bash paths,
     # before falling back to shutil.which("bash") which may return WSL bash
     # (C:\WINDOWS\system32\bash.EXE) — WSL cannot access Windows temp paths.
     candidates = [
-        os.path.join(lap, "deskagent", "git", "bin", "bash.exe"),
-        os.path.join(lap, "deskagent", "git", "usr", "bin", "bash.exe"),
+        os.path.join(lap, "spiritagent", "git", "bin", "bash.exe"),
+        os.path.join(lap, "spiritagent", "git", "usr", "bin", "bash.exe"),
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
     ]
@@ -77,15 +77,15 @@ def append_sane_path_entries(existing_path: str) -> str:
 
 @functools.lru_cache(maxsize=1)
 def find_python() -> str | None:
-    """Locate the uv-managed Python for the user's deskagent venv. Returns None when no usable interpreter is found; callers fall back to ``sys.executable``.
+    """Locate the uv-managed Python for the user's spiritagent venv. Returns None when no usable interpreter is found; callers fall back to ``sys.executable``.
 
     Resolved once per process — a venv created after the first call is invisible until the runner restarts.
     """
-    if override := os.environ.get("DESKAGENT_PYTHON"):
+    if override := os.environ.get("SPIRITAGENT_PYTHON"):
         if Path(override).is_file():
             return override
 
-    root = Path(get_deskagent_home()) / "runner" / ".venv"
+    root = Path(get_spiritagent_home()) / "runner" / ".venv"
     if IS_WINDOWS:
         candidates = (root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe")
     else:

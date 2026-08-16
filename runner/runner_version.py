@@ -41,7 +41,7 @@ def _read_wheel_version() -> str:
 
 def _safe_metadata_version() -> str | None:
     with contextlib.suppress(PackageNotFoundError):
-        return version("desk-agent")
+        return version("spirit-agent")
     return None
 
 

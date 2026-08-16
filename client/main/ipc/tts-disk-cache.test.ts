@@ -7,7 +7,7 @@ import test from 'node:test'
 import { cacheKey, createTtsDiskCache, MAX_CACHE_FILES, MAX_ENTRY_BYTES } from './tts-disk-cache'
 
 function makeHome(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'deskagent-tts-cache-test-'))
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-tts-cache-test-'))
 }
 
 function cacheDir(home: string, language = 'zh'): string {
@@ -26,7 +26,7 @@ test('cacheKey is stable and separates voice from text', () => {
 
 test('read returns null on miss and the written bytes on hit', async () => {
   const home = makeHome()
-  const cache = createTtsDiskCache({ deskagentHome: home })
+  const cache = createTtsDiskCache({ spiritagentHome: home })
   const entry = { language: 'zh', text: '嗯？怎么啦？', voice: '冰糖' }
 
   assert.equal(await cache.read(entry), null)
@@ -39,7 +39,7 @@ test('read returns null on miss and the written bytes on hit', async () => {
 
 test('a different voice or text is a different entry', async () => {
   const home = makeHome()
-  const cache = createTtsDiskCache({ deskagentHome: home })
+  const cache = createTtsDiskCache({ spiritagentHome: home })
 
   await cache.write({ buffer: Buffer.from('a'), language: 'zh', mimeType: MP3, text: 'hi', voice: '冰糖' })
 
@@ -50,7 +50,7 @@ test('a different voice or text is a different entry', async () => {
 
 test('write skips non-mp3 results and oversized buffers', async () => {
   const home = makeHome()
-  const cache = createTtsDiskCache({ deskagentHome: home })
+  const cache = createTtsDiskCache({ spiritagentHome: home })
 
   await cache.write({ buffer: Buffer.from('a'), language: 'zh', mimeType: 'audio/wav', text: 'wav', voice: 'v' })
   await cache.write({
@@ -66,7 +66,7 @@ test('write skips non-mp3 results and oversized buffers', async () => {
 
 test('an oversized file on disk reads as a miss', async () => {
   const home = makeHome()
-  const cache = createTtsDiskCache({ deskagentHome: home })
+  const cache = createTtsDiskCache({ spiritagentHome: home })
   fs.mkdirSync(cacheDir(home), { recursive: true })
   fs.writeFileSync(path.join(cacheDir(home), `${cacheKey('v', 'bloated')}.mp3`), Buffer.alloc(MAX_ENTRY_BYTES + 1))
 
@@ -75,7 +75,7 @@ test('an oversized file on disk reads as a miss', async () => {
 
 test('write evicts the oldest entries once the cap is exceeded', async () => {
   const home = makeHome()
-  const cache = createTtsDiskCache({ deskagentHome: home })
+  const cache = createTtsDiskCache({ spiritagentHome: home })
   const dir = cacheDir(home)
   fs.mkdirSync(dir, { recursive: true })
 
@@ -96,6 +96,6 @@ test('write evicts the oldest entries once the cap is exceeded', async () => {
   assert.deepEqual(await cache.read({ language: 'zh', text: 'newest', voice: 'v' }), Buffer.from('new'))
 })
 
-test('createTtsDiskCache requires deskagentHome', () => {
-  assert.throws(() => createTtsDiskCache({}), /deskagentHome is required/)
+test('createTtsDiskCache requires spiritagentHome', () => {
+  assert.throws(() => createTtsDiskCache({}), /spiritagentHome is required/)
 })

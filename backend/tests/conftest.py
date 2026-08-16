@@ -205,7 +205,7 @@ async def test_app(_patch_db):
     from components import get_db
     from fastapi import FastAPI
 
-    app = FastAPI(title="deskagent-test")
+    app = FastAPI(title="spiritagent-test")
 
     async def _test_get_db():
         async with _patch_db[1]() as db:

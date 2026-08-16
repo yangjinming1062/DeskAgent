@@ -33,7 +33,7 @@ import { speak } from '@/companion/tts'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { RpcEvent } from '@/shared/types/deskagent'
+import type { RpcEvent } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
@@ -243,7 +243,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // call_id the backend's await_future times out at 300s and surfaces the error.
       const p = (event.payload as { name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
 
-      const runnerInvoke = window.deskagent?.runnerInvoke
+      const runnerInvoke = window.spiritagent?.runnerInvoke
 
       if (!p.call_id || !runnerInvoke) {
         break

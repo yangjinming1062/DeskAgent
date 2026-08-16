@@ -10,19 +10,19 @@ export interface DetectRemoteDisplayOptions {
  * Decide whether the app is shown over a remote/forwarded display where
  * Chromium's GPU compositor produces an unstable, flickering surface.
  * Returns a short reason string when GPU should be disabled, or null.
- * `DESKAGENT_DESKTOP_DISABLE_GPU` overrides detection.
+ * `SPIRITAGENT_DESKTOP_DISABLE_GPU` overrides detection.
  * Pure + dependency-free so it can be unit-tested.
  */
 export function detectRemoteDisplay(options: DetectRemoteDisplayOptions = {}): null | string {
   const env = options.env ?? process.env
   const platform = options.platform ?? process.platform
 
-  const override = String(env.DESKAGENT_DESKTOP_DISABLE_GPU || '')
+  const override = String(env.SPIRITAGENT_DESKTOP_DISABLE_GPU || '')
     .trim()
     .toLowerCase()
 
   if (GPU_OVERRIDE_ON.has(override)) {
-    return 'override (DESKAGENT_DESKTOP_DISABLE_GPU)'
+    return 'override (SPIRITAGENT_DESKTOP_DISABLE_GPU)'
   }
 
   if (GPU_OVERRIDE_OFF.has(override)) {

@@ -2,14 +2,14 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { Button, ConfirmDialog } from '@/shared/components/ui'
-import { getDeskAgentConfig, saveDeskAgentConfig } from '@/shared/deskagent'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { KeyRound, Loader2, LogOut } from '@/shared/lib/icons'
 import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
+import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { DeskAgentConfigResponse } from '@/shared/types/deskagent'
+import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
 import { AgentDefaultsSection, type AgentFormState } from './account/agent-defaults-section'
 import { type ChatFormState, ContextCompressionSection } from './account/context-compression-section'
@@ -50,7 +50,7 @@ const EMPTY_CHAT: ChatFormState = {
 
 const THRESHOLD_OPTIONS = ['0.5', '0.6', '0.7', '0.8', '0.9'] as const
 
-const readWebState = (config: DeskAgentConfigResponse): WebFormState => {
+const readWebState = (config: SpiritAgentConfigResponse): WebFormState => {
   const web = config.web
 
   return {
@@ -68,7 +68,7 @@ const readWebState = (config: DeskAgentConfigResponse): WebFormState => {
   }
 }
 
-const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
+const readAgentState = (config: SpiritAgentConfigResponse): AgentFormState => {
   const agent = config.agent
 
   return {
@@ -78,7 +78,7 @@ const readAgentState = (config: DeskAgentConfigResponse): AgentFormState => {
   }
 }
 
-const readChatState = (config: DeskAgentConfigResponse): ChatFormState => ({
+const readChatState = (config: SpiritAgentConfigResponse): ChatFormState => ({
   enable_context_compression: config.chat?.enable_context_compression ?? EMPTY_CHAT.enable_context_compression,
   context_compression_threshold: config.chat?.context_compression_threshold ?? EMPTY_CHAT.context_compression_threshold
 })
@@ -105,7 +105,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
     void (async () => {
       try {
-        const config = await getDeskAgentConfig()
+        const config = await getSpiritAgentConfig()
 
         if (cancelled) {
           return
@@ -201,7 +201,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         bodyWeb.tavily_api_key = tavily.value
       }
 
-      const { config } = await saveDeskAgentConfig({
+      const { config } = await saveSpiritAgentConfig({
         agent: {
           enable_background_review: agent.enable_background_review,
           reasoning_effort: agent.reasoning_effort,
