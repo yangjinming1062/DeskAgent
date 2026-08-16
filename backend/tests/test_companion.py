@@ -1679,7 +1679,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
 
     async with SessionLocal() as db:
         user = User(
-            username="imguser", password_hash=None, is_active=True, can_use=True
+            username="imguser", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -1745,7 +1745,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
         user = User(
-            username="incomplete", password_hash=None, is_active=True, can_use=True
+            username="incomplete", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -1797,7 +1797,7 @@ async def test_generate_fullbody_stage_front_and_aux_chained(
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="fbuser", password_hash=None, is_active=True, can_use=True)
+        user = User(username="fbuser", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1894,7 +1894,7 @@ async def test_generate_fullbody_preconditions(
 
     async with SessionLocal() as db:
         user = User(
-            username="fbuser2", password_hash=None, is_active=True, can_use=True
+            username="fbuser2", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -1979,7 +1979,7 @@ async def test_generate_fullbody_single_mode_rejects_aux(
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
 
     async with SessionLocal() as db:
-        user = User(username="sngl", password_hash=None, is_active=True, can_use=True)
+        user = User(username="sngl", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2071,7 +2071,7 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
 
     async with SessionLocal() as db:
         user = User(
-            username="fbfeedback", password_hash=None, is_active=True, can_use=True
+            username="fbfeedback", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -2431,7 +2431,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     _, SessionLocal = _patch_db
 
     async with SessionLocal() as db:
-        user = User(username="mgen", password_hash=None, is_active=True, can_use=True)
+        user = User(username="mgen", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2495,7 +2495,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
 
     async with SessionLocal() as db:
         user = User(
-            username="mgenfail", password_hash=None, is_active=True, can_use=True
+            username="mgenfail", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -2598,7 +2598,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
 
     async with SessionLocal() as db:
         user = User(
-            username="mgenidem", password_hash=None, is_active=True, can_use=True
+            username="mgenidem", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -2714,7 +2714,7 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
 
     async with SessionLocal() as db:
         user = User(
-            username="run_single", password_hash=None, is_active=True, can_use=True
+            username="run_single", is_active=True, can_use=True
         )
         db.add(user)
         await db.flush()  # populate user.id for the FKs below
@@ -2820,7 +2820,6 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
     async with SessionLocal() as db:
         user = User(
             username="run_single_no_fallback",
-            password_hash=None,
             is_active=True,
             can_use=True,
         )
@@ -2900,7 +2899,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
 
     async with SessionLocal() as db:
         user = User(
-            username="wardrobe_user", password_hash=None, is_active=True, can_use=True
+            username="wardrobe_user", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -3314,7 +3313,6 @@ async def _make_authenticated_client(_patch_db, uid: int = 3001):
             user = User(
                 id=uid,
                 username=f"u_{uid}",
-                password_hash="x",
                 is_active=True,
                 can_use=True,
             )
@@ -3434,7 +3432,7 @@ async def test_slot_based_multi_equip(_patch_db):
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
         user = User(
-            username="slot_equip_user", password_hash=None, is_active=True, can_use=True
+            username="slot_equip_user", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -3554,7 +3552,7 @@ async def test_generate_fullbody_reference_image_source(
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="refsrc", password_hash=None, is_active=True, can_use=True)
+        user = User(username="refsrc", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3628,7 +3626,7 @@ async def test_generate_fullbody_avatar_source_no_secondary(
 
     async with SessionLocal() as db:
         user = User(
-            username="avatarref", password_hash=None, is_active=True, can_use=True
+            username="avatarref", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -3694,7 +3692,7 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="auxref", password_hash=None, is_active=True, can_use=True)
+        user = User(username="auxref", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)

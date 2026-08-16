@@ -16,7 +16,7 @@ async def _seed_user(SessionLocal):
 
     async with SessionLocal() as db:
         user = User(
-            username="statsuser", password_hash=None, is_active=True, can_use=True
+            username="statsuser", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()

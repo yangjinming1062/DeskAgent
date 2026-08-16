@@ -124,8 +124,9 @@ async def test_search_sessions_by_numeric_id_substring(
 
 
 async def _expire_seeded_user(SessionLocal, **updates):
-    from modules.auth import User
     from sqlalchemy import update
+
+    from modules.auth import User
 
     async with SessionLocal() as db:
         await db.execute(
@@ -189,7 +190,7 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
 
     # Create dummy user
     async with SessionLocal() as db:
-        user = User(username="del_user", password_hash="hash")
+        user = User(username="del_user", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -224,3 +225,67 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
 
     # Verify physical files are unlinked
     assert not portrait_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_user_activation_code_lifecycle(_patch_db):
+    from api.v1 import admin as admin_api
+    from modules.auth import (
+        UserCreate,
+        UserUpdate,
+        create_admin_token,
+        decode_activation_code,
+    )
+
+    _, SessionLocal = _patch_db
+
+    admin_tok, _ = await create_admin_token()
+
+    # 1. Create user with base_url
+    async with SessionLocal() as db:
+        resp = await admin_api.create_user(
+            UserCreate(username="code_user", base_url="http://spirit.test:10620"),
+            _admin=admin_tok,
+            db=db,
+        )
+        assert resp.username == "code_user"
+        assert resp.activation_code is not None
+        b, token_v1 = decode_activation_code(resp.activation_code)
+        assert b == "http://spirit.test:10620"
+        user_id = resp.id
+
+    # 2. Get user & list users return activation_code
+    async with SessionLocal() as db:
+        fetched = await admin_api.get_user(user_id=user_id, _admin=admin_tok, db=db)
+        assert fetched.activation_code == resp.activation_code
+
+        user_list = await admin_api.list_users(_admin=admin_tok, db=db)
+        matched = next((u for u in user_list.items if u.id == user_id), None)
+        assert matched is not None
+        assert matched.activation_code == resp.activation_code
+
+    # 3. Update base_url without regenerate_token
+    async with SessionLocal() as db:
+        updated = await admin_api.update_user(
+            user_id=user_id,
+            payload=UserUpdate(base_url="https://spirit-prod.internal:8443"),
+            _admin=admin_tok,
+            db=db,
+        )
+        assert updated.activation_code is not None
+        new_b, token_v2 = decode_activation_code(updated.activation_code)
+        assert new_b == "https://spirit-prod.internal:8443"
+        # Token remains the exact same, so existing user authorization is undisturbed
+        assert token_v1 == token_v2
+
+    # 4. Update with regenerate_token
+    async with SessionLocal() as db:
+        regen = await admin_api.update_user(
+            user_id=user_id,
+            payload=UserUpdate(regenerate_token=True, base_url="https://spirit-prod.internal:8443"),
+            _admin=admin_tok,
+            db=db,
+        )
+        assert regen.activation_code is not None
+        _, token_v3 = decode_activation_code(regen.activation_code)
+        assert token_v3 != token_v2

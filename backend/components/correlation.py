@@ -71,14 +71,7 @@ async def correlated_exception_response(request: Request, exc: Exception) -> JSO
     ExceptionMiddleware (在 user middleware 之内) 兜底, header 透传.
     """
     rid = current_request_id()
-    logger.exception(
-        "Unhandled server exception on %s %s: %s",
-        request.method,
-        request.url.path,
-        exc,
-        exc_info=exc,
-        extra={"request_id": rid},
-    )
+    logger.exception("Unhandled server exception on %s %s: %s", request.method, request.url.path, exc, exc_info=exc, extra={"request_id": rid})
     headers = {"X-Request-ID": rid} if rid else {}
     return JSONResponse(status_code=500, content={"error": "Internal Server Error", "reason": "internal_error", "status": 500}, headers=headers)
 

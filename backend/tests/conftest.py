@@ -170,7 +170,7 @@ async def _seed_user(SessionLocal, username="testuser"):
     async with SessionLocal() as db:
         user = User(
             username=username,
-            password_hash=None,
+            activation_code=encode_activation_code("http://localhost:10620", raw_token),
             activation_token_hash=hash_activation_token(raw_token),
             is_active=True,
             can_use=True,

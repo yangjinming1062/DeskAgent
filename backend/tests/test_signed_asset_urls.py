@@ -112,3 +112,68 @@ def test_signer_key_raises_outside_test_mode(monkeypatch):
 
     with pytest.raises(RuntimeError, match="empty outside test mode"):
         asset_store._signing_key()
+
+
+@pytest.mark.asyncio
+async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(_patch_db):
+    from pathlib import Path
+
+    from httpx import ASGITransport, AsyncClient
+
+    from components import SETTINGS
+    from main import app
+    from modules.auth import User, create_access_token
+
+    _, SessionLocal = _patch_db
+
+    # Create dummy avatar and companion asset
+    avatar_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    test_avatar = avatar_dir / "dual_auth_avatar.png"
+    test_avatar.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00testavatar")
+
+    user_asset_dir = Path(SETTINGS.data_dir) / "companion-assets" / "42"
+    user_asset_dir.mkdir(parents=True, exist_ok=True)
+    test_asset = user_asset_dir / "model_test.glb"
+    test_asset.write_bytes(b"glTF\x02\x00\x00\x00testmodel")
+
+    async with SessionLocal() as db:
+        user42 = User(id=42, username="user42", is_active=True, can_use=True)
+        db.add(user42)
+        await db.commit()
+
+    token_user42, _, token_jti = create_access_token(user_id=42, username="user42")
+    async with SessionLocal() as db:
+        from modules.auth import LoginRecord
+        db.add(LoginRecord(user_id=42, token_jti=token_jti, is_active=True))
+        await db.commit()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Unauthenticated request without signature fails 403
+        resp = await client.get("/api/companion/avatar/file/dual_auth_avatar.png")
+        assert resp.status_code == 403
+
+        resp = await client.get("/api/companion/asset/42/model_test.glb")
+        assert resp.status_code == 403
+
+        # 2. Authenticated user request without signature succeeds 200
+        resp = await client.get(
+            "/api/companion/avatar/file/dual_auth_avatar.png",
+            headers={"Authorization": f"Bearer {token_user42}"},
+        )
+        assert resp.status_code == 200
+        assert resp.content == b"\x89PNG\r\n\x1a\n\x00\x00testavatar"
+
+        resp = await client.get(
+            "/api/companion/asset/42/model_test.glb",
+            headers={"Authorization": f"Bearer {token_user42}"},
+        )
+        assert resp.status_code == 200
+        assert resp.content == b"glTF\x02\x00\x00\x00testmodel"
+
+        # 3. Valid HMAC signature without token succeeds 200
+        avatar_url = build_signed_avatar_url("dual_auth_avatar", "png")
+        qs = avatar_url.split("?", 1)[1]
+        resp = await client.get(f"/api/companion/avatar/file/dual_auth_avatar.png?{qs}")
+        assert resp.status_code == 200

@@ -6,7 +6,7 @@ from datetime import timedelta
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, TempFileMarkerMismatch, get_db, get_logger, safe_json_loads, utc_now
 from fastapi import Body, Depends, HTTPException, Request, Response, status
-from modules.auth import LoginRecord, User, get_current_session
+from modules.auth import LoginRecord, User, get_current_session, get_optional_current_session
 from modules.companion import (
     AnimationClipResponse,
     AnimationGenerateRequest,
@@ -579,8 +579,10 @@ public_router = get_router()
 
 
 @public_router.get("/avatar/file/{filename}")
-async def serve_avatar_file(request: Request, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
-    if not verify_signed_avatar_request(filename, expires, sig):
+async def serve_avatar_file(
+    request: Request, filename: str, expires: int | None = None, sig: str | None = None, session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session)
+) -> Response:
+    if session is None and not verify_signed_avatar_request(filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_uploaded_avatar_path(filename)
     if result is None:
@@ -590,8 +592,16 @@ async def serve_avatar_file(request: Request, filename: str, expires: int | None
 
 
 @public_router.get("/asset/{user_id}/{filename:path}")
-async def serve_companion_asset(request: Request, user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
-    if not verify_signed_asset_request(user_id, filename, expires, sig):
+async def serve_companion_asset(
+    request: Request,
+    user_id: int,
+    filename: str,
+    expires: int | None = None,
+    sig: str | None = None,
+    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
+) -> Response:
+    is_authed = session is not None and (session[0].id == user_id)
+    if not is_authed and not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_asset_path(user_id, filename)
     if result is None:
@@ -601,8 +611,16 @@ async def serve_companion_asset(request: Request, user_id: int, filename: str, e
 
 
 @public_router.get("/model/file/{user_id}/{filename:path}")
-async def serve_model_file(request: Request, user_id: int, filename: str, expires: int | None = None, sig: str | None = None) -> Response:
-    if not verify_signed_asset_request(user_id, filename, expires, sig):
+async def serve_model_file(
+    request: Request,
+    user_id: int,
+    filename: str,
+    expires: int | None = None,
+    sig: str | None = None,
+    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
+) -> Response:
+    is_authed = session is not None and (session[0].id == user_id)
+    if not is_authed and not verify_signed_asset_request(user_id, filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")
     result = resolve_companion_model_path(user_id, filename)
     if result is None:

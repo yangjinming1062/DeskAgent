@@ -1,4 +1,4 @@
-from .deps import get_current_admin_token, get_current_session
+from .deps import get_current_admin_token, get_current_session, get_optional_current_session
 from .models import LoginRecord, User, UserModelConfig
 from .schemas import (
     ActivateRequest,
@@ -63,6 +63,7 @@ __all__ = [
     "generate_activation_token",
     "get_current_admin_token",
     "get_current_session",
+    "get_optional_current_session",
     "hash_activation_token",
     "public_provider_slots",
 ]

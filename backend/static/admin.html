@@ -624,23 +624,23 @@ input[type="file"] { font-size: 0.78rem; }
         <div class="modal-body">
             <input type="hidden" id="activationManageUserId">
             <div class="callout">
-                出于安全考虑，激活令牌仅以哈希存储在服务器，<strong>无法再次查看已生成的激活码</strong>。
-                如需向用户重新发放，请生成新激活码（旧码将立即失效）。后端迁移时填入新地址重新生成即可，用户仍登录同一账号。
+                激活码携带后端服务地址与用户认证令牌。您可以在此随时查看当前激活码并复制发放。后端地址变动时输入新地址点击「更新后端地址」即可，无需重置令牌；如需强制作废旧激活码可点击「重新生成激活码」。
             </div>
-            <div class="field">
+            <div id="activationManageResult" style="margin-top:0.5rem;">
+                <label style="display:block; font-size:0.78rem; font-weight:600; margin-bottom:0.3rem;">当前激活码</label>
+                <textarea id="activationManageCode" class="mono" readonly rows="4" style="width:100%; resize:vertical; word-break:break-all;"></textarea>
+            </div>
+            <div class="field" style="margin-top:1rem;">
                 <label for="activationManageBaseUrl">后端地址</label>
                 <input type="text" id="activationManageBaseUrl" value="http://localhost:10620" autocomplete="off">
-                <div class="hint">嵌入激活码的后端地址。激活码同时携带地址与令牌，客户端激活时连接此地址。</div>
-            </div>
-            <div id="activationManageResult" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
-                <label style="display:block; font-size:0.78rem; font-weight:600; margin-bottom:0.3rem;">新激活码</label>
-                <textarea id="activationManageCode" class="mono" readonly rows="5" style="width:100%; resize:vertical; word-break:break-all;"></textarea>
+                <div class="hint">更新后端地址会自动重打激活码，不影响用户已有数据与授权。</div>
             </div>
         </div>
         <div class="modal-foot">
             <button class="btn btn--ghost" onclick="closeModal('activationManageModal')">关闭</button>
-            <button class="btn btn--ghost" id="activationManageCopyBtn" style="display:none" onclick="copyActivationManageCode()">复制</button>
-            <button class="btn btn--primary" id="activationManageGenBtn" onclick="regenerateFromManage()">生成新激活码</button>
+            <button class="btn btn--ghost" id="activationManageCopyBtn" style="display:none" onclick="copyActivationManageCode()">复制激活码</button>
+            <button class="btn btn--ghost" id="activationManageUpdateUrlBtn" style="display:none" onclick="updateBaseUrlFromManage()">更新后端地址</button>
+            <button class="btn btn--primary" id="activationManageGenBtn" onclick="regenerateFromManage()">重新生成激活码</button>
         </div>
     </div>
 </div>
@@ -1021,12 +1021,53 @@ function manageActivation(id) {
     const user = (tabCache.users?.items ?? []).find(u => u.id === id);
     $('#activationManageUserId').value = id;
     $('#activationManageTitle').textContent = '激活码管理' + (user ? ' · ' + user.username : '');
-    $('#activationManageBaseUrl').value = 'http://localhost:10620';
-    $('#activationManageResult').style.display = 'none';
-    $('#activationManageCode').value = '';
-    $('#activationManageCopyBtn').style.display = 'none';
-    $('#activationManageGenBtn').textContent = '生成新激活码';
+    const code = user?.activation_code || '';
+    $('#activationManageCode').value = code;
+    if (code) {
+        $('#activationManageResult').style.display = '';
+        $('#activationManageCopyBtn').style.display = '';
+        $('#activationManageUpdateUrlBtn').style.display = '';
+        try {
+            const raw = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
+            const data = JSON.parse(raw);
+            if (data.b) $('#activationManageBaseUrl').value = data.b;
+            else $('#activationManageBaseUrl').value = 'http://localhost:10620';
+        } catch (e) {
+            $('#activationManageBaseUrl').value = 'http://localhost:10620';
+        }
+    } else {
+        $('#activationManageResult').style.display = 'none';
+        $('#activationManageCopyBtn').style.display = 'none';
+        $('#activationManageUpdateUrlBtn').style.display = 'none';
+        $('#activationManageBaseUrl').value = 'http://localhost:10620';
+    }
     openModal('activationManageModal');
+}
+
+async function updateBaseUrlFromManage() {
+    const id = $('#activationManageUserId').value;
+    if (!id) return;
+    const baseUrl = $('#activationManageBaseUrl').value.trim() || 'http://localhost:10620';
+    const btn = $('#activationManageUpdateUrlBtn');
+    btn.disabled = true; btn.textContent = '更新中…';
+    try {
+        const resp = await apiFetch(`/api/admin/users/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ base_url: baseUrl }),
+        });
+        const data = await resp.json();
+        if (data.activation_code) {
+            $('#activationManageCode').value = data.activation_code;
+            $('#activationManageResult').style.display = '';
+            $('#activationManageCopyBtn').style.display = '';
+            $('#activationManageUpdateUrlBtn').style.display = '';
+            const user = (tabCache.users?.items ?? []).find(u => u.id === Number(id));
+            if (user) user.activation_code = data.activation_code;
+        }
+        toast('后端地址已更新，激活码已刷新');
+        loadUsers();
+    } catch (e) { toast(e.message, 'err'); }
+    finally { btn.disabled = false; btn.textContent = '更新后端地址'; }
 }
 
 async function regenerateFromManage() {
@@ -1045,11 +1086,14 @@ async function regenerateFromManage() {
             $('#activationManageCode').value = data.activation_code;
             $('#activationManageResult').style.display = '';
             $('#activationManageCopyBtn').style.display = '';
-            btn.textContent = '重新生成';
+            $('#activationManageUpdateUrlBtn').style.display = '';
+            const user = (tabCache.users?.items ?? []).find(u => u.id === Number(id));
+            if (user) user.activation_code = data.activation_code;
         }
-        toast('激活码已生成');
+        toast('激活码已重新生成');
+        loadUsers();
     } catch (e) { toast(e.message, 'err'); }
-    finally { btn.disabled = false; }
+    finally { btn.disabled = false; btn.textContent = '重新生成激活码'; }
 }
 
 async function copyActivationManageCode() {

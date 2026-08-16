@@ -2036,7 +2036,6 @@ class TestPerUserProviderChain:
         async with SessionLocal() as db:
             user = User(
                 username="u",
-                password_hash=None,
                 activation_token_hash=hash_activation_token(
                     generate_activation_token()
                 ),
@@ -2124,7 +2123,6 @@ class TestPerUserProviderChain:
         async with SessionLocal() as db:
             user = User(
                 username="u_pin",
-                password_hash=None,
                 activation_token_hash=hash_activation_token(
                     generate_activation_token()
                 ),
@@ -2191,7 +2189,6 @@ class TestResolveUserLlmConfigCredentials:
 
             user = User(
                 username="u",
-                password_hash=None,
                 activation_token_hash=hash_activation_token(
                     generate_activation_token()
                 ),

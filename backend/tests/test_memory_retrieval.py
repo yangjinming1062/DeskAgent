@@ -31,7 +31,6 @@ async def _make_user(SessionLocal, user_id: int = 1001):
                 User(
                     id=user_id,
                     username=f"u{user_id}",
-                    password_hash=None,
                     activation_token_hash=hash_activation_token(
                         generate_activation_token()
                     ),

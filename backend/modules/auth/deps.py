@@ -1,4 +1,4 @@
-from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS, get_db, utc_now
+from components import LOGIN_HEARTBEAT_INTERVAL_SECONDS, ensure_utc, get_db, utc_now
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
@@ -50,8 +50,19 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = utc_now()
-    if login_record.last_seen_at is None or (now - login_record.last_seen_at).total_seconds() > LOGIN_HEARTBEAT_INTERVAL_SECONDS:
+    if login_record.last_seen_at is None or (now - ensure_utc(login_record.last_seen_at)).total_seconds() > LOGIN_HEARTBEAT_INTERVAL_SECONDS:
         login_record.last_seen_at = now
         db.add(login_record)
         await db.commit()
     return user, login_record
+
+
+async def get_optional_current_session(
+    credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME), db: AsyncSession = Depends(get_db)
+) -> tuple[User, LoginRecord] | None:
+    if credentials is None or not credentials.credentials:
+        return None
+    try:
+        return await get_current_session(credentials, db)
+    except HTTPException:
+        return None

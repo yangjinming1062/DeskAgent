@@ -15,6 +15,7 @@ from modules.auth import (
     UserModelConfigRequest,
     UserResponse,
     UserUpdate,
+    decode_activation_code,
     encode_activation_code,
     fingerprint_api_key,
     generate_activation_token,
@@ -51,32 +52,41 @@ async def create_user(payload: UserCreate, _admin: str = Depends(get_current_adm
     if (await db.execute(select(User).where(User.username == payload.username))).scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     raw_token = generate_activation_token()
-    user = User(username=payload.username, password_hash=None, activation_token_hash=hash_activation_token(raw_token), can_use=payload.can_use, expires_at=payload.expires_at)
+    code = encode_activation_code(payload.base_url, raw_token)
+    user = User(username=payload.username, activation_code=code, activation_token_hash=hash_activation_token(raw_token), can_use=payload.can_use, expires_at=payload.expires_at)
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    resp = UserResponse.model_validate(user)
-    resp.activation_code = encode_activation_code(payload.base_url, raw_token)
-    return resp
+    return UserResponse.model_validate(user)
 
 
 @router.patch("/users/{user_id}", response_model=UserResponse)
 async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> UserResponse:
     user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
-    raw_token: str | None = None
     if payload.regenerate_token:
         raw_token = generate_activation_token()
         user.activation_token_hash = hash_activation_token(raw_token)
+        base_url = payload.base_url
+        if not base_url and user.activation_code:
+            try:
+                base_url = decode_activation_code(user.activation_code)[0]
+            except Exception:
+                base_url = "http://localhost:10620"
+        user.activation_code = encode_activation_code(base_url or "http://localhost:10620", raw_token)
+    elif payload.base_url:
+        if user.activation_code:
+            try:
+                _, token = decode_activation_code(user.activation_code)
+                user.activation_code = encode_activation_code(payload.base_url, token)
+            except Exception:
+                pass
     # 显式 null 清空:不放入 apply_partial.exclude,否则正常的"设置未来过期时间"也会被跳过
     if "expires_at" in payload.model_fields_set and payload.expires_at is None:
         user.expires_at = None
     apply_partial(user, payload, exclude={"regenerate_token", "base_url"})
     await db.commit()
-    resp = UserResponse.model_validate(user)
-    if raw_token is not None:
-        base_url = payload.base_url or "http://localhost:10620"
-        resp.activation_code = encode_activation_code(base_url, raw_token)
-    return resp
+    await db.refresh(user)
+    return UserResponse.model_validate(user)
 
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
