@@ -15,6 +15,8 @@ import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
+import { $dragVelocity } from '../spatial'
+
 import { Engine } from './Engine'
 import {
   $expressions,
@@ -163,6 +165,11 @@ export function Companion3D(): React.JSX.Element {
       // until the first model settles), then on every signal change.
       const unsubPower = subscribePowerProfile(profile => eng.setPowerProfile(profile))
 
+      // Drag velocity listener for 3D physics tilt/swing during window dragging
+      const unsubDragVelocity = $dragVelocity.listen(vel => {
+        eng.character.setDragVelocity(vel.vx, vel.vy)
+      })
+
       eng.start()
 
       detachWiring = () => {
@@ -172,6 +179,7 @@ export function Companion3D(): React.JSX.Element {
         unsubExpressions()
         detachLipSync()
         unsubPower()
+        unsubDragVelocity()
         window.removeEventListener('resize', onResize)
         ro.disconnect()
         eng.canvas.removeEventListener('pointermove', onPointerMove)

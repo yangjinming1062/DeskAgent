@@ -260,6 +260,17 @@ export class CharacterController {
           if (child instanceof THREE.Mesh) {
             child.castShadow = true
             child.receiveShadow = true
+            const mats = Array.isArray(child.material) ? child.material : [child.material]
+
+            for (const m of mats) {
+              if (m && isPbrMaterial(m)) {
+                m.userData = m.userData || {}
+                m.userData.baseMap = m.map
+                m.userData.baseNormalMap = m.normalMap
+                m.userData.baseRoughnessMap = m.roughnessMap
+                m.userData.baseMetalnessMap = m.metalnessMap
+              }
+            }
           }
         })
         scene.add(this.root)
@@ -876,7 +887,46 @@ export class CharacterController {
       try {
         dataUrl = await desktop.apiAsset({ url })
       } catch (err) {
-        log.warn('character', `PBR channel '${channel}' fetch failed:`, err)
+        log.warn('character', `PBR channel '${channel}' fetch failed, falling back to native texture:`, err)
+
+        // Fallback: restore native base texture if available
+        if (targetMeshes) {
+          for (const mesh of targetMeshes) {
+            const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+
+            for (const m of mats) {
+              if (isPbrMaterial(m) && m.userData) {
+                if (slot === 'map' && m.userData.baseMap) {
+                  setPbrSlot(m, 'map', m.userData.baseMap)
+                }
+
+                if (slot === 'normalMap' && m.userData.baseNormalMap) {
+                  setPbrSlot(m, 'normalMap', m.userData.baseNormalMap)
+                }
+              }
+            }
+          }
+        } else {
+          this.root.traverse(child => {
+            if (!(child instanceof THREE.Mesh) || this.isUnitDescendant(child)) {
+              return
+            }
+
+            const mats = Array.isArray(child.material) ? child.material : [child.material]
+
+            for (const m of mats) {
+              if (isPbrMaterial(m) && m.userData) {
+                if (slot === 'map' && m.userData.baseMap) {
+                  setPbrSlot(m, 'map', m.userData.baseMap)
+                }
+
+                if (slot === 'normalMap' && m.userData.baseNormalMap) {
+                  setPbrSlot(m, 'normalMap', m.userData.baseNormalMap)
+                }
+              }
+            }
+          })
+        }
 
         return
       }
@@ -975,7 +1025,19 @@ export class CharacterController {
 
       for (const m of mats) {
         if (isPbrMaterial(m)) {
-          setPbrSlot(m, slot, null)
+          // Restore native GLB base textures if clearing custom channel
+          const fallbackTex =
+            slot === 'map'
+              ? (m.userData?.baseMap ?? null)
+              : slot === 'normalMap'
+                ? (m.userData?.baseNormalMap ?? null)
+                : slot === 'roughnessMap'
+                  ? (m.userData?.baseRoughnessMap ?? null)
+                  : slot === 'metalnessMap'
+                    ? (m.userData?.baseMetalnessMap ?? null)
+                    : null
+
+          setPbrSlot(m, slot, fallbackTex)
 
           if (slot === 'displacementMap') {
             m.displacementScale = 0
@@ -992,10 +1054,22 @@ export class CharacterController {
     this.lookY = THREE.MathUtils.clamp(ny, -1, 1)
   }
 
+  private dragTilt = { x: 0, z: 0 }
+
+  setDragVelocity(vx: number, vy: number): void {
+    // vx, vy normalised in px/ms
+    this.dragTilt.z = THREE.MathUtils.clamp(-vx * 0.28, -0.45, 0.45)
+    this.dragTilt.x = THREE.MathUtils.clamp(vy * 0.18, -0.35, 0.35)
+  }
+
   update(delta: number): void {
     this.breathPhase += delta
     this.mixer?.update(delta)
     this.morph.update(delta)
+
+    // Smoothly decay drag tilt
+    this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.08)
+    this.dragTilt.z = THREE.MathUtils.lerp(this.dragTilt.z, 0, 0.08)
 
     if (this.isProcedural) {
       this.updateProcedural(delta)
@@ -1036,9 +1110,11 @@ export class CharacterController {
 
   private applyLookAt(): void {
     const yaw = this.lookX * 0.15
-    const pitch = -this.lookY * 0.08
+    const pitch = -this.lookY * 0.08 + this.dragTilt.x
+    const roll = this.dragTilt.z
     this.root.rotation.y = THREE.MathUtils.lerp(this.root.rotation.y, yaw, 0.08)
     this.root.rotation.x = THREE.MathUtils.lerp(this.root.rotation.x, pitch, 0.08)
+    this.root.rotation.z = THREE.MathUtils.lerp(this.root.rotation.z, roll, 0.1)
   }
 
   // ── Procedural fallback character ───────────────────────────

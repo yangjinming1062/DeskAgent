@@ -2,12 +2,25 @@ import { atom } from 'nanostores'
 
 import { $focusContext } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { $effectiveTier, $spriteEmotion, $spriteState } from '@/companion/companion-store'
+import { $clipOverride, $effectiveTier, $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
-export const SPRITE_W = 160
-export const SPRITE_H = 184
+export function getBaseSpriteHeight(): number {
+  if (typeof window === 'undefined') {
+    return 270
+  }
+
+  // Default height is 1/4 of display screen height, clamped within [200, 720]
+  return Math.round(Math.max(200, Math.min(window.innerHeight * 0.25, 720)))
+}
+
+export function getBaseSpriteWidth(): number {
+  return Math.round(getBaseSpriteHeight() * 0.85)
+}
+
+export const SPRITE_W = typeof window !== 'undefined' ? getBaseSpriteWidth() : 230
+export const SPRITE_H = typeof window !== 'undefined' ? getBaseSpriteHeight() : 270
 const REST_MARGIN = 24
 
 const WALK_SPEED = 80
@@ -27,6 +40,7 @@ export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
 export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
+export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
 
 // Window viewport size — single source of truth, updated by initSpatial's
 // existing resize listener. Overlays (chat-dock, proactive bubble) subscribe
@@ -45,9 +59,12 @@ export function getHomePosition(): { x: number; y: number } {
     return { x: 0, y: 0 }
   }
 
+  const w = getBaseSpriteWidth()
+  const h = getBaseSpriteHeight()
+
   return {
-    x: Math.max(REST_MARGIN, window.innerWidth - SPRITE_W - REST_MARGIN),
-    y: Math.max(REST_MARGIN, window.innerHeight - SPRITE_H - REST_MARGIN)
+    x: Math.max(REST_MARGIN, window.innerWidth - w - REST_MARGIN),
+    y: Math.max(REST_MARGIN, window.innerHeight - h - REST_MARGIN)
   }
 }
 
@@ -56,8 +73,10 @@ export function getChatPosition(): { x: number; y: number } {
     return { x: 0, y: 0 }
   }
 
+  const w = getBaseSpriteWidth()
+
   return {
-    x: Math.round((window.innerWidth - SPRITE_W) / 2),
+    x: Math.round((window.innerWidth - w) / 2),
     y: Math.round(window.innerHeight * 0.16)
   }
 }
@@ -592,10 +611,16 @@ export function startDrag(): void {
   stopRoam()
   cancelMovement()
   $spatialLocomotion.set('drag')
+  $clipOverride.set('drag')
+  $spriteState.set('interacting')
 }
 
-export function updateDragPosition(pos: { x: number; y: number }): void {
+export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
   $spatialPos.set(pos)
+
+  if (vel) {
+    $dragVelocity.set(vel)
+  }
 }
 
 export function endDragAt(pos: { x: number; y: number }): void {
@@ -603,6 +628,8 @@ export function endDragAt(pos: { x: number; y: number }): void {
   $homePosition.set(pos)
   $spatialLocomotion.set('still')
   $spatialLocale.set('home')
+  $dragVelocity.set({ vx: 0, vy: 0 })
+  $clipOverride.set('drag_end')
   void window.spiritagent.sprite.setPosition(pos)
 }
 
@@ -614,9 +641,12 @@ export function initSpatial(): () => void {
         return
       }
 
+      const w = getBaseSpriteWidth()
+      const h = getBaseSpriteHeight()
+
       const next = {
-        x: Math.max(REST_MARGIN, Math.min(saved.x, window.innerWidth - SPRITE_W - REST_MARGIN)),
-        y: Math.max(REST_MARGIN, Math.min(saved.y, window.innerHeight - SPRITE_H - REST_MARGIN))
+        x: Math.max(REST_MARGIN, Math.min(saved.x, window.innerWidth - w - REST_MARGIN)),
+        y: Math.max(REST_MARGIN, Math.min(saved.y, window.innerHeight - h - REST_MARGIN))
       }
 
       $homePosition.set(next)
@@ -653,10 +683,12 @@ export function initSpatial(): () => void {
     $viewport.set({ width: window.innerWidth, height: window.innerHeight })
 
     const home = $homePosition.get()
+    const w = getBaseSpriteWidth()
+    const h = getBaseSpriteHeight()
 
     const clamped = {
-      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - SPRITE_W - REST_MARGIN)),
-      y: Math.max(REST_MARGIN, Math.min(home.y, window.innerHeight - SPRITE_H - REST_MARGIN))
+      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - w - REST_MARGIN)),
+      y: Math.max(REST_MARGIN, Math.min(home.y, window.innerHeight - h - REST_MARGIN))
     }
 
     $homePosition.set(clamped)

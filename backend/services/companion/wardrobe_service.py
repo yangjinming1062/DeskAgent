@@ -93,9 +93,68 @@ def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, 
 
 
 def _re_sign_texture(item: WardrobeItem) -> None:
-    """Re-sign all companion-assets URLs on the item (5-min TTL)."""
+    """Re-sign all companion-assets URLs on the item (5-min TTL) and sanitize stale 404 URLs."""
     for attr, uid, filename in _iter_companion_asset_paths(item):
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
+
+    # If temp-media URL is present but file is expired, set attribute to None so client falls back cleanly
+    for attr in _COMPANION_ASSET_URL_ATTRS:
+        val = getattr(item, attr, None)
+        if val and "/api/media/files/" in val:
+            fid = val.rsplit("/", 1)[-1].split("?")[0]
+            if get_file_path(fid) is None:
+                setattr(item, attr, None)
+
+
+async def check_and_recover_missing_texture(user_id: int, item: WardrobeItem) -> None:
+    """Background task: If an equipped wardrobe item's texture is missing, regenerate PBR textures using its outfit_description."""
+    if item.kind not in (None, "texture") and not item.texture_url:
+        return
+    desc = item.outfit_description or item.prompt or item.name
+    if not desc:
+        return
+
+    try:
+        from .model_service import emit_wardrobe_updated
+
+        async with SESSION_LOCAL() as db:
+            avatar = await get_active_avatar(db, user_id)
+            ref_uri = None
+            if avatar and avatar.seed_front_url:
+                ref_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_url)
+            rig_type = await _resolve_rig_type(db, user_id)
+
+            res_dict, _prompts = await _generate_pbr_channels(description=desc, feedback=None, rig_type=rig_type, reference_data_uri=ref_uri, user_id=user_id)
+
+            async def _save_ch(ch: str, label: str) -> str | None:
+                if ch not in res_dict:
+                    return None
+                fid = res_dict[ch][1]
+                res = get_file_path(fid)
+                if not res:
+                    return None
+                data = await asyncio.to_thread(Path(res[0]).read_bytes)
+                return save_companion_asset(data, user_id=user_id, label=label, ext="png")
+
+            t_url, n_url, r_url, m_url, d_url = await asyncio.gather(
+                _save_ch("albedo", "wardrobe_texture"),
+                _save_ch("normal", "wardrobe_normal"),
+                _save_ch("roughness", "wardrobe_roughness"),
+                _save_ch("metalness", "wardrobe_metalness"),
+                _save_ch("displacement", "wardrobe_displacement"),
+            )
+
+            if t_url:
+                await db.execute(
+                    update(WardrobeItem)
+                    .where(WardrobeItem.id == item.id)
+                    .values(texture_url=t_url, normal_url=n_url, roughness_url=r_url, metalness_url=m_url, displacement_url=d_url)
+                )
+                await db.commit()
+                logger.info("Successfully recovered and regenerated wardrobe texture from outfit description", extra={"user_id": user_id, "item_id": item.id})
+                await emit_wardrobe_updated(user_id)
+    except Exception as exc:
+        logger.warning("Background regeneration of wardrobe texture failed", extra={"user_id": user_id, "item_id": item.id, "error": str(exc)})
 
 
 async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
@@ -111,6 +170,8 @@ async def get_equipped_item(db: AsyncSession, user_id: int) -> WardrobeItem | No
     item = equipped[-1] if equipped else None
     if item:
         _re_sign_texture(item)
+        if item.equipped and (item.kind in (None, "texture")) and not item.texture_url:
+            asyncio.create_task(check_and_recover_missing_texture(user_id, item))
     return item
 
 
@@ -119,6 +180,8 @@ async def get_equipped_items(db: AsyncSession, user_id: int) -> list[WardrobeIte
     items = await _query_equipped(db, user_id)
     for item in items:
         _re_sign_texture(item)
+        if item.equipped and (item.kind in (None, "texture")) and not item.texture_url:
+            asyncio.create_task(check_and_recover_missing_texture(user_id, item))
     return items
 
 

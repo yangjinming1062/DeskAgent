@@ -4,7 +4,16 @@ import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } fro
 import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
-import { $spatialPos, $spatialScale, cancelMovement, endDragAt, startDrag, updateDragPosition } from '../spatial'
+import {
+  $spatialPos,
+  $spatialScale,
+  cancelMovement,
+  endDragAt,
+  getBaseSpriteHeight,
+  getBaseSpriteWidth,
+  startDrag,
+  updateDragPosition
+} from '../spatial'
 
 interface SpriteStageProps {
   children: ReactNode
@@ -27,9 +36,16 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const capturedRef = useRef(false)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
 
-  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number; moved: boolean } | null>(
-    null
-  )
+  const dragRef = useRef<{
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+    lastX: number
+    lastY: number
+    lastTime: number
+  } | null>(null)
 
   const lastTapRef = useRef(0)
   const pos = useStore($spatialPos)
@@ -119,7 +135,17 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       return
     }
 
-    dragRef.current = { startX: e.clientX, startY: e.clientY, originX: pos.x, originY: pos.y, moved: false }
+    const now = performance.now()
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: pos.x,
+      originY: pos.y,
+      moved: false,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      lastTime: now
+    }
     cancelMovement()
   }
 
@@ -144,9 +170,17 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     }
 
     if (d.moved) {
+      const now = performance.now()
+      const dt = Math.max(1, now - d.lastTime)
+      const vx = (e.clientX - d.lastX) / dt
+      const vy = (e.clientY - d.lastY) / dt
+      d.lastX = e.clientX
+      d.lastY = e.clientY
+      d.lastTime = now
+
       const nextX = Math.round(d.originX + dx)
       const nextY = Math.round(d.originY + dy)
-      updateDragPosition({ x: nextX, y: nextY })
+      updateDragPosition({ x: nextX, y: nextY }, { vx, vy })
     }
   }
 
@@ -173,6 +207,9 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     }
   }
 
+  const spriteW = getBaseSpriteWidth()
+  const spriteH = getBaseSpriteHeight()
+
   return (
     <div className="fixed inset-0" style={{ pointerEvents: 'none' }}>
       <div
@@ -186,7 +223,15 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         ref={mountRef}
-        style={{ left: pos.x, top: pos.y, pointerEvents: 'auto', touchAction: 'none', transform: `scale(${scale})` }}
+        style={{
+          left: pos.x,
+          top: pos.y,
+          width: `${spriteW}px`,
+          height: `${spriteH}px`,
+          pointerEvents: 'auto',
+          touchAction: 'none',
+          transform: `scale(${scale})`
+        }}
       >
         {children}
       </div>
