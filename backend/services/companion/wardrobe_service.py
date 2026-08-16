@@ -310,9 +310,21 @@ def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, s
 
 
 async def preview_wardrobe_texture(
-    db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None
+    db: AsyncSession | None = None,
+    *,
+    user_id: int,
+    description: str,
+    image_bytes: bytes | None = None,
+    content_type: str | None = None,
+    feedback: str | None = None,
+    rig_type: str | None = None,
 ) -> WardrobePreviewResponse:
-    rig_type = await _resolve_rig_type(db, user_id)
+    if rig_type is None:
+        if db is not None:
+            rig_type = await _resolve_rig_type(db, user_id)
+        else:
+            async with SESSION_LOCAL() as probe_db:
+                rig_type = await _resolve_rig_type(probe_db, user_id)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
     res_dict, prompts = await _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id)
     return _preview_response(res_dict, prompts)

@@ -124,9 +124,8 @@ async def test_search_sessions_by_numeric_id_substring(
 
 
 async def _expire_seeded_user(SessionLocal, **updates):
-    from sqlalchemy import update
-
     from modules.auth import User
+    from sqlalchemy import update
 
     async with SessionLocal() as db:
         await db.execute(
@@ -175,3 +174,53 @@ async def test_expired_user_rejected_on_ws_handshake(
 
     user, payload = await authenticate_ws_token(ws_ticket)
     assert user is None and payload is None
+
+
+async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypatch):
+    from pathlib import Path
+
+    from api.v1 import admin as admin_api
+    from components import SETTINGS
+    from components.temp_files import save_file
+    from modules.auth import User, create_admin_token
+    from modules.companion import AvatarAsset
+
+    _, SessionLocal = _patch_db
+
+    # Create dummy user
+    async with SessionLocal() as db:
+        user = User(username="del_user", password_hash="hash")
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        user_id = user.id
+
+    # Create dummy files
+    avatar_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    avatar_dir.mkdir(parents=True, exist_ok=True)
+    portrait_file = avatar_dir / "del_avatar.jpg"
+    portrait_file.write_bytes(b"image bytes")
+
+    fid, _ = save_file(b"draft bytes", "", "image/png", "png")
+
+    async with SessionLocal() as db:
+        db.add(
+            AvatarAsset(
+                user_id=user_id,
+                prompt_json="{}",
+                asset_url="companion-avatars/del_avatar.jpg",
+                seed_front_url=f"temp-media/{fid}",
+                active=True,
+            )
+        )
+        await db.commit()
+
+    assert portrait_file.exists()
+
+    async with SessionLocal() as db:
+        token, _ = await create_admin_token()
+        resp = await admin_api.delete_user(user_id=user_id, _admin=token, db=db)
+        assert resp["message"] == "用户已删除。"
+
+    # Verify physical files are unlinked
+    assert not portrait_file.exists()

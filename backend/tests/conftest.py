@@ -1,14 +1,13 @@
 import os
 
+import components.database as _db_mod
+import modules
+import modules.media.models  # noqa: F401
 import pytest
+from common import ModelBase
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-
-import components.database as _db_mod
-import modules  # noqa: F401 — registers all ORM models on ModelBase.metadata
-import modules.media.models  # noqa: F401
-from common import ModelBase
 
 # All async tests and fixtures share one session-scoped event loop: the
 # session-scoped sqlite_engine (StaticPool = one aiosqlite connection) cannot
@@ -109,15 +108,20 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.media.video_jobs",
         "services.companion.affect_emit",
         "services.companion.affect_check",
+        "services.companion.avatar_service",
         "services.companion.interact",
         "services.companion.interaction_stats",
         "services.companion.memory_admin",
         "services.companion.model_service",
         "services.companion.persona_background",
         "services.companion.prompt_runtime",
+        "services.companion.sprite_service",
         "services.companion.wardrobe_service",
         "services.worker.queue",
         "services.companion.should_act",
+        "modules.auth",
+        "modules.auth.security",
+        "api.v1.admin",
         "api.v1.chat",
         "api.v1.companion",
         "api.v1.llm",
@@ -198,9 +202,8 @@ async def _seed_user(SessionLocal, username="testuser"):
 
 @pytest.fixture()
 async def test_app(_patch_db):
-    from fastapi import FastAPI
-
     from components import get_db
+    from fastapi import FastAPI
 
     app = FastAPI(title="deskagent-test")
 
@@ -260,9 +263,8 @@ async def ws_ticket(_patch_db):
     and pass ``?ticket=...`` rather than minting a bearer and passing
     ``?token=...``.
     """
-    from sqlalchemy import select
-
     from modules.auth import User, create_access_token
+    from sqlalchemy import select
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:

@@ -261,7 +261,9 @@ async def _nightly_resolve_persona_definition(db: AsyncSession, user_id: int) ->
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return {}
-    from services.companion.persona_service import _load_draft  # late import to avoid cycles
+    from services.companion.persona_service import (
+        _load_draft,  # late import to avoid cycles
+    )
 
     return _load_draft(persona)
 
@@ -570,14 +572,13 @@ async def _stage_5_creation(
         w_msg = str(wardrobe_spec.get("message") or "").strip()
         if w_name and w_desc:
             try:
-                # Preview (short session, read+image-gen LLM); then pre-resolve
-                # persona + vision chain (short read); then call confirm with
-                # db=None so its LLM call doesn't hold a pool connection across
-                # the multi-second await.
-                async with session_scope() as preview_db:
-                    preview = await preview_wardrobe_texture(preview_db, user_id=user_id, description=w_desc)
-                    persona_definition = await _nightly_resolve_persona_definition(preview_db, user_id)
-                    vision_chain = await resolve_vision_chain(preview_db, user_id)
+                # Pre-resolve persona + vision chain (short read); then run preview
+                # and confirm with db=None so their image-gen and LLM calls don't hold
+                # pool connections across multi-second awaits.
+                async with session_scope() as pre_db:
+                    persona_definition = await _nightly_resolve_persona_definition(pre_db, user_id)
+                    vision_chain = await resolve_vision_chain(pre_db, user_id)
+                preview = await preview_wardrobe_texture(user_id=user_id, description=w_desc)
                 created_wardrobe_item = await confirm_wardrobe_item(
                     user_id=user_id,
                     file_id=preview.file_id,

@@ -235,11 +235,14 @@ async def post_avatar(
     request: Request,  # required by @limiter.limit
     body: AvatarGenerateRequest = Body(default_factory=AvatarGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
+    async with SESSION_LOCAL() as pre_db:
+        persona = await get_or_create_persona(pre_db, user.id)
+        if not persona.is_complete:
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": "persona is incomplete"})
     try:
-        asset = await generate_avatar(db, user_id=user.id)
+        asset = await generate_avatar(user_id=user.id, persona=persona)
     except AvatarGenerationError as exc:
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
@@ -268,15 +271,16 @@ async def post_avatar_from_image(
     request: Request,  # required by @limiter.limit
     body: AvatarFromImageRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     pres_raw, pres_content_type = _decode_upload_image(body.presentation_image, body.presentation_content_type)
-    persona = await get_or_create_persona(db, user.id)
+    async with SESSION_LOCAL() as pre_db:
+        persona = await get_or_create_persona(pre_db, user.id)
+        if not persona.is_complete:
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再基于图片生成形象", "reason": "persona is incomplete"})
     try:
         asset = await regenerate_avatar_from_image(
-            db,
             user_id=user.id,
             persona=persona,
             data=raw,
@@ -302,12 +306,12 @@ async def post_avatar_fullbody(
     avatar_id: int,
     body: FullbodyGenerateRequest = Body(default_factory=FullbodyGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
-    persona = await get_or_create_persona(db, user.id)
-    if not persona.is_complete:
-        raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成全身图"})
+    async with SESSION_LOCAL() as pre_db:
+        persona = await get_or_create_persona(pre_db, user.id)
+        if not persona.is_complete:
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成全身图"})
     # Serialise against the WS avatar.regenerate RPC for the same user — both
     # paths mutate the active row; without this lock, a concurrent regen
     # could deactivate the row we're about to update.
@@ -317,7 +321,6 @@ async def post_avatar_fullbody(
     async with lock:
         try:
             asset = await generate_fullbody(
-                db,
                 user_id=user.id,
                 avatar_id=avatar_id,
                 view=body.view,
@@ -379,11 +382,10 @@ async def post_sprite(
     request: Request,  # required by @limiter.limit
     body: SpriteResolveRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> SpriteImageResponse:
     user, _ = auth
     try:
-        row, generated = await resolve_sprite(db, user_id=user.id, request_text=body.request, role=body.role, force_new=body.force_new)
+        row, generated = await resolve_sprite(user_id=user.id, request_text=body.request, role=body.role, force_new=body.force_new)
     except SpriteSeedMissingError as exc:
         raise HTTPException(status_code=404, detail={"error": str(exc)})
     except SpriteGenerationError as exc:

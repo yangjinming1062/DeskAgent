@@ -4,18 +4,17 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from sqlalchemy import func, select
-
 from api.v1 import companion as companion_api
 from components import get_db
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from modules.auth import get_current_session
 from modules.companion import Persona
 from services import companion as companion_svc
 from services.companion import voice_catalog
 from services.llm import VoiceDesignResult, pick_voice_id, voices_for_provider
 from services.rate_limit import limiter
+from sqlalchemy import func, select
 
 
 @pytest.mark.asyncio
@@ -1314,9 +1313,8 @@ def test_persona_update_schema_accepts_definition_json():
 
 
 def test_persona_update_schema_rejects_unknown_keys():
-    from pydantic import ValidationError
-
     from modules.companion import PersonaUpdate
+    from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
         PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
@@ -1536,7 +1534,6 @@ async def test_ws_ticket_mints_short_lived_jwt():
     # but the ticket path doesn't get blocked at the purpose gate.
     # Verify the purpose gate by mocking a fake user lookup.
     import jwt as _jwt
-
     from components import SETTINGS
 
     # A valid-purpose token passes the purpose gate; an invalid one
@@ -2095,11 +2092,10 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
     incomplete persona to 409 (provider failures stay 502)."""
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from api.v1 import companion as companion_api
     from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from modules.auth import get_current_session
     from services.companion import AvatarGenerationError
     from services.rate_limit import limiter
@@ -2148,11 +2144,10 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     PUT /persona takes definition_json, absent assets are 404 (not null),
     and POST /model surfaces generation failures as 502 (not 500).
     """
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from api.v1 import companion as companion_api
     from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from modules.auth import get_current_session
     from services.rate_limit import limiter
 
@@ -2880,11 +2875,10 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     """End-to-end test for wardrobe preview (temp-media) and confirm (persist + equip)."""
     import base64
 
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from api.v1 import companion as companion_api
     from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from modules.auth import User, get_current_session
     from modules.companion import WardrobeItem
     from services.rate_limit import limiter
@@ -3295,11 +3289,10 @@ def test_outfit_guidance_injected_only_when_outfit_present():
 
 
 async def _make_authenticated_client(_patch_db, uid: int = 3001):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from api.v1 import companion as companion_api
     from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from modules.auth import User, UserModelConfig, get_current_session
 
     _, SessionLocal = _patch_db
@@ -3746,9 +3739,8 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(
 
 def test_fullbody_request_schema_reference_source_validation():
     """FullbodyGenerateRequest rejects reference_source='reference_image' without a reference_image."""
-    from pydantic import ValidationError
-
     from modules.companion.schemas import FullbodyGenerateRequest
+    from pydantic import ValidationError
 
     # Default reference_source is 'avatar' — no reference_image needed
     req = FullbodyGenerateRequest(stage="front")
@@ -3902,3 +3894,89 @@ async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
     assert captured["io_dir"] == io_dir
     assert (io_dir / "body.glb").exists()
     assert "--body-glb" in captured["args"]
+
+
+@pytest.mark.asyncio
+async def test_temp_files_marker_strict_isolation():
+    from components.temp_files import TempFileMarkerMismatch, delete_file, save_file
+
+    fid_10, _ = save_file(b"preview_10", "", "image/png", "png", meta_marker="wardrobe_preview:10")
+    fid_1, _ = save_file(b"preview_1", "", "image/png", "png", meta_marker="wardrobe_preview:1")
+
+    # User 1 cannot delete user 10's preview despite prefix similarity
+    with pytest.raises(TempFileMarkerMismatch):
+        delete_file(fid_10, required_marker="wardrobe_preview:1")
+
+    # Category prefix match (ends with ':') works
+    assert delete_file(fid_10, required_marker="wardrobe_preview:") is True
+
+    # Exact match works
+    assert delete_file(fid_1, required_marker="wardrobe_preview:1") is True
+
+
+@pytest.mark.asyncio
+async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkeypatch):
+    from api.v1 import companion as companion_api
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from modules.auth import get_current_session
+    from modules.companion import AvatarAsset, Persona
+    from services.companion import avatar_service
+    from services.rate_limit import limiter
+
+    _, SessionLocal = _patch_db
+    app = FastAPI()
+    app.state.limiter = limiter
+
+    fake_user = type("U", (), {"id": 101})()
+
+    async def _fake_auth():
+        return fake_user, None
+
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+    client = TestClient(app)
+
+    # 1. Incomplete persona returns 409
+    resp = client.post("/api/companion/avatar")
+    assert resp.status_code == 409
+    assert "onboarding" in resp.json()["detail"]["error"]
+
+    # 2. Mark persona complete and verified
+    async with SessionLocal() as db:
+        persona = await avatar_service.get_or_create_persona(db, fake_user.id)
+        persona.is_complete = True
+        persona.is_portrait_confirmed = True
+        persona.definition_json = json.dumps({"biological_type": "人类", "gender": "female"}, ensure_ascii=False)
+        await db.commit()
+
+    async def _fake_gen_step(db, user_id, *, avatar_prompt, style, persona=None, **kw):
+        return AvatarAsset(id=999, user_id=user_id, asset_url="temp-media/dummy", prompt_json="{}", style=style, active=True)
+
+    async def _fake_prompt(*a, **k):
+        return "fake prompt"
+
+    monkeypatch.setattr(avatar_service, "enhance_avatar_prompt", _fake_prompt)
+    monkeypatch.setattr(avatar_service, "_generate_avatar_step", _fake_gen_step)
+
+    resp = client.post("/api/companion/avatar")
+    assert resp.status_code == 201
+    assert resp.json()["id"] == 999
+
+    # 3. Verify detached-safe write in _write_avatar_step
+    async with SessionLocal() as db:
+        asset = await avatar_service._write_avatar_step(
+            db,
+            fake_user.id,
+            asset_url="temp-media/abc",
+            file_id="abc",
+            final_ext="jpg",
+            avatar_source_url="temp-media/abc",
+            avatar_prompt="test",
+            style="portrait",
+            persist=False,
+        )
+        assert asset.active is True
+
+        refreshed_persona = (await db.execute(select(Persona).where(Persona.user_id == fake_user.id))).scalar_one()
+        assert refreshed_persona.is_portrait_confirmed is False

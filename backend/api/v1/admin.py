@@ -24,6 +24,7 @@ from modules.auth import (
 )
 from modules.companion import AvatarAsset, CompanionModel, WardrobeItem
 from modules.system import MessageResponse
+from services.companion.avatar_service import _delete_portrait_file
 from services.gateway.connection import cancel_user_cron_turns
 from services.gateway.handlers import _USER_SESSIONS, REGISTRY, discard_user
 from services.gateway.handlers import MANAGER as _MANAGER
@@ -101,13 +102,20 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     discard_user(user_id)
 
     # Wipe user-scoped DB rows + on-disk assets (right-to-be-forgotten).
+    avatar_rows = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id))).scalars().all()
+    for av in avatar_rows:
+        for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url"):
+            val = getattr(av, attr, None)
+            if val:
+                _delete_portrait_file(val)
+
     await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
     await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))
     await db.execute(sa_delete(WardrobeItem).where(WardrobeItem.user_id == user_id))
     await db.delete(await db.get(User, user_id))
     await db.commit()
 
-    for sub in ("companion-assets", "companion-avatars", "companion-models"):
+    for sub in ("companion-assets", "companion-models"):
         d = Path(SETTINGS.data_dir) / sub / str(user_id)
         if d.exists():
             with contextlib.suppress(Exception):

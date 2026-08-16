@@ -208,10 +208,19 @@ async def _persist_assistant_with_tool_calls_and_results(
         # Synthesize a tool result per pending tool_call so the assistant
         # row above is never orphaned (a row with tool_calls but no matching
         # tool-result rows makes the next LLM turn's context malformed).
-        tool_results = [
+        cancelled_results = [
             {"role": "tool", "name": tc.get("function", {}).get("name", ""), "tool_call_id": tc.get("id", ""), "content": json.dumps({"error": "cancelled"}, ensure_ascii=False)}
             for tc in tool_calls_list
         ]
+
+        async def _persist_cancelled() -> None:
+            async with session_scope() as cancel_db:
+                for res in cancelled_results:
+                    cancel_db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
+                await cancel_db.commit()
+
+        await asyncio.shield(_persist_cancelled())
+        raise
 
     for res in tool_results:
         current_messages.append(res)

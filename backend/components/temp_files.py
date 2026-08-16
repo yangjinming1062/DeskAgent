@@ -137,9 +137,9 @@ def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
         return False
     if required_marker is not None:
         marker = meta.get("marker", "")
-        # Accept exact match or a known-prefix match so the caller may pass
-        # a category prefix like "wardrobe_preview:".
-        if not (marker == required_marker or marker.startswith(required_marker + ":") or marker.startswith(required_marker)):
+        # Accept exact match, or category prefix match only if required_marker ends with ':'.
+        is_match = marker == required_marker or (required_marker.endswith(":") and marker.startswith(required_marker))
+        if not is_match:
             raise TempFileMarkerMismatch(f"file_id {file_id!r} marker {marker!r} does not match required {required_marker!r}")
     _safe_unlink(Path(meta.get("path", "")))
     _safe_unlink(mp)

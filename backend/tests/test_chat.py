@@ -321,7 +321,6 @@ class TestChatE2E:
         # httpx has no websocket support — the sync TestClient drives the
         # async app on its portal loop (fine with the shared aiosqlite conn).
         from fastapi.testclient import TestClient
-
         from services.gateway import handlers
 
         # ``services.gateway.handlers`` is not in conftest's SESSION_LOCAL
@@ -392,7 +391,6 @@ class TestChatE2E:
     ):
         """Test creating a session and verifying prompt submission after interrupt."""
         from fastapi.testclient import TestClient
-
         from services.gateway import handlers
 
         # Same conftest patch-list gap as the chat-flow test above.
@@ -419,3 +417,75 @@ class TestChatE2E:
             )
             resp = ws.receive_json()
             assert resp["result"] == {}
+
+
+@pytest.mark.asyncio
+async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summary(_patch_db, monkeypatch):
+    import asyncio
+    import json
+
+    from modules.conversation import Conversation, Message
+    from services.chat import persistence
+    from services.chat.persistence import (
+        _persist_assistant_with_tool_calls_and_results,
+        _ToolDispatchContext,
+        persist_tool_summary,
+    )
+    from sqlalchemy import select
+
+    _, SessionLocal = _patch_db
+
+    async with SessionLocal() as db:
+        conv = Conversation(user_id=1, kind="main", title="Main Conversation")
+        db.add(conv)
+        await db.commit()
+        await db.refresh(conv)
+        conv_id = conv.id
+
+    async def _cancelled_tool_batch(*a, **kw):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(persistence, "_run_tool_batch", _cancelled_tool_batch)
+
+    tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "test_tool", "arguments": "{}"}}]
+    current_messages = []
+    active_tools = {"test_tool"}
+    schemas = {}
+    dispatch_ctx = _ToolDispatchContext(
+        user_id=1, llm_config={}, user_settings={}, session_id="s1", native_memory=None, guardrails=None, emitter=None
+    )
+
+    # 1. Calling _persist_assistant_with_tool_calls_and_results raises CancelledError
+    with pytest.raises(asyncio.CancelledError):
+        await _persist_assistant_with_tool_calls_and_results(
+            conv,
+            tool_calls,
+            "assistant thoughts",
+            10,
+            20,
+            100,
+            dispatch_ctx,
+            current_messages,
+            active_tools,
+            schemas,
+        )
+
+    # 2. Finally block executes persist_tool_summary
+    await persist_tool_summary(conv, {"test_tool"})
+
+    # 3. Assert DB contains assistant, tool cancelled, and tool_summary messages
+    async with SessionLocal() as db:
+        messages = (await db.execute(select(Message).where(Message.conversation_id == conv_id).order_by(Message.id))).scalars().all()
+        assert len(messages) == 3
+
+        assistant_msg, tool_msg, summary_msg = messages
+        assert assistant_msg.role == "assistant"
+        assert "call_123" in assistant_msg.tool_calls
+
+        assert tool_msg.role == "tool"
+        assert tool_msg.tool_call_id == "call_123"
+        assert json.loads(tool_msg.content) == {"error": "cancelled"}
+
+        assert summary_msg.role == "system"
+        assert summary_msg.subtype == "tool_summary"
+        assert "test_tool" in summary_msg.content

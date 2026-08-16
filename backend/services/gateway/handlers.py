@@ -287,8 +287,12 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                                     if not t.done():
                                         t.cancel()
                                 target_sess.runtime_sessions.clear()
-                            from services.companion.avatar_service import _avatar_job_locks
-                            from services.companion.model_service import _model_job_locks
+                            from services.companion.avatar_service import (
+                                _avatar_job_locks,
+                            )
+                            from services.companion.model_service import (
+                                _model_job_locks,
+                            )
 
                             from .connection import cancel_user_cron_turns
 
@@ -302,7 +306,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             # dicts and so a stale ``_inflight_prompt`` doesn't lock
                             # out the user's next prompt.submit with "user_busy".
                             _inflight_prompt.discard(uid)
-                            _inflight_interact -= {(u, k) for u, k in _inflight_interact if u == uid}
+                            _inflight_interact.difference_update({(u, k) for u, k in _inflight_interact if u == uid})
                             _last_interact_ts.pop(uid, None)
                             _last_llm_respond_ts.pop(uid, None)
                             _last_check_affect_ts.pop(uid, None)
@@ -873,10 +877,8 @@ def _register_session_handlers(
                     if regen_busy:
                         payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
                     else:
-                        async with SESSION_LOCAL() as db:
-                            persona = await get_or_create_persona(db, user_id)
-                            asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
-                            payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
+                        asset = await regenerate_avatar(user_id=user_id, feedback=feedback)
+                        payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
                 except AvatarGenerationError as exc:
                     logger.warning("avatar regenerate failed", extra={"user_id": user_id, "error": exc.internal})
                     payload = {"job_id": job_id, "error": str(exc)}

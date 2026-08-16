@@ -276,31 +276,21 @@ async def _generate_one_portrait(
     return asset_url, file_id, final_ext, source_url
 
 
-async def _generate_avatar_step(
+async def _write_avatar_step(
     db: AsyncSession,
     user_id: int,
     *,
+    asset_url: str,
+    file_id: str,
+    final_ext: str,
+    avatar_source_url: str,
     avatar_prompt: str,
     style: str,
-    persona: Persona,
     feedback: str | None = None,
     reference_image: str | None = None,
     secondary_reference_image: str | None = None,
     persist: bool = False,
 ) -> AvatarAsset:
-    """Avatar (bust) only. Inserts a fresh active ``AvatarAsset`` row with
-    ``seed_front_url=""``, ``seed_right_url=""``, ``seed_back_url=""``; the full-body
-    multiview seeds land later via ``generate_fullbody`` once the user confirms
-    the face. ``avatar_prompt`` is cached in ``prompt_json`` as the visual anchor.
-
-    Failure is fatal — ``image_generation_tool`` swallows provider errors and
-    returns ``{success: false}``; ``first_image_url -> None`` surfaces that
-    as ``AvatarGenerationError``.
-    """
-    (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
-        avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
-    )
-
     previous = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
     prompt_payload: dict = {"prompt": avatar_prompt, "avatar_prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
@@ -322,8 +312,8 @@ async def _generate_avatar_step(
         seed=secrets.randbelow(2**31),
         active=True,
     )
-    persona.is_portrait_confirmed = False
-    persona.portrait_confirmed_at = None
+    # Explicit SQL update ensures persona confirmation is reset even if caller's persona is a detached instance.
+    await db.execute(update(Persona).where(Persona.user_id == user_id).values(is_portrait_confirmed=False, portrait_confirmed_at=None))
     db.add(asset)
     await db.commit()
     await db.refresh(asset)
@@ -342,46 +332,68 @@ async def _generate_avatar_step(
     return asset
 
 
-async def generate_fullbody(
-    db: AsyncSession,
+async def _generate_avatar_step(
+    db: AsyncSession | None,
     user_id: int,
     *,
-    avatar_id: int,
-    view: str | None = None,
-    stage: str | None = None,
+    avatar_prompt: str,
+    style: str,
+    persona: Persona | None = None,
     feedback: str | None = None,
-    reference_source: str = "avatar",
     reference_image: str | None = None,
-    reference_content_type: str | None = None,
+    secondary_reference_image: str | None = None,
+    persist: bool = False,
 ) -> AvatarAsset:
-    """Step-2: render full-body multiview seeds (front, right, back) using chained references.
+    """Avatar (bust) only. Generates portrait without holding a long DB session,
+    then commits the fresh active ``AvatarAsset`` row in a short write session."""
+    (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
+        avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
+    )
 
-    The text prompt contains ONLY structural directives (A-pose, framing,
-    background) — no character description.  The subject_reference image
-    carries 100% of the character's visual identity.  Integration testing
-    showed that any character text description causes MiniMax to default to
-    bust-portrait rendering instead of full body.
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write_avatar_step(
+                write_db,
+                user_id,
+                asset_url=asset_url,
+                file_id=file_id,
+                final_ext=final_ext,
+                avatar_source_url=avatar_source_url,
+                avatar_prompt=avatar_prompt,
+                style=style,
+                feedback=feedback,
+                reference_image=reference_image,
+                secondary_reference_image=secondary_reference_image,
+                persist=persist,
+            )
 
-    Stage 'front': bust portrait as subject_reference (clearest face).
-    Stage 'aux': right and back views use the front full-body seed as
-    reference — the complete outfit ensures clothing consistency across
-    all three views (critical for 3D model reconstruction).
-    View 'front' / 'right' / 'back': regenerates a single view.
+    return await _write_avatar_step(
+        db,
+        user_id,
+        asset_url=asset_url,
+        file_id=file_id,
+        final_ext=final_ext,
+        avatar_source_url=avatar_source_url,
+        avatar_prompt=avatar_prompt,
+        style=style,
+        feedback=feedback,
+        reference_image=reference_image,
+        secondary_reference_image=secondary_reference_image,
+        persist=persist,
+    )
 
-    ``reference_source='reference_image'``: front view uses the user's
-    original uploaded image (preserving body/figure info) instead of the
-    bust avatar.  The bust avatar is passed as a secondary reference so
-    Gemini's dual-ref mode can blend body from the upload + beautification
-    from the avatar.  Non-multi-ref providers (Grok/MiniMax) silently drop
-    the secondary.
-    """
-    if bool(stage) == bool(view):
-        raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
 
-    # Single-view mode: reject aux/side/back generation — only front is supported.
-    if SETTINGS.fullbody_mode == "single" and (stage == "aux" or view in ("right", "back")):
-        raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
-
+async def _pre_read_fullbody(
+    db: AsyncSession,
+    user_id: int,
+    avatar_id: int,
+    stage: str | None,
+    view: str | None,
+    feedback: str | None,
+    reference_source: str,
+    reference_image: str | None,
+    reference_content_type: str | None,
+) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str], dict[str, str]]:
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
@@ -392,33 +404,20 @@ async def generate_fullbody(
 
     persona = await get_or_create_persona(db, user_id)
     persist = persona.is_portrait_confirmed
-    # Call-time feedback (from the portrait-phase textarea) overrides the
-    # cached value from the bust regen — otherwise the user's "头发再短一点"
-    # never reaches the fullbody prompt.
     effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
     cached_avatar_prompt = prompt_payload.get("avatar_prompt")
 
-    # Normalize stage/view into the concrete list of views to generate.
     is_front = stage == "front" or view == "front"
     if is_front:
         views_to_gen = ["front"]
     elif stage == "aux":
         views_to_gen = ["right", "back"]
-    else:  # view in ("right", "back")
-        views_to_gen = [view]
+    else:
+        views_to_gen = [view or "front"]
 
-    # Aux views require a front seed to exist — check before reading the file
-    # so an empty seed raises FrontSeedMissingError, not AvatarSourceUnreadableError.
     if not is_front and not bool(asset.seed_front_url):
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
-    # Resolve the subject_reference per-view: front uses the bust portrait
-    # (clearest face), right/back use the front full-body seed (full outfit
-    # for clothing consistency across views — critical for 3D reconstruction).
-    #
-    # When reference_source='reference_image', the front view instead uses the
-    # user's original uploaded image (preserving body/figure), with the bust
-    # avatar as secondary so Gemini dual-ref can carry the beautification.
     references: dict[str, str] = {}
     secondary_refs: dict[str, str] = {}
     for v in views_to_gen:
@@ -435,8 +434,6 @@ async def generate_fullbody(
                 raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
             references[v] = ref
 
-    # Guard: the avatar_prompt visual anchor must exist (cached in prompt_json
-    # at avatar creation time) so the prompt builder has a valid seed reference.
     if not cached_avatar_prompt:
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
 
@@ -448,44 +445,17 @@ async def generate_fullbody(
         rig_type = await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
     template = resolve_fullbody_template(species, rig_type)
 
-    # Build prompts — no character description (integration-tested: any text
-    # description causes MiniMax to render bust portraits instead of full body).
-    # subject_reference carries 100% of the character's visual identity.
     prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
+    return views_to_gen, is_front, persist, references, secondary_refs, prompts
 
-    # Full-body generation uses a dedicated provider priority: Grok → Gemini
-    # → MiniMax. Grok is first because Gemini's IMAGE_SAFETY filter blocks the
-    # A-pose minimal-underwear fullbody prompt at a high rate; Grok's safety
-    # threshold is more permissive for the same structural prompt. Integration
-    # testing: Grok and Gemini produce comparable pose compliance (7-8/10),
-    # both above MiniMax (5/10); face identity is 7/10 across all three.
-    results = await asyncio.gather(
-        *[
-            _generate_one_portrait_with_moderation_retry(
-                prompts[v],
-                user_id,
-                reference_image=references[v],
-                secondary_reference_image=secondary_refs.get(v),
-                size=_AVATAR_FULL_SIZE,
-                persist=persist,
-                preferred_provider=_FULLBODY_PROVIDER_PRIORITY,
-            )
-            for v in views_to_gen
-        ],
-        return_exceptions=True,
-    )
 
-    generated: dict[str, tuple[str, str, str, str]] = {}
-    for v, result in zip(views_to_gen, results):
-        if isinstance(result, BaseException):
-            logger.warning("fullbody view generation failed", extra={"view": v, "error": str(result)})
-        else:
-            generated[v] = result
+async def _write_fullbody(
+    db: AsyncSession, user_id: int, avatar_id: int, views_to_gen: list[str], is_front: bool, persist: bool, generated: dict[str, tuple[str, str, str, str]]
+) -> AvatarAsset:
+    asset = await db.get(AvatarAsset, avatar_id)
+    if asset is None:
+        raise AvatarNotFoundError(f"avatar {avatar_id} not found")
 
-    if not generated:
-        raise (results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed"))
-
-    # Front regen / stage invalidates aux views
     if is_front:
         if persist:
             for attr in ("seed_right_url", "seed_back_url"):
@@ -507,9 +477,6 @@ async def generate_fullbody(
     await db.commit()
     await db.refresh(asset)
 
-    # Re-sign URLs in memory — expunge first so the mutations can never be
-    # flushed back to the DB by a subsequent db.commit() in the caller's
-    # session (the root cause of seed URLs being persisted as signed URLs).
     db.expunge(asset)
     asset.asset_url = _re_sign_bare_path(asset.asset_url) or asset.asset_url
     for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
@@ -519,6 +486,74 @@ async def generate_fullbody(
             if signed:
                 setattr(asset, attr, signed)
     return asset
+
+
+async def generate_fullbody(
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    *,
+    avatar_id: int,
+    view: str | None = None,
+    stage: str | None = None,
+    feedback: str | None = None,
+    reference_source: str = "avatar",
+    reference_image: str | None = None,
+    reference_content_type: str | None = None,
+    user_id_kw: int | None = None,
+) -> AvatarAsset:
+    """Step-2: render full-body multiview seeds (front, right, back) using chained references.
+    Decoupled into short pre-read, long generation without holding DB session, and short write."""
+    uid = user_id if user_id is not None else user_id_kw
+    if uid is None:
+        raise ValueError("user_id is required")
+
+    if bool(stage) == bool(view):
+        raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
+
+    if SETTINGS.fullbody_mode == "single" and (stage == "aux" or view in ("right", "back")):
+        raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
+
+    if db is None:
+        async with SESSION_LOCAL() as read_db:
+            views_to_gen, is_front, persist, references, secondary_refs, prompts = await _pre_read_fullbody(
+                read_db, uid, avatar_id, stage, view, feedback, reference_source, reference_image, reference_content_type
+            )
+    else:
+        views_to_gen, is_front, persist, references, secondary_refs, prompts = await _pre_read_fullbody(
+            db, uid, avatar_id, stage, view, feedback, reference_source, reference_image, reference_content_type
+        )
+
+    results = await asyncio.gather(
+        *[
+            _generate_one_portrait_with_moderation_retry(
+                prompts[v],
+                uid,
+                reference_image=references[v],
+                secondary_reference_image=secondary_refs.get(v),
+                size=_AVATAR_FULL_SIZE,
+                persist=persist,
+                preferred_provider=_FULLBODY_PROVIDER_PRIORITY,
+            )
+            for v in views_to_gen
+        ],
+        return_exceptions=True,
+    )
+
+    generated: dict[str, tuple[str, str, str, str]] = {}
+    for v, result in zip(views_to_gen, results):
+        if isinstance(result, BaseException):
+            logger.warning("fullbody view generation failed", extra={"view": v, "error": str(result)})
+        else:
+            generated[v] = result
+
+    if not generated:
+        raise (results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed"))
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write_fullbody(write_db, uid, avatar_id, views_to_gen, is_front, persist, generated)
+
+    return await _write_fullbody(db, uid, avatar_id, views_to_gen, is_front, persist, generated)
 
 
 def _delete_portrait_file(asset_url: str | None) -> None:
@@ -562,15 +597,24 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(db: AsyncSession, user_id: int, persona: Persona) -> AvatarAsset:
+async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None, *, user_id_kw: int | None = None) -> AvatarAsset:
     """Generate the initial portrait after onboarding completes."""
+    uid = user_id if user_id is not None else user_id_kw
+    if uid is None:
+        raise ValueError("user_id is required")
+    if persona is None:
+        if db is not None:
+            persona = await get_or_create_persona(db, uid)
+        else:
+            async with SESSION_LOCAL() as probe_db:
+                persona = await get_or_create_persona(probe_db, uid)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
+        avatar_prompt = await enhance_avatar_prompt(db, uid, persona)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
-    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=_DEFAULT_STYLE, persona=persona, persist=persona.is_portrait_confirmed)
+    asset = await _generate_avatar_step(db, uid, avatar_prompt=avatar_prompt, style=_DEFAULT_STYLE, persona=persona, persist=persona.is_portrait_confirmed)
     return asset
 
 
@@ -639,15 +683,32 @@ def _re_sign_bare_path(bare_path: str | None) -> str | None:
     return build_signed_avatar_url(file_id, ext)
 
 
-async def regenerate_avatar(db: AsyncSession, user_id: int, persona: Persona, feedback: str | None = None, style: str = _DEFAULT_STYLE) -> AvatarAsset:
+async def regenerate_avatar(
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    persona: Persona | None = None,
+    feedback: str | None = None,
+    style: str = _DEFAULT_STYLE,
+    *,
+    user_id_kw: int | None = None,
+) -> AvatarAsset:
     """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
+    uid = user_id if user_id is not None else user_id_kw
+    if uid is None:
+        raise ValueError("user_id is required")
+    if persona is None:
+        if db is not None:
+            persona = await get_or_create_persona(db, uid)
+        else:
+            async with SESSION_LOCAL() as probe_db:
+                persona = await get_or_create_persona(probe_db, uid)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
+        avatar_prompt = await enhance_avatar_prompt(db, uid, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
-    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
+    asset = await _generate_avatar_step(db, uid, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
     return asset
 
 
@@ -698,30 +759,41 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
 
 
 async def regenerate_avatar_from_image(
-    db: AsyncSession,
-    user_id: int,
-    persona: Persona,
-    data: bytes,
-    content_type: str,
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    persona: Persona | None = None,
+    data: bytes = b"",
+    content_type: str = "image/png",
     description: str | None = None,
     presentation_data: bytes | None = None,
     presentation_content_type: str | None = None,
     style: str = _DEFAULT_STYLE,
+    *,
+    user_id_kw: int | None = None,
 ) -> AvatarAsset:
     """Regenerate the portrait using a user-uploaded image as the subject
     reference (inline data URI). An optional second image
     (``presentation_data``) acts as a presentation/style reference alongside
     the identity anchor — only consumed by multi-reference providers."""
+    uid = user_id if user_id is not None else user_id_kw
+    if uid is None:
+        raise ValueError("user_id is required")
+    if persona is None:
+        if db is not None:
+            persona = await get_or_create_persona(db, uid)
+        else:
+            async with SESSION_LOCAL() as probe_db:
+                persona = await get_or_create_persona(probe_db, uid)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
+        avatar_prompt = await enhance_avatar_prompt(db, uid, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
     secondary_uri = build_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
     asset = await _generate_avatar_step(
         db,
-        user_id,
+        uid,
         avatar_prompt=avatar_prompt,
         style=style,
         persona=persona,
