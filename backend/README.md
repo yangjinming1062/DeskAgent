@@ -122,10 +122,23 @@ backend/
 | **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **Cron kick 守卫** | 写行前的 `is_quiet` 守卫（tier 落库）；`cron.turn.request` 行只被持有该用户 WS 的副本认领执行，全副本离线时 10min GC 兜底清行——该次触发丢弃（`next_run_at` 已 CAS 前移，等下次调度） |
-| **Obs 缺口** | 无 `/metrics` 端点、无 OpenTelemetry 集成；日志 stdout only，dev text / prod json |
 | **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；全程在 worker 沙箱内执行，不占 web 进程。`worker_stale_reclaim_seconds` 必须大于该最坏值，否则在跑任务会被误回收重排队。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
 | **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
 | **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
 | **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
 | **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
 | **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期 Blender 布料重力悬垂烘焙（20 帧静态形变固化）、5 通道 PBR 贴图（含 displacement 微表面深度）与客户端 BodyCollider 表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |
+
+## 7. 部署与监控
+
+### Docker Compose 部署
+
+- **基础核心启动**（仅启动 postgres + backend + worker）：
+  ```bash
+  docker compose up -d
+  ```
+- **附带 Prometheus 观测平台启动**（一键拉起指标采集）：
+  ```bash
+  docker compose --profile monitoring up -d
+  ```
+  启动后可直接访问 `http://localhost:9090` 打开 Prometheus 查询面板，指标默认每 15s 自动抓取 `backend:10620/metrics`。

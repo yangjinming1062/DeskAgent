@@ -83,5 +83,22 @@ services:
       - build
     command: ["true"]
 
+  # Optional Prometheus metrics observability platform (--profile monitoring)
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: deskagent-prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  prometheus_data:
