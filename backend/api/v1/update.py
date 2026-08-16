@@ -26,18 +26,20 @@ async def _get_latest(db: AsyncSession) -> UpdateVersion:
 
 
 def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
-    """Return the last sorted file in `versions_dir` matching any pattern.
+    """Return the last sorted file in ``versions_dir`` matching any pattern.
 
     Patterns are concatenated in call order then sorted, matching the prior
-    per-block `sorted(.../*.zip) + sorted(.../*.dmg)` semantics: files matching
-    later patterns sort AFTER earlier patterns only when their names tie.
+    per-block ``sorted(.../*.zip) + sorted(.../*.dmg)`` semantics: files
+    matching later patterns sort AFTER earlier patterns only when their
+    names tie. Temp / staging entries (``*.tmp.zip`` and any upload-time
+    leftovers) are excluded so the picker never returns an incomplete file.
     """
     if not patterns:
         return None
     matches: list[Path] = []
     for pattern in patterns:
         matches.extend(versions_dir.glob(pattern))
-    return sorted(matches)[-1] if matches else None
+    return sorted([m for m in matches if not m.name.startswith(".tmp.")])[-1] if matches else None
 
 
 @router.get("/latest.yml")
@@ -113,18 +115,18 @@ async def create_version(
 
     versions_dir = VERSIONS_DIR / version
     versions_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = versions_dir / ".tmp.zip"
-    with open(zip_path, "wb") as f:
-        while chunk := await file.read(CHUNK_SIZE):
-            f.write(chunk)
+    # Stage the upload in a per-process unique temp dir so two concurrent
+    # admin uploads of the same version don't clobber each other's bytes.
+    with tempfile.TemporaryDirectory(dir=VERSIONS_DIR, prefix=f".upload_{version}_") as tmp_dir:
+        zip_path = Path(tmp_dir) / "upload.zip"
+        with open(zip_path, "wb") as f:
+            while chunk := await file.read(CHUNK_SIZE):
+                f.write(chunk)
 
-    try:
-        _extract_archive_entries(zip_path, versions_dir)
-    except zipfile.BadZipFile:
-        raise HTTPException(status_code=400, detail="Invalid zip file")
-    finally:
-        with contextlib.suppress(OSError):
-            zip_path.unlink(missing_ok=True)
+        try:
+            _extract_archive_entries(zip_path, versions_dir)
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=400, detail="Invalid zip file")
 
     # Validate the embedded manifest.json. The build script (Build-UpdateZip)
     # always writes one and its `version` field must match the version we

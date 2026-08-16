@@ -92,12 +92,22 @@ async def image_generation_tool(
         return tool_error("图片生成服务返回空结果")
 
     urls: list[str] = []
+    ext_by_mime = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/webp": "webp",
+        "image/gif": "gif",
+    }
     for asset in result.images:
         if asset.url:
             urls.append(asset.url)
-        elif asset.b64:
+        elif asset.b64 is not None:
+            if not asset.b64:
+                logger.warning("image asset has empty b64; skipping", extra={"mime": asset.mime})
+                continue
             data = base64.b64decode(asset.b64)
-            _file_id, public_url = save_file(data, session_id="", content_type=asset.mime, ext="jpg")
+            ext = ext_by_mime.get((asset.mime or "").lower(), "jpg")
+            _file_id, public_url = save_file(data, session_id="", content_type=asset.mime or "image/jpeg", ext=ext)
             urls.append(public_url)
     logger.info("Generated images", extra={"image_count": len(urls), "prompt": prompt})
     return json.dumps({"success": True, "urls": urls}, ensure_ascii=False)

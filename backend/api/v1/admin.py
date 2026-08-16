@@ -1,5 +1,5 @@
 from common import get_or_404, get_router, list_response
-from components import apply_partial, get_db
+from components import SETTINGS, apply_partial, get_db
 from fastapi import Depends, HTTPException, status
 from modules.auth import (
     User,
@@ -20,7 +20,7 @@ from modules.auth import (
 )
 from modules.system import MessageResponse
 from services.llm import merge_provider_json
-from sqlalchemy import select
+from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
@@ -71,8 +71,57 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 
 @router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    await db.delete(await get_or_404(db, User, id=user_id, detail="用户不存在。"))
+    await get_or_404(db, User, id=user_id, detail="用户不存在。")
+    # Kick active WS so a deleted user's renderer gets disconnected cleanly.
+    from services.gateway.connection import cancel_user_cron_turns
+    from services.gateway.handlers import (
+        REGISTRY,
+        MANAGER as _MANAGER,
+        _USER_SESSIONS,
+        discard_user,
+    )
+    import contextlib
+    from services.companion.asset_store import unlink_companion_asset
+
+    ws = _MANAGER.active_connections.get(user_id)
+    if ws is not None:
+        with contextlib.suppress(Exception):
+            await ws.close(code=1000)
+        _MANAGER.disconnect(ws, user_id)
+    cancel_user_cron_turns(user_id)
+    _MANAGER.unregister_dispatcher(user_id)
+    REGISTRY.clear_runner_tools(user_id)
+    sess = _USER_SESSIONS.pop(user_id, None)
+    if sess is not None:
+        if sess.grace_timer_task and not sess.grace_timer_task.done():
+            sess.grace_timer_task.cancel()
+        for t in list(sess.background_tasks):
+            if not t.done():
+                t.cancel()
+        sess.runtime_sessions.clear()
+    discard_user(user_id)
+
+    # Wipe user-scoped DB rows + on-disk assets (right-to-be-forgotten).
+    from sqlalchemy import delete as sa_delete
+
+    from modules.companion import AvatarAsset, CompanionModel, WardrobeItem
+
+    await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
+    await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))
+    await db.execute(sa_delete(WardrobeItem).where(WardrobeItem.user_id == user_id))
+    await db.delete(await db.get(User, user_id))
     await db.commit()
+
+    import shutil
+
+    for sub in ("companion-assets", "companion-avatars", "companion-models"):
+        d = Path(SETTINGS.data_dir) / sub / str(user_id)
+        if d.exists():
+            with contextlib.suppress(Exception):
+                if d.is_dir():
+                    shutil.rmtree(d, ignore_errors=True)
+                else:
+                    d.unlink(missing_ok=True)
     return {"message": "用户已删除。"}
 
 
