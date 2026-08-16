@@ -84,6 +84,9 @@ export interface SessionResumeResponse {
   message_count: number
   messages: SessionMessage[]
   session_id: string
+  resumed?: boolean
+  replayed_count?: number
+  current_seq?: number
 }
 
 export interface SessionRuntimeInfo {

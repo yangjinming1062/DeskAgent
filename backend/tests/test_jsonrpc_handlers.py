@@ -12,7 +12,9 @@ def pin_handlers():
 
 
 @pytest.mark.asyncio
-async def test_companion_set_disturbance_tier_normalizes_unknown(pin_handlers, SessionLocal):
+async def test_companion_set_disturbance_tier_normalizes_unknown(
+    pin_handlers, SessionLocal
+):
     """``companion.set_disturbance_tier`` must reject unknown tiers
     by falling back to the default — never raise JSONRPC_INVALID_PARAMS."""
     from services.disturbance import set_disturbance_tier
@@ -61,7 +63,7 @@ def test_tts_match_voice_preference_string_required(pin_handlers):
         gender="female",
         language="zh",
         tags=["少女", "温柔", "女"],
-        description=""
+        description="",
     )
     assert _score("温柔少女音", fake) >= 2
 
@@ -80,6 +82,7 @@ def test_avatar_regenerate_feedback_string_required(pin_handlers):
     INVALID_PARAMS."""
     # Verify the source contains the type assertion.
     import inspect
+
     from services.gateway import handlers
 
     src = inspect.getsource(handlers)
@@ -98,7 +101,7 @@ def test_session_info_handler_returns_session_id():
         model="mimo-v2.5",
         provider="openai",
         running=True,
-        settings={"reasoning": "high", "fast": False}
+        settings={"reasoning": "high", "fast": False},
     )
     dumped = info.model_dump()
     assert dumped["cwd"] == "/tmp"
@@ -122,6 +125,7 @@ def test_companion_affect_emitter_roundtrip():
 def test_companion_interact_and_should_act_registered(pin_handlers):
     """Verify companion.interact and companion.should_act are registered in handlers.py source."""
     import inspect
+
     src = inspect.getsource(pin_handlers)
     assert 'dispatcher.register("companion.interact", companion_interact)' in src
     assert 'dispatcher.register("companion.should_act", companion_should_act)' in src
@@ -141,9 +145,12 @@ def test_companion_interact_drops_when_prompt_inflight(pin_handlers, monkeypatch
         monkeypatch.setattr(handlers, "_user_throttled", lambda *a, **kw: False)
         monkeypatch.setattr(handlers, "_last_interact_ts", {})
         monkeypatch.setattr(handlers, "_last_llm_respond_ts", {})
+
         # Stub the actual LLM call so it never runs.
         async def _no_llm(*a, **kw):
-            raise AssertionError("interact() must not run while prompt.submit is in-flight")
+            raise AssertionError(
+                "interact() must not run while prompt.submit is in-flight"
+            )
 
         monkeypatch.setattr(handlers, "interact", _no_llm)
 
@@ -160,6 +167,7 @@ def test_companion_interact_drops_when_prompt_inflight(pin_handlers, monkeypatch
         # importing the module and locating the closure. Easier: re-derive
         # the same gate logic and assert the source declares it.
         import inspect
+
         src = inspect.getsource(handlers)
         assert "_inflight_prompt" in src
         assert 'reason": "user_busy"' in src
@@ -173,12 +181,54 @@ def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monkeypatc
     """prompt.submit must reject while companion.interact is in-flight, so
     the user message and the poke's status rows can't cross on the main
     conversation timeline."""
+    import inspect
+
     from services.gateway import handlers
 
-    import inspect
     src = inspect.getsource(handlers)
     # The gate appears in prompt_submit (the path that adds user_id to
     # _inflight_prompt before invoking run_chat_turn, AND consults
     # _inflight_interact before queueing).
     assert "_inflight_prompt.add(user_id)" in src
     assert "companion reaction in-flight" in src
+
+
+@pytest.mark.asyncio
+async def test_websocket_boot_failure_cleans_up(monkeypatch):
+    from services.gateway.connection import MANAGER
+    from services.gateway.handlers import _USER_SESSIONS, handle_chat_websocket
+
+    class DummyWebSocket:
+        def __init__(self):
+            self.headers = {}
+            self.closed_code = None
+
+        async def accept(self):
+            pass
+
+        async def close(self, code=1000):
+            self.closed_code = code
+
+    ws = DummyWebSocket()
+
+    class DummyUser:
+        id = 9999
+
+    async def _mock_auth(tok):
+        return (DummyUser(), {})
+
+    monkeypatch.setattr("services.gateway.handlers.authenticate_ws_token", _mock_auth)
+
+    async def _failing_resolve(*args, **kwargs):
+        raise RuntimeError("DB connection failure during boot")
+
+    monkeypatch.setattr(
+        "services.gateway.handlers.resolve_user_llm_config", _failing_resolve
+    )
+
+    await handle_chat_websocket(ws, "valid_token")
+
+    # Assert manager slot is not retained and session not leaked
+    assert not MANAGER.is_connected(9999)
+    assert 9999 not in _USER_SESSIONS
+    assert ws.closed_code == 1011

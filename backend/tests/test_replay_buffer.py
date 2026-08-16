@@ -122,3 +122,20 @@ def test_replay_buffer_clear():
     buf.clear()
     assert len(buf) == 0
     assert buf.current_seq == 0
+
+
+def test_replay_buffer_can_replay_edge_cases():
+    # Fresh empty buffer: current_seq=0
+    buf = ReplayBuffer()
+    assert buf.can_replay(0) is True  # client is up-to-date
+    assert buf.can_replay(5) is False  # client claims seq ahead of server -> desync
+    assert buf.can_replay(-1) is False
+
+    # Buffer with items
+    buf.append({"method": "event", "params": {"type": "msg1"}})
+    buf.append({"method": "event", "params": {"type": "msg2"}})
+    assert buf.current_seq == 2
+    assert buf.can_replay(2) is True  # up-to-date, 0 frames to replay
+    assert buf.can_replay(3) is False  # ahead of server -> desync
+    assert buf.can_replay(0) is True  # can replay seq 1, 2
+    assert buf.replay_since(2) == []

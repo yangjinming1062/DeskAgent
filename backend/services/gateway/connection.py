@@ -27,8 +27,30 @@ WS_EVENT_MAX_AGE_SECONDS = 24 * 60 * 60
 CRON_TURN_EVENT = "cron.turn.request"
 CRON_TURN_MAX_AGE_SECONDS = 10 * 60
 
-# Strong refs so spawned cron turns aren't GC'd mid-run (CPython bpo-46662).
-_cron_turn_tasks: set[asyncio.Task] = set()
+# Strong refs per user so spawned cron turns aren't GC'd mid-run (CPython bpo-46662).
+_cron_turn_tasks: dict[int, set[asyncio.Task]] = {}
+
+
+def _discard_cron_task(user_id: int, task: asyncio.Task) -> None:
+    user_tasks = _cron_turn_tasks.get(user_id)
+    if user_tasks is not None:
+        user_tasks.discard(task)
+        if not user_tasks:
+            _cron_turn_tasks.pop(user_id, None)
+
+
+def cancel_user_cron_turns(user_id: int) -> int:
+    """Cancel all active cron turns for a specific user upon grace period expiry."""
+    user_tasks = _cron_turn_tasks.pop(user_id, None)
+    if not user_tasks:
+        return 0
+    cancelled = 0
+    for t in user_tasks:
+        if not t.done():
+            t.cancel()
+            cancelled += 1
+    return cancelled
+
 
 logger = get_logger(__name__)
 
@@ -203,8 +225,9 @@ async def _process_events(wakeup: asyncio.Event):
                 # Spawned, not awaited: a full chat turn runs minutes and must
                 # not block the dispatch sweep for other users' events.
                 task = asyncio.create_task(_execute_cron_turn(user_id, payload))
-                _cron_turn_tasks.add(task)
-                task.add_done_callback(_cron_turn_tasks.discard)
+                user_tasks = _cron_turn_tasks.setdefault(user_id, set())
+                user_tasks.add(task)
+                task.add_done_callback(lambda t, uid=user_id: _discard_cron_task(uid, t))
                 continue
             try:
                 await MANAGER.send_personal_event(event_type, payload, user_id)

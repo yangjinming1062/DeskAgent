@@ -29,7 +29,7 @@
 - **safeStorage 跨平台统一**：Windows DPAPI / macOS Keychain / Linux libsecret；Renderer 与 Preload **不可**访问 safeStorage 接口，阻断 XSS 窃取凭证。
 - **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = hide to tray；macOS close = hide window 但保留 Dock 图标。
 - **自更新两阶段契约**（Stage 1 prefetch + Stage 2 install）：保证升级中途断网或崩溃不会变砖。Stage 1 在 OLD Electron 里下载并强校验签名 + SHA-512；Stage 2 在 NEW Electron 里原地升级 wheel 与 `server.py`，venv 永不被改名或移动。
-- **网关连续性与去重重放（ACK & Session Resume）**：`JsonRpcGatewayClient` 记录单调递增 `lastReceivedSeq` 并对网络重叠帧进行幂等去重，同时在后台定期批量向服务端发送 `session.ack`。断网重连时携带 `last_seq` 触发增量 Replay，保障网络抖动下正在进行的流式对话和工具调用无感续接。
+- **网关连续性与去重重放（ACK & Session Resume）**：`JsonRpcGatewayClient` 记录单调递增的连接级 `lastReceivedSeq` 并对网络重叠帧进行幂等去重，同时在后台定期批量向服务端发送 `session.ack`（标准 RPC 请求）。断网重连时携带 `last_seq` 触发增量 Replay，保障网络抖动下正在进行的流式对话和工具调用无感续接；若服务端重启或序列号失同步（返回 `resumed: false` 或降级 `session.get_main`），客户端自动同步重置 `lastReceivedSeq = current_seq` 避免新事件黑洞（普通活连接会话切换不重置）。
 
 ## 3. 架构地图
 

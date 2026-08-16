@@ -18,9 +18,9 @@
 **核心约定**：
 - call_id 是整张表的**唯一 Future Key**——Backend 按 (user_id, call_id) 寻址，跨用户不共享。
 - 事件无 id，不可被响应；请求与响应必须按 id 配对。
-- 所有下发事件均附加递增序列号 `seq`（从 1 开始）；客户端维护 `lastReceivedSeq` 保证去重与有序消费。
-- 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度，服务端自 Replay Buffer 中修剪已确认帧。
-- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后 Backend 保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时或溢出则返回 `resumed: false` 与完整 DB 历史进行全量重水化。
+- 所有下发事件均附加递增序列号 `seq`（从 1 开始）；序列号与客户端 `lastReceivedSeq` 均为**连接级（Connection/User 级）**状态，跨 Session 共享。客户端维护 `lastReceivedSeq` 保证去重与有序消费。
+- 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度（带 id 的标准 RPC 请求），服务端自 Replay Buffer 中修剪已确认帧。
+- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后 Backend 保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时、溢出或服务端重启导致序列号失同步，则返回 `resumed: false`、当前最大 `current_seq` 与完整 DB 历史进行全量重水化。重连且收到 `resumed: false`（或降级走 `session.get_main`）时，客户端**必须**重置 `lastReceivedSeq = current_seq` 以防旧水位导致事件黑洞；普通会话切换（活连接上）严禁重置水位。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不再尝试。
 
 ---

@@ -158,6 +158,9 @@ class WSEmitter:
             logger.debug("WSEmitter.send_json unexpected", extra={"error": str(e)}, exc_info=True)
 
 
+_HANDSHAKE_LOCKS: dict[int, asyncio.Lock] = {}
+
+
 async def handle_chat_websocket(websocket: WebSocket, token: str):
     # BaseHTTPMiddleware skips WS upgrades — middleware never set request_id
     # here, so re-correlate from the upgrade's X-Request-ID (scripted clients only).
@@ -166,7 +169,8 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
     # 是 WS 协议限制, 不可修.
     adopt_inbound(websocket.headers.get(REQUEST_ID_HEADER))
 
-    # Authenticate BEFORE accept() so unauthenticated peers get a clean 1008 close
+    # Authenticate BEFORE accept to defend against unauthenticated connection floods.
+    # Rejected handshakes fail fast with 4001 Unauthorized at the transport layer
     # and never occupy a ConnectionManager slot.
     user, payload = await authenticate_ws_token(token)
     if user is None:
@@ -174,147 +178,69 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
         return
 
     user_id = user.id
-    await MANAGER.connect(websocket, user_id)
+    lock = _HANDSHAKE_LOCKS.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        try:
+            await MANAGER.connect(websocket, user_id)
 
-    # Config and settings are read once at connect time. Per-tool execution
-    # opens a fresh SESSION_LOCAL() so concurrent tool calls don't share
-    # SQLAlchemy state.
-    async with SESSION_LOCAL() as boot_db:
-        llm_config = await resolve_user_llm_config(boot_db, user_id)
-        user_settings = await load_user_settings(boot_db, user_id)
-        await get_or_create_main_conversation(boot_db, user_id)
+            # Config and settings are read once at connect time. Per-tool execution
+            # opens a fresh SESSION_LOCAL() so concurrent tool calls don't share
+            # SQLAlchemy state.
+            async with SESSION_LOCAL() as boot_db:
+                llm_config = await resolve_user_llm_config(boot_db, user_id)
+                user_settings = await load_user_settings(boot_db, user_id)
+                await get_or_create_main_conversation(boot_db, user_id)
 
-    session_client_context: ChatRequestClientContext | None = None
-    if payload and "ctx" in payload:
-        with contextlib.suppress(Exception):
-            session_client_context = ChatRequestClientContext(**payload["ctx"])
+            session_client_context: ChatRequestClientContext | None = None
+            if payload and "ctx" in payload:
+                with contextlib.suppress(Exception):
+                    session_client_context = ChatRequestClientContext(**payload["ctx"])
 
-    ws_emitter = WSEmitter(websocket)
+            ws_emitter = WSEmitter(websocket)
 
-    existing_session = _USER_SESSIONS.get(user_id)
-    if existing_session is not None:
-        if existing_session.grace_timer_task and not existing_session.grace_timer_task.done():
-            existing_session.grace_timer_task.cancel()
-            existing_session.grace_timer_task = None
-        existing_session.websocket = websocket
-        existing_session.llm_config = llm_config
-        existing_session.user_settings = user_settings
-        existing_session.session_client_context = session_client_context
-        existing_session.dispatcher.set_sender(ws_emitter.send_json)
-        user_session = existing_session
-        dispatcher = user_session.dispatcher
-        runtime_sessions = user_session.runtime_sessions
-        background_tasks = user_session.background_tasks
-        logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
-    else:
-        replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
-        dispatcher = JsonRpcDispatcher(ws_emitter.send_json, replay_buffer=replay_buffer)
-        runtime_sessions: dict[str, RuntimeSession] = {}
-        background_tasks: set[asyncio.Task] = set()
-        user_session = UserGatewaySession(
-            user_id=user_id,
-            dispatcher=dispatcher,
-            replay_buffer=replay_buffer,
-            runtime_sessions=runtime_sessions,
-            background_tasks=background_tasks,
-            llm_config=llm_config,
-            user_settings=user_settings,
-            session_client_context=session_client_context,
-            websocket=websocket,
-        )
-        _USER_SESSIONS[user_id] = user_session
-        MANAGER.register_dispatcher(user_id, dispatcher)
+            existing_session = _USER_SESSIONS.get(user_id)
+            if existing_session is not None:
+                if existing_session.grace_timer_task and not existing_session.grace_timer_task.done():
+                    existing_session.grace_timer_task.cancel()
+                    existing_session.grace_timer_task = None
+                existing_session.websocket = websocket
+                existing_session.llm_config = llm_config
+                existing_session.user_settings = user_settings
+                existing_session.session_client_context = session_client_context
+                existing_session.dispatcher.set_sender(ws_emitter.send_json)
+                existing_session.dispatcher.enable_hold()
+                user_session = existing_session
+                dispatcher = user_session.dispatcher
+                runtime_sessions = user_session.runtime_sessions
+                background_tasks = user_session.background_tasks
+                logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
+            else:
+                replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
+                dispatcher = JsonRpcDispatcher(ws_emitter.send_json, replay_buffer=replay_buffer)
+                dispatcher.enable_hold()
+                runtime_sessions: dict[str, RuntimeSession] = {}
+                background_tasks: set[asyncio.Task] = set()
+                user_session = UserGatewaySession(
+                    user_id=user_id,
+                    dispatcher=dispatcher,
+                    replay_buffer=replay_buffer,
+                    runtime_sessions=runtime_sessions,
+                    background_tasks=background_tasks,
+                    llm_config=llm_config,
+                    user_settings=user_settings,
+                    session_client_context=session_client_context,
+                    websocket=websocket,
+                )
+                _USER_SESSIONS[user_id] = user_session
+                MANAGER.register_dispatcher(user_id, dispatcher)
 
-        _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, replay_buffer=replay_buffer, user_session=user_session)
-
-        def _track(task: asyncio.Task) -> None:
-            user_session.background_tasks.add(task)
-            task.add_done_callback(user_session.background_tasks.discard)
-
-        async def prompt_submit(params: dict) -> dict:
-            runtime = _get_runtime(user_session.runtime_sessions, params)
-            text = _require_str(params, "text")
-            if runtime.chat_task and not runtime.chat_task.done():
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
-
-            # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
-            # user's main conversation.
-            if any(uid == user_id for uid, _ in _inflight_interact):
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
-
-            truncate_ordinal = params.get("truncate_before_user_ordinal")
-            if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
-            if truncate_ordinal is not None:
-                async with SESSION_LOCAL() as db:
-                    user_rows = (
-                        (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
-                    )
-                    if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
-                        raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
-                    drop_from_id = user_rows[truncate_ordinal].id
-                    await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
-                    db.expire_all()
-                    await db.commit()
-
-            attachments = _validate_attachments(params)
-
-            req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
-
-            # JsonRpcEmitter translates raw chat_service frames into JSON-RPC event envelopes.
-            emitter = JsonRpcEmitter(raw=None, dispatcher=user_session.dispatcher, session_id=runtime.session_id)
-
-            async def _run_turn() -> None:
-                _inflight_prompt.add(user_id)
-
-                try:
-                    try:
-                        await run_chat_turn(
-                            req,
-                            user_session.llm_config,
-                            user_session.user_settings,
-                            user_id,
-                            emitter,
-                            session_client_context=user_session.session_client_context,
-                            track_task=_track,
-                            runtime=runtime,
-                        )
-                    except (WebSocketDisconnect, asyncio.CancelledError):
-                        raise
-                    except Exception as e:
-                        logger.exception("prompt.submit chat_turn failed")
-                        with contextlib.suppress(Exception):
-                            await user_session.dispatcher.push_error_event(str(e), session_id=runtime.session_id)
-                finally:
-                    _inflight_prompt.discard(user_id)
-
-            runtime.chat_task = asyncio.create_task(_run_turn())
-            _track(runtime.chat_task)
-            return {"queued": True}
-
-        dispatcher.register("prompt.submit", prompt_submit)
-
-        async def tool_result_handler(params: dict) -> dict:
-            call_id = params.get("call_id")
-            result = params.get("result")
-            if not isinstance(call_id, str):
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "call_id must be a string")
-            if not isinstance(result, str):
-                result = json.dumps(result, ensure_ascii=False)
-            if not resolve_future(user_id, call_id, result):
-                logger.warning("Future not found or already done", extra={"user_id": user_id, "call_id": call_id})
-            return {}
-
-        dispatcher.register("tool.result", tool_result_handler)
-
-        async def tools_sync(params: dict) -> dict:
-            tools = params.get("tools", [])
-            if not isinstance(tools, list):
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "tools must be a list")
-            REGISTRY.update_runner_tools(user_id, tools)
-            return ToolsSyncResult(count=len(tools)).model_dump()
-
-        dispatcher.register("tools.sync", tools_sync)
+                _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, replay_buffer=replay_buffer, user_session=user_session)
+        except Exception:
+            logger.exception("WebSocket boot initialization failed", extra={"user_id": user_id})
+            MANAGER.disconnect(websocket, user_id)
+            with contextlib.suppress(Exception):
+                await websocket.close(code=1011)
+            return
 
     try:
         while True:
@@ -345,7 +271,11 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                                     if not t.done():
                                         t.cancel()
                                 target_sess.runtime_sessions.clear()
+                            from .connection import cancel_user_cron_turns
+
+                            cancel_user_cron_turns(uid)
                             MANAGER.unregister_dispatcher(uid)
+                            _HANDSHAKE_LOCKS.pop(uid, None)
                             discard_user(uid)
                             REGISTRY.clear_runner_tools(uid)
                     except asyncio.CancelledError:
@@ -462,6 +392,7 @@ def _register_session_handlers(
             messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         cfg = user_session.llm_config if user_session else llm_config
+        await dispatcher.flush_unsent()
         return SessionResumeResult(
             session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(cfg, runtime), current_seq=effective_buffer.max_seq
         ).model_dump()
@@ -478,6 +409,7 @@ def _register_session_handlers(
         runtime = _mount_runtime(conv, cwd)
         logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
         cfg = user_session.llm_config if user_session else llm_config
+        await dispatcher.flush_unsent()
         return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
 
     async def session_resume(params: dict) -> dict:
@@ -493,9 +425,7 @@ def _register_session_handlers(
         # Continuous replay if client provided last_seq and ReplayBuffer holds all deltas
         if isinstance(last_seq, int) and effective_buffer.can_replay(last_seq):
             runtime = _mount_runtime(conv, conv.cwd, cancel_existing=False)
-            replayed_frames = effective_buffer.replay_since(last_seq) or []
-            for frame in replayed_frames:
-                await dispatcher._send(frame)
+            replayed_frames = await dispatcher.replay(last_seq) or []
             logger.info("session.resume replayed frames", extra={"user_id": user_id, "session_id": runtime.session_id, "replayed": len(replayed_frames), "last_seq": last_seq})
             return SessionResumeResult(
                 session_id=runtime.session_id,
@@ -511,6 +441,7 @@ def _register_session_handlers(
         async with SESSION_LOCAL() as db:
             messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd, cancel_existing=True)
+        await dispatcher.flush_unsent()
         logger.info("session.resume full reload", extra={"user_id": user_id, "session_id": runtime.session_id})
         return SessionResumeResult(
             session_id=runtime.session_id,
@@ -527,6 +458,92 @@ def _register_session_handlers(
         if runtime.chat_task and not runtime.chat_task.done():
             runtime.chat_task.cancel()
         return {}
+
+    dispatcher.register("session.interrupt", session_interrupt)
+
+    def _track(task: asyncio.Task) -> None:
+        if user_session is not None:
+            user_session.background_tasks.add(task)
+            task.add_done_callback(user_session.background_tasks.discard)
+
+    async def prompt_submit(params: dict) -> dict:
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        text = _require_str(params, "text")
+        if runtime.chat_task and not runtime.chat_task.done():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
+
+        # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
+        # user's main conversation.
+        if any(uid == user_id for uid, _ in _inflight_interact):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
+
+        truncate_ordinal = params.get("truncate_before_user_ordinal")
+        if truncate_ordinal is not None and not isinstance(truncate_ordinal, int):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be an int")
+        if truncate_ordinal is not None:
+            async with SESSION_LOCAL() as db:
+                user_rows = (
+                    (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
+                )
+                if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
+                    raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
+                drop_from_id = user_rows[truncate_ordinal].id
+                await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
+                db.expire_all()
+                await db.commit()
+
+        attachments = _validate_attachments(params)
+        req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
+
+        disp = user_session.dispatcher if user_session else dispatcher
+        emitter = JsonRpcEmitter(raw=None, dispatcher=disp, session_id=runtime.session_id)
+
+        cur_cfg = user_session.llm_config if user_session else llm_config
+        cur_settings = user_session.user_settings if user_session else {}
+        cur_ctx = user_session.session_client_context if user_session else None
+
+        async def _run_turn() -> None:
+            _inflight_prompt.add(user_id)
+            try:
+                try:
+                    await run_chat_turn(req, cur_cfg, cur_settings, user_id, emitter, session_client_context=cur_ctx, track_task=_track, runtime=runtime)
+                except (WebSocketDisconnect, asyncio.CancelledError):
+                    raise
+                except Exception as e:
+                    logger.exception("prompt.submit chat_turn failed")
+                    with contextlib.suppress(Exception):
+                        await disp.push_error_event(str(e), session_id=runtime.session_id)
+            finally:
+                _inflight_prompt.discard(user_id)
+
+        runtime.chat_task = asyncio.create_task(_run_turn())
+        _track(runtime.chat_task)
+        return {"queued": True}
+
+    dispatcher.register("prompt.submit", prompt_submit)
+
+    async def tool_result_handler(params: dict) -> dict:
+        call_id = params.get("call_id")
+        result = params.get("result")
+        if not isinstance(call_id, str):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "call_id must be a string")
+        if not isinstance(result, str):
+            result = json.dumps(result, ensure_ascii=False)
+        if not resolve_future(user_id, call_id, result):
+            logger.warning("Future not found or already done", extra={"user_id": user_id, "call_id": call_id})
+        return {}
+
+    dispatcher.register("tool.result", tool_result_handler)
+
+    async def tools_sync(params: dict) -> dict:
+        tools = params.get("tools", [])
+        if not isinstance(tools, list):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "tools must be a list")
+        REGISTRY.update_runner_tools(user_id, tools)
+        return ToolsSyncResult(count=len(tools)).model_dump()
+
+    dispatcher.register("tools.sync", tools_sync)
 
     async def image_attach(params: dict) -> dict:
         # Path-mode: backend doesn't read the bytes; LLM reads via Runner file tools.
@@ -805,23 +822,18 @@ def _register_session_handlers(
         async def _run() -> None:
             async with lock:
                 try:
-                    async with SESSION_LOCAL() as db:
-                        # Advisory lock serializes avatar regen per user
-                        # within this process. The ``xact`` variant
-                        # auto-releases on commit/rollback, so no explicit
-                        # unlock is needed. Fail-open on driver errors so a
-                        # Postgres blip doesn't block portrait gen; the
-                        # in-process ``lock`` above still serializes within
-                        # the event loop.
-                        regen_busy = False
+                    regen_busy = False
+                    async with SESSION_LOCAL() as probe_db:
                         try:
-                            got = (await db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)})).scalar()
+                            got = (await probe_db.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": _AVATAR_REGEN_ADVISORY_NAMESPACE + int(user_id)})).scalar()
                             regen_busy = not bool(got)
                         except Exception:
                             regen_busy = False
-                        if regen_busy:
-                            payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
-                        else:
+
+                    if regen_busy:
+                        payload = {"job_id": job_id, "error": "伙伴正在生成形象，请稍候"}
+                    else:
+                        async with SESSION_LOCAL() as db:
                             persona = await get_or_create_persona(db, user_id)
                             asset = await regenerate_avatar(db, user_id, persona, feedback=feedback)
                             payload = {"job_id": job_id, "asset_url": asset.asset_url, "seed_front_url": None, "seed_right_url": None, "seed_back_url": None, "id": asset.id}
@@ -839,6 +851,9 @@ def _register_session_handlers(
         task = asyncio.create_task(_run())
         _avatar_regen_tasks.add(task)
         task.add_done_callback(_avatar_regen_tasks.discard)
+        if user_session is not None:
+            user_session.background_tasks.add(task)
+            task.add_done_callback(user_session.background_tasks.discard)
         return {"queued": True, "job_id": job_id}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)

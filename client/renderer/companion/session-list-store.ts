@@ -78,7 +78,7 @@ export async function switchSession(sessionId: string): Promise<void> {
 
 /** Mount the main conversation and load its transcript. Also the recovery path
  * when the dock has no session yet — the main conversation always exists. */
-export async function openMainSession(): Promise<string | null> {
+export async function openMainSession(onMounted?: (res: SessionResumeResponse) => void): Promise<string | null> {
   const gw = $gateway.get()
 
   if (!gw) {
@@ -89,6 +89,7 @@ export async function openMainSession(): Promise<string | null> {
     const res = await gw.request<SessionResumeResponse>('session.get_main')
     setChatSession(res.session_id)
     hydrateChatMessages(res.messages || [])
+    onMounted?.(res)
 
     return res.session_id
   } catch (err) {

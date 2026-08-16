@@ -1,9 +1,12 @@
+import asyncio
 import json
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 from components import JSON_RPC_VERSION, JSONRPC_INTERNAL_ERROR, JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR, get_logger
+
+from .buffer import ReplayBuffer
 
 logger = get_logger(__name__)
 
@@ -82,17 +85,36 @@ def _redact_data(data: Any) -> Any:
 
 
 class JsonRpcDispatcher:
-    def __init__(self, send_json: Callable[[dict], Awaitable[None]], replay_buffer: Any | None = None):
+    def __init__(self, send_json: Callable[[dict], Awaitable[None]], replay_buffer: ReplayBuffer | None = None):
         self._send = send_json
-        self._replay_buffer = replay_buffer
+        self._replay_buffer: ReplayBuffer | None = replay_buffer
         self._handlers: dict[str, Handler] = {}
+        self._send_lock = asyncio.Lock()
+        self._hold_events: bool = False
+        self._hold_timeout_task: asyncio.Task | None = None
 
     def set_sender(self, send_json: Callable[[dict], Awaitable[None]]) -> None:
         """Update the underlying frame sender callback (used during session takeover / reconnect)."""
         self._send = send_json
 
-    def set_replay_buffer(self, replay_buffer: Any | None) -> None:
-        self._replay_buffer = replay_buffer
+    def enable_hold(self, timeout_seconds: float = 10.0) -> None:
+        """Activate event hold mode: push_event only appends to buffer and delays sending
+        until mount (session.resume / session.get_main / session.create) flushes it.
+        """
+        self._hold_events = True
+        if self._hold_timeout_task and not self._hold_timeout_task.done():
+            self._hold_timeout_task.cancel()
+
+        async def _timeout_flush():
+            try:
+                await asyncio.sleep(timeout_seconds)
+                if self._hold_events:
+                    logger.warning("Event hold timed out without mount request; forcing flush_unsent")
+                    await self.flush_unsent()
+            except asyncio.CancelledError:
+                pass
+
+        self._hold_timeout_task = asyncio.create_task(_timeout_flush())
 
     def register(self, method: str, handler: Handler) -> None:
         self._handlers[method] = handler
@@ -155,17 +177,83 @@ class JsonRpcDispatcher:
         if payload is not None:
             params["payload"] = payload
         frame: dict[str, Any] = {"jsonrpc": JSON_RPC_VERSION, "method": "event", "params": params}
+        seq: int | None = None
         if self._replay_buffer is not None:
-            _, frame = self._replay_buffer.append(frame)
-        await self._send(frame)
+            seq, frame = self._replay_buffer.append(frame)
+
+        if self._hold_events:
+            return
+
+        async with self._send_lock:
+            if self._hold_events:
+                return
+            await self._send(frame)
+            if self._replay_buffer is not None and seq is not None:
+                self._replay_buffer.mark_sent_through(seq)
 
     async def push_error_event(self, message: str, session_id: str | None = None) -> None:
         # push_event bypasses _reply_error, so raw exception text must be
         # redacted here explicitly (ARCH §11#2).
         await self.push_event("error", {"message": redact_message(message)}, session_id=session_id)
 
+    async def replay(self, last_seq: int) -> list[dict[str, Any]] | None:
+        """Perform snapshot and sequential replay within send lock, then release hold."""
+        if self._hold_timeout_task and not self._hold_timeout_task.done():
+            self._hold_timeout_task.cancel()
+            self._hold_timeout_task = None
+
+        if self._replay_buffer is None:
+            self._hold_events = False
+            return None
+
+        async with self._send_lock:
+            if not self._replay_buffer.can_replay(last_seq):
+                self._hold_events = False
+                return None
+
+            replayed_frames = self._replay_buffer.replay_since(last_seq) or []
+            for frame in replayed_frames:
+                await self._send(frame)
+
+            if replayed_frames:
+                max_replayed = max(f.get("params", {}).get("seq", f.get("seq", 0)) for f in replayed_frames)
+                self._replay_buffer.mark_sent_through(max_replayed)
+
+            # Drain loop: send any new frames appended while we were sending
+            while True:
+                unsent = [f for f in self._replay_buffer.get_unsent() if f.seq > last_seq]
+                if not unsent:
+                    break
+                for f in unsent:
+                    await self._send(f.frame)
+                    f.sent = True
+
+            self._hold_events = False
+            return replayed_frames
+
+    async def flush_unsent(self) -> None:
+        """Flush all unsent buffered frames in sequence order within send lock, then release hold."""
+        if self._hold_timeout_task and not self._hold_timeout_task.done():
+            self._hold_timeout_task.cancel()
+            self._hold_timeout_task = None
+
+        if self._replay_buffer is None:
+            self._hold_events = False
+            return
+
+        async with self._send_lock:
+            while True:
+                unsent = self._replay_buffer.get_unsent()
+                if not unsent:
+                    break
+                for f in unsent:
+                    await self._send(f.frame)
+                    f.sent = True
+            self._hold_events = False
+
     async def _reply_result(self, msg_id: Any, result: Any) -> None:
-        await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "result": result})
+        async with self._send_lock:
+            await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "result": result})
 
     async def _reply_error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
         # Per spec §5.1: id in error reply is the request's id, or null if
@@ -174,4 +262,5 @@ class JsonRpcDispatcher:
         # session.resume "not found", etc.) are responsible for keeping
         # them user-friendly; we still run the redact pass as a backstop.
         error = {"code": code, "message": redact_message(message), **({"data": _redact_data(data)} if data is not None else {})}
-        await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "error": error})
+        async with self._send_lock:
+            await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "error": error})

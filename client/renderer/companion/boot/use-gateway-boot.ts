@@ -18,7 +18,7 @@ import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { RpcEvent, SessionMessage } from '@/shared/types/deskagent'
+import type { RpcEvent, SessionResumeResponse } from '@/shared/types/deskagent'
 import type { DeskAgentConnection } from '@/shared/types/global'
 
 // Backend uses WS close 1008 for auth failures (token expired/revoked) —
@@ -264,23 +264,33 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           // the runtime from the persisted DB conversation.
           const sid = $chatSessionId.get()
 
+          const syncMountSeq = (res: SessionResumeResponse) => {
+            if (typeof res.current_seq === 'number') {
+              gateway.resetSeq(res.current_seq)
+            }
+          }
+
           if (sid) {
             void gateway
-              .request<{ resumed?: boolean; messages?: SessionMessage[] }>('session.resume', {
+              .request<SessionResumeResponse>('session.resume', {
                 session_id: sid,
                 last_seq: gateway.lastReceivedSeq
               })
               .then(res => {
-                if (!res.resumed && Array.isArray(res.messages)) {
-                  hydrateChatMessages(res.messages)
+                if (!res.resumed) {
+                  syncMountSeq(res)
+
+                  if (Array.isArray(res.messages)) {
+                    hydrateChatMessages(res.messages)
+                  }
                 }
               })
               .catch(() => {
                 setChatSession(null)
-                void openMainSession()
+                void openMainSession(syncMountSeq)
               })
           } else {
-            void openMainSession()
+            void openMainSession(syncMountSeq)
           }
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {

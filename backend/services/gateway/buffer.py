@@ -15,6 +15,7 @@ class BufferedFrame:
     seq: int
     timestamp: float
     frame: dict[str, Any]
+    sent: bool = False
 
 
 class ReplayBuffer:
@@ -46,6 +47,16 @@ class ReplayBuffer:
     def __len__(self) -> int:
         return len(self._buffer)
 
+    def get_unsent(self) -> list[BufferedFrame]:
+        """Return all frames in the buffer that have not yet been sent over the wire."""
+        return [f for f in self._buffer if not f.sent]
+
+    def mark_sent_through(self, max_seq: int) -> None:
+        """Mark all buffered frames with seq <= max_seq as sent."""
+        for f in self._buffer:
+            if f.seq <= max_seq:
+                f.sent = True
+
     def append(self, frame: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """Assign a monotonic sequence ID to the frame, stamp it, and record in the buffer."""
         self._current_seq += 1
@@ -61,7 +72,7 @@ class ReplayBuffer:
             stamped_frame["seq"] = seq
 
         now = time.monotonic()
-        self._buffer.append(BufferedFrame(seq=seq, timestamp=now, frame=stamped_frame))
+        self._buffer.append(BufferedFrame(seq=seq, timestamp=now, frame=stamped_frame, sent=False))
         self._prune(now)
         return seq, stamped_frame
 
@@ -80,8 +91,12 @@ class ReplayBuffer:
         if last_seq < 0:
             return False
 
-        # If client is already at or ahead of current seq
-        if last_seq >= self._current_seq:
+        # Client is ahead of server (server restarted/sequence reset) -> desync, force full reload
+        if last_seq > self._current_seq:
+            return False
+
+        # Client is already at current seq (including fresh buffer where both are 0) -> valid, 0 frames to replay
+        if last_seq == self._current_seq:
             return True
 
         # If buffer is empty but last_seq < current_seq, frames were pruned
