@@ -24,9 +24,14 @@ async def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | 
     if not user_id:
         return None, None
 
+    try:
+        uid = int(user_id)
+    except (ValueError, TypeError):
+        return None, None
+
     # WS tickets aren't tracked in LoginRecord; revocation flows through session deactivation.
     async with SESSION_LOCAL() as db:
-        user = (await db.execute(select(User).where(User.id == int(user_id), User.is_active.is_(True)))).scalar_one_or_none()
+        user = (await db.execute(select(User).where(User.id == uid, User.is_active.is_(True)))).scalar_one_or_none()
         if user is not None and user.entitlement_expired:
             user = None
 

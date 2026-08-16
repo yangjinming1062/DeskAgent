@@ -21,7 +21,6 @@ async def get_current_admin_token(credentials: HTTPAuthorizationCredentials | No
     jti = payload.get("jti")
     if jti:
         session = (await db.execute(select(AdminSession).where(AdminSession.token_jti == jti, AdminSession.is_active.is_(True)))).scalar_one_or_none()
-        await db.rollback()
         if session is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="管理员令牌已吊销或未登记，请重新登录。")
     return username
@@ -35,17 +34,19 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
     if not user_id or not token_jti:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="访问令牌缺少必要字段。")
 
+    try:
+        uid = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌用户标识无效。")
+
     login_record = (await db.execute(select(LoginRecord).where(LoginRecord.token_jti == token_jti, LoginRecord.is_active.is_(True)))).scalar_one_or_none()
     if login_record is None:
-        await db.rollback()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="当前会话已失效，请重新登录")
 
-    user = (await db.execute(select(User).where(User.id == int(user_id), User.is_active.is_(True)))).scalar_one_or_none()
+    user = (await db.execute(select(User).where(User.id == uid, User.is_active.is_(True)))).scalar_one_or_none()
     if user is None:
-        await db.rollback()
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已停用。")
     if user.entitlement_expired:
-        await db.rollback()
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = utc_now()
@@ -53,6 +54,4 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
         login_record.last_seen_at = now
         db.add(login_record)
         await db.commit()
-    else:
-        await db.rollback()
     return user, login_record
