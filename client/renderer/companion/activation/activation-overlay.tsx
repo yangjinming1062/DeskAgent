@@ -1,9 +1,9 @@
 import { useStore } from '@nanostores/react'
-import { type FormEvent, useRef, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { Button } from '@/shared/components/ui'
-import { Loader2, Sparkles } from '@/shared/lib/icons'
+import { Loader2, Sparkles, X } from '@/shared/lib/icons'
 import { $auth, activate } from '@/shared/store/auth'
 
 /**
@@ -23,6 +23,19 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   // window — without this, the window's setIgnoreMouseEvents(true, ...) swallows
   // every click. Mirrors BootFailureOverlay's pattern.
   useInteractiveRegion('activation', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !busy) {
+        event.preventDefault()
+        onClose()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose, busy])
 
   const error = auth.kind === 'unauthenticated' ? auth.error : null
   const trimmed = code.trim()
@@ -49,20 +62,36 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   return (
     <div
       className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      onClick={e => {
+        if (e.target === e.currentTarget && !busy) {
+          onClose()
+        }
+      }}
       ref={overlayRef}
     >
       <form
-        className="spiritagent-fade-in w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
+        className="spiritagent-fade-in relative w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
         onSubmit={onSubmit}
       >
-        <div className="mb-5 flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Sparkles className="size-5" />
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Sparkles className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">激活 SpiritAgent</h2>
+              <p className="text-sm text-muted-foreground">粘贴您收到的激活码以开始使用。</p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold tracking-tight">激活 SpiritAgent</h2>
-            <p className="text-sm text-muted-foreground">粘贴您收到的激活码以开始使用。</p>
-          </div>
+          <button
+            aria-label="关闭"
+            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+          >
+            <X className="size-4" />
+          </button>
         </div>
 
         {error && (
@@ -82,6 +111,9 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
         />
 
         <div className="mt-5 flex justify-end gap-2">
+          <Button disabled={busy} onClick={onClose} type="button" variant="outline">
+            取消
+          </Button>
           <Button className="inline-flex items-center gap-2" disabled={!trimmed || busy} type="submit">
             {busy ? <Loader2 className="size-4 animate-spin" /> : null}
             {busy ? '激活中…' : '激活'}
