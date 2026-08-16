@@ -128,6 +128,7 @@ backend/
 | **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
 | **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
 | **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期 Blender 布料重力悬垂烘焙（20 帧静态形变固化）、5 通道 PBR 贴图（含 displacement 微表面深度）与客户端 BodyCollider 表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |
+| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（4s 防抖窗口，[DESIGN.md §6.6](../DESIGN.md)），再经 `prompt.submit` 的 `batch` 一次性提交——前驱消息经 `persist_extra_user_messages` 落库、末条作为当轮 user 消息；前一轮 turn 生成期间连发的消息仍会在上一轮落库后作为新 turn 批量写入。因此客户端刷新（Hydration）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。 |
 
 ## 7. 部署与监控
 

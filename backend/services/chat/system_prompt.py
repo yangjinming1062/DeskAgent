@@ -468,7 +468,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         # Companion persona drives a visible avatar — instruct the LLM to
         # emit an inline affect tag so the desktop's animation state machine
         # gets an emotion cue with every response.
-        stable_parts.append(build_affect_guidance(config.custom_expressions))
+        stable_parts.append(build_affect_guidance(config.custom_expressions, config.available_actions))
         if "**Appearance outfit**" in config.persona_extras:
             stable_parts.append(COMPANION_OUTFIT_GUIDANCE)
     if config.user_profile_extras:

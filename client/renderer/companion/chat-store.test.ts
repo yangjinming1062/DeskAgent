@@ -5,7 +5,10 @@ import {
   appendAssistantDelta,
   beginAssistantMessage,
   clearChat,
+  clearPendingPrompts,
+  drainPendingPrompts,
   finalizeAssistantMessage,
+  pushPendingPrompt,
   pushUserMessage,
   setAssistantError,
   setAssistantTool
@@ -54,5 +57,26 @@ describe('chat store streaming', () => {
     const last = $chatMessages.get().at(-1)
     expect(last?.error).toBe('连接断了')
     expect(last?.streaming).toBe(false)
+  })
+
+  it('prunes empty assistant message on finalize (affect-only ghost bubble prevention)', () => {
+    pushUserMessage('惹你生气')
+    beginAssistantMessage()
+    // No text delta arrived (affect-only response)
+    finalizeAssistantMessage('')
+    const msgs = $chatMessages.get()
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]?.role).toBe('user')
+  })
+
+  it('manages pending prompt batch correctly', () => {
+    clearPendingPrompts()
+    pushPendingPrompt({ text: '消息1' })
+    pushPendingPrompt({ text: '消息2', attachments: ['a.png'] })
+    const drained = drainPendingPrompts()
+    expect(drained).toHaveLength(2)
+    expect(drained[0].text).toBe('消息1')
+    expect(drained[1].attachments).toEqual(['a.png'])
+    expect(drainPendingPrompts()).toHaveLength(0)
   })
 })

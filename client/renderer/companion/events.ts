@@ -2,6 +2,8 @@ import {
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
+  hydrateExpressions,
+  hydrateGeneratedClips,
   hydrateWardrobe,
   setModelInfo
 } from '@/companion/3d/model-store'
@@ -11,12 +13,17 @@ import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $chatOpen,
   $chatSessionId,
+  $chatTurnInFlight,
+  $turnHadBubbleBreak,
   appendAssistantDelta,
   beginAssistantMessage,
+  clearPendingPrompts,
   finalizeAssistantMessage,
   pushProactiveMessage,
   setAssistantError,
-  setAssistantTool
+  setAssistantTool,
+  setTurnHadBubbleBreak,
+  submitPendingBatch
 } from '@/companion/chat-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { $responseMode } from '@/companion/prefs'
@@ -114,6 +121,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
   switch (event.type) {
     case 'message.start':
       beginAssistantMessage()
+      setTurnHadBubbleBreak(false)
       setSpriteState('thinking')
 
       break
@@ -127,13 +135,24 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'message.break': {
+      // Backend split the turn into consecutive bubbles — finalize the current
+      // bubble; the next message.delta will open a fresh one (the backend
+      // already inserted the 0.5–1.5s pause between them).
+      setTurnHadBubbleBreak(true)
+      finalizeAssistantMessage()
+
+      break
+    }
+
     case 'message.complete': {
       const payload = event.payload as
-        | { text?: string; affect?: { emotion?: string; locale?: string; target?: string } }
+        | { text?: string; affect?: { emotion?: string; action?: string; locale?: string; target?: string } }
         | undefined
 
       const text = payload?.text ?? ''
       const emotion = payload?.affect?.emotion
+      const action = payload?.affect?.action
       const locale = payload?.affect?.locale
       const target = payload?.affect?.target
 
@@ -141,13 +160,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const quiet = $effectiveTier.get() === 'quiet'
       const screenLocked = $screenLocked.get()
 
-      finalizeAssistantMessage(payload?.text)
+      // Multi-bubble turn: each bubble already carries its own streamed
+      // text; payload.text is the FULL turn (both bubbles) and would clobber
+      // the last bubble. Keep last.text in that case.
+      finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text)
 
       // "neutral" is the LLM's no-op emotion; treat it like no affect so it doesn't ping a badge.
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
       if (hasEmotion && !screenLocked) {
-        setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
+        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action })
       } else {
         setSpriteState('idle', { force: true })
       }
@@ -177,6 +199,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
       if (text.trim()) {
         reportInteractionStat('chat_turn')
       }
+
+      // The in-flight turn finished — clear the flag and flush any messages
+      // the user queued while it was running (submitted as one coalesced batch).
+      $chatTurnInFlight.set(false)
+      submitPendingBatch()
 
       break
     }
@@ -315,6 +342,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'companion.assets.updated': {
+      // Companion created a new expression / animation clip live (create_expression
+      // / create_animation tools). Re-pull both so the 3D avatar binds them
+      // without a restart.
+      void hydrateGeneratedClips()
+      void hydrateExpressions()
+
+      break
+    }
+
     case 'wardrobe.updated': {
       // Backend fires this after a wardrobe item is generated, equipped, or
       // deleted. Re-pull the full list so the equipped atom stays in sync.
@@ -363,6 +400,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'error': {
+      $chatTurnInFlight.set(false)
+      clearPendingPrompts()
       // Force the idle reset — the priority gate silently rejects a plain
       // transition while the sprite is on 'thinking'/'working'.
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'

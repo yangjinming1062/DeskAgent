@@ -91,7 +91,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
 | 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Backend | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 接 Backend 推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `companion.assets.updated` / `model.ready` / `wardrobe.updated` 等）与聊天流事件（`message.start` / `message.delta` / `message.break` / `message.complete` / `tool.*` / `error`） | 接 Backend 推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
 | Affect emotion / locale 枚举消费 | 接 Backend | [PROTOCOL.md §1.4](../PROTOCOL.md) |
 | 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接 Backend | [PROTOCOL.md §1.5](../PROTOCOL.md) |
 | 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接 Backend | [PROTOCOL.md §1.6](../PROTOCOL.md) |
@@ -119,3 +119,4 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | **WebGPU 透明合成依赖 premultiplied** | `alpha:true` 时 three 自动以 `alphaMode:'premultiplied'` 配置 canvas；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
 | **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（`BodyCollider`，~4096 顶点）结合骨骼球计算，在极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含 displacement 视差置换）。 |
 | **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
+| **连发消息 4s 合并窗口（非 BUG）** | 用户快速连发多条时，`chat-store.ts` 用 4s 防抖窗口（`FLUSH_DEBOUNCE_MS`）把消息合并成一次 `prompt.submit` batch，只触发一次 LLM 调用（[DESIGN.md §6.6](../DESIGN.md)）。这是**刻意**的合并，不是发送延迟：窗口内逐条重置计时器，且 `message.complete` / `error` / 用户停止时会立即 flush。 |

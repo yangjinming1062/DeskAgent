@@ -2,12 +2,13 @@ import asyncio
 import json
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..conversation import MAIN_KIND
+from ..conversation import AFFECT_TRACE_SUBTYPE, MAIN_KIND
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
@@ -38,6 +39,21 @@ def _coerce_tool_result_content(content: Any) -> str:
         return str(content)
 
 
+def _build_persisted_content_from_parts(text: str, attachments: list[dict] | None) -> tuple[str, str]:
+    if not attachments:
+        return text or "", "text"
+    parts = [{"type": "text", "text": text or ""}]
+    media_uris: list[str] = []
+    for att in attachments:
+        url = att.get("file_url")
+        if url:
+            parts.append({"type": "image_url", "image_url": {"url": url}})
+            media_uris.append(url)
+    if media_uris:
+        logger.info("multimodal parts sent to LLM", extra={"media_count": len(media_uris), "media_uris": media_uris})
+    return _coerce_tool_result_content(parts), "multimodal_v1"
+
+
 def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
     """Translate req.message + attachments into ``(content, content_type)``
     for the Message row. Pure text → ``("text", str)``; multimodal → a JSON
@@ -48,23 +64,17 @@ def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
     """
     text = req.message.content or ""
     attachments = getattr(req.message, "attachments", None) or []
-    if not attachments:
-        return text, "text"
+    return _build_persisted_content_from_parts(text, attachments)
 
-    parts = [{"type": "text", "text": text}]
-    media_uris: list[str] = []
 
-    for att in attachments:
-        url = att.get("file_url")
-        if not url:
-            continue
-        parts.append({"type": "image_url", "image_url": {"url": url}})
-        media_uris.append(url)
-
-    if media_uris:
-        logger.info("multimodal parts sent to LLM", extra={"media_count": len(media_uris), "media_uris": media_uris})
-
-    return _coerce_tool_result_content(parts), "multimodal_v1"
+async def persist_extra_user_messages(db: AsyncSession, conv_id: int, items: list[dict]) -> None:
+    """Persist precursor user messages in a batch before running the turn on the final message."""
+    for item in items:
+        text = item.get("text") or ""
+        attachments = item.get("attachments") or []
+        db_content, db_content_type = _build_persisted_content_from_parts(text, attachments)
+        db.add(Message(conversation_id=conv_id, role="user", content=db_content, content_type=db_content_type))
+    await db.commit()
 
 
 async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatRequest) -> None:
@@ -72,6 +82,22 @@ async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatR
     db_content, db_content_type = _build_persisted_content(req)
     db.add(Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id))
     await db.commit()
+
+
+def _affect_trace_content(emotion: str | None, action: str | None) -> str:
+    """Structured marker for a body-language-only reply (no text).
+
+    Persisted as an assistant-role row so the NEXT turn's LLM context still sees
+    that the companion reacted (a pout/action with no words would otherwise
+    vanish from the conversation and break emotional continuity). The renderer
+    maps this subtype to a recessive trace instead of a text bubble.
+    """
+    parts: list[str] = []
+    if emotion and emotion != "neutral":
+        parts.append(f"[affect:{emotion}]")
+    if action:
+        parts.append(f"[action:{action}]")
+    return "\n".join(parts)
 
 
 async def _persist_assistant_no_tool_turn(
@@ -91,6 +117,7 @@ async def _persist_assistant_no_tool_turn(
     track_task: TrackTask | None = None,
     *,
     emotion: str | None = None,
+    action: str | None = None,
     spatial_locale: str | None = None,
     spatial_target: str | None = None,
 ) -> None:
@@ -124,6 +151,24 @@ async def _persist_assistant_no_tool_turn(
                 )
             )
             await db.commit()
+    elif (emotion and emotion != "neutral") or action:
+        # Affect-only reply: no text, just a body-language reaction. Persist a
+        # lightweight assistant-role trace so the next turn's LLM context is
+        # complete — otherwise the companion's pout/action would vanish from
+        # history and a later "还在生气吗?" would lack the earlier reaction.
+        async with session_scope() as db:
+            db.add(
+                Message(
+                    conversation_id=conv.id,
+                    role="assistant",
+                    content=_affect_trace_content(emotion, action),
+                    subtype=AFFECT_TRACE_SUBTYPE,
+                    prompt_tokens=final_prompt_tokens,
+                    completion_tokens=final_completion_tokens,
+                    turn_duration_ms=turn_duration_ms,
+                )
+            )
+            await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
         title_task = asyncio.create_task(
@@ -141,6 +186,8 @@ async def _persist_assistant_no_tool_turn(
             track_task(review_task)
 
     affect_payload: dict[str, Any] = {"emotion": emotion}
+    if action:
+        affect_payload["action"] = action
     if spatial_locale:
         affect_payload["locale"] = spatial_locale
     if spatial_target:

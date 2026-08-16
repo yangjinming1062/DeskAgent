@@ -67,4 +67,5 @@ class AgentPromptConfig(BaseModel):
     inferred_profile_extras: str = ""
     proactive_memory_extras: str = ""
     custom_expressions: list[Any] | None = None
+    available_actions: list[str] = Field(default_factory=list)
     language: str = DEFAULT_LANGUAGE

@@ -6,8 +6,13 @@ import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $chatMessages,
   $chatSessionId,
+  $chatTurnInFlight,
+  cancelPendingFlush,
+  clearPendingPrompts,
   finalizeAssistantMessage,
+  pushPendingPrompt,
   pushUserMessage,
+  schedulePendingFlush,
   setAssistantCancelled,
   setAssistantError
 } from '@/companion/chat-store'
@@ -173,15 +178,17 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       }
 
       pushUserMessage(fullText || '（图片）', attachments.length ? attachments : undefined)
-      setSpriteState('thinking')
       setText('')
       setPendingImage(null)
-      await requestGateway('prompt.submit', {
-        session_id: id,
+      setSpriteState('thinking')
+
+      // Coalesce rapid-fire messages into one turn: queue locally and flush after
+      // a short debounce so messages within the window share a single LLM call.
+      pushPendingPrompt({
         text: fullText || '请看这张图',
-        // Forward attachments as {file_url, type} so the LLM sees the image.
-        ...(attachments.length ? { attachments: attachments.map(file_url => ({ file_url, type: 'image' })) } : {})
+        attachments: attachments.length ? attachments : undefined
       })
+      schedulePendingFlush()
     } catch (err) {
       setAssistantError(err instanceof Error ? err.message : '发送失败')
       setSpriteState('idle')
@@ -207,6 +214,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     gatewayState === 'open' && (showTyping || (lastMsg?.role === 'assistant' && lastMsg.streaming === true))
 
   const handleStop = async () => {
+    cancelPendingFlush()
+    clearPendingPrompts()
+    $chatTurnInFlight.set(false)
     const sid = $chatSessionId.get()
 
     if (sid) {

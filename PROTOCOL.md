@@ -71,6 +71,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败 | Client 加载 + 绑定动画 / 进度展示 / 降级 |
 | wardrobe.updated | 换装产物就绪 | Client 重拉列表 + 分派热替/装配 |
+| companion.assets.updated | 伙伴实时创建了新表情/动画（create_expression / create_animation） | Client 重拉 /animations + /expressions，绑定到 3D |
 | wardrobe.preview.progress / .ready / .failed | 换装预览 job 状态 | Client UI 反馈（与 GET 轮询等价） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 | reload.mcp | MCP 配置变更后通知重载 | Client 转发 Runner，重载后回同步工具表 |
@@ -81,13 +82,17 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 **语义/渲染解耦**——Backend 只产出情绪 + 可选场所语义，绝不指定渲染方式或像素坐标。
 
-**emotion 枚举**（17 项，权威源 backend/services/chat/affect.py 的 BUILTIN_EMOTIONS）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral。
+**emotion 枚举**（22 项，权威源 backend/services/chat/affect.py 的 BUILTIN_EMOTIONS）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral / pout / angry / smug / scared / relieved。
 
 **locale 枚举**（5 项，权威源 ALLOWED_LOCALES）：home / chat / perch / roam / sleep。
 
 **spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。Client 经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。Backend 解析后下发，Client 决定是否落位（档位门控 + 对话开启抑制）。
+
+**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），Backend 在提示词中注入可用清单（内置 procedural clip + 模型生成 clip 的并集），解析后经 message.complete 的 affect.action 字段下发，Client 按名称/标签匹配 clip、失败回退到 emotion valence。LLM 找不到合适动作时可调用 create_animation 工具实时生成新 clip 并落库。
+
+**连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
 **扩展协议**：每次扩展 emotion / locale 须同步更新 **Backend 白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。
 

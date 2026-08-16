@@ -103,6 +103,8 @@ export const BUILTIN_VALENCE: Record<string, 'positive' | 'negative' | 'neutral'
   playful: 'positive',
   curious: 'positive',
   surprised: 'positive',
+  smug: 'positive',
+  relieved: 'positive',
   sad: 'negative',
   concerned: 'negative',
   shy: 'negative',
@@ -111,6 +113,9 @@ export const BUILTIN_VALENCE: Record<string, 'positive' | 'negative' | 'neutral'
   embarrassed: 'negative',
   apologetic: 'negative',
   confused: 'negative',
+  pout: 'negative',
+  angry: 'negative',
+  scared: 'negative',
   sleepy: 'neutral',
   neutral: 'neutral'
 }
@@ -121,9 +126,27 @@ export function resolveEmotionClip(
   companionTags: string[],
   library: Record<string, ClipDef>,
   available: Set<string>,
-  customExpressions?: CompanionExpression[]
+  customExpressions?: CompanionExpression[],
+  action?: string | null
 ): string | null {
   const allClips = Object.values(library)
+
+  // A structured [action:...] hint narrows to a specific movement clip; fall
+  // back to the emotion valence when no clip name/tag matches the token.
+  const normAction = action?.trim().toLowerCase()
+
+  if (normAction) {
+    const actionClips = allClips.filter(
+      c =>
+        (available.size === 0 || available.has(c.name)) &&
+        (c.name.toLowerCase().includes(normAction) || (c.tags ?? []).some(t => t.toLowerCase().includes(normAction)))
+    )
+
+    if (actionClips.length > 0) {
+      return selectClipByTags(actionClips, companionTags, available)
+    }
+  }
+
   const normEmotion = emotion.toLowerCase()
   const customIndex = indexCustomExpressions(customExpressions)
   const customExpr = customIndex.get(normEmotion)
@@ -136,7 +159,11 @@ export function resolveEmotionClip(
 
   if (valence === 'positive') {
     categoryCandidates = allClips.filter(
-      c => c.category === 'emotion-positive' || c.category === 'surprise' || c.name.includes('happy')
+      c =>
+        c.category === 'emotion-positive' ||
+        c.category === 'surprise' ||
+        c.name.includes('happy') ||
+        c.name.includes('smug')
     )
   } else if (valence === 'negative') {
     categoryCandidates = allClips.filter(
@@ -144,7 +171,10 @@ export function resolveEmotionClip(
         c.category === 'emotion-negative' ||
         c.category === 'neg-ext' ||
         c.category === 'surprise' ||
-        c.name.includes('sad')
+        c.name.includes('sad') ||
+        c.name.includes('angry') ||
+        c.name.includes('pout') ||
+        c.name.includes('scared')
     )
   } else {
     categoryCandidates = allClips.filter(

@@ -1,3 +1,5 @@
+import asyncio
+import random
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -7,10 +9,15 @@ from components import TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
 from ..llm import FailoverReason, LLMRuntimeError, call_with_retry
 from .affect import AffectScrubber
+from .bubble import BubbleEvent, BubbleSplitter
 from .chat_emitter import Emitter
 from .think_scrubber import StreamingThinkScrubber
 
 logger = get_logger(__name__)
+
+# Visual pacing between consecutive assistant bubbles (plan §2.4).
+BUBBLE_BREAK_MIN_SECONDS = 0.5
+BUBBLE_BREAK_MAX_SECONDS = 1.5
 
 
 @dataclass
@@ -29,6 +36,7 @@ class _LLMTurnResult:
     final_usage_payload: dict | None
     turn_duration_ms: int
     emotion: str | None = None
+    action: str | None = None
     spatial_locale: str | None = None
     spatial_target: str | None = None
 
@@ -130,7 +138,8 @@ async def _stream_llm_response(
         # sees an error frame followed by content from the next provider.
         raise
 
-    turn_content = ""
+    turn_parts: list[str] = []  # one entry per bubble (joined text of its chunks)
+    bubble_parts: list[str] = []  # chunks of the current bubble
     tool_calls_dict: dict[int, dict] = {}
     final_prompt_tokens = final_completion_tokens = 0
     final_usage_payload: dict | None = None
@@ -145,7 +154,29 @@ async def _stream_llm_response(
 
     scrubber = StreamingThinkScrubber()
     affect = AffectScrubber(allowed_emotions)
-    clean_tail = ""  # assigned in try; read in finally to flush on stream errors
+    bubbles = BubbleSplitter()
+
+    async def _emit_bubble_events(events: list[BubbleEvent]) -> None:
+        for event in events:
+            if event.is_break:
+                # The --- separator is transport-only: emit the break frame for
+                # the renderer, but never fold it into turn_content. That text is
+                # persisted AND shipped as message.complete.text, which the
+                # renderer feeds to TTS — a spoken "---" must not leak.
+                if bubble_parts:
+                    turn_parts.append("".join(bubble_parts))
+                    bubble_parts.clear()
+                await emitter.send_json({"type": "bubble.break"})
+                # Visual pacing between consecutive bubbles: let bubble 1
+                # settle before bubble 2 starts streaming.
+                await asyncio.sleep(random.uniform(BUBBLE_BREAK_MIN_SECONDS, BUBBLE_BREAK_MAX_SECONDS))
+            elif event.text:
+                bubble_parts.append(event.text)
+                await emitter.send_json({"type": "chunk", "content": event.text})
+
+    async def _feed_clean(clean_text: str) -> None:
+        if clean_text:
+            await _emit_bubble_events(bubbles.feed(clean_text))
 
     try:
         try:
@@ -165,10 +196,7 @@ async def _stream_llm_response(
                     continue
                 delta = chunk.choices[0].delta
                 if delta and delta.content:
-                    clean_text = scrubber.feed(affect.feed(delta.content))
-                    if clean_text:
-                        turn_content += clean_text
-                        await emitter.send_json({"type": "chunk", "content": clean_text})
+                    await _feed_clean(scrubber.feed(affect.feed(delta.content)))
                 if delta and delta.tool_calls:
                     for tc in delta.tool_calls:
                         _accumulate_tool_call_delta(tool_calls_dict, tc)
@@ -187,18 +215,22 @@ async def _stream_llm_response(
         # Flush affect's residual buffer through the think scrubber so any
         # ``<think>`` fragments buffered during a tag-strip window also get
         # filtered.
-        clean_tail = scrubber.feed(affect.flush()) + scrubber.flush()
+        await _feed_clean(scrubber.feed(affect.flush()) + scrubber.flush())
     finally:
-        # Always flush (success OR stream-raise path) so text buffered in a
-        # half-open ``<reasoning>`` block lands in the assistant Message
-        # even when ``call_with_retry`` exhausted retries mid-stream.
-        if clean_tail:
-            turn_content += clean_tail
-            await emitter.send_json({"type": "chunk", "content": clean_tail})
+        # Flush the bubble splitter so residual buffered text lands even when
+        # the stream died mid-chunk. A trailing separator is dropped.
+        await _emit_bubble_events(bubbles.flush())
+
+    # Close out the final bubble. An empty trailing bubble (stream ended right
+    # after a break) is dropped — bubble_parts is empty then, so nothing is
+    # appended and turn_parts already holds the earlier bubble.
+    if bubble_parts:
+        turn_parts.append("".join(bubble_parts))
 
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
 
     tool_calls_list = list(tool_calls_dict.values())  # insertion order == streaming order
+    turn_content = "\n\n".join(turn_parts)
 
     return _LLMTurnResult(
         turn_content=turn_content,
@@ -208,6 +240,7 @@ async def _stream_llm_response(
         final_usage_payload=final_usage_payload,
         turn_duration_ms=turn_duration_ms,
         emotion=affect.emotion,
+        action=affect.action,
         spatial_locale=affect.spatial_locale,
         spatial_target=affect.spatial_target,
     )

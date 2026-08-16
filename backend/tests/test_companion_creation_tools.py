@@ -1,0 +1,112 @@
+from services.chat.bubble import BubbleSplitter
+from services.companion import BUILTIN_STATE_CLIPS, builtin_action_clips
+from services.tools import REGISTRY
+
+
+def _evs(s: BubbleSplitter, text: str) -> list[str]:
+    out = []
+    for e in s.feed(text):
+        out.append("<break>" if e.is_break else e.text)
+    return out
+
+
+def test_bubble_splitter_basic():
+    s = BubbleSplitter()
+    assert _evs(s, "hello\n\n---\n\nworld") == ["hello", "<break>", "world"]
+    assert s.flush() == []
+
+
+def test_bubble_splitter_separator_split_across_chunks():
+    s = BubbleSplitter()
+    assert _evs(s, "hello\n\n--") == ["hello"]
+    assert _evs(s, "-\n\nworld") == ["<break>", "world"]
+    assert s.flush() == []
+
+
+def test_bubble_splitter_single_dash_separator():
+    s = BubbleSplitter()
+    assert _evs(s, "first\n---\nsecond") == ["first", "<break>", "second"]
+    assert s.flush() == []
+
+
+def test_bubble_splitter_no_separator_is_plain_text():
+    s = BubbleSplitter()
+    assert _evs(s, "just text") == ["just text"]
+    assert s.flush() == []
+
+
+def test_bubble_splitter_trailing_separator_dropped_on_flush():
+    s = BubbleSplitter()
+    # A trailing separator has no second bubble: flush must not surface a break
+    # or the literal "---".
+    assert _evs(s, "only one\n\n---\n\n") == ["only one", "<break>"]
+    assert s.flush() == []
+
+
+def test_bubble_splitter_trailing_newline_preserved_on_flush():
+    s = BubbleSplitter()
+    assert _evs(s, "line one\nline two\n") == ["line one\nline two"]
+    assert [e.text for e in s.flush()] == ["\n"]
+
+
+def test_bubble_splitter_trailing_incomplete_dash_stripped_on_flush():
+    s = BubbleSplitter()
+    assert _evs(s, "statement\n--") == ["statement"]
+    assert s.flush() == []
+
+
+def test_builtin_action_clips_exclude_state_clips():
+    biped = builtin_action_clips("biped")
+    assert "idle" not in biped
+    assert "thinking" not in biped
+    assert "clap" in biped
+    assert "stomp_angry" in biped
+    assert len(biped) == len(builtin_action_clips("unknown_rig"))  # biped fallback
+
+
+def test_builtin_state_clips_are_the_nine_core_states():
+    assert BUILTIN_STATE_CLIPS == {
+        "idle",
+        "listening",
+        "thinking",
+        "speaking",
+        "working",
+        "sleeping",
+        "interacting",
+        "emotional_idle",
+        "disconnected",
+    }
+
+
+def test_create_animation_and_expression_registered():
+    assert REGISTRY.get_schema(0, "create_animation") is not None
+    assert REGISTRY.get_schema(0, "create_expression") is not None
+
+def test_affect_trace_content():
+    from services.chat.persistence import _affect_trace_content
+
+    assert _affect_trace_content("pout", None) == "[affect:pout]"
+    assert _affect_trace_content("pout", "stomp_angry") == "[affect:pout]\n[action:stomp_angry]"
+    assert _affect_trace_content("neutral", "stomp_angry") == "[action:stomp_angry]"
+    assert _affect_trace_content(None, None) == ""
+    assert _affect_trace_content("neutral", None) == ""
+
+
+def test_affect_trace_reaches_llm_context():
+    """status_affect rows must NOT be filtered out of the LLM context — an
+    affect-only reaction has to survive into the next turn so the companion
+    remembers it expressed a body-language reply."""
+    from modules.conversation import Message
+    from services.chat.turn_inputs import _history_to_messages
+    from services.conversation import AFFECT_TRACE_SUBTYPE
+
+    msgs = [
+        Message(role="user", content="你太懒了"),
+        Message(role="assistant", content="[affect:pout]", subtype=AFFECT_TRACE_SUBTYPE),
+        Message(role="assistant", content="（戳了戳精灵）", subtype="status_reaction"),
+    ]
+    out = _history_to_messages(msgs, "sys", drop_tool_intermediates=True)
+    assistant_contents = [m["content"] for m in out if m.get("role") == "assistant"]
+
+    assert "[affect:pout]" in assistant_contents
+    assert "（戳了戳精灵）" not in assistant_contents  # status_reaction is UI-only

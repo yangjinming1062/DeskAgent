@@ -36,10 +36,10 @@ async def test_disturbance_tier_store_defaults_and_normalizes(SessionLocal):
 async def test_send_message_companion_path_emits_ws_event(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str, str | None]] = []
+    captured: list[tuple[int, str, str | None, float | None]] = []
 
-    async def _emit(uid, text, affect=None):
-        captured.append((uid, text, affect))
+    async def _emit(uid, text, affect=None, followup_timeout_seconds=None):
+        captured.append((uid, text, affect, followup_timeout_seconds))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
 
@@ -55,17 +55,17 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
     assert result["success"] is True
     assert result["channel"] == "companion"
     assert result["quiet_suppressed"] is False
-    assert captured == [(7, "你好呀，想我了吗？", None)]
+    assert captured == [(7, "你好呀，想我了吗？", None, None)]
 
 
 @pytest.mark.asyncio
 async def test_send_message_companion_path_emits_with_affect(monkeypatch):
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str, str | None]] = []
+    captured: list[tuple[int, str, str | None, float | None]] = []
 
-    async def _emit(uid, text, affect=None):
-        captured.append((uid, text, affect))
+    async def _emit(uid, text, affect=None, followup_timeout_seconds=None):
+        captured.append((uid, text, affect, followup_timeout_seconds))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
 
@@ -79,7 +79,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
     )
 
     assert result["success"] is True
-    assert captured == [(3, "晚上好呀！", "happy")]
+    assert captured == [(3, "晚上好呀！", "happy", None)]
 
 
 @pytest.mark.asyncio
@@ -154,10 +154,10 @@ async def test_send_message_normal_tier_emits(monkeypatch):
     """P0-5: normal tier (or any non-quiet) lets the WSEvent through."""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
-    captured: list[tuple[int, str, str | None]] = []
+    captured: list[tuple[int, str, str | None, float | None]] = []
 
-    async def _emit(uid, text, affect=None):
-        captured.append((uid, text, affect))
+    async def _emit(uid, text, affect=None, followup_timeout_seconds=None):
+        captured.append((uid, text, affect, followup_timeout_seconds))
 
     monkeypatch.setattr(smt, "_emit_companion_message", _emit)
 
@@ -171,7 +171,7 @@ async def test_send_message_normal_tier_emits(monkeypatch):
     )
 
     assert result["success"] is True
-    assert captured == [(7, "hi", "happy")]
+    assert captured == [(7, "hi", "happy", None)]
 
 
 # ── Onboarding per-field persistence (design §7.5) ──

@@ -40,7 +40,12 @@ const EMOTION_PRESETS: Record<string, Record<string, number>> = {
   sleepy: { eyelidDroop: 0.7, jawOpen: 0.1, browDown: 0.2 },
   curious: { browUp: 0.4, smile: 0.2 },
   embarrassed: { cheekRaise: 0.5, eyelidDroop: 0.3, smile: 0.2 },
-  apologetic: { frown: 0.4, browDown: 0.4, eyelidDroop: 0.2 }
+  apologetic: { frown: 0.4, browDown: 0.4, eyelidDroop: 0.2 },
+  pout: { frown: 0.6, browDown: 0.4, cheekRaise: 0.3 },
+  angry: { browDown: 0.8, frown: 0.7, eyeSquint: 0.4 },
+  smug: { smile: 0.6, smileR: 0.4, browUp: 0.3 },
+  scared: { eyeWide: 0.8, browUp: 0.7, jawOpen: 0.2 },
+  relieved: { smile: 0.5, eyelidDroop: 0.4, cheekRaise: 0.2 }
 }
 
 export class MorphController {

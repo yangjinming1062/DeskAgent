@@ -412,3 +412,52 @@ def test_affect_scrubber_truncated_spatial_flush():
     assert scrubber.flush() == ""
     # Partial spatial doesn't expose a captured locale/target — the renderer
     # treats it as no cue, the user never sees the literal fragment.
+
+
+def test_affect_scrubber_strips_action_narration():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:pout]\n*（气鼓鼓地别过头去）*") + scrubber.flush()
+    assert clean == ""
+    assert scrubber.emotion == "pout"
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:happy]\n*（开心地笑）*\n你好呀！") + scrubber.flush()
+    assert clean == "你好呀！"
+    assert scrubber.emotion == "happy"
+
+
+def test_affect_scrubber_action_narration_split_across_chunks():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    assert scrubber.feed("[affect:shy]\n*（红着脸低") == ""
+    assert scrubber.feed("下头）*\n") == ""
+    assert scrubber.feed("你讨厌！") == "你讨厌！"
+    assert scrubber.emotion == "shy"
+
+
+def test_affect_scrubber_truncated_action_flush():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    assert scrubber.feed("[affect:angry]\n*（生闷气") == ""
+    assert scrubber.flush() == ""
+    assert scrubber.emotion == "angry"
+
+
+def test_affect_scrubber_parses_action_tag():
+    from services.chat.affect import AffectScrubber
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:angry]\n[action:turn_away]\n") + scrubber.flush()
+    assert clean == ""
+    assert scrubber.emotion == "angry"
+    assert scrubber.action == "turn_away"
+
+    scrubber = AffectScrubber()
+    clean = scrubber.feed("[affect:happy]\n[action:wave]\n你好呀！") + scrubber.flush()
+    assert clean == "你好呀！"
+    assert scrubber.emotion == "happy"
+    assert scrubber.action == "wave"

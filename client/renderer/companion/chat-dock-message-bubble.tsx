@@ -4,6 +4,10 @@ import type { ChatMessage } from './chat-store'
 const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'tool_summary', 'daily_summary', 'compress_summary'])
 // Poke/drag traces: side-aligned but visually recessive.
 const STATUS_TRACE_SUBTYPES = new Set(['status_interaction', 'status_reaction'])
+// Body-language-only reply (affect/action with no text): persisted so the LLM
+// context stays complete, but rendered as a recessive trace — the 3D already
+// expressed it live, so the transcript only marks "the companion reacted here".
+const AFFECT_TRACE_SUBTYPE = 'status_affect'
 
 export function MessageBubble({ message }: { message: ChatMessage }): React.JSX.Element {
   const subtype = message.subtype || ''
@@ -23,6 +27,14 @@ export function MessageBubble({ message }: { message: ChatMessage }): React.JSX.
     return (
       <div className={`my-0.5 flex ${isUser ? 'justify-end' : 'justify-start'} px-2`}>
         <div className="max-w-[80%] text-[11px] italic text-white/40">{message.text}</div>
+      </div>
+    )
+  }
+
+  if (subtype === AFFECT_TRACE_SUBTYPE) {
+    return (
+      <div className="my-0.5 flex justify-start px-2">
+        <div className="max-w-[80%] text-[11px] italic text-white/40">😶 用表情/动作回应了</div>
       </div>
     )
   }

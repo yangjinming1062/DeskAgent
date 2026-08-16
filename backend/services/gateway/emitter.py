@@ -8,6 +8,7 @@ from .jsonrpc import JsonRpcDispatcher
 _TRANSLATED: dict[str, str] = {
     "chunk": "message.delta",
     "message.start": "message.start",
+    "bubble.break": "message.break",
     "message.complete": "message.complete",
     "tool_start": "tool.start",
     "tool_end": "tool.complete",
@@ -66,6 +67,8 @@ class JsonRpcEmitter:
                 **({"usage": usage} if isinstance(usage, dict) else {}),
             }
         if raw_type == "message.start":
+            return {}
+        if raw_type == "bubble.break":
             return {}
         # tool_call
         return {"name": data.get("name"), "args": data.get("args"), "call_id": data.get("call_id")}

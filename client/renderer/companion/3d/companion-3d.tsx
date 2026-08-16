@@ -5,6 +5,7 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $chatOpen } from '@/companion/chat-store'
 import {
   $clipOverride,
+  $spriteAction,
   $spriteEmotion,
   $spriteState,
   type SpriteEmotion,
@@ -49,10 +50,11 @@ import { subscribePowerProfile } from './power-signals'
 interface CharacterSnapshot {
   state: SpriteStateName
   emotion: SpriteEmotion | null
+  action: string | null
 }
 
 function captureSpriteSnapshot(): CharacterSnapshot {
-  return { state: $spriteState.get(), emotion: $spriteEmotion.get() }
+  return { state: $spriteState.get(), emotion: $spriteEmotion.get(), action: $spriteAction.get() }
 }
 
 export function Companion3D(): React.JSX.Element {
@@ -85,7 +87,8 @@ export function Companion3D(): React.JSX.Element {
 
       const initial = captureSpriteSnapshot()
       eng.character.applyState(initial.state, initial.emotion, {
-        companionTags: $personalityTags.get()
+        companionTags: $personalityTags.get(),
+        action: initial.action
       })
 
       const initialGenerated = $generatedClips.get()
@@ -99,7 +102,8 @@ export function Companion3D(): React.JSX.Element {
         const override = state === 'interacting' ? $clipOverride.get() : undefined
         eng.character.applyState(state, $spriteEmotion.get(), {
           companionTags: tags,
-          clipOverride: override
+          clipOverride: override,
+          action: $spriteAction.get()
         })
 
         if (state !== 'interacting') {
@@ -110,7 +114,8 @@ export function Companion3D(): React.JSX.Element {
       const unsubEmotion = $spriteEmotion.listen(emotion => {
         eng.character.applyState($spriteState.get(), emotion, {
           companionTags: $personalityTags.get(),
-          customExpressions: $expressions.get()
+          customExpressions: $expressions.get(),
+          action: $spriteAction.get()
         })
       })
 

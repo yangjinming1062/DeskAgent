@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { $chatSessionId, setAssistantError, setChatSession } from '@/companion/chat-store'
+import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { getDeskAgentConfig } from '@/shared/deskagent'
 
@@ -130,14 +130,15 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     if (text) {
       try {
         const sessionId = await ensureSession()
+        $chatTurnInFlight.set(true)
         await requestGateway('prompt.submit', { session_id: sessionId, text })
         await onTranscribed?.(text)
       } catch (err) {
+        $chatTurnInFlight.set(false)
+        setSpriteState('idle')
         setAssistantError(err instanceof Error ? err.message : '发送失败')
       }
     }
-
-    setSpriteState('idle')
   }, [requestGateway, onTranscribed, ensureSession])
 
   stopRef.current = stop

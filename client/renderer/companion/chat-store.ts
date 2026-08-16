@@ -1,5 +1,8 @@
 import { atom } from 'nanostores'
 
+import { setSpriteState } from '@/companion/companion-store'
+import { sleep } from '@/shared/lib/utils'
+import { $gateway } from '@/shared/store/gateway'
 import type { SessionMessage } from '@/shared/types/deskagent'
 
 export interface ChatMessage {
@@ -30,6 +33,7 @@ export function setChatOpen(open: boolean): void {
 }
 
 export function setChatSession(id: string | null): void {
+  clearPendingPrompts()
   $chatSessionId.set(id)
 }
 
@@ -93,18 +97,159 @@ export function pushUserMessage(text: string, attachments?: string[]): string {
   return id
 }
 
-// Begin a streaming assistant segment. Called on `message.start`. If the last
-// message is already a streaming assistant one (e.g. back-to-back starts after
-// a tool round), finalize it in place first so segments don't merge.
+export interface PendingPromptItem {
+  text: string
+  attachments?: string[]
+}
+
+export const $pendingPromptBatch = atom<PendingPromptItem[]>([])
+
+export function pushPendingPrompt(item: PendingPromptItem): void {
+  $pendingPromptBatch.set([...$pendingPromptBatch.get(), item])
+}
+
+export function drainPendingPrompts(): PendingPromptItem[] {
+  const items = $pendingPromptBatch.get()
+  $pendingPromptBatch.set([])
+
+  return items
+}
+
+export function clearPendingPrompts(): void {
+  $pendingPromptBatch.set([])
+}
+
+export const $chatTurnInFlight = atom<boolean>(false)
+
+// Set when the backend emitted a bubble.break during the in-flight turn — used
+// so message.complete finalizes the LAST bubble with its own streamed text
+// instead of overwriting it with the full multi-bubble turn text.
+export const $turnHadBubbleBreak = atom<boolean>(false)
+
+export function setTurnHadBubbleBreak(v: boolean): void {
+  $turnHadBubbleBreak.set(v)
+}
+
+// Coalescing window for rapid-fire user messages (DESIGN §6.6 scenario 3):
+// messages sent within this window are batched into ONE prompt.submit → one
+// LLM call. This is an intentional debounce, NOT a send delay — schedulePendingFlush
+// is reset on every keystroke-send, and the batch is drained immediately on
+// message.complete / error / user stop via submitPendingBatch / handleStop.
+const FLUSH_DEBOUNCE_MS = 4000
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+export function schedulePendingFlush(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+  }
+
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    submitPendingBatch()
+  }, FLUSH_DEBOUNCE_MS)
+}
+
+export function cancelPendingFlush(): void {
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+}
+
+/** Drain the pending prompt batch and submit it as one coalesced turn. */
+export function submitPendingBatch(): void {
+  if ($chatTurnInFlight.get()) {
+    return
+  }
+
+  const sessionId = $chatSessionId.get()
+  const gateway = $gateway.get()
+
+  if (!sessionId || !gateway || gateway.connectionState !== 'open') {
+    return
+  }
+
+  const pendingBatch = drainPendingPrompts()
+
+  if (pendingBatch.length === 0) {
+    return
+  }
+
+  $chatTurnInFlight.set(true)
+
+  const batchPayload = {
+    session_id: sessionId,
+    batch: pendingBatch.map(p => ({
+      text: p.text,
+      ...(p.attachments?.length ? { attachments: p.attachments.map(file_url => ({ file_url, type: 'image' })) } : {})
+    }))
+  }
+
+  const submitWithRetry = async (attempt = 0): Promise<void> => {
+    const g = $gateway.get()
+
+    if (!g || g.connectionState !== 'open') {
+      $chatTurnInFlight.set(false)
+
+      return
+    }
+
+    try {
+      setSpriteState('thinking')
+      await g.request('prompt.submit', batchPayload)
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+
+      if (errMsg.includes('in-flight') && attempt < 3) {
+        await sleep(50 * Math.pow(2, attempt))
+
+        return submitWithRetry(attempt + 1)
+      }
+
+      setAssistantError(err instanceof Error ? err.message : '发送失败')
+      setSpriteState('idle')
+      $chatTurnInFlight.set(false)
+    }
+  }
+
+  void submitWithRetry()
+}
+
+// Ensure an active streaming assistant bubble exists before populating delta or tool state.
 export function beginAssistantMessage(): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
-  const rest = last?.streaming ? [...msgs.slice(0, -1), { ...last, streaming: false }] : msgs
+
+  if (last?.role === 'assistant' && last.streaming) {
+    if (!last.text.trim() && !last.toolName && !last.error && !last.cancelled) {
+      // Prior streaming bubble has no visible text or tools; reuse it to prevent ghost "…" bubbles
+      return
+    }
+
+    const finalized: ChatMessage = { ...last, streaming: false }
+    const id = nextId()
+    $chatMessages.set([...msgs.slice(0, -1), finalized, { id, role: 'assistant', text: '', streaming: true }])
+
+    return
+  }
+
   const id = nextId()
-  $chatMessages.set([...rest, { id, role: 'assistant', text: '', streaming: true }])
+  $chatMessages.set([...msgs, { id, role: 'assistant', text: '', streaming: true }])
+}
+
+export function ensureAssistantMessage(): void {
+  const msgs = $chatMessages.get()
+  const last = msgs[msgs.length - 1]
+
+  if (last && last.role === 'assistant' && last.streaming) {
+    return
+  }
+
+  beginAssistantMessage()
 }
 
 export function appendAssistantDelta(text: string): void {
+  ensureAssistantMessage()
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
 
@@ -116,6 +261,7 @@ export function appendAssistantDelta(text: string): void {
 }
 
 export function setAssistantTool(name: string | null): void {
+  ensureAssistantMessage()
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
 
@@ -130,16 +276,20 @@ export function finalizeAssistantMessage(text?: string): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
 
-  if (!last) {
+  if (!last || last.role !== 'assistant') {
     return
   }
 
-  const finalized: ChatMessage = { ...last, streaming: false, toolName: null }
+  const finalStr = typeof text === 'string' ? text : last.text
 
-  if (typeof text === 'string') {
-    finalized.text = text
+  // If the assistant message is empty and has no tool/error/cancellation, prune it to prevent ghost bubble
+  if (!finalStr.trim() && !last.toolName && !last.error && !last.cancelled && !last.attachments?.length) {
+    $chatMessages.set(msgs.slice(0, -1))
+
+    return
   }
 
+  const finalized: ChatMessage = { ...last, text: finalStr, streaming: false, toolName: null }
   $chatMessages.set([...msgs.slice(0, -1), finalized])
 }
 
@@ -175,6 +325,7 @@ export function setAssistantCancelled(): void {
 }
 
 export function clearChat(): void {
+  clearPendingPrompts()
   $chatMessages.set([])
   $chatSessionId.set(null)
 }

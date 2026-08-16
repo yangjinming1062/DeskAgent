@@ -13,9 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..companion import (
     build_system_prompt_extras,
     build_user_profile_extras,
+    builtin_action_clips,
     format_auto_inject_block,
     format_inferred_profile_block,
     format_proactive_memory_block,
+    get_active_model,
     retrieve_proactive_memories,
 )
 from ..conversation import MAIN_KIND, UI_ONLY_SUBTYPES
@@ -90,6 +92,59 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
+def _normalize_content_to_parts(content: str | list) -> list[dict]:
+    """Normalize str or list content into a list of multimodal parts dicts."""
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}] if content else []
+    if isinstance(content, list):
+        parts: list[dict] = []
+        for p in content:
+            if isinstance(p, dict):
+                parts.append(p)
+            elif isinstance(p, str):
+                parts.append({"type": "text", "text": p})
+        return parts
+    return []
+
+
+def _compact_adjacent_user_messages(messages: list[dict]) -> list[dict]:
+    """Fold consecutive 'user' role messages into a single message to satisfy
+    providers with strict alternating-role validation (e.g. Anthropic, Gemini).
+    Handles both plain strings and multimodal parts without raising TypeError.
+    """
+    compacted: list[dict] = []
+    for msg in messages:
+        if not compacted or msg.get("role") != "user" or compacted[-1].get("role") != "user":
+            compacted.append(dict(msg))
+            continue
+
+        prev = compacted[-1]
+        prev_parts = _normalize_content_to_parts(prev.get("content", ""))
+        curr_parts = _normalize_content_to_parts(msg.get("content", ""))
+
+        merged_parts: list[dict] = []
+        prev_texts = [p["text"] for p in prev_parts if p.get("type") == "text" and isinstance(p.get("text"), str)]
+        curr_texts = [p["text"] for p in curr_parts if p.get("type") == "text" and isinstance(p.get("text"), str)]
+        all_texts = prev_texts + curr_texts
+
+        if all_texts:
+            merged_parts.append({"type": "text", "text": "\n\n".join(all_texts)})
+
+        for p in prev_parts:
+            if p.get("type") != "text":
+                merged_parts.append(p)
+        for p in curr_parts:
+            if p.get("type") != "text":
+                merged_parts.append(p)
+
+        if all(p.get("type") == "text" for p in merged_parts):
+            prev["content"] = "\n\n".join(p["text"] for p in merged_parts) if merged_parts else ""
+        else:
+            prev["content"] = merged_parts
+
+    return compacted
+
+
 def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> list[dict]:
     """``drop_tool_intermediates`` is only set for the main conversation, where
     every tool-using turn leaves a ``tool_summary`` row standing in for the
@@ -119,7 +174,7 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_too
             m["tool_calls"] = parsed
         messages.append(m)
 
-    return messages
+    return _compact_adjacent_user_messages(messages)
 
 
 async def _build_turn_inputs(
@@ -182,6 +237,16 @@ async def _build_turn_inputs(
     proactive_rows = await retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
     proactive_memory_extras = format_proactive_memory_block(proactive_rows)
     custom_expressions = await resolve_custom_expressions(db, user_id) if persona is not None else []
+    available_actions: list[str] = []
+    active_model = await get_active_model(db, user_id)
+    if active_model is not None:
+        clips = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
+        if isinstance(clips, list):
+            available_actions = [str(c.get("name")) for c in clips if isinstance(c, dict) and c.get("name")]
+        # Merge the desktop's built-in procedural clips (the render-time library)
+        # so the LLM can reference the full [action:...] token set, not only the
+        # model-specific generated clips. Dedupe + sort for a stable prompt.
+        available_actions = sorted(set(available_actions) | set(builtin_action_clips(active_model.rig_type)))
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -195,6 +260,7 @@ async def _build_turn_inputs(
         inferred_profile_extras=inferred_profile_extras,
         proactive_memory_extras=proactive_memory_extras,
         custom_expressions=custom_expressions,
+        available_actions=available_actions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)

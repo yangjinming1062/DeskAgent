@@ -33,7 +33,12 @@ const EMOTION_SEMANTICS: Record<string, string> = {
   sleepy: '困倦地打哈欠',
   curious: '好奇地探头张望',
   embarrassed: '尴尬地挠头',
-  apologetic: '不好意思地道歉'
+  apologetic: '不好意思地道歉',
+  pout: '气鼓鼓地噘嘴傲娇',
+  angry: '生闷气微怒',
+  smug: '得意洋洋的小得意',
+  scared: '受惊害怕',
+  relieved: '如释重负地松了一口气'
 }
 
 /** The first-priority image: what static mode shows while it engages. */

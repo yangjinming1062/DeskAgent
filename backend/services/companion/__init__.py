@@ -1,6 +1,6 @@
 from . import asset_store, memory_admin, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
-from .animation_generator import RIG_DEFAULT_BONES, generate_animation_clips, get_rig_bones
+from .animation_generator import RIG_DEFAULT_BONES, generate_animation_clips, generate_named_animation_clip, get_rig_bones
 from .asset_store import (
     build_data_uri,
     build_signed_asset_url,
@@ -33,6 +33,7 @@ from .avatar_service import (
     resolve_uploaded_avatar_path,
 )
 from .blender_llm_pipeline import run_blender_llm_pipeline
+from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
 from .garment_service import run_garment_pipeline
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
@@ -44,6 +45,7 @@ from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memor
 from .model_service import (
     ModelGenerationError,
     ModelGenerationInProgressError,
+    emit_companion_assets_updated,
     emit_wardrobe_gift,
     emit_wardrobe_updated,
     generate_companion_model,
@@ -105,6 +107,8 @@ __all__ = [
     "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "ONBOARDING_FIELDS",
+    "BUILTIN_CLIPS_BY_RIG",
+    "BUILTIN_STATE_CLIPS",
     "RIG_DEFAULT_BONES",
     "AffectCheckResult",
     "AvatarGenerationError",
@@ -125,6 +129,7 @@ __all__ = [
     "asset_store",
     "avatar_response",
     "build_data_uri",
+    "builtin_action_clips",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
@@ -141,6 +146,7 @@ __all__ = [
     "delete_wardrobe_item",
     "design_voice",
     "discard_wardrobe_preview",
+    "emit_companion_assets_updated",
     "emit_wardrobe_gift",
     "emit_wardrobe_updated",
     "equip_wardrobe_item",
@@ -151,6 +157,7 @@ __all__ = [
     "format_memories_block",
     "format_proactive_memory_block",
     "generate_animation_clips",
+    "generate_named_animation_clip",
     "generate_avatar",
     "generate_companion_model",
     "generate_fullbody",

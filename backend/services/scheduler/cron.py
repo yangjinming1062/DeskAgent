@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -24,8 +25,9 @@ from modules.ws import WSEvent
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import Row
 
-from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES
+from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES, ProactiveState, get_user_proactive_record, record_user_outreach
 from services.disturbance import is_quiet
+from services.gateway.connection import MANAGER
 
 from .cron_jobs import _compute_next_run_at
 from .memory_consolidator import maybe_consolidate_one_user
@@ -223,6 +225,30 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     logger.info("cron: autonomous turn requested", extra={"user_id": user_id, "job_id": job_id})
 
 
+async def _maybe_run_proactive_followups(now: datetime) -> None:
+    """Scan users with an unanswered proactive outreach and trigger a follow-up autonomous turn."""
+    cur_time = time.monotonic()
+    online_uids = MANAGER.local_user_ids()
+    for uid in online_uids:
+        rec = get_user_proactive_record(uid)
+        if rec.state == ProactiveState.OUTREACHED and rec.followup_timeout_seconds > 0 and (cur_time - rec.last_outreach_ts) >= rec.followup_timeout_seconds:
+            if await is_quiet(uid):
+                continue
+
+            last_text = rec.last_proactive_text or "问候"
+            waited_minutes = round(rec.followup_timeout_seconds / 60)
+            prompt = (
+                f"[环境感知：你在大约 {waited_minutes} 分钟前向用户主动发送了：“{last_text}”，但用户一直没有回复你。"
+                "请根据你的人设性格（例如傲娇吐槽、轻微担心、自言自语或选择保持安静）决定是否要跟进。若要跟进发送消息，请调用 send_message_tool 工具，若决定不再打扰则直接结束回复。]"
+            )
+            # Advance state to FOLLOWUP_SENT to prevent re-triggering
+            record_user_outreach(uid, last_text)
+            async with session_scope() as db:
+                db.add(WSEvent(user_id=uid, event_type="cron.turn.request", payload=json.dumps({"job_id": -1, "prompt": prompt}, ensure_ascii=False)))
+                await db.commit()
+            logger.info("cron: proactive follow-up turn requested", extra={"user_id": uid, "last_outreach_text": last_text})
+
+
 async def _tick() -> None:
     """CAS-advance ``next_run_at`` for due jobs and request autonomous turns.
 
@@ -237,6 +263,7 @@ async def _tick() -> None:
     # would otherwise never trigger consolidation.
     await _maybe_run_memory_consolidator(now)
     await _maybe_run_autonomous_activity(now)
+    await _maybe_run_proactive_followups(now)
     due_jobs = await _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
         logger.warning("cron: tick over cap, deferred to next tick", extra={"due_count": len(due_jobs), "cap": _MAX_DUE_PER_TICK})

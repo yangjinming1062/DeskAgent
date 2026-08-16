@@ -1,7 +1,8 @@
-from modules.conversation import Conversation, Message
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from modules.conversation import Conversation, Message
 
 MAIN_KIND = "main"
 # Autonomous cron-driven turns run on a dedicated conversation so the renderer's
@@ -16,6 +17,12 @@ CRON_KIND = "cron"
 # status_proactive is intentionally NOT in this set — proactive assistant
 # messages are real conversation turns the user can reply to.
 UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "status_reaction"})
+
+# Body-language-only chat reply (an [affect:...]/[action:...] tag with no text).
+# Persisted as an assistant-role row so the NEXT turn's LLM context remembers the
+# companion reacted without speaking; the renderer shows it as a recessive trace,
+# not a text bubble. Deliberately NOT in UI_ONLY_SUBTYPES — it must reach the LLM.
+AFFECT_TRACE_SUBTYPE: str = "status_affect"
 
 HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
 

@@ -580,3 +580,93 @@ def test_truncate_marker_leads_when_no_user_in_prefix():
         out[1]["role"] == "user"
         and "removed for context window management" in out[1]["content"]
     )
+
+
+def test_compact_adjacent_user_messages_plain_text():
+    from services.chat.turn_inputs import _compact_adjacent_user_messages
+
+    input_msgs = [
+        {"role": "system", "content": "SYS"},
+        {"role": "user", "content": "今天好累"},
+        {"role": "user", "content": "老板又改需求了"},
+        {"role": "assistant", "content": "辛苦了！"},
+        {"role": "user", "content": "晚上吃火锅吗？"},
+    ]
+    out = _compact_adjacent_user_messages(input_msgs)
+    assert len(out) == 4
+    assert out[1]["role"] == "user"
+    assert out[1]["content"] == "今天好累\n\n老板又改需求了"
+    assert out[2]["role"] == "assistant"
+    assert out[3]["role"] == "user"
+    assert out[3]["content"] == "晚上吃火锅吗？"
+
+
+def test_compact_adjacent_user_messages_multimodal():
+    from services.chat.turn_inputs import _compact_adjacent_user_messages
+
+    input_msgs = [
+        {"role": "system", "content": "SYS"},
+        {"role": "user", "content": "看这张图"},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "还有这个"},
+                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
+            ],
+        },
+        {"role": "user", "content": "怎么修？"},
+    ]
+    out = _compact_adjacent_user_messages(input_msgs)
+    assert len(out) == 2
+    assert out[1]["role"] == "user"
+    assert isinstance(out[1]["content"], list)
+    texts = [p["text"] for p in out[1]["content"] if p.get("type") == "text"]
+    assert "看这张图\n\n还有这个\n\n怎么修？" in texts
+    images = [p["image_url"]["url"] for p in out[1]["content"] if p.get("type") == "image_url"]
+    assert images == ["https://example.com/a.png"]
+
+
+def test_proactive_state_machine_flow():
+    from services.conversation import ProactiveState, get_user_proactive_record, record_user_outreach, reset_user_outreach
+
+    uid = 998877
+    reset_user_outreach(uid)
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.IDLE
+
+    # 1. First proactive message
+    record_user_outreach(uid, "你今天过得好吗？")
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.OUTREACHED
+    assert rec.last_proactive_text == "你今天过得好吗？"
+
+    # 2. Follow-up triggered
+    record_user_outreach(uid, "喂～怎么不理我")
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.FOLLOWUP_SENT
+
+    # 3. Subsequent outreach suppressed
+    record_user_outreach(uid, "好吧")
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.SUPPRESSED
+
+    # 4. User replies -> reset to IDLE
+    reset_user_outreach(uid)
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.IDLE
+
+
+def test_proactive_state_records_followup_timeout():
+    from services.conversation import ProactiveState, get_user_proactive_record, record_user_outreach, reset_user_outreach
+
+    uid = 998878
+    reset_user_outreach(uid)
+    record_user_outreach(uid, "在吗？", followup_timeout_seconds=120.0)
+    rec = get_user_proactive_record(uid)
+    assert rec.state == ProactiveState.OUTREACHED
+    assert rec.followup_timeout_seconds == 120.0
+
+    # Omitted deadline means the LLM chose no follow-up.
+    reset_user_outreach(uid)
+    record_user_outreach(uid, "在吗？")
+    assert get_user_proactive_record(uid).followup_timeout_seconds == 0.0

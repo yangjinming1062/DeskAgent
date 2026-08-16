@@ -15,7 +15,7 @@ from .think_scrubber import StreamingThinkScrubber
 # is structural, not curated — adding a new public symbol in orchestrator /
 # turn_inputs / agent_delegate does NOT require updating it; __getattr__
 # resolves on demand.
-_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")
+_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate", "persistence")
 
 
 def __getattr__(name: str) -> Any:
@@ -36,6 +36,7 @@ __all__ = [
     "Emitter",
     "HeadlessEmitter",
     "build_session_messages",
+    "persist_extra_user_messages",
     "truncate_chat_history",
     "build_system_prompt",
     "build_system_prompt_parts",

@@ -38,7 +38,12 @@ export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
   'sleepy',
   'curious',
   'embarrassed',
-  'apologetic'
+  'apologetic',
+  'pout',
+  'angry',
+  'smug',
+  'scared',
+  'relieved'
 ])
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
@@ -47,6 +52,8 @@ export const $spriteState = atom<SpriteStateName>('idle')
 // disconnected→sleeping escalation so a gateway flap doesn't clobber an active call.
 export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
+// Optional structured action hint (e.g. turn_away) that refines the emotion clip.
+export const $spriteAction = atom<string | null>(null)
 export const $previousState = atom<SpriteStateName>('idle')
 export const $clipOverride = atom<string | null>(null)
 
@@ -119,7 +126,7 @@ export function setCompanionLifecycle(next: CompanionLifecycle): void {
 
 export function setSpriteState(
   name: SpriteStateName,
-  options?: { emotion?: SpriteEmotion; durationMs?: number; force?: boolean }
+  options?: { emotion?: SpriteEmotion; action?: string | null; durationMs?: number; force?: boolean }
 ): void {
   const current = $spriteState.get()
 
@@ -148,6 +155,7 @@ export function setSpriteState(
 
     if (options?.emotion) {
       $spriteEmotion.set(options.emotion)
+      $spriteAction.set(options.action ?? null)
     }
 
     $spriteState.set(name)
@@ -160,6 +168,7 @@ export function setSpriteState(
     transientTimer = setTimeout(() => {
       transientTimer = null
       $spriteEmotion.set(null)
+      $spriteAction.set(null)
       // Prefer the current state if a higher-priority one arrived mid-transient.
       const currentAfter = $spriteState.get()
       const storedPrev = $previousState.get()
@@ -183,6 +192,7 @@ export function setSpriteState(
   }
 
   $spriteEmotion.set(options?.emotion ?? null)
+  $spriteAction.set(options?.action ?? null)
   $spriteState.set(name)
 }
 

@@ -464,6 +464,19 @@ async def emit_wardrobe_updated(user_id: int) -> None:
         logger.warning("Failed to emit wardrobe.updated event", exc_info=True)
 
 
+async def emit_companion_assets_updated(user_id: int) -> None:
+    """Emit a ``companion.assets.updated`` event so an online client re-hydrates
+    generated animation clips + custom expressions after the companion creates
+    one live (``create_expression`` / ``create_animation`` tools). Mirrors
+    ``emit_wardrobe_updated`` for the clip/expression atoms."""
+    try:
+        async with SESSION_LOCAL() as db:
+            db.add(WSEvent(user_id=user_id, event_type="companion.assets.updated", payload="{}"))
+            await db.commit()
+    except Exception:
+        logger.warning("Failed to emit companion.assets.updated event", exc_info=True)
+
+
 async def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
     """Emit a ``wardrobe.gift`` event so an online client can hydrate wardrobe
     and announce the companion-generated gift proactively."""

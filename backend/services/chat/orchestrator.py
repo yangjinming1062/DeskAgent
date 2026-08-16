@@ -157,6 +157,9 @@ async def run_chat_turn(
                 break
 
             if not llm_result.tool_calls_list:
+                if invoked_tool_names:
+                    await asyncio.shield(persist_tool_summary(conv, invoked_tool_names))
+                    invoked_tool_names.clear()
                 await _persist_assistant_no_tool_turn(
                     conv,
                     user_id,
@@ -173,6 +176,7 @@ async def run_chat_turn(
                     current_messages,
                     track_task,
                     emotion=llm_result.emotion,
+                    action=llm_result.action,
                     spatial_locale=llm_result.spatial_locale,
                     spatial_target=llm_result.spatial_target,
                 )

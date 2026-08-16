@@ -300,3 +300,82 @@ async def generate_animation_clips(
     except Exception:
         logger.warning("Failed to generate animation clips via LLM", exc_info=True)
         return []
+
+
+_NAMED_CLIP_SYSTEM_PROMPT = (
+    "你是一个 3D 骨骼动画关键帧生成专家。请根据给定的骨骼列表、物种、骨骼类型以及动作描述，"
+    "为角色生成一个指定的 3D 动画 Clip 定义（JSON 对象）。\n"
+    "输出要求：\n"
+    "输出一个 JSON 对象（不是数组），格式如下：\n"
+    "{\n"
+    '  "name": "<name>",\n'
+    '  "duration": 2.0,\n'
+    '  "loop": false,\n'
+    '  "category": "interaction",\n'
+    '  "tags": ["...", "..."],\n'
+    '  "tracks": {\n'
+    '    "Head": [{"t": 0, "r": [0, 0, 0]}, {"t": 1.0, "r": [0.1, 0.2, 0]}, {"t": 2.0, "r": [0, 0, 0]}]\n'
+    "  }\n"
+    "}\n"
+    "规则与物理约束：\n"
+    "1. name 必须严格等于给定的动作名称；\n"
+    "2. tracks 的 key 必须严格来自给定的可用骨骼名列表；\n"
+    "3. 旋转 r 为欧拉角 [x, y, z]（单位弧度），通常范围在 [-1.5, 1.5] 之间，严禁过激形变；\n"
+    "4. loop 为 true 时，首帧 (t=0) 与尾帧 (t=duration) 的旋转值必须保持一致；\n"
+    "5. tags 字段需包含对应性格/动作标签；\n"
+    "6. 必须输出纯 JSON 对象，不要任何 markdown 说明。"
+)
+
+
+async def generate_named_animation_clip(
+    chat: ChatFn,
+    *,
+    name: str,
+    description: str,
+    rig_type: str,
+    bone_list: list[str] | None = None,
+    personality_tags: list[str] | None = None,
+    species: str = "人类",
+    category: str = "interaction",
+    user_id: int | None = None,
+    db: AsyncSession | None = None,
+) -> dict | None:
+    """Generate ONE animation clip with a caller-specified name + description.
+
+    Reuses :func:`validate_and_sanitize_clip` for the same bounds as the
+    nightly batch path, but forces the requested name so the LLM cannot rename
+    the clip. Returns the sanitized clip dict or ``None`` on any failure.
+    """
+    effective_bones = bone_list if bone_list else get_rig_bones(rig_type)
+    allowed_bones = set(effective_bones)
+    tags = list(personality_tags or [])
+
+    user_payload = (
+        f"动作名称: {name}\n"
+        f"动作描述: {description}\n"
+        f"物种: {species}\n"
+        f"骨骼类型: {rig_type}\n"
+        f"可用骨骼列表: {', '.join(effective_bones[:30])}\n"
+        f"动作分类: {category}\n"
+        f"性格/行为标签: {', '.join(tags)}\n"
+        f"请生成该动作的 Clip 定义（JSON 对象）："
+    )
+
+    try:
+        raw = await chat(db, user_id, _NAMED_CLIP_SYSTEM_PROMPT, user_payload)
+        cleaned_raw = raw.strip()
+        if cleaned_raw.startswith("```"):
+            cleaned_raw = cleaned_raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+
+        parsed = safe_json_loads(cleaned_raw, default=None)
+        if not isinstance(parsed, dict):
+            return None
+        # Force the requested name so a wayward model can't rename the clip.
+        parsed["name"] = name
+        sanitized = validate_and_sanitize_clip(parsed, allowed_bones)
+        if sanitized and not sanitized["tags"]:
+            sanitized["tags"] = tags[:2] if tags else []
+        return sanitized
+    except Exception:
+        logger.warning("Failed to generate named animation clip via LLM", exc_info=True)
+        return None

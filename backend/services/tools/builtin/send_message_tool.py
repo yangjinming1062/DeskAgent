@@ -5,7 +5,7 @@ from components import SESSION_LOCAL, get_logger, is_safe_outbound, safe_outboun
 from modules.conversation import Message
 from modules.ws import WSEvent
 
-from services.conversation import get_or_create_main_conversation
+from services.conversation import get_or_create_main_conversation, record_user_outreach
 from services.disturbance import is_quiet
 from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 WEBHOOK_TIMEOUT = 10.0
 
 
-async def _emit_companion_message(user_id: int, text: str, affect: str | None = None) -> None:
+async def _emit_companion_message(user_id: int, text: str, affect: str | None = None, followup_timeout_seconds: float | None = None) -> None:
     """Push a proactive companion message to the user's desktop via the WS
     outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
     and decides text-vs-affect-vs-bubble based on the user's disturbance tier.
@@ -32,6 +32,7 @@ async def _emit_companion_message(user_id: int, text: str, affect: str | None = 
         if text.strip():
             main_conv = await get_or_create_main_conversation(db, user_id)
             db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
+            record_user_outreach(user_id, text.strip(), followup_timeout_seconds)
         await db.commit()
 
 
@@ -41,7 +42,7 @@ async def _emit_companion_affect(user_id: int, emotion: str) -> None:
         await db.commit()
 
 
-async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, **kwargs) -> str:
+async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, follow_up_after_seconds: float | None = None, **kwargs) -> str:
     # Companion-native proactive path: no webhook ⇒ deliver straight to the
     # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
     # tool as the companion's proactive-reach-out channel).
@@ -66,7 +67,7 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
             if quiet:
                 await _emit_companion_affect(user_id, affect or "neutral")
             else:
-                await _emit_companion_message(user_id, message, affect=affect)
+                await _emit_companion_message(user_id, message, affect=affect, followup_timeout_seconds=follow_up_after_seconds)
         return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": quiet}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
@@ -106,6 +107,10 @@ SEND_MESSAGE_SCHEMA = {
             "affect": {
                 "type": "string",
                 "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (see system prompt Affect guidance for available emotions). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
+            },
+            "follow_up_after_seconds": {
+                "type": "number",
+                "description": "Optional. How many seconds to wait for the user's reply before proactively following up again. Choose a value fitting your persona and the current situation (e.g. an anxious/clingy persona follows up sooner, a calm/patient one waits longer). Omit if you do not intend to follow up.",
             },
         },
         "required": ["message"],

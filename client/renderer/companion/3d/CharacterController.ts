@@ -358,6 +358,7 @@ export class CharacterController {
       interactionBucket?: ReactionBucket
       clipOverride?: string | null
       customExpressions?: CompanionExpression[]
+      action?: string | null
     }
   ): void {
     this.currentState = state
@@ -376,7 +377,7 @@ export class CharacterController {
         clipName = resolveInteractionClip(ctx.interactionBucket, tags, library, available)
       } else if (state === 'emotional' && emotion) {
         // Tag-driven emotion clip selection
-        clipName = resolveEmotionClip(emotion, tags, library, available, ctx?.customExpressions)
+        clipName = resolveEmotionClip(emotion, tags, library, available, ctx?.customExpressions, ctx?.action)
       }
 
       // Spec state→clip map (MODEL_SPEC §3); last resort when no override / interaction / emotion clip resolves.

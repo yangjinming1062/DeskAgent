@@ -5,7 +5,7 @@ from components import get_logger
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
-# Built-in 17 baseline emotions (ARCHITECTURE §7.5). Unknown LLM tokens fall
+# Built-in baseline emotions (ARCHITECTURE §7.5). Unknown LLM tokens fall
 # back to ``neutral`` so a malformed emit doesn't poison renderer state.
 BUILTIN_EMOTIONS: frozenset[str] = frozenset(
     {
@@ -26,6 +26,11 @@ BUILTIN_EMOTIONS: frozenset[str] = frozenset(
         "curious",
         "embarrassed",
         "apologetic",
+        "pout",
+        "angry",
+        "smug",
+        "scared",
+        "relieved",
     }
 )
 
@@ -55,6 +60,17 @@ _SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)(?:,target:([^\]\n]+))?\]\n?",
 # the stream died mid-tag, so the user never sees ``[affect:foo``.
 _PARTIAL_AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)?", re.IGNORECASE)
 _PARTIAL_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)?(?:,target:([^\]\n]*))?", re.IGNORECASE)
+
+# Leading third-person action narration (asterisk-delimited), e.g. *（气鼓鼓地别过头去）*.
+# Stripped from the stream so it is never shown as text or spoken — only the
+# [affect:...] emotion drives the 3D reaction.
+_ACTION_NARRATION_RE = re.compile(r"^\s*\*[^*]*\*\s*")
+_PARTIAL_ACTION_RE = re.compile(r"^\s*\*[^*]*$")
+
+# Structured action tag: [action:slug] — the LLM names a specific physical
+# movement; the desktop maps it to a clip, falling back to the emotion valence.
+_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)\]\n?", re.IGNORECASE)
+_PARTIAL_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)?", re.IGNORECASE)
 
 # Generous upper bound — a real tag (including a long app-name target)
 # fits well under 256 chars; anything beyond that is unparseable input
@@ -89,8 +105,8 @@ async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> lis
         return []
 
 
-def build_affect_guidance(custom_expressions: list[Any] | None = None) -> str:
-    """Build affect guidance prompt including builtin emotions and user-custom expressions with their labels and descriptions."""
+def build_affect_guidance(custom_expressions: list[Any] | None = None, available_actions: list[str] | None = None) -> str:
+    """Build affect guidance prompt including builtin emotions, user-custom expressions, and available action animations."""
     emotions_set = set(BUILTIN_EMOTIONS)
     custom_desc_lines: list[str] = []
     if custom_expressions:
@@ -104,14 +120,23 @@ def build_affect_guidance(custom_expressions: list[Any] | None = None) -> str:
                     desc_str = f" ({label}: {desc})" if desc else f" ({label})"
                     custom_desc_lines.append(f"- {name}{desc_str}")
 
+    action_list = ""
+    if available_actions:
+        action_list = "Available action animations — choose [action:...] from exactly these names: " + ", ".join(sorted(set(available_actions))) + ".\n"
+
     guidance = (
         "# Companion Affect & Embodied Movement\n"
         "You are a companion with a visible on-screen 3D avatar. "
         "To convey your emotion and autonomously control your physical position/movement, "
-        "begin your text response with an affect tag and an optional spatial tag on their own lines:\n"
+        "begin your text response with an affect tag and optional action/spatial tags on their own lines:\n"
         "    [affect:EMOTION]\n"
+        "    [action:ACTION]  (optional; a specific movement in snake_case, e.g. turn_away / stomp / nod)\n"
         "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
-        "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n"
+        "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n" + action_list + "Note on Consecutive Bubbles:\n"
+        "- To send multiple short consecutive replies inside one turn (e.g. a quick answer followed by an afterthought), put a line containing only --- between consecutive replies; the desktop renders each segment as its own bubble with a brief pause. Do not overuse this.\n"
+        + "Note on Silent / Body Language Responses:\n"
+        "- To express purely through body language without speaking, output ONLY the [affect:EMOTION] tag (optionally with [action:ACTION]) and no text reply; the on-screen 3D avatar performs the emotion/action.\n"
+        "- If you accompany the body language with a spoken reply, put the reply text after the tags.\n"
     )
     if custom_desc_lines:
         guidance += "Custom emotion details:\n" + "\n".join(custom_desc_lines) + "\n"
@@ -129,26 +154,32 @@ def build_affect_guidance(custom_expressions: list[Any] | None = None) -> str:
 
 
 def _is_potential_prefix(buf: str) -> bool:
-    """Buffer might be a still-arriving tag prefix; keep buffering until
-    either a complete tag appears or a ``]`` rules it out."""
+    """Buffer might be a still-arriving tag or action-narration prefix."""
     s = buf.lstrip()
-    return s.startswith("[") and "]" not in s
+    if s.startswith("[") and "]" not in s:
+        return True
+    return s.startswith("*") and "*" not in s[1:]
 
 
 class AffectScrubber:
-    """Strip leading ``[affect:emotion]`` and ``[spatial:locale,target:app]``
-    markers from an LLM stream and surface the captured values."""
+    """Strip leading ``[affect:...]``/``[spatial:...]`` markers and asterisk
+    action narrations from an LLM stream, surfacing the captured values."""
 
     def __init__(self, allowed_emotions: frozenset[str] | None = None) -> None:
         self._buf: str = ""
         self._emotion: str | None = None
         self._spatial_locale: str | None = None
         self._spatial_target: str | None = None
+        self._action: str | None = None
         self._allowed: frozenset[str] = allowed_emotions if allowed_emotions is not None else BUILTIN_EMOTIONS
 
     @property
     def emotion(self) -> str | None:
         return self._emotion
+
+    @property
+    def action(self) -> str | None:
+        return self._action
 
     @property
     def spatial_locale(self) -> str | None:
@@ -177,6 +208,14 @@ class AffectScrubber:
         m_spat = _PARTIAL_SPATIAL_RE.match(self._buf)
         if m_spat:
             self._consume(m_spat, strip_bracket=True)
+        m_act_tag = _PARTIAL_ACTION_TAG_RE.match(self._buf)
+        if m_act_tag:
+            if m_act_tag.group(1):
+                self._set_action(m_act_tag.group(1))
+            self._consume(m_act_tag, strip_bracket=True)
+        m_act = _PARTIAL_ACTION_RE.match(self._buf)
+        if m_act:
+            self._consume(m_act)
         out, self._buf = self._buf, ""
         return out
 
@@ -200,6 +239,15 @@ class AffectScrubber:
                 self._set_spatial(m_spat.group(1), m_spat.group(2))
                 self._consume(m_spat)
                 continue
+            m_act_tag = _ACTION_TAG_RE.match(self._buf)
+            if m_act_tag:
+                self._set_action(m_act_tag.group(1))
+                self._consume(m_act_tag)
+                continue
+            m_act = _ACTION_NARRATION_RE.match(self._buf)
+            if m_act:
+                self._consume(m_act)
+                continue
             return
 
     def _set_emotion(self, token: str | None) -> None:
@@ -214,6 +262,11 @@ class AffectScrubber:
         normalized = loc.lower()
         self._spatial_locale = normalized if normalized in ALLOWED_LOCALES else None
         self._spatial_target = target
+
+    def _set_action(self, token: str | None) -> None:
+        if token is None:
+            return
+        self._action = token.lower()
 
     def _consume(self, m: re.Match[str], *, strip_bracket: bool = False) -> None:
         """Advance ``self._buf`` past the match; optionally eat a trailing

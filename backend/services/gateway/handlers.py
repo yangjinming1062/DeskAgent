@@ -29,7 +29,7 @@ from modules.system import ChatMessageRequest, ChatRequest
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.chat import build_session_messages, load_user_settings, run_chat_turn
+from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
 from services.companion import (
     AvatarGenerationError,
     PersonaValidationError,
@@ -52,7 +52,7 @@ from services.companion import (
     submit_onboarding_field,
     update_memory,
 )
-from services.conversation import get_main_conversation, get_or_create_main_conversation
+from services.conversation import get_main_conversation, get_or_create_main_conversation, reset_user_outreach
 from services.disturbance import set_disturbance_tier
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
 from services.tools import REGISTRY
@@ -509,9 +509,16 @@ def _register_session_handlers(
     async def prompt_submit(params: dict) -> dict:
         sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
         runtime = _get_runtime(sess_runtime, params)
-        text = _require_str(params, "text")
         if runtime.chat_task and not runtime.chat_task.done():
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
+            # Graceful brief wait for task finishing its final cleanup phase
+            try:
+                await asyncio.wait_for(asyncio.shield(runtime.chat_task), timeout=0.3)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                pass
+            if runtime.chat_task and not runtime.chat_task.done():
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 
         # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
         # user's main conversation.
@@ -533,7 +540,31 @@ def _register_session_handlers(
                 db.expire_all()
                 await db.commit()
 
-        attachments = _validate_attachments(params)
+        batch = params.get("batch")
+        if batch is not None:
+            if not isinstance(batch, list) or not batch:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, "batch must be a non-empty list")
+            validated_batch = []
+            for item in batch:
+                if not isinstance(item, dict):
+                    raise JsonRpcError(JSONRPC_INVALID_PARAMS, "each item in batch must be an object")
+                t = _require_str(item, "text")
+                att = _validate_attachments(item)
+                validated_batch.append({"text": t, "attachments": att})
+
+            last_item = validated_batch[-1]
+            text = last_item["text"]
+            attachments = last_item["attachments"]
+            precursor_items = validated_batch[:-1]
+            if precursor_items:
+                async with SESSION_LOCAL() as db:
+                    await persist_extra_user_messages(db, runtime.conversation_id, precursor_items)
+        else:
+            text = _require_str(params, "text")
+            attachments = _validate_attachments(params)
+
+        reset_user_outreach(user_id)
+
         req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
 
         disp = user_session.dispatcher if user_session else dispatcher
