@@ -166,7 +166,11 @@ async def _persist_assistant_with_tool_calls_and_results(
     iteration.
 
     The tool batch (runner IPC / LLM calls) runs BETWEEN two short
-    sessions — no pool connection is held across it.
+    sessions — no pool connection is held across it. On ``CancelledError``
+    mid-batch we still write the assistant row (already committed above)
+    AND emit a short-session ``tool`` row per pending tool_call with
+    ``{"error": "cancelled"}`` content so the next LLM context has a
+    self-consistent tool_calls ↔ tool results pair (no orphan tool_calls).
 
     ``active_tool_names`` and ``schemas_by_name`` are mutated in place when
     ``search_tools`` unlocks new tool names so the next iteration's
@@ -196,7 +200,23 @@ async def _persist_assistant_with_tool_calls_and_results(
         )
         await db.commit()
 
-    tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
+    # Run the tool batch OUTSIDE any DB transaction — pool connection must
+    # not be held while the runner / LLM call is in flight.
+    try:
+        tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
+    except asyncio.CancelledError:
+        # Synthesize a tool result per pending tool_call so the assistant
+        # row above is never orphaned (a row with tool_calls but no matching
+        # tool-result rows makes the next LLM turn's context malformed).
+        tool_results = [
+            {
+                "role": "tool",
+                "name": tc.get("function", {}).get("name", ""),
+                "tool_call_id": tc.get("id", ""),
+                "content": json.dumps({"error": "cancelled"}, ensure_ascii=False),
+            }
+            for tc in tool_calls_list
+        ]
 
     for res in tool_results:
         current_messages.append(res)
