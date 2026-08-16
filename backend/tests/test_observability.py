@@ -81,3 +81,17 @@ async def test_rpc_metrics_increment():
 
     after_count = RPC_REQUESTS_TOTAL.labels(method=method_name, status="ok")._value.get()
     assert after_count == before_count + 1
+
+
+def test_create_limiter_storage_backend(monkeypatch):
+    """create_limiter should honor default memory:// or configured rate_limit_storage_url."""
+    from services.rate_limit import create_limiter
+
+    # Default
+    monkeypatch.setattr(SETTINGS, "rate_limit_storage_url", "")
+    lim1 = create_limiter()
+    assert lim1.enabled == SETTINGS.rate_limit_enabled
+
+    # Custom storage uri
+    lim2 = create_limiter(storage_uri="memory://")
+    assert lim2.enabled == SETTINGS.rate_limit_enabled

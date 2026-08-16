@@ -30,7 +30,8 @@ def _user_key(request: Request) -> str:
     return f"ip:{get_remote_address(request)}"
 
 
-# in-memory backend serves the single-process deployment this project targets.
+# Storage backend: defaults to memory:// for single-process local deployment.
+# Can be overridden via SETTINGS.rate_limit_storage_url (e.g. redis:// or memcached://).
 # When ``rate_limit_enabled`` is False slowapi's ``enabled`` flag short-circuits
 # the decorator so ``@limiter.limit(...)`` stays inert — no per-call
 # noop stub needed.
@@ -41,7 +42,12 @@ def _user_key(request: Request) -> str:
 # crashes on Windows + cp936 locales when ``.env`` carries a UTF-8 BOM.
 # Settings themselves are loaded by pydantic-settings in
 # ``components.SETTINGS``.
-limiter = Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled, config_filename="")
+def create_limiter(storage_uri: str | None = None) -> Limiter:
+    uri = storage_uri if storage_uri is not None else (SETTINGS.rate_limit_storage_url.strip() if SETTINGS.rate_limit_storage_url else "memory://")
+    return Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled, storage_uri=uri, config_filename="")
+
+
+limiter = create_limiter()
 
 
 async def stash_user_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:

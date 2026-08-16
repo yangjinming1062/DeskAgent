@@ -11,34 +11,15 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, ge
 from .config import SETTINGS
 
 # Prometheus Metrics Definitions
-HTTP_REQUESTS_TOTAL = Counter(
-    "deskagent_http_requests_total",
-    "Total HTTP requests",
-    ["method", "path", "status"],
-)
+HTTP_REQUESTS_TOTAL = Counter("deskagent_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
 
-HTTP_REQUEST_DURATION_SECONDS = Histogram(
-    "deskagent_http_request_duration_seconds",
-    "HTTP request latency in seconds",
-    ["method", "path"],
-)
+HTTP_REQUEST_DURATION_SECONDS = Histogram("deskagent_http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
 
-WS_CONNECTIONS_ACTIVE = Gauge(
-    "deskagent_ws_connections_active",
-    "Active WebSocket connections count",
-)
+WS_CONNECTIONS_ACTIVE = Gauge("deskagent_ws_connections_active", "Active WebSocket connections count")
 
-RPC_REQUESTS_TOTAL = Counter(
-    "deskagent_rpc_requests_total",
-    "Total JSON-RPC requests handled over WebSocket",
-    ["method", "status"],
-)
+RPC_REQUESTS_TOTAL = Counter("deskagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
 
-RPC_REQUEST_DURATION_SECONDS = Histogram(
-    "deskagent_rpc_request_duration_seconds",
-    "JSON-RPC execution duration in seconds",
-    ["method"],
-)
+RPC_REQUEST_DURATION_SECONDS = Histogram("deskagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
 
 # ContextVar for JSON-RPC Trace Context Propagation
 _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_trace_id", default=None)
@@ -66,12 +47,7 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
     start_time = time.monotonic()
-    span_context = {
-        "name": name,
-        "trace_id": trace_id,
-        "span_id": span_id,
-        "attributes": attributes or {},
-    }
+    span_context = {"name": name, "trace_id": trace_id, "span_id": span_id, "attributes": attributes or {}}
     status = "ok"
     try:
         yield span_context
@@ -93,12 +69,7 @@ def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iter
     trace_id = get_current_trace_id()
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
-    span_context = {
-        "name": name,
-        "trace_id": trace_id,
-        "span_id": span_id,
-        "attributes": attributes or {},
-    }
+    span_context = {"name": name, "trace_id": trace_id, "span_id": span_id, "attributes": attributes or {}}
     try:
         yield span_context
     finally:
