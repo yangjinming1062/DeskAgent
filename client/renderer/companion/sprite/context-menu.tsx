@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
+import { $renderStyle } from '@/companion/3d/model-store'
 import { setChatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -10,6 +11,7 @@ import {
   LogOut,
   MessageSquareText,
   Moon,
+  Palette,
   Phone,
   Settings,
   SlidersHorizontal
@@ -33,6 +35,7 @@ export function SpriteContextMenu({
 }: ContextMenuProps): React.JSX.Element {
   const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
+  const renderStyle = useStore($renderStyle)
   const visible = pos !== null
   const authed = auth.kind === 'authenticated'
   const menuRef = useRef<HTMLDivElement>(null)
@@ -169,6 +172,17 @@ export function SpriteContextMenu({
           >
             <SlidersHorizontal className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
             <span>伙伴设置</span>
+          </button>
+          <button
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
+            onClick={() => {
+              $renderStyle.set(renderStyle === 'anime' ? 'realistic' : 'anime')
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <Palette className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>渲染风格：{renderStyle === 'anime' ? '二次元' : '写实'}</span>
           </button>
           <button
             className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
