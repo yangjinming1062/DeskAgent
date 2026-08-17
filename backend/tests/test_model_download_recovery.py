@@ -2,6 +2,7 @@
 state, retryDownload (query-only refresh + download), and the bounded
 auto-retry classification. See model_service + PROTOCOL.md §1.2."""
 
+import gzip
 import json as _json
 import logging
 import uuid
@@ -243,6 +244,31 @@ async def test_refresh_on_final_attempt_surfaces_the_403(SessionLocal, mock_fina
     row = await _load_model(SessionLocal, model_id)
     assert row.status == "download_failed"
     assert "https://cos.example/fresh.glb" in (row.download_urls_json or "")
+
+
+@pytest.mark.asyncio
+async def test_finalize_failure_keeps_raw_download(SessionLocal, monkeypatch):
+    """A post-download processing failure must not lose the paid GLB nor turn
+    terminal: the raw provider output is persisted to the model store before
+    auto-rig runs, and the row lands in the retryable download_failed state
+    (a terminal ``failed`` would make client hydration re-submit a paid
+    generation)."""
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(model_service, "_auto_rig_with_blender", AsyncMock(side_effect=model_service.ModelGenerationError("本地自动绑骨失败")))
+    provider = RecordingProvider()
+    user_id, model_id = await _seed_model(SessionLocal, status="pending_download")
+    await _run_retry(monkeypatch, provider, user_id, model_id)
+
+    assert (await _load_model(SessionLocal, model_id)).status == "download_failed"
+    async with SessionLocal() as db:
+        events = (await db.execute(select(WSEvent).where(WSEvent.event_type == "model.failed", WSEvent.user_id == user_id))).scalars().all()
+    assert any(_json.loads(e.payload).get("retry_download") is True and _json.loads(e.payload).get("model_id") == model_id for e in events), "finalize failure must offer retry_download"
+
+    from components import SETTINGS
+
+    files = list((Path(SETTINGS.data_dir) / "companion-models" / str(user_id)).glob("model_*.glb"))
+    assert files and any(gzip.decompress(f.read_bytes()) == _GLB for f in files), "raw provider GLB must survive a finalize failure"
 
 
 @pytest.mark.asyncio

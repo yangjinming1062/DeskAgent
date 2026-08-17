@@ -99,8 +99,10 @@ worker_poll_interval_seconds = 5.0
 [blender_sandbox]
 # 是否启用 Docker 容器沙箱隔离执行 LLM 生成的 Blender 脚本（false 则直接在宿主机/worker 容器内以子进程运行 blender）
 blender_sandbox_enabled = false
-# 沙箱 Docker 镜像名称
-blender_sandbox_image = "spiritagent-blender-sandbox:latest"
+# data_dir 在宿主 Docker daemon 侧的路径覆盖项（-v 挂载源前缀）。默认留空自动探测：
+# worker 容器内从 /proc/self/mountinfo 读取 data_dir bind mount 的 daemon 侧源路径，
+# 裸机直跑 worker 直接用本机路径。仅当探测不可行（如远程 DOCKER_HOST）才手动填写。
+blender_sandbox_host_data_root = ""
 # Docker 执行命令路径
 blender_sandbox_docker_binary = "docker"
 # 沙箱容器 CPU 配额限制（核数）

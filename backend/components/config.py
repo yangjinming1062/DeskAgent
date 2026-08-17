@@ -108,17 +108,13 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(default=5.0, validation_alias="WORKER_POLL_INTERVAL_SECONDS")
 
     blender_sandbox_enabled: bool = Field(default=False, validation_alias="BLENDER_SANDBOX_ENABLED")
-    blender_sandbox_image: str = Field(default="spiritagent-blender-sandbox:latest", validation_alias="BLENDER_SANDBOX_IMAGE")
+    blender_sandbox_host_data_root: str = Field(default="", validation_alias="BLENDER_SANDBOX_HOST_DATA_ROOT")
     blender_sandbox_docker_binary: str = Field(default="docker", validation_alias="BLENDER_SANDBOX_DOCKER_BINARY")
     blender_sandbox_cpus: float = Field(default=2.0, validation_alias="BLENDER_SANDBOX_CPUS")
     blender_sandbox_memory: str = Field(default="4g", validation_alias="BLENDER_SANDBOX_MEMORY")
     blender_sandbox_tmpfs_size: str = Field(default="1g", validation_alias="BLENDER_SANDBOX_TMPFS_SIZE")
 
     companion_asset_signing_key: str
-
-    # Comma-separated CIDRs exempting resolved IPs from the SSRF reserved-range
-    # refusal (fake-ip TUN proxies resolve every host into 198.18.0.0/15).
-    # Empty = refuse as before; hostname/scheme checks stay on either way.
     ssrf_allowed_cidrs: str = Field(default="", validation_alias="SSRF_ALLOWED_CIDRS")
 
     providers: Annotated[list[str], NoDecode] = Field(validation_alias="PROVIDERS")

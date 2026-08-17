@@ -68,8 +68,10 @@ services:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
 
-  # Build-only Blender sandbox image (--profile build); the worker references
-  # it by name via [blender_sandbox] image.
+  # Build-only Blender sandbox image (--profile build) for manual rebuilds;
+  # the worker also auto-builds it at startup when the daemon is missing it.
+  # The tag must match services/worker/sandbox.py:SANDBOX_IMAGE (drift-guarded
+  # by test).
   blender-sandbox:
     build:
       context: ..

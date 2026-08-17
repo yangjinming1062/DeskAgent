@@ -382,9 +382,9 @@ async def _load_model_record(model_id: int) -> CompanionModel | None:
 
 
 async def _mark_download_failed(model_id: int, reason: str) -> None:
-    """Download-stage failure: keep the row recoverable — task_id and URLs are
-    never cleared and the row stays distinct from terminal ``failed`` so the
-    client offers retryDownload instead of paid regeneration."""
+    """Download- or finalize-stage failure: keep the row recoverable — task_id
+    and URLs are never cleared and the row stays distinct from terminal
+    ``failed`` so the client offers retryDownload instead of paid regeneration."""
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is not None:
@@ -444,10 +444,10 @@ async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, use
     """Download + finalize an already-persisted generation result. Shared by
     the generation pipeline and the retryDownload path.
 
-    Download-stage failures land in ``download_failed`` (recoverable — the
-    paid result stays in the row); post-download processing failures stay
-    terminal ``failed`` like any other generation failure — a deterministic
-    rig failure won't heal by re-downloading."""
+    Both download-stage and post-download processing failures land in
+    ``download_failed`` (recoverable — the paid result stays in the row and
+    the raw GLB is persisted before post-processing); a terminal ``failed``
+    here would make the next client hydration re-submit a paid generation."""
     if not await _cas_model_status(model_id, from_statuses=RETRYABLE_DOWNLOAD_STATUSES, to_status="downloading"):
         logger.info("model download attempt skipped; another attempt owns the row", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id})
         return
@@ -468,9 +468,9 @@ async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, use
                 raise ModelGenerationError("companion model row vanished mid-download")
             await _finalize_model(record, glb_path, provider=provider, io_dir=io_dir)
         except Exception:
-            logger.warning("3D model finalization failed", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id}, exc_info=True)
-            await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
-            await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
+            logger.warning("3D model finalization failed; result kept for retry", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id}, exc_info=True)
+            await _mark_download_failed(model_id, "模型后处理失败，可重试下载")
+            await _emit_model_failed(user_id, "3D 模型生成失败，可重试下载", retry_download=True, model_id=model_id)
 
 
 async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> None:
@@ -480,11 +480,15 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
     user_id = record.user_id
     glb_bytes = await asyncio.to_thread(glb_path.read_bytes)
 
+    # job-io is wiped the moment the render job ends — persist the paid
+    # provider output to the durable store before local post-processing so a
+    # rig/morph failure never loses it.
+    rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
+
     if not provider.SUPPORTS_RIGGING:
         await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
         glb_bytes = await _auto_rig_with_blender(glb_bytes, record.rig_type, io_dir=io_dir)
-
-    rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
+        rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
     await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
     final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)

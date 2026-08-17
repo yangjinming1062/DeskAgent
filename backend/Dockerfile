@@ -43,6 +43,16 @@ RUN curl -fsSL -o /tmp/blender.tar.xz \
     ln -sf "/opt/blender-${BLENDER_VERSION}-linux-x64/blender" /usr/local/bin/blender && \
     rm /tmp/blender.tar.xz
 
+# ── sandbox image: Blender only, no app code. Never runs a server; built so
+#    the worker can `docker run` it with hard resource caps. The worker
+#    auto-builds this target at startup with an empty context — it must stay
+#    directly after the blender stage: the worker image ships docker-cli
+#    without the buildx plugin, and the classic builder walks stages
+#    linearly up to --target (BuildKit is order-independent). ──
+FROM blender AS sandbox
+
+CMD ["blender", "--version"]
+
 # ── backend / worker app image ──
 FROM blender AS backend
 
@@ -72,9 +82,3 @@ RUN sed -i 's|deb.debian.org|mirrors.tuna.tsinghua.edu.cn|g; \
     rm -rf /var/lib/apt/lists/*
 
 CMD ["uv", "run", "python", "-m", "services.worker"]
-
-# ── sandbox image: Blender only, no app code. Never runs a server; built so
-#    the worker can `docker run` it with hard resource caps. ──
-FROM blender AS sandbox
-
-CMD ["blender", "--version"]

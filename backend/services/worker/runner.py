@@ -13,7 +13,7 @@ from modules.jobs import RenderJob
 from sqlalchemy.engine import make_url
 
 from . import queue
-from .sandbox import sweep_orphan_containers
+from .sandbox import ensure_sandbox_image, sweep_orphan_containers
 
 logger = get_logger(__name__)
 
@@ -126,6 +126,8 @@ async def main() -> None:
     removed = await sweep_orphan_containers()
     if removed:
         logger.info("swept orphan sandbox containers", extra={"removed": removed})
+    if not await ensure_sandbox_image():
+        logger.error("blender sandbox image unavailable; Blender jobs will fail until it builds")
     await _gc_stale_io_dirs()
 
     wakeup = asyncio.Event()

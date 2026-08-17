@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -21,12 +22,26 @@ def test_docker_cmd_rejects_io_outside_data_dir(tmp_path, monkeypatch):
         sandbox._docker_cmd("spiritagent-job-x", outside, "s.py", [])
 
 
+def test_docker_cmd_translates_mount_source_via_host_root(tmp_path, monkeypatch):
+    """A containerized worker's data_dir doesn't exist on the host daemon —
+    the -v source must be translated through the configured host-side root,
+    else the daemon auto-creates an empty dir and Blender finds no script."""
+    monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path / "data"))
+    monkeypatch.setattr(SETTINGS, "blender_sandbox_host_data_root", "/run/desktop/mnt/host/c/svc/data")
+    io = tmp_path / "data" / "job-io" / "7"
+    io.mkdir(parents=True)
+
+    cmd = sandbox._docker_cmd("spiritagent-job-x", io, "s.py", [])
+
+    assert _flag(cmd, "-v") == "/run/desktop/mnt/host/c/svc/data/job-io/7:/io"
+
+
 def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox, "SANDBOX_IMAGE", "blender-sbx:9.9")
     monkeypatch.setattr(SETTINGS, "blender_sandbox_docker_binary", "docker")
     monkeypatch.setattr(SETTINGS, "blender_sandbox_cpus", 1.5)
     monkeypatch.setattr(SETTINGS, "blender_sandbox_memory", "2g")
     monkeypatch.setattr(SETTINGS, "blender_sandbox_tmpfs_size", "256m")
-    monkeypatch.setattr(SETTINGS, "blender_sandbox_image", "blender-sbx:9.9")
     io = tmp_path / "io"
     io.mkdir()
 
@@ -157,3 +172,96 @@ async def test_sweep_removes_labeled_containers(monkeypatch):
         ["rm", "-f", "abc123def456"],
         ["rm", "-f", "def789abc012"],
     ]
+
+
+def _proc(*, returncode: int = 0, out: bytes = b"") -> MagicMock:
+    proc = MagicMock()
+    proc.returncode = returncode
+    proc.communicate = AsyncMock(return_value=(out, b""))
+    proc.wait = AsyncMock(return_value=returncode)
+    return proc
+
+
+def test_compose_image_tag_matches_sandbox_constant():
+    """The compose blender-sandbox service must tag the same image the worker
+    runs — a drifted tag would make manual --profile builds useless."""
+    compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text(encoding="utf-8")
+    assert f"image: {sandbox.SANDBOX_IMAGE}" in compose
+
+
+async def test_ensure_skips_when_sandbox_disabled(monkeypatch):
+    monkeypatch.setattr(SETTINGS, "blender_sandbox_enabled", False)
+
+    async def _boom(*_a, **_k):
+        raise AssertionError("no docker call may happen when the sandbox is disabled")
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", _boom)
+    assert await sandbox.ensure_sandbox_image() is True
+
+
+async def test_ensure_skips_build_when_image_present(monkeypatch):
+    monkeypatch.setattr(SETTINGS, "blender_sandbox_enabled", True)
+    calls: list[list[str]] = []
+
+    async def _fake_exec(*cmd: str, **_kw) -> MagicMock:
+        calls.append(list(cmd))
+        return _proc(returncode=0)
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", _fake_exec)
+    assert await sandbox.ensure_sandbox_image() is True
+    assert calls == [[SETTINGS.blender_sandbox_docker_binary, "image", "inspect", sandbox.SANDBOX_IMAGE]]
+
+
+async def test_ensure_builds_missing_image(monkeypatch):
+    monkeypatch.setattr(SETTINGS, "blender_sandbox_enabled", True)
+    calls: list[list[str]] = []
+
+    async def _fake_exec(*cmd: str, **_kw) -> MagicMock:
+        calls.append(list(cmd))
+        return _proc(returncode=1) if cmd[1] == "image" else _proc(returncode=0)
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", _fake_exec)
+    assert await sandbox.ensure_sandbox_image() is True
+    build = calls[1]
+    assert build[1] == "build" and build[build.index("--target") + 1] == "sandbox"
+    assert build[build.index("-t") + 1] == sandbox.SANDBOX_IMAGE
+    dockerfile = Path(build[build.index("-f") + 1])
+    assert dockerfile.name == "Dockerfile" and dockerfile.exists(), "the Dockerfile must ship next to the code (in-image path /app/Dockerfile)"
+
+
+async def test_ensure_reports_failed_build(monkeypatch):
+    monkeypatch.setattr(SETTINGS, "blender_sandbox_enabled", True)
+
+    async def _fake_exec(*_cmd: str, **_kw) -> MagicMock:
+        return _proc(returncode=1, out=b"docker: build error")
+
+    monkeypatch.setattr(sandbox.asyncio, "create_subprocess_exec", _fake_exec)
+    assert await sandbox.ensure_sandbox_image() is False
+
+
+def test_data_dir_on_daemon_translates_bind_mount_source(tmp_path, monkeypatch):
+    """In-container: the data_dir bind mount's daemon-side path is rebuilt
+    from /proc/self/mountinfo — Docker Desktop's drive-form 9p source and a
+    plain native bind both translate; ancestor mounts carry the remainder."""
+    monkeypatch.setattr(sandbox, "_CONTAINER_MARKERS", (tmp_path / "in-container",))
+    (tmp_path / "in-container").write_text("")
+    data = tmp_path / "data"
+    data.mkdir()
+    app_data = tmp_path / "app" / "data"
+    monkeypatch.setattr(sandbox, "_MOUNTINFO", tmp_path / "mountinfo")
+    (tmp_path / "mountinfo").write_text(
+        f"1 0 0:0 / / rw - overlay overlay rw,lowerdir=/x 0\n"
+        f"4 0 0:3 / /proc rw - proc proc proc 0\n"
+        f"2 0 0:1 / {tmp_path.as_posix()}/app rw - ext4 /srv/svc rw 0\n"
+        f"3 0 0:2 /Code/SpiritAgent/backend/data {data.as_posix()} rw - 9p C:\\134 rw,aname=drvfs;path=C:\\ 0\n"
+    )
+    # Docker Desktop drive mount: source C:\ + bind_root subpath
+    assert sandbox._data_dir_on_daemon(data) == "/run/desktop/mnt/host/c/Code/SpiritAgent/backend/data"
+    # native ancestor bind: /srv/svc is mounted at <tmp>/app, data sits one level deeper
+    assert sandbox._data_dir_on_daemon(app_data) == "/srv/svc/data"
+
+
+def test_data_dir_on_daemon_passthrough_on_bare_metal(tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox, "_CONTAINER_MARKERS", (tmp_path / "absent-marker",))
+    data = tmp_path / "data"
+    assert sandbox._data_dir_on_daemon(data) == data.as_posix()

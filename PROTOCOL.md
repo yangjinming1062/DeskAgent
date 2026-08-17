@@ -63,7 +63,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 - **形象锁定**：全身图确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像/全身图重新生成路径关闭；换装与动画生成不受影响。
 - **单/多视图模式**：单视图（默认）仅正面全身图，拒绝侧面/背面生成；多视图逐视角生成、重绘正面会失效侧面/背面。
 - **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
-- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，provider task id 与下载 URL 已持久化；下载失败只置 `download_failed` 并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调 provider 查询与下载接口，服务重启中断的下载同样进入该可恢复态。
+- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，provider task id 与下载 URL 已持久化；下载或本地后处理失败只置 `download_failed` 并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调 provider 查询与下载接口，服务重启中断的下载同样进入该可恢复态。
 
 ### 1.3 事件类型
 
