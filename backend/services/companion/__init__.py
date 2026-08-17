@@ -33,6 +33,7 @@ from .avatar_service import (
     regenerate_avatar,
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
+    select_avatar,
 )
 from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
 from .garment_service import run_garment_pipeline
@@ -211,6 +212,7 @@ __all__ = [
     "run_prompt_json",
     "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",
+    "select_avatar",
     "select_rig_type",
     "serve_ranged_file",
     "should_act",

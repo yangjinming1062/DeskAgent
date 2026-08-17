@@ -35,8 +35,10 @@ import {
   clearPortraitHistory,
   clearRegenFeedback,
   commitPortraitEntry,
+  hydratePortraitHistory,
   type PortraitEntry,
   pushPortraitEntry,
+  selectAvatar,
   selectPortraitEntry,
   setActiveAvatarId,
   setRegenFeedback,
@@ -1005,6 +1007,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             nextField === 'portrait-fullbody-back'
           ) {
             try {
+              await hydratePortraitHistory()
+
               const avatarRes = await window.spiritagent.api<{
                 asset_url?: string | null
                 seed_front_url?: string | null
@@ -1019,6 +1023,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               const applied = await applyLocalPortrait(avatarRes)
 
               if (applied.avatar) {
+                if (avatarRes?.id != null) {
+                  const idx = $portraitHistory.get().findIndex(e => e.avatarId === avatarRes.id)
+
+                  if (idx >= 0) {
+                    selectPortraitEntry(idx)
+                  }
+                }
+
                 if (nextField === 'portrait-fullbody-back' && avatarRes?.seed_back_url) {
                   setPhase('portrait-fullbody-back')
                 } else if (nextField === 'portrait-fullbody-right' && avatarRes?.seed_right_url) {
@@ -1203,6 +1215,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     // to a face the user already rejected.
     if (entry.avatarId != null) {
       setActiveAvatarId(entry.avatarId)
+      void selectAvatar(entry.avatarId)
     }
   }, [])
 

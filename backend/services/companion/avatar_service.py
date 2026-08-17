@@ -382,7 +382,7 @@ async def _generate_avatar_step(
 async def _pre_read_fullbody(
     db: AsyncSession, user_id: int, avatar_id: int, stage: str | None, view: str | None, feedback: str | None, reference_image: str | None, reference_content_type: str | None
 ) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str], FullbodyStyle]:
-    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
 
@@ -471,6 +471,9 @@ async def _write_fullbody(
 
     for v, result in generated.items():
         setattr(asset, _SEED_ATTRS[v], result[0])
+
+    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
+    asset.active = True
 
     await db.commit()
     await db.refresh(asset)
@@ -623,6 +626,20 @@ async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | Non
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is not None:
         _re_sign_avatar_url(asset)
+    return asset
+
+
+async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> AvatarAsset:
+    """Set the specified avatar as active and deactivate all others for this user."""
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
+    if asset is None:
+        raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
+    asset.active = True
+    await db.commit()
+    await db.refresh(asset)
+    db.expunge(asset)
+    _re_sign_avatar_url(asset)
     return asset
 
 

@@ -54,7 +54,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | POST /api/companion/portrait/confirm | 确认形象（幂等），解开音色/用户子阶段 | Backend 状态 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成 | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
-| POST /api/companion/avatar（含 /from-image）与 /avatar/{id}/fullbody | 半身头像生成 / 链式全身种子图生成 | Backend 生成 + Client 两步流程 + DESIGN §5.4 |
+| POST /api/companion/avatar（含 /from-image）、/avatar/{id}/fullbody、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成 / 链式全身种子图生成 / 历史形象切换激活 / 历史查询 | Backend 生成 + Client 两步流程与历史画廊 + DESIGN §5.4 |
 | POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
 
 **关键约束**（跨模块语义，非实现细节）：

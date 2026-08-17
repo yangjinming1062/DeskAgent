@@ -78,6 +78,7 @@ from services.companion import (
     resolve_uploaded_avatar_path,
     schedule_onboarding_outfit_extraction,
     schedule_personality_tag_refresh,
+    select_avatar,
     serve_ranged_file,
     signed_sprite_url,
     update_persona,
@@ -365,6 +366,16 @@ async def get_avatar_history(auth: tuple[User, LoginRecord] = Depends(get_curren
     user, _ = auth
     history = await list_avatar_history(db, user.id)
     return AvatarHistoryResponse(history=[avatar_response(a) for a in history])
+
+
+@router.put("/avatar/{avatar_id}/select", response_model=AvatarAssetResponse)
+async def put_avatar_select(avatar_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AvatarAssetResponse:
+    user, _ = auth
+    try:
+        asset = await select_avatar(db, user.id, avatar_id)
+    except AvatarNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    return avatar_response(asset)
 
 
 @router.get("/model", response_model=CompanionModelResponse)

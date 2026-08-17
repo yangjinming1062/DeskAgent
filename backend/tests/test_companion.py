@@ -4167,3 +4167,81 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
             await db.execute(select(Persona).where(Persona.user_id == fake_user.id))
         ).scalar_one()
         assert refreshed_persona.is_portrait_confirmed is False
+
+
+@pytest.mark.asyncio
+async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from modules.auth import get_current_session
+    from modules.companion import AvatarAsset
+    from services.companion import avatar_service
+    from services.rate_limit import limiter
+
+    _, SessionLocal = _patch_db
+    app = FastAPI()
+    app.state.limiter = limiter
+
+    user = type("U", (), {"id": 202})()
+
+    async def _fake_auth():
+        return user, None
+
+    app.dependency_overrides[get_current_session] = _fake_auth
+    app.include_router(companion_api.router)
+    client = TestClient(app)
+
+    async with SessionLocal() as db:
+        persona = await avatar_service.get_or_create_persona(db, user.id)
+        persona.is_complete = True
+        persona.definition_json = json.dumps({"biological_type": "人类"}, ensure_ascii=False)
+        a1 = AvatarAsset(
+            user_id=user.id,
+            prompt_json=json.dumps({"avatar_prompt": "prompt1"}),
+            asset_url="temp-media/a1",
+            active=False,
+        )
+        a2 = AvatarAsset(
+            user_id=user.id,
+            prompt_json=json.dumps({"avatar_prompt": "prompt2"}),
+            asset_url="temp-media/a2",
+            active=True,
+        )
+        db.add_all([a1, a2])
+        await db.commit()
+        await db.refresh(a1)
+        await db.refresh(a2)
+        a1_id, a2_id = a1.id, a2.id
+
+    # 1. select a1 -> a1 becomes active, a2 inactive
+    resp = client.put(f"/api/companion/avatar/{a1_id}/select")
+    assert resp.status_code == 200
+    assert resp.json()["id"] == a1_id
+
+    async with SessionLocal() as db:
+        active = await avatar_service.get_active_avatar(db, user.id)
+        assert active is not None and active.id == a1_id
+
+    # 2. selecting non-existent returns 404
+    resp404 = client.put("/api/companion/avatar/99999/select")
+    assert resp404.status_code == 404
+
+    # 3. pre-read fullbody on a2 (which is inactive) succeeds without 404
+    async with SessionLocal() as db:
+        views, is_front, persist, refs, prompts, style = await avatar_service._pre_read_fullbody(
+            db, user.id, a2_id, "front", None, None, None, None
+        )
+        assert is_front is True
+        assert views == ["front"]
+
+        # 4. write fullbody on a2 reactivates a2
+        written = await avatar_service._write_fullbody(
+            db, user.id, a2_id, ["front"], True, False, {"front": ("temp-media/a2_front", "id", "ext", "orig")}, style
+        )
+        assert written.active is True
+        assert written.seed_front_url is not None
+
+        active_after = await avatar_service.get_active_avatar(db, user.id)
+        assert active_after is not None and active_after.id == a2_id

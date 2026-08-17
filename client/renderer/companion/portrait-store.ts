@@ -143,10 +143,38 @@ export async function hydratePortraitHistory(): Promise<void> {
         seedUrls: front || right || back ? { front, right, back } : null
       })
     }
+
+    const activeId = $activeAvatarId.get()
+
+    if (activeId != null) {
+      const activeIdx = $portraitHistory.get().findIndex(e => e.avatarId === activeId)
+
+      if (activeIdx >= 0) {
+        $portraitSelectedIdx.set(activeIdx)
+      }
+    }
   } catch (error) {
     if (!isClientErrorIpc(error)) {
       log.warn('portrait', 'hydratePortraitHistory failed', error)
     }
+  }
+}
+
+export async function selectAvatar(avatarId: number): Promise<boolean> {
+  try {
+    await window.spiritagent.api({
+      path: `/api/companion/avatar/${avatarId}/select`,
+      method: 'PUT'
+    })
+    setActiveAvatarId(avatarId)
+
+    return true
+  } catch (error) {
+    if (!isClientErrorIpc(error)) {
+      log.warn('portrait', 'selectAvatar failed', error)
+    }
+
+    return false
   }
 }
 
