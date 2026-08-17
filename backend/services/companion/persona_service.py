@@ -1,11 +1,13 @@
 import json
 from typing import Any
 
-from components import SETTINGS, safe_json_loads
+from components import safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from services.image_to_3d import get_effective_fullbody_mode
 
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
@@ -186,7 +188,7 @@ async def _portrait_next_field(db: AsyncSession, user_id: int) -> str:
     if avatar is None or not bool(avatar.seed_front_url):
         return "portrait"
     # Single mode: stay on front even if stale right/back seeds exist (image-to-model only consumes `front`).
-    if SETTINGS.fullbody_mode == "single" or not bool(avatar.seed_right_url):
+    if get_effective_fullbody_mode() == "single" or not bool(avatar.seed_right_url):
         return "portrait-fullbody-front"
     if not bool(avatar.seed_back_url):
         return "portrait-fullbody-right"
@@ -194,7 +196,7 @@ async def _portrait_next_field(db: AsyncSession, user_id: int) -> str:
 
 
 def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, Any]:
-    return {"answers": answers, "next_field": next_field, "complete": complete, "fullbody_mode": SETTINGS.fullbody_mode}
+    return {"answers": answers, "next_field": next_field, "complete": complete, "fullbody_mode": get_effective_fullbody_mode()}
 
 
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:

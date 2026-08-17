@@ -82,8 +82,6 @@ def _common_model_kwargs(
     if texture_quality:
         payload["texture_quality"] = texture_quality
     if face_limit is not None:
-        # face_limit=0 means "no limit" on H-series; preserve the operator's
-        # explicit zero rather than letting truthiness drop it.
         payload["face_limit"] = min(face_limit, _P_SERIES_FACE_LIMIT_MAX) if model_version.startswith("P") else face_limit
     if enable_autofix is not None:
         payload["enable_image_autofix"] = enable_autofix
@@ -105,8 +103,6 @@ def tripo_common_kwargs_from_settings(*, model_version: str | None = None, textu
         "face_limit": SETTINGS.tripo_face_limit or None,
         "enable_autofix": SETTINGS.tripo_enable_autofix,
     }
-    # Multiview-only framing hints — omitted for the single-image endpoint,
-    # whose signature does not declare them.
     if texture_alignment is not None:
         kwargs["texture_alignment"] = texture_alignment
     if orientation is not None:
@@ -165,14 +161,7 @@ async def create_image_to_model(
     face_limit: int | None = None,
     enable_autofix: bool | None = None,
 ) -> str:
-    """Single-image to 3D model (H系列 ``image-to-model`` endpoint).
-
-    ``image_token`` is a file_token from :func:`upload_file`, a public URL, or
-    a prior task_id. Returns a task_id; poll with :func:`get_task`.
-
-    Note: ``texture_alignment`` / ``orientation`` are multiview-only framing
-    hints and intentionally omitted from this endpoint's payload.
-    """
+    """Single-image to 3D model (H系列 ``image-to-model`` endpoint)."""
     if not image_token:
         raise ValueError("image-to-model requires a non-empty image_token")
     payload = _common_model_kwargs(model_version=model_version, pbr=pbr, texture_quality=texture_quality, face_limit=face_limit, enable_autofix=enable_autofix)
@@ -190,12 +179,7 @@ async def get_task(task_id: str) -> dict[str, Any]:
 
 
 async def poll_task(task_id: str, *, interval: float = 5.0, timeout: float = 1800.0, on_progress: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
-    """Polls until terminal status; returns the final ``data`` payload (with ``output.model_url`` on success).
-
-    ``on_progress`` is invoked with each poll response so callers can stream
-    progress events. Used by the rig exploration tooling; the model-gen
-    pipeline polls through the provider ABC instead.
-    """
+    """Polls until terminal status; returns the final ``data`` payload (with ``output.model_url`` on success)."""
     deadline = time.monotonic() + timeout
     while True:
         data = await get_task(task_id)
@@ -225,7 +209,7 @@ async def rig_check(task_id: str) -> str:
 
 
 async def poll_rig_check(task_id: str, *, interval: float = 2.0, timeout: float = 60.0) -> dict[str, Any]:
-    """Polls an ``animate_prerigcheck`` task until terminal status; returns its ``output`` dict (with ``rig_type`` + ``riggable``)."""
+    """Polls an ``animate_prerigcheck`` task until terminal status; returns its ``output`` dict."""
     deadline = time.monotonic() + timeout
     while True:
         data = await get_task(task_id)

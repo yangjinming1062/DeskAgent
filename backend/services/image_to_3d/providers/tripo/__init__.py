@@ -1,8 +1,8 @@
 import asyncio
 from pathlib import Path
 
-from ..base import Model3DAsset, Model3DJob, Model3DPollResult, ModelGenProvider, ProviderError, ServiceType
-from ..registry import register
+from ...base import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult
+from ...registry import register
 from . import client
 from .client import TripoApiError, TripoTaskFailed
 
@@ -12,10 +12,14 @@ _STATUS_MAP: dict[str, str] = {"queued": "queued", "running": "in_progress", "su
 _CONTENT_TYPES: dict[str, str] = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
 
-class TripoModelGenProvider(ModelGenProvider):
+class TripoImageTo3DProvider(ImageTo3DProvider):
     provider_name = "tripo"
     SUPPORTS_RIGGING = True
     SUPPORTS_MULTIVIEW = True
+
+    def __init__(self, api_key: str = "", base_url: str = "") -> None:
+        self.api_key = api_key
+        self.base_url = base_url
 
     async def _upload(self, path: Path) -> str:
         image_bytes = await asyncio.to_thread(path.read_bytes)
@@ -31,13 +35,13 @@ class TripoModelGenProvider(ModelGenProvider):
                 task_id = await client.create_image_to_model(await self._upload(image_path), **client.tripo_common_kwargs_from_settings())
             return Model3DJob(job_id=task_id)
         except TripoApiError as exc:
-            raise ProviderError(str(exc), provider=self.provider_name) from exc
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
         try:
             data = await client.get_task(job.job_id)
         except TripoApiError as exc:
-            raise ProviderError(str(exc), provider=self.provider_name) from exc
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
         status = _STATUS_MAP.get(data.get("status") or "", "in_progress")
         if status == "completed":
             url = (data.get("output") or {}).get("model_url") or ""
@@ -49,7 +53,7 @@ class TripoModelGenProvider(ModelGenProvider):
     async def download(self, result: Model3DPollResult, dest_dir: Path) -> Path:
         urls = [a.url for a in result.assets if a.url]
         if not urls:
-            raise ProviderError("tripo task completed without a model_url", provider=self.provider_name)
+            raise ImageTo3DError("tripo task completed without a model_url", provider=self.provider_name)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / "tripo_model.glb"
         await asyncio.to_thread(dest.write_bytes, await client.download_model(urls[0]))
@@ -59,15 +63,15 @@ class TripoModelGenProvider(ModelGenProvider):
         try:
             return bool((await client.poll_rig_check(await client.rig_check(job_id))).get("riggable"))
         except (TripoApiError, TripoTaskFailed) as exc:
-            raise ProviderError(str(exc), provider=self.provider_name) from exc
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 
     async def start_rig(self, job_id: str, rig_type: str) -> Model3DJob:
         try:
             return Model3DJob(job_id=await client.rig(job_id, rig_type))
         except TripoApiError as exc:
-            raise ProviderError(str(exc), provider=self.provider_name) from exc
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 
 
-register(ServiceType.model_gen, "tripo", TripoModelGenProvider)
+register("tripo", TripoImageTo3DProvider)
 
-__all__ = ["TripoModelGenProvider"]
+__all__ = ["TripoImageTo3DProvider"]

@@ -1,13 +1,15 @@
 import os
+from collections.abc import Callable
+
+import pytest
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 import components.database as _db_mod
 import modules
 import modules.media.models  # noqa: F401
-import pytest
 from common import ModelBase
-from sqlalchemy import event, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
 # All async tests and fixtures share one session-scoped event loop: the
 # session-scoped sqlite_engine (StaticPool = one aiosqlite connection) cannot
@@ -202,8 +204,9 @@ async def _seed_user(SessionLocal, username="testuser"):
 
 @pytest.fixture()
 async def test_app(_patch_db):
-    from components import get_db
     from fastapi import FastAPI
+
+    from components import get_db
 
     app = FastAPI(title="spiritagent-test")
 
@@ -263,8 +266,9 @@ async def ws_ticket(_patch_db):
     and pass ``?ticket=...`` rather than minting a bearer and passing
     ``?token=...``.
     """
-    from modules.auth import User, create_access_token
     from sqlalchemy import select
+
+    from modules.auth import User, create_access_token
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
@@ -286,6 +290,13 @@ def _clear_client_cache():
     http_pool.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _default_image_to_3d_settings(monkeypatch):
+    from components import SETTINGS
+
+    monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
+
+
 @pytest.fixture
 def set_fullbody_mode(monkeypatch) -> "Callable[[str], None]":
     """Patch ``SETTINGS.fullbody_mode`` for the duration of the test.
@@ -298,6 +309,8 @@ def set_fullbody_mode(monkeypatch) -> "Callable[[str], None]":
 
     def _set(mode: str) -> None:
         monkeypatch.setattr(SETTINGS, "fullbody_mode", mode)
+        if mode == "multi":
+            monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
 
     # Snapshot the production default at setup time so the fixture stays
     # correct if the documented default ever changes from "single" to "multi".

@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from components import SETTINGS
-from services.llm.providers.tripo import client as tripo_client
+from services.image_to_3d import tripo_client
 
 
 def test_base_url_prefers_settings_over_default(monkeypatch):

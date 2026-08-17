@@ -247,17 +247,6 @@ class TestRegistry:
         with pytest.raises(LookupError):
             resolve(ServiceType.stt, "minimax")
 
-    def test_tripo_model_gen_provider_registered(self):
-        """Tripo registers image-to-3D only — no chat/media capabilities."""
-        from services.llm import resolve
-        from services.llm.providers.tripo import TripoModelGenProvider
-
-        assert resolve(ServiceType.model_gen, "tripo") is TripoModelGenProvider
-        with pytest.raises(LookupError):
-            resolve(ServiceType.llm, "tripo")
-        assert TripoModelGenProvider.SUPPORTS_RIGGING is True
-        assert TripoModelGenProvider.SUPPORTS_MULTIVIEW is True
-
     def test_gemini_providers_registered(self):
         """Gemini registers only chat and image_gen; STT/TTS are absent
         because the all-multilingual voice catalog made cross-provider

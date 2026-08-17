@@ -81,23 +81,21 @@ class Settings(BaseSettings):
     temp_file_ttl_hours: int
     data_dir: str
 
-    tripo_api_key: str = Field(validation_alias="TRIPO_API_KEY")
-    tripo_base_url: str = Field(validation_alias="TRIPO_BASE_URL")
-    tripo_model_version: str = Field(validation_alias="TRIPO_MODEL_VERSION")
-    tripo_face_limit: int = Field(validation_alias="TRIPO_FACE_LIMIT")
-    tripo_texture_quality: str = Field(validation_alias="TRIPO_TEXTURE_QUALITY")
-    tripo_geometry_quality: str = Field(validation_alias="TRIPO_GEOMETRY_QUALITY")
-    tripo_enable_autofix: bool = Field(validation_alias="TRIPO_ENABLE_AUTOFIX")
+    image_to_3d_provider: str = Field(default="tripo", validation_alias="IMAGE_TO_3D_PROVIDER")
+    image_to_3d_poll_interval_seconds: float = Field(default=5.0, validation_alias="IMAGE_TO_3D_POLL_INTERVAL_SECONDS")
+    image_to_3d_max_poll_seconds: float = Field(default=1800.0, validation_alias="IMAGE_TO_3D_MAX_POLL_SECONDS")
 
-    hunyuan_api_key: str = Field(validation_alias="HUNYUAN_API_KEY")
-    hunyuan_base_url: str = Field(validation_alias="HUNYUAN_BASE_URL")
-    hunyuan_model_version: str = Field(validation_alias="HUNYUAN_MODEL_VERSION")
+    tripo_api_key: str = Field(default="", validation_alias="TRIPO_API_KEY")
+    tripo_base_url: str = Field(default="https://openapi.tripo3d.ai/v3", validation_alias="TRIPO_BASE_URL")
+    tripo_model_version: str = Field(default="v3.1-20260211", validation_alias="TRIPO_MODEL_VERSION")
+    tripo_face_limit: int = Field(default=2000000, validation_alias="TRIPO_FACE_LIMIT")
+    tripo_texture_quality: str = Field(default="detailed", validation_alias="TRIPO_TEXTURE_QUALITY")
+    tripo_geometry_quality: str = Field(default="detailed", validation_alias="TRIPO_GEOMETRY_QUALITY")
+    tripo_enable_autofix: bool = Field(default=True, validation_alias="TRIPO_ENABLE_AUTOFIX")
 
-    model_gen_provider: str = Field(validation_alias="MODEL_GEN_PROVIDER")
-    model_gen_base_url: str = Field(validation_alias="MODEL_GEN_BASE_URL")
-    model_gen_api_key: str = Field(validation_alias="MODEL_GEN_API_KEY")
-    model_gen_poll_interval_seconds: float = Field(validation_alias="MODEL_GEN_POLL_INTERVAL_SECONDS")
-    model_gen_max_poll_seconds: float = Field(validation_alias="MODEL_GEN_MAX_POLL_SECONDS")
+    hunyuan_api_key: str = Field(default="", validation_alias="HUNYUAN_API_KEY")
+    hunyuan_base_url: str = Field(default="https://tokenhub.tencentmaas.com", validation_alias="HUNYUAN_BASE_URL")
+    hunyuan_model_version: str = Field(default="hy-3d-3.1", validation_alias="HUNYUAN_MODEL_VERSION")
 
     blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
     blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")

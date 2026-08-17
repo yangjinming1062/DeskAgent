@@ -11,6 +11,8 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.image_to_3d import get_effective_fullbody_mode
+
 from ..llm import (
     FullbodyStyle,
     build_fullbody_prompt,
@@ -514,16 +516,16 @@ async def generate_fullbody(
     if bool(stage) == bool(view):
         raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
 
-    if SETTINGS.fullbody_mode == "single" and (stage == "aux" or view in ("right", "back")):
+    if get_effective_fullbody_mode() == "single" and (stage == "aux" or view in ("right", "back")):
         raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
 
     if db is None:
         async with SESSION_LOCAL() as read_db:
-            views_to_gen, is_front, persist, references, prompts, style = await _pre_read_fullbody(
+            (views_to_gen, is_front, persist, references, prompts, style) = await _pre_read_fullbody(
                 read_db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type
             )
     else:
-        views_to_gen, is_front, persist, references, prompts, style = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
+        (views_to_gen, is_front, persist, references, prompts, style) = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
 
     results = await asyncio.gather(
         *[

@@ -1,7 +1,6 @@
 import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 from openai import AsyncOpenAI
@@ -14,7 +13,6 @@ class ServiceType(str, enum.Enum):
     image_gen = "image_gen"
     video_gen = "video_gen"
     embedding = "embedding"
-    model_gen = "model_gen"
 
 
 @dataclass(frozen=True)
@@ -184,62 +182,6 @@ class VideoGenProvider(BaseProvider):
 
     @abstractmethod
     async def fetch(self, file_id: str) -> VideoAsset: ...
-
-
-# ── 3D model generation ────────────────────────────────────────────────
-
-
-@dataclass(frozen=True)
-class Model3DJob:
-    job_id: str
-
-
-@dataclass(frozen=True)
-class Model3DAsset:
-    kind: str  # "glb" | "obj" | ...
-    url: str
-    preview_image_url: str | None = None
-
-
-@dataclass(frozen=True)
-class Model3DPollResult:
-    status: Literal["queued", "in_progress", "completed", "failed"]
-    # Provider's own 0-100 progress signal; 0 = unknown (orchestration
-    # interpolates by elapsed time instead).
-    progress: int = 0
-    assets: tuple[Model3DAsset, ...] = ()
-    error: str | None = None
-
-
-class ModelGenProvider(BaseProvider):
-    """Image-to-3D generation. Capability ClassVars gate provider-specific
-    pipeline steps in ``model_service.run_model_gen_pipeline`` — orchestration
-    checks them before calling the optional rig methods."""
-
-    service_type: ServiceType = ServiceType.model_gen
-
-    SUPPORTS_RIGGING: ClassVar[bool] = False
-    SUPPORTS_MULTIVIEW: ClassVar[bool] = False
-
-    @abstractmethod
-    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
-        """Submit a generation job from local seed images. Providers digest
-        their own upload mechanism (file_token, base64, …) — callers only
-        hand over local paths."""
-
-    @abstractmethod
-    async def poll(self, job: Model3DJob) -> Model3DPollResult: ...
-
-    @abstractmethod
-    async def download(self, result: Model3DPollResult, dest_dir: Path) -> Path:
-        """Download the completed job's model into ``dest_dir`` and return the
-        local path of a single ``.glb`` file (archives are unpacked here)."""
-
-    async def rig_supported(self, job_id: str) -> bool:
-        raise ProviderError(f"{self.provider_name or type(self).__name__} does not support rigging", provider=self.provider_name)
-
-    async def start_rig(self, job_id: str, rig_type: str) -> Model3DJob:
-        raise ProviderError(f"{self.provider_name or type(self).__name__} does not support rigging", provider=self.provider_name)
 
 
 # ── TTS / STT ──────────────────────────────────────────────────────────

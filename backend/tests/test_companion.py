@@ -4,17 +4,18 @@ import json
 from unittest.mock import AsyncMock
 
 import pytest
-from api.v1 import companion as companion_api
-from components import get_db
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+
+from api.v1 import companion as companion_api
+from components import get_db
 from modules.auth import get_current_session
 from modules.companion import Persona
 from services import companion as companion_svc
 from services.companion import voice_catalog
 from services.llm import VoiceDesignResult, pick_voice_id, voices_for_provider
 from services.rate_limit import limiter
-from sqlalchemy import func, select
 
 
 @pytest.mark.asyncio
@@ -1312,8 +1313,9 @@ def test_persona_update_schema_accepts_definition_json():
 
 
 def test_persona_update_schema_rejects_unknown_keys():
-    from modules.companion import PersonaUpdate
     from pydantic import ValidationError
+
+    from modules.companion import PersonaUpdate
 
     with pytest.raises(ValidationError):
         PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
@@ -1533,6 +1535,7 @@ async def test_ws_ticket_mints_short_lived_jwt():
     # but the ticket path doesn't get blocked at the purpose gate.
     # Verify the purpose gate by mocking a fake user lookup.
     import jwt as _jwt
+
     from components import SETTINGS
 
     # A valid-purpose token passes the purpose gate; an invalid one
@@ -1561,7 +1564,6 @@ async def test_ws_ticket_endpoint_success(test_client, test_token):
     assert "access_token" in data
     assert data["expires_in"] == 60
     assert data["user"]["username"] == "testuser"
-
 
 
 def test_voice_catalog_cjk_score_prefers_specific_match():
@@ -1677,9 +1679,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     monkeypatch.setattr(avatar_service, "enhance_avatar_prompt", fake_enhance_avatar)
 
     async with SessionLocal() as db:
-        user = User(
-            username="imguser", is_active=True, can_use=True
-        )
+        user = User(username="imguser", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1743,9 +1743,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = User(
-            username="incomplete", is_active=True, can_use=True
-        )
+        user = User(username="incomplete", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1892,9 +1890,7 @@ async def test_generate_fullbody_preconditions(
     monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
-        user = User(
-            username="fbuser2", is_active=True, can_use=True
-        )
+        user = User(username="fbuser2", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2071,9 +2067,7 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
     monkeypatch.setattr(avatar_service, "build_fullbody_prompt", fake_build)
 
     async with SessionLocal() as db:
-        user = User(
-            username="fbfeedback", is_active=True, can_use=True
-        )
+        user = User(username="fbfeedback", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2106,10 +2100,11 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
     """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
     incomplete persona to 409 (provider failures stay 502)."""
-    from api.v1 import companion as companion_api
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from components import get_db
     from modules.auth import get_current_session
     from services.companion import AvatarGenerationError
     from services.rate_limit import limiter
@@ -2158,10 +2153,11 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     PUT /persona takes definition_json, absent assets are 404 (not null),
     and POST /model surfaces generation failures as 502 (not 500).
     """
-    from api.v1 import companion as companion_api
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from components import get_db
     from modules.auth import get_current_session
     from services.rate_limit import limiter
 
@@ -2427,8 +2423,8 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     from services.companion import (
         ModelGenerationInProgressError,
         generate_companion_model,
+        model_service,
     )
-    from services.companion import model_service
 
     _, SessionLocal = _patch_db
     monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
@@ -2485,8 +2481,11 @@ async def test_model_generation_failure_keeps_previous_model_active(
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
-    from services.companion import ModelGenerationError, generate_companion_model
-    from services.companion import model_service
+    from services.companion import (
+        ModelGenerationError,
+        generate_companion_model,
+        model_service,
+    )
 
     _, SessionLocal = _patch_db
     monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
@@ -2499,9 +2498,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
     )
 
     async with SessionLocal() as db:
-        user = User(
-            username="mgenfail", is_active=True, can_use=True
-        )
+        user = User(username="mgenfail", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2602,9 +2599,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
     )
 
     async with SessionLocal() as db:
-        user = User(
-            username="mgenidem", is_active=True, can_use=True
-        )
+        user = User(username="mgenidem", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2672,30 +2667,41 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import model_service
-    from services.llm import Model3DAsset, Model3DJob, Model3DPollResult, ModelGenProvider, ProviderConfig, ServiceType
+    from services.image_to_3d import (
+        ImageTo3DProvider,
+        Model3DAsset,
+        Model3DJob,
+        Model3DPollResult,
+    )
 
     _, SessionLocal = _patch_db
 
     captured: dict = {}
 
-    class _FakeProvider(ModelGenProvider):
+    class _FakeProvider(ImageTo3DProvider):
         provider_name = "tripo"
         SUPPORTS_RIGGING = True
         SUPPORTS_MULTIVIEW = True
 
         def __init__(self) -> None:
-            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="tripo"))
+            pass
 
         async def submit_image_to_model(self, image_path, *, multiview_paths=None):
             captured["submit"] = (image_path.name, multiview_paths)
             return Model3DJob(job_id="task_img")
 
         async def poll(self, job):
-            return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url="https://x/y.glb"),))
+            return Model3DPollResult(
+                status="completed",
+                progress=100,
+                assets=(Model3DAsset(kind="glb", url="https://x/y.glb"),),
+            )
 
         async def download(self, result, dest_dir):
             dest = dest_dir / "model.glb"
-            dest.write_bytes(b"\x00" * 20)  # tiny but valid GLB per the parser's 20-byte floor
+            dest.write_bytes(
+                b"\x00" * 20
+            )  # tiny but valid GLB per the parser's 20-byte floor
             return dest
 
         async def rig_supported(self, job_id):
@@ -2713,9 +2719,7 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
 
     async with SessionLocal() as db:
-        user = User(
-            username="run_single", is_active=True, can_use=True
-        )
+        user = User(username="run_single", is_active=True, can_use=True)
         db.add(user)
         await db.flush()  # populate user.id for the FKs below
         db.add(
@@ -2789,15 +2793,15 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import model_service
-    from services.llm import Model3DJob, ModelGenProvider, ProviderConfig, ServiceType
+    from services.image_to_3d import ImageTo3DProvider
 
     _, SessionLocal = _patch_db
 
-    class _FailingProvider(ModelGenProvider):
+    class _FailingProvider(ImageTo3DProvider):
         provider_name = "tripo"
 
         def __init__(self) -> None:
-            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="tripo"))
+            pass
 
         async def submit_image_to_model(self, image_path, *, multiview_paths=None):
             raise model_service.ModelGenerationError("insufficient credit")
@@ -2808,7 +2812,9 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
         async def download(self, result, dest_dir):
             raise AssertionError("download must not run after submit failed")
 
-    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: _FailingProvider())
+    monkeypatch.setattr(
+        model_service, "_resolve_model_provider", lambda _name: _FailingProvider()
+    )
 
     async with SessionLocal() as db:
         user = User(
@@ -2885,33 +2891,46 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import model_service
-    from services.llm import Model3DAsset, Model3DJob, Model3DPollResult, ModelGenProvider, ProviderConfig, ServiceType
+    from services.image_to_3d import (
+        ImageTo3DProvider,
+        Model3DAsset,
+        Model3DJob,
+        Model3DPollResult,
+    )
 
     _, SessionLocal = _patch_db
 
     captured: dict = {}
     order: list[str] = []
 
-    class _FakeHunyuanProvider(ModelGenProvider):
+    class _FakeHunyuanProvider(ImageTo3DProvider):
         provider_name = "hunyuan"  # SUPPORTS_RIGGING / SUPPORTS_MULTIVIEW stay False
 
         def __init__(self) -> None:
-            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="hunyuan"))
+            pass
 
         async def submit_image_to_model(self, image_path, *, multiview_paths=None):
             captured["submit"] = (image_path.name, multiview_paths)
             return Model3DJob(job_id="job_hy")
 
         async def poll(self, job):
-            return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url="https://x/m.glb"),))
+            return Model3DPollResult(
+                status="completed",
+                progress=100,
+                assets=(Model3DAsset(kind="glb", url="https://x/m.glb"),),
+            )
 
         async def download(self, result, dest_dir):
             order.append("download")
             dest = dest_dir / "model.glb"
-            dest.write_bytes(b"\x00" * 20)  # tiny but valid GLB per the parser's 20-byte floor
+            dest.write_bytes(
+                b"\x00" * 20
+            )  # tiny but valid GLB per the parser's 20-byte floor
             return dest
 
-    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider())
+    monkeypatch.setattr(
+        model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider()
+    )
 
     async def fake_select_rig_type(*_args, **_kwargs):
         return "biped"
@@ -2935,7 +2954,9 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
         db.add(
             Persona(
                 user_id=user.id,
-                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                definition_json=_json.dumps(
+                    {"name": "x", "personality": "p", "speaking_style": "s"}
+                ),
                 is_complete=True,
             )
         )
@@ -2962,7 +2983,9 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     try:
-        await model_service.run_model_gen_pipeline("hunyuan", uid, {"front": "front.png"}, "人类", model_id, "single")
+        await model_service.run_model_gen_pipeline(
+            "hunyuan", uid, {"front": "front.png"}, "人类", model_id, "single"
+        )
     finally:
         (asset_dir / "front.png").unlink(missing_ok=True)
 
@@ -2999,13 +3022,13 @@ async def test_generate_companion_model_without_provider_key_rejects(
     from services.companion import (
         ModelProviderNotConfiguredError,
         generate_companion_model,
+        model_service,
     )
-    from services.companion import model_service
 
     _, SessionLocal = _patch_db
     monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "")
-    monkeypatch.setattr(model_service.SETTINGS, "model_gen_api_key", "")
-    monkeypatch.setattr(model_service.SETTINGS, "model_gen_provider", "")
+    monkeypatch.setattr(model_service.SETTINGS, "hunyuan_api_key", "")
+    monkeypatch.setattr(model_service.SETTINGS, "image_to_3d_provider", "tripo")
 
     async with SessionLocal() as db:
         user = User(username="mgen_nokey", is_active=True, can_use=True)
@@ -3053,10 +3076,11 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     """End-to-end test for wardrobe preview (temp-media) and confirm (persist + equip)."""
     import base64
 
-    from api.v1 import companion as companion_api
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from components import get_db
     from modules.auth import User, get_current_session
     from modules.companion import WardrobeItem
     from services.rate_limit import limiter
@@ -3064,9 +3088,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     _, SessionLocal = _patch_db
 
     async with SessionLocal() as db:
-        user = User(
-            username="wardrobe_user", is_active=True, can_use=True
-        )
+        user = User(username="wardrobe_user", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3467,10 +3489,11 @@ def test_outfit_guidance_injected_only_when_outfit_present():
 
 
 async def _make_authenticated_client(_patch_db, uid: int = 3001):
-    from api.v1 import companion as companion_api
-    from components import get_db
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
+    from components import get_db
     from modules.auth import User, UserModelConfig, get_current_session
 
     _, SessionLocal = _patch_db
@@ -3597,9 +3620,7 @@ async def test_slot_based_multi_equip(_patch_db):
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = User(
-            username="slot_equip_user", is_active=True, can_use=True
-        )
+        user = User(username="slot_equip_user", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3789,9 +3810,7 @@ async def test_generate_fullbody_falls_back_to_bust_for_all_views(
     monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
-        user = User(
-            username="bustfallback", is_active=True, can_use=True
-        )
+        user = User(username="bustfallback", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3905,8 +3924,9 @@ async def test_generate_fullbody_aux_views_share_primary_reference(
 
 def test_fullbody_request_schema_no_reference_source_field():
     """``reference_source`` was removed — old clients passing it get a 422."""
-    from modules.companion.schemas import FullbodyGenerateRequest
     from pydantic import ValidationError
+
+    from modules.companion.schemas import FullbodyGenerateRequest
 
     # Valid request without the legacy field
     req = FullbodyGenerateRequest(stage="front", reference_image="iVBORw0KGgo=")
@@ -3917,7 +3937,9 @@ def test_fullbody_request_schema_no_reference_source_field():
         FullbodyGenerateRequest(stage="front", reference_source="reference_image")
 
 
-async def test_onboarding_state_does_not_include_default_fullbody_reference_source(_patch_db):
+async def test_onboarding_state_does_not_include_default_fullbody_reference_source(
+    _patch_db,
+):
     """The ``default_fullbody_reference_source`` field was removed from
     ``onboarding.get_state`` — fullbody reference resolution is now an
     implicit three-tier fallback (upload → bust → text)."""
@@ -4044,8 +4066,12 @@ async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
 async def test_temp_files_marker_strict_isolation():
     from components.temp_files import TempFileMarkerMismatch, delete_file, save_file
 
-    fid_10, _ = save_file(b"preview_10", "", "image/png", "png", meta_marker="wardrobe_preview:10")
-    fid_1, _ = save_file(b"preview_1", "", "image/png", "png", meta_marker="wardrobe_preview:1")
+    fid_10, _ = save_file(
+        b"preview_10", "", "image/png", "png", meta_marker="wardrobe_preview:10"
+    )
+    fid_1, _ = save_file(
+        b"preview_1", "", "image/png", "png", meta_marker="wardrobe_preview:1"
+    )
 
     # User 1 cannot delete user 10's preview despite prefix similarity
     with pytest.raises(TempFileMarkerMismatch):
@@ -4060,9 +4086,10 @@ async def test_temp_files_marker_strict_isolation():
 
 @pytest.mark.asyncio
 async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkeypatch):
-    from api.v1 import companion as companion_api
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
+    from api.v1 import companion as companion_api
     from modules.auth import get_current_session
     from modules.companion import AvatarAsset, Persona
     from services.companion import avatar_service
@@ -4091,11 +4118,20 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
         persona = await avatar_service.get_or_create_persona(db, fake_user.id)
         persona.is_complete = True
         persona.is_portrait_confirmed = True
-        persona.definition_json = json.dumps({"biological_type": "人类", "gender": "female"}, ensure_ascii=False)
+        persona.definition_json = json.dumps(
+            {"biological_type": "人类", "gender": "female"}, ensure_ascii=False
+        )
         await db.commit()
 
     async def _fake_gen_step(db, user_id, *, avatar_prompt, style, persona=None, **kw):
-        return AvatarAsset(id=999, user_id=user_id, asset_url="temp-media/dummy", prompt_json="{}", style=style, active=True)
+        return AvatarAsset(
+            id=999,
+            user_id=user_id,
+            asset_url="temp-media/dummy",
+            prompt_json="{}",
+            style=style,
+            active=True,
+        )
 
     async def _fake_prompt(*a, **k):
         return "fake prompt"
@@ -4122,5 +4158,7 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
         )
         assert asset.active is True
 
-        refreshed_persona = (await db.execute(select(Persona).where(Persona.user_id == fake_user.id))).scalar_one()
+        refreshed_persona = (
+            await db.execute(select(Persona).where(Persona.user_id == fake_user.id))
+        ).scalar_one()
         assert refreshed_persona.is_portrait_confirmed is False

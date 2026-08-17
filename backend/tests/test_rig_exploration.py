@@ -2,7 +2,7 @@ import httpx
 import pytest
 
 from services.companion import rig_exploration
-from services.llm.providers.tripo import client as tripo_client
+from services.image_to_3d import tripo_client
 
 
 @pytest.fixture

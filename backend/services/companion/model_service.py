@@ -12,19 +12,8 @@ from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import (
-    SERVICE_DEFAULT_PROVIDER,
-    Model3DJob,
-    Model3DPollResult,
-    ModelGenProvider,
-    ProviderConfig,
-    ServiceType,
-    chat,
-    default_base_url,
-    is_preset_species,
-    provider_from_config,
-    resolve_fullbody_style,
-)
+from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DJob, Model3DPollResult, get_effective_fullbody_mode, resolve_provider
+from services.llm import chat, is_preset_species, resolve_fullbody_style
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
@@ -104,19 +93,13 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
     return build_signed_model_url(int(parts[1]), parts[2])
 
 
-def _resolve_model_provider(name: str | None) -> ModelGenProvider:
+def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
     """Explicit selection only — commercial providers never fail over into
-    each other. Key precedence: ``model_gen_api_key`` → ``{name}_api_key``;
-    same for ``base_url`` down to the registry default."""
-    provider_name = name or SETTINGS.model_gen_provider or SERVICE_DEFAULT_PROVIDER["model_gen"]
-    api_key = SETTINGS.model_gen_api_key or getattr(SETTINGS, f"{provider_name}_api_key", "") or ""
-    base_url = SETTINGS.model_gen_base_url or getattr(SETTINGS, f"{provider_name}_base_url", "") or "" or default_base_url(provider_name, "model_gen")
-    if not api_key:
-        raise ModelProviderNotConfiguredError(f"图生3D供应商 {provider_name} 未配置 API key（config.toml [{provider_name}] 段或 {provider_name.upper()}_API_KEY）")
+    each other. Key precedence and endpoint are handled inside image_to_3d.resolve_provider."""
     try:
-        return provider_from_config(ProviderConfig(base_url=base_url, api_key=api_key, model="", service_type=ServiceType.model_gen, provider_name=provider_name))
-    except LookupError as exc:
-        raise ModelProviderNotConfiguredError(f"未注册的图生3D供应商: {provider_name}") from exc
+        return resolve_provider(name)
+    except (ImageTo3DError, LookupError) as exc:
+        raise ModelProviderNotConfiguredError(str(exc)) from exc
 
 
 def _provider_result_label(provider_name: str, multiview: bool) -> str:
@@ -227,8 +210,8 @@ async def generate_companion_model(
         if not front:
             raise ModelGenerationError("请先完成正面全身图生成再生成模型")
 
-        fullbody_mode = SETTINGS.fullbody_mode
-        if fullbody_mode == "single":
+        effective_fullbody_mode = get_effective_fullbody_mode(provider.provider_name)
+        if effective_fullbody_mode == "single":
             view_filenames = {"front": front}
         else:
             right = (avatar.seed_right_url or "").split("/")[-1].split("?")[0]
@@ -263,7 +246,7 @@ async def generate_companion_model(
     await render_queue.enqueue(
         "model_generate",
         user_id,
-        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode, "style": style, "provider": provider.provider_name},
+        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": effective_fullbody_mode, "style": style, "provider": provider.provider_name},
     )
     logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
@@ -280,7 +263,7 @@ async def run_model_gen_pipeline(
     *,
     io_dir: Path | None = None,
 ) -> None:
-    provider: ModelGenProvider | None = None
+    provider: ImageTo3DProvider | None = None
     try:
         provider = _resolve_model_provider(provider_name)
         is_single = fullbody_mode == "single"
@@ -364,12 +347,12 @@ async def run_model_gen_pipeline(
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
 
 
-async def _poll_with_progress(provider: ModelGenProvider, job: Model3DJob, user_id: int, stage: str, start_pct: int, end_pct: int) -> Model3DPollResult:
+async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user_id: int, stage: str, start_pct: int, end_pct: int) -> Model3DPollResult:
     # The emit is an async session write but poll() is awaited inline —
     # schedule each emit as a task and drain them before returning so no
     # progress event is dropped or GC'd mid-poll.
     emit_tasks: set[asyncio.Task] = set()
-    deadline = time.monotonic() + SETTINGS.model_gen_max_poll_seconds
+    deadline = time.monotonic() + SETTINGS.image_to_3d_max_poll_seconds
     started = time.monotonic()
 
     def _emit(our_pct: int) -> None:
@@ -392,12 +375,12 @@ async def _poll_with_progress(provider: ModelGenProvider, job: Model3DJob, user_
             raise ModelGenerationError(f"3D 生成任务失败: {result.error or stage}")
         # Providers without a numeric progress signal (hunyuan) interpolate by
         # elapsed time so the client sees the stage crawl instead of freezing.
-        raw = result.progress or min(100, int(100 * (time.monotonic() - started) / SETTINGS.model_gen_max_poll_seconds))
+        raw = result.progress or min(100, int(100 * (time.monotonic() - started) / SETTINGS.image_to_3d_max_poll_seconds))
         _emit(start_pct + (end_pct - start_pct) * raw // 100)
         if time.monotonic() > deadline:
             await _drain()
-            raise ModelGenerationError(f"3D 生成超时（{SETTINGS.model_gen_max_poll_seconds:.0f}s）")
-        await asyncio.sleep(SETTINGS.model_gen_poll_interval_seconds)
+            raise ModelGenerationError(f"3D 生成超时（{SETTINGS.image_to_3d_max_poll_seconds:.0f}s）")
+        await asyncio.sleep(SETTINGS.image_to_3d_poll_interval_seconds)
 
 
 async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, io_dir: Path | None = None) -> bytes:

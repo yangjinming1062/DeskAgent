@@ -38,8 +38,17 @@ temp_file_ttl_hours = 24
 # Root for backend-side disk artifacts
 data_dir = "./data"
 
-[tripo]
-# Tripo3D v3 — 图生3D供应商之一（支持云端绑骨 rig 与多视图种子）。
+[image_to_3d]
+# 图生3D 供应商选择：显式指定 "tripo" 或 "hunyuan"（默认 tripo），
+# 商业供应商之间不做自动回退；未配置 key 时 3D 生成请求被拒绝（400），
+# 桌宠以静态精灵模式兜底交互。
+# 优化：若当前配置的供应商不支持多视图（如 hunyuan），onboarding 阶段将自动
+# 回退 fullbody_mode 为 single，避免浪费生成侧面/背面全身图。
+image_to_3d_provider = "tripo"
+image_to_3d_poll_interval_seconds = 5.0
+image_to_3d_max_poll_seconds = 1800.0
+
+# ── Tripo3D v3（支持云端绑骨 rig 与多视图种子）──
 tripo_api_key = ""
 tripo_base_url = "https://openapi.tripo3d.ai/v3"
 tripo_model_version = "v3.1-20260211"
@@ -48,24 +57,10 @@ tripo_texture_quality = "detailed"
 tripo_geometry_quality = "detailed"
 tripo_enable_autofix = true
 
-[hunyuan]
-# 腾讯混元生3D（TokenHub OpenAI 兼容接入）— 图生3D供应商之一。
-# 仅专业版模型 hy-3d-3.0 / hy-3d-3.1；无云端绑骨能力，产物由本地
-# Blender 自动绑骨后处理补齐骨骼。
+# ── 腾讯混元3D（TokenHub 接入，单图生 3D + 本地 Blender 自动绑骨）──
 hunyuan_api_key = ""
 hunyuan_base_url = "https://tokenhub.tencentmaas.com"
 hunyuan_model_version = "hy-3d-3.1"
-
-[model_gen]
-# 图生3D 供应商选择：provider 参数显式指定（请求级覆盖 > 此处默认 > tripo），
-# 商业供应商之间不做自动回退；未配置任何 key 时 3D 生成被拒绝（400），
-# 桌宠以静态精灵方式兜底交互。key 优先级：model_gen_api_key → 供应商段
-# （[tripo]/[hunyuan]）的 {name}_api_key。
-model_gen_provider = ""
-model_gen_base_url = ""
-model_gen_api_key = ""
-model_gen_poll_interval_seconds = 5.0
-model_gen_max_poll_seconds = 1800.0
 
 [blender_llm]
 # Blender 只做 3D 后处理（绑骨/morph 注入/换装几何），不做模型生成。

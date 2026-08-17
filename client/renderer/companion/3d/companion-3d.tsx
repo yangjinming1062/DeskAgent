@@ -322,7 +322,14 @@ export function Companion3D(): React.JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.morph_params, modelInfo.rig_type])
+  }, [
+    modelInfo.asset_url,
+    modelInfo.content_hash,
+    modelInfo.id,
+    modelInfo.morph_params,
+    modelInfo.rig_type,
+    modelInfo.style
+  ])
 
   // Hot-switch NPR ⇄ PBR. Gated on the first model settling so the egg
   // window never flips lighting presets pointlessly.
