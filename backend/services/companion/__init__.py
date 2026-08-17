@@ -34,7 +34,6 @@ from .avatar_service import (
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
 )
-from .blender_llm_pipeline import run_blender_llm_pipeline
 from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
 from .garment_service import run_garment_pipeline
 from .http_range import serve_ranged_file
@@ -47,6 +46,7 @@ from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memor
 from .model_service import (
     ModelGenerationError,
     ModelGenerationInProgressError,
+    ModelProviderNotConfiguredError,
     emit_companion_assets_updated,
     emit_wardrobe_gift,
     emit_wardrobe_updated,
@@ -54,7 +54,7 @@ from .model_service import (
     get_active_model,
     parse_glb_json,
     recover_stuck_model_generations,
-    run_tripo_pipeline,
+    run_model_gen_pipeline,
     signed_model_url,
 )
 from .morph_generator import validate_and_sanitize_expression
@@ -86,7 +86,6 @@ from .sprite_service import (
     signed_sprite_url,
     solid_bg_to_alpha,
 )
-from .tripo_client import create_multiview_to_model
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
     WardrobeRouting,
@@ -108,9 +107,9 @@ from .wardrobe_service import (
 __all__ = [
     "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
-    "ONBOARDING_FIELDS",
     "BUILTIN_CLIPS_BY_RIG",
     "BUILTIN_STATE_CLIPS",
+    "ONBOARDING_FIELDS",
     "RIG_DEFAULT_BONES",
     "AffectCheckResult",
     "AvatarGenerationError",
@@ -120,6 +119,7 @@ __all__ = [
     "InteractResult",
     "ModelGenerationError",
     "ModelGenerationInProgressError",
+    "ModelProviderNotConfiguredError",
     "PersonaValidationError",
     "SeedPromptMissingError",
     "ShouldActResult",
@@ -131,22 +131,21 @@ __all__ = [
     "asset_store",
     "avatar_response",
     "build_data_uri",
-    "builtin_action_clips",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
     "build_system_prompt_extras",
     "build_user_profile_extras",
+    "builtin_action_clips",
     "check_affect",
     "classify_species",
+    "compress_glb",
     "compute_bytes_sha256",
     "compute_file_sha256",
-    "compress_glb",
-    "decompress_glb_if_needed",
     "confirm_portrait",
     "confirm_wardrobe_item",
-    "create_multiview_to_model",
     "decline_wardrobe_item",
+    "decompress_glb_if_needed",
     "delete_memory",
     "delete_wardrobe_item",
     "design_voice",
@@ -162,10 +161,10 @@ __all__ = [
     "format_memories_block",
     "format_proactive_memory_block",
     "generate_animation_clips",
-    "generate_named_animation_clip",
     "generate_avatar",
     "generate_companion_model",
     "generate_fullbody",
+    "generate_named_animation_clip",
     "get_active_avatar",
     "get_active_model",
     "get_avatar_job_lock",
@@ -207,10 +206,9 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
-    "run_blender_llm_pipeline",
     "run_garment_pipeline",
+    "run_model_gen_pipeline",
     "run_prompt_json",
-    "run_tripo_pipeline",
     "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",
     "select_rig_type",

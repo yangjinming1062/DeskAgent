@@ -1,7 +1,8 @@
 import httpx
 import pytest
 
-from services.companion import rig_exploration, tripo_client
+from services.companion import rig_exploration
+from services.llm.providers.tripo import client as tripo_client
 
 
 @pytest.fixture
@@ -17,7 +18,7 @@ def transport(monkeypatch, fake_key):
     original = httpx.AsyncClient
 
     def _factory(*_a, **_kw):
-        return original(transport=t, base_url=tripo_client.BASE_URL)
+        return original(transport=t, base_url=tripo_client._base_url())
 
     monkeypatch.setattr(tripo_client.httpx, "AsyncClient", _factory)
     monkeypatch.setattr(

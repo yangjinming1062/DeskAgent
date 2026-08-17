@@ -225,14 +225,14 @@ def _export_glb(output_path: str, assembly: dict) -> None:
     )
 
 
-# ─── Preview render (same as llm_bpy_scaffold) ───────────────────
+# ─── Preview render ───────────────────────────────────────────────
 
 
 def _render_preview(output_path: str) -> None:
     """Low-quality Cycles CPU render for the render-compare-refine loop.
 
     EEVEE is unreliable in headless containers (needs an OpenGL context);
-    Cycles CPU works everywhere. Keep in sync with llm_bpy_scaffold._render_preview.
+    Cycles CPU works everywhere.
     """
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"

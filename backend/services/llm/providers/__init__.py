@@ -3,8 +3,10 @@ from components import SETTINGS
 from . import (
     gemini,  # noqa: F401 — side-effect: registers gemini providers
     grok,  # noqa: F401 — side-effect: registers grok providers
+    hunyuan,  # noqa: F401 — side-effect: registers hunyuan providers
     mimo,  # noqa: F401 — side-effect: registers mimo providers
     minimax,  # noqa: F401 — side-effect: registers minimax providers
+    tripo,  # noqa: F401 — side-effect: registers tripo providers
     zhipu,  # noqa: F401 — side-effect: registers zhipu providers
 )
 from .base import (
@@ -15,6 +17,10 @@ from .base import (
     ImageGenProvider,
     ImageGenRequest,
     ImageGenResult,
+    Model3DAsset,
+    Model3DJob,
+    Model3DPollResult,
+    ModelGenProvider,
     ProviderConfig,
     ProviderError,
     ServiceType,
@@ -86,6 +92,10 @@ __all__ = [
     "MiMoImageGenProvider",
     "MiMoSTTProvider",
     "MiMoTTSProvider",
+    "Model3DAsset",
+    "Model3DJob",
+    "Model3DPollResult",
+    "ModelGenProvider",
     "ProviderConfig",
     "ProviderError",
     "STTProvider",

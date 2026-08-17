@@ -6,7 +6,14 @@ import httpx
 import pytest
 
 from components import SETTINGS
-from services.companion import tripo_client
+from services.llm.providers.tripo import client as tripo_client
+
+
+def test_base_url_prefers_settings_over_default(monkeypatch):
+    monkeypatch.setattr(SETTINGS, "tripo_base_url", "https://proxy.example.com/v3")
+    assert tripo_client._base_url() == "https://proxy.example.com/v3"
+    monkeypatch.setattr(SETTINGS, "tripo_base_url", "")
+    assert tripo_client._base_url() == tripo_client.DEFAULT_BASE_URL
 
 
 class _MockTransport(httpx.AsyncBaseTransport):
@@ -40,7 +47,7 @@ def mock_http(monkeypatch, fake_key):
     clients: list[httpx.AsyncClient] = []
 
     def _factory(*_a, **_kw):
-        c = original(transport=transport, base_url=tripo_client.BASE_URL)
+        c = original(transport=transport, base_url=tripo_client._base_url())
         clients.append(c)
         return c
 

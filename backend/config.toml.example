@@ -39,7 +39,7 @@ temp_file_ttl_hours = 24
 data_dir = "./data"
 
 [tripo]
-# Tripo3D v3 API key — used for 3D image-to-model and rig.
+# Tripo3D v3 — 图生3D供应商之一（支持云端绑骨 rig 与多视图种子）。
 tripo_api_key = ""
 tripo_base_url = "https://openapi.tripo3d.ai/v3"
 tripo_model_version = "v3.1-20260211"
@@ -48,10 +48,27 @@ tripo_texture_quality = "detailed"
 tripo_geometry_quality = "detailed"
 tripo_enable_autofix = true
 
+[hunyuan]
+# 腾讯混元生3D（TokenHub OpenAI 兼容接入）— 图生3D供应商之一。
+# 仅专业版模型 hy-3d-3.0 / hy-3d-3.1；无云端绑骨能力，产物由本地
+# Blender 自动绑骨后处理补齐骨骼。
+hunyuan_api_key = ""
+hunyuan_base_url = "https://tokenhub.tencentmaas.com"
+hunyuan_model_version = "hy-3d-3.1"
+
+[model_gen]
+# 图生3D 供应商选择：provider 参数显式指定（请求级覆盖 > 此处默认 > tripo），
+# 商业供应商之间不做自动回退；未配置任何 key 时 3D 生成被拒绝（400），
+# 桌宠以静态精灵方式兜底交互。key 优先级：model_gen_api_key → 供应商段
+# （[tripo]/[hunyuan]）的 {name}_api_key。
+model_gen_provider = ""
+model_gen_base_url = ""
+model_gen_api_key = ""
+model_gen_poll_interval_seconds = 5.0
+model_gen_max_poll_seconds = 1800.0
+
 [blender_llm]
-# Enable Blender+LLM fallback when Tripo3D is unavailable (no key or no credits).
-blender_llm_enabled = true
-# LLM ↔ Blender agentic loop maximum iterations (code-fix + visual-refine).
+# Blender 只做 3D 后处理（绑骨/morph 注入/换装几何），不做模型生成。
 blender_llm_max_iterations = 10
 # Per Blender invocation timeout in seconds (mesh build + optional render).
 blender_llm_timeout = 1800

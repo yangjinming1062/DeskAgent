@@ -28,6 +28,7 @@ from .prompt_engineer import (
     resolve_fullbody_template,
 )
 from .providers import (
+    SERVICE_DEFAULT_PROVIDER,
     BaseProvider,
     ChatProvider,
     EmbeddingProvider,
@@ -39,6 +40,10 @@ from .providers import (
     MiMoImageGenProvider,
     MiMoSTTProvider,
     MiMoTTSProvider,
+    Model3DAsset,
+    Model3DJob,
+    Model3DPollResult,
+    ModelGenProvider,
     ProviderConfig,
     ProviderError,
     ServiceType,
@@ -52,6 +57,7 @@ from .providers import (
     VideoJobStatus,
     VoiceDesignResult,
     aclose_all,
+    default_base_url,
     default_context_tokens_for,
     default_model_for,
     providers_supporting,
@@ -64,6 +70,7 @@ from .user_config import UserLlmConfig, merge_provider_json, resolve_user_llm_co
 from .voice_catalog import VoiceEntry, pick_voice_id, voices_for_provider
 
 __all__ = [
+    "SERVICE_DEFAULT_PROVIDER",
     "BaseProvider",
     "ChatProvider",
     "ClassifiedError",
@@ -81,6 +88,10 @@ __all__ = [
     "MiMoSTTProvider",
     "MiMoTTSProvider",
     "MissingLlmConfigError",
+    "Model3DAsset",
+    "Model3DJob",
+    "Model3DPollResult",
+    "ModelGenProvider",
     "ProviderConfig",
     "ProviderError",
     "STTProvider",
@@ -104,6 +115,7 @@ __all__ = [
     "classify_api_error",
     "client_for_config",
     "compress_history_if_needed",
+    "default_base_url",
     "default_context_tokens_for",
     "default_model_for",
     "enhance_avatar_prompt",

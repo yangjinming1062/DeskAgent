@@ -40,6 +40,7 @@ from services.companion import (
     FrontSeedMissingError,
     ModelGenerationError,
     ModelGenerationInProgressError,
+    ModelProviderNotConfiguredError,
     PersonaValidationError,
     SeedPromptMissingError,
     SpriteGenerationError,
@@ -370,6 +371,8 @@ async def post_model(
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider, force=body.force)
     except ModelGenerationInProgressError as exc:
         raise HTTPException(status_code=409, detail={"error": str(exc)})
+    except ModelProviderNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail={"error": str(exc)})
     except ModelGenerationError as exc:
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return model_response(model)

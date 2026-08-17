@@ -95,7 +95,7 @@ class ModelGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     species_override: str | None = Field(default=None, max_length=64)
-    provider: Literal["tripo", "blender_llm"] | None = None
+    provider: Literal["tripo", "hunyuan"] | None = None
     # False returns existing active model idempotently; True forces paid regeneration.
     force: bool = False
 

@@ -16,24 +16,29 @@ async def _emit(user_id: int, event_type: str, payload: dict) -> None:
 
 
 async def _model_generate(job: RenderJob, io_dir: Path) -> None:
-    # Late import: blender_llm_pipeline pulls the whole companion service
-    # graph; keeping it out of module level lets services.worker (queue/
-    # sandbox/runner) stay importable without those deps and avoids the
-    # model_service ↔ worker facade cycle.
-    from services.companion import blender_llm_pipeline
+    # Late import: model_service pulls the whole companion service graph and
+    # the provider registry; keeping it out of module level lets
+    # services.worker (queue/sandbox/runner) stay importable without those
+    # deps and avoids the model_service ↔ worker facade cycle.
+    from services.companion import model_service
 
     payload = job.payload
-    await blender_llm_pipeline.run_blender_llm_pipeline(
-        job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], style=payload.get("style", "realistic"), io_dir=io_dir
-    )
-
-
-async def _tripo_generate(job: RenderJob, io_dir: Path) -> None:
-    from services.companion import run_tripo_pipeline
-
-    payload = job.payload
-    await run_tripo_pipeline(
-        job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], payload.get("fullbody_mode", "multi"), payload.get("style", "realistic"), io_dir=io_dir
+    provider = payload.get("provider")
+    if not provider:
+        # Deploy-window rows enqueued under the old kind carry no provider
+        # field; legacy blender rows fail fast instead of re-routing.
+        if job.kind != "tripo_generate":
+            raise ValueError("model_generate payload missing provider")
+        provider = "tripo"
+    await model_service.run_model_gen_pipeline(
+        provider,
+        job.user_id,
+        payload["view_filenames"],
+        payload["species"],
+        payload["model_id"],
+        payload.get("fullbody_mode", "multi"),
+        payload.get("style", "realistic"),
+        io_dir=io_dir,
     )
 
 
@@ -66,5 +71,5 @@ async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
 
 def register() -> None:
     HANDLERS["model_generate"] = _model_generate
-    HANDLERS["tripo_generate"] = _tripo_generate
+    HANDLERS["tripo_generate"] = _model_generate
     HANDLERS["garment_preview"] = _garment_preview

@@ -2,6 +2,7 @@ import asyncio
 import json
 import shutil
 import tempfile
+import time
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -11,33 +12,39 @@ from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import chat, is_preset_species, resolve_fullbody_style
+from services.llm import (
+    SERVICE_DEFAULT_PROVIDER,
+    Model3DJob,
+    Model3DPollResult,
+    ModelGenProvider,
+    ProviderConfig,
+    ServiceType,
+    chat,
+    default_base_url,
+    is_preset_species,
+    provider_from_config,
+    resolve_fullbody_style,
+)
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
+from .rig_layout import layout_skeleton
 from .rig_type_selector import classify_species, select_rig_type
-from .tripo_client import (
-    TripoApiError,
-    account_balance,
-    create_image_to_model,
-    create_multiview_to_model,
-    download_model,
-    poll_rig_check,
-    poll_task,
-    rig,
-    rig_check,
-    tripo_common_kwargs_from_settings,
-    upload_file,
-)
 
 logger = get_logger(__name__)
 
 
 class ModelGenerationError(RuntimeError):
     pass
+
+
+class ModelProviderNotConfiguredError(ModelGenerationError):
+    """No image-to-3D provider is usable. Generation is rejected outright —
+    there is no local modelling fallback; the client keeps interacting in
+    sprite mode."""
 
 
 class ModelGenerationInProgressError(ModelGenerationError):
@@ -64,14 +71,14 @@ def get_model_job_lock(user_id: int) -> asyncio.Lock:
 async def recover_stuck_model_generations() -> None:
     """Mark every ``status="generating"`` row as failed on startup.
 
-    The Tripo3D / Blender pipeline runs as a fire-and-forget ``asyncio.Task``.
+    The image-to-3D pipeline runs as a fire-and-forget ``asyncio.Task``.
     A process restart (deploy, OOM, crash) kills the task mid-flight, but the
     DB row's ``status="generating"`` survives — it's the durable lock designed
     to outlive the task. Without this sweep those orphaned rows permanently
     block new generation attempts (``ModelGenerationInProgressError``).
 
-    Mirrors ``resume_pending_video_jobs`` in the media service, except Tripo
-    task IDs are lost on restart so we can't resume — only fail and let the
+    Mirrors ``resume_pending_video_jobs`` in the media service, except provider
+    job IDs are lost on restart so we can't resume — only fail and let the
     user retry.
     """
     async with SESSION_LOCAL() as db:
@@ -97,22 +104,23 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
     return build_signed_model_url(int(parts[1]), parts[2])
 
 
-_CREDITS_ERROR_PATTERNS: tuple[str, ...] = ("credit", "quota", "insufficient", "balance", "exhausted", "limit reached", "billing")
+def _resolve_model_provider(name: str | None) -> ModelGenProvider:
+    """Explicit selection only — commercial providers never fail over into
+    each other. Key precedence: ``model_gen_api_key`` → ``{name}_api_key``;
+    same for ``base_url`` down to the registry default."""
+    provider_name = name or SETTINGS.model_gen_provider or SERVICE_DEFAULT_PROVIDER["model_gen"]
+    api_key = SETTINGS.model_gen_api_key or getattr(SETTINGS, f"{provider_name}_api_key", "") or ""
+    base_url = SETTINGS.model_gen_base_url or getattr(SETTINGS, f"{provider_name}_base_url", "") or "" or default_base_url(provider_name, "model_gen")
+    if not api_key:
+        raise ModelProviderNotConfiguredError(f"图生3D供应商 {provider_name} 未配置 API key（config.toml [{provider_name}] 段或 {provider_name.upper()}_API_KEY）")
+    try:
+        return provider_from_config(ProviderConfig(base_url=base_url, api_key=api_key, model="", service_type=ServiceType.model_gen, provider_name=provider_name))
+    except LookupError as exc:
+        raise ModelProviderNotConfiguredError(f"未注册的图生3D供应商: {provider_name}") from exc
 
 
-def _is_credits_exhausted_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(p in msg for p in _CREDITS_ERROR_PATTERNS)
-
-
-def _should_use_blender_fallback(provider_override: str | None) -> bool:
-    if not SETTINGS.blender_llm_enabled:
-        return False
-    if provider_override == "blender_llm":
-        return True
-    if provider_override == "tripo":
-        return False
-    return not (getattr(SETTINGS, "tripo_api_key", "") or "")
+def _provider_result_label(provider_name: str, multiview: bool) -> str:
+    return f"{provider_name}_{'multiview' if multiview else 'image'}_to_3d"
 
 
 def _rig_naming_for(rig_type: str) -> str:
@@ -204,6 +212,12 @@ async def generate_companion_model(
                 logger.info("Companion model already exists; skipping generation", extra={"user_id": user_id, "model_id": existing.id})
                 return existing
 
+        # Fail fast on an unusable provider — before the row is created — so
+        # a misconfigured deployment can't strand a "generating" row. Sits
+        # after the idempotent return: a key lost later in the deployment's
+        # life must not lock users out of their existing model.
+        provider = _resolve_model_provider(provider_override)
+
         # Resolve seed image paths.
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
         if avatar is None:
@@ -244,91 +258,81 @@ async def generate_companion_model(
         await db.commit()
         await db.refresh(model)
 
-    # Blender+LLM consumes front/right/back seeds, so single-view mode always
-    # takes the Tripo branch (which works with a single front seed). Both
-    # pipelines run in the render worker — web never hosts bpy iterations or
-    # the long Tripo poll (ARCHITECTURE.md §10, README §1).
-    use_blender = _should_use_blender_fallback(provider_override) and fullbody_mode != "single"
-    kind = "model_generate" if use_blender else "tripo_generate"
-    await render_queue.enqueue(kind, user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode, "style": style})
-    logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "kind": kind})
+    # The pipeline runs in the render worker — web never hosts bpy
+    # iterations or the long provider poll (ARCHITECTURE.md §10, README §1).
+    await render_queue.enqueue(
+        "model_generate",
+        user_id,
+        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode, "style": style, "provider": provider.provider_name},
+    )
+    logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
 
 
-async def run_tripo_pipeline(
-    user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, style: str = "realistic", *, io_dir: Path | None = None
+async def run_model_gen_pipeline(
+    provider_name: str | None,
+    user_id: int,
+    view_filenames: dict[str, str],
+    species: str,
+    model_id: int,
+    fullbody_mode: str,
+    style: str = "realistic",
+    *,
+    io_dir: Path | None = None,
 ) -> None:
-    is_single = fullbody_mode == "single"
+    provider: ModelGenProvider | None = None
     try:
-        # Single-mode has no multi-view fallback path: blender_llm_pipeline
-        # unconditionally consumes front/right/back seeds, so diverting into
-        # it with a single seed would KeyError. Surface the Tripo failure
-        # instead of silently crashing inside the fallback.
-        if SETTINGS.blender_llm_enabled and not is_single:
-            try:
-                balance_info = await account_balance()
-                if float(balance_info.get("balance", 1)) <= 0:
-                    logger.info("Tripo balance is 0, falling back to Blender+LLM", extra={"user_id": user_id})
-                    await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id, "style": style})
-                    return
-            except Exception:
-                pass  # Best-effort: key might be invalid, network down, etc. — let the pipeline try normally.
+        provider = _resolve_model_provider(provider_name)
+        is_single = fullbody_mode == "single"
 
-        await _emit_progress(user_id, "uploading", 5, provider="tripo")
+        await _emit_progress(user_id, "uploading", 5, provider=provider.provider_name)
 
-        async def _read_and_upload(view_key: str, filename: str) -> tuple[str, str]:
-            resolved = resolve_uploaded_avatar_path(filename)
+        def _seed(view_key: str) -> Path:
+            resolved = resolve_uploaded_avatar_path(view_filenames[view_key])
             if resolved is None:
-                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {filename}")
-            path, content_type = resolved
-            image_bytes = await asyncio.to_thread(path.read_bytes)
-            file_token = await upload_file(image_bytes, filename, content_type)
-            return view_key, file_token
+                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
+            return resolved[0]
 
-        if is_single:
-            # Single seed → one sequential upload.
-            _, front_token = await _read_and_upload("front", view_filenames["front"])
-            await _emit_progress(user_id, "generating", 10, provider="tripo")
-            gen_task_id = await create_image_to_model(front_token, **tripo_common_kwargs_from_settings())
-            provider_label = "tripo_image_to_3d"
-        else:
-            # Multiview endpoint accepts the MV-only framing hints; image-to-model above does not.
-            mv_kwargs = tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image")
-            uploaded_items = await asyncio.gather(
-                _read_and_upload("front", view_filenames["front"]), _read_and_upload("right", view_filenames["right"]), _read_and_upload("back", view_filenames["back"])
-            )
-            await _emit_progress(user_id, "generating", 10, provider="tripo")
-            gen_task_id = await create_multiview_to_model(dict(uploaded_items), **mv_kwargs)
-            provider_label = "tripo_multiview_to_3d"
+        # Providers without a multiview endpoint always consume the front seed alone.
+        multiview = None if is_single or not provider.SUPPORTS_MULTIVIEW else {key: _seed(key) for key in ("front", "right", "back")}
 
-        await _poll_with_progress(user_id, gen_task_id, "generating", 10, 50)
+        await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
+        job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview)
+        provider_label = _provider_result_label(provider.provider_name, multiview is not None)
 
-        await _emit_progress(user_id, "checking_rig", 55, provider="tripo")
-        check_task_id = await rig_check(gen_task_id)
-        check_output = await poll_rig_check(check_task_id)
-        if not check_output.get("riggable"):
-            raise ModelGenerationError("模型不可绑骨，请尝试用更清晰的正面全身种子图重新生成")
+        gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
+
+        if provider.SUPPORTS_RIGGING:
+            await _emit_progress(user_id, "checking_rig", 55, provider=provider.provider_name)
+            if not await provider.rig_supported(job.job_id):
+                raise ModelGenerationError("模型不可绑骨，请尝试用更清晰的正面全身种子图重新生成")
 
         rig_type = await select_rig_type(chat, species, user_id=user_id)  # style came in with the payload — only the rig half is classified here
 
-        await _emit_progress(user_id, "rigging", 60, provider="tripo")
-        rig_task_id = await rig(gen_task_id, rig_type)
-        rig_result = await _poll_with_progress(user_id, rig_task_id, "rigging", 60, 85)
+        if provider.SUPPORTS_RIGGING:
+            await _emit_progress(user_id, "rigging", 60, provider=provider.provider_name)
+            gen_result = await _poll_with_progress(provider, await provider.start_rig(job.job_id, rig_type), user_id, "rigging", 60, 85)
 
-        await _emit_progress(user_id, "downloading", 88, provider="tripo")
-        model_url = rig_result["output"]["model_url"]
-        glb_bytes = await download_model(model_url)
+        await _emit_progress(user_id, "downloading", 88, provider=provider.provider_name)
+        io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+        with io_ctx as tmp:
+            rigged_glb = await provider.download(gen_result, Path(str(tmp)))
+            glb_bytes = await asyncio.to_thread(rigged_glb.read_bytes)
+
+        if not provider.SUPPORTS_RIGGING:
+            await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
+            glb_bytes = await _auto_rig_with_blender(glb_bytes, rig_type, io_dir=io_dir)
 
         rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
-        await _emit_progress(user_id, "injecting_morphs", 90, provider="tripo")
+        await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
         final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)
 
-        await _emit_progress(user_id, "finalizing", 95, provider="tripo")
+        await _emit_progress(user_id, "finalizing", 95, provider=provider.provider_name)
         asset_url = save_companion_model(final_glb, user_id=user_id)
         morph_names = _extract_morph_names_from_glb(final_glb)
 
-        # provider_label was set in the dispatch branch above (single vs multiview).
+        # provider_label was set in the submit branch above (single vs multiview).
         activated = await _finalize_generation(
             model_id,
             user_id,
@@ -342,44 +346,83 @@ async def run_tripo_pipeline(
         )
 
         if not activated:
-            logger.info("Tripo3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
+            logger.info("3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
         await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type, style=style)
-        await _emit_progress(user_id, "done", 100, provider="tripo")
-        logger.info("Tripo3D generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
+        await _emit_progress(user_id, "done", 100, provider=provider.provider_name)
+        logger.info(
+            "3D model generation succeeded",
+            extra={"user_id": user_id, "provider": provider.provider_name, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)},
+        )
 
-    except Exception as exc:
-        if SETTINGS.blender_llm_enabled and isinstance(exc, TripoApiError) and _is_credits_exhausted_error(exc) and not is_single:
-            logger.info("Tripo credits exhausted, falling back to Blender+LLM", extra={"user_id": user_id})
-            await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id, "style": style})
-            return
-
-        logger.warning("Tripo3D generation failed", extra={"user_id": user_id}, exc_info=True)
+    except Exception:
+        logger.warning("3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name}, exc_info=True)
         # model.failed reaches the client — fixed copy only, the raw provider
         # error lives in the log line above (PROTOCOL §1.2 / README §4).
         await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
 
 
-async def _poll_with_progress(user_id: int, task_id: str, stage: str, start_pct: int, end_pct: int) -> dict:
-    # poll_task invokes ``on_progress`` synchronously, but the emit is an async
-    # session write — schedule each emit as a task and drain them before
-    # returning so no progress event is dropped or GC'd mid-poll.
+async def _poll_with_progress(provider: ModelGenProvider, job: Model3DJob, user_id: int, stage: str, start_pct: int, end_pct: int) -> Model3DPollResult:
+    # The emit is an async session write but poll() is awaited inline —
+    # schedule each emit as a task and drain them before returning so no
+    # progress event is dropped or GC'd mid-poll.
     emit_tasks: set[asyncio.Task] = set()
+    deadline = time.monotonic() + SETTINGS.model_gen_max_poll_seconds
+    started = time.monotonic()
 
-    def _on_progress(data: dict) -> None:
-        tripo_progress = data.get("progress") or 0
-        our_pct = start_pct + int((end_pct - start_pct) * int(tripo_progress) / 100)
-        t = asyncio.create_task(_emit_progress(user_id, stage, our_pct, provider="tripo"))
+    def _emit(our_pct: int) -> None:
+        t = asyncio.create_task(_emit_progress(user_id, stage, our_pct, provider=provider.provider_name))
         emit_tasks.add(t)
         t.add_done_callback(emit_tasks.discard)
 
-    try:
-        return await poll_task(task_id, on_progress=_on_progress)
-    finally:
+    async def _drain() -> None:
         if emit_tasks:
             await asyncio.gather(*emit_tasks)
+
+    while True:
+        result = await provider.poll(job)
+        if result.status == "completed":
+            _emit(end_pct)
+            await _drain()
+            return result
+        if result.status == "failed":
+            await _drain()
+            raise ModelGenerationError(f"3D 生成任务失败: {result.error or stage}")
+        # Providers without a numeric progress signal (hunyuan) interpolate by
+        # elapsed time so the client sees the stage crawl instead of freezing.
+        raw = result.progress or min(100, int(100 * (time.monotonic() - started) / SETTINGS.model_gen_max_poll_seconds))
+        _emit(start_pct + (end_pct - start_pct) * raw // 100)
+        if time.monotonic() > deadline:
+            await _drain()
+            raise ModelGenerationError(f"3D 生成超时（{SETTINGS.model_gen_max_poll_seconds:.0f}s）")
+        await asyncio.sleep(SETTINGS.model_gen_poll_interval_seconds)
+
+
+async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, io_dir: Path | None = None) -> bytes:
+    """Local Blender auto-rigging for providers without a cloud rig API
+    (hunyuan). Deterministic bbox-proportioned skeleton via ``rig_layout``;
+    unlike morph injection this is not best-effort — a failure fails the
+    generation rather than shipping an unrigged model."""
+    script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "auto_rig.py"
+    if not script_path.exists():
+        raise ModelGenerationError("auto_rig.py 脚本缺失，无法进行本地绑骨")
+    spec = {"bones": [{"name": name, "parent": bone.parent, "head": list(bone.head), "tail": list(bone.tail)} for name, bone in layout_skeleton(rig_type).items()]}
+
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
+        tmp_dir = Path(tmp)
+        inp = tmp_dir / "input.glb"
+        out = tmp_dir / "output.glb"
+        await asyncio.to_thread(inp.write_bytes, glb_bytes)
+        await asyncio.to_thread((tmp_dir / "rig_spec.json").write_text, json.dumps(spec))
+        await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "auto_rig.py")
+
+        returncode, stderr = await run_blender(tmp_dir, "auto_rig.py", ["--input", str(inp), "--output", str(out), "--spec", str(tmp_dir / "rig_spec.json")], timeout=300)
+        if returncode != 0 or not out.exists():
+            raise ModelGenerationError(f"本地自动绑骨失败: {stderr[-300:]}")
+        return await asyncio.to_thread(out.read_bytes)
 
 
 async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None) -> bytes:

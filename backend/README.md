@@ -4,14 +4,14 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。3D 模型生成（Tripo3D 主路 + Blender+LLM 回退）与分钟级 Blender 系生成（garment 换装 / morph 注入）全部入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。3D 模型生成（图生3D provider：tripo / hunyuan）与分钟级 Blender 系后处理（morph 注入 / garment 换装）全部入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
 
 **不**做：
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner；图像/视频/语音等资产仅在云端生成、Client 拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
 - **不渲染桌面伙伴**——形象与动画完全是 Client 责任（[DESIGN.md §1](../DESIGN.md)）。
 - **不做 LLM provider 特定的 schema 适配**——nullable union 原样传给 OpenAI-compatible provider，由 provider 决定是否接受。
-- **web 进程不执行 Blender 子进程**——3D 模型生成（含 Tripo 主路的长轮询与 morph 注入）与换装几何管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
+- **web 进程不执行 Blender 子进程**——3D 模型生成（含 provider 长轮询与 morph 注入）与换装几何管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
 
@@ -37,7 +37,7 @@ backend/
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog、wardrobe
 │   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
-│   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT 五类 provider ABC
+│   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类 provider ABC
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
 │   ├── update/               # 桌面客户端版本更新清单构建
@@ -67,7 +67,7 @@ backend/
 - **形象生成失败对用户返回 502 + 固定文案**：作为陪伴场景的关键路径，需向用户返回可理解的友好提示并支持重试，不暴露生图服务原始错误。**为什么不透传 provider 错误**：provider 错误体常含 URL / 部分 auth header，且用户对生图服务错误无处理能力。
 - **API Key 永不离开后端（fingerprinting）**：`GET /api/user/model-config` 只返回 `sk-…XX` 形式的指纹 + `_set` 布尔。**为什么不分两条**：用户自助配置时不需要原始 key 重新输入；admin 端点单独走 `PUT /api/admin/{user_id}/model-config` 强制三字段非空。
 - **错误分类管道收敛为 21 种 `FailoverReason`**：8 步优先级过滤决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。**为什么不暴露原始异常**：provider 错误常含 URL / 部分 auth header / 私有 SDK 调用栈，必须脱敏。
-- **3D 模型生成管线双轨制（Tripo3D 主路 + Blender+LLM 回退）**：默认 Tripo3D 高保真度生成；当 `tripo_api_key` 缺失 / 余额为 0 / Tripo API 返回 credits 耗尽错误模式时自动回退到 Blender+LLM 管线，或由 `ModelGenerateRequest.provider` 显式锁向。**为什么不只用一条**：Tripo 商业 API 有成本与可用性限制（积分、断供、地区封锁）；自由形式 LLM 写 bpy 代码是 last-resort 兜底，质量显著低（无 PBR 纹理）但成本仅为 LLM tokens + 本地 CPU Blender render。Blender 子进程与 Backend 同用户运行——LLM 写代码本身就把 LLM 当作可执行代码生成器，威胁向量与现有 LLM 调用同等级，详见 [ARCHITECTURE.md §8](../ARCHITECTURE.md) 安全层不变量。
+- **图生3D 走 provider 注册表（显式指定，不做商业供应商 failover）**：`ServiceType.model_gen` + `ModelGenProvider` ABC（submit / poll / download 三段式 + `SUPPORTS_RIGGING` / `SUPPORTS_MULTIVIEW` 能力开关），供应商经 `services/llm/providers/<name>/` 自注册，编排统一在 `run_model_gen_pipeline`，按能力开关分支（无云端绑骨能力的供应商产物由本地 Blender 后处理补齐）。供应商选择**仅显式**：`model_gen_provider` 配置默认或请求 `provider` 参数覆盖；key 缺失（无论显式还是默认）→ 400 拒绝且不建生成行，桌宠以静态精灵方式交互。**为什么不做供应商间自动回退**：商业 3D 生成按次计费且风格差异大，静默换供应商会让用户拿到与预期不符的模型；配额耗尽等失败直接 `model.failed` 由用户重试。**Blender 的定位是 3D 后处理工具**（morph 注入、自动绑骨、garment 换装几何），不承担模型生成——LLM 自由写 bpy 建模的质量（无 PBR）与时长（分钟级起步）都不适合作为生成主路或兜底。
 - **全身图 prompt 按类人面孔分流风格 + 强制 A-pose + 最小覆盖内衣（仅 biped）**：`_FULLBODY_SHARED_RULES` 以 style × rig 矩阵组织——类人面孔（人类/精灵预设 + 自定义物种由 `classify_species` 的 LLM `has_humanoid_face` 判定）走 anime 分支，biped 用"3D 日系二次元手办 CGI"措辞（**为什么手办而非平面立绘**：Tripo image-to-3D 需要种子图自带体积/法线线索，平面 cel 插画重建的几何偏软）；类人非双足（人鱼等）用二次元 + 物种纹理措辞；非人生物（机甲/灵兽/幻形/四足等，无恐怖谷问题）回退写实分支（"写实风格，8K高清"）。风格随资产持久化：`_write_fullbody` 写入 `AvatarAsset.prompt_json.fullbody_style`，`generate_companion_model` 优先读该标记写入 `CompanionModel.style`（**为什么不二次分类**：两次 LLM 调用可能给出不同 verdict，种子图与 3D 模型风格漂移会重现风格断层），随 `model.ready` 事件与 `GET /api/companion/model` 下发供客户端路由 NPR/PBR 渲染。`_BIPED_A_POSE` 保留 A-pose（双臂微张 30°）—— Tripo + Mixamo 自动绑骨强依赖对称骨架，姿态偏离会导致肩/肘/腕识别失败、权重蒙皮错位；同时要求种子图穿运动内衣+运动短裤、显式禁掉长袖/连体紧身衣/长裤/长裙/长袍/外套/靴袜（**为什么**：Tripo image-to-3D 只重建实际可见的皮肤——覆盖款哪怕紧身款会让 PBR 换装后暴露色差/反光异常/细节缺失，长裙款直接几何穿模）。
 - **用户可见图像风格分层（半身像 / 精灵 = 写实；全身种子图 = 按类人面孔分流）**：半身像由 `_AVATAR_SYSTEM_PROMPT`（固定 photorealistic）持续保持写实；精灵是 GLB 缺位时的桌面降级渲染源（用户可见），主体参考切换为半身像且 `_SPRITE_PROMPT_SYSTEM` 显式锁"写实人像"措辞，使精灵与半身像保持视觉一致；全身种子图为 pipeline 内部消费（喂 Tripo3D），类人面孔走二次元手办（避免写实人像在 3D 重建后落入恐怖谷），非人生物保持写实。换装纹理提示词同路由（`_resolve_style`：active model 优先，缺行时按物种预设映射）——anime 角色的 albedo 加"二次元干净色块"措辞（toon 渲染会放大写实噪点），normal 等技术通道保持风格中性。**为什么不删精灵**：GLB 渲染前的"等不到 GLB"窗口期仍需要一张静态图占位，精灵是最稳的可见层。**为什么不让全身图也是用户可见的二次元**：会破坏半身像-精灵的写实身份锚点一致性。
 - **全身种子图专用 provider 优先级（gemini → grok → minimax）**：`generate_fullbody` 用 `_FULLBODY_PROVIDER_PRIORITY = ["gemini", "grok", "minimax"]` 强制排序，与通用 image-gen 链分离。**为什么 Gemini 优先**：将种子图改为二次元风格后，`scripts/sample_fullbody_providers.py`（`--species` / `--style` 分支采样 + `backend/data/参考图.jpg`）的采样结果——Gemini 输出最贴近"anime 立绘"目标，服装/姿态/指节最稳定；Grok 姿态合规但常态画出纯白/近白色服装，会被精灵阶段的 chroma-key 误吃（配套建议在 anime 分支补一条"避免纯白色服装"，当前是后续 PBR-swap 提示词层级加固项），位列第二；MiniMax 三维渲染偏重、cel-shading 弱、最接近旧写实风，末尾兜底。**为什么不直接跟随通用 `image_gen_provider`（默认 MiniMax）**：MiniMax 对含角色文字描述的全身请求会退化为半身像、且姿态合规度最低。
@@ -107,7 +107,7 @@ backend/
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
 | `ModelGenerateRequest.provider` 取值与触发条件 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
 | `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `tripo_multiview_to_3d` / `blender_llm`） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `tripo_multiview_to_3d` / `hunyuan_image_to_3d`） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
 | `onboarding.get_state` payload `fullbody_mode`（全身图主体参考按上传 → 半身像 → 文本三级回退，不再下发表单字段） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
 | `[companion] fullbody_mode` 配置与单/多视图流水线 | 本模块独有 | 本 README §2 + [PROTOCOL.md §1.2](../PROTOCOL.md) |
 | `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.7](../PROTOCOL.md) |
@@ -124,8 +124,8 @@ backend/
 | **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
 | **Cron kick 守卫** | 写行前的 `is_quiet` 守卫（tier 落库）；`cron.turn.request` 行只被持有该用户 WS 的副本认领执行，全副本离线时 10min GC 兜底清行——该次触发丢弃（`next_run_at` 已 CAS 前移，等下次调度） |
-| **Blender+LLM 回退管线最坏时长** | 默认 10 轮迭代 × 单次 600s Blender timeout = ~100 分钟一次生成；全程在 worker 沙箱内执行，不占 web 进程。`worker_stale_reclaim_seconds` 必须大于该最坏值，否则在跑任务会被误回收重排队。`blender_llm_max_iterations` / `blender_llm_timeout` 可调 |
-| **Blender+LLM 模型质量** | 无 PBR 纹理（仅纯色 Principled BSDF 材质）、几何为 LLM 自由形式生成——视觉保真度显著低于 Tripo3D。LLM 在迭代内可比 preview vs 种子图 → 持续精修 |
+| **自动绑骨为包围盒模板** | 无云端绑骨能力的供应商（hunyuan）产物用确定性比例模板（`rig_layout`）+ ARMATURE_AUTO 自动权重本地绑骨；对非标准姿态（蜷缩、翅膀张开）效果有限，动画质量依赖模板近似。绑骨失败直接判任务失败，不产出无骨模型。 |
+| **hunyuan 仅单图生成** | 腾讯混元生3D（TokenHub）无多视图输入——multi 模式下也只消费 front 种子图，provider 标签恒为 `hunyuan_image_to_3d`；`image_base64` 前缀格式（纯 base64 vs data URI）以常量 `IMAGE_BASE64_PREFIX` 切换，首次联调需验证。 |
 | **贴图换装受种子图皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于 Tripo 重建的皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
 | **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
 | **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |

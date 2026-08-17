@@ -52,7 +52,7 @@ async def test_drain_once_handler_failure_marks_failed(SessionLocal, monkeypatch
 
 
 async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
-    from services.companion import blender_llm_pipeline
+    from services.companion import model_service
     from services.worker import handlers
 
     handlers.register()
@@ -60,23 +60,24 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
     calls: list[dict] = []
 
     async def _fake_pipeline(
-        user_id, view_filenames, species, model_id, *, style="realistic", io_dir=None
+        provider, user_id, view_filenames, species, model_id, fullbody_mode, style="realistic", *, io_dir=None
     ):
         assert io_dir is not None and io_dir.is_dir()
         calls.append(
             {
+                "provider": provider,
                 "user_id": user_id,
                 "views": view_filenames,
                 "species": species,
                 "model_id": model_id,
+                "fullbody_mode": fullbody_mode,
                 "style": style,
             }
         )
 
-    monkeypatch.setattr(
-        blender_llm_pipeline, "run_blender_llm_pipeline", _fake_pipeline
-    )
+    monkeypatch.setattr(model_service, "run_model_gen_pipeline", _fake_pipeline)
     payload = {
+        "provider": "tripo",
         "view_filenames": {"front": "f.png", "right": "r.png", "back": "b.png"},
         "species": "人类",
         "model_id": 9,
@@ -85,11 +86,13 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
     assert await runner.drain_once() == 1
     assert calls == [
         {
+            "provider": "tripo",
             "user_id": 1,
             "views": payload["view_filenames"],
             "species": "人类",
             "model_id": 9,
-            # Style absent from the payload → the handler's realistic default.
+            # Mode/style absent from the payload → the handler's defaults.
+            "fullbody_mode": "multi",
             "style": "realistic",
         }
     ]

@@ -14,7 +14,7 @@ from ..llm import ServiceType, resolve, resolve_provider_chain
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_signed_asset_url, compute_bytes_sha256, save_companion_asset, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
-from .blender_llm_pipeline import _vision_llm_call
+from .blender_tools import _vision_llm_call
 from .persona_service import get_or_create_persona
 from .wardrobe_service import fetch_texture_bytes
 

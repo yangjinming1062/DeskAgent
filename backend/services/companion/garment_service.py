@@ -8,7 +8,7 @@ from components import SETTINGS, get_logger, parse_llm_json, session_scope
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .asset_store import build_data_uri
-from .blender_llm_pipeline import EvaluationResult, _strip_code_fences, _vision_llm_call, run_blender_scaffold
+from .blender_tools import EvaluationResult, _strip_code_fences, _vision_llm_call, run_blender_scaffold
 from .model_service import parse_glb_json
 from .rig_bone_specs import format_bone_tree
 

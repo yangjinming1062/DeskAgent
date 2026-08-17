@@ -89,8 +89,16 @@ class Settings(BaseSettings):
     tripo_geometry_quality: str = Field(validation_alias="TRIPO_GEOMETRY_QUALITY")
     tripo_enable_autofix: bool = Field(validation_alias="TRIPO_ENABLE_AUTOFIX")
 
-    # Blender+LLM fallback for 3D model generation when Tripo3D is unavailable.
-    blender_llm_enabled: bool = Field(default=True, validation_alias="BLENDER_LLM_ENABLED")
+    hunyuan_api_key: str = Field(validation_alias="HUNYUAN_API_KEY")
+    hunyuan_base_url: str = Field(validation_alias="HUNYUAN_BASE_URL")
+    hunyuan_model_version: str = Field(validation_alias="HUNYUAN_MODEL_VERSION")
+
+    model_gen_provider: str = Field(validation_alias="MODEL_GEN_PROVIDER")
+    model_gen_base_url: str = Field(validation_alias="MODEL_GEN_BASE_URL")
+    model_gen_api_key: str = Field(validation_alias="MODEL_GEN_API_KEY")
+    model_gen_poll_interval_seconds: float = Field(validation_alias="MODEL_GEN_POLL_INTERVAL_SECONDS")
+    model_gen_max_poll_seconds: float = Field(validation_alias="MODEL_GEN_MAX_POLL_SECONDS")
+
     blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
     blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")
 

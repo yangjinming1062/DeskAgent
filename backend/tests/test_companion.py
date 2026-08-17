@@ -2428,8 +2428,10 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
         ModelGenerationInProgressError,
         generate_companion_model,
     )
+    from services.companion import model_service
 
     _, SessionLocal = _patch_db
+    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
 
     async with SessionLocal() as db:
         user = User(username="mgen", is_active=True, can_use=True)
@@ -2484,8 +2486,10 @@ async def test_model_generation_failure_keeps_previous_model_active(
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import ModelGenerationError, generate_companion_model
+    from services.companion import model_service
 
     _, SessionLocal = _patch_db
+    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
 
     def _resolve_fails(*_a, **_kw):
         raise ModelGenerationError("tripo down")
@@ -2655,63 +2659,58 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
 
 
 @pytest.mark.asyncio
-async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
+async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
     _patch_db, monkeypatch, set_fullbody_mode
 ):
-    """Single mode must call ``create_image_to_model`` (not multiview) and finalize with ``provider='tripo_image_to_3d'``."""
+    """Single mode submits the front seed alone (no multiview paths) and
+    finalizes with ``provider='tripo_image_to_3d'``."""
     set_fullbody_mode("single")
 
     import json as _json
+    from pathlib import Path
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import model_service
+    from services.llm import Model3DAsset, Model3DJob, Model3DPollResult, ModelGenProvider, ProviderConfig, ServiceType
 
     _, SessionLocal = _patch_db
 
     captured: dict = {}
 
-    async def fake_upload(_bytes, filename, _content_type):
-        return f"tok_{filename}"
+    class _FakeProvider(ModelGenProvider):
+        provider_name = "tripo"
+        SUPPORTS_RIGGING = True
+        SUPPORTS_MULTIVIEW = True
 
-    async def fake_create_image(image_token, **kwargs):
-        captured["create_image"] = (image_token, kwargs)
-        return "task_img"
+        def __init__(self) -> None:
+            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="tripo"))
 
-    async def fake_create_multi(views, **_kwargs):
-        captured["create_multi_called"] = (
-            True  # sentinel: single-mode should never reach here
-        )
-        return "task_multi"
+        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+            captured["submit"] = (image_path.name, multiview_paths)
+            return Model3DJob(job_id="task_img")
 
-    async def fake_rig_check(_task_id):
-        return "rig_check_task"
+        async def poll(self, job):
+            return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url="https://x/y.glb"),))
 
-    async def fake_poll_rig_check(_task_id):
-        return {"riggable": True}
+        async def download(self, result, dest_dir):
+            dest = dest_dir / "model.glb"
+            dest.write_bytes(b"\x00" * 20)  # tiny but valid GLB per the parser's 20-byte floor
+            return dest
 
-    async def fake_rig(_task_id, _rig_type):
-        return "rig_task"
+        async def rig_supported(self, job_id):
+            return True
 
-    async def fake_poll_task(task_id, **_kwargs):
-        return {"status": "success", "output": {"model_url": "https://x/y.glb"}}
+        async def start_rig(self, job_id, rig_type):
+            return Model3DJob(job_id="rig_task")
 
-    async def fake_download_model(_url):
-        return b"\x00" * 20  # tiny but valid GLB per the parser's 20-byte floor
+    fake = _FakeProvider()
+    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: fake)
 
     async def fake_select_rig_type(*_args, **_kwargs):
         return "biped"
 
-    monkeypatch.setattr(model_service, "upload_file", fake_upload)
-    monkeypatch.setattr(model_service, "create_image_to_model", fake_create_image)
-    monkeypatch.setattr(model_service, "create_multiview_to_model", fake_create_multi)
-    monkeypatch.setattr(model_service, "rig_check", fake_rig_check)
-    monkeypatch.setattr(model_service, "poll_rig_check", fake_poll_rig_check)
-    monkeypatch.setattr(model_service, "rig", fake_rig)
-    monkeypatch.setattr(model_service, "poll_task", fake_poll_task)
-    monkeypatch.setattr(model_service, "download_model", fake_download_model)
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
-    monkeypatch.setattr(model_service.SETTINGS, "blender_llm_enabled", False)
 
     async with SessionLocal() as db:
         user = User(
@@ -2745,8 +2744,6 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
         model_id = model.id
 
     # Stash the front seed on disk so ``resolve_uploaded_avatar_path`` finds it.
-    from pathlib import Path
-
     from components import SETTINGS
 
     asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
@@ -2754,15 +2751,14 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     try:
-        await model_service.run_tripo_pipeline(
-            uid, {"front": "front.png"}, "人类", model_id, "single"
+        await model_service.run_model_gen_pipeline(
+            "tripo", uid, {"front": "front.png"}, "人类", model_id, "single"
         )
     finally:
         (asset_dir / "front.png").unlink(missing_ok=True)
 
-    assert "create_image" in captured, "create_image_to_model was not called"
-    assert "create_multi_called" not in captured, "multiview branch ran in single mode"
-    assert captured["create_image"][0] == "tok_front.png"
+    assert captured["submit"][0] == "front.png"
+    assert captured["submit"][1] is None, "multiview paths passed in single mode"
 
     async with SessionLocal() as db:
         row = (
@@ -2780,47 +2776,43 @@ async def test_run_tripo_pipeline_single_mode_uses_image_to_model(
 
 
 @pytest.mark.asyncio
-async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
+async def test_run_model_gen_pipeline_provider_failure_marks_failed(
     _patch_db, monkeypatch, set_fullbody_mode
 ):
-    """Single mode must surface Tripo failures as ``model.failed`` instead of diverting into Blender+LLM (which would KeyError on missing right/back seeds)."""
+    """A provider failure surfaces as ``model.failed`` with fixed copy — no
+    local modelling fallback exists."""
     set_fullbody_mode("single")
 
     import json as _json
+    from pathlib import Path
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
     from services.companion import model_service
+    from services.llm import Model3DJob, ModelGenProvider, ProviderConfig, ServiceType
 
     _, SessionLocal = _patch_db
 
-    fallback_called = {"value": False}
+    class _FailingProvider(ModelGenProvider):
+        provider_name = "tripo"
 
-    async def fake_blender_fallback(*_args, **_kwargs):
-        fallback_called["value"] = True
+        def __init__(self) -> None:
+            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="tripo"))
 
-    async def fake_create_image(*_args, **_kwargs):
-        raise model_service.TripoApiError("insufficient credit")
+        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+            raise model_service.ModelGenerationError("insufficient credit")
 
-    async def fake_account_balance():
-        return {"balance": 100.0}  # non-zero so the precheck doesn't divert
+        async def poll(self, job):
+            raise AssertionError("poll must not run after submit failed")
 
-    async def fake_upload(_bytes, filename, _content_type):
-        return f"tok_{filename}"
+        async def download(self, result, dest_dir):
+            raise AssertionError("download must not run after submit failed")
 
-    monkeypatch.setattr(model_service.SETTINGS, "blender_llm_enabled", True)
-    monkeypatch.setattr(model_service, "create_image_to_model", fake_create_image)
-    monkeypatch.setattr(model_service, "account_balance", fake_account_balance)
-    monkeypatch.setattr(model_service, "upload_file", fake_upload)
-    # Must be lazy-imported inside the pipeline, so patch the module it lives in.
-    monkeypatch.setattr(
-        "services.companion.blender_llm_pipeline.run_blender_llm_pipeline",
-        fake_blender_fallback,
-    )
+    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: _FailingProvider())
 
     async with SessionLocal() as db:
         user = User(
-            username="run_single_no_fallback",
+            username="run_gen_fail",
             is_active=True,
             can_use=True,
         )
@@ -2851,8 +2843,6 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
         uid = user.id
         model_id = model.id
 
-    from pathlib import Path
-
     from components import SETTINGS
 
     asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
@@ -2860,13 +2850,11 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
     (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     try:
-        await model_service.run_tripo_pipeline(
-            uid, {"front": "front.png"}, "人类", model_id, "single"
+        await model_service.run_model_gen_pipeline(
+            "tripo", uid, {"front": "front.png"}, "人类", model_id, "single"
         )
     finally:
         (asset_dir / "front.png").unlink(missing_ok=True)
-
-    assert fallback_called["value"] is False, "Blender fallback ran in single mode"
 
     async with SessionLocal() as db:
         row = (
@@ -2881,6 +2869,183 @@ async def test_run_tripo_pipeline_single_mode_skips_blender_fallback(
         assert row.status == "failed"
         assert row.active is False
         assert row.error == "3D 模型生成失败，请稍后重试"
+
+
+@pytest.mark.asyncio
+async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
+    _patch_db, monkeypatch, set_fullbody_mode
+):
+    """Providers without a cloud rig API (hunyuan) get the deterministic local
+    Blender auto-rig: download → auto_rig → morph injection, in that order."""
+    set_fullbody_mode("single")
+
+    import json as _json
+    from pathlib import Path
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import model_service
+    from services.llm import Model3DAsset, Model3DJob, Model3DPollResult, ModelGenProvider, ProviderConfig, ServiceType
+
+    _, SessionLocal = _patch_db
+
+    captured: dict = {}
+    order: list[str] = []
+
+    class _FakeHunyuanProvider(ModelGenProvider):
+        provider_name = "hunyuan"  # SUPPORTS_RIGGING / SUPPORTS_MULTIVIEW stay False
+
+        def __init__(self) -> None:
+            super().__init__(ProviderConfig(base_url="https://x", api_key="k", model="", service_type=ServiceType.model_gen, provider_name="hunyuan"))
+
+        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+            captured["submit"] = (image_path.name, multiview_paths)
+            return Model3DJob(job_id="job_hy")
+
+        async def poll(self, job):
+            return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url="https://x/m.glb"),))
+
+        async def download(self, result, dest_dir):
+            order.append("download")
+            dest = dest_dir / "model.glb"
+            dest.write_bytes(b"\x00" * 20)  # tiny but valid GLB per the parser's 20-byte floor
+            return dest
+
+    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider())
+
+    async def fake_select_rig_type(*_args, **_kwargs):
+        return "biped"
+
+    async def fake_auto_rig(glb_bytes, rig_type, *, io_dir=None):
+        order.append(f"auto_rig:{rig_type}")
+        return glb_bytes + b"RIGGED"
+
+    async def fake_morphs(glb_bytes, *, io_dir=None):
+        order.append("morphs")
+        return glb_bytes
+
+    monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
+    monkeypatch.setattr(model_service, "_auto_rig_with_blender", fake_auto_rig)
+    monkeypatch.setattr(model_service, "_inject_morph_targets", fake_morphs)
+
+    async with SessionLocal() as db:
+        user = User(username="run_hy_local_rig", is_active=True, can_use=True)
+        db.add(user)
+        await db.flush()
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url="companion-avatars/avatar.png",
+                seed_front_url="companion-avatars/front.png",
+                active=True,
+            )
+        )
+        model = CompanionModel(user_id=user.id, status="generating", active=False)
+        db.add(model)
+        await db.commit()
+        await db.refresh(model)
+        uid = user.id
+        model_id = model.id
+
+    from components import SETTINGS
+
+    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        await model_service.run_model_gen_pipeline("hunyuan", uid, {"front": "front.png"}, "人类", model_id, "single")
+    finally:
+        (asset_dir / "front.png").unlink(missing_ok=True)
+
+    assert captured["submit"][1] is None, "hunyuan must never receive multiview paths"
+    assert order == ["download", "auto_rig:biped", "morphs"]
+
+    async with SessionLocal() as db:
+        row = (
+            (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.id == model_id)
+                )
+            )
+            .scalars()
+            .one()
+        )
+        assert row.status == "succeeded"
+        assert row.provider == "hunyuan_image_to_3d"
+        assert row.rig_type == "biped"
+        assert row.has_rig is True
+        assert row.active is True
+
+
+@pytest.mark.asyncio
+async def test_generate_companion_model_without_provider_key_rejects(
+    _patch_db, monkeypatch
+):
+    """No provider key → explicit rejection before any row or enqueue —
+    generation is disabled and the companion stays in sprite mode."""
+    import json as _json
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import (
+        ModelProviderNotConfiguredError,
+        generate_companion_model,
+    )
+    from services.companion import model_service
+
+    _, SessionLocal = _patch_db
+    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "")
+    monkeypatch.setattr(model_service.SETTINGS, "model_gen_api_key", "")
+    monkeypatch.setattr(model_service.SETTINGS, "model_gen_provider", "")
+
+    async with SessionLocal() as db:
+        user = User(username="mgen_nokey", is_active=True, can_use=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "x"}),
+                system_prompt_extras="",
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json='{"source": "test"}',
+                asset_url="companion-avatars/seed.png",
+                seed_front_url="companion-avatars/seed_front.png",
+                seed_right_url="companion-avatars/seed_right.png",
+                seed_back_url="companion-avatars/seed_back.png",
+                active=True,
+            )
+        )
+        await db.commit()
+        uid = user.id
+
+    async with SessionLocal() as db:
+        with pytest.raises(ModelProviderNotConfiguredError, match="未配置"):
+            await generate_companion_model(db, user_id=uid)
+
+    async with SessionLocal() as db:
+        assert (
+            await db.execute(
+                select(func.count())
+                .select_from(CompanionModel)
+                .where(CompanionModel.user_id == uid)
+            )
+        ).scalar_one() == 0
 
 
 @pytest.mark.asyncio
@@ -3838,7 +4003,7 @@ async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
 
     from components import SETTINGS as _SETTINGS
     from services.companion import garment_service
-    from services.companion.blender_llm_pipeline import BlenderResult
+    from services.companion.blender_tools import BlenderResult
 
     io_dir = _Path(_SETTINGS.data_dir) / "job-io" / "77"
     io_dir.mkdir(parents=True)

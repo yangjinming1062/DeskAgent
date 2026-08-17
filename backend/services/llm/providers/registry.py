@@ -26,7 +26,7 @@ _PROVIDER_VISION_MODELS: dict[str, str] = {}
 # Provider families SpiritAgent ships. ``*_PROVIDER`` env vars must be one
 # of these; adding a new family means registering its classes AND extending
 # the dicts below.
-KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})
+KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu", "tripo", "hunyuan"})
 
 # Providers that expose an OpenAI-shaped ``/v1/embeddings`` endpoint. Native
 # providers (e.g. minimax's ``/v1/embeddings`` uses ``texts`` not ``input``) are
@@ -36,7 +36,15 @@ OPENAI_COMPATIBLE_PROVIDERS: frozenset[str] = frozenset({"openai", "mimo"})
 
 # Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
 # default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
-SERVICE_DEFAULT_PROVIDER: dict[str, str] = {"llm": "mimo", "stt": "mimo", "tts": "mimo", "image_gen": "minimax", "video_gen": "minimax", "embedding": "minimax"}
+SERVICE_DEFAULT_PROVIDER: dict[str, str] = {
+    "llm": "mimo",
+    "stt": "mimo",
+    "tts": "mimo",
+    "image_gen": "minimax",
+    "video_gen": "minimax",
+    "embedding": "minimax",
+    "model_gen": "tripo",
+}
 
 # Default base_url per (provider, service). An empty string means the
 # provider doesn't offer that service (e.g. MiniMax has no public STT API).
@@ -82,6 +90,8 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "video_gen": "",
         "embedding": "https://open.bigmodel.cn/api/paas/v4",
     },
+    "tripo": {"model_gen": "https://openapi.tripo3d.ai/v3"},
+    "hunyuan": {"model_gen": "https://tokenhub.tencentmaas.com"},
 }
 
 

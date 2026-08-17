@@ -118,13 +118,13 @@ Tripo3D `POST /v3/animations/rig`：
 }
 ```
 
-参数路由实现在 `backend/services/companion/tripo_client.py::rig_spec` / `rig_model_version`（`_RIG_SPECS` / `_RIG_MODEL_VERSIONS` 常量是唯一权威）。
+参数路由实现在 `backend/services/llm/providers/tripo/client.py::rig_spec` / `rig_model_version`（`_RIG_SPECS` / `_RIG_MODEL_VERSIONS` 常量是唯一权威）。
 
 ---
 
 ## 5. 参考实现
 
-- 骨骼路由：`backend/services/companion/tripo_client.py`（`_RIG_SPECS`、
+- 骨骼路由：`backend/services/llm/providers/tripo/client.py`（`_RIG_SPECS`、
   `_RIG_MODEL_VERSIONS`、`rig_spec()`、`rig_model_version()`）
 - 各 rig_type 的 clip 库：`client/renderer/companion/3d/clips-<rig_type>.ts`，
   顶部 `*_BONES` 常量定义实际槽位映射
