@@ -5,6 +5,11 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from .config import SETTINGS
+from .logger import get_logger
+
+logger = get_logger(__name__)
+
 BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.goog", "metadata", "instance-data.ec2.internal", "instance-data", "kubernetes.default.svc"})
 _BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 _BLOCKED_ALIBABA_META = ipaddress.ip_address("100.100.100.200")
@@ -13,6 +18,23 @@ _BLOCKED_AWS_META_IPV6 = ipaddress.ip_address("fd00:ec2::254")
 
 def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     return ip in _BLOCKED_CGNAT or ip == _BLOCKED_ALIBABA_META or ip == _BLOCKED_AWS_META_IPV6
+
+
+def _ssrf_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    """Operator-declared IP ranges exempt from the reserved-range refusal —
+    the escape hatch for fake-ip TUN proxies (Clash et al.) that resolve every
+    hostname into 198.18.0.0/15. Cloud-metadata / CGNAT blocks and the
+    hostname blocklist stay unconditional."""
+    networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+    for part in (SETTINGS.ssrf_allowed_cidrs or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(part, strict=False))
+        except ValueError:
+            logger.warning("SSRF_ALLOWED_CIDRS: ignoring unparseable CIDR", extra={"cidr": part})
+    return networks
 
 
 def is_safe_outbound(host: str) -> tuple[bool, str]:
@@ -25,12 +47,15 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
     except socket.gaierror as exc:
         return False, f"DNS resolution failed: {exc}"
 
+    allowed = _ssrf_allowed_networks()
     for info in infos:
         ip_str = info[4][0]
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             return False, f"unparseable address {ip_str!r}"
+        if any(ip in network for network in allowed):
+            continue
         if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
             return (False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)")
         if _ip_in_blocked(ip):

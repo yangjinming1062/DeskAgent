@@ -116,6 +116,11 @@ class Settings(BaseSettings):
 
     companion_asset_signing_key: str
 
+    # Comma-separated CIDRs exempting resolved IPs from the SSRF reserved-range
+    # refusal (fake-ip TUN proxies resolve every host into 198.18.0.0/15).
+    # Empty = refuse as before; hostname/scheme checks stay on either way.
+    ssrf_allowed_cidrs: str = Field(default="", validation_alias="SSRF_ALLOWED_CIDRS")
+
     providers: Annotated[list[str], NoDecode] = Field(validation_alias="PROVIDERS")
     mimo_api_key: str = Field(validation_alias=AliasChoices("MIMO_API_KEY", "MIMO_KEY"))
     mimo_base_url: str = Field(validation_alias="MIMO_BASE_URL")
