@@ -122,8 +122,9 @@ class TestSubmit:
         assert body["model"] == "hy-3d-3.1"
         assert body["result_format"] == "GLB"
         assert len(body["multi_view_images"]) == 2
-        view_names = {item["view"] for item in body["multi_view_images"]}
-        assert view_names == {"right", "back"}
+        by_view = {item["view_type"]: item["view_image_base64"] for item in body["multi_view_images"]}
+        assert set(by_view) == {"right", "back"}
+        assert by_view["right"] == base64.b64encode(right_seed.read_bytes()).decode("ascii")
 
     @pytest.mark.asyncio
     async def test_submit_with_custom_settings(self, png_seed, mock_http, monkeypatch):

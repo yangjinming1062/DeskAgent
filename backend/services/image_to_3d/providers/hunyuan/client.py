@@ -117,7 +117,9 @@ async def create_multiview_to_model(
     if not front_image_base64:
         raise ValueError("multiview-to-model requires a front image")
 
-    multi_view_images = [{"view": view_name, "image_base64": b64_data} for view_name, b64_data in views.items() if view_name.lower() != "front" and b64_data]
+    # ViewImage 字段名（view_type/view_image_base64）与主图的 image_base64 不对称，见
+    # https://cloud.tencent.com/document/api/1804/120828#ViewImage
+    multi_view_images = [{"view_type": view_name, "view_image_base64": b64_data} for view_name, b64_data in views.items() if view_name.lower() != "front" and b64_data]
 
     payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = front_image_base64
