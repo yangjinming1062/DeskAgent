@@ -2,17 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   APPEARANCE_PRESETS,
-  type AppearancePreset,
   CHARACTER_GENDER_PRESETS,
-  type CharacterGenderPreset,
   PERSONALITY_PRESETS,
-  type PersonalityPreset,
   ROLE_PRESETS,
-  type RolePreset,
   SPEAKING_STYLE_PRESETS,
-  type SpeakingStylePreset,
   SPECIES_PRESETS,
-  type SpeciesPreset,
   USER_AGE_BUCKET_PRESETS,
   USER_GENDER_PRESETS,
   VOICE_PRESETS
@@ -59,25 +53,5 @@ describe('persona-presets', () => {
       '高冷清冷'
     ])
     expect([...SPECIES_PRESETS]).toEqual(['人类', '灵兽', '精灵', '机甲', '幻形'])
-  })
-
-  it('keeps per-preset type aliases aligned with the tuple values', () => {
-    // Compile-time check: every member of each typed tuple must be a valid
-    // instance of its alias. If a developer adds '喜爱' to ROLE_PRESETS
-    // without updating RolePreset (or vice versa), this `as RolePreset[]`
-    // cast fails and the build breaks.
-    const roleTyped: readonly RolePreset[] = ROLE_PRESETS
-    const personalityTyped: readonly PersonalityPreset[] = PERSONALITY_PRESETS
-    const speciesTyped: readonly SpeciesPreset[] = SPECIES_PRESETS
-    const charGenderTyped: readonly CharacterGenderPreset[] = CHARACTER_GENDER_PRESETS
-    const appearanceTyped: readonly AppearancePreset[] = APPEARANCE_PRESETS
-    const speakingStyleTyped: readonly SpeakingStylePreset[] = SPEAKING_STYLE_PRESETS
-
-    expect(roleTyped).toEqual(ROLE_PRESETS)
-    expect(personalityTyped).toEqual(PERSONALITY_PRESETS)
-    expect(speciesTyped).toEqual(SPECIES_PRESETS)
-    expect(charGenderTyped).toEqual(CHARACTER_GENDER_PRESETS)
-    expect(appearanceTyped).toEqual(APPEARANCE_PRESETS)
-    expect(speakingStyleTyped).toEqual(SPEAKING_STYLE_PRESETS)
   })
 })

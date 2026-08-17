@@ -33,21 +33,31 @@ describe('pickReaction', () => {
     expect(entry?.tags.some(t => ['傲娇', '毒舌'].includes(t))).toBe(true)
   })
 
-  it('allows generic tag-free entries to participate in rotation when tags match', () => {
-    // Run multiple picks on drag bucket with matching tags to observe candidate eligibility
-    const pickedTags: number[] = []
-
-    for (let i = 0; i < 50; i++) {
-      const entry = pickReaction('drag', ['温柔'])
-
-      if (entry) {
-        pickedTags.push(entry.tags.length)
+  it('allows generic tag-free entries to participate in rotation when tags match', async () => {
+    // Minimal manifest: one tag-matched entry plus one generic entry in the
+    // same bucket — both must sit in the top-score rotation pool.
+    vi.resetModules()
+    vi.doMock('./manifest.json', () => ({
+      default: {
+        language: 'zh',
+        format: 'mp3',
+        buckets: ['drag'],
+        files: [
+          { id: 'drag.tagged', tags: ['温柔'], bucket: 'drag', text: 'tagged' },
+          { id: 'drag.generic', tags: [], bucket: 'drag', text: 'generic' }
+        ]
       }
-    }
+    }))
+    const { pickReaction: pick } = await import('./reaction-audio')
+    const random = vi.spyOn(Math, 'random')
 
-    // Eligible entries are gentle (tags.length = 3) and generic (tags.length = 0)
-    expect(pickedTags.every(len => len === 3 || len === 0)).toBe(true)
-    expect(pickedTags.some(len => len === 0)).toBe(true)
+    random.mockReturnValue(0)
+    expect(pick('drag', ['温柔'])?.id).toBe('drag.tagged')
+
+    random.mockReturnValue(0.999)
+    expect(pick('drag', ['温柔'])?.id).toBe('drag.generic')
+
+    random.mockRestore()
   })
 
   it('still returns a same-bucket entry when no tag matches', () => {

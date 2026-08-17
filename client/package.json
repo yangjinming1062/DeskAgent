@@ -23,7 +23,7 @@
     "dist:win": "pnpm run build && pnpm run builder -- --win",
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
     "test:desktop:dist": "node scripts/test-desktop.mjs all",
-    "test:desktop:platforms": "node --import tsx --test main/lifecycle/platform.test.ts main/lifecycle/desktop-log.test.ts main/security/hardening.test.ts main/backend/ws-probe.test.ts main/backend/bootstrap-session.test.ts main/backend/session.test.ts main/shared/config.test.ts main/runner/rpc-ws.test.ts main/runner/reverse-rpc.test.ts main/runner/bridge.test.ts main/preload-contract.test.ts main/path-consistency.test.ts main/ipc/onboarding-audio.test.ts main/ipc/tts-disk-cache.test.ts main/ipc/model-disk-cache.test.ts main/ipc/media.test.ts",
+    "test:desktop:platforms": "node --import tsx --test main/lifecycle/platform.test.ts main/lifecycle/desktop-log.test.ts main/security/hardening.test.ts main/backend/ws-probe.test.ts main/backend/session.test.ts main/shared/config.test.ts main/runner/rpc-ws.test.ts main/runner/reverse-rpc.test.ts main/runner/bridge.test.ts main/preload-contract.test.ts main/path-consistency.test.ts main/ipc/onboarding-audio.test.ts main/ipc/tts-disk-cache.test.ts main/ipc/model-disk-cache.test.ts main/ipc/media.test.ts main/ipc/runner.test.ts",
     "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
     "lint": "eslint renderer/ main/",
     "lint:fix": "eslint renderer/ main/ --fix",

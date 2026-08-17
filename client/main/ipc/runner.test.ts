@@ -45,11 +45,22 @@ test('runner:cancel dispatches spiritagent.cancel to the bridge', async () => {
 })
 
 test('runner:cancel is not rate-bucketed like execute_tool', async () => {
-  const bridge = { dispatch: async () => ({ ok: true }) }
+  const dispatched: any[] = []
+
+  const bridge = {
+    dispatch: async (method: string, params: any) => {
+      dispatched.push({ method, params })
+
+      return { ok: true }
+    }
+  }
+
   const ipc = makeFakeIpc()
   registerRunnerIpc({ deps: makeDeps(bridge), ipcMain: ipc as any })
 
   for (let i = 0; i < 80; i++) {
-    await ipc.invoke('spiritagent:runner:cancel')
+    assert.deepEqual(await ipc.invoke('spiritagent:runner:cancel'), { ok: true })
   }
+
+  assert.equal(dispatched.length, 80)
 })

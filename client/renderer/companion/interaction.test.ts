@@ -66,11 +66,21 @@ describe('poke / drag dispatch into reaction audio', () => {
     expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'poke-light' })
   })
 
-  it('repeated rapid pokes in a tight burst keep bucket=light (pokeCount reset by 4s timer, untouched by this test)', () => {
-    handlePokeInteraction()
+  it('escalates the poke bucket across a tight burst (light → medium → heavy)', async () => {
+    // Fresh module — pokeCount is module state and earlier tests advanced it.
+    vi.resetModules()
+    const { handlePokeInteraction: poke } = await import('./interaction')
 
-    expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
-    expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'poke-light' })
+    poke()
+    poke()
+    expect(hoisted.playReactionAudio.mock.calls[1][0]).toMatchObject({ bucket: 'poke-light' })
+
+    poke()
+    expect(hoisted.playReactionAudio.mock.calls[2][0]).toMatchObject({ bucket: 'poke-medium' })
+
+    poke()
+    poke()
+    expect(hoisted.playReactionAudio.mock.calls[4][0]).toMatchObject({ bucket: 'poke-heavy' })
   })
 
   it('reports a poke stat fire-and-forget on handlePokeInteraction', () => {

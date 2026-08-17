@@ -109,9 +109,7 @@ test('preload.ts exposes every required property declared in global.d.ts using T
     `preload.ts is missing required keys declared as non-optional in global.d.ts: ${missing.join(', ')}`
   )
 
-  if (optional.size > 0) {
-    const exposedOptional = [...optional].filter(k => exposed.has(k))
-    const unexposedOptional = [...optional].filter(k => !exposed.has(k))
-    console.log(`[contract] optional: exposed=${exposedOptional.length}, unexposed=${unexposedOptional.length}`)
-  }
+  const undeclared = [...exposed].filter(k => !required.has(k) && !optional.has(k))
+
+  assert.deepEqual(undeclared, [], `preload.ts exposes keys not declared in global.d.ts: ${undeclared.join(', ')}`)
 })

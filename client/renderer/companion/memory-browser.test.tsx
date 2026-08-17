@@ -2,7 +2,7 @@ import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MemoryBrowser } from './memory-browser'
-import { $memoryBrowserTab, setMemoryBrowserTab } from './memory-browser-store'
+import { setMemoryBrowserTab } from './memory-browser-store'
 
 const requestGateway = vi.fn()
 
@@ -129,10 +129,5 @@ describe('MemoryBrowser', () => {
     })
     await waitFor(() => expect(requestGateway).toHaveBeenCalledWith('memory.list', { kind: 'auto_inject' }))
     expect(queryByText('a')).toBeNull()
-  })
-
-  it('respects pre-set $memoryBrowserTab', () => {
-    setMemoryBrowserTab('auto_inject')
-    expect($memoryBrowserTab.get()).toBe('auto_inject')
   })
 })

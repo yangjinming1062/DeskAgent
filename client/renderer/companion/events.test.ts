@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { $chatMessages, clearChat, setChatSession } from './chat-store'
+import { $spriteState } from './companion-store'
 import { handleCompanionEvent } from './events'
 
 beforeEach(() => {
@@ -30,13 +31,13 @@ describe('handleCompanionEvent session filter', () => {
   })
 
   it('passes WSEvent-driven events through the session filter', () => {
-    // companion.message is bound for the proactive bubble; the renderer must
-    // react regardless of which conversation is currently mounted. The
-    // observable side effect here is "no chat-streaming msg was created by
-    // the filter" — i.e. the handler reached the chat-specific case branch
-    // without first polluting the visible chat.
-    handleCompanionEvent({ type: 'companion.message', payload: { text: '今天好' } })
+    // companion.message has no session_id and must reach its case branch:
+    // the affect lands on the sprite, while the proactive bubble path
+    // creates no chat-streaming message.
+    $spriteState.set('idle')
+    handleCompanionEvent({ type: 'companion.message', payload: { text: '今天好', affect: { emotion: 'happy' } } })
 
+    expect($spriteState.get()).toBe('emotional')
     expect($chatMessages.get().every(m => m.role !== 'assistant' || m.streaming !== true)).toBe(true)
   })
 })

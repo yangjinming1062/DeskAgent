@@ -88,17 +88,19 @@ describe('clips-registry', () => {
     }
   })
 
-  it('summarizes every rig library with enriched counts', () => {
+  it('summarizes every rig library with exact counts', () => {
     const summary = summarizeRigLibraries()
     expect(summary.length).toBe(7)
     const counts = Object.fromEntries(summary.map(s => [s.rig_type, s.count]))
-    expect(counts.biped).toBeGreaterThanOrEqual(100)
-    expect(counts.quadruped).toBeGreaterThanOrEqual(30)
-    expect(counts.avian).toBeGreaterThanOrEqual(25)
-    expect(counts.serpentine).toBeGreaterThanOrEqual(20)
-    expect(counts.aquatic).toBeGreaterThanOrEqual(20)
-    expect(counts.hexapod).toBeGreaterThanOrEqual(20)
-    expect(counts.octopod).toBeGreaterThanOrEqual(20)
+    expect(counts).toEqual({
+      biped: Object.keys(BIPED_CLIPS).length,
+      quadruped: Object.keys(QUADRUPED_CLIPS).length,
+      avian: Object.keys(AVIAN_CLIPS).length,
+      serpentine: Object.keys(SERPENTINE_CLIPS).length,
+      aquatic: Object.keys(AQUATIC_CLIPS).length,
+      hexapod: Object.keys(HEXAPOD_CLIPS).length,
+      octopod: Object.keys(OCTOPOD_CLIPS).length
+    })
   })
 
   it('exposes clip names per rig type', () => {

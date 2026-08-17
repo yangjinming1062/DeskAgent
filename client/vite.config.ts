@@ -58,11 +58,9 @@ export default defineConfig({
     port: 4174
   },
   // Vitest is the renderer-side test runner (Vitest + jsdom). The
-  // Electron-main-side tests use `node --test` instead (see
-  // package.json `test:desktop:platforms`); they ship as `*.test.cjs`
-  // under `main/` and `scripts/` and must be excluded here, otherwise
-  // vitest tries to parse them and fails on the CommonJS `require()` calls
-  // and the absence of a jsdom `window`.
+  // Electron-main-side tests use `node --test` instead (see package.json
+  // `test:desktop:platforms`); they live as `*.test.ts` under `main/` and
+  // stay outside the `renderer/**` include glob below.
   test: {
     include: ['renderer/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom'

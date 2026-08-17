@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { BUILTIN_EMOTIONS } from '@/companion/companion-store'
+
 import { BUILTIN_VALENCE, resolveEmotionClip, resolveInteractionClip, selectClipByTags } from './clip-dispatch'
 import type { ClipDef } from './clips-biped'
 import type { CompanionExpression } from './model-store'
@@ -123,31 +125,11 @@ describe('clip-dispatch', () => {
   })
 
   describe('BUILTIN_VALENCE', () => {
-    it('classifies all 17 built-in emotions', () => {
+    it('classifies every built-in emotion', () => {
       // Every built-in emotion must have a valence entry — a missing key
       // would silently default to 'neutral' and mis-route clip selection.
-      const builtins = [
-        'happy',
-        'sad',
-        'surprised',
-        'excited',
-        'confused',
-        'concerned',
-        'shy',
-        'proud',
-        'grateful',
-        'playful',
-        'bored',
-        'lonely',
-        'sleepy',
-        'curious',
-        'embarrassed',
-        'apologetic',
-        'neutral'
-      ]
-
-      for (const e of builtins) {
-        expect(BUILTIN_VALENCE[e]).toBeDefined()
+      for (const e of BUILTIN_EMOTIONS) {
+        expect(BUILTIN_VALENCE[e], `missing valence for '${e}'`).toBeDefined()
       }
     })
 
@@ -174,7 +156,8 @@ describe('clip-dispatch', () => {
 
     const customExpr: CompanionExpression = {
       id: 1,
-      name: 'tender_worry',
+      // Mixed case on purpose — the dispatch index must normalize both sides.
+      name: 'Tender_Worry',
       label: '心疼',
       valence: 'negative',
       description: 'Tender worry',
@@ -187,7 +170,7 @@ describe('clip-dispatch', () => {
       // 'tender_worry' is not in BUILTIN_VALENCE, so the custom expression's
       // valence='negative' should drive candidate selection.
       const clip = resolveEmotionClip('tender_worry', [], lib, avail, [customExpr])
-      expect(clip).toBeTruthy()
+      expect(clip).toBe('tender_worry_pose')
     })
 
     it('matches clips by custom expression tags', () => {
@@ -200,7 +183,7 @@ describe('clip-dispatch', () => {
 
     it('is case-insensitive on custom expression name', () => {
       const clip = resolveEmotionClip('TENDER_WORRY', [], lib, avail, [customExpr])
-      expect(clip).toBeTruthy()
+      expect(clip).toBe('tender_worry_pose')
     })
 
     it('falls back to BUILTIN_VALENCE when custom expression is absent', () => {
