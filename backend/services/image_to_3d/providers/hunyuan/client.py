@@ -1,7 +1,7 @@
 from typing import Any
 
 import httpx
-from components import SETTINGS, download_capped, get_logger
+from components import SETTINGS, download_capped, get_logger, log_paid_call
 
 logger = get_logger(__name__)
 
@@ -94,6 +94,7 @@ async def create_image_to_model(
     job_id = str(body.get("id") or "")
     if not job_id:
         raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
+    log_paid_call("hunyuan", "image_to_3d_submit", task_id=job_id)
     return job_id
 
 
@@ -135,6 +136,7 @@ async def create_multiview_to_model(
     job_id = str(body.get("id") or "")
     if not job_id:
         raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
+    log_paid_call("hunyuan", "image_to_3d_submit", task_id=job_id)
     return job_id
 
 
@@ -144,6 +146,7 @@ async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[s
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{_base_url()}/v1/api/3d/query", headers=_auth_headers(), json={"id": job_id, "model": model})
     if resp.status_code != 200:
+        logger.warning("hunyuan query failed", extra={"task_id": job_id, "status_code": resp.status_code})
         raise HunyuanApiError(f"hunyuan query HTTP {resp.status_code}: {resp.text[:300]}")
     return resp.json()
 

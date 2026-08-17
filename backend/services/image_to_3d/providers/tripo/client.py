@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from components import SETTINGS, download_capped, get_logger
+from components import SETTINGS, download_capped, get_logger, log_paid_call
 
 logger = get_logger(__name__)
 
@@ -59,7 +59,9 @@ async def create_text_to_model(prompt: str, *, model_version: str = MODEL_VERSIO
     """Returns a task_id; poll with :func:`poll_task` until ``status=success``."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/generation/text-to-model", headers=_auth_headers(), json={"prompt": prompt, "model": model_version})
-    return _envelope(resp.json())["task_id"]
+    task_id = _envelope(resp.json())["task_id"]
+    log_paid_call("tripo", "text_to_3d_submit", task_id=task_id)
+    return task_id
 
 
 def _common_model_kwargs(
@@ -149,7 +151,9 @@ async def create_multiview_to_model(
     payload["inputs"] = inputs
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/generation/multiview-to-model", headers=_auth_headers(), json=payload)
-    return _envelope(resp.json())["task_id"]
+    task_id = _envelope(resp.json())["task_id"]
+    log_paid_call("tripo", "image_to_3d_submit", task_id=task_id)
+    return task_id
 
 
 async def create_image_to_model(
@@ -168,14 +172,19 @@ async def create_image_to_model(
     payload["input"] = image_token
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/generation/image-to-model", headers=_auth_headers(), json=payload)
-    return _envelope(resp.json())["task_id"]
+    task_id = _envelope(resp.json())["task_id"]
+    log_paid_call("tripo", "image_to_3d_submit", task_id=task_id)
+    return task_id
 
 
 async def get_task(task_id: str) -> dict[str, Any]:
     """Single GET /v3/tasks/{id}; status mapping is the caller's job."""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.get(f"{_base_url()}/tasks/{task_id}", headers={"Authorization": f"Bearer {_api_key()}"})
-    return _envelope(resp.json())
+    data = _envelope(resp.json())
+    if data.get("status") == "success":
+        log_paid_call("tripo", "image_to_3d_result", task_id=task_id, urls=[(data.get("output") or {}).get("model_url")], level="debug")
+    return data
 
 
 async def poll_task(task_id: str, *, interval: float = 5.0, timeout: float = 1800.0, on_progress: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:

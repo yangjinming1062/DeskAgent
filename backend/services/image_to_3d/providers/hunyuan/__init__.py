@@ -4,7 +4,7 @@ import io
 import zipfile
 from pathlib import Path
 
-from components import SETTINGS, get_logger
+from components import SETTINGS, get_logger, log_paid_call
 
 from ...base import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult
 from ...registry import register
@@ -83,6 +83,7 @@ class HunyuanImageTo3DProvider(ImageTo3DProvider):
                 for item in body.get("data") or []
                 if isinstance(item, dict) and item.get("url")
             )
+            log_paid_call(self.provider_name, "image_to_3d_result", task_id=job.job_id, urls=[a.url for a in assets], level="debug")
             return Model3DPollResult(status="completed", progress=100, assets=assets)
         if status == "failed":
             return Model3DPollResult(status="failed", error=str(body.get("error") or body.get("message") or body)[:500])

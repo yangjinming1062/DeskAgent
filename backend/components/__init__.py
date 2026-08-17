@@ -96,6 +96,7 @@ from .observability import (
     render_metrics_response,
     sync_trace_span,
 )
+from .paid_calls import log_paid_call
 from .redact import redact_sensitive_text
 from .temp_files import TempFileMarkerMismatch, cleanup_expired, get_file_path, save_file
 from .temp_files import delete_file as temp_file_delete
@@ -194,6 +195,7 @@ __all__ = [
     "get_file_path",
     "get_logger",
     "is_safe_outbound",
+    "log_paid_call",
     "new_request_id",
     "normalize_sha512",
     "parse_llm_json",

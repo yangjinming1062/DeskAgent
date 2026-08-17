@@ -264,6 +264,7 @@ async def run_model_gen_pipeline(
     io_dir: Path | None = None,
 ) -> None:
     provider: ImageTo3DProvider | None = None
+    task_id: str | None = None
     try:
         provider = _resolve_model_provider(provider_name)
         is_single = fullbody_mode == "single"
@@ -281,6 +282,7 @@ async def run_model_gen_pipeline(
 
         await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
         job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview)
+        task_id = job.job_id
         provider_label = _provider_result_label(provider.provider_name, multiview is not None)
 
         gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
@@ -340,7 +342,7 @@ async def run_model_gen_pipeline(
         )
 
     except Exception:
-        logger.warning("3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name}, exc_info=True)
+        logger.warning("3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "task_id": task_id}, exc_info=True)
         # model.failed reaches the client — fixed copy only, the raw provider
         # error lives in the log line above (PROTOCOL §1.2 / README §4).
         await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")

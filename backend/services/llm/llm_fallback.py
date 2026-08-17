@@ -1,7 +1,8 @@
+import time
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from components import get_logger
+from components import get_logger, log_paid_call
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .error_classifier import FailoverReason, classify_api_error
@@ -59,7 +60,13 @@ async def execute_with_fallback(
         provider_cls = resolve(config.service_type, config.provider_name)
         provider = provider_cls(config)
         try:
-            return await call_fn(provider)
+            started = time.monotonic()
+            result = await call_fn(provider)
+            # Every billed capability (chat / image_gen / tts / video_gen) funnels
+            # through here — sync calls have no task_id, so the breadcrumb is
+            # provider + model + duration instead.
+            log_paid_call(config.provider_name, service_type, user_id=user_id, model=config.model, duration_ms=round((time.monotonic() - started) * 1000))
+            return result
         except Exception as exc:
             last_error = exc
             classified = getattr(exc, "classified", None) or classify_api_error(exc, provider=config.provider_name, model=config.model)
