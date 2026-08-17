@@ -9,7 +9,7 @@ from modules.companion import WardrobeItem, WardrobePreviewResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import build_texture_prompt, chat, is_preset_species
+from ..llm import build_texture_prompt, chat, is_preset_species, resolve_fullbody_style
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_asset_url, decompress_glb_if_needed, resolve_companion_model_path, save_companion_asset, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
@@ -123,8 +123,9 @@ async def check_and_recover_missing_texture(user_id: int, item: WardrobeItem) ->
             if avatar and avatar.seed_front_url:
                 ref_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_url)
             rig_type = await _resolve_rig_type(db, user_id)
+            style = await _resolve_style(db, user_id)
 
-            res_dict, _prompts = await _generate_pbr_channels(description=desc, feedback=None, rig_type=rig_type, reference_data_uri=ref_uri, user_id=user_id)
+            res_dict, _prompts = await _generate_pbr_channels(description=desc, feedback=None, rig_type=rig_type, reference_data_uri=ref_uri, user_id=user_id, style=style)
 
             async def _save_ch(ch: str, label: str) -> str | None:
                 if ch not in res_dict:
@@ -199,6 +200,20 @@ async def _resolve_rig_type(db: AsyncSession, user_id: int) -> str:
         return "biped"
 
     return await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
+
+
+async def _resolve_style(db: AsyncSession, user_id: int) -> str:
+    """Resolve the render style from the active model; falls back to the
+    species preset routing (a custom species without a model row gets the
+    anime mainstream default)."""
+    model = await get_active_model(db, user_id)
+    if model and model.style:
+        return model.style
+
+    persona = await get_or_create_persona(db, user_id)
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    species = (definition.get("biological_type") or "").strip()
+    return resolve_fullbody_style(species)
 
 
 @dataclass
@@ -319,10 +334,10 @@ async def _body_joint_names(db: AsyncSession, user_id: int) -> list[str]:
 
 
 async def _generate_pbr_channels(
-    *, description: str, feedback: str | None, rig_type: str, reference_data_uri: str | None, user_id: int
+    *, description: str, feedback: str | None, rig_type: str, reference_data_uri: str | None, user_id: int, style: str = "realistic"
 ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
     """Generate 5-channel PBR textures concurrently; raises if albedo fails."""
-    prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch) for ch in _PBR_CHANNELS}
+    prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch, style=style) for ch in _PBR_CHANNELS}
 
     async def _gen_one(ch: str) -> tuple[str, str] | None:
         try:
@@ -382,14 +397,19 @@ async def preview_wardrobe_texture(
     feedback: str | None = None,
     rig_type: str | None = None,
 ) -> WardrobePreviewResponse:
+    style = "realistic"
     if rig_type is None:
         if db is not None:
             rig_type = await _resolve_rig_type(db, user_id)
+            style = await _resolve_style(db, user_id)
         else:
             async with SESSION_LOCAL() as probe_db:
                 rig_type = await _resolve_rig_type(probe_db, user_id)
+                style = await _resolve_style(probe_db, user_id)
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
-    res_dict, prompts = await _generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id)
+    res_dict, prompts = await _generate_pbr_channels(
+        description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id, style=style
+    )
     return _preview_response(res_dict, prompts)
 
 
@@ -466,7 +486,11 @@ async def preview_garment(
             io_dir=io_dir,
         )
     )
-    pbr_task = asyncio.create_task(_generate_pbr_channels(description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id))
+    pbr_task = asyncio.create_task(
+        _generate_pbr_channels(
+            description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id, style=model.style or "realistic"
+        )
+    )
     # gather returns exceptions so the minute-long garment pipeline is not
     # cancelled on a seconds-scale PBR failure; the runner's ``finally: rmtree(io_dir)``
     # is responsible for its own tempdir cleanup regardless of which side raises.

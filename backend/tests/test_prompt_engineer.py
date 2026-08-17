@@ -373,3 +373,16 @@ def test_build_texture_channels():
         prompt = prompt_engineer.build_texture_prompt(description="旗袍", channel=ch)
         assert token in prompt
         assert "seamless" in prompt
+
+
+def test_build_texture_style_routes_albedo_wording():
+    # Anime albedo gets clean cel-friendly color blocks — toon shading
+    # amplifies photographic noise into dirty bands.
+    anime = prompt_engineer.build_texture_prompt(description="旗袍", style="anime")
+    assert "二次元" in anime
+    assert "干净色块" in anime
+    realistic = prompt_engineer.build_texture_prompt(description="旗袍")
+    assert "二次元" not in realistic
+    # Technical channels stay style-neutral — they encode geometry, not art.
+    normal = prompt_engineer.build_texture_prompt(description="旗袍", channel="normal", style="anime")
+    assert "二次元" not in normal

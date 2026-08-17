@@ -404,12 +404,15 @@ async def enhance_avatar_prompt(
     return _strip_markdown_fence(raw)
 
 
-def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped", channel: str = "albedo") -> str:
+def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped", channel: str = "albedo", style: str = "realistic") -> str:
     """直接构造 PBR 纹理图 image-gen prompt — 无 LLM 翻译。
 
     ``rig_type`` selects the texture-type prefix (clothing for bipeds, fur/scale
     patterns for quadrupeds, feather patterns for avians, etc.).
     ``channel`` supports 'albedo', 'normal', 'roughness', 'metalness', and 'displacement'.
+    ``style`` routes the albedo wording — anime-styled characters get clean
+    cel-friendly color blocks instead of photoreal skin/fiber detail (toon
+    shading amplifies photographic noise).
     """
     prefix = _TEXTURE_RIG_PREFIX.get(rig_type, _TEXTURE_RIG_PREFIX["biped"])
     prompt = f"{prefix} {description}。"
@@ -418,6 +421,9 @@ def build_texture_prompt(*, description: str, feedback: str | None = None, rig_t
 
     if channel_suffix := _TEXTURE_CHANNEL_SUFFIX.get(channel):
         prompt += channel_suffix
+
+    if channel == "albedo" and style == "anime":
+        prompt += "二次元动漫风格配色：干净色块、明快饱和的色彩、清晰的色块边界，无写实皮肤噪点、毛孔与织物纤维特写。"
 
     # Albedo (color) maps need even-lighting instructions; technical maps
     # (normal/roughness/metalness/displacement) use the trimmed suffix to avoid
