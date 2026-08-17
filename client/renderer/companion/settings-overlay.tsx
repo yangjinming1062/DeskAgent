@@ -281,8 +281,10 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
             <div className="space-y-2 text-xs">
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10">
                 <div>
-                  <p className="font-medium text-white/90">戳/拖思考回应</p>
-                  <p className="text-[10px] text-white/40">互动时由 LLM 生成反应文案与表情（关闭使用预制反馈）</p>
+                  <p className="font-medium text-white/90">戳击思考回应</p>
+                  <p className="text-[10px] text-white/40">
+                    戳击时由 LLM 生成反应文案与表情（关闭使用预制反馈）；拖拽始终使用本地预制反馈
+                  </p>
                 </div>
                 <input
                   checked={llmReactions}

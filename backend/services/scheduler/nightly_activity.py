@@ -90,8 +90,8 @@ Instructions:
    - auto_inject:mood_pattern (user's emotional tendency or state pattern)
    - auto_inject:relationship_signal (trust level, tease frequency, formality)
 4. Only output slots where there is genuine new information or an update. Do not return empty updates.
-5. Interaction Statistics: The user message may include an "interaction_stats_today" field containing today's raw poke / drag / chat counts and an hour_counts breakdown of when the user was active. This is grounded observational data (not conversation), so use it to inform:
-   - auto_inject:interaction_pattern (e.g. heavy poking in a burst, late-night activity, frequent drags)
+5. Interaction Statistics: The user message may include an "interaction_stats_today" field containing today's raw poke / chat counts and an hour_counts breakdown of when the user was active. This is grounded observational data (not conversation), so use it to inform:
+   - auto_inject:interaction_pattern (e.g. heavy poking in a burst, late-night activity)
    - auto_inject:mood_pattern (e.g. restless poking may signal stress/boredom)
    - inferred_profile:work_schedule (active-hour distribution from hour_counts)
    Do NOT fabricate counts; only reflect what the field actually contains.
@@ -707,7 +707,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         recall_rows = await list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
 
         # Baseline 7-day activity stats (main conversation, real turns only —
-        # poke/drag status rows are role="user" and would read as engagement).
+        # poke status rows are role="user" and would read as engagement).
         seven_days_ago_utc = utc_start - timedelta(days=7)
         past_7_count = (
             await db.execute(

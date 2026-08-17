@@ -131,7 +131,7 @@ _last_llm_respond_ts: dict[int, dict[str, float]] = {}
 _inflight_interact: set[tuple[int, str]] = set()
 
 # Per-user in-flight guard for ``prompt.submit`` (renderer-issued chat turns).
-# ``companion.interact`` consults this so a poke/drag reaction never lands
+# ``companion.interact`` consults this so a poke reaction never lands
 # while the user is mid-message — the two paths would otherwise write
 # interleaved rows into the same main conversation, producing a crossed
 # timeline in the next LLM context.
@@ -520,7 +520,7 @@ def _register_session_handlers(
             if runtime.chat_task and not runtime.chat_task.done():
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 
-        # Cross-gate: a companion reaction (poke/drag) is mid-flight on this
+        # Cross-gate: a companion reaction (poke) is mid-flight on this
         # user's main conversation.
         if any(uid == user_id for uid, _ in _inflight_interact):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
@@ -677,7 +677,7 @@ def _register_session_handlers(
     dispatcher.register("companion.check_affect", companion_check_affect)
 
     async def companion_record_interaction_stats(params: dict) -> dict:
-        # Per-event statistics (poke / drag / chat_turn) for daily Memory
+        # Per-event statistics (poke / chat_turn) for daily Memory
         # rollups. No LLM cost. The desktop coalesces stats RPCs itself: it
         # sends every event until ``STATS_THRESHOLD`` is reached, then switches
         # to one RPC per minute per kind (see
@@ -687,16 +687,16 @@ def _register_session_handlers(
         hour = params.get("hour")
         if not isinstance(hour, int) or not 0 <= hour <= 23:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "hour must be int in [0, 23]")
-        if kind not in ("poke", "drag", "chat_turn"):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/drag/chat_turn, got {kind!r}")
+        if kind not in ("poke", "chat_turn"):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/chat_turn, got {kind!r}")
         return await record_interaction(user_id, kind, hour)
 
     dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
 
     async def companion_interact(params: dict) -> dict:
         kind = params.get("kind")
-        if kind not in ("poke", "drag"):
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be poke or drag, got {kind!r}")
+        if kind != "poke":
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be poke, got {kind!r}")
 
         now = time.monotonic()
         if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
@@ -742,7 +742,7 @@ def _register_session_handlers(
 
         # Only a reaction the user actually saw is worth a history row — an
         # unanswered poke would otherwise litter the main conversation.
-        await _record_main_conversation(user_id, "user", f"（{'戳了戳' if kind == 'poke' else '拖拽了'}精灵）", "status_interaction")
+        await _record_main_conversation(user_id, "user", "（戳了戳精灵）", "status_interaction")
         await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
         # Cooldown is consumed regardless of the DB outcome: the LLM call has
         # already been paid for, so a persistence failure must not open the door

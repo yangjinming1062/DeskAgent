@@ -50,7 +50,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | avatar.regenerate | 重生头像（不重跑全身、不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
 | companion.set_disturbance_tier | Client 上报生效打扰档位（Client 是唯一权威） | Backend 持久化 + Client 活动感知 + DESIGN §6.2 |
-| companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳拖反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
+| companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认形象（幂等），解开音色/用户子阶段 | Backend 状态 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成 | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |

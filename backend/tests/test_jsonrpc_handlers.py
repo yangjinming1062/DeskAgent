@@ -232,3 +232,33 @@ async def test_websocket_boot_failure_cleans_up(monkeypatch):
     assert not MANAGER.is_connected(9999)
     assert 9999 not in _USER_SESSIONS
     assert ws.closed_code == 1011
+
+
+@pytest.mark.asyncio
+async def test_companion_interact_rejects_drag(pin_handlers):
+    """companion.interact must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
+    from components import JSONRPC_INVALID_PARAMS
+    from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
+
+    dispatcher = JsonRpcDispatcher(lambda msg: None)
+    pin_handlers._register_session_handlers(dispatcher, {}, {}, user_id=1001)
+
+    interact_fn = dispatcher._handlers["companion.interact"]
+    with pytest.raises(JsonRpcError) as exc_info:
+        await interact_fn({"kind": "drag"})
+    assert exc_info.value.code == JSONRPC_INVALID_PARAMS
+
+
+@pytest.mark.asyncio
+async def test_companion_record_interaction_stats_rejects_drag(pin_handlers):
+    """companion.record_interaction_stats must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
+    from components import JSONRPC_INVALID_PARAMS
+    from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
+
+    dispatcher = JsonRpcDispatcher(lambda msg: None)
+    pin_handlers._register_session_handlers(dispatcher, {}, {}, user_id=1001)
+
+    stats_fn = dispatcher._handlers["companion.record_interaction_stats"]
+    with pytest.raises(JsonRpcError) as exc_info:
+        await stats_fn({"kind": "drag", "hour": 12})
+    assert exc_info.value.code == JSONRPC_INVALID_PARAMS

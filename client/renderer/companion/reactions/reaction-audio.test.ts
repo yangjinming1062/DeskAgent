@@ -33,6 +33,23 @@ describe('pickReaction', () => {
     expect(entry?.tags.some(t => ['傲娇', '毒舌'].includes(t))).toBe(true)
   })
 
+  it('allows generic tag-free entries to participate in rotation when tags match', () => {
+    // Run multiple picks on drag bucket with matching tags to observe candidate eligibility
+    const pickedTags: number[] = []
+
+    for (let i = 0; i < 50; i++) {
+      const entry = pickReaction('drag', ['温柔'])
+
+      if (entry) {
+        pickedTags.push(entry.tags.length)
+      }
+    }
+
+    // Eligible entries are gentle (tags.length = 3) and generic (tags.length = 0)
+    expect(pickedTags.every(len => len === 3 || len === 0)).toBe(true)
+    expect(pickedTags.some(len => len === 0)).toBe(true)
+  })
+
   it('still returns a same-bucket entry when no tag matches', () => {
     const entry = pickReaction('drag', ['不存在的标签'])
 

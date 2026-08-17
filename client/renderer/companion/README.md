@@ -107,11 +107,13 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 ## 7. 用户直接交互
 
-- **戳 / 拖**（`onTap` / `onDragEnd`）：[interaction.ts](interaction.ts) 从 `client/renderer/companion/reactions/manifest.json` 的 52 条文案里按 (bucket, tone) 随机抽一条（[reactions/reaction-audio.ts](reactions/reaction-audio.ts)），交给 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }`。合成结果按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
+- **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；
+- **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
+- **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
 - **悬停**：10s 节流，`interacting` 1.5s（不放音）。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM 与重新注册 `interactive-region`/`mousedown` listener；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。点击外部通过 `mousedown` listener 关闭，仅在菜单可见时注册，避免隐藏态干扰 hover 命中。
 
-**每日互动统计**：poke / drag / chat_turn 三类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`（含 hour_counts 快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
+**每日互动统计**：poke / chat_turn 两类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`（含 hour_counts 快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
 ## 8. cron 主动陪伴链路
 

@@ -14,15 +14,10 @@ let lastPokeTime = 0
 let pokeCount = 0
 let resetTimer: ReturnType<typeof setTimeout> | null = null
 let hoverThrottleTimer: ReturnType<typeof setTimeout> | null = null
+let lastLlmPokeAt = 0
 
-export const lastLlmInteractAtByKind: Record<'poke' | 'drag', number> = {
-  poke: 0,
-  drag: 0
-}
-
-export function resetLlmInteractCooldown(): void {
-  lastLlmInteractAtByKind.poke = 0
-  lastLlmInteractAtByKind.drag = 0
+export function resetPokeLlmCooldown(): void {
+  lastLlmPokeAt = 0
 }
 
 function bucketForPokeCount(): ReactionBucket {
@@ -51,10 +46,10 @@ function playLocalReaction(bucket: ReactionBucket, tags: string[]): void {
   void playReactionAudio(entry)
 }
 
-async function triggerReaction(kind: 'poke' | 'drag', bucket: ReactionBucket, tags: string[]): Promise<void> {
+async function triggerReaction(bucket: ReactionBucket, tags: string[]): Promise<void> {
   const now = Date.now()
   const useLlm = $llmReactions.get()
-  const inLlmCooldown = now - lastLlmInteractAtByKind[kind] < LLM_INTERACT_COOLDOWN_MS
+  const inLlmCooldown = now - lastLlmPokeAt < LLM_INTERACT_COOLDOWN_MS
 
   if (!useLlm || inLlmCooldown) {
     playLocalReaction(bucket, tags)
@@ -64,12 +59,12 @@ async function triggerReaction(kind: 'poke' | 'drag', bucket: ReactionBucket, ta
 
   // Optimistic claim — refunded below unless we get an LLM reaction or the
   // server says rate_limited, so one transient failure doesn't lock out 5 min.
-  lastLlmInteractAtByKind[kind] = now
+  lastLlmPokeAt = now
 
   const gateway = $gateway.get()
 
   if (!gateway) {
-    lastLlmInteractAtByKind[kind] = 0
+    lastLlmPokeAt = 0
     playLocalReaction(bucket, tags)
 
     return
@@ -77,16 +72,16 @@ async function triggerReaction(kind: 'poke' | 'drag', bucket: ReactionBucket, ta
 
   try {
     const res = await gateway.request<InteractRpcResponse>('companion.interact', {
-      kind,
+      kind: 'poke',
       poke_count: pokeCount,
       idle_seconds: Math.max(0, $lastIdleSeconds.get()),
       local_hour: new Date().getHours()
     })
 
-    // Server-side cost window still active for this kind — sync our clock
+    // Server-side cost window still active for poke — sync our clock
     // and fall back to the local pool.
     if (res?.reason === 'rate_limited') {
-      lastLlmInteractAtByKind[kind] = Date.now()
+      lastLlmPokeAt = Date.now()
       playLocalReaction(bucket, tags)
 
       return
@@ -97,16 +92,16 @@ async function triggerReaction(kind: 'poke' | 'drag', bucket: ReactionBucket, ta
         $spriteEmotion.set(res.emotion)
       }
 
-      void playReactionAudio({ id: `llm-${kind}`, text: res.text, tags: [], bucket })
+      void playReactionAudio({ id: 'llm-poke', text: res.text, tags: [], bucket })
 
       return
     }
 
     // llm_error / unparseable / inflight — refund so the next poke retries.
-    lastLlmInteractAtByKind[kind] = 0
+    lastLlmPokeAt = 0
   } catch {
     // Network / timeout — refund so the next poke retries.
-    lastLlmInteractAtByKind[kind] = 0
+    lastLlmPokeAt = 0
   }
 
   playLocalReaction(bucket, tags)
@@ -140,7 +135,7 @@ export function handlePokeInteraction(): void {
   $clipOverride.set(clip)
   setSpriteState('interacting', { durationMs: 2000 })
 
-  void triggerReaction('poke', bucket, tags)
+  void triggerReaction(bucket, tags)
   reportInteractionStat('poke')
 }
 
@@ -149,7 +144,5 @@ export function handleHoverInteraction(): void {
 }
 
 export function handleDragEndInteraction(): void {
-  const tags = $personalityTags.get()
-  void triggerReaction('drag', 'drag', tags)
-  reportInteractionStat('drag')
+  playLocalReaction('drag', $personalityTags.get())
 }

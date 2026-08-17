@@ -57,7 +57,7 @@ export function pickReaction(bucket: ReactionBucket, companionTags: string[]): R
     const maxScore = Math.max(...scored.map(s => s.score))
 
     if (maxScore > 0) {
-      const topMatches = scored.filter(s => s.score === maxScore).map(s => s.entry)
+      const topMatches = scored.filter(s => s.score === maxScore || s.entry.tags.length === 0).map(s => s.entry)
 
       return topMatches[Math.floor(Math.random() * topMatches.length)]
     }

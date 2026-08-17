@@ -26,7 +26,7 @@ _INTERACT_PROMPT_TEMPLATE = (
     "最近的对话：\n{recent_context}\n\n"
     "今日互动数据：\n{today_stats}\n\n"
     "当前情境：\n"
-    "- 用户刚才对你做了一个动作：{kind_desc}（强度 bucket: {poke_count}）\n"
+    "- 用户刚才对你做了一个动作：戳了戳你（强度 bucket: {poke_count}）\n"
     "- 用户本地时间：{local_hour} 点\n"
     "- 用户此前已空闲 {idle_minutes} 分钟\n\n"
     "请结合你的角色语气和性格，给出一句简短的口头反应（长度严格 ≤40 字）。\n"
@@ -39,8 +39,8 @@ _INTERACT_PROMPT_TEMPLATE = (
 
 
 async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> InteractResult:
-    """LLM reasoning for user interaction response (poke/drag)."""
-    if kind not in ("poke", "drag"):
+    """LLM reasoning for user interaction response (poke)."""
+    if kind != "poke":
         return InteractResult(text=None, reason="invalid_kind")
 
     ctx = await load_companion_prompt_context(user_id)
@@ -65,7 +65,6 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
             "memories_block": ctx.memories_block,
             "recent_context": recent_context,
             "today_stats": today_stats,
-            "kind_desc": "戳了戳你" if kind == "poke" else "拖拽了你",
             "poke_count": poke_count,
             "local_hour": local_hour if local_hour >= 0 else "未知",
             "idle_minutes": idle_minutes,

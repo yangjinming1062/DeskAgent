@@ -412,19 +412,17 @@ export function stopActivityMonitor(): void {
 // UTC day rollover).
 const STATS_POST_THRESHROTTLE_MS = 60_000
 
-const _localStatsCounters: Record<'poke' | 'drag' | 'chat_turn', number> = {
+const _localStatsCounters: Record<'poke' | 'chat_turn', number> = {
   poke: 0,
-  drag: 0,
   chat_turn: 0
 }
 
-const _lastStatsSentAt: Record<'poke' | 'drag' | 'chat_turn', number> = {
+const _lastStatsSentAt: Record<'poke' | 'chat_turn', number> = {
   poke: 0,
-  drag: 0,
   chat_turn: 0
 }
 
-export function reportInteractionStat(kind: 'poke' | 'drag' | 'chat_turn'): void {
+export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
   const gateway = $gateway.get()
 
   if (!gateway) {

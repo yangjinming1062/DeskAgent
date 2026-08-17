@@ -6,9 +6,18 @@ import { handleDragEndInteraction, handlePokeInteraction } from './interaction'
 const hoisted = vi.hoisted(() => {
   return {
     playReactionAudio: vi.fn(),
-    reportInteractionStat: vi.fn()
+    reportInteractionStat: vi.fn(),
+    gatewayRequest: vi.fn()
   }
 })
+
+vi.mock('@/shared/store/gateway', () => ({
+  $gateway: {
+    get: () => ({
+      request: hoisted.gatewayRequest
+    })
+  }
+}))
 
 // Echoes the requested bucket back through the entry so the dispatch
 // assertions below can tell poke-light from drag.
@@ -41,6 +50,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(10_000))
   hoisted.playReactionAudio.mockClear()
   hoisted.reportInteractionStat.mockClear()
+  hoisted.gatewayRequest.mockClear()
 })
 
 afterEach(() => {
@@ -69,13 +79,13 @@ describe('poke / drag dispatch into reaction audio', () => {
     expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('poke')
   })
 
-  it('handleDragEndInteraction fires interacting state + playReactionAudio with bucket=drag', () => {
+  it('handleDragEndInteraction plays local drag reaction and never issues RPC or reports stat', () => {
     handleDragEndInteraction()
 
-    expect($spriteState.get()).toBe('interacting')
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
     expect(hoisted.playReactionAudio.mock.calls[0][0]).toMatchObject({ bucket: 'drag' })
-    expect(hoisted.reportInteractionStat).toHaveBeenCalledWith('drag')
+    expect(hoisted.reportInteractionStat).not.toHaveBeenCalled()
+    expect(hoisted.gatewayRequest).not.toHaveBeenCalled()
   })
 
   it('handles empty manifest by passing null through playReactionAudio', () => {

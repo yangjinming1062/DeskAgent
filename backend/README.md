@@ -86,7 +86,7 @@ backend/
 - **骨骼 Socket 自动模糊匹配与去前缀**：针对 mixamo 导出的 `mixamorig:` 前缀差异，`_resolve_socket` 执行精确与去前缀两级匹配；匹配失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。
 - **装备槽位互斥与 Outfit 状态拼接**：`equip` 仅顶替同 `assembly_json.slot` 的已装备部件；persona outfit 字段镜像全部已装备部件描述的文本拼接。texture 恒占 `outfit` 槽。
 - **流式 Chat 一致性与错误隔离**：流式 chat 一旦首 chunk 已发不再 fallback，避免同一回合混合两个模型的输出造成上下文截断；失败统一 raise。LLM 下载临时媒体失败拦截原始 SDK 报错，返回标准短消息，避免误导性触发 LLM 回退。
-- **交互频控与汇总门限**：`companion.interact` 设 5 分钟封顶作为主动反应成本控制闸门，不影响自主行为与统计；`interaction_stats` 采用 OR 门限（poke/drag/chat_turn 达到 10 即写汇总），序列化 `hour_counts` 供夜间反思。
+- **交互频控与汇总门限**：`companion.interact` 设 5 分钟封顶作为戳击主动反应成本控制闸门，不影响自主行为与统计；`interaction_stats` 采用 OR 门限（poke/chat_turn 达到 10 即写汇总），序列化 `hour_counts` 供夜间反思。
 - **MiniMax 内容风控快速失败**：`base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免无意义重试白烧配额。
 
 ## 5. 与外部的契约

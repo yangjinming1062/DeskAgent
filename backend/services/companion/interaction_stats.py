@@ -9,14 +9,13 @@ logger = get_logger(__name__)
 
 STATS_THRESHOLD = 10
 
-VALID_KINDS: frozenset[str] = frozenset({"poke", "drag", "chat_turn"})
+VALID_KINDS: frozenset[str] = frozenset({"poke", "chat_turn"})
 
 
 @dataclass
 class _DailyCounters:
     date: str
     poke: int = 0
-    drag: int = 0
     chat_turn: int = 0
     # Sparse map: keys are added only when an event lands in that hour,
     # so an idle day allocates a 24-entry zero dict for nothing.
@@ -67,7 +66,7 @@ def _format_content(counters: _DailyCounters) -> str:
     else:
         peak_str = f"{peak:02d}-{(peak + 1) % 24:02d}h"
     sorted_buckets = {k: counters.hour_buckets[k] for k in sorted(counters.hour_buckets)}
-    return f"{counters.date}: poke={counters.poke}, drag={counters.drag}, chat_turns={counters.chat_turn}; peak={peak_str}; hour_counts={sorted_buckets}"
+    return f"{counters.date}: poke={counters.poke}, chat_turns={counters.chat_turn}; peak={peak_str}; hour_counts={sorted_buckets}"
 
 
 async def _stats_memory_for(db: AsyncSession, user_id: int, date_str: str) -> Memory | None:
@@ -90,9 +89,7 @@ async def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
         else:
             db.add(Memory(user_id=user_id, content=content, context=f"interaction_stats:{counters.date}", tags=tags_json))
         await db.commit()
-    logger.info(
-        "interaction_stats: daily summary written", extra={"user_id": user_id, "date": counters.date, "poke": counters.poke, "drag": counters.drag, "chat_turn": counters.chat_turn}
-    )
+    logger.info("interaction_stats: daily summary written", extra={"user_id": user_id, "date": counters.date, "poke": counters.poke, "chat_turn": counters.chat_turn})
 
 
 async def read_today_summary(user_id: int, date_str: str | None = None) -> dict | None:
@@ -110,7 +107,7 @@ async def record_interaction(user_id: int, kind: str, hour: int) -> dict:
     """Increment the day's counter for ``kind`` and possibly upsert Memory.
 
     Returns ``{recorded, threshold_met, peak_hour}``. ``threshold_met``
-    is True iff, after this increment, any of the three kinds has crossed
+    is True iff, after this increment, either kind has crossed
     ``STATS_THRESHOLD``. ``hour`` is the **UTC** hour of the event
     (must match the UTC date key produced by ``_today_key``).
     """
@@ -123,12 +120,10 @@ async def record_interaction(user_id: int, kind: str, hour: int) -> dict:
     counters.hour_buckets[hour] = counters.hour_buckets.get(hour, 0) + 1
     if kind == "poke":
         counters.poke += 1
-    elif kind == "drag":
-        counters.drag += 1
     else:
         counters.chat_turn += 1
 
-    threshold_met = counters.poke >= STATS_THRESHOLD or counters.drag >= STATS_THRESHOLD or counters.chat_turn >= STATS_THRESHOLD
+    threshold_met = counters.poke >= STATS_THRESHOLD or counters.chat_turn >= STATS_THRESHOLD
 
     if threshold_met:
         await _upsert_memory(user_id, counters)

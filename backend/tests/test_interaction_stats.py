@@ -51,7 +51,6 @@ async def test_single_kind_at_threshold_writes_summary(_patch_db):
     for hour in (10, 11, 12):
         for _ in range(10):
             await interaction_stats.record_interaction(user_id, "poke", hour)
-            await interaction_stats.record_interaction(user_id, "drag", hour)
             await interaction_stats.record_interaction(user_id, "chat_turn", hour)
 
     from modules.memory import Memory
@@ -73,8 +72,8 @@ async def test_single_kind_at_threshold_writes_summary(_patch_db):
         row = rows[0]
         assert row.tags == '["interaction","stats","daily_summary"]'
         assert "poke=30" in row.content
-        assert "drag=30" in row.content
         assert "chat_turns=30" in row.content
+        assert "drag" not in row.content
         assert "peak=10-11h" in row.content
         assert "hour_counts=" in row.content
 
@@ -91,7 +90,6 @@ async def test_second_threshold_cross_updates_existing_row(_patch_db):
 
     for _ in range(10):
         await interaction_stats.record_interaction(user_id, "poke", 14)
-        await interaction_stats.record_interaction(user_id, "drag", 14)
         await interaction_stats.record_interaction(user_id, "chat_turn", 14)
 
     for _ in range(20):
@@ -114,7 +112,7 @@ async def test_second_threshold_cross_updates_existing_row(_patch_db):
         )
         assert len(rows) == 1
         assert "poke=30" in rows[0].content
-        assert "drag=10" in rows[0].content
+        assert "drag" not in rows[0].content
 
 
 async def test_peak_picks_earliest_hour_on_tie(_patch_db):
@@ -139,6 +137,8 @@ def test_peak_hour_none_when_no_activity():
 async def test_unknown_kind_raises():
     with pytest.raises(ValueError, match="unknown interaction kind"):
         await interaction_stats.record_interaction(1, "scroll", 12)
+    with pytest.raises(ValueError, match="unknown interaction kind"):
+        await interaction_stats.record_interaction(1, "drag", 12)
 
 
 async def test_invalid_hour_raises():
