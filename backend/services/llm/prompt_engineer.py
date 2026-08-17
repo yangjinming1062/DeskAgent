@@ -11,7 +11,8 @@ from .llm_retry import call_with_retry
 from .providers import ProviderConfig, ServiceType, resolve_context_tokens
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the
-# 纯白平面背景 clause is a hard contract with the desktop chroma-key renderer.
+# 纯白平面背景 clause keeps bust avatars displayable on light UI surfaces
+# and clean as reference input — nothing downstream chroma-keys them.
 _AVATAR_SYSTEM_PROMPT = (
     "你是一个专业的角色头像提示词工程师。你需要为角色生成一张高精度的半身头像图（avatar）提示词。\n"
     "\n"
@@ -30,7 +31,7 @@ _AVATAR_SYSTEM_PROMPT = (
     "4. 视角：正面朝向观众（front-facing bust portrait），平视镜头；\n"
     "5. 光线：柔和均匀的正面打光（soft even front lighting），无强烈阴影；\n"
     "6. 画风：photorealistic, hyperrealistic, ultra-detailed, natural skin texture, professional portrait photography, 8K；\n"
-    "7. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（桌面端 chroma-key 渲染依赖此约束）；\n"
+    "7. 必须包含「纯白平面背景，无场景、无渐变、无阴影」（浅色 UI 展示面与参考图干净度依赖此约束）；\n"
     "8. 全文使用中文，只保留专业术语与英文画风关键词；\n"
     "9. appearance 与 feedback 中的用户原始描述承载明确意图，其中具体的颜色、发型、五官、风格等细节必须忠实保留进最终 prompt，不得改写、泛化或遗漏（例如「深棕色头发带银色挑染」必须逐字体现「深棕色头发」与「银色挑染」，不可简化为「深色头发」）。feedback 的修改指令优先级最高，用于覆盖之前的 appearance 描述。若用户上传了参考图，提取角色的核心外观特征即可，不要过分在意参考图中的细节（如不需要和用户上传图像的动作、姿态一致，保持标准正面半身像）；\n"
     "10. 不要解释、不要寒暄，直接输出最终中文 prompt 文本。"

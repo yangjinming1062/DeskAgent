@@ -78,16 +78,7 @@ from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response, wardrobe_response
 from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
-from .sprite_service import (
-    SpriteGenerationError,
-    SpriteSeedMissingError,
-    get_waiting_sprite,
-    has_real_transparency,
-    list_sprites,
-    resolve_sprite,
-    signed_sprite_url,
-    solid_bg_to_alpha,
-)
+from .sprite_service import SpriteGenerationError, SpriteSeedMissingError, get_waiting_sprite, has_real_transparency, list_sprites, resolve_sprite, signed_sprite_url
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 from .wardrobe_service import (
     WardrobeRouting,
@@ -221,7 +212,6 @@ __all__ = [
     "signed_model_url",
     "signed_sprite_url",
     "slot_of",
-    "solid_bg_to_alpha",
     "submit_onboarding_field",
     "update_memory",
     "update_outfit_field",

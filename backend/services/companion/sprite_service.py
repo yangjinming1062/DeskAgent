@@ -1,12 +1,15 @@
 import asyncio
+import base64
 import io
 import json
 from collections import deque
 from collections.abc import Iterator
+from typing import NamedTuple
 
+import numpy as np
 from components import SESSION_LOCAL, get_logger, parse_llm_json, safe_json_loads
 from modules.companion import CompanionSpriteImage
-from PIL import Image, ImageOps
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,12 +25,36 @@ logger = get_logger(__name__)
 
 _SPRITE_SIZE = "2:3"
 _SPRITE_ALBUM_CAP = 300
-# White-key calibration (2026-08-14 MiniMax experiment): pure-white prompts
-# render corner pixels at 243–254 (JPEG compression), so seeds start at 240.
-# The soft band widens to 210 to capture dim "studio floor" haze; the squared
-# ease-out clears the lower band edge the linear ramp left as fog residue.
-_BG_CORE = 240
-_BG_SOFT = 210
+
+
+class ChromaCandidate(NamedTuple):
+    rgb: tuple[int, int, int]
+    hex_code: str
+    label: str
+
+
+# Maximally saturated hues spread across the wheel; orange sits last because
+# it is closest to skin tones and only wins when the subject rules out every
+# other hue. White is deliberately absent — light clothing must stay wearable.
+_CHROMA_CANDIDATES = (
+    ChromaCandidate((0, 255, 77), "#00FF4D", "亮绿色"),
+    ChromaCandidate((255, 0, 168), "#FF00A8", "品红色"),
+    ChromaCandidate((0, 229, 255), "#00E5FF", "青色"),
+    ChromaCandidate((122, 0, 255), "#7A00FF", "紫罗兰色"),
+    ChromaCandidate((255, 106, 0), "#FF6A00", "橙色"),
+)
+# Plain RGB Euclidean distance in 0–255 units; thresholds await calibration
+# against real provider output the way the retired white-key thresholds were.
+_KEY_CORE_DIST = 40
+_KEY_SOFT_DIST = 100
+_ALPHA_HARD_FLOOR = 16
+_BORDER_SAMPLE_PX = 8
+_BORDER_DOMINANT_FRAC = 0.6
+_PALETTE_THUMB_PX = 192
+_PALETTE_PCT = 5
+_REF_BG_BRIGHT = 236
+_MIN_OPAQUE_FRAC = 0.15
+_MAX_SEMI_FRAC = 0.08
 # Smaller-than-this enclosed soft-band components are character features
 # (eye highlights, specular dots) and survive even inside the body silhouette.
 _ISLAND_MIN_PX = 100
@@ -52,13 +79,12 @@ change the character's face, hair, body or outfit; the prompt only directs pose/
 Requirements:
 - 单人角色，全身完整可见，居中站立于画面内
 - 通过姿态与表情表达所请求的情绪状态或动作
-- 纯白色平面背景（#FFFFFF），无阴影、无渐变、无背景图案
-- 角色不穿纯白色或近白色的衣服与配饰
+- 纯色平面背景（{bg_hex} {bg_label}），无阴影、无渐变、无背景图案、无其他物体
 - 写实人像风格（realistic portrait photography），与半身像头像保持视觉一致，
   skin texture 自然、面部细节清晰、光照均匀
 - consistent stylization with the persona (species)
 
-Respond with a single JSON object: {"prompt": <str>, "tag": <str>}
+Respond with a single JSON object: {{"prompt": <str>, "tag": <str>}}
 tag is a short Chinese label (≤16 字) describing the pose/emotion/action — it is the album matching key.
 No commentary.
 """
@@ -73,28 +99,73 @@ class SpriteGenerationError(Exception):
 
 
 def has_real_transparency(data: bytes) -> bool:
+    # Opaque/semi fractions guard the hollow-silhouette failure mode (light
+    # clothing keyed away, only the outline surviving) that min-alpha alone
+    # happily accepts.
     try:
         img = Image.open(io.BytesIO(data))
         if img.mode not in ("RGBA", "LA") and not (img.mode == "P" and "transparency" in img.info):
             return False
-        lo, _ = img.convert("RGBA").getchannel("A").getextrema()
-        return lo <= 8
+        alpha = np.asarray(img.convert("RGBA").getchannel("A"), dtype=np.uint8)
+        return bool(
+            alpha.min() <= 8 and np.count_nonzero(alpha == 255) >= _MIN_OPAQUE_FRAC * alpha.size and np.count_nonzero((alpha > 0) & (alpha < 255)) <= _MAX_SEMI_FRAC * alpha.size
+        )
     except OSError:
         return False
 
 
-def solid_bg_to_alpha(data: bytes) -> bytes:
-    """Two-pass flood: border-connected soft-band pixels are keyed out, plus
-    any enclosed soft-band component large enough to be a backdrop
-    continuation (e.g. between-the-legs). Small enclosed pockets stay as
-    character features. Alpha uses a squared ease-out so the dim band edge
-    clears instead of leaving the linear-ramp haze."""
-    img = Image.open(io.BytesIO(data)).convert("RGB")
-    gray = ImageOps.grayscale(img)
-    w, h = img.size
-    soft = gray.point(lambda v: 255 if v >= _BG_SOFT else 0).tobytes()
-    gray_bytes = gray.tobytes()
-    filled = bytearray(w * h)
+def _palette_pixels(img: Image.Image) -> np.ndarray:
+    thumb = img.convert("RGB")
+    thumb.thumbnail((_PALETTE_THUMB_PX, _PALETTE_THUMB_PX))
+    px = np.asarray(thumb, dtype=np.float32).reshape(-1, 3)
+    # The bust reference itself carries the white-background contract —
+    # strip it or every candidate scores against white, not the subject.
+    near_white = (px.max(axis=1) >= _REF_BG_BRIGHT) & (px.max(axis=1) - px.min(axis=1) <= 10)
+    subject = px[~near_white]
+    return subject if subject.size else px
+
+
+def _select_chroma_candidate(img: Image.Image) -> ChromaCandidate:
+    # Low percentile, not mean/min: robust to small same-hue accessories
+    # without being hostage to single-pixel noise. argmax keeps ties on the
+    # first candidate so selection stays deterministic for tests.
+    px = _palette_pixels(img)
+    scores = [float(np.percentile(np.linalg.norm(px - np.asarray(c.rgb, dtype=np.float32), axis=1), _PALETTE_PCT)) for c in _CHROMA_CANDIDATES]
+    return _CHROMA_CANDIDATES[scores.index(max(scores))]
+
+
+def _select_bg_from_data_uri(ref: str) -> ChromaCandidate:
+    try:
+        return _select_chroma_candidate(Image.open(io.BytesIO(base64.b64decode(ref.partition(",")[2]))))
+    except (OSError, ValueError):
+        logger.info("reference palette analysis failed, defaulting chroma background", extra={"ref_prefix": ref[:48]})
+        return _CHROMA_CANDIDATES[0]
+
+
+def _estimate_border_background(rgb: np.ndarray) -> tuple[np.ndarray, float]:
+    h, w = rgb.shape[:2]
+    pad = min(_BORDER_SAMPLE_PX, h // 2, w // 2)
+    ring = np.concatenate([rgb[:pad].reshape(-1, 3), rgb[h - pad :].reshape(-1, 3), rgb[pad : h - pad, :pad].reshape(-1, 3), rgb[pad : h - pad, w - pad :].reshape(-1, 3)])
+    bg = np.median(ring, axis=0)
+    dominant = np.count_nonzero(np.linalg.norm(ring - bg, axis=1) <= _KEY_SOFT_DIST) / len(ring)
+    return bg, float(dominant)
+
+
+def chroma_key_to_alpha(img: Image.Image, bg: np.ndarray) -> Image.Image:
+    """Two-pass flood on RGB distance to ``bg``: border-connected soft-band
+    pixels are keyed out, plus any enclosed soft-band component large enough
+    to be a backdrop continuation (e.g. between-the-legs). Small enclosed
+    pockets stay as character features. Alpha uses a squared ease-out, then
+    a hard floor shears off sub-threshold haze (the faint residue that made
+    the old white-key output clickable outside the silhouette); despill
+    unmixes the background tint out of the feathered edge pixels."""
+    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+    h, w = rgb.shape[:2]
+    dist = np.linalg.norm(rgb - bg, axis=2)
+    soft = dist <= _KEY_SOFT_DIST
+    core = (dist <= _KEY_CORE_DIST).ravel()
+    soft_flat = soft.ravel()
+    filled = np.zeros(w * h, dtype=bool)
     queue: deque[int] = deque()
 
     def neighbors(idx: int) -> Iterator[int]:
@@ -108,57 +179,69 @@ def solid_bg_to_alpha(data: bytes) -> bytes:
         if y < h - 1:
             yield idx + w
 
-    def seed(x: int, y: int) -> None:
-        idx = y * w + x
-        if not filled[idx] and soft[idx] and gray_bytes[idx] >= _BG_CORE:
-            filled[idx] = 1
+    def seed(idx: int) -> None:
+        if not filled[idx] and soft_flat[idx] and core[idx]:
+            filled[idx] = True
             queue.append(idx)
 
     for x in range(w):
-        seed(x, 0)
-        seed(x, h - 1)
+        seed(x)
+        seed((h - 1) * w + x)
     for y in range(h):
-        seed(0, y)
-        seed(w - 1, y)
+        seed(y * w)
+        seed(y * w + w - 1)
 
     while queue:
         idx = queue.popleft()
         for nxt in neighbors(idx):
-            if soft[nxt] and not filled[nxt]:
-                filled[nxt] = 1
+            if soft_flat[nxt] and not filled[nxt]:
+                filled[nxt] = True
                 queue.append(nxt)
 
     island_threshold = max(_ISLAND_MIN_PX, (w * h) // _ISLAND_MIN_FRAC)
-    visited = bytearray(w * h)
+    visited = np.zeros(w * h, dtype=bool)
     for seed_idx in range(w * h):
-        if filled[seed_idx] or visited[seed_idx] or not soft[seed_idx]:
+        if filled[seed_idx] or visited[seed_idx] or not soft_flat[seed_idx]:
             continue
         component: list[int] = []
         queue.append(seed_idx)
-        visited[seed_idx] = 1
+        visited[seed_idx] = True
         while queue:
             idx = queue.popleft()
             component.append(idx)
             for nxt in neighbors(idx):
-                if soft[nxt] and not visited[nxt] and not filled[nxt]:
-                    visited[nxt] = 1
+                if soft_flat[nxt] and not visited[nxt] and not filled[nxt]:
+                    visited[nxt] = True
                     queue.append(nxt)
         if len(component) >= island_threshold:
             for idx in component:
-                filled[idx] = 1
+                filled[idx] = True
 
-    band_span = _BG_CORE - _BG_SOFT
-    alpha = bytearray(b"\xff" * (w * h))
-    for idx, mark in enumerate(filled):
-        if not mark:
-            continue
-        v = gray_bytes[idx]
-        alpha[idx] = 0 if v >= _BG_CORE else round(255 * (1 - (v - _BG_SOFT) / band_span) ** 2)
+    t = np.clip((dist - _KEY_CORE_DIST) / (_KEY_SOFT_DIST - _KEY_CORE_DIST), 0.0, 1.0)
+    alpha = np.where(filled.reshape(h, w), np.round(255.0 * t * t), 255.0).astype(np.uint8)
+    alpha[alpha < _ALPHA_HARD_FLOOR] = 0
 
-    out = img.convert("RGBA")
-    out.putalpha(Image.frombytes("L", (w, h), bytes(alpha)))
+    a = np.maximum(alpha.astype(np.float32) / 255.0, 1.0 / 255.0)[..., None]
+    unmixed = np.clip((rgb - (1.0 - a) * bg) / a, 0.0, 255.0)
+    edge = ((alpha > 0) & (alpha < 255))[..., None]
+    out = np.where(edge, unmixed, rgb)
+    return Image.fromarray(np.dstack([out, alpha[..., None]]).astype(np.uint8), "RGBA")
+
+
+def _key_sprite_png(data: bytes, requested: ChromaCandidate) -> bytes | None:
+    """Key whatever solid color the border ring actually carries — a provider
+    ignoring the requested hue degrades to the estimated background instead
+    of failing. None means no dominant border color: scene background or
+    subject flooding the frame edge."""
+    img = Image.open(io.BytesIO(data))
+    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
+    bg, dominant = _estimate_border_background(rgb)
+    if dominant < _BORDER_DOMINANT_FRAC:
+        return None
+    if float(np.linalg.norm(bg - np.asarray(requested.rgb, dtype=np.float32))) > _KEY_SOFT_DIST:
+        logger.info("provider ignored requested sprite background, keying estimated background", extra={"requested": requested.hex_code})
     buf = io.BytesIO()
-    out.save(buf, format="PNG")
+    chroma_key_to_alpha(img, bg).save(buf, format="PNG")
     return buf.getvalue()
 
 
@@ -175,7 +258,7 @@ async def _match_album(db: AsyncSession | None, user_id: int, entries: list[Comp
     return next((e for e in entries if e.id == match_id), None)
 
 
-async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: str) -> tuple[str, str]:
+async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: str, bg: ChromaCandidate) -> tuple[str, str]:
     if db is not None:
         persona = await get_or_create_persona(db, user_id)
     else:
@@ -184,7 +267,12 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     anchor = {k: definition.get(k) for k in ("biological_type", "gender", "appearance_core", "appearance_outfit") if definition.get(k)}
     raw = await _vision_llm_call(
-        db, user_id, _SPRITE_PROMPT_SYSTEM, json.dumps({"request": request_text, "persona": anchor}, ensure_ascii=False), [], response_format={"type": "json_object"}
+        db,
+        user_id,
+        _SPRITE_PROMPT_SYSTEM.format(bg_hex=bg.hex_code, bg_label=bg.label),
+        json.dumps({"request": request_text, "persona": anchor}, ensure_ascii=False),
+        [],
+        response_format={"type": "json_object"},
     )
     parsed = parse_llm_json(raw) or {}
     prompt, tag = parsed.get("prompt"), parsed.get("tag")
@@ -193,7 +281,7 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     return prompt.strip(), tag.strip()[:64]
 
 
-async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str) -> bytes:
+async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, requested: ChromaCandidate) -> bytes:
     chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
         raise SpriteGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
@@ -206,11 +294,11 @@ async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: st
             logger.warning("sprite image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
             continue
         try:
-            png = await asyncio.to_thread(solid_bg_to_alpha, raw)
+            png = await asyncio.to_thread(_key_sprite_png, raw, requested)
         except OSError:
             logger.info("sprite keying failed", extra={"user_id": user_id, "provider": cfg.provider_name})
             continue
-        if has_real_transparency(png):
+        if png is not None and has_real_transparency(png):
             return png
         logger.info("sprite background not keyable, trying next provider", extra={"user_id": user_id, "provider": cfg.provider_name})
     raise SpriteGenerationError("精灵形象生成失败，请稍后再试")
@@ -302,8 +390,9 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
     if subject_ref is None:
         raise SpriteSeedMissingError("形象种子图不可读，请重新确认形象")
 
-    prompt, tag = await _author_prompt(db, user_id, request_text)
-    png = await _generate_sprite_png(db, user_id, prompt, subject_ref)
+    bg = await asyncio.to_thread(_select_bg_from_data_uri, subject_ref)
+    prompt, tag = await _author_prompt(db, user_id, request_text, bg)
+    png = await _generate_sprite_png(db, user_id, prompt, subject_ref, bg)
     path = save_companion_asset(png, user_id=user_id, label="sprite", ext="png")
 
     if db is None:

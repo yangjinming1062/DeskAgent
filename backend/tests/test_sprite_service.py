@@ -1,8 +1,10 @@
+import base64
 import io
 import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from modules.companion import AvatarAsset, CompanionSpriteImage
 from PIL import Image
@@ -12,7 +14,6 @@ from services.companion.sprite_service import (
     SpriteSeedMissingError,
     has_real_transparency,
     resolve_sprite,
-    solid_bg_to_alpha,
 )
 from sqlalchemy import select, update
 
@@ -32,65 +33,161 @@ def _png(draw) -> bytes:
     return buf.getvalue()
 
 
+GREEN_RGB = sprite_service._CHROMA_CANDIDATES[0].rgb
+
+
+def _green_png(draw) -> bytes:
+    img = Image.new("RGB", (60, 80), GREEN_RGB)
+    draw(img)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _keyed(data: bytes) -> Image.Image:
+    return sprite_service.chroma_key_to_alpha(Image.open(io.BytesIO(data)), np.asarray(GREEN_RGB, dtype=np.float32))
+
+
 SPRITE_BG_PNG = _png(lambda img: None)  # solid white, nothing else
 SPRITE_BODY_PNG = _png(lambda img: img.paste((200, 30, 30), (10, 20, 50, 60)))
 SPRITE_DARK_PNG = _png(
     lambda img: img.paste((100, 100, 100), (0, 0, 60, 80))
-)  # no white bg → nothing keyable
+)  # solid gray → keys entirely, fails the opaque floor
+AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))  # blue subject on the white-bg contract
 
 
-def _rgba(data: bytes) -> Image.Image:
-    return Image.open(io.BytesIO(data)).convert("RGBA")
-
-
-def test_solid_bg_to_alpha_keeps_small_enclosed_pockets():
-    # White bg + red body + a small enclosed white pocket inside the red region.
-    # The pocket is below the island threshold (max(100, w*h//200) = 100 for a
-    # 60×80 image; pocket is 7×8 = 56 px), so it survives as a character feature
-    # — the analogue of an eye highlight or specular dot.
-    data = _png(
+def test_chroma_key_keeps_small_enclosed_pockets():
+    # Green bg + red body + a small enclosed green pocket inside the red
+    # region. The pocket is below the island threshold (max(100, w*h//200)
+    # = 100 for a 60×80 image; pocket is 7×8 = 56 px), so it survives as a
+    # character feature — the analogue of an eye highlight or specular dot.
+    data = _green_png(
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
-            img.paste((255, 255, 255), (25, 30, 32, 38)),
+            img.paste(GREEN_RGB, (25, 30, 32, 38)),
         )
     )
-    out = _rgba(solid_bg_to_alpha(data))
+    out = _keyed(data)
     assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
     assert out.getpixel((30, 50))[3] == 255  # body kept
     assert out.getpixel((28, 34))[3] == 255  # small enclosed pocket preserved
 
 
-def test_solid_bg_to_alpha_removes_large_enclosed_islands():
-    # Same body, but the enclosed white pocket is enlarged past the island
+def test_chroma_key_removes_large_enclosed_islands():
+    # Same body, but the enclosed green pocket is enlarged past the island
     # threshold — the analogue of a "between-the-legs" backdrop continuation.
     # Threshold = max(100, w*h//200) = 100; pocket is 30×30 = 900 px.
-    data = _png(
+    data = _green_png(
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
-            img.paste((255, 255, 255), (20, 30, 50, 60)),
+            img.paste(GREEN_RGB, (20, 30, 50, 60)),
         )
     )
-    out = _rgba(solid_bg_to_alpha(data))
+    out = _keyed(data)
     assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
     assert out.getpixel((10, 50))[3] == 255  # red body strip (left of pocket)
     assert out.getpixel((35, 45))[3] == 0  # large enclosed pocket keyed out
 
 
-def test_solid_bg_to_alpha_soft_band_feather():
-    # White left half seeds the flood; it expands into the 232-gray right half
-    # (still inside the 210–240 soft band), which gets a partial alpha. The
-    # squared ease-out curve clears the dim end of the band more aggressively
-    # than the old linear ramp did.
-    data = _png(lambda img: img.paste((232, 232, 232), (30, 0, 60, 80)))
-    out = _rgba(solid_bg_to_alpha(data))
-    assert out.getpixel((5, 40))[3] == 0  # pure-white half: fully keyed
+def test_chroma_key_soft_band_feather():
+    # Pure-green left half seeds the flood; it expands into the dimmer green
+    # right half (distance 80 sits inside the 40–100 soft band), which gets
+    # a partial alpha via the squared ease-out.
+    data = _green_png(lambda img: img.paste((0, 175, 77), (30, 0, 60, 80)))
+    out = _keyed(data)
+    assert out.getpixel((5, 40))[3] == 0  # pure-green half: fully keyed
     assert 0 < out.getpixel((45, 40))[3] < 255  # soft band: feathered
 
 
+def test_chroma_key_keeps_light_clothing():
+    # Regression anchor: the retired white-key washed out any subject pixel
+    # whose luminance crossed its soft band, so light-gray fabric vanished.
+    # On a chroma background light fabric is >300 distance units away and
+    # stays fully opaque.
+    data = _green_png(lambda img: img.paste((230, 230, 235), (5, 10, 55, 70)))
+    out = _keyed(data)
+    a = np.asarray(out.getchannel("A"))
+    assert out.getpixel((0, 0))[3] == 0
+    assert (a[15:65, 10:50] == 255).all()
+
+
+def test_chroma_key_hard_floor_shears_faint_residue():
+    # Distance 50 computes alpha≈7 — below the 16 floor it must shear to 0,
+    # while distance 60 (alpha≈28) survives: no 0<alpha<16 haze anywhere.
+    data = _green_png(
+        lambda img: (
+            img.paste((50, 255, 77), (30, 0, 45, 80)),
+            img.paste((60, 255, 77), (45, 0, 60, 80)),
+        )
+    )
+    out = _keyed(data)
+    a = np.asarray(out.getchannel("A"))
+    assert not np.any((a > 0) & (a < 16))
+    assert out.getpixel((37, 40))[3] == 0
+    assert 0 < out.getpixel((52, 40))[3] < 255
+
+
+def test_chroma_key_despills_feathered_edges():
+    # A mid-band edge pixel is a bg/foreground blend; despill unmixes it back
+    # toward the foreground hue instead of leaving a green fringe.
+    data = _green_png(
+        lambda img: (
+            img.paste((0, 175, 77), (20, 0, 40, 80)),  # blend of green bg and (0, 75, 77)
+            img.paste((0, 75, 77), (40, 0, 60, 80)),
+        )
+    )
+    out = _keyed(data)
+    edge = out.getpixel((30, 40))
+    assert 0 < edge[3] < 255
+    assert abs(edge[1] - 75) <= 6  # G channel unmixes toward the foreground value
+    assert out.getpixel((50, 40))[1] == 75  # opaque foreground untouched
+
+
+def test_key_sprite_png_rejects_undominant_border():
+    # Subject flooding the frame edge leaves no dominant border color — the
+    # ring guard must refuse to key instead of carving the subject up.
+    data = _green_png(lambda img: img.paste((200, 30, 30), (0, 40, 60, 80)))
+    assert sprite_service._key_sprite_png(data, sprite_service._CHROMA_CANDIDATES[0]) is None
+
+
+def test_key_sprite_png_keys_disobeyed_white_background():
+    # Provider ignoring the requested hue still yields a keyable solid white
+    # background: the estimate degrades gracefully instead of hard-failing.
+    png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
+    assert png is not None and has_real_transparency(png)
+
+
+def test_select_chroma_candidate_avoids_subject_hues():
+    green_ref = Image.new("RGB", (50, 50), GREEN_RGB)
+    assert sprite_service._select_chroma_candidate(green_ref).hex_code != sprite_service._CHROMA_CANDIDATES[0].hex_code
+
+
+def test_select_chroma_candidate_on_white_reference():
+    # A white-only palette strips every subject pixel; the fallback keeps the
+    # full pixel set and the farthest saturated hue from white wins.
+    white_ref = Image.new("RGB", (50, 50), (255, 255, 255))
+    assert sprite_service._select_chroma_candidate(white_ref).hex_code == "#00FF4D"
+
+
 def test_has_real_transparency():
-    assert has_real_transparency(solid_bg_to_alpha(SPRITE_BODY_PNG))
+    png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
+    assert png is not None and has_real_transparency(png)
     assert not has_real_transparency(SPRITE_BODY_PNG)  # opaque RGB PNG
     assert not has_real_transparency(SPRITE_BG_PNG)
+
+
+def test_has_real_transparency_rejects_hollow_silhouette():
+    # The washed-out failure mode: transparent border, thin opaque outline,
+    # semi-transparent interior. Min-alpha alone accepts it; the fraction
+    # gates must not.
+    alpha = np.full((60, 80), 100, dtype=np.uint8)
+    alpha[:2, :] = 0
+    alpha[:, :2] = 0
+    alpha[2:6, 2:58] = 255
+    img = Image.fromarray(np.dstack([np.zeros((60, 80, 3), dtype=np.uint8), alpha]), "RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    assert not has_real_transparency(buf.getvalue())
 
 
 async def _avatar(db, user_id: int = 1) -> AvatarAsset:
@@ -137,7 +234,7 @@ def gen_mocks(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sprite_service,
         "load_avatar_bytes_as_data_uri",
-        lambda url: "data:image/png;base64,eHg=",
+        lambda url: "data:image/png;base64," + base64.b64encode(AVATAR_REF_PNG).decode(),
     )
 
     async def fake_tool(*a, **k):
@@ -316,7 +413,7 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
     monkeypatch.setattr(sprite_service, "fetch_texture_bytes", dark_fetch)
 
     with pytest.raises(SpriteGenerationError):
-        await sprite_service._generate_sprite_png(db_session, 1, "p", "ref")
+        await sprite_service._generate_sprite_png(db_session, 1, "p", "ref", sprite_service._CHROMA_CANDIDATES[0])
 
 
 @pytest.mark.asyncio
@@ -465,3 +562,5 @@ def test_sprite_prompt_system_anchors_realistic_style():
     assert "二次元" not in system
     assert "cel-shading" not in system
     assert "立绘" not in system
+    assert "纯色平面背景" in system and "{bg_hex}" in system and "{bg_label}" in system
+    assert "不穿纯白" not in system  # light clothing is wearable again

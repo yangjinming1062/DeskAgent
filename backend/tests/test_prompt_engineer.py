@@ -232,8 +232,8 @@ def test_build_fullbody_pins_outfit_color_across_views():
     # Each view is a separate provider call sharing only the subject
     # reference — the seed garment exists solely in the text prompt, so its
     # color must be pinned or it drifts per call (white front, black side).
-    # Dark gray also keeps the garment separable from the pure-white
-    # chroma-key background.
+    # Dark gray also keeps the garment separable from the seed's pure-white
+    # background.
     template = prompt_engineer.resolve_fullbody_template("人类")
     for view in ("front", "right", "back"):
         prompt = prompt_engineer.build_fullbody_prompt(view, template=template)
