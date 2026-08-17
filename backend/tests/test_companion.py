@@ -2194,6 +2194,11 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     assert resp.status_code == 200
     assert set(resp.json()) == {"definition_json", "is_complete", "personality_tags"}
 
+    onboarding_state = client.get("/api/companion/onboarding/state")
+    assert onboarding_state.status_code == 200
+    assert onboarding_state.json()["complete"] is False
+    assert "answers" in onboarding_state.json()
+
     assert (
         client.put(
             "/api/companion/persona", json={"definition_json": "not json"}

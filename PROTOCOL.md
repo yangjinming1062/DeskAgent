@@ -46,7 +46,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 | 方法 | 用途 | 改动需同步的模块 |
 |------|------|------------------|
-| onboarding.get_state / onboarding.submit | 查询/增量提交 onboarding 答案（断点恢复） | Backend 状态机 + Client 消费状态机 + DESIGN §5 流程 |
+| onboarding.get_state / onboarding.submit 与 GET /api/companion/onboarding/state | 查询/增量提交 onboarding 答案（断点恢复，支持 WS RPC 与 REST） | Backend 状态机 + Client 消费状态机 + DESIGN §5 流程 |
 | avatar.regenerate | 重生头像（不重跑全身、不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
 | companion.set_disturbance_tier | Client 上报生效打扰档位（Client 是唯一权威） | Backend 持久化 + Client 活动感知 + DESIGN §6.2 |

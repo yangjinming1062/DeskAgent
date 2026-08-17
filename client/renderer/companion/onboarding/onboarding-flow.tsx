@@ -936,12 +936,30 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           setRefImage(cachedRef)
         }
 
-        const state = await requestGateway<{
+        let state: {
           answers?: Record<string, string>
           next_field?: string | null
           complete?: boolean
           fullbody_mode?: 'single' | 'multi'
-        }>('onboarding.get_state', {})
+        } | null = null
+
+        try {
+          state = await window.spiritagent.api<{
+            answers?: Record<string, string>
+            next_field?: string | null
+            complete?: boolean
+            fullbody_mode?: 'single' | 'multi'
+          }>({
+            path: '/api/companion/onboarding/state'
+          })
+        } catch {
+          state = await requestGateway<{
+            answers?: Record<string, string>
+            next_field?: string | null
+            complete?: boolean
+            fullbody_mode?: 'single' | 'multi'
+          }>('onboarding.get_state', {}).catch(() => null)
+        }
 
         if (state?.fullbody_mode) {
           // Type narrowed by the inline union above; the runtime guard is
@@ -1043,6 +1061,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       }
     })()
   }, [gatewayState, requestGateway, onCompleted, enterHatchingRef])
+
+  useEffect(() => {
+    if (gatewayState !== 'open' || voiceCatalog.length > 0) {
+      return
+    }
+
+    void fetchVoiceCatalogRaw(requestGateway).then(r => {
+      if (r.ok) {
+        setVoiceCatalog(r.catalog.voices)
+      }
+    })
+  }, [gatewayState, requestGateway, voiceCatalog.length])
 
   // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
   // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).

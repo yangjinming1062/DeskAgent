@@ -63,6 +63,7 @@ from services.companion import (
     get_active_model,
     get_avatar_job_lock,
     get_equipped_item,
+    get_onboarding_state,
     get_or_create_persona,
     get_rig_bones,
     list_avatar_history,
@@ -102,6 +103,12 @@ async def _resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[st
         return {}
     draft = safe_json_loads(persona.definition_json or "{}", default={})
     return draft if isinstance(draft, dict) else {}
+
+
+@router.get("/onboarding/state")
+async def get_onboarding_state_route(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+    user, _ = auth
+    return await get_onboarding_state(db, user.id)
 
 
 @router.get("/persona", response_model=PersonaResponse)

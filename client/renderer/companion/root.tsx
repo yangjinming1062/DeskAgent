@@ -137,7 +137,12 @@ export function CompanionRoot(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Route by onboarding.get_state.complete (not REST is_complete) so a mid-flow refresh after enterHatching doesn't kick the user out via a premature lifecycle='ready' + hydrateModel 404.
+  // Query onboarding state on auth.
+  // 1) Use GET /api/companion/onboarding/state (REST) for instant authoritative check.
+  // 2) Fallback to requestGateway('onboarding.get_state') if available.
+  // 3) Only set lifecycle='ready' when state?.complete === true.
+  //    Never fall back to persona.is_complete (which is true mid-onboarding after character questions are saved).
+  // 4) If state?.complete is not true, set lifecycle='onboarding' and setOnboardingOpen(true).
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
       setCompanionLifecycle('unauthed')
@@ -148,55 +153,37 @@ export function CompanionRoot(): React.JSX.Element {
 
     let cancelled = false
 
-    const personaPromise = window.spiritagent
-      .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
-      .catch(() => null)
+    const checkState = async () => {
+      let state: { complete?: boolean } | null = null
 
-    const statePromise = requestGateway<{ complete?: boolean }>('onboarding.get_state', {}).catch(() => null)
+      try {
+        state = await window.spiritagent.api<{ complete?: boolean }>({
+          path: '/api/companion/onboarding/state'
+        })
+      } catch {
+        state = await requestGateway<{ complete?: boolean }>('onboarding.get_state', {}).catch(() => null)
+      }
 
-    Promise.all([personaPromise, statePromise])
-      .then(([persona, state]) => {
-        if (cancelled) {
-          return
-        }
+      if (cancelled) {
+        return
+      }
 
-        const onboardingDone = state?.complete ?? persona?.is_complete ?? false
-        setCompanionLifecycle(onboardingDone ? 'ready' : 'onboarding')
+      const onboardingDone = state?.complete === true
+      setCompanionLifecycle(onboardingDone ? 'ready' : 'onboarding')
+      setOnboardingOpen(!onboardingDone)
 
-        // Only pull the portrait once we know one exists — during onboarding
-        // the GET would 404, which the renderer would silently catch but the
-        // main process still logs to stderr.
-        if (onboardingDone) {
-          void hydratePortrait()
-          // Re-fetch the avatar history alongside the active portrait so the
-          // gallery thumbnails persist across restarts instead of resetting
-          // to whatever the user just generated this session.
-          void hydratePortraitHistory()
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCompanionLifecycle('onboarding')
-        }
-      })
+      if (onboardingDone) {
+        void hydratePortrait()
+        void hydratePortraitHistory()
+      }
+    }
+
+    void checkState()
 
     return () => {
       cancelled = true
     }
   }, [auth.kind, requestGateway])
-
-  // Auto-open the wizard once after a fresh login resolves to 'onboarding'.
-  useEffect(() => {
-    if (
-      auth.kind === 'authenticated' &&
-      lifecycle === 'onboarding' &&
-      !onboardingOpen &&
-      pendingOnboardingAutoOpenRef.current
-    ) {
-      pendingOnboardingAutoOpenRef.current = false
-      setOnboardingOpen(true)
-    }
-  }, [auth.kind, lifecycle, onboardingOpen])
 
   const authed = auth.kind === 'authenticated'
   const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
@@ -252,6 +239,12 @@ export function CompanionRoot(): React.JSX.Element {
 
   const onTap = () => {
     if (authed) {
+      if (lifecycle === 'onboarding') {
+        setOnboardingOpen(true)
+
+        return
+      }
+
       wakeUpFromSleep()
       handlePokeInteraction()
 
@@ -266,6 +259,12 @@ export function CompanionRoot(): React.JSX.Element {
   // Plan §4.3: double-tap the ready companion to open Chat.
   const onDoubleTap = () => {
     if (authed) {
+      if (lifecycle === 'onboarding') {
+        setOnboardingOpen(true)
+
+        return
+      }
+
       setChatOpen(true)
 
       return
