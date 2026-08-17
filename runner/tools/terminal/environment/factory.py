@@ -29,10 +29,10 @@ def create_environment(
     docker_env = cc.get("docker_env", {})
     docker_extra_args = cc.get("docker_extra_args", [])
     if env_type == "local":
-        return LocalEnvironment(cwd=cwd, timeout=timeout, persistent=lc.get("persistent", False))
+        env = LocalEnvironment(cwd=cwd, timeout=timeout, persistent=lc.get("persistent", False))
     elif env_type == "docker":
         maybe_reap_docker_orphans(cc, DOCKER_ORPHAN_LIFETIME_SECONDS)
-        return DockerEnvironment(
+        env = DockerEnvironment(
             image=image,
             cwd=cwd,
             timeout=timeout,
@@ -51,10 +51,14 @@ def create_environment(
             persist_across_processes=cc.get("docker_persist_across_processes", True),
         )
     elif env_type == "singularity":
-        return SingularityEnvironment(image=image, cwd=cwd, timeout=timeout, cpu=cpu, memory=memory, disk=disk, persistent_filesystem=persistent, task_id=task_id)
+        env = SingularityEnvironment(image=image, cwd=cwd, timeout=timeout, cpu=cpu, memory=memory, disk=disk, persistent_filesystem=persistent, task_id=task_id)
     elif env_type == "ssh":
         if not ssh_config or not ssh_config.get("host") or not ssh_config.get("user"):
             raise ValueError("SSH environment requires ssh_host and ssh_user to be configured")
-        return SSHEnvironment(host=ssh_config["host"], user=ssh_config["user"], port=ssh_config.get("port", 22), key_path=ssh_config.get("key", ""), cwd=cwd, timeout=timeout)
+        env = SSHEnvironment(host=ssh_config["host"], user=ssh_config["user"], port=ssh_config.get("port", 22), key_path=ssh_config.get("key", ""), cwd=cwd, timeout=timeout)
     else:
         raise ValueError(f"Unknown environment type: {env_type}. Use 'local', 'docker', 'singularity', or 'ssh'")
+    # file_tools._get_file_ops routes local → NativeFileOperations off this tag;
+    # no env class sets it itself, so without this the local branch is dead.
+    env.env_type = env_type
+    return env

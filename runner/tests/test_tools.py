@@ -51,11 +51,17 @@ class TestFileTools:
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
-    def test_search(self):
+    def test_search_files_mode(self, tmp_path):
+        (tmp_path / "keep.txt").write_text("x", encoding="utf-8")
+        (tmp_path / "drop.md").write_text("x", encoding="utf-8")
         r = json.loads(
-            registry.dispatch("search_files", {"pattern": "*.py", "target": "files"})
+            registry.dispatch(
+                "search_files",
+                {"pattern": "*.txt", "target": "files", "path": str(tmp_path)},
+            )
         )
-        assert isinstance(r, dict)
+        assert "error" not in r
+        assert {f.replace("\\", "/") for f in r.get("files", [])} == {"keep.txt"}
 
 
 class TestRedaction:

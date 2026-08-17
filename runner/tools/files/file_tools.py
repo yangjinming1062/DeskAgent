@@ -678,8 +678,8 @@ def _is_internal_file_status_text(content: str) -> bool:
     return False
 
 
-def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
-    """Get or create ShellFileOperations for a terminal environment.
+def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileOperations:
+    """Get or create file ops for a terminal environment.
 
     Respects the TERMINAL_ENV setting -- if the task_id doesn't have an
     environment yet, creates one using the configured backend (local, docker,

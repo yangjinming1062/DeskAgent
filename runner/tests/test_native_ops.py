@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from tools.files.native_ops import NativeFileOperations
@@ -201,6 +203,60 @@ def test_search_exact_limit_not_truncated(tmp_cwd):
 
     assert ops.search("hit", path=".", limit=3).truncated is False
     assert ops.search("hit", path=".", limit=2).truncated is True
+
+
+class TestSearchFilesMode:
+    """``target='files'`` globs filenames — the local backend used to treat
+    every pattern as a content regex, so ``*.py`` returned an Invalid-regex
+    error envelope instead of matching anything."""
+
+    def test_glob_matches_only_requested_names(self, tmp_cwd):
+        ops, cwd = tmp_cwd
+        (cwd / "a.py").write_text("x", encoding="utf-8")
+        (cwd / "b.txt").write_text("x", encoding="utf-8")
+        (cwd / "sub").mkdir()
+        (cwd / "sub" / "c.py").write_text("x", encoding="utf-8")
+
+        result = ops.search("*.py", path=".", target="files")
+        assert result.error is None
+        assert {f.replace("\\", "/") for f in result.files} == {"a.py", "sub/c.py"}
+        assert result.total_count == 2
+
+    def test_sorted_by_mtime_desc(self, tmp_cwd):
+        ops, cwd = tmp_cwd
+        for name, t in (("old.txt", 1000), ("mid.txt", 2000), ("new.txt", 3000)):
+            p = cwd / name
+            p.write_text("x", encoding="utf-8")
+            os.utime(p, (t, t))
+
+        result = ops.search("*.txt", path=".", target="files")
+        assert [f.replace("\\", "/") for f in result.files] == [
+            "new.txt",
+            "mid.txt",
+            "old.txt",
+        ]
+
+    def test_pagination_and_truncated_flag(self, tmp_cwd):
+        ops, cwd = tmp_cwd
+        for i in range(3):
+            (cwd / f"f{i}.txt").write_text("x", encoding="utf-8")
+
+        result = ops.search("*.txt", path=".", target="files", limit=2)
+        assert len(result.files) == 2
+        assert result.truncated is True
+
+        result = ops.search("*.txt", path=".", target="files", limit=2, offset=2)
+        assert len(result.files) == 1
+        assert result.truncated is False
+
+    def test_skips_dot_directories(self, tmp_cwd):
+        ops, cwd = tmp_cwd
+        (cwd / "visible.txt").write_text("x", encoding="utf-8")
+        (cwd / ".hidden").mkdir()
+        (cwd / ".hidden" / "secret.txt").write_text("x", encoding="utf-8")
+
+        result = ops.search("*.txt", path=".", target="files")
+        assert {f.replace("\\", "/") for f in result.files} == {"visible.txt"}
 
 
 def test_exec_timeout_returns_partial_stdout(tmp_cwd, monkeypatch):

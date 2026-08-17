@@ -1,5 +1,6 @@
 import contextlib
 import difflib
+import fnmatch
 import logging
 import os
 import re
@@ -284,6 +285,8 @@ class NativeFileOperations(FileOperations):
     def search(
         self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
     ) -> SearchResult:
+        if target == "files":
+            return self._search_files_by_name(pattern, path, limit, offset)
         try:
             regex = re.compile(pattern, re.IGNORECASE)
         except re.error as e:
@@ -354,6 +357,32 @@ class NativeFileOperations(FileOperations):
                 break
 
         return SearchResult(matches=matches, files=list(files), counts=counts, total_count=total_count, truncated=truncated)
+
+    def _search_files_by_name(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
+        search_root = self._expand_path(path)
+        if not search_root.exists():
+            return SearchResult(error=f"Search path not found: {path}")
+
+        def should_skip(p: Path) -> bool:
+            return any(part.startswith(".") and len(part) > 1 for part in p.relative_to(search_root).parts[:-1])
+
+        candidates: Iterator[Path] = iter([search_root]) if not search_root.is_dir() else search_root.rglob("*")
+        hits: list[tuple[float, str]] = []
+        for p in candidates:
+            if not p.is_file() or should_skip(p):
+                continue
+            rel_path = str(p.relative_to(search_root)) if search_root.is_dir() else p.name
+            if not fnmatch.fnmatch(rel_path, pattern):
+                continue
+            try:
+                mtime = p.stat().st_mtime
+            except OSError:
+                logger.debug("search skipped unstatable file %s", rel_path)
+                continue
+            hits.append((mtime, rel_path))
+        hits.sort(reverse=True)
+        page = [rel for _, rel in hits[offset : offset + limit]]
+        return SearchResult(files=page, total_count=len(hits), truncated=len(hits) > offset + limit)
 
     def _exec(self, command: str, cwd: str | None = None, timeout: int = 60, stdin_data: str | None = None) -> Any:
         kwargs = {"shell": True, "text": True, "capture_output": True, "timeout": timeout}
