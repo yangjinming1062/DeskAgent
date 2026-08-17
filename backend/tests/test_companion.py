@@ -2909,7 +2909,9 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
     order: list[str] = []
 
     class _FakeHunyuanProvider(ImageTo3DProvider):
-        provider_name = "hunyuan"  # SUPPORTS_RIGGING / SUPPORTS_MULTIVIEW stay False
+        provider_name = "hunyuan"
+        SUPPORTS_RIGGING = False
+        SUPPORTS_MULTIVIEW = True
 
         def __init__(self) -> None:
             pass
@@ -2994,7 +2996,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
     finally:
         (asset_dir / "front.png").unlink(missing_ok=True)
 
-    assert captured["submit"][1] is None, "hunyuan must never receive multiview paths"
+    assert captured["submit"][1] is None, "single mode must never pass multiview paths"
     assert order == ["download", "auto_rig:biped", "morphs"]
 
     async with SessionLocal() as db:
@@ -3012,6 +3014,125 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
         assert row.rig_type == "biped"
         assert row.has_rig is True
         assert row.active is True
+
+
+@pytest.mark.asyncio
+async def test_run_model_gen_pipeline_hunyuan_multiview_mode(
+    _patch_db, monkeypatch
+):
+    import json as _json
+    from pathlib import Path
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import model_service
+    from services.image_to_3d import (
+        ImageTo3DProvider,
+        Model3DAsset,
+        Model3DJob,
+        Model3DPollResult,
+    )
+
+    _, SessionLocal = _patch_db
+
+    captured: dict = {}
+
+    class _FakeHunyuanProvider(ImageTo3DProvider):
+        provider_name = "hunyuan"
+        SUPPORTS_RIGGING = False
+        SUPPORTS_MULTIVIEW = True
+
+        def __init__(self) -> None:
+            pass
+
+        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+            captured["submit"] = (image_path.name, multiview_paths)
+            return Model3DJob(job_id="job_hy_mv")
+
+        async def poll(self, job):
+            return Model3DPollResult(
+                status="completed",
+                progress=100,
+                assets=(Model3DAsset(kind="glb", url="https://x/m.glb"),),
+            )
+
+        async def download(self, result, dest_dir):
+            dest = dest_dir / "model.glb"
+            dest.write_bytes(b"\x00" * 20)
+            return dest
+
+    monkeypatch.setattr(
+        model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider()
+    )
+    monkeypatch.setattr(model_service, "select_rig_type", AsyncMock(return_value="biped"))
+    monkeypatch.setattr(model_service, "_auto_rig_with_blender", AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"))
+    monkeypatch.setattr(model_service, "_inject_morph_targets", AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"))
+
+    async with SessionLocal() as db:
+        user = User(username="run_hy_mv", is_active=True, can_use=True)
+        db.add(user)
+        await db.flush()
+        db.add(
+            Persona(
+                user_id=user.id,
+                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                is_complete=True,
+            )
+        )
+        db.add(
+            AvatarAsset(
+                user_id=user.id,
+                prompt_json="{}",
+                asset_url="companion-avatars/avatar.png",
+                seed_front_url="companion-avatars/front.png",
+                active=True,
+            )
+        )
+        model = CompanionModel(user_id=user.id, status="generating", active=False)
+        db.add(model)
+        await db.commit()
+        await db.refresh(model)
+        uid = user.id
+        model_id = model.id
+
+    from components import SETTINGS
+
+    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (asset_dir / "right.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (asset_dir / "back.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        await model_service.run_model_gen_pipeline(
+            "hunyuan",
+            uid,
+            {"front": "front.png", "right": "right.png", "back": "back.png"},
+            "人类",
+            model_id,
+            "multi",
+        )
+    finally:
+        (asset_dir / "front.png").unlink(missing_ok=True)
+        (asset_dir / "right.png").unlink(missing_ok=True)
+        (asset_dir / "back.png").unlink(missing_ok=True)
+
+    assert captured["submit"][1] is not None
+    assert set(captured["submit"][1].keys()) == {"front", "right", "back"}
+
+    async with SessionLocal() as db:
+        row = (
+            (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.id == model_id)
+                )
+            )
+            .scalars()
+            .one()
+        )
+        assert row.status == "succeeded"
+        assert row.provider == "hunyuan_multiview_to_3d"
+
 
 
 @pytest.mark.asyncio

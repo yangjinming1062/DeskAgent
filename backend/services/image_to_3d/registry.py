@@ -12,7 +12,10 @@ DEFAULT_PROVIDER_URLS: dict[str, str] = {"tripo": "https://openapi.tripo3d.ai/v3
 
 def _ensure_registered() -> None:
     if not _REGISTRY:
-        from .providers import HunyuanImageTo3DProvider, TripoImageTo3DProvider  # noqa: F401
+        from .providers import (  # noqa: F401
+            HunyuanImageTo3DProvider,
+            TripoImageTo3DProvider,
+        )
 
 
 def register(provider_name: str, cls: type[ImageTo3DProvider]) -> None:
@@ -58,7 +61,7 @@ def get_effective_fullbody_mode(provider_name: str | None = None) -> str:
 
     Optimization: If SETTINGS.fullbody_mode is configured as 'multi', but the
     current active image-to-3D provider does not support multi-view input
-    (SUPPORTS_MULTIVIEW is False, e.g. Hunyuan), automatically fall back to 'single'
+    (SUPPORTS_MULTIVIEW is False), automatically fall back to 'single'
     to avoid generating redundant side and back reference images.
     """
     configured_mode = SETTINGS.fullbody_mode

@@ -1,129 +1,164 @@
 # ─────────────────────────────────────────────────────────────────────
-# SpiritAgent Backend Configuration Template (config.toml.example)
-# Authoritative defaults for SpiritAgent Backend. Tracked in Git.
-# Copy this file to `config.toml` for local modifications.
-# `config.toml` is ignored by Git.
-# Precedence: OS Env > .env > config.toml > config.toml.example
+# SpiritAgent 后端配置模板文件 (config.toml.example)
+# SpiritAgent 后端的默认基准配置，由 Git 跟踪维护。
+# 可复制此文件为 `config.toml` 进行本地修改（`config.toml` 已被 Git 忽略）。
+# 配置优先级：系统环境变量 > .env > config.toml > config.toml.example
 # ─────────────────────────────────────────────────────────────────────
 
 [runtime]
+# 后端服务名称（用于日志、文档及 OpenAPI 标识）
 app_name = "SpiritAgent Backend"
+# 统一 API 路由前缀
 api_prefix = "/api"
 
 [database]
-# SQLAlchemy URL. In Docker the service hostname is `postgres` (port 5432).
+# 数据库连接 URL（SQLAlchemy 格式）。在 Docker Compose 环境中服务名为 postgres（端口 5432）
 database_url = "postgresql+psycopg://postgres:postgres@postgres:5432/spiritagent"
 
 [auth]
-# CHANGE THIS in production! Must be ≥ 16 chars; used to sign JWTs.
+# JWT 签名私钥（生产环境必须修改，长度需 ≥ 16 个字符）
 jwt_secret_key = "replace-this-with-a-strong-secret"
+# JWT 签名算法
 jwt_algorithm = "HS256"
-# 8 hours.
+# 登录 Access Token 有效期（分钟），默认 480 分钟（8 小时）
 access_token_expire_minutes = 480
-# HMAC key for signing companion avatar asset URLs. Required in production.
+# 伴侣头像与 3D 资产 URL 的 HMAC 签名密钥（生产环境必须配置，防止未授权访问）
 companion_asset_signing_key = ""
-# Bootstrap admin account (created on first boot).
+# 初始管理员用户名（首次启动时自动创建）
 admin_username = "spiritagent"
+# 初始管理员密码（首次启动时自动创建）
 admin_password = "spiritagent@admin123"
 
 [network]
-# Public URL prefix Desktop/Runner uses to fetch self-hosted media
+# 外部访问前缀（客户端/Runner 下载后端自托管媒体资源时使用的 URL 前缀，留空则自动由 public_ip 与 port 拼接）
 public_url_prefix = ""
-# Auto-detected at startup when public_url_prefix is empty
+# 后端公网/局域网 IP（当 public_url_prefix 为空时，服务启动会自动探测，亦可在此手动指定）
 public_ip = ""
-# Backend HTTP port
+# 后端 HTTP 服务监听端口
 port = 10620
-# TTL for files served by /temp-media/{token}
+# `/temp-media/{token}` 临时媒体文件的有效存活时长（小时）
 temp_file_ttl_hours = 24
-# Root for backend-side disk artifacts
+# 后端磁盘数据与产物存储根目录（支持相对或绝对路径）
 data_dir = "./data"
 
 [image_to_3d]
-# 图生3D 供应商选择：显式指定 "tripo" 或 "hunyuan"（默认 tripo），
-# 商业供应商之间不做自动回退；未配置 key 时 3D 生成请求被拒绝（400），
-# 桌宠以静态精灵模式兜底交互。
-# 优化：若当前配置的供应商不支持多视图（如 hunyuan），onboarding 阶段将自动
-# 回退 fullbody_mode 为 single，避免浪费生成侧面/背面全身图。
+# 图生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
+# 商业供应商之间不做自动回退；未配置 Key 时图生 3D 请求将被拒绝（返回 400）
+# 若当前配置的供应商不支持多视图生成，伴侣初始化阶段将自动将 fullbody_mode 回退为 single
 image_to_3d_provider = "tripo"
+# 轮询 3D 生成任务状态的间隔时间（秒）
 image_to_3d_poll_interval_seconds = 5.0
+# 轮询 3D 生成任务的最大超时时间（秒）
 image_to_3d_max_poll_seconds = 1800.0
 
-# ── Tripo3D v3（支持云端绑骨 rig 与多视图种子）──
+# ── Tripo3D 配置（支持云端自动绑骨与多视图生模）──
+# Tripo3D API Key
 tripo_api_key = ""
+# Tripo3D API 基础地址
 tripo_base_url = "https://openapi.tripo3d.ai/v3"
+# Tripo3D 模型版本
 tripo_model_version = "v3.1-20260211"
+# 目标面数限制
 tripo_face_limit = 2000000
+# 纹理贴图质量（detailed / standard）
 tripo_texture_quality = "detailed"
+# 几何细节质量（detailed / standard）
 tripo_geometry_quality = "detailed"
+# 是否启用模型自动修复
 tripo_enable_autofix = true
 
-# ── 腾讯混元3D（TokenHub 接入，单图生 3D + 本地 Blender 自动绑骨）──
+# ── 腾讯混元 3D 配置（TokenHub 接入，支持单图/多视图生模 + 本地 Blender 自动绑骨）──
+# 腾讯混元 3D API Key
 hunyuan_api_key = ""
+# 腾讯混元 3D API 基础地址
 hunyuan_base_url = "https://tokenhub.tencentmaas.com"
+# 混元 3D 模型版本
 hunyuan_model_version = "hy-3d-3.1"
+# 生成模式：Normal（默认带贴图模型）、LowPoly（减面拓扑）、Geometry（白模无贴图）、Sketch（草图生模）
+hunyuan_generate_type = "Normal"
+# 减面拓扑类型（仅 LowPoly 模式生效）：triangle（三角面）、quadrilateral（四边面）
+hunyuan_polygon_type = "triangle"
+# 目标面数限制（3000 ~ 1500000；配置为 0 或不填则不传递该参数，避免额外计费）
+hunyuan_face_count = 0
+# 是否生成 PBR 材质贴图
+hunyuan_enable_pbr = true
+# 产物模型格式（默认 glb）
+hunyuan_result_format = "glb"
 
 [blender_llm]
-# Blender 只做 3D 后处理（绑骨/morph 注入/换装几何），不做模型生成。
+# LLM 生成 Blender bpy 脚本的最大修复迭代轮数（Blender 仅用于绑骨/morph 注入/换装等后处理，不直接生模）
 blender_llm_max_iterations = 10
-# Per Blender invocation timeout in seconds (mesh build + optional render).
+# 单次 Blender 脚本执行超时时间（秒，包含网格构建与可选渲染）
 blender_llm_timeout = 1800
 
 [worker]
-# Render-job worker process (docker-compose `worker` service).
+# 渲染与后台任务 Worker 进程并发数（对应 docker-compose 的 worker 服务）
 worker_concurrency = 1
-# A processing render_job whose claimant went silent this long is requeued
-# (or failed at the attempts cap). Must exceed the worst-case job duration.
+# 任务防假死回收超时时间（秒）：处理中任务超过该时间未更新心跳将被重新入队或判定失败
 worker_stale_reclaim_seconds = 7200
-# Fallback poll when PG LISTEN/NOTIFY is unavailable.
+# 当 PostgreSQL LISTEN/NOTIFY 不可用时的降级轮询间隔（秒）
 worker_poll_interval_seconds = 5.0
 
 [blender_sandbox]
-# Run LLM-generated bpy code in throwaway Docker containers (network none,
-# cpu/memory caps, read-only root, only the per-job io dir mounted).
-# false = bare `blender` subprocess in the backend/worker container.
+# 是否启用 Docker 容器沙箱隔离执行 LLM 生成的 Blender 脚本（false 则直接在宿主机/worker 容器内以子进程运行 blender）
 blender_sandbox_enabled = false
+# 沙箱 Docker 镜像名称
 blender_sandbox_image = "spiritagent-blender-sandbox:latest"
+# Docker 执行命令路径
 blender_sandbox_docker_binary = "docker"
+# 沙箱容器 CPU 配额限制（核数）
 blender_sandbox_cpus = 2.0
+# 沙箱容器内存配额限制
 blender_sandbox_memory = "4g"
+# 沙箱临时 tmpfs 挂载大小
 blender_sandbox_tmpfs_size = "1g"
 
 [providers]
-# Priority order chain (first wins). Supported: mimo, minimax, gemini, grok, zhipu
+# 供应商优先回退链（按数组顺序匹配第一个可用的服务商）。支持：mimo, minimax, gemini, grok, zhipu
 providers = ["mimo", "minimax", "gemini", "grok", "zhipu"]
 
-# Xiaomi MiMo
+# 小米 MiMo 配置
 mimo_api_key = ""
 mimo_base_url = ""
 
-# MiniMax
+# MiniMax 配置
 minimax_api_key = ""
 minimax_base_url = ""
 
-# Google Gemini
+# Google Gemini 配置
 gemini_api_key = ""
 gemini_base_url = ""
 
-# xAI Grok
+# xAI Grok 配置
 grok_api_key = ""
 grok_base_url = ""
 
-# Zhipu BigModel
+# 智谱 BigModel 配置
 zhipu_api_key = ""
 zhipu_base_url = ""
 
 [llm]
+# 默认 LLM 供应商（留空则按 providers 列表优先级自动选择）
 llm_provider = ""
+# LLM API 基础地址（留空则使用对应供应商默认地址）
 llm_base_url = ""
+# LLM API Key（留空则使用对应供应商的 Key）
 llm_api_key = ""
+# LLM 模型名称（留空则使用对应供应商默认模型）
 llm_model_name = ""
+# LLM 上下文 Token 限制（0 表示使用默认配置）
 llm_context_tokens = 0
+# LLM 请求超时时间（秒）
 llm_request_timeout_seconds = 300.0
+# LLM 请求失败最大重试次数
 llm_max_retry_attempts = 3
+# 重试初始退避延迟（秒）
 llm_base_retry_delay = 5.0
+# 重试最大延迟（秒）
 llm_max_retry_delay = 60.0
 
 [stt]
+# 语音识别 (STT) 供应商（如 minimax, mimo；留空按 providers 自动匹配）
 stt_provider = ""
 stt_base_url = ""
 stt_api_key = ""
@@ -131,6 +166,7 @@ stt_model_name = ""
 stt_context_tokens = 0
 
 [tts]
+# 语音合成 (TTS) 供应商（如 minimax, mimo；留空按 providers 自动匹配）
 tts_provider = ""
 tts_base_url = ""
 tts_api_key = ""
@@ -138,6 +174,7 @@ tts_model_name = ""
 tts_context_tokens = 0
 
 [image_gen]
+# 文生图/图像生成供应商（如 zhipu, minimax, mimo；留空按 providers 自动匹配）
 image_gen_provider = ""
 image_gen_base_url = ""
 image_gen_api_key = ""
@@ -145,58 +182,93 @@ image_gen_model_name = ""
 image_gen_context_tokens = 0
 
 [video_gen]
+# 视频生成供应商（如 minimax, zhipu；留空按 providers 自动匹配）
 video_gen_provider = ""
 video_gen_base_url = ""
 video_gen_api_key = ""
 video_gen_model_name = ""
 video_gen_context_tokens = 0
+# 异步视频任务状态轮询间隔（秒）
 video_gen_poll_interval_seconds = 5.0
+# 异步视频生成最大轮询超时时间（秒）
 video_gen_max_poll_seconds = 900.0
+# 工具调用等待视频生成的同步等待时间（秒）
 video_gen_tool_wait_seconds = 180.0
+# 视频下载最大字节限制（默认 200MB）
 video_gen_download_max_bytes = 209715200
 
 [chat]
+# 会话上下文压缩触发阈值（达到上下文限制的比例，如 0.70 即 70% 时触发）
 context_compression_threshold = 0.70
+# 历史会话摘要压缩的目标 Token 数量
 context_summary_target_tokens = 2000
+# 参与单次摘要压缩的最大历史消息条数
 context_summary_max_input_messages = 30
+# 是否启用长会话上下文压缩
 enable_context_compression = true
+# 默认 LLM 上下文 Token 容量兜底值
 default_llm_context_tokens = 1000000
+# IPC 异步调用等待超时时间（秒）
 ipc_future_timeout_seconds = 300.0
+# 伴侣活跃会话判定窗口时间（分钟）
 chat_active_window_minutes = 30
 
 [voice]
+# 是否启用语音识别输入功能
 enable_stt = true
+# 单次录音最大时长限制（秒）
 max_recording_seconds = 60
 
 [rate_limit]
+# 是否开启接口速率限制
 rate_limit_enabled = true
+# 登录接口每分钟请求频次上限
 login_rate_limit_per_minute = 10
+# 单用户 LLM 对话补全接口每分钟限制
 llm_completion_rate_limit_per_minute = 60
+# 单 IP LLM 对话补全接口每分钟限制
 llm_completion_rate_limit_per_ip_per_minute = 200
+# 语音识别接口每分钟限制
 media_stt_rate_limit_per_minute = 20
+# 语音合成接口每分钟限制
 media_tts_rate_limit_per_minute = 30
+# 图像生成接口每分钟限制
 media_image_gen_rate_limit_per_minute = 10
+# 视频生成接口每分钟限制
 media_video_gen_rate_limit_per_minute = 3
+# 伴侣头像生成接口每分钟限制
 companion_avatar_generate_rate_limit_per_minute = 3
+# 伴侣头像上传接口每分钟限制
 companion_avatar_upload_rate_limit_per_minute = 5
+# 伴侣 3D 模型生成接口每分钟限制
 companion_model_generate_rate_limit_per_minute = 1
+# 伴侣表情贴图生成接口每分钟限制
 companion_sprite_generate_rate_limit_per_minute = 10
+# 伴侣衣橱换装生成接口每分钟限制
 companion_wardrobe_generate_rate_limit_per_minute = 5
+# 限流存储后端 URL（留空使用内存存储，分布式环境可配置 Redis 例如 "redis://localhost:6379/0"）
 rate_limit_storage_url = ""
 
 [observability]
+# 是否启用 Prometheus 指标监控端点
 metrics_enabled = true
+# 指标采集路径
 metrics_path = "/metrics"
+# 指标采集鉴权 Token（留空则不开启采集鉴权）
 metrics_auth_token = ""
 
 [logging]
+# 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL
 log_level = "INFO"
+# 日志格式：json / text
 log_format = "json"
 
 [companion]
-# "single" = front-only fullbody (2 images: avatar + front), uses image-to-model API
-# "multi"  = three-view fullbody (4 images: avatar + front + right + back), uses multiview-to-model API
+# 伴侣全身图与 3D 生成模式：
+# "single" = 仅正面单图模式（共 2 张图：头像 + 正面全身图），调用单图生 3D 模型接口
+# "multi"  = 三视图模式（共 4 张图：头像 + 正面 + 侧面 + 背面全身图），调用多视图生 3D 模型接口
 fullbody_mode = "multi"
 
 [nightly]
+# 是否启用伴侣夜间日记与状态自省定时任务
 nightly_activity_enabled = true

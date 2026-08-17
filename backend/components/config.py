@@ -96,6 +96,11 @@ class Settings(BaseSettings):
     hunyuan_api_key: str = Field(default="", validation_alias="HUNYUAN_API_KEY")
     hunyuan_base_url: str = Field(default="https://tokenhub.tencentmaas.com", validation_alias="HUNYUAN_BASE_URL")
     hunyuan_model_version: str = Field(default="hy-3d-3.1", validation_alias="HUNYUAN_MODEL_VERSION")
+    hunyuan_generate_type: str = Field(default="Normal", validation_alias="HUNYUAN_GENERATE_TYPE")
+    hunyuan_polygon_type: str = Field(default="triangle", validation_alias="HUNYUAN_POLYGON_TYPE")
+    hunyuan_face_count: int = Field(default=0, validation_alias="HUNYUAN_FACE_COUNT")
+    hunyuan_enable_pbr: bool = Field(default=True, validation_alias="HUNYUAN_ENABLE_PBR")
+    hunyuan_result_format: str = Field(default="glb", validation_alias="HUNYUAN_RESULT_FORMAT")
 
     blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
     blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")
