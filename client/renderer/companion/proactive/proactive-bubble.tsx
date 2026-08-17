@@ -1,6 +1,8 @@
 import { useStore } from '@nanostores/react'
+import { useRef } from 'react'
 
-import { $chatOpen, $proactiveBubble } from '@/companion/chat-store'
+import { $chatOpen, $proactiveBubble, setChatOpen } from '@/companion/chat-store'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
 
 // Transient bubble for a proactive companion message, shown beside the
@@ -29,6 +31,9 @@ function ProactiveBubbleView({ text }: { text: string }): React.JSX.Element {
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
   const viewport = useStore($viewport)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+
+  useInteractiveRegion('proactive-bubble', bubbleRef)
 
   const { left, top } = computeOverlayAnchorBesideSprite({
     pos,
@@ -41,9 +46,14 @@ function ProactiveBubbleView({ text }: { text: string }): React.JSX.Element {
   })
 
   return (
-    <div className="proactive-bubble fixed z-30 max-w-[16rem]" style={{ left, top }}>
+    <div
+      className="proactive-bubble fixed z-30 max-w-[16rem] cursor-pointer select-none"
+      onClick={() => setChatOpen(true)}
+      ref={bubbleRef}
+      style={{ left, top }}
+    >
       <style>{`@keyframes proactiveIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.proactive-bubble>span{animation:proactiveIn .25s ease-out}`}</style>
-      <span className="block rounded-2xl rounded-br-sm border border-white/10 bg-black/65 px-3.5 py-2 text-sm leading-relaxed text-white/90 shadow-xl backdrop-blur-md">
+      <span className="block rounded-2xl rounded-br-sm border border-white/10 bg-black/65 px-3.5 py-2 text-sm leading-relaxed text-white/90 shadow-xl backdrop-blur-md transition hover:bg-black/80 hover:text-white">
         💬 {text}
       </span>
     </div>

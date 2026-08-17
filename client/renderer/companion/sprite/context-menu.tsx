@@ -4,22 +4,27 @@ import { useEffect, useRef } from 'react'
 import { setChatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { $auth } from '@/shared/store/auth'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 
 interface ContextMenuProps {
+  onOpenActivation?: () => void
   onOpenVoiceCall: () => void
   onOpenSettings: () => void
   onOpenMemory: () => void
 }
 
 export function SpriteContextMenu({
+  onOpenActivation,
   onOpenVoiceCall,
   onOpenSettings,
   onOpenMemory
 }: ContextMenuProps): React.JSX.Element {
+  const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
   const visible = pos !== null
+  const authed = auth.kind === 'authenticated'
   const menuRef = useRef<HTMLDivElement>(null)
   // Hidden state returns null so isPointInteractive skips the menu — avoids the (0,0) false hit that display:none would introduce (BCR returns 0×0).
   useInteractiveRegion('sprite-context-menu', menuRef, () => {
@@ -53,9 +58,19 @@ export function SpriteContextMenu({
       }
     }
 
-    window.addEventListener('mousedown', handleClickOutside)
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeContextMenu()
+      }
+    }
 
-    return () => window.removeEventListener('mousedown', handleClickOutside)
+    window.addEventListener('mousedown', handleClickOutside)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   }, [visible])
 
   const left = visible && pos ? Math.min(pos.x, window.innerWidth - 160) : 0
@@ -73,77 +88,115 @@ export function SpriteContextMenu({
         pointerEvents: visible ? 'auto' : 'none'
       }}
     >
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          setChatOpen(true)
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>💬</span> 对话 (Talk)
-      </button>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          onOpenVoiceCall()
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>📞</span> 语音通话 (Voice)
-      </button>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          onOpenSettings()
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>🎛️</span> 伙伴设置
-      </button>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          onOpenMemory()
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>🧠</span> 长期记忆
-      </button>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          void window.spiritagent.showToolWindow()
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>⚙️</span> 应用设置 (Settings)
-      </button>
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
-        onClick={() => {
-          setSpriteState('sleeping')
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>💤</span> 去睡觉 (Sleep)
-      </button>
-      <div className="my-1 h-px bg-white/10" />
-      <button
-        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-400 transition hover:bg-red-500/20"
-        onClick={() => {
-          window.close()
-          closeContextMenu()
-        }}
-        type="button"
-      >
-        <span>🚪</span> 退出 (Quit)
-      </button>
+      {!authed ? (
+        <>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              onOpenActivation?.()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>🔑</span> 激活 / 登录 (Login)
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              void window.spiritagent.showToolWindow()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>⚙️</span> 应用设置 (Settings)
+          </button>
+          <div className="my-1 h-px bg-white/10" />
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-400 transition hover:bg-red-500/20"
+            onClick={() => {
+              window.close()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>🚪</span> 退出 (Quit)
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              setChatOpen(true)
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>💬</span> 对话 (Talk)
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              onOpenVoiceCall()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>📞</span> 语音通话 (Voice)
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              onOpenSettings()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>🎛️</span> 伙伴设置
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              onOpenMemory()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>🧠</span> 长期记忆
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              void window.spiritagent.showToolWindow()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>⚙️</span> 应用设置 (Settings)
+          </button>
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            onClick={() => {
+              setSpriteState('sleeping')
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>💤</span> 去睡觉 (Sleep)
+          </button>
+          <div className="my-1 h-px bg-white/10" />
+          <button
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-400 transition hover:bg-red-500/20"
+            onClick={() => {
+              window.close()
+              closeContextMenu()
+            }}
+            type="button"
+          >
+            <span>🚪</span> 退出 (Quit)
+          </button>
+        </>
+      )}
     </div>
   )
 }

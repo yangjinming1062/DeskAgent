@@ -3,6 +3,7 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { assemblePersona } from '@/companion/persona'
 import {
   PERSONALITY_PRESETS,
@@ -112,6 +113,9 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  useInteractiveRegion('persona-retune', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   // Tracks whether the wizard is still mounted. Closing the modal mid-save
   // unmounts the component; the in-flight ``save()`` continues to run.
@@ -244,6 +248,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   return (
     <div
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
+      ref={overlayRef}
       style={{ pointerEvents: 'auto' }}
     >
       <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/80 text-white shadow-2xl">

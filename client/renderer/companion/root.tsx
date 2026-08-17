@@ -147,7 +147,6 @@ export function CompanionRoot(): React.JSX.Element {
     }
 
     let cancelled = false
-    setCompanionLifecycle('unauthed')
 
     const personaPromise = window.spiritagent
       .api<{ is_complete?: boolean }>({ path: '/api/companion/persona' })
@@ -252,7 +251,7 @@ export function CompanionRoot(): React.JSX.Element {
   }, [lifecycle, gatewayState, requestGateway])
 
   const onTap = () => {
-    if (showReady) {
+    if (authed) {
       wakeUpFromSleep()
       handlePokeInteraction()
 
@@ -260,25 +259,19 @@ export function CompanionRoot(): React.JSX.Element {
     }
 
     // Pre-auth: click opens the activation overlay in the companion window.
-    if (!authed) {
-      pendingOnboardingAutoOpenRef.current = true
-      setActivationOpen(true)
+    pendingOnboardingAutoOpenRef.current = true
+    setActivationOpen(true)
+  }
+
+  // Plan §4.3: double-tap the ready companion to open Chat.
+  const onDoubleTap = () => {
+    if (authed) {
+      setChatOpen(true)
 
       return
     }
 
-    // Authenticated but onboarding incomplete: click opens the onboarding flow.
-    if (lifecycle === 'onboarding') {
-      setOnboardingOpen(true)
-    }
-  }
-
-  // Plan §4.3: double-tap the ready companion to open Chat. Single-tap poke
-  // reactions (LLM-generated) arrive in a later slice.
-  const onDoubleTap = () => {
-    if (showReady) {
-      setChatOpen(true)
-    }
+    setActivationOpen(true)
   }
 
   // Onboarding completion fires the 3D model generation (base_texture
@@ -301,9 +294,7 @@ export function CompanionRoot(): React.JSX.Element {
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
         onContextMenu={e => {
-          if (showReady) {
-            $contextMenuPos.set({ x: e.clientX, y: e.clientY })
-          }
+          $contextMenuPos.set({ x: e.clientX, y: e.clientY })
         }}
         onDoubleTap={onDoubleTap}
         onTap={onTap}
@@ -315,25 +306,24 @@ export function CompanionRoot(): React.JSX.Element {
           </>
         )}
       </SpriteStage>
-      {showReady && (
-        <SpriteContextMenu
-          onOpenMemory={() => {
-            setChatOpen(false)
-            setVoiceCallOpen(false)
-            setMemoryOpen(true)
-          }}
-          onOpenSettings={() => {
-            setChatOpen(false)
-            setVoiceCallOpen(false)
-            setSettingsOpen(true)
-          }}
-          onOpenVoiceCall={() => {
-            setChatOpen(false)
-            setVoiceCallOpen(true)
-          }}
-        />
-      )}
-      {showReady && chatOpen && (
+      <SpriteContextMenu
+        onOpenActivation={() => setActivationOpen(true)}
+        onOpenMemory={() => {
+          setChatOpen(false)
+          setVoiceCallOpen(false)
+          setMemoryOpen(true)
+        }}
+        onOpenSettings={() => {
+          setChatOpen(false)
+          setVoiceCallOpen(false)
+          setSettingsOpen(true)
+        }}
+        onOpenVoiceCall={() => {
+          setChatOpen(false)
+          setVoiceCallOpen(true)
+        }}
+      />
+      {authed && chatOpen && (
         <ChatDock
           onClose={() => setChatOpen(false)}
           onOpenVoiceCall={() => {
@@ -342,10 +332,10 @@ export function CompanionRoot(): React.JSX.Element {
           }}
         />
       )}
-      {showReady && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
-      {showReady && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
-      {showReady && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
-      {showReady && <ProactiveBubble />}
+      {authed && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
+      {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
+      {authed && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
+      {authed && <ProactiveBubble />}
       <BootFailureOverlay />
       <DeveloperOverlay />
       {authed && <GatewayBooter />}

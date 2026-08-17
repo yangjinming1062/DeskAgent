@@ -257,6 +257,11 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
       return
     }
 
+    // Only left button releases trigger tap / double-tap; right-clicks open the context menu without activating a poke reaction
+    if (e.button !== 0) {
+      return
+    }
+
     const now = Date.now()
 
     if (onDoubleTap && now - lastTapRef.current < DOUBLE_TAP_MS) {

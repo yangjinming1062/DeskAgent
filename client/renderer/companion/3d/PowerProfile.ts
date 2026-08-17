@@ -15,10 +15,9 @@ export interface PowerSignals {
   modelSettled: boolean
 }
 
-// active is capped at 60 even on 120/240Hz displays — nothing the companion
-// renders benefits from higher rates. idle quantises to every 2nd frame on
-// 60Hz / 4th on 120Hz. dormant is timer-driven (see Engine).
-export const PROFILE_FPS: Record<PowerProfile, number> = { active: 60, idle: 30, dormant: 4 }
+// active and idle run at 60fps for smooth animations and fluid cursor look-at tracking.
+// dormant is timer-driven at 4fps when locked/hidden/fullscreen/sleeping to minimize power.
+export const PROFILE_FPS: Record<PowerProfile, number> = { active: 60, idle: 60, dormant: 4 }
 
 export function resolvePowerProfile(signals: PowerSignals): PowerProfile {
   // Ready guard: until the first character model settles, hatching must run

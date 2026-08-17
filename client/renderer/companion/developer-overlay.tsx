@@ -1,6 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $engineFps, $powerProfile, $rendererBackend } from './3d/engine-diagnostics'
 import { $spriteEmotion, $spriteState } from './companion-store'
@@ -23,6 +25,9 @@ export function DeveloperOverlay(): React.JSX.Element | null {
   const powerProfile = useStore($powerProfile)
   const fps = useStore($engineFps)
   const [minimized, setMinimized] = useState(false)
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  useInteractiveRegion('developer-overlay', overlayRef)
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -42,7 +47,10 @@ export function DeveloperOverlay(): React.JSX.Element | null {
   }
 
   return (
-    <div className="fixed top-4 left-4 z-50 w-80 overflow-hidden rounded-xl border border-emerald-500/30 bg-black/85 font-mono text-[11px] text-emerald-400 shadow-2xl backdrop-blur-md select-none">
+    <div
+      className="fixed top-4 left-4 z-50 w-80 overflow-hidden rounded-xl border border-emerald-500/30 bg-black/85 font-mono text-[11px] text-emerald-400 shadow-2xl backdrop-blur-md select-none"
+      ref={overlayRef}
+    >
       <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-950/40 px-3 py-1.5">
         <span className="font-semibold text-emerald-300">🛠️ Developer Debug Mode</span>
         <div className="flex items-center gap-2">

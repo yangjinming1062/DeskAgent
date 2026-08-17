@@ -23,6 +23,7 @@ import {
   setDisturbanceTier,
   setSpriteState
 } from '@/companion/companion-store'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -70,6 +71,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useInteractiveRegion('chat-dock', panelRef)
 
   // The chat panel inherits the sprite window's topmost flag — no toggling;
   // an unmount-time toggle would race the closing dock.

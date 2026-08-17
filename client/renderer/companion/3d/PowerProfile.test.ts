@@ -56,8 +56,8 @@ describe('resolvePowerProfile', () => {
     }
   )
 
-  it('orders frame budgets strictly active > idle > dormant', () => {
-    expect(PROFILE_FPS.active).toBeGreaterThan(PROFILE_FPS.idle)
+  it('orders frame budgets active >= idle > dormant', () => {
+    expect(PROFILE_FPS.active).toBeGreaterThanOrEqual(PROFILE_FPS.idle)
     expect(PROFILE_FPS.idle).toBeGreaterThan(PROFILE_FPS.dormant)
   })
 })

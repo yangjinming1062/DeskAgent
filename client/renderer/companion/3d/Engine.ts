@@ -354,7 +354,10 @@ export class Engine {
     try {
       const budgetMs = 1000 / PROFILE_FPS[this.profile]
 
-      if (now - this.lastFrameAt >= budgetMs - 1) {
+      // Allow a 25% tolerance on the frame budget (e.g. >= 12.5ms for 60fps) so 60Hz displays
+      // never drop a frame due to sub-millisecond rAF timer jitter, and 120Hz displays render
+      // cleanly on alternate VSync ticks.
+      if (now - this.lastFrameAt >= budgetMs * 0.75) {
         this.lastFrameAt = now
         const delta = Math.min(this.clock.getDelta(), MAX_FRAME_DELTA)
         this.physics.beginFrame()

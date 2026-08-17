@@ -1146,11 +1146,16 @@ export class CharacterController {
 
     // Cloth units read the skeleton's bone matrices (updated by the renderer
     // for the body SkinnedMesh) — one frame of lag, invisible at 60fps.
-    this.bodyCollider?.update()
+    // Only update the body collider and BVH if there are active physics units to collide with.
+    const hasActivePhysics = this.units.some(unit => unit.physics.length > 0)
 
-    for (const unit of this.units) {
-      for (const p of unit.physics) {
-        p.step(delta)
+    if (hasActivePhysics) {
+      this.bodyCollider?.update()
+
+      for (const unit of this.units) {
+        for (const p of unit.physics) {
+          p.step(delta)
+        }
       }
     }
 
