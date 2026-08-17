@@ -13,6 +13,7 @@ import { type PhysicsBackend, pickBackendFor } from './physics/PhysicsBackend'
 import { TslComputeBackend } from './physics/TslComputeBackend'
 import type { PowerProfile } from './PowerProfile'
 import { PROFILE_FPS } from './PowerProfile'
+import type { RenderStyle } from './style/types'
 import type { EngineBackendKind, EngineOptions, LoadedModelInfo } from './types'
 
 type AnyRenderer = THREE.WebGLRenderer | WebGPURenderer
@@ -167,7 +168,7 @@ export class Engine {
     this.lighting = new LightingRig(this.scene, this.renderer, useShadows)
 
     this.physics = pickBackendFor(backendKind) === 'tsl' ? new TslComputeBackend() : new CpuBackend()
-    this.character = new CharacterController(this.physics)
+    this.character = new CharacterController(this.physics, { nodePipeline: backendKind !== 'classic-webgl' })
 
     reportBackend(backendKind)
   }
@@ -296,6 +297,13 @@ export class Engine {
     this.frameCharacter()
 
     return info
+  }
+
+  /** Hot-switch NPR toon ⇄ PBR: materials via the character controller,
+   * lighting preset via the rig. */
+  setRenderStyle(style: RenderStyle): void {
+    this.character.setRenderStyle(style)
+    this.lighting.setStyleProfile(style)
   }
 
   start(): void {

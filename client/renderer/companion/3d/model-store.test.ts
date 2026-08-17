@@ -28,6 +28,7 @@ const baseModelResponse = {
   status: 'succeeded',
   rig_type: 'biped',
   rig_naming: 'mixamo',
+  style: 'anime',
   has_rig: true,
   has_morph_targets: true,
   content_hash: 'sha256_mock_hash_123'
@@ -54,7 +55,8 @@ describe('hydrateModel', () => {
       status: 'pending',
       rig_type: 'biped',
       rig_naming: 'mixamo',
-      content_hash: null
+      content_hash: null,
+      style: 'realistic'
     })
     vi.spyOn(log, 'warn').mockImplementation(() => undefined)
   })
@@ -82,7 +84,8 @@ describe('hydrateModel', () => {
       status: 'succeeded',
       rig_type: 'biped',
       rig_naming: 'mixamo',
-      content_hash: 'sha256_mock_hash_123'
+      content_hash: 'sha256_mock_hash_123',
+      style: 'anime'
     })
     expect(log.warn).not.toHaveBeenCalled()
   })
