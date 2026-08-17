@@ -164,11 +164,13 @@ def test_build_front_includes_pose_and_rules():
     assert "A-pose" in prompt
     assert "平视角度" in prompt
     assert "纯白背景" in prompt
-    assert "8K" not in prompt
+    # 人类 routes to the anime figurine-CGI branch.
+    assert "二次元" in prompt
+    assert "手办" in prompt
+    assert "8K超清" in prompt
     assert "8K高清" not in prompt
     assert "写实风格" not in prompt
-    assert "二次元" in prompt
-    assert "cel-shading" in prompt
+    assert "photorealistic" not in prompt
 
 
 def test_build_right_uses_right_features():
@@ -236,44 +238,75 @@ def test_build_non_biped_fullbody_skips_clothing_clause():
     assert "运动短裤" not in prompt
 
 
-def test_build_fullbody_shared_rules_drops_realistic_mode():
-    """The biped shared rules must NOT carry pure-photorealistic markers
-    (8K / "写实风格"), but the "semi-realistic" / "半写实" anchor is
-    intentional — it signals "not chibi, not pure cartoon" without pushing
-    providers into full photorealism."""
-    rules = prompt_engineer._FULLBODY_SHARED_RULES_BIPED
-    # Pure-photorealistic triggers must be gone.
-    assert "8K" not in rules
-    assert "写实风格" not in rules
-    # The anime / cel-shading anchor must be present.
-    assert "二次元" in rules
-    assert "cel-shading" in rules
-    # The semi-realistic anchor is the *target* — it's deliberate.
-    assert "半写实" in rules or "卡通渲染" in rules
+def test_fullbody_shared_rules_style_matrix():
+    """The biped anime branch carries the figurine-CGI anchor (volumetric
+    cues for Tripo reconstruction); the realistic branch restores the
+    pre-NPR photorealistic wording for non-human creatures."""
+    anime_biped = prompt_engineer._FULLBODY_SHARED_RULES[("anime", "biped")]
+    assert "二次元" in anime_biped
+    assert "手办" in anime_biped
+    assert "三维体积" in anime_biped
+    assert "写实风格" not in anime_biped
+    assert "photorealistic" not in anime_biped
+    for rig_kind in ("biped", "non_biped"):
+        realistic = prompt_engineer._FULLBODY_SHARED_RULES[("realistic", rig_kind)]
+        assert "写实风格" in realistic
+        assert "8K高清" in realistic
+        assert "二次元" not in realistic
+    # Anime non-biped (e.g. humanoid-faced aquatic) keeps species-texture wording.
+    anime_non_biped = prompt_engineer._FULLBODY_SHARED_RULES[("anime", "non_biped")]
+    assert "毛皮" in anime_non_biped
+    assert "鳞片" in anime_non_biped
 
 
-def test_build_fullbody_shared_rules_species_aware():
-    """Non-biped shared rules describe fur/feathers/scales instead of skin."""
-    biped = prompt_engineer._FULLBODY_SHARED_RULES_BIPED
-    non_biped = prompt_engineer._FULLBODY_SHARED_RULES_NON_BIPED
-    # Biped uses "淡彩肤色"; quadruped etc. must NOT.
-    assert "淡彩肤色" in biped
-    assert "淡彩肤色" not in non_biped
-    # Non-biped uses species-texture vocabulary.
-    assert "毛皮" in non_biped
-    assert "羽毛" in non_biped
-    assert "鳞片" in non_biped
-    # Biped species templates should resolve to biped shared rules.
-    quad_template = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
-    quad_prompt = prompt_engineer.build_fullbody_prompt("front", template=quad_template)
-    assert "毛皮" in quad_prompt
-    assert "淡彩肤色" not in quad_prompt
+def test_build_fullbody_routes_style_by_species():
+    # 人类 → anime figurine branch.
+    human = prompt_engineer.build_fullbody_prompt("front", template=prompt_engineer.resolve_fullbody_template("人类"))
+    assert "手办" in human
+    assert "写实风格" not in human
+    # 机甲 → realistic branch despite the biped rig (no uncanny valley).
+    mecha = prompt_engineer.build_fullbody_prompt("front", template=prompt_engineer.resolve_fullbody_template("机甲"))
+    assert "写实风格" in mecha
+    assert "二次元" not in mecha
+    mecha_right = prompt_engineer.build_fullbody_prompt("right", template=prompt_engineer.resolve_fullbody_template("机甲"))
+    assert "机体侧面轮廓清晰" in mecha_right
+    # Custom non-humanoid quadruped → realistic non-biped framing.
+    wolf = prompt_engineer.build_fullbody_prompt("front", template=prompt_engineer.resolve_fullbody_template("机械狼", "quadruped", "realistic"))
+    assert "从头到尾（或尾尖）" in wolf
+    assert "写实风格" in wolf
+
+
+def test_resolve_fullbody_style_presets_and_custom():
+    assert prompt_engineer.resolve_fullbody_style("人类") == "anime"
+    assert prompt_engineer.resolve_fullbody_style("精灵") == "anime"
+    assert prompt_engineer.resolve_fullbody_style("机甲") == "realistic"
+    assert prompt_engineer.resolve_fullbody_style("灵兽") == "realistic"
+    assert prompt_engineer.resolve_fullbody_style("幻形") == "realistic"
+    # Custom species: the LLM humanoid-face verdict decides.
+    assert prompt_engineer.resolve_fullbody_style("猫娘", True) == "anime"
+    assert prompt_engineer.resolve_fullbody_style("机械狼", False) == "realistic"
+    # Unknown verdict (classifier didn't run) degrades to the mainstream branch.
+    assert prompt_engineer.resolve_fullbody_style("龙") == "anime"
+    assert prompt_engineer.resolve_fullbody_style(" 人类 ") == "anime"
+
+
+def test_resolve_fullbody_template_reconciles_style():
+    """Rig templates default to anime; an explicit style pass wins. Preset
+    templates carry their style so preset resolution stays identity-stable."""
+    quad = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
+    assert quad.style == "anime"
+    quad_real = prompt_engineer.resolve_fullbody_template("猫", "quadruped", "realistic")
+    assert quad_real.style == "realistic"
+    assert quad_real.pose == quad.pose
+    assert prompt_engineer.resolve_fullbody_template("机甲") is prompt_engineer._SPECIES_TEMPLATES["机甲"]
+    assert prompt_engineer.resolve_fullbody_template("人类") is prompt_engineer._BIPED_HUMANOID_TEMPLATE
 
 
 def test_fullbody_template_carries_rig_type():
-    """``FullbodyTemplate.rig_type`` is required for species-aware shared rules."""
+    """``FullbodyTemplate.rig_type`` + ``style`` key the shared-rules matrix."""
     biped = prompt_engineer.resolve_fullbody_template("人类")
     assert biped.rig_type == "biped"
+    assert biped.style == "anime"
     quad = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
     assert quad.rig_type == "quadruped"
 

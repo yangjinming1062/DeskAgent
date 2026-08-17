@@ -74,7 +74,7 @@ from .persona_service import (
 from .personality_tagger import analyze_personality_tags
 from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response, wardrobe_response
-from .rig_type_selector import select_rig_type
+from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 from .sprite_service import (
     SpriteGenerationError,
@@ -138,6 +138,7 @@ __all__ = [
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
+    "classify_species",
     "compute_bytes_sha256",
     "compute_file_sha256",
     "compress_glb",

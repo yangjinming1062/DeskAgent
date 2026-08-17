@@ -23,14 +23,18 @@ async def _model_generate(job: RenderJob, io_dir: Path) -> None:
     from services.companion import blender_llm_pipeline
 
     payload = job.payload
-    await blender_llm_pipeline.run_blender_llm_pipeline(job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], io_dir=io_dir)
+    await blender_llm_pipeline.run_blender_llm_pipeline(
+        job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], style=payload.get("style", "realistic"), io_dir=io_dir
+    )
 
 
 async def _tripo_generate(job: RenderJob, io_dir: Path) -> None:
     from services.companion import run_tripo_pipeline
 
     payload = job.payload
-    await run_tripo_pipeline(job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], payload.get("fullbody_mode", "multi"), io_dir=io_dir)
+    await run_tripo_pipeline(
+        job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], payload.get("fullbody_mode", "multi"), payload.get("style", "realistic"), io_dir=io_dir
+    )
 
 
 async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:

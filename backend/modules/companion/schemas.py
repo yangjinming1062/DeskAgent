@@ -82,6 +82,8 @@ class CompanionModelResponse(BaseModel):
     species: str = "人类"
     rig_type: str = "biped"
     rig_naming: str = "mixamo"
+    # Seed style the model was generated from — routes the client render style.
+    style: str = "realistic"
     morph_params: dict = Field(default_factory=dict)
     status: str = "succeeded"
     has_rig: bool

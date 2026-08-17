@@ -31,7 +31,7 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 
 ## 3. 全身图供应商采样（调试）
 
-`sample_fullbody_providers.py` — 用固定角色（梦蝶）与固定参考图（`backend/data/参考图.jpg`）按供应商采样全身种子图，供视觉评审决定供应商优先级调整。
+`sample_fullbody_providers.py` — 用生产 prompt 构造器（`services.llm.prompt_engineer`，`--species` / `--style auto|anime|realistic` 选分支）与固定参考图（`backend/data/参考图.jpg`）按供应商采样全身种子图，供视觉评审决定供应商优先级调整。
 
 输出：`<repo>/backend/data/_fullbody_samples/<UTC-timestamp>/{grok,gemini,minimax}_{1,2}.png`。**不**写 `companion-avatars/`、**不**写 `companion-assets/<uid>/`，**不**改生产路径。
 

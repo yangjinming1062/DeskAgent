@@ -11,11 +11,20 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, is_preset_species, resolve_fullbody_template
+from ..llm import (
+    FullbodyStyle,
+    build_fullbody_prompt,
+    chat,
+    enhance_avatar_prompt,
+    is_content_policy_error_message,
+    is_preset_species,
+    resolve_fullbody_style,
+    resolve_fullbody_template,
+)
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
 from .persona_service import get_or_create_persona
-from .rig_type_selector import select_rig_type
+from .rig_type_selector import classify_species
 
 logger = get_logger(__name__)
 
@@ -368,7 +377,7 @@ async def _generate_avatar_step(
 
 async def _pre_read_fullbody(
     db: AsyncSession, user_id: int, avatar_id: int, stage: str | None, view: str | None, feedback: str | None, reference_image: str | None, reference_content_type: str | None
-) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str]]:
+) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str], FullbodyStyle]:
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
@@ -416,20 +425,30 @@ async def _pre_read_fullbody(
     species = (definition.get("biological_type") or "").strip()
 
     rig_type = "biped"
+    style: FullbodyStyle = resolve_fullbody_style(species)
     if not is_preset_species(species):
-        rig_type = await select_rig_type(chat, species or "人类", db=db, user_id=user_id)
-    template = resolve_fullbody_template(species, rig_type)
+        rig_type, has_humanoid_face = await classify_species(chat, species or "人类", db=db, user_id=user_id)
+        style = resolve_fullbody_style(species, has_humanoid_face)
+    template = resolve_fullbody_template(species, rig_type, style)
 
     prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
-    return views_to_gen, is_front, persist, references, prompts
+    return views_to_gen, is_front, persist, references, prompts, style
 
 
 async def _write_fullbody(
-    db: AsyncSession, user_id: int, avatar_id: int, views_to_gen: list[str], is_front: bool, persist: bool, generated: dict[str, tuple[str, str, str, str]]
+    db: AsyncSession, user_id: int, avatar_id: int, views_to_gen: list[str], is_front: bool, persist: bool, generated: dict[str, tuple[str, str, str, str]], style: FullbodyStyle
 ) -> AvatarAsset:
     asset = await db.get(AvatarAsset, avatar_id)
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+
+    # The style travels with the asset so the 3D pipeline (a separate worker
+    # with no persona context) renders the same style the seed was drawn in —
+    # an anime seed under PBR or the reverse re-creates the style cliff.
+    prompt_payload = safe_json_loads(asset.prompt_json, default={})
+    if isinstance(prompt_payload, dict) and prompt_payload.get("fullbody_style") != style:
+        prompt_payload["fullbody_style"] = style
+        asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
 
     if is_front:
         if persist:
@@ -481,8 +500,9 @@ async def generate_fullbody(
     All three views share the SAME primary subject reference so clothing, skin
     tone, and hair color stay consistent across viewpoints. The fullbody seed's
     face is intentionally AI-reinvented per the persona; the bust avatar is
-    not re-applied as a secondary anchor. The seed uses an NPR anime /
-    cel-shading illustration style (see ``_FULLBODY_SHARED_RULES_BIPED``);
+    not re-applied as a secondary anchor. The seed style is routed by
+    humanoid face (see ``_FULLBODY_SHARED_RULES``) — anime figurine CGI for
+    human-faced companions, realistic for non-human creatures;
     it is for the Tripo3D pipeline only and is not directly user-facing.
 
     Decoupled into short pre-read, long generation without holding DB session,
@@ -499,9 +519,11 @@ async def generate_fullbody(
 
     if db is None:
         async with SESSION_LOCAL() as read_db:
-            views_to_gen, is_front, persist, references, prompts = await _pre_read_fullbody(read_db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
+            views_to_gen, is_front, persist, references, prompts, style = await _pre_read_fullbody(
+                read_db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type
+            )
     else:
-        views_to_gen, is_front, persist, references, prompts = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
+        views_to_gen, is_front, persist, references, prompts, style = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
 
     results = await asyncio.gather(
         *[
@@ -525,9 +547,9 @@ async def generate_fullbody(
 
     if db is None:
         async with SESSION_LOCAL() as write_db:
-            return await _write_fullbody(write_db, uid, avatar_id, views_to_gen, is_front, persist, generated)
+            return await _write_fullbody(write_db, uid, avatar_id, views_to_gen, is_front, persist, generated, style)
 
-    return await _write_fullbody(db, uid, avatar_id, views_to_gen, is_front, persist, generated)
+    return await _write_fullbody(db, uid, avatar_id, views_to_gen, is_front, persist, generated, style)
 
 
 def _delete_portrait_file(asset_url: str | None) -> None:

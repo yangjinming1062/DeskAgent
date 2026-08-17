@@ -1788,12 +1788,12 @@ async def test_generate_fullbody_stage_front_and_aux_chained(
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(chat, species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(chat, species, db=None, user_id=None):
+        return ("biped", True)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
         user = User(username="fbuser", is_active=True, can_use=True)
@@ -1884,12 +1884,12 @@ async def test_generate_fullbody_preconditions(
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(chat, species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(chat, species, db=None, user_id=None):
+        return ("biped", True)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
         user = User(
@@ -2055,8 +2055,8 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
     async def fake_download(_url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(_chat, _species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(_chat, _species, db=None, user_id=None):
+        return ("biped", True)
 
     def fake_build(view, *, template, feedback=None, avatar_prompt=""):
         captured["feedback"] = feedback or ""
@@ -2064,7 +2064,7 @@ async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
     # `build_fullbody_prompt` is imported into the avatar_service module's namespace
     # via `from ..llm import build_fullbody_prompt`, so monkeypatch the local binding
     # (not the llm module's) to capture the call-time feedback.
@@ -3546,12 +3546,12 @@ async def test_generate_fullbody_uses_uploaded_image_for_all_views(
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(chat, species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(chat, species, db=None, user_id=None):
+        return ("biped", True)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
         user = User(username="uploadref", is_active=True, can_use=True)
@@ -3616,12 +3616,12 @@ async def test_generate_fullbody_falls_back_to_bust_for_all_views(
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(chat, species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(chat, species, db=None, user_id=None):
+        return ("biped", True)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
         user = User(
@@ -3682,12 +3682,12 @@ async def test_generate_fullbody_aux_views_share_primary_reference(
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_select_rig(chat, species, db=None, user_id=None):
-        return "biped"
+    async def fake_classify_species(chat, species, db=None, user_id=None):
+        return ("biped", True)
 
     monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
     monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
+    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
 
     async with SessionLocal() as db:
         user = User(username="auxshared", is_active=True, can_use=True)

@@ -60,7 +60,7 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
     calls: list[dict] = []
 
     async def _fake_pipeline(
-        user_id, view_filenames, species, model_id, *, io_dir=None
+        user_id, view_filenames, species, model_id, *, style="realistic", io_dir=None
     ):
         assert io_dir is not None and io_dir.is_dir()
         calls.append(
@@ -69,6 +69,7 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
                 "views": view_filenames,
                 "species": species,
                 "model_id": model_id,
+                "style": style,
             }
         )
 
@@ -88,6 +89,8 @@ async def test_model_generate_handler_end_to_end(SessionLocal, monkeypatch):
             "views": payload["view_filenames"],
             "species": "人类",
             "model_id": 9,
+            # Style absent from the payload → the handler's realistic default.
+            "style": "realistic",
         }
     ]
     async with SessionLocal() as db:

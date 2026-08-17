@@ -33,6 +33,10 @@ class CompanionModel(ModelBase, TimestampMixin):
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
     rig_type: Mapped[str] = mapped_column(String(32), default="biped", server_default=text("'biped'"), index=True)
     rig_naming: Mapped[str] = mapped_column(String(16), default="mixamo", server_default=text("'mixamo'"))
+    # Seed-image style the model was generated from (anime | realistic) —
+    # routes the client render style; legacy rows default to realistic so old
+    # models keep their PBR look unchanged.
+    style: Mapped[str] = mapped_column(String(16), default="realistic", server_default=text("'realistic'"))
     rig_original_url: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")

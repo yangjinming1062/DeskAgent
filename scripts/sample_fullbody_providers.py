@@ -2,14 +2,15 @@
 
 Drives the project's image-gen providers **directly** (no DB, no
 ``image_generation_tool``) so the script works even when the production
-PostgreSQL host isn't reachable. The persona is fixed (梦蝶) and the
-reference image is fixed (``backend/data/参考图.jpg``) so the user can
-compare providers side-by-side.
+PostgreSQL host isn't reachable. The reference image is fixed
+(``backend/data/参考图.jpg``); species and style branch are CLI flags so the
+user can compare providers side-by-side per style routing.
 
 Pipeline per sample:
-  1. Build an LLM-style fullbody prompt by *templating* the persona dict
-     into a structural Chinese prompt (no round-trip LLM call needed for
-     this debug harness — the structural intent is what we're verifying).
+  1. Build the fullbody prompt through the **production** template resolver
+     (``services.llm.prompt_engineer``) — samples can never drift from what
+     the backend actually sends. ``--style`` picks the anime/realistic branch
+     directly (``auto`` routes the species the way the backend would).
   2. Construct the named provider (grok / gemini / minimax) directly with
      a ``ProviderConfig`` populated from ``backend/config.toml`` and call
      ``provider.generate(req)`` once. Bypasses the DB-backed chain
@@ -68,17 +69,6 @@ if hasattr(sys.stderr, "reconfigure"):
 
 REFERENCE_IMAGE_PATH = REPO_ROOT / "backend" / "data" / "参考图.jpg"
 
-PERSONA: dict[str, str] = {
-    "name": "梦蝶",
-    "personality": "温柔体贴爱撒娇，性感妩媚",
-    "speaking_style": "风趣幽默、性感撩人，但是需要正经的时候又能严肃认证，很懂得分寸",
-    "appearance_core": "肤白貌美，身材曼妙，充满性张力。让人看一眼就忍不住爱上。",
-    "appearance_outfit": "穿着暴露，性感迷人",
-    "background": "红颜知己",
-    "biological_type": "人类",
-    "gender": "女",
-}
-
 PROVIDERS: list[str] = ["grok", "gemini", "minimax"]
 SAMPLES_PER_PROVIDER: int = 2
 SIZE: str = "1024x1792"
@@ -99,6 +89,13 @@ def _parse_args() -> argparse.Namespace:
         choices=["front", "right", "back"],
         default="front",
         help="Which view to render (default: front). Multi-view consistency checks typically run --view right / --view back with the same reference image.",
+    )
+    p.add_argument("--species", default="人类", help="Species fed to the production template resolver (default: 人类).")
+    p.add_argument(
+        "--style",
+        choices=["auto", "anime", "realistic"],
+        default="auto",
+        help="Seed style branch (default: auto = the backend's species routing).",
     )
     return p.parse_args()
 
@@ -149,41 +146,19 @@ def _reference_data_uri(path: Path) -> str:
     return f"data:{mime};base64,{encoded}"
 
 
-# ── Prompt construction (no LLM round-trip) ──────────────────────────
+# ── Prompt construction (production resolver, no LLM round-trip) ──────
 
 
-_VIEW_PREFIX_PROMPT: dict[str, str] = {
-    "front": "正面全身角色立绘",
-    "right": "右侧面全身角色立绘",
-    "back": "背面全身角色立绘",
-}
+def _build_fullbody_prompt(view: str, species: str, style: str) -> str:
+    """Delegate to the production template resolver so sampled prompts are
+    byte-identical to what ``avatar_service`` sends. Imports happen late for
+    the same reason as the provider imports below (parseable without the
+    backend venv)."""
+    from services.llm.prompt_engineer import build_fullbody_prompt, resolve_fullbody_style, resolve_fullbody_template  # type: ignore[import-not-found]
 
-_VIEW_FEATURES_PROMPT: dict[str, str] = {
-    "front": "",
-    "right": "右侧面（90°转体）。",
-    "back": "背面（180°转身），看不到面部。",
-}
-
-
-def _build_fullbody_prompt(view: str = "front") -> str:
-    """Inline persona → Chinese fullbody 立绘 prompt. No LLM round-trip.
-
-    Mirrors what the LLM-enhanced path would emit: structural Chinese,
-    anime / cel-shading, A-pose, minimal coverage, no character name,
-    no 写实 / 8K triggers. ``view`` selects the camera framing plus the
-    view-specific feature clause so the same prompt template drives the
-    front / right / back run with one call.
-    """
-    persona_blurb = f"（气质：{PERSONA['personality']}；{PERSONA['speaking_style']}；外形容貌：{PERSONA['appearance_core']}；服装：{PERSONA['appearance_outfit']}）"
-    return (
-        f"{_VIEW_PREFIX_PROMPT[view]},标准A-pose站姿（双臂微张30度便于下游骨骼自动识别，"
-        "双脚分开与肩同宽）。穿着最小覆盖的运动内衣+运动短裤，躯干与四肢皮肤充分暴露，"
-        "禁止覆盖躯干或四肢皮肤的大面积服装（长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜）。"
-        "纯白背景，均匀打光。从头到脚完整可见，平视角度拍摄。二次元动漫立绘"
-        "（anime / cel-shading illustration），半写实卡通渲染风格，柔和色阶过渡（soft cel shading），"
-        "清新自然的淡彩肤色，整体保持角色立绘的简洁明快质感。"
-        f"{_VIEW_FEATURES_PROMPT[view]}" + persona_blurb
-    )
+    resolved = resolve_fullbody_style(species) if style == "auto" else style
+    template = resolve_fullbody_template(species, style=resolved)
+    return build_fullbody_prompt(view, template=template)
 
 
 # ── Provider instantiation ───────────────────────────────────────────
@@ -300,7 +275,8 @@ async def main() -> None:
     print(f"[setup] reference: {args.reference_image} ({len(ref_uri)} chars data URI)")
     print(f"[setup] providers × samples: {providers} × {args.samples_per_provider} = {len(providers) * args.samples_per_provider} images")
 
-    prompt = _build_fullbody_prompt(args.view)
+    prompt = _build_fullbody_prompt(args.view, args.species, args.style)
+    print(f"[setup] species: {args.species}  style: {args.style}")
     print(f"[setup] fullbody prompt ({len(prompt)} chars):")
     print(prompt)
     print()

@@ -367,7 +367,7 @@ def _validate_glb(glb_bytes: bytes, required_bones: set[str]) -> list[str]:
     return missing
 
 
-async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, *, io_dir: Path | None = None) -> None:
+async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, *, style: str = "realistic", io_dir: Path | None = None) -> None:
     try:
         await _emit_progress(user_id, "analyzing", 5, provider="blender_llm")
         rig_type = await select_rig_type(chat, species, user_id=user_id)
@@ -446,14 +446,22 @@ async def run_blender_llm_pipeline(user_id: int, view_filenames: dict[str, str],
         morph_names = _extract_morph_names_from_glb(final_glb)
 
         activated = await _finalize_generation(
-            model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider="blender_llm", species=species, rig_type=rig_type, morph_names=morph_names
+            model_id,
+            user_id,
+            asset_url=asset_url,
+            rig_original_url=rig_original_url,
+            provider="blender_llm",
+            species=species,
+            rig_type=rig_type,
+            morph_names=morph_names,
+            style=style,
         )
 
         if not activated:
             logger.info("Blender+LLM generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
-        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
+        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type, style=style)
         await _emit_progress(user_id, "done", 100, provider="blender_llm")
         logger.info("Blender+LLM generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 

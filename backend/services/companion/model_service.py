@@ -11,14 +11,14 @@ from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import chat
+from services.llm import chat, is_preset_species, resolve_fullbody_style
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
-from .rig_type_selector import select_rig_type
+from .rig_type_selector import classify_species, select_rig_type
 from .tripo_client import (
     TripoApiError,
     account_balance,
@@ -120,7 +120,17 @@ def _rig_naming_for(rig_type: str) -> str:
 
 
 async def _finalize_generation(
-    model_id: int, user_id: int, *, asset_url: str, rig_original_url: str, provider: str, species: str, rig_type: str, morph_names: list[str], content_hash: str | None = None
+    model_id: int,
+    user_id: int,
+    *,
+    asset_url: str,
+    rig_original_url: str,
+    provider: str,
+    species: str,
+    rig_type: str,
+    morph_names: list[str],
+    style: str = "realistic",
+    content_hash: str | None = None,
 ) -> bool:
     """Persist a succeeded generation. Returns True if not superseded by a newer run."""
     async with SESSION_LOCAL() as db:
@@ -136,6 +146,7 @@ async def _finalize_generation(
         model.species = species
         model.rig_type = rig_type
         model.rig_naming = _rig_naming_for(rig_type)
+        model.style = style
         model.morph_params_json = "{}"
         model.status = "succeeded"
         model.has_rig = True
@@ -212,11 +223,23 @@ async def generate_companion_model(
                 raise ModelGenerationError("请先完成全身三视图生成再生成模型")
             view_filenames = {"front": front, "right": right, "back": back}
 
+        # Style prefers the verdict persisted with the seed assets (the seed
+        # was drawn in it); only regenerate it when the audit marker is
+        # missing so the model can never render a different style than its
+        # seed image was generated in.
+        prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
+        style = prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None
+        if style not in ("anime", "realistic"):
+            has_humanoid_face = None
+            if not is_preset_species(species):
+                has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
+            style = resolve_fullbody_style(species, has_humanoid_face)
+
         # The previous active model stays active while this generation runs —
         # only a success claims the active slot. A failed regeneration therefore
         # never discards the user's working model, and concurrent (TOCTOU)
         # generations resolve by "newest wins" instead of racing.
-        model = CompanionModel(user_id=user_id, status="generating", species=species, active=False)
+        model = CompanionModel(user_id=user_id, status="generating", species=species, style=style, active=False)
         db.add(model)
         await db.commit()
         await db.refresh(model)
@@ -227,12 +250,14 @@ async def generate_companion_model(
     # the long Tripo poll (ARCHITECTURE.md §10, README §1).
     use_blender = _should_use_blender_fallback(provider_override) and fullbody_mode != "single"
     kind = "model_generate" if use_blender else "tripo_generate"
-    await render_queue.enqueue(kind, user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode})
+    await render_queue.enqueue(kind, user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": fullbody_mode, "style": style})
     logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "kind": kind})
     return model
 
 
-async def run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, *, io_dir: Path | None = None) -> None:
+async def run_tripo_pipeline(
+    user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, style: str = "realistic", *, io_dir: Path | None = None
+) -> None:
     is_single = fullbody_mode == "single"
     try:
         # Single-mode has no multi-view fallback path: blender_llm_pipeline
@@ -244,7 +269,7 @@ async def run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], speci
                 balance_info = await account_balance()
                 if float(balance_info.get("balance", 1)) <= 0:
                     logger.info("Tripo balance is 0, falling back to Blender+LLM", extra={"user_id": user_id})
-                    await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id})
+                    await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id, "style": style})
                     return
             except Exception:
                 pass  # Best-effort: key might be invalid, network down, etc. — let the pipeline try normally.
@@ -284,7 +309,7 @@ async def run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], speci
         if not check_output.get("riggable"):
             raise ModelGenerationError("模型不可绑骨，请尝试用更清晰的正面全身种子图重新生成")
 
-        rig_type = await select_rig_type(chat, species, user_id=user_id)
+        rig_type = await select_rig_type(chat, species, user_id=user_id)  # style came in with the payload — only the rig half is classified here
 
         await _emit_progress(user_id, "rigging", 60, provider="tripo")
         rig_task_id = await rig(gen_task_id, rig_type)
@@ -305,21 +330,29 @@ async def run_tripo_pipeline(user_id: int, view_filenames: dict[str, str], speci
 
         # provider_label was set in the dispatch branch above (single vs multiview).
         activated = await _finalize_generation(
-            model_id, user_id, asset_url=asset_url, rig_original_url=rig_original_url, provider=provider_label, species=species, rig_type=rig_type, morph_names=morph_names
+            model_id,
+            user_id,
+            asset_url=asset_url,
+            rig_original_url=rig_original_url,
+            provider=provider_label,
+            species=species,
+            rig_type=rig_type,
+            morph_names=morph_names,
+            style=style,
         )
 
         if not activated:
             logger.info("Tripo3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
             return
 
-        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type)
+        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type, style=style)
         await _emit_progress(user_id, "done", 100, provider="tripo")
         logger.info("Tripo3D generation succeeded", extra={"user_id": user_id, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)})
 
     except Exception as exc:
         if SETTINGS.blender_llm_enabled and isinstance(exc, TripoApiError) and _is_credits_exhausted_error(exc) and not is_single:
             logger.info("Tripo credits exhausted, falling back to Blender+LLM", extra={"user_id": user_id})
-            await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id})
+            await render_queue.enqueue("model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model_id, "style": style})
             return
 
         logger.warning("Tripo3D generation failed", extra={"user_id": user_id}, exc_info=True)
@@ -424,12 +457,16 @@ async def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provide
         logger.warning("Failed to emit model.gen.progress", exc_info=True)
 
 
-async def _emit_model_ready(user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None, content_hash: str | None = None) -> None:
+async def _emit_model_ready(
+    user_id: int, model_id: int, asset_url: str, *, species: str | None = None, rig_type: str | None = None, style: str | None = None, content_hash: str | None = None
+) -> None:
     payload: dict = {"model_id": model_id}
     if species:
         payload["species"] = species
     if rig_type:
         payload["rig_type"] = rig_type
+    if style:
+        payload["style"] = style
     parts = asset_url.split("/", 2)
     if len(parts) == 3:
         payload["asset_url"] = build_signed_model_url(int(parts[1]), parts[2])

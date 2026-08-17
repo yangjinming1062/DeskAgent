@@ -40,6 +40,7 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
         has_morph_targets=model.has_morph_targets,
         rig_type=model.rig_type,
         rig_naming=model.rig_naming,
+        style=model.style or "realistic",
         content_hash=content_hash,
     )
 
