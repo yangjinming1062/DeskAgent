@@ -3,6 +3,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { PERSONA_INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { notifyError } from '@/shared/store/notifications'
@@ -61,6 +62,7 @@ export function MemoryBrowser({ onClose }: { onClose: () => void }): React.React
   const { requestGateway } = useGatewayRequest()
   const panelRef = useRef<HTMLDivElement>(null)
   useInteractiveRegion('memory-browser', panelRef)
+  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.memoryBrowserOffset', () => panelRef.current)
 
   const [rows, setRows] = useState<MemoryRow[]>([])
   const [counts, setCounts] = useState<MemoryCounts | null>(null)
@@ -168,9 +170,16 @@ export function MemoryBrowser({ onClose }: { onClose: () => void }): React.React
       <div
         className="flex h-[min(75vh,640px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
+        <div
+          className="flex cursor-grab items-center justify-between border-b border-white/10 px-4 py-3 active:cursor-grabbing"
+          {...dragBind}
+          title="拖动以移动面板"
+        >
           <h2 className="text-sm font-semibold">长期记忆</h2>
           <button
             aria-label="关闭"

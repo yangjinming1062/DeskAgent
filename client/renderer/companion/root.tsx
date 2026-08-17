@@ -71,6 +71,16 @@ export function CompanionRoot(): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
   const { requestGateway } = useGatewayRequest()
+
+  // Sprite-window docks are mutually exclusive — opening one closes the
+  // others so popups never stack on screen.
+  const openDock = (kind: 'chat' | 'memory' | 'settings' | 'voice'): void => {
+    setChatOpen(kind === 'chat')
+    setVoiceCallOpen(kind === 'voice')
+    setSettingsOpen(kind === 'settings')
+    setMemoryOpen(kind === 'memory')
+  }
+
   const validityCheckedRef = useRef(false)
   // Marks a sprite click that triggered the login flow — distinguishes a fresh
   // login from a cached-session boot, where the user must tap to open the wizard.
@@ -232,7 +242,7 @@ export function CompanionRoot(): React.JSX.Element {
         kind: 'warning',
         title: strings.notifications.voice.invalidTitle,
         message: strings.notifications.voice.invalidMessage(result.name),
-        action: { label: strings.notifications.voice.invalidAction, onClick: () => setSettingsOpen(true) }
+        action: { label: strings.notifications.voice.invalidAction, onClick: () => openDock('settings') }
       })
     })
   }, [lifecycle, gatewayState, requestGateway])
@@ -265,7 +275,7 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      setChatOpen(true)
+      openDock('chat')
 
       return
     }
@@ -307,30 +317,12 @@ export function CompanionRoot(): React.JSX.Element {
       </SpriteStage>
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
-        onOpenMemory={() => {
-          setChatOpen(false)
-          setVoiceCallOpen(false)
-          setMemoryOpen(true)
-        }}
-        onOpenSettings={() => {
-          setChatOpen(false)
-          setVoiceCallOpen(false)
-          setSettingsOpen(true)
-        }}
-        onOpenVoiceCall={() => {
-          setChatOpen(false)
-          setVoiceCallOpen(true)
-        }}
+        onOpenChat={() => openDock('chat')}
+        onOpenMemory={() => openDock('memory')}
+        onOpenSettings={() => openDock('settings')}
+        onOpenVoiceCall={() => openDock('voice')}
       />
-      {authed && chatOpen && (
-        <ChatDock
-          onClose={() => setChatOpen(false)}
-          onOpenVoiceCall={() => {
-            setChatOpen(false)
-            setVoiceCallOpen(true)
-          }}
-        />
-      )}
+      {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} onOpenVoiceCall={() => openDock('voice')} />}
       {authed && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {authed && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}

@@ -207,7 +207,9 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
 }
 
 // Boot-time paint: imported once during initial render, applied synchronously
-// so the page never flashes the default theme.
-if (typeof window !== 'undefined') {
+// so the page never flashes the default theme. The framed tool window is
+// exempt — styles.css pins its dark palette on html[data-role='tool'], and
+// the inline seeds here would win that cascade.
+if (typeof window !== 'undefined' && document.documentElement.dataset.role !== 'tool') {
   applyTheme(deriveTheme('light'), 'light')
 }

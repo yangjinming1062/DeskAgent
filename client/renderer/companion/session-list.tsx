@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useRef } from 'react'
 
+import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $chatSessionId } from './chat-store'
@@ -14,6 +15,7 @@ export function SessionListPanel({ onClose }: { onClose: () => void }): React.Re
   const panelRef = useRef<HTMLDivElement>(null)
 
   useInteractiveRegion('session-list', panelRef)
+  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.sessionListOffset', () => panelRef.current)
 
   const handleCreate = async (): Promise<void> => {
     await createNewSession()
@@ -37,9 +39,16 @@ export function SessionListPanel({ onClose }: { onClose: () => void }): React.Re
       <div
         className="w-full max-w-md rounded-2xl border border-white/15 bg-gray-900/90 p-4 text-white shadow-2xl backdrop-blur-xl"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div
+          className="flex cursor-grab items-center justify-between border-b border-white/10 pb-3 active:cursor-grabbing"
+          {...dragBind}
+          title="拖动以移动面板"
+        >
           <div className="flex items-center gap-2 font-medium">
             <span>💬 对话列表</span>
           </div>

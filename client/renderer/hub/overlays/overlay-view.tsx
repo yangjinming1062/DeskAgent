@@ -2,25 +2,25 @@ import { type ReactNode, useEffect } from 'react'
 
 import { Button, Codicon } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { cn } from '@/shared/lib/utils'
 import { strings } from '@/shared/strings'
+
+// Win/Linux draw the native WindowControlsOverlay at the top-right; an in-app
+// close button there would sit underneath it. macOS traffic lights live at
+// the top-left, so the in-app close survives.
+const HAS_NATIVE_WINDOW_CONTROLS = !navigator.userAgent.includes('Mac')
 
 interface OverlayViewProps {
   children: ReactNode
   onClose: () => void
   closeLabel?: string
-  contentClassName?: string
-  headerContent?: ReactNode
-  rootClassName?: string
 }
 
+// Full-bleed page shell for the framed tool window: a drag band below the
+// native window controls, plus Esc-to-close.
 export function OverlayView({
   children,
   onClose,
-  closeLabel = strings.common.close,
-  contentClassName,
-  headerContent,
-  rootClassName
+  closeLabel = strings.common.close
 }: OverlayViewProps): React.JSX.Element {
   const closeOverlay = () => {
     triggerHaptic('close')
@@ -47,28 +47,9 @@ export function OverlayView({
   }, [onClose])
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/22 p-3 backdrop-blur-[0.125rem] sm:p-6"
-      onClick={event => {
-        if (event.target === event.currentTarget) {
-          closeOverlay()
-        }
-      }}
-      role="presentation"
-    >
-      <div
-        className={cn(
-          'relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-chat-surface-background) shadow-md',
-          rootClassName
-        )}
-      >
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
-          {headerContent && (
-            <div className="pointer-events-auto absolute left-1/2 top-[calc(0.5rem+var(--titlebar-height)/2)] -translate-x-1/2 -translate-y-1/2 [-webkit-app-region:no-drag]">
-              {headerContent}
-            </div>
-          )}
-
+    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
+        {!HAS_NATIVE_WINDOW_CONTROLS && (
           <Button
             aria-label={closeLabel}
             className="pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground [-webkit-app-region:no-drag]"
@@ -78,13 +59,12 @@ export function OverlayView({
           >
             <Codicon name="close" size="1rem" />
           </Button>
-        </div>
-
-        {/* No top padding here: the split-layout columns own their own
-            titlebar clearance so their backgrounds run flush to the card top
-            (otherwise the card surface shows as a gap above the sidebar). */}
-        <div className={cn('min-h-0 flex flex-1 flex-col', contentClassName)}>{children}</div>
+        )}
       </div>
+
+      {/* No top padding here: the split-layout columns own their own
+          titlebar clearance so their backgrounds run flush to the page top. */}
+      <div className="min-h-0 flex flex-1 flex-col">{children}</div>
     </div>
   )
 }

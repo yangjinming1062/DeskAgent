@@ -17,7 +17,16 @@ export function registerTitlebarIpc({
   ipcMain,
   setRendererTitleBarTheme
 }: TitlebarIpcDeps): void {
-  ipcMain.on('spiritagent:titlebar-theme', (_event, payload) => {
+  ipcMain.on('spiritagent:titlebar-theme', (event, payload) => {
+    const tool = getToolWindow()
+
+    // Only the tool window's renderer may restyle its overlay — the sprite
+    // window boots the light theme and would paint a light strip on the dark
+    // tool UI.
+    if (!tool || tool.isDestroyed() || tool.webContents !== event.sender) {
+      return
+    }
+
     if (!payload || !isHexColor(payload.background) || !isHexColor(payload.foreground)) {
       return
     }
@@ -27,6 +36,6 @@ export function registerTitlebarIpc({
       foreground: payload.foreground
     })
 
-    getToolWindow()?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
+    tool.setTitleBarOverlay?.(getTitleBarOverlayOptions())
   })
 }

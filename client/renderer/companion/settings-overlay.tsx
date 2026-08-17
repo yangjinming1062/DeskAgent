@@ -6,6 +6,7 @@ import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } fr
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
+import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona } from '@/companion/persona-store'
@@ -136,6 +137,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [designHint, setDesignHint] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   useInteractiveRegion('companion-settings', panelRef)
+  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.settingsOffset', () => panelRef.current)
 
   const filteredVoices = useMemo(
     () =>
@@ -225,18 +227,25 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
       <div
-        className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] text-foreground shadow-2xl backdrop-blur-xl"
+        className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-white shadow-2xl backdrop-blur-md"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
-        <div className="flex items-center justify-between border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
+        <div
+          className="flex cursor-grab items-center justify-between border-b border-white/10 px-5 py-3.5 active:cursor-grabbing"
+          {...dragBind}
+          title="拖动以移动面板"
+        >
           <div className="flex items-center gap-2">
-            <SlidersHorizontal className="size-4 text-(--ui-text-secondary)" />
-            <h2 className="text-sm font-semibold text-foreground">伙伴设置</h2>
+            <SlidersHorizontal className="size-4 text-white/60" />
+            <h2 className="text-sm font-semibold">伙伴设置</h2>
           </div>
           <button
             aria-label="关闭"
-            className="flex size-7 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground"
+            className="flex size-7 items-center justify-center rounded-lg text-white/50 transition-colors hover:bg-white/10 hover:text-white"
             onClick={onClose}
             type="button"
           >

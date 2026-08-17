@@ -14,7 +14,6 @@ import {
   ipcMain,
   Menu,
   nativeImage,
-  nativeTheme,
   powerMonitor,
   protocol,
   safeStorage,
@@ -144,12 +143,13 @@ function getTitleBarOverlayOptions() {
     }
   }
 
-  const useDarkColors = nativeTheme.shouldUseDarkColors
-
+  // The tool window always renders the pinned dark palette (styles.css
+  // html[data-role='tool']) — the overlay strip must match regardless of OS
+  // appearance, or a light strip sits on the dark titlebar.
   return {
-    color: useDarkColors ? '#111111' : '#f7f7f7',
+    color: '#0f0f13',
     height: TITLEBAR_HEIGHT,
-    symbolColor: useDarkColors ? '#f7f7f7' : '#242424'
+    symbolColor: '#f2f2f5'
   }
 }
 
@@ -218,7 +218,6 @@ const desktopLogger = createDesktopLogger({
 
 const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
 let previewShortcutActive = false
-let nativeThemeListenerInstalled = false
 
 let bootProgressState: DesktopBootProgress = {
   error: null,
@@ -1260,7 +1259,7 @@ function installStandardWindowHandlers(win: BrowserWindow): void {
 function createToolWindow(): void {
   const icon = getAppIconPath() || undefined
   toolWindow = new BrowserWindow({
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#0f0f13',
     height: 800,
     icon,
     minHeight: 620,
@@ -1284,15 +1283,6 @@ function createToolWindow(): void {
 
   if (IS_MAC) {
     toolWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
-  }
-
-  if (!IS_MAC) {
-    if (!nativeThemeListenerInstalled) {
-      nativeThemeListenerInstalled = true
-      nativeTheme.on('updated', () => {
-        toolWindow?.setTitleBarOverlay?.(getTitleBarOverlayOptions())
-      })
-    }
   }
 
   toolWindow.on('enter-full-screen', () => sendWindowStateChanged(true))

@@ -49,7 +49,7 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps): Re
       className={cn(
         // pt clears the floating titlebar/header; the bg itself fills from the
         // card's top edge so there's no surface-colored gap above the sidebar.
-        'flex min-h-0 flex-col gap-0.5 overflow-y-auto bg-(--ui-sidebar-surface-background) px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)]',
+        'flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-white/[0.06] bg-(--ui-sidebar-surface-background) px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)]',
         className
       )}
     >
@@ -86,22 +86,16 @@ export function OverlayNavItem({
         'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
         nested
           ? active
-            ? 'border-transparent bg-(--chrome-action-hover) font-medium text-foreground'
-            : 'border-transparent bg-transparent text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+            ? 'border-transparent bg-white/10 font-medium text-white'
+            : 'border-transparent bg-transparent text-white/50 hover:bg-white/5 hover:text-white'
           : active
-            ? 'border-(--ui-stroke-tertiary) bg-(--ui-bg-tertiary) text-foreground'
-            : 'border-transparent bg-transparent text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'
+            ? 'border-white/10 bg-white/10 text-white'
+            : 'border-transparent bg-transparent text-white/60 hover:bg-white/5 hover:text-white'
       )}
       onClick={onClick}
       type="button"
     >
-      <Icon
-        className={cn(
-          'shrink-0',
-          nested ? 'size-3.5' : 'size-4',
-          active ? 'text-foreground/80' : 'text-muted-foreground/80'
-        )}
-      />
+      <Icon className={cn('shrink-0', nested ? 'size-3.5' : 'size-4', active ? 'text-white/80' : 'text-white/40')} />
       <span className="min-w-0 flex-1 truncate">{label}</span>
       {trailing}
     </button>

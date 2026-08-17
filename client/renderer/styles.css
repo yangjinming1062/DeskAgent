@@ -319,6 +319,10 @@
     --chat-min-width: 28rem;
     --titlebar-control-size: 1.25rem;
     --titlebar-control-height: 1.375rem;
+    /* Must match TITLEBAR_HEIGHT in main/entry.ts (also the WindowControlsOverlay
+       height on Win/Linux) — layouts clear it so content and the drag band
+       never slide under the native window buttons. */
+    --titlebar-height: 34px;
     --sidebar-content-inline-padding: 1rem;
 
     --sidebar: var(--dt-sidebar-bg);
@@ -365,6 +369,54 @@
     --ui-inline-code-border: color-mix(in srgb, #ffffff 10%, transparent);
     --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
     --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
+  }
+
+  /* Tool window (?role=tool): pin the semantic tokens to the explicit dark
+     palette shared with the companion docks (near-black surfaces, white/xx
+     strokes and text). No skin/mode system — one hardcoded look. Without
+     this pin the tokens resolve to the light :root values and the framed
+     settings window renders white. Outranks :root via the attribute
+     selector; index.html stamps data-role before first paint. */
+  html[data-role='tool'] {
+    color-scheme: dark;
+
+    --theme-foreground: #f2f2f5;
+    --theme-secondary: color-mix(in srgb, #0053fd 16%, #16161b);
+    --theme-accent-soft: color-mix(in srgb, #0053fd 14%, #16161b);
+
+    --ui-bg-chrome: #0f0f13;
+    --ui-bg-sidebar: #0b0b0f;
+    --ui-bg-editor: #17171c;
+    --ui-bg-elevated: #1d1d24;
+    --ui-bg-card: color-mix(in srgb, #ffffff 4%, transparent);
+    --ui-bg-input: #131318;
+    --ui-bg-primary: color-mix(in srgb, #ffffff 8%, transparent);
+    --ui-bg-secondary: color-mix(in srgb, #ffffff 6%, transparent);
+    --ui-bg-tertiary: color-mix(in srgb, #ffffff 5%, transparent);
+    --ui-bg-quaternary: color-mix(in srgb, #ffffff 4%, transparent);
+    --ui-bg-quinary: color-mix(in srgb, #ffffff 3%, transparent);
+    --ui-row-hover-background: color-mix(in srgb, #ffffff 4%, transparent);
+    --ui-row-active-background: color-mix(in srgb, #ffffff 6%, transparent);
+    --ui-control-hover-background: color-mix(in srgb, #ffffff 6%, transparent);
+    --ui-control-active-background: color-mix(in srgb, #ffffff 8%, transparent);
+
+    --ui-text-primary: color-mix(in srgb, #ffffff 94%, transparent);
+    --ui-text-secondary: color-mix(in srgb, #ffffff 74%, transparent);
+    --ui-text-tertiary: color-mix(in srgb, #ffffff 54%, transparent);
+    --ui-text-quaternary: color-mix(in srgb, #ffffff 36%, transparent);
+
+    --ui-stroke-primary: color-mix(in srgb, #ffffff 14%, transparent);
+    --ui-stroke-secondary: color-mix(in srgb, #ffffff 10%, transparent);
+    --ui-stroke-tertiary: color-mix(in srgb, #ffffff 7%, transparent);
+    --ui-stroke-quaternary: color-mix(in srgb, #ffffff 4%, transparent);
+
+    --ui-inline-code-background: color-mix(in srgb, #ffffff 7%, transparent);
+    --ui-inline-code-border: color-mix(in srgb, #ffffff 10%, transparent);
+    --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
+    --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
+    --ui-chat-bubble-background: #1a1a21;
+    --ui-chat-bubble-opaque-background: #17171c;
+    --sidebar-edge-border: color-mix(in srgb, #ffffff 8%, transparent);
   }
 
   * {

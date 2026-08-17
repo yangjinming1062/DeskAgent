@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatSession } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
+import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { speak, stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
@@ -60,6 +61,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const onCloseRef = useLatestRef(onClose)
 
   useInteractiveRegion('voice-call-dock', panelRef)
+  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.voiceCallOffset', () => panelRef.current)
 
   useEffect(() => {
     void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
@@ -356,9 +358,16 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       <div
         className="flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
-        <div className="flex w-full items-center justify-between text-xs text-white/60">
+        <div
+          className="flex w-full cursor-grab items-center justify-between text-xs text-white/60 active:cursor-grabbing"
+          {...dragBind}
+          title="拖动以移动面板"
+        >
           <span className="flex items-center gap-1.5 font-medium text-emerald-400">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             语音通话中

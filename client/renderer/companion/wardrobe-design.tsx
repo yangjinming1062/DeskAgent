@@ -14,6 +14,7 @@ import {
   type WardrobeCandidate,
   type WardrobeItem
 } from '@/companion/3d/model-store'
+import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { PERSONA_INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { notify, notifyError } from '@/shared/store/notifications'
@@ -95,6 +96,7 @@ function candidateFileIds(candidates: WardrobeCandidate[]): string[] {
 export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): React.JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null)
   useInteractiveRegion('wardrobe-design', panelRef)
+  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.wardrobeOffset', () => panelRef.current)
 
   const candidates = useStore($wardrobeCandidates)
   const selectedIdx = useStore($wardrobeSelectedIdx)
@@ -362,12 +364,19 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center px-4 pb-8" style={{ pointerEvents: 'none' }}>
       <div
-        className="flex h-[min(84vh,700px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/75 text-white shadow-2xl backdrop-blur-xl transition-all"
+        className="flex h-[min(84vh,700px)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/75 text-white shadow-2xl backdrop-blur-xl transition-colors"
         ref={panelRef}
-        style={{ pointerEvents: 'auto' }}
+        style={{
+          pointerEvents: 'auto',
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+        }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-3.5">
+        <div
+          className="flex cursor-grab items-center justify-between border-b border-white/10 px-5 py-3.5 active:cursor-grabbing"
+          {...dragBind}
+          title="拖动以移动面板"
+        >
           <div className="flex items-center gap-2">
             <span className="text-base">✨</span>
             <h2 className="text-sm font-semibold tracking-wide">换装设计 (Wardrobe Studio)</h2>
