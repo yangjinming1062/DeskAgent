@@ -322,10 +322,16 @@ def set_fullbody_mode(monkeypatch) -> "Callable[[str], None]":
 
 
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip e2e tests when MIMO_API_KEY is not set."""
-    if os.getenv("MIMO_API_KEY"):
-        return
-    skip_e2e = pytest.mark.skip(reason="MIMO_API_KEY not set")
+    """Auto-skip e2e tests when their required API-key env is not set.
+
+    Bare ``@pytest.mark.e2e`` requires ``MIMO_API_KEY``; the parametrized form
+    ``@pytest.mark.e2e("HUNYUAN_API_KEY")`` requires exactly the listed env
+    vars, so opt-in live tests never run — or cost — by default.
+    """
     for item in items:
-        if "e2e" in item.keywords:
-            item.add_marker(skip_e2e)
+        marker = item.get_closest_marker("e2e")
+        if marker is None:
+            continue
+        missing = [env for env in (marker.args or ("MIMO_API_KEY",)) if not os.getenv(env)]
+        if missing:
+            item.add_marker(pytest.mark.skip(reason=f"{'/'.join(missing)} not set"))

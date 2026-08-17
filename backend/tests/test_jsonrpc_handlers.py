@@ -11,6 +11,17 @@ def pin_handlers():
     return handlers
 
 
+@pytest.fixture
+def dispatcher(pin_handlers):
+    """Session handlers registered on a bare dispatcher, so tests invoke
+    methods exactly as the WS dispatch path does."""
+    from services.gateway.jsonrpc import JsonRpcDispatcher
+
+    disp = JsonRpcDispatcher(lambda msg: None)
+    pin_handlers._register_session_handlers(disp, {}, {}, user_id=1001)
+    return disp
+
+
 @pytest.mark.asyncio
 async def test_companion_set_disturbance_tier_normalizes_unknown(
     pin_handlers, SessionLocal
@@ -25,14 +36,24 @@ async def test_companion_set_disturbance_tier_normalizes_unknown(
 
 
 @pytest.mark.asyncio
-async def test_companion_check_affect_validates_inputs(pin_handlers, SessionLocal):
-    """``companion.check_affect`` accepts only ``idle_seconds >= 0`` (float)
-    and ``local_hour`` in ``0..23``."""
-    from services.disturbance import is_quiet, set_disturbance_tier
+async def test_companion_check_affect_coerces_inputs(dispatcher, pin_handlers, monkeypatch):
+    """``companion.check_affect`` normalizes context fields before the
+    service call: negative ``idle_seconds`` → 0.0, out-of-range
+    ``local_hour`` → -1 (documented "unknown" sentinel)."""
+    captured: dict = {}
 
-    # Service-level: handler normalizes bad inputs to 0 / -1.
-    await set_disturbance_tier(1, "normal")
-    assert await is_quiet(1) is False
+    async def _capture(_user_id, idle_seconds, local_hour, _cfg):
+        captured.update(idle=idle_seconds, hour=local_hour)
+        return {"emotion": None, "reason": "captured"}
+
+    monkeypatch.setattr(pin_handlers, "check_affect", _capture)
+    monkeypatch.setattr(pin_handlers, "_last_check_affect_ts", {})
+
+    result = await dispatcher._handlers["companion.check_affect"](
+        {"idle_seconds": -5, "local_hour": 99}
+    )
+    assert captured == {"idle": 0.0, "hour": -1}
+    assert result == {"emotion": None, "reason": "captured"}
 
 
 @pytest.mark.asyncio
@@ -47,150 +68,91 @@ async def test_companion_set_disturbance_tier_persists(pin_handlers, SessionLoca
     assert await get_disturbance_tier(42) == "proactive"
 
 
-def test_tts_match_voice_preference_string_required(pin_handlers):
-    """``tts.match_voice`` must reject non-string preference with
-    a JSON-RPC INVALID_PARAMS. Verify the underlying helper is
-    typed correctly."""
+@pytest.mark.asyncio
+async def test_tts_match_voice_rejects_non_string_preference(dispatcher):
+    from components import JSONRPC_INVALID_PARAMS
+    from services.gateway.jsonrpc import JsonRpcError
 
-    # The helper expects a real db session; smoke-test the
-    # preference normalization without db.
-    from services.companion.voice_catalog import _score
-    from services.llm import VoiceEntry
-
-    fake = VoiceEntry(
-        id="x",
-        label="少女",
-        gender="female",
-        language="zh",
-        tags=["少女", "温柔", "女"],
-        description="",
-    )
-    assert _score("温柔少女音", fake) >= 2
+    with pytest.raises(JsonRpcError) as exc_info:
+        await dispatcher._handlers["tts.match_voice"]({"preference": 123})
+    assert exc_info.value.code == JSONRPC_INVALID_PARAMS
+    assert "preference must be a string" in str(exc_info.value)
 
 
-def test_tts_design_voice_prompt_bounds(pin_handlers):
-    """The handler accepts only non-empty prompts within the
-    MAX_VOICE_DESIGN_PROMPT_CHARS bound."""
-    from components import MAX_VOICE_DESIGN_PROMPT_CHARS
+@pytest.mark.asyncio
+async def test_tts_design_voice_rejects_out_of_bounds_prompt(dispatcher):
+    from components import JSONRPC_INVALID_PARAMS, MAX_VOICE_DESIGN_PROMPT_CHARS
+    from services.gateway.jsonrpc import JsonRpcError
 
-    assert MAX_VOICE_DESIGN_PROMPT_CHARS > 0
-    assert MAX_VOICE_DESIGN_PROMPT_CHARS <= 1000  # reasonable upper bound
-
-
-def test_avatar_regenerate_feedback_string_required(pin_handlers):
-    """``avatar.regenerate`` must reject non-string feedback with
-    INVALID_PARAMS."""
-    # Verify the source contains the type assertion.
-    import inspect
-
-    from services.gateway import handlers
-
-    src = inspect.getsource(handlers)
-    assert "feedback must be a string" in src
-    assert "feedback is not None and not isinstance(feedback, str)" in src
+    fn = dispatcher._handlers["tts.design_voice"]
+    for bad in (123, "", " ", "x" * (MAX_VOICE_DESIGN_PROMPT_CHARS + 1)):
+        with pytest.raises(JsonRpcError) as exc_info:
+            await fn({"prompt": bad})
+        assert exc_info.value.code == JSONRPC_INVALID_PARAMS
 
 
-def test_session_info_handler_returns_session_id():
-    """Pydantic SessionRuntimeInfo round-trip preserves the model /
-    cwd / running keys (renderer depends on this)."""
-    from services.gateway import SessionRuntimeInfo
+@pytest.mark.asyncio
+async def test_avatar_regenerate_rejects_non_string_feedback(dispatcher):
+    from components import JSONRPC_INVALID_PARAMS
+    from services.gateway.jsonrpc import JsonRpcError
 
-    info = SessionRuntimeInfo(
-        cwd="/tmp",
-        branch="main",
-        model="mimo-v2.5",
-        provider="openai",
-        running=True,
-        settings={"reasoning": "high", "fast": False},
-    )
-    dumped = info.model_dump()
-    assert dumped["cwd"] == "/tmp"
-    assert dumped["branch"] == "main"
-    assert dumped["model"] == "mimo-v2.5"
-    assert dumped["provider"] == "openai"
-    assert dumped["running"] is True
-    assert dumped["settings"]["reasoning"] == "high"
+    with pytest.raises(JsonRpcError) as exc_info:
+        await dispatcher._handlers["avatar.regenerate"]({"feedback": 123})
+    assert exc_info.value.code == JSONRPC_INVALID_PARAMS
+    assert "feedback must be a string" in str(exc_info.value)
 
 
-def test_companion_affect_emitter_roundtrip():
-    """affect_emit.append_companion_affect persists a ``companion.affect``
-    WSEvent row with the correct payload shape."""
-    from services.companion.affect_emit import emit_companion_affect
-
-    # Smoke-test the function signature without a real DB (handled
-    # by the test_companion.py existing suite).
-    assert callable(emit_companion_affect)
+def test_companion_interact_and_should_act_registered(dispatcher):
+    assert "companion.interact" in dispatcher._handlers
+    assert "companion.should_act" in dispatcher._handlers
 
 
-def test_companion_interact_and_should_act_registered(pin_handlers):
-    """Verify companion.interact and companion.should_act are registered in handlers.py source."""
-    import inspect
-
-    src = inspect.getsource(pin_handlers)
-    assert 'dispatcher.register("companion.interact", companion_interact)' in src
-    assert 'dispatcher.register("companion.should_act", companion_should_act)' in src
-
-
-def test_companion_interact_drops_when_prompt_inflight(pin_handlers, monkeypatch):
+@pytest.mark.asyncio
+async def test_companion_interact_drops_when_prompt_inflight(
+    dispatcher, pin_handlers, monkeypatch
+):
     """companion.interact must short-circuit with reason='user_busy' while a
     prompt.submit turn is in-flight for the same user — otherwise the poke's
     status_interaction/status_reaction land interleaved with the user message
     on the main conversation."""
-    from services.gateway import handlers
+    async def _must_not_run(*a, **kw):
+        raise AssertionError("interact() must not run while prompt.submit is in-flight")
 
-    user_id = 9001
-    handlers._inflight_prompt.add(user_id)
+    monkeypatch.setattr(pin_handlers, "interact", _must_not_run)
+    monkeypatch.setattr(pin_handlers, "_last_interact_ts", {})
+
+    pin_handlers._inflight_prompt.add(1001)
     try:
-        # Bypass throttles — we are testing the cross-gate, not the LLM cost.
-        monkeypatch.setattr(handlers, "_user_throttled", lambda *a, **kw: False)
-        monkeypatch.setattr(handlers, "_last_interact_ts", {})
-        monkeypatch.setattr(handlers, "_last_llm_respond_ts", {})
-
-        # Stub the actual LLM call so it never runs.
-        async def _no_llm(*a, **kw):
-            raise AssertionError(
-                "interact() must not run while prompt.submit is in-flight"
-            )
-
-        monkeypatch.setattr(handlers, "interact", _no_llm)
-
-        captured: dict = {}
-
-        class _DummyDispatcher:
-            def __init__(self):
-                self.captured = {}
-
-            def push_event(self, *_a, **_kw):
-                return None
-
-        # We invoke the unbound ``companion_interact`` from the source by
-        # importing the module and locating the closure. Easier: re-derive
-        # the same gate logic and assert the source declares it.
-        import inspect
-
-        src = inspect.getsource(handlers)
-        assert "_inflight_prompt" in src
-        assert 'reason": "user_busy"' in src
-        captured["ok"] = True
+        result = await dispatcher._handlers["companion.interact"]({"kind": "poke"})
     finally:
-        handlers._inflight_prompt.discard(user_id)
-    assert captured["ok"] is True
+        pin_handlers._inflight_prompt.discard(1001)
+    assert result == {"text": None, "emotion": None, "reason": "user_busy"}
 
 
-def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monkeypatch):
+@pytest.mark.asyncio
+async def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monkeypatch):
     """prompt.submit must reject while companion.interact is in-flight, so
     the user message and the poke's status rows can't cross on the main
     conversation timeline."""
-    import inspect
+    from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
+    from services.gateway.runtime import RuntimeSession
 
-    from services.gateway import handlers
+    from components import JSONRPC_INVALID_PARAMS
 
-    src = inspect.getsource(handlers)
-    # The gate appears in prompt_submit (the path that adds user_id to
-    # _inflight_prompt before invoking run_chat_turn, AND consults
-    # _inflight_interact before queueing).
-    assert "_inflight_prompt.add(user_id)" in src
-    assert "companion reaction in-flight" in src
+    dispatcher = JsonRpcDispatcher(lambda msg: None)
+    runtime_sessions = {"123": RuntimeSession(conversation_id=123)}
+    pin_handlers._register_session_handlers(dispatcher, runtime_sessions, {}, user_id=1001)
+
+    pin_handlers._inflight_interact.add((1001, "poke"))
+    try:
+        with pytest.raises(JsonRpcError) as exc_info:
+            await dispatcher._handlers["prompt.submit"](
+                {"session_id": "123", "text": "hi"}
+            )
+    finally:
+        pin_handlers._inflight_interact.discard((1001, "poke"))
+    assert exc_info.value.code == JSONRPC_INVALID_PARAMS
+    assert "companion reaction in-flight" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -235,13 +197,10 @@ async def test_websocket_boot_failure_cleans_up(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_companion_interact_rejects_drag(pin_handlers):
+async def test_companion_interact_rejects_drag(dispatcher):
     """companion.interact must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
     from components import JSONRPC_INVALID_PARAMS
-    from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
-
-    dispatcher = JsonRpcDispatcher(lambda msg: None)
-    pin_handlers._register_session_handlers(dispatcher, {}, {}, user_id=1001)
+    from services.gateway.jsonrpc import JsonRpcError
 
     interact_fn = dispatcher._handlers["companion.interact"]
     with pytest.raises(JsonRpcError) as exc_info:
@@ -250,13 +209,10 @@ async def test_companion_interact_rejects_drag(pin_handlers):
 
 
 @pytest.mark.asyncio
-async def test_companion_record_interaction_stats_rejects_drag(pin_handlers):
+async def test_companion_record_interaction_stats_rejects_drag(dispatcher):
     """companion.record_interaction_stats must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
     from components import JSONRPC_INVALID_PARAMS
-    from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
-
-    dispatcher = JsonRpcDispatcher(lambda msg: None)
-    pin_handlers._register_session_handlers(dispatcher, {}, {}, user_id=1001)
+    from services.gateway.jsonrpc import JsonRpcError
 
     stats_fn = dispatcher._handlers["companion.record_interaction_stats"]
     with pytest.raises(JsonRpcError) as exc_info:

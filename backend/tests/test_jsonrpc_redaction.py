@@ -13,11 +13,11 @@ def testredact_message_strips_paths_and_credentials():
         'failed for user "postgres" /home/agent/SpiritAgent/backend/services/chat/x.py:42'
     )
     redacted = redact_message(leak)
-    assert "OperationalError" not in redacted or "[redacted]" in redacted
+    assert "OperationalError" not in redacted
     assert "/home/agent/" not in redacted
     assert "10.0.0.5" not in redacted
     assert "postgres" not in redacted
-    assert "psycopg2" not in redacted or "[redacted]" in redacted
+    assert "psycopg2" not in redacted
 
 
 def testredact_message_strips_traceback():
@@ -43,7 +43,7 @@ def testredact_message_strips_dsn():
     msg = "OperationalError: postgresql://app:s3cret@db.internal:5432/prod"
     redacted = redact_message(msg)
     assert "s3cret" not in redacted
-    assert "db.internal" not in redacted or "[redacted]" in redacted
+    assert "db.internal" not in redacted
 
 
 def testredact_message_caps_length():

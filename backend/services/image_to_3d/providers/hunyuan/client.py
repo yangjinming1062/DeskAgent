@@ -1,6 +1,3 @@
-import asyncio
-import time
-from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -24,10 +21,6 @@ _MAX_FACE_COUNT: int = 1_500_000
 
 class HunyuanApiError(RuntimeError):
     """API error returned by Hunyuan 3D service."""
-
-
-class HunyuanTaskFailed(RuntimeError):
-    """Polled task reached a terminal non-success status."""
 
 
 def _base_url() -> str:
@@ -143,26 +136,6 @@ async def create_multiview_to_model(
     return job_id
 
 
-async def create_text_to_model(
-    prompt: str, *, model: str = MODEL_VERSION_DEFAULT, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None
-) -> str:
-    """Submit a text-to-3D generation job."""
-    if not prompt:
-        raise ValueError("text-to-model requires a prompt")
-    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
-
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
-    if resp.status_code != 200:
-        raise HunyuanApiError(f"hunyuan text-to-3d submit HTTP {resp.status_code}: {resp.text[:300]}")
-    body = resp.json()
-    job_id = str(body.get("id") or "")
-    if not job_id:
-        raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
-    return job_id
-
-
 async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[str, Any]:
     """Single POST /v1/api/3d/query to check task status."""
     timeout = httpx.Timeout(60.0, connect=10.0)
@@ -171,25 +144,6 @@ async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[s
     if resp.status_code != 200:
         raise HunyuanApiError(f"hunyuan query HTTP {resp.status_code}: {resp.text[:300]}")
     return resp.json()
-
-
-async def poll_task(
-    job_id: str, *, model: str = MODEL_VERSION_DEFAULT, interval: float = 5.0, timeout: float = 1800.0, on_progress: Callable[[dict[str, Any]], None] | None = None
-) -> dict[str, Any]:
-    """Poll task until terminal status."""
-    deadline = time.monotonic() + timeout
-    while True:
-        data = await get_task(job_id, model=model)
-        status = str(data.get("status", "")).lower()
-        if on_progress is not None:
-            on_progress(data)
-        if status in ("completed", "succeeded"):
-            return data
-        if status == "failed":
-            raise HunyuanTaskFailed(f"task {job_id} failed: {data.get('error') or data.get('message') or data}")
-        if time.monotonic() > deadline:
-            raise HunyuanTaskFailed(f"task {job_id} did not finish within {timeout}s")
-        await asyncio.sleep(interval)
 
 
 async def download_model(model_url: str) -> bytes:

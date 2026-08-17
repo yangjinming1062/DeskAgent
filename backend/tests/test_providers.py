@@ -791,7 +791,7 @@ class TestMiniMaxImageGen:
 
     @pytest.mark.asyncio
     async def test_base_resp_content_filter(self):
-        from services.llm import FailoverReason, classify_api_error
+        from services.llm import FailoverReason, ProviderError, classify_api_error
 
         handler = _async_handler(
             [
@@ -804,7 +804,7 @@ class TestMiniMaxImageGen:
             ]
         )
         provider = self._make_provider(handler)
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(ProviderError) as exc_info:
             await provider.generate(ImageGenRequest(prompt="x"))
         classified = classify_api_error(
             exc_info.value, provider="minimax", model="image-01"

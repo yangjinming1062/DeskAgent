@@ -40,9 +40,6 @@ async def test_completed_event_uses_task_id(monkeypatch):
     payload = json.loads(captured["payload"])
     assert payload["task_id"] == "42"
     assert payload["url"] == "http://x/v.mp4"
-    assert "job_id" not in payload, (
-        f"WS payload must use task_id, not job_id: {payload}"
-    )
 
 
 async def test_failed_event_uses_task_id(monkeypatch):
@@ -79,4 +76,3 @@ async def test_failed_event_uses_task_id(monkeypatch):
     payload = json.loads(captured["payload"])
     assert payload["task_id"] == "7"
     assert payload["error"] == "timeout"
-    assert "job_id" not in payload

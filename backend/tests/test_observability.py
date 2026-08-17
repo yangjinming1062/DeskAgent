@@ -15,6 +15,10 @@ from main import app
 
 def test_metrics_endpoint_public_by_default(monkeypatch):
     """When metrics_auth_token is empty, /metrics should be accessible without credentials."""
+    # A labeled counter only renders once a child series exists, so touch
+    # one to guarantee the project's own metric appears in the exposition.
+    RPC_REQUESTS_TOTAL.labels(method="metrics_probe", status="ok").inc()
+
     monkeypatch.setattr(SETTINGS, "metrics_enabled", True)
     monkeypatch.setattr(SETTINGS, "metrics_auth_token", "")
 
@@ -22,7 +26,7 @@ def test_metrics_endpoint_public_by_default(monkeypatch):
     response = client.get("/metrics")
     assert response.status_code == 200
     assert "text/plain" in response.headers.get("content-type", "")
-    assert "spiritagent_rpc_requests_total" in response.text or "python_info" in response.text or "process_cpu_seconds_total" in response.text
+    assert "spiritagent_rpc_requests_total" in response.text
 
 
 def test_metrics_endpoint_token_authentication(monkeypatch):
@@ -84,14 +88,14 @@ async def test_rpc_metrics_increment():
 
 
 def test_create_limiter_storage_backend(monkeypatch):
-    """create_limiter should honor default memory:// or configured rate_limit_storage_url."""
+    """create_limiter must honor default memory:// and configured rate_limit_storage_url."""
     from services.rate_limit import create_limiter
 
-    # Default
+    # Limiter validates storage prerequisites eagerly, so uri variants stay
+    # within memory:// (no redis client needed to run this test).
     monkeypatch.setattr(SETTINGS, "rate_limit_storage_url", "")
-    lim1 = create_limiter()
-    assert lim1.enabled == SETTINGS.rate_limit_enabled
+    assert create_limiter()._storage_uri == "memory://"
 
-    # Custom storage uri
-    lim2 = create_limiter(storage_uri="memory://")
-    assert lim2.enabled == SETTINGS.rate_limit_enabled
+    monkeypatch.setattr(SETTINGS, "rate_limit_storage_url", "memory://from-settings")
+    assert create_limiter()._storage_uri == "memory://from-settings"
+    assert create_limiter(storage_uri="memory://explicit")._storage_uri == "memory://explicit"

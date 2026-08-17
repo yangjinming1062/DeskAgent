@@ -34,16 +34,18 @@ _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Generic filesystem paths (any /var/lib / /tmp / /etc) — the
     # `.py` patterns above don't catch directories or non-Python files.
     re.compile(r"/(?:var|tmp|etc|home|root|opt|srv|mnt)/[A-Za-z0-9_./-]+"),
-    # postgresql / psycopg asyncpg DSN with embedded user:pass.
-    re.compile(r"postgresql(?:ql)?(?:\+[A-Za-z0-9_]+)?://[^@\s/]+:[^@\s/]+@"),
+    # postgresql / psycopg asyncpg DSN with embedded user:pass. The match
+    # extends past ``@`` to the next whitespace so the internal hostname
+    # after the credentials doesn't survive either.
+    re.compile(r"postgresql(?:ql)?(?:\+[A-Za-z0-9_]+)?://[^@\s/]+:[^@\s/]+@\S+"),
     # Non-postgres DSNs the prior regex missed: redis / mongodb / amqp / kafka.
-    re.compile(r"(?:redis|mongodb|amqp|kafka)(?:\+[A-Za-z]+)?://[^@\s/]+:[^@\s/]+@"),
+    re.compile(r"(?:redis|mongodb|amqp|kafka)(?:\+[A-Za-z]+)?://[^@\s/]+:[^@\s/]+@\S+"),
     # Bearer / API-key header value (Authorization / X-API-Key / openai-style)
     re.compile(r"(?:Bearer\s+|(?:X-)?Api-Key:\s*|(?:sk|xai|gAAAA|hsk)-)[A-Za-z0-9._\-]{12,}"),
     # OpenAI-style / GitHub / Slack tokens + a few of the more common
     # new prefixes that ship with provider SDKs.
     re.compile(r"(sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[abp]-|xapp-[A-Za-z0-9-]{20,})[A-Za-z0-9_-]+"),
-    re.compile(r"\b(?:OperationalError|IntegrityError|FileNotFoundError|ConnectionError|TimeoutError|sqlalchemy\.exc\.[A-Za-z]+)\b"),
+    re.compile(r"\b(?:[A-Za-z0-9_]+\.)*(?:OperationalError|IntegrityError|FileNotFoundError|ConnectionError|TimeoutError)\b|\bsqlalchemy\.exc\.[A-Za-z]+\b"),
     # IPv4 (incl. RFC1918 / loopback) — caught here because the OperationalError
     # scrub above doesn't reach a bare host:port fragment like "10.0.0.5:5432".
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b"),

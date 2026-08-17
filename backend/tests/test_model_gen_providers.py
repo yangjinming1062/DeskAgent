@@ -1,8 +1,12 @@
+import asyncio
 import base64
 import io
+import json
+import time
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from unittest.mock import AsyncMock
+from typing import Any
 
 import httpx
 import pytest
@@ -36,26 +40,43 @@ def _pin_model(monkeypatch):
     monkeypatch.setattr(SETTINGS, "hunyuan_base_url", "https://tokenhub.test")
 
 
+class _MockTransport(httpx.AsyncBaseTransport):
+    def __init__(self) -> None:
+        self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: (
+            httpx.Response(200, json={})
+        )
+        # (method, absolute url, headers, json body) — headers stay an
+        # httpx.Headers so case-insensitive lookups keep working.
+        self.calls: list[tuple[str, str, httpx.Headers, dict[str, Any] | None]] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        body: dict[str, Any] | None = None
+        if request.content:
+            try:
+                body = json.loads(request.content)
+            except (TypeError, ValueError):
+                body = None
+        self.calls.append((request.method, str(request.url), request.headers, body))
+        return self.responder(request)
+
+
+@pytest.fixture
+def mock_http(monkeypatch):
+    transport = _MockTransport()
+    original = httpx.AsyncClient
+
+    def _factory(*_a, **_kw):
+        return original(transport=transport)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _factory)
+    return transport
+
+
 class TestSubmit:
     @pytest.mark.asyncio
-    async def test_submit_posts_base64_image(self, png_seed, monkeypatch):
-        captured: dict = {}
-
-        def _mock_post(url, headers, json=None, **kwargs):
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["body"] = json
-
-            class MockResponse:
-                status_code = 200
-
-                def json(self):
-                    return {"id": "job_1", "status": "queued"}
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
+    async def test_submit_posts_base64_image(self, png_seed, mock_http):
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"id": "job_1", "status": "queued"}
         )
 
         provider = HunyuanImageTo3DProvider(
@@ -63,9 +84,11 @@ class TestSubmit:
         )
         job = await provider.submit_image_to_model(png_seed)
         assert job.job_id == "job_1"
-        assert captured["url"] == "https://tokenhub.test/v1/api/3d/submit"
-        assert captured["headers"]["Authorization"] == "Bearer hk_test"
-        body = captured["body"]
+
+        method, url, headers, body = mock_http.calls[0]
+        assert method == "POST"
+        assert url == "https://tokenhub.test/v1/api/3d/submit"
+        assert headers["Authorization"] == "Bearer hk_test"
         assert body["model"] == "hy-3d-3.1"
         assert body["image_base64"] == base64.b64encode(png_seed.read_bytes()).decode(
             "ascii"
@@ -77,30 +100,14 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_multiview_posts_multi_view_images(
-        self, png_seed, tmp_path, monkeypatch
+        self, png_seed, tmp_path, mock_http
     ):
-        captured: dict = {}
-
         right_seed = tmp_path / "right.png"
         right_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x11" * 16)
         back_seed = tmp_path / "back.png"
         back_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x22" * 16)
-
-        def _mock_post(url, headers, json=None, **kwargs):
-            captured["url"] = str(url)
-            captured["headers"] = headers
-            captured["body"] = json
-
-            class MockResponse:
-                status_code = 200
-
-                def json(self):
-                    return {"id": "job_mv", "status": "queued"}
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"id": "job_mv", "status": "queued"}
         )
 
         provider = HunyuanImageTo3DProvider(
@@ -111,7 +118,7 @@ class TestSubmit:
             multiview_paths={"right": right_seed, "back": back_seed},
         )
         assert job.job_id == "job_mv"
-        body = captured["body"]
+        body = mock_http.calls[0][3]
         assert body["model"] == "hy-3d-3.1"
         assert body["result_format"] == "GLB"
         assert len(body["multi_view_images"]) == 2
@@ -119,27 +126,14 @@ class TestSubmit:
         assert view_names == {"right", "back"}
 
     @pytest.mark.asyncio
-    async def test_submit_with_custom_settings(self, png_seed, monkeypatch):
-        captured: dict = {}
+    async def test_submit_with_custom_settings(self, png_seed, mock_http, monkeypatch):
         monkeypatch.setattr(SETTINGS, "hunyuan_model_version", "hy-3d-3.0")
         monkeypatch.setattr(SETTINGS, "hunyuan_generate_type", "LowPoly")
         monkeypatch.setattr(SETTINGS, "hunyuan_face_count", 25000)
         monkeypatch.setattr(SETTINGS, "hunyuan_enable_pbr", False)
         monkeypatch.setattr(SETTINGS, "hunyuan_result_format", "obj")
-
-        def _mock_post(url, headers, json=None, **kwargs):
-            captured["body"] = json
-
-            class MockResponse:
-                status_code = 200
-
-                def json(self):
-                    return {"id": "job_custom", "status": "queued"}
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"id": "job_custom", "status": "queued"}
         )
 
         provider = HunyuanImageTo3DProvider(
@@ -147,7 +141,7 @@ class TestSubmit:
         )
         job = await provider.submit_image_to_model(png_seed)
         assert job.job_id == "job_custom"
-        body = captured["body"]
+        body = mock_http.calls[0][3]
         assert body["model"] == "hy-3d-3.0"
         assert body["generate_type"] == "LowPoly"
         assert body["face_count"] == 25000
@@ -175,19 +169,8 @@ class TestSubmit:
             await provider.submit_image_to_model(seed)
 
     @pytest.mark.asyncio
-    async def test_submit_without_id_raises(self, png_seed, monkeypatch):
-        def _mock_post(url, headers, json=None, **kwargs):
-            class MockResponse:
-                status_code = 200
-
-                def json(self):
-                    return {"status": "queued"}
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
-        )
+    async def test_submit_without_id_raises(self, png_seed, mock_http):
+        mock_http.responder = lambda _r: httpx.Response(200, json={"status": "queued"})
 
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
@@ -196,20 +179,8 @@ class TestSubmit:
             await provider.submit_image_to_model(png_seed)
 
     @pytest.mark.asyncio
-    async def test_http_error_raises_provider_error(self, png_seed, monkeypatch):
-        def _mock_post(url, headers, json=None, **kwargs):
-            class MockResponse:
-                status_code = 401
-                text = "unauthorized"
-
-                def json(self):
-                    return {"error": "unauthorized"}
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
-        )
+    async def test_http_error_raises_provider_error(self, png_seed, mock_http):
+        mock_http.responder = lambda _r: httpx.Response(401, text="unauthorized")
 
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
@@ -220,42 +191,36 @@ class TestSubmit:
 
 
 class TestPoll:
-    def _mock_query(self, monkeypatch, payload: dict):
-        def _mock_post(url, headers, json=None, **kwargs):
-            class MockResponse:
-                status_code = 200
-
-                def json(self):
-                    return payload
-
-            return MockResponse()
-
-        monkeypatch.setattr(
-            httpx.AsyncClient, "post", AsyncMock(side_effect=_mock_post)
-        )
-
     @pytest.mark.asyncio
-    async def test_queued_and_in_progress(self, monkeypatch):
+    async def test_queued_and_in_progress_queries_task(self, mock_http):
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        self._mock_query(monkeypatch, {"status": "queued"})
+
+        mock_http.responder = lambda _r: httpx.Response(200, json={"status": "queued"})
         result = await provider.poll(Model3DJob(job_id="j"))
         assert result.status == "queued"
         assert result.progress == 0
 
-        self._mock_query(monkeypatch, {"status": "in_progress"})
+        method, url, _headers, body = mock_http.calls[0]
+        assert method == "POST"
+        assert url == "https://tokenhub.test/v1/api/3d/query"
+        assert body == {"id": "j", "model": "hy-3d-3.1"}
+
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"status": "in_progress"}
+        )
         result = await provider.poll(Model3DJob(job_id="j"))
         assert result.status == "in_progress"
 
     @pytest.mark.asyncio
-    async def test_completed_maps_assets(self, monkeypatch):
+    async def test_completed_maps_assets(self, mock_http):
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        self._mock_query(
-            monkeypatch,
-            {
+        mock_http.responder = lambda _r: httpx.Response(
+            200,
+            json={
                 "status": "completed",
                 "data": [
                     {"type": "obj", "url": "https://x/m.obj"},
@@ -278,21 +243,25 @@ class TestPoll:
         )
 
     @pytest.mark.asyncio
-    async def test_failed_passes_error_through(self, monkeypatch):
+    async def test_failed_passes_error_through(self, mock_http):
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        self._mock_query(monkeypatch, {"status": "failed", "error": "content rejected"})
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"status": "failed", "error": "content rejected"}
+        )
         result = await provider.poll(Model3DJob(job_id="j"))
         assert result.status == "failed"
         assert "content rejected" in (result.error or "")
 
     @pytest.mark.asyncio
-    async def test_unknown_status_keeps_polling(self, monkeypatch):
+    async def test_unknown_status_keeps_polling(self, mock_http):
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        self._mock_query(monkeypatch, {"status": "weird_new_status"})
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"status": "weird_new_status"}
+        )
         assert (await provider.poll(Model3DJob(job_id="j"))).status == "in_progress"
 
 
@@ -426,3 +395,38 @@ class TestRegistryAndFallback:
 
         # Unknown provider safely falls back to single
         assert get_effective_fullbody_mode("unknown_provider") == "single"
+
+
+@pytest.mark.e2e("HUNYUAN_API_KEY")
+class TestHunyuanLiveE2E:
+    # Real TokenHub round-trip: submit → poll → download. Auto-skipped by
+    # conftest unless HUNYUAN_API_KEY is explicitly exported, so the default
+    # suite never pays generation cost.
+    @pytest.mark.asyncio
+    async def test_full_pipeline(self, tmp_path):
+        import os
+
+        from PIL import Image
+
+        seed = tmp_path / "seed.png"
+        Image.new("RGB", (64, 64), (200, 160, 120)).save(seed)
+        provider = HunyuanImageTo3DProvider(
+            api_key=os.environ["HUNYUAN_API_KEY"],
+            base_url=os.getenv("HUNYUAN_BASE_URL", ""),
+        )
+
+        job = await provider.submit_image_to_model(seed)
+        assert job.job_id
+
+        deadline = time.monotonic() + 900
+        while (result := await provider.poll(job)).status not in (
+            "completed",
+            "failed",
+        ):
+            assert time.monotonic() < deadline, "hunyuan job did not finish within 900s"
+            await asyncio.sleep(10)
+        assert result.status == "completed", result.error
+        assert result.assets and result.assets[0].url
+
+        model_path = await provider.download(result, tmp_path)
+        assert model_path.stat().st_size > 0

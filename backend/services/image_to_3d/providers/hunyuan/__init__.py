@@ -9,7 +9,7 @@ from components import SETTINGS, get_logger
 from ...base import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult
 from ...registry import register
 from . import client
-from .client import HunyuanApiError, HunyuanTaskFailed
+from .client import HunyuanApiError
 
 logger = get_logger(__name__)
 
@@ -117,4 +117,4 @@ def _extract_glb_from_zip(raw: bytes, dest_dir: Path) -> Path | None:
 
 register("hunyuan", HunyuanImageTo3DProvider)
 
-__all__ = ["HunyuanApiError", "HunyuanImageTo3DProvider", "HunyuanTaskFailed"]
+__all__ = ["HunyuanApiError", "HunyuanImageTo3DProvider"]

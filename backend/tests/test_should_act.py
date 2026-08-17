@@ -1,13 +1,6 @@
 import pytest
 
-from services.companion.should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
-
-
-def test_should_act_result_model():
-    res = ShouldActResult(should_act=True, action="roam", reason="test")
-    assert res.should_act is True
-    assert res.action == "roam"
-    assert res.reason == "test"
+from services.companion.should_act import ALLOWED_ACTIONS, should_act
 
 
 def test_allowed_actions_set():

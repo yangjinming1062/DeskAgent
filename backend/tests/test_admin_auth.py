@@ -25,8 +25,11 @@ async def test_admin_login_awaits_token_creation(monkeypatch):
 
     assert resp.access_token == "tok"
     assert resp.expires_in == 3600
-    with pytest.raises(Exception):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as exc_info:
         await page.admin_login(AdminLoginRequest(username="admin", password="wrong"))
+    assert exc_info.value.status_code == 401
 
 
 async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypatch):

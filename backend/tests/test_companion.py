@@ -1480,26 +1480,6 @@ async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
         assert "user_profile:timezone" in contexts
 
 
-def test_session_runtime_info_pydantic_model():
-    """P0-12 follow-up: SessionRuntimeInfo replaces the legacy ``dict``
-    return type. The model must round-trip ``model_dump()`` so the
-    renderer's JSON parser keeps working."""
-    from services.gateway import SessionRuntimeInfo
-
-    info = SessionRuntimeInfo(
-        cwd="/tmp",
-        branch=None,
-        model="mimo-v2.5",
-        provider="openai",
-        running=True,
-        settings={"fast": False},
-    )
-    dumped = info.model_dump()
-    assert dumped["cwd"] == "/tmp"
-    assert dumped["running"] is True
-    assert dumped["settings"] == {"fast": False}
-
-
 def test_voice_catalog_score_cjk_substring():
     """P1-13: CJK preference matching works via substring in both
     directions. ``"温柔少女音"`` previously matched nothing because
@@ -1686,19 +1666,6 @@ def test_voice_catalog_tag_scoring_picks_matching_voice():
         description="",
     )
     assert _score("明亮", bright) > _score("明亮", warm)
-
-
-def test_pydantic_session_runtime_info_optional_cwd():
-    """P2-11: SessionRuntimeInfo accepts a None cwd (the very first
-    turn before the user has set one)."""
-    from services.gateway import SessionRuntimeInfo
-
-    info = SessionRuntimeInfo(
-        cwd=None, branch=None, model=None, provider="openai", running=False, settings={}
-    )
-    assert info.cwd is None
-    assert info.running is False
-    assert info.model is None
 
 
 # ── Avatar generation from a user-uploaded base image ────────────────────────
@@ -2084,7 +2051,9 @@ def test_fullbody_generate_request_accepts_feedback():
     empty = FullbodyGenerateRequest.model_validate({"view": "front"})
     assert empty.feedback is None
 
-    with pytest.raises(Exception):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
         FullbodyGenerateRequest.model_validate({"view": "front", "unknown_field": "x"})
 
 

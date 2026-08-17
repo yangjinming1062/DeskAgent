@@ -380,7 +380,7 @@ class TestChatE2E:
         from starlette.testclient import WebSocketDisconnect
 
         test_client = TestClient(test_app)
-        with pytest.raises((WebSocketDisconnect, Exception)):
+        with pytest.raises(WebSocketDisconnect):
             with test_client.websocket_connect(
                 "/api/chat/ws?ticket=invalid-ticket-abc"
             ):
