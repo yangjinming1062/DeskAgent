@@ -3,6 +3,7 @@ import { atom, computed } from 'nanostores'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 import { safeJsonParse } from '@/shared/lib/safe-json'
+import { $gateway } from '@/shared/store/gateway'
 
 import type { ClipDef } from './clips-biped'
 import type { RenderStyle } from './style/types'
@@ -209,10 +210,51 @@ export function clearWardrobeCandidates(): void {
 // model.gen.progress → $modelGenState='generating' + $modelGenProgress
 // model.ready        → $modelGenState='succeeded'
 // model.failed       → $modelGenState='failed' + $modelGenError
+// model.failed with retry_download → the paid result survived on the backend
+// and only the download failed; $modelRetryable gates the "重试下载" action
+// (companion.model.retryDownload — never re-bills generation).
 export type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
 export const $modelGenState = atom<ModelGenState>('idle')
 export const $modelGenProgress = atom<{ stage: string; progress: number } | null>(null)
 export const $modelGenError = atom<string | null>(null)
+export const $modelRetryable = atom<boolean>(false)
+export const $modelRetryModelId = atom<number | null>(null)
+
+export function setModelFailed(reason: string, opts: { retryDownload?: boolean; modelId?: number | null } = {}): void {
+  $modelGenState.set('failed')
+  $modelGenError.set(reason)
+  $modelGenProgress.set(null)
+  $modelRetryable.set(opts.retryDownload === true)
+  $modelRetryModelId.set(opts.modelId ?? null)
+}
+
+export function clearModelRetry(): void {
+  $modelRetryable.set(false)
+  $modelRetryModelId.set(null)
+}
+
+/** companion.model.retryDownload — replay the download of an already-paid
+ * generation result (backend refreshes expired URLs via query only; never
+ * re-submits). Progress flows back over the same model.* events. */
+export async function retryModelDownload(modelId: number): Promise<void> {
+  const gateway = $gateway.get()
+
+  if (!gateway) {
+    log.warn('model-store', 'retryModelDownload: gateway not ready')
+
+    return
+  }
+
+  try {
+    await gateway.request('companion.model.retryDownload', { model_id: modelId })
+    $modelGenState.set('generating')
+    $modelGenProgress.set({ stage: 'downloading', progress: 88 })
+    $modelGenError.set(null)
+    clearModelRetry()
+  } catch (err) {
+    log.warn('model-store', 'retryModelDownload failed', err)
+  }
+}
 
 export function setModelInfo(next: Partial<ModelInfo>): void {
   $modelInfo.set({ ...$modelInfo.get(), ...next })
@@ -242,11 +284,18 @@ export function refreshEquippedAndApply(): WardrobeItem[] {
 // doesn't go unnoticed in production.
 export async function ensureModelGeneration(): Promise<void> {
   try {
-    await window.spiritagent.api<{ id?: number; status?: string }>({
+    const res = await window.spiritagent.api<{ id?: number; status?: string }>({
       path: '/api/companion/model',
       method: 'POST',
       body: {}
     })
+
+    // The backend returns (not regenerates) a download-failed row — the paid
+    // result is still recoverable, so surface the retry action instead of
+    // letting the failed state imply "must regenerate".
+    if (res?.status === 'download_failed' || res?.status === 'pending_download') {
+      setModelFailed('3D 模型下载失败，可重试下载', { retryDownload: true, modelId: res.id ?? null })
+    }
   } catch (err) {
     log.info('model-store', 'ensureModelGeneration requested:', err)
   }

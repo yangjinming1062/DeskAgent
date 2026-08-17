@@ -55,6 +55,7 @@ from .model_service import (
     get_active_model,
     parse_glb_json,
     recover_stuck_model_generations,
+    request_model_download_retry,
     run_model_gen_pipeline,
     signed_model_url,
 )
@@ -199,6 +200,7 @@ __all__ = [
     "record_interaction",
     "record_user_profile",
     "recover_stuck_model_generations",
+    "request_model_download_retry",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "resolve_companion_asset_path",

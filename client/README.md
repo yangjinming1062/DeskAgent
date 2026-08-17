@@ -87,6 +87,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **3D 材质安全回退与拖拽动力学**：`CharacterController` 加载 GLB 时记录模型内嵌原生基础贴图（`baseMap` / `baseNormalMap` 等）；在自定义 PBR 贴图发生 404 或网络故障时自动回退到原生材质，杜绝模型白板。拖拽时通过 `sprite-stage` 捕获即时速度向量，向 3D 模型注入物理惯性倾角（Roll/Pitch），结合 `drag`（悬空摆动）与 `drag_end`（落地缓冲）专属 Clip 呈现被“拎起”的真实交互质感；默认精灵基准尺寸采用动态 `window.innerHeight * 0.25`，自适应高分辨率屏幕。
 - **渲染循环自研调度与能耗档位控制**：`Engine.ts` 内部通过 `scheduleNext()` 自主调度动画循环，支持 `setPowerProfile`（`active` 60fps / `idle` 30fps / `dormant` 0.5fps 低频 Timer 轮询）以及 `stop()` 彻底终止循环；不依赖 Three.js 内部循环，解决休眠档位能耗控制。
 - **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$SPIRITAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
+- **模型下载失败与生成失败分流（`$modelRetryable`）**：`model.failed` 载荷带 `retry_download: true` 时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（`companion.model.retryDownload`，绝不重新计费），不给"重新生成"入口；启动 hydrate 收到 `download_failed` 行同样进该态，避免每次启动静默重刷一次计费生成。
 - **主进程 TypeScript 构建**：主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验。
 - **Windows 单实例锁 dev opt-out**：`SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 

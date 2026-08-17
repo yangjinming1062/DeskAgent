@@ -31,15 +31,17 @@ async def _model_generate(job: RenderJob, io_dir: Path) -> None:
             raise ValueError("model_generate payload missing provider")
         provider = "tripo"
     await model_service.run_model_gen_pipeline(
-        provider,
-        job.user_id,
-        payload["view_filenames"],
-        payload["species"],
-        payload["model_id"],
-        payload.get("fullbody_mode", "multi"),
-        payload.get("style", "realistic"),
-        io_dir=io_dir,
+        provider, job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], payload.get("fullbody_mode", "multi"), io_dir=io_dir
     )
+
+
+async def _model_retry_download(job: RenderJob, io_dir: Path) -> None:
+    # Download-only recovery of an already-paid generation result — the model
+    # row is the source of truth (task id + URLs); the pipeline never
+    # re-submits here.
+    from services.companion import model_service
+
+    await model_service.run_model_download_retry(job.user_id, job.payload["model_id"], io_dir=io_dir)
 
 
 async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
@@ -72,4 +74,5 @@ async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
 def register() -> None:
     HANDLERS["model_generate"] = _model_generate
     HANDLERS["tripo_generate"] = _model_generate
+    HANDLERS["model_retry_download"] = _model_retry_download
     HANDLERS["garment_preview"] = _garment_preview

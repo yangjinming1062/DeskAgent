@@ -2,9 +2,11 @@ import {
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
+  clearModelRetry,
   hydrateExpressions,
   hydrateGeneratedClips,
   hydrateWardrobe,
+  setModelFailed,
   setModelInfo
 } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
@@ -304,9 +306,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (p?.error) {
         log.warn('events', 'model.ready error:', p.error)
-        $modelGenState.set('failed')
-        $modelGenError.set(p.error)
-        $modelGenProgress.set(null)
+        setModelFailed(p.error)
 
         break
       }
@@ -314,6 +314,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       $modelGenState.set('succeeded')
       $modelGenProgress.set(null)
       $modelGenError.set(null)
+      clearModelRetry()
       setModelInfo({
         id: p?.model_id ?? null,
         asset_url: p?.asset_url ?? null,
@@ -334,10 +335,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'model.failed': {
-      const p = event.payload as { reason?: string } | undefined
-      $modelGenState.set('failed')
-      $modelGenError.set(p?.reason ?? '3D 模型生成失败')
-      $modelGenProgress.set(null)
+      const p = event.payload as { reason?: string; retry_download?: boolean; model_id?: number } | undefined
+      setModelFailed(p?.reason ?? '3D 模型生成失败', {
+        retryDownload: p?.retry_download === true,
+        modelId: p?.model_id ?? null
+      })
 
       break
     }

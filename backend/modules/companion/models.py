@@ -22,7 +22,11 @@ class CompanionPreference(ModelBase, TimestampMixin):
 
 
 class CompanionModel(ModelBase, TimestampMixin):
-    """Tripo3D-generated 3D model. status transitions: pending → generating → succeeded | failed."""
+    """Provider-generated 3D model. status transitions:
+    generating → pending_download → downloading → succeeded | failed;
+    any download-stage failure → download_failed (retryable via
+    ``companion.model.retryDownload`` — the paid result survives in
+    provider_task_id + download_urls_json)."""
 
     __tablename__ = "companion_models"
 
@@ -46,6 +50,12 @@ class CompanionModel(ModelBase, TimestampMixin):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    # Paid-result recovery handle: written the moment generation completes,
+    # before the download starts, so a download failure never loses the
+    # billed asset. provider_task_id is the id whose query re-yields the URLs
+    # (the rig task for cloud-rigged providers, the submit id otherwise).
+    provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
+    download_urls_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
 
 class CompanionExpression(ModelBase, TimestampMixin):

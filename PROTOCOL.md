@@ -53,6 +53,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认形象（幂等），解开音色/用户子阶段 | Backend 状态 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成 | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
+| companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（provider query 刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/fullbody、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成 / 链式全身种子图生成 / 历史形象切换激活 / 历史查询 | Backend 生成 + Client 两步流程与历史画廊 + DESIGN §5.4 |
 | POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
@@ -62,6 +63,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 - **形象锁定**：全身图确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像/全身图重新生成路径关闭；换装与动画生成不受影响。
 - **单/多视图模式**：单视图（默认）仅正面全身图，拒绝侧面/背面生成；多视图逐视角生成、重绘正面会失效侧面/背面。
 - **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
+- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，provider task id 与下载 URL 已持久化；下载失败只置 `download_failed` 并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调 provider 查询与下载接口，服务重启中断的下载同样进入该可恢复态。
 
 ### 1.3 事件类型
 

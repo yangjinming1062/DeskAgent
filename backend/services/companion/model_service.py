@@ -6,13 +6,14 @@ import time
 from contextlib import nullcontext
 from pathlib import Path
 
-from components import SESSION_LOCAL, SETTINGS, get_logger, safe_json_loads
+import httpx
+from components import SESSION_LOCAL, SETTINGS, get_logger, log_paid_call, safe_json_loads
 from modules.companion import AvatarAsset, CompanionModel
 from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DJob, Model3DPollResult, get_effective_fullbody_mode, resolve_provider
+from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult, get_effective_fullbody_mode, resolve_provider
 from services.llm import chat, is_preset_species, resolve_fullbody_style
 from services.worker import queue as render_queue
 from services.worker import run_blender
@@ -24,6 +25,17 @@ from .rig_layout import layout_skeleton
 from .rig_type_selector import classify_species, select_rig_type
 
 logger = get_logger(__name__)
+
+# Statuses that mean "a pipeline owns this row right now" — the durable
+# in-flight marker (see generate_companion_model / _finalize_generation).
+IN_FLIGHT_STATUSES: tuple[str, ...] = ("generating", "pending_download", "downloading")
+RETRYABLE_DOWNLOAD_STATUSES: tuple[str, ...] = ("pending_download", "download_failed")
+
+_DOWNLOAD_ATTEMPTS: int = 3
+_DOWNLOAD_RETRY_BASE_DELAY: float = 2.0
+# 403 on a COS signed URL means expired signature — refresh via a provider
+# query rather than counting against the network-retry budget.
+_DOWNLOAD_URL_REFRESH_LIMIT: int = 2
 
 
 class ModelGenerationError(RuntimeError):
@@ -58,25 +70,32 @@ def get_model_job_lock(user_id: int) -> asyncio.Lock:
 
 
 async def recover_stuck_model_generations() -> None:
-    """Mark every ``status="generating"`` row as failed on startup.
+    """Startup sweep for rows orphaned by a restart.
 
-    The image-to-3D pipeline runs as a fire-and-forget ``asyncio.Task``.
-    A process restart (deploy, OOM, crash) kills the task mid-flight, but the
-    DB row's ``status="generating"`` survives — it's the durable lock designed
-    to outlive the task. Without this sweep those orphaned rows permanently
-    block new generation attempts (``ModelGenerationInProgressError``).
+    ``generating`` rows lost their in-flight provider job (the pipeline runs
+    fire-and-forget; restart kills the task) and are the durable lock that
+    must not survive — fail them so new generation isn't blocked
+    (``ModelGenerationInProgressError``).
 
-    Mirrors ``resume_pending_video_jobs`` in the media service, except provider
-    job IDs are lost on restart so we can't resume — only fail and let the
-    user retry.
+    ``pending_download`` / ``downloading`` rows already hold the paid result
+    (provider_task_id + download_urls_json were persisted before the download
+    started) — flip to ``download_failed`` so the user recovers via
+    ``companion.model.retryDownload`` instead of paying for regeneration.
     """
     async with SESSION_LOCAL() as db:
-        result = await db.execute(
+        stuck = await db.execute(
             CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False)
         )
+        interrupted = await db.execute(
+            CompanionModel.__table__.update()
+            .where(CompanionModel.status.in_(("pending_download", "downloading")))
+            .values(status="download_failed", error="下载被服务重启中断，可重试下载")
+        )
         await db.commit()
-    if result.rowcount:
-        logger.warning("Recovered stuck model generations on startup", extra={"count": result.rowcount})
+    if stuck.rowcount:
+        logger.warning("Recovered stuck model generations on startup", extra={"count": stuck.rowcount})
+    if interrupted.rowcount:
+        logger.warning("Recovered interrupted model downloads on startup", extra={"count": interrupted.rowcount})
 
 
 async def get_active_model(db: AsyncSession, user_id: int) -> CompanionModel | None:
@@ -129,7 +148,7 @@ async def _finalize_generation(
         if model is None:
             raise ModelGenerationError("companion model row vanished mid-generation")
         superseded = (
-            await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status == "generating").limit(1))
+            await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status.in_(IN_FLIGHT_STATUSES)).limit(1))
         ).scalar_one_or_none() is not None
         model.asset_url = asset_url
         model.rig_original_url = rig_original_url
@@ -184,7 +203,7 @@ async def generate_companion_model(
     # per-user lock closes the check-then-create TOCTOU window; the row's
     # ``status="generating"`` is the durable in-flight marker.
     async with get_model_job_lock(user_id):
-        in_flight = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "generating").limit(1))).scalar_one_or_none()
+        in_flight = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status.in_(IN_FLIGHT_STATUSES)).limit(1))).scalar_one_or_none()
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
@@ -194,6 +213,17 @@ async def generate_companion_model(
             if existing is not None and existing.status == "succeeded" and existing.asset_url:
                 logger.info("Companion model already exists; skipping generation", extra={"user_id": user_id, "model_id": existing.id})
                 return existing
+            # A download-failed row still holds a paid generation result —
+            # return it instead of silently re-billing; the client surfaces
+            # the retryDownload action for it.
+            retryable = (
+                await db.execute(
+                    select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "download_failed").order_by(CompanionModel.id.desc()).limit(1)
+                )
+            ).scalar_one_or_none()
+            if retryable is not None:
+                logger.info("Companion model awaits download retry; skipping generation", extra={"user_id": user_id, "model_id": retryable.id})
+                return retryable
 
         # Fail fast on an unusable provider — before the row is created — so
         # a misconfigured deployment can't strand a "generating" row. Sits
@@ -246,22 +276,14 @@ async def generate_companion_model(
     await render_queue.enqueue(
         "model_generate",
         user_id,
-        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": effective_fullbody_mode, "style": style, "provider": provider.provider_name},
+        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": effective_fullbody_mode, "provider": provider.provider_name},
     )
     logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
 
 
 async def run_model_gen_pipeline(
-    provider_name: str | None,
-    user_id: int,
-    view_filenames: dict[str, str],
-    species: str,
-    model_id: int,
-    fullbody_mode: str,
-    style: str = "realistic",
-    *,
-    io_dir: Path | None = None,
+    provider_name: str | None, user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, *, io_dir: Path | None = None
 ) -> None:
     provider: ImageTo3DProvider | None = None
     task_id: str | None = None
@@ -292,61 +314,238 @@ async def run_model_gen_pipeline(
             if not await provider.rig_supported(job.job_id):
                 raise ModelGenerationError("模型不可绑骨，请尝试用更清晰的正面全身种子图重新生成")
 
-        rig_type = await select_rig_type(chat, species, user_id=user_id)  # style came in with the payload — only the rig half is classified here
+        rig_type = await select_rig_type(chat, species, user_id=user_id)  # style lives on the row — only the rig half is classified here
 
         if provider.SUPPORTS_RIGGING:
             await _emit_progress(user_id, "rigging", 60, provider=provider.provider_name)
-            gen_result = await _poll_with_progress(provider, await provider.start_rig(job.job_id, rig_type), user_id, "rigging", 60, 85)
+            rig_job = await provider.start_rig(job.job_id, rig_type)
+            gen_result = await _poll_with_progress(provider, rig_job, user_id, "rigging", 60, 85)
+            # The rig task's query re-yields the download URLs — it's the
+            # recovery handle once rigging is done.
+            task_id = rig_job.job_id
 
-        await _emit_progress(user_id, "downloading", 88, provider=provider.provider_name)
-        io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
-        with io_ctx as tmp:
-            rigged_glb = await provider.download(gen_result, Path(str(tmp)))
-            glb_bytes = await asyncio.to_thread(rigged_glb.read_bytes)
-
-        if not provider.SUPPORTS_RIGGING:
-            await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
-            glb_bytes = await _auto_rig_with_blender(glb_bytes, rig_type, io_dir=io_dir)
-
-        rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
-
-        await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
-        final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)
-
-        await _emit_progress(user_id, "finalizing", 95, provider=provider.provider_name)
-        asset_url = save_companion_model(final_glb, user_id=user_id)
-        morph_names = _extract_morph_names_from_glb(final_glb)
-
-        # provider_label was set in the submit branch above (single vs multiview).
-        activated = await _finalize_generation(
-            model_id,
-            user_id,
-            asset_url=asset_url,
-            rig_original_url=rig_original_url,
-            provider=provider_label,
-            species=species,
-            rig_type=rig_type,
-            morph_names=morph_names,
-            style=style,
-        )
-
-        if not activated:
-            logger.info("3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": model_id})
-            return
-
-        await _emit_model_ready(user_id, model_id, asset_url, species=species, rig_type=rig_type, style=style)
-        await _emit_progress(user_id, "done", 100, provider=provider.provider_name)
-        logger.info(
-            "3D model generation succeeded",
-            extra={"user_id": user_id, "provider": provider.provider_name, "species": species, "rig_type": rig_type, "morph_count": len(morph_names)},
-        )
-
+        # Persist BEFORE downloading: the generation is already billed. A
+        # download failure must never lose the result (task_id + URLs survive
+        # in both the row and the log line).
+        await _persist_download_source(model_id, user_id=user_id, task_id=task_id, assets=gen_result.assets, provider_label=provider_label, rig_type=rig_type)
     except Exception:
-        logger.warning("3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "task_id": task_id}, exc_info=True)
+        logger.warning(
+            "3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "task_id": task_id}, exc_info=True
+        )
         # model.failed reaches the client — fixed copy only, the raw provider
         # error lives in the log line above (PROTOCOL §1.2 / README §4).
         await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
+        return
+
+    await _run_download_phase(provider, model_id=model_id, user_id=user_id, task_id=task_id, assets=list(gen_result.assets), io_dir=io_dir)
+
+
+def _raw_provider_name(label: str) -> str:
+    """Registered provider names never contain '_' — the result-label prefix
+    (``hunyuan_multiview_to_3d`` → ``hunyuan``) is the registry key."""
+    return label.split("_", 1)[0]
+
+
+async def _persist_download_source(model_id: int, *, user_id: int, task_id: str, assets: tuple[Model3DAsset, ...], provider_label: str, rig_type: str) -> None:
+    """Durably record the paid result's recovery handle (provider task id +
+    download URLs + finalize inputs) before any download attempt. The INFO
+    line doubles as the ops breadcrumb for reconstructing a download by hand."""
+    urls = [{"kind": a.kind, "url": a.url} for a in assets]
+    async with SESSION_LOCAL() as db:
+        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        if model is None:
+            raise ModelGenerationError("companion model row vanished mid-generation")
+        model.provider_task_id = task_id
+        model.download_urls_json = json.dumps(urls, ensure_ascii=False)
+        model.provider = provider_label
+        model.rig_type = rig_type
+        model.status = "pending_download"
+        model.error = None
+        await db.commit()
+    log_paid_call(provider_label, "image_to_3d_result_persisted", task_id=task_id, user_id=user_id, model_id=model_id, urls=[u["url"] for u in urls])
+
+
+async def _cas_model_status(model_id: int, *, from_statuses: tuple[str, ...], to_status: str) -> bool:
+    """Conditional status transition — the row-level mutex keeping two
+    download attempts (pipeline vs retryDownload, double-click) from both
+    claiming the same model."""
+    async with SESSION_LOCAL() as db:
+        result = await db.execute(update(CompanionModel).where(CompanionModel.id == model_id, CompanionModel.status.in_(from_statuses)).values(status=to_status))
+        await db.commit()
+    return bool(result.rowcount)
+
+
+async def _load_model_record(model_id: int) -> CompanionModel | None:
+    async with SESSION_LOCAL() as db:
+        return (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+
+
+async def _mark_download_failed(model_id: int, reason: str) -> None:
+    """Download-stage failure: keep the row recoverable — task_id and URLs are
+    never cleared and the row stays distinct from terminal ``failed`` so the
+    client offers retryDownload instead of paid regeneration."""
+    async with SESSION_LOCAL() as db:
+        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        if model is not None:
+            model.status = "download_failed"
+            model.error = reason[:500]
+        await db.commit()
+
+
+async def _refresh_download_urls(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str) -> list[Model3DAsset]:
+    """Query-only refresh of expired signed URLs via the persisted provider
+    task. Never (re-)submits generation."""
+    result = await provider.poll(Model3DJob(job_id=task_id))
+    if result.status != "completed" or not result.assets:
+        raise ModelGenerationError(f"刷新模型下载地址失败: provider 任务 {task_id} 状态 {result.status}")
+    urls = [{"kind": a.kind, "url": a.url} for a in result.assets]
+    async with SESSION_LOCAL() as db:
+        await db.execute(update(CompanionModel).where(CompanionModel.id == model_id).values(download_urls_json=json.dumps(urls, ensure_ascii=False)))
+        await db.commit()
+    log_paid_call(provider.provider_name, "image_to_3d_urls_refreshed", task_id=task_id, user_id=user_id, model_id=model_id)
+    return list(result.assets)
+
+
+async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str | None, assets: list[Model3DAsset], dest_dir: Path) -> Path:
+    """Bounded auto-retry with exponential backoff. Network-class errors
+    (connect/timeout/transport — incl. SSRF-refusals) and 5xx retry; 403
+    treats the signed URL as expired and refreshes it via a provider query;
+    other 4xx surface immediately — retrying a permanent client error only
+    burns the window."""
+    refreshes = 0
+    last_exc: Exception | None = None
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            return await provider.download(Model3DPollResult(status="completed", assets=tuple(assets)), dest_dir)
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            if status_code == 403 and task_id and refreshes < _DOWNLOAD_URL_REFRESH_LIMIT:
+                refreshes += 1
+                assets = await _refresh_download_urls(provider, user_id=user_id, model_id=model_id, task_id=task_id)
+                continue
+            if not 400 <= status_code < 500:
+                last_exc = exc
+            else:
+                raise
+        except httpx.TransportError as exc:
+            last_exc = exc
+        logger.warning("model download attempt failed", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id, "attempt": attempt, "error": str(last_exc)})
+        if attempt < _DOWNLOAD_ATTEMPTS:
+            await asyncio.sleep(_DOWNLOAD_RETRY_BASE_DELAY * 2 ** (attempt - 1))
+    raise last_exc
+
+
+async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, user_id: int, task_id: str | None, assets: list[Model3DAsset], io_dir: Path | None = None) -> None:
+    """Download + finalize an already-persisted generation result. Shared by
+    the generation pipeline and the retryDownload path.
+
+    Download-stage failures land in ``download_failed`` (recoverable — the
+    paid result stays in the row); post-download processing failures stay
+    terminal ``failed`` like any other generation failure — a deterministic
+    rig failure won't heal by re-downloading."""
+    if not await _cas_model_status(model_id, from_statuses=RETRYABLE_DOWNLOAD_STATUSES, to_status="downloading"):
+        logger.info("model download attempt skipped; another attempt owns the row", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id})
+        return
+    await _emit_progress(user_id, "downloading", 88, provider=provider.provider_name)
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
+        try:
+            glb_path = await _download_with_retry(provider, user_id=user_id, model_id=model_id, task_id=task_id, assets=assets, dest_dir=Path(str(tmp)))
+        except Exception:
+            logger.warning("3D model download failed; result kept for retry", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id}, exc_info=True)
+            await _mark_download_failed(model_id, "模型下载失败，可重试下载")
+            await _emit_model_failed(user_id, "3D 模型下载失败，可重试下载", retry_download=True, model_id=model_id)
+            return
+
+        try:
+            record = await _load_model_record(model_id)
+            if record is None:
+                raise ModelGenerationError("companion model row vanished mid-download")
+            await _finalize_model(record, glb_path, provider=provider, io_dir=io_dir)
+        except Exception:
+            logger.warning("3D model finalization failed", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id}, exc_info=True)
+            await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
+            await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
+
+
+async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> None:
+    """Post-download processing shared by the pipeline and the retry path:
+    local auto-rig (providers without cloud rigging), artifact persistence,
+    morph injection, activation + ``model.ready``."""
+    user_id = record.user_id
+    glb_bytes = await asyncio.to_thread(glb_path.read_bytes)
+
+    if not provider.SUPPORTS_RIGGING:
+        await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
+        glb_bytes = await _auto_rig_with_blender(glb_bytes, record.rig_type, io_dir=io_dir)
+
+    rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
+
+    await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
+    final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)
+
+    await _emit_progress(user_id, "finalizing", 95, provider=provider.provider_name)
+    asset_url = save_companion_model(final_glb, user_id=user_id)
+    morph_names = _extract_morph_names_from_glb(final_glb)
+
+    activated = await _finalize_generation(
+        record.id,
+        user_id,
+        asset_url=asset_url,
+        rig_original_url=rig_original_url,
+        provider=record.provider,
+        species=record.species,
+        rig_type=record.rig_type,
+        morph_names=morph_names,
+        style=record.style or "realistic",
+    )
+
+    if not activated:
+        logger.info("3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": record.id})
+        return
+
+    await _emit_model_ready(user_id, record.id, asset_url, species=record.species, rig_type=record.rig_type, style=record.style or "realistic")
+    await _emit_progress(user_id, "done", 100, provider=provider.provider_name)
+    logger.info(
+        "3D model generation succeeded",
+        extra={"user_id": user_id, "provider": provider.provider_name, "species": record.species, "rig_type": record.rig_type, "morph_count": len(morph_names)},
+    )
+
+
+async def run_model_download_retry(user_id: int, model_id: int, *, io_dir: Path | None = None) -> None:
+    """Worker entry for ``companion.model.retryDownload``: replay the download
+    + finalize phases from the persisted provider task — never submits a new
+    generation."""
+    record = await _load_model_record(model_id)
+    if record is None or record.user_id != user_id:
+        logger.warning("model download retry skipped: row not found", extra={"user_id": user_id, "model_id": model_id})
+        return
+    if record.status not in RETRYABLE_DOWNLOAD_STATUSES:
+        logger.info("model download retry skipped: status not retryable", extra={"user_id": user_id, "model_id": model_id, "status": record.status})
+        return
+    urls = [item for item in safe_json_loads(record.download_urls_json or "[]", default=[]) if isinstance(item, dict) and item.get("url")]
+    if not record.provider_task_id or not urls:
+        await _mark_download_failed(model_id, "缺少下载地址，无法重试下载")
+        await _emit_model_failed(user_id, "3D 模型下载地址缺失，请重新生成", retry_download=False, model_id=model_id)
+        return
+    assets = [Model3DAsset(kind=str(item.get("kind") or ""), url=str(item.get("url") or "")) for item in urls]
+    provider = _resolve_model_provider(_raw_provider_name(record.provider))
+    await _run_download_phase(provider, model_id=model_id, user_id=user_id, task_id=record.provider_task_id, assets=assets, io_dir=io_dir)
+
+
+async def request_model_download_retry(db: AsyncSession, *, user_id: int, model_id: int) -> CompanionModel:
+    """Validate + enqueue a download-only retry on the render worker (the
+    finalize path needs Blender — web never runs it). Raises
+    ``ModelGenerationError`` on unknown/unretryable rows."""
+    model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id, CompanionModel.user_id == user_id))).scalar_one_or_none()
+    if model is None:
+        raise ModelGenerationError("未找到对应的 3D 模型记录")
+    if model.status not in RETRYABLE_DOWNLOAD_STATUSES:
+        raise ModelGenerationError("当前模型状态不支持重试下载")
+    await render_queue.enqueue("model_retry_download", user_id, {"model_id": model_id})
+    logger.info("model download retry enqueued", extra={"user_id": user_id, "model_id": model_id, "task_id": model.provider_task_id})
+    return model
 
 
 async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user_id: int, stage: str, start_pct: int, end_pct: int) -> Model3DPollResult:
@@ -512,10 +711,18 @@ async def _emit_model_ready(
         logger.warning("Failed to emit model.ready", exc_info=True)
 
 
-async def _emit_model_failed(user_id: int, reason: str) -> None:
+async def _emit_model_failed(user_id: int, reason: str, *, retry_download: bool = False, model_id: int | None = None) -> None:
+    payload: dict = {"reason": reason}
+    # retry_download=true marks a download-only failure — the paid result
+    # survives and the client offers companion.model.retryDownload instead of
+    # paid regeneration (PROTOCOL.md §1.3).
+    if retry_download:
+        payload["retry_download"] = True
+    if model_id is not None:
+        payload["model_id"] = model_id
     try:
         async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps({"reason": reason}, ensure_ascii=False)))
+            db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps(payload, ensure_ascii=False)))
             await db.commit()
     except Exception:
         logger.warning("Failed to emit model.failed", exc_info=True)

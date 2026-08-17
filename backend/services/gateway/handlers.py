@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
 from services.companion import (
     AvatarGenerationError,
+    ModelGenerationError,
     PersonaValidationError,
     check_affect,
     delete_memory,
@@ -48,6 +49,7 @@ from services.companion import (
     read_user_profile,
     record_interaction,
     regenerate_avatar,
+    request_model_download_retry,
     should_act,
     submit_onboarding_field,
     update_memory,
@@ -934,6 +936,23 @@ def _register_session_handlers(
         return {"queued": True, "job_id": job_id}
 
     dispatcher.register("avatar.regenerate", avatar_regenerate)
+
+    async def companion_model_retry_download(params: dict) -> dict:
+        # Download-only recovery of an already-paid 3D generation result. The
+        # heavy work (download + Blender finalize) runs on the render worker;
+        # status updates arrive over model.gen.progress / model.ready /
+        # model.failed events like a first-run pipeline.
+        model_id = params.get("model_id")
+        if not _is_nonneg_int(model_id) or model_id <= 0:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "model_id must be a positive int")
+        async with SESSION_LOCAL() as db:
+            try:
+                model = await request_model_download_retry(db, user_id=user_id, model_id=model_id)
+            except ModelGenerationError as exc:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(exc)) from exc
+        return {"model_id": model.id, "status": model.status}
+
+    dispatcher.register("companion.model.retryDownload", companion_model_retry_download)
 
     async def tts_list_voices(params: dict) -> dict:
         # Voice catalog (plan §3.5 / §6). Optional ``language`` filter — unknown

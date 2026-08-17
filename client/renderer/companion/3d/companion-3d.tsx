@@ -28,11 +28,14 @@ import {
   $modelGenState,
   $modelInfo,
   $modelLoadSettled,
+  $modelRetryable,
+  $modelRetryModelId,
   $outfitView,
   $renderStyle,
   hydrateExpressions,
   hydrateGeneratedClips,
-  refreshEquippedAndApply
+  refreshEquippedAndApply,
+  retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
 
@@ -377,6 +380,8 @@ export function Companion3D(): React.JSX.Element {
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)
   const genError = useStore($modelGenError)
+  const retryable = useStore($modelRetryable)
+  const retryModelId = useStore($modelRetryModelId)
   const staticMode = useStore($staticMode)
   const activeSprite = useStore($activeSprite)
   const isStaticCovered = Boolean(staticMode && activeSprite)
@@ -481,6 +486,26 @@ export function Companion3D(): React.JSX.Element {
             <div style={{ fontSize: '0.65rem', color: 'rgba(255, 180, 180, 0.95)', textAlign: 'center' }}>
               {genError ?? '3D 模型生成失败'}
             </div>
+            {retryable && (
+              <button
+                onClick={() => retryModelId !== null && void retryModelDownload(retryModelId)}
+                style={{
+                  marginTop: '0.45rem',
+                  pointerEvents: 'auto',
+                  padding: '4px 14px',
+                  fontSize: '0.65rem',
+                  color: 'rgba(255, 255, 255, 0.95)',
+                  background: 'rgba(90, 140, 255, 0.35)',
+                  border: '1px solid rgba(140, 180, 255, 0.5)',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+                type="button"
+              >
+                重试下载
+              </button>
+            )}
           </div>
         </div>
       )}
