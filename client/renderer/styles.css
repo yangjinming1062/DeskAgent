@@ -380,16 +380,16 @@
   html[data-role='tool'] {
     color-scheme: dark;
 
-    --theme-foreground: #f2f2f5;
-    --theme-secondary: color-mix(in srgb, #0053fd 16%, #16161b);
-    --theme-accent-soft: color-mix(in srgb, #0053fd 14%, #16161b);
+    --theme-foreground: #f2f2f2;
+    --theme-secondary: color-mix(in srgb, #0053fd 16%, #161616);
+    --theme-accent-soft: color-mix(in srgb, #0053fd 14%, #161616);
 
-    --ui-bg-chrome: #0f0f13;
-    --ui-bg-sidebar: #0b0b0f;
-    --ui-bg-editor: #17171c;
-    --ui-bg-elevated: #1d1d24;
+    --ui-bg-chrome: #0d0d0d;
+    --ui-bg-sidebar: #090909;
+    --ui-bg-editor: #161616;
+    --ui-bg-elevated: #1b1b1b;
     --ui-bg-card: color-mix(in srgb, #ffffff 4%, transparent);
-    --ui-bg-input: #131318;
+    --ui-bg-input: #121212;
     --ui-bg-primary: color-mix(in srgb, #ffffff 8%, transparent);
     --ui-bg-secondary: color-mix(in srgb, #ffffff 6%, transparent);
     --ui-bg-tertiary: color-mix(in srgb, #ffffff 5%, transparent);
@@ -414,8 +414,8 @@
     --ui-inline-code-border: color-mix(in srgb, #ffffff 10%, transparent);
     --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
     --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
-    --ui-chat-bubble-background: #1a1a21;
-    --ui-chat-bubble-opaque-background: #17171c;
+    --ui-chat-bubble-background: #1a1a1a;
+    --ui-chat-bubble-opaque-background: #161616;
     --sidebar-edge-border: color-mix(in srgb, #ffffff 8%, transparent);
   }
 

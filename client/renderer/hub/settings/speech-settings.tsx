@@ -149,8 +149,16 @@ export function SpeechSettings(): React.JSX.Element {
     )
   }
 
-  const engineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
-    { id: 'auto', label: s.engineAuto },
+  // STT auto routes local-first (free), TTS auto routes cloud-first (better
+  // voice quality) — the "auto" labels must state each engine's own priority.
+  const sttEngineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
+    { id: 'auto', label: s.sttEngineAuto },
+    { id: 'local', label: s.engineLocal },
+    { id: 'cloud', label: s.engineCloud }
+  ]
+
+  const ttsEngineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
+    { id: 'auto', label: s.ttsEngineAuto },
     { id: 'local', label: s.engineLocal },
     { id: 'cloud', label: s.engineCloud }
   ]
@@ -177,7 +185,7 @@ export function SpeechSettings(): React.JSX.Element {
               <div className="flex flex-col items-end gap-1.5">
                 <SegmentedControl
                   onChange={v => update({ sttEngine: v })}
-                  options={engineOptions}
+                  options={sttEngineOptions}
                   value={state.sttEngine}
                 />
                 {availBadge(localSttAvailable)}
@@ -200,7 +208,7 @@ export function SpeechSettings(): React.JSX.Element {
               <div className="flex flex-col items-end gap-1.5">
                 <SegmentedControl
                   onChange={v => update({ ttsEngine: v })}
-                  options={engineOptions}
+                  options={ttsEngineOptions}
                   value={state.ttsEngine}
                 />
                 {availBadge(localTtsAvailable)}

@@ -147,9 +147,9 @@ function getTitleBarOverlayOptions() {
   // html[data-role='tool']) — the overlay strip must match regardless of OS
   // appearance, or a light strip sits on the dark titlebar.
   return {
-    color: '#0f0f13',
+    color: '#0d0d0d',
     height: TITLEBAR_HEIGHT,
-    symbolColor: '#f2f2f5'
+    symbolColor: '#f2f2f2'
   }
 }
 
@@ -1259,7 +1259,7 @@ function installStandardWindowHandlers(win: BrowserWindow): void {
 function createToolWindow(): void {
   const icon = getAppIconPath() || undefined
   toolWindow = new BrowserWindow({
-    backgroundColor: '#0f0f13',
+    backgroundColor: '#0d0d0d',
     height: 800,
     icon,
     minHeight: 620,

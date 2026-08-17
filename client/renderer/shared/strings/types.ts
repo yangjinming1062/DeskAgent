@@ -375,7 +375,8 @@ export interface Translations {
     sttSilentFallbackDesc: string
     ttsEngineTitle: string
     ttsEngineDesc: string
-    engineAuto: string
+    sttEngineAuto: string
+    ttsEngineAuto: string
     engineLocal: string
     engineCloud: string
     engineLocalAvail: string
