@@ -90,20 +90,37 @@ describe('hydrateModel', () => {
     expect(log.warn).not.toHaveBeenCalled()
   })
 
-  it('treats a 404 as expected (no active row) and leaves the atom alone', async () => {
+  it('treats a 404 as expected (no active row) and triggers model generation', async () => {
     $modelInfo.set({ ...$modelInfo.get(), species: '人类' })
     const before = $modelInfo.get()
-    const api = vi.fn().mockRejectedValue(new Error('404 /api/companion/model'))
+
+    const api = vi.fn().mockImplementation(async req => {
+      if (req.path === '/api/companion/model' && req.method !== 'POST') {
+        throw new Error('404 /api/companion/model')
+      }
+
+      return { id: 1, status: 'generating' }
+    })
+
     setWindowSpiritagent(api)
 
     await hydrateModel()
 
     expect($modelInfo.get()).toEqual(before)
+    expect(api).toHaveBeenCalledWith({ path: '/api/companion/model' })
+    expect(api).toHaveBeenCalledWith({ path: '/api/companion/model', method: 'POST', body: {} })
     expect(log.warn).not.toHaveBeenCalled()
   })
 
   it('warns on a 5xx so a missing model is diagnosable', async () => {
-    const api = vi.fn().mockRejectedValue(new Error('500 /api/companion/model: boom'))
+    const api = vi.fn().mockImplementation(async req => {
+      if (req.path === '/api/companion/model' && req.method !== 'POST') {
+        throw new Error('500 /api/companion/model: boom')
+      }
+
+      return { id: 1, status: 'generating' }
+    })
+
     setWindowSpiritagent(api)
 
     await hydrateModel()

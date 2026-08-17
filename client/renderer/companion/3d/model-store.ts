@@ -240,35 +240,50 @@ export function refreshEquippedAndApply(): WardrobeItem[] {
 // (no model yet during onboarding) is swallowed silently so the initial
 // atom stays at its default; 5xx / network errors warn so a missing model
 // doesn't go unnoticed in production.
+export async function ensureModelGeneration(): Promise<void> {
+  try {
+    await window.spiritagent.api<{ id?: number; status?: string }>({
+      path: '/api/companion/model',
+      method: 'POST',
+      body: {}
+    })
+  } catch (err) {
+    log.info('model-store', 'ensureModelGeneration requested:', err)
+  }
+}
+
 export async function hydrateModel(): Promise<void> {
   try {
     const res = await window.spiritagent.api<CompanionModelResponse>({
       path: '/api/companion/model'
     })
 
-    if (!res) {
+    if (res && res.asset_url && res.status === 'succeeded') {
+      setModelInfo({
+        id: res.id,
+        asset_url: res.asset_url,
+        species: res.species,
+        provider: res.provider,
+        morph_params: res.morph_params ?? {},
+        has_rig: res.has_rig,
+        has_morph_targets: res.has_morph_targets,
+        status: res.status,
+        rig_type: res.rig_type ?? 'biped',
+        rig_naming: res.rig_naming ?? 'mixamo',
+        content_hash: res.content_hash ?? null,
+        style: res.style === 'anime' ? 'anime' : 'realistic'
+      })
+
       return
     }
-
-    setModelInfo({
-      id: res.id,
-      asset_url: res.asset_url,
-      species: res.species,
-      provider: res.provider,
-      morph_params: res.morph_params ?? {},
-      has_rig: res.has_rig,
-      has_morph_targets: res.has_morph_targets,
-      status: res.status,
-      rig_type: res.rig_type ?? 'biped',
-      rig_naming: res.rig_naming ?? 'mixamo',
-      content_hash: res.content_hash ?? null,
-      style: res.style === 'anime' ? 'anime' : 'realistic'
-    })
   } catch (error) {
     if (!isClientErrorIpc(error)) {
       log.warn('model-store', 'hydrateModel failed', error)
     }
   }
+
+  // If no ready model is available on lifecycle=ready, automatically trigger generation
+  void ensureModelGeneration()
 }
 
 // Same shape as ``hydrateModel`` — GET /api/companion/wardrobe, publish to

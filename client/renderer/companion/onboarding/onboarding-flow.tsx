@@ -1452,6 +1452,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const confirmVoice = () => {
+    if (voice) {
+      const vName = voice.label || voice.id
+      setAnswers(prev => ({ ...prev, voice: vName }))
+      void requestGateway('onboarding.submit', { field: 'voice', value: vName })
+    }
+
     setPhase('q-user')
     setQIndex(0)
     setInput('')
@@ -1460,10 +1466,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const finish = async (currentAnswers?: OnboardingAnswers) => {
-    const ans = currentAnswers ?? answers
+    const ans = { ...answers, ...(currentAnswers ?? {}) }
+
+    if (voice && !ans.voice) {
+      ans.voice = voice.label || voice.id
+    }
 
     // Safety-net retry; roll back to 'q-user' on failure so phase isn't stuck on 'finishing'.
     try {
+      if (voice) {
+        void requestGateway('onboarding.submit', { field: 'voice', value: voice.label || voice.id })
+      }
+
       await savePersona(assemblePersona(ans))
     } catch (err) {
       setPhase('q-user')

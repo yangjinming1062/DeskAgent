@@ -113,11 +113,18 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
     async def _dual_write() -> Persona:
         await record_user_profile(db, user_id, user_profile)
         persona = await get_or_create_persona(db, user_id)
+        current_draft = _load_draft(persona)
+        if current_draft.get("voice"):
+            cleaned["voice"] = current_draft["voice"]
+        if "appearance_outfit" not in cleaned and current_draft.get("appearance_outfit"):
+            cleaned["appearance_outfit"] = current_draft["appearance_outfit"]
+        definition_changed = any(cleaned.get(k) != current_draft.get(k) for k in _KNOWN_FIELDS if k != "appearance_outfit")
         persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
         persona.system_prompt_extras = render_extras(cleaned)
         persona.is_complete = True
-        persona.is_portrait_confirmed = False
-        persona.portrait_confirmed_at = None
+        if definition_changed:
+            persona.is_portrait_confirmed = False
+            persona.portrait_confirmed_at = None
         return persona
 
     persona = await _dual_write()

@@ -388,11 +388,12 @@ export function Companion3D(): React.JSX.Element {
       ref={containerRef}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      {!isStaticCovered && genState === 'generating' && (
+      {genState === 'generating' && (
         <div
           style={{
             position: 'absolute',
             inset: 0,
+            zIndex: 20,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -408,15 +409,20 @@ export function Companion3D(): React.JSX.Element {
               alignItems: 'center',
               padding: '8px 16px',
               borderRadius: '16px',
-              background: 'rgba(0, 0, 0, 0.65)',
+              background: 'rgba(0, 0, 0, 0.7)',
               backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
               maxWidth: '85%'
             }}
           >
             <div
-              style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.9)', marginBottom: '0.4rem', fontWeight: 500 }}
+              style={{
+                fontSize: '0.7rem',
+                color: 'rgba(255, 255, 255, 0.95)',
+                marginBottom: '0.4rem',
+                fontWeight: 500
+              }}
             >
               ✨ 正在为你塑造形象…
             </div>
@@ -424,7 +430,7 @@ export function Companion3D(): React.JSX.Element {
               style={{
                 width: '100px',
                 height: '3px',
-                background: 'rgba(255, 255, 255, 0.15)',
+                background: 'rgba(255, 255, 255, 0.2)',
                 borderRadius: '2px',
                 overflow: 'hidden'
               }}
@@ -433,14 +439,14 @@ export function Companion3D(): React.JSX.Element {
                 style={{
                   width: `${genProgress?.progress ?? 0}%`,
                   height: '100%',
-                  background: 'rgba(255, 255, 255, 0.85)',
+                  background: 'rgba(255, 255, 255, 0.9)',
                   borderRadius: '2px',
                   transition: 'width 0.5s ease'
                 }}
               />
             </div>
             {genProgress?.stage && (
-              <div style={{ fontSize: '0.6rem', color: 'rgba(255, 255, 255, 0.6)', marginTop: '0.3rem' }}>
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255, 255, 255, 0.65)', marginTop: '0.3rem' }}>
                 {stageLabel(genProgress.stage)}
               </div>
             )}
@@ -452,6 +458,7 @@ export function Companion3D(): React.JSX.Element {
           style={{
             position: 'absolute',
             inset: 0,
+            zIndex: 20,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -464,7 +471,7 @@ export function Companion3D(): React.JSX.Element {
             style={{
               padding: '6px 14px',
               borderRadius: '14px',
-              background: 'rgba(0, 0, 0, 0.65)',
+              background: 'rgba(0, 0, 0, 0.7)',
               backdropFilter: 'blur(8px)',
               border: '1px solid rgba(255, 100, 100, 0.25)',
               boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',

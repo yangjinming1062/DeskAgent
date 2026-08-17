@@ -410,7 +410,7 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "voice"
 
-        # 5. Re-finalizing persona resets confirmation
+        # 5. Re-finalizing persona with new character fields resets confirmation
         updated = await update_persona(
             db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"}
         )
@@ -419,6 +419,63 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
 
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait-fullbody-back"
+
+
+async def test_onboarding_finish_save_persona_preserves_confirmation(
+    _patch_db, set_fullbody_mode
+):
+    """When onboarding finishes, PUT /persona saves user_* and voice with the same
+    character definition — this must NOT reset is_portrait_confirmed, so restarting
+    the client stays complete=True and does not re-open the onboarding dialog."""
+    set_fullbody_mode("multi")
+    _, SessionLocal = _patch_db
+    from modules.companion import AvatarAsset
+    from services.companion import (
+        confirm_portrait,
+        get_onboarding_state,
+        update_persona,
+    )
+
+    async with SessionLocal() as db:
+        # Step 1: Character definition saved
+        await update_persona(
+            db, 105, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
+        )
+        avatar = AvatarAsset(
+            user_id=105,
+            prompt_json="{}",
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="companion-avatars/front.jpg",
+            seed_right_url="companion-avatars/right.jpg",
+            seed_back_url="companion-avatars/back.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        # Step 2: Confirm portrait and submit voice
+        await confirm_portrait(db, 105)
+        from services.companion import submit_onboarding_field
+
+        await submit_onboarding_field(db, 105, "voice", "温柔女声")
+
+        # Step 3: Finish onboarding by saving payload with user profile (matching assemblePersona)
+        full_payload = {
+            "name": "小光",
+            "personality": "温柔",
+            "speaking_style": "轻柔",
+            "user_call_name": "老板",
+            "user_gender": "保密",
+            "user_age_bucket": "青年",
+            "user_hobbies": "摄影",
+            "user_freeform": "热爱编程",
+        }
+        resaved = await update_persona(db, 105, full_payload)
+        assert resaved.is_portrait_confirmed is True
+
+        state = await get_onboarding_state(db, 105)
+        assert state["complete"] is True
+        assert state["next_field"] is None
 
 
 async def test_portrait_resume_single_mode(_patch_db, set_fullbody_mode):
@@ -3017,9 +3074,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
 
 
 @pytest.mark.asyncio
-async def test_run_model_gen_pipeline_hunyuan_multiview_mode(
-    _patch_db, monkeypatch
-):
+async def test_run_model_gen_pipeline_hunyuan_multiview_mode(_patch_db, monkeypatch):
     import json as _json
     from pathlib import Path
 
@@ -3064,9 +3119,19 @@ async def test_run_model_gen_pipeline_hunyuan_multiview_mode(
     monkeypatch.setattr(
         model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider()
     )
-    monkeypatch.setattr(model_service, "select_rig_type", AsyncMock(return_value="biped"))
-    monkeypatch.setattr(model_service, "_auto_rig_with_blender", AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"))
-    monkeypatch.setattr(model_service, "_inject_morph_targets", AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"))
+    monkeypatch.setattr(
+        model_service, "select_rig_type", AsyncMock(return_value="biped")
+    )
+    monkeypatch.setattr(
+        model_service,
+        "_auto_rig_with_blender",
+        AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"),
+    )
+    monkeypatch.setattr(
+        model_service,
+        "_inject_morph_targets",
+        AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"),
+    )
 
     async with SessionLocal() as db:
         user = User(username="run_hy_mv", is_active=True, can_use=True)
@@ -3075,7 +3140,9 @@ async def test_run_model_gen_pipeline_hunyuan_multiview_mode(
         db.add(
             Persona(
                 user_id=user.id,
-                definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
+                definition_json=_json.dumps(
+                    {"name": "x", "personality": "p", "speaking_style": "s"}
+                ),
                 is_complete=True,
             )
         )
@@ -3132,7 +3199,6 @@ async def test_run_model_gen_pipeline_hunyuan_multiview_mode(
         )
         assert row.status == "succeeded"
         assert row.provider == "hunyuan_multiview_to_3d"
-
 
 
 @pytest.mark.asyncio
@@ -4317,7 +4383,9 @@ async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
     async with SessionLocal() as db:
         persona = await avatar_service.get_or_create_persona(db, user.id)
         persona.is_complete = True
-        persona.definition_json = json.dumps({"biological_type": "人类"}, ensure_ascii=False)
+        persona.definition_json = json.dumps(
+            {"biological_type": "人类"}, ensure_ascii=False
+        )
         a1 = AvatarAsset(
             user_id=user.id,
             prompt_json=json.dumps({"avatar_prompt": "prompt1"}),
@@ -4351,7 +4419,14 @@ async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
 
     # 3. pre-read fullbody on a2 (which is inactive) succeeds without 404
     async with SessionLocal() as db:
-        views, is_front, persist, refs, prompts, style = await avatar_service._pre_read_fullbody(
+        (
+            views,
+            is_front,
+            persist,
+            refs,
+            prompts,
+            style,
+        ) = await avatar_service._pre_read_fullbody(
             db, user.id, a2_id, "front", None, None, None, None
         )
         assert is_front is True
@@ -4359,7 +4434,14 @@ async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
 
         # 4. write fullbody on a2 reactivates a2
         written = await avatar_service._write_fullbody(
-            db, user.id, a2_id, ["front"], True, False, {"front": ("temp-media/a2_front", "id", "ext", "orig")}, style
+            db,
+            user.id,
+            a2_id,
+            ["front"],
+            True,
+            False,
+            {"front": ("temp-media/a2_front", "id", "ext", "orig")},
+            style,
         )
         assert written.active is True
         assert written.seed_front_url is not None
