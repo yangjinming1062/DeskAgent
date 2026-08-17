@@ -1,10 +1,11 @@
-"""baseline: 18 tables + pgvector/pg_trgm extensions, partial unique indexes,
-HNSW/GIN indexes and the ws_events NOTIFY trigger — the schema that used to be
-create_all() + raw DDL in main.py.
+"""baseline: full pre-launch schema — 20 tables + pgvector/pg_trgm extensions,
+partial unique indexes, HNSW/GIN indexes and the ws_events / render_jobs NOTIFY
+triggers. Single squashed revision (no live deployments when introduced); new
+migrations chain from here.
 
 Revision ID: 0001
 Revises:
-Create Date: 2026-08-15 00:26:08.406491
+Create Date: 2026-08-17
 
 """
 
@@ -35,8 +36,8 @@ def upgrade() -> None:
         sa.Column("ip_address", sa.String(length=64), nullable=False),
         sa.Column("user_agent", sa.Text(), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("revoked_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("token_jti", name="uq_admin_sessions_token_jti"),
@@ -60,7 +61,7 @@ def upgrade() -> None:
         sa.Column("runner_size", sa.Integer(), nullable=True),
         sa.Column("runner_version", sa.String(length=64), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("created_by", sa.String(length=128), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.PrimaryKeyConstraint("id"),
@@ -70,14 +71,14 @@ def upgrade() -> None:
     op.create_table(
         "users",
         sa.Column("username", sa.String(length=64), nullable=False),
-        sa.Column("password_hash", sa.String(length=255), nullable=True),
+        sa.Column("activation_code", sa.Text(), nullable=True),
         sa.Column("activation_token_hash", sa.String(length=128), nullable=True),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
         sa.Column("can_use", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
-        sa.Column("expires_at", sa.DateTime(), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_users_activation_token_hash"), "users", ["activation_token_hash"], unique=True)
@@ -93,7 +94,7 @@ def upgrade() -> None:
         sa.Column("seed_back_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed", sa.Integer(), nullable=True),
         sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -111,8 +112,8 @@ def upgrade() -> None:
         sa.Column("tags_json", sa.Text(), nullable=False),
         sa.Column("scale_boost", sa.Float(), server_default=sa.text("1.0"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -126,6 +127,7 @@ def upgrade() -> None:
         sa.Column("species", sa.String(length=64), server_default=sa.text("'人类'"), nullable=False),
         sa.Column("rig_type", sa.String(length=32), server_default=sa.text("'biped'"), nullable=False),
         sa.Column("rig_naming", sa.String(length=16), server_default=sa.text("'mixamo'"), nullable=False),
+        sa.Column("style", sa.String(length=16), server_default=sa.text("'realistic'"), nullable=False),
         sa.Column("rig_original_url", sa.Text(), server_default=sa.text("''"), nullable=False),
         sa.Column("morph_params_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
@@ -136,8 +138,8 @@ def upgrade() -> None:
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -148,15 +150,15 @@ def upgrade() -> None:
         "companion_sprite_images",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("avatar_id", sa.Integer(), nullable=True),
-        sa.Column("role", sa.String(length=32), server_default=sa.text("NULL"), nullable=True),
+        sa.Column("role", sa.String(length=32), nullable=True),
         sa.Column("tag", sa.Text(), server_default=sa.text("''"), nullable=False),
         sa.Column("prompt", sa.Text(), server_default=sa.text("''"), nullable=False),
         sa.Column("request_text", sa.Text(), server_default=sa.text("''"), nullable=False),
         sa.Column("asset_url", sa.String(length=2048), nullable=False),
         sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -170,8 +172,8 @@ def upgrade() -> None:
         sa.Column("cwd", sa.String(length=1024), nullable=True),
         sa.Column("settings_json", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["parent_id"], ["conversations.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -187,8 +189,8 @@ def upgrade() -> None:
         sa.Column("deliver", sa.String(length=64), nullable=False),
         sa.Column("is_paused", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("one_shot", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
-        sa.Column("next_run_at", sa.DateTime(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("next_run_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -204,9 +206,9 @@ def upgrade() -> None:
         sa.Column("ip_address", sa.String(length=64), nullable=False),
         sa.Column("user_agent", sa.Text(), nullable=False),
         sa.Column("is_active", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
-        sa.Column("login_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("logout_at", sa.DateTime(), nullable=True),
-        sa.Column("last_seen_at", sa.DateTime(), nullable=True),
+        sa.Column("login_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("logout_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -225,8 +227,8 @@ def upgrade() -> None:
         sa.Column("importance", sa.Float(), server_default="1.0", nullable=False),
         sa.Column("embedding", Vector(dim=1536), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -241,8 +243,8 @@ def upgrade() -> None:
         sa.Column("is_portrait_confirmed", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("portrait_confirmed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -274,8 +276,8 @@ def upgrade() -> None:
         sa.Column("video_gen_model_name", sa.String(length=128), nullable=False),
         sa.Column("provider_config", sa.Text(), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -286,8 +288,8 @@ def upgrade() -> None:
         sa.Column("setting_key", sa.String(length=128), nullable=False),
         sa.Column("setting_value", sa.Text(), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "setting_key", name="uq_user_settings_user_key"),
@@ -309,9 +311,9 @@ def upgrade() -> None:
         sa.Column("video_url", sa.Text(), nullable=True),
         sa.Column("error_reason", sa.String(length=64), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("expires_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -343,8 +345,8 @@ def upgrade() -> None:
         sa.Column("gift_reason", sa.Text(), nullable=True),
         sa.Column("gift_message", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -355,7 +357,7 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("event_type", sa.String(length=128), nullable=False),
         sa.Column("payload", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -375,7 +377,7 @@ def upgrade() -> None:
         sa.Column("turn_duration_ms", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("content_type", sa.String(length=32), server_default=sa.text("'text'"), nullable=False),
         sa.Column("summary_date", sa.String(length=10), nullable=True),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -383,6 +385,37 @@ def upgrade() -> None:
     op.create_index(op.f("ix_messages_conversation_id"), "messages", ["conversation_id"], unique=False)
     op.create_index(op.f("ix_messages_subtype"), "messages", ["subtype"], unique=False)
     op.create_index(op.f("ix_messages_summary_date"), "messages", ["summary_date"], unique=False)
+    op.create_table(
+        "render_jobs",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("kind", sa.String(length=32), nullable=False),
+        sa.Column("payload", sa.JSON(), nullable=False),
+        sa.Column("status", sa.String(length=16), nullable=False),
+        sa.Column("attempts", sa.Integer(), nullable=False),
+        sa.Column("claimed_by", sa.String(length=64), nullable=True),
+        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("result", sa.JSON(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(op.f("ix_render_jobs_status"), "render_jobs", ["status"], unique=False)
+    op.create_index(op.f("ix_render_jobs_user_id"), "render_jobs", ["user_id"], unique=False)
+    op.create_table(
+        "companion_preferences",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("disturbance_tier", sa.String(length=16), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", name="uq_companion_preferences_user_id"),
+    )
 
     # ── Partial unique indexes (cannot be expressed in declarative models) ──
     # Concurrent POST /model would otherwise leave two active rows.
@@ -411,7 +444,7 @@ def upgrade() -> None:
     op.create_index("ix_memories_content_trgm", "memories", ["content"], unique=False, postgresql_using="gin", postgresql_ops={"content": "gin_trgm_ops"})
     op.create_index("ix_memories_context_trgm", "memories", ["context"], unique=False, postgresql_using="gin", postgresql_ops={"context": "gin_trgm_ops"})
 
-    # ── ws_events LISTEN/NOTIFY wakeup trigger (ARCHITECTURE.md §5) ──
+    # ── Outbox / render-queue LISTEN/NOTIFY wakeup triggers (ARCHITECTURE.md §5) ──
     op.execute("""
 CREATE FUNCTION notify_ws_event() RETURNS trigger AS $$
 BEGIN
@@ -425,83 +458,47 @@ CREATE TRIGGER ws_event_notify_trigger
 AFTER INSERT ON ws_events
 FOR EACH STATEMENT EXECUTE FUNCTION notify_ws_event();
 """)
+    op.execute("""
+CREATE FUNCTION notify_render_job() RETURNS trigger AS $$
+BEGIN
+  PERFORM pg_notify('render_jobs_channel', 'wakeup');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+""")
+    op.execute("""
+CREATE TRIGGER render_jobs_notify_trigger
+AFTER INSERT ON render_jobs
+FOR EACH ROW WHEN (NEW.status = 'queued') EXECUTE FUNCTION notify_render_job();
+""")
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS render_jobs_notify_trigger ON render_jobs")
+    op.execute("DROP FUNCTION IF EXISTS notify_render_job()")
     op.execute("DROP TRIGGER IF EXISTS ws_event_notify_trigger ON ws_events")
     op.execute("DROP FUNCTION IF EXISTS notify_ws_event()")
-    op.drop_index("ix_memories_context_trgm", table_name="memories")
-    op.drop_index("ix_memories_content_trgm", table_name="memories")
-    op.drop_index("ix_memories_embedding", table_name="memories")
-    op.drop_index("ix_memories_recall_user_updated", table_name="memories")
-    op.drop_index("uq_memories_diary_day", table_name="memories")
-    op.drop_index("uq_memories_inferred_profile_slot", table_name="memories")
-    op.drop_index("uq_memories_auto_inject_slot", table_name="memories")
-    op.drop_index("uq_memories_user_context", table_name="memories")
-    op.drop_index("uq_companion_expressions_user_name", table_name="companion_expressions")
-    op.drop_index("uq_companion_sprites_one_waiting", table_name="companion_sprite_images")
-    op.drop_index("uq_conversations_user_main", table_name="conversations")
-    op.drop_index("uq_wardrobe_items_user_name", table_name="wardrobe_items")
-    op.drop_index("uq_companion_models_one_active", table_name="companion_models")
-    op.drop_index("uq_avatar_assets_one_active", table_name="avatar_assets")
-    op.drop_index(op.f("ix_messages_summary_date"), table_name="messages")
-    op.drop_index(op.f("ix_messages_subtype"), table_name="messages")
-    op.drop_index(op.f("ix_messages_conversation_id"), table_name="messages")
-    op.drop_table("messages")
-    op.drop_index(op.f("ix_ws_events_user_id"), table_name="ws_events")
-    op.drop_index(op.f("ix_ws_events_created_at"), table_name="ws_events")
-    op.drop_table("ws_events")
-    op.drop_index(op.f("ix_wardrobe_items_user_id"), table_name="wardrobe_items")
-    op.drop_index(op.f("ix_wardrobe_items_equipped"), table_name="wardrobe_items")
-    op.drop_table("wardrobe_items")
-    op.drop_index("ix_video_gen_jobs_user_status", table_name="video_gen_jobs")
-    op.drop_index(op.f("ix_video_gen_jobs_user_id"), table_name="video_gen_jobs")
-    op.drop_index(op.f("ix_video_gen_jobs_status"), table_name="video_gen_jobs")
-    op.drop_index(op.f("ix_video_gen_jobs_provider_task_id"), table_name="video_gen_jobs")
-    op.drop_index(op.f("ix_video_gen_jobs_created_at"), table_name="video_gen_jobs")
-    op.drop_table("video_gen_jobs")
-    op.drop_index(op.f("ix_user_settings_user_id"), table_name="user_settings")
-    op.drop_index(op.f("ix_user_settings_setting_key"), table_name="user_settings")
-    op.drop_table("user_settings")
-    op.drop_index(op.f("ix_user_model_configs_user_id"), table_name="user_model_configs")
-    op.drop_table("user_model_configs")
-    op.drop_index(op.f("ix_personas_user_id"), table_name="personas")
-    op.drop_index(op.f("ix_personas_is_portrait_confirmed"), table_name="personas")
-    op.drop_index(op.f("ix_personas_is_complete"), table_name="personas")
-    op.drop_table("personas")
-    op.drop_index(op.f("ix_memories_user_id"), table_name="memories")
-    op.drop_table("memories")
-    op.drop_index(op.f("ix_login_records_user_id"), table_name="login_records")
-    op.drop_index(op.f("ix_login_records_token_jti"), table_name="login_records")
-    op.drop_index(op.f("ix_login_records_login_at"), table_name="login_records")
-    op.drop_index(op.f("ix_login_records_is_active"), table_name="login_records")
-    op.drop_table("login_records")
-    op.drop_index(op.f("ix_cron_jobs_user_id"), table_name="cron_jobs")
-    op.drop_index(op.f("ix_cron_jobs_next_run_at"), table_name="cron_jobs")
-    op.drop_index(op.f("ix_cron_jobs_name"), table_name="cron_jobs")
-    op.drop_table("cron_jobs")
-    op.drop_index(op.f("ix_conversations_user_id"), table_name="conversations")
-    op.drop_index(op.f("ix_conversations_parent_id"), table_name="conversations")
-    op.drop_table("conversations")
-    op.drop_index(op.f("ix_companion_sprite_images_user_id"), table_name="companion_sprite_images")
-    op.drop_table("companion_sprite_images")
-    op.drop_index(op.f("ix_companion_models_user_id"), table_name="companion_models")
-    op.drop_index(op.f("ix_companion_models_rig_type"), table_name="companion_models")
-    op.drop_index(op.f("ix_companion_models_active"), table_name="companion_models")
-    op.drop_table("companion_models")
-    op.drop_index(op.f("ix_companion_expressions_user_id"), table_name="companion_expressions")
-    op.drop_table("companion_expressions")
-    op.drop_index(op.f("ix_avatar_assets_user_id"), table_name="avatar_assets")
-    op.drop_index(op.f("ix_avatar_assets_active"), table_name="avatar_assets")
-    op.drop_table("avatar_assets")
-    op.drop_index(op.f("ix_users_username"), table_name="users")
-    op.drop_index(op.f("ix_users_activation_token_hash"), table_name="users")
-    op.drop_table("users")
-    op.drop_index(op.f("ix_update_versions_version"), table_name="update_versions")
-    op.drop_index(op.f("ix_update_versions_is_active"), table_name="update_versions")
-    op.drop_table("update_versions")
-    op.drop_index(op.f("ix_admin_sessions_username"), table_name="admin_sessions")
-    op.drop_index(op.f("ix_admin_sessions_token_jti"), table_name="admin_sessions")
-    op.drop_index(op.f("ix_admin_sessions_is_active"), table_name="admin_sessions")
-    op.drop_index(op.f("ix_admin_sessions_created_at"), table_name="admin_sessions")
-    op.drop_table("admin_sessions")
+    # Children before parents (messages → conversations → users).
+    for table in (
+        "messages",
+        "ws_events",
+        "wardrobe_items",
+        "video_gen_jobs",
+        "user_settings",
+        "user_model_configs",
+        "personas",
+        "memories",
+        "login_records",
+        "cron_jobs",
+        "companion_sprite_images",
+        "companion_models",
+        "companion_expressions",
+        "avatar_assets",
+        "render_jobs",
+        "companion_preferences",
+        "conversations",
+        "users",
+        "update_versions",
+        "admin_sessions",
+    ):
+        op.drop_table(table)

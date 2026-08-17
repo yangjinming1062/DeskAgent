@@ -39,7 +39,6 @@ from services.scheduler.cron import drain as _cron_drain
 from services.tools import aclose
 from services.worker import queue as render_queue
 from slowapi.errors import RateLimitExceeded
-from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import make_url
 
 logger = get_logger(__name__)
@@ -55,23 +54,9 @@ def _raw_pg_dsn() -> str:
 
 
 def _run_migrations() -> None:
-    """Alembic upgrade head; zero-touch for pre-Alembic databases.
-
-    存量库（create_all + 手写 DDL 时代建好）没有 alembic_version 表——先
-    stamp 到 baseline（0001）再 upgrade：0002 只做幂等的 nullable/类型
-    规范化与孤儿列清理，对已匹配的库是 no-op。
-    """
+    """Alembic upgrade head; the single 0001 baseline builds the full schema."""
     cfg = Config(str(Path(__file__).parent / "alembic.ini"))
-    url = _sync_pg_url()
-    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-
-    engine = create_engine(url)
-    try:
-        tables = set(inspect(engine).get_table_names())
-    finally:
-        engine.dispose()
-    if tables - {"alembic_version"} and "alembic_version" not in tables:
-        command.stamp(cfg, "0001")
+    cfg.set_main_option("sqlalchemy.url", _sync_pg_url().replace("%", "%%"))
     command.upgrade(cfg, "head")
 
 
