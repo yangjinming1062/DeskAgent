@@ -11,6 +11,7 @@ import {
   type SpriteEmotion,
   type SpriteStateName
 } from '@/companion/companion-store'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
@@ -386,6 +387,13 @@ export function Companion3D(): React.JSX.Element {
   const activeSprite = useStore($activeSprite)
   const isStaticCovered = Boolean(staticMode && activeSprite)
 
+  // The failed panel carries the retry button — without a registered region
+  // the click passes through the transparent sprite window to the desktop
+  // (interactive-regions.ts owns capture toggling). Rect is null while the
+  // panel is unmounted, so the region only exists in the failed state.
+  const failedPanelRef = useRef<HTMLDivElement | null>(null)
+  useInteractiveRegion('model-gen-failed', failedPanelRef)
+
   return (
     <div
       className="companion-3d-wrapper"
@@ -473,6 +481,7 @@ export function Companion3D(): React.JSX.Element {
           }}
         >
           <div
+            ref={failedPanelRef}
             style={{
               padding: '6px 14px',
               borderRadius: '14px',

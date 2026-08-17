@@ -293,7 +293,7 @@ export async function ensureModelGeneration(): Promise<void> {
     // The backend returns (not regenerates) a download-failed row — the paid
     // result is still recoverable, so surface the retry action instead of
     // letting the failed state imply "must regenerate".
-    if (res?.status === 'download_failed' || res?.status === 'pending_download') {
+    if (res?.status === 'download_failed') {
       setModelFailed('3D 模型下载失败，可重试下载', { retryDownload: true, modelId: res.id ?? null })
     }
   } catch (err) {

@@ -4,17 +4,24 @@ import { log } from '@/shared/lib/log'
 
 import {
   $equippedItems,
+  $modelGenError,
+  $modelGenState,
   $modelInfo,
+  $modelRetryable,
+  $modelRetryModelId,
   $outfitView,
   $wardrobe,
   $wardrobeCandidates,
   $wardrobePreview,
   $wardrobeSelectedIdx,
+  clearModelRetry,
   clearWardrobeCandidates,
+  ensureModelGeneration,
   hydrateModel,
   hydrateWardrobe,
   pushWardrobeCandidate,
   selectWardrobeCandidate,
+  setModelFailed,
   slotOf,
   type WardrobeItem
 } from './model-store'
@@ -362,5 +369,53 @@ describe('slotOf and $outfitView', () => {
     expect(currentView.length).toBe(2)
     expect(currentView.map(i => slotOf(i))).toEqual(['legs', 'torso'])
     expect(currentView.find(i => slotOf(i) === 'torso')?.id).toBe(-1)
+  })
+})
+
+describe('download-failure retry state', () => {
+  beforeEach(() => {
+    $modelGenState.set('idle')
+    $modelGenError.set(null)
+    clearModelRetry()
+    vi.spyOn(log, 'warn').mockImplementation(() => undefined)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    restoreWindowSpiritagent()
+  })
+
+  it('setModelFailed records retryability and the model id atomically', () => {
+    setModelFailed('生成失败')
+    expect($modelGenState.get()).toBe('failed')
+    expect($modelRetryable.get()).toBe(false)
+    expect($modelRetryModelId.get()).toBeNull()
+
+    setModelFailed('下载失败，可重试下载', { retryDownload: true, modelId: 3 })
+    expect($modelGenError.get()).toBe('下载失败，可重试下载')
+    expect($modelRetryable.get()).toBe(true)
+    expect($modelRetryModelId.get()).toBe(3)
+  })
+
+  it('maps a download_failed POST response onto the failed + retryable state', async () => {
+    const api = vi.fn().mockResolvedValue({ id: 9, status: 'download_failed' })
+    setWindowSpiritagent(api)
+
+    await ensureModelGeneration()
+
+    expect(api).toHaveBeenCalled()
+    expect($modelGenState.get()).toBe('failed')
+    expect($modelRetryable.get()).toBe(true)
+    expect($modelRetryModelId.get()).toBe(9)
+  })
+
+  it('leaves state untouched when generation is genuinely requested', async () => {
+    const api = vi.fn().mockResolvedValue({ id: 10, status: 'generating' })
+    setWindowSpiritagent(api)
+
+    await ensureModelGeneration()
+
+    expect($modelGenState.get()).toBe('idle')
+    expect($modelRetryable.get()).toBe(false)
   })
 })

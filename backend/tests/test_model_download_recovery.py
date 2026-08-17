@@ -217,6 +217,35 @@ async def test_permanent_4xx_not_auto_retried(SessionLocal, mock_finalize, monke
 
 
 @pytest.mark.asyncio
+async def test_refresh_budget_exhausted_lands_recoverable(SessionLocal, mock_finalize, monkeypatch):
+    """Every attempt 403s: the refresh budget caps out, the row stays
+    recoverable, and the LAST refreshed URLs are persisted for the manual
+    retry."""
+    provider = RecordingProvider(outcomes=[_status_error(403)] * model_service._DOWNLOAD_ATTEMPTS)
+    user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
+    await _run_retry(monkeypatch, provider, user_id, model_id)
+
+    assert provider.poll_calls == model_service._DOWNLOAD_URL_REFRESH_LIMIT
+    assert provider.download_calls == model_service._DOWNLOAD_ATTEMPTS
+    row = await _load_model(SessionLocal, model_id)
+    assert row.status == "download_failed"
+    assert "https://cos.example/fresh.glb" in (row.download_urls_json or ""), "refreshed URLs must be persisted for the manual retry"
+
+
+@pytest.mark.asyncio
+async def test_refresh_on_final_attempt_surfaces_the_403(SessionLocal, mock_finalize, monkeypatch):
+    """A 403 whose refresh lands on the last attempt must surface the error —
+    never fall out of the retry loop without one."""
+    provider = RecordingProvider(outcomes=[httpx.ConnectError("reset"), _status_error(403), _status_error(403)])
+    user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
+    await _run_retry(monkeypatch, provider, user_id, model_id)
+
+    row = await _load_model(SessionLocal, model_id)
+    assert row.status == "download_failed"
+    assert "https://cos.example/fresh.glb" in (row.download_urls_json or "")
+
+
+@pytest.mark.asyncio
 async def test_cas_guards_concurrent_download_claims(SessionLocal):
     assert await model_service._cas_model_status(999999, from_statuses=model_service.RETRYABLE_DOWNLOAD_STATUSES, to_status="downloading") is False
 

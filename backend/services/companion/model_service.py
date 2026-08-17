@@ -423,7 +423,11 @@ async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, mod
             if status_code == 403 and task_id and refreshes < _DOWNLOAD_URL_REFRESH_LIMIT:
                 refreshes += 1
                 assets = await _refresh_download_urls(provider, user_id=user_id, model_id=model_id, task_id=task_id)
-                continue
+                if attempt < _DOWNLOAD_ATTEMPTS:
+                    continue
+                # Last attempt: the refreshed URLs are already persisted for
+                # the manual retry — surface the 403 now instead of looping.
+                raise
             if not 400 <= status_code < 500:
                 last_exc = exc
             else:
@@ -527,7 +531,7 @@ async def run_model_download_retry(user_id: int, model_id: int, *, io_dir: Path 
     urls = [item for item in safe_json_loads(record.download_urls_json or "[]", default=[]) if isinstance(item, dict) and item.get("url")]
     if not record.provider_task_id or not urls:
         await _mark_download_failed(model_id, "缺少下载地址，无法重试下载")
-        await _emit_model_failed(user_id, "3D 模型下载地址缺失，请重新生成", retry_download=False, model_id=model_id)
+        await _emit_model_failed(user_id, "3D 模型下载地址缺失，请重新生成", model_id=model_id)
         return
     assets = [Model3DAsset(kind=str(item.get("kind") or ""), url=str(item.get("url") or "")) for item in urls]
     provider = _resolve_model_provider(_raw_provider_name(record.provider))

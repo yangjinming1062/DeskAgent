@@ -116,6 +116,13 @@ def _raw_pg_dsn() -> str:
 async def main() -> None:
     setup_logging()
     logger.info("render worker starting", extra={"worker_id": WORKER_ID, "concurrency": SETTINGS.worker_concurrency})
+    # The model-gen pipeline runs HERE, not in web — a worker crash leaves
+    # rows in generating/pending_download/downloading that only this process's
+    # restart can observe as dead. Web runs the same sweep for its own
+    # restarts; both are idempotent.
+    from services.companion import recover_stuck_model_generations
+
+    await recover_stuck_model_generations()
     removed = await sweep_orphan_containers()
     if removed:
         logger.info("swept orphan sandbox containers", extra={"removed": removed})
