@@ -192,8 +192,7 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
             "answers": {},
             "next_field": "name",
             "complete": False,
-            "fullbody_mode": "single",
-            "default_fullbody_reference_source": "reference_image",
+            "fullbody_mode": "multi",
         }
 
         # Submit one field — it persists immediately.
@@ -1829,10 +1828,10 @@ async def test_generate_fullbody_stage_front_and_aux_chained(
         assert front_res.seed_right_url == ""
         assert front_res.seed_back_url == ""
         assert len(all_calls) == 1
-        assert "正面全身照片" in all_calls[0]["prompt"]
+        assert "正面全身角色立绘" in all_calls[0]["prompt"]
         assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
 
-        # 2. Stage 'aux'
+        # 2. Stage 'aux' — bust anchor is reused for right/back (no longer the front seed)
         aux_res = await avatar_service.generate_fullbody(
             db, user_id=user.id, avatar_id=asset.id, stage="aux"
         )
@@ -1841,8 +1840,8 @@ async def test_generate_fullbody_stage_front_and_aux_chained(
         assert "/api/companion/avatar/file/" in aux_res.seed_back_url
         assert len(all_calls) == 3
         # Aux calls used right and back prompts
-        assert "右侧面全身照片" in all_calls[1]["prompt"]
-        assert "背面全身照片" in all_calls[2]["prompt"]
+        assert "右侧面全身角色立绘" in all_calls[1]["prompt"]
+        assert "背面全身角色立绘" in all_calls[2]["prompt"]
 
         # 3. View 'front' regeneration invalidates aux seeds
         all_calls.clear()
@@ -1944,14 +1943,16 @@ async def test_generate_fullbody_preconditions(
                 db, user_id=user.id, avatar_id=asset.id, stage="aux"
             )
 
-        # Unreadable source
+        # Unreadable source — under the new three-tier fallback the
+        # code silently drops the subject reference (text-only) rather
+        # than raising. Verify generation proceeds with reference_image=None.
         monkeypatch.setattr(
             avatar_service, "load_avatar_bytes_as_data_uri", lambda _url: None
         )
-        with pytest.raises(avatar_service.AvatarSourceUnreadableError):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, stage="front"
-            )
+        result = await avatar_service.generate_fullbody(
+            db, user_id=user.id, avatar_id=asset.id, stage="front"
+        )
+        assert "/api/companion/avatar/file/" in result.seed_front_url
 
 
 @pytest.mark.asyncio
@@ -3521,11 +3522,12 @@ def test_resolve_socket_exact_suffix_fallback():
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_reference_image_source(
+async def test_generate_fullbody_uses_uploaded_image_for_all_views(
     monkeypatch, _patch_db, set_fullbody_mode
 ):
-    """reference_source='reference_image' uses the uploaded image as primary
-    and the bust avatar as secondary (for Gemini dual-ref beautification)."""
+    """When ``reference_image`` is provided, all three views (front/right/back)
+    share the uploaded image as the sole subject reference — the previously
+    generated front seed and the bust avatar no longer flow in."""
     set_fullbody_mode("multi")
 
     import json as _json
@@ -3552,7 +3554,7 @@ async def test_generate_fullbody_reference_image_source(
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="refsrc", is_active=True, can_use=True)
+        user = User(username="uploadref", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3579,26 +3581,23 @@ async def test_generate_fullbody_reference_image_source(
             user_id=user.id,
             avatar_id=asset.id,
             stage="front",
-            reference_source="reference_image",
             reference_image=fake_b64,
             reference_content_type="image/png",
         )
 
         assert len(all_calls) == 1
         call = all_calls[0]
-        # Primary reference is the uploaded image
+        # Sole subject reference is the uploaded image
         assert call["reference_image"] == f"data:image/png;base64,{fake_b64}"
-        # Secondary reference is the bust avatar (for beautification)
-        assert call["secondary_reference_image"] is not None
-        assert call["secondary_reference_image"].startswith("data:image/png;base64,")
+        assert call["secondary_reference_image"] is None
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_avatar_source_no_secondary(
+async def test_generate_fullbody_falls_back_to_bust_for_all_views(
     monkeypatch, _patch_db, set_fullbody_mode
 ):
-    """reference_source='avatar' (default) uses the bust avatar as primary
-    and does NOT set a secondary reference."""
+    """When no ``reference_image`` is provided, the bust avatar is the sole
+    subject reference for all three views."""
     set_fullbody_mode("multi")
 
     import json as _json
@@ -3626,7 +3625,7 @@ async def test_generate_fullbody_avatar_source_no_secondary(
 
     async with SessionLocal() as db:
         user = User(
-            username="avatarref", is_active=True, can_use=True
+            username="bustfallback", is_active=True, can_use=True
         )
         db.add(user)
         await db.commit()
@@ -3656,16 +3655,15 @@ async def test_generate_fullbody_avatar_source_no_secondary(
         call = all_calls[0]
         # Primary reference is the bust avatar
         assert call["reference_image"].startswith("data:image/png;base64,")
-        # No secondary reference in avatar mode
         assert call["secondary_reference_image"] is None
 
 
 @pytest.mark.asyncio
-async def test_generate_fullbody_reference_image_ignored_for_aux(
+async def test_generate_fullbody_aux_views_share_primary_reference(
     monkeypatch, _patch_db, set_fullbody_mode
 ):
-    """reference_source='reference_image' has no effect on right/back views —
-    they always use the front seed as reference, with no secondary."""
+    """Right/back views reuse the same primary subject reference (upload or
+    bust fallback) as the front view, never the just-generated front seed."""
     set_fullbody_mode("multi")
 
     import json as _json
@@ -3692,7 +3690,7 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(
     monkeypatch.setattr(avatar_service, "select_rig_type", fake_select_rig)
 
     async with SessionLocal() as db:
-        user = User(username="auxref", is_active=True, can_use=True)
+        user = User(username="auxshared", is_active=True, can_use=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -3713,71 +3711,55 @@ async def test_generate_fullbody_reference_image_ignored_for_aux(
         await db.commit()
         await db.refresh(asset)
 
-        # First generate front (so aux has a seed to reference)
+        upload_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
         await avatar_service.generate_fullbody(
             db,
             user_id=user.id,
             avatar_id=asset.id,
             stage="front",
-            reference_source="reference_image",
-            reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+            reference_image=upload_b64,
             reference_content_type="image/png",
         )
         all_calls.clear()
 
-        # Aux views — reference_source should be ignored
+        # Aux — uploaded image still wins (no reliance on the just-generated seed).
         await avatar_service.generate_fullbody(
             db,
             user_id=user.id,
             avatar_id=asset.id,
             stage="aux",
-            reference_source="reference_image",
-            reference_image="iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB",
+            reference_image=upload_b64,
             reference_content_type="image/png",
         )
 
         assert len(all_calls) == 2
         for call in all_calls:
-            # Right/back use the front seed, not the uploaded image
-            assert call["reference_image"].startswith("data:image/png;base64,")
-            assert (
-                call["reference_image"]
-                != "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
-            )
-            # No secondary for aux views
+            assert call["reference_image"] == f"data:image/png;base64,{upload_b64}"
             assert call["secondary_reference_image"] is None
 
 
-def test_fullbody_request_schema_reference_source_validation():
-    """FullbodyGenerateRequest rejects reference_source='reference_image' without a reference_image."""
+def test_fullbody_request_schema_no_reference_source_field():
+    """``reference_source`` was removed — old clients passing it get a 422."""
     from modules.companion.schemas import FullbodyGenerateRequest
     from pydantic import ValidationError
 
-    # Default reference_source is 'avatar' — no reference_image needed
-    req = FullbodyGenerateRequest(stage="front")
-    assert req.reference_source == "avatar"
+    # Valid request without the legacy field
+    req = FullbodyGenerateRequest(stage="front", reference_image="iVBORw0KGgo=")
+    assert not hasattr(req, "reference_source")
 
-    # reference_source='reference_image' with image — OK
-    req = FullbodyGenerateRequest(
-        stage="front",
-        reference_source="reference_image",
-        reference_image="iVBORw0KGgo=",
-        reference_content_type="image/png",
-    )
-    assert req.reference_source == "reference_image"
-
-    # reference_source='reference_image' without image — rejected
+    # Old clients passing the field are rejected by ``extra="forbid"``
     with pytest.raises(ValidationError):
         FullbodyGenerateRequest(stage="front", reference_source="reference_image")
 
 
-async def test_onboarding_state_default_fullbody_reference_source(_patch_db):
-    """onboarding.get_state returns 'avatar' for preset species, 'reference_image' otherwise."""
+async def test_onboarding_state_does_not_include_default_fullbody_reference_source(_patch_db):
+    """The ``default_fullbody_reference_source`` field was removed from
+    ``onboarding.get_state`` — fullbody reference resolution is now an
+    implicit three-tier fallback (upload → bust → text)."""
     _, SessionLocal = _patch_db
     from services.companion import get_onboarding_state, update_persona
 
     async with SessionLocal() as db:
-        # Preset species (人类) → 'avatar'
         await update_persona(
             db,
             201,
@@ -3789,9 +3771,9 @@ async def test_onboarding_state_default_fullbody_reference_source(_patch_db):
             },
         )
         state = await get_onboarding_state(db, 201)
-        assert state["default_fullbody_reference_source"] == "avatar"
+        assert "default_fullbody_reference_source" not in state
 
-        # Non-preset species (猫) → 'reference_image'
+        # Confirm a non-preset species also no longer leaks the field.
         await update_persona(
             db,
             202,
@@ -3803,21 +3785,7 @@ async def test_onboarding_state_default_fullbody_reference_source(_patch_db):
             },
         )
         state = await get_onboarding_state(db, 202)
-        assert state["default_fullbody_reference_source"] == "reference_image"
-
-        # Preset species (精灵) → 'avatar'
-        await update_persona(
-            db,
-            203,
-            {
-                "name": "艾尔",
-                "personality": "优雅",
-                "speaking_style": "沉稳",
-                "biological_type": "精灵",
-            },
-        )
-        state = await get_onboarding_state(db, 203)
-        assert state["default_fullbody_reference_source"] == "avatar"
+        assert "default_fullbody_reference_source" not in state
 
 
 @pytest.mark.asyncio

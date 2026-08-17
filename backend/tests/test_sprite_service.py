@@ -406,3 +406,42 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
 
     resp = client.post("/api/companion/sprite", json={"request": ""})
     assert resp.status_code == 422
+
+
+# ── sprite subject-reference anchor: bust before seed ──────────────────
+
+
+def test_sprite_subject_reference_prefers_bust_over_seed():
+    """The sprite is a user-visible static-fallback fullbody image that must
+    stay in the realistic identity-anchor tier — anchored on the bust avatar,
+    not on the (now anime / cel-shading) seed."""
+    import re
+
+    src = open(sprite_service.__file__, encoding="utf-8").read()
+    pattern = (
+        r"subject_ref\s*=\s*load_avatar_bytes_as_data_uri"
+        r"\([^)]+\)\s*or\s*load_avatar_bytes_as_data_uri\([^)]+\)"
+    )
+    matches = re.findall(pattern, src)
+    assert matches, "expected subject_ref fallback expression in sprite_service"
+    for expr in matches:
+        primary, fallback = expr.split(" or ")
+        assert "asset.asset_url" in primary, (
+            "sprite subject_ref must prefer the bust (asset.asset_url); "
+            f"got: {expr}"
+        )
+        assert "seed_front_url" in fallback, (
+            "sprite subject_ref must fall back to seed_front_url only; "
+            f"got: {expr}"
+        )
+
+
+def test_sprite_prompt_system_anchors_realistic_style():
+    """Sprite prompt must include realistic-anchor wording and exclude the
+    anime / cel-shading / 立绘 vocabulary reserved for the fullbody seed."""
+    system = sprite_service._SPRITE_PROMPT_SYSTEM
+    assert "写实人像" in system
+    assert "realistic" in system.lower()
+    assert "二次元" not in system
+    assert "cel-shading" not in system
+    assert "立绘" not in system

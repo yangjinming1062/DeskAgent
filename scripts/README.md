@@ -29,6 +29,26 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 - `runner/tools/<subpkg>` 之间的 sibling cross-subpackage eager import（terminal_tool ↔ file_tools、code_execution_tool → thread_context 这类循环）
 - Facade 一致性：`from <local_pkg> import X` 走的 `<local_pkg>` 必须在其 `__init__.py` 里 re-export `X`，防止 facade 被过度精简
 
+## 3. 全身图供应商采样（调试）
+
+`sample_fullbody_providers.py` — 用固定角色（梦蝶）与固定参考图（`backend/data/参考图.jpg`）按供应商采样全身种子图，供视觉评审决定供应商优先级调整。
+
+输出：`<repo>/backend/data/_fullbody_samples/<UTC-timestamp>/{grok,gemini,minimax}_{1,2}.png`。**不**写 `companion-avatars/`、**不**写 `companion-assets/<uid>/`，**不**改生产路径。
+
+```bash
+# 跑默认 3 供应商 × 2 张 = 6 张
+uv run scripts/sample_fullbody_providers.py
+
+# 只跑某个供应商
+uv run scripts/sample_fullbody_providers.py --providers gemini
+
+# 自定义输出目录
+uv run scripts/sample_fullbody_providers.py --output-dir backend/data/_fullbody_samples/2026-08-16-review/
+
+# 跑前先确认 backend/data/参考图.jpg 存在
+```
+
+
 ## 3. Onboarding 引导词音频生成与校验 — `onboarding-audio/`
 
 包含预渲染引导词音频元信息 `manifest.json` 与合成/校验脚本 `generate_onboarding_audio.py`。详见 [scripts/onboarding-audio/README.md](onboarding-audio/README.md)。

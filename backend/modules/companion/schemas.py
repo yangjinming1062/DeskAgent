@@ -44,11 +44,6 @@ class FullbodyGenerateRequest(BaseModel):
     # Free-text nudge from the portrait-phase textarea ("头发再短一点"). Empty
     # / whitespace is treated as no nudge by build_fullbody_prompt.
     feedback: str | None = Field(default=None, max_length=2000)
-    # When "reference_image", the front view uses the user's original uploaded
-    # reference image (preserving body/figure info) instead of the bust avatar.
-    # The backend automatically passes the bust avatar as a secondary reference
-    # so Gemini can blend body from the upload + beautification from the avatar.
-    reference_source: Literal["avatar", "reference_image"] = "avatar"
     reference_image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
     reference_content_type: str | None = Field(default=None, max_length=64)
 
@@ -56,8 +51,6 @@ class FullbodyGenerateRequest(BaseModel):
     def _check_exclusive(self):
         if bool(self.stage) == bool(self.view):
             raise ValueError("exactly one of 'stage' or 'view' is required")
-        if self.reference_source == "reference_image" and not self.reference_image:
-            raise ValueError("reference_image is required when reference_source is 'reference_image'")
         return self
 
 

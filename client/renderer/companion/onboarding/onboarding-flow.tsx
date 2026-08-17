@@ -385,7 +385,6 @@ async function generateFullbody(
     const body: Record<string, unknown> = { view, feedback }
 
     if (referenceSource === 'reference_image' && referenceImage) {
-      body.reference_source = 'reference_image'
       body.reference_image = referenceImage.base64
       body.reference_content_type = referenceImage.contentType
     }
@@ -982,7 +981,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           next_field?: string | null
           complete?: boolean
           fullbody_mode?: 'single' | 'multi'
-          default_fullbody_reference_source?: 'avatar' | 'reference_image'
         }>('onboarding.get_state', {})
 
         if (state?.fullbody_mode) {
@@ -992,15 +990,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           const next: 'single' | 'multi' = state.fullbody_mode
 
           setFullbodyMode(next)
-        }
-
-        if (state?.default_fullbody_reference_source) {
-          const refDefault = state.default_fullbody_reference_source
-
-          setDefaultFullbodyRefSource(refDefault)
-          // Only set the current selection if the user hasn't manually toggled yet
-          // (both start as 'avatar', so if they differ the user already chose).
-          setFullbodyRefSource(prev => (prev === defaultFullbodyRefSourceRef.current ? refDefault : prev))
         }
 
         if (state?.complete) {

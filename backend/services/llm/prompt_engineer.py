@@ -44,28 +44,49 @@ class FullbodyTemplate:
     back_features: str
     pose: str
     flavor: str = ""
+    rig_type: str = "biped"
 
 
 # ── 共用规则后缀（完整性 + 背景光线 + 画风，不含 pose）──
 # Integration-tested: Chinese-only structural prompts score highest across
 # MiniMax image-01, Gemini, and Grok.  No character description in the text
 # prompt — subject_reference carries 100% of identity.  Avoid "wide shot"
-# (→ top-down camera) and "portrait of" (→ bust-only rendering).
-_FULLBODY_SHARED_RULES = "从头到脚完整可见，平视角度拍摄。纯白背景，均匀打光。写实风格，8K高清。"
+# (→ top-down camera), "portrait of" (→ bust-only rendering), "写实", "8K",
+# and "photorealistic" — these bias providers toward photorealistic output
+# and degrade NPR / cel-shaded results.  Style is now anime / cel-shading
+# to match the persona sprite style (see sprite_bBxZoPXc9Rw.png reference).
+_FULLBODY_SHARED_RULES_BIPED = (
+    "从头到脚完整可见，平视角度拍摄。纯白背景，均匀打光。"
+    "二次元动漫立绘（anime / cel-shading illustration），"
+    "半写实卡通渲染风格，柔和色阶过渡（soft cel shading），"
+    "清新自然的淡彩肤色，整体保持角色立绘的简洁明快质感。"
+)
 
-# Shared A-pose clause — MiniMax rarely produces a rigid textbook A-pose, but
-# a concise Chinese directive consistently yields a natural standing pose with
-# arms slightly spread, which is the best achievable result.
-# Skin visibility is a wardrobe-swap precondition: PBR-texture swaps only carry
-# over albedo / detail / roughness / metalness for skin Tripo actually saw in
-# the seed. Tight-but-covering (bodysuit, leggings) leaves skin-color and PBR
-# channel mismatches later; full coverage (long dress) leaves geometry holes.
+_FULLBODY_SHARED_RULES_NON_BIPED = (
+    "从头到尾（或尾尖）完整可见，平视角度拍摄。纯白背景，均匀打光。"
+    "二次元动漫立绘（anime / cel-shading illustration），"
+    "半写实卡通渲染风格，柔和色阶过渡（soft cel shading），"
+    "体表呈现该物种特征纹理（毛皮 / 羽毛 / 鳞片 / 几丁质外壳），"
+    "整体保持角色立绘的简洁明快质感。"
+)
+
+
+def _select_shared_rules(rig_type: str) -> str:
+    return _FULLBODY_SHARED_RULES_BIPED if rig_type == "biped" else _FULLBODY_SHARED_RULES_NON_BIPED
+
+
+# A-pose preserved — Tripo3D + Mixamo auto-rigging rely on a symmetric,
+# clearly-separated skeleton. Clothing constraint retained: in anime style
+# the model will otherwise freely paint a long dress and break the PBR
+# wardrobe swap pipeline. The "every body part visible" enumeration is
+# softened (it reads as "fully nude" to providers and triggers moderation);
+# the long-coverage ban stays as-is.
 _BIPED_A_POSE = (
-    "标准A-pose站姿，双臂向两侧微张约30度，双脚分开与肩同宽。"
-    "穿着最小覆盖的运动内衣+运动短裤，颈部至脚踝的全部皮肤完整可见——"
-    "颈、锁骨、胸腹腰、臀、大腿、小腿、脚踝均无布料遮挡；"
-    "禁止任何覆盖躯干或四肢皮肤的服装（长袖、连体紧身衣、长裤、长裙、"
-    "长袍、外套、长靴、高筒袜等一律不允许）。"
+    "标准A-pose站姿，双臂向两侧微张约30度（肩、肘、腕清晰分离，便于下游骨骼自动识别），"
+    "双脚分开与肩同宽。"
+    "穿着最小覆盖的运动内衣+运动短裤，躯干与四肢皮肤充分暴露，"
+    "便于后期 PBR 换装保留完整 albedo —— 禁止覆盖躯干或四肢皮肤的大面积服装"
+    "（长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等）。"
 )
 
 # ── 预设物种模板 ───────────────────────────────────────────────────
@@ -74,11 +95,15 @@ _BIPED_A_POSE = (
 # 由 beautified avatar_prompt + 参考图决定，系统不替用户想象。
 # 人类/精灵 share identical rigging-focused views (front/right/back);
 # only 机甲 has distinct mechanical-joint language.
-_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(front_features="", right_features="右侧面（90°转体）。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE)
+_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
+    front_features="", right_features="右侧面（90°转体）。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE, rig_type="biped"
+)
 _SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
     "人类": _BIPED_HUMANOID_TEMPLATE,
     "精灵": _BIPED_HUMANOID_TEMPLATE,
-    "机甲": FullbodyTemplate(front_features="", right_features="右侧面（90°转体），机体侧面轮廓清晰。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE),
+    "机甲": FullbodyTemplate(
+        front_features="", right_features="右侧面（90°转体），机体侧面轮廓清晰。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE, rig_type="biped"
+    ),
 }
 
 # ── 物种氛围修饰（用于 rig type 不确定的预设标签）──
@@ -97,27 +122,42 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         right_features="右侧面（90°），四肢与尾巴侧面轮廓清晰。",
         back_features="背面（180°转身），看不到面部。",
         pose="四足自然直立站立，四腿分开；脊椎水平，头抬起；尾巴自然下垂。",
+        rig_type="quadruped",
     ),
     "avian": FullbodyTemplate(
         front_features="",
         right_features="右侧面（90°），翅膀侧面轮廓清晰。",
         back_features="背面（180°转身），看不到面部。",
         pose="双足直立站立，双翼向两侧半展约30-45度；身体朝前。",
+        rig_type="avian",
     ),
     "serpentine": FullbodyTemplate(
         front_features="",
         right_features="右侧面（90°），躯体侧面曲线清晰。",
         back_features="背面，脊背纹理连贯至尾尖。",
         pose="身体水平自然伸展或S形蜿蜒，全身完整可见；头部抬起。",
+        rig_type="serpentine",
     ),
     "aquatic": FullbodyTemplate(
-        front_features="", right_features="右侧面（90°），各鳍形态清晰。", back_features="背面，背鳍与尾鳍形态清晰。", pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。"
+        front_features="",
+        right_features="右侧面（90°），各鳍形态清晰。",
+        back_features="背面，背鳍与尾鳍形态清晰。",
+        pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。",
+        rig_type="aquatic",
     ),
     "hexapod": FullbodyTemplate(
-        front_features="", right_features="右侧面（90°），六足排列清晰。", back_features="背面，背甲纹理清晰。", pose="六足自然直立站立，六腿对称分开；各体段完整可见。"
+        front_features="",
+        right_features="右侧面（90°），六足排列清晰。",
+        back_features="背面，背甲纹理清晰。",
+        pose="六足自然直立站立，六腿对称分开；各体段完整可见。",
+        rig_type="hexapod",
     ),
     "octopod": FullbodyTemplate(
-        front_features="", right_features="右侧面（90°），步足排列清晰。", back_features="背面，背甲轮廓清晰。", pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。"
+        front_features="",
+        right_features="右侧面（90°），步足排列清晰。",
+        back_features="背面，背甲轮廓清晰。",
+        pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。",
+        rig_type="octopod",
     ),
 }
 
@@ -143,32 +183,46 @@ def resolve_fullbody_template(species: str, rig_type: str = "biped") -> Fullbody
     return template
 
 
-_VIEW_PREFIX = {"front": "正面全身照片", "right": "右侧面全身照片", "back": "背面全身照片"}
+_VIEW_PREFIX = {"front": "正面全身角色立绘", "right": "右侧面全身角色立绘", "back": "背面全身角色立绘"}
 
 
 def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: str | None = None, avatar_prompt: str = "") -> str:
     """直接构造 image-gen prompt — 无 LLM 翻译。
 
-    Integration-tested through 4 rounds of A/B testing with MiniMax image-01:
+    Integration-tested through 5 rounds of A/B testing with MiniMax image-01,
+    Grok, and Gemini:
 
     1. **No character description in the text prompt.** Any character
        description — even "一位黑色长发年轻女性" — causes MiniMax to
        default to bust-portrait rendering (body score drops from 9 to 1-2).
        subject_reference carries 100% of the character's visual identity.
+       The full-body seed's face is intentionally AI-reinvented based on the
+       persona + reference image — it does NOT need to match the bust
+       avatar (which stays photorealistic; see ``_AVATAR_SYSTEM_PROMPT``).
 
     2. **Chinese-only, pure structural.** Chinese consistently outperformed
        English (total 28-34 vs 18-29).  Avoid "wide shot" (→ top-down camera)
        and "portrait of" (→ bust-only rendering).
 
-    3. **View framing first.** "正面全身照片" as the opening phrase prevents
-       the model from interpreting the prompt as a portrait request.
+    3. **View framing first.** "正面全身角色立绘" as the opening phrase
+       prevents the model from interpreting the prompt as a portrait request.
+
+    4. **Style is NPR anime / cel-shading.** Realistic / 8K / photorealistic
+       keywords bias providers toward photorealism and degrade the new style.
+       The shared rules suffix carries the anime / cel-shading bias; see
+       ``_select_shared_rules`` (biped vs non-biped variants).
+
+    5. **Pose preserved as A-pose for bipeds.** Tripo3D + Mixamo auto-rigging
+       rely on a symmetric skeleton. Non-biped rigs use their own pose
+       strings. See ``_RIG_TYPE_TEMPLATES``.
 
     ``avatar_prompt`` is accepted but intentionally unused (kept for API
     stability; the vision-LLM description is no longer injected into the
     image-gen prompt).
     """
     features = getattr(template, f"{view}_features")
-    prompt = f"{_VIEW_PREFIX[view]}，{template.pose}{features}{_FULLBODY_SHARED_RULES}"
+    shared_rules = _select_shared_rules(template.rig_type)
+    prompt = f"{_VIEW_PREFIX[view]}，{template.pose}{features}{shared_rules}"
     if template.flavor:
         prompt += template.flavor
     if feedback and feedback.strip():

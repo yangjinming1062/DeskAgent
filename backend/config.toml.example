@@ -184,7 +184,7 @@ log_format = "json"
 [companion]
 # "single" = front-only fullbody (2 images: avatar + front), uses image-to-model API
 # "multi"  = three-view fullbody (4 images: avatar + front + right + back), uses multiview-to-model API
-fullbody_mode = "single"
+fullbody_mode = "multi"
 
 [nightly]
 nightly_activity_enabled = true

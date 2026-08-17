@@ -160,24 +160,28 @@ def test_build_front_includes_pose_and_rules():
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
     # View framing goes FIRST — prevents MiniMax from defaulting to bust portrait
-    assert prompt.startswith("正面全身照片，")
+    assert prompt.startswith("正面全身角色立绘，")
     assert "A-pose" in prompt
     assert "平视角度" in prompt
     assert "纯白背景" in prompt
-    assert "8K" in prompt
+    assert "8K" not in prompt
+    assert "8K高清" not in prompt
+    assert "写实风格" not in prompt
+    assert "二次元" in prompt
+    assert "cel-shading" in prompt
 
 
 def test_build_right_uses_right_features():
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt("right", template=template)
-    assert prompt.startswith("右侧面全身照片，")
+    assert prompt.startswith("右侧面全身角色立绘，")
     assert "右侧面（90°转体）" in prompt
 
 
 def test_build_back_uses_back_features():
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt("back", template=template)
-    assert prompt.startswith("背面全身照片，")
+    assert prompt.startswith("背面全身角色立绘，")
     assert "看不到面部" in prompt
 
 
@@ -200,7 +204,7 @@ def test_build_quadruped_pose():
     prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
     assert "四足自然直立站立" in prompt
     assert "A-pose" not in prompt
-    assert prompt.startswith("正面全身照片，")
+    assert prompt.startswith("正面全身角色立绘，")
 
 
 def test_build_biped_fullbody_includes_body_reveal_clause():
@@ -209,6 +213,8 @@ def test_build_biped_fullbody_includes_body_reveal_clause():
     # full body, otherwise hidden geometry surfaces as artifacts. Even
     # tight-but-covering outfits (bodysuit, leggings) leave albedo/PBR mismatches
     # in the covered skin areas, so the directive must enforce minimum coverage.
+    # Note: the prior "颈部至脚踝的全部皮肤完整可见" enumeration was removed
+    # because providers misread it as "fully nude" and triggered moderation.
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
     assert "最小覆盖" in prompt
@@ -217,7 +223,8 @@ def test_build_biped_fullbody_includes_body_reveal_clause():
     assert "长裙" in prompt
     assert "长袖" in prompt
     assert "连体紧身衣" in prompt
-    assert "全部皮肤完整可见" in prompt
+    assert "高筒袜" in prompt
+    assert "躯干与四肢皮肤充分暴露" in prompt
 
 
 def test_build_non_biped_fullbody_skips_clothing_clause():
@@ -227,6 +234,48 @@ def test_build_non_biped_fullbody_skips_clothing_clause():
     assert "最小覆盖" not in prompt
     assert "运动内衣" not in prompt
     assert "运动短裤" not in prompt
+
+
+def test_build_fullbody_shared_rules_drops_realistic_mode():
+    """The biped shared rules must NOT carry pure-photorealistic markers
+    (8K / "写实风格"), but the "semi-realistic" / "半写实" anchor is
+    intentional — it signals "not chibi, not pure cartoon" without pushing
+    providers into full photorealism."""
+    rules = prompt_engineer._FULLBODY_SHARED_RULES_BIPED
+    # Pure-photorealistic triggers must be gone.
+    assert "8K" not in rules
+    assert "写实风格" not in rules
+    # The anime / cel-shading anchor must be present.
+    assert "二次元" in rules
+    assert "cel-shading" in rules
+    # The semi-realistic anchor is the *target* — it's deliberate.
+    assert "半写实" in rules or "卡通渲染" in rules
+
+
+def test_build_fullbody_shared_rules_species_aware():
+    """Non-biped shared rules describe fur/feathers/scales instead of skin."""
+    biped = prompt_engineer._FULLBODY_SHARED_RULES_BIPED
+    non_biped = prompt_engineer._FULLBODY_SHARED_RULES_NON_BIPED
+    # Biped uses "淡彩肤色"; quadruped etc. must NOT.
+    assert "淡彩肤色" in biped
+    assert "淡彩肤色" not in non_biped
+    # Non-biped uses species-texture vocabulary.
+    assert "毛皮" in non_biped
+    assert "羽毛" in non_biped
+    assert "鳞片" in non_biped
+    # Biped species templates should resolve to biped shared rules.
+    quad_template = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
+    quad_prompt = prompt_engineer.build_fullbody_prompt("front", template=quad_template)
+    assert "毛皮" in quad_prompt
+    assert "淡彩肤色" not in quad_prompt
+
+
+def test_fullbody_template_carries_rig_type():
+    """``FullbodyTemplate.rig_type`` is required for species-aware shared rules."""
+    biped = prompt_engineer.resolve_fullbody_template("人类")
+    assert biped.rig_type == "biped"
+    quad = prompt_engineer.resolve_fullbody_template("猫", "quadruped")
+    assert quad.rig_type == "quadruped"
 
 
 # ── chat error cases ──────────────────────────────────────────────

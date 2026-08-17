@@ -41,14 +41,16 @@ No commentary.
 _SPRITE_PROMPT_SYSTEM = """\
 You write one Chinese image-generation prompt for a static full-body companion sprite.
 
-The subject's visual identity comes from a reference image — never re-describe or change the
-character's face, hair, body or outfit; the prompt only directs pose/emotion/action.
+The subject's visual identity comes from a bust reference image — never re-describe or
+change the character's face, hair, body or outfit; the prompt only directs pose/emotion/action.
 Requirements:
-- single character, full body, standing in frame
-- express the requested state/emotion/action clearly through pose and expression
+- 单人角色，全身完整可见，居中站立于画面内
+- 通过姿态与表情表达所请求的情绪状态或动作
 - 纯白色平面背景（#FFFFFF），无阴影、无渐变、无背景图案
 - 角色不穿纯白色或近白色的衣服与配饰
-- consistent stylization with the persona (species / art style)
+- 写实人像风格（realistic portrait photography），与半身像头像保持视觉一致，
+  skin texture 自然、面部细节清晰、光照均匀
+- consistent stylization with the persona (species)
 
 Respond with a single JSON object: {"prompt": <str>, "tag": <str>}
 tag is a short Chinese label (≤16 字) describing the pose/emotion/action — it is the album matching key.
@@ -57,7 +59,7 @@ No commentary.
 
 
 class SpriteSeedMissingError(Exception):
-    """Raised when the user has no active avatar/seed to anchor sprite identity."""
+    """Raised when the user has no active avatar bust to anchor sprite identity."""
 
 
 class SpriteGenerationError(Exception):
@@ -237,7 +239,12 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
                     (await read_db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
                 )
             avatar_id = asset.id
-            subject_ref = load_avatar_bytes_as_data_uri(asset.seed_front_url) or load_avatar_bytes_as_data_uri(asset.asset_url)
+            # Sprite is a user-visible static-fallback fullbody image and stays
+            # in the realistic identity-anchor tier — anchor it on the bust
+            # avatar, not on the seed (which is now an anime / cel-shading
+            # internal-only image). ``seed_front_url`` remains a fallback for
+            # the rare case where the bust is missing (e.g. mid-onboarding).
+            subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url) or load_avatar_bytes_as_data_uri(asset.seed_front_url)
 
         if entries and (hit := await _match_album(None, user_id, entries, request_text)):
             return hit, False
@@ -252,7 +259,8 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
             if entries and (hit := await _match_album(db, user_id, entries, request_text)):
                 return hit, False
         avatar_id = asset.id
-        subject_ref = load_avatar_bytes_as_data_uri(asset.seed_front_url) or load_avatar_bytes_as_data_uri(asset.asset_url)
+        # See note above: bust is the sprite's identity anchor.
+        subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url) or load_avatar_bytes_as_data_uri(asset.seed_front_url)
 
     if subject_ref is None:
         raise SpriteSeedMissingError("形象种子图不可读，请重新确认形象")

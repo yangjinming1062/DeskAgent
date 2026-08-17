@@ -7,7 +7,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import is_preset_species
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
 # Persona field order — part of the contract downstream prompt consumers
@@ -194,14 +193,8 @@ async def _portrait_next_field(db: AsyncSession, user_id: int) -> str:
     return "portrait-fullbody-back"
 
 
-def _state(answers: dict, next_field: str | None, complete: bool, *, default_fullbody_reference_source: str = "avatar") -> dict[str, Any]:
-    return {
-        "answers": answers,
-        "next_field": next_field,
-        "complete": complete,
-        "fullbody_mode": SETTINGS.fullbody_mode,
-        "default_fullbody_reference_source": default_fullbody_reference_source,
-    }
+def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, Any]:
+    return {"answers": answers, "next_field": next_field, "complete": complete, "fullbody_mode": SETTINGS.fullbody_mode}
 
 
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
@@ -210,30 +203,29 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
     ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
     ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
     ``fullbody_mode`` is included so the desktop knows whether to show the side/back phases.
+    Fullbody subject-reference resolution is no longer exposed via this
+    payload — it uses an implicit three-tier fallback (upload → bust → none)
+    server-side; the client just supplies ``reference_image`` when it has one.
     """
     persona = await get_or_create_persona(db, user_id)
-    # Preset species (人类/精灵/机甲) are biped → default to avatar for fullbody;
-    # everything else defaults to reference_image to preserve body features.
-    species = _load_draft(persona).get("biological_type", "")
-    default_ref = "avatar" if is_preset_species(species) else "reference_image"
     if persona.is_complete:
         draft = _load_draft(persona)
         user_profile = await read_user_profile(db, user_id)
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
-            return _state(merged, await _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
+            return _state(merged, await _portrait_next_field(db, user_id), False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
             # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
             next_field = "voice" if voice_missing else missing_users[0]
-            return _state(merged, next_field, False, default_fullbody_reference_source=default_ref)
-        return _state({}, None, True, default_fullbody_reference_source=default_ref)
+            return _state(merged, next_field, False)
+        return _state({}, None, True)
     draft = _load_draft(persona)
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     if missing_character is not None:
-        return _state(draft, missing_character, False, default_fullbody_reference_source=default_ref)
-    return _state(draft, await _portrait_next_field(db, user_id), False, default_fullbody_reference_source=default_ref)
+        return _state(draft, missing_character, False)
+    return _state(draft, await _portrait_next_field(db, user_id), False)
 
 
 async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, value: str | None) -> dict[str, Any]:

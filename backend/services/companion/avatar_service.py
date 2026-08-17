@@ -32,7 +32,7 @@ _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 _SEED_ATTRS: dict[str, str] = {"front": "seed_front_url", "right": "seed_right_url", "back": "seed_back_url"}
 
-_FULLBODY_PROVIDER_PRIORITY = ["grok", "gemini", "minimax"]
+_FULLBODY_PROVIDER_PRIORITY = ["gemini", "grok", "minimax"]
 
 # Per-user lock shared between the REST fullbody route and the WS RPC handlers
 # so a concurrent regen + fullbody for the same user can't race on the row.
@@ -44,23 +44,6 @@ _MODERATION_SANITIZATION_PROMPT = (
     "将可能触发审核的描述替换为更含蓄、得体的表达。\n"
     "只做最小改动，保持描述的整体风格和细节完整，输出修改后的提示词，不要解释。"
 )
-
-
-def _resolve_reference_for_view(asset: AvatarAsset, view: str) -> str | None:
-    """Resolve the ``subject_reference`` image for a given view.
-
-    Front view: bust portrait (``asset_url``) — highest face-to-image ratio
-    for identity preservation.
-
-    Right / back views: front full-body seed (``seed_front_url``) — the
-    complete outfit is visible, ensuring clothing consistency across all
-    three views (critical for 3D model reconstruction).  Gemini's native
-    image-editing mode follows viewpoint instructions reliably even when
-    the reference shows a front-facing body.
-    """
-    if view == "front":
-        return load_avatar_bytes_as_data_uri(asset.asset_url)
-    return load_avatar_bytes_as_data_uri(asset.seed_front_url)
 
 
 async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
@@ -384,16 +367,8 @@ async def _generate_avatar_step(
 
 
 async def _pre_read_fullbody(
-    db: AsyncSession,
-    user_id: int,
-    avatar_id: int,
-    stage: str | None,
-    view: str | None,
-    feedback: str | None,
-    reference_source: str,
-    reference_image: str | None,
-    reference_content_type: str | None,
-) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str], dict[str, str]]:
+    db: AsyncSession, user_id: int, avatar_id: int, stage: str | None, view: str | None, feedback: str | None, reference_image: str | None, reference_content_type: str | None
+) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str]]:
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
@@ -418,21 +393,21 @@ async def _pre_read_fullbody(
     if not is_front and not bool(asset.seed_front_url):
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
+    # Three-tier subject-reference fallback: uploaded image → bust avatar → none.
+    # All views (front/right/back) share the SAME primary reference so clothing,
+    # skin tone, and hair color stay consistent across viewpoints. The fullbody
+    # seed's face is intentionally AI-reinvented per the persona — the bust
+    # avatar is no longer a "beautification secondary" anchor.
     references: dict[str, str] = {}
-    secondary_refs: dict[str, str] = {}
-    for v in views_to_gen:
-        if v == "front" and reference_source == "reference_image" and reference_image:
-            mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
-            references[v] = f"data:{mime};base64,{reference_image}"
-            avatar_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
-            if avatar_ref:
-                secondary_refs[v] = avatar_ref
-        else:
-            ref = _resolve_reference_for_view(asset, v)
-            if ref is None:
-                source_label = "front seed" if v != "front" else "avatar source file"
-                raise AvatarSourceUnreadableError(f"avatar {avatar_id} {source_label} is unreadable")
-            references[v] = ref
+    primary_ref_uri: str | None = None
+    if reference_image:
+        mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
+        primary_ref_uri = f"data:{mime};base64,{reference_image}"
+    else:
+        primary_ref_uri = load_avatar_bytes_as_data_uri(asset.asset_url)
+    if primary_ref_uri:
+        for v in views_to_gen:
+            references[v] = primary_ref_uri
 
     if not cached_avatar_prompt:
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
@@ -446,7 +421,7 @@ async def _pre_read_fullbody(
     template = resolve_fullbody_template(species, rig_type)
 
     prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
-    return views_to_gen, is_front, persist, references, secondary_refs, prompts
+    return views_to_gen, is_front, persist, references, prompts
 
 
 async def _write_fullbody(
@@ -496,13 +471,22 @@ async def generate_fullbody(
     view: str | None = None,
     stage: str | None = None,
     feedback: str | None = None,
-    reference_source: str = "avatar",
     reference_image: str | None = None,
     reference_content_type: str | None = None,
     user_id_kw: int | None = None,
 ) -> AvatarAsset:
-    """Step-2: render full-body multiview seeds (front, right, back) using chained references.
-    Decoupled into short pre-read, long generation without holding DB session, and short write."""
+    """Step-2: render the full-body multiview seed set (front / right / back).
+
+    Reference image fallback chain: uploaded reference → bust avatar → none (text-only).
+    All three views share the SAME primary subject reference so clothing, skin
+    tone, and hair color stay consistent across viewpoints. The fullbody seed's
+    face is intentionally AI-reinvented per the persona; the bust avatar is
+    not re-applied as a secondary anchor. The seed uses an NPR anime /
+    cel-shading illustration style (see ``_FULLBODY_SHARED_RULES_BIPED``);
+    it is for the Tripo3D pipeline only and is not directly user-facing.
+
+    Decoupled into short pre-read, long generation without holding DB session,
+    and short write."""
     uid = user_id if user_id is not None else user_id_kw
     if uid is None:
         raise ValueError("user_id is required")
@@ -515,24 +499,14 @@ async def generate_fullbody(
 
     if db is None:
         async with SESSION_LOCAL() as read_db:
-            views_to_gen, is_front, persist, references, secondary_refs, prompts = await _pre_read_fullbody(
-                read_db, uid, avatar_id, stage, view, feedback, reference_source, reference_image, reference_content_type
-            )
+            views_to_gen, is_front, persist, references, prompts = await _pre_read_fullbody(read_db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
     else:
-        views_to_gen, is_front, persist, references, secondary_refs, prompts = await _pre_read_fullbody(
-            db, uid, avatar_id, stage, view, feedback, reference_source, reference_image, reference_content_type
-        )
+        views_to_gen, is_front, persist, references, prompts = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
 
     results = await asyncio.gather(
         *[
             _generate_one_portrait_with_moderation_retry(
-                prompts[v],
-                uid,
-                reference_image=references[v],
-                secondary_reference_image=secondary_refs.get(v),
-                size=_AVATAR_FULL_SIZE,
-                persist=persist,
-                preferred_provider=_FULLBODY_PROVIDER_PRIORITY,
+                prompts[v], uid, reference_image=references.get(v), size=_AVATAR_FULL_SIZE, persist=persist, preferred_provider=_FULLBODY_PROVIDER_PRIORITY
             )
             for v in views_to_gen
         ],

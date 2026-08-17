@@ -326,7 +326,6 @@ async def post_avatar_fullbody(
                 view=body.view,
                 stage=body.stage,
                 feedback=body.feedback,
-                reference_source=body.reference_source,
                 reference_image=body.reference_image,
                 reference_content_type=body.reference_content_type,
             )
