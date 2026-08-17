@@ -2,6 +2,7 @@ import asyncio
 import io
 import json
 from collections import deque
+from collections.abc import Iterator
 
 from components import SESSION_LOCAL, get_logger, parse_llm_json, safe_json_loads
 from modules.companion import CompanionSpriteImage
@@ -21,11 +22,16 @@ logger = get_logger(__name__)
 
 _SPRITE_SIZE = "2:3"
 _SPRITE_ALBUM_CAP = 300
-# White-key calibration from the 2026-08-14 MiniMax experiment: pure-white
-# prompts render corner pixels 243–254 (JPEG compression), so seeds start at
-# 240 and the flood expands through the 225+ soft band.
+# White-key calibration (2026-08-14 MiniMax experiment): pure-white prompts
+# render corner pixels at 243–254 (JPEG compression), so seeds start at 240.
+# The soft band widens to 210 to capture dim "studio floor" haze; the squared
+# ease-out clears the lower band edge the linear ramp left as fog residue.
 _BG_CORE = 240
-_BG_SOFT = 225
+_BG_SOFT = 210
+# Smaller-than-this enclosed soft-band components are character features
+# (eye highlights, specular dots) and survive even inside the body silhouette.
+_ISLAND_MIN_PX = 100
+_ISLAND_MIN_FRAC = 200  # ≈ 0.5 % of image
 
 _SPRITE_MATCH_SYSTEM = """\
 You match a semantic sprite request against an existing image album.
@@ -73,18 +79,16 @@ def has_real_transparency(data: bytes) -> bool:
             return False
         lo, _ = img.convert("RGBA").getchannel("A").getextrema()
         return lo <= 8
-    except Exception:
+    except OSError:
         return False
 
 
 def solid_bg_to_alpha(data: bytes) -> bytes:
-    """Pure-white background → alpha via border-connected flood fill.
-
-    MiniMax only emits opaque JPEG (Step 0 experiment), so transparency is
-    produced server-side: only background-connected white is keyed out —
-    enclosed white (eyes, highlights, white garments) survives the flood.
-    Flood-reached soft-band pixels get a linear alpha ramp to soften edges.
-    """
+    """Two-pass flood: border-connected soft-band pixels are keyed out, plus
+    any enclosed soft-band component large enough to be a backdrop
+    continuation (e.g. between-the-legs). Small enclosed pockets stay as
+    character features. Alpha uses a squared ease-out so the dim band edge
+    clears instead of leaving the linear-ramp haze."""
     img = Image.open(io.BytesIO(data)).convert("RGB")
     gray = ImageOps.grayscale(img)
     w, h = img.size
@@ -92,6 +96,17 @@ def solid_bg_to_alpha(data: bytes) -> bytes:
     gray_bytes = gray.tobytes()
     filled = bytearray(w * h)
     queue: deque[int] = deque()
+
+    def neighbors(idx: int) -> Iterator[int]:
+        x, y = idx % w, idx // w
+        if x > 0:
+            yield idx - 1
+        if x < w - 1:
+            yield idx + 1
+        if y > 0:
+            yield idx - w
+        if y < h - 1:
+            yield idx + w
 
     def seed(x: int, y: int) -> None:
         idx = y * w + x
@@ -108,17 +123,37 @@ def solid_bg_to_alpha(data: bytes) -> bytes:
 
     while queue:
         idx = queue.popleft()
-        x, y = idx % w, idx // w
-        for nxt in ((idx - 1 if x else -1), (idx + 1 if x < w - 1 else -1), (idx - w if y else -1), (idx + w if y < h - 1 else -1)):
-            if nxt >= 0 and soft[nxt] and not filled[nxt]:
+        for nxt in neighbors(idx):
+            if soft[nxt] and not filled[nxt]:
                 filled[nxt] = 1
                 queue.append(nxt)
 
+    island_threshold = max(_ISLAND_MIN_PX, (w * h) // _ISLAND_MIN_FRAC)
+    visited = bytearray(w * h)
+    for seed_idx in range(w * h):
+        if filled[seed_idx] or visited[seed_idx] or not soft[seed_idx]:
+            continue
+        component: list[int] = []
+        queue.append(seed_idx)
+        visited[seed_idx] = 1
+        while queue:
+            idx = queue.popleft()
+            component.append(idx)
+            for nxt in neighbors(idx):
+                if soft[nxt] and not visited[nxt] and not filled[nxt]:
+                    visited[nxt] = 1
+                    queue.append(nxt)
+        if len(component) >= island_threshold:
+            for idx in component:
+                filled[idx] = 1
+
+    band_span = _BG_CORE - _BG_SOFT
     alpha = bytearray(b"\xff" * (w * h))
     for idx, mark in enumerate(filled):
-        if mark:
-            v = gray_bytes[idx]
-            alpha[idx] = max(0, round(255 * (_BG_CORE - v) / (_BG_CORE - _BG_SOFT))) if v < _BG_CORE else 0
+        if not mark:
+            continue
+        v = gray_bytes[idx]
+        alpha[idx] = 0 if v >= _BG_CORE else round(255 * (1 - (v - _BG_SOFT) / band_span) ** 2)
 
     out = img.convert("RGBA")
     out.putalpha(Image.frombytes("L", (w, h), bytes(alpha)))
@@ -132,7 +167,7 @@ async def _match_album(db: AsyncSession | None, user_id: int, entries: list[Comp
     try:
         raw = await _vision_llm_call(db, user_id, _SPRITE_MATCH_SYSTEM, f"{listing}\n\n请求：{request_text}", [], response_format={"type": "json_object"})
         match_id = (parse_llm_json(raw) or {}).get("match_id")
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         logger.info("sprite album match failed, treating as miss", extra={"error": str(exc)})
         return None
     if not isinstance(match_id, int):
@@ -170,7 +205,7 @@ async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: st
             continue
         try:
             png = await asyncio.to_thread(solid_bg_to_alpha, raw)
-        except Exception:
+        except OSError:
             logger.info("sprite keying failed", extra={"user_id": user_id, "provider": cfg.provider_name})
             continue
         if has_real_transparency(png):

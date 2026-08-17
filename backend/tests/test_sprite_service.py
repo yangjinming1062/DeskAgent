@@ -4,10 +4,8 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
-from PIL import Image
-from sqlalchemy import select, update
-
 from modules.companion import AvatarAsset, CompanionSpriteImage
+from PIL import Image
 from services.companion import sprite_service
 from services.companion.sprite_service import (
     SpriteGenerationError,
@@ -16,6 +14,7 @@ from services.companion.sprite_service import (
     resolve_sprite,
     solid_bg_to_alpha,
 )
+from sqlalchemy import select, update
 
 
 @pytest.fixture()
@@ -44,8 +43,11 @@ def _rgba(data: bytes) -> Image.Image:
     return Image.open(io.BytesIO(data)).convert("RGBA")
 
 
-def test_solid_bg_to_alpha_border_connected():
-    # White bg + red body + an enclosed white pocket inside the red region.
+def test_solid_bg_to_alpha_keeps_small_enclosed_pockets():
+    # White bg + red body + a small enclosed white pocket inside the red region.
+    # The pocket is below the island threshold (max(100, w*h//200) = 100 for a
+    # 60×80 image; pocket is 7×8 = 56 px), so it survives as a character feature
+    # — the analogue of an eye highlight or specular dot.
     data = _png(
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
@@ -55,12 +57,30 @@ def test_solid_bg_to_alpha_border_connected():
     out = _rgba(solid_bg_to_alpha(data))
     assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
     assert out.getpixel((30, 50))[3] == 255  # body kept
-    assert out.getpixel((28, 34))[3] == 255  # enclosed white pocket survives the flood
+    assert out.getpixel((28, 34))[3] == 255  # small enclosed pocket preserved
+
+
+def test_solid_bg_to_alpha_removes_large_enclosed_islands():
+    # Same body, but the enclosed white pocket is enlarged past the island
+    # threshold — the analogue of a "between-the-legs" backdrop continuation.
+    # Threshold = max(100, w*h//200) = 100; pocket is 30×30 = 900 px.
+    data = _png(
+        lambda img: (
+            img.paste((200, 30, 30), (5, 10, 55, 70)),
+            img.paste((255, 255, 255), (20, 30, 50, 60)),
+        )
+    )
+    out = _rgba(solid_bg_to_alpha(data))
+    assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
+    assert out.getpixel((10, 50))[3] == 255  # red body strip (left of pocket)
+    assert out.getpixel((35, 45))[3] == 0  # large enclosed pocket keyed out
 
 
 def test_solid_bg_to_alpha_soft_band_feather():
     # White left half seeds the flood; it expands into the 232-gray right half
-    # (soft band), which gets a partial alpha instead of a hard cut.
+    # (still inside the 210–240 soft band), which gets a partial alpha. The
+    # squared ease-out curve clears the dim end of the band more aggressively
+    # than the old linear ramp did.
     data = _png(lambda img: img.paste((232, 232, 232), (30, 0, 60, 80)))
     out = _rgba(solid_bg_to_alpha(data))
     assert out.getpixel((5, 40))[3] == 0  # pure-white half: fully keyed
@@ -239,7 +259,7 @@ async def test_resolve_waiting_force_new_replaces_old_row(
 
 @pytest.mark.asyncio
 async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypatch):
-    asset = await _avatar(db_session)
+    await _avatar(db_session)
     await _row(
         db_session, 1, avatar_id=999, tag="旧身份的图"
     )  # stale: avatar regen invalidates
@@ -255,7 +275,7 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
         )
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
-    row, generated = await resolve_sprite(
+    _, generated = await resolve_sprite(
         db_session, user_id=1, request_text="任何姿态"
     )
     assert generated  # stale row never matched → generated a fresh sprite
@@ -270,7 +290,7 @@ async def test_resolve_without_avatar_raises(db_session):
 
 @pytest.mark.asyncio
 async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
-    asset = await _avatar(db_session)
+    await _avatar(db_session)
 
     async def _fake_chain(db, uid, svc):
         return [
@@ -346,11 +366,10 @@ async def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
 
 
 def test_sprite_endpoint_contract(_patch_db, monkeypatch):
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
-
     from api.v1 import companion as companion_api
     from components import get_db
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
     from modules.auth import get_current_session
     from services.rate_limit import limiter
 
@@ -417,7 +436,8 @@ def test_sprite_subject_reference_prefers_bust_over_seed():
     not on the (now anime / cel-shading) seed."""
     import re
 
-    src = open(sprite_service.__file__, encoding="utf-8").read()
+    with open(sprite_service.__file__, encoding="utf-8") as _f:
+        src = _f.read()
     pattern = (
         r"subject_ref\s*=\s*load_avatar_bytes_as_data_uri"
         r"\([^)]+\)\s*or\s*load_avatar_bytes_as_data_uri\([^)]+\)"
