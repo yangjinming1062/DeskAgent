@@ -39,6 +39,7 @@ import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
+import { type SpriteHit } from './static-sprite/sprite-hitmap'
 import { StaticSprite } from './static-sprite/StaticSprite'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
@@ -70,6 +71,7 @@ export function CompanionRoot(): React.JSX.Element {
   }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
+  const [spriteHit, setSpriteHit] = useState<SpriteHit | null>(null)
   const { requestGateway } = useGatewayRequest()
 
   // Sprite-window docks are mutually exclusive — opening one closes the
@@ -307,11 +309,12 @@ export function CompanionRoot(): React.JSX.Element {
         }}
         onDoubleTap={onDoubleTap}
         onTap={onTap}
+        spriteHit={spriteHit}
       >
         {showOnboarding ? null : (
           <>
             <Companion3D />
-            <StaticSprite />
+            <StaticSprite onHitmapReady={setSpriteHit} />
           </>
         )}
       </SpriteStage>

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { $spriteEmotion, $spriteState } from '../companion-store'
 
+import { buildSpriteHitmap, type SpriteHit } from './sprite-hitmap'
 import { semanticRequestFor, WAITING_REQUEST } from './sprite-semantics'
 import { $activeSprite, $staticMode, requestSprite } from './sprite-store'
 
@@ -14,12 +15,17 @@ import { $activeSprite, $staticMode, requestSprite } from './sprite-store'
 // breathing keeps it alive between switches (DESIGN.md §1.2).
 const FADE_MS = 250
 
-export function StaticSprite(): React.JSX.Element | null {
+interface StaticSpriteProps {
+  onHitmapReady?: (hit: SpriteHit | null) => void
+}
+
+export function StaticSprite({ onHitmapReady }: StaticSpriteProps): React.JSX.Element | null {
   const staticMode = useStore($staticMode)
   const activeSprite = useStore($activeSprite)
   const dataUrl = activeSprite?.dataUrl ?? null
   const prevUrlRef = useRef<string | null>(null)
   const [prevUrl, setPrevUrl] = useState<string | null>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
 
   useEffect(() => {
     if (!staticMode) {
@@ -62,6 +68,29 @@ export function StaticSprite(): React.JSX.Element | null {
     setPrevUrl(null)
   }, [dataUrl])
 
+  // Hitmap lifetime tracks the mounted <img>: invalidated on url swap,
+  // static-mode exit and unmount — a stale hitmap would sample a detached
+  // element's zero rect and make the sprite unhittable.
+  useEffect(() => {
+    if (!staticMode || !dataUrl) {
+      onHitmapReady?.(null)
+
+      return
+    }
+
+    return () => onHitmapReady?.(null)
+  }, [staticMode, dataUrl, onHitmapReady])
+
+  const onImgLoad = (): void => {
+    const el = imgRef.current
+
+    if (el?.complete && el.naturalWidth > 0) {
+      const hitmap = buildSpriteHitmap(el)
+
+      onHitmapReady?.(hitmap ? { el, hitmap } : null)
+    }
+  }
+
   if (!staticMode) {
     return null
   }
@@ -69,7 +98,16 @@ export function StaticSprite(): React.JSX.Element | null {
   return (
     <div aria-hidden="true" className="static-sprite-layer">
       {prevUrl && <img alt="" className="static-sprite-img" src={prevUrl} />}
-      {dataUrl && <img alt="" className="static-sprite-img static-sprite-img--in" key={dataUrl} src={dataUrl} />}
+      {dataUrl && (
+        <img
+          alt=""
+          className="static-sprite-img static-sprite-img--in"
+          key={dataUrl}
+          onLoad={onImgLoad}
+          ref={imgRef}
+          src={dataUrl}
+        />
+      )}
     </div>
   )
 }

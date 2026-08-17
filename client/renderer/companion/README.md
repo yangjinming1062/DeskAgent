@@ -107,6 +107,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 ## 7. 用户直接交互
 
+- **命中模型**：精灵区域在矩形命中后做像素级精化——静态精灵模式按图片 alpha ≥ 32 判定（[sprite-hitmap.ts](static-sprite/sprite-hitmap.ts) 在图加载时构建 ≤256 等比降采样 hitmap，按 object-fit 映射实时跟随拖拽/缩放/呼吸动画）；无 hitmap（3D 模式 / 图未加载）回退精灵矩形。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
 - **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。

@@ -14,24 +14,29 @@ import {
   startDrag,
   updateDragPosition
 } from '../spatial'
+import { type SpriteHit, spriteHitTest } from '../static-sprite/sprite-hitmap'
 
 interface SpriteStageProps {
   children: ReactNode
   onTap?: () => void
   onDoubleTap?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
+  spriteHit?: SpriteHit | null
 }
 
 // 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
-// Covers the sprite's CSS glow halos that overflow the inner box: companion-glow
-// 170% (≈56px), sil-glow 170% of 180 (≈63px).
-const HALO_PAD = 70
 
 const SPRITE_REGION_ID = 'sprite-stage'
 
-export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: SpriteStageProps): React.JSX.Element {
+export function SpriteStage({
+  children,
+  onTap,
+  onDoubleTap,
+  onContextMenu,
+  spriteHit
+}: SpriteStageProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
@@ -50,6 +55,7 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
   const lastTapRef = useRef(0)
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
+  const hitRef = useRef<SpriteHit | null>(null)
 
   const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -98,15 +104,31 @@ export function SpriteStage({ children, onTap, onDoubleTap, onContextMenu }: Spr
     releaseDebounced()
   }, [releaseDebounced])
 
-  useInteractiveRegion(SPRITE_REGION_ID, mountRef, el => {
+  // spriteHit flows through a ref so the region's hitTest closure stays stable
+  // — otherwise every image swap would unregister/re-register the region.
+  useEffect(() => {
+    hitRef.current = spriteHit ?? null
+  }, [spriteHit])
+
+  const stageRect = useCallback((el: HTMLElement): DOMRect | null => {
     const rect = el.getBoundingClientRect()
 
     if (rect.width === 0 || rect.height === 0) {
       return null
     }
 
-    return new DOMRect(rect.left - HALO_PAD, rect.top - HALO_PAD, rect.width + 2 * HALO_PAD, rect.height + 2 * HALO_PAD)
-  })
+    return rect
+  }, [])
+
+  // No hitmap (3D mode / image not loaded) opts out of pixel refinement — the
+  // rect pre-filter already hit, so returning true keeps the rect fallback.
+  const stageHitTest = useCallback((x: number, y: number): boolean => {
+    const hit = hitRef.current
+
+    return hit ? spriteHitTest(hit, x, y) : true
+  }, [])
+
+  useInteractiveRegion(SPRITE_REGION_ID, mountRef, stageRect, stageHitTest)
 
   useEffect(() => {
     // Coalesce mousemove to a single rAF tick — getBoundingClientRect() per region is layout-forcing, and 60+ Hz raw mousemove burns the frame budget on the resulting style-recalc.

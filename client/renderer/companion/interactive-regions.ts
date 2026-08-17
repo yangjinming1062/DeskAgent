@@ -2,6 +2,7 @@ import { type RefObject, useEffect } from 'react'
 
 export type InteractiveRegion = {
   getRect: () => DOMRect | null
+  hitTest?: (x: number, y: number) => boolean
   id: string
 }
 
@@ -21,9 +22,14 @@ function _bucket(windowId: number): Map<string, InteractiveRegion> {
   return m
 }
 
-export function registerInteractiveRegion(id: string, getRect: () => DOMRect | null, windowId: number = 0): void {
+export function registerInteractiveRegion(
+  id: string,
+  getRect: () => DOMRect | null,
+  windowId: number = 0,
+  hitTest?: (x: number, y: number) => boolean
+): void {
   const m = _bucket(windowId)
-  m.set(id, { id, getRect })
+  m.set(id, { getRect, hitTest, id })
   _probesByWindow.get(windowId)?.()
 }
 
@@ -56,7 +62,11 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
     }
 
     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      return true
+      // Rect hit refined by the pixel predicate; absent or non-boolean keeps
+      // the plain rect semantics.
+      if (region.hitTest?.(x, y) !== false) {
+        return true
+      }
     }
   }
 
@@ -65,21 +75,28 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
 
 // React hook: register an interactive region for the lifetime of the
 // component, deriving the rectangle from a ref's getBoundingClientRect().
-// Pass `getRect` to override (e.g. the sprite stage applies HALO_PAD padding,
-// the boot-failure overlay covers the full viewport). Return `null` from
-// `getRect` to opt out of the region for that frame.
+// Pass `getRect` to override (e.g. the boot-failure overlay covers the full
+// viewport). Pass `hitTest` to refine rect hits pixel-wise — callers must keep
+// its reference stable, the region re-registers whenever it changes. Return
+// `null` from `getRect` to opt out of the region for that frame.
 export function useInteractiveRegion(
   id: string,
   ref: RefObject<HTMLElement | null>,
-  getRect: (el: HTMLElement) => DOMRect | null = el => el.getBoundingClientRect()
+  getRect: (el: HTMLElement) => DOMRect | null = el => el.getBoundingClientRect(),
+  hitTest?: (x: number, y: number) => boolean
 ): void {
   useEffect(() => {
-    registerInteractiveRegion(id, () => {
-      const el = ref.current
+    registerInteractiveRegion(
+      id,
+      () => {
+        const el = ref.current
 
-      return el ? getRect(el) : null
-    })
+        return el ? getRect(el) : null
+      },
+      0,
+      hitTest
+    )
 
     return () => unregisterInteractiveRegion(id)
-  }, [id, ref, getRect])
+  }, [id, ref, getRect, hitTest])
 }
