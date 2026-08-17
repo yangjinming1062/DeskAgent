@@ -254,7 +254,9 @@ async def _generate_one_portrait(
         # sniff, but never crosses into str(exc) (user-visible surface).
         parsed = safe_json_loads(result_json, default=None)
         tool_err = parsed.get("error") if isinstance(parsed, dict) else None
-        raise AvatarGenerationError("image-gen provider failed", internal=str(tool_err or "image-gen provider returned no URL"))
+        err_msg = str(tool_err or "image-gen provider returned no URL")
+        logger.warning("portrait image generation failed", extra={"user_id": user_id, "error": err_msg})
+        raise AvatarGenerationError("image-gen provider failed", internal=err_msg)
 
     if not persist:
         temp_file_id = _extract_temp_file_id(source_url)
@@ -540,7 +542,8 @@ async def generate_fullbody(
     generated: dict[str, tuple[str, str, str, str]] = {}
     for v, result in zip(views_to_gen, results):
         if isinstance(result, BaseException):
-            logger.warning("fullbody view generation failed", extra={"view": v, "error": str(result)})
+            err_detail = getattr(result, "internal", str(result))
+            logger.warning("fullbody view generation failed", extra={"view": v, "error": err_detail})
         else:
             generated[v] = result
 

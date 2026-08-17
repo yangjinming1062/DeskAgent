@@ -11,8 +11,11 @@ logger = get_logger(__name__)
 
 async def text_to_speech_tool(text: str, voice: str = "", user_id: int | None = None, **_) -> str:
     """TTS via the provider chain (MiMo chat completions API or MiniMax TTS)."""
+    active_provider: list[str] = []
 
     def _call(p):
+        prov_name = getattr(getattr(p, "config", None), "provider_name", None) or getattr(p, "provider_name", type(p).__name__)
+        active_provider.append(prov_name)
         return p.synthesize(text, voice=pick_voice_id(voice, p.provider_name))
 
     try:
@@ -21,14 +24,16 @@ async def text_to_speech_tool(text: str, voice: str = "", user_id: int | None = 
                 result: TTSResult = await execute_with_fallback(db, user_id, "tts", call_fn=_call)
         else:
             result = await execute_with_fallback(None, None, "tts", call_fn=_call)
-    except MissingLlmConfigError:
+    except MissingLlmConfigError as exc:
+        logger.warning("text_to_speech_tool missing config", extra={"user_id": user_id, "error": str(exc)})
         return tool_error("TTS provider 未配置")
     except Exception as e:
-        logger.exception("text_to_speech_tool failed")
+        logger.exception("text_to_speech_tool failed", extra={"user_id": user_id})
         return tool_error(str(e))
 
     audio_b64 = base64.b64encode(result.audio).decode("ascii")
-    logger.info("Generated TTS audio", extra={"audio_bytes": len(result.audio)})
+    used_provider = active_provider[-1] if active_provider else None
+    logger.info("Generated TTS audio", extra={"audio_bytes": len(result.audio), "provider": used_provider, "user_id": user_id, "voice": result.voice or voice})
     return json.dumps({"success": True, "audio_base64": audio_b64, "format": "mp3"}, ensure_ascii=False)
 
 

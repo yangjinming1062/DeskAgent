@@ -80,12 +80,21 @@ async def image_generation_tool(
         else:
             chain, err = await _image_gen_chain(None, None, reference_image, secondary_reference_image, preferred_provider=preferred_provider)
         if err:
+            logger.warning("image_generation_tool chain error", extra={"error": err, "user_id": user_id})
             return tool_error(err)
-        result = await execute_with_fallback(None, user_id, "image_gen", call_fn=lambda p: p.generate(req), _chain=chain)
-    except MissingLlmConfigError:
+        active_provider: list[str] = []
+
+        async def _generate_call(p):
+            prov_name = getattr(getattr(p, "config", None), "provider_name", None) or getattr(p, "provider_name", type(p).__name__)
+            active_provider.append(prov_name)
+            return await p.generate(req)
+
+        result = await execute_with_fallback(None, user_id, "image_gen", call_fn=_generate_call, _chain=chain)
+    except MissingLlmConfigError as e:
+        logger.warning("image_generation_tool missing config", extra={"error": str(e), "user_id": user_id})
         return tool_error("图片生成服务未配置")
     except Exception as e:
-        logger.exception("image_generation_tool failed")
+        logger.exception("image_generation_tool failed", extra={"user_id": user_id})
         return tool_error(str(e))
 
     if not result.images:
@@ -104,7 +113,8 @@ async def image_generation_tool(
             ext = ext_by_mime.get((asset.mime or "").lower(), "jpg")
             _file_id, public_url = save_file(data, session_id="", content_type=asset.mime or "image/jpeg", ext=ext)
             urls.append(public_url)
-    logger.info("Generated images", extra={"image_count": len(urls), "prompt": prompt})
+    used_provider = active_provider[-1] if active_provider else None
+    logger.info("Generated images", extra={"image_count": len(urls), "prompt": prompt, "provider": used_provider, "user_id": user_id})
     return json.dumps({"success": True, "urls": urls}, ensure_ascii=False)
 
 

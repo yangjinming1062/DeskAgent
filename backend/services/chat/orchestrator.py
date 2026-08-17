@@ -146,6 +146,10 @@ async def run_chat_turn(
                 # Chain exhausted (or non-fallback error / mid-stream after
                 # chunks already shipped). Emit the closing error frame so
                 # the renderer's message state machine gets a clean end.
+                reason_val = exc.classified.reason.value if getattr(exc, "classified", None) else "unknown"
+                prov_val = getattr(getattr(exc, "classified", None), "provider", None)
+                model_val = getattr(getattr(exc, "classified", None), "model", None)
+                logger.warning("LLM turn failed", extra={"user_id": user_id, "reason": reason_val, "provider": prov_val, "model": model_val, "error": str(exc)}, exc_info=True)
                 await _emit_llm_error(emitter, exc)
                 break
             except (MissingLlmConfigError, RuntimeError) as exc:

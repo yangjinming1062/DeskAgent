@@ -202,6 +202,8 @@ async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: st
         url = first_image_url(result_json)
         raw = await fetch_texture_bytes(url) if url else None
         if raw is None:
+            err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
+            logger.warning("sprite image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
             continue
         try:
             png = await asyncio.to_thread(solid_bg_to_alpha, raw)

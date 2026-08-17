@@ -344,6 +344,8 @@ async def _generate_pbr_channels(
             result_json = await image_generation_tool(prompt=prompts[ch], reference_image=reference_data_uri, llm_config={}, size="1024x1024", n=1, user_id=user_id)
             src_url = first_image_url(result_json)
             if not src_url:
+                tool_err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
+                logger.warning("PBR texture channel image generation returned no URL", extra={"channel": ch, "error": tool_err, "user_id": user_id})
                 return None
             if "/api/media/files/" in src_url:
                 fid = src_url.rsplit("/", 1)[-1].split("?")[0]

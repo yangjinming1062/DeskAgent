@@ -245,10 +245,13 @@ async def post_avatar(
     try:
         asset = await generate_avatar(user_id=user.id, persona=persona)
     except AvatarGenerationError as exc:
+        err_detail = getattr(exc, "internal", str(exc))
+        logger.warning("post_avatar generation failed", extra={"user_id": user.id, "error": err_detail})
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "伙伴形象生成失败，请稍后重试", "reason": str(exc)})
     except MissingLlmConfigError as exc:
+        logger.warning("post_avatar missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
     return avatar_response(asset)
 
@@ -291,10 +294,13 @@ async def post_avatar_from_image(
             presentation_content_type=pres_content_type,
         )
     except AvatarGenerationError as exc:
+        err_detail = getattr(exc, "internal", str(exc))
+        logger.warning("post_avatar_from_image failed", extra={"user_id": user.id, "error": err_detail})
         if "persona is incomplete" in str(exc):
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再基于图片生成形象", "reason": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "按参考重绘失败，请稍后重试", "reason": str(exc)})
     except MissingLlmConfigError as exc:
+        logger.warning("post_avatar_from_image missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
 
     return avatar_response(asset)
@@ -331,12 +337,17 @@ async def post_avatar_fullbody(
                 reference_content_type=body.reference_content_type,
             )
         except AvatarNotFoundError as exc:
+            logger.warning("post_avatar_fullbody not found", extra={"user_id": user.id, "avatar_id": avatar_id, "error": str(exc)})
             raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
         except FrontSeedMissingError as exc:
+            logger.warning("post_avatar_fullbody missing front seed", extra={"user_id": user.id, "avatar_id": avatar_id, "error": str(exc)})
             raise HTTPException(status_code=409, detail={"error": "请先生成正面全身图", "reason": str(exc)})
         except (SeedPromptMissingError, AvatarSourceUnreadableError) as exc:
+            logger.warning("post_avatar_fullbody seed prompt/source unreadable", extra={"user_id": user.id, "avatar_id": avatar_id, "error": getattr(exc, "internal", str(exc))})
             raise HTTPException(status_code=409, detail={"error": "请先重新生成头像再试", "reason": str(exc)})
         except AvatarGenerationError as exc:
+            err_detail = getattr(exc, "internal", str(exc))
+            logger.warning("post_avatar_fullbody failed", extra={"user_id": user.id, "avatar_id": avatar_id, "error": err_detail})
             raise HTTPException(status_code=502, detail={"error": "伙伴全身图生成失败，请稍后重试", "reason": str(exc)})
 
     return avatar_response(asset)
@@ -370,10 +381,13 @@ async def post_model(
     try:
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider, force=body.force)
     except ModelGenerationInProgressError as exc:
+        logger.info("post_model already in progress", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=409, detail={"error": str(exc)})
     except ModelProviderNotConfiguredError as exc:
+        logger.warning("post_model provider not configured", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=400, detail={"error": str(exc)})
     except ModelGenerationError as exc:
+        logger.warning("post_model generation error", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return model_response(model)
 
@@ -389,11 +403,14 @@ async def post_sprite(
     try:
         row, generated = await resolve_sprite(user_id=user.id, request_text=body.request, role=body.role, force_new=body.force_new)
     except SpriteSeedMissingError as exc:
+        logger.warning("post_sprite missing seed", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=404, detail={"error": str(exc)})
     except SpriteGenerationError as exc:
+        logger.warning("post_sprite generation failed", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     url = signed_sprite_url(row)
     if url is None:
+        logger.warning("post_sprite invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
         raise HTTPException(status_code=502, detail={"error": "精灵形象生成失败，请稍后重试"})
     return SpriteImageResponse(id=row.id, url=url, tag=row.tag, content_hash=row.content_hash, generated=generated)
 
