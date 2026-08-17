@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import * as React from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   clearDraftRefImage,
@@ -30,6 +30,7 @@ import {
   $portraitSelectedIdx,
   $portraitUrl,
   $regenFeedback,
+  $seedHistoryByAvatarId,
   $seedUrls,
   applyPortrait,
   clearPortraitHistory,
@@ -40,6 +41,7 @@ import {
   pushPortraitEntry,
   selectAvatar,
   selectPortraitEntry,
+  selectSeedEntry,
   setActiveAvatarId,
   setRegenFeedback,
   setSeedUrls
@@ -64,7 +66,7 @@ import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type
 import { $voicePreparing } from '../voice-state'
 
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
-import { Chip, PortraitPanel } from './onboarding-components'
+import { Chip, type HistoryGalleryItem, PortraitPanel, type PortraitStep } from './onboarding-components'
 
 type Phase =
   | 'q-character'
@@ -1191,33 +1193,155 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPhase('portrait-avatar')
   }
 
-  const onSelectHistoryEntry = useCallback((idx: number) => {
-    const entry: PortraitEntry | undefined = $portraitHistory.get()[idx]
+  const seedHistoryMap = useStore($seedHistoryByAvatarId)
+  const currentAvatarKey = activeAvatarId ?? 0
+  const avatarSeedHistory = seedHistoryMap[currentAvatarKey]
 
-    if (!entry) {
-      return
+  const activeStep: PortraitStep =
+    phase === 'portrait-avatar'
+      ? 'avatar'
+      : phase === 'portrait-fullbody-right'
+        ? 'right'
+        : phase === 'portrait-fullbody-back'
+          ? 'back'
+          : 'front'
+
+  const frontHistory = useMemo(() => {
+    if (avatarSeedHistory?.front && avatarSeedHistory.front.length > 0) {
+      return avatarSeedHistory.front
     }
 
-    selectPortraitEntry(idx)
+    return seedUrls?.front ? [seedUrls.front] : []
+  }, [avatarSeedHistory?.front, seedUrls?.front])
 
-    if (entry.portraitUrl) {
-      setPortraitUrl(entry.portraitUrl)
-      $portraitUrl.set(entry.portraitUrl)
+  const rightHistory = useMemo(() => {
+    if (avatarSeedHistory?.right && avatarSeedHistory.right.length > 0) {
+      return avatarSeedHistory.right
     }
 
-    // Bust-regen rows have null seeds; still flush current seeds so the main
-    // view doesn't keep showing the previously-active avatar's body.
-    setSeedUrls(entry.seedUrls)
+    return seedUrls?.right ? [seedUrls.right] : []
+  }, [avatarSeedHistory?.right, seedUrls?.right])
 
-    // Following the user's gallery pick: the next fullbody gen has to operate
-    // on this avatar row, otherwise selecting an older entry would silently
-    // fall back to the latest row and the displayed image would jump back
-    // to a face the user already rejected.
-    if (entry.avatarId != null) {
-      setActiveAvatarId(entry.avatarId)
-      void selectAvatar(entry.avatarId)
+  const backHistory = useMemo(() => {
+    if (avatarSeedHistory?.back && avatarSeedHistory.back.length > 0) {
+      return avatarSeedHistory.back
     }
-  }, [])
+
+    return seedUrls?.back ? [seedUrls.back] : []
+  }, [avatarSeedHistory?.back, seedUrls?.back])
+
+  const currentHistoryItems: HistoryGalleryItem[] = useMemo(() => {
+    switch (activeStep) {
+      case 'avatar':
+        return portraitHistory.map(e => ({ url: e.portraitUrl }))
+
+      case 'front':
+        return frontHistory.map(url => ({ url }))
+
+      case 'right':
+        return rightHistory.map(url => ({ url }))
+
+      case 'back':
+        return backHistory.map(url => ({ url }))
+
+      default:
+        return []
+    }
+  }, [activeStep, portraitHistory, frontHistory, rightHistory, backHistory])
+
+  const currentSelectedIdx: number = useMemo(() => {
+    switch (activeStep) {
+      case 'avatar':
+        return portraitSelectedIdx
+      case 'front': {
+        const idx = frontHistory.lastIndexOf(seedUrls?.front ?? '')
+
+        return idx >= 0 ? idx : Math.max(0, frontHistory.length - 1)
+      }
+
+      case 'right': {
+        const idx = rightHistory.lastIndexOf(seedUrls?.right ?? '')
+
+        return idx >= 0 ? idx : Math.max(0, rightHistory.length - 1)
+      }
+
+      case 'back': {
+        const idx = backHistory.lastIndexOf(seedUrls?.back ?? '')
+
+        return idx >= 0 ? idx : Math.max(0, backHistory.length - 1)
+      }
+
+      default:
+        return 0
+    }
+  }, [activeStep, portraitSelectedIdx, frontHistory, rightHistory, backHistory, seedUrls])
+
+  const onSelectHistoryEntry = useCallback(
+    (idx: number) => {
+      switch (activeStep) {
+        case 'avatar': {
+          const entry: PortraitEntry | undefined = portraitHistory[idx]
+
+          if (!entry) {
+            return
+          }
+
+          selectPortraitEntry(idx)
+
+          if (entry.portraitUrl) {
+            setPortraitUrl(entry.portraitUrl)
+            $portraitUrl.set(entry.portraitUrl)
+          }
+
+          // Bust-regen rows have null seeds; still flush current seeds so the main
+          // view doesn't keep showing the previously-active avatar's body.
+          setSeedUrls(entry.seedUrls)
+
+          // Following the user's gallery pick: the next fullbody gen has to operate
+          // on this avatar row, otherwise selecting an older entry would silently
+          // fall back to the latest row and the displayed image would jump back
+          // to a face the user already rejected.
+          if (entry.avatarId != null) {
+            setActiveAvatarId(entry.avatarId)
+            void selectAvatar(entry.avatarId)
+          }
+
+          break
+        }
+
+        case 'front': {
+          const url = frontHistory[idx]
+
+          if (url) {
+            selectSeedEntry('front', url, activeAvatarId)
+          }
+
+          break
+        }
+
+        case 'right': {
+          const url = rightHistory[idx]
+
+          if (url) {
+            selectSeedEntry('right', url, activeAvatarId)
+          }
+
+          break
+        }
+
+        case 'back': {
+          const url = backHistory[idx]
+
+          if (url) {
+            selectSeedEntry('back', url, activeAvatarId)
+          }
+
+          break
+        }
+      }
+    },
+    [activeStep, portraitHistory, frontHistory, rightHistory, backHistory, activeAvatarId]
+  )
 
   const pickReferenceImage = async () => {
     const picked = await pickAvatarImage('选择一张参考图')
@@ -1529,21 +1653,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
-              history={portraitHistory}
+              history={currentHistoryItems}
               introHint={phase === 'portrait-avatar' ? portraitIntroHint(fullbodyMode) : null}
               name={answers.name?.trim() || '伙伴'}
               onSelectEntry={onSelectHistoryEntry}
               seedUrls={seedUrls}
-              selectedIdx={portraitSelectedIdx}
-              step={
-                phase === 'portrait-avatar'
-                  ? 'avatar'
-                  : phase === 'portrait-fullbody-right'
-                    ? 'right'
-                    : phase === 'portrait-fullbody-back'
-                      ? 'back'
-                      : 'front'
-              }
+              selectedIdx={currentSelectedIdx}
+              step={activeStep}
             />
           )}
 

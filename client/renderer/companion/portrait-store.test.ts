@@ -4,12 +4,16 @@ import {
   $activeAvatarId,
   $portraitHistory,
   $portraitSelectedIdx,
+  $seedHistoryByAvatarId,
+  $seedUrls,
   clearPortraitHistory,
   commitPortraitEntry,
   hydratePortraitHistory,
   type PortraitEntry,
   pushPortraitEntry,
+  pushSeedEntry,
   selectAvatar,
+  selectSeedEntry,
   setActiveAvatarId
 } from './portrait-store'
 
@@ -118,5 +122,40 @@ describe('selectAvatar', () => {
       method: 'PUT'
     })
     expect($activeAvatarId.get()).toBe(5)
+  })
+})
+
+describe('seed history management', () => {
+  it('pushes seed entries keyed by avatarId and view', () => {
+    pushSeedEntry('front', 'front-1', 10)
+    pushSeedEntry('front', 'front-2', 10)
+    pushSeedEntry('right', 'right-1', 10)
+    pushSeedEntry('front', 'front-other-avatar', 20)
+
+    const map = $seedHistoryByAvatarId.get()
+    expect(map[10]?.front).toEqual(['front-1', 'front-2'])
+    expect(map[10]?.right).toEqual(['right-1'])
+    expect(map[10]?.back).toEqual([])
+    expect(map[20]?.front).toEqual(['front-other-avatar'])
+  })
+
+  it('selectSeedEntry updates seedUrls and active avatar entry', () => {
+    setActiveAvatarId(10)
+    pushPortraitEntry(avatarEntry(10, { seedUrls: { front: 'front-1', right: null, back: null } }))
+
+    selectSeedEntry('front', 'front-2', 10)
+
+    expect($seedUrls.get()?.front).toBe('front-2')
+    expect($portraitHistory.get()[0].seedUrls?.front).toBe('front-2')
+  })
+
+  it('clearPortraitHistory clears both portrait and seed history', () => {
+    pushPortraitEntry(avatarEntry(1))
+    pushSeedEntry('front', 'front-1', 1)
+
+    clearPortraitHistory()
+
+    expect($portraitHistory.get()).toEqual([])
+    expect($seedHistoryByAvatarId.get()).toEqual({})
   })
 })

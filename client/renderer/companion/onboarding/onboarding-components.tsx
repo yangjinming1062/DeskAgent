@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 
-import type { PortraitEntry, SeedUrls } from '../portrait-store'
+import type { SeedUrls } from '../portrait-store'
 
 // Extracts of the four small JSX components that were co-located inside
 // onboarding-flow.tsx. All take their inputs as props — no shared module
@@ -30,7 +30,11 @@ export function Chip({
   )
 }
 
-type PortraitStep = 'avatar' | 'front' | 'right' | 'back'
+export type PortraitStep = 'avatar' | 'front' | 'right' | 'back'
+
+export interface HistoryGalleryItem {
+  url: string | null
+}
 
 export function PortraitPanel({
   avatarUrl,
@@ -49,7 +53,7 @@ export function PortraitPanel({
   hint: string | null
   step?: PortraitStep
   introHint?: string | null
-  history?: PortraitEntry[]
+  history?: HistoryGalleryItem[]
   selectedIdx?: number
   onSelectEntry?: (idx: number) => void
 }): React.JSX.Element {
@@ -98,7 +102,7 @@ function HistoryGallery({
   onSelect,
   step
 }: {
-  entries: PortraitEntry[]
+  entries: HistoryGalleryItem[]
   selectedIdx: number
   onSelect: (idx: number) => void
   step: PortraitStep
@@ -108,20 +112,6 @@ function HistoryGallery({
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
-        // The view-specific seed is what the user sees in the main slot.
-        // For entries that predate fullbody (bust-regen rows from step 1)
-        // the seed is null — fall back to the bust so the user still
-        // recognises which avatar the slot belongs to instead of staring
-        // at a row of blank "—" tiles.
-        const viewUrl =
-          step === 'avatar'
-            ? entry.portraitUrl
-            : step === 'front'
-              ? (entry.seedUrls?.front ?? null)
-              : step === 'right'
-                ? (entry.seedUrls?.right ?? null)
-                : (entry.seedUrls?.back ?? null)
-
         return (
           <button
             className={`overflow-hidden rounded-md border transition ${
@@ -131,10 +121,8 @@ function HistoryGallery({
             onClick={() => onSelect(idx)}
             type="button"
           >
-            {viewUrl ? (
-              <img alt="" className={`${thumbSize} object-cover`} src={viewUrl} />
-            ) : entry.portraitUrl ? (
-              <img alt="" className={`${thumbSize} object-cover opacity-50`} src={entry.portraitUrl} />
+            {entry.url ? (
+              <img alt="" className={`${thumbSize} object-cover`} src={entry.url} />
             ) : (
               <div className={`grid ${thumbSize} place-items-center text-[10px] text-white/30`}>—</div>
             )}

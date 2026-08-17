@@ -44,6 +44,63 @@ export interface PortraitUrls {
   id?: number | null
 }
 
+export type FullbodyView = 'front' | 'right' | 'back'
+
+export interface FullbodySeedHistory {
+  front: string[]
+  right: string[]
+  back: string[]
+}
+
+// Stores per-avatar fullbody seed history per view, keyed by avatarId (or 0 for draft).
+export const $seedHistoryByAvatarId = atom<Record<number, FullbodySeedHistory>>({})
+
+export function pushSeedEntry(view: FullbodyView, url: string, avatarId?: number | null): void {
+  const targetId = avatarId ?? $activeAvatarId.get() ?? 0
+  const allHistories = $seedHistoryByAvatarId.get()
+  const avatarHistory = allHistories[targetId] ?? { front: [], right: [], back: [] }
+  const currentViewList = avatarHistory[view] ?? []
+
+  if (currentViewList[currentViewList.length - 1] === url) {
+    return
+  }
+
+  const nextList = [...currentViewList.filter(u => u !== url), url]
+
+  if (nextList.length > _MAX_HISTORY) {
+    nextList.shift()
+  }
+
+  $seedHistoryByAvatarId.set({
+    ...allHistories,
+    [targetId]: {
+      ...avatarHistory,
+      [view]: nextList
+    }
+  })
+}
+
+export function selectSeedEntry(view: FullbodyView, url: string, avatarId?: number | null): void {
+  const currentSeeds = $seedUrls.get() ?? { front: null, right: null, back: null }
+
+  const updatedSeeds: SeedUrls = {
+    ...currentSeeds,
+    [view]: url
+  }
+
+  setSeedUrls(updatedSeeds)
+
+  const activeId = avatarId ?? $activeAvatarId.get()
+
+  if (activeId != null) {
+    commitPortraitEntry({
+      portraitUrl: $portraitUrl.get(),
+      avatarId: activeId,
+      seedUrls: updatedSeeds
+    })
+  }
+}
+
 // Resolve fresh asset_url / seed multiview URLs into data URLs. Publishes to
 // global $portraitUrl and $seedUrls atoms; returns resolved URLs.
 export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seeds: SeedUrls | null }> {
@@ -55,15 +112,43 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
 
   let seeds: SeedUrls | null = null
 
-  if (urls.seedFrontUrl || urls.seedRightUrl || urls.seedBackUrl) {
+  if (urls.seedFrontUrl !== undefined || urls.seedRightUrl !== undefined || urls.seedBackUrl !== undefined) {
+    const current = $seedUrls.get() ?? { front: null, right: null, back: null }
+
     const [front, right, back] = await Promise.all([
-      urls.seedFrontUrl ? resolvePortraitUrl(urls.seedFrontUrl) : Promise.resolve(null),
-      urls.seedRightUrl ? resolvePortraitUrl(urls.seedRightUrl) : Promise.resolve(null),
-      urls.seedBackUrl ? resolvePortraitUrl(urls.seedBackUrl) : Promise.resolve(null)
+      urls.seedFrontUrl === undefined
+        ? Promise.resolve(current.front)
+        : urls.seedFrontUrl
+          ? resolvePortraitUrl(urls.seedFrontUrl)
+          : Promise.resolve(null),
+      urls.seedRightUrl === undefined
+        ? Promise.resolve(current.right)
+        : urls.seedRightUrl
+          ? resolvePortraitUrl(urls.seedRightUrl)
+          : Promise.resolve(null),
+      urls.seedBackUrl === undefined
+        ? Promise.resolve(current.back)
+        : urls.seedBackUrl
+          ? resolvePortraitUrl(urls.seedBackUrl)
+          : Promise.resolve(null)
     ])
 
     seeds = { front, right, back }
     setSeedUrls(seeds)
+
+    const targetId = urls.id ?? $activeAvatarId.get() ?? 0
+
+    if (front) {
+      pushSeedEntry('front', front, targetId)
+    }
+
+    if (right) {
+      pushSeedEntry('right', right, targetId)
+    }
+
+    if (back) {
+      pushSeedEntry('back', back, targetId)
+    }
   }
 
   if (urls.id != null) {
@@ -128,6 +213,7 @@ export async function hydratePortraitHistory(): Promise<void> {
     // would otherwise leave the user seeing fewer entries than the server has.
     $portraitHistory.set([])
     $portraitSelectedIdx.set(0)
+    $seedHistoryByAvatarId.set({})
 
     for (const item of items) {
       const [portraitUrl, front, right, back] = await Promise.all([
@@ -142,6 +228,18 @@ export async function hydratePortraitHistory(): Promise<void> {
         avatarId: item.id,
         seedUrls: front || right || back ? { front, right, back } : null
       })
+
+      if (front) {
+        pushSeedEntry('front', front, item.id)
+      }
+
+      if (right) {
+        pushSeedEntry('right', right, item.id)
+      }
+
+      if (back) {
+        pushSeedEntry('back', back, item.id)
+      }
     }
 
     const activeId = $activeAvatarId.get()
@@ -251,4 +349,5 @@ export function selectPortraitEntry(idx: number): void {
 export function clearPortraitHistory(): void {
   $portraitHistory.set([])
   $portraitSelectedIdx.set(0)
+  $seedHistoryByAvatarId.set({})
 }
