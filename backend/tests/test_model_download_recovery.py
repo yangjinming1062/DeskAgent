@@ -177,6 +177,23 @@ async def test_retry_never_submits(SessionLocal, mock_finalize, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_ready_is_last_model_event(SessionLocal, mock_finalize, monkeypatch):
+    """PROTOCOL §1.3 ordering: model.ready is the terminal model.* event — a
+    model.gen.progress landing after it resurrects the client's generating
+    overlay on the already-loaded model."""
+    provider = RecordingProvider()
+    user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
+    await _run_retry(monkeypatch, provider, user_id, model_id)
+
+    async with SessionLocal() as db:
+        events = (
+            await db.execute(select(WSEvent).where(WSEvent.user_id == user_id, WSEvent.event_type.like("model.%")).order_by(WSEvent.id))
+        ).scalars().all()
+    assert events, "the finalize path must emit model events"
+    assert [e.event_type for e in events[-2:]] == ["model.gen.progress", "model.ready"]
+
+
+@pytest.mark.asyncio
 async def test_retry_refreshes_expired_url_on_403(SessionLocal, mock_finalize, monkeypatch):
     """Acceptance 3: a 403 (expired signature) triggers a provider query, the
     row's URLs are refreshed, and the download succeeds with the fresh URL."""

@@ -328,7 +328,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'model.gen.progress': {
       const p = event.payload as { stage?: string; progress?: number } | undefined
-      $modelGenState.set('generating')
+      // 'done' is terminal — a late progress event must not resurrect the overlay on a loaded model.
+      $modelGenState.set(p?.stage === 'done' ? 'succeeded' : 'generating')
       $modelGenProgress.set({ stage: p?.stage ?? '', progress: p?.progress ?? 0 })
 
       break

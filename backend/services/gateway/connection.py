@@ -214,7 +214,9 @@ async def _process_events(wakeup: asyncio.Event):
                 ).all()
                 # DELETE ... RETURNING has no ordering guarantee; restore the
                 # creation-order FIFO the old SELECT ... ORDER BY claimed with.
-                deleted_rows.sort(key=lambda r: r[4])
+                # id breaks created_at ties (second precision): same-tick
+                # events (model.gen.progress → model.ready) keep insert order.
+                deleted_rows.sort(key=lambda r: (r[4], r[0]))
                 for event_id, event_type, payload_str, user_id, _created_at in deleted_rows:
                     payload = safe_json_loads(payload_str)
                     if payload is not None:
@@ -223,7 +225,11 @@ async def _process_events(wakeup: asyncio.Event):
                         logger.warning("Skipping unparseable WSEvent", extra={"event_id": event_id})
             except (NotImplementedError, OperationalError):
                 # Fallback for older SQLite engines (<3.35) without RETURNING support
-                rows = (await db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at).with_for_update(skip_locked=True))).scalars().all()
+                rows = (
+                    (await db.execute(select(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).order_by(WSEvent.created_at, WSEvent.id).with_for_update(skip_locked=True)))
+                    .scalars()
+                    .all()
+                )
                 for r in rows:
                     payload = safe_json_loads(r.payload)
                     if payload is not None:

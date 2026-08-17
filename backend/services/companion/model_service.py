@@ -513,8 +513,10 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
         logger.info("3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": record.id})
         return
 
-    await _emit_model_ready(user_id, record.id, asset_url, species=record.species, rig_type=record.rig_type, style=record.style or "realistic")
+    # PROTOCOL §1.3: progress strictly precedes model.ready — a later progress
+    # event would resurrect the client's generating overlay on a loaded model.
     await _emit_progress(user_id, "done", 100, provider=provider.provider_name)
+    await _emit_model_ready(user_id, record.id, asset_url, species=record.species, rig_type=record.rig_type, style=record.style or "realistic")
     logger.info(
         "3D model generation succeeded",
         extra={"user_id": user_id, "provider": provider.provider_name, "species": record.species, "rig_type": record.rig_type, "morph_count": len(morph_names)},

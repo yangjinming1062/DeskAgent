@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
+import { $modelGenState } from './3d/model-store'
 import { $chatMessages, clearChat, setChatSession } from './chat-store'
 import { $spriteState } from './companion-store'
 import { handleCompanionEvent } from './events'
@@ -39,5 +40,22 @@ describe('handleCompanionEvent session filter', () => {
 
     expect($spriteState.get()).toBe('emotional')
     expect($chatMessages.get().every(m => m.role !== 'assistant' || m.streaming !== true)).toBe(true)
+  })
+})
+
+describe('model.gen.progress terminality', () => {
+  beforeEach(() => {
+    $modelGenState.set('idle')
+  })
+
+  it("treats stage 'done' as success so a late progress event cannot resurrect the overlay", () => {
+    handleCompanionEvent({ type: 'model.gen.progress', payload: { stage: 'downloading', progress: 88 } })
+    expect($modelGenState.get()).toBe('generating')
+
+    handleCompanionEvent({ type: 'model.ready', payload: { model_id: 1 } })
+    expect($modelGenState.get()).toBe('succeeded')
+
+    handleCompanionEvent({ type: 'model.gen.progress', payload: { stage: 'done', progress: 100 } })
+    expect($modelGenState.get()).toBe('succeeded')
   })
 })

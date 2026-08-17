@@ -48,12 +48,33 @@ def main() -> int:
         print("auto_rig: imported GLB contains no mesh", file=sys.stderr)
         return 1
 
+    # glTF import leaves the +90° X axis conversion on the object while the
+    # data is already upright — re-exporting applies it twice and the mesh
+    # ships lying. Bake it into the data (world pose unchanged).
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in meshes:
+        obj.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
+
+    # Bone heat fails outright on non-manifold provider meshes (zero weights
+    # → skinless export); a no-op 1e-5 remove_doubles rebuilds the BMesh
+    # enough for the solve to converge.
+    for obj in meshes:
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.mesh.remove_doubles(threshold=1e-5)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
     mn, mx = _world_bbox(meshes)
     size = Vector(max(c - d, _MIN_BONE_LENGTH) for c, d in zip(mx, mn))
-    center = Vector(((mn.x + mx.x) / 2, mn.y, (mn.z + mx.z) / 2))
+    center = Vector(((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, mn.z))
 
+    # Spec is glTF-convention (Y up, front -Z, left -X); remap into Blender's
+    # Z-up world where imported meshes front -Y with the character's left at +X.
     def to_world(frac: list[float]) -> Vector:
-        return Vector((center.x + frac[0] * size.x, center.y + frac[1] * size.y, center.z + frac[2] * size.z))
+        return Vector((center.x - frac[0] * size.x, center.y + frac[2] * size.y, center.z + frac[1] * size.z))
 
     spec = json.loads(Path(args.spec).read_text(encoding="utf-8"))
 
@@ -67,7 +88,7 @@ def main() -> int:
         eb.head = to_world(bone["head"])
         eb.tail = to_world(bone["tail"])
         if (eb.tail - eb.head).length < _MIN_BONE_LENGTH:
-            eb.tail = eb.head + Vector((0.0, _MIN_BONE_LENGTH, 0.0))
+            eb.tail = eb.head + Vector((0.0, 0.0, _MIN_BONE_LENGTH))
         if bone["parent"]:
             eb.parent = arm_data.edit_bones[bone["parent"]]
     bpy.ops.object.mode_set(mode="OBJECT")
@@ -78,6 +99,10 @@ def main() -> int:
     arm_obj.select_set(True)
     bpy.context.view_layer.objects.active = arm_obj
     bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+
+    if not any(len(v.groups) for obj in meshes for v in obj.data.vertices):
+        print("auto_rig: automatic weighting assigned no vertices", file=sys.stderr)
+        return 1
 
     bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
     return 0
