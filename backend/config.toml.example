@@ -29,13 +29,7 @@ admin_username = "spiritagent"
 # 初始管理员密码（首次启动时自动创建）
 admin_password = "spiritagent@admin123"
 
-[network]
-# 外部访问前缀（客户端/Runner 下载后端自托管媒体资源时使用的 URL 前缀，留空则自动由 public_ip 与 port 拼接）
-public_url_prefix = ""
-# 后端公网/局域网 IP（当 public_url_prefix 为空时，服务启动会自动探测，亦可在此手动指定）
-public_ip = ""
-# 后端 HTTP 服务监听端口
-port = 10620
+[storage]
 # `/temp-media/{token}` 临时媒体文件的有效存活时长（小时）
 temp_file_ttl_hours = 24
 # 后端磁盘数据与产物存储根目录（支持相对或绝对路径）

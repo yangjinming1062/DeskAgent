@@ -75,9 +75,6 @@ class Settings(BaseSettings):
     admin_username: str
     admin_password: str
 
-    public_url_prefix: str
-    public_ip: str
-    port: int
     temp_file_ttl_hours: int
     data_dir: str
 

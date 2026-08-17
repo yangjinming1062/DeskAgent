@@ -20,9 +20,7 @@ def build_data_uri(data: bytes, content_type: str | None = None) -> str:
 
     The provider consumes the seed image inline (MiniMax ``subject_reference``,
     Gemini ``inlineData``, or the vision-describe step) so generation does not
-    depend on the backend being publicly reachable — a signed URL breaks when
-    ``public_url_prefix`` is empty because providers reject private/localhost
-    hosts outright.
+    depend on the backend being publicly reachable.
     """
     mime = (content_type or "image/png").split(";")[0].strip().lower() or "image/png"
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
@@ -65,11 +63,10 @@ def _sign(user_id: int, filename: str, expires_at: int) -> str:
 
 def build_signed_asset_url(user_id: int, filename: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
     """Do not cache — expires in 5 min; the desktop re-signs on every list refresh."""
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
     expires_at = int(time.time()) + ttl_seconds
     sig = _sign(user_id, filename, expires_at)
     qs = urlencode({"expires": expires_at, "sig": sig})
-    return f"{prefix}/api/companion/asset/{user_id}/{filename}?{qs}"
+    return f"/api/companion/asset/{user_id}/{filename}?{qs}"
 
 
 def verify_signed_asset_request(user_id: int, filename: str, expires: int | None, sig: str | None) -> bool:
@@ -87,11 +84,10 @@ def _sign_avatar(filename: str, expires_at: int) -> str:
 
 
 def build_signed_avatar_url(file_id: str, ext: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
     expires_at = int(time.time()) + ttl_seconds
     sig = _sign_avatar(f"{file_id}.{ext}", expires_at)
     qs = urlencode({"expires": expires_at, "sig": sig})
-    return f"{prefix}/api/companion/avatar/file/{file_id}.{ext}?{qs}"
+    return f"/api/companion/avatar/file/{file_id}.{ext}?{qs}"
 
 
 def verify_signed_avatar_request(filename: str, expires: int | None, sig: str | None) -> bool:
@@ -212,8 +208,7 @@ def get_companion_model_sha256(user_id: int, filename: str) -> str | None:
 
 
 def build_signed_model_url(user_id: int, filename: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
-    prefix = SETTINGS.public_url_prefix or f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
     expires_at = int(time.time()) + ttl_seconds
     sig = _sign(user_id, filename, expires_at)
     qs = urlencode({"expires": expires_at, "sig": sig})
-    return f"{prefix}/api/companion/model/file/{user_id}/{filename}?{qs}"
+    return f"/api/companion/model/file/{user_id}/{filename}?{qs}"

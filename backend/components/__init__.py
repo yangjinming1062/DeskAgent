@@ -1,6 +1,6 @@
 from .attachments import attachment_root, path_attach_ref
 from .attachments import gc_session as attachments_gc_session
-from .background import BackgroundTask, fetch_public_ip
+from .background import BackgroundTask
 from .config import SETTINGS
 from .constants import (
     ACTIVITY_DAY_BUCKETS,
@@ -188,7 +188,6 @@ __all__ = [
     "correlation_id_middleware",
     "download_capped",
     "ensure_utc",
-    "fetch_public_ip",
     "get_current_span_id",
     "get_current_trace_id",
     "get_db",

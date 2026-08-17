@@ -123,7 +123,7 @@ class TestImageGenTool:
                 else:
                     assert False, f"Image generation failed: {error_msg}"
             assert len(result["urls"]) > 0
-            assert result["urls"][0].startswith("http")
+            assert result["urls"][0].startswith("http") or result["urls"][0].startswith("/api/media/files/")
         except Exception as e:
             if (
                 getattr(e, "status_code", None) == 404

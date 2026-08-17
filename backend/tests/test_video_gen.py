@@ -232,8 +232,8 @@ class TestVideoGenJobRoundtrip:
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
         )
-        assert row.video_url.startswith("http"), (
-            f"video_url should be our public URL, got {row.video_url!r}"
+        assert row.video_url.startswith("/api/media/files/"), (
+            f"video_url should be our relative media path, got {row.video_url!r}"
         )
         assert row.file_id is not None
         assert calls == ["submit", "poll", "retrieve"], calls
@@ -286,7 +286,7 @@ class TestVideoGenJobRoundtrip:
         assert row.status == "succeeded", (
             f"job ended in {row.status}: {row.error_message}"
         )
-        assert row.video_url.startswith("http")
+        assert row.video_url.startswith("/api/media/files/")
         assert calls == ["submit", "poll"], calls
 
     @pytest.mark.asyncio

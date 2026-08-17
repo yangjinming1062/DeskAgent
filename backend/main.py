@@ -17,7 +17,6 @@ from components import (
     cleanup_expired,
     correlated_exception_response,
     correlation_id_middleware,
-    fetch_public_ip,
     get_logger,
     render_metrics_response,
     setup_logging,
@@ -70,18 +69,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await asyncio.to_thread(_run_migrations)
 
     attachment_root(SETTINGS.data_dir).mkdir(parents=True, exist_ok=True)
-
-    if not SETTINGS.public_url_prefix:
-        try:
-            if ip := fetch_public_ip():
-                SETTINGS.public_ip = ip
-                logger.info("Public IP detected", extra={"ip": ip})
-            else:
-                logger.warning("Could not detect public IP, falling back to 127.0.0.1")
-                SETTINGS.public_ip = "127.0.0.1"
-        except Exception:
-            logger.warning("Public IP detection failed, falling back to 127.0.0.1")
-            SETTINGS.public_ip = "127.0.0.1"
 
     start_scheduler()
     # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连；非 PG 后端传 None

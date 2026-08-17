@@ -56,10 +56,7 @@ def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta
 
 
 def _build_public_url(file_id: str) -> str:
-    prefix = SETTINGS.public_url_prefix
-    if not prefix:
-        prefix = f"http://{SETTINGS.public_ip}:{SETTINGS.port}"
-    return f"{prefix}/api/media/files/{file_id}"
+    return f"/api/media/files/{file_id}"
 
 
 def get_file_path(file_id: str) -> tuple[Path, str] | None:
