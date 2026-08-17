@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import ServiceType, resolve, resolve_provider_chain
 from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import build_signed_asset_url, compute_bytes_sha256, save_companion_asset, unlink_companion_asset
+from .asset_store import build_signed_asset_url, compute_bytes_sha256, resolve_companion_asset_path, save_companion_asset, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .blender_tools import _vision_llm_call
 from .persona_service import get_or_create_persona
@@ -312,6 +312,27 @@ async def list_sprites(db: AsyncSession, user_id: int) -> list[CompanionSpriteIm
     return (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id).order_by(CompanionSpriteImage.created_at.desc()))).scalars().all()
 
 
+async def _drop_missing_files(db: AsyncSession, rows: list[CompanionSpriteImage]) -> list[CompanionSpriteImage]:
+    """Files deleted out-of-band (manual cleanup, disk wipe) leave orphan rows
+    that sign URLs straight into 404s — such rows are pruned on sight so the
+    next resolve regenerates instead of serving a dead entry."""
+    alive: list[CompanionSpriteImage] = []
+    for row in rows:
+        parts = row.asset_url.split("/", 2)
+        try:
+            present = len(parts) == 3 and resolve_companion_asset_path(int(parts[1]), parts[2]) is not None
+        except ValueError:
+            present = False
+        if present:
+            alive.append(row)
+            continue
+        logger.info("pruning sprite row with missing file", extra={"user_id": row.user_id, "asset_url": row.asset_url})
+        await db.delete(row)
+    if len(alive) != len(rows):
+        await db.commit()
+    return alive
+
+
 async def _prune_album(db: AsyncSession, user_id: int) -> None:
     rows = await list_sprites(db, user_id)
     for row in rows[_SPRITE_ALBUM_CAP:]:
@@ -357,11 +378,15 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
             if asset is None:
                 raise SpriteSeedMissingError("形象种子图尚未生成，请先完成形象确认")
             if role == "waiting" and not force_new and (row := await get_waiting_sprite(read_db, user_id)):
-                return row, False
+                if alive := await _drop_missing_files(read_db, [row]):
+                    return alive[0], False
             entries = []
             if not force_new:
-                entries = (
-                    (await read_db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
+                entries = await _drop_missing_files(
+                    read_db,
+                    (await read_db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id)))
+                    .scalars()
+                    .all(),
                 )
             avatar_id = asset.id
             # Sprite is a user-visible static-fallback fullbody image and stays
@@ -378,9 +403,12 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
         if asset is None:
             raise SpriteSeedMissingError("形象种子图尚未生成，请先完成形象确认")
         if role == "waiting" and not force_new and (row := await get_waiting_sprite(db, user_id)):
-            return row, False
+            if alive := await _drop_missing_files(db, [row]):
+                return alive[0], False
         if not force_new:
-            entries = (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
+            entries = await _drop_missing_files(
+                db, (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
+            )
             if entries and (hit := await _match_album(db, user_id, entries, request_text)):
                 return hit, False
         avatar_id = asset.id

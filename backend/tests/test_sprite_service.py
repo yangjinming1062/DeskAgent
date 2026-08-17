@@ -2,10 +2,12 @@ import base64
 import io
 import json
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from components import SETTINGS
 from modules.companion import AvatarAsset, CompanionSpriteImage
 from PIL import Image
 from services.companion import sprite_service
@@ -214,6 +216,10 @@ async def _row(
     )
     db.add(row)
     await db.commit()
+    # Album rows whose backing file exists; resolve treats missing files as misses.
+    path = Path(SETTINGS.data_dir) / row.asset_url
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"png")
     return row
 
 
@@ -383,6 +389,63 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
 async def test_resolve_without_avatar_raises(db_session):
     with pytest.raises(SpriteSeedMissingError):
         await resolve_sprite(db_session, user_id=1, request_text="等待")
+
+
+@pytest.mark.asyncio
+async def test_resolve_regenerates_when_album_file_deleted(
+    db_session, gen_mocks, monkeypatch
+):
+    asset = await _avatar(db_session)
+    hit = await _row(db_session, 1, asset.id, "开心挥手")
+    (Path(SETTINGS.data_dir) / hit.asset_url).unlink()
+
+    async def fake_vision(db, uid, system, text, images, **k):
+        return (
+            json.dumps({"match_id": None})
+            if "match_id" in system
+            else json.dumps({"prompt": "p", "tag": "补图"})
+        )
+
+    monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
+    row, generated = await resolve_sprite(
+        db_session, user_id=1, request_text="开心地挥手打招呼"
+    )
+    assert generated and row.tag == "补图"
+    remaining = {
+        r.asset_url
+        for r in (
+            (
+                await db_session.execute(
+                    select(CompanionSpriteImage).where(
+                        CompanionSpriteImage.user_id == 1
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    }
+    assert hit.asset_url not in remaining  # orphan row pruned, not left to 404
+
+
+@pytest.mark.asyncio
+async def test_resolve_waiting_regenerates_when_file_deleted(
+    db_session, gen_mocks, monkeypatch
+):
+    asset = await _avatar(db_session)
+    waiting = await _row(db_session, 1, asset.id, "等待", role="waiting")
+    (Path(SETTINGS.data_dir) / waiting.asset_url).unlink()
+
+    async def fake_vision(db, uid, system, text, images, **k):
+        assert "match_id" not in system  # dead waiting row means no album at all
+        return json.dumps({"prompt": "p", "tag": "新等待"})
+
+    monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
+    row, generated = await resolve_sprite(
+        db_session, user_id=1, request_text="安静站立等待", role="waiting"
+    )
+    # sqlite reuses the freed autoincrement id — asset_url is the identity here
+    assert generated and row.asset_url != waiting.asset_url and row.role == "waiting"
 
 
 @pytest.mark.asyncio
