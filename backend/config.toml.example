@@ -77,7 +77,7 @@ hunyuan_face_count = 0
 # 是否生成 PBR 材质贴图
 hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
-hunyuan_result_format = "glb"
+hunyuan_result_format = "GLB"
 
 [blender_llm]
 # LLM 生成 Blender bpy 脚本的最大修复迭代轮数（Blender 仅用于绑骨/morph 注入/换装等后处理，不直接生模）

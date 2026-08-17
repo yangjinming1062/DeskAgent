@@ -379,15 +379,16 @@ export function Companion3D(): React.JSX.Element {
   const genError = useStore($modelGenError)
   const staticMode = useStore($staticMode)
   const activeSprite = useStore($activeSprite)
+  const isStaticCovered = Boolean(staticMode && activeSprite)
 
   return (
     <div
       className="companion-3d-wrapper"
-      data-static-covered={staticMode && activeSprite ? 'true' : undefined}
+      data-static-covered={isStaticCovered ? 'true' : undefined}
       ref={containerRef}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      {genState === 'generating' && (
+      {!isStaticCovered && genState === 'generating' && (
         <div
           style={{
             position: 'absolute',
@@ -396,42 +397,57 @@ export function Companion3D(): React.JSX.Element {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(2px)',
-            borderRadius: '50%',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            padding: '1rem'
           }}
         >
-          <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.8)', marginBottom: '0.4rem' }}>
-            ✨ 正在为你塑造形象…
-          </div>
           <div
             style={{
-              width: '60%',
-              height: '3px',
-              background: 'rgba(255,255,255,0.15)',
-              borderRadius: '2px',
-              overflow: 'hidden'
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              padding: '8px 16px',
+              borderRadius: '16px',
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+              maxWidth: '85%'
             }}
           >
             <div
-              style={{
-                width: `${genProgress?.progress ?? 0}%`,
-                height: '100%',
-                background: 'rgba(255,255,255,0.7)',
-                borderRadius: '2px',
-                transition: 'width 0.5s ease'
-              }}
-            />
-          </div>
-          {genProgress?.stage && (
-            <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.3rem' }}>
-              {stageLabel(genProgress.stage)}
+              style={{ fontSize: '0.7rem', color: 'rgba(255, 255, 255, 0.9)', marginBottom: '0.4rem', fontWeight: 500 }}
+            >
+              ✨ 正在为你塑造形象…
             </div>
-          )}
+            <div
+              style={{
+                width: '100px',
+                height: '3px',
+                background: 'rgba(255, 255, 255, 0.15)',
+                borderRadius: '2px',
+                overflow: 'hidden'
+              }}
+            >
+              <div
+                style={{
+                  width: `${genProgress?.progress ?? 0}%`,
+                  height: '100%',
+                  background: 'rgba(255, 255, 255, 0.85)',
+                  borderRadius: '2px',
+                  transition: 'width 0.5s ease'
+                }}
+              />
+            </div>
+            {genProgress?.stage && (
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255, 255, 255, 0.6)', marginTop: '0.3rem' }}>
+                {stageLabel(genProgress.stage)}
+              </div>
+            )}
+          </div>
         </div>
       )}
-      {genState === 'failed' && (
+      {!isStaticCovered && genState === 'failed' && (
         <div
           style={{
             position: 'absolute',
@@ -440,14 +456,24 @@ export function Companion3D(): React.JSX.Element {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(2px)',
-            borderRadius: '50%',
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            padding: '1rem'
           }}
         >
-          <div style={{ fontSize: '0.65rem', color: 'rgba(255,180,180,0.9)', textAlign: 'center', maxWidth: '80%' }}>
-            {genError ?? '生成失败'}
+          <div
+            style={{
+              padding: '6px 14px',
+              borderRadius: '14px',
+              background: 'rgba(0, 0, 0, 0.65)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255, 100, 100, 0.25)',
+              boxShadow: '0 4px 16px rgba(0, 0, 0, 0.3)',
+              maxWidth: '85%'
+            }}
+          >
+            <div style={{ fontSize: '0.65rem', color: 'rgba(255, 180, 180, 0.95)', textAlign: 'center' }}>
+              {genError ?? '3D 模型生成失败'}
+            </div>
           </div>
         </div>
       )}

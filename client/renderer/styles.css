@@ -1184,8 +1184,9 @@ body:has(.recording-toolbar-root) {
   height: 100% !important;
 }
 
-.companion-3d-wrapper[data-static-covered='true'] .companion-3d-canvas {
+.companion-3d-wrapper[data-static-covered='true'] {
   visibility: hidden;
+  pointer-events: none;
 }
 
 .static-sprite-layer {

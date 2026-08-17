@@ -97,7 +97,7 @@ class Settings(BaseSettings):
     hunyuan_polygon_type: str = Field(default="triangle", validation_alias="HUNYUAN_POLYGON_TYPE")
     hunyuan_face_count: int = Field(default=0, validation_alias="HUNYUAN_FACE_COUNT")
     hunyuan_enable_pbr: bool = Field(default=True, validation_alias="HUNYUAN_ENABLE_PBR")
-    hunyuan_result_format: str = Field(default="glb", validation_alias="HUNYUAN_RESULT_FORMAT")
+    hunyuan_result_format: str = Field(default="GLB", validation_alias="HUNYUAN_RESULT_FORMAT")
 
     blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
     blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")

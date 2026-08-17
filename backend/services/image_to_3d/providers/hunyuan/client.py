@@ -50,14 +50,14 @@ def _common_model_kwargs(
     *,
     model: str,
     enable_pbr: bool = True,
-    result_format: str = "glb",
+    result_format: str = "GLB",
     generate_type: str | None = None,
     polygon_type: str | None = None,
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> dict[str, Any]:
     """Build common payload fields for Hunyuan 3D API in snake_case."""
-    payload: dict[str, Any] = {"model": model, "enable_pbr": enable_pbr, "result_format": result_format}
+    payload: dict[str, Any] = {"model": model, "enable_pbr": enable_pbr, "result_format": (result_format or "GLB").upper()}
     if generate_type:
         payload["generate_type"] = generate_type
     if polygon_type:
@@ -81,13 +81,14 @@ def hunyuan_common_kwargs_from_settings(
     """Build common call kwargs for Hunyuan endpoints from SETTINGS."""
     raw_face_count = face_count if face_count is not None else getattr(SETTINGS, "hunyuan_face_count", 0)
     fc = raw_face_count if (raw_face_count is not None and raw_face_count > 0) else None
+    rf = result_format if result_format is not None else (getattr(SETTINGS, "hunyuan_result_format", "") or "GLB")
     return {
         "model": model if model is not None else (getattr(SETTINGS, "hunyuan_model_version", "") or MODEL_VERSION_DEFAULT),
         "generate_type": generate_type if generate_type is not None else getattr(SETTINGS, "hunyuan_generate_type", None),
         "polygon_type": polygon_type if polygon_type is not None else getattr(SETTINGS, "hunyuan_polygon_type", None),
         "face_count": fc,
         "enable_pbr": enable_pbr if enable_pbr is not None else getattr(SETTINGS, "hunyuan_enable_pbr", True),
-        "result_format": result_format if result_format is not None else (getattr(SETTINGS, "hunyuan_result_format", "") or "glb"),
+        "result_format": rf.upper() if rf else "GLB",
     }
 
 
@@ -96,7 +97,7 @@ async def create_image_to_model(
     *,
     model: str = MODEL_VERSION_DEFAULT,
     enable_pbr: bool = True,
-    result_format: str = "glb",
+    result_format: str = "GLB",
     generate_type: str | None = None,
     polygon_type: str | None = None,
     face_count: int | None = None,
@@ -128,7 +129,7 @@ async def create_multiview_to_model(
     *,
     model: str = MODEL_VERSION_DEFAULT,
     enable_pbr: bool = True,
-    result_format: str = "glb",
+    result_format: str = "GLB",
     generate_type: str | None = None,
     polygon_type: str | None = None,
     face_count: int | None = None,
@@ -169,7 +170,7 @@ async def create_text_to_model(
     *,
     model: str = MODEL_VERSION_DEFAULT,
     enable_pbr: bool = True,
-    result_format: str = "glb",
+    result_format: str = "GLB",
     generate_type: str | None = None,
     polygon_type: str | None = None,
     face_count: int | None = None,

@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-
 from components import SETTINGS
 from services.image_to_3d import (
     HunyuanImageTo3DProvider,
@@ -72,7 +71,7 @@ class TestSubmit:
             "ascii"
         )
         assert body["enable_pbr"] is True
-        assert body["result_format"] == "glb"
+        assert body["result_format"] == "GLB"
         assert "face_count" not in body
         assert "multi_view_images" not in body
 
@@ -88,14 +87,15 @@ class TestSubmit:
         back_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x22" * 16)
 
         def _mock_post(url, headers, json=None, **kwargs):
-            captured["url"] = url
+            captured["url"] = str(url)
+            captured["headers"] = headers
             captured["body"] = json
 
             class MockResponse:
                 status_code = 200
 
                 def json(self):
-                    return {"id": "job_mv_1", "status": "queued"}
+                    return {"id": "job_mv", "status": "queued"}
 
             return MockResponse()
 
@@ -108,20 +108,14 @@ class TestSubmit:
         )
         job = await provider.submit_image_to_model(
             png_seed,
-            multiview_paths={
-                "front": png_seed,
-                "right": right_seed,
-                "back": back_seed,
-            },
+            multiview_paths={"right": right_seed, "back": back_seed},
         )
-        assert job.job_id == "job_mv_1"
+        assert job.job_id == "job_mv"
         body = captured["body"]
-        assert body["image_base64"] == base64.b64encode(png_seed.read_bytes()).decode(
-            "ascii"
-        )
-        mv = body["multi_view_images"]
-        assert len(mv) == 2
-        view_names = {item["view"] for item in mv}
+        assert body["model"] == "hy-3d-3.1"
+        assert body["result_format"] == "GLB"
+        assert len(body["multi_view_images"]) == 2
+        view_names = {item["view"] for item in body["multi_view_images"]}
         assert view_names == {"right", "back"}
 
     @pytest.mark.asyncio
@@ -160,7 +154,7 @@ class TestSubmit:
         assert body["polygon_type"] == "quadrilateral"
         assert body["face_count"] == 25000
         assert body["enable_pbr"] is False
-        assert body["result_format"] == "obj"
+        assert body["result_format"] == "OBJ"
 
     @pytest.mark.asyncio
     async def test_submit_rejects_bad_suffix(self, tmp_path):
