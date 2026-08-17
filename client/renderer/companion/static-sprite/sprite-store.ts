@@ -34,24 +34,66 @@ interface SpriteResolveResponse {
 // Small PNGs over the apiAsset data-URL channel (same as wardrobe textures);
 // keyed by content_hash so re-resolving a cached album row skips the fetch.
 const _urlCache = new Map<string, string>()
-const _resolvedRequests = new Set<string>()
+const _requestCache = new Map<string, ActiveSprite>()
 const _inflight = new Map<string, Promise<void>>()
 
 // Space distinct POSTs: the album is LLM-backed and state changes can burst
-// (poke → interacting → previous state in quick succession). A dropped
-// request re-fires on the next state change.
+// (poke → interacting → previous state in quick succession). Trailing timer
+// ensures the latest state request executes after the window elapses.
 const MIN_REQUEST_SPACING_MS = 1500
 let _lastPostAt = 0
+let _pendingTimer: ReturnType<typeof setTimeout> | null = null
+let _latestPending: { request: string; role?: 'waiting' } | null = null
 
 /** Resolve a semantic request against the backend album; publishes to
  * $activeSprite on success and silently keeps the current image on failure. */
 export async function requestSprite(request: string, role?: 'waiting'): Promise<void> {
-  if (_resolvedRequests.has(request) || _inflight.has(request)) {
+  const cached = _requestCache.get(request)
+
+  if (cached) {
+    if (_latestPending?.request === request) {
+      _latestPending = null
+    }
+
+    $activeSprite.set(cached)
+
+    return
+  }
+
+  const inflight = _inflight.get(request)
+
+  if (inflight) {
+    await inflight
+    const resolved = _requestCache.get(request)
+
+    if (resolved) {
+      $activeSprite.set(resolved)
+    }
+
     return
   }
 
   if (Date.now() - _lastPostAt < MIN_REQUEST_SPACING_MS) {
+    _latestPending = { request, role }
+
+    if (_pendingTimer === null) {
+      const delay = Math.max(50, MIN_REQUEST_SPACING_MS - (Date.now() - _lastPostAt))
+      _pendingTimer = setTimeout(() => {
+        _pendingTimer = null
+
+        if (_latestPending) {
+          const next = _latestPending
+          _latestPending = null
+          void requestSprite(next.request, next.role)
+        }
+      }, delay)
+    }
+
     return
+  }
+
+  if (_latestPending?.request === request) {
+    _latestPending = null
   }
 
   const task = (async () => {
@@ -72,8 +114,9 @@ export async function requestSprite(request: string, role?: 'waiting'): Promise<
         _urlCache.set(cacheKey, dataUrl)
       }
 
-      _resolvedRequests.add(request)
-      $activeSprite.set({ dataUrl, tag: res.tag })
+      const active: ActiveSprite = { dataUrl, tag: res.tag }
+      _requestCache.set(request, active)
+      $activeSprite.set(active)
     } catch (error) {
       if (!isClientErrorIpc(error)) {
         log.warn('sprite-store', 'requestSprite failed', error)
@@ -90,8 +133,15 @@ export async function requestSprite(request: string, role?: 'waiting'): Promise<
 /** Avatar regen invalidates the album's identity anchor (server filters by
  * avatar_id) — drop local caches so the next request generates fresh sprites. */
 export function resetSpriteAlbum(): void {
+  if (_pendingTimer !== null) {
+    clearTimeout(_pendingTimer)
+    _pendingTimer = null
+  }
+
+  _latestPending = null
   _urlCache.clear()
-  _resolvedRequests.clear()
+  _requestCache.clear()
+  _inflight.clear()
   _lastPostAt = 0
   $activeSprite.set(null)
 }

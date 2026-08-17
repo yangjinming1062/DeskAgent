@@ -32,6 +32,8 @@ export function StaticSprite(): React.JSX.Element | null {
       void requestSprite(semanticRequestFor($spriteState.get(), $spriteEmotion.get()))
     }
 
+    fire()
+
     const unsubState = $spriteState.listen(fire)
     const unsubEmotion = $spriteEmotion.listen(fire)
 

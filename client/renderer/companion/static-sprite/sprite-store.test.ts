@@ -96,21 +96,55 @@ describe('sprite-store', () => {
     expect($activeSprite.get()).toBe(before)
   })
 
-  it('spaces distinct requests by 1.5s', async () => {
+  it('switches immediately between cached requests without re-fetching', async () => {
     const mock: SpiritagentMock = {
-      api: vi.fn().mockResolvedValue(spriteResponse('h4', '等待')),
-      apiAsset: vi.fn().mockResolvedValue('data:AAA')
+      api: vi
+        .fn()
+        .mockResolvedValueOnce(spriteResponse('h_idle', '站立'))
+        .mockResolvedValueOnce(spriteResponse('h_sleep', '睡觉')),
+      apiAsset: vi
+        .fn()
+        .mockResolvedValueOnce('data:image/png;base64,IDLE')
+        .mockResolvedValueOnce('data:image/png;base64,SLEEP')
+    }
+
+    setWindowSpiritagent(mock)
+
+    await requestSprite('站立请求')
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,IDLE', tag: '站立' })
+
+    vi.advanceTimersByTime(1500)
+    await requestSprite('睡觉请求')
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,SLEEP', tag: '睡觉' })
+
+    // Re-requesting the already resolved idle request switches the active sprite immediately
+    await requestSprite('站立请求')
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,IDLE', tag: '站立' })
+    expect(mock.api).toHaveBeenCalledTimes(2)
+  })
+
+  it('spaces distinct requests and executes trailing request after throttle', async () => {
+    const mock: SpiritagentMock = {
+      api: vi
+        .fn()
+        .mockResolvedValueOnce(spriteResponse('h4_a', '等待'))
+        .mockResolvedValueOnce(spriteResponse('h4_b', '睡觉')),
+      apiAsset: vi.fn().mockResolvedValueOnce('data:A').mockResolvedValueOnce('data:B')
     }
 
     setWindowSpiritagent(mock)
 
     await requestSprite('第一个请求')
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:A', tag: '等待' })
+
+    // Second request is within 1.5s throttle — queued as latest pending
     await requestSprite('第二个请求')
     expect(mock.api).toHaveBeenCalledTimes(1)
 
-    vi.advanceTimersByTime(1500)
-    await requestSprite('第三个请求')
+    // Advance time to allow trailing timer to trigger
+    await vi.advanceTimersByTimeAsync(1500)
     expect(mock.api).toHaveBeenCalledTimes(2)
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:B', tag: '睡觉' })
   })
 
   it('resetSpriteAlbum drops caches so identical requests re-fetch', async () => {
