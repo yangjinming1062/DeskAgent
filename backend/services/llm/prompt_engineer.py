@@ -108,11 +108,15 @@ def _select_shared_rules(rig_type: str, style: FullbodyStyle) -> str:
 # the model will otherwise freely paint a long dress and break the PBR
 # wardrobe swap pipeline. The "every body part visible" enumeration is
 # softened (it reads as "fully nude" to providers and triggers moderation);
-# the long-coverage ban stays as-is.
+# the long-coverage ban stays as-is. Outfit color pinned: each view is an
+# independent image-gen call sharing only the subject reference (which wears
+# the persona outfit, not the seed garment), so an unpinned color drifts per
+# call (white front, black side). Dark gray also survives the pure-white
+# chroma-key background.
 _BIPED_A_POSE = (
     "标准A-pose站姿，双臂向两侧微张约30度（肩、肘、腕清晰分离，便于下游骨骼自动识别），"
     "双脚分开与肩同宽。"
-    "穿着最小覆盖的运动内衣+运动短裤，躯干与四肢皮肤充分暴露，"
+    "穿着最小覆盖的深灰色运动内衣+深灰色运动短裤，躯干与四肢皮肤充分暴露，"
     "便于后期 PBR 换装保留完整 albedo —— 禁止覆盖躯干或四肢皮肤的大面积服装"
     "（长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等）。"
 )

@@ -220,13 +220,24 @@ def test_build_biped_fullbody_includes_body_reveal_clause():
     template = prompt_engineer.resolve_fullbody_template("人类")
     prompt = prompt_engineer.build_fullbody_prompt("front", template=template)
     assert "最小覆盖" in prompt
-    assert "运动内衣" in prompt
-    assert "运动短裤" in prompt
+    assert "深灰色运动内衣+深灰色运动短裤" in prompt
     assert "长裙" in prompt
     assert "长袖" in prompt
     assert "连体紧身衣" in prompt
     assert "高筒袜" in prompt
     assert "躯干与四肢皮肤充分暴露" in prompt
+
+
+def test_build_fullbody_pins_outfit_color_across_views():
+    # Each view is a separate provider call sharing only the subject
+    # reference — the seed garment exists solely in the text prompt, so its
+    # color must be pinned or it drifts per call (white front, black side).
+    # Dark gray also keeps the garment separable from the pure-white
+    # chroma-key background.
+    template = prompt_engineer.resolve_fullbody_template("人类")
+    for view in ("front", "right", "back"):
+        prompt = prompt_engineer.build_fullbody_prompt(view, template=template)
+        assert "深灰色运动内衣+深灰色运动短裤" in prompt
 
 
 def test_build_non_biped_fullbody_skips_clothing_clause():
