@@ -1,6 +1,4 @@
 import type {
-  ModelConfigPutRequest,
-  ModelConfigResponse,
   SpiritAgentConfigPutRequest,
   SpiritAgentConfigRecord,
   SpiritAgentConfigResponse
@@ -28,18 +26,4 @@ export async function saveSpiritAgentConfig(
   })
 
   return { config: response.config }
-}
-
-export function getModelConfig(): Promise<ModelConfigResponse> {
-  return window.spiritagent.api<ModelConfigResponse>({
-    path: '/api/user/model-config'
-  })
-}
-
-export async function saveModelConfig(config: ModelConfigPutRequest): Promise<ModelConfigResponse> {
-  return window.spiritagent.api<ModelConfigResponse>({
-    body: config,
-    method: 'PUT',
-    path: '/api/user/model-config'
-  })
 }

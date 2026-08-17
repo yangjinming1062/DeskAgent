@@ -141,7 +141,6 @@ export interface Translations {
       archivedChats: string
       about: string
       appearance: string
-      models: string
       toolsets: string
       runner: string
       skills: string
@@ -236,44 +235,6 @@ export interface Translations {
       emptyDesc: string
       hiddenByPlatformTitle: string
       hiddenByPlatformDesc: string
-    }
-    models: {
-      heading: string
-      intro: string
-      loading: string
-      saveFailed: string
-      saved: string
-      reconnectNotice: string
-      baseUrl: string
-      baseUrlPlaceholder: string
-      apiKey: string
-      apiKeyPlaceholder: string
-      modelName: string
-      modelNamePlaceholder: string
-      set: string
-      notSet: string
-      fingerprint: (fp: string) => string
-      reveal: string
-      hide: string
-      clearKey: string
-      clearKeyConfirm: string
-      clearAll: string
-      clearAllConfirm: string
-      capabilities: {
-        llm: { title: string; desc: string }
-        stt: { title: string; desc: string }
-        tts: { title: string; desc: string }
-        imageGen: { title: string; desc: string }
-        videoGen: { title: string; desc: string }
-      }
-      providers: {
-        heading: string
-        intro: string
-        addSlot: string
-        name: string
-        remove: string
-        empty: string
-      }
     }
     account: {
       heading: string

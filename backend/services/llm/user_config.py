@@ -11,7 +11,6 @@ def merge_provider_json(slots: list[ProviderSlot], existing: UserModelConfig | N
 
     An empty ``api_key`` keeps the existing key for that provider — the caller
     can't see the raw value, so "leave blank" must mean "no change".
-    Shared by the admin and user self-service model-config endpoints.
     """
     prev = {s["name"]: s.get("api_key", "") for s in json.loads(existing.provider_config or "[]")} if existing else {}
     out = []

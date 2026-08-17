@@ -1,5 +1,5 @@
 from common import get_router
-from components import SETTINGS, apply_partial, get_db, utc_now
+from components import SETTINGS, get_db, utc_now
 from fastapi import Depends, HTTPException, Request, status
 from modules.auth import (
     ActivateRequest,
@@ -8,17 +8,12 @@ from modules.auth import (
     TokenResponse,
     User,
     UserInfo,
-    UserModelConfig,
-    UserModelConfigResponse,
-    UserModelConfigSelfRequest,
     create_access_token,
     decode_activation_code,
     get_current_session,
     hash_activation_token,
 )
 from modules.system import MessageResponse
-from services.auth import CAPABILITIES, build_config_response
-from services.llm import merge_provider_json
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
@@ -127,56 +122,3 @@ async def logout(current: tuple[User, LoginRecord] = Depends(get_current_session
     db.add(login_record)
     await db.commit()
     return MessageResponse(message="已退出登录。")
-
-
-@router.get("/model-config", response_model=UserModelConfigResponse)
-async def model_config(current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> UserModelConfigResponse:
-    """Return the user's own per-service model config.
-
-    Only values the user has explicitly set are returned — empty strings
-    when nothing is stored, so the desktop UI never sees server-wide
-    defaults from ``SETTINGS``. Raw API keys are NEVER returned; the
-    renderer only sees ``*_api_key_set`` + ``llm_api_key_fingerprint``.
-    """
-    user, _session = current
-    cfg = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user.id))).scalar_one_or_none()
-    return build_config_response(cfg)
-
-
-@router.put("/model-config", response_model=UserModelConfigResponse)
-async def update_model_config(
-    payload: UserModelConfigSelfRequest, current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
-) -> UserModelConfigResponse:
-    """User self-service model config update.
-
-    Empty ``api_key`` fields keep the existing value (the GET endpoint never
-    returns raw keys, so the user cannot re-type them). Empty ``base_url``
-    and ``model_name`` clear the field so the provider chain falls back to
-    server defaults. Returns the updated public config so the caller can
-    refresh badges without a second round-trip.
-    """
-    user, _session = current
-    config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user.id))).scalar_one_or_none()
-
-    # Preserve existing api_keys when the user submits an empty one (the GET
-    # endpoint never returns raw keys); ``None`` (JSON null) means "clear".
-    for cap in CAPABILITIES:
-        attr = f"{cap}_api_key"
-        val = getattr(payload, attr)
-        if val is None:
-            setattr(payload, attr, "")
-        elif not val and config:
-            setattr(payload, attr, getattr(config, attr))
-
-    provider_json = merge_provider_json(payload.provider_config, config)
-
-    if config:
-        apply_partial(config, payload, exclude=frozenset({"provider_config"}))
-        config.provider_config = provider_json
-    else:
-        data = payload.model_dump()
-        data["provider_config"] = provider_json
-        config = UserModelConfig(user_id=user.id, **data)
-        db.add(config)
-    await db.commit()
-    return build_config_response(config)

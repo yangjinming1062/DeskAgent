@@ -206,7 +206,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 
 ### 5.4 API Key Fingerprinting
 
-GET /api/user/model-config 只返回用户显式设置的字段；未设置的字段返回空、**绝不**透传服务器默认值。原始 API key 永不离开后端，仅返回 *_set 布尔 + 指纹（sk-…XX 形式）。PUT 允许用户自助修改：空 api_key = 保留原值；空 base_url/model_name = 清空回退默认。
+用户的模型配置仅经管理端点管理（`/api/admin/model-configs` 系）；Client 无自助配置入口。原始 API key 永不离开后端：管理列表只返回 *_set 布尔 + 指纹（sk-…XX 形式），PUT 空 api_key = 保留原值（管理页看不到原始 key，留空必须等价于"不改"）。admin 写入强制 LLM 三字段（base_url / api_key / model_name）非空——半行配置会静默打断用户会话链。
 
 ### 5.5 自更新签名（Client ↔ Backend / Installer ↔ Backend）
 

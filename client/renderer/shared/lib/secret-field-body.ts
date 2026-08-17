@@ -1,4 +1,4 @@
-// Three-state secret-field writer used by account/model-config form save
+// Three-state secret-field writer used by account form save
 // paths. The backend distinguishes:
 //
 //   1. key absent in the PATCH body → keep existing value untouched

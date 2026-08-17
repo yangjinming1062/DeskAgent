@@ -55,37 +55,10 @@ def public_provider_slots(raw: str | None) -> list[ProviderSlotPublic]:
     return [ProviderSlotPublic(name=s.get("name", ""), base_url=s.get("base_url", ""), api_key_set=bool(s.get("api_key"))) for s in json.loads(raw or "[]")]
 
 
-class UserModelConfigResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    llm_provider: str = ""
-    llm_base_url: str
-    llm_api_key_fingerprint: str
-    llm_api_key_set: bool
-    llm_model_name: str
-    stt_provider: str = ""
-    stt_base_url: str
-    stt_api_key_set: bool
-    stt_model_name: str
-    tts_provider: str = ""
-    tts_base_url: str
-    tts_api_key_set: bool
-    tts_model_name: str
-    image_gen_provider: str = ""
-    image_gen_base_url: str
-    image_gen_api_key_set: bool
-    image_gen_model_name: str
-    video_gen_provider: str = ""
-    video_gen_base_url: str
-    video_gen_api_key_set: bool
-    video_gen_model_name: str
-    provider_config: list[ProviderSlotPublic]
-
-
 class _UserModelConfigBase(BaseModel):
-    """Shared per-capability fields for admin and self-service requests.
+    """Per-capability fields for the admin model-config request.
 
-    Every field defaults to ``""`` so the user can clear any capability.
+    Every field defaults to ``""`` so an admin can clear any capability.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -117,26 +90,9 @@ class UserModelConfigRequest(_UserModelConfigBase):
     """Admin model config."""
 
 
-class UserModelConfigSelfRequest(_UserModelConfigBase):
-    """User self-service model config — all fields optional.
-
-    Empty ``api_key`` means "keep existing" (the GET endpoint never returns
-    raw keys, so the user cannot re-type the current value). ``None`` (JSON
-    ``null``) means "clear the stored key". Empty ``base_url`` /
-    ``model_name`` means "clear — use server default".
-    """
-
-    llm_api_key: str | None = Field(default="", max_length=255)
-    stt_api_key: str | None = Field(default="", max_length=255)
-    tts_api_key: str | None = Field(default="", max_length=255)
-    image_gen_api_key: str | None = Field(default="", max_length=255)
-    video_gen_api_key: str | None = Field(default="", max_length=255)
-
-
 class UserModelConfigListItem(BaseModel):
-    """Admin-facing view of ``UserModelConfig`` — mirrors ``UserModelConfigResponse``
-    so admins see ``llm_api_key_fingerprint`` + ``*_set`` flags instead of raw
-    credentials.
+    """Admin-facing view of ``UserModelConfig`` — shows ``llm_api_key_fingerprint``
+    + ``*_set`` flags instead of raw credentials.
     """
 
     model_config = ConfigDict(from_attributes=True)

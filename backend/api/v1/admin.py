@@ -179,9 +179,8 @@ async def list_model_configs(_admin: str = Depends(get_current_admin_token), db:
 
 @router.put("/{user_id}/model-config")
 async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    # Unlike the self-service endpoint (empty = keep/clear), an admin write
-    # must be complete — a partially-filled row would silently break the
-    # user's chat chain (PROTOCOL §5.4).
+    # An admin write must be complete — a partially-filled row would silently
+    # break the user's chat chain (PROTOCOL §5.4).
     if not (payload.llm_base_url and payload.llm_api_key and payload.llm_model_name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url、api_key、model_name 三字段必填。")
     await get_or_404(db, User, id=user_id, detail="用户不存在。")

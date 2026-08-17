@@ -41,7 +41,7 @@ test('resolvePathTimeoutMs keeps reads and PUTs on the fast default', () => {
 
 test('resolvePathTimeoutMs ignores unrelated paths', () => {
   assert.equal(resolvePathTimeoutMs('/api/config', 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
-  assert.equal(resolvePathTimeoutMs('/api/user/model-config', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs('/api/config', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/companion/persona', 'PUT'), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/companion/voices', 'GET'), DEFAULT_FETCH_TIMEOUT_MS)
 })

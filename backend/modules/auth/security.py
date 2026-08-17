@@ -114,11 +114,12 @@ def decode_bearer_token(credentials: HTTPAuthorizationCredentials | None) -> dic
 def fingerprint_api_key(api_key: str | None) -> str:
     """Stable, non-reversible display tag for an LLM API key.
 
-    Used by ``GET /api/user/model-config`` so the renderer can show the user
-    which key is on file without ever sending the raw secret over the wire.
-    Returns ``"<empty>"`` for missing keys and ``"<short>"`` for keys
-    shorter than the slicing window — these are almost always typos or
-    misconfigurations, and we refuse to leak a 1-2 char key.
+    Used by the admin model-config list and the desktop config response so
+    callers can show which key is on file without ever sending the raw
+    secret over the wire. Returns ``"<empty>"`` for missing keys and
+    ``"<short>"`` for keys shorter than the slicing window — these are
+    almost always typos or misconfigurations, and we refuse to leak a 1-2
+    char key.
     """
     if not api_key:
         return "<empty>"

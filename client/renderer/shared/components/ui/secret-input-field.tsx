@@ -33,9 +33,8 @@ interface SecretInputFieldProps {
   disabled?: boolean
 }
 
-// Standalone "password input + reveal + clear" trio used by both
-// account-settings.tsx (WebSearchCopy / API keys) and
-// model-config-settings.tsx (CapabilitySection api-key row). Callers wrap
+// Standalone "password input + reveal + clear" trio used by
+// account-settings.tsx (WebSearchCopy / API keys). Callers wrap
 // it in a ListRow with title + status themselves — that part differs
 // (status pill position, fingerprint hint format, etc.) and is not
 // worth forcing into a single component shape.

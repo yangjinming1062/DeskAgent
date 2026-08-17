@@ -136,7 +136,6 @@ export const strings: Translations = {
       archivedChats: '已归档对话',
       about: '关于',
       appearance: '外观',
-      models: '模型配置',
       toolsets: '工具集',
       runner: '执行器',
       skills: '技能与工具',
@@ -237,44 +236,6 @@ export const strings: Translations = {
       hiddenByPlatformTitle: '当前操作系统没有可用技能',
       hiddenByPlatformDesc:
         '本版本 SpiritAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 SpiritAgent 后再启用。'
-    },
-    models: {
-      heading: '模型配置',
-      intro: '为对话、语音、图像和视频能力配置自定义模型凭证。留空则使用服务器默认配置。',
-      loading: '加载中…',
-      saveFailed: '保存模型配置失败。',
-      saved: '模型配置已保存，正在重连以应用新配置…',
-      reconnectNotice: '保存后将自动重连以使新配置生效。',
-      baseUrl: 'API 地址',
-      baseUrlPlaceholder: '留空使用服务器默认',
-      apiKey: 'API 密钥',
-      apiKeyPlaceholder: '留空保留当前密钥',
-      modelName: '模型名称',
-      modelNamePlaceholder: '留空使用服务器默认',
-      set: '已设置',
-      notSet: '未设置',
-      fingerprint: (fp: string) => `指纹:${fp}`,
-      reveal: '显示',
-      hide: '隐藏',
-      clearKey: '清除密钥',
-      clearKeyConfirm: '确定要清除该 API 密钥吗？清除后将回退到服务器默认。',
-      clearAll: '全部清除（使用服务器默认）',
-      clearAllConfirm: '确定要清除所有自定义模型配置吗？将回退到服务器默认。',
-      capabilities: {
-        llm: { title: '对话模型 (LLM)', desc: '聊天对话使用的大语言模型。' },
-        stt: { title: '语音识别 (STT)', desc: '云端语音转文字模型。' },
-        tts: { title: '语音合成 (TTS)', desc: '云端文字转语音模型。' },
-        imageGen: { title: '图像生成', desc: '图像生成模型。' },
-        videoGen: { title: '视频生成', desc: '视频生成模型。' }
-      },
-      providers: {
-        heading: '供应商槽位（高级）',
-        intro: '多供应商 fallback 链。按顺序优先于上方能力级配置，空 API 密钥保留已有值。',
-        addSlot: '添加供应商',
-        name: '供应商',
-        remove: '移除',
-        empty: '暂无供应商槽位。'
-      }
     },
     account: {
       heading: '账户',

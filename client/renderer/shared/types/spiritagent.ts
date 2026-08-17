@@ -209,66 +209,6 @@ export interface SpiritAgentConfigPutRequest {
 
 export type SpiritAgentConfigRecord = Record<string, unknown>
 
-/** Shape returned by `GET /api/user/model-config`. Contains only the user's
- * explicitly-set values — empty strings when nothing is stored, so the desktop
- * UI never sees server-wide defaults. Raw API keys are NEVER returned. */
-export interface ModelConfigResponse {
-  llm_base_url: string
-  llm_api_key_fingerprint: string
-  llm_api_key_set: boolean
-  llm_model_name: string
-  stt_base_url: string
-  stt_api_key_set: boolean
-  stt_model_name: string
-  tts_base_url: string
-  tts_api_key_set: boolean
-  tts_model_name: string
-  image_gen_base_url: string
-  image_gen_api_key_set: boolean
-  image_gen_model_name: string
-  video_gen_base_url: string
-  video_gen_api_key_set: boolean
-  video_gen_model_name: string
-  provider_config: ProviderSlotPublic[]
-}
-
-/** Redacted provider slot returned by the backend (no raw api_key). */
-export interface ProviderSlotPublic {
-  name: string
-  base_url: string
-  api_key_set: boolean
-}
-
-/** Writable provider slot for PUT requests. Empty api_key = keep existing. */
-export interface ProviderSlotInput {
-  name: string
-  api_key: string
-  base_url: string
-}
-
-/** Body shape accepted by `PUT /api/user/model-config`. All fields default to
- * empty string. Empty `*_api_key` = keep existing; `null` = clear the stored
- * key; empty `*_base_url` / `*_model_name` = clear (fall back to server
- * default). */
-export interface ModelConfigPutRequest {
-  llm_base_url: string
-  llm_api_key: string | null
-  llm_model_name: string
-  stt_base_url: string
-  stt_api_key: string | null
-  stt_model_name: string
-  tts_base_url: string
-  tts_api_key: string | null
-  tts_model_name: string
-  image_gen_base_url: string
-  image_gen_api_key: string | null
-  image_gen_model_name: string
-  video_gen_base_url: string
-  video_gen_api_key: string | null
-  video_gen_model_name: string
-  provider_config: ProviderSlotInput[]
-}
-
 /** Shape returned by `GET /api/insights/overview?days=N`.
  *
  * Field names mirror the backend's `insights.py` response — kept snake_case

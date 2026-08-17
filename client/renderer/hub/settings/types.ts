@@ -1,6 +1,6 @@
 import type { SpiritAgentGateway } from '@/shared/spiritagent'
 
-export type SettingsView = 'about' | 'account' | 'mcp' | 'models' | 'runner' | 'skills' | 'speech' | 'voices'
+export type SettingsView = 'about' | 'account' | 'mcp' | 'runner' | 'skills' | 'speech' | 'voices'
 
 export interface SettingsPageProps {
   gateway?: SpiritAgentGateway | null

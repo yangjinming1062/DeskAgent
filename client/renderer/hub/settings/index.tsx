@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { ConfirmDialog, Tip } from '@/shared/components/ui'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { AudioLines, Brain, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
+import { AudioLines, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
 import { getSpiritAgentConfig, getSpiritAgentConfigDefaults, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -16,7 +16,6 @@ import { OverlayView } from '../overlays/overlay-view'
 import { AboutSettings } from './about-settings'
 import { AccountSettings } from './account-settings'
 import { McpSettings } from './mcp-settings'
-import { ModelConfigSettings } from './model-config-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
@@ -27,7 +26,6 @@ const SETTINGS_VIEWS = [
   'account',
   'speech',
   'voices',
-  'models',
   'runner',
   'skills',
   'mcp',
@@ -124,12 +122,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             onClick={() => setActiveView('voices')}
           />
           <OverlayNavItem
-            active={activeView === 'models'}
-            icon={Brain}
-            label={t.settings.nav.models}
-            onClick={() => setActiveView('models')}
-          />
-          <OverlayNavItem
             active={activeView === 'runner'}
             icon={Settings}
             label={t.settings.nav.runner ?? 'Runner'}
@@ -192,8 +184,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             <SpeechSettings />
           ) : activeView === 'voices' ? (
             <VoiceGallerySettings />
-          ) : activeView === 'models' ? (
-            <ModelConfigSettings gateway={gateway} onConfigSaved={onConfigSaved} />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (
