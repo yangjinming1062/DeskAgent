@@ -123,7 +123,6 @@ class TestSubmit:
         captured: dict = {}
         monkeypatch.setattr(SETTINGS, "hunyuan_model_version", "hy-3d-3.0")
         monkeypatch.setattr(SETTINGS, "hunyuan_generate_type", "LowPoly")
-        monkeypatch.setattr(SETTINGS, "hunyuan_polygon_type", "quadrilateral")
         monkeypatch.setattr(SETTINGS, "hunyuan_face_count", 25000)
         monkeypatch.setattr(SETTINGS, "hunyuan_enable_pbr", False)
         monkeypatch.setattr(SETTINGS, "hunyuan_result_format", "obj")
@@ -151,7 +150,6 @@ class TestSubmit:
         body = captured["body"]
         assert body["model"] == "hy-3d-3.0"
         assert body["generate_type"] == "LowPoly"
-        assert body["polygon_type"] == "quadrilateral"
         assert body["face_count"] == 25000
         assert body["enable_pbr"] is False
         assert body["result_format"] == "OBJ"

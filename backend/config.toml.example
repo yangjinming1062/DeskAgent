@@ -70,8 +70,6 @@ hunyuan_base_url = "https://tokenhub.tencentmaas.com"
 hunyuan_model_version = "hy-3d-3.1"
 # 生成模式：Normal（默认带贴图模型）、LowPoly（减面拓扑）、Geometry（白模无贴图）、Sketch（草图生模）
 hunyuan_generate_type = "Normal"
-# 减面拓扑类型（仅 LowPoly 模式生效）：triangle（三角面）、quadrilateral（四边面）
-hunyuan_polygon_type = "triangle"
 # 目标面数限制（3000 ~ 1500000；配置为 0 或不填则不传递该参数，避免额外计费）
 hunyuan_face_count = 0
 # 是否生成 PBR 材质贴图

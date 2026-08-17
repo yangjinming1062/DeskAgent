@@ -47,21 +47,12 @@ def _auth_headers() -> dict[str, str]:
 
 
 def _common_model_kwargs(
-    *,
-    model: str,
-    enable_pbr: bool = True,
-    result_format: str = "GLB",
-    generate_type: str | None = None,
-    polygon_type: str | None = None,
-    face_count: int | None = None,
-    prompt: str | None = None,
+    *, model: str, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None, prompt: str | None = None
 ) -> dict[str, Any]:
     """Build common payload fields for Hunyuan 3D API in snake_case."""
     payload: dict[str, Any] = {"model": model, "enable_pbr": enable_pbr, "result_format": (result_format or "GLB").upper()}
     if generate_type:
         payload["generate_type"] = generate_type
-    if polygon_type:
-        payload["polygon_type"] = polygon_type
     if face_count is not None and face_count > 0:
         payload["face_count"] = max(_MIN_FACE_COUNT, min(face_count, _MAX_FACE_COUNT))
     if prompt:
@@ -70,13 +61,7 @@ def _common_model_kwargs(
 
 
 def hunyuan_common_kwargs_from_settings(
-    *,
-    model: str | None = None,
-    generate_type: str | None = None,
-    polygon_type: str | None = None,
-    face_count: int | None = None,
-    enable_pbr: bool | None = None,
-    result_format: str | None = None,
+    *, model: str | None = None, generate_type: str | None = None, face_count: int | None = None, enable_pbr: bool | None = None, result_format: str | None = None
 ) -> dict[str, Any]:
     """Build common call kwargs for Hunyuan endpoints from SETTINGS."""
     raw_face_count = face_count if face_count is not None else getattr(SETTINGS, "hunyuan_face_count", 0)
@@ -85,7 +70,6 @@ def hunyuan_common_kwargs_from_settings(
     return {
         "model": model if model is not None else (getattr(SETTINGS, "hunyuan_model_version", "") or MODEL_VERSION_DEFAULT),
         "generate_type": generate_type if generate_type is not None else getattr(SETTINGS, "hunyuan_generate_type", None),
-        "polygon_type": polygon_type if polygon_type is not None else getattr(SETTINGS, "hunyuan_polygon_type", None),
         "face_count": fc,
         "enable_pbr": enable_pbr if enable_pbr is not None else getattr(SETTINGS, "hunyuan_enable_pbr", True),
         "result_format": rf.upper() if rf else "GLB",
@@ -99,16 +83,13 @@ async def create_image_to_model(
     enable_pbr: bool = True,
     result_format: str = "GLB",
     generate_type: str | None = None,
-    polygon_type: str | None = None,
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> str:
     """Submit a single-image to 3D model generation job."""
     if not image_base64:
         raise ValueError("image-to-model requires a non-empty image_base64")
-    payload = _common_model_kwargs(
-        model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, polygon_type=polygon_type, face_count=face_count, prompt=prompt
-    )
+    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = image_base64
 
     timeout = httpx.Timeout(60.0, connect=10.0)
@@ -131,7 +112,6 @@ async def create_multiview_to_model(
     enable_pbr: bool = True,
     result_format: str = "GLB",
     generate_type: str | None = None,
-    polygon_type: str | None = None,
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> str:
@@ -146,9 +126,7 @@ async def create_multiview_to_model(
 
     multi_view_images = [{"view": view_name, "image_base64": b64_data} for view_name, b64_data in views.items() if view_name.lower() != "front" and b64_data]
 
-    payload = _common_model_kwargs(
-        model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, polygon_type=polygon_type, face_count=face_count, prompt=prompt
-    )
+    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = front_image_base64
     if multi_view_images:
         payload["multi_view_images"] = multi_view_images
@@ -166,21 +144,12 @@ async def create_multiview_to_model(
 
 
 async def create_text_to_model(
-    prompt: str,
-    *,
-    model: str = MODEL_VERSION_DEFAULT,
-    enable_pbr: bool = True,
-    result_format: str = "GLB",
-    generate_type: str | None = None,
-    polygon_type: str | None = None,
-    face_count: int | None = None,
+    prompt: str, *, model: str = MODEL_VERSION_DEFAULT, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None
 ) -> str:
     """Submit a text-to-3D generation job."""
     if not prompt:
         raise ValueError("text-to-model requires a prompt")
-    payload = _common_model_kwargs(
-        model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, polygon_type=polygon_type, face_count=face_count, prompt=prompt
-    )
+    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
 
     timeout = httpx.Timeout(60.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
