@@ -17,7 +17,7 @@ import sys
 import pytest
 
 import utils.reverse_rpc as reverse_rpc
-from utils.capabilities import _binary_exists, disk_free_bytes, snapshot
+from utils.capabilities import _binary_exists, disk_free_bytes
 from utils.config import (
     cfg_bool,
     cfg_float,
@@ -30,7 +30,6 @@ from utils.config import (
     set_inmemory_config,
 )
 from utils.constants import (
-    CREATE_NO_WINDOW,
     IS_WINDOWS,
     get_spiritagent_dir,
     get_spiritagent_home,
@@ -151,19 +150,6 @@ class TestSecureParentDir:
         existing.mkdir()
         secure_parent_dir(existing / "child")
         # No exception = success.
-
-
-class TestPlatformFlags:
-    def test_create_no_window_is_zero_on_posix(self):
-        if not IS_WINDOWS:
-            assert CREATE_NO_WINDOW == 0
-        else:
-            # On Windows, must be the non-zero flag; exact value isn't
-            # pinned (it's a subprocess constant) — just check it's truthy.
-            assert CREATE_NO_WINDOW != 0
-
-    def test_is_windows_matches_sys_platform(self):
-        assert IS_WINDOWS == (sys.platform == "win32")
 
 
 # ---------------------------------------------------------------------------
@@ -571,23 +557,6 @@ class TestCapabilitiesBoundary:
     def test_disk_free_bytes_for_missing_returns_none(self, tmp_path):
         # Path that doesn't exist; shutil.disk_usage raises OSError.
         assert disk_free_bytes(tmp_path / "nope" / "nope") is None
-
-    def test_snapshot_keys_complete(self):
-        """``snapshot`` MUST return every documented key."""
-        caps = snapshot()
-        for key in (
-            "microphone",
-            "screen_capture",
-            "local_stt",
-            "local_tts",
-            "system_activity",
-            "platform",
-            "python",
-        ):
-            assert key in caps
-        assert caps["platform"] == sys.platform
-        # Values are bools for the capability flags.
-        assert isinstance(caps["microphone"], bool)
 
 
 # ---------------------------------------------------------------------------

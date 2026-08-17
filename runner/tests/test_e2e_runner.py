@@ -12,9 +12,7 @@ stability, the runner must:
 3. Run ``mcp.reload`` end-to-end (RPC → reload call → cache reset →
    tools_changed notification).
 4. Route ``terminal.env_type`` through every backend factory branch.
-5. Sync bundled skills from a fake bundle into ``$SPIRITAGENT_HOME/skills``
-   and pin the manifest + suppression behaviour.
-6. Gate vision / TTS / STT tools on their optional deps so the LLM
+5. Gate vision / TTS / STT tools on their optional deps so the LLM
    never sees a broken tool.
 
 All tests are synchronous where possible (we drive ``asyncio`` via
@@ -511,108 +509,6 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     )
 
 
-@pytest.mark.timeout(10)
-def test_read_endpoint_returns_none_for_corrupted_endpoint(monkeypatch, tmp_path):
-    """``read_endpoint`` MUST return ``None`` (not raise, not return a
-    malformed endpoint) for every kind of corruption the Desktop might
-    leave behind on crash or partial write.
-
-    Production risk: a Desktop crash mid-write can leave the file with
-    a truncated or non-JSON body, missing keys, or a stale PID. The
-    runner's reconnect loop must treat all of these as "no usable
-    endpoint" — otherwise it could try to connect to a bogus path or
-    loop forever.
-    """
-    import server as server_mod
-
-    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-    endpoint_file = tmp_path / "desktop-endpoint.json"
-    sample_path = (
-        "\\\\.\\pipe\\spiritagent-runner-1234"
-        if IS_WINDOWS
-        else "/tmp/spiritagent-runner.sock"
-    )
-
-    # None body = keep the file absent (the "missing file" case); "" writes a
-    # genuinely empty file so that case is exercised for real.
-    cases: list[tuple[str, str | None, str]] = [
-        ("missing file", None, "no file → None"),
-        ("empty file", "", "empty file → None"),
-        ("malformed JSON", "{not json", "malformed JSON → None"),
-        (
-            "missing path",
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "token": "a" * 64,
-                "pid": os.getpid(),
-            }),
-            "no path key → None",
-        ),
-        (
-            "path is empty",
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "path": "",
-                "token": "a" * 64,
-                "pid": os.getpid(),
-            }),
-            "empty path → None",
-        ),
-        (
-            "missing token",
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "path": sample_path,
-                "pid": os.getpid(),
-            }),
-            "no token key → None",
-        ),
-        (
-            "foreign transport",
-            json.dumps({
-                "transport": "tcp",
-                "path": "127.0.0.1:1",
-                "token": "a" * 64,
-                "pid": os.getpid(),
-            }),
-            "transport/host mismatch → None",
-        ),
-        (
-            "dead PID",
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "path": sample_path,
-                "token": "a" * 64,
-                "pid": 2**31 - 1,
-            }),
-            "dead PID → None",
-        ),
-    ]
-    for name, body, doc in cases:
-        if body is None:
-            with contextlib.suppress(FileNotFoundError):
-                endpoint_file.unlink()
-        else:
-            endpoint_file.write_text(body, encoding="utf-8")
-        result = server_mod.read_endpoint()
-        assert result is None, f"{name}: expected None ({doc}), got {result!r}"
-
-    # The happy path is covered by ``test_runner_recovers_from_desktop_restart``;
-    # here we only pin corruption cases.
-    endpoint_file.write_text(
-        json.dumps({
-            "transport": EXPECTED_TRANSPORT,
-            "path": sample_path,
-            "token": "a" * 64,
-            "pid": os.getpid(),
-        })
-    )
-    good = server_mod.read_endpoint()
-    assert good is not None and good.path == sample_path, (
-        f"valid endpoint must resolve, got {good!r}"
-    )
-
-
 # ---------------------------------------------------------------------------
 # (3) MCP reload RPC end-to-end
 # ---------------------------------------------------------------------------
@@ -849,14 +745,7 @@ def test_create_environment_rejects_unknown_env_type():
 
 
 # ---------------------------------------------------------------------------
-# (5) Skills sync — real bundle → real SPIRITAGENT_HOME/skills
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.timeout(15)
-
-# ---------------------------------------------------------------------------
-# (6) Vision / TTS / STT — real check_fn gating
+# (5) Vision / TTS / STT — real check_fn gating
 # ---------------------------------------------------------------------------
 
 

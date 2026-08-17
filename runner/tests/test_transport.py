@@ -622,6 +622,51 @@ async def test_read_endpoint_missing_file(tmp_path, monkeypatch):
     assert read_endpoint() is None
 
 
+@pytest.mark.parametrize(
+    "body,expect_valid",
+    [
+        ("", False),  # genuinely empty file
+        ("{not json", False),
+        (
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "token": "a" * 64,
+                "pid": os.getpid(),
+            }),
+            False,
+        ),  # missing path key
+        (
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "path": "\\\\.\\pipe\\spiritagent-runner-123"
+                if IS_WINDOWS
+                else "/tmp/runner.sock",
+                "pid": os.getpid(),
+            }),
+            False,
+        ),  # missing token key
+        (
+            json.dumps({
+                "transport": EXPECTED_TRANSPORT,
+                "path": "/tmp/runner.sock",
+                "token": "a" * 64,
+                "pid": 0,
+            }),
+            True,
+        ),  # pid=0 ignored — same leniency as the port-based era
+    ],
+)
+async def test_read_endpoint_corrupt_bodies(tmp_path, monkeypatch, body, expect_valid):
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+    (tmp_path / "desktop-endpoint.json").write_text(body, encoding="utf-8")
+    endpoint = read_endpoint()
+    if expect_valid:
+        assert endpoint is not None
+        assert endpoint.token == "a" * 64
+    else:
+        assert endpoint is None
+
+
 async def test_read_endpoint_stale_pid(tmp_path, monkeypatch):
     import utils.desktop_transport as transport_module
 

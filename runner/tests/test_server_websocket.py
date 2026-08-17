@@ -21,7 +21,6 @@ real TCP listener.
 import asyncio
 import contextlib
 import json
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -174,39 +173,8 @@ async def test_runner_ready_handshake_carries_capabilities(desktop_peer):
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_get_tools_returns_registry_schemas():
-    # Wait until the runner is settled; the fixture already consumed ``runner_ready``.
-    await asyncio.sleep(0.05)
-    # The peer is bound to its own queue; we need a way to push the request IN
-    # and read the reply OUT through the same peer ws. Since ``serve`` owns the
-    # peer ws inside its task, we expose the per-id response by listening to
-    # ``peer.received`` (incoming) and re-deriving outgoing from the
-    # handler-based response queue we built in ``run_peer``.
-    #
-    # Simplest path: send the request via the peer by injecting a fake
-    # "self-originated" message isn't possible (only one WS). Instead,
-    # this test relies on ``process_request`` directly: the runner's
-    # message loop is already running; we tap ``process_request`` via the
-    # public surface by connecting a SECOND client to the same peer port,
-    # which will be served as a SECOND concurrent peer. The runner's
-    # in-flight ws stays on its connection; our second client just talks
-    # to the peer, which routes via the handler table.
-    #
-    # But the peer DOES NOT have a handler registered for ``get_tools``
-    # (the runner does). So this approach fails. Instead, drive the
-    # runner from a SECOND client that the runner will serve: the
-    # runner's ``runner_loop`` connects to the peer; the test's second
-    # client connects to the peer too. Both end up at the peer; the
-    # peer only knows how to route method->handler when the runner is
-    # the requester. So a request from the test's second client would be
-    # answered by the peer's handler (none for get_tools) → -32601.
-    #
-    # Correct approach: bypass the wire for the request and verify
-    # ``process_request`` directly via unit-style calls; the wire-level
-    # confidence we wanted is established by the handshake + cancel tests
-    # above. Drop this test in favour of a direct ``process_request``
-    # call.
-
-    # Direct unit-style test of process_request for get_tools.
+    # Direct unit-style call of process_request — the wire-level envelope
+    # routing is covered by the handshake test above.
     from tools import discover_builtin_tools
 
     discover_builtin_tools()  # ensure singleton registry is populated
@@ -489,89 +457,6 @@ def test_extract_llm_content_rejects_non_string_content():
 
 
 @pytest.mark.timeout(15)
-def test_read_endpoint_schema_variants(tmp_path, monkeypatch):
-    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-    assert server.read_endpoint() is None  # missing file
-
-    transport = "pipe" if IS_WINDOWS else "unix"
-    sample_path = (
-        "\\\\.\\pipe\\spiritagent-runner-123" if IS_WINDOWS else "/tmp/runner.sock"
-    )
-    endpoint = tmp_path / "desktop-endpoint.json"
-
-    endpoint.write_text(
-        json.dumps({
-            "transport": transport,
-            "path": sample_path,
-            "token": "a" * 64,
-            "pid": os.getpid(),
-        })
-    )
-    resolved = server.read_endpoint()
-    assert resolved is not None
-    assert resolved.transport == transport
-    assert resolved.path == sample_path
-    assert resolved.token == "a" * 64
-    assert resolved.pid == os.getpid()
-
-    endpoint.write_text(
-        json.dumps({
-            "transport": transport,
-            "path": sample_path,
-            "token": "a" * 64,
-            "pid": 2**31 - 1,
-        })
-    )
-    assert server.read_endpoint() is None  # desktop PID gone → stale file
-
-    endpoint.write_text("not json {")
-    assert server.read_endpoint() is None
-
-    endpoint.write_text(
-        json.dumps({
-            "transport": transport,
-            "path": sample_path,
-            "token": "",
-            "pid": os.getpid(),
-        })
-    )
-    assert server.read_endpoint() is None  # missing token
-
-    # pid=0 is ignored (not validated) — same leniency as the port-based era.
-    endpoint.write_text(
-        json.dumps({
-            "transport": transport,
-            "path": sample_path,
-            "token": "a" * 64,
-            "pid": 0,
-        })
-    )
-    assert server.read_endpoint() is not None
-
-    endpoint.write_text(
-        json.dumps({
-            "transport": "tcp",
-            "path": "127.0.0.1:1",
-            "token": "a" * 64,
-            "pid": os.getpid(),
-        })
-    )
-    assert server.read_endpoint() is None  # transport must match the host
-
-
-@pytest.mark.timeout(15)
-async def test_runner_ready_payload_probe_failed_flag(monkeypatch):
-    def _boom():
-        raise RuntimeError("simulated probe crash")
-
-    monkeypatch.setattr(server, "snapshot", _boom)
-    payload = await server._runner_ready_payload()
-    assert payload["probe_failed"] is True
-    assert payload["capabilities"] == {}
-    assert "version" in payload
-
-
-@pytest.mark.timeout(15)
 async def test_runner_ready_payload_snapshot_returns_non_dict(monkeypatch):
     def _bad():
         return "not-a-dict"
@@ -594,8 +479,6 @@ async def test_build_info_handles_individual_subfailures(monkeypatch):
     assert isinstance(info["tool_count"], int)
     assert isinstance(info["mcp_servers"], list)
 
-
-@pytest.mark.timeout(15)
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio

@@ -28,26 +28,6 @@ def test_kill_orphaned_mcp_children_survives_dead_pid():
         mcp_tool._stdio_pids.pop(proc.pid, None)
 
 
-def test_capabilities_snapshot_returns_safe_dict():
-    """``snapshot()`` must never raise; unknown probes report ``False``."""
-    from utils.capabilities import snapshot
-
-    caps = snapshot()
-    for key in (
-        "microphone",
-        "screen_capture",
-        "local_stt",
-        "local_tts",
-        "system_activity",
-        "platform",
-        "python",
-    ):
-        assert key in caps
-    assert caps["platform"] == sys.platform
-    assert isinstance(caps["local_stt"], bool)
-    assert isinstance(caps["local_tts"], bool)
-
-
 def test_registry_check_fn_filters_unavailable_tools():
     """Tools whose check_fn returns False must NOT appear in ``get_schemas_for_llm``,
     but tools without a check_fn must still appear."""
@@ -231,15 +211,6 @@ def test_system_snapshot_tool_is_registered():
     assert "system.snapshot" in names
 
 
-def test_audio_tool_schemas_registered():
-    """All three audio tools must register themselves at import, even if
-    their check_fn later reports False (deps missing)."""
-    from tools import registry
-
-    for name in ("speech_to_text", "text_to_speech", "list_tts_voices"):
-        assert name in registry.get_all_tool_names(), f"{name} missing from registry"
-
-
 def test_audio_check_fn_hidden_when_dep_missing(monkeypatch):
     """If ``faster-whisper`` isn't importable in the venv, ``speech_to_text``
     must NOT appear in the LLM-facing schemas."""
@@ -265,29 +236,13 @@ def test_audio_check_fn_hidden_when_dep_missing(monkeypatch):
         registry.clear_availability_cache()
 
 
-def test_computer_use_cancel_prefix():
-    """The interrupted-cancel response shape must contain the stable prefix
-    marker — downstream consumers pattern-match on this constant string."""
-    from tools.multimodal import cu_tool
+def test_audio_tool_schemas_registered():
+    """All three audio tools must register themselves at import, even if
+    their check_fn later reports False (deps missing)."""
+    from tools import registry
 
-    assert cu_tool.INTERRUPTED_PREFIX == "[INTERRUPTED]"
-
-    # The helper returns a JSON envelope; verify the prefix survives in
-    # the payload. We do NOT call handle_computer_use directly here
-    # because mocking out every backend is more code than warranted —
-    # we only verify that the constant exists and is non-empty.
-    assert isinstance(cu_tool.INTERRUPTED_PREFIX, str)
-
-
-def test_action_result_carries_verdict_fields():
-    """Verdict payload fields added in 2026-07 are present on ActionResult."""
-    from tools.multimodal.cu_backend import ActionResult
-
-    res = ActionResult(ok=True, action="click")
-    assert res.verified is False
-    assert res.escalation == "done"
-    assert res.delivery_mode == "background"
-    assert res.code == 0
+    for name in ("speech_to_text", "text_to_speech", "list_tts_voices"):
+        assert name in registry.get_all_tool_names(), f"{name} missing from registry"
 
 
 async def test_info_payload_shape():

@@ -99,13 +99,6 @@ class TestInterruptFlags:
 
 
 class TestPropagateContextToThread:
-    def test_returns_callable(self):
-        def _no_op():
-            return 1
-
-        wrapped = propagate_context_to_thread(_no_op)
-        assert callable(wrapped)
-
     def test_runs_target_in_thread_and_returns_value(self):
         import threading
 
@@ -519,23 +512,36 @@ class TestUrlSafety:
 
         assert is_always_blocked_url("https://example.com/path") is False
 
-    def test_normalize_url_drops_default_port(self):
+    def test_normalize_url_passthrough_non_http_scheme(self):
         from utils import normalize_url_for_request
 
-        out = normalize_url_for_request("https://example.com:443/path")
-        # Default-port-stripping is conditional on the URL parser. We
-        # just confirm the normalizer does not crash and returns a string.
-        assert isinstance(out, str)
-        # If the port was stripped, ``example.com:443`` is gone from the
-        # host portion. Otherwise the URL is unchanged. Either way, the
-        # path ``/path`` must survive.
-        assert "/path" in out
+        s = "ftp://example.com/a b"
+        assert normalize_url_for_request(s) == s
 
-    def test_normalize_url_preserves_non_default_port(self):
+    def test_normalize_url_percent_encodes_path_and_query(self):
         from utils import normalize_url_for_request
 
-        out = normalize_url_for_request("https://example.com:8443/path")
-        assert ":8443" in out
+        assert (
+            normalize_url_for_request("https://example.com/a b?q=x y")
+            == "https://example.com/a%20b?q=x%20y"
+        )
+
+    def test_normalize_url_idna_encodes_hostname(self):
+        from utils import normalize_url_for_request
+
+        assert normalize_url_for_request("https://bücher.de/path") == (
+            "https://xn--bcher-kva.de/path"
+        )
+
+    def test_normalize_url_keeps_ports_verbatim(self):
+        from utils import normalize_url_for_request
+
+        assert normalize_url_for_request("https://example.com:443/path") == (
+            "https://example.com:443/path"
+        )
+        assert normalize_url_for_request("https://example.com:8443/path") == (
+            "https://example.com:8443/path"
+        )
 
     def test_is_safe_url_blocks_localhost(self):
         """127.0.0.1 is a SSRF risk — MUST be blocked regardless of config."""

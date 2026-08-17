@@ -31,4 +31,4 @@ def test_click_at_handler():
         "system.click_at", {"x": 100, "y": 100, "button": "left", "clicks": 1}
     )
     res = json.loads(res_str)
-    assert "clicked" in res
+    assert res.get("clicked") is True
