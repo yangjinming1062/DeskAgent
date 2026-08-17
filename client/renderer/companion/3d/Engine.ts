@@ -95,8 +95,7 @@ export class Engine {
         canvas,
         alpha: true,
         // MSAA off: per-frame resolve is a meaningful chunk of GPU time at this size; PBR + tonemap already hide jagged silhouettes. WebGPU renderer does not expose `premultipliedAlpha` (the WebGL2 fallback does).
-        antialias: false,
-        powerPreference: 'low-power'
+        antialias: false
       })
 
       await gpu.init()
@@ -358,8 +357,9 @@ export class Engine {
       // never drop a frame due to sub-millisecond rAF timer jitter, and 120Hz displays render
       // cleanly on alternate VSync ticks.
       if (now - this.lastFrameAt >= budgetMs * 0.75) {
+        const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / 60
         this.lastFrameAt = now
-        const delta = Math.min(this.clock.getDelta(), MAX_FRAME_DELTA)
+        const delta = Math.min(Math.max(0.001, elapsed), MAX_FRAME_DELTA)
         this.physics.beginFrame()
         this.character.update(delta)
 

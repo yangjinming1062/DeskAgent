@@ -34,6 +34,8 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion/voice'
+import { Codicon } from '@/shared/components/ui'
+import { SlidersHorizontal } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
@@ -223,19 +225,22 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
       <div
-        className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/60 text-white shadow-2xl backdrop-blur-md"
+        className="flex h-[min(70vh,600px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] text-foreground shadow-2xl backdrop-blur-xl"
         ref={panelRef}
         style={{ pointerEvents: 'auto' }}
       >
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h2 className="text-sm font-semibold">伙伴设置</h2>
+        <div className="flex items-center justify-between border-b border-(--ui-stroke-tertiary) px-5 py-3.5">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="size-4 text-(--ui-text-secondary)" />
+            <h2 className="text-sm font-semibold text-foreground">伙伴设置</h2>
+          </div>
           <button
             aria-label="关闭"
-            className="text-white/50 transition hover:text-white"
+            className="flex size-7 items-center justify-center rounded-lg text-(--ui-text-tertiary) transition-colors hover:bg-(--ui-control-active-background) hover:text-foreground"
             onClick={onClose}
             type="button"
           >
-            ✕
+            <Codicon name="close" size="0.875rem" />
           </button>
         </div>
 

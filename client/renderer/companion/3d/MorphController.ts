@@ -221,7 +221,13 @@ export class MorphController {
         const infls = this.meshes[mi].morphTargetInfluences!
 
         if (infls[ti] !== undefined) {
-          infls[ti] = THREE.MathUtils.lerp(infls[ti], target, speed)
+          const cur = infls[ti]
+
+          if (Math.abs(cur - target) > 0.001) {
+            infls[ti] = THREE.MathUtils.lerp(cur, target, speed)
+          } else if (cur !== target) {
+            infls[ti] = target
+          }
         }
       }
     }

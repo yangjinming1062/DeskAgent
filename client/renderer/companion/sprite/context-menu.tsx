@@ -4,6 +4,16 @@ import { useEffect, useRef } from 'react'
 import { setChatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import {
+  Brain,
+  KeyRound,
+  LogOut,
+  MessageSquareText,
+  Moon,
+  Phone,
+  Settings,
+  SlidersHorizontal
+} from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
@@ -73,12 +83,12 @@ export function SpriteContextMenu({
     }
   }, [visible])
 
-  const left = visible && pos ? Math.min(pos.x, window.innerWidth - 160) : 0
-  const top = visible && pos ? Math.min(pos.y, window.innerHeight - 200) : 0
+  const left = visible && pos ? Math.min(pos.x, window.innerWidth - 180) : 0
+  const top = visible && pos ? Math.min(pos.y, window.innerHeight - 240) : 0
 
   return (
     <div
-      className="fixed z-50 min-w-36 overflow-hidden rounded-xl border border-white/20 bg-black/85 p-1 text-xs text-white shadow-2xl select-none"
+      className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_94%,transparent)] p-1 text-xs text-foreground shadow-2xl backdrop-blur-xl select-none"
       ref={menuRef}
       style={{
         left,
@@ -91,109 +101,119 @@ export function SpriteContextMenu({
       {!authed ? (
         <>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               onOpenActivation?.()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>🔑</span> 激活 / 登录 (Login)
+            <KeyRound className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>激活 / 登录 (Login)</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               void window.spiritagent.showToolWindow()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>⚙️</span> 应用设置 (Settings)
+            <Settings className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>应用设置 (Settings)</span>
           </button>
-          <div className="my-1 h-px bg-white/10" />
+          <div className="-mx-1 my-1 h-px bg-(--ui-stroke-tertiary)" />
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-400 transition hover:bg-red-500/20"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
             onClick={() => {
               window.close()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>🚪</span> 退出 (Quit)
+            <LogOut className="size-3.5 text-destructive shrink-0" />
+            <span>退出 (Quit)</span>
           </button>
         </>
       ) : (
         <>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               setChatOpen(true)
               closeContextMenu()
             }}
             type="button"
           >
-            <span>💬</span> 对话 (Talk)
+            <MessageSquareText className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>对话 (Talk)</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               onOpenVoiceCall()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>📞</span> 语音通话 (Voice)
+            <Phone className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>语音通话 (Voice)</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               onOpenSettings()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>🎛️</span> 伙伴设置
+            <SlidersHorizontal className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>伙伴设置</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               onOpenMemory()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>🧠</span> 长期记忆
+            <Brain className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>长期记忆</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               void window.spiritagent.showToolWindow()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>⚙️</span> 应用设置 (Settings)
+            <Settings className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>应用设置 (Settings)</span>
           </button>
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition hover:bg-white/15"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-foreground transition-colors hover:bg-(--ui-control-active-background) focus:bg-(--ui-control-active-background) focus:outline-none"
             onClick={() => {
               setSpriteState('sleeping')
               closeContextMenu()
             }}
             type="button"
           >
-            <span>💤</span> 去睡觉 (Sleep)
+            <Moon className="size-3.5 text-(--ui-text-tertiary) shrink-0" />
+            <span>去睡觉 (Sleep)</span>
           </button>
-          <div className="my-1 h-px bg-white/10" />
+          <div className="-mx-1 my-1 h-px bg-(--ui-stroke-tertiary)" />
           <button
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-red-400 transition hover:bg-red-500/20"
+            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
             onClick={() => {
               window.close()
               closeContextMenu()
             }}
             type="button"
           >
-            <span>🚪</span> 退出 (Quit)
+            <LogOut className="size-3.5 text-destructive shrink-0" />
+            <span>退出 (Quit)</span>
           </button>
         </>
       )}

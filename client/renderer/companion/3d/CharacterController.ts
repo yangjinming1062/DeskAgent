@@ -212,6 +212,7 @@ export class CharacterController {
 
   root = new THREE.Group()
   private mixer: THREE.AnimationMixer | null = null
+  private clips = new Map<string, THREE.AnimationClip>()
   private actions = new Map<string, THREE.AnimationAction>()
   private actionNames = new Set<string>()
   private injectedClipDefs: ClipDef[] = []
@@ -251,6 +252,25 @@ export class CharacterController {
 
   constructor(physics: PhysicsBackend) {
     this.physics = physics
+  }
+
+  private getAction(name: string): THREE.AnimationAction | null {
+    if (!this.mixer) {
+      return null
+    }
+
+    let action = this.actions.get(name)
+
+    if (!action) {
+      const clip = this.clips.get(name)
+
+      if (clip) {
+        action = this.mixer.clipAction(clip)
+        this.actions.set(name, action)
+      }
+    }
+
+    return action ?? null
   }
 
   /** Parse pre-fetched GLB bytes + animations; falls back to procedural on error. Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based by main, no CORS preflight). When `contentHash` is provided and `gltf-instance-cache` already has a parsed template, the load pulls a deep clone instead of re-parsing. */
@@ -322,8 +342,11 @@ export class CharacterController {
           }
         })
 
+        this.clips.clear()
+        this.actions.clear()
+
         for (const clip of gltfAnimations) {
-          this.actions.set(clip.name, this.mixer.clipAction(clip))
+          this.clips.set(clip.name, clip)
         }
 
         this.headBone = null
@@ -343,23 +366,23 @@ export class CharacterController {
         })
 
         for (const clip of buildClipsForRig(rigType, this.boneRestQuats)) {
-          this.actions.set(clip.name, this.mixer.clipAction(clip))
+          this.clips.set(clip.name, clip)
         }
 
         for (const def of this.injectedClipDefs) {
           const clip = buildClip(def, this.boneRestQuats)
-          this.actions.set(clip.name, this.mixer.clipAction(clip))
+          this.clips.set(clip.name, clip)
         }
 
-        this.actionNames = new Set(this.actions.keys())
+        this.actionNames = new Set(this.clips.keys())
         $availableClipNames.set(new Set(this.actionNames))
         this.morph.discover(this.root)
         this.applyState(this.currentState, null)
 
         return {
           hasMorphTargets: this.morph.hasTargets(),
-          hasAnimations: this.actions.size > 0,
-          clipNames: [...this.actions.keys()],
+          hasAnimations: this.clips.size > 0,
+          clipNames: [...this.clips.keys()],
           morphNames: this.morph.targetNames(),
           procedural: false
         }
@@ -390,6 +413,7 @@ export class CharacterController {
 
     this.mixer?.stopAllAction()
     this.mixer = null
+    this.clips.clear()
     this.actions.clear()
     this.actionNames.clear()
 
@@ -426,10 +450,15 @@ export class CharacterController {
       this.injectedClipDefs = this.injectedClipDefs.filter(d => d.name !== def.name)
       this.injectedClipDefs.push(def)
 
-      if (this.mixer) {
-        const clip = buildClip(def, this.boneRestQuats)
-        this.actions.set(clip.name, this.mixer.clipAction(clip))
-        this.actionNames.add(clip.name)
+      const clip = buildClip(def, this.boneRestQuats)
+      this.clips.set(clip.name, clip)
+      this.actionNames.add(clip.name)
+
+      if (this.mixer && this.actions.has(clip.name)) {
+        const oldAction = this.actions.get(clip.name)
+        oldAction?.stop()
+        this.mixer.uncacheClip(clip)
+        this.actions.delete(clip.name)
       }
     }
 
@@ -439,15 +468,17 @@ export class CharacterController {
   /** 移除指定的动态动作。 */
   removeClip(name: string): void {
     this.injectedClipDefs = this.injectedClipDefs.filter(d => d.name !== name)
+    this.clips.delete(name)
+    this.actionNames.delete(name)
     const action = this.actions.get(name)
 
     if (action) {
       action.stop()
       this.mixer?.uncacheClip(action.getClip())
       this.actions.delete(name)
-      this.actionNames.delete(name)
-      $availableClipNames.set(new Set(this.actionNames))
     }
+
+    $availableClipNames.set(new Set(this.actionNames))
   }
 
   /** 查询当前所有已注册的动作名称。 */
@@ -1167,7 +1198,7 @@ export class CharacterController {
   }
 
   private playClip(name: string, fade: number): void {
-    const next = this.actions.get(name)
+    const next = this.getAction(name)
 
     if (!next) {
       return
@@ -1198,18 +1229,30 @@ export class CharacterController {
     // In human portraiture, a slight chin-tuck (~3°) flatters the jawline, engages direct eye contact,
     // and eliminates the detached "looking up at the ceiling" appearance from raw AI rigs.
     if (this.headBone && this.isBipedRig) {
+      const restHead = this.boneRestQuats.get(this.headBone.name)
       const chinTuckPitch = 0.05
       const lookPitch = -this.lookY * 0.06
       const lookYaw = this.lookX * 0.1
 
       _EULER.set(chinTuckPitch + lookPitch, lookYaw, 0, 'YXZ')
       _QUAT.setFromEuler(_EULER)
-      this.headBone.quaternion.multiply(_QUAT)
+
+      if (restHead) {
+        this.headBone.quaternion.copy(restHead).multiply(_QUAT)
+      } else {
+        this.headBone.quaternion.multiply(_QUAT)
+      }
 
       if (this.neckBone) {
+        const restNeck = this.boneRestQuats.get(this.neckBone.name)
         _EULER.set((chinTuckPitch + lookPitch) * 0.25, lookYaw * 0.25, 0, 'YXZ')
         _QUAT.setFromEuler(_EULER)
-        this.neckBone.quaternion.multiply(_QUAT)
+
+        if (restNeck) {
+          this.neckBone.quaternion.copy(restNeck).multiply(_QUAT)
+        } else {
+          this.neckBone.quaternion.multiply(_QUAT)
+        }
       }
     }
   }

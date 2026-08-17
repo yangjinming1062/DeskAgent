@@ -139,11 +139,14 @@ export function Companion3D(): React.JSX.Element {
       // while audio is playing; we just forward it.
       const detachLipSync = registerAmplitudeSink(amp => eng.character.setLipSyncAmplitude(amp))
 
+      let cachedW = getBaseSpriteWidth()
+      let cachedH = getBaseSpriteHeight()
+
       const onResize = () => {
         const container = containerRef.current
-        const w = container?.clientWidth || eng.canvas.clientWidth || getBaseSpriteWidth()
-        const h = container?.clientHeight || eng.canvas.clientHeight || getBaseSpriteHeight()
-        eng.resize(w, h)
+        cachedW = container?.clientWidth || eng.canvas.clientWidth || getBaseSpriteWidth()
+        cachedH = container?.clientHeight || eng.canvas.clientHeight || getBaseSpriteHeight()
+        eng.resize(cachedW, cachedH)
       }
 
       const ro = new ResizeObserver(onResize)
@@ -164,10 +167,8 @@ export function Companion3D(): React.JSX.Element {
           return
         }
 
-        const cw = eng.canvas.clientWidth || getBaseSpriteWidth()
-        const ch = eng.canvas.clientHeight || getBaseSpriteHeight()
-        const nx = (e.offsetX / cw) * 2 - 1
-        const ny = (e.offsetY / ch) * 2 - 1
+        const nx = (e.offsetX / (cachedW || 1)) * 2 - 1
+        const ny = (e.offsetY / (cachedH || 1)) * 2 - 1
         eng.character.setLookTarget(nx, ny)
       }
 
