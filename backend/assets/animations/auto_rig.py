@@ -9,11 +9,12 @@ mesh with automatic bone-heat weights and exports a rigged GLB.
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 _MIN_BONE_LENGTH = 1e-3
 
@@ -30,6 +31,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--input", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--spec", required=True, help="JSON skeleton spec from rig_layout.layout_skeleton")
+    p.add_argument("--yaw", type=float, default=0.0, help="Skeleton yaw in degrees: face direction of the mesh vs the canonical -Y front (from the vision-LLM face detection).")
     return p.parse_args(argv)
 
 
@@ -108,6 +110,16 @@ def _assign_strays_to_nearest_bone(obj: bpy.types.Object, arm_obj: bpy.types.Obj
     return len(stray)
 
 
+def _face_yaw(args: argparse.Namespace) -> float:
+    """Skeleton yaw in radians from the ``--yaw`` degree argument. The spec
+    skeleton faces Blender -Y; text-to-3D meshes ship in arbitrary yaw, which
+    would leave arm bones floating beside (heat-binding onto) the torso. The
+    caller resolves the face direction beforehand — a vision LLM reading four
+    view snapshots; head-vertex-density heuristics proved unreliable (long
+    hair flattens the contrast between face and back of skull)."""
+    return math.radians(args.yaw)
+
+
 def main() -> int:
     args = _parse_args(sys.argv)
 
@@ -163,6 +175,11 @@ def main() -> int:
             eb.parent = arm_data.edit_bones[bone["parent"]]
     bpy.ops.object.mode_set(mode="OBJECT")
 
+    yaw = _face_yaw(args)
+    if abs(yaw) > 1e-3:
+        arm_obj.rotation_mode = "XYZ"
+        arm_obj.rotation_euler.rotate_axis("Z", yaw)
+
     _parent_auto(meshes, arm_obj)
 
     if not _weights_complete(meshes):
@@ -183,6 +200,18 @@ def main() -> int:
         if not _weights_complete(meshes):
             print("auto_rig: weight transfer left vertices unskinned", file=sys.stderr)
             return 1
+
+    if abs(yaw) > 1e-3:
+        # Rotate rig + mesh together back to the canonical -Y front, then
+        # bake — the glTF exporter drops unapplied object rotations, and
+        # writing rotation_euler is a no-op on quaternion-mode imports.
+        back = Matrix.Rotation(-yaw, 4, "Z")
+        for obj in bpy.context.scene.objects:
+            if obj.parent is None:
+                obj.matrix_world = back @ obj.matrix_world
+        bpy.ops.object.select_all(action="SELECT")
+        bpy.context.view_layer.objects.active = arm_obj
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
     bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
     return 0

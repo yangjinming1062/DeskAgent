@@ -22,6 +22,7 @@ from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_
 from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
+from .rig_orientation import detect_face_yaw
 from .rig_type_selector import classify_species, select_rig_type
 
 logger = get_logger(__name__)
@@ -487,7 +488,7 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
 
     if not provider.SUPPORTS_RIGGING:
         await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
-        glb_bytes = await _auto_rig_with_blender(glb_bytes, record.rig_type, io_dir=io_dir)
+        glb_bytes = await _auto_rig_with_blender(glb_bytes, record.rig_type, user_id=user_id, io_dir=io_dir)
         rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
     await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
@@ -594,7 +595,7 @@ async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user
         await asyncio.sleep(SETTINGS.image_to_3d_poll_interval_seconds)
 
 
-async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, io_dir: Path | None = None) -> bytes:
+async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: int | None = None, io_dir: Path | None = None) -> bytes:
     """Local Blender auto-rigging for providers without a cloud rig API
     (hunyuan). Deterministic bbox-proportioned skeleton via ``rig_layout``;
     unlike morph injection this is not best-effort — a failure fails the
@@ -613,7 +614,10 @@ async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, io_dir: Pat
         await asyncio.to_thread((tmp_dir / "rig_spec.json").write_text, json.dumps(spec))
         await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "auto_rig.py")
 
-        returncode, stderr = await run_blender(tmp_dir, "auto_rig.py", ["--input", str(inp), "--output", str(out), "--spec", str(tmp_dir / "rig_spec.json")], timeout=300)
+        yaw = await detect_face_yaw(glb_bytes, workdir=tmp_dir, user_id=user_id)
+        returncode, stderr = await run_blender(
+            tmp_dir, "auto_rig.py", ["--input", str(inp), "--output", str(out), "--spec", str(tmp_dir / "rig_spec.json"), "--yaw", str(yaw)], timeout=300
+        )
         if returncode != 0 or not out.exists():
             raise ModelGenerationError(f"本地自动绑骨失败: {stderr[-300:]}")
         return await asyncio.to_thread(out.read_bytes)

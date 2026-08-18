@@ -2968,7 +2968,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
     async def fake_select_rig_type(*_args, **_kwargs):
         return "biped"
 
-    async def fake_auto_rig(glb_bytes, rig_type, *, io_dir=None):
+    async def fake_auto_rig(glb_bytes, rig_type, *, user_id=None, io_dir=None):
         order.append(f"auto_rig:{rig_type}")
         return glb_bytes + b"RIGGED"
 
