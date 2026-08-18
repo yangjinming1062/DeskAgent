@@ -310,20 +310,7 @@ async def run_model_gen_pipeline(
 
         gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
 
-        if provider.SUPPORTS_RIGGING:
-            await _emit_progress(user_id, "checking_rig", 55, provider=provider.provider_name)
-            if not await provider.rig_supported(job.job_id):
-                raise ModelGenerationError("模型不可绑骨，请尝试用更清晰的正面全身种子图重新生成")
-
         rig_type = await select_rig_type(chat, species, user_id=user_id)  # style lives on the row — only the rig half is classified here
-
-        if provider.SUPPORTS_RIGGING:
-            await _emit_progress(user_id, "rigging", 60, provider=provider.provider_name)
-            rig_job = await provider.start_rig(job.job_id, rig_type)
-            gen_result = await _poll_with_progress(provider, rig_job, user_id, "rigging", 60, 85)
-            # The rig task's query re-yields the download URLs — it's the
-            # recovery handle once rigging is done.
-            task_id = rig_job.job_id
 
         # Persist BEFORE downloading: the generation is already billed. A
         # download failure must never lose the result (task_id + URLs survive
@@ -474,10 +461,47 @@ async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, use
             await _emit_model_failed(user_id, "3D 模型生成失败，可重试下载", retry_download=True, model_id=model_id)
 
 
+async def _rig_locally_with_cloud_fallback(glb_bytes: bytes, record: CompanionModel, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> bytes:
+    """Local auto-rig for every provider; cloud rigging only as a fallback.
+
+    The local path yields bare mixamo-style bone names (what the client clip
+    tracks target) and the canonical yaw, while cloud-rigged GLBs need a
+    normalize pass (``auto_rig.py --mode normalize``) for both. The provider
+    prerigcheck is deliberately skipped — it conservatively reports
+    text-to-3D meshes as ``others``/unriggable while forced rigging succeeds
+    on them."""
+    try:
+        return await _auto_rig_with_blender(glb_bytes, record.rig_type, user_id=record.user_id, io_dir=io_dir)
+    except Exception:
+        if not provider.SUPPORTS_RIGGING:
+            raise
+        logger.warning("local auto-rig failed; falling back to cloud rigging", extra={"user_id": record.user_id, "model_id": record.id}, exc_info=True)
+
+    rig_job = await provider.start_rig(record.provider_task_id or "", record.rig_type)
+    result = await _poll_with_progress(provider, rig_job, record.user_id, "rigging", 90, 95)
+    io_ctx = nullcontext(str(io_dir)) if io_dir is not None else tempfile.TemporaryDirectory()
+    with io_ctx as tmp:
+        tmp_dir = Path(tmp)
+        cloud_path = await provider.download(result, tmp_dir)
+        cloud_bytes = await asyncio.to_thread(cloud_path.read_bytes)
+        yaw = await detect_face_yaw(cloud_bytes, workdir=tmp_dir, user_id=record.user_id)
+        script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "auto_rig.py"
+        if not script_path.exists():
+            raise ModelGenerationError("auto_rig.py 脚本缺失，无法归一化云端绑骨产物")
+        await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "auto_rig.py")
+        inp = tmp_dir / "cloud_rigged.glb"
+        out = tmp_dir / "normalized.glb"
+        await asyncio.to_thread(inp.write_bytes, cloud_bytes)
+        returncode, stderr = await run_blender(tmp_dir, "auto_rig.py", ["--mode", "normalize", "--input", str(inp), "--output", str(out), "--yaw", str(yaw)], timeout=300)
+        if returncode != 0 or not out.exists():
+            raise ModelGenerationError(f"云端绑骨产物归一化失败: {stderr[-300:]}")
+        return await asyncio.to_thread(out.read_bytes)
+
+
 async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> None:
     """Post-download processing shared by the pipeline and the retry path:
-    local auto-rig (providers without cloud rigging), artifact persistence,
-    morph injection, activation + ``model.ready``."""
+    local auto-rig with cloud fallback, artifact persistence, morph
+    injection, activation + ``model.ready``."""
     user_id = record.user_id
     glb_bytes = await asyncio.to_thread(glb_path.read_bytes)
 
@@ -486,10 +510,9 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
     # rig/morph failure never loses it.
     rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
-    if not provider.SUPPORTS_RIGGING:
-        await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
-        glb_bytes = await _auto_rig_with_blender(glb_bytes, record.rig_type, user_id=user_id, io_dir=io_dir)
-        rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
+    await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
+    glb_bytes = await _rig_locally_with_cloud_fallback(glb_bytes, record, provider=provider, io_dir=io_dir)
+    rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
     await _emit_progress(user_id, "injecting_morphs", 90, provider=provider.provider_name)
     final_glb = await _inject_morph_targets(glb_bytes, io_dir=io_dir)

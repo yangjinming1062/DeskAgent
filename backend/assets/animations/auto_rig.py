@@ -30,7 +30,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="auto_rig")
     p.add_argument("--input", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--spec", required=True, help="JSON skeleton spec from rig_layout.layout_skeleton")
+    p.add_argument("--spec", required=False, help="JSON skeleton spec from rig_layout.layout_skeleton")
+    p.add_argument(
+        "--mode",
+        choices=["rig", "normalize"],
+        default="rig",
+        help="rig: build + skin from spec; normalize: post-process an already-cloud-rigged GLB (strip bone prefixes, canonical yaw).",
+    )
     p.add_argument("--yaw", type=float, default=0.0, help="Skeleton yaw in degrees: face direction of the mesh vs the canonical -Y front (from the vision-LLM face detection).")
     return p.parse_args(argv)
 
@@ -120,8 +126,67 @@ def _face_yaw(args: argparse.Namespace) -> float:
     return math.radians(args.yaw)
 
 
+def _apply_canonical_yaw(yaw: float) -> None:
+    """Rotate rig + meshes together to the canonical -Y front, then bake —
+    the glTF exporter drops unapplied object rotations, and writing
+    rotation_euler is a no-op on quaternion-mode imports."""
+    if abs(yaw) <= 1e-3:
+        return
+    back = Matrix.Rotation(-yaw, 4, "Z")
+    for obj in bpy.context.scene.objects:
+        if obj.parent is None:
+            obj.matrix_world = back @ obj.matrix_world
+    arm_obj = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    bpy.ops.object.select_all(action="SELECT")
+    if arm_obj is not None:
+        bpy.context.view_layer.objects.active = arm_obj
+    bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+
+
+def _strip_bone_prefixes() -> int:
+    """Rename ``mixamorig:X`` bones to bare ``X`` — cloud-rigged GLBs carry
+    the prefix while the client clip tracks target bare names. Vertex groups
+    are renamed in lockstep (renaming edit bones does not touch them)."""
+    renamed = 0
+    for arm_obj in (o for o in bpy.context.scene.objects if o.type == "ARMATURE"):
+        renames = {b.name: b.name.split(":")[-1] for b in arm_obj.data.bones if ":" in b.name}
+        if not renames:
+            continue
+        bpy.context.view_layer.objects.active = arm_obj
+        bpy.ops.object.mode_set(mode="EDIT")
+        for eb in arm_obj.data.edit_bones:
+            if eb.name in renames:
+                eb.name = renames[eb.name]
+        bpy.ops.object.mode_set(mode="OBJECT")
+        for obj in bpy.context.scene.objects:
+            if obj.type == "MESH":
+                for vg in obj.vertex_groups:
+                    if vg.name in renames:
+                        vg.name = renames[vg.name]
+        renamed += len(renames)
+    return renamed
+
+
+def _normalize_cloud_rigged(args: argparse.Namespace) -> int:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=args.input)
+    if not any(o.type == "ARMATURE" for o in bpy.context.scene.objects):
+        print("auto_rig: normalize input contains no armature", file=sys.stderr)
+        return 1
+    _strip_bone_prefixes()
+    _apply_canonical_yaw(_face_yaw(args))
+    bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
+    return 0
+
+
 def main() -> int:
     args = _parse_args(sys.argv)
+
+    if args.mode == "normalize":
+        return _normalize_cloud_rigged(args)
+    if not args.spec:
+        print("auto_rig: --spec is required in rig mode", file=sys.stderr)
+        return 1
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.input)
@@ -202,16 +267,7 @@ def main() -> int:
             return 1
 
     if abs(yaw) > 1e-3:
-        # Rotate rig + mesh together back to the canonical -Y front, then
-        # bake — the glTF exporter drops unapplied object rotations, and
-        # writing rotation_euler is a no-op on quaternion-mode imports.
-        back = Matrix.Rotation(-yaw, 4, "Z")
-        for obj in bpy.context.scene.objects:
-            if obj.parent is None:
-                obj.matrix_world = back @ obj.matrix_world
-        bpy.ops.object.select_all(action="SELECT")
-        bpy.context.view_layer.objects.active = arm_obj
-        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+        _apply_canonical_yaw(yaw)
 
     bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
     return 0

@@ -2747,7 +2747,11 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
     async def fake_select_rig_type(*_args, **_kwargs):
         return "biped"
 
+    async def fake_auto_rig(glb_bytes, rig_type, *, user_id=None, io_dir=None):
+        return glb_bytes + b"RIGGED"
+
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
+    monkeypatch.setattr(model_service, "_auto_rig_with_blender", fake_auto_rig)
 
     async with SessionLocal() as db:
         user = User(username="run_single", is_active=True, can_use=True)
@@ -2807,6 +2811,117 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
         )
         assert row.status == "succeeded"
         assert row.provider == "tripo_image_to_3d"
+        assert row.active is True
+
+
+@pytest.mark.asyncio
+async def test_local_rig_failure_falls_back_to_cloud_rigging(
+    _patch_db, monkeypatch, set_fullbody_mode
+):
+    """Local auto-rig is the primary path for every provider; when it fails
+    and the provider has a cloud rig API, the cloud product is rigged,
+    normalized (bone prefixes stripped + canonical yaw) and shipped."""
+    set_fullbody_mode("single")
+
+    import json as _json
+    from pathlib import Path
+
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel, Persona
+    from services.companion import model_service
+    from services.image_to_3d import (
+        ImageTo3DProvider,
+        Model3DAsset,
+        Model3DJob,
+        Model3DPollResult,
+    )
+
+    _, SessionLocal = _patch_db
+    captured: dict = {}
+
+    class _FakeCloudRigProvider(ImageTo3DProvider):
+        provider_name = "tripo"
+        SUPPORTS_RIGGING = True
+        SUPPORTS_MULTIVIEW = False
+
+        def __init__(self) -> None:
+            pass
+
+        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+            return Model3DJob(job_id="task_gen")
+
+        async def poll(self, job):
+            return Model3DPollResult(
+                status="completed",
+                progress=100,
+                assets=(Model3DAsset(kind="glb", url="https://x/y.glb"),),
+            )
+
+        async def download(self, result, dest_dir):
+            dest = dest_dir / "model.glb"
+            dest.write_bytes(b"\x00" * 20)
+            return dest
+
+        async def start_rig(self, job_id, rig_type):
+            captured["start_rig"] = (job_id, rig_type)
+            return Model3DJob(job_id="rig_task")
+
+    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: _FakeCloudRigProvider())
+
+    async def fake_select_rig_type(*_args, **_kwargs):
+        return "biped"
+
+    async def failing_auto_rig(glb_bytes, rig_type, *, user_id=None, io_dir=None):
+        raise model_service.ModelGenerationError("本地自动绑骨失败")
+
+    async def fake_detect_yaw(_bytes, *, workdir, user_id=None, db=None):
+        return 90.0
+
+    async def fake_run_blender(io_dir, script_name, args, *, timeout=300, name_hint="adhoc"):
+        assert "normalize" in args, "cloud fallback must run the normalize pass"
+        out = Path(args[args.index("--output") + 1])
+        out.write_bytes(b"\x00" * 20)
+        assert args[args.index("--yaw") + 1] == "90.0"
+        return 0, ""
+
+    async def fake_morphs(glb_bytes, *, io_dir=None):
+        return glb_bytes
+
+    monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
+    monkeypatch.setattr(model_service, "_auto_rig_with_blender", failing_auto_rig)
+    monkeypatch.setattr(model_service, "detect_face_yaw", fake_detect_yaw)
+    monkeypatch.setattr(model_service, "run_blender", fake_run_blender)
+    monkeypatch.setattr(model_service, "_inject_morph_targets", fake_morphs)
+
+    async with SessionLocal() as db:
+        user = User(username="run_cloud_fallback", is_active=True, can_use=True)
+        db.add(user)
+        await db.flush()
+        db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}), is_complete=True))
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", seed_front_url="companion-avatars/front.png", active=True))
+        model = CompanionModel(user_id=user.id, status="generating", active=False)
+        db.add(model)
+        await db.commit()
+        await db.refresh(model)
+        uid, model_id = user.id, model.id
+
+    from components import SETTINGS
+
+    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    try:
+        await model_service.run_model_gen_pipeline("tripo", uid, {"front": "front.png"}, "人类", model_id, "single")
+    finally:
+        (asset_dir / "front.png").unlink(missing_ok=True)
+
+    assert captured["start_rig"][0] == "task_gen", "cloud fallback rigs the persisted generation task"
+    assert captured["start_rig"][1] == "biped"
+
+    async with SessionLocal() as db:
+        row = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalars().one()
+        assert row.status == "succeeded"
         assert row.active is True
 
 
