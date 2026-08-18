@@ -4,8 +4,6 @@ import { createPortal } from 'react-dom'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 
-import type { SeedUrls } from '../portrait-store'
-
 // Extracts of the four small JSX components that were co-located inside
 // onboarding-flow.tsx. All take their inputs as props — no shared module
 // state — so they're trivially testable in isolation.
@@ -30,28 +28,22 @@ export function Chip({
   )
 }
 
-export type PortraitStep = 'avatar' | 'front' | 'right' | 'back'
-
 export interface HistoryGalleryItem {
   url: string | null
 }
 
 export function PortraitPanel({
   avatarUrl,
-  seedUrls,
   name,
   hint,
-  step = 'front',
   introHint,
   history,
   selectedIdx,
   onSelectEntry
 }: {
   avatarUrl: string | null
-  seedUrls?: SeedUrls | null
   name: string
   hint: string | null
-  step?: PortraitStep
   introHint?: string | null
   history?: HistoryGalleryItem[]
   selectedIdx?: number
@@ -61,33 +53,18 @@ export function PortraitPanel({
 
   const gallery =
     history && history.length > 1 && onSelectEntry ? (
-      <HistoryGallery
-        entries={history}
-        onSelect={onSelectEntry}
-        selectedIdx={selectedIdx ?? history.length - 1}
-        step={step}
-      />
+      <HistoryGallery entries={history} onSelect={onSelectEntry} selectedIdx={selectedIdx ?? history.length - 1} />
     ) : null
-
-  const { label, url } = {
-    avatar: { label: '头像', url: avatarUrl },
-    front: { label: '正面', url: seedUrls?.front ?? null },
-    right: { label: '右侧', url: seedUrls?.right ?? null },
-    back: { label: '背面', url: seedUrls?.back ?? null }
-  }[step]
-
-  const isPortrait = step !== 'avatar'
 
   return (
     <div className="flex flex-col items-center gap-2">
       {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
       <PortraitThumb
-        label={label}
+        label="头像"
         name={name}
-        onZoom={url ? () => setZoomedUrl(url) : undefined}
-        portrait={isPortrait}
+        onZoom={avatarUrl ? () => setZoomedUrl(avatarUrl) : undefined}
         size="lg"
-        url={url}
+        url={avatarUrl}
       />
       {gallery}
       {hint && <p className="text-xs text-rose-300/90">{hint}</p>}
@@ -99,16 +76,12 @@ export function PortraitPanel({
 function HistoryGallery({
   entries,
   selectedIdx,
-  onSelect,
-  step
+  onSelect
 }: {
   entries: HistoryGalleryItem[]
   selectedIdx: number
   onSelect: (idx: number) => void
-  step: PortraitStep
 }): React.JSX.Element {
-  const thumbSize = step === 'avatar' ? 'h-10 w-10' : 'w-10 aspect-[4/7]'
-
   return (
     <div className="mt-1 flex justify-center gap-1.5">
       {entries.map((entry, idx) => {
@@ -122,9 +95,9 @@ function HistoryGallery({
             type="button"
           >
             {entry.url ? (
-              <img alt="" className={`${thumbSize} object-cover`} src={entry.url} />
+              <img alt="" className="h-10 w-10 object-cover" src={entry.url} />
             ) : (
-              <div className={`grid ${thumbSize} place-items-center text-[10px] text-white/30`}>—</div>
+              <div className="grid h-10 w-10 place-items-center text-[10px] text-white/30">—</div>
             )}
           </button>
         )
@@ -138,26 +111,15 @@ function PortraitThumb({
   name,
   onZoom,
   url,
-  size = 'sm',
-  portrait = false
+  size = 'sm'
 }: {
   label: string
   name: string
   onZoom: (() => void) | undefined
   url: string | null
   size?: 'sm' | 'md' | 'lg'
-  portrait?: boolean
 }): React.JSX.Element {
-  // Full-body seeds are generated at 1024×1792 (4:7); the portrait variant
-  // keeps the same width but lets CSS aspect-ratio derive the height so the
-  // whole body is visible instead of cropped into a square.
-  const sizeClass = portrait
-    ? `${size === 'lg' ? 'w-48' : size === 'sm' ? 'w-28' : 'w-36'} aspect-[4/7]`
-    : size === 'lg'
-      ? 'h-48 w-48'
-      : size === 'sm'
-        ? 'h-28 w-28'
-        : 'h-36 w-36'
+  const sizeClass = size === 'lg' ? 'h-48 w-48' : size === 'sm' ? 'h-28 w-28' : 'h-36 w-36'
 
   return (
     <div className="flex flex-col items-center gap-1">

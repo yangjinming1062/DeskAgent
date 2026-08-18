@@ -7,11 +7,9 @@ import {
   $activeAvatarId,
   $portraitUrl,
   $regenFeedback,
-  $seedUrls,
   applyPortrait,
   clearRegenFeedback,
-  pushPortraitEntry,
-  type SeedUrls
+  pushPortraitEntry
 } from '@/companion/portrait-store'
 
 import { playOnboardingAudio } from './onboarding/onboarding-audio'
@@ -54,7 +52,7 @@ export interface UseRegeneratePortraitOptions {
    * atom update; surfaces already subscribed via `useStore($portraitUrl)`
    * can omit it.
    */
-  onRegenerated?: (urls: { avatar: string | null; seeds: SeedUrls | null; id: number | null }) => void
+  onRegenerated?: (urls: { avatar: string | null; id: number | null }) => void
 }
 
 export interface UseRegeneratePortraitResult {
@@ -108,8 +106,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       const onApplied = () => {
         pushPortraitEntry({
           portraitUrl: $portraitUrl.get(),
-          avatarId: $activeAvatarId.get(),
-          seedUrls: $seedUrls.get()
+          avatarId: $activeAvatarId.get()
         })
         clearRegenFeedback()
 
@@ -128,9 +125,6 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         if (primaryRef) {
           const res = await window.spiritagent.api<{
             asset_url?: string | null
-            seed_front_url?: string | null
-            seed_right_url?: string | null
-            seed_back_url?: string | null
             id?: number
           }>({
             path: '/api/companion/avatar/from-image',
@@ -149,10 +143,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           if (res?.asset_url) {
             const applied = await applyPortrait({
               id: res.id,
-              assetUrl: res.asset_url,
-              seedFrontUrl: res.seed_front_url,
-              seedRightUrl: res.seed_right_url,
-              seedBackUrl: res.seed_back_url
+              assetUrl: res.asset_url
             })
 
             onRegenerated?.({ ...applied, id: res.id ?? null })
@@ -167,9 +158,6 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
           queued?: boolean
           job_id?: string
           asset_url?: string | null
-          seed_front_url?: string | null
-          seed_right_url?: string | null
-          seed_back_url?: string | null
           id?: number
         }>('avatar.regenerate', { feedback })
 
@@ -183,10 +171,7 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         if (settled?.asset_url) {
           const applied = await applyPortrait({
             id: settled.id,
-            assetUrl: settled.asset_url,
-            seedFrontUrl: settled.seed_front_url,
-            seedRightUrl: settled.seed_right_url,
-            seedBackUrl: settled.seed_back_url
+            assetUrl: settled.asset_url
           })
 
           onRegenerated?.({ ...applied, id: settled.id ?? null })

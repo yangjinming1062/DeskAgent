@@ -28,7 +28,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs 
 }
 
 export const AVATAR_SLOW_PATH_PATTERN =
-  /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody)?|sprite|wardrobe|animations\/generate)|media\/(?:image_gen|video_gen))$/i
+  /^\/api\/(?:companion\/(?:avatar(?:\/from-image)?|sprite|wardrobe|animations\/generate)|media\/(?:image_gen|video_gen))$/i
 
 // POST only — reads are DB lookups with no provider call.
 export function resolvePathTimeoutMs(

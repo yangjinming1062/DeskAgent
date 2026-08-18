@@ -30,21 +30,16 @@ import {
   $portraitSelectedIdx,
   $portraitUrl,
   $regenFeedback,
-  $seedHistoryByAvatarId,
-  $seedUrls,
   applyPortrait,
   clearPortraitHistory,
   clearRegenFeedback,
-  commitPortraitEntry,
   hydratePortraitHistory,
   type PortraitEntry,
   pushPortraitEntry,
   selectAvatar,
   selectPortraitEntry,
-  selectSeedEntry,
   setActiveAvatarId,
-  setRegenFeedback,
-  setSeedUrls
+  setRegenFeedback
 } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
@@ -66,19 +61,9 @@ import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type
 import { $voicePreparing } from '../voice-state'
 
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
-import { Chip, type HistoryGalleryItem, PortraitPanel, type PortraitStep } from './onboarding-components'
+import { Chip, type HistoryGalleryItem, PortraitPanel } from './onboarding-components'
 
-type Phase =
-  | 'q-character'
-  | 'hatching'
-  | 'portrait-avatar'
-  | 'portrait-fullbody-front'
-  | 'portrait-fullbody-right'
-  | 'portrait-fullbody-back'
-  | 'q-user'
-  | 'voice'
-  | 'finishing'
-  | 'greeting'
+type Phase = 'q-character' | 'hatching' | 'portrait-avatar' | 'q-user' | 'voice' | 'finishing' | 'greeting'
 
 type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -162,7 +147,7 @@ const QUESTIONS: readonly Question[] = [
   },
   {
     // appearance_core: locked visual anchor — feeds the 3D model prompt and
-    // gets stripped from PUT /persona after the user confirms the seed
+    // gets stripped from PUT /persona after the user confirms the avatar
     // image. The red `*` on the label is rendered inline in the JSX below.
     key: 'appearance_core',
     text: '您希望我长什么样？说说头发、眼睛、体型、标志性细节…',
@@ -264,8 +249,8 @@ const QUESTIONS: readonly Question[] = [
   }
 ]
 
-// Fields whose value drives the 3D model and therefore can't change after the
-// user confirms the seed image. A red `*` is rendered inline beside the
+// Fields whose value drives the 3D model and therefore cannot change after the
+// user confirms the avatar. A red `*` is rendered inline beside the
 // question text + a top-of-wizard banner reminds the user of the rule.
 const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance_core'])
 
@@ -283,9 +268,6 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   voice: VOICE_QUESTIONS,
   hatching: [],
   'portrait-avatar': [],
-  'portrait-fullbody-front': [],
-  'portrait-fullbody-right': [],
-  'portrait-fullbody-back': [],
   finishing: [],
   greeting: []
 }
@@ -344,21 +326,15 @@ const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
   'voice'
 ])
 
-// Step-1: avatar only. Returns the raw backend response (id is captured for
-// step 2's fullbody call). applyPortrait owns the resolve step.
+// Avatar (bust) generation. Returns the raw backend response; applyPortrait
+// owns the resolve step.
 async function generatePortrait(reference: PickedImage | null): Promise<{
   asset_url?: string
-  seed_front_url?: string | null
-  seed_right_url?: string | null
-  seed_back_url?: string | null
   id?: number
 } | null> {
   try {
     const res = await window.spiritagent.api<{
       asset_url?: string
-      seed_front_url?: string | null
-      seed_right_url?: string | null
-      seed_back_url?: string | null
       id?: number
     }>({
       path: reference ? '/api/companion/avatar/from-image' : '/api/companion/avatar',
@@ -369,42 +345,6 @@ async function generatePortrait(reference: PickedImage | null): Promise<{
     return res
   } catch (error) {
     // Rethrow deterministic failures so retryTransient doesn't burn the 120s avatar budget.
-    if (isClientErrorIpc(error)) {
-      throw error
-    }
-
-    return null
-  }
-}
-
-// Step-2: full-body single-view seed on top of the just-confirmed avatar row.
-async function generateFullbody(
-  avatarId: number,
-  view: 'front' | 'right' | 'back',
-  feedback?: string,
-  referenceImage?: PickedImage | null
-): Promise<{ id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null> {
-  try {
-    const body: Record<string, unknown> = { view, feedback }
-
-    if (referenceImage) {
-      body.reference_image = referenceImage.base64
-      body.reference_content_type = referenceImage.contentType
-    }
-
-    const res = await window.spiritagent.api<{
-      id?: number
-      seed_front_url?: string
-      seed_right_url?: string
-      seed_back_url?: string
-    }>({
-      path: `/api/companion/avatar/${avatarId}/fullbody`,
-      method: 'POST',
-      body
-    })
-
-    return res
-  } catch (error) {
     if (isClientErrorIpc(error)) {
       throw error
     }
@@ -461,12 +401,6 @@ function SpinnerWithText({ text, size = 'h-5 w-5' }: { text: string; size?: stri
   )
 }
 
-const FULLBODY_LOADING_TEXT: Record<'front' | 'right' | 'back', string> = {
-  front: '正在生成正面全身图…',
-  right: '正在生成侧面全身图…',
-  back: '正在生成背面全身图…'
-}
-
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.Element | null {
   const gatewayState = useStore($gatewayState)
   const voicePreparing = useStore($voicePreparing)
@@ -476,31 +410,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
-  // null = mode not yet fetched; the early-return below shows a placeholder so a multi-mode
-  // user doesn't briefly see single-mode copy/button during the bootstrap fetch.
-  const [fullbodyMode, setFullbodyMode] = useState<'single' | 'multi' | null>(null)
-  const singleMode = fullbodyMode === 'single'
-  const seedUrls = useStore($seedUrls)
   // Active avatar row id is published to the global $activeAvatarId atom by
-  // applyPortrait — subscribe to it so any step-1 regen propagates without
+  // applyPortrait — subscribe to it so any regen propagates without
   // us wiring setState through every call site.
   const activeAvatarId = useStore($activeAvatarId)
-  // History gallery — thumbnails below the portrait/fullbody panel.
+  // History gallery — thumbnails below the portrait panel.
   const portraitHistory = useStore($portraitHistory)
   const portraitSelectedIdx = useStore($portraitSelectedIdx)
   // voice phase runs the Q7 description input first, then the catalogue picker.
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
   // Failure keeps the current portrait: it already holds resolved bytes.
-  // The shared `applyPortrait` writes the global $portraitUrl + $activeAvatarId
-  // + $seedUrls atoms.
+  // The shared `applyPortrait` writes the global $portraitUrl + $activeAvatarId atoms.
   const applyLocalPortrait = async (
     response:
       | {
           asset_url?: string | null
-          seed_front_url?: string | null
-          seed_right_url?: string | null
-          seed_back_url?: string | null
           id?: number
         }
       | null
@@ -508,10 +433,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   ): Promise<{ avatar: string | null; id: number | null }> => {
     const { avatar } = await applyPortrait({
       id: response?.id,
-      assetUrl: response?.asset_url,
-      seedFrontUrl: response?.seed_front_url,
-      seedRightUrl: response?.seed_right_url,
-      seedBackUrl: response?.seed_back_url
+      assetUrl: response?.asset_url
     })
 
     if (avatar) {
@@ -529,14 +451,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
-  // Step-2 transition has no avatar regen hook attached (the user already
-  // confirmed the face), so track its loading here for button-disabled state.
-  const [fullbodyLoading, setFullbodyLoading] = useState(false)
-  // Which view the in-flight fullbody request is generating — drives the
-  // spinner copy. Without this, clicking「下一步」from the front phase still
-  // shows "正在生成正面全身图…" because the phase doesn't advance until the
-  // API call resolves.
-  const [generatingView, setGeneratingView] = useState<'front' | 'right' | 'back' | null>(null)
 
   // Reference image handed over at the 形象描述 question. Persisted locally
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
@@ -597,17 +511,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }, [])
 
-  // The feedback textarea is shared across every portrait phase. Clearing on
-  // phase change keeps "头发再短一点" typed for the front view from leaking
-  // into the right view's regenerator (different anatomy, different prompt).
+  // The feedback textarea is shared across portrait surfaces. Clearing on
+  // phase change keeps "头发再短一点" typed during onboarding from leaking
+  // into a later regenerator.
   useEffect(() => {
-    const isPortraitPhase =
-      phase === 'portrait-avatar' ||
-      phase === 'portrait-fullbody-front' ||
-      phase === 'portrait-fullbody-right' ||
-      phase === 'portrait-fullbody-back'
-
-    if (isPortraitPhase) {
+    if (phase === 'portrait-avatar') {
       clearRegenFeedback()
     }
   }, [phase])
@@ -895,8 +803,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         if (url) {
           pushPortraitEntry({
             portraitUrl: url,
-            avatarId: applied.id ?? activeAvatarId,
-            seedUrls: $seedUrls.get()
+            avatarId: applied.id ?? activeAvatarId
           })
         }
       } catch {
@@ -914,8 +821,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
 
-    // Step 1: avatar only. The fullbody step is triggered explicitly via
-    // 「下一步」 so the user reviews the face before locking in the body.
+    // The avatar phase: the user reviews the face and confirms it —
+    // confirmation locks the look and unblocks the voice sub-stage.
     setPhase('portrait-avatar')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
@@ -944,7 +851,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           answers?: Record<string, string>
           next_field?: string | null
           complete?: boolean
-          fullbody_mode?: 'single' | 'multi'
         } | null = null
 
         try {
@@ -952,7 +858,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             answers?: Record<string, string>
             next_field?: string | null
             complete?: boolean
-            fullbody_mode?: 'single' | 'multi'
           }>({
             path: '/api/companion/onboarding/state'
           })
@@ -961,17 +866,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             answers?: Record<string, string>
             next_field?: string | null
             complete?: boolean
-            fullbody_mode?: 'single' | 'multi'
           }>('onboarding.get_state', {}).catch(() => null)
-        }
-
-        if (state?.fullbody_mode) {
-          // Type narrowed by the inline union above; the runtime guard is
-          // belt-and-suspenders for a misconfigured backend that returns
-          // a value outside the union.
-          const next: 'single' | 'multi' = state.fullbody_mode
-
-          setFullbodyMode(next)
         }
 
         if (state?.complete) {
@@ -1002,20 +897,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
           const nextField = state.next_field
 
-          if (
-            nextField === 'portrait' ||
-            nextField === 'portrait-fullbody-front' ||
-            nextField === 'portrait-fullbody-right' ||
-            nextField === 'portrait-fullbody-back'
-          ) {
+          if (nextField === 'portrait') {
             try {
               await hydratePortraitHistory()
 
               const avatarRes = await window.spiritagent.api<{
                 asset_url?: string | null
-                seed_front_url?: string | null
-                seed_right_url?: string | null
-                seed_back_url?: string | null
                 id?: number
               }>({
                 path: '/api/companion/avatar',
@@ -1033,15 +920,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   }
                 }
 
-                if (nextField === 'portrait-fullbody-back' && avatarRes?.seed_back_url) {
-                  setPhase('portrait-fullbody-back')
-                } else if (nextField === 'portrait-fullbody-right' && avatarRes?.seed_right_url) {
-                  setPhase('portrait-fullbody-right')
-                } else if (nextField === 'portrait-fullbody-front' && avatarRes?.seed_front_url) {
-                  setPhase('portrait-fullbody-front')
-                } else {
-                  setPhase('portrait-avatar')
-                }
+                setPhase('portrait-avatar')
               } else {
                 void enterHatchingRef.current(merged, cachedRef)
               }
@@ -1101,246 +980,36 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   })
 
-  const runFullbodyView = async (
-    view: 'front' | 'right' | 'back',
-    failureHint: string,
-    nextPhase: Phase,
-    forceRegen: boolean
-  ) => {
-    if (activeAvatarId == null) {
-      setPortraitPanelHint('找不到对应的形象，请稍后重试')
-
-      return
-    }
-
-    // 「下一步」should ride on the existing seed when the user already has
-    // one for this view — only「重新生成」overrides via forceRegen. Skipping
-    // also prevents the history from growing on every back/forward hop.
-    if (!forceRegen && $seedUrls.get()?.[view]) {
-      setPhase(nextPhase)
-
-      return
-    }
-
-    setPortraitPanelHint(null)
-    setFullbodyLoading(true)
-    setGeneratingView(view)
-    const idAtCall = activeAvatarId
-    // Snapshot the textarea so a user typing into it mid-request doesn't
-    // mutate the value we send to the backend.
-    const feedback = $regenFeedback.get().trim() || undefined
-    let res: { id?: number; seed_front_url?: string; seed_right_url?: string; seed_back_url?: string } | null = null
-
-    try {
-      res = await retryTransient(() => generateFullbody(idAtCall, view, feedback, refImage), 1500, 2)
-    } catch {
-      res = null
-    } finally {
-      setFullbodyLoading(false)
-      setGeneratingView(null)
-    }
-
-    const urlKey = `seed_${view}_url` as const
-    const ok = !!res?.[urlKey]
-
-    if (!ok) {
-      setPortraitPanelHint(failureHint)
-
-      return
-    }
-
-    await applyLocalPortrait({
-      asset_url: null,
-      seed_front_url: res!.seed_front_url,
-      seed_right_url: res!.seed_right_url,
-      seed_back_url: res!.seed_back_url,
-      id: idAtCall
-    })
-    // Same avatar row → update in place. The previous pushPortraitEntry would
-    // duplicate the avatar in the gallery every time the user hopped backwards
-    // and forwards, ballooning the history to 5 entries all pointing at the
-    // same avatar.
-    commitPortraitEntry({
-      portraitUrl: $portraitUrl.get(),
-      avatarId: $activeAvatarId.get(),
-      seedUrls: $seedUrls.get()
-    })
-    // Successful regen consumed the feedback — keep the textarea empty so the
-    // next view's feedback doesn't get prepended with the previous one.
-    clearRegenFeedback()
-    setPhase(nextPhase)
-  }
-
-  const advanceToFront = () =>
-    runFullbodyView('front', '正面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-front', false)
-
-  const advanceToRightView = () =>
-    runFullbodyView('right', '侧面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-right', false)
-
-  const advanceToBackView = () =>
-    runFullbodyView('back', '背面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-back', false)
-
-  const regenerateFront = () =>
-    runFullbodyView('front', '正面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-front', true)
-
-  const regenerateRightView = () =>
-    runFullbodyView('right', '侧面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-right', true)
-
-  const regenerateBackView = () =>
-    runFullbodyView('back', '背面全身图暂时没生成出来，可以再点一次试试', 'portrait-fullbody-back', true)
-
-  const backToAvatar = () => {
-    setPhase('portrait-avatar')
-  }
-
-  const seedHistoryMap = useStore($seedHistoryByAvatarId)
-  const currentAvatarKey = activeAvatarId ?? 0
-  const avatarSeedHistory = seedHistoryMap[currentAvatarKey]
-
-  const activeStep: PortraitStep =
-    phase === 'portrait-avatar'
-      ? 'avatar'
-      : phase === 'portrait-fullbody-right'
-        ? 'right'
-        : phase === 'portrait-fullbody-back'
-          ? 'back'
-          : 'front'
-
-  const frontHistory = useMemo(() => {
-    if (avatarSeedHistory?.front && avatarSeedHistory.front.length > 0) {
-      return avatarSeedHistory.front
-    }
-
-    return seedUrls?.front ? [seedUrls.front] : []
-  }, [avatarSeedHistory?.front, seedUrls?.front])
-
-  const rightHistory = useMemo(() => {
-    if (avatarSeedHistory?.right && avatarSeedHistory.right.length > 0) {
-      return avatarSeedHistory.right
-    }
-
-    return seedUrls?.right ? [seedUrls.right] : []
-  }, [avatarSeedHistory?.right, seedUrls?.right])
-
-  const backHistory = useMemo(() => {
-    if (avatarSeedHistory?.back && avatarSeedHistory.back.length > 0) {
-      return avatarSeedHistory.back
-    }
-
-    return seedUrls?.back ? [seedUrls.back] : []
-  }, [avatarSeedHistory?.back, seedUrls?.back])
-
-  const currentHistoryItems: HistoryGalleryItem[] = useMemo(() => {
-    switch (activeStep) {
-      case 'avatar':
-        return portraitHistory.map(e => ({ url: e.portraitUrl }))
-
-      case 'front':
-        return frontHistory.map(url => ({ url }))
-
-      case 'right':
-        return rightHistory.map(url => ({ url }))
-
-      case 'back':
-        return backHistory.map(url => ({ url }))
-
-      default:
-        return []
-    }
-  }, [activeStep, portraitHistory, frontHistory, rightHistory, backHistory])
-
-  const currentSelectedIdx: number = useMemo(() => {
-    switch (activeStep) {
-      case 'avatar':
-        return portraitSelectedIdx
-      case 'front': {
-        const idx = frontHistory.lastIndexOf(seedUrls?.front ?? '')
-
-        return idx >= 0 ? idx : Math.max(0, frontHistory.length - 1)
-      }
-
-      case 'right': {
-        const idx = rightHistory.lastIndexOf(seedUrls?.right ?? '')
-
-        return idx >= 0 ? idx : Math.max(0, rightHistory.length - 1)
-      }
-
-      case 'back': {
-        const idx = backHistory.lastIndexOf(seedUrls?.back ?? '')
-
-        return idx >= 0 ? idx : Math.max(0, backHistory.length - 1)
-      }
-
-      default:
-        return 0
-    }
-  }, [activeStep, portraitSelectedIdx, frontHistory, rightHistory, backHistory, seedUrls])
+  const currentHistoryItems: HistoryGalleryItem[] = useMemo(
+    () => portraitHistory.map(e => ({ url: e.portraitUrl })),
+    [portraitHistory]
+  )
 
   const onSelectHistoryEntry = useCallback(
     (idx: number) => {
-      switch (activeStep) {
-        case 'avatar': {
-          const entry: PortraitEntry | undefined = portraitHistory[idx]
+      const entry: PortraitEntry | undefined = portraitHistory[idx]
 
-          if (!entry) {
-            return
-          }
+      if (!entry) {
+        return
+      }
 
-          selectPortraitEntry(idx)
+      selectPortraitEntry(idx)
 
-          if (entry.portraitUrl) {
-            setPortraitUrl(entry.portraitUrl)
-            $portraitUrl.set(entry.portraitUrl)
-          }
+      if (entry.portraitUrl) {
+        setPortraitUrl(entry.portraitUrl)
+        $portraitUrl.set(entry.portraitUrl)
+      }
 
-          // Bust-regen rows have null seeds; still flush current seeds so the main
-          // view doesn't keep showing the previously-active avatar's body.
-          setSeedUrls(entry.seedUrls)
-
-          // Following the user's gallery pick: the next fullbody gen has to operate
-          // on this avatar row, otherwise selecting an older entry would silently
-          // fall back to the latest row and the displayed image would jump back
-          // to a face the user already rejected.
-          if (entry.avatarId != null) {
-            setActiveAvatarId(entry.avatarId)
-            void selectAvatar(entry.avatarId)
-          }
-
-          break
-        }
-
-        case 'front': {
-          const url = frontHistory[idx]
-
-          if (url) {
-            selectSeedEntry('front', url, activeAvatarId)
-          }
-
-          break
-        }
-
-        case 'right': {
-          const url = rightHistory[idx]
-
-          if (url) {
-            selectSeedEntry('right', url, activeAvatarId)
-          }
-
-          break
-        }
-
-        case 'back': {
-          const url = backHistory[idx]
-
-          if (url) {
-            selectSeedEntry('back', url, activeAvatarId)
-          }
-
-          break
-        }
+      // Following the user's gallery pick: the active avatar row has to match
+      // the displayed face, otherwise the selection would silently fall back
+      // to the latest row and the displayed image would jump back to a face
+      // the user already rejected.
+      if (entry.avatarId != null) {
+        setActiveAvatarId(entry.avatarId)
+        void selectAvatar(entry.avatarId)
       }
     },
-    [activeStep, portraitHistory, frontHistory, rightHistory, backHistory, activeAvatarId]
+    [portraitHistory]
   )
 
   const pickReferenceImage = async () => {
@@ -1506,15 +1175,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // 「换一个」 stays inside the matcher's candidates while we have them.
   const voiceCandidates = voice ? [voice, ...(voiceAlternatives.length ? voiceAlternatives : otherVoices)] : []
 
-  // Hide the dialog body until the bootstrap IPC returns the mode (see useState above).
-  if (fullbodyMode === null) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="text-white/80">加载中…</div>
-      </div>
-    )
-  }
-
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
       <div
@@ -1659,30 +1319,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
           {phase === 'hatching' && <SpinnerWithText size="h-6 w-6" text={hint || '让我想想我该是什么样子…'} />}
 
-          {(phase === 'portrait-avatar' ||
-            phase === 'portrait-fullbody-front' ||
-            phase === 'portrait-fullbody-right' ||
-            phase === 'portrait-fullbody-back' ||
-            phase === 'greeting') && (
+          {(phase === 'portrait-avatar' || phase === 'greeting') && (
             <PortraitPanel
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
               history={currentHistoryItems}
-              introHint={phase === 'portrait-avatar' ? portraitIntroHint(fullbodyMode) : null}
+              introHint={phase === 'portrait-avatar' ? portraitIntroHint() : null}
               name={answers.name?.trim() || '伙伴'}
               onSelectEntry={onSelectHistoryEntry}
-              seedUrls={seedUrls}
-              selectedIdx={currentSelectedIdx}
-              step={activeStep}
+              selectedIdx={portraitSelectedIdx}
             />
           )}
 
           {phase === 'portrait-avatar' && (
             <div className="mt-4">
-              {avatarBusy || fullbodyLoading ? (
-                <SpinnerWithText
-                  text={fullbodyLoading && generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在重新生成头像…'}
-                />
+              {avatarBusy ? (
+                <SpinnerWithText text="正在重新生成头像…" />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1750,129 +1402,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     <button
                       className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
                       disabled={activeAvatarId == null}
-                      onClick={() => void advanceToFront()}
-                      type="button"
-                    >
-                      下一步
-                    </button>
-                  </div>
-                </>
-              )}
-              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
-            </div>
-          )}
-
-          {phase === 'portrait-fullbody-front' && (
-            <div className="mt-4">
-              {fullbodyLoading ? (
-                <SpinnerWithText
-                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成正面全身图…'}
-                />
-              ) : (
-                <>
-                  <RegenFeedbackInput />
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <div className="flex gap-3">
-                      <button
-                        className="text-white/60 transition hover:text-white"
-                        onClick={backToAvatar}
-                        type="button"
-                      >
-                        上一步
-                      </button>
-                      <button
-                        className="text-white/70 transition hover:text-white"
-                        onClick={() => void regenerateFront()}
-                        type="button"
-                      >
-                        重新生成正面
-                      </button>
-                    </div>
-                    <button
-                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                      disabled={!seedUrls?.front}
-                      onClick={() => void (singleMode ? confirmPortrait() : advanceToRightView())}
-                      type="button"
-                    >
-                      {singleMode ? '确认' : '下一步'}
-                    </button>
-                  </div>
-                </>
-              )}
-              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
-            </div>
-          )}
-
-          {phase === 'portrait-fullbody-right' && (
-            <div className="mt-4">
-              {fullbodyLoading ? (
-                <SpinnerWithText
-                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成侧面全身图…'}
-                />
-              ) : (
-                <>
-                  <RegenFeedbackInput />
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <div className="flex gap-3">
-                      <button
-                        className="text-white/60 transition hover:text-white"
-                        onClick={() => setPhase('portrait-fullbody-front')}
-                        type="button"
-                      >
-                        上一步
-                      </button>
-                      <button
-                        className="text-white/70 transition hover:text-white"
-                        onClick={() => void regenerateRightView()}
-                        type="button"
-                      >
-                        重新生成右侧
-                      </button>
-                    </div>
-                    <button
-                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                      disabled={!seedUrls?.right}
-                      onClick={() => void advanceToBackView()}
-                      type="button"
-                    >
-                      下一步
-                    </button>
-                  </div>
-                </>
-              )}
-              {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
-            </div>
-          )}
-
-          {phase === 'portrait-fullbody-back' && (
-            <div className="mt-4">
-              {fullbodyLoading ? (
-                <SpinnerWithText
-                  text={generatingView ? FULLBODY_LOADING_TEXT[generatingView] : '正在生成背面全身图…'}
-                />
-              ) : (
-                <>
-                  <RegenFeedbackInput />
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <div className="flex gap-3">
-                      <button
-                        className="text-white/60 transition hover:text-white"
-                        onClick={() => setPhase('portrait-fullbody-right')}
-                        type="button"
-                      >
-                        上一步
-                      </button>
-                      <button
-                        className="text-white/70 transition hover:text-white"
-                        onClick={() => void regenerateBackView()}
-                        type="button"
-                      >
-                        重新生成背面
-                      </button>
-                    </div>
-                    <button
-                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
-                      onClick={confirmPortrait}
+                      onClick={() => void confirmPortrait()}
                       type="button"
                     >
                       确认

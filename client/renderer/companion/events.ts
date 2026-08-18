@@ -383,9 +383,6 @@ export function handleCompanionEvent(event: RpcEvent): void {
         | {
             job_id?: string
             asset_url?: string | null
-            seed_front_url?: string | null
-            seed_right_url?: string | null
-            seed_back_url?: string | null
             id?: number
             error?: string
           }
