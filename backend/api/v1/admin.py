@@ -114,10 +114,7 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     # Wipe user-scoped DB rows + on-disk assets (right-to-be-forgotten).
     avatar_rows = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id))).scalars().all()
     for av in avatar_rows:
-        for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url"):
-            val = getattr(av, attr, None)
-            if val:
-                _delete_portrait_file(val)
+        _delete_portrait_file(av.asset_url)
 
     await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
     await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))

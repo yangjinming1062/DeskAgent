@@ -30,9 +30,14 @@ async def _model_generate(job: RenderJob, io_dir: Path) -> None:
         if job.kind != "tripo_generate":
             raise ValueError("model_generate payload missing provider")
         provider = "tripo"
-    await model_service.run_model_gen_pipeline(
-        provider, job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], payload.get("fullbody_mode", "multi"), io_dir=io_dir
-    )
+    if "view_filenames" in payload:
+        # Pre-text-to-3D payload from the retired image pipeline — fail fast
+        # with a readable reason instead of key-erroring mid-flight.
+        raise ValueError("model_generate payload is from the retired image pipeline; re-generate instead")
+    style = payload.get("style") or "realistic"
+    if style not in ("anime", "realistic"):
+        raise ValueError(f"model_generate payload has invalid style: {style!r}")
+    await model_service.run_model_gen_pipeline(provider, job.user_id, payload["species"], payload["model_id"], style, io_dir=io_dir)
 
 
 async def _model_retry_download(job: RenderJob, io_dir: Path) -> None:

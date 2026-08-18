@@ -193,7 +193,6 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
             "answers": {},
             "next_field": "name",
             "complete": False,
-            "fullbody_mode": "multi",
         }
 
         # Submit one field — it persists immediately.
@@ -336,16 +335,13 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
         assert state["next_field"] == "voice"
 
 
-async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
+async def test_portrait_confirmation_and_resume(_patch_db):
     """Test full lifecycle of is_portrait_confirmed:
     - Persona unconfirmed without avatar -> next_field="portrait"
-    - Persona unconfirmed with bust only -> next_field="portrait"
-    - Persona unconfirmed with fullbody seeds -> next_field="portrait-fullbody-back"
+    - Persona unconfirmed with avatar -> still "portrait" (avatar confirmation)
     - POST /api/companion/portrait/confirm marks it confirmed
     - update_persona / regen resets is_portrait_confirmed to False
     """
-    set_fullbody_mode("multi")
-
     _, SessionLocal = _patch_db
     from modules.companion import AvatarAsset
     from services.companion import (
@@ -365,14 +361,13 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
         assert state["complete"] is False
-        assert state["fullbody_mode"] == "multi"
+        assert "fullbody_mode" not in state
 
-        # 2. Bust-only avatar row (no seed_front_url) -> portrait
+        # 2. Avatar row present but unconfirmed -> still portrait (its confirmation step)
         avatar = AvatarAsset(
             user_id=101,
             prompt_json="{}",
             asset_url="companion-avatars/test.jpg",
-            seed_front_url="",
             active=True,
         )
         db.add(avatar)
@@ -381,28 +376,7 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
 
-        # 3. Front seed only -> portrait-fullbody-front
-        avatar.seed_front_url = "companion-avatars/front.jpg"
-        await db.commit()
-
-        state = await get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody-front"
-
-        # 3b. Right seed generated -> portrait-fullbody-right
-        avatar.seed_right_url = "companion-avatars/right.jpg"
-        await db.commit()
-
-        state = await get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody-right"
-
-        # 3c. Back seed generated -> portrait-fullbody-back
-        avatar.seed_back_url = "companion-avatars/back.jpg"
-        await db.commit()
-
-        state = await get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody-back"
-
-        # 4. Confirm portrait -> next_field moves past portrait to voice
+        # 3. Confirm portrait -> next_field moves past portrait to voice
         confirmed = await confirm_portrait(db, 101)
         assert confirmed.is_portrait_confirmed is True
         assert confirmed.portrait_confirmed_at is not None
@@ -410,7 +384,7 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "voice"
 
-        # 5. Re-finalizing persona with new character fields resets confirmation
+        # 4. Re-finalizing persona with new character fields resets confirmation
         updated = await update_persona(
             db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"}
         )
@@ -418,16 +392,13 @@ async def test_portrait_confirmation_and_resume(_patch_db, set_fullbody_mode):
         assert updated.portrait_confirmed_at is None
 
         state = await get_onboarding_state(db, 101)
-        assert state["next_field"] == "portrait-fullbody-back"
+        assert state["next_field"] == "portrait"
 
 
-async def test_onboarding_finish_save_persona_preserves_confirmation(
-    _patch_db, set_fullbody_mode
-):
+async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
     """When onboarding finishes, PUT /persona saves user_* and voice with the same
     character definition — this must NOT reset is_portrait_confirmed, so restarting
     the client stays complete=True and does not re-open the onboarding dialog."""
-    set_fullbody_mode("multi")
     _, SessionLocal = _patch_db
     from modules.companion import AvatarAsset
     from services.companion import (
@@ -445,9 +416,6 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(
             user_id=105,
             prompt_json="{}",
             asset_url="companion-avatars/test.jpg",
-            seed_front_url="companion-avatars/front.jpg",
-            seed_right_url="companion-avatars/right.jpg",
-            seed_back_url="companion-avatars/back.jpg",
             active=True,
         )
         db.add(avatar)
@@ -476,48 +444,6 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(
         state = await get_onboarding_state(db, 105)
         assert state["complete"] is True
         assert state["next_field"] is None
-
-
-async def test_portrait_resume_single_mode(_patch_db, set_fullbody_mode):
-    """In single-view mode, front seed alone completes the fullbody phase —
-    no right/back routing, and ``fullbody_mode`` is exposed in the state."""
-    set_fullbody_mode("single")
-
-    _, SessionLocal = _patch_db
-    from modules.companion import AvatarAsset
-    from services.companion import get_onboarding_state, update_persona
-
-    async with SessionLocal() as db:
-        await update_persona(
-            db, 102, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
-        avatar = AvatarAsset(
-            user_id=102,
-            prompt_json="{}",
-            asset_url="companion-avatars/test.jpg",
-            seed_front_url="",
-            active=True,
-        )
-        db.add(avatar)
-        await db.commit()
-
-        # No front seed -> portrait
-        state = await get_onboarding_state(db, 102)
-        assert state["next_field"] == "portrait"
-        assert state["fullbody_mode"] == "single"
-
-        # Front seed only -> portrait-fullbody-front (no right/back routing)
-        avatar.seed_front_url = "companion-avatars/front.jpg"
-        await db.commit()
-        state = await get_onboarding_state(db, 102)
-        assert state["next_field"] == "portrait-fullbody-front"
-
-        # Even with all 3 seeds present, single mode still routes to front
-        avatar.seed_right_url = "companion-avatars/right.jpg"
-        avatar.seed_back_url = "companion-avatars/back.jpg"
-        await db.commit()
-        state = await get_onboarding_state(db, 102)
-        assert state["next_field"] == "portrait-fullbody-front"
 
 
 async def test_speaking_style_rejected_after_finalization(_patch_db):
@@ -1740,10 +1666,6 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         assert call["reference_image"].startswith("data:image/png;base64,")
         assert "把背景改成纯白" in call["prompt"]
         assert asset.active is True
-        # Multiview seed URLs stay empty until step 2 writes them back.
-        assert asset.seed_front_url == ""
-        assert asset.seed_right_url == ""
-        assert asset.seed_back_url == ""
         payload = _json.loads(asset.prompt_json)
         # Audit row keeps a marker, not the base64 blob.
         assert payload["reference_image"] == "data:image/png;base64"
@@ -1784,343 +1706,6 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
                 db, user.id, persona, b"ref", "image/png"
             )
 
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_stage_front_and_aux_chained(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """Stage 'front' generates only the front seed using avatar as reference and caches front_prompt.
-    Stage 'aux' generates right and back seeds using front seed as reference and caches multiview_prompts.
-    """
-    set_fullbody_mode("multi")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-    all_calls: list[dict] = []
-
-    async def fake_gen(**kwargs):
-        all_calls.append(kwargs)
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(chat, species, db=None, user_id=None):
-        return ("biped", True)
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-
-    async with SessionLocal() as db:
-        user = User(username="fbuser", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps(
-                {"prompt": "bust portrait", "avatar_prompt": "bust portrait"}
-            ),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
-
-        # 1. Stage 'front'
-        front_res = await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="front"
-        )
-        assert front_res.id == asset.id
-        assert "/api/companion/avatar/file/" in front_res.seed_front_url
-        assert front_res.seed_right_url == ""
-        assert front_res.seed_back_url == ""
-        assert len(all_calls) == 1
-        assert "正面全身角色立绘" in all_calls[0]["prompt"]
-        assert all_calls[0]["reference_image"].startswith("data:image/png;base64,")
-
-        # 2. Stage 'aux' — bust anchor is reused for right/back (no longer the front seed)
-        aux_res = await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="aux"
-        )
-        assert "/api/companion/avatar/file/" in aux_res.seed_front_url
-        assert "/api/companion/avatar/file/" in aux_res.seed_right_url
-        assert "/api/companion/avatar/file/" in aux_res.seed_back_url
-        assert len(all_calls) == 3
-        # Aux calls used right and back prompts
-        assert "右侧面全身角色立绘" in all_calls[1]["prompt"]
-        assert "背面全身角色立绘" in all_calls[2]["prompt"]
-
-        # 3. View 'front' regeneration invalidates aux seeds
-        all_calls.clear()
-        front_regen = await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, view="front"
-        )
-        assert "/api/companion/avatar/file/" in front_regen.seed_front_url
-        assert front_regen.seed_right_url == ""
-        assert front_regen.seed_back_url == ""
-        assert len(all_calls) == 1
-
-        # 4. View 'right' regeneration without front raises or regenerates
-        # Since front seed exists now, regenerating view 'right' succeeds
-        all_calls.clear()
-        right_regen = await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, view="right"
-        )
-        assert "/api/companion/avatar/file/" in right_regen.seed_right_url
-        assert len(all_calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_preconditions(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """Step-2 raises typed errors for missing row, missing stage/view, unreadable source, and missing front seed for aux."""
-    set_fullbody_mode("multi")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-
-    async def fake_gen(**kwargs):
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(chat, species, db=None, user_id=None):
-        return ("biped", True)
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-
-    async with SessionLocal() as db:
-        user = User(username="fbuser2", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-
-        # Missing both or passing both stage and view
-        with pytest.raises(
-            avatar_service.AvatarGenerationError,
-            match="exactly one of 'stage' or 'view' is required",
-        ):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id
-            )
-
-        with pytest.raises(
-            avatar_service.AvatarGenerationError,
-            match="exactly one of 'stage' or 'view' is required",
-        ):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, stage="front", view="front"
-            )
-
-        # Avatar not found
-        with pytest.raises(avatar_service.AvatarNotFoundError):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id + 1, stage="front"
-            )
-
-        # Aux stage when front seed is missing
-        with pytest.raises(avatar_service.FrontSeedMissingError):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, stage="aux"
-            )
-
-        # Unreadable source — under the new three-tier fallback the
-        # code silently drops the subject reference (text-only) rather
-        # than raising. Verify generation proceeds with reference_image=None.
-        monkeypatch.setattr(
-            avatar_service, "load_avatar_bytes_as_data_uri", lambda _url: None
-        )
-        result = await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="front"
-        )
-        assert "/api/companion/avatar/file/" in result.seed_front_url
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_single_mode_rejects_aux(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """In single-view mode, stage='aux' and view='right'/'back' are rejected."""
-    set_fullbody_mode("single")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-
-    async def fake_gen(**_kwargs):
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(_url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-
-    async with SessionLocal() as db:
-        user = User(username="sngl", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="companion-avatars/front.jpg",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-
-        # stage='aux' rejected in single mode
-        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, stage="aux"
-            )
-
-        # view='right' rejected in single mode
-        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, view="right"
-            )
-
-        # view='back' rejected in single mode
-        with pytest.raises(avatar_service.AvatarGenerationError, match="单视图模式"):
-            await avatar_service.generate_fullbody(
-                db, user_id=user.id, avatar_id=asset.id, view="back"
-            )
-
-
-def test_fullbody_generate_request_accepts_feedback():
-    """The fullbody request schema accepts an optional feedback string and
-    rejects unknown extras — the front-end sends the portrait-stage textarea
-    text here and the backend injects it into the image prompt."""
-    from modules.companion.schemas import FullbodyGenerateRequest
-
-    parsed = FullbodyGenerateRequest.model_validate(
-        {"view": "front", "feedback": "头发再短一点"}
-    )
-    assert parsed.feedback == "头发再短一点"
-
-    empty = FullbodyGenerateRequest.model_validate({"view": "front"})
-    assert empty.feedback is None
-
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        FullbodyGenerateRequest.model_validate({"view": "front", "unknown_field": "x"})
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_uses_call_time_feedback(monkeypatch, _patch_db):
-    """Call-time feedback from the request body overrides the cached one
-    stored on the avatar row — otherwise the textarea input never reaches
-    the fullbody prompt."""
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-    captured: dict[str, str] = {}
-
-    async def fake_gen(**_kwargs):
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(_url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(_chat, _species, db=None, user_id=None):
-        return ("biped", True)
-
-    def fake_build(view, *, template, feedback=None, avatar_prompt=""):
-        captured["feedback"] = feedback or ""
-        return f"prompt-{view}"
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-    # `build_fullbody_prompt` is imported into the avatar_service module's namespace
-    # via `from ..llm import build_fullbody_prompt`, so monkeypatch the local binding
-    # (not the llm module's) to capture the call-time feedback.
-    monkeypatch.setattr(avatar_service, "build_fullbody_prompt", fake_build)
-
-    async with SessionLocal() as db:
-        user = User(username="fbfeedback", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            style="portrait",
-            seed=1,
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
-
-        await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, view="front", feedback="calltime"
-        )
-
-        assert captured["feedback"] == "calltime"
 
 
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
@@ -2470,9 +2055,6 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
                 user_id=user.id,
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
-                seed_front_url="companion-avatars/seed_front.png",
-                seed_right_url="companion-avatars/seed_right.png",
-                seed_back_url="companion-avatars/seed_back.png",
                 active=True,
             )
         )
@@ -2521,11 +2103,11 @@ async def test_model_generation_failure_keeps_previous_model_active(
     _, SessionLocal = _patch_db
     monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
 
-    def _resolve_fails(*_a, **_kw):
+    def _avatar_unreadable(*_a, **_kw):
         raise ModelGenerationError("tripo down")
 
     monkeypatch.setattr(
-        "services.companion.model_service.resolve_uploaded_avatar_path", _resolve_fails
+        "services.companion.model_service.load_avatar_bytes_as_data_uri", _avatar_unreadable
     )
 
     async with SessionLocal() as db:
@@ -2546,9 +2128,6 @@ async def test_model_generation_failure_keeps_previous_model_active(
                 user_id=user.id,
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
-                seed_front_url="companion-avatars/seed_front.png",
-                seed_right_url="companion-avatars/seed_right.png",
-                seed_back_url="companion-avatars/seed_back.png",
                 active=True,
             )
         )
@@ -2626,7 +2205,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
         raise AssertionError("pipeline must not start when a model already exists")
 
     monkeypatch.setattr(
-        "services.companion.model_service.resolve_uploaded_avatar_path", _must_not_run
+        "services.companion.model_service.load_avatar_bytes_as_data_uri", _must_not_run
     )
 
     async with SessionLocal() as db:
@@ -2647,9 +2226,6 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
                 user_id=user.id,
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
-                seed_front_url="companion-avatars/seed_front.png",
-                seed_right_url="companion-avatars/seed_right.png",
-                seed_back_url="companion-avatars/seed_back.png",
                 active=True,
             )
         )
@@ -2685,15 +2261,10 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
 
 
 @pytest.mark.asyncio
-async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
-    _patch_db, monkeypatch, set_fullbody_mode
-):
-    """Single mode submits the front seed alone (no multiview paths) and
-    finalizes with ``provider='tripo_image_to_3d'``."""
-    set_fullbody_mode("single")
-
+async def test_run_model_gen_pipeline_submits_text_to_model(_patch_db, monkeypatch):
+    """The pipeline builds the text-to-3D prompt from the appearance
+    extraction and finalizes with ``provider='tripo_text_to_3d'``."""
     import json as _json
-    from pathlib import Path
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
@@ -2717,9 +2288,9 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
         def __init__(self) -> None:
             pass
 
-        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
-            captured["submit"] = (image_path.name, multiview_paths)
-            return Model3DJob(job_id="task_img")
+        async def submit_text_to_model(self, prompt):
+            captured["prompt"] = prompt
+            return Model3DJob(job_id="task_txt")
 
         async def poll(self, job):
             return Model3DPollResult(
@@ -2750,8 +2321,12 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
     async def fake_auto_rig(glb_bytes, rig_type, *, user_id=None, io_dir=None):
         return glb_bytes + b"RIGGED"
 
+    async def fake_enhance(*_args, **_kwargs):
+        return "黑长直少女，红瞳，白色连衣裙"
+
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
     monkeypatch.setattr(model_service, "_auto_rig_with_blender", fake_auto_rig)
+    monkeypatch.setattr(model_service, "enhance_t3d_prompt", fake_enhance)
 
     async with SessionLocal() as db:
         user = User(username="run_single", is_active=True, can_use=True)
@@ -2771,7 +2346,6 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
                 user_id=user.id,
                 prompt_json="{}",
                 asset_url="companion-avatars/avatar.png",
-                seed_front_url="companion-avatars/front.png",
                 active=True,
             )
         )
@@ -2782,22 +2356,13 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
         uid = user.id
         model_id = model.id
 
-    # Stash the front seed on disk so ``resolve_uploaded_avatar_path`` finds it.
-    from components import SETTINGS
+    await model_service.run_model_gen_pipeline("tripo", uid, "人类", model_id, "anime")
 
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-
-    try:
-        await model_service.run_model_gen_pipeline(
-            "tripo", uid, {"front": "front.png"}, "人类", model_id, "single"
-        )
-    finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
-
-    assert captured["submit"][0] == "front.png"
-    assert captured["submit"][1] is None, "multiview paths passed in single mode"
+    # The submitted prompt carries the extracted appearance plus the fixed
+    # biped completeness suffix and the anime style wording.
+    assert "黑长直少女" in captured["prompt"]
+    assert "完整的全身站立角色" in captured["prompt"]
+    assert "精美的日系二次元风格" in captured["prompt"]
 
     async with SessionLocal() as db:
         row = (
@@ -2810,19 +2375,15 @@ async def test_run_model_gen_pipeline_single_mode_uses_image_to_model(
             .one()
         )
         assert row.status == "succeeded"
-        assert row.provider == "tripo_image_to_3d"
+        assert row.provider == "tripo_text_to_3d"
         assert row.active is True
 
 
 @pytest.mark.asyncio
-async def test_local_rig_failure_falls_back_to_cloud_rigging(
-    _patch_db, monkeypatch, set_fullbody_mode
-):
+async def test_local_rig_failure_falls_back_to_cloud_rigging(_patch_db, monkeypatch):
     """Local auto-rig is the primary path for every provider; when it fails
     and the provider has a cloud rig API, the cloud product is rigged,
     normalized (bone prefixes stripped + canonical yaw) and shipped."""
-    set_fullbody_mode("single")
-
     import json as _json
     from pathlib import Path
 
@@ -2847,7 +2408,7 @@ async def test_local_rig_failure_falls_back_to_cloud_rigging(
         def __init__(self) -> None:
             pass
 
-        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+        async def submit_text_to_model(self, prompt):
             return Model3DJob(job_id="task_gen")
 
         async def poll(self, job):
@@ -2887,34 +2448,29 @@ async def test_local_rig_failure_falls_back_to_cloud_rigging(
     async def fake_morphs(glb_bytes, *, io_dir=None):
         return glb_bytes
 
+    async def fake_enhance(*_args, **_kwargs):
+        return "黑长直少女，红瞳，白色连衣裙"
+
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
     monkeypatch.setattr(model_service, "_auto_rig_with_blender", failing_auto_rig)
     monkeypatch.setattr(model_service, "detect_face_yaw", fake_detect_yaw)
     monkeypatch.setattr(model_service, "run_blender", fake_run_blender)
     monkeypatch.setattr(model_service, "_inject_morph_targets", fake_morphs)
+    monkeypatch.setattr(model_service, "enhance_t3d_prompt", fake_enhance)
 
     async with SessionLocal() as db:
         user = User(username="run_cloud_fallback", is_active=True, can_use=True)
         db.add(user)
         await db.flush()
         db.add(Persona(user_id=user.id, definition_json=_json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}), is_complete=True))
-        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", seed_front_url="companion-avatars/front.png", active=True))
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", active=True))
         model = CompanionModel(user_id=user.id, status="generating", active=False)
         db.add(model)
         await db.commit()
         await db.refresh(model)
         uid, model_id = user.id, model.id
 
-    from components import SETTINGS
-
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-
-    try:
-        await model_service.run_model_gen_pipeline("tripo", uid, {"front": "front.png"}, "人类", model_id, "single")
-    finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
+    await model_service.run_model_gen_pipeline("tripo", uid, "人类", model_id, "anime")
 
     assert captured["start_rig"][0] == "task_gen", "cloud fallback rigs the persisted generation task"
     assert captured["start_rig"][1] == "biped"
@@ -2926,15 +2482,10 @@ async def test_local_rig_failure_falls_back_to_cloud_rigging(
 
 
 @pytest.mark.asyncio
-async def test_run_model_gen_pipeline_provider_failure_marks_failed(
-    _patch_db, monkeypatch, set_fullbody_mode
-):
+async def test_run_model_gen_pipeline_provider_failure_marks_failed(_patch_db, monkeypatch):
     """A provider failure surfaces as ``model.failed`` with fixed copy — no
     local modelling fallback exists."""
-    set_fullbody_mode("single")
-
     import json as _json
-    from pathlib import Path
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
@@ -2949,7 +2500,7 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
         def __init__(self) -> None:
             pass
 
-        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+        async def submit_text_to_model(self, prompt):
             raise model_service.ModelGenerationError("insufficient credit")
 
         async def poll(self, job):
@@ -2961,6 +2512,11 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
     monkeypatch.setattr(
         model_service, "_resolve_model_provider", lambda _name: _FailingProvider()
     )
+
+    async def fake_enhance(*_args, **_kwargs):
+        return "黑长直少女，红瞳，白色连衣裙"
+
+    monkeypatch.setattr(model_service, "enhance_t3d_prompt", fake_enhance)
 
     async with SessionLocal() as db:
         user = User(
@@ -2984,7 +2540,6 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
                 user_id=user.id,
                 prompt_json="{}",
                 asset_url="companion-avatars/avatar.png",
-                seed_front_url="companion-avatars/front.png",
                 active=True,
             )
         )
@@ -2995,18 +2550,7 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
         uid = user.id
         model_id = model.id
 
-    from components import SETTINGS
-
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-
-    try:
-        await model_service.run_model_gen_pipeline(
-            "tripo", uid, {"front": "front.png"}, "人类", model_id, "single"
-        )
-    finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
+    await model_service.run_model_gen_pipeline("tripo", uid, "人类", model_id, "anime")
 
     async with SessionLocal() as db:
         row = (
@@ -3024,15 +2568,10 @@ async def test_run_model_gen_pipeline_provider_failure_marks_failed(
 
 
 @pytest.mark.asyncio
-async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
-    _patch_db, monkeypatch, set_fullbody_mode
-):
+async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(_patch_db, monkeypatch):
     """Providers without a cloud rig API (hunyuan) get the deterministic local
     Blender auto-rig: download → auto_rig → morph injection, in that order."""
-    set_fullbody_mode("single")
-
     import json as _json
-    from pathlib import Path
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel, Persona
@@ -3046,7 +2585,6 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
 
     _, SessionLocal = _patch_db
 
-    captured: dict = {}
     order: list[str] = []
 
     class _FakeHunyuanProvider(ImageTo3DProvider):
@@ -3057,8 +2595,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
         def __init__(self) -> None:
             pass
 
-        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
-            captured["submit"] = (image_path.name, multiview_paths)
+        async def submit_text_to_model(self, prompt):
             return Model3DJob(job_id="job_hy")
 
         async def poll(self, job):
@@ -3091,9 +2628,13 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
         order.append("morphs")
         return glb_bytes
 
+    async def fake_enhance(*_args, **_kwargs):
+        return "黑长直少女，红瞳，白色连衣裙"
+
     monkeypatch.setattr(model_service, "select_rig_type", fake_select_rig_type)
     monkeypatch.setattr(model_service, "_auto_rig_with_blender", fake_auto_rig)
     monkeypatch.setattr(model_service, "_inject_morph_targets", fake_morphs)
+    monkeypatch.setattr(model_service, "enhance_t3d_prompt", fake_enhance)
 
     async with SessionLocal() as db:
         user = User(username="run_hy_local_rig", is_active=True, can_use=True)
@@ -3113,7 +2654,6 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
                 user_id=user.id,
                 prompt_json="{}",
                 asset_url="companion-avatars/avatar.png",
-                seed_front_url="companion-avatars/front.png",
                 active=True,
             )
         )
@@ -3124,20 +2664,8 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
         uid = user.id
         model_id = model.id
 
-    from components import SETTINGS
+    await model_service.run_model_gen_pipeline("hunyuan", uid, "人类", model_id, "anime")
 
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-
-    try:
-        await model_service.run_model_gen_pipeline(
-            "hunyuan", uid, {"front": "front.png"}, "人类", model_id, "single"
-        )
-    finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
-
-    assert captured["submit"][1] is None, "single mode must never pass multiview paths"
     assert order == ["download", "auto_rig:biped", "morphs"]
 
     async with SessionLocal() as db:
@@ -3151,138 +2679,10 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(
             .one()
         )
         assert row.status == "succeeded"
-        assert row.provider == "hunyuan_image_to_3d"
+        assert row.provider == "hunyuan_text_to_3d"
         assert row.rig_type == "biped"
         assert row.has_rig is True
         assert row.active is True
-
-
-@pytest.mark.asyncio
-async def test_run_model_gen_pipeline_hunyuan_multiview_mode(_patch_db, monkeypatch):
-    import json as _json
-    from pathlib import Path
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset, CompanionModel, Persona
-    from services.companion import model_service
-    from services.image_to_3d import (
-        ImageTo3DProvider,
-        Model3DAsset,
-        Model3DJob,
-        Model3DPollResult,
-    )
-
-    _, SessionLocal = _patch_db
-
-    captured: dict = {}
-
-    class _FakeHunyuanProvider(ImageTo3DProvider):
-        provider_name = "hunyuan"
-        SUPPORTS_RIGGING = False
-        SUPPORTS_MULTIVIEW = True
-
-        def __init__(self) -> None:
-            pass
-
-        async def submit_image_to_model(self, image_path, *, multiview_paths=None):
-            captured["submit"] = (image_path.name, multiview_paths)
-            return Model3DJob(job_id="job_hy_mv")
-
-        async def poll(self, job):
-            return Model3DPollResult(
-                status="completed",
-                progress=100,
-                assets=(Model3DAsset(kind="glb", url="https://x/m.glb"),),
-            )
-
-        async def download(self, result, dest_dir):
-            dest = dest_dir / "model.glb"
-            dest.write_bytes(b"\x00" * 20)
-            return dest
-
-    monkeypatch.setattr(
-        model_service, "_resolve_model_provider", lambda _name: _FakeHunyuanProvider()
-    )
-    monkeypatch.setattr(
-        model_service, "select_rig_type", AsyncMock(return_value="biped")
-    )
-    monkeypatch.setattr(
-        model_service,
-        "_auto_rig_with_blender",
-        AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"),
-    )
-    monkeypatch.setattr(
-        model_service,
-        "_inject_morph_targets",
-        AsyncMock(return_value=b"\x00" * 20 + b"RIGGED"),
-    )
-
-    async with SessionLocal() as db:
-        user = User(username="run_hy_mv", is_active=True, can_use=True)
-        db.add(user)
-        await db.flush()
-        db.add(
-            Persona(
-                user_id=user.id,
-                definition_json=_json.dumps(
-                    {"name": "x", "personality": "p", "speaking_style": "s"}
-                ),
-                is_complete=True,
-            )
-        )
-        db.add(
-            AvatarAsset(
-                user_id=user.id,
-                prompt_json="{}",
-                asset_url="companion-avatars/avatar.png",
-                seed_front_url="companion-avatars/front.png",
-                active=True,
-            )
-        )
-        model = CompanionModel(user_id=user.id, status="generating", active=False)
-        db.add(model)
-        await db.commit()
-        await db.refresh(model)
-        uid = user.id
-        model_id = model.id
-
-    from components import SETTINGS
-
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-    (asset_dir / "right.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-    (asset_dir / "back.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-
-    try:
-        await model_service.run_model_gen_pipeline(
-            "hunyuan",
-            uid,
-            {"front": "front.png", "right": "right.png", "back": "back.png"},
-            "人类",
-            model_id,
-            "multi",
-        )
-    finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
-        (asset_dir / "right.png").unlink(missing_ok=True)
-        (asset_dir / "back.png").unlink(missing_ok=True)
-
-    assert captured["submit"][1] is not None
-    assert set(captured["submit"][1].keys()) == {"front", "right", "back"}
-
-    async with SessionLocal() as db:
-        row = (
-            (
-                await db.execute(
-                    select(CompanionModel).where(CompanionModel.id == model_id)
-                )
-            )
-            .scalars()
-            .one()
-        )
-        assert row.status == "succeeded"
-        assert row.provider == "hunyuan_multiview_to_3d"
 
 
 @pytest.mark.asyncio
@@ -3324,9 +2724,6 @@ async def test_generate_companion_model_without_provider_key_rejects(
                 user_id=user.id,
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
-                seed_front_url="companion-avatars/seed_front.png",
-                seed_right_url="companion-avatars/seed_right.png",
-                seed_back_url="companion-avatars/seed_back.png",
                 active=True,
             )
         )
@@ -4001,279 +3398,6 @@ def test_resolve_socket_exact_suffix_fallback():
     assert _resolve_socket(None, "unknown_slot", []) is None
 
 
-# ---------------------------------------------------------------------------
-# Fullbody reference source: avatar vs. user's original reference image
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_uses_uploaded_image_for_all_views(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """When ``reference_image`` is provided, all three views (front/right/back)
-    share the uploaded image as the sole subject reference — the previously
-    generated front seed and the bust avatar no longer flow in."""
-    set_fullbody_mode("multi")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-    all_calls: list[dict] = []
-
-    async def fake_gen(**kwargs):
-        all_calls.append(kwargs)
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(chat, species, db=None, user_id=None):
-        return ("biped", True)
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-
-    async with SessionLocal() as db:
-        user = User(username="uploadref", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
-
-        fake_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
-        await avatar_service.generate_fullbody(
-            db,
-            user_id=user.id,
-            avatar_id=asset.id,
-            stage="front",
-            reference_image=fake_b64,
-            reference_content_type="image/png",
-        )
-
-        assert len(all_calls) == 1
-        call = all_calls[0]
-        # Sole subject reference is the uploaded image
-        assert call["reference_image"] == f"data:image/png;base64,{fake_b64}"
-        assert call["secondary_reference_image"] is None
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_falls_back_to_bust_for_all_views(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """When no ``reference_image`` is provided, the bust avatar is the sole
-    subject reference for all three views."""
-    set_fullbody_mode("multi")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-    all_calls: list[dict] = []
-
-    async def fake_gen(**kwargs):
-        all_calls.append(kwargs)
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(chat, species, db=None, user_id=None):
-        return ("biped", True)
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-
-    async with SessionLocal() as db:
-        user = User(username="bustfallback", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
-
-        await avatar_service.generate_fullbody(
-            db, user_id=user.id, avatar_id=asset.id, stage="front"
-        )
-
-        assert len(all_calls) == 1
-        call = all_calls[0]
-        # Primary reference is the bust avatar
-        assert call["reference_image"].startswith("data:image/png;base64,")
-        assert call["secondary_reference_image"] is None
-
-
-@pytest.mark.asyncio
-async def test_generate_fullbody_aux_views_share_primary_reference(
-    monkeypatch, _patch_db, set_fullbody_mode
-):
-    """Right/back views reuse the same primary subject reference (upload or
-    bust fallback) as the front view, never the just-generated front seed."""
-    set_fullbody_mode("multi")
-
-    import json as _json
-
-    from modules.auth import User
-    from modules.companion import AvatarAsset
-    from services.companion import avatar_service
-
-    _, SessionLocal = _patch_db
-    all_calls: list[dict] = []
-
-    async def fake_gen(**kwargs):
-        all_calls.append(kwargs)
-        return _json.dumps({"success": True, "urls": ["http://provider/fullbody.png"]})
-
-    async def fake_download(url):
-        return b"\x89PNG\r\n\x1a\n", "image/png"
-
-    async def fake_classify_species(chat, species, db=None, user_id=None):
-        return ("biped", True)
-
-    monkeypatch.setattr(avatar_service, "image_generation_tool", fake_gen)
-    monkeypatch.setattr(avatar_service, "_download_to_bytes", fake_download)
-    monkeypatch.setattr(avatar_service, "classify_species", fake_classify_species)
-
-    async with SessionLocal() as db:
-        user = User(username="auxshared", is_active=True, can_use=True)
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-
-        bare_path, _, _ = await avatar_service._persist_portrait_bytes(
-            b"\x89PNG\r\n\x1a\n", "image/png"
-        )
-        asset = AvatarAsset(
-            user_id=user.id,
-            prompt_json=_json.dumps({"prompt": "bust", "avatar_prompt": "bust"}),
-            asset_url=bare_path,
-            seed_front_url="",
-            seed_right_url="",
-            seed_back_url="",
-            active=True,
-        )
-        db.add(asset)
-        await db.commit()
-        await db.refresh(asset)
-
-        upload_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"
-        await avatar_service.generate_fullbody(
-            db,
-            user_id=user.id,
-            avatar_id=asset.id,
-            stage="front",
-            reference_image=upload_b64,
-            reference_content_type="image/png",
-        )
-        all_calls.clear()
-
-        # Aux — uploaded image still wins (no reliance on the just-generated seed).
-        await avatar_service.generate_fullbody(
-            db,
-            user_id=user.id,
-            avatar_id=asset.id,
-            stage="aux",
-            reference_image=upload_b64,
-            reference_content_type="image/png",
-        )
-
-        assert len(all_calls) == 2
-        for call in all_calls:
-            assert call["reference_image"] == f"data:image/png;base64,{upload_b64}"
-            assert call["secondary_reference_image"] is None
-
-
-def test_fullbody_request_schema_no_reference_source_field():
-    """``reference_source`` was removed — old clients passing it get a 422."""
-    from pydantic import ValidationError
-
-    from modules.companion.schemas import FullbodyGenerateRequest
-
-    # Valid request without the legacy field
-    req = FullbodyGenerateRequest(stage="front", reference_image="iVBORw0KGgo=")
-    assert not hasattr(req, "reference_source")
-
-    # Old clients passing the field are rejected by ``extra="forbid"``
-    with pytest.raises(ValidationError):
-        FullbodyGenerateRequest(stage="front", reference_source="reference_image")
-
-
-async def test_onboarding_state_does_not_include_default_fullbody_reference_source(
-    _patch_db,
-):
-    """The ``default_fullbody_reference_source`` field was removed from
-    ``onboarding.get_state`` — fullbody reference resolution is now an
-    implicit three-tier fallback (upload → bust → text)."""
-    _, SessionLocal = _patch_db
-    from services.companion import get_onboarding_state, update_persona
-
-    async with SessionLocal() as db:
-        await update_persona(
-            db,
-            201,
-            {
-                "name": "光",
-                "personality": "温柔",
-                "speaking_style": "轻柔",
-                "biological_type": "人类",
-            },
-        )
-        state = await get_onboarding_state(db, 201)
-        assert "default_fullbody_reference_source" not in state
-
-        # Confirm a non-preset species also no longer leaks the field.
-        await update_persona(
-            db,
-            202,
-            {
-                "name": "喵",
-                "personality": "活泼",
-                "speaking_style": "俏皮",
-                "biological_type": "猫",
-            },
-        )
-        state = await get_onboarding_state(db, 202)
-        assert "default_fullbody_reference_source" not in state
-
-
 @pytest.mark.asyncio
 async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db):
     client, SessionLocal, uid = await _make_authenticated_client(_patch_db, uid=3003)
@@ -4464,7 +3588,7 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
 
 
 @pytest.mark.asyncio
-async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
+async def test_select_avatar_and_history(_patch_db, monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
 
@@ -4509,7 +3633,7 @@ async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
         await db.commit()
         await db.refresh(a1)
         await db.refresh(a2)
-        a1_id, a2_id = a1.id, a2.id
+        a1_id = a1.id
 
     # 1. select a1 -> a1 becomes active, a2 inactive
     resp = client.put(f"/api/companion/avatar/{a1_id}/select")
@@ -4523,35 +3647,3 @@ async def test_select_avatar_and_history_fullbody(_patch_db, monkeypatch):
     # 2. selecting non-existent returns 404
     resp404 = client.put("/api/companion/avatar/99999/select")
     assert resp404.status_code == 404
-
-    # 3. pre-read fullbody on a2 (which is inactive) succeeds without 404
-    async with SessionLocal() as db:
-        (
-            views,
-            is_front,
-            persist,
-            refs,
-            prompts,
-            style,
-        ) = await avatar_service._pre_read_fullbody(
-            db, user.id, a2_id, "front", None, None, None, None
-        )
-        assert is_front is True
-        assert views == ["front"]
-
-        # 4. write fullbody on a2 reactivates a2
-        written = await avatar_service._write_fullbody(
-            db,
-            user.id,
-            a2_id,
-            ["front"],
-            True,
-            False,
-            {"front": ("temp-media/a2_front", "id", "ext", "orig")},
-            style,
-        )
-        assert written.active is True
-        assert written.seed_front_url is not None
-
-        active_after = await avatar_service.get_active_avatar(db, user.id)
-        assert active_after is not None and active_after.id == a2_id

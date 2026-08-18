@@ -38,7 +38,8 @@ class ImageTo3DError(Exception):
 
 
 class ImageTo3DProvider(ABC):
-    """Image-to-3D generation provider ABC. Capability ClassVars gate
+    """Text-to-3D generation provider ABC (the image-to-3D entry is retained
+    but the generation line no longer uses it). Capability ClassVars gate
     provider-specific pipeline steps in ``model_service.run_model_gen_pipeline`` —
     orchestration checks them before calling the optional rig or multiview methods.
     """
@@ -46,12 +47,6 @@ class ImageTo3DProvider(ABC):
     provider_name: str = ""
     SUPPORTS_RIGGING: ClassVar[bool] = False
     SUPPORTS_MULTIVIEW: ClassVar[bool] = False
-
-    @abstractmethod
-    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
-        """Submit a generation job from local seed images. Providers digest
-        their own upload mechanism (file_token, base64, …) — callers only
-        hand over local paths."""
 
     @abstractmethod
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
@@ -64,6 +59,12 @@ class ImageTo3DProvider(ABC):
 
     async def submit_text_to_model(self, prompt: str) -> Model3DJob:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support text-to-3D", provider=self.provider_name)
+
+    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
+        """Submit from local seed images (retained capability, unused by the
+        generation line). Providers digest their own upload mechanism (file_token,
+        base64, …) — callers only hand over local paths."""
+        raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support image-to-3D", provider=self.provider_name)
 
     async def rig_supported(self, job_id: str) -> bool:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support cloud rigging", provider=self.provider_name)

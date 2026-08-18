@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 # Persona blob travels as one JSON string; 32 KiB caps DoS at the HTTP
 # boundary while leaving headroom for the largest persona field (2000 chars)
@@ -28,30 +28,8 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
-    # Step-1 (avatar-only) rows leave seed URLs empty until the user confirms
-    # the face and triggers ``POST /avatar/{id}/fullbody``.
-    seed_front_url: str | None = ""
-    seed_right_url: str | None = ""
-    seed_back_url: str | None = ""
     prompt: str = ""
     status: SucceededStatus = "succeeded"
-
-
-class FullbodyGenerateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    view: Literal["front", "right", "back"] | None = None
-    stage: Literal["front", "aux"] | None = None
-    # Free-text nudge from the portrait-phase textarea ("头发再短一点"). Empty
-    # / whitespace is treated as no nudge by build_fullbody_prompt.
-    feedback: str | None = Field(default=None, max_length=2000)
-    reference_image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
-    reference_content_type: str | None = Field(default=None, max_length=64)
-
-    @model_validator(mode="after")
-    def _check_exclusive(self):
-        if bool(self.stage) == bool(self.view):
-            raise ValueError("exactly one of 'stage' or 'view' is required")
-        return self
 
 
 class AvatarGenerateRequest(BaseModel):

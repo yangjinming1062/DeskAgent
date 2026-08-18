@@ -18,7 +18,6 @@ from services.image_to_3d import (
     Model3DJob,
     Model3DPollResult,
     TripoImageTo3DProvider,
-    get_effective_fullbody_mode,
     get_provider_class,
     hunyuan_client,
     list_providers,
@@ -426,28 +425,6 @@ class TestRegistryAndFallback:
     def test_resolve_unknown_provider_raises(self):
         with pytest.raises(ImageTo3DError, match="未注册"):
             resolve_provider("nonexistent_provider")
-
-    def test_get_effective_fullbody_mode_multiview(self, monkeypatch):
-        # 1. When SETTINGS.fullbody_mode is single -> always single
-        monkeypatch.setattr(SETTINGS, "fullbody_mode", "single")
-        monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
-        assert get_effective_fullbody_mode() == "single"
-
-        # 2. When SETTINGS.fullbody_mode is multi:
-        monkeypatch.setattr(SETTINGS, "fullbody_mode", "multi")
-        # Both Tripo and Hunyuan support multiview -> multi
-        monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
-        assert get_effective_fullbody_mode() == "multi"
-
-        monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "hunyuan")
-        assert get_effective_fullbody_mode() == "multi"
-
-        # Explicit provider override passed in
-        assert get_effective_fullbody_mode("tripo") == "multi"
-        assert get_effective_fullbody_mode("hunyuan") == "multi"
-
-        # Unknown provider safely falls back to single
-        assert get_effective_fullbody_mode("unknown_provider") == "single"
 
 
 @pytest.mark.e2e("HUNYUAN_API_KEY")

@@ -587,33 +587,21 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
     assert resp.status_code == 422
 
 
-# ── sprite subject-reference anchor: bust before seed ──────────────────
+# ── sprite subject-reference anchor: the bust avatar ───────────────────
 
 
-def test_sprite_subject_reference_prefers_bust_over_seed():
+def test_sprite_subject_reference_anchors_on_bust():
     """The sprite is a user-visible static-fallback fullbody image that must
-    stay in the realistic identity-anchor tier — anchored on the bust avatar,
-    not on the (now anime / cel-shading) seed."""
+    stay in the realistic identity-anchor tier — anchored on the bust avatar
+    so sprite and avatar keep the same visual identity."""
     import re
 
     with open(sprite_service.__file__, encoding="utf-8") as _f:
         src = _f.read()
-    pattern = (
-        r"subject_ref\s*=\s*load_avatar_bytes_as_data_uri"
-        r"\([^)]+\)\s*or\s*load_avatar_bytes_as_data_uri\([^)]+\)"
-    )
-    matches = re.findall(pattern, src)
-    assert matches, "expected subject_ref fallback expression in sprite_service"
+    matches = re.findall(r"subject_ref\s*=\s*load_avatar_bytes_as_data_uri\([^)]+\)", src)
+    assert matches, "expected subject_ref expression in sprite_service"
     for expr in matches:
-        primary, fallback = expr.split(" or ")
-        assert "asset.asset_url" in primary, (
-            "sprite subject_ref must prefer the bust (asset.asset_url); "
-            f"got: {expr}"
-        )
-        assert "seed_front_url" in fallback, (
-            "sprite subject_ref must fall back to seed_front_url only; "
-            f"got: {expr}"
-        )
+        assert "asset.asset_url" in expr, f"sprite subject_ref must anchor on the bust (asset.asset_url); got: {expr}"
 
 
 def test_sprite_prompt_system_anchors_realistic_style():

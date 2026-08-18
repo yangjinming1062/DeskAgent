@@ -8,15 +8,7 @@ from .wardrobe_service import slot_of
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    return AvatarAssetResponse(
-        id=asset.id,
-        asset_url=asset.asset_url,
-        seed_front_url=asset.seed_front_url or None,
-        seed_right_url=asset.seed_right_url or None,
-        seed_back_url=asset.seed_back_url or None,
-        prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
-        status="succeeded",
-    )
+    return AvatarAssetResponse(id=asset.id, asset_url=asset.asset_url, prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "", status="succeeded")
 
 
 def model_response(model: CompanionModel) -> CompanionModelResponse:

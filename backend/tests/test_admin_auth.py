@@ -185,7 +185,6 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
 
     from api.v1 import admin as admin_api
     from components import SETTINGS
-    from components.temp_files import save_file
     from modules.auth import User, create_admin_token
     from modules.companion import AvatarAsset
 
@@ -205,15 +204,12 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
     portrait_file = avatar_dir / "del_avatar.jpg"
     portrait_file.write_bytes(b"image bytes")
 
-    fid, _ = save_file(b"draft bytes", "", "image/png", "png")
-
     async with SessionLocal() as db:
         db.add(
             AvatarAsset(
                 user_id=user_id,
                 prompt_json="{}",
                 asset_url="companion-avatars/del_avatar.jpg",
-                seed_front_url=f"temp-media/{fid}",
                 active=True,
             )
         )

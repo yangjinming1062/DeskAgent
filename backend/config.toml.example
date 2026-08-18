@@ -41,9 +41,8 @@ temp_file_ttl_hours = 24
 data_dir = "./data"
 
 [image_to_3d]
-# 图生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
-# 商业供应商之间不做自动回退；未配置 Key 时图生 3D 请求将被拒绝（返回 400）
-# 若当前配置的供应商不支持多视图生成，伴侣初始化阶段将自动将 fullbody_mode 回退为 single
+# 文生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
+# 商业供应商之间不做自动回退；未配置 Key 时文生 3D 请求将被拒绝（返回 400）
 image_to_3d_provider = "tripo"
 # 轮询 3D 生成任务状态的间隔时间（秒）
 image_to_3d_poll_interval_seconds = 5.0
@@ -261,12 +260,6 @@ metrics_auth_token = ""
 log_level = "INFO"
 # 日志格式：json / text
 log_format = "json"
-
-[companion]
-# 伴侣全身图与 3D 生成模式：
-# "single" = 仅正面单图模式（共 2 张图：头像 + 正面全身图），调用单图生 3D 模型接口
-# "multi"  = 三视图模式（共 4 张图：头像 + 正面 + 侧面 + 背面全身图），调用多视图生 3D 模型接口
-fullbody_mode = "multi"
 
 [nightly]
 # 是否启用伴侣夜间日记与状态自省定时任务

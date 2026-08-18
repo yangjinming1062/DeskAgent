@@ -16,7 +16,6 @@ from modules.companion import (
     AvatarHistoryResponse,
     CompanionExpression,
     CompanionModelResponse,
-    FullbodyGenerateRequest,
     ModelGenerateRequest,
     Persona,
     PersonaResponse,
@@ -37,12 +36,10 @@ from services.companion import (
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
-    FrontSeedMissingError,
     ModelGenerationError,
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
     PersonaValidationError,
-    SeedPromptMissingError,
     SpriteGenerationError,
     SpriteSeedMissingError,
     WardrobeSourceExpiredError,
@@ -58,10 +55,8 @@ from services.companion import (
     generate_animation_clips,
     generate_avatar,
     generate_companion_model,
-    generate_fullbody,
     get_active_avatar,
     get_active_model,
-    get_avatar_job_lock,
     get_equipped_item,
     get_onboarding_state,
     get_or_create_persona,
@@ -310,53 +305,6 @@ async def post_avatar_from_image(
     except MissingLlmConfigError as exc:
         logger.warning("post_avatar_from_image missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
-
-    return avatar_response(asset)
-
-
-@router.post("/avatar/{avatar_id}/fullbody", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
-async def post_avatar_fullbody(
-    request: Request,  # required by @limiter.limit
-    avatar_id: int,
-    body: FullbodyGenerateRequest = Body(default_factory=FullbodyGenerateRequest),
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> AvatarAssetResponse:
-    user, _ = auth
-    async with SESSION_LOCAL() as pre_db:
-        persona = await get_or_create_persona(pre_db, user.id)
-        if not persona.is_complete:
-            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成全身图"})
-    # Serialise against the WS avatar.regenerate RPC for the same user — both
-    # paths mutate the active row; without this lock, a concurrent regen
-    # could deactivate the row we're about to update.
-    lock = get_avatar_job_lock(user.id)
-    if lock.locked():
-        raise HTTPException(status_code=429, detail={"error": "伙伴正在生成形象，请稍候"})
-    async with lock:
-        try:
-            asset = await generate_fullbody(
-                user_id=user.id,
-                avatar_id=avatar_id,
-                view=body.view,
-                stage=body.stage,
-                feedback=body.feedback,
-                reference_image=body.reference_image,
-                reference_content_type=body.reference_content_type,
-            )
-        except AvatarNotFoundError as exc:
-            logger.warning("post_avatar_fullbody not found", extra={"user_id": user.id, "avatar_id": avatar_id, "error": str(exc)})
-            raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
-        except FrontSeedMissingError as exc:
-            logger.warning("post_avatar_fullbody missing front seed", extra={"user_id": user.id, "avatar_id": avatar_id, "error": str(exc)})
-            raise HTTPException(status_code=409, detail={"error": "请先生成正面全身图", "reason": str(exc)})
-        except (SeedPromptMissingError, AvatarSourceUnreadableError) as exc:
-            logger.warning("post_avatar_fullbody seed prompt/source unreadable", extra={"user_id": user.id, "avatar_id": avatar_id, "error": getattr(exc, "internal", str(exc))})
-            raise HTTPException(status_code=409, detail={"error": "请先重新生成头像再试", "reason": str(exc)})
-        except AvatarGenerationError as exc:
-            err_detail = getattr(exc, "internal", str(exc))
-            logger.warning("post_avatar_fullbody failed", extra={"user_id": user.id, "avatar_id": avatar_id, "error": err_detail})
-            raise HTTPException(status_code=502, detail={"error": "伙伴全身图生成失败，请稍后重试", "reason": str(exc)})
 
     return avatar_response(asset)
 

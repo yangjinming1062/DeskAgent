@@ -11,42 +11,22 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.image_to_3d import get_effective_fullbody_mode
-
-from ..llm import (
-    FullbodyStyle,
-    build_fullbody_prompt,
-    chat,
-    enhance_avatar_prompt,
-    is_content_policy_error_message,
-    is_preset_species,
-    resolve_fullbody_style,
-    resolve_fullbody_template,
-)
+from ..llm import chat, enhance_avatar_prompt, is_content_policy_error_message
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
 from .persona_service import get_or_create_persona
-from .rig_type_selector import classify_species
 
 logger = get_logger(__name__)
 
 _DEFAULT_STYLE: str = "portrait"
-# Square fits a bust; the full-body seed needs portrait orientation so
-# the model renders head-to-toe at natural proportions instead of
-# cropping or tilting to fit a 1:1 canvas.
 _AVATAR_SIZE: str = "1024x1024"
-_AVATAR_FULL_SIZE: str = "1024x1792"
 _AVATAR_QUALITY: str = "standard"
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
-_SEED_ATTRS: dict[str, str] = {"front": "seed_front_url", "right": "seed_right_url", "back": "seed_back_url"}
-
-_FULLBODY_PROVIDER_PRIORITY = ["gemini", "grok", "minimax"]
-
-# Per-user lock shared between the REST fullbody route and the WS RPC handlers
-# so a concurrent regen + fullbody for the same user can't race on the row.
+# Per-user lock shared between the REST avatar routes and the WS RPC handlers
+# so a concurrent regen + select for the same user can't race on the row.
 _avatar_job_locks: dict[int, asyncio.Lock] = {}
 
 _MODERATION_SANITIZATION_PROMPT = (
@@ -120,21 +100,13 @@ class AvatarGenerationError(RuntimeError):
 
 
 class AvatarNotFoundError(AvatarGenerationError):
-    """Step-2 (fullbody) was asked to update an avatar row that doesn't exist
-    or doesn't belong to the caller."""
-
-
-class SeedPromptMissingError(AvatarGenerationError):
-    """The avatar row's prompt_json has no cached avatar_prompt visual anchor."""
-
-
-class FrontSeedMissingError(AvatarGenerationError):
-    """Aux-stage generation requested but no front full-body seed exists."""
+    """An avatar row lookup targeted a row that doesn't exist or doesn't
+    belong to the caller."""
 
 
 class AvatarSourceUnreadableError(AvatarGenerationError):
-    """Step-2 can't read the avatar file from disk to build the subject
-    reference; the user needs to regenerate the avatar before retrying."""
+    """The avatar file can't be read from disk; the user needs to regenerate
+    the avatar before retrying."""
 
 
 def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
@@ -297,17 +269,7 @@ async def _write_avatar_step(
         prompt_payload["reference_image"] = reference_image.split(",", 1)[0]
     if secondary_reference_image is not None:
         prompt_payload["secondary_reference_image"] = secondary_reference_image.split(",", 1)[0]
-    asset = AvatarAsset(
-        user_id=user_id,
-        prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
-        asset_url=asset_url,
-        seed_front_url="",
-        seed_right_url="",
-        seed_back_url="",
-        style=style,
-        seed=secrets.randbelow(2**31),
-        active=True,
-    )
+    asset = AvatarAsset(user_id=user_id, prompt_json=json.dumps(prompt_payload, ensure_ascii=False), asset_url=asset_url, style=style, seed=secrets.randbelow(2**31), active=True)
     # Explicit SQL update ensures persona confirmation is reset even if caller's persona is a detached instance.
     await db.execute(update(Persona).where(Persona.user_id == user_id).values(is_portrait_confirmed=False, portrait_confirmed_at=None))
     db.add(asset)
@@ -318,9 +280,6 @@ async def _write_avatar_step(
         asset.asset_url = build_signed_avatar_url(file_id, final_ext)
         if previous is not None:
             _delete_portrait_file(previous.asset_url)
-            _delete_portrait_file(previous.seed_front_url)
-            _delete_portrait_file(previous.seed_right_url)
-            _delete_portrait_file(previous.seed_back_url)
     else:
         # Onboarding: temp-media URL — convert to a path the client can resolve.
         asset.asset_url = _temp_media_public_url(asset_url)
@@ -377,187 +336,6 @@ async def _generate_avatar_step(
         secondary_reference_image=secondary_reference_image,
         persist=persist,
     )
-
-
-async def _pre_read_fullbody(
-    db: AsyncSession, user_id: int, avatar_id: int, stage: str | None, view: str | None, feedback: str | None, reference_image: str | None, reference_content_type: str | None
-) -> tuple[list[str], bool, bool, dict[str, str], dict[str, str], FullbodyStyle]:
-    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-    if asset is None:
-        raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-
-    prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    if not isinstance(prompt_payload, dict):
-        prompt_payload = {}
-
-    persona = await get_or_create_persona(db, user_id)
-    persist = persona.is_portrait_confirmed
-    effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt")
-
-    is_front = stage == "front" or view == "front"
-    if is_front:
-        views_to_gen = ["front"]
-    elif stage == "aux":
-        views_to_gen = ["right", "back"]
-    else:
-        views_to_gen = [view or "front"]
-
-    if not is_front and not bool(asset.seed_front_url):
-        raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
-
-    # Three-tier subject-reference fallback: uploaded image → bust avatar → none.
-    # All views (front/right/back) share the SAME primary reference so clothing,
-    # skin tone, and hair color stay consistent across viewpoints. The fullbody
-    # seed's face is intentionally AI-reinvented per the persona — the bust
-    # avatar is no longer a "beautification secondary" anchor.
-    references: dict[str, str] = {}
-    primary_ref_uri: str | None = None
-    if reference_image:
-        mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
-        primary_ref_uri = f"data:{mime};base64,{reference_image}"
-    else:
-        primary_ref_uri = load_avatar_bytes_as_data_uri(asset.asset_url)
-    if primary_ref_uri:
-        for v in views_to_gen:
-            references[v] = primary_ref_uri
-
-    if not cached_avatar_prompt:
-        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt visual anchor")
-
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = (definition.get("biological_type") or "").strip()
-
-    rig_type = "biped"
-    style: FullbodyStyle = resolve_fullbody_style(species)
-    if not is_preset_species(species):
-        rig_type, has_humanoid_face = await classify_species(chat, species or "人类", db=db, user_id=user_id)
-        style = resolve_fullbody_style(species, has_humanoid_face)
-    template = resolve_fullbody_template(species, rig_type, style)
-
-    prompts = {v: build_fullbody_prompt(v, template=template, feedback=effective_feedback) for v in views_to_gen}
-    return views_to_gen, is_front, persist, references, prompts, style
-
-
-async def _write_fullbody(
-    db: AsyncSession, user_id: int, avatar_id: int, views_to_gen: list[str], is_front: bool, persist: bool, generated: dict[str, tuple[str, str, str, str]], style: FullbodyStyle
-) -> AvatarAsset:
-    asset = await db.get(AvatarAsset, avatar_id)
-    if asset is None:
-        raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-
-    # The style travels with the asset so the 3D pipeline (a separate worker
-    # with no persona context) renders the same style the seed was drawn in —
-    # an anime seed under PBR or the reverse re-creates the style cliff.
-    prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    if isinstance(prompt_payload, dict) and prompt_payload.get("fullbody_style") != style:
-        prompt_payload["fullbody_style"] = style
-        asset.prompt_json = json.dumps(prompt_payload, ensure_ascii=False)
-
-    if is_front:
-        if persist:
-            for attr in ("seed_right_url", "seed_back_url"):
-                old_val = getattr(asset, attr, None)
-                if old_val:
-                    _delete_portrait_file(old_val)
-        asset.seed_right_url = ""
-        asset.seed_back_url = ""
-
-    if persist:
-        for v in generated:
-            old_url = getattr(asset, _SEED_ATTRS[v], None)
-            if old_url:
-                _delete_portrait_file(old_url)
-
-    for v, result in generated.items():
-        setattr(asset, _SEED_ATTRS[v], result[0])
-
-    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
-    asset.active = True
-
-    await db.commit()
-    await db.refresh(asset)
-
-    db.expunge(asset)
-    asset.asset_url = _re_sign_bare_path(asset.asset_url) or asset.asset_url
-    for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
-        val = getattr(asset, attr, None)
-        if val:
-            signed = _re_sign_bare_path(val)
-            if signed:
-                setattr(asset, attr, signed)
-    return asset
-
-
-async def generate_fullbody(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    *,
-    avatar_id: int,
-    view: str | None = None,
-    stage: str | None = None,
-    feedback: str | None = None,
-    reference_image: str | None = None,
-    reference_content_type: str | None = None,
-    user_id_kw: int | None = None,
-) -> AvatarAsset:
-    """Step-2: render the full-body multiview seed set (front / right / back).
-
-    Reference image fallback chain: uploaded reference → bust avatar → none (text-only).
-    All three views share the SAME primary subject reference so clothing, skin
-    tone, and hair color stay consistent across viewpoints. The fullbody seed's
-    face is intentionally AI-reinvented per the persona; the bust avatar is
-    not re-applied as a secondary anchor. The seed style is routed by
-    humanoid face (see ``_FULLBODY_SHARED_RULES``) — anime figurine CGI for
-    human-faced companions, realistic for non-human creatures;
-    it is for the Tripo3D pipeline only and is not directly user-facing.
-
-    Decoupled into short pre-read, long generation without holding DB session,
-    and short write."""
-    uid = user_id if user_id is not None else user_id_kw
-    if uid is None:
-        raise ValueError("user_id is required")
-
-    if bool(stage) == bool(view):
-        raise AvatarGenerationError("exactly one of 'stage' or 'view' is required")
-
-    if get_effective_fullbody_mode() == "single" and (stage == "aux" or view in ("right", "back")):
-        raise AvatarGenerationError("当前为单视图模式，不支持生成侧面/背面全身图")
-
-    if db is None:
-        async with SESSION_LOCAL() as read_db:
-            (views_to_gen, is_front, persist, references, prompts, style) = await _pre_read_fullbody(
-                read_db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type
-            )
-    else:
-        (views_to_gen, is_front, persist, references, prompts, style) = await _pre_read_fullbody(db, uid, avatar_id, stage, view, feedback, reference_image, reference_content_type)
-
-    results = await asyncio.gather(
-        *[
-            _generate_one_portrait_with_moderation_retry(
-                prompts[v], uid, reference_image=references.get(v), size=_AVATAR_FULL_SIZE, persist=persist, preferred_provider=_FULLBODY_PROVIDER_PRIORITY
-            )
-            for v in views_to_gen
-        ],
-        return_exceptions=True,
-    )
-
-    generated: dict[str, tuple[str, str, str, str]] = {}
-    for v, result in zip(views_to_gen, results):
-        if isinstance(result, BaseException):
-            err_detail = getattr(result, "internal", str(result))
-            logger.warning("fullbody view generation failed", extra={"view": v, "error": err_detail})
-        else:
-            generated[v] = result
-
-    if not generated:
-        raise (results[0] if isinstance(results[0], BaseException) else AvatarGenerationError("all views failed"))
-
-    if db is None:
-        async with SESSION_LOCAL() as write_db:
-            return await _write_fullbody(write_db, uid, avatar_id, views_to_gen, is_front, persist, generated, style)
-
-    return await _write_fullbody(db, uid, avatar_id, views_to_gen, is_front, persist, generated, style)
 
 
 def _delete_portrait_file(asset_url: str | None) -> None:
@@ -654,10 +432,6 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
     # Onboarding draft: temp-media/{file_id} — convert to a client-resolvable URL.
     if asset.asset_url and asset.asset_url.startswith("temp-media/"):
         asset.asset_url = _temp_media_public_url(asset.asset_url)
-        for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
-            val = getattr(asset, attr, None)
-            if val and val.startswith("temp-media/"):
-                setattr(asset, attr, _temp_media_public_url(val))
         return
 
     if not asset.asset_url or not asset.asset_url.startswith("companion-avatars/"):
@@ -669,36 +443,6 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
     if not file_id:
         return
     asset.asset_url = build_signed_avatar_url(file_id, ext)
-    if (signed_seed := _re_sign_bare_path(asset.seed_front_url)) is not None:
-        asset.seed_front_url = signed_seed
-    if (signed_right := _re_sign_bare_path(asset.seed_right_url)) is not None:
-        asset.seed_right_url = signed_right
-    if (signed_back := _re_sign_bare_path(asset.seed_back_url)) is not None:
-        asset.seed_back_url = signed_back
-
-
-def _re_sign_bare_path(bare_path: str | None) -> str | None:
-    """Re-sign a bare ``companion-avatars/<file_id>.<ext>`` path into a fresh URL.
-
-    For ``temp-media/<file_id>`` paths (onboarding drafts), convert to a
-    ``/api/media/files/<file_id>`` URL (no HMAC signing needed).
-
-    Returns ``None`` for empty input, non-matching prefixes, or path-traversal
-    patterns so callers can decide whether to fall back to the existing value.
-    """
-    if not bare_path:
-        return None
-    if bare_path.startswith("temp-media/"):
-        return _temp_media_public_url(bare_path)
-    if not bare_path.startswith("companion-avatars/"):
-        return None
-    filename = bare_path.split("/", 1)[1]
-    if "/" in filename or "\\" in filename or ".." in filename:
-        return None
-    file_id, _, ext = filename.partition(".")
-    if not file_id:
-        return None
-    return build_signed_avatar_url(file_id, ext)
 
 
 async def regenerate_avatar(
@@ -882,34 +626,22 @@ def _read_temp_media_bytes(bare_path: str) -> tuple[bytes, str] | None:
 
 
 async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
-    """Copy the active avatar's images from temp-media to companion-avatars.
-    Two-phase: reads all bytes first (abort on any TTL expiry), then persists —
-    avoids orphaned companion-avatars files on partial failure. Idempotent.
-    Raises ``AvatarSourceUnreadableError`` if any temp-media file has expired."""
+    """Copy the active avatar's image from temp-media to companion-avatars.
+    Idempotent. Raises ``AvatarSourceUnreadableError`` if the temp-media file
+    has expired."""
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         return None
 
-    pending: list[tuple[str, bytes, str]] = []  # (attr, data, content_type)
-    for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url"):
-        current = getattr(asset, attr, None)
-        if current and current.startswith("temp-media/"):
-            result = _read_temp_media_bytes(current)
-            if result is None:
-                raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the avatar")
-            pending.append((attr, result[0], result[1]))
+    if asset.asset_url and asset.asset_url.startswith("temp-media/"):
+        result = _read_temp_media_bytes(asset.asset_url)
+        if result is None:
+            raise AvatarSourceUnreadableError(f"temp-media file expired for asset_url: {asset.asset_url} — please regenerate the avatar")
+        new_path, _, _ = await _persist_portrait_bytes(result[0], result[1])
+        asset.asset_url = new_path
+        await db.commit()
+        await db.refresh(asset)
 
-    if not pending:
-        db.expunge(asset)
-        _re_sign_avatar_url(asset)
-        return asset
-
-    for attr, data, content_type in pending:
-        new_path, _, _ = await _persist_portrait_bytes(data, content_type)
-        setattr(asset, attr, new_path)
-
-    await db.commit()
-    await db.refresh(asset)
     db.expunge(asset)
     _re_sign_avatar_url(asset)
     return asset

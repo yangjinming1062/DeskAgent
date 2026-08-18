@@ -13,13 +13,13 @@ from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult, get_effective_fullbody_mode, resolve_provider
-from services.llm import chat, is_preset_species, resolve_fullbody_style
+from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult, resolve_provider
+from services.llm import FullbodyStyle, build_t3d_prompt, chat, enhance_t3d_prompt, is_preset_species, resolve_fullbody_style, resolve_vision_chain
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
-from .avatar_service import resolve_uploaded_avatar_path
+from .avatar_service import load_avatar_bytes_as_data_uri
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
 from .rig_orientation import detect_face_yaw
@@ -122,8 +122,8 @@ def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
         raise ModelProviderNotConfiguredError(str(exc)) from exc
 
 
-def _provider_result_label(provider_name: str, multiview: bool) -> str:
-    return f"{provider_name}_{'multiview' if multiview else 'image'}_to_3d"
+def _provider_result_label(provider_name: str) -> str:
+    return f"{provider_name}_text_to_3d"
 
 
 def _rig_naming_for(rig_type: str) -> str:
@@ -232,36 +232,19 @@ async def generate_companion_model(
         # life must not lock users out of their existing model.
         provider = _resolve_model_provider(provider_override)
 
-        # Resolve seed image paths.
+        # Text-to-3D reads the confirmed avatar (visual anchor of the
+        # appearance extraction) — no seed images anymore.
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        if avatar is None:
-            raise ModelGenerationError("没有找到种子图，请先完成引导流程中的形象生成")
+        if avatar is None or not avatar.asset_url:
+            raise ModelGenerationError("没有找到形象头像，请先完成引导流程中的形象生成")
 
-        front = (avatar.seed_front_url or "").split("/")[-1].split("?")[0]
-        if not front:
-            raise ModelGenerationError("请先完成正面全身图生成再生成模型")
-
-        effective_fullbody_mode = get_effective_fullbody_mode(provider.provider_name)
-        if effective_fullbody_mode == "single":
-            view_filenames = {"front": front}
-        else:
-            right = (avatar.seed_right_url or "").split("/")[-1].split("?")[0]
-            back = (avatar.seed_back_url or "").split("/")[-1].split("?")[0]
-            if not (right and back):
-                raise ModelGenerationError("请先完成全身三视图生成再生成模型")
-            view_filenames = {"front": front, "right": right, "back": back}
-
-        # Style prefers the verdict persisted with the seed assets (the seed
-        # was drawn in it); only regenerate it when the audit marker is
-        # missing so the model can never render a different style than its
-        # seed image was generated in.
-        prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
-        style = prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None
-        if style not in ("anime", "realistic"):
-            has_humanoid_face = None
-            if not is_preset_species(species):
-                has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
-            style = resolve_fullbody_style(species, has_humanoid_face)
+        # Style is resolved once at row creation and persisted on it —
+        # re-classifying later could yield a different verdict and re-create
+        # the style cliff between the model and its wardrobe textures.
+        has_humanoid_face = None
+        if not is_preset_species(species):
+            has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
+        style = resolve_fullbody_style(species, has_humanoid_face)
 
         # The previous active model stays active while this generation runs —
         # only a success claims the active slot. A failed regeneration therefore
@@ -274,43 +257,41 @@ async def generate_companion_model(
 
     # The pipeline runs in the render worker — web never hosts bpy
     # iterations or the long provider poll (ARCHITECTURE.md §10, README §1).
-    await render_queue.enqueue(
-        "model_generate",
-        user_id,
-        {"view_filenames": view_filenames, "species": species, "model_id": model.id, "fullbody_mode": effective_fullbody_mode, "provider": provider.provider_name},
-    )
+    await render_queue.enqueue("model_generate", user_id, {"species": species, "model_id": model.id, "style": style, "provider": provider.provider_name})
     logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
 
 
-async def run_model_gen_pipeline(
-    provider_name: str | None, user_id: int, view_filenames: dict[str, str], species: str, model_id: int, fullbody_mode: str, *, io_dir: Path | None = None
-) -> None:
+async def run_model_gen_pipeline(provider_name: str | None, user_id: int, species: str, model_id: int, style: FullbodyStyle, *, io_dir: Path | None = None) -> None:
     provider: ImageTo3DProvider | None = None
     task_id: str | None = None
     try:
         provider = _resolve_model_provider(provider_name)
-        is_single = fullbody_mode == "single"
 
-        await _emit_progress(user_id, "uploading", 5, provider=provider.provider_name)
+        # Text-to-3D input assembly. Persona/avatar/chains are read inside the
+        # short session — the session never spans an LLM await (README §4) —
+        # and the vision chain is passed explicitly because db=None would
+        # skip vision extraction entirely.
+        async with SESSION_LOCAL() as db:
+            persona = await get_or_create_persona(db, user_id)
+            avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+            if avatar is None or not avatar.asset_url:
+                raise ModelGenerationError("没有找到形象头像，无法构建文生3D提示词")
+            vision_chain = await resolve_vision_chain(db, user_id)
+            image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.asset_url)
 
-        def _seed(view_key: str) -> Path:
-            resolved = resolve_uploaded_avatar_path(view_filenames[view_key])
-            if resolved is None:
-                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
-            return resolved[0]
-
-        # Providers without a multiview endpoint always consume the front seed alone.
-        multiview = None if is_single or not provider.SUPPORTS_MULTIVIEW else {key: _seed(key) for key in ("front", "right", "back")}
-
-        await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
-        job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview)
-        task_id = job.job_id
-        provider_label = _provider_result_label(provider.provider_name, multiview is not None)
-
-        gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
+        await _emit_progress(user_id, "generating", 5, provider=provider.provider_name)
+        structured = await enhance_t3d_prompt(None, user_id, persona, image_data_uri=image_data_uri, vision_chain=vision_chain)
 
         rig_type = await select_rig_type(chat, species, user_id=user_id)  # style lives on the row — only the rig half is classified here
+        prompt = build_t3d_prompt(structured, style, rig_type=rig_type)
+        logger.info("text-to-3d prompt built", extra={"user_id": user_id, "model_id": model_id, "chars": len(prompt)})
+
+        job = await provider.submit_text_to_model(prompt)
+        task_id = job.job_id
+        provider_label = _provider_result_label(provider.provider_name)
+
+        gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
 
         # Persist BEFORE downloading: the generation is already billed. A
         # download failure must never lose the result (task_id + URLs survive

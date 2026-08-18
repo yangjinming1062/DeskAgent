@@ -42,7 +42,7 @@ class RecordingProvider:
         self._outcomes = list(outcomes or [])
         self._poll_url = poll_url
 
-    async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+    async def submit_text_to_model(self, prompt):
         self.submit_calls += 1
         return Model3DJob(job_id="task_paid_1")
 
@@ -122,12 +122,17 @@ async def test_pipeline_connect_error_leaves_recoverable_record(SessionLocal, mo
 
     monkeypatch.setattr(model_service, "select_rig_type", _rig)
 
+    async def _enhance(*_a, **_k):
+        return "黑长直少女，红瞳，白色连衣裙"
+
+    monkeypatch.setattr(model_service, "enhance_t3d_prompt", _enhance)
+
     async with SessionLocal() as db:
         user = User(username=f"dlr_pipe_{uuid.uuid4().hex[:8]}", is_active=True, can_use=True)
         db.add(user)
         await db.flush()
         db.add(Persona(user_id=user.id, definition_json="{}", is_complete=True))
-        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", seed_front_url="companion-avatars/front.png", active=True))
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", active=True))
         model = CompanionModel(user_id=user.id, status="generating", species="人类", style="anime", active=False)
         db.add(model)
         await db.commit()
@@ -138,12 +143,12 @@ async def test_pipeline_connect_error_leaves_recoverable_record(SessionLocal, mo
 
     asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "front.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    (asset_dir / "avatar.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     try:
         with caplog.at_level(logging.INFO, logger="paid_calls"):
-            await model_service.run_model_gen_pipeline("hunyuan", uid, {"front": "front.png"}, "人类", model_id, "single")
+            await model_service.run_model_gen_pipeline("hunyuan", uid, "人类", model_id, "anime")
     finally:
-        (asset_dir / "front.png").unlink(missing_ok=True)
+        (asset_dir / "avatar.png").unlink(missing_ok=True)
 
     assert provider.download_calls == model_service._DOWNLOAD_ATTEMPTS, "auto-retry must exhaust before download_failed"
     row = await _load_model(SessionLocal, model_id)

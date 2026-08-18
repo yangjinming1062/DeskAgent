@@ -2,12 +2,10 @@ import json
 from typing import Any
 
 from components import safe_json_loads
-from modules.companion import AvatarAsset, Persona
+from modules.companion import Persona
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from services.image_to_3d import get_effective_fullbody_mode
 
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
@@ -189,21 +187,8 @@ def _load_draft(persona: Persona) -> dict[str, str]:
     return draft if isinstance(draft, dict) else {}
 
 
-async def _portrait_next_field(db: AsyncSession, user_id: int) -> str:
-    """Map avatar seed state to the portrait sub-stage; single mode skips right/back."""
-    avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-    if avatar is None or not bool(avatar.seed_front_url):
-        return "portrait"
-    # Single mode: stay on front even if stale right/back seeds exist (image-to-model only consumes `front`).
-    if get_effective_fullbody_mode() == "single" or not bool(avatar.seed_right_url):
-        return "portrait-fullbody-front"
-    if not bool(avatar.seed_back_url):
-        return "portrait-fullbody-right"
-    return "portrait-fullbody-back"
-
-
 def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, Any]:
-    return {"answers": answers, "next_field": next_field, "complete": complete, "fullbody_mode": get_effective_fullbody_mode()}
+    return {"answers": answers, "next_field": next_field, "complete": complete}
 
 
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
@@ -211,10 +196,8 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
 
     ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
     ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
-    ``fullbody_mode`` is included so the desktop knows whether to show the side/back phases.
-    Fullbody subject-reference resolution is no longer exposed via this
-    payload — it uses an implicit three-tier fallback (upload → bust → none)
-    server-side; the client just supplies ``reference_image`` when it has one.
+    An unconfirmed portrait always resumes at ``"portrait"`` (avatar
+    confirmation) — the fullbody sub-stages are gone with the seed pipeline.
     """
     persona = await get_or_create_persona(db, user_id)
     if persona.is_complete:
@@ -222,7 +205,7 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
         user_profile = await read_user_profile(db, user_id)
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
-            return _state(merged, await _portrait_next_field(db, user_id), False)
+            return _state(merged, "portrait", False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
@@ -234,7 +217,7 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
     missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
     if missing_character is not None:
         return _state(draft, missing_character, False)
-    return _state(draft, await _portrait_next_field(db, user_id), False)
+    return _state(draft, "portrait", False)
 
 
 async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, value: str | None) -> dict[str, Any]:

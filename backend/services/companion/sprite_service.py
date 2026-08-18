@@ -390,11 +390,9 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
                 )
             avatar_id = asset.id
             # Sprite is a user-visible static-fallback fullbody image and stays
-            # in the realistic identity-anchor tier — anchor it on the bust
-            # avatar, not on the seed (which is now an anime / cel-shading
-            # internal-only image). ``seed_front_url`` remains a fallback for
-            # the rare case where the bust is missing (e.g. mid-onboarding).
-            subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url) or load_avatar_bytes_as_data_uri(asset.seed_front_url)
+            # in the realistic identity-anchor tier — anchored on the bust
+            # avatar so sprite and avatar keep the same visual identity.
+            subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
 
         if entries and (hit := await _match_album(None, user_id, entries, request_text)):
             return hit, False
@@ -413,7 +411,7 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
                 return hit, False
         avatar_id = asset.id
         # See note above: bust is the sprite's identity anchor.
-        subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url) or load_avatar_bytes_as_data_uri(asset.seed_front_url)
+        subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
 
     if subject_ref is None:
         raise SpriteSeedMissingError("形象种子图不可读，请重新确认形象")

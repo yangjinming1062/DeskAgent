@@ -1,6 +1,5 @@
 import json
 import re
-from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from components import get_logger, parse_llm_json, safe_json_loads
@@ -44,55 +43,16 @@ _AVATAR_SYSTEM_PROMPT = (
 
 FullbodyStyle = Literal["anime", "realistic"]
 
-
-@dataclass(frozen=True)
-class FullbodyTemplate:
-    front_features: str
-    right_features: str
-    back_features: str
-    pose: str
-    flavor: str = ""
-    rig_type: str = "biped"
-    style: FullbodyStyle = "anime"
-
-
-# ── 共用规则后缀（完整性 + 背景光线 + 画风，不含 pose）──
-# Integration-tested: Chinese-only structural prompts score highest across
-# MiniMax image-01, Gemini, and Grok.  No character description in the text
-# prompt — subject_reference carries 100% of identity.  Avoid "wide shot"
-# (→ top-down camera), "portrait of" (→ bust-only rendering), and
-# "photorealistic" — these bias providers toward photorealistic output.
-# Style is routed by humanoid face: anime for human-faced companions (the
-# product's primary style carrier — realistic humans land in the uncanny
-# valley after Tripo3D reconstruction), realistic for non-human creatures
-# (pets / beasts / mecha) with no uncanny-valley problem.  The anime-biped
-# variant is deliberately "figurine CGI" rather than flat cel illustration:
-# Tripo's image-to-3D pass needs volumetric / normal cues in the seed to
-# lift a 2D anime style into clean 3D geometry.
-_FULLBODY_SHARED_RULES: dict[tuple[FullbodyStyle, str], str] = {
-    ("anime", "biped"): (
-        "从头到脚完整可见，平视角度拍摄。纯白背景，均匀专业棚拍布光。"
-        "3D日系二次元手办风格，原神/崩铁级CGI渲染质感，精致二次元面部与立体发束，"
-        "清晰的三维体积与结构轮廓，柔和次表面散射，光滑材质，8K超清。"
-    ),
-    ("anime", "non_biped"): (
-        "从头到尾（或尾尖）完整可见，平视角度拍摄。纯白背景，均匀打光。"
-        "二次元动漫立绘（anime / cel-shading illustration），"
-        "半写实卡通渲染风格，柔和色阶过渡（soft cel shading），"
-        "体表呈现该物种特征纹理（毛皮 / 羽毛 / 鳞片 / 几丁质外壳），"
-        "整体保持角色立绘的简洁明快质感。"
-    ),
-    ("realistic", "biped"): "从头到脚完整可见，平视角度拍摄。纯白背景，均匀打光。写实风格，8K高清。",
-    ("realistic", "non_biped"): "从头到尾（或尾尖）完整可见，平视角度拍摄。纯白背景，均匀打光。写实风格，8K高清。",
-}
-
 # Preset species carry the style outright; custom species are routed by the
 # LLM humanoid-face verdict (see ``rig_type_selector.classify_species``).
 _SPECIES_STYLE: dict[str, FullbodyStyle] = {"人类": "anime", "精灵": "anime", "机甲": "realistic", "灵兽": "realistic", "幻形": "realistic"}
 
+# Rig-preset species — fixed body plans, no LLM rig classification needed.
+_PRESET_SPECIES: frozenset[str] = frozenset({"人类", "精灵", "机甲"})
+
 
 def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) -> FullbodyStyle:
-    """Resolve the seed-image style for a species.
+    """Resolve the 3D style route for a species.
 
     ``has_humanoid_face=None`` means the classifier didn't run — custom
     companions are predominantly humanoid and anime is the primary style
@@ -104,177 +64,9 @@ def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) 
     return "realistic" if has_humanoid_face is False else "anime"
 
 
-def _select_shared_rules(rig_type: str, style: FullbodyStyle) -> str:
-    return _FULLBODY_SHARED_RULES[(style, "biped" if rig_type == "biped" else "non_biped")]
-
-
-# A-pose preserved — Tripo3D + Mixamo auto-rigging rely on a symmetric,
-# clearly-separated skeleton. Clothing constraint retained: in anime style
-# the model will otherwise freely paint a long dress and break the PBR
-# wardrobe swap pipeline. The "every body part visible" enumeration is
-# softened (it reads as "fully nude" to providers and triggers moderation);
-# the long-coverage ban stays as-is. Outfit color pinned: each view is an
-# independent image-gen call sharing only the subject reference (which wears
-# the persona outfit, not the seed garment), so an unpinned color drifts per
-# call (white front, black side). Dark gray also survives the pure-white
-# chroma-key background.
-_BIPED_A_POSE = (
-    "标准A-pose站姿，双臂向两侧微张约30度（肩、肘、腕清晰分离，便于下游骨骼自动识别），"
-    "双脚分开与肩同宽。"
-    "穿着最小覆盖的深灰色运动内衣+深灰色运动短裤，躯干与四肢皮肤充分暴露，"
-    "便于后期 PBR 换装保留完整 albedo —— 禁止覆盖躯干或四肢皮肤的大面积服装"
-    "（长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等）。"
-)
-
-# ── 预设物种模板 ───────────────────────────────────────────────────
-# 每个 view 的 features 只承载影响 3D 绑骨的结构性要求（该视角下哪些部位
-# 必须完整可见、轮廓清晰、不被遮挡），不描述角色身体本身——角色长什么样
-# 由 beautified avatar_prompt + 参考图决定，系统不替用户想象。
-# 人类/精灵 share identical rigging-focused views (front/right/back);
-# only 机甲 has distinct mechanical-joint language.
-_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
-    front_features="", right_features="右侧面（90°转体）。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE, rig_type="biped"
-)
-_SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
-    "人类": _BIPED_HUMANOID_TEMPLATE,
-    "精灵": _BIPED_HUMANOID_TEMPLATE,
-    "机甲": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°转体），机体侧面轮廓清晰。",
-        back_features="背面（180°转身），看不到面部。",
-        pose=_BIPED_A_POSE,
-        rig_type="biped",
-        style="realistic",
-    ),
-}
-
-# ── 物种氛围修饰（用于 rig type 不确定的预设标签）──
-_SPECIES_FLAVOR: dict[str, str] = {
-    "灵兽": "角色散发灵气与神秘气场，身上可能有发光纹路、灵力标记或神秘图腾。",
-    "幻形": "角色呈现虚幻、流变的气质，身体边缘可能有半透明、发光或粒子消散效果。",
-}
-
-# ── 7 种骨骼类型通用模板 ──
-# features 只描述该视角下影响绑骨的结构可见性（完整、不遮挡、分节/关节
-# 清晰），不描述角色身体外观。角色外观由 avatar_prompt + 参考图提供。
-_RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
-    "biped": _SPECIES_TEMPLATES["人类"],
-    "quadruped": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），四肢与尾巴侧面轮廓清晰。",
-        back_features="背面（180°转身），看不到面部。",
-        pose="四足自然直立站立，四腿分开；脊椎水平，头抬起；尾巴自然下垂。",
-        rig_type="quadruped",
-    ),
-    "avian": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），翅膀侧面轮廓清晰。",
-        back_features="背面（180°转身），看不到面部。",
-        pose="双足直立站立，双翼向两侧半展约30-45度；身体朝前。",
-        rig_type="avian",
-    ),
-    "serpentine": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），躯体侧面曲线清晰。",
-        back_features="背面，脊背纹理连贯至尾尖。",
-        pose="身体水平自然伸展或S形蜿蜒，全身完整可见；头部抬起。",
-        rig_type="serpentine",
-    ),
-    "aquatic": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），各鳍形态清晰。",
-        back_features="背面，背鳍与尾鳍形态清晰。",
-        pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。",
-        rig_type="aquatic",
-    ),
-    "hexapod": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），六足排列清晰。",
-        back_features="背面，背甲纹理清晰。",
-        pose="六足自然直立站立，六腿对称分开；各体段完整可见。",
-        rig_type="hexapod",
-    ),
-    "octopod": FullbodyTemplate(
-        front_features="",
-        right_features="右侧面（90°），步足排列清晰。",
-        back_features="背面，背甲轮廓清晰。",
-        pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。",
-        rig_type="octopod",
-    ),
-}
-
-
 def is_preset_species(species: str) -> bool:
-    """True if the species has a dedicated fullbody template (no rig-type classification needed)."""
-    return species in _SPECIES_TEMPLATES
-
-
-def resolve_fullbody_template(species: str, rig_type: str = "biped", style: FullbodyStyle | None = None) -> FullbodyTemplate:
-    """Resolve a complete fullbody template.
-
-    Preset species (人类/精灵/机甲) return their rich per-species template directly.
-    Other species use the rig-type template, with optional atmospheric flavor overlaid
-    via ``dataclasses.replace`` so the result is a single self-contained template.
-    ``style`` defaults to ``resolve_fullbody_style(species)``; an explicit pass
-    (e.g. the classifier verdict) reconciles via replace so template defaults
-    never override the routed style.
-    """
-    resolved_style = style if style is not None else resolve_fullbody_style(species)
-    if species in _SPECIES_TEMPLATES:
-        template = _SPECIES_TEMPLATES[species]
-    else:
-        flavor = _SPECIES_FLAVOR.get(species, "")
-        template = _RIG_TYPE_TEMPLATES.get(rig_type, _RIG_TYPE_TEMPLATES["biped"])
-        if flavor:
-            template = replace(template, flavor=flavor)
-    return template if template.style == resolved_style else replace(template, style=resolved_style)
-
-
-_VIEW_PREFIX = {"front": "正面全身角色立绘", "right": "右侧面全身角色立绘", "back": "背面全身角色立绘"}
-
-
-def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: str | None = None, avatar_prompt: str = "") -> str:
-    """直接构造 image-gen prompt — 无 LLM 翻译。
-
-    Integration-tested through 5 rounds of A/B testing with MiniMax image-01,
-    Grok, and Gemini:
-
-    1. **No character description in the text prompt.** Any character
-       description — even "一位黑色长发年轻女性" — causes MiniMax to
-       default to bust-portrait rendering (body score drops from 9 to 1-2).
-       subject_reference carries 100% of the character's visual identity.
-       The full-body seed's face is intentionally AI-reinvented based on the
-       persona + reference image — it does NOT need to match the bust
-       avatar (which stays photorealistic; see ``_AVATAR_SYSTEM_PROMPT``).
-
-    2. **Chinese-only, pure structural.** Chinese consistently outperformed
-       English (total 28-34 vs 18-29).  Avoid "wide shot" (→ top-down camera)
-       and "portrait of" (→ bust-only rendering).
-
-    3. **View framing first.** "正面全身角色立绘" as the opening phrase
-       prevents the model from interpreting the prompt as a portrait request.
-
-    4. **Style is routed by humanoid face.** ``_select_shared_rules`` keys the
-       style × rig matrix: anime figurine CGI for human-faced bipeds, realistic
-       for non-human creatures. Never write "photorealistic" into the anime
-       branch — it drags providers back into the uncanny valley.
-
-    5. **Pose preserved as A-pose for bipeds.** Tripo3D + Mixamo auto-rigging
-       rely on a symmetric skeleton. Non-biped rigs use their own pose
-       strings. See ``_RIG_TYPE_TEMPLATES``.
-
-    ``avatar_prompt`` is accepted but intentionally unused (kept for API
-    stability; the vision-LLM description is no longer injected into the
-    image-gen prompt).
-    """
-    features = getattr(template, f"{view}_features")
-    shared_rules = _select_shared_rules(template.rig_type, template.style)
-    prompt = f"{_VIEW_PREFIX[view]}，{template.pose}{features}{shared_rules}"
-    if template.flavor:
-        prompt += template.flavor
-    if feedback and feedback.strip():
-        prompt += f"（用户反馈：{feedback.strip()}）"
-    return prompt
+    """True if the species has a fixed body plan (no rig-type classification needed)."""
+    return species in _PRESET_SPECIES
 
 
 # ── 文生3D（text-to-3D）提示词 ─────────────────────────────────────────

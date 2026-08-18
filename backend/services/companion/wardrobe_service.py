@@ -120,8 +120,8 @@ async def check_and_recover_missing_texture(user_id: int, item: WardrobeItem) ->
         async with SESSION_LOCAL() as db:
             avatar = await get_active_avatar(db, user_id)
             ref_uri = None
-            if avatar and avatar.seed_front_url:
-                ref_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_url)
+            if avatar and avatar.asset_url:
+                ref_uri = load_avatar_bytes_as_data_uri(avatar.asset_url)
             rig_type = await _resolve_rig_type(db, user_id)
             style = await _resolve_style(db, user_id)
 
@@ -463,10 +463,10 @@ async def preview_garment(
     if model is None or not model.asset_url:
         raise RuntimeError("没有找到 3D 身体模型，请先生成身体模型")
     avatar = await get_active_avatar(db, user_id)
-    if avatar is None or not avatar.seed_front_url:
-        raise RuntimeError("没有找到种子图，无法为 LLM 提供身体参考")
+    if avatar is None or not avatar.asset_url:
+        raise RuntimeError("没有找到形象参考，无法为 LLM 提供身体参考")
     body_glb_bytes, body_preview_uri = await asyncio.gather(
-        asyncio.to_thread(_read_model_bytes, model.asset_url), asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.seed_front_url)
+        asyncio.to_thread(_read_model_bytes, model.asset_url), asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.asset_url)
     )
 
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None

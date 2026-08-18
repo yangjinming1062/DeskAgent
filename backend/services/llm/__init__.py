@@ -17,10 +17,8 @@ from .llm_fallback import execute_with_fallback
 from .llm_retry import LLMRuntimeError, call_with_retry
 from .prompt_engineer import (
     FullbodyStyle,
-    FullbodyTemplate,
     T3DAppearance,
     T3dWording,
-    build_fullbody_prompt,
     build_t3d_prompt,
     build_texture_prompt,
     call_llm_once,
@@ -29,7 +27,6 @@ from .prompt_engineer import (
     enhance_t3d_prompt,
     is_preset_species,
     resolve_fullbody_style,
-    resolve_fullbody_template,
     strip_think_blocks,
 )
 from .providers import (
@@ -78,7 +75,6 @@ __all__ = [
     "EmbeddingProvider",
     "FailoverReason",
     "FullbodyStyle",
-    "FullbodyTemplate",
     "ImageAsset",
     "ImageGenProvider",
     "ImageGenRequest",
@@ -106,7 +102,6 @@ __all__ = [
     "VoiceDesignResult",
     "VoiceEntry",
     "aclose_all",
-    "build_fullbody_prompt",
     "build_t3d_prompt",
     "build_texture_prompt",
     "call_llm_once",
@@ -135,7 +130,6 @@ __all__ = [
     "resolve",
     "resolve_context_tokens",
     "resolve_fullbody_style",
-    "resolve_fullbody_template",
     "resolve_provider_chain",
     "resolve_provider_config",
     "resolve_service_row",

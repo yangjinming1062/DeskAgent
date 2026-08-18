@@ -54,26 +54,3 @@ def resolve_provider(name: str | None = None) -> ImageTo3DProvider:
         raise ImageTo3DError(f"图生3D供应商 {provider_name} 未配置 API key（config.toml [image_to_3d] 段或 {provider_name.upper()}_API_KEY）")
 
     return cls(api_key=api_key, base_url=base_url)
-
-
-def get_effective_fullbody_mode(provider_name: str | None = None) -> str:
-    """Resolve whether onboarding/avatar generation should use 'single' or 'multi' fullbody mode.
-
-    Optimization: If SETTINGS.fullbody_mode is configured as 'multi', but the
-    current active image-to-3D provider does not support multi-view input
-    (SUPPORTS_MULTIVIEW is False), automatically fall back to 'single'
-    to avoid generating redundant side and back reference images.
-    """
-    configured_mode = SETTINGS.fullbody_mode
-    if configured_mode == "single":
-        return "single"
-
-    target_provider = (provider_name or SETTINGS.image_to_3d_provider or "tripo").strip().lower()
-    try:
-        provider_cls = get_provider_class(target_provider)
-        if not getattr(provider_cls, "SUPPORTS_MULTIVIEW", False):
-            return "single"
-        return "multi"
-    except Exception:  # noqa: BLE001
-        # If provider lookup fails or is unknown, safely fall back to single mode
-        return "single"

@@ -297,27 +297,6 @@ def _default_image_to_3d_settings(monkeypatch):
     monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
 
 
-@pytest.fixture
-def set_fullbody_mode(monkeypatch) -> "Callable[[str], None]":
-    """Patch ``SETTINGS.fullbody_mode`` for the duration of the test.
-
-    Encapsulates the ``from components import SETTINGS; monkeypatch.setattr(...)``
-    boilerplate that mode-sensitive tests used to repeat. The mode is
-    restored to the production default after the test.
-    """
-    from components import SETTINGS
-
-    def _set(mode: str) -> None:
-        monkeypatch.setattr(SETTINGS, "fullbody_mode", mode)
-        if mode == "multi":
-            monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
-
-    # Snapshot the production default at setup time so the fixture stays
-    # correct if the documented default ever changes from "single" to "multi".
-    _set(SETTINGS.fullbody_mode)
-    return _set
-
-
 # ── E2E test auto-skip ──────────────────────────────────────────────
 
 
