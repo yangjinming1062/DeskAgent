@@ -36,7 +36,7 @@ import { registerOnboardingAudioIpc } from './ipc/onboarding-audio'
 import { autoStartBridge, autoStopBridge, registerRunnerIpc } from './ipc/runner'
 import { registerRunnerConfigIpc } from './ipc/runner-config'
 import { registerSkillsIpc } from './ipc/skills'
-import { registerSpriteIpc } from './ipc/sprite'
+import { readRestPosition, registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
 import { registerTitlebarIpc } from './ipc/titlebar'
 import { registerUpdateIpc } from './ipc/update'
@@ -1302,12 +1302,19 @@ function createToolWindow(): void {
 
 const SPRITE_TRANSPARENT = !REMOTE_DISPLAY_REASON
 
-function applySpriteBounds(): void {
+function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
   }
 
-  mainWindow.setBounds(screen.getPrimaryDisplay().workArea)
+  // Stick to the display the window currently overlaps (or the one containing
+  // preferredOrigin at launch) instead of always snapping back to the primary —
+  // the sprite must stay reachable on whatever monitor the user dragged it to.
+  // getDisplayMatching falls back to the nearest display when it was unplugged.
+  const base = preferredOrigin
+    ? { height: 1, width: 1, x: preferredOrigin.x, y: preferredOrigin.y }
+    : mainWindow.getBounds()
+  mainWindow.setBounds(screen.getDisplayMatching(base).workArea)
 }
 
 function createSpriteWindow(): void {
@@ -1336,7 +1343,7 @@ function createSpriteWindow(): void {
     width: 480
   })
 
-  applySpriteBounds()
+  applySpriteBounds(readRestPosition(app.getPath('userData'))?.origin)
   mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
 
   // macOS gets the 'screen-saver' z-band (sits above the floating window level and beats games using exclusive fullscreen); Win/Linux fall back to 'floating'. Windows exclusive fullscreen bypasses DWM entirely — companion cannot overlay those; documented limitation.
@@ -1352,7 +1359,7 @@ function createSpriteWindow(): void {
 
   if (!spriteBoundsListenerInstalled) {
     spriteBoundsListenerInstalled = true
-    screen.on('display-metrics-changed', applySpriteBounds)
+    screen.on('display-metrics-changed', () => applySpriteBounds())
   }
 
   installStandardWindowHandlers(mainWindow)
@@ -1542,7 +1549,7 @@ registerUpdateIpc({
 })
 
 registerSpriteIpc({
-  deps: { getSpriteWindow: () => mainWindow, getUserDataDir: () => app.getPath('userData') },
+  deps: { getSpriteWindow: () => mainWindow, getUserDataDir: () => app.getPath('userData'), screen },
   ipcMain
 })
 

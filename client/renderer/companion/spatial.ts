@@ -703,6 +703,12 @@ export function initSpatial(): () => void {
   const onResize = () => {
     $viewport.set({ width: window.innerWidth, height: window.innerHeight })
 
+    // A display handoff mid-drag also fires resize with the new display's viewport —
+    // re-deriving home/locale here would yank the sprite out from under the cursor.
+    if ($spatialLocomotion.get() === 'drag') {
+      return
+    }
+
     const home = $homePosition.get()
     const w = getBaseSpriteWidth()
     const h = getBaseSpriteHeight()

@@ -28,6 +28,10 @@ interface SpriteStageProps {
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
 
+// Pointer capture keeps delivering coordinates past the viewport edge once the cursor
+// crosses onto another display; probe main at most this often for a display handoff.
+const DISPLAY_SWITCH_PROBE_MS = 200
+
 const SPRITE_REGION_ID = 'sprite-stage'
 
 export function SpriteStage({
@@ -62,6 +66,7 @@ export function SpriteStage({
   const pendingPosRef = useRef<{ x: number; y: number } | null>(null)
   const pendingVelRef = useRef<{ vx: number; vy: number } | null>(null)
   const dragRafRef = useRef<number | null>(null)
+  const displayProbeAtRef = useRef(0)
 
   // 0-delay unignore on capture: setIgnoreMouseEvents(true, { forward: true }) does NOT forward mousedown/contextmenu to the renderer, so the window must be ungnored BEFORE the click arrives — mousemove is the only signal that reaches us.
   const captureImmediate = useCallback(() => {
@@ -187,6 +192,41 @@ export function SpriteStage({
     }
   }, [capture, release])
 
+  // The sprite window lives on a single display; moving the sprite to another monitor
+  // means moving the window. Main snaps it onto the cursor's display and returns both
+  // window origins — shift the drag frame by the delta so the sprite stays glued to
+  // the cursor across the switch instead of jumping.
+  const probeDisplaySwitch = useCallback((): void => {
+    const now = performance.now()
+
+    if (now - displayProbeAtRef.current < DISPLAY_SWITCH_PROBE_MS) {
+      return
+    }
+
+    displayProbeAtRef.current = now
+
+    void window.spiritagent.sprite
+      .moveToCursorDisplay()
+      .then(switched => {
+        const d = dragRef.current
+
+        if (!switched || !d || !d.moved) {
+          return
+        }
+
+        const dx = switched.from.x - switched.to.x
+        const dy = switched.from.y - switched.to.y
+        d.startX += dx
+        d.startY += dy
+        d.lastX += dx
+        d.lastY += dy
+
+        const p = $spatialPos.get()
+        updateDragPosition({ x: p.x + dx, y: p.y + dy })
+      })
+      .catch(() => {})
+  }, [])
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     lastPointRef.current = { x: e.clientX, y: e.clientY }
 
@@ -230,6 +270,10 @@ export function SpriteStage({
     }
 
     if (d.moved) {
+      if (e.clientX < 0 || e.clientX > window.innerWidth || e.clientY < 0 || e.clientY > window.innerHeight) {
+        probeDisplaySwitch()
+      }
+
       const now = performance.now()
       const dt = Math.max(1, now - d.lastTime)
       const vx = (e.clientX - d.lastX) / dt

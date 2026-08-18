@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   sprite: {
     getPosition: () => ipcRenderer.invoke('spiritagent:sprite:get-position'),
+    moveToCursorDisplay: () => ipcRenderer.invoke('spiritagent:sprite:move-to-cursor-display'),
     setAlwaysOnTop: (payload: { on: boolean }) => ipcRenderer.invoke('spiritagent:sprite:set-always-on-top', payload),
     setIgnoreMouseEvents: (payload: { forward?: boolean; ignore: boolean }) =>
       ipcRenderer.invoke('spiritagent:sprite:set-ignore-mouse-events', payload),

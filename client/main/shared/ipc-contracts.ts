@@ -291,8 +291,15 @@ export interface IpcInvokeContract {
     ignore: boolean
   }) => Promise<void> | void
   'spiritagent:sprite:set-always-on-top': (payload: { on: boolean }) => Promise<void> | void
-  'spiritagent:sprite:get-position': () => null | { x: number; y: number } | Promise<null | { x: number; y: number }>
+  'spiritagent:sprite:get-position': () =>
+    | null
+    | { origin?: { x: number; y: number }; x: number; y: number }
+    | Promise<null | { origin?: { x: number; y: number }; x: number; y: number }>
   'spiritagent:sprite:set-position': (payload: { x: number; y: number }) => Promise<void> | void
+  'spiritagent:sprite:move-to-cursor-display': () =>
+    | null
+    | { from: { x: number; y: number }; to: { x: number; y: number } }
+    | Promise<null | { from: { x: number; y: number }; to: { x: number; y: number } }>
 
   // Update
   'spiritagent:update:check': () => Promise<void> | void
