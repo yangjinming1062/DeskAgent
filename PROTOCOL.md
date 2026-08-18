@@ -16,11 +16,11 @@
 **信封四种形态**（JSON-RPC 2.0）：请求（带 id + method + params）、事件（无 id、method=event、带 type + payload + seq，不可被响应）、响应（带 id + result 或 error）、ACK（带 method=session.ack、params={seq: int}）。
 
 **核心约定**：
-- call_id 是整张表的**唯一 Future Key**——Backend 按 (user_id, call_id) 寻址，跨用户不共享。
+- call_id 是整张表的**唯一 Future Key**——后端按 (user_id, call_id) 寻址，跨用户不共享。
 - 事件无 id，不可被响应；请求与响应必须按 id 配对。
 - 所有下发事件均附加递增序列号 `seq`（从 1 开始）；序列号与客户端 `lastReceivedSeq` 均为**连接级（Connection/User 级）**状态，跨 Session 共享。客户端维护 `lastReceivedSeq` 保证去重与有序消费。
-- 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度（带 id 的标准 RPC 请求），服务端自 Replay Buffer 中修剪已确认帧。
-- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后 Backend 保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时、溢出或服务端重启导致序列号失同步，则返回 `resumed: false`、当前最大 `current_seq` 与完整 DB 历史进行全量重水化。重连且收到 `resumed: false`（或降级走 `session.get_main`）时，客户端**必须**重置 `lastReceivedSeq = current_seq` 以防旧水位导致事件黑洞；普通会话切换（活连接上）严禁重置水位。
+- 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度（带 id 的标准 RPC 请求），服务端自重放缓冲中修剪已确认帧。
+- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后后端保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时、溢出或服务端重启导致序列号失同步，则返回 `resumed: false`、当前最大 `current_seq` 与完整 DB 历史进行全量重水化。重连且收到 `resumed: false`（或降级走 `session.get_main`）时，客户端**必须**重置 `lastReceivedSeq = current_seq` 以防旧水位导致事件黑洞；普通会话切换（活连接上）严禁重置水位。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不再尝试。
 
 ---
@@ -29,7 +29,7 @@
 
 ### 1.1 通道分工（WS vs REST 路由原则）
 
-Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套通道的**设计意图不同**——选错通道等于把一类语义错配到不属于它的链路：
+后端与客户端同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套通道的**设计意图不同**——选错通道等于把一类语义错配到不属于它的链路：
 
 | | WS（JSON-RPC） | REST |
 |---|---|---|
@@ -42,7 +42,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 ### 1.2 伙伴生命周期方法（方法级契约）
 
-普通 chat / tool 类方法见 [backend/README.md](backend/README.md)。以下是**伙伴生命周期**专用方法，Client 必须实现消费状态机（详见 [DESIGN.md §5–§6](DESIGN.md)）。**逐参数签名见 backend 代码，本文只锁定契约意图与「改这里要同步哪里」：**
+普通 chat / tool 类方法见 [backend/README.md](backend/README.md)。以下是**伙伴生命周期**专用方法，客户端必须实现消费状态机（详见 [DESIGN.md §5–§6](DESIGN.md)）。**逐参数签名见 backend 代码，本文只锁定契约意图与「改这里要同步哪里」：**
 
 | 方法 | 用途 | 改动需同步的模块 |
 |------|------|------------------|
@@ -53,7 +53,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认形象（幂等），解开音色/用户子阶段 | Backend 状态 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（文生3D：视觉 LLM 读头像 + 角色设定构建提示词，无种子图） | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
-| companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（provider query 刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
+| companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（供应商查询接口刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
@@ -63,7 +63,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在形象确认且音色 + 用户信息齐后才算完成；未确认形象时回到头像确认步恢复，确认后按音色先于用户信息路由。
 - **形象锁定**：头像确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭；换装与动画生成不受影响。
 - **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
-- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，provider task id 与下载 URL 已持久化；下载或本地后处理失败只置 `download_failed` 并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调 provider 查询与下载接口，服务重启中断的下载同样进入该可恢复态。
+- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，供应商task_id 与下载 URL 已持久化；下载或本地后处理失败只置下载失败态并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调供应商查询与下载接口，服务重启中断的下载同样进入该可恢复态。
 
 ### 1.3 事件类型
 
@@ -84,21 +84,21 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 **语义/渲染解耦**——Backend 只产出情绪 + 可选场所语义，绝不指定渲染方式或像素坐标。
 
-**emotion 枚举**（22 项，权威源 backend/services/chat/affect.py 的 BUILTIN_EMOTIONS）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral / pout / angry / smug / scared / relieved。
+**emotion 枚举**（22 项，权威源 backend/services/chat/affect.py）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral / pout / angry / smug / scared / relieved。
 
-**locale 枚举**（5 项，权威源 ALLOWED_LOCALES）：home / chat / perch / roam / sleep。
+**locale 枚举**（5 项，权威源在后端白名单）：home / chat / perch / roam / sleep。
 
-**spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。Client 经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
+**spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。客户端经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
 
-**inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。Backend 解析后下发，Client 决定是否落位（档位门控 + 对话开启抑制）。
+**inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（档位门控 + 对话开启抑制）。
 
-**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），Backend 在提示词中注入可用清单（内置 procedural clip + 模型生成 clip 的并集），解析后经 message.complete 的 affect.action 字段下发，Client 按名称/标签匹配 clip、失败回退到 emotion valence。LLM 找不到合适动作时可调用 create_animation 工具实时生成新 clip 并落库。
+**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），后端在提示词中注入可用清单（内置 procedural clip + 模型生成 clip 的并集），解析后经 message.complete 的 affect.action 字段下发，客户端按名称/标签匹配 clip、失败回退到 emotion valence。LLM 找不到合适动作时可调用 create_animation 工具实时生成新 clip 并落库。
 
-**表情的渲染分工**：情绪驱动两处渲染——3D 面部仅保留眨眼与 TTS 口型，情绪的面部表达由 Client 经表情头像端点换图实现（聊天窗左栏头像）。LLM 找不到合适情绪时可调用 create_expression 工具注册自创情绪 token（description 必填、兼任头像生成语义、icon 可选），注册后 token 并入情绪白名单、后台预热生成头像图。
+**表情的渲染分工**：情绪驱动两处渲染——3D 面部仅保留眨眼与 TTS 口型，情绪的面部表达由客户端经表情头像端点换图实现（聊天窗左栏头像）。LLM 找不到合适情绪时可调用 create_expression 工具注册自创情绪 token（description 必填、兼任头像生成语义、icon 可选），注册后 token 并入情绪白名单、后台预热生成头像图。
 
 **连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **Backend 白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。
 
 ### 1.5 资产 URL 签名与传输缓存
 
@@ -110,13 +110,13 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | 静态精灵相册 PNG | 5 分钟 |
 | 表情头像 PNG | 5 分钟 |
 
-**表情头像缓存键**为 (user, 情绪 token, avatar_id)——头像重生后旧行成为陈旧身份、按未命中重新生成；行/文件丢失同样视为未命中（缓存允许丢失，丢失后重生成）。与相册相同的 match-or-generate 语义，但按 token 精确匹配（无 LLM 语义匹配调用）。
+**表情头像缓存键**为 (用户, 情绪 token, 头像)——头像重生后旧行成为陈旧身份、按未命中重新生成；行/文件丢失同样视为未命中（缓存允许丢失，丢失后重生成）。与相册相同的 match-or-generate 语义，但按 token 精确匹配（无 LLM 语义匹配调用）。
 
 **契约要点**：资产端点支持双通道鉴权——已登录 Client 携带有效 Bearer JWT 时可直接访问归属资产；未携带令牌时按 URL HMAC 签名校验（每次签名 5 分钟 TTL，换设备/过期需重新签名）。服务端模型/资产端点支持 HTTP Range 断点续传 + ETag + 不可变缓存头；Client 按内容哈希（SHA-256）在本地磁盘缓存，命中即跳过网络，未命中/中断走断点续传。
 
 ### 1.6 错误信封
 
-REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；21 种分类（FailoverReason）决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何 provider 失败不再 fallback。
+REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何供应商失败不再 fallback。
 
 ### 1.7 换装单元装配契约
 
@@ -132,7 +132,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.8 Render job 状态机（换装预览）
 
-分钟级生成任务分两段：web 进程入队（同步、毫秒级），Render Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的文生3D provider 管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
+分钟级生成任务分两段：后端 web 进程入队（同步、毫秒级），渲染 Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的文生3D 供应商管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
 
 ---
 
@@ -140,9 +140,9 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 2.1 链路与鉴权
 
-- Runner **主动**连 Client 提供的 IPC 端点（Windows 命名管道 / macOS UDS，权限 0600）。
-- 端点路径与 token 由 Client **单向下发**（启动参数 + 落盘文件）；Runner 重连间重读文件以在 Client 重启后拾取新端点与新 token。
-- 启动后发 runner_ready 握手通知；鉴权走 upgrade 头，校验失败 Client 回 401、不完成握手；Runner 收到 401 后丢弃内存缓存端点与 token、等待重读文件。token 为每次启动新生成的 256-bit 随机值，**不是 Backend 凭据**。
+- Runner **主动**连客户端提供的 IPC 端点（Windows 命名管道 / macOS UDS，权限 0600）。
+- 端点路径与 token 由客户端**单向下发**（启动参数 + 落盘文件）；Runner 重连间重读文件以在客户端重启后拾取新端点与新 token。
+- 启动后发 runner_ready 握手通知；鉴权走 upgrade 头，校验失败客户端回 401、不完成握手；Runner 收到 401 后丢弃内存缓存端点与 token、等待重读文件。token 为每次启动新生成的 256-bit 随机值，**不是 Backend 凭据**。
 - 安全模型：Windows 命名管道命名空间对本机进程可枚举、且无自定义 DACL 接口——token 是实际闸门；macOS 侧 0600 socket 为主闸门、token 为纵深防御。OS IPC 不经网络栈，无端口监听面。
 
 ### 2.2 RPC 方法清单
@@ -161,17 +161,17 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 2.3 runner_ready capabilities 与 health 状态
 
-capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `spiritagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由 Client 优雅降级或提供具体故障原因 Tooltip 引导。
+capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `spiritagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由客户端优雅降级或提供具体故障原因 Tooltip 引导。
 
 ### 2.4 配置推送所有权
 
-**Client 是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 持有在内存、每次工具调用读取——**不再读写磁盘配置文件**。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，Client 在下次 runner_ready 时重新推送。Client 把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
+**客户端是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 持有在内存、每次工具调用读取——**不再读写磁盘配置文件**。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。客户端把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
 
 ---
 
 ## 3. 反向 RPC 桥接（Runner 借大脑）
 
-**核心约束**：Runner **零凭证运行**，不持有任何 Backend Token；所有出站 LLM 请求必须向上借道 Client。本地 IPC 链路的握手 token 只守 Client↔Runner 之间，不是 Backend 凭据，不参与任何 Backend 请求的鉴权。
+**核心约束**：Runner **零凭证运行**，不持有任何后端 Token；所有出站 LLM 请求必须向上借道客户端。本地 IPC 链路的握手 token 只守 Client↔Runner 之间，不是 Backend 凭据，不参与任何 Backend 请求的鉴权。
 
 **链路**：Runner ──(本地 WS: request_llm)──> Client ──(HTTP POST: /api/llm/completion)──> Backend ──> LLM（Client JWT 鉴权）。
 
@@ -187,7 +187,7 @@ call_id 是 Backend IPC future 字典的**唯一 Future Key**，标识单次 RPC
 
 **超时与快速失败**：默认 300s 超时返回 synthetic error；下发前做连接在线 → 工具可用 → 发送异常三层检查，通常毫秒级返回离线错误，仅绕过三层后才进入超时。
 
-**JWT 过期边界**：token 在飞行途中过期时 Client 回传被拒 → future 挂起直到超时；token 过期不触发 WS 断开，当前靠超时兜底。
+**JWT 过期边界**：token 在飞行途中过期时客户端回传被拒 → future 挂起直到超时；token 过期不触发 WS 断开，当前靠超时兜底。
 
 **通用事件分发**：复用同一 future 通道发任意 JSON-RPC 事件（如 reload.mcp）。
 
@@ -199,7 +199,7 @@ call_id 是 Backend IPC future 字典的**唯一 Future Key**，标识单次 RPC
 
 ### 5.1 Reserved Keys（防 LLM 入参注入）
 
-LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings（Backend 在工具入口静默丢弃）。**角色定义同等保护**：角色定义作为系统提示词的一部分，同样受此保护，防止用户对话内容注入改写伙伴人格。**新增保留键须在本文档 + 工具入口两处同步。**
+LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings（后端在工具入口静默丢弃）。**角色定义同等保护**：角色定义作为系统提示词的一部分，同样受此保护，防止用户对话内容注入改写伙伴人格。**新增保留键须在本文档 + 工具入口两处同步。**
 
 ### 5.2 不可信工具结果包裹
 
@@ -234,7 +234,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 | call_id | 字符串 | 单次 RPC 调用 | 整张表唯一（用作 Future Key） |
 | task_id（视频生成） | 字符串 | 异步任务周期 | 单 (user_id, provider) 内唯一 |
 
-**职责分立**：session_id 就是 conversation_id 的字符串形式——Client 侧始终用字符串、Backend 侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。
+**职责分立**：session_id 就是 conversation_id 的字符串形式——客户端侧始终用字符串、后端侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。
 
 ---
 
@@ -243,14 +243,14 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 LLM 在生成 affect / spatial 时按以下规则：
 - affect 的 emotion 必须从 §1.4 枚举集选，LLM 在回复前自填，由解析器解析。
 - spatial 的 LOCALE 从 §1.4 locale 枚举选，target 可选、仅 perch 时有意义。
-- **Backend 不产出像素坐标**——Client 据 locale + 当前空间状态决定最终位置与移动方式；target 仅在 perch 时由 Client 经窗口枚举解析为窗口几何后计算 perch 点。
+- **后端不产出像素坐标**——客户端据 locale + 当前空间状态决定最终位置与移动方式；target 仅在 perch 时由客户端经窗口枚举解析为窗口几何后计算 perch 点。
 
 ---
 
 ## 8. 维护规约
 
 - 本文档是**跨模块公共契约**——任何改动必须同时通知所有受影响的模块所有者。
-- 任何扩展 emotion / locale / 事件 type，必须在 **本文档 + Backend 白名单 + Client 消费代码**三处同步。
+- 任何扩展 emotion / locale / 事件 type，必须在 **本文档 + 后端白名单 + 客户端消费代码**三处同步。
 - 任何 Reserved Key 新增，必须在 **本文档 + 工具入口** 同步。
-- 任何换装装配语义（slot/layer/socket/physics）变更，必须在 **本文档 + Backend 生成管线 + Client 装配层**同步。
+- 任何换装装配语义（slot/layer/socket/physics）变更，必须在 **本文档 + 后端生成管线 + 客户端装配层**同步。
 - 子模块 README 不重复本文档内容，只在需要时链接。

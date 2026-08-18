@@ -10,26 +10,24 @@
 - 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转
 - 统一自更新（Electron 二进制 + Runner wheel，两阶段契约）
-- **disturbance_tier 的唯一权威**：持有用户偏好 + 活动上下文，独立计算 effective 值并单向推 Backend
+- **打扰档位的唯一权威**：持有用户偏好 + 活动上下文，独立计算生效值并单向推后端
 
 **不**做：
-- **不渲染伙伴人格层**（角色定义 / 长期记忆 / 主动消息生成）——这是 Backend 责任
+- **不渲染伙伴人格层**（角色定义 / 长期记忆 / 主动消息生成）——这是后端责任
 - **不执行本机工具**——通过 IPC 委托给 Runner
-- **不持有 LLM API 凭证**——所有 LLM 调用经 Backend（即使是反向 RPC 也是经 Client → Backend → LLM）
-- **不解析协议 schema**（affect / morph target 等）——Backend 出枚举，Client 按枚举查找，不擅自扩展
+- **不持有 LLM API 凭证**——所有 LLM 调用经后端（即使是反向 RPC 也是经客户端 → 后端 → LLM）
+- **不解析协议 schema**（affect / 变形目标等）——后端出枚举，客户端按枚举查找，不擅自扩展
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；产品设计见 [DESIGN.md](../DESIGN.md)。
 
 ## 2. 设计意图
 
-- **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是 backend/runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。两层共享同一个 Electron 主进程，但伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
-- **3D 实时渲染 + 三级降级**：GLB 加载成功时骨骼动画 + morph 表情覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时静态精灵相册接管——`StaticSprite` 层按状态/情绪向后端相册请求身份一致的透明背景立绘（250ms 淡切 + 3.4s 呼吸），GLB 真正解析完成后淡出交还；相册不可用才渲染程序化兜底蛋（暖琥珀蛋壳 `0xfff4d6` + emissive 3.4s 呼吸光 + 裂痕装饰 + 呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"且永远是用户选定的角色。
-- **多骨骼动画库 + 性格标签驱动**：biped 109 clip，其余 6 大 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）各 20–45+ clip；客户端按 `rig_type` 注入对应动画库，按伴侣性格标签交集匹配驱动动作调度。详见 [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md)。
-- **disturbance_tier 唯一权威**：Client 持有用户偏好（`localStorage` 持久化）+ 活动上下文（活动感知器），独立计算 effective 值（应用「手动 quiet 永远不被覆盖」+ immersive/fullscreen → quiet 规则），通过 `companion.set_disturbance_tier` 单向推 Backend；Backend `_disturbance` 字典是镜像，不是独立推导。
-- **safeStorage 跨平台统一**：Windows DPAPI / macOS Keychain / Linux libsecret；Renderer 与 Preload **不可**访问 safeStorage 接口，阻断 XSS 窃取凭证。
-- **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = hide to tray；macOS close = hide window 但保留 Dock 图标。
-- **自更新两阶段契约**（Stage 1 prefetch + Stage 2 install）：保证升级中途断网或崩溃不会变砖。Stage 1 在 OLD Electron 里下载并强校验签名 + SHA-512；Stage 2 在 NEW Electron 里原地升级 wheel 与 `server.py`，venv 永不被改名或移动。
-- **网关连续性与去重重放（ACK & Session Resume）**：`JsonRpcGatewayClient` 记录单调递增的连接级 `lastReceivedSeq` 并对网络重叠帧进行幂等去重，同时在后台定期批量向服务端发送 `session.ack`（标准 RPC 请求）。断网重连时携带 `last_seq` 触发增量 Replay，保障网络抖动下正在进行的流式对话和工具调用无感续接；若服务端重启或序列号失同步（返回 `resumed: false` 或降级 `session.get_main`），客户端自动同步重置 `lastReceivedSeq = current_seq` 避免新事件黑洞（普通活连接会话切换不重置）。
+- **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
+- **3D 实时渲染 + 三级降级**：GLB 加载成功时骨骼动画 + 面部变形目标覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时静态精灵相册接管——按状态/情绪向后端相册请求身份一致的透明背景立绘，淡入淡出切换，GLB 解析完成后交还；相册不可用才渲染程序化兜底蛋（呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"且永远是用户选定的角色。
+- **多骨骼动画库 + 性格标签驱动**：7 大骨骼体系（人形最全，100+ 动作），按模型骨骼类型注入对应动画库，按伙伴性格标签交集匹配驱动动作调度。详见 [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md)。
+- **打扰档位唯一权威**：客户端持有用户偏好（本地持久化）+ 活动上下文（活动感知器），独立计算生效值（应用「手动安静永远不被覆盖」+ 沉浸式/全屏 → 安静规则），单向推后端；后端持有的只是镜像，不是独立推导。契约见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)。
+- **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
+- **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
 
 ## 3. 架构地图
 
@@ -56,7 +54,7 @@ client/
 └── assets/                # icon
 ```
 
-**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `main/shared/ipc-contracts.ts` 与 `renderer/shared/types/global.d.ts` 共享严格的 IPC Channel 与 Payload 契约。
+**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过主进程的 IPC 契约定义与渲染进程的全局类型声明共享严格的 IPC 通道与载荷契约。
 
 **renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
 
@@ -73,58 +71,54 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 
 ## 4. 关键设计决策
 
-- **NPR 卡通渲染层与 PBR 热切换（`renderer/companion/3d/style/`）**：模型元数据 `style=anime` 时经 `StyleDirector` 切入 toon 管线——toon 色阶（gradientMap 三阶）、反向法线描边、rim 边缘光、面部法线平滑（头骨权重 + 头骨半径双信号，rest pose 期烘焙，随风格切换 normal 属性）。**为什么 vendor 光照模型**：上游 `ToonLightingModel.direct` 用未蒙皮的对象空间法线与视空间光方向点积，蒙皮模型上色阶分层错位——修复版改用 `normalView`。**为什么不动渲染循环**：描边用 per-mesh hull 克隆（共享 skeleton/geometry，蒙皮与 morph 自动驱动）而非 post-processing pass，`Engine.tick` 的单次 `render()` 保持不变；节点 tier 的 hull 顶点数学复刻官方 `ToonOutlinePassNode`（clip 空间等厚），经典 tier 在 `<skinning_vertex>` 后注入顶点偏移 + `customProgramCacheKey` 防程序缓存碰撞。**换装协同**：toon twin 只挂 albedo/normal 通道（roughness/metalness/displacement 是 PBR-only 概念），切回 PBR 时重放当前五通道纹理；TSL 布料单元（材质 `positionNode` 非空）保持 PBR——toon 化会破坏求解器的顶点写入契约。**降级矩阵**：webgpu / webgl2-node（同节点代码路径）全功能；classic-webgl 用原生 `MeshToonMaterial` + onBeforeCompile 注入；任何切换异常回滚 realistic 并告警。**切换入口**：精灵右键菜单"渲染风格"项写 `$renderStyle` 会话覆盖 atom（换模型时重置回该模型的元数据风格）。
-- **`safeStorage` 跨平台统一封装**：Windows DPAPI / macOS Keychain / Linux libsecret；所有平台走同一组 API（`safeStorage.encryptString` / `decryptString`）。Renderer 与 Preload 进程**不可**访问 safeStorage 接口——阻断 XSS 窃取凭证。**为什么不自己写加密**：OS 原生机制与用户登录态绑定，重启/换用户自动失效；自实现加密无法保证密钥生命周期。
-- **精灵窗口透明需要双重保证**：`BrowserWindow.transparent: true` **加** 渲染层 `body` 透明（`html[data-role='sprite'] body { background: transparent }`，`data-role` 由 `index.html` 内嵌脚本在 `<head>` 解析时同步设置）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
-- **交互范围仅限可见矩形**（透明窗口交互陷阱）：Electron `setIgnoreMouseEvents` 是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，其余继续穿透给桌面其他应用，所有 overlay 把自己的面板 bbox 注册到 `companion/interactive-regions.ts`，由 `SpriteStage` 的全局 `mousemove` 唯一做命中测试再切换 `setIgnoreMouseEvents`。任何 overlay 都不能再用 `setIgnoreMouseEvents({ignore:false})` 一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
-- **精灵窗口弹层不走 `--ui-*` 主题变量**：主题变量在精灵窗口按浅色解析（`shared/themes` 的 boot 块以内联样式应用 light 预设），`--ui-bg-elevated` 是白底，而弹层正文全是硬编码 `text-white/xx`——主题变量配硬编码白字会白上白不可读。因此对话/伙伴设置/长期记忆/语音通话/换装/对话列表面板统一硬编码深色半透明容器（`bg-black/55~75 + backdrop-blur`）；新增弹层必须跟这一族，主题变量只属于 hub 工具窗口。同族交互契约：面板头部统一接 `companion/hooks/use-panel-drag`（`translate3d` 位移 + localStorage 持久化偏移；`getBoundingClientRect()` 含 transform，interactive-region 命中自动跟随），打开入口统一经 `companion/root.tsx` 的 `openDock` 互斥收口——同一时刻最多一个 dock 在屏，避免弹层堆叠。
-- **工具窗口（`?role=tool`）由 `html[data-role='tool']` 钉死深色显式调色板**：`styles.css` 该块把全部语义 token 固定为与精灵弹层同族的深色显式值（近黑表面 + `white/xx` 描边文字；无皮肤/模式切换，一处硬编码）。`shared/themes` 的 boot 内联主题对此窗口跳过——内联样式会盖过样式表钉死值；titlebar-theme IPC 只接受工具窗口自身的推送，精灵窗口的 light 主题不得改写工具窗口 overlay。主进程 `backgroundColor` 与 titleBarOverlay 用同一深色且不跟随 OS 外观。设置页经 `OverlayView` 以全出血页面渲染（唯一形态：拖拽带 + Esc 关闭；Win/Linux 关闭由原生 WindowControlsOverlay 承担，应用侧关闭钮只在 macOS 渲染）。`--titlebar-height` 必须等于 main 的 `TITLEBAR_HEIGHT`——侧栏/主区顶部内边距与拖拽带高度都由它推导，两边漂移会让内容钻进原生按钮下。
-- **激活码持久 + session JWT 内存 only**：`agent-session.json` 持久化激活码（加密）+ baseUrl + user。`restoreSession()` 读取激活码后调 `/api/user/activate` 获取 session JWT。session JWT 的 proactive refresh 机制（`/api/user/refresh`）保持不变。**为什么不持久 session JWT**：JWT 一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
-- **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断 / 进程被杀时变砖；两阶段拆分让 Stage 1（旧 Electron 跑）只需下载+校验，Stage 2（新 Electron 跑）才做 file ops，失败回滚到旧版。**为什么不直接 atomic-rename**：atomic-rename 之前需要先完整下载到 staging，与两阶段本质等价，但语义上分阶段更易追踪 Sentinel 与降级。
-- **`runner venv 永不被改名或移动`**：升级只改 wheel（`pip install --upgrade`），venv 路径稳定；任意升级阶段崩溃时旧版 Runner 依赖树仍完全可用。
-- **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；Engine 路由由 `main/ipc/media.cjs` 在 IPC 边界读 short-TTL 缓存决策（`auto` / `local` / `cloud` 三档），不暴露在 Desktop 设置面板——运维/部署侧决策。
-- **`voice id` 不跨引擎**：云端 voice id（provider 目录中的 id）与本地 voice id（Piper `en_US-amy-medium` 格式）属于不同命名空间；`media.cjs` 路由到本地时不传 caller 的 voice。用户在伙伴设置中选的音色仅在云端路径生效。
-- **3D 渲染栈 `WebGPURenderer` + 四层回退**：`Engine.create()` 异步工厂按 WebGPU 后端 → three 内置 WebGL2 后端（同一 API 面/场景图，零代码）→ 经典 `WebGLRenderer` → `EngineInitError`（static-sprite 层兜底，永不空白）逐级降级。经典回退必须换新 canvas——曾成功获取过 webgpu 上下文的 canvas 再也要不到 webgl2 上下文，所以 canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load/outfit effects 一律 await 引擎就绪 Promise 而非早退，避免首模型在异步 boot 窗口被静默丢弃。PMREMGenerator 按渲染器类型分支——经典版深度依赖 WebGLRenderer internals，传入 WebGPURenderer 构造期即抛。**为什么不停留在 WebGLRenderer**：混合显卡笔记本上 `powerPreference:'high-performance'` 会强制唤醒独显（桌宠场景远低于 dGPU 门槛），且 TSL compute 需要节点材质系统才能把布料物理搬进 GPU。
-- **3D 材质安全回退与拖拽动力学**：`CharacterController` 加载 GLB 时记录模型内嵌原生基础贴图（`baseMap` / `baseNormalMap` 等）；在自定义 PBR 贴图发生 404 或网络故障时自动回退到原生材质，杜绝模型白板。拖拽时通过 `sprite-stage` 捕获即时速度向量，向 3D 模型注入物理惯性倾角（Roll/Pitch），结合 `drag`（悬空摆动）与 `drag_end`（落地缓冲）专属 Clip 呈现被“拎起”的真实交互质感；默认精灵基准尺寸采用动态 `window.innerHeight * 0.25`，自适应高分辨率屏幕。
-- **精灵窗口单显示器跟踪 + 跨屏拖拽接力**：透明精灵窗口同一时刻只覆盖一块显示器（bounds 贴当前显示器 workArea；分辨率变化原地重贴，显示器被拔掉时 `getDisplayMatching` 自动落回最近屏）。拖拽中指针坐标越出视口即光标已跨入邻屏——渲染层经 `spiritagent:sprite:move-to-cursor-display` 请主进程按 `getCursorScreenPoint()` 把窗口 setBounds 到光标所在屏；渲染层只把精灵位置平移新旧窗口原点差，拖拽基准不动（切换后指针坐标已在新视口空间，拖拽公式自然产出平移后的值），并按返回的光标点判定最新指针坐标属于旧/新视口空间，避免接力 IPC 往返期间已到达的新空间事件被二次平移（`spatial` 的 resize 处理在 drag 中跳过重定位）。拖拽结束时主进程把窗口原点随位置一并写入 `companion-position.json`，下次启动窗口先贴回精灵所在的显示器再恢复位置。**为什么不做一个覆盖整个虚拟桌面的窗口**：全桌面合成层 + 跨屏 DPI 差异的坐标/命中测试复杂度远高于单屏窗口接力，且 `setIgnoreMouseEvents` 的穿透范围会被迫覆盖所有屏。
-- **渲染循环自研调度与能耗档位控制**：`Engine.ts` 内部通过 `scheduleNext()` 自主调度动画循环，支持 `setPowerProfile`（`active` 60fps / `idle` 30fps / `dormant` 0.5fps 低频 Timer 轮询）以及 `stop()` 彻底终止循环；不依赖 Three.js 内部循环，解决休眠档位能耗控制。
-- **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$SPIRITAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
-- **模型下载失败与生成失败分流（`$modelRetryable`）**：`model.failed` 载荷带 `retry_download: true` 时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（`companion.model.retryDownload`，绝不重新计费），不给"重新生成"入口；启动 hydrate 收到 `download_failed` 行同样进该态，避免每次启动静默重刷一次计费生成。
-- **主进程 TypeScript 构建**：主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验。
-- **独立 3D 动画与模型调试套件（`pnpm clip` / `renderer/clip-debugger/`）**：为解决 3D 骨骼动作、表情 Morph 与后端 GLB 模型质量验证严重依赖完整 LLM 对话链路、调试反馈慢的问题，提供独立调试器（`role=clip`，全屏 Vite 热更 Web 模式）。支持：(a) 激活码自动兑换鉴权一键从后端（`GET /api/companion/model`）下载 GLB 模型并流式 Gzip 解压；(b) 7 大骨骼体系（biped/quadruped 等）100+ 动作库即点即播、交叉淡入淡出与逐帧步进；(c) 智能包围盒接地、水平居中与 Z-up 平躺模型自动立起；(d) 3D TransformControls 交互手柄（位移/旋转/缩放）；(e) 面部 Blendshape 实时调校与 TTS 嘴型振幅模拟。
-- **Windows 单实例锁 dev opt-out**：`SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
+- **NPR 卡通渲染层与 PBR 热切换**：模型元数据风格为二次元时切入 toon 管线——色阶、反向法线描边、边缘光、面部法线平滑（rest pose 期烘焙）。**为什么自研光照模型**：上游 toon 光照用未蒙皮的对象空间法线计算，蒙皮模型上色阶分层错位，修复版改用视空间法线。**为什么不动渲染循环**：描边用外壳克隆（共享骨架与几何，蒙皮与变形目标自动驱动）而非后处理通道，渲染循环的单次绘制保持不变。**换装协同**：toon 双生材质只挂反照率/法线通道（粗糙度/金属度/置换是 PBR 专属概念），切回 PBR 时重放当前五通道纹理；TSL 布料单元保持 PBR——toon 化会破坏求解器的顶点写入契约。**降级矩阵**：WebGPU / WebGL2 节点路径全功能；经典 WebGL 用原生 toon 材质 + 着色器注入；任何切换异常回滚写实并告警。**切换入口**：精灵右键菜单"渲染风格"项（会话级覆盖，换模型时重置回该模型的元数据风格）。
+- **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
+- **交互范围仅限可见矩形（透明窗口交互陷阱）**：Electron 的鼠标穿透是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，所有弹层把面板矩形注册到统一的命中登记处，由舞台的全局移动事件唯一做命中测试再切换穿透。任何弹层都不能自行一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
+- **精灵窗口弹层不走主题变量**：主题变量在精灵窗口按浅色解析（白底容器），而弹层正文全是硬编码白字——主题变量配硬编码白字会白上白不可读。因此对话/伙伴设置/长期记忆/语音通话/换装/对话列表面板统一硬编码深色半透明容器；新增弹层必须跟这一族，主题变量只属于 hub 工具窗口。同族交互契约：面板头部统一接同一拖拽钩子（位移本地持久化、命中区域自动跟随）、打开入口统一经互斥收口——同一时刻最多一个面板在屏，避免弹层堆叠。
+- **工具窗口（`?role=tool`）钉死深色显式调色板**：该窗口把全部语义 token 固定为与精灵弹层同族的深色显式值，无皮肤/模式切换，一处硬编码；主题 boot 对此窗口跳过（内联主题会盖过钉死值），精灵窗口的浅色主题不得改写工具窗口 overlay。主进程背景色与标题栏用同一深色且不跟随 OS 外观。设置页经系统原生窗口控件覆盖层全出血渲染（唯一形态：拖拽带 + Esc 关闭；Win/Linux 关闭由原生控件承担，应用侧关闭钮只在 macOS 渲染）。**标题栏高度常量必须与样式变量一致**——侧栏/主区内边距与拖拽带高度都由它推导，两边漂移会让内容钻进原生按钮下。
+- **激活码持久 + 会话 JWT 仅内存**：磁盘只持久化加密激活码 + 服务地址 + 用户；每次启动用激活码换取新的会话 JWT（含主动刷新机制）。为什么不持久会话 JWT：一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
+- **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。
+- **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；引擎路由在 IPC 边界读短 TTL 缓存决策（自动 / 本地 / 云端三档），不暴露在设置面板——运维/部署侧决策。
+- **音色 id 不跨引擎**：云端音色 id 与本地音色 id 属于不同命名空间；路由到本地时不传调用方的音色。用户在伙伴设置中选的音色仅在云端路径生效。
+- **3D 渲染栈 WebGPU + 四层回退**：引擎异步工厂按 WebGPU → 内置 WebGL2 节点后端（同一 API 面/场景图，零代码）→ 经典 WebGLRenderer → 初始化失败（静态精灵层兜底，永不空白）逐级降级。**经典回退必须换新 canvas**——曾成功获取过 WebGPU 上下文的 canvas 再也要不到 WebGL2 上下文，所以 canvas 由引擎自建自管（React 只渲染容器），模型/换装加载一律等待引擎就绪而非早退，避免首模型在异步启动窗口被静默丢弃。环境贴图生成按渲染器类型分支——经典版深度依赖 WebGLRenderer 内部结构。为什么不停留在经典 WebGL：混合显卡笔记本上高性能偏好会强制唤醒独显（桌面伙伴负载远低于该门槛），且布料 TSL compute 需要节点材质系统才能把物理搬进 GPU。
+- **3D 材质安全回退与拖拽动力学**：加载 GLB 时记录模型内嵌原生基础贴图，自定义 PBR 贴图 404 或网络故障时自动回退原生材质，杜绝模型白板。拖拽时捕获即时速度向量注入物理惯性倾角（横滚/俯仰），结合"悬空摆动"与"落地缓冲"专属动作呈现被"拎起"的交互质感；精灵基准尺寸随屏幕高度自适应，兼容高分辨率屏。
+- **精灵窗口单显示器跟踪 + 跨屏拖拽接力**：透明精灵窗口同一时刻只覆盖一块显示器（贴合当前显示器工作区；分辨率变化原地重贴，显示器被拔掉时自动落回最近屏）。拖拽中指针越出视口即光标已跨入邻屏——渲染层请主进程把窗口挪到光标所在屏；渲染层只把精灵位置平移新旧窗口原点差、拖拽基准不动（切换后指针坐标已在新视口空间，拖拽公式自然产出平移后的值），并按返回的光标点判定最新指针坐标属于旧/新视口空间，避免接力往返期间已到达的新空间事件被二次平移；拖拽结束时窗口原点随位置一并持久化，下次启动先贴回精灵所在显示器再恢复位置。为什么不做覆盖整个虚拟桌面的窗口：全桌面合成层 + 跨屏 DPI 差异的坐标/命中测试复杂度远高于单屏窗口接力，且鼠标穿透范围会被迫覆盖所有屏。
+- **渲染循环自研调度与能耗档位**：引擎自主调度动画循环（不依赖 Three.js 内部循环），支持活跃全速 / 空闲降频 / 休眠低频轮询与彻底停止，解决休眠档位能耗控制。
+- **3D 模型传输与本地缓存**：身体与服装 GLB 均采用 Draco 压缩，渲染端流式解压（解码器本地托管）；主进程按内容哈希磁盘缓存，支持断点续传与 LRU 淘汰。传输契约见 [PROTOCOL.md §1.5](../PROTOCOL.md)。
+- **模型下载失败与生成失败分流**：失败事件载荷带"可重试下载"标记时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（绝不重新计费），不给"重新生成"入口；启动水合收到下载失败行同样进该态，避免每次启动静默重刷一次计费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
+- **独立 3D 动画与模型调试套件（`pnpm clip`）**：为解决 3D 动作、面部变形目标与后端 GLB 模型质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；7 大骨骼体系全动作库即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
+- **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
+- **连发消息合并窗口**：用户快速连发多条时，聊天层用数秒防抖窗口把消息合并成一次批量提交，只触发一次 LLM 调用（[DESIGN.md §6.6](../DESIGN.md)）。这是**刻意**的合并，不是发送延迟：窗口内逐条重置计时器，且回合完成 / 错误 / 用户停止时会立即冲刷。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Backend | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `companion.assets.updated` / `model.ready` / `wardrobe.updated` 等）与聊天流事件（`message.start` / `message.delta` / `message.break` / `message.complete` / `tool.*` / `error`） | 接 Backend 推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| Affect emotion / locale 枚举消费 | 接 Backend | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接 Backend | [PROTOCOL.md §1.5](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接 Backend | [PROTOCOL.md §1.6](../PROTOCOL.md) |
+| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对后端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `companion.assets.updated` / `model.ready` / `wardrobe.updated` 等）与聊天流事件（`message.start` / `message.delta` / `message.break` / `message.complete` / `tool.*` / `error`） | 接后端推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| Affect emotion / locale 枚举消费 | 接后端 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
+| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接后端 | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接后端 | [PROTOCOL.md §1.6](../PROTOCOL.md) |
 | Runner `runner_ready` payload + capabilities 消费 | 对 Runner | [PROTOCOL.md §2.3](../PROTOCOL.md) |
-| 反向 RPC `request_llm` 代理 | 对 Runner + Backend | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 反向 RPC 速率守卫（200 帧；文本 1MB / 多模态视觉 10MB 上限） | 对 Runner（Client 转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
-| disturbance_tier 权威边界 | 对 Backend（Client 推、Backend 镜像） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) + [DESIGN.md §6.2](../DESIGN.md) |
-| disturbance_tier 双层模型（`$userPreferredTier` + `$effectiveTierOverride` + `$effectiveTier`） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
-| LLM 反应与自主开关 (`llmReactions` / `llmAffect` / `llmAutonomy`) | 本模块独有（`localStorage` 持久化，不上报后端） | [DESIGN.md §6.3](../DESIGN.md) |
+| 反向 RPC `request_llm` 代理 | 对 Runner + 后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
+| 反向 RPC 速率守卫（200 帧；文本 1MB / 多模态视觉 10MB 上限） | 对 Runner（客户端转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
+| 打扰档位权威边界 | 对后端（客户端推、后端镜像） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) + [DESIGN.md §6.2](../DESIGN.md) |
+| 打扰档位双层模型（用户偏好 + 生效覆盖 + 生效值） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
+| LLM 反应与自主开关（本地持久化，不上报后端） | 本模块独有 | [DESIGN.md §6.3](../DESIGN.md) |
 | safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
-| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
-| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对 Backend | [PROTOCOL.md §5.5](../PROTOCOL.md) |
+| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对后端 | [PROTOCOL.md §5.5](../PROTOCOL.md) |
+| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对后端 | [PROTOCOL.md §5.5](../PROTOCOL.md) |
 | IPC 命名空间 `spiritagent:*` 前缀（`spiritagent:sprite:*` / `spiritagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
-| 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费 Backend `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
-| 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费 Backend `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
-| Companion personality tag 驱动的动画调度（`selectClipByTags`） | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
-| 激活码格式（base64 编码 `{b, t}` JSON） | 对 Backend | [PROTOCOL.md §5.3](../PROTOCOL.md) |
+| 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费后端 `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
+| 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费后端 `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
+| 伙伴性格标签驱动的动画调度 | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
+| 激活码格式（base64 编码 `{b, t}` JSON） | 对后端 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |
 
 ## 6. 已知限制
 
 | 限制 | 说明 |
 |------|------|
-| **透明窗口平台差异** | 远程显示（X11/VNC/RDP）无法合成透明层，精灵窗口降级为非透明（`SPRITE_TRANSPARENT`）；macOS / Windows 本地会话支持良好 |
-| **WebGPU 透明合成依赖 premultiplied** | `alpha:true` 时 three 自动以 `alphaMode:'premultiplied'` 配置 canvas；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
-| **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（`BodyCollider`，~4096 顶点）结合骨骼球计算，在极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含 displacement 视差置换）。 |
+| **WebGPU 透明合成依赖 premultiplied** | 透明画布按预乘 alpha 配置；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
+| **几何服装与布料碰撞精度** | 服装与身体的碰撞由 CPU 代理网格（约 4k 顶点）结合骨骼球计算，极端曲率处存在数毫米内的近似误差；换装 PBR 支持 5 通道（含置换视差）。 |
 | **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |
-| **连发消息 4s 合并窗口（非 BUG）** | 用户快速连发多条时，`chat-store.ts` 用 4s 防抖窗口（`FLUSH_DEBOUNCE_MS`）把消息合并成一次 `prompt.submit` batch，只触发一次 LLM 调用（[DESIGN.md §6.6](../DESIGN.md)）。这是**刻意**的合并，不是发送延迟：窗口内逐条重置计时器，且 `message.complete` / `error` / 用户停止时会立即 flush。 |

@@ -1,29 +1,27 @@
 # Backend
 
-云端大脑——FastAPI + PostgreSQL + JWT。承载 SpiritAgent 伙伴的"人格"（角色定义 + 长期记忆）与"形象"（专属形象资产生成与下发），负责 LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给 Client/Runner。
+云端大脑——FastAPI + PostgreSQL + JWT。承载 SpiritAgent 伙伴的"人格"（角色定义 + 长期记忆）与"形象"（专属形象资产生成与下发），负责 LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度，以及通过 IPC 将本地工具调用下发给客户端/Runner。
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。3D 模型生成（文生3D provider：tripo / hunyuan）与分钟级 Blender 系后处理（morph 注入 / garment 换装）全部入队 `render_jobs`，由**同镜像的 Render Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发（WS outbox）、REST + WebSocket 端点暴露。3D 模型生成（文生3D 供应商：tripo / hunyuan）与分钟级 Blender 系后处理（变形目标注入 / 换装几何）全部入队渲染队列，由**同镜像的渲染 Worker 副本**（compose `worker` 服务）认领执行，每轮 Blender 跑在一次性沙箱容器里。
 
 **不**做：
-- **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner；图像/视频/语音等资产仅在云端生成、Client 拉取后渲染。
+- **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner；图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。
 - **不持有终端 / 浏览器会话**——这些都在 Runner 进程内。
-- **不渲染桌面伙伴**——形象与动画完全是 Client 责任（[DESIGN.md §1](../DESIGN.md)）。
-- **不做 LLM provider 特定的 schema 适配**——nullable union 原样传给 OpenAI-compatible provider，由 provider 决定是否接受。
-- **web 进程不执行 Blender 子进程**——3D 模型生成（含 provider 长轮询与 morph 注入）与换装几何管线全部经 render_jobs 转交 worker；web 内只保留 avatar 2D 与 video 生成的既有 job 模式。
+- **不渲染桌面伙伴**——形象与动画完全是客户端责任（[DESIGN.md §1](../DESIGN.md)）。
+- **web 进程不执行 Blender 子进程**——3D 模型生成（含供应商长轮询与变形目标注入）与换装几何管线全部经渲染队列转交渲染 Worker；web 内只保留头像 2D 与视频生成的既有任务模式。
 
 架构层定位见 [ARCHITECTURE.md §1 / §2](../ARCHITECTURE.md)；跨模块契约见 [PROTOCOL.md](../PROTOCOL.md)；错误分层见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
 
 ## 2. 设计意图
 
 - **持久化伙伴身份与资产**：角色定义、形象资产、长期记忆都是**跨设备、跨会话**的核心资产，必须云端托管且按用户维度隔离。
-- **LLM 流式编排作为唯一对话入口**：所有用户消息经 backend chat service 走完整 turn（角色定义装配 → 上下文管理 → LLM 调度 → 工具路由 → 响应流式下发）；不绕过、不分支。
-- **数据库 schema 由 Alembic 版本化迁移管理**：lifespan 启动时自动 `upgrade head`（决策细节见 §4）；schema 演进可审查、可回滚，消除 create_all + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区。
-- **Provider 自注册 + 三层入口**：每个 provider 模块在 module bottom 调 `REGISTRY.register`，`main.py` 显式 import 触发；chain resolver 不从 `base_url` host 反推（避免脆弱推断）。三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`）按场景路由。
-- **Outbox + LISTEN/NOTIFY 取代轮询**：伙伴主动消息、Cron 任务、形象/角色变更通知全经 PostgreSQL 触发器 + `ws_events` 表，毫秒级、可水平扩展。
-- **重生成任务与 web 进程隔离（PG 队列，零 Redis）**：Blender 系分钟级生成入队 `render_jobs`（INSERT 触发 NOTIFY 唤醒 worker 的 LISTEN 专线；认领 = `FOR UPDATE SKIP LOCKED` + CAS UPDATE），web 请求路径毫秒级返回；attempts 封顶 + stale 回收 + 启动清扫覆盖崩溃恢复，语义按 VideoGenJob 先例自管。跨模块拓扑与安全边界见 [ARCHITECTURE.md §2 云端渲染拓扑](../ARCHITECTURE.md) 与 §8 不变量 11。
-- **形象资产生成受 rate-limit + per-user 锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开 provider 原始错误。
+- **LLM 流式编排作为唯一对话入口**：所有用户消息走完整 turn（角色定义装配 → 上下文管理 → LLM 调度 → 工具路由 → 响应流式下发）；不绕过、不分支。
+- **数据库 schema 由版本化迁移管理**：schema 演进可审查、可回滚，消除建表脚本 + 手写幂等 DDL 时代"只能加列、不可收紧不可回滚"的盲区（启动自动升级的决策见 §4）。
+- **事件经数据库 outbox 推送而非直推 WS**：毫秒级、可水平扩展（机制与不变量见 [ARCHITECTURE.md §5](../ARCHITECTURE.md)）。
+- **分钟级生成走 PG 队列、零 Redis**：web 请求路径毫秒级返回，渲染 Worker 认领执行（见 §4 沙箱决策）。
+- **形象资产生成受频控 + 单用户锁守护**：生成是同步、阻塞 UI 的高成本路径，不并发、不公开供应商原始错误。
 
 ## 3. 架构地图
 
@@ -37,102 +35,93 @@ backend/
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog、wardrobe
 │   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
-│   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类 provider ABC
+│   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
 │   ├── update/               # 桌面客户端版本更新清单构建
-│   ├── worker/               # render_jobs 认领循环 + Blender 沙箱执行器（独立进程入口）
+│   ├── worker/               # 渲染队列认领循环 + Blender 沙箱执行器（独立进程入口）
 │   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
 ```
 
 依赖方向（低 → 高）：`common` / `components`（框架基座，**不** import modules/services）→ `modules`（领域模型与契约）→ `api/v1`（端点）/ `services`（服务层）→ `main.py`，无反向。
 
-**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 `services/chat/chat_emitter.py`（`Emitter` 协议，零内部依赖）收敛；重编排器/`turn_inputs`/`agent_delegate` 经 `__getattr__` 懒加载，保证 `import services.chat` 不会触发整张服务图。
+**循环断路器**：`chat ↔ gateway`、`chat ↔ scheduler`、`chat → companion → tools.builtin → scheduler → chat` 三条 import 环全部经 chat 服务内一个零内部依赖的发送协议模块（`services/chat/chat_emitter.py`）收敛；重编排器等重依赖经模块级懒加载，保证 `import services.chat` 不会触发整张服务图。
 
 ## 4. 关键设计决策
 
-- **夜间自主活动批处理（Stage 0–4 独立事务）**：在用户本地休息窗口（0:00–5:00）调用 LLM 运行批处理流水线（画像推断、记忆整理与衰退、主动规划、自我日记）。每个阶段独立事务并具备全空回滚安全网。**为什么不作为在线 agentic 循环**：批处理在离线状态也可完成用户认知深化与记忆优化，不强依赖客户端长连接；次日生成的 CronJob 在触发派发时才执行在线与 disturbance 检查。
-- **夜间批处理消化「刚结束的那个本地日」，参考时刻由 cron 单点传入**：窗口在本地 0–5 点，此刻「今天」几乎没有数据，可反思的是昨天。`_maybe_run_autonomous_activity` 用 `now` 判断本地小时窗口（避免 DST 日偏移一小时），用 `now - 1d` 算数据日，并把这个 `reference_utc` 传给 `run_nightly_pipeline`。**为什么不让流水线自己算**：两处各自推导会漂移——准入门限数昨天的消息、流水线读今天的空窗口，结果是每晚扫描都判定"无消息"提前返回，`_LAST_NIGHTLY_RUN` 永不落位，整个窗口每 5 分钟重试一次且永远不成功。
-- **双压缩检查点，所有对话类型统一读路径**：LLM 上下文从最近的压缩检查点起算，检查点之前的历史不进入上下文（DB 始终保留完整历史，裁剪只在 `_history_to_messages` 读路径）。两类检查点地位对等，区别只在触发时机：
-  - `compress_summary`（运行时，所有对话）：`compress_history_if_needed` 在每 turn 检测 token 超过 `context_length × 0.7` 时触发，把最旧的一块消息 LLM 压成一条摘要，持久化为 `Message(role='system', subtype='compress_summary')`。下一次 turn 从该行开始读（inclusive）——被压缩的消息不再进入 LLM 上下文。
-  - `daily_summary`（夜间，仅主对话）：`run_daily_checkpoint` 在夜间自主活动阶段触发，从最近的任意类型检查点（inclusive）读到当前，调一次 LLM 压成 `Message(role='system', subtype='daily_summary', summary_date=...)`。compress_summary 行的文本被纳入摘要输入，由 LLM 融入新的 daily_summary——内容不丢失。新 daily_summary 写入后 id 更大，自动取代旧 compress_summary 成为后续读起点。
-  - **跳过工具帧仅限主对话**：只有主对话每个用过工具的 turn 会落一条 `tool_summary` 顶替被跳过的帧；普通对话没有替身，一并跳过等于抹掉工作上下文。
-- **TOML 模版与 Git 隔离配置管理**：Git 统一托管默认配置模版 `config.toml.example`，`components/config.py` 中不保留重复默认值与冗余注释。开发者本地配置写在 `config.toml`（已被 `.gitignore` 忽略）。系统按 `OS Env > .env > config.toml > config.toml.example` 优先级加载。
-- **provider 自注册而非手动 `main.py` 引入**：`services/llm/providers/<name>/__init__.py` import 时注册到 `_REGISTRY`；新增 provider 子包即可扩展能力，无须修改 `main.py`。**代价**：注册顺序敏感——`main.py` 显式 import 触发；遗漏某 provider 则该能力静默缺失（fail-open）。
-- **IPC future 按 `(user_id, call_id)` 二元键寻址 + 30s 断线缓冲期（Grace Period）**：并发用户不共享 future；网关引入 `ReplayBuffer`（容量 500 帧、TTL 60s）与 30 秒断线 Grace Period，短时网络抖动期间后台生成任务（包括 LLM 流式、形象再生成与 cron turn）保持存活且产物事件进 buffer 待重放；用户重连时经 `session.resume(last_seq)` 增量补发，宽限期超时（用户未归）后由 `_grace_cleanup` 统一回收 dispatcher、未决 future、runner 工具并取消孤儿生成与 cron turn 任务。
-- **LLM bpy 代码经沙箱容器执行（worker 派生）**：worker 把 body-GLB/参考图拷进每 job 私有的 `job-io` 目录后 `docker run --rm`（`--network none` + CPU/内存限额 + 只读根 + tmpfs + 仅挂该目录），超时/取消走 `docker kill`（杀 docker CLI 不杀容器）。容器名前缀 `spiritagent-job-`、label `spiritagent-worker=1`，worker 启动按 label 清扫孤儿。**挂载约束**：`docker -v` 源路径由宿主 daemon 解析，只有 `data_dir` 是宿主 bind mount——沙箱执行器强制 io_dir 必须位于 data_dir 之下（越界即 fail-loud），一切 Blender 工作区（脚本/参考图/body-GLB/输出）都必须落在 job-io。worker 自身容器化时（compose 部署）其 data_dir 路径在 daemon 文件系统上不存在，挂载源须翻译成 daemon 侧路径，否则 daemon 把挂载源自动建成空目录、沙箱内脚本全部不可见——worker 从 `/proc/self/mountinfo` 读取 data_dir bind mount 的 daemon 侧源路径自动完成翻译（Docker Desktop 宿主盘符即 `/run/desktop/mnt/host/<盘符>/...`），裸机直跑 worker 不在容器内则直接用本机路径；仅远程 DOCKER_HOST 等探测不可行的场景经 `blender_sandbox_host_data_root` 手动覆盖。**为什么不用宿主子进程直跑**：LLM 生成的代码零消毒，直跑即 RCE 面（原不变量 11 记录的问题）。**代价**：worker 需挂 docker.sock（等效宿主 root），仅授予 worker 服务、镜像内只装 docker-cli；`[blender_sandbox] enabled=false`（默认）退回裸子进程路径，保测试与裸机开发。compose 部署形态：`backend` + `worker`（docker.sock / data / config.toml ro）+ `blender-sandbox`（`--profile build` 手动重建入口）三服务。沙箱镜像名是代码常量（`services/worker/sandbox.py`；compose 服务同标签，测试防漂移，无配置项），worker 启动时发现 daemon 缺该镜像即自动按 Dockerfile 的 `sandbox` target 构建（该 target 链零 COPY，空上下文即可构建）——新环境部署无须手动构建镜像
-- **Outbox + LISTEN/NOTIFY 而非直推 WS**：调度器 tick 只写入事件不 await WS 发射，慢客户端不拖垮事务；副本原子认领保证单发。**为什么不直接推 WS**：WS 不可水平扩展，且无法处理后端 OOM/重启时的未发事件。
-- **WS 关闭码 1008（鉴权失效）立即退出重连流程**：避免在 token 失效状态下重试 N 次把请求堆到过期账号上。**为什么不让 retry**：用户凭据问题靠重试无法恢复。
-- **形象生成失败对用户返回 502 + 固定文案**：作为陪伴场景的关键路径，需向用户返回可理解的友好提示并支持重试，不暴露生图服务原始错误。**为什么不透传 provider 错误**：provider 错误体常含 URL / 部分 auth header，且用户对生图服务错误无处理能力。
-- **API Key 永不离开后端（fingerprinting）**：管理页的模型配置列表只返回 `sk-…XX` 形式的指纹 + `_set` 布尔。**为什么留空 = 保留已有值**：管理页看不到原始 key，重输不是义务，「留空」必须等价于「不改」；`PUT /api/admin/{user_id}/model-config` 同时强制 LLM 三字段非空，防半行配置静默打断用户会话链。
-- **错误分类管道收敛为 21 种 `FailoverReason`**：8 步优先级过滤决定恢复策略（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。**为什么不暴露原始异常**：provider 错误常含 URL / 部分 auth header / 私有 SDK 调用栈，必须脱敏。
-- **文生3D 走独立 image_to_3d 服务与 provider 注册表（显式指定，不做商业供应商 failover）**：独立于通用 LLM 模块（`services/image_to_3d/`），`ImageTo3DProvider` ABC（submit / poll / download 三段式 + `SUPPORTS_RIGGING` / `SUPPORTS_MULTIVIEW` 能力开关），供应商经 `services/image_to_3d/providers/<name>/` 自注册，编排统一在 `run_model_gen_pipeline`：视觉 LLM 读头像 + 角色设定产出结构化外观（`enhance_t3d_prompt`，无图或视觉失败回退纯文本）→ `build_t3d_prompt` 拼固定后缀与风格措辞（1024 字符截断只吃描述主体、后缀完整保留）→ `submit_text_to_model`。图生3D/多视图入口（`submit_image_to_model`）保留在 provider 层但生成线不再使用。绑骨**本地优先**：所有供应商产物先走本地 Blender auto_rig；失败且有云端绑骨 API 的供应商（tripo）才兜底云端绑骨，云端产物再经去 ``mixamorig:`` 前缀 + 朝向归一化（云绑骨骨骼带前缀而客户端动画剪辑轨道用裸名精确匹配，不去前缀则全部轨道绑定失败、手脚不动）；生成期不再调供应商 prerigcheck（其对文生3D 产物保守判不可绑，强制绑骨实际可行）。供应商选择**仅显式**：`image_to_3d_provider` 配置默认或请求 `provider` 参数覆盖；key 缺失（无论显式还是默认）→ 400 拒绝且不建生成行，桌宠以静态精灵方式交互。**为什么不做供应商间自动回退**：商业 3D 生成按次计费且风格差异大，静默换供应商会让用户拿到与预期不符的模型；配额耗尽等失败直接 `model.failed` 由用户重试。**Blender 的定位是 3D 后处理工具**（morph 注入、自动绑骨、garment 换装几何），不承担模型生成——LLM 自由写 bpy 建模的质量（无 PBR）与时长（分钟级起步）都不适合作为生成主路或兜底。
-- **文生3D 先落库再下载（已付费结果绝不丢）**：生成成功的一刻、下载开始前，provider task id 与下载 URL 已持久化进模型行（下载互斥锁也是行状态：`pending_download → downloading` 的 CAS 防止管线与手动重试并发下载）。下载或本地后处理（自动绑骨 / morph 注入）阶段的任何失败只置 `download_failed`，不删除不回滚——后处理开始前原始 GLB 已先落盘进模型存储（job-io 工作区在任务结束即被清空，不能作为留存位置），恢复走"仅重试下载"路径（provider **查询**接口刷新过期签名 URL + 下载 + 后处理，绝不重新提交生成），且必须经 render 队列在 worker 执行（后处理需要 Blender，web 进程不跑）。下载内置有限次指数退避自动重试：网络类错误与 5xx 重试，403 视为签名过期走 URL 刷新，其余 4xx 不自动重试。服务重启时中断中的下载同样转入该可恢复态，而非判死。**为什么不把下载/后处理失败并入 `failed` 终态**：生成已计费，终态会让客户端下次水合时重新提交付费生成（等于二次付费）且静默丢弃结果。
-- **SSRF 保留段检查默认严格、按部署显式豁免（`SSRF_ALLOWED_CIDRS`）**：fake-ip TUN 代理（Clash 类）把所有域名解析进 198.18.0.0/15，`ipaddress` 判 is_private=True，令 provider 产物的对象存储下载在 SSRF 检查被拦——API 调用走普通客户端不受影响，唯独下载失败且已计费。命中豁免网段的 IP 跳过保留段拒绝，但域名黑名单、协议白名单、HTTPS→HTTP 降级拦截、云元数据/CGNAT 拦截无条件保留。**为什么不默认放行 198.18.0.0/15**：多租户部署里该段同样可能是真实内网；"本部署跑在 fake-ip 代理后"是部署者的知识，豁免必须是显式配置而非代码默认。
-- **文生3D 提示词按类人面孔分流风格 + 完整性子句前置 + A-pose + 最小覆盖内衣（仅 biped）**：类人面孔（人类/精灵预设 + 自定义物种由 `classify_species` 的 LLM `has_humanoid_face` 判定）默认「精美二次元」措辞（`_T3D_STYLE_WORDING` anime；**为什么不是手办 CGI**：用户目检否决——figurine/flat 保留为 CLI 对比变体）；非人生物（机甲/灵兽/幻形/四足等，无恐怖谷问题）用写实措辞。**完整性子句放提示词最前并点名全部体段**（`_T3D_SUFFIX_BIPED`）——身份描述占大头时供应商会退化出半身像/截断下肢（实测 Tripo v3.1 出过上半身 A-pose、无腿的产物）；后缀措辞风格中立，风格词只进 `_T3D_STYLE_WORDING`。A-pose（双臂微张）与最小覆盖运动内衣约束与图生路径同因：绑骨强依赖对称骨架，姿态偏离会导致肩/肘/腕识别失败、权重蒙皮错位；PBR 换装依赖皮肤可见度——覆盖款会让换装后暴露色差/反光异常，长裙款直接几何穿模。风格随模型行持久化：`generate_companion_model` 建行时单次 `resolve_fullbody_style` 解析写入 `CompanionModel.style`（**为什么不二次分类**：两次 LLM 调用可能给出不同 verdict，风格漂移会重现风格断层），随 `model.ready` 事件与 `GET /api/companion/model` 下发供客户端路由 NPR/PBR 渲染。
-- **用户可见图像风格分层（半身像 / 精灵 = 写实）**：半身像持续保持写实；精灵是 GLB 缺位或 3D 生成失败时的桌面降级渲染源（用户可见），主体参考为半身像且显式锁"写实人像"措辞，使精灵与半身像保持视觉一致。换装纹理提示词同路由（`_resolve_style`：active model 优先，缺行时按物种预设映射）——anime 角色的 albedo 加"二次元干净色块"措辞（toon 渲染会放大写实噪点），normal 等技术通道保持风格中性。**为什么不删精灵**：GLB 渲染前的"等不到 GLB"窗口期与生成失败期仍需要一张静态图占位，精灵是最稳的可见层。
-- **双参考图能力仅 Gemini 支持（Grok / MiniMax 单参考）**：第二张参考图（身份锚点之外的风格/体态参考）只有 Gemini 消费——其 i2i 原生支持双参考融合（`supports_multiple_reference_images=True`）；Grok 与 MiniMax 都是单参考（MiniMax 的 subject_reference 只接受单条），收到第二张参考图时**静默忽略**。provider 链在双参考请求下把 Gemini 排在单参考供应商之前、单参考作为兜底。
-- **静态精灵相册按需懒生成 + 写实锚点（[sprite_service.py](services/companion/sprite_service.py)）**：`POST /api/companion/sprite` 是无 3D 模型期的降级渲染源，主体参考锁半身像（`asset.asset_url`），`_SPRITE_PROMPT_SYSTEM` 显式锁"写实人像"措辞与半身像风格一致；LLM 按自由语义在相册 tag 中匹配（命中零生成成本），未命中才由 LLM 撰写 prompt 经常规 image-gen 链生成（`role="waiting"` 等待图每用户唯一且命中即返、不查 LLM）。**为什么不预生成全集**：语义空间开放（状态×情绪×反应），预生成既浪费也永远不齐；懒生成让每张图都被真实需求验证。相册按 `avatar_id` 失效、上限 300 张；频控 `companion_sprite_generate_rate_limit_per_minute` 防 LLM 循环刷请求。相册行在命中/短路返回前校验文件在盘——带外删除（手动清理/换盘）产生的孤儿行即删并按 miss 走再生成，签名 URL 不会持续指向 404。精灵背景走**自适应色键**：从 `_CHROMA_CANDIDATES`（亮绿/品红/青/紫罗兰/橙）按半身像参考图调色板选与主体距离最远的颜色写入 prompt（后端选色而非让模型自由挑色——模型可能选中与服装冲突的颜色）；`_key_sprite_png` 按边框环估计的实际背景色做 RGB 距离双阈值 flood fill 抠图（边界连通才抠、封闭大连通域补抠、despill 去溢色、alpha<16 硬化清残渣）。**为什么不用纯白背景**：亮度键无法区分白背景与白色/浅色服装（prompt 禁止角色穿白衣是唯一防线），色相键把可分性挪到色相维度，角色可以穿白/浅色衣服。**为什么不用 rembg**：ML 分割引入 onnxruntime 重依赖且不确定，色键确定性强、仅依赖 Pillow+numpy。provider 无视颜色指令渲染成白底时按估计背景色退化抠图（仅记日志不硬失败）；边框环无主导色（场景背景/角色占满边框）则换下家。`has_real_transparency` 复合门（min alpha≤8 + 实心占比≥15% + 半透明占比≤8%）拦截"只剩轮廓"的洗坏产出。
-- **表情头像按情绪 token 精确匹配懒生成（[expression_avatar_service.py](services/companion/expression_avatar_service.py)）**：3D 生成模型的脸部在桌面尺寸下精细度不足，情绪的面部表达改由聊天窗表情头像承载——以半身像为身份参考、按 (用户, 情绪 token, avatar) 三元组缓存，命中即返签名 URL，未命中才以确定性模板 prompt 生成（情绪语义取内置映射 / 注册表 description；物种由半身像参考图锚定、外形特征文案随行强化身份，**着装例外**——取 persona 当前着装字段，它是换装系统的权威镜像而参考图冻结的是 onboarding 着装；性格随行以塑造情绪反应方式，同一情绪在不同性格上反应不同；无 LLM 撰写轮）走通用 image-gen 链，抠图沿用精灵的自适应色键管线。**为什么精确匹配而非精灵的 LLM 语义匹配**：token 与缓存行 1:1（协议枚举 ∪ 注册表），语义匹配是白付一次 LLM 调用。生成窗口 10–60s：进程内 in-flight 去重（并发触发共享一次生成，清理挂任务完成而非首个等待者——中途断连不得提前弹 key 导致重复计费）、per-key 失败 5min 冷却、上限 300 行修剪；`neutral` 永不生成（即形象头像本身）。
-- **长期记忆混合检索与前置主动召回（[memory_retrieval.py](services/companion/memory_retrieval.py)）**：针对传统 SQL 子串匹配的语义鸿沟与纯被动调用的健忘问题，构建多维检索管线：
-  - **Dense + Sparse 混合检索与 RRF 融合**：Dense 向量语义检索（pgvector 余弦距离，SQLite/测试环境内存回退）+ Sparse 关键词/CJK N-gram 检索，经 RRF（Reciprocal Rank Fusion，$k=60$）合并打分。
-  - **艾宾浩斯时间衰减与重要性加权**：基于记忆距今时间 $\Delta t$ 实施指数衰减 $0.3 + 0.7 \times e^{-0.05 \Delta t}$（保底 0.3 防关键记忆归零），并与记忆重要度系数 $Importance \in [0.1, 5.0]$ 乘积得到最终排序得分。
-  - **前置主动召回注入**：在主对话 turn 开始前自动根据当前输入匹配 Top-3 高相关 recall 记忆注入 System Prompt，免去 LLM 轮轮主动调用 `memory_recall` 的认知开销。
-- **Alembic 版本化迁移 + 启动自动 upgrade**：schema 由 `alembic/versions/` 版本化；lifespan 内 `asyncio.to_thread(_run_migrations)` 自动 `upgrade head`，无独立部署步骤。**为什么启动时跑**：单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。**单一 baseline**：`0001_baseline` 是全量 schema（20 表 + 扩展 + partial unique / HNSW / GIN 索引 + 双 NOTIFY 触发器），上线前 squash 而来，此后演进只在其上追加迁移、不再重写历史。**autogenerate 两个坑**：(a) `modules.media.models`（video_gen_jobs）不被 `modules/__init__` 导入，`alembic/env.py` 的显式 import 勿删；(b) partial unique / hnsw / gin trgm 索引只存在于迁移文件（声明进模型会让 SQLite `create_all` 丢失 `WHERE` 语义变成全量唯一索引），env.py 的 `include_object` 因此跳过"仅存在于数据库"的索引——代价是从模型删除 Index 时 autogenerate 不会生成对应 `drop_index`，需手写。**严格比对**：`compare_type` + `compare_server_default` 全开，`alembic check` 必须零差异；`ModelBase.metadata` 带 naming convention（与 PG 默认约束名逐一致，新约束自动获得确定性名字，改约束名须走迁移）。
-- **全异步数据访问层（SQLAlchemy 2.0 async + asyncpg 单一连接池）**：所有 session 经 `components/database.py` 的 `create_async_engine`（asyncpg 驱动，20+10 连接）与 `AsyncSession`；路由、WS handler、调度协程内的 DB 读写不再阻塞事件循环。**为什么单池**：此前同步 psycopg 池与 asyncpg LISTEN 池并存（峰值 40 连接且职责重叠），合并后 30+1。**LISTEN 专线**：`ws_event_loop` 持一条进程生命周期专用的 asyncpg 直连（LISTEN 独占连接，连接池语义无用），断线 5s 自动重连，非 PG 后端传 None 走 60s 轮询回退。**AsyncSession 纪律**：关系属性访问必须显式 `selectinload`/`joinedload`（懒加载在 async 下直接抛 `MissingGreenlet`）；`db.add` 是同步方法不可 await（`db.delete`/`commit`/`refresh` 等为 async）。**timestamptz 纪律**：全库 DateTime 列均为 `timezone=True`，`utc_now()` 返回 aware UTC；asyncpg 对 timestamptz 参数强制 aware（naive 混入在绑定期即报错）；SQLite 读回丢失 tzinfo，跨方言的 datetime 算术需容错（见 `_compute_time_decay`）。**短事务纪律（session 不跨 LLM await）**：`run_chat_turn` 不接收 session——turn 起点（加载对话 + 写用户消息 + 装配输入）一个短 session，其后每个持久化点、工具批处理前后、压缩检查点各自开短 session；`NativeMemory(db=None)` 时每次记忆工具调用自开短 session；后台任务（persona 标签刷新 / 换装 onboarding / 后台记忆复习）按"读→LLM→写"三段各持短 session，LLM 调用经预解析的 provider chain（`_chain`/`provider_config`/`vision_chain` 旁路）以 `db=None` 执行。
-- **换装管线自然语言路由与分类机制**：`POST /api/companion/wardrobe/preview` 接收的描述由 LLM 语义分类为 `texture` / `garment` / `accessory` 并产出装配元数据（slot / socket / physics），分类失败默认走 `garment`（能力最全路径）。客户端不暴露 `kind` 字段——用户只输入自然语言描述，由后端自适应决定走哪条流水线。
-- **换装材质防失效与自愈重生成**：`_re_sign_texture` 对已过期的临时媒体链接（`temp-media/`）安全置空，避免客户端请求失效 URL；当检测到已装备的换装项缺失材质贴图时，后台异步基于角色的当前着装描述（`outfit_description` / `prompt`，以头像为肤色基准）触发 PBR 贴图自动重生成并持久化至 `companion-assets/`，生成完成后发射 `wardrobe.updated` 事件通知客户端静默刷新。
-- **几何换装"LLM 毛坯 + 确定性后处理"分工**：LLM 负责毛坯几何生成与 `VG_ANCHOR` 锚点标注（语义理解优势），贴合/加厚/蒙皮/防穿模由确定性 bpy 算法接管（边界为 `_build_garment` 函数，保证数值几何可复现可校验）。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。
-- **挂件（Accessory）硬质绑定管线**：accessory 作为硬质附件直接挂接 socket 骨骼，无需贴合、加厚与变形蒙皮——scaffold `--kind accessory` 分支直接导出并校验 GLB 可解析。
-- **骨骼 Socket 自动模糊匹配与去前缀**：针对 mixamo 导出的 `mixamorig:` 前缀差异，`_resolve_socket` 执行精确与去前缀两级匹配；匹配失败按槽位回退默认挂点（Head/RightHand/Spine2），再失败降级为 garment。
-- **装备槽位互斥与 Outfit 状态拼接**：`equip` 仅顶替同 `assembly_json.slot` 的已装备部件；persona outfit 字段镜像全部已装备部件描述的文本拼接。texture 恒占 `outfit` 槽。
-- **流式 Chat 一致性与错误隔离**：流式 chat 一旦首 chunk 已发不再 fallback，避免同一回合混合两个模型的输出造成上下文截断；失败统一 raise。LLM 下载临时媒体失败拦截原始 SDK 报错，返回标准短消息，避免误导性触发 LLM 回退。
-- **交互频控与汇总门限**：`companion.interact` 设 5 分钟封顶作为戳击主动反应成本控制闸门，不影响自主行为与统计；`interaction_stats` 采用 OR 门限（poke/chat_turn 达到 10 即写汇总），序列化 `hour_counts` 供夜间反思。
-- **3D 伴侣模型本地快速调试与质量检视（`pnpm clip`）**：后端在调整 3D 生成管线（Tripo3D / 混元）、Blender `auto_rig` 自动绑骨权重、面部 Blendshape 注入或骨骼朝向时，无需启动完整桌面客户端或等待 LLM 链路对话——直接在根目录或 `client/` 运行 `pnpm clip` 启动独立动画调试器（浏览器直开 `http://127.0.0.1:5174/?role=clip`）。支持粘贴激活码一键直连本地后端（`/api/companion/model`）下载并渲染伴侣 GLB 模型（自动处理 Gzip 透明解压与 71°手臂自然下垂 Rest Pose 映射），提供 3D 交互位移/旋转/缩放坐标轴（TransformControls）、一键立起（解决 Z-up 平躺）、一键接地、一键转身、面部 Blendshape 调节与 7 大骨骼分类动作全量即点即测。
-- **MiniMax 内容风控快速失败**：`base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免无意义重试白烧配额。
+- **夜间自主活动批处理，离线而非在线 agentic**：在用户本地休息窗口（0–5 点）跑批处理流水线（画像推断、记忆整理与衰退、主动规划、自我日记），每阶段独立事务、全空可安全回滚。为什么不作为在线循环：批处理在离线状态也可完成认知深化与记忆优化，不强依赖客户端长连接；次日派发的主动回合在触发时才做在线与打扰检查。
+- **夜间批处理消化"刚结束的那个本地日"，参考时刻由调度单点传入**：凌晨窗口里"今天"几乎没有数据，可反思的是昨天；数据日由调度侧统一判定后传入流水线。为什么不让流水线自己算：两处各自推导会漂移——准入门限数昨天、流水线读今天的空窗口，结果是每晚都判定"无消息"提前返回，整个窗口反复重试永不成功。
+- **双压缩检查点，所有对话类型统一读路径**：LLM 上下文从最近的检查点起算，之前的完整历史只在库中留存、不进上下文（裁剪只在读路径）。两类检查点地位对等、区别只在触发时机：运行时压缩摘要（所有对话，上下文超限时把最旧一块压成一条摘要）与夜间日总结（仅主对话，从最近检查点读到当前压成一条）。旧压缩摘要融入新日总结，内容不丢失；新日总结自动取代旧检查点成为后续读起点。**跳过工具帧仅限主对话**：只有主对话会落一条工具摘要顶替被跳过的帧，普通对话没有替身，一并跳过等于抹掉工作上下文。
+- **配置模版与本地配置隔离**：Git 只托管模版 `config.toml.example`（代码中不保留重复默认值），本地 `config.toml` 被 `.gitignore` 忽略；按 OS Env > .env > config.toml > 模版 的优先级加载。
+- **供应商自注册而非手动引入**：各供应商模块在包底部导入时注册进注册表，入口显式 import 触发——新增供应商子包即扩展能力，无须改入口。代价：注册顺序敏感、遗漏 import 则该能力静默缺失（fail-open）。三层入口（按服务取供应商 / 取客户端 / 带回退执行）按场景路由，不从 URL host 反推供应商（避免脆弱推断）。
+- **IPC future 按 (user_id, call_id) 二元键寻址 + 断线缓冲期**：并发用户不共享 future；短时断线期间后台生成任务（LLM 流式、形象再生成、Cron 回合）保持存活、产物事件进缓冲待重放，重连经会话恢复增量补发；宽限超时（用户未归）统一回收未决 future、Runner 工具并取消孤儿生成。契约见 [PROTOCOL.md §0 / §4](../PROTOCOL.md)。
+- **LLM 生成的 Blender 代码在一次性沙箱容器执行**（跨模块拓扑与安全边界见 [ARCHITECTURE.md §8 不变量 11](../ARCHITECTURE.md)）：渲染 Worker 把输入拷进每任务私有工作目录后派生断网、CPU/内存限额、只读根的容器，超时/取消强杀容器，启动时按标签清扫孤儿容器。**挂载约束（非显然坑）**：只有数据目录是宿主 bind mount，沙箱工作目录必须落在它之下，越界即拒；渲染 Worker 自身容器化时，数据目录路径在 daemon 文件系统上并不存在，挂载源必须翻译成 daemon 侧路径，否则 daemon 把挂载源自动建成空目录、沙箱内脚本全部不可见——worker 从自身挂载表自动完成翻译，仅远程 DOCKER_HOST 等探测不可行的场景需配置手动覆盖。沙箱镜像缺失时启动自动构建，新环境部署无须手动构建；沙箱关闭配置退回 worker 容器内裸子进程，仅建议受控部署使用。
+- **WS 关闭码 1008（鉴权失效）立即退出重连流程**：凭据问题靠重试无法恢复，不把请求堆到过期账号上。
+- **形象生成失败对用户返回固定友好文案并支持重试**：不透传供应商原始错误——错误体常含 URL / 部分 auth 头，且用户对生图服务错误无处理能力。
+- **错误统一归类为有限分类决定恢复策略**（退避重试 / 凭证轮换 / 压缩上下文 / 不重试）。为什么不暴露原始异常：供应商错误常含 URL / auth 头 / 私有调用栈，必须脱敏。
+- **文生3D 独立服务，供应商显式指定、不做商业供应商自动回退**：独立于通用 LLM 模块的文生3D 服务，供应商接口为提交 / 轮询 / 下载三段式并带能力开关，经同一注册表自注册；提示词管线为视觉 LLM 读半身像 + 角色设定产出结构化外观（无图或视觉失败回退纯文本），再拼固定后缀与风格措辞。绑骨**本地优先**：产物先走本地 Blender 自动绑骨，失败且供应商有云端绑骨 API 才兜底云端、产物归一化后落库。供应商仅显式选择（配置默认或请求参数覆盖）；key 缺失（无论显式还是默认）一律拒绝且不建生成行，客户端以静态精灵交互。为什么不做供应商间自动回退：商业 3D 生成按次计费且风格差异大，静默换供应商会让用户拿到与预期不符的模型；配额耗尽等失败直接进失败态由用户重试。**Blender 的定位是 3D 后处理工具**（变形目标注入、自动绑骨、换装几何），不承担模型生成——LLM 自由写建模代码的质量（无 PBR）与时长（分钟级起步）都不适合作为生成主路或兜底。
+- **已付费 3D 产物先落盘留存，恢复走渲染队列**（跨模块契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)「下载失败可恢复」）：后处理开始前原始 GLB 已先落盘进模型存储——任务工作区结束即被清空，不能作为留存位置；下载/后处理失败的恢复（刷新签名 URL + 下载 + 后处理）必须经渲染队列在渲染 Worker 执行（后处理需要 Blender，web 进程不跑）。
+- **SSRF 保留段检查默认严格、按部署显式豁免**：fake-ip TUN 代理（Clash 类）把所有域名解析进 198.18.0.0/15，供应商产物的对象存储下载会被 SSRF 保留段检查拦截——API 调用走普通客户端不受影响，唯独下载失败且已计费。命中豁免网段只跳过保留段拒绝，域名黑名单、协议白名单、HTTPS→HTTP 降级拦截、云元数据/CGNAT 拦截无条件保留。为什么默认不豁免：多租户部署里该段同样可能是真实内网，"本部署跑在 fake-ip 代理后"是部署者的知识，豁免必须显式配置。
+- **文生3D 提示词按类人面孔分流风格 + 完整性子句 + A-pose + 最小覆盖内衣**：类人面孔（人类/精灵预设 + 视觉 LLM 判定的自定义物种）默认二次元措辞（手办 CGI 风格被用户目检否决，保留为 CLI 对比变体）；非人生物（机甲/灵兽/四足等，无恐怖谷问题）用写实措辞。完整性子句放提示词最前并点名全部体段——身份描述占大头时供应商会退化出半身像/截断下肢。A-pose（双臂微张）与最小覆盖运动内衣与图生路径同因：绑骨强依赖对称骨架，姿态偏离会导致关节识别失败、蒙皮错位；贴图换装依赖皮肤可见度，覆盖款会色差/穿模。风格随模型行持久化：建行时单次解析写入（不做二次分类——两次 LLM 调用可能给出不同判定，风格漂移会重现断层），随模型就绪事件与模型接口下发，供客户端路由 NPR/PBR 渲染。
+- **用户可见图像风格分层（半身像 / 精灵恒写实）**：半身像持续写实；精灵是 GLB 缺位或生成失败期的桌面降级渲染源（用户可见），主体参考锁半身像并显式锁写实人像措辞，保持与半身像视觉一致。换装纹理提示词同路由（优先取模型行风格，缺行按物种预设）——二次元角色的反照率贴图加"干净色块"措辞（toon 渲染会放大写实噪点），法线等技术通道风格中立。为什么不删精灵：等不到 GLB 的窗口期与生成失败期仍需要静态占位，精灵是最稳的可见层。
+- **双参考图仅 Gemini 消费**：第二张参考图（身份锚点之外的风格/体态参考）只有 Gemini 的图生图原生支持双参考融合；Grok 与 MiniMax 都是单参考，收到第二张时**静默忽略**。供应商链在双参考请求下把 Gemini 排在单参考家之前、单参考兜底。
+- **静态精灵相册懒生成 + 写实锚点**：无 3D 模型期的降级渲染源，主体参考锁半身像、措辞显式锁写实人像；LLM 按自由语义在相册标签中匹配（命中零生成成本），未命中才撰写提示词生成，等待图每用户唯一且命中即返。为什么懒生成而非预生成全集：语义空间开放（状态×情绪×反应），预生成既浪费也永远不齐，懒生成让每张图都被真实需求验证。相册按头像失效、有数量上限与每分钟频控（防 LLM 循环刷请求）；命中/短路返回前校验文件在盘，带外删除（手动清理/换盘）产生的孤儿行即删并按未命中再生成——签名 URL 不会持续指向 404。抠图走**自适应色键**：从候选色（亮绿/品红/青/紫罗兰/橙）按半身像调色板选与主体距离最远的颜色写入提示词（后端选色而非让模型自由挑色——模型可能选中与服装冲突的颜色），生成后按边框环估计的实际背景色做双阈值 flood fill 抠图（边界连通才抠、封闭大连通域补抠、去溢色、残余硬化）。为什么不用纯白背景：亮度键无法区分白背景与白色/浅色服装；为什么不用 ML 分割：引入 onnxruntime 级重依赖且不确定，色键确定性强。供应商无视颜色指令渲染成白底时按估计背景色退化抠图（仅记日志不硬失败）；复合质量门（实心占比 + 半透明占比）拦截"只剩轮廓"的洗坏产出。
+- **表情头像按情绪精确匹配懒生成**：3D 模型的脸部在桌面尺寸下精细度不足，情绪的面部表达由聊天窗表情头像承载——以半身像为身份参考、按 (用户, 情绪, 头像) 三元组缓存，命中即返签名 URL，未命中才以确定性模板提示词生成（情绪语义取内置映射或注册表描述），无 LLM 撰写轮。提示词三字段口径：外形特征文案随行强化身份（物种由半身像参考锚定）；**着装例外**——取角色定义的当前着装字段，它是换装系统的权威镜像而参考图冻结的是 onboarding 期着装；性格随行以塑造情绪反应方式（同一情绪在不同性格上反应不同）。为什么精确匹配而非语义匹配：情绪与缓存行 1:1，语义匹配是白付一次 LLM 调用。生成窗口内进程级去重（并发触发共享一次生成，清理挂任务完成而非首个等待者——中途断连不得提前弹 key 导致重复计费）、失败短冷却、数量上限修剪；中性情绪永不生成（即形象头像本身）。
+- **长期记忆混合检索与前置主动召回**：针对 SQL 子串匹配的语义鸿沟与纯被动调用的健忘，检索管线为向量语义（余弦距离，非 PG 环境内存回退）+ 关键词/CJK N-gram 双路召回、RRF 融合，叠加时间衰减（保底不归零，关键记忆不消失）与重要性加权；主对话 turn 开始前自动匹配高相关记忆注入系统提示词，免去 LLM 轮轮主动调用记忆工具的认知开销。
+- **Alembic 版本化迁移 + 启动自动升级**：lifespan 内自动升级到 head，无独立部署步骤——单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。单一 baseline（全量 schema 上线前 squash 而来），此后只追加迁移、不重写历史；类型与默认值比对全开，校验必须零差异。autogenerate 两个坑：视频生成任务模型不被模型包入口导入，迁移环境脚本的显式 import 勿删；partial unique / 向量 / 全文索引只存在于迁移文件（声明进模型会让 SQLite 建表丢失语义），因此从模型删索引不会自动生成 drop，需手写。
+- **全异步数据访问层，单一连接池**：所有会话经同一 asyncpg 池（此前同步池与异步池并存、职责重叠且连接数翻倍，合并后单池 + 一条监听专线）；事件监听独占一条进程生命周期直连，断线自动重连，非 PG 后端回退轮询。纪律（async 下的坑）：关系属性必须显式预加载（懒加载运行时直接抛错）；全库时间戳带时区、参数必须 aware（SQLite 回读丢时区，跨方言算术需容错）；**短事务——会话不跨 LLM await**：回合起点、每个持久化点、工具批处理前后、压缩检查点各自开短会话，后台任务按"读 → LLM → 写"三段各持短会话，LLM 调用以无会话方式执行。
+- **换装自然语言路由与分类**：用户只输入自然语言描述，LLM 语义分类为贴图 / 几何服装 / 挂件并产出装配元数据（槽位/挂点/物理），分类失败默认走能力最全的几何服装路径；客户端不暴露分类字段。
+- **换装材质防失效与自愈重生成**：已过期的临时媒体链接安全置空，避免客户端请求失效 URL；检测到已装备项缺失材质贴图时，后台基于角色当前着装描述（以半身像为肤色基准）自动重生成 PBR 贴图并持久化，完成发事件通知客户端静默刷新。
+- **几何换装"LLM 毛坯 + 确定性后处理"分工**：LLM 负责毛坯几何与语义锚点标注（语义理解优势），贴合/加厚/蒙皮/防穿模由确定性算法接管（数值几何可复现可校验）；挂件作为硬质附件直接挂接骨骼，无贴合与蒙皮。参数表见 [MODEL_SPEC.md §4.2](../docs/MODEL_SPEC.md)。
+- **骨骼挂点自动模糊匹配与去前缀**：针对 mixamo 导出的骨骼前缀差异做精确 → 去前缀两级匹配；失败按槽位回退默认挂点，再失败降级为服装。
+- **装备槽位互斥与着装镜像**：装备只顶替同槽已装备件；角色定义的着装字段镜像全部已装备部件描述的拼接，贴图恒占外观槽。
+- **交互频控与汇总门限**：戳击主动反应设分钟级封顶作为成本闸门，不影响自主行为与统计；互动统计按 OR 门限（戳击或对话任一达标）写小时级汇总，供夜间反思。
+- **3D 模型本地快速调试入口（`pnpm clip`）**：调整文生3D 管线、自动绑骨、变形目标注入或骨骼朝向时，无须启动完整客户端或等待 LLM 链路——独立动画调试器直连本地后端下载渲染伴侣模型。详见 [client/README.md §4](../client/README.md)。
+- **内容风控快速失败**：供应商内容风控拒绝映射为不可重试错误，避免无意义重试白烧配额。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| Affect emotion / locale 枚举 | 对 LLM 提示词 → Client 渲染 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名 | 对 Client | [PROTOCOL.md §1.5](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏 | 对 Client | [PROTOCOL.md §1.6](../PROTOCOL.md) |
+| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| 事件类型（`companion.affect` / `model.ready` / `wardrobe.updated` 等） | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| Affect emotion / locale 枚举 | 对 LLM 提示词 → 客户端渲染 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
+| 资产 URL 5 分钟 HMAC 签名 | 对客户端 | [PROTOCOL.md §1.5](../PROTOCOL.md) |
+| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏 | 对客户端 | [PROTOCOL.md §1.6](../PROTOCOL.md) |
 | Reserved Keys 防注入（`user_id` / `llm_config` / `user_settings`） | 对 LLM 工具入参 | [PROTOCOL.md §5.1](../PROTOCOL.md) |
-| Outbox `ws_events` LISTEN/NOTIFY 调度 | 内部（业务 / Cron → Client） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
-| IPC future `(user_id, call_id)` 键语义 + 超时 + JWT 过期兜底 | 内部（Backend ↔ Client IPC） | [PROTOCOL.md §4](../PROTOCOL.md) |
-| disturbance_tier 持久化（`companion_preferences` 表，重启不丢） | 接 Client 推送 [PROTOCOL.md §1.2](../PROTOCOL.md) 的 `companion.set_disturbance_tier` | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
-| LLM provider chain resolver 三层入口（`provider_for_service` / `client_for_service` / `execute_with_fallback`） | 本模块独有 | 本 README §3 |
-| PROVIDER-first 配置 + Tier 1–4 回落链 | 本模块独有（Provider 自注册产物） | 本 README §2 |
-| 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §2 + backend 代码 |
-| `ModelGenerateRequest.provider` 取值与触发条件 | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `companion.model.retryDownload`（仅重试下载，绝不重新计费）与 `model.failed` 载荷的 `retry_download` / `model_id` | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `model.ready` / `model.gen.progress` payload `provider` 字段 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `model.ready` `provider` 来源标识（`tripo_text_to_3d` / `hunyuan_text_to_3d`） | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对 Client | [PROTOCOL.md §1.7](../PROTOCOL.md) |
-| `POST /api/companion/wardrobe/preview`（202 入队）/ `GET .../preview/{job_id}`（轮询）/ `confirm` | 对 Client | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `wardrobe.preview.progress/.ready/.failed` 事件 | 对 Client | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| render job 状态机（queued/processing/succeeded/failed + 崩溃回收） | 对 Client + 内部 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
-| cron 自主回合内部事件 `cron.turn.request`（outbox 路由到持连副本） | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| API Key 永不离后端（指纹化 + 留空即保留） | 对管理端 | [PROTOCOL.md §5.4](../PROTOCOL.md) |
+| Outbox `ws_events` LISTEN/NOTIFY 调度 | 内部（业务 / Cron → 客户端） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| IPC future `(user_id, call_id)` 键语义 + 超时 + JWT 过期兜底 | 内部（后端 ↔ 客户端 IPC） | [PROTOCOL.md §4](../PROTOCOL.md) |
+| 打扰档位持久化（重启不丢） | 接客户端推送（见 [PROTOCOL.md §1.2](../PROTOCOL.md) `companion.set_disturbance_tier`） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| 供应商链三层入口（按服务取供应商 / 取客户端 / 带回退执行） | 本模块独有 | 本 README §4 |
+| 供应商优先配置 + 回落链 | 本模块独有（供应商自注册产物） | 本 README §4 |
+| 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 + backend 代码 |
+| `ModelGenerateRequest.provider` 取值与触发条件 | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `companion.model.retryDownload`（仅重试下载，绝不重新计费）与 `model.failed` 载荷的 `retry_download` / `model_id` | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `model.ready` / `model.gen.progress` 载荷 `provider` 字段 | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `model.ready` `provider` 来源标识（`tripo_text_to_3d` / `hunyuan_text_to_3d`） | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| `WardrobeItem` 换装装配契约（`kind` / `slot` / `assembly_json` / `mesh_url`） | 对客户端 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
+| `POST /api/companion/wardrobe/preview`（202 入队）/ `GET .../preview/{job_id}`（轮询）/ `confirm` | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
+| `wardrobe.preview.progress/.ready/.failed` 事件 | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
+| render job 状态机（queued/processing/succeeded/failed + 崩溃回收） | 对客户端 + 内部 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
+| Cron 自主回合内部事件 `cron.turn.request`（outbox 路由到持连副本） | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 
 ## 6. 已知限制
 
 | 限制 | 说明 |
 |------|------|
-| **web 单副本语义（chat 亲和）** | 运行时 chat 会话（流式 / `chat_task`）与 IPC future 在 process-local 内存，多 web 副本需粘性 WS 且不解决迁移互斥（lifespan 自动迁移无并发锁）；in-memory rate limit（slowapi）。`disturbance_tier` 与 cron 回合派发已跨副本安全。Render Worker 无进程内用户状态，可加副本 |
-| **AsyncSession 关系懒加载不可用** | 关系属性在查询后访问必须显式 `selectinload`/`joinedload` 预加载，否则运行时抛 `MissingGreenlet`；新增跨表访问时需同步补加载选项。 |
-| **MiniMax 视频 URL 短时效** | video_gen v2（H3）`poll` 直接返回 `download_url`，v1（Hailuo）还有 `files/retrieve` 第二跳；两者 URL 都是短时效的，必须**立即下载落 `data_dir/temp-media`**，不能直接返给前端 |
-| **Cron kick 守卫** | 写行前的 `is_quiet` 守卫（tier 落库）；`cron.turn.request` 行只被持有该用户 WS 的副本认领执行，全副本离线时 10min GC 兜底清行——该次触发丢弃（`next_run_at` 已 CAS 前移，等下次调度） |
-| **自动绑骨为包围盒模板** | 无云端绑骨能力的供应商（hunyuan）产物用确定性比例模板（`rig_layout`）+ ARMATURE_AUTO 自动权重本地绑骨；对非标准姿态（蜷缩、翅膀张开）效果有限，动画质量依赖模板近似。绑骨失败（含自动权重零分配）直接判任务失败，不产出无骨模型。spec 坐标为 glTF 约定（Y 朝上、面朝 -Z），`auto_rig.py` 负责重映射进 Blender Z-up 世界（含 x 翻转对齐左右手）；导入网格必须先 transform_apply（glTF 导入把 +90°X 轴转换留在对象上，二次导出会叠加成模型躺倒），并跑一遍 1e-5 `remove_doubles`（供应商网格高度非流形，bone heat 直接无解 → glTF 导出器丢弃 skin，模型有骨无皮不可动画）。百万顶点级网格（文生3D 产物）remove_doubles 仍不够、bone heat 无解时走**代理求解**：抽减到约 12 万顶点的代理网格上解自动权重，再经 Data Transfer（最近面插值）回传原网格并归一化，求解期裸顶点兜底指派最近骨骼——GLB 蒙皮要求每顶点权重非零，零权顶点在首次摆姿势时撕裂网格。骨架 yaw 由 vision LLM 读四视角渲染快照判正脸对齐（几何密度启发对长发网格失效——正反面密度差被头发抹平；LLM 失败降级 yaw=0），绑骨后整体转回规范朝向再导出。本地绑骨失败且供应商支持云绑骨时兜底云端绑骨，云端产物经 ``--mode normalize`` 去骨骼前缀 + 同款朝向归一化后落库。 |
-| **hunyuan 文生/图生入口** | 腾讯混元生3D（TokenHub 接入）文生入口为当前生成线（Prompt 与图像输入互斥）；单图/多视图图生入口（`multi_view_images`）保留未使用。无云端绑骨能力，产物骨骼由本地 Blender 自动绑骨后处理补齐。 |
-| **贴图换装受身体模型皮肤可见度约束** | `kind=texture` 的 PBR 贴图换装受限于供应商重建的身体皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。`kind=garment` 的几何换装不受此约束（服装是独立 mesh，不走身体纹理迁移）。 |
-| **几何服装管线需 Blender + 较长生成时间** | `kind=garment` / `accessory` 经 LLM→Blender→evaluate 迭代生成几何，单次预览耗时数分钟（受 `blender_llm_max_iterations` × `blender_llm_timeout` 支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。garment GLB 导出复用身体 armature 保证关节一致，客户端零映射 rebind。 |
-| **worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（`blender_sandbox_enabled=false` 时退回 worker 容器内裸 blender 子进程）。 |
-| **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期 Blender 布料重力悬垂烘焙（20 帧静态形变固化）、5 通道 PBR 贴图（含 displacement 微表面深度）与客户端 BodyCollider 表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |
-| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（4s 防抖窗口，[DESIGN.md §6.6](../DESIGN.md)），再经 `prompt.submit` 的 `batch` 一次性提交——前驱消息经 `persist_extra_user_messages` 落库、末条作为当轮 user 消息；前一轮 turn 生成期间连发的消息仍会在上一轮落库后作为新 turn 批量写入。因此客户端刷新（Hydration）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。 |
+| **web 单副本语义（chat 亲和）** | 运行时 chat 会话（流式 / 后台回合）与 IPC future 在进程内存，多 web 副本需粘性 WS 且不解决迁移互斥（lifespan 自动迁移无并发锁）；限流也是进程内的。打扰档位与 Cron 回合派发已跨副本安全。渲染 Worker 无进程内用户状态，可加副本。 |
+| **异步会话关系懒加载不可用** | 关系属性在查询后访问必须显式预加载（selectinload/joinedload），否则运行时抛错；新增跨表访问时需同步补加载选项。 |
+| **MiniMax 视频 URL 短时效** | 新版轮询直接返回下载 URL，旧版（Hailuo）还有取文件第二跳；两者 URL 都是短时效的，必须**立即下载落临时媒体目录**，不能直接返给前端。 |
+| **Cron 回合派发守卫** | 写行前做静默档守卫（档位已落库）；自主回合行只被持有该用户 WS 的副本认领执行，全副本离线时由 GC 兜底清行——该次触发丢弃（下次调度时间已前移，等下次触发）。 |
+| **自动绑骨为包围盒模板** | 无云端绑骨能力的供应商产物用确定性比例模板 + 自动权重本地绑骨，对非标准姿态（蜷缩、翅膀张开）效果有限；绑骨失败（含自动权重零分配）直接判任务失败，不产出无骨模型。多个非显然坑：spec 坐标为 glTF 约定（Y 朝上），导入 Blender（Z-up）需重映射与左右手翻转；glTF 导入会把坐标转换留在对象上，二次导出前必须应用变换，否则叠加成模型躺倒；供应商网格高度非流形，须先合并顶点否则权重求解无解、导出器丢弃蒙皮（模型有骨无皮）；百万顶点级网格合并仍不够时走**代理求解**——抽减到约 12 万顶点的代理网格上解权重再回传原网格（GLB 蒙皮要求每顶点权重非零，零权顶点首次摆姿势时撕裂网格）；骨架朝向由视觉 LLM 读四视角快照判正脸（几何密度启发对长发网格失效，失败降级不旋转）。本地失败且供应商支持云绑骨时兜底云端，产物经去骨骼前缀 + 朝向归一化后落库。 |
+| **hunyuan 文生/图生入口** | 腾讯混元生3D（TokenHub 接入）文生入口为当前生成线（提示词与图像输入互斥）；图生/多视图入口保留未使用。无云端绑骨能力，产物骨骼由本地自动绑骨补齐。 |
+| **贴图换装受身体模型皮肤可见度约束** | 贴图换装受限于供应商重建的身体皮肤区域——紧身覆盖款换到露出款会有色差/反光异常。几何服装不受此约束（独立网格，不走身体纹理迁移）。 |
+| **几何服装管线需 Blender + 较长生成时间** | 几何服装/挂件经 LLM→Blender→评估迭代生成，单次预览耗时数分钟（受迭代与超时配置支配）；预览已异步化（202 + 轮询/事件，见 [PROTOCOL.md §1.8](../PROTOCOL.md)），HTTP 不再阻塞。服装 GLB 导出复用身体骨架保证关节一致，客户端零映射直接绑。 |
+| **渲染 Worker 挂 docker.sock = 宿主 root 面** | 沙箱执行器经 docker.sock 派生容器，持有该 socket 等效宿主 root；仅 compose `worker` 服务挂载、镜像内只装 docker-cli，多租户部署不得开启沙箱（关闭时退回 worker 容器内裸 Blender 子进程）。 |
+| **几何拟真度天花板** | 几何是程序化/LLM 生成，偏"干净"，达不到扫描级写实；通过生成期布料重力悬垂烘焙、5 通道 PBR 贴图（含置换微表面深度）与客户端碰撞体表面防穿模推移提升拟真度。扫描级写实属于商业高成本管线边界，非工程缺陷。 |
+| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（防抖窗口，[DESIGN.md §6.6](../DESIGN.md)）再一次性批量提交——前驱消息先落库、末条作为当轮 user 消息；上一轮生成期间连发的消息在上一轮落库后作为新 turn 批量写入。因此客户端刷新（水合）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。 |
 
 ## 7. 部署与监控
 

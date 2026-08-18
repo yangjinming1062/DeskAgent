@@ -154,7 +154,7 @@ pnpm clip
 - **全量动画测试**：支持 7 大骨骼体系（人形双足 / 四足动物 / 飞禽鸟类等）100+ 动作即点即播、交叉淡入淡出、倍速与单帧步进；
 - **智能姿态纠偏**：自动识别 Z-up 平躺模型并立起、自动双脚贴地与水平居中；
 - **3D 交互手柄**：内置 TransformControls（位移 / 旋转 / 缩放）坐标轴拖拽与精确数值微调；
-- **表情与嘴型**：支持 52 维面部 Blendshape 调节与 TTS 口型振幅模拟。
+- **表情与嘴型**：支持面部变形目标调节与 TTS 口型振幅模拟。
 
 ---
 
@@ -187,5 +187,5 @@ bash scripts/build_client.sh
 | **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、状态机与换装热替 |
 | **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化、MCP 客户端与工具库 |
 | **安装器与引导机制 (Installer)** | [installer/README.md](installer/README.md) | Tauri 2 极简轻量安装引导与环境配置流程 |
-| **3D 模型与骨骼规范** | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) | 骨骼命名、动画 Clip 映射、Morph 表情规范说明 |
+| **3D 模型与骨骼规范** | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) | 骨骼命名、动画 clip 映射、面部变形目标规范说明 |
 | **代码与协作开发规范** | [RULES.md](RULES.md) | 仓库代码风格、文档更新原则、Git Commit 提交模板 |
