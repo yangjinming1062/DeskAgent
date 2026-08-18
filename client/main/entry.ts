@@ -1314,6 +1314,7 @@ function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
   const base = preferredOrigin
     ? { height: 1, width: 1, x: preferredOrigin.x, y: preferredOrigin.y }
     : mainWindow.getBounds()
+
   mainWindow.setBounds(screen.getDisplayMatching(base).workArea)
 }
 

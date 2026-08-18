@@ -83,12 +83,12 @@ function setup(opts: { cursor: { x: number; y: number }; nearest?: FakeDisplay; 
   return { ipc, setBoundsCalls, tmpDir }
 }
 
-test('move-to-cursor-display snaps the window onto the cursor display and reports both origins', async () => {
+test('move-to-cursor-display snaps the window onto the cursor display and reports origins and cursor', async () => {
   const { ipc, setBoundsCalls } = setup({ cursor: { x: 2000, y: 100 }, nearest: SECONDARY })
 
   const res = await ipc.invoke('spiritagent:sprite:move-to-cursor-display')
 
-  assert.deepEqual(res, { from: { x: 0, y: 0 }, to: { x: 1920, y: 0 } })
+  assert.deepEqual(res, { cursor: { x: 2000, y: 100 }, from: { x: 0, y: 0 }, to: { x: 1920, y: 0 } })
   assert.equal(setBoundsCalls.length, 1)
   assert.deepEqual(setBoundsCalls[0], SECONDARY.workArea)
 })

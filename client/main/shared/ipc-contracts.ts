@@ -298,8 +298,8 @@ export interface IpcInvokeContract {
   'spiritagent:sprite:set-position': (payload: { x: number; y: number }) => Promise<void> | void
   'spiritagent:sprite:move-to-cursor-display': () =>
     | null
-    | { from: { x: number; y: number }; to: { x: number; y: number } }
-    | Promise<null | { from: { x: number; y: number }; to: { x: number; y: number } }>
+    | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }
+    | Promise<null | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }>
 
   // Update
   'spiritagent:update:check': () => Promise<void> | void

@@ -1,10 +1,13 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
+import { $chatOpen } from '@/companion/chat-store'
 import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 import {
+  $homePosition,
+  $spatialLocomotion,
   $spatialPos,
   $spatialScale,
   cancelMovement,
@@ -67,6 +70,7 @@ export function SpriteStage({
   const pendingVelRef = useRef<{ vx: number; vy: number } | null>(null)
   const dragRafRef = useRef<number | null>(null)
   const displayProbeAtRef = useRef(0)
+  const lastDragPointRef = useRef<{ x: number; y: number } | null>(null)
 
   // 0-delay unignore on capture: setIgnoreMouseEvents(true, { forward: true }) does NOT forward mousedown/contextmenu to the renderer, so the window must be ungnored BEFORE the click arrives — mousemove is the only signal that reaches us.
   const captureImmediate = useCallback(() => {
@@ -194,8 +198,12 @@ export function SpriteStage({
 
   // The sprite window lives on a single display; moving the sprite to another monitor
   // means moving the window. Main snaps it onto the cursor's display and returns both
-  // window origins — shift the drag frame by the delta so the sprite stays glued to
-  // the cursor across the switch instead of jumping.
+  // window origins. Only the sprite POSITION shifts by the origin delta — the drag
+  // reference points must not: pointer events after the switch arrive in the NEW
+  // viewport space (client itself jumps by the same delta), so origin + (client −
+  // start) keeps producing the shifted value on its own. Shifting start too pins the
+  // sprite to its old-viewport coordinates and flings it to the far edge of the new
+  // display.
   const probeDisplaySwitch = useCallback((): void => {
     const now = performance.now()
 
@@ -208,21 +216,52 @@ export function SpriteStage({
     void window.spiritagent.sprite
       .moveToCursorDisplay()
       .then(switched => {
-        const d = dragRef.current
-
-        if (!switched || !d || !d.moved) {
+        if (!switched) {
           return
         }
 
-        const dx = switched.from.x - switched.to.x
-        const dy = switched.from.y - switched.to.y
-        d.startX += dx
-        d.startY += dy
-        d.lastX += dx
-        d.lastY += dy
+        const { cursor, from, to } = switched
+        const dx = from.x - to.x
+        const dy = from.y - to.y
+        const d = dragRef.current
 
-        const p = $spatialPos.get()
-        updateDragPosition({ x: p.x + dx, y: p.y + dy })
+        // Pointer coords captured before the window jump are old-space, after it
+        // new-space; they differ by the origin delta (hundreds of px) while the cursor
+        // moved only a few px since main read it. If the latest drag point already sits
+        // in the new space, the drag formula recomputes the shifted position on its
+        // own — shifting again would double-apply the delta for a frame.
+        const point = d?.moved ? { x: d.lastX, y: d.lastY } : lastDragPointRef.current
+
+        if (
+          point &&
+          Math.hypot(point.x - (cursor.x - to.x), point.y - (cursor.y - to.y)) <=
+            Math.hypot(point.x - (cursor.x - from.x), point.y - (cursor.y - from.y))
+        ) {
+          return
+        }
+
+        const dragging = d?.moved === true
+
+        // Released before the handoff landed — remap the resting position too, or the
+        // sprite stays parked in old-viewport coordinates (off-screen on the new
+        // display). Skip when an autonomous move already recomputed a new-space one.
+        if (!dragging && ($spatialLocomotion.get() !== 'still' || $chatOpen.get())) {
+          return
+        }
+
+        if (pendingPosRef.current) {
+          pendingPosRef.current.x += dx
+          pendingPosRef.current.y += dy
+        }
+
+        const pos = $spatialPos.get()
+        const next = { x: pos.x + dx, y: pos.y + dy }
+        $spatialPos.set(next)
+
+        if (!dragging) {
+          $homePosition.set(next)
+          void window.spiritagent.sprite.setPosition(next)
+        }
       })
       .catch(() => {})
   }, [])
@@ -304,6 +343,7 @@ export function SpriteStage({
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
     const drag = dragRef.current
     dragRef.current = null
+    lastDragPointRef.current = drag?.moved ? { x: drag.lastX, y: drag.lastY } : null
 
     if (dragRafRef.current !== null) {
       cancelAnimationFrame(dragRafRef.current)

@@ -99,7 +99,8 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
 
   // During a drag the renderer reports out-of-viewport pointer coords once the cursor
   // crosses onto another display — snap the window onto the cursor's display and return
-  // both origins so the renderer can remap its drag frame without the sprite jumping.
+  // both origins plus the cursor point, so the renderer can remap the sprite position
+  // and tell whether its latest pointer coords pre- or post-date the window jump.
   ipcMain.handle('spiritagent:sprite:move-to-cursor-display', async () => {
     const win = getSpriteWindow()
 
@@ -107,7 +108,8 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
       return null
     }
 
-    const target = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    const cursor = screen.getCursorScreenPoint()
+    const target = screen.getDisplayNearestPoint(cursor)
 
     if (target.id === screen.getDisplayMatching(win.getBounds()).id) {
       return null
@@ -116,6 +118,10 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     const from = win.getContentBounds()
     win.setBounds(target.workArea)
 
-    return { from: { x: from.x, y: from.y }, to: { x: target.workArea.x, y: target.workArea.y } }
+    return {
+      cursor: { x: cursor.x, y: cursor.y },
+      from: { x: from.x, y: from.y },
+      to: { x: target.workArea.x, y: target.workArea.y }
+    }
   })
 }

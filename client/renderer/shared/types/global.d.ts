@@ -97,7 +97,11 @@ declare global {
         setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
         setAlwaysOnTop: (payload: { on: boolean }) => Promise<void>
         getPosition: () => Promise<{ origin?: { x: number; y: number }; x: number; y: number } | null>
-        moveToCursorDisplay: () => Promise<{ from: { x: number; y: number }; to: { x: number; y: number } } | null>
+        moveToCursorDisplay: () => Promise<{
+          cursor: { x: number; y: number }
+          from: { x: number; y: number }
+          to: { x: number; y: number }
+        } | null>
         setPosition: (payload: { x: number; y: number }) => Promise<void>
       }
       onWindowStateChanged?: (callback: (payload: SpiritAgentWindowState) => void) => () => void
