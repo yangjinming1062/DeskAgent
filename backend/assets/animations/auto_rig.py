@@ -17,6 +17,12 @@ from mathutils import Vector
 
 _MIN_BONE_LENGTH = 1e-3
 
+# Bone heat solves reliably at this scale; the million-vertex text-to-3D
+# meshes diverge outright. Above it, weights are solved on a decimated
+# proxy and transferred back (the solved deformation matters, not the
+# vertex count it was solved on).
+_PROXY_MAX_VERTICES: int = 120_000
+
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     argv = argv[argv.index("--") + 1 :] if "--" in argv else []
@@ -36,6 +42,70 @@ def _world_bbox(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
             mn = Vector(min(a, b) for a, b in zip(mn, wc))
             mx = Vector(max(a, b) for a, b in zip(mx, wc))
     return mn, mx
+
+
+def _parent_auto(objects: list[bpy.types.Object], arm_obj: bpy.types.Object) -> None:
+    bpy.ops.object.select_all(action="DESELECT")
+    for obj in objects:
+        obj.select_set(True)
+    arm_obj.select_set(True)
+    bpy.context.view_layer.objects.active = arm_obj
+    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+
+
+def _weights_complete(objects: list[bpy.types.Object]) -> bool:
+    return all(any(g.weight > 0.0 for g in v.groups) for obj in objects for v in obj.data.vertices)
+
+
+def _make_proxy(obj: bpy.types.Object) -> bpy.types.Object:
+    proxy = obj.copy()
+    proxy.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(proxy)
+    ratio = min(1.0, _PROXY_MAX_VERTICES / max(len(proxy.data.vertices), 1))
+    if ratio < 1.0:
+        mod = proxy.modifiers.new("Decimate", "DECIMATE")
+        mod.ratio = ratio
+        bpy.context.view_layer.objects.active = proxy
+        bpy.ops.object.modifier_apply(modifier=mod.name)
+    return proxy
+
+
+def _transfer_weights(proxy: bpy.types.Object, obj: bpy.types.Object, arm_obj: bpy.types.Object) -> None:
+    # Data transfer fills only target groups that already exist, matched by name.
+    for bone in arm_obj.data.bones:
+        obj.vertex_groups.new(name=bone.name)
+    mod = obj.modifiers.new("WeightTransfer", "DATA_TRANSFER")
+    mod.object = proxy
+    mod.use_object_transform = True
+    mod.use_vert_data = True
+    mod.data_types_verts = {"VGROUP_WEIGHTS"}
+    mod.vert_mapping = "POLYINTERP_NEAREST"
+    mod.mix_mode = "REPLACE"
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.modifier_apply(modifier=mod.name)
+
+
+def _normalize_weights(obj: bpy.types.Object) -> None:
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.object.vertex_group_normalize_all()
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def _assign_strays_to_nearest_bone(obj: bpy.types.Object, arm_obj: bpy.types.Object) -> int:
+    """GLB skinning needs nonzero vertex-group weights everywhere — a vertex
+    the solver left bare is rigid forever, tearing the mesh on first pose.
+    Rescue it with a unit weight on the nearest bone."""
+    stray = [v.index for v in obj.data.vertices if not any(g.weight > 0.0 for g in v.groups)]
+    if not stray:
+        return 0
+    heads = [(arm_obj.matrix_world @ bone.head_local, bone.name) for bone in arm_obj.data.bones]
+    for vi in stray:
+        world = obj.matrix_world @ obj.data.vertices[vi].co
+        name = min(heads, key=lambda t: (t[0] - world).length)[1]
+        obj.vertex_groups[name].add([vi], 1.0, "REPLACE")
+    return len(stray)
 
 
 def main() -> int:
@@ -93,16 +163,26 @@ def main() -> int:
             eb.parent = arm_data.edit_bones[bone["parent"]]
     bpy.ops.object.mode_set(mode="OBJECT")
 
-    bpy.ops.object.select_all(action="DESELECT")
-    for obj in meshes:
-        obj.select_set(True)
-    arm_obj.select_set(True)
-    bpy.context.view_layer.objects.active = arm_obj
-    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+    _parent_auto(meshes, arm_obj)
 
-    if not any(len(v.groups) for obj in meshes for v in obj.data.vertices):
-        print("auto_rig: automatic weighting assigned no vertices", file=sys.stderr)
-        return 1
+    if not _weights_complete(meshes):
+        proxies = [_make_proxy(obj) for obj in meshes]
+        _parent_auto(proxies, arm_obj)
+        # Partial heat failure keeps some bones bare; rescue before transfer.
+        for proxy in proxies:
+            strays = _assign_strays_to_nearest_bone(proxy, arm_obj)
+            if strays:
+                print(f"auto_rig: {strays} proxy vertices fell back to nearest-bone", file=sys.stderr)
+        for proxy, obj in zip(proxies, meshes):
+            _transfer_weights(proxy, obj, arm_obj)
+            _normalize_weights(obj)
+            strays = _assign_strays_to_nearest_bone(obj, arm_obj)
+            if strays:
+                print(f"auto_rig: {strays} vertices fell back to nearest-bone", file=sys.stderr)
+            bpy.data.objects.remove(proxy, do_unlink=True)
+        if not _weights_complete(meshes):
+            print("auto_rig: weight transfer left vertices unskinned", file=sys.stderr)
+            return 1
 
     bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
     return 0
