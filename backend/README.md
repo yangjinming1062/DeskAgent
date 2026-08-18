@@ -88,6 +88,7 @@ backend/
 - **装备槽位互斥与 Outfit 状态拼接**：`equip` 仅顶替同 `assembly_json.slot` 的已装备部件；persona outfit 字段镜像全部已装备部件描述的文本拼接。texture 恒占 `outfit` 槽。
 - **流式 Chat 一致性与错误隔离**：流式 chat 一旦首 chunk 已发不再 fallback，避免同一回合混合两个模型的输出造成上下文截断；失败统一 raise。LLM 下载临时媒体失败拦截原始 SDK 报错，返回标准短消息，避免误导性触发 LLM 回退。
 - **交互频控与汇总门限**：`companion.interact` 设 5 分钟封顶作为戳击主动反应成本控制闸门，不影响自主行为与统计；`interaction_stats` 采用 OR 门限（poke/chat_turn 达到 10 即写汇总），序列化 `hour_counts` 供夜间反思。
+- **3D 伴侣模型本地快速调试与质量检视（`pnpm clip`）**：后端在调整 3D 生成管线（Tripo3D / 混元）、Blender `auto_rig` 自动绑骨权重、面部 52 维 Blendshape 注入或骨骼朝向时，无需启动完整桌面客户端或等待 LLM 链路对话——直接在根目录或 `client/` 运行 `pnpm clip` 启动独立动画调试器（浏览器直开 `http://127.0.0.1:5174/?role=clip`）。支持粘贴激活码一键直连本地后端（`/api/companion/model`）下载并渲染伴侣 GLB 模型（自动处理 Gzip 透明解压与 71°手臂自然下垂 Rest Pose 映射），提供 3D 交互位移/旋转/缩放坐标轴（TransformControls）、一键立起（解决 Z-up 平躺）、一键接地、一键转身、面部 52 维 Blendshape 调节与 7 大骨骼分类动作全量即点即测。
 - **MiniMax 内容风控快速失败**：`base_resp.status_code=1027` 映射到 `content_policy_blocked` 且 `retryable=False`，避免无意义重试白烧配额。
 
 ## 5. 与外部的契约

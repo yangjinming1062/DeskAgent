@@ -1,0 +1,70 @@
+import type * as THREE from 'three'
+
+import type { ClipDef } from '@/companion/3d/clips-biped'
+import type { RigType } from '@/companion/3d/clips-registry'
+
+export type { RigType }
+
+export interface ClipItem {
+  id: string
+  name: string
+  duration: number
+  loop: boolean
+  category: string
+  tags?: readonly string[]
+  trackCount: number
+  isEmbedded?: boolean
+  clipDef?: ClipDef
+  animationClip?: THREE.AnimationClip
+}
+
+export type PlaybackLoopMode = 'default' | 'force-loop' | 'force-once'
+
+export interface PlaybackState {
+  isPlaying: boolean
+  currentTime: number
+  duration: number
+  speed: number
+  loopMode: PlaybackLoopMode
+  crossFadeDuration: number
+}
+
+export type ViewportBackground = 'studio' | 'slate' | 'transparent' | 'light' | 'midnight'
+
+export interface ViewportOptions {
+  showSkeleton: boolean
+  showGrid: boolean
+  showAxes: boolean
+  showWireframe: boolean
+  background: ViewportBackground
+  lightIntensity: number
+  autoRotate: boolean
+  cameraFov: number
+}
+
+export interface MorphTargetInfo {
+  name: string
+  index: number
+  meshName: string
+  currentValue: number
+}
+
+export interface ModelStats {
+  sourceType: 'mannequin' | 'custom-glb' | 'procedural-egg'
+  name: string
+  fileSizeBytes?: number
+  vertexCount: number
+  triangleCount: number
+  meshCount: number
+  boneCount: number
+  hasMorphs: boolean
+  hasEmbeddedAnimations: boolean
+}
+
+export type TransformMode = 'view' | 'translate' | 'rotate' | 'scale'
+
+export interface ModelTransform {
+  position: { x: number; y: number; z: number }
+  rotation: { x: number; y: number; z: number } // 角度 (degrees)
+  scale: number
+}
