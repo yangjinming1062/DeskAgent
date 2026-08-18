@@ -47,21 +47,20 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | 方法 | 用途 | 改动需同步的模块 |
 |------|------|------------------|
 | onboarding.get_state / onboarding.submit 与 GET /api/companion/onboarding/state | 查询/增量提交 onboarding 答案（断点恢复，支持 WS RPC 与 REST） | Backend 状态机 + Client 消费状态机 + DESIGN §5 流程 |
-| avatar.regenerate | 重生头像（不重跑全身、不使模型失效） | Backend + Client 头像展示 |
+| avatar.regenerate | 重生头像（不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
 | companion.set_disturbance_tier | Client 上报生效打扰档位（Client 是唯一权威） | Backend 持久化 + Client 活动感知 + DESIGN §6.2 |
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认形象（幂等），解开音色/用户子阶段 | Backend 状态 + Client 流程 |
-| GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成 | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
+| GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（文生3D：视觉 LLM 读头像 + 角色设定构建提示词，无种子图） | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（provider query 刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
-| POST /api/companion/avatar（含 /from-image）、/avatar/{id}/fullbody、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成 / 链式全身种子图生成 / 历史形象切换激活 / 历史查询 | Backend 生成 + Client 两步流程与历史画廊 + DESIGN §5.4 |
+| POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
 
 **关键约束**（跨模块语义，非实现细节）：
-- **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在形象确认且音色 + 用户信息齐后才算完成；未确认形象时按已生成全身视角恢复，确认后按音色先于用户信息路由。
-- **形象锁定**：全身图确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像/全身图重新生成路径关闭；换装与动画生成不受影响。
-- **单/多视图模式**：单视图（默认）仅正面全身图，拒绝侧面/背面生成；多视图逐视角生成、重绘正面会失效侧面/背面。
+- **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在形象确认且音色 + 用户信息齐后才算完成；未确认形象时回到头像确认步恢复，确认后按音色先于用户信息路由。
+- **形象锁定**：头像确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭；换装与动画生成不受影响。
 - **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
 - **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，provider task id 与下载 URL 已持久化；下载或本地后处理失败只置 `download_failed` 并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调 provider 查询与下载接口，服务重启中断的下载同样进入该可恢复态。
 
@@ -102,7 +101,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 | 资产 | TTL |
 |------|-----|
-| portrait 头像/种子图 | 5 分钟 |
+| portrait 头像 | 5 分钟 |
 | 3D 模型 GLB | 5 分钟 |
 | 换装产物（纹理 + 服装 GLB） | 5 分钟 |
 | 静态精灵相册 PNG | 5 分钟 |
@@ -127,7 +126,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.8 Render job 状态机（换装预览）
 
-分钟级生成任务分两段：web 进程入队（同步、毫秒级），Render Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的图生3D provider 管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
+分钟级生成任务分两段：web 进程入队（同步、毫秒级），Render Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的文生3D provider 管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
 
 ---
 
