@@ -79,6 +79,27 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
   return false
 }
 
+export function isRegionHit(id: string, x: number, y: number, windowId: number = 0): boolean {
+  const regions = _bucket(windowId)
+  const region = regions.get(id)
+
+  if (!region) {
+    return false
+  }
+
+  const rect = region.getRect()
+
+  if (!rect) {
+    return false
+  }
+
+  if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+    return region.hitTest?.(x, y) !== false
+  }
+
+  return false
+}
+
 // React hook: register an interactive region for the lifetime of the
 // component, deriving the rectangle from a ref's getBoundingClientRect().
 // Pass `getRect` to override (e.g. the boot-failure overlay covers the full

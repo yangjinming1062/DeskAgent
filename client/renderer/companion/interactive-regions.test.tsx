@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isPointInteractive,
+  isRegionHit,
   registerInteractiveRegion,
   unregisterInteractiveRegion,
   useInteractiveRegion
@@ -69,6 +70,38 @@ describe('useInteractiveRegion', () => {
     expect(isPointInteractive(0, 0)).toBe(false)
 
     unregisterInteractiveRegion('manual')
+    document.body.removeChild(div)
+  })
+
+  it('isRegionHit checks only the targeted region with hitTest predicate', () => {
+    const div = document.createElement('div')
+    document.body.appendChild(div)
+
+    div.getBoundingClientRect = () =>
+      ({
+        left: 100,
+        top: 100,
+        right: 200,
+        bottom: 200,
+        width: 100,
+        height: 100,
+        x: 100,
+        y: 100,
+        toJSON() {}
+      }) as DOMRect
+
+    const hitTest = (x: number, y: number) => x >= 120 && y >= 120
+
+    registerInteractiveRegion('sprite-test', () => div.getBoundingClientRect(), 0, hitTest)
+    registerInteractiveRegion('other-region', () => new DOMRect(0, 0, 50, 50))
+
+    expect(isRegionHit('sprite-test', 150, 150)).toBe(true)
+    expect(isRegionHit('sprite-test', 110, 110)).toBe(false) // rejected by hitTest
+    expect(isRegionHit('sprite-test', 20, 20)).toBe(false) // outside rect
+    expect(isRegionHit('non-existent', 150, 150)).toBe(false)
+
+    unregisterInteractiveRegion('sprite-test')
+    unregisterInteractiveRegion('other-region')
     document.body.removeChild(div)
   })
 })

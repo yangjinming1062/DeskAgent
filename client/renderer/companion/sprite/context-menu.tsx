@@ -1,9 +1,9 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { $renderStyle } from '@/companion/3d/model-store'
 import { setSpriteState } from '@/companion/companion-store'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
 import {
   Brain,
   KeyRound,
@@ -39,37 +39,19 @@ export function SpriteContextMenu({
   const renderStyle = useStore($renderStyle)
   const visible = pos !== null
   const authed = auth.kind === 'authenticated'
+  const backdropRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  // Hidden state returns null so isPointInteractive skips the menu — avoids the (0,0) false hit that display:none would introduce (BCR returns 0×0).
-  useInteractiveRegion('sprite-context-menu', menuRef, () => {
-    if (!visible || !pos) {
-      return null
-    }
 
-    const el = menuRef.current
+  const getInteractiveRect = useCallback(
+    () => (visible && pos ? new DOMRect(0, 0, window.innerWidth, window.innerHeight) : null),
+    [visible, pos]
+  )
 
-    if (!el) {
-      return null
-    }
-
-    const rect = el.getBoundingClientRect()
-
-    if (rect.width === 0 || rect.height === 0) {
-      return null
-    }
-
-    return new DOMRect(rect.left, rect.top, rect.width, rect.height)
-  })
+  useInteractiveRegion('sprite-context-menu', backdropRef, getInteractiveRect)
 
   useEffect(() => {
     if (!visible) {
       return
-    }
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        closeContextMenu()
-      }
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -78,12 +60,16 @@ export function SpriteContextMenu({
       }
     }
 
-    window.addEventListener('mousedown', handleClickOutside)
+    const handleBlur = () => {
+      closeContextMenu()
+    }
+
     window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('blur', handleBlur)
 
     return () => {
-      window.removeEventListener('mousedown', handleClickOutside)
       window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('blur', handleBlur)
     }
   }, [visible])
 
@@ -92,146 +78,175 @@ export function SpriteContextMenu({
 
   return (
     <div
-      className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-white/10 bg-black/60 p-1 text-xs text-white shadow-2xl backdrop-blur-md select-none"
-      ref={menuRef}
+      className="fixed inset-0 z-50 select-none"
+      onContextMenu={e => {
+        e.preventDefault()
+        e.stopPropagation()
+
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+          if (isRegionHit('sprite-stage', e.clientX, e.clientY)) {
+            $contextMenuPos.set({ x: e.clientX, y: e.clientY })
+          } else {
+            closeContextMenu()
+          }
+        }
+      }}
+      onPointerDown={e => {
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+          e.preventDefault()
+          e.stopPropagation()
+          closeContextMenu()
+        }
+      }}
+      ref={backdropRef}
       style={{
-        left,
-        top,
-        visibility: visible ? 'visible' : 'hidden',
-        // Belt-and-suspenders: prevent the hidden menu from intercepting any tile it overlaps.
-        pointerEvents: visible ? 'auto' : 'none'
+        pointerEvents: visible ? 'auto' : 'none',
+        visibility: visible ? 'visible' : 'hidden'
       }}
     >
-      {!authed ? (
-        <>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              onOpenActivation?.()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <KeyRound className="size-3.5 text-white/50 shrink-0" />
-            <span>激活 / 登录 (Login)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              void window.spiritagent.showToolWindow()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Settings className="size-3.5 text-white/50 shrink-0" />
-            <span>应用设置 (Settings)</span>
-          </button>
-          <div className="-mx-1 my-1 h-px bg-white/10" />
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
-            onClick={() => {
-              window.close()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <LogOut className="size-3.5 text-destructive shrink-0" />
-            <span>退出 (Quit)</span>
-          </button>
-        </>
-      ) : (
-        <>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              onOpenChat()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <MessageSquareText className="size-3.5 text-white/50 shrink-0" />
-            <span>对话 (Talk)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              onOpenVoiceCall()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Phone className="size-3.5 text-white/50 shrink-0" />
-            <span>语音通话 (Voice)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              onOpenSettings()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <SlidersHorizontal className="size-3.5 text-white/50 shrink-0" />
-            <span>伙伴设置 (Companion)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              $renderStyle.set(renderStyle === 'anime' ? 'realistic' : 'anime')
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Palette className="size-3.5 text-white/50 shrink-0" />
-            <span>渲染风格 (Style)：{renderStyle === 'anime' ? '二次元' : '写实'}</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              onOpenMemory()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Brain className="size-3.5 text-white/50 shrink-0" />
-            <span>长期记忆 (Memory)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              void window.spiritagent.showToolWindow()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Settings className="size-3.5 text-white/50 shrink-0" />
-            <span>应用设置 (Settings)</span>
-          </button>
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-            onClick={() => {
-              setSpriteState('sleeping')
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <Moon className="size-3.5 text-white/50 shrink-0" />
-            <span>去睡觉 (Sleep)</span>
-          </button>
-          <div className="-mx-1 my-1 h-px bg-white/10" />
-          <button
-            className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
-            onClick={() => {
-              window.close()
-              closeContextMenu()
-            }}
-            type="button"
-          >
-            <LogOut className="size-3.5 text-destructive shrink-0" />
-            <span>退出 (Quit)</span>
-          </button>
-        </>
-      )}
+      <div
+        className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-white/10 bg-black/60 p-1 text-xs text-white shadow-2xl backdrop-blur-md select-none"
+        onPointerDown={e => {
+          e.stopPropagation()
+        }}
+        ref={menuRef}
+        style={{
+          left,
+          top,
+          pointerEvents: visible ? 'auto' : 'none'
+        }}
+      >
+        {!authed ? (
+          <>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                onOpenActivation?.()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <KeyRound className="size-3.5 text-white/50 shrink-0" />
+              <span>激活 / 登录 (Login)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                void window.spiritagent.showToolWindow()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Settings className="size-3.5 text-white/50 shrink-0" />
+              <span>应用设置 (Settings)</span>
+            </button>
+            <div className="-mx-1 my-1 h-px bg-white/10" />
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
+              onClick={() => {
+                window.close()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <LogOut className="size-3.5 text-destructive shrink-0" />
+              <span>退出 (Quit)</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                onOpenChat()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <MessageSquareText className="size-3.5 text-white/50 shrink-0" />
+              <span>对话 (Talk)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                onOpenVoiceCall()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Phone className="size-3.5 text-white/50 shrink-0" />
+              <span>语音通话 (Voice)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                onOpenSettings()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <SlidersHorizontal className="size-3.5 text-white/50 shrink-0" />
+              <span>伙伴设置 (Companion)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                $renderStyle.set(renderStyle === 'anime' ? 'realistic' : 'anime')
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Palette className="size-3.5 text-white/50 shrink-0" />
+              <span>渲染风格 (Style)：{renderStyle === 'anime' ? '二次元' : '写实'}</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                onOpenMemory()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Brain className="size-3.5 text-white/50 shrink-0" />
+              <span>长期记忆 (Memory)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                void window.spiritagent.showToolWindow()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Settings className="size-3.5 text-white/50 shrink-0" />
+              <span>应用设置 (Settings)</span>
+            </button>
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
+              onClick={() => {
+                setSpriteState('sleeping')
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <Moon className="size-3.5 text-white/50 shrink-0" />
+              <span>去睡觉 (Sleep)</span>
+            </button>
+            <div className="-mx-1 my-1 h-px bg-white/10" />
+            <button
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
+              onClick={() => {
+                window.close()
+                closeContextMenu()
+              }}
+              type="button"
+            >
+              <LogOut className="size-3.5 text-destructive shrink-0" />
+              <span>退出 (Quit)</span>
+            </button>
+          </>
+        )}
+      </div>
     </div>
   )
 }
