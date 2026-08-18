@@ -26,6 +26,7 @@ interface SpriteStageProps {
   onDoubleTap?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
   spriteHit?: SpriteHit | null
+  hidden?: boolean
 }
 
 // 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
@@ -43,7 +44,8 @@ export function SpriteStage({
   onTap,
   onDoubleTap,
   onContextMenu,
-  spriteHit
+  spriteHit,
+  hidden = false
 }: SpriteStageProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
   const capturedRef = useRef(false)
@@ -131,15 +133,22 @@ export function SpriteStage({
     hitRef.current = spriteHit ?? null
   }, [spriteHit])
 
-  const stageRect = useCallback((el: HTMLElement): DOMRect | null => {
-    const rect = el.getBoundingClientRect()
+  const stageRect = useCallback(
+    (el: HTMLElement): DOMRect | null => {
+      if (hidden) {
+        return null
+      }
 
-    if (rect.width === 0 || rect.height === 0) {
-      return null
-    }
+      const rect = el.getBoundingClientRect()
 
-    return rect
-  }, [])
+      if (rect.width === 0 || rect.height === 0) {
+        return null
+      }
+
+      return rect
+    },
+    [hidden]
+  )
 
   // Static hitmap refines while its image is on display; 3D mode falls to
   // the live silhouette probe (strict miss → false once warm; null during
@@ -289,6 +298,10 @@ export function SpriteStage({
   }, [])
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (hidden) {
+      return
+    }
+
     lastPointRef.current = { x: e.clientX, y: e.clientY }
 
     // Only capture when left-button is pressed
@@ -311,6 +324,10 @@ export function SpriteStage({
   }
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (hidden) {
+      return
+    }
+
     lastPointRef.current = { x: e.clientX, y: e.clientY }
     const d = dragRef.current
 
@@ -362,6 +379,10 @@ export function SpriteStage({
   }
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    if (hidden) {
+      return
+    }
+
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
     const drag = dragRef.current
     dragRef.current = null
@@ -407,8 +428,12 @@ export function SpriteStage({
   return (
     <div className="fixed inset-0" style={{ pointerEvents: 'none' }}>
       <div
-        className="absolute"
+        className={`absolute transition-opacity duration-200 ${hidden ? 'pointer-events-none opacity-0 invisible' : 'opacity-100'}`}
         onContextMenu={e => {
+          if (hidden) {
+            return
+          }
+
           e.preventDefault()
           onContextMenu?.(e)
         }}
@@ -422,11 +447,13 @@ export function SpriteStage({
           top: 0,
           width: `${spriteW}px`,
           height: `${spriteH}px`,
-          pointerEvents: 'auto',
+          pointerEvents: hidden ? 'none' : 'auto',
           touchAction: 'none',
+          visibility: hidden ? 'hidden' : 'visible',
+          opacity: hidden ? 0 : 1,
           transform: `translate3d(${pos.x}px, ${pos.y}px, 0px) scale(${scale})`,
           transformOrigin: 'top left',
-          willChange: 'transform'
+          willChange: 'transform, opacity'
         }}
       >
         {children}

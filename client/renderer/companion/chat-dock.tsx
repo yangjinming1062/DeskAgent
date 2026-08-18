@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
@@ -16,30 +16,63 @@ import {
   setAssistantCancelled,
   setAssistantError
 } from '@/companion/chat-store'
-import {
-  $effectiveTier,
-  $userPreferredTier,
-  type DisturbanceTier,
-  setDisturbanceTier,
-  setSpriteState
-} from '@/companion/companion-store'
+import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $portraitUrl } from '@/companion/portrait-store'
-import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
+import { $viewport } from '@/companion/spatial'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { MessageBubble } from './chat-dock-message-bubble'
-import { DISTURBANCE_TIERS } from './disturbance-tiers'
 import { usePanelDrag } from './hooks/use-panel-drag'
+import { type ResizeDirection, usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
 import { SessionListPanel } from './session-list'
 import { $sessionListOpen, openMainSession, setSessionListOpen } from './session-list-store'
 
-// matches the panel's max-w-lg (32rem) so we can position it before mount
-const DOCK_MAX_W = 512
-const DOCK_MAX_H = 520
-const DOCK_GAP = 16
-const DOCK_HEAD_OFFSET_RATIO = 0.1
+const DOCK_DEFAULT_WIDTH = 760
+const DOCK_DEFAULT_HEIGHT = 540
+const DOCK_MIN_WIDTH = 580
+const DOCK_MIN_HEIGHT = 420
+const DOCK_MAX_WIDTH = 1400
+const DOCK_MAX_HEIGHT = 900
+
+const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
+  happy: { label: '开心愉悦', icon: '😊' },
+  excited: { label: '兴奋雀跃', icon: '✨' },
+  curious: { label: '充满好奇', icon: '🧐' },
+  grateful: { label: '心怀感激', icon: '💖' },
+  playful: { label: '顽皮逗趣', icon: '😜' },
+  proud: { label: '自信自豪', icon: '🌟' },
+  smug: { label: '有点得意', icon: '😏' },
+  shy: { label: '害羞腼腆', icon: '😳' },
+  relieved: { label: '安心放松', icon: '😌' },
+  concerned: { label: '关切担忧', icon: '🥺' },
+  confused: { label: '略带疑惑', icon: '🤔' },
+  surprised: { label: '感到惊讶', icon: '😮' },
+  embarrassed: { label: '不好意思', icon: '😅' },
+  apologetic: { label: '抱歉内疚', icon: '🙇' },
+  sad: { label: '有些低落', icon: '😢' },
+  lonely: { label: '稍感孤单', icon: '🌧️' },
+  bored: { label: '百无聊赖', icon: '🥱' },
+  sleepy: { label: '昏昏欲睡', icon: '😴' },
+  pout: { label: '气鼓鼓中', icon: '😤' },
+  angry: { label: '有些生气', icon: '💢' },
+  scared: { label: '受到惊吓', icon: '😨' }
+}
+
+const RESIZE_HANDLES: Array<{
+  dir: ResizeDirection
+  className: string
+}> = [
+  { dir: 'n', className: 'absolute -top-1 left-3 right-3 h-2.5 cursor-ns-resize z-20 touch-none' },
+  { dir: 's', className: 'absolute -bottom-1 left-3 right-3 h-2.5 cursor-ns-resize z-20 touch-none' },
+  { dir: 'w', className: 'absolute -left-1 top-3 bottom-3 w-2.5 cursor-ew-resize z-20 touch-none' },
+  { dir: 'e', className: 'absolute -right-1 top-3 bottom-3 w-2.5 cursor-ew-resize z-20 touch-none' },
+  { dir: 'nw', className: 'absolute -top-1.5 -left-1.5 h-4 w-4 cursor-nwse-resize z-30 touch-none' },
+  { dir: 'ne', className: 'absolute -top-1.5 -right-1.5 h-4 w-4 cursor-nesw-resize z-30 touch-none' },
+  { dir: 'sw', className: 'absolute -bottom-1.5 -left-1.5 h-4 w-4 cursor-nesw-resize z-30 touch-none' },
+  { dir: 'se', className: 'absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize z-30 touch-none' }
+]
 
 interface ChatDockProps {
   onClose: () => void
@@ -48,11 +81,12 @@ interface ChatDockProps {
 
 export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.ReactElement {
   const messages = useStore($chatMessages)
-  const sessionId = useStore($chatSessionId)
   const gatewayState = useStore($gatewayState)
-  const tier = useStore($userPreferredTier)
   const portraitUrl = useStore($portraitUrl)
+  const spriteEmotion = useStore($spriteEmotion)
+  const spriteState = useStore($spriteState)
   const sessionListOpen = useStore($sessionListOpen)
+  const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
   const [pendingImage, setPendingImage] = useState<string | null>(null)
@@ -75,13 +109,21 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   useInteractiveRegion('chat-dock', panelRef)
 
-  // The chat panel inherits the sprite window's topmost flag — no toggling;
-  // an unmount-time toggle would race the closing dock.
+  const { size, getResizeHandleProps } = usePanelResize({
+    sizeStorageKey: 'da.companion.chatDockSize',
+    offsetStorageKey: 'da.companion.chatDockOffset',
+    defaultSize: { width: DOCK_DEFAULT_WIDTH, height: DOCK_DEFAULT_HEIGHT },
+    minSize: { width: DOCK_MIN_WIDTH, height: DOCK_MIN_HEIGHT },
+    maxSize: { width: DOCK_MAX_WIDTH, height: DOCK_MAX_HEIGHT },
+    getPanel: () => panelRef.current
+  })
+
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
   const ensureSession = async (): Promise<string> => {
@@ -98,15 +140,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
 
     return sessionId
-  }
-
-  const changeTier = (next: DisturbanceTier) => {
-    setDisturbanceTier(next)
-    // Push the EFFECTIVE tier (which incorporates both user choice and the
-    // activity-monitor override) so the backend gates on the same value the
-    // renderer reads. Without this, an immersive IDE context would un-mute
-    // the backend for the full poll-cycle window after a manual click.
-    void requestGateway('companion.set_disturbance_tier', { tier: $effectiveTier.get() }).catch(() => {})
   }
 
   const onPaste = async (e: React.ClipboardEvent) => {
@@ -154,8 +187,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       const attachments: string[] = []
 
       if (pendingImage) {
-        // Convert the local path to a data URL — the backend can't read
-        // the path in Docker/remote deployments and would ignore the image.
         let attachmentUrl = pendingImage
 
         try {
@@ -167,7 +198,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             }
           }
         } catch {
-          /* keep the local path; backend may still resolve it via volume mount */
+          /* keep the local path */
         }
 
         const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
@@ -186,8 +217,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       setPendingImage(null)
       setSpriteState('thinking')
 
-      // Coalesce rapid-fire messages into one turn: queue locally and flush after
-      // a short debounce so messages within the window share a single LLM call.
       pushPendingPrompt({
         text: fullText || '请看这张图',
         attachments: attachments.length ? attachments : undefined
@@ -202,16 +231,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
-  // Show a typing indicator while the user's message has no streaming
-  // assistant reply yet (between prompt.submit returning {queued} and
-  // message.start). Once message.start pushes a streaming assistant bubble it
-  // renders its own "…".
   const lastIsUser = messages[messages.length - 1]?.role === 'user'
   const showTyping = lastIsUser && gatewayState === 'open'
-
-  // Generating covers both the pre-response gap (showTyping) and the streaming
-  // phase (last assistant bubble still streaming). Either way the user should
-  // be able to interrupt.
   const lastMsg = messages[messages.length - 1]
 
   const isGenerating =
@@ -227,194 +248,259 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       try {
         await requestGateway('session.interrupt', { session_id: sid })
       } catch {
-        /* best effort — local finalize below covers the UX */
+        /* best effort */
       }
     }
 
-    // session.interrupt stops the LLM stream, not a command the runner is
-    // already executing; the cancel RPC flags those handlers to bail early.
     void window.spiritagent?.runnerCancel?.().catch(() => {})
 
-    // Backend cancellation aborts run_chat_turn mid-stream — no message.complete
-    // arrives, so we must finalize the streaming bubble locally to avoid a
-    // stuck "…" indicator. If the user clicked Stop during the pre-response
-    // window (last message is still the user one), append a cancelled
-    // assistant placeholder so `showTyping` clears and Send comes back.
     const last = $chatMessages.get().at(-1)
 
     if (last?.role === 'assistant' && last.streaming) {
       finalizeAssistantMessage()
     } else {
-      // User-initiated stop before the first chunk arrived — render a
-      // neutral cancelled placeholder (not the 😬 error bubble).
       setAssistantCancelled()
     }
 
     setSpriteState('idle', { force: true })
   }
 
-  // Drag the panel via its header; the offset survives a restart (see
-  // use-panel-drag).
-  const pos = useStore($spatialPos)
-  const scale = useStore($spatialScale)
-  const viewport = useStore($viewport)
+  const currentW = size.width
+  const currentH = size.height
 
-  const { left: baseLeft, top: baseTop } = computeOverlayAnchorBesideSprite({
-    pos,
-    scale,
-    gap: DOCK_GAP,
-    overlayMaxW: DOCK_MAX_W,
-    overlayH: DOCK_MAX_H,
-    vw: viewport.width,
-    vh: viewport.height,
-    verticalRatio: DOCK_HEAD_OFFSET_RATIO
-  })
+  const baseLeft = Math.max(16, Math.round((viewport.width - Math.min(viewport.width - 32, currentW)) / 2))
+  const baseTop = Math.max(16, Math.round((viewport.height - Math.min(viewport.height - 32, currentH)) / 2))
 
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.chatDockOffset', () => panelRef.current)
 
+  // Current mood display
+  const currentMood = useMemo(() => {
+    if (spriteEmotion && EMOTION_MAP[spriteEmotion]) {
+      return EMOTION_MAP[spriteEmotion]
+    }
+
+    switch (spriteState) {
+      case 'thinking':
+        return { label: '正在思考', icon: '💭' }
+
+      case 'speaking':
+        return { label: '正在回复', icon: '💬' }
+
+      case 'listening':
+        return { label: '专注倾听', icon: '🎙️' }
+
+      case 'sleeping':
+        return { label: '休息小憩', icon: '🌙' }
+
+      case 'working':
+        return { label: '专注工作中', icon: '💼' }
+
+      default:
+        return { label: '平静温和', icon: '😊' }
+    }
+  }, [spriteEmotion, spriteState])
+
   return (
-    // Anchor the panel beside the sprite (SPEC §4.1 对话发生在角色身边) so it
-    // follows wherever the user has dragged or routed the companion, rather
-    // than pinning to the screen bottom and drifting away from the character.
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="flex h-[min(60vh,520px)] max-w-lg flex-col overflow-hidden rounded-2xl border border-white/10 bg-black/55 text-white shadow-2xl backdrop-blur-md"
+        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/10 bg-[#18181b] text-white shadow-2xl"
         ref={panelRef}
         style={{
           position: 'fixed',
           left: baseLeft,
           top: baseTop,
-          width: 'min(calc(100vw - 2rem), 32rem)',
+          width: `min(calc(100vw - 2rem), ${currentW}px)`,
+          height: `min(calc(100vh - 2rem), ${currentH}px)`,
           pointerEvents: 'auto',
           transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
         }}
       >
+        {/* Resize Handles (8 Directions) */}
+        {RESIZE_HANDLES.map(h => (
+          <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
+        ))}
+
+        {/* Left Column: Visual Anchor & Character Emotion Status (Draggable) */}
         <div
-          className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
+          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-[#131316] p-4 select-none active:cursor-grabbing"
           {...dragBind}
           title="拖动以移动对话框"
         >
-          <div className="flex items-center gap-2">
-            {portraitUrl && (
-              <img
-                alt="伙伴形象"
-                className="h-7 w-7 rounded-full border border-white/15 object-cover"
-                src={portraitUrl}
-              />
-            )}
-            <div className="flex items-center gap-0.5 rounded-full bg-white/5 p-0.5 text-[11px]" title="打扰档位">
-              {DISTURBANCE_TIERS.map(t => (
-                <button
-                  className={`rounded-full px-2.5 py-1 transition ${tier === t.id ? 'bg-white/80 font-medium text-black' : 'text-white/60 hover:text-white'}`}
-                  key={t.id}
-                  onClick={() => changeTier(t.id)}
-                  type="button"
-                >
-                  {t.label}
-                </button>
-              ))}
+          <div className="flex flex-col items-center w-full">
+            {/* Character Avatar with subtle glow and framing */}
+            <div className="relative group mt-1">
+              <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/30">
+                {portraitUrl ? (
+                  <img
+                    alt="角色形象"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    src={portraitUrl}
+                  />
+                ) : (
+                  <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-white/10 to-white/5 p-4 text-center">
+                    <span className="text-3xl animate-pulse">✨</span>
+                    <span className="mt-2 text-[11px] text-white/40">伙伴形象</span>
+                  </div>
+                )}
+              </div>
+              {/* Status Badge floating at bottom of avatar */}
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/15 bg-[#18181b] px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    spriteState === 'thinking'
+                      ? 'bg-amber-400 animate-ping'
+                      : spriteState === 'speaking'
+                        ? 'bg-blue-400 animate-pulse'
+                        : spriteState === 'listening'
+                          ? 'bg-rose-400 animate-pulse'
+                          : spriteState === 'sleeping'
+                            ? 'bg-purple-400'
+                            : 'bg-emerald-400'
+                  }`}
+                />
+                <span>
+                  {spriteState === 'thinking'
+                    ? '思考中…'
+                    : spriteState === 'speaking'
+                      ? '回复中…'
+                      : spriteState === 'listening'
+                        ? '聆听中…'
+                        : spriteState === 'sleeping'
+                          ? '小憩中'
+                          : '在线陪伴'}
+                </span>
+              </div>
             </div>
-            <button
-              className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/80 transition hover:bg-white/20"
-              onClick={() => setSessionListOpen(true)}
-              title="切换对话"
-              type="button"
-            >
-              💬 对话
-            </button>
-            {onOpenVoiceCall && (
+
+            {/* Current Emotion Status Display */}
+            <div className="mt-6 flex flex-col items-center text-center w-full px-2">
+              <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/90 shadow-sm">
+                <span className="text-sm">{currentMood.icon}</span>
+                <span className="font-medium tracking-wide">{currentMood.label}</span>
+              </div>
+              <span className="mt-2 text-[10px] text-white/40 tracking-wider">当前情绪状态</span>
+            </div>
+          </div>
+
+          {/* Quick status summary / hint at bottom */}
+          <div className="w-full pt-3 text-center border-t border-white/5">
+            <p className="text-[10px] text-white/35">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
+          </div>
+        </div>
+
+        {/* Right Column: Chat Stream & Input */}
+        <div className="flex flex-1 flex-col min-w-0 bg-[#18181b]">
+          {/* Header Bar */}
+          <div
+            className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3.5 py-2.5 active:cursor-grabbing"
+            {...dragBind}
+            title="拖动以移动对话框"
+          >
+            <div className="flex items-center gap-2">
               <button
-                className="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] text-white/80 transition hover:bg-white/20"
-                onClick={onOpenVoiceCall}
-                title="开启语音通话模式"
+                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80 transition hover:bg-white/20 hover:text-white"
+                onClick={() => setSessionListOpen(true)}
+                title="切换历史对话"
                 type="button"
               >
-                📞 通话
+                💬 切换对话
               </button>
+            </div>
+            <button
+              aria-label="关闭对话"
+              className="text-white/50 transition hover:text-white px-1.5 py-0.5 rounded-md hover:bg-white/10"
+              onClick={onClose}
+              type="button"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Messages Area */}
+          <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
+            {messages.length === 0 && !sending && (
+              <p className="mt-8 text-center text-sm text-white/40">说点什么，或粘贴一张图给我看看～</p>
+            )}
+            {messages.map(m => (
+              <MessageBubble key={m.id} message={m} />
+            ))}
+            {showTyping && (
+              <div className="flex justify-start">
+                <span className="rounded-2xl rounded-bl-sm bg-white/10 px-3 py-2 text-sm text-white/60">…</span>
+              </div>
             )}
           </div>
-          <button
-            aria-label="关闭对话"
-            className="text-white/50 transition hover:text-white"
-            onClick={onClose}
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
-          {messages.length === 0 && !sending && (
-            <p className="mt-6 text-center text-sm text-white/40">说点什么，或粘贴一张图给我看看～</p>
-          )}
-          {messages.map(m => (
-            <MessageBubble key={m.id} message={m} />
-          ))}
-          {showTyping && (
-            <div className="flex justify-start">
-              <span className="rounded-2xl rounded-bl-sm bg-white/10 px-3 py-2 text-sm text-white/60">…</span>
+          {pendingImage && (
+            <div className="border-t border-white/10 px-4 py-2 text-xs text-white/60">
+              📎 已附加图片 {sending ? '（发送中…）' : ''}
             </div>
           )}
-        </div>
 
-        {pendingImage && (
-          <div className="border-t border-white/10 px-4 py-2 text-xs text-white/60">
-            📎 已附加图片 {sending ? '（发送中…）' : ''}
-          </div>
-        )}
-
-        <div className="border-t border-white/10 p-3">
-          {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
-          <div className="flex items-end gap-2">
-            <textarea
-              className="max-h-32 flex-1 resize-none rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  void send()
-                }
-              }}
-              onPaste={onPaste}
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-              ref={inputRef}
-              rows={1}
-              value={text}
-            />
-            <button
-              className={`rounded-lg border px-3 py-2 text-xs font-medium transition ${
-                recording
-                  ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse'
-                  : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
-              }`}
-              onMouseDown={() => void startRecording()}
-              onMouseLeave={() => {
-                if (recording) {
-                  void stopRecording()
-                }
-              }}
-              onMouseUp={() => void stopRecording()}
-              onPointerCancel={() => void stopRecording()}
-              onPointerLeave={() => {
-                if (recording) {
-                  void stopRecording()
-                }
-              }}
-              onTouchEnd={() => void stopRecording()}
-              onTouchStart={() => void startRecording()}
-              title="按住录制语音消息"
-              type="button"
-            >
-              {recording ? '松开发送' : '🎤 语音'}
-            </button>
-            <button
-              className="rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
-              disabled={!isGenerating && (sending || gatewayState !== 'open' || (!text.trim() && !pendingImage))}
-              onClick={() => void (isGenerating ? handleStop() : send())}
-              type="button"
-            >
-              {isGenerating ? '停止' : '发送'}
-            </button>
+          {/* Input Area */}
+          <div className="border-t border-white/10 p-3 bg-[#18181b]">
+            {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
+            <div className="flex items-end gap-2">
+              <textarea
+                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/40 focus:border-white/40"
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    void send()
+                  }
+                }}
+                onPaste={onPaste}
+                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                ref={inputRef}
+                rows={1}
+                value={text}
+              />
+              <button
+                className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                  recording
+                    ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse'
+                    : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
+                }`}
+                onMouseDown={() => void startRecording()}
+                onMouseLeave={() => {
+                  if (recording) {
+                    void stopRecording()
+                  }
+                }}
+                onMouseUp={() => void stopRecording()}
+                onPointerCancel={() => void stopRecording()}
+                onPointerLeave={() => {
+                  if (recording) {
+                    void stopRecording()
+                  }
+                }}
+                onTouchEnd={() => void stopRecording()}
+                onTouchStart={() => void startRecording()}
+                title="按住录制语音消息"
+                type="button"
+              >
+                {recording ? '松开发送' : '🎤 语音'}
+              </button>
+              {onOpenVoiceCall && (
+                <button
+                  className="shrink-0 whitespace-nowrap rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs font-medium text-white/75 transition hover:bg-white/15 hover:text-white"
+                  onClick={onOpenVoiceCall}
+                  title="开启实时语音通话模式"
+                  type="button"
+                >
+                  📞 通话
+                </button>
+              )}
+              <button
+                className="shrink-0 whitespace-nowrap rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
+                disabled={!isGenerating && (sending || gatewayState !== 'open' || (!text.trim() && !pendingImage))}
+                onClick={() => void (isGenerating ? handleStop() : send())}
+                type="button"
+              >
+                {isGenerating ? '停止' : '发送'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -155,7 +155,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 **移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s；2D 静态卡片模式下跳过中间平移过程直接瞬移至目标坐标。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
 
-**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（home ↔ chat 动画切换）、$spriteState（sleep 位 + 自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）、$staticMode（2D 模式取消正在进行的平移与漫游）。返回 cleanup 函数。
+**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（sleep 位 + 自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）、$staticMode（2D 模式取消正在进行的平移与漫游）。返回 cleanup 函数。
 
 **决策树**（`updateSpatialDecision`）：drag > chat(listener) > sleeping → sleep 位（默认保持右下角 home 位安稳躺卧）> quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 无 perch 目标 + 非 2D 模式 → roam > home。每次 tier / focus / state 变化触发重评估。
 

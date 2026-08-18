@@ -304,6 +304,7 @@ export function CompanionRoot(): React.JSX.Element {
       {activationOpen && !authed && <ActivationOverlay onClose={() => setActivationOpen(false)} />}
       {showOnboarding && <OnboardingFlow onCompleted={onOnboardingComplete} />}
       <SpriteStage
+        hidden={chatOpen}
         onContextMenu={e => {
           $contextMenuPos.set({ x: e.clientX, y: e.clientY })
         }}

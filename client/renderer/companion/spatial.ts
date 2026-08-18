@@ -671,11 +671,11 @@ export function initSpatial(): () => void {
     .catch(() => {})
 
   const unlistenChat = $chatOpen.listen(open => {
-    if ($spatialLocomotion.get() === 'drag') {
-      return
+    if (open) {
+      stopRoam()
+      cancelMovement()
+      $spatialLocomotion.set('still')
     }
-
-    setLocale(open ? 'chat' : 'home')
   })
 
   const unlistenState = $spriteState.listen(() => {

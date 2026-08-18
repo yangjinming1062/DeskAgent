@@ -59,7 +59,7 @@ tripo_model_version = "v3.1-20260211"
 # 目标面数限制
 tripo_face_limit = 2000000
 # 纹理贴图质量（detailed / standard）
-tripo_texture_quality = "detailed"
+tripo_texture_quality = "extreme"
 # 几何细节质量（detailed / standard）
 tripo_geometry_quality = "detailed"
 # 是否启用模型自动修复
@@ -75,7 +75,7 @@ hunyuan_model_version = "hy-3d-3.1"
 # 生成模式：Normal（默认带贴图模型）、LowPoly（减面拓扑）、Geometry（白模无贴图）、Sketch（草图生模）
 hunyuan_generate_type = "Normal"
 # 目标面数限制（3000 ~ 1500000；配置为 0 或不填则不传递该参数，避免额外计费）
-hunyuan_face_count = 0
+hunyuan_face_count = 1500000
 # 是否生成 PBR 材质贴图
 hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
