@@ -406,6 +406,14 @@ export class CharacterController {
         this.boneRestQuats.clear()
         this.root.traverse(child => {
           if (child instanceof THREE.Bone) {
+            if (child.name.startsWith('mixamorig:')) {
+              child.name = child.name.slice(10)
+            } else if (child.name.startsWith('mixamorig_')) {
+              child.name = child.name.slice(10)
+            } else if (child.name.startsWith('mixamorig') && child.name.length > 9) {
+              child.name = child.name.slice(9)
+            }
+
             this.boneRestQuats.set(child.name, child.quaternion.clone())
             const name = child.name.toLowerCase()
 

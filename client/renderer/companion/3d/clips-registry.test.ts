@@ -138,4 +138,50 @@ describe('clips-registry', () => {
       }
     }
   })
+
+  it('ensures biped idle clip provides natural standing posture rather than stiff A-pose', () => {
+    const idle = BIPED_CLIPS.idle
+    expect(idle).toBeDefined()
+    expect(idle.tracks).toHaveProperty('LeftArm')
+    expect(idle.tracks).toHaveProperty('RightArm')
+    expect(idle.tracks).toHaveProperty('LeftForeArm')
+    expect(idle.tracks).toHaveProperty('RightForeArm')
+    expect(idle.tracks).toHaveProperty('Spine')
+    expect(idle.tracks).toHaveProperty('Head')
+
+    // Natural arm drop should rotate arm down towards torso (LeftArm Z < -1.0 rad (~-57°+), RightArm Z > 1.0 rad (~+57°+))
+    for (const kf of idle.tracks.LeftArm) {
+      expect(kf.r[2]).toBeLessThan(-1.0)
+    }
+
+    for (const kf of idle.tracks.RightArm) {
+      expect(kf.r[2]).toBeGreaterThan(1.0)
+    }
+
+    // Forearms should have natural elbow flexion (> 0.1 rad)
+    for (const kf of idle.tracks.LeftForeArm) {
+      expect(kf.r[0]).toBeGreaterThan(0.1)
+    }
+
+    for (const kf of idle.tracks.RightForeArm) {
+      expect(kf.r[0]).toBeGreaterThan(0.1)
+    }
+  })
+
+  it('ensures placeholder biped clips include natural resting arm tracks to prevent A-pose pop', () => {
+    const placeholder = BIPED_CLIPS.idle_yawn
+    expect(placeholder).toBeDefined()
+    expect(placeholder.tracks).toHaveProperty('LeftArm')
+    expect(placeholder.tracks).toHaveProperty('RightArm')
+    expect(placeholder.tracks).toHaveProperty('LeftForeArm')
+    expect(placeholder.tracks).toHaveProperty('RightForeArm')
+
+    for (const kf of placeholder.tracks.LeftArm) {
+      expect(kf.r[2]).toBeLessThan(-1.0)
+    }
+
+    for (const kf of placeholder.tracks.RightArm) {
+      expect(kf.r[2]).toBeGreaterThan(1.0)
+    }
+  })
 })
