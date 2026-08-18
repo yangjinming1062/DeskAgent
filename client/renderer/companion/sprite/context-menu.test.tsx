@@ -69,6 +69,32 @@ describe('SpriteContextMenu', () => {
     expect($contextMenuPos.get()).toBeNull()
   })
 
+  it('hides sprite when clicking "隐藏 (Hide)" button', () => {
+    $contextMenuPos.set({ x: 100, y: 150 })
+
+    const hideMock = vi.fn().mockResolvedValue(undefined)
+
+    ;(window as any).spiritagent = {
+      sprite: { hide: hideMock }
+    }
+
+    render(
+      <SpriteContextMenu
+        onOpenChat={vi.fn()}
+        onOpenMemory={vi.fn()}
+        onOpenSettings={vi.fn()}
+        onOpenVoiceCall={vi.fn()}
+      />
+    )
+
+    const hideBtn = screen.getByRole('button', { name: /隐藏 \(Hide\)/i })
+    expect(hideBtn).toBeDefined()
+
+    fireEvent.click(hideBtn)
+    expect(hideMock).toHaveBeenCalledTimes(1)
+    expect($contextMenuPos.get()).toBeNull()
+  })
+
   it('closes menu when clicking outside on the backdrop', () => {
     $contextMenuPos.set({ x: 200, y: 300 })
 

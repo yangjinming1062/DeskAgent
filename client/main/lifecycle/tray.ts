@@ -28,6 +28,16 @@ function isAuthenticated(): boolean {
   return session?.getSession?.()?.hasToken === true
 }
 
+export function isSpriteVisible(): boolean {
+  const win = trayDeps?.bridgeDeps?.getMainWindow?.()
+
+  if (!win || win.isDestroyed()) {
+    return false
+  }
+
+  return win.isVisible() && !win.isMinimized()
+}
+
 function sendToMainWindow(channel: string): void {
   const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
@@ -36,32 +46,40 @@ function sendToMainWindow(channel: string): void {
   }
 }
 
-function buildTrayMenu() {
+export function buildTrayMenu() {
   if (!trayDeps) {
     return null
   }
 
   const authed = isAuthenticated()
+  const visible = isSpriteVisible()
+
+  let mainActionLabel: string
+  let mainActionClick: () => void
+
+  if (visible) {
+    mainActionLabel = '隐藏'
+    mainActionClick = () => hideMainWindow()
+  } else if (authed) {
+    mainActionLabel = '显示'
+    mainActionClick = () => showMainWindow()
+  } else {
+    mainActionLabel = '激活...'
+    mainActionClick = () => showMainWindow()
+  }
 
   const template: any[] = [
     {
-      // When unauthenticated, focus the sprite window (where activation
-      // happens) instead of the tool window (which only renders Settings).
-      label: authed ? '显示 SpiritAgent' : '激活...',
-      click: () => showMainWindow()
+      label: mainActionLabel,
+      click: mainActionClick
     }
   ]
 
   if (authed) {
-    template.push(
-      { type: 'separator' },
-      // The framed tool window self-selects Settings (authed) from $auth.
-      { click: () => trayDeps?.bridgeDeps.showToolWindow(), label: '设置...' },
-      { click: () => sendToMainWindow('spiritagent:tray:logout'), label: '退出登录' }
-    )
+    template.push({ type: 'separator' }, { click: () => sendToMainWindow('spiritagent:tray:logout'), label: '反激活' })
   }
 
-  template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出 SpiritAgent' })
+  template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出客户端' })
 
   return trayDeps.Menu.buildFromTemplate(template)
 }
@@ -88,14 +106,36 @@ export function installCloseInterceptor(win: BrowserWindow): void {
     if (process.platform === 'win32') {
       win.setSkipTaskbar(true)
     }
+
+    rebuildTrayMenu()
   })
+
+  win.on('show', () => rebuildTrayMenu())
+  win.on('hide', () => rebuildTrayMenu())
+  win.on('minimize', () => rebuildTrayMenu())
+  win.on('restore', () => rebuildTrayMenu())
+}
+
+export function hideMainWindow(): void {
+  const win = trayDeps?.bridgeDeps?.getMainWindow?.()
+
+  if (win && !win.isDestroyed()) {
+    win.hide()
+
+    if (process.platform === 'win32') {
+      win.setSkipTaskbar(true)
+    }
+
+    rebuildTrayMenu()
+  }
 }
 
 export function showMainWindow(): void {
-  const win = trayDeps?.bridgeDeps.getMainWindow()
+  const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
   if (!win || win.isDestroyed()) {
     trayDeps?.createWindow()
+    rebuildTrayMenu()
 
     return
   }
@@ -113,6 +153,15 @@ export function showMainWindow(): void {
   }
 
   win.focus()
+  rebuildTrayMenu()
+}
+
+export function toggleMainWindow(): void {
+  if (isSpriteVisible()) {
+    hideMainWindow()
+  } else {
+    showMainWindow()
+  }
 }
 
 export function quitAppFully(): void {
@@ -153,6 +202,14 @@ export function installTray(deps: TrayDeps): null | Tray {
   if (menu) {
     trayInstance.setContextMenu(menu)
   }
+
+  trayInstance.on('click', () => {
+    toggleMainWindow()
+  })
+
+  trayInstance.on('double-click', () => {
+    showMainWindow()
+  })
 
   return trayInstance
 }

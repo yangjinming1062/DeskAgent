@@ -56,6 +56,16 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     }
   }
 
+  ipcMain.handle('spiritagent:sprite:hide', async () => {
+    withWindow(win => {
+      win.hide()
+
+      if (process.platform === 'win32') {
+        win.setSkipTaskbar(true)
+      }
+    })
+  })
+
   ipcMain.handle(
     'spiritagent:sprite:set-ignore-mouse-events',
     async (_event, payload?: { forward?: boolean; ignore: boolean }) => {

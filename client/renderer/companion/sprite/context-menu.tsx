@@ -6,8 +6,8 @@ import { setSpriteState } from '@/companion/companion-store'
 import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
 import {
   Brain,
+  EyeOff,
   KeyRound,
-  LogOut,
   MessageSquareText,
   Moon,
   Palette,
@@ -142,15 +142,15 @@ export function SpriteContextMenu({
             </button>
             <div className="-mx-1 my-1 h-px bg-white/10" />
             <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
               onClick={() => {
-                window.close()
+                void window.spiritagent.sprite.hide()
                 closeContextMenu()
               }}
               type="button"
             >
-              <LogOut className="size-3.5 text-destructive shrink-0" />
-              <span>退出 (Quit)</span>
+              <EyeOff className="size-3.5 text-white/50 shrink-0" />
+              <span>隐藏 (Hide)</span>
             </button>
           </>
         ) : (
@@ -234,15 +234,15 @@ export function SpriteContextMenu({
             </button>
             <div className="-mx-1 my-1 h-px bg-white/10" />
             <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-destructive transition-colors hover:bg-destructive/15 focus:bg-destructive/15 focus:outline-none"
+              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
               onClick={() => {
-                window.close()
+                void window.spiritagent.sprite.hide()
                 closeContextMenu()
               }}
               type="button"
             >
-              <LogOut className="size-3.5 text-destructive shrink-0" />
-              <span>退出 (Quit)</span>
+              <EyeOff className="size-3.5 text-white/50 shrink-0" />
+              <span>隐藏 (Hide)</span>
             </button>
           </>
         )}

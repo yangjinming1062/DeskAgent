@@ -37,11 +37,20 @@ function makeFakeIpc() {
   }
 }
 
-function makeFakeWindow(initial: FakeDisplay['workArea']): { setBoundsCalls: unknown[]; win: BrowserWindow } {
+function makeFakeWindow(initial: FakeDisplay['workArea']): {
+  readonly hidden: boolean
+  setBoundsCalls: unknown[]
+  win: BrowserWindow
+} {
   let bounds = { ...initial }
   const setBoundsCalls: unknown[] = []
 
+  let hidden = false
+
   const win = {
+    hide: () => {
+      hidden = true
+    },
     isDestroyed: () => false,
     getBounds: () => ({ ...bounds }),
     getContentBounds: () => ({ ...bounds }),
@@ -50,10 +59,17 @@ function makeFakeWindow(initial: FakeDisplay['workArea']): { setBoundsCalls: unk
       bounds = { ...b }
     },
     setAlwaysOnTop: () => {},
-    setIgnoreMouseEvents: () => {}
+    setIgnoreMouseEvents: () => {},
+    setSkipTaskbar: () => {}
   } as unknown as BrowserWindow
 
-  return { setBoundsCalls, win }
+  return {
+    get hidden() {
+      return hidden
+    },
+    setBoundsCalls,
+    win
+  } as any
 }
 
 function makeFakeScreen(opts: { cursor: { x: number; y: number }; nearest: FakeDisplay }): Screen {
@@ -68,27 +84,39 @@ function makeFakeScreen(opts: { cursor: { x: number; y: number }; nearest: FakeD
 
 function setup(opts: { cursor: { x: number; y: number }; nearest?: FakeDisplay; startOn?: FakeDisplay }) {
   const ipc = makeFakeIpc()
-  const { setBoundsCalls, win } = makeFakeWindow((opts.startOn ?? PRIMARY).workArea)
+  const fakeWin = makeFakeWindow((opts.startOn ?? PRIMARY).workArea)
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'spiritagent-sprite-test-'))
 
   registerSpriteIpc({
     deps: {
-      getSpriteWindow: () => win,
+      getSpriteWindow: () => fakeWin.win,
       getUserDataDir: () => tmpDir,
       screen: makeFakeScreen({ cursor: opts.cursor, nearest: opts.nearest ?? PRIMARY })
     },
     ipcMain: ipc as any
   })
 
-  return { ipc, setBoundsCalls, tmpDir }
+  return { fakeWin, ipc, setBoundsCalls: fakeWin.setBoundsCalls, tmpDir }
 }
+
+test('sprite:hide hides the sprite window', async () => {
+  const { fakeWin, ipc } = setup({ cursor: { x: 100, y: 100 } })
+
+  assert.equal(fakeWin.hidden, false)
+  await ipc.invoke('spiritagent:sprite:hide')
+  assert.equal(fakeWin.hidden, true)
+})
 
 test('move-to-cursor-display snaps the window onto the cursor display and reports origins and cursor', async () => {
   const { ipc, setBoundsCalls } = setup({ cursor: { x: 2000, y: 100 }, nearest: SECONDARY })
 
   const res = await ipc.invoke('spiritagent:sprite:move-to-cursor-display')
 
-  assert.deepEqual(res, { cursor: { x: 2000, y: 100 }, from: { x: 0, y: 0 }, to: { x: 1920, y: 0 } })
+  assert.deepEqual(res, {
+    cursor: { x: 2000, y: 100 },
+    from: { x: 0, y: 0 },
+    to: { x: 1920, y: 0 }
+  })
   assert.equal(setBoundsCalls.length, 1)
   assert.deepEqual(setBoundsCalls[0], SECONDARY.workArea)
 })

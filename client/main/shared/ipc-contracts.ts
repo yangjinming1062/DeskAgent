@@ -286,6 +286,7 @@ export interface IpcInvokeContract {
     | Promise<{ bytes: number; dataUrl: string; mimeType: string; tag: string }>
 
   // Sprite
+  'spiritagent:sprite:hide': () => Promise<void> | void
   'spiritagent:sprite:set-ignore-mouse-events': (payload: {
     forward?: boolean
     ignore: boolean

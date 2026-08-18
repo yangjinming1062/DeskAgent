@@ -94,6 +94,7 @@ declare global {
         }
       }
       sprite: {
+        hide: () => Promise<void>
         setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
         setAlwaysOnTop: (payload: { on: boolean }) => Promise<void>
         getPosition: () => Promise<{ origin?: { x: number; y: number }; x: number; y: number } | null>

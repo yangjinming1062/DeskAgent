@@ -1405,6 +1405,7 @@ function hideToolWindow(): void {
 }
 
 function broadcastAuthChanged(snapshot: any): void {
+  rebuildTrayMenu()
   const authenticated = Boolean(snapshot?.hasToken)
   const payload = { authenticated, snapshot: authenticated ? snapshot : null }
 
@@ -1511,9 +1512,22 @@ const bridgeDeps: any = {
     })
 
     try {
-      bridgeDeps.backendSession.restoreSession()
+      bridgeDeps.backendSession
+        .restoreSession()
+        .then((snapshot: any) => {
+          if (snapshot) {
+            broadcastAuthChanged(snapshot)
+            autoStartBridge(bridgeDeps)
+          } else {
+            rebuildTrayMenu()
+          }
+        })
+        .catch((error: any) => {
+          rememberLog(`[session] restore failed: ${error?.message || error}`)
+          rebuildTrayMenu()
+        })
     } catch (error: any) {
-      rememberLog(`[session] restore failed: ${error.message}`)
+      rememberLog(`[session] restore failed: ${error?.message || error}`)
     }
 
     return bridgeDeps.backendSession
