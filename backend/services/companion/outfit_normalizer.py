@@ -3,7 +3,7 @@ from typing import Protocol
 from components import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import ProviderConfig, provider_from_config, resolve_vision_chain
+from ..llm import ProviderConfig, provider_from_config, resolve_vision_chain, strip_think_blocks
 
 logger = get_logger(__name__)
 
@@ -17,7 +17,7 @@ _OUTFIT_NORMALIZER_SYSTEM_PROMPT = (
     "2. 如果原始信息提到具体服装（如“比基尼”“晚礼服”“机甲”），保留并丰富其视觉细节；\n"
     "3. 描述应与角色的物种和性别兼容（如四足生物描述其毛色/甲壳/羽翼外观；有尾角色需考虑尾巴部位的穿着适配）；\n"
     "4. 语言简洁自然，一段话描述，不要分条列举；\n"
-    "5. 不要解释、不要寒暄，直接输出描述文本；\n"
+    "5. 不要解释、不要寒暄，不要输出任何思考过程或推理文本，直接输出中文描述文本；\n"
     "6. 如果原始信息中缺少明确的服装描述，根据角色物种和性别生成一个合理的默认穿着。"
 )
 
@@ -38,7 +38,7 @@ def _build_user_payload(raw_input: str, persona_definition: dict[str, str] | Non
 
 
 def _clean(raw: str) -> str:
-    cleaned = raw.strip()
+    cleaned = strip_think_blocks(raw)
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     return cleaned

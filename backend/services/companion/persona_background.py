@@ -127,13 +127,16 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
             if avatar:
                 prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
                 avatar_prompt = prompt_payload.get("avatar_prompt", "") if isinstance(prompt_payload, dict) else ""
-            seed_front_url = avatar.seed_front_url if avatar else None
+            # Vision reference is the bust avatar — the fullbody seed's
+            # A-pose sports underwear is a pipeline constraint, not the
+            # user's outfit intent (it leaked into appearance_outfit here).
+            avatar_url = avatar.asset_url if avatar else None
             if not avatar_prompt and not appearance_core:
                 return
             chain = await resolve_provider_chain(db, user_id, "llm")
-            vision_chain = await resolve_vision_chain(db, user_id) if seed_front_url else []
+            vision_chain = await resolve_vision_chain(db, user_id) if avatar_url else []
         raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
-        image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, seed_front_url) if seed_front_url else None
+        image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar_url)
         outfit = await normalize_outfit(
             chat,
             raw_input=raw_input,

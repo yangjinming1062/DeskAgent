@@ -191,6 +191,58 @@ class TestSubmit:
         assert "401" in str(exc_info.value)
 
 
+class TestSubmitTextToModel:
+    @pytest.mark.asyncio
+    async def test_hunyuan_prompt_only_payload(self, mock_http):
+        """Text-to-3D sends ``prompt`` and no image field at all — the official
+        API declares Prompt mutually exclusive with image input."""
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"id": "job_t2d", "status": "queued"}
+        )
+        provider = HunyuanImageTo3DProvider(
+            api_key="hk_test", base_url="https://tokenhub.test"
+        )
+        job = await provider.submit_text_to_model("一位黑色长发女性，A-pose站姿")
+        assert job.job_id == "job_t2d"
+        body = mock_http.calls[0][3]
+        assert body["prompt"] == "一位黑色长发女性，A-pose站姿"
+        assert body["model"] == "hy-3d-3.1"
+        assert body["enable_pbr"] is True
+        assert "image_base64" not in body
+        assert "multi_view_images" not in body
+
+    @pytest.mark.asyncio
+    async def test_tripo_drops_image_only_autofix(self, mock_http, monkeypatch):
+        """Provider-level text entry reuses the shared settings kwargs but must
+        strip ``enable_autofix`` — that maps to the image-only payload field."""
+        monkeypatch.setattr(SETTINGS, "tripo_api_key", "tsk_test")
+        monkeypatch.setattr(SETTINGS, "tripo_base_url", "https://tripo.test/v3")
+        monkeypatch.setattr(SETTINGS, "tripo_enable_autofix", True)
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"code": 0, "status": "success", "data": {"task_id": "task_t2d"}}
+        )
+        provider = TripoImageTo3DProvider(api_key="tsk_test", base_url="https://tripo.test/v3")
+        job = await provider.submit_text_to_model("一位黑色长发女性，A-pose站姿")
+        assert job.job_id == "task_t2d"
+        _method, url, _headers, body = mock_http.calls[0]
+        assert url == "https://tripo.test/v3/generation/text-to-model"
+        assert body["prompt"] == "一位黑色长发女性，A-pose站姿"
+        assert body["pbr"] is True
+        assert "enable_image_autofix" not in body
+        assert "input" not in body and "inputs" not in body
+
+    @pytest.mark.asyncio
+    async def test_tripo_model_version_override(self, mock_http, monkeypatch):
+        monkeypatch.setattr(SETTINGS, "tripo_api_key", "tsk_test")
+        monkeypatch.setattr(SETTINGS, "tripo_base_url", "https://tripo.test/v3")
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"code": 0, "status": "success", "data": {"task_id": "task_p1"}}
+        )
+        provider = TripoImageTo3DProvider(api_key="tsk_test", base_url="https://tripo.test/v3")
+        await provider.submit_text_to_model("x", model_version="P1-20260311")
+        assert mock_http.calls[0][3]["model"] == "P1-20260311"
+
+
 class TestPoll:
     @pytest.mark.asyncio
     async def test_queued_and_in_progress_queries_task(self, mock_http):

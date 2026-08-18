@@ -322,6 +322,139 @@ def test_fullbody_template_carries_rig_type():
     assert quad.rig_type == "quadruped"
 
 
+# ── text-to-3D prompt ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_enhance_t3d_prompt_parses_json(monkeypatch):
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
+        return '```json\n{"gender": "女性", "hair": "黑色长直发", "eye_color": "琥珀色"}\n```'
+
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+
+    class _FakePersona:
+        definition_json = json.dumps({"biological_type": "人类", "appearance_core": "容貌姣好"})
+
+    out = await prompt_engineer.enhance_t3d_prompt(None, 1, _FakePersona())
+    assert isinstance(out, prompt_engineer.T3DAppearance)
+    assert out.gender == "女性"
+    assert out.hair == "黑色长直发"
+    assert out.age_range == ""  # absent keys default, extra keys ignored
+
+
+@pytest.mark.asyncio
+async def test_enhance_t3d_prompt_plain_text_fallback(monkeypatch):
+    """A non-JSON response degrades to the cleaned plain text, not an error."""
+    async def _fake_chat(db, user_id, system_prompt, user_payload, **_kw):
+        return "<think>hmm</think>一位黑色长发、琥珀色瞳的年轻女性"
+
+    monkeypatch.setattr(prompt_engineer, "chat", _fake_chat)
+
+    class _FakePersona:
+        definition_json = json.dumps({"biological_type": "人类"})
+
+    out = await prompt_engineer.enhance_t3d_prompt(None, 1, _FakePersona())
+    assert out == "一位黑色长发、琥珀色瞳的年轻女性"
+
+
+def _t3d_structured() -> prompt_engineer.T3DAppearance:
+    return prompt_engineer.T3DAppearance(
+        age_range="年轻",
+        gender="女性",
+        hair="黑色长直发",
+        eye_color="琥珀色",
+        facial_features="温柔的大眼睛",
+        skin_tone="白皙",
+        body_type="身姿曼妙",
+    )
+
+
+def test_build_t3d_prompt_style_routing():
+    # anime → 精美二次元 default wording (figurine CGI was rejected by visual
+    # review); realistic → PBR wording; figurine/flat stay CLI-selectable.
+    anime = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
+    assert "精美的日系二次元" in anime
+    assert "写实" not in anime
+    assert "手办" not in anime
+    realistic = prompt_engineer.build_t3d_prompt(_t3d_structured(), "realistic")
+    assert "写实" in realistic
+    assert "二次元" not in realistic
+    figurine = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", wording="figurine")
+    assert "手办" in figurine
+    flat = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", wording="flat")
+    assert "赛璐璐" in flat
+
+
+def test_build_t3d_prompt_suffix_and_description():
+    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
+    assert "年轻女性" in prompt  # age_range + gender merged as the subject
+    assert "黑色长直发" in prompt
+    assert "A-pose" in prompt
+    assert "运动内衣与运动短裤" in prompt
+    assert "单个角色" in prompt
+    assert "无场景" in prompt
+
+
+def test_build_t3d_prompt_leads_with_fullbody_completeness():
+    # Text-to-3D degenerates to a bust / truncated figure when identity
+    # clauses dominate — the completeness clause opens the suffix and names
+    # every body segment so nothing can be dropped silently.
+    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
+    suffix_start = prompt.index("完整的全身站立角色")
+    assert suffix_start < prompt.index("A-pose")
+    for part in ("头顶到脚底", "双腿", "双脚", "不截断身体", "不是半身像"):
+        assert part in prompt
+
+
+def test_build_t3d_prompt_non_biped_drops_biped_clauses():
+    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "realistic", rig_type="quadruped")
+    assert "A-pose" not in prompt
+    assert "运动内衣" not in prompt
+    assert "全身完整可见" in prompt
+
+
+def test_build_t3d_prompt_accepts_plain_text():
+    prompt = prompt_engineer.build_t3d_prompt("一位黑色长发的年轻女性", "anime")
+    assert prompt.startswith("一位黑色长发的年轻女性。")
+    assert "二次元" in prompt
+
+
+def test_build_t3d_prompt_rejects_empty_description():
+    with pytest.raises(ValueError, match="empty"):
+        prompt_engineer.build_t3d_prompt(prompt_engineer.T3DAppearance(), "anime")
+
+
+def test_build_t3d_prompt_truncates_to_1024_keeps_suffix():
+    long_desc = "黑" * 2000
+    prompt = prompt_engineer.build_t3d_prompt(long_desc, "anime")
+    assert len(prompt) == 1024
+    # The hard-constraint suffix survives intact; only the body is cut.
+    assert prompt.endswith(prompt_engineer._T3D_SUFFIX_BIPED + prompt_engineer._T3D_STYLE_WORDING["anime"])
+    assert prompt.startswith("黑")
+
+
+# ── strip_think_blocks ──────────────────────────────────────────────
+
+
+def test_strip_think_blocks_paired():
+    assert prompt_engineer.strip_think_blocks("<think>reasoning…</think>正文") == "正文"
+
+
+def test_strip_think_blocks_unclosed_truncates_to_end():
+    # A reasoning model cut off mid-think never emitted the closer — the
+    # whole trailing block is artifact, so everything from <think> goes.
+    assert prompt_engineer.strip_think_blocks("<think>The user wants") == ""
+
+
+def test_strip_think_blocks_preserves_plain_text():
+    text = "不含思考标记的普通输出"
+    assert prompt_engineer.strip_think_blocks(text) == text
+
+
+def test_strip_think_blocks_mid_text_closed_block():
+    assert prompt_engineer.strip_think_blocks("前<think>x</think>后") == "前后"
+
+
 # ── chat error cases ──────────────────────────────────────────────
 
 

@@ -69,6 +69,33 @@ def hunyuan_common_kwargs_from_settings(
     }
 
 
+async def _submit_job(payload: dict[str, Any], *, paid_label: str) -> str:
+    """POST /v1/api/3d/submit shared by every submission mode."""
+    timeout = httpx.Timeout(60.0, connect=10.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
+    if resp.status_code != 200:
+        raise HunyuanApiError(f"hunyuan submit HTTP {resp.status_code}: {resp.text[:300]}")
+    body = resp.json()
+    job_id = str(body.get("id") or "")
+    if not job_id:
+        raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
+    log_paid_call("hunyuan", paid_label, task_id=job_id)
+    return job_id
+
+
+async def create_text_to_model(
+    prompt: str, *, model: str = MODEL_VERSION_DEFAULT, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None
+) -> str:
+    """Submit a prompt-only (text-to-3D) generation job — the official API
+    declares ``Prompt`` mutually exclusive with any image input, so no image
+    field is sent at all."""
+    if not prompt:
+        raise ValueError("text-to-model requires a non-empty prompt")
+    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
+    return await _submit_job(payload, paid_label="text_to_3d_submit")
+
+
 async def create_image_to_model(
     image_base64: str,
     *,
@@ -84,18 +111,7 @@ async def create_image_to_model(
         raise ValueError("image-to-model requires a non-empty image_base64")
     payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = image_base64
-
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
-    if resp.status_code != 200:
-        raise HunyuanApiError(f"hunyuan submit HTTP {resp.status_code}: {resp.text[:300]}")
-    body = resp.json()
-    job_id = str(body.get("id") or "")
-    if not job_id:
-        raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
-    log_paid_call("hunyuan", "image_to_3d_submit", task_id=job_id)
-    return job_id
+    return await _submit_job(payload, paid_label="image_to_3d_submit")
 
 
 async def create_multiview_to_model(
@@ -126,18 +142,7 @@ async def create_multiview_to_model(
     payload["image_base64"] = front_image_base64
     if multi_view_images:
         payload["multi_view_images"] = multi_view_images
-
-    timeout = httpx.Timeout(60.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
-    if resp.status_code != 200:
-        raise HunyuanApiError(f"hunyuan submit HTTP {resp.status_code}: {resp.text[:300]}")
-    body = resp.json()
-    job_id = str(body.get("id") or "")
-    if not job_id:
-        raise HunyuanApiError(f"hunyuan submit response missing job id: {str(body)[:300]}")
-    log_paid_call("hunyuan", "image_to_3d_submit", task_id=job_id)
-    return job_id
+    return await _submit_job(payload, paid_label="image_to_3d_submit")
 
 
 async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[str, Any]:

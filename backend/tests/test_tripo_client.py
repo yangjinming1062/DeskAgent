@@ -79,6 +79,31 @@ async def test_create_text_to_model_returns_task_id(mock_http):
 
 
 @pytest.mark.asyncio
+async def test_create_text_to_model_carries_kwargs_without_image_fields(mock_http):
+    """The text endpoint declares no image-only fields (``enable_image_autofix``,
+    framing hints); shared generation knobs (pbr / quality / face_limit) do apply."""
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_t2d"})
+    )
+    await tripo_client.create_text_to_model(
+        "一个女孩",
+        model_version="P1-20260311",
+        pbr=True,
+        texture_quality="detailed",
+        face_limit=20_000,
+    )
+    body = mock_http.calls[0][2]
+    assert body["prompt"] == "一个女孩"
+    assert body["model"] == "P1-20260311"
+    assert body["pbr"] is True
+    assert body["texture_quality"] == "detailed"
+    assert body["face_limit"] == 20_000
+    assert "enable_image_autofix" not in body
+    assert "input" not in body and "inputs" not in body
+    assert "texture_alignment" not in body and "orientation" not in body
+
+
+@pytest.mark.asyncio
 async def test_create_image_to_model_uses_singular_input_field(mock_http):
     """H series ``image-to-model`` uses singular ``input`` (not the multiview ``inputs`` list)."""
     mock_http.responder = lambda _r: httpx.Response(

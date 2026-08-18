@@ -3544,6 +3544,29 @@ async def test_normalize_outfit_strips_markdown_fences():
 
 
 @pytest.mark.asyncio
+async def test_normalize_outfit_strips_think_blocks():
+    """Reasoning-model <think>…</think> prefixes (including an unclosed one
+    truncated mid-reasoning) never reach appearance_outfit."""
+    from services.companion import normalize_outfit
+
+    async def _closed(db, user_id, system_prompt, user_payload, **kwargs):
+        return "<think>user wants outfit</think>粉色和服，樱花刺绣"
+
+    result = await normalize_outfit(
+        _closed, raw_input="和服", persona_definition=None
+    )
+    assert result == "粉色和服，樱花刺绣"
+
+    async def _unclosed(db, user_id, system_prompt, user_payload, **kwargs):
+        return "<think>The user wants me to generate a normalized clothing"
+
+    result = await normalize_outfit(
+        _unclosed, raw_input="运动装", persona_definition=None
+    )
+    assert result == "运动装"
+
+
+@pytest.mark.asyncio
 async def test_normalize_outfit_empty_response_falls_back():
     """Empty LLM response triggers fallback to raw_input."""
     from services.companion import normalize_outfit

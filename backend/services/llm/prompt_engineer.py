@@ -1,14 +1,18 @@
 import json
+import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
-from components import safe_json_loads
+from components import get_logger, parse_llm_json, safe_json_loads
 from modules.companion import Persona
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
+from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config, resolve_vision_chain
 from .llm_retry import call_with_retry
 from .providers import ProviderConfig, ServiceType, resolve_context_tokens
+
+logger = get_logger(__name__)
 
 # Chinese-first (persona is Chinese, minimax handles it natively); the
 # 纯白平面背景 clause keeps bust avatars displayable on light UI surfaces
@@ -273,6 +277,137 @@ def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, feedback: st
     return prompt
 
 
+# ── 文生3D（text-to-3D）提示词 ─────────────────────────────────────────
+# 与图生路径相反：文字描述承载 100% 的角色身份（没有参考图可喂）。真实 persona 的
+# appearance_core 极薄（连发色都没有），身份细节由视觉 LLM 从头像图提取。
+
+
+class T3DAppearance(BaseModel):
+    gender: str = ""
+    age_range: str = ""
+    hair: str = ""
+    eye_color: str = ""
+    facial_features: str = ""
+    skin_tone: str = ""
+    body_type: str = ""
+    signature_details: str = ""
+
+
+_T3D_ENHANCER_SYSTEM_PROMPT = (
+    "你是一个3D角色外观分析引擎。根据角色头像参考图与角色文本设定，提取角色外观特征，"
+    "输出一个JSON对象，用于文生3D模型生成。\n\n"
+    "JSON字段（值为一到两个简洁中文短语；头像图可见的特征以图为准，图中不可见而文本设定中有的按文本，两者都没有则填空字符串）：\n"
+    '{"gender": "性别", "age_range": "年龄段", "hair": "发型（长度、形状、发色）", '
+    '"eye_color": "瞳色", "facial_features": "五官特征", "skin_tone": "肤色", '
+    '"body_type": "体型", "signature_details": "标志性细节（发饰、耳饰、纹身等）"}\n\n'
+    "要求：不要解释、不要思考过程，只输出JSON对象，所有字段值使用中文。"
+)
+
+T3dWording = Literal["anime", "figurine", "flat", "realistic"]
+
+# Tripo/混元都没有姿势控制参数 —— 姿势与服装约束只能写进 prompt 文本赌服从度；
+# 运动内衣约束与图生路径的 _BIPED_A_POSE 同因：保护 PBR 换装的皮肤可见度。
+# 完整性子句放最前并点名所有体段：身份描述占大头时供应商会退化出半身像/截断
+# 下肢（实测 v3.1 出过上半身 A-pose、无腿的产物）。措辞保持风格中立——
+# 风格词只进 _T3D_STYLE_WORDING。
+_T3D_SUFFIX_BIPED = (
+    "完整的全身站立角色：从头顶到脚底，头部、躯干、双臂、双腿、双脚全部完整，"
+    "不截断身体、不是半身像或胸像。"
+    "标准A-pose站姿，双臂向两侧微张，双脚分开与肩同宽。"
+    "单个角色，无场景、无道具，纯色简洁背景。"
+    "穿着最小覆盖的简洁运动内衣与运动短裤，躯干与四肢皮肤充分可见，"
+    "禁止长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等大面积覆盖服装。"
+)
+_T3D_SUFFIX_NON_BIPED = "单个角色，无场景、无道具，纯色简洁背景，全身完整可见，自然站姿。"
+
+# 精美二次元是 anime 的默认措辞（用户目检否决了手办 CGI）；figurine/flat
+# 保留为 CLI 对比变体。
+_T3D_STYLE_WORDING: dict[T3dWording, str] = {
+    "anime": "精美的日系二次元风格，精致的五官与发型细节，色彩明亮通透、干净和谐的配色，柔和细腻的高品质动漫渲染质感。",
+    "figurine": "3D日系二次元手办风格，原神/崩铁级CGI渲染质感，精致二次元面部与立体发束，清晰的三维体积与结构轮廓，柔和次表面散射，光滑材质。",
+    "flat": "日系二次元动漫风格，扁平赛璐璐渲染，色彩明快干净，清晰的色块分界。",
+    "realistic": "写实风格，高细节PBR材质，自然的皮肤与毛发质感。",
+}
+
+# Tripo 与混元的 Prompt 上限均为 1024 字符 —— 固定后缀承载硬约束，
+# 截断只允许吃掉描述主体，不能吃掉后缀。
+_T3D_PROMPT_MAX_CHARS: int = 1024
+
+
+def _format_t3d_appearance(structured: T3DAppearance) -> str:
+    segs = [
+        s
+        for s in (
+            f"{structured.age_range}{structured.gender}",
+            structured.hair,
+            structured.eye_color,
+            structured.facial_features,
+            structured.skin_tone,
+            structured.body_type,
+            structured.signature_details,
+        )
+        if s
+    ]
+    return "，".join(segs)
+
+
+def build_t3d_prompt(structured: T3DAppearance | str, style: FullbodyStyle = "anime", *, rig_type: str = "biped", wording: T3dWording | None = None) -> str:
+    """Assemble the text-to-3D prompt: appearance description + fixed 3D
+    suffix + style wording, truncated to the shared 1024-char provider cap
+    (suffix kept intact, only the description body gives way)."""
+    desc = _format_t3d_appearance(structured) if isinstance(structured, T3DAppearance) else structured.strip()
+    if not desc:
+        raise ValueError("T3D appearance description is empty")
+    resolved_wording: T3dWording = wording or style
+    tail = "。" + (_T3D_SUFFIX_BIPED if rig_type == "biped" else _T3D_SUFFIX_NON_BIPED) + _T3D_STYLE_WORDING[resolved_wording]
+    if len(desc) + len(tail) > _T3D_PROMPT_MAX_CHARS:
+        desc = desc[: max(0, _T3D_PROMPT_MAX_CHARS - len(tail))]
+    return desc + tail
+
+
+async def enhance_t3d_prompt(
+    db: AsyncSession | None,
+    user_id: int | None,
+    persona: Persona,
+    *,
+    image_data_uri: str | None = None,
+    provider_config: ProviderConfig | None = None,
+    vision_chain: list[ProviderConfig] | None = None,
+) -> T3DAppearance | str:
+    """Vision-first (if *image_data_uri* given) appearance extraction for
+    text-to-3D. Returns parsed ``T3DAppearance`` on a well-formed JSON
+    response, else the cleaned plain text — ``build_t3d_prompt`` accepts both."""
+    payload = _persona_visual_payload(persona, None)
+    user_payload = f"角色文本设定：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```\n请输出外观特征JSON："
+    raw = ""
+    if image_data_uri:
+        if vision_chain is None:
+            vision_chain = await resolve_vision_chain(db, user_id) if db is not None and user_id is not None else []
+        if vision_chain:
+            try:
+                provider = provider_from_config(vision_chain[0])
+                client = provider.raw_client()
+                if client is not None:
+                    messages: list = [
+                        {"role": "system", "content": _T3D_ENHANCER_SYSTEM_PROMPT},
+                        {"role": "user", "content": [{"type": "text", "text": user_payload}, {"type": "image_url", "image_url": {"url": image_data_uri}}]},
+                    ]
+                    response = await client.chat.completions.create(model=provider.config.model, messages=messages)
+                    raw = (response.choices[0].message.content or "").strip()
+            except Exception:
+                logger.warning("Vision T3D appearance extraction failed, falling back to text", exc_info=True)
+    if not raw:
+        raw = await chat(db, user_id, _T3D_ENHANCER_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
+    cleaned = _strip_markdown_fence(strip_think_blocks(raw))
+    parsed = parse_llm_json(cleaned)
+    if isinstance(parsed, dict):
+        try:
+            return T3DAppearance.model_validate(parsed)
+        except ValidationError:
+            pass
+    return cleaned
+
+
 # Direct-construct PBR texture prompts — no LLM round-trip.
 # Tiled across UV islands on a 3D model; a directional light baked into the
 # map would clash with the GLB's runtime lighting.  Each rig-type prefix
@@ -367,6 +502,19 @@ def _strip_markdown_fence(raw: str) -> str:
         if first_newline != -1 and cleaned.endswith("```") and len(cleaned) > first_newline + 3:
             cleaned = cleaned[first_newline + 1 : -3].strip()
     return cleaned
+
+
+_THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
+
+
+def strip_think_blocks(raw: str) -> str:
+    """Strip reasoning-model ``<think>…</think>`` blocks, including an
+    unclosed ``<think>`` running to end-of-string (output got truncated
+    before the closer ever arrived)."""
+    cleaned = _THINK_BLOCK.sub("", raw)
+    if "<think>" in cleaned:
+        cleaned = cleaned.split("<think>", 1)[0]
+    return cleaned.strip()
 
 
 async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str:

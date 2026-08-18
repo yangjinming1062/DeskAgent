@@ -62,6 +62,9 @@ class ImageTo3DProvider(ABC):
         """Download the completed job's model into ``dest_dir`` and return the
         local path of a single ``.glb`` file (archives are unpacked here)."""
 
+    async def submit_text_to_model(self, prompt: str) -> Model3DJob:
+        raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support text-to-3D", provider=self.provider_name)
+
     async def rig_supported(self, job_id: str) -> bool:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support cloud rigging", provider=self.provider_name)
 

@@ -37,6 +37,18 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
         except TripoApiError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 
+    async def submit_text_to_model(self, prompt: str, *, model_version: str | None = None) -> Model3DJob:
+        try:
+            kwargs = client.tripo_common_kwargs_from_settings()
+            # enable_image_autofix is an image-input-only field; the text
+            # endpoint schema does not declare it.
+            kwargs.pop("enable_autofix", None)
+            if model_version is not None:
+                kwargs["model_version"] = model_version
+            return Model3DJob(job_id=await client.create_text_to_model(prompt, **kwargs))
+        except (TripoApiError, ValueError) as exc:
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
+
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
         try:
             data = await client.get_task(job.job_id)

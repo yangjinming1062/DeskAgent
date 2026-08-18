@@ -55,10 +55,18 @@ def _envelope(payload: dict[str, Any]) -> dict[str, Any]:
     return payload.get("data") or {}
 
 
-async def create_text_to_model(prompt: str, *, model_version: str = MODEL_VERSION_DEFAULT) -> str:
-    """Returns a task_id; poll with :func:`poll_task` until ``status=success``."""
+async def create_text_to_model(
+    prompt: str, *, model_version: str = MODEL_VERSION_DEFAULT, pbr: bool = True, texture_quality: str | None = None, face_limit: int | None = None
+) -> str:
+    """Prompt-only 3D generation. Returns a task_id; poll with :func:`poll_task`
+    until ``status=success``. ``enable_autofix`` is image-input-only and has no
+    parameter here — the text endpoint schema does not declare it."""
+    if not prompt:
+        raise ValueError("text-to-model requires a non-empty prompt")
+    payload = _common_model_kwargs(model_version=model_version, pbr=pbr, texture_quality=texture_quality, face_limit=face_limit, enable_autofix=None)
+    payload["prompt"] = prompt
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{_base_url()}/generation/text-to-model", headers=_auth_headers(), json={"prompt": prompt, "model": model_version})
+        resp = await client.post(f"{_base_url()}/generation/text-to-model", headers=_auth_headers(), json=payload)
     task_id = _envelope(resp.json())["task_id"]
     log_paid_call("tripo", "text_to_3d_submit", task_id=task_id)
     return task_id

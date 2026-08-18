@@ -70,6 +70,13 @@ class HunyuanImageTo3DProvider(ImageTo3DProvider):
         except ValueError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name, model=self._model) from exc
 
+    async def submit_text_to_model(self, prompt: str) -> Model3DJob:
+        try:
+            task_id = await client.create_text_to_model(prompt, **client.hunyuan_common_kwargs_from_settings())
+            return Model3DJob(job_id=task_id)
+        except (HunyuanApiError, ValueError) as exc:
+            raise ImageTo3DError(str(exc), provider=self.provider_name, model=self._model) from exc
+
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
         try:
             body = await client.get_task(job.job_id, model=self._model)
