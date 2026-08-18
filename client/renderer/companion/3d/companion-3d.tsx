@@ -136,12 +136,6 @@ export function Companion3D(): React.JSX.Element {
         }
       })
 
-      const unsubExpressions = $expressions.listen(exprs => {
-        if (exprs.length > 0) {
-          eng.character.setCustomExpressions(exprs)
-        }
-      })
-
       // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
       // while audio is playing; we just forward it.
       const detachLipSync = registerAmplitudeSink(amp => eng.character.setLipSyncAmplitude(amp))
@@ -205,7 +199,6 @@ export function Companion3D(): React.JSX.Element {
         unsubState()
         unsubEmotion()
         unsubGenerated()
-        unsubExpressions()
         detachLipSync()
         unsubPower()
         unsubDragVelocity()

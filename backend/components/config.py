@@ -191,6 +191,7 @@ class Settings(BaseSettings):
     companion_avatar_upload_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_sprite_generate_rate_limit_per_minute: int
+    companion_expression_avatar_generate_rate_limit_per_minute: int
     companion_wardrobe_generate_rate_limit_per_minute: int
     rate_limit_storage_url: str = ""
 

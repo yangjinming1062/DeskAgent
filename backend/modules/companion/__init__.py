@@ -1,4 +1,4 @@
-from .models import AvatarAsset, CompanionExpression, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona, WardrobeItem
+from .models import AvatarAsset, CompanionExpression, CompanionExpressionAvatar, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona, WardrobeItem
 from .schemas import (
     AnimationClipResponse,
     AnimationGenerateRequest,
@@ -7,6 +7,7 @@ from .schemas import (
     AvatarGenerateRequest,
     AvatarHistoryResponse,
     CompanionModelResponse,
+    ExpressionAvatarRequest,
     ModelGenerateRequest,
     PersonaResponse,
     PersonaUpdate,
@@ -31,10 +32,12 @@ __all__ = [
     "AvatarGenerateRequest",
     "AvatarHistoryResponse",
     "CompanionExpression",
+    "CompanionExpressionAvatar",
     "CompanionModel",
     "CompanionModelResponse",
     "CompanionPreference",
     "CompanionSpriteImage",
+    "ExpressionAvatarRequest",
     "ModelGenerateRequest",
     "Persona",
     "PersonaResponse",

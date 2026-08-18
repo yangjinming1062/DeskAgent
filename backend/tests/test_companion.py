@@ -3238,9 +3238,8 @@ async def test_get_expressions_endpoint(_patch_db):
                 label="心疼",
                 valence="negative",
                 description="Tender worry",
-                weights_json='{"frown": 0.5}',
+                icon="🥺",
                 tags_json='["心疼"]',
-                scale_boost=1.1,
             )
         )
         await db.commit()

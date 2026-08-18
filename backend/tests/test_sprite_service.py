@@ -476,7 +476,7 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
     monkeypatch.setattr(sprite_service, "fetch_texture_bytes", dark_fetch)
 
     with pytest.raises(SpriteGenerationError):
-        await sprite_service._generate_sprite_png(db_session, 1, "p", "ref", sprite_service._CHROMA_CANDIDATES[0])
+        await sprite_service.generate_sprite_png(db_session, 1, "p", "ref", sprite_service._CHROMA_CANDIDATES[0])
 
 
 @pytest.mark.asyncio

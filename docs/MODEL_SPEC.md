@@ -84,7 +84,7 @@ clip 按骨骼类型分库存放（`clips-biped.ts` / `clips-quadruped.ts` / …
 | `working` | 循环 | 3~4s | 前倾、双手模拟打字 |
 | `sleeping` | 循环 | 5~6s | 头倾、呼吸深缓；最慢循环 |
 | `interacting` | 单次 | 1~1.5s | 被点击后的轻跳 + 回头 |
-| `emotional_idle` | 循环 | 3~4s | 情绪保持期的身体循环；面部细节由 morph 叠加 |
+| `emotional_idle` | 循环 | 3~4s | 情绪保持期的身体循环（情绪面部由表情头像承载） |
 | `disconnected` | 循环 | 4~5s | 懒腰、慢头、走神 |
 
 ### 2.2 微弱动作（biped SHOULD = 6）
@@ -179,32 +179,20 @@ IDLE 中每 10~15s 随机插入；缺失时退回 `idle`。
 
 ---
 
-## 3. Morph Target（44 个）
+## 3. Morph Target（9 个）
 
-morph target 用 ARKit BlendShape 标准命名。所有 morph 由资源管线注入到 GLB，命名
-必须落到下表分组。
+morph target 用 ARKit BlendShape 标准命名，由资源管线注入到 GLB。情绪不驱动任何面部
+morph——情绪的面部表达由聊天窗表情头像承载（[PROTOCOL.md §1.4](../PROTOCOL.md)），管线
+只注入运行时实际消费的面部信号与体型调节组。
 
-### 3.1 基础表情（16）
+### 3.1 面部信号（3）
 
-| 部位 | 名称 |
-|------|------|
-| 眼 | `eyeBlinkLeft` `eyeBlinkRight` `eyeWideLeft` `eyeWideRight` `eyeSquintLeft` `eyeSquintRight` `eyesLookDown` |
-| 眉 | `browInnerUp` `browInnerDown` |
-| 嘴 | `jawOpen` `mouthSmile` `mouthSmileRight` `mouthFrown` |
-| 其他 | `cheekSquintLeft` `noseSneerLeft` `tongueOut` |
+| 部位 | 名称 | 消费方 |
+|------|------|--------|
+| 眼 | `eyeBlinkLeft` `eyeBlinkRight` | 自动眨眼 |
+| 嘴 | `jawOpen` | TTS 口型同步 |
 
-### 3.2 负面 / 强烈情绪（14）
-
-`eyeCloseTight` `eyeDroopLeft` `eyeDroopRight` `eyeWidenFear` `eyeNarrow`
-`browFurrow` `browOuterUp` `nostrilFlare` `mouthTremble` `mouthCornerDown`
-`jawClench` `lipPress` `faceWince` `cheekPuff`
-
-### 3.3 亲密 / 俏皮（8）
-
-`eyeCloseLeft` `eyeCloseRight` `browRaiseLeft` `browRaiseRight` `mouthPucker`
-`lipBiteLower` `noseWrinkle` `cheekBlush`
-
-### 3.4 体型调节（6）
+### 3.2 体型调节（6）
 
 `Body_Height` `Body_Weight` `Body_Muscle` `Body_Shoulders` `Face_Width` `Face_Jaw`
 （均 0.0~1.0）
@@ -215,7 +203,6 @@ morph target 用 ARKit BlendShape 标准命名。所有 morph 由资源管线注
 |------|----------|
 | `eyeBlink*` | 不眨眼 |
 | `jawOpen` | TTS 期间无嘴型同步 |
-| 情绪 morph | 该情绪 fallback 为纯 idle 面部 |
 | 体型 morph | 使用模型默认体型 |
 
 ---
@@ -262,7 +249,7 @@ LLM 只产"毛坯几何 + `VG_ANCHOR` 锚点标注"，其后一切由确定性 b
 
 ### 5.2 整文件无损压缩与客户端透明解压
 
-- **无损整包压缩**：由于 44 组 ARKit 面部/体态 Blendshape 在非位移区域包含大量稀疏浮点数据，采用 Gzip / Deflate 等通用无损压缩方案可实现 90% 以上的体积缩减（原始 300MB~600MB 模型无损压缩后仅需 ~30MB~50MB 传输带宽）；
+- **无损整包压缩**：GLB 二进制缓冲区（蒙皮权重、morph 顶点位移、对齐补零等稀疏 / 重复数据占大头）采用 Gzip / Deflate 等通用无损压缩方案可实现 90% 以上的体积缩减（原始 300MB~600MB 模型无损压缩后仅需 ~30MB~50MB 传输带宽）；
 - **客户端透明解压**：客户端（[`CharacterController.ts`](../client/renderer/companion/3d/CharacterController.ts)）集成原生 Web 流式解压（`DecompressionStream`），自动识别压缩魔数并透明还原为原始二进制 GLB 缓冲区，零感知交付给 Three.js `GLTFLoader` 渲染。
 
 ---

@@ -91,7 +91,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **3D 模型传输与本地缓存优化**：身体与服装 GLB 均采用 Draco 压缩（体积降低 5–10×），渲染端通过 `createGLTFLoader()`（集成 `DRACOLoader`，解码器由 Vite `assets/draco/` 本地托管）流式解压渲染；主进程按 `content_hash` 在 `$SPIRITAGENT_HOME/cache/models/` 磁盘缓存，支持 HTTP Range 断点续传与 LRU 淘汰。
 - **模型下载失败与生成失败分流（`$modelRetryable`）**：`model.failed` 载荷带 `retry_download: true` 时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（`companion.model.retryDownload`，绝不重新计费），不给"重新生成"入口；启动 hydrate 收到 `download_failed` 行同样进该态，避免每次启动静默重刷一次计费生成。
 - **主进程 TypeScript 构建**：主进程源码使用 TypeScript (`main/*.ts`)，由 `tsup` 统一编译打包为 CJS 输出至 `dist-electron/`，与渲染进程共享严谨的静态类型校验。
-- **独立 3D 动画与模型调试套件（`pnpm clip` / `renderer/clip-debugger/`）**：为解决 3D 骨骼动作、表情 Morph 与后端 GLB 模型质量验证严重依赖完整 LLM 对话链路、调试反馈慢的问题，提供独立调试器（`role=clip`，全屏 Vite 热更 Web 模式）。支持：(a) 激活码自动兑换鉴权一键从后端（`GET /api/companion/model`）下载 GLB 模型并流式 Gzip 解压；(b) 7 大骨骼体系（biped/quadruped 等）100+ 动作库即点即播、交叉淡入淡出与逐帧步进；(c) 智能包围盒接地、水平居中与 Z-up 平躺模型自动立起；(d) 3D TransformControls 交互手柄（位移/旋转/缩放）；(e) 52 维面部 Blendshape 实时调校与 TTS 嘴型振幅模拟。
+- **独立 3D 动画与模型调试套件（`pnpm clip` / `renderer/clip-debugger/`）**：为解决 3D 骨骼动作、表情 Morph 与后端 GLB 模型质量验证严重依赖完整 LLM 对话链路、调试反馈慢的问题，提供独立调试器（`role=clip`，全屏 Vite 热更 Web 模式）。支持：(a) 激活码自动兑换鉴权一键从后端（`GET /api/companion/model`）下载 GLB 模型并流式 Gzip 解压；(b) 7 大骨骼体系（biped/quadruped 等）100+ 动作库即点即播、交叉淡入淡出与逐帧步进；(c) 智能包围盒接地、水平居中与 Z-up 平躺模型自动立起；(d) 3D TransformControls 交互手柄（位移/旋转/缩放）；(e) 面部 Blendshape 实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev opt-out**：`SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 
 ## 5. 与外部的契约

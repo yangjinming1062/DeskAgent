@@ -32,29 +32,15 @@
 
 `emotion === 'neutral'` 不触发 EMOTIONAL 状态，直接回 `idle`。这是 LLM 的"无特定情绪"答案，不是"中性情绪"。
 
-## 2. 表情枚举
+## 2. 情绪表达（表情头像 + 肢体动画）
 
-| 枚举值 | MorphController | 备注 |
-|---|---|---|---|
-| `happy` | ✓ | |
-| `sad` | ✓ | |
-| `surprised` | ✓ | |
-| `excited` | ✓ | |
-| `confused` | ✓ | |
-| `concerned` | ✓ | |
-| `shy` | ✓ | |
-| `proud` | ✓ | |
-| `grateful` | ✓ | |
-| `playful` | ✓ | |
-| `bored` | ✓ | |
-| `lonely` | ✓ | |
-| `sleepy` | ✓ | |
-| `curious` | ✓ | |
-| `embarrassed` | ✓ | |
-| `apologetic` | ✓ | |
-| `neutral` | (无) | **过滤掉**，不触发 EMOTIONAL |
+情绪枚举 21 项内置（不含 `neutral`；后端权威 `BUILTIN_EMOTIONS` 22 项含 neutral）∪ 自创情绪注册表（`create_expression` 落库、经 `/expressions` 水合）。`neutral` 不触发 EMOTIONAL，直接回 `idle`；LLM 任何未注册 token 走 `affect.py` 的 neutral 回退，tag 剥离后归 `idle`。
 
-LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_resolve` 的 neutral 回退，tag 剥离后归 `idle`。
+情绪的渲染分工（3D 面部不承载情绪表情——生成模型脸部在桌面尺寸下精细度不足）：
+
+- **表情头像**：情绪激活时 chat-dock 左栏头像换为对应表情图（`POST /api/companion/expression-avatar` 按情绪 token 后端 match-or-generate）。store 按情绪 token 缓存结果（token 与服务端缓存行 1:1，单缓存即可）、失败 60s backoff；**生成结果永不浪费**——只要情绪未变，无论多晚生成完就换入；即便错过本次（情绪已切换）也同时落库落缓存，下次同情绪即时命中；情绪结束 / 未就绪 / 失败显示一律回退 portrait。订阅挂在 ChatDock 组件内——聊天窗关闭即不请求，桌面-only 情绪不触发生成。avatar 重生（`avatar.regenerated`）清全部缓存（身份锚点变了）。
+- **3D 面部仅眨眼 + 口型**：只解析 `blink`/`jawOpen` 两组语义别名（blink 统一 morph 优先、缺失时双眼回退）。
+- **肢体动画**：clip-dispatch 按 valence（自创情绪读注册表 valence）+ tags 选肢体 clip，无对应回退 idle。情绪胶囊显示 = 内置 `EMOTION_MAP` ∪ 注册表自创情绪（label/icon），未水合 token 兜底渲染。
 
 ## 3. 三档打扰（双层模型）
 
@@ -76,7 +62,7 @@ LLM 任何 `joyful` / `happy_excited` 等未注册 token 走 `affect.py::_try_re
 
 渲染栈是 `three/webgpu` 的 **WebGPURenderer + 四层回退**：WebGPU 后端 → three 内置 WebGL2 后端（同 API 面，零代码）→ 经典 `WebGLRenderer`（仅当 `init()` 整体 reject；必须换新 canvas——webgpu 上下文成功过的 canvas 要不到 webgl2）→ `EngineInitError`（静态精灵层兜底）。`Engine.create()` 是异步工厂，canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load/outfit effects 一律 await 引擎就绪 Promise；实际后端写 dev log。
 
-GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时**静态精灵模式**接管——[static-sprite/](static-sprite/) 的 `StaticSprite` 层叠在 canvas 之上，有图显示后隐藏 canvas（蛋不透出），GLB 真正解析完成（`LoadedModelInfo.procedural === false`，而非 `model.ready`——该事件早于字节落地，靠此修掉换模闪蛋）才淡出交还。相册不可用/图未到达时蛋继续显示（永不空白）。语义映射表在 [sprite-semantics.ts](static-sprite/sprite-semantics.ts)（9 状态 + 17 情绪 + 未覆盖情绪的通用回退子句）；请求去重/1.5s 间隔/`content_hash` 内存缓存在 [sprite-store.ts](static-sprite/sprite-store.ts)——失败保持当前图。图间 250ms 淡切，`prefers-reduced-motion` 下禁用淡切与呼吸。加载失败时渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动）。MorphController 经语义别名映射到 GLB 内置的 ARKit morph targets——缺失的情绪 morph 静默回退为 idle 面部。模型经 \model.ready\ 事件下发，换装经 \wardrobe.updated\ 下发。
+GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时**静态精灵模式**接管——[static-sprite/](static-sprite/) 的 `StaticSprite` 层叠在 canvas 之上，有图显示后隐藏 canvas（蛋不透出），GLB 真正解析完成（`LoadedModelInfo.procedural === false`，而非 `model.ready`——该事件早于字节落地，靠此修掉换模闪蛋）才淡出交还。相册不可用/图未到达时蛋继续显示（永不空白）。语义映射表在 [sprite-semantics.ts](static-sprite/sprite-semantics.ts)（9 状态 + 17 情绪 + 未覆盖情绪的通用回退子句）；请求去重/1.5s 间隔/`content_hash` 内存缓存在 [sprite-store.ts](static-sprite/sprite-store.ts)——失败保持当前图。图间 250ms 淡切，`prefers-reduced-motion` 下禁用淡切与呼吸。加载失败时渲染程序化兜底角色（Three.js 基本体组合 + 正弦驱动呼吸/眨眼/说话浮动）。MorphController 只消费眨眼/口型两组语义别名（见 §2），情绪面部由表情头像承载。模型经 \model.ready\ 事件下发，换装经 \wardrobe.updated\ 下发。
 
 **渲染功耗三档**（[3d/PowerProfile.ts](3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（sleeping 状态、`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`、static-sprite 完全覆盖）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
 

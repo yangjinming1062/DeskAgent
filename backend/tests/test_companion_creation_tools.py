@@ -1,3 +1,5 @@
+import pytest
+
 from services.chat.bubble import BubbleSplitter
 from services.companion import BUILTIN_STATE_CLIPS, builtin_action_clips
 from services.tools import REGISTRY
@@ -81,6 +83,47 @@ def test_builtin_state_clips_are_the_nine_core_states():
 def test_create_animation_and_expression_registered():
     assert REGISTRY.get_schema(0, "create_animation") is not None
     assert REGISTRY.get_schema(0, "create_expression") is not None
+
+
+@pytest.mark.asyncio
+async def test_create_expression_registers_and_kicks_generation(_patch_db, monkeypatch):
+    import json as json_mod
+
+    from modules.companion import CompanionExpression
+    from services.tools.builtin import expression_tool
+    from sqlalchemy import select
+
+    _, SessionLocal = _patch_db
+    kicked: list[str] = []
+    emitted: list[int] = []
+
+    async def _fake_emit(uid):
+        emitted.append(uid)
+
+    monkeypatch.setattr(expression_tool, "emit_companion_assets_updated", _fake_emit, raising=False)
+    # The tool lazy-imports these from the services.companion barrel — patch there.
+    import services.companion as companion_pkg
+
+    monkeypatch.setattr(companion_pkg, "kick_background_generation", lambda uid, name: kicked.append(name))
+    monkeypatch.setattr(companion_pkg, "emit_companion_assets_updated", _fake_emit)
+
+    result = json_mod.loads(
+        await expression_tool.create_expression_tool(
+            "tender_worry", "心疼又担忧地看着你", label="心疼", valence="negative", tags=["温柔"], icon="🥺", user_id=1
+        )
+    )
+    assert result["success"] is True
+    assert kicked == ["tender_worry"] and emitted == [1]
+
+    async with SessionLocal() as db:
+        row = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == 1))).scalar_one()
+        assert (row.name, row.label, row.valence, row.description, row.icon) == ("tender_worry", "心疼", "negative", "心疼又担忧地看着你", "🥺")
+
+    # Missing description → rejected without touching the registry.
+    assert json_mod.loads(await expression_tool.create_expression_tool("blank_mind", "", user_id=1))["success"] is False
+    # Duplicate name → rejected.
+    assert json_mod.loads(await expression_tool.create_expression_tool("tender_worry", "另一个描述", user_id=1))["success"] is False
+
 
 def test_affect_trace_content():
     from services.chat.persistence import _affect_trace_content

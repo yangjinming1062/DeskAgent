@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -59,7 +59,10 @@ class CompanionModel(ModelBase, TimestampMixin):
 
 
 class CompanionExpression(ModelBase, TimestampMixin):
-    """Dynamic companion emotion expressions created autonomously or via custom presets."""
+    """Custom emotion registry: LLM-created emotion tokens usable as [affect:NAME].
+    The avatar image for an emotion (builtin or custom) lives in
+    CompanionExpressionAvatar keyed by name — this table only registers the
+    token and its clip-matching/display metadata."""
 
     __tablename__ = "companion_expressions"
 
@@ -68,9 +71,29 @@ class CompanionExpression(ModelBase, TimestampMixin):
     label: Mapped[str] = mapped_column(String(32))
     valence: Mapped[str] = mapped_column(String(16), default="neutral")
     description: Mapped[str] = mapped_column(Text, default="")
-    weights_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Optional single-emoji icon shown next to the label in the chat dock.
+    icon: Mapped[str | None] = mapped_column(String(16), nullable=True)
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
-    scale_boost: Mapped[float] = mapped_column(Float, default=1.0, server_default=text("1.0"))
+
+
+class CompanionExpressionAvatar(ModelBase, TimestampMixin):
+    """Chat-window expression avatar image cache, keyed by emotion token and
+    the avatar identity it was generated from. Lookup is exact-match on
+    (user_id, name, avatar_id); a regenerated avatar makes old rows stale and
+    they regenerate lazily. Loss is tolerable — a missing row or file just
+    means one more generation."""
+
+    __tablename__ = "companion_expression_avatars"
+    __table_args__ = (UniqueConstraint("user_id", "name", "avatar_id", name="uq_companion_expression_avatars_key"),)
+
+    # No separate user_id index: the unique (user_id, name, avatar_id)
+    # constraint's index already covers user_id-prefix lookups.
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(64))
+    avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    asset_url: Mapped[str] = mapped_column(String(2048))
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
 
 
 class WardrobeItem(ModelBase, TimestampMixin):

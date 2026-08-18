@@ -871,9 +871,8 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
                     "label": "同仇敌徾",
                     "valence": "negative",
                     "description": "Feeling outraged along with user",
-                    "weights": {"frown": 0.8, "browDown": 0.7},
+                    "icon": "😤",
                     "tags": ["同仇敌徾"],
-                    "scale_boost": 1.2,
                 },
                 "clip_brief": "愤怒跺脚与挥拳",
                 "tags": ["同仇敌徾"],
@@ -928,6 +927,10 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
     monkeypatch.setattr(nightly_activity, "resolve_provider_chain", _mock_chain)
     monkeypatch.setattr(nightly_activity, "generate_animation_clips", _mock_gen_clips)
+    # Kick runs a fire-and-forget avatar generation on the shared test
+    # connection — record the call instead of interleaving a second session.
+    kicked: list[str] = []
+    monkeypatch.setattr(nightly_activity, "kick_background_generation", lambda uid, name: kicked.append(name))
 
     ok = await _stage_5_creation(
         llm_cfg={"model_name": "test"},
@@ -951,7 +954,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
         ).scalar_one_or_none()
         assert expr is not None
         assert expr.label == "同仇敌徾"
-        assert expr.scale_boost == 1.2
+        assert expr.icon == "😤"
 
         gift = (
             await db.execute(

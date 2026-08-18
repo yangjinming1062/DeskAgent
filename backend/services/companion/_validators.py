@@ -1,8 +1,6 @@
-"""Shared helpers for LLM-output validators in companion asset generation.
-
-Both ``animation_generator.validate_and_sanitize_clip`` and
-``morph_generator.validate_and_sanitize_expression`` clamp numeric ranges
-and normalize tag lists. Keeping the helpers in one place means a bug fix
+"""Shared helpers for the LLM-output validators in companion asset generation
+(``clamp_value``: clip keyframe ranges; ``parse_tags``: clip and custom-emotion
+tag lists). Keeping the helpers in one place means a bug fix
 or new validation rule only touches one function, and a new validator
 (material prompts, voice tags, ...) can import them.
 """

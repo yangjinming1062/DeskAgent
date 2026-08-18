@@ -33,6 +33,16 @@ from .avatar_service import (
     select_avatar,
 )
 from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
+from .expression_avatar_service import (
+    ExpressionCooldownError,
+    ExpressionSeedMissingError,
+    NeutralEmotionError,
+    UnknownEmotionError,
+    kick_background_generation,
+    resolve_expression_avatar,
+    signed_expression_avatar_url,
+)
+from .expression_validator import validate_and_sanitize_expression
 from .garment_service import run_garment_pipeline
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
@@ -56,7 +66,6 @@ from .model_service import (
     run_model_gen_pipeline,
     signed_model_url,
 )
-from .morph_generator import validate_and_sanitize_expression
 from .outfit_normalizer import normalize_outfit
 from .persona_background import schedule_onboarding_outfit_extraction, schedule_personality_tag_refresh
 from .persona_service import (
@@ -105,14 +114,18 @@ __all__ = [
     "AvatarGenerationError",
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
+    "ExpressionCooldownError",
+    "ExpressionSeedMissingError",
     "InteractResult",
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "ModelProviderNotConfiguredError",
+    "NeutralEmotionError",
     "PersonaValidationError",
     "ShouldActResult",
     "SpriteGenerationError",
     "SpriteSeedMissingError",
+    "UnknownEmotionError",
     "WardrobeRouting",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
@@ -164,6 +177,7 @@ __all__ = [
     "get_waiting_sprite",
     "has_real_transparency",
     "interact",
+    "kick_background_generation",
     "list_avatar_history",
     "list_memories",
     "list_sprites",
@@ -190,6 +204,7 @@ __all__ = [
     "regenerate_avatar_from_image",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
+    "resolve_expression_avatar",
     "resolve_sprite",
     "resolve_uploaded_avatar_path",
     "retrieve_hybrid_memories",
@@ -203,6 +218,7 @@ __all__ = [
     "select_rig_type",
     "serve_ranged_file",
     "should_act",
+    "signed_expression_avatar_url",
     "signed_model_url",
     "signed_sprite_url",
     "slot_of",

@@ -55,6 +55,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（文生3D：视觉 LLM 读头像 + 角色设定构建提示词，无种子图） | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（provider query 刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
+| POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
 
@@ -72,7 +73,7 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败 | Client 加载 + 绑定动画 / 进度展示 / 降级 |
 | wardrobe.updated | 换装产物就绪 | Client 重拉列表 + 分派热替/装配 |
-| companion.assets.updated | 伙伴实时创建了新表情/动画（create_expression / create_animation） | Client 重拉 /animations + /expressions，绑定到 3D |
+| companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图）/ 新动画 | Client 重拉 /expressions（自创情绪注册表：白名单、肢体 clip 匹配、情绪胶囊）+ /animations |
 | wardrobe.preview.progress / .ready / .failed | 换装预览 job 状态 | Client UI 反馈（与 GET 轮询等价） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 | reload.mcp | MCP 配置变更后通知重载 | Client 转发 Runner，重载后回同步工具表 |
@@ -93,9 +94,11 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 
 **动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），Backend 在提示词中注入可用清单（内置 procedural clip + 模型生成 clip 的并集），解析后经 message.complete 的 affect.action 字段下发，Client 按名称/标签匹配 clip、失败回退到 emotion valence。LLM 找不到合适动作时可调用 create_animation 工具实时生成新 clip 并落库。
 
+**表情的渲染分工**：情绪驱动两处渲染——3D 面部仅保留眨眼与 TTS 口型，情绪的面部表达由 Client 经表情头像端点换图实现（聊天窗左栏头像）。LLM 找不到合适情绪时可调用 create_expression 工具注册自创情绪 token（description 必填、兼任头像生成语义、icon 可选），注册后 token 并入情绪白名单、后台预热生成头像图。
+
 **连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **Backend 白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **Backend 白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。
 
 ### 1.5 资产 URL 签名与传输缓存
 
@@ -105,6 +108,9 @@ Backend ↔ Client 同时暴露 JSON-RPC over WebSocket 与 HTTP REST。两套�
 | 3D 模型 GLB | 5 分钟 |
 | 换装产物（纹理 + 服装 GLB） | 5 分钟 |
 | 静态精灵相册 PNG | 5 分钟 |
+| 表情头像 PNG | 5 分钟 |
+
+**表情头像缓存键**为 (user, 情绪 token, avatar_id)——头像重生后旧行成为陈旧身份、按未命中重新生成；行/文件丢失同样视为未命中（缓存允许丢失，丢失后重生成）。与相册相同的 match-or-generate 语义，但按 token 精确匹配（无 LLM 语义匹配调用）。
 
 **契约要点**：资产端点支持双通道鉴权——已登录 Client 携带有效 Bearer JWT 时可直接访问归属资产；未携带令牌时按 URL HMAC 签名校验（每次签名 5 分钟 TTL，换设备/过期需重新签名）。服务端模型/资产端点支持 HTTP Range 断点续传 + ETag + 不可变缓存头；Client 按内容哈希（SHA-256）在本地磁盘缓存，命中即跳过网络，未命中/中断走断点续传。
 

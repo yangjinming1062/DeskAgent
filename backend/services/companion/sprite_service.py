@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..llm import ServiceType, resolve, resolve_provider_chain
 from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import build_signed_asset_url, compute_bytes_sha256, resolve_companion_asset_path, save_companion_asset, unlink_companion_asset
+from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .blender_tools import _vision_llm_call
 from .persona_service import get_or_create_persona
@@ -134,7 +134,7 @@ def _select_chroma_candidate(img: Image.Image) -> ChromaCandidate:
     return _CHROMA_CANDIDATES[scores.index(max(scores))]
 
 
-def _select_bg_from_data_uri(ref: str) -> ChromaCandidate:
+def select_bg_from_data_uri(ref: str) -> ChromaCandidate:
     try:
         return _select_chroma_candidate(Image.open(io.BytesIO(base64.b64decode(ref.partition(",")[2]))))
     except (OSError, ValueError):
@@ -281,12 +281,13 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     return prompt.strip(), tag.strip()[:64]
 
 
-async def _generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, requested: ChromaCandidate) -> bytes:
+# Public: expression_avatar_service reuses this for chat expression avatars.
+async def generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, requested: ChromaCandidate, size: str = _SPRITE_SIZE) -> bytes:
     chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
         raise SpriteGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
     for cfg in chain:
-        result_json = await image_generation_tool(prompt, {}, size=_SPRITE_SIZE, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
+        result_json = await image_generation_tool(prompt, {}, size=size, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
         url = first_image_url(result_json)
         raw = await fetch_texture_bytes(url) if url else None
         if raw is None:
@@ -318,12 +319,7 @@ async def _drop_missing_files(db: AsyncSession, rows: list[CompanionSpriteImage]
     next resolve regenerates instead of serving a dead entry."""
     alive: list[CompanionSpriteImage] = []
     for row in rows:
-        parts = row.asset_url.split("/", 2)
-        try:
-            present = len(parts) == 3 and resolve_companion_asset_path(int(parts[1]), parts[2]) is not None
-        except ValueError:
-            present = False
-        if present:
+        if companion_asset_exists(row.asset_url):
             alive.append(row)
             continue
         logger.info("pruning sprite row with missing file", extra={"user_id": row.user_id, "asset_url": row.asset_url})
@@ -343,12 +339,7 @@ async def _prune_album(db: AsyncSession, user_id: int) -> None:
 
 
 def signed_sprite_url(row: CompanionSpriteImage) -> str | None:
-    if not row.asset_url.startswith("companion-assets/"):
-        return None
-    parts = row.asset_url.split("/", 2)
-    if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
-        return None
-    return build_signed_asset_url(int(parts[1]), parts[2])
+    return signed_companion_asset_url(row.asset_url)
 
 
 async def _write_sprite(
@@ -416,9 +407,9 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
     if subject_ref is None:
         raise SpriteSeedMissingError("形象种子图不可读，请重新确认形象")
 
-    bg = await asyncio.to_thread(_select_bg_from_data_uri, subject_ref)
+    bg = await asyncio.to_thread(select_bg_from_data_uri, subject_ref)
     prompt, tag = await _author_prompt(db, user_id, request_text, bg)
-    png = await _generate_sprite_png(db, user_id, prompt, subject_ref, bg)
+    png = await generate_sprite_png(db, user_id, prompt, subject_ref, bg)
     path = save_companion_asset(png, user_id=user_id, label="sprite", ext="png")
 
     if db is None:

@@ -16,6 +16,7 @@ from modules.companion import (
     AvatarHistoryResponse,
     CompanionExpression,
     CompanionModelResponse,
+    ExpressionAvatarRequest,
     ModelGenerateRequest,
     Persona,
     PersonaResponse,
@@ -36,12 +37,16 @@ from services.companion import (
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
+    ExpressionCooldownError,
+    ExpressionSeedMissingError,
     ModelGenerationError,
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
+    NeutralEmotionError,
     PersonaValidationError,
     SpriteGenerationError,
     SpriteSeedMissingError,
+    UnknownEmotionError,
     WardrobeSourceExpiredError,
     avatar_response,
     confirm_portrait,
@@ -69,12 +74,14 @@ from services.companion import (
     regenerate_avatar_from_image,
     resolve_companion_asset_path,
     resolve_companion_model_path,
+    resolve_expression_avatar,
     resolve_sprite,
     resolve_uploaded_avatar_path,
     schedule_onboarding_outfit_extraction,
     schedule_personality_tag_refresh,
     select_avatar,
     serve_ranged_file,
+    signed_expression_avatar_url,
     signed_sprite_url,
     update_persona,
     verify_signed_asset_request,
@@ -170,9 +177,8 @@ async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_s
                 "label": r.label,
                 "valence": r.valence,
                 "description": r.description,
-                "weights": safe_json_loads(r.weights_json or "{}", default={}),
+                "icon": r.icon,
                 "tags": safe_json_loads(r.tags_json or "[]", default=[]),
-                "scale_boost": r.scale_boost,
             }
         )
     return {"expressions": exprs}
@@ -379,6 +385,35 @@ async def post_sprite(
         logger.warning("post_sprite invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
         raise HTTPException(status_code=502, detail={"error": "精灵形象生成失败，请稍后重试"})
     return SpriteImageResponse(id=row.id, url=url, tag=row.tag, content_hash=row.content_hash, generated=generated)
+
+
+@router.post("/expression-avatar", response_model=SpriteImageResponse)
+@limiter.limit(f"{SETTINGS.companion_expression_avatar_generate_rate_limit_per_minute}/minute")
+async def post_expression_avatar(
+    request: Request,  # required by @limiter.limit
+    body: ExpressionAvatarRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> SpriteImageResponse:
+    user, _ = auth
+    try:
+        row, generated = await resolve_expression_avatar(user_id=user.id, name=body.name, force_new=body.force_new)
+    except NeutralEmotionError:
+        raise HTTPException(status_code=400, detail={"error": "neutral 情绪直接使用形象头像，无需生成", "reason": "neutral_uses_portrait"})
+    except UnknownEmotionError as exc:
+        raise HTTPException(status_code=400, detail={"error": str(exc), "reason": "unknown_token"})
+    except ExpressionSeedMissingError as exc:
+        logger.warning("post_expression_avatar missing seed", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "no_active_avatar"})
+    except ExpressionCooldownError as exc:
+        raise HTTPException(status_code=503, detail={"error": str(exc), "reason": "generation_cooldown"})
+    except SpriteGenerationError as exc:
+        logger.warning("post_expression_avatar generation failed", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=502, detail={"error": str(exc)})
+    url = signed_expression_avatar_url(row)
+    if url is None:
+        logger.warning("post_expression_avatar invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
+        raise HTTPException(status_code=502, detail={"error": "表情头像生成失败，请稍后重试"})
+    return SpriteImageResponse(id=row.id, url=url, tag=row.name, content_hash=row.content_hash, generated=generated)
 
 
 @router.get("/wardrobe", response_model=list[WardrobeItemResponse])

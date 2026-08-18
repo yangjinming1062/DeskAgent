@@ -125,16 +125,42 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
     return filepath, content_type
 
 
-def unlink_companion_asset(storage_path: str | None) -> Path | None:
-    """Best-effort unlink of a bare ``companion-assets/<uid>/<filename>`` path. Returns the path that was targeted, or ``None`` on malformed/missing."""
+def parse_companion_asset_path(storage_path: str | None) -> tuple[int, str] | None:
+    """Split a bare ``companion-assets/<uid>/<filename>`` storage path.
+    None on anything malformed. The schema has no subdirs; extra slashes
+    silently mis-pair uid / filename and 404 the signed URL."""
     if not storage_path or not storage_path.startswith("companion-assets/"):
         return None
     parts = storage_path.split("/", 2)
-    # Schema is companion-assets/<uid>/<filename> with no subdirs;
-    # extra slashes silently mis-pair uid / filename and 404 the signed URL.
     if len(parts) != 3 or "/" in parts[2] or "\\" in parts[2]:
         return None
-    resolved = resolve_companion_asset_path(int(parts[1]), parts[2])
+    try:
+        return int(parts[1]), parts[2]
+    except ValueError:
+        return None
+
+
+def signed_companion_asset_url(storage_path: str) -> str | None:
+    """Sign a bare storage path for the /asset file route; None when malformed."""
+    parsed = parse_companion_asset_path(storage_path)
+    if parsed is None:
+        return None
+    return build_signed_asset_url(*parsed)
+
+
+def companion_asset_exists(storage_path: str) -> bool:
+    """Whether the file behind a bare storage path is still on disk — orphan
+    rows whose files vanished count as cache misses, not dead hits."""
+    parsed = parse_companion_asset_path(storage_path)
+    return parsed is not None and resolve_companion_asset_path(*parsed) is not None
+
+
+def unlink_companion_asset(storage_path: str | None) -> Path | None:
+    """Best-effort unlink of a bare ``companion-assets/<uid>/<filename>`` path. Returns the path that was targeted, or ``None`` on malformed/missing."""
+    parsed = parse_companion_asset_path(storage_path)
+    if parsed is None:
+        return None
+    resolved = resolve_companion_asset_path(*parsed)
     if resolved is None:
         return None
     try:

@@ -161,9 +161,8 @@ describe('clip-dispatch', () => {
       label: '心疼',
       valence: 'negative',
       description: 'Tender worry',
-      weights: { frown: 0.5 },
-      tags: ['温柔', '心疼'],
-      scale_boost: 1.0
+      icon: '🥺',
+      tags: ['温柔', '心疼']
     }
 
     it('uses custom expression valence as fallback for unknown emotion', () => {

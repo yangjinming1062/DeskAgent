@@ -1,84 +1,20 @@
 import * as THREE from 'three'
 
-import type { SpriteEmotion } from '@/companion/companion-store'
-
-/** Canonical semantic name → possible morph target names across model formats
- * (ARKit blendshapes, VRM expressions, Daz morphs, custom). The first alias
- * that exists in the loaded model's dictionary wins. */
+/** Facial morph control for the two surviving face signals: the automatic
+ * blink and TTS lip-sync. Emotion expressions moved off the 3D face (faces
+ * are too small to read) — the chat dock swaps a generated avatar image
+ * instead; the 3D body still plays emotion clips. Canonical semantic name →
+ * possible morph target names across model formats; the first alias that
+ * exists in the loaded model's dictionary wins. */
 const ALIASES: Record<string, string[][]> = {
-  blinkL: [['eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left']],
-  blinkR: [['eyeBlinkRight', 'Blink_Right', 'blink_r', 'eye_blink_right']],
+  // Unified blink first; per-eye groups close both eyes on models without a
+  // unified morph (a lone wink has no consumer since emotion morphs left).
   blink: [
     ['blink', 'eyeBlink', 'eyesClosed', 'Blink', 'eye_blink'],
     ['eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left'],
     ['eyeBlinkRight', 'Blink_Right', 'blink_r', 'eye_blink_right']
   ],
-  smileL: [['mouthSmileLeft', 'Smile_L', 'mouth_smile_left']],
-  smileR: [['mouthSmileRight', 'Smile_R', 'mouth_smile_right']],
-  smile: [
-    ['mouthSmile', 'Smile', 'smile', 'happy'],
-    ['mouthSmileLeft', 'Smile_L', 'mouth_smile_left'],
-    ['mouthSmileRight', 'Smile_R', 'mouth_smile_right']
-  ],
-  frown: [
-    ['mouthFrown', 'Frown', 'frown', 'sad'],
-    ['mouthFrownLeft', 'Frown_L', 'mouth_frown_left'],
-    ['mouthFrownRight', 'Frown_R', 'mouth_frown_right']
-  ],
-  jawOpen: [['jawOpen', 'mouthOpen', 'Open', 'aa', 'mouth_open']],
-  browUp: [
-    ['browInnerUp', 'browUp', 'BrowRaise', 'brow_up'],
-    ['browOuterUpLeft', 'brow_outer_up_left'],
-    ['browOuterUpRight', 'brow_outer_up_right']
-  ],
-  browDown: [
-    ['browDown', 'BrowLower', 'brow_down'],
-    ['browDownLeft', 'browInnerDown', 'brow_down_left'],
-    ['browDownRight', 'brow_down_right']
-  ],
-  eyeWide: [
-    ['eyeWide', 'EyeWide', 'eye_wide'],
-    ['eyeWideLeft', 'eye_wide_left'],
-    ['eyeWideRight', 'eye_wide_right']
-  ],
-  eyeSquint: [
-    ['eyeSquint', 'Squint', 'eye_squint'],
-    ['eyeSquintLeft', 'eye_squint_left'],
-    ['eyeSquintRight', 'eye_squint_right']
-  ],
-  cheekRaise: [
-    ['cheekRaise', 'CheekRaise', 'cheek_raise'],
-    ['cheekSquintLeft', 'cheek_squint_left'],
-    ['cheekSquintRight', 'cheek_squint_right']
-  ],
-  eyelidDroop: [['eyesLookDown', 'eyelidDroop', 'eyeSquint', 'squint']],
-  tongueOut: [['tongueOut', 'TongueOut', 'tongue_out']]
-}
-
-/** Emotion → weighted semantic morph influences. Missing morphs are
- * silently skipped — only morphs present in the model contribute. */
-const EMOTION_PRESETS: Record<string, Record<string, number>> = {
-  happy: { smile: 0.8, cheekRaise: 0.4, eyeSquint: 0.3 },
-  sad: { frown: 0.6, browDown: 0.5, eyelidDroop: 0.3 },
-  surprised: { jawOpen: 0.3, eyeWide: 0.7, browUp: 0.6 },
-  excited: { smile: 0.9, eyeWide: 0.5, browUp: 0.5, cheekRaise: 0.5 },
-  confused: { browDown: 0.3, browUp: 0.2 },
-  concerned: { frown: 0.3, browDown: 0.4 },
-  shy: { smile: 0.3, eyelidDroop: 0.4, cheekRaise: 0.3 },
-  proud: { smile: 0.5, browUp: 0.3 },
-  grateful: { smile: 0.7, cheekRaise: 0.3 },
-  playful: { smile: 0.6, eyeSquint: 0.4, tongueOut: 0.3 },
-  bored: { frown: 0.3, eyelidDroop: 0.5 },
-  lonely: { frown: 0.4, eyelidDroop: 0.3, browDown: 0.3 },
-  sleepy: { eyelidDroop: 0.7, jawOpen: 0.1, browDown: 0.2 },
-  curious: { browUp: 0.4, smile: 0.2 },
-  embarrassed: { cheekRaise: 0.5, eyelidDroop: 0.3, smile: 0.2 },
-  apologetic: { frown: 0.4, browDown: 0.4, eyelidDroop: 0.2 },
-  pout: { frown: 0.6, browDown: 0.4, cheekRaise: 0.3 },
-  angry: { browDown: 0.8, frown: 0.7, eyeSquint: 0.4 },
-  smug: { smile: 0.6, smileR: 0.4, browUp: 0.3 },
-  scared: { eyeWide: 0.8, browUp: 0.7, jawOpen: 0.2 },
-  relieved: { smile: 0.5, eyelidDroop: 0.4, cheekRaise: 0.2 }
+  jawOpen: [['jawOpen', 'mouthOpen', 'Open', 'aa', 'mouth_open']]
 }
 
 export class MorphController {
@@ -86,9 +22,7 @@ export class MorphController {
   private resolved: Record<string, [number, number][]> = {}
   /** Cached at discovery time to avoid per-frame allocations. */
   private resolvedEntries: [string, [number, number][]][] = []
-  private customPresets: Record<string, Record<string, number>> = {}
   private blinkHits: [number, number][] = []
-  private targets: Record<string, number> = {}
   private blinkTimer = 0
   private blinkInterval = 3 + Math.random() * 3
   private blinkPhase: 'idle' | 'closing' | 'opening' = 'idle'
@@ -96,16 +30,6 @@ export class MorphController {
   private lipSyncAmplitude = 0
   // Smoothed jaw-open override — asymmetric attack/release kills the mouth "pop" on audio start and the abrupt close on audio end (airi pattern).
   private currentJawValue = 0
-
-  setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
-    this.customPresets = {}
-
-    for (const expr of exprs) {
-      if (expr.name && expr.weights) {
-        this.customPresets[expr.name.toLowerCase()] = expr.weights
-      }
-    }
-  }
 
   setLipSyncAmplitude(amp: number): void {
     this.lipSyncAmplitude = amp
@@ -165,7 +89,7 @@ export class MorphController {
     }
 
     this.resolvedEntries = Object.entries(this.resolved)
-    this.blinkHits = ['blink', 'blinkL', 'blinkR'].flatMap(k => this.resolved[k] ?? [])
+    this.blinkHits = this.resolved['blink'] ?? []
   }
 
   hasTargets(): boolean {
@@ -186,47 +110,27 @@ export class MorphController {
     return [...names]
   }
 
-  setExpression(emotion: SpriteEmotion | null): void {
-    if (!emotion) {
-      this.targets = {}
-
-      return
-    }
-
-    const key = emotion.toLowerCase()
-    const preset = this.customPresets[key] ?? EMOTION_PRESETS[key]
-
-    if (preset) {
-      this.targets = {}
-
-      for (const [semantic, weight] of Object.entries(preset)) {
-        if (semantic in this.resolved) {
-          this.targets[semantic] = weight
-        }
-      }
-    }
-  }
-
   update(delta: number): void {
     if (this.meshes.length === 0) {
       return
     }
 
+    // Decay any stray influences toward the neutral face — models may ship
+    // with non-zero defaults and nothing else writes these two morph groups
+    // outside blink / lip-sync.
     const speed = Math.min(1, 8 * delta)
 
-    for (const [semantic, hits] of this.resolvedEntries) {
-      const target = this.targets[semantic] ?? 0
-
+    for (const [, hits] of this.resolvedEntries) {
       for (const [mi, ti] of hits) {
         const infls = this.meshes[mi].morphTargetInfluences!
 
         if (infls[ti] !== undefined) {
           const cur = infls[ti]
 
-          if (Math.abs(cur - target) > 0.001) {
-            infls[ti] = THREE.MathUtils.lerp(cur, target, speed)
-          } else if (cur !== target) {
-            infls[ti] = target
+          if (Math.abs(cur) > 0.001) {
+            infls[ti] = THREE.MathUtils.lerp(cur, 0, speed)
+          } else if (cur !== 0) {
+            infls[ti] = 0
           }
         }
       }
@@ -238,7 +142,8 @@ export class MorphController {
 
   /**
    * Asymmetric smoothing on the audio-driven jaw override — fast attack, slow release (airi pattern).
-   * The override is `max`'d with the emotion-morphed jaw so audio can drive the mouth open but cannot undercut an emotion preset.
+   * The override is `max`'d with the decayed jaw so audio can drive the mouth open; the decay loop
+   * above then re-zeros it once speech ends.
    */
   private updateLipSync(delta: number): void {
     const target = this.lipSyncAmplitude * 0.6

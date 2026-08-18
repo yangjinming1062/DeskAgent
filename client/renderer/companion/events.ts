@@ -28,6 +28,7 @@ import {
   submitPendingBatch
 } from '@/companion/chat-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
 import { resetSpriteAlbum } from '@/companion/static-sprite/sprite-store'
@@ -395,6 +396,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // Avatar identity changed — the sprite album's anchor is stale
       // (server filters rows by avatar_id), so drop local caches too.
       resetSpriteAlbum()
+      resetExpressionAvatars()
 
       break
     }

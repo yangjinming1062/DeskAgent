@@ -242,6 +242,8 @@ companion_avatar_upload_rate_limit_per_minute = 5
 companion_model_generate_rate_limit_per_minute = 1
 # 伴侣表情贴图生成接口每分钟限制
 companion_sprite_generate_rate_limit_per_minute = 10
+# 伴侣表情头像生成接口每分钟限制
+companion_expression_avatar_generate_rate_limit_per_minute = 10
 # 伴侣衣橱换装生成接口每分钟限制
 companion_wardrobe_generate_rate_limit_per_minute = 5
 # 限流存储后端 URL（留空使用内存存储，分布式环境可配置 Redis 例如 "redis://localhost:6379/0"）

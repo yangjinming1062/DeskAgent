@@ -1,9 +1,11 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { $expressions } from '@/companion/3d/model-store'
 import { ChatDock } from '@/companion/chat-dock'
 import { $chatMessages } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState } from '@/companion/companion-store'
+import { $expressionAvatar, resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $gatewayState } from '@/shared/store/gateway'
 
@@ -13,17 +15,22 @@ vi.mock('@/companion/boot/use-gateway-request', () => ({
   })
 }))
 
+const avatarImg = (): HTMLImageElement => screen.getByAltText('角色形象') as HTMLImageElement
+
 describe('ChatDock', () => {
   beforeEach(() => {
     $chatMessages.set([])
     $gatewayState.set('open')
     $spriteState.set('idle')
-    $spriteEmotion.set('happy')
+    $spriteEmotion.set(null)
     $portraitUrl.set('http://test/avatar.png')
+    $expressions.set([])
+    resetExpressionAvatars()
 
     window.spiritagent = {
       ...window.spiritagent,
       api: vi.fn().mockResolvedValue({}),
+      apiAsset: vi.fn().mockResolvedValue('data:image/png;base64,EXPR'),
       saveClipboardImage: vi.fn(),
       readFileDataUrl: vi.fn()
     } as unknown as typeof window.spiritagent
@@ -31,6 +38,8 @@ describe('ChatDock', () => {
 
   afterEach(() => {
     cleanup()
+    $spriteEmotion.set(null)
+    resetExpressionAvatars()
   })
 
   it('renders two-column layout with left emotion state and right chat panel', () => {
@@ -38,14 +47,12 @@ describe('ChatDock', () => {
     const onOpenVoiceCall = vi.fn()
     render(<ChatDock onClose={onClose} onOpenVoiceCall={onOpenVoiceCall} />)
 
-    // Left visual anchor elements: emotion state and status
-    expect(screen.getByText('开心愉悦')).toBeDefined()
+    // Left visual anchor elements: emotion state and status (no emotion → calm)
+    expect(screen.getByText('平静温和')).toBeDefined()
     expect(screen.getByText('当前情绪状态')).toBeDefined()
     expect(screen.getByText('在线陪伴')).toBeDefined()
 
-    const avatarImg = screen.getByAltText('角色形象') as HTMLImageElement
-    expect(avatarImg).toBeDefined()
-    expect(avatarImg.src).toContain('avatar.png')
+    expect(avatarImg().src).toContain('avatar.png')
 
     // Right chat panel elements
     expect(screen.getByPlaceholderText('输入消息，Enter 发送，Shift+Enter 换行')).toBeDefined()
@@ -63,6 +70,47 @@ describe('ChatDock', () => {
     render(<ChatDock onClose={vi.fn()} />)
 
     expect(screen.getByText('充满好奇')).toBeDefined()
+  })
+
+  it('swaps the left-column avatar to the emotion image and back to the portrait', async () => {
+    render(<ChatDock onClose={vi.fn()} />)
+    $spriteEmotion.set('happy')
+
+    await waitFor(() => expect($expressionAvatar.get()?.name).toBe('happy'))
+    expect(avatarImg().src).toContain('EXPR')
+
+    // Emotional transient ends → portrait fallback.
+    $spriteEmotion.set(null)
+
+    await waitFor(() => expect($expressionAvatar.get()).toBeNull())
+    expect(avatarImg().src).toContain('avatar.png')
+  })
+
+  it('renders custom emotions from the registry with label and icon', () => {
+    $expressions.set([
+      {
+        id: 1,
+        name: 'tender_worry',
+        label: '心疼担忧',
+        valence: 'negative',
+        description: '心疼又担忧地看着你',
+        icon: '🥺',
+        tags: []
+      }
+    ])
+    $spriteEmotion.set('tender_worry')
+    render(<ChatDock onClose={vi.fn()} />)
+
+    expect(screen.getByText('心疼担忧')).toBeDefined()
+    expect(screen.getByText('🥺')).toBeDefined()
+  })
+
+  it('falls back to a generic rendering for unknown emotion tokens', () => {
+    $spriteEmotion.set('sparkly')
+    render(<ChatDock onClose={vi.fn()} />)
+
+    expect(screen.getByText('sparkly')).toBeDefined()
+    expect(screen.getByText('💫')).toBeDefined()
   })
 
   it('reflects thinking state in visual anchor status badge', () => {

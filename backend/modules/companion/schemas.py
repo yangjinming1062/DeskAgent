@@ -95,6 +95,13 @@ class SpriteImageResponse(BaseModel):
     generated: bool
 
 
+class ExpressionAvatarRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=64)
+    force_new: bool = False
+
+
 class WardrobeItemResponse(BaseModel):
     id: int
     name: str

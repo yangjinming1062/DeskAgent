@@ -260,9 +260,7 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
                 label="心疼",
                 valence="negative",
                 description="Used when companion feels concerned for the user",
-                weights_json='{"frown": 0.5}',
                 tags_json='["心疼"]',
-                scale_boost=1.1,
             )
         )
         await db.commit()

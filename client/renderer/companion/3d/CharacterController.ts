@@ -461,10 +461,6 @@ export class CharacterController {
     return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [], procedural: true }
   }
 
-  setCustomExpressions(exprs: readonly { name: string; weights: Record<string, number> }[]): void {
-    this.morph.setCustomExpressions(exprs)
-  }
-
   private disposeRoot(scene: THREE.Scene | null): void {
     // Bump epoch first so in-flight textureLoader callbacks dispose their freshly-decoded texture and bail.
     this.textureEpoch++
@@ -604,8 +600,6 @@ export class CharacterController {
         this.playClip(clipName, 0.25)
       }
     }
-
-    this.morph.setExpression(state === 'emotional' ? emotion : null)
   }
 
   /** Audio amplitude [0..1] for TTS-driven lip sync. */

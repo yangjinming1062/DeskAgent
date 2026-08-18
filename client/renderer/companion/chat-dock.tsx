@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { $expressions } from '@/companion/3d/model-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $chatMessages,
@@ -17,6 +18,11 @@ import {
   setAssistantError
 } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
+import {
+  $expressionAvatar,
+  clearExpressionAvatar,
+  requestExpressionAvatar
+} from '@/companion/expression-avatar/expression-avatar-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $viewport } from '@/companion/spatial'
@@ -85,6 +91,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const portraitUrl = useStore($portraitUrl)
   const spriteEmotion = useStore($spriteEmotion)
   const spriteState = useStore($spriteState)
+  const expressionAvatar = useStore($expressionAvatar)
+  const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
@@ -121,6 +129,20 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // Emotion face: swap the left-column avatar while an affect is active;
+  // portrait is the fallback when there is no emotion or the image isn't
+  // ready. The subscription lives here (not in the store) so desktop-only
+  // emotions never trigger generations while the chat window is closed.
+  useEffect(() => {
+    if (spriteEmotion && spriteEmotion !== 'neutral') {
+      void requestExpressionAvatar(spriteEmotion)
+    } else {
+      clearExpressionAvatar()
+    }
+  }, [spriteEmotion])
+
+  useEffect(() => () => clearExpressionAvatar(), [])
 
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -275,8 +297,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   // Current mood display
   const currentMood = useMemo(() => {
-    if (spriteEmotion && EMOTION_MAP[spriteEmotion]) {
-      return EMOTION_MAP[spriteEmotion]
+    if (spriteEmotion) {
+      // Custom emotion registry (create_expression): label + optional icon,
+      // generic rendering for tokens not yet hydrated.
+      const custom = customExpressions.find(e => e.name === spriteEmotion)
+
+      return EMOTION_MAP[spriteEmotion] ?? { label: custom?.label || spriteEmotion, icon: custom?.icon || '💫' }
     }
 
     switch (spriteState) {
@@ -298,7 +324,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       default:
         return { label: '平静温和', icon: '😊' }
     }
-  }, [spriteEmotion, spriteState])
+  }, [spriteEmotion, spriteState, customExpressions])
 
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
@@ -330,11 +356,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             {/* Character Avatar with subtle glow and framing */}
             <div className="relative group mt-1">
               <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/30">
-                {portraitUrl ? (
+                {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
                   <img
                     alt="角色形象"
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    src={portraitUrl}
+                    src={expressionAvatar?.dataUrl ?? portraitUrl ?? undefined}
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-white/10 to-white/5 p-4 text-center">

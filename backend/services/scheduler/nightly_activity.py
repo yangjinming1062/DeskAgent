@@ -39,6 +39,7 @@ from services.companion import (
     generate_animation_clips,
     get_active_model,
     get_rig_bones,
+    kick_background_generation,
     list_memories,
     preview_wardrobe_texture,
     read_today_summary,
@@ -173,10 +174,9 @@ Asset specifications:
        "name": "snake_case_name", // e.g. "tender_worry"
        "label": "心疼",
        "valence": "positive" | "negative" | "neutral",
-       "description": "When to use this expression",
-       "weights": {{"smile": 0.2, "frown": 0.5, "browDown": 0.4}}, // morph semantics: blinkL, blinkR, blink, smile, smileR, frown, jawOpen, browUp, browDown, eyeWide, eyeSquint, cheekRaise, eyelidDroop, tongueOut
-       "tags": ["温柔", "心疼"],
-       "scale_boost": 1.0
+       "description": "What the companion's face looks like in this emotion — drives the generated expression avatar image",
+       "icon": "🥺", // optional single emoji
+       "tags": ["温柔", "心疼"]
      }}
    - "clip_brief": Description of physical gesture/movement desired for this moment.
    - "tags": ["温柔", "心疼"]
@@ -535,9 +535,8 @@ async def _stage_5_creation(
                         label=expr["label"],
                         valence=expr["valence"],
                         description=expr["description"],
-                        weights_json=json.dumps(expr["weights"], ensure_ascii=False),
+                        icon=expr.get("icon"),
                         tags_json=json.dumps(expr["tags"], ensure_ascii=False),
-                        scale_boost=expr["scale_boost"],
                     )
                 )
                 new_expr_count += 1
@@ -563,6 +562,11 @@ async def _stage_5_creation(
                     active_model.animation_clips_json = json.dumps(curr_clips, ensure_ascii=False)
                     new_clip_count = added
             await db.commit()
+
+        # Warm-start avatar generation so the images exist before the morning
+        # "show your new creations" message has the companion use them.
+        for expr in pending_expressions:
+            kick_background_generation(user_id, expr["name"])
 
     # 2. Process Wardrobe Gift
     if allow_wardrobe and isinstance(wardrobe_spec, dict):

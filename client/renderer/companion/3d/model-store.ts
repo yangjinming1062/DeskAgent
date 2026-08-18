@@ -62,9 +62,8 @@ export interface CompanionExpression {
   label: string
   valence: string
   description: string
-  weights: Record<string, number>
+  icon?: string | null
   tags: string[]
-  scale_boost: number
 }
 
 interface CompanionModelResponse {
