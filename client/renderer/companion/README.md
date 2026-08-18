@@ -82,7 +82,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 两条防坑约束：**Ready 保护**——首个模型 `loadCharacter` 落定（`$modelLoadSettled`）前强制 active，避免孵化动画被误降频拉长；**隐藏窗口降级**——Chromium 对 hidden 窗口硬停 rAF（禁节流开关管不到合成层），active/idle 档在 `document.hidden` 时改由 16/37ms timer 驱动，`visibilitychange` 恢复 rAF。dormant 恒为 250ms timer（进程级禁 timer 节流，锁屏下稳定）；档位回升时 Engine 层把 delta 钳制到 50ms，防 mixer/布料在长暂停后跳变。
 
-**性能取舍**（与上述 3D 渲染叠加生效）：阴影默认关闭（300×360 精灵窗的 PBR 环境光足以体现深度，2048² PCFSoft 阴影是单项最大 GPU 成本），开启时强制 1024² PCF；MSAA 关闭、贴图预乘 alpha 关闭、DPR 封顶 1.5——小透明窗口的不必要 GUI 成本剔除。GLB 解析模板走 [gltf-instance-cache.ts](3d/gltf-instance-cache.ts)：按 `contentHash` 缓存解析后的 scene + animations，切换模型时深克隆避免重新解析；模板的 materials/textures 被多个克隆共享（read-only，PBR 热替走 `loadPbrChannel` 另克隆 slot）。OPFS 字节缓存（[glb-opfs-cache.ts](3d/glb-opfs-cache.ts)）以 `contentHash` 为键（同源私有文件系统，而不是 `caches.open` 的 HTTP 缓存），第二次加载走 0 ms 落盘读。BodyCollider BVH 划分改 typed-array in-place quicksort（原 `Array.from(...).sort(...)` 每帧 ~50K 分配，4K 三角形下完全压垮 GC）。Renderer 错误隔离（`$engineError`）：Engine tick 抛错时停止 ticker 并上报，避免"每帧抛+日志洪水"循环。这些都是默认关闭或收紧后的基线，需要在 Settings 重新打开的功能必须经过实测。
+**性能取舍**（与上述 3D 渲染叠加生效）：阴影默认关闭（300×360 精灵窗的 PBR 环境光足以体现深度，2048² PCFSoft 阴影是单项最大 GPU 成本），开启时强制 1024² PCF；MSAA 开启（4×——精灵悬浮在任意桌面内容之上，剪影锯齿是首要画质破绽，此尺寸下 resolve 成本可忽略）、贴图预乘 alpha 关闭、DPR 封顶 1.5——小透明窗口的其余 GUI 成本剔除。GLB 解析模板走 [gltf-instance-cache.ts](3d/gltf-instance-cache.ts)：按 `contentHash` 缓存解析后的 scene + animations，切换模型时深克隆避免重新解析；模板的 materials/textures 被多个克隆共享（read-only，PBR 热替走 `loadPbrChannel` 另克隆 slot）。OPFS 字节缓存（[glb-opfs-cache.ts](3d/glb-opfs-cache.ts)）以 `contentHash` 为键（同源私有文件系统，而不是 `caches.open` 的 HTTP 缓存），第二次加载走 0 ms 落盘读。BodyCollider BVH 划分改 typed-array in-place quicksort（原 `Array.from(...).sort(...)` 每帧 ~50K 分配，4K 三角形下完全压垮 GC）。Renderer 错误隔离（`$engineError`）：Engine tick 抛错时停止 ticker 并上报，避免"每帧抛+日志洪水"循环。这些都是默认关闭或收紧后的基线，需要在 Settings 重新打开的功能必须经过实测。
 
 ## 5. 屏锁与端忙
 
@@ -107,7 +107,7 @@ GLB 加载成功后骨骼动画覆盖全部状态；GLB 不可用（生成中/�
 
 ## 7. 用户直接交互
 
-- **命中模型**：精灵区域在矩形命中后做像素级精化——静态精灵模式按图片 alpha ≥ 32 判定（[sprite-hitmap.ts](static-sprite/sprite-hitmap.ts) 在图加载时构建 ≤256 等比降采样 hitmap，按 object-fit 映射实时跟随拖拽/缩放/呼吸动画）；无 hitmap（3D 模式 / 图未加载）回退精灵矩形。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
+- **命中模型**：精灵区域在矩形命中后做像素级精化——静态精灵模式按图片 alpha ≥ 32 判定（[sprite-hitmap.ts](static-sprite/sprite-hitmap.ts) 在图加载时构建 ≤256 等比降采样 hitmap，按 object-fit 映射实时跟随拖拽/缩放/呼吸动画）；3D 模式由 [3d/silhouette-hit.ts](3d/silhouette-hit.ts) 驱动引擎剪影探测——`Engine` 把场景渲进 1/4 分辨率离屏 RT（clear alpha 0，只有实际绘制的像素计入，天然含当前姿态/布料/描边壳）异步读回 alpha，window 级 mousemove（穿透态下 pointer 事件到不了 canvas）rAF 合并请求、250ms TTL 让并发请求共享一次刷新，答案落地后手动触发 capture probe 处理静止光标；首个读回落地前（boot/加载空挡/图未加载）回退精灵矩形，之后未命中点严格判否——扫过矩形空白区不捕获。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
 - **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。

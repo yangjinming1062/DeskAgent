@@ -11,7 +11,7 @@ import {
   type SpriteEmotion,
   type SpriteStateName
 } from '@/companion/companion-store'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { probeInteractiveRegions, useInteractiveRegion } from '@/companion/interactive-regions'
 import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
@@ -39,6 +39,7 @@ import {
   retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
+import { attachSilhouetteHitProbe } from './silhouette-hit'
 
 // Mounts the Three.js engine into the sprite-stage canvas. The sprite-stage
 // owns drag / click-through / region tracking; this component only renders.
@@ -194,6 +195,10 @@ export function Companion3D(): React.JSX.Element {
         eng.character.setDragVelocity(vel.vx, vel.vy)
       })
 
+      // Pixel-exact click-through refinement for 3D mode (static images use
+      // their own hitmap — see sprite-stage).
+      const detachSilhouette = attachSilhouetteHitProbe(eng)
+
       eng.start()
 
       detachWiring = () => {
@@ -204,6 +209,7 @@ export function Companion3D(): React.JSX.Element {
         detachLipSync()
         unsubPower()
         unsubDragVelocity()
+        detachSilhouette()
         window.removeEventListener('resize', onResize)
         ro.disconnect()
         eng.canvas.removeEventListener('pointermove', onPointerMove)
@@ -295,6 +301,13 @@ export function Companion3D(): React.JSX.Element {
         // happens only once the GLB has actually parsed (no egg flash).
         $glbLoadFailed.set(info.procedural)
         $modelLoadSettled.set(true)
+
+        // Warm up the live silhouette hitmap immediately with the newly loaded character.
+        void engine.silhouetteHitmap().then(map => {
+          if (map && !cancelled) {
+            probeInteractiveRegions()
+          }
+        })
       } catch (err) {
         if (cancelled) {
           return

@@ -37,6 +37,17 @@ const MAX_FRAME_DELTA = 0.05
 // the sprite's native display size. iGPU + alpha:true is fillrate-bound.
 const MAX_DPR = 1.5
 
+// Silhouette hitmap: 1/4 canvas res bounds the extra render + readback; the
+// TTL caps refreshes at 4 Hz while the cursor sweeps the sprite rect.
+const HITMAP_SCALE = 4
+const HITMAP_TTL_MS = 250
+
+export interface SilhouetteHitmap {
+  alpha: Uint8Array
+  width: number
+  height: number
+}
+
 function makeCanvas(container: HTMLElement): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
   canvas.className = 'companion-3d-canvas'
@@ -79,6 +90,10 @@ export class Engine {
   private lastFrameAt = 0
   private statsFrames = 0
   private statsWindowStart = 0
+  private hitRT: THREE.RenderTarget | null = null
+  private hitMap: SilhouetteHitmap | null = null
+  private hitMapAt = 0
+  private hitRefresh: Promise<SilhouetteHitmap | null> | null = null
 
   // Async factory: WebGPURenderer.init() owns the first two tiers of the
   // fallback chain (WebGPU backend → its built-in WebGL2 retry). Only a full
@@ -95,8 +110,11 @@ export class Engine {
       const gpu = new WebGPURenderer({
         canvas,
         alpha: true,
-        // MSAA off: per-frame resolve is a meaningful chunk of GPU time at this size; PBR + tonemap already hide jagged silhouettes. WebGPU renderer does not expose `premultipliedAlpha` (the WebGL2 fallback does).
-        antialias: false
+        // MSAA 4×: the companion floats over arbitrary desktop content, so
+        // silhouette crawl is the top visual defect — and at ≤450×540 px the
+        // per-frame resolve is negligible even on iGPU. WebGPU renderer does
+        // not expose `premultipliedAlpha` (the WebGL2 fallback does).
+        antialias: true
       })
 
       await gpu.init()
@@ -118,8 +136,8 @@ export class Engine {
       const classic = new THREE.WebGLRenderer({
         canvas: fallbackCanvas,
         alpha: true,
-        // MSAA off (same reasoning as WebGPU branch); premultipliedAlpha off skips the multiply during the resolve.
-        antialias: false,
+        // MSAA on (same reasoning as WebGPU branch); premultipliedAlpha off skips the multiply during the resolve.
+        antialias: true,
         premultipliedAlpha: false,
         // 'default' keeps hybrid-GPU laptops on the integrated GPU — the companion scene is far below dGPU territory and forcing it wakes a 20W+ chip for a desk pet.
         powerPreference: 'default'
@@ -171,6 +189,98 @@ export class Engine {
     this.character = new CharacterController(this.physics, { nodePipeline: backendKind !== 'classic-webgl' })
 
     reportBackend(backendKind)
+  }
+
+  /** Current-frame silhouette alpha at ~1/4 canvas resolution. Renders the
+   * scene into an offscreen target — clear alpha is 0, so only drawn pixels
+   * count and the map tracks the live pose, cloth and outline hulls exactly.
+   * Cached HITMAP_TTL_MS; concurrent callers share one refresh. Null only
+   * when the readback itself fails. */
+  async silhouetteHitmap(): Promise<SilhouetteHitmap | null> {
+    if (this.hitMap && performance.now() - this.hitMapAt < HITMAP_TTL_MS) {
+      return this.hitMap
+    }
+
+    this.hitRefresh ??= this.refreshHitmap().finally(() => {
+      this.hitRefresh = null
+    })
+
+    return this.hitRefresh
+  }
+
+  getSilhouetteHitmap(): SilhouetteHitmap | null {
+    return this.hitMap
+  }
+
+  private async refreshHitmap(): Promise<SilhouetteHitmap | null> {
+    const canvasW = this.canvas.clientWidth || this.canvas.parentElement?.clientWidth || getBaseSpriteWidth()
+    const canvasH = this.canvas.clientHeight || this.canvas.parentElement?.clientHeight || getBaseSpriteHeight()
+    const w = Math.max(1, Math.round(canvasW / HITMAP_SCALE))
+    const h = Math.max(1, Math.round(canvasH / HITMAP_SCALE))
+
+    if (!this.hitRT || this.hitRT.width !== w || this.hitRT.height !== h) {
+      this.hitRT?.dispose()
+      // The classic tier's async read demands a WebGLRenderTarget; the node
+      // tiers take the core RenderTarget.
+      this.hitRT =
+        this.backendKind === 'classic-webgl' ? new THREE.WebGLRenderTarget(w, h) : new THREE.RenderTarget(w, h)
+    }
+
+    const rt = this.hitRT
+
+    try {
+      // Param cast narrows the renderer union — the node tier accepts the
+      // RenderTarget supertype, the classic tier the WebGLRenderTarget both
+      // tiers construct here per kind.
+      try {
+        this.renderer.setRenderTarget(rt as THREE.WebGLRenderTarget)
+        this.renderer.render(this.scene, this.camera)
+      } finally {
+        this.renderer.setRenderTarget(null)
+      }
+
+      const data =
+        this.backendKind === 'classic-webgl'
+          ? await this.readClassicPixels(rt as THREE.WebGLRenderTarget, w, h)
+          : await (this.renderer as WebGPURenderer).readRenderTargetPixelsAsync(rt, 0, 0, w, h)
+
+      if (this.disposed) {
+        return null
+      }
+
+      const alpha = new Uint8Array(w * h)
+      // WebGPU copyTextureToBuffer aligns each row to 256 bytes; WebGL readPixels is tightly packed.
+      // Normalize to top-down row order matching DOM client space (y=0 at top of canvas).
+      const isWebGPU = this.backendKind === 'webgpu'
+      const isBottomUp = this.backendKind !== 'webgpu'
+      const rowStrideBytes = isWebGPU ? Math.ceil((w * 4) / 256) * 256 : w * 4
+
+      for (let y = 0; y < h; y++) {
+        const srcY = isBottomUp ? h - 1 - y : y
+        const srcRowOffset = srcY * rowStrideBytes
+        const dstRowOffset = y * w
+
+        for (let x = 0; x < w; x++) {
+          alpha[dstRowOffset + x] = data[srcRowOffset + x * 4 + 3]
+        }
+      }
+
+      this.hitMap = { alpha, height: h, width: w }
+      this.hitMapAt = performance.now()
+
+      return this.hitMap
+    } catch (err) {
+      log.warn('engine', 'silhouette hitmap readback failed:', err)
+
+      return null
+    }
+  }
+
+  private async readClassicPixels(rt: THREE.WebGLRenderTarget, w: number, h: number): Promise<Uint8Array> {
+    const buf = new Uint8Array(w * h * 4)
+    await (this.renderer as THREE.WebGLRenderer).readRenderTargetPixelsAsync(rt, 0, 0, w, h, buf)
+
+    return buf
   }
 
   frameCharacter(): void {
@@ -295,6 +405,8 @@ export class Engine {
   ): Promise<LoadedModelInfo> {
     const info = await this.character.load(bytes, this.scene, rigType, contentHash)
     this.frameCharacter()
+    this.hitMap = null
+    this.hitMapAt = 0
 
     return info
   }
@@ -451,6 +563,9 @@ export class Engine {
     this.lighting.dispose(this.scene)
     this.physics.dispose()
     this.character.dispose()
+    this.hitRT?.dispose()
+    this.hitRT = null
+    this.hitMap = null
     this.renderer.dispose()
     this.canvas.remove()
   }

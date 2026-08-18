@@ -51,6 +51,12 @@ export function setCaptureProbe(fn: (() => void) | null, windowId: number = 0): 
   }
 }
 
+/** Re-run the window's capture probe outside the mousemove path — e.g. an
+ * async hit refinement just landed for a stationary cursor. */
+export function probeInteractiveRegions(windowId: number = 0): void {
+  _probesByWindow.get(windowId)?.()
+}
+
 export function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
   const regions = _bucket(windowId)
 

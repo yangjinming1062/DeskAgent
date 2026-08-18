@@ -4,6 +4,7 @@ import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } fro
 import { $chatOpen } from '@/companion/chat-store'
 import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
 
+import { $sprite3DHitTest } from '../3d/silhouette-hit'
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
 import {
   $homePosition,
@@ -63,6 +64,17 @@ export function SpriteStage({
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
   const hitRef = useRef<SpriteHit | null>(null)
+  // Live 3D silhouette probe, synced through a ref for the same
+  // closure-stability reason as hitRef above.
+  const hit3DRef = useRef<((x: number, y: number) => boolean | null) | null>(null)
+
+  useEffect(
+    () =>
+      $sprite3DHitTest.subscribe(fn => {
+        hit3DRef.current = fn
+      }),
+    []
+  )
 
   const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -82,7 +94,7 @@ export function SpriteStage({
     void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
   }, [])
 
-  // 50 ms debounce on release: prevents boundary jitter from repeatedly flipping the window between interactive and click-through.
+  // 100 ms debounce on release: prevents boundary jitter from repeatedly flipping the window between interactive and click-through during fast mouse sweeps.
   const releaseDebounced = useCallback(() => {
     if (pendingToggleRef.current) {
       clearTimeout(pendingToggleRef.current)
@@ -91,7 +103,7 @@ export function SpriteStage({
     pendingToggleRef.current = setTimeout(() => {
       pendingToggleRef.current = null
       void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
-    }, 50)
+    }, 100)
   }, [])
 
   const capture = useCallback(() => {
@@ -129,12 +141,17 @@ export function SpriteStage({
     return rect
   }, [])
 
-  // No hitmap (3D mode / image not loaded) opts out of pixel refinement — the
-  // rect pre-filter already hit, so returning true keeps the rect fallback.
+  // Static hitmap refines while its image is on display; 3D mode falls to
+  // the live silhouette probe (strict miss → false once warm; null during
+  // boot/load keeps the rect fallback).
   const stageHitTest = useCallback((x: number, y: number): boolean => {
     const hit = hitRef.current
 
-    return hit ? spriteHitTest(hit, x, y) : true
+    if (hit) {
+      return spriteHitTest(hit, x, y)
+    }
+
+    return hit3DRef.current?.(x, y) ?? true
   }, [])
 
   useInteractiveRegion(SPRITE_REGION_ID, mountRef, stageRect, stageHitTest)
@@ -161,18 +178,23 @@ export function SpriteStage({
     const onMove = (e: MouseEvent) => {
       lastPointRef.current = { x: e.clientX, y: e.clientY }
 
-      if (moveRafId !== null) {
-        return
+      // Fast-path: immediately un-ignore without waiting for next rAF frame when entering interactive pixels
+      if (isPointInteractive(e.clientX, e.clientY)) {
+        capture()
+      } else if (moveRafId === null) {
+        moveRafId = requestAnimationFrame(flushMove)
       }
-
-      moveRafId = requestAnimationFrame(flushMove)
     }
 
     const probe = () => {
       const p = lastPointRef.current
 
-      if (p && !dragRef.current && isPointInteractive(p.x, p.y)) {
-        capture()
+      if (p && !dragRef.current) {
+        if (isPointInteractive(p.x, p.y)) {
+          capture()
+        } else {
+          release()
+        }
       }
     }
 
