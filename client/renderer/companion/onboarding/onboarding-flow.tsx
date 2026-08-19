@@ -849,6 +849,64 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const enterHatchingRef = useLatestRef(enterHatching)
 
+  // Rehydrate the fullbody stage from the avatar row — persisted style samples,
+  // picked style and front seed — so a restart resumes where the user left off
+  // and never re-triggers paid sample generation. Falls back to fresh
+  // generation only when nothing is stored (first entry / legacy rows) or the
+  // temp-media drafts expired past their TTL.
+  const hydrateFullbodyStage = async (): Promise<void> => {
+    const avatarRes = await window.spiritagent.api<{
+      asset_url?: string | null
+      seed_front_url?: string | null
+      id?: number
+      fullbody_style?: string | null
+      fullbody_samples?: Record<string, string>
+    }>({
+      path: '/api/companion/avatar',
+      method: 'GET'
+    })
+
+    await applyLocalPortrait(avatarRes)
+    setPhase('fullbody-3d')
+
+    const rawSamples = avatarRes?.fullbody_samples ?? {}
+    let resolvedSamples: Record<string, string> = {}
+
+    if (Object.keys(rawSamples).length > 0) {
+      resolvedSamples = {}
+
+      for (const [styleId, rawUrl] of Object.entries(rawSamples)) {
+        const dataUrl = await resolvePortraitUrl(rawUrl)
+
+        if (dataUrl) {
+          resolvedSamples[styleId] = dataUrl
+        }
+      }
+
+      setFullbodyRawSamplesState(rawSamples)
+      setFullbodySamplesState(resolvedSamples)
+    }
+
+    const style = avatarRes?.fullbody_style || null
+    setFullbodyStyleState(style)
+
+    if (avatarRes?.seed_front_url) {
+      setFullbodyFrontRawUrl(avatarRes.seed_front_url)
+      setFullbodyFrontUrl(await resolvePortraitUrl(avatarRes.seed_front_url))
+    } else if (style && rawSamples[style]) {
+      setFullbodyFrontRawUrl(rawSamples[style])
+      setFullbodyFrontUrl(resolvedSamples[style] ?? null)
+    }
+
+    if (avatarRes?.id != null && (Object.keys(rawSamples).length === 0 || Object.keys(resolvedSamples).length === 0)) {
+      // No stored samples, or the temp-media drafts expired past their TTL —
+      // regenerate instead of showing dead cards.
+      void fetchFullbodySamples(avatarRes.id)
+    }
+  }
+
+  const hydrateFullbodyStageRef = useLatestRef(hydrateFullbodyStage)
+
   // Breakpoint recovery (plan §3 / design §7.5): once the gateway is open,
   // pull any half-answered draft so a crash/exit mid-onboarding resumes from
   // the next unanswered question. One-shot — never re-resumes.
@@ -950,30 +1008,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           } else if (nextField === 'fullbody') {
             try {
               await hydratePortraitHistory()
-
-              const avatarRes = await window.spiritagent.api<{
-                asset_url?: string | null
-                seed_front_url?: string | null
-                id?: number
-              }>({
-                path: '/api/companion/avatar',
-                method: 'GET'
-              })
-
-              await applyLocalPortrait(avatarRes)
-              setPhase('fullbody-3d')
-
-              if (avatarRes?.seed_front_url) {
-                setFullbodyFrontRawUrl(avatarRes.seed_front_url)
-                const resolvedFront = await resolvePortraitUrl(avatarRes.seed_front_url)
-                setFullbodyFrontUrl(resolvedFront)
-              }
-
-              if (avatarRes?.id != null) {
-                void fetchFullbodySamples(avatarRes.id)
-              }
+              await hydrateFullbodyStageRef.current()
             } catch {
               setPhase('fullbody-3d')
+              setFullbodyHint('全身立绘恢复失败，请点击重新生成样图')
             }
           } else if (nextField === 'voice') {
             // next_field==='voice' means the description sentence itself is
@@ -1001,7 +1039,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         setVoiceCatalog(r.catalog.voices)
       }
     })()
-  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef])
+  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef, hydrateFullbodyStageRef])
 
   useEffect(() => {
     if (gatewayState !== 'open' || voiceCatalog.length > 0) {
@@ -1137,9 +1175,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyFeedback('')
     setFullbodyHint(null)
 
-    if (activeAvatarId) {
-      void fetchFullbodySamples(activeAvatarId)
-    }
+    // Reuse samples already persisted on the avatar row (user stepped back to
+    // portrait and re-confirmed); only generate when none exist.
+    void hydrateFullbodyStage().catch(() => {
+      if (activeAvatarId) {
+        void fetchFullbodySamples(activeAvatarId)
+      }
+    })
   }
 
   const fetchFullbodySamples = async (avatarId: number) => {
@@ -1193,6 +1235,19 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyFrontRawUrl(rawUrl)
     setFullbodyFrontUrl(sampleUrl)
     setFullbodyHint(null)
+
+    // Persist the pick so a restart resumes at the front preview instead of
+    // regenerating samples. Best-effort: the in-session flow works regardless
+    // because confirm-front sends the front image URL explicitly.
+    if (activeAvatarId != null) {
+      void window.spiritagent
+        .api({
+          path: `/api/companion/avatar/${activeAvatarId}/fullbody/select-style`,
+          method: 'POST',
+          body: { style: styleId }
+        })
+        .catch(() => undefined)
+    }
   }
 
   const regenerateFullbodyFront = async () => {
@@ -1285,8 +1340,25 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setInput('')
       setAnswerKind(null)
       setHint(null)
-    } catch (err) {
-      setFullbodyHint(err instanceof Error ? err.message : '多视角自动生成失败，请重试')
+    } catch (error) {
+      // A 409 means the temp-media draft expired — the front image is gone.
+      // Stay on this stage so the user can regenerate instead of advancing.
+      if (isClientErrorIpc(error)) {
+        const unwrapped = unwrapIpcErrorMessage(error)
+        const jsonStart = unwrapped.indexOf('{')
+        const parsed = jsonStart >= 0 ? safeJsonParse(unwrapped.slice(jsonStart), null) : null
+        const backendError = (parsed as { detail?: { error?: string } } | null)?.detail?.error
+
+        if (backendError) {
+          setFullbodyHint(backendError)
+          setFullbodyFrontUrl(null)
+          setFullbodyFrontRawUrl(null)
+
+          return
+        }
+      }
+
+      setFullbodyHint(error instanceof Error ? error.message : '多视角自动生成失败，请重试')
     } finally {
       setFullbodyLoading(false)
     }

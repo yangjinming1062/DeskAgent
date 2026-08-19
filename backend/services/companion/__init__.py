@@ -24,6 +24,7 @@ from .avatar_service import (
     FrontSeedMissingError,
     FullbodyGenerationError,
     SeedPromptMissingError,
+    UnknownFullbodyStyleError,
     confirm_fullbody_front,
     finalize_avatar,
     generate_avatar,
@@ -37,6 +38,7 @@ from .avatar_service import (
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
     select_avatar,
+    select_fullbody_style,
 )
 from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
 from .expression_avatar_service import (
@@ -139,6 +141,7 @@ __all__ = [
     "SpriteGenerationError",
     "SpriteSeedMissingError",
     "UnknownEmotionError",
+    "UnknownFullbodyStyleError",
     "WardrobeRouting",
     "WardrobeSourceExpiredError",
     "analyze_personality_tags",
@@ -231,6 +234,7 @@ __all__ = [
     "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",
     "select_avatar",
+    "select_fullbody_style",
     "select_rig_type",
     "serve_ranged_file",
     "should_act",

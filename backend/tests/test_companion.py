@@ -247,6 +247,13 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         await db.commit()
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
+        # Front seed alone = not confirmed yet (style pick / refine redraw).
+        assert state["next_field"] == "fullbody"
+
+        avatar.seed_back_url = "companion-avatars/test_back.jpg"
+        await db.commit()
+        state = await get_onboarding_state(db, 100)
+        assert state["complete"] is False
         assert state["next_field"] == "voice"
 
 
@@ -323,6 +330,7 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
             prompt_json="{}",
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/test_front.jpg",
+            seed_back_url="companion-avatars/test_back.jpg",
             active=True,
         )
         db.add(avatar)
@@ -330,7 +338,7 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
 
         await confirm_portrait(db, 100)
 
-        # Portrait confirmed & fullbody seed ready, voice missing → voice wins over (also missing) user_*.
+        # Portrait confirmed & fullbody confirmed (aux seeds present), voice missing → voice wins over (also missing) user_*.
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "voice"
@@ -411,8 +419,13 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "fullbody"
 
-        # 4. Adding seed_front_url advances to voice
+        # 4. Front seed alone keeps the fullbody stage open; aux seeds (confirm-front) advance to voice
         avatar.seed_front_url = "companion-avatars/test_front.jpg"
+        await db.commit()
+        state = await get_onboarding_state(db, 101)
+        assert state["next_field"] == "fullbody"
+
+        avatar.seed_back_url = "companion-avatars/test_back.jpg"
         await db.commit()
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "voice"
@@ -450,6 +463,7 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
             prompt_json="{}",
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/test_front.jpg",
+            seed_back_url="companion-avatars/test_back.jpg",
             active=True,
         )
         db.add(avatar)

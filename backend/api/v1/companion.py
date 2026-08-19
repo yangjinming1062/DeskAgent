@@ -21,6 +21,7 @@ from modules.companion import (
     FullbodyFrontGenerateRequest,
     FullbodySamplesRequest,
     FullbodySamplesResponse,
+    FullbodySelectStyleRequest,
     FullbodyStyleItem,
     ModelGenerateRequest,
     Persona,
@@ -56,6 +57,7 @@ from services.companion import (
     SpriteGenerationError,
     SpriteSeedMissingError,
     UnknownEmotionError,
+    UnknownFullbodyStyleError,
     WardrobeSourceExpiredError,
     avatar_response,
     confirm_fullbody_front,
@@ -92,6 +94,7 @@ from services.companion import (
     schedule_onboarding_outfit_extraction,
     schedule_personality_tag_refresh,
     select_avatar,
+    select_fullbody_style,
     serve_ranged_file,
     signed_expression_avatar_url,
     signed_sprite_url,
@@ -377,6 +380,21 @@ async def post_fullbody_samples(
     return FullbodySamplesResponse(samples=samples)
 
 
+@router.post("/avatar/{avatar_id}/fullbody/select-style", response_model=AvatarAssetResponse)
+async def post_fullbody_select_style(
+    avatar_id: int, body: FullbodySelectStyleRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+) -> AvatarAssetResponse:
+    """Persist the picked style (fast DB write — no generation, no rate limit)."""
+    user, _ = auth
+    try:
+        asset = await select_fullbody_style(db, user.id, avatar_id=avatar_id, style=body.style)
+    except AvatarNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except UnknownFullbodyStyleError as exc:
+        raise HTTPException(status_code=400, detail={"error": "未知画风", "reason": str(exc)})
+    return avatar_response(asset)
+
+
 @router.post("/avatar/{avatar_id}/fullbody/front", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_front(
@@ -415,6 +433,8 @@ async def post_fullbody_confirm_front(
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except FrontSeedMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
+    except AvatarSourceUnreadableError as exc:
+        raise HTTPException(status_code=409, detail={"error": "全身立绘草稿已过期，请重新生成正面全身图", "reason": str(exc)})
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("fullbody multiview confirmation failed", extra={"user_id": user.id, "error": err_detail})

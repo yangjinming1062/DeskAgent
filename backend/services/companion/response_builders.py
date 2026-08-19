@@ -2,19 +2,27 @@ from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, WardrobeItem, WardrobeItemResponse
 
 from .asset_store import get_companion_model_sha256
+from .avatar_service import _re_sign_bare_path
 from .model_service import signed_model_url
 from .wardrobe_service import slot_of
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
+    payload = prompt_payload if isinstance(prompt_payload, dict) else {}
+    raw_samples = payload.get("fullbody_samples")
+    fullbody_samples = {
+        style_id: signed for style_id, bare in (raw_samples.items() if isinstance(raw_samples, dict) else []) if isinstance(bare, str) and (signed := _re_sign_bare_path(bare))
+    }
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
         seed_front_url=getattr(asset, "seed_front_url", None) or "",
         seed_right_url=getattr(asset, "seed_right_url", None) or "",
         seed_back_url=getattr(asset, "seed_back_url", None) or "",
-        prompt=prompt_payload.get("prompt", "") if isinstance(prompt_payload, dict) else "",
+        fullbody_style=str(payload.get("fullbody_style") or ""),
+        fullbody_samples=fullbody_samples,
+        prompt=payload.get("prompt", ""),
         status="succeeded",
     )
 

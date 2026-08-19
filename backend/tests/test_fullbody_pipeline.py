@@ -1,16 +1,22 @@
 from unittest.mock import AsyncMock, patch
+import json
 
 import pytest
 from api.v1.companion import router as companion_router
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from modules.companion import AvatarAsset
+from sqlalchemy import update
 from services.companion import (
     STYLE_CATALOG,
+    AvatarSourceUnreadableError,
     FrontSeedMissingError,
+    UnknownFullbodyStyleError,
+    avatar_response,
     confirm_fullbody_front,
     generate_fullbody_front,
     generate_fullbody_style_samples,
+    select_fullbody_style,
 )
 
 
@@ -55,7 +61,7 @@ async def test_fullbody_generate_samples(SessionLocal):
             "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = ("companion-avatars/sample.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = ("temp-media/sample_01", "sample_01", "jpg", "https://source.example/test.jpg")
             samples = await generate_fullbody_style_samples(db, user_id, avatar_id=avatar.id)
             assert len(samples) == 2
             assert "cel_shading" in samples
@@ -63,6 +69,142 @@ async def test_fullbody_generate_samples(SessionLocal):
             assert mock_gen.call_count == 2
             for call in mock_gen.call_args_list:
                 assert call.kwargs.get("preferred_provider") == ["gemini", "grok"]
+                assert call.kwargs.get("persist") is False
+
+        # Draft sample paths ride the avatar row so a restart rehydrates the
+        # picker instead of regenerating paid images; they stay in temp-media
+        # until confirm-front promotes the picked one.
+        await db.refresh(avatar)
+        payload = json.loads(avatar.prompt_json)
+        assert payload["fullbody_samples"] == {
+            "cel_shading": "temp-media/sample_01",
+            "anime_game_cg": "temp-media/sample_01",
+        }
+        res = avatar_response(avatar)
+        assert res.fullbody_style == ""
+        assert set(res.fullbody_samples) == {"cel_shading", "anime_game_cg"}
+        assert res.fullbody_samples["cel_shading"] == "/api/media/files/sample_01"
+
+
+@pytest.mark.asyncio
+async def test_fullbody_select_style(SessionLocal):
+    user_id = 406
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json=json.dumps(
+                {
+                    "avatar_prompt": "少女，白发蓝瞳",
+                    "fullbody_samples": {
+                        "cel_shading": "temp-media/sample_cel",
+                        "anime_game_cg": "temp-media/sample_cg",
+                    },
+                }
+            ),
+            asset_url="companion-avatars/test.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="anime_game_cg")
+        assert asset.seed_front_url == "/api/media/files/sample_cg"
+        assert asset.seed_right_url == ""
+        assert asset.seed_back_url == ""
+        res = avatar_response(asset)
+        assert res.fullbody_style == "anime_game_cg"
+        assert res.seed_front_url == "/api/media/files/sample_cg"
+
+        # Switching style swaps the front-seed candidate to that style's sample.
+        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="cel_shading")
+        assert asset.seed_front_url == "/api/media/files/sample_cel"
+
+        with pytest.raises(UnknownFullbodyStyleError):
+            await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="nope")
+
+
+@pytest.mark.asyncio
+async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
+    """confirm-front moves draft seeds from temp-media to companion-avatars
+    and drops the stored sample set; an expired draft raises a regenerable
+    error instead of committing a dead URL."""
+    user_id = 408
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json=json.dumps(
+                {
+                    "avatar_prompt": "少女",
+                    "fullbody_style": "cel_shading",
+                    "fullbody_samples": {"cel_shading": "temp-media/sample_front"},
+                }
+            ),
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="temp-media/sample_front",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with (
+            patch(
+                "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+                new_callable=AsyncMock,
+            ) as mock_gen,
+            patch("services.companion.avatar_service._read_temp_media_bytes", return_value=(b"img", "image/png")),
+            patch(
+                "services.companion.avatar_service._persist_portrait_bytes",
+                new_callable=AsyncMock,
+                return_value=("companion-avatars/promoted.png", "f1", "png"),
+            ),
+        ):
+            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            confirmed = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
+
+        assert "promoted.png" in confirmed.seed_front_url
+        assert "aux_view.jpg" in confirmed.seed_right_url
+        assert "aux_view.jpg" in confirmed.seed_back_url
+        payload = json.loads(confirmed.prompt_json)
+        assert "fullbody_samples" not in payload
+
+        # Expired draft → regenerable error, row untouched.
+        await db.execute(
+            update(AvatarAsset)
+            .where(AvatarAsset.id == avatar.id)
+            .values(seed_front_url="temp-media/expired_front", seed_right_url="", seed_back_url="")
+        )
+        await db.commit()
+        with (
+            patch(
+                "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+                new_callable=AsyncMock,
+            ) as mock_gen,
+            patch("services.companion.avatar_service._read_temp_media_bytes", return_value=None),
+        ):
+            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            with pytest.raises(AvatarSourceUnreadableError):
+                await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
+
+
+@pytest.mark.asyncio
+async def test_fullbody_select_style_without_samples_keeps_seed(SessionLocal):
+    """Legacy rows without persisted samples: persist the style only, never
+    fabricate a front seed."""
+    user_id = 407
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "少年"}',
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="companion-avatars/refined_front.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="cel_shading")
+        assert "refined_front.jpg" in asset.seed_front_url
+        assert avatar_response(asset).fullbody_style == "cel_shading"
 
 
 @pytest.mark.asyncio

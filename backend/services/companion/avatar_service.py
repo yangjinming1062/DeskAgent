@@ -23,6 +23,7 @@ _DEFAULT_STYLE: str = "portrait"
 _AVATAR_SIZE: str = "1024x1024"
 _AVATAR_QUALITY: str = "standard"
 _FULLBODY_PREFERRED_PROVIDERS = ("gemini", "grok")
+_STYLE_IDS: frozenset[str] = frozenset(info.id for info in STYLE_CATALOG)
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
@@ -112,6 +113,10 @@ class FullbodyGenerationError(AvatarGenerationError):
 
 class FrontSeedMissingError(FullbodyGenerationError):
     """Raised when attempting multiview generation without a confirmed front seed."""
+
+
+class UnknownFullbodyStyleError(AvatarGenerationError):
+    """Raised when a fullbody style id is outside the STYLE_CATALOG."""
 
 
 class SeedPromptMissingError(FullbodyGenerationError):
@@ -753,12 +758,13 @@ async def generate_fullbody_style_samples(
         )
         tasks.append(
             _generate_one_portrait_with_moderation_retry(
-                prompt, user_id, reference_image=ref_uri, size=_AVATAR_SIZE, persist=persona.is_portrait_confirmed, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
+                prompt, user_id, reference_image=ref_uri, size=_AVATAR_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
             )
         )
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     samples: dict[str, str] = {}
+    stored: dict[str, str] = {}
     errors: list[BaseException] = []
     for style_info, result in zip(STYLE_CATALOG, results):
         if isinstance(result, BaseException):
@@ -766,13 +772,72 @@ async def generate_fullbody_style_samples(
             logger.warning("fullbody style sample generation failed", extra={"style": style_info.id, "error": getattr(result, "internal", str(result))})
         else:
             samples[style_info.id] = _re_sign_bare_path(result[0]) or result[0]
+            stored[style_info.id] = result[0]
 
     if not samples:
         first_err = errors[0] if errors else RuntimeError("all styles failed")
         err_msg = getattr(first_err, "internal", str(first_err))
         raise FullbodyGenerationError("所有风格样图生成失败，请稍后重试", internal=err_msg)
 
+    # Sample paths ride the avatar row so a client restart rehydrates the style
+    # picker instead of paying for generation again. They are drafts in
+    # temp-media (TTL-bound); confirm-front promotes the picked one to
+    # companion-avatars, and an expired draft falls back to regeneration.
+    async def _persist_samples(session: AsyncSession) -> None:
+        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
+        if target is None:
+            return
+        payload = safe_json_loads(target.prompt_json, default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        payload["fullbody_samples"] = stored
+        target.prompt_json = json.dumps(payload, ensure_ascii=False)
+        await session.commit()
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            await _persist_samples(write_db)
+    else:
+        await _persist_samples(db)
+
     return samples
+
+
+async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str) -> AvatarAsset:
+    """Persist the picked fullbody style so a restart resumes at the front
+    preview instead of regenerating samples. The selected style's sample
+    becomes the front-seed candidate — mirroring the client swapping its
+    preview to the sample card."""
+    if user_id is None:
+        raise ValueError("user_id is required")
+    if style not in _STYLE_IDS:
+        raise UnknownFullbodyStyleError(f"unknown fullbody style: {style}")
+
+    async def _write(session: AsyncSession) -> AvatarAsset:
+        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
+        if target is None:
+            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        payload = safe_json_loads(target.prompt_json, default={})
+        if not isinstance(payload, dict):
+            payload = {}
+        payload["fullbody_style"] = style
+        stored = payload.get("fullbody_samples")
+        sample = stored.get(style) if isinstance(stored, dict) else None
+        if isinstance(sample, str) and sample.startswith(("companion-avatars/", "temp-media/")):
+            target.seed_front_url = sample
+            target.seed_right_url = ""
+            target.seed_back_url = ""
+        target.prompt_json = json.dumps(payload, ensure_ascii=False)
+        await session.commit()
+        await session.refresh(target)
+        session.expunge(target)
+        _re_sign_avatar_url(target)
+        return target
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write(write_db)
+    return await _write(db)
 
 
 async def generate_fullbody_front(
@@ -823,7 +888,7 @@ async def generate_fullbody_front(
 
     try:
         (front_url, _, _, _) = await _generate_one_portrait_with_moderation_retry(
-            prompt, user_id, reference_image=ref_uri, size=_AVATAR_SIZE, persist=persona.is_portrait_confirmed, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
+            prompt, user_id, reference_image=ref_uri, size=_AVATAR_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
         )
     except Exception as exc:
         err_msg = getattr(exc, "internal", str(exc))
@@ -953,9 +1018,21 @@ async def confirm_fullbody_front(
             target.seed_right_url = generated["right"]
         if "back" in generated:
             target.seed_back_url = generated["back"]
+        # Confirmation promotes draft seeds from temp-media to companion-avatars
+        # (same lifecycle as finalize_avatar for the bust). An expired draft
+        # surfaces a regenerable 409 instead of a silently dead URL.
+        for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
+            current = getattr(target, attr)
+            if current.startswith("temp-media/"):
+                moved = _read_temp_media_bytes(current)
+                if moved is None:
+                    raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the fullbody front")
+                new_path, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
+                setattr(target, attr, new_path)
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
+            payload.pop("fullbody_samples", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         await session.commit()
         await session.refresh(target)

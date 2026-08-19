@@ -53,7 +53,8 @@
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认半身形象（幂等），解开全身 3D 风格选择子阶段 | Backend 状态 + Client 流程 |
 | GET /api/companion/avatar/fullbody/styles | 查询全身立绘画风目录（日系赛璐珞 / 二次元游戏CG） | Backend 静态目录 + Client 流程 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定 | Backend 生成 + Client 风格选择卡片 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定（草稿落 temp-media，路径随形象行持久化供断点恢复复用） | Backend 生成 + Client 风格选择卡片 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/select-style | 持久化用户选定的画风（不触发生成），重启恢复到正面预览而非重新出样图 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front | 按选定画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图，自动生成侧面与背面视角多视图种子图，解开音色/用户子阶段 | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（图生3D：基于已确认的正/侧/背多视图种子图提交供应商生成） | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
@@ -64,7 +65,7 @@
 | POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
 
 **关键约束**（跨模块语义，非实现细节）：
-- **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。
+- **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的样图与已选画风随形象行持久化，断点恢复直接重放、不重复触发生成；样图草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
 - **形象锁定**：形象确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭；换装与动画生成不受影响。
 - **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
 - **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，供应商task_id 与下载 URL 已持久化；下载或本地后处理失败只置下载失败态并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调供应商查询与下载接口，服务重启中断的下载同样进入该可恢复态。

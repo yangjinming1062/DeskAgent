@@ -31,6 +31,10 @@ class AvatarAssetResponse(BaseModel):
     seed_front_url: str = ""
     seed_right_url: str = ""
     seed_back_url: str = ""
+    # Picked fullbody style + durable style-sample URLs, re-signed on read —
+    # the resume surface for the fullbody confirmation stage.
+    fullbody_style: str = ""
+    fullbody_samples: dict[str, str] = Field(default_factory=dict)
     prompt: str = ""
     status: SucceededStatus = "succeeded"
 
@@ -65,6 +69,12 @@ class FullbodyConfirmFrontRequest(BaseModel):
 
     style: str | None = Field(default=None, max_length=64)
     front_url: str | None = Field(default=None, max_length=2048)
+
+
+class FullbodySelectStyleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    style: str = Field(min_length=1, max_length=64)
 
 
 class AvatarGenerateRequest(BaseModel):
