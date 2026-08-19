@@ -1,7 +1,9 @@
 from typing import Any
 
 from modules.memory import Memory
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _USER_PROFILE_TAGS_JSON = '["onboarding", "user_profile"]'
@@ -63,10 +65,16 @@ async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str,
         if not val:
             continue
         ctx = _CONTEXT_LABELS.get(user_key, f"user_profile:{user_key.removeprefix('user_')}")
-        existing = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == ctx))).scalar_one_or_none()
-        if existing is not None:
-            existing.content = val
-            existing.tags = _USER_PROFILE_TAGS_JSON
-            continue
-        db.add(Memory(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON))
-        await db.flush()
+        values = {"user_id": user_id, "content": val, "context": ctx, "tags": _USER_PROFILE_TAGS_JSON}
+
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            statement = postgres_insert(Memory).values(**values)
+        else:
+            statement = sqlite_insert(Memory).values(**values)
+
+        statement = statement.on_conflict_do_update(
+            index_elements=["user_id", "context"],
+            index_where=Memory.context.like("user_profile:%"),
+            set_={"content": val, "tags": _USER_PROFILE_TAGS_JSON, "updated_at": func.now()},
+        )
+        await db.execute(statement)

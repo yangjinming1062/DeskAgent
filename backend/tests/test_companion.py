@@ -1157,6 +1157,51 @@ async def test_dual_write_is_idempotent(_patch_db):
         assert rows[0].content == "大佬"
 
 
+async def test_record_user_profile_survives_stale_read(_patch_db, monkeypatch):
+    """The final onboarding PUT may race the last incremental user_* submit.
+
+    Simulate the stale read from that race: the SELECT sees no row while the
+    unique index already contains it. The upsert must update that row instead
+    of inserting a second one.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql import Select
+
+    from modules.memory import Memory
+    from services.companion import memory_bootstrap
+
+    _, SessionLocal = _patch_db
+    async with SessionLocal() as db:
+        db.add(Memory(user_id=444, content="旧值", context="user_profile:freeform", tags='["user_profile"]'))
+        await db.flush()
+
+    class _EmptyResult:
+        def scalar_one_or_none(self):
+            return None
+
+    original_execute = AsyncSession.execute
+
+    async def stale_execute(session, statement, *args, **kwargs):
+        if isinstance(statement, Select):
+            return _EmptyResult()
+        return await original_execute(session, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", stale_execute)
+    async with SessionLocal() as db:
+        await memory_bootstrap.record_user_profile(db, 444, {"user_freeform": "新值"})
+        await db.commit()
+
+    async with SessionLocal() as db:
+        rows = (
+            (await original_execute(db, select(Memory).where(Memory.user_id == 444)))
+            .scalars()
+            .all()
+        )
+        assert len(rows) == 1
+        assert rows[0].content == "新值"
+        assert rows[0].tags == '["onboarding", "user_profile"]'
+
+
 async def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
     """When the persona editor sends back only persona fields (no user_*),
     ``record_user_profile`` short-circuits to no-op: existing user_profile

@@ -423,6 +423,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const { requestGateway } = useGatewayRequest()
   const [phase, setPhase] = useState<Phase>('q-character')
   const [qIndex, setQIndex] = useState(0)
+  const onboardingSubmissionsRef = useRef(Promise.resolve())
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
@@ -662,6 +663,21 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     return () => stopSpeaking()
   }, [phase, qIndex, currentList, answersRef])
 
+  const submitOnboardingAnswer = useCallback(
+    (field: QKey, value: string | null) => {
+      const submission = onboardingSubmissionsRef.current
+        .then(async () => {
+          await requestGateway('onboarding.submit', { field, value })
+        })
+        .catch(() => undefined)
+
+      onboardingSubmissionsRef.current = submission
+
+      return submission
+    },
+    [requestGateway]
+  )
+
   useEffect(() => {
     const isQuestionPhase = phase === 'q-character' || phase === 'q-user' || phase === 'voice'
 
@@ -685,7 +701,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     // Per-field incremental persistence (design §7.5); fire-and-forget — never
     // block the UI on a draft save. No-op until the gateway is open.
     if (gatewayState === 'open' && ONBOARDING_FIELD_KEYS.has(q.key)) {
-      void requestGateway('onboarding.submit', { field: q.key, value: cleaned ?? null }).catch(() => {})
+      void submitOnboardingAnswer(q.key, cleaned ?? null)
     }
 
     return nextAnswers
@@ -817,6 +833,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     // Finalize persona before portrait — avatar gen needs is_complete=true; user_* are routed to Memory later via submit_onboarding_field.
     // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
     let personaOk = false
+    await onboardingSubmissionsRef.current
 
     try {
       personaOk = (await retryTransient(() => savePersona(assembleCharacterPersona(ans)), 700)) === true
@@ -1548,7 +1565,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     if (voice) {
       const vName = voice.label || voice.id
       setAnswers(prev => ({ ...prev, voice: vName }))
-      void requestGateway('onboarding.submit', { field: 'voice', value: vName })
+      void submitOnboardingAnswer('voice', vName)
     }
 
     setPhase('q-user')
@@ -1568,8 +1585,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     // Safety-net retry; roll back to 'q-user' on failure so phase isn't stuck on 'finishing'.
     try {
       if (voice) {
-        void requestGateway('onboarding.submit', { field: 'voice', value: voice.label || voice.id })
+        await submitOnboardingAnswer('voice', voice.label || voice.id)
       }
+
+      await onboardingSubmissionsRef.current
 
       await savePersona(assemblePersona(ans))
     } catch (err) {
