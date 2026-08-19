@@ -1457,68 +1457,51 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const confirmFullbodyFront = async () => {
+  const confirmFullbodyFront = () => {
     if (!activeAvatarId || !fullbodyStyle) {
       return
     }
 
-    setFullbodyLoading(true)
-    setFullbodyLoadingText('正在自动生成侧面与背面视角，请稍候…')
-    setFullbodyHint(null)
+    const avatarId = activeAvatarId
+    const style = fullbodyStyle
+    const frontUrl = fullbodyFrontRawUrl
 
-    try {
-      const res = await window.spiritagent.api<{
+    // Advance to voice phase immediately without blocking on background multi-view generation
+    setPhase('voice')
+    setVoiceStage('describe')
+    setQIndex(0)
+    setInput('')
+    setAnswerKind(null)
+    setHint(null)
+
+    // Trigger confirmation & background multi-view derivation asynchronously
+    void window.spiritagent
+      .api<{
         id?: number
         asset_url?: string
         seed_front_url?: string
         seed_right_url?: string
         seed_back_url?: string
       }>({
-        path: `/api/companion/avatar/${activeAvatarId}/fullbody/confirm-front`,
+        path: `/api/companion/avatar/${avatarId}/fullbody/confirm-front`,
         method: 'POST',
         body: {
-          style: fullbodyStyle,
-          front_url: fullbodyFrontRawUrl || undefined
+          style,
+          front_url: frontUrl || undefined
         }
       })
-
-      await applyPortrait({
-        id: res?.id,
-        assetUrl: res?.asset_url,
-        seedFrontUrl: res?.seed_front_url,
-        seedRightUrl: res?.seed_right_url,
-        seedBackUrl: res?.seed_back_url
+      .then(async res => {
+        await applyPortrait({
+          id: res?.id,
+          assetUrl: res?.asset_url,
+          seedFrontUrl: res?.seed_front_url,
+          seedRightUrl: res?.seed_right_url,
+          seedBackUrl: res?.seed_back_url
+        })
       })
-
-      // Advance to voice phase
-      setPhase('voice')
-      setVoiceStage('describe')
-      setQIndex(0)
-      setInput('')
-      setAnswerKind(null)
-      setHint(null)
-    } catch (error) {
-      // A 409 means the temp-media draft expired — the front image is gone.
-      // Stay on this stage so the user can regenerate instead of advancing.
-      if (isClientErrorIpc(error)) {
-        const unwrapped = unwrapIpcErrorMessage(error)
-        const jsonStart = unwrapped.indexOf('{')
-        const parsed = jsonStart >= 0 ? safeJsonParse(unwrapped.slice(jsonStart), null) : null
-        const backendError = (parsed as { detail?: { error?: string } } | null)?.detail?.error
-
-        if (backendError) {
-          setFullbodyHint(backendError)
-          setFullbodyFrontUrl(null)
-          setFullbodyFrontRawUrl(null)
-
-          return
-        }
-      }
-
-      setFullbodyHint(error instanceof Error ? error.message : '多视角自动生成失败，请重试')
-    } finally {
-      setFullbodyLoading(false)
-    }
+      .catch(() => {
+        // Background derivation runs asynchronously and is non-blocking to the user onboarding flow
+      })
   }
 
   const previewVoice = (id: string, context: string) =>
