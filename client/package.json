@@ -14,23 +14,15 @@
   },
   "scripts": {
     "clip": "node scripts/assert-root-install.cjs && vite --host 127.0.0.1 --port 5174 --open \"/?role=clip\"",
-    "dev": "node scripts/assert-root-install.cjs && tsup && concurrently -k \"pnpm dev:renderer\" \"tsup --watch\" \"wait-on dist-electron/entry.cjs http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 SPIRITAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 node scripts/launch-dev-electron.cjs\"",
-    "dev:renderer": "node scripts/assert-root-install.cjs && vite --host 127.0.0.1 --port 5174",
-    "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && pnpm run type-check && tsup && vite build && node scripts/assert-dist-built.cjs",
+    "dev": "node scripts/assert-root-install.cjs && tsup && concurrently -k \"vite --host 127.0.0.1 --port 5174\" \"tsup --watch\" \"wait-on dist-electron/entry.cjs http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 SPIRITAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 node scripts/launch-dev-electron.cjs\"",
+    "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsup && vite build && node scripts/assert-dist-built.cjs",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
     "pack": "pnpm run build && pnpm run builder -- --dir",
     "dist": "pnpm run build && pnpm run builder",
     "dist:mac:dmg": "pnpm run build && pnpm run builder -- --mac dmg",
     "dist:win": "pnpm run build && pnpm run builder -- --win",
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
-    "test:desktop:dist": "node scripts/test-desktop.mjs all",
-    "test:desktop:platforms": "node --import tsx --test main/lifecycle/platform.test.ts main/lifecycle/desktop-log.test.ts main/lifecycle/tray.test.ts main/security/hardening.test.ts main/backend/ws-probe.test.ts main/backend/session.test.ts main/shared/config.test.ts main/runner/rpc-ws.test.ts main/runner/reverse-rpc.test.ts main/runner/bridge.test.ts main/preload-contract.test.ts main/path-consistency.test.ts main/ipc/onboarding-audio.test.ts main/ipc/sprite.test.ts main/ipc/tts-disk-cache.test.ts main/ipc/model-disk-cache.test.ts main/ipc/media.test.ts main/ipc/runner.test.ts",
-    "type-check": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
-    "lint": "eslint renderer/ main/",
-    "lint:fix": "eslint renderer/ main/ --fix",
-    "fmt": "prettier --write \"renderer/**/*.{ts,tsx}\" \"main/**/*.{ts,tsx}\" \"scripts/**/*.{cjs,mjs,ts}\" \"vite.config.ts\" \"tsup.config.ts\"",
-    "fix": "pnpm run lint:fix && pnpm run fmt && pnpm run type-check",
-    "test:ui": "vitest run"
+    "fix": "eslint renderer/ main/ --fix && prettier --write \"renderer/**/*.{ts,tsx}\" \"main/**/*.{ts,tsx}\" \"scripts/**/*.{cjs,mjs,ts}\" \"vite.config.ts\" \"tsup.config.ts\" && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
   },
   "dependencies": {
     "electron-log": "^5.2.0",
