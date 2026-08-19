@@ -43,7 +43,8 @@ _MODERATION_SANITIZATION_PROMPT = (
 
 async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
     """Mildly sanitize *prompt* for content moderation. Returns the original on failure.
-    Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared."""
+    Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared.
+    """
     try:
         async with SESSION_LOCAL() as db:
             sanitized = await chat(db, user_id, _MODERATION_SANITIZATION_PROMPT, prompt)
@@ -227,7 +228,8 @@ async def _generate_one_portrait(
     preferred_provider: str | list[str] | None = None,
 ) -> tuple[str, str, str, str]:
     """``persist=False`` keeps the image in temp-media/ (onboarding); ``persist=True``
-    downloads and writes to companion-avatars/. Returns ``(bare_path, file_id, ext, source_url)``."""
+    downloads and writes to companion-avatars/. Returns ``(bare_path, file_id, ext, source_url)``.
+    """
     result_json = await image_generation_tool(
         prompt=prompt,
         llm_config={},
@@ -821,13 +823,13 @@ async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | N
         payload = safe_json_loads(target.prompt_json, default={})
         if not isinstance(payload, dict):
             payload = {}
+        if (target.seed_right_url or target.seed_back_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+            payload["fullbody_aux_style"] = payload["fullbody_style"]
         payload["fullbody_style"] = style
         stored = payload.get("fullbody_samples")
         sample = stored.get(style) if isinstance(stored, dict) else None
         if isinstance(sample, str) and sample.startswith(("companion-avatars/", "temp-media/")):
             target.seed_front_url = sample
-            target.seed_right_url = ""
-            target.seed_back_url = ""
         target.prompt_json = json.dumps(payload, ensure_ascii=False)
         await session.commit()
         await session.refresh(target)
@@ -888,7 +890,7 @@ async def generate_fullbody_front(
     )
 
     try:
-        (front_url, _, _, _) = await _generate_one_portrait_with_moderation_retry(
+        front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
             prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
         )
     except Exception as exc:
@@ -901,13 +903,13 @@ async def generate_fullbody_front(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
+            if (target.seed_right_url or target.seed_back_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+                payload["fullbody_aux_style"] = payload["fullbody_style"]
             payload["fullbody_style"] = style
             if feedback is not None:
                 payload["fullbody_feedback"] = feedback
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         target.seed_front_url = front_url
-        target.seed_right_url = ""
-        target.seed_back_url = ""
         await session.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
         target.active = True
         await session.commit()
@@ -925,7 +927,7 @@ async def generate_fullbody_front(
 async def confirm_fullbody_front(
     db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None
 ) -> AvatarAsset:
-    """Confirm the front fullbody view and automatically generate right + back views."""
+    """Confirm the front fullbody view and generate only missing right/back views."""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -962,54 +964,51 @@ async def confirm_fullbody_front(
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", effective_style)
 
-    # The confirmed front image serves as the subject reference for side & back
-    front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
+    auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
+    generated = {view: getattr(asset, f"seed_{view}_url") for view in ("right", "back") if getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style}
+    missing_views = tuple(view for view in ("right", "back") if view not in generated)
+    results = []
 
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
-    prompts = {
-        "right": build_fullbody_prompt(
-            "right",
-            template=template,
-            style_id=effective_style,
-            feedback=prompt_payload.get("fullbody_feedback"),
-            appearance_core=appearance_core,
-            personality=personality,
-            avatar_prompt=cached_avatar_prompt,
-        ),
-        "back": build_fullbody_prompt(
-            "back",
-            template=template,
-            style_id=effective_style,
-            feedback=prompt_payload.get("fullbody_feedback"),
-            appearance_core=appearance_core,
-            personality=personality,
-            avatar_prompt=cached_avatar_prompt,
-        ),
-    }
+    if missing_views:
+        # The confirmed front image serves as the subject reference for missing views.
+        front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
 
-    results = await asyncio.gather(
-        *[
-            _generate_one_portrait_with_moderation_retry(
-                prompts[v],
-                user_id,
-                reference_image=front_ref_uri,
-                size=_FULLBODY_SIZE,
-                persist=persona.is_portrait_confirmed,
-                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+        cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
+        prompts = {
+            view: build_fullbody_prompt(
+                view,
+                template=template,
+                style_id=effective_style,
+                feedback=prompt_payload.get("fullbody_feedback"),
+                appearance_core=appearance_core,
+                personality=personality,
+                avatar_prompt=cached_avatar_prompt,
             )
-            for v in ("right", "back")
-        ],
-        return_exceptions=True,
-    )
+            for view in missing_views
+        }
 
-    generated: dict[str, str] = {}
+        results = await asyncio.gather(
+            *[
+                _generate_one_portrait_with_moderation_retry(
+                    prompts[view],
+                    user_id,
+                    reference_image=front_ref_uri,
+                    size=_FULLBODY_SIZE,
+                    persist=persona.is_portrait_confirmed,
+                    preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+                )
+                for view in missing_views
+            ],
+            return_exceptions=True,
+        )
+
     errors: list[BaseException] = []
-    for v, result in zip(("right", "back"), results):
+    for view, result in zip(missing_views, results):
         if isinstance(result, BaseException):
             errors.append(result)
-            logger.warning("auxiliary fullbody view failed", extra={"view": v, "error": getattr(result, "internal", str(result))})
+            logger.warning("auxiliary fullbody view failed", extra={"view": view, "error": getattr(result, "internal", str(result))})
         else:
-            generated[v] = result[0]
+            generated[view] = result[0]
 
     if len(generated) < 2:
         first_err = errors[0] if errors else RuntimeError("all aux views failed")
@@ -1038,6 +1037,7 @@ async def confirm_fullbody_front(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
+            payload["fullbody_aux_style"] = effective_style
             payload.pop("fullbody_samples", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         await session.commit()

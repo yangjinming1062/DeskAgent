@@ -56,7 +56,7 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定（草稿落 temp-media，路径随形象行持久化供断点恢复复用） | Backend 生成 + Client 风格选择卡片 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/select-style | 持久化用户选定的画风（不触发生成），重启恢复到正面预览而非重新出样图 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front | 按选定画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图，自动生成侧面与背面视角多视图种子图，解开音色/用户子阶段 | Backend 生成 + Client 流程 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图；同画风仅补齐缺失侧面/背面，换画风重绘两者，并解开音色/用户子阶段 | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（图生3D：基于已确认的正/侧/背多视图种子图提交供应商生成） | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果（供应商查询接口刷新过期 URL + 下载 + 后处理；**绝不重新提交生成/计费**） | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
