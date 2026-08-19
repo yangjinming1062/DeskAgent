@@ -1,6 +1,8 @@
 import asyncio
 import json
+import time
 from dataclasses import replace
+from typing import Any
 
 from components import SETTINGS, get_logger
 from modules.auth import UserModelConfig
@@ -8,6 +10,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .llm_debug import log_event, new_call_id, truncate_for_log
 from .providers import (
     KNOWN_PROVIDERS,
     SERVICE_DEFAULT_PROVIDER,
@@ -25,6 +28,15 @@ from .providers import (
 from .providers.http import get_async_client
 
 logger = get_logger(__name__)
+
+
+def _log_embedding(*, call_id: str, phase: str, provider: str, model: str, user_id: int | None, status: str | None = None, latency_ms: int | None = None, **extras: Any) -> None:
+    """Embedding chokepoint has stable caller-supplied defaults (service /
+    call_site); fold them in here so the call sites only spell out the
+    per-event fields."""
+    log_event(
+        call_id=call_id, service="embedding", provider=provider, model=model, call_site=__name__, phase=phase, status=status, latency_ms=latency_ms, user_id=user_id, **extras
+    )
 
 
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
@@ -275,13 +287,48 @@ async def generate_embedding(text: str, user_id: int | None = None, db: AsyncSes
     """Generate embedding vector for a single text. Returns None if unconfigured or failed."""
     if not text or not text.strip():
         return None
+    call_id = new_call_id()
+    _log_embedding(call_id=call_id, phase="request", provider="(resolving)", model="(resolving)", user_id=user_id, text_preview=truncate_for_log(text)[0], num_texts=1)
+    started = time.monotonic()
     try:
         provider = await _resolve_embedding_provider(db, user_id)
         if provider is None:
+            _log_embedding(
+                call_id=call_id,
+                phase="response",
+                provider="(none)",
+                model="(none)",
+                user_id=user_id,
+                status="skipped",
+                reason="no_provider",
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
             return None
-        return await asyncio.wait_for(provider.embed_one(text), timeout=timeout_seconds)
+        _log_embedding(call_id=call_id, phase="provider_resolved", provider=provider.provider_name, model=getattr(provider.config, "model", ""), user_id=user_id)
+        result = await asyncio.wait_for(provider.embed_one(text), timeout=timeout_seconds)
+        _log_embedding(
+            call_id=call_id,
+            phase="response",
+            provider=provider.provider_name,
+            model=getattr(provider.config, "model", ""),
+            user_id=user_id,
+            status="success",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            vector_dim=len(result) if result else 0,
+        )
+        return result
     except Exception as exc:
         logger.debug("generate_embedding failed", extra={"error": str(exc)})
+        _log_embedding(
+            call_id=call_id,
+            phase="response",
+            provider="(unknown)",
+            model="(unknown)",
+            user_id=user_id,
+            status="error",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            error={"type": type(exc).__name__, "message": str(exc)[:500]},
+        )
         return None
 
 
@@ -289,11 +336,47 @@ async def generate_embeddings(texts: list[str], user_id: int | None = None, db: 
     """Generate embedding vectors for multiple texts."""
     if not texts:
         return []
+    call_id = new_call_id()
+    _log_embedding(call_id=call_id, phase="request", provider="(resolving)", model="(resolving)", user_id=user_id, text_preview=truncate_for_log(texts[0])[0], num_texts=len(texts))
+    started = time.monotonic()
     try:
         provider = await _resolve_embedding_provider(db, user_id)
         if provider is None:
+            _log_embedding(
+                call_id=call_id,
+                phase="response",
+                provider="(none)",
+                model="(none)",
+                user_id=user_id,
+                status="skipped",
+                reason="no_provider",
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
             return None
-        return await asyncio.wait_for(provider.embed(texts), timeout=timeout_seconds)
+        _log_embedding(call_id=call_id, phase="provider_resolved", provider=provider.provider_name, model=getattr(provider.config, "model", ""), user_id=user_id)
+        result = await asyncio.wait_for(provider.embed(texts), timeout=timeout_seconds)
+        _log_embedding(
+            call_id=call_id,
+            phase="response",
+            provider=provider.provider_name,
+            model=getattr(provider.config, "model", ""),
+            user_id=user_id,
+            status="success",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            vector_dim=len(result[0]) if result else 0,
+            num_vectors=len(result) if result else 0,
+        )
+        return result
     except Exception as exc:
         logger.debug("generate_embeddings failed", extra={"error": str(exc)})
+        _log_embedding(
+            call_id=call_id,
+            phase="response",
+            provider="(unknown)",
+            model="(unknown)",
+            user_id=user_id,
+            status="error",
+            latency_ms=int((time.monotonic() - started) * 1000),
+            error={"type": type(exc).__name__, "message": str(exc)[:500]},
+        )
         return None

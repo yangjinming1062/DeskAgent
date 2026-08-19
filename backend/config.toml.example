@@ -263,6 +263,13 @@ log_level = "INFO"
 # 日志格式：json / text
 log_format = "json"
 
+[llm_debug]
+# 是否启用 LLM 调用的 debug 面包屑日志（输出 provider / model / 截断后的输入输出 / 延迟 / 状态）
+# 默认关闭，开启后会在 llm.debug logger 上按调用粒度输出详细信息
+llm_debug_logging = false
+# 单字段最大保留字符数，超过则截断并标注原长度
+llm_debug_max_chars = 4000
+
 [nightly]
 # 是否启用伴侣夜间日记与状态自省定时任务
 nightly_activity_enabled = true

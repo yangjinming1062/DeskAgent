@@ -8,8 +8,16 @@ from typing import Any
 from components import LLM_RETRY_MAX_SUGGESTED_DELAY, LLM_RETRY_MIN_DELAY, LLM_RETRY_MIN_TIMEOUT, SETTINGS, approx_message_tokens, get_logger
 
 from .error_classifier import ClassifiedError, classify_api_error
+from .llm_debug import log_event, new_call_id, summarize_chat_request, summarize_chat_response, summarize_error, truncate_for_log
 
 logger = get_logger(__name__)
+
+
+def _call_site_from_client(client: Any) -> str:
+    # SDK client carries no provider label — fall back to the base_url host.
+    base_url = getattr(client, "base_url", None)
+    host = getattr(base_url, "host", None) if base_url is not None else None
+    return host or (str(base_url) if base_url else "unknown")
 
 
 def _jittered_backoff(attempt: int, *, base_delay: float, max_delay: float, jitter_ratio: float = 0.5) -> float:
@@ -67,6 +75,92 @@ async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> As
                 await aclose()
 
 
+async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provider: str, model: str, call_site: str, call_started: float) -> AsyncIterator:
+    """Pass-through that accumulates stream chunks and emits one final
+    breadcrumb on iteration end (success, mid-stream raise, or cancel)."""
+    chunks: list[Any] = []
+    accumulated_content = ""
+    usage = None
+    finish_reason: Any = None
+    tool_call_delta_count = 0
+    first_chunk_at: float | None = None
+    error: BaseException | None = None
+
+    try:
+        async for chunk in stream:
+            if first_chunk_at is None:
+                first_chunk_at = time.monotonic()
+            chunks.append(chunk)
+            choices = getattr(chunk, "choices", None) or []
+            if choices:
+                delta = getattr(choices[0], "delta", None)
+                if delta is not None:
+                    content = getattr(delta, "content", None)
+                    if isinstance(content, str):
+                        accumulated_content += content
+                    if getattr(delta, "tool_calls", None):
+                        tool_call_delta_count += len(delta.tool_calls)
+                fr = getattr(choices[0], "finish_reason", None)
+                if fr:
+                    finish_reason = fr
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = chunk_usage
+            yield chunk
+    except asyncio.CancelledError:
+        error = asyncio.CancelledError()
+        raise
+    except BaseException as exc:
+        error = exc
+        raise
+    finally:
+        latency_ms = int((time.monotonic() - call_started) * 1000)
+        preview, original_len = truncate_for_log(accumulated_content)
+        response_summary: dict[str, Any] = {
+            "num_chunks": len(chunks),
+            "content_preview": preview,
+            "content_original_chars": original_len,
+            "finish_reason": finish_reason,
+            "tool_call_delta_count": tool_call_delta_count,
+        }
+        if usage is not None:
+            response_summary["usage"] = {
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            }
+        extras: dict[str, Any] = {"stream": True}
+        if first_chunk_at is not None:
+            extras["time_to_first_chunk_ms"] = int((first_chunk_at - call_started) * 1000)
+        if error is not None:
+            log_event(
+                call_id=call_id,
+                service="llm",
+                provider=provider,
+                model=model,
+                call_site=call_site,
+                phase="error",
+                latency_ms=latency_ms,
+                status="error",
+                response=response_summary,
+                error=summarize_error(error),
+                **extras,
+            )
+        else:
+            log_event(
+                call_id=call_id,
+                service="llm",
+                provider=provider,
+                model=model,
+                call_site=call_site,
+                phase="response",
+                latency_ms=latency_ms,
+                status="success",
+                response=response_summary,
+                **extras,
+            )
+
+
 async def call_with_retry(
     client: Any,
     *,
@@ -109,10 +203,55 @@ async def call_with_retry(
     approx_tokens = approx_message_tokens(messages)
     num_messages = len(messages or [])
 
+    # Emit the request-side breadcrumb up front so failure-only log readers
+    # still see the prompt that was sent.
+    call_id = new_call_id()
+    call_site = _call_site_from_client(client)
+    call_started = time.monotonic()
+    log_event(
+        call_id=call_id,
+        service="llm",
+        provider=call_site,
+        model=model,
+        call_site=call_site,
+        phase="request",
+        request=summarize_chat_request(create_kwargs),
+        stream=is_stream,
+        context_length=context_length,
+        timeout_seconds=timeout,
+        max_attempts=max_attempts,
+    )
+
     last_classified: ClassifiedError | None = None
     last_exc: BaseException | None = None
     started_at = time.monotonic()
     classifier_kwargs = {"model": model, "approx_tokens": approx_tokens, "context_length": context_length, "num_messages": num_messages}
+
+    success_result: Any = None
+    success = False
+
+    def _emit_failure_breadcrumb(exc: BaseException | None) -> None:
+        # The original ``exc`` may not carry ``.classified`` (only the
+        # ClassifiedError record does); merge so the breadcrumb surfaces
+        # the classifier's reason bucket alongside the raw exception shape.
+        digest = summarize_error(exc) if exc is not None else {"type": "unknown"}
+        if last_classified is not None:
+            digest.setdefault("reason", last_classified.reason.value)
+            digest.setdefault("status_code", last_classified.status_code)
+            digest.setdefault("retryable", last_classified.retryable)
+            digest.setdefault("should_fallback", last_classified.should_fallback)
+            digest.setdefault("classified_message", last_classified.message)
+        log_event(
+            call_id=call_id,
+            service="llm",
+            provider=call_site,
+            model=model,
+            call_site=call_site,
+            phase="error",
+            latency_ms=int((time.monotonic() - call_started) * 1000),
+            status="error",
+            error=digest,
+        )
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -125,8 +264,11 @@ async def call_with_retry(
                 deadline = loop.time() + timeout
                 stream = await asyncio.wait_for(coro, timeout=min(timeout, 60))
                 remaining = max(deadline - loop.time(), 0.1)
-                return _stream_with_timeout(stream, remaining, model=model)
-            return await asyncio.wait_for(coro, timeout=timeout)
+                success_result = _stream_with_timeout(stream, remaining, model=model)
+            else:
+                success_result = await asyncio.wait_for(coro, timeout=timeout)
+            success = True
+            break
         except TimeoutError as exc:
             last_classified = classify_api_error(exc, **classifier_kwargs)
             last_exc = exc
@@ -148,6 +290,7 @@ async def call_with_retry(
             logger.warning(
                 "LLM error not retryable", extra={"reason": last_classified.reason.value, "status_code": last_classified.status_code, "error_message": last_classified.message}
             )
+            _emit_failure_breadcrumb(last_exc)
             raise LLMRuntimeError(last_classified, original=last_exc) from last_exc
 
         if attempt >= max_attempts:
@@ -158,12 +301,31 @@ async def call_with_retry(
                 last_classified.reason.value,
                 last_classified.message,
             )
+            _emit_failure_breadcrumb(last_exc)
             raise LLMRuntimeError(last_classified, original=last_exc) from last_exc
 
         await asyncio.sleep(_compute_retry_delay(last_classified, attempt, base_delay, max_delay))
 
-    assert last_classified is not None
-    raise LLMRuntimeError(last_classified, original=last_exc) from last_exc
+    assert success, "call_with_retry exited retry loop without raising or succeeding"
+
+    # Stream result: hand off to the debug wrapper so the response breadcrumb
+    # fires when iteration completes.
+    if is_stream:
+        return _wrap_stream_for_debug(success_result, call_id=call_id, provider=call_site, model=model, call_site=call_site, call_started=call_started)
+
+    log_event(
+        call_id=call_id,
+        service="llm",
+        provider=call_site,
+        model=model,
+        call_site=call_site,
+        phase="response",
+        latency_ms=int((time.monotonic() - call_started) * 1000),
+        status="success",
+        response=summarize_chat_response(success_result),
+        stream=False,
+    )
+    return success_result
 
 
 def _compute_retry_delay(classified: ClassifiedError, attempt: int, base_delay: float, max_delay: float) -> float:

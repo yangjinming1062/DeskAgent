@@ -201,6 +201,8 @@ class Settings(BaseSettings):
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]
+    llm_debug_logging: bool = Field(default=False, validation_alias="LLM_DEBUG_LOGGING")
+    llm_debug_max_chars: int = Field(default=4000, validation_alias="LLM_DEBUG_MAX_CHARS")
 
     nightly_activity_enabled: bool = True
 

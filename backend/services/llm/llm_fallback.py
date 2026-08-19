@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .error_classifier import FailoverReason, classify_api_error
 from .llm_client import MissingLlmConfigError, resolve_provider_chain
+from .llm_debug import log_event, new_call_id
 from .providers import BaseProvider, ProviderConfig, resolve
 
 logger = get_logger(__name__)
@@ -56,16 +57,48 @@ async def execute_with_fallback(
 
     last_error: Exception | None = None
     content_policy_error: Exception | None = None
+    chain_call_id = new_call_id()
+    chain_started = time.monotonic()
+    chain_size = len(chain)
     for idx, config in enumerate(chain):
         provider_cls = resolve(config.service_type, config.provider_name)
         provider = provider_cls(config)
+        # Per-call request/response lines come from the chat retry wrapper
+        # or the provider method itself; this chain-level line tells the
+        # reader which slot is firing and where fallback landed on success.
+        log_event(
+            call_id=chain_call_id,
+            service=service_type,
+            provider=config.provider_name,
+            model=config.model,
+            call_site=__name__,
+            phase="chain_attempt",
+            chain_index=idx,
+            chain_size=chain_size,
+            user_id=user_id,
+        )
         try:
             started = time.monotonic()
             result = await call_fn(provider)
-            # Every billed capability (chat / image_gen / tts / video_gen) funnels
-            # through here — sync calls have no task_id, so the breadcrumb is
-            # provider + model + duration instead.
-            log_paid_call(config.provider_name, service_type, user_id=user_id, model=config.model, duration_ms=round((time.monotonic() - started) * 1000))
+            # Every billed capability funnels through here — sync calls have
+            # no task_id, so the paid-calls breadcrumb is provider + model +
+            # duration instead.
+            duration_ms = round((time.monotonic() - started) * 1000)
+            log_paid_call(config.provider_name, service_type, user_id=user_id, model=config.model, duration_ms=duration_ms)
+            log_event(
+                call_id=chain_call_id,
+                service=service_type,
+                provider=config.provider_name,
+                model=config.model,
+                call_site=__name__,
+                phase="chain_result",
+                status="success",
+                chain_index=idx,
+                chain_size=chain_size,
+                latency_ms=duration_ms,
+                total_chain_latency_ms=int((time.monotonic() - chain_started) * 1000),
+                user_id=user_id,
+            )
             return result
         except Exception as exc:
             last_error = exc
@@ -95,6 +128,22 @@ async def execute_with_fallback(
                         "next_provider": next_provider,
                     },
                 )
+                log_event(
+                    call_id=chain_call_id,
+                    service=service_type,
+                    provider=config.provider_name,
+                    model=config.model,
+                    call_site=__name__,
+                    phase="chain_fallback",
+                    status="error",
+                    chain_index=idx,
+                    chain_size=chain_size,
+                    reason=classified.reason.value,
+                    status_code=classified.status_code,
+                    error_message=classified.message,
+                    next_provider=next_provider,
+                    user_id=user_id,
+                )
                 continue
 
             # Either not a fallback condition, stream already emitted, or this
@@ -103,8 +152,38 @@ async def execute_with_fallback(
             # ``ClassifiedError``.  Prefer a content-policy error from an earlier
             # provider when present so the caller's moderation-retry can fire
             # instead of being masked by an unrelated cascading failure.
+            log_event(
+                call_id=chain_call_id,
+                service=service_type,
+                provider=config.provider_name,
+                model=config.model,
+                call_site=__name__,
+                phase="chain_result",
+                status="error",
+                chain_index=idx,
+                chain_size=chain_size,
+                reason=classified.reason.value,
+                status_code=classified.status_code,
+                error_message=classified.message,
+                total_chain_latency_ms=int((time.monotonic() - chain_started) * 1000),
+                user_id=user_id,
+            )
             raise content_policy_error or last_error
 
     # Unreachable with an empty last_error: the chain is non-empty (checked
     # above) and every iteration either returns or records last_error.
+    log_event(
+        call_id=chain_call_id,
+        service=service_type,
+        provider=chain[-1].provider_name,
+        model=chain[-1].model,
+        call_site=__name__,
+        phase="chain_result",
+        status="error",
+        chain_index=chain_size - 1,
+        chain_size=chain_size,
+        reason="chain_exhausted",
+        total_chain_latency_ms=int((time.monotonic() - chain_started) * 1000),
+        user_id=user_id,
+    )
     raise content_policy_error or last_error  # type: ignore[misc]
