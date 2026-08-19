@@ -498,14 +498,21 @@ async def regenerate_avatar(
 def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     if not asset_url_or_path:
         return None
+    if asset_url_or_path.startswith("data:"):
+        return asset_url_or_path
 
     clean_path = asset_url_or_path.replace("\\", "/")
 
-    # 1. Onboarding draft: temp-media/{file_id} — resolve via temp_files sidecar.
-    temp_marker = "temp-media/"
-    temp_idx = clean_path.find(temp_marker)
-    if temp_idx >= 0:
-        temp_file_id = clean_path[temp_idx + len(temp_marker) :].split("?")[0]
+    # 1. Onboarding draft: temp-media/{file_id} or /api/media/files/{file_id} — resolve via temp_files sidecar.
+    temp_file_id: str | None = None
+    if "temp-media/" in clean_path:
+        temp_idx = clean_path.find("temp-media/")
+        temp_file_id = clean_path[temp_idx + len("temp-media/") :].split("?")[0]
+    elif "/api/media/files/" in clean_path:
+        idx = clean_path.find("/api/media/files/")
+        temp_file_id = clean_path[idx + len("/api/media/files/") :].split("?")[0].split("/")[0]
+
+    if temp_file_id:
         raw_id = temp_file_id.rsplit(".", 1)[0] if "." in temp_file_id else temp_file_id
         res = get_file_path(raw_id) or get_file_path(temp_file_id)
         if res is not None:
@@ -728,12 +735,22 @@ async def generate_fullbody_style_samples(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
+    appearance_core = str(definition.get("appearance_core") or "").strip()
+    personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", "cel_shading")
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     tasks = []
     for style_info in STYLE_CATALOG:
-        prompt = build_fullbody_prompt("front", template=template, style_id=style_info.id, feedback=prompt_payload.get("feedback"), avatar_prompt=cached_avatar_prompt)
+        prompt = build_fullbody_prompt(
+            "front",
+            template=template,
+            style_id=style_info.id,
+            feedback=prompt_payload.get("feedback"),
+            appearance_core=appearance_core,
+            personality=personality,
+            avatar_prompt=cached_avatar_prompt,
+        )
         tasks.append(
             _generate_one_portrait_with_moderation_retry(
                 prompt, user_id, reference_image=ref_uri, size=_AVATAR_SIZE, persist=persona.is_portrait_confirmed, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
@@ -794,11 +811,15 @@ async def generate_fullbody_front(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
+    appearance_core = str(definition.get("appearance_core") or "").strip()
+    personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
-    prompt = build_fullbody_prompt("front", template=template, style_id=style, feedback=effective_feedback, avatar_prompt=cached_avatar_prompt)
+    prompt = build_fullbody_prompt(
+        "front", template=template, style_id=style, feedback=effective_feedback, appearance_core=appearance_core, personality=personality, avatar_prompt=cached_avatar_prompt
+    )
 
     try:
         (front_url, _, _, _) = await _generate_one_portrait_with_moderation_retry(
@@ -871,6 +892,8 @@ async def confirm_fullbody_front(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
+    appearance_core = str(definition.get("appearance_core") or "").strip()
+    personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     # The confirmed front image serves as the subject reference for side & back
@@ -878,8 +901,24 @@ async def confirm_fullbody_front(
 
     cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
     prompts = {
-        "right": build_fullbody_prompt("right", template=template, style_id=effective_style, feedback=prompt_payload.get("fullbody_feedback"), avatar_prompt=cached_avatar_prompt),
-        "back": build_fullbody_prompt("back", template=template, style_id=effective_style, feedback=prompt_payload.get("fullbody_feedback"), avatar_prompt=cached_avatar_prompt),
+        "right": build_fullbody_prompt(
+            "right",
+            template=template,
+            style_id=effective_style,
+            feedback=prompt_payload.get("fullbody_feedback"),
+            appearance_core=appearance_core,
+            personality=personality,
+            avatar_prompt=cached_avatar_prompt,
+        ),
+        "back": build_fullbody_prompt(
+            "back",
+            template=template,
+            style_id=effective_style,
+            feedback=prompt_payload.get("fullbody_feedback"),
+            appearance_core=appearance_core,
+            personality=personality,
+            avatar_prompt=cached_avatar_prompt,
+        ),
     }
 
     results = await asyncio.gather(

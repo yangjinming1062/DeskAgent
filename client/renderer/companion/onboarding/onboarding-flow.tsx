@@ -7,6 +7,7 @@ import {
   loadDraftRefImage,
   pickAvatarImage,
   type PickedImage,
+  resolvePortraitUrl,
   saveDraftRefImage
 } from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
@@ -464,8 +465,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
   const [fullbodyLoadingText, setFullbodyLoadingText] = useState('正在为您生成不同风格的全身样图…')
   const [fullbodySamples, setFullbodySamplesState] = useState<Record<string, string>>({})
+  const [fullbodyRawSamples, setFullbodyRawSamplesState] = useState<Record<string, string>>({})
   const [fullbodyStyle, setFullbodyStyleState] = useState<string | null>(null)
   const [fullbodyFrontUrl, setFullbodyFrontUrl] = useState<string | null>(null)
+  const [fullbodyFrontRawUrl, setFullbodyFrontRawUrl] = useState<string | null>(null)
   const [fullbodyFeedback, setFullbodyFeedback] = useState<string>('')
   const [fullbodyHint, setFullbodyHint] = useState<string | null>(null)
 
@@ -961,7 +964,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               setPhase('fullbody-3d')
 
               if (avatarRes?.seed_front_url) {
-                setFullbodyFrontUrl(avatarRes.seed_front_url)
+                setFullbodyFrontRawUrl(avatarRes.seed_front_url)
+                const resolvedFront = await resolvePortraitUrl(avatarRes.seed_front_url)
+                setFullbodyFrontUrl(resolvedFront)
               }
 
               if (avatarRes?.id != null) {
@@ -1128,6 +1133,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPhase('fullbody-3d')
     setFullbodyStyleState(null)
     setFullbodyFrontUrl(null)
+    setFullbodyFrontRawUrl(null)
     setFullbodyFeedback('')
     setFullbodyHint(null)
 
@@ -1154,7 +1160,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       })
 
       if (res?.samples && Object.keys(res.samples).length > 0) {
-        setFullbodySamplesState(res.samples)
+        setFullbodyRawSamplesState(res.samples)
+        const resolved: Record<string, string> = {}
+
+        for (const [styleId, rawUrl] of Object.entries(res.samples)) {
+          const dataUrl = await resolvePortraitUrl(rawUrl)
+
+          if (dataUrl) {
+            resolved[styleId] = dataUrl
+          }
+        }
+
+        setFullbodySamplesState(resolved)
+
+        if (Object.keys(resolved).length === 0) {
+          setFullbodyHint('风格样图加载失败，请重试')
+        }
       } else {
         setFullbodyHint('风格样图生成未返回内容，请重试')
       }
@@ -1167,7 +1188,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const selectStyle = (styleId: string) => {
     setFullbodyStyleState(styleId)
+    const rawUrl = fullbodyRawSamples[styleId] || null
     const sampleUrl = fullbodySamples[styleId] || null
+    setFullbodyFrontRawUrl(rawUrl)
     setFullbodyFrontUrl(sampleUrl)
     setFullbodyHint(null)
   }
@@ -1207,10 +1230,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         seedBackUrl: res?.seed_back_url
       })
 
+      setFullbodyFrontRawUrl(res?.seed_front_url || null)
+
       if (applied.seedFront) {
         setFullbodyFrontUrl(applied.seedFront)
       } else if (res?.seed_front_url) {
-        setFullbodyFrontUrl(res.seed_front_url)
+        const resolved = await resolvePortraitUrl(res.seed_front_url)
+        setFullbodyFrontUrl(resolved)
       }
     } catch (err) {
       setFullbodyHint(err instanceof Error ? err.message : '重新生成正面全身图失败，请重试')
@@ -1240,7 +1266,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         method: 'POST',
         body: {
           style: fullbodyStyle,
-          front_url: fullbodyFrontUrl || undefined
+          front_url: fullbodyFrontRawUrl || undefined
         }
       })
 
@@ -1608,11 +1634,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       onClick={() => selectStyle('cel_shading')}
                       type="button"
                     >
-                      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/30">
+                      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-black/30">
                         {fullbodySamples['cel_shading'] ? (
                           <img
                             alt="日系赛璐珞"
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                             src={fullbodySamples['cel_shading']}
                           />
                         ) : (
@@ -1634,11 +1660,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       onClick={() => selectStyle('anime_game_cg')}
                       type="button"
                     >
-                      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/30">
+                      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-black/30">
                         {fullbodySamples['anime_game_cg'] ? (
                           <img
                             alt="二次元游戏CG"
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-contain"
                             src={fullbodySamples['anime_game_cg']}
                           />
                         ) : (
@@ -1693,7 +1719,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     </button>
                   </div>
 
-                  <div className="relative mt-3 flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                  <div className="relative mt-3 flex aspect-[3/4] max-h-[360px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40">
                     {fullbodyFrontUrl ? (
                       <img alt="正面全身立绘" className="h-full w-full object-contain" src={fullbodyFrontUrl} />
                     ) : (
