@@ -16,6 +16,7 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
     provider_name = "tripo"
     SUPPORTS_RIGGING = True
     SUPPORTS_MULTIVIEW = True
+    SUPPORTS_NEGATIVE_PROMPT = True
 
     def __init__(self, api_key: str = "", base_url: str = "") -> None:
         self.api_key = api_key
@@ -37,7 +38,7 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
         except TripoApiError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 
-    async def submit_text_to_model(self, prompt: str, *, model_version: str | None = None) -> Model3DJob:
+    async def submit_text_to_model(self, prompt: str, *, negative_prompt: str | None = None, model_version: str | None = None) -> Model3DJob:
         try:
             kwargs = client.tripo_common_kwargs_from_settings()
             # enable_image_autofix is an image-input-only field; the text
@@ -45,7 +46,7 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
             kwargs.pop("enable_autofix", None)
             if model_version is not None:
                 kwargs["model_version"] = model_version
-            return Model3DJob(job_id=await client.create_text_to_model(prompt, **kwargs))
+            return Model3DJob(job_id=await client.create_text_to_model(prompt, negative_prompt=negative_prompt, **kwargs))
         except (TripoApiError, ValueError) as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
 

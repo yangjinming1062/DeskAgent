@@ -2284,12 +2284,14 @@ async def test_run_model_gen_pipeline_submits_text_to_model(_patch_db, monkeypat
         provider_name = "tripo"
         SUPPORTS_RIGGING = True
         SUPPORTS_MULTIVIEW = True
+        SUPPORTS_NEGATIVE_PROMPT = True
 
         def __init__(self) -> None:
             pass
 
-        async def submit_text_to_model(self, prompt):
+        async def submit_text_to_model(self, prompt, *, negative_prompt=None):
             captured["prompt"] = prompt
+            captured["negative_prompt"] = negative_prompt
             return Model3DJob(job_id="task_txt")
 
         async def poll(self, job):
@@ -2361,8 +2363,10 @@ async def test_run_model_gen_pipeline_submits_text_to_model(_patch_db, monkeypat
     # The submitted prompt carries the extracted appearance plus the fixed
     # biped completeness suffix and the anime style wording.
     assert "黑长直少女" in captured["prompt"]
-    assert "完整的全身站立角色" in captured["prompt"]
-    assert "精美的日系二次元风格" in captured["prompt"]
+    assert "单个完整全身站立3D角色" in captured["prompt"]
+    assert "单个完整全身站立3D角色" in captured["prompt"]
+    assert "赛璐璐平涂" in captured["prompt"]
+    assert "半身像" in captured["negative_prompt"]
 
     async with SessionLocal() as db:
         row = (
@@ -2586,6 +2590,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(_patch_
     _, SessionLocal = _patch_db
 
     order: list[str] = []
+    captured: dict = {}
 
     class _FakeHunyuanProvider(ImageTo3DProvider):
         provider_name = "hunyuan"
@@ -2596,6 +2601,7 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(_patch_
             pass
 
         async def submit_text_to_model(self, prompt):
+            captured["prompt"] = prompt
             return Model3DJob(job_id="job_hy")
 
         async def poll(self, job):
@@ -2667,6 +2673,9 @@ async def test_run_model_gen_pipeline_local_rig_for_non_rigging_provider(_patch_
     await model_service.run_model_gen_pipeline("hunyuan", uid, "人类", model_id, "anime")
 
     assert order == ["download", "auto_rig:biped", "morphs"]
+    assert "禁止：" in captured["prompt"]
+    assert "半身像" in captured["prompt"]
+    assert len(captured["prompt"]) <= 1024
 
     async with SessionLocal() as db:
         row = (

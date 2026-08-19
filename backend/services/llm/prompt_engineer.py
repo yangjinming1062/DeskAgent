@@ -88,73 +88,206 @@ class T3DAppearance(BaseModel):
 _T3D_ENHANCER_SYSTEM_PROMPT = (
     "你是一个3D角色外观分析引擎。根据角色头像参考图与角色文本设定，提取角色外观特征，"
     "输出一个JSON对象，用于文生3D模型生成。\n\n"
-    "JSON字段（值为一到两个简洁中文短语；头像图可见的特征以图为准，图中不可见而文本设定中有的按文本，两者都没有则填空字符串）：\n"
-    '{"gender": "性别", "age_range": "年龄段", "hair": "发型（长度、形状、发色）", '
-    '"eye_color": "瞳色", "facial_features": "五官特征", "skin_tone": "肤色", '
+    "JSON字段（值为一到两个简洁中文短语；头像图可见的特征以图为准，图中不可见而文本设定中有的按文本，两者都没有则填空字符串）。字段边界必须干净：毛发/羽毛/鳞甲/外壳与发型全部只写入 hair；skin_tone 只写底色，不写质感或光影；facial_features 只写脸型、五官、耳部或物种头部结构，不要写入发丝、刘海、皮肤质地。\n"
+    '{"gender": "性别", "age_range": "年龄段", "hair": "毛发/羽毛/鳞甲/外壳等体表外观（长度、形状、颜色）", '
+    '"eye_color": "瞳色", "facial_features": "头部与五官特征", "skin_tone": "肤色或主体底色", '
     '"body_type": "体型", "signature_details": "标志性细节（发饰、耳饰、纹身等）"}\n\n'
     "要求：不要解释、不要思考过程，只输出JSON对象，所有字段值使用中文。"
 )
 
-T3dWording = Literal["anime", "figurine", "flat", "realistic"]
+T3dStyle = Literal["cel_shading", "anime_game_cg", "realistic"]
+_T3D_RIG_TYPES: tuple[str, ...] = ("biped", "quadruped", "avian", "serpentine", "aquatic", "hexapod", "octopod")
 
-# Tripo/混元都没有姿势控制参数 —— 姿势与服装约束只能写进 prompt 文本赌服从度；
-# 运动内衣约束与图生路径的 _BIPED_A_POSE 同因：保护 PBR 换装的皮肤可见度。
-# 完整性子句放最前并点名所有体段：身份描述占大头时供应商会退化出半身像/截断
-# 下肢（实测 v3.1 出过上半身 A-pose、无腿的产物）。措辞保持风格中立——
-# 风格词只进 _T3D_STYLE_WORDING。
-_T3D_SUFFIX_BIPED = (
-    "完整的全身站立角色：从头顶到脚底，头部、躯干、双臂、双腿、双脚全部完整，"
-    "不截断身体、不是半身像或胸像。"
-    "标准A-pose站姿，双臂向两侧微张，双脚分开与肩同宽。"
-    "单个角色，无场景、无道具，纯色简洁背景。"
-    "穿着最小覆盖的简洁运动内衣与运动短裤，躯干与四肢皮肤充分可见，"
-    "禁止长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等大面积覆盖服装。"
-)
-_T3D_SUFFIX_NON_BIPED = "单个角色，无场景、无道具，纯色简洁背景，全身完整可见，自然站姿。"
-
-# 精美二次元是 anime 的默认措辞（用户目检否决了手办 CGI）；figurine/flat
-# 保留为 CLI 对比变体。
-_T3D_STYLE_WORDING: dict[T3dWording, str] = {
-    "anime": "精美的日系二次元风格，精致的五官与发型细节，色彩明亮通透、干净和谐的配色，柔和细腻的高品质动漫渲染质感。",
-    "figurine": "3D日系二次元手办风格，原神/崩铁级CGI渲染质感，精致二次元面部与立体发束，清晰的三维体积与结构轮廓，柔和次表面散射，光滑材质。",
-    "flat": "日系二次元动漫风格，扁平赛璐璐渲染，色彩明快干净，清晰的色块分界。",
-    "realistic": "写实风格，高细节PBR材质，自然的皮肤与毛发质感。",
+_T3D_RIG_COMPLETENESS: dict[str, str] = {
+    "biped": ("单个完整全身站立3D角色：标准A-pose，双臂向两侧微张，双脚分开与肩同宽，头部正对前方；从头顶到脚底，头部、颈部、躯干、双臂、双手、双腿、双脚全部完整连接"),
+    "quadruped": ("单个完整四足站立3D生物：自然四足站姿，四足稳定落地，头部正对前方；头部、吻部、颈部、躯干、四条腿、四只足或蹄、尾部全部完整连接"),
+    "avian": ("单个完整鸟类或有翼3D生物：自然站立姿态，双翅完整收拢在身体两侧；头部、喙或口部、颈部、躯干、双翼、双腿、双爪、尾羽全部完整连接"),
+    "serpentine": ("单个完整蛇形3D生物：自然水平盘绕或爬行姿态，头部正对前方；头部、口鼻、连续蛇形躯干和逐渐收束的尾部末端全部完整连接"),
+    "aquatic": ("单个完整水生3D生物：自然游泳姿态，身体左右对称；头部、口部、躯干、背鳍、胸鳍、尾鳍和完整尾柄全部完整连接"),
+    "hexapod": ("单个完整六足3D生物：自然六足站立姿态，六条腿对称分布；头部、触角、胸部、腹部、六条腿和六只足尖全部完整连接"),
+    "octopod": ("单个完整八足3D生物：自然八肢支撑姿态，八条肢体对称分布；头部、躯干或外套膜、八条肢体及末端吸盘或爪尖全部完整连接"),
 }
 
-# Tripo 与混元的 Prompt 上限均为 1024 字符 —— 固定后缀承载硬约束，
-# 截断只允许吃掉描述主体，不能吃掉后缀。
+_T3D_CLOTHING = "；穿着简洁白色运动内衣与运动短裤，头颈、肩部、躯干和四肢皮肤清晰可见"
+_T3D_PROMPT_SUFFIX = "，纯浅灰白背景，单个角色"
+
+_T3D_RIG_SURFACE: dict[str, tuple[str, str]] = {
+    "biped": ("发型与体表", "肤色"),
+    "quadruped": ("毛色与体表", "主体底色"),
+    "avian": ("羽色与体表", "主体底色"),
+    "serpentine": ("鳞色与体表", "主体底色"),
+    "aquatic": ("体色与水生体表", "主体底色"),
+    "hexapod": ("甲壳与体表", "主体底色"),
+    "octopod": ("肢体与体表", "主体底色"),
+}
+
+_T3D_RIG_DETAIL: dict[str, str] = {
+    "biped": "面部与五官",
+    "quadruped": "头部、眼睛与吻部",
+    "avian": "头部、眼睛与喙部",
+    "serpentine": "头部、眼睛与口鼻",
+    "aquatic": "头部、眼睛与口部",
+    "hexapod": "头部、复眼与口器",
+    "octopod": "头部、眼睛与肢体末端",
+}
+
+_T3D_STYLE_WORDING: dict[T3dStyle, str] = {
+    "cel_shading": "经典日式赛璐璐平涂3D风格：纯平色块、清晰色块边界、无渐变阴影，明亮干净的配色",
+    "anime_game_cg": "现代二次元3D游戏CG角色与高端PVC手办风格：光洁PBR材质，柔和次表面散射，色彩明亮通透、层次细腻且干净",
+    "realistic": "写实风格，高细节PBR材质，自然的体表材质与结构比例",
+}
+
+_T3D_RIG_STYLE_DETAIL: dict[str, dict[T3dStyle, str]] = {
+    "biped": {"cel_shading": "面部与发型采用大块规整、干净利落的结构", "anime_game_cg": "面部与发型采用立体圆润的手办式结构", "realistic": "骨架比例与体表材质连续自然"},
+    "quadruped": {
+        "cel_shading": "毛皮花纹归纳为整洁大块色斑，四肢结构清晰",
+        "anime_game_cg": "毛皮与四肢采用圆润光洁的手办式结构",
+        "realistic": "毛发布局、四肢关节与体态比例自然",
+    },
+    "avian": {"cel_shading": "羽毛归纳为整洁分层羽片，翅膀轮廓清晰", "anime_game_cg": "羽毛与翅膀采用圆润光洁的手办式结构", "realistic": "羽层、翅膀折叠与体态比例自然"},
+    "serpentine": {"cel_shading": "鳞片归纳为清晰大块图案，身体走向流畅", "anime_game_cg": "鳞片与身体曲面采用圆润光洁的手办式结构", "realistic": "鳞片排列、腹甲与身体曲线自然"},
+    "aquatic": {"cel_shading": "鱼鳍与体表花纹归纳为干净大块形状", "anime_game_cg": "鱼鳍与体表采用通透光洁的手办式结构", "realistic": "鱼鳍薄膜、体表质感与游泳体态自然"},
+    "hexapod": {"cel_shading": "甲壳分块干净，肢体结构清晰规整", "anime_game_cg": "甲壳与肢体采用圆润光洁的手办式结构", "realistic": "甲壳层次、关节结构与肢体比例自然"},
+    "octopod": {"cel_shading": "肢体分块规整，吸盘图案干净简洁", "anime_game_cg": "肢体与头部采用圆润光洁的手办式结构", "realistic": "肢体肌肉、吸盘细节与姿态比例自然"},
+}
+_T3D_RIG_NEGATIVE_TERMS: dict[str, tuple[str, ...]] = {
+    "biped": ("半身像", "身体截断", "缺手臂", "缺腿", "缺手", "缺脚", "歪头", "俯仰头部"),
+    "quadruped": ("身体截断", "缺腿", "缺足蹄", "缺尾", "头部歪斜"),
+    "avian": ("身体截断", "缺翼", "缺腿", "缺爪", "缺尾羽", "头部歪斜"),
+    "serpentine": ("身体截断", "缺尾", "尾部突然截断", "躯干断裂", "头部歪斜"),
+    "aquatic": ("身体截断", "缺鱼鳍", "缺尾鳍", "左右不对称", "头部歪斜"),
+    "hexapod": ("身体截断", "腿部数量错误", "缺腿", "缺足尖", "缺触角"),
+    "octopod": ("身体截断", "肢体数量错误", "缺肢体", "肢体断裂"),
+}
+_T3D_ANIME_NEGATIVE_TERMS: tuple[str, ...] = ("写实毛孔", "皮肤凹凸", "噪点", "杂斑", "碎发", "杂乱发丝", "贴图描边", "黑线", "烘焙阴影", "AO")
+_T3D_REALISTIC_NEGATIVE_TERMS: tuple[str, ...] = ("明显噪点", "杂斑", "贴图描边", "黑线", "烘焙阴影")
+_T3D_COMMON_NEGATIVE_TERMS: tuple[str, ...] = ("断裂网格", "复杂姿势", "坐姿", "多人", "场景", "道具", "文字", "水印")
+
 _T3D_PROMPT_MAX_CHARS: int = 1024
+_T3D_NEGATIVE_PROMPT_MAX_CHARS: int = 255
 
 
-def _format_t3d_appearance(structured: T3DAppearance) -> str:
-    segs = [
-        s
-        for s in (
-            f"{structured.age_range}{structured.gender}",
-            structured.hair,
-            structured.eye_color,
-            structured.facial_features,
-            structured.skin_tone,
-            structured.body_type,
-            structured.signature_details,
+def _resolved_t3d_style(style: FullbodyStyle, t3d_style: T3dStyle | None) -> T3dStyle:
+    return t3d_style or ("cel_shading" if style == "anime" else "realistic")
+
+
+def _validate_t3d_rig_type(rig_type: str) -> str:
+    if rig_type not in _T3D_RIG_TYPES:
+        raise ValueError(f"unsupported T3D rig type: {rig_type!r}")
+    return rig_type
+
+
+def _t3d_subject(structured: T3DAppearance, species: str) -> str:
+    return "".join(part for part in (structured.age_range, species, structured.gender) if part) or species
+
+
+def _t3d_identity(structured: T3DAppearance, rig_type: str, species: str) -> tuple[str, str]:
+    surface_label, base_label = _T3D_RIG_SURFACE[rig_type]
+    segments: list[str] = []
+    if structured.body_type:
+        segments.append(structured.body_type)
+    if structured.hair:
+        segments.append(f"{surface_label}为{structured.hair}")
+    if structured.skin_tone:
+        segments.append(f"{base_label}为{structured.skin_tone}")
+    if structured.signature_details:
+        segments.append(structured.signature_details)
+    identity = "，".join((_t3d_subject(structured, species), *segments))
+    clothing = _T3D_CLOTHING if rig_type == "biped" else ""
+    return identity, clothing
+
+
+def _t3d_face(structured: T3DAppearance, rig_type: str) -> str:
+    details: list[str] = []
+    if structured.facial_features:
+        details.append(structured.facial_features)
+    if structured.eye_color:
+        details.append(f"{structured.eye_color}眼睛清晰对称")
+    details.append("轮廓完整干净")
+    return f"{_T3D_RIG_DETAIL[rig_type]}：{'，'.join(details)}"
+
+
+def _fit_t3d_prompt(prefix: str, identity: str, clothing: str, face: str, style: str, limit: int) -> str:
+    fixed_length = len(prefix) + len(clothing) + len(style) + len(face) + 6
+    if fixed_length + len(identity) > limit:
+        identity = identity[: max(0, limit - fixed_length)]
+    prompt = prefix + "\n\n" + identity + clothing + "\n\n" + face + "\n\n" + style
+    return prompt.replace("。", "").replace(".", "")
+
+
+def build_t3d_prompt(
+    structured: T3DAppearance | str,
+    style: FullbodyStyle = "anime",
+    *,
+    rig_type: str = "biped",
+    t3d_style: T3dStyle | None = None,
+    species: str = "人类",
+    max_chars: int | None = None,
+) -> str:
+    """Assemble a species-aware prompt in priority order: completeness, body
+    identity and clothing, head detail, then style."""
+    rig_type = _validate_t3d_rig_type(rig_type)
+    resolved_style = _resolved_t3d_style(style, t3d_style)
+    limit = _T3D_PROMPT_MAX_CHARS if max_chars is None else max_chars
+    if limit <= 0:
+        raise ValueError("T3D prompt limit must be positive")
+
+    if isinstance(structured, T3DAppearance):
+        has_appearance = any(
+            (
+                structured.age_range,
+                structured.gender,
+                structured.hair,
+                structured.eye_color,
+                structured.facial_features,
+                structured.skin_tone,
+                structured.body_type,
+                structured.signature_details,
+            )
         )
-        if s
-    ]
-    return "，".join(segs)
+        if not has_appearance:
+            raise ValueError("T3D appearance description is empty")
+        identity, clothing = _t3d_identity(structured, rig_type, species)
+        face = _t3d_face(structured, rig_type)
+    else:
+        desc = structured.strip()
+        if not desc:
+            raise ValueError("T3D appearance description is empty")
+        identity = f"{species}，{desc}"
+        clothing = _T3D_CLOTHING if rig_type == "biped" else ""
+        face = f"{_T3D_RIG_DETAIL[rig_type]}：轮廓完整干净，眼睛清晰对称"
+
+    style_wording = _T3D_STYLE_WORDING[resolved_style]
+    rig_style = _T3D_RIG_STYLE_DETAIL[rig_type][resolved_style]
+    style = f"{style_wording}；{rig_style}{_T3D_PROMPT_SUFFIX}"
+    return _fit_t3d_prompt(_T3D_RIG_COMPLETENESS[rig_type], identity, clothing, face, style, limit)
 
 
-def build_t3d_prompt(structured: T3DAppearance | str, style: FullbodyStyle = "anime", *, rig_type: str = "biped", wording: T3dWording | None = None) -> str:
-    """Assemble the text-to-3D prompt: appearance description + fixed 3D
-    suffix + style wording, truncated to the shared 1024-char provider cap
-    (suffix kept intact, only the description body gives way)."""
-    desc = _format_t3d_appearance(structured) if isinstance(structured, T3DAppearance) else structured.strip()
-    if not desc:
-        raise ValueError("T3D appearance description is empty")
-    resolved_wording: T3dWording = wording or style
-    tail = "。" + (_T3D_SUFFIX_BIPED if rig_type == "biped" else _T3D_SUFFIX_NON_BIPED) + _T3D_STYLE_WORDING[resolved_wording]
-    if len(desc) + len(tail) > _T3D_PROMPT_MAX_CHARS:
-        desc = desc[: max(0, _T3D_PROMPT_MAX_CHARS - len(tail))]
-    return desc + tail
+def build_t3d_negative_prompt(style: FullbodyStyle = "anime", *, rig_type: str = "biped", t3d_style: T3dStyle | None = None) -> str:
+    rig_type = _validate_t3d_rig_type(rig_type)
+    resolved_style = _resolved_t3d_style(style, t3d_style)
+    terms = [*(_T3D_RIG_NEGATIVE_TERMS[rig_type]), *_T3D_COMMON_NEGATIVE_TERMS]
+    terms.extend(_T3D_REALISTIC_NEGATIVE_TERMS if resolved_style == "realistic" else _T3D_ANIME_NEGATIVE_TERMS)
+    return "、".join(dict.fromkeys(terms))[:_T3D_NEGATIVE_PROMPT_MAX_CHARS]
+
+
+def build_t3d_submission_prompts(
+    structured: T3DAppearance | str,
+    style: FullbodyStyle = "anime",
+    *,
+    rig_type: str = "biped",
+    t3d_style: T3dStyle | None = None,
+    species: str = "人类",
+    supports_negative_prompt: bool,
+) -> tuple[str, str | None]:
+    """Return provider-ready prompt inputs. Providers without a native
+    negative field receive the restrictions inline so they are never lost."""
+    negative_prompt = build_t3d_negative_prompt(style, rig_type=rig_type, t3d_style=t3d_style)
+    if supports_negative_prompt:
+        return build_t3d_prompt(structured, style, rig_type=rig_type, t3d_style=t3d_style, species=species), negative_prompt
+    inline_negative = "\n\n禁止：" + negative_prompt
+    prompt = build_t3d_prompt(structured, style, rig_type=rig_type, t3d_style=t3d_style, species=species, max_chars=_T3D_PROMPT_MAX_CHARS - len(inline_negative))
+    return prompt + inline_negative, None
 
 
 async def enhance_t3d_prompt(

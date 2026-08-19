@@ -76,6 +76,7 @@ async def test_create_text_to_model_returns_task_id(mock_http):
     body = mock_http.calls[0][2]
     assert body["prompt"] == "a cute cat"
     assert body["model"] == tripo_client.MODEL_VERSION_DEFAULT
+    assert "negative_prompt" not in body
 
 
 @pytest.mark.asyncio
@@ -101,6 +102,19 @@ async def test_create_text_to_model_carries_kwargs_without_image_fields(mock_htt
     assert "enable_image_autofix" not in body
     assert "input" not in body and "inputs" not in body
     assert "texture_alignment" not in body and "orientation" not in body
+
+
+@pytest.mark.asyncio
+async def test_create_text_to_model_carries_negative_prompt(mock_http):
+    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_neg"}))
+    await tripo_client.create_text_to_model("一个女孩", negative_prompt="blurry, low quality")
+    assert mock_http.calls[0][2]["negative_prompt"] == "blurry, low quality"
+
+
+@pytest.mark.asyncio
+async def test_create_text_to_model_rejects_long_negative_prompt():
+    with pytest.raises(ValueError, match="negative_prompt exceeds 255"):
+        await tripo_client.create_text_to_model("一个女孩", negative_prompt="x" * 256)
 
 
 @pytest.mark.asyncio

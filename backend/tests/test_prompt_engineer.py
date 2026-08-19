@@ -188,54 +188,71 @@ def _t3d_structured() -> prompt_engineer.T3DAppearance:
     )
 
 
-def test_build_t3d_prompt_style_routing():
-    # anime → 精美二次元 default wording (figurine CGI was rejected by visual
-    # review); realistic → PBR wording; figurine/flat stay CLI-selectable.
-    anime = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
-    assert "精美的日系二次元" in anime
-    assert "写实" not in anime
-    assert "手办" not in anime
+def test_build_t3d_prompt_priority_order_and_explicit_style_routing():
+    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
+    assert prompt.startswith("单个完整全身站立3D角色：标准A-pose")
+    assert prompt.index("单个完整全身站立3D角色") < prompt.index("年轻人类女性")
+    assert prompt.index("年轻人类女性") < prompt.index("面部与五官")
+    assert prompt.index("面部与五官") < prompt.index("经典日式赛璐璐平涂3D风格")
+    assert prompt_engineer._T3D_CLOTHING in prompt
+    assert "纯浅灰白背景" in prompt
+    assert "写实" not in prompt
+    assert "手办" not in prompt
+
+    anime_game_cg = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", t3d_style="anime_game_cg")
+    assert "手办" in anime_game_cg
     realistic = prompt_engineer.build_t3d_prompt(_t3d_structured(), "realistic")
     assert "写实" in realistic
     assert "二次元" not in realistic
-    figurine = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", wording="figurine")
-    assert "手办" in figurine
-    flat = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", wording="flat")
-    assert "赛璐璐" in flat
+    cel_shading = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", t3d_style="cel_shading")
+    assert cel_shading == prompt
 
 
-def test_build_t3d_prompt_suffix_and_description():
-    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
-    assert "年轻女性" in prompt  # age_range + gender merged as the subject
-    assert "黑色长直发" in prompt
-    assert "A-pose" in prompt
-    assert "运动内衣与运动短裤" in prompt
-    assert "单个角色" in prompt
-    assert "无场景" in prompt
-
-
-def test_build_t3d_prompt_leads_with_fullbody_completeness():
-    # Text-to-3D degenerates to a bust / truncated figure when identity
-    # clauses dominate — the completeness clause opens the suffix and names
-    # every body segment so nothing can be dropped silently.
-    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime")
-    suffix_start = prompt.index("完整的全身站立角色")
-    assert suffix_start < prompt.index("A-pose")
-    for part in ("头顶到脚底", "双腿", "双脚", "不截断身体", "不是半身像"):
-        assert part in prompt
-
-
-def test_build_t3d_prompt_non_biped_drops_biped_clauses():
-    prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "realistic", rig_type="quadruped")
+def test_build_t3d_prompt_is_rig_and_species_aware():
+    appearance = prompt_engineer.T3DAppearance(
+        age_range="成年",
+        gender="雌性",
+        hair="银灰色金属质感和装甲纹路",
+        eye_color="金色",
+        facial_features="狼形头部，双耳立体",
+        skin_tone="冷灰",
+        body_type="矫健",
+        signature_details="背部有能量核心",
+    )
+    prompt = prompt_engineer.build_t3d_prompt(appearance, "realistic", rig_type="quadruped", species="机械狼")
+    assert "机械狼" in prompt
+    assert "人类" not in prompt
     assert "A-pose" not in prompt
     assert "运动内衣" not in prompt
-    assert "全身完整可见" in prompt
+    assert "单个完整四足站立3D生物" in prompt
+    assert "四条腿" in prompt and "尾部" in prompt
+    assert "银灰色金属质感和装甲纹路" in prompt
+    assert "金色眼睛" in prompt
+    assert "背部有能量核心" in prompt
 
 
-def test_build_t3d_prompt_accepts_plain_text():
-    prompt = prompt_engineer.build_t3d_prompt("一位黑色长发的年轻女性", "anime")
-    assert prompt.startswith("一位黑色长发的年轻女性。")
-    assert "二次元" in prompt
+def test_t3d_prompt_has_distinct_detail_for_every_rig_type():
+    prefixes = set()
+    details = set()
+    for rig_type in prompt_engineer._T3D_RIG_TYPES:
+        prompt = prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", rig_type=rig_type, species="幻兽")
+        prefixes.add(prompt.split("：", 1)[0])
+        details.add(prompt_engineer._T3D_RIG_DETAIL[rig_type])
+    assert len(prefixes) == len(prompt_engineer._T3D_RIG_TYPES)
+    assert len(details) == len(prompt_engineer._T3D_RIG_TYPES)
+
+
+def test_build_t3d_prompt_rejects_unknown_rig_type():
+    with pytest.raises(ValueError, match="unsupported T3D rig type"):
+        prompt_engineer.build_t3d_prompt(_t3d_structured(), "anime", rig_type="unknown")
+
+
+def test_build_t3d_prompt_accepts_plain_text_without_inventing_gender():
+    prompt = prompt_engineer.build_t3d_prompt("银色短发，蓝眼，轻盈体型", "anime", species="人形使魔")
+    assert "人形使魔" in prompt
+    assert "银色短发" in prompt
+    assert "女性" not in prompt
+    assert "赛璐璐" in prompt
 
 
 def test_build_t3d_prompt_rejects_empty_description():
@@ -243,13 +260,60 @@ def test_build_t3d_prompt_rejects_empty_description():
         prompt_engineer.build_t3d_prompt(prompt_engineer.T3DAppearance(), "anime")
 
 
-def test_build_t3d_prompt_truncates_to_1024_keeps_suffix():
-    long_desc = "黑" * 2000
-    prompt = prompt_engineer.build_t3d_prompt(long_desc, "anime")
+def test_build_t3d_prompt_truncates_to_1024_keeps_constraints():
+    prompt = prompt_engineer.build_t3d_prompt("黑" * 2000, "anime")
     assert len(prompt) == 1024
-    # The hard-constraint suffix survives intact; only the body is cut.
-    assert prompt.endswith(prompt_engineer._T3D_SUFFIX_BIPED + prompt_engineer._T3D_STYLE_WORDING["anime"])
-    assert prompt.startswith("黑")
+    assert prompt.startswith(prompt_engineer._T3D_RIG_COMPLETENESS["biped"])
+    assert prompt.endswith(prompt_engineer._T3D_PROMPT_SUFFIX)
+
+
+def test_t3d_prompt_omits_sentence_periods_for_every_rig_type():
+    for rig_type in prompt_engineer._T3D_RIG_TYPES:
+        prompt = prompt_engineer.build_t3d_prompt("长发。眼睛清晰。White shirt.", "anime", rig_type=rig_type)
+        assert "。" not in prompt
+        assert "." not in prompt
+        assert "长发" in prompt and "眼睛清晰" in prompt
+
+
+def test_t3d_negative_prompt_is_rig_and_style_aware():
+    biped = prompt_engineer.build_t3d_negative_prompt("anime", rig_type="biped")
+    quadruped = prompt_engineer.build_t3d_negative_prompt("anime", rig_type="quadruped")
+    realistic = prompt_engineer.build_t3d_negative_prompt("realistic", rig_type="quadruped")
+    assert "缺手臂" in biped and "缺手" in biped and "缺脚" in biped
+    assert "缺翼" not in quadruped and "缺足蹄" in quadruped
+    assert "写实毛孔" in quadruped
+    assert "写实毛孔" not in realistic
+    for rig_type in prompt_engineer._T3D_RIG_TYPES:
+        assert len(prompt_engineer.build_t3d_negative_prompt("anime", rig_type=rig_type)) <= 255
+
+
+def test_t3d_submission_prompts_preserve_negative_restrictions():
+    positive, native_negative = prompt_engineer.build_t3d_submission_prompts(
+        _t3d_structured(), "anime", supports_negative_prompt=True
+    )
+    assert native_negative is not None
+    assert "禁止" not in positive
+    assert "半身像" in native_negative
+
+    inline_positive, native_negative = prompt_engineer.build_t3d_submission_prompts(
+        _t3d_structured(), "anime", supports_negative_prompt=False
+    )
+    assert native_negative is None
+    assert len(inline_positive) <= prompt_engineer._T3D_PROMPT_MAX_CHARS
+    assert inline_positive.endswith("\n\n禁止：" + prompt_engineer.build_t3d_negative_prompt("anime"))
+
+    for rig_type in prompt_engineer._T3D_RIG_TYPES:
+        supported_prompt, supported_negative = prompt_engineer.build_t3d_submission_prompts(
+            _t3d_structured(), "anime", rig_type=rig_type, supports_negative_prompt=True
+        )
+        fallback_prompt, fallback_negative = prompt_engineer.build_t3d_submission_prompts(
+            _t3d_structured(), "anime", rig_type=rig_type, supports_negative_prompt=False
+        )
+        assert len(supported_prompt) <= prompt_engineer._T3D_PROMPT_MAX_CHARS
+        assert len(supported_negative or "") <= prompt_engineer._T3D_NEGATIVE_PROMPT_MAX_CHARS
+        assert len(fallback_prompt) <= prompt_engineer._T3D_PROMPT_MAX_CHARS
+        assert fallback_negative is None
+        assert "禁止：" in fallback_prompt
 
 
 # ── strip_think_blocks ──────────────────────────────────────────────

@@ -120,6 +120,7 @@ def _add_shape_keys(mesh: bpy.types.Object) -> None:
 
 def _add_shape(mesh: bpy.types.Object, name: str, regions: dict[str, Vector], deformer) -> None:
     sk = mesh.shape_key_add(name=name, from_mix=False)
+    sk.value = 0.0
     deformer(sk.data, regions)
 
 

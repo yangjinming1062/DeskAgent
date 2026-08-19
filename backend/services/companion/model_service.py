@@ -14,7 +14,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult, resolve_provider
-from services.llm import FullbodyStyle, build_t3d_prompt, chat, enhance_t3d_prompt, is_preset_species, resolve_fullbody_style, resolve_vision_chain
+from services.llm import FullbodyStyle, build_t3d_submission_prompts, chat, enhance_t3d_prompt, is_preset_species, resolve_fullbody_style, resolve_vision_chain
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
@@ -284,10 +284,18 @@ async def run_model_gen_pipeline(provider_name: str | None, user_id: int, specie
         structured = await enhance_t3d_prompt(None, user_id, persona, image_data_uri=image_data_uri, vision_chain=vision_chain)
 
         rig_type = await select_rig_type(chat, species, user_id=user_id)  # style lives on the row — only the rig half is classified here
-        prompt = build_t3d_prompt(structured, style, rig_type=rig_type)
-        logger.info("text-to-3d prompt built", extra={"user_id": user_id, "model_id": model_id, "chars": len(prompt)})
+        prompt, negative_prompt = build_t3d_submission_prompts(
+            structured, style, rig_type=rig_type, species=species, supports_negative_prompt=getattr(provider, "SUPPORTS_NEGATIVE_PROMPT", False)
+        )
+        logger.info(
+            "text-to-3d prompt built",
+            extra={"user_id": user_id, "model_id": model_id, "chars": len(prompt), "negative_chars": len(negative_prompt or ""), "negative_inline": negative_prompt is None},
+        )
 
-        job = await provider.submit_text_to_model(prompt)
+        if negative_prompt is None:
+            job = await provider.submit_text_to_model(prompt)
+        else:
+            job = await provider.submit_text_to_model(prompt, negative_prompt=negative_prompt)
         task_id = job.job_id
         provider_label = _provider_result_label(provider.provider_name)
 

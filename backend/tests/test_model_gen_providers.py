@@ -214,6 +214,10 @@ class TestSubmitTextToModel:
         assert "image_base64" not in body
         assert "multi_view_images" not in body
 
+    def test_negative_prompt_capability_routes_native_field(self):
+        assert TripoImageTo3DProvider.SUPPORTS_NEGATIVE_PROMPT is True
+        assert HunyuanImageTo3DProvider.SUPPORTS_NEGATIVE_PROMPT is False
+
     @pytest.mark.asyncio
     async def test_tripo_drops_image_only_autofix(self, mock_http, monkeypatch):
         """Provider-level text entry reuses the shared settings kwargs but must
@@ -225,11 +229,12 @@ class TestSubmitTextToModel:
             200, json={"code": 0, "status": "success", "data": {"task_id": "task_t2d"}}
         )
         provider = TripoImageTo3DProvider(api_key="tsk_test", base_url="https://tripo.test/v3")
-        job = await provider.submit_text_to_model("一位黑色长发女性，A-pose站姿")
+        job = await provider.submit_text_to_model("一位黑色长发女性，A-pose站姿", negative_prompt="半身像，噪点")
         assert job.job_id == "task_t2d"
         _method, url, _headers, body = mock_http.calls[0]
         assert url == "https://tripo.test/v3/generation/text-to-model"
         assert body["prompt"] == "一位黑色长发女性，A-pose站姿"
+        assert body["negative_prompt"] == "半身像，噪点"
         assert body["pbr"] is True
         assert "enable_image_autofix" not in body
         assert "input" not in body and "inputs" not in body

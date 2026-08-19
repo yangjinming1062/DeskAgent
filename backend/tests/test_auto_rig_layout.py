@@ -94,3 +94,5 @@ async def test_auto_rig_blender_roundtrip(tmp_path, monkeypatch):
     assert final_gltf is not None
     final_joints = {final_gltf["nodes"][i].get("name", "") for skin in final_gltf.get("skins", []) for i in skin.get("joints", [])}
     assert bone_names("biped") <= final_joints, "morph injection dropped the armature"
+    final_weights = final_gltf.get("meshes", [{}])[0].get("weights", [])
+    assert final_weights and not any(final_weights), "morph injection exported active default morph weights"

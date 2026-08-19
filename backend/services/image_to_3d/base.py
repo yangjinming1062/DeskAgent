@@ -47,6 +47,7 @@ class ImageTo3DProvider(ABC):
     provider_name: str = ""
     SUPPORTS_RIGGING: ClassVar[bool] = False
     SUPPORTS_MULTIVIEW: ClassVar[bool] = False
+    SUPPORTS_NEGATIVE_PROMPT: ClassVar[bool] = False
 
     @abstractmethod
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
@@ -57,7 +58,7 @@ class ImageTo3DProvider(ABC):
         """Download the completed job's model into ``dest_dir`` and return the
         local path of a single ``.glb`` file (archives are unpacked here)."""
 
-    async def submit_text_to_model(self, prompt: str) -> Model3DJob:
+    async def submit_text_to_model(self, prompt: str, *, negative_prompt: str | None = None) -> Model3DJob:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support text-to-3D", provider=self.provider_name)
 
     async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
