@@ -2041,23 +2041,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
 
                   <div className="mt-3 flex items-center justify-between text-xs">
-                    <div className="flex gap-3">
-                      <button
-                        className="text-white/60 transition hover:text-white"
-                        onClick={() => setFullbodyStyleState(null)}
-                        type="button"
-                      >
-                        切换画风
-                      </button>
-                      <button
-                        className="text-white/70 transition hover:text-white disabled:opacity-40"
-                        disabled={fullbodyLoading}
-                        onClick={() => void regenerateFullbodyFront()}
-                        type="button"
-                      >
-                        微调重绘
-                      </button>
-                    </div>
+                    <button
+                      className="text-white/70 transition hover:text-white disabled:opacity-40"
+                      disabled={fullbodyLoading}
+                      onClick={() => void regenerateFullbodyFront()}
+                      type="button"
+                    >
+                      微调重绘
+                    </button>
                     <button
                       className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
                       disabled={fullbodyLoading || !fullbodyFrontUrl}
