@@ -66,7 +66,7 @@ function applySpatialCue(locale?: string, target?: string): void {
     return
   }
 
-  // Don't yank the sprite away from an open chat dock.
+  // 不要在聊天面板打开时把精灵拽走。
   if ($chatOpen.get() && (locale === 'home' || locale === 'roam')) {
     return
   }
@@ -105,14 +105,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
     pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
   }
 
-  // Chat-turn events (message.start/delta/complete, tool.*, error) carry the
-  // emitting conversation's session_id. Those from a conversation the renderer
-  // isn't currently viewing must not be applied to the visible chat — e.g.
-  // cron's autonomous turn streams text via the cron conversation; without
-  // this gate the user would see cron's reply as if it answered their last
-  // main-session message. WSEvent-driven events (companion.message/affect,
-  // wardrobe.*, model.*, avatar.regenerated, reload.mcp) have no session_id
-  // and pass through.
+  // 聊天回合事件（message.start/delta/complete、tool.*、error）携带发出该事件的会话 session_id。
+  // 来自渲染层当前未查看会话的事件不应作用于可见聊天——
+  // 例如 cron 的自动回合通过 cron 会话流式输出文本；没有这道门的话，
+  // 用户会看到 cron 的回复，好像它回答了主会话上一条消息。
+  // WSEvent 驱动的事件（companion.message/affect、wardrobe.*、model.*、
+  // avatar.regenerated、reload.mcp）没有 session_id，直接放行。
   if (event.session_id !== undefined) {
     const current = $chatSessionId.get()
 
@@ -139,9 +137,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'message.break': {
-      // Backend split the turn into consecutive bubbles — finalize the current
-      // bubble; the next message.delta will open a fresh one (the backend
-      // already inserted the 0.5–1.5s pause between them).
+      // 后端把回合切成了连续的气泡——收尾当前气泡；
+      // 下一条 message.delta 会开一个新气泡（后端已在它们之间插入 0.5–1.5 秒停顿）。
       setTurnHadBubbleBreak(true)
       finalizeAssistantMessage()
 
@@ -159,16 +156,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const locale = payload?.affect?.locale
       const target = payload?.affect?.target
 
-      // Suppress render-side cues for quiet users and when the screen is locked.
+      // 对安静用户与锁屏状态下，抑制渲染层的提示。
       const quiet = $effectiveTier.get() === 'quiet'
       const screenLocked = $screenLocked.get()
 
-      // Multi-bubble turn: each bubble already carries its own streamed
-      // text; payload.text is the FULL turn (both bubbles) and would clobber
-      // the last bubble. Keep last.text in that case.
+      // 多气泡回合：每个气泡各自携带流式文本；
+      // payload.text 是整轮（包含两个气泡）的全文，会覆盖最后一个气泡。
+      // 这种情况下保留 last.text。
       finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text)
 
-      // "neutral" is the LLM's no-op emotion; treat it like no affect so it doesn't ping a badge.
+      // "neutral" 是 LLM 的无操作情绪；当作无 affect 处理，避免触发徽标闪烁。
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
       if (hasEmotion && !screenLocked) {
@@ -179,9 +176,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       applySpatialCue(locale, target)
 
-      // Speak chat replies in "always voice" mode (plan §4.1); skip during an
-      // active voice call or a locked screen. Defer a frame so EMOTIONAL is
-      // observable before SPEAKING overwrites it (ARCH §7.5).
+      // 在「始终语音」模式下朗读聊天回复（plan §4.1）；
+      // 通话进行中或锁屏时跳过。延后一帧让 EMOTIONAL 先可观察，
+      // 再被 SPEAKING 覆盖（ARCH §7.5）。
       if ($responseMode.get() === 'voice' && text.trim() && !$voiceCallOpen.get() && !screenLocked) {
         const say = () => void speak(text).then(() => setSpriteState('idle', { force: true }))
 
@@ -196,15 +193,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
         }
       }
 
-      // Daily interaction stats — chat_turn counts only when there's actual
-      // text to count (matches the TTS gate above). The shared helper in
-      // activity.ts owns the fire-and-forget RPC.
+      // 每日互动统计——chat_turn 仅在确有文本可统计时计数
+      // （与上面的 TTS 门控一致）。fire-and-forget RPC 由 activity.ts 中的公共助手负责。
       if (text.trim()) {
         reportInteractionStat('chat_turn')
       }
 
-      // The in-flight turn finished — clear the flag and flush any messages
-      // the user queued while it was running (submitted as one coalesced batch).
+      // in-flight 回合结束——清掉标记并冲刷用户在回合运行期间排队的消息
+      // （合并为单次批量提交）。
       $chatTurnInFlight.set(false)
       submitPendingBatch()
 
@@ -212,7 +208,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.affect': {
-      // Affect & spatial embodied cue from LLM or backend:
+      // 来自 LLM 或后端的 affect 与空间具身提示：
       const payload = event.payload as { emotion?: string; locale?: string; target?: string } | undefined
       const emotion = payload?.emotion
       const locale = payload?.locale
@@ -228,10 +224,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.start': {
-      // Universal WORKING entry — tool_start is emitted for ALL tools (backend,
-      // memory, runner) before execution begins, so the sprite enters WORKING
-      // regardless of tool location. tool.call (below) only fires for runner
-      // tools and carries the args for IPC dispatch.
+      // 全局 WORKING 入口——所有工具（后端 / memory / runner）
+      // 在执行开始前都会发 tool_start，因此无论工具位置如何精灵都会进入 WORKING。
+      // tool.call（下方）只针对 Runner 工具触发，并携带 IPC 分发所需的参数。
       const p = event.payload as { name?: string } | undefined
 
       setAssistantTool(p?.name ?? '工具')
@@ -241,9 +236,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.call': {
-      // Runner dispatch only — WORKING was already set by tool.start.
-      // tool.call carries the args needed for runner IPC; without a bridge or
-      // call_id the backend's await_future times out at 300s and surfaces the error.
+      // 仅 Runner 分发——WORKING 已由 tool.start 设置。
+      // tool.call 携带 Runner IPC 所需的参数；缺少 bridge 或 call_id
+      // 时后端的 await_future 会在 300 秒后超时并上报错误。
       const p = (event.payload as { name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
 
       const runnerInvoke = window.spiritagent?.runnerInvoke
@@ -254,8 +249,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       const name = p.name ?? ''
 
-      // Fire-and-forget the Runner call and post the result so the backend's
-      // await_future resolves; tool errors must not bubble into this handler.
+      // fire-and-forget 调用 Runner 并把结果回传，让后端的
+      // await_future 解析完成；工具错误不得冒泡到本处理器。
       const gateway = $gateway.get()
 
       void (async () => {
@@ -278,7 +273,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
               result: { ok: false, error: err instanceof Error ? err.message : String(err) }
             })
           } catch {
-            /* best effort — backend's 300s fallback covers it */
+            /* 尽力而为——后端的 300 秒兜底会处理 */
           }
         }
       })()
@@ -287,9 +282,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.complete': {
-      // Universal WORKING exit — tool_end is emitted for ALL tools in the
-      // finally block. force: THINKING (50) < WORKING (70), so the priority
-      // gate would silently reject the transition without it.
+      // 全局 WORKING 出口——所有工具的 finally 块都会发 tool_end。
+      // force：THINKING（50）< WORKING（70），没有 force 的话优先级门控会静默拒绝该转换。
       setAssistantTool(null)
       setSpriteState('thinking', { force: true })
 
@@ -297,10 +291,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'model.ready': {
-      // Backend pushes this after a /api/companion/model generation finishes.
-      // The 3D engine reloads whenever $modelInfo.asset_url changes (see
-      // companion-3d.tsx). error field surfaces generation failures; the UI
-      // logs it for now — recovery flow is a later slice.
+      // 后端在 /api/companion/model 生成结束后推送此事件。
+      // 只要 $modelInfo.asset_url 变化，3D 引擎就会重新加载（见 companion-3d.tsx）。
+      // error 字段用于展示生成失败；目前 UI 只是记录日志，恢复流程在后续切片。
       const p = event.payload as
         | { model_id?: number; asset_url?: string; species?: string; rig_type?: string; error?: string }
         | undefined
@@ -329,7 +322,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'model.gen.progress': {
       const p = event.payload as { stage?: string; progress?: number } | undefined
-      // 'done' is terminal — a late progress event must not resurrect the overlay on a loaded model.
+      // 'done' 是终态——晚到的 progress 事件不应在已加载的模型上重新唤醒覆盖层。
       $modelGenState.set(p?.stage === 'done' ? 'succeeded' : 'generating')
       $modelGenProgress.set({ stage: p?.stage ?? '', progress: p?.progress ?? 0 })
 
@@ -347,9 +340,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.assets.updated': {
-      // Companion created a new expression / animation clip live (create_expression
-      // / create_animation tools). Re-pull both so the 3D avatar binds them
-      // without a restart.
+      // 伙伴即时创建了新的表情 / 动画片段（create_expression / create_animation 工具）。
+      // 重新拉取这两项，让 3D 头像无需重启即可绑定。
       void hydrateGeneratedClips()
       void hydrateExpressions()
 
@@ -357,15 +349,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'wardrobe.updated': {
-      // Backend fires this after a wardrobe item is generated, equipped, or
-      // deleted. Re-pull the full list so the equipped atom stays in sync.
+      // 后端在装扮项生成、装备或删除后触发此事件。重新拉取完整列表，保持装备 atom 同步。
       void hydrateWardrobe()
 
       break
     }
 
     case 'wardrobe.gift': {
-      // Companion generated a costume gift during Stage 5 autonomous creation.
+      // 伙伴在第 5 阶段主动创作中生成了一份装扮礼物。
       void hydrateWardrobe()
       const p = event.payload as { name?: string; message?: string; reason?: string } | undefined
 
@@ -378,8 +369,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'avatar.regenerated': {
-      // Background regeneration result — resolve the pending awaiter by job_id
-      // so the portrait can swap without blocking the handler.
+      // 后台重新生成的结果——通过 job_id 解析等待者，
+      // 让肖像能直接替换而不阻塞处理器。
       const p = event.payload as
         | {
             job_id?: string
@@ -393,8 +384,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
         resolveAvatarRegeneration(p)
       }
 
-      // Avatar identity changed — the sprite album's anchor is stale
-      // (server filters rows by avatar_id), so drop local caches too.
+      // 头像身份已变化——精灵相册的锚点已过期
+      // （服务端按 avatar_id 过滤行），同时清空本地缓存。
       resetSpriteAlbum()
       resetExpressionAvatars()
 
@@ -404,8 +395,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'error': {
       $chatTurnInFlight.set(false)
       clearPendingPrompts()
-      // Force the idle reset — the priority gate silently rejects a plain
-      // transition while the sprite is on 'thinking'/'working'.
+      // 强制重置为 idle——精灵在 'thinking' / 'working' 时，
+      // 优先级门控会静默拒绝普通的状态转换。
       const message = (event.payload as { message?: string } | undefined)?.message ?? '出了点小问题'
       setAssistantError(message)
       setSpriteState('idle', { force: true })
@@ -419,12 +410,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const currentTier = $effectiveTier.get()
       const affectEmotion = payload?.affect?.emotion
 
-      // Affect flows before text so the reaction shows even when text is suppressed.
+      // Affect 在文本之前流动，这样即便文本被抑制，反应仍能显示。
       if (affectEmotion && affectEmotion !== 'neutral') {
         setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
-      // Quiet tier and locked screen suppress the bubble; the affect above still flows.
+      // 安静档位与锁屏会抑制气泡；上方的 affect 仍正常流动。
       const textSuppressed = currentTier === 'quiet' || $screenLocked.get()
 
       if (text && !textSuppressed) {

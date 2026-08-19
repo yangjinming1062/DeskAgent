@@ -33,8 +33,8 @@ export function SessionListPanel({ onClose }: { onClose: () => void }): React.Re
   }
 
   return (
-    // The companion window is click-through except for registered interactive
-    // regions, so the wrapper must not paint or capture — only `panelRef` does.
+    // 伙伴窗口默认是鼠标穿透的，只有登记过的交互区域会捕获事件，
+    // 因此外层 wrapper 不能绘制也不能捕获——只有 `panelRef` 才行。
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ pointerEvents: 'none' }}>
       <div
         className="w-full max-w-md rounded-2xl border border-white/15 bg-gray-900/90 p-4 text-white shadow-2xl backdrop-blur-xl"

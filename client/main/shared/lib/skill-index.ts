@@ -13,8 +13,8 @@ interface RawSkillItem {
   platforms?: string[] | null
 }
 
-// Main process computes `compatible` per skill; renderer has no
-// `process.platform` and uses the flag to hide non-matching rows.
+// 主进程为每个 skill 计算 `compatible`；渲染端没有
+// `process.platform`，用这个标志隐藏不匹配的行。
 const HOST_PLATFORM: string = (() => {
   switch (process.platform) {
     case 'darwin':
@@ -40,7 +40,7 @@ function platformMatches(declared?: null | string | string[]): boolean {
     return true
   }
 
-  // YAML scalar (`platforms: macos`) or one-element list (`platforms: [macos]`).
+  // YAML 标量（`platforms: macos`）或单元素列表（`platforms: [macos]`）。
   const list = Array.isArray(declared) ? declared : [declared]
 
   if (list.length === 0) {
@@ -101,7 +101,7 @@ function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
               }
             }
           } catch {
-            // ignore parsing errors
+            // 忽略解析错误
           }
 
           skills.push({
@@ -115,7 +115,7 @@ function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
       }
     }
   } catch {
-    // ignore
+    // 忽略
   }
 
   return skills.sort((a, b) => {
@@ -127,8 +127,8 @@ function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
   })
 }
 
-// Field enumeration (not `...skill`) so internal-only fields added to
-// listSkillsFromDisk don't leak to the renderer.
+// 显式列出字段（而不是 `...skill`），
+// 避免 listSkillsFromDisk 内部新增的字段泄漏到渲染端。
 function projectSummary(skill: RawSkillItem, disabledSet: Set<string>): SkillItem {
   return {
     category: skill.category,

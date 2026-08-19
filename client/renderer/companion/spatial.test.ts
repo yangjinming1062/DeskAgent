@@ -23,7 +23,7 @@ describe('spatial positioning & transitions', () => {
     $glbLoadFailed.set(false)
     $modelInfo.set({ ...$modelInfo.get(), asset_url: null, status: 'pending' })
     $companionLifecycle.set('ready')
-    // Reset home position
+    // 重置 home 位置
     const home = getHomePosition()
     $homePosition.set(home)
     $spatialPos.set(home)
@@ -87,7 +87,7 @@ describe('spatial positioning & transitions', () => {
   })
 
   it('interpolates movement smoothly when in 3D mode', () => {
-    // Switch to 3D mode
+    // 切换到 3D 模式
     $modelInfo.set({ ...$modelInfo.get(), asset_url: 'http://model.glb', status: 'succeeded' })
     expect($staticMode.get()).toBe(false)
 

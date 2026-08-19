@@ -22,7 +22,7 @@ export async function checkCompanionVoiceValidity(requestGateway: RequestGateway
   return result.catalog.voices.some(v => v.id === id)
     ? { valid: true }
     : (() => {
-        // Clear the stale id so the next speak() omits the voice arg
+        // 清除过期的 id，使下次 speak() 不再带 voice 参数
         $companionVoiceId.set('')
 
         return { valid: false, name: id, reason: 'catalog_miss' }

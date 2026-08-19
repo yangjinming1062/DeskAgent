@@ -219,7 +219,7 @@ export class JsonRpcGatewayClient {
             try {
               socket.close()
             } catch {
-              // ignore
+              // 忽略
             }
 
             this.socket = null
@@ -322,8 +322,8 @@ export class JsonRpcGatewayClient {
 
   private handleMessage(raw: unknown): void {
     if (typeof raw !== 'string') {
-      // Binary frames (Blob / ArrayBuffer) are not part of the JSON-RPC contract;
-      // stringifying them would silently drop data, so reject explicitly.
+      // 二进制帧（Blob / ArrayBuffer）不属于 JSON-RPC 契约的一部分；
+      // 把它们 stringify 会丢失内容，因此这里显式丢弃。
       return
     }
 

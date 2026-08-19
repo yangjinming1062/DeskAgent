@@ -49,10 +49,9 @@ interface SettingsOverlayProps {
 
 const TIERS = DISTURBANCE_TIERS
 
-// Companion-specific settings live in the sprite window (where the WS gateway
-// boots) rather than the framed tool window, because voice/clip/avatar calls
-// are JSON-RPC over the gateway. General app settings stay in the tray tool
-// window. Covers plan §6 companion items: voice, avatar, response mode, tier.
+// 伙伴专属设置放在精灵窗口（WS 网关在此启动）而非框架化的工具窗口，
+// 因为 voice/clip/avatar 调用都是经网关走的 JSON-RPC。通用应用设置仍放在托盘工具窗口。
+// 覆盖 plan §6 的伙伴条目：音色、形象、回应方式、档位。
 export function CompanionSettings({ onClose }: SettingsOverlayProps): React.ReactElement {
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
@@ -91,14 +90,12 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     user_freeform: string
   } | null>(null)
 
-  // Hydrate the retune wizard's user_* step from the backend before
-  // showing the modal. Without this, step 5 shows blank fields and the
-  // review screen renders '—' for each, misrepresenting the saved state.
+  // 在弹出对话框之前从后端水合 retune 向导的 user_* 步骤。
+  // 没有这一步，步骤 5 会显示空白字段，复核界面也会渲染成 '—'，
+  // 不能反映真实的已保存状态。
   const openRetune = async () => {
-    // A11: dedupe concurrent clicks — two rapid clicks would otherwise
-    // issue two parallel `get_user_profile` fetches, both setting
-    // `retuneInitial`. The second write wins but the first fetch's work
-    // is wasted.
+    // A11：去重并发点击——快速连点两次会触发两次并行的 `get_user_profile`
+    // 请求，都会写入 `retuneInitial`。后者覆盖前者，但前一次拉取的工作白做。
     if (retuneOpen) {
       return
     }
@@ -120,11 +117,10 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         user_freeform: profile.user_freeform ?? ''
       })
     } catch (err) {
-      // C1: refuse to open with empty user_* values — the wizard saves
-      // whatever the form holds, so a blank fallback would PUT '' over the
-      // user's saved `user_call_name`, `user_gender`, `user_hobbies`, etc.
-      // and silently erase them. Close the modal and notify instead; the
-      // user can retry once the backend is reachable.
+      // C1：拒绝用空的 user_* 值打开——向导保存表单当前内容，
+      // 若用空值兜底会把空串 PUT 覆盖用户已保存的 `user_call_name`、
+      // `user_gender`、`user_hobbies` 等，悄无声息地把数据抹掉。
+      // 直接关闭对话框并提示，等后端可达后再试。
       setRetuneOpen(false)
       notifyError(err, '暂时拉不到个人资料，稍后再试')
     }
@@ -191,8 +187,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   // 3D 模型生成入口已移除（形象确认后不可重生成）；只剩换装
 
-  // Pull the full wardrobe catalog — called on settings open; the
-  // wardrobe.updated event also refreshes on backend-side mutations.
+  // 拉取完整衣橱目录——在打开设置时调用；
+  // 后端变更时 wardrobe.updated 事件也会触发刷新。
   useEffect(() => {
     void window.spiritagent
       .api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
@@ -213,8 +209,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         setWardrobe(items ?? [])
         refreshEquippedAndApply()
       } catch (refreshErr) {
-        // Surface the refresh failure rather than swallowing it. The equip call already
-        // succeeded on the backend; the wardrobe.updated event will update the UI.
+        // 把刷新失败暴露出来而不是吞掉。装备调用已经在后端成功；
+        // wardrobe.updated 事件会更新 UI。
         setWardrobeHint(
           refreshErr instanceof Error ? `已装备，但目录刷新失败：${refreshErr.message}` : '已装备，但目录刷新失败'
         )
@@ -341,13 +337,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                   onClick={() => {
                     const previous = $userPreferredTier.get()
                     setDisturbanceTier(t.id)
-                    // Push the EFFECTIVE tier (incorporates the activity
-                    // override) so the backend gate stays consistent with the
-                    // renderer's view. Without this, an immersive focus
-                    // context would un-mute the backend for the full poll-cycle
-                    // window after a manual click.
+                    // 推送 EFFECTIVE 档位（含活动覆盖）以保证后端闸门与渲染层一致。
+                    // 否则在手动点击后，沉浸式焦点上下文会让后端在整个
+                    // 轮询周期内都保持 un-mute。
                     const effectiveNow = $effectiveTier.get()
-                    // Roll back locally if the backend rejects the tier.
+                    // 后端拒绝时本地回滚档位。
                     requestGateway('companion.set_disturbance_tier', { tier: effectiveNow }).catch(err => {
                       setDisturbanceTier(previous)
                       pushDevLog(

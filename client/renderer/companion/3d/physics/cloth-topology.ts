@@ -1,18 +1,15 @@
-// Cloth mesh topology extraction — the single source of truth shared by the
-// CPU (ClothSolver) and GPU (TslComputeBackend) physics backends. Both must
-// agree on anchor rings, constraint edges and collider radii, or the WebGL
-// fallback would drape differently from the WebGPU path.
+// 布料网格拓扑提取 —— CPU（ClothSolver）与 GPU（TslComputeBackend）物理后端共用的唯一事实源。
+// 两侧必须就锚点环、约束边和碰撞半径达成一致，否则 WebGL 降级路径的悬垂形态会与 WebGPU 路径不同。
 
-export const ANCHOR_RATIO = 0.3 // top band of the unit's height pinned to the skeleton
-export const MAX_VERTICES = 16384 // perf guard — both backends decline above this
-export const GRAVITY = -4.0 // world-space m/s²
-export const DAMPING = 0.97 // verlet velocity retention per frame (1 = no damping)
-export const ITERATIONS = 3 // distance-constraint relaxation passes per frame
-export const SKIN_CLEARANCE = 0.002 // skin-unit push-out clearance (m) from the body surface
+export const ANCHOR_RATIO = 0.3 // 单元高度顶部区域固定到骨骼
+export const MAX_VERTICES = 16384 // 性能护栏 —— 任一后端超出此值都拒绝
+export const GRAVITY = -4.0 // 世界空间 m/s²
+export const DAMPING = 0.97 // Verlet 每帧速度保持率（1 表示无阻尼）
+export const ITERATIONS = 3 // 每帧距离约束松弛次数
+export const SKIN_CLEARANCE = 0.002 // skin 单元相对身体表面的推出余量（米）
 
-// Bones (matched by suffix so mixamorig: prefixes don't matter) whose world
-// positions become collision spheres. Torso + legs cover skirt/drape collision
-// for bipeds; other rigs simply collide with whichever bones match.
+// 用后缀匹配的骨骼（mixamorig: 前缀不参与匹配），其世界位置成为碰撞球。
+// 躯干 + 腿部覆盖人形的裙子 / 下垂物碰撞；其他骨骼类型就以命中的骨骼为准。
 export const COLLIDER_RADII: Record<string, number> = {
   Hips: 0.15,
   Spine: 0.14,
@@ -26,8 +23,7 @@ export const COLLIDER_RADII: Record<string, number> = {
   RightLeg: 0.08
 }
 
-/** pinAll pins every vertex to its skinned target; otherwise the top `ratio`
- * band of the unit's height forms the anchor ring. */
+/** pinAll 为真时把每个顶点都钉到它的蒙皮目标；否则取单元顶部高度 `ratio` 比例的带状区域作为锚点环。 */
 export function buildAnchors(
   base: Float32Array,
   count: number,
@@ -68,8 +64,7 @@ export interface ClothConstraints {
   rest: Float32Array
 }
 
-/** Unique structural edges + rest lengths from the index buffer; null when
- * the mesh has no index buffer or exceeds the vertex budget. */
+/** 根据 index buffer 提取唯一的结构边与静态长度；网格没有索引或超过顶点上限时返回 null。 */
 export function buildConstraints(index: ArrayLike<number>, count: number, base: Float32Array): ClothConstraints | null {
   if (count > MAX_VERTICES) {
     return null
@@ -107,14 +102,13 @@ export function buildConstraints(index: ArrayLike<number>, count: number, base: 
 }
 
 export interface VertexTriAdjacency {
-  /** Length vertCount + 1 — triangle refs for vertex v live in list[offsets[v], offsets[v + 1]). */
+  /** 长度 vertCount + 1 —— 顶点 v 的三角形引用位于 list[offsets[v], offsets[v + 1]) 区间。 */
   offsets: Uint32Array
   list: Uint32Array
 }
 
-/** Per-vertex triangle adjacency for parallel normal accumulation: each vertex
- * only writes its own normal, so no atomics (WGSL atomics are i32/u32 only)
- * and no zero-area cross-product can poison another vertex. */
+/** 按顶点构建三角形邻接，用于并行的法线累加：每个顶点只写自己的法线，
+ * 因此不需要原子操作（WGSL 原子只支持 i32 / u32），零面积叉积也不会污染其他顶点。 */
 export function buildVertexTriAdjacency(index: ArrayLike<number>, vertCount: number): VertexTriAdjacency {
   const offsets = new Uint32Array(vertCount + 1)
 

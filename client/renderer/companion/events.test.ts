@@ -32,9 +32,8 @@ describe('handleCompanionEvent session filter', () => {
   })
 
   it('passes WSEvent-driven events through the session filter', () => {
-    // companion.message has no session_id and must reach its case branch:
-    // the affect lands on the sprite, while the proactive bubble path
-    // creates no chat-streaming message.
+    // companion.message 没有 session_id，必须能走到对应分支：
+    // affect 落到精灵，主动气泡路径则不创建聊天流式消息。
     $spriteState.set('idle')
     handleCompanionEvent({ type: 'companion.message', payload: { text: '今天好', affect: { emotion: 'happy' } } })
 

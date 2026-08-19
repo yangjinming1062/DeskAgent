@@ -45,7 +45,7 @@ export function createReverseRpc(
     throw new TypeError('createReverseRpc requires options.backendSession.')
   }
 
-  // Per-session cumulative limits; the budget resets when the runner reconnects (fresh WS session).
+  // 单会话累计限额；Runner 重新连接时（新的 WS 会话）配额会重置。
   const MAX_MESSAGES_PER_SESSION = 200
   const MAX_TEXT_BYTES_PER_SESSION = 1 * 1024 * 1024
   const MAX_VISION_BYTES_PER_SESSION = 10 * 1024 * 1024

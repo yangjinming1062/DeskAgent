@@ -1,9 +1,8 @@
 import type { DesktopTheme, DesktopThemeTypography } from './types'
 
-// Color-emoji fonts to append to every stack as a last resort. None of the UI
-// text/mono fonts carry emoji glyphs, so without this emoji render as tofu
-// boxes on platforms whose default text font lacks them. Covers macOS,
-// Windows, plus the `emoji` generic for anything else.
+// 兜底追加到每个字体栈末尾的彩色 emoji 字体。所有 UI 正文 / 等宽字体
+// 都不携带 emoji 字形，没有这一段，在默认文本字体不含 emoji 的平台上
+// 会渲染为豆腐块。覆盖 macOS、Windows，并附带 `emoji` 泛型以应对其他平台。
 export const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
 
 const SYSTEM_SANS =
@@ -19,15 +18,13 @@ const SPIRITAGENT_BLUE = '#0053FD'
 const PSYCHE_BLUE = '#1540B1'
 const PSYCHE_WARM = '#FFE6CB'
 
-// B5: collapse the two near-identical tints into one. The transparent
-// variant differs only in the second `color-mix` argument — pass it in
-// rather than carrying two copies of the same template.
+// B5：把两个几乎相同的 tint 合并成一份。透明变体仅在第二个 `color-mix`
+// 参数上有区别——把这个参数传进来即可，不必同时持有同一模板的两份拷贝。
 const spiritagentTint = (pct: number, base: '#FFFFFF' | 'transparent' = '#FFFFFF') =>
   `color-mix(in srgb, ${SPIRITAGENT_BLUE} ${pct}%, ${base})`
 
-/** SpiritAgent — canonical desktop identity. The palette keeps the current
- * glass geometry neutral, then lets the old bb/gui blue and psyche cream
- * return as accent seeds. */
+/** SpiritAgent —— 桌面端的官方身份。调色板让当前的玻璃质感保持中性，
+ * 再让旧的 bb/gui 蓝与 psyche 米色作为强调色种子回归。 */
 export const spiritagentTheme: DesktopTheme = {
   name: 'spiritagent',
   label: 'SpiritAgent',

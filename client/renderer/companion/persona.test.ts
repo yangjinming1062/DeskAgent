@@ -69,11 +69,9 @@ describe('assemblePersona', () => {
   })
 
   it('preserves locked visual-anchor fields from previous when not in answers', () => {
-    // The lock-feature design lets post-lock callers (persona-editor /
-    // persona-retune) omit species / character_gender / appearance_core
-    // from `answers`. The backend's PUT /persona does a full replace, so
-    // the client must re-include those fields from the current persona —
-    // otherwise they get wiped.
+    // 「锁定」特性允许锁定后的调用方（persona-editor / persona-retune）在 `answers` 里
+    // 省略 species / character_gender / appearance_core。后端 PUT /persona 做的是整体替换，
+    // 所以客户端必须把当前 persona 里的这些字段重新带过去，否则会被清空。
     const previous = {
       biological_type: '灵兽',
       gender: '女',
@@ -114,9 +112,8 @@ describe('assemblePersona', () => {
   })
 
   it('regression: persona-editor save must not wipe locked fields (P0)', () => {
-    // Simulates the persona-editor save path: caller only knows about
-    // name / role / personality / appearance_outfit but must NOT wipe
-    // biological_type / gender / appearance_core.
+    // 模拟 persona-editor 的保存路径：调用方只知道 name / role / personality / appearance_outfit，
+    // 但绝不能清掉 biological_type / gender / appearance_core。
     const previous = {
       biological_type: '灵兽',
       gender: '女',
@@ -138,9 +135,8 @@ describe('assemblePersona', () => {
   })
 
   it('regression: persona-editor save preserves custom speaking_style via previous fallback', () => {
-    // persona-editor save() doesn't include speaking_style in its answers —
-    // the previous fallback chain (`previous?.speaking_style?.trim()`) is
-    // what keeps a user-picked speaking style from being clobbered.
+    // persona-editor save() 没把 speaking_style 放进 answers——
+    // 保留用户挑选说话风格的，靠的就是 previous 回退链（`previous?.speaking_style?.trim()`）。
     const previous = { speaking_style: '上次选的说话风格' }
     const p = assemblePersona({ name: '小光', personality: '专业干练', role: '管家' }, previous)
     expect(p.speaking_style).toBe('上次选的说话风格')

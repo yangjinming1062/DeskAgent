@@ -139,7 +139,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
     const id = message.id
     const method = message.method
 
-    // Response to a pending outbound call (has id, no method)
+    // 对已发出调用的响应（有 id、无 method）
     if (id !== undefined && id !== null && !method) {
       const entry = pending.get(String(id))
 
@@ -160,14 +160,14 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
       return
     }
 
-    // Inbound request from Runner (has id + method) — reverse RPC
+    // Runner 发来的入站请求（同时有 id 和 method）——反向 RPC
     if (id !== undefined && id !== null && method) {
       handleReverseRpc(id, method, message.params || {})
 
       return
     }
 
-    // Notification (no id, has method)
+    // 通知（无 id，有 method）
     if (method) {
       if (method === 'runner_ready') {
         log('[runner-ws] runner_ready received')
@@ -350,7 +350,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           try {
             activeWs.close(1000, 'replaced')
           } catch {
-            /* ignore */
+            /* 忽略 */
           }
         }
 
@@ -372,7 +372,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
             try {
               ws.close(1011, 'heartbeat-deadline')
             } catch {
-              /* ignore */
+              /* 忽略 */
             }
 
             clearInterval(heartbeatTimer)
@@ -447,7 +447,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           try {
             fs.unlinkSync(ipcPath)
           } catch {
-            /* already gone */
+            /* 已经消失 */
           }
         }
 

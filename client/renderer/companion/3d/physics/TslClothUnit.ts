@@ -35,16 +35,15 @@ import {
 } from './cloth-topology'
 import type { PhysicsUnit } from './PhysicsBackend'
 
-// GPU cloth/skin unit — mirrors ClothSolver semantics as TSL compute passes:
-// skin+integrate → distance constraints → bone-sphere collision → normals.
-// All world-space inputs (bone matrices, collider positions) are pulled into
-// the mesh's local space via uMeshInv inside the shaders, so the `pos` storage
-// holds local coordinates and the render pass applies modelWorldMatrix exactly
-// once — the same contract as geometry.attributes.position.
+// GPU 布料 / 蒙皮单元 —— 用 TSL compute pass 镜像 ClothSolver 语义：
+// skin + integrate → 距离约束 → 骨骼球碰撞 → 法线。
+// 所有世界空间输入（骨骼矩阵、碰撞体位置）都在着色器里通过 uMeshInv
+// 转到网格的局部空间，因此 `pos` storage 存的是局部坐标，
+// 渲染通道恰好应用一次 modelWorldMatrix —— 与 geometry.attributes.position 的契约一致。
 
-// The typed declaration of the static factory is missing from @types/three;
-// it exists in three.webgpu.js and returns the node material for any classic
-// material (MeshStandardMaterial → MeshStandardNodeMaterial).
+// @types/three 缺少这个静态工厂的类型声明；
+// 但它在 three.webgpu.js 里存在，可把任意经典材质
+// （MeshStandardMaterial → MeshStandardNodeMaterial）转成节点材质。
 const fromMaterial = (
   NodeMaterial as unknown as {
     fromMaterial: (m: THREE.Material) => MeshStandardNodeMaterial
@@ -100,8 +99,7 @@ export class TslClothUnit implements PhysicsUnit {
     const count = posAttr?.count ?? 0
 
     if (!posAttr || count === 0 || !si || !sw) {
-      // Degenerate for GPU simulation (usually an unskinned static piece) —
-      // the caller keeps rendering the mesh as-is.
+      // 对 GPU 模拟来说已退化（通常是无蒙皮的静态片段）—— 调用方继续原样渲染网格。
       this.uColliders = makeVec4Array([])
       this.normalsPass = null
       this.skinPass = null
@@ -137,10 +135,10 @@ export class TslClothUnit implements PhysicsUnit {
     const skinWeightStore = storage(mkAttr(new Float32Array(sw.array as ArrayLike<number>), 4), 'vec4', count)
     const boneStore = bones.node
 
-    // ── Pass 1: skin targets + verlet integration ────────────────────────
-    // skinned = meshInv · Σ wᵢ · boneMatricesᵢ · (bindMatrix · base) — the
-    // same formula as skinning.ts::cpuSkinPoint. Settle (first step) pins
-    // every vertex so the cloth doesn't snap from the bind pose.
+    // ── Pass 1：蒙皮目标 + Verlet 积分 ────────────────────────
+    // skinned = meshInv · Σ wᵢ · boneMatricesᵢ · (bindMatrix · base) ——
+    // 与 skinning.ts::cpuSkinPoint 的公式相同。
+    // 首次步进（Settle）把每个顶点都钉住，避免布料从绑定姿态突然弹开。
     this.skinPass = computeNamed(
       'clothSkin',
       Fn(() => {
@@ -189,11 +187,10 @@ export class TslClothUnit implements PhysicsUnit {
           const edgesStore = storage(mkAttr(new Uint32Array(constraints.edges), 2), 'uvec2', edgeCount)
           const restStore = storage(mkAttr(new Float32Array(constraints.rest), 1), 'float', edgeCount)
 
-          // ── Pass 2: distance-constraint relaxation ──────────────────────
-          // Parallel invocations touching shared endpoints race within one
-          // dispatch; between dispatches the writes resolve, so three passes
-          // converge like a Jacobi/Gauss-Seidel hybrid. The fixed endpoint
-          // absorbs the whole correction, as on the CPU.
+          // ── Pass 2：距离约束松弛 ──────────────────────
+          // 一次 dispatch 内的并行调用共享端点，存在竞争；dispatch 之间写入收敛，
+          // 因此三次 pass 类似 Jacobi / Gauss-Seidel 混合迭代收敛。
+          // 固定端吸收全部修正量，与 CPU 端一致。
           const constraintPass = computeNamed(
             'clothConstraint',
             Fn(() => {
@@ -230,9 +227,9 @@ export class TslClothUnit implements PhysicsUnit {
         log.warn('cloth', 'GPU cloth mesh has no index buffer — constraints disabled')
       }
 
-      // ── Pass 3: bone-sphere collision (free vertices only) ───────────────
-      // Skipped entirely when no bone matches the radius table (non-biped
-      // rigs): a zero-length uniform array is not valid WGSL.
+      // ── Pass 3：骨骼球碰撞（仅作用于自由顶点）───────────────
+      // 当没有任何骨骼命中半径表（非人形骨骼）时整段跳过：
+      // 长度为 0 的 uniform 数组不是合法的 WGSL。
       for (const bone of skeleton.bones) {
         const radius = COLLIDER_RADII[boneSuffix(bone.name)]
 
@@ -280,10 +277,9 @@ export class TslClothUnit implements PhysicsUnit {
       this.uColliders = makeVec4Array([])
     }
 
-    // ── Pass 4: normals from accumulated face normals (every 2nd frame) ────
-    // Per-vertex triangle adjacency keeps writes disjoint (no atomics), and
-    // the clamped division keeps degenerate zero-area triangles from
-    // normalizing a zero vector into NaN black spots.
+    // ── Pass 4：每两帧由累积面法线重算法线────────
+    // 按顶点的三角邻接关系保证写入互不重叠（无需原子操作）；
+    // 除法做夹紧，避免零面积三角形把零向量归一化成 NaN 黑色斑点。
     const triIndex = geo.index?.array
 
     if (triIndex) {
@@ -316,8 +312,8 @@ export class TslClothUnit implements PhysicsUnit {
       this.normalsPass = null
     }
 
-    // Rendering consumes the storages directly — positionNode/normalNode
-    // read local-space values, so modelWorldMatrix applies exactly once.
+    // 渲染通道直接读取 storage —— positionNode / normalNode 读局部空间值，
+    // 所以 modelWorldMatrix 恰好应用一次。
     const readPos = posStore.toReadOnly().element(vertexIndex)
     const readNormal = normalStore.toReadOnly().element(vertexIndex)
     const originals = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
@@ -365,8 +361,8 @@ export class TslClothUnit implements PhysicsUnit {
       return []
     }
 
-    // Halve normal recompute — 60fps hems look identical to 30fps (same
-    // trade-off as the CPU solver, and it is the widest pass).
+    // 把法线重算减半 —— 60fps 的衣摆看起来与 30fps 一模一样
+    // （与 CPU 求解器同样的权衡，并且这是开销最大的 pass）。
     if (this.frameTick % 2 === 0 && this.normalsPass) {
       return [...this.passes, this.normalsPass]
     }

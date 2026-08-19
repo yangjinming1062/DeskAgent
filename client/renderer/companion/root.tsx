@@ -44,10 +44,9 @@ import { StaticSprite } from './static-sprite/StaticSprite'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
 
-// Boots the gateway as a mount effect — so it only runs while authenticated.
-// When $auth flips back to unauthenticated (logout/expiry) this unmounts and
-// useGatewayBoot's cleanup tears the WS down. handleGatewayEvent dispatches the
-// streaming chat frames onto the chat store + state machine (events.ts).
+// 把 gateway 启动挂在 mount effect 里——这样只在已鉴权时才会跑。
+// 当 $auth 切回未鉴权（登出 / 过期）时这里会卸载，useGatewayBoot 的 cleanup
+// 负责拆掉 WS。handleGatewayEvent 把流式聊天帧分派到 chat store + 状态机（events.ts）。
 function GatewayBooter(): null {
   useGatewayBoot({
     handleGatewayEvent: handleCompanionEvent,
@@ -74,8 +73,7 @@ export function CompanionRoot(): React.JSX.Element {
   const [spriteHit, setSpriteHit] = useState<SpriteHit | null>(null)
   const { requestGateway } = useGatewayRequest()
 
-  // Sprite-window docks are mutually exclusive — opening one closes the
-  // others so popups never stack on screen.
+  // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
   const openDock = (kind: 'chat' | 'memory' | 'settings' | 'voice'): void => {
     setChatOpen(kind === 'chat')
     setVoiceCallOpen(kind === 'voice')
@@ -84,8 +82,8 @@ export function CompanionRoot(): React.JSX.Element {
   }
 
   const validityCheckedRef = useRef(false)
-  // Marks a sprite click that triggered the login flow — distinguishes a fresh
-  // login from a cached-session boot, where the user must tap to open the wizard.
+  // 标记一次点击精灵后触发了登录流程的「点击」——用于区分全新登录
+  // 与带缓存会话的启动（后者需要再点一下才会打开向导）。
   const pendingOnboardingAutoOpenRef = useRef(false)
 
   useEffect(() => {
@@ -94,9 +92,9 @@ export function CompanionRoot(): React.JSX.Element {
 
   useEffect(() => initSpatial(), [])
 
-  // Hydrate the runner-status atom once on mount — mirrors the hydrateAuth
-  // pattern so companion-side consumers (activity.ts, etc.) can read
-  // $runnerPhase without re-implementing the subscribe + sync-getter dance.
+  // 挂载时一次性水合 runner-status atom——与 hydrateAuth 同款模式，
+  // 让伙伴侧消费者（activity.ts 等）能直接读 $runnerPhase，
+  // 不必各自再实现 subscribe + 同步 getter 的组合。
   useEffect(() => {
     void hydrateRunnerStatus()
   }, [])
@@ -113,25 +111,24 @@ export function CompanionRoot(): React.JSX.Element {
     return () => off()
   }, [])
 
-  // Tray menu "Log out" entry fires this bridge; the main-side logout also
-  // triggers `onSessionExpired` on the next session check, but routing this
-  // explicitly keeps the UI snappy when the user clicks the tray item.
+  // 托盘菜单的「登出」入口会触发这个桥；主进程侧登出也会在下一次会话检查时
+  // 触发 `onSessionExpired`，但显式路由能让用户在点托盘项时 UI 更跟手。
   useEffect(() => {
     const off = window.spiritagent.onTrayLogout?.(() => void logout())
 
     return () => off?.()
   }, [])
 
-  // Clear on logout so the next login starts clean.
+  // 登出时清掉，保证下次登录从干净状态开始。
   useEffect(() => {
     if (auth.kind === 'unauthenticated') {
       pendingOnboardingAutoOpenRef.current = false
     }
   }, [auth.kind])
 
-  // Dev-only: inject a test proactive message (Ctrl+Shift+P) to exercise the
-  // companion.message receiver + bubble + TTS without the Backend send_message
-  // path. Stripped in production builds.
+  // 仅开发期：注入一条测试主动消息（Ctrl+Shift+P）来跑通
+  // companion.message 接收 + 气泡 + TTS 全链路，但不走 Backend 的 send_message 路径。
+  // 生产构建里会被剔除。
   useEffect(() => {
     if (import.meta.env.PROD) {
       return
@@ -149,12 +146,12 @@ export function CompanionRoot(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // Query onboarding state on auth.
-  // 1) Use GET /api/companion/onboarding/state (REST) for instant authoritative check.
-  // 2) Fallback to requestGateway('onboarding.get_state') if available.
-  // 3) Only set lifecycle='ready' when state?.complete === true.
-  //    Never fall back to persona.is_complete (which is true mid-onboarding after character questions are saved).
-  // 4) If state?.complete is not true, set lifecycle='onboarding' and setOnboardingOpen(true).
+  // 鉴权后查询 onboarding 状态。
+  // 1) 先用 GET /api/companion/onboarding/state（REST）做权威即时检查。
+  // 2) 不可用时回退到 requestGateway('onboarding.get_state')。
+  // 3) 仅在 state?.complete === true 时把 lifecycle 设为 'ready'。
+  //    不要回退到 persona.is_complete（角色题保存后它会在 onboarding 中途变成 true）。
+  // 4) 若 state?.complete 不是 true，则 lifecycle='onboarding' 并 setOnboardingOpen(true)。
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
       setCompanionLifecycle('unauthed')
@@ -225,9 +222,8 @@ export function CompanionRoot(): React.JSX.Element {
     }
   }, [lifecycle])
 
-  // Detect a cached companion voice id that the cloud catalog no longer lists
-  // (provider pruned/renamed voices, or provider switch). Backend tolerates
-  // unknown ids, so this is a one-time prompt — not a hard error.
+  // 检测云端目录里已经下架的伙伴 voice id（供应商裁剪 / 改名，或换了供应商）。
+  // 后端对未知 id 是宽容的，这里只是一次性提示，不是硬错误。
   useEffect(() => {
     if (lifecycle !== 'ready' || gatewayState !== 'open' || validityCheckedRef.current) {
       return
@@ -263,12 +259,12 @@ export function CompanionRoot(): React.JSX.Element {
       return
     }
 
-    // Pre-auth: click opens the activation overlay in the companion window.
+    // 鉴权前：点击打开伙伴窗口内的激活浮层。
     pendingOnboardingAutoOpenRef.current = true
     setActivationOpen(true)
   }
 
-  // Plan §4.3: double-tap the ready companion to open Chat.
+  // Plan §4.3：双击 ready 状态的伙伴打开 Chat。
   const onDoubleTap = () => {
     if (authed) {
       if (lifecycle === 'onboarding') {
@@ -285,11 +281,10 @@ export function CompanionRoot(): React.JSX.Element {
     setActivationOpen(true)
   }
 
-  // Onboarding completion fires the 3D model generation (base_texture
-  // provider is instant — model.ready arrives in the same tick and the
-  // engine reloads). POST /model is server-side idempotent when the body
-  // model already exists, so a resume-fire here is safe — no client guard
-  // needed. Failure is silent: the user can retry from settings.
+  // onboarding 完成触发 3D 模型生成（base_texture 供应商是即时的——
+  // model.ready 同一 tick 就到，引擎重载）。POST /model 在 body 模型已存在时
+  // 服务端是幂等的，所以这里重复触发也安全——客户端不用加守卫。
+  // 失败静默：用户可以从设置里重试。
   const onOnboardingComplete = () => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')

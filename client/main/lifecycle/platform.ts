@@ -7,11 +7,11 @@ export interface DetectRemoteDisplayOptions {
 }
 
 /**
- * Decide whether the app is shown over a remote/forwarded display where
- * Chromium's GPU compositor produces an unstable, flickering surface.
- * Returns a short reason string when GPU should be disabled, or null.
- * `SPIRITAGENT_DESKTOP_DISABLE_GPU` overrides detection.
- * Pure + dependency-free so it can be unit-tested.
+ * 判断应用是否在远程/转发的显示器上运行——这种场景下 Chromium 的 GPU 合成器
+ * 会产生不稳定、闪烁的画面。
+ * 需要禁用 GPU 时返回一个简短的 reason 字符串，否则返回 null。
+ * `SPIRITAGENT_DESKTOP_DISABLE_GPU` 环境变量可以覆盖检测结果。
+ * 纯函数、无依赖，便于单元测试。
  */
 export function detectRemoteDisplay(options: DetectRemoteDisplayOptions = {}): null | string {
   const env = options.env ?? process.env
@@ -29,13 +29,13 @@ export function detectRemoteDisplay(options: DetectRemoteDisplayOptions = {}): n
     return null
   }
 
-  // SSH-session → display is X11-forwarded or remote.
+  // SSH 会话 → 显示是 X11 转发或远程。
   if (env.SSH_CONNECTION || env.SSH_CLIENT || env.SSH_TTY) {
     return 'ssh-session'
   }
 
   if (platform === 'win32') {
-    // RDP sessions report SESSIONNAME like "RDP-Tcp#7"; local console is "Console".
+    // RDP 会话上报的 SESSIONNAME 类似 "RDP-Tcp#7"；本地会话则是 "Console"。
     const sessionName = String(env.SESSIONNAME || '')
 
     if (/^rdp-/i.test(sessionName)) {

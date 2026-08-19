@@ -332,10 +332,9 @@ export interface Translations {
     toolsetsRefreshFailed: string
   }
 
-  // Per-toolset label/description. Keyed by toolset id from
-  // `lib/toolset-catalog.ts`; the union is derived from TOOLSET_CATALOG so
-  // adding a toolset without adding a matching localized pair in en.ts / zh.ts
-  // is a compile error.
+  // 每个工具集的 label / description。以 `lib/toolset-catalog.ts` 中的工具集 id 为键；
+  // 联合类型由 TOOLSET_CATALOG 推导，所以新增工具集但忘了在 en.ts / zh.ts
+  // 添加对应的本地化文案会直接报编译错误。
   toolsets: {
     [K in ToolsetId]: {
       label: string

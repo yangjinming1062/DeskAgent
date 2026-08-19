@@ -1,9 +1,8 @@
 import { useCallback, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
-// Read/write an enum-shaped URL search param (e.g. ?tab=foo). Used to make
-// tabbed views survive a refresh. Always navigates with replace so tab clicks
-// don't pile up in history.
+// 读取 / 写入枚举形态的 URL search 参数（如 ?tab=foo）。让带标签页的视图
+// 在刷新后能保留状态。导航统一使用 replace，避免点切换 tab 在 history 中堆积。
 export function useRouteEnumParam<T extends string>(
   key: string,
   values: readonly T[],

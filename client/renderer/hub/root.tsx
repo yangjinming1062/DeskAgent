@@ -19,9 +19,9 @@ export function ToolRoot(): React.JSX.Element {
     void hydrateAuth()
   }, [])
 
-  // Hydrate runner-status atom so hub-side consumers (speech-settings.tsx
-  // probes local engine availability) can subscribe to phase transitions
-  // without their own sync-getter.
+  // 水合 runner-status 原子，让枢纽侧消费者（如 speech-settings.tsx
+  // 探测本地引擎可用性）能订阅阶段变化，
+  // 不必各自实现同步 getter。
   useEffect(() => {
     void hydrateRunnerStatus()
   }, [])
@@ -47,8 +47,8 @@ export function ToolRoot(): React.JSX.Element {
     return () => off?.()
   }, [])
 
-  // Activation happens in the companion (sprite) window; the tool window
-  // only renders Settings and has nothing to show until authenticated.
+  // 激活在伙伴（精灵）窗口完成；工具窗口仅渲染 Settings，
+  // 在认证前没有内容可显示。
   if (auth.kind !== 'authenticated') {
     return (
       <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-(--ui-chat-surface-background)">

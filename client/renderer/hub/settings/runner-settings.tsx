@@ -207,9 +207,9 @@ export function RunnerSettings(): React.JSX.Element {
                           onChange={e => {
                             const val = e.target.value
 
-                            // Number('') is 0, not NaN — treat empty input as
-                            // invalid so clearing a number field falls back to
-                            // the default instead of silently saving 0.
+                            // Number('') 是 0 而不是 NaN——把空输入视为无效，
+                            // 让清空数字字段时回退到默认值，
+                            // 而不是悄悄写入 0。
                             if (row.type === 'number') {
                               const parsed = val === '' ? NaN : Number(val)
                               updateField(row.path, isNaN(parsed) ? row.default : parsed)

@@ -21,8 +21,7 @@ export interface ChatMessage {
 export const $chatMessages = atom<ChatMessage[]>([])
 export const $chatSessionId = atom<string | null>(null)
 export const $chatOpen = atom(false)
-// A transient proactive message the companion speaks aloud and surfaces as a
-// bubble when the chat dock is closed. Cleared after the utterance ends.
+// 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
 export const $proactiveBubble = atom<string | null>(null)
 
 let idCounter = 0
@@ -37,9 +36,8 @@ export function setChatSession(id: string | null): void {
   $chatSessionId.set(id)
 }
 
-/** Replace the dock's transcript with a conversation loaded from the backend.
- * `system` / `tool` rows keep their subtype so the bubble renderer can pick the
- * right presentation; they are folded onto the assistant side for layout only. */
+/** 用从后端加载的会话替换面板的聊天记录。
+ * `system` / `tool` 行保留 subtype，以便气泡渲染器选择正确的呈现；布局上折叠到助手侧。 */
 export function hydrateChatMessages(messages: SessionMessage[]): void {
   $chatMessages.set(
     messages.map(m => ({
@@ -53,9 +51,8 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
 }
 
 function extractText(m: SessionMessage): string {
-  // ``SessionMessage.content`` is unknown — a multimodal_v1 user message
-  // arrives as a JSON parts array; render only the user-visible text so the
-  // bubble doesn't leak ``[{"type": "image_url", ...}]``.
+  // ``SessionMessage.content`` 类型未知——multimodal_v1 的用户消息
+  // 以 JSON parts 数组到达；只渲染用户可见文本，避免漏出 ``[{"type": "image_url", ...}]``。
   if (typeof m.content !== 'string') {
     return ''
   }
@@ -121,20 +118,18 @@ export function clearPendingPrompts(): void {
 
 export const $chatTurnInFlight = atom<boolean>(false)
 
-// Set when the backend emitted a bubble.break during the in-flight turn — used
-// so message.complete finalizes the LAST bubble with its own streamed text
-// instead of overwriting it with the full multi-bubble turn text.
+// 当后端在 in-flight 回合期间发出 bubble.break 时置位——这样 message.complete
+// 收尾的是最后一个气泡自己的流式文本，而不是用整轮多气泡文本覆盖它。
 export const $turnHadBubbleBreak = atom<boolean>(false)
 
 export function setTurnHadBubbleBreak(v: boolean): void {
   $turnHadBubbleBreak.set(v)
 }
 
-// Coalescing window for rapid-fire user messages (DESIGN §6.6 scenario 3):
-// messages sent within this window are batched into ONE prompt.submit → one
-// LLM call. This is an intentional debounce, NOT a send delay — schedulePendingFlush
-// is reset on every keystroke-send, and the batch is drained immediately on
-// message.complete / error / user stop via submitPendingBatch / handleStop.
+// 连发消息的合并窗口（DESIGN §6.6 场景 3）：
+// 在该窗口内连发的多条消息会被合并成一次 prompt.submit → 一次 LLM 调用。
+// 这是**刻意**的合并，不是发送延迟——schedulePendingFlush 在每次按键发送时重置，
+// 而批量会在 message.complete / 错误 / 用户停止时通过 submitPendingBatch / handleStop 立即冲刷。
 const FLUSH_DEBOUNCE_MS = 4000
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -215,14 +210,14 @@ export function submitPendingBatch(): void {
   void submitWithRetry()
 }
 
-// Ensure an active streaming assistant bubble exists before populating delta or tool state.
+// 在填充增量或工具状态前，确保存在一个活跃的流式助手气泡。
 export function beginAssistantMessage(): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
 
   if (last?.role === 'assistant' && last.streaming) {
     if (!last.text.trim() && !last.toolName && !last.error && !last.cancelled) {
-      // Prior streaming bubble has no visible text or tools; reuse it to prevent ghost "…" bubbles
+      // 之前的流式气泡没有可见文本或工具调用；复用它以避免出现幽灵的「…」气泡
       return
     }
 
@@ -282,7 +277,7 @@ export function finalizeAssistantMessage(text?: string): void {
 
   const finalStr = typeof text === 'string' ? text : last.text
 
-  // If the assistant message is empty and has no tool/error/cancellation, prune it to prevent ghost bubble
+  // 助手消息为空且无工具/错误/取消时，剪掉以避免出现幽灵气泡
   if (!finalStr.trim() && !last.toolName && !last.error && !last.cancelled && !last.attachments?.length) {
     $chatMessages.set(msgs.slice(0, -1))
 
@@ -302,14 +297,12 @@ export function setAssistantError(message: string): void {
     ? { ...last, streaming: false, error: message }
     : { id: nextId(), role: 'assistant', text: '', error: message }
 
-  // Replace when finalizing a streaming assistant message; otherwise append
-  // so we don't clobber the user's last message.
+  // 收尾流式助手消息时替换；否则追加，避免覆盖用户的最后一条消息。
   $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), error] : [...msgs, error])
 }
 
-// User-initiated stop before the first assistant chunk arrived. Distinct from
-// setAssistantError because cancellation isn't a failure — the bubble should
-// render neutrally, not with the 😬 error glyph.
+// 用户在第一条助手片段到达前主动停止。与 setAssistantError 的区别在于：
+// 取消不是失败——气泡应以中性样式渲染，而不是带 😬 错误图标。
 export function setAssistantCancelled(): void {
   const msgs = $chatMessages.get()
   const last = msgs[msgs.length - 1]
@@ -319,8 +312,7 @@ export function setAssistantCancelled(): void {
     ? { ...last, streaming: false, cancelled: true }
     : { id: nextId(), role: 'assistant', text: '', cancelled: true }
 
-  // Replace when finalizing a streaming assistant message; otherwise append
-  // so we don't clobber the user's last message.
+  // 收尾流式助手消息时替换；否则追加，避免覆盖用户的最后一条消息。
   $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), cancelled] : [...msgs, cancelled])
 }
 

@@ -46,8 +46,8 @@ export function SearchField({
       <input
         aria-label={ariaLabel}
         className={cn(
-          // `field-sizing: content` grows the input to fit the placeholder/typed
-          // text, capped by the container's max-width — no awkward empty space.
+          // `field-sizing: content` 让输入框随 placeholder / 已输入文字自动伸缩，
+          // 上限由容器 max-width 控制——避免留出尴尬的空白。
           'h-7 max-w-full bg-transparent text-sm text-foreground [field-sizing:content] placeholder:text-muted-foreground focus:outline-none',
           inputClassName
         )}

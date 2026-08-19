@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// $runnerPhase + hydrateRunnerStatus — IPC plumbing (sync getter + event sub)
+// $runnerPhase + hydrateRunnerStatus——IPC 桥接（同步 getter + 事件订阅）
 interface RunnerStatusListener {
   (ev: { type: string; [k: string]: unknown }): void
 }
@@ -53,8 +53,8 @@ function installRunnerSpiritagent(
 }
 
 describe('runner-status store', () => {
-  // Each test gets a fresh module so the module-level `offRunnerStatus`
-  // idempotency branch doesn't short-circuit subsequent calls.
+  // 每个测试获得一个全新的模块，避免模块级 `offRunnerStatus` 的幂等分支
+  // 把后续调用提前短路掉。
   beforeEach(() => {
     vi.resetModules()
   })

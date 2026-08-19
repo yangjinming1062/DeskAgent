@@ -13,8 +13,8 @@ describe('playReactionAudio', () => {
 
     expect(entry).not.toBeNull()
     await expect(playReactionAudio(entry)).resolves.toBe(true)
-    // `persist: true` lives inside speakScripted — first poke synthesises and
-    // writes the clip, every later poke reads it back off disk.
+    // `persist: true` 在 speakScripted 内部——第一次戳会合成并落盘，
+    // 之后的戳都从磁盘直接读回。
     expect(hoisted.speakScripted).toHaveBeenCalledWith(entry?.text, undefined, 'reaction')
   })
 
@@ -34,8 +34,7 @@ describe('pickReaction', () => {
   })
 
   it('allows generic tag-free entries to participate in rotation when tags match', async () => {
-    // Minimal manifest: one tag-matched entry plus one generic entry in the
-    // same bucket — both must sit in the top-score rotation pool.
+    // 极简 manifest：同一桶里一条带 tag 的 + 一条通用条目——两者都要进入最高分轮换池。
     vi.resetModules()
     vi.doMock('./manifest.json', () => ({
       default: {

@@ -4,21 +4,20 @@ import type { ComputeNode } from 'three/webgpu'
 import type { BodyCollider } from '../BodyCollider'
 import type { EngineBackendKind } from '../types'
 
-// PhysicsBackend decouples CharacterController from where cloth/skin solving
-// happens: the WebGPU backend runs TSL compute passes, everything else keeps
-// the main-thread CPU solver (behaviour identical to a WebGL-only build).
+// PhysicsBackend 把 CharacterController 与布料/蒙皮求解位置解耦：
+// WebGPU 后端跑 TSL compute pass，其他情况一律保留主线程 CPU 求解器
+// （行为与纯 WebGL 构建一致）。
 
 export type PhysicsMode = 'cloth' | 'skin'
 
 export interface ClothUnitSpec {
-  /** Render mesh; the TSL backend replaces its material with node materials
-   * whose positionNode/normalNode read the compute-written storage. */
+  /** 渲染网格；TSL 后端会把它的材质替换为节点材质，
+   * 其 positionNode / normalNode 读取 compute 写入的 storage。 */
   mesh: THREE.Mesh
   skeleton: THREE.Skeleton
   bindMatrix: THREE.Matrix4 | null
   mode: PhysicsMode
-  /** CPU backend only — body-surface collision proxy. The TSL backend uses
-   * bone-sphere colliders instead (BVH mesh collision stays CPU-only). */
+  /** 仅 CPU 后端需要：身体表面碰撞代理。TSL 后端用骨骼球碰撞代替（BVH 网格碰撞仍只在 CPU）。 */
   bodyCollider?: BodyCollider | null
 }
 
@@ -31,21 +30,20 @@ export type PhysicsBackendKind = 'tsl' | 'cpu'
 
 export interface PhysicsBackend {
   readonly kind: PhysicsBackendKind
-  /** null when the unit can't be simulated (no positions / over budget / no
-   * skin weights on the GPU path) — the caller keeps the mesh static. */
+  /** 当该单元无法模拟时（无位置 / 超出预算 / GPU 路径缺少蒙皮权重）返回 null，
+   * 调用方保持网格静止。 */
   createUnit(spec: ClothUnitSpec): PhysicsUnit | null
-  /** Tear down one unit and drop it from the per-frame dispatch — called
-   * from CharacterController.disposeUnit (outfit swap / model reload). */
+  /** 销毁一个单元，并从逐帧调度里移除 —— 由 CharacterController.disposeUnit
+   * 调用（换装 / 模型重载）。 */
   destroyUnit(unit: PhysicsUnit): void
-  /** Per-frame CPU→GPU uploads (bone-matrix snapshot, per-unit transforms). */
+  /** 逐帧 CPU → GPU 上传（骨骼矩阵快照、各单元的变换）。 */
   beginFrame(): void
   collectCompute(): ComputeNode[]
   dispose(): void
 }
 
 export function pickBackendFor(kind: EngineBackendKind): PhysicsBackendKind {
-  // The WebGL2 fallback backend technically implements compute via transform
-  // feedback, but iGPU throughput there is not dependable — keep those paths
-  // on the CPU solver instead of a half-fast GPU path.
+  // WebGL2 降级后端理论上可以用 transform feedback 实现 compute，但集显上吞吐不稳定
+  // —— 干脆让那些路径继续走 CPU 求解器，而不是用半吊子的 GPU 路径。
   return kind === 'webgpu' ? 'tsl' : 'cpu'
 }

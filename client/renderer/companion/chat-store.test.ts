@@ -41,7 +41,7 @@ describe('chat store streaming', () => {
   it('finalizes a prior streaming segment when a new one begins (tool rounds)', () => {
     beginAssistantMessage()
     appendAssistantDelta('先查一下')
-    beginAssistantMessage() // second assistant segment after a tool round
+    beginAssistantMessage() // 工具轮次之后的第二个助手消息段
     appendAssistantDelta('结果是')
 
     const msgs = $chatMessages.get()
@@ -62,7 +62,7 @@ describe('chat store streaming', () => {
   it('prunes empty assistant message on finalize (affect-only ghost bubble prevention)', () => {
     pushUserMessage('惹你生气')
     beginAssistantMessage()
-    // No text delta arrived (affect-only response)
+    // 没有收到文本增量（仅 affect 的响应）
     finalizeAssistantMessage('')
     const msgs = $chatMessages.get()
     expect(msgs).toHaveLength(1)

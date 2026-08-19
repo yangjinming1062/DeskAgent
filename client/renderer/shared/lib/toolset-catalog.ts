@@ -17,7 +17,7 @@ import {
   Volume2
 } from './icons'
 
-// Renderer-facing catalog of toolsets.
+// 渲染层使用的工具集目录。
 
 export interface ToolsetCatalogEntry {
   id: string

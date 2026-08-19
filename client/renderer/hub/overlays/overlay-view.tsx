@@ -4,9 +4,9 @@ import { Button, Codicon } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { strings } from '@/shared/strings'
 
-// Win/Linux draw the native WindowControlsOverlay at the top-right; an in-app
-// close button there would sit underneath it. macOS traffic lights live at
-// the top-left, so the in-app close survives.
+// Win / Linux 把原生 WindowControlsOverlay 画在右上角；那里的应用内
+// 关闭按钮会被盖在下面。macOS 的红绿灯在左上角，
+// 因此应用内关闭按钮可以保留。
 const HAS_NATIVE_WINDOW_CONTROLS = !navigator.userAgent.includes('Mac')
 
 interface OverlayViewProps {
@@ -15,8 +15,7 @@ interface OverlayViewProps {
   closeLabel?: string
 }
 
-// Full-bleed page shell for the framed tool window: a drag band below the
-// native window controls, plus Esc-to-close.
+// 工具窗口的全出血页面外壳：原生窗口控件下方的拖拽带 + Esc 关闭。
 export function OverlayView({
   children,
   onClose,
@@ -27,9 +26,9 @@ export function OverlayView({
     onClose()
   }
 
-  // Esc dismisses every OverlayView-based overlay. Nested Radix dialogs
-  // stop propagation themselves, so opening (e.g.) the model picker inside
-  // Settings still closes the picker first instead of the underlying overlay.
+  // Esc 关闭所有基于 OverlayView 的浮层。嵌套的 Radix 对话框会自行阻止冒泡，
+  // 因此在 Settings 中打开（例如）模型选择器时，会先关闭选择器，
+  // 而不是下层浮层。
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented) {

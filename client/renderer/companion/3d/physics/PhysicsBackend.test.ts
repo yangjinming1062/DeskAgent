@@ -24,7 +24,7 @@ function riggedMesh(w = 0.2, h = 0.4): { mesh: THREE.Mesh; skeleton: THREE.Skele
 }
 
 describe('pickBackendFor', () => {
-  it('maps renderer kinds to physics backends deterministically', () => {
+  it('把渲染器类型确定性映射到物理后端', () => {
     expect(pickBackendFor('webgpu')).toBe('tsl')
     expect(pickBackendFor('webgl2')).toBe('cpu')
     expect(pickBackendFor('classic-webgl')).toBe('cpu')
@@ -32,14 +32,14 @@ describe('pickBackendFor', () => {
 })
 
 describe('CpuBackend', () => {
-  it('creates a stepping unit that delegates to the CPU solver', () => {
+  it('创建一个把求解委托给 CPU 求解器的可步进单元', () => {
     const { mesh, skeleton } = riggedMesh()
     const backend = new CpuBackend()
     const unit = backend.createUnit({ mesh, skeleton, bindMatrix: null, mode: 'cloth' })
 
     expect(unit).not.toBeNull()
 
-    // Stepping must not throw and must leave the geometry positions finite.
+    // 步进必须不抛异常，并且让几何位置保持有限值。
     unit!.step(1 / 60)
 
     const pos = mesh.geometry.attributes.position.array as Float32Array
@@ -49,7 +49,7 @@ describe('CpuBackend', () => {
     unit!.dispose()
   })
 
-  it('keeps compute dispatch empty', () => {
+  it('保持 compute 派发表为空', () => {
     expect(new CpuBackend().collectCompute()).toEqual([])
   })
 })

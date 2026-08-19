@@ -9,7 +9,7 @@ let _storePath: null | string = null
 let _config: Record<string, any> = {}
 let _loaded = false
 let _writeLock: null | Promise<any> = null
-// Set by the bridge; null pre-login. Swallowed errors = runner not connected yet.
+// 由 bridge 设置；登录前为 null。吞掉的错误表示 Runner 尚未连接。
 let _pushTarget: null | ((config: Record<string, any>) => Promise<any> | void) = null
 
 export function init({ spiritagentHome }: { spiritagentHome: null | string }): void {
@@ -37,13 +37,13 @@ function _load(): Record<string, any> {
       _config = parsed
     }
   } catch {
-    // ENOENT (first run) or invalid JSON — start empty.
+    // ENOENT（首次运行）或 JSON 格式无效——从空配置开始。
   }
 
   return _config
 }
 
-/** Same reference across calls; mutations must go through ``write`` / ``patch`` / ``mutate``. */
+/** 跨调用共享同一引用；变更必须经由 ``write`` / ``patch`` / ``mutate`` 进行。*/
 export function read(): Record<string, any> {
   return _load()
 }
@@ -72,12 +72,12 @@ async function _persistAndPush(): Promise<void> {
     await atomicWriteFile(_storePath, content)
   }
 
-  // Swallow dispatch errors — bridge may not be connected yet (pre-login).
+  // 吞掉派发错误——bridge 在登录前可能尚未连接。
   if (_pushTarget && _config) {
     try {
       await _pushTarget(_config)
     } catch {
-      /* runner not connected — config will be pushed on next runner-ready */
+      /* runner 未连接——待下次 runner-ready 时再推送配置 */
     }
   }
 }
@@ -120,7 +120,7 @@ export async function patch(
   })
 }
 
-/** fn mutates the config in place under the write lock; its return is forwarded as ``mutated``. */
+/** fn 在写锁内就地变更配置；其返回值会作为 ``mutated`` 透出。*/
 export async function mutate<T>(
   fn: (config: Record<string, any>) => T
 ): Promise<{ error?: string; mutated?: T; ok: boolean }> {

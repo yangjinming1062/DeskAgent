@@ -88,7 +88,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string): number {
   return DEFAULT_TIMEOUT_MS
 }
 
-// JSON → JSON-stringified, string → as is, Buffer/Uint8Array → bytes.
+// JSON → 序列化为 JSON 字符串；string → 原样；Buffer/Uint8Array → 字节。
 function encodeBody(body: unknown): { body: string | Buffer | Uint8Array | undefined; contentType: null | string } {
   if (body === undefined || body === null) {
     return { body: undefined, contentType: null }

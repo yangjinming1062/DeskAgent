@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_TYPOGRAPHY, EMOJI_FALLBACK, spiritagentTheme } from './presets'
 
-// #40364: none of the UI text/mono fonts carry emoji glyphs, so every font
-// stack must end with a color-emoji fallback or emoji render as tofu on
-// platforms whose default font lacks them.
+// #40364：所有 UI 正文 / 等宽字体都不携带 emoji 字形，因此每个字体栈
+// 必须以彩色 emoji 字体兜底，否则在默认字体不含 emoji 的平台上
+// 会渲染为豆腐块。
 describe('theme typography emoji fallback (#40364)', () => {
   const stacks: Array<[string, string]> = (
     [

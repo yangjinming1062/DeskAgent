@@ -19,8 +19,7 @@ vi.mock('@/shared/store/gateway', () => ({
   }
 }))
 
-// Echoes the requested bucket back through the entry so the dispatch
-// assertions below can tell poke-light from drag.
+// 把请求的 bucket 透传回入口，让下方的分发断言能区分 poke-light 与 drag。
 vi.mock('./reactions/reaction-audio', () => ({
   pickReaction: (bucket: string) => ({
     id: `reaction.${bucket}.gentle.0`,
@@ -43,9 +42,9 @@ vi.mock('./persona-store', () => ({
 
 beforeEach(() => {
   vi.useFakeTimers()
-  // Wipe any setTimeout left over from prior tests — interaction.ts uses a
-  // module-level reset timer that fires 4s after each poke. Without clearing,
-  // a stray callback from a previous test can reset pokeCount mid-suite.
+  // 清理之前测试残留的 setTimeout——interaction.ts 使用
+  // 一个模块级的重置计时器，每次戳后 4 秒触发。不清理的话，
+  // 上一个测试的回调可能在套件中途重置 pokeCount。
   vi.clearAllTimers()
   vi.setSystemTime(new Date(10_000))
   hoisted.playReactionAudio.mockClear()
@@ -67,7 +66,7 @@ describe('poke / drag dispatch into reaction audio', () => {
   })
 
   it('escalates the poke bucket across a tight burst (light → medium → heavy)', async () => {
-    // Fresh module — pokeCount is module state and earlier tests advanced it.
+    // 全新模块——pokeCount 是模块状态，前面测试已经推进过它。
     vi.resetModules()
     const { handlePokeInteraction: poke } = await import('./interaction')
 

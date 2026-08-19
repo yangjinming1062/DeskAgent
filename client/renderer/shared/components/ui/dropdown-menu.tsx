@@ -7,15 +7,14 @@ import { Codicon } from './codicon'
 
 const DropdownMenuPrimitive = RadixUI.DropdownMenu
 
-// Shared class tokens for edge-to-edge menus (use with `p-0` content): rows go
-// full-width, square, and compact so the highlight spans the whole surface.
-// Reuse these instead of re-deriving per menu so every searchable/compact menu
-// reads identically.
+// 边到边菜单的共享 class token（与 `p-0` 内容配合使用）：菜单行占满宽度、方形且紧凑，
+// 高亮区贯穿整块表面。复用这些 token，避免在每个菜单里重复推算，保证所有可搜索 /
+// 紧凑菜单视觉一致。
 export const dropdownMenuRow = 'gap-2 rounded-none px-2.5 py-1 text-xs'
 export const dropdownMenuSectionLabel = 'px-2.5 pt-1 pb-0.5 text-[0.625rem] font-medium uppercase tracking-wide'
 
-// Keys that must reach Radix's menu handler (navigation/close). Everything else
-// is a filter keystroke and is stopped so the menu's typeahead doesn't hijack it.
+// 必须交给 Radix 菜单处理器处理的按键（导航 / 关闭）。其余按键视为过滤输入，
+// 会 stopPropagation，避免菜单自带的 typeahead 抢键。
 const DROPDOWN_NAV_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'])
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>): React.JSX.Element {
@@ -35,9 +34,9 @@ function DropdownMenuTrigger({
 }
 
 /**
- * Borderless filter input for a searchable dropdown. Autofocuses, keeps the
- * menu's typeahead from eating keystrokes, and still lets arrow/enter/escape
- * drive the list. Drop it in as the first child of a `DropdownMenuContent`.
+ * 可搜索下拉菜单的无边框过滤输入框。自动聚焦，阻止菜单 typeahead 抢键，
+ * 同时保留方向键 / Enter / Escape 控制列表。把它作为 `DropdownMenuContent` 的
+ * 第一个子节点插入即可。
  */
 function DropdownMenuSearch({
   className,
@@ -83,15 +82,15 @@ function DropdownMenuContent({
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
-        // `dt-portal-scrollbar` reproduces the thin themed scrollbar from
-        // `.scrollbar-dt` for portaled overlays (Radix renders this under
-        // document.body, outside #root's scope). See styles.css.
+        // `dt-portal-scrollbar` 复刻 `.scrollbar-dt` 的细滚动条样式，
+        // 用于 portal 渲染的浮层（Radix 把它们渲染在 document.body 下，
+        // 脱离了 #root 的作用域）。见 styles.css。
         className={cn(
           'dt-portal-scrollbar z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] p-1 text-[length:var(--conversation-text-font-size)] text-popover-foreground shadow-md backdrop-blur-md data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           className
         )}
-        // Keep the menu inside the viewport: Radix flips/shifts away from edges
-        // (avoidCollisions defaults on); the padding stops it kissing the edge.
+        // 让菜单留在视口内：Radix 会自动避开边缘（avoidCollisions 默认开启）；
+        // 这段 padding 防止它贴着视口边。
         collisionPadding={collisionPadding}
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
@@ -232,7 +231,7 @@ function DropdownMenuSubTrigger({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
   inset?: boolean
-  /** Suppress the trailing caret — for triggers that own their right-side affordance. */
+  /** 隐藏末尾的 caret——给自带右侧图标的触发器留位。 */
   hideChevron?: boolean
 }): React.JSX.Element {
   return (
@@ -257,24 +256,22 @@ function DropdownMenuSubContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>): React.JSX.Element {
   return (
-    // Portal the submenu out of the parent Content so it escapes that Content's
-    // `overflow` clip. Without this, a submenu opening from a scrollable menu
-    // gets visually cut off at the parent's edges. Radix Popper still anchors
-    // it to the SubTrigger and handles collision/flip, so portaling is safe.
+    // 把 SubContent portal 渲染到父 Content 之外，从而规避父 Content 的
+    // `overflow` 裁剪。不这样做的话，从可滚动菜单打开的子菜单会被父级边缘
+    // 视觉裁掉。Radix Popper 仍然把它锚定到 SubTrigger 并处理碰撞 / 翻转，
+    // 因此 portal 是安全的。
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.SubContent
-        // `dt-portal-scrollbar` reproduces the themed scrollbar for portaled
-        // overlays (rendered under document.body). Use a fixed `max-h-80`
-        // rather than the Radix available-height variable: that variable is
-        // only published on Content, NOT SubContent — using it here collapses
-        // the submenu to 0px height.
+        // `dt-portal-scrollbar` 复刻主题化滚动条样式，用于 portal 渲染的
+        // 浮层（位于 document.body 下）。使用固定的 `max-h-80` 而非 Radix
+        // available-height 变量：该变量仅发布在 Content 上，SubContent 上
+        // 没有——用在这里会让子菜单高度坍缩到 0。
         className={cn(
           'dt-portal-scrollbar z-50 max-h-80 min-w-36 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg border border-(--ui-stroke-secondary) bg-[color-mix(in_srgb,var(--ui-bg-elevated)_96%,transparent)] p-1 text-[length:var(--conversation-text-font-size)] text-popover-foreground shadow-md backdrop-blur-md data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
           className
         )}
-        // Flip to the other side / shift vertically when near a viewport edge
-        // (e.g. the status bar menu opening from the bottom-right corner) so
-        // the submenu never gets clipped.
+        // 临近视口边缘时（如右下角的状态栏菜单）翻到对侧 / 纵向位移，
+        // 避免子菜单被裁掉。
         collisionPadding={collisionPadding}
         data-slot="dropdown-menu-sub-content"
         {...props}

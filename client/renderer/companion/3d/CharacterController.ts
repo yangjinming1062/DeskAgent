@@ -35,7 +35,7 @@ interface OutfitItem {
   roughness_url?: string | null
   metalness_url?: string | null
   displacement_url?: string | null
-  // Geometric wardrobe (PROTOCOL.md §1.6 + companion README §9).
+  // 几何衣橱（见 PROTOCOL.md §1.6 与 companion README §9）。
   kind?: string
   mesh_url?: string | null
   assembly_json?: string
@@ -75,10 +75,9 @@ function parseAssembly(item: OutfitItem): AssemblySpec {
   }
 }
 
-// Channels the wardrobe pipeline can populate on a WardrobeItem. The keys
-// are the URL field names on the JSON response; the values name the
-// MeshStandardMaterial slot each texture binds to. Adding a new channel
-// means a new field on the ORM + schema + this table.
+// 衣橱管线可以在 WardrobeItem 上填充的通道。键是 JSON 响应中的 URL 字段名，
+// 值是该贴图所绑定的 MeshStandardMaterial 插槽。新增通道
+// 意味着要在 ORM、schema 与本表各加一个新字段。
 type PbrChannel = 'albedo' | 'normal' | 'roughness' | 'metalness' | 'displacement'
 
 type PbrSlot =
@@ -91,14 +90,14 @@ type PbrSlot =
   | 'bumpMap'
   | 'displacementMap'
 
-// Cloth-unit materials become MeshStandardNodeMaterial under the TSL physics
-// backend — both expose the same PBR slots, so binds and disposal accept both.
+// 在 TSL 物理后端下，布料单元的材质会变成 MeshStandardNodeMaterial。
+// 两者暴露相同的 PBR 插槽，所以绑定与释放都能兼容。
 type PbrMaterial = THREE.MeshStandardMaterial | MeshStandardNodeMaterial
 
 const isPbrMaterial = (m: THREE.Material): m is PbrMaterial =>
   m instanceof THREE.MeshStandardMaterial || m instanceof MeshStandardNodeMaterial
 
-/** Bind a wardrobe channel texture onto the GLB-native PBR material. */
+/** 把衣橱通道贴图绑定到 GLB 自带的 PBR 材质上。 */
 const applyChannelTexture = (m: THREE.Material, slot: PbrSlot, tex: THREE.Texture | null): void => {
   if (isPbrMaterial(m)) {
     setPbrSlot(m, slot, tex)
@@ -110,7 +109,7 @@ const applyChannelTexture = (m: THREE.Material, slot: PbrSlot, tex: THREE.Textur
   }
 }
 
-/** Restore the GLB-native base texture for map/normalMap (fetch-failure fallback + channel clear). */
+/** 恢复 GLB 自带的 map / normalMap 基础贴图（拉取失败回退 + 通道清理）。 */
 const restoreBaseTexture = (m: THREE.Material, slot: PbrSlot): void => {
   if (slot !== 'map' && slot !== 'normalMap') {
     return
@@ -164,7 +163,7 @@ const PBR_TEXTURE_KEYS = [
   'displacementMap'
 ] as const
 
-// Dispose geometry, materials, and textures under an Object3D hierarchy.
+// 释放 Object3D 层级下的几何、材质与贴图。
 const disposeObjectTree = (root: THREE.Object3D): void => {
   root.traverse(child => {
     if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
@@ -176,9 +175,9 @@ const disposeObjectTree = (root: THREE.Object3D): void => {
           continue
         }
 
-        // Dispose PBR textures before the material — material.dispose() doesn't release GPU texture refs.
-        // currentPbrTex tracks the setOutfit-loaded ones (disposed by the caller); this sweep also covers
-        // GLB-baked textures that live only on materials. dispose() is idempotent.
+        // 释放材质前先释放 PBR 贴图——material.dispose() 不会释放 GPU 贴图引用。
+        // currentPbrTex 记录由 setOutfit 加载的贴图（由调用方释放）；
+        // 本次扫描覆盖仅随材质存活的 GLB 内嵌贴图。dispose() 本身是幂等的。
         if (isPbrMaterial(mat)) {
           for (const key of PBR_TEXTURE_KEYS) {
             const tex = getPbrSlot(mat, key)
@@ -196,13 +195,13 @@ const disposeObjectTree = (root: THREE.Object3D): void => {
 }
 
 /**
- * Transparently decompresses Gzip / Deflate compressed GLB buffers.
- * Preserves 100% full mesh resolution and fidelity while drastically reducing transport size.
+ * 透明地解压经过 Gzip / Deflate 压缩的 GLB 缓冲。
+ * 在大幅缩小传输体积的同时，保留 100% 的网格分辨率与精度。
  */
 async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> {
   const bytes = new Uint8Array(buffer)
 
-  // Gzip magic bytes (0x1f, 0x8b)
+  // Gzip 魔数（0x1f, 0x8b）
   if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
     if (typeof DecompressionStream !== 'undefined') {
       try {
@@ -216,7 +215,7 @@ async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> 
     }
   }
 
-  // Deflate / zlib magic bytes (0x78 0x9c / 0x78 0x01 / 0x78 0xda)
+  // Deflate / zlib 魔数（0x78 0x9c / 0x78 0x01 / 0x78 0xda）
   if (bytes.length >= 2 && bytes[0] === 0x78 && (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda)) {
     if (typeof DecompressionStream !== 'undefined') {
       try {
@@ -261,7 +260,7 @@ export class CharacterController {
   private breathPhase = 0
   private lookX = 0
   private lookY = 0
-  // Track PBR channel textures we last applied so a hot-swap can dispose the previous set before replacing it.
+  // 记录最近应用的 PBR 通道贴图，以便热替换时先释放旧资源再装入新资源。
   private currentPbrTex: Record<PbrChannel, THREE.Texture | null> = {
     albedo: null,
     normal: null,
@@ -269,13 +268,13 @@ export class CharacterController {
     metalness: null,
     displacement: null
   }
-  // Monotonic epoch so stale textureLoader callbacks (e.g. reverse load-completion order on rapid setOutfit) dispose their texture and bail.
+  // 单调递增的 epoch——快速连续 setOutfit 时，过期的 textureLoader 回调
+  // （如加载完成顺序与发起顺序相反）据此释放自己解码的贴图并退出。
   private textureEpoch = 0
   private readonly textureLoader = new THREE.TextureLoader()
 
-  // Assembled wardrobe units (PROTOCOL.md §1.6): one entry per equipped
-  // geometric item (garment or accessory); texture items apply to the body
-  // root instead and keep no entry here.
+  // 已装配的衣橱单元（PROTOCOL.md §1.6）：每个已装备的
+  // 几何项（服装或配件）对应一条记录；贴图项应用于身体根节点，不在此登记。
   private units: AssembledUnit[] = []
   private bodyCollider: BodyCollider | null = null
   private boneRestQuats = new Map<string, THREE.Quaternion>()
@@ -303,7 +302,7 @@ export class CharacterController {
     return action ?? null
   }
 
-  /** Parse pre-fetched GLB bytes + animations; falls back to procedural on error. Bytes arrive from the renderer's `apiAssetBuffer` IPC (host-stripped + re-based by main, no CORS preflight). When `contentHash` is provided and `gltf-instance-cache` already has a parsed template, the load pulls a deep clone instead of re-parsing. */
+  /** 解析预取的 GLB 字节与动画；出错时回退到程序化形象。字节来自渲染进程的 `apiAssetBuffer` IPC（主进程已剥离 host 并重写 base，无 CORS 预检）。若提供了 `contentHash` 且 `gltf-instance-cache` 中已有解析好的模板，则取出深克隆而非重新解析。 */
   async load(
     bytes: ArrayBuffer | null,
     scene: THREE.Scene,
@@ -319,7 +318,7 @@ export class CharacterController {
         let rootScene: THREE.Group
         let gltfAnimations: THREE.AnimationClip[]
 
-        // Detached cache: deep clone is dramatically cheaper than re-parsing GLB.
+        // 分离缓存：深克隆比重解析 GLB 便宜得多。
         if (contentHash && hasGltf(contentHash)) {
           const cached = takeGltfClone(contentHash)!
 
@@ -336,7 +335,7 @@ export class CharacterController {
           rootScene = gltf.scene
           gltfAnimations = gltf.animations
 
-          // Template stays owned by the cache; subsequent takes return deep clones.
+          // 模板由缓存持有；后续取出时返回深克隆。
           if (contentHash) {
             stashGltf(contentHash, gltf.scene, gltf.animations, bytes.byteLength)
           }
@@ -435,7 +434,7 @@ export class CharacterController {
   }
 
   private disposeRoot(scene: THREE.Scene | null): void {
-    // Bump epoch first so in-flight textureLoader callbacks dispose their freshly-decoded texture and bail.
+    // 先递增 epoch，使进行中的 textureLoader 回调释放其刚解码的贴图并退出。
     this.textureEpoch++
 
     this.headBone = null
@@ -551,17 +550,17 @@ export class CharacterController {
       let clipName: string | null = null
 
       if (ctx?.clipOverride && this.actionNames.has(ctx.clipOverride)) {
-        // Caller already resolved and verified the override (e.g. interaction.ts)
+        // 调用方已解析并校验过该 override（例如 interaction.ts）
         clipName = ctx.clipOverride
       } else if (ctx?.interactionBucket) {
-        // Tag-driven interaction clip selection
+        // 基于标签的交互动作选择
         clipName = resolveInteractionClip(ctx.interactionBucket, tags, library, available)
       } else if (state === 'emotional' && emotion) {
-        // Tag-driven emotion clip selection
+        // 基于标签的情绪动作选择
         clipName = resolveEmotionClip(emotion, tags, library, available, ctx?.customExpressions, ctx?.action)
       }
 
-      // Spec state→clip map (MODEL_SPEC §3); last resort when no override / interaction / emotion clip resolves.
+      // 规范状态→动作映射（MODEL_SPEC §3）；override / 交互 / 情绪动作均无解析时的兜底。
       if (!clipName) {
         clipName = resolveClip(state, this.actionNames)
       }
@@ -572,7 +571,7 @@ export class CharacterController {
     }
   }
 
-  /** Audio amplitude [0..1] for TTS-driven lip sync. */
+  /** TTS 驱动的嘴型同步振幅 [0..1]。 */
   setLipSyncAmplitude(amp: number): void {
     this.morph.setLipSyncAmplitude(amp)
 
@@ -581,7 +580,7 @@ export class CharacterController {
     }
   }
 
-  /** Apply body-shape morph target weights (0.0–1.0). */
+  /** 施加身材形变形目标权重（0.0–1.0）。 */
   setMorphs(params: Record<string, number>): void {
     this.root.traverse(child => {
       if (!(child instanceof THREE.Mesh)) {
@@ -605,7 +604,7 @@ export class CharacterController {
     })
   }
 
-  /** Apply equipped wardrobe set (texture hot-swap and geometric assembly). */
+  /** 应用已装备的衣橱套装（贴图热替换 + 几何装配）。 */
   setOutfit(items: readonly OutfitItem[]): void {
     if (this.isProcedural) {
       return
@@ -658,9 +657,8 @@ export class CharacterController {
 
   private applyTextureOutfit(item: OutfitItem | null): void {
     if (item === null) {
-      // No texture item equipped — clear stale body PBR bindings left by the
-      // previous outfit (the stub-object path accidentally also cleared, but
-      // here it's an explicit operation).
+      // 未装备贴图项——显式清理上一套外观残留的身体 PBR 绑定
+      // （stub-object 分支会顺带清理，此处保留显式清理以保持意图明确）。
       for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
         const def = PBR_CHANNEL_DEFS[channel]
         this.clearPbrChannel(channel, def.slot)
@@ -727,7 +725,7 @@ export class CharacterController {
     return false
   }
 
-  /** Assemble a geometric unit (garment or accessory). */
+  /** 装配一个几何单元（服装或配饰）。 */
   private async assembleUnit(item: OutfitItem, spec: AssemblySpec): Promise<void> {
     const epoch = this.textureEpoch
     const desktop = window.spiritagent
@@ -776,8 +774,8 @@ export class CharacterController {
       const socketBone = spec.socket ? this.findBodyBone(spec.socket) : null
 
       if (socketBone) {
-        // Parent an anchor to the socket bone, compensated so meshes keep
-        // their authored world placement in rest pose while inheriting bone motion.
+        // 将锚点挂到 socket 骨骼并做补偿，使网格在继承骨骼运动
+        // 的同时，仍保持 rest pose 下原本的世界位置。
         const anchor = new THREE.Group()
         anchor.name = `wardrobe-unit-anchor-${spec.kind}`
 
@@ -807,7 +805,7 @@ export class CharacterController {
         }
       }
     } else {
-      // Garment path: find body SkinnedMesh for skeleton + bindMatrix.
+      // 服装分支：找到身体的 SkinnedMesh 以获取 skeleton 与 bindMatrix。
       const bodyMesh = this.bodySkinnedMesh()
 
       if (!bodyMesh?.skeleton) {
@@ -825,11 +823,11 @@ export class CharacterController {
       }
 
       if (skinned.length > 0) {
-        // Both cloth and skin units render as plain Meshes (no GPU skinning)
-        // so the solver-written positions are authoritative — the TSL backend
-        // achieves this via node-material positionNode instead of attribute
-        // writes. Cloth hands free vertices to the verlet solver; skin pins
-        // every vertex against the body to stop animation-time clipping.
+        // 布料与皮肤单元都按普通 Mesh 渲染（无 GPU 蒙皮），
+        // 求解器写出的顶点位置即最终位置。TSL 后端通过
+        // node-material 的 positionNode 而非 attribute 写入实现这一点。
+        // 布料把自由顶点交给 verlet 求解器；皮肤把每个顶点钉在身体上，
+        // 防止动画时穿模。
         const bodyCollider = this.physics.kind === 'cpu' ? this.ensureBodyCollider(bodyMesh) : null
         const plain: THREE.Mesh[] = []
 
@@ -867,11 +865,11 @@ export class CharacterController {
     this.root.add(group)
     this.units.push({ group, physics, key: item.mesh_url ?? '', anchors })
 
-    // Bind PBR textures scoped to the unit's meshes only.
+    // PBR 贴图绑定仅作用于该单元自身的网格。
     this.bindPbrChannels(item, meshes)
   }
 
-  /** Find first body SkinnedMesh as skeleton and bindMatrix source. */
+  /** 找到首个身体的 SkinnedMesh，作为 skeleton 与 bindMatrix 的来源。 */
   private bodySkinnedMesh(): THREE.SkinnedMesh | null {
     const skinned: THREE.SkinnedMesh[] = []
 
@@ -884,7 +882,7 @@ export class CharacterController {
     return skinned[0] ?? null
   }
 
-  /** Lazily build the shared body collision proxy, or return the cached one. */
+  /** 按需构建共享的身体碰撞代理，或返回已缓存的实例。 */
   private ensureBodyCollider(bodyMesh: THREE.SkinnedMesh): BodyCollider | null {
     if (this.bodyCollider) {
       return this.bodyCollider
@@ -900,7 +898,7 @@ export class CharacterController {
     return this.bodyCollider
   }
 
-  /** Collect Mesh / SkinnedMesh leaves from a loaded unit scene; flags shadows. */
+  /** 从已加载的单元场景中收集 Mesh / SkinnedMesh 叶子节点；标记阴影投射。 */
   private collectUnitMeshes(scene: THREE.Object3D, skinnedOnly: boolean): THREE.Mesh[] {
     const found: THREE.Mesh[] = []
 
@@ -915,7 +913,7 @@ export class CharacterController {
     return found
   }
 
-  /** Find a bone in the body skeleton by exact or suffix name (mixamorig: tolerant). */
+  /** 按精确名或后缀名在身体骨架中查找骨骼（兼容 mixamorig: 前缀）。 */
   private findBodyBone(name: string): THREE.Bone | null {
     const skeleton = this.bodySkinnedMesh()?.skeleton
 
@@ -934,14 +932,14 @@ export class CharacterController {
     return skeleton.bones.find(b => (b.name.split(':').pop() ?? b.name) === suffix) ?? null
   }
 
-  /** Rebind garment SkinnedMesh to body skeleton (zero-mapping or bone name remap). */
+  /** 将服装 SkinnedMesh 重绑到身体骨架上（零映射或按骨骼名重映射）。 */
   private rebindGarmentMesh(
     mesh: THREE.SkinnedMesh,
     bodySkeleton: THREE.Skeleton,
     bodyBindMatrix: THREE.Matrix4 | null,
     bodyBoneNames: string[]
   ): void {
-    // Defensive: check if joint names match. If not, remap skinIndices.
+    // 防御性：检查关节名是否对应；不对应则重映射 skinIndices。
     if (!mesh.skeleton) {
       log.warn('character', 'garment mesh has no skeleton — skipping rebind')
 
@@ -980,7 +978,7 @@ export class CharacterController {
     mesh.bindMode = THREE.DetachedBindMode
   }
 
-  /** Dispose an assembled unit and remove from scene. */
+  /** 释放已装配的单元并从场景中移除。 */
   private disposeUnit(unit: AssembledUnit): void {
     for (const p of unit.physics) {
       this.physics.destroyUnit(p)
@@ -997,7 +995,7 @@ export class CharacterController {
     this.root.remove(unit.group)
   }
 
-  /** Load and bind a PBR channel texture, optionally scoped to target meshes. */
+  /** 加载并绑定 PBR 通道贴图，可选限定到目标网格。 */
   private loadPbrChannel(
     url: string,
     channel: PbrChannel,
@@ -1009,7 +1007,7 @@ export class CharacterController {
     const desktop = window.spiritagent
 
     void (async () => {
-      // Same host-strip via IPC as the GLB path; data URL is fine for textures
+      // 与 GLB 路径一样经 IPC 走 host-strip；贴图用 data URL 即可
       // (≪ GLB) and ``THREE.TextureLoader`` accepts them.
       let dataUrl: string | null = null
 
@@ -1018,7 +1016,7 @@ export class CharacterController {
       } catch (err) {
         log.warn('character', `PBR channel '${channel}' fetch failed, falling back to native texture:`, err)
 
-        // Fallback: restore native base texture if available
+        // 兜底：若有原生基础贴图则恢复
         if (targetMeshes) {
           for (const mesh of targetMeshes) {
             const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
@@ -1049,8 +1047,8 @@ export class CharacterController {
       }
 
       this.textureLoader.load(dataUrl, tex => {
-        // Stale callback: a newer setOutfit / disposeRoot invalidated this load.
-        // Dispose the freshly-decoded texture (never bound to a mesh) and bail.
+        // 过期回调：更新的 setOutfit / disposeRoot 已使本加载失效。
+        // 释放刚解码的贴图（从未绑定到网格）并退出。
         if (epoch < this.textureEpoch) {
           tex.dispose()
 
@@ -1089,7 +1087,7 @@ export class CharacterController {
     })()
   }
 
-  /** Dispatch and load PBR channel textures for an outfit item. */
+  /** 为装扮项分发并加载 PBR 通道贴图。 */
   private bindPbrChannels(item: OutfitItem, targetMeshes?: THREE.Mesh[]): void {
     for (const channel of Object.keys(PBR_CHANNEL_DEFS) as PbrChannel[]) {
       const def = PBR_CHANNEL_DEFS[channel]
@@ -1124,7 +1122,7 @@ export class CharacterController {
 
       for (const m of mats) {
         if (isPbrMaterial(m)) {
-          // Restore native GLB base textures if clearing custom channel
+          // 清理自定义通道时恢复 GLB 原生基础贴图
           const fallbackTex =
             slot === 'map'
               ? (m.userData?.baseMap ?? null)
@@ -1148,7 +1146,7 @@ export class CharacterController {
   }
 
   setLookTarget(nx: number, ny: number): void {
-    // nx, ny normalised to [-1, 1] from screen centre
+    // nx, ny 从屏幕中心归一化到 [-1, 1]
     this.lookX = THREE.MathUtils.clamp(nx, -1, 1)
     this.lookY = THREE.MathUtils.clamp(ny, -1, 1)
   }
@@ -1156,7 +1154,7 @@ export class CharacterController {
   private dragTilt = { x: 0, z: 0 }
 
   setDragVelocity(vx: number, vy: number): void {
-    // vx, vy normalised in px/ms
+    // vx, vy 以 px/ms 为单位归一化
     this.dragTilt.z = THREE.MathUtils.clamp(-vx * 0.12, -0.25, 0.25)
     this.dragTilt.x = THREE.MathUtils.clamp(vy * 0.08, -0.2, 0.2)
   }
@@ -1166,20 +1164,20 @@ export class CharacterController {
     this.mixer?.update(delta)
     this.morph.update(delta)
 
-    // Smoothly decay drag tilt
+    // 平滑衰减拖拽倾角
     this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.1)
     this.dragTilt.z = THREE.MathUtils.lerp(this.dragTilt.z, 0, 0.1)
 
     if (this.isProcedural) {
       this.updateProcedural(delta)
     } else {
-      // Subtle idle float for GLB characters whose clip may not include it
+      // GLB 角色若内置动作不包含 idle 浮动，则手动添加细微的 idle 浮动
       this.root.position.y = Math.sin(this.breathPhase * 0.8) * 0.01
     }
 
-    // Cloth units read the skeleton's bone matrices (updated by the renderer
-    // for the body SkinnedMesh) — one frame of lag, invisible at 60fps.
-    // Only update the body collider and BVH if there are active physics units to collide with.
+    // 布料单元读取骨骼矩阵（由渲染器按身体的 SkinnedMesh 更新）——
+    // 有一帧延迟，60fps 下不可见。
+    // 仅当存在活跃的物理单元需要参与碰撞时，才更新身体碰撞体与 BVH。
     const hasActivePhysics = this.units.some(unit => unit.physics.length > 0)
 
     if (hasActivePhysics) {
@@ -1217,19 +1215,19 @@ export class CharacterController {
   }
 
   private applyLookAt(): void {
-    // Subtle body yaw towards cursor
+    // 身体向光标方向微微偏航
     const yaw = this.lookX * 0.12
     this.root.rotation.y = THREE.MathUtils.lerp(this.root.rotation.y, yaw, 0.08)
 
-    // Drag physics inertia only during active drag (smoothly decays to 0 at rest)
+    // 仅在主动拖拽期间保留拖拽惯性（静止时平滑衰减为 0）
     const pitch = this.dragTilt.x * 0.4
     const roll = this.dragTilt.z * 0.4
     this.root.rotation.x = THREE.MathUtils.lerp(this.root.rotation.x, pitch, 0.1)
     this.root.rotation.z = THREE.MathUtils.lerp(this.root.rotation.z, roll, 0.1)
 
-    // Subtle chin-tuck posture + cursor gaze tracking for natural, engaged eye-level contact
-    // In human portraiture, a slight chin-tuck (~3°) flatters the jawline, engages direct eye contact,
-    // and eliminates the detached "looking up at the ceiling" appearance from raw AI rigs.
+    // 微微下颌内收 + 光标视线追踪，营造自然、有交流感的平视眼神。
+    // 人像摄影里约 3° 的下颌内收能让下颌线更柔和、视线更聚焦，
+    // 避免 AI 原始骨骼那种"仰头看天花板"的脱节感。
     if (this.headBone && this.isBipedRig) {
       const restHead = this.boneRestQuats.get(this.headBone.name)
       const chinTuckPitch = 0.05
@@ -1260,10 +1258,10 @@ export class CharacterController {
   }
 
   // ── Procedural fallback character ───────────────────────────
-  // Scope: the pre-portrait onboarding window (no identity images exist yet)
-  // and the absolute last resort when the static-sprite album has no usable
-  // image (backend down / all generations rejected). Post-portrait, the
-  // degraded renderer is the static sprite layer — never blank (invariant #10).
+  // 适用场景：半身像生成前的 onboarding 窗口（还没有形象图），
+  // 以及静态相册彻底无可用图时的最后兜底
+  // （后端宕机 / 所有生成都被拒）。半身像就绪后，
+  // 降级渲染层切到静态精灵——画面永不空白（不变量 #10）。
 
   private createProcedural(scene: THREE.Scene): void {
     this.isProcedural = true
@@ -1301,26 +1299,26 @@ export class CharacterController {
     mouth.position.set(0, 1.04, 0.4)
     group.add(mouth)
 
-    // Prefabricated crack line decorations on shell surface
+    // 蛋壳表面的预制裂纹线装饰
     const cracks: THREE.Line[] = []
     const crackMats: THREE.LineBasicMaterial[] = []
 
     const crackPathsPoints = [
-      // Crack 1: Upper left
+      // 裂纹 1：左上
       [
         new THREE.Vector3(-0.15, 1.3, 0.42),
         new THREE.Vector3(-0.25, 1.22, 0.38),
         new THREE.Vector3(-0.2, 1.12, 0.43),
         new THREE.Vector3(-0.32, 1.05, 0.35)
       ],
-      // Crack 2: Mid right
+      // 裂纹 2：中右
       [
         new THREE.Vector3(0.25, 1.1, 0.4),
         new THREE.Vector3(0.35, 1.0, 0.32),
         new THREE.Vector3(0.28, 0.9, 0.39),
         new THREE.Vector3(0.38, 0.82, 0.28)
       ],
-      // Crack 3: Lower left
+      // 裂纹 3：左下
       [new THREE.Vector3(-0.2, 0.85, 0.42), new THREE.Vector3(-0.28, 0.78, 0.36), new THREE.Vector3(-0.18, 0.7, 0.41)]
     ]
 
@@ -1378,7 +1376,7 @@ export class CharacterController {
       }
     }
 
-    // Reset transforms each frame
+    // 每帧重置变换矩阵
     this.proc.group.position.y = 0
     this.proc.body.scale.set(0.82, 1.08, 0.82)
     this.proc.body.rotation.z = 0
@@ -1388,7 +1386,7 @@ export class CharacterController {
       case 'speaking': {
         this.proc.group.position.y = Math.sin(t * 5) * 0.015
 
-        // Mouth scale driven by setLipSyncAmplitude, not sine wave
+        // 嘴型缩放由 setLipSyncAmplitude 驱动，而非正弦波
         break
       }
 
@@ -1425,7 +1423,7 @@ export class CharacterController {
       }
     }
 
-    // Procedural blink — sleeping already returned early above
+    // 程序化眨眼——上面 sleeping 已提前返回
     const blinkCycle = t % (3 + (this.currentState.charCodeAt(0) % 3))
     const blinkWindow = blinkCycle > 2.8 && blinkCycle < 2.95
     const eyeScaleY = blinkWindow ? 0.1 : 1

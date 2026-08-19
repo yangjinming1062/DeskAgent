@@ -6,8 +6,8 @@ export type InteractiveRegion = {
   id: string
 }
 
-// Per-window keyed map so each window owns its regions — a second
-// window (its own SpriteStage) can't clobber the shared list.
+// 按窗口分桶的 map，使每个窗口各自管理自己的交互区域——
+// 第二个窗口（各自的 SpriteStage）不会冲掉共享列表。
 const _regionsByWindow = new Map<number, Map<string, InteractiveRegion>>()
 const _probesByWindow = new Map<number, () => void>()
 
@@ -68,8 +68,7 @@ export function isPointInteractive(x: number, y: number, windowId: number = 0): 
     }
 
     if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
-      // Rect hit refined by the pixel predicate; absent or non-boolean keeps
-      // the plain rect semantics.
+      // 用像素谓词细化矩形命中；缺失或非布尔值时保持纯矩形语义。
       if (region.hitTest?.(x, y) !== false) {
         return true
       }
@@ -100,12 +99,11 @@ export function isRegionHit(id: string, x: number, y: number, windowId: number =
   return false
 }
 
-// React hook: register an interactive region for the lifetime of the
-// component, deriving the rectangle from a ref's getBoundingClientRect().
-// Pass `getRect` to override (e.g. the boot-failure overlay covers the full
-// viewport). Pass `hitTest` to refine rect hits pixel-wise — callers must keep
-// its reference stable, the region re-registers whenever it changes. Return
-// `null` from `getRect` to opt out of the region for that frame.
+// React hook：在组件生命周期内注册一个交互区域，
+// 通过 ref 的 getBoundingClientRect() 派生矩形。
+// 传 `getRect` 可覆盖默认行为（如 boot-failure 覆盖层覆盖整个视口）。
+// 传 `hitTest` 可按像素细化命中——调用方必须保持其引用稳定，
+// 引用变化时区域会重新注册。在 `getRect` 中返回 `null` 可让该帧退出区域。
 export function useInteractiveRegion(
   id: string,
   ref: RefObject<HTMLElement | null>,

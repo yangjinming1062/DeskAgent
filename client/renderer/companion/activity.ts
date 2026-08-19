@@ -6,9 +6,9 @@ import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $llmAffect } from './prefs'
 
-// Local environment signals polled from the Runner's system.* tools (plan §8),
-// bypassing the LLM — the companion reasons about them directly. Polls no-op
-// while the Runner is offline and the atoms keep their defaults.
+// 本地环境信号取自 Runner 的 system.* 工具（plan §8），
+// 绕过 LLM——伙伴层直接基于这些信号做推理。Runner 离线时 poll 是空操作，
+// atom 保持默认值。
 
 export const $screenLocked = atom<boolean>(false)
 // Last finite idle-seconds reading from the activity poll. -1 means no signal
@@ -28,27 +28,25 @@ export const $focusContext = atom<FocusContext | null>(null)
 
 const POLL_INTERVAL_MS = 30_000
 
-// Idle-triggered contextual affect (ARCHITECTURE.md §7.6). When the user has
-// been inactive past IDLE_THRESHOLD_SECONDS and the cooldown window has
-// elapsed, ping the backend's `companion.check_affect` RPC so the LLM can
-// reason (persona + memory) whether the companion should express a contextual
-// emotion. The desktop owns trigger timing; the backend owns emotion reasoning.
+// 空闲触发的上下文 affect（ARCHITECTURE.md §7.6）。当用户闲置时间超过
+// IDLE_THRESHOLD_SECONDS 且冷却窗口已过，向后端的 `companion.check_affect`
+// RPC 发起探测，让 LLM 结合人格（长期记忆）推理伙伴是否应表达一个
+// 上下文相关的情绪。客户端掌握触发时机；后端掌握情绪推理。
 const IDLE_THRESHOLD_SECONDS = 30 * 60
 const CHECK_COOLDOWN_MS = 60 * 60 * 1000
 
-// Tier-push dedup: only push to the backend when the effective tier value
-// changes; the polling cadence (POLL_INTERVAL_MS, 30s) is much larger than
-// any reasonable throttle, so dedup on value alone is sufficient.
+// 打扰档位推送去重：只有当生效档位值变化时才往后端推；轮询节拍
+// (POLL_INTERVAL_MS, 30 秒) 远大于任何合理的节流阈值，
+// 所以单凭值去重就够了。
 let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
 let lastTierPushed: { value: DisturbanceTier; at: number } | null = null
 
-// Runner-gate state. The poll only fires `runnerInvoke` once the bridge has
-// reached `running`; until then `pollOnce` would log four "Runner is not
-// connected" rejections per cycle in the main process for no value. The
-// bridge lifecycle lives in the shared `$runnerPhase` atom (see
-// `@/shared/store/runner-status`); this module subscribes for transitions
-// and caches the boolean locally for the setInterval tick gate.
+// Runner 网关状态。轮询只在 bridge 达到 `running` 后才发起 `runnerInvoke`；
+// 否则每个周期 `pollOnce` 都会在主进程里记四次 "Runner is not connected"
+// 拒绝，毫无意义。bridge 生命周期写在共享的 `$runnerPhase` atom 里
+// （见 `@/shared/store/runner-status`）；本模块订阅其状态变化，
+// 并把布尔值本地缓存供 setInterval tick 网关使用。
 let runnerReady = false
 let offPhaseSub: (() => void) | null = null
 
@@ -65,8 +63,8 @@ function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
 
   const hour = new Date().getHours()
 
-  // Quiet hours (23-7, synced with companion-store.checkBedtimeAndAutoSleep):
-  // skip so an affect cue doesn't wake the companion past SLEEPING.
+  // 静默时段（23-7，与 companion-store.checkBedtimeAndAutoSleep 同步）：
+  // 跳过，避免 affect 提示在 SLEEPING 之后又把伙伴唤醒。
   if (hour >= 23 || hour < 7) {
     return
   }
@@ -79,7 +77,7 @@ function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
       local_hour: hour
     })
     .catch(() => {
-      /* backend offline or RPC failed — silent, next poll will retry after cooldown */
+      /* 后端离线或 RPC 失败——静默，下次轮询冷却后重试 */
     })
 }
 
@@ -197,7 +195,7 @@ export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
 const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['ide', 'gaming', 'reader'])
 
 function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusContext | null): DisturbanceTier {
-  // Manual ``quiet`` lock-in: never overridden.
+  // 手动 ``quiet`` 锁定：任何情况下都不被覆盖。
   if (userPreferred === 'quiet') {
     return 'quiet'
   }
@@ -218,16 +216,15 @@ function maybePushTierOverride(): void {
   const ctx = $focusContext.get()
   const desired = computeLocalEffectiveTier(preferred, ctx)
 
-  // Mirror the backend's sidecar: write the override atom so $effectiveTier
-  // recomputes, and push the derived effective tier to the backend. Skip the
-  // set when unchanged — atom updates cascade to all subscribers.
+  // 镜像后端 sidecar 的行为：写入 override atom 让 $effectiveTier 重算，
+  // 并把派生出的生效档位推给后端。值未变则跳过 set——订阅者会级联到所有订阅者。
   const nextOverride = desired === preferred ? null : desired
 
   if ($effectiveTierOverride.get() !== nextOverride) {
     $effectiveTierOverride.set(nextOverride)
   }
 
-  // Dedup on value alone: only push when the effective value changes.
+  // 仅按值去重：只有生效值变化时才推送。
   if (lastTierPushed && lastTierPushed.value === desired) {
     return
   }
@@ -236,15 +233,15 @@ function maybePushTierOverride(): void {
 
   const gateway = $gateway.get()
   void gateway?.request('companion.set_disturbance_tier', { tier: desired }).catch(() => {
-    /* backend offline — push will retry on next poll cycle */
+    /* 后端离线——下次轮询周期会重试推送 */
   })
 }
 
-// Aggregated activity snapshot from the runner. Single ``system.snapshot``
-// round-trip replaces four separate ``system.*`` probes — same data shape,
-// one IPC + WS message instead of four. Returns the same per-probe safe
-// defaults the individual tools would (idle=-1.0, locked=false, focused={},
-// fullscreen=false) when their underlying OS APIs are missing.
+// Runner 的活动快照聚合。单个 ``system.snapshot`` 往返替代四次
+// 独立的 ``system.*`` 探测——数据结构相同，
+// 但只需一次 IPC + WS 消息，而非四次。当底层 OS API 缺失时，
+// 返回与各独立工具相同的探针安全默认值（idle=-1.0, locked=false,
+// focused={}, fullscreen=false）。
 interface SystemSnapshot {
   idle_seconds?: number
   locked?: boolean
@@ -259,15 +256,15 @@ async function pollOnce(): Promise<void> {
     return
   }
 
-  // ``system.snapshot`` aggregates all four signals. A single rejection
-  // leaves every atom untouched (sticky-on-probe-failure), matching the
-  // per-probe semantics the previous ``Promise.all`` of four calls had.
+  // ``system.snapshot`` 聚合全部四个信号。任一拒绝会保留所有 atom
+  // 不动（探针失败时黏住上次值），与原先四次调用 ``Promise.all`` 的
+  // 逐探针语义保持一致。
   const snapshotResult = await desktop.runnerInvoke('system.snapshot', {}).catch(() => null)
 
   if (snapshotResult === null) {
-    // Probe failed — atoms keep their last known values. Re-evaluate the
-    // tier override from current atom state so a stale $focusContext doesn't
-    // pin a tier forever after a probe outage.
+    // 探测失败——atom 保留上次已知值。基于当前 atom 状态重新计算
+    // 档位 override，避免探测中断后陈旧的 $focusContext 把档位
+    // 永久钉住。
     maybePushTierOverride()
 
     return
@@ -275,7 +272,7 @@ async function pollOnce(): Promise<void> {
 
   const snapshot = snapshotResult as SystemSnapshot
 
-  // Screen-lock: only update the atom when the snapshot carried a value.
+  // 锁屏场景：仅在快照包含该字段时才更新原子。
   if (snapshot.locked !== undefined) {
     const isLocked = Boolean(snapshot.locked)
 
@@ -286,25 +283,23 @@ async function pollOnce(): Promise<void> {
 
   const idleSeconds = Number(snapshot.idle_seconds ?? 0)
 
-  // ``Number('abc')`` returns NaN; ``NaN < N`` is always false, so without an
-  // explicit guard the cooldown gate below would pass NaN through to the
-  // backend LLM prompt. Treat any non-finite value as a missing signal.
+  // ``Number('abc')`` 返回 NaN；而 ``NaN < N`` 永远为 false，
+  // 没有显式守卫时下面的冷却网关会把 NaN 透传给后端的 LLM prompt。
+  // 把任何非有限值当作缺失信号处理。
   if (!Number.isFinite(idleSeconds)) {
     return
   }
 
-  // Cache the latest finite idle reading so other modules can read it on
-  // demand without re-querying the runner. -1 here means "no signal this
-  // cycle" — callers treat that as unknown and skip the field.
+  // 缓存最近一次有限空闲值，其他模块按需读取，不必再向 Runner 发起请求。
+  // 这里的 -1 表示"本周期无信号"——调用方按未知处理并跳过该字段。
   $lastIdleSeconds.set(idleSeconds)
 
   const isLockedKnown = snapshot.locked !== undefined
   maybeTriggerAffectCheck(isLockedKnown ? idleSeconds : -1, $screenLocked.get())
 
-  // Fullscreen is independent of focused-app: we still track it on its own
-  // even if focused-app classification failed, so an active fullscreen
-  // window always suppresses proactive outreach regardless of why focus
-  // classification is missing.
+  // 全屏状态与聚焦应用独立：即使聚焦应用分类失败，也单独跟踪全屏位，
+  // 这样只要当前是全屏窗口，无论聚焦分类因何缺失，
+  // 主动出击始终被压制。
   const fullscreenProbeOk = snapshot.fullscreen !== undefined
 
   const fullscreen = fullscreenProbeOk ? Boolean(snapshot.fullscreen) : ($focusContext.get()?.fullscreen ?? false)
@@ -327,10 +322,9 @@ async function pollOnce(): Promise<void> {
       $focusContext.set({ category, fullscreen, windowGeom })
     }
   } else if (fullscreenProbeOk) {
-    // focused-app probe empty but fullscreen succeeded: keep the
-    // category (and the override atom if any) but still update the
-    // fullscreen bit so a freshly-detected fullscreen window doesn't
-    // require a successful focused-app probe.
+    // focused-app 探测为空但 fullscreen 成功：保留分类
+    // （以及 override atom），但仍要更新 fullscreen 位，
+    // 这样新检测到的全屏窗口无需依赖一次成功的 focused-app 探测。
     const cur = $focusContext.get()
 
     if (cur && cur.fullscreen !== fullscreen) {
@@ -357,20 +351,19 @@ export function startActivityMonitor(): () => void {
     void pollOnce()
   }
 
-  // Subscribe to the shared phase atom (see @/shared/store/runner-status).
-  // nanostore fires the callback once with the current value on subscribe,
-  // so if the bridge was already `running` (atom hydrated via
-  // runnerGetState), firstPollDone kicks. Future `running` events keep
-  // `runnerReady` true but the one-shot latch avoids burst-polling on
-  // recovery (intentional: don't burst-poll, just rejoin the 30s cadence).
+  // 订阅共享的 phase atom（见 @/shared/store/runner-status）。
+  // nanostore 在订阅时会用当前值触发一次回调，
+  // 所以如果 bridge 已经是 `running`（atom 已通过 runnerGetState 水合），
+  // 首次轮询会被 kick。后续的 `running` 事件让 `runnerReady` 保持 true，
+  // 但一次性 latch 避免在恢复时爆发轮询（刻意如此：不爆发，
+  // 只是重新并入 30 秒节拍）。
   offPhaseSub = $runnerPhase.subscribe(phase => {
     if (phase === 'running') {
       runnerReady = true
       kickFirstPoll()
     } else if (phase === 'stopped' || phase === 'error') {
-      // Bridge will re-emit `running` once it recovers; until then the
-      // setInterval tick is a no-op so we don't spam "Runner is not
-      // connected" through the IPC error log path.
+      // bridge 恢复后会再次发出 `running`；在此之前 setInterval tick
+      // 是空操作，避免在 IPC 错误日志里不断刷 "Runner is not connected"。
       runnerReady = false
     }
   })
@@ -400,16 +393,13 @@ export function stopActivityMonitor(): void {
   runnerReady = false
 }
 
-// Client-side throttle for stats RPCs. Pre-threshold (any kind < 10)
-// the desktop fires every event so the backend's daily counter ticks
-// up promptly; once a kind crosses the threshold the row is already
-// written, so subsequent events of the same kind only need to refresh
-// the row content. Sampling at most every 60s per kind keeps the
-// post-threshold DB-write rate bounded without losing meaningful
-// aggregation. The backend's ``record_interaction`` still increments
-// the in-memory counter, so a brief client-side drop never causes a
-// regression to ``threshold_met=false`` (the counter only resets on
-// UTC day rollover).
+// 客户端 stats RPC 节流。低于阈值（任意 kind < 10）时客户端发送每次事件，
+// 让后端的每日计数器及时累计；一旦某个 kind 越过阈值，行已经写入，
+// 同 kind 的后续事件只需刷新行内容。每 kind 至多每 60 秒采样一次，
+// 在不损失有意义的聚合粒度的前提下限制越过阈值后的 DB 写入频率。
+// 后端的 ``record_interaction`` 仍会增加内存计数器，
+// 因此客户端短暂丢事件不会让 ``threshold_met`` 退回 false
+// （计数器只在 UTC 日切换时重置）。
 const STATS_POST_THRESHROTTLE_MS = 60_000
 
 const _localStatsCounters: Record<'poke' | 'chat_turn', number> = {
@@ -431,12 +421,11 @@ export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
 
   _localStatsCounters[kind] += 1
 
-  // Threshold matches the backend's ``STATS_THRESHOLD = 10``. Below it,
-  // fire every event so the daily counter ticks promptly; above it,
-  // coalesce to one RPC per minute per kind — the daily row is already
-  // persisted, and the in-memory counter on the backend is the source
-  // of truth for ``threshold_met``. Subsequent events still update the
-  // row content (peak hour / hour_buckets) on each coalesced send.
+  // 阈值与后端的 ``STATS_THRESHOLD = 10`` 对齐。低于阈值时
+  // 每次事件都发送，让每日计数器及时累加；越过阈值后，
+  // 每 kind 每分钟最多合并成一次 RPC——每日行已落库，
+  // 后端的内存计数器才是 ``threshold_met`` 的真值。后续事件
+  // 在每次合并发送时仍会更新行内容（高峰小时 / hour_buckets）。
   const now = Date.now()
 
   if (_localStatsCounters[kind] > 10 && now - _lastStatsSentAt[kind] < STATS_POST_THRESHROTTLE_MS) {
@@ -446,6 +435,6 @@ export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
   _lastStatsSentAt[kind] = now
 
   void gateway.request('companion.record_interaction_stats', { kind, hour: new Date().getHours() }).catch(() => {
-    /* fire-and-forget; failure silently swallowed */
+    /* 即发即忘；失败静默吞掉 */
   })
 }

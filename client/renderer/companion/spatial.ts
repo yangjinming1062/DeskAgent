@@ -18,7 +18,7 @@ export function getBaseSpriteHeight(): number {
     return 360
   }
 
-  // Default height is 1/3 of display screen height, clamped within [260, 960]
+  // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
   return Math.round(Math.max(260, Math.min(window.innerHeight / 3, 960)))
 }
 
@@ -35,7 +35,7 @@ const FLY_SPEED = 400
 const SCALE_TRANSITION_MS = 300
 const SCALE_KEY = 'da.companion.defaultScale'
 
-// Transient zoom factors for high-arousal built-in emotions.
+// 高唤醒度内置情绪的瞬时缩放因子。
 const EMOTION_SCALE_BOOST: Record<string, number> = {
   excited: 1.5,
   playful: 1.3,
@@ -56,9 +56,8 @@ export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
 
-// Window viewport size — single source of truth, updated by initSpatial's
-// existing resize listener. Overlays (chat-dock, proactive bubble) subscribe
-// here instead of running their own listener.
+// 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
+// 弹层（chat-dock、proactive 气泡）订阅这里而不是各自挂监听器。
 export interface ViewportSize {
   width: number
   height: number
@@ -180,12 +179,10 @@ export function computePerchPosition(geom: {
   return { x, y }
 }
 
-// Anchor for transient overlays (chat panel, proactive bubble) that float next
-// to the sprite: place to the right of the sprite, flip to the left if the
-// overlay would overflow the viewport. `gap` is the gap between sprite and
-// overlay; `overlayMaxW` is the largest width the overlay can grow to (used
-// only for the flip check). `top` is anchored to the sprite's head area
-// (top + verticalRatio * scaled height) and clamped into the viewport.
+// 精灵旁边浮动的瞬时弹层（聊天面板、proactive 气泡）的锚点定位：默认放在精灵右侧，
+// 放不下则翻转到左侧。`gap` 是精灵与弹层之间的间距；`overlayMaxW` 是弹层最大可能宽度
+// （仅用于翻转判定）。`top` 锚定到精灵头部区域（top + verticalRatio * 缩放后高度），
+// 并限制在视口范围内。
 export function computeOverlayAnchorBesideSprite(opts: {
   pos: { x: number; y: number }
   scale: number
@@ -446,9 +443,9 @@ function updateSpatialDecision(): void {
 
   const state = $spriteState.get()
 
-  // LLM autonomy owns perch/roam/home decisions; this tree keeps only the
-  // sleep-state↔locale render (the LLM's go_sleep/wake relies on it) and the
-  // "quiet" tier hard-constraint (a user setting the LLM has no context for).
+  // LLM 自主模式负责 perch/roam/home 的切换；这里只处理 sleep 状态↔场所 的渲染
+  // （LLM 的 go_sleep/wake 依赖它）以及「安静」档位的硬约束（这是用户偏好，
+  // LLM 没有上下文可以参考）。
   if ($llmAutonomy.get()) {
     if (state === 'sleeping') {
       stopRoam()
@@ -685,8 +682,8 @@ export function initSpatial(): () => void {
   const onResize = () => {
     $viewport.set({ width: window.innerWidth, height: window.innerHeight })
 
-    // A display handoff mid-drag also fires resize with the new display's viewport —
-    // re-deriving home/locale here would yank the sprite out from under the cursor.
+    // 拖拽中切换显示器也会触发 resize，事件携带新显示器的视口——此时若重新
+    // 推算 home/locale，会把精灵从光标下抽走。
     if ($spatialLocomotion.get() === 'drag') {
       return
     }

@@ -40,21 +40,17 @@ import {
 import { subscribePowerProfile } from './power-signals'
 import { attachSilhouetteHitProbe } from './silhouette-hit'
 
-// Mounts the Three.js engine into the sprite-stage canvas. The sprite-stage
-// owns drag / click-through / region tracking; this component only renders.
+// 把 Three.js 引擎挂载到精灵舞台画布上。精灵舞台负责拖拽 / 鼠标穿透 / 区域跟踪；
+// 本组件只负责渲染。
 //
-// - Engine.create is async (WebGPU init) — the ready promise is shared with
-//   the load/outfit effects below so they never race the boot; a null
-//   resolution means the component unmounted mid-init.
-// - Subscribes to $spriteState / $spriteEmotion and forwards them to the
-//   character controller for animation + morph playback. Snapshots are taken
-//   at engine-ready time (post-await), so state flips during the async boot
-//   window are not lost.
-// - Reacts to $modelInfo.asset_url changes by reloading the GLB.
-// - TTS lip-sync: hooks the audio-track AnalyserNode via tts-bridge.
-// - Look-at: tracks the cursor over the canvas when the chat dock is closed.
-// - Outfit: applies the currently equipped wardrobe item whenever the
-//   equipped atom changes (initial mount + hot-swap).
+// - Engine.create 是异步的（WebGPU 初始化）—— ready promise 与下面的 load/outfit 副作用共享，
+//   永远不会和启动竞速；返回 null 表示组件在初始化过程中被卸载。
+// - 订阅 $spriteState / $spriteEmotion 并转发给角色控制器做动画 + 变形播放。
+//   快照在引擎就绪后（await 之后）才取，因此异步启动窗口内的状态翻转不会丢失。
+// - 响应 $modelInfo.asset_url 变化来重新加载 GLB。
+// - TTS 唇形同步：通过 tts-bridge 钩到 audio-track 的 AnalyserNode。
+// - 视线跟随：在聊天面板关闭时跟踪画布上的光标。
+// - 换装：已装备原子每次变化时都应用当前已装备项（初始挂载 + 热替换）。
 
 interface CharacterSnapshot {
   state: SpriteStateName
@@ -72,7 +68,7 @@ export function Companion3D(): React.JSX.Element {
   const outfitView = useStore($outfitView)
   const modelInfo = useStore($modelInfo)
 
-  // Boot engine, wire subscriptions, and kick off initial model load.
+  // 启动引擎，接好订阅，并触发首次模型加载。
   useEffect(() => {
     const container = containerRef.current
 
@@ -134,8 +130,8 @@ export function Companion3D(): React.JSX.Element {
         }
       })
 
-      // TTS lip-sync — the audio-track AnalyserNode pushes amplitude every frame
-      // while audio is playing; we just forward it.
+      // TTS 唇形同步 —— audio-track 的 AnalyserNode 在音频播放期间逐帧推振幅；
+      // 我们只做转发。
       const detachLipSync = registerAmplitudeSink(amp => eng.character.setLipSyncAmplitude(amp))
 
       let cachedW = getBaseSpriteWidth()
@@ -158,7 +154,7 @@ export function Companion3D(): React.JSX.Element {
 
       window.addEventListener('resize', onResize)
 
-      // Look-at — smoothly track cursor when hovering over the companion without triggering DOM reflows
+      // 视线跟随 —— 在伙伴上悬停时平滑跟随光标，避免触发 DOM 回流
       const onPointerMove = (e: PointerEvent) => {
         if ($chatOpen.get() || $spatialLocomotion.get() === 'drag' || $contextMenuOpen.get()) {
           eng.character.setLookTarget(0, 0)
@@ -178,17 +174,16 @@ export function Companion3D(): React.JSX.Element {
       eng.canvas.addEventListener('pointermove', onPointerMove)
       eng.canvas.addEventListener('pointerleave', onPointerLeave)
 
-      // Render-power tiers — resolves once immediately (boot locks to active
-      // until the first model settles), then on every signal change.
+      // 渲染功率档位 —— 启动时立即解析一次（在首个模型稳定前锁定 active），
+      // 之后随信号变化更新。
       const unsubPower = subscribePowerProfile(profile => eng.setPowerProfile(profile))
 
-      // Drag velocity listener for 3D physics tilt/swing during window dragging
+      // 拖拽速度监听器：拖动窗口时让 3D 物理跟随倾斜 / 摆动
       const unsubDragVelocity = $dragVelocity.listen(vel => {
         eng.character.setDragVelocity(vel.vx, vel.vy)
       })
 
-      // Pixel-exact click-through refinement for 3D mode (static images use
-      // their own hitmap — see sprite-stage).
+      // 3D 模式下像素级精确的鼠标穿透细化（静态图片用自己的命中图 —— 见 sprite-stage）。
       const detachSilhouette = attachSilhouetteHitProbe(eng)
 
       eng.start()
@@ -216,8 +211,8 @@ export function Companion3D(): React.JSX.Element {
     void hydrateExpressions()
 
     void ready.catch(err => {
-      // Whole fallback chain failed — no GPU context at all. Static-sprite
-      // mode is the never-blank floor; settled so the scheduler can stand down.
+      // 整条降级链都失败了 —— 完全拿不到 GPU 上下文。静态精灵图层是永不空白的兜底；
+      // 这里置为 settled，调度器可以歇下来。
       if (!cancelled) {
         log.error('companion-3d', 'engine init failed:', err)
         $glbLoadFailed.set(true)
@@ -232,16 +227,15 @@ export function Companion3D(): React.JSX.Element {
     }
   }, [])
 
-  // Load (or reload) the GLB whenever the model's asset URL changes. Awaits
-  // engine boot — an early return on a null engine would silently skip the
-  // first model forever.
+  // 在模型 asset URL 变化时加载（或重新加载）GLB。等待引擎启动完成 —— 引擎为 null 时提前 return，
+  // 否则会永久静默跳过首个模型。
   useEffect(() => {
     let cancelled = false
     const url = modelInfo.asset_url
 
-    // Fetch signed bytes via IPC — main re-bases the host, so no CORS preflight.
-    // Leverages disk cache & Range resumption when content_hash is present.
-    // Null on fetch failure lets CharacterController fall through to procedural.
+    // 通过 IPC 拉取带签名的字节 —— 主进程重定 host，因此不触发 CORS 预检。
+    // 当带 content_hash 时复用磁盘缓存并支持 Range 续传。
+    // 拉取失败时返回 null，让 CharacterController 回退到程序化模型。
     void (async () => {
       const engine = await engineReadyRef.current
 
@@ -253,10 +247,8 @@ export function Companion3D(): React.JSX.Element {
 
       if (url) {
         try {
-          // OPFS-cached first; falls back to the main-process IPC and
-          // populates the cache on success. The first load still costs the
-          // IPC round-trip; subsequent loads with the same contentHash are
-          // instant.
+          // 先走 OPFS 缓存；失败则走主进程 IPC，成功后回填缓存。
+          // 首次加载仍要走一次 IPC 往返；之后相同 contentHash 的加载瞬时完成。
           bytes = await fetchGlbWithCache(url, modelInfo.content_hash || undefined)
 
           if (cancelled) {
@@ -282,13 +274,12 @@ export function Companion3D(): React.JSX.Element {
           return
         }
 
-        // Publish whether the engine fell through to the procedural egg —
-        // static-mode waits on this, not on model.ready, so the swap to 3D
-        // happens only once the GLB has actually parsed (no egg flash).
+        // 发布引擎是否回退到了程序化的"蛋" —— 静态模式等的不是 model.ready，而是这个，
+        // 因此只有 GLB 真正解析完才会切到 3D（不会出现蛋形态闪现）。
         $glbLoadFailed.set(info.procedural)
         $modelLoadSettled.set(true)
 
-        // Warm up the live silhouette hitmap immediately with the newly loaded character.
+        // 用刚加载的角色立刻预热实时轮廓命中图。
         void engine.silhouetteHitmap().then(map => {
           if (map && !cancelled) {
             probeInteractiveRegions()
@@ -310,8 +301,7 @@ export function Companion3D(): React.JSX.Element {
         return
       }
 
-      // Re-apply morph params + the currently equipped outfit so reloads
-      // preserve the user's customisation.
+      // 重新应用 morph 参数和当前已装备的换装，让重载后仍保留用户的定制。
       if (Object.keys(modelInfo.morph_params).length) {
         engine.character.setMorphs(modelInfo.morph_params)
       }
@@ -324,10 +314,9 @@ export function Companion3D(): React.JSX.Element {
     }
   }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.morph_params, modelInfo.rig_type])
 
-  // Apply the equipped set (or a live preview candidate) on every change. A
-  // preview replaces only the equipped item in its own slot — other slots keep
-  // rendering so a shirt preview doesn't visually strip the equipped shoes.
-  // setOutfit is a no-op when the character is the procedural fallback.
+  // 每次变化时应用已装备项（或活动的预览候选）。预览只替换本槽位的已装备项 ——
+  // 其他槽位继续渲染，这样预览上衣时不会让已装备的鞋被视觉剥离。
+  // 当角色是程序化回退时 setOutfit 是 no-op。
   useEffect(() => {
     let cancelled = false
     const view = outfitView
@@ -356,10 +345,9 @@ export function Companion3D(): React.JSX.Element {
   const activeSprite = useStore($activeSprite)
   const isStaticCovered = Boolean(staticMode && activeSprite)
 
-  // The failed panel carries the retry button — without a registered region
-  // the click passes through the transparent sprite window to the desktop
-  // (interactive-regions.ts owns capture toggling). Rect is null while the
-  // panel is unmounted, so the region only exists in the failed state.
+  // 失败面板承载重试按钮 —— 没有注册区域时，点击会从透明精灵窗口直接穿透到桌面
+  // （interactive-regions.ts 负责捕获开关）。面板未挂载时矩形为 null，
+  // 因此区域仅在失败状态下存在。
   const failedPanelRef = useRef<HTMLDivElement | null>(null)
   useInteractiveRegion('model-gen-failed', failedPanelRef)
 

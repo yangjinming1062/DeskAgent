@@ -1,7 +1,7 @@
-// Late-arrival buffer for the async avatar (bust) regen flow. The companion
-// path is REST-only (POST /api/companion/avatar and POST /from-image); the
-// WS `avatar.regenerate` RPC result arrives here as the `avatar.regenerated`
-// event.
+// 异步头像（半身像）重新生成流程的迟到事件缓冲。伙伴路径纯走 REST
+//（POST /api/companion/avatar 与 POST /from-image）；
+// WS 的 `avatar.regenerate` RPC 结果会以 `avatar.regenerated` 事件
+// 到达本模块。
 
 type Resolver<T> = (payload: T) => void
 
@@ -11,7 +11,7 @@ interface PendingMap<T> {
   timedOut: Map<string, number>
 }
 
-// Above the 60s+ slow-provider image-gen ceiling so legitimate requests don't trip.
+// 设置在 60 秒以上的慢速供应商图生上限之上，避免合法请求被误判超时。
 const REGEN_TIMEOUT_MS = 120_000
 const TOMBSTONE_TTL_MS = 10 * 60_000
 
@@ -85,7 +85,7 @@ function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string
   }
 }
 
-// Avatar (bust) regen payload carried by the `avatar.regenerated` event.
+// 由 `avatar.regenerated` 事件承载的头像（半身像）重新生成载荷。
 export interface AvatarRegeneratedPayload {
   job_id?: string
   asset_url?: string | null

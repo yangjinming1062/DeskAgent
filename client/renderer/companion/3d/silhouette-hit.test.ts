@@ -41,17 +41,17 @@ describe('silhouette-hit', () => {
 
     const test = $sprite3DHitTest.get()
     expect(test).toBeTypeOf('function')
-    // Before hitmap resolves, test returns null so SpriteStage uses rect fallback
+    // 命中图未解析时返回 null，让 SpriteStage 走矩形回退
     expect(test!(150, 150)).toBeNull()
 
     resolveHitmap(null)
     detach()
   })
 
-  it('synchronously tests coordinates against the latest hitmap in O(1)', async () => {
-    // 2x2 top-down hitmap:
-    // py=0 (top row): [0, 255] (top-left transparent, top-right opaque)
-    // py=1 (bottom row): [255, 0] (bottom-left opaque, bottom-right transparent)
+  it('同步以 O(1) 时间把坐标命中到最新的命中图', async () => {
+    // 2x2 自顶向下命中图：
+    // py=0（顶行）：[0, 255]（左上透明、右上不透明）
+    // py=1（底行）：[255, 0]（左下不透明、右下透明）
     const alpha = new Uint8Array([
       0,
       255, // row 0 (top)
@@ -66,7 +66,7 @@ describe('silhouette-hit', () => {
       silhouetteHitmap: () => Promise.resolve(hitmap)
     })
 
-    // Wait for the initial eager refresh to resolve
+    // 等待初始的预热刷新解析完成
     await Promise.resolve()
     await Promise.resolve()
 
@@ -74,20 +74,20 @@ describe('silhouette-hit', () => {
     expect(test).toBeTypeOf('function')
     expect(probeMock).toHaveBeenCalled()
 
-    // Canvas rect: left=100, top=100, width=200, height=300
-    // Test top-left quadrant (clientX=120, clientY=120): relX=0.1 -> px=0, relY=0.067 -> py=0 -> alpha[0*2+0] = 0 (miss)
+    // 画布矩形：left=100、top=100、width=200、height=300
+    // 测试左上象限（clientX=120、clientY=120）：relX=0.1 -> px=0，relY=0.067 -> py=0 -> alpha[0*2+0] = 0（未命中）
     expect(test!(120, 120)).toBe(false)
 
-    // Test top-right quadrant (clientX=280, clientY=120): relX=0.9 -> px=1, relY=0.067 -> py=0 -> alpha[0*2+1] = 255 (hit)
+    // 测试右上象限（clientX=280、clientY=120）：relX=0.9 -> px=1，relY=0.067 -> py=0 -> alpha[0*2+1] = 255（命中）
     expect(test!(280, 120)).toBe(true)
 
-    // Test bottom-left quadrant (clientX=120, clientY=380): relX=0.1 -> px=0, relY=0.933 -> py=1 -> alpha[1*2+0] = 255 (hit)
+    // 测试左下象限（clientX=120、clientY=380）：relX=0.1 -> px=0，relY=0.933 -> py=1 -> alpha[1*2+0] = 255（命中）
     expect(test!(120, 380)).toBe(true)
 
-    // Test bottom-right quadrant (clientX=280, clientY=380): relX=0.9 -> px=1, relY=0.933 -> py=1 -> alpha[1*2+1] = 0 (miss)
+    // 测试右下象限（clientX=280、clientY=380）：relX=0.9 -> px=1，relY=0.933 -> py=1 -> alpha[1*2+1] = 0（未命中）
     expect(test!(280, 380)).toBe(false)
 
-    // Points outside canvas rect return false
+    // 画布矩形之外的点返回 false
     expect(test!(50, 50)).toBe(false)
     expect(test!(350, 350)).toBe(false)
 
@@ -95,7 +95,7 @@ describe('silhouette-hit', () => {
     expect($sprite3DHitTest.get()).toBeNull()
   })
 
-  it('triggers hitmap refresh on mouse movement near canvas', async () => {
+  it('在画布附近移动鼠标时触发命中图刷新', async () => {
     let callCount = 0
     const alpha = new Uint8Array([255])
     const hitmap: SilhouetteHitmap = { alpha, height: 1, width: 1 }
@@ -109,19 +109,19 @@ describe('silhouette-hit', () => {
       }
     })
 
-    // Initial eager refresh
+    // 初始的预热刷新
     expect(callCount).toBe(1)
 
-    // Mouse move near canvas (rect: 100-300 x 100-400)
+    // 在画布附近移动鼠标（矩形：100-300 × 100-400）
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 150, clientY: 200 }))
 
-    // Move outside margin (margin is 50px)
+    // 移动到余量之外（余量为 50 像素）
     window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10 }))
 
     detach()
   })
 
-  it('reads hitmap directly from engine.getSilhouetteHitmap when provided', () => {
+  it('当传入时直接从 engine.getSilhouetteHitmap 读取命中图', () => {
     const alpha = new Uint8Array([255])
     const hitmap: SilhouetteHitmap = { alpha, height: 1, width: 1 }
 

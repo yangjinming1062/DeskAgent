@@ -31,9 +31,8 @@ function computeNotices(state: WebFormState, t: WebSearchCopy): string[] {
   const extractIsTavily = state.extract_backend === 'tavily'
   const tavilyMissing = !state.tavily_api_key_set
 
-  // One extract-related notice; the two negative conditions stay mutually
-  // exclusive because the inner ternary collapses (extract_backend, key_set)
-  // → one of three keys or none.
+  // 仅一条抽取相关提示；两个负面条件互斥，因为内部三元
+  // 把 (extract_backend, key_set) 折叠为三种 key 之一或空。
   if (extractIsTavily && tavilyMissing) {
     notices.push(t.unavailable.extractTavilyNoKey)
   } else if (!extractIsTavily && tavilyMissing) {
@@ -42,8 +41,8 @@ function computeNotices(state: WebFormState, t: WebSearchCopy): string[] {
     notices.push(t.unavailable.extractNonTavilyWithKey)
   }
 
-  // Search: only surface the Tavily-missing-key banner when no extract notice
-  // already covers the same root cause — the user already knows to add a key.
+  // 搜索：仅当抽取提示尚未覆盖同一根因时，才显示 Tavily 缺少 key 的横幅——
+  // 用户已经知道需要加 key。
   if (state.backend === 'brave-free' && !state.brave_api_key_set) {
     notices.push(t.unavailable.searchKeyFallback('Brave'))
   } else if (state.backend === 'tavily' && tavilyMissing && !notices.length) {

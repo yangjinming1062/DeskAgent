@@ -34,10 +34,9 @@ export async function hydrateAuth(): Promise<void> {
   }
 }
 
-// Apply a main→renderer auth broadcast (login/logout/refresh). The sprite
-// window never runs the login form, so it relies on this to learn the new
-// session. Gateway teardown on logout is handled by the GatewayBooter unmount
-// (conditional render on $auth), so here we only flip auth state.
+// 应用主进程 → 渲染层的鉴权广播（登录 / 登出 / 刷新）。精灵窗口不会运行登录表单，
+// 因此依赖此广播来感知新会话。登出时的网关拆除由 GatewayBooter 卸载时处理
+//（按 $auth 做条件渲染），这里只翻转鉴权状态。
 export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   const { snapshot } = payload
 
@@ -62,8 +61,8 @@ export async function activate(payload: { code: string }): Promise<void> {
 }
 
 export async function refreshSession(payload?: Record<string, unknown>): Promise<void> {
-  // Refresh failure does NOT auto-logout (unlike login()): the old JWT may
-  // still work, and the caller can decide whether to surface the error.
+  // 刷新失败并不会自动登出（与 login() 不同）：旧 JWT 可能仍然有效，
+  // 是否把错误抛出由调用方决定。
   const snapshot = await window.spiritagent.refreshSession(payload)
   $auth.set({ kind: 'authenticated', snapshot })
 }

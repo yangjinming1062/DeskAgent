@@ -8,8 +8,8 @@ export const POSITION_FILE = 'companion-position.json'
 export interface RestPosition {
   x: number
   y: number
-  // Window origin at save time — lets the next launch reopen the sprite window
-  // on the monitor where the sprite was left, not just the primary display.
+  // 保存时的窗口坐标——让下次启动能在精灵上次留下的那块显示器上重新打开精灵窗口，
+  // 而不只是主显示器。
   origin?: { x: number; y: number }
 }
 
@@ -33,7 +33,7 @@ export function readRestPosition(userDataDir?: string): null | RestPosition {
       return next
     }
   } catch {
-    // No saved position yet
+    // 还没有保存过的位置
   }
 
   return null
@@ -103,14 +103,13 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, POSITION_FILE), JSON.stringify({ x: payload.x, y: payload.y, origin }))
     } catch {
-      // Best effort
+      // 尽力而为
     }
   })
 
-  // During a drag the renderer reports out-of-viewport pointer coords once the cursor
-  // crosses onto another display — snap the window onto the cursor's display and return
-  // both origins plus the cursor point, so the renderer can remap the sprite position
-  // and tell whether its latest pointer coords pre- or post-date the window jump.
+  // 拖拽过程中，当光标越过视口跨到另一块显示器时，渲染层会上报超出视口的指针坐标——
+  // 此处把窗口贴到光标所在的显示器上，并返回两个窗口坐标与光标点，
+  // 让渲染层重映射精灵位置、并判断最新指针坐标是窗口跳转前还是跳转后采样。
   ipcMain.handle('spiritagent:sprite:move-to-cursor-display', async () => {
     const win = getSpriteWindow()
 

@@ -1,13 +1,12 @@
-// Three-state secret-field writer used by account form save
-// paths. The backend distinguishes:
+// 三态的密钥字段写入器，供账户表单保存路径使用。
+// 后端区分以下三种情况：
 //
-//   1. key absent in the PATCH body → keep existing value untouched
-//   2. key present, value = `clearedSentinel` → drop the stored value
-//   3. key present, value = any other string → store it
+//   1. PATCH body 中缺该键 → 保留已有值不动
+//   2. 键存在，value = `clearedSentinel` → 删除已存储的值
+//   3. 键存在，value = 任意其他字符串 → 存该值
 //
-// `value === ''` is treated as "untouched" so an unmodified textbox doesn't
-// clobber a stored credential with an empty string. Callers that want
-// "explicitly empty" should toggle `cleared = true` instead.
+// `value === ''` 被视作「未修改」，避免未触碰的输入框把已存储的凭据
+// 覆盖为空串。需要表达「显式清空」时，调用方应改设 `cleared = true`。
 export type SecretFieldBody<T> = { omit: true } | { omit: false; value: T }
 
 export function buildSecretFieldBody<T>(value: string, cleared: boolean, clearedSentinel: T): SecretFieldBody<T> {

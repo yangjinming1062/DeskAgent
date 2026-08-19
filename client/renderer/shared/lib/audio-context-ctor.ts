@@ -1,6 +1,6 @@
-// Returns the AudioContext constructor available on `window`, falling back to
-// Safari's prefixed `webkitAudioContext`. Returns `null` if neither exists —
-// caller skips audio analysis / recording rather than crashing.
+// 返回 `window` 上可用的 AudioContext 构造函数，回退到 Safari 的
+// 带前缀 `webkitAudioContext`。两者都不存在时返回 `null`——调用方
+// 跳过音频分析 / 录音逻辑，而不是崩溃。
 
 export function getAudioContextCtor(): typeof AudioContext | null {
   if (typeof window === 'undefined') {

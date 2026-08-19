@@ -16,7 +16,7 @@ export interface ProbeOptions {
 }
 
 /**
- * Attempt a live WebSocket connection and classify the outcome.
+ * 对 WebSocket 做一次实时连接尝试并对结果做分类。
  */
 export function probeGatewayWebSocket(
   wsUrl: string,
@@ -63,7 +63,7 @@ export function probeGatewayWebSocket(
       try {
         socket?.close?.()
       } catch {
-        // ignore — best effort teardown
+        // 忽略 —— 尽力清理即可
       }
 
       resolve(result)

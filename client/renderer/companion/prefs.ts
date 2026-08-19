@@ -2,8 +2,8 @@ import { atom, type WritableAtom } from 'nanostores'
 
 import { persistBoolean, persistString, storedBoolean, storedString } from '@/shared/lib/storage'
 
-// Response mode controls how the companion replies in Chat mode (plan §4.1).
-// Voice-call mode is always voice regardless of this setting.
+// 响应模式控制伙伴在 Chat 模式下如何回复（plan §4.1）。
+// 语音通话模式始终是语音，与此设置无关。
 export type ResponseMode = 'text' | 'voice'
 
 export const $companionVoiceId = atom<string>(storedString('da.companion.voiceId') ?? '')
@@ -19,10 +19,8 @@ export function setResponseMode(mode: ResponseMode): void {
   persistString('da.companion.responseMode', mode)
 }
 
-// Boolean toggles backed by localStorage — used for the LLM-driven
-// reaction switches in companion settings. Each toggle's persistence
-// is created atomically by the factory so a future addition only
-// needs one line.
+// 由 localStorage 支撑的布尔开关——供伙伴设置里的 LLM 驱动反应开关使用。
+// 每个开关的持久化都由工厂函数原子创建，以后新增只需一行。
 export interface BooleanPref {
   $atom: WritableAtom<boolean>
   set: (value: boolean) => void

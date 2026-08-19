@@ -37,7 +37,7 @@ export class RunnerUpdater {
     this.log = log
   }
 
-  // Phase 1: prefetch in the OLD Electron.
+  // 阶段 1：在旧版 Electron 进程内预下载。
   async prefetchRunnerAssets({
     publicKeyPath,
     updateBaseUrl,
@@ -169,7 +169,7 @@ export class RunnerUpdater {
     this._emit({ kind: 'runner-ready', version })
   }
 
-  // Phase 2: install in the NEW Electron.
+  // 阶段 2：在新版 Electron 进程内完成安装。
   async installPending(): Promise<{ error?: string; noop?: boolean; ok: boolean }> {
     const home = this.bridgeDeps.spiritagentHome
     const sentinelPath = path.join(home, '.pending-runner-update.json')
@@ -389,7 +389,7 @@ export class RunnerUpdater {
     try {
       await fsp.writeFile(sentinelPath, JSON.stringify(sentinel, null, 2), 'utf8')
     } catch {
-      // best effort
+      // 尽力而为
     }
   }
 

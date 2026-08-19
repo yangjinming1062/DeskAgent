@@ -16,9 +16,9 @@ import { setUpdateStatus } from './hub/settings-store'
 
 installClipboardShim()
 
-// Subscribe to electron-updater events at boot. The main process auto-checks
-// ~30s after launch; this listener pumps every event into the renderer store
-// so the status bar badge, About panel, and update toast all react.
+// 启动时订阅 electron-updater 事件。主进程在启动后约 30 秒自动检查更新；
+// 本监听器把所有事件泵入渲染层 store，
+// 让状态栏徽标、关于面板和更新提示都能联动。
 window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   switch (payload.type) {
     case 'checking':
@@ -62,13 +62,12 @@ window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   }
 })
 
-// Subscribe to runner-side update events. Phase 1 (prefetch) runs in the OLD
-// Electron after `update-downloaded`; phase 2 (install) runs in the NEW
-// Electron at startup. The desktop status bar surfaces these via the
-// $updateStatus atom (handled in main.tsx above) — runner-internal phase
-// transitions are intentionally not user-visible in the renderer.
+// 订阅 Runner 侧的更新事件。第 1 阶段（预下载）在收到 `update-downloaded` 后的
+// 旧版 Electron 中运行；第 2 阶段（安装）在新版 Electron 启动时运行。
+// 桌面状态栏通过 $updateStatus 原子（见上方 main.tsx）暴露这些事件——
+// Runner 内部的阶段切换刻意不在渲染层面向用户展示。
 window.spiritagent?.update?.onRunnerEvent?.(() => {
-  // Intentionally a no-op: see runner-updater.cjs for the full lifecycle.
+  // 刻意留作空操作：完整生命周期见 runner-updater.cjs。
 })
 
 createRoot(document.getElementById('root')!).render(

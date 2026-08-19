@@ -38,9 +38,8 @@ describe('persona-presets', () => {
   })
 
   it('keeps the canonical role / personality / species chip sets', () => {
-    // These three are user-visible anchors of the persona product. Changing
-    // them is a product decision, not a refactor — encode the contract here
-    // so a stray rewrite trips CI.
+    // 这三组是 persona 产品的用户可见锚点。改动它们属于产品决策，不是普通重构——
+    // 把契约写在这里，这样任何意外改写都会在 CI 里被抓住。
     expect([...ROLE_PRESETS]).toEqual(['亲密的爱人', '灵魂伴侣', '赛博管家', '知己好友', '宠物', '伙伴'])
     expect([...PERSONALITY_PRESETS]).toEqual([
       '温柔体贴',

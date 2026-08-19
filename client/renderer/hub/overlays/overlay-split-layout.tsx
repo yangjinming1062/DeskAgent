@@ -23,8 +23,8 @@ interface OverlayNavItemProps {
   active: boolean
   icon: IconComponent
   label: string
-  // Renders as an indented child of another nav item: smaller icon and a
-  // lighter active state so it never competes with the boxed parent item.
+  // 作为另一个导航项的缩进子项渲染：图标更小、激活态更弱，
+  // 不与带框的父项争抢视觉。
   nested?: boolean
   onClick: () => void
   trailing?: ReactNode

@@ -64,8 +64,7 @@ describe('subscribePowerProfile', () => {
     $spriteState.set('thinking')
     $activeSprite.set({ dataUrl: 'data:image/png;base64,AAA', tag: 't' })
 
-    // speaking / thinking are both active; a sprite alone doesn't cover 3D
-    // while $staticMode is false.
+    // speaking / thinking 都属于 active；仅在 $staticMode 为 false 时，单靠精灵图层不会覆盖 3D。
     expect(profiles).toEqual(['idle', 'active'])
   })
 

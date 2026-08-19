@@ -57,8 +57,8 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[]): Promise<
     return
   }
 
-  // Optimistic claim — refunded below unless we get an LLM reaction or the
-  // server says rate_limited, so one transient failure doesn't lock out 5 min.
+  // 乐观抢占——除非拿到 LLM 反应或服务端返回 rate_limited，否则下方会回退，
+  // 这样一次瞬时失败不会锁死 5 分钟。
   lastLlmPokeAt = now
 
   const gateway = $gateway.get()
@@ -78,8 +78,7 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[]): Promise<
       local_hour: new Date().getHours()
     })
 
-    // Server-side cost window still active for poke — sync our clock
-    // and fall back to the local pool.
+    // 服务端的成本窗口对 poke 仍生效——同步本地时钟并退回回本地反应池。
     if (res?.reason === 'rate_limited') {
       lastLlmPokeAt = Date.now()
       playLocalReaction(bucket, tags)
@@ -97,10 +96,10 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[]): Promise<
       return
     }
 
-    // llm_error / unparseable / inflight — refund so the next poke retries.
+    // llm_error / 无法解析 / inflight——退还本次抢占，让下次 poke 重试。
     lastLlmPokeAt = 0
   } catch {
-    // Network / timeout — refund so the next poke retries.
+    // 网络 / 超时——退还本次抢占，让下次 poke 重试。
     lastLlmPokeAt = 0
   }
 
@@ -140,7 +139,7 @@ export function handlePokeInteraction(): void {
 }
 
 export function handleHoverInteraction(): void {
-  // Smooth hover: cursor tracking is handled directly by Look-At without interrupting clips
+  // 平滑悬停：光标追踪由 Look-At 直接处理，不打断动画
 }
 
 export function handleDragEndInteraction(): void {

@@ -5,16 +5,14 @@ import { log } from '@/shared/lib/log'
 import type { PowerProfile } from './PowerProfile'
 import type { EngineBackendKind } from './types'
 
-// Render-engine observability: which fallback tier actually booted, the live
-// power profile, and the measured frame rate. Consumed by the developer
-// overlay; profile transitions additionally land in the desktop log file so
-// power regressions are diagnosable from logs alone.
+// 渲染引擎可观测性：实际启动的降级档位、当前功率档位，以及测得的帧率。
+// 由开发者 overlay 消费；档位切换还会落到桌面日志里，纯靠日志就能排查功率回退。
 
 export const $rendererBackend = atom<EngineBackendKind | null>(null)
 export const $powerProfile = atom<PowerProfile>('active')
 export const $engineFps = atom(0)
 
-// Render guard — surfaces unrecoverable engine errors so the ticker can stop instead of looping into per-frame throws.
+// 渲染守卫 —— 把不可恢复的引擎错误抛到表面，让 ticker 停掉，而不是陷入逐帧抛异常的循环。
 export const $engineError = atom<{ message: string; at: number } | null>(null)
 
 let lastLoggedProfile: PowerProfile | null = null

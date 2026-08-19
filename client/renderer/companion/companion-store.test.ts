@@ -32,7 +32,7 @@ describe('companion-store Phase 2 state machine', () => {
     setSpriteState('working')
     expect($spriteState.get()).toBe('working')
 
-    // listening is priority 40 vs working priority 70
+    // listening 优先级 40，working 优先级 70
     setSpriteState('listening')
     expect($spriteState.get()).toBe('working')
   })
@@ -64,16 +64,15 @@ describe('companion-store Phase 2 state machine', () => {
     setSpriteState('idle', { force: true })
     expect($spriteState.get()).toBe('idle')
 
-    // 6 consecutive activity ticks flip idle -> working (counter gate).
+    // 连续 6 次活动 tick 将 idle 翻转为 working（计数器阈值）。
     for (let i = 0; i < 6; i++) {
       reportUserActivity()
     }
 
     expect($spriteState.get()).toBe('working')
 
-    // Working (pri 70) gates idle (pri 10) — without force, the 10s
-    // inactivity timer would expire but the state would stay locked on
-    // the working badge. The fix forces the exit.
+    // working（优先级 70）会盖住 idle（优先级 10）——不带 force 时，
+    // 10 秒不活动计时器到期，状态仍会卡在 working。修复就是强制退出。
     vi.advanceTimersByTime(10_000)
     expect($spriteState.get()).toBe('idle')
   })
@@ -109,20 +108,17 @@ describe('companion-store disturbance tier', () => {
   })
 
   it('manual quiet is a hard lock-in (override ignored)', () => {
-    // The plan says manual quiet is "locked in": even if the activity
-    // monitor writes a stray override while the user has picked quiet,
-    // the rendered effective tier stays quiet. The lock-in is enforced
-    // in the computed atom itself so the rule cannot be regressed by a
-    // monitor-side bug.
+    // 计划规定手动安静是「锁定」的：即便活动监视器在用户已选安静时
+    // 写入了一条意外的 override，渲染出的生效档位也保持安静。
+    // 锁定规则在 computed atom 内部强制生效，因此不会被监视器侧的 bug 倒退。
     setDisturbanceTier('quiet')
     $effectiveTierOverride.set('proactive')
     expect($effectiveTier.get()).toBe('quiet')
   })
 
   it('non-quiet user_preferred respects override', () => {
-    // Inverse of the lock-in test: when user is NOT on quiet, the
-    // activity monitor's override (e.g. immersive focus context) takes
-    // effect.
+    // 锁定测试的反向：当用户**未**选安静时，活动监视器的 override
+    //（如沉浸式专注上下文）会生效。
     setDisturbanceTier('normal')
     $effectiveTierOverride.set('quiet')
     expect($effectiveTier.get()).toBe('quiet')

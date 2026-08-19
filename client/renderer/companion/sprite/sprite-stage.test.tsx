@@ -6,7 +6,7 @@ import { SpriteStage } from '@/companion/sprite/sprite-stage'
 
 describe('SpriteStage', () => {
   beforeEach(() => {
-    // Mock window.spiritagent.sprite methods
+    // mock window.spiritagent.sprite 方法
     window.spiritagent = {
       ...window.spiritagent,
       sprite: {
@@ -49,7 +49,7 @@ describe('SpriteStage', () => {
     expect(stageEl.style.opacity).toBe('0')
     expect(stageEl.style.pointerEvents).toBe('none')
 
-    // Region hit-test returns false when hidden
+    // 隐藏时区域命中检测返回 false
     expect(isPointInteractive(100, 100)).toBe(false)
   })
 })

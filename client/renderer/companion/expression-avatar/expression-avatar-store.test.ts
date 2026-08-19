@@ -59,7 +59,7 @@ describe('expression-avatar-store', () => {
     await requestExpressionAvatar('happy')
     expect($expressionAvatar.get()).toEqual({ name: 'happy', dataUrl: 'data:image/png;base64,AAA' })
 
-    // Cached switch-back: instant, no refetch.
+    // 命中缓存的回切：即时切换，不重新请求。
     $expressionAvatar.set(null)
     await requestExpressionAvatar('happy')
     expect($expressionAvatar.get()?.name).toBe('happy')
@@ -88,15 +88,15 @@ describe('expression-avatar-store', () => {
     $spriteEmotion.set('happy')
     const pending = requestExpressionAvatar('happy')
 
-    // Emotional transient ends before the backend answers — the display
-    // stays on the portrait, but the result is kept, never wasted.
+    // 情绪瞬态在后端返回前结束——显示仍停留在肖像上，
+    // 但结果会保留，绝不浪费。
     $spriteEmotion.set(null)
     resolveApi?.(avatarResponse('h2', 'happy'))
     await pending
 
     expect($expressionAvatar.get()).toBeNull()
 
-    // Next activation of the same emotion hits the cache: instant swap, no second POST.
+    // 同一情绪的下次激活命中缓存：即时切换，无第二次 POST。
     $spriteEmotion.set('happy')
     await requestExpressionAvatar('happy')
     expect($expressionAvatar.get()).toEqual({ name: 'happy', dataUrl: 'data:AAA' })
@@ -114,7 +114,7 @@ describe('expression-avatar-store', () => {
     await requestExpressionAvatar('sad')
     expect($expressionAvatar.get()).toBeNull()
 
-    // Within the backoff window the request is skipped entirely.
+    // 在退避窗口内完全跳过该请求。
     await requestExpressionAvatar('sad')
     expect(mock.api).toHaveBeenCalledTimes(1)
 
@@ -186,16 +186,15 @@ describe('expression-avatar-store', () => {
     $spriteEmotion.set('happy')
     const pending = requestExpressionAvatar('happy')
 
-    // avatar.regenerated lands mid-generation — the in-flight image belongs
-    // to the discarded identity and must not re-enter the cache on arrival.
+    // avatar.regenerated 在生成过程中抵达——进行中的图像
+    // 属于已被丢弃的身份，到达时不得再进入缓存。
     resetExpressionAvatars()
     resolveApi?.(avatarResponse('h7', 'happy'))
     await pending
 
     expect($expressionAvatar.get()).toBeNull()
 
-    // The next activation must re-fetch (the stale result was not cached) and
-    // publish the fresh-identity image.
+    // 下次激活必须重新请求（旧结果未缓存），并展示新身份的图像。
     $spriteEmotion.set('happy')
     await requestExpressionAvatar('happy')
     expect(mock.api).toHaveBeenCalledTimes(2)

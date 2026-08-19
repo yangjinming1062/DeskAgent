@@ -8,9 +8,8 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
     return
   }
 
-  // Quiet tier suppresses proactive outreach, but user-initiated reactions
-  // (poke/drag) always voice (plan §4.2). Affect is never gated — callers set
-  // emotional state directly.
+  // 安静档位会压掉主动外联，但用户主动触发的反应（戳 / 拖拽）始终出声（plan §4.2）。
+  // Affect 永远不受门控——调用方自己设情绪状态。
   const tier = $effectiveTier.get()
 
   if (!opts?.userInitiated && tier === 'quiet') {
@@ -22,16 +21,16 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
   }
 
   if (tier === 'proactive' || opts?.userInitiated) {
-    // Force the speaking transition — priority 60 is otherwise gated silently
-    // by 'working' (pri 70), so proactive/initiated speech wouldn't show.
+    // 强制切到 speaking 状态——优先级 60 会被 'working'（pri 70）默默门控，
+    // 不强制切的话主动/触发的语音就不会体现出来。
     setSpriteState('speaking', { force: true })
     const ok = await speak(text)
     setSpriteState('idle', { force: true })
-    // Let the bubble linger briefly after the voice ends, then dismiss.
+    // 让气泡在语音结束后再停留一会儿再消失。
     const linger = ok ? 4200 : 5000
     setTimeout(() => setProactiveBubble(null), linger)
   } else {
-    // Normal tier: longer linger so the text reads without spoken narration.
+    // 普通档位：停留更久，让用户在没有语音的情况下也能读完文字。
     setTimeout(() => setProactiveBubble(null), 8000)
   }
 }

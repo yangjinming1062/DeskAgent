@@ -15,9 +15,9 @@ export class LightingRig {
 
   private readonly eyeLight: THREE.DirectionalLight
 
-  // The env texture is the only part that survives construction; the classic
-  // PMREMGenerator is bound to WebGLRenderer internals and the webgpu one to
-  // the WebGPU backend, so the target handle differs per renderer kind.
+  // env 贴图是构造后唯一存活的部分；经典 PMREMGenerator
+  // 绑定在 WebGLRenderer 内部，webgpu 版则绑定在 WebGPU 后端，
+  // 因此 target 句柄因渲染器类型而异。
   private readonly envTexture: THREE.Texture
   private readonly disposeEnvTarget: () => void
   private readonly scene: THREE.Scene
@@ -25,8 +25,8 @@ export class LightingRig {
   constructor(scene: THREE.Scene, renderer: RendererHost, enableShadows: boolean) {
     this.scene = scene
 
-    // PMREM environment gives PBR materials realistic ambient reflections
-    // without needing an HDRI file.
+    // PMREM 环境贴图为 PBR 材质提供真实的环境反射，
+    // 无需额外的 HDRI 文件。
     if (renderer instanceof WebGPURenderer) {
       const pmrem = new WebGPUPMREMGenerator(renderer)
       const target = pmrem.fromScene(new RoomEnvironment(), 0.04)
@@ -46,7 +46,7 @@ export class LightingRig {
     this.ambient = new THREE.AmbientLight(0xffffff, 0.3)
     scene.add(this.ambient)
 
-    // Key — warm, front-left. Default off for a 300×360 desktop-pet window (shadow map was the single biggest GPU cost); when on, 1024² PCF radius 1.
+    // 主光——暖色，左前方。300×360 桌面伙伴窗口默认关闭（shadow map 是单笔最大的 GPU 开销）；开启时使用 1024² PCF radius 1。
     this.key = new THREE.DirectionalLight(0xfff6ee, 2.2)
     this.key.position.set(1.4, 2.2, 3.2)
 
@@ -67,19 +67,19 @@ export class LightingRig {
 
     scene.add(this.key)
 
-    // Fill — cool, front-right, softer; lifts shadow detail.
+    // 补光——冷色，右前方，更柔和；用于提升阴影细节。
     this.fill = new THREE.DirectionalLight(0xdbe8ff, 0.85)
     this.fill.position.set(-1.6, 1.4, 2.6)
     scene.add(this.fill)
 
-    // Eye catchlight / face soft light — straight-on front at eye level for lively catchlights & soft facial fill.
+    // 眼神高光 / 面部柔光——正前方平视高度，让眼神光更灵动、面部补光更柔和。
     this.eyeLight = new THREE.DirectionalLight(0xffffff, 0.8)
     this.eyeLight.position.set(0, 1.45, 2.5)
     this.eyeLight.target.position.set(0, 1.45, 0)
     scene.add(this.eyeLight)
     scene.add(this.eyeLight.target)
 
-    // Rim — behind/above, creates edge separation from background.
+    // 轮廓光——后上方，制造角色与背景的边缘分离。
     this.rim = new THREE.DirectionalLight(0xede6ff, 1.1)
     this.rim.position.set(0.4, 2.6, -3.0)
     scene.add(this.rim)

@@ -125,7 +125,7 @@ export function inspectScene(
 export async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayBuffer> {
   const bytes = new Uint8Array(buffer)
 
-  // Gzip magic bytes (0x1f, 0x8b)
+  // Gzip 魔数（0x1f, 0x8b）
   if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
     if (typeof DecompressionStream !== 'undefined') {
       try {
@@ -139,7 +139,7 @@ export async function decompressGlbIfNeeded(buffer: ArrayBuffer): Promise<ArrayB
     }
   }
 
-  // Deflate / zlib magic bytes (0x78 0x9c / 0x78 0x01 / 0x78 0xda)
+  // Deflate / zlib 魔数（0x78 0x9c / 0x78 0x01 / 0x78 0xda）
   if (bytes.length >= 2 && bytes[0] === 0x78 && (bytes[1] === 0x9c || bytes[1] === 0x01 || bytes[1] === 0xda)) {
     if (typeof DecompressionStream !== 'undefined') {
       try {

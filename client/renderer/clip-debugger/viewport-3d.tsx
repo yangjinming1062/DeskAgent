@@ -94,7 +94,7 @@ export function Viewport3D(): React.JSX.Element {
 
     container.appendChild(renderer.domElement)
 
-    // OrbitControls
+    // 轨道控制器 OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.08

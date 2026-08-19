@@ -33,13 +33,12 @@ interface PersonaRetuneProps {
 const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
-// Field schema: each step owns a list of fields. ``presets`` is typed as
-// the union of all known preset tokens plus '' (the "auto-derive" marker
-// used by speakingStyle). This means a typo like '喜爱' in a STEPS entry
-// fails to compile instead of silently rendering an empty chip.
+// 字段 schema：每一步持有一组字段。``presets`` 的类型是全部已知 preset token 的联合再加 ''
+// （speakingStyle 用的「自动派生」标记）。这样 STEPS 里写成「喜爱」这种拼写错误会编译失败，
+// 而不是默默渲染出一个空 chip。
 //
-// Species / character_gender / appearance_core / appearance_outfit are not
-// editable here — outfit is maintained by the wardrobe system.
+// species / character_gender / appearance_core / appearance_outfit 在这里不可编辑——
+// outfit 由换装系统维护。
 type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {
@@ -93,9 +92,9 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   }
 ]
 
-// Review step is data-driven too: a single Row per state slice, labeled.
-// Locked visual-anchor fields (species / gender / appearance_core) are not
-// editable here; readers can see them in the persona section of settings.
+// 回顾步骤也是数据驱动的：每条状态切片对应一个 Row，带标签。
+// 锁定的视觉锚点字段（species / gender / appearance_core）在这里不可编辑，
+// 可以在设置里的角色区查看。
 const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }[] = [
   { key: 'name', label: '名字' },
   { key: 'background', label: '关系' },
@@ -117,8 +116,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
 
   useInteractiveRegion('persona-retune', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
-  // Tracks whether the wizard is still mounted. Closing the modal mid-save
-  // unmounts the component; the in-flight ``save()`` continues to run.
+  // 跟踪向导是否还挂载。保存中途关闭模态框会卸载组件；进行中的 ``save()`` 仍会跑完。
   const mountedRef = useRef(true)
   useEffect(
     () => () => {
@@ -137,7 +135,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const [userHobbies, setUserHobbies] = useState(initial.user_hobbies)
   const [userFreeform, setUserFreeform] = useState(initial.user_freeform)
 
-  // Setter map keyed by field ``key``. Avoids a switch/case per step.
+  // 以字段 ``key`` 为键的 setter 映射。避免每一步写 switch/case。
   const setters: Record<keyof typeof EMPTY, (v: string) => void> = {
     name: setName,
     background: setBackground,
@@ -181,12 +179,10 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     setSaving(true)
     setHint(null)
 
-    // C2: separate the PUT (write) and hydrate (read) failure modes —
-    // same rationale as persona-editor. A transient GET failure after a
-    // successful PUT must NOT look like a save failure.
+    // C2：把 PUT（写）与 hydrate（读）的失败模式分开——与 persona-editor 同理。
+    // PUT 成功之后即便 GET 短暂失败，也不能被当成保存失败。
     //
-    // Current persona passed as `previous` so locked visual-anchor fields
-    // are re-included verbatim; see DESIGN.md §5.4.
+    // 把当前 persona 作为 `previous` 传入，让锁定的视觉锚点字段原样带回——见 DESIGN.md §5.4。
     let putOk = false
 
     try {
@@ -233,9 +229,8 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     }
 
     if (!result.ok) {
-      // Backend has the persona; the local copy didn't refresh. Show a
-      // softer hint so the user knows to expect a stale view until the
-      // next hydrate (next save, restart, etc.).
+      // 后端已经有人设，本地副本没刷出来。给一条更温和的提示，
+      // 让用户知道下次 hydrate 之前（下一次保存、重启等）看到的是旧值。
       setHint('已保存，但本地刷新失败，稍后再试')
       setSaving(false)
 
@@ -334,8 +329,8 @@ interface FieldProps {
 }
 
 function Field({ field, value, onChange }: FieldProps): React.ReactElement {
-  // Last entry of the presets list, when an empty string, is the
-  // "auto-derive / clear" affordance — only meaningful for speaking_style.
+  // presets 列表的最后一项如果是空字符串，表示「自动派生 / 清空」选项——
+  // 只有 speaking_style 上才有意义。
   const isClearPreset = field.presets && field.presets[field.presets.length - 1] === ''
   const max = field.max ?? Infinity
   const handleChange = (v: string) => onChange(max === Infinity ? v : v.slice(0, max))

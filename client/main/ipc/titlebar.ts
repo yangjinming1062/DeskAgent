@@ -20,9 +20,8 @@ export function registerTitlebarIpc({
   ipcMain.on('spiritagent:titlebar-theme', (event, payload) => {
     const tool = getToolWindow()
 
-    // Only the tool window's renderer may restyle its overlay — the sprite
-    // window boots the light theme and would paint a light strip on the dark
-    // tool UI.
+    // 只有工具窗口的渲染层可以重设覆盖层样式——精灵窗口启动的是浅色主题，
+    // 套到深色工具 UI 上会画出一道浅色条。
     if (!tool || tool.isDestroyed() || tool.webContents !== event.sender) {
       return
     }

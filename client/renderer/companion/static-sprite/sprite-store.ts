@@ -6,11 +6,9 @@ import { log } from '@/shared/lib/log'
 import { $modelInfo } from '../3d/model-store'
 import { $companionLifecycle } from '../companion-store'
 
-// Static-sprite album store — the degraded renderer while no GLB is
-// available (generating / failed / no key / load gap). The waiting image is
-// requested once per static-mode entry; state & emotion changes map to
-// free-form semantics (sprite-semantics.ts) and resolve via the backend's
-// match-or-generate album. Failures keep the current image — never blank.
+// 静态精灵相册 store——无 GLB 时的降级渲染器（生成中 / 失败 / 无 key / 加载空挡）。
+// 等待图在每次进入静态模式时请求一次；状态与情绪变化映射为自由语义
+// （sprite-semantics.ts），由后端做匹配或生成。失败时保留当前图像——绝不空白。
 
 export interface ActiveSprite {
   dataUrl: string
@@ -18,9 +16,9 @@ export interface ActiveSprite {
 }
 
 export const $activeSprite = atom<ActiveSprite | null>(null)
-// True when CharacterController.load fell through to the procedural egg —
-// set from companion-3d's load effect; gates $hasRenderableModel until the
-// GLB actually parses (model.ready flips 'succeeded' before the bytes land).
+// 当 CharacterController.load 回退到程序化蛋兜底时为 true——
+// 由 companion-3d 的加载 effect 设置；在 GLB 真正解析完成前控制
+// $hasRenderableModel（model.ready 在字节到达前就已翻为 'succeeded'）。
 export const $glbLoadFailed = atom<boolean>(false)
 
 interface SpriteResolveResponse {
@@ -31,22 +29,22 @@ interface SpriteResolveResponse {
   generated: boolean
 }
 
-// Small PNGs over the apiAsset data-URL channel (same as wardrobe textures);
-// keyed by content_hash so re-resolving a cached album row skips the fetch.
+// 小 PNG 走 apiAsset data-URL 通道（与衣橱纹理共用）；
+// 按 content_hash 索引，因此重新解析相册中已缓存的行可跳过拉取。
 const _urlCache = new Map<string, string>()
 const _requestCache = new Map<string, ActiveSprite>()
 const _inflight = new Map<string, Promise<void>>()
 
-// Space distinct POSTs: the album is LLM-backed and state changes can burst
-// (poke → interacting → previous state in quick succession). Trailing timer
-// ensures the latest state request executes after the window elapses.
+// 给不同的 POST 留出间隔：相册由 LLM 支撑，状态变化可能突发
+// （戳击 → interacting → 上一状态快速切换）。trailing 定时器保证窗口期过后
+// 最新状态请求会被执行。
 const MIN_REQUEST_SPACING_MS = 1500
 let _lastPostAt = 0
 let _pendingTimer: ReturnType<typeof setTimeout> | null = null
 let _latestPending: { request: string; role?: 'waiting' } | null = null
 
-/** Resolve a semantic request against the backend album; publishes to
- * $activeSprite on success and silently keeps the current image on failure. */
+/** 把语义请求发到后端相册；成功时发布到 $activeSprite，
+ * 失败时静默保留当前图像。 */
 export async function requestSprite(request: string, role?: 'waiting'): Promise<void> {
   const cached = _requestCache.get(request)
 
@@ -130,8 +128,9 @@ export async function requestSprite(request: string, role?: 'waiting'): Promise<
   await task
 }
 
-/** Avatar regen invalidates the album's identity anchor (server filters by
- * avatar_id) — drop local caches so the next request generates fresh sprites. */
+/** 形象重生成会让相册的身份锚失效（服务端按 avatar_id 过滤）——
+ * 清掉本地缓存，让下次请求生成全新的精灵。
+ */
 export function resetSpriteAlbum(): void {
   if (_pendingTimer !== null) {
     clearTimeout(_pendingTimer)

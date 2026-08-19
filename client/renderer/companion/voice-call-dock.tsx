@@ -20,14 +20,13 @@ interface VoiceCallDockProps {
 const SPEECH_THRESHOLD = 28
 const BARGEIN_THRESHOLD = 38
 const SILENCE_END_MS = 1300
-// Releases the awaiting-reply lock if no message.start ever lands, so the mic re-opens.
+// 在没有任何 message.start 到达时释放 awaiting-reply 锁，使麦克风能再次开启。
 const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
-// Live half-duplex voice conversation: the mic stays open; a volume analyser
-// segments utterances (speech → sustained silence = turn end). Each finished
-// utterance is transcribed (cloud STT), sent as a prompt, and the streamed
-// reply is spoken aloud when it completes. Barge-in: speaking aloud while the
-// companion talks cuts off the TTS and returns to listening (plan §4.1).
+// 实时半双工语音通话——麦克风持续开启；音量分析器把语音切成片段
+// （说话 → 持续静音 = 一回合结束）。每段语音被转写（云端 STT）后
+// 作为 prompt 发出，回流结束后读出回复。打断：伙伴说话时用户开口
+// 会切断 TTS，回到倾听（plan §4.1）。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
   const messages = useStore($chatMessages)
@@ -48,12 +47,12 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const awaitingReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const assistantSpeakingRef = useRef(false)
   const lastSpokenIdRef = useRef<string | null>(null)
-  // Reset the last-spoken dedup on a new session so the first reply isn't skipped as a duplicate.
+  // 新会话时重置 lastSpokenId 去重状态，避免首条回复被当作重复而跳过。
   const chatSessionId = useStore($chatSessionId)
   useEffect(() => {
     lastSpokenIdRef.current = null
   }, [chatSessionId])
-  // Stale speak() promises can't drag the sprite to idle after a newer utterance starts.
+  // 过期 speak() promise 不能在新一轮语音开始后把精灵拉回 idle。
   const speakGenRef = useRef(0)
   const gatewayStateRef = useLatestRef(gatewayState)
   const { requestGateway } = useGatewayRequest()
@@ -134,7 +133,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                 lastActivityTimeRef.current = Date.now()
               }
 
-              // Barge-in: user speaks while the companion is talking.
+              // 打断：用户趁伙伴说话时开口。
               if (avg > BARGEIN_THRESHOLD && assistantSpeakingRef.current) {
                 stopSpeaking()
                 assistantSpeakingRef.current = false
@@ -148,7 +147,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                   userSpeakingRef.current = true
                   setSpriteState('listening')
                   startRecorder()
-                  // Cancel unconditionally: a no-op when already cleared.
+                  // 无条件清除；已清除时为空操作。
                   clearTimeout(silenceTimerRef.current ?? undefined)
                   silenceTimerRef.current = null
                 } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
@@ -212,7 +211,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         const res = await window.spiritagent.media.stt({ dataUrl, filename: 'voice.webm' })
         text = (res.text ?? '').trim()
       } catch {
-        // Surface STT failure to the user instead of silently returning to listening.
+        // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。
         setAssistantError('没听清，请再说一次')
         text = ''
       }
@@ -226,7 +225,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       awaitingReplyRef.current = true
       setSpriteState('thinking')
 
-      // Recover if the WS dies before any message.start lands; cleared on normal completion.
+      // WS 在任何 message.start 到达前断开时恢复；正常完成时清除。
       if (awaitingReplyTimerRef.current) {
         clearTimeout(awaitingReplyTimerRef.current)
       }
@@ -301,9 +300,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     }
   }, [requestGateway, gatewayStateRef, onCloseRef])
 
-  // Speak the assistant's completed reply, then return to listening. The chat
-  // event stream (events.ts) owns the streaming + state machine; this effect
-  // only reacts to a finalized assistant turn.
+  // 念出助手已完成的回复，然后回到倾听。聊天事件流（events.ts）负责
+  // 流式推送与状态机；本 effect 只对已结束的助手回合做出反应。
   useEffect(() => {
     if (!micActive) {
       return

@@ -1,8 +1,8 @@
 import { atom } from 'nanostores'
 
-// Discriminated union — the main process forwards electron-updater events as
-// `{ type, ... }` payloads on the `spiritagent:update-event` IPC channel. Each
-// variant mirrors one autoUpdater.on(...) callback.
+// 可辨识联合类型——主进程将 electron-updater 事件以 `{ type, ... }` 载荷
+// 通过 `spiritagent:update-event` IPC 通道转发。
+// 每个变体对应一个 autoUpdater.on(...) 回调。
 export type UpdateStatus =
   | { status: 'idle' }
   | { status: 'checking' }

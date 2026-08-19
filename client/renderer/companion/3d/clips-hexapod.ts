@@ -48,7 +48,7 @@ const RH = TRIPO_HEXAPOD_BONES.rightHind[0]
 export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
   ...buildStateClipsForBones(S0, HD),
 
-  // ── States & Locomotion ──
+  // ── 状态与位移 ──
   hex_idle_perch: makeClip('hex_idle_perch', 4, true, 'state', ['秩序', '沉稳', '机械', '甲壳坚硬'], {
     [S0]: [kf(0, 0, 0, 0), kf(2, 0.02, 0, 0), kf(4, 0, 0, 0)],
     [LA]: [kf(0, 0, 0, 0), kf(2, 0.05, 0.08, 0), kf(4, 0, 0, 0)],
@@ -61,7 +61,7 @@ export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
     [RA]: [kf(0, 0.3, 0, 0), kf(3, 0.35, 0, 0), kf(6, 0.3, 0, 0)]
   }),
   hex_crawl: makeClip('hex_crawl', 1.2, true, 'locomotion', ['秩序', '机械', '勤劳'], {
-    // Tripod gait: LF + RM + LH move together; RF + LM + RH move together
+    // 三足步态：LF + RM + LH 同步移动；RF + LM + RH 同步移动
     [LF]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
     [RM]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
     [LH]: [kf(0, 0.3, 0, 0), kf(0.6, -0.2, 0, 0), kf(1.2, 0.3, 0, 0)],
@@ -79,7 +79,7 @@ export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
     [RH]: [kf(0, -0.3, 0, 0), kf(0.3, 0.4, 0, 0), kf(0.6, -0.3, 0, 0)]
   }),
 
-  // ── Interaction & Micro ──
+  // ── 交互与小动作 ──
   hex_antenna_explore: makeClip('hex_antenna_explore', 2.0, true, 'interaction', ['触角敏锐', '探索', '好奇'], {
     [LA]: [kf(0, 0, 0.2, 0), kf(0.5, 0.1, -0.2, 0), kf(1.0, 0, 0.3, 0), kf(1.5, 0.1, -0.1, 0), kf(2.0, 0, 0.2, 0)],
     [RA]: [kf(0, 0, -0.2, 0), kf(0.5, 0.1, 0.2, 0), kf(1.0, 0, -0.3, 0), kf(1.5, 0.1, 0.1, 0), kf(2.0, 0, -0.2, 0)],
@@ -106,7 +106,7 @@ export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
     [JW]: [kf(0, 0.1, 0, 0), kf(0.6, 0.3, 0, 0), kf(1.2, 0.1, 0, 0)]
   }),
 
-  // ── Positive & Social ──
+  // ── 正面情绪与社交 ──
   hex_happy_vibrate: makeClip('hex_happy_vibrate', 1.0, true, 'emotion-positive', ['欢腾', '灵动', '服从'], {
     [S0]: [kf(0, 0, 0.05, 0), kf(0.25, 0, -0.05, 0), kf(0.5, 0, 0.05, 0), kf(0.75, 0, -0.05, 0), kf(1.0, 0, 0.05, 0)],
     [LA]: [kf(0, 0.1, 0, 0), kf(0.5, -0.1, 0, 0), kf(1.0, 0.1, 0, 0)],
@@ -122,7 +122,7 @@ export const HEXAPOD_CLIPS: Readonly<Record<string, ClipDef>> = {
     [RA]: [kf(0, 0, -0.3, 0), kf(1.0, 0, 0.3, 0), kf(2.0, 0, -0.3, 0)]
   }),
 
-  // ── Negative Emotion & Threat ──
+  // ── 负面情绪与威胁 ──
   hex_rage_frenzy: makeClip('hex_rage_frenzy', 1.0, true, 'emotion-negative', ['狂躁', '暴躁', '凶猛'], {
     [JW]: [kf(0, 0, 0, 0), kf(0.2, 0.4, 0, 0), kf(0.4, 0, 0, 0), kf(0.6, 0.4, 0, 0), kf(1.0, 0, 0, 0)],
     [LF]: [kf(0, 0.5, 0, 0), kf(0.5, -0.4, 0, 0), kf(1.0, 0.5, 0, 0)],

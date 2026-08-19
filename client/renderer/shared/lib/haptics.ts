@@ -87,11 +87,10 @@ export type HapticTrigger = (input?: HapticInput, options?: TriggerOptions) => P
 let registeredTrigger: HapticTrigger | null = null
 let lastSelectionAt = 0
 
-// Global rolling rate-limit. A runaway upstream loop (auth-expiry error-toast
-// storms, reconnect flaps) can request dozens of haptics a second, which the
-// trackpad actuator renders as a frantic "clickity" buzz. Cap firings to
-// RATE_LIMIT per RATE_WINDOW so no source can machine-gun the actuator;
-// intentional UI haptics are human-paced and never approach the ceiling.
+// 全局滚动速率限制。上游失控循环（鉴权过期错误 toast 风暴、重连抖动）可能
+// 一秒内请求几十次触感，触控板执行器会发出令人焦虑的"咔哒"震动。把触发频率
+// 限制在 RATE_WINDOW 内最多 RATE_LIMIT 次，防止任何源头对执行器扫射；
+// 正常 UI 触感由人手控制，远低于该上限。
 const RATE_WINDOW = 1000
 const RATE_LIMIT = 5
 let recentFires: number[] = []

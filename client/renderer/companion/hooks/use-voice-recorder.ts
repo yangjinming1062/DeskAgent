@@ -9,12 +9,12 @@ type Options = {
   onTranscribed?: (text: string) => Promise<void> | void
 }
 
-// Owns the full voice-message lifecycle: MediaRecorder + chunks + auto-stop
-// timer + global-mouseup hook + STT submit. Caller just toggles `recording`
-// and listens for `onTranscribed` to push the result to its own state.
+// 负责完整的语音消息生命周期：MediaRecorder + 音频块 + 自动停止计时器
+// + 全局 mouseup 钩子 + STT 提交。调用方只需切换 `recording`
+// 并监听 `onTranscribed` 以把结果写入自己的状态。
 //
-// The hook is responsible for stopping tracks on stop and on unmount so the
-// OS-level mic LED doesn't stay on after the recorder finishes.
+// 该 hook 负责在 stop 与 unmount 时关闭音轨，
+// 避免 OS 级别的麦克风指示灯在录音结束后仍保持亮起。
 
 export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
   recording: boolean
@@ -55,7 +55,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     try {
       recorder.stream.getTracks().forEach(t => t.stop())
     } catch {
-      /* already closed */
+      /* 已关闭 */
     }
   }
 
@@ -98,7 +98,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       try {
         await startPendingRef.current
       } catch {
-        /* surfaced via start */
+        /* 由 start 抛出 */
       }
     }
 
@@ -185,8 +185,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     startPendingRef.current = pending
   }, [])
 
-  // `recording` flip drives a global mouseup listener so the user can stop a
-  // recording by releasing the button anywhere on screen.
+  // `recording` 切换驱动一个全局 mouseup 监听器，
+  // 用户可在屏幕任意位置松开按钮即可停止录音。
   useEffect(() => {
     if (!recording) {
       return
@@ -203,7 +203,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     }
   }, [recording])
 
-  // Unmount cleanup: stop tracks so the OS-level mic LED doesn't stay on.
+  // 卸载清理：关闭音轨，避免 OS 级别麦克风指示灯保持亮起。
   useEffect(() => {
     return () => {
       cancelAutoStop()
@@ -215,7 +215,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
         try {
           recorder.stop()
         } catch {
-          /* already stopped */
+          /* 已停止 */
         }
       }
 

@@ -3,19 +3,16 @@ import * as THREE from 'three'
 import { cpuSkinPoint } from './skinning'
 
 /**
- * Runtime collision surface for the animated body, used to keep `physics=skin`
- * garment units from clipping into the body during animation.
+ * 动画化身体的运行时碰撞表面，用来防止 `physics=skin` 服装单元在动画中
+ * 穿入身体。
  *
- * The body mesh is GPU-skinned, so its animated surface is not readable from
- * `geometry.attributes.position` (that stays in bind pose). To collide on the
- * CPU we decimate the body into a low-poly proxy once, CPU-skin the proxy with
- * the same skeleton each frame, then rebuild a median-split BVH over the
- * skinned triangles for closest-point push-out queries.
+ * 身体网格由 GPU 蒙皮，其动画表面无法直接从 `geometry.attributes.position`
+ * 读取（顶点保持在绑定姿态下）。要在 CPU 上做碰撞，需先把身体精简为低面代理，
+ * 每帧用同一骨架 CPU 蒙皮代理，再对蒙皮后的三角形构建中位数切分 BVH，
+ * 用于最近点推离查询。
  *
- * The proxy is a vertex-clustered approximation, so the collision surface can
- * deviate a few millimetres from the true body in curved regions. That is an
- * accepted trade-off for eliminating gross animation-time penetration; exact
- * surface collision is deferred (see docs/plan.md).
+ * 代理是基于顶点聚类的近似，曲面区域与真实身体可能相差几毫米。这是为消除
+ * 明显的动画期穿模所做的可接受权衡；精确表面碰撞留待以后处理（见 docs/plan.md）。
  */
 
 const MAX_PROXY_VERTS = 4096
@@ -41,7 +38,7 @@ export class BodyCollider {
   private readonly index: Uint32Array
   private readonly world: Float32Array
 
-  // Median-split BVH over proxy triangles (world space), rebuilt each update().
+  // 在代理三角形（世界空间）上构建中位数分割 BVH，每次 update() 重建。
   private bvhMin = new Float32Array(0)
   private bvhMax = new Float32Array(0)
   private bvhLeft = new Int32Array(0)
@@ -79,7 +76,7 @@ export class BodyCollider {
     this.world = new Float32Array(proxy.positions.length)
   }
 
-  /** CPU-skin the proxy into world space and rebuild the BVH. Call once per frame before resolving. */
+  /** 把代理 CPU 蒙皮到世界空间并重建 BVH。每帧求解前调用一次。 */
   update(): void {
     if (
       !this.skeleton.boneMatrices ||
@@ -114,8 +111,8 @@ export class BodyCollider {
   }
 
   /**
-   * Push `point` (world space, mutated in place) out to `clearance` from the
-   * body surface when it lies inside. Returns true when a push was applied.
+   * 当 `point`（世界空间，原地变更）位于身体内部时，将其沿表面外推到 `clearance`
+   * 距离。返回是否施加了推力。
    */
   resolve(point: THREE.Vector3, clearance: number): boolean {
     if (this.bvhRoot < 0) {
@@ -175,7 +172,7 @@ export class BodyCollider {
       return
     }
 
-    // Node arrays sized for a worst-case full binary tree (2·N − 1 nodes).
+    // 节点数组按最坏情况满二叉树（2·N − 1 个节点）预留容量。
     const maxNodes = triCount * 2
     this.bvhMin = new Float32Array(maxNodes * 3)
     this.bvhMax = new Float32Array(maxNodes * 3)
@@ -183,7 +180,7 @@ export class BodyCollider {
     this.bvhRight = new Int32Array(maxNodes)
     this.bvhTri = new Int32Array(maxNodes).fill(-1)
 
-    // Per-triangle AABB + centroid (world space).
+    // 每三角形的 AABB 与质心（世界空间）。
     const triMin = new Float32Array(triCount * 3)
     const triMax = new Float32Array(triCount * 3)
     const centroid = new Float32Array(triCount * 3)
@@ -247,7 +244,8 @@ export class BodyCollider {
       const extent = [mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]]
       const axis = extent[0] >= extent[1] && extent[0] >= extent[2] ? 0 : extent[1] >= extent[2] ? 1 : 2
 
-      // In-place typed-array quicksort — replaces the old `Array.from(...).sort(...)` which allocated ~50K elements per frame on a 4K-triangle proxy.
+      // 原位 typed-array 快速排序——替换旧版 `Array.from(...).sort(...)`，
+      // 后者在 4K 三角形代理上每帧分配约 50K 元素。
       sortByCentroidInPlace(order, start, end, centroid, axis)
 
       const mid = (start + end) >> 1
@@ -262,7 +260,7 @@ export class BodyCollider {
   }
 }
 
-/** In-place quicksort with median-of-three pivot + 3-way Dutch Flag partition over a typed-array `[start, end)` slice. */
+/** 对 typed-array 的 `[start, end)` 切片做原地快速排序：中位数三路 + 三向 Dutch Flag 分区。 */
 const INSERTION_SORT_THRESHOLD = 16
 
 function sortByCentroidInPlace(
@@ -278,7 +276,7 @@ function sortByCentroidInPlace(
     return
   }
 
-  // Insertion sort for small slices — lower constant factor than quicksort and no recursion overhead.
+  // 小切片使用插入排序——常数因子小于快速排序，且无递归开销。
   if (length <= INSERTION_SORT_THRESHOLD) {
     for (let i = start + 1; i < end; i++) {
       const key = order[i]
@@ -296,7 +294,7 @@ function sortByCentroidInPlace(
     return
   }
 
-  // Median-of-three pivot: pick the median of `start`, `mid`, `end-1`.
+  // 三数取中枢纽：取 `start`、`mid`、`end-1` 三者的中位数。
   const mid = start + (length >> 1)
   const a = order[start]
   const b = order[mid]
@@ -338,7 +336,7 @@ function sortByCentroidInPlace(
   sortByCentroidInPlace(order, gt, end, centroid, axis)
 }
 
-/** Squared distance from point to node AABB (for BVH pruning). */
+/** 点到节点 AABB 的距离平方（用于 BVH 剪枝）。 */
 function aabbDist2(px: number, py: number, pz: number, min: Float32Array, max: Float32Array, node: number): number {
   let d2 = 0
 
@@ -360,8 +358,8 @@ function aabbDist2(px: number, py: number, pz: number, min: Float32Array, max: F
 }
 
 /**
- * Closest point on proxy triangle `tri` to `(px,py,pz)`. Writes the closest
- * point and outward face normal (proxy winding) and returns squared distance.
+ * 代理三角形 `tri` 上最接近 `(px,py,pz)` 的点。写入最近点与朝外法线
+ * （代理绕序），返回距离平方。
  */
 function closestPointOnTri(
   px: number,
@@ -387,7 +385,7 @@ function closestPointOnTri(
   const cy = world[c + 1]
   const cz = world[c + 2]
 
-  // Outward face normal (CCW winding), used for signed push-out direction.
+  // 朝外的面法线（CCW 缠绕），用于有符号推出方向。
   const v0x = bx - ax
   const v0y = by - ay
   const v0z = bz - az
@@ -403,7 +401,7 @@ function closestPointOnTri(
     normal.set(nx / nl, ny / nl, nz / nl)
   }
 
-  // Ericson's closest-point-on-triangle via barycentric region tests.
+  // Ericson 的三角形最近点算法，基于重心坐标区域判定。
   const v2x = px - ax
   const v2y = py - ay
   const v2z = pz - az
@@ -447,7 +445,7 @@ function closestPointOnTriEdges(
   cz: number,
   out: THREE.Vector3
 ): number {
-  // Closest among the three edges.
+  // 取三条边上的最近点。
   let best = closestPointOnSegment(px, py, pz, ax, ay, az, bx, by, bz)
   let rx = best[0]
   let ry = best[1]
@@ -477,7 +475,7 @@ function closestPointOnTriEdges(
   return bestD2
 }
 
-/** Closest point on segment ab to p. Returns [x, y, z, dist²]. */
+/** 线段 ab 上最接近 p 的点。返回 [x, y, z, 距离平方]。 */
 function closestPointOnSegment(
   px: number,
   py: number,
@@ -514,7 +512,7 @@ function closestPointOnSegment(
   return [x, y, z, dx * dx + dy * dy + dz * dz]
 }
 
-/** Build a vertex-clustered proxy of the body geometry. */
+/** 基于顶点聚类构建身体几何的代理。 */
 function buildProxy(
   pos: Float32Array,
   si: ArrayLike<number>,

@@ -47,18 +47,18 @@ describe('ChatDock', () => {
     const onOpenVoiceCall = vi.fn()
     render(<ChatDock onClose={onClose} onOpenVoiceCall={onOpenVoiceCall} />)
 
-    // Left visual anchor elements: emotion state and status (no emotion → calm)
+    // 左侧视觉锚定元素：情绪状态与状态标签（无情绪时为平静）
     expect(screen.getByText('平静温和')).toBeDefined()
     expect(screen.getByText('当前情绪状态')).toBeDefined()
     expect(screen.getByText('在线陪伴')).toBeDefined()
 
     expect(avatarImg().src).toContain('avatar.png')
 
-    // Right chat panel elements
+    // 右侧聊天面板元素
     expect(screen.getByPlaceholderText('输入消息，Enter 发送，Shift+Enter 换行')).toBeDefined()
     expect(screen.getByRole('button', { name: '关闭对话' })).toBeDefined()
 
-    // Voice call button in bottom bar
+    // 底部栏的语音通话按钮
     const voiceCallBtn = screen.getByRole('button', { name: '📞 通话' })
     expect(voiceCallBtn).toBeDefined()
     fireEvent.click(voiceCallBtn)
@@ -79,7 +79,7 @@ describe('ChatDock', () => {
     await waitFor(() => expect($expressionAvatar.get()?.name).toBe('happy'))
     expect(avatarImg().src).toContain('EXPR')
 
-    // Emotional transient ends → portrait fallback.
+    // 情绪瞬态结束 → 回退到半身像。
     $spriteEmotion.set(null)
 
     await waitFor(() => expect($expressionAvatar.get()).toBeNull())

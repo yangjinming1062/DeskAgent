@@ -29,12 +29,12 @@ interface SpriteStageProps {
   hidden?: boolean
 }
 
-// 12px keeps trackpad micro-jitter from misclassifying a double-tap as a drag.
+// 12px 是为了避免触控板微抖动被误判为拖拽、把双击吞掉。
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
 
-// Pointer capture keeps delivering coordinates past the viewport edge once the cursor
-// crosses onto another display; probe main at most this often for a display handoff.
+// 一旦光标跨到另一块显示器，pointer capture 会持续投递跨视口坐标；
+// 探测主进程的频率最多为此间隔。
 const DISPLAY_SWITCH_PROBE_MS = 200
 
 const SPRITE_REGION_ID = 'sprite-stage'
@@ -66,8 +66,7 @@ export function SpriteStage({
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
   const hitRef = useRef<SpriteHit | null>(null)
-  // Live 3D silhouette probe, synced through a ref for the same
-  // closure-stability reason as hitRef above.
+  // 实时 3D 轮廓探测，通过 ref 同步，理由同 hitRef 的闭包稳定性。
   const hit3DRef = useRef<((x: number, y: number) => boolean | null) | null>(null)
 
   useEffect(
@@ -86,7 +85,9 @@ export function SpriteStage({
   const displayProbeAtRef = useRef(0)
   const lastDragPointRef = useRef<{ x: number; y: number } | null>(null)
 
-  // 0-delay unignore on capture: setIgnoreMouseEvents(true, { forward: true }) does NOT forward mousedown/contextmenu to the renderer, so the window must be ungnored BEFORE the click arrives — mousemove is the only signal that reaches us.
+  // 捕获时零延迟取消忽略：setIgnoreMouseEvents(true, { forward: true })
+  // 不会把 mousedown/contextmenu 转发给渲染层，所以窗口必须在点击到达前
+  // 取消忽略——mousemove 是我们能收到的唯一信号。
   const captureImmediate = useCallback(() => {
     if (pendingToggleRef.current) {
       clearTimeout(pendingToggleRef.current)
@@ -96,7 +97,7 @@ export function SpriteStage({
     void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
   }, [])
 
-  // 100 ms debounce on release: prevents boundary jitter from repeatedly flipping the window between interactive and click-through during fast mouse sweeps.
+  // 释放时 100ms 防抖：避免快速鼠标扫过边界时窗口在交互/穿透间反复翻转。
   const releaseDebounced = useCallback(() => {
     if (pendingToggleRef.current) {
       clearTimeout(pendingToggleRef.current)
@@ -127,8 +128,8 @@ export function SpriteStage({
     releaseDebounced()
   }, [releaseDebounced])
 
-  // spriteHit flows through a ref so the region's hitTest closure stays stable
-  // — otherwise every image swap would unregister/re-register the region.
+  // spriteHit 经 ref 传递，以保证 region 的 hitTest 闭包稳定——
+  // 否则每次图像切换都会重新注册/注销 region。
   useEffect(() => {
     hitRef.current = spriteHit ?? null
   }, [spriteHit])
@@ -150,9 +151,8 @@ export function SpriteStage({
     [hidden]
   )
 
-  // Static hitmap refines while its image is on display; 3D mode falls to
-  // the live silhouette probe (strict miss → false once warm; null during
-  // boot/load keeps the rect fallback).
+  // 静态 hitmap 在图像展示时做精确命中；3D 模式下退化为实时轮廓探测
+  // （热备后严格 miss → false；启动/加载阶段返回 null 以保留矩形兜底）。
   const stageHitTest = useCallback((x: number, y: number): boolean => {
     const hit = hitRef.current
 
@@ -166,7 +166,8 @@ export function SpriteStage({
   useInteractiveRegion(SPRITE_REGION_ID, mountRef, stageRect, stageHitTest)
 
   useEffect(() => {
-    // Coalesce mousemove to a single rAF tick — getBoundingClientRect() per region is layout-forcing, and 60+ Hz raw mousemove burns the frame budget on the resulting style-recalc.
+    // 把 mousemove 合并到单个 rAF tick——每个 region 调 getBoundingClientRect()
+    // 都会触发布局，60+ Hz 的原始 mousemove 会让随后的 style 重算把帧预算烧光。
     let moveRafId: number | null = null
 
     const flushMove = () => {
@@ -187,7 +188,7 @@ export function SpriteStage({
     const onMove = (e: MouseEvent) => {
       lastPointRef.current = { x: e.clientX, y: e.clientY }
 
-      // Fast-path: immediately un-ignore without waiting for next rAF frame when entering interactive pixels
+      // 快路径：进入交互像素时立刻取消忽略，不必等下一帧 rAF
       if (isPointInteractive(e.clientX, e.clientY)) {
         capture()
       } else if (moveRafId === null) {
@@ -227,14 +228,12 @@ export function SpriteStage({
     }
   }, [capture, release])
 
-  // The sprite window lives on a single display; moving the sprite to another monitor
-  // means moving the window. Main snaps it onto the cursor's display and returns both
-  // window origins. Only the sprite POSITION shifts by the origin delta — the drag
-  // reference points must not: pointer events after the switch arrive in the NEW
-  // viewport space (client itself jumps by the same delta), so origin + (client −
-  // start) keeps producing the shifted value on its own. Shifting start too pins the
-  // sprite to its old-viewport coordinates and flings it to the far edge of the new
-  // display.
+  // 精灵窗口只占一块显示器；要把精灵搬到另一块显示器上就要移动窗口。
+  // 主进程会把窗口对齐到光标所在显示器并返回两个窗口原点。
+  // 只有精灵的 POSITION 需要按原点 delta 平移——拖拽参考点不能动：
+  // 切换后到达的 pointer 事件在 NEW 视口空间里（client 本身就跳过了同样的 delta），
+  // 所以 origin + (client - start) 会自然产出平移后的值；再平移 start 反而
+  // 会把精灵钉在旧视口坐标上、甩到新显示器边缘。
   const probeDisplaySwitch = useCallback((): void => {
     const now = performance.now()
 
@@ -256,11 +255,10 @@ export function SpriteStage({
         const dy = from.y - to.y
         const d = dragRef.current
 
-        // Pointer coords captured before the window jump are old-space, after it
-        // new-space; they differ by the origin delta (hundreds of px) while the cursor
-        // moved only a few px since main read it. If the latest drag point already sits
-        // in the new space, the drag formula recomputes the shifted position on its
-        // own — shifting again would double-apply the delta for a frame.
+        // 窗口跳转前抓到的坐标是旧空间，跳转后是新空间；两者相差原点 delta
+        // （几百像素），但主进程读取光标之后光标只动了几个像素。
+        // 如果最新的拖拽点已经在新空间，拖拽公式自己就能算出平移后的位置——
+        // 再平移一次会让 delta 在一帧内被双重应用。
         const point = d?.moved ? { x: d.lastX, y: d.lastY } : lastDragPointRef.current
 
         if (
@@ -273,9 +271,8 @@ export function SpriteStage({
 
         const dragging = d?.moved === true
 
-        // Released before the handoff landed — remap the resting position too, or the
-        // sprite stays parked in old-viewport coordinates (off-screen on the new
-        // display). Skip when an autonomous move already recomputed a new-space one.
+        // 拖拽释放比显示器切换早到——也要重映射静止位置，否则精灵会停在旧视口
+        // 坐标上（新显示器上看不见）。自主移动已经算出新空间位置时跳过。
         if (!dragging && ($spatialLocomotion.get() !== 'still' || $chatOpen.get())) {
           return
         }
@@ -304,7 +301,7 @@ export function SpriteStage({
 
     lastPointRef.current = { x: e.clientX, y: e.clientY }
 
-    // Only capture when left-button is pressed
+    // 只在按下左键时捕获
     if (e.button !== 0) {
       return
     }
@@ -406,7 +403,7 @@ export function SpriteStage({
       return
     }
 
-    // Only left button releases trigger tap / double-tap; right-clicks open the context menu without activating a poke reaction
+    // 只有左键松开触发 tap / double-tap；右键打开右键菜单且不触发戳击反应
     if (e.button !== 0) {
       return
     }

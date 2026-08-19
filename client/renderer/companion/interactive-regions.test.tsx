@@ -19,9 +19,8 @@ function RegionProbe({ id, getRect }: { id: string; getRect?: (el: HTMLElement) 
 
 describe('useInteractiveRegion', () => {
   it('registers the region through to isPointInteractive', () => {
-    // Custom getRect returning a fixed viewport-sized rect. After mount,
-    // isPointInteractive at any point inside the rect returns true; on
-    // unmount the region is removed.
+    // 自定义 getRect 返回固定视口大小的矩形。挂载后，
+    // 矩形内任意点的 isPointInteractive 返回 true；卸载后该区域被移除。
     const { unmount } = render(<RegionProbe getRect={() => new DOMRect(0, 0, 1920, 1080)} id="fullscreen" />)
 
     expect(isPointInteractive(500, 500)).toBe(true)
@@ -32,9 +31,8 @@ describe('useInteractiveRegion', () => {
   })
 
   it('returns null from getRect when the ref is never attached', () => {
-    // Render a component that calls the hook with a ref but never renders
-    // an element to attach it to. The hook's getRect callback must return
-    // null so isPointInteractive doesn't accidentally match anything.
+    // 渲染一个用 ref 调用 hook 但从未渲染元素去挂载它的组件。
+    // hook 的 getRect 回调必须返回 null，避免 isPointInteractive 误命中。
     function Unbound() {
       const ref = useRef<HTMLDivElement>(null)
       useInteractiveRegion('unset-region', ref)
@@ -47,8 +45,8 @@ describe('useInteractiveRegion', () => {
   })
 
   it('unregisters on unmount', () => {
-    // Sanity: even without a custom getRect, mounting + unmounting should
-    // not leave a region behind that matches a hit-test.
+    // 健全性检查：即便没有自定义 getRect，挂载 + 卸载
+    // 也不应在命中测试中遗留可命中的区域。
     const { unmount } = render(<RegionProbe getRect={() => new DOMRect(0, 0, 10, 10)} id="ephemeral" />)
 
     expect(isPointInteractive(5, 5)).toBe(true)
@@ -57,8 +55,8 @@ describe('useInteractiveRegion', () => {
   })
 
   it('isPointInteractive honours a directly-registered region', () => {
-    // Direct test of the underlying bucket — the hook above covers the
-    // glue, this verifies the bucket itself behaves correctly.
+    // 直接测试底层桶——上面的 hook 已覆盖胶水代码，
+    // 这里验证桶本身行为正确。
     const div = document.createElement('div')
     document.body.appendChild(div)
 
@@ -96,8 +94,8 @@ describe('useInteractiveRegion', () => {
     registerInteractiveRegion('other-region', () => new DOMRect(0, 0, 50, 50))
 
     expect(isRegionHit('sprite-test', 150, 150)).toBe(true)
-    expect(isRegionHit('sprite-test', 110, 110)).toBe(false) // rejected by hitTest
-    expect(isRegionHit('sprite-test', 20, 20)).toBe(false) // outside rect
+    expect(isRegionHit('sprite-test', 110, 110)).toBe(false) // 被 hitTest 拒绝
+    expect(isRegionHit('sprite-test', 20, 20)).toBe(false) // 在矩形外
     expect(isRegionHit('non-existent', 150, 150)).toBe(false)
 
     unregisterInteractiveRegion('sprite-test')

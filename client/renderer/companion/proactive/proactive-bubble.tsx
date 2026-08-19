@@ -5,13 +5,11 @@ import { $chatOpen, $proactiveBubble, setChatOpen } from '@/companion/chat-store
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
 
-// Transient bubble for a proactive companion message, shown beside the
-// companion when the chat dock is closed (plan.md §4.2). When chat is open the
-// message already lives in the transcript, so we don't double-show.
+// 伙伴主动消息的临时气泡：聊天面板关闭时显示在伙伴身边（plan.md §4.2）。
+// 聊天面板打开时，消息已经在对话流里出现，这里不再重复显示。
 //
-// Anchored beside the sprite so it follows drag / walk / fly / chat-locale
-// repositioning; the outer gate short-circuits when there's no message so the
-// spatial subscriptions only run while a bubble is on screen.
+// 锚定在精灵身边，跟随拖拽 / 行走 / 飞行 / 聊天场所重新定位；
+// 外层在「无消息」时短路掉，保证 spatial 订阅只在气泡显示期间才跑。
 const BUBBLE_GAP = 8
 const BUBBLE_MAX_W = 256
 const BUBBLE_VERTICAL_RATIO = 0.1

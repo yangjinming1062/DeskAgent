@@ -2,14 +2,13 @@ export interface OnboardingAnswers {
   name?: string
   species?: string
   character_gender?: string
-  // appearance_core: locked visual anchor (face / body / markings). Drives
-  // the 3D model generation prompt; preserved across edits post lock.
+  // appearance_core：锁定的视觉锚点（脸 / 体型 / 标记）。驱动 3D 模型生成 prompt；
+  // 锁定之后的编辑里会被保留。
   appearance_core?: string
-  // appearance_outfit: LLM-maintained outfit description (e.g. "粉点碎花洋裙").
-  // Not collected during onboarding — derived async from the avatar prompt +
-  // appearance_core after portrait confirm. Updated via wardrobe equip (each
-  // item carries its own normalized description). Renders into the LLM system
-  // prompt but not into image-gen prompts.
+  // appearance_outfit：由 LLM 维护的着装描述（如「粉点碎花洋裙」）。
+  // onboarding 阶段不收集——由头像 prompt 与 appearance_core 在确认头像后异步派生。
+  // 换装时更新（每件单品自带归一化后的描述）。
+  // 渲染进 LLM system prompt，但不进入生图 prompt。
   appearance_outfit?: string
   role?: string
   personality?: string
@@ -62,7 +61,7 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
   const name = answers.name?.trim() || '伙伴'
   const personality = answers.personality?.trim() || DEFAULT_PERSONALITY
 
-  // 客户端仅透传用户输入，不进行程序化转换；未填写时不注入默认性格
+  // 客户端只透传用户输入，不做程序化转换；未填写时不注入默认性格
   const userPickedStyle = answers.speaking_style?.trim()
   const speakingStyle = userPickedStyle || previous?.speaking_style?.trim() || ''
 
@@ -72,8 +71,8 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
     speaking_style: speakingStyle
   }
 
-  // Locked visual-anchor fields fall back to `previous` — backend PUT
-  // /persona does a full replace, so omission would wipe them.
+  // 锁定的视觉锚点字段在用户没填时回退到 `previous`——后端 PUT /persona
+  // 做整体替换，不带回就会把它们清掉。
   const prev = previous ?? {}
 
   const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [
@@ -100,7 +99,8 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
   return payload
 }
 
-// Character-only subset of assemblePersona — strips user_* so enterHatching can finalize before q-user / voice are collected.
+// assemblePersona 的「仅角色」子集——剥掉 user_*，让 enterHatching 在 q-user / voice
+// 还没收集时就能完成角色定型。
 export function assembleCharacterPersona(answers: OnboardingAnswers): PersonaPayload {
   const payload = assemblePersona(answers)
 

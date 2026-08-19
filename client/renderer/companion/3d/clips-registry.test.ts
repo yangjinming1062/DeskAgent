@@ -28,7 +28,7 @@ const CANONICAL_STATE_CLIPS = [
 ] as const
 
 describe('clips-registry', () => {
-  it('lists all 7 rig types', () => {
+  it('列出全部 7 种骨骼类型', () => {
     expect(SUPPORTED_RIG_TYPES).toEqual(['biped', 'quadruped', 'avian', 'serpentine', 'aquatic', 'hexapod', 'octopod'])
   })
 
@@ -40,9 +40,8 @@ describe('clips-registry', () => {
     ['aquatic', AQUATIC_CLIPS],
     ['hexapod', HEXAPOD_CLIPS],
     ['octopod', OCTOPOD_CLIPS]
-  ])('provides the canonical state clips for %s', (rig, defs) => {
-    // AnimationMap.resolveClip looks up states by these exact names; a rig
-    // library missing one leaves the character unable to animate that state.
+  ])('为 %s 提供标准状态 clip', (rig, defs) => {
+    // AnimationMap.resolveClip 用这些精确名字查找状态；缺一个就让该角色无法动画该状态。
     for (const state of CANONICAL_STATE_CLIPS) {
       expect(defs, `${rig} missing canonical clip '${state}'`).toHaveProperty(state)
     }
@@ -60,13 +59,13 @@ describe('clips-registry', () => {
     expect(getClipDefs(rig)).toBe(expected)
   })
 
-  it('falls back to biped for unknown rig types', () => {
+  it('未知骨骼类型时回退到 biped', () => {
     expect(getClipDefs('avian-but-spelled-wrong')).toBe(BIPED_CLIPS)
     expect(getClipDefs(null)).toBe(BIPED_CLIPS)
     expect(getClipDefs('')).toBe(BIPED_CLIPS)
   })
 
-  it('falls back to biped for unsupported rig types', () => {
+  it('不支持的骨骼类型时回退到 biped', () => {
     expect(getClipDefs('mech')).toBe(BIPED_CLIPS)
   })
 
@@ -78,7 +77,7 @@ describe('clips-registry', () => {
     ['aquatic', Object.keys(AQUATIC_CLIPS).length],
     ['hexapod', Object.keys(HEXAPOD_CLIPS).length],
     ['octopod', Object.keys(OCTOPOD_CLIPS).length]
-  ])('builds THREE.AnimationClip instances for %s', (rig, expectedCount) => {
+  ])('为 %s 构建 THREE.AnimationClip 实例', (rig, expectedCount) => {
     const clips = buildClipsForRig(rig)
     expect(clips.length).toBe(expectedCount)
 
@@ -88,7 +87,7 @@ describe('clips-registry', () => {
     }
   })
 
-  it('summarizes every rig library with exact counts', () => {
+  it('汇总每个骨骼库，给出精确数量', () => {
     const summary = summarizeRigLibraries()
     expect(summary.length).toBe(7)
     const counts = Object.fromEntries(summary.map(s => [s.rig_type, s.count]))
@@ -103,7 +102,7 @@ describe('clips-registry', () => {
     })
   })
 
-  it('exposes clip names per rig type', () => {
+  it('按骨骼类型暴露 clip 名称', () => {
     expect(getClipNames('biped')).toContain('idle')
     expect(getClipNames('biped')).toContain('comfort_pat')
     expect(getClipNames('quadruped')).toContain('quad_idle')
@@ -122,7 +121,7 @@ describe('clips-registry', () => {
     ['aquatic', AQUATIC_CLIPS],
     ['hexapod', HEXAPOD_CLIPS],
     ['octopod', OCTOPOD_CLIPS]
-  ])('ensures clips in %s have valid definitions and tags', (rig, defs) => {
+  ])('确保 %s 里的 clip 拥有合法的定义与 tags', (rig, defs) => {
     for (const [name, clip] of Object.entries(defs)) {
       expect(clip.name).toBe(name)
       expect(clip.duration).toBeGreaterThan(0)
@@ -139,7 +138,7 @@ describe('clips-registry', () => {
     }
   })
 
-  it('ensures biped idle clip provides natural standing posture rather than stiff A-pose', () => {
+  it('确保 biped idle clip 提供自然站姿而不是僵硬的 A pose', () => {
     const idle = BIPED_CLIPS.idle
     expect(idle).toBeDefined()
     expect(idle.tracks).toHaveProperty('LeftArm')
@@ -149,7 +148,7 @@ describe('clips-registry', () => {
     expect(idle.tracks).toHaveProperty('Spine')
     expect(idle.tracks).toHaveProperty('Head')
 
-    // Natural arm drop should rotate arm down towards torso (LeftArm Z < -1.0 rad (~-57°+), RightArm Z > 1.0 rad (~+57°+))
+    // 自然下垂的手臂应把臂部朝向躯干旋转（LeftArm Z < -1.0 rad（约 -57°+），RightArm Z > 1.0 rad（约 +57°+））
     for (const kf of idle.tracks.LeftArm) {
       expect(kf.r[2]).toBeLessThan(-1.0)
     }
@@ -158,7 +157,7 @@ describe('clips-registry', () => {
       expect(kf.r[2]).toBeGreaterThan(1.0)
     }
 
-    // Forearms should have natural elbow flexion (> 0.1 rad)
+    // 前臂应有自然的肘部弯曲（> 0.1 rad）
     for (const kf of idle.tracks.LeftForeArm) {
       expect(kf.r[0]).toBeGreaterThan(0.1)
     }
@@ -168,7 +167,7 @@ describe('clips-registry', () => {
     }
   })
 
-  it('ensures placeholder biped clips include natural resting arm tracks to prevent A-pose pop', () => {
+  it('确保 biped 占位 clip 包含自然的静息手臂轨迹，避免 A pose 跳变', () => {
     const placeholder = BIPED_CLIPS.idle_yawn
     expect(placeholder).toBeDefined()
     expect(placeholder.tracks).toHaveProperty('LeftArm')

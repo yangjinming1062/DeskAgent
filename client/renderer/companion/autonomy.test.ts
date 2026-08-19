@@ -22,8 +22,7 @@ describe('autonomy provision loop and consultAutonomyLLM', () => {
   let llmAutonomy: typeof $llmAutonomy
 
   beforeEach(async () => {
-    // Each test gets a fresh module so the module-level throttle / snapshot
-    // counters don't bleed across tests.
+    // 每个测试都用全新的 module，避免模块级的节流/快照计数器跨测试污染。
     vi.resetModules()
     vi.useFakeTimers()
 
@@ -74,7 +73,7 @@ describe('autonomy provision loop and consultAutonomyLLM', () => {
     expect(mockRequest).toHaveBeenCalledTimes(1)
     expect(mockRequest.mock.calls[0][0]).toBe('companion.should_act')
 
-    // Second call immediately without state change or force should be skipped due to 60s minimum interval
+    // 紧接着的第二次调用（无状态变化且未强制）应被 60 秒最小间隔节流跳过
     await consult(false)
     expect(mockRequest).toHaveBeenCalledTimes(1)
   })
@@ -83,13 +82,13 @@ describe('autonomy provision loop and consultAutonomyLLM', () => {
     await consult(true)
     expect(mockRequest).toHaveBeenCalledTimes(1)
 
-    // Advance 10s, change state
+    // 推进 10 秒，改变状态
     vi.advanceTimersByTime(10_000)
     screenLocked.set(true)
     await consult(false)
     expect(mockRequest).toHaveBeenCalledTimes(1) // throttled
 
-    // Advance to 61s total
+    // 推进到累计 61 秒
     vi.advanceTimersByTime(51_000)
     await consult(false)
     expect(mockRequest).toHaveBeenCalledTimes(2)
@@ -113,9 +112,9 @@ describe('autonomy provision loop and consultAutonomyLLM', () => {
 
   it('startAutonomyProvision subscribes to state changes and background timer', async () => {
     start()
-    expect(mockRequest).toHaveBeenCalledTimes(1) // initial consult on subscribe
+    expect(mockRequest).toHaveBeenCalledTimes(1) // 订阅时的首次咨询
 
-    // Background timer (30 mins)
+    // 后台定时器（30 分钟）
     vi.advanceTimersByTime(30 * 60_000 + 1000)
     expect(mockRequest).toHaveBeenCalledTimes(2)
 

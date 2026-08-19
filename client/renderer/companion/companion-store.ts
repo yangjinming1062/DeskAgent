@@ -2,12 +2,11 @@ import { atom, computed } from 'nanostores'
 
 import { $llmAutonomy } from './prefs'
 
-// Companion lifecycle drives what the sprite window renders. The renderer
-// transitions unauthed → onboarding (during the wizard) → ready (after
-// onboarding completes).
+// 伙伴生命周期决定精灵窗口渲染的内容。渲染层按
+// unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
-// Phase 2 state-machine (plan.md §2):
+// 第二阶段状态机（plan.md §2）：
 // IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / SLEEPING / INTERACTING / DISCONNECTED
 export type SpriteStateName =
   | 'idle'
@@ -48,39 +47,33 @@ export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
 export const $spriteState = atom<SpriteStateName>('idle')
-// True during a live voice-call; read by useGatewayBoot to defer the
-// disconnected→sleeping escalation so a gateway flap doesn't clobber an active call.
+// 通话进行中为 true；由 useGatewayBoot 读取以推迟 disconnected→sleeping 升级，
+// 避免网关抖动把正在进行的通话误判为断开。
 export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
-// Optional structured action hint (e.g. turn_away) that refines the emotion clip.
+// 可选的结构化动作提示（如 turn_away），用于细化情绪片段。
 export const $spriteAction = atom<string | null>(null)
 export const $previousState = atom<SpriteStateName>('idle')
 export const $clipOverride = atom<string | null>(null)
 
-// Disturbance tier gates the companion's proactive behaviour (ARCHITECTURE.md §6 /
-// plan.md §4.2). User-initiated actions are never gated — only proactive
-// outbound (companion.message). `quiet` blocks proactive messages but keeps
-// the affect channel open (phase 2).
+// 打扰档位门控伙伴的主动行为（ARCHITECTURE.md §6 / plan.md §4.2）。
+// 用户主动行为永不被门控——只门控主动外发（companion.message）。
+// `quiet` 屏蔽主动消息，但保持 affect 通道开启（第二阶段）。
 //
-// Two-atoms model:
-// - ``$userPreferredTier`` — the user's manual choice in the settings UI,
-//   persisted to localStorage, source of truth. The activity monitor reads
-//   this when deciding whether to override.
-// - ``$effectiveTierOverride`` — set by the activity monitor when the user
-//   is in an immersive / fullscreen focus context. ``null`` means "no
-//   override; effective = user preferred".
-// - ``$effectiveTier`` — derived from the two above. This is what the
-//   rest of the renderer reads to decide whether to gate proactive
-//   channels; the settings-overlay / chat-dock pills still display the
-//   user_preferred value so the chip reflects the user's actual choice
-//   rather than a transient override.
+// 双 atom 模型：
+// - ``$userPreferredTier`` ——用户在设置界面手动选择的档位，
+//   持久化到 localStorage，作为唯一真源。活动监视器在决定是否覆盖时读取它。
+// - ``$effectiveTierOverride`` ——活动监视器在用户处于沉浸式 / 全屏专注上下文时设置。
+//   ``null`` 表示「无覆盖；生效值 = 用户偏好」。
+// - ``$effectiveTier`` ——由以上两个推导而来。渲染层其余部分读取它来
+//   决定是否门控主动通道；settings-overlay / chat-dock 上的标签仍展示
+//   user_preferred，反映用户实际选择而非瞬时覆盖。
 export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 
-// Persist the chosen tier in localStorage so a Desktop restart
-// doesn't silently reset the user to the (more chatty) default. The
-// backend has its own process-local cache (services/companion/disturbance.py)
-// but the desktop is the source of truth — the desktop reports the tier
-// back to the backend on every change AND on gateway open.
+// 将所选档位持久化到 localStorage，避免 Desktop 重启时悄悄把用户
+// 重置为更聒噪的默认档。后端有自己进程内的缓存
+// （services/companion/disturbance.py），但桌面端才是真源——
+// 每次变更及网关开启时都把档位回传给后端。
 const _storedTier = (typeof localStorage !== 'undefined' &&
   localStorage.getItem('da.companion.disturbanceTier')) as DisturbanceTier | null
 
@@ -88,14 +81,13 @@ const _validStored: DisturbanceTier | null =
   _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
 
 export const $userPreferredTier = atom<DisturbanceTier>(_validStored ?? 'normal')
-// ``null`` means "no override active; effective falls back to user_preferred".
-// The activity monitor (activity.ts) is the only writer.
+// ``null`` 表示「当前无覆盖；生效档位回退到 user_preferred」。
+// 只有活动监视器（activity.ts）会写它。
 export const $effectiveTierOverride = atom<DisturbanceTier | null>(null)
 
-// Manual quiet is a hard lock-in: even if the activity monitor writes an
-// override while the user has manually chosen quiet, the rendered effective
-// tier stays quiet. Other overrides (proactive / normal) only apply when the
-// user has not picked quiet.
+// 手动安静是硬锁定：即便活动监视器在用户已选安静时写入 override，
+// 渲染出的生效档位也保持安静。其他覆盖（proactive / normal）
+// 仅在用户未选安静时生效。
 export const $effectiveTier = computed([$userPreferredTier, $effectiveTierOverride], (preferred, override) =>
   preferred === 'quiet' ? 'quiet' : (override ?? preferred)
 )
@@ -112,10 +104,10 @@ const STATE_PRIORITY: Record<SpriteStateName, number> = {
   idle: 10
 }
 
-// States that auto-revert via ``$previousState`` + the timer below. They
-// bypass the priority gate so an in-flight WORKING/SPEAKING animation
-// doesn't suppress a transient emotion/interaction cue — adding a new
-// transient state is one entry here, not three code sites.
+// 这些状态通过 ``$previousState`` 与下方计时器自动恢复。
+// 它们绕过优先级门控，避免进行中的 WORKING/SPEAKING 动画
+// 压制一个瞬时的情绪/互动提示——新增瞬时状态只需要在这里加一项，
+// 而不必改三个代码位置。
 const TRANSIENT_STATES: ReadonlySet<SpriteStateName> = new Set(['emotional', 'interacting'])
 
 let transientTimer: ReturnType<typeof setTimeout> | null = null
@@ -136,8 +128,8 @@ export function setSpriteState(
     current !== 'idle' &&
     !TRANSIENT_STATES.has(name)
   ) {
-    // Lower priority state cannot interrupt higher priority state —
-    // except transient states, which auto-revert via the timer below.
+    // 低优先级状态无法打断高优先级状态——瞬时状态除外，
+    // 它们会通过下方计时器自动恢复。
     return
   }
 
@@ -169,7 +161,7 @@ export function setSpriteState(
       transientTimer = null
       $spriteEmotion.set(null)
       $spriteAction.set(null)
-      // Prefer the current state if a higher-priority one arrived mid-transient.
+      // 若瞬时过程中有更高优先级状态到达，优先取当前状态。
       const currentAfter = $spriteState.get()
       const storedPrev = $previousState.get()
 
@@ -243,10 +235,9 @@ export function reportUserActivity(): void {
     activityCounter = 0
 
     if ($spriteState.get() === 'working') {
-      // ``working`` (pri 70) gates ``idle`` (pri 10) — without ``force: true``
-      // the timer expires but the state stays locked on the working badge.
-      // Explicitly force the exit so the sprite returns to idle once
-      // the user stops producing activity for the configured window.
+      // ``working``（优先级 70）盖住 ``idle``（优先级 10）——不带 ``force: true`` 时
+      // 计时器到期，但状态仍会卡在 working。显式强制退出，
+      // 这样在用户停止活动达到配置窗口后精灵能回到 idle。
       setSpriteState('idle', { force: true })
     }
   }, 10000)
@@ -259,8 +250,8 @@ export function setDisturbanceTier(tier: DisturbanceTier): void {
     try {
       localStorage.setItem('da.companion.disturbanceTier', tier)
     } catch {
-      // localStorage may be disabled (private mode); the in-memory atom
-      // is the only thing the rest of the code reads, so silently keep going.
+      // localStorage 可能被禁用（无痕模式）；其余代码只读取内存 atom，
+      // 所以这里静默继续。
     }
   }
 }

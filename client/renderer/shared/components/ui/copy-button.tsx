@@ -226,6 +226,6 @@ export function CopyButton({
     </Button>
   )
 
-  // Only icon-only buttons need a tooltip; the text variant already shows its label.
+  // 只有纯图标按钮需要 tooltip；带文字的变体已经显示了 label。
   return appearance === 'icon' ? <Tip label={feedbackLabel}>{button}</Tip> : button
 }

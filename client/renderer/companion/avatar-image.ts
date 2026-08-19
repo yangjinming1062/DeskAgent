@@ -4,9 +4,8 @@ export interface PickedImage {
   previewUrl: string
 }
 
-// Matches the backend's AvatarFromImageRequest cap —
-// anything bigger comes back as a 422 the user can't act on, so reject it here
-// with a hint instead.
+// 与后端 AvatarFromImageRequest 上限对齐——更大的请求会被拒为 422，
+// 用户无从操作，所以这里先给提示直接拒收。
 const MAX_IMAGE_BASE64 = 8 * 1024 * 1024
 
 /** `null` when the user cancels or the file is unreadable; `error` is user-facing copy. */
@@ -29,7 +28,7 @@ export async function pickAvatarImage(title: string): Promise<{ image: PickedIma
       return null
     }
 
-    // The backend splits the mime on ';', so a trailing ";base64" is harmless.
+    // 后端按 ';' 切分 mime，末尾的 ";base64" 不会带来副作用。
     return base64.length > MAX_IMAGE_BASE64
       ? { error: '这张图太大了，换张小一点的吧' }
       : { image: { base64, contentType: dataUrl.slice(5, comma), previewUrl: dataUrl } }
@@ -79,7 +78,7 @@ export async function saveDraftRefImage(image: PickedImage | null): Promise<void
       tx.objectStore(STORE_NAME).delete(REF_IMAGE_KEY)
     }
   } catch {
-    /* ignore storage errors */
+    /* 忽略存储错误 */
   }
 }
 
@@ -106,6 +105,6 @@ export async function clearDraftRefImage(): Promise<void> {
 
     tx.objectStore(STORE_NAME).delete(REF_IMAGE_KEY)
   } catch {
-    /* ignore storage errors */
+    /* 忽略存储错误 */
   }
 }

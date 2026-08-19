@@ -1,10 +1,9 @@
 import type { PersonaPayload } from './persona'
 import type { PersonaDefinition } from './persona-store'
 
-// Wire↔store mapper pair for the persona shape. PersonaDefinition (camelCase)
-// is the renderer-side `$persona` store; PersonaPayload (snake_case) is what
-// the backend PUT reads. Adding a new field requires touching exactly one of
-// these mappers + the corresponding source-of-truth type.
+// persona 形状在 wire 与 store 之间的 mapper 对。PersonaDefinition（camelCase）
+// 是渲染端的 `$persona` store；PersonaPayload（snake_case）是后端 PUT 所读字段。
+// 新增字段只需碰这两个 mapper 之一，再加上对应 source-of-truth 类型即可。
 
 export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
   return {

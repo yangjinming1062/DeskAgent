@@ -130,7 +130,7 @@ export async function consultAutonomyLLM(force = false): Promise<void> {
       executeAutonomousAction(res.action)
     }
   } catch {
-    /* silent catch; LLM error results in no autonomous action taken */
+    /* 静默捕获；LLM 错误时不做任何自主动作 */
   }
 }
 
@@ -166,8 +166,7 @@ export function startAutonomyProvision(): () => void {
     }
   }, BACKGROUND_CONSULT_INTERVAL_MS)
 
-  // Kick off an initial consult explicitly rather than relying on the
-  // subscribe-replay semantics of whichever atoms are already set.
+  // 显式触发首次咨询，而不是依赖任一 atom 的订阅回放语义。
   if ($runnerPhase.get() === 'running') {
     void consultAutonomyLLM(true)
   }

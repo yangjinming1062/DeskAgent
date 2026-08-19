@@ -3,9 +3,9 @@ import { log } from '@/shared/lib/log'
 import { isLatestGen, nextGen, playDataUrl } from '../audio-track'
 import { $voicePreparing } from '../voice-state'
 
-// Pre-rendered cloud-TTS clips for the onboarding flow. Tag list mirrors
-// installer/payload/onboarding-audio/manifest.json; each tag corresponds to
-// exactly one mp3 under $SPIRITAGENT_HOME/audio/onboarding/zh/.
+// 预渲染的云端 TTS 片段，用于 onboarding 流程。Tag 列表对应
+// installer/payload/onboarding-audio/manifest.json；每个 tag 在
+// $SPIRITAGENT_HOME/audio/onboarding/zh/ 下对应唯一一个 mp3。
 export type OnboardingAudioTag =
   | `onboarding.q${number}`
   | 'onboarding.hatching'
@@ -29,9 +29,8 @@ export async function playOnboardingAudio(tag: OnboardingAudioTag): Promise<bool
 
     return await playDataUrl(res.dataUrl)
   } catch (error) {
-    // Pre-rendered clip is the source of truth for onboarding voice — never
-    // silently fall back to runtime TTS. Surface the missing file loudly so
-    // dev/QA catches a broken installer payload on the spot.
+    // 预渲染片段是 onboarding 语音的唯一真相来源——绝不能悄悄回退到运行时 TTS。
+    // 把缺失文件的情况大声暴露出来，便于 dev/QA 当场抓到损坏的安装包载荷。
     log.error('onboarding-audio', 'missing pre-rendered clip', tag, error)
 
     return false

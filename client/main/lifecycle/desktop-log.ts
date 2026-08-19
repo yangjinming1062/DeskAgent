@@ -70,7 +70,7 @@ export function createDesktopLogger({ spiritagentHome, isPackaged = true }: Desk
           fs.renameSync(src, dst!)
         }
       } catch {
-        // Best effort
+        // 尽力而为
       }
     }
   }
@@ -92,7 +92,7 @@ export function createDesktopLogger({ spiritagentHome, isPackaged = true }: Desk
           await fs.promises.rename(src, dst!)
         }
       } catch {
-        // Best effort
+        // 尽力而为
       }
     }
   }
@@ -110,7 +110,7 @@ export function createDesktopLogger({ spiritagentHome, isPackaged = true }: Desk
       rotateSync()
       fs.appendFileSync(logPath, chunk)
     } catch {
-      // Best effort
+      // 尽力而为
     }
   }
 
@@ -129,7 +129,7 @@ export function createDesktopLogger({ spiritagentHome, isPackaged = true }: Desk
         await fs.promises.appendFile(logPath, chunk)
       })
       .catch(() => {
-        // Best effort
+        // 尽力而为
       })
 
     return flushPromise

@@ -143,9 +143,9 @@ function getTitleBarOverlayOptions() {
     }
   }
 
-  // The tool window always renders the pinned dark palette (styles.css
-  // html[data-role='tool']) — the overlay strip must match regardless of OS
-  // appearance, or a light strip sits on the dark titlebar.
+  // 工具窗口始终渲染钉死的深色调色板（styles.css 中
+  // html[data-role='tool']）——覆盖条必须与系统外观无关地与深色标题栏一致，
+  // 否则浅色条会落在深色标题栏上。
   return {
     color: '#0d0d0d',
     height: TITLEBAR_HEIGHT,
@@ -626,7 +626,7 @@ function registerPowerResumeListeners(): void {
     powerMonitor.on('resume', sendPowerResume)
     powerMonitor.on('unlock-screen', sendPowerResume)
   } catch {
-    // Best effort
+    // 尽力而为
   }
 }
 
@@ -1067,7 +1067,7 @@ function getBundledPublicKeyPath(): null | string {
       }
     }
   } catch {
-    // Best effort
+    // 尽力而为
   }
 
   return null
@@ -1283,10 +1283,9 @@ function applySpriteBounds(preferredOrigin?: { x: number; y: number }): void {
     return
   }
 
-  // Stick to the display the window currently overlaps (or the one containing
-  // preferredOrigin at launch) instead of always snapping back to the primary —
-  // the sprite must stay reachable on whatever monitor the user dragged it to.
-  // getDisplayMatching falls back to the nearest display when it was unplugged.
+  // 贴住窗口当前覆盖的那块显示器（或启动时包含 preferredOrigin 的那块），
+  // 而不是每次都弹回主显示器——精灵必须停留在用户拖到的那块显示器上。
+  // 当原显示器被拔掉时，getDisplayMatching 会回退到最近的那块。
   const base = preferredOrigin
     ? { height: 1, width: 1, x: preferredOrigin.x, y: preferredOrigin.y }
     : mainWindow.getBounds()
@@ -1306,7 +1305,7 @@ function createSpriteWindow(): void {
     resizable: false,
     show: false,
     skipTaskbar: true,
-    // `type: 'panel'` is macOS-only (Cocoa NSPanel); setting it on Win/Linux logs a deprecation warning.
+    // `type: 'panel'` 仅适用于 macOS（Cocoa NSPanel）；在 Win/Linux 上设置会输出 deprecation 警告。
     type: IS_MAC ? 'panel' : undefined,
     transparent: SPRITE_TRANSPARENT,
     webPreferences: {
@@ -1323,7 +1322,7 @@ function createSpriteWindow(): void {
   applySpriteBounds(readRestPosition(app.getPath('userData'))?.origin)
   mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
 
-  // macOS gets the 'screen-saver' z-band (sits above the floating window level and beats games using exclusive fullscreen); Win/Linux fall back to 'floating'. Windows exclusive fullscreen bypasses DWM entirely — companion cannot overlay those; documented limitation.
+  // macOS 使用 'screen-saver' z-band（位于 floating 窗口层之上，能压过使用 exclusive fullscreen 的游戏）；Win/Linux 回退到 'floating'。Windows 的 exclusive fullscreen 完全绕过 DWM——伙伴窗口无法覆盖在上面；这是已记录的限制。
   if (IS_MAC) {
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
   } else {
@@ -1577,7 +1576,7 @@ try {
     fs.renameSync(legacyPath, legacyPath + '.bak-' + stamp)
   }
 } catch {
-  /* swallow */
+  /* 忽略 */
 }
 
 app.whenReady().then(async () => {

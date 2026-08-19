@@ -1,9 +1,8 @@
 import type { RequestGateway, VoiceOption } from '@/shared/voice-catalog'
 
-// Voice catalog + matching + design backed by the Backend `tts.*` JSON-RPC
-// methods (services/companion/voice_catalog.py). Voice ids are provider-specific;
-// the backend catalog only lists ids the active TTS provider accepts, so a
-// matched id never breaks synthesis.
+// 音色目录、匹配与设计由后端 `tts.*` JSON-RPC 方法
+// （services/companion/voice_catalog.py）支撑。音色 id 属于供应商私有命名空间；
+// 后端目录只列出当前 TTS 供应商接受的 id，所以匹配到的 id 永远不会让合成失败。
 
 export type { VoiceOption } from '@/shared/voice-catalog'
 export { GENDER_OPTIONS, LANGUAGE_LABELS } from '@/shared/voice-catalog'

@@ -203,27 +203,27 @@ export interface MediaTtsPayload {
 
 // 1. Request-Response (Renderer -> Main via ipcRenderer.invoke / ipcMain.handle)
 export interface IpcInvokeContract {
-  // Connection & Boot
+  // 连接与启动
   'spiritagent:connection': () => SpiritAgentConnection | Promise<SpiritAgentConnection>
   'spiritagent:gateway:ws-url': () => Promise<string> | string
   'spiritagent:boot-progress:get': () => DesktopBootProgress | Promise<DesktopBootProgress>
 
-  // Auth
+  // 鉴权
   'spiritagent:auth:activate': (payload: DesktopActivatePayload) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
   'spiritagent:auth:refresh': (payload?: Record<string, unknown>) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
   'spiritagent:auth:logout': () => DesktopLogoutResult | Promise<DesktopLogoutResult>
   'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
   'spiritagent:auth:get-default-backend-url': () => null | string | Promise<null | string>
 
-  // Windows & UI
+  // 窗口与界面
   'spiritagent:window:show-tool': () => Promise<void> | void
 
-  // Backend API Proxy
+  // 后端 API 代理
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
   'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
   'spiritagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
 
-  // File & Clipboard & Log
+  // 文件 / 剪贴板 / 日志
   'spiritagent:readFileDataUrl': (filePath: string) => Promise<string> | string
   'spiritagent:selectPaths': (options?: SpiritAgentSelectPathsOptions) => Promise<string[]> | string[]
   'spiritagent:writeClipboard': (text: string) => boolean | Promise<boolean>
@@ -250,7 +250,7 @@ export interface IpcInvokeContract {
     patch: RunnerConfigPatch
   ) => { error?: string; ok: boolean } | Promise<{ error?: string; ok: boolean }>
 
-  // Skills & Toolsets
+  // Skills 与工具集
   'spiritagent:skills:list': () =>
     | { error?: string; ok: boolean; skills?: SkillItem[] }
     | Promise<{ error?: string; ok: boolean; skills?: SkillItem[] }>
@@ -270,7 +270,7 @@ export interface IpcInvokeContract {
     | { error?: string; ok: boolean; toolsets?: ToolsetItem[] }
     | Promise<{ error?: string; ok: boolean; toolsets?: ToolsetItem[] }>
 
-  // Media
+  // 媒体
   'spiritagent:media:stt': (payload: MediaSttPayload) => { text: string } | Promise<{ text: string }>
   'spiritagent:media:tts': (
     payload: MediaTtsPayload
@@ -281,7 +281,7 @@ export interface IpcInvokeContract {
     | { bytes: number; dataUrl: string; mimeType: string; tag: string }
     | Promise<{ bytes: number; dataUrl: string; mimeType: string; tag: string }>
 
-  // Sprite
+  // 精灵窗口
   'spiritagent:sprite:hide': () => Promise<void> | void
   'spiritagent:sprite:set-ignore-mouse-events': (payload: {
     forward?: boolean
@@ -298,7 +298,7 @@ export interface IpcInvokeContract {
     | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }
     | Promise<null | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }>
 
-  // Update
+  // 更新
   'spiritagent:update:check': () => Promise<void> | void
 }
 

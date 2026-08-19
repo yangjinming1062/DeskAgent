@@ -4,8 +4,8 @@ import type * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-// Small status/metadata tag. App radius (not a full pill); tones map to the
-// shared accent/muted/destructive surfaces so badges read consistently.
+// 小型状态 / 元信息标签。使用应用圆角（而非完整胶囊形）；配色映射到共享的
+// 强调 / 弱化 / 警示底色，保证不同徽标视觉一致。
 const badgeVariants = cva(
   'inline-flex w-fit shrink-0 items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[0.65rem] font-medium leading-none whitespace-nowrap [&_svg]:size-3 [&_svg]:pointer-events-none',
   {

@@ -1,6 +1,6 @@
 import { log } from '@/shared/lib/log'
 
-/** OPFS-backed cache for raw GLB bytes — second load of the same model is served from disk instead of full IPC + signed URL round trip (typical 200–800 ms → 0 ms). Uses OPFS Web standard, NOT `caches.open` (Cache Storage is for HTTP responses; OPFS is a real filesystem for binary blobs). Silently falls back to the IPC path on any OPFS failure. */
+/** 基于 OPFS 的原始 GLB 字节缓存 —— 同一模型的二次加载直接从磁盘取，省去 IPC + 签名 URL 往返（典型 200–800 ms → 0 ms）。用 OPFS Web 标准，而不是 `caches.open`（Cache Storage 是给 HTTP 响应用的；OPFS 才是面向二进制 blob 的真实文件系统）。任何 OPFS 失败都静默回退到 IPC 路径。 */
 
 const OPFS_DIR = 'glb-cache'
 const SCHEMA_VERSION = 1
@@ -35,7 +35,7 @@ function blobKey(contentHash: string): string {
   return `${contentHash}.glb`
 }
 
-/** Read cached GLB bytes for `contentHash`. Returns null on miss or any OPFS error — caller treats null as "fall back to IPC". */
+/** 读取 `contentHash` 对应的缓存 GLB 字节。未命中或任何 OPFS 错误时返回 null —— 调用方把 null 当作"回退到 IPC"。 */
 export async function readCachedGlb(contentHash: string): Promise<ArrayBuffer | null> {
   if (!contentHash) {
     return null
@@ -69,7 +69,7 @@ export async function readCachedGlb(contentHash: string): Promise<ArrayBuffer | 
   }
 }
 
-/** Persist GLB bytes in OPFS. Best-effort: if the write fails (quota, etc.) we swallow the error so the calling pipeline can keep working. */
+/** 把 GLB 字节写入 OPFS。尽力而为：写入失败（配额等）时静默吞掉错误，让调用方的流水线继续运行。 */
 export async function writeCachedGlb(contentHash: string, bytes: ArrayBuffer): Promise<void> {
   if (!contentHash) {
     return
@@ -103,7 +103,7 @@ export async function writeCachedGlb(contentHash: string, bytes: ArrayBuffer): P
   }
 }
 
-/** Cache-aware wrapper around the main-process `apiAssetBuffer` IPC. Tries OPFS first, falls back to network IPC and populates the cache on success. Key is `contentHash` (server-issued), not URL — the URL is a signed query that rotates. */
+/** 围绕主进程 `apiAssetBuffer` IPC 的带缓存包装。先尝试 OPFS，失败则走网络 IPC，成功后回填缓存。键是 `contentHash`（后端签发），不是 URL —— URL 是会轮换的签名查询串。 */
 export async function fetchGlbWithCache(url: string, contentHash?: string): Promise<ArrayBuffer | null> {
   if (contentHash) {
     const cached = await readCachedGlb(contentHash)
@@ -129,7 +129,7 @@ export async function fetchGlbWithCache(url: string, contentHash?: string): Prom
   }
 
   if (contentHash && bytes) {
-    // Fire-and-forget — caller already has the data and shouldn't wait for the cache write to resolve.
+    // 即发即忘 —— 调用方已经拿到数据，不应该等缓存写入完成。
     void writeCachedGlb(contentHash, bytes)
   }
 

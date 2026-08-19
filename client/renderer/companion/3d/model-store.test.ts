@@ -71,7 +71,7 @@ describe('hydrateModel', () => {
     restoreWindowSpiritagent()
   })
 
-  it('publishes the active model on a 200 response', async () => {
+  it('在 200 响应上发布当前模型', async () => {
     const api = vi.fn().mockResolvedValue(baseModelResponse)
     setWindowSpiritagent(api)
 
@@ -94,7 +94,7 @@ describe('hydrateModel', () => {
     expect(log.warn).not.toHaveBeenCalled()
   })
 
-  it('treats a 404 as expected (no active row) and triggers model generation', async () => {
+  it('把 404 当作正常情况（没有激活行），并触发模型生成', async () => {
     $modelInfo.set({ ...$modelInfo.get(), species: '人类' })
     const before = $modelInfo.get()
 
@@ -116,7 +116,7 @@ describe('hydrateModel', () => {
     expect(log.warn).not.toHaveBeenCalled()
   })
 
-  it('warns on a 5xx so a missing model is diagnosable', async () => {
+  it('在 5xx 时打 warn，让模型缺失可被定位', async () => {
     const api = vi.fn().mockImplementation(async req => {
       if (req.path === '/api/companion/model' && req.method !== 'POST') {
         throw new Error('500 /api/companion/model: boom')
@@ -167,7 +167,7 @@ describe('hydrateWardrobe', () => {
     restoreWindowSpiritagent()
   })
 
-  it('publishes items and derives the equipped atom', async () => {
+  it('发布条目并衍生已装备原子', async () => {
     const api = vi.fn().mockResolvedValue(sample)
     setWindowSpiritagent(api)
 
@@ -178,7 +178,7 @@ describe('hydrateWardrobe', () => {
     expect(log.warn).not.toHaveBeenCalled()
   })
 
-  it('warns on a 5xx', async () => {
+  it('在 5xx 时打 warn', async () => {
     const api = vi.fn().mockRejectedValue(new Error('502 Bad Gateway'))
     setWindowSpiritagent(api)
 
@@ -194,7 +194,7 @@ describe('wardrobe candidates & preview', () => {
     clearWardrobeCandidates()
   })
 
-  it('pushes candidates and selects the latest', () => {
+  it('推入候选并选中最新一条', () => {
     pushWardrobeCandidate({
       url: 'http://localhost/c1.png',
       prompt: 'prompt 1',
@@ -218,7 +218,7 @@ describe('wardrobe candidates & preview', () => {
     expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c2.png')
   })
 
-  it('caps candidate history at 3 and shifts oldest', () => {
+  it('候选历史最多保留 3 条，超出时挤掉最旧', () => {
     for (let i = 1; i <= 4; i++) {
       pushWardrobeCandidate({
         url: `http://localhost/c${i}.png`,
@@ -235,7 +235,7 @@ describe('wardrobe candidates & preview', () => {
     expect($wardrobePreview.get()?.texture_url).toBe('http://localhost/c4.png')
   })
 
-  it('switches preview when selecting an earlier candidate and preserves displacement channel', () => {
+  it('选中更早的候选时切换预览，并保留置换通道', () => {
     pushWardrobeCandidate({
       url: 'http://localhost/c1.png',
       normalUrl: 'http://localhost/n1.png',
@@ -263,7 +263,7 @@ describe('wardrobe candidates & preview', () => {
     expect(prev?.displacement_url).toBe('http://localhost/d1.png')
   })
 
-  it('clears all candidates and resets preview to null', () => {
+  it('清空所有候选，并把预览重置为 null', () => {
     pushWardrobeCandidate({
       url: 'http://localhost/c1.png',
       prompt: 'p1',
@@ -279,7 +279,7 @@ describe('wardrobe candidates & preview', () => {
 })
 
 describe('slotOf and $outfitView', () => {
-  it('identifies item slot correctly', () => {
+  it('正确识别条目所属槽位', () => {
     const textureItem: WardrobeItem = {
       id: 1,
       name: '材质',
@@ -319,7 +319,7 @@ describe('slotOf and $outfitView', () => {
     expect(slotOf(explicitSlotItem)).toBe('head')
   })
 
-  it('replaces only the matching slot during candidate preview in $outfitView', () => {
+  it('$outfitView 在候选预览期间只替换匹配槽位', () => {
     const torsoItem: WardrobeItem = {
       id: 1,
       name: '外套',
@@ -347,10 +347,10 @@ describe('slotOf and $outfitView', () => {
     $equippedItems.set([torsoItem, legsItem])
     clearWardrobeCandidates()
 
-    // Without preview, $outfitView equals $equippedItems
+    // 没有预览时，$outfitView 与 $equippedItems 相同
     expect($outfitView.get().map(i => i.name)).toEqual(['外套', '裤子'])
 
-    // Push a candidate for 'torso'
+    // 为 'torso' 推入一条候选
     pushWardrobeCandidate({
       url: 'http://localhost/preview_torso.png',
       fileId: 'fid_torso',
@@ -361,7 +361,7 @@ describe('slotOf and $outfitView', () => {
       kind: 'garment'
     })
 
-    // $outfitView should keep legs and replace torso with the preview item
+    // $outfitView 应保留裤子，并把外套槽位替换为预览项
     const currentView = $outfitView.get()
     expect(currentView.length).toBe(2)
     expect(currentView.map(i => slotOf(i))).toEqual(['legs', 'torso'])
@@ -382,7 +382,7 @@ describe('download-failure retry state', () => {
     restoreWindowSpiritagent()
   })
 
-  it('setModelFailed records retryability and the model id atomically', () => {
+  it('setModelFailed 原子地记录可重试状态与模型 id', () => {
     setModelFailed('生成失败')
     expect($modelGenState.get()).toBe('failed')
     expect($modelRetryable.get()).toBe(false)
@@ -394,7 +394,7 @@ describe('download-failure retry state', () => {
     expect($modelRetryModelId.get()).toBe(3)
   })
 
-  it('maps a download_failed POST response onto the failed + retryable state', async () => {
+  it('把 download_failed 的 POST 响应映射到 failed + 可重试状态', async () => {
     const api = vi.fn().mockResolvedValue({ id: 9, status: 'download_failed' })
     setWindowSpiritagent(api)
 
@@ -406,7 +406,7 @@ describe('download-failure retry state', () => {
     expect($modelRetryModelId.get()).toBe(9)
   })
 
-  it('leaves state untouched when generation is genuinely requested', async () => {
+  it('在真正请求生成时保持状态不变', async () => {
     const api = vi.fn().mockResolvedValue({ id: 10, status: 'generating' })
     setWindowSpiritagent(api)
 

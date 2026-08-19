@@ -9,7 +9,7 @@ export interface SpriteHit {
   hitmap: SpriteHitmap
 }
 
-// 256² caps the alpha buffer at 64 KiB — ample precision for tap targeting.
+// 256² 把 alpha 缓冲限制在 64 KiB——足够点击定位用。
 const HITMAP_MAX_DIM = 256
 const HIT_ALPHA_MIN = 32
 
@@ -54,8 +54,8 @@ export function spriteHitTest(hit: SpriteHit, clientX: number, clientY: number):
     return false
   }
 
-  // The img renders with object-fit: contain, so client coords must map through
-  // the letterboxed uniform-fit rect — raw element coords would test the bars.
+  // img 用 object-fit: contain 渲染，所以 client 坐标必须经过 letterbox 后的
+  // 等比适配矩形映射——直接用元素坐标会把信箱黑边当成精灵本体命中。
   const scale = Math.min(rect.width / hit.hitmap.width, rect.height / hit.hitmap.height)
   const offsetX = rect.left + (rect.width - hit.hitmap.width * scale) / 2
   const offsetY = rect.top + (rect.height - hit.hitmap.height * scale) / 2

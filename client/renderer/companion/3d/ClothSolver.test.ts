@@ -65,18 +65,18 @@ describe('ClothSolver', () => {
       clearance: 0.005
     })
 
-    // Update simulation frame
+    // 推进一帧模拟
     solver.update(1 / 60)
 
     const pos = geo.attributes.position
-    // Since center of PlaneGeometry is at origin (inside the 1x1x1 body box),
-    // vertices should be pushed out by bodyCollider.
+    // 由于 PlaneGeometry 的中心位于原点（位于 1×1×1 身体盒内部），
+    // 顶点应被 bodyCollider 推出。
     const v = new THREE.Vector3(pos.getX(0), pos.getY(0), pos.getZ(0))
     expect(v.length()).toBeGreaterThanOrEqual(0.5)
   })
 
   it('simulates gravity and edge relaxation for free vertices in cloth mode (pinAll=false)', () => {
-    // Vertical cylinder or strip from Y=0 to Y=-1
+    // 从 Y=0 到 Y=-1 的竖直圆柱（布条）
     const geo = new THREE.CylinderGeometry(0.1, 0.1, 1, 8, 4)
     const { mesh, skeleton } = makeRiggedMesh(geo)
 
@@ -84,12 +84,12 @@ describe('ClothSolver', () => {
 
     const initialY = geo.attributes.position.getY(0)
 
-    // Step several simulation frames
+    // 推进多帧模拟
     for (let i = 0; i < 10; i++) {
       solver.update(1 / 60)
     }
 
-    // Lower vertices should have moved downward under gravity
+    // 下方顶点应在重力作用下向下移动
     let minFinalY = Infinity
 
     for (let i = 0; i < geo.attributes.position.count; i++) {
@@ -100,7 +100,7 @@ describe('ClothSolver', () => {
   })
 
   it('pushes cloth free vertices out of BodyCollider during simulation', () => {
-    // Create cloth plane right through the body origin
+    // 创建一块穿过身体原点的布料平面
     const geo = new THREE.PlaneGeometry(0.6, 0.6, 4, 4)
     const { mesh, skeleton } = makeRiggedMesh(geo)
     const body = makeBody()
@@ -112,15 +112,15 @@ describe('ClothSolver', () => {
       clearance: 0.01
     })
 
-    // Bone sphere colliders should be disabled when bodyCollider is present
+    // 当 bodyCollider 存在时，骨骼球碰撞体应被禁用
     expect((solver as unknown as { colliders: unknown[] }).colliders.length).toBe(0)
 
-    // Step simulation frames
+    // 推进模拟帧
     for (let i = 0; i < 5; i++) {
       solver.update(1 / 60)
     }
 
-    // Every vertex should be at or outside the body surface (0.5m half-width) + clearance
+    // 每个顶点应位于身体表面（半宽 0.5m）+ clearance 之外
     const pos = geo.attributes.position
 
     for (let i = 0; i < pos.count; i++) {

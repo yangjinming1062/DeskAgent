@@ -8,9 +8,9 @@ describe('classifyFocusedApp', () => {
   })
 
   it('classifies Windows IDE apps', () => {
-    // Test the underlying classification regardless of detected platform —
-    // the platform gate lives in the activity.ts runner; here we exercise
-    // the data-driven allowlist via a synthetic Windows browser env.
+    // 不依赖实际检测到的平台，单独测试分类逻辑本身——
+    // 平台分支逻辑写在 activity.ts 的 Runner 路径里；这里用合成的 Windows 浏览器环境
+    // 演练数据驱动的白名单。
     const originalPlatform = (navigator as Navigator).platform
     Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true })
 
@@ -62,12 +62,11 @@ describe('classifyFocusedApp', () => {
   })
 })
 
-// startActivityMonitor — runner-gate
+// startActivityMonitor — Runner 网关
 //
-// The bridge lifecycle now lives in the shared `$runnerPhase` atom (see
-// `@/shared/store/runner-status`). Hydration IPC plumbing is tested in
-// runner-status.test.ts; here we drive `$runnerPhase` directly to exercise
-// activity.ts's consumer-side logic in isolation.
+// 网关生命周期现在统一在共享的 `$runnerPhase` atom 里（见
+// `@/shared/store/runner-status`）。水合 IPC 的连通性在 runner-status.test.ts 中
+// 测过；这里直接驱动 `$runnerPhase` 单独演练 activity.ts 的消费侧逻辑。
 import { $runnerPhase } from '@/shared/store/runner-status'
 
 interface ActivitySpiritagent {
@@ -127,9 +126,8 @@ describe('startActivityMonitor runner-gate', () => {
   it('kicks immediately when phase is already running on subscribe', async () => {
     const { runnerInvoke } = installActivitySpiritagent()
 
-    // Bridge already up before subscribe — simulates a runner that reached
-    // running while activity.ts wasn't watching. nanostore fires the
-    // callback once with the current value on subscribe.
+    // 网关在订阅之前就已就绪——模拟 activity.ts 还没观察时 Runner 已进入 running
+    // 的场景。nanostore 在订阅时会用当前值触发一次回调。
     $runnerPhase.set('running')
 
     startActivityMonitor()
@@ -165,10 +163,9 @@ describe('startActivityMonitor runner-gate', () => {
 
     $runnerPhase.set('running')
 
-    // firstPollDone is already true from the initial kick — re-entering
-    // running only flips runnerReady. The next setInterval tick is what
-    // resumes polling (intentional: don't burst polls on recovery, just
-    // rejoin the 30s cadence).
+    // 首次轮询已由初次 kick 完成——再次进入 running 只会把 runnerReady 翻回 true。
+    // 真正恢复轮询的是下一次 setInterval tick（刻意如此：恢复时不爆发轮询，
+    // 只是重新并入 30 秒节拍）。
     await vi.advanceTimersByTimeAsync(0)
     expect(runnerInvoke.mock.calls.length).toBe(beforeStop)
 
@@ -185,7 +182,7 @@ describe('startActivityMonitor runner-gate', () => {
 
     stopActivityMonitor()
 
-    // Phase changes after stop must have no effect on this monitor.
+    // stop 之后的 phase 变化对此 monitor 不应有任何影响。
     $runnerPhase.set('stopped')
     $runnerPhase.set('running')
     const beforeTimer = runnerInvoke.mock.calls.length

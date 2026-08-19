@@ -82,7 +82,7 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
 
     await client.connect('ws://localhost:8000')
 
-    // Receive frame seq 1
+    // 接收 seq=1 的帧
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -93,7 +93,7 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
 
-    // Receive duplicate frame seq 1 -> should be dropped
+    // 接收重复的 seq=1 帧——应被丢弃
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -104,7 +104,7 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
 
-    // Receive frame seq 2
+    // 接收 seq=2 的帧
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',

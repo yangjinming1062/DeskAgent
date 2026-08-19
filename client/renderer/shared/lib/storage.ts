@@ -12,7 +12,7 @@ export function persistBoolean(key: string, value: boolean): void {
   try {
     window.localStorage.setItem(key, String(value))
   } catch {
-    // Best-effort: restricted contexts (e.g. private browsing) may throw.
+    // 尽力而为：受限上下文（如无痕浏览模式）可能抛出异常。
   }
 }
 
@@ -32,6 +32,6 @@ export function persistString(key: string, value: null | string): void {
       window.localStorage.setItem(key, value)
     }
   } catch {
-    // Best-effort.
+    // 尽力而为。
   }
 }

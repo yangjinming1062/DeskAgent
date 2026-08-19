@@ -2,13 +2,12 @@ import { atom, computed } from 'nanostores'
 
 import type { DesktopRunnerPhase, DesktopRunnerStatusEvent } from '@/shared/types/global'
 
-// Single source of truth for "is the runner bridge live?". Mirrors the
-// hydrateAuth + applyAuthBroadcast pattern: one IPC sync getter covers the
-// "bridge already running before we subscribed" case (Electron IPC has no
-// event replay), and a single subscription fans future transitions into the
-// atom. Consumers read $runnerReady for the boolean gate and subscribe to
-// $runnerPhase for transition reactions — no per-consumer sync-getter dance
-// needed. See companion/activity.ts and hub/settings/speech-settings.tsx.
+// 「Runner 网桥是否在线」的唯一真源。沿用 hydrateAuth + applyAuthBroadcast 的模式：
+// 一个 IPC 同步 getter 覆盖「我们订阅前网桥就已经跑起来」的情况
+//（Electron IPC 没有事件重放），一份订阅把后续转换写入 atom。
+// 消费方读 $runnerReady 拿布尔门控，订阅 $runnerPhase 监听转换——
+// 无需每个消费方各自跳一次同步 getter。见 companion/activity.ts
+// 和 hub/settings/speech-settings.tsx。
 export const $runnerPhase = atom<DesktopRunnerPhase>('idle')
 
 export const $runnerReady = computed($runnerPhase, phase => phase === 'running')
@@ -18,9 +17,8 @@ let offRunnerStatus: (() => void) | null = null
 export async function hydrateRunnerStatus(): Promise<void> {
   const desktop = window.spiritagent
 
-  // Sync getter first — closes the "subscribed too late, missed the initial
-  // running event" window. If the bridge hasn't been created yet the
-  // handler returns { phase: 'idle' }, which is a valid early answer.
+  // 同步 getter 优先——消除「订阅太晚，错过初始 running 事件」的窗口期。
+  // 若网桥尚未创建，处理函数返回 { phase: 'idle' }，这也是一个有效的早期回答。
   try {
     const state = await desktop.runnerGetState?.()
 
@@ -28,12 +26,10 @@ export async function hydrateRunnerStatus(): Promise<void> {
       $runnerPhase.set(state.phase)
     }
   } catch {
-    // Bridge probe failed (older preload / IPC transport error). The
-    // subscription below is the fallback path.
+    // 网桥探测失败（旧版 preload / IPC 传输错误）。下方订阅作为回退路径。
   }
 
-  // Future transitions. Idempotent: re-calling hydrate after the
-  // subscription is already attached just re-runs the sync getter.
+  // 后续转换。幂等：订阅已挂载时再次调用 hydrate 只是重新跑一次同步 getter。
   if (offRunnerStatus) {
     return
   }

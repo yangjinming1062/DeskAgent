@@ -7,12 +7,11 @@ import { buildSpriteHitmap, type SpriteHit } from './sprite-hitmap'
 import { semanticRequestFor, WAITING_REQUEST } from './sprite-semantics'
 import { $activeSprite, $staticMode, requestSprite } from './sprite-store'
 
-// Degraded renderer for the no-GLB window (generating / failed / no key /
-// swap gap). Rides above the 3D canvas inside SpriteStage: pointer events
-// pass through to the stage's drag/poke handlers, and the canvas (egg) hides
-// only while an image is actually on display — the egg stays the never-blank
-// floor until the first sprite resolves. Crossfades between album images;
-// breathing keeps it alive between switches (DESIGN.md §1.2).
+// 无 GLB 窗口时的降级渲染器（生成中 / 失败 / 无 key / 换模空挡）。
+// 挂在 SpriteStage 内的 3D 画布之上：指针事件穿透给舞台的拖拽/戳击处理，
+// 而画布（蛋兜底）只有在精灵图实际展示时才隐藏——首张精灵解析完成前
+// 蛋仍是永不留白的底面。相册图之间做交叉淡入淡出；切换间隙靠呼吸动作维持
+// 「活着」的状态（DESIGN.md §1.2）。
 const FADE_MS = 250
 
 interface StaticSpriteProps {
@@ -68,9 +67,9 @@ export function StaticSprite({ onHitmapReady }: StaticSpriteProps): React.JSX.El
     setPrevUrl(null)
   }, [dataUrl])
 
-  // Hitmap lifetime tracks the mounted <img>: invalidated on url swap,
-  // static-mode exit and unmount — a stale hitmap would sample a detached
-  // element's zero rect and make the sprite unhittable.
+  // hitmap 生命周期跟随挂载的 <img>：url 切换、退出静态模式、
+  // 卸载时都让 hitmap 失效——过期的 hitmap 会采样已脱离 DOM 的元素的
+  // 零尺寸矩形，让精灵变得点不到。
   useEffect(() => {
     if (!staticMode || !dataUrl) {
       onHitmapReady?.(null)

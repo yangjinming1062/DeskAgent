@@ -17,27 +17,26 @@ import type { EngineBackendKind, EngineOptions, LoadedModelInfo } from './types'
 
 type AnyRenderer = THREE.WebGLRenderer | WebGPURenderer
 
-// dormant is timer-driven at 4fps rather than rAF-gated: lock screens and
-// occluded windows stop rAF entirely, while the process ships with Chromium
-// timer throttling disabled, so setTimeout keeps a steady cadence.
+// dormant 档位由定时器以 4fps 驱动，而非 rAF：
+// 锁屏与被遮挡窗口会完全停止 rAF，而本进程关闭了 Chromium 定时器限流，
+// 因此 setTimeout 仍能保持稳定节奏。
 const DORMANT_TICK_MS = 250
-// Hidden windows hard-stop rAF even with the anti-throttling switches; an
-// active-profile companion under an occluder (e.g. speaking) keeps animating
-// from a timer until visibility returns.
+// 即使加了反限流开关，隐藏窗口仍会硬性停止 rAF。
+// 处于活跃档位且被遮挡的伙伴（例如正在说话）会改用定时器继续推进动画，
+// 直到窗口恢复可见。
 const HIDDEN_ACTIVE_MS = 16
 const HIDDEN_IDLE_MS = 37
-// Wake clamp — a dormant→active transition must not feed the mixer or the
-// verlet solver a multi-second delta (ClothSolver clamps its own, the mixer
-// does not).
+// 唤醒钳位——dormant→active 切换时不能把多秒级的 delta 喂给
+// mixer 或 verlet 求解器（ClothSolver 自行钳位，mixer 不会）。
 const MAX_FRAME_DELTA = 0.05
 
-// DPR cap. 1.5 is enough for a 300×360 desktop-pet window — going higher
-// (e.g. 2.0) doubles the shader work without any visible quality gain at
-// the sprite's native display size. iGPU + alpha:true is fillrate-bound.
+// DPR 上限。1.5 对 300×360 的桌面伙伴窗口已经足够——
+// 再高（如 2.0）会把 shader 工作量翻倍，
+// 但在精灵原生显示尺寸下肉眼无差别。iGPU + alpha:true 受 fillrate 限制。
 const MAX_DPR = 1.5
 
-// Silhouette hitmap: 1/4 canvas res bounds the extra render + readback; the
-// TTL caps refreshes at 4 Hz while the cursor sweeps the sprite rect.
+// 剪影命中图：1/4 canvas 分辨率上限限定额外渲染与回读开销；
+// TTL 在光标扫过精灵矩形时将刷新频率限制为 4 Hz。
 const HITMAP_SCALE = 4
 const HITMAP_TTL_MS = 250
 
@@ -58,7 +57,7 @@ function makeCanvas(container: HTMLElement): HTMLCanvasElement {
   return canvas
 }
 
-// Read the layout box the canvas occupies inside the companion container.
+// 读取 canvas 在伙伴容器内的布局盒子。
 function readCanvasSize(canvas: HTMLCanvasElement): { width: number; height: number } {
   const parent = canvas.parentElement
   const width = parent?.clientWidth || canvas.clientWidth || getBaseSpriteWidth()
@@ -94,12 +93,11 @@ export class Engine {
   private hitMapAt = 0
   private hitRefresh: Promise<SilhouetteHitmap | null> | null = null
 
-  // Async factory: WebGPURenderer.init() owns the first two tiers of the
-  // fallback chain (WebGPU backend → its built-in WebGL2 retry). Only a full
-  // init rejection drops to the classic WebGLRenderer — on a fresh canvas,
-  // because a canvas that ever hosted a webgpu context never yields a webgl2
-  // one. Anything beyond that propagates to the caller (static-sprite mode
-  // is the never-blank floor).
+  // 异步工厂：WebGPURenderer.init() 负责回退链的前两档
+  // （WebGPU 后端 → 自带的 WebGL2 重试）。只有 init 完全失败
+  // 才会降级到经典 WebGLRenderer——前提是新 canvas，
+  // 因为一旦承载过 webgpu 上下文的 canvas 不会再产出 webgl2 上下文。
+  // 进一步失败则向上抛给调用方（静态精灵层就是"永不空白"的底线）。
   static async create(opts: EngineOptions): Promise<Engine> {
     const useShadows = opts.useShadows ?? false
     const canvas = makeCanvas(opts.container)
@@ -109,10 +107,10 @@ export class Engine {
       const gpu = new WebGPURenderer({
         canvas,
         alpha: true,
-        // MSAA 4×: the companion floats over arbitrary desktop content, so
-        // silhouette crawl is the top visual defect — and at ≤450×540 px the
-        // per-frame resolve is negligible even on iGPU. WebGPU renderer does
-        // not expose `premultipliedAlpha` (the WebGL2 fallback does).
+        // MSAA 4×：伙伴窗口悬浮在任意桌面内容之上，
+        // 走样的剪影是最显眼的瑕疵——而在 ≤450×540 px 范围内，
+        // 即使在 iGPU 上每帧 resolve 的开销也可忽略。
+        // WebGPU 渲染器未暴露 `premultipliedAlpha`（WebGL2 回退分支会暴露）。
         antialias: true
       })
 
@@ -135,7 +133,7 @@ export class Engine {
       const classic = new THREE.WebGLRenderer({
         canvas: fallbackCanvas,
         alpha: true,
-        // MSAA on (same reasoning as WebGPU branch); premultipliedAlpha off skips the multiply during the resolve.
+        // 启用 MSAA（理由同上）；关闭 premultipliedAlpha 可以在 resolve 时省掉一次乘法。
         antialias: true,
         premultipliedAlpha: false,
         // 'default' keeps hybrid-GPU laptops on the integrated GPU — the companion scene is far below dGPU territory and forcing it wakes a 20W+ chip for a desk pet.
@@ -144,7 +142,7 @@ export class Engine {
 
       return new Engine(classic, 'classic-webgl', fallbackCanvas, fallbackSize, useShadows)
     } catch (err) {
-      // No GPU context at all — release the orphan canvas before propagating
+      // 完全拿不到 GPU 上下文——在向上抛错前释放这个孤儿 canvas
       // (static-sprite mode is the never-blank floor).
       fallbackCanvas.remove()
       throw err
@@ -177,7 +175,7 @@ export class Engine {
 
     this.scene = new THREE.Scene()
 
-    // Straight-on (face-to-face) telephoto portrait camera setup — 14° FOV provides true orthographic-like parallel perspective, eliminating chin/feet keystoning
+    // 正面对视（face-to-face）的长焦人像相机设置——14° FOV 接近真正的正交平行透视，避免下巴/脚部梯形失真
     this.camera = new THREE.PerspectiveCamera(14, size.width / size.height, 0.1, 50)
     this.camera.position.set(0, 0.9, 6.0)
     this.camera.lookAt(0, 0.9, 0)
@@ -215,8 +213,7 @@ export class Engine {
 
     if (!this.hitRT || this.hitRT.width !== w || this.hitRT.height !== h) {
       this.hitRT?.dispose()
-      // The classic tier's async read demands a WebGLRenderTarget; the node
-      // tiers take the core RenderTarget.
+      // 经典档位的异步 read 需要 WebGLRenderTarget；节点档位接受核心 RenderTarget。
       this.hitRT =
         this.backendKind === 'classic-webgl' ? new THREE.WebGLRenderTarget(w, h) : new THREE.RenderTarget(w, h)
     }
@@ -224,9 +221,8 @@ export class Engine {
     const rt = this.hitRT
 
     try {
-      // Param cast narrows the renderer union — the node tier accepts the
-      // RenderTarget supertype, the classic tier the WebGLRenderTarget both
-      // tiers construct here per kind.
+      // 参数转换收窄渲染器联合类型——节点档位接受 RenderTarget 父类型，
+      // 经典档位接受 WebGLRenderTarget，两档位在此按 kind 各自构造。
       try {
         this.renderer.setRenderTarget(rt as THREE.WebGLRenderTarget)
         this.renderer.render(this.scene, this.camera)
@@ -244,8 +240,8 @@ export class Engine {
       }
 
       const alpha = new Uint8Array(w * h)
-      // WebGPU copyTextureToBuffer aligns each row to 256 bytes; WebGL readPixels is tightly packed.
-      // Normalize to top-down row order matching DOM client space (y=0 at top of canvas).
+      // WebGPU 的 copyTextureToBuffer 每行按 256 字节对齐；WebGL 的 readPixels 紧凑排列。
+      // 统一为自上而下的行序，与 DOM client 空间一致（y=0 在 canvas 顶部）。
       const isWebGPU = this.backendKind === 'webgpu'
       const isBottomUp = this.backendKind !== 'webgpu'
       const rowStrideBytes = isWebGPU ? Math.ceil((w * 4) / 256) * 256 : w * 4
@@ -285,7 +281,7 @@ export class Engine {
 
     this.character.root.updateMatrixWorld(true)
 
-    // Check if we have skeleton bones to calculate real posed/skinned world positions
+    // 检查是否有骨骼以计算真实的蒙皮后世界坐标
     const bones: THREE.Bone[] = []
     this.character.root.traverse(child => {
       if (child instanceof THREE.Bone) {
@@ -327,12 +323,12 @@ export class Engine {
         }
       }
 
-      // Add generous head top clearance (~26cm above Head bone for skull, hair buns, and volume)
-      // and foot sole clearance (~6cm below Foot/Toe bone for shoes and ground plane)
+      // 头部预留较大顶部空间（Head 骨骼上方约 26cm，用于头骨、发髻与体积）
+      // 以及脚底空间（Foot/Toe 骨骼下方约 6cm，用于鞋底与地面）
       maxY += 0.26
       minY -= 0.06
     } else {
-      // Fallback: Box3 from meshes
+      // 兜底：由网格构造 Box3
       const box = new THREE.Box3().setFromObject(this.character.root)
 
       if (box.isEmpty()) {
@@ -349,9 +345,9 @@ export class Engine {
     const centerY = (minY + maxY) / 2
     const centerX = (minX + maxX) / 2
 
-    // Straight-on eye-level (平视) framing:
-    // Determine eye-level optical axis height (~72% of character height, or Head bone level for bipeds).
-    // Placing the camera at eye level with 0° pitch guarantees a true straight-on perspective without chin-up distortion.
+    // 平视取景：
+    // 确定视线轴的高度（约为角色身高的 72%，或双足生物的 Head 骨骼高度）。
+    // 相机放在平视高度且俯仰角 0°，可保证真正的正面对视透视，避免仰视失真。
     let targetY = centerY
 
     if (this.character.isBipedRig || bones.length >= 3) {
@@ -364,8 +360,8 @@ export class Engine {
       }
     }
 
-    // Height fill ratio ~87% ensures ~6.5% breathing room above hair and below feet,
-    // completely eliminating top-of-head cropping while filling the 1/3 screen window.
+    // 高度占比约 87%——头顶与脚底各预留约 6.5% 的呼吸空间，
+    // 在填满 1/3 屏窗口的同时，彻底避免头顶裁切。
     const aspect = this.camera.aspect || getBaseSpriteWidth() / getBaseSpriteHeight()
     const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov / 2)
 
@@ -374,12 +370,12 @@ export class Engine {
     const distW = (widthSpan * 0.5) / (Math.tan(halfFovRad) * aspect * 0.85)
     const dist = Math.max(distH, distW, 0.5)
 
-    // Level straight-on camera (pitch = 0°, eye-level horizontal line of sight)
+    // 水平的正面对视相机（俯仰角 0°，平视水平视线）
     this.camera.position.set(centerX, targetY, dist)
     this.camera.lookAt(centerX, targetY, 0)
 
-    // Shift projection window vertically via setViewOffset so the full body remains centered
-    // from head to toe within the canvas window without tilting the camera optical axis.
+    // 通过 setViewOffset 垂直偏移投影窗口，使全身从头到脚
+    // 在 canvas 窗口内居中显示，而无需倾斜相机光轴。
     const canvasWidth = this.canvas.clientWidth || getBaseSpriteWidth()
     const canvasHeight = this.canvas.clientHeight || getBaseSpriteHeight()
     const visibleWorldHeight = ((height * 0.5) / 0.87) * 2
@@ -430,8 +426,7 @@ export class Engine {
 
     this.profile = profile
 
-    // Re-schedule under the new cadence; cancelPendingLoop closes the race
-    // where the previous rAF/timer callback is still queued.
+    // 按新节奏重新调度；cancelPendingLoop 关闭旧 rAF/定时器回调仍排队时的竞态。
     if (this.running && !this.disposed) {
       this.cancelPendingLoop()
       this.scheduleNext()
@@ -439,8 +434,8 @@ export class Engine {
   }
 
   private onVisibilityChange = (): void => {
-    // A hidden window never fires the pending rAF — swap it for the timer
-    // fallback without waiting for a profile change.
+    // 隐藏窗口永远不会触发排队的 rAF——直接换成定时器回退，
+    // 无需等待档位变更。
     if (this.running && !this.disposed) {
       this.cancelPendingLoop()
       this.scheduleNext()
@@ -461,9 +456,9 @@ export class Engine {
     try {
       const budgetMs = 1000 / PROFILE_FPS[this.profile]
 
-      // Allow a 25% tolerance on the frame budget (e.g. >= 12.5ms for 60fps) so 60Hz displays
-      // never drop a frame due to sub-millisecond rAF timer jitter, and 120Hz displays render
-      // cleanly on alternate VSync ticks.
+      // 帧预算允许 25% 的容差（如 60fps 下 ≥12.5ms），
+      // 让 60Hz 显示器不会因亚毫秒级的 rAF 抖动丢帧，
+      // 让 120Hz 显示器能在隔一拍的 VSync 上干净渲染。
       if (now - this.lastFrameAt >= budgetMs * 0.75) {
         const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / 60
         this.lastFrameAt = now
@@ -471,8 +466,8 @@ export class Engine {
         this.physics.beginFrame()
         this.character.update(delta)
 
-        // One dispatch per node keeps pass ordering explicit (skin →
-        // constraints → collide → normals); the CPU backend yields none.
+        // 每个节点一次派发，使 pass 顺序显式（skin → constraints →
+        // collide → normals）；CPU 后端则不会产出节点。
         if (this.renderer instanceof WebGPURenderer) {
           for (const node of this.physics.collectCompute()) {
             this.renderer.compute(node)
@@ -495,7 +490,8 @@ export class Engine {
         }
       }
     } catch (err) {
-      // Render guard — stop the ticker on first error so the next frame doesn't repeat the same throw; surface via $engineError for the dev overlay.
+      // 渲染守卫——首次错误即停止 ticker，避免下一帧重复同一异常；
+      // 通过 $engineError 暴露给开发者覆盖层。
       this.running = false
       const message = err instanceof Error ? err.message : String(err)
       reportEngineError(message)
@@ -536,8 +532,7 @@ export class Engine {
   }
 
   resize(width: number, height: number): void {
-    // Re-pick pixel ratio: window.devicePixelRatio changes when the window
-    // is dragged across monitors with different DPI.
+    // 重新选择像素比：window.devicePixelRatio 在跨不同 DPI 显示器拖动时会变化。
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR))
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()

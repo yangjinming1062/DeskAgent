@@ -1,13 +1,13 @@
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import type { ChatMessage } from './chat-store'
 
-// Centered meta line rather than a chat bubble.
+// 居中的元信息行，而非聊天气泡。
 const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'tool_summary', 'daily_summary', 'compress_summary'])
-// Poke/drag traces: side-aligned but visually recessive.
+// 戳 / 拖拽追踪：侧对齐但视觉上弱化。
 const STATUS_TRACE_SUBTYPES = new Set(['status_interaction', 'status_reaction'])
-// Body-language-only reply (affect/action with no text): persisted so the LLM
-// context stays complete, but rendered as a recessive trace — the 3D already
-// expressed it live, so the transcript only marks "the companion reacted here".
+// 仅肢体语言回复（affect / action，无文字）：持久化以保留完整的 LLM 上下文，
+// 但渲染为低权重 trace——3D 已经现场表达过，
+// 文字记录只需标注"伙伴在这里做出了反应"。
 const AFFECT_TRACE_SUBTYPE = 'status_affect'
 
 export function MessageBubble({ message }: { message: ChatMessage }): React.JSX.Element {
@@ -69,9 +69,7 @@ export function MessageBubble({ message }: { message: ChatMessage }): React.JSX.
             '…'
           )}
         </div>
-        {showPlayButton && (
-          <ChatMessagePlayButton className="mt-1" messageId={message.id} text={message.text} />
-        )}
+        {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={message.text} />}
       </div>
     </div>
   )

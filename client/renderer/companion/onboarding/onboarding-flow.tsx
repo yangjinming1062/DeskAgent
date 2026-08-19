@@ -91,8 +91,7 @@ export interface FullbodyStyleOption {
 
 type QKey = keyof OnboardingAnswers
 
-// A chip that picks *what kind* of answer the user is about to give instead of
-// being the answer itself — see CALL_NAME_KINDS.
+// 这个 chip 用来挑「用户接下来要填的是哪一类答案」，本身不是答案——见 CALL_NAME_KINDS。
 interface AnswerKind {
   chip: string
   label: string
@@ -106,21 +105,19 @@ interface Question {
   placeholder: string
   required: boolean
   multiline: boolean
-  // Manifest tags are bound to the recorded line, not to a position — reordering
-  // QUESTIONS must not desync the audio.
+  // Manifest tag 与录到的语音行绑定，而不是与位置绑定——重排 QUESTIONS 也不能让音频错位。
   audioTag: OnboardingAudioTag
   presets?: readonly string[]
   max?: number
-  // Lets the user hand over a reference image alongside the text answer.
+  // 允许用户在文本答案之外再附带一张参考图。
   allowImage?: boolean
-  // Mutually exclusive with `presets`: two-level entry instead of chip-fills-input.
+  // 与 `presets` 互斥：双层入口，而不是「点 chip 就把输入框填好」。
   kinds?: readonly AnswerKind[]
 }
 
-// "名字 / 昵称" are categories of appellation, not appellations — filling the
-// input with the literal chip text would store "昵称" as the way to address the
-// user. Picking a chip re-labels the input and asks for the concrete value;
-// 称号 additionally offers ready-made values because those *are* answers.
+// "名字 / 昵称" 是称呼的类别，不是称呼本身——把 chip 的字面文本写进输入框会
+// 把「昵称」存成怎么称呼用户。点 chip 只是给输入框换个标签，再去问具体的值；
+// 「称号」再额外给几个现成选项，因为它本身就是答案。
 const CALL_NAME_KINDS: readonly AnswerKind[] = [
   { chip: '名字', label: '那，您的名字是？', placeholder: '比如：张三' },
   { chip: '昵称', label: '那，您的昵称是？', placeholder: '比如：小明、阿棠' },
@@ -161,9 +158,9 @@ const QUESTIONS: readonly Question[] = [
     presets: CHARACTER_GENDER_PRESETS
   },
   {
-    // appearance_core: locked visual anchor — feeds the 3D model prompt and
-    // gets stripped from PUT /persona after the user confirms the avatar
-    // image. The red `*` on the label is rendered inline in the JSX below.
+    // appearance_core：锁定的视觉锚点——既会喂给 3D 模型 prompt，
+    // 又会在用户确认头像图后从 PUT /persona 中被剔除。标签旁的红色 `*`
+    // 渲染逻辑见下方 JSX。
     key: 'appearance_core',
     text: '您希望我长什么样？说说头发、眼睛、体型、标志性细节…',
     placeholder: '比如：金发绿眼、额间一道疤、机械义眼…',
@@ -192,9 +189,8 @@ const QUESTIONS: readonly Question[] = [
     audioTag: 'onboarding.q5',
     presets: PERSONALITY_PRESETS
   },
-  // speaking_style is required by the backend schema — the dedicated question
-  // makes the user's choice the direct source of truth, and being a character
-  // field it lands in the enterHatching PUT with the rest.
+  // speaking_style 是后端 schema 的必填项——用专门一道题去问，
+  // 让用户的选择成为直接真相来源；它属于角色字段，跟其它字段一起进 enterHatching 的 PUT。
   {
     key: 'speaking_style',
     text: '您希望我说话的风格是什么样的？',
@@ -264,14 +260,12 @@ const QUESTIONS: readonly Question[] = [
   }
 ]
 
-// Fields whose value drives the 3D model and therefore cannot change after the
-// user confirms the avatar. A red `*` is rendered inline beside the
-// question text + a top-of-wizard banner reminds the user of the rule.
+// 这些字段的值会驱动 3D 模型，因此用户在确认头像后不能再改。
+// 题面旁边会渲染一个红色 `*`，向导顶部还有 banner 提示用户这一限制。
 const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance_core'])
 
-// Slice boundaries derive from the ``voice`` question position — everything
-// before it is character sub-stage, it alone is the voice sub-stage, and
-// everything after is user sub-stage. Mirrors backend ONBOARDING_FIELDS order.
+// 分段边界由 ``voice`` 这道题的位置决定——之前全是角色子阶段，
+// 它本身是声音子阶段，之后都是用户子阶段。对应后端 ONBOARDING_FIELDS 的顺序。
 const _VOICE_Q_INDEX = QUESTIONS.findIndex(q => q.key === 'voice')
 const CHARACTER_QUESTIONS: readonly Question[] = QUESTIONS.slice(0, _VOICE_Q_INDEX)
 const VOICE_QUESTIONS: readonly Question[] = QUESTIONS.slice(_VOICE_Q_INDEX, _VOICE_Q_INDEX + 1)
@@ -288,18 +282,18 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   greeting: []
 }
 
-// Routes resume's next_field to q-user; `voice` has its own branch. Derived
-// from USER_QUESTIONS so it stays in sync when questions are added/removed.
+// 把 resume 的 next_field 路由到 q-user；`voice` 有自己的分支。
+// 从 USER_QUESTIONS 推导，题目增删时自动保持同步。
 const POST_CHARACTER_FIELDS: ReadonlySet<string> = new Set(USER_QUESTIONS.map(q => q.key))
 
-// Hoisted: useInteractiveRegion's effect otherwise re-registers every render.
+// 提到顶层：否则 useInteractiveRegion 的 effect 会在每次渲染时重新注册。
 const interactiveRegionRect = (el: HTMLElement): DOMRect | null => {
   const rect = el.getBoundingClientRect()
 
   return rect.width === 0 || rect.height === 0 ? null : rect
 }
 
-// Throws from `fn` propagate so callers can rethrow 4xx and short-circuit retries.
+// `fn` 抛出的错误会向上传播，方便调用方把 4xx 重新抛出并提前结束重试。
 const retryTransient = async <T,>(
   fn: () => Promise<T | null | undefined>,
   delayMs: number,
@@ -322,10 +316,9 @@ const retryTransient = async <T,>(
 
 const DRAG_THRESHOLD = 6
 
-// Question keys submittable via onboarding.submit — mirrors backend
-// ONBOARDING_FIELDS. All mappings are identity (question key === backend
-// field name), so a Set suffices. appearance_outfit is absent: it's a Persona
-// field edited via persona-editor / persona-retune, not collected at onboarding.
+// 可经 onboarding.submit 提交的 question key——与后端 ONBOARDING_FIELDS 对齐。
+// 映射都是恒等的（question key === 后端字段名），所以用 Set 就够了。
+// appearance_outfit 不在其中：它是 Persona 字段，由 persona-editor / persona-retune 编辑，不在 onboarding 里收集。
 const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
   'name',
   'species',
@@ -342,8 +335,7 @@ const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
   'voice'
 ])
 
-// Avatar (bust) generation. Returns the raw backend response; applyPortrait
-// owns the resolve step.
+// 头像（半身像）生成。返回后端的原始响应；解析步骤由 applyPortrait 负责。
 async function generatePortrait(reference: PickedImage | null): Promise<{
   asset_url?: string
   id?: number
@@ -360,7 +352,7 @@ async function generatePortrait(reference: PickedImage | null): Promise<{
 
     return res
   } catch (error) {
-    // Rethrow deterministic failures so retryTransient doesn't burn the 120s avatar budget.
+    // 把确定性的失败重抛出去，避免 retryTransient 烧掉 120 秒的头像预算。
     if (isClientErrorIpc(error)) {
       throw error
     }
@@ -379,7 +371,7 @@ async function savePersona(payload: ReturnType<typeof assemblePersona>): Promise
 
     return true
   } catch (error) {
-    // Rethrow 4xx so retryTransient doesn't burn retries on a deterministic failure.
+    // 重抛 4xx，避免 retryTransient 在确定性失败上空耗重试。
     if (isClientErrorIpc(error)) {
       throw error
     }
@@ -392,7 +384,7 @@ interface OnboardingFlowProps {
   onCompleted: () => void
 }
 
-// Lives outside OnboardingFlow: its $regenFeedback subscription would otherwise re-render the whole dialog on every keystroke.
+// 放到 OnboardingFlow 外面：否则它订阅的 $regenFeedback 会在每次按键时让整个对话框重渲染。
 function RegenFeedbackInput(): React.JSX.Element {
   const value = useStore($regenFeedback)
 
@@ -427,18 +419,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
   const [input, setInput] = useState('')
   const [portraitUrl, setPortraitUrl] = useState<string | null>(null)
-  // Active avatar row id is published to the global $activeAvatarId atom by
-  // applyPortrait — subscribe to it so any regen propagates without
-  // us wiring setState through every call site.
+  // 当前头像行 id 由 applyPortrait 写入全局 $activeAvatarId atom——
+  // 这里订阅它，让重生结果自动传播，省得我们在每个调用点都手写 setState。
   const activeAvatarId = useStore($activeAvatarId)
-  // History gallery — thumbnails below the portrait panel.
+  // 历史画廊——头像面板下方的缩略图。
   const portraitHistory = useStore($portraitHistory)
   const portraitSelectedIdx = useStore($portraitSelectedIdx)
-  // voice phase runs the Q7 description input first, then the catalogue picker.
+  // voice 阶段先跑 Q7 描述输入，再进入目录选择器。
   const [voiceStage, setVoiceStage] = useState<VoiceStage>('describe')
 
-  // Failure keeps the current portrait: it already holds resolved bytes.
-  // The shared `applyPortrait` writes the global $portraitUrl + $activeAvatarId atoms.
+  // 失败时保留当前头像：它已经持有解析好的字节。
+  // 共用的 `applyPortrait` 负责写入全局 $portraitUrl 与 $activeAvatarId atom。
   const applyLocalPortrait = async (
     response:
       | {
@@ -462,11 +453,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const [voice, setVoice] = useState<VoiceOption | null>(null)
   const [voiceCatalog, setVoiceCatalog] = useState<VoiceOption[]>([])
-  // Matcher's runner-ups. Kept apart from the full catalog so the 推荐卡's
-  // 「换一个」 cycles the candidates instead of walking the whole directory.
+  // 匹配器的候选项。跟完整目录分开，方便「推荐卡」的「换一个」按钮在候选项里循环，
+  // 而不是遍历整个目录。
   const [voiceAlternatives, setVoiceAlternatives] = useState<VoiceOption[]>([])
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
-  // Failure hints live on the portrait panel — the form area is hidden behind it.
+  // 失败提示挂在头像面板上——表单区被它压在下面。
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
   const [styleCatalog, setStyleCatalog] = useState<FullbodyStyleOption[]>([])
@@ -488,13 +479,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const [fullbodyHistoryIndices, setFullbodyHistoryIndices] = useState<Record<string, number>>({})
 
-  // Reference image handed over at the 形象描述 question. Persisted locally
-  // via IndexedDB draft cache so a crash before bust generation resumes with it.
+  // 在「形象描述」题目提交上来的参考图。本地用 IndexedDB 草稿缓存持久化，
+  // 这样半身生成前崩溃后重启也能带回来。
   const [refImage, setRefImage] = useState<PickedImage | null>(null)
 
-  // Presentation/style reference picked during avatar regen — coexists with
-  // the Q4 identity image instead of replacing it. In-memory only; it's a
-  // transient regen aid, not a persistent identity asset.
+  // 头像重生时挑的展现/画风参考图——跟 Q4 的身份图共存，而不是替换它。
+  // 仅存内存：是临时性的重生辅助，不是持久化的身份资产。
   const [presentationRef, setPresentationRef] = useState<PickedImage | null>(null)
 
   const updateRefImage = (img: PickedImage | null) => {
@@ -520,7 +510,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     pointerId: number
   } | null>(null)
 
-  // Centered initial position; the user can drag from there.
+  // 居中的初始位置；用户可以从这里开始拖拽。
   const [dialogPos, setDialogPos] = useState<{ x: number; y: number }>(() => {
     const width = 448
     const height = 600
@@ -535,10 +525,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   })
 
-  // Onboarding dialog is fully interactive — register its actual visible rect
-  // with the global interactive-regions registry so SpriteStage's hit-test
-  // captures only while the cursor is over the dialog form card.
-  // SpriteStage restores click-through on unmount.
+  // Onboarding 对话框完全可交互——把它的实际可见矩形注册到全局 interactive-regions 注册表，
+  // SpriteStage 的命中测试就只在光标停在对话框表单卡片上时才捕获。卸载时 SpriteStage 会恢复穿透。
   useInteractiveRegion('onboarding', containerRef, interactiveRegionRect)
 
   useEffect(() => {
@@ -547,19 +535,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }, [])
 
-  // The feedback textarea is shared across portrait surfaces. Clearing on
-  // phase change keeps "头发再短一点" typed during onboarding from leaking
-  // into a later regenerator.
+  // 反馈 textarea 在多个头像面板之间共享。阶段切换时清空，
+  // 避免 onboarding 里输入的「头发再短一点」泄漏到后续重生流程里。
   useEffect(() => {
     if (phase === 'portrait-avatar') {
       clearRegenFeedback()
     }
   }, [phase])
 
-  // Drag uses document-level listeners (not React onPointerMove on the
-  // container) so the drag survives the cursor leaving the dialog rect and
-  // still updates while the cursor is over an unrelated region. setPointerCapture
-  // would interfere with click events fired on the form's buttons/inputs.
+  // 拖拽用 document 级监听器（而不是容器上的 React onPointerMove），
+  // 这样光标离开对话框矩形后拖拽仍能继续，并能在悬停在别的区域时持续更新位置。
+  // setPointerCapture 会干扰表单上按钮/输入框触发的 click 事件，所以不用它。
   const onDialogPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     const target = e.target as HTMLElement
 
@@ -607,8 +593,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     const onLeave = (e: PointerEvent) => {
-      // Pointer leaving the window mid-drag clears the drag state so subsequent
-      // moves don't translate with stale origin coordinates.
+      // 拖拽过程中指针离开窗口要清掉拖拽状态，避免后续 move 拿旧的原点坐标去算位移。
       const drag = dragRef.current
 
       if (drag && drag.pointerId === e.pointerId) {
@@ -632,15 +617,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const currentList = PHASE_QUESTIONS[phase]
 
   const question = currentList[qIndex]
-  // Latest-answers ref so the speak/focus effects only re-run on phase/qIndex,
-  // not on every keystroke (the rule's exhaustive-deps lint can't see the
-  // intent).
+  // 用 ref 持有最新 answers，让 speak/focus effect 只在 phase/qIndex 变化时重跑，
+  // 而不是每次按键都跑（exhaustive-deps lint 看不到这个意图）。
   const answersRef = useLatestRef(answers)
 
-  // Question text rendered under the input.
+  // 题面文本，显示在输入框下方。
   const spokenText = question?.text ?? ''
 
-  // Speak each question as it appears (default neutral voice; plan §3.2).
+  // 每道题出现时朗读（默认中性声；plan §3.2）。
   useEffect(() => {
     if (phase !== 'q-character' && phase !== 'q-user' && phase !== 'voice') {
       return
@@ -698,8 +682,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const nextAnswers: OnboardingAnswers = { ...answers, [q.key]: cleaned }
     setAnswers(nextAnswers)
 
-    // Per-field incremental persistence (design §7.5); fire-and-forget — never
-    // block the UI on a draft save. No-op until the gateway is open.
+    // 逐字段增量持久化（design §7.5）；fire-and-forget——绝不阻塞 UI 等草稿保存。
+    // 网关未打开前是空操作。
     if (gatewayState === 'open' && ONBOARDING_FIELD_KEYS.has(q.key)) {
       void submitOnboardingAnswer(q.key, cleaned ?? null)
     }
@@ -710,7 +694,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const advance = (updatedAnswers?: OnboardingAnswers) => {
     const currentAnswers = updatedAnswers ?? answers
 
-    // Voice describe has a single question; advancing flips to catalog which the useEffect below loads.
+    // Voice describe 只有一道题；点下一题会切到 catalog，由下面的 useEffect 加载。
     if (phase === 'voice' && voiceStage === 'describe') {
       setVoiceStage('catalog')
 
@@ -731,7 +715,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  // Loads catalogue + preview TTS on describe→catalog transition (and on resume into catalog).
+  // 在 describe→catalog 切换（以及 resume 直接进入 catalog）时加载目录与试听 TTS。
   useEffect(() => {
     if (phase !== 'voice' || voiceStage !== 'catalog') {
       return
@@ -744,10 +728,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setCompanionVoiceId(matched.voice.id)
       setVoiceLangFilter('zh')
       const r = await fetchVoiceCatalogRaw(requestGateway, 'zh')
-      // Exclude both the matched voice AND its alternatives — they're already
-      // prepended. Without this, every alternative that's also in the catalog
-      // (e.g. 茉莉) appears twice, and the list visibly duplicates on every
-      // voice switch.
+      // 同时把 matched voice 与它的 alternatives 都剔除——它们已经被前置了。
+      // 不剔除的话，同时也在目录里的 alternative（如「茉莉」）会重复出现，
+      // 每次切换声音时列表都能看出重了。
       const priorityIds = new Set([matched.voice.id, ...matched.alternatives.map(v => v.id)])
       const extra = r.ok ? r.catalog.voices.filter(v => !priorityIds.has(v.id)) : []
       setVoiceCatalog([matched.voice, ...matched.alternatives, ...extra])
@@ -814,9 +797,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
-    // Skip generation only when we have both a server row AND a valid portrait
-    // image. On resume after TTL expiry, $activeAvatarId is set but $portraitUrl
-    // is null — we must regenerate in that case.
+    // 只有同时有服务端行 AND 有效的头像图时才能跳过生成。
+    // TTL 到期后续传时，$activeAvatarId 还在但 $portraitUrl 已经为 null——这种情况必须重新生成。
     if (activeAvatarId != null && $portraitUrl.get()) {
       setPhase('portrait-avatar')
       void playOnboardingAudio('onboarding.portrait.ok')
@@ -830,8 +812,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
     void playOnboardingAudio('onboarding.hatching')
 
-    // Finalize persona before portrait — avatar gen needs is_complete=true; user_* are routed to Memory later via submit_onboarding_field.
-    // savePersona re-throws 4xx; roll back to the form so the user can fix the field.
+    // 先固化 persona 再做头像——avatar 生成需要 is_complete=true；user_* 之后由 submit_onboarding_field 路由到 Memory。
+    // savePersona 把 4xx 重新抛出；退回表单让用户修改该字段。
     let personaOk = false
     await onboardingSubmissionsRef.current
 
@@ -859,33 +841,29 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           })
         }
       } catch {
-        // A deterministic 4xx (unusable reference image, incomplete persona)
-        // must not strand the flow on 'hatching' — fall through to the portrait
-        // phase, where regenerate with optional feedback is still available.
+        // 确定性的 4xx（参考图不可用、persona 不完整）不能让流程卡在 'hatching'——
+        // 直接落到 portrait 阶段，那里仍然支持带反馈或不带反馈的重生。
         url = null
       }
 
       if (!url) {
-        // The portrait panel is what renders next; `hint` is only visible in the form.
+        // 接下来渲染的是 portrait 面板；`hint` 只在表单里能看到。
         setPortraitPanelHint(img ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
       }
     } else {
       setHint('记忆还没存好，稍后再试试形象吧…')
     }
 
-    // The avatar phase: the user reviews the face and confirms it —
-    // confirmation locks the look and unblocks the voice sub-stage.
+    // avatar 阶段：用户审视头像并确认——确认即锁定形象，并解锁 voice 子阶段。
     setPhase('portrait-avatar')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
 
   const enterHatchingRef = useLatestRef(enterHatching)
 
-  // Rehydrate the fullbody stage from the avatar row — persisted style samples,
-  // picked style and front seed — so a restart resumes where the user left off
-  // and never re-triggers paid sample generation. Falls back to fresh
-  // generation only when nothing is stored (first entry / legacy rows) or the
-  // temp-media drafts expired past their TTL.
+  // 从 avatar 行复水 fullbody 阶段——持久化的风格样图、已选风格和正面种子——
+  // 让重启能从上次中断处继续，且绝不重新触发付费样图生成。
+  // 仅在没有存储内容（首次进入 / 旧版行）或 temp-media 草稿过了 TTL 时才回退到重新生成。
   const hydrateFullbodyStage = async (): Promise<void> => {
     void window.spiritagent
       .api<FullbodyStyleOption[]>({
@@ -987,17 +965,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyHistoryIndices(initialIndices)
 
     if (avatarRes?.id != null && (Object.keys(rawSamples).length === 0 || Object.keys(resolvedSamples).length === 0)) {
-      // No stored samples, or the temp-media drafts expired past their TTL —
-      // regenerate instead of showing dead cards.
+      // 没有持久化样图，或者 temp-media 草稿已过 TTL——重新生成，别显示死卡。
       void fetchFullbodySamples(avatarRes.id)
     }
   }
 
   const hydrateFullbodyStageRef = useLatestRef(hydrateFullbodyStage)
 
-  // Breakpoint recovery (plan §3 / design §7.5): once the gateway is open,
-  // pull any half-answered draft so a crash/exit mid-onboarding resumes from
-  // the next unanswered question. One-shot — never re-resumes.
+  // 断点恢复（plan §3 / design §7.5）：网关一旦连通，
+  // 就把还没答完的草稿拉回来，让 onboarding 中途崩溃/退出后能从下一道未答的题继续。
+  // 只跑一次，绝不重复 resume。
   useEffect(() => {
     if (resumedRef.current || gatewayState !== 'open') {
       return
@@ -1043,8 +1020,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }
 
         if (state?.answers) {
-          // Merge server draft with answers typed in the current session;
-          // local non-empty edits win so recent user intent survives.
+          // 把服务端草稿与当前会话里已经输入的答案合并；
+          // 本地非空的编辑优先，保证用户最近的意图不会丢失。
           const a = state.answers
           let merged: OnboardingAnswers = {}
           setAnswers(prev => {
@@ -1102,8 +1079,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               setFullbodyHint('全身立绘恢复失败，请点击重新生成样图')
             }
           } else if (nextField === 'voice') {
-            // next_field==='voice' means the description sentence itself is
-            // still unanswered — land on describe, not the catalog.
+            // next_field==='voice' 意味着描述句本身还没回答——落在 describe 上，而不是 catalog。
             setPhase('voice')
             setVoiceStage('describe')
             setQIndex(0)
@@ -1153,8 +1129,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     })
   }, [gatewayState, requestGateway, voiceCatalog.length])
 
-  // Step 1 — avatar regen: creates a new avatar row, the new id publishes to
-  // ``$activeAvatarId`` automatically (via applyPortrait inside the hook).
+  // 第一步——头像重生：新建一行 avatar，新 id 通过 hook 内 applyPortrait 自动发布到 ``$activeAvatarId``。
   const { regenerate: regenerateAvatarPortrait, busy: avatarBusy } = useRegeneratePortrait({
     refImage,
     presentationRef,
@@ -1186,10 +1161,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         $portraitUrl.set(entry.portraitUrl)
       }
 
-      // Following the user's gallery pick: the active avatar row has to match
-      // the displayed face, otherwise the selection would silently fall back
-      // to the latest row and the displayed image would jump back to a face
-      // the user already rejected.
+      // 用户在画廊里点选时：当前 avatar 行必须跟显示的脸保持一致，
+      // 否则选中会悄悄回退到最后一行，画面跳回用户已经拒绝过的那张脸。
       if (entry.avatarId != null) {
         setActiveAvatarId(entry.avatarId)
         void selectAvatar(entry.avatarId)
@@ -1239,9 +1212,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         method: 'POST'
       })
     } catch (error) {
-      // A 409 means temp-media expired — the avatar files are gone and
-      // we must NOT advance. Route back to the avatar phase so the user
-      // can regenerate.
+      // 409 表示 temp-media 已过期——头像文件已不在，绝不能继续推进。
+      // 退回 avatar 阶段，让用户重新生成。
       if (isClientErrorIpc(error)) {
         const unwrapped = unwrapIpcErrorMessage(error)
         const jsonStart = unwrapped.indexOf('{')
@@ -1255,8 +1227,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           return
         }
       }
-      // Non-IPC failure (network, JSON parse, IPC envelope): the `void` in onClick
-      // would swallow the rejection — surface a hint and refuse to advance.
+      // 非 IPC 失败（网络、JSON 解析、IPC envelope）：onClick 里的 `void` 会把异常吞掉——
+      // 这里显式提示并拒绝推进。
 
       console.warn('confirmPortrait failed unexpectedly', error)
       setPortraitPanelHint('确认失败，请检查网络后重试')
@@ -1267,7 +1239,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     clearPortraitHistory()
     setPresentationRef(null)
 
-    // Advance to fullbody-3d
+    // 推进到 fullbody-3d
     setPhase('fullbody-3d')
     setFullbodyStyleState(null)
     setSelectedStyleKey('')
@@ -1277,8 +1249,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyHint(null)
     setFullbodyZoomUrl(null)
 
-    // Reuse samples already persisted on the avatar row (user stepped back to
-    // portrait and re-confirmed); only generate when none exist.
+    // 复用 avatar 行上已经持久化的样图（用户退回 portrait 又重新确认过的情况）；
+    // 只有在没有现成样图时才重新生成。
     void hydrateFullbodyStage().catch(() => {
       if (activeAvatarId) {
         void fetchFullbodySamples(activeAvatarId)
@@ -1377,9 +1349,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyFrontUrl(frontResolved)
     setFullbodyHint(null)
 
-    // Persist the pick so a restart resumes at the front preview instead of
-    // regenerating samples. Best-effort: the in-session flow works regardless
-    // because confirm-front sends the front image URL explicitly.
+    // 持久化本次选择，让重启能从正面预览处继续，而不是重新生成样图。
+    // 尽力而为：当前会话的流程不受影响，因为 confirm-front 会显式带上正面图 URL。
     if (activeAvatarId != null) {
       void window.spiritagent
         .api({
@@ -1494,7 +1465,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const style = fullbodyStyle
     const frontUrl = fullbodyFrontRawUrl
 
-    // Advance to voice phase immediately without blocking on background multi-view generation
+    // 立刻推进到 voice 阶段，不等后台的多视图生成完成
     setPhase('voice')
     setVoiceStage('describe')
     setQIndex(0)
@@ -1502,7 +1473,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setAnswerKind(null)
     setHint(null)
 
-    // Trigger confirmation & background multi-view derivation asynchronously
+    // 异步触发确认 + 后台多视图派生
     void window.spiritagent
       .api<{
         id?: number
@@ -1528,14 +1499,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         })
       })
       .catch(() => {
-        // Background derivation runs asynchronously and is non-blocking to the user onboarding flow
+        // 后台派生是异步的，对用户 onboarding 流程不构成阻塞
       })
   }
 
   const previewVoice = (id: string, context: string) =>
     void speakScripted(sampleLine(answers.name || ''), id || undefined, context)
 
-  // Selecting always previews: the label alone says nothing about how it sounds.
+  // 选中时总要试听：标签本身说明不了声音听起来什么样。
   const selectVoice = (next: VoiceOption, context: string) => {
     setVoice(next)
     setCompanionVoiceId(next.id)
@@ -1547,12 +1518,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const r = await fetchVoiceCatalogRaw(requestGateway, lang)
     const voices = r.ok ? r.catalog.voices : []
     setVoiceCatalog(voices)
-    // Candidates were scored against the previous tab's language.
+    // 候选项是按上一个 tab 的语言评分的。
     setVoiceAlternatives([])
-    // Reset the current voice to the first of the filtered list so the
-    // Try/Next cycle starts from a language-appropriate default. The
-    // persisted voice id follows the displayed voice so a later
-    // confirmVoice picks the filtered-list voice, not the previous tab's.
+    // 把当前 voice 重置成筛选后列表的第一项，让「试听 / 下一个」循环从一个语言适配的默认值起步。
+    // 持久化的 voice id 跟随显示中的 voice，这样后续 confirmVoice 拿到的是当前 tab 的，
+    // 而不是上一个 tab 的。
     const next = voices[0] ?? voice
     setVoice(next)
 
@@ -1582,7 +1552,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       ans.voice = voice.label || voice.id
     }
 
-    // Safety-net retry; roll back to 'q-user' on failure so phase isn't stuck on 'finishing'.
+    // 兜底重试；失败时退回 'q-user'，避免 phase 卡在 'finishing'。
     try {
       if (voice) {
         await submitOnboardingAnswer('voice', voice.label || voice.id)
@@ -1616,7 +1586,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const presetValues = question?.presets ?? []
   const otherVoices = voice ? voiceCatalog.filter(v => v.id !== voice.id) : []
-  // 「换一个」 stays inside the matcher's candidates while we have them.
+  // 只要还有候选项，「换一个」就在候选项里循环。
   const voiceCandidates = voice ? [voice, ...(voiceAlternatives.length ? voiceAlternatives : otherVoices)] : []
 
   const currentFullbodyHistory: HistoryGalleryItem[] = useMemo(() => {

@@ -38,8 +38,8 @@ function setModel(assetUrl: string | null, status: string): void {
 describe('sprite-store', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    // Real-scale epoch: the store's initial _lastPostAt=0 sentinel must not
-    // be confused with "just posted" (a 0-epoch clock would block request #1).
+    // 真实尺度的 epoch：store 初始的 _lastPostAt=0 哨兵值不应被误判为「刚提交过」
+    // （0 时刻的时钟会阻塞第一次请求）。
     vi.setSystemTime(new Date('2026-08-14T12:00:00Z').getTime())
     resetSpriteAlbum()
     $glbLoadFailed.set(false)
@@ -63,7 +63,7 @@ describe('sprite-store', () => {
     await requestSprite(WAITING_REQUEST, 'waiting')
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,AAA', tag: '等待' })
 
-    // Second request resolving the same hash (album match) must not re-fetch the asset.
+    // 第二次请求解析到相同 hash（相册命中）时不应再拉资源。
     mock.api.mockResolvedValue(spriteResponse('h1', '等待'))
     await requestSprite('另一种语义请求')
     expect(mock.apiAsset).toHaveBeenCalledTimes(1)
@@ -117,7 +117,7 @@ describe('sprite-store', () => {
     await requestSprite('睡觉请求')
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,SLEEP', tag: '睡觉' })
 
-    // Re-requesting the already resolved idle request switches the active sprite immediately
+    // 再次请求已经解析过的 idle 请求时，立刻切换当前精灵
     await requestSprite('站立请求')
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,IDLE', tag: '站立' })
     expect(mock.api).toHaveBeenCalledTimes(2)
@@ -137,11 +137,11 @@ describe('sprite-store', () => {
     await requestSprite('第一个请求')
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:A', tag: '等待' })
 
-    // Second request is within 1.5s throttle — queued as latest pending
+    // 第二次请求落在 1.5s 节流窗口内——作为最新 pending 入队
     await requestSprite('第二个请求')
     expect(mock.api).toHaveBeenCalledTimes(1)
 
-    // Advance time to allow trailing timer to trigger
+    // 推进时间，让 trailing 定时器触发
     await vi.advanceTimersByTimeAsync(1500)
     expect(mock.api).toHaveBeenCalledTimes(2)
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:B', tag: '睡觉' })
@@ -255,7 +255,7 @@ describe('semanticRequestFor', () => {
 
   it('appends known emotion clauses and falls back for unknown emotions', () => {
     expect(semanticRequestFor('idle', 'happy')).toContain('开心地笑')
-    // LLM-invented emotions still resolve through the generic clause.
+    // LLM 自创的情绪仍可通过通用子句解析。
     expect(semanticRequestFor('idle', 'sparkly')).toContain('sparkly')
   })
 })

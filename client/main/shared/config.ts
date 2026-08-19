@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-// $SPIRITAGENT_HOME/desktop-config.json holds the user's activated backend URL
-// (kept distinct from the encrypted session file at `agent-session.json`
-// so it survives a logout). Best-effort: missing / malformed file yields null.
+// $SPIRITAGENT_HOME/desktop-config.json 保存用户激活过的后端 URL
+//（与加密会话文件 `agent-session.json` 分离，便于在登出后仍然保留）。
+// 尽力处理：文件缺失或格式错乱时返回 null。
 export const FILENAME = 'desktop-config.json'
 
 export function configPath(spiritagentHome: string | null | undefined): string | null {
@@ -28,7 +28,7 @@ export function readStoredBackendUrl(spiritagentHome: string | null | undefined)
       return parsed.backendUrl.trim()
     }
   } catch {
-    // missing / malformed / unreadable
+    // 缺失 / 格式错乱 / 不可读
   }
 
   return null
@@ -66,7 +66,7 @@ export function writeStoredBackendUrl(spiritagentHome: string | null | undefined
       try {
         fs.chmodSync(target, 0o600)
       } catch {
-        // best-effort; FS may not support chmod
+        // 尽力而为；某些文件系统不支持 chmod
       }
     }
 
@@ -76,8 +76,8 @@ export function writeStoredBackendUrl(spiritagentHome: string | null | undefined
   }
 }
 
-// Coerce + trailing-slash strip for callers appending path suffixes (e.g. /api/update).
-// Returns null if no backend URL is configured.
+// 为会在后面拼接路径后缀（如 /api/update）的调用方做归一化与去尾斜杠。
+// 没有配置后端 URL 时返回 null。
 export function resolveNormalizedBackendUrl(spiritagentHome: string | null | undefined): string | null {
   const url = readStoredBackendUrl(spiritagentHome)
 

@@ -9,10 +9,9 @@ import { $persona, hydratePersona } from '@/companion/persona-store'
 const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
-// Editable persona fields: name / role / personality.
-// appearance_outfit is read-only (maintained by the wardrobe system).
-// Locked visual-anchor fields (species / gender / appearance_core) are
-// intentionally not editable — see DESIGN.md §5.4.
+// 可编辑的 persona 字段：name / role / personality。
+// appearance_outfit 只读（由换装系统维护）。
+// 锁定的视觉锚点字段（species / gender / appearance_core）刻意不可编辑——见 DESIGN.md §5.4。
 export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)
@@ -42,13 +41,11 @@ export function PersonaSection(): React.JSX.Element {
     setSaving(true)
     setHint(null)
 
-    // C2: separate the PUT (write) and hydrate (read) failure modes. A
-    // transient GET failure after a successful PUT must NOT look like a
-    // save failure — the backend has the data; surfacing "保存失败"
-    // would tempt the user to retry and double-write.
+    // C2：把 PUT（写）与 hydrate（读）的失败模式分开。PUT 成功之后
+    // 即便 GET 短暂失败，也不能被当成保存失败——后端是有数据的，
+    // 这时弹「保存失败」会诱导用户重试，造成重复写入。
     //
-    // Current persona passed as `previous` so locked visual-anchor fields
-    // are re-included verbatim; see DESIGN.md §5.4.
+    // 把当前 persona 作为 `previous` 传入，让锁定的视觉锚点字段原样带回——见 DESIGN.md §5.4。
     let putOk = false
 
     try {
@@ -80,9 +77,8 @@ export function PersonaSection(): React.JSX.Element {
       const result = await hydratePersona({ silent: true })
 
       if (!result.ok) {
-        // Backend has the persona; the local copy didn't refresh. Show a
-        // softer hint so the user knows to expect a stale view until the
-        // next hydrate (next save, restart, etc.).
+        // 后端已经有人设，本地副本没刷出来。给一条更温和的提示，
+        // 让用户知道下次 hydrate 之前（下一次保存、重启等）看到的是旧值。
         setHint('已保存，但本地刷新失败，稍后再试')
       }
     }

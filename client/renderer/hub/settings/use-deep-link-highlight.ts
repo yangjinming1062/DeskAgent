@@ -9,10 +9,9 @@ interface DeepLinkHighlightOptions {
   block?: ScrollLogicalPosition
 }
 
-// Deep-link from the command palette (?<param>=<id>): once the target row is
-// renderable, scroll it into view and flash it, then drop the param so it
-// doesn't re-fire. Returns the pending target (null once consumed) so callers
-// can force the row open before it mounts.
+// 命令面板的深度链接（?<param>=<id>）：目标行可渲染后，
+// 滚入视口并高亮闪烁，然后移除该参数以避免重复触发。
+// 返回待处理目标（消费后为 null），让调用方能在挂载前强行打开该行。
 export function useDeepLinkHighlight({
   param,
   ready,
@@ -30,7 +29,7 @@ export function useDeepLinkHighlight({
 
     onResolve?.(target)
 
-    // Defer a frame so async state (expansion, selection) mounts the row first.
+    // 延迟一帧，让异步状态（展开、选中）先挂载该行。
     const scrollTimeout = window.setTimeout(() => {
       const element = document.getElementById(elementId(target))
 

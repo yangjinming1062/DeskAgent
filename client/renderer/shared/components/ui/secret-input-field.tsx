@@ -33,11 +33,9 @@ interface SecretInputFieldProps {
   disabled?: boolean
 }
 
-// Standalone "password input + reveal + clear" trio used by
-// account-settings.tsx (WebSearchCopy / API keys). Callers wrap
-// it in a ListRow with title + status themselves — that part differs
-// (status pill position, fingerprint hint format, etc.) and is not
-// worth forcing into a single component shape.
+// 由 account-settings.tsx（WebSearchCopy / API key）使用的"密码输入 + 显示 +
+// 清除"三件套独立组件。调用方自行把它包进 ListRow 并加上标题与状态——这部分
+// 差异较大（状态徽标位置、指纹提示格式等），不值得强行统一成单一组件形态。
 export function SecretInputField({
   copy,
   value,
@@ -82,9 +80,8 @@ export function SecretInputField({
           <X className="size-4" />
         </Button>
       ) : null}
-      {/* Caller decides where the fingerprint hint lives. We expose the
-          fingerprint string via props and the formatter via copy so the
-          caller's ListRow can render it in the right slot. */}
+      {/* 由调用方决定指纹提示放在哪里。指纹串通过 props 暴露、格式化函数通过 copy
+          暴露，调用方的 ListRow 即可在合适的槽位渲染。 */}
       {isSet && fingerprint ? <span className="sr-only">{copy.fingerprint(fingerprint)}</span> : null}
     </div>
   )

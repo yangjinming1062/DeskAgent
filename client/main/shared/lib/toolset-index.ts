@@ -9,8 +9,7 @@ interface ToolsetDef {
   prefixes?: string[]
 }
 
-// Source of truth catalog for the filter side. id matches
-// ToolsetCatalogEntry.id in toolset-catalog.ts.
+// 过滤侧的权威目录。id 与 toolset-catalog.ts 中的 ToolsetCatalogEntry.id 对应。
 const TOOLSET_DEFS: ToolsetDef[] = [
   { id: 'browser_automation', prefixes: ['browser_'] },
   { extraTools: ['read_file', 'write_file', 'patch', 'list_directory', 'search_files'], id: 'file_operations' },
@@ -68,7 +67,7 @@ function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>): stri
   return names
 }
 
-// Build the renderer-facing toolset roster. Used by `spiritagent:toolsets:list`.
+// 生成供渲染端使用的工具集清单。供 `spiritagent:toolsets:list` 调用。
 export function buildToolsetRoster(schemas: Array<{ name?: string }>, disabledToolsetIds: Set<string>): ToolsetItem[] {
   const availableNames = new Set(schemas.map(s => s?.name).filter(Boolean) as string[])
 

@@ -50,7 +50,7 @@ export function registerOnboardingAudioIpc({
 
   if (!devAudioRoot) {
     const baseAppPath = appRoot || (typeof app?.getAppPath === 'function' ? app.getAppPath() : process.cwd())
-    // If baseAppPath is client/ or client/dist-electron, resolve to repo root
+    // 如果 baseAppPath 是 client/ 或 client/dist-electron，则解析到仓库根目录
     let repoRoot = baseAppPath
 
     if (path.basename(repoRoot) === 'dist-electron') {

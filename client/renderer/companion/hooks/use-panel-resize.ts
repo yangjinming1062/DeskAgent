@@ -49,7 +49,7 @@ export function usePanelResize({
         }
       }
     } catch {
-      /* fallback */
+      /* 回退 */
     }
 
     return defaultSize
@@ -124,7 +124,7 @@ export function usePanelResize({
     let newDx = startDx
     let newDy = startDy
 
-    // Horizontal
+    // 水平
     if (dir.includes('e')) {
       newWidth = Math.min(maxSize.width, Math.max(minSize.width, startWidth + deltaX))
     } else if (dir.includes('w')) {
@@ -132,7 +132,7 @@ export function usePanelResize({
       newDx = startDx + (startWidth - newWidth)
     }
 
-    // Vertical
+    // 垂直
     if (dir.includes('s')) {
       newHeight = Math.min(maxSize.height, Math.max(minSize.height, startHeight + deltaY))
     } else if (dir.includes('n')) {
@@ -168,7 +168,7 @@ export function usePanelResize({
       try {
         localStorage.setItem(sizeStorageKey, JSON.stringify(finalSize))
 
-        // Also update offset if width/height changed on left/top edge
+        // 左侧/顶部边缘的宽度/高度变化时同步更新偏移
         const panel = getPanel()
 
         if (panel?.style.transform) {
@@ -185,7 +185,7 @@ export function usePanelResize({
           }
         }
       } catch {
-        /* storage error */
+        /* 存储错误 */
       }
     }
   }

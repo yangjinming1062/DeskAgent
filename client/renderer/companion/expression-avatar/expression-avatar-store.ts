@@ -4,9 +4,8 @@ import { $spriteEmotion } from '@/companion/companion-store'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 
-// Chat-dock expression avatars — the emotion face shown beside the chat while
-// an affect is active. Lookup is tag-keyed (the backend resolves
-// match-or-generate by emotion token); failures keep the portrait fallback.
+// 聊天面板中的表情头像——affect 激活时显示在聊天旁的情绪脸。
+// 按 tag 查找（后端按情绪 token 匹配或生成）；失败时保留肖像兜底。
 
 export interface ExpressionAvatar {
   name: string
@@ -15,21 +14,20 @@ export interface ExpressionAvatar {
 
 export const $expressionAvatar = atom<ExpressionAvatar | null>(null)
 
-// Resolved per emotion token (the request key is 1:1 with the server row, so
-// a single cache suffices — unlike the sprite album, where free-form requests
-// can LLM-match the same image). Small PNGs travel over the apiAsset
-// data-URL channel, same as wardrobe textures.
+// 按情绪 token 解析（请求 key 与服务端行一一对应，因此单一缓存即可——
+// 与精灵相册不同，相册的开放请求可能由 LLM 匹配到同一张图）。
+// 小 PNG 走 apiAsset 的 data-URL 通道，与装扮贴图相同。
 const _resolvedCache = new Map<string, ExpressionAvatar>()
 const _inflight = new Map<string, Promise<void>>()
 const _failedAt = new Map<string, number>()
 
 const _FAILURE_BACKOFF_MS = 60_000
-// Bumped by resetExpressionAvatars — a task that started before the reset
-// (avatar regenerated mid-generation) must not re-cache its stale result.
+// 由 resetExpressionAvatars 自增——reset 之前启动的任务
+// （头像在生成中途被重新生成）不得用旧结果再次写缓存。
 let _resetEpoch = 0
 
-/** Resolve the emotion's avatar; publishes to $expressionAvatar while the
- * emotion is still active. neutral / no-op emotions never request. */
+/** 解析情绪对应的头像；在情绪仍处于活跃状态时写入 $expressionAvatar。
+ * neutral / 无意义的情绪不会触发请求。 */
 export async function requestExpressionAvatar(name: string): Promise<void> {
   const normalized = name.trim().toLowerCase()
 
@@ -54,8 +52,8 @@ export async function requestExpressionAvatar(name: string): Promise<void> {
   const inflight = _inflight.get(normalized)
 
   if (inflight) {
-    // The owning task publishes / caches / backs off on completion — the
-    // joiner only waits; re-running that logic here would duplicate the guard.
+    // 拥有者任务在完成后负责发布 / 缓存 / 退避——加入方只等；
+    // 在这里重跑那段逻辑会与守卫重复。
     await inflight
 
     return
@@ -74,9 +72,8 @@ export async function requestExpressionAvatar(name: string): Promise<void> {
       const dataUrl = await window.spiritagent.apiAsset({ url: res.url })
       const active: ExpressionAvatar = { name: normalized, dataUrl }
 
-      // A slow generation is never wasted: the result always lands in the
-      // caches (server row + here) and shows instantly on the next use. The
-      // display swaps in only while this emotion is still the active one.
+      // 慢速生成绝不浪费：结果始终落到缓存（服务端行 + 此处），
+      // 下次使用时即时显示。展示区仅在该情绪仍是当前活跃情绪时才切换。
       if (epoch === _resetEpoch) {
         _resolvedCache.set(normalized, active)
 
@@ -89,8 +86,7 @@ export async function requestExpressionAvatar(name: string): Promise<void> {
         log.warn('expression-avatar', 'requestExpressionAvatar failed', error)
       }
 
-      // Portrait fallback for the active emotion — even if the display still
-      // holds a stale previous face.
+      // 当前情绪的肖像兜底——即便展示区仍保留着过期的旧脸。
       if (epoch === _resetEpoch) {
         _failedAt.set(normalized, Date.now())
 
@@ -107,13 +103,13 @@ export async function requestExpressionAvatar(name: string): Promise<void> {
   await task
 }
 
-/** Drop the display only (emotion ended) — caches survive for the next use. */
+/** 仅清空显示（情绪结束）——缓存保留给下次使用。 */
 export function clearExpressionAvatar(): void {
   $expressionAvatar.set(null)
 }
 
-/** Avatar regen invalidates the identity anchor (server keys rows by
- * avatar_id) — drop local caches so the next request resolves fresh images. */
+/** 头像重新生成会让身份锚点失效（服务端按 avatar_id 给行做键）——
+ * 清空本地缓存，使下次请求能解析出全新图像。 */
 export function resetExpressionAvatars(): void {
   _resetEpoch++
   _resolvedCache.clear()

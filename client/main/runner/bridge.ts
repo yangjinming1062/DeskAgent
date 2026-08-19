@@ -11,7 +11,7 @@ import type { RunnerProcess, RunnerProcessStartArgs, RunnerProcessState } from '
 import type { ReverseRpcOptions } from './reverse-rpc'
 import type { CreateRunnerWsServerOptions, RunnerWsEvent, RunnerWsServer, RunnerWsStatus } from './rpc-ws'
 
-// macOS sun_path is capped at 104 bytes; stay under it with a margin.
+// macOS 的 sun_path 上限为 104 字节；留出余量以确保不超限。
 const MAC_SOCK_PATH_BYTE_LIMIT = 100
 
 function computeDesktopEndpoint(spiritagentHome?: null | string): { path: string; transport: string } {
@@ -39,12 +39,12 @@ function sweepLegacySockets(spiritagentHome: string): void {
         try {
           fs.unlinkSync(path.join(spiritagentHome, name))
         } catch {
-          /* raced away */
+          /* 已被竞争移除 */
         }
       }
     }
   } catch {
-    /* spiritagentHome missing/unreadable — nothing to sweep */
+    /* spiritagentHome 缺失或不可读——没有可清理的内容 */
   }
 }
 
@@ -170,7 +170,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       try {
         off()
       } catch {
-        /* already detached */
+        /* 早已解绑 */
       }
     }
 
@@ -313,7 +313,7 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
         const errObj = ev.error as { message?: string }
         log(`[runner-bridge] ws server error: ${errObj?.message || String(ev.error)}`)
       } else if (ev.type === 'connected') {
-        // Connected event
+        // connected 事件，无需处理
       } else {
         const detail =
           (ev as { type: string; method?: string }).type === 'notification'

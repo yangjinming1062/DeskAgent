@@ -70,9 +70,8 @@ export function MemoryBrowser({ onClose }: { onClose: () => void }): React.React
   const [hint, setHint] = useState<string | null>(null)
   const [draftById, setDraftById] = useState<Record<number, string>>({})
   const [savingById, setSavingById] = useState<Record<number, boolean>>({})
-  // Bumped on every ``load`` invocation; ``load`` results that resolve
-  // after a newer invocation started are discarded so a slow response
-  // can't overwrite a faster one for the *new* tab.
+  // 每次调用 ``load`` 时递增；``load`` 发起更新版本之后才返回的旧响应被丢弃，
+  // 防止慢响应覆盖已切换到新 tab 的快响应。
   const loadIdRef = useRef(0)
 
   const load = useCallback(
@@ -112,9 +111,8 @@ export function MemoryBrowser({ onClose }: { onClose: () => void }): React.React
     void load(tab)
   }, [tab, load])
 
-  // Functional setState gives us the previous rows without a mirror ref —
-  // the rollback branch restores both rows[i].content and draftById[i]
-  // from the closure snapshot of `rows` taken at click time.
+  // 函数式 setState 无需镜像 ref 也能拿到上一次的 rows；
+  // 回滚分支从点击时闭包捕获的 `rows` 快照里同时还原 rows[i].content 与 draftById[i]。
   const saveRecall = useCallback(
     async (id: number) => {
       const draft = draftById[id] ?? ''

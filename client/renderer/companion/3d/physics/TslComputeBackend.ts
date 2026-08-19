@@ -4,9 +4,9 @@ import { type ComputeNode, StorageBufferAttribute } from 'three/webgpu'
 import type { ClothUnitSpec, PhysicsBackend, PhysicsUnit } from './PhysicsBackend'
 import { makeMat4Storage, type SharedBones, TslClothUnit } from './TslClothUnit'
 
-// WebGPU physics backend — owns the shared per-skeleton bone-matrix storage
-// (the only per-frame CPU→GPU upload beyond tiny uniforms) and aggregates the
-// compute passes of every live unit for the engine's per-frame dispatch.
+// WebGPU 物理后端 —— 持有每个骨骼共享的骨骼矩阵 storage
+// （除了微小 uniform 之外唯一的逐帧 CPU→GPU 上传），
+// 并把每个活单元的 compute pass 聚合成引擎逐帧调度所需的形式。
 
 const _staleCheck = (bm: Float32Array): boolean => bm.length >= 11 && bm[0] === 0 && bm[5] === 0 && bm[10] === 0
 
@@ -49,10 +49,9 @@ export class TslComputeBackend implements PhysicsBackend {
   }
 
   beginFrame(): void {
-    // One bone-matrix snapshot per skeleton mirrors the CPU solver's contract:
-    // matrices come from the previous render pass (one frame of lag), and a
-    // never-rendered skeleton (first frame after load) is updated explicitly
-    // so the settle pass doesn't collapse everything to the origin.
+    // 每个骨骼一份矩阵快照，与 CPU 求解器一致：
+    // 矩阵来自上一帧渲染通道（延迟一帧），尚未渲染过的骨骼（加载后首帧）显式更新，
+    // 避免 settle pass 把所有内容压到原点。
     for (const [skeleton, bones] of this.bonesBySkeleton) {
       const source = skeleton.boneMatrices as unknown as Float32Array | undefined
 

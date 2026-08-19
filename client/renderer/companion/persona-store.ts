@@ -11,10 +11,10 @@ export interface PersonaDefinition {
   background?: string
   biological_type?: string
   gender?: string
-  // appearance_core: locked visual anchor — face / body / markings.
-  // assemblePersona preserves this across edits post seed confirmation.
+  // appearance_core：锁定的视觉锚点——脸 / 体型 / 标记。
+  // 种子确认后的编辑里，assemblePersona 会保留这一字段。
   appearance_core?: string
-  // appearance_outfit: initial outfit description; stays editable.
+  // appearance_outfit：初始着装描述；保持可编辑。
   appearance_outfit?: string
 }
 
@@ -23,8 +23,8 @@ export const $personalityTags = atom<string[]>([])
 
 export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{ ok: boolean; error?: unknown }> {
   try {
-    // All structured persona fields live INSIDE definition_json (a JSON
-    // string blob), not as flat top-level keys on the wire.
+    // 全部结构化 persona 字段都在 definition_json（JSON 字符串 blob）里面，
+    // 而不是作为顶层扁平 key 出现在线协议里。
     const p = await window.spiritagent.api<{
       definition_json?: string
       is_complete?: boolean
@@ -34,10 +34,9 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
     })
 
     if (!p?.is_complete) {
-      // Not-yet-set persona is a valid state, not an error: leave $persona
-      // as-is (don't null it out) so a "save just succeeded, hydrate
-      // landed and saw stale is_complete" race doesn't look like a wipe
-      // to consumers gated on $persona.
+      // 「还没设置 persona」是合法状态，不是错误：保持 $persona 不动（不要置空），
+      // 这样「保存刚刚成功，hydrate 落地却读到陈旧 is_complete」的竞态，
+      // 不会让那些依赖 $persona 的消费者把它当成清空。
       return { ok: true }
     }
 
@@ -60,12 +59,9 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
 
     return { ok: true }
   } catch (err) {
-    // C2: when the caller just successfully PUT a new persona, a transient
-    // GET failure here doesn't mean the save failed — the backend has the
-    // data. Pass `silent: true` to leave $persona untouched so the user
-    // isn't shown a "保存失败" hint + a settings page that hides the
-    // 编辑按钮 because $persona became null. The caller's notifier
-    // surfaces the GET failure as a soft hint instead.
+    // C2：调用方刚刚成功 PUT 了新 persona 时，这里的 GET 短暂失败不代表保存失败——
+    // 后端是有数据的。传 `silent: true` 保持 $persona 不动，避免同时弹出「保存失败」提示
+    // 又让设置页因为 $persona 变 null 而隐藏「编辑」按钮。GET 失败由调用方作为软提示暴露。
     if (!opts.silent) {
       $persona.set(null)
       $personalityTags.set([])

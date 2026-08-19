@@ -55,7 +55,7 @@ describe('BootFailureOverlay', () => {
     $desktopBoot.set(makeBootState({}))
     const { container } = render(<BootFailureOverlay />)
     expect(container.firstChild).toBeNull()
-    // Hook still called once (region callback returns null when ref is unset).
+    // 钩子仍然调用一次（ref 未设置时 region 回调返回 null）。
     expect(useInteractiveRegionMock).toHaveBeenCalledTimes(1)
   })
 
@@ -67,8 +67,8 @@ describe('BootFailureOverlay', () => {
   })
 
   it('registers a fullscreen interactive region so Retry stays clickable', () => {
-    // The whole point of the CSS + interactive-region fix: without this the
-    // sprite window's click-through swallows the Retry click.
+    // 这正是 CSS + interactive-region 修复的核心——没有这一步，
+    // 精灵窗口的鼠标穿透会吞掉 Retry 点击。
     $desktopBoot.set(makeBootState({ error: 'BOOT_FAIL', message: '...', phase: 'renderer.error' }))
     render(<BootFailureOverlay />)
 
@@ -76,9 +76,8 @@ describe('BootFailureOverlay', () => {
     const [id, , getRect] = useInteractiveRegionMock.mock.calls[0]
     expect(id).toBe('boot-failure')
 
-    // The rect is a compile-time viewport constant — invoking getRect with any
-    // ref returns the full window dimensions, so isPointInteractive will
-    // resolve a hit anywhere on screen during the failure state.
+    // rect 是编译期视口常量——用任意 ref 调用 getRect 都返回整个窗口的尺寸，
+    // 因此失败态下 isPointInteractive 在屏幕上任何位置都会判定为命中。
     const rect = getRect(null as unknown as HTMLElement)
     expect(rect.width).toBe(window.innerWidth)
     expect(rect.height).toBe(window.innerHeight)

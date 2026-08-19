@@ -3,9 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { __resetChatPlayButtonStateForTests, ChatMessagePlayButton } from './chat-message-play-button'
 
-// `tts.ts` is mocked via vi.hoisted so the mock factory can reference the same
-// vi.fn() instances that the assertions check. Mirrors the pattern in
-// `reactions/reaction-audio.test.ts`.
+// 通过 vi.hoisted 模拟 `tts.ts`，让 mock 工厂与断言检查引用同一个 vi.fn() 实例。
+// 与 `reactions/reaction-audio.test.ts` 的写法一致。
 const hoisted = vi.hoisted(() => ({
   speakChatMessage: vi.fn<(text: string, voice?: string, onDone?: () => void) => Promise<boolean>>(),
   stopSpeaking: vi.fn()

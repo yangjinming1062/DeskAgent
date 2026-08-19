@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// Canonical "fetch on mount, hold the result, expose error" loop. Replaces
-// the ~12-line `useEffect` + `useRef('cancelled')` + try/catch/finally dance
-// repeated across every settings page. Caller passes a `load` function that
-// resolves to the data (or throws); the hook handles mounting, cancellation
-// on unmount, error state, and a manual `reload` trigger.
+// 规范的"挂载时拉取、持有结果、暴露错误"循环。取代每个设置页里重复出现的
+// `useEffect` + `useRef('cancelled')` + try/catch/finally 大约 12 行的样板。
+// 调用方传入一个 resolve 出数据（或抛出）的 `load` 函数；hook 负责挂载、
+// 卸载时取消、错误状态以及手动 `reload` 触发。
 //
-// The `reloadKey` argument lets a caller re-trigger the load when their
-// upstream inputs change (e.g. a `errorKey` prop or the user pressing Retry).
-// Pass an empty string / 0 / null to load once on mount only.
+// `reloadKey` 参数让调用方能在上游输入变化时重新触发加载（如 `errorKey` prop
+// 变化，或用户按下重试）。传入空串 / 0 / null 则仅挂载时加载一次。
 
 export type AsyncLoader<T> = {
   data: T | null
@@ -24,8 +22,8 @@ export function useAsyncLoader<T>(load: () => Promise<T>, reloadKey?: unknown): 
   const [version, setVersion] = useState(0)
   const loadRef = useRef(load)
 
-  // Mirror the latest `load` closure so the effect body always reads fresh
-  // state without depending on the function identity.
+  // 镜像最新的 `load` 闭包，让 effect 体始终读取最新状态，
+  // 又不必依赖函数引用稳定性。
   loadRef.current = load
 
   useEffect(() => {
@@ -53,8 +51,8 @@ export function useAsyncLoader<T>(load: () => Promise<T>, reloadKey?: unknown): 
     return () => {
       cancelled = true
     }
-    // `reloadKey` is the caller-provided discriminator; `version` is the
-    // manual-reload trigger (bump via `reload()`).
+    // `reloadKey` 是调用方提供的判别值；`version` 是手动 reload 触发器
+    // （通过 `reload()` 自增）。
   }, [reloadKey, version])
 
   const reload = useCallback(() => {

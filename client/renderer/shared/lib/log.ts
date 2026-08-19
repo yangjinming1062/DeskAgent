@@ -1,7 +1,7 @@
-// Renderer → main structured logger. Forwards to the `spiritagent:log:emit` IPC
-// (main/ipc/log.cjs) so warn/error/info lines land in the desktop log file
-// instead of disappearing into DevTools. No-ops when the preload bridge hasn't
-// exposed `window.spiritagent.log` yet (early boot / test harness).
+// 渲染进程 → 主进程的结构化日志器。转发到 `spiritagent:log:emit` IPC
+//（main/ipc/log.cjs），让 warn / error / info 行落到桌面日志文件，
+// 而不是淹没在 DevTools 里。若 preload 桥尚未暴露 `window.spiritagent.log`
+// （早期启动 / 测试环境）则为空操作。
 
 type LogLevel = 'error' | 'info' | 'warn'
 

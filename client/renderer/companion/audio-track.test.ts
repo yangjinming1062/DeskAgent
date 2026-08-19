@@ -98,10 +98,9 @@ describe('playDataUrl', () => {
     const { playDataUrl } = await import('./audio-track')
     const playback = playDataUrl('data:audio/mpeg;base64,α')
 
-    // play() must fire even before ctx.resume() settles — that's the whole
-    // point of kicking both off in parallel. The previous shape forced every
-    // TTS playback to wait for AudioContext.resume() (50–150 ms on idle),
-    // which made the first syllable of every line feel cut off.
+    // play() 必须在 ctx.resume() 完成之前就触发——把两者并行启动正是这点。
+    // 之前的实现强制所有 TTS 播放等待 AudioContext.resume()
+    // （空闲时 50–150 ms），导致每句话的第一个音节听起来被截断。
     await vi.waitFor(() => expect(hoisted.events).toContain('play'))
     await vi.waitFor(() => expect(hoisted.events).toContain('resume'))
 
@@ -118,8 +117,7 @@ describe('playDataUrl', () => {
     const playback = playDataUrl('data:audio/mpeg;base64,β')
 
     await vi.waitFor(() => expect(hoisted.events).toContain('play'))
-    // When resume rejects, the analyser pipeline never wires up — that's
-    // expected. The audio itself still plays.
+    // resume 被拒时 analyser 管线不会接上——这是预期行为。音频本身仍然能播放。
     expect(hoisted.events).not.toContainEqual('source:data:audio/mpeg;base64,β')
 
     FakeAudio.instances[0].emit('ended')

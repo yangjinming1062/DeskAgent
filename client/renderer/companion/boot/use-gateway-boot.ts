@@ -21,15 +21,14 @@ import { strings } from '@/shared/strings'
 import type { SpiritAgentConnection } from '@/shared/types/global'
 import type { RpcEvent, SessionResumeResponse } from '@/shared/types/spiritagent'
 
-// Backend uses WS close 1008 for auth failures (token expired/revoked) —
-// trigger logout instead of looping reconnect with a dead token.
+// 后端对鉴权失败（token 过期 / 被吊销）使用 WS close 1008——
+// 此时触发登出，而不是用无效 token 不断重连。
 const WS_CLOSE_POLICY_VIOLATION = 1008
 
-// Re-report the tier after every (re)open: backend stores it in a process-local
-// dict that a restart silently resets. Push the EFFECTIVE value (not
-// user_preferred alone) so an immersive focus context survives the reconnect
-// — otherwise a fresh WS handshake would briefly un-mute the backend while
-// the user is still in an IDE/fullscreen window. Fire-and-forget.
+// 每次（重）开后重新上报档位：后端存在进程级字典里，后端重启会静默清空。
+// 推生效值（不只是 user_preferred），让沉浸式聚焦上下文能跨重连接存活——
+// 否则新的 WS 握手会让后端短暂解静音，而用户其实还在 IDE / 全屏窗口里。
+// 即发即忘。
 function syncDisturbanceTier(gateway: SpiritAgentGateway): void {
   const tier = $effectiveTier.get()
 
@@ -94,21 +93,20 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       return () => void (cancelled = true)
     }
 
-    // macOS sleep silently drops the renderer's WebSocket. The backend Python
-    // process keeps running, but nothing re-opened the socket on wake, so the
-    // app stayed disabled forever on "Starting…". Once the initial boot
-    // succeeds we treat any non-open state as recoverable and reconnect with
-    // backoff, and we nudge a reconnect on the OS/browser signals that fire
-    // around wake (power resume, network online, the window becoming visible).
+    // macOS 睡眠会静默丢掉渲染端的 WebSocket。后端 Python 进程仍在跑，
+    // 但唤醒时没人重开 socket，应用永远卡在 "Starting…"。一旦初次启动成功，
+    // 我们就把任何非 open 状态视为可恢复，按退避重连，
+    // 并在唤醒相关的 OS / 浏览器信号（电源恢复、网络上线、窗口变为可见）触发
+    // 时主动 nudge 一次重连。
     let bootCompleted = false
     let bootOverlayDismissed = false
     let reconnecting = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let graceTimer: ReturnType<typeof setTimeout> | null = null
     let reconnectAttempt = 0
-    // Surface "sign in again" once per disconnect episode, not on every backoff
-    // tick — a stale OAuth ticket fails every attempt and would otherwise stack
-    // identical error toasts (and their haptics). Reset on the next clean open.
+    // 每次断连只弹一次"请重新登录"，而不是每个退避 tick都弹——
+    // 过期的 OAuth 票据会让每次尝试都失败，否则会堆出大量相同的错误 toast
+    // （以及它们的触感反馈）。在下一次干净的 open 时重置。
     let reauthNotified = false
 
     const dismissOverlayOnce = () => {
@@ -151,13 +149,11 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         }
 
         publish(conn)
-        // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
-        // with a short TTL, so the ticket baked into the cached conn.wsUrl is
-        // dead on every reconnect after the initial boot — reusing it surfaces
-        // as an opaque "Could not connect to gateway". resolveGatewayWsUrl
-        // mints a fresh ticket (or throws a reauth error in OAuth mode rather
-        // than connecting with a stale one). For local/token gateways the URL
-        // carries a long-lived token and the re-mint is a cheap no-op.
+        // 重连前重新生成 WS URL。OAuth 票据是一次性的且 TTL 很短，
+        // 所以缓存 conn.wsUrl 里那条票据在初次启动后的每次重连都已失效——
+        // 复用只会换来一条神秘的"无法连接到网关"。resolveGatewayWsUrl 会签发
+        // 新票据（OAuth 模式下会抛 reauth 错误，而不是拿着过期票据硬连）。
+        // local/token 网关的 URL 携带的是长效 token，重新签发是廉价的空操作。
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
         await gateway.connect(wsUrl)
 
@@ -168,7 +164,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         void syncRunnerTools(gateway)
         reconnectAttempt = 0
       } catch {
-        // Transport failure — fall through to the backoff in the finally block.
+        // 传输失败——交给 finally 块里的退避逻辑处理。
       } finally {
         reconnecting = false
 
@@ -238,30 +234,27 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         clearReconnectTimer()
         clearGraceTimer()
         clearSleepEscalation()
-        // Re-report the disturbance tier so the backend's process-local
-        // dict picks up the user's persisted choice on first boot AND
-        // after each reconnect (covers backend restart, OAuth reauth).
+        // 重新上报打扰档位，让后端进程级字典在初次启动以及每次重连后
+        // 都拿到用户持久化下来的选择（覆盖后端重启、OAuth 重新登录）。
         syncDisturbanceTier(gateway)
         startAutonomyProvision()
 
-        // On a normal post-wake reconnect, nothing calls completeDesktopBoot()
-        // afterwards, so dismiss the boot-progress overlay here once we're open
-        // again — otherwise it sticks. A no-op on the initial boot.
+        // 正常的唤醒后重连不会再次调用 completeDesktopBoot()，
+        // 所以这里在再次 open 后把启动进度浮层收掉——否则它会一直挂着。
+        // 初次启动时是 no-op。
         if (bootCompleted) {
           dismissOverlayOnce()
-          // Reconnect "perk up": if we had expressed a disconnected/sleeping
-          // degradation, wake back to idle (plan §4.5). Silent recovery when
-          // the degradation was never shown.
+          // 重连后"打起精神"：如果之前表达过 disconnected / sleeping 降级，
+          // 就回到 idle（plan §4.5）。若从未显示过降级，则静默恢复。
           const cur = $spriteState.get()
 
           if (cur === 'disconnected' || cur === 'sleeping') {
             setSpriteState('idle', { force: true })
           }
 
-          // Re-mount the existing conversation so the next prompt.submit
-          // doesn't hit "session not found". The backend clears its in-memory
-          // runtime_sessions on every WS disconnect; session.resume re-derives
-          // the runtime from the persisted DB conversation.
+          // 重新挂载已有会话，避免下一次 prompt.submit 触发"找不到 session"。
+          // 后端每次 WS 断开都会清空内存里的 runtime_sessions；
+          // session.resume 从持久化的 DB 会话记录里把运行时重新派生出来。
           const sid = $chatSessionId.get()
 
           const syncMountSeq = (res: SessionResumeResponse) => {
@@ -300,7 +293,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           return
         }
 
-        // Schedule disconnection grace state (3s foreground, 30s background)
+        // 安排断连宽限状态（前台 3 秒，后台 30 秒）
         if (graceTimer === null) {
           const isForeground = document.visibilityState === 'visible'
           const graceMs = isForeground ? 3000 : 30000
@@ -308,14 +301,14 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
             graceTimer = null
             setSpriteState('disconnected')
 
-            // Prolonged disconnect → doze off (plan §4.5), but defer while a voice-call is live.
+            // 长时间断连 → 进入休眠（plan §4.5），但语音通话在线时延后。
             if (sleepEscalationTimer === null) {
               sleepEscalationTimer = setTimeout(
                 () => {
                   sleepEscalationTimer = null
 
                   if ($voiceCallOpen.get()) {
-                    // Skip — voice-call active; rescheduled on the next disconnect.
+                    // 跳过——语音通话进行中；下一次断连时会再次排程。
                     return
                   }
 

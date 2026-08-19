@@ -17,8 +17,7 @@ export function useGatewayRequest(): UseGatewayRequestResult {
   const gatewayStateRef = useLatestRef(gatewayState)
   const reconnectingRef = useRef<Promise<SpiritAgentGateway | null> | null>(null)
 
-  // Track the active gateway so outbound requests and overlay props always
-  // target the focused socket.
+  // 跟踪当前活动的 gateway，让出站请求与 overlay props 都打到当前 socket 上。
   useEffect(
     () =>
       $gateway.subscribe(gateway => {
@@ -51,10 +50,10 @@ export function useGatewayRequest(): UseGatewayRequestResult {
 
       try {
         const conn = await desktop.getConnection()
-        // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
-        // and short-lived, so the cached conn.wsUrl ticket is dead here;
-        // resolveGatewayWsUrl() throws a reauth error in OAuth mode rather than
-        // connecting with a stale ticket.
+        // 重连前重新签发 WS URL。OAuth 票据是一次性且短期的，
+        // 所以缓存 conn.wsUrl 里的票据在此已死；
+        // resolveGatewayWsUrl() 在 OAuth 模式下会抛 reauth 错误，
+        // 而不是拿着过期票据硬连。
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
         await existing.connect(wsUrl)
 
@@ -86,9 +85,9 @@ export function useGatewayRequest(): UseGatewayRequestResult {
           throw error
         }
 
-        // Remote gateways re-mint a single-use OAuth ticket on each connect,
-        // so a stale ticket surfaces as "connection closed" and we retry once
-        // through the local reconnect path before giving up.
+        // 远端网关每次连接都会重新签发一次性 OAuth 票据，
+        // 因此过期票据会表现为"connection closed"，
+        // 我们走一次本地重连路径重试一次再放弃。
         const recovered = await ensureGatewayOpen()
 
         if (!recovered) {

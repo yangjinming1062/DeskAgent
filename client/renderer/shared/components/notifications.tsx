@@ -66,12 +66,11 @@ export function NotificationStack(): React.JSX.Element | null {
   const [latest, ...olderNotifications] = notifications
   const overflowCount = olderNotifications.length
 
-  // Portaled to <body> with a z above the Radix dialog layer (overlay z-[120],
-  // content z-[130]). Without the portal the stack lives inside the React root
-  // subtree, which any body-level dialog/overlay portal paints over — so a
-  // success toast fired while a dialog is open (or over an OverlayView page)
-  // was invisible. The titlebar-height var only exists inside the app shell
-  // scope, so fall back to its constant (34px) when mounted on <body>.
+  // 渲染到 <body>，z-index 高于 Radix 对话框层（overlay z-[120]、content z-[130]）。
+  // 不做 portal 时，堆叠上下文留在 React 根子树内，body 级对话框 / overlay 的 portal
+  // 会盖在上面——所以在对话框打开时（或 OverlayView 页面上）触发的成功提示
+  // 会不可见。titlebar-height 变量只在 app shell 作用域内存在，
+  // 在 <body> 上挂载时退回到其常量值（34px）。
   return createPortal(
     <div
       aria-label={copy.region}

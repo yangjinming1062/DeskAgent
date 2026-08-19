@@ -7,8 +7,8 @@ import * as THREE from 'three'
  * possible morph target names across model formats; the first alias that
  * exists in the loaded model's dictionary wins. */
 const ALIASES: Record<string, string[][]> = {
-  // Unified blink first; per-eye groups close both eyes on models without a
-  // unified morph (a lone wink has no consumer since emotion morphs left).
+  // 优先统一眨眼；单眼眨眼组在没有统一 morph 的模型上会让双眼一起闭上
+  // （孤立 wink 没有消费者，因为情绪 morph 把表情搬走了）。
   blink: [
     ['blink', 'eyeBlink', 'eyesClosed', 'Blink', 'eye_blink'],
     ['eyeBlinkLeft', 'Blink_Left', 'blink_l', 'eye_blink_left'],
@@ -28,7 +28,7 @@ export class MorphController {
   private blinkPhase: 'idle' | 'closing' | 'opening' = 'idle'
   private blinkElapsed = 0
   private lipSyncAmplitude = 0
-  // Smoothed jaw-open override — asymmetric attack/release kills the mouth "pop" on audio start and the abrupt close on audio end (airi pattern).
+  // 平滑的张嘴覆盖——非对称的 attack/release 能去掉音频开始时的嘴部"啪"声与结束时突然闭合的突兀感（airi 模式）。
   private currentJawValue = 0
 
   setLipSyncAmplitude(amp: number): void {
@@ -115,9 +115,8 @@ export class MorphController {
       return
     }
 
-    // Decay any stray influences toward the neutral face — models may ship
-    // with non-zero defaults and nothing else writes these two morph groups
-    // outside blink / lip-sync.
+    // 把漂移的影响衰减回中性脸——模型出厂默认值可能非零，
+    // 而这两组 morph 在眨眼/唇形同步之外没有其他写入。
     const speed = Math.min(1, 8 * delta)
 
     for (const [, hits] of this.resolvedEntries) {
@@ -148,7 +147,9 @@ export class MorphController {
   private updateLipSync(delta: number): void {
     const target = this.lipSyncAmplitude * 0.6
 
-    // Fast attack on rising target (mouth opens quickly), slow release on falling target (mouth closes gently). The clamp keeps the lerp factor frame-rate-correct at very large `delta` (e.g. after a tab pause): without it, the lerp would overshoot `target` and oscillate.
+    // 上升时快速 attack（嘴迅速张开），下降时缓慢 release（嘴柔和闭合）。
+    // 在 delta 极大时（例如标签页暂停后）clamp 保证 lerp 系数帧率正确：
+    // 没有 clamp，lerp 会越过 target 并振荡。
     const speed = target > this.currentJawValue ? 50 : 8
     this.currentJawValue = THREE.MathUtils.lerp(this.currentJawValue, target, Math.min(1, speed * delta))
 

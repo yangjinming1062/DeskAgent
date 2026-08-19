@@ -41,10 +41,9 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
 
   const exportConfig = async () => {
     try {
-      // Reuse the typed getter instead of the loose `Record<string, unknown>`
-      // variant — both come from the same `/api/config` endpoint, but the
-      // structured shape gives us better safety on round-trip without
-      // changing the JSON.stringify behaviour (B1).
+      // 复用强类型 getter，而非宽松的 `Record<string, unknown>` 变体——
+      // 两者都来自同一 `/api/config` 端点，但结构化形态在往返时更安全，
+      // 且不改变 JSON.stringify 行为（B1）。
       const cfg = await getSpiritAgentConfig()
       const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
@@ -60,9 +59,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
   }
 
   const importConfig = async (file: File) => {
-    // Refuse anything >2 MiB up front. The accept filter is a hint only —
-    // the user can pick any file, and a large file.text() + JSON.parse on
-    // the renderer thread would freeze the window with no feedback.
+    // 预先拒绝 >2 MiB 的文件。accept 过滤器只是提示——用户可以选任意文件，
+    // 在渲染线程上对大文件做 file.text() + JSON.parse 会冻住窗口且无反馈。
     const MAX_IMPORT_BYTES = 2 * 1024 * 1024
 
     if (file.size > MAX_IMPORT_BYTES) {
@@ -205,7 +203,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             void importConfig(file)
           }
 
-          // Reset so selecting the same file twice still fires onChange.
+          // 重置输入，连选同一文件也能再次触发 onChange。
           e.target.value = ''
         }}
         ref={importInputRef}

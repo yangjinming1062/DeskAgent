@@ -5,9 +5,8 @@ import { log } from '@/shared/lib/log'
 
 import { resolvePortraitUrl } from './avatar-image'
 
-// Resolved data URL of the companion's 2D portrait. Hydrated on app start from
-// GET /api/companion/avatar and refreshed on regen. The 3D model is independent;
-// the portrait is the visible identity in the chat header and the 形象 section.
+// 伙伴 2D 头像的解析后 data URL。启动时从 GET /api/companion/avatar 水合，
+// 每次重生后刷新。3D 模型独立；这里管的是聊天头部和「形象」区的可见身份。
 export const $portraitUrl = atom<string | null>(null)
 export const $seedFrontUrl = atom<string | null>(null)
 export const $seedRightUrl = atom<string | null>(null)
@@ -15,9 +14,8 @@ export const $seedBackUrl = atom<string | null>(null)
 export const $fullbodyStyle = atom<string>('cel_shading')
 export const $fullbodySamples = atom<Record<string, string>>({})
 
-// Active avatar row id — written by hydrate + by every regen that creates a
-// fresh row. The 3D pipeline reads the active avatar row server-side, so the
-// client only mirrors it for gallery selection.
+// 当前 avatar 行 id——由 hydrate 与每次创建新行的重生写入。
+// 3D 流水线是在服务端读取当前 avatar 行，所以这里只是为画廊选择做镜像。
 export const $activeAvatarId = atom<number | null>(null)
 
 export function setPortraitUrl(url: string | null): void {
@@ -56,8 +54,7 @@ export interface PortraitUrls {
   id?: number | null
 }
 
-// Resolve a fresh asset_url into a data URL. Publishes to the global
-// $portraitUrl atom; returns the resolved URL.
+// 把新拿到的 asset_url 解析成 data URL。写入全局 $portraitUrl atom，返回解析后的 URL。
 export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seedFront: string | null }> {
   const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
   const seedFront = urls.seedFrontUrl === undefined ? null : await resolvePortraitUrl(urls.seedFrontUrl)
@@ -87,9 +84,8 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
   return { avatar, seedFront }
 }
 
-// Pulls the active portrait from the backend on app start. Called from
-// root.tsx once the user authenticates; 404 (no avatar yet during onboarding)
-// is expected and leaves the atoms null.
+// 应用启动时从后端拉当前头像。由 root.tsx 在用户鉴权通过后触发；
+// 404（onboarding 还没头像）是预期情况，让 atom 保持 null 即可。
 export async function hydratePortrait(): Promise<void> {
   try {
     const res = await window.spiritagent.api<{
@@ -116,12 +112,11 @@ export async function hydratePortrait(): Promise<void> {
   }
 }
 
-// Pulls the avatar history from the backend on app start. Without this, the
-// gallery thumbnails are empty after every restart — the user only sees the
-// active avatar and has to regenerate to get visual alternatives.
+// 应用启动时从后端拉头像历史。不拉的话每次重启后画廊缩略图都空的——
+// 用户只能看到当前 avatar，想看别的样图只能重新生成。
 //
-// History is append-order on the client (oldest first), but the backend
-// returns desc order; reverse so pushPortraitEntry lays them out chronologically.
+// 客户端按追加顺序展示（最早在前），后端按 desc 返回；反转过来
+// 让 pushPortraitEntry 能按时间顺序追加。
 export async function hydratePortraitHistory(): Promise<void> {
   try {
     const res = await window.spiritagent.api<{
@@ -135,8 +130,8 @@ export async function hydratePortraitHistory(): Promise<void> {
 
     const items = [...(res?.history ?? [])].reverse()
 
-    // Clear any stale local history before re-populating — a partial hydrate
-    // would otherwise leave the user seeing fewer entries than the server has.
+    // 重新填充前先清掉本地残留——否则一次部分 hydrate 会让用户看到的条目
+    // 比服务端实际持有的还少。
     $portraitHistory.set([])
     $portraitSelectedIdx.set(0)
 
@@ -183,11 +178,10 @@ export async function selectAvatar(avatarId: number): Promise<boolean> {
   }
 }
 
-// Free-text feedback the user typed before pressing "重新生成". Shared across
-// every surface that exposes the regenerate flow (onboarding / 伙伴设置 /
-// 重新对话微调性格 / 角色 inline 编辑) so a half-typed draft survives the
-// user closing one panel and reopening another. Cleared on each successful
-// regenerate by useRegeneratePortrait.
+// 用户在按「重新生成」之前输入的反馈文本。在所有暴露重生流程的面板间共享
+// （onboarding / 伙伴设置 / 重新对话微调性格 / 角色 inline 编辑），
+// 这样用户在某个面板里输入了一半再切到另一个面板时草稿不会丢。
+// 每次重生成功后由 useRegeneratePortrait 清掉。
 export const $regenFeedback = atom<string>('')
 
 export function setRegenFeedback(value: string): void {

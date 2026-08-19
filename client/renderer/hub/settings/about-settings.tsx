@@ -21,9 +21,8 @@ export function AboutSettings(): React.JSX.Element {
   }, [])
 
   const onCheckClick = useCallback(() => {
-    // Kick off the manual check. The status bar badge + statusLine below
-    // both react to `$updateStatus` so the user sees the transition without
-    // a separate dialog.
+    // 触发手动检查。下方的状态栏徽标 + statusLine 都对 `$updateStatus` 做出响应，
+    // 用户无需打开独立对话框即可看到状态切换。
     void window.spiritagent?.update?.check?.()
   }, [])
 

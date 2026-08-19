@@ -126,8 +126,8 @@ describe('clip-dispatch', () => {
 
   describe('BUILTIN_VALENCE', () => {
     it('classifies every built-in emotion', () => {
-      // Every built-in emotion must have a valence entry — a missing key
-      // would silently default to 'neutral' and mis-route clip selection.
+      // 每个内置情绪必须有 valence 项——缺失的键会静默回退到 'neutral'，
+      // 从而错误路由动作选择。
       for (const e of BUILTIN_EMOTIONS) {
         expect(BUILTIN_VALENCE[e], `missing valence for '${e}'`).toBeDefined()
       }
@@ -156,7 +156,7 @@ describe('clip-dispatch', () => {
 
     const customExpr: CompanionExpression = {
       id: 1,
-      // Mixed case on purpose — the dispatch index must normalize both sides.
+      // 故意混用大小写——派发索引必须对两侧做归一化。
       name: 'Tender_Worry',
       label: '心疼',
       valence: 'negative',
@@ -167,15 +167,14 @@ describe('clip-dispatch', () => {
 
     it('uses custom expression valence as fallback for unknown emotion', () => {
       // 'tender_worry' is not in BUILTIN_VALENCE, so the custom expression's
-      // valence='negative' should drive candidate selection.
+      // valence='negative' 应驱动候选项选择。
       const clip = resolveEmotionClip('tender_worry', [], lib, avail, [customExpr])
       expect(clip).toBe('tender_worry_pose')
     })
 
     it('matches clips by custom expression tags', () => {
-      // The custom expression has tags ['温柔','心疼'] which match
-      // tender_worry_pose; combined with the valence bucket, the tag-matched
-      // clip should be a strong candidate.
+      // 自定义表达式的标签 ['温柔','心疼'] 与 tender_worry_pose 匹配；
+      // 叠加 valence 桶后，按标签匹配的动作应作为强候选。
       const clip = resolveEmotionClip('tender_worry', ['活泼'], lib, avail, [customExpr])
       expect(clip).toBe('tender_worry_pose')
     })

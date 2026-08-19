@@ -21,7 +21,7 @@ export const MEDIA_MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp'
 }
 
-// Derived: any ext whose MIME starts with audio/ or video/.
+// 派生：MIME 以 audio/ 或 video/ 开头的所有扩展名。
 export const STREAMABLE_MEDIA_EXTS: Set<string> = new Set(
   Object.entries(MEDIA_MIME_TYPES)
     .filter(([, mime]) => mime.startsWith('audio/') || mime.startsWith('video/'))
@@ -73,7 +73,7 @@ export function dataUrlFromBuffer(buffer: Buffer | Uint8Array, mimeType: string)
   return `data:${mimeType};base64,${buf.toString('base64')}`
 }
 
-// Decode a `data:<mime>[;base64],<payload>` URL back to the raw bytes.
+// 将 `data:<mime>[;base64],<payload>` 形式的 URL 解码回原始字节。
 export function dataUrlToBuffer(dataUrl: string): Buffer {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
 

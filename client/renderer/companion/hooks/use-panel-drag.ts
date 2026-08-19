@@ -7,12 +7,11 @@ export interface PanelDragBind {
   onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void
 }
 
-// Header-drag for sprite-window panels: translate3d (no re-render per move),
-// offset persisted to localStorage so the position survives a restart.
-// getBoundingClientRect() includes the transform, so useInteractiveRegion
-// hit-testing follows the dragged panel for free. The panel is a lazy getter
-// (not a RefObject) so the transform write below can't be traced back to a
-// hook argument (react-compiler mutation guard).
+// 精灵窗口面板的标题栏拖拽：translate3d（每次移动不触发重渲染），
+// 偏移量持久化到 localStorage，位置重启后依然保留。
+// getBoundingClientRect() 会包含 transform，因此 useInteractiveRegion
+// 的命中测试自动跟随拖拽后的面板。panel 是惰性 getter（而非 RefObject），
+// 这样下面对 transform 的写入不会回溯到 hook 参数（react-compiler 变更守卫）。
 export function usePanelDrag(
   storageKey: string,
   getPanel: () => HTMLElement | null
@@ -38,12 +37,12 @@ export function usePanelDrag(
   const dragRef = useRef<{ startX: number; startY: number; baseDx: number; baseDy: number } | null>(null)
 
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
-    // Only left-button drags; ignore middle/right click and modifier-hold.
+    // 仅响应左键拖拽；忽略中键/右键点击以及带修饰键的拖拽。
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
       return
     }
 
-    // Don't start a drag when the user actually clicked a control inside the handle.
+    // 当用户实际点中拖拽柄里的控件时，不要开启拖拽。
     if ((e.target as HTMLElement).closest('button, input, textarea, select, a, [role="button"]')) {
       return
     }
@@ -86,7 +85,7 @@ export function usePanelDrag(
       try {
         localStorage.setItem(storageKey, JSON.stringify(offsetRef.current))
       } catch {
-        /* private mode: in-memory only */
+        /* 无痕模式：仅内存有效 */
       }
     }
   }

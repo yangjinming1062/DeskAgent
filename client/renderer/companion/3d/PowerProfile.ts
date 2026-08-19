@@ -1,8 +1,7 @@
 import type { SpriteStateName } from '@/companion/companion-store'
 
-// Render-power tiers for the always-resident companion window. The renderer
-// process ships with Chromium throttling disabled (background chat streaming),
-// so the 3D loop gates itself from these signals instead.
+// 常驻伙伴窗口的渲染功耗档位。渲染进程关闭了 Chromium 限流（用于后台聊天流），
+// 因此 3D 循环改为依据这些信号自行节流。
 
 export type PowerProfile = 'active' | 'idle' | 'dormant'
 
@@ -15,14 +14,13 @@ export interface PowerSignals {
   modelSettled: boolean
 }
 
-// active and idle run at 60fps for smooth animations and fluid cursor look-at tracking.
-// dormant is timer-driven at 4fps when locked/hidden/fullscreen/sleeping to minimize power.
+// active 和 idle 以 60fps 运行，保证动画顺滑与光标视线追踪流畅。
+// dormant 在锁屏/隐藏/全屏/休眠时由定时器以 4fps 驱动，以节省功耗。
 export const PROFILE_FPS: Record<PowerProfile, number> = { active: 60, idle: 60, dormant: 4 }
 
 export function resolvePowerProfile(signals: PowerSignals): PowerProfile {
-  // Ready guard: until the first character model settles, hatching must run
-  // at full rate — a dormant/idle boot would stretch GLB parse and texture
-  // uploads across 250ms frames.
+  // 就绪守卫：在首个角色模型稳定之前，孵化阶段必须全速运行——
+  // 如果用 dormant/idle 启动，GLB 解析与贴图上传会被拖到 250ms 一帧。
   if (!signals.modelSettled) {
     return 'active'
   }

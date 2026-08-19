@@ -11,13 +11,13 @@ function planePositions(w = 0.2, h = 0.4, seg = 2): { base: Float32Array; count:
 }
 
 describe('buildAnchors', () => {
-  it('pins every vertex in pinAll mode', () => {
+  it('在 pinAll 模式下钉住每个顶点', () => {
     const { base, count } = planePositions()
 
     expect(Array.from(buildAnchors(base, count, true))).toEqual(new Array(count).fill(1))
   })
 
-  it('anchors only the top band of the height range', () => {
+  it('只在高度范围的顶部带状区域设锚点', () => {
     const { base, count } = planePositions(0.2, 0.4, 2)
     const anchors = buildAnchors(base, count, false, 0.3)
 
@@ -41,7 +41,7 @@ describe('buildAnchors', () => {
 })
 
 describe('buildConstraints', () => {
-  it('derives unique edges and rest lengths from the index buffer', () => {
+  it('从 index buffer 导出唯一的边与静态长度', () => {
     const geo = new THREE.PlaneGeometry(0.2, 0.2, 2, 2)
     const base = new Float32Array(geo.attributes.position.array as ArrayLike<number>)
     const idx = geo.index!.array
@@ -51,7 +51,7 @@ describe('buildConstraints', () => {
     expect(constraints.edges.length % 2).toBe(0)
     expect(constraints.rest.length).toBe(constraints.edges.length / 2)
 
-    // Rest lengths match the base positions exactly.
+    // 静态长度与原始位置完全一致。
     for (let e = 0; e < constraints.edges.length; e += 2) {
       const a = constraints.edges[e] * 3
       const b = constraints.edges[e + 1] * 3
@@ -63,7 +63,7 @@ describe('buildConstraints', () => {
     }
   })
 
-  it('declines meshes above the vertex budget', () => {
+  it('超出顶点上限时拒绝', () => {
     const { base } = planePositions()
     const idx = new THREE.PlaneGeometry(0.2, 0.2, 2, 2).index!.array
 
@@ -72,7 +72,7 @@ describe('buildConstraints', () => {
 })
 
 describe('buildVertexTriAdjacency', () => {
-  it('partitions every triangle ref exactly once per corner vertex', () => {
+  it('每个三角形引用在角顶点上恰好被分配一次', () => {
     const geo = new THREE.PlaneGeometry(0.2, 0.2, 3, 3)
     const vertCount = geo.attributes.position.count
     const idx = geo.index!.array

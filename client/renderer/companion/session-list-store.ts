@@ -8,7 +8,7 @@ export const $sessions = atom<SessionInfo[]>([])
 export const $sessionsLoading = atom(false)
 export const $sessionListOpen = atom(false)
 
-// Bumped per fetch so a slow response can't overwrite a newer one.
+// 每次 fetch 自增，避免慢响应覆盖更新的结果。
 let fetchToken = 0
 
 export function setSessionListOpen(open: boolean): void {
@@ -76,8 +76,7 @@ export async function switchSession(sessionId: string): Promise<void> {
   }
 }
 
-/** Mount the main conversation and load its transcript. Also the recovery path
- * when the dock has no session yet — the main conversation always exists. */
+/** 挂载主会话并加载其对话流。同时也是 dock 还没有会话时的恢复路径——主会话始终存在。 */
 export async function openMainSession(onMounted?: (res: SessionResumeResponse) => void): Promise<string | null> {
   const gw = $gateway.get()
 

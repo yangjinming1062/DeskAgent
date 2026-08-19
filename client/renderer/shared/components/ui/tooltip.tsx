@@ -29,9 +29,9 @@ function TooltipContent({
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
-        // Instant, no transition (the Provider's delayDuration=0 + no animate-*
-        // classes). bg-foreground/text-background auto-inverts per theme: white
-        // on near-black in light mode, black on white in dark.
+        // 即时显示、无过渡动画（Provider 的 delayDuration=0，且不使用 animate-* 类）。
+        // bg-foreground / text-background 按主题自动反色：浅色主题为黑底白字，
+        // 深色主题为白底黑字。
         className={cn(
           'z-[200] w-fit bg-foreground px-1.5 py-1 text-[11px] font-bold leading-none text-background select-none [font-family:Arial,sans-serif]',
           className
@@ -52,10 +52,8 @@ interface TipProps extends Omit<React.ComponentProps<typeof TooltipPrimitive.Con
   delayDuration?: number
 }
 
-// Drop-in replacement for native `title=`: wrap any single element. Instant,
-// position-aware, themed. Self-contained (carries its own Provider) so it works
-// anywhere without a provider ancestor. Renders the child untouched when label
-// is falsy.
+// 原生 `title=` 的即插即用替代：包住任意单个元素。即时显示、自动避让、
+// 主题化。自带 Provider，无需上层 Provider 包装。label 为空时直接渲染子元素。
 function Tip({ label, children, delayDuration = 0, ...props }: TipProps): React.JSX.Element {
   if (!label) {
     return <>{children}</>

@@ -2,7 +2,7 @@ import { isLatestGen, nextGen, playDataUrl, stopAudio } from './audio-track'
 import { $companionVoiceId } from './prefs'
 import { $voicePreparing } from './voice-state'
 
-// Companion TTS via `spiritagent:media:tts` REST IPC.
+// 伙伴 TTS 经 `spiritagent:media:tts` REST IPC 调用。
 
 export function stopSpeaking(): void {
   stopAudio()
@@ -31,8 +31,8 @@ async function synth(
     }
 
     return await playDataUrl(res.dataUrl, () => {
-      // Only the latest generation's lifecycle signal is meaningful — stale
-      // resolves leak the closure but harmlessly invoke a no-op.
+      // 只有最新一代的生命周期信号有意义——过期 resolve 仍持有闭包，
+      // 但触发的也只是一个无害的 no-op。
       if (isLatestGen(gen) && onDone) {
         onDone()
       }

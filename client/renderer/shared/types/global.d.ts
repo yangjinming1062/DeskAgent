@@ -12,9 +12,10 @@ declare global {
       getSession: () => Promise<DesktopAuthSnapshot | null>
       showToolWindow: () => Promise<void>
       api: <T>(request: SpiritAgentApiRequest) => Promise<T>
-      /** Fetch a backend-served binary asset as a data URL (see connection.cjs). */
+      /** 把后端服务的二进制资产以 data URL 的形式取回（见 connection.cjs）。 */
       apiAsset: (request: { url: string }) => Promise<string>
-      /** Fetch a backend-served binary asset as raw bytes — for large payloads (GLB) where base64 inflation is unacceptable. Supports disk cache via contentHash. */
+      /** 把后端服务的二进制资产以原始字节取回——用于大体积负载（GLB），
+       * 不能接受 base64 膨胀。支持通过 contentHash 做磁盘缓存。 */
       apiAssetBuffer: (request: { url: string; contentHash?: string }) => Promise<Uint8Array>
       readFileDataUrl: (filePath: string) => Promise<string>
       selectPaths: (options?: SpiritAgentSelectPathsOptions) => Promise<string[]>
@@ -149,10 +150,9 @@ export type DesktopUpdateEvent =
   | { type: 'downloaded'; info?: DesktopUpdateInfo }
   | { type: 'error'; message: string }
 
-// Runner-side update events, forwarded from main.cjs → runner-updater.cjs
-// on the `spiritagent:runner-update-event` IPC channel. Phase 1 (prefetch) runs in
-// the OLD Electron after `update-downloaded`; phase 2 (install) runs in the
-// NEW Electron at startup. `recoverable: false` means the user must reinstall.
+// Runner 侧的更新事件，由 main.cjs → runner-updater.cjs 经 `spiritagent:runner-update-event`
+// IPC 通道转发。阶段 1（预取）在旧的 Electron 中、收到 `update-downloaded` 之后运行；
+// 阶段 2（安装）在新的 Electron 启动时运行。`recoverable: false` 表示用户必须重装。
 export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-prefetching'; version: string; phase: 'manifest' | 'wheel' | 'server'; percent?: number }
   | { kind: 'runner-ready'; version: string }
@@ -160,7 +160,7 @@ export type DesktopRunnerUpdateEvent =
   | { kind: 'runner-installed'; version: string }
   | { kind: 'runner-failed'; error: string; recoverable: boolean; version?: string }
 
-// Runner capabilities probe result. Reflected from `runner_ready` events in
+// Runner 能力探测结果。来自 `runner_ready` 事件、
 export interface CapabilityHealthItem {
   available: boolean
   reason?: string | null
@@ -168,9 +168,9 @@ export interface CapabilityHealthItem {
 
 export type RunnerCapabilitiesHealth = Record<string, CapabilityHealthItem>
 
-// runner-bridge.cjs and the `running` / `tools_changed` lifecycle variants —
-// each capability maps to a real per-platform subsystem probe
-// (sounddevice, Win32 GetLastInputInfo, Quartz, loginctl, …).
+// runner-bridge.cjs 中的 `running` / `tools_changed` 生命周期变体——
+// 每个能力对应一个真实的、按平台的子体探测
+// （sounddevice、Win32 GetLastInputInfo、Quartz、loginctl，……）。
 export interface RunnerCapabilities {
   microphone?: boolean
   screen_capture?: boolean
@@ -181,11 +181,10 @@ export interface RunnerCapabilities {
   python?: string
 }
 
-// Runner lifecycle events from runner-bridge.cjs (`running` / `stopped` /
-// `error` / `tools_changed`), forwarded over the `spiritagent:runner:status` IPC
-// channel. Renderer subscribes via `onRunnerStatus`; see use-gateway-boot.ts
-// where the `running` and `tools_changed` variants both trigger a
-// tool-schema sync to backend.
+// 来自 runner-bridge.cjs 的 Runner 生命周期事件（`running` / `stopped` /
+// `error` / `tools_changed`），经 `spiritagent:runner:status` IPC 通道转发。
+// 渲染层通过 `onRunnerStatus` 订阅；见 use-gateway-boot.ts，
+// 其中 `running` 与 `tools_changed` 两个变体都会触发一次向后端的工具 schema 同步。
 export type DesktopRunnerStatusEvent =
   | {
       type: 'running'
@@ -211,9 +210,9 @@ export type DesktopRunnerStatusEvent =
   | { type: 'stopped'; reason?: string; errors: string[] }
   | { type: 'error'; phase: string; error: Error }
 
-// Synchronous snapshot of the runner bridge lifecycle. Returned by
-// ``runnerGetState``; pairs with ``DesktopRunnerStatusEvent`` for future
-// transitions. Mirrors the phase values emitted by runner-bridge.cjs.
+// Runner 网桥生命周期的同步快照。由 ``runnerGetState`` 返回；
+// 后续转换由 ``DesktopRunnerStatusEvent`` 配合给出。
+// 与 runner-bridge.cjs 派发的 phase 取值一一对应。
 export type DesktopRunnerPhase = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
 
 export interface DesktopRunnerState {
@@ -282,10 +281,9 @@ export interface DesktopLogoutResult {
   ok: boolean
 }
 
-// main→renderer broadcast after every login/logout/refresh, sent to BOTH
-// windows so each renderer's per-window $auth stays in sync. The sprite
-// window never runs the login form, so it relies on this to learn the new
-// session and boot/teardown its gateway.
+// 主进程 → 渲染层在每次登录 / 登出 / 刷新后的广播，同时发送给两个窗口，
+// 以保证各渲染层的每窗口 $auth 保持同步。精灵窗口从不展示登录界面，
+// 因此依赖此广播来感知新会话并启停自己的网关。
 export interface DesktopAuthBroadcast {
   authenticated: boolean
   snapshot: DesktopAuthSnapshot | null

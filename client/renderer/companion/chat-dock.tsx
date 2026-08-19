@@ -130,10 +130,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     inputRef.current?.focus()
   }, [])
 
-  // Emotion face: swap the left-column avatar while an affect is active;
-  // portrait is the fallback when there is no emotion or the image isn't
-  // ready. The subscription lives here (not in the store) so desktop-only
-  // emotions never trigger generations while the chat window is closed.
+  // 表情脸：在 affect 激活时替换左栏头像；
+  // 没有情绪或图片未就绪时回退到半身像。
+  // 订阅放在这里（而不是 store 里），是为了让仅桌面端的表情
+  // 在聊天窗口关闭时不会触发生成。
   useEffect(() => {
     if (spriteEmotion && spriteEmotion !== 'neutral') {
       void requestExpressionAvatar(spriteEmotion)
@@ -295,11 +295,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.chatDockOffset', () => panelRef.current)
 
-  // Current mood display
+  // 当前情绪展示
   const currentMood = useMemo(() => {
     if (spriteEmotion) {
-      // Custom emotion registry (create_expression): label + optional icon,
-      // generic rendering for tokens not yet hydrated.
+      // 自定义情绪注册表（create_expression）：label + 可选 icon，
+      // 尚未水合的 token 用通用渲染。
       const custom = customExpressions.find(e => e.name === spriteEmotion)
 
       return EMOTION_MAP[spriteEmotion] ?? { label: custom?.label || spriteEmotion, icon: custom?.icon || '💫' }

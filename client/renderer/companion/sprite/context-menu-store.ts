@@ -5,13 +5,13 @@ export interface ContextMenuPos {
   y: number
 }
 
-// Persistent position so the menu can stay mounted and just toggle visibility.
-// Kept in a nanostore (not useState) so opening/closing doesn't re-render the
-// heavy CompanionRoot (8 useStore + 7 useState).
+// 持久化位置以便菜单一直挂着、只切换可见性。
+// 用 nanostore（而非 useState）让打开/关闭不会触发沉重的 CompanionRoot
+// （8 个 useStore + 7 个 useState）重新渲染。
 export const $contextMenuPos = atom<ContextMenuPos | null>(null)
 
-// Derived atom — consumed by companions that want to skip canvas work while
-// the menu is open (e.g. `companion-3d.tsx` gates `pointermove` look-at here).
+// 派生 atom——供伙伴在菜单打开时跳过画布工作使用
+// （如 `companion-3d.tsx` 用它门控 `pointermove` 注视跟踪）。
 export const $contextMenuOpen = computed($contextMenuPos, pos => pos !== null)
 
 export function openContextMenu(pos: ContextMenuPos): void {

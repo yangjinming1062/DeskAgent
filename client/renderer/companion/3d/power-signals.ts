@@ -7,9 +7,8 @@ import type { PowerProfile } from './PowerProfile'
 import { resolvePowerProfile } from './PowerProfile'
 import type { PowerSignals } from './PowerProfile'
 
-// Bridges the existing renderer atoms into power-profile changes for the 3D
-// engine. Pure resolution lives in PowerProfile.ts; this module only owns the
-// subscriptions so components stay free of signal plumbing.
+// 把渲染器已有的原子信号桥接到 3D 引擎的功率档位切换。
+// 纯解析逻辑在 PowerProfile.ts；本模块只负责订阅，让组件不必接触信号管线。
 
 function currentSignals(): PowerSignals {
   return {

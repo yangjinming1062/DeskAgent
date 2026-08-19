@@ -35,7 +35,7 @@ export interface SessionCreateResponse {
 
 export interface SessionInfo {
   archived?: boolean
-  /** Free string server-side; only 'main' and 'standard' are first-class today. */
+  /** 服务端是自由字符串；目前只有 'main' 和 'standard' 是一级值。 */
   kind?: string
   cwd?: null | string
   ended_at: null | number
@@ -128,13 +128,13 @@ export interface UsageStats {
   total: number
 }
 
-/** STT/TTS engine routing preference, resolved by the Desktop main process.
- * `auto` = local Runner engine first with cloud fallback; `local` = local only
- * (no cloud fallback); `cloud` = backend always. See client/main/ipc/media.cjs. */
+/** STT/TTS 引擎路由偏好，由桌面端主进程解析。
+ * `auto` = 优先本地 Runner 引擎，云端兜底；`local` = 仅本地（无云端兜底）；
+ * `cloud` = 始终走后端。见 client/main/ipc/media.cjs。 */
 export type SpeechEngine = 'auto' | 'local' | 'cloud'
 
-/** Shape returned by `GET /api/config`. Includes computed siblings like `*_set` / `*_fingerprint`
- * that the backend injects after stripping raw credentials. */
+/** `GET /api/config` 的返回结构。后端剥离原始凭据后注入 `*_set` / `*_fingerprint`
+ * 等计算字段。 */
 export interface SpiritAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
@@ -146,20 +146,19 @@ export interface SpiritAgentConfigResponse {
     context_compression_threshold?: number
   }
   stt?: {
-    /** Master switch — when false, spiritagent:media:stt rejects without doing
-     * any local/cloud work. See media.cjs. */
+    /** 总开关——为 false 时，spiritagent:media:stt 直接拒绝，
+     * 不进行任何本地 / 云端工作。见 media.cjs。 */
     enabled?: boolean
     engine?: SpeechEngine
-    /** When false, a weak/low-confidence local STT result surfaces to the user
-     * instead of silently retrying on cloud. Default true. See media.cjs. */
+    /** 为 false 时，低置信度的本地 STT 结果直接展示给用户，
+     * 而非悄悄用云端重试。默认 true。见 media.cjs。 */
     silent_fallback?: boolean
   }
   tts?: {
     engine?: SpeechEngine
   }
   voice?: {
-    /** Maximum duration (seconds) of a single voice recording. The companion
-     * dock auto-stops the MediaRecorder at this cap. */
+    /** 单次语音录制的最长时长（秒）。聊天面板在该上限处自动停止 MediaRecorder。 */
     max_recording_seconds?: number
   }
   web?: {
@@ -173,8 +172,8 @@ export interface SpiritAgentConfigResponse {
   }
 }
 
-/** Body shape accepted by `PUT /api/config`. Raw credentials are writable here; the computed
- * `*_set` / `*_fingerprint` siblings from the response shape are not. */
+/** `PUT /api/config` 接受的请求体。原始凭据可写入；响应结构里的
+ * `*_set` / `*_fingerprint` 计算字段不可写入。 */
 export interface SpiritAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
@@ -199,9 +198,9 @@ export interface SpiritAgentConfigPutRequest {
   web?: {
     backend?: string
     extract_backend?: string
-    /** Empty string clears the key; omitting the field leaves the existing value untouched. */
+    /** 空字符串清空该 key；省略字段则保持原值不变。 */
     brave_api_key?: string
-    /** Empty string clears the key; omitting the field leaves the existing value untouched. */
+    /** 空字符串清空该 key；省略字段则保持原值不变。 */
     tavily_api_key?: string
     tavily_base_url?: string
   }
@@ -209,11 +208,10 @@ export interface SpiritAgentConfigPutRequest {
 
 export type SpiritAgentConfigRecord = Record<string, unknown>
 
-/** Shape returned by `GET /api/insights/overview?days=N`.
+/** `GET /api/insights/overview?days=N` 的返回结构。
  *
- * Field names mirror the backend's `insights.py` response — kept snake_case
- * to match the JSON-RPC / REST conventions used by other endpoints in this
- * module (see `SessionInfo`, `UsageStats`).
+ * 字段名与服务端 `insights.py` 响应保持一致——使用 snake_case，
+ * 以匹配本模块其他端点采用的 JSON-RPC / REST 命名约定（见 `SessionInfo`、`UsageStats`）。
  */
 export interface InsightsTopTool {
   count: number

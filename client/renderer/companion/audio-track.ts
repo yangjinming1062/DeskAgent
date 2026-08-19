@@ -16,8 +16,8 @@ function detachListeners(audio: HTMLAudioElement): void {
 export function stopAudio(): void {
   if (current) {
     current.pause()
-    // Release the dataURL-backed src so the encoded bytes (~256KB worst case)
-    // become unreachable even if ended/error never fires.
+    // 释放 dataURL-backed src，让编码后的字节（最差约 256KB）即使在 ended/error
+    // 没有触发的情况下也变得不可达。
     current.removeAttribute('src')
     current.load()
     detachListeners(current)
@@ -29,7 +29,7 @@ export function stopAudio(): void {
     currentDone = null
   }
 
-  // Also flag the amplitude loop to bail and immediately cancel pending frame.
+  // 同时标记振幅循环退出，并立即取消待处理的帧。
   amplitudeActive = false
 
   if (amplitudeRaf !== null) {
@@ -53,18 +53,16 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
   const audio = new Audio(dataUrl)
   current = audio
 
-  // Wire up the 'ended' / 'error' listeners BEFORE any await, so a fast
-  // `emit('ended')` from a test (or a real audio-end event) can never race
-  // past the point where listeners get attached.
+  // 在任何 await 之前就挂好 'ended' / 'error' 监听器，避免测试里的快速
+  // `emit('ended')`（或真实的音频结束事件）抢在监听器挂好之前到达。
   let resolvePlayback!: (ok: boolean) => void
 
   const playbackEnded = new Promise<boolean>(resolve => {
     resolvePlayback = resolve
   })
 
-  // `fired` makes `fireDone` idempotent: even if multiple sources (listener,
-  // stopAudio, play-failure branch) try to settle the promise, only the first
-  // call wins.
+  // `fired` 让 `fireDone` 幂等：即使有多个来源（监听器、stopAudio、
+  // play-failure 分支）都试图结算这个 promise，只有第一次调用生效。
   let fired = false
 
   const fireDone = (ok: boolean): void => {
@@ -85,8 +83,8 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
     }
   }
 
-  // `currentDone` is invoked by stopAudio(). Wrap `fireDone` in a thin closure
-  // that always reports failure (stop is never a "successful" playback end).
+  // `currentDone` 由 stopAudio() 调用。把 `fireDone` 包成一个 thin closure，
+  // 始终上报失败（stop 不算"成功"的播放结束）。
   const stopDone = (): void => fireDone(false)
 
   currentDone = stopDone
@@ -100,23 +98,20 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
     ['error', errorHandler]
   ]
 
-  // Kick off playback immediately, then wire up the analyser in parallel.
+  // 立即启动播放，再并行接上 analyser。
   //
-  // The previous shape — `await startAmplitudeLoop(audio)` BEFORE
-  // `await audio.play()` — forced every TTS playback to wait for
-  // AudioContext.resume() to settle (50–150 ms on an idle / suspended context,
-  // and the renderer was logging "power profile -> dormant" right before the
-  // user reported the issue, confirming the context had gone cold). During
-  // that wait the audio element was already loaded but `play()` hadn't been
-  // called yet, so the very first syllable of every TTS line felt "cut off"
-  // even though the encoded MP3 itself began at t=0.
+  // 之前的实现——`await startAmplitudeLoop(audio)` 在 `await audio.play()`
+  // 之前——强制所有 TTS 播放等待 AudioContext.resume() 完成（空闲/挂起上下文
+  // 需要 50–150 ms，且用户在反馈问题前，渲染进程日志里正在记
+  // "power profile -> dormant"，证实上下文已经变冷）。在这段等待时间里
+  // audio 元素已经加载好但 `play()` 还没调用，所以每句 TTS 的第一个音节
+  // 听感上像被"截掉"，尽管编码出的 MP3 本身在 t=0 就开始。
   //
-  // HTMLAudioElement playback and Web Audio analyser routing are independent
-  // — `play()` does not require the AudioContext to be running. So we start
-  // playback first and connect the analyser asynchronously. Lip-sync lags by
-  // the same 50–150 ms, but the mouth doesn't visibly move in the first frame
-  // anyway, and the analyser pipeline still has plenty of audio to capture
-  // once it's wired up.
+  // HTMLAudioElement 播放与 Web Audio analyser 路由相互独立——
+  // `play()` 不要求 AudioContext 处于 running 状态。所以我们先启动播放，
+  // 再异步接上 analyser。口型同步会滞后同样的 50–150 ms，
+  // 但嘴部在首帧本来也不会有可见动作，
+  // analyser接好后仍然能采集到后续充足的数据。
   const playPromise = audio.play().catch(err => err)
   void startAmplitudeLoop(audio).catch(() => undefined)
 
@@ -180,7 +175,7 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
   const analyserNode = analyser
 
   if (!ctx || !analyserNode || !amplitudeBuffer) {
-    // Web Audio unsupported — silently skip lip sync rather than crash.
+    // 不支持 Web Audio——静默跳过口型同步，不要崩。
     return
   }
 
@@ -192,17 +187,16 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
     return
   }
 
-  // Create one MediaElementSource per audio element. Reusing across swaps
-  // (e.g. back-to-back speak() calls) leaks graph nodes and triggers the
-  // "HTMLMediaElement already connected" DOMException.
+  // 每个 audio 元素创建一个 MediaElementSource。跨多次切换复用（例如连续的
+  // speak() 调用）会泄漏图节点，并触发 "HTMLMediaElement already connected" 的
+  // DOMException。
   try {
     analyserSource?.disconnect()
     analyserSource = ctx.createMediaElementSource(audio)
     analyserSource.connect(analyserNode)
     analyserNode.connect(ctx.destination)
   } catch {
-    // The element was already connected (shouldn't happen with a fresh
-    // Audio() but some test environments recycle nodes).
+    // 该元素已经被连接（用全新的 Audio() 不应发生，但某些测试环境会复用节点）。
     return
   }
 
@@ -221,7 +215,7 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
     }
 
     analyser.getByteTimeDomainData(buf)
-    // Sum the deviation from 0x80 (silence centre) and normalise.
+    // 累加相对 0x80（静音中点）的偏差并归一化。
     let sum = 0
 
     for (let i = 0; i < buf.length; i++) {
@@ -230,7 +224,7 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
     }
 
     const avg = sum / buf.length
-    // 128 is the theoretical max for a full-scale square wave; clamp to 1.
+    // 128 是满幅方波的理论最大值；夹到 1。
     amplitudeSink?.(Math.min(1, avg / 96))
     amplitudeRaf = requestAnimationFrame(tick)
   }

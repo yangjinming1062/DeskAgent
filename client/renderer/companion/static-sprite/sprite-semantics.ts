@@ -1,9 +1,8 @@
 import type { SpriteEmotion, SpriteStateName } from '../companion-store'
 
-// Free-form Chinese semantics for the static-sprite album. The backend LLM
-// matches these against album tags (or authors a generation prompt on miss),
-// so requests are deliberately open-ended rather than enum-keyed — an unknown
-// LLM-invented emotion still resolves via the generic fallback clause.
+// 静态精灵相册使用的自由形式中文语义。后端 LLM 会拿这些与相册标签
+// 匹配（未命中则自行撰写生成提示），因此请求刻意保持开放而非按枚举键值映射——
+// LLM 自创的未知情绪仍可通过通用兜底子句解析。
 
 const STATE_SEMANTICS: Record<SpriteStateName, string> = {
   idle: '自然放松地站立，看向观众，温和的神态',
@@ -41,7 +40,7 @@ const EMOTION_SEMANTICS: Record<string, string> = {
   relieved: '如释重负地松了一口气'
 }
 
-/** The first-priority image: what static mode shows while it engages. */
+/** 静态模式启动时优先展示的首张图。 */
 export const WAITING_REQUEST = '安静站立等待的全身立绘，中性微笑，双手自然下垂'
 
 export function semanticRequestFor(state: SpriteStateName, emotion: SpriteEmotion | null): string {

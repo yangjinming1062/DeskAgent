@@ -15,17 +15,16 @@ interface ConfirmDialogProps {
   title: string
   description?: string
   confirmLabel: string
-  /** Defaults to strings.common.cancel. */
+  /** 默认为 strings.common.cancel。 */
   cancelLabel?: string
-  /** Destructive confirms colour the confirm button + apply focus to it. */
+  /** 警示类确认会着色确认按钮并把焦点放在上面。 */
   variant?: 'default' | 'destructive'
   onConfirm: () => void | Promise<void>
 }
 
-// Small modal for destructive confirms (clear API key, sign out, reset
-// config). Replaces window.confirm() in hub/settings — keeps the glass
-// aesthetic, integrates with the existing Alert/Button primitives, and
-// stays focus-trapped + Esc-dismissible via Radix.
+// 用于警示性确认的小型弹窗（清空 API key、退出登录、重置配置）。
+// 替换 hub/settings 中的 window.confirm() ——保留玻璃质感，复用现有 Alert / Button
+// 原语，并通过 Radix 维持焦点陷阱与 Esc 关闭。
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -80,9 +79,8 @@ export function ConfirmDialog({
                   await onConfirm()
                   onOpenChange(false)
                 } catch {
-                  // Leave the dialog open on error so the user can retry
-                  // or cancel. Errors are surfaced by the caller's
-                  // notify/notifyError, not the dialog itself.
+                  // 出错时保留弹窗，让用户可以重试或取消。
+                  // 错误由调用方的 notify / notifyError 抛出，不由弹窗本身处理。
                 } finally {
                   setBusy(false)
                 }

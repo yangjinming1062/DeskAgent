@@ -20,8 +20,7 @@ export interface TrayDeps {
 let trayInstance: null | Tray = null
 let trayDeps: null | TrayDeps = null
 
-// Settings + Activation/Logout live in the tray context menu rather than
-// in-app chrome.
+// 设置和激活/反激活放在托盘右键菜单里，而不是应用内界面。
 function isAuthenticated(): boolean {
   const session = trayDeps?.bridgeDeps?.backendSession || trayDeps?.bridgeDeps?.ensureBackendSession?.()
 

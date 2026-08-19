@@ -131,8 +131,8 @@ export function resolveEmotionClip(
 ): string | null {
   const allClips = Object.values(library)
 
-  // A structured [action:...] hint narrows to a specific movement clip; fall
-  // back to the emotion valence when no clip name/tag matches the token.
+  // 结构化的 [action:...] 提示可以精确到具体动作；
+  // 当动作名/标签都不匹配时，回退到情绪 valence。
   const normAction = action?.trim().toLowerCase()
 
   if (normAction) {

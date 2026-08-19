@@ -114,12 +114,12 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Ensure wardrobe catalog is hydrated
+  // 确保衣橱目录已水合
   useEffect(() => {
     void hydrateWardrobe()
   }, [])
 
-  // Handle image file selection
+  // 处理图片文件选择
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0]
 
@@ -162,7 +162,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // Handle generation of new texture candidate
+  // 处理新贴图候选的生成
   const handleGenerate = async (): Promise<void> => {
     const desc = description.trim()
 
@@ -232,7 +232,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // Handle candidate selection
+  // 处理候选选择
   const handleSelectCandidate = (idx: number): void => {
     selectWardrobeCandidate(idx)
     const selected = candidates[idx]
@@ -242,7 +242,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // Handle candidate confirmation
+  // 处理候选确认
   const handleConfirm = async (): Promise<void> => {
     const currentCandidate = candidates[selectedIdx]
 
@@ -301,13 +301,13 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // Handle candidate discard
+  // 处理候选丢弃
   const handleDiscard = (): void => {
     void discardAllPreviewFiles()
     setStatusMessage({ type: 'info', text: '已丢弃候选，恢复当前装扮' })
   }
 
-  // Equip existing wardrobe item
+  // 装备现有衣橱项
   const handleDeclineGift = async (itemId: number, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation()
 

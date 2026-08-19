@@ -5,7 +5,7 @@ import { probeInteractiveRegions } from '@/companion/interactive-regions'
 
 import type { Engine, SilhouetteHitmap } from './Engine'
 
-// Sync hit predicate SpriteStage refines its region with in 3D mode. Null during boot/load gap -> rect fallback.
+// 精灵舞台在 3D 模式下用这个命中谓词进一步细化命中区域。启动/加载空隙期间为 null，回退到矩形判定。
 export const $sprite3DHitTest = atom<((x: number, y: number) => boolean | null) | null>(null)
 
 const HIT_ALPHA_MIN = 16
@@ -38,7 +38,7 @@ export function attachSilhouetteHitProbe(
 
     const relX = (x - rect.left) / rect.width
     const relY = (y - rect.top) / rect.height
-    // Engine normalizes hitmap alpha to top-down row order matching DOM client space.
+    // 引擎把命中图的 alpha 归一化为自顶向下的行序，与 DOM client 空间一致。
     const px = MathUtils.clamp(Math.floor(relX * map.width), 0, map.width - 1)
     const py = MathUtils.clamp(Math.floor(relY * map.height), 0, map.height - 1)
 
@@ -71,7 +71,7 @@ export function attachSilhouetteHitProbe(
   const onMove = (e: MouseEvent): void => {
     const rect = engine.canvas.getBoundingClientRect()
 
-    // When the cursor is within or approaching canvas bounds, refresh hitmap if stale
+    // 当光标进入或接近画布边界时，若命中图过期则刷新
     if (
       e.clientX >= rect.left - 50 &&
       e.clientX <= rect.right + 50 &&
@@ -87,7 +87,7 @@ export function attachSilhouetteHitProbe(
     }
   }
 
-  // Request initial hitmap right away so it is warm as soon as the engine renders
+  // 立刻请求初始命中图，让引擎一渲染出来就能命中
   refresh()
 
   window.addEventListener('mousemove', onMove)

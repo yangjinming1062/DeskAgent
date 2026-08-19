@@ -50,10 +50,10 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
   ].filter(Boolean)
 
   const enabledNames = listSkills(skillsRoot, store.getDisabledSet())
-    // Skills tagged for a different OS are filtered here so the backend's
-    // "Enabled local skills…" prompt block (system_prompt.py:64-68) never
-    // lists an unavailable skill. Runtime filtering also happens at the
-    // runner (skill_matches_platform); this is the prompt-side gate.
+    // 这里过滤掉针对其他 OS 标记的 skill，避免后端
+    // "Enabled local skills…" 这段提示词块（system_prompt.py:64-68）
+    // 列出实际不可用的 skill。Runner 侧（skill_matches_platform）也有运行时过滤；
+    // 这一层是提示词侧的入口。
     .filter(s => s.enabled && s.compatible)
     .map(s => s.name)
 

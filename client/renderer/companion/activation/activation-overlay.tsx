@@ -7,10 +7,9 @@ import { Loader2, Sparkles, X } from '@/shared/lib/icons'
 import { $auth, activate } from '@/shared/store/auth'
 
 /**
- * Activation code entry overlay shown in the companion (sprite) window when
- * the user is unauthenticated.  Replaces the old tool-window login page —
- * the user pastes a base64 activation code and the main process exchanges
- * it for a session JWT via ``/api/user/activate``.
+ * 激活码输入浮层：在伙伴（精灵）窗口中未鉴权时显示。
+ * 取代了旧的工具窗口登录页——用户粘贴 base64 激活码，
+ * 主进程通过 ``/api/user/activate`` 换取会话 JWT。
  */
 export function ActivationOverlay({ onClose }: { onClose: () => void }): React.JSX.Element {
   const auth = useStore($auth)
@@ -18,10 +17,10 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
   const [busy, setBusy] = useState(false)
   const overlayRef = useRef<HTMLDivElement>(null)
 
-  // Register the full-bleed overlay as an interactive region so the textarea
-  // and submit button stay clickable through the otherwise click-through sprite
-  // window — without this, the window's setIgnoreMouseEvents(true, ...) swallows
-  // every click. Mirrors BootFailureOverlay's pattern.
+  // 把全出血浮层注册为可交互区域，让 textarea 与提交按钮
+  // 在默认鼠标穿透的精灵窗口里仍然可以点击——不注册的话，
+  // 窗口的 setIgnoreMouseEvents(true, ...) 会吞掉所有点击。
+  // 镜像 BootFailureOverlay 的模式。
   useInteractiveRegion('activation', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   useEffect(() => {
@@ -53,7 +52,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
       await activate({ code: trimmed })
       onClose()
     } catch {
-      // $auth.error carries the message; the banner reads it.
+      // 错误信息挂在 $auth.error 上，banner 会读取它。
     } finally {
       setBusy(false)
     }

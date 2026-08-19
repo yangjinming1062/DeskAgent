@@ -20,7 +20,7 @@ export function directoryExists(filePath: string): boolean {
   }
 }
 
-// Guard for mainWindow.webContents.send(...): skip if destroyed (race during shutdown/reload).
+// 守护 mainWindow.webContents.send(...)：若已销毁则跳过（关闭/重载期间的竞态）。
 export function sendToMain(mainWindow: BrowserWindow | null | undefined, channel: string, payload?: unknown): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
@@ -35,8 +35,8 @@ export function sendToMain(mainWindow: BrowserWindow | null | undefined, channel
   webContents.send(channel, payload)
 }
 
-// Write-then-rename so a crash mid-write leaves the previous file intact.
-// Unlinks the .tmp on failure to avoid accumulating orphans across crashed saves.
+// 先写再重命名，确保写入中途崩溃时旧文件保持完整。
+// 失败时删除 .tmp，避免因崩溃写入而堆积残留文件。
 export async function atomicWriteFile(targetPath: string, content: Buffer | string | Uint8Array): Promise<void> {
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
   const tmpPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`
@@ -50,7 +50,7 @@ export async function atomicWriteFile(targetPath: string, content: Buffer | stri
   }
 }
 
-// Resolves after `ms` milliseconds.
+// 在 `ms` 毫秒后 resolve。
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }

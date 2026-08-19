@@ -7,10 +7,10 @@ import { $gateway } from '@/shared/store/gateway'
 
 import type { ClipDef } from './clips-biped'
 
-// Model + wardrobe asset catalog for the 3D companion.
-// Backed by the backend /api/companion/model + /api/companion/wardrobe
-// endpoints; pushed over the gateway as model.ready / wardrobe.updated events,
-// and pulled on lifecycle=ready via ``hydrateModel`` / ``hydrateWardrobe``.
+// 3D 伙伴的模型与衣橱资产目录。
+// 后端接口：/api/companion/model 与 /api/companion/wardrobe；
+// 通过网关推送 model.ready / wardrobe.updated 事件，并在 lifecycle=ready 时
+// 由 ``hydrateModel`` / ``hydrateWardrobe`` 拉取一次。
 
 export interface ModelInfo {
   id: number | null
@@ -30,10 +30,10 @@ export interface WardrobeItem {
   id: number
   name: string
   category: string
-  // Raw JSON blob from the backend — parse before applying material overrides.
+  // 后端返回的原始 JSON 字符串 —— 应用材质覆盖前需先解析。
   material_overrides_json: string
   texture_url: string | null
-  // PBR channels paired with `texture_url` (albedo). All nullable.
+  // 与 `texture_url`（albedo）配套的 PBR 通道，均可空。
   normal_url?: string | null
   roughness_url?: string | null
   metalness_url?: string | null
@@ -45,8 +45,8 @@ export interface WardrobeItem {
   gift_state?: string | null
   gift_reason?: string | null
   gift_message?: string | null
-  // Geometric wardrobe (PROTOCOL.md §1.6). ``slot`` is the backend-resolved
-  // mutual-exclusion slot; absent on client-built preview candidates.
+  // 几何衣橱（PROTOCOL.md §1.6）。``slot`` 是后端解析出的互斥槽位；
+  // 客户端构建的预览候选上没有该字段。
   kind?: string
   mesh_url?: string | null
   assembly_json?: string
@@ -92,17 +92,17 @@ export const $modelInfo = atom<ModelInfo>({
 })
 
 export const $wardrobe = atom<WardrobeItem[]>([])
-// True once the first loadCharacter() settles (GLB parsed or procedural
-// fallback active). Gates the render-power scheduler: before it, hatching
-// runs at full frame rate regardless of idle/sleep signals.
+// 首次 loadCharacter() 完成（GLB 解析成功或回退到程序化模型）后置为 true。
+// 用于门控渲染功率调度器：在它变 true 之前，孵化阶段全速运行，
+// 不受 idle/sleep 信号影响。
 export const $modelLoadSettled = atom<boolean>(false)
-// Multi-equip: up to one item per slot (outfit / torso / legs / feet / head / …)
-// can be equipped at once; the array holds the full equipped set.
+// 多装备：每个槽位（outfit / torso / legs / feet / head / …）同时只能装一个；
+// 数组保存当前全套已装备项。
 export const $equippedItems = atom<WardrobeItem[]>([])
 export const $availableClipNames = atom<Set<string>>(new Set())
 export const $generatedClips = atom<ClipDef[]>([])
 
-/** Resolve mutual-exclusion slot from item or assembly_json. */
+/** 根据 item 或 assembly_json 解析互斥槽位。 */
 export function slotOf(item: WardrobeItem): string {
   if (item.slot) {
     return item.slot
@@ -133,7 +133,7 @@ export interface WardrobeCandidate {
   metalnessFileId?: string
   displacementUrl?: string
   displacementFileId?: string
-  // Geometric wardrobe (PROTOCOL.md §1.6).
+  // 几何衣橱（PROTOCOL.md §1.6）。
   meshUrl?: string
   meshFileId?: string
   kind?: string
@@ -144,11 +144,11 @@ const _MAX_CANDIDATES = 3
 
 export const $wardrobeCandidates = atom<WardrobeCandidate[]>([])
 export const $wardrobeSelectedIdx = atom<number>(0)
-// 选中候选时设为临时 outfit spec；null 时回退到 $equippedItems
+// 选中候选时设为临时 outfit spec；为 null 时回退到 $equippedItems。
 export const $wardrobePreview = atom<WardrobeItem | null>(null)
 
-// Build the transient WardrobeItem consumed by CharacterController.setOutfit
-// during preview. Centralised so the id:-1 sentinel lives in one place.
+// 构造预览期间 CharacterController.setOutfit 使用的临时 WardrobeItem。
+// 集中在这里，让 id:-1 这个哨兵值只出现在一处。
 function _candidateToPreview(c: WardrobeCandidate): WardrobeItem {
   return {
     id: -1,
@@ -200,9 +200,8 @@ export function clearWardrobeCandidates(): void {
 // model.gen.progress → $modelGenState='generating' + $modelGenProgress
 // model.ready        → $modelGenState='succeeded'
 // model.failed       → $modelGenState='failed' + $modelGenError
-// model.failed with retry_download → the paid result survived on the backend
-// and only the download failed; $modelRetryable gates the "重试下载" action
-// (companion.model.retryDownload — never re-bills generation).
+// model.failed 且带 retry_download → 付费结果仍留在后端，只是下载失败；
+// $modelRetryable 门控"重试下载"动作（companion.model.retryDownload —— 绝不重新计费生成）。
 export type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
 export const $modelGenState = atom<ModelGenState>('idle')
 export const $modelGenProgress = atom<{ stage: string; progress: number } | null>(null)
@@ -223,9 +222,8 @@ export function clearModelRetry(): void {
   $modelRetryModelId.set(null)
 }
 
-/** companion.model.retryDownload — replay the download of an already-paid
- * generation result (backend refreshes expired URLs via query only; never
- * re-submits). Progress flows back over the same model.* events. */
+/** companion.model.retryDownload —— 重放一次已经付费生成结果的下载
+ * （后端仅刷新 URL 签名查询，不会重新提交生成）。进度沿同一条 model.* 事件流回传。 */
 export async function retryModelDownload(modelId: number): Promise<void> {
   const gateway = $gateway.get()
 
@@ -250,7 +248,7 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
   $modelInfo.set({ ...$modelInfo.get(), ...next })
 }
 
-/** Render set: equipped items overlaid with active preview candidate by slot. */
+/** 渲染集合：已装备项按槽位叠加当前预览候选。 */
 export const $outfitView = computed([$equippedItems, $wardrobePreview], (equipped, preview) =>
   preview ? equipped.filter(i => slotOf(i) !== slotOf(preview)).concat(preview) : equipped
 )
@@ -267,11 +265,9 @@ export function refreshEquippedAndApply(): WardrobeItem[] {
   return equipped
 }
 
-// Pull the active model from the backend on lifecycle=ready. The backend
-// re-signs ``asset_url`` every call (5-minute TTL); we never cache it. 404
-// (no model yet during onboarding) is swallowed silently so the initial
-// atom stays at its default; 5xx / network errors warn so a missing model
-// doesn't go unnoticed in production.
+// 在 lifecycle=ready 时从后端拉取当前模型。后端每次调用都会重签 ``asset_url``（5 分钟 TTL），
+// 不做本地缓存。404（onboarding 期间还没有模型）静默吞掉，让初始原子值保持默认；
+// 5xx / 网络错误则打 warn，避免生产环境模型缺失悄无声息。
 export async function ensureModelGeneration(): Promise<void> {
   try {
     const res = await window.spiritagent.api<{ id?: number; status?: string }>({
@@ -280,9 +276,8 @@ export async function ensureModelGeneration(): Promise<void> {
       body: {}
     })
 
-    // The backend returns (not regenerates) a download-failed row — the paid
-    // result is still recoverable, so surface the retry action instead of
-    // letting the failed state imply "must regenerate".
+    // 后端返回的是一行下载失败的记录（而非重新生成）—— 付费结果仍可恢复，
+    // 因此弹出重试动作，而不是让 failed 状态暗示"必须重新生成"。
     if (res?.status === 'download_failed') {
       setModelFailed('3D 模型下载失败，可重试下载', { retryDownload: true, modelId: res.id ?? null })
     }
@@ -320,13 +315,13 @@ export async function hydrateModel(): Promise<void> {
     }
   }
 
-  // If no ready model is available on lifecycle=ready, automatically trigger generation
+  // lifecycle=ready 阶段还没有可用模型时，自动启动生成
   void ensureModelGeneration()
 }
 
-// Same shape as ``hydrateModel`` — GET /api/companion/wardrobe, publish to
-// ``$wardrobe`` (which also derives ``$equippedItems``). Shared between the
-// lifecycle=ready hydration and the ``wardrobe.updated`` WS event handler.
+// 与 ``hydrateModel`` 形态一致 —— GET /api/companion/wardrobe 后写入
+// ``$wardrobe``（同时衍生 ``$equippedItems``）。在 lifecycle=ready 时的水合
+// 与 ``wardrobe.updated`` WS 事件处理之间共用。
 export async function hydrateWardrobe(): Promise<void> {
   try {
     const res = await window.spiritagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
@@ -340,9 +335,8 @@ export async function hydrateWardrobe(): Promise<void> {
 
 export const $expressions = atom<CompanionExpression[]>([])
 
-/** GET → atom hydrator. Swallows 4xx (precondition) silently so the atom stays
- * at its default; 5xx / network errors warn so a missing asset doesn't go
- * unnoticed in production. */
+/** GET → 原子的水合函数。静默吞掉 4xx（前置条件不满足）让原子保持默认值；
+ * 5xx / 网络错误则打 warn，避免生产环境资产缺失悄无声息。 */
 async function hydrateArray<T>(
   path: string,
   atom: { set(value: T[]): void },

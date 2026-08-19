@@ -3,7 +3,7 @@ import type { DesktopTheme, DesktopThemeColors } from './types'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 
-// ─── Color math (for synthesised light variants) ────────────────────────
+// ─── 颜色计算（用于合成浅色变体） ────────────────────────
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const clean = hex.trim().replace(/^#/, '')
@@ -109,7 +109,7 @@ function renderedModeFor(colors: DesktopThemeColors, mode: 'light' | 'dark'): 'l
   return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'light' : 'dark'
 }
 
-// ─── CSS application ────────────────────────────────────────────────────────
+// ─── CSS 应用 ────────────────────────────────────────────────────────
 
 const mixesFor = (isDark: boolean): Record<string, string> => ({
   '--theme-mix-chrome': isDark ? '74%' : '92%',
@@ -127,13 +127,12 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
   const root = document.documentElement
   const c = theme.colors
 
-  // B4: spiritagentTheme.typography covers both fontSans and fontMono, so the
-  // DEFAULT_TYPOGRAPHY fallback is dead in practice for our shipped themes.
-  // The remaining `theme.typography` spread still lets consumers override
-  // per-theme. We coalesce against `DEFAULT_TYPOGRAPHY` because
-  // `DesktopTheme.typography` is `Partial<...>` so even spiritagentTheme's
-  // values are typed `string | undefined`. The default matches what we
-  // used to spread in.
+  // B4：spiritagentTheme.typography 同时覆盖 fontSans 和 fontMono，
+  // 所以 DEFAULT_TYPOGRAPHY 回退在我们出厂的主题里实际上是死代码。
+  // 保留 `theme.typography` 的展开是为了让消费方按主题覆写。
+  // 我们用 `DEFAULT_TYPOGRAPHY` 做兜底，是因为 `DesktopTheme.typography` 是
+  // `Partial<...>`，即便 spiritagentTheme 自己的值类型也是 `string | undefined`。
+  // 默认值与我们之前展开的值一致。
   const typo = {
     fontSans: theme.typography?.fontSans ?? spiritagentTheme.typography?.fontSans ?? DEFAULT_TYPOGRAPHY.fontSans,
     fontMono: theme.typography?.fontMono ?? spiritagentTheme.typography?.fontMono ?? DEFAULT_TYPOGRAPHY.fontMono,
@@ -148,7 +147,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
   root.dataset.spiritagentMode = rendered
   root.classList.toggle('dark', isDark)
 
-  // Brand seeds feed every glass + shadcn token via `color-mix()` in styles.css.
+  // 品牌种子通过 styles.css 中的 `color-mix()` 喂给所有 glass + shadcn token。
   const seeds: Record<string, string> = {
     '--theme-foreground': c.foreground,
     '--theme-primary': c.primary,
@@ -163,7 +162,7 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
     '--theme-bubble-seed': c.userBubble ?? c.popover
   }
 
-  // shadcn/Tailwind tokens that aren't derived from the seed chain.
+  // 不由种子链派生的 shadcn / Tailwind token。
   const palette: Record<string, string> = {
     '--dt-primary-foreground': c.primaryForeground,
     '--dt-secondary-foreground': c.secondaryForeground,
@@ -192,10 +191,10 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
     foreground: c.foreground
   })
 
-  // B6: inject the theme stylesheet here. There's exactly one font URL
-  // (Courier Prime from spiritagentTheme.typography.fontUrl), and
-  // applyTheme is now only called from the module-load boot block below.
-  // The previous Set + dataset guard was dead overhead for a single URL.
+  // B6：在此注入主题样式表。整套只有一份字体 URL
+  // （Courier Prime，来自 spiritagentTheme.typography.fontUrl），
+  // 而 applyTheme 如今只在下方模块加载的启动块中被调用。
+  // 之前那个 Set + dataset 守卫对单个 URL 是无用的开销。
   if (typo.fontUrl && !document.head.querySelector(`link[data-spiritagent-theme-font]`)) {
     const link = document.createElement('link')
 
@@ -206,10 +205,10 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark'): void {
   }
 }
 
-// Boot-time paint: imported once during initial render, applied synchronously
-// so the page never flashes the default theme. The framed tool window is
-// exempt — styles.css pins its dark palette on html[data-role='tool'], and
-// the inline seeds here would win that cascade.
+// 启动时绘制：在初始渲染时一次性 import，同步应用，
+// 让页面不会出现默认主题闪烁。带框架的工具窗口例外——
+// styles.css 在 html[data-role='tool'] 上钉死了深色调色板，
+// 此处内联种子反而会赢过那一级 cascade。
 if (typeof window !== 'undefined' && document.documentElement.dataset.role !== 'tool') {
   applyTheme(deriveTheme('light'), 'light')
 }

@@ -24,7 +24,7 @@ describe('avatar-regen-store', () => {
 
     await expect(awaitAvatarRegeneration('job-2')).resolves.toEqual({ job_id: 'job-2', error: 'provider down' })
 
-    // The buffered payload must be consumed exactly once.
+    // 缓冲的载荷只能被消费一次。
     resolveAvatarRegeneration({ job_id: 'job-2', error: 'second' })
     await expect(awaitAvatarRegeneration('job-2')).resolves.toEqual({ job_id: 'job-2', error: 'second' })
   })
@@ -38,16 +38,16 @@ describe('avatar-regen-store', () => {
   })
 
   it('drops a late event that arrives after the timeout', async () => {
-    // First awaiter times out.
+    // 第一个 awaiter 超时。
     const promise = awaitAvatarRegeneration('job-4')
     const settled = expect(promise).rejects.toThrow(/timed out/)
     await vi.advanceTimersByTime(120_001)
     await settled
 
-    // Late event past the deadline: the tombstone must drop it, not re-buffer it.
+    // 超时后才到达的迟到事件：墓碑记录必须丢弃它，而不是再次入队。
     resolveAvatarRegeneration({ job_id: 'job-4', error: 'too late' })
 
-    // A new awaiter for the same job starts fresh with its own timer.
+    // 同一个 job 的新 awaiter 从零开始计时。
     const retry = awaitAvatarRegeneration('job-4')
     const retrySettled = expect(retry).rejects.toThrow(/timed out/)
     await vi.advanceTimersByTime(120_001)

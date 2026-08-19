@@ -5,7 +5,7 @@ export interface VoiceOption {
   language: string
   tags: readonly string[]
   description: string
-  // Provider-supplied design-voice guidance, surfaced in the hub gallery.
+  // 供应商提供的设计音色说明，展示在枢纽层的画廊中。
   voice_design_guide?: string
 }
 
@@ -23,11 +23,10 @@ export const GENDER_OPTIONS: { id: string; label: string }[] = [
   { id: 'neutral', label: '中性' }
 ]
 
-// Prefix used by MiMoTTSProvider.synthesize to encode a designed voice as a
-// single string (`mimo_voicedesign:<prompt>`). Recognized in two places: the
-// renderer-side validity check (companion/voice-validity.ts) and the
-// main-process TTS router (media.cjs), which must force design tokens to
-// cloud regardless of the user's local-vs-cloud preference.
+// MiMoTTSProvider.synthesize 用来把设计音色编码成单个字符串的前
+// 前缀（`mimo_voicedesign:<prompt>`）。两处会识别它：
+// 渲染层的合法性检查（companion/voice-validity.ts）和主进程的 TTS 路由
+// （media.cjs）——后者无论用户偏好本地还是云端，都必须把设计音色强制走云。
 export const VOICEDESIGN_PREFIX = 'mimo_voicedesign:'
 
 export type RequestGateway = <T>(method: string, params?: Record<string, unknown>) => Promise<T>

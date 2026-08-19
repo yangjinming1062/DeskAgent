@@ -19,48 +19,43 @@ const DEFAULT_FAILURE_HINT = '暂时换不出来，稍后再试吧'
 
 export interface UseRegeneratePortraitOptions {
   /**
-   * Take the refImage branch (POST /avatar/from-image) instead of the
-   * avatar.regenerate RPC. Empty string clears any prior reference image.
+   * 走 refImage 分支（POST /avatar/from-image），而不是 avatar.regenerate RPC。
+   * 空字符串会清除之前的参考图。
    */
   refImage?: PickedImage | null
   /**
-   * Optional presentation/style reference sent alongside the identity anchor
-   * as ``presentation_image``. Only consumed by multi-reference providers.
-   * When ``refImage`` is absent, this acts as the sole reference (primary
-   * ``image``) rather than a secondary.
+   * 与身份锚一起以 ``presentation_image`` 发送的可选表现/风格参考。
+   * 仅多参考供应商会消费它。当 ``refImage`` 不存在时，本字段充当唯一参考
+   * （主 ``image``）而非辅图。
    */
   presentationRef?: PickedImage | null
   /**
-   * Play onboarding.portrait.regenerate on success. Off by default so
-   * non-onboarding surfaces don't grow audio behaviour they didn't ask for.
+   * 成功时播放 onboarding.portrait.regenerate。
+   * 默认关闭，避免非 onboarding 页面意外加上没有申请的音效行为。
    */
   playAudioOnSuccess?: boolean
-  /** Override success copy. */
+  /** 覆盖成功提示文案。 */
   successHint?: string
-  /** Override failure copy. */
+  /** 覆盖失败提示文案。 */
   failureHint?: string
   /**
-   * Optional per-call feedback passed via `regenerate(feedback)`. When set,
-   * the hook's own copy doesn't shadow the per-call value — callFeedback
-   * wins.
+   * 通过 `regenerate(feedback)` 传入的可选逐次反馈。设置后，
+   * hook 自身的文案不会覆盖本次调用的值——callFeedback 优先。
    */
   feedback?: string
   /**
-   * Fired with the freshly-resolved data URLs after each successful regen.
-   * Surfaces that mirror the global `$portraitUrl` into their own local
-   * state (e.g. onboarding's paired preview) wire this up to mirror the
-   * atom update; surfaces already subscribed via `useStore($portraitUrl)`
-   * can omit it.
+   * 每次成功重生成后用刚解析到的 data URL 触发。把全局 `$portraitUrl` 同步到
+   * 自己本地状态的页面（如 onboarding 的成对预览）需要接入它来镜像 atom 更新；
+   * 已通过 `useStore($portraitUrl)` 订阅的页面可以省略。
    */
   onRegenerated?: (urls: { avatar: string | null; id: number | null }) => void
 }
 
 export interface UseRegeneratePortraitResult {
   /**
-   * Per-call feedback overrides options.feedback and the shared
-   * $regenFeedback atom. Trimmed; empty becomes undefined. The atom is
-   * cleared on every successful regenerate regardless of which source the
-   * feedback came from.
+   * 逐次反馈优先于 options.feedback 和共享的 $regenFeedback atom。
+   * 会 trim；空串转为 undefined。无论反馈来自哪条路径，
+   * 每次成功 regenerate 后都会清空 atom。
    */
   regenerate: (feedback?: string) => Promise<void>
   busy: boolean
@@ -69,11 +64,10 @@ export interface UseRegeneratePortraitResult {
 }
 
 /**
- * Shared regenerate-the-portrait flow for onboarding, 伙伴设置 → 形象,
- * 重新对话微调性格, and PersonaSection inline editing. Owns the
- * sync/queued split, busy flag, hint copy, and audio cue; the caller
- * supplies a textarea bound to $regenFeedback (via setRegenFeedback /
- * useStore) or passes feedback per-call.
+ * 跨 onboarding、伙伴设置 → 形象、重新对话微调性格、PersonaSection 内联编辑
+ * 共用的重生成形象流程。负责同步/排队分流、busy 标记、提示文案、音效提示；
+ * 调用方提供一个绑定到 $regenFeedback 的 textarea（通过 setRegenFeedback /
+ * useStore）或逐次传入 feedback。
  */
 export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}): UseRegeneratePortraitResult {
   const { requestGateway } = useGatewayRequest()
@@ -116,9 +110,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       }
 
       try {
-        // Q4 image is the identity anchor; presentationRef is a style/presentation
-        // hint. When no Q4 image exists, the presentation ref becomes the sole
-        // reference (primary image) instead of a secondary.
+        // Q4 图是身份锚；presentationRef 是风格/表现提示。
+        // 没有 Q4 图时，presentation ref 变成唯一的参考图（主图）而非辅图。
         const primaryRef = refImage ?? presentationRef
         const secondaryRef = refImage ? presentationRef : null
 
@@ -186,11 +179,10 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
         setBusy(false)
       }
     },
-    // Depend on the destructured primitives, not on the `options` object
-    // itself — callers pass a fresh literal each render, which would
-    // otherwise give `regenerate` a new identity every render and defeat
-    // downstream React.memo. optionFeedback participates so a caller can
-    // change it without remounting the hook.
+    // 依赖项用解构出来的基本值，而非 `options` 对象本身——调用方每次渲染
+    // 都会传入新字面量，否则会让 `regenerate` 每次渲染都获得新身份，
+    // 抵消下游 React.memo 的效果。optionFeedback 参与依赖是为了让调用方
+    // 在不重新挂载 hook 的情况下更改它。
     [
       requestGateway,
       refImage,

@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url'
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 
-// Avatar / Sprite / Wardrobe generation: provider call + Pillow re-encode + clip seeding routinely
-// run 15–25s, so the 15s default fires before the backend returns 201.
+// 头像 / 精灵 / 衣橱生成：供应商调用 + Pillow 重编码 + 关键帧写入通常要 15–25 秒，
+// 默认 15 秒会在后端返回 201 之前就超时，所以这里放宽。
 export const AVATAR_FETCH_TIMEOUT_MS = 120_000
 
 export const SAFE_ENV_SUFFIXES: Set<string> = new Set(['dist', 'example', 'sample', 'template'])
@@ -29,7 +29,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs 
 export const AVATAR_SLOW_PATH_PATTERN =
   /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody\/(?:samples|front|confirm-front))?|sprite|wardrobe|animations\/generate)|media\/(?:image_gen|video_gen))$/i
 
-// POST only — reads are DB lookups with no provider call.
+// 仅 POST 路径——读路径只是数据库查询，不涉及供应商调用。
 export function resolvePathTimeoutMs(
   pathStr?: null | string,
   method?: null | string,

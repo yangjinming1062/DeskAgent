@@ -213,7 +213,7 @@ test('buildTrayMenu shows "隐藏" when unauthenticated but sprite is visible', 
   assert.ok(menu)
   assert.equal(menu.template[0].label, '隐藏')
 
-  // Clicking it should hide the window
+  // 点击应隐藏窗口
   menu.template[0].click()
   assert.equal(fakeWin.hidden, true)
 
@@ -229,7 +229,7 @@ test('buildTrayMenu shows "激活..." when unauthenticated and sprite is hidden'
   assert.ok(menu)
   assert.equal(menu.template[0].label, '激活...')
 
-  // Clicking it should show the window
+  // 点击应显示窗口
   menu.template[0].click()
   assert.equal(fakeWin.hidden, false)
 
@@ -292,7 +292,7 @@ test('installCloseInterceptor rebuilds tray menu on window lifecycle events', ()
 
   assert.equal(tray.contextMenu.template[0].label, '隐藏')
 
-  // Trigger close event -> intercepted and hidden
+  // 触发 close 事件 → 被拦截并隐藏
   const closeEvent = {
     defaultPrevented: false,
     preventDefault() {
@@ -305,7 +305,7 @@ test('installCloseInterceptor rebuilds tray menu on window lifecycle events', ()
   assert.equal(fakeWin.hidden, true)
   assert.equal(tray.contextMenu.template[0].label, '显示')
 
-  // Trigger show event -> menu updates to '隐藏'
+  // 触发 show 事件 → 菜单更新为 '隐藏'
   fakeWin.show()
   assert.equal(tray.contextMenu.template[0].label, '隐藏')
 
@@ -317,14 +317,14 @@ test('installTray handles tray click and double-click events', () => {
   const { deps } = createMockDeps({ authed: true, fakeWin })
   const tray = installTray(deps) as any
 
-  // Tray click toggles
+  // 单击托盘图标切换显示状态
   tray.emit('click')
   assert.equal(fakeWin.hidden, true)
 
   tray.emit('click')
   assert.equal(fakeWin.hidden, false)
 
-  // Tray double click shows
+  // 双击托盘图标显示窗口
   fakeWin.hidden = true
   tray.emit('double-click')
   assert.equal(fakeWin.hidden, false)

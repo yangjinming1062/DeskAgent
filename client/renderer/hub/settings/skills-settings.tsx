@@ -66,8 +66,8 @@ export function SkillsSettings(): React.JSX.Element {
   const saveErrorRef = useLatestRef(s.saveError)
   const refreshErrorRef = useLatestRef(s.refreshError)
 
-  // Read latest skills via ref so a toggle's identity isn't tied to array
-  // length; the IPC failure path rolls back to the pre-click snapshot.
+  // 通过 ref 读取最新的 skills，使切换回调不依赖数组长度；
+  // IPC 失败路径回滚到点击前的快照。
   const toggle = async (name: string, nextEnabled: boolean) => {
     const prev = skillsRef.current
 
@@ -102,8 +102,8 @@ export function SkillsSettings(): React.JSX.Element {
     const groupedVisible = new Map<string, SkillSummary[]>()
     let visibleCount = 0
 
-    // Platform-incompatible skills are hidden from the menu entirely; the IPC
-    // guard in skills.cjs refuses re-enabling them for older callers.
+    // 与平台不兼容的 skills 从菜单中完全隐藏；skills.cjs 中的 IPC 守卫
+    // 会拒绝旧调用方重新启用它们。
     for (const skill of skills) {
       if (!skill.compatible) {
         continue

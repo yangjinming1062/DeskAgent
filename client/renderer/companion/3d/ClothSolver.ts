@@ -89,8 +89,8 @@ export class ClothSolver {
     this.skinIndex = si ? (si.array as Uint16Array | Uint8Array) : null
     this.skinWeight = sw ? (sw.array as Float32Array) : null
 
-    // Structural constraints from the index buffer (unique edges). Skin mode
-    // has no free vertices, so it skips edge constraints entirely.
+    // 由 index buffer 派生结构约束（唯一边）。Skin 模式没有自由顶点，
+    // 因此完全跳过边约束。
     const constraints = !this.pinAll && geo.index ? buildConstraints(geo.index.array, count, this.base) : null
 
     this.edges = constraints?.edges ?? null
@@ -100,9 +100,9 @@ export class ClothSolver {
       log.warn('cloth', 'cloth mesh has no index buffer or exceeds vertex budget — constraints disabled')
     }
 
-    // Bone sphere colliders are only built when bodyCollider is absent.
-    // When bodyCollider is available, accurate body surface mesh collision is used
-    // and coarse bone spheres are disabled so they do not push beyond the surface.
+    // 仅当 bodyCollider 缺失时才构建骨骼球碰撞体。
+    // 有 bodyCollider 时使用精确的身体表面网格碰撞，
+    // 并关闭粗粒度的骨骼球以免推出超过表面。
     if (!this.pinAll && !this.bodyCollider) {
       for (const bone of skeleton.bones) {
         const radius = COLLIDER_RADII[boneSuffix(bone.name)]
@@ -127,12 +127,11 @@ export class ClothSolver {
     const geo = this.mesh.geometry
 
     this.mesh.updateWorldMatrix(true, false)
-    // Single mesh-to-skeleton-space inverse shared by the two methods below.
+    // mesh 到 skeleton 空间的逆矩阵，由下方两个方法共用。
     _inv.copy(this.mesh.matrixWorld).invert()
 
     if (!this.initialized) {
-      // First frame: settle everything onto the skinned pose so the cloth
-      // doesn't visibly snap from the bind pose.
+      // 首帧：把所有点稳定到蒙皮姿态，避免布料从绑定姿态出现明显跳变。
       this.writeSkinnedTargets(true)
       this.prev.set(this.pos)
       this.initialized = true
@@ -148,7 +147,7 @@ export class ClothSolver {
     const prev = this.prev
     const count = this.anchor.length
 
-    // Integrate free vertices (anchors were pinned by writeSkinnedTargets).
+    // 积分自由顶点（锚点已由 writeSkinnedTargets 钉住）。
     for (let i = 0; i < count; i++) {
       if (this.anchor[i]) {
         continue
@@ -175,8 +174,8 @@ export class ClothSolver {
     ;(attr.array as Float32Array).set(pos)
     attr.needsUpdate = true
 
-    // Halve normal recompute — 60 fps hems look identical to 30 fps and this
-    // is the largest single cost on the hot path.
+    // 法线重算频率减半——60fps 与 30fps 的折边观感一致，
+    // 而这是热路径上最贵的开销。
     if (++this.frameTick % 2 === 0) {
       geo.computeVertexNormals()
     }
@@ -209,7 +208,7 @@ export class ClothSolver {
     const sw = this.skinWeight
     const count = this.anchor.length
 
-    // mesh.matrixWorld inverse precomputed by update() and shared with refreshColliders.
+    // mesh.matrixWorld 的逆矩阵由 update() 预计算，供 refreshColliders 共用。
 
     for (let i = 0; i < count; i++) {
       if (!pinAll && !this.anchor[i]) {
@@ -259,7 +258,7 @@ export class ClothSolver {
       const diff = (d - r) / d
       const aFixed = this.anchor[e[i]] === 1
       const bFixed = this.anchor[e[i + 1]] === 1
-      // Split correction; a fixed endpoint absorbs the whole correction.
+      // 修正分配：固定端吸收全部修正量。
       const wa = aFixed ? 0 : bFixed ? 1 : 0.5
       const wb = bFixed ? 0 : aFixed ? 1 : 0.5
 
@@ -273,9 +272,9 @@ export class ClothSolver {
   }
 
   private refreshColliders(): void {
-    // bone.matrixWorld is maintained by the renderer each frame; reading it
-    // directly skips the per-collider ancestor walk. One-frame lag contract
-    // already documented. mesh.matrixWorld inverse precomputed by update().
+    // bone.matrixWorld 由渲染器每帧维护；直接读取可省去
+    // 每个碰撞体的祖先遍历。一帧延迟契约已记录。
+    // mesh.matrixWorld 的逆矩阵由 update() 预计算。
 
     for (let i = 0; i < this.colliders.length; i++) {
       const bone = this.colliders[i].bone

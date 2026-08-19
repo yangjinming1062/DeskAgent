@@ -13,13 +13,11 @@ export function BootFailureOverlay(): React.JSX.Element | null {
   const overlayRef = useRef<HTMLDivElement>(null)
   const isError = boot.phase === 'renderer.error' && boot.error
 
-  // Register the full-bleed overlay as an interactive region so the Retry
-  // button stays clickable through the otherwise click-through sprite
-  // window — without this, the window's setIgnoreMouseEvents(true, ...)
-  // swallows every click in the failure state. The rect is a compile-time
-  // constant (position: fixed; inset: 0) so we skip getBoundingClientRect
-  // and return the viewport directly — interactive-regions calls this on
-  // every mousemove across the screen while the failure state is up.
+  // 把全出血浮层注册为可交互区域，让 Retry 按钮在默认鼠标穿透的精灵窗口里
+  // 仍可点击——不注册的话，窗口的 setIgnoreMouseEvents(true, ...) 会在
+  // 失败态下吞掉所有点击。rect 是编译期常量（position: fixed; inset: 0），
+  // 因此跳过 getBoundingClientRect，直接返回视口——interactive-regions
+  // 在失败态期间会针对屏幕上的每个 mousemove 调用此函数。
   useInteractiveRegion('boot-failure', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   if (!isError) {
@@ -29,7 +27,7 @@ export function BootFailureOverlay(): React.JSX.Element | null {
   const message = boot.message || strings.boot.errors.desktopBootFailed
 
   const onRetry = () => {
-    // Reload re-runs the boot path, which only fires once per mount.
+    // Reload 会重跑启动流程，每次挂载只触发一次。
     setPrimaryGateway(null)
     window.location.reload()
   }
