@@ -19,15 +19,19 @@ async def get_current_admin_token(credentials: HTTPAuthorizationCredentials | No
     if not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌无效。")
     jti = payload.get("jti")
-    if jti:
-        session = (await db.execute(select(AdminSession).where(AdminSession.token_jti == jti, AdminSession.is_active.is_(True)))).scalar_one_or_none()
-        if session is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="管理员令牌已吊销或未登记，请重新登录。")
+    if not jti:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌无效。")
+    session = (await db.execute(select(AdminSession).where(AdminSession.token_jti == jti, AdminSession.is_active.is_(True)))).scalar_one_or_none()
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="管理员令牌已吊销或未登记，请重新登录。")
     return username
 
 
 async def get_current_session(credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME), db: AsyncSession = Depends(get_db)) -> tuple[User, LoginRecord]:
     payload = decode_bearer_token(credentials)
+
+    if payload.get("purpose") is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="令牌用途无效。")
 
     user_id = payload.get("sub")
     token_jti = payload.get("jti")

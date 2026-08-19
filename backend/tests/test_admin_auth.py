@@ -4,6 +4,7 @@ cron consolidator Row unpacking)."""
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
 
 async def test_admin_login_awaits_token_creation(monkeypatch):
@@ -152,6 +153,20 @@ async def test_disabled_user_rejected_by_session_guard(
     assert resp.status_code == 403
 
 
+async def test_ws_ticket_cannot_drive_rest_refresh(_patch_db, test_client, test_token):
+    from modules.auth import LoginRecord, create_access_token
+
+    _, SessionLocal = _patch_db
+    async with SessionLocal() as db:
+        login = (await db.execute(select(LoginRecord).where(LoginRecord.is_active.is_(True)))).scalar_one()
+        token, _, token_jti = create_access_token(user_id=login.user_id, username="testuser", expires_in_seconds=60, purpose="ws")
+        db.add(LoginRecord(user_id=login.user_id, token_jti=token_jti, is_active=True))
+        await db.commit()
+
+    resp = await test_client.post("/api/user/refresh", headers={"Authorization": f"Bearer {token}"}, json={})
+    assert resp.status_code == 401
+
+
 async def test_expired_user_rejected_by_session_guard(
     test_client, test_token, _patch_db
 ):
@@ -288,3 +303,28 @@ async def test_user_activation_code_lifecycle(_patch_db):
         assert regen.activation_code is not None
         _, token_v3 = decode_activation_code(regen.activation_code)
         assert token_v3 != token_v2
+async def test_admin_token_requires_active_registered_session(_patch_db):
+    from fastapi import HTTPException
+    from fastapi.security import HTTPAuthorizationCredentials
+    from sqlalchemy import update
+
+    from components import SETTINGS
+    from modules.auth.deps import get_current_admin_token
+    from modules.auth.models import AdminSession
+    from modules.auth.security import create_admin_token, decode_access_token
+
+    _, SessionLocal = _patch_db
+    token, _ = await create_admin_token()
+    credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    payload = decode_access_token(token)
+
+    async with SessionLocal() as db:
+        assert await get_current_admin_token(credentials, db) == SETTINGS.admin_username
+        await db.execute(update(AdminSession).where(AdminSession.token_jti == payload["jti"]).values(is_active=False))
+        await db.commit()
+
+    async with SessionLocal() as db:
+        with pytest.raises(HTTPException) as exc_info:
+            await get_current_admin_token(credentials, db)
+
+    assert exc_info.value.status_code == 401

@@ -1,8 +1,7 @@
 import os
 from typing import Any
 
-import httpx
-from components import get_logger
+from components import get_logger, safe_outbound_async_client
 
 from .. import WebSearchProvider
 
@@ -11,7 +10,7 @@ logger = get_logger(__name__)
 TAVILY_TIMEOUT = 60
 # Module-level client keeps the connection pool warm across calls —
 # recreating per-request pays a TLS handshake on every Tavily call.
-_HTTP_CLIENT = httpx.AsyncClient(timeout=TAVILY_TIMEOUT)
+_HTTP_CLIENT = safe_outbound_async_client(timeout=TAVILY_TIMEOUT)
 
 
 async def aclose_tavily() -> None:

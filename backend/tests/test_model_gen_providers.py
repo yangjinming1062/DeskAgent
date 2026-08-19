@@ -33,8 +33,12 @@ def png_seed(tmp_path: Path) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def _pin_model(monkeypatch):
+def _pin_hunyuan_settings(monkeypatch):
     monkeypatch.setattr(SETTINGS, "hunyuan_model_version", "")
+    monkeypatch.setattr(SETTINGS, "hunyuan_generate_type", "Normal")
+    monkeypatch.setattr(SETTINGS, "hunyuan_face_count", 0)
+    monkeypatch.setattr(SETTINGS, "hunyuan_enable_pbr", True)
+    monkeypatch.setattr(SETTINGS, "hunyuan_result_format", "glb")
     monkeypatch.setattr(SETTINGS, "hunyuan_api_key", "hk_test")
     monkeypatch.setattr(SETTINGS, "hunyuan_base_url", "https://tokenhub.test")
 

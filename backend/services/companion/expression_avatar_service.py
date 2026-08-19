@@ -77,6 +77,7 @@ class ExpressionCooldownError(Exception):
 # share one generation); failed keys cool down instead of retry-storming.
 _inflight: dict[tuple[int, str, int], asyncio.Task[CompanionExpressionAvatar]] = {}
 _failed_at: dict[tuple[int, str, int], float] = {}
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 
 def signed_expression_avatar_url(row: CompanionExpressionAvatar) -> str | None:
@@ -154,7 +155,9 @@ def kick_background_generation(user_id: int, name: str) -> None:
         except Exception:
             logger.info("background expression avatar generation failed", extra={"user_id": user_id, "name": name})
 
-    asyncio.create_task(_run())
+    task = asyncio.create_task(_run())
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause: str, setting_clause: str, subject_ref: str) -> CompanionExpressionAvatar:

@@ -1,5 +1,7 @@
 import contextlib
 import json
+import math
+import re
 import secrets
 import time
 from collections.abc import Iterator
@@ -9,6 +11,9 @@ from .config import SETTINGS
 from .logger import get_logger
 
 logger = get_logger(__name__)
+
+_FILE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_MEDIA_EXTENSIONS = ("jpg", "png", "jpeg", "webp", "glb", "wav", "mp3")
 
 
 def _storage_dir() -> Path:
@@ -23,6 +28,33 @@ def _meta_path(file_id: str) -> Path:
 
 def _media_path(file_id: str, ext: str) -> Path:
     return _storage_dir() / f"{file_id}.{ext}"
+
+
+def _valid_file_id(file_id: str) -> bool:
+    return _FILE_ID_RE.fullmatch(file_id) is not None
+
+
+def _read_metadata(path: Path) -> dict | None:
+    try:
+        value = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _metadata_created_at(meta: dict) -> float | None:
+    try:
+        created_at = float(meta.get("created_at", 0))
+    except (TypeError, ValueError):
+        return None
+    return created_at if math.isfinite(created_at) else None
+
+
+def _metadata_path(meta: dict) -> Path | None:
+    value = meta.get("path")
+    if not isinstance(value, str) or not value:
+        return None
+    return Path(value)
 
 
 def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta_marker: str | None = None) -> tuple[str, str]:
@@ -61,36 +93,53 @@ def _build_public_url(file_id: str) -> str:
 
 def get_file_path(file_id: str) -> tuple[Path, str] | None:
     """Get file path and content_type by ID. Returns None if not found/expired."""
+    if not _valid_file_id(file_id):
+        return None
     mp = _meta_path(file_id)
     if mp.exists():
-        try:
-            meta = json.loads(mp.read_text())
-            path = Path(meta.get("path", ""))
-            if not path.is_absolute():
-                path = (Path(SETTINGS.data_dir) / path).resolve()
-            if not path.exists():
-                path = _storage_dir() / Path(meta.get("path", "")).name
-            if path.exists():
-                return path, meta.get("content_type", "image/png")
-        except (json.JSONDecodeError, OSError):
-            pass
+        meta = _read_metadata(mp)
+        if meta is None:
+            return None
+        created_at = _metadata_created_at(meta)
+        if created_at is None or time.time() - created_at > SETTINGS.temp_file_ttl_hours * 3600:
+            return None
+        raw_path = _metadata_path(meta)
+        if raw_path is None:
+            return None
+        path = raw_path if raw_path.is_absolute() else _storage_dir() / raw_path
+        resolved_path = path.resolve()
+        if resolved_path.is_relative_to(_storage_dir().resolve()) and resolved_path.is_file():
+            content_type = meta.get("content_type", "image/png")
+            return resolved_path, content_type if isinstance(content_type, str) else "image/png"
+        return None
 
-    # Direct fallback: check _storage_dir for any matching extension
-    for ext in ("jpg", "png", "jpeg", "webp", "glb", "wav", "mp3"):
+    storage_dir = _storage_dir().resolve()
+    for ext in _MEDIA_EXTENSIONS:
         candidate = _storage_dir() / f"{file_id}.{ext}"
-        if candidate.exists():
+        try:
+            resolved_path = candidate.resolve()
+            stat_result = resolved_path.stat()
+        except OSError:
+            continue
+        if not resolved_path.is_relative_to(storage_dir):
+            continue
+        if time.time() - stat_result.st_mtime > SETTINGS.temp_file_ttl_hours * 3600:
+            _safe_unlink(resolved_path)
+            continue
+        if resolved_path.is_file():
             content_type = "image/jpeg" if ext in ("jpg", "jpeg") else ("image/png" if ext == "png" else "application/octet-stream")
-            return candidate, content_type
+            return resolved_path, content_type
 
     return None
 
 
 def _iter_meta_files() -> Iterator[tuple[Path, dict]]:
     for mp in _storage_dir().glob("*.json"):
-        try:
-            yield mp, json.loads(mp.read_text())
-        except (json.JSONDecodeError, OSError):
+        meta = _read_metadata(mp)
+        if meta is None:
             _safe_unlink(mp)
+            continue
+        yield mp, meta
 
 
 def cleanup_expired() -> None:
@@ -98,8 +147,13 @@ def cleanup_expired() -> None:
     now = time.time()
     count = 0
     for mp, meta in _iter_meta_files():
-        if now - meta.get("created_at", 0) > ttl:
-            _safe_unlink(Path(meta.get("path", "")))
+        created_at = _metadata_created_at(meta)
+        if created_at is None:
+            created_at = 0.0
+        if now - created_at > ttl:
+            path = _metadata_path(meta)
+            if path is not None:
+                _safe_unlink(path)
             _safe_unlink(mp)
             count += 1
     if count:
@@ -110,7 +164,9 @@ def gc_session(session_id: str) -> None:
     count = 0
     for mp, meta in _iter_meta_files():
         if meta.get("session_id") == session_id:
-            _safe_unlink(Path(meta.get("path", "")))
+            path = _metadata_path(meta)
+            if path is not None:
+                _safe_unlink(path)
             _safe_unlink(mp)
             count += 1
     if count:
@@ -132,27 +188,31 @@ def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
     so the route can pass ``"wardrobe_preview:"`` and the file may carry
     ``"wardrobe_preview:{user_id}"``). Mismatch raises ``TempFileMarkerMismatch``
     so the caller can distinguish cross-owner attempts from missing files."""
-    if not file_id or "/" in file_id or "\\" in file_id or ".." in file_id:
+    if not _valid_file_id(file_id):
         return False
     mp = _meta_path(file_id)
     if not mp.exists():
         return False
-    try:
-        meta = json.loads(mp.read_text())
-    except (json.JSONDecodeError, OSError):
+    meta = _read_metadata(mp)
+    if meta is None:
         _safe_unlink(mp)
         return False
     if required_marker is not None:
         marker = meta.get("marker", "")
+        marker = marker if isinstance(marker, str) else ""
         # Accept exact match, or category prefix match only if required_marker ends with ':'.
         is_match = marker == required_marker or (required_marker.endswith(":") and marker.startswith(required_marker))
         if not is_match:
             raise TempFileMarkerMismatch(f"file_id {file_id!r} marker {marker!r} does not match required {required_marker!r}")
-    _safe_unlink(Path(meta.get("path", "")))
+    path = _metadata_path(meta)
+    if path is not None:
+        _safe_unlink(path)
     _safe_unlink(mp)
     return True
 
 
 def _safe_unlink(path: Path) -> None:
     with contextlib.suppress(OSError):
-        path.unlink(missing_ok=True)
+        resolved_path = path.resolve()
+        if resolved_path.is_relative_to(_storage_dir().resolve()):
+            resolved_path.unlink(missing_ok=True)

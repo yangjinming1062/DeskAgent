@@ -17,6 +17,8 @@ from ._http_errors import classified_http_exception, missing_config_http
 
 logger = get_logger(__name__)
 
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
 router = get_router()
 
 
@@ -103,7 +105,7 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
         )
 
     sink = bytearray()
-    async for chunk in audio_file.stream():
+    while chunk := await audio_file.read(_UPLOAD_CHUNK_BYTES):
         sink.extend(chunk)
         if len(sink) > STT_MAX_AUDIO_BYTES:
             raise HTTPException(

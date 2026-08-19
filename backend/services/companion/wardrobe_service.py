@@ -27,6 +27,7 @@ _COMPANION_ASSET_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "rou
 
 # Cache body model joint names to avoid re-reading multi-MB GLBs on each preview.
 _BODY_JOINT_NAMES_CACHE: dict[str, list[str]] = {}
+_TEXTURE_RECOVERY_TASKS: dict[tuple[int, int], asyncio.Task[None]] = {}
 
 _VALID_SLOTS = {"outfit", "torso", "legs", "feet", "full_body", "head", "hands", "back"}
 _SLOT_TEXTURE = "outfit"
@@ -158,6 +159,15 @@ async def check_and_recover_missing_texture(user_id: int, item: WardrobeItem) ->
         logger.warning("Background regeneration of wardrobe texture failed", extra={"user_id": user_id, "item_id": item.id, "error": str(exc)})
 
 
+def _spawn_texture_recovery_once(user_id: int, item: WardrobeItem) -> None:
+    key = (user_id, item.id)
+    if key in _TEXTURE_RECOVERY_TASKS:
+        return
+    task = asyncio.create_task(check_and_recover_missing_texture(user_id, item))
+    _TEXTURE_RECOVERY_TASKS[key] = task
+    task.add_done_callback(lambda _task, _key=key: _TEXTURE_RECOVERY_TASKS.pop(_key, None))
+
+
 async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
     items = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id).order_by(WardrobeItem.created_at))).scalars().all()
     for item in items:
@@ -172,7 +182,7 @@ async def get_equipped_item(db: AsyncSession, user_id: int) -> WardrobeItem | No
     if item:
         _re_sign_texture(item)
         if item.equipped and (item.kind in (None, "texture")) and not item.texture_url:
-            asyncio.create_task(check_and_recover_missing_texture(user_id, item))
+            _spawn_texture_recovery_once(user_id, item)
     return item
 
 
@@ -182,7 +192,7 @@ async def get_equipped_items(db: AsyncSession, user_id: int) -> list[WardrobeIte
     for item in items:
         _re_sign_texture(item)
         if item.equipped and (item.kind in (None, "texture")) and not item.texture_url:
-            asyncio.create_task(check_and_recover_missing_texture(user_id, item))
+            _spawn_texture_recovery_once(user_id, item)
     return items
 
 

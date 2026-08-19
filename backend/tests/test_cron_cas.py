@@ -146,6 +146,29 @@ async def test_exhausted_schedule_pauses(SessionLocal, monkeypatch):
     assert jobs[rows[0].id].next_run_at is None
 
 
+async def test_select_due_jobs_caps_database_read(SessionLocal, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from services.scheduler import cron as cron_mod
+
+    now = utc_now()
+    async with SessionLocal() as db:
+        user = User(username="cron-cap-user", is_active=True, can_use=True)
+        db.add(user)
+        await db.flush()
+        for index in range(cron_mod._MAX_DUE_PER_TICK + 2):
+            db.add(CronJob(user_id=user.id, name=f"job-{index}", schedule="* * * * *", next_run_at=now - timedelta(seconds=index + 1), deliver="ws", prompt="p"))
+        await db.commit()
+
+    @asynccontextmanager
+    async def scoped_session():
+        async with SessionLocal() as db:
+            yield db
+
+    monkeypatch.setattr(cron_mod, "session_scope", scoped_session)
+    assert len(await cron_mod._select_due_jobs()) == cron_mod._MAX_DUE_PER_TICK + 1
+
+
 async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch):
     """The tick replica only writes a cron.turn.request ws_events row — the
     connection-holding replica claims and executes it (multi-replica safe).

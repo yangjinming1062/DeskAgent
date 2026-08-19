@@ -97,6 +97,7 @@ async def _select_due_jobs() -> list[Row]:
                 select(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot)
                 .where(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
                 .order_by(CronJob.next_run_at, CronJob.id)
+                .limit(_MAX_DUE_PER_TICK + 1)
             )
         ).all()
 
