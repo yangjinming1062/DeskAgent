@@ -9,6 +9,11 @@ import { resolvePortraitUrl } from './avatar-image'
 // GET /api/companion/avatar and refreshed on regen. The 3D model is independent;
 // the portrait is the visible identity in the chat header and the 形象 section.
 export const $portraitUrl = atom<string | null>(null)
+export const $seedFrontUrl = atom<string | null>(null)
+export const $seedRightUrl = atom<string | null>(null)
+export const $seedBackUrl = atom<string | null>(null)
+export const $fullbodyStyle = atom<string>('cel_shading')
+export const $fullbodySamples = atom<Record<string, string>>({})
 
 // Active avatar row id — written by hydrate + by every regen that creates a
 // fresh row. The 3D pipeline reads the active avatar row server-side, so the
@@ -19,29 +24,67 @@ export function setPortraitUrl(url: string | null): void {
   $portraitUrl.set(url)
 }
 
+export function setSeedFrontUrl(url: string | null): void {
+  $seedFrontUrl.set(url)
+}
+
+export function setSeedRightUrl(url: string | null): void {
+  $seedRightUrl.set(url)
+}
+
+export function setSeedBackUrl(url: string | null): void {
+  $seedBackUrl.set(url)
+}
+
+export function setFullbodyStyle(style: string): void {
+  $fullbodyStyle.set(style)
+}
+
+export function setFullbodySamples(samples: Record<string, string>): void {
+  $fullbodySamples.set(samples)
+}
+
 export function setActiveAvatarId(id: number | null): void {
   $activeAvatarId.set(id)
 }
 
 export interface PortraitUrls {
   assetUrl?: string | null
+  seedFrontUrl?: string | null
+  seedRightUrl?: string | null
+  seedBackUrl?: string | null
   id?: number | null
 }
 
 // Resolve a fresh asset_url into a data URL. Publishes to the global
 // $portraitUrl atom; returns the resolved URL.
-export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null }> {
+export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seedFront: string | null }> {
   const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
+  const seedFront = urls.seedFrontUrl === undefined ? null : await resolvePortraitUrl(urls.seedFrontUrl)
+  const seedRight = urls.seedRightUrl === undefined ? null : await resolvePortraitUrl(urls.seedRightUrl)
+  const seedBack = urls.seedBackUrl === undefined ? null : await resolvePortraitUrl(urls.seedBackUrl)
 
   if (avatar) {
     setPortraitUrl(avatar)
+  }
+
+  if (seedFront !== null) {
+    setSeedFrontUrl(seedFront)
+  }
+
+  if (seedRight !== null) {
+    setSeedRightUrl(seedRight)
+  }
+
+  if (seedBack !== null) {
+    setSeedBackUrl(seedBack)
   }
 
   if (urls.id != null) {
     setActiveAvatarId(urls.id)
   }
 
-  return { avatar }
+  return { avatar, seedFront }
 }
 
 // Pulls the active portrait from the backend on app start. Called from
@@ -52,13 +95,19 @@ export async function hydratePortrait(): Promise<void> {
     const res = await window.spiritagent.api<{
       id?: number
       asset_url?: string
+      seed_front_url?: string
+      seed_right_url?: string
+      seed_back_url?: string
     }>({
       path: '/api/companion/avatar'
     })
 
     await applyPortrait({
       id: res?.id,
-      assetUrl: res?.asset_url
+      assetUrl: res?.asset_url,
+      seedFrontUrl: res?.seed_front_url,
+      seedRightUrl: res?.seed_right_url,
+      seedBackUrl: res?.seed_back_url
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {

@@ -63,7 +63,15 @@ import { $voicePreparing } from '../voice-state'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import { Chip, type HistoryGalleryItem, PortraitPanel } from './onboarding-components'
 
-type Phase = 'q-character' | 'hatching' | 'portrait-avatar' | 'q-user' | 'voice' | 'finishing' | 'greeting'
+type Phase =
+  | 'q-character'
+  | 'hatching'
+  | 'portrait-avatar'
+  | 'fullbody-3d'
+  | 'q-user'
+  | 'voice'
+  | 'finishing'
+  | 'greeting'
 
 type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -268,6 +276,7 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   voice: VOICE_QUESTIONS,
   hatching: [],
   'portrait-avatar': [],
+  'fullbody-3d': [],
   finishing: [],
   greeting: []
 }
@@ -451,6 +460,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
+
+  const [fullbodyLoading, setFullbodyLoading] = useState(false)
+  const [fullbodyLoadingText, setFullbodyLoadingText] = useState('正在为您生成不同风格的全身样图…')
+  const [fullbodySamples, setFullbodySamplesState] = useState<Record<string, string>>({})
+  const [fullbodyStyle, setFullbodyStyleState] = useState<string | null>(null)
+  const [fullbodyFrontUrl, setFullbodyFrontUrl] = useState<string | null>(null)
+  const [fullbodyFeedback, setFullbodyFeedback] = useState<string>('')
+  const [fullbodyHint, setFullbodyHint] = useState<string | null>(null)
 
   // Reference image handed over at the 形象描述 question. Persisted locally
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
@@ -927,6 +944,32 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             } catch {
               void enterHatchingRef.current(merged, cachedRef)
             }
+          } else if (nextField === 'fullbody') {
+            try {
+              await hydratePortraitHistory()
+
+              const avatarRes = await window.spiritagent.api<{
+                asset_url?: string | null
+                seed_front_url?: string | null
+                id?: number
+              }>({
+                path: '/api/companion/avatar',
+                method: 'GET'
+              })
+
+              await applyLocalPortrait(avatarRes)
+              setPhase('fullbody-3d')
+
+              if (avatarRes?.seed_front_url) {
+                setFullbodyFrontUrl(avatarRes.seed_front_url)
+              }
+
+              if (avatarRes?.id != null) {
+                void fetchFullbodySamples(avatarRes.id)
+              }
+            } catch {
+              setPhase('fullbody-3d')
+            }
           } else if (nextField === 'voice') {
             // next_field==='voice' means the description sentence itself is
             // still unanswered — land on describe, not the catalog.
@@ -1081,14 +1124,136 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     clearPortraitHistory()
     updateRefImage(null)
     setPresentationRef(null)
-    // Voice belongs with the portrait: both define the companion itself, so
-    // they run back-to-back before any user_* question.
-    setPhase('voice')
-    setVoiceStage('describe')
-    setQIndex(0)
-    setInput('')
-    setAnswerKind(null)
-    setHint(null)
+
+    // Advance to fullbody-3d
+    setPhase('fullbody-3d')
+    setFullbodyStyleState(null)
+    setFullbodyFrontUrl(null)
+    setFullbodyFeedback('')
+    setFullbodyHint(null)
+
+    if (activeAvatarId) {
+      void fetchFullbodySamples(activeAvatarId)
+    }
+  }
+
+  const fetchFullbodySamples = async (avatarId: number) => {
+    setFullbodyLoading(true)
+    setFullbodyLoadingText('正在为您生成不同风格的全身样图…')
+    setFullbodyHint(null)
+
+    try {
+      const res = await window.spiritagent.api<{ samples?: Record<string, string> }>({
+        path: `/api/companion/avatar/${avatarId}/fullbody/samples`,
+        method: 'POST'
+      })
+
+      if (res?.samples && Object.keys(res.samples).length > 0) {
+        setFullbodySamplesState(res.samples)
+      } else {
+        setFullbodyHint('风格样图生成未返回内容，请重试')
+      }
+    } catch (err) {
+      setFullbodyHint(err instanceof Error ? err.message : '样图生成失败，请重试')
+    } finally {
+      setFullbodyLoading(false)
+    }
+  }
+
+  const selectStyle = (styleId: string) => {
+    setFullbodyStyleState(styleId)
+    const sampleUrl = fullbodySamples[styleId] || null
+    setFullbodyFrontUrl(sampleUrl)
+    setFullbodyHint(null)
+  }
+
+  const regenerateFullbodyFront = async () => {
+    if (!activeAvatarId || !fullbodyStyle) {
+      return
+    }
+
+    setFullbodyLoading(true)
+    setFullbodyLoadingText('正在按要求重新生成正面全身图…')
+    setFullbodyHint(null)
+
+    try {
+      const res = await window.spiritagent.api<{
+        id?: number
+        asset_url?: string
+        seed_front_url?: string
+        seed_right_url?: string
+        seed_back_url?: string
+      }>({
+        path: `/api/companion/avatar/${activeAvatarId}/fullbody/front`,
+        method: 'POST',
+        body: {
+          style: fullbodyStyle,
+          feedback: fullbodyFeedback.trim() || undefined
+        }
+      })
+
+      const applied = await applyPortrait({
+        id: res?.id,
+        assetUrl: res?.asset_url,
+        seedFrontUrl: res?.seed_front_url,
+        seedRightUrl: res?.seed_right_url,
+        seedBackUrl: res?.seed_back_url
+      })
+
+      if (applied.seedFront) {
+        setFullbodyFrontUrl(applied.seedFront)
+      } else if (res?.seed_front_url) {
+        setFullbodyFrontUrl(res.seed_front_url)
+      }
+    } catch (err) {
+      setFullbodyHint(err instanceof Error ? err.message : '重新生成正面全身图失败，请重试')
+    } finally {
+      setFullbodyLoading(false)
+    }
+  }
+
+  const confirmFullbodyFront = async () => {
+    if (!activeAvatarId || !fullbodyStyle) {
+      return
+    }
+
+    setFullbodyLoading(true)
+    setFullbodyLoadingText('正在自动生成侧面与背面视角，请稍候…')
+    setFullbodyHint(null)
+
+    try {
+      const res = await window.spiritagent.api<{
+        id?: number
+        asset_url?: string
+        seed_front_url?: string
+        seed_right_url?: string
+        seed_back_url?: string
+      }>({
+        path: `/api/companion/avatar/${activeAvatarId}/fullbody/confirm-front`,
+        method: 'POST',
+        body: { style: fullbodyStyle }
+      })
+
+      await applyPortrait({
+        id: res?.id,
+        assetUrl: res?.asset_url,
+        seedFrontUrl: res?.seed_front_url,
+        seedRightUrl: res?.seed_right_url,
+        seedBackUrl: res?.seed_back_url
+      })
+
+      // Advance to voice phase
+      setPhase('voice')
+      setVoiceStage('describe')
+      setQIndex(0)
+      setInput('')
+      setAnswerKind(null)
+      setHint(null)
+    } catch (err) {
+      setFullbodyHint(err instanceof Error ? err.message : '多视角自动生成失败，请重试')
+    } finally {
+      setFullbodyLoading(false)
+    }
   }
 
   const previewVoice = (id: string, context: string) =>
@@ -1411,6 +1576,160 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 </>
               )}
               {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
+            </div>
+          )}
+
+          {phase === 'fullbody-3d' && (
+            <div className="mt-2">
+              {fullbodyLoading ? (
+                <div className="py-8 text-center">
+                  <SpinnerWithText size="h-6 w-6" text={fullbodyLoadingText} />
+                </div>
+              ) : !fullbodyStyle ? (
+                <div>
+                  <p className="text-[14px] font-medium text-white/90">选择全身立绘画风</p>
+                  <p className="mt-1 text-xs text-white/60">
+                    为您生成了两种不同风格的正面全身样图，点击卡片选择您喜欢的画风：
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-3">
+                    <button
+                      className="flex flex-col items-center rounded-xl border border-white/15 bg-white/5 p-3 text-left transition hover:border-white/40 hover:bg-white/10"
+                      onClick={() => selectStyle('cel_shading')}
+                      type="button"
+                    >
+                      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/30">
+                        {fullbodySamples['cel_shading'] ? (
+                          <img
+                            alt="日系赛璐珞"
+                            className="h-full w-full object-cover"
+                            src={fullbodySamples['cel_shading']}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                            加载中…
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2.5 w-full text-center">
+                        <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-white/90">
+                          日系赛璐珞
+                        </span>
+                        <p className="mt-1 text-[10px] text-white/50">清晰轮廓 · 明快平涂色彩</p>
+                      </div>
+                    </button>
+
+                    <button
+                      className="flex flex-col items-center rounded-xl border border-white/15 bg-white/5 p-3 text-left transition hover:border-white/40 hover:bg-white/10"
+                      onClick={() => selectStyle('anime_game_cg')}
+                      type="button"
+                    >
+                      <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-black/30">
+                        {fullbodySamples['anime_game_cg'] ? (
+                          <img
+                            alt="二次元游戏CG"
+                            className="h-full w-full object-cover"
+                            src={fullbodySamples['anime_game_cg']}
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                            加载中…
+                          </div>
+                        )}
+                      </div>
+                      <div className="mt-2.5 w-full text-center">
+                        <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-white/90">
+                          二次元游戏CG
+                        </span>
+                        <p className="mt-1 text-[10px] text-white/50">3D渲染 · 细腻质感光影</p>
+                      </div>
+                    </button>
+                  </div>
+                  {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
+                  <div className="mt-4 flex items-center justify-between text-xs">
+                    <button
+                      className="text-white/60 transition hover:text-white"
+                      onClick={() => setPhase('portrait-avatar')}
+                      type="button"
+                    >
+                      上一步
+                    </button>
+                    {activeAvatarId && (
+                      <button
+                        className="text-white/70 transition hover:text-white"
+                        onClick={() => void fetchFullbodySamples(activeAvatarId)}
+                        type="button"
+                      >
+                        重新生成样图
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-white/60">当前风格：</span>
+                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">
+                        {fullbodyStyle === 'cel_shading' ? '日系赛璐珞' : '二次元游戏CG'}
+                      </span>
+                    </div>
+                    <button
+                      className="text-xs text-white/60 transition hover:text-white"
+                      onClick={() => setFullbodyStyleState(null)}
+                      type="button"
+                    >
+                      更换风格
+                    </button>
+                  </div>
+
+                  <div className="relative mt-3 flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                    {fullbodyFrontUrl ? (
+                      <img alt="正面全身立绘" className="h-full w-full object-contain" src={fullbodyFrontUrl} />
+                    ) : (
+                      <div className="text-xs text-white/40">暂无预览图</div>
+                    )}
+                  </div>
+
+                  <div className="mt-3">
+                    <textarea
+                      className={`${INPUT_CLASS} text-xs`}
+                      maxLength={MAX_APPEARANCE}
+                      onChange={e => setFullbodyFeedback(e.target.value)}
+                      placeholder="对正面立绘有微调要求？例如：头发再长一点、换个服饰配色…（可留空直接确认）"
+                      rows={2}
+                      value={fullbodyFeedback}
+                    />
+                  </div>
+
+                  {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
+
+                  <div className="mt-3 flex items-center justify-between text-xs">
+                    <div className="flex gap-3">
+                      <button
+                        className="text-white/60 transition hover:text-white"
+                        onClick={() => setFullbodyStyleState(null)}
+                        type="button"
+                      >
+                        切换风格
+                      </button>
+                      <button
+                        className="text-white/70 transition hover:text-white"
+                        onClick={() => void regenerateFullbodyFront()}
+                        type="button"
+                      >
+                        微调重绘
+                      </button>
+                    </div>
+                    <button
+                      className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white"
+                      onClick={() => void confirmFullbodyFront()}
+                      type="button"
+                    >
+                      确认形象
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

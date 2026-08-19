@@ -28,8 +28,33 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
+    seed_front_url: str = ""
+    seed_right_url: str = ""
+    seed_back_url: str = ""
     prompt: str = ""
     status: SucceededStatus = "succeeded"
+
+
+class FullbodyStyleItem(BaseModel):
+    id: str
+    label_zh: str
+
+
+class FullbodySamplesResponse(BaseModel):
+    samples: dict[str, str] = Field(default_factory=dict)
+
+
+class FullbodyFrontGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    style: str = Field(default="cel_shading", max_length=64)
+    feedback: str | None = Field(default=None, max_length=500)
+
+
+class FullbodyConfirmFrontRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    style: str | None = Field(default=None, max_length=64)
 
 
 class AvatarGenerateRequest(BaseModel):

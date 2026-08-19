@@ -19,7 +19,7 @@ from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
-from .avatar_service import load_avatar_bytes_as_data_uri
+from .avatar_service import load_avatar_bytes_as_data_uri, resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
 from .rig_orientation import detect_face_yaw
@@ -122,12 +122,40 @@ def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
         raise ModelProviderNotConfiguredError(str(exc)) from exc
 
 
-def _provider_result_label(provider_name: str) -> str:
-    return f"{provider_name}_text_to_3d"
+def _provider_result_label(provider_name: str, multiview: bool = False, is_text_to_3d: bool = False) -> str:
+    if is_text_to_3d:
+        return f"{provider_name}_text_to_3d"
+    return f"{provider_name}_{'multiview' if multiview else 'image'}_to_3d"
 
 
 def _rig_naming_for(rig_type: str) -> str:
     return "mixamo" if rig_type == "biped" else "tripo"
+
+
+async def _emit_progress(user_id: int, stage: str, progress: int, provider: str = "") -> None:
+    payload = {"stage": stage, "progress": progress}
+    if provider:
+        payload["provider"] = provider
+    try:
+        async with SESSION_LOCAL() as db:
+            db.add(WSEvent(user_id=user_id, event_type="model.gen.progress", payload=json.dumps(payload, ensure_ascii=False)))
+            await db.commit()
+    except Exception:
+        logger.warning("Failed to emit model.gen.progress", exc_info=True)
+
+
+async def _emit_model_failed(user_id: int, reason: str, retry_download: bool = False, model_id: int | None = None) -> None:
+    payload = {"reason": reason}
+    if retry_download:
+        payload["retry_download"] = True
+    if model_id is not None:
+        payload["model_id"] = model_id
+    try:
+        async with SESSION_LOCAL() as db:
+            db.add(WSEvent(user_id=user_id, event_type="model.failed", payload=json.dumps(payload, ensure_ascii=False)))
+            await db.commit()
+    except Exception:
+        logger.warning("Failed to emit model.failed", exc_info=True)
 
 
 async def _finalize_generation(
@@ -139,15 +167,15 @@ async def _finalize_generation(
     provider: str,
     species: str,
     rig_type: str,
-    morph_names: list[str],
-    style: str = "realistic",
-    content_hash: str | None = None,
+    style: str = "cel_shading",
+    morph_names: list[str] | tuple[str, ...] = (),
+    content_hash: str = "",
 ) -> bool:
     """Persist a succeeded generation. Returns True if not superseded by a newer run."""
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is None:
-            raise ModelGenerationError("companion model row vanished mid-generation")
+            return False
         superseded = (
             await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status.in_(IN_FLIGHT_STATUSES)).limit(1))
         ).scalar_one_or_none() is not None
@@ -198,25 +226,16 @@ async def generate_companion_model(
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = species_override or (definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类")
 
-    # Reject concurrent generation: the background pipeline is fire-and-forget,
-    # so two overlapping runs would race over the active row (both success
-    # paths deactivate "other actives", so the older one could win). The
-    # per-user lock closes the check-then-create TOCTOU window; the row's
-    # ``status="generating"`` is the durable in-flight marker.
     async with get_model_job_lock(user_id):
         in_flight = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status.in_(IN_FLIGHT_STATUSES)).limit(1))).scalar_one_or_none()
         if in_flight is not None:
             raise ModelGenerationInProgressError("已有 3D 模型生成任务进行中，请稍候再试")
 
-        # Return existing active model idempotently unless force=True.
         if not force:
             existing = await get_active_model(db, user_id)
             if existing is not None and existing.status == "succeeded" and existing.asset_url:
                 logger.info("Companion model already exists; skipping generation", extra={"user_id": user_id, "model_id": existing.id})
                 return existing
-            # A download-failed row still holds a paid generation result —
-            # return it instead of silently re-billing; the client surfaces
-            # the retryDownload action for it.
             retryable = (
                 await db.execute(
                     select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "download_failed").order_by(CompanionModel.id.desc()).limit(1)
@@ -226,39 +245,46 @@ async def generate_companion_model(
                 logger.info("Companion model awaits download retry; skipping generation", extra={"user_id": user_id, "model_id": retryable.id})
                 return retryable
 
-        # Fail fast on an unusable provider — before the row is created — so
-        # a misconfigured deployment can't strand a "generating" row. Sits
-        # after the idempotent return: a key lost later in the deployment's
-        # life must not lock users out of their existing model.
         provider = _resolve_model_provider(provider_override)
 
-        # Text-to-3D reads the confirmed avatar (visual anchor of the
-        # appearance extraction) — no seed images anymore.
+        # Image-to-3D reads the confirmed avatar and fullbody seeds
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        if avatar is None or not avatar.asset_url:
+        if avatar is None or not (avatar.seed_front_url or avatar.asset_url):
             raise ModelGenerationError("没有找到形象头像，请先完成引导流程中的形象生成")
 
-        # Style is resolved once at row creation and persisted on it —
-        # re-classifying later could yield a different verdict and re-create
-        # the style cliff between the model and its wardrobe textures.
-        has_humanoid_face = None
-        if not is_preset_species(species):
-            has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
-        style = resolve_fullbody_style(species, has_humanoid_face)
+        front_seed = avatar.seed_front_url or avatar.asset_url
+        front_filename = front_seed.split("/")[-1].split("?")[0]
+        if not front_filename:
+            raise ModelGenerationError("请先生成正面全身图再生成模型")
 
-        # The previous active model stays active while this generation runs —
-        # only a success claims the active slot. A failed regeneration therefore
-        # never discards the user's working model, and concurrent (TOCTOU)
-        # generations resolve by "newest wins" instead of racing.
-        model = CompanionModel(user_id=user_id, status="generating", species=species, style=style, active=False)
+        right_seed = avatar.seed_right_url
+        back_seed = avatar.seed_back_url
+        right_filename = right_seed.split("/")[-1].split("?")[0] if right_seed else ""
+        back_filename = back_seed.split("/")[-1].split("?")[0] if back_seed else ""
+
+        view_filenames: dict[str, str] = {"front": front_filename}
+        if right_filename:
+            view_filenames["right"] = right_filename
+        if back_filename:
+            view_filenames["back"] = back_filename
+
+        prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
+        selected_style = prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None
+        if not selected_style:
+            has_humanoid_face = None
+            if not is_preset_species(species):
+                has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
+            selected_style = resolve_fullbody_style(species, has_humanoid_face)
+
+        model = CompanionModel(user_id=user_id, status="generating", species=species, style=selected_style, active=False)
         db.add(model)
         await db.commit()
         await db.refresh(model)
 
-    # The pipeline runs in the render worker — web never hosts bpy
-    # iterations or the long provider poll (ARCHITECTURE.md §10, README §1).
-    await render_queue.enqueue("model_generate", user_id, {"species": species, "model_id": model.id, "style": style, "provider": provider.provider_name})
-    logger.info("model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
+    await render_queue.enqueue(
+        "image_model_generate", user_id, {"view_filenames": view_filenames, "species": species, "model_id": model.id, "provider": provider.provider_name, "style": selected_style}
+    )
+    logger.info("image-to-3d model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
 
 
@@ -297,7 +323,7 @@ async def run_model_gen_pipeline(provider_name: str | None, user_id: int, specie
         else:
             job = await provider.submit_text_to_model(prompt, negative_prompt=negative_prompt)
         task_id = job.job_id
-        provider_label = _provider_result_label(provider.provider_name)
+        provider_label = _provider_result_label(provider.provider_name, is_text_to_3d=True)
 
         gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
 
@@ -311,6 +337,46 @@ async def run_model_gen_pipeline(provider_name: str | None, user_id: int, specie
         )
         # model.failed reaches the client — fixed copy only, the raw provider
         # error lives in the log line above (PROTOCOL §1.2 / README §4).
+        await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
+        await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
+        return
+
+    await _run_download_phase(provider, model_id=model_id, user_id=user_id, task_id=task_id, assets=list(gen_result.assets), io_dir=io_dir)
+
+
+async def run_image_model_gen_pipeline(
+    provider_name: str | None, user_id: int, view_filenames: dict[str, str], species: str, model_id: int, style: str = "cel_shading", *, io_dir: Path | None = None
+) -> None:
+    provider: ImageTo3DProvider | None = None
+    task_id: str | None = None
+    try:
+        provider = _resolve_model_provider(provider_name)
+
+        await _emit_progress(user_id, "uploading", 5, provider=provider.provider_name)
+
+        def _seed(view_key: str) -> Path:
+            resolved = resolve_uploaded_avatar_path(view_filenames[view_key])
+            if resolved is None:
+                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
+            return resolved[0]
+
+        multiview = {key: _seed(key) for key in ("front", "right", "back") if key in view_filenames} if getattr(provider, "SUPPORTS_MULTIVIEW", False) else None
+
+        await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
+        job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview)
+        task_id = job.job_id
+        provider_label = _provider_result_label(provider.provider_name, multiview=multiview is not None)
+
+        gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
+
+        rig_type = await select_rig_type(chat, species, user_id=user_id)
+
+        # Persist BEFORE downloading: the generation is already billed.
+        await _persist_download_source(model_id, user_id=user_id, task_id=task_id, assets=gen_result.assets, provider_label=provider_label, rig_type=rig_type)
+    except Exception:
+        logger.warning(
+            "3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "task_id": task_id}, exc_info=True
+        )
         await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
         return

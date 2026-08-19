@@ -79,7 +79,7 @@ export function Viewport3D(): React.JSX.Element {
     const width = container.clientWidth || 800
     const height = container.clientHeight || 600
 
-    const camera = new THREE.PerspectiveCamera(viewportOpts.cameraFov, width / height, 0.1, 100)
+    const camera = new THREE.PerspectiveCamera($viewportOptions.get().cameraFov, width / height, 0.1, 100)
     camera.position.set(0, 1.3, 3.5)
     cameraRef.current = camera
 
@@ -223,9 +223,15 @@ export function Viewport3D(): React.JSX.Element {
   useEffect(() => {
     const scene = sceneRef.current
     const renderer = rendererRef.current
+    const camera = cameraRef.current
 
     if (!scene || !renderer) {
       return
+    }
+
+    if (camera && camera.fov !== viewportOpts.cameraFov) {
+      camera.fov = viewportOpts.cameraFov
+      camera.updateProjectionMatrix()
     }
 
     if (gridHelperRef.current) {
@@ -510,7 +516,7 @@ export function Viewport3D(): React.JSX.Element {
 
         // 骨骼辅助线
         const skeletonHelper = new THREE.SkeletonHelper(parsed.root)
-        skeletonHelper.visible = viewportOpts.showSkeleton
+        skeletonHelper.visible = $viewportOptions.get().showSkeleton
         scene.add(skeletonHelper)
         skeletonHelperRef.current = skeletonHelper
 

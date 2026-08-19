@@ -49,6 +49,17 @@ async def _model_retry_download(job: RenderJob, io_dir: Path) -> None:
     await model_service.run_model_download_retry(job.user_id, job.payload["model_id"], io_dir=io_dir)
 
 
+async def _image_model_generate(job: RenderJob, io_dir: Path) -> None:
+    from services.companion import model_service
+
+    payload = job.payload
+    if "view_filenames" not in payload or "species" not in payload or "model_id" not in payload:
+        raise ValueError("image_model_generate payload missing required fields (view_filenames, species, model_id)")
+    provider = payload.get("provider") or "tripo"
+    style = payload.get("style") or "cel_shading"
+    await model_service.run_image_model_gen_pipeline(provider, job.user_id, payload["view_filenames"], payload["species"], payload["model_id"], style=style, io_dir=io_dir)
+
+
 async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
     # preview_wardrobe_outfit only reads through ``db`` (persona/model/avatar)
     # and writes artifacts via save_file — all reproducible worker-side.
@@ -79,5 +90,6 @@ async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
 def register() -> None:
     HANDLERS["model_generate"] = _model_generate
     HANDLERS["tripo_generate"] = _model_generate
+    HANDLERS["image_model_generate"] = _image_model_generate
     HANDLERS["model_retry_download"] = _model_retry_download
     HANDLERS["garment_preview"] = _garment_preview

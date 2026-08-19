@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from components import safe_json_loads
-from modules.companion import Persona
+from modules.companion import AvatarAsset, Persona
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -192,12 +192,10 @@ def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, A
 
 
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
-    """``answers``: every field already submitted; ``next_field``: first unanswered (``None`` when all answered).
+    """Resume onboarding state from database rows.
 
-    ``complete`` is gated on portrait confirmation, voice + user_* being answered, not just is_complete, so a crash mid-flow resumes rather than skips.
-    ``voice`` outranks ``user_*`` because the voice sub-stage runs right after 形象确认, before the user sub-stage.
-    An unconfirmed portrait always resumes at ``"portrait"`` (avatar
-    confirmation) — the fullbody sub-stages are gone with the seed pipeline.
+    ``answers``: every field already submitted; ``next_field``: first unanswered step.
+    ``complete`` is gated on portrait confirmation, fullbody confirmation, voice, and user profile fields.
     """
     persona = await get_or_create_persona(db, user_id)
     if persona.is_complete:
@@ -206,6 +204,9 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
         merged = {**draft, **user_profile}
         if not persona.is_portrait_confirmed:
             return _state(merged, "portrait", False)
+        avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+        if avatar is None or not getattr(avatar, "seed_front_url", None):
+            return _state(merged, "fullbody", False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:

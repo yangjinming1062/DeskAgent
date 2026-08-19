@@ -1,5 +1,6 @@
 import json
 import re
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from components import get_logger, parse_llm_json, safe_json_loads
@@ -52,12 +53,7 @@ _PRESET_SPECIES: frozenset[str] = frozenset({"人类", "精灵", "机甲"})
 
 
 def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) -> FullbodyStyle:
-    """Resolve the 3D style route for a species.
-
-    ``has_humanoid_face=None`` means the classifier didn't run — custom
-    companions are predominantly humanoid and anime is the primary style
-    carrier, so the unknown path degrades to anime rather than the niche
-    realistic branch."""
+    """Resolve the 3D style route for a species."""
     preset = _SPECIES_STYLE.get(species.strip())
     if preset is not None:
         return preset
@@ -67,6 +63,131 @@ def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) 
 def is_preset_species(species: str) -> bool:
     """True if the species has a fixed body plan (no rig-type classification needed)."""
     return species in _PRESET_SPECIES
+
+
+# ── 全身图风格词 ───────────────────────────────────────────────────
+_FULLBODY_STYLE_WORDING: dict[str, str] = {
+    "cel_shading": "日系赛璐珞卡通渲染风格（cel-shading anime style），清晰的轮廓勾线与分明硬朗的阴影色块，明亮清透的色彩，二次元动漫手办质感，无复杂杂乱渐变，纯净平滑的面部与发丝结构。",
+    "anime_game_cg": "次世代二次元游戏CG风格（anime game 3D CGI），原神与崩铁级现代3D二次元渲染质感，精致立体二次元五官与层次分明的发束，柔和次表面散射光泽，光滑细腻的材质与微立体阴影，8K超清。",
+}
+
+
+@dataclass(frozen=True)
+class FullbodyTemplate:
+    front_features: str
+    right_features: str
+    back_features: str
+    pose: str
+    flavor: str = ""
+    rig_type: str = "biped"
+    style: str = "cel_shading"
+
+
+_BIPED_A_POSE = (
+    "标准A-pose站姿，双臂向两侧微张45度（肩、肘、腕清晰分离，便于下游骨骼自动识别），"
+    "双脚分开与肩同宽；"
+    "穿着最小覆盖的深灰色运动内衣与深灰色运动短裤，躯干与四肢皮肤充分暴露，"
+    "便于后期 PBR 换装保留完整 albedo —— 禁止覆盖躯干或四肢皮肤的大面积服装"
+    "（长袖、连体紧身衣、长裤、长裙、长袍、外套、长靴、高筒袜等）。"
+)
+
+_BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
+    front_features="", right_features="右侧面（90°转体）。", back_features="背面（180°转身），看不到面部。", pose=_BIPED_A_POSE, rig_type="biped"
+)
+_SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
+    "人类": _BIPED_HUMANOID_TEMPLATE,
+    "精灵": _BIPED_HUMANOID_TEMPLATE,
+    "机甲": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°转体），机体侧面轮廓清晰。",
+        back_features="背面（180°转身），看不到面部。",
+        pose=_BIPED_A_POSE,
+        rig_type="biped",
+        style="cel_shading",
+    ),
+}
+
+_SPECIES_FLAVOR: dict[str, str] = {
+    "灵兽": "角色散发灵气与神秘气场，身上可能有发光纹路、灵力标记或神秘图腾。",
+    "幻形": "角色呈现虚幻、流变的气质，身体边缘可能有半透明、发光或粒子消散效果。",
+}
+
+_RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
+    "biped": _SPECIES_TEMPLATES["人类"],
+    "quadruped": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），四肢与尾巴侧面轮廓清晰。",
+        back_features="背面（180°转身），看不到面部。",
+        pose="四足自然直立站立，四腿分开；脊椎水平，头抬起；尾巴自然下垂。",
+        rig_type="quadruped",
+    ),
+    "avian": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），翅膀侧面轮廓清晰。",
+        back_features="背面（180°转身），看不到面部。",
+        pose="双足直立站立，双翼向两侧半展约30-45度；身体朝前。",
+        rig_type="avian",
+    ),
+    "serpentine": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），躯体侧面曲线清晰。",
+        back_features="背面，脊背纹理连贯至尾尖。",
+        pose="身体水平自然伸展或S形蜿蜒，全身完整可见；头部抬起。",
+        rig_type="serpentine",
+    ),
+    "aquatic": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），各鳍形态清晰。",
+        back_features="背面，背鳍与尾鳍形态清晰。",
+        pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。",
+        rig_type="aquatic",
+    ),
+    "hexapod": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），六足排列清晰。",
+        back_features="背面，背甲纹理清晰。",
+        pose="六足自然直立站立，六腿对称分开；各体段完整可见。",
+        rig_type="hexapod",
+    ),
+    "octopod": FullbodyTemplate(
+        front_features="",
+        right_features="右侧面（90°），步足排列清晰。",
+        back_features="背面，背甲轮廓清晰。",
+        pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。",
+        rig_type="octopod",
+    ),
+}
+
+
+def resolve_fullbody_template(species: str, rig_type: str = "biped", style: str = "cel_shading") -> FullbodyTemplate:
+    """Resolve a complete fullbody template."""
+    if species in _SPECIES_TEMPLATES:
+        template = _SPECIES_TEMPLATES[species]
+    else:
+        flavor = _SPECIES_FLAVOR.get(species, "")
+        template = _RIG_TYPE_TEMPLATES.get(rig_type, _RIG_TYPE_TEMPLATES["biped"])
+        if flavor:
+            template = replace(template, flavor=flavor)
+    return template if template.style == style else replace(template, style=style)
+
+
+_VIEW_PREFIX = {"front": "正面全身角色立绘", "right": "右侧面全身角色立绘", "back": "背面全身角色立绘"}
+
+
+def build_fullbody_prompt(view: str, *, template: FullbodyTemplate, style_id: str | None = None, feedback: str | None = None, avatar_prompt: str = "") -> str:
+    """直接构造 image-gen prompt — 无 LLM 翻译。"""
+    style_key = style_id or template.style or "cel_shading"
+    style_wording = _FULLBODY_STYLE_WORDING.get(style_key, _FULLBODY_STYLE_WORDING["cel_shading"])
+    features = getattr(template, f"{view}_features", "")
+    identity = avatar_prompt.strip() if avatar_prompt else ""
+    prompt = f"{_VIEW_PREFIX.get(view, '正面全身角色立绘')}，{template.pose}{features}从头到脚完整可见，平视角度拍摄。纯白背景，均匀专业棚拍布光。{style_wording}"
+    if identity:
+        prompt += f"角色身份：{identity}。"
+    if template.flavor:
+        prompt += template.flavor
+    if feedback and feedback.strip():
+        prompt += f"（用户反馈：{feedback.strip()}）"
+    return prompt
 
 
 # ── 文生3D（text-to-3D）提示词 ─────────────────────────────────────────
