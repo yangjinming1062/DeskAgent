@@ -136,7 +136,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.8 Render job 状态机（换装预览）
 
-分钟级生成任务分两段：后端 web 进程入队（同步、毫秒级），渲染 Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的文生3D 供应商管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
+分钟级生成任务分两段：后端 web 进程入队（同步、毫秒级），渲染 Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的图生3D 供应商管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
 
 ---
 

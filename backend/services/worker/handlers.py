@@ -15,31 +15,6 @@ async def _emit(user_id: int, event_type: str, payload: dict) -> None:
         await db.commit()
 
 
-async def _model_generate(job: RenderJob, io_dir: Path) -> None:
-    # Late import: model_service pulls the whole companion service graph and
-    # the provider registry; keeping it out of module level lets
-    # services.worker (queue/sandbox/runner) stay importable without those
-    # deps and avoids the model_service ↔ worker facade cycle.
-    from services.companion import model_service
-
-    payload = job.payload
-    provider = payload.get("provider")
-    if not provider:
-        # Deploy-window rows enqueued under the old kind carry no provider
-        # field; legacy blender rows fail fast instead of re-routing.
-        if job.kind != "tripo_generate":
-            raise ValueError("model_generate payload missing provider")
-        provider = "tripo"
-    if "view_filenames" in payload:
-        # Pre-text-to-3D payload from the retired image pipeline — fail fast
-        # with a readable reason instead of key-erroring mid-flight.
-        raise ValueError("model_generate payload is from the retired image pipeline; re-generate instead")
-    style = payload.get("style") or "realistic"
-    if style not in ("anime", "realistic"):
-        raise ValueError(f"model_generate payload has invalid style: {style!r}")
-    await model_service.run_model_gen_pipeline(provider, job.user_id, payload["species"], payload["model_id"], style, io_dir=io_dir)
-
-
 async def _model_retry_download(job: RenderJob, io_dir: Path) -> None:
     # Download-only recovery of an already-paid generation result — the model
     # row is the source of truth (task id + URLs); the pipeline never
@@ -88,8 +63,6 @@ async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
 
 
 def register() -> None:
-    HANDLERS["model_generate"] = _model_generate
-    HANDLERS["tripo_generate"] = _model_generate
     HANDLERS["image_model_generate"] = _image_model_generate
     HANDLERS["model_retry_download"] = _model_retry_download
     HANDLERS["garment_preview"] = _garment_preview

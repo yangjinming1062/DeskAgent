@@ -41,8 +41,8 @@ temp_file_ttl_hours = 24
 data_dir = "./data"
 
 [image_to_3d]
-# 文生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
-# 商业供应商之间不做自动回退；未配置 Key 时文生 3D 请求将被拒绝（返回 400）
+# 图生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
+# 商业供应商之间不做自动回退；未配置 Key 时图生 3D 请求将被拒绝（返回 400）
 image_to_3d_provider = "tripo"
 # 轮询 3D 生成任务状态的间隔时间（秒）
 image_to_3d_poll_interval_seconds = 5.0

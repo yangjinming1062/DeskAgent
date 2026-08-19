@@ -4,18 +4,17 @@ auto-retry classification. See model_service + PROTOCOL.md §1.2."""
 
 import gzip
 import json as _json
-import logging
 import uuid
 from pathlib import Path
 
 import httpx
 import pytest
 from modules.auth import User
-from modules.companion import AvatarAsset, CompanionModel, Persona
+from modules.companion import CompanionModel, Persona
 from modules.ws import WSEvent
-from sqlalchemy import select
 from services.companion import model_service
-from services.image_to_3d import Model3DAsset, Model3DJob, Model3DPollResult
+from services.image_to_3d import Model3DAsset, Model3DPollResult
+from sqlalchemy import select
 
 _GLB = b"\x00" * 20  # tiny but valid GLB per the parser's 20-byte floor
 
@@ -26,25 +25,23 @@ def _status_error(code: int) -> httpx.HTTPStatusError:
 
 
 class RecordingProvider:
-    """ImageTo3DProvider stand-in recording submit/poll/download calls.
-    ``outcomes`` items are exceptions to raise or bytes to write; exhausting
-    the list falls back to a successful write."""
+    """ImageTo3DProvider stand-in recording poll/download calls. The retry
+    helpers only touch ``poll`` (URL refresh on 403) and ``download`` (raw
+    asset pull); ``submit_*`` is never called because the paid task_id is
+    already persisted on the model row. ``outcomes`` items are exceptions to
+    raise or bytes to write; exhausting the list falls back to a successful
+    write."""
 
     provider_name = "hunyuan"
     SUPPORTS_RIGGING = False
     SUPPORTS_MULTIVIEW = True
 
     def __init__(self, outcomes: list | None = None, *, poll_url: str = "https://cos.example/fresh.glb") -> None:
-        self.submit_calls = 0
         self.poll_calls = 0
         self.download_calls = 0
         self.downloaded_urls: list[str] = []
         self._outcomes = list(outcomes or [])
         self._poll_url = poll_url
-
-    async def submit_text_to_model(self, prompt):
-        self.submit_calls += 1
-        return Model3DJob(job_id="task_paid_1")
 
     async def poll(self, job):
         self.poll_calls += 1
@@ -111,62 +108,6 @@ async def _run_retry(monkeypatch, provider: RecordingProvider, user_id: int, mod
 
 
 @pytest.mark.asyncio
-async def test_pipeline_connect_error_leaves_recoverable_record(SessionLocal, mock_finalize, monkeypatch, caplog):
-    """Acceptance 1: the download dies with ConnectError — the row lands in
-    download_failed with task_id + URLs persisted (and logged at INFO)."""
-    provider = RecordingProvider(outcomes=[httpx.ConnectError("SSRF check failed for cos.example")] * model_service._DOWNLOAD_ATTEMPTS)
-    monkeypatch.setattr(model_service, "_resolve_model_provider", lambda _name: provider)
-
-    async def _rig(*_a, **_k):
-        return "biped"
-
-    monkeypatch.setattr(model_service, "select_rig_type", _rig)
-
-    async def _enhance(*_a, **_k):
-        return "黑长直少女，红瞳，白色连衣裙"
-
-    monkeypatch.setattr(model_service, "enhance_t3d_prompt", _enhance)
-
-    async with SessionLocal() as db:
-        user = User(username=f"dlr_pipe_{uuid.uuid4().hex[:8]}", is_active=True, can_use=True)
-        db.add(user)
-        await db.flush()
-        db.add(Persona(user_id=user.id, definition_json="{}", is_complete=True))
-        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="companion-avatars/avatar.png", active=True))
-        model = CompanionModel(user_id=user.id, status="generating", species="人类", style="anime", active=False)
-        db.add(model)
-        await db.commit()
-        await db.refresh(model)
-        uid, model_id = user.id, model.id
-
-    from components import SETTINGS
-
-    asset_dir = Path(SETTINGS.data_dir) / "companion-avatars"
-    asset_dir.mkdir(parents=True, exist_ok=True)
-    (asset_dir / "avatar.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-    try:
-        with caplog.at_level(logging.INFO, logger="paid_calls"):
-            await model_service.run_model_gen_pipeline("hunyuan", uid, "人类", model_id, "anime")
-    finally:
-        (asset_dir / "avatar.png").unlink(missing_ok=True)
-
-    assert provider.download_calls == model_service._DOWNLOAD_ATTEMPTS, "auto-retry must exhaust before download_failed"
-    row = await _load_model(SessionLocal, model_id)
-    assert row.status == "download_failed"
-    assert row.provider_task_id == "task_paid_1"
-    assert "https://cos.example/fresh.glb" in (row.download_urls_json or "")
-
-    persisted = [r for r in caplog.records if "persisted" in r.getMessage()]
-    assert persisted, "the pre-download persist breadcrumb must be logged at INFO"
-    assert persisted[0].task_id == "task_paid_1"
-    assert "https://cos.example/fresh.glb" in persisted[0].urls
-
-    async with SessionLocal() as db:
-        events = (await db.execute(select(WSEvent).where(WSEvent.event_type == "model.failed", WSEvent.user_id == uid))).scalars().all()
-    assert any(_json.loads(e.payload).get("retry_download") is True and _json.loads(e.payload).get("model_id") == model_id for e in events), "model.failed must carry retry_download + model_id"
-
-
-@pytest.mark.asyncio
 async def test_retry_never_submits(SessionLocal, mock_finalize, monkeypatch):
     """Acceptance 2: the retryDownload path only queries + downloads — the
     paid generation is never re-submitted."""
@@ -174,7 +115,6 @@ async def test_retry_never_submits(SessionLocal, mock_finalize, monkeypatch):
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
 
-    assert provider.submit_calls == 0
     assert provider.download_calls == 1
     row = await _load_model(SessionLocal, model_id)
     assert row.status == "succeeded"

@@ -84,18 +84,6 @@ async def _submit_job(payload: dict[str, Any], *, paid_label: str) -> str:
     return job_id
 
 
-async def create_text_to_model(
-    prompt: str, *, model: str = MODEL_VERSION_DEFAULT, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None
-) -> str:
-    """Submit a prompt-only (text-to-3D) generation job — the official API
-    declares ``Prompt`` mutually exclusive with any image input, so no image
-    field is sent at all."""
-    if not prompt:
-        raise ValueError("text-to-model requires a non-empty prompt")
-    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
-    return await _submit_job(payload, paid_label="text_to_3d_submit")
-
-
 async def create_image_to_model(
     image_base64: str,
     *,

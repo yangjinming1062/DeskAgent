@@ -49,16 +49,6 @@ uv run scripts/sample_fullbody_providers.py --output-dir backend/data/_fullbody_
 ```
 
 
-## 4. 文生3D 供应商采样（调试）
-
-`sample_text_to_3d.py` — 文生3D 实验工具：走生产同款提示词管线（视觉 LLM 读头像与角色定义提取外观结构，叠加固定 3D 后缀与风格措辞）采样裸 GLB。默认单格（tripo × 二次元措辞，一次付费生成）；`--wordings figurine,flat` 跑对比措辞；`--tripo-model` 对比风格化低多边形模型。`--rig` 对产物追加本地 Blender 自动绑骨做成功率探针（百万级顶点直接 Bone Heat 无解，生产绑骨走代理网格求解，见 [backend/README.md §6](../backend/README.md)）。
-
-输出：`backend/data/_text_to_3d_samples/<UTC-timestamp>/<provider>_<wording>[_rigged].glb` + 各措辞提示词快照。无 DB、不写生产目录。
-
-```bash
-./backend/.venv/Scripts/python.exe scripts/sample_text_to_3d.py
-```
-
-## 5. Onboarding 引导词音频生成与校验 — `onboarding-audio/`
+## 4. Onboarding 引导词音频生成与校验 — `onboarding-audio/`
 
 包含预渲染引导词音频元信息 `manifest.json` 与合成/校验脚本 `generate_onboarding_audio.py`。详见 [scripts/onboarding-audio/README.md](onboarding-audio/README.md)。

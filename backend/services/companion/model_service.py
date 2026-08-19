@@ -14,12 +14,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.image_to_3d import ImageTo3DError, ImageTo3DProvider, Model3DAsset, Model3DJob, Model3DPollResult, resolve_provider
-from services.llm import FullbodyStyle, build_t3d_submission_prompts, chat, enhance_t3d_prompt, is_preset_species, resolve_fullbody_style, resolve_vision_chain
+from services.llm import chat, is_preset_species, resolve_fullbody_style
 from services.worker import queue as render_queue
 from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
-from .avatar_service import load_avatar_bytes_as_data_uri, resolve_uploaded_avatar_path
+from .avatar_service import resolve_uploaded_avatar_path
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
 from .rig_orientation import detect_face_yaw
@@ -122,9 +122,7 @@ def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
         raise ModelProviderNotConfiguredError(str(exc)) from exc
 
 
-def _provider_result_label(provider_name: str, multiview: bool = False, is_text_to_3d: bool = False) -> str:
-    if is_text_to_3d:
-        return f"{provider_name}_text_to_3d"
+def _provider_result_label(provider_name: str, multiview: bool = False) -> str:
     return f"{provider_name}_{'multiview' if multiview else 'image'}_to_3d"
 
 
@@ -286,62 +284,6 @@ async def generate_companion_model(
     )
     logger.info("image-to-3d model generation enqueued", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model
-
-
-async def run_model_gen_pipeline(provider_name: str | None, user_id: int, species: str, model_id: int, style: FullbodyStyle, *, io_dir: Path | None = None) -> None:
-    provider: ImageTo3DProvider | None = None
-    task_id: str | None = None
-    try:
-        provider = _resolve_model_provider(provider_name)
-
-        # Text-to-3D input assembly. Persona/avatar/chains are read inside the
-        # short session — the session never spans an LLM await (README §4) —
-        # and the vision chain is passed explicitly because db=None would
-        # skip vision extraction entirely.
-        async with SESSION_LOCAL() as db:
-            persona = await get_or_create_persona(db, user_id)
-            avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-            if avatar is None or not avatar.asset_url:
-                raise ModelGenerationError("没有找到形象头像，无法构建文生3D提示词")
-            vision_chain = await resolve_vision_chain(db, user_id)
-            image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar.asset_url)
-
-        await _emit_progress(user_id, "generating", 5, provider=provider.provider_name)
-        structured = await enhance_t3d_prompt(None, user_id, persona, image_data_uri=image_data_uri, vision_chain=vision_chain)
-
-        rig_type = await select_rig_type(chat, species, user_id=user_id)  # style lives on the row — only the rig half is classified here
-        prompt, negative_prompt = build_t3d_submission_prompts(
-            structured, style, rig_type=rig_type, species=species, supports_negative_prompt=getattr(provider, "SUPPORTS_NEGATIVE_PROMPT", False)
-        )
-        logger.info(
-            "text-to-3d prompt built",
-            extra={"user_id": user_id, "model_id": model_id, "chars": len(prompt), "negative_chars": len(negative_prompt or ""), "negative_inline": negative_prompt is None},
-        )
-
-        if negative_prompt is None:
-            job = await provider.submit_text_to_model(prompt)
-        else:
-            job = await provider.submit_text_to_model(prompt, negative_prompt=negative_prompt)
-        task_id = job.job_id
-        provider_label = _provider_result_label(provider.provider_name, is_text_to_3d=True)
-
-        gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
-
-        # Persist BEFORE downloading: the generation is already billed. A
-        # download failure must never lose the result (task_id + URLs survive
-        # in both the row and the log line).
-        await _persist_download_source(model_id, user_id=user_id, task_id=task_id, assets=gen_result.assets, provider_label=provider_label, rig_type=rig_type)
-    except Exception:
-        logger.warning(
-            "3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "task_id": task_id}, exc_info=True
-        )
-        # model.failed reaches the client — fixed copy only, the raw provider
-        # error lives in the log line above (PROTOCOL §1.2 / README §4).
-        await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
-        await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
-        return
-
-    await _run_download_phase(provider, model_id=model_id, user_id=user_id, task_id=task_id, assets=list(gen_result.assets), io_dir=io_dir)
 
 
 async def run_image_model_gen_pipeline(

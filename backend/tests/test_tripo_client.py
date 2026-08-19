@@ -4,7 +4,6 @@ from typing import Any
 
 import httpx
 import pytest
-
 from components import SETTINGS
 from services.image_to_3d import tripo_client
 
@@ -62,59 +61,6 @@ def _ok(data: dict | None = None) -> dict:
 
 def _err(code: int, message: str) -> dict:
     return {"code": code, "status": "error", "message": message}
-
-
-@pytest.mark.asyncio
-async def test_create_text_to_model_returns_task_id(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_abc"})
-    )
-    tid = await tripo_client.create_text_to_model("a cute cat")
-    assert tid == "task_abc"
-    assert mock_http.calls[0][0] == "POST"
-    assert mock_http.calls[0][1] == "/v3/generation/text-to-model"
-    body = mock_http.calls[0][2]
-    assert body["prompt"] == "a cute cat"
-    assert body["model"] == tripo_client.MODEL_VERSION_DEFAULT
-    assert "negative_prompt" not in body
-
-
-@pytest.mark.asyncio
-async def test_create_text_to_model_carries_kwargs_without_image_fields(mock_http):
-    """The text endpoint declares no image-only fields (``enable_image_autofix``,
-    framing hints); shared generation knobs (pbr / quality / face_limit) do apply."""
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_t2d"})
-    )
-    await tripo_client.create_text_to_model(
-        "一个女孩",
-        model_version="P1-20260311",
-        pbr=True,
-        texture_quality="detailed",
-        face_limit=20_000,
-    )
-    body = mock_http.calls[0][2]
-    assert body["prompt"] == "一个女孩"
-    assert body["model"] == "P1-20260311"
-    assert body["pbr"] is True
-    assert body["texture_quality"] == "detailed"
-    assert body["face_limit"] == 20_000
-    assert "enable_image_autofix" not in body
-    assert "input" not in body and "inputs" not in body
-    assert "texture_alignment" not in body and "orientation" not in body
-
-
-@pytest.mark.asyncio
-async def test_create_text_to_model_carries_negative_prompt(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "task_neg"}))
-    await tripo_client.create_text_to_model("一个女孩", negative_prompt="blurry, low quality")
-    assert mock_http.calls[0][2]["negative_prompt"] == "blurry, low quality"
-
-
-@pytest.mark.asyncio
-async def test_create_text_to_model_rejects_long_negative_prompt():
-    with pytest.raises(ValueError, match="negative_prompt exceeds 255"):
-        await tripo_client.create_text_to_model("一个女孩", negative_prompt="x" * 256)
 
 
 @pytest.mark.asyncio

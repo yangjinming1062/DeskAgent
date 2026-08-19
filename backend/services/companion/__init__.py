@@ -71,7 +71,6 @@ from .model_service import (
     recover_stuck_model_generations,
     request_model_download_retry,
     run_image_model_gen_pipeline,
-    run_model_gen_pipeline,
     signed_model_url,
 )
 from .outfit_normalizer import normalize_outfit
@@ -228,7 +227,6 @@ __all__ = [
     "retrieve_proactive_memories",
     "run_garment_pipeline",
     "run_image_model_gen_pipeline",
-    "run_model_gen_pipeline",
     "run_prompt_json",
     "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",
