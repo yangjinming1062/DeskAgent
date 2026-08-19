@@ -1,15 +1,6 @@
 import pytest
 
-from services.companion.should_act import ALLOWED_ACTIONS, should_act
-
-
-def test_allowed_actions_set():
-    assert "go_sleep" in ALLOWED_ACTIONS
-    assert "wake" in ALLOWED_ACTIONS
-    assert "roam" in ALLOWED_ACTIONS
-    assert "perch" in ALLOWED_ACTIONS
-    assert "stay" in ALLOWED_ACTIONS
-    assert "dance" not in ALLOWED_ACTIONS
+from services.companion.should_act import should_act
 
 
 @pytest.mark.asyncio

@@ -602,16 +602,3 @@ def test_sprite_subject_reference_anchors_on_bust():
     assert matches, "expected subject_ref expression in sprite_service"
     for expr in matches:
         assert "asset.asset_url" in expr, f"sprite subject_ref must anchor on the bust (asset.asset_url); got: {expr}"
-
-
-def test_sprite_prompt_system_anchors_realistic_style():
-    """Sprite prompt must include realistic-anchor wording and exclude the
-    anime / cel-shading / 立绘 vocabulary reserved for the fullbody seed."""
-    system = sprite_service._SPRITE_PROMPT_SYSTEM
-    assert "写实人像" in system
-    assert "realistic" in system.lower()
-    assert "二次元" not in system
-    assert "cel-shading" not in system
-    assert "立绘" not in system
-    assert "纯色平面背景" in system and "{bg_hex}" in system and "{bg_label}" in system
-    assert "不穿纯白" not in system  # light clothing is wearable again

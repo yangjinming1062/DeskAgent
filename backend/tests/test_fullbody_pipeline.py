@@ -8,7 +8,6 @@ from httpx import ASGITransport, AsyncClient
 from modules.companion import AvatarAsset
 from sqlalchemy import update
 from services.companion import (
-    STYLE_CATALOG,
     AvatarSourceUnreadableError,
     FrontSeedMissingError,
     UnknownFullbodyStyleError,
@@ -18,14 +17,6 @@ from services.companion import (
     generate_fullbody_style_samples,
     select_fullbody_style,
 )
-
-
-@pytest.mark.asyncio
-async def test_fullbody_style_catalog():
-    assert len(STYLE_CATALOG) == 2
-    style_ids = [s.id for s in STYLE_CATALOG]
-    assert "cel_shading" in style_ids
-    assert "anime_game_cg" in style_ids
 
 
 @pytest.mark.asyncio

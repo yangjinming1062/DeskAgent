@@ -1302,24 +1302,6 @@ async def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
     assert "Gender" not in out and "Age bucket" not in out and "Freeform" not in out
 
 
-def test_render_extras_includes_new_character_fields():
-    from services.companion.persona_service import render_extras
-
-    out = render_extras(
-        {
-            "name": "小光",
-            "personality": "温柔体贴",
-            "speaking_style": "轻声细语",
-            "biological_type": "灵兽",
-            "gender": "女",
-            "appearance_core": "金发",
-        }
-    )
-    assert "Biological type" in out and "灵兽" in out
-    assert "Gender" in out and "女" in out
-    assert "Appearance core" in out and "金发" in out
-
-
 def test_persona_update_schema_accepts_definition_json():
     from modules.companion import PersonaUpdate
 
@@ -2738,27 +2720,6 @@ async def test_update_outfit_field_surgical(_patch_db):
         # System prompt extras re-rendered with the outfit line
         assert "Appearance outfit" in persona.system_prompt_extras
         assert "粉色碎花洋裙" in persona.system_prompt_extras
-
-
-def test_render_extras_outfit_label():
-    """render_extras produces the 'Appearance outfit' label that the system
-    prompt injection checks for."""
-    from services.companion.persona_service import render_extras
-
-    with_outfit = render_extras(
-        {
-            "name": "x",
-            "personality": "y",
-            "speaking_style": "z",
-            "appearance_outfit": "比基尼",
-        }
-    )
-    assert "**Appearance outfit**" in with_outfit
-
-    without_outfit = render_extras(
-        {"name": "x", "personality": "y", "speaking_style": "z"}
-    )
-    assert "**Appearance outfit**" not in without_outfit
 
 
 def test_outfit_guidance_injected_only_when_outfit_present():

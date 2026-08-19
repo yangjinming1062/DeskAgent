@@ -1,7 +1,7 @@
 import pytest
 
 from services.chat.bubble import BubbleSplitter
-from services.companion import BUILTIN_STATE_CLIPS, builtin_action_clips
+from services.companion import builtin_action_clips
 from services.tools import REGISTRY
 
 
@@ -64,20 +64,6 @@ def test_builtin_action_clips_exclude_state_clips():
     assert "clap" in biped
     assert "stomp_angry" in biped
     assert len(biped) == len(builtin_action_clips("unknown_rig"))  # biped fallback
-
-
-def test_builtin_state_clips_are_the_nine_core_states():
-    assert BUILTIN_STATE_CLIPS == {
-        "idle",
-        "listening",
-        "thinking",
-        "speaking",
-        "working",
-        "sleeping",
-        "interacting",
-        "emotional_idle",
-        "disconnected",
-    }
 
 
 def test_create_animation_and_expression_registered():

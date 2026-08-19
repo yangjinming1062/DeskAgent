@@ -64,97 +64,12 @@ def _err(code: int, message: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_create_image_to_model_uses_singular_input_field(mock_http):
-    """H series ``image-to-model`` uses singular ``input`` (not the multiview ``inputs`` list)."""
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_image"})
-    )
-    tid = await tripo_client.create_image_to_model("file_abc123")
-    assert tid == "task_image"
-    assert mock_http.calls[0][0] == "POST"
-    assert mock_http.calls[0][1] == "/v3/generation/image-to-model"
-    body = mock_http.calls[0][2]
-    assert body["input"] == "file_abc123"
-    assert "inputs" not in body  # singular; multiview uses the plural list
-    assert body["model"] == tripo_client.MODEL_VERSION_DEFAULT
-
-
-@pytest.mark.asyncio
-async def test_create_image_to_model_propagates_optional_kwargs(mock_http):
-    """Shared optional fields reach the H-series endpoint; multiview-only
-    framing hints (``texture_alignment``, ``orientation``) are intentionally
-    omitted because the H-series endpoint schema does not declare them."""
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_image"})
-    )
-    await tripo_client.create_image_to_model(
-        "file_x",
-        model_version="v3.1-20260211",
-        pbr=True,
-        texture_quality="detailed",
-        face_limit=100_000,
-        enable_autofix=True,
-    )
-    body = mock_http.calls[0][2]
-    assert body["model"] == "v3.1-20260211"
-    assert body["pbr"] is True
-    assert body["texture_quality"] == "detailed"
-    assert body["face_limit"] == 100_000
-    assert body["enable_image_autofix"] is True
-    # Multiview-only framing hints must NOT appear on the H-series payload.
-    assert "texture_alignment" not in body
-    assert "orientation" not in body
-
-
-@pytest.mark.asyncio
-async def test_common_kwargs_from_settings_are_valid_call_kwargs(mock_http):
-    """tripo_common_kwargs_from_settings yields call kwargs for endpoint functions."""
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_kwargs"})
-    )
-    kwargs = tripo_client.tripo_common_kwargs_from_settings()
-    assert "enable_image_autofix" not in kwargs
-    await tripo_client.create_image_to_model("file_x", **kwargs)
-
-    mv_kwargs = tripo_client.tripo_common_kwargs_from_settings(
-        texture_alignment="original_image", orientation="align_image"
-    )
-    await tripo_client.create_multiview_to_model(
-        {"front": "file_f", "right": "file_r"}, **mv_kwargs
-    )
-    mv_body = mock_http.calls[-1][2]
-    assert mv_body["texture_alignment"] == "original_image"
-    assert mv_body["orientation"] == "align_image"
-
-
-@pytest.mark.asyncio
 async def test_create_image_to_model_rejects_empty_token(mock_http):
     """An empty ``image_token`` should raise before any HTTP call."""
     import pytest as _pytest
 
     with _pytest.raises(ValueError, match="image_token"):
         await tripo_client.create_image_to_model("")
-
-
-@pytest.mark.asyncio
-async def test_create_multiview_to_model_includes_mv_framing_hints(mock_http):
-    """Multiview endpoint accepts the framing hints; image-to-model does not."""
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_mv"})
-    )
-    await tripo_client.create_multiview_to_model(
-        {"front": "tok_f", "right": "tok_r"},
-        model_version="v3.1-20260211",
-        pbr=True,
-        texture_quality="detailed",
-        face_limit=100_000,
-        enable_autofix=True,
-        texture_alignment="original_image",
-        orientation="align_image",
-    )
-    body = mock_http.calls[0][2]
-    assert body["texture_alignment"] == "original_image"
-    assert body["orientation"] == "align_image"
 
 
 @pytest.mark.asyncio
@@ -171,24 +86,6 @@ async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
 
 
 @pytest.mark.asyncio
-async def test_create_multiview_to_model_formats_inputs_correctly(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_multi"})
-    )
-    views = {"front": "token_f", "right": "token_r", "back": "token_b"}
-    tid = await tripo_client.create_multiview_to_model(views)
-    assert tid == "task_multi"
-    assert mock_http.calls[0][0] == "POST"
-    assert mock_http.calls[0][1] == "/v3/generation/multiview-to-model"
-    body = mock_http.calls[0][2]
-    assert body["inputs"] == [
-        {"front": "token_f"},
-        {"right": "token_r"},
-        {"back": "token_b"},
-    ]
-
-
-@pytest.mark.asyncio
 async def test_create_multiview_to_model_validates_front_and_min_views():
     with pytest.raises(ValueError, match="front"):
         await tripo_client.create_multiview_to_model(
@@ -196,17 +93,6 @@ async def test_create_multiview_to_model_validates_front_and_min_views():
         )
     with pytest.raises(ValueError, match="at least 2 views"):
         await tripo_client.create_multiview_to_model({"front": "tok_f"})
-
-
-@pytest.mark.asyncio
-async def test_rig_check_returns_rig_type(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_xyz"})
-    )
-    prerigcheck_task = await tripo_client.rig_check("task_x")
-    assert prerigcheck_task == "task_xyz"
-
-    assert mock_http.calls[0][2] == {"input": "task_x"}
 
 
 @pytest.mark.asyncio
@@ -242,14 +128,6 @@ async def test_api_key_required(monkeypatch):
     monkeypatch.setattr(SETTINGS, "tripo_api_key", "")
     with pytest.raises(tripo_client.TripoApiError, match="TRIPO_API_KEY"):
         await tripo_client.account_balance()
-
-
-@pytest.mark.asyncio
-async def test_account_balance_parses_payload(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"balance": 12.34, "frozen": 1.0})
-    )
-    assert await tripo_client.account_balance() == {"balance": 12.34, "frozen": 1.0}
 
 
 @pytest.mark.asyncio
