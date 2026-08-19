@@ -5,26 +5,13 @@ import json
 import secrets
 from pathlib import Path
 
-from components import (
-    SESSION_LOCAL,
-    SETTINGS,
-    download_capped,
-    get_file_path,
-    get_logger,
-    safe_json_loads,
-)
+from components import SESSION_LOCAL, SETTINGS, download_capped, get_file_path, get_logger, safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import (
-    build_fullbody_prompt,
-    chat,
-    enhance_avatar_prompt,
-    is_content_policy_error_message,
-    resolve_fullbody_template,
-)
+from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, resolve_fullbody_template
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
 from .fullbody_style_catalog import STYLE_CATALOG
@@ -38,12 +25,7 @@ _FULLBODY_SIZE: str = "1024x1792"
 _AVATAR_QUALITY: str = "standard"
 _FULLBODY_PREFERRED_PROVIDERS = ("gemini", "grok")
 _STYLE_IDS: frozenset[str] = frozenset(info.id for info in STYLE_CATALOG)
-_UPLOAD_EXTS: dict[str, str] = {
-    "image/png": "png",
-    "image/jpeg": "jpg",
-    "image/webp": "webp",
-    "image/gif": "gif",
-}
+_UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
@@ -85,21 +67,12 @@ async def _generate_one_portrait_with_moderation_retry(
     """Generate one portrait, retrying with a sanitized prompt on content-moderation failure."""
     try:
         return await _generate_one_portrait(
-            prompt,
-            user_id,
-            reference_image=reference_image,
-            secondary_reference_image=secondary_reference_image,
-            size=size,
-            persist=persist,
-            preferred_provider=preferred_provider,
+            prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist, preferred_provider=preferred_provider
         )
     except AvatarGenerationError as first_exc:
         if not is_content_policy_error_message(first_exc.internal):
             raise
-        logger.info(
-            "avatar gen blocked by moderation, sanitizing prompt",
-            extra={"user_id": user_id},
-        )
+        logger.info("avatar gen blocked by moderation, sanitizing prompt", extra={"user_id": user_id})
         sanitized = await _sanitize_prompt_for_moderation(user_id, prompt)
         if sanitized == prompt:
             raise  # Sanitization produced no change — don't waste another API call.
@@ -114,10 +87,7 @@ async def _generate_one_portrait_with_moderation_retry(
                 preferred_provider=preferred_provider,
             )
         except AvatarGenerationError as second_exc:
-            raise AvatarGenerationError(
-                "sanitized retry failed after moderation block",
-                internal=f"original: {first_exc.internal}; retry: {second_exc.internal}",
-            ) from second_exc
+            raise AvatarGenerationError("sanitized retry failed after moderation block", internal=f"original: {first_exc.internal}; retry: {second_exc.internal}") from second_exc
 
 
 class AvatarGenerationError(RuntimeError):
@@ -166,9 +136,7 @@ def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
     return _avatar_job_locks.setdefault(user_id, asyncio.Lock())
 
 
-async def _persist_portrait_bytes(
-    data: bytes, content_type: str
-) -> tuple[str, str, str]:
+async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
     """Write portrait bytes to the persistent ``companion-avatars/`` dir and
     return ``(bare_storage_path, file_id, ext)``.
 
@@ -279,10 +247,7 @@ async def _generate_one_portrait(
         parsed = safe_json_loads(result_json, default=None)
         tool_err = parsed.get("error") if isinstance(parsed, dict) else None
         err_msg = str(tool_err or "image-gen provider returned no URL")
-        logger.warning(
-            "portrait image generation failed",
-            extra={"user_id": user_id, "error": err_msg},
-        )
+        logger.warning("portrait image generation failed", extra={"user_id": user_id, "error": err_msg})
         raise AvatarGenerationError("image-gen provider failed", internal=err_msg)
 
     if not persist:
@@ -314,47 +279,19 @@ async def _write_avatar_step(
     secondary_reference_image: str | None = None,
     persist: bool = False,
 ) -> AvatarAsset:
-    previous = (
-        await db.execute(
-            select(AvatarAsset).where(
-                AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)
-            )
-        )
-    ).scalar_one_or_none()
-    await db.execute(
-        update(AvatarAsset)
-        .where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True))
-        .values(active=False)
-    )
-    prompt_payload: dict = {
-        "prompt": avatar_prompt,
-        "avatar_prompt": avatar_prompt,
-        "style": style,
-        "source_url": avatar_source_url,
-    }
+    previous = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
+    prompt_payload: dict = {"prompt": avatar_prompt, "avatar_prompt": avatar_prompt, "style": style, "source_url": avatar_source_url}
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
         # Audit row keeps a marker (``data:image/png``), not the base64 blob.
         prompt_payload["reference_image"] = reference_image.split(",", 1)[0]
     if secondary_reference_image is not None:
-        prompt_payload["secondary_reference_image"] = secondary_reference_image.split(
-            ",", 1
-        )[0]
-    asset = AvatarAsset(
-        user_id=user_id,
-        prompt_json=json.dumps(prompt_payload, ensure_ascii=False),
-        asset_url=asset_url,
-        style=style,
-        seed=secrets.randbelow(2**31),
-        active=True,
-    )
+        prompt_payload["secondary_reference_image"] = secondary_reference_image.split(",", 1)[0]
+    asset = AvatarAsset(user_id=user_id, prompt_json=json.dumps(prompt_payload, ensure_ascii=False), asset_url=asset_url, style=style, seed=secrets.randbelow(2**31), active=True)
     # Explicit SQL update ensures persona confirmation is reset even if caller's persona is a detached instance.
-    await db.execute(
-        update(Persona)
-        .where(Persona.user_id == user_id)
-        .values(is_portrait_confirmed=False, portrait_confirmed_at=None)
-    )
+    await db.execute(update(Persona).where(Persona.user_id == user_id).values(is_portrait_confirmed=False, portrait_confirmed_at=None))
     db.add(asset)
     await db.commit()
     await db.refresh(asset)
@@ -384,17 +321,8 @@ async def _generate_avatar_step(
 ) -> AvatarAsset:
     """Avatar (bust) only. Generates portrait without holding a long DB session,
     then commits the fresh active ``AvatarAsset`` row in a short write session."""
-    (
-        asset_url,
-        file_id,
-        final_ext,
-        avatar_source_url,
-    ) = await _generate_one_portrait_with_moderation_retry(
-        avatar_prompt,
-        user_id,
-        reference_image=reference_image,
-        secondary_reference_image=secondary_reference_image,
-        persist=persist,
+    (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
+        avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
     )
 
     if db is None:
@@ -471,11 +399,7 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    persona: Persona | None = None,
-) -> AvatarAsset:
+async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None) -> AvatarAsset:
     """Generate the initial portrait after onboarding completes."""
     if user_id is None:
         raise ValueError("user_id is required")
@@ -490,28 +414,13 @@ async def generate_avatar(
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(
-            "prompt enhancement failed", internal=str(exc)
-        ) from exc
-    asset = await _generate_avatar_step(
-        db,
-        user_id,
-        avatar_prompt=avatar_prompt,
-        style=_DEFAULT_STYLE,
-        persona=persona,
-        persist=persona.is_portrait_confirmed,
-    )
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
+    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=_DEFAULT_STYLE, persona=persona, persist=persona.is_portrait_confirmed)
     return asset
 
 
 async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
-    asset = (
-        await db.execute(
-            select(AvatarAsset).where(
-                AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)
-            )
-        )
-    ).scalar_one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is not None:
         _re_sign_avatar_url(asset)
     return asset
@@ -519,20 +428,10 @@ async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | Non
 
 async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> AvatarAsset:
     """Set the specified avatar as active and deactivate all others for this user."""
-    asset = (
-        await db.execute(
-            select(AvatarAsset).where(
-                AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-            )
-        )
-    ).scalar_one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-    await db.execute(
-        update(AvatarAsset)
-        .where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True))
-        .values(active=False)
-    )
+    await db.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
     asset.active = True
     await db.commit()
     await db.refresh(asset)
@@ -541,21 +440,8 @@ async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> Avata
     return asset
 
 
-async def list_avatar_history(
-    db: AsyncSession, user_id: int, limit: int = 20
-) -> list[AvatarAsset]:
-    assets = (
-        (
-            await db.execute(
-                select(AvatarAsset)
-                .where(AvatarAsset.user_id == user_id)
-                .order_by(AvatarAsset.created_at.desc())
-                .limit(limit)
-            )
-        )
-        .scalars()
-        .all()
-    )
+async def list_avatar_history(db: AsyncSession, user_id: int, limit: int = 20) -> list[AvatarAsset]:
+    assets = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id).order_by(AvatarAsset.created_at.desc()).limit(limit))).scalars().all()
     for asset in assets:
         _re_sign_avatar_url(asset)
     return assets
@@ -594,11 +480,7 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
 
 
 async def regenerate_avatar(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    persona: Persona | None = None,
-    feedback: str | None = None,
-    style: str = _DEFAULT_STYLE,
+    db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None, feedback: str | None = None, style: str = _DEFAULT_STYLE
 ) -> AvatarAsset:
     """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
     if user_id is None:
@@ -612,22 +494,10 @@ async def regenerate_avatar(
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(
-            db, user_id, persona, feedback=feedback
-        )
+        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(
-            "prompt enhancement failed", internal=str(exc)
-        ) from exc
-    asset = await _generate_avatar_step(
-        db,
-        user_id,
-        avatar_prompt=avatar_prompt,
-        style=style,
-        persona=persona,
-        feedback=feedback,
-        persist=persona.is_portrait_confirmed,
-    )
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
+    asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
     return asset
 
 
@@ -646,9 +516,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
         temp_file_id = clean_path[temp_idx + len("temp-media/") :].split("?")[0]
     elif "/api/media/files/" in clean_path:
         idx = clean_path.find("/api/media/files/")
-        temp_file_id = (
-            clean_path[idx + len("/api/media/files/") :].split("?")[0].split("/")[0]
-        )
+        temp_file_id = clean_path[idx + len("/api/media/files/") :].split("?")[0].split("/")[0]
 
     if temp_file_id:
         raw_id = temp_file_id.rsplit(".", 1)[0] if "." in temp_file_id else temp_file_id
@@ -743,18 +611,10 @@ async def regenerate_avatar_from_image(
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     try:
-        avatar_prompt = await enhance_avatar_prompt(
-            db, user_id, persona, feedback=description
-        )
+        avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
-        raise AvatarGenerationError(
-            "prompt enhancement failed", internal=str(exc)
-        ) from exc
-    secondary_uri = (
-        build_data_uri(presentation_data, presentation_content_type or "image/png")
-        if presentation_data is not None
-        else None
-    )
+        raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
+    secondary_uri = build_data_uri(presentation_data, presentation_content_type or "image/png") if presentation_data is not None else None
     asset = await _generate_avatar_step(
         db,
         user_id,
@@ -801,13 +661,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
     Two-phase: reads all bytes first (abort on any TTL expiry), then persists —
     avoids orphaned companion-avatars files on partial failure. Idempotent.
     Raises ``AvatarSourceUnreadableError`` if any temp-media file has expired."""
-    asset = (
-        await db.execute(
-            select(AvatarAsset).where(
-                AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)
-            )
-        )
-    ).scalar_one_or_none()
+    asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         return None
 
@@ -817,9 +671,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
         if current and current.startswith("temp-media/"):
             result = _read_temp_media_bytes(current)
             if result is None:
-                raise AvatarSourceUnreadableError(
-                    f"temp-media file expired for {attr}: {current} — please regenerate the avatar"
-                )
+                raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the avatar")
             pending.append((attr, result[0], result[1]))
 
     if not pending:
@@ -848,46 +700,27 @@ def _normalize_avatar_url_to_bare(url: str | None) -> str:
         fid = clean.split("/api/media/files/", 1)[1].split("?")[0].split("/")[0]
         return f"temp-media/{fid}"
     if "/api/companion/avatar/file/" in clean:
-        filename = (
-            clean.split("/api/companion/avatar/file/", 1)[1].split("?")[0].split("/")[0]
-        )
+        filename = clean.split("/api/companion/avatar/file/", 1)[1].split("?")[0].split("/")[0]
         return f"companion-avatars/{filename}"
     return clean
 
 
-def _subject_reference_for_avatar(
-    asset: AvatarAsset,
-    reference_image: str | None = None,
-    reference_content_type: str | None = None,
-) -> str | None:
+def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | None = None, reference_content_type: str | None = None) -> str | None:
     if reference_image:
-        mime = (reference_content_type or "image/png").split(";")[
-            0
-        ].strip().lower() or "image/png"
+        mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
         return f"data:{mime};base64,{reference_image}"
     return load_avatar_bytes_as_data_uri(asset.asset_url)
 
 
 async def generate_fullbody_style_samples(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    *,
-    avatar_id: int,
-    reference_image: str | None = None,
-    reference_content_type: str | None = None,
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, reference_image: str | None = None, reference_content_type: str | None = None
 ) -> dict[str, str]:
     """Generate 1 front sample image for each style in STYLE_CATALOG concurrently."""
     if user_id is None:
         raise ValueError("user_id is required")
 
     async def _fetch_context(session: AsyncSession):
-        asset = (
-            await session.execute(
-                select(AvatarAsset).where(
-                    AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-                )
-            )
-        ).scalar_one_or_none()
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
@@ -902,9 +735,7 @@ async def generate_fullbody_style_samples(
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     if not isinstance(prompt_payload, dict):
         prompt_payload = {}
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get(
-        "prompt"
-    )
+    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt")
     if not cached_avatar_prompt:
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt")
 
@@ -913,9 +744,7 @@ async def generate_fullbody_style_samples(
     appearance_core = str(definition.get("appearance_core") or "").strip()
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", "cel_shading")
-    ref_uri = _subject_reference_for_avatar(
-        asset, reference_image, reference_content_type
-    )
+    ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     tasks = []
     for style_info in STYLE_CATALOG:
@@ -930,12 +759,7 @@ async def generate_fullbody_style_samples(
         )
         tasks.append(
             _generate_one_portrait_with_moderation_retry(
-                prompt,
-                user_id,
-                reference_image=ref_uri,
-                size=_FULLBODY_SIZE,
-                persist=False,
-                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+                prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
             )
         )
 
@@ -946,13 +770,7 @@ async def generate_fullbody_style_samples(
     for style_info, result in zip(STYLE_CATALOG, results):
         if isinstance(result, BaseException):
             errors.append(result)
-            logger.warning(
-                "fullbody style sample generation failed",
-                extra={
-                    "style": style_info.id,
-                    "error": getattr(result, "internal", str(result)),
-                },
-            )
+            logger.warning("fullbody style sample generation failed", extra={"style": style_info.id, "error": getattr(result, "internal", str(result))})
         else:
             samples[style_info.id] = _re_sign_bare_path(result[0]) or result[0]
             stored[style_info.id] = result[0]
@@ -960,22 +778,14 @@ async def generate_fullbody_style_samples(
     if not samples:
         first_err = errors[0] if errors else RuntimeError("all styles failed")
         err_msg = getattr(first_err, "internal", str(first_err))
-        raise FullbodyGenerationError(
-            "所有风格样图生成失败，请稍后重试", internal=err_msg
-        )
+        raise FullbodyGenerationError("所有风格样图生成失败，请稍后重试", internal=err_msg)
 
     # Sample paths ride the avatar row so a client restart rehydrates the style
     # picker instead of paying for generation again. They are drafts in
     # temp-media (TTL-bound); confirm-front promotes the picked one to
     # companion-avatars, and an expired draft falls back to regeneration.
     async def _persist_samples(session: AsyncSession) -> None:
-        target = (
-            await session.execute(
-                select(AvatarAsset).where(
-                    AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-                )
-            )
-        ).scalar_one_or_none()
+        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if target is None:
             return
         payload = safe_json_loads(target.prompt_json, default={})
@@ -994,13 +804,7 @@ async def generate_fullbody_style_samples(
     return samples
 
 
-async def select_fullbody_style(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    *,
-    avatar_id: int,
-    style: str,
-) -> AvatarAsset:
+async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str) -> AvatarAsset:
     """Persist the picked fullbody style so a restart resumes at the front
     preview instead of regenerating samples. The selected style's sample
     becomes the front-seed candidate — mirroring the client swapping its
@@ -1011,13 +815,7 @@ async def select_fullbody_style(
         raise UnknownFullbodyStyleError(f"unknown fullbody style: {style}")
 
     async def _write(session: AsyncSession) -> AvatarAsset:
-        target = (
-            await session.execute(
-                select(AvatarAsset).where(
-                    AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-                )
-            )
-        ).scalar_one_or_none()
+        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
@@ -1026,9 +824,7 @@ async def select_fullbody_style(
         payload["fullbody_style"] = style
         stored = payload.get("fullbody_samples")
         sample = stored.get(style) if isinstance(stored, dict) else None
-        if isinstance(sample, str) and sample.startswith(
-            ("companion-avatars/", "temp-media/")
-        ):
+        if isinstance(sample, str) and sample.startswith(("companion-avatars/", "temp-media/")):
             target.seed_front_url = sample
             target.seed_right_url = ""
             target.seed_back_url = ""
@@ -1060,13 +856,7 @@ async def generate_fullbody_front(
         raise ValueError("user_id is required")
 
     async def _fetch(session: AsyncSession):
-        asset = (
-            await session.execute(
-                select(AvatarAsset).where(
-                    AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-                )
-            )
-        ).scalar_one_or_none()
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
@@ -1081,9 +871,7 @@ async def generate_fullbody_front(
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     if not isinstance(prompt_payload, dict):
         prompt_payload = {}
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get(
-        "prompt"
-    )
+    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt")
     if not cached_avatar_prompt:
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt")
 
@@ -1092,37 +880,20 @@ async def generate_fullbody_front(
     appearance_core = str(definition.get("appearance_core") or "").strip()
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", style)
-    ref_uri = _subject_reference_for_avatar(
-        asset, reference_image, reference_content_type
-    )
+    ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
-    effective_feedback = (
-        feedback if feedback is not None else prompt_payload.get("feedback")
-    )
+    effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
     prompt = build_fullbody_prompt(
-        "front",
-        template=template,
-        style_id=style,
-        feedback=effective_feedback,
-        appearance_core=appearance_core,
-        personality=personality,
-        avatar_prompt=cached_avatar_prompt,
+        "front", template=template, style_id=style, feedback=effective_feedback, appearance_core=appearance_core, personality=personality, avatar_prompt=cached_avatar_prompt
     )
 
     try:
         (front_url, _, _, _) = await _generate_one_portrait_with_moderation_retry(
-            prompt,
-            user_id,
-            reference_image=ref_uri,
-            size=_FULLBODY_SIZE,
-            persist=False,
-            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+            prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
         )
     except Exception as exc:
         err_msg = getattr(exc, "internal", str(exc))
-        raise FullbodyGenerationError(
-            "正面全身图生成失败，请稍后重试", internal=err_msg
-        ) from exc
+        raise FullbodyGenerationError("正面全身图生成失败，请稍后重试", internal=err_msg) from exc
 
     async def _write(session: AsyncSession) -> AvatarAsset:
         target = await session.get(AvatarAsset, avatar_id)
@@ -1137,11 +908,7 @@ async def generate_fullbody_front(
         target.seed_front_url = front_url
         target.seed_right_url = ""
         target.seed_back_url = ""
-        await session.execute(
-            update(AvatarAsset)
-            .where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True))
-            .values(active=False)
-        )
+        await session.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
         target.active = True
         await session.commit()
         await session.refresh(target)
@@ -1156,25 +923,14 @@ async def generate_fullbody_front(
 
 
 async def confirm_fullbody_front(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    *,
-    avatar_id: int,
-    style: str | None = None,
-    front_url: str | None = None,
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None
 ) -> AvatarAsset:
     """Confirm the front fullbody view and automatically generate right + back views."""
     if user_id is None:
         raise ValueError("user_id is required")
 
     async def _fetch(session: AsyncSession):
-        asset = (
-            await session.execute(
-                select(AvatarAsset).where(
-                    AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id
-                )
-            )
-        ).scalar_one_or_none()
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
@@ -1193,9 +949,7 @@ async def confirm_fullbody_front(
             effective_front_url = normalized_front
 
     if not effective_front_url:
-        raise FrontSeedMissingError(
-            f"avatar {avatar_id} has no front seed; generate front fullbody first"
-        )
+        raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     if not isinstance(prompt_payload, dict):
@@ -1209,13 +963,9 @@ async def confirm_fullbody_front(
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     # The confirmed front image serves as the subject reference for side & back
-    front_ref_uri = load_avatar_bytes_as_data_uri(
-        effective_front_url
-    ) or _subject_reference_for_avatar(asset)
+    front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
 
-    cached_avatar_prompt = (
-        prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
-    )
+    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
     prompts = {
         "right": build_fullbody_prompt(
             "right",
@@ -1257,19 +1007,13 @@ async def confirm_fullbody_front(
     for v, result in zip(("right", "back"), results):
         if isinstance(result, BaseException):
             errors.append(result)
-            logger.warning(
-                "auxiliary fullbody view failed",
-                extra={"view": v, "error": getattr(result, "internal", str(result))},
-            )
+            logger.warning("auxiliary fullbody view failed", extra={"view": v, "error": getattr(result, "internal", str(result))})
         else:
             generated[v] = result[0]
 
     if len(generated) < 2:
         first_err = errors[0] if errors else RuntimeError("all aux views failed")
-        raise FullbodyGenerationError(
-            "侧面与背面生成失败，请稍后重试",
-            internal=getattr(first_err, "internal", str(first_err)),
-        )
+        raise FullbodyGenerationError("侧面与背面生成失败，请稍后重试", internal=getattr(first_err, "internal", str(first_err)))
 
     async def _write(session: AsyncSession) -> AvatarAsset:
         target = await session.get(AvatarAsset, avatar_id)
@@ -1288,9 +1032,7 @@ async def confirm_fullbody_front(
             if current.startswith("temp-media/"):
                 moved = _read_temp_media_bytes(current)
                 if moved is None:
-                    raise AvatarSourceUnreadableError(
-                        f"temp-media file expired for {attr}: {current} — please regenerate the fullbody front"
-                    )
+                    raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the fullbody front")
                 new_path, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
                 setattr(target, attr, new_path)
         payload = safe_json_loads(target.prompt_json, default={})

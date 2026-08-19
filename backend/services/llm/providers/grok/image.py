@@ -5,13 +5,7 @@ import httpx
 
 from .._provider_errors import raise_for_provider_response
 from .._size_aspect import SIZE_TO_ASPECT
-from ..base import (
-    ImageAsset,
-    ImageGenProvider,
-    ImageGenRequest,
-    ImageGenResult,
-    ProviderConfig,
-)
+from ..base import ImageAsset, ImageGenProvider, ImageGenRequest, ImageGenResult, ProviderConfig
 from ..http import download_as_b64, get_http
 
 
@@ -41,9 +35,7 @@ class GrokImageGenProvider(ImageGenProvider):
     """
 
     provider_name = "grok"
-    DEFAULT_MODELS: ClassVar[dict[str, str]] = {
-        "image_gen": "grok-imagine-image-quality"
-    }
+    DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "grok-imagine-image-quality"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
     # xAI's /images/edits natively consumes ``reference_image``; the tool
     # layer can pass it through without falling back to a vision-model
@@ -68,9 +60,7 @@ class GrokImageGenProvider(ImageGenProvider):
             payload["aspect_ratio"] = aspect
 
         resp = await self._client.post("/images/generations", json=payload)
-        body = raise_for_provider_response(
-            resp, family=self.provider_name, model=self.config.model
-        )
+        body = raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
         urls = [item.get("url") for item in body.get("data") or [] if item.get("url")]
         if not urls:
@@ -87,20 +77,13 @@ class GrokImageGenProvider(ImageGenProvider):
     # ── text + reference image ─────────────────────────────────────────
 
     async def _generate_with_reference(self, req: ImageGenRequest) -> ImageGenResult:
-        payload: dict = {
-            "model": self.config.model,
-            "prompt": req.prompt,
-            "n": req.n,
-            "image": {"url": req.reference_image, "type": "image_url"},
-        }
+        payload: dict = {"model": self.config.model, "prompt": req.prompt, "n": req.n, "image": {"url": req.reference_image, "type": "image_url"}}
         aspect = req.aspect_ratio or (req.size and SIZE_TO_ASPECT.get(req.size))
         if aspect:
             payload["aspect_ratio"] = aspect
 
         resp = await self._client.post("/images/edits", json=payload)
-        body = raise_for_provider_response(
-            resp, family=self.provider_name, model=self.config.model
-        )
+        body = raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
         urls = [item.get("url") for item in body.get("data") or [] if item.get("url")]
         if not urls:

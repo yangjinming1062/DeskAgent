@@ -1427,28 +1427,39 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         seedBackUrl: res?.seed_back_url
       })
 
-      setFullbodyFrontRawUrl(res?.seed_front_url || null)
-
+      const rawFront = res?.seed_front_url || null
       let resolvedUrl: string | null = null
 
       if (applied.seedFront) {
         resolvedUrl = applied.seedFront
-      } else if (res?.seed_front_url) {
-        resolvedUrl = await resolvePortraitUrl(res.seed_front_url)
+      } else if (rawFront) {
+        resolvedUrl = await resolvePortraitUrl(rawFront)
       }
 
-      setFullbodyFrontUrl(resolvedUrl)
-
       if (resolvedUrl) {
-        const currentList = fullbodyHistories[fullbodyStyle] || []
-        const nextList = [...currentList, { rawUrl: res?.seed_front_url || null, previewUrl: resolvedUrl }]
+        setFullbodyFrontRawUrl(rawFront)
+        setFullbodyFrontUrl(resolvedUrl)
 
-        if (nextList.length > 5) {
-          nextList.shift()
-        }
+        let targetIdx = 0
+        setFullbodyHistories(prev => {
+          let currentList = prev[fullbodyStyle] || []
 
-        setFullbodyHistories(prev => ({ ...prev, [fullbodyStyle]: nextList }))
-        setFullbodyHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: nextList.length - 1 }))
+          if (currentList.length === 0 && fullbodyFrontUrl) {
+            currentList = [{ rawUrl: fullbodyFrontRawUrl, previewUrl: fullbodyFrontUrl }]
+          }
+
+          const nextList = [...currentList, { rawUrl: rawFront, previewUrl: resolvedUrl }]
+
+          if (nextList.length > 5) {
+            nextList.shift()
+          }
+
+          targetIdx = nextList.length - 1
+
+          return { ...prev, [fullbodyStyle]: nextList }
+        })
+
+        setFullbodyHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: targetIdx }))
       }
     } catch (err) {
       setFullbodyHint(err instanceof Error ? err.message : '重新生成正面全身图失败，请重试')
