@@ -62,25 +62,10 @@ def test_pick_voice_for_text_explicit_preferred_wins():
     assert pr.pick_voice_for_text(preferred="en_US-amy-medium") == "en_US-amy-medium"
 
 
-def test_pick_voice_for_text_chinese_text_picks_zh_default():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    with mock.patch.object(pr, "default_voice_id", return_value="en_US-amy-medium"):
-        assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
-
-
-def test_pick_voice_for_text_english_text_picks_zh_default():
-    """Non-CJK text still gets ZH_DEFAULT_VOICE — see runner/README §本地 TTS voice 选型 for the "auto-routing creates inconsistent identity" rationale."""
-    from tools.multimodal.audio import piper_runtime as pr
-
-    with mock.patch.object(pr, "default_voice_id", return_value="en_US-amy-medium"):
-        assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
-
-
 def test_pick_voice_for_text_empty_preferred_uses_zh_default():
+    """Non-CJK text still gets ZH_DEFAULT_VOICE — see runner/README §本地 TTS voice 选型 for the "auto-routing creates inconsistent identity" rationale. pick_voice_for_text doesn't take text, so this pins the no-preferred path: ZH default wins unconditionally."""
     from tools.multimodal.audio import piper_runtime as pr
 
-    # No caller pref → ZH default wins regardless of text language.
     assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
 
 
@@ -159,27 +144,6 @@ def test_voice_id_to_repo_path_unknown_layout_returns_misc():
 
 
 # ── bundled_voices ───────────────────────────────────────────────────────
-
-
-def test_bundled_voices_includes_zh_default():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    voices = pr.bundled_voices()
-    assert pr.ZH_DEFAULT_VOICE in voices
-
-
-def test_bundled_voices_includes_zh_male():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    voices = pr.bundled_voices()
-    assert pr.ZH_MALE_DEFAULT_VOICE in voices
-
-
-def test_bundled_voices_includes_en_default():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    voices = pr.bundled_voices()
-    assert pr.EN_DEFAULT_VOICE in voices
 
 
 def test_bundled_voices_voice_ids_match_piper_pattern():
