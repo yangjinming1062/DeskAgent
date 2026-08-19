@@ -43,10 +43,13 @@ def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
     # Pick the character mesh (attached to armature or possessing materials)
     character_mesh = None
     for o in bpy.context.scene.objects:
-        if o.type == "MESH" and o.name != "Icosphere":
-            if o.parent == armature or any(m.type == "ARMATURE" for m in o.modifiers) or (o.data.materials and len(o.data.materials) > 0):
-                character_mesh = o
-                break
+        if (
+            o.type == "MESH"
+            and o.name != "Icosphere"
+            and (o.parent == armature or any(m.type == "ARMATURE" for m in o.modifiers) or (o.data.materials and len(o.data.materials) > 0))
+        ):
+            character_mesh = o
+            break
     if not character_mesh:
         character_mesh = next((o for o in bpy.context.scene.objects if o.type == "MESH"), None)
 
@@ -166,7 +169,8 @@ def inject(input_glb: str, output_glb: str) -> list[str]:
         export_materials="EXPORT",
         export_skins=True,
         export_morph=True,
-        export_morph_normal=True,
+        export_morph_normal=False,
+        export_normals=False,
         export_morph_tangent=False,
         export_animations=True,
         export_animation_mode="ACTIONS",

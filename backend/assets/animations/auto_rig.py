@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import bpy
+from auto_rig_helpers import sanitize_head_weights
 from mathutils import Matrix, Vector
 
 _MIN_BONE_LENGTH = 1e-3
@@ -65,10 +66,23 @@ def _weights_complete(objects: list[bpy.types.Object]) -> bool:
     return all(any(g.weight > 0.0 for g in v.groups) for obj in objects for v in obj.data.vertices)
 
 
+def _validate_automatic_weights(objects: list[bpy.types.Object], arm_obj: bpy.types.Object) -> None:
+    """Reject a silent bone-heat failure before nearest-bone weighting can ship."""
+    critical_bones = [bone for bone in arm_obj.data.bones if not bone.children and bone.name.lower().startswith(("left", "right")) and not bone.name.lower().endswith("eye")]
+    for bone in critical_bones:
+        if not any(any(group.weight > 0.0 for group in vertex.groups if obj.vertex_groups[group.group].name == bone.name) for obj in objects for vertex in obj.data.vertices):
+            raise RuntimeError(f"automatic bone weights left {bone.name} without influence")
+
+
 def _make_proxy(obj: bpy.types.Object) -> bpy.types.Object:
     proxy = obj.copy()
     proxy.data = obj.data.copy()
     bpy.context.scene.collection.objects.link(proxy)
+    bpy.context.view_layer.objects.active = proxy
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.remove_doubles(threshold=1e-5)
+    bpy.ops.object.mode_set(mode="OBJECT")
     ratio = min(1.0, _PROXY_MAX_VERTICES / max(len(proxy.data.vertices), 1))
     if ratio < 1.0:
         mod = proxy.modifiers.new("Decimate", "DECIMATE")
@@ -126,6 +140,10 @@ def _face_yaw(args: argparse.Namespace) -> float:
     return math.radians(args.yaw)
 
 
+def _export(path: str) -> None:
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", export_normals=False, export_draco_mesh_compression_enable=False)
+
+
 def _apply_canonical_yaw(yaw: float) -> None:
     """Rotate rig + meshes together to the canonical -Y front, then bake —
     the glTF exporter drops unapplied object rotations, and writing
@@ -175,7 +193,7 @@ def _normalize_cloud_rigged(args: argparse.Namespace) -> int:
         return 1
     _strip_bone_prefixes()
     _apply_canonical_yaw(_face_yaw(args))
-    bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
+    _export(args.output)
     return 0
 
 
@@ -203,16 +221,6 @@ def main() -> int:
         obj.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-
-    # Bone heat fails outright on non-manifold provider meshes (zero weights
-    # → skinless export); a no-op 1e-5 remove_doubles rebuilds the BMesh
-    # enough for the solve to converge.
-    for obj in meshes:
-        bpy.context.view_layer.objects.active = obj
-        bpy.ops.object.mode_set(mode="EDIT")
-        bpy.ops.mesh.select_all(action="SELECT")
-        bpy.ops.mesh.remove_doubles(threshold=1e-5)
-        bpy.ops.object.mode_set(mode="OBJECT")
 
     mn, mx = _world_bbox(meshes)
     size = Vector(max(c - d, _MIN_BONE_LENGTH) for c, d in zip(mx, mn))
@@ -245,31 +253,29 @@ def main() -> int:
         arm_obj.rotation_mode = "XYZ"
         arm_obj.rotation_euler.rotate_axis("Z", yaw)
 
-    _parent_auto(meshes, arm_obj)
-
+    proxies = [_make_proxy(obj) for obj in meshes]
+    _parent_auto(proxies, arm_obj)
+    _validate_automatic_weights(proxies, arm_obj)
+    for proxy in proxies:
+        strays = _assign_strays_to_nearest_bone(proxy, arm_obj)
+        if strays:
+            print(f"auto_rig: {strays} proxy vertices fell back to nearest-bone", file=sys.stderr)
+    for proxy, obj in zip(proxies, meshes):
+        _transfer_weights(proxy, obj, arm_obj)
+        _normalize_weights(obj)
+        strays = _assign_strays_to_nearest_bone(obj, arm_obj)
+        if strays:
+            print(f"auto_rig: {strays} vertices fell back to nearest-bone", file=sys.stderr)
+        bpy.data.objects.remove(proxy, do_unlink=True)
+    sanitize_head_weights(meshes, arm_obj)
     if not _weights_complete(meshes):
-        proxies = [_make_proxy(obj) for obj in meshes]
-        _parent_auto(proxies, arm_obj)
-        # Partial heat failure keeps some bones bare; rescue before transfer.
-        for proxy in proxies:
-            strays = _assign_strays_to_nearest_bone(proxy, arm_obj)
-            if strays:
-                print(f"auto_rig: {strays} proxy vertices fell back to nearest-bone", file=sys.stderr)
-        for proxy, obj in zip(proxies, meshes):
-            _transfer_weights(proxy, obj, arm_obj)
-            _normalize_weights(obj)
-            strays = _assign_strays_to_nearest_bone(obj, arm_obj)
-            if strays:
-                print(f"auto_rig: {strays} vertices fell back to nearest-bone", file=sys.stderr)
-            bpy.data.objects.remove(proxy, do_unlink=True)
-        if not _weights_complete(meshes):
-            print("auto_rig: weight transfer left vertices unskinned", file=sys.stderr)
-            return 1
+        print("auto_rig: weight transfer left vertices unskinned", file=sys.stderr)
+        return 1
 
     if abs(yaw) > 1e-3:
         _apply_canonical_yaw(yaw)
 
-    bpy.ops.export_scene.gltf(filepath=args.output, export_format="GLB", export_draco_mesh_compression_enable=False)
+    _export(args.output)
     return 0
 
 

@@ -20,6 +20,7 @@ from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
+from .glb_fidelity import add_source_vertex_uv, assert_preserves_display, restore_preserved_vertex_attributes
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
 from .rig_orientation import detect_face_yaw
@@ -483,16 +484,24 @@ async def _rig_locally_with_cloud_fallback(glb_bytes: bytes, record: CompanionMo
         cloud_bytes = await asyncio.to_thread(cloud_path.read_bytes)
         yaw = await detect_face_yaw(cloud_bytes, workdir=tmp_dir, user_id=record.user_id)
         script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "auto_rig.py"
-        if not script_path.exists():
-            raise ModelGenerationError("auto_rig.py 脚本缺失，无法归一化云端绑骨产物")
+        helper_path = script_path.with_name("auto_rig_helpers.py")
+        if not script_path.exists() or not helper_path.exists():
+            raise ModelGenerationError("auto_rig 脚本缺失，无法归一化云端绑骨产物")
         await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "auto_rig.py")
+        await asyncio.to_thread(shutil.copyfile, helper_path, tmp_dir / "auto_rig_helpers.py")
         inp = tmp_dir / "cloud_rigged.glb"
         out = tmp_dir / "normalized.glb"
-        await asyncio.to_thread(inp.write_bytes, cloud_bytes)
+        await asyncio.to_thread(inp.write_bytes, add_source_vertex_uv(cloud_bytes))
         returncode, stderr = await run_blender(tmp_dir, "auto_rig.py", ["--mode", "normalize", "--input", str(inp), "--output", str(out), "--yaw", str(yaw)], timeout=300)
         if returncode != 0 or not out.exists():
             raise ModelGenerationError(f"云端绑骨产物归一化失败: {stderr[-300:]}")
-        return await asyncio.to_thread(out.read_bytes)
+        normalized = await asyncio.to_thread(out.read_bytes)
+        try:
+            restored = restore_preserved_vertex_attributes(cloud_bytes, normalized)
+            assert_preserves_display(cloud_bytes, restored)
+        except Exception as error:
+            raise ModelGenerationError(f"云端绑骨归一化破坏模型展示数据: {error}") from error
+        return restored
 
 
 async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> None:
@@ -621,7 +630,8 @@ async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: in
     unlike morph injection this is not best-effort — a failure fails the
     generation rather than shipping an unrigged model."""
     script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "auto_rig.py"
-    if not script_path.exists():
+    helper_path = script_path.with_name("auto_rig_helpers.py")
+    if not script_path.exists() or not helper_path.exists():
         raise ModelGenerationError("auto_rig.py 脚本缺失，无法进行本地绑骨")
     spec = {"bones": [{"name": name, "parent": bone.parent, "head": list(bone.head), "tail": list(bone.tail)} for name, bone in layout_skeleton(rig_type).items()]}
 
@@ -630,9 +640,14 @@ async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: in
         tmp_dir = Path(tmp)
         inp = tmp_dir / "input.glb"
         out = tmp_dir / "output.glb"
-        await asyncio.to_thread(inp.write_bytes, glb_bytes)
+        try:
+            tagged = add_source_vertex_uv(glb_bytes)
+        except Exception as error:
+            raise ModelGenerationError(f"本地自动绑骨失败: 无法建立源顶点映射: {error}") from error
+        await asyncio.to_thread(inp.write_bytes, tagged)
         await asyncio.to_thread((tmp_dir / "rig_spec.json").write_text, json.dumps(spec))
         await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "auto_rig.py")
+        await asyncio.to_thread(shutil.copyfile, helper_path, tmp_dir / "auto_rig_helpers.py")
 
         yaw = await detect_face_yaw(glb_bytes, workdir=tmp_dir, user_id=user_id)
         returncode, stderr = await run_blender(
@@ -640,7 +655,13 @@ async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: in
         )
         if returncode != 0 or not out.exists():
             raise ModelGenerationError(f"本地自动绑骨失败: {stderr[-300:]}")
-        return await asyncio.to_thread(out.read_bytes)
+        rigged = await asyncio.to_thread(out.read_bytes)
+        try:
+            restored = restore_preserved_vertex_attributes(glb_bytes, rigged)
+            assert_preserves_display(glb_bytes, restored)
+        except Exception as error:
+            raise ModelGenerationError(f"本地绑骨破坏模型展示数据: {error}") from error
+        return restored
 
 
 async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None) -> bytes:
@@ -660,7 +681,12 @@ async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None)
         tmp_dir = Path(tmp)
         inp = tmp_dir / "input.glb"
         out = tmp_dir / "output.glb"
-        await asyncio.to_thread(inp.write_bytes, glb_bytes)
+        try:
+            tagged = add_source_vertex_uv(glb_bytes)
+        except Exception:
+            logger.warning("Morph source mapping failed; skipping morph injection", exc_info=True)
+            return glb_bytes
+        await asyncio.to_thread(inp.write_bytes, tagged)
         await asyncio.to_thread(shutil.copyfile, script_path, tmp_dir / "inject_morph_targets.py")
 
         try:
@@ -671,7 +697,14 @@ async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None)
         if returncode != 0 or not out.exists():
             logger.warning("Blender morph injection failed", extra={"stderr": stderr[:500]})
             return glb_bytes
-        return await asyncio.to_thread(out.read_bytes)
+        processed = await asyncio.to_thread(out.read_bytes)
+        try:
+            restored = restore_preserved_vertex_attributes(glb_bytes, processed)
+            assert_preserves_display(glb_bytes, restored)
+        except Exception:
+            logger.warning("Morph injection changed protected model display data; keeping input", exc_info=True)
+            return glb_bytes
+        return restored
 
 
 def parse_glb_json(glb_data: bytes) -> dict | None:
