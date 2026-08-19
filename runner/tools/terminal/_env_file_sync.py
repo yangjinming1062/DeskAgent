@@ -19,10 +19,8 @@ from utils import get_spiritagent_home
 
 from ._env_base import _file_mtime_key
 
-# File-locking stdlib is platform-determined at interpreter build time;
-# listing it in pyproject.toml would be wrong (stdlib is auto-available).
-# POSIX gets fcntl.flock; Windows gets msvcrt.locking — same semantics, both
-# exclusive advisory locks.
+# 文件锁 stdlib 由解释器构建时决定，不应在 pyproject.toml 列出（stdlib 自动可用）。
+# POSIX 用 fcntl.flock，Windows 用 msvcrt.locking，语义一致，都是独占式建议锁。
 if sys.platform == "win32":
     import msvcrt
 else:
@@ -44,6 +42,7 @@ GetFilesFn: TypeAlias = Callable[[], list[tuple[str, str]]]
 
 
 def iter_sync_files(container_base: str = "/root/.spiritagent") -> list[tuple[str, str]]:
+    """枚举需要与容器同步的 (host_path, container_path) 列表：凭据、技能、缓存目录。"""
     return (
         [(m["host_path"], m["container_path"].replace("/root/.spiritagent", container_base, 1)) for m in get_credential_file_mounts()]
         + [(m["host_path"], m["container_path"]) for m in iter_skills_files(container_base=container_base)]
@@ -52,14 +51,17 @@ def iter_sync_files(container_base: str = "/root/.spiritagent") -> list[tuple[st
 
 
 def quoted_rm_command(remote_paths: list[str]) -> str:
+    """拼接一条 `rm -f ...` 命令串，路径自动 shlex 转义。"""
     return "rm -f " + shlex.join(remote_paths)
 
 
 def quoted_mkdir_command(dirs: list[str]) -> str:
+    """拼接一条 `mkdir -p ...` 命令串，路径自动 shlex 转义。"""
     return "mkdir -p " + shlex.join(dirs)
 
 
 def unique_parent_dirs(files: list[tuple[str, str]]) -> list[str]:
+    """从 (host, remote) 列表中提取所有不重复的 remote 父目录（POSIX 风格）。"""
     return sorted({posixpath.dirname(remote) for _, remote in files})
 
 
@@ -77,6 +79,8 @@ _SYNC_BACK_MAX_BYTES = 2 * 1024 * 1024 * 1024
 
 
 class FileSyncManager:
+    """双向同步管理器：上传依赖目录到远端 / 下载远端变更回本地，通过文件锁串行化避免冲突。"""
+
     def __init__(
         self,
         get_files_fn: GetFilesFn,
@@ -158,8 +162,7 @@ class FileSyncManager:
                     if os.name == "posix":
                         os.kill(os.getpid(), signal.SIGINT)
                     else:
-                        # Windows os.kill with SIGINT is TerminateProcess, not
-                        # KeyboardInterrupt — deliver the deferred interrupt directly.
+                        # Windows 下 os.kill(PID, SIGINT) 实际是 TerminateProcess，不会触发 KeyboardInterrupt——直接抛出延迟的中断。
                         raise KeyboardInterrupt
 
     def _sync_back_locked(self, lock_path: Path) -> None:
@@ -183,9 +186,7 @@ class FileSyncManager:
         if not self._bulk_download_fn:
             raise RuntimeError("Missing bulk_download_fn")
         mapping = list(self._get_files_fn())
-        # mkstemp + explicit close: the download subprocess must be able to
-        # open the path for writing, which Windows denies while our own fd
-        # holds the file open (NamedTemporaryFile's open handle).
+        # mkstemp + 显式关闭：下载子进程需以写入方式打开该路径，Windows 在我们的 fd 持有文件时拒绝（NamedTemporaryFile 的打开句柄）。
         fd, tar_name = tempfile.mkstemp(suffix=".tar")
         os.close(fd)
         try:
@@ -200,9 +201,7 @@ class FileSyncManager:
                 for dp, _, fnames in os.walk(staging):
                     for fn in fnames:
                         staged = os.path.join(dp, fn)
-                        # Remote/container paths are POSIX-style; on Windows
-                        # os.path.relpath emits backslashes that never match
-                        # the mapping.
+                        # 远端/容器路径是 POSIX 风格；Windows 的 os.path.relpath 会输出反斜杠，永远匹配不上映射表。
                         remote = "/" + os.path.relpath(staged, staging).replace(os.sep, "/")
                         if (pushed := self._pushed_hashes.get(remote)) is not None and _sha256_file(staged) == pushed:
                             continue
@@ -224,6 +223,5 @@ class FileSyncManager:
         return next((h for h, r in mapping if r == remote_path), None)
 
     def _infer_host_path(self, remote_path: str, mapping: list[tuple[str, str]]) -> str | None:
-        # posixpath.dirname keeps the prefix POSIX-style on every host;
-        # str(Path(...)) on Windows would emit drive-less backslash paths.
+        # posixpath.dirname 在所有平台都保留 POSIX 风格前缀；Windows 下 str(Path(...)) 会输出无盘符的反斜杠路径。
         return next((str(Path(host).parent) + remote_path[len(r_dir) :] for host, remote in mapping if remote_path.startswith((r_dir := posixpath.dirname(remote)) + "/")), None)

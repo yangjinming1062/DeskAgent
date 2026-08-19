@@ -360,8 +360,6 @@ def skill_manage(
     return json.dumps(result, ensure_ascii=False)
 
 
-# OpenAI Function-Calling Schema
-
 SKILL_MANAGE_SCHEMA = {
     "name": "skill_manage",
     "description": (
@@ -455,11 +453,10 @@ SKILL_MANAGE_SCHEMA = {
 }
 
 
-# --- Registry ---
+# --- 注册表 ---
 def _skill_manage_handler(args: dict[str, Any], **kw: Any) -> str:
-    # Cheap interrupt early-return: skill_manage writes to disk on "create"
-    # actions. Without this guard a stale call could overwrite a
-    # freshly-edited file.
+    # 廉价的 interrupt 提前返回：skill_manage 在 "create" 动作下写磁盘。
+    # 没有这个兜底，过期调用可能覆盖刚编辑完的文件。
     if is_interrupted():
         return json.dumps({"error": "Interrupted", "interrupted": True})
     return skill_manage(

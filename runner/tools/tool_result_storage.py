@@ -13,6 +13,7 @@ STORAGE_DIR = os.path.join(tempfile.gettempdir(), "spiritagent-results")
 
 
 def _resolve_storage_dir(env: Any) -> str:
+    """优先采用环境的临时目录(跨 host 时留在 sandbox 内), 回落到系统临时目录。"""
     if env is not None and (get_temp_dir := getattr(env, "get_temp_dir", None)) and callable(get_temp_dir):
         try:
             if temp_dir := get_temp_dir():
@@ -23,6 +24,7 @@ def _resolve_storage_dir(env: Any) -> str:
 
 
 def generate_preview(content: str, max_chars: int = DEFAULT_PREVIEW_SIZE_CHARS) -> tuple[str, bool]:
+    """截取前 max_chars 字符的预览, 若断在行尾之后则回退到行边界。"""
     if len(content) <= max_chars:
         return content, False
     truncated = content[:max_chars]

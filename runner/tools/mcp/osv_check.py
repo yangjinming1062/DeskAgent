@@ -12,6 +12,7 @@ _TIMEOUT = 10
 
 
 def check_package_for_malware(command: str, args: list) -> str | None:
+    """检查即将通过 stdio MCP 子进程启动的包是否在 OSV 中存在恶意软件公告。"""
     if not (ecosystem := _infer_ecosystem(command)):
         return None
     if not (package_version := _parse_package_from_args(args, ecosystem))[0]:
@@ -28,11 +29,13 @@ def check_package_for_malware(command: str, args: list) -> str | None:
 
 
 def _infer_ecosystem(command: str) -> str | None:
+    """根据命令名推断包生态，仅识别 npm/PyPI 两类入口。"""
     base = os.path.basename(command).lower()
     return "npm" if base in {"npx", "npx.cmd"} else "PyPI" if base in {"uvx", "uvx.cmd", "pipx"} else None
 
 
 def _parse_package_from_args(args: list, ecosystem: str) -> tuple[str | None, str | None]:
+    """从 CLI 参数列表中抽取目标包名与版本号。"""
     if not args:
         return None, None
     package_token = None
@@ -60,6 +63,7 @@ def _parse_package_from_args(args: list, ecosystem: str) -> tuple[str | None, st
 
 
 def _parse_npm_package(token: str) -> tuple[str | None, str | None]:
+    """解析 npm 包令牌，支持 scope（@org/pkg）和可选的 @version 后缀。"""
     if token.startswith("@"):
         return (m.group(1), m.group(2)) if (m := re.match(r"^(@[^/]+/[^@]+)(?:@(.+))?$", token)) else (token, None)
     if "@" in token:
@@ -69,10 +73,12 @@ def _parse_npm_package(token: str) -> tuple[str | None, str | None]:
 
 
 def _parse_pypi_package(token: str) -> tuple[str | None, str | None]:
+    """解析 PyPI 包令牌，可选 [extras] 后缀与 ==version 约束。"""
     return (m.group(1), m.group(2)) if (m := re.match(r"^([a-zA-Z0-9._-]+)(?:\[[^\]]*\])?(?:==(.+))?$", token)) else (token, None)
 
 
 def _query_osv(package: str, ecosystem: str, version: str | None = None) -> list:
+    """查询 OSV 接口，仅返回 MAL- 前缀的恶意软件公告。"""
     payload = {"package": {"name": package, "ecosystem": ecosystem}} | ({"version": version} if version else {})
     req = urllib.request.Request(
         _OSV_ENDPOINT, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "spiritagent-agent-osv-check/1.0"}, method="POST"

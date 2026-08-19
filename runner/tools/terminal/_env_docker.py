@@ -34,8 +34,7 @@ _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_VALUE_OK_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
 
-# Windows: suppress the console window the runner would otherwise
-# flash for every docker/ssh/singularity child it spawns.
+# Windows：抑制 runner 每次派生 docker/ssh/singularity 子进程时闪现的控制台窗口。
 _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 
@@ -73,6 +72,7 @@ def _sanitize_label_value(value: str) -> str:
 
 
 def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | None = None, docker_exe: str | None = None) -> int:
+    """扫描已退出且超过存活阈值的 spiritagent 标签容器并强制删除；返回实际清理数量。"""
     docker = docker_exe or find_docker() or "docker"
     filters = ["--filter", "label=spiritagent-agent=1", "--filter", "status=exited"]
     if profile_filter:
@@ -97,15 +97,13 @@ def reap_orphan_containers(*, max_age_seconds: int = 600, profile_filter: str | 
     return removed
 
 
-# ── Orphan reaper (run-once guard) ────────────────────────────────────
-
 _DEFAULT_ORPHAN_LIFETIME_SECONDS = 300
 _orphan_reaper_ran = False
 _orphan_reaper_lock = threading.Lock()
 
 
 def maybe_reap_docker_orphans(container_config: dict, lifetime_seconds: int | None = None) -> None:
-    """Reap stale Docker containers once per process, guarded by a lock."""
+    """单进程内只执行一次的孤儿容器回收入口：通过锁与标志位双重守护，避免热路径上重复扫描。"""
     global _orphan_reaper_ran
     if not container_config.get("docker_orphan_reaper", True):
         return
@@ -139,6 +137,7 @@ def _container_finished_at(docker_exe: str, container_id: str) -> datetime.datet
 
 
 def find_docker() -> str | None:
+    """解析本地 docker/podman 可执行路径：先看配置覆盖，再 `which`，最后回退到平台常见路径；首次成功后缓存。"""
     global _docker_executable
     if _docker_executable is not None:
         return _docker_executable
@@ -216,6 +215,8 @@ def _ensure_docker_available() -> None:
 
 
 class DockerEnvironment(BaseEnvironment):
+    """基于 Docker 容器提供隔离终端：每个会话对应一个长驻 `sleep infinity` 容器，命令通过 `docker exec` 注入。"""
+
     _NO_CONTAINER_PATTERNS = ("No such container", "is not running", "no such container")
 
     def __init__(

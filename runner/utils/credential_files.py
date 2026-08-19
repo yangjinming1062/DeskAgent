@@ -71,7 +71,7 @@ def _load_config_files() -> list[dict[str, str]]:
 
 
 def reset_cache() -> None:
-    """Drop the config-derived mounts list (spiritagent.config.update)."""
+    """清空由配置派生的挂载列表（spiritagent.config.update 时调用）。"""
     global _config_files
     _config_files = None
 

@@ -31,8 +31,7 @@ from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, Computer
 
 logger = logging.getLogger(__name__)
 
-# COM/UIA interface pointers are apartment-affine and pyautogui drives one
-# physical mouse/keyboard — desktop automation must not run concurrently.
+# COM/UIA 接口指针与 apartment 亲和，pyautogui 同一时刻只能驱动一套物理鼠标/键盘 — 桌面自动化不能并发执行
 _serial_lock = threading.RLock()
 
 
@@ -68,12 +67,8 @@ _WINDOWS_KEY_MAP = {
 
 PW_RENDERFULLCONTENT = 0x00000002
 
-# Sentinel values for `app=` are defined centrally in ``cu_backend.DESKTOP_SENTINELS``
-# so the macOS and Windows backends can't drift apart.
-# Windows class names are reported by GetClassNameW verbatim with their
-# canonical capitalization; match case-insensitively so 'Progman' /
-# 'Shell_TrayWnd' from the OS resolve to the same set entry as their
-# lowercase spellings.
+# app= 的哨兵值集中定义在 cu_backend.DESKTOP_SENTINELS，防止 macOS 与 Windows 后端产生分歧
+# Windows 类名由 GetClassNameW 按规范大小写原样返回；忽略大小写匹配，使 OS 给出的 'Progman' / 'Shell_TrayWnd' 与小写拼写落到同一集合项
 _WIN_SHELL_CLASSES = frozenset({"progman", "shell_traywnd"})
 
 
@@ -152,8 +147,7 @@ def _capture_window_printwindow(hwnd: int) -> bytes | None:
             if ctypes.windll.user32.PrintWindow(hwnd, hdc_mem, PW_RENDERFULLCONTENT):
                 png_bytes = _bitmap_to_png(hdc_mem, hbitmap, width, height)
         finally:
-            # Every GDI handle acquired above must be released even when the
-            # pixel copy raises midway — leaks accumulate per capture call.
+            # 上面获取的每个 GDI 句柄都必须在像素拷贝中途抛错时也释放 — 泄漏会按 capture 调用累积
             ctypes.windll.gdi32.DeleteObject(hbitmap)
             ctypes.windll.gdi32.DeleteDC(hdc_mem)
             ctypes.windll.user32.ReleaseDC(hwnd, hdc_window)
@@ -499,8 +493,7 @@ class WinBackend(ComputerUseBackend):
         return None, ""
 
     def _find_shell_window(self) -> tuple[int | None, str]:
-        """Return the topmost Progman / Shell_TrayWnd window, used for the
-        ``app='desktop'`` sentinel."""
+        """返回最顶层的 Progman / Shell_TrayWnd 窗口，供 app='desktop' 哨兵使用。"""
         try:
             desktop = self._get_desktop()
             for win in desktop.windows():

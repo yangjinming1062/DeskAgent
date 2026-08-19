@@ -10,8 +10,7 @@ from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, get_credential_file_mou
 
 from ._env_base import BaseEnvironment, _load_json_store, _popen_bash, _save_json_store, get_sandbox_dir
 
-# Windows: suppress the console window the runner would otherwise
-# flash for every docker/ssh/singularity child it spawns.
+# Windows：抑制 runner 每次派生 docker/ssh/singularity 子进程时闪现的控制台窗口。
 _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
@@ -97,6 +96,8 @@ def _get_or_build_sif(image: str, executable: str = "apptainer") -> str:
 
 
 class SingularityEnvironment(BaseEnvironment):
+    """基于 Apptainer/Singularity 的隔离终端：每个会话对应一个长驻 instance，命令通过 `exec` 注入。"""
+
     def __init__(
         self, image: str, cwd: str = "~", timeout: int = 60, cpu: float = 0, memory: int = 0, disk: int = 0, persistent_filesystem: bool = False, task_id: str = "default"
     ):

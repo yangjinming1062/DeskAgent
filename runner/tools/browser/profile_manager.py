@@ -7,33 +7,23 @@ from utils import cfg_get, get_spiritagent_home, load_config
 
 logger = logging.getLogger(__name__)
 
-# Files Chromium writes to claim a single owner of a profile dir.
-# If either exists on startup, another instance is using the same profile.
+# Chromium 用来声明「单一 owner」的 profile 锁文件——启动时任一存在表示另有实例在用。
 _PROFILE_LOCK_FILES = ("SingletonLock", "SingletonCookie", "LOCK")
 
-# 72h matches the auto-recording retention policy; older profiles get
-# GC'd on the next cleanup tick.
+# 72h 对齐自动录屏保留策略；更老的 profile 在下一次 GC tick 回收。
 DEFAULT_RETENTION_HOURS = 72
 
-# How long a SingletonLock/etc. is considered "live" before we treat it as
-# stale (e.g. a crashed runner left it behind). 90s comfortably exceeds the
-# longest realistic Chrome startup but stays well under the profile GC
-# retention so we don't accidentally treat fresh locks as stale.
+# SingletonLock 等被视作「新鲜」的最大时长——90s 远超真实 Chrome 启动时间、又远低于 profile GC 保留期，避免把新锁误判为陈旧锁。
 _LOCK_FRESHNESS_S = 90.0
 
 
 def _has_lock_file(path: Path) -> bool:
-    """True when ``path`` contains any of the Chromium profile lock files."""
+    """``path`` 下存在任意 Chromium profile 锁文件时返回 True。"""
     return any((path / lock).exists() for lock in _PROFILE_LOCK_FILES)
 
 
 def resolve_profile_dir(profile_name: str = "default") -> Path:
-    """Return the on-disk path for ``profile_name`` under $SPIRITAGENT_HOME.
-
-    The directory is created (parents + leaf) but never *used* — caller
-    decides whether to pass it to ``--user-data-dir`` and whether to hold
-    a profile lock.
-    """
+    """返回 profile_name 对应的磁盘目录路径（按需创建），是否真正使用由调用方决定。"""
     try:
         cfg_root = cfg_get(load_config(), "browser", "profile_dir", default="")
     except Exception as e:
@@ -47,14 +37,7 @@ def resolve_profile_dir(profile_name: str = "default") -> Path:
 
 
 def is_profile_locked(profile_dir: Path) -> bool:
-    """Return True if a fresh lockfile exists (suggests a live agent-browser).
-
-    The check fires only when the lockfile was modified in the last
-    ``_LOCK_FRESHNESS_S`` seconds — past that window we assume the previous
-    runner crashed (stale lock) and prefer to overwrite. Detector must
-    NOT block persistent profile use on stale locks, since the whole point
-    of the profile is to survive between runner sessions.
-    """
+    """锁文件在 ``_LOCK_FRESHNESS_S`` 秒内被修改过返回 True（说明有别的 agent-browser 在用）；过期锁视为残留以便复用持久 profile。"""
     if not profile_dir.is_dir():
         return False
     cutoff = time.time() - _LOCK_FRESHNESS_S
@@ -66,14 +49,7 @@ def is_profile_locked(profile_dir: Path) -> bool:
 
 
 def cleanup_old_profiles(retention_hours: int = DEFAULT_RETENTION_HOURS) -> int:
-    """Remove profile directories not modified within ``retention_hours``.
-
-    Returns the number of profiles deleted. Confined walk — only deletes
-    immediate children of the resolved profile root that look like a
-    Chromium profile (must contain ``Default/Preferences`` or one of the
-    profile lockfiles). Without this guard, an unrelated sibling dir
-    pointing at a live config root could be rmtree'd on GC.
-    """
+    """删除 mtime 早于 retention_hours 的 profile 目录；只在 profile 根下扫描、且仅删看起来像 Chromium profile 的子目录，避免误删无关兄弟目录。"""
     cutoff = time.time() - retention_hours * 3600
     deleted = 0
     try:
@@ -100,5 +76,5 @@ def cleanup_old_profiles(retention_hours: int = DEFAULT_RETENTION_HOURS) -> int:
 
 
 def _looks_like_chromium_profile(path: Path) -> bool:
-    """True when ``path`` has the on-disk signature of a Chromium user-data-dir."""
+    """``path`` 看起来像 Chromium user-data-dir 时返回 True（含 Default/Preferences 或锁文件）。"""
     return (path / "Default" / "Preferences").is_file() or _has_lock_file(path)

@@ -96,4 +96,5 @@ BINARY_EXTENSIONS = frozenset({
 
 
 def has_binary_extension(path: str) -> bool:
+    """通过后缀名快速判断文件是否为已知二进制类型。"""
     return (dot := path.rfind(".")) != -1 and path[dot:].lower() in BINARY_EXTENSIONS

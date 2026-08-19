@@ -10,6 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class DebugSession:
+    """按工具维度记录调试会话, 输出到 ``logs/{tool}_debug_{session}.json``。"""
+
     def __init__(self, tool_name: str, *, env_var: str) -> None:
         self.tool_name = tool_name
         self._debug_key = env_var.lower()
@@ -23,7 +25,7 @@ class DebugSession:
 
     @property
     def enabled(self) -> bool:
-        # Read per call: the Desktop's config push arrives long after import.
+        # 每次都重读: Desktop 的 config.push 在导入之后很久才到达, 模块级快照会永远关闭。
         return bool(cfg_get(load_config(), "debug", self._debug_key, default=False))
 
     @property

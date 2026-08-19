@@ -18,8 +18,6 @@ from utils import safe_schedule_threadsafe
 
 logger = logging.getLogger(__name__)
 
-# ── Config defaults ───────────────────────────────────────────────────────────
-
 DIALOG_POLICY_MUST_RESPOND = "must_respond"
 DIALOG_POLICY_AUTO_DISMISS = "auto_dismiss"
 DIALOG_POLICY_AUTO_ACCEPT = "auto_accept"
@@ -32,25 +30,17 @@ DEFAULT_DIALOG_TIMEOUT_S = 300.0
 FRAME_TREE_MAX_ENTRIES = 30
 FRAME_TREE_MAX_OOPIF_DEPTH = 2
 
-# Ring buffer of recent console-level events (used later by PR 2 diagnostics).
 CONSOLE_HISTORY_MAX = 50
 
-# Keep the last N closed dialogs in ``recent_dialogs`` so agents on backends
-# that auto-dismiss server-side can still observe that a dialog fired, even
-# if they couldn't respond to it in time.
+# 保留最近 N 条已关闭弹窗到 ``recent_dialogs``：服务端自动 dismiss 的后端也能让 agent 看到弹窗发生过（即便没赶上响应）。
 RECENT_DIALOGS_MAX = 20
 
-# Magic host the injected dialog bridge XHRs to. Intercepted via the CDP
-# Fetch domain; the host never has to resolve. Keep this ASCII + URL-safe;
-# we also gate Fetch patterns on it.
+# 注入式 dialog bridge 的 XHR 目标 host。由 CDP Fetch domain 拦截；该 host 永远不需要解析。保持 ASCII + URL-safe，Fetch pattern 也基于它做过滤。
 DIALOG_BRIDGE_HOST = "spiritagent-dialog-bridge.invalid"
 DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
 
-# Script injected into every frame via Page.addScriptToEvaluateOnNewDocument.
-# Overrides alert/confirm/prompt to round-trip through a sync XHR that we
-# intercept via Fetch.requestPaused. Works on backends whose CDP proxy
-# auto-dismisses REAL native dialogs because the native dialogs never fire
-# in the first place — the overrides take precedence.
+# 通过 Page.addScriptToEvaluateOnNewDocument 注入到每个 frame 的脚本。
+# 把 alert/confirm/prompt 改写成走同步 XHR（由 Fetch.requestPaused 拦截）。在 CDP 代理自动 dismiss 真实弹窗的后端上依然可用——因为原生弹窗根本不会弹出，override 抢先生效。
 _DIALOG_BRIDGE_SCRIPT = r"""
 (() => {
   if (window.__spiritagentDialogBridgeInstalled) return;
@@ -104,8 +94,6 @@ _DIALOG_BRIDGE_SCRIPT = r"""
 })();
 """
 
-# ── Data model ────────────────────────────────────────────────────────────────
-
 
 @dataclass
 class PendingDialog:
@@ -116,11 +104,9 @@ class PendingDialog:
     message: str
     default_prompt: str
     opened_at: float
-    cdp_session_id: str  # which attached CDP session the dialog fired in
+    cdp_session_id: str
     frame_id: str | None = None
-    # When set, the dialog was captured via the bridge XHR path (Fetch domain).
-    # Response must be delivered via Fetch.fulfillRequest, NOT
-    # Page.handleJavaScriptDialog — the native dialog never fired.
+    # 设置后表示该弹窗是经 bridge XHR 路径（Fetch domain）抓到的，响应必须通过 Fetch.fulfillRequest 回送，而非 Page.handleJavaScriptDialog——因为原生弹窗根本没有触发。
     bridge_request_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -141,7 +127,7 @@ class DialogRecord:
     message: str
     opened_at: float
     closed_at: float
-    closed_by: str  # "agent" | "auto_policy" | "remote" | "watchdog"
+    closed_by: str  # 关闭来源：agent / auto_policy / remote / watchdog
     frame_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -209,7 +195,7 @@ class SupervisorSnapshot:
     recent_dialogs: tuple[DialogRecord, ...]
     frame_tree: dict[str, Any]
     console_errors: tuple[ConsoleEvent, ...]
-    active: bool  # False if supervisor is detached/stopped
+    active: bool
     cdp_url: str
     task_id: str
 
@@ -219,9 +205,6 @@ class SupervisorSnapshot:
         if self.recent_dialogs:
             out["recent_dialogs"] = [d.to_dict() for d in self.recent_dialogs]
         return out
-
-
-# ── Supervisor core ───────────────────────────────────────────────────────────
 
 
 class CDPSupervisor:
@@ -249,7 +232,7 @@ class CDPSupervisor:
         self.dialog_policy = dialog_policy
         self.dialog_timeout_s = float(dialog_timeout_s)
 
-        # State protected by ``_state_lock`` for cross-thread reads.
+        # 受 ``_state_lock`` 保护的状态，供跨线程读取。
         self._state_lock = threading.Lock()
         self._pending_dialogs: dict[str, PendingDialog] = {}
         self._recent_dialogs: list[DialogRecord] = []
@@ -257,39 +240,34 @@ class CDPSupervisor:
         self._console_events: list[ConsoleEvent] = []
         self._active = False
 
-        # Download tracking — keyed by CDP ``guid``.
-        # Each entry: {"state": str, "filename": str, "event": threading.Event}
+        # 下载跟踪：key 为 CDP ``guid``，value 为 ``{"state": str, "filename": str, "event": threading.Event}``。
         self._pending_downloads: dict[str, dict[str, Any]] = {}
 
-        # Supervisor loop machinery — populated in start().
+        # supervisor loop 状态机：在 start() 中填充。
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._ready_event = threading.Event()
         self._start_error: BaseException | None = None
         self._stop_requested = False
 
-        # CDP call tracking (runs on supervisor loop only).
+        # CDP 调用跟踪（仅在 supervisor loop 上运行）。
         self._next_call_id = 1
         self._pending_calls: dict[int, asyncio.Future] = {}
         self._ws: ClientConnection | None = None
         self._page_session_id: str | None = None
-        self._child_sessions: dict[str, dict[str, Any]] = {}  # session_id -> info
+        self._child_sessions: dict[str, dict[str, Any]] = {}
 
-        # Multi-tab routing — every CDP message that doesn't explicitly pass
-        # session_id goes to the active tab. Starts unset; ``_run`` sets it to
-        # ``_page_session_id`` after the initial page attaches.
+        # 多 tab 路由：未显式带 session_id 的 CDP 消息发往当前活动 tab；初始为空，由 ``_run`` 在初始 page 接入后设为 ``_page_session_id``。
         self._active_session_id: str | None = None
-        # target_id -> {"session_id": str, "title": str} for attached tabs.
+        # 已附加的 tab：target_id -> ``{"session_id": str, "title": str}``。
         self._attached_targets: dict[str, dict[str, str]] = {}
 
-        # Dialog auto-dismiss watchdog handles (per dialog id).
+        # 各 dialog 的 auto-dismiss watchdog 句柄（key 为 dialog id）。
         self._dialog_watchdogs: dict[str, asyncio.TimerHandle] = {}
-        # Monotonic id generator for dialogs (human-readable in snapshots).
+        # dialog 单调 id 生成器（snapshot 里给人读的）。
         self._dialog_seq = 0
-        # Holds references to background asyncio tasks to prevent GC.
+        # 持有后台 asyncio task 的引用，防止 GC 回收。
         self._bg_tasks: set[asyncio.Task] = set()
-
-    # ── Public sync API ──────────────────────────────────────────────────────
 
     def start(self, timeout: float = 15.0) -> None:
         """Launch the background loop and wait until attachment is complete.
@@ -428,8 +406,7 @@ class CDPSupervisor:
         with self._state_lock:
             if not self._active:
                 return {"ok": False, "error": "supervisor is not active"}
-            # Route to the active tab (multi-tab Phase 4) by default;
-            # fall back to the initial page so single-tab callers don't break.
+            # 默认路由到活动 tab（multi-tab Phase 4），回退到初始 page 让单 tab 调用方不会坏掉。
             session_id = self._active_session_id or self._page_session_id
 
         if not session_id:
@@ -442,8 +419,7 @@ class CDPSupervisor:
                     "expression": expression,
                     "returnByValue": by_value,
                     "awaitPromise": await_promise,
-                    # userGesture matters for things like clipboard / fullscreen
-                    # APIs that require a user-activation context.
+                    # userGesture 对 clipboard / fullscreen 等要求用户激活上下文的 API 很关键。
                     "userGesture": True,
                 },
                 session_id=session_id,
@@ -459,14 +435,7 @@ class CDPSupervisor:
         try:
             response = _run_eval(return_by_value)
         except Exception as exc:
-            # ``returnByValue=True`` asks Chrome to deep-serialize the result.
-            # For live DOM nodes / NodeLists / Window that serialization can
-            # blow past CDP's recursion guard and fail the whole call with
-            # ``Object reference chain is too long`` (a protocol-level error,
-            # not a JS exception).  Retry once with ``returnByValue=False`` so
-            # Chrome returns the object's description string instead — the same
-            # graceful degradation path used for ``document.querySelector(...)``
-            # results — rather than crashing the eval.
+            # ``returnByValue=True`` 让 Chrome 深度序列化结果：对于活跃 DOM 节点 / NodeList / Window，序列化可能撞穿 CDP 的递归保护并报 ``Object reference chain is too long``（这是协议级错误而非 JS 异常）。退而求其次：用 ``returnByValue=False`` 重试一次，让 Chrome 返回对象的 description 字符串（与 ``document.querySelector(...)`` 结果走同一条降级路径），而不是炸掉 eval。
             if return_by_value and "reference chain is too long" in str(exc).lower():
                 try:
                     response = _run_eval(False)
@@ -475,13 +444,13 @@ class CDPSupervisor:
             else:
                 return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
-        # Runtime.evaluate response shape:
+        # Runtime.evaluate 响应结构：
         #   {"id": N, "result": {"result": {"type": "...", "value": ..., ...},
-        #                         "exceptionDetails": {...} (only on error)}}
+        #                         "exceptionDetails": {...} (仅出错时)}}
         result_payload = response.get("result", {}) if isinstance(response, dict) else {}
         exception_details = result_payload.get("exceptionDetails")
         if exception_details:
-            # Surface the JS-side exception with a clean message.
+            # 把 JS 端异常用干净文本暴露出来。
             exc_text = exception_details.get("text") or "JavaScript exception"
             exc_obj = exception_details.get("exception") or {}
             description = exc_obj.get("description")
@@ -497,8 +466,7 @@ class CDPSupervisor:
         elif result_type == "undefined":
             value = None
         else:
-            # Non-serializable (functions, DOM nodes, etc.) — return the
-            # browser's string description so the model gets *something*.
+            # 不可序列化（function / DOM 节点等）——返回浏览器的字符串描述，让模型至少能拿到点东西。
             value = result_obj.get("description") or result_obj.get("unserializableValue")
 
         return {"ok": True, "result": value, "result_type": result_type}
@@ -521,9 +489,7 @@ class CDPSupervisor:
         with self._state_lock:
             if not self._active:
                 return {"ok": False, "error": "supervisor is not active"}
-            # Route to the active tab by default; fall back to the initial
-            # page session so single-tab callers (which never call
-            # ``set_active_session_id``) keep working without changes.
+            # 默认路由到活动 tab，回退到初始 page session——这样从未调过 ``set_active_session_id`` 的单 tab 调用方也能继续工作。
             session_id = self._active_session_id or self._page_session_id
 
         if not session_id:
@@ -540,16 +506,13 @@ class CDPSupervisor:
         except Exception as exc:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
-    # ── Download tracking ────────────────────────────────────────────────────
-
     def _on_download_begin(self, params: dict[str, Any]) -> None:
         """Handle ``Browser.downloadWillBegin`` CDP event."""
         guid = params.get("guid", "")
         if not guid:
             return
         with self._state_lock:
-            # Drop finished entries nobody waited for (page-initiated
-            # downloads) so the map doesn't grow without bound.
+            # 清理没人等待的已完成条目（页面自发的下载），避免 map 无界增长。
             for stale in [g for g, e in self._pending_downloads.items() if e["event"].is_set()]:
                 self._pending_downloads.pop(stale, None)
             self._pending_downloads[guid] = {"state": "in_progress", "filename": params.get("suggestedFilename", ""), "url": params.get("url", ""), "event": threading.Event()}
@@ -575,8 +538,7 @@ class CDPSupervisor:
         Returns ``{"ok": True, "filename": ..., "state": "completed"}`` on
         success, or ``{"ok": False, "error": ...}`` on timeout / cancellation.
         """
-        # downloadWillBegin arrives asynchronously after the triggering click
-        # returns — wait briefly for the entry instead of failing outright.
+        # downloadWillBegin 在触发 click 返回后才异步到达——短暂等待条目而非直接失败。
         grace_deadline = time.monotonic() + 2.0
         while not self._pending_downloads:
             if time.monotonic() >= grace_deadline:
@@ -585,7 +547,7 @@ class CDPSupervisor:
         with self._state_lock:
             if not self._pending_downloads:
                 return {"ok": False, "error": "no pending download found"}
-            # The most recently started download is the last item in the dict
+            # 最近一次启动的下载就是 dict 的最后一个条目。
             guid, entry = list(self._pending_downloads.items())[-1]
             event = entry["event"]
 
@@ -600,8 +562,6 @@ class CDPSupervisor:
         if state == "completed":
             return {"ok": True, "filename": entry.get("filename", ""), "guid": guid}
         return {"ok": False, "error": f"download ended with state: {state}"}
-
-    # ── Multi-tab routing ─────────────────────────────────────────────────────
 
     def set_active_session_id(self, session_id: str | None) -> None:
         """Point all subsequent CDP messages at the given session.
@@ -634,9 +594,7 @@ class CDPSupervisor:
         if session_id:
             with self._state_lock:
                 self._attached_targets[target_id] = {"session_id": session_id, "title": ""}
-            # Dialogs on the new tab need the same bridge/JS we install
-            # for the initial page — without this, ``browser_dialog`` would
-            # silently no-op for tabs created via ``browser_tab_new``.
+            # 新 tab 上的弹窗需要和初始 page 一样的 bridge / JS——否则 ``browser_dialog`` 对 ``browser_tab_new`` 创建的 tab 会静默失效。
             self._schedule_install_dialog_bridge(session_id)
         return {"ok": True, "session_id": session_id}
 
@@ -701,15 +659,12 @@ class CDPSupervisor:
         with self._state_lock:
             self._attached_targets.pop(tab_id, None)
             if closing_active:
-                # Fall back to the initial page so subsequent CDP messages
-                # don't go to a stale session_id.
+                # 回退到初始 page，避免后续 CDP 消息打到已失效的 session_id。
                 self._active_session_id = self._page_session_id
         return result if not result.get("ok") else {"ok": True, "tab_id": tab_id}
 
-    # ── Supervisor loop internals ────────────────────────────────────────────
-
     def _thread_main(self) -> None:
-        """Entry point for the supervisor's dedicated thread."""
+        """supervisor 专用线程的入口。"""
         loop = asyncio.new_event_loop()
         self._loop = loop
         try:
@@ -737,13 +692,9 @@ class CDPSupervisor:
                 self._active = False
 
     async def _run(self) -> None:
-        """Top-level supervisor coroutine.
+        """顶层 supervisor 协程。
 
-        Holds a reconnecting loop so we survive the remote closing the
-        WebSocket — some cloud backends tear down the CDP socket every time
-        a short-lived client (e.g. agent-browser's per-command CDP client)
-        disconnects.  We drop our state snapshot keys that
-        depend on specific CDP session ids, re-attach, and keep going.
+        维持重连循环，扛住远端关 WebSocket——有些云后端会在短生命周期客户端（agent-browser 的每命令 CDP 客户端）断开时立即拆掉 CDP socket。我们把依赖于特定 CDP session id 的快照键丢掉，重新 attach 后继续。
         """
         attempt = 0
         last_success_at = 0.0
@@ -754,7 +705,7 @@ class CDPSupervisor:
             except Exception as e:
                 attempt += 1
                 if not self._ready_event.is_set():
-                    # Never connected once — fatal for start().
+                    # 从未连上过——start() 视为致命失败。
                     self._start_error = e
                     self._ready_event.set()
                     return
@@ -765,7 +716,6 @@ class CDPSupervisor:
 
             reader_task = asyncio.create_task(self._read_loop(), name="cdp-reader")
             try:
-                # around after a reconnect.
                 with self._state_lock:
                     self._page_session_id = None
                     self._active_session_id = None
@@ -788,7 +738,7 @@ class CDPSupervisor:
                 await reader_task
             except BaseException as e:
                 if not self._ready_event.is_set():
-                    # Never got to ready — propagate to start().
+                    # 还没进入 ready 状态——向 start() 抛出。
                     self._start_error = e
                     self._ready_event.set()
                     raise
@@ -812,7 +762,6 @@ class CDPSupervisor:
             if self._stop_requested:
                 return
 
-            # Reconnect: brief backoff, then reattach.
             logger.debug("CDP supervisor %s: reconnecting in %.1fs...", self.task_id, backoff)
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 10.0)
@@ -830,23 +779,16 @@ class CDPSupervisor:
 
         attach = await self._cdp("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         self._page_session_id = attach["result"]["sessionId"]
-        # Route CDP messages to the initial page by default; browser_tab_*
-        # calls set_active_session_id() to point elsewhere. We also seed
-        # ``_attached_targets`` with the initial targetId so browser_tab_list
-        # reports it and browser_tab_close() / browser_tab_switch() can target
-        # it without a fresh Target.getTargets round-trip.
+        # 默认把 CDP 消息路由到初始 page，browser_tab_* 系列调用 set_active_session_id() 改路由。同时把初始 targetId 写入 ``_attached_targets``，让 browser_tab_list 能列出它、browser_tab_close() / browser_tab_switch() 不用再发 Target.getTargets 就能定位。
         with self._state_lock:
             self._active_session_id = self._page_session_id
             self._attached_targets[target_id] = {"session_id": self._page_session_id, "title": ""}
         await self._cdp("Page.enable", session_id=self._page_session_id)
         await self._cdp("Runtime.enable", session_id=self._page_session_id)
-        # Enable download events so browser_download can track progress.
+        # 启用下载事件，供 browser_download 跟踪进度。
         await self._cdp("Browser.setDownloadBehavior", {"behavior": "allow", "eventsEnabled": True, "downloadPath": tempfile.gettempdir()}, session_id=self._page_session_id)
         await self._cdp("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}, session_id=self._page_session_id)
-        # Install the dialog bridge — overrides native alert/confirm/prompt with
-        # a synchronous XHR we intercept via Fetch domain. This is how we make
-        # dialog response work when the CDP proxy auto-dismisses real native
-        # dialogs before we can call handleJavaScriptDialog.
+        # 安装 dialog bridge：把原生 alert/confirm/prompt 改写成同步 XHR，由 Fetch domain 拦截。这正是 CDP 代理在我们能调 handleJavaScriptDialog 之前自动 dismiss 真实弹窗时，仍能回应弹窗的关键。
         await self._install_dialog_bridge(self._page_session_id)
 
     async def _install_dialog_bridge(self, session_id: str) -> None:
@@ -876,8 +818,7 @@ class CDPSupervisor:
             )
         except Exception as e:
             logger.debug("dialog bridge: Fetch.enable failed on sid=%s: %s", (session_id or "")[:16], e)
-        # Also try to inject into the already-loaded document so existing
-        # pages pick up the override on reconnect. Best-effort.
+        # 同时尝试把 override 注入已加载文档，让已存在的页面在重连后也能生效；best-effort。
         with contextlib.suppress(Exception):
             await self._cdp("Runtime.evaluate", {"expression": _DIALOG_BRIDGE_SCRIPT, "returnByValue": True}, session_id=session_id, timeout=3.0)
 
@@ -924,8 +865,6 @@ class CDPSupervisor:
         except Exception as e:
             logger.debug("CDP read loop exited: %s", e)
 
-    # ── Event dispatch ──────────────────────────────────────────────────────
-
     async def _on_event(self, method: str, params: dict[str, Any], session_id: str | None) -> None:
         if method == "Page.javascriptDialogOpening":
             await self._on_dialog_opening(params, session_id)
@@ -965,9 +904,7 @@ class CDPSupervisor:
         )
 
         if self.dialog_policy == DIALOG_POLICY_AUTO_DISMISS:
-            # Archive immediately with the policy tag so the ``closed`` event
-            # arriving right after our handleJavaScriptDialog call doesn't
-            # re-archive it as "remote".
+            # 立即以 policy tag 入档，避免 handleJavaScriptDialog 调用之后到达的 ``closed`` event 把它重复标记为 "remote"。
             with self._state_lock:
                 self._archive_dialog_locked(dialog, "auto_policy")
             t = asyncio.create_task(self._auto_handle_dialog(dialog, accept=False, prompt_text=""))
@@ -980,7 +917,6 @@ class CDPSupervisor:
             self._bg_tasks.add(t)
             t.add_done_callback(self._bg_tasks.discard)
         else:
-            # must_respond → add to pending and arm watchdog.
             with self._state_lock:
                 self._pending_dialogs[dialog.id] = dialog
             loop = asyncio.get_running_loop()
@@ -994,11 +930,7 @@ class CDPSupervisor:
             self._dialog_watchdogs[dialog.id] = handle
 
     async def _auto_handle_dialog(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:
-        """Send handleJavaScriptDialog for auto_dismiss/auto_accept.
-
-        Dialog has already been archived by the caller (``_on_dialog_opening``);
-        this just fires the CDP call so the page unblocks.
-        """
+        """针对 auto_dismiss/auto_accept 策略向 Chrome 发送 Page.handleJavaScriptDialog 解开阻塞。"""
         params: dict[str, Any] = {"accept": accept}
         if dialog.type == "prompt":
             params["promptText"] = prompt_text
@@ -1014,7 +946,7 @@ class CDPSupervisor:
             return
         logger.warning("CDP supervisor %s: dialog %s (%s) auto-dismissed after %ss timeout", self.task_id, dialog_id, dialog.type, self.dialog_timeout_s)
         try:
-            # Archive with watchdog tag BEFORE fulfilling / dismissing.
+            # 先以 watchdog tag 入档，再 fulfill / dismiss。
             with self._state_lock:
                 if dialog_id in self._pending_dialogs:
                     self._pending_dialogs.pop(dialog_id, None)
@@ -1029,7 +961,7 @@ class CDPSupervisor:
             logger.debug("auto-dismiss failed for %s: %s", dialog_id, e)
 
     def _archive_dialog_locked(self, dialog: PendingDialog, closed_by: str) -> None:
-        """Move a pending dialog to the recent_dialogs ring buffer. Must hold state_lock."""
+        """把 pending dialog 移到 recent_dialogs 环形缓冲区；调用方必须持有 state_lock。"""
         record = DialogRecord(
             id=dialog.id, type=dialog.type, message=dialog.message, opened_at=dialog.opened_at, closed_at=time.time(), closed_by=closed_by, frame_id=dialog.frame_id
         )
@@ -1062,8 +994,7 @@ class CDPSupervisor:
         try:
             await self._cdp("Page.handleJavaScriptDialog", params, session_id=dialog.cdp_session_id or None, timeout=5.0)
         finally:
-            # Clear regardless — the CDP error path usually means the dialog
-            # already closed (browser auto-dismissed after navigation, etc.).
+            # 无条件清掉——CDP 报错通常意味着弹窗已经关闭（跳转后浏览器自动 dismiss 等）。
             with self._state_lock:
                 if dialog.id in self._pending_dialogs:
                     self._pending_dialogs.pop(dialog.id, None)
@@ -1075,19 +1006,13 @@ class CDPSupervisor:
     async def _on_dialog_closed(self, params: dict[str, Any], session_id: str | None) -> None:
         # ``Page.javascriptDialogClosed`` spec has only ``result`` (bool) and
         # ``userInput`` (string), not the original ``message``.  Match by
-        # session id and clear the oldest dialog on that session — if Chrome
-        # closed one on us (e.g. our disconnect auto-dismissed it, or the
-        # browser navigated, or the CDP proxy auto-dismissed), there
-        # shouldn't be more than one in flight per session anyway because the
-        # JS thread is blocked while a dialog is up.
+        # ``Page.javascriptDialogClosed`` 只带 ``result``(bool) 与 ``userInput``(str)，没有原始 ``message``。按 session id 匹配并清掉该 session 上最旧的一条——Chrome 关弹窗（如断连触发自动 dismiss、跳转、CDP 代理自动 dismiss）时一个 session 同时不该有多条在飞，因为 JS 线程被弹窗阻塞着。
         with self._state_lock:
             candidate_ids = [
                 d.id
                 for d in self._pending_dialogs.values()
                 if d.cdp_session_id == session_id
-                # Bridge-captured dialogs aren't cleared by native close events;
-                # they're resolved via Fetch.fulfillRequest instead. Only the
-                # real-native-dialog path uses Page.javascriptDialogClosed.
+                # bridge 抓到的弹窗不由 native close event 清，而是经 Fetch.fulfillRequest 解决；只有真实原生弹窗走 Page.javascriptDialogClosed。
                 and d.bridge_request_id is None
             ]
             if candidate_ids:
@@ -1113,10 +1038,9 @@ class CDPSupervisor:
         request_id = params.get("requestId")
         if not request_id:
             return
-        # Only care about our bridge URLs. Fetch can still deliver other
-        # intercepted requests if patterns were ever broadened.
+        # 只关心 bridge URL；若 pattern 范围扩大，Fetch 仍可能投递别的拦截请求。
         if DIALOG_BRIDGE_HOST not in url:
-            # Not ours — forward unchanged so the page sees its own request.
+            # 不是我们的——原样放行，让页面继续拿到自己的请求。
             with contextlib.suppress(Exception):
                 await self._cdp("Fetch.continueRequest", {"requestId": request_id}, session_id=session_id, timeout=3.0)
             return
@@ -1143,7 +1067,6 @@ class CDPSupervisor:
             bridge_request_id=str(request_id),
         )
 
-        # Apply policy exactly as for native dialogs.
         if self.dialog_policy == DIALOG_POLICY_AUTO_DISMISS:
             with self._state_lock:
                 self._archive_dialog_locked(dialog, "auto_policy")
@@ -1157,7 +1080,6 @@ class CDPSupervisor:
             self._bg_tasks.add(t)
             t.add_done_callback(self._bg_tasks.discard)
         else:
-            # must_respond — add to pending + arm watchdog.
             with self._state_lock:
                 self._pending_dialogs[dialog.id] = dialog
             loop = asyncio.get_running_loop()
@@ -1190,8 +1112,6 @@ class CDPSupervisor:
             )
         except Exception as e:
             logger.debug("bridge fulfill failed for %s: %s", dialog.id, e)
-
-    # ── Frame / target tracking ─────────────────────────────────────────────
 
     def _on_frame_attached(self, params: dict[str, Any], session_id: str | None) -> None:
         frame_id = params.get("frameId")
@@ -1260,7 +1180,6 @@ class CDPSupervisor:
             return
         self._child_sessions[sid] = {"info": info, "type": target_type}
 
-        # Record the frame with its OOPIF session id for interaction routing.
         if target_type == "iframe":
             target_id = info.get("targetId")
             with self._state_lock:
@@ -1275,7 +1194,6 @@ class CDPSupervisor:
                     name=str(info.get("title") or (existing.name if existing else "")),
                 )
 
-        # reader can resolve those replies' Futures.
         t = asyncio.create_task(self._enable_child_domains(sid))
         self._bg_tasks.add(t)
         t.add_done_callback(self._bg_tasks.discard)
@@ -1292,7 +1210,6 @@ class CDPSupervisor:
             await self._cdp("Target.setAutoAttach", {"autoAttach": True, "waitForDebuggerOnStart": False, "flatten": True}, session_id=sid, timeout=3.0)
         except Exception as e:
             logger.debug("child session %s setup failed: %s", sid[:16], e)
-        # Install the dialog bridge on the child so iframe dialogs are captured.
         await self._install_dialog_bridge(sid)
 
     def _on_target_detached(self, params: dict[str, Any]) -> None:
@@ -1324,8 +1241,6 @@ class CDPSupervisor:
                         name=frame.name,
                     )
 
-    # ── Console / exception ring buffer ─────────────────────────────────────
-
     def _on_console(self, params: dict[str, Any], *, level_from: str) -> None:
         if level_from == "exception":
             details = params.get("exceptionDetails") or {}
@@ -1347,29 +1262,22 @@ class CDPSupervisor:
                 # Keep last CONSOLE_HISTORY_MAX; allow 2x slack to reduce churn.
                 self._console_events = self._console_events[-CONSOLE_HISTORY_MAX:]
 
-    # ── Frame tree building (bounded) ───────────────────────────────────────
-
     def _build_frame_tree_locked(self) -> dict[str, Any]:
         """Build the capped frame_tree payload. Must be called under state lock."""
         frames = self._frames
         if not frames:
             return {"top": None, "children": [], "truncated": False}
 
-        # Identify a top frame — one with no parent, preferring oopif=False.
         tops = [f for f in frames.values() if not f.parent_frame_id]
         top = next((f for f in tops if not f.is_oopif), tops[0] if tops else None)
 
-        # BFS from top, capped by FRAME_TREE_MAX_ENTRIES and
-        # FRAME_TREE_MAX_OOPIF_DEPTH for OOPIF branches.
+        # BFS 从 top 出发，受 FRAME_TREE_MAX_ENTRIES 与 FRAME_TREE_MAX_OOPIF_DEPTH（OOPIF 分支）双重封顶。
         children: list[dict[str, Any]] = []
         truncated = False
         if top is None:
             return {"top": None, "children": [], "truncated": False}
 
-        # Pre-build a parent_frame_id → children index so each BFS step is
-        # O(1) instead of scanning every frame. Without this, the BFS is
-        # O(N²) on pages with many iframes (a single browser_snapshot can
-        # take milliseconds where it should take microseconds).
+        # 预建 parent_frame_id → 子帧 索引，让每步 BFS 是 O(1) 而不用扫所有帧；不加这个的话多 iframe 页面 BFS 是 O(N²)，单次 browser_snapshot 会从微秒级变成毫秒级。
         children_by_parent: dict[str, list[FrameInfo]] = {}
         for f in frames.values():
             children_by_parent.setdefault(f.parent_frame_id, []).append(f)
@@ -1392,9 +1300,6 @@ class CDPSupervisor:
             truncated = True
 
         return {"top": top.to_dict(), "children": children, "truncated": truncated}
-
-
-# ── Registry ─────────────────────────────────────────────────────────────────
 
 
 class _SupervisorRegistry:

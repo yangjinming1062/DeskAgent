@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 class OAuthNonInteractiveError(RuntimeError):
+    """非交互环境下 OAuth 流程无法完成（如无浏览器/超时）时抛出。"""
+
     pass
 
 
@@ -102,6 +104,8 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 class SpiritAgentTokenStorage:
+    """符合 MCP SDK TokenStorage 协议的 SPIRITAGENT 端 token 持久化实现。"""
+
     def __init__(self, server_name: str) -> None:
         self._server_name = _safe_filename(server_name)
         self._token_dir = _get_token_dir()
@@ -172,6 +176,7 @@ class SpiritAgentTokenStorage:
 
 
 def remove_oauth_tokens(server_name: str) -> None:
+    """从磁盘与缓存中清除指定 MCP 服务器的 OAuth 凭据。"""
     SpiritAgentTokenStorage(server_name).remove()
     logger.info("OAuth tokens removed for '%s'", server_name)
 
@@ -389,6 +394,8 @@ class _ProviderEntry:
 
 
 class MCPOAuthManager:
+    """管理 MCP OAuth provider 的进程内单例，跨服务器复用 provider 与 401 处理状态。"""
+
     def __init__(self) -> None:
         self._entries: dict[str, _ProviderEntry] = {}
         self._entries_lock = threading.Lock()
@@ -497,6 +504,7 @@ _MANAGER_LOCK = threading.Lock()
 
 
 def get_manager() -> MCPOAuthManager:
+    """返回进程内的 MCPOAuthManager 单例（懒加载）。"""
     global _MANAGER
     with _MANAGER_LOCK:
         if _MANAGER is None:
@@ -505,6 +513,7 @@ def get_manager() -> MCPOAuthManager:
 
 
 def reset_manager_for_tests() -> None:
+    """重置全局 MCPOAuthManager 单例，仅供测试使用。"""
     global _MANAGER
     with _MANAGER_LOCK:
         _MANAGER = None

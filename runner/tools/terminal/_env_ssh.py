@@ -13,8 +13,7 @@ from utils import CREATE_NO_WINDOW, IS_WINDOWS
 from ._env_base import BaseEnvironment, _popen_bash
 from ._env_file_sync import FileSyncManager, iter_sync_files, quoted_mkdir_command, quoted_rm_command, unique_parent_dirs
 
-# Windows: suppress the console window the runner would otherwise
-# flash for every docker/ssh/singularity child it spawns.
+# Windows：抑制 runner 每次派生 docker/ssh/singularity 子进程时闪现的控制台窗口。
 _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
@@ -26,6 +25,8 @@ def _ensure_ssh_available() -> None:
 
 
 class SSHEnvironment(BaseEnvironment):
+    """基于 SSH ControlMaster 的远端终端：复用持久连接减少认证开销，文件通过 SCP 增量同步。"""
+
     def __init__(self, host: str, user: str, cwd: str = "~", timeout: int = 60, port: int = 22, key_path: str = "") -> None:
         super().__init__(cwd=cwd, timeout=timeout)
         self.host = host

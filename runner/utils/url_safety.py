@@ -72,7 +72,7 @@ def normalize_url_for_request(url: str) -> str:
 
 
 def _global_allow_private_urls() -> bool:
-    """Read live from config — no caching because the value can change via ``spiritagent.config.update``."""
+    """实时从配置读取（不缓存，因为该值会通过 ``spiritagent.config.update`` 变更）。"""
     try:
         cfg = load_config()
         return any(isinstance(d, dict) and is_truthy_value(d.get("allow_private_urls"), default=False) for d in (cfg.get("security"), cfg.get("browser")))
@@ -177,7 +177,7 @@ async def async_is_safe_url(url: str) -> bool:
 
 
 def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:
-    """Validate a redirect target URL against IMDSv2 metadata blocklists and SSRF guards."""
+    """校验重定向目标 URL 是否命中云元数据黑名单或 SSRF 防护。"""
     if not redirect_url or not redirect_url.startswith(("http://", "https://")):
         return True
     if is_always_blocked_url(redirect_url):
@@ -220,7 +220,7 @@ def _iter_blocklist_file_rules(path: Path) -> list[str]:
 
 
 def _load_policy_config() -> dict[str, Any]:
-    """Read ``security.website_blocklist`` from the in-memory config."""
+    """从内存配置读取 ``security.website_blocklist``。"""
     config = load_config()
     if not isinstance(config, dict):
         raise WebsitePolicyError("config root must be a mapping")

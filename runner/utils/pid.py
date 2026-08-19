@@ -6,10 +6,7 @@ from .constants import CREATE_NO_WINDOW, IS_WINDOWS
 
 
 def pid_exists(pid: int | None) -> bool:
-    """True when the OS recognises the PID (psutil is cross-platform and uses
-    the safest probe for each platform). AccessDenied means the process exists
-    but is owned by another user — report ``True``. Other transient errors
-    (busy, timeout) report ``False``."""
+    """OS 是否识别该 PID；AccessDenied（进程存在但属于其他用户）按存在处理，其他瞬时错误按不存在处理。"""
     if pid is None:
         return False
     try:
@@ -21,19 +18,7 @@ def pid_exists(pid: int | None) -> bool:
 
 
 def kill_tree(pid: int | None, *, force: bool = True, timeout: float = 10.0) -> bool:
-    """Tree-kill a process on Windows via ``taskkill /T [/F]``.
-
-    Returns True when the tree (or an already-gone equivalent) was terminated.
-    False when the invocation failed or the tree remained partially alive —
-    callers should fall back to ``proc.kill()`` on the parent handle.
-
-    taskkill exits 128 when the target PID is already gone — that's a success
-    for a kill request, not a failure to kill.
-
-    POSIX tree-kill is intentionally not unified here: existing callers use
-    ``psutil.children`` + ``os.killpg`` for graceful-then-force and have
-    legitimate platform-specific escalation paths.
-    """
+    """在 Windows 上通过 ``taskkill /T [/F]`` 终结进程树；进程已消失时返回 True。POSIX 由调用方走 psutil/os.killpg。"""
     if pid is None:
         return False
     if not IS_WINDOWS:
@@ -52,7 +37,7 @@ def kill_tree(pid: int | None, *, force: bool = True, timeout: float = 10.0) -> 
     if result is not None and result.returncode in (0, 128):
         return True
     if result is None and not force:
-        # Soft-kill timed out — escalate to force-kill so caller doesn't have to.
+        # 软杀超时——直接升级到强杀，避免调用方再走一遍。
         result = _run([*args, "/F"])
         if result is not None and result.returncode in (0, 128):
             return True

@@ -77,21 +77,17 @@ LIST_VOICES_SCHEMA = {
 }
 
 
-# Cloud voice ids the backend advertises — Piper/pyttsx3 can't speak them.
-# Tuple form lets ``str.startswith`` do a single C-level check across all
-# prefixes. New providers must add their prefix here AND wire their voices
-# into ``backend/services/llm/voice_catalog.py`` — keeping the two in sync
-# is the contract this list enforces.
+# 后端对外展示的云端语音 id — Piper/pyttsx3 无法直接合成。
+# 用 tuple 让 str.startswith 一次性在 C 层检查所有前缀；新增提供商必须同时在此追加前缀并把语音接入
+# backend/services/llm/voice_catalog.py — 保持两边一致是本列表的契约。
 _CLOUD_VOICE_HINTS = ("mimo_", "minimax_", "minimax:")
 
 
 def _is_cloud_voice(voice: str) -> bool:
-    """True iff `voice` is a cloud-provider id rather than a local Piper id.
+    """voice 是云端提供方 id（非本地 Piper id）时返回 True。
 
-    The shape fallback (anything not matching ``PIPER_VOICE_RE``) catches
-    bare names like ``冰糖`` / ``Mia`` that don't carry a known prefix; the
-    prefix list is a forward-compat guard for ids that LOOK Piper-shaped
-    but are actually cloud tokens (e.g. ``mimo_voicedesign:<prompt>``).
+    形状兜底（不匹配 PIPER_VOICE_RE 的全部归入云端）可捕获形如 `冰糖` / `Mia` 这种没有已知前缀的裸名；
+    前缀列表是前瞻性兜底，用于拦截看似 Piper 形状但实际是云端 token 的 id（如 `mimo_voicedesign:<prompt>`）。
     """
     return voice.startswith(_CLOUD_VOICE_HINTS) or not PIPER_VOICE_RE.match(voice)
 
@@ -109,17 +105,15 @@ def _output_path(name_hint: str = "tts") -> Path:
 
 
 def _synth_piper(text: str, voice: str, speed: float, dst: Path) -> dict[str, Any]:
-    # Module singleton so the voice LRU actually persists across calls — a
-    # fresh PiperRuntime per call reloaded the ONNX model every time.
+    # 模块单例使 voice LRU 真正跨调用保持 — 每次新建 PiperRuntime 都会重载 ONNX 模型
     return {"engine": "piper", "voice": voice, "path": str(_runtime.synthesize(text, voice_id=voice, output_wav=dst, speed=speed))}
 
 
 def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
-    """Snapshot the pyttsx3 voices list as ``{id, name, lang, lang_name, is_zh}``.
+    """快照 pyttsx3 voices 列表为 {id, name, lang, lang_name, is_zh}。
 
-    Caller owns ``engine`` — must have a live pyttsx3.init() handle. On
-    Windows the calling thread must already have called CoInitialize, or
-    SAPI5 raises ``OSError: CoInitialize has not been called``.
+    engine 由调用方持有 — 必须有可用的 pyttsx3.init() 句柄。
+    Windows 上调用线程必须先调用 CoInitialize，否则 SAPI5 抛 OSError: CoInitialize has not been called。
     """
     try:
         voices = engine.getProperty("voices") or []
@@ -145,21 +139,15 @@ def _enumerate_pyttsx3_voices(engine: Any) -> list[dict[str, str]]:
     return out
 
 
-# Module-scope cache: the OS voice list doesn't change at runtime. SAPI5
-# enumeration is what costs ~100ms per ``init()``; init itself is still
-# per-call (the engine's runAndWait lifecycle owns the COM apartment).
+# 模块级缓存：OS 语音列表运行时不变。SAPI5 枚举每次 init() 约 100ms；init 仍按调用进行（引擎的 runAndWait 生命周期持有 COM apartment）
 _PYTTSX3_VOICE_CACHE: list[dict[str, str]] | None = None
 
 
 def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dict[str, Any]:
-    # pyttsx3 on Windows uses SAPI5 via COM. The runner's tools run on
-    # asyncio worker threads that don't have COM initialized — SAPI5
-    # raises ``OSError: [WinError -2147221008] CoInitialize has not
-    # been called`` if we don't bootstrap the apartment. CoInitialize
-    # / CoUninitialize must be paired per thread. Windows-only; the
-    # import is deferred so POSIX runs aren't affected. Both the voice
-    # enumeration and the synthesis must happen inside this scope — see
-    # ``_PYTTSX3_VOICE_CACHE`` below.
+    # Windows 上的 pyttsx3 通过 COM 调用 SAPI5。runner 的工具跑在 asyncio 工作线程，
+    # 这些线程未初始化 COM — 若不引导 apartment 则 SAPI5 抛 OSError: [WinError -2147221008] CoInitialize has not been called。
+    # CoInitialize / CoUninitialize 必须按线程成对调用。仅 Windows；导入延迟以避免影响 POSIX。
+    # 语音枚举与合成都必须在此作用域内完成 — 见下面的 _PYTTSX3_VOICE_CACHE。
     com_initialized = False
     if sys.platform == "win32":
         try:
@@ -177,9 +165,7 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
         except Exception:
             pass
 
-        # Resolve the voice inside the COM scope. An explicit caller-supplied
-        # id wins; otherwise pick a Chinese SAPI5 voice for CJK text — but
-        # only if no caller choice was given (see ``text_to_speech_tool``).
+        # 在 COM 作用域内解析 voice。显式 caller id 优先；否则在 CJK 文本上挑一个中文 SAPI5 语音，但仅当 caller 未指定时（见 text_to_speech_tool）
         global _PYTTSX3_VOICE_CACHE
         if not voice:
             if _PYTTSX3_VOICE_CACHE is None:
@@ -187,7 +173,7 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
             if text_language(text) == "zh":
                 voice = next((v["id"] or None for v in _PYTTSX3_VOICE_CACHE if v["is_zh"] == "1"), None)
 
-        # pyttsx3's setProperty("voice") is best-effort across platforms.
+        # pyttsx3 的 setProperty("voice") 跨平台是尽力而为
         if voice:
             with contextlib.suppress(Exception):
                 engine.setProperty("voice", voice)
@@ -241,8 +227,8 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     if not normalized:
         return tool_error("text is empty after normalization")
 
-    # Cloud voice id (e.g. ``冰糖`` / ``mimo_voicedesign:...``) — Piper/pyttsx3 can't speak it directly.
-    # If fallback_to_local is True, automatically fall back to the default local Chinese voice instead of failing hard.
+    # 云端语音 id（如 `冰糖` / `mimo_voicedesign:...`）— Piper/pyttsx3 无法直接合成。
+    # 若 fallback_to_local=True，自动回退到默认本地中文语音而非硬失败。
     is_cloud = bool(raw_voice and _is_cloud_voice(raw_voice))
     fallback_requested = bool(args.get("fallback_to_local") or args.get("fallback"))
     if is_cloud and not fallback_requested:
@@ -254,14 +240,14 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
             success=False,
         )
 
-    # Per-user voice id is the single source of truth for routing (see runner/README §本地 TTS voice 选型):
-    # explicit caller pref wins, otherwise default to bundled ZH voice per the "default Chinese" direction.
+    # 用户级 voice id 是路由的唯一真实来源（见 runner/README §本地 TTS voice 选型）：
+    # 显式 caller 偏好优先，否则按 "默认中文" 方向回退到内置 ZH 语音
     voice = pick_voice_for_text(preferred="" if is_cloud else raw_voice)
 
     dst = _output_path(name_hint="piper" if engine == "piper" else "tts")
 
-    # piper_available() only checks the package imports — voice may not be on disk, so verify
-    # below and auto-download the missing one before falling back to pyttsx3.
+    # piper_available() 只检查包是否导入 — 语音可能不在磁盘上，因此下方再校验，
+    # 缺失则自动下载，再回退到 pyttsx3
     engine_chain: list[tuple[str, str]] = []  # (engine_name, voice_id)
 
     if engine == "piper":
@@ -273,14 +259,12 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
             return tool_error("pyttsx3 engine not installed", hint="`pyttsx3` should be in the runner wheel — re-install if missing.")
         engine_chain.append(("pyttsx3", ""))
     else:
-        # Auto mode: try the requested Piper voice first; auto-download on miss so a first install
-        # that wiped $SPIRITAGENT_HOME keeps speaking locally.
+        # Auto 模式：先尝试请求的 Piper voice；缺失时自动下载，让首次安装擦除 $SPIRITAGENT_HOME 后仍能在本地发声
         cfg_default = default_voice_id()
         piper_voice_for_chain: str | None = None
         for candidate in (voice, *([cfg_default] if voice != cfg_default else [])):
             if PIPER_VOICE_RE.match(candidate):
-                # ensure_voice_installed already short-circuits when the voice is
-                # on disk and returns True; otherwise it tries to download.
+                # ensure_voice_installed 在语音已在磁盘上时短路返回 True；否则尝试下载
                 if ensure_voice_installed(candidate):
                     piper_voice_for_chain = candidate
                     break
@@ -294,9 +278,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
                 hint=(f"Download a Piper voice to {piper_voice_dir()}, or install pyttsx3. Bundled voice ids: {', '.join(bundled_voices())}."),
             )
 
-    # Explicit engine=piper/pyttsx3 honors the caller's choice — only auto mode
-    # silently falls through to the next engine on failure (model corruption,
-    # OOM, missing file mid-synthesis).
+    # 显式 engine=piper/pyttsx3 尊重调用方选择 — 只有 auto 模式在失败（模型损坏、OOM、合成中途文件缺失）时才会静默落到下一个引擎
     is_auto = engine not in ("piper", "pyttsx3")
     last_error: Exception | None = None
     info: dict[str, Any] | None = None
@@ -305,9 +287,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
             if eng_name == "piper":
                 info = _synth_piper(normalized, eng_voice, speed, dst)
             else:
-                # The pyttsx3 slot in the chain never carries a voice id —
-                # _synth_pyttsx3 auto-picks a Chinese SAPI5 voice for CJK text
-                # inside its COM scope.
+                # 链路中 pyttsx3 这一槽永远不携带 voice id — _synth_pyttsx3 在其 COM 作用域内对 CJK 文本自动挑中文 SAPI5 语音
                 info = _synth_pyttsx3(normalized, None, speed, dst)
             break
         except Exception as e:

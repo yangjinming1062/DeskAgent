@@ -66,7 +66,7 @@ def _suffix_for_mime(mime: str) -> str:
 
 def _decode_and_transcribe(audio_path: str | Path, *, language: str | None, model_size: str, initial_prompt: str | None, beam_size: int = 1) -> dict[str, Any]:
     model = WhisperModel if WhisperModel is None else get_whisper(size=model_size)  # type: ignore[truthy-function]
-    # Normalize ``"auto"`` / ``None`` → None so the third-party API only sees the explicit-or-auto contract.
+    # 把 "auto" / None 归一为 None，让第三方 API 只看到 explicit-or-auto 契约
     whisper_language = None if language in (None, "auto") else language
     segments, info = model.transcribe(
         str(audio_path), language=whisper_language, beam_size=beam_size, initial_prompt=initial_prompt, vad_filter=True, condition_on_previous_text=False
@@ -124,6 +124,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
     # sentinels here so the IPC layer's `language="zh"` default still wins
     # for the common case while callers can opt into auto-detect explicitly.
     raw_language = args.get("language")
+    # "" 与 "auto" 都表示让 whisper 自动检测 — 在此保留为哨兵，使 IPC 层默认的 language="zh" 仍可命中常见场景，同时让调用方能显式开启 auto-detect
     is_auto_detect = raw_language in (None, "", "auto")
     language = None if is_auto_detect else str(raw_language).strip() or None
     model_size = args.get("model") or "base"
@@ -178,7 +179,7 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         logger.exception("speech_to_text decode failed")
         return tool_error(f"whisper decode failed: {e}", success=False)
 
-    # Empty text or low confidence → tool_error so the desktop silent_fallback path promotes to cloud.
+    # 空文本或低置信度 → tool_error，让桌面端 silent_fallback 路径升级到云端
     text = result.get("text") or ""
     if not text:
         return tool_error("local STT produced no segments (audio may be silent or all segments filtered by confidence gate)", hint=_CLOUD_FALLBACK_HINT, success=False)

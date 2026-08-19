@@ -1,13 +1,6 @@
-"""OS-native IPC transport for the Runner -> Desktop link.
+"""Runner 与 Desktop 之间的 OS 原生 IPC 传输层（命名管道 / Unix 域套接字）。
 
-The Desktop listens on a Windows named pipe or a 0600 Unix domain socket
-(macOS) and the Runner dials in as the client; the WebSocket wire protocol
-is preserved on top of the byte stream, driven by the sans-I/O
-``websockets.client.ClientProtocol`` (the library owns handshake, masking,
-control frames, and close semantics; this module owns the plumbing).
-
-Endpoint/auth contract and the security model live in PROTOCOL.md §2.1;
-the transport design rationale in runner/README.md §4.
+底层走字节流，上层复用 sans-I/O 的 ``websockets.client.ClientProtocol``：库负责握手、掩码、控制帧、关闭语义，本模块只负责字节流与协议对象之间的搬运。
 """
 
 import asyncio
@@ -37,12 +30,10 @@ UNIX_TRANSPORT = "unix"
 
 HANDSHAKE_AUTH_HEADER = "X-SpiritAgent-Auth"
 
-# Reverse-RPC vision payloads are allowed up to 10 MiB (the Desktop's
-# reverse-rpc.cjs caps); the sans-I/O default of 1 MiB would abort them.
+# 反向 RPC 的视觉负载上限 10 MiB（Desktop 端 reverse-rpc.cjs 的限制）；sans-I/O 默认 1 MiB 会截断，所以放宽到 16 MiB。
 MAX_MESSAGE_BYTES = 16 * 1024 * 1024
 
-# The Host header never leaves the machine; a fixed dummy URI supplies the
-# handshake metadata the protocol builder expects.
+# Host 头不会出本机，用固定虚拟 URI 给协议构造器提供握手所需的元信息即可。
 _DUMMY_URI = "ws://spiritagent/rpc"
 
 _READ_CHUNK = 65536
@@ -87,7 +78,7 @@ if IS_WINDOWS:
 
 @dataclass(frozen=True)
 class DesktopEndpoint:
-    """Resolved Desktop connection target (from argv or the endpoint file)."""
+    """已解析的 Desktop 连接端点（来自命令行参数或端点文件）。"""
 
     transport: str
     path: str
@@ -96,15 +87,7 @@ class DesktopEndpoint:
 
 
 def read_endpoint() -> DesktopEndpoint | None:
-    """Read ``$SPIRITAGENT_HOME/desktop-endpoint.json`` into a DesktopEndpoint.
-
-    Returns ``None`` when the file is missing, malformed, names a transport
-    that does not match this host, or was left behind by a dead Desktop —
-    callers treat that as "wait for the file", never "connect anyway".
-
-    The Desktop is the single source of truth for the path (including the
-    macOS ``/tmp`` fallback for long ``sun_path``); this never re-derives it.
-    """
+    """读取 ``$SPIRITAGENT_HOME/desktop-endpoint.json`` 为 DesktopEndpoint；缺失/格式错误/进程已退出时返回 ``None``。"""
     try:
         endpoint_path = get_spiritagent_home() / "desktop-endpoint.json"
         if not endpoint_path.exists():
@@ -121,8 +104,7 @@ def read_endpoint() -> DesktopEndpoint | None:
             return None
         if not isinstance(token, str) or not token:
             return None
-        # Skip stale files left by a crashed Desktop. pid_exists() over
-        # os.kill(pid, 0): latter is unsafe on Windows (bpo-14484).
+        # 跳过 Desktop 崩溃留下的过期文件。用 pid_exists() 而不是 os.kill(pid, 0)，后者在 Windows 上不安全（bpo-14484）。
         if isinstance(pid, int) and pid > 0:
             if not pid_exists(pid):
                 logger.debug("Desktop PID %s is gone, ignoring stale endpoint file", pid)
@@ -133,7 +115,7 @@ def read_endpoint() -> DesktopEndpoint | None:
 
 
 class _Stream(Protocol):
-    """Duplex byte-stream surface both platform transports implement."""
+    """两种平台传输共用的双工字节流接口。"""
 
     async def read(self, n: int = _READ_CHUNK) -> bytes: ...
 
@@ -145,13 +127,7 @@ class _Stream(Protocol):
 if IS_WINDOWS:
 
     def _connect_pipe_handle(path: str, *, timeout_s: float = _PIPE_CONNECT_TIMEOUT_S) -> int:
-        """Open an overlapped client handle, retrying connect races.
-
-        ``ERROR_PIPE_BUSY`` (all instances mid-handoff) sleeps in
-        ``WaitNamedPipeW`` and ``ERROR_FILE_NOT_FOUND`` (Desktop-restart
-        window) polls, both until the deadline; anything else propagates —
-        the runner's reconnect backoff is the right retry point there.
-        """
+        """打开带重叠 IO 的管道客户端句柄，对连接竞争做有限重试。"""
         deadline = time.monotonic() + timeout_s
         last_error: int | None = None
         while time.monotonic() < deadline:
@@ -169,13 +145,7 @@ if IS_WINDOWS:
         raise TimeoutError(f"named pipe {path!r} not connectable within {timeout_s}s (winerror {last_error})")
 
     class _PipeStream:
-        """Duplex stream over an overlapped named-pipe handle.
-
-        Raw handles instead of CRT fds: the CRT holds its per-fd lock across
-        a blocking ``os.read``, so a concurrent ``os.write`` on the same fd
-        would wait forever. ``CancelIoEx(handle, None)`` aborts all pending
-        overlapped operations, which is what keeps teardown prompt.
-        """
+        """基于重叠 IO 命名管道句柄的双工流。"""
 
         def __init__(self, handle: int) -> None:
             self._handle = handle
@@ -190,7 +160,7 @@ if IS_WINDOWS:
             self._thread.start()
 
         def _read_once(self) -> bytes | None:
-            """One overlapped read; ``None`` on EOF, abort, or breakage."""
+            """执行一次重叠读；EOF、取消或管道断开时返回 ``None``。"""
             buf = ctypes.create_string_buffer(_READ_CHUNK)
             count = wintypes.DWORD(0)
             overlapped = _OVERLAPPED()
@@ -219,8 +189,7 @@ if IS_WINDOWS:
                         break
                     loop.call_soon_threadsafe(reader.feed_data, chunk)
             finally:
-                # feed_eof wakes any pump blocked in read() so the connection
-                # unwinds instead of hanging on a half-closed pipe.
+                # feed_eof 唤醒 read() 中阻塞的 pump，避免半关闭管道上永久挂起。
                 with contextlib.suppress(RuntimeError):
                     loop.call_soon_threadsafe(reader.feed_eof)
 
@@ -229,9 +198,7 @@ if IS_WINDOWS:
 
         async def write(self, data: bytes) -> None:
             async with self._write_lock:
-                # The handle may have been torn down while this coroutine
-                # waited on the lock; writing then would fail inside the
-                # executor thread with a confusing last error.
+                # 句柄可能在本协程取锁过程中被关闭——若不显式检查，executor 线程里写入失败时报错会很迷惑。
                 if self._closed:
                     raise ConnectionError("desktop pipe is closed")
                 await self._loop.run_in_executor(None, self._write_all, data)
@@ -257,24 +224,21 @@ if IS_WINDOWS:
         async def close(self) -> None:
             if self._closed:
                 return
-            self._closed = True  # first: writers queued on the lock bail here
-            # Abort every pending overlapped operation (blocked reader and
-            # any in-flight write); their GetOverlappedResult calls return
-            # ERROR_OPERATION_ABORTED and unwind.
+            self._closed = True  # 先置位：让排队等锁的写协程快速失败
+            # 取消所有进行中的重叠操作（阻塞中的读 + in-flight 写），对应 GetOverlappedResult 返回 ERROR_OPERATION_ABORTED 而退出。
             _kernel32.CancelIoEx(self._handle, None)
             thread = self._thread
             if thread is not None and thread is not threading.current_thread():
-                # Join off-loop so a wedged reader cannot stall teardown; the
-                # daemon flag is the backstop if the join times out.
+                # 把 join 放到 executor 中避免卡死事件循环；daemon 标志是 join 超时后的兜底。
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(self._loop.run_in_executor(None, thread.join, 2.0), 2.5)
-            async with self._write_lock:  # wait out any in-flight executor write
+            async with self._write_lock:  # 等待 in-flight executor 写入完成
                 _kernel32.CloseHandle(self._handle)
 
 else:
 
     class _UnixStream:
-        """Adapter giving macOS UDS streams the same surface as ``_PipeStream``."""
+        """把 macOS UDS 流包装为与 ``_PipeStream`` 同形接口的适配器。"""
 
         def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
             self._reader = reader
@@ -302,8 +266,7 @@ else:
 
 async def _open_stream(path: str) -> _Stream:
     if IS_WINDOWS:
-        # The connect loop can sleep up to its deadline (BUSY / restart
-        # window); keep it off the loop.
+        # 连接循环最长会睡到 deadline（BUSY / 重启窗口），所以放到线程里执行，避免阻塞事件循环。
         handle = await asyncio.to_thread(_connect_pipe_handle, path)
         stream = _PipeStream(handle)
         await stream.start()
@@ -313,14 +276,12 @@ async def _open_stream(path: str) -> _Stream:
 
 
 class DesktopConnection:
-    """WebSocket client over an OS-native IPC stream.
+    """基于 OS 原生 IPC 字节流的 WebSocket 客户端。
 
-    Driving rules (violating either wedges the protocol):
+    两条必须遵守的驱动规则（违反任一条都会让协议僵死）：
 
-    - ``data_to_send()`` must be drained after every ``receive_data()`` and
-      after every send-side call — that is where the library queues Pong
-      replies and the Close acknowledgment.
-    - ``receive_eof()`` must be called when the stream hits EOF.
+    - 每次 ``receive_data()`` 及发送操作后必须 drain 一次 ``data_to_send()`` —— Pong 回复与 Close ACK 都从这里排队发出。
+    - 流到达 EOF 时必须调用 ``receive_eof()``。
     """
 
     def __init__(self, stream: _Stream, token: str) -> None:
@@ -333,11 +294,10 @@ class DesktopConnection:
         self._message_opcode: int | None = None
 
     async def _drain(self) -> None:
-        """Write out everything the protocol has queued (frames, pongs, close acks)."""
+        """把协议排队中需要发出的数据（帧、Pong、Close ACK）全部写出。"""
         for data in self._protocol.data_to_send():
             if data == SEND_EOF:
-                # Write-side EOF sentinel; a pipe/UDS cannot half-close, the
-                # caller's stream close handles it.
+                # 写入端 EOF 哨兵；管道/UDS 不能半关闭，统一由外层 stream.close() 兜底。
                 continue
             await self._stream.write(data)
 
@@ -349,10 +309,7 @@ class DesktopConnection:
         while True:
             chunk = await self._stream.read()
             if not chunk:
-                # A rejected upgrade (HTTP 401 + connection close, no
-                # Content-Length) only parses once stream EOF terminates
-                # the body-less response — hand EOF to the protocol and
-                # look for the Response event before giving up.
+                # 升级被拒（如 HTTP 401 + 连接关闭且无 Content-Length）只有在流 EOF 时才能终止无 body 响应并解析完成；把 EOF 喂给协议，再尝试从事件里找 Response。
                 self._protocol.receive_eof()
                 self._consume_handshake_events(self._protocol.events_received())
                 if self._recv_task is None:
@@ -365,12 +322,7 @@ class DesktopConnection:
                 return
 
     def _consume_handshake_events(self, events: list[Any] | tuple[Any, ...]) -> None:
-        """Process one events batch: the Response first, then any frames the
-        peer pipelined behind it. The sans-I/O parser keeps parsing after the
-        101 in the same batch, and ``events_received()`` drains the queue —
-        stopping at the Response would silently drop those frames. Frames may
-        not legally *precede* the handshake response; those stay a protocol
-        violation."""
+        """处理一批事件：先取 Response，再处理对端紧随其后管线化的帧。sans-I/O 解析器在 101 之后会继续解析同一批数据，而 ``events_received()`` 一次性排空队列——停在 Response 会静默丢弃后续帧。帧按协议不能在握手响应之前出现，先出现的视为协议违规。"""
         response_seen = False
         for event in events:
             if not response_seen:
@@ -385,13 +337,11 @@ class DesktopConnection:
             self._recv_task = asyncio.create_task(self._pump(), name="desktop-ipc-recv")
 
     def _process_handshake_response(self, response: Response) -> None:
-        # Raises InvalidStatus on non-101 — e.g. the Desktop's HTTP 401 auth
-        # rejection. Callers then drop the cached endpoint and re-read the
-        # endpoint file instead of retrying the same stale token.
+        # 非 101 时抛 InvalidStatus——例如 Desktop 返回的 HTTP 401 鉴权拒绝。调用方此时应丢弃缓存端点、重读端点文件，而不是带着过期 token 重试。
         self._protocol.process_response(response)
 
     async def _pump(self) -> None:
-        """Feed the stream into the protocol; surface assembled messages."""
+        """把字节流喂给协议，再把组装完成的消息推到队列。"""
         try:
             while True:
                 chunk = await self._stream.read()
@@ -407,9 +357,7 @@ class DesktopConnection:
         except (ConnectionError, OSError):
             pass
         except Exception as exc:
-            # Protocol violations (bad UTF-8, framing errors) kill the
-            # connection like any transport failure would; the sentinel in
-            # the finally unwinds waiters.
+            # 协议级错误（坏 UTF-8、帧错误）按传输失败处理；finally 中的哨兵负责唤醒所有等待者。
             logger.warning("desktop IPC pump terminated: %s", exc)
         finally:
             self._messages.put_nowait(None)
@@ -428,15 +376,13 @@ class DesktopConnection:
                 self._emit(self._message_opcode, b"".join(self._fragments))
                 self._fragments = []
                 self._message_opcode = None
-        # Control frames never surface as messages: the protocol
-        # already queued the Pong/Close replies in _drain().
+        # 控制帧永远不会以消息形式出现：Pong/Close 已经在 _drain() 里入队。
 
     def _emit(self, opcode: int, data: bytes) -> None:
         if opcode is OP_TEXT:
             self._messages.put_nowait(data.decode("utf-8"))
         else:
-            # JSON-RPC rides text frames; decode binary anyway so a peer bug
-            # shows up as a JSON parse error instead of a silent drop.
+            # JSON-RPC 走文本帧；但二进制也尝试解码，避免对端 bug 被静默丢弃而表现成 JSON 解析错误。
             self._messages.put_nowait(data.decode("utf-8", errors="replace"))
 
     async def send(self, message: str) -> None:
@@ -456,9 +402,7 @@ class DesktopConnection:
                 await self._drain()
         task = self._recv_task
         if task is not None and not task.done():
-            # Give the peer a moment to echo the Close frame — the peer is on
-            # the same machine, so 2s is already generous; stream.close()
-            # below force-unwinds the pump if it never does.
+            # 给对端一个回送 Close 帧的窗口期——对端在同机，2 秒已偏宽松；下方 stream.close() 兜底强制解套。
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(asyncio.shield(task), 2.0)
         await self._stream.close()
@@ -467,7 +411,7 @@ class DesktopConnection:
             with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
                 await asyncio.wait_for(task, 1.0)
         elif task is None:
-            # Handshake never completed; unblock any waiters anyway.
+            # 握手未完成，仍要放一个哨兵让任何等待者退出。
             self._messages.put_nowait(None)
 
     @property
@@ -482,8 +426,7 @@ class DesktopConnection:
         return self
 
     async def __anext__(self) -> str:
-        # Drain queued messages even after the connection closed so no
-        # in-flight JSON-RPC frame is lost to the teardown race.
+        # 连接关闭后仍要排空队列，避免 in-flight JSON-RPC 帧因拆解竞争丢失。
         if self._protocol.state is State.CLOSED and self._messages.empty():
             raise StopAsyncIteration
         item = await self._messages.get()
@@ -499,14 +442,7 @@ class DesktopConnection:
 
 
 async def connect_desktop(endpoint: DesktopEndpoint, *, open_timeout_s: float = 8.0) -> DesktopConnection:
-    """Connect to the Desktop over its native IPC endpoint and authenticate.
-
-    Raises ``websockets.exceptions.InvalidStatus`` when the upgrade is
-    answered with HTTP 401 (token mismatch — e.g. the Desktop restarted and
-    the runner still holds the previous session's token): callers must drop
-    their cached endpoint and re-read the endpoint file rather than retrying
-    the same stale token.
-    """
+    """连接 Desktop 端 IPC 端点并完成握手鉴权。"""
     stream = await _open_stream(endpoint.path)
     try:
         connection = DesktopConnection(stream, token=endpoint.token)

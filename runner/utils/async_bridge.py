@@ -7,12 +7,7 @@ from typing import Any
 def safe_schedule_threadsafe(
     coro: Any, loop: asyncio.AbstractEventLoop | None, *, logger: logging.Logger | None = None, log_message: str = "safe_schedule_threadsafe: scheduling failed"
 ) -> concurrent.futures.Future | None:
-    """Schedule ``coro`` on ``loop`` from any thread. Returns the future.
-
-    Returns ``None`` if the loop is closed or the schedule call raises
-    (e.g. the loop is no longer accepting work). On failure, ``logger``
-    is used to log ``log_message`` at WARNING level when supplied.
-    """
+    """把协程调度到目标事件循环；循环已关闭或调度抛错时返回 ``None``。"""
     if loop is None or loop.is_closed():
         return None
     try:
@@ -24,7 +19,7 @@ def safe_schedule_threadsafe(
 
 
 def in_async_loop() -> bool:
-    """True if the calling thread is currently running an asyncio event loop."""
+    """当前线程是否正在运行 asyncio 事件循环。"""
     try:
         asyncio.get_running_loop()
     except RuntimeError:

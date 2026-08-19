@@ -33,6 +33,7 @@ BROWSER_COOKIES_GET_SCHEMA: dict[str, Any] = {
 
 
 def browser_cookies_get(url: str | None = None, task_id: str | None = None) -> str:
+    """通过 CDP Network.getCookies 读取当前页面可见的 cookie（可选按 URL 过滤）。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     params: dict[str, Any] = {}
@@ -81,6 +82,7 @@ def browser_cookies_set(
     same_site: str | None = None,
     task_id: str | None = None,
 ) -> str:
+    """通过 CDP Network.setCookie 写入一条 cookie，可用于会话恢复或测试用 token 注入。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     params: dict[str, Any] = {"name": name, "value": value, "domain": domain, "path": path, "httpOnly": http_only, "secure": secure}
@@ -128,6 +130,7 @@ BROWSER_COOKIES_CLEAR_SCHEMA: dict[str, Any] = {
 
 
 def browser_cookies_clear(session: bool = True, storage: bool = True, task_id: str | None = None) -> str:
+    """清空当前源的 cookie 和/或 storage（默认同时清掉两者）。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     actions: list[str] = []
@@ -136,10 +139,7 @@ def browser_cookies_clear(session: bool = True, storage: bool = True, task_id: s
             return json.dumps({"success": False, "error": "Network.clearBrowserCookies failed"}, ensure_ascii=False)
         actions.append("session_cookies")
     if storage:
-        # ``clearDataForOrigin`` takes the current origin's scheme://host:port
-        # — ``storageTypes`` defaults to all (cookies+localStorage+indexedDB+...).
-        # Reading ``location.origin`` keeps the call idempotent across
-        # navigations and matches Chrome's documentation.
+        # ``clearDataForOrigin`` 的 ``storageTypes`` 默认就是 all（cookies + localStorage + indexedDB 等），无需逐项列出。
         if not supervisor.send_cdp("Storage.clearDataForOrigin", {"origin": "*", "storageTypes": "all"}).get("ok"):
             return json.dumps({"success": False, "error": "Storage.clearDataForOrigin failed"}, ensure_ascii=False)
         actions.append("storage")
@@ -171,6 +171,7 @@ BROWSER_STORAGE_GET_SCHEMA: dict[str, Any] = {
 
 
 def browser_storage_get(key: str, origin: str, kind: str = "localStorage", task_id: str | None = None) -> str:
+    """通过 CDP DOMStorage.getDOMStorageItems 读取指定 origin 下某 key 的 storage 值。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     res = supervisor.send_cdp("DOMStorage.getDOMStorageItems", {"storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"}})
@@ -209,6 +210,7 @@ BROWSER_STORAGE_SET_SCHEMA: dict[str, Any] = {
 
 
 def browser_storage_set(key: str, value: str, origin: str, kind: str = "localStorage", task_id: str | None = None) -> str:
+    """通过 CDP DOMStorage.setDOMStorageItem 向 origin 的 localStorage/sessionStorage 写入 key。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return _no_supervisor()
     res = supervisor.send_cdp("DOMStorage.setDOMStorageItem", {"storageId": {"securityOrigin": origin, "isLocalStorage": kind == "localStorage"}, "key": key, "value": value})

@@ -13,12 +13,9 @@ _job_lock = threading.Lock()
 if IS_WINDOWS:
     from ctypes import wintypes
 
-    # use_last_error=True + ctypes.get_last_error() is the reliable error
-    # channel; a plain windll + GetLastError() FFI call can observe a value
-    # reset by intermediate ctypes machinery.
+    # use_last_error=True 配合 ctypes.get_last_error() 是可靠的错误通道；裸 windll + GetLastError() FFI 调用可能被中间 ctypes 逻辑重置 LastError。
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-    # Configure 64-bit safe argtypes and restypes for kernel32 APIs
     kernel32.CreateJobObjectW.restype = wintypes.HANDLE
     kernel32.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
 
@@ -70,20 +67,7 @@ if IS_WINDOWS:
 
 
 def init_runner_job_object() -> bool:
-    """Initialize the Windows Job Object for the Runner process tree.
-
-    On Windows, this creates a kernel Job Object with
-    ``JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`` (without breakaway permission) and
-    assigns the Runner process (``GetCurrentProcess()``) to it.
-
-    By Windows OS kernel semantics, any subprocess, grandchild process, or PTY
-    spawned by the Runner or its descendants automatically and atomically
-    inherits this Job Object. When the Runner process terminates or crashes, the
-    kernel automatically closes the Job Object handle and forcefully terminates
-    all descendant processes, preventing orphaned background processes.
-
-    On POSIX, this is a no-op that returns True.
-    """
+    """初始化 Runner 进程树的 Windows Job Object，确保子进程/孙进程随 Runner 退出被强制回收。POSIX 上为空操作。"""
     global _runner_job_handle
     if not IS_WINDOWS:
         return True
@@ -122,12 +106,12 @@ def init_runner_job_object() -> bool:
 
 
 def get_runner_job_handle() -> Any:
-    """Return the raw Windows Job Object handle (or None on POSIX/uninitialized)."""
+    """返回 Windows Job Object 原始句柄（POSIX 上或未初始化时为 None）。"""
     return _runner_job_handle
 
 
 def is_job_object_active() -> bool:
-    """True if the Windows Job Object is active for the current Runner process."""
+    """当前 Runner 进程的 Windows Job Object 是否处于激活状态。"""
     if not IS_WINDOWS:
         return False
     with _job_lock:

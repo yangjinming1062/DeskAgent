@@ -10,10 +10,7 @@ TRUSTED_REPOS = {
     "openai/skills",
     "anthropics/skills",
     "huggingface/skills",
-    # NVIDIA-verified skills: each entry ships a signed `skill.oms.sig`
-    # and a governance `skill-card.md` (sync pipeline drops anything
-    # missing the signature or card). Catalog details:
-    # https://github.com/NVIDIA/skills
+    # NVIDIA 验证过的 skill：每个条目附带签名的 skill.oms.sig 与治理文件 skill-card.md（同步流水线会丢弃缺签名或缺 card 的项）。目录详情：https://github.com/NVIDIA/skills
     "NVIDIA/skills",
 }
 
@@ -21,10 +18,8 @@ INSTALL_POLICY = {
     "builtin": ("allow", "allow", "allow"),
     "trusted": ("allow", "allow", "block"),
     "community": ("allow", "block", "block"),
-    # Agent-created: "ask" on dangerous surfaces as an error to the agent,
-    # which can retry without the flagged content. This gate only runs when
-    # skills.guard_agent_created is enabled (off by default) — see
-    # tools/skill_manager_tool.py::_guard_agent_created_enabled.
+    # agent-created：在 dangerous 等级上 "ask" — 返回错误给 agent，让它去掉触发内容后重试。
+    # 此 gate 仅在 skills.guard_agent_created 启用时（默认关闭）才执行，见 tools/skill_manager_tool.py::_guard_agent_created_enabled
     "agent-created": ("allow", "allow", "ask"),
 }
 
@@ -53,16 +48,16 @@ class ScanResult:
     summary: str = ""
 
 
-# Threat patterns — (regex, pattern_id, severity, category, description)
+# 威胁模式 — (regex, pattern_id, severity, category, description)
 
 THREAT_PATTERNS = [
-    # ── Exfiltration: shell commands leaking secrets ──
+    # ── Exfiltration：通过 shell 命令泄漏密钥 ──
     (r"curl\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", "env_exfil_curl", "critical", "exfiltration", "curl command interpolating secret environment variable"),
     (r"wget\s+[^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)", "env_exfil_wget", "critical", "exfiltration", "wget command interpolating secret environment variable"),
     (r"fetch\s*\([^\n]*\$\{?\w*(KEY|TOKEN|SECRET|PASSWORD|API)", "env_exfil_fetch", "critical", "exfiltration", "fetch() call interpolating secret environment variable"),
     (r"httpx?\.(get|post|put|patch)\s*\([^\n]*(KEY|TOKEN|SECRET|PASSWORD)", "env_exfil_httpx", "critical", "exfiltration", "HTTP library call with secret variable"),
     (r"requests\.(get|post|put|patch)\s*\([^\n]*(KEY|TOKEN|SECRET|PASSWORD)", "env_exfil_requests", "critical", "exfiltration", "requests library call with secret variable"),
-    # ── Exfiltration: reading credential stores ──
+    # ── Exfiltration：读取凭据存储 ──
     (r"base64[^\n]*env", "encoded_exfil", "high", "exfiltration", "base64 encoding combined with environment access"),
     (r"\$HOME/\.ssh|\~/\.ssh", "ssh_dir_access", "high", "exfiltration", "references user SSH directory"),
     (r"\$HOME/\.aws|\~/\.aws", "aws_dir_access", "high", "exfiltration", "references user AWS credentials directory"),
@@ -70,20 +65,13 @@ THREAT_PATTERNS = [
     (r"\$HOME/\.kube|\~/\.kube", "kube_dir_access", "high", "exfiltration", "references Kubernetes config directory"),
     (r"\$HOME/\.docker|\~/\.docker", "docker_dir_access", "high", "exfiltration", "references Docker config (may contain registry creds)"),
     (r"\$HOME/\.spiritagent/\.env|\~/\.spiritagent/\.env", "spiritagent_env_access", "critical", "exfiltration", "directly references SpiritAgent secrets file"),
-    # Match `cat <secrets-file>` (reading credentials) but NOT `cat > <file>`
-    # or `cat >> <file>`, which are output redirections that WRITE a file
-    # (e.g. a setup doc telling the user to write their own keys into their
-    # own local `.env` via a heredoc). Writing your own config in is the
-    # opposite of exfiltrating secrets out.
+    # 匹配 `cat <secrets-file>`（读取凭据）但不匹配 `cat > <file>` 或 `cat >> <file>`（输出重定向，是写入文件 — 比如 setup 文档让用户把自己的 key 写入本地 .env）。
+    # 写入自己的配置与外泄密钥方向相反。
     (r"cat\s+(?!>)[^\n]*(\.env|credentials|\.netrc|\.pgpass|\.npmrc|\.pypirc)", "read_secrets_file", "critical", "exfiltration", "reads known secrets file"),
-    # ── Exfiltration: programmatic env access ──
+    # ── Exfiltration：编程式 env 访问 ──
     (r"printenv|env\s*\|", "dump_all_env", "high", "exfiltration", "dumps all environment variables"),
-    # `os.environ` bare access (dict dump / iteration) is suspicious, but the
-    # common `os.environ.get("SOME_CONFIG")` form is just a config read and is
-    # the OPPOSITE of exfiltration (it reads a local var, sends nothing). The
-    # lookahead exempts `os.environ.get("<name>")` only when <name> is NOT a
-    # secret-shaped identifier — `os.environ.get("OPENAI_API_KEY")` still trips
-    # via the dedicated secret pattern just below.
+    # 裸访问 os.environ（dict dump / 迭代）可疑，但常见的 os.environ.get("SOME_CONFIG") 只是读配置 — 方向与外泄相反（读本地变量，不外发）。
+    # lookahead 仅在 <name> 不是密钥形标识符时豁免 os.environ.get("<name>") — os.environ.get("OPENAI_API_KEY") 仍会被下方专用的密钥模式命中。
     (
         r'os\.environ\b(?!\s*\.get\s*\(\s*["\'](?![^"\']*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)))',
         "python_os_environ",
@@ -101,13 +89,13 @@ THREAT_PATTERNS = [
     (r"os\.getenv\s*\(\s*[^\)]*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)", "python_getenv_secret", "critical", "exfiltration", "reads secret via os.getenv()"),
     (r"process\.env\[", "node_process_env", "high", "exfiltration", "accesses process.env (Node.js environment)"),
     (r"ENV\[.*(?:KEY|TOKEN|SECRET|PASSWORD)", "ruby_env_secret", "critical", "exfiltration", "reads secret via Ruby ENV[]"),
-    # ── Exfiltration: DNS and staging ──
+    # ── Exfiltration：DNS 与暂存 ──
     (r"\b(dig|nslookup|host)\s+[^\n]*\$", "dns_exfil", "critical", "exfiltration", "DNS lookup with variable interpolation (possible DNS exfiltration)"),
     (r">\s*/tmp/[^\s]*\s*&&\s*(curl|wget|nc|python)", "tmp_staging", "critical", "exfiltration", "writes to /tmp then exfiltrates"),
-    # ── Exfiltration: markdown/link based ──
+    # ── Exfiltration：基于 markdown / 链接 ──
     (r"!\[.*\]\(https?://[^\)]*\$\{?", "md_image_exfil", "high", "exfiltration", "markdown image URL with variable interpolation (image-based exfil)"),
     (r"\[.*\]\(https?://[^\)]*\$\{?", "md_link_exfil", "high", "exfiltration", "markdown link with variable interpolation"),
-    # ── Prompt injection ──
+    # ── 提示词注入 ──
     (r"ignore\s+(?:\w+\s+)*(previous|all|above|prior)\s+instructions", "prompt_injection_ignore", "critical", "injection", "prompt injection: ignore previous instructions"),
     (r"you\s+are\s+(?:\w+\s+)*now\s+", "role_hijack", "high", "injection", "attempts to override the agent's role"),
     (r"do\s+not\s+(?:\w+\s+)*tell\s+(?:\w+\s+)*the\s+user", "deception_hide", "critical", "injection", "instructs agent to hide information from user"),
@@ -126,7 +114,7 @@ THREAT_PATTERNS = [
     (r"translate\s+.*\s+into\s+.*\s+and\s+(execute|run|eval)", "translate_execute", "critical", "injection", "translate-then-execute evasion technique"),
     (r"<!--[^>]*(?:ignore|override|system|secret|hidden)[^>]*-->", "html_comment_injection", "high", "injection", "hidden instructions in HTML comments"),
     (r'<\s*div\s+style\s*=\s*["\'][\s\S]*?display\s*:\s*none', "hidden_div", "high", "injection", "hidden HTML div (invisible instructions)"),
-    # ── Destructive operations ──
+    # ── 破坏性操作 ──
     (r"rm\s+-rf\s+/", "destructive_root_rm", "critical", "destructive", "recursive delete from root"),
     (r"rm\s+(-[^\s]*)?r.*\$HOME|\brmdir\s+.*\$HOME", "destructive_home_rm", "critical", "destructive", "recursive delete targeting home directory"),
     (r"chmod\s+777", "insecure_perms", "medium", "destructive", "sets world-writable permissions"),
@@ -135,7 +123,7 @@ THREAT_PATTERNS = [
     (r"\bdd\s+.*if=.*of=/dev/", "disk_overwrite", "critical", "destructive", "raw disk write operation"),
     (r"shutil\.rmtree\s*\(\s*[\"\'/]", "python_rmtree", "high", "destructive", "Python rmtree on absolute or root-relative path"),
     (r"truncate\s+-s\s*0\s+/", "truncate_system", "critical", "destructive", "truncates system file to zero bytes"),
-    # ── Persistence ──
+    # ── 持久化 ──
     (r"\bcrontab\b", "persistence_cron", "medium", "persistence", "modifies cron jobs"),
     (r"\.(bashrc|zshrc|profile|bash_profile|bash_login|zprofile|zlogin)\b", "shell_rc_mod", "medium", "persistence", "references shell startup file"),
     (r"authorized_keys", "ssh_backdoor", "critical", "persistence", "modifies SSH authorized keys"),
@@ -145,7 +133,7 @@ THREAT_PATTERNS = [
     (r"launchctl\s+load|LaunchAgents|LaunchDaemons", "macos_launchd", "medium", "persistence", "macOS launch agent/daemon persistence"),
     (r"/etc/sudoers|visudo", "sudoers_mod", "critical", "persistence", "modifies sudoers (privilege escalation)"),
     (r"git\s+config\s+--global\s+", "git_config_global", "medium", "persistence", "modifies global git configuration"),
-    # ── Network: reverse shells and tunnels ──
+    # ── 网络：反弹 shell 与隧道 ──
     (r"\bnc\s+-[lp]|ncat\s+-[lp]|\bsocat\b", "reverse_shell", "critical", "network", "potential reverse shell listener"),
     (r"\bngrok\b|\blocaltunnel\b|\bserveo\b|\bcloudflared\b", "tunnel_service", "high", "network", "uses tunneling service for external access"),
     (r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5}", "hardcoded_ip_port", "medium", "network", "hardcoded IP address with port"),
@@ -155,7 +143,7 @@ THREAT_PATTERNS = [
     (r"socket\.connect\s*\(\s*\(", "python_socket_connect", "high", "network", "Python socket connect to arbitrary host"),
     (r"webhook\.site|requestbin\.com|pipedream\.net|hookbin\.com", "exfil_service", "high", "network", "references known data exfiltration/webhook testing service"),
     (r"pastebin\.com|hastebin\.com|ghostbin\.", "paste_service", "medium", "network", "references paste service (possible data staging)"),
-    # ── Obfuscation: encoding and eval ──
+    # ── 混淆：编码与 eval ──
     (r"base64\s+(-d|--decode)\s*\|", "base64_decode_pipe", "high", "obfuscation", "base64 decodes and pipes to execution"),
     (r"\\x[0-9a-fA-F]{2}.*\\x[0-9a-fA-F]{2}.*\\x[0-9a-fA-F]{2}", "hex_encoded_string", "medium", "obfuscation", "hex-encoded string (possible obfuscation)"),
     (r'\beval\s*\(\s*["\']', "eval_string", "high", "obfuscation", "eval() with string argument"),
@@ -170,46 +158,44 @@ THREAT_PATTERNS = [
     (r"\[::-1\]", "string_reversal", "low", "obfuscation", "string reversal (possible obfuscated payload)"),
     (r"chr\s*\(\s*\d+\s*\)\s*\+\s*chr\s*\(\s*\d+", "chr_building", "high", "obfuscation", "building string from chr() calls (obfuscation)"),
     (r"\\u[0-9a-fA-F]{4}.*\\u[0-9a-fA-F]{4}.*\\u[0-9a-fA-F]{4}", "unicode_escape_chain", "medium", "obfuscation", "chain of unicode escapes (possible obfuscation)"),
-    # ── Process execution in scripts ──
+    # ── 脚本中执行进程 ──
     (r"subprocess\.(run|call|Popen|check_output)\s*\(", "python_subprocess", "medium", "execution", "Python subprocess execution"),
     (r"os\.system\s*\(", "python_os_system", "high", "execution", "os.system() — unguarded shell execution"),
     (r"os\.popen\s*\(", "python_os_popen", "high", "execution", "os.popen() — shell pipe execution"),
     (r"child_process\.(exec|spawn|fork)\s*\(", "node_child_process", "high", "execution", "Node.js child_process execution"),
     (r"Runtime\.getRuntime\(\)\.exec\(", "java_runtime_exec", "high", "execution", "Java Runtime.exec() — shell execution"),
     (r"`[^`]*\$\([^)]+\)[^`]*`", "backtick_subshell", "medium", "execution", "backtick string with command substitution"),
-    # ── Path traversal ──
+    # ── 路径穿越 ──
     (r"\.\./\.\./\.\.", "path_traversal_deep", "high", "traversal", "deep relative path traversal (3+ levels up)"),
     (r"\.\./\.\.", "path_traversal", "medium", "traversal", "relative path traversal (2+ levels up)"),
     (r"/etc/passwd|/etc/shadow", "system_passwd_access", "critical", "traversal", "references system password files"),
     (r"/proc/self|/proc/\d+/", "proc_access", "high", "traversal", "references /proc filesystem (process introspection)"),
     (r"/dev/shm/", "dev_shm", "medium", "traversal", "references shared memory (common staging area)"),
-    # ── Crypto mining ──
+    # ── 加密挖矿 ──
     (r"xmrig|stratum\+tcp|monero|coinhive|cryptonight", "crypto_mining", "critical", "mining", "cryptocurrency mining reference"),
     (r"hashrate|nonce.*difficulty", "mining_indicators", "medium", "mining", "possible cryptocurrency mining indicators"),
-    # ── Supply chain: curl/wget pipe to shell ──
+    # ── 供应链：curl / wget 管道至 shell ──
     (r"curl\s+[^\n]*\|\s*(ba)?sh", "curl_pipe_shell", "critical", "supply_chain", "curl piped to shell (download-and-execute)"),
     (r"wget\s+[^\n]*-O\s*-\s*\|\s*(ba)?sh", "wget_pipe_shell", "critical", "supply_chain", "wget piped to shell (download-and-execute)"),
     (r"curl\s+[^\n]*\|\s*python", "curl_pipe_python", "critical", "supply_chain", "curl piped to Python interpreter"),
-    # ── Supply chain: unpinned/deferred dependencies ──
+    # ── 供应链：未锁定 / 延迟加载依赖 ──
     (r"#\s*///\s*script.*dependencies", "pep723_inline_deps", "medium", "supply_chain", "PEP 723 inline script metadata with dependencies (verify pinning)"),
     (r"pip\s+install\s+(?!-r\s)(?!.*==)", "unpinned_pip_install", "medium", "supply_chain", "pip install without version pinning"),
     (r"npm\s+install\s+(?!.*@\d)", "unpinned_npm_install", "medium", "supply_chain", "npm install without version pinning"),
     (r"uv\s+run\s+", "uv_run", "medium", "supply_chain", "uv run (may auto-install unpinned dependencies)"),
-    # ── Supply chain: remote resource fetching ──
+    # ── 供应链：远程资源拉取 ──
     (r'(curl|wget|httpx?\.get|requests\.get|fetch)\s*[\(]?\s*["\']https?://', "remote_fetch", "medium", "supply_chain", "fetches remote resource at runtime"),
     (r"git\s+clone\s+", "git_clone", "medium", "supply_chain", "clones a git repository at runtime"),
     (r"docker\s+pull\s+", "docker_pull", "medium", "supply_chain", "pulls a Docker image at runtime"),
-    # ── Privilege escalation ──
-    # `allowed-tools:` is REQUIRED SKILL.md frontmatter per the agent-skill
-    # spec — every compliant skill declares it, so it cannot be a threat
-    # signal on its own. Keep it as an informational (low) finding for
-    # auditability; it no longer drives the verdict.
+    # ── 提权 ──
+    # `allowed-tools:` 是 agent-skill 规范下 SKILL.md frontmatter 的必填字段 — 每个合规 skill 都会声明，单独出现不能视为威胁信号。
+    # 保留为 informational（low）finding 以便审计；不再驱动 verdict。
     (r"^allowed-tools\s*:", "allowed_tools_field", "low", "privilege_escalation", "skill declares allowed-tools (standard frontmatter; informational)"),
     (r"\bsudo\b", "sudo_usage", "high", "privilege_escalation", "uses sudo (privilege escalation)"),
     (r"setuid|setgid|cap_setuid", "setuid_setgid", "critical", "privilege_escalation", "setuid/setgid (privilege escalation mechanism)"),
     (r"NOPASSWD", "nopasswd_sudo", "critical", "privilege_escalation", "NOPASSWD sudoers entry (passwordless privilege escalation)"),
     (r"chmod\s+[u+]?s", "suid_bit", "critical", "privilege_escalation", "sets SUID/SGID bit on a file"),
-    # ── Agent config persistence ──
+    # ── agent 配置持久化 ──
     (
         r"AGENTS\.md|CLAUDE\.md|\.cursorrules|\.clinerules",
         "agent_config_mod",
@@ -225,7 +211,7 @@ THREAT_PATTERNS = [
         "references SpiritAgent configuration files directly",
     ),
     (r"\.claude/settings|\.codex/config", "other_agent_config", "high", "persistence", "references other agent configuration files"),
-    # ── Hardcoded secrets (credentials embedded in the skill itself) ──
+    # ── 硬编码密钥（凭据直接嵌入 skill 本身） ──
     (
         r'(?:api[_-]?key|token|secret|password)\s*[=:]\s*["\'][A-Za-z0-9+/=_-]{20,}',
         "hardcoded_secret",
@@ -238,7 +224,7 @@ THREAT_PATTERNS = [
     (r"sk-[A-Za-z0-9]{20,}", "openai_key_leaked", "critical", "credential_exposure", "possible OpenAI API key in skill content"),
     (r"sk-ant-[A-Za-z0-9_-]{90,}", "anthropic_key_leaked", "critical", "credential_exposure", "possible Anthropic API key in skill content"),
     (r"AKIA[0-9A-Z]{16}", "aws_access_key_leaked", "critical", "credential_exposure", "AWS access key ID in skill content"),
-    # ── Additional prompt injection: jailbreak patterns ──
+    # ── 额外提示词注入：越狱模式 ──
     (r"\bDAN\s+mode\b|Do\s+Anything\s+Now", "jailbreak_dan", "critical", "injection", "DAN (Do Anything Now) jailbreak attempt"),
     (r"\bdeveloper\s+mode\b.*\benabled?\b", "jailbreak_dev_mode", "critical", "injection", "developer mode jailbreak attempt"),
     (r"hypothetical\s+scenario.*(?:ignore|bypass|override)", "hypothetical_bypass", "high", "injection", "hypothetical scenario used to bypass restrictions"),
@@ -258,7 +244,7 @@ THREAT_PATTERNS = [
         "injection",
         "claims new policy/guidelines (may be social engineering)",
     ),
-    # ── Context window exfiltration ──
+    # ── 上下文窗口外泄 ──
     (
         r"(include|output|print|send|share)\s+(?:\w+\s+)*(conversation|chat\s+history|previous\s+messages|context)",
         "context_exfil",
@@ -273,7 +259,7 @@ MAX_FILE_COUNT = 50  # skills shouldn't have 50+ files
 MAX_TOTAL_SIZE_KB = 1024  # 1MB total is suspicious for a skill
 MAX_SINGLE_FILE_KB = 256  # individual file > 256KB is suspicious
 
-# File extensions to scan (text files only — skip binary)
+# 扫描的文件扩展名（仅文本文件 — 跳过二进制）
 SCANNABLE_EXTENSIONS = {
     ".md",
     ".txt",
@@ -302,7 +288,7 @@ SCANNABLE_EXTENSIONS = {
 
 SUSPICIOUS_BINARY_EXTENSIONS = {".exe", ".dll", ".so", ".dylib", ".bin", ".dat", ".com", ".msi", ".dmg", ".app", ".deb", ".rpm"}
 
-# Zero-width and invisible unicode characters used for injection
+# 用于注入的零宽与不可见 Unicode 字符
 INVISIBLE_CHARS = {
     "\u200b",  # zero-width space
     "\u200c",  # zero-width non-joiner
@@ -325,16 +311,7 @@ INVISIBLE_CHARS = {
 
 
 def scan_file(file_path: Path, rel_path: str = "") -> list[Finding]:
-    """
-    Scan a single file for threat patterns and invisible unicode characters.
-
-    Args:
-        file_path: Absolute path to the file
-        rel_path: Relative path for display (defaults to file_path.name)
-
-    Returns:
-        List of findings (deduplicated per pattern per line)
-    """
+    """扫描单个文件中的威胁模式与不可见 Unicode 字符。返回按 pattern × line 去重的 findings 列表。"""
     if not rel_path:
         rel_path = file_path.name
 
@@ -348,7 +325,7 @@ def scan_file(file_path: Path, rel_path: str = "") -> list[Finding]:
 
     findings = []
     lines = content.split("\n")
-    seen = set()  # (pattern_id, line_number) for deduplication
+    seen = set()  # (pattern_id, line_number) 用于去重
 
     for pattern, pid, severity, category, description in THREAT_PATTERNS:
         for i, line in enumerate(lines, start=1):
@@ -382,28 +359,15 @@ def scan_file(file_path: Path, rel_path: str = "") -> list[Finding]:
 
 
 def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
-    """
-    Scan all files in a skill directory for security threats.
+    """扫描 skill 目录下全部文件的安全威胁。包含：
 
-    Performs:
-    1. Structural checks (file count, total size, binary files, symlinks)
-    2. Regex pattern matching on all text files
-    3. Invisible unicode character detection
+    1. 结构检查（文件数、总体积、二进制文件、符号链接）
+    2. 全部文本文件的正则模式匹配
+    3. 不可见 Unicode 字符检测
 
-    A skill may ship a `.skillignore` (or `.clawhubignore`) file with
-    gitignore-style patterns. Matching paths are excluded from BOTH the
-    structural checks and the pattern scan, so development/docs artifacts
-    that are not part of the installed skill (e.g. `SKILL-original.md`,
-    `docs/plans/`, `release-notes.md`) don't trip findings. The ignore
-    file itself is always excluded. Patterns cannot un-ignore the
-    skill's own `SKILL.md`, which is always scanned.
-
-    Args:
-        skill_path: Path to the skill directory (must contain SKILL.md)
-        source: Source identifier for trust level resolution (e.g. "openai/skills")
-
-    Returns:
-        ScanResult with verdict, findings, and trust metadata
+    skill 可附带 .skillignore（或 .clawhubignore）gitignore 风格规则文件。匹配路径同时从结构检查与模式扫描中排除，
+    这样不属于已安装 skill 的开发 / 文档产物（如 SKILL-original.md、docs/plans/、release-notes.md）不会触发 finding。
+    ignore 文件自身始终被排除；任何规则都不能 un-ignore skill 自己的 SKILL.md — 它始终被扫描。
     """
     skill_name = skill_path.name
     trust_level = _resolve_trust_level(source)
@@ -411,12 +375,10 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
     all_findings: list[Finding] = []
 
     if skill_path.is_dir():
-        # .skillignore only applies to sources we already trust — an
-        # untrusted skill shipping its own `*` ignore file must not be able
-        # to switch off its own THREAT scan and structure checks.
+        # .skillignore 仅对我们已信任的来源生效 — 一个不受信任的 skill 自带 `*` ignore 文件不应能关闭自身的 THREAT 扫描与结构检查
         ignore = _load_skill_ignore(skill_path) if trust_level in ("builtin", "trusted") else _ignore_nothing
 
-        # Structural checks first (honoring the ignore list)
+        # 先做结构检查（尊重 ignore 列表）
         all_findings.extend(_check_structure(skill_path, ignore=ignore))
 
         for f in skill_path.rglob("*"):
@@ -437,16 +399,7 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
 
 
 def should_allow_install(result: ScanResult, force: bool = False) -> tuple[bool, str]:
-    """
-    Determine whether a skill should be installed based on scan result and trust.
-
-    Args:
-        result: Scan result from scan_skill()
-        force: If True, override blocked policy decisions for this scan result
-
-    Returns:
-        (allowed, reason) tuple
-    """
+    """根据扫描结果与信任级别决定是否允许安装 skill。返回 (allowed, reason) 元组。"""
     policy = INSTALL_POLICY.get(result.trust_level, INSTALL_POLICY["community"])
     vi = VERDICT_INDEX.get(result.verdict, 2)
     decision = policy[vi]
@@ -458,29 +411,24 @@ def should_allow_install(result: ScanResult, force: bool = False) -> tuple[bool,
         return True, (f"Force-installed despite {result.verdict} verdict ({len(result.findings)} findings)")
 
     if decision == "ask":
-        # Return None to signal "needs user confirmation"
+        # 返回 None 表示"需要用户确认"
         return None, (f"Requires confirmation ({result.trust_level} source + {result.verdict} verdict, {len(result.findings)} findings)")
 
-    # Dangerous verdicts cannot be overridden by --force (community/trusted);
-    # other blocks can.
+    # dangerous verdict 不能被 --force 覆盖（community / trusted）；其它 block 可以
     if result.verdict == "dangerous" and result.trust_level in ("community", "trusted"):
         return False, (f"Blocked ({result.trust_level} source + dangerous verdict, {len(result.findings)} findings). --force does not override a dangerous verdict.")
     return False, (f"Blocked ({result.trust_level} source + {result.verdict} verdict, {len(result.findings)} findings). Use --force to override.")
 
 
 def format_scan_report(result: ScanResult) -> str:
-    """
-    Format a scan result as a human-readable report string.
-
-    Returns a compact multi-line report suitable for CLI or chat display.
-    """
+    """把 ScanResult 格式化为人类可读的紧凑多行报告。"""
     lines = []
 
     verdict_display = result.verdict.upper()
     lines.append(f"Scan: {result.skill_name} ({result.source}/{result.trust_level})  Verdict: {verdict_display}")
 
     if result.findings:
-        # Group and sort: critical first, then high, medium, low
+        # 分组并排序：critical、high、medium、low
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
         sorted_findings = sorted(result.findings, key=lambda f: severity_order.get(f.severity, 4))
 
@@ -505,15 +453,11 @@ def format_scan_report(result: ScanResult) -> str:
 
 
 def content_hash(skill_path: Path) -> str:
-    """Compute a SHA-256 hash of all files in a skill directory for integrity tracking.
+    """计算 skill 目录下所有文件的 SHA-256 摘要，用于完整性追踪。
 
-    File paths (relative to ``skill_path``) are mixed into the hash alongside
-    file contents so that swapping the contents of two files in a skill
-    changes the hash. This must stay symmetric with
-    ``tools.skills_hub.bundle_content_hash`` — both functions need to
-    produce the same digest for the same skill (one operates on disk,
-    one on an in-memory bundle), so any change to the hash shape MUST
-    land in both places at once.
+    文件路径（相对于 skill_path）会与文件内容一起混入摘要，因此交换 skill 内两个文件的内容会改变摘要。
+    必须与 tools.skills_hub.bundle_content_hash 保持对称 — 两个函数对同一 skill 必须产出相同摘要（一个操作磁盘，一个操作内存 bundle），
+    所以对摘要形状的任何修改都必须同时落到两处。
     """
     h = hashlib.sha256()
     if skill_path.is_dir():
@@ -600,7 +544,7 @@ _NEVER_IGNORABLE = {"SKILL.md"}
 
 
 def _ignore_nothing(_rel: str) -> bool:
-    """Ignore-list for untrusted sources: never excludes a file."""
+    """不受信任来源的 ignore 列表：永远不排除任何文件。"""
     return False
 
 

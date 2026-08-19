@@ -65,17 +65,13 @@ _INJECTION_PATTERNS = [
 
 
 def skill_matches_platform(frontmatter: dict[str, Any]) -> bool:
-    """Return True if the current OS is allowed by the skill's ``platforms`` field.
+    """当 skill 的 platforms 字段允许当前 OS 时返回 True。
 
-    The runner only ever runs on the host it was launched on, so the only
-    meaningful check is: are there any platforms listed, and if so is the
-    current host among them? Missing / empty list means "all platforms".
+    runner 仅在启动它的宿主上运行，所以唯一有意义的检查是：是否列出任何平台，若是，当前宿主是否在其中。
+    缺失 / 列表为空表示"所有平台"。
 
-    Frontmatter values are ``macos`` / ``windows``. ``_PLATFORM_MAP``
-    translates each declared value to the ``sys.platform`` string it must
-    match (``darwin`` / ``win32``). Without that translation the OS string
-    never matches — e.g. macOS-only skills would be filtered out on the
-    only OS that can run them.
+    frontmatter 取值为 macos / windows。_PLATFORM_MAP 把每个声明值翻译成 sys.platform 必须匹配的字符串（darwin / win32）。
+    没有这个翻译，OS 字符串永远不匹配 — 例如 macOS 专属的 skill 会在唯一能运行它们的 OS 上被过滤掉。
     """
     declared = frontmatter.get("platforms") or frontmatter.get("platform")
     if not declared:
@@ -158,12 +154,10 @@ def _get_required_environment_variables(frontmatter: dict[str, Any], legacy_env_
 
 
 def _env_overrides() -> dict[str, str]:
-    """Read the ``skills.env_overrides`` map from the in-memory config.
+    """从内存配置中读取 skills.env_overrides map。
 
-    The runner does not interactive-prompt for secrets. Operators declare
-    per-skill env values in the Runner config; Desktop surfaces that map to the
-    user. Missing entries cause the skill to surface a ``setup_needed``
-    hint instead of failing.
+    runner 不通过交互式提示收集密钥。运维在 Runner 配置中声明每个 skill 的 env 值；Desktop 把该 map 暴露给用户。
+    缺失条目会让 skill 抛 setup_needed 提示而非失败。
     """
     overrides = cfg_get(load_config(), "skills", "env_overrides", default={})
     return overrides if isinstance(overrides, dict) else {}
@@ -206,10 +200,7 @@ def _parse_tags(tags_value: Any) -> list[str]:
 
 
 def _is_disabled(name: str, category: str | None, disabled: set[str]) -> bool:
-    """Pure membership check: leaf is disabled if its name OR its category is
-    in the disabled set. Top-level skills (category=None) match on leaf name
-    only; nested skills match on name OR category so a single entry covers
-    every SKILL.md in that folder."""
+    """纯成员检查：若 name 或 category 在 disabled 集合中则视为 disabled。顶层 skill（category=None）仅按 name 匹配；嵌套 skill 按 name 或 category 匹配，使单条 entry 覆盖该文件夹下每个 SKILL.md。"""
     if name in disabled:
         return True
     if category is not None and category in disabled:
@@ -218,14 +209,9 @@ def _is_disabled(name: str, category: str | None, disabled: set[str]) -> bool:
 
 
 def _is_skill_disabled(name: str, category: str | None = None, platform: str | None = None) -> bool:
-    """Wrap ``_is_disabled`` with config loading. Honors both the global
-    ``skills.disabled`` list (name OR category match) and the per-platform
-    ``skills.platform_disabled[plat]`` map (name match only). When the
-    platform map is defined it short-circuits the global list — same
-    either-or semantics the original implementation carried.
+    """为 _is_disabled 包一层配置加载。同时尊重全局 skills.disabled 列表（按 name 或 category 匹配）以及按平台的 skills.platform_disabled[plat] map（仅按 name 匹配）。当 platform map 已定义时短路掉全局列表 — 与原始实现的"二选一"语义保持一致。
 
-    Callers that already have a pre-loaded disabled set (e.g. _find_all_skills)
-    should call ``_is_disabled`` directly to avoid a re-parse.
+    已经持有预加载 disabled 集合的调用方（例如 _find_all_skills）应直接调用 _is_disabled 以避免重复解析。
     """
     try:
         cfg = cfg_get(load_config(), "skills", default={})
@@ -255,9 +241,7 @@ def _find_all_skills(*, skip_disabled: bool = False) -> list[dict[str, Any]]:
                     continue
                 raw_name = frontmatter.get("name", skill_md.parent.name)
                 if not isinstance(raw_name, str) or not raw_name.strip():
-                    # YAML `name: 123` (or a list) used to raise here and the
-                    # skill silently vanished from listings with only a debug
-                    # log — surface it instead.
+                    # YAML 中 name: 123（或 list）以前会在此处抛错，skill 静默从列表中消失，仅留 debug 日志 — 改为显式提示
                     logger.warning("skills_list: skill at %s has a non-string name (%r); skipping", skill_md.parent, raw_name)
                     continue
                 name = raw_name[:MAX_NAME_LENGTH]
@@ -604,9 +588,8 @@ registry.register_tool("skills_list", schema=SKILLS_LIST_SCHEMA)(lambda args, **
 
 
 def _skill_view_with_bump(args: dict[str, Any], **kw: Any) -> str:
-    # Cheap interrupt early-return: skill_view reads from disk + the hub
-    # index-cache. Without this guard, a stale "please list skills" call
-    # keeps running after the user has moved on.
+    # 廉价的 interrupt 提前返回：skill_view 从磁盘与 hub index-cache 读取。
+    # 没有这个兜底，过期 "please list skills" 调用会在用户已转移注意力后继续运行。
     if is_interrupted():
         return json.dumps({"error": "Interrupted", "interrupted": True})
     name = args.get("name", "")

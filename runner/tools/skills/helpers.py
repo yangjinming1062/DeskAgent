@@ -11,12 +11,10 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
-    """Split ``content`` into ``(frontmatter, body)``.
+    """把 content 拆为 (frontmatter, body)。
 
-    Returns an empty dict and the original body if no frontmatter block
-    is present. Frontmatter is parsed as YAML; YAML parse errors are
-    swallowed (empty dict) to keep skill_view resilient to malformed
-    manifests.
+    没有 frontmatter 块时返回空 dict 与原始 body。frontmatter 按 YAML 解析；
+    YAML 解析错误会被吞掉（返回空 dict），以让 skill_view 对畸形 manifest 保持韧性。
     """
     match = _FRONTMATTER_RE.match(content)
     if not match:
@@ -29,7 +27,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
 
 
 def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md") -> Iterator[Path]:
-    """Yield every ``name`` file under ``directory`` (recursive)."""
+    """产出 directory 下（递归）所有 name 文件。"""
     root = Path(directory)
     if not root.is_dir():
         return
@@ -37,7 +35,7 @@ def iter_skill_index_files(directory: Path | str, name: str = "SKILL.md") -> Ite
 
 
 def get_spiritagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, Any]:
-    """Return ``frontmatter.metadata.spiritagent`` as a dict, or ``{}`` if any link is missing/wrong type."""
+    """返回 frontmatter.metadata.spiritagent 作为 dict；任一环节缺失或类型不对则返回 {}。"""
     if not isinstance(frontmatter, dict):
         return {}
     metadata = frontmatter.get("metadata")
@@ -48,9 +46,5 @@ def get_spiritagent_metadata(frontmatter: dict[str, Any] | None) -> dict[str, An
 
 
 def get_disabled_skill_names(section: str = "skills") -> set[str]:
-    """Read the ``<section>.disabled`` list from the in-memory config.
-
-    ``section`` defaults to ``"skills"``; pass ``"toolsets"`` to share the
-    same parse path for the sibling toolsets section.
-    """
+    """从内存配置中读取 <section>.disabled 列表。section 默认 "skills"；传 "toolsets" 可让兄弟 toolsets section 复用同一解析路径。"""
     return get_disabled_config_names(section)

@@ -26,19 +26,15 @@ PINNED_CUA_DRIVER_VERSION = cfg_get(load_config(), "computer_use", "cua_driver_v
 _CUA_DRIVER_CMD = cfg_get(load_config(), "computer_use", "cua_driver_cmd", default="cua-driver")
 _CUA_DRIVER_ARGS = ["mcp"]
 
-# Sentinel values for `app=` are defined centrally in ``cu_backend.DESKTOP_SENTINELS``
-# so the macOS and Windows backends can't drift apart.
+# app= 的哨兵值集中定义在 cu_backend.DESKTOP_SENTINELS，防止 macOS 与 Windows 后端产生分歧
 _MACOS_SHELL_APP_NAMES = frozenset({"finder", "dock"})
 
-# Variables cua-driver (Rust binary) needs at startup to find its native deps
-# and present a sensible process identity. Anything not on this list is dropped
-# from the subprocess env to keep Desktop JWT / Backend URL / safeStorage
-# ciphertext out of the cua-driver process tree.
+# cua-driver（Rust 二进制）启动时需要的变量，用于查找本地依赖和呈现合理的进程身份。
+# 不在此列表的变量都会从子进程 env 中剔除，避免 Desktop JWT / Backend URL / safeStorage 密文泄漏到 cua-driver 进程树中。
 #
-# Split into exact-match (single env-var names) and prefix-match (env-var
-# families) so each entry declares whether it is a name or a namespace.
+# 拆分为精确匹配（单个变量名）和前缀匹配（变量族），让每条都明确是名还是命名空间
 _CUA_DRIVER_SAFE_ENV_EXACT = frozenset({
-    # Path / identity / locale / shell
+    # 路径 / 身份 / locale / shell
     "PATH",
     "HOME",
     "USER",
@@ -50,30 +46,28 @@ _CUA_DRIVER_SAFE_ENV_EXACT = frozenset({
     "TMPDIR",
     "TMP",
     "TEMP",
-    # X11 / Wayland display server hint
+    # X11 / Wayland 显示服务提示
     "DISPLAY",
     "QT5",
     "QT6",
 })
 _CUA_DRIVER_SAFE_ENV_PREFIXES = (
-    # locale, XDG / freedesktop
+    # locale、XDG / freedesktop
     "LC_",
     "XDG_",
-    # GUI platform env (Qt / SDL / EGL / GL — needed for the capture
-    # pipeline to bind to a display surface)
+    # GUI 平台环境（Qt / SDL / EGL / GL — capture 管线需要绑定到显示面）
     "GTK_",
     "QT_",
     "SDL_",
     "EGL_",
     "GL_",
-    # macOS shared library paths
+    # macOS 共享库路径
     "DYLD_",
     "LD_",
     "XKB_",
     "XKB_DEFAULT_",
     "KEYBOARD",
-    # Input method (fcitx / ibus / scim) — without these the agent types
-    # the wrong characters for non-ASCII layouts
+    # 输入法（fcitx / ibus / scim）— 没有这些，非 ASCII 布局的字符会输入错误
     "INPUT_",
     "IM_",
     "QT_IM_MODULE",
@@ -81,15 +75,11 @@ _CUA_DRIVER_SAFE_ENV_PREFIXES = (
     "XMODIFIERS",
 )
 _CUA_DRIVER_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "JWT", "WEBHOOK", "DSN", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "SECRET_KEY")
-# Substrings that look like secrets but commonly appear in NON-secret env
-# vars (KEYBOARD_LAYOUT / XKB_KEYMAP / OAUTH_CLIENT_ID / AUTHORITY etc.). We
-# match these in two passes: if the var name contains a strong-secret
-# substring above it gets dropped; otherwise a weak substring like ``KEY`` or
-# ``AUTH`` only matches at a word boundary (so ``KEYBOARD_LAYOUT`` survives
-# but ``STRIPE_KEY`` is still dropped).
+# 看起来像密钥但常出现在非密钥变量中的子串（KEYBOARD_LAYOUT / XKB_KEYMAP / OAUTH_CLIENT_ID / AUTHORITY 等）。
+# 两遍匹配：若变量名包含上面任一强密钥子串则丢弃；否则弱子串 KEY / AUTH 只在词边界匹配
+# （KEYBOARD_LAYOUT 得以保留，但 STRIPE_KEY 仍被丢弃）。
 _CUA_DRIVER_SECRET_WORD_BOUNDARY = ("KEY", "AUTH")
-# Explicit non-secret overrides for known-public identifiers that would
-# otherwise be lost to the prefix whitelist. Matched by exact variable name.
+# 对已知公开标识符的显式非密钥覆盖，否则会被前缀白名单误杀。按变量名精确匹配
 _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset({
     "OAUTH_CLIENT_ID",
     "OAUTH_ISSUER",
@@ -100,10 +90,8 @@ _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset({
     "AUTHORITY",
     "AUTHORITY_URL",
 })
-# Exact-match drop list for vars whose names don't contain the substrings
-# above but are still sensitive (e.g. SPIRITAGENT_JWT contains "JWT" so it'd be
-# caught; SPIRITAGENT_DESKTOP_TOKEN contains "TOKEN" so it'd be caught too — kept
-# here as a belt-and-suspenders anchor).
+# 名字不包含上述子串但仍然敏感的变量精确丢弃列表（例如 SPIRITAGENT_JWT 包含 "JWT" 已能被捕获；
+# SPIRITAGENT_DESKTOP_TOKEN 包含 "TOKEN" 也能被捕获 — 此处保留作为双保险锚点）
 _CUA_DRIVER_DROP_EXACT: frozenset[str] = frozenset()
 
 _WINDOW_LINE_RE = re.compile(r"^-\s+(.+?)\s+\(pid\s+(\d+)\)\s+.*\[window_id:\s+(\d+)\]", re.MULTILINE)
@@ -116,17 +104,11 @@ def _is_macos() -> bool:
 
 @functools.lru_cache(maxsize=1)
 def cua_driver_binary_available() -> bool:
-    """True if a working cua-driver binary is on PATH and matches the host
-    architecture. A bare ``shutil.which`` accepts a copy built for a
-    different OS / arch (e.g. a macOS binary scp'd onto a Windows host) and
-    only fails at exec time with an unhelpful loader error — a quick
-    ``subprocess.run([_CUA_DRIVER_CMD, '--version'])`` surfaces the
-    mismatch early.
+    """当 PATH 上存在可用的 cua-driver 二进制且与宿主架构匹配时返回 True。
 
-    Result is cached for the process lifetime (cu-driver installation
-    status is static at runtime).
-    ``handle_computer_use`` invocation; memoization cuts up to 3 process
-    spawns per tool call to 0.
+    单纯的 shutil.which 会接受一份为不同 OS / arch 构建的副本（例如 macOS 二进制被 scp 到 Windows 主机），
+    仅在 exec 时以一个晦涩的加载器错误失败 — 一次 subprocess.run([_CUA_DRIVER_CMD, '--version']) 可尽早暴露这种错配。
+    结果在进程生命周期内缓存（cu-driver 安装状态在运行时是静态的）；每次 handle_computer_use 调用可避免最多 3 次子进程派生。
     """
     path = shutil.which(_CUA_DRIVER_CMD)
     if not path:
@@ -149,36 +131,27 @@ def cua_driver_install_hint() -> str:
 
 
 def _build_cua_driver_env() -> dict[str, str]:
-    """Return a sanitized environment for the cua-driver subprocess.
+    """返回 cua-driver 子进程的净化环境变量。
 
-    Whitelist by prefix (``PATH`` / ``HOME`` / ``DYLD_*`` / ``LD_*`` / locale /
-    tmp / GUI display), drop anything whose name contains a secret substring
-    (TOKEN / JWT / SECRET / …), and additionally honor anything registered via
-    ``register_env_passthrough(...)`` — that's how callers opt in to extra vars
-    cua-driver needs at runtime.
+    按前缀白名单（PATH / HOME / DYLD_* / LD_* / locale / tmp / GUI 显示）保留变量，
+    丢弃名字包含密钥子串（TOKEN / JWT / SECRET / ...）的变量，
+    另外尊重通过 register_env_passthrough(...) 注册的额外变量 — 这是调用方开启 cua-driver 运行时所需变量的入口。
 
-    Compared to passing ``os.environ.copy()`` (the pre-fix behavior), this
-    keeps Desktop's JWT, the Backend base URL, and any safeStorage ciphertext
-    out of the cua-driver process tree — they don't leak via ``ps -E`` on macOS
-    (or, on Windows, ``wmic process`` queries that the cua-driver doesn't
-    support anyway).
+    与旧实现的 os.environ.copy() 相比，此实现可让 Desktop 的 JWT、Backend base URL 以及任何 safeStorage 密文
+    都不会泄漏到 cua-driver 进程树中 — macOS 上不会通过 ps -E 泄漏（Windows 上 cua-driver 也不支持 wmic process 查询）。
 
-    The weak-secret substrings (``KEY``, ``AUTH``) match only at a word
-    boundary, so ``KEYBOARD_LAYOUT`` / ``XKB_KEYMAP`` / ``OAUTH_CLIENT_ID``
-    survive — but ``STRIPE_KEY`` / ``API_KEY`` / ``AUTH_HEADER`` don't.
+    弱密钥子串（KEY、AUTH）只在词边界匹配，因此 KEYBOARD_LAYOUT / XKB_KEYMAP / OAUTH_CLIENT_ID 得以保留，
+    而 STRIPE_KEY / API_KEY / AUTH_HEADER 会被丢弃。
 
-    Also injects ``CUA_DRIVER_RS_TELEMETRY_ENABLED`` based on the
-    ``computer_use.cua_telemetry`` config knob — fail-safe default is off.
+    同时根据 computer_use.cua_telemetry 配置项注入 CUA_DRIVER_RS_TELEMETRY_ENABLED — 失败安全默认关闭。
     """
 
     def _is_secret_var(name: str) -> bool:
         upper = name.upper()
         if any(s in upper for s in _CUA_DRIVER_SECRET_SUBSTRINGS):
             return True
-        # Word-boundary match for ambiguous substrings: `KEY` / `AUTH` only
-        # count as secrets when surrounded by `_` or start/end of name. This
-        # keeps `KEYBOARD_LAYOUT` / `OAUTH_CLIENT_ID` alive while still
-        # dropping `STRIPE_KEY` / `AUTH_HEADER`.
+        # 模糊子串只在词边界匹配：KEY / AUTH 仅当被 _ 包围或位于变量名两端时算密钥。
+        # 这样 KEYBOARD_LAYOUT / OAUTH_CLIENT_ID 得以保留，同时 STRIPE_KEY / AUTH_HEADER 仍被丢弃。
         return bool(re.search(r"(?:^|_)(?:KEY|AUTH)(?:_|$)", upper))
 
     safe: dict[str, str] = {}
@@ -393,11 +366,10 @@ class _CuaDriverSession:
 
 
 def _extract_first_image(out: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Pull the first image + its MIME from a call_tool result dict.
+    """从 call_tool 结果 dict 中提取第一张图片及其 MIME。
 
-    Used by the vision / som / zoom capture paths so the "what if cua-driver
-    returns no image_mime_types" guard lives in one place. Returns
-    ``(None, None)`` when the response has no image part.
+    vision / som / zoom capture 路径共用，保证"cua-driver 未返回 image_mime_types"的兜底逻辑只在一处。
+    响应中没有图片部分时返回 (None, None)。
     """
     images = out.get("images") or []
     if not images:
@@ -408,13 +380,11 @@ def _extract_first_image(out: dict[str, Any]) -> tuple[str | None, str | None]:
 
 def _extract_tool_result(mcp_result: Any) -> dict[str, Any]:
     content = getattr(mcp_result, "content", []) or []
-    # cua-driver 0.5.x+ emits `mimeType` on every image part; older builds
-    # only set `data`. Preserve the wire-declared MIME so downstream code
-    # can skip the base64-magic-byte sniff fallback path.
+    # cua-driver 0.5.x+ 在每个图片部分上都会带 mimeType；旧版本只设置 data。
+    # 保留线协议声明的 MIME，让下游可以省去 base64 magic-byte sniff 兜底路径。
     #
-    # Single pass: build (data, mime_type) tuples in lock-step so the parallel
-    # lists can't drift apart if a future cua-driver version interleaves
-    # non-image parts between images.
+    # 单遍：并行构建 (data, mime_type) 元组，保证当未来 cua-driver 在图片之间插入非图片部分时，
+    # 两个并行列表不会错位。
     image_parts: list[tuple[str, str | None]] = []
     text_chunks: list[str] = []
     for part in content:
@@ -459,8 +429,7 @@ class CuaDriverBackend(ComputerUseBackend):
             self._bridge.stop()
 
     def is_available(self) -> bool:
-        # cua-driver ships for darwin and win32 only. We only check that
-        # cua-driver is on PATH and we're not running on an unsupported host.
+        # cua-driver 仅发布 darwin 与 win32 版本。我们仅检查 cua-driver 在 PATH 上且未运行在不支持的宿主。
         if not cua_driver_binary_available():
             return False
         return sys.platform in {"darwin", "win32"}
@@ -494,10 +463,8 @@ class CuaDriverBackend(ComputerUseBackend):
                 return CaptureResult(
                     mode=mode, width=0, height=0, window_title=f"<no shell window found; sentinel app={app!r} requires Finder/Dock to be visible on the active Space>"
                 )
-            # Sentinel matched — use the shell window list and skip the
-            # substring filter below. Without this, the next `if app:` would
-            # discard the shell windows (since 'desktop' isn't a substring of
-            # 'finder'/'dock').
+            # 哨兵命中 — 使用 shell 窗口列表并跳过下面的子串过滤。
+            # 否则后续 `if app:` 会丢弃 shell 窗口（因为 'desktop' 不是 'finder'/'dock' 的子串）。
             windows = shell
             app = None
 
@@ -633,14 +600,7 @@ class CuaDriverBackend(ComputerUseBackend):
         return self._action("set_value", {"pid": pid, "window_id": window_id, "element_index": element, "value": value})
 
     def zoom(self, window_id: int, x: int, y: int, w: int, h: int, factor: float = 2.0, fmt: str = "jpeg", quality: int = 85) -> dict[str, Any]:
-        """Python-object-only helper (not exposed via the tool schema) that
-        captures a sub-region of a window and optionally upscales it. Useful
-        when the caller needs to OCR / inspect a dense UI region without
-        burning tokens on the whole screen.
-
-        Returns ``{image_b64, mime_type, width, height}``. ``width/height``
-        reflect the post-upscaled pixel size.
-        """
+        """Python 内部辅助（不暴露到工具 schema）：截取窗口子区域并可选上采样，用于在不消耗整屏 token 的前提下 OCR / 检查密集 UI 区域。返回 {image_b64, mime_type, width, height}，width/height 为上采样后的像素。"""
         out = self._session.call_tool("zoom", {"window_id": window_id, "x": x, "y": y, "w": w, "h": h, "factor": factor, "format": fmt, "quality": quality})
         image_b64, mime_type = _extract_first_image(out)
         return {"image_b64": image_b64, "mime_type": mime_type, "width": int((w or 0) * (factor or 0)), "height": int((h or 0) * (factor or 0))}

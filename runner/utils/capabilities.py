@@ -16,7 +16,7 @@ def _binary_exists(name: str) -> bool:
 
 
 def probe_microphone() -> tuple[bool, str | None]:
-    """Probe microphone availability and return (available, reason)."""
+    """探测麦克风可用性，返回 (是否可用, 失败原因)。"""
     if IS_WINDOWS or IS_MACOS:
         try:
             import sounddevice as sd  # type: ignore[import-not-found]
@@ -37,7 +37,7 @@ def probe_microphone() -> tuple[bool, str | None]:
 
 
 def microphone_available() -> bool:
-    """Best-effort mic-presence probe — enumerates devices, never opens a stream."""
+    """轻量麦克风探测：枚举设备，永不打开音频流。"""
     if IS_WINDOWS or IS_MACOS:
         try:
             import sounddevice as sd  # type: ignore[import-not-found]
@@ -53,7 +53,7 @@ def microphone_available() -> bool:
 
 
 def probe_screen_capture() -> tuple[bool, str | None]:
-    """Probe screen capture capability and return (available, reason)."""
+    """探测截屏能力，返回 (是否可用, 失败原因)。"""
     if IS_WINDOWS:
         try:
             import mss
@@ -73,7 +73,7 @@ def probe_screen_capture() -> tuple[bool, str | None]:
 
 
 def screen_capture_available() -> bool:
-    """True iff the host platform has a usable screenshot path on this build."""
+    """当前平台是否具备可用的截屏路径。"""
     if IS_WINDOWS:
         try:
             import mss
@@ -88,7 +88,7 @@ def screen_capture_available() -> bool:
 
 
 def probe_local_stt() -> tuple[bool, str | None]:
-    """Probe local STT capability and return (available, reason)."""
+    """探测本地 STT 能力，返回 (是否可用, 失败原因)。"""
     try:
         import faster_whisper  # noqa: F401 — capability check
 
@@ -98,7 +98,7 @@ def probe_local_stt() -> tuple[bool, str | None]:
 
 
 def local_stt_available() -> bool:
-    """True iff the bundled STT stack can run on this machine."""
+    """内置 STT 栈在本机是否可运行。"""
     try:
         import faster_whisper  # noqa: F401 — capability check
 
@@ -108,7 +108,7 @@ def local_stt_available() -> bool:
 
 
 def probe_local_tts() -> tuple[bool, str | None]:
-    """Probe local TTS capability and return (available, reason)."""
+    """探测本地 TTS 能力，返回 (是否可用, 失败原因)。"""
     errors: list[str] = []
     try:
         import piper  # noqa: F401 — capability check
@@ -126,7 +126,7 @@ def probe_local_tts() -> tuple[bool, str | None]:
 
 
 def local_tts_available() -> bool:
-    """True iff at least one local TTS engine imports successfully."""
+    """至少有一个本地 TTS 引擎可成功导入。"""
     try:
         import piper  # noqa: F401 — capability check
 
@@ -142,7 +142,7 @@ def local_tts_available() -> bool:
 
 
 def probe_system_activity() -> tuple[bool, str | None]:
-    """Probe system activity capability and return (available, reason)."""
+    """探测系统活动检测能力，返回 (是否可用, 失败原因)。"""
     if IS_WINDOWS:
         try:
             import ctypes
@@ -175,7 +175,7 @@ def probe_system_activity() -> tuple[bool, str | None]:
 
 
 def system_activity_available() -> bool:
-    """True iff idle / lock / focus probes can answer on this build."""
+    """空闲/锁屏/焦点探测在本构建是否可用。"""
     if IS_WINDOWS:
         try:
             import ctypes
@@ -201,8 +201,7 @@ def system_activity_available() -> bool:
 
 
 def network_reachable(host: str = "1.1.1.1", port: int = 443, timeout: float = 1.5) -> bool:
-    """Best-effort reachability check used by ``spiritagent.info`` to surface
-    connectivity state to the Desktop. Avoids hanging the handshake."""
+    """轻量连通性探测（供 ``spiritagent.info`` 上报网络状态），避免握手超时。"""
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -211,7 +210,7 @@ def network_reachable(host: str = "1.1.1.1", port: int = 443, timeout: float = 1
 
 
 def disk_free_bytes(path: str | Path = ".") -> int | None:
-    """Free bytes for ``path``'s filesystem. ``None`` if not queryable."""
+    """``path`` 所在文件系统的剩余字节数；无法查询时返回 ``None``。"""
     try:
         return shutil.disk_usage(path).free
     except OSError:
@@ -223,13 +222,13 @@ _snapshot_cache: tuple[float, dict[str, Any], dict[str, Any]] | None = None
 
 
 def reset_snapshot_cache() -> None:
-    """Drop the TTL cache (tests)."""
+    """清空能力快照的 TTL 缓存（测试用）。"""
     global _snapshot_cache
     _snapshot_cache = None
 
 
 def snapshot_with_health() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return both boolean capabilities map and structured health map, cached for TTL."""
+    """返回 (能力布隆, 健康详情) 双份字典，按 TTL 缓存。"""
     global _snapshot_cache
     now = time.monotonic()
     if _snapshot_cache is not None and now - _snapshot_cache[0] < _SNAPSHOT_TTL_S:
@@ -270,12 +269,12 @@ def snapshot_with_health() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def snapshot() -> dict[str, Any]:
-    """Return the full capabilities map advertised on handshake / info RPC."""
+    """返回握手 / info RPC 上报的完整能力映射。"""
     caps, _ = snapshot_with_health()
     return caps
 
 
 def snapshot_health() -> dict[str, Any]:
-    """Return the structured capabilities health map."""
+    """返回结构化的能力健康详情。"""
     _, health = snapshot_with_health()
     return health

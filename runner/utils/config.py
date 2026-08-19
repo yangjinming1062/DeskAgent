@@ -3,17 +3,12 @@ from typing import Any
 
 _TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
 
-# ``None`` until the Desktop pushes via spiritagent.config.update; consumers fall back to cfg_get(default=...).
+# 初始为 ``None``；Desktop 通过 spiritagent.config.update 推送前，消费者请走 cfg_get(default=...)。
 _INMEMORY_CONFIG: dict[str, Any] | None = None
 
 
 def is_truthy_value(value: Any, default: bool = False) -> bool:
-    """Interpret a config value as a bool.
-
-    Used to coerce ``cfg["foo"]`` (which can be a bool, a str, a number,
-    or None) into a clean bool. Anything that isn't explicitly in the
-    truthy set falls back to ``default``.
-    """
+    """把配置值归一为 bool：不在真值集合内的回落到 ``default``。"""
     if value is None:
         return default
     if isinstance(value, bool):
@@ -24,12 +19,12 @@ def is_truthy_value(value: Any, default: bool = False) -> bool:
 
 
 def load_config() -> dict[str, Any]:
-    """Return the in-memory config dict (``{}`` before the Desktop's first push)."""
+    """返回内存配置字典（Desktop 首次推送前为 ``{}``）。"""
     return _INMEMORY_CONFIG if _INMEMORY_CONFIG is not None else {}
 
 
 def set_inmemory_config(config: dict[str, Any]) -> None:
-    """Replace the in-memory config; called by the ``spiritagent.config.update`` RPC handler."""
+    """覆盖内存配置；由 ``spiritagent.config.update`` RPC 处理函数调用。"""
     global _INMEMORY_CONFIG
     if not isinstance(config, dict):
         raise TypeError(f"config must be a dict, got {type(config).__name__}")
@@ -37,7 +32,7 @@ def set_inmemory_config(config: dict[str, Any]) -> None:
 
 
 def cfg_get(d: Any, *keys: str, default: Any = None) -> Any:
-    """Walk nested ``d.get(k)`` chain; return ``default`` on any miss."""
+    """沿 ``d.get(k)`` 链逐层取值，任一缺失即返回 ``default``。"""
     for k in keys:
         if not isinstance(d, dict):
             return default
@@ -46,28 +41,24 @@ def cfg_get(d: Any, *keys: str, default: Any = None) -> Any:
 
 
 def get_env_type(default: str = "local") -> str:
-    """Normalized ``terminal.env_type`` from config: stripped, lowercased, with fallback.
-
-    Centralized so every consumer (terminal tool dispatcher, skill setup
-    note, etc.) applies the same normalization.
-    """
+    """归一化 ``terminal.env_type``：去空白、转小写、缺失回落到 ``default``。"""
     val = cfg_get(load_config(), "terminal", "env_type", default=default)
     return str(val).strip().lower() or default
 
 
 def cfg_str(section: dict[str, Any], key: str, default: str = "") -> str:
-    """Coerce a config value to str, stripping whitespace."""
+    """把配置值强制为字符串并去前后空白。"""
     v = section.get(key, default)
     return str(v).strip() if v is not None else default
 
 
 def cfg_bool(section: dict[str, Any], key: str, default: bool = False) -> bool:
-    """Coerce a config value to bool via ``is_truthy_value``."""
+    """通过 ``is_truthy_value`` 把配置值转 bool。"""
     return is_truthy_value(section.get(key), default=default)
 
 
 def cfg_int(section: dict[str, Any], key: str, default: int = 0) -> int:
-    """Coerce a config value to int, returning *default* on failure."""
+    """把配置值转为 int；失败回落到 *default*。"""
     try:
         return int(section.get(key, default))
     except (TypeError, ValueError):
@@ -75,7 +66,7 @@ def cfg_int(section: dict[str, Any], key: str, default: int = 0) -> int:
 
 
 def cfg_float(section: dict[str, Any], key: str, default: float = 0.0) -> float:
-    """Coerce a config value to float, returning *default* on failure."""
+    """把配置值转为 float；失败回落到 *default*。"""
     try:
         return float(section.get(key, default))
     except (TypeError, ValueError):
@@ -83,7 +74,7 @@ def cfg_float(section: dict[str, Any], key: str, default: float = 0.0) -> float:
 
 
 def cfg_json(section: dict[str, Any], key: str, default: Any = None) -> Any:
-    """Coerce a config value to a JSON-decoded list/dict, or *default*."""
+    """把配置值解码为 JSON 列表/字典；失败回落到 *default*。"""
     v = section.get(key)
     if v is None:
         return default
@@ -96,10 +87,7 @@ def cfg_json(section: dict[str, Any], key: str, default: Any = None) -> Any:
 
 
 def get_disabled_config_names(section: str = "skills") -> set[str]:
-    """Read the ``{section}.disabled`` list from the in-memory config.
-
-    Works for ``skills``, ``toolsets``, etc.
-    """
+    """读取 ``{section}.disabled`` 列表（适用于 ``skills``、``toolsets`` 等）。"""
     raw = cfg_get(load_config(), section, "disabled", default=[])
     if not isinstance(raw, list):
         return set()

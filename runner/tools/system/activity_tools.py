@@ -122,11 +122,8 @@ def _fullscreen_handler(args: dict[str, Any], **kw: Any) -> str:
 
 
 def _snapshot_handler(args: dict[str, Any], **kw: Any) -> str:
-    # Aggregates the four activity probes into one IPC message. Each probe is
-    # independent and sub-millisecond on the OS side, so we run them serially
-    # here rather than threading — the savings are in IPC + WS framing, not
-    # in syscall overlap. Failures are isolated per-probe (each returns its
-    # own safe default), so one broken probe can't blackhole the snapshot.
+    # 串行聚合四条独立探测, 避免一次 IPC+WS 帧内多个 syscall 反而比单个 round-trip 更慢。
+    # 单个探测失败有各自的安全默认值, 互不影响, 因此串行不会因为一个失败而黑洞整次快照。
     return json.dumps({"idle_seconds": get_idle_seconds(), "locked": is_screen_locked(), "focused_app": get_focused_app(), "fullscreen": is_fullscreen()})
 
 

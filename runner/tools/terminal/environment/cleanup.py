@@ -17,8 +17,6 @@ _cleanup_thread = None
 _cleanup_running = False
 _cleanup_stop_event = threading.Event()
 
-# ── Helpers ───────────────────────────────────────────────────────────
-
 
 def _is_already_gone(exc: BaseException) -> bool:
     msg = str(exc)
@@ -41,9 +39,6 @@ def _stop_env(env: Any) -> None:
         env.terminate()
 
 
-# ── Cleanup operations ────────────────────────────────────────────────
-
-
 def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
     from ...files import clear_file_ops_cache
     from ...process import process_registry
@@ -60,11 +55,7 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
                 last_activity.pop(task_id, None)
                 if env is not None:
                     envs_to_stop.append((task_id, env))
-        # creation_locks entries are intentionally NOT popped here: removing
-        # a lock object another thread currently holds (mid env creation)
-        # lets a third thread create a fresh lock and enter the same critical
-        # section — two envs for one task. Entries live for the process
-        # lifetime, bounded by the task-id space.
+        # creation_locks 条目刻意不弹出：删除一个别的线程正在持有的锁对象（环境创建中途），会让第三个线程创建一把新锁进入同一临界区——一个任务两个环境。条目随进程生命周期驻留，由 task_id 空间限定上限。
     for task_id, env in envs_to_stop:
         clear_file_ops_cache(task_id)
         try:
@@ -86,6 +77,7 @@ def _cleanup_thread_worker() -> None:
 
 
 def start_cleanup_thread() -> None:
+    """惰性启动后台清理线程：仅在首次调用且当前未运行时启动，避免重复。"""
     global _cleanup_thread, _cleanup_running
     with env_lock:
         if _cleanup_thread is None or not _cleanup_thread.is_alive():
@@ -95,6 +87,7 @@ def start_cleanup_thread() -> None:
 
 
 def stop_cleanup_thread() -> None:
+    """停止后台清理线程：置标志位 + 唤醒等待 + 限时 join。"""
     global _cleanup_running
     _cleanup_running = False
     _cleanup_stop_event.set()
@@ -104,6 +97,7 @@ def stop_cleanup_thread() -> None:
 
 
 def cleanup_all_environments() -> int:
+    """批量清理所有活跃终端环境并回收孤儿 scratch 目录；返回已清理任务数。"""
     task_ids = list(active_environments.keys())
     cleaned = 0
     for task_id in task_ids:
@@ -113,9 +107,7 @@ def cleanup_all_environments() -> int:
         except Exception as e:
             logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
     scratch_dir = _get_scratch_dir()
-    # Skip `spiritagent-overlays/` (Singularity persistent overlays live under
-    # it bound to live task_ids) — wiping this dir during cleanup will
-    # silently nuke overlays that persistent sessions still use.
+    # 跳过 `spiritagent-overlays/`（Singularity 持久化 overlay 位于其下，绑定活的 task_id）——清理时一并删除会静默摧毁持久化会话仍在使用的 overlay。
     for path in glob.glob(str(scratch_dir / "spiritagent-*")):
         if path.endswith("spiritagent-overlays"):
             continue
@@ -130,6 +122,7 @@ def cleanup_all_environments() -> int:
 
 
 def cleanup_vm(task_id: str, *, force_remove: bool = False) -> None:
+    """清理指定 task 的终端环境：从活跃表中摘除、清理文件缓存、关闭底层环境。"""
     from ...files import clear_file_ops_cache
 
     env = None

@@ -30,25 +30,24 @@ logger = logging.getLogger(__name__)
 _VOICE_CACHE_MAX = 3
 _DEFAULT_VOICE = "en_US-amy-medium"
 
-# Bundled voices shipped in installer/payload/voices/ (see installer/README §10).
+# 安装包内置语音，置于 installer/payload/voices/（见 installer/README §10）
 ZH_DEFAULT_VOICE = "zh_CN-huayan-medium"
 EN_DEFAULT_VOICE = "en_US-amy-medium"
 ZH_MALE_DEFAULT_VOICE = "zh_CN-chaowen-medium"
 _BUNDLED_VOICES: tuple[str, ...] = (ZH_DEFAULT_VOICE, ZH_MALE_DEFAULT_VOICE, EN_DEFAULT_VOICE)
 
-# Piper's documented voice source: https://github.com/rhasspy/piper#predefined-voices
+# Piper 文档化的语音源：https://github.com/rhasspy/piper#predefined-voices
 _PIPER_VOICES_REPO = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
-# CJK Unified Ideographs plus the two extension blocks for common CJK punctuation.
+# CJK 统一表意文字，加上两个常见 CJK 标点扩展块
 _CJK_RE = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿]")
 
-# Canonical Piper voice id shape. Cloud ids (e.g. ``Mia`` / ``冰糖``) never match —
-# basis for tts_tool._is_cloud_voice's shape check.
+# Piper voice id 的规范形状。云端 id（如 `小美` / `mimo_voicedesign:...`）永不匹配 — 是 tts_tool._is_cloud_voice 形状检查的基础
 PIPER_VOICE_RE = re.compile(r"^[a-z]{2,3}_[A-Z]{2}-[a-z0-9-]+-(?:x_low|low|medium|high)$")
 
 
 def text_language(text: str) -> str:
-    """``"zh"`` when ≥50% of non-whitespace chars are CJK, else ``"other"``."""
+    """非空白字符中 CJK ≥50% 时返回 "zh"，否则 "other"。"""
     if not text:
         return "other"
     non_ws = "".join(text.split())
@@ -60,8 +59,7 @@ def text_language(text: str) -> str:
 class PiperRuntime:
     def __init__(self) -> None:
         self._voices: OrderedDict[str, Any] = OrderedDict()
-        # RLock: synthesize() holds it across get_voice() (re-entrant) so a
-        # PiperVoice object is never driven by two threads at once.
+        # RLock：synthesize() 跨 get_voice() 持有（可重入），保证 PiperVoice 对象不会被两个线程同时驱动
         self._lock = threading.RLock()
 
     def get_voice(self, voice_id: str = _DEFAULT_VOICE) -> Any:
@@ -87,8 +85,7 @@ class PiperRuntime:
             return voice
 
     def synthesize(self, text: str, *, voice_id: str = _DEFAULT_VOICE, output_wav: Path | str, speed: float = 1.0) -> Path:
-        # Caller passes any path under ``$SPIRITAGENT_HOME/cache/audio/tts/`` —
-        # outside the cache we'd be writing to an attacker-influenced location.
+        # 调用方传入 $SPIRITAGENT_HOME/cache/audio/tts/ 下的路径 — 写到缓存外即受攻击者影响
         with self._lock:
             return self._synthesize_locked(text, voice_id=voice_id, output_wav=output_wav, speed=speed)
 
@@ -97,8 +94,7 @@ class PiperRuntime:
         output_wav = Path(output_wav)
         output_wav.parent.mkdir(parents=True, exist_ok=True)
         cfg = SynthesisConfig(length_scale=max(0.5, min(2.0, 1.0 / max(0.5, speed))))
-        # ``synthesize_wav`` with ``set_wav_format=True`` lets Piper set the
-        # wave header from the audio chunk's sample rate/width/channels.
+        # synthesize_wav 与 set_wav_format=True 让 Piper 按音频块的 sample rate / width / channels 写入 wave header
         with wave.open(str(output_wav), "wb") as wf:
             voice.synthesize_wav(text, wf, syn_config=cfg, set_wav_format=True)
         return output_wav
@@ -155,7 +151,7 @@ def discover_installed_voices(voice_dir: Path | None = None) -> list[str]:
 
 
 def bundled_voices() -> tuple[str, ...]:
-    """Voice ids bundled in installer/payload/voices/ or discovered locally."""
+    """安装包内置的语音 id（installer/payload/voices/）或本地发现的语音。"""
     discovered = discover_installed_voices()
     seen = set(_BUNDLED_VOICES)
     extras = [v for v in discovered if v not in seen]
@@ -163,11 +159,9 @@ def bundled_voices() -> tuple[str, ...]:
 
 
 def pick_voice_for_text(*, preferred: str = "") -> str:
-    """Explicit `preferred` wins; otherwise default to ZH_DEFAULT_VOICE.
+    """显式 preferred 优先；否则回退到 ZH_DEFAULT_VOICE。
 
-    We deliberately do not auto-route on text language — see runner/README
-    §"本地 TTS voice 选型" for why (inconsistent voice identity across a
-    single conversation).
+    故意不按文本语言自动路由 — 详见 runner/README §"本地 TTS voice 选型"（同一对话中声音身份不一致）。
     """
     if preferred and preferred.strip():
         return preferred.strip()
@@ -180,7 +174,7 @@ def _is_voice_installed(voice_id: str, voice_dir: Path | None = None) -> bool:
 
 
 def download_voice(voice_id: str, *, voice_dir: Path | None = None, timeout: float = 60.0) -> Path:
-    """Fetch ``.onnx`` and ``.onnx.json`` for ``voice_id`` into ``voice_dir``. Raises on failure."""
+    """把 voice_id 对应的 .onnx 与 .onnx.json 取到 voice_dir，失败抛异常。"""
     base = voice_dir if voice_dir is not None else piper_voice_dir()
     base.mkdir(parents=True, exist_ok=True)
     prefix = _voice_id_to_repo_path(voice_id)
@@ -197,8 +191,7 @@ def download_voice(voice_id: str, *, voice_dir: Path | None = None, timeout: flo
             raise RuntimeError(f"failed to download {url}: {exc}") from exc
         if not data:
             raise RuntimeError(f"empty response while downloading {url}")
-        # Atomic swap: a partial .onnx left by an interrupted download would
-        # be treated as installed and fail every subsequent load.
+        # 原子替换：中断下载留下的半截 .onnx 会被视为已安装，导致后续每次 load 都失败
         tmp = dst.with_suffix(dst.suffix + ".part")
         tmp.write_bytes(data)
         os.replace(tmp, dst)
@@ -217,7 +210,7 @@ def _voice_id_to_repo_path(voice_id: str) -> str:
 
 
 def ensure_voice_installed(voice_id: str, *, voice_dir: Path | None = None, timeout: float = 60.0) -> bool:
-    """False on download failure — caller falls back to pyttsx3 / cloud."""
+    """下载失败时返回 False — 调用方回退到 pyttsx3 / 云端。"""
     if _is_voice_installed(voice_id, voice_dir=voice_dir):
         return True
     try:

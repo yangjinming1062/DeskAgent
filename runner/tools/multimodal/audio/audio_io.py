@@ -17,13 +17,12 @@ except (ImportError, OSError):
 
 logger = logging.getLogger(__name__)
 
-# Whisper + Piper both expect this PCM shape — ffmpeg handles the conversion.
+# Whisper + Piper 都要求这个 PCM 形状 — ffmpeg 处理转码
 _TARGET_RATE = 16_000
 _TARGET_CHANNELS = 1
 _TARGET_SAMPLE_WIDTH = 2
 
-# Over-large inbound voice clips are almost certainly an LLM-context
-# dump attempt; Telegram defaults to 50 MB, anything beyond that is suspicious.
+# 异常大的入站语音片段几乎肯定是 LLM 上下文倾倒尝试；Telegram 默认 50 MB，超过此即视为可疑
 DEFAULT_MAX_INPUT_BYTES = 25 * 1024 * 1024
 
 
@@ -122,8 +121,7 @@ def _native_wav_to_pcm16(src: Path, dst: Path) -> bool:
 
 
 def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int = DEFAULT_MAX_INPUT_BYTES, ffmpeg_bin: str = "ffmpeg") -> Path:
-    # Output is always a valid path on disk — ffmpeg stdout args change
-    # across versions, stdio redirects are not portable enough to rely on.
+    # 输出始终是磁盘上的有效路径 — ffmpeg 的 stdout 参数跨版本变化，stdio 重定向不够可移植
     src = Path(src_path)
     size = src.stat().st_size if src.exists() else 0
     if size == 0:
@@ -133,7 +131,7 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
     dst = Path(dst_path)
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # Fast-path: if source is already a standard WAV container, decode/resample natively via Python + numpy
+    # 快路径：若源已是标准 WAV 容器，直接通过 Python + numpy 原生解码/重采样
     with open(src, "rb") as probe:
         head = probe.read(16)
     if sniff_container(head) == "wav":
@@ -178,8 +176,7 @@ def write_wav_pcm16(path: str | Path, samples: bytes, sample_rate: int = _TARGET
     file_size = 36 + data_size
     byte_rate = sample_rate * _TARGET_CHANNELS * _TARGET_SAMPLE_WIDTH
     block_align = _TARGET_CHANNELS * _TARGET_SAMPLE_WIDTH
-    # RIFF/WAVE written by hand so we don't pull in ``soundfile`` — keeps
-    # the no-LLM-runtime builds free of audio deps.
+    # 手工写 RIFF/WAVE 而不引入 soundfile — 让无 LLM 运行时的构建不带音频依赖
     with open(path, "wb") as f:
         f.write(b"RIFF")
         f.write(struct.pack("<I", file_size))
@@ -203,11 +200,7 @@ _AUDIO_CLEANUP_INTERVAL_S = 3600.0
 
 
 def cleanup_audio_cache_dir(cache_dir: Path, max_age_hours: float = 72.0) -> None:
-    """Best-effort GC for audio cache dirs; throttled to one scan per hour per dir.
-
-    Downloads/screenshots/recordings all have GC — without this the four
-    audio cache dirs (inbound/transcode/tts/audio_cache) grow unbounded.
-    """
+    """音频缓存目录尽力 GC，每个目录每小时最多扫描一次。Downloads/screenshots/recordings 都有 GC — 不加这段四个音频缓存目录（inbound/transcode/tts/audio_cache）会无限膨胀。"""
     now = time.monotonic()
     key = str(cache_dir)
     if now - _LAST_AUDIO_CLEANUP.get(key, 0.0) < _AUDIO_CLEANUP_INTERVAL_S:
@@ -237,6 +230,5 @@ def read_audio_bytes(path: str | Path) -> bytes:
 
 
 def is_pa_loaded() -> bool:
-    """False when PortAudio shared library is unavailable — Desktop should
-    fall back to its Electron-side mic capture rather than stall the user."""
+    """PortAudio 共享库不可用时返回 False — Desktop 应回退到 Electron 侧麦克风采集，而不是卡住用户。"""
     return sounddevice is not None

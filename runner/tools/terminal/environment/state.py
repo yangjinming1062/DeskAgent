@@ -6,16 +6,12 @@ from typing import Any
 
 from utils import cfg_bool, cfg_float, cfg_get, cfg_int, cfg_json, cfg_str, load_config
 
-# ── Config-driven constants ───────────────────────────────────────────
-
 
 def _terminal_config_value(key: str, default: Any) -> Any:
     return cfg_get(load_config(), "terminal", key, default=default)
 
 
 DOCKER_ORPHAN_LIFETIME_SECONDS = max(60, int(_terminal_config_value("lifetime_seconds", 300)))
-
-# ── Shared state ──────────────────────────────────────────────────────
 
 active_environments: dict[str, Any] = {}
 last_activity: dict[str, float] = {}
@@ -27,8 +23,6 @@ creation_locks_lock = threading.Lock()
 task_env_overrides: dict[str, dict[str, Any]] = {}
 task_env_overrides_lock = threading.Lock()
 
-# ── Helpers ───────────────────────────────────────────────────────────
-
 
 def _safe_getcwd() -> str:
     try:
@@ -37,16 +31,15 @@ def _safe_getcwd() -> str:
         return os.path.expanduser("~")
 
 
-# ── Query API ─────────────────────────────────────────────────────────
-
-
 def resolve_container_task_id(task_id: str | None) -> str:
+    """将 None/空任务 id 归一为 'default'；其他值原样转字符串。"""
     if not task_id:
         return "default"
     return str(task_id)
 
 
 def get_env_config() -> dict[str, Any]:
+    """加载并规范化 `terminal.*` 配置（env_type、镜像、cwd、超时、SSH 字段等）。"""
     default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
     cfg = load_config() or {}
     t = cfg.get("terminal") if isinstance(cfg, dict) else {}
@@ -108,12 +101,14 @@ def get_env_config() -> dict[str, Any]:
 
 
 def get_active_env(task_id: str) -> Any | None:
+    """按 task_id 取活跃环境：先归一化再查表，同时兼容原始 key 的旧条目。"""
     lookup = resolve_container_task_id(task_id)
     with env_lock:
         return active_environments.get(lookup) or active_environments.get(task_id)
 
 
 def is_persistent_env(task_id: str) -> bool:
+    """查询指定任务的环境是否声明为持久化（仅看 `_persistent` 字段）。"""
     env = get_active_env(task_id)
     if env is None:
         return False
@@ -121,7 +116,7 @@ def is_persistent_env(task_id: str) -> bool:
 
 
 def register_environment(task_id: str, env: Any) -> None:
-    """Register an environment instance and update last activity timestamp."""
+    """注册一个环境实例并刷新其 last_activity 时间戳。"""
     with env_lock:
         active_environments[task_id] = env
         last_activity[task_id] = time.time()

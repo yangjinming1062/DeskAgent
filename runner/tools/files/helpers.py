@@ -38,7 +38,7 @@ _HUNK_HINT_RE = re.compile(r"@@\s*(.+?)\s*@@")
 
 
 def _strip_terminal_fence_leaks(text: str) -> str:
-    """Strip leaked terminal fence wrappers from file read output."""
+    """剥离读取文件中残留的终端围栏包裹。"""
     if not text:
         return text
     cleaned_lines: list[str] = []
@@ -54,7 +54,7 @@ def _strip_terminal_fence_leaks(text: str) -> str:
 
 
 def _detect_line_ending(sample: str) -> str | None:
-    """Return the dominant line ending in ``sample`` or None if undetermined."""
+    """返回 ``sample`` 中的主要换行符；无法判断时返回 None。"""
     if not sample:
         return None
     head = sample[:4096]
@@ -66,7 +66,7 @@ def _detect_line_ending(sample: str) -> str | None:
 
 
 def _normalize_line_endings(text: str, target: str) -> str:
-    """Convert all line endings in ``text`` to ``target`` (``\\n`` or ``\\r\\n``)."""
+    """将 ``text`` 中所有换行符统一为 ``target``（``\\n`` 或 ``\\r\\n``）。"""
     lf_normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     if target == "\n":
         return lf_normalized
@@ -79,14 +79,14 @@ _UTF8_BOM = "\ufeff"
 
 
 def _strip_bom(text: str) -> tuple[str, bool]:
-    """Return (text-without-leading-BOM, had_bom)."""
+    """返回 (去 BOM 文本, 是否有 BOM)。"""
     if text and text.startswith(_UTF8_BOM):
         return text[len(_UTF8_BOM) :], True
     return text, False
 
 
 def _has_bom(text: str | None) -> bool:
-    """True if ``text`` begins with a UTF-8 BOM."""
+    """若 ``text`` 以 UTF-8 BOM 开头则返回 True。"""
     return bool(text) and text.startswith(_UTF8_BOM)
 
 
@@ -176,14 +176,14 @@ class LintResult:
 
 @dataclass
 class ExecuteResult:
-    """Result from executing a shell command."""
+    """执行 shell 命令的结果。"""
 
     stdout: str = ""
     exit_code: int = 0
 
 
 def _split_tool_diagnostics(output: str) -> tuple[str, str]:
-    """Separate rg/grep diagnostic lines from real match output."""
+    """把 rg/grep 的诊断行与真正的匹配输出分开。"""
     diagnostics: list[str] = []
     payload: list[str] = []
     for line in output.split("\n"):
@@ -204,7 +204,7 @@ _SEARCH_OUTPUT_RE = re.compile(r"^([A-Za-z]:)?[^\s:][^\n]*?[:\-]\d|^[^\s:][^\s]*
 
 
 def _parse_search_context_line(line: str) -> tuple[str, int, str] | None:
-    """Parse grep/rg context output in ``path-line-content`` format."""
+    """解析 ``path-line-content`` 形式的 grep/rg 上下文输出。"""
     if not line or line == "--":
         return None
     match = None
@@ -219,7 +219,7 @@ def _parse_search_context_line(line: str) -> tuple[str, int, str] | None:
 
 
 class FileOperations(ABC):
-    """Abstract interface for file operations across terminal backends."""
+    """跨终端后端的文件操作抽象接口。"""
 
     @abstractmethod
     def read_file(self, path: str, offset: int = 1, limit: int = 500) -> ReadResult: ...
@@ -269,7 +269,7 @@ _LINTER_UNUSABLE_PATTERNS = {
 
 
 def _looks_like_linter_unusable(base_cmd: str, output: str) -> bool:
-    """Return True iff ``output`` from ``base_cmd`` indicates the linter itself couldn't run."""
+    """若 ``output`` 表明 ``base_cmd`` 自身无法运行则返回 True。"""
     patterns = _LINTER_UNUSABLE_PATTERNS.get(base_cmd)
     if not patterns:
         return False
@@ -278,7 +278,7 @@ def _looks_like_linter_unusable(base_cmd: str, output: str) -> bool:
 
 
 def _lint_json_inproc(content: str) -> tuple[bool, str]:
-    """In-process JSON syntax check."""
+    """进程内 JSON 语法校验。"""
     try:
         json.loads(content)
         return True, ""
@@ -289,7 +289,7 @@ def _lint_json_inproc(content: str) -> tuple[bool, str]:
 
 
 def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
-    """In-process YAML syntax check."""
+    """进程内 YAML 语法校验。"""
     try:
         yaml.safe_load(content)
         return True, ""
@@ -300,7 +300,7 @@ def _lint_yaml_inproc(content: str) -> tuple[bool, str]:
 
 
 def _lint_toml_inproc(content: str) -> tuple[bool, str]:
-    """In-process TOML syntax check."""
+    """进程内 TOML 语法校验。"""
     try:
         tomllib.loads(content)
         return True, ""
@@ -309,7 +309,7 @@ def _lint_toml_inproc(content: str) -> tuple[bool, str]:
 
 
 def _lint_python_inproc(content: str) -> tuple[bool, str]:
-    """In-process Python syntax check via ast.parse."""
+    """通过 ast.parse 进行进程内 Python 语法校验。"""
     try:
         ast.parse(content)
         return True, ""
@@ -332,7 +332,7 @@ DEFAULT_SEARCH_LIMIT = 50
 
 
 def _coerce_int(value: Any, default: int) -> int:
-    """Best-effort integer coercion for tool pagination inputs."""
+    """尽力将分页参数转为整数。"""
     try:
         return int(value)
     except (TypeError, ValueError):
@@ -340,7 +340,7 @@ def _coerce_int(value: Any, default: int) -> int:
 
 
 def normalize_read_pagination(offset: Any = DEFAULT_READ_OFFSET, limit: Any = DEFAULT_READ_LIMIT) -> tuple[int, int]:
-    """Return safe read_file pagination bounds."""
+    """返回 read_file 的安全分页边界。"""
     max_lines = get_max_lines()
     normalized_offset = max(1, _coerce_int(offset, DEFAULT_READ_OFFSET))
     normalized_limit = _coerce_int(limit, DEFAULT_READ_LIMIT)
@@ -349,14 +349,14 @@ def normalize_read_pagination(offset: Any = DEFAULT_READ_OFFSET, limit: Any = DE
 
 
 def normalize_search_pagination(offset: Any = DEFAULT_SEARCH_OFFSET, limit: Any = DEFAULT_SEARCH_LIMIT) -> tuple[int, int]:
-    """Return safe search pagination bounds for shell head/tail pipelines."""
+    """返回 shell head/tail 管线安全的搜索分页边界。"""
     normalized_offset = max(0, _coerce_int(offset, DEFAULT_SEARCH_OFFSET))
     normalized_limit = max(1, _coerce_int(limit, DEFAULT_SEARCH_LIMIT))
     return normalized_offset, normalized_limit
 
 
 class ShellFileOperations(FileOperations):
-    """File operations implemented via shell commands."""
+    """通过 shell 命令实现文件操作。"""
 
     def __init__(self, terminal_env: Any, cwd: str | None = None) -> None:
         self.env = terminal_env
@@ -364,7 +364,7 @@ class ShellFileOperations(FileOperations):
         self._command_cache: dict[str, bool] = {}
 
     def _exec(self, command: str, cwd: str | None = None, timeout: int | None = None, stdin_data: str | None = None) -> ExecuteResult:
-        """Execute command via terminal backend."""
+        """通过终端后端执行命令。"""
         kwargs = {}
         if timeout:
             kwargs["timeout"] = timeout
@@ -375,14 +375,14 @@ class ShellFileOperations(FileOperations):
         return ExecuteResult(stdout=result.get("output", ""), exit_code=result.get("returncode", 0))
 
     def _has_command(self, cmd: str) -> bool:
-        """Check if a command exists in the environment (cached)."""
+        """检查命令是否在环境中可用（带缓存）。"""
         if cmd not in self._command_cache:
             result = self._exec(f"command -v {cmd} >/dev/null 2>&1 && echo 'yes'")
             self._command_cache[cmd] = result.stdout.strip() == "yes"
         return self._command_cache[cmd]
 
     def _is_likely_binary(self, path: str, content_sample: str | None = None) -> bool:
-        """Check if a file is likely binary."""
+        """判断文件是否可能为二进制。"""
         ext = os.path.splitext(path)[1].lower()
         if ext in BINARY_EXTENSIONS:
             return True
@@ -392,12 +392,12 @@ class ShellFileOperations(FileOperations):
         return False
 
     def _is_image(self, path: str) -> bool:
-        """Check if file is an image we can return as base64."""
+        """判断文件是否为可返回 base64 的图片。"""
         ext = os.path.splitext(path)[1].lower()
         return ext in IMAGE_EXTENSIONS
 
     def _add_line_numbers(self, content: str, start_line: int = 1) -> str:
-        """Add line numbers to content in ``LINE_NUM|CONTENT`` format."""
+        """以 ``LINE_NUM|CONTENT`` 格式给内容加上行号。"""
         max_line_length = get_max_line_length()
         lines = content.split("\n")
         numbered = []
@@ -408,7 +408,7 @@ class ShellFileOperations(FileOperations):
         return "\n".join(numbered)
 
     def _expand_path(self, path: str) -> str:
-        """Expand shell-style paths like ~ and ~user to absolute paths."""
+        """把 ``~``/``~user`` 形式的 shell 路径展开为绝对路径。"""
         if not path:
             return path
         if path.startswith("~"):
@@ -431,11 +431,11 @@ class ShellFileOperations(FileOperations):
         return path
 
     def _escape_shell_arg(self, arg: str) -> str:
-        """Escape a string for safe use in shell commands."""
+        """把字符串转义为 shell 命令可安全使用的形式。"""
         return "'" + arg.replace("'", "'\"'\"'") + "'"
 
     def _atomic_write(self, path: str, content: str) -> "ExecuteResult":
-        """Write ``content`` to ``path`` atomically via temp-file + rename."""
+        """通过「临时文件 + rename」原子写入 ``content`` 到 ``path``。"""
         q_path = self._escape_shell_arg(path)
         parent = os.path.dirname(path) or "."
         q_parent = self._escape_shell_arg(parent)
@@ -459,7 +459,7 @@ class ShellFileOperations(FileOperations):
         return self._exec(script, stdin_data=content)
 
     def _detect_file_line_ending(self, path: str, pre_content: str | None = None) -> str | None:
-        """Detect the dominant line ending of a file on disk."""
+        """检测磁盘上文件的主要换行符。"""
         if pre_content:
             return _detect_line_ending(pre_content)
         head_cmd = f"head -c 4096 {self._escape_shell_arg(path)} 2>/dev/null"
@@ -469,7 +469,7 @@ class ShellFileOperations(FileOperations):
         return _detect_line_ending(head_result.stdout)
 
     def _file_has_bom(self, path: str, pre_content: str | None = None) -> bool:
-        """Whether the file on disk starts with a UTF-8 BOM."""
+        """磁盘上文件是否以 UTF-8 BOM 开头。"""
         if pre_content is not None:
             return _has_bom(pre_content)
         head_cmd = f"head -c 3 {self._escape_shell_arg(path)} 2>/dev/null"
@@ -479,14 +479,14 @@ class ShellFileOperations(FileOperations):
         return _has_bom(head_result.stdout)
 
     def _unified_diff(self, old_content: str, new_content: str, filename: str) -> str:
-        """Generate unified diff between old and new content."""
+        """生成新旧内容的 unified diff。"""
         old_lines = old_content.splitlines(keepends=True)
         new_lines = new_content.splitlines(keepends=True)
         diff = difflib.unified_diff(old_lines, new_lines, fromfile=f"a/{filename}", tofile=f"b/{filename}")
         return "".join(diff)
 
     def read_file(self, path: str, offset: int = 1, limit: int = 500) -> ReadResult:
-        """Read a file with pagination, binary detection, and line numbers."""
+        """带分页、二进制检测与行号的文件读取。"""
         path = self._expand_path(path)
         offset, limit = normalize_read_pagination(offset, limit)
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
@@ -499,10 +499,8 @@ class ShellFileOperations(FileOperations):
         except ValueError:
             file_size = 0
         if file_size > MAX_FILE_SIZE and limit >= 500:
-            # Large file with default-ish pagination — refuse so a
-            # tail-followed read cannot exhaust context.  When limit is
-            # small (<500) the caller is doing a targeted paginated read
-            # (the ``sed`` path is bounded by ``limit`` lines) so we allow it.
+            # 大文件 + 默认分页：拒绝以防「尾巴循环」耗尽上下文。
+            # 当 limit <500 时调用方在做有针对性的分页读取（``sed`` 受 limit 限制），放行。
             return ReadResult(
                 file_size=file_size,
                 error=(f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. Read with offset/limit or use the terminal tool for a paginated view."),
@@ -541,7 +539,7 @@ class ShellFileOperations(FileOperations):
         return ReadResult(content=self._add_line_numbers(read_output, offset), total_lines=total_lines, file_size=file_size, truncated=truncated, hint=hint)
 
     def _suggest_similar_files(self, path: str) -> ReadResult:
-        """Suggest similar files when the requested file is not found."""
+        """请求的文件未找到时推荐相似的文件。"""
         dir_path = os.path.dirname(path) or "."
         filename = os.path.basename(path)
         basename_no_ext = os.path.splitext(filename)[0]
@@ -577,7 +575,7 @@ class ShellFileOperations(FileOperations):
         return ReadResult(error=f"File not found: {path}", similar_files=similar)
 
     def read_file_raw(self, path: str) -> ReadResult:
-        """Read the complete file content as a plain string."""
+        """将完整文件内容读取为纯字符串。"""
         path = self._expand_path(path)
         stat_cmd = f"wc -c < {self._escape_shell_arg(path)} 2>/dev/null"
         stat_result = self._exec(stat_cmd)
@@ -601,11 +599,11 @@ class ShellFileOperations(FileOperations):
         return ReadResult(content=raw_content, file_size=file_size)
 
     def delete_file(self, path: str) -> WriteResult:
-        """Delete a single file."""
+        """删除单个文件。"""
         return self._python_delete(path, recursive=False)
 
     def delete_path(self, path: str, recursive: bool = False) -> WriteResult:
-        """Cross-platform delete that handles files and (with recursive=True) directory trees."""
+        """跨平台删除：文件直接删，目录需 ``recursive=True`` 才删子树。"""
         return self._python_delete(path, recursive=recursive)
 
     def _python_delete(self, path: str, recursive: bool) -> WriteResult:
@@ -637,7 +635,7 @@ class ShellFileOperations(FileOperations):
         return WriteResult()
 
     def move_file(self, src: str, dst: str) -> WriteResult:
-        """Move a file via mv."""
+        """通过 mv 移动文件。"""
         src = self._expand_path(src)
         dst = self._expand_path(dst)
         for p in (src, dst):
@@ -649,7 +647,7 @@ class ShellFileOperations(FileOperations):
         return WriteResult()
 
     def write_file(self, path: str, content: str) -> WriteResult:
-        """Write content to a file, creating parent directories as needed."""
+        """把内容写入文件，必要时创建父目录。"""
         path = self._expand_path(path)
         if is_write_denied(path):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
@@ -686,7 +684,7 @@ class ShellFileOperations(FileOperations):
         return WriteResult(bytes_written=bytes_written, dirs_created=dirs_created, lint=lint_result.to_dict() if lint_result else None)
 
     def patch_replace(self, path: str, old_string: str, new_string: str, replace_all: bool = False) -> PatchResult:
-        """Replace text in a file using fuzzy matching."""
+        """用模糊匹配替换文件中的文本。"""
         path = self._expand_path(path)
         if is_write_denied(path):
             return PatchResult(error=f"Write denied: '{path}' is a protected system/credential file.")
@@ -730,7 +728,7 @@ class ShellFileOperations(FileOperations):
         return PatchResult(success=True, diff=diff, files_modified=[path], lint=lint_result.to_dict() if lint_result else None)
 
     def patch_v4a(self, patch_content: str) -> PatchResult:
-        """Apply a V4A format patch."""
+        """应用 V4A 格式补丁。"""
         operations, parse_error = parse_v4a_patch(patch_content)
         if parse_error:
             return PatchResult(error=f"Failed to parse patch: {parse_error}")
@@ -738,7 +736,7 @@ class ShellFileOperations(FileOperations):
         return result
 
     def _check_lint(self, path: str, content: str | None = None) -> LintResult:
-        """Run syntax check on a file after editing."""
+        """编辑后对文件执行语法检查。"""
         ext = os.path.splitext(path)[1].lower()
         inproc = LINTERS_INPROC.get(ext)
         if inproc is not None:
@@ -765,7 +763,7 @@ class ShellFileOperations(FileOperations):
         return LintResult(success=result.exit_code == 0, output=result.stdout.strip() if result.stdout.strip() else "")
 
     def _check_lint_delta(self, path: str, pre_content: str | None, post_content: str | None = None) -> LintResult:
-        """Run post-write syntax lint with pre-write baseline comparison."""
+        """写后语法 lint，与写前基线对比，仅报告新增错误。"""
         post = self._check_lint(path, content=post_content)
         if post.success or post.skipped:
             return post
@@ -783,7 +781,7 @@ class ShellFileOperations(FileOperations):
     def search(
         self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
     ) -> SearchResult:
-        """Search for content or files."""
+        """搜索内容或文件名。"""
         offset, limit = normalize_search_pagination(offset, limit)
         path = self._expand_path(path)
         check = self._exec(f"test -e {self._escape_shell_arg(path)} && echo exists || echo not_found")
@@ -812,7 +810,7 @@ class ShellFileOperations(FileOperations):
             return self._search_content(pattern, path, file_glob, limit, offset, output_mode, context)
 
     def _search_files(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
-        """Search for files by name pattern (glob-like)."""
+        """按 glob 模式按文件名搜索。"""
         if not pattern.startswith("**/") and "/" not in pattern:
             search_pattern = pattern
         else:
@@ -860,13 +858,12 @@ class ShellFileOperations(FileOperations):
         return SearchResult(files=files, total_count=len(files))
 
     def _search_files_rg(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
-        """Search for files by name using ripgrep's --files mode."""
+        """用 ripgrep 的 --files 模式按文件名搜索。"""
         if "/" not in pattern and not pattern.startswith("*"):
             glob_pattern = f"*{pattern}"
         else:
             glob_pattern = pattern
-        # Fetch one row past the page so "exactly limit results" is not
-        # misreported as truncated (a >= limit check cannot tell).
+        # 多取一条以让「恰好 limit 条」不被错判为截断（仅 >= 检查无法区分）。
         fetch_limit = limit + offset + 1
         cmd_sorted = f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
         result = self._exec(cmd_sorted, timeout=60)
@@ -881,7 +878,7 @@ class ShellFileOperations(FileOperations):
         return SearchResult(files=page, total_count=total, truncated=truncated)
 
     def _search_content(self, pattern: str, path: str, file_glob: str | None, limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Search for content inside files (grep-like)."""
+        """在文件内搜索内容（类似 grep）。"""
         if self._has_command("rg"):
             return self._search_with_rg(pattern, path, file_glob, limit, offset, output_mode, context)
         elif self._has_command("grep"):
@@ -890,7 +887,7 @@ class ShellFileOperations(FileOperations):
             return SearchResult(error="Content search requires ripgrep (rg) or grep. Install ripgrep: https://github.com/BurntSushi/ripgrep#installation")
 
     def _search_with_rg(self, pattern: str, path: str, file_glob: str | None, limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Search using ripgrep."""
+        """使用 ripgrep 搜索。"""
         cmd_parts = ["rg", "--line-number", "--no-heading", "--with-filename"]
         if context > 0:
             cmd_parts.extend(["-C", str(context)])
@@ -944,7 +941,7 @@ class ShellFileOperations(FileOperations):
             return SearchResult(matches=page, total_count=total, truncated=total > offset + limit)
 
     def _search_with_grep(self, pattern: str, path: str, file_glob: str | None, limit: int, offset: int, output_mode: str, context: int) -> SearchResult:
-        """Fallback search using grep."""
+        """使用 grep 兜底搜索。"""
         cmd_parts = ["grep", "-rnH"]
         cmd_parts.append("--exclude-dir='.*'")
         if context > 0:
@@ -1030,7 +1027,7 @@ def _safe_mtime(path: str) -> float | None:
 
 
 class FileStateRegistry:
-    """Process-wide coordinator for cross-agent file edits."""
+    """跨 Agent 文件编辑的进程级协调器。"""
 
     def __init__(self) -> None:
         self._reads: dict[str, dict[str, ReadStamp]] = {}
@@ -1049,7 +1046,7 @@ class FileStateRegistry:
 
     @contextmanager
     def lock_path(self, resolved: str | Path) -> Iterator[None]:
-        """Per-path lock for read→modify→write sections."""
+        """read→modify→write 段的单路径锁。"""
         with self._lock_for(str(resolved)):
             yield
 
@@ -1066,7 +1063,7 @@ class FileStateRegistry:
             _cap_dict(agent_reads, _MAX_PATHS_PER_AGENT)
 
     def note_write(self, task_id: str, resolved: str | Path) -> None:
-        """Record a successful write."""
+        """记录一次成功的写入。"""
         if _disabled():
             return
         resolved_s = str(resolved)
@@ -1081,7 +1078,7 @@ class FileStateRegistry:
             _cap_dict(self._reads[task_id], _MAX_PATHS_PER_AGENT)
 
     def check_stale(self, task_id: str, resolved: str | Path) -> str | None:
-        """Return a model-facing warning if a write here would be stale."""
+        """若此处写入将基于过期状态则返回面向模型的警告。"""
         if _disabled():
             return None
         resolved_s = str(resolved)
@@ -1119,7 +1116,7 @@ class FileStateRegistry:
         return None
 
     def clear(self) -> None:
-        """Reset all state."""
+        """重置所有状态。"""
         with self._state_lock:
             self._reads.clear()
             self._last_writer.clear()
@@ -1220,7 +1217,7 @@ def _hint_uniqueness_error(file_path: str, text: str, hint: str) -> str | None:
 
 
 def _insert_at_hint(text: str, hint: str, insert: str) -> tuple[str, str | None]:
-    """Return (new_text, error). Exactly one of the two is non-None."""
+    """返回 (新文本, 错误)；两者必有且仅有一个非 None。"""
     occurrences = text.count(hint)
     if occurrences == 0:
         return text.rstrip("\n") + "\n" + insert + "\n", None
@@ -1301,7 +1298,7 @@ def parse_v4a_patch(patch_content: str) -> tuple[list[PatchOperation], str | Non
 
 
 def _retry_windowed(content: str, search: str, replace: str, hint: str) -> tuple[str, str | None]:
-    """Retry a fuzzy match in a window centered on *hint*."""
+    """以 hint 为中心的小窗口内重试模糊匹配。"""
     pos = content.find(hint)
     if pos == -1:
         return content, "context hint not found"
@@ -1314,7 +1311,7 @@ def _retry_windowed(content: str, search: str, replace: str, hint: str) -> tuple
 
 
 def _apply_addition_only(content: str, hunk: Hunk) -> tuple[str, str | None]:
-    """Insert a hunk's `+` lines at the hint (or append)."""
+    """在 hint 处插入 hunk 的 ``+`` 行（或追加到末尾）。"""
     insert_text = _hunk_text(hunk, " +")
     if hunk.context_hint:
         return _insert_at_hint(content, hunk.context_hint, insert_text)
@@ -1322,7 +1319,7 @@ def _apply_addition_only(content: str, hunk: Hunk) -> tuple[str, str | None]:
 
 
 def _validate_operations(operations: list[PatchOperation], file_ops: Any) -> list[str]:
-    """Run a simulation pass; return a list of error messages."""
+    """模拟跑一遍，返回错误信息列表。"""
     errors: list[str] = []
     for op in operations:
         if op.operation is OperationType.UPDATE:
@@ -1415,7 +1412,7 @@ _APPLY: dict[OperationType, Any] = {OperationType.ADD: _apply_add, OperationType
 
 
 def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> PatchResult:
-    """Two-phase validate-then-apply."""
+    """两阶段：先校验再应用。"""
     errors = _validate_operations(operations, file_ops)
     if errors:
         return PatchResult(success=False, error="Patch validation failed (no files were modified):\n" + "\n".join(f"  • {e}" for e in errors))

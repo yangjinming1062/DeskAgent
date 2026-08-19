@@ -8,35 +8,26 @@ logger = logging.getLogger(__name__)
 
 
 _MACOS_PERMISSION_PROBES: tuple[tuple[str, str, str], ...] = (
-    # Screen Recording is what gates CGWindowListCreate / ScreenCaptureKit —
-    # the actual APIs cua-driver uses for capture. We probe it by trying to
-    # take a tiny screencapture to a tempfile and reading the bytes back;
-    # when TCC denies Screen Recording, the capture binary returns a
-    # zero-byte file regardless of region size, while a successful capture
-    # produces non-empty PNG data.
+    # Screen Recording 权限门控 CGWindowListCreate / ScreenCaptureKit — 这是 cua-driver 实际使用的截图 API。
+    # 通过尝试截取 1x1 区域到临时文件再读回字节数来探测：TCC 拒绝时无论区域多大都返回 0 字节，成功时返回有效 PNG 数据。
     (
         "screen_recording",
         "Screen Recording",
-        # /tmp path so we don't depend on the user's TMPDIR; output is deleted
-        # immediately after read so we don't litter the system.
+        # 使用 /tmp 路径以避免依赖用户的 TMPDIR；读取后立即删除，避免污染系统
         "do shell script \"screencapture -x -t png -R 0,0,1,1 /tmp/.spiritagent_cu_sr_probe.png && wc -c < /tmp/.spiritagent_cu_sr_probe.png | tr -d ' \\n'\"",
     ),
-    # Accessibility / Automation is what gates CGEventPost and the AX APIs
-    # that cua-driver uses for clicks and key injection. We probe it by
-    # asking System Events for a process count — TCC denies this when
-    # Accessibility is missing.
+    # Accessibility / Automation 权限门控 CGEventPost 以及 cua-driver 用于点击和按键注入的 AX API。
+    # 通过向 System Events 请求进程计数来探测：缺失 Accessibility 时 TCC 会拒绝此调用。
     ("accessibility", "Accessibility", 'tell application "System Events" to count processes'),
 )
 
 
 def get_permission_status() -> dict[str, Any]:
-    """Return permission status for computer_use on the current platform."""
+    """返回当前平台上 computer_use 的权限状态。"""
     if sys.platform != "darwin":
         return {"ok": True, "missing": [], "platform": sys.platform, "details": {}}
 
-    # Probes are independent — run them in parallel so a TCC dialog being
-    # open on one permission doesn't block the other probe (worst case halves
-    # from ~30s to ~15s on a stalled dialog).
+    # 各探测相互独立，并行执行以避免一个权限的 TCC 对话框阻塞另一个（最坏情况下，从 ~30s 减半到 ~15s）
     probes = list(_MACOS_PERMISSION_PROBES)
     with ThreadPoolExecutor(max_workers=len(probes)) as pool:
         results = list(pool.map(lambda p: (p[0], p[1], _probe_macos_permission(p[2])), probes))
@@ -50,7 +41,7 @@ def get_permission_status() -> dict[str, Any]:
         elif result == "denied":
             details[key] = f"missing ({err or 'permission denied'})"
             missing.append(label)
-        else:  # "pending" — TCC dialog likely still open, user mid-grant
+        else:  # "pending" — TCC 对话框可能仍开着，用户授权中
             details[key] = f"pending ({err or 'probe timed out'})"
             pending.append(label)
 
@@ -58,26 +49,22 @@ def get_permission_status() -> dict[str, Any]:
 
 
 def _probe_macos_permission(osascript: str) -> tuple[str, str | None]:
-    """Run a tiny AppleScript and return one of ``"ok" / "denied" / "pending" / "unknown"``.
+    """运行一小段 AppleScript，返回 "ok" / "denied" / "pending" / "unknown" 之一。
 
-    - ``"ok"`` — exit 0, permission granted
-    - ``"denied"`` — explicit TCC rejection (matched error strings)
-    - ``"pending"`` — probe timed out, very likely because a TCC dialog is
-      open and the user is mid-grant; we deliberately don't downgrade to
-      ``"denied"`` because the dialog being open is itself progress.
-    - ``"unknown"`` — failed without matching a TCC rejection signature;
-      callers bucket it with ``pending`` rather than claiming denial.
+    - "ok" — exit 0，权限已授予
+    - "denied" — 显式 TCC 拒绝（匹配错误字符串）
+    - "pending" — 探测超时，很可能是 TCC 对话框开着、用户正在授权；故意不降级为 "denied"，因为对话框开着本身就是进展
+    - "unknown" — 失败但未匹配到 TCC 拒绝特征；调用方将其归入 pending，而非声称被拒
 
-    ``osascript`` ships with every macOS install — no extra dependency. The
-    TCC framework returns specific error strings we pattern-match against
-    ("not authorized", "operation not permitted") on rejection.
+    osascript 是 macOS 自带 — 无额外依赖。TCC 框架在被拒绝时返回特定错误字符串，
+    我们按模式匹配（"not authorized"、"operation not permitted" 等）。
     """
     try:
         result = subprocess.run(
             ["osascript", "-e", osascript],
             capture_output=True,
             text=True,
-            timeout=15,  # generous — user may be reading the TCC warning text
+            timeout=15,  # 留宽裕一些 — 用户可能正在阅读 TCC 警告文本
             check=False,
         )
     except FileNotFoundError:

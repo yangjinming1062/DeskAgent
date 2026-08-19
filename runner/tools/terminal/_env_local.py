@@ -31,8 +31,7 @@ def _path_env_key(run_env: dict) -> str | None:
 
 
 def _make_run_env(env: dict) -> dict:
-    """Build the env for a fresh subprocess. Starts from the runner's own
-    environment (caller-controlled) and overlays ``env``."""
+    """组装子进程环境：以 runner 自身环境为基底（调用方可控），叠加 `env` 覆盖。"""
     run_env = {k: str(v) if v is not None else "" for k, v in (os.environ | env).items()}
     if path_key := _path_env_key(run_env):
         run_env[path_key] = append_sane_path_entries(run_env.get(path_key, ""))
@@ -71,6 +70,8 @@ def _prepend_shell_init(cmd_string: str, files: list[str]) -> str:
 
 
 class LocalEnvironment(BaseEnvironment):
+    """在宿主机 shell 中直接执行命令的本地环境：复用宿主的 PATH/HOME，仅解析 cwd 与登录初始化文件。"""
+
     def __init__(self, cwd: str = "", timeout: int = 60, env: dict | None = None, persistent: bool = False) -> None:
         super().__init__(cwd=os.path.expanduser(cwd) if cwd else os.getcwd(), timeout=timeout, env=env)
         self._persistent = persistent
@@ -139,12 +140,10 @@ class LocalEnvironment(BaseEnvironment):
 
         try:
             if IS_WINDOWS:
-                # Mirror POSIX: soft-kill (taskkill /T) → wait → force-kill.
-                # kill_tree(force=False) returns True when taskkill /T
-                # exits 0, but that only means the signal was *delivered*,
-                # not that the target process actually exited — a process
-                # that handles CTRL_BREAK_EVENT keeps running.  So we
-                # always wait and escalate if the process survives.
+                # 对称 POSIX：soft-kill (taskkill /T) → 等待 → force-kill。
+                # kill_tree(force=False) 在 taskkill /T 退出 0 时返回 True，但那只代表信号已 *送达*，
+                # 不代表目标进程实际退出——能处理 CTRL_BREAK_EVENT 的进程会继续运行。
+                # 因此无论返回如何都等待，超时再升级。
                 kill_tree(proc.pid, force=False)
                 try:
                     proc.wait(timeout=1.0)

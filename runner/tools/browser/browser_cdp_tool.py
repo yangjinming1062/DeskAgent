@@ -66,6 +66,7 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
 
 
 def _run_async(coro: Any) -> Any:
+    """在线程里跑独立事件循环的协程——因为已经在跑 asyncio 循环时不能直接 asyncio.run。"""
     try:
         if asyncio.get_running_loop().is_running():
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -143,6 +144,7 @@ def _browser_cdp_via_supervisor(task_id: str, frame_id: str, method: str, params
 def browser_cdp(
     method: str, params: dict[str, Any] | None = None, target_id: str | None = None, frame_id: str | None = None, timeout: float = 30.0, task_id: str | None = None
 ) -> str:
+    """转发一条原生 CDP 命令；frame_id 走 supervisor 子会话，否则用当前 CDP 端点的 WebSocket。"""
     if frame_id:
         return _browser_cdp_via_supervisor(task_id or "default", frame_id, method, params, timeout)
     if not isinstance(method, str) or not method:

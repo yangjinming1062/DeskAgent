@@ -27,11 +27,10 @@ def _resolve_download_timeout() -> float:
 
 
 def resolve_vision_params(default_timeout: float = 120.0, default_temperature: float = 0.1) -> tuple[float, float]:
-    """Read ``auxiliary.vision.timeout`` and ``auxiliary.vision.temperature``.
+    """读取 auxiliary.vision.timeout 与 auxiliary.vision.temperature。
 
-    Falls back to ``(default_timeout, default_temperature)`` on any error or
-    missing key. Callers that need a higher floor (e.g. local models) should
-    clamp ``timeout`` to their minimum after the call.
+    任何错误或键缺失时回退到 (default_timeout, default_temperature)。
+    需要更高下限的调用方（例如本地模型）应在调用后将 timeout 夹到自己的最小值。
     """
     try:
         vc = cfg_get(load_config(), "auxiliary", "vision", default={})
@@ -86,20 +85,14 @@ def _is_retryable_download_error(error: Exception) -> bool:
         if status is None:
             return False
         return status == 429 or status >= 500
-    # httpx transport errors (ConnectError, RemoteProtocolError, ReadTimeout,
-    # etc.) — these are transient and worth retrying.
+    # httpx 传输层错误（ConnectError、RemoteProtocolError、ReadTimeout 等）— 瞬时错误，值得重试
     if isinstance(error, (httpx.TransportError, httpx.TimeoutException, ConnectionError, OSError)):
         return True
     return False
 
 
 async def _download_media(url: str, destination: Path, *, accept: str, max_bytes: int, timeout: float, media_label: str, max_retries: int = 3) -> Path:
-    """Download a media file to ``destination`` with size cap, redirect
-    safety, and retryable-error handling. The vision tool is the sole
-    caller today; ``accept`` / ``max_bytes`` / ``timeout`` / ``media_label``
-    remain parameterised so a future media tool can reuse the helper
-    without copying the size-cap / redirect-guard machinery.
-    """
+    """下载媒体到 destination，含大小上限、重定向安全检查与可重试错误处理。目前 vision 工具是唯一调用方；accept / max_bytes / timeout / media_label 仍参数化以便未来媒体工具复用，无需复制大小上限/重定向防护机制。"""
 
     def _write_destination(body: bytearray) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -175,7 +168,7 @@ def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_
     estimated_b64 = (file_size * 4) // 3 + 100
     needs_resize = estimated_b64 > max_base64_bytes
 
-    # Single Image.open() — reuse for both dimension check and resize.
+    # 单次 Image.open() — 同时复用于尺寸检查和缩放
     img = None
     if not needs_resize or max_dimension is not None:
         try:
@@ -191,7 +184,7 @@ def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_
         data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
         if len(data_url) <= max_base64_bytes:
             return data_url
-        # Re-open for resize since base64 exceeded despite file size estimate.
+        # base64 仍超过限制（与文件大小估算不一致），重新打开以执行缩放
         try:
             img = Image.open(image_path)
         except Exception as exc:
@@ -214,10 +207,7 @@ def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_
 
     quality_steps = (85, 70, 50) if pil_format == "JPEG" else (None)
     prev_dims = (img.width, img.height)
-    # Track the smallest candidate seen so we can return the best effort
-    # when no iteration actually meets `max_base64_bytes` — the previous
-    # fallback returned the ORIGINAL-size base64, which is the opposite of
-    # what the caller wants when resizing failed to fit.
+    # 跟踪见到的最小候选，以便在没有任何一次迭代满足 max_base64_bytes 时仍能返回最佳结果 — 旧版兜底返回的是原尺寸 base64，与调用方在缩放失败时想要的相反
     best_candidate: str | None = None
 
     for attempt in range(5):
@@ -240,7 +230,5 @@ def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_
                 best_candidate = candidate
             if len(candidate) <= max_base64_bytes and (max_dimension is None or max(img.width, img.height) <= max_dimension):
                 return candidate
-    # No iteration fit. Return the smallest candidate we produced, NOT
-    # the original (the caller has already decided the original is too
-    # big — returning it would defeat the whole resize chain).
+    # 没有一次迭代达成目标。返回我们产出的最小候选，而不是原始尺寸 — 调用方已经认定原图过大，再返回原图会让整条缩放链路失去意义
     return best_candidate or _image_to_base64_data_url(image_path, mime_type=mime_type)

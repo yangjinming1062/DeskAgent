@@ -45,24 +45,18 @@ logger = logging.getLogger(__name__)
 
 _EXPECTED_WRITE_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS}
 
-# We're model-agnostic so we can't count tokens; characters are a safe proxy.
-# 100K chars ≈ 25–35K tokens across typical tokenisers.  Files larger than
-# this in a single read are a context-window hazard — the model should use
-# offset+limit to read the relevant section.
+# 我们与 model 无关，无法直接计 token；字符数是稳妥的代理。
+# 100K 字符 ≈ 典型分词器下的 25–35K token。单次读取超过该值会构成上下文窗口
+# 隐患——模型应使用 offset+limit 读取相关区段。
 #
-# Configurable via the in-memory config (pushed by Desktop):  file_read_max_chars: 200000
+# 可由 Desktop 推送的内存配置覆盖：file_read_max_chars: 200000
 
 _DEFAULT_MAX_READ_CHARS = 100_000
 _max_read_chars_cached: int | None = None
 
 
 def _get_max_read_chars() -> int:
-    """Return the configured max characters per file read.
-
-    Reads ``file_read_max_chars`` from the in-memory config on first call,
-    caches the result for the lifetime of the process.  Falls back to the
-    built-in default if the config is missing or invalid.
-    """
+    """返回每次文件读取允许的最大字符数（带进程内缓存）。"""
     global _max_read_chars_cached
     if _max_read_chars_cached is not None:
         return _max_read_chars_cached
@@ -79,17 +73,15 @@ def _get_max_read_chars() -> int:
 
 
 def reset_max_read_chars_cache() -> None:
-    """Clear the cached file_read_max_chars so the next call re-reads the config."""
+    """清除 file_read_max_chars 缓存，下次调用重新读配置。"""
     global _max_read_chars_cached
     _max_read_chars_cached = None
 
 
-# If the total file size exceeds this AND the caller didn't specify a narrow
-# range (limit <= 200), we include a hint encouraging targeted reads.
+# 若文件总大小超过该阈值且调用方未指定窄范围（limit <= 200），提示走精确读取。
 _LARGE_FILE_HINT_BYTES = 512_000  # 512 KB
 
-# Device path blocklist — reading these hangs the process (infinite output
-# or blocking on input).  Checked by path only (no I/O).
+# 设备路径黑名单——读取它们会让进程挂起（无限输出或阻塞输入）。仅按路径判定（不发起 I/O）。
 
 _BLOCKED_DEVICE_PATHS = frozenset({
     # Infinite output — never reach EOF
@@ -109,34 +101,29 @@ _BLOCKED_DEVICE_PATHS = frozenset({
 
 
 def _resolve_path(filepath: str, task_id: str = "default") -> Path:
-    """Resolve a path relative to TERMINAL_CWD (the worktree base directory)
-    instead of the main repository root.
-    """
+    """把路径解析到 TERMINAL_CWD（worktree 基目录）而非主仓库根。"""
     return _resolve_path_for_task(filepath, task_id)
 
 
-# Sentinel ``TERMINAL_CWD`` values that mean "not configured", NOT a literal
-# directory to resolve against. A stale config / .env commonly leaves the
-# literal "." here; "auto"/"cwd" are setup-wizard placeholders. Treating any of
-# these as a real relative base silently anchors edits to the agent PROCESS cwd
-# (e.g. the main repo while a worktree session is active), routing writes to the
-# wrong checkout. The gateway sanitizes the same set at import time
-# (gateway/run.py); the file/terminal-tool layer must do likewise so CLI
-# sessions get the same protection. See references/worktree-cwd-discipline.md.
+# 哨兵 ``TERMINAL_CWD`` 值代表「未配置」，不是字面目录基准。过期配置 / .env
+# 常留下字面 ``"."``；``auto``/``cwd`` 是设置向导的占位。若把任一当作真实
+# 相对基准，会静默把编辑锚到 Agent 进程 cwd（如 worktree 会话却写到主仓库），
+# 写入错误的检出点。gateway 在 import 时（gateway/run.py）也消毒同一集合；
+# 文件/终端工具层必须同步处理，让 CLI 会话获得同样保护。
+# 见 references/worktree-cwd-discipline.md。
 _TERMINAL_CWD_SENTINELS = frozenset({"", ".", "./", "auto", "cwd"})
 
 
 def _configured_terminal_cwd() -> str | None:
-    """Return ``$TERMINAL_CWD`` only when it names a real directory anchor.
+    """仅当 ``$TERMINAL_CWD`` 指向真实目录锚点时才返回它。
 
-    Sentinel values (see ``_TERMINAL_CWD_SENTINELS``) and relative paths are
-    rejected — a relative anchor is meaningless without knowing which cwd it is
-    relative to, which is exactly the ambiguity that misroutes worktree edits.
-    Only an absolute, sentinel-free value is honored.
+    哨兵值（见 ``_TERMINAL_CWD_SENTINELS``）与相对路径都被拒绝——相对锚点无法
+    独立确定解析基准，正是导致 worktree 编辑误路由的歧义根源。仅接受绝对、
+    非哨兵的值。
     """
     raw = (os.environ.get("TERMINAL_CWD") or "").strip()
-    # TERMINAL_CWD is a runtime parameter passed by Desktop via WebSocket.
-    # It anchors file operations to the user's active worktree.
+    # TERMINAL_CWD 是 Desktop 通过 WebSocket 传入的运行时参数，
+    # 用于把文件操作锚定到其当前活动的 worktree。
     if raw.lower() in _TERMINAL_CWD_SENTINELS:
         return None
     expanded = os.path.expanduser(raw)
@@ -146,7 +133,7 @@ def _configured_terminal_cwd() -> str | None:
 
 
 def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
-    """Return the task's live terminal cwd for bookkeeping when available."""
+    """返回任务实时终端 cwd（如可用），仅用于记账。"""
     try:
         container_key = resolve_container_task_id(task_id)
     except Exception:
@@ -172,16 +159,13 @@ def _get_live_tracking_cwd(task_id: str = "default") -> str | None:
 
 
 def _authoritative_workspace_root(task_id: str = "default") -> str | None:
-    """Best-effort absolute workspace root for divergence checks.
+    """尽力给出绝对工作区根，用于工作树漂移检查。
 
-    Prefers the live terminal cwd (the directory the agent is actually working
-    in). When no terminal command has run yet — so the live registry is empty —
-    falls back to a sentinel-free absolute ``$TERMINAL_CWD``. This is what lets
-    a worktree session warn about (and resolve into) the worktree from the very
-    first ``write_file``/``patch``, before any ``cd`` has populated the live cwd.
+    优先选实时终端 cwd（Agent 实际所在目录）；终端命令还没跑、live 注册表
+    为空时，回退到不含哨兵的绝对 ``$TERMINAL_CWD``。这样 worktree 会话在
+    第一次写入之前就能警告/解析到正确 worktree。
 
-    Returns ``None`` only when there is genuinely no reliable anchor, in which
-    case callers fall back to the process cwd.
+    仅当确实没有可靠锚点时才返回 None，调用方此时退回到进程 cwd。
     """
     live = _get_live_tracking_cwd(task_id)
     if live:
@@ -190,42 +174,36 @@ def _authoritative_workspace_root(task_id: str = "default") -> str | None:
 
 
 def _resolve_base_dir(task_id: str = "default") -> Path:
-    """Return the ABSOLUTE base directory for resolving relative paths.
+    """返回用于解析相对路径的 ABSOLUTE 基目录。
 
-    Resolution order:
-      1. The task's live terminal cwd (the directory the agent is actually
-         working in — e.g. a git worktree). Authoritative when known.
-      2. A sentinel-free, absolute ``$TERMINAL_CWD`` (the worktree path set by
-         ``cli.py``/``main.py`` for ``-w`` sessions). Used even before any
-         terminal command has populated the live cwd registry.
-      3. The process cwd.
+    解析顺序：
+      1. 任务实时终端 cwd（Agent 实际工作目录，如 git worktree），有则权威。
+      2. 不含哨兵的绝对 ``$TERMINAL_CWD``（``cli.py``/``main.py`` 给 ``-w`` 会话
+         设置的 worktree 路径），用于终端注册表尚未填入的早期阶段。
+      3. 进程 cwd。
 
-    The returned base is ALWAYS absolute. This is the core invariant that
-    prevents the worktree-cwd divergence bug: a relative or sentinel
-    ``TERMINAL_CWD`` (commonly the literal ``"."`` from a stale config) is
-    meaningless as a resolution anchor — left to ``Path.resolve()`` it silently
-    resolves against whatever the agent PROCESS cwd happens to be (e.g. the main
-    repo while the terminal is in a worktree), routing edits to the wrong
-    checkout. We therefore reject sentinel/relative ``TERMINAL_CWD`` values
-    outright (rather than anchoring them to the process cwd) and fall through to
-    the process cwd only as a last resort, deterministically.
+    返回值始终为绝对路径。这是防止 worktree-cwd 漂移的核心不变量：相对或
+    哨兵形式的 ``TERMINAL_CWD``（常因过期配置保留字面 ``"."``）无法作为
+    解析锚点——放任 ``Path.resolve()`` 会静默解析到 Agent 进程 cwd（如终端
+    实际在 worktree，但相对解析却落到主仓库），导致写入错误检出点。因此
+    这里直接拒绝哨兵/相对值（而非回退到进程 cwd 锚定），仅作为最终兜底
+    才退回到进程 cwd。
     """
     root = _authoritative_workspace_root(task_id)
     base = Path(root).expanduser() if root else Path(os.getcwd())
     if not base.is_absolute():
-        # Last-resort anchoring: a live cwd should already be absolute, but if a
-        # terminal backend ever reports a relative cwd, anchor it to the process
-        # cwd once, here, so the result no longer depends on cwd at resolve().
+        # 兜底锚定：实时 cwd 应当已是绝对的；若终端后端意外返回相对 cwd，
+        # 在此处一次性挂到进程 cwd 上，结果就不再依赖 resolve() 时的 cwd。
         base = Path(os.getcwd()) / base
     return base.resolve()
 
 
 @functools.lru_cache(maxsize=1024)
 def _resolve_absolute_path(filepath: str) -> Path:
-    """Cached resolve for absolute paths (no cwd dependency).
+    """缓存的绝对路径解析（与 cwd 无关）。
 
-    Only call with absolute paths — a relative path would resolve against
-    cwd and the cwd-dependent result would be cached permanently.
+    仅可传入绝对路径——若传入相对路径，会按调用时的 cwd 解析，并把依赖
+    cwd 的结果永久缓存下来。
     """
     filepath = msys_to_windows_path(filepath) if IS_WINDOWS else filepath
     p = Path(filepath).expanduser()
@@ -234,20 +212,15 @@ def _resolve_absolute_path(filepath: str) -> Path:
 
 
 def _resolve_path_for_task(filepath: str, task_id: str = "default") -> Path:
-    """Resolve *filepath* against the task's absolute base directory.
+    """把 *filepath* 解析到任务的绝对基目录下。
 
-    See :func:`_resolve_base_dir` for how the base is chosen. Absolute input
-    paths are returned resolved-but-unanchored (cached). Relative paths are
-    resolved against the live terminal cwd and are NOT cached because a
-    mid-session ``cd`` would return a stale path from the cache.
+    绝对输入路径走 LRU 缓存（与 cwd 无关）；相对路径按实时终端 cwd 解析
+    且**不缓存**——中途 ``cd`` 后再走缓存会拿到过期路径。
 
-    On Windows, an agent-sourced path may arrive as a MSYS-style
-    ``/c/Users/foo`` or ``/mnt/c/...`` form (bash sessions, Git Bash, WSL
-    paths leaked into a tool call). Translate those to native ``C:\\...``
-    before ``Path.resolve()`` so the read/write/patch paths actually land
-    on the file the agent thinks they do — without this, ``Path.resolve()``
-    treats ``/c/Users/foo`` as a literal path under the runner's cwd and
-    the user sees a confusing "file not found".
+    在 Windows 上 Agent 传入的路径常为 MSYS 风格（``/c/Users/foo``、
+    ``/mnt/c/...``，来自 bash / Git Bash / WSL 透传）。在 ``Path.resolve()``
+    之前需先转回原生 ``C:\\...``，否则 ``/c/Users/foo`` 会被当作 runner
+    cwd 下的字面路径处理，用户得到莫名其妙的「文件未找到」。
     """
     filepath = msys_to_windows_path(filepath) if IS_WINDOWS else filepath
     p = Path(filepath).expanduser()
@@ -257,18 +230,14 @@ def _resolve_path_for_task(filepath: str, task_id: str = "default") -> Path:
 
 
 def _path_resolution_warning(filepath: str, resolved: Path, task_id: str = "default") -> str | None:
-    """Warn when a relative path resolved OUTSIDE the task's workspace root.
+    """当相对路径解析到工作区根之外时给出警告（worktree-cwd 漂移）。
 
-    Surfaces the worktree-cwd divergence the moment it would matter: if the
-    agent passes a relative path but it resolves under a directory that is not
-    the workspace root (i.e. the edit is about to land in a different checkout
-    than the one the agent is working in), return a message naming the absolute
-    target. ``None`` when the path is absolute, the base is unknown, or the
-    resolved path is correctly under the workspace root.
+    一旦 Agent 给的相对路径解到了工作区根之外的目录（即即将写入与 Agent
+    实际工作目录不同的检出点），立刻返回绝对目标提示。绝对路径、未知根、
+    或正常落在工作区根内时返回 None。
 
-    The workspace root is the live terminal cwd when known, else a sentinel-free
-    absolute ``$TERMINAL_CWD`` — so a worktree session whose terminal registry
-    is still empty (no ``cd`` run yet) is warned on the very first write.
+    工作区根取实时终端 cwd；未知时退回到不含哨兵的绝对 ``$TERMINAL_CWD``——
+    这样终端注册表仍为空（未 ``cd``）的 worktree 会话能在第一次写入时就被警告。
     """
     try:
         if Path(filepath).expanduser().is_absolute():
@@ -293,27 +262,26 @@ def _path_resolution_warning(filepath: str, resolved: Path, task_id: str = "defa
         return None
 
 
-def _is_blocked_device_path(path: str) -> bool:
-    """Return True for concrete device/fd paths that can hang reads."""
+def _is_blocked_device_path(path: str) -> str | bool:
+    """返回 True 表示该具体设备/fd 路径会卡住读。"""
     normalized = os.path.expanduser(path)
     if normalized in _BLOCKED_DEVICE_PATHS:
         return True
     # /proc/self/fd/0-2 and /proc/<pid>/fd/0-2 are Linux aliases for stdio
     if normalized.startswith("/proc/") and normalized.endswith(("/fd/0", "/fd/1", "/fd/2")):
         return True
-    # /proc/*/environ, /proc/*/cmdline, /proc/*/maps can leak secrets,
-    # command-line args, and memory layout from the host process
+    # /proc/*/environ、/proc/*/cmdline、/proc/*/maps 可能泄露宿主进程的
+    # 凭据、命令行参数与内存布局。
     if normalized.startswith("/proc/") and normalized.endswith(("/environ", "/cmdline", "/maps")):
         return True
     return False
 
 
 def _is_blocked_device(filepath: str) -> bool:
-    """Return True if the path would hang the process (infinite output or blocking input).
+    """若路径会让进程挂起（无限输出或阻塞输入）则返回 True。
 
-    Check the literal path first so aliases like /dev/stdin are caught before
-    they resolve to terminal-specific paths. Then check the resolved path so a
-    workspace symlink to /dev/zero cannot bypass the guard.
+    先按字面路径检查，能在解析到终端特定路径之前捕获 ``/dev/stdin`` 等别名；
+    再检查解析后的路径，避免工作区里指向 ``/dev/zero`` 的符号链接绕过守卫。
     """
     normalized = os.path.expanduser(filepath)
     if _is_blocked_device_path(normalized):
@@ -327,20 +295,16 @@ def _is_blocked_device(filepath: str) -> bool:
     return False
 
 
-# Paths that file tools should refuse to write to without going through the
-# terminal tool's approval system.  These match prefixes after os.path.realpath.
-# On Windows, the matching is case-insensitive and slash-insensitive (see
-# ``_check_sensitive_path``), so each entry is the canonical lowercase form
-# with forward slashes — the suffix "/" is intentional so ``C:/Windows``
-# does NOT match the prefix meant for ``C:/Windows/System32``. The Windows
-# entries are sourced from ``utils.file_safety.get_windows_sensitive_prefixes``
-# so the file-tool gate and the terminal denylist stay in sync.
+# 文件工具应拒绝写入、必须经终端工具审批系统的路径。按 ``os.path.realpath``
+# 后的前缀匹配。Windows 上匹配大小写不敏感、斜杠不敏感（见 ``_check_sensitive_path``），
+# 每项用规范小写 + 正斜杠——保留尾部 ``/`` 是故意的，让 ``C:/Windows`` 不会
+# 命中本意仅给 ``C:/Windows/System32`` 的前缀。Windows 条目源自
+# ``utils.file_safety.get_windows_sensitive_prefixes``，保证文件工具门禁与
+# 终端黑名单同步。
 _SENSITIVE_PATH_PREFIXES = ("/etc/", "/boot/", "/usr/lib/systemd/", "/private/etc/", "/private/var/", *get_windows_sensitive_prefixes())
-# Per-user AppData / NTUSER.DAT — anchored to the logged-in user's home
-# directory so a workspace folder that happens to contain
-# ``appdata/roaming/microsoft/`` is NOT falsely blocked.  Without the
-# anchor any Windows project at ``C:\Users\me\Projects\myapp\appdata\...``
-# would be write-refused.
+# Per-user AppData / NTUSER.DAT——锚到当前登录用户的 home，避免恰好含
+# ``appdata/roaming/microsoft/`` 的工作区目录被误拒。无锚定的话，任何
+# ``C:\Users\me\Projects\myapp\appdata\...`` 形式的 Windows 工程都会被拒写。
 _SENSITIVE_USER_PREFIXES: tuple[str, ...] = ()
 _SENSITIVE_USER_EXACTS: tuple[str, ...] = ()
 if IS_WINDOWS:
@@ -375,13 +339,7 @@ _spiritagent_config_resolved_loaded = False
 
 
 def _get_spiritagent_config_resolved() -> str | None:
-    """Return the resolved absolute path of the SpiritAgent settings file (cached).
-
-    The Desktop persists runner config as ``desktop-settings.json`` in
-    ``$SPIRITAGENT_HOME``; protecting it from agent writes prevents a malicious
-    or prompt-injected agent from silently corrupting security-sensitive
-    configuration.
-    """
+    """返回 SpiritAgent 设置文件的解析后绝对路径（带缓存）。"""
     global _spiritagent_config_resolved, _spiritagent_config_resolved_loaded
     if _spiritagent_config_resolved_loaded:
         return _spiritagent_config_resolved
@@ -397,18 +355,19 @@ def _get_spiritagent_config_resolved() -> str | None:
 
 
 def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None:
-    """Return an error message if the path targets a sensitive system location."""
+    """若路径指向敏感系统位置则返回错误信息。"""
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):
         resolved = filepath
     # Apply the same MSYS translation that _resolve_path_for_task uses so
     # the fallback path also matches the canonical prefix list on Windows.
+    # 与 _resolve_path_for_task 同样应用 MSYS 翻译，使 fallback 路径也能
+    # 在 Windows 上匹配规范前缀表。
     norm_input = msys_to_windows_path(filepath) if IS_WINDOWS else filepath
     normalized = os.path.normpath(os.path.expanduser(norm_input))
-    # On Windows, agent paths come in many forms (`C:\Windows\System32`,
-    # `c:/windows/system32/`, `C:/Windows/System32\\foo`) — match all of
-    # them against the canonical lowercase + forward-slash prefix list.
+    # Windows 下 Agent 传入路径形式各异（`C:\Windows\System32`、`c:/windows/system32/`、
+    # `C:/Windows/System32\\foo`），需统一与规范的小写 + 正斜杠前缀表比对。
     if IS_WINDOWS:
         resolved = resolved.replace("\\", "/").lower()
         normalized = normalized.replace("\\", "/").lower()
@@ -439,7 +398,7 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
-    """Return the container-side SpiritAgent mirror prefix for Docker file tools."""
+    """返回 Docker 文件工具对应的容器内 SpiritAgent 镜像前缀。"""
     try:
         container_key = resolve_container_task_id(task_id)
     except Exception:
@@ -464,41 +423,26 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
 
 
 def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | None:
-    """Return a soft-guard warning when ``filepath`` lands in another SpiritAgent
-    profile's scoped area, a host-side sandbox-mirror of authoritative profile
-    state, or the Docker container's sandbox mirror of SpiritAgent state.
+    """``filepath`` 落到另一个 SpiritAgent profile 作用域、宿主侧 sandbox 镜像
+    或容器内 sandbox 镜像时给出软守卫警告。三类检测依次执行。
 
-    Three detectors run in order:
+    * cross-profile：命中其他 profile 的 skills/plugins/cron/memories 目录。
+      策略：仅软守卫。Agent 可在用户明确指示后通过写工具的
+      ``cross_profile=True`` 绕过，与另两类共用同一种逃逸口。默认不强制
+      阻断，因为终端工具无强约束（OS 用户本就到处可写），硬阻断会给人
+      虚假的安全感。
+    * sandbox-mirror (#32049)：命中非本地终端后端（Docker、Daytona 等）
+      产生的 ``…/sandboxes/<backend>/<task>/home/.spiritagent/…`` 镜像，
+      宿主 SpiritAgent 进程从不读该镜像，写入等于无效。
+    * container-mirror (#32049 后续)：Docker 容器内 bind-mount 的 home
+      剥掉了 ``sandboxes/`` 前缀，Agent 看到的是普通 ``/root/.spiritagent/…``。
 
-    * cross-profile — writes that hit another profile's
-      ``skills/plugins/cron/memories`` directory. Policy: soft guard only.
-      The agent CAN opt-in by passing ``cross_profile=True`` to its write
-      tool after explicit user direction; this matches the existing override
-      surface for the other two detectors, so all three cross-scope writes
-      share the same escape hatch. We do NOT block by default because the
-      agent's host OS user can already write anywhere (the terminal tool
-      has no enforcement), so a hard block here would give false confidence.
-    * sandbox-mirror (#32049) — writes that hit the
-      ``…/sandboxes/<backend>/<task>/home/.spiritagent/…`` mirror created by a
-      non-local terminal backend (Docker, Daytona, etc.), where the host
-      SpiritAgent process never reads the mirror and the authoritative file is
-      left untouched.
-    * container-mirror (#32049 follow-up) — writes from inside a Docker
-      container whose bind-mounted home strips the ``sandboxes/`` prefix, so
-      the agent sees a plain ``/root/.spiritagent/…`` path.
-
-    Returns ``None`` when the write is in-scope or outside SpiritAgent scope.
-    All detectors are soft guards — the agent can override any by
-    passing ``cross_profile=True`` to its write tool after explicit user
-    direction. Defense-in-depth, NOT a security boundary — the terminal
-    tool runs as the same OS user and can write any of these paths
-    directly. See ``agent/file_safety.classify_cross_profile_target``,
-    ``classify_sandbox_mirror_target`` and ``classify_container_mirror_target``
-    for the detection rules.
+    写入在作用域内或不在 SpiritAgent 范围时返回 None。三类检测都是软守卫——
+    终端工具以同一 OS 用户运行，可以直接写这些路径，因此这只是纵深防御，
+    不是安全边界。检测规则见 ``agent/file_safety.classify_*``。
     """
-    # Resolve via the task's cwd so a relative ``skills/foo/SKILL.md``
-    # in a session that cd'd into ``~/.spiritagent/profiles/other/`` is
-    # classified against the right base.
+    # 通过任务 cwd 解析，使会话内 ``cd`` 到 ``~/.spiritagent/profiles/other/``
+    # 后的相对路径（如 ``skills/foo/SKILL.md``）能基于正确基准分类。
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):
@@ -516,7 +460,7 @@ def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | 
 
 
 def _is_expected_write_exception(exc: Exception) -> bool:
-    """Return True for expected write denials that should not hit error logs."""
+    """返回 True 表示是可预期的写入拒绝（不应记入 error 日志）。"""
     if isinstance(exc, PermissionError):
         return True
     if isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS:
@@ -527,35 +471,30 @@ def _is_expected_write_exception(exc: Exception) -> bool:
 _file_ops_lock = threading.Lock()
 _file_ops_cache: dict = {}
 
-# Track files read per task to detect re-read loops and deduplicate reads.
-# Per task_id we store:
-#   "last_key":     the key of the most recent read/search call (or None)
-#   "consecutive":  how many times that exact call has been repeated in a row
-#   "read_history": set of (path, offset, limit) tuples for get_read_files_summary
-#   "dedup":        dict mapping (resolved_path, offset, limit) → mtime float
-#                   Used to skip re-reads of unchanged files.  Reset on
-#                   context compression (the original content is summarised
-#                   away so the model needs the full content again).
-#   "read_timestamps": dict mapping resolved_path → modification-time float
-#                      recorded when the file was last read (or written) by
-#                      this task.  Used by write_file and patch to detect
-#                      external changes between the agent's read and write.
-
-#                      by the same task don't trigger false warnings.
+# 记录每个任务的读取，用于检测重读循环与去重。每个 task_id 存储：
+#   "last_key":     最近一次 read/search 调用的 key（或 None）
+#   "consecutive":  完全相同的调用连续重复的次数
+#   "read_history": (path, offset, limit) 元组集合，供 get_read_files_summary 使用
+#   "dedup":        (resolved_path, offset, limit) → mtime 浮点 的字典，
+#                   用于跳过未变化文件的重读。上下文压缩时重置（原内容被
+#                   摘要化掉，模型需要再拿到完整内容）。
+#   "read_timestamps": resolved_path → mtime 浮点的字典，记录本任务最近
+#                      一次读/写该文件的时间。write_file 与 patch 据此检测
+#                      Agent 读后发生的外部修改。
+#
+#                   这样同任务的连续编辑不会触发误报陈旧警告。
 _read_tracker_lock = threading.Lock()
 _read_tracker: dict = {}
 
-# Track consecutive patch failures per (task_id, resolved_path).  Used to
-# escalate the hint when the model repeatedly fails to patch the same file
-# (typical cause: stale view of file contents, ambiguous old_string, or
-# the file was modified externally between the agent's read and patch
-# attempt).  Reset on a successful patch to that path.
+# 跟踪每个 (task_id, resolved_path) 的连续补丁失败。模型反复对同一文件
+# 打补丁失败时用于逐步增强提示（典型原因：文件视图过期、old_string 歧义、
+# 或 Agent 读后到打补丁之间文件被外部修改）。同一路径打补丁成功后重置。
 _patch_failure_lock = threading.Lock()
 _patch_failure_tracker: dict = {}  # {task_id: {resolved_path: count}}
 
 
 def _record_patch_failure(task_id: str, resolved_path: str) -> int:
-    """Increment and return the consecutive-failure count for this path."""
+    """递增并返回该路径的连续失败计数。"""
     with _patch_failure_lock:
         task_failures = _patch_failure_tracker.setdefault(task_id, {})
         # Cap dict size per task to avoid unbounded growth in long sessions
@@ -572,7 +511,7 @@ def _record_patch_failure(task_id: str, resolved_path: str) -> int:
 
 
 def _reset_patch_failures(task_id: str, resolved_paths: list) -> None:
-    """Clear consecutive-failure counts for the given paths."""
+    """清除给定路径的连续失败计数。"""
     if not resolved_paths:
         return
     with _patch_failure_lock:
@@ -583,12 +522,10 @@ def _reset_patch_failures(task_id: str, resolved_paths: list) -> None:
             task_failures.pop(rp, None)
 
 
-# Per-task bounds for the containers inside each _read_tracker[task_id].
-# A CLI session uses one stable task_id for its lifetime; without these
-# caps, a 10k-read session would accumulate ~1.5MB of dict/set state that
-# is never referenced again (only the most recent reads matter for dedup,
-# loop detection, and external-edit warnings).  Hard caps bound the
-# accretion to a few hundred KB regardless of session length.
+# 每个任务在 _read_tracker[task_id] 内各容器的上限。CLI 会话全程使用同一
+# task_id；无这些上限的话，1 万次读取的会话会累积 ~1.5MB 的 dict/set 状态，
+# 而其中大部分后续不再被引用（只有最近几次读取用于去重、循环检测与外部
+# 编辑警告）。硬上限把累积量控制在几百 KB，与会话长度无关。
 _READ_HISTORY_CAP = 500  # set; used only by get_read_files_summary
 _DEDUP_CAP = 1000  # dict; skip-identical-reread guard
 _READ_TIMESTAMPS_CAP = 1000  # dict; external-edit detection for write/patch
@@ -598,18 +535,15 @@ _READ_DEDUP_STATUS_MESSAGE = (
 
 
 def _cap_read_tracker_data(task_data: dict) -> None:
-    """Enforce size caps on the per-task read-tracker sub-containers.
+    """对每个任务的 read-tracker 子容器强制大小上限。
 
-    Must be called with ``_read_tracker_lock`` held.  Eviction policy:
-
-      * ``read_history`` (set): pop arbitrary entries on overflow.  This
-        is fine because the set only feeds diagnostic summaries; losing
-        old entries just trims the summary's tail.
-      * ``dedup`` / ``read_timestamps`` (dict): pop oldest by insertion
-        order (Python 3.7+ dicts).  Evicted entries lose their dedup
-        skip on a future re-read (the file gets re-sent once) and
-        external-edit mtime comparison (the write/patch falls back to
-        a non-mtime check).  Both are graceful degradations, not bugs.
+    调用方必须持有 ``_read_tracker_lock``。驱逐策略：
+      * ``read_history``（set）：溢出时任意弹出。集合仅供诊断摘要，丢老的
+        条目只是裁掉摘要的尾部，可接受。
+      * ``dedup`` / ``read_timestamps``（dict）：按插入顺序弹出最旧（Python 3.7+
+        dict 保证有序）。被驱逐条目在下次重读时失去 dedup 跳过（文件会被
+        重发一次），以及失去外部编辑 mtime 比对（write/patch 退回到非
+        mtime 检查）。两种都是优雅降级，不是 bug。
     """
     rh = task_data.get("read_history")
     if rh is not None and len(rh) > _READ_HISTORY_CAP:
@@ -649,22 +583,18 @@ def _cap_read_tracker_data(task_data: dict) -> None:
 
 
 def _is_internal_file_status_text(content: str) -> bool:
-    """Return True when content looks like an internal file-tool status, not real file bytes.
+    """若内容看起来像内部文件工具状态（而非真实文件字节）则返回 True。
 
-    The read_file dedup status message must never be persisted as file
-    content.  The obvious shape is the model echoing the message verbatim,
-    but in practice it also wraps it with small framing text (a leading
-    "Note:", a trailing newline + short comment, etc.) before calling
-    write_file.  We treat any short-ish write whose body is dominated by
-    the status message as the same class of corruption.
+    read_file dedup 状态消息绝不能被当成文件内容持久化。最显见的形态是
+    模型原样回显这条消息，但实际中调用方常会先包一层短文本（前导 "Note:"、
+    尾部换行 + 短评注等）再调 write_file。把任何「较短、内容由状态消息主导」
+    的写入都视为同类污染。
 
-    Heuristic:
-      * Strict equality (after strip) — the verbatim shape.
-      * OR the stripped content contains the full status message AND is
-        short enough that the status dominates it (<=2x the message length).
-        Short, status-dominated writes can't plausibly be real files —
-        legitimate docs/notes that happen to quote this internal message
-        are always dramatically longer.
+    启发式：
+      * 严格相等（strip 后）—— 字面形态。
+      * 或 strip 后的内容包含整条状态消息，且总长度 ≤ 2 倍消息长度。短而
+        状态主导的写入不可能是真实文件——合法文档/笔记即便引用了这条内部
+        消息也通常远长于此。
     """
     if not isinstance(content, str):
         return False
@@ -679,25 +609,21 @@ def _is_internal_file_status_text(content: str) -> bool:
 
 
 def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileOperations:
-    """Get or create file ops for a terminal environment.
+    """获取或创建任务对应的文件操作实例。
 
-    Respects the TERMINAL_ENV setting -- if the task_id doesn't have an
-    environment yet, creates one using the configured backend (local, docker,
-    modal, etc.) rather than always defaulting to local.
+    遵守 ``TERMINAL_ENV`` 配置：若任务尚未有环境，按配置后端（local、docker、
+    modal 等）新建，而非默认 local。
 
-    Thread-safe: uses the same per-task creation locks as terminal_tool to
-    prevent duplicate sandbox creation from concurrent tool calls.
+    线程安全：复用 terminal_tool 的 per-task 创建锁，防止并发调用重复创建沙箱。
 
-    Note: subagent task_ids are collapsed to "default" via
-    ``resolve_container_task_id`` so delegate_task children share the
-    parent's container and its cached file_ops. RL/benchmark task_ids with
-    a registered env override keep their isolation.
+    注：子 Agent 的 task_id 通过 ``resolve_container_task_id`` 折叠为
+    "default"，使 delegate_task 子任务共享父任务容器与缓存的 file_ops。
+    持有 env override 的 RL/benchmark task_id 保持隔离。
     """
 
     task_id = resolve_container_task_id(task_id)
 
-    # Fast path: check cache -- but also verify the underlying environment
-    # is still alive (it may have been killed by the cleanup thread).
+    # 快速路径：检查缓存——并校验底层环境仍存活（可能已被清理线程杀掉）。
     with _file_ops_lock:
         cached = _file_ops_cache.get(task_id)
     if cached is not None:
@@ -710,7 +636,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
                 with _file_ops_lock:
                     _file_ops_cache.pop(task_id, None)
 
-    # Need to ensure the environment exists before building file_ops.
+    # 需要先确保环境存在，再构建 file_ops。
 
     with creation_locks_lock:
         if task_id not in creation_locks:
@@ -798,19 +724,20 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
 
 
 def clear_file_ops_cache(task_id: str | None = None) -> None:
-    """Clear the file operations cache."""
+    """清空文件操作缓存。"""
     with _file_ops_lock:
         if task_id:
             _file_ops_cache.pop(task_id, None)
         else:
             _file_ops_cache.clear()
-    # Absolute-path resolution is path-scoped (not task-scoped), so the
-    # cache survives task swaps. If a worktree change genuinely alters
-    # symlinks, call _resolve_absolute_path.cache_clear() explicitly.
+    # 绝对路径解析是按路径作用域（而非按任务），缓存可在任务切换间存活。
+
+
+# 若 worktree 切换确实改变了符号链接，需显式调用 _resolve_absolute_path.cache_clear()。
 
 
 def list_directory_tool(path: str, task_id: str = "default") -> str:
-    """List contents of a directory."""
+    """列出目录内容。"""
     try:
         if _is_blocked_device(path):
             return json.dumps({"error": f"Cannot read '{path}': device file blocked."})
@@ -838,7 +765,7 @@ def list_directory_tool(path: str, task_id: str = "default") -> str:
 
 
 def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default") -> str:
-    """Read a file with pagination and line numbers."""
+    """带分页与行号读取文件。"""
     try:
         offset, limit = normalize_read_pagination(offset, limit)
 
@@ -1040,17 +967,14 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
 
 
 def _invalidate_dedup_for_path(filepath: str, task_id: str) -> None:
-    """Remove all dedup cache entries whose resolved path matches *filepath*.
+    """移除 dedup 缓存中所有已解析路径匹配 *filepath* 的条目。
 
-    Called after write_file and patch so that a subsequent read_file on
-    the same path always returns fresh content instead of a stale
-    "File unchanged" stub.  The dedup cache keys are tuples of
-    ``(resolved_path, offset, limit)``; we must evict **all** offset/limit
-    combinations for the written path because any cached range could now
-    be stale.
+    write_file 和 patch 之后调用，保证对同一路径的随后 read_file 总是返回
+    新内容，而非过期的「文件未变」占位。dedup 缓存键是
+    ``(resolved_path, offset, limit)``，需要清掉该路径所有 offset/limit
+    组合——任一缓存范围都可能已失效。
 
-    Must be called with ``_read_tracker_lock`` **not** held — acquires it
-    internally.
+    调用方不得持有 ``_read_tracker_lock``（本函数内部自行加锁）。
     """
     try:
         resolved = str(_resolve_path(filepath))
@@ -1070,16 +994,13 @@ def _invalidate_dedup_for_path(filepath: str, task_id: str) -> None:
 
 
 def _update_read_timestamp(filepath: str, task_id: str) -> None:
-    """Record the file's current modification time after a successful write.
+    """写入成功后刷新该文件的修改时间戳。
 
-    Called after write_file and patch so that consecutive edits by the
-    same task don't trigger false staleness warnings — each write
-    refreshes the stored timestamp to match the file's new state.
-
-    Also invalidates the dedup cache for the written path so that
-    subsequent reads return fresh content (fixes #13144).
+    write_file 和 patch 之后调用：同任务的连续编辑会用新时间戳覆盖旧值，
+    避免误报陈旧警告。同时清空该路径的 dedup 缓存，让随后的 read_file
+    拿到新内容（修复 #13144）。
     """
-    # Invalidate dedup first (before acquiring lock for timestamp update).
+    # 先清 dedup（再进入锁更新时间戳）
     _invalidate_dedup_for_path(filepath, task_id)
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
@@ -1094,11 +1015,10 @@ def _update_read_timestamp(filepath: str, task_id: str) -> None:
 
 
 def _check_file_staleness(filepath: str, task_id: str) -> str | None:
-    """Check whether a file was modified since the agent last read it.
+    """检查文件是否在 Agent 上次读取后被修改过。
 
-    Returns a warning string if the file is stale (mtime changed since
-    the last read_file call for this task), or None if the file is fresh
-    or was never read.  Does not block — the write still proceeds.
+    若自本任务上次 read_file 以来 mtime 变化则返回警告字符串；文件是新的
+    或从未被读取则返回 None。不阻断写入，写入仍会继续。
     """
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
@@ -1125,13 +1045,12 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
 
 
 def write_file_tool(path: str, content: str, task_id: str = "default", cross_profile: bool = False) -> str:
-    """Write content to a file.
+    """把内容写入文件。
 
-    ``cross_profile`` opts out of the soft cross-SpiritAgent-profile guard. The
-    guard fires only on writes that land in another profile's
-    skills/plugins/cron/memories directory; everything else is unaffected.
-    Pass ``True`` after explicit user direction — same shape as ``force``
-    on the terminal tool.
+    ``cross_profile`` 用于绕过跨 SpiritAgent profile 软守卫。该守卫只在
+    写入落在其他 profile 的 skills/plugins/cron/memories 目录时触发，其他
+    路径不受影响。需用户在明确指示后传 ``True``——与 terminal 工具的
+    ``force`` 同形。
     """
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
@@ -1208,13 +1127,12 @@ def patch_tool(
     task_id: str = "default",
     cross_profile: bool = False,
 ) -> str:
-    """Patch a file using replace mode or V4A patch format.
+    """以 replace 模式或 V4A 补丁格式修改文件。
 
-    ``cross_profile`` opts out of the soft cross-SpiritAgent-profile guard for
-    targets under another profile's skills/plugins/cron/memories
-    directory. Same shape as ``write_file``'s flag.
+    ``cross_profile`` 用于绕过跨 SpiritAgent profile 软守卫，作用于其他
+    profile 的 skills/plugins/cron/memories 目标。形式与 ``write_file`` 一致。
     """
-    # Check sensitive paths for both replace (explicit path) and V4A patch (extract paths)
+    # replace 模式（显式 path）与 V4A 模式（从 patch 抽取）都需敏感路径检查
     _paths_to_check = []
     if path:
         _paths_to_check.append(path)
@@ -1375,7 +1293,7 @@ def search_tool(
     context: int = 0,
     task_id: str = "default",
 ) -> str:
-    """Search for content or files."""
+    """搜索内容或文件名。"""
     try:
         offset, limit = normalize_search_pagination(offset, limit)
 
@@ -1427,7 +1345,7 @@ def search_tool(
 
 # Schemas + Registry
 
-# Lazy import — resolved at first use to avoid circular dependency with terminal_tool.
+# Lazy import — 首次使用时解析，避免与 terminal_tool 循环依赖。
 
 
 LIST_DIRECTORY_SCHEMA = {

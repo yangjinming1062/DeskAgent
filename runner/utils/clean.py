@@ -28,13 +28,7 @@ def strip_ansi(text: str) -> str:
 
 
 def strip_fence(text: str) -> str:
-    """Strip matching markdown code fences wrapping terminal output.
-
-    Only removes a leading ``` (with optional language tag) when there
-    is a matching trailing ``` on its own line at the end of `text`.
-    Interior content is returned as-is. Stray ``` runs embedded in the
-    middle of the output (e.g. from `cat file.md`) are left alone.
-    """
+    """去除包裹终端输出的成对 Markdown 代码围栏；中间孤立的 ``` 不会被动。"""
     if not text:
         return text
     open_match = _FENCE_OPEN_RE.match(text)
@@ -48,21 +42,12 @@ def strip_fence(text: str) -> str:
 
 
 def clean_output(text: str) -> str:
-    """Apply the standard output cleaning chain to *text*.
-
-    Order matters: ANSI escapes are removed first so that downstream regexes
-    see the raw characters; markdown fences wrapping terminal output are
-    stripped next; secrets are redacted last so the pattern matchers see the
-    canonical text. Whitespace is preserved end-to-end so the model sees the
-    same trailing newlines and indentation the tool produced.
-    """
-    # strip_ansi / strip_fence are cosmetic — fail-open is acceptable.
+    """对工具输出按固定顺序清洗：先去 ANSI 跳脱码，再去代码围栏，最后脱敏。"""
     with contextlib.suppress(Exception):
         text = strip_ansi(text)
     with contextlib.suppress(Exception):
         text = strip_fence(text)
-    # redact_sensitive_text is security-critical — fail-closed so raw
-    # secrets never reach the LLM if the regex engine chokes.
+    # redact_sensitive_text 是安全关键，失败即整段屏蔽，保证原始凭据绝不进入 LLM。
     if text:
         try:
             text = redact_sensitive_text(text)

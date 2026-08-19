@@ -41,9 +41,9 @@ logger = logging.getLogger(__name__)
 
 
 class NativeFileOperations(FileOperations):
-    """FileOperations implementation using native Python pathlib and os modules.
+    """基于原生 pathlib/os 的文件操作实现。
 
-    This avoids shell execution and works robustly on Windows for local environments.
+    避免走 shell，在 Windows 本地环境下鲁棒性更好。
     """
 
     def __init__(self, cwd: str | None = None) -> None:
@@ -226,7 +226,7 @@ class NativeFileOperations(FileOperations):
         new_lines = content_after.splitlines(keepends=True)
         diff = "".join(difflib.unified_diff(old_lines, new_lines, fromfile=f"a/{path}", tofile=f"b/{path}"))
 
-        # Re-run lint checks after patch
+        # 补丁后再跑一次 lint 检查
         lint_result = self._check_lint_delta(str(p), pre_content=content, post_content=content_after)
 
         return PatchResult(success=True, diff=diff, files_modified=[path], lint=lint_result.to_dict() if lint_result else None)
@@ -312,8 +312,7 @@ class NativeFileOperations(FileOperations):
                 yield from search_root.rglob("*")
 
         def should_skip(p: Path) -> bool:
-            # Relative to the search root: a root that itself sits inside a
-            # dot-directory must not disqualify every file under it.
+            # 相对搜索根判定：若根本身位于某个点目录下，不应据此屏蔽根下所有文件。
             return any(part.startswith(".") and len(part) > 1 for part in p.relative_to(search_root).parts[:-1])
 
         scanned_count = 0
@@ -392,7 +391,7 @@ class NativeFileOperations(FileOperations):
             result = subprocess.run(command, cwd=cwd or self.cwd, **kwargs)
             return ExecuteResult(stdout=result.stdout, exit_code=result.returncode)
         except subprocess.TimeoutExpired as e:
-            # text=True mode delivers str|None on TimeoutExpired; decoding again raises.
+            # text=True 模式下 TimeoutExpired.stdout 已为 str|None，再次解码会抛错。
             return ExecuteResult(stdout=e.stdout or "", exit_code=124)
         except Exception as e:
             return ExecuteResult(stdout=str(e), exit_code=1)

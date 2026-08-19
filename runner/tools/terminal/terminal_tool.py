@@ -232,6 +232,7 @@ def terminal_tool(
     notify_on_complete: bool = False,
     watch_patterns: list[str] | None = None,
 ) -> str:
+    """在对应 task 的终端环境中执行单条 shell 命令——前台/后台互斥分支，复用 / 必要时懒创建环境。"""
     try:
         if not isinstance(command, str):
             logger.warning("Rejected invalid terminal command value: %s", type(command).__name__)
@@ -506,8 +507,7 @@ def terminal_tool(
                 break
             output = result.get("output", "")
             returncode = result.get("returncode", 0)
-            # Character budget (the registry's result-size cap): mixing in the
-            # byte cap would let CJK output blow past the LLM payload limit.
+            # 字符预算（registry 的结果大小上限）：混用字节上限会让 CJK 输出突破 LLM 载荷上限。
             max_output_chars = registry.get_max_result_size()
             if len(output) > max_output_chars:
                 head_chars = int(max_output_chars * 0.4)

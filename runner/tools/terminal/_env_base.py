@@ -61,6 +61,7 @@ def _file_mtime_key(host_path: str) -> tuple[float, int] | None:
 
 
 def get_sandbox_dir() -> Path:
+    """解析终端沙箱根目录：配置覆盖优先；否则以应用根目录下的 `sandboxes` 作为基目录。"""
     override = cfg_get(load_config(), "terminal", "sandbox_dir")
     base = Path(str(override)) if override else (get_spiritagent_home() / "sandboxes")
     base.mkdir(parents=True, exist_ok=True)
@@ -79,7 +80,7 @@ def _pipe_stdin(proc: subprocess.Popen, data: str) -> None:
 
 
 def _popen_bash(cmd: list[str], stdin_data: str | None = None, **kwargs) -> subprocess.Popen:
-    # Windows: suppress the console window flashed for every bash child.
+    # Windows：抑制每次 bash 子进程闪现的控制台窗口。
     if os.name == "nt":
         kwargs.setdefault("creationflags", CREATE_NO_WINDOW)
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL, text=True, **kwargs)
@@ -194,10 +195,7 @@ class BaseEnvironment(ABC):
                 if not isinstance(fd, int) or fd < 0:
                     _drain_iterable(stream)
                 elif os.name == "nt":
-                    # A bare blocking os.read never returns while an orphaned
-                    # descendant still holds the pipe's write end; poll with
-                    # PeekNamedPipe and stop once the direct child is gone and
-                    # the pipe stays empty (mirrors the POSIX select branch).
+                    # 当有孤儿后代仍持有管道的写端时，裸阻塞 os.read 永远不会返回；用 PeekNamedPipe 轮询，在直接子进程退出且管道持续空时退出（与 POSIX 的 select 分支对称）。
                     handle = msvcrt.get_osfhandle(fd)
                     avail = wintypes.DWORD(0)
                     idle_after_exit = 0
@@ -209,8 +207,7 @@ class BaseEnvironment(ABC):
                             output_chunks.append(decoder.decode(chunk))
                             idle_after_exit = 0
                         elif not peeked:
-                            # Write end closed (broken pipe): drain what is still
-                            # buffered, then the read returns b"" and we stop.
+                            # 写端关闭（broken pipe）：先排空剩余缓冲数据，再让 read 返回 b"" 退出。
                             if not (chunk := os.read(fd, 4096)):
                                 break
                             output_chunks.append(decoder.decode(chunk))

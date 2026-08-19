@@ -52,6 +52,7 @@ BROWSER_DIALOG_SCHEMA: dict[str, Any] = {
 
 
 def browser_dialog(action: str, prompt_text: str | None = None, dialog_id: str | None = None, task_id: str | None = None) -> str:
+    """应答当前阻塞页面的 JS 弹窗（accept / dismiss）；多弹窗叠加时可用 dialog_id 区分。"""
     if (supervisor := SUPERVISOR_REGISTRY.get(task_id or "default")) is None:
         return json.dumps({"success": False, "error": "No CDP supervisor is attached to this task. Call browser_navigate or /browser connect first."})
 

@@ -47,7 +47,7 @@ except ImportError:
 
 
 def get_idle_seconds() -> float:
-    """Seconds since last user input. ``-1.0`` when unavailable."""
+    """自上次用户输入以来的秒数; 不可用时返回 ``-1.0``。"""
     if IS_WINDOWS:
         return _idle_windows()
     if IS_MACOS:
@@ -56,7 +56,7 @@ def get_idle_seconds() -> float:
 
 
 def is_screen_locked() -> bool:
-    """True iff the workstation session is locked. ``False`` when unknown."""
+    """当且仅当工作站会话已锁屏; 无法判断时返回 ``False``(误报"已锁"比漏报更糟)。"""
     if IS_WINDOWS:
         return _locked_windows()
     if IS_MACOS:
@@ -65,7 +65,7 @@ def is_screen_locked() -> bool:
 
 
 def get_focused_app() -> dict[str, Any]:
-    """``{name, pid, kind}`` for the foreground app, or ``{}`` when unknown."""
+    """前台应用的 ``{name, pid, kind}``; 无法判断时返回 ``{}``。"""
     if IS_WINDOWS:
         return _focus_windows()
     if IS_MACOS:
@@ -74,8 +74,7 @@ def get_focused_app() -> dict[str, Any]:
 
 
 def is_fullscreen() -> bool:
-    """True iff the foreground window covers (≥95%) of its monitor's
-    working area. ``False`` when unknown / unavailable."""
+    """当且仅当前台窗口覆盖其显示器工作区 ≥ 95%; 未知/不可用时返回 ``False``。"""
     if IS_WINDOWS:
         return _fullscreen_windows()
     if IS_MACOS:
@@ -84,7 +83,7 @@ def is_fullscreen() -> bool:
 
 
 def get_power_state() -> dict[str, Any]:
-    """``{on_battery, screen_on, charging}`` — all booleans default ``False``/``True``."""
+    """``{on_battery, screen_on, charging}`` — 布尔值默认 ``False``/``True``。"""
     state: dict[str, Any] = {"on_battery": False, "screen_on": True, "charging": False}
     if psutil is not None:
         try:
@@ -99,8 +98,7 @@ def get_power_state() -> dict[str, Any]:
 
 
 def get_windows() -> dict[str, Any]:
-    """``{"windows": [{title, name, x, y, w, h, focused}, ...]}`` for visible
-    top-level windows. Empty list when unavailable."""
+    """可见顶层窗口列表 ``{"windows": [{title, name, x, y, w, h, focused}, ...]}``; 不可用时为空列表。"""
     if IS_WINDOWS:
         return _windows_windows()
     if IS_MACOS:
@@ -109,7 +107,7 @@ def get_windows() -> dict[str, Any]:
 
 
 def open_application(name: str) -> dict[str, Any]:
-    """Launch *name* (exe / app name / path). Returns ``{opened, name}``."""
+    """启动 *name*(可执行名 / app 名 / 路径), 返回 ``{opened, name}``。"""
     try:
         if IS_WINDOWS:
             subprocess.Popen(["cmd", "/c", "start", "", name])
@@ -122,7 +120,7 @@ def open_application(name: str) -> dict[str, Any]:
 
 
 def get_work_area() -> dict[str, Any]:
-    """``{x, y, w, h}`` representing the primary display's work area."""
+    """主显示器工作区的 ``{x, y, w, h}``(已扣除任务栏/dock)。"""
     if IS_WINDOWS:
         return _work_area_windows()
     if IS_MACOS:
@@ -131,7 +129,7 @@ def get_work_area() -> dict[str, Any]:
 
 
 def get_cursor_pos() -> dict[str, Any]:
-    """``{x, y}`` representing current global cursor location."""
+    """当前全局鼠标位置的 ``{x, y}``。"""
     if IS_WINDOWS:
         return _cursor_windows()
     if IS_MACOS:
@@ -140,7 +138,7 @@ def get_cursor_pos() -> dict[str, Any]:
 
 
 def click_at(x: int, y: int, button: str = "left", clicks: int = 1) -> dict[str, Any]:
-    """Simulate a mouse click at global screen coordinates (x, y)."""
+    """在全局屏幕坐标 (x, y) 处模拟一次鼠标点击。"""
     if IS_WINDOWS:
         return _click_at_windows(x, y, button, clicks)
     if IS_MACOS:
@@ -284,15 +282,12 @@ def _idle_macos() -> float:
 
 
 def _locked_windows() -> bool:
-    """Detect whether Windows desktop is locked.
+    """检测 Windows 桌面是否已锁屏。
 
-    Combines three independent signals (any one True ⇒ locked):
-      1. ``GetForegroundWindow() == NULL`` — the desktop itself
-         owns no foreground window.
-      2. ``GetClassName(hwnd) == 'LockScreenBackstop' / 'LogonUI'`` —
-         lock-screen window classes.
-      3. ``GetUserObjectInformation()`` on the foreground
-         thread's input desktop reports a non-default desktop name.
+    组合三个互相独立的信号(任一为真 ⇒ 锁屏):
+      1. ``GetForegroundWindow() == NULL`` — 桌面自身没有前台窗口。
+      2. ``GetClassName(hwnd) == 'LockScreenBackstop' / 'LogonUI'`` — Win10/11 锁屏窗口类。
+      3. 前台线程输入桌面的 ``GetUserObjectInformation()`` 返回非默认桌面名。
     """
     if ctypes is None:
         return False
@@ -302,15 +297,13 @@ def _locked_windows() -> bool:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return True
-        # (2) class-name match — LogonUI is the Win10/11 lock screen
+        # (2) 类名匹配 — LogonUI 即 Win10/11 的锁屏。
         buf = ctypes.create_unicode_buffer(256)
         n = user32.GetClassNameW(hwnd, buf, 256)
         cls = buf.value if n > 0 else ""
         if cls in ("LockScreenBackstop", "LogonUI"):
             return True
-        # (3) input desktop switch — GetUserObjectInformation is the
-        # canonical API but is heavy; only call when the cheap
-        # signals haven't tripped.
+        # (3) 输入桌面切换 — ``GetUserObjectInformation`` 是规范 API, 但成本高, 只在前两个便宜信号未触发时调用。
         try:
             thread_id = user32.GetWindowThreadProcessId(hwnd, None)
             input_desktop = user32.GetThreadDesktop(thread_id)
@@ -326,13 +319,11 @@ def _locked_windows() -> bool:
 
 
 def _locked_macos() -> bool:
-    """True iff the active macOS session is locked.
+    """当且仅当当前 macOS 会话已锁屏。
 
-    Modern ``kCGSSessionOnConsoleKey`` is ``1`` whenever a user is logged
-    in on the console (both during normal use AND on the lock screen).
-    The legacy camelCase ``CGSSessionOnConsoleKey`` appears only when
-    nobody is on the console — i.e. locked screen / loginwindow — so
-    locked ⇔ that legacy key is present OR the modern key is absent.
+    新版 ``kCGSSessionOnConsoleKey`` 在控制台上有用户登录(正常用 + 锁屏)时都返回 ``1``;
+    旧版驼峰命名 ``CGSSessionOnConsoleKey`` 只在控制台无用户(锁屏/loginwindow)时出现 — 因此:
+    锁屏 ⇔ 旧 key 存在 **或** 新 key 不存在。
     """
     if Quartz is None:
         return False
@@ -349,12 +340,7 @@ def _locked_macos() -> bool:
 
 
 def _focus_windows() -> dict[str, Any]:
-    """Inspect focused window on Windows.
-
-    Strategy:
-      1. Skip windows whose class is 'Shell_TrayWnd' / 'WorkerW' / 'Progman'.
-      2. Use ``GetGUIThreadInfo`` on the foreground thread to read the real focused hwnd.
-    """
+    """检查 Windows 前台窗口(遍历 explorer 容器并读真正焦点 hwnd)。"""
     if ctypes is None or wintypes is None:
         return {}
     try:
@@ -363,21 +349,18 @@ def _focus_windows() -> dict[str, Any]:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return {}
-        # Skip explorer containers — they have a real hwnd but
-        # are not what the user is actually interacting with.
+        # 跳过 explorer 容器 — 它们有真实 hwnd, 但并非用户真正交互的对象。
         for _ in range(4):
             buf = ctypes.create_unicode_buffer(256)
             user32.GetClassNameW(hwnd, buf, 256)
             if buf.value not in ("Shell_TrayWnd", "WorkerW", "Progman"):
                 break
-            # Walk to the real foreground window.
+            # 继续走到真正的前台窗口。
             hwnd = user32.GetForegroundWindow()
             if not hwnd:
                 return {}
 
-        # GetGUIThreadInfo: read the focused hwnd on the
-        # foreground thread (the actual window the user is
-        # typing in, not just the topmost shell container).
+        # GetGUIThreadInfo: 读前台线程上真正 focus 的 hwnd(用户实际输入窗口, 而非最顶层 shell 容器)。
         class _GuiThreadInfo(ctypes.Structure):
             _fields_ = [
                 ("cbSize", wintypes.DWORD),
@@ -395,7 +378,7 @@ def _focus_windows() -> dict[str, Any]:
         info = _GuiThreadInfo(cbSize=ctypes.sizeof(_GuiThreadInfo))
         user32.GetGUIThreadInfo(tid, ctypes.byref(info))
         real_hwnd = info.hwndFocus or info.hwndActive or hwnd
-        # Top-level owner of the focused window.
+        # 取焦点窗口的顶层 owner。
         top = user32.GetAncestor(real_hwnd, 2)  # GA_ROOT = 2
 
         pid = wintypes.DWORD()
@@ -450,7 +433,7 @@ _FULLSCREEN_COVERAGE_RATIO = 0.95
 
 
 def _fullscreen_windows() -> bool:
-    """Foreground window covers ≥95% of its monitor's working area."""
+    """前台窗口覆盖其显示器工作区 ≥ 95%。"""
     if ctypes is None or wintypes is None:
         return False
     try:
@@ -478,12 +461,9 @@ def _fullscreen_windows() -> bool:
         monitor_info.cbSize = ctypes.sizeof(monitor_info)
         if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
             return False
-        # Compare against the FULL monitor (rcMonitor), not the work area
-        # (rcWork). rcWork excludes the taskbar; a maximized window already
-        # covers rcWork so work-based comparison fires for every window the
-        # user has maximized, which is the normal working state for most
-        # people. rcMonitor includes the taskbar area, so only a true
-        # fullscreen window (taskbar auto-hidden) reaches the threshold.
+        # 跟 *完整* 显示器区域 ``rcMonitor`` 比, 而不是工作区 ``rcWork``: 工作区不含任务栏,
+        # 已最大化窗口就一定覆盖工作区, 绝大多数用户的正常工作态会被误判成全屏; ``rcMonitor``
+        # 包含任务栏区, 只有真正进入全屏(任务栏自动隐藏)才能达到阈值。
         monitor = monitor_info.rcMonitor
         monitor_w = max(1, monitor.right - monitor.left)
         monitor_h = max(1, monitor.bottom - monitor.top)
@@ -495,15 +475,11 @@ def _fullscreen_windows() -> bool:
 
 
 def _fullscreen_macos() -> bool:
-    """True iff the focused app's key window is in native full-screen
-    mode (the green-window traffic-light full screen). Returns ``False``
-    when the API is unavailable or the focused window can't be read.
+    """当且仅当前台 app 的 key window 在原生全屏模式(绿色按钮触发的那种)。
 
-    ``NSApplication.sharedApplication().windows()`` enumerates the *Runner's*
-    own NSWindows (the Runner is a headless Python process with none), not
-    the frontmost user app's. Cross-process window enumeration requires the
-    CoreGraphics ``CGWindowListCopyWindowInfo`` API, which we use here with
-    the focused app's PID obtained from ``NSWorkspace``.
+    ``NSApplication.sharedApplication().windows()`` 只枚举 *Runner 自己进程内* 的 NSWindow(Runner 是无头 Python 进程,
+    根本没有); 跨进程窗口枚举必须走 CoreGraphics 的 ``CGWindowListCopyWindowInfo``, 这里就用它配合 ``NSWorkspace``
+    拿到的前台 PID 来完成。
     """
     if NSWorkspace is None or Quartz is None or CGWindowListCopyWindowInfo is None:
         return False
@@ -512,18 +488,14 @@ def _fullscreen_macos() -> bool:
         if not app:
             return False
         focused_pid = app.processIdentifier()
-        # kCGWindowListOptionOnScreenOnly excludes off-screen / minimized
-        # windows. We then filter by PID and check for the kCGWindowIsInWindowList
-        # + full-screen bits the AppKit headers expose.
+        # kCGWindowListOptionOnScreenOnly 排除离屏/最小化窗口; 再按 PID 过滤, 看 AppKit 头文件暴露的全屏位/窗口状态位。
         windows = CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly, kCGNullWindowId)
-        NSWindowStyleMaskFullScreen = 1 << 14  # from AppKit headers
+        NSWindowStyleMaskFullScreen = 1 << 14  # 来自 AppKit 头文件
         for win in windows:
             owner_pid = win.get("kCGWindowOwnerPID", -1)
             if owner_pid != focused_pid:
                 continue
-            # Window state bit 1 << 9 is ``kCGWindowStateIsInFullscreen`` on
-            # modern macOS — older headers expose the constant; fall back to
-            # the raw bitmask if absent.
+            # 窗口状态位 1 << 9 是现代 macOS 的 ``kCGWindowStateIsInFullscreen`` — 老版本的头文件没暴露这个常量, 直接按位掩码兜底。
             if win.get("kCGWindowIsInFullscreen", 0) & 1:
                 return True
             style_mask = win.get("kCGWindowStyleMask", 0)
@@ -539,7 +511,7 @@ _SHELL_WINDOW_CLASSES = frozenset(("Shell_TrayWnd", "WorkerW", "Progman"))
 
 
 def _process_exe(pid: int) -> str:
-    """Best-effort exe name for *pid*; empty string on failure."""
+    """尽力获取 *pid* 的可执行文件名; 失败时返回空串。"""
     if ctypes is None or wintypes is None:
         return ""
     try:

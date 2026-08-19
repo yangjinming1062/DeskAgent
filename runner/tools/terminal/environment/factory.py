@@ -18,6 +18,7 @@ def create_environment(
     task_id: str = "default",
     host_cwd: str | None = None,
 ) -> Any:
+    """按 env_type 实例化对应的终端环境（local / docker / singularity / ssh），并打上 `env_type` 标签。"""
     cc = container_config or {}
     lc = local_config or {}
     cpu = cc.get("container_cpu", 1)
@@ -58,7 +59,6 @@ def create_environment(
         env = SSHEnvironment(host=ssh_config["host"], user=ssh_config["user"], port=ssh_config.get("port", 22), key_path=ssh_config.get("key", ""), cwd=cwd, timeout=timeout)
     else:
         raise ValueError(f"Unknown environment type: {env_type}. Use 'local', 'docker', 'singularity', or 'ssh'")
-    # file_tools._get_file_ops routes local → NativeFileOperations off this tag;
-    # no env class sets it itself, so without this the local branch is dead.
+    # file_tools._get_file_ops 通过该标签将 local 路由到 NativeFileOperations；环境类自身不会设置，不补就漏掉 local 分支。
     env.env_type = env_type
     return env

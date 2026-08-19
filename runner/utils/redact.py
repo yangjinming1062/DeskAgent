@@ -38,9 +38,7 @@ _PREFIX_PATTERNS: tuple[str, ...] = (
     r"gsk_[A-Za-z0-9]{10,}",
     r"xai-[A-Za-z0-9]{30,}",
 )
-# \b anchors both token ends so a secret at string start/end or right after
-# `=` / `"` / space still matches (lookbehind/lookahead can't anchor at a
-# string boundary). Trade-off: a token preceded by `_` is skipped.
+# \b 锚定 token 两端，让位于字符串首尾或紧跟在 `=` / `"` / 空格后的凭据也能匹配（lookbehind/lookahead 无法锚字符串边界）。代价：前导为 `_` 的 token 会被跳过。
 SECRET_PREFIX_RE = re.compile(r"\b(" + "|".join(_PREFIX_PATTERNS) + r")\b")
 
 _SECRET_ENV_NAMES = r"(?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|BEARER)"
@@ -69,12 +67,7 @@ def _is_redact_enabled() -> bool:
 
 
 def redact_sensitive_text(text: str) -> str:
-    """Redact likely secrets in *text*. Disabled when ``security.redact_secrets`` is falsy in config.
-
-    Reads the in-memory config on each call, so a ``spiritagent.config.update``
-    push takes effect immediately. Regex failures propagate — ``clean_output``
-    is the security boundary that fails closed on them.
-    """
+    """脱敏 *text* 中疑似凭据；由 ``security.redact_secrets`` 配置控制总开关。"""
     if not text or not _is_redact_enabled():
         return text
     return _redact(text)

@@ -39,8 +39,7 @@ def _load_security_config() -> dict:
 
 _resolved_path: str | None | bool = None
 _INSTALL_FAILED = False
-# Transient install failures worth a bounded in-process retry (network /
-# extraction); cosign and configuration failures stay permanent.
+# 值得做有限进程内重试的瞬时失败(网络/解压); cosign 和配置类失败保持永久失败, 不重试。
 _INSTALL_RETRYABLE = {"download_failed", "binary_extract_failed", "cross_device_copy_failed"}
 _install_retries = 0
 _install_retry_deadline = 0.0
@@ -127,6 +126,7 @@ def _detect_target() -> str | None:
 
 
 def is_platform_supported() -> bool:
+    """当前 host 是否能跑 tirith(目前仅 Windows + macOS 是受支持的发布目标)。"""
     return _detect_target() is not None
 
 
@@ -312,8 +312,7 @@ def _resolve_tirith_path(configured_path: str) -> str:
             _resolved_path, _install_failure_reason = None, ""
             _clear_install_failed()
         elif _install_failure_reason in _INSTALL_RETRYABLE and _install_retries < 3 and time.monotonic() >= _install_retry_deadline:
-            # One transient failure (e.g. a network blip at startup) must not
-            # degrade a multi-day runner to builtin rules for its whole life.
+            # 单次瞬时失败(如启动时的网络抖动)不应让一个要跑好几天的 runner 整个生命周期都被降级到内置规则。
             _install_retries += 1
             _install_retry_deadline = time.monotonic() + 300
             _resolved_path, _install_failure_reason = None, ""
@@ -324,9 +323,7 @@ def _resolve_tirith_path(configured_path: str) -> str:
     if (disk_reason := _read_failure_reason()) is not None and _is_install_failed_on_disk():
         _resolved_path, _install_failure_reason = _INSTALL_FAILED, disk_reason
         return expanded
-    # Install in the background so the first shell command never blocks on
-    # the download; until it lands, callers degrade to allow-with-warning
-    # via the missing-binary path.
+    # 后台安装: 第一条 shell 命令绝对不能被下载阻塞; 安装完成前调用者通过缺失二进制路径降级到 allow-with-warning。
     _install_thread = threading.Thread(target=_background_install, kwargs={"log_failures": True}, daemon=True)
     _install_thread.start()
     return expanded
@@ -351,14 +348,14 @@ def _background_install(*, log_failures: bool = True) -> None:
 
 
 def check_command_security(command: str) -> dict:
+    """用 tirith 二进制扫描一条 shell 命令, 在失败/缺失时按 fail-open 或 fail-closed 配置降级。"""
     cfg = _load_security_config()
     if not cfg["tirith_enabled"] or not is_platform_supported():
         return {"action": "allow", "findings": [], "summary": ""}
     tirith_path = _resolve_tirith_path(cfg["tirith_path"])
     timeout, fail_open = cfg["tirith_timeout"], cfg["tirith_fail_open"]
 
-    # Check if binary is physically present and runnable on the host.
-    # If uninstalled / offline / first run, fall back with warning without paralyzing normal execution.
+    # 检测二进制是否真的可用; 未装/离线/首次启动就 warn 降级, 不让正常执行卡死。
     is_binary_ready = bool(
         tirith_path
         and tirith_path is not _INSTALL_FAILED

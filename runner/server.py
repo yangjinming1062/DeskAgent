@@ -41,14 +41,7 @@ logger = logging.getLogger("spiritagent_runner")
 
 
 def _require_supported_host() -> None:
-    """Runner only ships for Windows + macOS. Refuse to start elsewhere.
-
-    Running on an unsupported host leaves several subsystems silently
-    unavailable: microphone probes, the system-activity backends, the
-    cu_* tools, and the language-specific Tirith advisories.
-    Rather than fail later with a confusing capability error, fail fast here
-    with a clear message the operator / CI can act on.
-    """
+    """Runner 只在 Windows + macOS 上分发; 在其他平台直接拒绝启动 — 跑在不支持的主机上, 多项子系统(麦克风探测、system-activity 后端、cu_* 工具、Tirith 多语言提示)都会悄悄失效, 不如直接在此硬失败, 给运维/CI 一个明确信号。"""
     if sys.platform not in {"win32", "darwin"}:
         raise SystemExit(f"SpiritAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
 
@@ -56,13 +49,12 @@ def _require_supported_host() -> None:
 _ACTIVE_WS: Any | None = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
 _PENDING_RPC: dict[str, asyncio.Future] = {}
-# Process-scoped: MCP tool cache lives for the runner's lifetime, so a single
-# discovery on the first connect is enough.
+# 进程级: MCP 工具缓存随 runner 生命周期存活, 首次连接做一次发现即可。
 _discovery_started = False
 _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
 
-# Reconnect backoff and the endpoint-file poll interval.
+# 重连退避 + 端点文件轮询间隔。
 MAX_RECONNECT_ATTEMPTS = 15
 BASE_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 30.0
@@ -83,17 +75,11 @@ async def _send_notification(ws: Any, method: str, params: dict[str, Any], id: A
 
 
 async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
-    """Send a ``request_llm`` to Desktop and return the raw LLM response text.
+    """向 Desktop 发 ``request_llm`` 并返回原始 LLM 文本响应(供 vision / web_extract 等一次性补全的工具使用; 所有网络鉴权都在 Desktop 侧完成, runner 自身不带凭据)。
 
-    Used by tools that need a one-off LLM completion (vision, web
-    extraction). All network auth lives in Desktop; the runner has no
-    provider credentials.
-
-    The Backend returns ``{ "content": str, "usage": dict|null }`` or a raw
-    OpenAI-compatible body; the content text is extracted so callers get
-    plain ``str``. A dict with no text-bearing key degrades to ``""`` (see
-    ``_extract_llm_content``); a non-str/non-dict payload is rejected as a
-    protocol error.
+    Backend 返回 ``{ "content": str, "usage": dict|null }`` 或原始 OpenAI 兼容体; 这里抽取出文本
+    给调用方纯 ``str``。不携带文本字段的 dict 降级为 ``""``(见 ``_extract_llm_content``); 既不是 str 也不是
+    dict 的载荷按协议错误拒绝。
     """
     if (ws := _ACTIVE_WS) is None:
         raise RuntimeError("No active WebSocket connection")
@@ -104,9 +90,7 @@ async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
 
     await _send_notification(ws, "request_llm", kwargs, id=req_id)
 
-    # Honor the caller's per-call timeout when one is supplied. Floor at
-    # 1.0s to avoid pathological zero-second waits; no upper bound, since
-    # the caller's budget is the right place to enforce a cap.
+    # 尊重调用方传入的 per-call 超时: 下限设 1.0s 避免出现 0 秒等; 不设上限, 上限由调用方在业务预算处自行约束。
     try:
         timeout_s = float(kwargs.get("timeout", 120.0))
     except (TypeError, ValueError):
@@ -129,15 +113,12 @@ async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
 
 
 def _extract_llm_content(result: dict[str, Any]) -> str:
-    """Pull text out of a Backend completion response.
+    """从 Backend 补全响应里抽文本。
 
-    The Backend ``/api/llm/completion`` proxy returns either
-    ``{"content": str, "usage": ...}`` (legacy normalized form) or a raw
-    OpenAI-compatible ``{"choices": [{"message": {"content": str}}], ...}``
-    body. Some providers wrap text in a list of content blocks
-    (``{"choices": [{"message": {"content": [{"type": "text", "text": "..."}]}}]}``).
-    Returns the extracted text or ``""`` if no text-bearing key is found,
-    so callers can degrade gracefully instead of failing the whole tool call.
+    ``/api/llm/completion`` 代理返回 ``{"content": str, "usage": ...}``(旧规整形式)或原始 OpenAI 兼容
+    ``{"choices": [{"message": {"content": str}}], ...}``; 部分供应商用内容块列表
+    (``{"choices": [{"message": {"content": [{"type": "text", "text": "..."}]}}]}``)。没有文本键时返回
+    ``""``, 调用方能优雅降级而不至于整个工具调用失败。
     """
     if "content" in result and isinstance(result["content"], str):
         return result["content"]
@@ -165,17 +146,14 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
     method = req.get("method")
     params = req.get("params", {})
 
-    # Notifications carry no id; drop early so the liveness ping doesn't spam -32601 log noise.
+    # notification 不带 id; 提前丢弃, 否则心跳探测会刷出 -32601 log noise。
     if req_id is None and method:
         return
 
-    # A new request just arrived. Clear any stale per-thread interrupt
-    # left over from a previous request so the current request's tools
-    # don't immediately bail. For cancel requests we set the
-    # cross-thread ``_global_interrupt`` so in-flight tool handlers
-    # from other requests see the flag on their next ``is_interrupted()``
-    # check. Only a subsequent execute_tool clears it — diagnostic polls
-    # (spiritagent.info / get_tools) must not swallow a pending cancel.
+    # 新请求到达时清理上一条请求残留的 per-thread interrupt, 防止当前请求的工具立刻被 bail。
+    # 对 cancel 请求置跨线程 ``_global_interrupt``, 让其他请求里正在执行的工具处理器在下一次
+    # ``is_interrupted()`` 检查时看到标志。只有下一次 execute_tool 才清除 — 诊断探针
+    # (spiritagent.info / get_tools) 不能误吃待发 cancel。
     if method == "spiritagent.cancel":
         set_global_interrupt(True)
     elif method == "execute_tool":
@@ -195,7 +173,7 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             return
 
         if method == "spiritagent.config.update":
-            # Cache resets mirror mcp.reload so derived limits pick up the new config immediately.
+            # 重置缓存对标 mcp.reload, 让派生限制立刻看到新 config。
             config = params.get("config")
             if not isinstance(config, dict):
                 raise ValueError("spiritagent.config.update requires a 'config' object")
@@ -208,15 +186,13 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             return
 
         if method == "mcp.reload":
-            # Clear config caches so tool_output_limits and file_read_max_chars
-            # pick up any config changes without requiring a runner restart.
+            # 清掉 config 缓存, 让 tool_output_limits / file_read_max_chars 不需要重启 runner 就能看到改动。
             reset_cache()
             reset_max_read_chars_cache()
             utils.env_passthrough.reset_cache()
             utils.credential_files.reset_cache()
-            # Off-load: reload_mcp_servers joins the MCP loop thread and waits
-            # up to 15s on shutdown — running it inline would block the
-            # Runner's WS event loop and starve spiritagent.cancel / heartbeats.
+            # 卸载到线程: reload_mcp_servers 会 join MCP loop 线程, 关停最长等 15s — 同步执行会阻塞
+            # runner 的 WS event loop, 把 spiritagent.cancel / 心跳掐死。
             result = await asyncio.to_thread(reload_mcp_servers)
             await _send(ws, req_id, result=result)
             return
@@ -235,19 +211,16 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
 
         await _send(ws, req_id, error={"code": -32601, "message": "Method not found"})
     except Exception as e:
-        # The reply itself must not raise: a connection torn down mid-handler
-        # would leave the background task dying with an unretrieved exception.
+        # 回复本身绝不能再抛: 中途断连的 handler 会让后台任务以未捕获异常死去。
         with contextlib.suppress(Exception):
             await _send(ws, req_id, error={"code": -32000, "message": str(e)})
 
 
 def _fail_pending_rpcs(reason: str) -> None:
-    """Fail every in-flight request_llm future so callers' wait_for returns fast.
+    """对所有 in-flight 的 ``request_llm`` future 抛失败, 让调用方的 ``wait_for`` 迅速返回。
 
-    set_exception (not cancel) preserves the disconnect reason for the LLM.
-    A future may already be done (response popped, or wait_for cancelled it)
-    between the values() snapshot and the iteration; set_exception on a done
-    future raises InvalidStateError and would break the loop.
+    用 ``set_exception`` 而不是 cancel 是为了把断连原因透给 LLM。future 可能在 values() 快照到迭代之间已经
+    done(响应被取走 / ``wait_for`` 被取消), 在已 done 的 future 上 ``set_exception`` 会抛 InvalidStateError。
     """
     for fut in list(_PENDING_RPC.values()):
         if not fut.done():
@@ -256,11 +229,7 @@ def _fail_pending_rpcs(reason: str) -> None:
 
 
 async def runner_loop(endpoint: DesktopEndpoint) -> None:
-    """Long-running connection loop for the Desktop IPC link.
-
-    Keeps a persistent connection, handles reconnect backoff, dispatches
-    RPC calls, and notifies Desktop when ready.
-    """
+    """与 Desktop IPC 的长连接主循环: 维护持久连接、处理重连退避、派发 RPC、Ready 时主动通知。"""
     global _ACTIVE_WS, _RUNNER_LOOP, _RECONNECT_COUNT
 
     current_endpoint = endpoint
@@ -268,21 +237,15 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
 
     while True:
         cancelled = False
-        # Waiting for the Desktop to publish an endpoint (restart window,
-        # missing/stale file) is a normal steady state, not a failed connect —
-        # it must not consume the reconnect-attempt budget below.
+        # 等 Desktop 发布 endpoint(重启窗口、文件缺失/陈旧)是正常稳态, 不是连接失败 — 不能消耗下面的重连预算。
         tried_connect = current_endpoint is not None
         if current_endpoint is None:
             logger.info("Desktop endpoint not ready, waiting for endpoint file...")
         else:
             logger.info(f"Connecting to Desktop IPC: {current_endpoint.path} (attempt {attempt + 1})")
-            # Proactively drain any stale
-            # ``_PENDING_RPC`` futures before the new connection opens. The
-            # ``finally`` block on the previous connection does this too,
-            # but only after the websocket context manager fully unwinds —
-            # any future created in the gap would leak an awaited
-            # ``wait_for`` on the caller side. Cheap insurance: set
-            # ConnectionError on every future that's still pending.
+            # 新连接打开前主动 drain 掉残留的 ``_PENDING_RPC`` future。前一条连接的 ``finally`` 也会做,
+            # 但要等 websocket 上下文完全退出之后 — 那窗口里新建的 future 会让调用方 ``wait_for`` 泄漏。
+            # 廉价保险: 给所有尚未 done 的 future 抛 ConnectionError。
             _fail_pending_rpcs("Runner WS reconnecting; abandoning in-flight request")
             try:
                 connection = await connect_desktop(current_endpoint)
@@ -290,7 +253,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     _ACTIVE_WS = ws
                     _RUNNER_LOOP = asyncio.get_running_loop()
                     set_main_loop(_RUNNER_LOOP)
-                    attempt = 0  # reset on successful connection
+                    attempt = 0  # 连接成功后重置
                     try:
                         await _send_notification(ws, "runner_ready", await _runner_ready_payload())
                         _schedule_background_mcp_discovery()
@@ -301,11 +264,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                             except json.JSONDecodeError:
                                 logger.error("Invalid JSON received")
                                 continue
-                            # JSON-RPC frames must be JSON objects. A frame
-                            # that parses to ``int``/``list``/``None`` is
-                            # a malformed message — log and skip rather
-                            # than letting ``data.get(...)`` raise and
-                            # kill the reader task.
+                            # JSON-RPC 帧必须是 JSON 对象。解析成 ``int`` / ``list`` / ``None`` 的帧是畸形 — 打 log 跳过, 防止 ``data.get(...)`` 抛异常把读取任务杀掉。
                             if not isinstance(data, dict):
                                 logger.error("Non-object JSON frame received: %r", type(data).__name__)
                                 continue
@@ -326,25 +285,18 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     finally:
                         _ACTIVE_WS = None
                         _RUNNER_LOOP = None
-                        # Drain pending request_llm futures so callers'
-                        # wait_for returns fast with the disconnect reason.
+                        # 排空待发 request_llm future, 让调用方 ``wait_for`` 携带断连原因迅速返回。
                         _fail_pending_rpcs("Runner WS disconnected before response arrived")
 
             except websockets.exceptions.ConnectionClosed:
                 logger.warning("WebSocket connection closed by Desktop.")
             except websockets.exceptions.InvalidStatus as e:
-                # HTTP 401 from the Desktop's pre-upgrade token check: this
-                # process still holds the previous session's token (the
-                # Desktop restarted). Drop the cached endpoint so the next
-                # attempt re-reads the endpoint file for the fresh path and
-                # token — retrying the stale one would burn the attempt
-                # budget on a guaranteed rejection.
+                # Desktop 升级前 token 校验返回 HTTP 401: 本进程仍持有上一个会话的 token(Desktop 重启过)。
+                # 丢弃缓存 endpoint, 下一次从 endpoint 文件重读新的路径+token — 重试旧的一定 401 白白烧掉重试预算。
                 logger.warning(f"Desktop rejected handshake ({e.response.status_code}); refreshing endpoint")
                 current_endpoint = None
             except asyncio.CancelledError:
-                # Test cleanup / normal shutdown — exit the loop. Don't bump
-                # ``_RECONNECT_COUNT`` because we intentionally tore down, not
-                # dropped mid-session.
+                # 测试清理 / 正常退出 — 离开循环, 不 bump ``_RECONNECT_COUNT``, 因为这是主动拆除, 不是会话中途掉线。
                 cancelled = True
             except Exception as e:
                 logger.error(f"WebSocket error: {e}")
@@ -352,8 +304,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
         if cancelled:
             break
 
-        # Try to read a fresh endpoint (path AND token) from the file the
-        # Desktop writes; a missing/stale file keeps the cached endpoint.
+        # 从 Desktop 写的文件读取最新 endpoint(路径+token); 文件缺失/陈旧就保留缓存的 endpoint。
         new_endpoint = read_endpoint()
         if new_endpoint:
             current_endpoint = new_endpoint
@@ -374,16 +325,10 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
 
 
 async def _runner_ready_payload() -> dict[str, Any]:
-    """Compile the ``runner_ready`` notification payload from a fresh / cached
-    snapshot probe. Desktop uses this to decide whether to expose features
-    that depend on optional OS subsystems (microphone, screen capture,
-    system activity signals, local STT/TTS).
+    """编译 ``runner_ready`` 通知负载: Desktop 用它决定要不要暴露依赖可选 OS 子系统的功能(麦克风、截屏、system activity、本地 STT/TTS)。
 
-    On probe failure we surface a structurally distinct shape so the
-    Desktop can tell ``probe_failed=True`` apart from
-    ``capabilities={...all False}``. The Desktop should treat any
-    feature whose value is missing from the dict as "do not enable"
-    regardless of the failure flag.
+    探测失败时返回结构上独立于 ``capabilities={...all False}`` 的形态(``probe_failed=True``), 让 Desktop 能区分;
+    Desktop 应当把任何 ``capabilities`` 里缺失的键视为"不启用", 不管 ``probe_failed`` 是什么。
     """
     payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "capabilities_health": {}, "probe_failed": False}
     try:
@@ -403,13 +348,7 @@ async def _runner_ready_payload() -> dict[str, Any]:
 
 
 async def _build_info() -> dict[str, Any]:
-    """Full snapshot returned by the ``spiritagent.info`` RPC.
-
-    Captures process / OS state in addition to capabilities so the
-    Desktop diagnostic panel can tell stale-process from cold-start, and
-    so the agent itself can adapt behaviour (e.g. avoid heavy tools when
-    disk is tight).
-    """
+    """``spiritagent.info`` RPC 的完整快照: 除能力外还含进程 / OS 状态, 让 Desktop 诊断面板分得清"陈旧进程"与"冷启动", 也让 agent 自己能据此调整行为(例如磁盘吃紧时避免重型工具)。"""
     try:
         caps = await asyncio.to_thread(snapshot)
         if not isinstance(caps, dict):
@@ -427,8 +366,7 @@ async def _build_info() -> dict[str, Any]:
         tool_names = registry.get_all_tool_names()
     except Exception:
         tool_names = []
-    # network_reachable can block up to ~1.5s; keep it off the loop so
-    # heartbeats and spiritagent.cancel stay responsive during the probe.
+    # ``network_reachable`` 可能阻塞 ~1.5s; 放到线程里避免探测期间心跳 / spiritagent.cancel 失去响应。
     reachable = await asyncio.to_thread(network_reachable)
     return {
         "version": __version__,
@@ -466,7 +404,7 @@ def main() -> None:
 
 
 def _schedule_background_mcp_discovery() -> None:
-    """Run ``discover_mcp_tools()`` off the WS event loop. Process-scoped (no-op on reconnect) — concurrent discovery threads would race on the shared registry during the 60-120s stdio spawn window."""
+    """``discover_mcp_tools()`` 跑在 WS event loop 之外; 进程级(重连时不重复) — 并发的发现线程会在 60-120s 的 stdio spawn 窗口里争抢共享 registry。"""
     global _discovery_started
     if _discovery_started:
         return
@@ -484,11 +422,7 @@ def _schedule_background_mcp_discovery() -> None:
 
 
 def _notify_tools_changed() -> None:
-    """Send `tools_changed` notification to the desktop via the active WS.
-
-    No-op when the WS isn't yet connected (e.g. shutdown raced ahead of
-    discovery) or has been closed.
-    """
+    """通过当前 WS 向 Desktop 发 ``tools_changed``; WS 还没连上时(发现先于连接)或已关闭时 no-op。"""
     ws = _ACTIVE_WS
     loop = _RUNNER_LOOP
     if ws is None or loop is None or loop.is_closed():

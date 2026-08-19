@@ -49,6 +49,6 @@ def get_max_line_length() -> int:
 
 
 def reset_cache() -> None:
-    """Clear the cached limits so the next call re-reads the config."""
+    """清除缓存的限制值, 下次调用重新读 config(供 ``config.update`` / 测试使用)。"""
     global _cached_limits
     _cached_limits = None

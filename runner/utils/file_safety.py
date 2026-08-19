@@ -15,7 +15,7 @@ _SANDBOX_HOME_SUFFIX = ("home", ".spiritagent")
 
 
 def validate_within_dir(path: Path, root: Path) -> str | None:
-    """Returns error if path resolves outside root, None if safe."""
+    """若解析结果落在 ``root`` 之外返回错误信息，否则返回 ``None``。"""
     try:
         path.resolve().relative_to(root.resolve())
         return None
@@ -95,9 +95,7 @@ def build_write_denied_prefixes(home: str) -> list[str]:
         Path("C:/Windows/WinSxS"),
         Path("C:/Windows/Boot"),
         Path("C:/Windows/Recovery"),
-        # WinSxS is huge and refactor-sensitive — never edit live.
-        # Boot/Recovery hold boot-loader / recovery binaries.
-        # System32/SysWOW64 are the canonical DLL hosts.
+        # WinSxS 体量巨大且结构敏感——禁止在线编辑；Boot/Recovery 存放引导/恢复二进制；System32/SysWOW64 是系统 DLL 主目录。
         Path(os.environ.get("SystemRoot", "C:/Windows")),
         Path(os.environ.get("ProgramData", "C:/ProgramData")),
         Path(os.environ.get("ProgramFiles", "C:/Program Files")),
@@ -112,12 +110,7 @@ def build_write_denied_prefixes(home: str) -> list[str]:
 
 
 def _build_normalized_prefixes(home: str) -> list[str]:
-    """Normalized (lowercase + forward-slash) version of ``build_write_denied_prefixes``.
-
-    On Windows, ``is_write_denied`` needs case/slash-insensitive matching.
-    Pre-normalizing avoids calling ``.replace().lower()`` on every prefix
-    on every invocation.
-    """
+    """``build_write_denied_prefixes`` 的小写 + 正斜杠预归一版本，供 Windows 上的写检查避免热路径上反复 ``replace().lower()``。"""
     global _denied_prefixes_norm_cache
     if _denied_prefixes_norm_cache and _denied_prefixes_norm_cache[0] == home:
         return _denied_prefixes_norm_cache[1]
@@ -128,24 +121,14 @@ def _build_normalized_prefixes(home: str) -> list[str]:
 
 
 def get_windows_sensitive_prefixes() -> tuple[str, ...]:
-    """Canonical lowercase forward-slash Windows system-dir prefixes.
-
-    Shared with ``tools/files/file_tools.py`` so the file-tool write guard
-    and the terminal denylist stay in sync — adding a new entry (e.g.
-    ``C:/Windows/Tasks``) lives in one place. The trailing ``/`` is
-    intentional so ``C:/Windows`` does NOT match the prefix meant for
-    ``C:/Windows/System32``; callers should compare with
-    ``resolved.startswith(prefix)`` after the same
-    ``replace("\\\\", "/").lower()`` normalization the file-tool guard
-    performs.
-    """
+    """归一化（小写 + 正斜杠）后的 Windows 系统目录前缀。"""
     rel_entries = ("windows/system32/", "windows/syswow64/", "windows/winsxs/", "windows/boot/", "windows/recovery/", "programdata/", "program files/", "program files (x86)/")
     drives = _enumerate_windows_drives() or ("c",)
     return tuple(f"{drv}:/{rel}" for drv in drives for rel in rel_entries)
 
 
 def _enumerate_windows_drives() -> tuple[str, ...]:
-    """Return mounted Windows drive letters (a-z) lowercase, no colon."""
+    """返回已挂载的 Windows 盘符字母（a-z，小写，无冒号）。"""
     if not IS_WINDOWS:
         return ()
     try:
@@ -187,13 +170,7 @@ if IS_WINDOWS:
 
 
 def _strip_device_prefix(path_str: str) -> str:
-    """Normalize Windows NT path prefixes (``\\\\?\\``, ``\\\\?\\UNC\\``).
-
-    Slicing is done on the separator-normalized form so forward-slash input
-    is handled consistently. ``\\\\.\\`` device paths have no DOS equivalent
-    and pass through untouched — stripping that prefix would forge a bogus
-    relative path out of e.g. ``\\\\.\\pipe\\x``.
-    """
+    """去除 Windows NT 路径前缀（``\\\\?\\``、``\\\\?\\UNC\\``），但保留 ``\\\\.\\`` 设备路径。"""
     if not path_str:
         return path_str
     norm = path_str.replace("/", "\\")
@@ -206,11 +183,7 @@ def _strip_device_prefix(path_str: str) -> str:
 
 
 def _split_ads_stream(path_str: str) -> tuple[str, str]:
-    """Split Windows path into base file/dir path and NTFS stream suffix.
-
-    Preserves drive letter colon (e.g. 'C:') and only extracts colons
-    in subsequent components.
-    """
+    """把 Windows 路径拆成 (基础路径, NTFS 流后缀)；保留盘符冒号，仅拆分后续组件中的冒号。"""
     if not IS_WINDOWS or not path_str:
         return path_str, ""
 
@@ -238,7 +211,7 @@ def _split_ads_stream(path_str: str) -> tuple[str, str]:
 
 
 def _get_final_path_by_handle(path_str: str) -> str | None:
-    """Resolve authoritative canonical path via Win32 GetFinalPathNameByHandleW with dynamic buffer allocation."""
+    """通过 Win32 GetFinalPathNameByHandleW（动态缓冲）解析权威规范化路径。"""
     if not IS_WINDOWS:
         return None
     try:
@@ -248,7 +221,6 @@ def _get_final_path_by_handle(path_str: str) -> str | None:
         if h == wintypes.HANDLE(-1).value or h == -1:
             return None
         try:
-            # Query required buffer size dynamically
             req_len = kernel32.GetFinalPathNameByHandleW(h, None, 0, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
             if req_len == 0:
                 return None
@@ -264,17 +236,7 @@ def _get_final_path_by_handle(path_str: str) -> str | None:
 
 
 def canonicalize_path(path: str) -> str:
-    """Authoritative cross-platform path canonicalization.
-
-    On Windows:
-    - Strips NT device prefixes (\\\\?\\, \\\\?\\UNC\\).
-    - Preserves and isolates NTFS Alternate Data Streams (ADS).
-    - Pre-normalizes with normpath to resolve '..' and '.' traversal upfront.
-    - Resolves 8.3 short names (PROGRA~1), symlinks, and junctions using
-      Win32 GetFinalPathNameByHandleW with dynamic buffer sizing.
-    - Backtracks to existing parent directories for uncreated targets.
-    - Re-attaches stream suffixes.
-    """
+    """跨平台权威路径规范化（Windows 上处理 NT 设备前缀、ADS、8.3 短名、符号链接/连接点，缺失路径回溯到已存在父目录）。"""
     if not path:
         return ""
     expanded = os.path.expanduser(str(path))
@@ -284,15 +246,12 @@ def canonicalize_path(path: str) -> str:
     cleaned = _strip_device_prefix(expanded)
     base_path, stream_suffix = _split_ads_stream(cleaned)
 
-    # Pre-normalize to resolve '..' and '.' upfront
     norm = os.path.normpath(base_path)
 
-    # Try direct handle resolution on existing file/dir
     resolved = _get_final_path_by_handle(norm)
     if resolved:
         return resolved + stream_suffix
 
-    # For non-existent files/directories: walk up to existing parent directory
     cur = norm
     tail_parts: list[str] = []
     while cur:
@@ -306,7 +265,6 @@ def canonicalize_path(path: str) -> str:
             return _strip_device_prefix(joined) + stream_suffix
         cur = parent
 
-    # Fallback to os.path.realpath if no parent handle could be queried
     return os.path.realpath(norm) + stream_suffix
 
 
@@ -319,9 +277,7 @@ def is_write_denied(path: str) -> bool:
 
     base_resolved, stream_suffix = _split_ads_stream(resolved)
 
-    # On Windows the prefix and path checks are slash- and case-insensitive.
-    # Normalise both sides so a write to ``C:\Windows\System32``,
-    # ``c:/windows/system32``, ``~/.BASHRC`` or any variant hits the denylist.
+    # Windows 上路径和前缀匹配都忽略大小写与斜杠方向；两侧统一归一化后，``C:\Windows\System32``、``c:/windows/system32``、``~/.BASHRC`` 等都能命中黑名单。
     resolved_norm = resolved.replace("\\", "/").lower() if IS_WINDOWS else resolved
     base_resolved_norm = base_resolved.replace("\\", "/").lower() if IS_WINDOWS else base_resolved
 
@@ -335,11 +291,10 @@ def is_write_denied(path: str) -> bool:
             return True
 
     if IS_WINDOWS:
-        # Pre-normalized prefixes — check both the full path (with any ADS) and base path
         normalized_prefixes = _build_normalized_prefixes(home)
         if any(resolved_norm.startswith(p) or base_resolved_norm.startswith(p) for p in normalized_prefixes):
             return True
-        # Also block directory stream tampering like ::$INDEX_ALLOCATION
+        # 同时阻断目录流的元数据写入（如 ::$INDEX_ALLOCATION）。
         if stream_suffix and any(base_resolved_norm == p.rstrip("/") for p in normalized_prefixes):
             return True
     elif any(resolved.startswith(p) or base_resolved.startswith(p) for p in build_write_denied_prefixes(home)):

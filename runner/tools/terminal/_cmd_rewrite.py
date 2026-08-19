@@ -18,10 +18,12 @@ _callback_tls = threading.local()
 
 
 def get_sudo_password_callback() -> Callable[[], str | None] | None:
+    """读取当前线程注入的 sudo 密码回调（Desktop 进程设置）。"""
     return getattr(_callback_tls, "sudo_password", None)
 
 
 def set_sudo_password_callback(cb: Callable[[], str | None] | None) -> None:
+    """注入当前线程的 sudo 密码回调。"""
     _callback_tls.sudo_password = cb
 
 
@@ -52,9 +54,7 @@ def _set_cached_sudo_password(password: str) -> None:
 
 
 def _prompt_for_sudo_password() -> str:
-    """Sudo password source: the callback the Desktop installs (thread_context
-    propagates it), else the per-scope cache. The runner has no interactive
-    console — a TTY prompt here would be unreachable dead weight (README §6)."""
+    """密码来源：优先回调（由 Desktop 注入，thread_context 透传），其次按 scope 缓存——runner 没有交互终端，TTY 提示永远不可达。"""
     cached = _get_cached_sudo_password()
     if cached:
         return cached

@@ -41,29 +41,24 @@ class ActionResult:
     message: str = ""
     capture: CaptureResult | None = None
     meta: dict[str, Any] = field(default_factory=dict)
-    # Verdict surface:
-    #   ``verified``   — capture re-checked the action took effect.
-    #   ``effect``     — short human label, e.g. "opened file", "no-op".
-    #   ``escalation`` — ``"done"`` | ``"verify_fresh_state"`` | ``"escalate"``.
-    #   ``path``       — which fallback ladder branch produced this result.
-    #   ``code``       — numeric status, parallels a typed_error code.
+    # 判定面：
+    #   verified   — capture 复核动作是否生效
+    #   effect     — 简短人类可读标签，如 "opened file"、"no-op"
+    #   escalation — "done" | "verify_fresh_state" | "escalate"
+    #   path       — 哪个回退分支产生了此结果
+    #   code       — 数值状态码，与 typed_error code 对应
     verified: bool = False
     effect: str = ""
     escalation: str = "done"
     path: str = ""
     code: int = 0
-    # Background vs foreground escalation: backend implementations tag
-    # which delivery channel the action went through so the runner
-    # caller can apply per-channel approval scope. Defaults to
-    # ``"background"`` default.
+    # 后端实现标注动作走的是哪条投递通道，runner 调用方据此按通道应用不同的审批范围；默认 "background"
     delivery_mode: str = "background"
 
 
-# Sentinel values for `app=` that target the OS shell surface (desktop
-# background / taskbar) rather than a specific application. Both backends
-# resolve the sentinel to the topmost shell window — Finder / Dock on macOS,
-# Progman / Shell_TrayWnd on Windows. Centralized here so the platform
-# backends can't silently diverge on what counts as a sentinel.
+# app= 的哨兵值，目标是 OS 桌面壳层（桌面背景 / 任务栏）而非某个具体应用。
+# macOS 上解析为 Finder / Dock，Windows 上为 Progman / Shell_TrayWnd。
+# 在此集中定义，防止两个平台后端对"什么算哨兵"产生隐性分歧。
 DESKTOP_SENTINELS: frozenset[str] = frozenset({"screen", "desktop", "fullscreen", "all"})
 
 

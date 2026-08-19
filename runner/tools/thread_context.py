@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def propagate_context_to_thread(target: Callable[..., Any]) -> Callable[..., Any]:
+    """把当前线程的 contextvars + sudo 回调透传到工作线程, 任务结束后清理 sudo 回调避免泄漏。"""
     ctx = contextvars.copy_context()
     parent_sudo_cb = None
     try:

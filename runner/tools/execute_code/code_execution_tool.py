@@ -163,6 +163,7 @@ _TOOL_STUBS = {
 
 
 def generate_spiritagent_tools_module(enabled_tools: list[str], transport: str = "uds") -> str:
+    """为 sandbox 子进程生成 ``spiritagent_tools`` 桩模块(根据 enabled_tools 过滤, 选 UDS / file 传输头)。"""
     tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
     stub_functions = []
     export_names = []
@@ -338,7 +339,7 @@ _TERMINAL_BLOCKED_PARAMS = {"background", "pty", "notify_on_complete", "watch_pa
 
 
 def _read_conn_line(conn: socket.socket, buf: bytes) -> tuple[bytes | None, bytes]:
-    """Read one newline-terminated line; returns (None, buf) on timeout/EOF."""
+    """读取一个以换行结尾的行; 超时或对端关闭时返回 ``(None, buf)``。"""
     while b"\n" not in buf:
         try:
             chunk = conn.recv(65536)
@@ -354,13 +355,11 @@ def _read_conn_line(conn: socket.socket, buf: bytes) -> tuple[bytes | None, byte
 def _rpc_server_loop(
     server_sock: socket.socket, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str], expected_token: str
 ) -> None:
+    """本机沙箱的父进程侧 RPC 监听循环: accept 一条已认证连接 + 串行派发工具调用。"""
     conn = None
     try:
         server_sock.settimeout(5)
-        # On Windows the endpoint is loopback TCP with no filesystem
-        # permissions, so the first line must authenticate the sandbox; a
-        # rejected connection is dropped and the listener keeps accepting —
-        # otherwise any local process could hijack the single RPC slot.
+        # Windows 上端点是 loopback TCP, 没有文件系统权限, 因此首行必须做沙箱认证; 拒绝的连接立即关闭、监听继续接收 — 否则任何本地进程都能抢这个独享 RPC 槽位。
         while True:
             try:
                 conn, _ = server_sock.accept()
@@ -378,8 +377,7 @@ def _rpc_server_loop(
             conn.close()
             conn = None
         conn.settimeout(300)
-        # Drain buffered lines (the request may have arrived pipelined with
-        # the auth line) before waiting for more wire data.
+        # 先把可能和 auth 行 pipeline 一同到达的请求行消费掉, 再开始等新数据。
         while True:
             while b"\n" in buf:
                 line, buf = buf.split(b"\n", 1)
@@ -444,6 +442,7 @@ def _rpc_server_loop(
 
 
 def _get_or_create_env(task_id: str) -> tuple[Any, str]:
+    """获取或按需创建 task_id 对应的沙箱 Environment(双检锁, 避免重复创建)。"""
     effective_task_id = resolve_container_task_id(task_id)
     with env_lock:
         if effective_task_id in active_environments:
@@ -511,12 +510,14 @@ def _get_or_create_env(task_id: str) -> tuple[Any, str]:
 
 
 def _ship_file_to_remote(env: Any, remote_path: str, content: str) -> None:
+    """通过 base64 把一段文本内容投递到沙箱里的 remote_path, 避开 shell 转义的所有坑。"""
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
     quoted_remote_path = shlex.quote(remote_path)
     env.execute(f"echo '{encoded}' | base64 -d > {quoted_remote_path}", cwd="/", timeout=30)
 
 
 def _env_temp_dir(env: Any) -> str:
+    """返回 env 后端可写的临时目录(优先 ``env.get_temp_dir()``, 回落到 ``tempfile.gettempdir()`` / ``/tmp``)。"""
     get_temp_dir = getattr(env, "get_temp_dir", None)
     if callable(get_temp_dir):
         try:
@@ -542,6 +543,7 @@ def _rpc_poll_loop(
     stop_event: threading.Event,
     expected_token: str,
 ) -> None:
+    """远程沙箱的 RPC 轮询循环(基于文件 req/res), 触发父进程派发工具调用并写回响应文件。"""
     poll_interval = 0.1
     quoted_rpc_dir = shlex.quote(rpc_dir)
     while not stop_event.is_set():
@@ -571,6 +573,7 @@ def _rpc_poll_loop(
                 res_file = f"{rpc_dir}/res_{seq_str}"
                 quoted_res_file = shlex.quote(res_file)
                 if request.get("token") != expected_token:
+                    # 沙箱侧认证: 与 TCP/UDS 路径同理, 不认证就拒, 防止沙箱内的恶意脚本冒充其他会话触发工具调用。
                     logger.debug("execute_code RPC: dropped unauthenticated request %s", req_file)
                     env.execute(f"rm -f {quoted_req_file}", cwd="/", timeout=5)
                     continue
@@ -609,6 +612,7 @@ def _rpc_poll_loop(
 
 
 def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | None) -> str:
+    """在非本地(Docker/Singularity/SSH)沙箱后端里执行 ``code``; 通过文件 RPC 转发工具调用。"""
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
@@ -700,6 +704,7 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
 
 
 def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str] | None = None) -> str:
+    """执行 sandbox 子进程: 本机用 UDS/TCP RPC, 远程(Docker/Singularity/SSH)委派 ``_execute_remote``。"""
     if not code or not code.strip():
         return tool_error("No code provided.")
     env_type = get_env_config()["env_type"]
@@ -902,6 +907,7 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
 
 
 def _kill_process_group(proc: subprocess.Popen, escalate: bool = False) -> None:
+    """杀掉沙箱子进程及其整个进程组; Windows 走 taskkill, POSIX 用 psutil 走整棵树, ``escalate=True`` 时再用 SIGKILL 二次升级。"""
     if IS_WINDOWS:
         if not kill_tree(proc.pid, force=True):
             try:
@@ -953,6 +959,7 @@ def _kill_process_group(proc: subprocess.Popen, escalate: bool = False) -> None:
 
 
 def _load_config() -> dict:
+    """从内存 config 读 ``code_execution`` 段; 解析失败或缺失时返回空 dict。"""
     try:
         cfg = load_config().get("code_execution", {})
         return cfg if isinstance(cfg, dict) else {}
@@ -961,6 +968,7 @@ def _load_config() -> dict:
 
 
 def _get_execution_mode() -> str:
+    """读取合法的 ``code_execution.mode``, 非法值降级为默认。"""
     cfg_value = str(_load_config().get("mode", DEFAULT_EXECUTION_MODE)).strip().lower()
     if cfg_value in EXECUTION_MODES:
         return cfg_value
@@ -970,10 +978,8 @@ def _get_execution_mode() -> str:
 
 @functools.lru_cache(maxsize=32)
 def _is_usable_python(python_path: str, venv: str, conda: str) -> bool:
-    # venv / conda are part of the cache key so a worktree swap that
-    # repoints VIRTUAL_ENV / CONDA_PREFIX automatically invalidates the
-    # verdict without an explicit cache_clear() call. The key values are
-    # not used in the probe itself — they only distinguish cache entries.
+    """探测一个 Python 解释器是否 >= 3.8 可用; ``venv`` / ``conda`` 仅作为缓存键区分条目(进程内 venv 切换会自动失效缓存)。"""
+    # 把 venv/conda 放进 cache key, 让切换 VIRTUAL_ENV / CONDA_PREFIX 的 worktree swap 不需要手动 cache_clear()。
     del venv, conda
     try:
         result = subprocess.run(
@@ -989,22 +995,15 @@ def _is_usable_python(python_path: str, venv: str, conda: str) -> bool:
 
 
 def _invalidate_python_probe_cache() -> None:
-    """Clear the ``_is_usable_python`` cache.
-
-    Kept for explicit invalidation callers (tests, settings hot-reload). The
-    runtime venv-switch path no longer needs this — the cache key includes
-    ``VIRTUAL_ENV`` / ``CONDA_PREFIX`` so a swap self-invalidates.
-    """
+    """清空 ``_is_usable_python`` 缓存(测试 / 热重载用, 运行时 venv 切换已经靠 cache key 自失效)。"""
     _is_usable_python.cache_clear()
 
 
 def _resolve_child_python(mode: str) -> str:
+    """解析沙箱子进程用的 Python 解释器(优先 installer 装的 uv-managed venv, 再看 VIRTUAL_ENV/CONDA_PREFIX)。"""
     if mode != "project":
         return sys.executable
-    # Prefer the uv-managed venv Python (installed by the installer). Cache
-    # key uses a discriminator so the verdict can't collide with the
-    # VIRTUAL_ENV/CONDA_PREFIX probe entries (which use empty strings when
-    # those env vars are unset).
+    # 用鉴别串作为 discriminator, 避免和 ``VIRTUAL_ENV``/``CONDA_PREFIX`` 探测条目撞 key(env 变量缺失时这两路用空串)。
     managed = find_python()
     if managed and _is_usable_python(managed, "managed-venv", ""):
         return managed
@@ -1031,6 +1030,7 @@ def _resolve_child_python(mode: str) -> str:
 
 
 def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
+    """解析沙箱子进程的 cwd: project 模式按 ``terminal.cwd`` / 当前目录回退, 非 project 模式直接用 staging。"""
     if mode != "project":
         return staging_dir
     raw = str(cfg_get(load_config(), "terminal", "cwd", default="")).strip()

@@ -42,7 +42,7 @@ def _load_config_passthrough() -> frozenset[str]:
 
 
 def reset_cache() -> None:
-    """Drop the config-derived passthrough set (spiritagent.config.update)."""
+    """清空由配置派生的透传变量集合（spiritagent.config.update 时调用）。"""
     global _config_passthrough
     _config_passthrough = None
 

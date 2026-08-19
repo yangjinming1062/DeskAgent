@@ -88,10 +88,8 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
         except Exception as api_err:
             if not is_image_size_error(api_err):
                 raise
-            # Provider rejected the image as too large. Resize and retry
-            # exactly once. The retry uses RESIZE_TARGET_BYTES (5 MB) as
-            # the ceiling, which is well below _MAX_BASE64_BYTES (20 MB),
-            # so a second resize-on-error is unnecessary.
+            # 提供商以过大拒绝。缩放后正好重试一次。retry 以 RESIZE_TARGET_BYTES（5 MB）为上限，
+            # 远低于 _MAX_BASE64_BYTES（20 MB），因此无需二次 resize-on-error。
             img_url = await asyncio.to_thread(resize_image_for_vision, temp_path, mime_type=mime)
             messages[0]["content"][1]["image_url"]["url"] = img_url
             res = await call_llm(**call_kwargs)
@@ -107,8 +105,7 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
         analysis = _classify_api_error(e, "image")
         debug_call_data["error"] = err_msg
 
-        # Tool-exit boundary: the LLM-facing envelope plus the classified
-        # fallback analysis are the error contract callers parse.
+        # 工具出口边界：面向 LLM 的 envelope 加上分类后的兜底分析，是调用方解析的契约
         return json.dumps({"success": False, "error": err_msg, "analysis": analysis}, indent=2, ensure_ascii=False)
     finally:
         await asyncio.to_thread(_debug.log_call, "vision_analyze_tool", debug_call_data)

@@ -51,31 +51,25 @@ from .osv_check import check_package_for_malware
 
 logger = logging.getLogger(__name__)
 
+# MCP SDK 的 ``stdio_client(server, errlog=sys.stderr)`` 默认把子进程 stderr
+# 接到父进程的真实 stderr（即用户 TTY）。这意味着启动时拉起的 MCP server
+# （FastMCP 横幅、slack-mcp-server 启动 JSON 日志等）会直接往终端写，
+# 在 prompt_toolkit / Rich 渲染 TUI 时污染显示并可能卡死会话。
 #
-# The MCP SDK's ``stdio_client(server, errlog=sys.stderr)`` defaults the
-# subprocess stderr stream to the parent process's real stderr, i.e. the
-# user's TTY.  That means any MCP server we spawn at startup (FastMCP
-# banners, slack-mcp-server JSON startup logs, etc.) writes directly onto
-# the terminal while prompt_toolkit / Rich is rendering the TUI — which
-# corrupts the display and can hang the session.
-#
-# Instead we redirect every stdio MCP subprocess's stderr into a shared
-# per-profile log file (~/.spiritagent/logs/mcp-stderr.log), tagged with the
-# server name so individual servers remain debuggable.
-#
-# Fallback is os.devnull if opening the log file fails for any reason.
+# 这里改为把每个 stdio MCP 子进程的 stderr 重定向到 per-profile 共享日志
+# （~/.spiritagent/logs/mcp-stderr.log），用 server 名标记边界以便排错。
+# 打开日志文件失败时回退到 os.devnull。
 
 _mcp_stderr_log_fh: Any | None = None
 _mcp_stderr_log_lock = threading.Lock()
 
 
 def _get_mcp_stderr_log() -> Any:
-    """Return a shared append-mode file handle for MCP subprocess stderr.
+    """返回 MCP 子进程 stderr 共享的 append 模式文件句柄。
 
-    Opened once per process and reused for every stdio server.  Must have a
-    real OS-level file descriptor (``fileno()``) because asyncio's subprocess
-    machinery wires the child's stderr directly to that fd.  Falls back to
-    ``/dev/null`` if opening the log file fails.
+    每个进程只打开一次，所有 stdio server 复用。必须有真实 OS 级 fd，
+    因为 asyncio 子进程机制直接把子 stderr 接到该 fd 上。日志文件打开
+    失败则回退到 ``/dev/null``。
     """
     global _mcp_stderr_log_fh
     with _mcp_stderr_log_lock:
@@ -104,11 +98,10 @@ def _get_mcp_stderr_log() -> Any:
 
 
 def _write_stderr_log_header(server_name: str) -> None:
-    """Write a human-readable session marker before launching a server.
+    """在启动 server 之前写入一行可读的会话分隔标记。
 
-    Gives operators a way to find each server's output in the shared
-    ``mcp-stderr.log`` file without needing per-line prefixes (which would
-    require a pipe + reader thread and complicate shutdown).
+    让运维在共享 ``mcp-stderr.log`` 中能定位各 server 的输出，无需逐行
+    加前缀（那需要管道 + 读线程，并会复杂化关闭流程）。
     """
     fh = _get_mcp_stderr_log()
     try:
@@ -120,7 +113,7 @@ def _write_stderr_log_header(server_name: str) -> None:
 
 
 def _check_message_handler_support() -> bool:
-    """ClientSession accepts ``message_handler`` only on newer MCP SDKs."""
+    """仅较新版本 MCP SDK 的 ClientSession 支持 ``message_handler`` 参数。"""
     try:
         return "message_handler" in inspect.signature(ClientSession).parameters
     except (TypeError, ValueError):
@@ -242,21 +235,14 @@ def _build_safe_env(user_env: dict | None) -> dict:
 
 
 def _sanitize_error(text: str) -> str:
-    """Strip credential-like patterns from error text before returning to LLM.
-
-    Replaces tokens, keys, and other secrets with [REDACTED] to prevent
-    accidental credential exposure in tool error responses.
-    """
+    """把错误文本中的凭据模式替换为 [REDACTED]，避免在工具错误响应中泄露。"""
     return _CREDENTIAL_PATTERN.sub("[REDACTED]", text)
 
 
 def _exc_str(exc: BaseException) -> str:
-    """Return a non-empty human-readable string for *exc*.
-
-    Some exception classes (e.g. ``anyio.ClosedResourceError``) are raised
-    without a message argument, so ``str(exc)`` is ``""``.  This helper
-    falls back to ``repr(exc)`` so that error messages shown to the user
-    and logged to disk always carry *some* diagnostic information.
+    """返回 *exc* 的非空可读字符串。某些异常类（如 ``anyio.ClosedResourceError``）
+    不带消息参数，会使 ``str(exc) == ""``。此处回退到 ``repr(exc)`` 以确保
+    日志与用户可见错误都至少带一些诊断信息。
     """
     text = str(exc).strip()
     return text if text else repr(exc)
@@ -298,10 +284,10 @@ def _prepend_path(env: dict, directory: str) -> dict:
 
 
 def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
-    """Resolve a stdio MCP command against the exact subprocess environment.
+    """按子进程实际环境解析 stdio MCP 命令。
 
-    This primarily exists to make bare ``npx``/``npm``/``node`` commands work
-    reliably even when MCP subprocesses run under a filtered PATH.
+    主要目的是：即使 MCP 子进程在受限 PATH 下运行，裸 ``npx``/``npm``/``node``
+    命令也能稳定找到。
     """
     resolved_command = os.path.expanduser(str(command).strip())
     resolved_env = dict(env or {})
@@ -354,7 +340,7 @@ def _get_image_cache_dir() -> Path:
 
 
 def cache_image_from_bytes(raw_bytes: bytes, ext: str = ".png") -> str:
-    """Cache raw image bytes to disk and return the file path."""
+    """把图片字节缓存到磁盘并返回文件路径。"""
     cache_dir = _get_image_cache_dir()
     filename = f"{secrets.token_hex(8)}{ext}"
     path = cache_dir / filename
@@ -390,25 +376,21 @@ def _cache_mcp_image_block(block: Any) -> str:
 
 
 class InvalidMcpUrlError(ValueError):
-    """Raised when a remote MCP server's ``url`` cannot be parsed as http(s)://.
+    """远程 MCP server 的 ``url`` 无法解析为 http(s):// 时抛出。
 
-    Validated once at startup so we fail fast with a clear message instead of
-    burning through the reconnect-backoff loop on every attempt.
+    启动时一次性校验，快速给出明确错误，而不是让重连退避循环每次都白跑一遍。
     """
 
 
 class NonMcpEndpointError(ConnectionError):
-    """Raised when an HTTP MCP URL serves a non-MCP response.
+    """HTTP MCP URL 返回非 MCP 响应时抛出。
 
-    A genuine MCP Streamable-HTTP endpoint answers with ``application/json``
-    or ``text/event-stream``.  Anything else on a 2xx response (typically
-    ``text/html`` from a web-app root) means the configured ``url`` points at
-    the wrong place.  This is non-retryable: every attempt returns the same
-    page, so the reconnect-backoff loop is skipped and the server is reported
-    failed immediately with an actionable message.
+    真正的 MCP Streamable-HTTP 端点会返回 ``application/json`` 或
+    ``text/event-stream``；2xx 上若拿到其他内容（典型为 ``text/html``，来自
+    web 应用根），说明配置的 ``url`` 指向了错误位置。不可重试——每次都返回
+    同一页面，跳过重连退避循环，立即按可处理消息上报为失败。
 
-    Subclasses :class:`ConnectionError` so callers that only catch the broad
-    class still treat it as a connection problem.
+    继承 :class:`ConnectionError`，便于只捕获基类的调用方仍把它当连接问题。
     """
 
 
@@ -433,22 +415,18 @@ def _validate_remote_mcp_url(server_name: str, url: Any) -> str:
 
 
 def _resolve_client_cert(server_name: str, config: dict) -> str | tuple[str, str] | tuple[str, str, str] | None:
-    """Resolve the ``client_cert`` / ``client_key`` config for mTLS.
+    """解析 mTLS 的 ``client_cert`` / ``client_key`` 配置。
 
-    Returns whatever ``httpx``'s ``cert=`` parameter accepts, or ``None`` when
-    no client certificate is configured:
+    返回 ``httpx`` 的 ``cert=`` 接受的形态，未配置证书时返回 None：
+      - 单个绝对路径字符串：``client_cert`` 是字符串且 ``client_key`` 未设
+        （PEM 文件含证书 + 私钥）。
+      - ``(cert_path, key_path)`` 元组：两项都设置，或 ``client_cert`` 是 2
+        元 list/tuple。
+      - ``(cert_path, key_path, password)`` 元组：``client_cert`` 是 3 元
+        list/tuple，第三项为私钥口令。
 
-      - ``None`` if neither ``client_cert`` nor ``client_key`` is set.
-      - A single absolute path string if ``client_cert`` is a string and
-        ``client_key`` is unset (PEM file with cert + key combined).
-      - A ``(cert_path, key_path)`` tuple when both are set, or when
-        ``client_cert`` is a 2-element list/tuple.
-      - A ``(cert_path, key_path, password)`` tuple when ``client_cert`` is
-        a 3-element list/tuple — the third element is the key passphrase.
-
-    User paths support ``~`` expansion. Missing files raise ``FileNotFoundError``
-    with a server-scoped message so the failure surfaces as a clear setup
-    error rather than an opaque TLS handshake error.
+    用户路径支持 ``~`` 展开。文件缺失抛出带 server 名的 ``FileNotFoundError``，
+    让失败表现为清晰的设置错误而非不透明的 TLS 握手错误。
     """
     raw_cert = config.get("client_cert")
     raw_key = config.get("client_key")
@@ -527,15 +505,14 @@ def _safe_numeric(value: Any, default: Any, coerce: Callable = int, minimum: int
 
 
 class SamplingHandler:
-    """Handles sampling/createMessage requests for a single MCP server.
+    """处理单个 MCP server 的 sampling/createMessage 请求。
 
-    Each MCPServerTask that has sampling enabled creates one SamplingHandler.
-    The handler is callable and passed directly to ``ClientSession`` as
-    the ``sampling_callback``.  All state (rate-limit timestamps, metrics) lives on the instance -- no module-level globals.
+    每个启用了 sampling 的 MCPServerTask 创建一个 SamplingHandler 实例，
+    直接作为 ``ClientSession`` 的 ``sampling_callback``。所有状态（限流
+    时间戳、指标）都挂在实例上——无模块级全局变量。
 
-    The callback is async and runs on the MCP background event loop. The
-    reverse RPC returns plain text; MCP tool-use sampling is rejected before
-    an LLM request is sent.
+    回调为 async，运行在 MCP 后台事件循环上。反向 RPC 仅返回纯文本；
+    MCP tool-use sampling 在发送 LLM 请求前会被拒绝。
     """
 
     def __init__(self, server_name: str, config: dict) -> None:
@@ -556,7 +533,7 @@ class SamplingHandler:
     # -- Rate limiting -------------------------------------------------------
 
     def _check_rate_limit(self) -> bool:
-        """Sliding-window rate limiter.  Returns True if request is allowed."""
+        """滑动窗口限流；返回 True 表示允许本次请求。"""
         now = time.time()
         window = now - 60
         self._rate_timestamps[:] = [t for t in self._rate_timestamps if t > window]
@@ -568,7 +545,7 @@ class SamplingHandler:
     # -- Model resolution ----------------------------------------------------
 
     def _resolve_model(self, preferences: Any) -> str | None:
-        """Config override > server hint > None (use default)."""
+        """模型解析优先级：config override > server hint > None（用默认）。"""
         if self.model_override:
             return self.model_override
         if preferences and hasattr(preferences, "hints") and preferences.hints:
@@ -581,7 +558,7 @@ class SamplingHandler:
 
     @staticmethod
     def _extract_tool_result_text(block: Any) -> str:
-        """Extract text from a ToolResultContent block."""
+        """从 ToolResultContent block 中抽取文本。"""
         if not hasattr(block, "content") or block.content is None:
             return ""
         items = block.content if isinstance(block.content, list) else [block.content]
@@ -636,16 +613,15 @@ class SamplingHandler:
     # -- Session kwargs helper -----------------------------------------------
 
     def session_kwargs(self) -> dict[str, Any]:
-        """Return kwargs to pass to ClientSession for sampling support."""
+        """返回传给 ClientSession 以启用 sampling 的 kwargs。"""
         return {"sampling_callback": self, "sampling_capabilities": SamplingCapability()}
 
     # -- Main callback -------------------------------------------------------
 
     async def __call__(self, context: Any, params: Any) -> Any:
-        """Sampling callback invoked by the MCP SDK.
+        """由 MCP SDK 调用的 sampling 回调，遵循 ``SamplingFnT`` 协议。
 
-        Conforms to ``SamplingFnT`` protocol. Returns
-        ``CreateMessageResult`` or ``ErrorData``.
+        返回 ``CreateMessageResult`` 或 ``ErrorData``。
         """
 
         if not self._check_rate_limit():
@@ -697,13 +673,13 @@ class SamplingHandler:
 
 
 class MCPServerTask:
-    """Manages a single MCP server connection in a dedicated asyncio Task.
+    """在专属 asyncio Task 中管理单个 MCP server 连接。
 
-    The entire connection lifecycle (connect, discover, serve, disconnect)
-    runs inside one asyncio Task so that anyio cancel-scopes created by
-    the transport client are entered and exited in the same Task context.
+    整个连接生命周期（connect、discover、serve、disconnect）都跑在同一个
+    asyncio Task 内，因此 transport client 创建的 anyio cancel-scopes 在
+    同一 Task 上下文里进入和退出。
 
-    Supports both stdio and HTTP/StreamableHTTP transports.
+    同时支持 stdio 与 HTTP/StreamableHTTP 传输。
     """
 
     __slots__ = (
@@ -762,13 +738,13 @@ class MCPServerTask:
         self.initialize_result: Any | None = None
 
     def _is_http(self) -> bool:
-        """Check if this server uses HTTP transport."""
+        """检查该 server 是否使用 HTTP 传输。"""
         return "url" in self._config
 
     # ----- Dynamic tool discovery (notifications/tools/list_changed) -----
 
     async def _refresh_tools_task(self) -> None:
-        """Run a dynamic tool refresh and log failures from background tasks."""
+        """执行一次动态工具刷新，并在后台任务路径上记录失败。"""
         try:
             await self._refresh_tools()
         except asyncio.CancelledError:
@@ -777,22 +753,21 @@ class MCPServerTask:
             logger.exception("MCP server '%s': dynamic tool refresh failed", self.name)
 
     def _schedule_tools_refresh(self) -> asyncio.Task:
-        """Schedule a background tool refresh and keep it strongly referenced."""
+        """调度后台工具刷新任务并保持强引用。"""
         task = asyncio.create_task(self._refresh_tools_task())
         self._pending_refresh_tasks.add(task)
         task.add_done_callback(self._pending_refresh_tasks.discard)
         return task
 
     def _make_message_handler(self) -> "Callable[[Any], Any]":
-        """Build a ``message_handler`` callback for ``ClientSession``.
+        """为 ``ClientSession`` 构建 ``message_handler`` 回调。
 
-        Dispatches on notification type.  Only ``ToolListChangedNotification``
-        triggers a refresh; ``PromptListChangedNotification`` and
-        ``ResourceListChangedNotification`` are deliberately ignored at the
-        Runner level — the runner's `tools_list` / `skill_view` surface only
-        reflects tools, and prompts/resources are not yet exposed through
-        any SpiritAgent-side tool. Callers who need prompt/resource updates must
-        send ``mcp.reload`` via the Desktop ``reload.mcp`` JSON-RPC path.
+        按通知类型分发：仅 ``ToolListChangedNotification`` 触发刷新；
+        ``PromptListChangedNotification`` 和 ``ResourceListChangedNotification``
+        在 Runner 层被刻意忽略——runner 的 tools_list / skill_view 表面只反映
+        tools，prompts/resources 暂未通过任何 SpiritAgent 端工具暴露。需要
+        prompts/resources 更新的调用方需通过 Desktop 的 ``reload.mcp`` JSON-RPC
+        路径发送 ``mcp.reload``。
         """
 
         async def _handler(message) -> None:
@@ -822,12 +797,11 @@ class MCPServerTask:
         return _handler
 
     async def _refresh_tools(self) -> None:
-        """Re-fetch tools from the server and update the registry.
+        """从 server 重新拉取工具并更新 registry。
 
-        Called when the server sends ``notifications/tools/list_changed``.
-        The lock prevents overlapping refreshes from rapid-fire notifications.
-        After the initial ``await`` (list_tools), all mutations are synchronous
-        — atomic from the event loop's perspective.
+        在 server 发送 ``notifications/tools/list_changed`` 时调用；锁用于
+        防止高频通知产生重叠刷新。首次 ``await``（list_tools）之后所有修改
+        均为同步——相对事件循环是原子的。
         """
 
         async with self._refresh_lock:
@@ -869,24 +843,18 @@ class MCPServerTask:
                 logger.info("MCP server '%s': dynamically refreshed %d tool(s) (no changes)", self.name, len(self._registered_tool_names))
 
     async def _wait_for_lifecycle_event(self) -> str:
-        """Block until either _shutdown_event or _reconnect_event fires.
+        """阻塞直到 ``_shutdown_event`` 或 ``_reconnect_event`` 触发。
 
-        Returns:
-            "shutdown"  if the server should exit the run loop entirely.
-            "reconnect" if the server should tear down the current MCP
-                        session and re-enter the transport (fresh OAuth
-                        tokens, new session ID, etc.). The reconnect event
-                        is cleared before return so the next cycle starts
-                        with a fresh signal.
+        返回 "shutdown"（完全退出 run loop）或 "reconnect"（拆掉当前 MCP
+        会话并重入传输：刷新 OAuth token、新 session ID 等）。返回前
+        reconnect 事件被清除，以便下一轮从干净信号开始。
 
-        Shutdown takes precedence if both events are set simultaneously.
+        若两个事件同时 set，shutdown 优先。
 
-        Periodically sends a lightweight keepalive (``list_tools``) to
-        prevent TCP connections from going stale during long idle
-        periods (#17003).  If the keepalive fails, triggers a reconnect.
+        周期性发送轻量 keepalive（``list_tools``），防止 TCP 长空闲
+        老化（#17003）；keepalive 失败则触发 reconnect。
         """
-        # Keepalive interval in seconds.  Must be shorter than typical
-        # LB / NAT idle-timeout (commonly 300-600s).
+        # keepalive 间隔（秒），须短于常见 LB / NAT 空闲超时（300-600s）。
         _KEEPALIVE_INTERVAL = 180  # 3 minutes
 
         shutdown_task = asyncio.create_task(self._shutdown_event.wait())
@@ -923,8 +891,7 @@ class MCPServerTask:
         return "reconnect"
 
     async def _run_stdio(self, config: dict) -> None:
-        """Run the server using stdio transport."""
-
+        """用 stdio 传输运行 server。"""
         command = config.get("command")
         args = config.get("args", [])
         user_env = config.get("env")
@@ -1020,27 +987,22 @@ class MCPServerTask:
     _MCP_CONTENT_TYPES = ("application/json", "text/event-stream")
 
     async def _preflight_content_type(self, url: str, *, headers: dict | None = None, ssl_verify: bool = True, client_cert=None, timeout: float = 5.0) -> None:
-        """Probe *url* for an MCP-shaped response before the SDK connects.
+        """在 SDK 连接之前探测 *url* 是否返回 MCP 形态的响应。
 
-        A misconfigured ``mcp_servers.<name>.url`` pointed at a plain web app
-        returns HTML (or some other non-MCP body). The MCP SDK then sits on
-        the connection for the full ``connect_timeout`` (default 60 s) before
-        surfacing an opaque ``CancelledError``. A cheap, short-timeout probe
-        here catches that in ≤ ``timeout`` seconds and raises
-        :class:`NonMcpEndpointError` with an actionable message.
+        配错的 ``mcp_servers.<name>.url``（指向普通 web 应用）会返回 HTML
+        （或其它非 MCP 内容），MCP SDK 会卡满 ``connect_timeout``（默认 60s）
+        才抛出莫名其妙的 ``CancelledError``。此处用廉价、短超时的探测能在
+        ≤ ``timeout`` 秒内捕获并抛出带可处理消息的 :class:`NonMcpEndpointError`。
 
-        Detection is allow-list based: a 2xx response is rejected only when it
-        carries a definite content type that is NOT one an MCP endpoint uses
-        (``application/json`` / ``text/event-stream``). A missing or empty
-        content type, non-2xx status, or any network/transport error passes
-        through silently — the probe is strictly best-effort, and the real
-        handshake remains the source of truth for everything except the
-        unambiguous "this is a web page, not MCP" case.
+        检测基于白名单：仅当 2xx 响应带确定 content-type 且**不**是 MCP
+        端点使用的类型（``application/json`` / ``text/event-stream``）时
+        才拒绝；缺/空 content-type、非 2xx、网络/传输错误一律放行——
+        探测严格 best-effort，真正的握手仍然是除「显然是网页不是 MCP」
+        之外所有情况的最终裁决。
 
-        Runs on its own httpx client OUTSIDE the SDK's anyio task group, so the
-        raised error propagates as itself rather than being wrapped in an
-        ``ExceptionGroup`` (which is what defeats hooks installed inside the
-        SDK transport).
+        跑在独立 httpx client 上、在 SDK 的 anyio task group 之外，让抛出
+        的异常以原始形态上抛（不会被包成 ``ExceptionGroup``，那会破坏 SDK
+        传输层内安装的 hook）。
         """
         client_kwargs: dict = {"verify": ssl_verify, "follow_redirects": True, "timeout": httpx.Timeout(timeout)}
         if client_cert is not None:
@@ -1078,7 +1040,7 @@ class MCPServerTask:
         )
 
     async def _run_http(self, config: dict) -> None:
-        """Run the server using HTTP/StreamableHTTP transport."""
+        """用 HTTP/StreamableHTTP 传输运行 server。"""
         url = config["url"]
         headers = dict(config.get("headers") or {})
         # Some MCP servers require MCP-Protocol-Version on the initial
@@ -1162,7 +1124,7 @@ class MCPServerTask:
         _original_url = httpx.URL(url)
 
         async def _strip_auth_on_cross_origin_redirect(response) -> None:
-            """Strip Authorization headers when redirected to a different origin."""
+            """重定向到不同 origin 时移除 Authorization 请求头。"""
             if response.is_redirect and response.next_request:
                 target = response.next_request.url
                 if (target.scheme, target.host, target.port) != (_original_url.scheme, _original_url.host, _original_url.port):
@@ -1198,7 +1160,7 @@ class MCPServerTask:
                 logger.info("MCP server '%s': reconnect requested — tearing down HTTP session", self.name)
 
     async def _discover_tools(self) -> None:
-        """Discover tools from the connected session."""
+        """从已连接会话发现工具。"""
         if self.session is None:
             return
         async with self._rpc_lock:
@@ -1206,10 +1168,9 @@ class MCPServerTask:
         self._tools = tools_result.tools if hasattr(tools_result, "tools") else []
 
     async def run(self, config: dict) -> None:
-        """Long-lived coroutine: connect, discover tools, wait, disconnect.
+        """长生命周期协程：连接、发现工具、等待、断开。
 
-        Includes automatic reconnection with exponential backoff if the
-        connection drops unexpectedly (unless shutdown was requested).
+        连接意外中断时按指数退避自动重连（除非收到关闭信号）。
         """
         self._config = config
         self.tool_timeout = config.get("timeout") or _DEFAULT_TOOL_TIMEOUT
@@ -1349,15 +1310,14 @@ class MCPServerTask:
                 self.session = None
 
     async def start(self, config: dict) -> None:
-        """Create the background Task and wait until ready (or failed)."""
+        """创建后台 Task 并等待 ready（或失败）。"""
         self._task = asyncio.ensure_future(self.run(config))
         await self._ready.wait()
         if self._error:
             raise self._error
 
     async def shutdown(self) -> None:
-        """Signal the Task to exit and wait for clean resource teardown."""
-
+        """通知 Task 退出并等待资源干净回收。"""
         self._shutdown_event.set()
         # Defensive: if _wait_for_lifecycle_event is blocking, we need ANY
         # event to unblock it. _shutdown_event alone is sufficient (the
@@ -1414,33 +1374,16 @@ def _is_auth_error(exc: BaseException) -> bool:
 
 
 def _handle_auth_error_and_retry(server_name: str, exc: BaseException, retry_call, op_description: str):
-    """Attempt auth recovery and one retry; return None to fall through.
+    """尝试认证恢复并重试一次；返回 None 时让调用方走通用错误路径。
 
-    Called by the 5 MCP tool handlers when ``session.<op>()`` raises an
-    auth-related exception. Workflow:
-
-      1. Ask :class:`tools.mcp.helpers.MCPOAuthManager.handle_401` if
-         recovery is viable (i.e., disk has fresh tokens, or the SDK can
-         refresh in-place).
-      2. If yes, set the server's ``_reconnect_event`` so the server task
-         tears down the current MCP session and rebuilds it with fresh
-         credentials. Wait briefly for ``_ready`` to re-fire.
-      3. Retry the operation once. Return the retry result if it produced
-         a non-error JSON payload. Otherwise return the ``needs_reauth``
-         error dict so the model stops hallucinating manual refresh.
-      4. Return None if ``exc`` is not an auth error, signalling the
-         caller to use the generic error path.
-
-    Args:
-        server_name: Name of the MCP server that raised.
-        exc: The exception from the failed tool call.
-        retry_call: Zero-arg callable that re-runs the tool call, returning
-            the same JSON string format as the handler.
-        op_description: Human-readable name of the operation (for logs).
-
-    Returns:
-        A JSON string if auth recovery was attempted, or None to fall
-        through to the caller's generic error path.
+    5 个 MCP 工具处理函数在 ``session.<op>()`` 抛认证异常时调用。流程：
+      1. 询问 :class:`tools.mcp.helpers.MCPOAuthManager.handle_401` 是否可
+         恢复（磁盘已有新 token 或 SDK 可原地刷新）。
+      2. 若可恢复：设置该 server 的 ``_reconnect_event``，让 server 任务拆掉
+         当前 MCP 会话并用新凭据重建；短暂等待 ``_ready`` 重新触发。
+      3. 重试一次。返回非错误 JSON 时直接返回 retry 结果；否则返回
+         ``needs_reauth`` 错误 dict，避免模型继续幻觉式地手动重试。
+      4. 若 ``exc`` 非认证错误，返回 None 让调用方走通用错误路径。
     """
     if not _is_auth_error(exc):
         return None
@@ -1544,18 +1487,15 @@ _SESSION_EXPIRED_MARKERS: tuple = (
 
 
 def _is_session_expired_error(exc: BaseException) -> bool:
-    """Return True if ``exc`` looks like an MCP transport session expiry.
+    """若 ``exc`` 看起来是 MCP 传输会话过期则返回 True。
 
-    Streamable HTTP MCP servers may garbage-collect server-side session
-    state while the OAuth token remains valid — idle TTL, server
-    restart, horizontal-scaling pod rotation, etc.  The SDK surfaces
-    this as a JSON-RPC error whose message contains phrases like
-    ``"Invalid or expired session"``.  This class of failure is
-    distinct from :func:`_is_auth_error`: re-running the OAuth refresh
-    flow would be pointless because the access token is fine.  What's
-    needed is a transport reconnect — tear down and rebuild the
-    ``streamable_http_client`` + ``ClientSession`` pair, which is
-    exactly what ``MCPServerTask._reconnect_event`` triggers.
+    Streamable HTTP MCP server 可能回收服务端会话状态（空闲 TTL、服务重启、
+    横向扩缩容的 pod 轮转等），而 OAuth token 仍然有效。SDK 把这种错误以
+    包含 ``"Invalid or expired session"`` 等措辞的 JSON-RPC error 上抛。
+    这类故障不同于 :func:`_is_auth_error`——重跑 OAuth 刷新流程无意义，
+    因为 access token 没问题。需要的是传输层重连：拆掉并重建
+    ``streamable_http_client`` + ``ClientSession`` 对，这正是
+    ``MCPServerTask._reconnect_event`` 触发的动作。
     """
     if isinstance(exc, InterruptedError):
         return False
@@ -1570,28 +1510,12 @@ def _is_session_expired_error(exc: BaseException) -> bool:
 
 
 def _handle_session_expired_and_retry(server_name: str, exc: BaseException, retry_call, op_description: str):
-    """Trigger a transport reconnect and retry once on session expiry.
+    """会话过期时触发传输重连并重试一次（不重跑 OAuth）。
 
-    Unlike :func:`_handle_auth_error_and_retry`, this does **not** call
-    the OAuth manager's ``handle_401`` — the access token is still
-    valid, only the server-side session state is stale.  Setting
-    ``_reconnect_event`` causes the server task's lifecycle loop to
-    tear down the current ``streamablehttp_client`` + ``ClientSession``
-    and rebuild them, reusing the existing OAuth provider instance.
-    See #13383.
-
-    Args:
-        server_name: Name of the MCP server that raised.
-        exc: The exception from the failed call.
-        retry_call: Zero-arg callable that re-runs the operation,
-            returning the same JSON string format as the handler.
-        op_description: Human-readable name of the operation (logs).
-
-    Returns:
-        A JSON string if reconnect + retry was attempted and produced
-        a response, or ``None`` to fall through to the caller's
-        generic error path (not a session-expired error, no server
-        record, reconnect didn't ready in time, or retry also failed).
+    与 :func:`_handle_auth_error_and_retry` 不同的是：access token 仍有效，
+    仅服务端会话状态过期。设置 ``_reconnect_event`` 让 server 任务的生命
+    周期循环拆掉当前 ``streamablehttp_client`` + ``ClientSession`` 并重建，
+    复用现有 OAuth provider 实例。见 #13383。
     """
     if not _is_session_expired_error(exc):
         return None
@@ -1636,10 +1560,9 @@ def _handle_session_expired_and_retry(server_name: str, exc: BaseException, retr
 
 
 def _snapshot_child_pids() -> set:
-    """Return a set of current child process PIDs.
+    """返回当前子进程 PID 集合：优先 /proc，回退 psutil，最终空集合。
 
-    Uses /proc on Linux, falls back to psutil, then empty set.
-    Used by _run_stdio to identify the subprocess spawned by stdio_client.
+    供 ``_run_stdio`` 识别 stdio_client 实际派生的子进程。
     """
     my_pid = os.getpid()
 
@@ -1661,13 +1584,11 @@ def _snapshot_child_pids() -> set:
 
 
 def _mcp_loop_exception_handler(loop, context) -> None:
-    """Suppress benign 'Event loop is closed' noise during shutdown.
+    """关闭阶段吞掉良性的「Event loop is closed」噪声。
 
-    When the MCP event loop is stopped and closed, httpx/httpcore async
-    transports may fire __del__ finalizers that call call_soon() on the
-    dead loop.  asyncio catches that RuntimeError and routes it here.
-    We silence it because the connection is being torn down anyway; all
-    other exceptions are forwarded to the default handler.
+    MCP 事件循环停止并关闭后，httpx/httpcore 异步传输的 ``__del__`` 终结器
+    可能在已死循环上调用 call_soon()，asyncio 把对应 RuntimeError 转到这里。
+    连接反正要拆，吞掉它；其他异常转给默认处理函数。
     """
     exc = context.get("exception")
     if isinstance(exc, RuntimeError) and "Event loop is closed" in str(exc):
@@ -1676,7 +1597,7 @@ def _mcp_loop_exception_handler(loop, context) -> None:
 
 
 def _ensure_mcp_loop() -> None:
-    """Start the background event loop thread if not already running."""
+    """若后台事件循环线程未运行则启动它。"""
     global _mcp_loop, _mcp_thread
     with _lock:
         if _mcp_loop is not None and _mcp_loop.is_running():
@@ -1688,15 +1609,13 @@ def _ensure_mcp_loop() -> None:
 
 
 def _run_on_mcp_loop(coro_or_factory: Any, timeout: float = 30) -> Any:
-    """Schedule a coroutine on the MCP event loop and block until done.
+    """把协程调度到 MCP 事件循环并阻塞等待结果。
 
-    Accepts either a coroutine object or a zero-arg callable that returns one.
-    Callers can pass a factory to avoid constructing coroutine objects when
-    the MCP loop is unavailable (which would otherwise leak the coroutine
-    frame and emit ``"coroutine was never awaited"`` warnings).
+    接受协程对象或零参 callable（返回协程）。后者让调用方在 MCP 循环不可用
+    时不必先构造协程（否则会泄漏协程帧并抛 ``"coroutine was never awaited"``
+    警告）。
 
-    Poll in short intervals so the calling agent thread can honor user
-    interrupts while the MCP work is still running on the background loop.
+    短间隔轮询，使调用方 Agent 线程在 MCP 后台任务仍在跑时也能响应用户中断。
     """
 
     with _lock:
@@ -1740,12 +1659,12 @@ def _run_on_mcp_loop(coro_or_factory: Any, timeout: float = 30) -> Any:
 
 
 def _interrupted_call_result() -> str:
-    """Standardized JSON error for a user-interrupted MCP tool call."""
+    """用户中断 MCP 工具调用时返回的标准化 JSON 错误。"""
     return json.dumps({"error": "MCP call interrupted: user sent a new message"}, ensure_ascii=False)
 
 
 def _interpolate_env_vars(value: Any) -> Any:
-    """Recursively resolve ``${VAR}`` placeholders from ``os.environ``."""
+    """递归地把 ``${VAR}`` 占位符替换为 ``os.environ`` 中的值。"""
     if isinstance(value, str):
 
         def _replace(m):
@@ -1760,15 +1679,14 @@ def _interpolate_env_vars(value: Any) -> Any:
 
 
 def _load_mcp_config() -> dict[str, dict]:
-    """Read ``mcp_servers`` from the SpiritAgent config file.
+    """从 SpiritAgent 配置文件读取 ``mcp_servers`` 段。
 
-    Returns a dict of ``{server_name: server_config}`` or empty dict.
-    Server config can contain either ``command``/``args``/``env`` for stdio
-    transport or ``url``/``headers`` for HTTP transport, plus optional
-    ``timeout``, ``connect_timeout``, and ``auth`` overrides.
+    返回 ``{server_name: server_config}`` 或空 dict。server 配置可含 stdio
+    传输的 ``command``/``args``/``env`` 或 HTTP 传输的 ``url``/``headers``，
+    加上可选的 ``timeout``、``connect_timeout``、``auth`` 覆盖。
 
-    ``${ENV_VAR}`` placeholders in string values are resolved from
-    ``os.environ`` (which includes ``~/.spiritagent/.env`` loaded at startup).
+    字符串中的 ``${ENV_VAR}`` 占位符会从 ``os.environ``（含启动时加载的
+    ``~/.spiritagent/.env``）解析。
     """
     try:
         config = load_config()
@@ -1782,14 +1700,10 @@ def _load_mcp_config() -> dict[str, dict]:
 
 
 async def _connect_server(name: str, config: dict) -> MCPServerTask:
-    """Create an MCPServerTask, start it, and return when ready.
+    """创建 MCPServerTask 并启动，ready 后返回。
 
-    The server Task keeps the connection alive in the background.
-    Call ``server.shutdown()`` (on the same event loop) to tear it down.
-
-    Raises:
-        ValueError: if required config keys are missing.
-        Exception: on connection or initialization failure.
+    server Task 在后台保持连接；调用 ``server.shutdown()``（须在同一事件循环）
+    来拆除。
     """
     server = MCPServerTask(name)
     _connecting[name] = server
@@ -1802,11 +1716,9 @@ async def _connect_server(name: str, config: dict) -> MCPServerTask:
 
 
 def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
-    """Return a sync handler that calls an MCP tool via the background loop.
+    """返回同步 handler：调用后台 MCP 循环上的某个工具。
 
-    The handler conforms to the registry's dispatch interface:
-        pass
-    ``handler(args_dict, **kwargs) -> str``
+    签名 ``handler(args_dict, **kwargs) -> str``，符合 registry 的 dispatch 接口。
     """
 
     def _handler(args: dict, **kwargs) -> str:
@@ -1933,7 +1845,7 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
 
 
 def _make_list_resources_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that lists resources from an MCP server."""
+    """返回同步 handler：列出 MCP server 的资源。"""
 
     def _handler(args: dict, **kwargs) -> str:
         with _lock:
@@ -1979,7 +1891,7 @@ def _make_list_resources_handler(server_name: str, tool_timeout: float):
 
 
 def _make_read_resource_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that reads a resource by URI from an MCP server."""
+    """返回同步 handler：按 URI 读取 MCP server 资源。"""
 
     def _handler(args: dict, **kwargs) -> str:
         with _lock:
@@ -2025,7 +1937,7 @@ def _make_read_resource_handler(server_name: str, tool_timeout: float):
 
 
 def _make_list_prompts_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that lists prompts from an MCP server."""
+    """返回同步 handler：列出 MCP server 的 prompts。"""
 
     def _handler(args: dict, **kwargs) -> str:
         with _lock:
@@ -2076,7 +1988,7 @@ def _make_list_prompts_handler(server_name: str, tool_timeout: float):
 
 
 def _make_get_prompt_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that gets a prompt by name from an MCP server."""
+    """返回同步 handler：按名获取 MCP server 的 prompt。"""
 
     def _handler(args: dict, **kwargs) -> str:
         with _lock:
@@ -2133,7 +2045,7 @@ def _make_get_prompt_handler(server_name: str, tool_timeout: float):
 
 
 def _make_check_fn(server_name: str):
-    """Return a check function that verifies the MCP connection is alive."""
+    """返回 check 函数：验证 MCP 连接是否存活。"""
 
     def _check() -> bool:
         with _lock:
@@ -2144,26 +2056,21 @@ def _make_check_fn(server_name: str):
 
 
 def _normalize_mcp_input_schema(schema: dict | None) -> dict:
-    """Normalize MCP input schemas for LLM tool-calling compatibility.
+    """规范化 MCP 输入 schema，使其兼容各家 LLM 工具调用接口。
 
-    MCP servers can emit plain JSON Schema with ``definitions`` /
-    ``#/definitions/...`` references.  Kimi / Moonshot rejects that form and
-    requires local refs to point into ``#/$defs/...`` instead.  Normalize the
-    common draft-07 shape here so MCP tool schemas remain portable across
-    OpenAI-compatible providers.
+    MCP server 会输出含 ``definitions`` / ``#/definitions/...`` 引用的原始
+    JSON Schema。Kimi / Moonshot 拒绝这种形式，要求使用 ``#/$defs/...``。
+    此处规范化常见的 draft-07 形态，让 MCP 工具 schema 在各 OpenAI 兼容
+    provider 间保持可移植。
 
-    Additional MCP-server robustness repairs applied recursively:
+    同时递归做几项 server 健壮性修补：
+    * object 形态节点缺失或为 ``null`` 的 ``type`` 强制为 ``"object"``（部分
+      server 漏写）。见 PR #4897。
+    * ``object`` 节点缺 ``properties`` 时补空 dict，避免 ``required`` 悬空。
+    * 修剪 ``required`` 数组仅保留 ``properties`` 中存在的名字，否则 Google AI
+      Studio / Gemini 会 400 报 ``property is not defined``。见 PR #4651。
 
-    * Missing or ``null`` ``type`` on an object-shaped node is coerced to
-      ``"object"`` (some servers omit it).  See PR #4897.
-    * When an ``object`` node lacks ``properties``, an empty ``properties``
-      dict is added so ``required`` entries don't dangle.
-    * ``required`` arrays are pruned to only names that exist in
-      ``properties``; otherwise Google AI Studio / Gemini 400s with
-      ``property is not defined``.  See PR #4651.
-
-    Nullable ``anyOf`` unions are kept as-is; OpenAI accepts this form and
-    the product targets OpenAI-compatible providers only.
+    可空 ``anyOf`` 联合保留原样（OpenAI 接受，产品只面向 OpenAI 兼容 provider）。
     """
     if not schema:
         return {"type": "object", "properties": {}}
@@ -2183,7 +2090,7 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
         return node
 
     def _repair_object_shape(node):
-        """Recursively repair object-shaped nodes: fill type, prune required."""
+        """递归修补 object 形态节点：填 type、修剪 required。"""
         if isinstance(node, list):
             return [_repair_object_shape(item) for item in node]
         if not isinstance(node, dict):
@@ -2227,27 +2134,13 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 
 
 def sanitize_mcp_name_component(value: str) -> str:
-    """Return an MCP name component safe for tool and prefix generation.
-
-    Preserves SpiritAgent's historical behavior of converting hyphens to
-    underscores, and also replaces any other character outside
-    ``[A-Za-z0-9_]`` with ``_`` so generated tool names are compatible with
-    provider validation rules.
-    """
+    """返回用于工具名/前缀的 MCP 名称安全分量：连字符替为下划线，``[A-Za-z0-9_]``
+    之外的字符统一替为 ``_``，确保生成名兼容各 provider 校验规则。"""
     return _NAME_COMPONENT_RE.sub("_", str(value or ""))
 
 
 def _convert_mcp_schema(server_name: str, mcp_tool: Any) -> dict[str, Any]:
-    """Convert an MCP tool listing to the SpiritAgent registry schema format.
-
-    Args:
-        server_name: The logical server name for prefixing.
-        mcp_tool:    An MCP ``Tool`` object with ``.name``, ``.description``,
-                     and ``.inputSchema``.
-
-    Returns:
-        A dict suitable for ``registry.register(schema=...)``.
-    """
+    """把 MCP 工具条目转成 SpiritAgent registry 的 schema 格式。"""
     safe_tool_name = sanitize_mcp_name_component(mcp_tool.name)
     safe_server_name = sanitize_mcp_name_component(server_name)
     prefixed_name = f"mcp_{safe_server_name}_{safe_tool_name}"
@@ -2259,10 +2152,9 @@ def _convert_mcp_schema(server_name: str, mcp_tool: Any) -> dict[str, Any]:
 
 
 def _build_utility_schemas(server_name: str) -> list[dict]:
-    """Build schemas for the MCP utility tools (resources & prompts).
+    """为 MCP 工具类（resources & prompts）构建 schema 列表。
 
-    Returns a list of (schema, handler_factory_name) tuples encoded as dicts
-    with keys: schema, handler_key.
+    返回的每项是带 ``schema`` 与 ``handler_key`` 两个键的 dict。
     """
     safe_name = sanitize_mcp_name_component(server_name)
     return [
@@ -2309,7 +2201,7 @@ def _build_utility_schemas(server_name: str) -> list[dict]:
 
 
 def _normalize_name_filter(value: Any, label: str) -> set[str]:
-    """Normalize include/exclude config to a set of tool names."""
+    """把 include/exclude 配置规范化为工具名集合。"""
     if value is None:
         return set()
     if isinstance(value, str):
@@ -2321,7 +2213,7 @@ def _normalize_name_filter(value: Any, label: str) -> set[str]:
 
 
 def _parse_boolish(value: Any, default: bool = True) -> bool:
-    """Parse a bool-like config value with safe fallback."""
+    """解析类布尔配置值，失败时安全回退到默认。"""
     if value is None:
         return default
     if isinstance(value, bool):
@@ -2351,20 +2243,20 @@ _UTILITY_CAPABILITY_ATTRS = {"list_resources": "resources", "read_resource": "re
 
 
 def _track_mcp_tool_server(tool_name: str, server_name: str) -> None:
-    """Remember the exact MCP server that registered *tool_name*."""
+    """记录注册 *tool_name* 的精确 MCP server。"""
     safe_server_name = sanitize_mcp_name_component(server_name)
     with _lock:
         _mcp_tool_server_names[tool_name] = safe_server_name
 
 
 def _forget_mcp_tool_server(tool_name: str) -> None:
-    """Forget MCP server provenance for a deregistered tool."""
+    """注销工具时移除对应的 MCP server 来源记录。"""
     with _lock:
         _mcp_tool_server_names.pop(tool_name, None)
 
 
 def _select_utility_schemas(server_name: str, server: MCPServerTask, config: dict) -> list[dict]:
-    """Select utility schemas based on config and server capabilities."""
+    """根据配置和 server 能力选择要注册的 utility schema。"""
     tools_filter = config.get("tools") or {}
     resources_enabled = _parse_boolish(tools_filter.get("resources"), default=True)
     prompts_enabled = _parse_boolish(tools_filter.get("prompts"), default=True)
@@ -2409,7 +2301,7 @@ def _select_utility_schemas(server_name: str, server: MCPServerTask, config: dic
 
 
 def _existing_tool_names() -> list[str]:
-    """Return tool names for all currently connected servers."""
+    """返回所有当前已连接 server 的工具名。"""
     with _lock:
         servers = list(_servers.values())
     names: list[str] = []
@@ -2424,16 +2316,13 @@ def _existing_tool_names() -> list[str]:
 
 
 def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> list[str]:
-    """Register tools from an already-connected server into the registry.
+    """把已连接 server 的工具注册到 registry，处理 include/exclude 与 utility。
 
-    Handles include/exclude filtering and utility tools. Toolset resolution
-    for ``mcp-{server}`` and raw server-name aliases is derived from the live
-    registry, rather than mutating ``toolsets.TOOLSETS`` at runtime.
+    ``mcp-{server}`` 与裸 server 名别名的 toolset 解析从 live registry 派生，
+    不在运行时改动 ``toolsets.TOOLSETS``。初始发现与动态刷新（list_changed）
+    都调用本函数。
 
-    Used by both initial discovery and dynamic refresh (list_changed).
-
-    Returns:
-        List of registered prefixed tool names.
+    返回已注册的、带前缀的工具名列表。
     """
 
     registered_names: list[str] = []
@@ -2512,10 +2401,7 @@ def _register_server_tools(name: str, server: MCPServerTask, config: dict) -> li
 
 
 async def _discover_and_register_server(name: str, config: dict) -> list[str]:
-    """Connect to a single MCP server, discover tools, and register them.
-
-    Returns list of registered tool names.
-    """
+    """连接单个 MCP server，发现工具并注册，返回注册的工具名列表。"""
     connect_timeout = config.get("connect_timeout", _DEFAULT_CONNECT_TIMEOUT)
     try:
         server = await asyncio.wait_for(_connect_server(name, config), timeout=connect_timeout)
@@ -2541,16 +2427,12 @@ async def _discover_and_register_server(name: str, config: dict) -> list[str]:
 
 
 def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
-    """Connect to explicit MCP servers and register their tools.
+    """连接指定的 MCP server 并注册其工具。
 
-    Idempotent for already-connected server names. Servers with
-    ``enabled: false`` are skipped without disconnecting existing sessions.
+    对已连接的 server 名称幂等；``enabled: false`` 的 server 直接跳过，
+    不会断开已有会话。
 
-    Args:
-        servers: Mapping of ``{server_name: server_config}``.
-
-    Returns:
-        List of all currently registered MCP tool names.
+    返回所有当前已注册 MCP 工具名。
     """
     if not servers:
         logger.debug("No explicit MCP servers provided")
@@ -2573,7 +2455,7 @@ def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
     _ensure_mcp_loop()
 
     async def _discover_one(name: str, cfg: dict) -> list[str]:
-        """Connect to a single server and return its registered tool names."""
+        """连接单个 server 并返回其注册的工具名。"""
         return await _discover_and_register_server(name, cfg)
 
     async def _discover_all() -> None:
@@ -2615,16 +2497,12 @@ def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
 
 
 def discover_mcp_tools() -> list[str]:
-    """Entry point: load config, connect to MCP servers, register tools.
+    """入口：加载配置、连接 MCP server、注册工具。
 
-    Called from ``server.py::main`` after ``discover_builtin_tools()``. Safe to call even when
-    the ``mcp`` package is not installed (returns empty list).
+    从 ``server.py::main`` 的 ``discover_builtin_tools()`` 之后调用。即使
+    ``mcp`` 包未安装也可安全调用（返回空列表）。
 
-    Idempotent for already-connected servers. If some servers failed on a
-    previous call, only the missing ones are retried.
-
-    Returns:
-        List of all registered MCP tool names.
+    对已连接 server 幂等；若上次失败，仅重试缺失的 server。
     """
     servers = _load_mcp_config()
     if not servers:
@@ -2653,15 +2531,13 @@ def discover_mcp_tools() -> list[str]:
 
 
 def is_mcp_tool_parallel_safe(tool_name: str) -> bool:
-    """Check if an MCP tool belongs to a server that supports parallel tool calls.
+    """检查某 MCP 工具所属 server 是否启用 ``supports_parallel_tool_calls``。
 
-    MCP tool names follow the pattern ``mcp_{server}_{tool}``, but that string
-    shape is ambiguous when server names contain underscores. Use the exact
-    server provenance captured at registration time rather than prefix
-    matching, then check whether that server's config includes
-    ``supports_parallel_tool_calls: true``.
+    MCP 工具名形如 ``mcp_{server}_{tool}``，但 server 名含下划线时该字符串
+    形态有歧义。使用注册时记录的精确 server 来源而非前缀匹配，再查
+    config 是否含 ``supports_parallel_tool_calls: true``。
 
-    Returns False for non-MCP tools or tools from servers without the flag.
+    非 MCP 工具或未启用该标志的 server 上的工具返回 False。
     """
     if not tool_name.startswith("mcp_"):
         return False
@@ -2671,23 +2547,21 @@ def is_mcp_tool_parallel_safe(tool_name: str) -> bool:
 
 
 def get_active_mcp_servers() -> list[str]:
-    """Return a sorted list of names for all active MCP servers."""
+    """返回所有活跃 MCP server 名称（已排序）。"""
     with _lock:
         return sorted(_servers.keys())
 
 
 def reload_mcp_servers() -> dict:
-    """Tear down all live MCP server connections and reconnect from the latest config.
+    """拆除所有活跃 MCP server 连接并按最新配置重连。
 
-    Called by the ``mcp.reload`` first-class JSON-RPC method (server.py) in
-    response to a backend ``reload.mcp`` request. Re-reads
-    the in-memory config on each call so the next ``mcp_*`` tool call
-    has live tools without needing a Runner restart.
+    由 ``mcp.reload`` 一级 JSON-RPC 方法（server.py）响应后端 ``reload.mcp``
+    请求时调用。每次都重新读取内存中的配置，让下次 ``mcp_*`` 工具调用直接
+    拿到新工具，无需重启 Runner。
 
-    Returns ``{"reloaded": int, "errors": int, "servers": int, "connected": int}``
-    for the JSON-RPC result. ``reloaded`` / ``servers`` are the count of MCP
-    servers torn down; ``connected`` is the count of MCP tools registered
-    after reconnect.
+    返回 ``{"reloaded": int, "errors": int, "servers": int, "connected": int}``
+    用于 JSON-RPC 结果：``reloaded``/``servers`` 是拆除的 MCP server 数；
+    ``connected`` 是重连后注册的 MCP 工具数。
     """
     with _lock:
         servers_snapshot = list(_servers.values())
@@ -2723,27 +2597,21 @@ def reload_mcp_servers() -> dict:
 
 
 def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
-    """Best-effort graceful shutdown of stdio MCP subprocesses to reap orphans.
+    """尽力优雅关闭 stdio MCP 子进程以回收孤儿进程。
 
-    Orphans are PIDs that survived their session context exit (SDK teardown
-    did not terminate the process — common on Linux when stdio children escape
-    the parent cgroup on cancellation). By default only entries in
-    ``_orphan_stdio_pids`` are reaped so concurrent cron jobs and live user
-    sessions are not disrupted.
+    孤儿指 SDK teardown 未杀掉的 PID（Linux 下 stdio 子进程在取消时逃出
+    父 cgroup 比较常见）。默认仅回收 ``_orphan_stdio_pids`` 中的条目，避免
+    影响并发的 cron 任务与活跃用户会话。
 
-    Sends SIGTERM, waits 2 seconds, then escalates to SIGKILL for any
-    survivors, avoiding shared-resource collisions when multiple spiritagent
-    processes run on the same host (each has its own ``_stdio_pids`` dict).
+    先发 SIGTERM，等 2 秒后对仍在的进程升级为 SIGKILL，避免多 spiritagent
+    进程在同一主机上共享资源时冲突（每个进程各自持有 ``_stdio_pids`` dict）。
 
-    On POSIX, signals are sent via ``os.killpg`` to the spawn-time pgid when
-    one is tracked, so reparented grandchildren in the same process group
-    (e.g. ``claude mcp serve`` spawned by a stdio MCP wrapper that exited
-    first) are reaped alongside the direct child.  Falls back to ``os.kill``
-    on Windows and when no pgid is recorded.
+    POSIX 上若记录了 spawn-time pgid，通过 ``os.killpg`` 向进程组发信号，
+    让同组中再被收养的孙进程（如 stdio MCP 包装器先退出后留下的
+    ``claude mcp serve``）一并回收。Windows 或无 pgid 时回退到 ``os.kill``。
 
-    With ``include_active=True`` also kills every PID in ``_stdio_pids`` —
-    used only at final shutdown, after the MCP event loop has stopped and no
-    sessions can still be in flight.
+    ``include_active=True`` 还会杀 ``_stdio_pids`` 中所有 PID，仅在最终
+    关闭时使用——此时 MCP 事件循环已停，不会有进行中的会话。
     """
 
     with _lock:
@@ -2768,10 +2636,10 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
     _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
 
     def _send_signal(pid: int, sig: int, server_name: str) -> None:
-        """SIGTERM/SIGKILL via pgroup on POSIX, fall back to pid signal.
-        On Windows use ``kill_tree`` so descendants (common when stdio MCP
-        servers wrap other processes) don't get reparented to the system
-        and survive cleanup.
+        """POSIX 通过进程组发 SIGTERM/SIGKILL，否则退回到 pid 信号。
+
+        Windows 上用 ``kill_tree``，避免 stdio MCP server 包装的子进程被
+        重新挂到系统 init 下并幸存。
         """
         if IS_WINDOWS:
             force = sig == _sigkill
@@ -2811,7 +2679,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
 
 
 def _stop_mcp_loop() -> None:
-    """Stop the background event loop and join its thread."""
+    """停止后台事件循环并 join 其线程。"""
     global _mcp_loop, _mcp_thread
     with _lock:
         loop = _mcp_loop

@@ -40,7 +40,7 @@ def resolve_safe_cwd(cwd: str) -> str:
 
 
 def find_bash() -> str:
-    """Return absolute path to a runnable bash; raise on Windows if Git for Windows is missing."""
+    """返回可运行 bash 的绝对路径；Windows 上若找不到 Git for Windows 则抛错。"""
     if not IS_WINDOWS:
         return shutil.which("bash") or next((p for p in ("/usr/bin/bash", "/bin/bash") if os.path.isfile(p)), None) or os.environ.get("SHELL") or "/bin/sh"
 
@@ -48,9 +48,7 @@ def find_bash() -> str:
         return custom
 
     lap = os.environ.get("LOCALAPPDATA", "")
-    # Check spiritagent-bundled Git Bash first, then standard Git Bash paths,
-    # before falling back to shutil.which("bash") which may return WSL bash
-    # (C:\WINDOWS\system32\bash.EXE) — WSL cannot access Windows temp paths.
+    # 优先查找 spiritagent 自带 Git Bash，再走标准 Git Bash 路径；shutil.which("bash") 兜底可能返回 WSL 的 C:\WINDOWS\system32\bash.EXE——它访问不了 Windows 临时路径。
     candidates = [
         os.path.join(lap, "spiritagent", "git", "bin", "bash.exe"),
         os.path.join(lap, "spiritagent", "git", "usr", "bin", "bash.exe"),
@@ -77,10 +75,7 @@ def append_sane_path_entries(existing_path: str) -> str:
 
 @functools.lru_cache(maxsize=1)
 def find_python() -> str | None:
-    """Locate the uv-managed Python for the user's spiritagent venv. Returns None when no usable interpreter is found; callers fall back to ``sys.executable``.
-
-    Resolved once per process — a venv created after the first call is invisible until the runner restarts.
-    """
+    """定位用户 spiritagent venv 对应的 uv 管理 Python；找不到可用解释器时返回 None（调用方回落到 ``sys.executable``）。"""
     if override := os.environ.get("SPIRITAGENT_PYTHON"):
         if Path(override).is_file():
             return override

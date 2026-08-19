@@ -12,7 +12,7 @@ def set_handler(h: Callable[..., Awaitable[Any]]) -> None:
 
 
 def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
-    """Register the runner's main event loop for sync-context bridging."""
+    """注册 Runner 主事件循环，供同步上下文桥接使用。"""
     global _main_loop
     _main_loop = loop
 
@@ -24,12 +24,7 @@ async def call_llm(**kwargs: Any) -> str:
 
 
 def call_llm_sync(**kwargs: Any) -> str:
-    """Call the reverse-RPC LLM handler from a worker-thread (sync tool) context.
-
-    The pending future must live on the main loop — the WS receive path
-    resolves it there — so ``asyncio.run`` in a ``to_thread`` worker would
-    cross event loops and stall until the LLM timeout fires.
-    """
+    """在工作线程（同步工具）上下文中调用反向 RPC LLM 处理函数。"""
     try:
         asyncio.get_running_loop()
     except RuntimeError:

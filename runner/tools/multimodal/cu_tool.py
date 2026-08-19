@@ -16,9 +16,7 @@ from .helpers import _MAX_BASE64_BYTES
 
 logger = logging.getLogger(__name__)
 
-# Stable prefix the LLM and downstream surfacing can pattern-match on as
-# a cancellation marker, telling clients that a turn exited cleanly via
-# cancel rather than producing assistant prose.
+# 稳定前缀，LLM 与下游展示可作为取消标记模式匹配，表明本轮是干净通过 cancel 退出，而不是产生了 assistant 正文
 INTERRUPTED_PREFIX = "[INTERRUPTED]"
 
 _BLOCKED_KEY_COMBOS = {
@@ -35,10 +33,8 @@ _BLOCKED_KEY_COMBOS = {
 
 _KEY_ALIASES = {"command": "cmd", "control": "ctrl", "alt": "option", "windows": "win", "super": "win", "meta": "win", "⌘": "cmd", "⌥": "option"}
 _BLOCKED_TYPE_PATTERNS = [
-    # Pipe-to-shell: `curl ... | bash`, `wget ... | sh`, plus the alternate
-    # shell-command separators `;`, `&&`, `||` (an attacker substituting any
-    # of those would otherwise slip past the blocklist). ``re.DOTALL`` lets
-    # ``.*?`` cross newlines so ``curl http://x\n; bash`` is also matched.
+    # Pipe-to-shell: `curl ... | bash`、`wget ... | sh`，加上备选 shell 命令分隔符 `;`、`&&`、`||`
+    # （攻击者替换为这些字符本可绕过黑名单）。re.DOTALL 让 .*? 跨行匹配，因此 `curl http://x\n; bash` 也能命中
     re.compile(r"curl\s+.*?(?:\|\||&&|[|;])\s*bash", re.IGNORECASE | re.DOTALL),
     re.compile(r"curl\s+.*?(?:\|\||&&|[|;])\s*sh\b", re.IGNORECASE | re.DOTALL),
     re.compile(r"wget\s+.*?(?:\|\||&&|[|;])\s*bash", re.IGNORECASE | re.DOTALL),
@@ -51,8 +47,7 @@ _BLOCKED_TYPE_PATTERNS = [
 _backend_lock = threading.Lock()
 _backend: ComputerUseBackend | None = None
 
-# Reuse vision_analyze's 20MB cap so a runaway desktop capture (e.g. a
-# full-screen 4K screenshot with alpha channel) cannot exhaust context.
+# 复用 vision_analyze 的 20MB 上限，防止失控的桌面截图（例如带 alpha 通道的全屏 4K）耗尽上下文
 _MAX_CAPTURE_BYTES = _MAX_BASE64_BYTES
 
 
@@ -148,9 +143,8 @@ class _NoopBackend(ComputerUseBackend):
 
 
 def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
-    # Cheap interrupt early-return: capture/click/scroll can take seconds
-    # to round-trip through the cua driver / Win backend. Checking here
-    # avoids a half-finished desktop action after the user has moved on.
+    # 廉价的 interrupt 提前返回：capture/click/scroll 经过 cua driver / Win 后端可能耗时数秒。
+    # 此处检查可避免在用户已转移注意力后产生半成品的桌面动作。
     if is_interrupted():
         return json.dumps({"error": "Interrupted", "interrupted": True, "prefix": INTERRUPTED_PREFIX, "returncode": 130})
     if not (action := (args.get("action") or "").strip().lower()):
@@ -202,18 +196,11 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
     bring_to_front = bool(args.get("bring_to_front"))
 
     def _tag(res: ActionResult) -> ActionResult:
-        """Stamp ``delivery_mode`` and default verdict fields onto a result
-        without going through the backend ABC.
+        """把 delivery_mode 与默认 verdict 字段盖到结果上，不经过后端 ABC。
 
-        ``delivery_mode`` is always overwritten — the runner side is the
-        only layer that knows which scope (background/foreground) the
-        call came from.
-
-        ``escalation`` defaults to ``"done"`` / ``"verify_fresh_state"``
-        only when the backend left it at the dataclass default (``""``).
-        A backend that already set ``"escalate"`` or another truthful
-        value keeps its verdict — never silently overwritten by a
-        runner-side heuristic.
+        delivery_mode 总是被覆盖 — runner 是唯一知道本次调用 scope（background/foreground）的层。
+        escalation 仅在后端保持 dataclass 默认（""）时回填为 "done" / "verify_fresh_state"；
+        后端已设置 "escalate" 或其他真实值时予以保留，绝不被 runner 启发式静默覆盖。
         """
         res.delivery_mode = delivery_mode
         if not res.escalation:
@@ -233,7 +220,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
         case "focus_app":
             if not (app := args.get("app")):
                 return json.dumps({"error": "focus_app requires `app`"})
-            # ``raise_window`` (legacy) and ``bring_to_front`` (new) are aliases.
+            # raise_window（遗留）与 bring_to_front（新）是别名
             do_raise = bool(args.get("raise_window")) or bring_to_front
             return _maybe_follow_capture(backend, _tag(backend.focus_app(app, do_raise)), capture_after)
         case "click" | "double_click" | "right_click" | "middle_click":
@@ -277,18 +264,14 @@ def _text_response(res: ActionResult) -> str:
 
 
 def _sniff_image_mime(b64: str) -> str:
-    """Best-effort MIME from base64 magic bytes. Covers JPEG / PNG / WebP / GIF;
-    anything unrecognized falls back to ``image/png`` so the LLM at least sees
-    an image tag it can render. cua-driver 0.5.x+ sets ``mimeType`` on every
-    image part — this fallback is only hit when that field is missing or for
-    non-cua backends (WinBackend)."""
+    """尽力通过 base64 magic bytes 猜测 MIME，覆盖 JPEG / PNG / WebP / GIF；无法识别时回退到 image/png，让 LLM 至少看到可渲染的图片标签。cua-driver 0.5.x+ 会在每个 image part 上设置 mimeType — 此兜底仅在该字段缺失或非 cua 后端（WinBackend）时触发。"""
     if not b64:
         return "image/png"
     if b64[:4].startswith("/9j/"):
         return "image/jpeg"
     if b64[:8].startswith("iVBORw0"):
         return "image/png"
-    # WebP: `RIFF????WEBP`
+    # WebP: RIFF????WEBP
     if b64.startswith("UklGR") and "V0VCUA" in b64[:20]:
         return "image/webp"
     if b64.startswith("R0lGOD"):
@@ -318,8 +301,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     if truncated:
         summary_lines.append(f"  (response truncated to {len(visible)} of {total} elements; raise max_elements or pass app= to narrow)")
 
-    # Drop oversize PNG once and surface a hint so the caller can ask for a
-    # narrower ``app=`` or a text-only ``mode='ax'`` instead.
+    # 一次性丢弃超尺寸 PNG 并提示调用方改为更窄的 app= 或纯文本的 mode='ax'
     if cap.png_b64 and cap.mode != "ax" and (cap.png_bytes_len or 0) > _MAX_CAPTURE_BYTES:
         cap = CaptureResult(
             mode=cap.mode, width=cap.width, height=cap.height, png_b64=None, elements=cap.elements, app=cap.app, window_title=cap.window_title, png_bytes_len=cap.png_bytes_len
@@ -329,9 +311,8 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     summary = clean_output("\n".join(summary_lines))
 
     if cap.png_b64 and cap.mode != "ax":
-        # Prefer the MIME that cua-driver reported via `image.mimeType`
-        # (cua-driver 0.5.x+); fall back to base64 magic-byte sniffing for
-        # older builds or non-cua backends (WinBackend).
+        # 优先采用 cua-driver 通过 image.mimeType 报告的 MIME（cua-driver 0.5.x+）；
+        # 旧版本或非 cua 后端（WinBackend）回退到 base64 magic-byte 嗅探
         mime = cap.image_mime_type or _sniff_image_mime(cap.png_b64)
         return {
             "_multimodal": True,
@@ -356,14 +337,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
 
 
 def _action_result_payload(res: ActionResult) -> dict[str, Any]:
-    """Compact envelope for an ``ActionResult`` — verdict fields included.
-
-    Used as the action header on both the standalone text response and
-    the follow-up capture merge. Symmetric with ``_text_response`` —
-    every surface that emits an ActionResult goes through this shape so
-    downstream consumers can rely on the same field set regardless of
-    whether the action was followed by a capture.
-    """
+    """ActionResult 的紧凑 envelope，包含 verdict 字段。在独立文本响应和 follow-up capture merge 上均作为 action header 使用；与 _text_response 对称 — 任何输出 ActionResult 的面都走这个 shape，下游消费者无论后续是否接 capture 都看到一致的字段集合。"""
     payload: dict[str, Any] = {"ok": res.ok, "action": res.action, "delivery_mode": res.delivery_mode, "escalation": res.escalation}
     if res.message:
         payload["message"] = clean_output(res.message)
@@ -397,8 +371,7 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
         prefix = " ".join(prefix_parts)
         resp["content"][0]["text"] = f"{prefix}\n\n{resp['content'][0]['text']}"
         resp["text_summary"] = f"{prefix}\n\n{resp['text_summary']}"
-        # Mirror the verdict fields at the envelope level so ACP / TUI
-        # consumers don't have to parse the text payload to recover them.
+        # 在 envelope 层镜像 verdict 字段，ACP / TUI 消费者无需解析文本 payload 即可获取
         resp.update(action_payload)
         return resp
     try:

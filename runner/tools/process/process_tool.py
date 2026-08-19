@@ -32,8 +32,7 @@ from utils import (
 from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 
-# winpty is Windows-only; importing at module load would crash the runner on
-# POSIX during tool discovery. Guard with a platform check.
+# winpty 只在 Windows 上存在; 工具发现阶段在 POSIX 上导入会崩, 因此用平台检查守住。
 _PtyProcessCls = None
 if IS_WINDOWS:
     with contextlib.suppress(ImportError):
@@ -42,10 +41,8 @@ else:
     with contextlib.suppress(ImportError):
         from ptyprocess import PtyProcess as _PtyProcessCls
 
-# ``fcntl`` is POSIX-only stdlib — not available on Windows at compile time,
-# so try/except would always raise there. Import unconditionally on POSIX.
-# (The fcntl-using code path below only fires for ptyprocess output, which
-# is itself POSIX-only, so Windows never reaches it.)
+# ``fcntl`` 仅 POSIX 标准库, Windows 编译期就没有, try/except 也会永远抛; 在 POSIX 上无条件 import。
+# (下面的 fcntl 代码路径只为 ptyprocess 输出用, 而 ptyprocess 本身也是 POSIX-only, 因此 Windows 根本走不到。)
 if not IS_WINDOWS:
     import fcntl
 else:
@@ -59,10 +56,9 @@ else:
 
 
 def _drain_pipe_peek_windows(stdout) -> str:
-    """One-shot drain of whatever is currently buffered in the pipe.
+    """一次性把 pipe 当前可读字节全部抽走(非阻塞)。
 
-    PeekNamedPipe reports how many bytes are readable so os.read never
-    blocks on a pipe a live descendant is still holding open.
+    PeekNamedPipe 先报可读字节数, 这样即使派生进程仍在持有句柄, 后面的 ``os.read`` 也不会阻塞。
     """
     chunks: list[str] = []
     try:
@@ -82,24 +78,21 @@ def _drain_pipe_peek_windows(stdout) -> str:
 
 logger = logging.getLogger(__name__)
 
-# Checkpoint file for crash recovery
+# 用于崩溃恢复的 checkpoint 文件。
 CHECKPOINT_PATH = get_spiritagent_home() / "processes.json"
 
-MAX_OUTPUT_CHARS = 200_000  # 200KB rolling output buffer
-FINISHED_TTL_SECONDS = 1800  # Keep finished processes for 30 minutes
-MAX_PROCESSES = 64  # Max concurrent tracked processes (LRU pruning)
+MAX_OUTPUT_CHARS = 200_000  # 200KB 滚动输出缓冲
+FINISHED_TTL_SECONDS = 1800  # 已结束的进程保留 30 分钟
+MAX_PROCESSES = 64  # 同时跟踪的进程上限, LRU 淘汰
 
-# Watch pattern rate limiting — PER SESSION.
-# Hard rule: at most ONE watch-match notification every WATCH_MIN_INTERVAL_SECONDS.
-# Any match arriving inside that cooldown window is dropped and counted as a strike.
-# After WATCH_STRIKE_LIMIT consecutive strike windows, watch_patterns for that
+# Watch 模式限流 — 每 session 维度。
+# 硬规则: 两条 watch-match 通知的间隔至少 WATCH_MIN_INTERVAL_SECONDS。
+# 在冷却窗口内的匹配会被丢弃并计为一次 strike。连续 WATCH_STRIKE_LIMIT 个 strike 窗口后,
+# 改用 notify_on_complete(进程退出时一次通知, 不再中途刷屏)。
+WATCH_MIN_INTERVAL_SECONDS = 15  # 两次匹配通知之间最小间隔(秒)
+WATCH_STRIKE_LIMIT = 3  # 连续 strike 数阈值, 超后升级为 notify_on_complete
 
-# semantics (one notification when the process actually exits).
-WATCH_MIN_INTERVAL_SECONDS = 15  # Minimum spacing between consecutive watch matches
-WATCH_STRIKE_LIMIT = 3  # Strikes in a row → disable watch + promote to notify_on_complete
-
-# Global circuit breaker — across all sessions. Secondary safety net so concurrent
-# siblings can't collectively flood the user even when each is under its own cap.
+# 全局熔断器 — 跨 session 维度。第二层安全网, 让多个 session 协同起来也不能淹没用户(每条各自限流不足以防整体洪水)。
 WATCH_GLOBAL_MAX_PER_WINDOW = 15
 WATCH_GLOBAL_WINDOW_SECONDS = 10
 WATCH_GLOBAL_COOLDOWN_SECONDS = 30
@@ -107,60 +100,57 @@ WATCH_GLOBAL_COOLDOWN_SECONDS = 30
 
 @dataclass
 class ProcessSession:
-    """A tracked background process with output buffering."""
+    """一个被跟踪的后台进程, 带输出缓冲。"""
 
-    id: str  # Unique session ID ("proc_xxxxxxxxxxxx")
-    command: str  # Original command string
-    task_id: str = ""  # Task/sandbox isolation key
-    session_key: str = ""  # Gateway session key (for reset protection)
-    pid: int | None = None  # OS process ID
-    process: subprocess.Popen | None = None  # Popen handle (local only)
-    env_ref: Any = None  # Reference to the environment object
-    cwd: str | None = None  # Working directory
-    started_at: float = 0.0  # time.time() of spawn
-    exited: bool = False  # Whether the process has finished
-    exit_code: int | None = None  # Exit code (None if still running)
-    output_buffer: str = ""  # Rolling output (last MAX_OUTPUT_CHARS)
+    id: str  # 唯一会话 ID("proc_xxxxxxxxxxxx")
+    command: str  # 原始命令字符串
+    task_id: str = ""  # 任务 / 沙箱隔离键
+    session_key: str = ""  # Gateway 会话键(防止 reset 误删)
+    pid: int | None = None  # 操作系统进程 ID
+    process: subprocess.Popen | None = None  # Popen handle(仅本机)
+    env_ref: Any = None  # 关联的 Environment 对象
+    cwd: str | None = None  # 工作目录
+    started_at: float = 0.0  # spawn 时的 time.time()
+    exited: bool = False  # 进程是否已结束
+    exit_code: int | None = None  # 退出码(未结束则为 None)
+    output_buffer: str = ""  # 滚动输出(最近 MAX_OUTPUT_CHARS)
     max_output_chars: int = MAX_OUTPUT_CHARS
-    detached: bool = False  # True if recovered from crash (no pipe)
-    pid_scope: str = "host"  # "host" for local/PTY PIDs, "sandbox" for env-local PIDs
-    # Watcher/notification metadata (persisted for crash recovery)
+    detached: bool = False  # 崩溃恢复得到的, 没有 stdout 管道
+    pid_scope: str = "host"  # "host" 为本机 / PTY 的 PID, "sandbox" 为 env 内 PID
+    # watcher / 通知元数据(崩溃恢复需要持久化)。
     watcher_platform: str = ""
     watcher_chat_id: str = ""
     watcher_user_id: str = ""
     watcher_user_name: str = ""
     watcher_thread_id: str = ""
-    watcher_message_id: str = ""  # Triggering message id — reply anchor for topic routing
-    watcher_interval: int = 0  # 0 = no watcher configured
-    notify_on_complete: bool = False  # Queue agent notification on exit
-    # Watch patterns — trigger agent notification when output matches any pattern
+    watcher_message_id: str = ""  # 触发的消息 ID — 主题路由的回复锚点
+    watcher_interval: int = 0  # 0 表示未配置 watcher
+    notify_on_complete: bool = False  # 退出时入队 agent 通知
+    # watch_patterns — 输出匹配任意模式时触发 agent 通知。
     watch_patterns: list[str] = field(default_factory=list)
-    _watch_hits: int = field(default=0, repr=False)  # total matches delivered
-    _watch_suppressed: int = field(default=0, repr=False)  # matches dropped by rate limit
-    _watch_disabled: bool = field(default=False, repr=False)  # permanently killed after strike limit
-    # Per-session rate limit state: at most one match every WATCH_MIN_INTERVAL_SECONDS.
-    # When an emission happens, _watch_cooldown_until is set to now + interval and
-    # _watch_strike_candidate becomes True. The next match to arrive before that
-    # deadline counts as one strike (regardless of how many matches were dropped in
-    # between — a strike is a window, not a match). After WATCH_STRIKE_LIMIT strikes
-    # in a row, watch_patterns is disabled and the session promotes to
-    # notify_on_complete.
+    _watch_hits: int = field(default=0, repr=False)  # 实际下发的匹配数
+    _watch_suppressed: int = field(default=0, repr=False)  # 被限流丢弃的匹配
+    _watch_disabled: bool = field(default=False, repr=False)  # 触发 strike 限制后永久停用
+    # 每 session 限流状态: 两次匹配至少 WATCH_MIN_INTERVAL_SECONDS。
+    # 一次下发后, ``_watch_cooldown_until`` 设为 now + interval; 在截止时间之前来的任何匹配
+    # 都计为一次 strike(无论中间丢过多少 — strike 是窗口维度而不是匹配维度)。连续 WATCH_STRIKE_LIMIT
+    # 个 strike 后停用 watch_patterns, 提升为 notify_on_complete 语义。
     _watch_last_emit_at: float = field(default=0.0, repr=False)
     _watch_cooldown_until: float = field(default=0.0, repr=False)
     _watch_strike_candidate: bool = field(default=False, repr=False)
     _watch_consecutive_strikes: int = field(default=0, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _reader_thread: threading.Thread | None = field(default=None, repr=False)
-    _pty: Any = field(default=None, repr=False)  # ptyprocess handle (when use_pty=True)
+    _pty: Any = field(default=None, repr=False)  # ptyprocess 句柄(use_pty=True 时)
 
 
 class ProcessRegistry:
-    """
-    In-memory registry of running and finished background processes.
-    Thread-safe. Accessed from:
-      - Executor threads (terminal_tool, process tool handlers)
-      - Gateway asyncio loop (watcher tasks, session reset checks)
-      - Cleanup thread (sandbox reaping coordination)
+    """运行中 / 已结束后台进程的内存注册表 — 线程安全。
+
+    接入方:
+      - 执行线程(terminal_tool / process 工具 handler)
+      - Gateway asyncio loop(watcher 任务 / session reset 检查)
+      - 清理线程(沙箱回收协调)
     """
 
     _SHELL_NOISE_SUBSTRINGS = (
@@ -175,17 +165,15 @@ class ProcessRegistry:
         self._running: dict[str, ProcessSession] = {}
         self._finished: dict[str, ProcessSession] = {}
         self._lock = threading.Lock()
-        # Side-channel for check_interval watchers (gateway reads after agent run)
+        # check_interval watcher 的侧信道: gateway 在 agent 运行结束后读取它。
         self.pending_watchers: list[dict[str, Any]] = []
-        # Notification queue — unified queue for all background process events.
-        # Completion notifications (notify_on_complete) and watch pattern matches
-        # both land here, distinguished by "type" field.  CLI process_loop and
-        # gateway drain this after each agent turn to auto-trigger new turns.
+        # 通知队列 — 所有后台进程事件的统一队列。
+        # 完成通知(notify_on_complete)和 watch 模式匹配都进这里, 通过 "type" 字段区分。
+        # CLI process_loop 和 gateway 在每次 agent 回合结束后 drain, 自动触发下一轮。
         self.completion_queue: queue.Queue = queue.Queue()
-        # via wait/poll/log.  Drain loops skip notifications for these.
+        # 已经被 wait/poll/log 直接消费的会话: drain 循环对它们跳过完成通知。
         self._completion_consumed: set = set()
-        # Global watch-match circuit breaker — across all sessions.
-        # when each stays under its own per-session cap.
+        # 跨 session 的全局 watch-match 熔断器 — 防止单 session 各自限流依然整体洪泛用户。
         self._global_watch_lock = threading.Lock()
         self._global_watch_window_start: float = 0.0
         self._global_watch_window_hits: int = 0
@@ -194,32 +182,24 @@ class ProcessRegistry:
 
     @staticmethod
     def _clean_shell_noise(text: str) -> str:
-        """Strip shell startup warnings from the beginning of output."""
+        """剥掉输出开头几行的 shell 启动告警(交互式 shell 标志等)。"""
         lines = text.split("\n")
         while lines and any(noise in lines[0] for noise in ProcessRegistry._SHELL_NOISE_SUBSTRINGS):
             lines.pop(0)
         return "\n".join(lines)
 
     def _check_watch_patterns(self, session: ProcessSession, new_text: str) -> None:
-        """Scan new output for watch patterns and queue notifications.
-        Called from reader threads with new_text being the freshly-read chunk.
-        Per-session rate limit: at most ONE watch-match notification per
-        WATCH_MIN_INTERVAL_SECONDS. Any match arriving inside the cooldown
-        window is dropped and counts as ONE strike for that window. After
-        WATCH_STRIKE_LIMIT consecutive strike windows, watch_patterns is
-        disabled for this session and the session is promoted to
-        notify_on_complete semantics — one notification when the process
-        actually exits, no more mid-process spam.
+        """扫描新增输出匹配 watch_patterns, 按限流规则入队通知(reader 线程调用)。
+
+        每 session 限流: 两次 watch-match 通知至少 WATCH_MIN_INTERVAL_SECONDS; 冷却窗口内的所有匹配
+        都丢掉并为本窗口记 1 次 strike。连续 WATCH_STRIKE_LIMIT 个 strike 窗口后, 本 session 停用
+        ``watch_patterns``, 提升到 ``notify_on_complete`` 语义 — 进程退出时一次通知, 之后再无中途刷屏。
         """
         if not session.watch_patterns or session._watch_disabled:
             return
-        # Suppress-after-exit: once the reader loop has declared the process
-        # exited, any late chunk we still see is post-exit noise. Dropping these
-        # prevents the "stale notifications delivered minutes after the process
-        # ended" spam when completion_queue consumers run async.
+        # 退出后抑制: reader 循环宣告进程退出后再出现的延迟 chunk 都是退出后噪声; 直接丢弃防住 "进程结束后几分钟还在发陈旧通知" 的体验问题。
         if session.exited:
             return
-        # Scan new text line-by-line for pattern matches
         matched_lines = []
         matched_pattern = None
         for line in new_text.splitlines():
@@ -228,34 +208,28 @@ class ProcessRegistry:
                     matched_lines.append(line.rstrip())
                     if matched_pattern is None:
                         matched_pattern = pat
-                    break  # one match per line is enough
+                    break  # 每行算一次匹配
         if not matched_lines:
             return
         now = time.time()
         should_disable = False
         with session._lock:
-            # Case 1: still inside the cooldown from the last emission.
-            # Count this as a strike for the current window (only once per window)
-            # and drop the event. If we've hit the strike limit, disable watch
-            # and promote to notify_on_complete.
+            # 情形 1: 仍在上一发冷却期内 — 计本窗口 1 次 strike 并丢弃; 累计达到上限时停用 watch 并提升为 notify_on_complete。
             if session._watch_cooldown_until and now < session._watch_cooldown_until:
                 session._watch_suppressed += len(matched_lines)
                 if not session._watch_strike_candidate:
-                    # First drop in this window — count one strike.
+                    # 本窗口首次丢弃 — 记一次 strike。
                     session._watch_strike_candidate = True
                     session._watch_consecutive_strikes += 1
                     if session._watch_consecutive_strikes >= WATCH_STRIKE_LIMIT:
                         session._watch_disabled = True
-                        # exactly one notification when the process actually ends.
+                        # 进程真正退出时再补一次通知, 不再中途刷屏。
                         session.notify_on_complete = True
                         should_disable = True
                 return_early = True
             else:
-                # Case 2: cooldown has expired.
-                # Decide whether this window was a "clean" one (no drops) or a
-                # strike window. If no strike candidate was set during the prior
-                # cooldown, reset the consecutive-strike counter — we're back to
-                # healthy emission cadence.
+                # 情形 2: 冷却已过。
+                # 视本窗口是否"干净"(无丢弃)或 strike 窗口: 上一冷却内没记 strike 就重置连续 strike 计数, 恢复健康下发节奏。
                 if session._watch_cooldown_until and not session._watch_strike_candidate:
                     session._watch_consecutive_strikes = 0
                 session._watch_strike_candidate = False
@@ -267,7 +241,7 @@ class ProcessRegistry:
                 return_early = False
         if return_early:
             if should_disable:
-                # summary event so the agent/user sees why things went quiet.
+                # 发一条 watch_disabled 汇总事件让 agent / 用户看到"为什么安静了"。
                 msg = self._watcher_event_base(session)
                 msg.update({
                     "type": "watch_disabled",
@@ -286,7 +260,7 @@ class ProcessRegistry:
         output = clean_output("\n".join(matched_lines[:20]))
         if len(output) > 2000:
             output = output[:2000] + "\n...(truncated)"
-        # Global circuit breaker — across all sessions (secondary safety net).
+        # 全局熔断器 — 跨 session 维度的第二层安全网。
         if not self._global_watch_admit(now):
             return
         msg = self._watcher_event_base(session)
@@ -307,14 +281,11 @@ class ProcessRegistry:
         }
 
     def _global_watch_admit(self, now: float) -> bool:
-        """Return True if this watch_match event is allowed through the global breaker.
-        Semantics:
-        - If we're currently in a cooldown period, drop the event and count it.
-        - Otherwise, slide the rolling window and check the global cap.
-        - If the cap is exceeded, trip the breaker for WATCH_GLOBAL_COOLDOWN_SECONDS
-          and emit ONE summary event so the agent/user sees "N notifications were
-          suppressed" instead of getting them individually.
-        - When the cooldown ends, emit a release summary and reset counters.
+        """全局熔断闸门: True 表示允许本次 watch_match 事件通过。
+
+        - 当前在冷却期内: 直接丢弃并计数。
+        - 否则滑动窗口, 命中 WATCH_GLOBAL_MAX_PER_WINDOW 上限就熔断 WATCH_GLOBAL_COOLDOWN_SECONDS, 同时下发一条汇总事件("N notifications were suppressed")代替逐条刷屏。
+        - 冷却结束再发一条 release 汇总并清零计数。
         """
         with self._global_watch_lock:
             if self._global_watch_tripped_until and now >= self._global_watch_tripped_until:
@@ -324,7 +295,7 @@ class ProcessRegistry:
                 self._global_watch_window_start = now
                 self._global_watch_window_hits = 0
                 if suppressed > 0:
-                    # Queue a summary event outside the lock (below).
+                    # 汇总事件放在锁外入队。
                     release_msg = {
                         "session_id": "",
                         "session_key": "",
@@ -342,20 +313,18 @@ class ProcessRegistry:
                     release_msg = None
             else:
                 release_msg = None
-            # Still in cooldown — drop and count.
+            # 仍在冷却中 — 丢弃并计数。
             if self._global_watch_tripped_until and now < self._global_watch_tripped_until:
                 self._global_watch_suppressed_during_trip += 1
                 admit = False
                 trip_now = None
             else:
-                # Slide the window.
+                # 滑动窗口。
                 if now - self._global_watch_window_start >= WATCH_GLOBAL_WINDOW_SECONDS:
                     self._global_watch_window_start = now
                     self._global_watch_window_hits = 0
                 if self._global_watch_window_hits >= WATCH_GLOBAL_MAX_PER_WINDOW:
-                    # Trip the breaker. The tripping event itself is not
-                    # counted as suppressed — only events arriving during
-                    # the actual cooldown period are.
+                    # 触发熔断。触发事件本身不计为 suppressed; 只有冷却窗口里到达的才计。
                     self._global_watch_tripped_until = now + WATCH_GLOBAL_COOLDOWN_SECONDS
                     trip_now = now
                     admit = False
@@ -363,7 +332,7 @@ class ProcessRegistry:
                     self._global_watch_window_hits += 1
                     trip_now = None
                     admit = True
-        # Queue summary events outside the lock.
+        # 把汇总事件放在锁外入队。
         if release_msg is not None:
             self.completion_queue.put(release_msg)
         if trip_now is not None:
@@ -388,15 +357,11 @@ class ProcessRegistry:
 
     @staticmethod
     def _is_host_pid_alive(pid: int | None) -> bool:
-        """Best-effort liveness check for host-visible PIDs.
-
-        ``os.kill(pid, 0)`` is NOT a no-op on Windows (bpo-14484) — delegate
-        to the cross-platform ``pid_exists`` from ``utils.pid``.
-        """
+        """尽力探测 host 可见 PID 是否存活; 调用跨平台 ``utils.pid.pid_exists`` — Windows 上 ``os.kill(pid, 0)`` 并非 no-op(bpo-14484)。"""
         return bool(pid) and pid_exists(pid)
 
     def _refresh_detached_session(self, session: ProcessSession | None) -> ProcessSession | None:
-        """Update recovered host-PID sessions when the underlying process has exited."""
+        """当崩溃恢复得到的 host PID session 对应的真实进程已经退出时, 把它的 exited 字段翻正。"""
         if session is None or session.exited or not session.detached or session.pid_scope != "host":
             return session
         if self._is_host_pid_alive(session.pid):
@@ -405,19 +370,17 @@ class ProcessRegistry:
             if session.exited:
                 return session
             session.exited = True
-            # Recovered sessions no longer have a waitable handle, so the real
-            # exit code is unavailable once the original process object is gone.
+            # 恢复出来的 session 已经没有 waitable 句柄, 一旦原始 Popen 对象消失就拿不到真实 exit code。
             session.exit_code = None
         self._move_to_finished(session)
         return session
 
     @staticmethod
     def _terminate_host_pid(pid: int) -> None:
-        """Terminate a host-visible PID and its descendants.
-        POSIX walks the process tree with ``psutil`` so subprocess trees
-        (e.g. Chromium renderers/GPU helpers spawned by an ``agent-browser``
-        daemon) don't get reparented to init and survive cleanup. Windows
-        delegates to ``utils.pid.kill_tree`` (``taskkill /T /F``).
+        """终止一个 host 可见 PID 及其所有后代进程。
+
+        POSIX 走 ``psutil`` 走整棵进程树(例如 ``agent-browser`` 守护派生的 Chromium renderer / GPU helper 不会被
+        reparent 到 init 之后逃过清理); Windows 委派 ``utils.pid.kill_tree``(``taskkill /T /F``)。
         """
         if IS_WINDOWS:
             if not kill_tree(pid, force=True):
@@ -439,7 +402,7 @@ class ProcessRegistry:
     # ----- Spawn -----
     @staticmethod
     def _env_temp_dir(env: Any) -> str:
-        """Return the writable sandbox temp dir for env-backed background tasks."""
+        """返回 env 后端后台任务可写的沙箱临时目录。"""
         get_temp_dir = getattr(env, "get_temp_dir", None)
         if callable(get_temp_dir):
             try:
@@ -451,28 +414,21 @@ class ProcessRegistry:
         return "/tmp"
 
     def spawn_local(self, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", env_vars: dict | None = None, use_pty: bool = False) -> ProcessSession:
-        """
-        Spawn a background process locally.
-        Only for TERMINAL_ENV=local. Other backends use spawn_via_env().
-        Args:
-            use_pty: If True, use a pseudo-terminal via ptyprocess for interactive
-                     CLI tools (Codex, Claude Code, Python REPL). Falls back to
-                     subprocess.Popen if ptyprocess is not installed.
+        """本机派生一个后台进程。仅限 TERMINAL_ENV=local; 其他后端走 ``spawn_via_env()``。
+
+        ``use_pty=True`` 用 ptyprocess 打开伪终端, 给交互式 CLI(Codex / Claude Code / Python REPL)用; ptyprocess 缺失则回落到 ``subprocess.Popen``。
         """
         session = ProcessSession(
             id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=resolve_safe_cwd(cwd or os.getcwd()), started_at=time.time()
         )
         if use_pty:
-            # Try PTY mode for interactive CLI tools
             try:
                 user_shell = find_bash()
                 pty_env = sanitize_subprocess_env(os.environ, env_vars)
                 pty_env["PYTHONUNBUFFERED"] = "1"
                 pty_proc = _PtyProcessCls.spawn([user_shell, "-lic", f"set +m; {command}"], cwd=session.cwd, env=pty_env, dimensions=(30, 120))
                 session.pid = pty_proc.pid
-                # Store the pty handle on the session for read/write
                 session._pty = pty_proc
-                # PTY reader thread
                 reader = threading.Thread(target=self._pty_reader_loop, args=(session,), daemon=True, name=f"proc-pty-reader-{session.id}")
                 session._reader_thread = reader
                 reader.start()
@@ -485,12 +441,9 @@ class ProcessRegistry:
                 logger.warning("ptyprocess not installed, falling back to pipe mode")
             except Exception as e:
                 logger.warning("PTY spawn failed (%s), falling back to pipe mode", e)
-        # Standard Popen path (non-PTY or PTY fallback)
-        # Use the user's login shell for consistency with LocalEnvironment --
-        # ensures rc files are sourced and user tools are available.
+        # 标准 Popen 路径(非 PTY 或 PTY 回落)。用用户登录 shell, 与 LocalEnvironment 保持一致 — 确保 rc 文件生效且用户工具可用。
         user_shell = find_bash()
-        # during background execution (libraries like tqdm/datasets buffer when
-        # stdout is a pipe, hiding output from process(action="poll")).
+        # 强制 PYTHONUNBUFFERED=1, 否则 tqdm / datasets 这类库在 pipe stdout 时会缓冲, 导致 process(poll) 看不到任何输出。
         bg_env = sanitize_subprocess_env(os.environ, env_vars)
         bg_env["PYTHONUNBUFFERED"] = "1"
         _popen_kwargs = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
@@ -518,14 +471,12 @@ class ProcessRegistry:
                 self._running[session.id] = session
             self._write_checkpoint()
         except Exception:
-            # Post-Popen setup failed — kill the orphaned subprocess (and any
-            # descendants spawned via setsid) before re-raising so they do not
-            # leak as untracked background processes.
+            # Popen 之后启动失败 — 把孤儿子进程连同 setsid 派生的后代一起杀掉再上抛, 否则会留下不可见的野进程。
             try:
                 if not IS_WINDOWS:
                     try:
                         kill_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
-                        os.killpg(os.getpgid(proc.pid), kill_signal)  # windows-footgun: ok - guarded by IS_WINDOWS above
+                        os.killpg(os.getpgid(proc.pid), kill_signal)  # windows-footgun: ok - 上面 IS_WINDOWS 已 guard
                     except (ProcessLookupError, PermissionError, OSError):
                         proc.kill()
                 else:
@@ -539,14 +490,10 @@ class ProcessRegistry:
         return session
 
     def spawn_via_env(self, env: Any, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", timeout: int = 10) -> ProcessSession:
-        """
-        Spawn a background process through a non-local environment backend.
-        For Docker/Singularity/SSH: runs the command inside the sandbox
-        using the environment's execute() interface. We wrap the command to
-        capture the in-sandbox PID and redirect output to a log file inside
-        the sandbox, then poll the log via subsequent execute() calls.
-        This is less capable than local spawn (no live stdout pipe, no stdin),
-        but it ensures the command runs in the correct sandbox context.
+        """通过非本地 Environment 后端派生后台进程(Docker / Singularity / SSH)。
+
+        把命令包成 nohup, 把 in-sandbox PID 和输出重定向到沙箱内的 log 文件, 随后通过后续 ``execute()`` 轮询状态。
+        不支持实时 stdout pipe 和 stdin 输入 — 但能保证命令跑在正确的 sandbox 上下文里。
         """
         session = ProcessSession(
             id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=cwd, started_at=time.time(), env_ref=env, pid_scope="sandbox"
@@ -574,9 +521,7 @@ class ProcessRegistry:
                 if line.isdigit():
                     session.pid = int(line)
                     break
-            # If the wrapper couldn't produce a PID (for example, syntax
-            # error or broken redirect), treat it as a failed launch instead
-            # of exposing a fake running session.
+            # 包壳若没产出 PID(语法错误 / 重定向失败), 视为启动失败而不是伪装一个 in-flight session。
             if session.pid is None:
                 session.exited = True
                 session.exit_code = int(result.get("returncode", -1))
@@ -601,7 +546,7 @@ class ProcessRegistry:
 
     # ----- Reader / Poller Threads -----
     def _reader_loop(self, session: ProcessSession) -> None:
-        """Background thread: read stdout from a local Popen process."""
+        """后台线程: 从本机 Popen 进程的 stdout 读数据并维护 output_buffer。"""
         first_chunk = True
         try:
             while True:
@@ -619,7 +564,7 @@ class ProcessRegistry:
         except Exception as e:
             logger.debug("Process stdout reader ended: %s", e)
         finally:
-            # Always reap the child to prevent zombie processes.
+            # 始终 reap 子进程以避免僵尸进程。
             try:
                 session.process.wait(timeout=5)
             except Exception as e:
@@ -629,13 +574,13 @@ class ProcessRegistry:
             self._move_to_finished(session)
 
     def _env_poller_loop(self, session: ProcessSession, env: Any, log_path: str, pid_path: str, exit_path: str) -> None:
-        """Background thread: poll a sandbox log file for non-local backends."""
+        """后台线程: 给非本地后端轮询沙箱内的 log 文件(每 2 秒一次)。"""
         quoted_log_path = shlex.quote(log_path)
         quoted_pid_path = shlex.quote(pid_path)
         quoted_exit_path = shlex.quote(exit_path)
-        prev_output_len = 0  # track delta for watch pattern scanning
+        prev_output_len = 0
         while not session.exited:
-            time.sleep(2)  # Poll every 2 seconds
+            time.sleep(2)
             try:
                 result = env.execute(f"cat {quoted_log_path} 2>/dev/null", timeout=10)
                 new_output = result.get("output", "")
@@ -661,14 +606,14 @@ class ProcessRegistry:
                     self._move_to_finished(session)
                     return
             except Exception:
-                # Environment might be gone (sandbox reaped, etc.)
+                # Environment 可能已经被回收(沙箱 reaped 等)。
                 session.exited = True
                 session.exit_code = -1
                 self._move_to_finished(session)
                 return
 
     def _pty_reader_loop(self, session: ProcessSession) -> None:
-        """Background thread: read output from a PTY process."""
+        """后台线程: 从 PTY 进程读输出。"""
         pty = session._pty
         try:
             while pty.isalive():
@@ -696,18 +641,12 @@ class ProcessRegistry:
         self._move_to_finished(session)
 
     def _move_to_finished(self, session: ProcessSession) -> None:
-        """Move a session from running to finished.
-        Idempotent: if the session was already moved (e.g. kill_process raced
-        with the reader thread), the second call is a no-op — no duplicate
-        completion notification is enqueued.
-        """
+        """把一个 session 从 running 移到 finished; 幂等, 不会被并发调用重入双下发。"""
         with self._lock:
             was_running = self._running.pop(session.id, None) is not None
             self._finished[session.id] = session
         self._write_checkpoint()
-        # Only enqueue completion notification on the FIRST move.  Without
-        # this guard, kill_process() and the reader thread can both call
-        # _move_to_finished(), producing duplicate [IMPORTANT: ...] messages.
+        # 仅在第一次移过来时入队完成通知 — 不做这个守卫, kill_process() 和 reader 线程可能各自调用一次, 产出重复 ``[IMPORTANT: ...]`` 消息。
         if was_running and session.notify_on_complete:
             output_tail = clean_output(session.output_buffer[-2000:]) if session.output_buffer else ""
             self.completion_queue.put({
@@ -721,14 +660,11 @@ class ProcessRegistry:
 
     # ----- Query Methods -----
     def is_completion_consumed(self, session_id: str) -> bool:
-        """Check if a completion notification was already consumed via wait/poll/log."""
+        """判断某个会话的完成通知是否已被 ``wait`` / ``poll`` / ``log`` 直接消费(用于 drain 时跳过)。"""
         return session_id in self._completion_consumed
 
     def drain_notifications(self) -> "list[tuple[dict, str]]":
-        """Pop all pending notification events and return formatted pairs.
-        Returns a list of (raw_event, formatted_text) tuples.
-        Skips completion events that were already consumed via wait/poll/log.
-        """
+        """从队列里取出所有待发的通知事件, 返回 ``(原始事件, 格式化文本)`` 列表; 自动跳过已经被 wait/poll/log 消费过的完成事件。"""
         results = []
         while not self.completion_queue.empty():
             try:
@@ -744,27 +680,22 @@ class ProcessRegistry:
         return results
 
     def get(self, session_id: str) -> ProcessSession | None:
-        """Get a session by ID (running or finished)."""
+        """根据 ID 取一个 session(运行中 / 已结束均可), 并对崩溃恢复得到的 detached session 做存活刷新。"""
         with self._lock:
             session = self._running.get(session_id) or self._finished.get(session_id)
         return self._refresh_detached_session(session)
 
     def _reconcile_local_exit(self, session: "ProcessSession") -> None:
-        """Reconcile session.exited against the real child process state.
-        The reader thread (`_reader_loop`) sets `session.exited = True` only
-        in its `finally` block, which runs when `stdout.read()` returns EOF.
-        If the direct `Popen` child has exited but a descendant process (e.g.
-        a daemon spawned during self-update restarting the gateway) is still
-        holding the stdout pipe open, the reader blocks forever and poll()
-        keeps returning "running" indefinitely (issue #17327 — 74 polls over
-        7 minutes on Feishu).
-        This helper closes that window: when `session.exited` is still False
-        but the direct child's `Popen.poll()` reports an exit code, drain any
-        readable bytes non-blocking and flip `session.exited`. The orphaned
-        reader thread remains stuck on its blocking `read()` but is a daemon
-        thread and will be reaped with the process.
-        Safe no-op on sessions without a local `Popen` (env/PTY), already-
-        exited sessions, and detached-recovered sessions.
+        """把 ``session.exited`` 与真实子进程状态对账。
+
+        reader 线程仅在 ``stdout.read()`` 返回 EOF 的 ``finally`` 里把 ``session.exited`` 置 True; 但若直接
+        Popen 子进程已经退出, 而某个派生进程(例如自更新重启 gateway 派生的守护)还抓着 stdout pipe 不放, reader
+        会无限阻塞, 外部 ``poll()`` 永远返回 "running"(issue #17327 — 飞书那边 7 分钟里 poll 了 74 次)。
+
+        本方法把这个窗口关上: ``session.exited`` 仍是 False 但 ``Popen.poll()`` 已经返回 exit code 时,
+        非阻塞把可读字节抽走, 然后把 ``exited`` 翻过去。被遗留的 reader 线程是 daemon, 进程退出时一同回收。
+
+        对没有本地 Popen 的(env / PTY)、已退出的、以及 detached 恢复出的 session 都是安全的 no-op。
         """
         if session is None or session.exited:
             return
@@ -776,11 +707,8 @@ class ProcessRegistry:
         except Exception:
             return
         if rc is None:
-            return  # Direct child still running — reader block is legitimate.
-        # Direct child exited. Try to drain any bytes the reader hasn't
-        # consumed yet. This is best-effort: if the pipe is held open by a
-        # descendant, the non-blocking read returns what's immediately
-        # available and we stop.
+            return  # 直接子进程仍在跑 — reader 的阻塞是合规的。
+        # 直接子进程已退出。尽力把 reader 没消费完的字节抽走: 若 pipe 被派生进程霸占, 非阻塞读只会拿到当前可用的部分, 拿不到就停。
         drained = ""
         stdout = getattr(proc, "stdout", None)
         if stdout is not None and IS_WINDOWS:
@@ -812,12 +740,11 @@ class ProcessRegistry:
         self._move_to_finished(session)
 
     def poll(self, session_id: str) -> dict:
-        """Check status and get new output for a background process."""
+        """查询后台进程的状态与最新输出。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
-        # Reconcile against real child state before reading session.exited.
-        # Guards against orphaned-pipe reader hangs.
+        # 先对账真实子进程状态, 防止孤儿 pipe 让 reader 卡死。
         self._reconcile_local_exit(session)
         with session._lock:
             output_preview = clean_output(session.output_buffer[-1000:]) if session.output_buffer else ""
@@ -838,7 +765,7 @@ class ProcessRegistry:
         return result
 
     def read_log(self, session_id: str, offset: int = 0, limit: int = 200) -> dict:
-        """Read the full output log with optional pagination by lines."""
+        """读取完整输出日志, 支持按行分页(默认返回末尾 N 行)。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
@@ -846,7 +773,6 @@ class ProcessRegistry:
             full_output = clean_output(session.output_buffer)
         lines = full_output.splitlines()
         total_lines = len(lines)
-        # Default: last N lines
         if offset == 0 and limit > 0:
             selected = lines[-limit:]
         else:
@@ -863,15 +789,7 @@ class ProcessRegistry:
         return result
 
     def wait(self, session_id: str, timeout: int | None = None) -> dict:
-        """
-        Block until a process exits, timeout, or interrupt.
-        Args:
-            session_id: The process to wait for.
-            timeout: Max seconds to block. Falls back to TERMINAL_TIMEOUT config.
-        Returns:
-            dict with status ("exited", "timeout", "interrupted", "not_found")
-            and output snapshot.
-        """
+        """阻塞直到进程退出、超时或被取消; 超时上限用 config.terminal.timeout 防模型设了巨值。"""
         try:
             default_timeout = int(cfg_get(load_config(), "terminal", "timeout", default=180))
         except (ValueError, TypeError):
@@ -890,8 +808,7 @@ class ProcessRegistry:
         deadline = time.monotonic() + effective_timeout
         while time.monotonic() < deadline:
             session = self._refresh_detached_session(session)
-            # Reconcile against real child state — guards against orphaned-
-            # child has already exited.
+            # 对账真实子进程状态 — 防孤儿 child 已退出的情况。
             self._reconcile_local_exit(session)
             if session.exited:
                 self._completion_consumed.add(session_id)
@@ -913,16 +830,14 @@ class ProcessRegistry:
         return result
 
     def kill_process(self, session_id: str) -> dict:
-        """Kill a background process."""
+        """终止一个后台进程(支持 PTY / 本地 Popen / 非本地 env / detached host PID 四种 session)。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         if session.exited:
             return {"status": "already_exited", "exit_code": session.exit_code}
-        # Kill via PTY, Popen (local), or env execute (non-local)
         try:
             if session._pty:
-                # PTY process -- terminate via ptyprocess
                 try:
                     session._pty.terminate(force=True)
                 except Exception:
@@ -932,7 +847,7 @@ class ProcessRegistry:
                         else:
                             os.kill(session.pid, signal.SIGTERM)
             elif session.process:
-                # Local process -- kill the process tree
+                # 本地进程 — 连同进程树一起杀。
                 try:
                     if IS_WINDOWS:
                         if not kill_tree(session.process.pid, force=True):
@@ -949,10 +864,7 @@ class ProcessRegistry:
                 except (ProcessLookupError, PermissionError):
                     session.process.kill()
             elif session.env_ref and session.pid:
-                # Non-local — kill inside the sandbox. The recorded pid is the
-                # wrapper subshell ($!); the real command is its child, so
-                # signal the sibling set (pkill -P) too, then escalate if any
-                # part of the tree survives.
+                # 非本地: 记录下来的 pid 是包壳 subshell($!), 真命令是它的子进程, 因此连带 pkill -P 一同信号, 残留再用 SIGKILL 升级。
                 qpid = shlex.quote(str(session.pid))
                 session.env_ref.execute(f"pkill -TERM -P {qpid} 2>/dev/null; kill {qpid} 2>/dev/null", timeout=5)
                 alive = session.env_ref.execute(f"kill -0 {qpid} 2>/dev/null || pgrep -P {qpid} >/dev/null 2>&1", timeout=5)
@@ -968,8 +880,7 @@ class ProcessRegistry:
                 self._terminate_host_pid(session.pid)
             else:
                 return {"status": "error", "error": ("Recovered process cannot be killed after restart because its original runtime handle is no longer available")}
-            # Only report an exit code we actually observed: taskkill /F and
-            # sandbox kills do not map to SIGTERM's -15.
+            # 只上报真实观察到的 exit code: taskkill /F 和沙箱里的 kill 都不映射到 SIGTERM 的 -15。
             proc = getattr(session, "process", None)
             with session._lock:
                 session.exited = True
@@ -981,16 +892,15 @@ class ProcessRegistry:
             return {"status": "error", "error": str(e)}
 
     def write_stdin(self, session_id: str, data: str) -> dict:
-        """Send raw data to a running process's stdin (no newline appended)."""
+        """向运行中进程的 stdin 发送裸数据(不附加换行符)。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         if session.exited:
             return {"status": "already_exited", "error": "Process has already finished"}
-        # PTY mode -- write through pty handle.
         if hasattr(session, "_pty") and session._pty:
             try:
-                # pywinpty expects str on Windows; ptyprocess expects bytes on POSIX.
+                # pywinpty 在 Windows 上要 str; ptyprocess 在 POSIX 上要 bytes。
                 if IS_WINDOWS:
                     pty_data = str(data)
                 else:
@@ -999,7 +909,6 @@ class ProcessRegistry:
                 return {"status": "ok", "bytes_written": len(data)}
             except Exception as e:
                 return {"status": "error", "error": str(e)}
-        # Popen mode -- write through stdin pipe
         if not session.process or not session.process.stdin:
             return {"status": "error", "error": "Process stdin not available (non-local backend or stdin closed)"}
         try:
@@ -1010,11 +919,11 @@ class ProcessRegistry:
             return {"status": "error", "error": str(e)}
 
     def submit_stdin(self, session_id: str, data: str = "") -> dict:
-        """Send data + newline to a running process's stdin (like pressing Enter)."""
+        """向运行中进程的 stdin 发送 data + 换行(等价于按一次 Enter)。"""
         return self.write_stdin(session_id, data + "\n")
 
     def close_stdin(self, session_id: str) -> dict:
-        """Close a running process's stdin / send EOF without killing the process."""
+        """关闭运行中进程的 stdin(发 EOF), 不杀进程。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
@@ -1035,19 +944,14 @@ class ProcessRegistry:
             return {"status": "error", "error": str(e)}
 
     def count_running(self) -> int:
-        """Return the count of currently-running background processes.
-        Cheap O(1) read of the running dict, suitable for status-bar polling
-        on every render tick. CPython dict ``len()`` is atomic; callers do not
-        need to hold ``self._lock``. Reflects ``_running`` only: sessions are
-        moved to ``_finished`` when their subprocess exits.
-        """
+        """返回当前正在运行的后台进程数(读 ``_running`` 字典 O(1), 状态栏每帧轮询也安全)。"""
         try:
             return len(self._running)
         except Exception:
             return 0
 
     def list_sessions(self, task_id: str | None = None) -> list:
-        """List all running and recently-finished processes."""
+        """列出所有运行中和最近结束的后台进程(可按 task_id 过滤)。"""
         with self._lock:
             all_sessions = list(self._running.values()) + list(self._finished.values())
         all_sessions = [self._refresh_detached_session(s) for s in all_sessions]
@@ -1055,9 +959,7 @@ class ProcessRegistry:
             all_sessions = [s for s in all_sessions if s.task_id == task_id]
         result = []
         for s in all_sessions:
-            # Redact the full string first, then slice — otherwise a secret
-            # spanning the 200-char boundary would be truncated mid-token
-            # and the redactor's regex would never match the partial prefix.
+            # 先对完整字符串脱敏再切片: 否则一个跨 200 字符边界的密钥会被切在 token 中间, 脱敏正则匹配不到前缀片段就漏过。
             entry = {
                 "session_id": s.id,
                 "command": clean_output(s.command)[:200],
@@ -1085,15 +987,15 @@ class ProcessRegistry:
             return any(getattr(s, key) == value and not s.exited for s in self._running.values())
 
     def has_active_processes(self, task_id: str) -> bool:
-        """Check if there are active (running) processes for a task_id."""
+        """判断 task_id 下是否还有运行中进程。"""
         return self._has_active("task_id", task_id)
 
     def has_active_for_session(self, session_key: str) -> bool:
-        """Check if there are active processes for a gateway session key."""
+        """判断 gateway session_key 下是否还有运行中进程。"""
         return self._has_active("session_key", session_key)
 
     def kill_all(self, task_id: str | None = None) -> int:
-        """Kill all running processes, optionally filtered by task_id. Returns count killed."""
+        """杀掉全部运行中进程(可选 task_id 过滤), 返回成功杀掉的条数。"""
         with self._lock:
             targets = [s for s in self._running.values() if (task_id is None or s.task_id == task_id) and not s.exited]
         killed = 0
@@ -1105,20 +1007,19 @@ class ProcessRegistry:
 
     # ----- Cleanup / Pruning -----
     def _prune_if_needed(self) -> None:
-        """Remove oldest finished sessions if over MAX_PROCESSES. Must hold _lock."""
+        """超过 MAX_PROCESSES 时淘汰最旧的已结束 session(调用方需持 ``_lock``)。"""
         now = time.time()
         expired = [sid for sid, s in self._finished.items() if (now - s.started_at) > FINISHED_TTL_SECONDS]
         for sid in expired:
             del self._finished[sid]
             self._completion_consumed.discard(sid)
-        # If still over limit, remove oldest finished
+        # 仍超限时按 started_at 顺序再淘汰最旧的。
         total = len(self._running) + len(self._finished)
         if total >= MAX_PROCESSES and self._finished:
             oldest_id = min(self._finished, key=lambda sid: self._finished[sid].started_at)
             del self._finished[oldest_id]
             self._completion_consumed.discard(oldest_id)
-        # tracked at all — belt-and-suspenders against module-lifetime growth
-        # on process-registry lookup paths that don't reach the dict prunes.
+        # belt-and-suspenders: 清理不在任何已跟踪集合里的 completion 残留 id, 防止模块生命周期内的_lookup 路径绕过上面 dict prune 时无限增长。
         tracked = self._running.keys() | self._finished.keys()
         stale = self._completion_consumed - tracked
         if stale:
@@ -1126,7 +1027,7 @@ class ProcessRegistry:
 
     # ----- Checkpoint (crash recovery) -----
     def _write_checkpoint(self) -> None:
-        """Write running process metadata to checkpoint file atomically."""
+        """把运行中的进程元数据原子写入 checkpoint 文件(崩溃恢复用)。"""
         try:
             with self._lock:
                 entries = []
@@ -1156,10 +1057,7 @@ class ProcessRegistry:
             logger.debug("Failed to write checkpoint file: %s", e, exc_info=True)
 
     def recover_from_checkpoint(self) -> int:
-        """
-        On gateway startup, probe PIDs from checkpoint file.
-        Returns the number of processes recovered as detached.
-        """
+        """Gateway 启动时读取 checkpoint, 探测 PID, 把仍存活的恢复成 detached session; 返回恢复条数。"""
         if not CHECKPOINT_PATH.exists():
             return 0
         try:
@@ -1173,9 +1071,7 @@ class ProcessRegistry:
                 continue
             pid_scope = entry.get("pid_scope", "host")
             if pid_scope != "host":
-                # Sandbox-backed processes keep only in-sandbox PIDs in the
-                # checkpoint, which are not meaningful to the restarted host
-                # process once the original environment handle is gone.
+                # 沙箱后端进程在 checkpoint 里只有沙箱内 PID, host 进程一旦重启 + 原 env handle 消失, 这些 PID 就不再有意义, 直接跳过。
                 logger.info("Skipping recovery for non-host process: %s (pid=%s, scope=%s)", entry.get("command", "unknown")[:60], pid, pid_scope)
                 continue
             alive = self._is_host_pid_alive(pid)
@@ -1189,7 +1085,7 @@ class ProcessRegistry:
                     pid_scope=pid_scope,
                     cwd=entry.get("cwd"),
                     started_at=entry.get("started_at", time.time()),
-                    detached=True,  # Can't read output, but can report status + kill
+                    detached=True,  # 没拿到原 pipe, 无法读输出, 但能报状态、能杀
                     watcher_platform=entry.get("watcher_platform", ""),
                     watcher_chat_id=entry.get("watcher_chat_id", ""),
                     watcher_user_id=entry.get("watcher_user_id", ""),
@@ -1204,7 +1100,7 @@ class ProcessRegistry:
                     self._running[session.id] = session
                 recovered += 1
                 logger.info("Recovered detached process: %s (pid=%d)", session.command[:60], pid)
-                # Re-enqueue watcher so gateway can resume notifications
+                # 把 watcher 重新入队, gateway 续接通知。
                 if session.watcher_interval > 0:
                     self.pending_watchers.append({
                         "session_id": session.id,
@@ -1226,10 +1122,7 @@ process_registry = ProcessRegistry()
 
 
 def format_process_notification(evt: dict) -> "str | None":
-    """Format a process notification event into a [IMPORTANT: ...] message.
-    Handles completion events (notify_on_complete), watch pattern matches,
-    and watch disabled events from the unified completion_queue.
-    """
+    """把进程通知事件格式化成 ``[IMPORTANT: ...]`` 文本; 处理三类事件(notify_on_complete 完成 / watch 模式匹配 / watch 停用)。"""
     evt_type = evt.get("type", "completion")
     _sid = evt.get("session_id", "unknown")
 

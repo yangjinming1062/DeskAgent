@@ -6,11 +6,7 @@ SNAPSHOT_SUMMARIZE_THRESHOLD = 8000
 
 
 def _truncate_snapshot(snapshot_text: str, max_chars: int = 8000) -> str:
-    """Structure-aware truncation for accessibility-tree snapshots.
-
-    Cuts at line boundaries so that snapshot elements are never split
-    mid-line, and appends a note telling the agent how much was omitted.
-    """
+    """按行边界截断可访问性树快照，并在末尾标注被省略的字符数（避免切断 element ref）。"""
     if len(snapshot_text) <= max_chars:
         return snapshot_text
     lines = snapshot_text.split("\n")
@@ -27,12 +23,7 @@ def _truncate_snapshot(snapshot_text: str, max_chars: int = 8000) -> str:
 
 
 def _extract_relevant_content(snapshot_text: str, user_task: str | None = None) -> str:
-    """Use LLM to extract relevant content from a snapshot based on the user's task.
-
-    Falls back to simple truncation when the reverse-RPC isn't reachable
-    (e.g. the dispatcher is itself called from a sync handler that can't
-    await the LLM call).
-    """
+    """调用 LLM 按 user_task 抽取快照里与任务相关的内容；不可达 reverse-RPC 时回退到按行截断。"""
     if user_task:
         extraction_prompt = (
             f"You are a content extractor for a browser automation agent.\n\n"

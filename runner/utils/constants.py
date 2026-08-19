@@ -5,13 +5,13 @@ import sys
 from pathlib import Path
 
 IS_WINDOWS: bool = sys.platform == "win32"
-"""Platform flag: True on Windows, False on POSIX."""
+"""平台标记：Windows 为 True，POSIX 为 False。"""
 
 IS_MACOS: bool = sys.platform == "darwin"
-"""Platform flag: True on macOS, False otherwise."""
+"""平台标记：macOS 为 True，其他平台为 False。"""
 
 CREATE_NO_WINDOW: int = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
-"""Windows subprocess flag for ``creationflags``; 0 on POSIX (no-op)."""
+"""Windows ``creationflags`` 用子进程标志；POSIX 上为 0（无操作）。"""
 
 
 def get_spiritagent_home() -> Path:
@@ -48,9 +48,7 @@ def get_skills_dir() -> Path:
 
 
 def secure_parent_dir(path: str | Path) -> None:
-    """Ensure ``path``'s parent exists with ``0700`` permissions (POSIX only —
-    NTFS ignores POSIX mode bits, so the chmod is a Windows no-op; real
-    protection there needs NTFS ACLs)."""
+    """确保 ``path`` 的父目录存在并设置 ``0700`` 权限（仅 POSIX 生效）。"""
     parent = Path(path).parent
     if not parent.exists():
         parent.mkdir(parents=True, exist_ok=True)

@@ -13,10 +13,8 @@ from utils import atomic_replace, get_skills_dir
 
 from .helpers import get_spiritagent_metadata, iter_skill_index_files, parse_frontmatter
 
-# ``fcntl`` (POSIX) and ``msvcrt`` (Windows) are stdlib — they are not and
-# must not be listed in pyproject.toml (that file is for third-party deps).
-# The stdlib ships one of these on every supported platform; the platform
-# is decided once at interpreter startup and cannot change mid-process.
+# fcntl（POSIX）与 msvcrt（Windows）属于标准库 — 不应也不允许列在 pyproject.toml（那里仅放第三方依赖）。
+# 标准库在每个支持的平台上都会附带其中之一；平台在解释器启动时确定，进程中途不会改变。
 if sys.platform == "win32":
     import msvcrt
 else:
@@ -32,11 +30,10 @@ _VALID_STATES = {STATE_ACTIVE, STATE_STALE, STATE_ARCHIVED}
 
 @functools.cache
 def _load_protected_builtins() -> frozenset[str]:
-    """Skill names declaring ``metadata.spiritagent.protected: true`` in their SKILL.md.
+    """在 SKILL.md 的 metadata.spiritagent.protected: true 上声明的 skill 名集合。
 
-    Per-skill OSError and YAML errors are swallowed so a single malformed
-    manifest doesn't disable curator protection across the board.
-    Call ``_load_protected_builtins.cache_clear()`` after installing new skills.
+    单个 skill 的 OSError / YAML 错误会被吞掉，避免一个畸形 manifest 整体禁用 curator 保护。
+    安装新 skill 后请调用 _load_protected_builtins.cache_clear()。
     """
     protected: set[str] = set()
     for skill_md in iter_skill_index_files(get_skills_dir()):

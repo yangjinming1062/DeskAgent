@@ -25,16 +25,19 @@ _vnc_url_checked = False
 
 
 def get_camofox_url() -> str:
+    """返回配置里的 Camofox 后端 base URL（已去除末尾斜杠）。"""
     val = cfg_get(load_config(), "browser", "camofox", "url")
     return str(val).rstrip("/") if val else ""
 
 
 def is_camofox_mode() -> bool:
+    """当前是否走 Camofox REST 后端（无 CDP 覆盖且配置了 camofox URL）。"""
     cdp_override = str(cfg_get(load_config(), "browser", "cdp_url", default="")).strip()
     return not cdp_override and bool(get_camofox_url())
 
 
 def check_camofox_available() -> bool:
+    """探测 Camofox 后端健康状态，顺便记下 VNC 地址（用于分享给用户围观）。"""
     global _vnc_url, _vnc_url_checked
     if not (url := get_camofox_url()):
         return False
@@ -50,6 +53,7 @@ def check_camofox_available() -> bool:
 
 
 def get_vnc_url() -> str | None:
+    """若 Camofox 暴露了 VNC 端口则返回其 URL，否则 None。"""
     if not _vnc_url_checked:
         check_camofox_available()
     return _vnc_url
@@ -192,6 +196,7 @@ def _drop_session(task_id: str | None) -> dict[str, Any] | None:
 
 
 def camofox_soft_cleanup(task_id: str | None = None) -> bool:
+    """受管持久化场景下丢弃本地会话记录（远端会话仍在 Camofox 保留）。"""
     camofox_cfg = _get_camofox_config()
     if bool(camofox_cfg.get("managed_persistence")) or _camofox_identity_override(task_id, camofox_cfg):
         _drop_session(task_id)
@@ -225,6 +230,7 @@ def _delete(path: str, body: dict | None = None, timeout: int = _DEFAULT_TIMEOUT
 
 
 def camofox_navigate(url: str, task_id: str | None = None) -> str:
+    """通过 Camofox REST 后端导航到 url，返回含页面快照与（若有）VNC 链接的 JSON。"""
     try:
         browser_url, rewrite_info = _rewrite_loopback_url_for_camofox(url)
         session = _get_session(task_id)
@@ -261,6 +267,7 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
 
 
 def camofox_snapshot(full: bool = False, task_id: str | None = None, user_task: str | None = None) -> str:
+    """取 Camofox 后端的页面可访问性树快照，超长时按 user_task 调用 LLM 抽取或截断。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -275,6 +282,7 @@ def camofox_snapshot(full: bool = False, task_id: str | None = None, user_task: 
 
 
 def camofox_click(ref: str, task_id: str | None = None) -> str:
+    """在 Camofox 当前 tab 上点击 ref 元素（自动剥掉前导 @）。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -287,6 +295,7 @@ def camofox_click(ref: str, task_id: str | None = None) -> str:
 
 
 def camofox_type(ref: str, text: str, task_id: str | None = None) -> str:
+    """在 Camofox 当前 tab 上向 ref 元素输入 text。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -299,6 +308,7 @@ def camofox_type(ref: str, text: str, task_id: str | None = None) -> str:
 
 
 def camofox_scroll(direction: str, task_id: str | None = None) -> str:
+    """在 Camofox 当前 tab 上按 direction（up/down）滚动。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -310,6 +320,7 @@ def camofox_scroll(direction: str, task_id: str | None = None) -> str:
 
 
 def camofox_back(task_id: str | None = None) -> str:
+    """让 Camofox 当前 tab 退回历史上一页。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -321,6 +332,7 @@ def camofox_back(task_id: str | None = None) -> str:
 
 
 def camofox_press(key: str, task_id: str | None = None) -> str:
+    """在 Camofox 当前 tab 上按下指定按键。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -332,6 +344,7 @@ def camofox_press(key: str, task_id: str | None = None) -> str:
 
 
 def camofox_close(task_id: str | None = None) -> str:
+    """关闭 task 对应的 Camofox 会话（直接调用 /sessions/{user_id}）。"""
     try:
         if session := _drop_session(task_id):
             _delete(f"/sessions/{session['user_id']}")
@@ -341,6 +354,7 @@ def camofox_close(task_id: str | None = None) -> str:
 
 
 def camofox_get_images(task_id: str | None = None) -> str:
+    """从 Camofox 页面快照中解析出所有图片的 src 与 alt。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -360,6 +374,7 @@ def camofox_get_images(task_id: str | None = None) -> str:
 
 
 def camofox_vision(question: str, annotate: bool = False, task_id: str | None = None) -> str:
+    """截图 Camofox 当前 tab 并请视觉模型回答 question；可选标注 ref。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -408,6 +423,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
 
 
 def camofox_console(clear: bool = False, task_id: str | None = None) -> str:
+    """Camofox 不支持 console 捕获，直接返回「不支持」说明。"""
     return json.dumps({
         "success": True,
         "console_messages": [],
