@@ -1,12 +1,11 @@
-from unittest.mock import AsyncMock, patch
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from api.v1.companion import router as companion_router
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from modules.companion import AvatarAsset
-from sqlalchemy import update
 from services.companion import (
     AvatarSourceUnreadableError,
     FrontSeedMissingError,
@@ -17,6 +16,7 @@ from services.companion import (
     generate_fullbody_style_samples,
     select_fullbody_style,
 )
+from sqlalchemy import update
 
 
 @pytest.mark.asyncio
@@ -31,8 +31,10 @@ async def test_fullbody_routes_styles():
         assert len(data) == 2
         assert data[0]["id"] == "cel_shading"
         assert data[0]["label_zh"] == "日系赛璐珞"
+        assert data[0]["description_zh"] == "清晰轮廓 · 明快平涂色彩"
         assert data[1]["id"] == "anime_game_cg"
         assert data[1]["label_zh"] == "二次元游戏CG"
+        assert data[1]["description_zh"] == "3D渲染 · 细腻质感光影"
 
 
 @pytest.mark.asyncio
@@ -52,8 +54,15 @@ async def test_fullbody_generate_samples(SessionLocal):
             "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = ("temp-media/sample_01", "sample_01", "jpg", "https://source.example/test.jpg")
-            samples = await generate_fullbody_style_samples(db, user_id, avatar_id=avatar.id)
+            mock_gen.return_value = (
+                "temp-media/sample_01",
+                "sample_01",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
+            samples = await generate_fullbody_style_samples(
+                db, user_id, avatar_id=avatar.id
+            )
             assert len(samples) == 2
             assert "cel_shading" in samples
             assert "anime_game_cg" in samples
@@ -98,7 +107,9 @@ async def test_fullbody_select_style(SessionLocal):
         db.add(avatar)
         await db.commit()
 
-        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="anime_game_cg")
+        asset = await select_fullbody_style(
+            db, user_id, avatar_id=avatar.id, style="anime_game_cg"
+        )
         assert asset.seed_front_url == "/api/media/files/sample_cg"
         assert asset.seed_right_url == ""
         assert asset.seed_back_url == ""
@@ -107,7 +118,9 @@ async def test_fullbody_select_style(SessionLocal):
         assert res.seed_front_url == "/api/media/files/sample_cg"
 
         # Switching style swaps the front-seed candidate to that style's sample.
-        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="cel_shading")
+        asset = await select_fullbody_style(
+            db, user_id, avatar_id=avatar.id, style="cel_shading"
+        )
         assert asset.seed_front_url == "/api/media/files/sample_cel"
 
         with pytest.raises(UnknownFullbodyStyleError):
@@ -142,14 +155,22 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
                 "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
                 new_callable=AsyncMock,
             ) as mock_gen,
-            patch("services.companion.avatar_service._read_temp_media_bytes", return_value=(b"img", "image/png")),
+            patch(
+                "services.companion.avatar_service._read_temp_media_bytes",
+                return_value=(b"img", "image/png"),
+            ),
             patch(
                 "services.companion.avatar_service._persist_portrait_bytes",
                 new_callable=AsyncMock,
                 return_value=("companion-avatars/promoted.png", "f1", "png"),
             ),
         ):
-            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/aux_view.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
             confirmed = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
 
         assert "promoted.png" in confirmed.seed_front_url
@@ -162,7 +183,11 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
         await db.execute(
             update(AvatarAsset)
             .where(AvatarAsset.id == avatar.id)
-            .values(seed_front_url="temp-media/expired_front", seed_right_url="", seed_back_url="")
+            .values(
+                seed_front_url="temp-media/expired_front",
+                seed_right_url="",
+                seed_back_url="",
+            )
         )
         await db.commit()
         with (
@@ -170,9 +195,17 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
                 "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
                 new_callable=AsyncMock,
             ) as mock_gen,
-            patch("services.companion.avatar_service._read_temp_media_bytes", return_value=None),
+            patch(
+                "services.companion.avatar_service._read_temp_media_bytes",
+                return_value=None,
+            ),
         ):
-            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/aux_view.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
             with pytest.raises(AvatarSourceUnreadableError):
                 await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
 
@@ -193,7 +226,9 @@ async def test_fullbody_select_style_without_samples_keeps_seed(SessionLocal):
         db.add(avatar)
         await db.commit()
 
-        asset = await select_fullbody_style(db, user_id, avatar_id=avatar.id, style="cel_shading")
+        asset = await select_fullbody_style(
+            db, user_id, avatar_id=avatar.id, style="cel_shading"
+        )
         assert "refined_front.jpg" in asset.seed_front_url
         assert avatar_response(asset).fullbody_style == "cel_shading"
 
@@ -215,15 +250,28 @@ async def test_fullbody_front_and_confirm(SessionLocal):
             "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = ("companion-avatars/seed_front.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/seed_front.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
 
             # 1. Generate front image
-            asset = await generate_fullbody_front(db, user_id, avatar_id=avatar.id, style="cel_shading", feedback="头发长一点")
+            asset = await generate_fullbody_front(
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="cel_shading",
+                feedback="头发长一点",
+            )
             assert asset.seed_front_url is not None
             assert "seed_front" in asset.seed_front_url
 
             # 2. Confirm front image -> triggers side + back generation
-            confirmed_asset = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id, style="cel_shading")
+            confirmed_asset = await confirm_fullbody_front(
+                db, user_id, avatar_id=avatar.id, style="cel_shading"
+            )
             assert confirmed_asset.seed_front_url is not None
             assert confirmed_asset.seed_right_url is not None
             assert confirmed_asset.seed_back_url is not None
@@ -243,7 +291,9 @@ async def test_fullbody_confirm_without_front_raises(SessionLocal):
         await db.commit()
 
         with pytest.raises(FrontSeedMissingError):
-            await confirm_fullbody_front(db, user_id, avatar_id=avatar.id, style="cel_shading")
+            await confirm_fullbody_front(
+                db, user_id, avatar_id=avatar.id, style="cel_shading"
+            )
 
 
 @pytest.mark.asyncio
@@ -263,7 +313,12 @@ async def test_fullbody_direct_confirm_with_sample_url(SessionLocal):
             "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/aux_view.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
 
             # Direct confirmation passing sample url as front_url
             confirmed_asset = await confirm_fullbody_front(
@@ -295,17 +350,34 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
             "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
             new_callable=AsyncMock,
         ) as mock_gen:
-            mock_gen.return_value = ("companion-avatars/sample.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/sample.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
 
             custom_ref_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
             samples = await generate_fullbody_style_samples(
-                db, user_id, avatar_id=avatar.id, reference_image=custom_ref_b64, reference_content_type="image/png"
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                reference_image=custom_ref_b64,
+                reference_content_type="image/png",
             )
             assert len(samples) == 2
             for call in mock_gen.call_args_list:
-                assert call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"
+                assert (
+                    call.kwargs.get("reference_image")
+                    == f"data:image/png;base64,{custom_ref_b64}"
+                )
 
-            mock_gen.return_value = ("companion-avatars/front_custom.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            mock_gen.return_value = (
+                "companion-avatars/front_custom.jpg",
+                "file1",
+                "jpg",
+                "https://source.example/test.jpg",
+            )
             asset = await generate_fullbody_front(
                 db,
                 user_id,
@@ -316,4 +388,7 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
             )
             assert "front_custom" in asset.seed_front_url
             last_call = mock_gen.call_args_list[-1]
-            assert last_call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"
+            assert (
+                last_call.kwargs.get("reference_image")
+                == f"data:image/png;base64,{custom_ref_b64}"
+            )

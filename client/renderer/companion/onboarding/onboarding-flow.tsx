@@ -62,7 +62,7 @@ import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type
 import { $voicePreparing } from '../voice-state'
 
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
-import { Chip, type HistoryGalleryItem, PortraitPanel } from './onboarding-components'
+import { Chip, HistoryGallery, type HistoryGalleryItem, PortraitLightbox, PortraitPanel } from './onboarding-components'
 
 type Phase =
   | 'q-character'
@@ -82,6 +82,12 @@ const VOICE_LANGUAGE_TABS: { id: VoiceLanguageFilter; label: string }[] = [
   { id: 'zh', label: '中文' },
   { id: 'en', label: 'English' }
 ]
+
+export interface FullbodyStyleOption {
+  id: string
+  label_zh: string
+  description_zh?: string
+}
 
 type QKey = keyof OnboardingAnswers
 
@@ -462,15 +468,24 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // Failure hints live on the portrait panel — the form area is hidden behind it.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
+  const [styleCatalog, setStyleCatalog] = useState<FullbodyStyleOption[]>([])
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
   const [fullbodyLoadingText, setFullbodyLoadingText] = useState('正在为您生成不同风格的全身样图…')
   const [fullbodySamples, setFullbodySamplesState] = useState<Record<string, string>>({})
   const [fullbodyRawSamples, setFullbodyRawSamplesState] = useState<Record<string, string>>({})
   const [fullbodyStyle, setFullbodyStyleState] = useState<string | null>(null)
+  const [selectedStyleKey, setSelectedStyleKey] = useState<string>('')
   const [fullbodyFrontUrl, setFullbodyFrontUrl] = useState<string | null>(null)
   const [fullbodyFrontRawUrl, setFullbodyFrontRawUrl] = useState<string | null>(null)
   const [fullbodyFeedback, setFullbodyFeedback] = useState<string>('')
   const [fullbodyHint, setFullbodyHint] = useState<string | null>(null)
+  const [fullbodyZoomUrl, setFullbodyZoomUrl] = useState<string | null>(null)
+
+  const [fullbodyHistories, setFullbodyHistories] = useState<
+    Record<string, Array<{ rawUrl: string | null; previewUrl: string }>>
+  >({})
+
+  const [fullbodyHistoryIndices, setFullbodyHistoryIndices] = useState<Record<string, number>>({})
 
   // Reference image handed over at the 形象描述 question. Persisted locally
   // via IndexedDB draft cache so a crash before bust generation resumes with it.
@@ -855,6 +870,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // generation only when nothing is stored (first entry / legacy rows) or the
   // temp-media drafts expired past their TTL.
   const hydrateFullbodyStage = async (): Promise<void> => {
+    void window.spiritagent
+      .api<FullbodyStyleOption[]>({
+        path: '/api/companion/avatar/fullbody/styles',
+        method: 'GET'
+      })
+      .then(res => {
+        if (Array.isArray(res) && res.length > 0) {
+          setStyleCatalog(res)
+        }
+      })
+      .catch(() => undefined)
+
     const avatarRes = await window.spiritagent.api<{
       asset_url?: string | null
       seed_front_url?: string | null
@@ -890,13 +917,57 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const style = avatarRes?.fullbody_style || null
     setFullbodyStyleState(style)
 
-    if (avatarRes?.seed_front_url) {
-      setFullbodyFrontRawUrl(avatarRes.seed_front_url)
-      setFullbodyFrontUrl(await resolvePortraitUrl(avatarRes.seed_front_url))
-    } else if (style && rawSamples[style]) {
-      setFullbodyFrontRawUrl(rawSamples[style])
-      setFullbodyFrontUrl(resolvedSamples[style] ?? null)
+    if (style) {
+      setSelectedStyleKey(style)
+    } else {
+      const firstAvailableKey = Object.keys(rawSamples)[0]
+
+      if (firstAvailableKey) {
+        setSelectedStyleKey(prev => prev || firstAvailableKey)
+      }
     }
+
+    let initialFrontRaw: string | null = null
+    let initialFrontResolved: string | null = null
+
+    if (avatarRes?.seed_front_url) {
+      initialFrontRaw = avatarRes.seed_front_url
+      initialFrontResolved = await resolvePortraitUrl(avatarRes.seed_front_url)
+    } else if (style && rawSamples[style]) {
+      initialFrontRaw = rawSamples[style]
+      initialFrontResolved = resolvedSamples[style] ?? null
+    }
+
+    setFullbodyFrontRawUrl(initialFrontRaw)
+    setFullbodyFrontUrl(initialFrontResolved)
+
+    const initialHistories: Record<string, Array<{ rawUrl: string | null; previewUrl: string }>> = {}
+    const initialIndices: Record<string, number> = {}
+
+    for (const [styleId, preview] of Object.entries(resolvedSamples)) {
+      if (preview) {
+        initialHistories[styleId] = [{ rawUrl: rawSamples[styleId] || null, previewUrl: preview }]
+        initialIndices[styleId] = 0
+      }
+    }
+
+    if (style && initialFrontResolved) {
+      const samplePreview = resolvedSamples[style]
+
+      if (samplePreview && initialFrontResolved !== samplePreview) {
+        initialHistories[style] = [
+          { rawUrl: rawSamples[style] || null, previewUrl: samplePreview },
+          { rawUrl: initialFrontRaw, previewUrl: initialFrontResolved }
+        ]
+        initialIndices[style] = 1
+      } else {
+        initialHistories[style] = [{ rawUrl: initialFrontRaw, previewUrl: initialFrontResolved }]
+        initialIndices[style] = 0
+      }
+    }
+
+    setFullbodyHistories(initialHistories)
+    setFullbodyHistoryIndices(initialIndices)
 
     if (avatarRes?.id != null && (Object.keys(rawSamples).length === 0 || Object.keys(resolvedSamples).length === 0)) {
       // No stored samples, or the temp-media drafts expired past their TTL —
@@ -1038,6 +1109,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       if (r.ok) {
         setVoiceCatalog(r.catalog.voices)
       }
+
+      void window.spiritagent
+        .api<FullbodyStyleOption[]>({
+          path: '/api/companion/avatar/fullbody/styles',
+          method: 'GET'
+        })
+        .then(res => {
+          if (Array.isArray(res) && res.length > 0) {
+            setStyleCatalog(res)
+          }
+        })
+        .catch(() => undefined)
     })()
   }, [gatewayState, requestGateway, onCompleted, enterHatchingRef, hydrateFullbodyStageRef])
 
@@ -1170,10 +1253,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     // Advance to fullbody-3d
     setPhase('fullbody-3d')
     setFullbodyStyleState(null)
+    setSelectedStyleKey('')
     setFullbodyFrontUrl(null)
     setFullbodyFrontRawUrl(null)
     setFullbodyFeedback('')
     setFullbodyHint(null)
+    setFullbodyZoomUrl(null)
 
     // Reuse samples already persisted on the avatar row (user stepped back to
     // portrait and re-confirmed); only generate when none exist.
@@ -1215,6 +1300,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
         setFullbodySamplesState(resolved)
 
+        const initialHistories: Record<string, Array<{ rawUrl: string | null; previewUrl: string }>> = {}
+        const initialIndices: Record<string, number> = {}
+
+        for (const [styleId, preview] of Object.entries(resolved)) {
+          initialHistories[styleId] = [{ rawUrl: res.samples[styleId] || null, previewUrl: preview }]
+          initialIndices[styleId] = 0
+        }
+
+        setFullbodyHistories(initialHistories)
+        setFullbodyHistoryIndices(initialIndices)
+
+        const resolvedKeys = Object.keys(resolved)
+
+        if (resolvedKeys.length > 0) {
+          setSelectedStyleKey(prev => prev || resolvedKeys[0])
+        }
+
         if (Object.keys(resolved).length === 0) {
           setFullbodyHint('风格样图加载失败，请重试')
         }
@@ -1229,11 +1331,33 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const selectStyle = (styleId: string) => {
+    setSelectedStyleKey(styleId)
     setFullbodyStyleState(styleId)
-    const rawUrl = fullbodyRawSamples[styleId] || null
-    const sampleUrl = fullbodySamples[styleId] || null
-    setFullbodyFrontRawUrl(rawUrl)
-    setFullbodyFrontUrl(sampleUrl)
+
+    const historyList = fullbodyHistories[styleId] || []
+    const historyIdx = fullbodyHistoryIndices[styleId] ?? 0
+    let frontRaw: string | null = null
+    let frontResolved: string | null = null
+
+    if (historyList.length > 0 && historyList[historyIdx]) {
+      frontRaw = historyList[historyIdx].rawUrl
+      frontResolved = historyList[historyIdx].previewUrl
+    } else {
+      frontRaw = fullbodyRawSamples[styleId] || null
+      frontResolved = fullbodySamples[styleId] || null
+      const sampleUrl = fullbodySamples[styleId]
+
+      if (sampleUrl) {
+        setFullbodyHistories(prev => ({
+          ...prev,
+          [styleId]: [{ rawUrl: frontRaw, previewUrl: sampleUrl }]
+        }))
+        setFullbodyHistoryIndices(prev => ({ ...prev, [styleId]: 0 }))
+      }
+    }
+
+    setFullbodyFrontRawUrl(frontRaw)
+    setFullbodyFrontUrl(frontResolved)
     setFullbodyHint(null)
 
     // Persist the pick so a restart resumes at the front preview instead of
@@ -1249,6 +1373,24 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         .catch(() => undefined)
     }
   }
+
+  const onSelectFullbodyHistoryEntry = useCallback(
+    (idx: number) => {
+      if (!fullbodyStyle) {
+        return
+      }
+
+      const list = fullbodyHistories[fullbodyStyle] || []
+
+      if (idx >= 0 && idx < list.length) {
+        const entry = list[idx]
+        setFullbodyHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: idx }))
+        setFullbodyFrontUrl(entry.previewUrl)
+        setFullbodyFrontRawUrl(entry.rawUrl)
+      }
+    },
+    [fullbodyHistories, fullbodyStyle]
+  )
 
   const regenerateFullbodyFront = async () => {
     if (!activeAvatarId || !fullbodyStyle) {
@@ -1287,11 +1429,26 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
       setFullbodyFrontRawUrl(res?.seed_front_url || null)
 
+      let resolvedUrl: string | null = null
+
       if (applied.seedFront) {
-        setFullbodyFrontUrl(applied.seedFront)
+        resolvedUrl = applied.seedFront
       } else if (res?.seed_front_url) {
-        const resolved = await resolvePortraitUrl(res.seed_front_url)
-        setFullbodyFrontUrl(resolved)
+        resolvedUrl = await resolvePortraitUrl(res.seed_front_url)
+      }
+
+      setFullbodyFrontUrl(resolvedUrl)
+
+      if (resolvedUrl) {
+        const currentList = fullbodyHistories[fullbodyStyle] || []
+        const nextList = [...currentList, { rawUrl: res?.seed_front_url || null, previewUrl: resolvedUrl }]
+
+        if (nextList.length > 5) {
+          nextList.shift()
+        }
+
+        setFullbodyHistories(prev => ({ ...prev, [fullbodyStyle]: nextList }))
+        setFullbodyHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: nextList.length - 1 }))
       }
     } catch (err) {
       setFullbodyHint(err instanceof Error ? err.message : '重新生成正面全身图失败，请重试')
@@ -1448,6 +1605,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const otherVoices = voice ? voiceCatalog.filter(v => v.id !== voice.id) : []
   // 「换一个」 stays inside the matcher's candidates while we have them.
   const voiceCandidates = voice ? [voice, ...(voiceAlternatives.length ? voiceAlternatives : otherVoices)] : []
+
+  const currentFullbodyHistory: HistoryGalleryItem[] = useMemo(() => {
+    if (!fullbodyStyle) {
+      return []
+    }
+
+    const list = fullbodyHistories[fullbodyStyle] || []
+
+    return list.map(item => ({ url: item.previewUrl }))
+  }, [fullbodyHistories, fullbodyStyle])
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
@@ -1698,60 +1865,90 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 <div>
                   <p className="text-[14px] font-medium text-white/90">选择全身立绘画风</p>
                   <p className="mt-1 text-xs text-white/60">
-                    为您生成了两种不同风格的正面全身样图，点击卡片选择您喜欢的画风：
+                    为您生成了两种不同风格的正面全身样图，点击卡片选择您喜欢的画风，也可放大预览：
                   </p>
-                  <div className="mt-3 grid grid-cols-2 gap-3">
-                    <button
-                      className="flex flex-col items-center rounded-xl border border-white/15 bg-white/5 p-3 text-left transition hover:border-white/40 hover:bg-white/10"
-                      onClick={() => selectStyle('cel_shading')}
-                      type="button"
-                    >
-                      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-black/30">
-                        {fullbodySamples['cel_shading'] ? (
-                          <img
-                            alt="日系赛璐珞"
-                            className="h-full w-full object-contain"
-                            src={fullbodySamples['cel_shading']}
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
-                            加载中…
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-2.5 w-full text-center">
-                        <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-white/90">
-                          日系赛璐珞
-                        </span>
-                        <p className="mt-1 text-[10px] text-white/50">清晰轮廓 · 明快平涂色彩</p>
-                      </div>
-                    </button>
+                  <div
+                    className={`mt-3 grid gap-3 ${
+                      styleCatalog.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3'
+                    }`}
+                  >
+                    {styleCatalog.map(style => {
+                      const isSelected = selectedStyleKey === style.id
+                      const sampleUrl = fullbodySamples[style.id]
 
-                    <button
-                      className="flex flex-col items-center rounded-xl border border-white/15 bg-white/5 p-3 text-left transition hover:border-white/40 hover:bg-white/10"
-                      onClick={() => selectStyle('anime_game_cg')}
-                      type="button"
-                    >
-                      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-lg bg-black/30">
-                        {fullbodySamples['anime_game_cg'] ? (
-                          <img
-                            alt="二次元游戏CG"
-                            className="h-full w-full object-contain"
-                            src={fullbodySamples['anime_game_cg']}
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
-                            加载中…
+                      return (
+                        <div
+                          className={`group relative flex flex-col items-center rounded-xl border p-2.5 text-left transition cursor-pointer ${
+                            isSelected
+                              ? 'border-white/80 bg-white/15 shadow-lg ring-1 ring-white/40'
+                              : 'border-white/15 bg-white/5 hover:border-white/40 hover:bg-white/10'
+                          }`}
+                          key={style.id}
+                          onClick={() => setSelectedStyleKey(style.id)}
+                        >
+                          <div className="relative aspect-[9/16] w-full overflow-hidden rounded-lg bg-black/30">
+                            {sampleUrl ? (
+                              <>
+                                <img alt={style.label_zh} className="h-full w-full object-cover" src={sampleUrl} />
+                                <button
+                                  aria-label="放大预览"
+                                  className="absolute top-1.5 right-1.5 rounded-full bg-black/60 p-1.5 text-white/80 backdrop-blur-sm transition hover:bg-black/80 hover:text-white"
+                                  onClick={e => {
+                                    e.stopPropagation()
+                                    setFullbodyZoomUrl(sampleUrl)
+                                  }}
+                                  title="放大预览"
+                                  type="button"
+                                >
+                                  <svg
+                                    className="h-3.5 w-3.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth={2}
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                              </>
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+                                加载中…
+                              </div>
+                            )}
+                            {isSelected && (
+                              <div className="absolute top-1.5 left-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-white text-black shadow">
+                                <svg
+                                  className="h-3 w-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth={3}
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path d="M5 13l4 4L19 7" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <div className="mt-2.5 w-full text-center">
-                        <span className="rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-medium text-white/90">
-                          二次元游戏CG
-                        </span>
-                        <p className="mt-1 text-[10px] text-white/50">3D渲染 · 细腻质感光影</p>
-                      </div>
-                    </button>
+                          <div className="mt-2 w-full text-center">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium transition ${
+                                isSelected ? 'bg-white text-black' : 'bg-white/15 text-white/90'
+                              }`}
+                            >
+                              {style.label_zh}
+                            </span>
+                            {style.description_zh && (
+                              <p className="mt-1 text-[10px] text-white/50">{style.description_zh}</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                   {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
                   <div className="mt-4 flex items-center justify-between text-xs">
@@ -1762,24 +1959,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     >
                       上一步
                     </button>
-                    {activeAvatarId && (
-                      <button
-                        className="text-white/70 transition hover:text-white"
-                        onClick={() => void fetchFullbodySamples(activeAvatarId)}
-                        type="button"
-                      >
-                        重新生成样图
-                      </button>
-                    )}
+                    <button
+                      className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                      disabled={!selectedStyleKey || !fullbodySamples[selectedStyleKey]}
+                      onClick={() => selectStyle(selectedStyleKey)}
+                      type="button"
+                    >
+                      确认画风
+                    </button>
                   </div>
                 </div>
               ) : (
                 <div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-white/60">当前风格：</span>
-                      <span className="rounded-full bg-white/20 px-2 py-0.5 text-xs font-medium text-white">
-                        {fullbodyStyle === 'cel_shading' ? '日系赛璐珞' : '二次元游戏CG'}
+                      <span className="text-xs text-white/60">当前画风：</span>
+                      <span className="rounded-full bg-white/20 px-2.5 py-0.5 text-xs font-medium text-white">
+                        {styleCatalog.find(s => s.id === fullbodyStyle)?.label_zh || fullbodyStyle || ''}
                       </span>
                     </div>
                     <button
@@ -1787,17 +1983,49 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       onClick={() => setFullbodyStyleState(null)}
                       type="button"
                     >
-                      更换风格
+                      更换画风
                     </button>
                   </div>
 
-                  <div className="relative mt-3 flex aspect-[3/4] max-h-[360px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40">
+                  <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
                     {fullbodyFrontUrl ? (
-                      <img alt="正面全身立绘" className="h-full w-full object-contain" src={fullbodyFrontUrl} />
+                      <button
+                        aria-label="放大查看"
+                        className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
+                        onClick={() => setFullbodyZoomUrl(fullbodyFrontUrl)}
+                        type="button"
+                      >
+                        <img alt="正面全身立绘" className="h-full w-full object-cover" src={fullbodyFrontUrl} />
+                        <div className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white/80 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 hover:text-white">
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={2}
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
+                      </button>
                     ) : (
                       <div className="text-xs text-white/40">暂无预览图</div>
                     )}
                   </div>
+
+                  {currentFullbodyHistory.length > 1 && (
+                    <div className="mt-2">
+                      <HistoryGallery
+                        entries={currentFullbodyHistory}
+                        onSelect={onSelectFullbodyHistoryEntry}
+                        selectedIdx={fullbodyHistoryIndices[fullbodyStyle] ?? currentFullbodyHistory.length - 1}
+                      />
+                    </div>
+                  )}
 
                   <div className="mt-3">
                     <textarea
@@ -1819,10 +2047,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         onClick={() => setFullbodyStyleState(null)}
                         type="button"
                       >
-                        切换风格
+                        切换画风
                       </button>
                       <button
-                        className="text-white/70 transition hover:text-white"
+                        className="text-white/70 transition hover:text-white disabled:opacity-40"
+                        disabled={fullbodyLoading}
                         onClick={() => void regenerateFullbodyFront()}
                         type="button"
                       >
@@ -1830,7 +2059,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                     </div>
                     <button
-                      className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white"
+                      className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                      disabled={fullbodyLoading || !fullbodyFrontUrl}
                       onClick={() => void confirmFullbodyFront()}
                       type="button"
                     >
@@ -1838,6 +2068,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     </button>
                   </div>
                 </div>
+              )}
+
+              {fullbodyZoomUrl && (
+                <PortraitLightbox
+                  name={answers.name?.trim() || '伙伴'}
+                  onClose={() => setFullbodyZoomUrl(null)}
+                  url={fullbodyZoomUrl}
+                />
               )}
             </div>
           )}

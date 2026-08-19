@@ -42,6 +42,7 @@ class AvatarAssetResponse(BaseModel):
 class FullbodyStyleItem(BaseModel):
     id: str
     label_zh: str
+    description_zh: str = ""
 
 
 class FullbodySamplesRequest(BaseModel):

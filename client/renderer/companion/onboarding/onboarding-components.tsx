@@ -73,7 +73,7 @@ export function PortraitPanel({
   )
 }
 
-function HistoryGallery({
+export function HistoryGallery({
   entries,
   selectedIdx,
   onSelect
@@ -152,7 +152,7 @@ function PortraitThumb({
 // document.body so the onboarding container's `backdrop-filter` doesn't trap
 // our `position: fixed` inside the small dialog box (per CSS Containing Block
 // rules).
-function PortraitLightbox({
+export function PortraitLightbox({
   url,
   name,
   onClose
