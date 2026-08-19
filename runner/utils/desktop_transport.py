@@ -18,6 +18,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Any, Protocol
 
 from websockets.client import ClientProtocol
@@ -493,7 +494,7 @@ class DesktopConnection:
     async def __aenter__(self) -> "DesktopConnection":
         return self
 
-    async def __aexit__(self, *exc_info) -> None:
+    async def __aexit__(self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None) -> None:
         await self.close()
 
 

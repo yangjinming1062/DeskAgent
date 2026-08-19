@@ -21,7 +21,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -33,16 +33,13 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.types import (
     LATEST_PROTOCOL_VERSION,
     CreateMessageResult,
-    CreateMessageResultWithTools,
     ErrorData,
     PromptListChangedNotification,
     ResourceListChangedNotification,
     SamplingCapability,
-    SamplingToolsCapability,
     ServerNotification,
     TextContent,
     ToolListChangedNotification,
-    ToolUseContent,
 )
 
 from utils import IS_WINDOWS, call_llm, get_spiritagent_home, kill_tree, load_config, pid_exists, safe_schedule_threadsafe
@@ -534,22 +531,18 @@ class SamplingHandler:
 
     Each MCPServerTask that has sampling enabled creates one SamplingHandler.
     The handler is callable and passed directly to ``ClientSession`` as
-    the ``sampling_callback``.  All state (rate-limit timestamps, metrics,
-    tool-loop counters) lives on the instance -- no module-level globals.
+    the ``sampling_callback``.  All state (rate-limit timestamps, metrics) lives on the instance -- no module-level globals.
 
-    The callback is async and runs on the MCP background event loop.  The
-    sync LLM call is offloaded to a thread via ``asyncio.to_thread()`` so
-    it doesn't block the event loop.
+    The callback is async and runs on the MCP background event loop. The
+    reverse RPC returns plain text; MCP tool-use sampling is rejected before
+    an LLM request is sent.
     """
-
-    _STOP_REASON_MAP: ClassVar[dict[str, str]] = {"stop": "endTurn", "length": "maxTokens", "tool_calls": "toolUse"}
 
     def __init__(self, server_name: str, config: dict) -> None:
         self.server_name = server_name
         self.max_rpm = _safe_numeric(config.get("max_rpm", 10), 10, int)
         self.timeout = _safe_numeric(config.get("timeout", 30), 30, float)
         self.max_tokens_cap = _safe_numeric(config.get("max_tokens_cap", 4096), 4096, int)
-        self.max_tool_rounds = _safe_numeric(config.get("max_tool_rounds", 5), 5, int, minimum=0)
         self.model_override = config.get("model")
         self.allowed_models = config.get("allowed_models", [])
 
@@ -558,8 +551,7 @@ class SamplingHandler:
 
         # Per-instance state
         self._rate_timestamps: list[float] = []
-        self._tool_loop_count = 0
-        self.metrics = {"requests": 0, "errors": 0, "tokens_used": 0, "tool_use_count": 0}
+        self.metrics = {"requests": 0, "errors": 0, "tokens_used": 0}
 
     # -- Rate limiting -------------------------------------------------------
 
@@ -641,80 +633,19 @@ class SamplingHandler:
     def _error(message: str, code: int = -1) -> ErrorData:
         return ErrorData(code=code, message=message)
 
-    # -- Response building ---------------------------------------------------
-
-    def _build_tool_use_result(self, choice: Any, response: Any) -> Any:
-        """Build a CreateMessageResultWithTools from an LLM tool_calls response."""
-        self.metrics["tool_use_count"] += 1
-
-        if self.max_tool_rounds == 0:
-            self._tool_loop_count = 0
-            return self._error(f"Tool loops disabled for server '{self.server_name}' (max_tool_rounds=0)")
-
-        self._tool_loop_count += 1
-        if self._tool_loop_count > self.max_tool_rounds:
-            self._tool_loop_count = 0
-            return self._error(f"Tool loop limit exceeded for server '{self.server_name}' (max {self.max_tool_rounds} rounds)")
-
-        content_blocks = []
-        for tc in choice.message.tool_calls:
-            args = tc.function.arguments
-            if isinstance(args, str):
-                try:
-                    parsed = json.loads(args)
-                except (json.JSONDecodeError, ValueError):
-                    logger.warning("MCP server '%s': malformed tool_calls arguments from LLM (wrapping as raw): %.100s", self.server_name, args)
-                    parsed = {"_raw": args}
-            else:
-                parsed = args if isinstance(args, dict) else {"_raw": str(args)}
-
-            content_blocks.append(ToolUseContent(type="tool_use", id=tc.id, name=tc.function.name, input=parsed))
-
-        logger.log(
-            self.audit_level,
-            "MCP server '%s' sampling response: model=%s, tokens=%s, tool_calls=%d",
-            self.server_name,
-            response.model,
-            getattr(getattr(response, "usage", None), "total_tokens", "?"),
-            len(content_blocks),
-        )
-
-        return CreateMessageResultWithTools(role="assistant", content=content_blocks, model=response.model, stopReason="toolUse")
-
-    def _build_text_result(self, choice: Any, response: Any) -> Any:
-        """Build a CreateMessageResult from a normal text response."""
-        self._tool_loop_count = 0  # reset on text response
-        response_text = choice.message.content or ""
-
-        logger.log(
-            self.audit_level,
-            "MCP server '%s' sampling response: model=%s, tokens=%s",
-            self.server_name,
-            response.model,
-            getattr(getattr(response, "usage", None), "total_tokens", "?"),
-        )
-
-        return CreateMessageResult(
-            role="assistant",
-            content=TextContent(type="text", text=_sanitize_error(response_text)),
-            model=response.model,
-            stopReason=self._STOP_REASON_MAP.get(choice.finish_reason, "endTurn"),
-        )
-
     # -- Session kwargs helper -----------------------------------------------
 
     def session_kwargs(self) -> dict[str, Any]:
         """Return kwargs to pass to ClientSession for sampling support."""
-        return {"sampling_callback": self, "sampling_capabilities": SamplingCapability(tools=SamplingToolsCapability())}
+        return {"sampling_callback": self, "sampling_capabilities": SamplingCapability()}
 
     # -- Main callback -------------------------------------------------------
 
     async def __call__(self, context: Any, params: Any) -> Any:
         """Sampling callback invoked by the MCP SDK.
 
-        Conforms to ``SamplingFnT`` protocol.  Returns
-        ``CreateMessageResult``, ``CreateMessageResultWithTools``, or
-        ``ErrorData``.
+        Conforms to ``SamplingFnT`` protocol. Returns
+        ``CreateMessageResult`` or ``ErrorData``.
         """
 
         if not self._check_rate_limit():
@@ -741,26 +672,16 @@ class SamplingHandler:
         if hasattr(params, "temperature") and params.temperature is not None:
             call_temperature = params.temperature
 
-        call_tools = None
         server_tools = getattr(params, "tools", None)
         if server_tools:
-            call_tools = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": getattr(t, "name", ""),
-                        "description": getattr(t, "description", "") or "",
-                        "parameters": _normalize_mcp_input_schema(getattr(t, "inputSchema", None)),
-                    },
-                }
-                for t in server_tools
-            ]
+            self.metrics["errors"] += 1
+            return self._error("MCP sampling with tools is not supported by the Runner reverse-RPC LLM bridge")
 
         logger.log(self.audit_level, "MCP server '%s' sampling request: model=%s, max_tokens=%d, messages=%d", self.server_name, resolved_model, max_tokens, len(messages))
 
         try:
             response = await asyncio.wait_for(
-                call_llm(task="mcp", model=resolved_model or None, messages=messages, temperature=call_temperature, max_tokens=max_tokens, tools=call_tools, timeout=self.timeout),
+                call_llm(task="mcp", model=resolved_model or None, messages=messages, temperature=call_temperature, max_tokens=max_tokens, timeout=self.timeout),
                 timeout=self.timeout,
             )
         except TimeoutError:
@@ -770,21 +691,9 @@ class SamplingHandler:
             self.metrics["errors"] += 1
             return self._error(f"Sampling LLM call failed: {_sanitize_error(_exc_str(exc))}")
 
-        # Guard against empty choices (content filtering, provider errors)
-        if not getattr(response, "choices", None):
-            self.metrics["errors"] += 1
-            return self._error(f"LLM returned empty response (no choices) for server '{self.server_name}'")
-
-        choice = response.choices[0]
         self.metrics["requests"] += 1
-        total_tokens = getattr(getattr(response, "usage", None), "total_tokens", 0)
-        if isinstance(total_tokens, int):
-            self.metrics["tokens_used"] += total_tokens
-
-        if choice.finish_reason == "tool_calls" and hasattr(choice.message, "tool_calls") and choice.message.tool_calls:
-            return self._build_tool_use_result(choice, response)
-
-        return self._build_text_result(choice, response)
+        response_text = response if isinstance(response, str) else str(response)
+        return CreateMessageResult(role="assistant", content=TextContent(type="text", text=_sanitize_error(response_text)), model=resolved_model or "default", stopReason="endTurn")
 
 
 class MCPServerTask:
@@ -2671,7 +2580,7 @@ def register_mcp_servers(servers: dict[str, dict]) -> list[str]:
         server_names = list(new_servers.keys())
 
         results = await asyncio.gather(*(_discover_one(name, cfg) for name, cfg in new_servers.items()), return_exceptions=True)
-        for name, result in zip(server_names, results):
+        for name, result in zip(server_names, results, strict=True):
             if isinstance(result, BaseException):
                 command = new_servers.get(name, {}).get("command")
                 logger.warning("Failed to connect to MCP server '%s'%s: %s", name, f" (command={command})" if command else "", _format_connect_error(result))
@@ -2789,7 +2698,7 @@ def reload_mcp_servers() -> dict:
         async def _shutdown_all() -> None:
             nonlocal errors
             results = await asyncio.gather(*(server.shutdown() for server in servers_snapshot), return_exceptions=True)
-            for server, result in zip(servers_snapshot, results):
+            for server, result in zip(servers_snapshot, results, strict=True):
                 if isinstance(result, Exception):
                     errors += 1
                     logger.warning("Error closing MCP server '%s': %s", server.name, result)

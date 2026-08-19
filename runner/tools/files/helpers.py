@@ -7,6 +7,7 @@ import threading
 import time
 import tomllib
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
@@ -1047,7 +1048,7 @@ class FileStateRegistry:
             return lock
 
     @contextmanager
-    def lock_path(self, resolved: str | Path) -> None:
+    def lock_path(self, resolved: str | Path) -> Iterator[None]:
         """Per-path lock for read→modify→write sections."""
         with self._lock_for(str(resolved)):
             yield
@@ -1218,7 +1219,7 @@ def _hint_uniqueness_error(file_path: str, text: str, hint: str) -> str | None:
     return None
 
 
-def _insert_at_hint(text: str, hint: str, insert: str) -> tuple[str | None, str | None]:
+def _insert_at_hint(text: str, hint: str, insert: str) -> tuple[str, str | None]:
     """Return (new_text, error). Exactly one of the two is non-None."""
     occurrences = text.count(hint)
     if occurrences == 0:

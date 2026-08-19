@@ -1,3 +1,4 @@
+import asyncio
 import contextlib
 import json
 import logging
@@ -64,19 +65,18 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
         else:
             raise ValueError("Invalid image source. Provide an HTTP/HTTPS URL or a valid local file path.")
 
-        debug_call_data["image_size_bytes"] = temp_path.stat().st_size
-        if not (mime := _detect_image_mime_type(temp_path)):
-            raise ValueError("Only real image files are supported for vision analysis.")
-
-        # Quick size check before reading the entire file into memory.
-        if temp_path.stat().st_size > _MAX_BASE64_BYTES * 3 // 4:
-            img_url = resize_image_for_vision(temp_path, mime_type=mime)
-        else:
+        def _prepare_image() -> tuple[str, str]:
+            debug_call_data["image_size_bytes"] = temp_path.stat().st_size
+            if not (mime := _detect_image_mime_type(temp_path)):
+                raise ValueError("Only real image files are supported for vision analysis.")
+            if temp_path.stat().st_size > _MAX_BASE64_BYTES * 3 // 4:
+                return resize_image_for_vision(temp_path, mime_type=mime), mime
             img_url = _image_to_base64_data_url(temp_path, mime_type=mime)
-        if len(img_url) > _MAX_BASE64_BYTES:
-            img_url = resize_image_for_vision(temp_path, mime_type=mime)
             if len(img_url) > _MAX_BASE64_BYTES:
-                raise ValueError("Image too large for vision API even after resizing.")
+                img_url = resize_image_for_vision(temp_path, mime_type=mime)
+            return img_url, mime
+
+        img_url, mime = await asyncio.to_thread(_prepare_image)
 
         messages = [{"role": "user", "content": [{"type": "text", "text": user_prompt}, {"type": "image_url", "image_url": {"url": img_url}}]}]
         timeout, temp = resolve_vision_params()
@@ -92,7 +92,7 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
             # exactly once. The retry uses RESIZE_TARGET_BYTES (5 MB) as
             # the ceiling, which is well below _MAX_BASE64_BYTES (20 MB),
             # so a second resize-on-error is unnecessary.
-            img_url = resize_image_for_vision(temp_path, mime_type=mime)
+            img_url = await asyncio.to_thread(resize_image_for_vision, temp_path, mime_type=mime)
             messages[0]["content"][1]["image_url"]["url"] = img_url
             res = await call_llm(**call_kwargs)
 
@@ -111,11 +111,11 @@ async def vision_analyze_tool(image_url: str, user_prompt: str) -> str:
         # fallback analysis are the error contract callers parse.
         return json.dumps({"success": False, "error": err_msg, "analysis": analysis}, indent=2, ensure_ascii=False)
     finally:
-        _debug.log_call("vision_analyze_tool", debug_call_data)
-        _debug.save()
+        await asyncio.to_thread(_debug.log_call, "vision_analyze_tool", debug_call_data)
+        await asyncio.to_thread(_debug.save)
         if should_cleanup and temp_path:
             with contextlib.suppress(Exception):
-                temp_path.unlink()
+                await asyncio.to_thread(temp_path.unlink)
 
 
 def _handle_vision_analyze(args: dict[str, Any], **kw: Any) -> Awaitable[str]:

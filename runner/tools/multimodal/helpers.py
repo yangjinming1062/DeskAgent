@@ -100,27 +100,38 @@ async def _download_media(url: str, destination: Path, *, accept: str, max_bytes
     remain parameterised so a future media tool can reuse the helper
     without copying the size-cap / redirect-guard machinery.
     """
-    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    def _write_destination(body: bytearray) -> None:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(body)
 
     async def _guard(response) -> None:
         if response.is_redirect and response.next_request and not await async_is_safe_url(redirect := str(response.next_request.url)):
             raise ValueError(f"Blocked redirect to private/internal address: {redirect}")
 
-    last_err = None
+    last_err: Exception | None = None
     for attempt in range(max_retries):
         try:
             if blocked := check_website_access(url):
                 raise PermissionError(blocked.message)
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, event_hooks={"response": [_guard]}) as client:
-                res = await client.get(
-                    url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": accept}
+                res = await client.stream(
+                    "GET",
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Accept": accept},
                 )
-                res.raise_for_status()
-                if ((cl := res.headers.get("content-length")) and int(cl) > max_bytes) or len(body := res.content) > max_bytes:
-                    raise ValueError(f"{media_label.capitalize()} too large")
-                if blocked := check_website_access(str(res.url)):
-                    raise PermissionError(blocked.message)
-                destination.write_bytes(body)
+                async with res:
+                    res.raise_for_status()
+                    if (content_length := res.headers.get("content-length")) and int(content_length) > max_bytes:
+                        raise ValueError(f"{media_label.capitalize()} too large")
+                    body = bytearray()
+                    async for chunk in res.aiter_bytes():
+                        body.extend(chunk)
+                        if len(body) > max_bytes:
+                            raise ValueError(f"{media_label.capitalize()} too large")
+                    if blocked := check_website_access(str(res.url)):
+                        raise PermissionError(blocked.message)
+                    await asyncio.to_thread(_write_destination, body)
             return destination
         except Exception as e:
             last_err = e
@@ -218,7 +229,7 @@ def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_
                 new_w = max(int(img.width * (64 / img.height)), 64)
             if (new_w, new_h) == prev_dims:
                 break
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
             prev_dims = (new_w, new_h)
 
         for q in quality_steps:

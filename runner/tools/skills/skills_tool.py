@@ -311,7 +311,7 @@ def skills_list(category: str | None = None, task_id: str | None = None) -> str:
         return tool_error(str(e), success=False)
 
 
-def skill_view(name: str, file_path: str | None = None, task_id: str | None = None, preprocess: bool = True) -> str:
+def skill_view(name: str, file_path: str | None = None, task_id: str | None = None) -> str:
     try:
         if lookup_error := _skill_lookup_path_error(name):
             return json.dumps({"success": False, "error": lookup_error, "hint": "Use a skill name or relative path within the skills directory."}, ensure_ascii=False)

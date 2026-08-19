@@ -126,7 +126,7 @@ def maybe_reap_docker_orphans(container_config: dict, lifetime_seconds: int | No
         logger.debug("Docker orphan reaper raised: %s", e)
 
 
-def _container_finished_at(docker_exe: str, container_id: str) -> bool:
+def _container_finished_at(docker_exe: str, container_id: str) -> datetime.datetime | None:
     try:
         res = subprocess.run(
             [docker_exe, "inspect", "--format", "{{.State.FinishedAt}}", container_id], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW
