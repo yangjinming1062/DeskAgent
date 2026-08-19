@@ -1,4 +1,4 @@
-"""baseline: full pre-launch schema — 20 tables + pgvector/pg_trgm extensions,
+"""baseline: full pre-launch schema — 21 tables + pgvector/pg_trgm extensions,
 partial unique indexes, HNSW/GIN indexes and the ws_events / render_jobs NOTIFY
 triggers. Single squashed revision (no live deployments when introduced); new
 migrations chain from here.
@@ -108,9 +108,8 @@ def upgrade() -> None:
         sa.Column("label", sa.String(length=32), nullable=False),
         sa.Column("valence", sa.String(length=16), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
-        sa.Column("weights_json", sa.Text(), nullable=False),
+        sa.Column("icon", sa.String(length=16), nullable=True),
         sa.Column("tags_json", sa.Text(), nullable=False),
-        sa.Column("scale_boost", sa.Float(), server_default=sa.text("1.0"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -118,6 +117,21 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_companion_expressions_user_id"), "companion_expressions", ["user_id"], unique=False)
+    op.create_table(
+        "companion_expression_avatars",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=64), nullable=False),
+        sa.Column("avatar_id", sa.Integer(), nullable=True),
+        sa.Column("prompt", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("asset_url", sa.String(length=2048), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "name", "avatar_id", name="uq_companion_expression_avatars_key"),
+    )
     op.create_table(
         "companion_models",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -137,6 +151,8 @@ def upgrade() -> None:
         sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("provider_task_id", sa.String(length=128), nullable=True),
+        sa.Column("download_urls_json", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -491,6 +507,7 @@ def downgrade() -> None:
         "login_records",
         "cron_jobs",
         "companion_sprite_images",
+        "companion_expression_avatars",
         "companion_models",
         "companion_expressions",
         "avatar_assets",
