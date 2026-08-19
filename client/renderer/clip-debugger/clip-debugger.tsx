@@ -29,7 +29,6 @@ export function ClipDebugger(): React.JSX.Element {
   const modelStats = useStore($modelStats)
   const customGlb = useStore($customGlbBuffer)
 
-  // 处理本地模型文件上传
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
 

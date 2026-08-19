@@ -81,7 +81,6 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
     }
   }
 
-  // 从直接 URL 加载
   const handleFetchDirectUrl = async () => {
     if (!directUrl.trim()) {
       return

@@ -18,9 +18,7 @@ import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primit
 
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
 const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
-// OpenAI service_tier accepts exactly {auto, default, flex}. UI must mirror
-// the API's allowed set — anything outside is silently dropped by the
-// backend's whitelist before reaching the model.
+// OpenAI service_tier 仅接受 {auto, default, flex}，UI 必须与 API 允许集一致
 const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
 
 const EMPTY_WEB: WebFormState = {
@@ -182,8 +180,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     try {
       setIsSaving(true)
 
-      // Build the body shallowly from form state. Sensitive keys use 3-state logic:
-      // typed non-empty → write value, cleared → write '', untouched → omit the key.
+      // 敏感字段三态逻辑：有值→写入，已清空→写 ''，未动→忽略
       const bodyWeb: Record<string, unknown> = {}
       bodyWeb.backend = web.backend
       bodyWeb.extract_backend = web.extract_backend

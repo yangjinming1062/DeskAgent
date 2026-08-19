@@ -11,9 +11,7 @@ import { $llmAffect } from './prefs'
 // atom 保持默认值。
 
 export const $screenLocked = atom<boolean>(false)
-// Last finite idle-seconds reading from the activity poll. -1 means no signal
-// yet (runner offline, probe failed, etc.) — callers should treat that as
-// "unknown" and either skip the field or send 0.
+// 最近一次有限空闲秒数；-1 表示无信号（Runner 离线或探测失败），调用方应按未知处理。
 export const $lastIdleSeconds = atom<number>(-1)
 
 export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'

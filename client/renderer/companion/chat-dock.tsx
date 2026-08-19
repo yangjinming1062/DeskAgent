@@ -295,7 +295,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.chatDockOffset', () => panelRef.current)
 
-  // 当前情绪展示
   const currentMood = useMemo(() => {
     if (spriteEmotion) {
       // 自定义情绪注册表（create_expression）：label + 可选 icon，

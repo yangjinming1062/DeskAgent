@@ -51,8 +51,7 @@ export function SkillsSettings(): React.JSX.Element {
   const loading = loader.isLoading
   const loadFailed = loader.error !== null
 
-  // Mirror loader.data into local state so optimistic-toggle `setSkills` works
-  // — the loader is the source of truth at mount, local writes win afterwards.
+  // loader.data 同步到本地状态——挂载时 loader 是真相源，本地写入之后优先
   useEffect(() => {
     if (loader.data) {
       setSkills(loader.data)
@@ -83,8 +82,7 @@ export function SkillsSettings(): React.JSX.Element {
 
       setSkills(res.skills)
 
-      // Refresh the JWT for the new skill-scoped permissions. Don't close the sprite's
-      // WS — it's owned by the companion and the permission delta is server-side.
+      // 刷新 JWT 以获取新 skill 权限；不关精灵窗口的 WS（权限变更在服务端完成）
       try {
         await refreshSession()
       } catch (err) {

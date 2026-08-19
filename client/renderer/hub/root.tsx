@@ -5,11 +5,8 @@ import { Loader2 } from '@/shared/lib/icons'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 
-// The framed tool window hosts Settings only (post-authentication). When
-// unauthenticated, the companion (sprite) window handles activation — the
-// tool window simply waits. REST-only — it never boots the gateway, so the
-// MCP reload button (which needs the gateway) degrades gracefully.
-// `gateway={null}` encodes that.
+// 工具窗口仅在认证后承载设置面板；未认证时由精灵窗口处理激活流程。
+// 纯 REST 模式——不启动网关，MCP 重载按钮会优雅降级（gateway={null}）。
 const SettingsView = lazy(() => import('./settings').then(m => ({ default: m.SettingsView })))
 
 export function ToolRoot(): React.JSX.Element {
@@ -38,9 +35,7 @@ export function ToolRoot(): React.JSX.Element {
     return () => off()
   }, [])
 
-  // Tray menu "Log out" entry fires this bridge; subscribe so clicking the
-  // tray item actually logs the user out (the menu fires this IPC and the
-  // renderer is the only place that can drive the in-app logout flow).
+  // 托盘菜单"退出登录"触发此 IPC；渲染进程是唯一能驱动应用内登出流程的地方
   useEffect(() => {
     const off = window.spiritagent.onTrayLogout?.(() => void logout())
 
@@ -57,8 +52,7 @@ export function ToolRoot(): React.JSX.Element {
     )
   }
 
-  // window.close() hits the close interceptor (tray.cjs) which hides the
-  // tool window rather than destroying it — Settings is on-demand.
+  // window.close() 走拦截器隐藏窗口而非销毁——设置面板是按需打开的
   return (
     <Suspense fallback={null}>
       <SettingsView gateway={null} onClose={() => window.close()} />

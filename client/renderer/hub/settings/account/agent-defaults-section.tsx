@@ -13,9 +13,7 @@ export interface AgentFormState {
 }
 
 const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
-// OpenAI service_tier accepts exactly {auto, default, flex}. UI must mirror
-// the API's allowed set — anything outside is silently dropped by the
-// backend's whitelist before reaching the model.
+// OpenAI service_tier 仅接受 {auto, default, flex}，UI 必须与 API 允许集一致
 const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
 
 export function AgentDefaultsSection({

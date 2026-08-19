@@ -98,7 +98,7 @@ export function RunnerSettings(): React.JSX.Element {
     setIsDirty(true)
   }
 
-  // Row config is a stable module-level shape — no useMemo needed.
+  // 行配置是稳定的模块级结构，无需 useMemo
   const rowGroups: readonly { heading: string; rows: readonly Row[] }[] = [
     {
       heading: r.terminal,

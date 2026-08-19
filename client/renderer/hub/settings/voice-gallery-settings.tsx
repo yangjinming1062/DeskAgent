@@ -9,12 +9,8 @@ import { GENDER_OPTIONS, LANGUAGE_LABELS, type VoiceOption } from '@/shared/voic
 
 import { EmptyState, FilterPill, ListRow, LoadingState, Pill, SettingsContent, SettingsSubsection } from './primitives'
 
-// Read-only voice catalog browser for the framed tool window (hub), which has
-// no WS gateway and thus can't call the `tts.list_voices` JSON-RPC method. It
-// reaches the same backend catalog via REST (GET /api/companion/voices) and
-// previews a voice through the `spiritagent:media:tts` IPC (available to both
-// windows). Changing the active companion voice stays in the sprite window's
-// 伙伴设置 — this page only browses + 试听.
+// 工具窗口（hub）的只配音色浏览器——无 WS 网关，通过 REST 获取同一后端配色目录，
+// 经 spiritagent:media:tts IPC 试听。更换伙伴音色仍在精灵窗口的伙伴设置中完成。
 
 interface VoiceCatalog {
   provider: string

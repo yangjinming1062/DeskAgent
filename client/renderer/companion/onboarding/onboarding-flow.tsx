@@ -160,7 +160,6 @@ const QUESTIONS: readonly Question[] = [
   {
     // appearance_core：锁定的视觉锚点——既会喂给 3D 模型 prompt，
     // 又会在用户确认头像图后从 PUT /persona 中被剔除。标签旁的红色 `*`
-    // 渲染逻辑见下方 JSX。
     key: 'appearance_core',
     text: '您希望我长什么样？说说头发、眼睛、体型、标志性细节…',
     placeholder: '比如：金发绿眼、额间一道疤、机械义眼…',

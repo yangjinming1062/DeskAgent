@@ -166,7 +166,6 @@ export function Viewport3D(): React.JSX.Element {
     scene.add(axes)
     axesHelperRef.current = axes
 
-    // 动画循环
     let rafId: number
     const clock = new THREE.Clock()
 
@@ -312,7 +311,6 @@ export function Viewport3D(): React.JSX.Element {
     controlsRef.current.update()
   }, [resetCameraSig])
 
-  // 变换模式与 TransformControls 同步
   useEffect(() => {
     const tc = transformControlsRef.current
     const char = characterGroupRef.current
@@ -528,7 +526,6 @@ export function Viewport3D(): React.JSX.Element {
         $modelStats.set(parsed.stats)
         $embeddedClips.set(parsed.embeddedClips)
 
-        // 初始自动播放一个默认动作
         const currentActive = $activeClip.get()
 
         if (currentActive) {
@@ -567,7 +564,6 @@ export function Viewport3D(): React.JSX.Element {
     }
   }, [selectedRig, customGlb])
 
-  // 执行动作切换与播放
   const playTargetClip = (
     item: ClipItem,
     restQuats: Map<string, THREE.Quaternion>,

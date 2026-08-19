@@ -45,7 +45,7 @@ export function SpeechSettings(): React.JSX.Element {
   const [isSaving, setIsSaving] = useState(false)
   const [original, setOriginal] = useState<SpeechFormState>(DEFAULTS)
   const [state, setState] = useState<SpeechFormState>(DEFAULTS)
-  // Local-engine availability, probed from the Runner tool schema (null = unknown).
+  // 本地引擎可用性（null = 未知），从 Runner 工具 schema 探测
   const [localSttAvailable, setLocalSttAvailable] = useState<boolean | null>(null)
   const [localTtsAvailable, setLocalTtsAvailable] = useState<boolean | null>(null)
 
@@ -59,13 +59,8 @@ export function SpeechSettings(): React.JSX.Element {
 
   const isLoading = configLoader.isLoading
 
-  // Probe which local engines the Runner currently advertises (check_fn-gated),
-  // so the user can see whether "local"/"auto" will actually use a local engine.
-  // Re-probe on runner phase transitions — `running` means the bridge is up
-  // and tools have been fetched, `tools_changed` means MCP discovery finished
-  // post-startup. Both surface via the shared $runnerPhase atom (currently
-  // collapsed: only `running` is published, but the subscription wires up
-  // the same way if the atom grows new event types).
+  // 探测 Runner 当前可用的本地引擎（check_fn 门控），让用户知道 "local"/"auto" 是否会真正使用本地引擎。
+  // 在 Runner 阶段切换时重新探测——`running` 表示 bridge 已就绪，`tools_changed` 表示 MCP 发现完成。
   useEffect(() => {
     let cancelled = false
 
@@ -168,7 +163,7 @@ export function SpeechSettings(): React.JSX.Element {
       <Pill tone={avail ? 'primary' : 'muted'}>{avail ? s.engineLocalAvail : s.engineLocalUnavail}</Pill>
     )
 
-  // Include the current value so non-standard values still show a matching <option>.
+  // 包含当前值，确保非标准值也能匹配 <option>
   const recordingOptions = Array.from(new Set([...RECORDING_OPTIONS, state.maxRecordingSeconds])).sort((a, b) => a - b)
 
   return (

@@ -6,32 +6,17 @@ import path from 'path'
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
-  // Use `assets/` as the publicDir so the canonical icon.png there is the
-  // single source of truth — same file is read by main.cjs (window icon),
-  // electron-builder (packaged app icon), and the renderer (favicon /
-  // BrandMark). Vite copies `assets/*` to `dist/*` on build, and dev mode
-  // serves them directly from disk.
+  // icon.png 的唯一真相源——main.cjs、electron-builder 和渲染器共用同一文件
   publicDir: 'assets',
   css: {
-    // Pin an explicit (empty) PostCSS config. Tailwind is handled entirely by
-    // `@tailwindcss/vite`, so the renderer needs no PostCSS plugins — and
-    // without this, Vite's `postcss-load-config` walks UP the filesystem
-    // looking for a stray `postcss.config.*` / `tailwind.config.*`. The desktop
-    // build runs from inside the user's home tree (e.g.
-    // `C:\Users\<name>\AppData\Local\spiritagent\spiritagent-agent\apps\desktop`), so an
-    // unrelated Tailwind v3 config higher up the tree gets picked up and
-    // reprocesses our v4 stylesheet, failing the build with
-    // "`@layer base` is used but no matching `@tailwind base` directive is
-    // present." Pinning the config makes the build hermetic.
+    // 显式钉死空 PostCSS 配置：Tailwind 由 @tailwindcss/vite 处理，无需 PostCSS 插件。
+    // 不钉的话 Vite 会向上查找 postcss.config.*，用户目录里可能有 Tailwind v3 配置
+    // 导致 v4 样式表构建失败（"@layer base is used but no matching @tailwind base"）。
     postcss: { plugins: [] }
   },
   build: {
-    // Keep desktop packaging stable: Shiki ships many dynamic chunks by
-    // default, and electron-builder can OOM scanning thousands of files.
-    // Collapsing to a single chunk is intentional, so the renderer bundle is
-    // large by design (~22 MB). Raise the warning ceiling above that so the
-    // cosmetic "chunk larger than 500 kB" nag stays quiet, while still acting
-    // as a regression alarm if the bundle balloons well past today's size.
+    // Shiki 默认产出大量动态 chunk，electron-builder 扫描数千文件会 OOM。
+    // 刻意合并为单 chunk（~22 MB），阈值调高以静默 500 kB 警告。
     chunkSizeWarningLimit: 25000,
     rolldownOptions: {
       output: {
@@ -57,10 +42,7 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 4174
   },
-  // Vitest is the renderer-side test runner (Vitest + jsdom). The
-  // Electron-main-side tests use `node --test` instead (see package.json
-  // `test:desktop:platforms`); they live as `*.test.ts` under `main/` and
-  // stay outside the `renderer/**` include glob below.
+  // Vitest 负责渲染进程测试；主进程测试用 node --test（见 package.json）
   test: {
     include: ['renderer/**/*.{test,spec}.{ts,tsx}'],
     environment: 'jsdom'

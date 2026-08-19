@@ -45,10 +45,8 @@ type JsonRpcFrame = {
 }
 type WebSocketLike = WebSocket
 
-// JSON-RPC 2.0 standard error codes. Mirror of the values emitted by
-// `backend/core/jsonrpc_dispatcher.py` — keep this list in sync with the
-// Python side so consumers can branch on `err.code` without parsing
-// `err.message` heuristically.
+// JSON-RPC 2.0 标准错误码——与后端 jsonrpc_dispatcher.py 保持同步，
+// 消费方可按 err.code 分支而无需解析 err.message
 export enum SpiritAgentRpcErrorCode {
   ParseError = -32700,
   InvalidRequest = -32600,
@@ -213,8 +211,7 @@ export class JsonRpcGatewayClient {
           settled = true
           cleanup()
 
-          // Drop the half-open socket so the next connect() starts clean
-          // instead of short-circuiting on a zombie 'connecting' state.
+          // 丢弃半开 socket，避免下次 connect() 在僵尸 'connecting' 状态上短路
           if (this.socket === socket) {
             try {
               socket.close()
@@ -339,7 +336,7 @@ export class JsonRpcGatewayClient {
 
     if (typeof seq === 'number') {
       if (seq <= this._lastReceivedSeq) {
-        // Duplicate frame already processed — drop idempotently
+        // 重复帧——幂等丢弃
         return
       }
 

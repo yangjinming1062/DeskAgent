@@ -114,12 +114,10 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 确保衣橱目录已水合
   useEffect(() => {
     void hydrateWardrobe()
   }, [])
 
-  // 处理图片文件选择
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0]
 
@@ -162,7 +160,6 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // 处理新贴图候选的生成
   const handleGenerate = async (): Promise<void> => {
     const desc = description.trim()
 
@@ -232,7 +229,6 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // 处理候选选择
   const handleSelectCandidate = (idx: number): void => {
     selectWardrobeCandidate(idx)
     const selected = candidates[idx]
@@ -242,7 +238,6 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // 处理候选确认
   const handleConfirm = async (): Promise<void> => {
     const currentCandidate = candidates[selectedIdx]
 
@@ -274,7 +269,7 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
       })
 
       if (res) {
-        // Discard all temp files from non-selected candidates (all PBR channels + garment GLB).
+        // 清理未选中候选的临时文件（PBR 通道 + 服装 GLB）
         const otherIds = candidateFileIds(candidates.filter(c => c !== currentCandidate))
 
         clearWardrobeCandidates()
@@ -301,13 +296,11 @@ export function WardrobeDesignPanel({ onClose }: WardrobeDesignPanelProps): Reac
     }
   }
 
-  // 处理候选丢弃
   const handleDiscard = (): void => {
     void discardAllPreviewFiles()
     setStatusMessage({ type: 'info', text: '已丢弃候选，恢复当前装扮' })
   }
 
-  // 装备现有衣橱项
   const handleDeclineGift = async (itemId: number, e: React.MouseEvent): Promise<void> => {
     e.stopPropagation()
 

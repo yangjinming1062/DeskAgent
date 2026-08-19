@@ -24,14 +24,12 @@ export function ClipList(): React.JSX.Element {
   const activeClip = useStore($activeClip)
   const embeddedClips = useStore($embeddedClips)
 
-  // 聚合当前 Rig 的所有 Clip 定义 + 外部模型自带动画
   const allClips = useMemo<ClipItem[]>(() => {
     const rigClips = getRigClipItems(selectedRig)
 
     return [...embeddedClips, ...rigClips]
   }, [selectedRig, embeddedClips])
 
-  // 所有可用分类与各分类数量统计
   const { categories, filteredClips } = useMemo(() => {
     const catSet = new Set<string>(['all'])
 
@@ -42,12 +40,10 @@ export function ClipList(): React.JSX.Element {
     const query = searchQuery.trim().toLowerCase()
 
     const filtered = allClips.filter(clip => {
-      // 分类筛选
       if (selectedCategory !== 'all' && clip.category !== selectedCategory) {
         return false
       }
 
-      // 关键词搜索
       if (query) {
         const nameMatch = clip.name.toLowerCase().includes(query)
         const catMatch = (CATEGORY_LABELS[clip.category] || clip.category).toLowerCase().includes(query)
