@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+
 from services.llm import prompt_engineer
 
 
@@ -228,16 +229,38 @@ def test_build_texture_channels():
         assert "seamless" in prompt
 
 
-def test_build_texture_style_routes_albedo_wording():
-    # Anime albedo gets clean cel-friendly color blocks — toon shading
-    # amplifies photographic noise into dirty bands.
-    anime = prompt_engineer.build_texture_prompt(description="旗袍", style="anime")
-    assert "二次元" in anime
-    assert "干净色块" in anime
-    realistic = prompt_engineer.build_texture_prompt(description="旗袍")
-    assert "二次元" not in realistic
-    # Technical channels stay style-neutral — they encode geometry, not art.
-    normal = prompt_engineer.build_texture_prompt(
+def test_build_texture_style_routes_all_channels():
+    # Anime albedo and normal get clean cel-friendly cartoon wording
+    anime_albedo = prompt_engineer.build_texture_prompt(
+        description="旗袍", style="anime"
+    )
+    assert "二次元" in anime_albedo
+    assert "明快色块" in anime_albedo
+
+    anime_normal = prompt_engineer.build_texture_prompt(
         description="旗袍", channel="normal", style="anime"
     )
-    assert "二次元" not in normal
+    assert "二次元平滑法线贴图" in anime_normal
+
+    cg_normal = prompt_engineer.build_texture_prompt(
+        description="旗袍", channel="normal", style="anime_game_cg"
+    )
+    assert "次世代二次元游戏法线贴图" in cg_normal
+
+    realistic_albedo = prompt_engineer.build_texture_prompt(
+        description="旗袍", style="realistic"
+    )
+    assert "二次元" not in realistic_albedo
+    assert "写实" in realistic_albedo
+
+    realistic_normal = prompt_engineer.build_texture_prompt(
+        description="旗袍", channel="normal", style="realistic"
+    )
+    assert "高精写实法线贴图" in realistic_normal
+
+
+def test_build_texture_mecha_species():
+    mecha_prompt = prompt_engineer.build_texture_prompt(
+        description="纳米合金装甲板", species="机甲"
+    )
+    assert "机甲装甲表面纹理" in mecha_prompt
