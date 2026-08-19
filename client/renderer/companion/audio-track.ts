@@ -52,8 +52,7 @@ export async function playDataUrl(dataUrl: string): Promise<boolean> {
   stopAudio()
   const audio = new Audio(dataUrl)
   current = audio
-  // Re-arm the amplitude loop for the new track.
-  startAmplitudeLoop(audio)
+  await startAmplitudeLoop(audio)
 
   try {
     await audio.play()
@@ -125,11 +124,22 @@ function ensureAnalyser(): void {
   amplitudeBuffer = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount))
 }
 
-function startAmplitudeLoop(audio: HTMLAudioElement): void {
+async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
   ensureAnalyser()
 
-  if (!audioCtx || !analyser || !amplitudeBuffer) {
+  const ctx = audioCtx
+  const analyserNode = analyser
+
+  if (!ctx || !analyserNode || !amplitudeBuffer) {
     // Web Audio unsupported — silently skip lip sync rather than crash.
+    return
+  }
+
+  if (ctx.state === 'suspended') {
+    await ctx.resume().catch(() => undefined)
+  }
+
+  if (ctx.state !== 'running') {
     return
   }
 
@@ -137,14 +147,10 @@ function startAmplitudeLoop(audio: HTMLAudioElement): void {
   // (e.g. back-to-back speak() calls) leaks graph nodes and triggers the
   // "HTMLMediaElement already connected" DOMException.
   try {
-    if (audioCtx.state === 'suspended') {
-      void audioCtx.resume()
-    }
-
     analyserSource?.disconnect()
-    analyserSource = audioCtx.createMediaElementSource(audio)
-    analyserSource.connect(analyser)
-    analyser.connect(audioCtx.destination)
+    analyserSource = ctx.createMediaElementSource(audio)
+    analyserSource.connect(analyserNode)
+    analyserNode.connect(ctx.destination)
   } catch {
     // The element was already connected (shouldn't happen with a fresh
     // Audio() but some test environments recycle nodes).
