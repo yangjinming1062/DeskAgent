@@ -1,10 +1,5 @@
 import type { ToolsetId } from '@/shared/lib/toolset-catalog'
 
-interface ModeOptionCopy {
-  label: string
-  description: string
-}
-
 export interface Translations {
   common: {
     apply: string
@@ -84,7 +79,6 @@ export interface Translations {
     details: string
     copyDetail: string
     copyDetailFailed: string
-    updateReadyMessage: (count: number) => string
     errors: {
       elevenLabsNeedsKey: string
       elevenLabsRejectedKey: string
@@ -95,34 +89,9 @@ export interface Translations {
       openaiTtsNeedsKey: string
     }
     voice: {
-      configureSpeechToText: string
-      couldNotStartSession: string
-      microphoneAccessDenied: string
-      microphoneConstraintsUnsupported: string
-      microphoneFailed: string
-      microphoneInUse: string
-      microphonePermissionDenied: string
-      microphoneStartFailed: string
-      microphoneUnsupported: string
-      noMicrophone: string
-      noSpeechDetected: string
-      playbackFailed: string
-      recordingFailed: string
-      transcriptionFailed: string
-      transcriptionUnavailable: string
-      tryRecordingAgain: string
-      unavailable: string
       invalidTitle: string
       invalidMessage: (name: string) => string
       invalidAction: string
-    }
-    events: {
-      compressionTimeoutTitle: string
-      compressionTimeoutMessage: string
-      cronTriggeredTitle: string
-      cronTriggeredMessage: (name: string | null, jobId: string | number) => string
-      backgroundReviewFailedTitle: string
-      backgroundReviewFailedMessage: (error: string | null) => string
     }
   }
 
@@ -138,15 +107,11 @@ export interface Translations {
     nav: {
       account: string
       mcp: string
-      archivedChats: string
       about: string
-      appearance: string
-      toolsets: string
       runner: string
       skills: string
       voices: string
     }
-    modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     about: {
       heading: string
       version: (value: string) => string
@@ -158,19 +123,6 @@ export interface Translations {
       updateAvailable: (value: string) => string
       updateDownloaded: (value: string) => string
       updateError: (value: string) => string
-      download: string
-      restart: string
-      later: string
-    }
-    envActions: {
-      actionsFor: (label: string) => string
-      credentialActions: string
-      docs: string
-      hideValue: string
-      revealValue: string
-      replace: string
-      set: string
-      clear: string
     }
     mcp: {
       loading: string
@@ -208,7 +160,6 @@ export interface Translations {
       save: string
       saveSuccess: string
       saveFailed: string
-      invalidYaml: string
       terminal: string
       terminalEnvType: string
       security: string
@@ -328,8 +279,6 @@ export interface Translations {
     loading: string
     sttEnabledTitle: string
     sttEnabledDesc: string
-    sttTitle: string
-    sttDesc: string
     sttEngineTitle: string
     sttEngineDesc: string
     sttSilentFallbackTitle: string
@@ -370,8 +319,6 @@ export interface Translations {
     other: string
     searchSkills: string
     searchToolsets: string
-    refresh: string
-    refreshing: string
     loading: string
     noSkillsTitle: string
     noSkillsDesc: string
@@ -380,19 +327,9 @@ export interface Translations {
     noToolsetsTitle: string
     noToolsetsDesc: string
     noDescription: string
-    configured: string
-    needsKeys: string
     toolsetsEnabled: (enabled: number, total: number) => string
-    configureToolset: (label: string) => string
-    toggleToolset: (label: string) => string
     skillsLoadFailed: string
     toolsetsRefreshFailed: string
-    skillEnabled: string
-    skillDisabled: string
-    toolsetEnabled: string
-    toolsetDisabled: string
-    appliesToNewSessions: (name: string) => string
-    failedToUpdate: (name: string) => string
   }
 
   // Per-toolset label/description. Keyed by toolset id from
@@ -417,18 +354,6 @@ export interface Translations {
   ui: {
     search: {
       clear: string
-    }
-    pagination: {
-      label: string
-      previous: string
-      previousAria: string
-      next: string
-      nextAria: string
-    }
-    sidebar: {
-      title: string
-      description: string
-      toggle: string
     }
   }
 }

@@ -5,7 +5,7 @@ import yaml from 'yaml'
 
 import type { SkillItem } from '../ipc-contracts'
 
-export interface RawSkillItem {
+interface RawSkillItem {
   category: string
   compatible: boolean
   description?: string
@@ -15,7 +15,7 @@ export interface RawSkillItem {
 
 // Main process computes `compatible` per skill; renderer has no
 // `process.platform` and uses the flag to hide non-matching rows.
-export const HOST_PLATFORM: string = (() => {
+const HOST_PLATFORM: string = (() => {
   switch (process.platform) {
     case 'darwin':
       return 'macos'
@@ -28,14 +28,14 @@ export const HOST_PLATFORM: string = (() => {
   }
 })()
 
-export const PLATFORM_ALIASES: Record<string, string> = {
+const PLATFORM_ALIASES: Record<string, string> = {
   darwin: 'macos',
   macos: 'macos',
   win32: 'windows',
   windows: 'windows'
 }
 
-export function platformMatches(declared?: null | string | string[]): boolean {
+function platformMatches(declared?: null | string | string[]): boolean {
   if (declared == null) {
     return true
   }
@@ -52,7 +52,7 @@ export function platformMatches(declared?: null | string | string[]): boolean {
   return mapped.includes(HOST_PLATFORM)
 }
 
-export function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
+function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
   if (!skillsRoot) {
     return []
   }
@@ -129,7 +129,7 @@ export function listSkillsFromDisk(skillsRoot?: null | string): RawSkillItem[] {
 
 // Field enumeration (not `...skill`) so internal-only fields added to
 // listSkillsFromDisk don't leak to the renderer.
-export function projectSummary(skill: RawSkillItem, disabledSet: Set<string>): SkillItem {
+function projectSummary(skill: RawSkillItem, disabledSet: Set<string>): SkillItem {
   return {
     category: skill.category,
     compatible: skill.compatible,

@@ -30,12 +30,6 @@ let backgroundTimer: ReturnType<typeof setInterval> | null = null
 let unsubs: Array<() => void> = []
 let active = false
 
-export function resetAutonomyState(): void {
-  lastConsultAt = 0
-  lastAutonomousActionAt = 0
-  lastSnapshot = null
-}
-
 function stateChanged(oldSnap: Snapshot, newSnap: Snapshot): boolean {
   return (
     oldSnap.focused_category !== newSnap.focused_category ||
@@ -44,7 +38,7 @@ function stateChanged(oldSnap: Snapshot, newSnap: Snapshot): boolean {
   )
 }
 
-function executeAutonomousAction(action: string, _params?: Record<string, unknown>): void {
+function executeAutonomousAction(action: string): void {
   switch (action) {
     case 'go_sleep':
       setSpriteState('sleeping', { force: true })
@@ -133,7 +127,7 @@ export async function consultAutonomyLLM(force = false): Promise<void> {
 
     if (res?.should_act && res.action) {
       lastAutonomousActionAt = Date.now()
-      executeAutonomousAction(res.action, res.params)
+      executeAutonomousAction(res.action)
     }
   } catch {
     /* silent catch; LLM error results in no autonomous action taken */

@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $runnerPhase, $runnerReady, hydrateRunnerStatus, teardownRunnerStatus } from './runner-status'
-
 // $runnerPhase + hydrateRunnerStatus — IPC plumbing (sync getter + event sub)
 interface RunnerStatusListener {
   (ev: { type: string; [k: string]: unknown }): void
@@ -55,114 +53,115 @@ function installRunnerSpiritagent(
 }
 
 describe('runner-status store', () => {
+  // Each test gets a fresh module so the module-level `offRunnerStatus`
+  // idempotency branch doesn't short-circuit subsequent calls.
   beforeEach(() => {
-    $runnerPhase.set('idle')
+    vi.resetModules()
   })
 
   afterEach(() => {
-    teardownRunnerStatus()
     ;(window as unknown as { spiritagent?: unknown }).spiritagent = undefined
   })
 
   describe('$runnerReady', () => {
-    it('is false when phase is idle', () => {
-      $runnerPhase.set('idle')
-      expect($runnerReady.get()).toBe(false)
+    it('is false when phase is idle', async () => {
+      const { $runnerReady: ready } = await import('./runner-status')
+
+      expect(ready.get()).toBe(false)
     })
 
-    it('is true when phase is running', () => {
-      $runnerPhase.set('running')
-      expect($runnerReady.get()).toBe(true)
+    it('is true when phase is running', async () => {
+      const { $runnerPhase: phase } = await import('./runner-status')
+      phase.set('running')
+      const { $runnerReady: ready } = await import('./runner-status')
+
+      expect(ready.get()).toBe(true)
     })
 
-    it('flips false again when phase drops to stopped', () => {
-      $runnerPhase.set('running')
-      expect($runnerReady.get()).toBe(true)
+    it('flips false again when phase drops to stopped', async () => {
+      const { $runnerPhase: phase } = await import('./runner-status')
+      phase.set('running')
+      const { $runnerReady: ready } = await import('./runner-status')
+      expect(ready.get()).toBe(true)
 
-      $runnerPhase.set('stopped')
-      expect($runnerReady.get()).toBe(false)
+      phase.set('stopped')
+      const { $runnerReady: ready2 } = await import('./runner-status')
+      expect(ready2.get()).toBe(false)
     })
   })
 
   describe('hydrateRunnerStatus', () => {
     it('populates the atom from the sync getter on first call', async () => {
       installRunnerSpiritagent({ initialState: { phase: 'running' } })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
+      await hydrate()
 
-      expect($runnerPhase.get()).toBe('running')
+      expect(phase.get()).toBe('running')
     })
 
     it('defaults to idle when the bridge has not been created yet', async () => {
       installRunnerSpiritagent({ initialState: { phase: 'idle' } })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
+      await hydrate()
 
-      expect($runnerPhase.get()).toBe('idle')
+      expect(phase.get()).toBe('idle')
     })
 
     it('swallows sync-getter rejection and leaves atom at default', async () => {
       installRunnerSpiritagent({ getStateRejected: true })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
+      await hydrate()
 
-      expect($runnerPhase.get()).toBe('idle')
+      expect(phase.get()).toBe('idle')
     })
 
     it('subscribes once — repeated hydrate calls do not stack subscriptions', async () => {
       const spy = installRunnerSpiritagent()
+      const { hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
-      await hydrateRunnerStatus()
-      await hydrateRunnerStatus()
+      await hydrate()
+      await hydrate()
+      await hydrate()
 
       expect(spy.onRunnerStatus).toHaveBeenCalledTimes(1)
     })
 
     it('updates the atom when onRunnerStatus fires `running`', async () => {
       const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
-      expect($runnerPhase.get()).toBe('starting')
+      await hydrate()
+      expect(phase.get()).toBe('starting')
 
       spy.emit({ type: 'running' })
-      expect($runnerPhase.get()).toBe('running')
+      expect(phase.get()).toBe('running')
     })
 
     it('updates the atom when onRunnerStatus fires `stopped` / `error`', async () => {
       const spy = installRunnerSpiritagent({ initialState: { phase: 'running' } })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
-      expect($runnerPhase.get()).toBe('running')
+      await hydrate()
+      expect(phase.get()).toBe('running')
 
       spy.emit({ type: 'stopped' })
-      expect($runnerPhase.get()).toBe('stopped')
+      expect(phase.get()).toBe('stopped')
 
       spy.emit({ type: 'error' })
-      expect($runnerPhase.get()).toBe('stopped')
+      expect(phase.get()).toBe('stopped')
     })
 
     it('treats `runner_ready` as `running` (transitions to live state)', async () => {
       const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
+      const { $runnerPhase: phase, hydrateRunnerStatus: hydrate } = await import('./runner-status')
 
-      await hydrateRunnerStatus()
+      await hydrate()
 
       spy.emit({ type: 'runner_ready' })
-      expect($runnerPhase.get()).toBe('running')
-    })
-
-    it('teardownRunnerStatus detaches the onRunnerStatus subscription', async () => {
-      const spy = installRunnerSpiritagent({ initialState: { phase: 'starting' } })
-
-      await hydrateRunnerStatus()
-      expect(spy.onRunnerStatus).toHaveBeenCalledTimes(1)
-
-      teardownRunnerStatus()
-
-      // After teardown, a fresh hydrate should subscribe again (the previous
-      // unsubscribe was called and we should re-attach on next hydrate).
-      await hydrateRunnerStatus()
-      expect(spy.onRunnerStatus).toHaveBeenCalledTimes(2)
+      expect(phase.get()).toBe('running')
     })
   })
 })

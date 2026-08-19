@@ -76,17 +76,10 @@ export function writeStoredBackendUrl(spiritagentHome: string | null | undefined
   }
 }
 
-// Resolves the active backend URL stored in $SPIRITAGENT_HOME/desktop-config.json
-// (written on successful activation code exchange).
-// Returns null if the client has not been activated yet.
-export function resolveBackendUrl(spiritagentHome: string | null | undefined): string | null {
-  return readStoredBackendUrl(spiritagentHome)
-}
-
 // Coerce + trailing-slash strip for callers appending path suffixes (e.g. /api/update).
 // Returns null if no backend URL is configured.
 export function resolveNormalizedBackendUrl(spiritagentHome: string | null | undefined): string | null {
-  const url = resolveBackendUrl(spiritagentHome)
+  const url = readStoredBackendUrl(spiritagentHome)
 
   return url ? String(url).replace(/\/+$/, '') : null
 }

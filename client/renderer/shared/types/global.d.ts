@@ -10,7 +10,6 @@ declare global {
       refreshSession: (payload?: Record<string, unknown>) => Promise<DesktopAuthSnapshot>
       logout: () => Promise<DesktopLogoutResult>
       getSession: () => Promise<DesktopAuthSnapshot | null>
-      getDefaultBackendUrl: () => Promise<string | null>
       showToolWindow: () => Promise<void>
       api: <T>(request: SpiritAgentApiRequest) => Promise<T>
       /** Fetch a backend-served binary asset as a data URL (see connection.cjs). */
@@ -27,7 +26,6 @@ declare global {
       reloadMcp: () => Promise<unknown>
       runnerGetState?: () => Promise<DesktopRunnerState>
       runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
-      getPathForFile: (file: File) => string
       setTitleBarTheme?: (payload: SpiritAgentTitleBarTheme) => void
       runnerConfig: {
         read: () => Promise<{ ok: boolean; content?: string; error?: string }>

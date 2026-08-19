@@ -221,10 +221,6 @@ export interface IpcInvokeContract {
   // Backend API Proxy
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
   'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
-  'spiritagent:api:asset-cached-path': (request: {
-    contentHash?: string
-    url: string
-  }) => null | string | Promise<null | string>
   'spiritagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
 
   // File & Clipboard & Log

@@ -81,8 +81,21 @@ export function buildClip(def: ClipDef, restQuats?: ReadonlyMap<string, THREE.Qu
   return new THREE.AnimationClip(def.name, def.duration, tracks)
 }
 
-function kf(t: number, x: number, y: number, z: number): Keyframe {
+export function kf(t: number, x: number, y: number, z: number): Keyframe {
   return { t, r: [x, y, z] as const }
+}
+
+// Shared clip factory for the per-rig libraries. They all repeat the same
+// 6-field object literal; one definition keeps them in lock-step.
+export function makeClip(
+  name: string,
+  duration: number,
+  loop: boolean,
+  category: ClipDef['category'],
+  tags: readonly string[],
+  tracks: Record<string, Keyframe[]>
+): ClipDef {
+  return { name, duration, loop, category, tags, tracks }
 }
 
 /** Canonical §3.1 state clips for a non-biped rig (AnimationMap resolves

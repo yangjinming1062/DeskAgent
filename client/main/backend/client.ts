@@ -42,7 +42,7 @@ export class BackendRequestError extends Error {
   }
 }
 
-export function normalizeBaseUrl(raw?: null | string): string {
+function normalizeBaseUrl(raw?: null | string): string {
   const value = String(raw || '').trim()
 
   if (!value) {

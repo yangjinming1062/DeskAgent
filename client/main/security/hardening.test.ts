@@ -8,7 +8,6 @@ import { pathToFileURL } from 'node:url'
 import {
   AVATAR_FETCH_TIMEOUT_MS,
   DEFAULT_FETCH_TIMEOUT_MS,
-  encryptDesktopSecret,
   resolvePathTimeoutMs,
   resolveReadableFileForIpc,
   resolveTimeoutMs,
@@ -55,30 +54,6 @@ test('resolvePathTimeoutMs tolerates garbage inputs', () => {
 test('resolvePathTimeoutMs honors a custom fallbackMs', () => {
   assert.equal(resolvePathTimeoutMs('/api/config', 'POST', 9_000), 9_000)
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'POST', 9_000), AVATAR_FETCH_TIMEOUT_MS)
-})
-
-test('encryptDesktopSecret requires available secure storage', () => {
-  assert.equal(
-    encryptDesktopSecret('', { encryptString: () => Buffer.alloc(0), isEncryptionAvailable: () => true }),
-    null
-  )
-
-  assert.throws(
-    () => encryptDesktopSecret('token', { encryptString: () => Buffer.alloc(0), isEncryptionAvailable: () => false }),
-    /Secure token storage is unavailable/
-  )
-})
-
-test('encryptDesktopSecret stores safeStorage base64 payload', () => {
-  const secret = encryptDesktopSecret('token-123', {
-    encryptString: value => Buffer.from(`enc:${value}`, 'utf8'),
-    isEncryptionAvailable: () => true
-  })
-
-  assert.deepEqual(secret, {
-    encoding: 'safeStorage',
-    value: Buffer.from('enc:token-123', 'utf8').toString('base64')
-  })
 })
 
 test('sensitiveFileBlockReason blocks obvious secret file patterns', () => {

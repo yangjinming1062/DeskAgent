@@ -49,7 +49,6 @@ export interface EncryptedToken {
 export interface StoredSessionPayload {
   activationCode: EncryptedToken | null
   baseUrl: null | string
-  savedAt: number
   schemaVersion: number
   user: null | SessionUser
 }
@@ -240,7 +239,6 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     atomicWriteJson(sessionPath, {
       activationCode: encryptToken(cached.activationCode, safeStorage),
       baseUrl: cached.baseUrl,
-      savedAt: now(),
       schemaVersion: SESSION_SCHEMA_VERSION,
       user: cached.user
     })
@@ -288,7 +286,6 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
   function loadFromDisk(): null | {
     activationCode: string
     baseUrl: null | string
-    savedAt: null | number
     user: null | SessionUser
   } {
     const raw = readJsonSafe(sessionPath)
@@ -312,7 +309,6 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return {
       activationCode,
       baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : null,
-      savedAt: typeof record.savedAt === 'number' && Number.isFinite(record.savedAt) ? record.savedAt : null,
       user: normalizeUser(record.user)
     }
   }

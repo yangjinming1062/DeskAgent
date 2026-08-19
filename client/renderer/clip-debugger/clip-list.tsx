@@ -33,13 +33,11 @@ export function ClipList(): React.JSX.Element {
 
   // 所有可用分类与各分类数量统计
   const { categories, filteredClips } = useMemo(() => {
-    const catCounts: Record<string, number> = { all: allClips.length }
+    const catSet = new Set<string>(['all'])
 
     for (const clip of allClips) {
-      catCounts[clip.category] = (catCounts[clip.category] || 0) + 1
+      catSet.add(clip.category)
     }
-
-    const availableCats = ['all', ...Object.keys(catCounts).filter(c => c !== 'all')]
 
     const query = searchQuery.trim().toLowerCase()
 
@@ -61,7 +59,7 @@ export function ClipList(): React.JSX.Element {
       return true
     })
 
-    return { categories: availableCats, categoryCounts: catCounts, filteredClips: filtered }
+    return { categories: [...catSet], filteredClips: filtered }
   }, [allClips, selectedCategory, searchQuery])
 
   return (

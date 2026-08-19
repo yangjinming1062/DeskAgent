@@ -12,9 +12,9 @@ import type { ReverseRpcOptions } from './reverse-rpc'
 import type { CreateRunnerWsServerOptions, RunnerWsEvent, RunnerWsServer, RunnerWsStatus } from './rpc-ws'
 
 // macOS sun_path is capped at 104 bytes; stay under it with a margin.
-export const MAC_SOCK_PATH_BYTE_LIMIT = 100
+const MAC_SOCK_PATH_BYTE_LIMIT = 100
 
-export function computeDesktopEndpoint(spiritagentHome?: null | string): { path: string; transport: string } {
+function computeDesktopEndpoint(spiritagentHome?: null | string): { path: string; transport: string } {
   if (process.platform === 'win32') {
     return { path: `\\\\.\\pipe\\spiritagent-runner-${process.pid}`, transport: 'pipe' }
   }
@@ -32,7 +32,7 @@ export function computeDesktopEndpoint(spiritagentHome?: null | string): { path:
   return { path: path.join(os.tmpdir(), `spiritagent-${uid}-${digest}.sock`), transport: 'unix' }
 }
 
-export function sweepLegacySockets(spiritagentHome: string): void {
+function sweepLegacySockets(spiritagentHome: string): void {
   try {
     for (const name of fs.readdirSync(spiritagentHome)) {
       if (/^runner-\d+\.sock$/.test(name)) {

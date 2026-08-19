@@ -33,14 +33,14 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
     return deps.runnerBridge
   }
 
-  const pushConfig = (config: Record<string, unknown> = store.read()) => {
+  const pushConfig = () => {
     const bridge = deps.runnerBridge
 
     if (!bridge) {
       return Promise.resolve()
     }
 
-    return bridge.dispatch('spiritagent.config.update', { config })
+    return bridge.dispatch('spiritagent.config.update', { config: store.read() })
   }
 
   deps.runnerBridge = deps.createRunnerBridge({

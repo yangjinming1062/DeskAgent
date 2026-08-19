@@ -79,7 +79,6 @@ export const strings: Translations = {
     details: '详情',
     copyDetail: '复制详情',
     copyDetailFailed: '无法复制通知详情',
-    updateReadyMessage: count => `有 ${count} 项新更改可用。`,
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
@@ -90,34 +89,9 @@ export const strings: Translations = {
       openaiTtsNeedsKey: 'OpenAI TTS 需要 VOICE_TOOLS_OPENAI_KEY 或 OPENAI_API_KEY。'
     },
     voice: {
-      configureSpeechToText: '配置语音转文字后即可使用语音模式。',
-      couldNotStartSession: '无法启动语音会话',
-      microphoneAccessDenied: '麦克风访问被拒绝。',
-      microphoneConstraintsUnsupported: '此设备不支持当前麦克风约束。',
-      microphoneFailed: '麦克风出错',
-      microphoneInUse: '麦克风正被其他应用占用。',
-      microphonePermissionDenied: '麦克风权限被拒绝。',
-      microphoneStartFailed: '无法开始麦克风录音。',
-      microphoneUnsupported: '当前运行环境不支持麦克风录音。',
-      noMicrophone: '未找到麦克风。',
-      noSpeechDetected: '没有检测到语音',
-      playbackFailed: '语音播放失败',
-      recordingFailed: '语音录制失败',
-      transcriptionFailed: '语音转写失败',
-      transcriptionUnavailable: '语音转写暂不可用。',
-      tryRecordingAgain: '请再录一次。',
-      unavailable: '语音不可用',
       invalidTitle: '音色已失效',
       invalidMessage: name => `你之前选的音色「${name}」已不在当前目录，已临时用默认音色，去伙伴设置里重新挑一个吧～`,
       invalidAction: '去设置'
-    },
-    events: {
-      compressionTimeoutTitle: '上下文压缩',
-      compressionTimeoutMessage: '压缩请求超时 — 继续而不压缩。',
-      cronTriggeredTitle: '定时任务已触发',
-      cronTriggeredMessage: (name, jobId) => name || `任务 #${jobId}`,
-      backgroundReviewFailedTitle: '后台任务',
-      backgroundReviewFailedMessage: error => error || '记忆提取失败'
     }
   },
 
@@ -133,18 +107,10 @@ export const strings: Translations = {
     nav: {
       account: '账户',
       mcp: 'MCP',
-      archivedChats: '已归档对话',
       about: '关于',
-      appearance: '外观',
-      toolsets: '工具集',
       runner: '执行器',
       skills: '技能与工具',
       voices: '音色目录'
-    },
-    modeOptions: {
-      light: { label: '明亮', description: '明亮的桌面界面' },
-      dark: { label: '暗色', description: '低眩光工作区' },
-      system: { label: '跟随系统', description: '跟随系统外观' }
     },
     about: {
       heading: 'SpiritAgent Desktop',
@@ -156,20 +122,7 @@ export const strings: Translations = {
       upToDateWithVersion: value => `已是最新版本（v${value}）`,
       updateAvailable: value => `v${value} 可用`,
       updateDownloaded: value => `v${value} 已就绪,等待重启安装`,
-      updateError: value => `检查更新失败:${value}`,
-      download: '下载更新',
-      restart: '立即重启',
-      later: '稍后再说'
-    },
-    envActions: {
-      actionsFor: label => `${label} 的操作`,
-      credentialActions: '凭据操作',
-      docs: '文档',
-      hideValue: '隐藏值',
-      revealValue: '显示值',
-      replace: '替换',
-      set: '设置',
-      clear: '清除'
+      updateError: value => `检查更新失败:${value}`
     },
     mcp: {
       loading: '正在加载 MCP 服务器...',
@@ -207,7 +160,6 @@ export const strings: Translations = {
       save: '保存配置',
       saveSuccess: '配置已保存',
       saveFailed: '配置保存失败',
-      invalidYaml: 'YAML 格式无效',
       terminal: '终端设置',
       terminalEnvType: '环境类型',
       security: '安全',
@@ -330,8 +282,6 @@ export const strings: Translations = {
     loading: '加载中…',
     sttEnabledTitle: '语音转文字总开关',
     sttEnabledDesc: '关闭后语音条与通话模式均不可用。',
-    sttTitle: '语音转文字（STT）',
-    sttDesc: '开启后可用语音条与通话模式说话输入',
     sttEngineTitle: 'STT 引擎',
     sttEngineDesc: '语音转文字优先使用的引擎。本地引擎免费、零成本。',
     sttSilentFallbackTitle: '低置信度自动切云端',
@@ -372,8 +322,6 @@ export const strings: Translations = {
     other: '其他',
     searchSkills: '搜索技能…',
     searchToolsets: '搜索工具集…',
-    refresh: '刷新技能',
-    refreshing: '正在刷新技能',
     loading: '正在加载能力…',
     noSkillsTitle: '未找到技能',
     noSkillsDesc: '尝试更宽泛的搜索或其他分类。',
@@ -382,19 +330,9 @@ export const strings: Translations = {
     noToolsetsTitle: '未找到工具集',
     noToolsetsDesc: '尝试更宽泛的搜索词。',
     noDescription: '暂无描述。',
-    configured: '已配置',
-    needsKeys: '需要密钥',
     toolsetsEnabled: (enabled, total) => `已启用 ${enabled}/${total} 个工具集`,
-    configureToolset: label => `配置 ${label}`,
-    toggleToolset: label => `切换 ${label} 工具集`,
     skillsLoadFailed: '技能加载失败',
-    toolsetsRefreshFailed: '工具集刷新失败',
-    skillEnabled: '技能已启用',
-    skillDisabled: '技能已禁用',
-    toolsetEnabled: '工具集已启用',
-    toolsetDisabled: '工具集已禁用',
-    appliesToNewSessions: name => `${name} 将应用于新会话。`,
-    failedToUpdate: name => `更新 ${name} 失败`
+    toolsetsRefreshFailed: '工具集刷新失败'
   },
 
   toolsets: {
@@ -426,18 +364,6 @@ export const strings: Translations = {
   ui: {
     search: {
       clear: '清除搜索'
-    },
-    pagination: {
-      label: '分页',
-      previous: '上一页',
-      previousAria: '前往上一页',
-      next: '下一页',
-      nextAria: '前往下一页'
-    },
-    sidebar: {
-      title: '侧边栏',
-      description: '显示移动端侧边栏。',
-      toggle: '切换侧边栏'
     }
   }
 }

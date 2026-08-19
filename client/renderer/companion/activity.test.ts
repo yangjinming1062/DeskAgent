@@ -68,7 +68,7 @@ describe('classifyFocusedApp', () => {
 // `@/shared/store/runner-status`). Hydration IPC plumbing is tested in
 // runner-status.test.ts; here we drive `$runnerPhase` directly to exercise
 // activity.ts's consumer-side logic in isolation.
-import { $runnerPhase, teardownRunnerStatus } from '@/shared/store/runner-status'
+import { $runnerPhase } from '@/shared/store/runner-status'
 
 interface ActivitySpiritagent {
   runnerInvoke: ReturnType<typeof vi.fn>
@@ -95,7 +95,6 @@ describe('startActivityMonitor runner-gate', () => {
 
   afterEach(() => {
     stopActivityMonitor()
-    teardownRunnerStatus()
     vi.useRealTimers()
     ;(window as unknown as { spiritagent?: unknown }).spiritagent = undefined
   })

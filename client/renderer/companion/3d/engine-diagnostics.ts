@@ -37,7 +37,3 @@ export function reportEngineError(message: string): void {
   $engineError.set({ message, at: Date.now() })
   log.error('engine', `engine error: ${message}`)
 }
-
-export function clearEngineError(): void {
-  $engineError.set(null)
-}

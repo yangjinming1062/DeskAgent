@@ -8,14 +8,14 @@ import { sleep } from '../shared/utils'
 
 import { createTtsDiskCache } from './tts-disk-cache'
 
-export const STT_TIMEOUT_MS = 60_000
-export const TTS_TIMEOUT_MS = 60_000
-export const TTS_MAX_TEXT_CHARS = 4000
-export const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
-export const CONFIG_CACHE_TTL_MS = 10_000
-export const DEFAULT_TTS_LANGUAGE = 'zh'
-export const DEFAULT_STT_LANGUAGE = 'zh'
-export const MIN_TTS_INTERVAL_MS = 750
+const STT_TIMEOUT_MS = 60_000
+const TTS_TIMEOUT_MS = 60_000
+const TTS_MAX_TEXT_CHARS = 4000
+const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
+const CONFIG_CACHE_TTL_MS = 10_000
+const DEFAULT_TTS_LANGUAGE = 'zh'
+const DEFAULT_STT_LANGUAGE = 'zh'
+const MIN_TTS_INTERVAL_MS = 750
 
 let ttsSeq = 0
 let sttSeq = 0
@@ -81,7 +81,7 @@ async function postMultipart({
   return { body: buf, contentType: res.headers.get('content-type') || '', headers: res.headers }
 }
 
-export interface RunnerBridgeLike {
+interface RunnerBridgeLike {
   getTools?: () => Record<string, unknown>[]
   invoke?: <T = unknown>(name: string, args?: Record<string, unknown>) => Promise<T>
 }

@@ -6,9 +6,9 @@ import { spiritagentHome as resolveSpiritAgentHome } from '../security/paths'
 import * as store from './lib/runner-config-store'
 import { buildSkillSummaries } from './lib/skill-index'
 
-export const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 1
 
-export interface BuildClientContextOptions {
+interface BuildClientContextOptions {
   arch?: string
   spiritagentHome?: null | string
   desktopVersion?: string
@@ -20,7 +20,7 @@ export interface BuildClientContextOptions {
   userAgent?: null | string
 }
 
-export interface ClientContextResult {
+interface ClientContextResult {
   client_context: {
     environment_hints: string
     platform_hints: string

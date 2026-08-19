@@ -42,15 +42,6 @@
   --radius-3xl: calc(var(--radius-scalar) * 2rem);
   --radius-4xl: calc(var(--radius-scalar) * 2.5rem);
 
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-
   --shadow-xs: 0 0.0625rem 0.125rem color-mix(in srgb, #000 5%, transparent);
   --shadow-sm:
     0 0 0 0.0625rem color-mix(in srgb, var(--dt-foreground) 6%, transparent),
@@ -483,18 +474,6 @@
   }
 }
 
-.dither {
-  background: repeating-conic-gradient(currentColor 0% 25%, transparent 0% 50%) 0 0 / 0.125rem 0.125rem;
-}
-
-:root:not([style*='--theme-asset-bg:']) .theme-default-filler {
-  display: block;
-}
-
-:root[style*='--theme-asset-bg:'] .theme-default-filler {
-  display: none;
-}
-
 /* Primitive-level pointer cursor for every interactive control (buttons,
    selects, menu items, switches, tabs, summaries). Keeps individual
    components from having to hardcode `cursor-pointer`; explicit cursor
@@ -518,72 +497,6 @@
   [class*='rounded-full'],
   [class*=':rounded-full'] {
     border-radius: calc(var(--radius-scalar) * 9999rem);
-  }
-}
-
-@keyframes arc-border {
-  0% {
-    background-position: 15% 15%;
-  }
-  100% {
-    background-position: 75% 75%;
-  }
-}
-
-.arc-border {
-  --arc-c0: color-mix(in srgb, var(--dt-foreground) 0%, transparent);
-  --arc-c1: var(--dt-midground);
-  --arc-c2: var(--dt-background);
-  --arc-angle: 160deg;
-  --arc-width: 0.078125rem;
-  --arc-inset: -0.125rem;
-  --arc-duration: 2.23s;
-
-  pointer-events: none;
-  position: absolute;
-  overflow: hidden;
-  border-radius: inherit;
-  inset: var(--arc-inset);
-  padding: var(--arc-width);
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-}
-
-:root.dark .arc-border {
-  --arc-c1: var(--dt-foreground);
-}
-
-.arc-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    var(--arc-angle),
-    transparent 0%,
-    var(--arc-c0) 15%,
-    var(--arc-c1) 20%,
-    var(--arc-c2) 25%,
-    transparent 35%,
-    transparent 40%,
-    var(--arc-c0) 55%,
-    var(--arc-c1) 60%,
-    var(--arc-c2) 65%,
-    transparent 75%,
-    transparent 80%,
-    var(--arc-c0) 95%,
-    var(--arc-c1) 100%
-  );
-  background-size: 300% 300%;
-  animation: arc-border var(--arc-duration) linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .arc-border::before {
-    animation: none;
   }
 }
 
@@ -843,49 +756,10 @@ canvas {
   font-size: 0.875rem;
   line-height: 1.45;
 }
-
-.fit-text {
-  --fit-captured-length: initial;
-  --fit-support-sentinel: var(--fit-captured-length, 9999px);
-
-  display: flex;
-  container-type: inline-size;
+[data-slot='composer-root'] {
+  width: min(var(--composer-width), calc(100% - 2rem));
+  padding-bottom: var(--composer-shell-pad-block-end);
 }
-
-.fit-text > [aria-hidden] {
-  visibility: hidden;
-}
-
-.fit-text > :not([aria-hidden]) {
-  flex-grow: 1;
-  container-type: inline-size;
-
-  --fit-captured-length: 100cqi;
-  --fit-available-space: var(--fit-captured-length);
-}
-
-.fit-text > :not([aria-hidden]) > * {
-  --fit-support-sentinel: inherit;
-  --fit-captured-length: 100cqi;
-  --fit-ratio: tan(atan2(var(--fit-available-space), var(--fit-available-space) - var(--fit-captured-length)));
-
-  display: block;
-  inline-size: var(--fit-available-space);
-  font-size: clamp(var(--fit-min, 1em), 1em * var(--fit-ratio), var(--fit-max, infinity * 1px) - var(--fit-support-sentinel));
-}
-
-@container (inline-size > 0) {
-  .fit-text > :not([aria-hidden]) > * {
-    white-space: nowrap;
-  }
-}
-
-@property --fit-captured-length {
-  syntax: '<length>';
-  initial-value: 0px;
-  inherits: true;
-}
-
 [data-slot='composer-root'] {
   width: min(var(--composer-width), calc(100% - 2rem));
   padding-bottom: var(--composer-shell-pad-block-end);
@@ -1134,93 +1008,19 @@ canvas {
   }
 }
 
-/* Recording toolbar pulse — mounted from main.tsx when window.location.hash
-   starts with #/toolbar. Lives here so the toolbar JSX stays free of inline
-   <style> literals and the keyframes only ship with styles.css. */
-@keyframes spiritagent-toolbar-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+/* ── Setting field highlight: transient outline for deep-link jumps ────────
+   Apply via `classList.add('setting-field-highlight')` on the target field
+   when activating a deep link from the dock / settings index. */
+.setting-field-highlight {
+  outline: 2px solid var(--theme-primary, currentColor);
+  outline-offset: 2px;
+  animation: setting-field-highlight-pulse 1.6s ease-out;
 }
 
-/* Recording toolbar window — its own root (see main.tsx), so the global
-   body styles in @layer base don't apply. Reset margin/overflow so the
-   full-bleed toolbar can paint edge-to-edge on top of the transparent
-   BrowserWindow. */
-body:has(.recording-toolbar-root) {
-  margin: 0;
-  background: transparent;
-  overflow: hidden;
-}
-
-/* ── Login gate: ambient companion glow ─────────────────────────────────────
-    Breathes in lockstep with the procedural egg (CharacterController fallback):
-    identical 3.4s ease-in-out cadence and ×1.5 opacity swell. The login is the
-    front door to meeting one's companion, so its warmth pulses with the egg's
-    life-force rhythm — same amber (#ffd166 family) as the egg/silhouette glow. */
-.login-glow {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: min(72vw, 38rem);
-  height: min(72vw, 38rem);
-  transform: translate(-50%, -50%);
-  border-radius: 9999px;
-  background: radial-gradient(closest-side, rgba(255, 209, 102, 0.32), transparent 70%);
-  filter: blur(32px);
-  opacity: 0.6;
-  pointer-events: none;
-  z-index: 0;
-  animation: loginGlowPulse 3.4s ease-in-out infinite;
-}
-
-@keyframes loginGlowPulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 0.9; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .login-glow {
-    animation: none;
-  }
-}
-
-/* ── Keybind panel / edit overlay: small key chips ──────────────────────────
-   A quiet `kbd`-style chip shared by the shortcuts panel and the on-screen
-   editor so both read as the same control. No animation, no glow. */
-.kbd-cap {
-  display: inline-grid;
-  place-items: center;
-  min-width: 1.5rem;
-  height: 1.4rem;
-  padding: 0 0.4rem;
-  border-radius: 0.375rem;
-  font-family: var(--dt-font-mono, ui-monospace, monospace);
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1;
-  color: color-mix(in srgb, var(--dt-foreground) 82%, transparent);
-  background: color-mix(in srgb, var(--ui-bg-elevated) 70%, transparent);
-  border: 1px solid var(--ui-stroke-secondary);
-  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ui-stroke-tertiary) 50%, transparent);
-}
-
-/* Unbound slot: a hollow dashed chip inviting a binding. */
-.kbd-cap--ghost {
-  color: color-mix(in srgb, var(--dt-foreground) 42%, transparent);
-  background: none;
-  border-style: dashed;
-  border-color: var(--ui-stroke-tertiary);
-  box-shadow: none;
-  font-style: italic;
-}
-
-/* Waiting for a keypress: solid accent, no motion. */
-.kbd-capturing {
-  color: var(--theme-primary);
-  border-color: color-mix(in srgb, var(--theme-primary) 55%, var(--ui-stroke-secondary)) !important;
-  border-style: solid;
-  background: color-mix(in srgb, var(--theme-primary) 9%, var(--ui-bg-elevated));
-  box-shadow: none;
+@keyframes setting-field-highlight-pulse {
+  0% { outline-color: transparent; }
+  20% { outline-color: var(--theme-primary, currentColor); }
+  100% { outline-color: transparent; }
 }
 
 /* ── Static sprite: degraded renderer while no GLB is available ─────────────

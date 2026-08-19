@@ -64,7 +64,7 @@ import {
 } from './security/hardening'
 import { spiritagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
-import { resolveBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
+import { readStoredBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
 import type { DesktopBootProgress, SpiritAgentConnection } from './shared/ipc-contracts'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
@@ -217,7 +217,6 @@ const desktopLogger = createDesktopLogger({
 })
 
 const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
-let previewShortcutActive = false
 
 let bootProgressState: DesktopBootProgress = {
   error: null,
@@ -610,10 +609,6 @@ function sameWindowButtonPosition(a: any, b: any): boolean {
   return !!a && !!b && a.x === b.x && a.y === b.y
 }
 
-function sendClosePreviewRequested(): void {
-  sendToMain(mainWindow, 'spiritagent:close-preview-requested')
-}
-
 function sendPowerResume(): void {
   sendToMain(mainWindow, 'spiritagent:power-resume')
 }
@@ -680,11 +675,7 @@ function buildApplicationMenu(): Menu {
         ? {
             accelerator: 'CommandOrControl+W',
             click: () => {
-              if (previewShortcutActive) {
-                sendClosePreviewRequested()
-              } else {
-                mainWindow?.close()
-              }
+              mainWindow?.close()
             },
             label: 'Close'
           }
@@ -775,20 +766,6 @@ function installDevToolsShortcut(targetWin: BrowserWindow): void {
 
     event.preventDefault()
     toggleDevTools(targetWin)
-  })
-}
-
-function installPreviewShortcut(targetWin: BrowserWindow): void {
-  targetWin.webContents.on('before-input-event', (event, input) => {
-    const key = String(input.key || '').toLowerCase()
-    const isPreviewCloseShortcut = key === 'w' && (IS_MAC ? input.meta : input.control) && !input.alt && !input.shift
-
-    if (!isPreviewCloseShortcut || !previewShortcutActive) {
-      return
-    }
-
-    event.preventDefault()
-    sendClosePreviewRequested()
   })
 }
 
@@ -1288,7 +1265,6 @@ function createToolWindow(): void {
   toolWindow.on('enter-full-screen', () => sendWindowStateChanged(true))
   toolWindow.on('leave-full-screen', () => sendWindowStateChanged(false))
 
-  installPreviewShortcut(toolWindow)
   installZoomShortcuts(toolWindow)
   installContextMenu(toolWindow)
   installStandardWindowHandlers(toolWindow)
@@ -1456,7 +1432,6 @@ registerConnectionIpc({
   getBootProgressState: () => bootProgressState,
   ipcMain,
   modelDiskCache,
-  resetBackendCache,
   resolvePathTimeoutMs,
   resolveTimeoutMs
 })
@@ -1504,7 +1479,7 @@ const bridgeDeps: any = {
 
     bridgeDeps.backendSession = createBackendSession({
       appVersion: resolveSpiritAgentVersion(),
-      defaultBaseUrl: resolveBackendUrl(SPIRITAGENT_HOME) || null,
+      defaultBaseUrl: readStoredBackendUrl(SPIRITAGENT_HOME) || null,
       fetchImpl: (url: string, options: any) => electronNet.fetch(url, options),
       log: (chunk: string) => rememberLog(chunk),
       safeStorage,

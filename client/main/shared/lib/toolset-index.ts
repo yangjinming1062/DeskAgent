@@ -1,9 +1,9 @@
 import type { ToolsetItem } from '../ipc-contracts'
 
-export const EXCLUDED_PREFIXES = ['mcp_']
-export const EXCLUDED_PREFIX_RE = new RegExp(`^(?:${EXCLUDED_PREFIXES.join('|')})`)
+const EXCLUDED_PREFIXES = ['mcp_']
+const EXCLUDED_PREFIX_RE = new RegExp(`^(?:${EXCLUDED_PREFIXES.join('|')})`)
 
-export interface ToolsetDef {
+interface ToolsetDef {
   extraTools?: string[]
   id: string
   prefixes?: string[]
@@ -11,7 +11,7 @@ export interface ToolsetDef {
 
 // Source of truth catalog for the filter side. id matches
 // ToolsetCatalogEntry.id in toolset-catalog.ts.
-export const TOOLSET_DEFS: ToolsetDef[] = [
+const TOOLSET_DEFS: ToolsetDef[] = [
   { id: 'browser_automation', prefixes: ['browser_'] },
   { extraTools: ['read_file', 'write_file', 'patch', 'list_directory', 'search_files'], id: 'file_operations' },
   { extraTools: ['terminal'], id: 'terminal' },
@@ -29,7 +29,7 @@ export const TOOLSET_DEFS: ToolsetDef[] = [
   { extraTools: ['vision_analyze'], id: 'media_analysis' }
 ]
 
-export function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>): string[] {
+function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>): string[] {
   const names: string[] = []
   const seen = new Set<string>()
 

@@ -157,29 +157,6 @@ export class StyleDirector {
     }
   }
 
-  /**
-   * Mirror a wardrobe PBR channel texture onto every toon twin. Only map and
-   * normalMap exist on toon materials; the remaining channels no-op there
-   * (roughness/metalness/displacement are PBR-only concepts).
-   */
-  applyChannelTexture(slot: 'map' | 'normalMap' | null, tex: THREE.Texture | null): void {
-    if (!slot) {
-      return
-    }
-
-    for (const twin of this.twinCache.values()) {
-      twin[slot] = tex
-      // Classic shaders recompile on texture-presence flips (USE_MAP);
-      // node tiers re-run setup — both are one-off costs per outfit swap.
-      twin.needsUpdate = true
-    }
-  }
-
-  /** Toon twin for a PBR source material, if one was built. */
-  twinOf(src: THREE.Material): TwinMaterial | null {
-    return this.twinCache.get(src as PbrSource) ?? null
-  }
-
   /** Per-load teardown: restore PBR on the old root and drop hulls/twins.
    * The shared uniforms, outline material, and ramp texture survive for the
    * next attach. */

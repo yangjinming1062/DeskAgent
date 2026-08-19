@@ -1,19 +1,19 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const DESKTOP_LOG_FLUSH_MS = 120
-export const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
+const DESKTOP_LOG_FLUSH_MS = 120
+const DESKTOP_LOG_BUFFER_MAX_CHARS = 64 * 1024
 export const DESKTOP_LOG_MAX_BYTES = 10 * 1024 * 1024
-export const DESKTOP_LOG_BACKUP_COUNT = 3
+const DESKTOP_LOG_BACKUP_COUNT = 3
 export const DESKTOP_LOG_DISCARD_BYTES = DESKTOP_LOG_MAX_BYTES * 4
-export const MAX_IN_MEMORY_LOGS = 300
+const MAX_IN_MEMORY_LOGS = 300
 
-export interface DesktopLoggerOptions {
+interface DesktopLoggerOptions {
   spiritagentHome: string
   isPackaged?: boolean
 }
 
-export interface DesktopLogger {
+interface DesktopLogger {
   flushAsync: () => Promise<void>
   flushSync: () => void
   getLogs: () => string[]

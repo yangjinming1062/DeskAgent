@@ -208,10 +208,6 @@ export class Engine {
     return this.hitRefresh
   }
 
-  getSilhouetteHitmap(): SilhouetteHitmap | null {
-    return this.hitMap
-  }
-
   private async refreshHitmap(): Promise<SilhouetteHitmap | null> {
     const canvasW = this.canvas.clientWidth || this.canvas.parentElement?.clientWidth || getBaseSpriteWidth()
     const canvasH = this.canvas.clientHeight || this.canvas.parentElement?.clientHeight || getBaseSpriteHeight()

@@ -61,7 +61,7 @@ export function buildClipsForRig(
   return Object.values(defs).map(def => buildClip(def, restQuats))
 }
 
-export interface RigClipSummary {
+interface RigClipSummary {
   rig_type: RigType
   count: number
   names: readonly string[]

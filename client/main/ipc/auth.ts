@@ -3,7 +3,7 @@ import type { IpcMain } from 'electron'
 import type { FetchFunction } from '../backend/client'
 import type { BackendSession, BackendSessionOptions, SessionSnapshot } from '../backend/session'
 import type { SafeStorageApi } from '../security/hardening'
-import { resolveBackendUrl, writeStoredBackendUrl } from '../shared/config'
+import { readStoredBackendUrl, writeStoredBackendUrl } from '../shared/config'
 import type { DesktopActivatePayload } from '../shared/ipc-contracts'
 
 export interface AuthIpcDeps {
@@ -28,7 +28,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
 
   deps.backendSession = deps.createBackendSession({
     appVersion: deps.resolveSpiritAgentVersion(),
-    defaultBaseUrl: resolveBackendUrl(deps.spiritagentHome),
+    defaultBaseUrl: readStoredBackendUrl(deps.spiritagentHome),
     fetchImpl: (url: string, options?: RequestInit) => deps.electronNet.fetch(url, options),
     log: (chunk: string) => deps.rememberLog(chunk),
     safeStorage: deps.safeStorage,
@@ -105,6 +105,6 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
   })
 
   ipcMain.handle('spiritagent:auth:get-default-backend-url', async () => {
-    return resolveBackendUrl(deps.spiritagentHome)
+    return readStoredBackendUrl(deps.spiritagentHome)
   })
 }

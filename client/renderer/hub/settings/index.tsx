@@ -124,13 +124,13 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
           <OverlayNavItem
             active={activeView === 'runner'}
             icon={Settings}
-            label={t.settings.nav.runner ?? 'Runner'}
+            label={t.settings.nav.runner}
             onClick={() => setActiveView('runner')}
           />
           <OverlayNavItem
             active={activeView === 'skills'}
             icon={Sparkles}
-            label={t.settings.nav.skills ?? 'Skills'}
+            label={t.settings.nav.skills}
             onClick={() => setActiveView('skills')}
           />
           <div className="my-2 h-px bg-white/10" />

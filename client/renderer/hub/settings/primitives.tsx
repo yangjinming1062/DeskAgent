@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { PAGE_INSET_X } from '@/shared'
 import { PageLoader } from '@/shared/components/page-loader'
-import { Badge, Button } from '@/shared/components/ui'
+import { Badge } from '@/shared/components/ui'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
@@ -90,36 +90,6 @@ export function SettingsSubsection({
       ) : null}
       {children}
     </div>
-  )
-}
-
-export function NavLink({
-  icon: Icon,
-  label,
-  active,
-  onClick
-}: {
-  icon: IconComponent
-  label: string
-  active: boolean
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <Button
-      className={cn(
-        'flex min-h-7 w-full justify-start gap-2 rounded-md px-2 text-left text-[length:var(--conversation-text-font-size)] transition',
-        active
-          ? 'bg-(--ui-bg-tertiary) text-foreground'
-          : 'text-(--ui-text-secondary) hover:bg-(--chrome-action-hover) hover:text-foreground'
-      )}
-      onClick={onClick}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      <Icon className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-    </Button>
   )
 }
 

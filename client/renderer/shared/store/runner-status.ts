@@ -47,8 +47,3 @@ export async function hydrateRunnerStatus(): Promise<void> {
       }
     }) ?? null
 }
-
-export function teardownRunnerStatus(): void {
-  offRunnerStatus?.()
-  offRunnerStatus = null
-}

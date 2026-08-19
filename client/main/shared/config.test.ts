@@ -8,7 +8,6 @@ import {
   configPath,
   FILENAME,
   readStoredBackendUrl,
-  resolveBackendUrl,
   resolveNormalizedBackendUrl,
   writeStoredBackendUrl
 } from './config'
@@ -79,12 +78,10 @@ test('writeStoredBackendUrl returns false without home', () => {
   assert.equal(writeStoredBackendUrl(null as any, 'https://api.example.com'), false)
 })
 
-test('resolveBackendUrl and resolveNormalizedBackendUrl return stored URL or null', () => {
+test('resolveNormalizedBackendUrl returns stored URL or null (trailing slash stripped)', () => {
   const home = tmpHome('resolve')
-  assert.equal(resolveBackendUrl(home), null)
   assert.equal(resolveNormalizedBackendUrl(home), null)
 
   writeStoredBackendUrl(home, 'https://api.example.com/')
-  assert.equal(resolveBackendUrl(home), 'https://api.example.com/')
   assert.equal(resolveNormalizedBackendUrl(home), 'https://api.example.com')
 })

@@ -2,14 +2,16 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
+type OverlayTone = 'subtle'
+
 interface OverlayActionButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  tone?: 'default' | 'danger' | 'subtle'
+  tone?: OverlayTone
 }
 
-export function OverlayActionButton({
+function OverlayActionButton({
   children,
   className,
-  tone = 'default',
+  tone = 'subtle',
   type = 'button',
   ...props
 }: OverlayActionButtonProps): React.JSX.Element {
@@ -17,12 +19,8 @@ export function OverlayActionButton({
     <button
       className={cn(
         'inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-45',
-        tone === 'default' &&
-          'border-[color-mix(in_srgb,var(--dt-border)_55%,transparent)] bg-[color-mix(in_srgb,var(--dt-card)_80%,transparent)] text-foreground hover:bg-[color-mix(in_srgb,var(--dt-muted)_46%,var(--dt-card))]',
         tone === 'subtle' &&
           'h-7 border-transparent px-2 text-muted-foreground hover:border-[color-mix(in_srgb,var(--dt-border)_54%,transparent)] hover:bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)] hover:text-foreground',
-        tone === 'danger' &&
-          'h-7 border-transparent px-2 text-destructive hover:border-[color-mix(in_srgb,var(--dt-destructive)_40%,transparent)] hover:bg-[color-mix(in_srgb,var(--dt-destructive)_10%,transparent)] hover:text-destructive',
         className
       )}
       type={type}

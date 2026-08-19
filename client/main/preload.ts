@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
 import type {
   DesktopActivatePayload,
@@ -24,15 +24,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
     ipcRenderer.invoke('spiritagent:api:asset-buffer', request),
   getBootProgress: () => ipcRenderer.invoke('spiritagent:boot-progress:get'),
   getConnection: () => ipcRenderer.invoke('spiritagent:connection'),
-  getDefaultBackendUrl: () => ipcRenderer.invoke('spiritagent:auth:get-default-backend-url'),
   getGatewayWsUrl: () => ipcRenderer.invoke('spiritagent:gateway:ws-url'),
-  getPathForFile: (file: File): string => {
-    try {
-      return webUtils.getPathForFile(file) || ''
-    } catch {
-      return ''
-    }
-  },
   getSession: () => ipcRenderer.invoke('spiritagent:auth:get-session'),
   getVersion: () => ipcRenderer.invoke('spiritagent:version'),
   log: (payload: { args: unknown[]; level: 'error' | 'info' | 'warn'; scope: string }) =>

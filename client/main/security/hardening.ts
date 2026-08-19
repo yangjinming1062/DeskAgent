@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url'
 
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
-export const TEXT_PREVIEW_SOURCE_MAX_BYTES = 64 * 1024 * 1024
 
 // Avatar / Sprite / Wardrobe generation: provider call + Pillow re-encode + clip seeding routinely
 // run 15–25s, so the 15s default fires before the backend returns 201.
@@ -48,42 +47,6 @@ export interface SafeStorageApi {
   decryptString?: (encrypted: Buffer) => string
   encryptString: (plainText: string) => Buffer
   isEncryptionAvailable: () => boolean
-}
-
-export function encryptDesktopSecret(
-  value: null | string | undefined,
-  safeStorageApi?: null | SafeStorageApi
-): null | { encoding: 'safeStorage'; value: string } {
-  const raw = String(value || '')
-
-  if (!raw) {
-    return null
-  }
-
-  let encryptionAvailable = false
-
-  try {
-    encryptionAvailable = Boolean(safeStorageApi?.isEncryptionAvailable?.())
-  } catch {
-    encryptionAvailable = false
-  }
-
-  if (!encryptionAvailable) {
-    throw new Error(
-      'Secure token storage is unavailable, so SpiritAgent Desktop cannot save remote gateway tokens. ' +
-        'Enable OS keychain access and try again.'
-    )
-  }
-
-  try {
-    return {
-      encoding: 'safeStorage',
-      value: safeStorageApi!.encryptString(raw).toString('base64')
-    }
-  } catch (error: any) {
-    const detail = error instanceof Error && error.message ? ` (${error.message})` : ''
-    throw new Error(`Failed to encrypt the remote gateway token for secure storage${detail}.`)
-  }
 }
 
 export function sensitiveFileBlockReason(filePath: string): null | string {

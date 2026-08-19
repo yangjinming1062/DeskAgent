@@ -18,7 +18,6 @@ export interface ConnectionIpcDeps {
   getBootProgressState: () => DesktopBootProgress
   ipcMain: IpcMain
   modelDiskCache?: null | ModelDiskCache
-  resetBackendCache?: () => void
   resolvePathTimeoutMs: (path?: string, method?: string, fallbackMs?: number) => number
   resolveTimeoutMs: (timeoutMs?: number | string | null, fallbackMs?: number) => number
 }
@@ -30,10 +29,9 @@ export function registerConnectionIpc({
   getBootProgressState,
   ipcMain,
   modelDiskCache,
-  resetBackendCache,
   resolvePathTimeoutMs,
   resolveTimeoutMs
-}: ConnectionIpcDeps): { resetBackendCache: () => void } {
+}: ConnectionIpcDeps): void {
   ipcMain.handle('spiritagent:connection', async () => ensureBackend())
   ipcMain.handle('spiritagent:gateway:ws-url', async () => {
     const connection = await ensureBackend()
@@ -105,29 +103,6 @@ export function registerConnectionIpc({
     return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
-  ipcMain.handle(
-    'spiritagent:api:asset-cached-path',
-    async (_event, request?: { contentHash?: string; url?: string }) => {
-      const connection = await ensureBackend()
-      const raw = String(request?.url || '')
-
-      if (!raw) {
-        throw new Error('asset url is required')
-      }
-
-      if (!modelDiskCache) {
-        throw new Error('model disk cache is unavailable')
-      }
-
-      return await modelDiskCache.ensureCached({
-        baseUrl: connection.baseUrl,
-        contentHash: request?.contentHash,
-        token: connection.token || undefined,
-        url: raw
-      })
-    }
-  )
-
   ipcMain.handle('spiritagent:api:asset-buffer', async (_event, request?: { contentHash?: string; url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
@@ -175,6 +150,4 @@ export function registerConnectionIpc({
 
     return Buffer.from(await res.arrayBuffer())
   })
-
-  return { resetBackendCache: resetBackendCache || (() => {}) }
 }
