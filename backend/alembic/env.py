@@ -14,8 +14,13 @@ from common.model import ModelBase
 from components.config import SETTINGS
 
 config = context.config
-if config.config_file_name:
-    fileConfig(config.config_file_name)
+# fileConfig 默认 disable_existing_loggers=True 且会用 alembic.ini 的
+# [logger_root]（WARNING + stderr）整个替换 root —— 应用内启动迁移
+# （main.py lifespan 已先 setup_logging）绝不能走这条路径，否则迁移
+# 一跑完整个 web 进程就"失明"（无 access log、无应用日志）。仅 CLI
+# 调用 alembic 时才配置日志。
+if config.config_file_name and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # URL 优先级：调用方显式注入（main.py 启动迁移）> DATABASE_URL 环境变量 > SETTINGS。
 if not config.get_main_option("sqlalchemy.url"):

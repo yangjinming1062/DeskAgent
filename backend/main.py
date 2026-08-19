@@ -55,6 +55,9 @@ def _raw_pg_dsn() -> str:
 def _run_migrations() -> None:
     """Alembic upgrade head; the single 0001 baseline builds the full schema."""
     cfg = Config(str(Path(__file__).parent / "alembic.ini"))
+    # lifespan 已 setup_logging；标记给 env.py，让启动迁移跳过 fileConfig，
+    # 否则 alembic.ini 的 WARNING root 会接管全局日志、禁用所有已建 logger。
+    cfg.attributes["configure_logger"] = False
     cfg.set_main_option("sqlalchemy.url", _sync_pg_url().replace("%", "%%"))
     command.upgrade(cfg, "head")
 
