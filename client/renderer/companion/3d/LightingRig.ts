@@ -2,23 +2,10 @@ import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu'
 
-import type { RenderStyle } from './style/types'
-
 /** Three-point lighting + PMREM environment for PBR material reflections.
  * Tuned for a realistic character bust/half-body framing. */
 
 type RendererHost = THREE.WebGLRenderer | WebGPURenderer
-
-// Light intensities per style profile. Anime hands lighting to the toon
-// ramp: the environment comes off (classic-tier MeshToonMaterial ignores it
-// anyway — WebGLPrograms only grants scene.environment to Standard/Lambert/
-// Phong — so nulling it makes all three renderer tiers agree), ambient
-// rises to lift the ramp's dark band, and the light rim dims because the
-// shader rim takes over edge separation.
-const LIGHT_PRESETS = {
-  anime: { ambient: 0.55, key: 1.6, fill: 0.35, eyeLight: 1.0, rim: 0.4 },
-  realistic: { ambient: 0.3, key: 2.2, fill: 0.85, eyeLight: 0.8, rim: 1.1 }
-} as const
 
 export class LightingRig {
   private readonly ambient: THREE.AmbientLight
@@ -34,7 +21,6 @@ export class LightingRig {
   private readonly envTexture: THREE.Texture
   private readonly disposeEnvTarget: () => void
   private readonly scene: THREE.Scene
-  private style: RenderStyle = 'realistic'
 
   constructor(scene: THREE.Scene, renderer: RendererHost, enableShadows: boolean) {
     this.scene = scene
@@ -97,22 +83,6 @@ export class LightingRig {
     this.rim = new THREE.DirectionalLight(0xede6ff, 1.1)
     this.rim.position.set(0.4, 2.6, -3.0)
     scene.add(this.rim)
-  }
-
-  setStyleProfile(style: RenderStyle): void {
-    if (style === this.style) {
-      return
-    }
-
-    this.style = style
-    const preset = LIGHT_PRESETS[style]
-
-    this.ambient.intensity = preset.ambient
-    this.key.intensity = preset.key
-    this.fill.intensity = preset.fill
-    this.eyeLight.intensity = preset.eyeLight
-    this.rim.intensity = preset.rim
-    this.scene.environment = style === 'realistic' ? this.envTexture : null
   }
 
   dispose(scene: THREE.Scene): void {

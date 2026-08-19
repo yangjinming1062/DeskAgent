@@ -6,7 +6,6 @@ import { safeJsonParse } from '@/shared/lib/safe-json'
 import { $gateway } from '@/shared/store/gateway'
 
 import type { ClipDef } from './clips-biped'
-import type { RenderStyle } from './style/types'
 
 // Model + wardrobe asset catalog for the 3D companion.
 // Backed by the backend /api/companion/model + /api/companion/wardrobe
@@ -25,8 +24,6 @@ export interface ModelInfo {
   rig_type: string
   rig_naming: string
   content_hash: string | null
-  // Seed style the model was generated from — routes NPR vs PBR rendering.
-  style: RenderStyle
 }
 
 export interface WardrobeItem {
@@ -75,7 +72,6 @@ interface CompanionModelResponse {
   status: string
   rig_type: string
   rig_naming: string
-  style?: string
   has_rig: boolean
   has_morph_targets: boolean
   content_hash?: string | null
@@ -92,13 +88,8 @@ export const $modelInfo = atom<ModelInfo>({
   status: 'pending',
   rig_type: 'biped',
   rig_naming: 'mixamo',
-  content_hash: null,
-  style: 'realistic'
+  content_hash: null
 })
-
-// Session-level render-style override. Reset to the model's own style
-// whenever a different model becomes active (Companion3D watches id).
-export const $renderStyle = atom<RenderStyle>('realistic')
 
 export const $wardrobe = atom<WardrobeItem[]>([])
 // True once the first loadCharacter() settles (GLB parsed or procedural
@@ -318,8 +309,7 @@ export async function hydrateModel(): Promise<void> {
         status: res.status,
         rig_type: res.rig_type ?? 'biped',
         rig_naming: res.rig_naming ?? 'mixamo',
-        content_hash: res.content_hash ?? null,
-        style: res.style === 'anime' ? 'anime' : 'realistic'
+        content_hash: res.content_hash ?? null
       })
 
       return

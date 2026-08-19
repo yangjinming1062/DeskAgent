@@ -32,7 +32,6 @@ import {
   $modelRetryable,
   $modelRetryModelId,
   $outfitView,
-  $renderStyle,
   hydrateExpressions,
   hydrateGeneratedClips,
   refreshEquippedAndApply,
@@ -72,7 +71,6 @@ export function Companion3D(): React.JSX.Element {
   const engineReadyRef = useRef<Promise<Engine | null> | null>(null)
   const outfitView = useStore($outfitView)
   const modelInfo = useStore($modelInfo)
-  const renderStyle = useStore($renderStyle)
 
   // Boot engine, wire subscriptions, and kick off initial model load.
   useEffect(() => {
@@ -241,11 +239,6 @@ export function Companion3D(): React.JSX.Element {
     let cancelled = false
     const url = modelInfo.asset_url
 
-    // A different model resets the render-style override to the model's own
-    // seed style (legacy rows default to realistic/PBR).
-    if (modelInfo.id !== null) {
-      $renderStyle.set(modelInfo.style)
-    }
     // Fetch signed bytes via IPC — main re-bases the host, so no CORS preflight.
     // Leverages disk cache & Range resumption when content_hash is present.
     // Null on fetch failure lets CharacterController fall through to procedural.
@@ -324,42 +317,12 @@ export function Companion3D(): React.JSX.Element {
       }
 
       refreshEquippedAndApply()
-      // Reloads keep the active render style (StyleDirector re-applies it
-      // to the fresh root during attach).
-      engine.setRenderStyle($renderStyle.get())
     })()
 
     return () => {
       cancelled = true
     }
-  }, [
-    modelInfo.asset_url,
-    modelInfo.content_hash,
-    modelInfo.id,
-    modelInfo.morph_params,
-    modelInfo.rig_type,
-    modelInfo.style
-  ])
-
-  // Hot-switch NPR ⇄ PBR. Gated on the first model settling so the egg
-  // window never flips lighting presets pointlessly.
-  useEffect(() => {
-    let cancelled = false
-
-    void (async () => {
-      const engine = await engineReadyRef.current
-
-      if (!engine || cancelled) {
-        return
-      }
-
-      engine.setRenderStyle(renderStyle)
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [renderStyle])
+  }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.morph_params, modelInfo.rig_type])
 
   // Apply the equipped set (or a live preview candidate) on every change. A
   // preview replaces only the equipped item in its own slot — other slots keep

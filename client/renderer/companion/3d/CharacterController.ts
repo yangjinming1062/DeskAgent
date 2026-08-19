@@ -16,9 +16,6 @@ import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames, type CompanionExpression } from './model-store'
 import { MorphController } from './MorphController'
 import type { PhysicsBackend, PhysicsUnit } from './physics/PhysicsBackend'
-import { StyleDirector } from './style/StyleDirector'
-import { isToonMaterial, type ToonNodeMaterial } from './style/toon-materials'
-import type { RenderStyle } from './style/types'
 import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
@@ -101,19 +98,7 @@ type PbrMaterial = THREE.MeshStandardMaterial | MeshStandardNodeMaterial
 const isPbrMaterial = (m: THREE.Material): m is PbrMaterial =>
   m instanceof THREE.MeshStandardMaterial || m instanceof MeshStandardNodeMaterial
 
-// Toon materials only carry the albedo/normal channels of the wardrobe PBR
-// set; roughness/metalness/displacement binds are PBR-only no-ops.
-const setToonSlot = (m: ToonNodeMaterial | THREE.MeshToonMaterial, slot: PbrSlot, tex: THREE.Texture | null): void => {
-  if (slot !== 'map' && slot !== 'normalMap') {
-    return
-  }
-
-  m[slot] = tex
-  m.needsUpdate = true
-}
-
-/** Bind a wardrobe channel texture onto whichever material set is mounted
- * (PBR originals or toon twins). */
+/** Bind a wardrobe channel texture onto the GLB-native PBR material. */
 const applyChannelTexture = (m: THREE.Material, slot: PbrSlot, tex: THREE.Texture | null): void => {
   if (isPbrMaterial(m)) {
     setPbrSlot(m, slot, tex)
@@ -122,13 +107,10 @@ const applyChannelTexture = (m: THREE.Material, slot: PbrSlot, tex: THREE.Textur
       m.displacementScale = 0.003
       m.displacementBias = -0.0015
     }
-  } else if (isToonMaterial(m)) {
-    setToonSlot(m, slot, tex)
   }
 }
 
-/** Restore the GLB-native base texture for map/normalMap on either
- * material set (fetch-failure fallback + channel clear). */
+/** Restore the GLB-native base texture for map/normalMap (fetch-failure fallback + channel clear). */
 const restoreBaseTexture = (m: THREE.Material, slot: PbrSlot): void => {
   if (slot !== 'map' && slot !== 'normalMap') {
     return
@@ -143,8 +125,6 @@ const restoreBaseTexture = (m: THREE.Material, slot: PbrSlot): void => {
 
   if (isPbrMaterial(m)) {
     setPbrSlot(m, slot, base)
-  } else if (isToonMaterial(m)) {
-    setToonSlot(m, slot, base)
   }
 }
 
@@ -299,11 +279,9 @@ export class CharacterController {
   private units: AssembledUnit[] = []
   private bodyCollider: BodyCollider | null = null
   private boneRestQuats = new Map<string, THREE.Quaternion>()
-  private readonly styleDirector: StyleDirector
 
-  constructor(physics: PhysicsBackend, opts: { nodePipeline: boolean }) {
+  constructor(physics: PhysicsBackend) {
     this.physics = physics
-    this.styleDirector = new StyleDirector({ nodePipeline: opts.nodePipeline })
   }
 
   private getAction(name: string): THREE.AnimationAction | null {
@@ -436,11 +414,6 @@ export class CharacterController {
 
         this.actionNames = new Set(this.clips.keys())
         $availableClipNames.set(new Set(this.actionNames))
-        // Attach the style layer BEFORE morph discovery so outline-hull
-        // clones (own morphTargetInfluences, shared geometry) get driven by
-        // the same blink/lip-sync pass, and while the skeleton still sits
-        // in rest pose for the facial-normal bake.
-        this.styleDirector.attachCharacter(this.root, this.headBone, this.neckBone)
         this.morph.discover(this.root)
         this.applyState(this.currentState, null)
 
@@ -501,9 +474,6 @@ export class CharacterController {
     this.units = []
     this.bodyCollider = null
     this.boneRestQuats.clear()
-    // Restore PBR materials first so disposeObjectTree traverses (and
-    // GPU-releases) the original GLB materials rather than orphaned stashes.
-    this.styleDirector.reset()
     disposeObjectTree(this.root)
     this.root = new THREE.Group()
   }
@@ -716,10 +686,7 @@ export class CharacterController {
       const mats = Array.isArray(child.material) ? child.material : [child.material]
 
       for (const mat of mats) {
-        const std = isPbrMaterial(mat)
-        const toon = !std && isToonMaterial(mat)
-
-        if ((!std && !toon) || !mat.color) {
+        if (!isPbrMaterial(mat) || !mat.color) {
           continue
         }
 
@@ -733,16 +700,12 @@ export class CharacterController {
           mat.color.set(ov.color)
         }
 
-        // Roughness / metalness are PBR-only slots — toon twins take the
-        // color override alone.
-        if (std) {
-          if (ov.roughness !== undefined) {
-            mat.roughness = ov.roughness
-          }
+        if (ov.roughness !== undefined) {
+          mat.roughness = ov.roughness
+        }
 
-          if (ov.metalness !== undefined) {
-            mat.metalness = ov.metalness
-          }
+        if (ov.metalness !== undefined) {
+          mat.metalness = ov.metalness
         }
       }
     })
@@ -903,10 +866,6 @@ export class CharacterController {
 
     this.root.add(group)
     this.units.push({ group, physics, key: item.mesh_url ?? '', anchors })
-    // Style the assembled unit (outline hulls; toon twins when anime is
-    // active). Runs after physics.createUnit so cloth-solver materials —
-    // which own their vertex pipeline — are identifiable and skipped.
-    this.styleDirector.attachUnit(group)
 
     // Bind PBR textures scoped to the unit's meshes only.
     this.bindPbrChannels(item, meshes)
@@ -1183,8 +1142,6 @@ export class CharacterController {
             m.displacementScale = 0
             m.displacementBias = 0
           }
-        } else if (isToonMaterial(m)) {
-          restoreBaseTexture(m, slot)
         }
       }
     })
@@ -1240,45 +1197,6 @@ export class CharacterController {
 
   dispose(): void {
     this.disposeRoot(null)
-    this.styleDirector.dispose()
-  }
-
-  /** Hot-switch the render style (NPR toon ⇄ PBR). Switching back to PBR
-   * replays the current wardrobe channel textures — anime-mode binds only
-   * reached the toon twins. */
-  setRenderStyle(style: RenderStyle): void {
-    this.styleDirector.setStyle(style, () => this.rebindCurrentOutfitChannels())
-  }
-
-  private rebindCurrentOutfitChannels(): void {
-    for (const channel of Object.keys(this.currentPbrTex) as PbrChannel[]) {
-      const tex = this.currentPbrTex[channel]
-
-      if (!tex) {
-        continue
-      }
-
-      const def = PBR_CHANNEL_DEFS[channel]
-
-      this.root.traverse(child => {
-        if (!(child instanceof THREE.Mesh) || this.isUnitDescendant(child)) {
-          return
-        }
-
-        const mats = Array.isArray(child.material) ? child.material : [child.material]
-
-        for (const m of mats) {
-          if (isPbrMaterial(m)) {
-            setPbrSlot(m, def.slot, tex)
-
-            if (def.slot === 'displacementMap') {
-              m.displacementScale = 0.003
-              m.displacementBias = -0.0015
-            }
-          }
-        }
-      })
-    }
   }
 
   private playClip(name: string, fade: number): void {
