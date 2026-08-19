@@ -1,3 +1,4 @@
+import { ChatMessagePlayButton } from './chat-message-play-button'
 import type { ChatMessage } from './chat-store'
 
 // Centered meta line rather than a chat bubble.
@@ -39,23 +40,37 @@ export function MessageBubble({ message }: { message: ChatMessage }): React.JSX.
     )
   }
 
+  // 「播放」按钮只展示在已完成、可朗读、有真实文本的精灵回复上：
+  //   - 非用户消息
+  //   - 流式已结束（streaming=false）
+  //   - 有 text 且非 error / cancelled / tool 占位
+  const showPlayButton =
+    !isUser && !message.streaming && Boolean(message.text) && !message.error && !message.cancelled && !message.toolName
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div
-        className={`max-w-[80%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
-          isUser ? 'rounded-br-sm bg-(--theme-primary, #6c8aff) text-white' : 'rounded-bl-sm bg-white/10 text-white/90'
-        }`}
-      >
-        {message.error ? (
-          <span className="text-amber-300/90">😬 {message.error}</span>
-        ) : message.cancelled ? (
-          <span className="text-white/50">已停止</span>
-        ) : message.toolName ? (
-          <span className="text-white/60">🔧 正在使用 {message.toolName}…</span>
-        ) : message.text ? (
-          message.text
-        ) : (
-          '…'
+      <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
+        <div
+          className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+            isUser
+              ? 'rounded-br-sm bg-(--theme-primary, #6c8aff) text-white'
+              : 'rounded-bl-sm bg-white/10 text-white/90'
+          }`}
+        >
+          {message.error ? (
+            <span className="text-amber-300/90">😬 {message.error}</span>
+          ) : message.cancelled ? (
+            <span className="text-white/50">已停止</span>
+          ) : message.toolName ? (
+            <span className="text-white/60">🔧 正在使用 {message.toolName}…</span>
+          ) : message.text ? (
+            message.text
+          ) : (
+            '…'
+          )}
+        </div>
+        {showPlayButton && (
+          <ChatMessagePlayButton className="mt-1" messageId={message.id} text={message.text} />
         )}
       </div>
     </div>

@@ -48,42 +48,91 @@ export function isLatestGen(gen: number): boolean {
   return gen === playGen
 }
 
-export async function playDataUrl(dataUrl: string): Promise<boolean> {
+export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise<boolean> {
   stopAudio()
   const audio = new Audio(dataUrl)
   current = audio
-  await startAmplitudeLoop(audio)
 
-  try {
-    await audio.play()
-  } catch {
+  // Wire up the 'ended' / 'error' listeners BEFORE any await, so a fast
+  // `emit('ended')` from a test (or a real audio-end event) can never race
+  // past the point where listeners get attached.
+  let resolvePlayback!: (ok: boolean) => void
+
+  const playbackEnded = new Promise<boolean>(resolve => {
+    resolvePlayback = resolve
+  })
+
+  // `fired` makes `fireDone` idempotent: even if multiple sources (listener,
+  // stopAudio, play-failure branch) try to settle the promise, only the first
+  // call wins.
+  let fired = false
+
+  const fireDone = (ok: boolean): void => {
+    if (fired) {
+      return
+    }
+
+    fired = true
+
+    if (currentDone === stopDone) {
+      currentDone = null
+    }
+
+    resolvePlayback(ok)
+
+    if (onDone) {
+      onDone()
+    }
+  }
+
+  // `currentDone` is invoked by stopAudio(). Wrap `fireDone` in a thin closure
+  // that always reports failure (stop is never a "successful" playback end).
+  const stopDone = (): void => fireDone(false)
+
+  currentDone = stopDone
+
+  const endedHandler: EventListener = () => fireDone(true)
+  const errorHandler: EventListener = () => fireDone(false)
+  audio.addEventListener('ended', endedHandler, { once: true })
+  audio.addEventListener('error', errorHandler, { once: true })
+  currentListeners = [
+    ['ended', endedHandler],
+    ['error', errorHandler]
+  ]
+
+  // Kick off playback immediately, then wire up the analyser in parallel.
+  //
+  // The previous shape — `await startAmplitudeLoop(audio)` BEFORE
+  // `await audio.play()` — forced every TTS playback to wait for
+  // AudioContext.resume() to settle (50–150 ms on an idle / suspended context,
+  // and the renderer was logging "power profile -> dormant" right before the
+  // user reported the issue, confirming the context had gone cold). During
+  // that wait the audio element was already loaded but `play()` hadn't been
+  // called yet, so the very first syllable of every TTS line felt "cut off"
+  // even though the encoded MP3 itself began at t=0.
+  //
+  // HTMLAudioElement playback and Web Audio analyser routing are independent
+  // — `play()` does not require the AudioContext to be running. So we start
+  // playback first and connect the analyser asynchronously. Lip-sync lags by
+  // the same 50–150 ms, but the mouth doesn't visibly move in the first frame
+  // anyway, and the analyser pipeline still has plenty of audio to capture
+  // once it's wired up.
+  const playPromise = audio.play().catch(err => err)
+  void startAmplitudeLoop(audio).catch(() => undefined)
+
+  const playResult = await playPromise
+
+  if (playResult instanceof Error) {
     if (current === audio) {
       current = null
     }
 
+    fireDone(false)
+
     return false
   }
 
-  await new Promise<void>(resolve => {
-    currentDone = resolve
-
-    const done: EventListener = () => {
-      if (currentDone === resolve) {
-        currentDone = null
-      }
-
-      resolve()
-    }
-
-    audio.addEventListener('ended', done, { once: true })
-    audio.addEventListener('error', done, { once: true })
-    currentListeners = [
-      ['ended', done],
-      ['error', done]
-    ]
-  })
-
-  return true
+  return await playbackEnded
 }
 
 // ── Analyser-driven amplitude for 3D lip sync ─────────────────────────────

@@ -12,7 +12,8 @@ async function synth(
   text: string,
   voice: string | undefined,
   context: string | undefined,
-  persist: boolean
+  persist: boolean,
+  onDone?: () => void
 ): Promise<boolean> {
   const gen = nextGen()
   $voicePreparing.set(true)
@@ -29,7 +30,13 @@ async function synth(
       return false
     }
 
-    return await playDataUrl(res.dataUrl)
+    return await playDataUrl(res.dataUrl, () => {
+      // Only the latest generation's lifecycle signal is meaningful — stale
+      // resolves leak the closure but harmlessly invoke a no-op.
+      if (isLatestGen(gen) && onDone) {
+        onDone()
+      }
+    })
   } catch {
     stopAudio()
 
@@ -50,4 +57,11 @@ export async function speak(text: string, voice?: string, context?: string): Pro
  *  同一组 (音色, 台词) 一辈子只花一次云端额度。 */
 export async function speakScripted(text: string, voice?: string, context?: string): Promise<boolean> {
   return await synth(text, voice, context, true)
+}
+
+/** 聊天窗口里用户主动点击消息气泡下方的「播放」按钮时的入口。语义与
+ *  {@link speak} 一致——动态、单次、命中即停——但永远走磁盘缓存，保证同一段
+ *  (voice, text) 跨会话只会消耗一次云端额度。 */
+export async function speakChatMessage(text: string, voice?: string, onDone?: () => void): Promise<boolean> {
+  return await synth(text, voice, 'chat.replay', true, onDone)
 }

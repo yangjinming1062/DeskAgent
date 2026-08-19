@@ -91,23 +91,21 @@ beforeEach(() => {
 })
 
 describe('playDataUrl', () => {
-  it('waits for the suspended AudioContext to resume before starting playback', async () => {
+  it('starts playback immediately without waiting for AudioContext resume', async () => {
     let resolveResume: (() => void) | undefined
     hoisted.resumeGate = () => new Promise<void>(resolve => (resolveResume = resolve))
 
     const { playDataUrl } = await import('./audio-track')
     const playback = playDataUrl('data:audio/mpeg;base64,α')
 
+    // play() must fire even before ctx.resume() settles — that's the whole
+    // point of kicking both off in parallel. The previous shape forced every
+    // TTS playback to wait for AudioContext.resume() (50–150 ms on idle),
+    // which made the first syllable of every line feel cut off.
+    await vi.waitFor(() => expect(hoisted.events).toContain('play'))
     await vi.waitFor(() => expect(hoisted.events).toContain('resume'))
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(hoisted.events).not.toContain('play')
 
     resolveResume?.()
-    await vi.waitFor(() => expect(hoisted.events).toContain('play'))
-
-    expect(hoisted.events.indexOf('resume')).toBeLessThan(hoisted.events.indexOf('play'))
-    expect(hoisted.events.indexOf('source.connect')).toBeLessThan(hoisted.events.indexOf('play'))
 
     FakeAudio.instances[0].emit('ended')
     await expect(playback).resolves.toBe(true)
@@ -120,6 +118,8 @@ describe('playDataUrl', () => {
     const playback = playDataUrl('data:audio/mpeg;base64,β')
 
     await vi.waitFor(() => expect(hoisted.events).toContain('play'))
+    // When resume rejects, the analyser pipeline never wires up — that's
+    // expected. The audio itself still plays.
     expect(hoisted.events).not.toContainEqual('source:data:audio/mpeg;base64,β')
 
     FakeAudio.instances[0].emit('ended')
