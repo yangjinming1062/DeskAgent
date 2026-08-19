@@ -40,6 +40,13 @@ class FullbodyStyleItem(BaseModel):
     label_zh: str
 
 
+class FullbodySamplesRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
+    content_type: str | None = Field(default=None, max_length=64)
+
+
 class FullbodySamplesResponse(BaseModel):
     samples: dict[str, str] = Field(default_factory=dict)
 
@@ -49,12 +56,15 @@ class FullbodyFrontGenerateRequest(BaseModel):
 
     style: str = Field(default="cel_shading", max_length=64)
     feedback: str | None = Field(default=None, max_length=500)
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
+    content_type: str | None = Field(default=None, max_length=64)
 
 
 class FullbodyConfirmFrontRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     style: str | None = Field(default=None, max_length=64)
+    front_url: str | None = Field(default=None, max_length=2048)
 
 
 class AvatarGenerateRequest(BaseModel):

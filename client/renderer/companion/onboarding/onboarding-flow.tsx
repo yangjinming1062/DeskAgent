@@ -1122,7 +1122,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     clearPortraitHistory()
-    updateRefImage(null)
     setPresentationRef(null)
 
     // Advance to fullbody-3d
@@ -1145,7 +1144,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     try {
       const res = await window.spiritagent.api<{ samples?: Record<string, string> }>({
         path: `/api/companion/avatar/${avatarId}/fullbody/samples`,
-        method: 'POST'
+        method: 'POST',
+        body: refImage
+          ? {
+              image: refImage.base64,
+              content_type: refImage.contentType
+            }
+          : undefined
       })
 
       if (res?.samples && Object.keys(res.samples).length > 0) {
@@ -1188,7 +1193,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         method: 'POST',
         body: {
           style: fullbodyStyle,
-          feedback: fullbodyFeedback.trim() || undefined
+          feedback: fullbodyFeedback.trim() || undefined,
+          image: refImage?.base64,
+          content_type: refImage?.contentType
         }
       })
 
@@ -1231,7 +1238,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       }>({
         path: `/api/companion/avatar/${activeAvatarId}/fullbody/confirm-front`,
         method: 'POST',
-        body: { style: fullbodyStyle }
+        body: {
+          style: fullbodyStyle,
+          front_url: fullbodyFrontUrl || undefined
+        }
       })
 
       await applyPortrait({
@@ -1323,6 +1333,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     void clearDraftRefImage()
+    updateRefImage(null)
     setPhase('greeting')
 
     const ok = await playOnboardingAudio('onboarding.greeting')

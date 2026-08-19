@@ -677,6 +677,21 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
     return asset
 
 
+def _normalize_avatar_url_to_bare(url: str | None) -> str:
+    if not url:
+        return ""
+    clean = url.strip().replace("\\", "/")
+    if clean.startswith(("companion-avatars/", "temp-media/")):
+        return clean
+    if "/api/media/files/" in clean:
+        fid = clean.split("/api/media/files/", 1)[1].split("?")[0].split("/")[0]
+        return f"temp-media/{fid}"
+    if "/api/companion/avatar/file/" in clean:
+        filename = clean.split("/api/companion/avatar/file/", 1)[1].split("?")[0].split("/")[0]
+        return f"companion-avatars/{filename}"
+    return clean
+
+
 def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | None = None, reference_content_type: str | None = None) -> str | None:
     if reference_image:
         mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
@@ -684,7 +699,9 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
     return load_avatar_bytes_as_data_uri(asset.asset_url)
 
 
-async def generate_fullbody_style_samples(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int) -> dict[str, str]:
+async def generate_fullbody_style_samples(
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, reference_image: str | None = None, reference_content_type: str | None = None
+) -> dict[str, str]:
     """Generate 1 front sample image for each style in STYLE_CATALOG concurrently."""
     if user_id is None:
         raise ValueError("user_id is required")
@@ -712,7 +729,7 @@ async def generate_fullbody_style_samples(db: AsyncSession | None = None, user_i
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
     template = resolve_fullbody_template(species, "biped", "cel_shading")
-    ref_uri = _subject_reference_for_avatar(asset)
+    ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     tasks = []
     for style_info in STYLE_CATALOG:
@@ -818,7 +835,9 @@ async def generate_fullbody_front(
     return await _write(db)
 
 
-async def confirm_fullbody_front(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None) -> AvatarAsset:
+async def confirm_fullbody_front(
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None
+) -> AvatarAsset:
     """Confirm the front fullbody view and automatically generate right + back views."""
     if user_id is None:
         raise ValueError("user_id is required")
@@ -836,7 +855,13 @@ async def confirm_fullbody_front(db: AsyncSession | None = None, user_id: int | 
     else:
         asset, persona = await _fetch(db)
 
-    if not asset.seed_front_url:
+    effective_front_url = asset.seed_front_url
+    if front_url:
+        normalized_front = _normalize_avatar_url_to_bare(front_url)
+        if normalized_front:
+            effective_front_url = normalized_front
+
+    if not effective_front_url:
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
@@ -849,7 +874,7 @@ async def confirm_fullbody_front(db: AsyncSession | None = None, user_id: int | 
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     # The confirmed front image serves as the subject reference for side & back
-    front_ref_uri = load_avatar_bytes_as_data_uri(asset.seed_front_url) or _subject_reference_for_avatar(asset)
+    front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
 
     cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
     prompts = {
@@ -884,6 +909,7 @@ async def confirm_fullbody_front(db: AsyncSession | None = None, user_id: int | 
         target = await session.get(AvatarAsset, avatar_id)
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        target.seed_front_url = effective_front_url
         if "right" in generated:
             target.seed_right_url = generated["right"]
         if "back" in generated:

@@ -111,3 +111,76 @@ async def test_fullbody_confirm_without_front_raises(SessionLocal):
 
         with pytest.raises(FrontSeedMissingError):
             await confirm_fullbody_front(db, user_id, avatar_id=avatar.id, style="cel_shading")
+
+
+@pytest.mark.asyncio
+async def test_fullbody_direct_confirm_with_sample_url(SessionLocal):
+    user_id = 404
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "魔法少女"}',
+            asset_url="companion-avatars/test.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with patch(
+            "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("companion-avatars/aux_view.jpg", "file1", "jpg", "https://source.example/test.jpg")
+
+            # Direct confirmation passing sample url as front_url
+            confirmed_asset = await confirm_fullbody_front(
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="cel_shading",
+                front_url="/api/companion/avatar/file/sample_front.jpg?sig=abc",
+            )
+            assert "sample_front" in confirmed_asset.seed_front_url
+            assert "aux_view" in confirmed_asset.seed_right_url
+            assert "aux_view" in confirmed_asset.seed_back_url
+
+
+@pytest.mark.asyncio
+async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
+    user_id = 405
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "机械武士"}',
+            asset_url="companion-avatars/test.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with patch(
+            "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            mock_gen.return_value = ("companion-avatars/sample.jpg", "file1", "jpg", "https://source.example/test.jpg")
+
+            custom_ref_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+            samples = await generate_fullbody_style_samples(
+                db, user_id, avatar_id=avatar.id, reference_image=custom_ref_b64, reference_content_type="image/png"
+            )
+            assert len(samples) == 2
+            for call in mock_gen.call_args_list:
+                assert call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"
+
+            mock_gen.return_value = ("companion-avatars/front_custom.jpg", "file1", "jpg", "https://source.example/test.jpg")
+            asset = await generate_fullbody_front(
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="anime_game_cg",
+                reference_image=custom_ref_b64,
+                reference_content_type="image/png",
+            )
+            assert "front_custom" in asset.seed_front_url
+            last_call = mock_gen.call_args_list[-1]
+            assert last_call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"

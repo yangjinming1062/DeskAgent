@@ -19,6 +19,7 @@ from modules.companion import (
     ExpressionAvatarRequest,
     FullbodyConfirmFrontRequest,
     FullbodyFrontGenerateRequest,
+    FullbodySamplesRequest,
     FullbodySamplesResponse,
     FullbodyStyleItem,
     ModelGenerateRequest,
@@ -351,11 +352,17 @@ async def get_fullbody_styles() -> list[FullbodyStyleItem]:
 @router.post("/avatar/{avatar_id}/fullbody/samples", response_model=FullbodySamplesResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_samples(
-    request: Request, avatar_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    request: Request,
+    avatar_id: int,
+    body: FullbodySamplesRequest = Body(default_factory=FullbodySamplesRequest),
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> FullbodySamplesResponse:
     user, _ = auth
+    raw, content_type = _decode_upload_image(body.image, body.content_type)
+    ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
     try:
-        samples = await generate_fullbody_style_samples(db, user.id, avatar_id=avatar_id)
+        samples = await generate_fullbody_style_samples(db, user.id, avatar_id=avatar_id, reference_image=ref_b64, reference_content_type=content_type)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except SeedPromptMissingError as exc:
@@ -376,8 +383,12 @@ async def post_fullbody_front(
     request: Request, avatar_id: int, body: FullbodyFrontGenerateRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> AvatarAssetResponse:
     user, _ = auth
+    raw, content_type = _decode_upload_image(body.image, body.content_type)
+    ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
     try:
-        asset = await generate_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback)
+        asset = await generate_fullbody_front(
+            db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, reference_image=ref_b64, reference_content_type=content_type
+        )
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except SeedPromptMissingError as exc:
@@ -399,7 +410,7 @@ async def post_fullbody_confirm_front(
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
-        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style)
+        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except FrontSeedMissingError as exc:
