@@ -2423,10 +2423,15 @@ class _FakeProvider:
     SUPPORTS_MULTIVIEW = False
     SUPPORTS_ANIMATE_BIND = True
 
-    def __init__(self, clip_map: dict[str, str], *, animate_fails: bool = False):
+    def __init__(
+        self, clip_map: dict[str, str], *, animate_fails: bool = False, supports_rigging: bool = True, supports_animate_bind: bool = True
+    ):
         self._clip_map = clip_map
         self._animate_fails = animate_fails
+        self.SUPPORTS_RIGGING = supports_rigging
+        self.SUPPORTS_ANIMATE_BIND = supports_animate_bind
         self.calls: list[str] = []
+        self.downloaded_urls: list[str] = []
 
     def animation_clips(self, rig_type: str) -> dict[str, str]:
         return self._clip_map
@@ -2443,9 +2448,11 @@ class _FakeProvider:
         return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url=f"https://cdn/{job.job_id}.glb"),))
 
     async def download(self, result, dest_dir):
+        url = next(a.url for a in result.assets if a.url)
+        self.downloaded_urls.append(url)
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / "m.glb"
-        dest.write_bytes(b"glTF-fake")
+        dest.write_bytes(f"glTF-fake:{url}".encode())
         return dest
 
     async def start_rig(self, job_id: str, rig_type: str):
@@ -2480,7 +2487,7 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type=rig_type, provider_task_id="task_prev" if retry_only else None)
+        row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type=rig_type, provider_task_id="task_prev" if retry_only else None, provider_phase="animate" if retry_only else "submit")
         db.add(row)
         await db.commit()
         await db.refresh(row)
@@ -2500,6 +2507,7 @@ async def test_chain_persists_clip_map_when_animate_bind_succeeds(_patch_db, mon
     row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped")
 
     assert provider.calls == ["submit", "rig", "animate"]
+    assert provider.downloaded_urls == ["https://cdn/task_anim.glb"]
     assert json.loads(row.clip_map_json) == {"idle": "preset:biped:idle"}
 
 
@@ -2510,6 +2518,7 @@ async def test_chain_skips_animate_bind_for_rig_without_presets(_patch_db, monke
     row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="avian")
 
     assert "animate" not in provider.calls
+    assert provider.downloaded_urls == ["https://cdn/task_rig.glb"]
     assert json.loads(row.clip_map_json) == {}
 
 
@@ -2520,6 +2529,7 @@ async def test_chain_leaves_clip_map_empty_when_animate_bind_fails(_patch_db, mo
     row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped")
 
     assert "animate" in provider.calls
+    assert provider.downloaded_urls == ["https://cdn/task_rig.glb"]
     assert json.loads(row.clip_map_json) == {}
 
 
@@ -2527,9 +2537,33 @@ async def test_chain_leaves_clip_map_empty_when_animate_bind_fails(_patch_db, mo
 async def test_chain_retry_only_skips_all_enhancement_hops(_patch_db, monkeypatch, SessionLocal, tmp_path):
     """重试下载时 provider_task_id 已是链末任务，重跑增强跳会重复计费。"""
     provider = _FakeProvider({"idle": "preset:biped:idle"})
-    await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", retry_only=True)
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", retry_only=True)
 
     assert provider.calls == []
+    assert provider.downloaded_urls == ["https://cdn/task_prev.glb"]
+    assert row.provider_phase == "animate"
+
+
+@pytest.mark.asyncio
+async def test_chain_downloads_raw_result_once_when_rigging_unsupported(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """无云端绑骨能力时动画绑定不可进入，raw task 就是链末产物。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"}, supports_rigging=False, supports_animate_bind=True)
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="raw-provider")
+
+    assert provider.calls == ["submit"]
+    assert provider.downloaded_urls == ["https://cdn/task_gen.glb"]
+    assert row.status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_chain_downloads_rigged_result_once_when_animate_bind_unsupported(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """云端动画绑定缺位时，已绑骨 task 就是链末产物。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"}, supports_animate_bind=False)
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="rig-only-provider")
+
+    assert provider.calls == ["submit", "rig"]
+    assert provider.downloaded_urls == ["https://cdn/task_rig.glb"]
+    assert json.loads(row.clip_map_json) == {}
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,8 @@
 """图生 3D 模型能力链编排。
 
-链拓扑（``task_id`` 串联,bytes 不跨 hop 传递）：submit → poll → download →
+链拓扑（``task_id`` 串联,bytes 不跨 hop 传递）：submit → poll →
 按 ``provider.SUPPORTS_RIGGING`` 可选 cloud_rig → 按 ``provider.SUPPORTS_ANIMATE_BIND``
-可选 cloud_animate_bind → 落库。云端每一步直接给出的 GLB 即为终产物,后端不解析、不校验、不二次处理。
+可选 cloud_animate_bind → download → 落库。只有链末产物会下载,后端不解析、不校验、不二次处理。
 """
 
 import asyncio
@@ -64,7 +64,7 @@ def get_model_job_lock(user_id: int) -> asyncio.Lock:
 @dataclass
 class _PipelineState:
     provider_task_id: str
-    glb_bytes: bytes
+    assets: tuple[Model3DAsset, ...]
 
 
 def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
@@ -352,8 +352,7 @@ async def _maybe_apply_capability(
         await _persist_download_source(
             model_id, user_id=user_id, task_id=new_job.job_id, assets=result.assets, provider_label=provider.provider_name, rig_type=rig_type, phase=phase
         )
-        glb_bytes = await _download_one_step(provider=provider, user_id=user_id, model_id=model_id, task_id=new_job.job_id, assets=result.assets)
-        return _PipelineState(provider_task_id=new_job.job_id, glb_bytes=glb_bytes), True
+        return _PipelineState(provider_task_id=new_job.job_id, assets=result.assets), True
     except Exception:
         logger.warning("cloud capability %s failed; keeping current state for SPEC check", capability_attr, extra={"user_id": user_id, "model_id": model_id}, exc_info=True)
         return state, False
@@ -362,7 +361,7 @@ async def _maybe_apply_capability(
 async def run_capability_chain(
     *, provider_name: str | None, user_id: int, view_filenames: dict[str, str], species: str, model_id: int, style: str = "realistic", retry_only: bool = False
 ) -> None:
-    """submit → poll → download → 可选 cloud_rig / cloud_animate_bind → 落库。``retry_only=True`` 跳过 submit,直接用持久 ``provider_task_id`` 重新驱动后续跳。"""
+    """submit → poll → 可选 cloud_rig / cloud_animate_bind → download → 落库。``retry_only=True`` 跳过 submit,直接用持久 ``provider_task_id`` 重新驱动后续跳。"""
     try:
         provider = _resolve_model_provider(provider_name)
     except ModelProviderNotConfiguredError as exc:
@@ -396,13 +395,17 @@ async def run_capability_chain(
         rig_type = record.rig_type or await select_rig_type(chat, species, user_id=user_id)
         provider_label = record.provider or _provider_result_label(provider.provider_name, multiview=len(view_filenames) > 1)
 
-        # 先落库再下载：付费结果恢复句柄固化。
-        await _persist_download_source(model_id, user_id=user_id, task_id=job.job_id, assets=gen_result.assets, provider_label=provider_label, rig_type=rig_type)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            glb_path = await _download_with_retry(provider, user_id=user_id, model_id=model_id, task_id=job.job_id, assets=list(gen_result.assets), dest_dir=Path(tmp))
-            raw_bytes = await asyncio.to_thread(glb_path.read_bytes)
-        state = _PipelineState(provider_task_id=job.job_id, glb_bytes=raw_bytes)
+        # 先落库付费任务恢复句柄；增强跳只消费 task_id，GLB 延迟到链末统一下载。
+        await _persist_download_source(
+            model_id,
+            user_id=user_id,
+            task_id=job.job_id,
+            assets=gen_result.assets,
+            provider_label=provider_label,
+            rig_type=rig_type,
+            phase=record.provider_phase if retry_only else "submit",
+        )
+        state = _PipelineState(provider_task_id=job.job_id, assets=gen_result.assets)
     except Exception as exc:
         logger.warning(
             "3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "error": str(exc)}, exc_info=True
@@ -417,7 +420,7 @@ async def run_capability_chain(
     # 此时映射已由首轮的动画绑定跳固化在行上,直接读回。
     clip_map: dict[str, str] = json.loads(record.clip_map_json or "{}") if retry_only else {}
     if not retry_only:
-        state, _ = await _maybe_apply_capability(
+        state, rigged = await _maybe_apply_capability(
             state,
             capability_attr="SUPPORTS_RIGGING",
             progress_stage="rigging",
@@ -432,7 +435,7 @@ async def run_capability_chain(
         )
         # 空映射代表该骨架无可用预设(avian),整跳不进入——走异常分支会在正常生成里留下形似故障的堆栈。
         provider_clips = provider.animation_clips(rig_type)
-        if provider_clips:
+        if rigged and provider_clips:
             state, animated = await _maybe_apply_capability(
                 state,
                 capability_attr="SUPPORTS_ANIMATE_BIND",
@@ -451,7 +454,8 @@ async def run_capability_chain(
             await _persist_clip_map(model_id, clip_map)
 
     try:
-        asset_url = await asyncio.to_thread(save_companion_model, state.glb_bytes, user_id=user_id)
+        glb_bytes = await _download_one_step(provider=provider, user_id=user_id, model_id=model_id, task_id=state.provider_task_id, assets=state.assets)
+        asset_url = await asyncio.to_thread(save_companion_model, glb_bytes, user_id=user_id)
         activated = await _finalize_generation(
             model_id, user_id, asset_url=asset_url, provider=provider_label, species=species, rig_type=rig_type, style=record.style or style, clip_map=clip_map
         )

@@ -7,16 +7,16 @@
 ## 1. 链拓扑
 
 ```
-submit(seed) → poll → download              → raw GLB（无骨架）
-[SUPPORTS_RIGGING]                          → start_rig → poll → download   → rigged GLB
-[SUPPORTS_ANIMATE_BIND & animation_clips(rig_type) ≠ {}] → start_animate_bind → poll → download → final GLB
-落盘 → companion-models/<uid>/<sha>.glb
+submit(seed) → poll → raw task
+[SUPPORTS_RIGGING] → start_rig → poll → rigged task
+[SUPPORTS_ANIMATE_BIND & animation_clips(rig_type) ≠ {}] → start_animate_bind → poll → animated task
+chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 ```
 
 **关键不变量**：
 
-- **`task_id` 串联**：每跳用前跳的 `task_id` 作为输入，链不传递 GLB bytes；终产物才落盘。
-- **能力缺位自动跳过**：`SUPPORTS_RIGGING=False` 时跳过 rig；`SUPPORTS_ANIMATE_BIND=False` 或 `animation_clips(rig_type) == {}` 时跳过 animate_bind（avian 即此情况，产物是绑骨无动画的 GLB）。
+- **`task_id` 串联**：每跳用前跳的 `task_id` 作为输入，链不传递 GLB bytes；链末产物只下载一次并落盘。
+- **能力缺位自动跳过**：`SUPPORTS_RIGGING=False` 或绑骨失败时交付 raw task 的 GLB；只有绑骨成功且 `SUPPORTS_ANIMATE_BIND=True`、`animation_clips(rig_type) != {}` 时才进入 animate_bind，否则交付已绑骨 task 的 GLB（avian 即此情况）。
 - **每跳成功就地刷新 `provider_task_id` + `download_urls_json`**：重试下载 / 进程崩溃接续都从这里恢复，**绝不重新计费**。
 - **`provider_phase` 标识当前 task_id 在链上的阶段**（submit / rig / animate）：崩溃接续据此判断产物是不是最终含动画的 GLB。
 - **`clip_map_json` 只在 animate_bind 真正成功时落**：`{}` 代表该骨架不产出动画（avian 或绑定失败）；客户端拿到非空映射会去 GLB 里兑现 clip，空映射是契约硬面。

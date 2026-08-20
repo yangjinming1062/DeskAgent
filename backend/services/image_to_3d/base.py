@@ -25,16 +25,6 @@ class Model3DPollResult:
     error: str | None = None
 
 
-@dataclass(frozen=True)
-class Model3DIntermediateAsset:
-    """已下载到本进程内存的链中间产物：上传阶段不落盘，链结束后唯一终产物落盘。"""
-
-    glb_bytes: bytes
-    source_kind: str  # "raw" | "rigged" | "animated"
-    provider_task_id: str
-    download_urls: tuple[Model3DAsset, ...] = ()
-
-
 class ImageTo3DError(Exception):
     """图生 3D 服务及供应商的基础异常。"""
 
@@ -49,7 +39,7 @@ class ImageTo3DError(Exception):
 class ImageTo3DProvider(ABC):
     """图生 3D 供应商抽象基类；能力 ClassVars 控制 ``pipeline.run_capability_chain`` 中的供应商专属流水线步骤，编排侧在调用可选的 rig / animate_bind / multiview 方法前先检查它们。
 
-    链拓扑:submit → poll → download → (可选) cloud_rig → (可选) cloud_animate_bind,以 ``task_id`` 串联,云端产物即终产物。
+    链拓扑:submit → poll → (可选) cloud_rig → (可选) cloud_animate_bind → download,以 ``task_id`` 串联,只下载链末产物。
     """
 
     provider_name: str = ""

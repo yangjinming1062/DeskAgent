@@ -4,7 +4,7 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型生成(图生3D 供应商:tripo / hunyuan)由 web 进程内 `services/companion/pipeline.py` 的能力链直接编排(submit → poll → download → 可选 cloud_rig → 可选 cloud_animate_bind → 落盘),长任务跑在 web 进程同一事件循环里。详细链拓扑与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型生成(图生3D 供应商:tripo / hunyuan)由 web 进程内 `services/companion/pipeline.py` 的能力链直接编排(submit → poll → 可选 cloud_rig → 可选 cloud_animate_bind → download → 落盘),长任务跑在 web 进程同一事件循环里。详细链拓扑与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 
 **不**做:
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner;图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。
@@ -58,7 +58,7 @@ backend/
 - **形象生成失败对用户返回固定友好文案并支持重试**：不透传供应商原始错误——错误体常含 URL / 部分 auth 头,且用户对生图服务错误无处理能力。
 - **错误统一归类为有限分类决定恢复策略**(退避重试 / 凭证轮换 / 压缩上下文 / 不重试)。为什么不暴露原始异常：供应商错误常含 URL / auth 头 / 私有调用栈,必须脱敏。
 - **3D 模型生成以图生3D为主路、多画风正面确认后自动多视角**：独立于通用 LLM 模块的 3D 生成服务,供应商接口为提交 / 轮询 / 下载三段式并带能力开关,经同一注册表自注册；生成主路为图生3D（由用户在引导流程中对比日系赛璐珞与二次元游戏CG两款画风样图、锁定画风并确认正面全身图后,后端补齐缺失的左/右/背面视角多视图,将正/左/右/背四张种子图提交供应商多视角生模接口）。同一画风的左/右/背面种子跨正面重绘复用；画风变化时在确认时重绘左/右/背面,避免不同画风种子混用。**绑骨 / 动画绑定由供应商能力链消费**——动画绑定 hop 把该骨架的预设动画烘焙进 GLB,产品侧的语义键到预设 token 的映射由供应商适配器声明、随模型一起下发,客户端只做兑现,不持有任何供应商命名（映射权威列表见 [docs/PIPELINE.md §8](../docs/PIPELINE.md)）。
-- **已付费 3D 产物先落盘留存，失败重试仅触发下载而不重新计费**（跨模块契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)「下载失败可恢复」）：`pipeline._persist_download_source` 在下载前先把付费 task_id 与 URL 写行；能力链每跳成功后立即刷新 task_id 保证 `companion.model.retryDownload` 永远回到"最近一次成功产物"重查重下。整链路在 web 进程内 `asyncio.create_task` 跑，由 `_resume_inflight_pipelines()` 在启动时扫 `IN_FLIGHT_STATUSES` 行接续旧的悬挂任务。
+- **已付费 3D 任务先持久化，失败重试仅触发下载而不重新计费**（跨模块契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)「下载失败可恢复」）：`pipeline._persist_download_source` 在下载前把付费 task_id 与 URL 写行；能力链每跳成功后立即刷新 task_id，链末只下载一次，保证 `companion.model.retryDownload` 永远回到"最近一次成功产物"重查重下。整链路在 web 进程内 `asyncio.create_task` 跑，由 `_resume_inflight_pipelines()` 在启动时扫 `IN_FLIGHT_STATUSES` 行接续旧的悬挂任务。
 - **SSRF 保留段检查默认严格、按部署显式豁免**：fake-ip TUN 代理（Clash 类）把所有域名解析进 198.18.0.0/15，供应商产物的对象存储下载会被 SSRF 保留段检查拦截——API 调用走普通客户端不受影响，唯独下载失败且已计费。命中豁免网段只跳过保留段拒绝，域名黑名单、协议白名单、HTTPS→HTTP 降级拦截、云元数据/CGNAT 拦截无条件保留。为什么默认不豁免：多租户部署里该段同样可能是真实内网，"本部署跑在 fake-ip 代理后"是部署者的知识，豁免必须显式配置。
 - **全身立绘提示词模板 + A-pose + 严格画风词典**：全身立绘生成收敛至双画风（日系赛璐珞 `cel_shading` 与二次元游戏CG `anime_game_cg`），生图供应商优先使用 Gemini / Grok；A-pose（双臂微张、对称站姿）与干净背景保障绑骨识别与多视角一致性。风格随模型行持久化：建行时单次解析写入，随模型就绪事件与模型接口下发，供客户端路由 NPR/PBR 渲染。
 - **全身样图草稿可恢复、确认才转正**（断点恢复契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)）：样图与微调正面图以 temp-media 草稿形态生成，草稿路径与用户已选画风随形象行持久化——客户端重启断点恢复时重放样图与正面预览，不重复触发生图；草稿过期按未生成处理，由客户端重新生成。正面确认时四张种子图才从 temp-media 转存 companion-avatars（与半身像 finalize 同一生命周期），转存失败返回可重试错误而非落死链。为什么确认才转正：未确认产物可能被整组丢弃（换画风/微调重绘），提前转正会在正式存储堆积孤儿文件。
