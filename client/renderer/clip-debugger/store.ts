@@ -43,6 +43,9 @@ export const $playbackState = map<PlaybackState>({
 
 export const $viewportOptions = map<ViewportOptions>({
   showSkeleton: false,
+  showBones: false,
+  showJoints: false,
+  showHologram: false,
   showGrid: true,
   showAxes: false,
   showWireframe: false,
@@ -162,6 +165,30 @@ export function setBackground(bg: ViewportBackground): void {
 
 export function toggleSkeleton(): void {
   $viewportOptions.setKey('showSkeleton', !$viewportOptions.get().showSkeleton)
+}
+
+/**
+ * 骨骼/关节显示开关。
+ * 打开任意一项时自动切换模型为半透明全息风格（否则骨骼被表皮完全遮挡），
+ * 两项都关闭时自动还原原始材质。切换后用户仍可用 toggleHologram 单独覆盖。
+ */
+function syncHologramWithRig(): void {
+  const opts = $viewportOptions.get()
+  $viewportOptions.setKey('showHologram', opts.showBones || opts.showJoints)
+}
+
+export function toggleBones(): void {
+  $viewportOptions.setKey('showBones', !$viewportOptions.get().showBones)
+  syncHologramWithRig()
+}
+
+export function toggleJoints(): void {
+  $viewportOptions.setKey('showJoints', !$viewportOptions.get().showJoints)
+  syncHologramWithRig()
+}
+
+export function toggleHologram(): void {
+  $viewportOptions.setKey('showHologram', !$viewportOptions.get().showHologram)
 }
 
 export function toggleGrid(): void {

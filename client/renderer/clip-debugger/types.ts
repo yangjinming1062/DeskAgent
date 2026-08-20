@@ -33,6 +33,12 @@ export type ViewportBackground = 'studio' | 'slate' | 'transparent' | 'light' | 
 
 export interface ViewportOptions {
   showSkeleton: boolean
+  /** 实体骨段绘制（锥形骨头，叠加于模型之上） */
+  showBones: boolean
+  /** 关节球绘制 */
+  showJoints: boolean
+  /** 模型半透明全息风格，便于透视观察内部骨骼 */
+  showHologram: boolean
   showGrid: boolean
   showAxes: boolean
   showWireframe: boolean

@@ -13,7 +13,10 @@ import {
   $viewportOptions,
   setBackground,
   toggleAxes,
+  toggleBones,
   toggleGrid,
+  toggleHologram,
+  toggleJoints,
   toggleSkeleton,
   toggleWireframe
 } from './store'
@@ -121,6 +124,39 @@ export function ClipDebugger(): React.JSX.Element {
               type="button"
             >
               🦴 骨架
+            </button>
+
+            <button
+              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
+                viewportOpts.showBones ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={toggleBones}
+              title="实体骨段（锥形骨头，自动切换模型为全息半透明）"
+              type="button"
+            >
+              🦿 骨段
+            </button>
+
+            <button
+              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
+                viewportOpts.showJoints ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={toggleJoints}
+              title="关节球（左蓝 / 右橙 / 中轴绿 / 根骨粉，自动切换模型为全息半透明）"
+              type="button"
+            >
+              ⚪ 关节
+            </button>
+
+            <button
+              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
+                viewportOpts.showHologram ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
+              }`}
+              onClick={toggleHologram}
+              title="全息半透明风格（透视观察内部骨骼与关节位置）"
+              type="button"
+            >
+              🔷 全息
             </button>
 
             <button

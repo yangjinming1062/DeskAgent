@@ -9,6 +9,7 @@ import { buildClip } from '@/companion/3d/clips-biped'
 import { getClipDefs } from '@/companion/3d/clips-registry'
 
 import { createProceduralMannequin, parseGlbBuffer, readGlbFile } from './model-loader'
+import { createHologramMaterial, createSkeletonViz, type SkeletonViz } from './skeleton-viz'
 import {
   $activeClip,
   $autoCenterSignal,
@@ -56,6 +57,9 @@ export function Viewport3D(): React.JSX.Element {
   const transformControlsRef = useRef<TransformControls | null>(null)
   const characterGroupRef = useRef<THREE.Group | null>(null)
   const skeletonHelperRef = useRef<THREE.SkeletonHelper | null>(null)
+  const skeletonVizRef = useRef<SkeletonViz | null>(null)
+  const hologramMatRef = useRef<THREE.MeshStandardMaterial | null>(null)
+  const originalMaterialsRef = useRef<Map<THREE.Mesh, THREE.Material | THREE.Material[]>>(new Map())
   const gridHelperRef = useRef<THREE.GridHelper | null>(null)
   const axesHelperRef = useRef<THREE.AxesHelper | null>(null)
 
@@ -188,6 +192,11 @@ export function Viewport3D(): React.JSX.Element {
         }
       }
 
+      // 骨骼可视化跟随当前姿态刷新（放在 mixer 之后，保证读到本帧最终骨骼矩阵）
+      if (skeletonVizRef.current?.group.visible) {
+        skeletonVizRef.current.update()
+      }
+
       renderer.render(scene, camera)
     }
 
@@ -213,6 +222,10 @@ export function Viewport3D(): React.JSX.Element {
       cancelAnimationFrame(rafId)
       ro.disconnect()
       controls.dispose()
+      skeletonVizRef.current?.dispose()
+      skeletonVizRef.current = null
+      hologramMatRef.current?.dispose()
+      hologramMatRef.current = null
       renderer.dispose()
       renderer.domElement.remove()
     }
@@ -245,7 +258,38 @@ export function Viewport3D(): React.JSX.Element {
       skeletonHelperRef.current.visible = viewportOpts.showSkeleton
     }
 
-    // 线框模式切换
+    if (skeletonVizRef.current) {
+      skeletonVizRef.current.setVisible(viewportOpts.showBones, viewportOpts.showJoints)
+
+      if (skeletonVizRef.current.group.visible) {
+        skeletonVizRef.current.update()
+      }
+    }
+
+    // 全息半透明风格：替换角色材质，关闭时还原原始材质
+    if (viewportOpts.showHologram) {
+      if (!hologramMatRef.current) {
+        hologramMatRef.current = createHologramMaterial()
+      }
+
+      for (const m of loadedCharacterMeshesRef.current) {
+        if (!originalMaterialsRef.current.has(m)) {
+          originalMaterialsRef.current.set(m, m.material)
+        }
+
+        m.material = hologramMatRef.current
+        m.castShadow = false
+      }
+    } else if (originalMaterialsRef.current.size > 0) {
+      for (const [mesh, mat] of originalMaterialsRef.current) {
+        mesh.material = mat
+        mesh.castShadow = true
+      }
+
+      originalMaterialsRef.current.clear()
+    }
+
+    // 线框模式切换（全息模式下作用于全息材质本身）
     for (const m of loadedCharacterMeshesRef.current) {
       const mats = Array.isArray(m.material) ? m.material : [m.material]
 
@@ -443,6 +487,13 @@ export function Viewport3D(): React.JSX.Element {
           skeletonHelperRef.current = null
         }
 
+        if (skeletonVizRef.current) {
+          skeletonVizRef.current.dispose()
+          skeletonVizRef.current = null
+        }
+
+        originalMaterialsRef.current.clear()
+
         if (mixerRef.current) {
           mixerRef.current.stopAllAction()
           mixerRef.current = null
@@ -517,6 +568,29 @@ export function Viewport3D(): React.JSX.Element {
         skeletonHelper.visible = $viewportOptions.get().showSkeleton
         scene.add(skeletonHelper)
         skeletonHelperRef.current = skeletonHelper
+
+        // 关节球 / 实体骨段可视化（世界空间叠加层）
+        const viz = createSkeletonViz(parsed.root)
+
+        if (viz) {
+          const opts = $viewportOptions.get()
+          viz.setVisible(opts.showBones, opts.showJoints)
+          scene.add(viz.group)
+          skeletonVizRef.current = viz
+        }
+
+        // 若当前处于全息模式，新载入的模型同样应用全息材质
+        if ($viewportOptions.get().showHologram) {
+          if (!hologramMatRef.current) {
+            hologramMatRef.current = createHologramMaterial()
+          }
+
+          for (const m of meshes) {
+            originalMaterialsRef.current.set(m, m.material)
+            m.material = hologramMatRef.current
+            m.castShadow = false
+          }
+        }
 
         // 动画 Mixer
         const mixer = new THREE.AnimationMixer(parsed.root)
