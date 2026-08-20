@@ -383,17 +383,19 @@ async def run_capability_chain(
         if record is None:
             raise ModelGenerationError("companion model row vanished mid-generation")
 
+        multiview_paths: dict[str, Path] | None = None
         if retry_only and record.provider_task_id:
             job = Model3DJob(job_id=record.provider_task_id)
             gen_result = await _poll_with_progress(provider, job, user_id, "uploading", 5, 50)
         else:
-            multiview_paths = {key: _seed(key) for key in ("front", "right", "back", "left") if key in view_filenames} if getattr(provider, "SUPPORTS_MULTIVIEW", False) else None
+            supports_multiview = bool(getattr(provider, "SUPPORTS_MULTIVIEW", False))
+            multiview_paths = {key: _seed(key) for key in ("front", "right", "back", "left") if key in view_filenames} if supports_multiview else None
             await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
-            job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview_paths)
+            job = await provider.create_image_to_model(_seed("front"), multiview_paths=multiview_paths)
             gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
 
         rig_type = record.rig_type or await select_rig_type(chat, species, user_id=user_id)
-        provider_label = record.provider or _provider_result_label(provider.provider_name, multiview=len(view_filenames) > 1)
+        provider_label = record.provider or _provider_result_label(provider.provider_name, multiview=multiview_paths is not None and len(multiview_paths) > 1)
 
         # 先落库付费任务恢复句柄；增强跳只消费 task_id，GLB 延迟到链末统一下载。
         await _persist_download_source(

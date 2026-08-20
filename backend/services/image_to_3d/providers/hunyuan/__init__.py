@@ -56,14 +56,15 @@ class HunyuanImageTo3DProvider(ImageTo3DProvider):
             raise ImageTo3DError(f"种子图超过 10MB 上限（{len(image_bytes)} bytes）", provider=self.provider_name)
         return IMAGE_BASE64_PREFIX + base64.b64encode(image_bytes).decode("ascii")
 
-    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
+    async def create_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
         try:
-            if multiview_paths:
-                views = {key: await self._read_b64(path) for key, path in multiview_paths.items()}
-                front_b64 = views.get("front") or await self._read_b64(image_path)
-                task_id = await client.create_multiview_to_model(front_b64, views, **client.hunyuan_common_kwargs_from_settings())
+            auxiliary_paths = {key: path for key, path in (multiview_paths or {}).items() if key != "front"}
+            front_b64 = await self._read_b64(image_path)
+            if self.SUPPORTS_MULTIVIEW and auxiliary_paths:
+                auxiliary_images = {key: await self._read_b64(path) for key, path in auxiliary_paths.items()}
+                task_id = await client.create_image_to_model(front_b64, multiview_images=auxiliary_images, **client.hunyuan_common_kwargs_from_settings())
             else:
-                task_id = await client.create_image_to_model(await self._read_b64(image_path), **client.hunyuan_common_kwargs_from_settings())
+                task_id = await client.create_image_to_model(front_b64, **client.hunyuan_common_kwargs_from_settings())
             return Model3DJob(job_id=task_id)
         except HunyuanApiError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name, model=self._model) from exc

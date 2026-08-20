@@ -11,6 +11,8 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.image_to_3d import get_provider_class
+
 from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, resolve_fullbody_template
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
@@ -31,6 +33,16 @@ _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 # 按用户加锁，避免 REST 头像路由与 WS RPC 并发再生成/选择时抢同一行
 AVATAR_JOB_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _configured_model_provider_supports_multiview() -> bool:
+    try:
+        provider_class = get_provider_class(SETTINGS.image_to_3d_provider or "tripo")
+    except LookupError:
+        logger.warning("configured image-to-3D provider is unknown; keeping front seed only", extra={"provider": SETTINGS.image_to_3d_provider})
+        return False
+    return bool(getattr(provider_class, "SUPPORTS_MULTIVIEW", False))
+
 
 _MODERATION_SANITIZATION_PROMPT = (
     "以下图像生成提示词被内容审核拦截。请在保持角色核心视觉特征"
@@ -908,9 +920,14 @@ async def confirm_fullbody_front(
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", effective_style)
 
+    supports_multiview = _configured_model_provider_supports_multiview()
     auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
-    generated = {view: getattr(asset, f"seed_{view}_url") for view in ("right", "back", "left") if getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style}
-    missing_views = tuple(view for view in ("right", "back", "left") if view not in generated)
+    generated = {
+        view: getattr(asset, f"seed_{view}_url")
+        for view in ("right", "back", "left")
+        if supports_multiview and getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style
+    }
+    missing_views = tuple(view for view in ("right", "back", "left") if view not in generated) if supports_multiview else ()
     results = []
 
     if missing_views:
@@ -954,7 +971,7 @@ async def confirm_fullbody_front(
         else:
             generated[view] = result[0]
 
-    if len(generated) < 2:
+    if supports_multiview and len(generated) < 3:
         first_err = errors[0] if errors else RuntimeError("all aux views failed")
         raise FullbodyGenerationError("多视角种子图生成失败，请稍后重试", internal=getattr(first_err, "internal", str(first_err)))
 
@@ -963,12 +980,9 @@ async def confirm_fullbody_front(
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         target.seed_front_url = effective_front_url
-        if "right" in generated:
-            target.seed_right_url = generated["right"]
-        if "back" in generated:
-            target.seed_back_url = generated["back"]
-        if "left" in generated:
-            target.seed_left_url = generated["left"]
+        target.seed_right_url = generated.get("right", "")
+        target.seed_back_url = generated.get("back", "")
+        target.seed_left_url = generated.get("left", "")
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
         for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
             current = getattr(target, attr)
@@ -981,7 +995,10 @@ async def confirm_fullbody_front(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
-            payload["fullbody_aux_style"] = effective_style
+            if supports_multiview:
+                payload["fullbody_aux_style"] = effective_style
+            else:
+                payload.pop("fullbody_aux_style", None)
             payload.pop("fullbody_samples", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         await session.commit()

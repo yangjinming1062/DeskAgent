@@ -37,7 +37,7 @@ class ImageTo3DError(Exception):
 
 
 class ImageTo3DProvider(ABC):
-    """图生 3D 供应商抽象基类；能力 ClassVars 控制 ``pipeline.run_capability_chain`` 中的供应商专属流水线步骤，编排侧在调用可选的 rig / animate_bind / multiview 方法前先检查它们。
+    """图生 3D 供应商抽象基类；能力 ClassVars 控制 ``pipeline.run_capability_chain`` 中的供应商专属流水线步骤，编排侧在调用可选的 rig / animate_bind 方法前先检查它们。
 
     链拓扑:submit → poll → (可选) cloud_rig → (可选) cloud_animate_bind → download,以 ``task_id`` 串联,只下载链末产物。
     """
@@ -56,9 +56,9 @@ class ImageTo3DProvider(ABC):
     async def download(self, result: Model3DPollResult, dest_dir: Path) -> Path:
         """把已完成任务的模型下载到 ``dest_dir``，返回单个 ``.glb`` 本地路径（压缩包在此处解压）。"""
 
-    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
+    @abstractmethod
+    async def create_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
         """从本地种子图提交；供应商自行处理上传机制（file_token、base64 等），调用方只传本地路径。"""
-        raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support image-to-3D", provider=self.provider_name)
 
     async def rig_supported(self, job_id: str) -> bool:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support cloud rigging", provider=self.provider_name)

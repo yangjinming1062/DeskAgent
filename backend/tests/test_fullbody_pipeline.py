@@ -276,6 +276,40 @@ async def test_fullbody_front_and_confirm(SessionLocal):
 
 
 @pytest.mark.asyncio
+async def test_fullbody_confirm_keeps_front_only_without_multiview(SessionLocal):
+    user_id = 410
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "少女", "fullbody_style": "cel_shading", "fullbody_aux_style": "cel_shading"}',
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="companion-avatars/front.jpg",
+            seed_right_url="companion-avatars/right.jpg",
+            seed_back_url="companion-avatars/back.jpg",
+            seed_left_url="companion-avatars/left.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with patch(
+            "services.companion.avatar_service._configured_model_provider_supports_multiview",
+            return_value=False,
+        ), patch(
+            "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+            new_callable=AsyncMock,
+        ) as mock_gen:
+            confirmed = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
+
+        assert mock_gen.await_count == 0
+        assert "front.jpg" in confirmed.seed_front_url
+        assert confirmed.seed_right_url == ""
+        assert confirmed.seed_back_url == ""
+        assert confirmed.seed_left_url == ""
+        assert "fullbody_aux_style" not in json.loads(confirmed.prompt_json)
+
+
+@pytest.mark.asyncio
 async def test_fullbody_confirm_without_front_raises(SessionLocal):
     user_id = 403
     async with SessionLocal() as db:

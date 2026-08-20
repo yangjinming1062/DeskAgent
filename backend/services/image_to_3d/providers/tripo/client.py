@@ -138,23 +138,31 @@ async def upload_file(file_bytes: bytes, filename: str, content_type: str = "ima
     return _envelope(resp.json())["file_token"]
 
 
-async def create_multiview_to_model(
-    views: dict[str, str],
+async def create_image_to_model(
+    image_token: str,
     *,
+    multiview_tokens: dict[str, str] | None = None,
     model_version: str = MODEL_VERSION_DEFAULT,
     pbr: bool = True,
     texture_quality: str | None = None,
     face_limit: int | None = None,
     enable_autofix: bool | None = None,
-    texture_alignment: str = "original_image",
-    orientation: str = "align_image",
+    texture_alignment: str | None = "original_image",
+    orientation: str | None = "align_image",
 ) -> str:
-    """views 把 ``{front, left, back, right}`` 中的视角键映射为 file_token 或公网 URL。'front' 必需；至少提供 2 个视角。"""
-    if not views.get("front"):
-        raise ValueError("multiview-to-model requires a 'front' view")
-    if len(views) < 2:
-        raise ValueError("multiview-to-model requires at least 2 views")
-    inputs = [{view: views[view]} for view in ("front", "right", "back", "left") if views.get(view)]
+    """提交图生 3D 任务；提供辅助视角时使用多视角端点，否则使用单图端点。"""
+    if not image_token:
+        raise ValueError("image-to-model requires a non-empty image_token")
+    auxiliary_tokens = {view: token for view, token in (multiview_tokens or {}).items() if view != "front" and token}
+    if auxiliary_tokens:
+        views = {"front": image_token, **auxiliary_tokens}
+        if len(views) < 2:
+            raise ValueError("multiview-to-model requires at least 2 views")
+        inputs = [{view: views[view]} for view in ("front", "right", "back", "left") if views.get(view)]
+    else:
+        texture_alignment = None
+        orientation = None
+        inputs = None
     payload = _common_model_kwargs(
         model_version=model_version,
         pbr=pbr,
@@ -164,30 +172,13 @@ async def create_multiview_to_model(
         texture_alignment=texture_alignment,
         orientation=orientation,
     )
-    payload["inputs"] = inputs
+    if inputs is not None:
+        payload["inputs"] = inputs
+    else:
+        payload["input"] = image_token
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{_base_url()}/generation/multiview-to-model", headers=_auth_headers(), json=payload)
-    task_id = _envelope(resp.json())["task_id"]
-    log_paid_call("tripo", "image_to_3d_submit", task_id=task_id)
-    return task_id
-
-
-async def create_image_to_model(
-    image_token: str,
-    *,
-    model_version: str = MODEL_VERSION_DEFAULT,
-    pbr: bool = True,
-    texture_quality: str | None = None,
-    face_limit: int | None = None,
-    enable_autofix: bool | None = None,
-) -> str:
-    """单图生 3D（H 系列 ``image-to-model`` 端点）。"""
-    if not image_token:
-        raise ValueError("image-to-model requires a non-empty image_token")
-    payload = _common_model_kwargs(model_version=model_version, pbr=pbr, texture_quality=texture_quality, face_limit=face_limit, enable_autofix=enable_autofix)
-    payload["input"] = image_token
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{_base_url()}/generation/image-to-model", headers=_auth_headers(), json=payload)
+        endpoint = "generation/multiview-to-model" if inputs is not None else "generation/image-to-model"
+        resp = await client.post(f"{_base_url()}/{endpoint}", headers=_auth_headers(), json=payload)
     task_id = _envelope(resp.json())["task_id"]
     log_paid_call("tripo", "image_to_3d_submit", task_id=task_id)
     return task_id

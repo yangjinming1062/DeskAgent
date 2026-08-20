@@ -87,6 +87,7 @@ async def _submit_job(payload: dict[str, Any], *, paid_label: str) -> str:
 async def create_image_to_model(
     image_base64: str,
     *,
+    multiview_images: dict[str, str] | None = None,
     model: str = MODEL_VERSION_DEFAULT,
     enable_pbr: bool = True,
     result_format: str = "GLB",
@@ -94,37 +95,15 @@ async def create_image_to_model(
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> str:
-    """提交单图生 3D 模型任务。"""
+    """提交图生 3D 任务；提供辅助视角时组装多视图字段。"""
     if not image_base64:
         raise ValueError("image-to-model requires a non-empty image_base64")
     payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = image_base64
-    return await _submit_job(payload, paid_label="image_to_3d_submit")
-
-
-async def create_multiview_to_model(
-    front_image_base64: str,
-    views: dict[str, str],
-    *,
-    model: str = MODEL_VERSION_DEFAULT,
-    enable_pbr: bool = True,
-    result_format: str = "GLB",
-    generate_type: str | None = None,
-    face_count: int | None = None,
-    prompt: str | None = None,
-) -> str:
-    """提交多视图生 3D 模型任务。``front_image_base64`` 是正面主图（放入 ``image_base64``），``views`` 把视角键（如 ``right`` / ``back`` / ``left`` / ``top`` / ``bottom``）映射为 base64 或 URL，组装到 ``multi_view_images``。"""
-    if not front_image_base64:
-        raise ValueError("multiview-to-model requires a front image")
-
-    # ViewImage 字段名（view_type/view_image_base64）与主图的 image_base64 不对称，见
-    # https://cloud.tencent.com/document/api/1804/120828#ViewImage
-    multi_view_images = [{"view_type": view_name, "view_image_base64": b64_data} for view_name, b64_data in views.items() if view_name.lower() != "front" and b64_data]
-
-    payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
-    payload["image_base64"] = front_image_base64
-    if multi_view_images:
-        payload["multi_view_images"] = multi_view_images
+    auxiliary_images = {view: image for view, image in (multiview_images or {}).items() if view.lower() != "front" and image}
+    if auxiliary_images:
+        # ViewImage 字段名（view_type/view_image_base64）与主图的 image_base64 不对称。
+        payload["multi_view_images"] = [{"view_type": view_name, "view_image_base64": image_data} for view_name, image_data in auxiliary_images.items()]
     return await _submit_job(payload, paid_label="image_to_3d_submit")
 
 

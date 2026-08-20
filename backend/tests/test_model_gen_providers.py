@@ -84,7 +84,7 @@ class TestSubmit:
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        job = await provider.submit_image_to_model(png_seed)
+        job = await provider.create_image_to_model(png_seed)
         assert job.job_id == "job_1"
 
         method, url, headers, body = mock_http.calls[0]
@@ -101,7 +101,7 @@ class TestSubmit:
         assert "multi_view_images" not in body
 
     @pytest.mark.asyncio
-    async def test_submit_multiview_posts_multi_view_images(
+    async def test_create_multiview_posts_multi_view_images(
         self, png_seed, tmp_path, mock_http
     ):
         right_seed = tmp_path / "right.png"
@@ -117,7 +117,7 @@ class TestSubmit:
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        job = await provider.submit_image_to_model(
+        job = await provider.create_image_to_model(
             png_seed,
             multiview_paths={"right": right_seed, "back": back_seed, "left": left_seed},
         )
@@ -136,6 +136,28 @@ class TestSubmit:
         )
 
     @pytest.mark.asyncio
+    async def test_create_ignores_auxiliary_views_when_multiview_unsupported(
+        self, png_seed, tmp_path, mock_http
+    ):
+        right_seed = tmp_path / "right.png"
+        right_seed.write_bytes(b"right")
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json={"id": "job_single", "status": "queued"}
+        )
+        provider = HunyuanImageTo3DProvider(
+            api_key="hk_test", base_url="https://tokenhub.test"
+        )
+        provider.SUPPORTS_MULTIVIEW = False
+
+        job = await provider.create_image_to_model(
+            png_seed, multiview_paths={"front": png_seed, "right": right_seed}
+        )
+
+        assert job.job_id == "job_single"
+        assert "multi_view_images" not in mock_http.calls[0][3]
+
+
+    @pytest.mark.asyncio
     async def test_submit_with_custom_settings(self, png_seed, mock_http, monkeypatch):
         monkeypatch.setattr(SETTINGS, "hunyuan_model_version", "hy-3d-3.0")
         monkeypatch.setattr(SETTINGS, "hunyuan_generate_type", "LowPoly")
@@ -149,7 +171,7 @@ class TestSubmit:
         provider = HunyuanImageTo3DProvider(
             api_key="hk_test", base_url="https://tokenhub.test"
         )
-        job = await provider.submit_image_to_model(png_seed)
+        job = await provider.create_image_to_model(png_seed)
         assert job.job_id == "job_custom"
         body = mock_http.calls[0][3]
         assert body["model"] == "hy-3d-3.0"
@@ -166,7 +188,7 @@ class TestSubmit:
             api_key="hk_test", base_url="https://tokenhub.test"
         )
         with pytest.raises(ImageTo3DError, match="格式不支持"):
-            await provider.submit_image_to_model(seed)
+            await provider.create_image_to_model(seed)
 
     @pytest.mark.asyncio
     async def test_submit_rejects_oversize_image(self, tmp_path):
@@ -176,7 +198,7 @@ class TestSubmit:
             api_key="hk_test", base_url="https://tokenhub.test"
         )
         with pytest.raises(ImageTo3DError, match="10MB"):
-            await provider.submit_image_to_model(seed)
+            await provider.create_image_to_model(seed)
 
     @pytest.mark.asyncio
     async def test_submit_without_id_raises(self, png_seed, mock_http):
@@ -186,7 +208,7 @@ class TestSubmit:
             api_key="hk_test", base_url="https://tokenhub.test"
         )
         with pytest.raises(ImageTo3DError, match="missing job id"):
-            await provider.submit_image_to_model(png_seed)
+            await provider.create_image_to_model(png_seed)
 
     @pytest.mark.asyncio
     async def test_http_error_raises_provider_error(self, png_seed, mock_http):
@@ -196,7 +218,7 @@ class TestSubmit:
             api_key="hk_test", base_url="https://tokenhub.test"
         )
         with pytest.raises(ImageTo3DError) as exc_info:
-            await provider.submit_image_to_model(png_seed)
+            await provider.create_image_to_model(png_seed)
         assert "401" in str(exc_info.value)
 
 
@@ -401,7 +423,7 @@ class TestHunyuanLiveE2E:
             base_url=os.getenv("HUNYUAN_BASE_URL", ""),
         )
 
-        job = await provider.submit_image_to_model(seed)
+        job = await provider.create_image_to_model(seed)
         assert job.job_id
 
         deadline = time.monotonic() + 900

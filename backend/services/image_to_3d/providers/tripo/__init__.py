@@ -27,14 +27,18 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
         image_bytes = await asyncio.to_thread(path.read_bytes)
         return await client.upload_file(image_bytes, path.name, _CONTENT_TYPES.get(path.suffix.lower(), "image/png"))
 
-    async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
+    async def create_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
         try:
-            if multiview_paths:
-                # multiview 端点接受 MV 专属 framing hints；下方 image-to-model 不接受。
-                views = {key: await self._upload(path) for key, path in multiview_paths.items()}
-                task_id = await client.create_multiview_to_model(views, **client.tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image"))
+            auxiliary_paths = {key: path for key, path in (multiview_paths or {}).items() if key != "front"}
+            front_token = await self._upload(image_path)
+            if self.SUPPORTS_MULTIVIEW and auxiliary_paths:
+                # multiview 端点接受 MV 专属 framing hints；单图端点不接受。
+                auxiliary_tokens = {key: await self._upload(path) for key, path in auxiliary_paths.items()}
+                task_id = await client.create_image_to_model(
+                    front_token, multiview_tokens=auxiliary_tokens, **client.tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image")
+                )
             else:
-                task_id = await client.create_image_to_model(await self._upload(image_path), **client.tripo_common_kwargs_from_settings())
+                task_id = await client.create_image_to_model(front_token, **client.tripo_common_kwargs_from_settings())
             return Model3DJob(job_id=task_id)
         except TripoApiError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name) from exc

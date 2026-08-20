@@ -83,13 +83,40 @@ async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
 
 
 @pytest.mark.asyncio
-async def test_create_multiview_to_model_validates_front_and_min_views():
-    with pytest.raises(ValueError, match="front"):
-        await tripo_client.create_multiview_to_model(
-            {"right": "tok_r", "back": "tok_b"}
-        )
-    with pytest.raises(ValueError, match="at least 2 views"):
-        await tripo_client.create_multiview_to_model({"front": "tok_f"})
+async def test_create_image_to_model_selects_endpoint_by_auxiliary_views(mock_http):
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_single"})
+    )
+    await tripo_client.create_image_to_model("file_x")
+    method, url, body = mock_http.calls[0]
+    assert method == "POST"
+    assert url.endswith("/generation/image-to-model")
+    assert body["input"] == "file_x"
+    assert "inputs" not in body
+    assert "texture_alignment" not in body
+    assert "orientation" not in body
+
+
+@pytest.mark.asyncio
+async def test_create_image_to_model_posts_multiview_inputs(mock_http):
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "task_mv"})
+    )
+    await tripo_client.create_image_to_model(
+        "file_f",
+        multiview_tokens={"right": "file_r", "back": "file_b", "left": "file_l"},
+    )
+    method, url, body = mock_http.calls[0]
+    assert method == "POST"
+    assert url.endswith("/generation/multiview-to-model")
+    assert body["inputs"] == [
+        {"front": "file_f"},
+        {"right": "file_r"},
+        {"back": "file_b"},
+        {"left": "file_l"},
+    ]
+    assert body["texture_alignment"] == "original_image"
+    assert body["orientation"] == "align_image"
 
 
 @pytest.mark.asyncio

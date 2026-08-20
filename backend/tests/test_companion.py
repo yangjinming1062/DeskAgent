@@ -2441,7 +2441,7 @@ class _FakeProvider:
     def animation_clips(self, rig_type: str) -> dict[str, str]:
         return self._clip_map
 
-    async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+    async def create_image_to_model(self, image_path, *, multiview_paths=None):
         from services.image_to_3d import Model3DJob
 
         self.calls.append("submit")
@@ -2639,8 +2639,8 @@ async def test_provider_result_label_reflects_multiview_input():
 
 
 @pytest.mark.asyncio
-async def test_chain_passes_multiview_by_view_filenames_count(_patch_db, monkeypatch, SessionLocal, tmp_path):
-    """``run_capability_chain`` 必须按 view_filenames 数量（而非 style）决定 multiview 参数——分别测两个场景。"""
+async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """多视图标签由供应商能力与可用视角共同决定；不支持时即使库里残留辅助图也按单图提交。"""
     from modules.auth import User
     from modules.companion import CompanionModel
     from services.companion import pipeline as _pipeline
@@ -2650,8 +2650,10 @@ async def test_chain_passes_multiview_by_view_filenames_count(_patch_db, monkeyp
     monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", lambda _n: (seed, "image/png"))
     monkeypatch.setattr("services.companion.pipeline.save_companion_model", lambda _b, *, user_id: f"companion-models/{user_id}/x.glb")
 
-    async def _capture(views: dict[str, str]) -> bool | None:
-        monkeypatch.setattr("services.companion.pipeline._resolve_model_provider", lambda _n: _FakeProvider({"idle": "preset:biped:idle"}))
+    async def _capture(views: dict[str, str], *, supports_multiview: bool = True) -> bool | None:
+        provider = _FakeProvider({"idle": "preset:biped:idle"})
+        provider.SUPPORTS_MULTIVIEW = supports_multiview
+        monkeypatch.setattr("services.companion.pipeline._resolve_model_provider", lambda _n: provider)
 
         from services.companion import pipeline as _p
         original = _p._provider_result_label
@@ -2664,7 +2666,7 @@ async def test_chain_passes_multiview_by_view_filenames_count(_patch_db, monkeyp
         monkeypatch.setattr(_p, "_provider_result_label", spy)
 
         async with SessionLocal() as db:
-            user = User(username=f"mv-{len(views)}", is_active=True, can_use=True)
+            user = User(username=f"mv-{len(views)}-{supports_multiview}", is_active=True, can_use=True)
             db.add(user)
             await db.commit()
             await db.refresh(user)
@@ -2678,8 +2680,11 @@ async def test_chain_passes_multiview_by_view_filenames_count(_patch_db, monkeyp
 
         return captured[0] if captured else None
 
+    multi_views = {"front": "seed.png", "right": "seed.png", "back": "seed.png", "left": "seed.png"}
     single = await _capture({"front": "seed.png"})
-    multi = await _capture({"front": "seed.png", "right": "seed.png", "back": "seed.png", "left": "seed.png"})
+    multi = await _capture(multi_views)
+    unsupported = await _capture(multi_views, supports_multiview=False)
 
     assert single is False
     assert multi is True
+    assert unsupported is False

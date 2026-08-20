@@ -30,10 +30,10 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 | `SUPPORTS_RIGGING` | 是否云端绑骨 |
 | `SUPPORTS_ANIMATE_BIND` | 是否云端动画绑定 |
 | `animation_clips(rig_type) -> dict` | 该骨架的「语义键 → 预设 token」映射；空字典 = 不产出动画 |
-| `SUPPORTS_MULTIVIEW` | 是否接受多视图种子图 |
+| `SUPPORTS_MULTIVIEW` | 提交方法是否按多图模式消费种子图；关闭时编排侧只提交正面图 |
 | `SUPPORTS_NEGATIVE_PROMPT` | 是否接受 negative prompt |
 
-接入新供应商：继承 `ImageTo3DProvider`、覆写 ClassVar 与三个抽象方法（`submit_image_to_model` / `poll` / `download`），可选覆写 `start_rig` / `start_animate_bind` / `animation_clips`（不实现抛 `NotImplementedError` 等价于"不支持"）。
+接入新供应商：继承 `ImageTo3DProvider`、覆写 ClassVar 与三个抽象方法（`create_image_to_model` / `poll` / `download`），可选覆写 `start_rig` / `start_animate_bind` / `animation_clips`（默认实现抛 `ImageTo3DError` 等价于"不支持"）。
 
 ## 3. 失败与重试语义
 
