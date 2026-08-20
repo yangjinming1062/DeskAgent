@@ -1,18 +1,9 @@
-# SpiritAgent Agent installer (Windows / PowerShell 5.1+).
-#
-# 6-stage payload release. Tauri SpiritAgent-Setup.exe is the GUI shell that
-# spawns this script; the script's job is to install Python (if needed),
-# copy the bundled runner binary, desktop app, and skills
-# into the user's $SPIRITAGENT_HOME (and the platform-canonical desktop install
-# location).
-#
-# Protocol:
-#   powershell -File install.ps1 -Manifest                 → emit manifest JSON
-#   powershell -File install.ps1 -Stage NAME -Json         → run a single stage
-#
-# Payload locations are passed via SPIRITAGENT_BUNDLE_* env vars (set by the Tauri
-# installer) or via the matching --bundled-*-dir parameters (for dev/test).
-# When both are present, env wins.
+# SpiritAgent 安装脚本（Windows / PowerShell 5.1+）。由 Tauri SpiritAgent-Setup.exe 调用；
+# 6 阶段负载释放：安装 Python（如需）、拷贝 runner wheel / 桌面安装器 / skills 至 $SPIRITAGENT_HOME 及平台规范位置。
+# 协议：
+#   powershell -File install.ps1 -Manifest                 → 输出 manifest JSON
+#   powershell -File install.ps1 -Stage NAME -Json         → 执行单个阶段，输出结果帧
+# payload 位置通过 SPIRITAGENT_BUNDLE_* 环境变量或对应 --bundled-*-dir 参数传递；二者并存时环境变量优先。
 
 [CmdletBinding()]
 param(
@@ -41,8 +32,7 @@ $DefaultDesktopFormat = "nsis"
 $PythonVersion = "3.13"
 $PythonFallbackVersions = @("3.12", "3.14", "3.11")
 
-# --- resolve paths: env var > param > default ------------------------------
-
+# 路径优先级：环境变量 > 参数 > 默认值
 if (-not $SpiritAgentHome) {
     if ($env:SPIRITAGENT_HOME) { $SpiritAgentHome = $env:SPIRITAGENT_HOME }
     else { $SpiritAgentHome = Join-Path $env:LOCALAPPDATA "SpiritAgent" }
@@ -56,8 +46,6 @@ if (-not $InstallerFormat) {
     if ($env:SPIRITAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:SPIRITAGENT_INSTALLER_FORMAT }
     else { $InstallerFormat = $DefaultDesktopFormat }
 }
-
-# --- output helpers ---------------------------------------------------------
 
 function Emit-Manifest {
     @"
@@ -88,8 +76,6 @@ function Emit-StageOk([string]$stage, [bool]$skipped = $false, [string]$reason =
 function Emit-StageErr([string]$stage, [string]$reason) {
     Write-Output "{`"ok`": false, `"stage`": `"$stage`", `"reason`": `"" + (Escape-JsonString $reason) + "`"}"
 }
-
-# --- Python installation helpers --------------------------------------------
 
 function Install-Uv {
     $managedUv = Join-Path $SpiritAgentHome "bin\uv.exe"
@@ -151,7 +137,7 @@ function Test-Python {
         } catch { }
     }
 
-    # Cold cache — install the preferred version and re-check just that one.
+    # 冷缓存：安装首选版本后再次只查该版本。
     try {
         $prevEAP = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
@@ -169,8 +155,7 @@ function Test-Python {
     return $false
 }
 
-# --- stage 1: welcome -------------------------------------------------------
-
+# 阶段 1：welcome
 function Stage-Welcome {
     $bin = Join-Path $SpiritAgentHome "bin"
     $skills = Join-Path $SpiritAgentHome "skills"
@@ -195,8 +180,7 @@ function Stage-Welcome {
     return 0
 }
 
-# --- stage 2: install-python ------------------------------------------------
-
+# 阶段 2：安装 Python
 function Stage-InstallPython {
     if (Test-Python) {
         $escVer = Escape-JsonString $script:PythonVersion
@@ -208,8 +192,7 @@ function Stage-InstallPython {
     return 1
 }
 
-# --- stage 3: unpack-runner -------------------------------------------------
-
+# 阶段 3：解包运行器
 function Stage-UnpackRunner {
     if (-not $script:UvCmd -or -not $script:PythonVersion) {
         if (-not (Test-Python)) {
@@ -236,22 +219,22 @@ function Stage-UnpackRunner {
     $runnerDir = Join-Path $SpiritAgentHome "runner"
     if (-not (Test-Path $runnerDir)) { New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null }
 
-    # Copy server.py alongside the wheel (not inside it)
+    # 拷贝 server.py 与 wheel 同级（不进入 wheel）
     $serverSrc = Join-Path $BundledRunnerDir "server.py"
     if (Test-Path $serverSrc) { Copy-Item -Force $serverSrc (Join-Path $runnerDir "server.py") }
 
-    # Create venv (requires install-python stage to have completed)
+    # 创建 venv（依赖 install-python 阶段完成）
     $venvDir = Join-Path $runnerDir ".venv"
     $prevEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     $venvOutput = & $script:UvCmd venv $venvDir --python $script:PythonVersion --clear 2>&1
     if ($LASTEXITCODE) { $ErrorActionPreference = $prevEAP; Emit-StageErr "unpack-runner" "uv venv failed: $($venvOutput -join ' | ')"; return 1 }
 
-    # Install wheel into venv (installs wheel + deps in one shot)
+    # 安装 wheel 至 venv（含依赖一次性安装）
     $pythonExe = Join-Path $venvDir "Scripts\python.exe"
     $pipOutput = & $script:UvCmd pip install --python $pythonExe $wheel.FullName 2>&1
     if ($LASTEXITCODE) {
-        # Retry with a custom or default domestic mirror to mitigate common network issues
+        # 网络不稳时回退至国内镜像
         $pypiIndex = $env:SPIRITAGENT_PYPI_INDEX_URL
         if (-not $pypiIndex) { $pypiIndex = $env:PIP_INDEX_URL }
         if (-not $pypiIndex) { $pypiIndex = "https://mirrors.aliyun.com/pypi/simple/" }
@@ -261,20 +244,14 @@ function Stage-UnpackRunner {
         }
     }
 
-    # No post-install smoke: build_client.ps1 already gates the wheel
-    # behind pytest tests/test_startup_imports.py (and the full runner
-    # test suite via the same hook), so a broken venv can't reach users
-    # through this installer. install.ps1 stays simple.
+    # 不做安装后烟测：build_client.ps1 已通过 pytest tests/test_startup_imports.py 把 wheel 卡在打包前，损坏 venv 不会到达用户。
 
-    # Clean up old PyInstaller binary if present
+    # 清理旧的 PyInstaller 二进制
     $oldBin = Join-Path (Join-Path $SpiritAgentHome "bin") "spiritagent-runner.exe"
     if (Test-Path $oldBin) { Remove-Item -Force $oldBin }
 
-    # Copy bundled Piper voices (installer/payload/voices/) into the models
-    # directory so local TTS works offline on day 1. Each voice needs both
-    # ``.onnx`` and ``.onnx.json`` — a partial copy is useless to Piper.
-    # Content-based copy so future voice additions only need a payload
-    # drop, no install-script edit.
+    # 拷贝 bundled Piper voices（installer/payload/voices/）至 models 目录，确保首日离线 TTS 可用。
+    # 每个语音需同时具备 ``.onnx`` 与 ``.onnx.json``，缺一不可；按内容拷贝——未来添加语音只需投放 payload，无须改安装脚本。
     $voiceCount = 0
     if ($BundledVoicesDir -and (Test-Path $BundledVoicesDir -PathType Container)) {
         $voicesTarget = Join-Path $SpiritAgentHome "models\piper"
@@ -291,8 +268,7 @@ function Stage-UnpackRunner {
         $voiceCount = (Get-ChildItem -Path $voicesTarget -Filter "*.onnx" -File -ErrorAction SilentlyContinue).Count
     }
 
-    # Copy bundled onboarding guidance audio — language subdirs (zh\, en\, …) map
-    # 1:1 to $SpiritAgentHome\audio\onboarding\<lang>\.
+    # 拷贝 onboarding 引导音频：语言子目录（zh\、en\、…）1:1 映射至 $SpiritAgentHome\audio\onboarding\<lang>\。
     $audioCount = 0
     if ($BundledOnboardingAudioDir -and (Test-Path $BundledOnboardingAudioDir -PathType Container)) {
         Get-ChildItem -Path $BundledOnboardingAudioDir -Directory | ForEach-Object {
@@ -311,8 +287,7 @@ function Stage-UnpackRunner {
     return 0
 }
 
-# --- stage 4: unpack-desktop ------------------------------------------------
-
+# 阶段 4：解包桌面端
 function Stage-UnpackDesktop {
     if (-not $BundledDesktopDir) {
         Emit-StageErr "unpack-desktop" "--BundledDesktopDir (or SPIRITAGENT_BUNDLED_DESKTOP_DIR) is required"
@@ -323,7 +298,7 @@ function Stage-UnpackDesktop {
         return 1
     }
 
-    # Locate the artifact by format.
+    # 按格式定位产物
     $artifact = $null
     switch ($InstallerFormat) {
         "nsis" { $artifact = Get-ChildItem -Path $BundledDesktopDir -Filter "*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1 }
@@ -343,8 +318,7 @@ function Stage-UnpackDesktop {
 
     switch ($InstallerFormat) {
         "nsis" {
-            # NSIS /S = silent install; /D sets install dir. No console window
-            # because Tauri's installer process already owns the visible window.
+            # NSIS /S 静默安装，/D 指定安装目录；Tauri 安装器已持有可见窗口，子进程无需再开控制台。
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
             $installDir = Join-Path $localPrograms "SpiritAgent"
             if (-not (Test-Path $installDir)) { New-Item -ItemType Directory -Force -Path $installDir | Out-Null }
@@ -360,7 +334,7 @@ function Stage-UnpackDesktop {
             return 0
         }
         "msi" {
-            # msiexec /qn = quiet, no UI; REBOOT=ReallySuppress prevents reboot prompts.
+            # msiexec /qn 静默安装，无 UI；REBOOT=ReallySuppress 抑制重启提示。
             $proc = Start-Process -FilePath "msiexec.exe" `
                                   -ArgumentList @("/i", $artifactPath, "/qn", "REBOOT=ReallySuppress") `
                                   -Wait -NoNewWindow -PassThru
@@ -375,9 +349,8 @@ function Stage-UnpackDesktop {
             return 0
         }
         "zip" {
-            # Extract ZIP to $SPIRITAGENT_HOME\apps\SpiritAgent (NSIS-style layout) — desktop
-            # is then launched from SpiritAgent.exe inside. Matches the install_root
-            # path bootstrap.rs::resolve_spiritagent_desktop_exe expects on Windows.
+            # 解压 ZIP 至 $SPIRITAGENT_HOME\apps\SpiritAgent（与 NSIS 布局一致），后续可从内部的 SpiritAgent.exe 启动；
+            # 与 bootstrap.rs::resolve_spiritagent_desktop_exe 在 Windows 上期望的 install_root 路径对齐。
             $dest = Join-Path $SpiritAgentHome "apps\SpiritAgent"
             if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
             Expand-Archive -Path $artifactPath -DestinationPath $dest -Force
@@ -389,8 +362,7 @@ function Stage-UnpackDesktop {
     return 1
 }
 
-# --- stage 5: install-skills ------------------------------------------------
-
+# 阶段 5：安装技能
 function Stage-InstallSkills {
     if (-not $BundledSkillsDir) {
         Emit-StageErr "install-skills" "--BundledSkillsDir (or SPIRITAGENT_BUNDLED_SKILLS_DIR) is required"
@@ -401,7 +373,7 @@ function Stage-InstallSkills {
         return 1
     }
 
-    # Respect the .no-bundled-skills marker.
+    # 尊重 .no-bundled-skills 标记
     $noSkillsMarker = Join-Path $SpiritAgentHome ".no-bundled-skills"
     if (Test-Path $noSkillsMarker) {
         Emit-StageOk "install-skills" $true "user opted out via .no-bundled-skills"
@@ -411,8 +383,7 @@ function Stage-InstallSkills {
     $skillsDir = Join-Path $SpiritAgentHome "skills"
     if (-not (Test-Path $skillsDir)) { New-Item -ItemType Directory -Force -Path $skillsDir | Out-Null }
 
-    # robocopy /MIR mirrors (preserves user-added dirs/files that don't
-    # collide with the bundle). Exit codes 0-7 are success; >=8 is failure.
+    # robocopy /MIR 镜像（保留用户未与 bundle 冲突的本地内容）。退出码 0-7 视为成功，>=8 视为失败。
     & robocopy $BundledSkillsDir $skillsDir /MIR /NFL /NDL /NJH /NJS /NP /R:0 /W:0 | Out-Null
     if ($LASTEXITCODE -ge 8) {
         Emit-StageErr "install-skills" "robocopy skills failed: exit $LASTEXITCODE"
@@ -424,8 +395,7 @@ function Stage-InstallSkills {
     return 0
 }
 
-# --- stage 6: finalize ------------------------------------------------------
-
+# 阶段 6：收尾
 function Stage-Finalize {
     $marker = Join-Path $SpiritAgentHome ".spiritagent-bootstrap-complete"
     Set-Content -Path $marker -Value "" -NoNewline
@@ -434,8 +404,6 @@ function Stage-Finalize {
     Write-Output "{`"ok`": true, `"stage`": `"finalize`", `"data`": {`"marker`": `"$escMarker`"}}"
     return 0
 }
-
-# --- dispatch ---------------------------------------------------------------
 
 if ($Manifest) {
     Emit-Manifest
@@ -447,9 +415,7 @@ if (-not $Stage) {
     exit 2
 }
 
-# Runs a stage scriptblock: JSON frames emitted via Write-Output go to
-# stdout, and the stage's `return` value (the LAST element of the result
-# array) is the exit code.
+# 运行阶段脚本块：通过 Write-Output 输出的 JSON 帧进入 stdout；阶段 `return` 值（结果数组最后一个元素）作为退出码。
 function Run-Stage([scriptblock]$fn) {
     $result = @(& $fn)
     $code = if ($result.Count -gt 0) { $result[-1] } else { 0 }

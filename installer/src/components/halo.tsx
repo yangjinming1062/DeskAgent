@@ -59,7 +59,7 @@ export function Halo({
 }: HaloProps): React.JSX.Element {
   const segments = Array.from({ length: total }, (_, i) => i)
   const segmentAngle = 360 / total
-  const gapAngle = 4 // 4 degree gap between segments
+  const gapAngle = 4 // 段间留 4° 间隔
 
   return (
     <div

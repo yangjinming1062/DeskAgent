@@ -1,16 +1,6 @@
-// SpiritAgent Setup — process entrypoint. All logic lives in lib.rs so it can
-// be unit-tested as a library; this file just calls into it.
-//
-// The windows_subsystem attribute MUST live here on the binary crate
-// (not lib.rs) — placing it on the lib was the bug that left a stray
-// cmd window behind SpiritAgent-Setup.exe on release builds.
-//
-// `windows_subsystem = "windows"` strips the console allocation that
-// the default `windows_subsystem = "console"` would do, so double-clicking
-// the .exe gives you ONLY the Tauri window.
-//
-// debug_assertions guard: dev builds keep the console so tracing output
-// is visible during `cargo tauri dev`.
+// 进程入口；逻辑均在 lib.rs 中以便以库形式单测。
+// windows_subsystem 必须置于二进制 crate——之前写在 lib 上导致 release 版残留 cmd 窗口。
+// debug_assertions 仅在 release 构建中剥离控制台分配，便于 `cargo tauri dev` 时看到 tracing 输出。
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 

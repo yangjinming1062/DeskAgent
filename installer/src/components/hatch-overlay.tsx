@@ -3,9 +3,6 @@ interface HatchOverlayProps {
   active: boolean
 }
 
-/**
- * Visual overlay anchor during hatching sequence completion.
- */
 export function HatchOverlay({ active }: HatchOverlayProps): React.JSX.Element | null {
   if (!active) return null
 

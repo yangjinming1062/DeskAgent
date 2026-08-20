@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# SpiritAgent Agent installer (POSIX / macOS).
-#
-# 6-stage payload release. Tauri SpiritAgent-Setup.app is the GUI shell that
-# spawns this script; the script's job is to install Python (if needed),
-# copy the bundled runner binary, desktop app, and skills
-# into the user's $SPIRITAGENT_HOME (and platform-canonical locations for the
-# desktop app).
-#
-# Protocol:
-#   install.sh -Manifest                 → emit manifest JSON, one stage list
-#   install.sh -Stage NAME -Json         → run a single stage, emit result frame
-#
-# Payload locations are passed via SPIRITAGENT_BUNDLE_* env vars (set by the Tauri
-# installer) or via the matching --bundled-*-dir CLI args (for dev/test).
-# When both are present, env wins.
+# SpiritAgent 安装脚本（POSIX / macOS）。由 Tauri SpiritAgent-Setup.app 调用；
+# 6 阶段负载释放：安装 Python（如需）、拷贝 runner wheel / 桌面应用 / skills 至 $SPIRITAGENT_HOME 及平台规范位置。
+# 协议：
+#   install.sh -Manifest                 → 输出 manifest JSON
+#   install.sh -Stage NAME -Json         → 执行单个阶段，输出结果帧
+# payload 位置通过 SPIRITAGENT_BUNDLE_* 环境变量或对应 --bundled-*-dir 参数传递；二者并存时环境变量优先。
 
 set -euo pipefail
 shopt -s nullglob
@@ -22,21 +13,16 @@ PROTOCOL_VERSION=2
 SCRIPT_NAME="install.sh"
 PYTHON_VERSION="3.13"
 
-# --- defaults ---------------------------------------------------------------
-
 if [[ "$(uname -s)" == "Darwin" ]]; then
   DEFAULT_SPIRITAGENT_HOME_UNIX="$HOME/Library/Application Support/SpiritAgent"
 else
   DEFAULT_SPIRITAGENT_HOME_UNIX="$HOME/.spiritagent"
 fi
 
-# Path to the runner binary inside the bundle. POSIX uses no extension.
 RUNNER_WHEEL_GLOB="spirit-agent-*.whl"
 
-# Default desktop format; overridden by $SPIRITAGENT_INSTALLER_FORMAT.
+# 桌面端格式默认 dmg，可由 $SPIRITAGENT_INSTALLER_FORMAT 覆盖。
 DEFAULT_DESKTOP_FORMAT="dmg"
-
-# --- arg parsing ------------------------------------------------------------
 
 SPIRITAGENT_HOME_ARG=""
 BUNDLED_RUNNER_DIR_ARG=""
@@ -45,7 +31,7 @@ BUNDLED_SKILLS_DIR_ARG=""
 BUNDLED_VOICES_DIR_ARG=""
 BUNDLED_ONBOARDING_AUDIO_DIR_ARG=""
 
-MODE="stage"     # "manifest" | "stage"
+MODE="stage"
 STAGE=""
 JSON_OUTPUT=0
 NON_INTERACTIVE=0
@@ -85,8 +71,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# --- resolve paths: env var > arg > default ---------------------------------
-
+# 路径优先级：环境变量 > 参数 > 默认值。
 if [[ -n "${SPIRITAGENT_HOME:-}" ]]; then
   SPIRITAGENT_HOME_RESOLVED="$SPIRITAGENT_HOME"
 elif [[ -n "$SPIRITAGENT_HOME_ARG" ]]; then
@@ -101,8 +86,6 @@ BUNDLED_SKILLS_DIR="${SPIRITAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
 BUNDLED_VOICES_DIR="${SPIRITAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
 BUNDLED_ONBOARDING_AUDIO_DIR="${SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
 DESKTOP_FORMAT="${SPIRITAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
-
-# --- output helpers ---------------------------------------------------------
 
 emit_manifest() {
   cat <<EOF
@@ -121,7 +104,7 @@ EOF
 emit_stage_ok() {
   local stage="$1" skipped="${2:-0}" reason="${3:-}"
   if [[ "$skipped" == "1" && -n "$reason" ]]; then
-    # Escape double quotes in reason so the JSON frame stays valid.
+    # reason 中的双引号转义后嵌入 JSON，保证结果帧合法。
     local esc="${reason//\\/\\\\}"
     esc="${esc//\"/\\\"}"
     printf '{"ok": true, "stage": "%s", "skipped": true, "reason": "%s"}\n' "$stage" "$esc"
@@ -137,8 +120,6 @@ emit_stage_err() {
   esc="${esc//\"/\\\"}"
   printf '{"ok": false, "stage": "%s", "reason": "%s"}\n' "$stage" "$esc"
 }
-
-# --- Python installation helpers --------------------------------------------
 
 install_uv() {
   local managed_uv="$SPIRITAGENT_HOME_RESOLVED/bin/uv"
@@ -184,7 +165,7 @@ test_python() {
     missing+=("$ver")
   done
 
-  # Cold cache — install the preferred version and re-check just that one.
+  # 冷缓存：安装首选版本后再次只查该版本。
   "$UV_CMD" python install "$PYTHON_VERSION" 2>/dev/null || true
   local found
   found=$("$UV_CMD" python find "$PYTHON_VERSION" 2>/dev/null || true)
@@ -195,8 +176,7 @@ test_python() {
   return 1
 }
 
-# --- stage 1: welcome -------------------------------------------------------
-
+# 阶段 1：welcome
 stage_welcome() {
   mkdir -p "$SPIRITAGENT_HOME_RESOLVED/bin" \
            "$SPIRITAGENT_HOME_RESOLVED/skills" \
@@ -219,8 +199,7 @@ stage_welcome() {
     "$SPIRITAGENT_HOME_RESOLVED" "$is_reinstall"
 }
 
-# --- stage 2: install-python ------------------------------------------------
-
+# 阶段 2：安装 Python
 stage_install_python() {
   if test_python; then
     printf '{"ok": true, "stage": "install-python", "data": {"version": "%s"}}\n' "$PYTHON_VERSION"
@@ -231,8 +210,7 @@ stage_install_python() {
   return 1
 }
 
-# --- stage 3: unpack-runner -------------------------------------------------
-
+# 阶段 3：解包运行器
 stage_unpack_runner() {
   if [[ -z "$BUNDLED_RUNNER_DIR" ]]; then
     emit_stage_err unpack-runner "--bundled-runner-dir (or SPIRITAGENT_BUNDLED_RUNNER_DIR) is required"
@@ -254,25 +232,18 @@ stage_unpack_runner() {
   local runner_dir="$SPIRITAGENT_HOME_RESOLVED/runner"
   mkdir -p "$runner_dir"
 
-  # Copy server.py alongside the wheel
+  # 拷贝 server.py 至与 wheel 同级
   if [[ -f "$BUNDLED_RUNNER_DIR/server.py" ]]; then
     cp -f "$BUNDLED_RUNNER_DIR/server.py" "$runner_dir/server.py"
   fi
 
-  # `--clear` is load-bearing on a reinstall: without it `uv venv` errors out
-  # when the target dir already exists, leaving a stale/broken venv in place —
-  # exactly the env-rot failure mode this stage is designed to recover from.
-  # install.ps1 uses the same flag; keep the two scripts in sync.
+  # `--clear` 在重装时至关重要：缺省情况下 `uv venv` 遇到目标目录已存在会报错，留下陈旧/损坏 venv，正是本阶段要修复的故障态。install.ps1 同步使用该 flag。
   "$UV_CMD" venv "$runner_dir/.venv" --python "$PYTHON_VERSION" --clear 2>/dev/null || {
     emit_stage_err unpack-runner "uv venv failed"
     return 1
   }
 
-  # Install wheel into venv. PyPI direct connection is unreliable from
-  # China; on the first failure, retry against the Aliyun mirror which
-  # install.ps1 also uses (P2-10: keep the two scripts symmetric). The
-  # retry is best-effort: a second failure surfaces the same error to
-  # the stage handler.
+  # 安装 wheel 至 venv。从国内访问 PyPI 不稳，首次失败回退至阿里云镜像（与 install.ps1 保持一致）；再次失败把同一错误透出给上层。
   if ! "$UV_CMD" pip install --python "$runner_dir/.venv/bin/python" "$wheel" 2>/dev/null; then
     if ! "$UV_CMD" pip install --python "$runner_dir/.venv/bin/python" \
         --index-url https://mirrors.aliyun.com/pypi/simple/ \
@@ -282,20 +253,14 @@ stage_unpack_runner() {
     fi
   fi
 
-  # No post-install smoke: build_client.{ps1,sh} already gates the
-  # wheel behind pytest tests/test_startup_imports.py before packaging,
-  # so a broken venv can't reach users through this installer.
-  # install.sh stays simple.
+  # 不再做安装后烟测：build_client.{ps1,sh} 已经用 pytest 把 wheel 卡在打包前，损坏 venv 不会到达用户。
 
-  # Clean up old PyInstaller binary if present
+  # 清理旧的 PyInstaller 二进制
   rm -f "$SPIRITAGENT_HOME_RESOLVED/bin/spiritagent-runner"
 
-  # Copy bundled Piper voices (installer/payload/voices/) into the models
-  # directory so local TTS works offline on day 1. Each voice is an onnx
-  # model + a config json — both files are required; partial copies make
-  # Piper raise FileNotFoundError. Voice selection in tts_tool honours the
-  # desktop-settings.json::audio.tts.default_voice setting; this just makes sure the
-  # on-disk side of the contract is satisfied.
+  # 拷贝 bundled Piper voices（installer/payload/voices/）至 models 目录，确保首日离线 TTS 可用。
+  # 每个语音由 onnx + json 组成，缺一不可。按内容拷贝——只拷同时包含两半的语音，未来添加语音只需投放 payload，无须改安装脚本。
+  # 变量 ``name`` 已以 .onnx 结尾，再用 ``${name}.onnx.json`` 会拼出重复后缀，因此对 .onnx 走 ``${name}.json`` 拼接。
   local voice_count=0
   if [[ -n "$BUNDLED_VOICES_DIR" && -d "$BUNDLED_VOICES_DIR" ]]; then
     local voices_target="$SPIRITAGENT_HOME_RESOLVED/models/piper"
@@ -303,10 +268,6 @@ stage_unpack_runner() {
     shopt -s nullglob
     local voice_files=("$BUNDLED_VOICES_DIR"/*)
     if [[ ${#voice_files[@]} -gt 0 ]]; then
-      # Content-based copy, not name-based — a single onnx without its
-      # .onnx.json sibling is useless to Piper. Copy anything that ships
-      # with both halves so future voice additions only need a payload
-      # drop, no install-script edit.
       for f in "${voice_files[@]}"; do
         local name
         name=$(basename "$f")
@@ -316,9 +277,6 @@ stage_unpack_runner() {
             cp -f "$f" "$voices_target/$name"
           fi
         elif [[ "$name" == *.onnx ]]; then
-          # ``${name}.onnx.json`` would expand to ``<name>.onnx.onnx.json``
-          # (duplicate .onnx) because ``name`` already ends in .onnx.
-          # Append the canonical suffix to the file id stem instead.
           if [[ -f "$BUNDLED_VOICES_DIR/${name}.json" ]]; then
             cp -f "$f" "$voices_target/$name"
           fi
@@ -329,8 +287,7 @@ stage_unpack_runner() {
     shopt -u nullglob
   fi
 
-  # Copy bundled onboarding guidance audio — language subdirs (zh/, en/, …) map
-  # 1:1 to $SPIRITAGENT_HOME/audio/onboarding/<lang>/.
+  # 拷贝 onboarding 引导音频：语言子目录（zh/、en/、…）1:1 映射至 $SPIRITAGENT_HOME/audio/onboarding/<lang>/。
   local audio_count=0
   if [[ -n "$BUNDLED_ONBOARDING_AUDIO_DIR" && -d "$BUNDLED_ONBOARDING_AUDIO_DIR" ]]; then
     for lang_dir in "$BUNDLED_ONBOARDING_AUDIO_DIR"/*/; do
@@ -350,8 +307,7 @@ stage_unpack_runner() {
     "$SPIRITAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
 }
 
-# --- stage 4: unpack-desktop ------------------------------------------------
-
+# 阶段 4：解包桌面端
 stage_unpack_desktop() {
   if [[ -z "$BUNDLED_DESKTOP_DIR" ]]; then
     emit_stage_err unpack-desktop "--bundled-desktop-dir (or SPIRITAGENT_BUNDLED_DESKTOP_DIR) is required"
@@ -362,7 +318,7 @@ stage_unpack_desktop() {
     return 1
   fi
 
-  # Locate the artifact by format.
+  # 按格式定位产物
   local artifact=""
   case "$DESKTOP_FORMAT" in
     dmg)
@@ -387,7 +343,7 @@ stage_unpack_desktop() {
 
   case "$DESKTOP_FORMAT" in
     dmg)
-      # macOS: mount DMG, copy SpiritAgent.app to /Applications, detach, strip xattrs.
+      # macOS：挂载 DMG，把 SpiritAgent.app 拷到 /Applications，卸载并清空 xattr。
       if [[ "$(uname -s)" != "Darwin" ]]; then
         emit_stage_err unpack-desktop "dmg format requires macOS host"
         return 1
@@ -410,16 +366,14 @@ stage_unpack_desktop() {
       printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/SpiritAgent.app", "format": "dmg"}}\n'
       ;;
     nsis|zip)
-      # install.sh doesn't run on Windows; on POSIX this format is unsupported
-      # (Windows users get install.ps1 via the Tauri installer instead).
+      # POSIX 上不支持这些格式；Windows 用户改走 install.ps1。
       emit_stage_err unpack-desktop "desktop format '$DESKTOP_FORMAT' is not supported on this platform (use install.ps1 on Windows)"
       return 1
       ;;
   esac
 }
 
-# --- stage 5: install-skills ------------------------------------------------
-
+# 阶段 5：安装技能
 stage_install_skills() {
   if [[ -z "$BUNDLED_SKILLS_DIR" ]]; then
     emit_stage_err install-skills "--bundled-skills-dir (or SPIRITAGENT_BUNDLED_SKILLS_DIR) is required"
@@ -430,13 +384,13 @@ stage_install_skills() {
     return 1
   fi
 
-  # Respect the .no-bundled-skills marker (set by --no-skills / spiritagent profile).
+  # 尊重 .no-bundled-skills 标记（由 --no-skills / spiritagent profile 设置）。
   if [[ -f "$SPIRITAGENT_HOME_RESOLVED/.no-bundled-skills" ]]; then
     emit_stage_ok install-skills 1 "user opted out via .no-bundled-skills"
     return 0
   fi
 
-  # rsync without --delete to preserve any skills the user added locally.
+  # 用 rsync 不加 --delete 以保留用户本地添加的 skills。
   mkdir -p "$SPIRITAGENT_HOME_RESOLVED/skills"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a "$BUNDLED_SKILLS_DIR/" "$SPIRITAGENT_HOME_RESOLVED/skills/"
@@ -451,16 +405,13 @@ stage_install_skills() {
     "$bundled_count"
 }
 
-# --- stage 6: finalize ------------------------------------------------------
-
+# 阶段 6：收尾
 stage_finalize() {
   : > "$SPIRITAGENT_HOME_RESOLVED/.spiritagent-bootstrap-complete"
 
   printf '{"ok": true, "stage": "finalize", "data": {"marker": "%s/.spiritagent-bootstrap-complete"}}\n' \
     "$SPIRITAGENT_HOME_RESOLVED"
 }
-
-# --- dispatch ---------------------------------------------------------------
 
 case "$MODE" in
   manifest)

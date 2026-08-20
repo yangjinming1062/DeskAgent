@@ -1,26 +1,11 @@
-//! Resolves `installer/install.ps1` (or `installer/install.sh`) — the worker
-//! scripts the Tauri installer spawns to release its bundled payload.
-//!
-//! Resolution order:
-//!   1. Dev shortcut: a sibling repo checkout via $SPIRITAGENT_SETUP_DEV_REPO_ROOT.
-//!      Lets devs iterate on the script without re-bundling.
-//!   2. Bundled: Tauri `bundle.resources` (`payload/install.{sh,ps1}`). The
-//!      `SpiritAgent-Setup` binary is self-contained — no network, no GitHub, no
-//!      cache. The script version IS the installer build version.
-//!
-//! Mirrors `client/main/lifecycle/platform.cjs`'s `resolveInstallScript`,
-//! but the dev-checkout resolution is driven by an env var rather than the
-//! Electron app's APP_ROOT/.. trick, because SpiritAgent-Setup.exe is meant to
-//! live OUTSIDE any repo checkout.
+//! 解析安装脚本路径：优先 $SPIRITAGENT_SETUP_DEV_REPO_ROOT 开发入口，其次 Tauri bundle.resources；
+//! 安装器不联网，脚本版本即安装器构建版本。
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use tauri::{AppHandle, Manager};
 
-/// The install script the Tauri process will spawn. Identified only by its
-/// on-disk path — there is no commit/branch pin to track, because the
-/// script is bundled into the installer binary itself.
 #[derive(Debug, Clone)]
 pub struct ResolvedScript {
     pub path: PathBuf,
@@ -29,13 +14,12 @@ pub struct ResolvedScript {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScriptSource {
-    /// Loaded from a sibling repo checkout via $SPIRITAGENT_SETUP_DEV_REPO_ROOT.
+    /// 来自 $SPIRITAGENT_SETUP_DEV_REPO_ROOT 指向的本地 checkout。
     DevCheckout,
-    /// Loaded from the Tauri `bundle.resources` directory.
+    /// 来自 Tauri bundle.resources。
     Bundled,
 }
 
-/// What flavor of script (Windows .ps1 vs Unix .sh).
 #[derive(Debug, Clone, Copy)]
 pub enum ScriptKind {
     Ps1,
@@ -59,16 +43,13 @@ impl ScriptKind {
     }
 }
 
-/// Resolves the install script to use for this run.
-///
-/// Order: dev (env override) → bundled (Tauri resources). There is no
-/// network step — the installer binary is self-contained.
+/// 解析安装脚本：dev 入口（环境变量覆盖）→ bundle.resources；不自联网。
 pub async fn resolve(
     app: &AppHandle,
     kind: ScriptKind,
     emit_log: &impl Fn(&str),
 ) -> Result<ResolvedScript> {
-    // 1. Dev shortcut.
+    // 1) 开发入口：通过环境变量指向 checkout，避免每次脚本改动都要重打包。
     if let Ok(repo_root) = std::env::var("SPIRITAGENT_SETUP_DEV_REPO_ROOT") {
         let candidate = PathBuf::from(repo_root).join("installer").join(kind.filename());
         if candidate.exists() {
@@ -84,7 +65,7 @@ pub async fn resolve(
         }
     }
 
-    // 2. Bundled in Tauri bundle.resources.
+    // 2) 生产路径：Tauri bundle.resources。
     let resource_dir = app
         .path()
         .resource_dir()
@@ -101,10 +82,7 @@ pub async fn resolve(
     })
 }
 
-/// Reads the install script from a Tauri `bundle.resources` directory.
-/// Pure function — no AppHandle, so it's directly unit-testable with a
-/// tmp dir. The script is a child of `payload/` because it expects to find
-/// the runner / desktop / skills / config payload alongside it.
+/// 从 Tauri bundle.resources 读取安装脚本；纯函数，便于用临时目录直接单测。
 fn resolve_bundled(resource_dir: &Path, kind: ScriptKind) -> Result<PathBuf> {
     let script_path = resource_dir.join("payload").join(kind.filename());
     if script_path.is_file() {
@@ -148,9 +126,7 @@ mod tests {
         fs::write(payload.join(kind.filename()), b"#!/bin/sh\necho fake\n").unwrap();
     }
 
-    /// The script bundled in the Tauri resources is the canonical source in
-    /// production. Verifying the resolver returns it (and not a download or
-    /// cache hit) is the whole point of removing the GitHub fallback.
+    /// 生产环境下 bundle.resources 中的脚本才是正解；本测试就是验证移除 GitHub 回退后解析器的首选路径。
     #[test]
     fn resolve_bundled_returns_script_in_payload() {
         let tmp = unique_tmp_dir("bundled-ok");
@@ -166,9 +142,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// When the standard bundle path is empty, resolve_bundled falls back
-    /// to the embedded resources (include_bytes! payload). In a test binary
-    /// built with payload staged, this succeeds.
+    /// 当标准 bundle 路径为空时回退到嵌入资源（include_bytes!）；测试二进制带 payload 时可成功。
     #[test]
     fn resolve_bundled_falls_back_to_embedded_resources() {
         let tmp = unique_tmp_dir("bundled-missing");
@@ -179,9 +153,7 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    /// Script kind round-trips through filename() — guards against a typo
-    /// (e.g., switching the .ps1 / .sh mapping) silently loading the wrong
-    /// script on the wrong platform.
+    /// 防止 .ps1 / .sh 映射被写错，从而在错误的平台加载到错误的脚本。
     #[test]
     fn script_kind_filename_round_trip() {
         assert_eq!(ScriptKind::Ps1.filename(), "install.ps1");

@@ -4,18 +4,6 @@ import * as React from 'react'
 
 import { cn } from '../lib/utils'
 
-/*
- * Button — copied verbatim from client/src/components/ui/button.tsx.
- *
- * We import the client's local shadcn-style Button rather than
- * @nous-research/ui's <Button>, because the DS Button uses bg-midground /
- * text-background-base utilities that resolve to the DS's hardcoded
- * gold/brown brand defaults (#ffac02 / #170d02) unless overridden in
- * runtime. The client never sets those vars; it routes through its
- * own --dt-* token chain via shadcn classes like bg-primary. We do
- * the same so visuals match exactly.
- */
-
 const buttonVariants = cva(
   "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[0.1875rem] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {

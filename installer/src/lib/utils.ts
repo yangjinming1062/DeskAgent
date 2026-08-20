@@ -1,12 +1,7 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
-/*
- * cn — Tailwind-aware class merger. Same util the desktop and dashboard
- * use. clsx handles conditional classes; twMerge resolves utility
- * conflicts so `cn('px-2', condition && 'px-4')` ends up with px-4 only,
- * not both.
- */
+// 合并 Tailwind 类：clsx 处理条件类，twMerge 解决同效工具类冲突。
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs))
 }

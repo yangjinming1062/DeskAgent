@@ -1,10 +1,5 @@
-//! Drives PowerShell (Windows) or bash (Unix) for install.ps1 / install.sh.
-//!
-//! Port of `spawnPowerShell` from bootstrap-runner.cjs, with the same
-//! line-buffered stdout/stderr streaming + cancellation semantics.
-//!
-//! On Windows we pass `-NoProfile -ExecutionPolicy Bypass -File <script>`.
-//! On Unix we shell out to `bash <script>` since install.sh expects bash.
+//! 驱动 install.ps1 / install.sh 的子进程：Windows 下走 PowerShell，Unix 下走 bash。
+//! Windows: `-NoProfile -ExecutionPolicy Bypass -File <script>`；Unix: `bash <script>`。
 
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -13,14 +8,12 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
 
-/// Hooks the caller installs to receive output.
 pub struct StreamSink {
     pub on_stdout_line: Box<dyn Fn(&str) + Send + Sync>,
     pub on_stderr_line: Box<dyn Fn(&str) + Send + Sync>,
 }
 
-/// Outcome of a script invocation. Mirrors bootstrap-runner.cjs's
-/// `{stdout, stderr, code, signal, killed}` shape.
+/// 脚本执行结果；字段与 bootstrap-runner.cjs 中的 `{stdout, stderr, code, signal, killed}` 一致。
 #[derive(Debug)]
 pub struct ScriptResult {
     pub stdout: String,
@@ -29,42 +22,32 @@ pub struct ScriptResult {
     pub killed: bool,
 }
 
-/// Cancellation signal — `cancel_tx.send(()).await` aborts the running script.
+/// 取消信号：`cancel_tx.send(()).await` 中止运行中的脚本。
 pub type CancelRx = mpsc::Receiver<()>;
 
-/// Optional context for the install script, derived from the installer's
-/// `bundle.resources` layout. Propagated to the child as a SPIRITAGENT_BUNDLE_*
-/// env-var pair so the slim install.{sh,ps1} (5-stage payload release)
-/// knows where to read its inputs from without having to be passed CLI args.
+/// 安装脚本可选上下文，由安装器 `bundle.resources` 布局派生；
+/// 作为 SPIRITAGENT_BUNDLE_* 环境变量下发给子脚本，避免用大量 CLI 参数。
 #[derive(Debug, Clone, Default)]
 pub struct BundleContext {
-    /// Absolute path to the unpacked Tauri bundle resources root.
+    /// Tauri bundle.resources 解压根路径。
     pub bundle_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/runner/` — holds the runner wheel (`desk_agent-*.whl`) and `server.py`.
+    /// `<bundle>/payload/runner/`，承载 runner wheel 与 `server.py`。
     pub bundled_runner_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/desktop/` — holds the platform's desktop installer
-    /// (dmg / nsis). Filename is `SpiritAgent-{version}-{platform}.{ext}`.
+    /// `<bundle>/payload/desktop/`，承载桌面安装器（dmg / nsis）。
     pub bundled_desktop_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/skills/` — Stage-InstallSkills source.
+    /// `<bundle>/payload/skills/`，Stage-InstallSkills 数据来源。
     pub bundled_skills_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/voices/` — bundled Piper onnx+json voice files. The
-    /// install script copies them into `$SPIRITAGENT_HOME/models/piper/` during
-    /// unpack-runner so local TTS works offline on day 1.
+    /// `<bundle>/payload/voices/`，Piper 语音 onnx+json；脚本拷至 `$SPIRITAGENT_HOME/models/piper/` 以便离线 TTS。
     pub bundled_voices_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/onboarding-audio/<lang>/` — pre-rendered cloud-TTS clips
-    /// grouped by language. Copied to `$SPIRITAGENT_HOME/audio/onboarding/<lang>/`
-    /// during unpack-runner.
+    /// `<bundle>/payload/onboarding-audio/<lang>/`，按语言组织的云端 TTS 引导音频。
     pub bundled_onboarding_audio_dir: Option<std::path::PathBuf>,
-    /// `dmg` | `nsis` — tells the unpack-desktop stage what to do
-    /// with the desktop artifact (hdiutil attach / NSIS /S).
+    /// `dmg` | `nsis`，unpack-desktop 阶段据此选择 hdiutil attach 或 NSIS /S。
     pub installer_format: Option<String>,
 }
 
-/// Spawns install.ps1 / install.sh with the given args and streams output.
+/// 启动 install.ps1 / install.sh 并流式返回输出。
 ///
-/// `spiritagent_home_override` propagates to the child as $SPIRITAGENT_HOME so the
-/// install script writes to the same directory the installer is reading from.
-/// `bundle` is propagated as SPIRITAGENT_BUNDLE_* env vars (see `BundleContext`).
+/// `spiritagent_home_override` 作为 $SPIRITAGENT_HOME 传递给子脚本；`bundle` 作为 SPIRITAGENT_BUNDLE_* 环境变量。
 pub async fn run_script(
     script_path: &Path,
     args: &[String],
@@ -75,10 +58,7 @@ pub async fn run_script(
 ) -> Result<ScriptResult> {
     let mut cmd = build_command(script_path, args);
 
-    // The installer can be launched from a .app bundle that is later replaced
-    // during self-update. Pin child scripts to a stable directory so bash/zsh
-    // never starts from a deleted cwd and emits getcwd/job-working-directory
-    // errors at the end of an otherwise successful install.
+    // 安装器可能被自更新替换；固定一个稳定 cwd，避免 bash/zsh 从已删除目录启动时打印 getcwd 错误。
     if let Some(cwd) = stable_script_cwd(script_path, spiritagent_home_override) {
         cmd.current_dir(cwd);
     }
@@ -87,10 +67,7 @@ pub async fn run_script(
         cmd.env("SPIRITAGENT_HOME", home);
     }
 
-    // Inject SPIRITAGENT_BUNDLE_* env vars so the slim install script can find
-    // its payload without a long CLI arg list. Each var is independent
-    // (None → omit), so dev overrides via individual CLI args remain
-    // available at the bootstrap layer.
+    // 下发 SPIRITAGENT_BUNDLE_* 变量，省去 CLI 长参数；各项独立（None 即省略），与 bootstrap 层的 CLI 覆盖不冲突。
     if let Some(p) = &bundle.bundle_dir {
         cmd.env("SPIRITAGENT_BUNDLE_DIR", p);
     }
@@ -117,9 +94,7 @@ pub async fn run_script(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    // On Windows, avoid spawning a flashing cmd window when we're hosted
-    // inside a GUI process. Tauri's main window is already created, so
-    // the side-effect console for the child is unwanted.
+    // 避免在 GUI 进程中弹出多余的 cmd 控制台窗口。
     #[cfg(target_os = "windows")]
     {
         // CREATE_NO_WINDOW = 0x08000000
@@ -140,7 +115,6 @@ pub async fn run_script(
     let mut combined_stderr = String::new();
     let mut killed = false;
 
-    // Loop: poll stdout, stderr, cancel, and child exit concurrently.
     loop {
         tokio::select! {
             line = stdout_reader.next_line() => {
@@ -150,10 +124,7 @@ pub async fn run_script(
                         combined_stdout.push_str(&l);
                         combined_stdout.push('\n');
                     }
-                    Ok(None) => {
-                        // EOF on stdout — wait for stderr + exit.
-                        break;
-                    }
+                    Ok(None) => break,
                     Err(e) => {
                         tracing::warn!("stdout read error: {e}");
                         break;
@@ -167,9 +138,7 @@ pub async fn run_script(
                         combined_stderr.push_str(&l);
                         combined_stderr.push('\n');
                     }
-                    Ok(None) => {
-                        // stderr EOF — keep draining stdout.
-                    }
+                    Ok(None) => {}
                     Err(e) => {
                         tracing::warn!("stderr read error: {e}");
                     }
@@ -178,14 +147,14 @@ pub async fn run_script(
             _ = recv_cancel(&mut cancel_rx) => {
                 tracing::warn!("cancellation received — killing child");
                 killed = true;
-                // best-effort kill; don't propagate errors
+                // 尽力杀掉子进程，不向上传播错误。
                 let _ = child.start_kill();
                 break;
             }
         }
     }
 
-    // Drain remaining lines after the loop exited.
+    // 主循环退出后继续把残余行抽干，避免上层遗漏末尾输出。
     while let Ok(Some(l)) = stdout_reader.next_line().await {
         (sink.on_stdout_line)(&l);
         combined_stdout.push_str(&l);
@@ -231,10 +200,7 @@ async fn recv_cancel(rx: &mut Option<CancelRx>) {
 
 #[cfg(target_os = "windows")]
 fn build_command(script_path: &Path, args: &[String]) -> Command {
-    // We want PowerShell 5.1 / 7. install.ps1 uses 5.1-safe syntax everywhere.
-    // Prefer `powershell.exe` (5.1 baseline, present on every Windows since 7)
-    // over `pwsh.exe` (7+, may not be present). Resolve it by absolute path —
-    // see `windows_powershell_exe`.
+    // install.ps1 全部使用 5.1 兼容语法；优先 powershell.exe（5.1 基线，Win7+ 均提供），不依赖 pwsh 7+。
     let mut cmd = Command::new(windows_powershell_exe());
     cmd.arg("-NoProfile");
     cmd.arg("-ExecutionPolicy").arg("Bypass");
@@ -247,8 +213,7 @@ fn build_command(script_path: &Path, args: &[String]) -> Command {
 
 #[cfg(not(target_os = "windows"))]
 fn build_command(script_path: &Path, args: &[String]) -> Command {
-    // install.sh expects bash. /bin/bash is fine on macOS (Apple still
-    // ships an old 3.2 bash; install.sh is written to that baseline).
+    // install.sh 要求 bash；macOS 自带的 bash 3.2 即可，脚本按该基线编写。
     let mut cmd = Command::new("bash");
     cmd.arg(script_path);
     for a in args {
@@ -257,9 +222,7 @@ fn build_command(script_path: &Path, args: &[String]) -> Command {
     cmd
 }
 
-/// Canonical PowerShell 5.1 location under a Windows root (`%SystemRoot%`).
-/// Kept separate (and test-visible) so the path layout is unit-tested on any
-/// host, not just Windows.
+/// Windows 根（`%SystemRoot%`）下的 PowerShell 5.1 标准位置；独立函数（并对 test 开放）便于在任何主机上单测路径布局。
 #[cfg(any(target_os = "windows", test))]
 fn powershell_under_root(root: &Path) -> std::path::PathBuf {
     root.join("System32")
@@ -268,15 +231,9 @@ fn powershell_under_root(root: &Path) -> std::path::PathBuf {
         .join("powershell.exe")
 }
 
-/// Resolves the PowerShell interpreter to spawn.
+/// 解析 PowerShell 解释器路径。
 ///
-/// `Command::new("powershell.exe")` trusts PATH to contain
-/// `%SystemRoot%\System32\WindowsPowerShell\v1.0`. On machines whose PATH was
-/// trimmed or truncated (Windows silently drops entries once the variable grows
-/// past its length limit), that lookup fails and the spawn dies with
-/// "program not found" before install.ps1 ever runs — the installer then stalls
-/// at "0 of 0 steps". Resolve by absolute path first, then fall back to PATH
-/// (powershell 5.1, then pwsh 7), then a bare name as a last resort.
+/// 不信任 PATH，因 Windows 会在过长时静默丢弃条目，导致 "program not found"；优先用绝对路径，再走 PATH / powershell 5.1 / pwsh 7，最后兜底 bare name。
 #[cfg(target_os = "windows")]
 fn windows_powershell_exe() -> std::path::PathBuf {
     for var in ["SystemRoot", "windir"] {
@@ -297,10 +254,7 @@ fn windows_powershell_exe() -> std::path::PathBuf {
     std::path::PathBuf::from("powershell.exe")
 }
 
-/// Human-readable interpreter name for spawn-failure context. On Windows this
-/// is the resolved PowerShell path so a missing/odd interpreter is obvious in
-/// the log (the old message only printed the script path, which read as if the
-/// .ps1 itself was missing).
+/// spawn 失败上下文中的人类可读解释器名；Windows 下走解析后的绝对路径，避免误以为脚本本身丢失。
 #[cfg(target_os = "windows")]
 fn interpreter_label() -> String {
     windows_powershell_exe().display().to_string()
@@ -311,11 +265,8 @@ fn interpreter_label() -> String {
     "bash".to_string()
 }
 
-/// Parses the LAST line of stdout that looks like a JSON object matching
-/// the install.ps1 stage-result contract: `{ok: bool, stage: string, ...}`.
-///
-/// Mirrors `parseStageResult` from bootstrap-runner.cjs. install.ps1 may
-/// print info/banner lines before the result frame; we scan from the end.
+/// 解析 stdout 中最后一个匹配 install.ps1 阶段结果约定的 JSON 行 `{ok: bool, stage: string, ...}`。
+/// install.ps1 可能在结果帧前输出 info/banner，从末尾向前扫描。
 pub fn parse_stage_result(stdout: &str) -> Option<crate::events::StageResultPayload> {
     for line in stdout.lines().rev() {
         let trimmed = line.trim();
@@ -337,11 +288,8 @@ pub fn parse_stage_result(stdout: &str) -> Option<crate::events::StageResultPayl
     None
 }
 
-/// Same logic but for the `-Manifest` payload (the LAST line with a `stages`
-/// array). Returns the parsed manifest.
-///
-/// Handles both single-line JSON and multi-line JSON (PowerShell here-strings
-/// from `Emit-Manifest` produce multi-line output).
+/// `-Manifest` 负载解析：找最后一个含 `stages` 数组的 JSON。
+/// 同时兼容单行 JSON 与多行 JSON（PowerShell `Emit-Manifest` 走 here-string 时为多行）。
 pub fn parse_manifest(stdout: &str) -> Option<crate::events::Manifest> {
     fn try_parse(blob: &str) -> Option<crate::events::Manifest> {
         let value = serde_json::from_str::<serde_json::Value>(blob).ok()?;
@@ -351,7 +299,7 @@ pub fn parse_manifest(stdout: &str) -> Option<crate::events::Manifest> {
         serde_json::from_value(value).ok()
     }
 
-    // Try line-by-line first (handles single-line JSON and trailing banners).
+    // 先按行匹配（处理单行 JSON 与尾部 banner）。
     for line in stdout.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -361,8 +309,7 @@ pub fn parse_manifest(stdout: &str) -> Option<crate::events::Manifest> {
             return Some(m);
         }
     }
-    // Fallback: try the entire stdout as one JSON object (multi-line
-    // here-string output from PowerShell).
+    // 兜底：把整个 stdout 当作一个 JSON 对象解析（处理 PowerShell 多行 here-string 输出）。
     try_parse(stdout.trim())
 }
 

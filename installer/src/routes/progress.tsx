@@ -28,7 +28,7 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
 
   const currentStageObj = currentStageName ? bootstrap.stages[currentStageName] : null
 
-  // Determine egg phase
+  // 根据状态决定蛋的阶段
   let phase: EggPhase = 'idle'
   if (bootstrap.status === 'completed') {
     phase = 'hatching'
@@ -52,10 +52,10 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
 
   return (
     <div className="spiritagent-fade-in relative isolate flex h-full flex-col overflow-hidden bg-background">
-      {/* Background ambient glow */}
+      {/* 背景氛围光 */}
       <span aria-hidden="true" className="spiritagent-glow" />
 
-      {/* Region A: Top Step Header */}
+      {/* 区域 A：顶部步骤头 */}
       <div className="flex shrink-0 items-center justify-between px-8 pt-6 pb-2">
         <div className="flex items-center gap-2">
           <span className="font-['Collapse'] text-lg font-bold tracking-[0.08em] text-primary">
@@ -75,10 +75,10 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
         </div>
       </div>
 
-      {/* Region B: Hero Egg + Halo (flex-1) */}
+      {/* 区域 B：主视觉蛋与光环 */}
       <div className="relative flex flex-1 flex-col items-center justify-center min-h-0 px-6 py-2">
         <div className="relative flex items-center justify-center">
-          {/* Outer Segmented Halo */}
+          {/* 外层分段光环 */}
           <Halo
             total={progress.total || 6}
             done={progress.done}
@@ -88,18 +88,18 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
             className="absolute"
           />
 
-          {/* Center Egg */}
+          {/* 中央蛋 */}
           <Egg
             cracks={progress.done}
             phase={phase}
             size={240}
           />
 
-          {/* Hatch overlay centered on Hero */}
+          {/* 破壳覆盖层，居中叠在主视觉上 */}
           <HatchOverlay active={bootstrap.status === 'completed'} />
         </div>
 
-        {/* Dynamic Caption below Hero */}
+        {/* 主视觉下方的动态文案 */}
         <div className="mt-4 flex items-center gap-2 text-center text-sm font-medium text-foreground/90">
           {bootstrap.status === 'running' && (
             <Loader2 size={14} className="animate-spin text-primary shrink-0" />
@@ -108,14 +108,14 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
         </div>
       </div>
 
-      {/* Collapsible Details Panel overlay if toggled */}
+      {/* 折叠展开的详情面板 */}
       {showDetails && (
         <div className="mx-8 mb-2 h-44 shrink-0 overflow-hidden">
           <StageList bootstrap={bootstrap} />
         </div>
       )}
 
-      {/* Region C: Bottom Toolbar */}
+      {/* 区域 C：底部工具栏 */}
       <div className="flex shrink-0 items-center justify-between border-t border-border px-8 py-3 bg-card/40 backdrop-blur-xs">
         <button
           type="button"

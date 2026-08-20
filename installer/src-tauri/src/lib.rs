@@ -1,12 +1,5 @@
-//! SpiritAgent Setup — Tauri entrypoint.
-//!
-//! Spawns a single window pointed at the React frontend (installer/src/).
-//! All install-time work lives in `bootstrap.rs` and is invoked through the Tauri
-//! commands registered at the bottom of `run()`.
-//!
-//! The Windows-subsystem strip lives on the binary crate (src/main.rs), not
-//! here — a crate-level attribute on a lib doesn't propagate to the linker
-//! flags of the executable that consumes it.
+//! SpiritAgent Setup 的 Tauri 入口；安装期工作集中于 `bootstrap.rs`，通过 `run()` 注册的命令调用。
+//! Windows 子系统剥离（windows_subsystem）位于二进制 crate 的 main.rs，而不在此处——lib 上的属性不会下传到链接期。
 
 mod bootstrap;
 mod embedded_resources;
@@ -18,10 +11,7 @@ mod paths;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-/// Returns true when the args request a forced installer UI (repair/reinstall)
-/// via `--reinstall` or `--repair`, which overrides the macOS launcher
-/// fast-path so a broken install can be repaired. Arg-iterator generic so it's
-/// unit-testable. Independent of any mode selection.
+/// 当传入 `--reinstall` 或 `--repair` 时强制进入安装器 UI（绕过 macOS 启动快路径，便于修复已坏安装）。
 pub fn force_setup_from_args<I, S>(args: I) -> bool
 where
     I: IntoIterator<Item = S>,
@@ -31,11 +21,8 @@ where
         .any(|a| a.as_ref() == "--reinstall" || a.as_ref() == "--repair")
 }
 
-/// Process-wide install state, shared across Tauri commands.
-///
-/// The bootstrap is a one-shot, single-tenant process — we only need one
-/// of these per window. `Arc<Mutex<...>>` lets command handlers grab it
-/// without lifetime gymnastics.
+/// 进程级安装状态，跨 Tauri 命令共享。
+/// bootstrap 为一次性单租户流程，每个窗口仅需一份；`Arc<Mutex<...>>` 避免命令处理器处理生命周期问题。
 pub struct AppState {
     pub bootstrap: Mutex<Option<bootstrap::BootstrapHandle>>,
 }
@@ -50,14 +37,10 @@ impl AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Tracing → bootstrap-installer.log under SPIRITAGENT_HOME/logs/ so install
-    // failures leave a trail for support. Console output also goes here in
-    // debug builds.
+    // tracing 输出到 bootstrap-installer.log，debug 构建同时输出到控制台。
     let _guard = paths::init_logging();
 
-    // Escape hatch: `--reinstall`/`--repair` forces the installer UI even when
-    // SpiritAgent is already installed, so users can re-run setup to repair a broken
-    // install instead of the launcher fast path silently relaunching the app.
+    // `--reinstall` / `--repair` 兜底：已安装时也强制回到安装器，避免快路径再次启动已坏的应用。
     let force_setup = force_setup_from_args(std::env::args().skip(1));
     tracing::info!(force_setup, "SpiritAgent installer starting");
 
@@ -70,28 +53,14 @@ pub fn run() {
         .setup(move |app| {
             use tauri::Manager;
 
-            // Launcher fast path (macOS only): a bare ("Install") launch when
-            // SpiritAgent is already installed should NOT show the installer or
-            // rebuild — it should just open the app, so the /Applications
-            // "SpiritAgent" doubles as a normal launcher (first run installs, every
-            // later run launches instantly). The window is kept hidden until
-            // here via `"visible": false` so this path never flashes a window.
-            //
-            // Gated to macOS deliberately: on Windows the installer keeps
-            // its existing behavior (Windows users relaunch via the Start
-            // Menu/Desktop "SpiritAgent" shortcuts that install.ps1 creates, and a
-            // reliable detached relaunch there needs the DETACHED_PROCESS +
-            // startup-grace handling used by launch_spiritagent_desktop — out of
-            // scope here). So this is a pure no-op on Windows.
-            //
-            // `--reinstall`/`--repair` opts out so a broken install can be
-            // repaired by re-running setup instead of launching the bad app.
+            // macOS 启动快路径：已安装时不再弹窗，直接打开应用。窗口通过 `"visible": false` 推迟显形，避免闪烁。
+            // 仅限 macOS：Windows 由 install.ps1 创建的快捷方式启动，需要 launch_spiritagent_desktop 的 DETACHED_PROCESS + 启动 grace；这里在 Windows 上为纯 no-op。
+            // `--reinstall` / `--repair` 强制退出快路径，以便重新跑一遍安装来修复。
             if cfg!(target_os = "macos") && !force_setup {
                 if bootstrap::spiritagent_is_installed() {
                     match bootstrap::spawn_installed_desktop() {
                         Ok(()) => {
-                            // Brief grace so the spawned app is registered
-                            // before we exit (mirrors launch_spiritagent_desktop).
+                            // 短暂等待确保子进程被系统注册后再退出（与 launch_spiritagent_desktop 保持一致）。
                             std::thread::sleep(std::time::Duration::from_millis(200));
                             tracing::info!(
                                 "spiritagent already installed — relaunched desktop; exiting installer"
@@ -108,7 +77,7 @@ pub fn run() {
                     }
                 }
             }
-            // First run / repair install: reveal the UI.
+            // 首次安装或修复安装：显形主窗口。
             match app.get_webview_window("main") {
                 Some(win) => {
                     if let Err(err) = win.show() {
@@ -122,13 +91,10 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            // Bootstrap lifecycle
             bootstrap::start_bootstrap,
             bootstrap::cancel_bootstrap,
             bootstrap::get_bootstrap_status,
-            // Hand-off
             bootstrap::launch_spiritagent_desktop,
-            // Diagnostics
             paths::get_log_path,
             paths::get_spiritagent_home,
             paths::open_log_dir,

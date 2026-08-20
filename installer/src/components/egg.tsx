@@ -11,19 +11,19 @@ interface EggProps {
   className?: string
 }
 
-// 6 preset crack SVG path definitions radiating towards egg center
+// 6 条预设裂纹 SVG 路径（向蛋中心辐射）
 const CRACK_PATHS = [
-  // Crack 1: Top-left fracture
+  // 裂纹 1：左上裂缝
   'M 160 70 L 148 95 L 155 115 L 140 135',
-  // Crack 2: Upper-right branch
+  // 裂纹 2：右上分支
   'M 230 140 L 205 148 L 195 135 L 180 155',
-  // Crack 3: Lower-left fork
+  // 裂纹 3：左下分叉
   'M 90 210 L 115 200 L 125 215 L 145 195',
-  // Crack 4: Mid-left zigzag
+  // 裂纹 4：左中曲折
   'M 80 145 L 105 150 L 115 165 L 138 160',
-  // Crack 5: Top-right deep notch
+  // 裂纹 5：右上深凹
   'M 175 60 L 180 88 L 168 105 L 175 125',
-  // Crack 6: Deep center split connecting core
+  // 裂纹 6：贯穿核心的中央裂缝
   'M 160 270 L 165 240 L 152 215 L 160 170'
 ]
 
@@ -69,14 +69,14 @@ export function Egg({
         aria-label="SpiritAgent Egg"
       >
         <defs>
-          {/* Ambient background glow */}
+          {/* 环境氛围光 */}
           <radialGradient id="egg-ambient-glow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#ffd166" stopOpacity="0.45" />
             <stop offset="60%" stopColor="#ffd166" stopOpacity="0.15" />
             <stop offset="100%" stopColor="#ffd166" stopOpacity="0" />
           </radialGradient>
 
-          {/* Hatching core warm light */}
+          {/* 破壳时的核心暖光 */}
           <radialGradient id="egg-core-light" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
             <stop offset="35%" stopColor="#fff4d6" stopOpacity="0.95" />
@@ -84,7 +84,7 @@ export function Egg({
             <stop offset="100%" stopColor="#0053fd" stopOpacity="0" />
           </radialGradient>
 
-          {/* Crack glow filter */}
+          {/* 裂纹辉光滤镜 */}
           <filter id="crack-glow-filter" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="2" result="blur" />
             <feMerge>
@@ -94,7 +94,7 @@ export function Egg({
           </filter>
         </defs>
 
-        {/* Ambient radial glow behind egg */}
+        {/* 蛋后方的环境辉光 */}
         {!isHatched && (
           <ellipse
             cx="160"
@@ -106,7 +106,7 @@ export function Egg({
           />
         )}
 
-        {/* Core warm orb revealed during hatching */}
+        {/* 破壳时显形的核心暖光球 */}
         {(isHatching || isHatched) && (
           <g className="animate-warm-glow">
             <circle cx="160" cy="170" r="75" fill="url(#egg-core-light)" />
@@ -114,7 +114,7 @@ export function Egg({
           </g>
         )}
 
-        {/* Main Egg Shell */}
+        {/* 主蛋壳 */}
         {!isHatched && (
           <g
             className={clsx(
@@ -123,7 +123,7 @@ export function Egg({
             )}
             style={{ transformOrigin: '160px 170px' }}
           >
-            {/* Outer shell path */}
+            {/* 外壳路径 */}
             <path
               d="M 160 50 C 95 50 75 135 75 185 C 75 245 112 290 160 290 C 208 290 245 245 245 185 C 245 135 225 50 160 50 Z"
               fill="var(--color-egg-shell, #fff4d6)"
@@ -131,7 +131,7 @@ export function Egg({
               strokeWidth="2"
             />
 
-            {/* Render cracks */}
+            {/* 渲染裂纹 */}
             {CRACK_PATHS.slice(0, visibleCracks).map((pathD, idx) => {
               const isFlashing = flashingIdx === idx
               const strokeColor = isFailed

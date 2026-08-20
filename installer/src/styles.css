@@ -1,26 +1,8 @@
-/*
- * SpiritAgent Setup — self-contained design tokens.
- *
- * The installer is an independent top-level module. It does NOT import
- * from desktop/, runner/, or backend/. This file declares the design
- * tokens the four installer screens (welcome / progress / success / failure)
- * actually use, hardcoded to the brand's light surface (Nous-blue accent
- * on near-white chrome). No theme switcher — a one-time install UX doesn't
- * need one.
- *
- * Token values mirror desktop/src/styles.css's light mode so the wordmark
- * and brand feel consistent, but they are NOT auto-generated from there.
- * If the brand palette changes, update both — they are intentionally
- * decoupled. The installer's needs are narrow (one accent, one destructive,
- * a few surfaces); pulling in the full design system would couple us to
- * its every edit.
- */
+/* 安装器为顶层独立模块，token 与桌面端浅色模式保持视觉一致但不联动。 */
 
 @import 'tailwindcss';
 
-/* Collapse Bold — SpiritAgent wordmark font. Shipped via @nous-research/ui, which
-   is a dep of this package; the path resolves to installer/node_modules.
-   The desktop uses the same font, but from its own copy of node_modules. */
+/* Collapse Bold —— SpiritAgent 品牌字体；通过 @nous-research/ui 依赖提供。 */
 @font-face {
   font-family: 'Collapse';
   font-style: normal;
@@ -54,11 +36,7 @@
 }
 
 @layer utilities {
-  /* fit-text — auto-size text to its container. The wordmark and the
-     failure headline use this to size themselves to the window width.
-     Logic copied from desktop/src/styles.css §.fit-text; the CSS is plain
-     enough that maintaining a copy is cheaper than introducing a shared
-     stylesheet package. */
+  /* fit-text —— 按容器宽度自动缩放字体；与桌面端 .fit-text 保持一致。 */
   .fit-text {
     --fit-captured-length: initial;
     --fit-support-sentinel: var(--fit-captured-length, 9999px);
@@ -102,7 +80,6 @@
   }
 }
 
-/* Installer-only additions: a fade-in animation and the companion glow. */
 @keyframes spiritagent-fade-in {
   from {
     opacity: 0;
@@ -118,13 +95,7 @@
   animation: spiritagent-fade-in 0.45s ease-out both;
 }
 
-/* The installer's companion glow — breathes in lockstep with the egg the
-   user is about to meet (desktop companion/sprite/egg.tsx `eggGlowPulse`):
-   identical 3.4s ease-in-out cadence and ×1.5 opacity swell, same amber
-   (#ffd166 family) as the egg/silhouette life-force glow. The installer is
-   the very first impression — before the egg even appears — so it carries
-   the same warmth the desktop login and the egg radiate. Self-contained:
-   this module does not import desktop's .login-glow; the rhythm is mirrored. */
+/* 伙伴氛围光；与桌面端 eggGlowPulse 同步脉动（3.4s ease-in-out，琥珀色系）。 */
 .spiritagent-glow {
   position: absolute;
   left: 50%;

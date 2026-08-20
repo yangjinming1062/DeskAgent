@@ -2,17 +2,7 @@ import { atom, computed } from 'nanostores'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 
-/*
- * Bootstrap state store — single source of truth for installer screens.
- *
- * Lives in nanostores per the project's TypeScript guidelines (desktop
- * AGENTS.md): "Prefer small nanostores over component state when state is
- * shared, reused, or read by distant UI."
- *
- * One channel from Rust ('bootstrap' event), discriminated by payload.type.
- * We translate those events into typed atom updates here so the rest of
- * the app only deals with React-friendly state.
- */
+// bootstrap 状态的单一数据源；按 payload.type 派发 Tauri 'bootstrap' 事件。
 
 export interface StageInfo {
   name: string
@@ -129,7 +119,6 @@ function clearRouteTimer(): void {
 export async function initialize(): Promise<void> {
   if (unlisten) return
 
-  // Clean up IPC listeners and route timers when the installer window unloads.
   const cleanup = () => {
     clearRouteTimer()
     if (unlisten) {
@@ -142,7 +131,7 @@ export async function initialize(): Promise<void> {
     window.addEventListener('beforeunload', cleanup)
   }
 
-  // Pull static info on mount for the diagnostics footer.
+  // 启动时拉取诊断信息（日志路径、SPIRITAGENT_HOME）。
   try {
     const [logPath, spiritAgentHome] = await Promise.all([
       invoke<string>('get_log_path'),
@@ -202,8 +191,7 @@ export async function initialize(): Promise<void> {
       }
       case 'log': {
         const logs = [...cur.logs, { stage: payload.stage, line: payload.line, stream: payload.stream }]
-        // Keep the rolling buffer bounded so the UI doesn't get OOM'd
-        // during a long install (playwright chromium download is ~10k lines).
+        // 长流程日志可上万行，限制滚动缓冲以避免前端 OOM。
         const trimmed = logs.length > 2000 ? logs.slice(-2000) : logs
         $bootstrap.set({ ...cur, logs: trimmed })
         break
@@ -240,9 +228,7 @@ export async function initialize(): Promise<void> {
 
 export async function startInstall(): Promise<void> {
   clearRouteTimer()
-  // Reset before kicking off so a retry from the failure screen clears
-  // the previous run's state. The install script is bundled and pinned at
-  // build time (BUILD_PIN_BRANCH) — branch/commit are always null here.
+  // 重试前重置状态；安装脚本在构建期 pin 完毕，commit/branch 始终为 null。
   $bootstrap.set(INITIAL)
   $route.set('progress')
   await invoke('start_bootstrap', {
@@ -262,8 +248,7 @@ export async function cancelInstall(): Promise<void> {
 
 export async function launchSpiritAgentDesktop(): Promise<void> {
   if (!$bootstrap.get().installRoot) throw new Error('no install root')
-  // launch_spiritagent_desktop resolves the desktop binary from $SPIRITAGENT_HOME
-  // on the Rust side (see src-tauri/src/bootstrap.rs).
+  // 桌面端路径由 Rust 侧从 $SPIRITAGENT_HOME 解析（见 src-tauri/src/bootstrap.rs）。
   await invoke('launch_spiritagent_desktop')
 }
 

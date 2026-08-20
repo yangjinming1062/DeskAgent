@@ -1,12 +1,7 @@
-//! Filesystem paths + logging setup.
+//! SPIRITAGENT_HOME 路径与日志初始化；必须与 Python/JS/Bash 解析器完全一致，否则安装器与 install.ps1 会读写不同位置。
 //!
-//! Mirrors `runner/utils/constants.py::get_spiritagent_home()`:
-//!   Windows: %LOCALAPPDATA%\SpiritAgent
-//!   macOS:   ~/Library/Application Support/SpiritAgent
-//!
-//! IMPORTANT: this must match the Python/JS/bash resolvers exactly. Drift
-//! here means install.ps1 writes to one place and the installer reads from
-//! another, breaking the bootstrap-complete check.
+//! Windows: %LOCALAPPDATA%\SpiritAgent
+//! macOS:   ~/Library/Application Support/SpiritAgent
 
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
@@ -44,12 +39,7 @@ pub fn log_path() -> PathBuf {
     log_dir().join("bootstrap-installer.log")
 }
 
-/// Stable location the installer copies itself to after a successful install.
-/// The start-menu / desktop shortcuts can point users back to it for repair
-/// runs. Lives directly under SPIRITAGENT_HOME so it survives repo checkout deletion.
-///
-/// On Windows this is `%LOCALAPPDATA%\SpiritAgent\spiritagent-setup.exe`; on other
-/// platforms the extension differs but the directory is the same.
+/// 安装完成后将安装器自拷贝到的稳定位置；快捷方式可指向此处，便于重装/修复。位于 SPIRITAGENT_HOME 下，仓库删除后仍保留。
 pub fn installer_dest() -> PathBuf {
     let name = if cfg!(target_os = "windows") {
         "spiritagent-setup.exe"
@@ -59,20 +49,14 @@ pub fn installer_dest() -> PathBuf {
     spiritagent_home().join(name)
 }
 
-/// Copy the currently-running installer binary to `installer_dest()` so the
-/// start-menu / desktop shortcuts have a stable target.
+/// 把当前运行的安装器二进制拷贝到 `installer_dest()`，给快捷方式一个稳定目标。
 ///
-/// No-ops (returns Ok) when the running exe is ALREADY the destination (a
-/// prior copy), where copying onto ourselves would be a Windows sharing
-/// violation. Best-effort: a failure here must not fail the install, so the
-/// caller logs and continues.
+/// 当运行位置已为最终位置时直接 no-op（自我拷贝在 Windows 下会触发共享冲突）。最佳努力：失败不应中断安装。
 pub fn copy_self_to_spiritagent_home() -> std::io::Result<()> {
     let src = std::env::current_exe()?;
     let dest = installer_dest();
 
-    // Skip if we're already running from the destination (a prior copy).
-    // canonicalize both so symlinks / 8.3 short paths / case differences don't
-    // trick us into a self-copy.
+    // canonicalize 双方规避符号链接/8.3 短名/大小写差异引起的误判拷贝。
     let same = match (src.canonicalize(), dest.canonicalize()) {
         (Ok(a), Ok(b)) => a == b,
         _ => src == dest,
@@ -93,9 +77,7 @@ pub fn copy_self_to_spiritagent_home() -> std::io::Result<()> {
 
 #[cfg(target_os = "macos")]
 fn repair_macos_installer_helper(path: &Path) {
-    // The staged helper may inherit quarantine from the downloaded installer.
-    // The desktop's start-menu shortcut launches this exact file for repair
-    // runs, so make it executable before LaunchServices/Gatekeeper reject it.
+    // 拷贝后的文件可能继承下载安装器的 quarantine 属性；桌面快捷方式会再次启动它，需先祛除隔离属性。
     let _ = Command::new("/usr/bin/xattr")
         .args(["-cr"])
         .arg(path)
@@ -117,21 +99,15 @@ fn repair_macos_installer_helper(path: &Path) {
 #[cfg(not(target_os = "macos"))]
 fn repair_macos_installer_helper(_path: &Path) {}
 
-/// Where install.ps1 writes the bootstrap-complete marker (existence-only file
-/// the macOS launcher fast-path checks via `spiritagent_is_installed()`).
+/// install.ps1 写入 bootstrap-complete 标记的位置（仅存在与否，供 macOS 启动快路径判断）。
 #[allow(dead_code)]
 pub fn likely_bootstrap_marker(install_root: &Path) -> PathBuf {
     install_root.join(".spiritagent-bootstrap-complete")
 }
 
-/// Path to the python binary in the Runner's uv-managed venv. `None`
-/// when neither candidate exists (uv may have dropped `python.exe`
-/// vs `python3.exe` depending on the targeted version); callers
-/// should treat `None` as "no healthy venv" and refuse accordingly.
+/// Runner uv venv 中的 Python 二进制路径。两者皆不存在时返回 `None`，调用方应视为"venv 不健康"并拒绝。
 ///
-/// Mirrors `runner/utils/path_helpers.py::find_python()`'s candidate
-/// list so a venv that uv produced on Windows without `python.exe`
-/// but with `python3.exe` still reports positive.
+/// 与 `runner/utils/path_helpers.py::find_python()` 的候选列表保持一致，避免 Windows uv 仅产出 python3.exe 时被误判为缺失。
 pub fn runner_venv_python() -> Option<PathBuf> {
     let root = spiritagent_home().join("runner").join(".venv");
     let candidates: [PathBuf; 2] = if cfg!(target_os = "windows") {
@@ -148,14 +124,11 @@ pub fn runner_venv_python() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.is_file())
 }
 
-/// Initializes tracing to bootstrap-installer.log under SPIRITAGENT_HOME/logs/.
-/// Returns a guard that flushes the appender on drop — keep it alive for
-/// the lifetime of the process.
+/// 初始化 tracing，输出到 SPIRITAGENT_HOME/logs/bootstrap-installer.log；返回的 guard 在 drop 时 flush，须在进程生命周期内持有。
 pub fn init_logging() -> Option<WorkerGuard> {
     let dir = log_dir();
     if let Err(err) = std::fs::create_dir_all(&dir) {
-        // No log dir → log to stderr only. Don't panic; the installer
-        // should still be usable on an exotic filesystem.
+        // 日志目录创建失败时仅向 stderr 输出，不 panic；安装器仍应在异常文件系统下可用。
         eprintln!("[spiritagent-setup] could not create log dir {dir:?}: {err}");
         return None;
     }
@@ -175,10 +148,6 @@ pub fn init_logging() -> Option<WorkerGuard> {
 
     Some(guard)
 }
-
-// ---------------------------------------------------------------------------
-// Tauri commands
-// ---------------------------------------------------------------------------
 
 #[tauri::command]
 pub fn get_log_path() -> String {

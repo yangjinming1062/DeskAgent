@@ -1,18 +1,7 @@
 @echo off
-REM ============================================================================
-REM SpiritAgent Agent Installer (CMD wrapper)
-REM ============================================================================
-REM Forwards to install.ps1 in the same directory. Use this when
-REM you're on a Windows CMD shell and only have install.cmd handy; if you
-REM can, just run install.ps1 directly from PowerShell.
-REM
-REM Usage:
-REM   install.cmd
-REM   install.cmd -Manifest
-REM   install.cmd -Stage welcome -Json
-REM
-REM All arguments are passed through to install.ps1 untouched.
-REM ============================================================================
+REM SpiritAgent 安装器（CMD 包装）：转发到同目录下 install.ps1。
+REM 仅用于只有 install.cmd 可用的 CMD 环境；能直接用 PowerShell 跑 install.ps1 时优先走 install.ps1。
+REM 所有参数原样透传给 install.ps1。
 
 setlocal
 set SCRIPT_DIR=%~dp0

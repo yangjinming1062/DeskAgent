@@ -14,13 +14,7 @@ interface FailureProps {
   bootstrap: BootstrapStateModel
 }
 
-/*
- * Failure screen. Same hero treatment as Welcome/Success — the wordmark
- * carries the brand, so we keep it across every terminal state.
- *
- * The actual error message lives below in muted text. Two clear
- * affordances: Retry (primary) and Open log folder (secondary).
- */
+// 失败页：保持品牌主视觉，错误文案置于次级文字，主操作是重试。
 export default function Failure({ bootstrap }: FailureProps): React.JSX.Element {
   const logPath = useStore($logPath)
 
