@@ -1,54 +1,25 @@
 #!/usr/bin/env bash
-# Build the SpiritAgent client installer for macOS.
-#
-# Single entry point that orchestrates:
-#   1. uv build wheel → runner/dist/spiritagent-agent-*.whl
-#   2. electron-builder → client/release/SpiritAgent-{ver}-mac-*.dmg
-#   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
-#   4. Patch tauri.conf.json so bundle.resources contains the current host's
-#      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer/src-tauri/target/release/bundle/.../SpiritAgent-Setup.dmg
-#   6. Restore tauri.conf.json (git state preserved).
-#   7. Print the final installer path under release/.
-#
-# Backend (Docker) is NOT built here — it has its own CI/repo path.
-#
-# Usage:
-#   scripts/build_client.sh --version 0.16.0 --target mac
-#
-# Options:
-#   --version X.Y.Z           Required. Written into desktop + installer package.json
-#                             and runner/pyproject.toml.
-#   --target mac              Build target. Defaults to current host. macOS must
-#                             be built on its native host (electron-builder /
-#                             Tauri can't cross-build).
-#   --skip-runner             Don't build runner wheel (use existing dist/spiritagent-agent-*.whl).
-#   --skip-desktop            Don't build desktop (use existing release/SpiritAgent-*).
-#   --sign-identity ID        macOS code-sign identity (Developer ID Application: ...).
-#   --notary-profile NAME     macOS notarytool keychain profile.
-#   --output DIR              Output directory for the final installer. Default: release/.
+# 打包 SpiritAgent 客户端安装器（macOS）。Backend 由 Docker 单独构建，不在此入口内。
+# 编排顺序：构建 runner wheel → electron-builder 桌面端 → 暂存 payload → 临时改 tauri.conf.json → Tauri 构建 → 还原配置 → 拷贝最终安装器。
+# 用法：scripts/build_client.sh --version X.Y.Z [--target mac] [--skip-runner] [--skip-desktop] [--sign-identity ID] [--notary-profile NAME] [--output DIR]
 
 set -euo pipefail
-
-# --- defaults ---------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 VERSION=""
-TARGET=""             # resolved later from uname
+TARGET=""
 SKIP_RUNNER=0
 SKIP_DESKTOP=0
 SIGN_IDENTITY=""
 NOTARY_PROFILE=""
 OUTPUT_DIR="$REPO_ROOT/release"
 
-DESKTOP_PNPM_TARGET="" # populated per --target
+DESKTOP_PNPM_TARGET=""
 DESKTOP_ARTIFACT_GLOB=""
 DESKTOP_FORMAT=""
 TAURI_BUNDLE_DIR=""
-
-# --- arg parsing ------------------------------------------------------------
 
 usage() {
   cat <<EOF
@@ -86,8 +57,7 @@ if [[ -z "$VERSION" ]]; then
   exit 2
 fi
 
-# --- resolve target from host if not given ----------------------------------
-
+# 缺省从 uname 推断目标平台
 HOST_OS="$(uname -s)"
 if [[ -z "$TARGET" ]]; then
   case "$HOST_OS" in
@@ -96,7 +66,7 @@ if [[ -z "$TARGET" ]]; then
   esac
 fi
 
-# Validate host/target match (no cross-build).
+# 不允许跨主机构建；macOS 只能在 Darwin 上产出。
 if [[ "$TARGET" == "mac" && "$HOST_OS" != "Darwin" ]]; then
   echo "error: --target mac requires a macOS host (got '$HOST_OS')" >&2
   exit 1
@@ -106,12 +76,7 @@ DESKTOP_ARTIFACT_GLOB="SpiritAgent-${VERSION}-mac-*.dmg"
 DESKTOP_FORMAT="dmg"
 TAURI_BUNDLE_DIR="dmg"
 
-# --- preflight --------------------------------------------------------------
-
-# Build deps — missing any of these aborts the build with a clear message.
-# rsync/python3/node are also build deps; jq is consumed later by
-# patch_tauri_config and gets its own specific error path so the operator
-# knows exactly which step needs it.
+# 通用构建依赖；缺则报错并打印缺哪一个。
 for cmd in uv pnpm node python3 rsync; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "error: required build dep '$cmd' not found in PATH" >&2
@@ -119,7 +84,7 @@ for cmd in uv pnpm node python3 rsync; do
   fi
 done
 
-# macOS build deps.
+# macOS 专属依赖
 for cmd in hdiutil codesign; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "error: required command '$cmd' not found in PATH" >&2
@@ -127,15 +92,11 @@ for cmd in hdiutil codesign; do
   fi
 done
 
-# jq is used by patch_tauri_config (further down). Check it here so a
-# missing jq fails the build with a clear error pointing at the right
-# step, instead of letting it surface later as a cryptic jq parse error.
+# jq 在下方 patch_tauri_config 阶段才用到；这里提前校验，便于给出指向明确步骤的错误。
 if ! command -v jq >/dev/null 2>&1; then
   echo "error: 'jq' is required to patch tauri.conf.json for the desktop artifact" >&2
   exit 1
 fi
-
-# --- helper functions -------------------------------------------------------
 
 set_version() {
   local v="$1"
@@ -144,31 +105,27 @@ set_version() {
 import json, sys, re, pathlib
 v = sys.argv[1]
 
-# client/package.json
 p = pathlib.Path("client/package.json")
 data = json.loads(p.read_text())
 data["version"] = v
 p.write_text(json.dumps(data, indent=2) + "\n")
 
-# installer/package.json
 p = pathlib.Path("installer/package.json")
 data = json.loads(p.read_text())
 data["version"] = v
 p.write_text(json.dumps(data, indent=2) + "\n")
 
-# installer/src-tauri/tauri.conf.json
 p = pathlib.Path("installer/src-tauri/tauri.conf.json")
 data = json.loads(p.read_text())
 data["version"] = v
 p.write_text(json.dumps(data, indent=2) + "\n")
 
-# installer/src-tauri/Cargo.toml (already has version field)
+# Cargo.toml 已含 version 字段，直接就地替换
 p = pathlib.Path("installer/src-tauri/Cargo.toml")
 text = p.read_text()
 text = re.sub(r'^version = "[^"]+"', f'version = "{v}"', text, count=1, flags=re.MULTILINE)
 p.write_text(text)
 
-# runner/pyproject.toml
 p = pathlib.Path("runner/pyproject.toml")
 text = p.read_text()
 text = re.sub(r'^version = "[^"]+"', f'version = "{v}"', text, count=1, flags=re.MULTILINE)
@@ -188,12 +145,11 @@ stage_payload() {
     exit 1
   fi
   cp "$wheel" "installer/payload/runner/$(basename "$wheel")"
-  # Also copy server.py into the payload so install scripts deploy it to $SPIRITAGENT_HOME/runner/
+  # server.py 也拷到 payload，便于 install 脚本部署到 $SPIRITAGENT_HOME/runner/。
   cp runner/server.py installer/payload/runner/server.py
 
-  # Symlink skills/install scripts so they're not duplicated in the repo.
-  # build_client.{sh,ps1} run as a single command — symlinks are fine for
-  # staging.
+  # 用符号链入 skills/install 脚本，避免在仓库内出现重复副本；
+  # build_client.{sh,ps1} 是单次调用，staging 阶段用软链足够。
   rm -rf installer/payload/skills \
          installer/payload/install.sh \
          installer/payload/install.ps1
@@ -235,20 +191,13 @@ restore_tauri_config() {
 # Run a command, but always restore tauri.conf.json on exit (success or fail).
 trap restore_tauri_config EXIT
 
-# --- main -------------------------------------------------------------------
-
 cd "$REPO_ROOT"
 
 set_version "$VERSION"
 
-# 1. Build runner.
 if [[ $SKIP_RUNNER -eq 0 ]]; then
   echo "==> Building runner (uv build wheel → dist/spiritagent-agent-*.whl)"
-  # Pre-package gate: catch the env-rot failure mode that previously
-  # shipped zero-byte `typing_extensions.py` / `mcp` `.py` files inside
-  # the wheel — the install-time smoke was too shallow (`import tools,
-  # utils`) and let bad wheels through. See
-  # runner/tests/test_startup_imports.py docstring for context.
+  # 打包前的环境闸口：env-rot 状态（如 0 字节 typing_extensions.py / mcp 的 .py）会跟着钻进 wheel，安装期 smoke 仅 `import tools, utils` 太浅，曾放走坏 wheel。详见 runner/tests/test_startup_imports.py docstring。
   ( cd runner && \
       uv sync --frozen --extra dev && \
       uv run --frozen --no-sync pytest tests/ -q && \
@@ -258,7 +207,6 @@ else
   echo "==> Skipping runner build (--skip-runner)"
 fi
 
-# 2. Build client.
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
   echo "==> Building client (electron-builder → release/SpiritAgent-${VERSION}-${TARGET}*)"
   ( cd client && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET )
@@ -266,7 +214,6 @@ else
   echo "==> Skipping client build (--skip-desktop)"
 fi
 
-# 3. Locate desktop artifact.
 DESKTOP_ARTIFACT="$(ls -1 client/release/${DESKTOP_ARTIFACT_GLOB} 2>/dev/null | head -1 || true)"
 if [[ -z "$DESKTOP_ARTIFACT" ]]; then
   echo "error: no desktop artifact matching '$DESKTOP_ARTIFACT_GLOB' found in client/release/" >&2
@@ -274,11 +221,10 @@ if [[ -z "$DESKTOP_ARTIFACT" ]]; then
 fi
 echo "==> Desktop artifact: $DESKTOP_ARTIFACT"
 
-# 4. Stage payload.
 stage_payload
 cp "$DESKTOP_ARTIFACT" "installer/payload/client/"
 
-# 5. macOS code-sign + notarize.
+# macOS 签名 + 公证
 if [[ -n "$SIGN_IDENTITY" ]]; then
   echo "==> Code-signing $DESKTOP_ARTIFACT"
   cp "$DESKTOP_ARTIFACT" "${DESKTOP_ARTIFACT}.unsigned"
@@ -288,18 +234,15 @@ if [[ -n "$SIGN_IDENTITY" ]]; then
     xcrun notarytool submit "$DESKTOP_ARTIFACT" --keychain-profile "$NOTARY_PROFILE" --wait
     xcrun stapler staple "$DESKTOP_ARTIFACT"
   fi
-  # Re-copy the signed artifact into the payload.
+  # 重新拷回 payload，覆盖未签名版本。
   cp "$DESKTOP_ARTIFACT" "installer/payload/client/"
 fi
 
-# 7. Patch tauri.conf.json for the current host's desktop artifact, then
-#    Tauri build, then restore.
 patch_tauri_config
 
 echo "==> Tauri build"
 ( cd installer && pnpm install --frozen-lockfile && pnpm run tauri:build )
 
-# 8. Locate final installer.
 FINAL_DIR="installer/src-tauri/target/release/bundle/$TAURI_BUNDLE_DIR"
 FINAL_GLOB="SpiritAgent-Setup_${VERSION}_*.dmg"
 FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"
@@ -308,7 +251,6 @@ if [[ -z "$FINAL" ]]; then
   exit 1
 fi
 
-# 9. Copy to output dir.
 mkdir -p "$OUTPUT_DIR"
 FINAL_NAME="$(basename "$FINAL")"
 cp "$FINAL" "$OUTPUT_DIR/$FINAL_NAME"

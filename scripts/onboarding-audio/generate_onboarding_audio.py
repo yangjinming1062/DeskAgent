@@ -9,9 +9,7 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 
-# Wire shape mirrors backend/services/llm/providers/mimo/tts.py::synthesize()
-# so the audio is byte-identical to what /api/media/tts would return at
-# runtime with the same voice. See scripts/onboarding-audio/README.md for usage.
+# 请求体结构对齐 backend/services/llm/providers/mimo/tts.py::synthesize()，保证同一音色下产出音频与 /api/media/tts 运行时字节一致。用法见 scripts/onboarding-audio/README.md。
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 MANIFEST_PATH = REPO_ROOT / "scripts" / "onboarding-audio" / "manifest.json"
@@ -19,12 +17,12 @@ OUTPUT_DIR = REPO_ROOT / "installer" / "payload" / "onboarding-audio" / "zh"
 
 MIMO_BASE_URL = "https://token-plan-cn.xiaomimimo.com/v1"
 MIMO_TTS_MODEL = "mimo-v2.5-tts"
-# Bound concurrent MiMo requests so a slow upstream doesn't trigger 429s.
+# 限制并发请求数，避免上游降速时触发 429。
 SYNC_CONCURRENCY = 10
 
 
 def _validate_mp3_sync(path: Path) -> bool:
-    # MPEG audio frame sync byte is 0xFF followed by 0xFB/0xFA/0xF3/0xF2.
+    # MPEG 音频帧同步字：0xFF 后跟 0xFB / 0xFA / 0xF3 / 0xF2。
     head = path.read_bytes()[:4]
     return len(head) >= 2 and head[0] == 0xFF and head[1] in (0xFB, 0xFA, 0xF3, 0xF2)
 
@@ -90,8 +88,7 @@ def _check(manifest: dict, output_dir: Path) -> int:
 
     missing = expected_tags - actual_tags
     extras = actual_tags - expected_tags
-    # Sync-byte check is only meaningful if every expected file is present —
-    # a missing file fails the check on its own.
+    # 同步字检查只在文件齐全时有意义；缺失文件已经独立判失败。
     if missing:
         bad = []
 

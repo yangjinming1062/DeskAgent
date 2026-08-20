@@ -1,28 +1,6 @@
-# Build the SpiritAgent client installer for Windows.
-#
-# Single entry point that orchestrates:
-#   1. uv build wheel → runner/dist/spiritagent-agent-*.whl
-#   2. electron-builder → client/release/SpiritAgent-{ver}-win-x64-nsis.exe
-#   3. Stage payload (runner wheel + desktop + skills + config) to installer/payload/
-#   4. Patch tauri.conf.json so bundle.resources contains the current host's
-#      desktop artifact (Tauri 2 fails on missing resources).
-#   5. Tauri build → installer\src-tauri\target\release\bundle\nsis\SpiritAgent-Setup_*_x64-setup.exe
-#   6. Restore tauri.conf.json (git state preserved).
-#   7. Copy the final installer to the output directory.
-#
-# Backend (Docker) is NOT built here — it has its own CI/repo path.
-#
-# Usage:
-#   powershell -File scripts\build_client.ps1 -Version 0.16.0
-#
-# Parameters:
-#   -Version X.Y.Z      Required. Written into desktop + installer package.json
-#                       and runner/pyproject.toml.
-#   -SkipRunner         Don't build runner wheel (use existing dist/spiritagent-agent-*.whl).
-#   -SkipDesktop        Don't build desktop (use existing release/SpiritAgent-*-nsis.exe).
-#   -SignTool PATH      signtool.exe path (defaults to first in PATH).
-#   -CertThumbprint TH  Code-sign certificate thumbprint.
-#   -OutputDir DIR      Output directory for the final installer. Default: release\.
+# 打包 SpiritAgent 客户端安装器（Windows）。Backend 由 Docker 单独构建，不在此入口内。
+# 编排顺序：构建 runner wheel → electron-builder 桌面端 → 暂存 payload → 临时改 tauri.conf.json → Tauri 构建 → 还原配置 → 拷贝最终安装器。
+# 用法：powershell -File scripts\build_client.ps1 -Version 0.16.0 [-SkipRunner] [-SkipDesktop] [-SignTool PATH] [-CertThumbprint TH] [-OutputDir DIR]
 
 [CmdletBinding()]
 param(
@@ -42,8 +20,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path "$ScriptDir\..").Path
 
-# Load shared signing + manifest helpers (Sign-Manifest, New-RunnerManifest,
-# Resolve-UpdateSigningKey).
+# 加载共享签名 + manifest 助手（Sign-Manifest / New-RunnerManifest / Resolve-UpdateSigningKey）。
 . (Join-Path $ScriptDir 'lib/UpdateManifest.ps1')
 
 if (-not $OutputDir) { $OutputDir = Join-Path $RepoRoot "release" }
@@ -53,8 +30,6 @@ $DesktopPnpmTarget = "dist:win:nsis"
 $DesktopArtifactGlob = "SpiritAgent-${Version}-win-*.exe"
 $DesktopFormat = "nsis"
 $TauriBundleDir = "nsis"
-
-# --- helpers ----------------------------------------------------------------
 
 function Set-Version([string]$v) {
     Write-Output "==> Writing version $v to package.json/pyproject.toml"
@@ -94,13 +69,10 @@ function Stage-Payload {
     }
     $runnerDst = Join-Path $payloadRunner $runnerWheel.Name
     Copy-Item -Force $runnerWheel.FullName $runnerDst
-    # Also copy server.py into the payload so install scripts deploy it to $SPIRITAGENT_HOME/runner/
+    # server.py 一起打包到 payload，便于 install.sh/ps1 部署到 $SPIRITAGENT_HOME/runner/。
     Copy-Item -Force (Join-Path $RepoRoot "runner\server.py") (Join-Path $payloadRunner "server.py")
 
-    # Junction skills/install scripts into the payload dir.
-    # Junctions are Windows-native symbolic links to directories; hardlinks
-    # work for the .sh / .ps1 files. All sources are inside the repo's
-    # installer/ subtree so relative resolution at bundle time stays simple.
+    # 把 skills 与 install.{sh,ps1} 链入 payload：目录走 junction（Windows 原生目录符号链接），文件走 hardlink；源都在 installer/ 子树内，相对解析简单。
     $skillsLink = Join-Path $RepoRoot "installer\payload\skills"
     $installShLink = Join-Path $RepoRoot "installer\payload\install.sh"
     $installPs1Link = Join-Path $RepoRoot "installer\payload\install.ps1"
@@ -110,7 +82,7 @@ function Stage-Payload {
 
     $cmdOutput = & cmd /c "mklink /J `"$skillsLink`" `"$RepoRoot\installer\skills`"" 2>&1
     if ($LASTEXITCODE -ne 0) { throw "mklink skills failed: $cmdOutput" }
-    # install.sh and install.ps1 are files, not directories — use hardlinks.
+    # install.sh / install.ps1 是文件不是目录，改用 hardlink。
     $cmdOutput = & cmd /c "mklink /H `"$installShLink`" `"$RepoRoot\installer\install.sh`"" 2>&1
     if ($LASTEXITCODE -ne 0) { throw "mklink install.sh failed: $cmdOutput" }
     $cmdOutput = & cmd /c "mklink /H `"$installPs1Link`" `"$RepoRoot\installer\install.ps1`"" 2>&1
@@ -123,33 +95,9 @@ function Stage-Payload {
 }
 
 function Build-UpdateZip {
-    <#
-    .SYNOPSIS
-      Build the SpiritAgent-{ver}-update.zip artifact consumed by the desktop
-      client's self-updater.
-
-    .DESCRIPTION
-      The update zip carries BOTH the inner Electron desktop artifacts
-      (electron-builder output) AND the Python runner wheel + server.py, so a
-      single update refreshes both halves of the user-side agent. The
-      runner-half is laid out under `runner/` inside the zip; the backend's
-      `_extract_archive_entries` mirrors the layout to
-      `updates/versions/{ver}/runner/`.
-
-      Skills ship INSIDE the wheel (as `package_data` declared in
-      runner/pyproject.toml); the desktop never sees a separate skills tar.
-
-      Output: {OutputDir}/SpiritAgent-{ver}-update.zip, containing:
-        - desktop artifacts (exe / dmg / zip + blockmap)
-        - latest.yml / latest-mac.yml (re-signed defensively)
-        - latest-runner.yml (signed by New-RunnerManifest)
-        - app-update.yml (electron-builder output; the URL placeholder is
-          ignored by the desktop client, which resolves the host at runtime)
-        - manifest.json (uploaded alongside the binaries so the backend can
-          validate version consistency)
-        - runner/spiritagent-agent-{ver}-py3-none-any.whl
-        - runner/server.py
-    #>
+    # 构造自更新 zip：同时装入桌面端产物 + runner wheel + server.py，一次更新覆盖客户端两侧；
+    # wheel 内已带 skills（runner/pyproject.toml 的 package_data），不需要单独的 skills tar。
+    # 后端按 zip 内的 `runner/` 布局提取，便于后续一致性校验。
     param(
         [Parameter(Mandatory)][string]$Version,
         [Parameter(Mandatory)][string]$DesktopReleaseDir,
@@ -175,9 +123,7 @@ function Build-UpdateZip {
     New-Item -ItemType Directory -Path $stageDir | Out-Null
 
     try {
-        # 1. Copy only current-version artifacts and update manifests into
-        #    staging. Exclude win-unpacked/, builder debug files, and stale
-        #    artifacts from prior builds.
+        # 仅拷贝当前版本产物与 manifest（剔除 win-unpacked/、构建调试文件、旧构建残留）。
         $versionPrefix = "SpiritAgent-$Version"
         Get-ChildItem -Path $DesktopReleaseDir -File | Where-Object {
             $_.Name -like "$versionPrefix*" -or
@@ -187,21 +133,16 @@ function Build-UpdateZip {
             Copy-Item -Path $_.FullName -Destination $stageDir -Force
         }
 
-        # 2. Stage runner wheel + server.py under runner/.
+        # 暂存 runner wheel 与 server.py。
         $runnerStage = Join-Path $stageDir 'runner'
         New-Item -ItemType Directory -Path $runnerStage -Force | Out-Null
         Copy-Item -Force $RunnerWheelPath (Join-Path $runnerStage (Split-Path -Leaf $RunnerWheelPath))
         Copy-Item -Force $ServerPyPath (Join-Path $runnerStage 'server.py')
 
-        # 3. Resolve the private key once (used for all per-platform re-signs
-        # and for New-RunnerManifest).
+        # 一次性解析私钥（后续各平台重签与 New-RunnerManifest 共用）。
         $keyPath = Resolve-UpdateSigningKey
 
-        # 4. Defensive re-sign of any per-platform latest*.yml whose
-        # `signature` field is missing. Build-UpdateZip is the canonical signer
-        # (see Sign-Manifest in lib/UpdateManifest.ps1); this catches the case
-        # where electron-builder emitted an unsigned manifest on a cross-host
-        # build.
+        # 兜底重签：Build-UpdateZip 是规范的签名点（见 lib/UpdateManifest.ps1::Sign-Manifest），此分支处理跨主机构建时 electron-builder 输出未签名 manifest 的情况。
         foreach ($name in @('latest.yml', 'latest-mac.yml')) {
             $manifestPath = Join-Path $stageDir $name
             if (-not (Test-Path $manifestPath)) { continue }
@@ -211,10 +152,7 @@ function Build-UpdateZip {
             Sign-Manifest -ManifestPath $manifestPath -KeyPath $keyPath
         }
 
-        # 5. Produce + sign latest-runner.yml. The desktop main process reads
-        # this BEFORE the restart, fetches the wheel + server.py locally, and
-        # only AFTER both have staged + verified does it offer the user
-        # "Restart now".
+        # 构造并签名 latest-runner.yml：桌面端主进程在重启前读取，先把 wheel + server.py 拉到本地、校验完成才提示用户 "Restart now"。
         New-RunnerManifest `
             -Version $Version `
             -WheelPath (Join-Path $runnerStage (Split-Path -Leaf $RunnerWheelPath)) `
@@ -222,9 +160,7 @@ function Build-UpdateZip {
             -OutDir $stageDir `
             -KeyPath $keyPath | Out-Null
 
-        # 6. Pick the canonical desktop exe (Windows NSIS) to record in
-        # manifest.json so the backend's _extract_archive_entries finds it
-        # without ambiguity.
+        # 选定规范的 Windows NSIS exe 写入 manifest.json，便于后端 _extract_archive_entries 无歧义定位。
         $desktopExe = Get-ChildItem $stageDir -Filter 'SpiritAgent-*-win-*.exe' -File | Select-Object -First 1
         $manifest = [ordered]@{
             version        = $Version
@@ -235,7 +171,7 @@ function Build-UpdateZip {
         }
         ($manifest | ConvertTo-Json -Depth 5) | Set-Content -Path (Join-Path $stageDir 'manifest.json') -NoNewline
 
-        # 7. Zip up.
+        # 打包 zip。
         $zipPath = Join-Path $OutputDir "SpiritAgent-${Version}-update.zip"
         if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
         Add-Type -AssemblyName 'System.IO.Compression.FileSystem'
@@ -274,28 +210,18 @@ function Restore-TauriConfig {
     }
 }
 
-# --- main -------------------------------------------------------------------
-
 Push-Location $RepoRoot
 try {
     Set-Version $Version
 
-    # 1. Build runner.
     if (-not $SkipRunner) {
         Write-Output "==> Building runner (uv build wheel → dist\spiritagent-agent-*.whl)"
         Push-Location (Join-Path $RepoRoot "runner")
         try {
             & uv sync --frozen --extra dev
             if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
-            # Pre-package gate: any env-rot state in this checkout would
-            # otherwise ride out inside the wheel (zero-byte
-            # `typing_extensions.py` has shipped before). Run the whole
-            # runner tests/ directory — narrower gates miss drift in
-            # new tests that don't yet know they're "load-bearing".
-            # Quiet by default: release gates pass 99% of the time so the
-            # ~110-line -v report buries real signal. pytest re-runs -v
-            # on its own when a test fails (per pytest's verbose-fallback
-            # when -q hits a failure), so we don't add a manual re-run.
+            # 打包前的环境闸口：env-rot 状态（如 0 字节 typing_extensions.py）会一起钻进 wheel，跑整个 runner/tests/——更窄的闸门会漏掉尚不自知"承重"的新测试。
+            # 默认静默：release 路径 99% 通过，-v 报告会淹没真实信号；pytest 在 -q 失败时自己回退到 -v，不必手动重跑。
             & uv run --frozen --no-sync pytest tests/ -q
             if ($LASTEXITCODE -ne 0) {
                 throw "runner test suite failed — see pytest output. Common cause: stale or corrupt transitive dep (typing_extensions, mcp, annotated_types) that would make the shipped wheel unstartable on user machines. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build."
@@ -307,7 +233,6 @@ try {
         Write-Output "==> Skipping runner build (-SkipRunner)"
     }
 
-    # 2. Build desktop.
     if (-not $SkipDesktop) {
         Write-Output "==> Building desktop (electron-builder → release\SpiritAgent-${Version}-win-*-nsis.exe)"
         Push-Location (Join-Path $RepoRoot "client")
@@ -321,19 +246,16 @@ try {
         Write-Output "==> Skipping desktop build (-SkipDesktop)"
     }
 
-    # 3. Locate desktop artifact.
     $desktopArtifact = Get-ChildItem -Path (Join-Path $RepoRoot "client\release") -Filter $DesktopArtifactGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $desktopArtifact) {
         throw "no desktop artifact matching '$DesktopArtifactGlob' in client\release\"
     }
     Write-Output "==> Desktop artifact: $($desktopArtifact.FullName)"
 
-    # 4. Stage payload.
     Stage-Payload
     Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
 
 
-    # 6. Code-sign desktop (if a cert thumbprint is provided).
     if ($CertThumbprint) {
         Write-Output "==> Code-signing $($desktopArtifact.Name)"
         & $SignTool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a /sha1 $CertThumbprint $desktopArtifact.FullName
@@ -341,11 +263,7 @@ try {
         Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
     }
 
-    # 7. Patch tauri.conf.json, then Tauri build, then restore.
-    # No NSIS wrap — ship SpiritAgent-Setup.exe directly so the user double-clicks it
-    # and immediately sees the install UI (single-file installer pattern,
-    # avoids the double-installer problem where NSIS extracts SpiritAgent-Setup.exe
-    # to Program Files and the user then has to run it manually).
+    # 不外层包 NSIS：直接产 SpiritAgent-Setup.exe，单文件安装器形态，双击即出 UI（避免 NSIS 把 .exe 解到 Program Files 后用户再手动跑一遍）。
     Patch-TauriConfig
     try {
         Write-Output "==> Tauri build"
@@ -360,7 +278,7 @@ try {
         Restore-TauriConfig
     }
 
-    # 8. Locate final installer — SpiritAgent-Setup.exe at target/release (no NSIS wrapper).
+    # 在 target/release 找最终 SpiritAgent-Setup.exe（不走 NSIS 包装）。
     $finalDir = Join-Path $RepoRoot "installer\src-tauri\target\release"
     $finalGlob = "SpiritAgent-Setup.exe"
     $final = Get-ChildItem -Path $finalDir -Filter $finalGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -368,16 +286,13 @@ try {
         throw "Tauri build did not produce $finalDir\$finalGlob"
     }
 
-    # 9. Copy to output dir with version-suffixed name.
     if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null }
     $finalName = "SpiritAgent-Setup-${Version}.exe"
     Copy-Item -Force $final.FullName (Join-Path $OutputDir $finalName)
     Write-Output ""
     Write-Output "==> Final installer: $(Join-Path $OutputDir $finalName)"
 
-    # 10. Build the self-update artifact. Same build, second zip — installed
-    # clients fetch this from the backend to self-update desktop + runner
-    # without re-running the outer Tauri installer.
+    # 同一构建再产一个自更新 zip：已安装客户端从后端拉它自更桌面端 + runner，无需重跑 Tauri 安装器。
     Build-UpdateZip `
         -Version $Version `
         -DesktopReleaseDir (Join-Path (Join-Path $RepoRoot 'desktop') 'release') `

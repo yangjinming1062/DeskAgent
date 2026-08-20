@@ -13,9 +13,6 @@ def _parse(path: Path) -> ast.Module | None:
         return None
 
 
-# ---- A. TYPE_CHECKING leak ----------------------------------------------------
-
-
 def _tc_ranges(tree: ast.Module) -> list[tuple[int, int]]:
     ranges: list[tuple[int, int]] = []
     for node in tree.body:
@@ -72,17 +69,13 @@ def check_type_checking_leak(path: Path) -> list[str]:
     return [f"{path}: '{name}' imported under TYPE_CHECKING but used outside it (annotation evaluated at runtime → NameError)" for name in leaks]
 
 
-# ---- B. Facade consistency ----------------------------------------------------
+# B. Facade 一致性
 
 
 def _facade_exports(init_path: Path) -> set[str] | None:
-    """Re-exported names from a facade's ``__init__.py``.
+    """解析 facade 的 ``__init__.py`` 中的对外导出名。
 
-    Returns ``None`` if the file is a stub (no re-exports) — caller should
-    skip the facade in that case. Otherwise returns the union of:
-
-      * names in ``__all__`` (if defined)
-      * names imported by module-level ``from .X import Y`` statements
+    无任何 re-export 时返回 ``None``，调用方应跳过；否则返回 ``__all__`` 与模块级 ``from .X import Y`` 引入名两者的并集。
     """
     tree = _parse(init_path)
     if tree is None:
@@ -111,7 +104,7 @@ def _facade_exports(init_path: Path) -> set[str] | None:
 
 
 def _importer_scan_root(path: Path) -> Path | None:
-    """Which scan root (backend/ or runner/) does this file live under?"""
+    """判断文件所属扫描根（backend/ 或 runner/）。"""
     resolved = path.resolve()
     for root in SCAN_ROOTS:
         try:
@@ -123,16 +116,9 @@ def _importer_scan_root(path: Path) -> Path | None:
 
 
 def _resolve_facade_init(importer: Path, level: int, module: str | None) -> Path | None:
-    """Resolve an ``ast.ImportFrom`` to a facade ``__init__.py`` path.
+    """把 ``ast.ImportFrom`` 解析到 facade 的 ``__init__.py`` 路径。
 
-    Handles:
-      * ``from X import Y`` — absolute; ``X`` is resolved under the
-        importer's scan root (backend/ or runner/).
-      * ``from .X import Y`` / ``from ..X import Y`` — single-segment
-        relative; resolved relative to the importer's parent chain.
-      * multi-segment modules (``from utils.constants import X``,
-        ``from ..multimodal.helpers import X``) are skipped — these point
-        at regular modules, not facades we can statically introspect.
+    支持：绝对导入 ``from X import Y``（在 importer 所属扫描根内解析）、单段相对 ``from .X import Y`` / ``from ..X import Y``（沿 importer 的父目录链解析）。多段模块（如 ``from utils.constants import X``）直接跳过——那些指向普通模块，无法静态内省其 facade 状态。
     """
     if level == 0:
         if not module or "." in module:
@@ -157,13 +143,9 @@ def _resolve_facade_init(importer: Path, level: int, module: str | None) -> Path
 
 
 def check_facade_consistency(path: Path) -> list[str]:
-    """For every ``from <local_pkg> import X`` that resolves to a facade
-    with declared re-exports, ``X`` must be in those re-exports.
+    """对每个解析到带 re-export 的 facade 的本地导入，要求被引入的名字必须出现在 re-export 列表里。
 
-    Skips:
-      * the facade's own ``__init__.py`` (it defines the exports)
-      * imports whose target has no ``__init__.py`` (regular modules)
-      * facades without any re-exports (``None`` from ``_facade_exports``)
+    跳过：facade 自身的 ``__init__.py``、目标无 ``__init__.py``（普通模块）、无 re-export 的 facade。
     """
     if path.name == "__init__.py":
         return []
@@ -198,7 +180,7 @@ def check_facade_consistency(path: Path) -> list[str]:
     return errors
 
 
-# ---- main --------------------------------------------------------------------
+# main
 
 
 def main(argv: list[str]) -> int:

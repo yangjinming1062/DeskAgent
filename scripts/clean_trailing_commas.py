@@ -7,18 +7,13 @@ import sys
 import tokenize
 from pathlib import Path
 
-# Python keywords that can legally precede a parenthesised tuple literal or
-# unpacking target, e.g. `for (x,) in …`, `return (x,)`, `assert (x,)`.
-# When the token before `(` is one of these we must NOT treat `(x,)` as a
-# function call — it is a 1-element tuple whose trailing comma is required.
+# 可出现在括号化元组字面量或解包目标前的 Python 关键字，如 `for (x,) in ...`、`return (x,)`、`assert (x,)`。
+# 当 `(` 之前的 token 是这些关键字时，不能把 `(x,)` 当作函数调用——它是 1 元素元组，尾逗号不可去。
 _KEYWORDS = frozenset(keyword.kwlist)
 
 
 def clean_trailing_commas_in_source(source: str) -> str:
-    """Remove trailing commas in argument lists, calls, subscripts, lists, dicts, tuples (>=2 elements),
-
-    preserving 1-element tuples (x,).
-    """
+    """移除实参列表、调用、下标、列表、字典、≥2 元素元组中多余的尾逗号，保留 1 元素元组 `(x,)`。"""
     try:
         tokens = list(tokenize.tokenize(io.BytesIO(source.encode("utf-8")).readline))
     except Exception:
@@ -48,18 +43,14 @@ def clean_trailing_commas_in_source(source: str) -> str:
                         next_idx += 1
                     if next_idx < len(tokens) and tokens[next_idx].type == tokenize.OP and tokens[next_idx].string in (")", "]", "}"):
                         opening = stack[-1]
-                        # Preserve 1-element tuple literals `(x,)` and
-                        # 1-element tuple unpacking `for (x,) in ...`.
+                        # 保留 1 元素元组字面量 `(x,)` 与解包 `for (x,) in ...`。
                         if opening["bracket"] == "(" and opening["comma_count"] == 1:
                             prev_to_open = opening["idx"] - 1
                             is_tuple_literal = True
                             if prev_to_open >= 0:
                                 prev_tok = tokens[prev_to_open]
-                                # A NAME token before `(` means a function call
-                                # like `func(x,)` — NOT a tuple literal — UNLESS
-                                # that NAME is a Python keyword (`for`, `in`,
-                                # `return`, `if`, `assert`, …), in which case
-                                # the parens form a tuple context.
+                                # `(` 前的 NAME token 通常表示函数调用 `func(x,)`——不是元组字面量；
+                                # 但该 NAME 是 Python 关键字（for / return / assert 等）时，括号进入元组上下文。
                                 if prev_tok.type == tokenize.NAME and prev_tok.string not in _KEYWORDS:
                                     is_tuple_literal = False
                                 elif prev_tok.type == tokenize.OP and prev_tok.string in (")", "]", "}"):
@@ -104,7 +95,7 @@ def main() -> int:
     if not modified_paths:
         return 0
 
-    # Batch format all stripped files in one single ruff call (sub-millisecond speed)
+    # 一次 ruff 调用批量格式化所有被动过的文件（毫秒级）。
     ruff_bin = shutil.which("ruff") or "ruff"
     try:
         subprocess.run(
@@ -115,7 +106,7 @@ def main() -> int:
     except Exception:
         pass
 
-    # Check how many files actually changed from their original content
+    # 统计真正发生改动的文件数（去除 ruff 格式化但内容未变的）。
     really_modified = 0
     for path, orig in original_contents.items():
         try:

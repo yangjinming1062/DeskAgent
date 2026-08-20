@@ -1,19 +1,12 @@
-# scripts/lib/UpdateManifest.ps1
-# Shared signing + manifest helpers for the SpiritAgent update pipeline.
-#
-# Imported by:
-#   - scripts/build_client.ps1 (Build-UpdateZip)
-#
-# Pure functions over the filesystem; no module-level state.
+# scripts/lib/UpdateManifest.ps1 —— SpiritAgent 自更新管线的共享签名与 manifest 助手；由 scripts/build_client.ps1 的 Build-UpdateZip 引入。
+# 仅做纯文件操作，没有模块级可变状态。
 
-# Resolve the full path to openssl.exe.
-# Git for Windows ships openssl in its mingw64/bin dir, which may not be on
-# PATH when the script is invoked from a non-git shell.
+# 定位 openssl.exe：Git for Windows 把 openssl 放在 mingw64/bin 下，非 git 环境下不在 PATH 中，故多走几步常见安装位置查找。
 function Resolve-OpenSsl {
     $cmd = Get-Command openssl -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
 
-    # Fallback: look in common Git install locations.
+    # 兜底：常见 Git 安装位置
     $candidates = @(
         Join-Path $env:ProgramFiles 'Git\mingw64\bin\openssl.exe'
         Join-Path ${env:ProgramFiles(x86)} 'Git\mingw64\bin\openssl.exe'
@@ -26,11 +19,7 @@ function Resolve-OpenSsl {
     throw "openssl not found. Install Git for Windows (includes openssl) or add openssl to PATH."
 }
 
-# Resolve the PEM private key used to sign update manifests.
-#
-# Returns the absolute path to scripts/secrets/update.key in the repo.
-# Throws if the file is missing (it is committed to the repo and should
-# always be present after a normal clone).
+# 定位签名用的 PEM 私钥（返回 scripts/secrets/update.key 绝对路径）。该文件已入库，正常 clone 后应始终存在，缺失则抛错。
 function Resolve-UpdateSigningKey {
     [CmdletBinding()]
     param()
@@ -46,25 +35,14 @@ function Resolve-UpdateSigningKey {
     return $keyPath
 }
 
-# Sign a Squirrel-style manifest in place.
-#
-# Reads the JSON manifest at $ManifestPath, computes the SHA-512 of the file
-# referenced by its top-level `path` field, normalizes to UPPERCASE hex, and
-# writes back a `signature` field produced by `openssl dgst -sha512 -sign`
-# over the payload "<path>|<sha512>". Also rewrites `sha512` and `files[]`
-# to reflect the current on-disk file.
-#
-# Throws if the manifest has no `path` field, if the referenced file is
-# missing, or if openssl is not in PATH.
+# 就地签署 Squirrel 风格 manifest：根据顶层 `path` 字段计算 SHA-512（大写），用 openssl 对 "<path>|<sha512>" 签出 `signature`，并同步回写 `sha512` 与 `files[]`。
+# 缺少 `path` 字段、引用的文件不存在、或 openssl 不在 PATH 时抛错。
 function Sign-Manifest {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$ManifestPath,
         [Parameter(Mandatory)][string]$KeyPath,
-        # Pre-computed digest of the binary the manifest points at. Pass this
-        # when the caller already has the SHA-512/size in hand (e.g. when
-        # building a fresh manifest) so we avoid re-hashing a multi-hundred-MB
-        # wheel twice.
+        # 调用方已算好的 SHA-512/大小（如构建新 manifest 时），传入可避免对几百 MB 的 wheel 重复哈希。
         [string]$Sha512 = '',
         [long]$Size = -1
     )
@@ -77,8 +55,7 @@ function Sign-Manifest {
     $manifestDir = Split-Path -Parent $ManifestPath
     $raw = Get-Content $ManifestPath -Raw
 
-    # Extract the `path` value with regex so we handle both JSON and YAML
-    # manifests without requiring a YAML parser.
+    # 用正则提取 `path`，同时支持 JSON 与 YAML，避免引入 YAML 解析器。
     $pathMatch = [regex]::Match($raw, '(?m)^\s*"?\s*path\s*"?\s*[:=]\s*"?\s*(.+?)\s*"?\s*,?\s*$')
     if (-not $pathMatch.Success) {
         Write-Warning "Manifest $ManifestPath has no 'path' field; skipping"
@@ -99,8 +76,7 @@ function Sign-Manifest {
         $size = (Get-Item $binaryPath).Length
     }
 
-    # Compute the RSA signature. Write to temp files because PowerShell's
-    # & operator captures binary stdout as an array, not a byte stream.
+    # 用临时文件落地签名输出：PowerShell `&` 操作符把二进制 stdout 当数组收，无法直接成字节流。
     $openssl = Resolve-OpenSsl
     $payload = "$pathValue|$sha512"
     $tmpPayload = Join-Path ([IO.Path]::GetTempPath()) "spiritagent-sign-payload-$PID.tmp"
@@ -117,24 +93,18 @@ function Sign-Manifest {
     }
     $signatureB64 = [Convert]::ToBase64String($signatureBytes)
 
-    # Update fields via regex so we handle both YAML and JSON manifests
-    # without requiring a YAML parser.
+    # 同样用正则就地改字段，兼容 YAML 与 JSON 两种 manifest。
     $updated = $raw
 
     # sha512:  sha512: <value>  or  "sha512": "<value>"
     $updated = $updated -replace '(?m)(\s*"?\s*sha512\s*"?\s*[:=]\s*"?\s*)[^\r\n"]*', "`${1}$sha512"
 
-    # files array: replace the entire block with a single-entry array.
-    # YAML:   files:\n  - url: ...\n    sha512: ...\n    size: ...
-    # JSON:   "files": [{"url": "...", "sha512": "...", "size": ...}]
+    # files 数组：整段替换为单元素数组（同时覆盖 YAML 与 JSON 形态）。
     $filesBlockYaml = "  - url: $pathValue`n    sha512: $sha512`n    size: $size"
     $filesBlockJson = "`"files`": [{`"url`": `"$pathValue`", `"sha512`": `"$sha512`", `"size`": $size}]"
     if ($updated -match '(?m)^\s*"?\s*files\s*"?\s*:\s*\[') {
-        # JSON-style files array
         $updated = $updated -replace '(?m)(\s*"?\s*files\s*"?\s*:\s*)\[.*?\]', "`${1}$filesBlockJson"
     } else {
-        # YAML-style files block: match from "files:" through the indented list
-        # items until the next top-level key or end of string.
         $updated = $updated -replace '(?s)(files:\s*\n)(\s+-[\s\S]*?)(?=\n\S|\n\n|\z)', "`${1}$filesBlockYaml"
     }
 
@@ -149,17 +119,7 @@ function Sign-Manifest {
     [System.IO.File]::WriteAllText($ManifestPath, $updated, $utf8NoBom)
 }
 
-# Build a signed `latest-runner.yml` manifest for the runner wheel + server.py.
-#
-# The output is a Squirrel-compatible YAML where:
-#   - top-level `path` / `sha512` / `files[]` point at the wheel (electron-updater
-#     ignores this field, but the file must still validate as a Squirrel manifest)
-#   - `runner` block carries wheel_filename / wheel_sha512 / wheel_size /
-#     server_py_sha256
-#   - `signature` is RSA-signed over "<path>|<sha512>" using the same keypair
-#     as the desktop binary
-#
-# Returns the absolute path to the signed YAML.
+# 为 runner wheel + server.py 构造并签出 `latest-runner.yml`：顶层 Squirrel 字段指向 wheel，`runner` 块记录 wheel/server.py 哈希，`signature` 用桌面端同一密钥对签出。返回签名后 YAML 的绝对路径。
 function New-RunnerManifest {
     [CmdletBinding()]
     param(
@@ -180,10 +140,7 @@ function New-RunnerManifest {
     $wheelName = Split-Path -Leaf $WheelPath
     $serverPyName = Split-Path -Leaf $ServerPyPath
 
-    # The Squirrel convention is for `path` to be relative to the manifest's
-    # directory. We mirror the build layout: `runner/spiritagent-agent-*.whl` is
-    # staged under `<staging>/runner/`, so the manifest is written to the
-    # staging root and `path` is `runner/<wheel>`.
+    # Squirrel 约定 `path` 相对 manifest 所在目录；构建布局把 wheel 暂存至 <staging>/runner/，故 manifest 写在 staging 根，path 为 runner/<wheel>。
     $wheelRel = "runner/$wheelName"
     $serverPyRel = "runner/$serverPyName"
 
@@ -219,10 +176,7 @@ function New-RunnerManifest {
     $manifestPath = Join-Path $OutDir 'latest-runner.yml'
     ($manifest | ConvertTo-Json -Depth 8) | Set-Content -Path $manifestPath -NoNewline
 
-    # Pass the SHA-512 + size we already computed (the wheel was just hashed
-    # and stat'd on lines above). Sign-Manifest falls back to a re-hash when
-    # these aren't passed, which would mean reading the multi-hundred-MB wheel
-    # twice per build.
+    # 把上面已算好的 SHA-512/大小直接传下去，避免 Sign-Manifest 对几百 MB 的 wheel 重哈希。
     Sign-Manifest -ManifestPath $manifestPath -KeyPath $KeyPath -Sha512 $wheelSha -Size $wheelSize
 
     return $manifestPath
