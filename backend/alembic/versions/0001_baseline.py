@@ -331,35 +331,6 @@ def upgrade() -> None:
     op.create_index(op.f("ix_video_gen_jobs_user_id"), "video_gen_jobs", ["user_id"], unique=False)
     op.create_index("ix_video_gen_jobs_user_status", "video_gen_jobs", ["user_id", "status"], unique=False)
     op.create_table(
-        "wardrobe_items",
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("category", sa.String(length=64), nullable=False),
-        sa.Column("material_overrides_json", sa.Text(), nullable=False),
-        sa.Column("texture_url", sa.Text(), nullable=True),
-        sa.Column("normal_url", sa.Text(), nullable=True),
-        sa.Column("roughness_url", sa.Text(), nullable=True),
-        sa.Column("metalness_url", sa.Text(), nullable=True),
-        sa.Column("displacement_url", sa.Text(), nullable=True),
-        sa.Column("prompt", sa.Text(), nullable=True),
-        sa.Column("outfit_description", sa.Text(), nullable=True),
-        sa.Column("equipped", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
-        sa.Column("kind", sa.String(length=16), server_default=sa.text("'texture'"), nullable=False),
-        sa.Column("mesh_url", sa.Text(), nullable=True),
-        sa.Column("assembly_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
-        sa.Column("origin", sa.String(length=16), server_default=sa.text("'user'"), nullable=False),
-        sa.Column("gift_state", sa.String(length=16), nullable=True),
-        sa.Column("gift_reason", sa.Text(), nullable=True),
-        sa.Column("gift_message", sa.Text(), nullable=True),
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_wardrobe_items_equipped"), "wardrobe_items", ["equipped"], unique=False)
-    op.create_index(op.f("ix_wardrobe_items_user_id"), "wardrobe_items", ["user_id"], unique=False)
-    op.create_table(
         "ws_events",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("event_type", sa.String(length=128), nullable=False),
@@ -428,8 +399,6 @@ def upgrade() -> None:
     # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     op.create_index("uq_companion_models_one_active", "companion_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
-    # _ensure_presets 依赖该索引做去重，不再额外 SELECT。
-    op.create_index("uq_wardrobe_items_user_name", "wardrobe_items", ["user_id", "name"], unique=True)
     # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
     op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
@@ -486,7 +455,6 @@ def downgrade() -> None:
     for table in (
         "messages",
         "ws_events",
-        "wardrobe_items",
         "video_gen_jobs",
         "user_settings",
         "user_model_configs",

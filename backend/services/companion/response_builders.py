@@ -1,10 +1,9 @@
 from components import safe_json_loads
-from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, WardrobeItem, WardrobeItemResponse
+from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse
 
 from .asset_store import get_companion_model_sha256
 from .avatar_service import _re_sign_bare_path
 from .model_service import signed_model_url
-from .wardrobe_service import slot_of
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -50,30 +49,4 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
         rig_naming=model.rig_naming,
         style=model.style or "realistic",
         content_hash=content_hash,
-    )
-
-
-def wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
-    """把衣柜条目转换为接口响应。"""
-    return WardrobeItemResponse(
-        id=item.id,
-        name=item.name,
-        category=item.category,
-        material_overrides_json=item.material_overrides_json,
-        texture_url=item.texture_url,
-        normal_url=item.normal_url,
-        roughness_url=item.roughness_url,
-        metalness_url=item.metalness_url,
-        displacement_url=item.displacement_url,
-        prompt=item.prompt,
-        outfit_description=item.outfit_description,
-        equipped=item.equipped,
-        origin=item.origin or "user",
-        gift_state=item.gift_state,
-        gift_reason=item.gift_reason,
-        gift_message=item.gift_message,
-        kind=item.kind or "texture",
-        mesh_url=item.mesh_url,
-        assembly_json=item.assembly_json or "{}",
-        slot=slot_of(item),
     )

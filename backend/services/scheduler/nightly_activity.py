@@ -14,19 +14,17 @@ from components import (
     NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_TOKENS,
-    NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS,
     NIGHTLY_DIARY_MAX_TOKENS,
     NIGHTLY_MESSAGE_TRUNCATE_CHARS,
     NIGHTLY_PLANNING_MAX_TOKENS,
     NIGHTLY_REFLECTION_MAX_TOKENS,
-    ensure_utc,
     get_logger,
     parse_llm_json,
     safe_json_loads,
     session_scope,
     utc_now,
 )
-from modules.companion import CompanionExpression, Persona, WardrobeItem
+from modules.companion import CompanionExpression, Persona
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from sqlalchemy import func, select
@@ -34,20 +32,17 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.companion import (
-    confirm_wardrobe_item,
-    emit_wardrobe_gift,
     generate_animation_clips,
     get_active_model,
     get_rig_bones,
     kick_background_generation,
     list_memories,
-    preview_wardrobe_texture,
     read_today_summary,
     upsert_slotted_memory,
     validate_and_sanitize_expression,
 )
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
-from services.llm import call_llm_once, chat, resolve_provider_chain, resolve_user_llm_config, resolve_vision_chain
+from services.llm import call_llm_once, chat, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
@@ -155,11 +150,11 @@ Output valid JSON only:
 }
 """
 
-_CREATION_SYSTEM_PROMPT = """You are SpiritAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression, animation, or costume asset.
+_CREATION_SYSTEM_PROMPT = """You are SpiritAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression or animation asset.
 
 Conservative Principle:
-- ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional or visual expression.
-- If existing assets are already sufficient or today was routine, return empty lists: {{"gaps": [], "wardrobe": null}}.
+- ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional or physical expression.
+- If existing assets are already sufficient or today was routine, return empty lists: {{"gaps": []}}.
 - Do NOT generate generic or repetitive assets.
 
 Asset specifications:
@@ -177,16 +172,10 @@ Asset specifications:
      }}
    - "clip_brief": Description of physical gesture/movement desired for this moment.
    - "tags": ["温柔", "心疼"]
-2. "wardrobe": (optional) Wardrobe gift idea (null if allow_wardrobe_creation is false or if not generating a costume):
-   - "name": Short costume name (e.g. "温暖厚绒毛衣")
-   - "description": Costume visual description (style, material, color, cut)
-   - "reason": Why companion chose this gift based on today (e.g. "昨晚你熬夜到三点，想让你感觉温暖")
-   - "message": Companion's message when presenting the gift next morning
 
 Output valid JSON only:
 {{
-  "gaps": [...],
-  "wardrobe": null or {{...}}
+  "gaps": [...]
 }}
 """
 
@@ -412,7 +401,7 @@ async def _stage_5_creation(
     local_date_str: str,
     tz_str: str | None = None,
 ) -> bool:
-    """Stage 5：自主创作——伙伴生成表情、动画片段和装扮礼物。"""
+    """Stage 5：自主创作——伙伴生成表情和动画片段。"""
     if not NIGHTLY_CREATION_ENABLED:
         return False
 
@@ -437,22 +426,6 @@ async def _stage_5_creation(
         rig_type = model.rig_type if model else "biped"
         species = model.species if model else "人类"
 
-        # 一次 wardrobe 查询——在 Python 里派生 pending 数、已有名字、上次礼物时间。
-        wardrobe_rows = (
-            await db.execute(select(WardrobeItem.name, WardrobeItem.gift_state, WardrobeItem.origin, WardrobeItem.created_at).where(WardrobeItem.user_id == user_id))
-        ).all()
-        existing_wardrobe_names = [r[0] for r in wardrobe_rows if r[0]]
-        pending_wardrobe_count = sum(1 for r in wardrobe_rows if r[1] == "pending")
-        companion_gifts = [r for r in wardrobe_rows if r[2] == "companion" and r[3] is not None]
-        last_companion_gift_created_at = max((r[3] for r in companion_gifts), default=None)
-
-        # 检查 image_gen provider 能力
-        img_chain = await resolve_provider_chain(db, user_id, "image_gen")
-        image_gen_available = bool(img_chain)
-
-        days_since_last_gift = (utc_now() - ensure_utc(last_companion_gift_created_at)).days if last_companion_gift_created_at else 999
-        allow_wardrobe = image_gen_available and (pending_wardrobe_count == 0) and (days_since_last_gift >= NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS)
-
     # 构造创作 prompt
     system_prompt = _CREATION_SYSTEM_PROMPT
     payload = {
@@ -462,8 +435,6 @@ async def _stage_5_creation(
         "personality_tags": personality_tags,
         "existing_expressions": existing_expr_names,
         "existing_clip_names": existing_clip_names,
-        "existing_wardrobe_names": existing_wardrobe_names,
-        "allow_wardrobe_creation": allow_wardrobe,
     }
 
     raw = await call_llm_once(llm_cfg, system_prompt, payload, max_tokens=NIGHTLY_CREATION_MAX_TOKENS)
@@ -473,11 +444,9 @@ async def _stage_5_creation(
         return False
 
     gaps = parsed.get("gaps") or []
-    wardrobe_spec = parsed.get("wardrobe") if allow_wardrobe else None
 
     new_expr_count = 0
     new_clip_count = 0
-    created_wardrobe_item = None
 
     # 1. 处理 gaps -> 表情 & 片段——整批用同一个 session_scope。
     # LLM keyframe 调用先跑（与 DB 独立），merge 是单一 read-modify-write 事务。
@@ -547,54 +516,15 @@ async def _stage_5_creation(
         for expr in pending_expressions:
             kick_background_generation(user_id, expr["name"])
 
-    # 2. 处理装扮礼物
-    if allow_wardrobe and isinstance(wardrobe_spec, dict):
-        w_name = str(wardrobe_spec.get("name") or "").strip()
-        w_desc = str(wardrobe_spec.get("description") or "").strip()
-        w_reason = str(wardrobe_spec.get("reason") or "").strip()
-        w_msg = str(wardrobe_spec.get("message") or "").strip()
-        if w_name and w_desc:
-            try:
-                # 预解析 persona + vision chain（短读）；再跑 preview 和 confirm 时传 db=None，让它们的图像生成与 LLM 调用在多秒级 await 期间不占连接池。
-                async with session_scope() as pre_db:
-                    persona_definition = await _nightly_resolve_persona_definition(pre_db, user_id)
-                    vision_chain = await resolve_vision_chain(pre_db, user_id)
-                preview = await preview_wardrobe_texture(user_id=user_id, description=w_desc)
-                created_wardrobe_item = await confirm_wardrobe_item(
-                    user_id=user_id,
-                    file_id=preview.file_id,
-                    name=w_name,
-                    prompt=w_desc,
-                    normal_file_id=getattr(preview, "normal_file_id", None),
-                    roughness_file_id=getattr(preview, "roughness_file_id", None),
-                    metalness_file_id=getattr(preview, "metalness_file_id", None),
-                    displacement_file_id=getattr(preview, "displacement_file_id", None),
-                    equip=False,
-                    origin="companion",
-                    gift_state="pending",
-                    gift_reason=w_reason,
-                    gift_message=w_msg,
-                    persona_definition=persona_definition,
-                    vision_chain=vision_chain,
-                )
-                # 发 wardrobe.gift 事件让在线客户端水合并主动宣布；离线客户端通过 WSEvent 积压重连时拿到，早晨 cron 是兜底。
-                await emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
-            except Exception as exc:
-                logger.warning("nightly_activity: stage 5 wardrobe gift generation failed", extra={"user_id": user_id, "error": str(exc)})
-
-    # 3. 若生成了资产，安排早晨通知的 cron job
-    if new_expr_count > 0 or new_clip_count > 0 or created_wardrobe_item is not None:
+    # 2. 若生成了资产，安排早晨通知的 cron job
+    if new_expr_count > 0 or new_clip_count > 0:
         summary_parts = []
         if new_expr_count > 0:
             summary_parts.append(f"创造了 {new_expr_count} 个新表情")
         if new_clip_count > 0:
             summary_parts.append(f"创造了 {new_clip_count} 个新动作")
-        if created_wardrobe_item is not None:
-            summary_parts.append(f"准备了一件新衣服作为礼物「{created_wardrobe_item.name}」")
 
         cron_prompt = f"昨晚你默默为用户完成了一轮创作（{', '.join(summary_parts)}）。在今天的聊天中，请自然地展示你的新表情和动作。"
-        if created_wardrobe_item is not None:
-            cron_prompt += f"你有礼物待用户拆开（{created_wardrobe_item.gift_reason}），可以温馨地提醒用户在装扮屋里拆开礼物。"
 
         # 安排到下次本地 09:00——cron 用 UTC，从用户时区换算；one_shot=True 让 job 触发后删除，一次性"展示新创作"消息不会每天重复。
         schedule = _local_9am_cron(tz_str)
@@ -603,7 +533,7 @@ async def _stage_5_creation(
         except Exception as exc:
             logger.warning("nightly_activity: stage 5 cron creation failed", extra={"user_id": user_id, "error": str(exc)})
 
-    logger.info("nightly_activity: stage 5 completed", extra={"user_id": user_id, "expressions": new_expr_count, "clips": new_clip_count, "wardrobe": bool(created_wardrobe_item)})
+    logger.info("nightly_activity: stage 5 completed", extra={"user_id": user_id, "expressions": new_expr_count, "clips": new_clip_count})
     return True
 
 

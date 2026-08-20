@@ -8,9 +8,6 @@ import { getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
 import { CharacterController } from './CharacterController'
 import { reportBackend, reportEngineError, reportFrameStats } from './engine-diagnostics'
 import { LightingRig } from './LightingRig'
-import { CpuBackend } from './physics/CpuBackend'
-import { type PhysicsBackend, pickBackendFor } from './physics/PhysicsBackend'
-import { TslComputeBackend } from './physics/TslComputeBackend'
 import type { PowerProfile } from './PowerProfile'
 import { PROFILE_FPS } from './PowerProfile'
 import type { EngineBackendKind, EngineOptions, LoadedModelInfo } from './types'
@@ -26,8 +23,7 @@ const DORMANT_TICK_MS = 250
 // 直到窗口恢复可见。
 const HIDDEN_ACTIVE_MS = 16
 const HIDDEN_IDLE_MS = 37
-// 唤醒钳位——dormant→active 切换时不能把多秒级的 delta 喂给
-// mixer 或 verlet 求解器（ClothSolver 自行钳位，mixer 不会）。
+// 唤醒钳位——dormant→active 切换时不能把多秒级的 delta 喂给 mixer。
 const MAX_FRAME_DELTA = 0.05
 
 // DPR 上限。1.5 对 300×360 的桌面伙伴窗口已经足够——
@@ -75,7 +71,6 @@ export class Engine {
   readonly clock = new THREE.Clock()
   readonly character: CharacterController
   readonly lighting: LightingRig
-  private readonly physics: PhysicsBackend
   /** Measured render rate, refreshed once per second (diagnostics only). */
   readonly stats = { fps: 0 }
 
@@ -98,54 +93,58 @@ export class Engine {
   // 才会降级到经典 WebGLRenderer——前提是新 canvas，
   // 因为一旦承载过 webgpu 上下文的 canvas 不会再产出 webgl2 上下文。
   // 进一步失败则向上抛给调用方（静态精灵层就是"永不空白"的底线）。
-  static async create(opts: EngineOptions): Promise<Engine> {
-    const useShadows = opts.useShadows ?? false
-    const canvas = makeCanvas(opts.container)
-    const size = readCanvasSize(canvas)
+  static async create(container: HTMLElement, opts: EngineOptions = {}): Promise<Engine> {
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
 
+    // ── 尝试 1：WebGPU（首选 WebGPU 后端，init 内部回退 WebGL2）──
     try {
-      const gpu = new WebGPURenderer({
+      const canvas = makeCanvas(container)
+      const { width, height } = readCanvasSize(canvas)
+
+      const renderer = new WebGPURenderer({
         canvas,
         alpha: true,
-        // MSAA 4×：伙伴窗口悬浮在任意桌面内容之上，
-        // 走样的剪影是最显眼的瑕疵——而在 ≤450×540 px 范围内，
-        // 即使在 iGPU 上每帧 resolve 的开销也可忽略。
-        // WebGPU 渲染器未暴露 `premultipliedAlpha`（WebGL2 回退分支会暴露）。
-        antialias: true
+        antialias: true,
+        powerPreference: 'high-performance'
       })
 
-      await gpu.init()
-      const backend = gpu.backend as { isWebGLBackend?: boolean }
-      const kind: EngineBackendKind = backend.isWebGLBackend ? 'webgl2' : 'webgpu'
+      renderer.setPixelRatio(dpr)
+      renderer.setSize(width, height, false)
 
-      log.info('engine', `3D renderer backend: ${kind}`)
+      await renderer.init()
 
-      return new Engine(gpu, kind, canvas, size, useShadows)
-    } catch (err) {
-      log.warn('engine', 'WebGPURenderer init failed, falling back to classic WebGLRenderer:', err)
-      canvas.remove()
+      const backendKind: EngineBackendKind = (renderer.backend as any)?.isWebGPUBackend ? 'webgpu' : 'webgl2'
+
+      log.info('3d', `Engine initialized with ${backendKind} backend (${width}x${height} @ ${dpr}x)`)
+
+      return new Engine(renderer, backendKind, canvas, opts)
+    } catch (gpuErr) {
+      log.warn('3d', 'WebGPURenderer failed, falling back to classic WebGLRenderer:', gpuErr)
     }
 
-    const fallbackCanvas = makeCanvas(opts.container)
-    const fallbackSize = readCanvasSize(fallbackCanvas)
-
+    // ── 尝试 2：经典 WebGLRenderer（纯标准 WebGL2，兼容旧 GPU 与驱动）──
     try {
-      const classic = new THREE.WebGLRenderer({
-        canvas: fallbackCanvas,
+      // 必须用新 canvas：承载过 webgpu 上下文的 canvas 不会再产出 webgl2 上下文
+      const canvas = makeCanvas(container)
+      const { width, height } = readCanvasSize(canvas)
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
         alpha: true,
-        // 启用 MSAA（理由同上）；关闭 premultipliedAlpha 可以在 resolve 时省掉一次乘法。
         antialias: true,
-        premultipliedAlpha: false,
-        // 'default' keeps hybrid-GPU laptops on the integrated GPU — the companion scene is far below dGPU territory and forcing it wakes a 20W+ chip for a desk pet.
-        powerPreference: 'default'
+        powerPreference: 'high-performance',
+        preserveDrawingBuffer: false
       })
 
-      return new Engine(classic, 'classic-webgl', fallbackCanvas, fallbackSize, useShadows)
-    } catch (err) {
-      // 完全拿不到 GPU 上下文——在向上抛错前释放这个孤儿 canvas
-      // (static-sprite mode is the never-blank floor).
-      fallbackCanvas.remove()
-      throw err
+      renderer.setPixelRatio(dpr)
+      renderer.setSize(width, height, false)
+
+      log.info('3d', `Engine initialized with classic-webgl backend (${width}x${height} @ ${dpr}x)`)
+
+      return new Engine(renderer, 'classic-webgl', canvas, opts)
+    } catch (glErr) {
+      log.error('3d', 'All 3D renderer backends failed:', glErr)
+      throw new Error(`Failed to initialize any 3D renderer: ${glErr instanceof Error ? glErr.message : String(glErr)}`)
     }
   }
 
@@ -153,44 +152,40 @@ export class Engine {
     renderer: AnyRenderer,
     backendKind: EngineBackendKind,
     canvas: HTMLCanvasElement,
-    size: {
-      width: number
-      height: number
-    },
-    useShadows: boolean
+    opts: EngineOptions = {}
   ) {
     this.renderer = renderer
     this.backendKind = backendKind
     this.canvas = canvas
 
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_DPR))
-    this.renderer.setSize(size.width, size.height, false)
-    this.renderer.setClearColor(0x000000, 0)
+    const useShadows = opts.useShadows ?? false
+
+    if (useShadows) {
+      this.renderer.shadowMap.enabled = true
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+    }
+
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.0
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace
-    this.renderer.shadowMap.enabled = useShadows
-    // 1024² PCF (no Soft) when shadows are on — half the bandwidth of the old 2048² PCFSoft default.
-    this.renderer.shadowMap.type = useShadows ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
+    this.renderer.toneMappingExposure = 1.05
 
     this.scene = new THREE.Scene()
 
-    // 正面对视（face-to-face）的长焦人像相机设置——14° FOV 接近真正的正交平行透视，避免下巴/脚部梯形失真
-    this.camera = new THREE.PerspectiveCamera(14, size.width / size.height, 0.1, 50)
+    const { width, height } = readCanvasSize(this.canvas)
+    const aspect = width / height
+    this.camera = new THREE.PerspectiveCamera(30, aspect, 0.1, 100)
     this.camera.position.set(0, 0.9, 6.0)
     this.camera.lookAt(0, 0.9, 0)
 
     this.lighting = new LightingRig(this.scene, this.renderer, useShadows)
 
-    this.physics = pickBackendFor(backendKind) === 'tsl' ? new TslComputeBackend() : new CpuBackend()
-    this.character = new CharacterController(this.physics)
+    this.character = new CharacterController()
 
     reportBackend(backendKind)
   }
 
   /** Current-frame silhouette alpha at ~1/4 canvas resolution. Renders the
    * scene into an offscreen target — clear alpha is 0, so only drawn pixels
-   * count and the map tracks the live pose, cloth and outline hulls exactly.
+   * count and the map tracks the live pose and outline hulls exactly.
    * Cached HITMAP_TTL_MS; concurrent callers share one refresh. Null only
    * when the readback itself fails. */
   async silhouetteHitmap(): Promise<SilhouetteHitmap | null> {
@@ -261,112 +256,125 @@ export class Engine {
 
       return this.hitMap
     } catch (err) {
-      log.warn('engine', 'silhouette hitmap readback failed:', err)
+      log.warn('3d', 'silhouette hitmap readback failed:', err)
 
       return null
     }
   }
 
-  private async readClassicPixels(rt: THREE.WebGLRenderTarget, w: number, h: number): Promise<Uint8Array> {
-    const buf = new Uint8Array(w * h * 4)
-    await (this.renderer as THREE.WebGLRenderer).readRenderTargetPixelsAsync(rt, 0, 0, w, h, buf)
+  // 经典 WebGLRenderTarget 的异步像素回读。优先走 PBO 围栏；
+  // 没有围栏扩展时回退到 readPixels 同步读取。
+  private async readClassicPixels(rt: THREE.WebGLRenderTarget, width: number, height: number): Promise<Uint8Array> {
+    const glRenderer = this.renderer as THREE.WebGLRenderer
+    const gl = glRenderer.getContext() as WebGL2RenderingContext
 
-    return buf
+    if (!(gl instanceof WebGL2RenderingContext)) {
+      const out = new Uint8Array(width * height * 4)
+      glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
+
+      return out
+    }
+
+    const pbo = gl.createBuffer()
+
+    if (!pbo) {
+      const out = new Uint8Array(width * height * 4)
+      glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
+
+      return out
+    }
+
+    const size = width * height * 4
+    const glProps = glRenderer.properties.get(rt) as { __webglFramebuffer?: WebGLFramebuffer } | undefined
+    const fb = glProps?.__webglFramebuffer
+
+    if (!fb) {
+      gl.deleteBuffer(pbo)
+      const out = new Uint8Array(size)
+      glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
+
+      return out
+    }
+
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, fb)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo)
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, size, gl.STREAM_READ)
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, 0)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null)
+
+    const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
+
+    if (!sync) {
+      gl.deleteBuffer(pbo)
+      const out = new Uint8Array(size)
+      glRenderer.readRenderTargetPixels(rt, 0, 0, width, height, out)
+
+      return out
+    }
+
+    await this.waitSync(gl, sync)
+    gl.deleteSync(sync)
+
+    const out = new Uint8Array(size)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo)
+    gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, out)
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null)
+    gl.deleteBuffer(pbo)
+
+    return out
   }
 
+  private waitSync(gl: WebGL2RenderingContext, sync: WebGLSync): Promise<void> {
+    return new Promise(resolve => {
+      const check = (): void => {
+        if (this.disposed) {
+          resolve()
+
+          return
+        }
+
+        const res = gl.clientWaitSync(sync, 0, 0)
+
+        if (res === gl.ALREADY_SIGNALED || res === gl.CONDITION_SATISFIED) {
+          resolve()
+        } else if (res === gl.WAIT_FAILED) {
+          resolve()
+        } else {
+          setTimeout(check, 4)
+        }
+      }
+
+      check()
+    })
+  }
+
+  /** 计算包围盒与相机距，对齐正对视角。 */
   frameCharacter(): void {
-    if (!this.character.root) {
+    const box = new THREE.Box3().setFromObject(this.character.root)
+
+    if (box.isEmpty()) {
       return
     }
 
-    this.character.root.updateMatrixWorld(true)
+    const size = new THREE.Vector3()
+    const center = new THREE.Vector3()
+    box.getSize(size)
+    box.getCenter(center)
 
-    // 检查是否有骨骼以计算真实的蒙皮后世界坐标
-    const bones: THREE.Bone[] = []
-    this.character.root.traverse(child => {
-      if (child instanceof THREE.Bone) {
-        bones.push(child)
-      }
-    })
+    const widthSpan = Math.max(size.x, size.z, 0.4)
+    const height = Math.max(size.y, 0.6)
+    const centerX = center.x
+    const centerY = center.y
 
-    const headBone = bones.find(b => {
-      const name = b.name.toLowerCase()
+    // 将相机目标对准角色身高的 ~55% 处（胸口/锁骨中段偏上），
+    // 配合下颌微收的平视视线，达成最舒适的水平对视感。
+    const targetY = box.min.y + height * 0.55
 
-      return b.name === 'Head' || b.name === 'mixamorigHead' || name.endsWith('head')
-    })
-
-    let minY = Infinity
-    let maxY = -Infinity
-    let minX = Infinity
-    let maxX = -Infinity
-
-    if (bones.length >= 3) {
-      const v = new THREE.Vector3()
-
-      for (const bone of bones) {
-        bone.getWorldPosition(v)
-
-        if (v.y < minY) {
-          minY = v.y
-        }
-
-        if (v.y > maxY) {
-          maxY = v.y
-        }
-
-        if (v.x < minX) {
-          minX = v.x
-        }
-
-        if (v.x > maxX) {
-          maxX = v.x
-        }
-      }
-
-      // 头部预留较大顶部空间（Head 骨骼上方约 26cm，用于头骨、发髻与体积）
-      // 以及脚底空间（Foot/Toe 骨骼下方约 6cm，用于鞋底与地面）
-      maxY += 0.26
-      minY -= 0.06
-    } else {
-      // 兜底：由网格构造 Box3
-      const box = new THREE.Box3().setFromObject(this.character.root)
-
-      if (box.isEmpty()) {
-        return
-      }
-
-      minY = box.min.y
-      maxY = box.max.y
-      minX = box.min.x
-      maxX = box.max.x
-    }
-
-    const height = Math.max(0.1, maxY - minY)
-    const centerY = (minY + maxY) / 2
-    const centerX = (minX + maxX) / 2
-
-    // 平视取景：
-    // 确定视线轴的高度（约为角色身高的 72%，或双足生物的 Head 骨骼高度）。
-    // 相机放在平视高度且俯仰角 0°，可保证真正的正面对视透视，避免仰视失真。
-    let targetY = centerY
-
-    if (this.character.isBipedRig || bones.length >= 3) {
-      if (headBone) {
-        const headPos = new THREE.Vector3()
-        headBone.getWorldPosition(headPos)
-        targetY = THREE.MathUtils.clamp(headPos.y - 0.05, centerY, maxY - 0.1)
-      } else {
-        targetY = minY + height * 0.72
-      }
-    }
-
-    // 高度占比约 87%——头顶与脚底各预留约 6.5% 的呼吸空间，
-    // 在填满 1/3 屏窗口的同时，彻底避免头顶裁切。
-    const aspect = this.camera.aspect || getBaseSpriteWidth() / getBaseSpriteHeight()
-    const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov / 2)
-
-    const distH = (height * 0.5) / (Math.tan(halfFovRad) * 0.87)
-    const widthSpan = Math.max(Math.min(maxX - minX, height * 0.65), height * 0.42)
+    // 计算覆盖全身包围盒所需的相机距离（保留 15% 视野余量）
+    const aspect = this.camera.aspect
+    const halfFovRad = THREE.MathUtils.degToRad(this.camera.fov * 0.5)
+    const distH = (height * 0.5) / (Math.tan(halfFovRad) * 0.85)
     const distW = (widthSpan * 0.5) / (Math.tan(halfFovRad) * aspect * 0.85)
     const dist = Math.max(distH, distW, 0.5)
 
@@ -463,16 +471,7 @@ export class Engine {
         const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / 60
         this.lastFrameAt = now
         const delta = Math.min(Math.max(0.001, elapsed), MAX_FRAME_DELTA)
-        this.physics.beginFrame()
         this.character.update(delta)
-
-        // 每个节点一次派发，使 pass 顺序显式（skin → constraints →
-        // collide → normals）；CPU 后端则不会产出节点。
-        if (this.renderer instanceof WebGPURenderer) {
-          for (const node of this.physics.collectCompute()) {
-            this.renderer.compute(node)
-          }
-        }
 
         this.renderer.render(this.scene, this.camera)
 
@@ -544,7 +543,6 @@ export class Engine {
     this.disposed = true
     this.stop()
     this.lighting.dispose(this.scene)
-    this.physics.dispose()
     this.character.dispose()
     this.hitRT?.dispose()
     this.hitRT = null

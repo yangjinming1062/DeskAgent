@@ -41,7 +41,6 @@
 ======================
 enhance_avatar_prompt()   [LLM]      Persona 角色定义 → 半身头像图（bust avatar）提示词
 build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种姿态模板 + 画风 + Persona 设定 → 全身立绘提示词
-build_texture_prompt()    [确定性]   贴图描述 + PBR 通道(albedo/normal/roughness/metalness/displacement) → 材质贴图提示词
 
 全身图提示词组装脉络与公式
 =========================
@@ -237,8 +236,7 @@ class FullbodyTemplate:
 _BIPED_A_POSE = (
     "标准A-pose站姿，身体直立，双臂自然向身体两侧微张45度，手臂与躯干自然分开，手肘微屈，手指自然舒展，"
     "双腿直立，双脚分开与肩同宽；"
-    "穿着贴身最小覆盖的深灰色运动内衣与深灰色运动短裤，躯干与四肢呈现自然完整的皮肤质感，"
-    "便于后期 PBR 换装保留完整 albedo。"
+    "穿着贴身设计的深灰色运动内衣与深灰色运动短裤，躯干与四肢呈现自然完整的形体与皮肤质感。"
 )
 
 _BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
@@ -377,97 +375,3 @@ def build_fullbody_prompt(
     if feedback and feedback.strip():
         prompt += f"（用户反馈：{feedback.strip()}）"
     return prompt
-
-
-# 贴图铺在 3D 模型 UV 岛上；若 bake 进方向光会与 GLB 运行时灯光冲突。每个 rig_type 前缀把贴图对象适配到体型（人形服装 / 机甲装甲 / 四足毛鳞 / 鸟类羽毛等）。
-_TEXTURE_RIG_PREFIX: dict[str, str] = {
-    "biped": (
-        "顶视图服装面料平铺图（top-down flat lay），适合直接贴到三维人形 UV。"
-        "需清晰呈现服装款式、配色、面料质感（棉、丝绸、皮革、金属等）、"
-        "图案花纹、缝线走线、纽扣、拉链、铆钉等配件。"
-    ),
-    "mecha": ("顶视图机甲装甲表面纹理平铺图（top-down flat lay），适合直接贴到三维机甲模型 UV。需清晰呈现金属装甲板块分色、装甲刻线接缝、螺栓固定点、警示标识图案与发光能量条纹。"),
-    "quadruped": (
-        "顶视图四足动物体表纹理平铺图（top-down flat lay），适合直接贴到三维四足模型 UV。"
-        "需清晰呈现毛色分布与渐变、花纹走向（条纹、斑点、块状）、毛皮质感（长短、光泽、卷曲度），"
-        "或装备覆盖物（项圈、鞍具、护甲）的材质与配件。"
-    ),
-    "avian": ("顶视图羽毛纹理平铺图（top-down flat lay），适合直接贴到三维鸟类或有翼生物 UV。需清晰呈现羽毛排列层次、色彩分布与渐变、羽轴纹路、绒毛质感、翼羽与尾羽的图案差异。"),
-    "serpentine": (
-        "顶视图鳞片纹理平铺图（top-down flat lay），适合直接贴到三维蛇形或龙形 UV。"
-        "需清晰呈现鳞片排列方式（覆瓦状、网状）、背鳞与腹鳞的色彩差异、"
-        "体色渐变与花纹、鳞片光泽与质感、背棘或角冠纹理（如有）。"
-    ),
-    "aquatic": (
-        "顶视图水生生物皮肤纹理平铺图（top-down flat lay），适合直接贴到三维鱼类或水生生物 UV。"
-        "需清晰呈现鳞片或皮肤质感（光滑、颗粒状）、色彩分布与渐变、"
-        "侧线纹理、鳍条与尾鳍的图案、腹部与背部的明暗差异。"
-    ),
-    "hexapod": (
-        "顶视图节肢动物外骨骼纹理平铺图（top-down flat lay），适合直接贴到三维六足生物 UV。"
-        "需清晰呈现甲壳分节纹理、表面质感（光滑、粗糙、棘刺）、色彩与光泽、"
-        "体段间的色彩差异、膜质连接处纹理。"
-    ),
-    "octopod": (
-        "顶视图节肢动物外骨骼纹理平铺图（top-down flat lay），适合直接贴到三维八足生物 UV。"
-        "需清晰呈现甲壳或皮肤质感、色彩与光泽、腿节与躯干的纹理差异、"
-        "表面纹饰（疣突、毛刺、斑点）。"
-    ),
-}
-
-_TEXTURE_FORMAT_SUFFIX = "seamless 平铺、可平铺（tileable）。均匀打光、无方向性阴影（even diffuse lighting, no directional shadows）。高细节、清晰可辨。无背景、无边框、无水印。"
-
-# 非 albedo 通道不编码光照，"均匀打光/无方向性阴影"指令会误导；使用裁剪版后缀，仅保留通用指令（可平铺、无水印、无边框）
-_TEXTURE_FORMAT_SUFFIX_TECHNICAL = "seamless 平铺、可平铺（tileable）。高细节、清晰可辨。无背景、无边框、无水印。"
-
-# 写实微褶皱、毛孔、噪点法线会在赛璐珞 / 二次元 CG 的 toon 着色器上造成脏渲；按通道适配画风。
-_TEXTURE_STYLE_CHANNEL_SUFFIX: dict[str, dict[str, str]] = {
-    "cel_shading": {
-        "albedo": " 日系赛璐珞二次元动漫配色：纯净平滑的明快色块、清晰的色块边界，自然流畅的二次元色彩分布，无写实噪点、毛孔与杂乱织物纤维特写。",
-        "normal": " 二次元平滑法线贴图（tangent space normal map），RGB 蓝紫偏向，仅保留主要结构起伏与边缘线条轮廓，表面平整纯净，无写实细碎噪点与杂乱凹凸纹理。",
-        "roughness": " 二次元粗糙度贴图（roughness map），单色灰阶图，整体平滑均匀微漫反射，避免杂乱颗粒噪点。",
-        "metalness": " 二次元金属度遮罩贴图（metalness map），单色黑白遮罩图，纯黑非金属，纯白高亮金属配饰与金边装饰，边界清晰利落。",
-        "displacement": " 二次元高度置换贴图（displacement map），单色灰阶图，纯净大块结构高度起伏，无高频细碎噪点。",
-    },
-    "anime_game_cg": {
-        "albedo": " 次世代二次元游戏CG质感配色：现代二次元3D游戏贴图，细腻微渐变与精致纹理花纹，柔和透亮色彩与高质感金属描边。",
-        "normal": " 次世代二次元游戏法线贴图（tangent space normal map），RGB 蓝紫偏向，精细呈现服装裁片边缘、平整缝线走线与立体浮雕花纹，表面整洁利落。",
-        "roughness": " 二次元游戏材质粗糙度贴图（roughness map），单色灰阶图，清晰区分布料微哑光、皮革柔光与金属高光区域。",
-        "metalness": " 二次元游戏金属度贴图（metalness map），单色灰阶图，纯净黑白分明，高亮金属搭扣与金属镶边遮罩。",
-        "displacement": " 二次元游戏高度置换贴图（displacement map），单色灰阶图，清晰表达服装裁剪层叠厚度与立体刺绣浮雕。",
-    },
-    "realistic": {
-        "albedo": " 写实逼真材质配色：真实质感、自然光影与材质细节。",
-        "normal": " 高精写实法线贴图（tangent space normal map），RGB 蓝紫偏向，凸显表面的真实缝线、面料织物纤维、微表面凹凸起伏与自然褶皱纹理。",
-        "roughness": " 写实粗糙度贴图（roughness map），单色灰阶图，白高粗糙黑高光，真实表达不同材质表面的反光与微表面微磨损。",
-        "metalness": " 写实金属度贴图（metalness map），单色灰阶图，黑色非金属白色金属，清晰材质边界与金属过渡。",
-        "displacement": " 写实高度置换贴图（displacement/height map），单色灰阶图，白色凸起黑色凹陷，精确表达织物纹理深度、刺绣起伏与微表面结构。",
-    },
-}
-
-
-def _normalize_texture_style(style: str) -> str:
-    s = (style or "").strip().lower()
-    if s in ("cel_shading", "anime", "toon"):
-        return "cel_shading"
-    if s in ("anime_game_cg", "game_cg", "3d_anime"):
-        return "anime_game_cg"
-    return "realistic"
-
-
-def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped", channel: str = "albedo", style: str = "realistic", species: str = "") -> str:
-    """直接拼装 PBR 贴图生图 prompt（无 LLM 往返）；由 ``services.companion.wardrobe_service`` 在预览贴图 / 几何服装 / 挂件时调用。``rig_type`` 选择贴图主题前缀（人形服装 / 机甲装甲 / 四足毛鳞 / 鸟类羽毛等）；``channel`` 支持 albedo / normal / roughness / metalness / displacement；``style`` 在赛璐珞、二次元游戏 CG、写实之间路由通道需求。"""
-    effective_rig = "mecha" if (species == "机甲" or rig_type == "mecha") else rig_type
-    prefix = _TEXTURE_RIG_PREFIX.get(effective_rig, _TEXTURE_RIG_PREFIX["biped"])
-    prompt = f"{prefix} {description}。"
-    if feedback and feedback.strip():
-        prompt += f"（用户反馈：{feedback.strip()}）"
-
-    norm_style = _normalize_texture_style(style)
-    style_table = _TEXTURE_STYLE_CHANNEL_SUFFIX.get(norm_style, _TEXTURE_STYLE_CHANNEL_SUFFIX["realistic"])
-    if channel_clause := style_table.get(channel):
-        prompt += channel_clause
-
-    # Albedo（颜色）通道需要均匀光照指令；技术通道（normal/roughness/metalness/displacement）使用裁剪版后缀以避免误导性的光照指令稀释通道专属指令。
-    format_suffix = _TEXTURE_FORMAT_SUFFIX if channel == "albedo" else _TEXTURE_FORMAT_SUFFIX_TECHNICAL
-    return prompt + format_suffix

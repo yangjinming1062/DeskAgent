@@ -62,12 +62,10 @@
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
-| POST /api/companion/wardrobe/preview 与 GET .../preview/{job_id} 与 POST .../wardrobe/confirm | 换装预览（入队/轮询）与落库装备 | Backend 流水线 + Client 装配层 + DESIGN §1.3 + §1.8 状态机 |
 
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的样图与已选画风随形象行持久化，断点恢复直接重放、不重复触发生成；样图草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
-- **形象锁定**：形象确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭；换装与动画生成不受影响。
-- **换装预览为 202 异步**：校验图片后入队，结果经轮询或事件等价获取；预览产物在 TTL 内可落库。
+- **形象锁定**：形象确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭；动画生成不受影响。
 - **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，供应商task_id 与下载 URL 已持久化；下载或本地后处理失败只置下载失败态并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调供应商查询与下载接口，服务重启中断的下载同样进入该可恢复态。
 
 ### 1.3 事件类型
@@ -77,9 +75,7 @@
 | companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败 | Client 加载 + 绑定动画 / 进度展示 / 降级 |
-| wardrobe.updated | 换装产物就绪 | Client 重拉列表 + 分派热替/装配 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图）/ 新动画 | Client 重拉 /expressions（自创情绪注册表：白名单、肢体 clip 匹配、情绪胶囊）+ /animations |
-| wardrobe.preview.progress / .ready / .failed | 换装预览 job 状态 | Client UI 反馈（与 GET 轮询等价） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 | reload.mcp | MCP 配置变更后通知重载 | Client 转发 Runner，重载后回同步工具表 |
 
@@ -111,7 +107,6 @@
 |------|-----|
 | portrait 头像 | 5 分钟 |
 | 3D 模型 GLB | 5 分钟 |
-| 换装产物（纹理 + 服装 GLB） | 5 分钟 |
 | 静态精灵相册 PNG | 5 分钟 |
 | 表情头像 PNG | 5 分钟 |
 
@@ -122,22 +117,6 @@
 ### 1.6 错误信封
 
 REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何供应商失败不再 fallback。
-
-### 1.7 换装单元装配契约
-
-换装单元 kind 取 texture / garment / accessory，由 Backend 路由决定（Client 不发送、不感知路由参数）。几何单元（garment/accessory）的装配语义由数据库列与服装 GLB 的自描述元数据**双处声明且必须一致**——数据库供列表/装备决策（免解析 GLB），GLB 自描述保证可移植；冲突时以数据库为准。
-
-装配语义要点：
-- **槽位（slot）**：outfit / full_body / torso / legs / feet / head / hands / back。装备互斥范围是**槽位**——装备一件只顶掉同槽已装备件，异槽并存。texture 恒为 outfit；几何单元读自身声明（缺省 torso）。
-- **叠放（layer）**：升序叠放，贴身衣物先挂；同槽互斥时恒为 1。
-- **挂点（socket）**：accessory 挂到身体骨架的实际骨骼名；garment 恒无。客户端按骨骼名精确匹配，失败时忽略前缀做后缀匹配；均失败退化为静态摆放并告警。
-- **物理（physics）**：skin（蒙皮跟随）| cloth（客户端布料摆动）。
-- **GLB 导出不变量**（违反即客户端装配错位）：garment 的蒙皮骨骼名与顺序须与身体模型完全一致、无动画无表情；accessory 不含蒙皮（纯静态网格、佩戴点已在导出时对准）、无动画无表情。
-- **降级**：服装/挂件载入失败退化为贴图换装或程序化兜底，不崩溃；身体资产整体缺失按「3D 模型 → 静态精灵相册 → 程序化蛋形」层级兜底。
-
-### 1.8 Render job 状态机（换装预览）
-
-分钟级生成任务分两段：后端 web 进程入队（同步、毫秒级），渲染 Worker 认领执行（分钟级）——涵盖换装预览等 Blender 后处理与 3D 模型的图生3D 供应商管线。对外契约只涉及换装预览 job，状态为 queued → processing → succeeded / failed；失联的 processing 行按阈值回收，未超认领封顶重排队、超了转 failed。客户端只消费状态、不感知恢复。3D 建模共用同一队列语义，但对外仍是 model.gen.progress → model.ready / model.failed 事件、无轮询端点。
 
 ---
 
@@ -257,5 +236,4 @@ LLM 在生成 affect / spatial 时按以下规则：
 - 本文档是**跨模块公共契约**——任何改动必须同时通知所有受影响的模块所有者。
 - 任何扩展 emotion / locale / 事件 type，必须在 **本文档 + 后端白名单 + 客户端消费代码**三处同步。
 - 任何 Reserved Key 新增，必须在 **本文档 + 工具入口** 同步。
-- 任何换装装配语义（slot/layer/socket/physics）变更，必须在 **本文档 + 后端生成管线 + 客户端装配层**同步。
 - 子模块 README 不重复本文档内容，只在需要时链接。

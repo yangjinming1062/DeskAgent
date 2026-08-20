@@ -37,7 +37,7 @@ mindmap
       一段对话从无到有
       半身像与双画风全身立绘
       图生 3D 自动绑骨与变形目标
-      非破坏性 AI 换装与材质热替
+      自动根据情绪生成表情头像
     桌面生命感
       Three.js 实时 3D 骨骼驱动
       NPR 卡通 / PBR 渲染热切换
@@ -62,7 +62,6 @@ mindmap
 
 ### 1. 🎨 自然语言驱动的“无中生有”定制
 * **无需 3D 建模基础与外部资产**：你只需像和新朋友聊天一样描述名字、物种、性格、说话风格与外貌，AI 即可自动化完成半身像绘制、日系赛璐珞与二次元游戏CG双画风全身立绘生成、多视图派生与图生 3D 绑骨建模。
-* **非破坏性换装系统**：提供预设材质、AI PBR 纹理贴图（秒级热替）与几何服装装配，身体模型永不因换装重生，换装过程不中断正在播放的状态动画。
 * **视觉永不空白（3 级降级兜底）**：`3D GLB 模型 ➔ 静态精灵相册 ➔ 程序化蛋形` 级联兜底，即便无网络或在生成空挡期，角色也时刻维持生动呼吸，绝不出现卡死或空白加载态。
 
 ### 2. 🦾 拥有真实“手和脚”的桌面生产力（Runner + MCP）
@@ -94,7 +93,7 @@ mindmap
      │                   FastAPI + PostgreSQL + Worker             │
      │  - 伙伴人格（角色定义持久化 + 长期/短期记忆管理）           │
      │  - 专属形象资产生成编排（半身像 + 多风格立绘 + 图生 3D）    │
-     │  - 渲染 Worker 沙箱执行（自动绑骨 + 变形目标注入 + 几何换装）│
+     │  - 渲染 Worker 沙箱执行（自动绑骨 + 变形目标注入）          │
      │  - LLM 编排与系统提示词装配 / Outbox 事件发布               │
      └─────────────────────────┬───────────────────────────────────┘
                                │ WebSocket 长连接（JWT 鉴权）
@@ -194,7 +193,7 @@ bash scripts/build_client.sh
 | **伙伴交互与产品设计** | [DESIGN.md](DESIGN.md) | 形象体系、动画状态机、空间行为、Onboarding 生命周期与陪伴范式 |
 | **跨模块协议与安全契约** | [PROTOCOL.md](PROTOCOL.md) | JSON-RPC 2.0 方法规范、事件流、枚举定义、四层安全防御机制 |
 | **后端核心实现 (Backend)** | [backend/README.md](backend/README.md) | FastAPI 架构、数据模型、记忆管理、Prompt 装配与渲染 Worker |
-| **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、状态机与换装热替 |
+| **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、动画状态机与表情驱动 |
 | **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化、MCP 客户端与工具库 |
 | **安装器与引导机制 (Installer)** | [installer/README.md](installer/README.md) | Tauri 2 极简轻量安装引导与环境配置流程 |
 | **3D 模型与骨骼规范** | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) | 骨骼命名、动画 clip 映射、面部变形目标规范说明 |

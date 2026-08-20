@@ -98,8 +98,6 @@ class Settings(BaseSettings):
     hunyuan_enable_pbr: bool = Field(default=True, validation_alias="HUNYUAN_ENABLE_PBR")
     hunyuan_result_format: str = Field(default="GLB", validation_alias="HUNYUAN_RESULT_FORMAT")
 
-    blender_llm_max_iterations: int = Field(default=10, validation_alias="BLENDER_LLM_MAX_ITERATIONS")
-    blender_llm_timeout: int = Field(default=600, validation_alias="BLENDER_LLM_TIMEOUT")
     worker_concurrency: int = Field(default=1, validation_alias="WORKER_CONCURRENCY")
     worker_stale_reclaim_seconds: int = Field(default=7200, validation_alias="WORKER_STALE_RECLAIM_SECONDS")
     worker_poll_interval_seconds: float = Field(default=5.0, validation_alias="WORKER_POLL_INTERVAL_SECONDS")
@@ -188,7 +186,6 @@ class Settings(BaseSettings):
     companion_model_generate_rate_limit_per_minute: int
     companion_sprite_generate_rate_limit_per_minute: int
     companion_expression_avatar_generate_rate_limit_per_minute: int
-    companion_wardrobe_generate_rate_limit_per_minute: int
     rate_limit_storage_url: str = ""
 
     metrics_enabled: bool = True

@@ -175,12 +175,13 @@ describe('clips-registry', () => {
     expect(placeholder.tracks).toHaveProperty('LeftForeArm')
     expect(placeholder.tracks).toHaveProperty('RightForeArm')
 
+    // A-pose：占位 Z 旋转已从 T-pose 的 ±1.2 收敛到 A-pose 的 ±0.30 附近。
     for (const kf of placeholder.tracks.LeftArm) {
-      expect(kf.r[2]).toBeLessThan(-1.0)
+      expect(kf.r[2]).toBeLessThan(-0.2)
     }
 
     for (const kf of placeholder.tracks.RightArm) {
-      expect(kf.r[2]).toBeGreaterThan(1.0)
+      expect(kf.r[2]).toBeGreaterThan(0.2)
     }
   })
 })

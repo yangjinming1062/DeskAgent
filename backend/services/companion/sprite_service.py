@@ -4,22 +4,22 @@ import io
 import json
 from collections import deque
 from collections.abc import Iterator
-from typing import NamedTuple
+from pathlib import Path
+from typing import Any, NamedTuple
 
 import numpy as np
-from components import SESSION_LOCAL, get_logger, parse_llm_json, safe_json_loads
+from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, parse_llm_json, safe_json_loads
 from modules.companion import CompanionSpriteImage
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import ServiceType, resolve, resolve_provider_chain
+from ..llm import MissingLlmConfigError, ServiceType, provider_from_config, resolve, resolve_provider_chain, resolve_vision_chain
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
-from .blender_tools import _vision_llm_call
+from .model_service import ModelGenerationError
 from .persona_service import get_or_create_persona
-from .wardrobe_service import fetch_texture_bytes
 
 logger = get_logger(__name__)
 
@@ -262,6 +262,43 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     if not isinstance(prompt, str) or not prompt.strip() or not isinstance(tag, str) or not tag.strip():
         raise SpriteGenerationError("精灵形象生成服务暂时不可用，请稍后再试")
     return prompt.strip(), tag.strip()[:64]
+
+
+async def _vision_llm_call(db: AsyncSession | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str], **create_kwargs: object) -> str:
+    """用首个可用 vision provider 发起多模态调用。"""
+    chain = await resolve_vision_chain(db, user_id)
+    if not chain:
+        raise ModelGenerationError("没有可用的 vision LLM provider，无法分析图像")
+
+    provider = provider_from_config(chain[0])
+    client = provider.raw_client()
+    if client is None:
+        raise MissingLlmConfigError(f"vision provider '{provider.provider_name}' is not OpenAI-compatible")
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": text_instruction}]
+    for uri in image_data_uris:
+        content.append({"type": "image_url", "image_url": {"url": uri}})
+
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": content}]
+    response = await client.chat.completions.create(model=provider.config.model, messages=messages, **create_kwargs)
+    return (response.choices[0].message.content or "").strip()
+
+
+async def _fetch_image_bytes(url: str) -> bytes | None:
+    if "/api/media/files/" in url:
+        fid = url.rsplit("/", 1)[-1].split("?")[0]
+        res = get_file_path(fid)
+        if not res:
+            return None
+        return await asyncio.to_thread(Path(res[0]).read_bytes)
+
+    try:
+        return await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
+    except Exception:
+        return None
+
+
+fetch_texture_bytes = _fetch_image_bytes
 
 
 # 公开给 expression_avatar_service 复用于聊天表情头像生成

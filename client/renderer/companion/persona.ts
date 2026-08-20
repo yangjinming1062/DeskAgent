@@ -7,7 +7,6 @@ export interface OnboardingAnswers {
   appearance_core?: string
   // appearance_outfit：由 LLM 维护的着装描述（如「粉点碎花洋裙」）。
   // onboarding 阶段不收集——由头像 prompt 与 appearance_core 在确认头像后异步派生。
-  // 换装时更新（每件单品自带归一化后的描述）。
   // 渲染进 LLM system prompt，但不进入生图 prompt。
   appearance_outfit?: string
   role?: string

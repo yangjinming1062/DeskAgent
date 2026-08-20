@@ -23,7 +23,7 @@ from modules.auth import (
     hash_activation_token,
     public_provider_slots,
 )
-from modules.companion import AvatarAsset, CompanionModel, WardrobeItem
+from modules.companion import AvatarAsset, CompanionModel
 from modules.system import MessageResponse
 from services.companion.avatar_service import _delete_portrait_file
 from services.gateway.connection import cancel_user_cron_turns
@@ -118,7 +118,6 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
 
     await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
     await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))
-    await db.execute(sa_delete(WardrobeItem).where(WardrobeItem.user_id == user_id))
     await db.delete(await db.get(User, user_id))
     await db.commit()
 

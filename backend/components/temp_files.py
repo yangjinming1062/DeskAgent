@@ -58,7 +58,7 @@ def _metadata_path(meta: dict) -> Path | None:
 
 
 def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta_marker: str | None = None) -> tuple[str, str]:
-    """保存字节到 temp 存储，返回 (file_id, public_url)；meta_marker 是所有权/身份标签（如 ``"wardrobe_preview:{user_id}"``），写入 meta 后由 temp_file_delete 校验以拒绝跨 owner 删除；meta 写失败时 unlink 数据文件，避免无 TTL 跟踪的孤儿。"""
+    """保存字节到 temp 存储，返回 (file_id, public_url)；meta_marker 是所有权/身份标签（如 ``"preview:{user_id}"``），写入 meta 后由 temp_file_delete 校验以拒绝跨 owner 删除；meta 写失败时 unlink 数据文件，避免无 TTL 跟踪的孤儿。"""
     file_id = secrets.token_urlsafe(16)
     filepath = _media_path(file_id, ext)
 
@@ -172,7 +172,7 @@ class TempFileMarkerMismatch(PermissionError):
 
 
 def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
-    """尽力删除单个 temp-media 文件；删了东西返 True。required_marker 命中规则：完全相等，或 required_marker 以 ':' 结尾且 marker 以它为前缀（支持 category 共享 marker，如 wardrobe_preview:）。"""
+    """尽力删除单个 temp-media 文件；删了东西返 True。required_marker 命中规则：完全相等，或 required_marker 以 ':' 结尾且 marker 以它为前缀（支持 category 共享 marker，如 preview:）。"""
     if not _valid_file_id(file_id):
         return False
     mp = _meta_path(file_id)

@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $wardrobe, refreshEquippedAndApply, setWardrobe, type WardrobeItem } from '@/companion/3d/model-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
@@ -41,7 +40,6 @@ import { notifyError } from '@/shared/store/notifications'
 
 import { pushDevLog } from './developer-overlay'
 import { PersonaSection } from './persona-editor'
-import { WardrobeDesignPanel } from './wardrobe-design'
 
 interface SettingsOverlayProps {
   onClose: () => void
@@ -74,9 +72,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [genderFilter, setGenderFilter] = useState('')
 
   const [retuneOpen, setRetuneOpen] = useState(false)
-  const [wardrobeDesignOpen, setWardrobeDesignOpen] = useState(false)
-  const wardrobe = useStore($wardrobe)
-  const [wardrobeHint, setWardrobeHint] = useState<string | null>(null)
 
   const [retuneInitial, setRetuneInitial] = useState<{
     name: string
@@ -182,41 +177,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       setDesignHint('生成失败，换个描述试试？')
     } finally {
       setDesigning(false)
-    }
-  }
-
-  // 3D 模型生成入口已移除（形象确认后不可重生成）；只剩换装
-
-  // 拉取完整衣橱目录——在打开设置时调用；
-  // 后端变更时 wardrobe.updated 事件也会触发刷新。
-  useEffect(() => {
-    void window.spiritagent
-      .api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
-      .then(items => setWardrobe(items ?? []))
-      .catch(() => {})
-  }, [])
-
-  const equipWardrobe = async (itemId: number) => {
-    try {
-      await window.spiritagent.api<WardrobeItem>({
-        path: '/api/companion/wardrobe/equip',
-        method: 'PUT',
-        body: { item_id: itemId }
-      })
-
-      try {
-        const items = await window.spiritagent.api<WardrobeItem[]>({ path: '/api/companion/wardrobe' })
-        setWardrobe(items ?? [])
-        refreshEquippedAndApply()
-      } catch (refreshErr) {
-        // 把刷新失败暴露出来而不是吞掉。装备调用已经在后端成功；
-        // wardrobe.updated 事件会更新 UI。
-        setWardrobeHint(
-          refreshErr instanceof Error ? `已装备，但目录刷新失败：${refreshErr.message}` : '已装备，但目录刷新失败'
-        )
-      }
-    } catch (err) {
-      setWardrobeHint(err instanceof Error ? err.message : '装备失败')
     }
   }
 
@@ -484,46 +444,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
             )}
           </Section>
 
-          {/* 形象 + 3D 模型：形象确认后整体不再可改；只保留换装（纹理热替，零模型重生成） */}
-          <Section hint="形象已确认；换装只改纹理不动 3D 模型" title="换装">
-            <div className="flex">
-              <button
-                className="flex-1 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
-                onClick={() => setWardrobeDesignOpen(true)}
-                type="button"
-              >
-                ✨ 打开换装设计 (Wardrobe Studio)
-              </button>
-            </div>
-            {wardrobe.length > 0 && (
-              <div className="mt-3 grid grid-cols-3 gap-2">
-                {wardrobe.map(item => (
-                  <button
-                    className={`flex flex-col items-center gap-1 rounded-lg border p-2 text-[10px] transition ${
-                      item.equipped
-                        ? 'border-white/60 bg-white/15 text-white'
-                        : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'
-                    }`}
-                    key={item.id}
-                    onClick={() => void equipWardrobe(item.id)}
-                    type="button"
-                  >
-                    {item.texture_url ? (
-                      <img alt={item.name} className="h-12 w-12 rounded object-cover" src={item.texture_url} />
-                    ) : (
-                      <span className="grid h-12 w-12 place-items-center rounded bg-white/10 text-base">
-                        {item.category?.[0] ?? '?'}
-                      </span>
-                    )}
-                    <span className="truncate">{item.name}</span>
-                    {item.equipped && <span className="text-[9px] text-emerald-300">已装备</span>}
-                  </button>
-                ))}
-              </div>
-            )}
-            {wardrobeHint && <p className="mt-2 text-xs text-amber-300/80">{wardrobeHint}</p>}
-          </Section>
-
           <Section hint="精灵在桌面上的默认显示比例" title="形象大小">
             <div className="flex gap-2">
               {[0.5, 0.75, 1, 1.5, 2].map(s => (
@@ -544,8 +464,6 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
       {retuneOpen && persona?.name && retuneInitial && (
         <PersonaRetune initial={retuneInitial} onClose={() => setRetuneOpen(false)} />
       )}
-
-      {wardrobeDesignOpen && <WardrobeDesignPanel onClose={() => setWardrobeDesignOpen(false)} />}
     </div>
   )
 }

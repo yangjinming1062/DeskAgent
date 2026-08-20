@@ -1,4 +1,4 @@
-from .models import AvatarAsset, CompanionExpression, CompanionExpressionAvatar, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona, WardrobeItem
+from .models import AvatarAsset, CompanionExpression, CompanionExpressionAvatar, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona
 from .schemas import (
     AnimationClipResponse,
     AnimationGenerateRequest,
@@ -19,14 +19,6 @@ from .schemas import (
     PersonaUpdate,
     SpriteImageResponse,
     SpriteResolveRequest,
-    WardrobeConfirmRequest,
-    WardrobeEquipRequest,
-    WardrobeGenerateRequest,
-    WardrobeItemResponse,
-    WardrobePreviewAcceptedResponse,
-    WardrobePreviewJobResponse,
-    WardrobePreviewRequest,
-    WardrobePreviewResponse,
 )
 
 __all__ = [
@@ -56,13 +48,4 @@ __all__ = [
     "PersonaUpdate",
     "SpriteImageResponse",
     "SpriteResolveRequest",
-    "WardrobeConfirmRequest",
-    "WardrobeEquipRequest",
-    "WardrobeGenerateRequest",
-    "WardrobeItem",
-    "WardrobeItemResponse",
-    "WardrobePreviewAcceptedResponse",
-    "WardrobePreviewJobResponse",
-    "WardrobePreviewRequest",
-    "WardrobePreviewResponse",
 ]

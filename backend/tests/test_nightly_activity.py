@@ -828,7 +828,7 @@ async def test_e2e_nightly_full_run(seeded):
 
 @pytest.mark.asyncio
 async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
-    from modules.companion import CompanionExpression, WardrobeItem
+    from modules.companion import CompanionExpression
     from services.scheduler.nightly_activity import _stage_5_creation
 
     _, SessionLocal = _patch_db
@@ -851,54 +851,15 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
                 "tags": ["同仇敌徾"],
             }
         ],
-        "wardrobe": {
-            "name": "战术蓬蓬裙",
-            "description": "带有流光科技线条的蓬蓬裙",
-            "reason": "看你受了一天气，想穿酷炫装扮给你鼓劲",
-            "message": "看！这是我昨晚特意为今天准备的新战袍！",
-        },
     }
 
     monkeypatch.setattr(
         nightly_activity, "call_llm_once", _mock_llm_response(llm_payload)
     )
 
-    class _MockPreview:
-        file_id = "preview_file_123"
-        normal_file_id = "preview_normal_123"
-        roughness_file_id = "preview_roughness_123"
-        metalness_file_id = "preview_metalness_123"
-        displacement_file_id = "preview_displacement_123"
-
-    async def _mock_preview(*a, **kw):
-        return _MockPreview()
-
-    async def _mock_confirm(*, user_id, file_id, name, prompt, db=None, **kwargs):
-        item = WardrobeItem(
-            user_id=user_id,
-            name=name,
-            category="generated",
-            prompt=prompt,
-            equipped=kwargs.get("equip", False),
-            origin=kwargs.get("origin", "user"),
-            gift_state=kwargs.get("gift_state"),
-            gift_reason=kwargs.get("gift_reason"),
-            gift_message=kwargs.get("gift_message"),
-        )
-        async with SessionLocal() as write_db:
-            write_db.add(item)
-            await write_db.commit()
-        return item
-
-    async def _mock_chain(db, uid, cap):
-        return ["provider_a"] if cap == "image_gen" else []
-
     async def _mock_gen_clips(*a, **kw):
         return [{"name": "angry_stomp", "duration": 1.0, "tracks": []}]
 
-    monkeypatch.setattr(nightly_activity, "preview_wardrobe_texture", _mock_preview)
-    monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
-    monkeypatch.setattr(nightly_activity, "resolve_provider_chain", _mock_chain)
     monkeypatch.setattr(nightly_activity, "generate_animation_clips", _mock_gen_clips)
     # kick 会在共享测试连接上 fire-and-forget 头像生成——只记录调用而不并发打开第二会话。
     kicked: list[str] = []
@@ -927,16 +888,3 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
         assert expr is not None
         assert expr.label == "同仇敌徾"
         assert expr.icon == "😤"
-
-        gift = (
-            await db.execute(
-                select(WardrobeItem).where(
-                    WardrobeItem.user_id == 1005,
-                    WardrobeItem.origin == "companion",
-                )
-            )
-        ).scalar_one_or_none()
-        assert gift is not None
-        assert gift.name == "战术蓬蓬裙"
-        assert gift.equipped is False
-        assert gift.gift_state == "pending"

@@ -36,9 +36,7 @@ const presetClass = PERSONA_PRESET_CLASS
 // 字段 schema：每一步持有一组字段。``presets`` 的类型是全部已知 preset token 的联合再加 ''
 // （speakingStyle 用的「自动派生」标记）。这样 STEPS 里写成「喜爱」这种拼写错误会编译失败，
 // 而不是默默渲染出一个空 chip。
-//
-// species / character_gender / appearance_core / appearance_outfit 在这里不可编辑——
-// outfit 由换装系统维护。
+// species / character_gender / appearance_core / appearance_outfit 在这里不可编辑。
 type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {

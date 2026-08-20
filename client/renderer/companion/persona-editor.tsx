@@ -10,8 +10,7 @@ const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
 // 可编辑的 persona 字段：name / role / personality。
-// appearance_outfit 只读（由换装系统维护）。
-// 锁定的视觉锚点字段（species / gender / appearance_core）刻意不可编辑——见 DESIGN.md §5.4。
+// 锁定的视觉锚点字段（species / gender / appearance_core / appearance_outfit）刻意不可编辑——见 DESIGN.md §5.4。
 export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)
@@ -161,7 +160,6 @@ export function PersonaSection(): React.JSX.Element {
             <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
               {persona.appearance_outfit}
             </p>
-            <span className="mt-1 block text-[10px] text-white/30">着装由换装系统维护，请在换装设计面板中更换</span>
           </div>
         )}
         {hint && <p className="text-[11px] text-amber-300/80">{hint}</p>}

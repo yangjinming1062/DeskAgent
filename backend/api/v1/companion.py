@@ -1,10 +1,8 @@
-import asyncio
 import base64
 import json
-from datetime import timedelta
 
 from common import get_router
-from components import SESSION_LOCAL, SETTINGS, TempFileMarkerMismatch, get_db, get_logger, safe_json_loads, utc_now
+from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
 from fastapi import Body, Depends, HTTPException, Request, Response, status
 from modules.auth import LoginRecord, User, get_current_session, get_optional_current_session
 from modules.companion import (
@@ -29,15 +27,7 @@ from modules.companion import (
     PersonaUpdate,
     SpriteImageResponse,
     SpriteResolveRequest,
-    WardrobeConfirmRequest,
-    WardrobeEquipRequest,
-    WardrobeGenerateRequest,
-    WardrobeItemResponse,
-    WardrobePreviewAcceptedResponse,
-    WardrobePreviewJobResponse,
-    WardrobePreviewRequest,
 )
-from modules.jobs import RenderJob
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
     STYLE_CATALOG,
@@ -58,16 +48,9 @@ from services.companion import (
     SpriteSeedMissingError,
     UnknownEmotionError,
     UnknownFullbodyStyleError,
-    WardrobeSourceExpiredError,
     avatar_response,
     confirm_fullbody_front,
     confirm_portrait,
-    confirm_wardrobe_item,
-    decline_wardrobe_item,
-    delete_wardrobe_item,
-    discard_wardrobe_preview,
-    emit_wardrobe_updated,
-    equip_wardrobe_item,
     finalize_avatar,
     generate_animation_clips,
     generate_avatar,
@@ -76,13 +59,11 @@ from services.companion import (
     generate_fullbody_style_samples,
     get_active_avatar,
     get_active_model,
-    get_equipped_item,
     get_onboarding_state,
     get_or_create_persona,
     get_rig_bones,
     list_avatar_history,
     list_tts_voices,
-    list_wardrobe,
     model_response,
     normalize_voice_language,
     regenerate_avatar_from_image,
@@ -101,11 +82,9 @@ from services.companion import (
     update_persona,
     verify_signed_asset_request,
     verify_signed_avatar_request,
-    wardrobe_response,
 )
-from services.llm import MissingLlmConfigError, chat, resolve_vision_chain
+from services.llm import MissingLlmConfigError, chat
 from services.rate_limit import limiter
-from services.worker import queue as render_queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -523,178 +502,6 @@ async def post_expression_avatar(
         logger.warning("post_expression_avatar invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
         raise HTTPException(status_code=502, detail={"error": "表情头像生成失败，请稍后重试"})
     return SpriteImageResponse(id=row.id, url=url, tag=row.name, content_hash=row.content_hash, generated=generated)
-
-
-@router.get("/wardrobe", response_model=list[WardrobeItemResponse])
-async def get_wardrobe(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> list[WardrobeItemResponse]:
-    user, _ = auth
-    return [wardrobe_response(i) for i in await list_wardrobe(db, user.id)]
-
-
-@router.get("/wardrobe/equipped", response_model=WardrobeItemResponse)
-async def get_wardrobe_equipped(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
-    user, _ = auth
-    item = await get_equipped_item(db, user.id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="No equipped wardrobe item")
-    return wardrobe_response(item)
-
-
-@router.post("/wardrobe", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
-@limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
-async def post_wardrobe(
-    request: Request,  # required by @limiter.limit
-    body: WardrobeGenerateRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> WardrobeItemResponse:
-    user, _ = auth
-    # 一次调用完成生成与确认；生成本身跑在渲染 worker 上（README §1：web 不承载 Blender 管线），此处长轮询任务以维持同步 201 契约。
-    job_id = await render_queue.enqueue("garment_preview", user.id, {"description": body.description})
-    deadline = utc_now() + timedelta(seconds=SETTINGS.blender_llm_timeout * SETTINGS.blender_llm_max_iterations)
-    job: RenderJob | None = None
-    while utc_now() < deadline:
-        async with SESSION_LOCAL() as poll_db:
-            job = await poll_db.get(RenderJob, job_id)
-        if job is None or job.status == "failed":
-            raise HTTPException(status_code=502, detail={"error": "换装生成失败，请稍后重试"})
-        if job.status == "succeeded":
-            break
-        await asyncio.sleep(2.0)
-    if job is None or job.status != "succeeded":
-        raise HTTPException(status_code=504, detail={"error": "换装生成超时，请稍后重试"})
-    result = job.result or {}
-    # 在短会话内预解析 persona + 视觉链路，让 confirm_wardrobe_item 内的 LLM 调用不长时间占用连接池。
-    async with SESSION_LOCAL() as pre_db:
-        persona_definition = await _resolve_persona_definition(pre_db, user.id)
-        vision_chain = await resolve_vision_chain(pre_db, user.id)
-    try:
-        item = await confirm_wardrobe_item(
-            user_id=user.id,
-            file_id=result.get("file_id", ""),
-            name=body.name,
-            prompt=body.description,
-            normal_file_id=result.get("normal_file_id"),
-            roughness_file_id=result.get("roughness_file_id"),
-            metalness_file_id=result.get("metalness_file_id"),
-            displacement_file_id=result.get("displacement_file_id"),
-            mesh_file_id=result.get("mesh_file_id"),
-            assembly_json=result.get("assembly_json"),
-            persona_definition=persona_definition,
-            vision_chain=vision_chain,
-        )
-    except WardrobeSourceExpiredError as exc:
-        raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
-    except (RuntimeError, MissingLlmConfigError):
-        logger.exception("wardrobe post confirmation failed", extra={"user_id": user.id})
-        raise HTTPException(status_code=502, detail={"error": "换装确认失败，请稍后重试"})
-    return wardrobe_response(item)
-
-
-@router.put("/wardrobe/equip", response_model=WardrobeItemResponse)
-async def put_wardrobe_equip(body: WardrobeEquipRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
-    user, _ = auth
-    try:
-        item = await equip_wardrobe_item(db, user.id, body.item_id)
-        await emit_wardrobe_updated(user.id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Wardrobe item not found")
-    return wardrobe_response(item)
-
-
-@router.put("/wardrobe/{item_id}/decline", response_model=WardrobeItemResponse)
-async def put_wardrobe_decline(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobeItemResponse:
-    user, _ = auth
-    try:
-        item = await decline_wardrobe_item(db, user.id, item_id)
-        await emit_wardrobe_updated(user.id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Wardrobe item not found")
-    return wardrobe_response(item)
-
-
-@router.delete("/wardrobe/{item_id}")
-async def delete_wardrobe(item_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
-    user, _ = auth
-    if not await delete_wardrobe_item(db, user.id, item_id):
-        raise HTTPException(status_code=404, detail="Wardrobe item not found")
-    await emit_wardrobe_updated(user.id)
-    return {"ok": True}
-
-
-@router.post("/wardrobe/preview", response_model=WardrobePreviewAcceptedResponse, status_code=status.HTTP_202_ACCEPTED)
-@limiter.limit(f"{SETTINGS.companion_wardrobe_generate_rate_limit_per_minute}/minute")
-async def post_wardrobe_preview(
-    request: Request,  # required by @limiter.limit
-    body: WardrobePreviewRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
-) -> WardrobePreviewAcceptedResponse:
-    """入队预览任务（贴图秒级、服装几何分钟级）后立即返回；轮询 GET 或监听 wardrobe.preview.* 事件获取结果。"""
-    user, _ = auth
-    raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
-    payload = {
-        "description": body.description,
-        "feedback": body.feedback,
-        "content_type": content_type,
-        "image_b64": base64.b64encode(raw_bytes).decode("ascii") if raw_bytes else None,
-    }
-    job_id = await render_queue.enqueue("garment_preview", user.id, payload)
-    return WardrobePreviewAcceptedResponse(job_id=job_id, status="queued")
-
-
-@router.get("/wardrobe/preview/{job_id}", response_model=WardrobePreviewJobResponse)
-async def get_wardrobe_preview(job_id: int, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> WardrobePreviewJobResponse:
-    user, _ = auth
-    job = await db.get(RenderJob, job_id)
-    if job is None or job.user_id != user.id or job.kind != "garment_preview":
-        raise HTTPException(status_code=404, detail="Preview job not found")
-    resp = WardrobePreviewJobResponse(job_id=job.id, status=job.status, error=job.error)
-    if job.status == "succeeded" and job.result:
-        for key, value in job.result.items():
-            setattr(resp, key, value)
-    return resp
-
-
-@router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
-async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> WardrobeItemResponse:
-    user, _ = auth
-    # 在短会话内预解析 persona + 视觉链路，让 confirm_wardrobe_item 内的 LLM 调用不长时间占用连接池。
-    async with SESSION_LOCAL() as pre_db:
-        persona_definition = await _resolve_persona_definition(pre_db, user.id)
-        vision_chain = await resolve_vision_chain(pre_db, user.id)
-    try:
-        item = await confirm_wardrobe_item(
-            user_id=user.id,
-            file_id=body.file_id,
-            name=body.name,
-            prompt=body.prompt,
-            normal_file_id=body.normal_file_id,
-            roughness_file_id=body.roughness_file_id,
-            metalness_file_id=body.metalness_file_id,
-            displacement_file_id=body.displacement_file_id,
-            mesh_file_id=body.mesh_file_id,
-            assembly_json=body.assembly_json,
-            persona_definition=persona_definition,
-            vision_chain=vision_chain,
-        )
-    except WardrobeSourceExpiredError as exc:
-        raise HTTPException(status_code=409, detail={"error": "换装草稿已过期，请重新生成", "reason": str(exc)})
-    except (RuntimeError, MissingLlmConfigError):
-        logger.exception("wardrobe confirm failed", extra={"user_id": user.id})
-        raise HTTPException(status_code=502, detail={"error": "换装确认失败，请稍后重试"})
-    await emit_wardrobe_updated(user.id)
-    return wardrobe_response(item)
-
-
-@router.delete("/wardrobe/preview/{file_id}")
-async def delete_wardrobe_preview(file_id: str, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, bool]:
-    """尽力删除未确认的 wardrobe 预览（Wardrobe Studio 关闭/丢弃时调用，避免临时媒体文件滞留到 cleanup_expired 回收）；跨用户删除会被拒绝。"""
-    user, _ = auth
-    try:
-        deleted = discard_wardrobe_preview(file_id, user_id=user.id)
-    except TempFileMarkerMismatch:
-        raise HTTPException(status_code=403, detail="preview does not belong to current user")
-    return {"deleted": deleted}
 
 
 public_router = get_router()

@@ -28,7 +28,7 @@ _EXPRESSION_PROMPT_TEMPLATE = (
     "纯色平面背景（{bg_hex} {bg_label}），无阴影、无渐变、无背景图案、无其他物体。"
 )
 
-# 带入提示词的人设字段：着装取衣柜同步值（参考图冻结在引导期着装，换装后会过期），性格影响同一情绪的表现方式
+# 带入提示词的人设字段：性格影响同一情绪的表现方式
 _PERSONA_ANCHOR_FIELDS: tuple[tuple[str, str], ...] = (("appearance_core", "外形特征"), ("appearance_outfit", "当前着装"), ("personality", "性格"))
 
 

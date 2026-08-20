@@ -76,34 +76,6 @@ class CompanionExpressionAvatar(ModelBase, TimestampMixin):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
 
 
-class WardrobeItem(ModelBase, TimestampMixin):
-    """material_overrides_json 的 key 是 mesh 名，"*" 表示所有 mesh；texture_url 为 albedo，normal/roughness/metalness/displacement 为同 GLB 纹理 pass 的 PBR 通道；五者均可空，与旧 albedo-only 行与无纹理色卡行并存。"""
-
-    __tablename__ = "wardrobe_items"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    name: Mapped[str] = mapped_column(String(128))
-    category: Mapped[str] = mapped_column(String(64), default="generated")
-    material_overrides_json: Mapped[str] = mapped_column(Text, default="{}")
-    texture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    normal_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    roughness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    metalness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    displacement_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # LLM 规范化的穿搭描述（visual: style、color、material、cut）；创建时生成，equip 时换入 Persona.appearance_outfit。
-    outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
-    # 几何衣橱（PROTOCOL.md §1.6）：kind ∈ {texture, garment, accessory}。
-    kind: Mapped[str] = mapped_column(String(16), default="texture", server_default=text("'texture'"))
-    mesh_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    assembly_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
-    origin: Mapped[str] = mapped_column(String(16), default="user", server_default=text("'user'"))
-    gift_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    gift_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    gift_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
 class Persona(ModelBase, TimestampMixin):
     """system_prompt_extras 单列，使 persona 改动只重渲一行而不是所有历史消息。"""
 

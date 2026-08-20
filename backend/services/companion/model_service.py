@@ -731,15 +731,6 @@ async def _emit_model_failed(user_id: int, reason: str, *, retry_download: bool 
         logger.warning("Failed to emit model.failed", exc_info=True)
 
 
-async def emit_wardrobe_updated(user_id: int) -> None:
-    try:
-        async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="wardrobe.updated", payload="{}"))
-            await db.commit()
-    except Exception:
-        logger.warning("Failed to emit wardrobe.updated event", exc_info=True)
-
-
 async def emit_companion_assets_updated(user_id: int) -> None:
     """推送 companion.assets.updated，让在线客户端重新拉取新生成的动画 clip 与自定义表情。"""
     try:
@@ -748,14 +739,3 @@ async def emit_companion_assets_updated(user_id: int) -> None:
             await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.assets.updated event", exc_info=True)
-
-
-async def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
-    """推送 wardrobe.gift，让在线客户端补水衣柜并主动播报伙伴赠送的礼物。"""
-    try:
-        payload = json.dumps({"name": name, "message": message, "reason": reason})
-        async with SESSION_LOCAL() as db:
-            db.add(WSEvent(user_id=user_id, event_type="wardrobe.gift", payload=payload))
-            await db.commit()
-    except Exception:
-        logger.warning("Failed to emit wardrobe.gift event", exc_info=True)

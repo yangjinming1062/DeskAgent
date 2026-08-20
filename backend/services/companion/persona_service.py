@@ -17,7 +17,7 @@ _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
 # 引导问答的原始字段，按提问顺序排列；未完成时以草稿形式存在 definition_json 中，user_* 由 update_persona 路由进 Memory。
-# 注意：appearance_outfit 刻意不在此收集——初始着装在确认立绘后由头像提示词异步推导，之后随衣柜换装更新，且始终经 LLM 规范化而非原始用户输入。
+# 注意：appearance_outfit 刻意不在此收集——初始着装在确认立绘后由头像提示词异步推导，且始终经 LLM 规范化而非原始用户输入。
 ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",

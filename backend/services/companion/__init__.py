@@ -52,7 +52,6 @@ from .expression_avatar_service import (
 )
 from .expression_validator import validate_and_sanitize_expression
 from .fullbody_style_catalog import STYLE_CATALOG, FullbodyStyle, FullbodyStyleInfo
-from .garment_service import run_garment_pipeline
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
 from .interaction_stats import read_today_summary, record_interaction
@@ -65,8 +64,6 @@ from .model_service import (
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
     emit_companion_assets_updated,
-    emit_wardrobe_gift,
-    emit_wardrobe_updated,
     generate_companion_model,
     get_active_model,
     parse_glb_json,
@@ -90,27 +87,11 @@ from .persona_service import (
 )
 from .personality_tagger import analyze_personality_tags
 from .prompt_runtime import run_prompt_json
-from .response_builders import avatar_response, model_response, wardrobe_response
+from .response_builders import avatar_response, model_response
 from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 from .sprite_service import SpriteGenerationError, SpriteSeedMissingError, get_waiting_sprite, has_real_transparency, list_sprites, resolve_sprite, signed_sprite_url
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
-from .wardrobe_service import (
-    WardrobeRouting,
-    WardrobeSourceExpiredError,
-    confirm_wardrobe_item,
-    decline_wardrobe_item,
-    delete_wardrobe_item,
-    discard_wardrobe_preview,
-    equip_wardrobe_item,
-    get_equipped_item,
-    get_equipped_items,
-    list_wardrobe,
-    preview_garment,
-    preview_wardrobe_outfit,
-    preview_wardrobe_texture,
-    slot_of,
-)
 
 __all__ = [
     "ALLOWED_ACTIONS",
@@ -142,8 +123,6 @@ __all__ = [
     "SpriteSeedMissingError",
     "UnknownEmotionError",
     "UnknownFullbodyStyleError",
-    "WardrobeRouting",
-    "WardrobeSourceExpiredError",
     "analyze_personality_tags",
     "asset_store",
     "avatar_response",
@@ -161,17 +140,10 @@ __all__ = [
     "compute_file_sha256",
     "confirm_fullbody_front",
     "confirm_portrait",
-    "confirm_wardrobe_item",
-    "decline_wardrobe_item",
     "decompress_glb_if_needed",
     "delete_memory",
-    "delete_wardrobe_item",
     "design_voice",
-    "discard_wardrobe_preview",
     "emit_companion_assets_updated",
-    "emit_wardrobe_gift",
-    "emit_wardrobe_updated",
-    "equip_wardrobe_item",
     "extract_user_profile",
     "finalize_avatar",
     "format_auto_inject_block",
@@ -188,8 +160,6 @@ __all__ = [
     "get_active_model",
     "get_avatar_job_lock",
     "get_companion_model_sha256",
-    "get_equipped_item",
-    "get_equipped_items",
     "get_onboarding_state",
     "get_or_create_persona",
     "get_rig_bones",
@@ -201,7 +171,6 @@ __all__ = [
     "list_memories",
     "list_sprites",
     "list_tts_voices",
-    "list_wardrobe",
     "load_avatar_bytes_as_data_uri",
     "match_user_voice",
     "memory_admin",
@@ -210,9 +179,6 @@ __all__ = [
     "normalize_outfit",
     "normalize_voice_language",
     "parse_glb_json",
-    "preview_garment",
-    "preview_wardrobe_outfit",
-    "preview_wardrobe_texture",
     "read_today_summary",
     "read_user_profile",
     "record_interaction",
@@ -228,7 +194,6 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
-    "run_garment_pipeline",
     "run_image_model_gen_pipeline",
     "run_prompt_json",
     "schedule_onboarding_outfit_extraction",
@@ -241,7 +206,6 @@ __all__ = [
     "signed_expression_avatar_url",
     "signed_model_url",
     "signed_sprite_url",
-    "slot_of",
     "submit_onboarding_field",
     "update_memory",
     "update_outfit_field",
@@ -251,5 +215,4 @@ __all__ = [
     "verify_signed_asset_request",
     "verify_signed_avatar_request",
     "voice_catalog",
-    "wardrobe_response",
 ]

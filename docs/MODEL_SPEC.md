@@ -164,36 +164,15 @@ morph——情绪的面部表达由聊天窗表情头像承载（[PROTOCOL.md §
 
 ---
 
-## 4. 材质与装配
+## 4. 材质与渲染
 
 每个模型至少两个材质 slot：`Skin`（身体，roughness 0.55）· `Eyes`（眼珠，roughness 0.12）。
-PBR 纹理由资源管线生成并嵌入 GLB，支持 5 通道（`albedo` / `normal` / `roughness` / `metalness` / `displacement`，客户端绑定到 `MeshStandardMaterial.displacementMap` 呈现微表面起伏与织纹/刺绣深度）。换装由后端单入口 `POST /api/companion/wardrobe/preview` 接收描述文本，由一次 LLM 路由调用决定走 `texture`（贴图热替换，仅改色/材质/图案）、`garment`（几何装配，加载独立服装 GLB 并 rebind 到身体骨骼）或 `accessory`（挂件挂到 socket 骨骼）流水线——客户端不暴露 `kind` 字段。三者均不改动身体骨骼或 morph。装配语义（kind / slot / layer / socket / physics / materials 映射）的协议契约见 [PROTOCOL.md §1.6](../PROTOCOL.md)。
+PBR 纹理由资源管线生成并嵌入 GLB，支持原生 PBR 材质渲染。
 
-### 4.1 换装单元 GLB 事实规范
+### 4.1 渲染风格按类人面孔分流
 
-- **garment GLB**：独立 skinned mesh + 身体 armature（导出时**复用身体 armature 对象本身**，不重建、不改名、不改顺序，保证 `skins[].joints` 骨骼名与顺序与身体 GLB 完全一致——客户端 rebind 零映射的前提）；**不含动画、不含 morph**。锚点顶点组 `VG_ANCHOR` 在导出前校验非空（生成管线内部契约，不出现在 GLB）。
-- **accessory GLB**：纯静态 mesh（无 skins、无 armature），佩戴点在导出时已对准挂点骨骼的世界位置；无动画、无 morph。
-- **extras**：装配元数据内嵌于 `scene.extras["dsh:assembly"]` 且同时落在各 mesh node 的 extras（兼容不导出 scene 自定义属性的导出器），与 DB `assembly_json` 一致（GLB 自描述，DB 为冲突仲裁）。
-
-### 4.2 garment 生成管线确定性后处理参数
-
-LLM 只产"毛坯几何 + `VG_ANCHOR` 锚点标注"，其后一切由确定性 bpy 代码接管（贴合/厚度/悬垂/蒙皮/防穿模是数值几何问题，必须可复现可校验）：
-
-| 阶段 | 操作 | 参数 |
-|------|------|------|
-| fit | Shrinkwrap 仅作用于 `VG_ANCHOR` 顶点（保住裙摆/褶皱轮廓） | offset 1.5 mm |
-| drape | Blender 布料重力悬垂仿真（`VG_ANCHOR` 钉住，身体碰撞，步进 20 帧将悬垂褶皱烘焙进单层静态几何） | frames 20，distance 3 mm |
-| 厚度 | Solidify 向外 + 低密度补 Subsurf | 2 mm；顶点 < 4000 时 level=1 |
-| 蒙皮 | Data Transfer 从身体 mesh 迁移顶点权重（最近面插值）+ ARMATURE 修改器——薄壳/悬空几何上自动权重必失败 | REPLACE ×1.0 |
-| 碰撞 | 静止态顶点推出身体表面（BVH 最近点） | clearance 3 mm |
-
-蒙皮用 Data Transfer 而非 `parent_set(ARMATURE_AUTO)`：自动权重基于骨骼热扩散，在薄壳（裙摆、褶皱）上必产生错误权重；Data Transfer 直接继承身体表面最近面的权重，对任意形态、任意物种成立。
-
-### 4.3 拟真度上限与诚实边界
-
-- **渲染风格按类人面孔分流**：类人面孔的模型以二次元画风作为原图种子（全身立绘生成与画风选择按同一分流措辞，默认「精美二次元」，目的：规避写实人像在 3D 重建后的恐怖谷）；非人生物保留写实路线（无恐怖谷问题）。生成的 3D GLB 在客户端统一以 GLB 原生 PBR 路径渲染；画风信息保留在后端 `fullbody_style` 字段供立绘生成与换装 prompt 使用。
-- **零边际成本的拟真上限**：多模态 LLM 程序化毛坯 + 确定性后处理（厚度/悬垂烘焙/权重传递）+ 5 通道 PBR（含 displacement）+ 运行时 CPU 表面碰撞（`BodyCollider`），可达成"可信、自然、有悬垂与立体微细节"的次世代桌面伴侣效果。
-- **与商业扫描级的边界**：几何精度无法达到商业 image-to-3D（Tripo/Rodin）按件计费或真实扫描/资产库的照片级精度。此为成本策略决定的保真度边界，而非工程缺陷；桌面精灵场景在此上限内即可达成设计目标。
+- **渲染风格按类人面孔分流**：类人面孔的模型以二次元画风作为原图种子（全身立绘生成与画风选择按同一分流措辞，默认「精美二次元」，目的：规避写实人像在 3D 重建后的恐怖谷）；非人生物保留写实路线（无恐怖谷问题）。生成的 3D GLB 在客户端统一以 GLB 原生 PBR 路径渲染；画风信息保留在后端 `fullbody_style` 字段供立绘生成使用。
+- **拟真度上限与边界**：生成的 3D 模型由供应商图生 3D 管线产出，在客户端经 Three.js 实时渲染。几何精度与贴图质量受图生 3D 供应商能力支配，桌面精灵场景在此上限内即可达成设计目标。
 
 ---
 

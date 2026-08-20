@@ -81,12 +81,6 @@ hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
 hunyuan_result_format = "GLB"
 
-[blender_llm]
-# LLM 生成 Blender bpy 脚本的最大修复迭代轮数（Blender 仅用于绑骨/morph 注入/换装等后处理，不直接生模）
-blender_llm_max_iterations = 10
-# 单次 Blender 脚本执行超时时间（秒，包含网格构建与可选渲染）
-blender_llm_timeout = 1800
-
 [worker]
 # 渲染与后台任务 Worker 进程并发数（对应 docker-compose 的 worker 服务）
 worker_concurrency = 1
@@ -244,8 +238,6 @@ companion_model_generate_rate_limit_per_minute = 1
 companion_sprite_generate_rate_limit_per_minute = 10
 # 伴侣表情头像生成接口每分钟限制
 companion_expression_avatar_generate_rate_limit_per_minute = 10
-# 伴侣衣橱换装生成接口每分钟限制
-companion_wardrobe_generate_rate_limit_per_minute = 5
 # 限流存储后端 URL（留空使用内存存储，分布式环境可配置 Redis 例如 "redis://localhost:6379/0"）
 rate_limit_storage_url = ""
 

@@ -19,5 +19,5 @@ class RenderJob(ModelBase, TimestampMixin):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # handler 返回值，给调用方轮询的 kind 用（garment_preview: 完整 WardrobePreviewResponse 字段）。
+    # handler 返回值，给调用方轮询或查询结果用。
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

@@ -5,7 +5,6 @@ import {
   clearModelRetry,
   hydrateExpressions,
   hydrateGeneratedClips,
-  hydrateWardrobe,
   setModelFailed,
   setModelInfo
 } from '@/companion/3d/model-store'
@@ -109,7 +108,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
   // 来自渲染层当前未查看会话的事件不应作用于可见聊天——
   // 例如 cron 的自动回合通过 cron 会话流式输出文本；没有这道门的话，
   // 用户会看到 cron 的回复，好像它回答了主会话上一条消息。
-  // WSEvent 驱动的事件（companion.message/affect、wardrobe.*、model.*、
+  // WSEvent 驱动的事件（companion.message/affect、model.*、
   // avatar.regenerated、reload.mcp）没有 session_id，直接放行。
   if (event.session_id !== undefined) {
     const current = $chatSessionId.get()
@@ -344,26 +343,6 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 重新拉取这两项，让 3D 头像无需重启即可绑定。
       void hydrateGeneratedClips()
       void hydrateExpressions()
-
-      break
-    }
-
-    case 'wardrobe.updated': {
-      // 后端在装扮项生成、装备或删除后触发此事件。重新拉取完整列表，保持装备 atom 同步。
-      void hydrateWardrobe()
-
-      break
-    }
-
-    case 'wardrobe.gift': {
-      // 伙伴在第 5 阶段主动创作中生成了一份装扮礼物。
-      void hydrateWardrobe()
-      const p = event.payload as { name?: string; message?: string; reason?: string } | undefined
-
-      const msg =
-        p?.message || (p?.name ? `为你准备了一份装扮礼物「${p.name}」，快去装扮屋拆开看看吧！` : '为你准备了一份礼物！')
-
-      void speakProactive(msg, { affect: 'excited' })
 
       break
     }

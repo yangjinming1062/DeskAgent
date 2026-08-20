@@ -31,10 +31,8 @@ import {
   $modelLoadSettled,
   $modelRetryable,
   $modelRetryModelId,
-  $outfitView,
   hydrateExpressions,
   hydrateGeneratedClips,
-  refreshEquippedAndApply,
   retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
@@ -50,7 +48,6 @@ import { attachSilhouetteHitProbe } from './silhouette-hit'
 // - 响应 $modelInfo.asset_url 变化来重新加载 GLB。
 // - TTS 唇形同步：通过 tts-bridge 钩到 audio-track 的 AnalyserNode。
 // - 视线跟随：在聊天面板关闭时跟踪画布上的光标。
-// - 换装：已装备原子每次变化时都应用当前已装备项（初始挂载 + 热替换）。
 
 interface CharacterSnapshot {
   state: SpriteStateName
@@ -65,7 +62,6 @@ function captureSpriteSnapshot(): CharacterSnapshot {
 export function Companion3D(): React.JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const engineReadyRef = useRef<Promise<Engine | null> | null>(null)
-  const outfitView = useStore($outfitView)
   const modelInfo = useStore($modelInfo)
 
   // 启动引擎，接好订阅，并触发首次模型加载。
@@ -80,7 +76,7 @@ export function Companion3D(): React.JSX.Element {
     let engine: Engine | null = null
     let detachWiring: (() => void) | null = null
 
-    const ready = Engine.create({ container }).then(created => {
+    const ready = Engine.create(container).then(created => {
       if (cancelled) {
         created.dispose()
 
@@ -301,40 +297,16 @@ export function Companion3D(): React.JSX.Element {
         return
       }
 
-      // 重新应用 morph 参数和当前已装备的换装，让重载后仍保留用户的定制。
+      // 重新应用 morph 参数，让重载后仍保留用户的身材定制。
       if (Object.keys(modelInfo.morph_params).length) {
         engine.character.setMorphs(modelInfo.morph_params)
       }
-
-      refreshEquippedAndApply()
     })()
 
     return () => {
       cancelled = true
     }
   }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.morph_params, modelInfo.rig_type])
-
-  // 每次变化时应用已装备项（或活动的预览候选）。预览只替换本槽位的已装备项 ——
-  // 其他槽位继续渲染，这样预览上衣时不会让已装备的鞋被视觉剥离。
-  // 当角色是程序化回退时 setOutfit 是 no-op。
-  useEffect(() => {
-    let cancelled = false
-    const view = outfitView
-
-    void (async () => {
-      const engine = await engineReadyRef.current
-
-      if (!engine || cancelled) {
-        return
-      }
-
-      engine.character.setOutfit(view)
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [outfitView])
 
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)
