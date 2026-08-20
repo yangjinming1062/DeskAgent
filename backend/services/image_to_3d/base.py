@@ -11,7 +11,7 @@ class Model3DJob:
 
 @dataclass(frozen=True)
 class Model3DAsset:
-    kind: str  # "glb" | "obj" | ...
+    kind: str
     url: str
     preview_image_url: str | None = None
 
@@ -19,15 +19,14 @@ class Model3DAsset:
 @dataclass(frozen=True)
 class Model3DPollResult:
     status: Literal["queued", "in_progress", "completed", "failed"]
-    # Provider's own 0-100 progress signal; 0 = unknown (orchestration
-    # interpolates by elapsed time instead).
+    # 供应商自身的 0-100 进度信号；0 表示未知（编排侧按已用时间插值）。
     progress: int = 0
     assets: tuple[Model3DAsset, ...] = ()
     error: str | None = None
 
 
 class ImageTo3DError(Exception):
-    """Base error for image-to-3D service and providers."""
+    """图生 3D 服务及供应商的基础异常。"""
 
     def __init__(self, message: str, *, status_code: int | None = None, body: dict | None = None, provider: str = "", model: str = "") -> None:
         super().__init__(message)
@@ -38,10 +37,7 @@ class ImageTo3DError(Exception):
 
 
 class ImageTo3DProvider(ABC):
-    """Image-to-3D generation provider ABC. Capability ClassVars gate
-    provider-specific pipeline steps in
-    ``model_service.run_image_model_gen_pipeline`` — orchestration checks
-    them before calling the optional rig or multiview methods."""
+    """图生 3D 供应商抽象基类；能力 ClassVars 控制 ``model_service.run_image_model_gen_pipeline`` 中的供应商专属流水线步骤，编排侧在调用可选的 rig / multiview 方法前先检查它们。"""
 
     provider_name: str = ""
     SUPPORTS_RIGGING: ClassVar[bool] = False
@@ -50,16 +46,14 @@ class ImageTo3DProvider(ABC):
 
     @abstractmethod
     async def poll(self, job: Model3DJob) -> Model3DPollResult:
-        """Poll the generation status of a submitted job."""
+        """轮询已提交任务的生成状态。"""
 
     @abstractmethod
     async def download(self, result: Model3DPollResult, dest_dir: Path) -> Path:
-        """Download the completed job's model into ``dest_dir`` and return the
-        local path of a single ``.glb`` file (archives are unpacked here)."""
+        """把已完成任务的模型下载到 ``dest_dir``，返回单个 ``.glb`` 本地路径（压缩包在此处解压）。"""
 
     async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
-        """Submit from local seed images. Providers digest their own upload
-        mechanism (file_token, base64, …) — callers only hand over local paths."""
+        """从本地种子图提交；供应商自行处理上传机制（file_token、base64 等），调用方只传本地路径。"""
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support image-to-3D", provider=self.provider_name)
 
     async def rig_supported(self, job_id: str) -> bool:

@@ -5,10 +5,10 @@ ReasoningCallback = Callable[[str], Any]
 
 
 class StreamingThinkScrubber:
-    """Stateful per-delta reasoning-tag suppressor."""
+    """按增量抑制推理标签的有状态 scrubber。"""
 
     _OPEN_TAG_NAMES: tuple[str, ...] = ("think", "thinking", "reasoning", "thought", "REASONING_SCRATCHPAD")
-    # Pre-compute literal tags so the hot path does string ops, not regex compilation per feed().
+    # 预计算字面 tag，避免热路径每次 feed() 重复编译正则。
     _OPEN_TAGS: tuple[str, ...] = tuple(f"<{name}>" for name in _OPEN_TAG_NAMES)
     _CLOSE_TAGS: tuple[str, ...] = tuple(f"</{name}>" for name in _OPEN_TAG_NAMES)
     _MAX_TAG_LEN: int = max(len(t) for t in _OPEN_TAGS + _CLOSE_TAGS)
@@ -17,18 +17,18 @@ class StreamingThinkScrubber:
     def __init__(self, on_reasoning: ReasoningCallback | None = None) -> None:
         self._in_block: bool = False
         self._buf: str = ""
-        # Start-of-stream counts as a boundary.
+        # 流开头视为一个边界。
         self._last_emitted_ended_newline: bool = True
         self._on_reasoning = on_reasoning
 
     def reset(self) -> None:
-        """Reset all state.  Call at the top of every new turn."""
+        """重置全部状态，每个新轮次顶部调用一次。"""
         self._in_block = False
         self._buf = ""
         self._last_emitted_ended_newline = True
 
     def feed(self, text: str) -> str:
-        """Feed one delta; return the scrubbed visible portion. May be empty (held-back partial tag or in-block)."""
+        """送入一个增量；返回清洗后的可见部分，可能为空（暂留的部分 tag 或正处于块内）。"""
         if not text:
             return ""
         buf = self._buf + text
@@ -37,18 +37,16 @@ class StreamingThinkScrubber:
 
         while buf:
             if self._in_block:
-                # Hunt for the earliest close tag.
                 close_idx, close_len = self._find_first_tag(buf, self._CLOSE_TAGS)
                 if close_idx == -1:
                     held = self._max_partial_suffix(buf, self._CLOSE_TAGS)
                     self._buf = buf[-held:] if held else ""
-                    # Capture in-block content (minus partial-tag holdback).
+                    # 捕获块内内容（扣掉暂留的部分 tag 后缀）。
                     if self._on_reasoning is not None:
                         emit = buf[:-held] if held else buf
                         if emit:
                             self._on_reasoning(emit)
                     return "".join(out)
-                # Capture reasoning up to the close tag.
                 if self._on_reasoning and close_idx > 0:
                     self._on_reasoning(buf[:close_idx])
                 buf = buf[close_idx + close_len :]
@@ -58,14 +56,14 @@ class StreamingThinkScrubber:
             pair = self._find_earliest_closed_pair(buf)
             open_idx, open_len = self._find_open_at_boundary(buf, out)
 
-            # Closed pair wins (it's a bounded construct — model leaking reasoning inline).
+            # 闭合对优先（边界明确，对应模型把推理泄漏到正文的情形）。
             if pair is not None and (open_idx == -1 or pair[0] <= open_idx):
                 start_idx, end_idx = pair
                 preceding = self._emit_preceding(buf, start_idx)
                 if preceding is not None:
                     out.append(preceding)
                     self._last_emitted_ended_newline = preceding.endswith("\n")
-                # Capture reasoning from closed pairs before discarding.
+                # 在丢弃前先抽取闭合对内的推理内容。
                 if self._on_reasoning is not None:
                     inner = self._extract_pair_inner(buf, start_idx, end_idx)
                     if inner:
@@ -82,8 +80,7 @@ class StreamingThinkScrubber:
                 buf = buf[open_idx + open_len :]
                 continue
 
-            # No resolvable tag structure — hold back any partial-tag tail so a
-            # split tag across deltas isn't missed, then emit the rest.
+            # 无可解析的 tag 结构：暂留尾部可能跨增量合并的部分 tag，再输出剩余文本，避免漏掉被切分的 tag。
             held = max(self._max_partial_suffix(buf, self._OPEN_TAGS), self._max_partial_suffix(buf, self._CLOSE_TAGS))
             if held:
                 emit_text = buf[:-held]
@@ -100,14 +97,14 @@ class StreamingThinkScrubber:
         return "".join(out)
 
     def _emit_preceding(self, buf: str, tag_start: int) -> str | None:
-        """Strip orphan closes from text preceding ``tag_start``; None when nothing to emit."""
+        """清理 ``tag_start`` 之前文本中的孤立 close tag；无可输出内容时返回 None。"""
         if tag_start <= 0:
             return None
         preceding = self._strip_orphan_close_tags(buf[:tag_start])
         return preceding or None
 
     def flush(self) -> str:
-        """End-of-stream flush. Unterminated block is discarded (leaking partial reasoning is worse than a truncated answer)."""
+        """流结束时冲刷：未闭合的块直接丢弃（让推理半截泄漏比答案截断更糟）。"""
         if self._in_block:
             self._buf = ""
             self._in_block = False
@@ -123,7 +120,7 @@ class StreamingThinkScrubber:
 
     @staticmethod
     def _find_first_tag(buf: str, tags: tuple[str, ...]) -> tuple[int, int]:
-        """Return (earliest_index, tag_length) over *tags*, or (-1, 0). Case-insensitive."""
+        """返回 *tags* 中最早出现的 (位置, 长度)，未命中为 (-1, 0)；大小写不敏感。"""
         buf_lower = buf.lower()
         best_idx = -1
         best_len = 0
@@ -135,7 +132,7 @@ class StreamingThinkScrubber:
         return best_idx, best_len
 
     def _find_earliest_closed_pair(self, buf: str):
-        """Return (start_idx, end_idx) of the earliest closed pair, else None. Case-insensitive, non-greedy."""
+        """返回最早闭合对的 (起始, 结束) 位置；无则返回 None；大小写不敏感、非贪婪。"""
         buf_lower = buf.lower()
         best: tuple[int, int] | None = None
         for open_tag, close_tag in zip(self._OPEN_TAGS, self._CLOSE_TAGS):
@@ -152,7 +149,7 @@ class StreamingThinkScrubber:
         return best
 
     def _find_open_at_boundary(self, buf: str, already_emitted: list[str]) -> tuple[int, int]:
-        """Return the earliest block-boundary open-tag (idx, len). (-1, 0) when none."""
+        """返回块边界上最早出现的 open-tag (位置, 长度)，无则 (-1, 0)。"""
         buf_lower = buf.lower()
         best_idx = -1
         best_len = 0
@@ -172,12 +169,7 @@ class StreamingThinkScrubber:
         return best_idx, best_len
 
     def _is_block_boundary(self, buf: str, idx: int, already_emitted: list[str]) -> bool:
-        """True iff position *idx* in *buf* is a block boundary.
-
-        Boundary = start of buf AND the most recent emission ended with a newline;
-        OR any position whose preceding text on the current line is whitespace-only;
-        AND if no newline precedes it in buf, the most recent prior emission must have ended with a newline.
-        """
+        """判定 *buf* 中 *idx* 是否为块边界：要么位于 buf 开头且上一段输出以换行结尾，要么当前位置到行首仅含空白（且 buf 内无前置换行时也要求上一段输出以换行结尾）。"""
         if idx == 0:
             if already_emitted:
                 return already_emitted[-1].endswith("\n")
@@ -191,7 +183,7 @@ class StreamingThinkScrubber:
 
     @classmethod
     def _max_partial_suffix(cls, buf: str, tags: tuple[str, ...]) -> int:
-        """Longest buf-suffix that is a *prefix* of any tag (strictly shorter than the tag itself)."""
+        """返回 buf 末尾能匹配任意 tag 真前缀的最大长度（严格短于 tag 自身）。"""
         if not buf:
             return 0
         buf_lower = buf.lower()
@@ -205,11 +197,7 @@ class StreamingThinkScrubber:
         return 0
 
     def _extract_pair_inner(self, buf: str, start_idx: int, end_idx: int) -> str:
-        """Extract the inner text of a closed pair (between open and close tags).
-
-        ``start_idx`` is the open-tag position; ``end_idx`` is the position
-        after the close tag (as returned by ``_find_earliest_closed_pair``).
-        """
+        """抽取闭合对内部的文本（open-tag 与 close-tag 之间）；``start_idx`` 是 open-tag 起始位置，``end_idx`` 是 close-tag 之后的位置（与 ``_find_earliest_closed_pair`` 一致）。"""
         for open_tag, close_tag in zip(self._OPEN_TAGS, self._CLOSE_TAGS):
             open_lower = open_tag.lower()
             if buf[start_idx : start_idx + len(open_tag)].lower() == open_lower:
@@ -221,7 +209,7 @@ class StreamingThinkScrubber:
 
     @classmethod
     def _strip_orphan_close_tags(cls, text: str) -> str:
-        """Remove orphan close tags (no matching open in scrubber state) plus any trailing whitespace."""
+        """剥离孤儿 close tag（scrubber 状态中无对应 open tag）及其后随的空白。"""
         if "</" not in text:
             return text
         text_lower = text.lower()

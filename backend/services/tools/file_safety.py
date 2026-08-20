@@ -1,12 +1,10 @@
 import functools
 import os
 
-# SpiritAgent control-plane files: provider credentials, OAuth tokens, HMAC secrets,
-# gateway config. Listed by basename — both ~/.spiritagent/<name> and profile-scoped
-# ~/.spiritagent/profiles/<profile>/<name> are blocked.
+# SpiritAgent 控制面文件：供应商凭据、OAuth token、HMAC 密钥、网关配置。按 basename 列入，~/.spiritagent/<name> 与 ~/.spiritagent/profiles/<profile>/<name> 都被拦截。
 SPIRITAGENT_CONTROL_FILE_BASENAMES: tuple[str, ...] = ("auth.json", "auth.lock", "desktop-settings.json", "webhook_subscriptions.json", ".env")
 
-# .env.example is deliberately NOT here — it's a documented-shape substitute.
+# .env.example 故意不在此列——它是带文档结构的占位文件。
 BLOCKED_PROJECT_ENV_BASENAMES: frozenset[str] = frozenset({".env", ".env.local", ".env.development", ".env.production", ".env.test", ".env.staging", ".envrc"})
 
 _WRITE_DENIED_RELATIVE_PATHS: tuple[tuple[str, ...], ...] = (
@@ -36,7 +34,7 @@ _WRITE_DENIED_SPIRITAGENT_PREFIXES: tuple[str, ...] = ("mcp-tokens", "pairing", 
 
 @functools.lru_cache(maxsize=1)
 def _spiritagent_home() -> str:
-    """Canonical ~/.spiritagent path. Cached at module load — home rarely moves at runtime."""
+    """规范化的 ~/.spiritagent 路径，模块加载时缓存——home 运行时极少变动。"""
     return os.path.realpath(os.path.expanduser("~/.spiritagent"))
 
 
@@ -46,7 +44,7 @@ def _join_real(base: str, *parts: str) -> str:
 
 @functools.lru_cache(maxsize=4)
 def _write_denied_paths(home: str) -> frozenset[str]:
-    """Exact sensitive paths that must never be written."""
+    """绝不允许写入的精确敏感路径集合。"""
     home_real = os.path.realpath(home)
     spiritagent_home = _spiritagent_home()
     return frozenset(
@@ -60,7 +58,7 @@ def _write_denied_paths(home: str) -> frozenset[str]:
 
 @functools.lru_cache(maxsize=4)
 def _write_denied_prefixes(home: str) -> tuple[str, ...]:
-    """Sensitive directory prefixes that must never be written."""
+    """绝不允许写入的敏感目录前缀集合。"""
     home_real = os.path.realpath(home)
     spiritagent_home = _spiritagent_home()
     return tuple(
@@ -74,7 +72,7 @@ def _write_denied_prefixes(home: str) -> tuple[str, ...]:
 
 
 def is_write_denied(path: str) -> bool:
-    """True when ``path`` falls in the write denylist (after symlink resolution)."""
+    """路径（解析符号链接后）命中写入黑名单时返回 True。"""
     try:
         resolved = os.path.realpath(os.path.expanduser(str(path)))
     except Exception:
@@ -86,7 +84,7 @@ def is_write_denied(path: str) -> bool:
 
 @functools.lru_cache(maxsize=4)
 def _read_block_messages() -> tuple[tuple[str, str], ...]:
-    """Pre-resolved (real_path, error_message) pairs for credential files."""
+    """预解析的 (real_path, error_message) 凭据文件对。"""
     return tuple((_join_real(_spiritagent_home(), name), f"Blocked: cannot read SpiritAgent credential file ({name}).") for name in SPIRITAGENT_CONTROL_FILE_BASENAMES)
 
 
@@ -100,13 +98,7 @@ def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
 
 
 def get_read_block_error(path: str) -> str | None:
-    """Error message for a denied read target, or None when the path is allowed.
-
-    **Defense-in-depth only** — the terminal tool runs as the same OS user
-    with shell access, so a determined attacker can still `cat auth.json`.
-    The denylist exists so models that respect tool denials (the empirical
-    majority) stop at the error message rather than reaching for the shell.
-    """
+    """拒绝读取目标时返回错误消息，路径可用时返回 None——仅为纵深防御，终端工具同用户运行 shell，决心攻击者仍可 `cat auth.json`；黑名单旨在让守规矩的模型止步于错误消息。"""
     try:
         resolved = os.path.realpath(os.path.expanduser(str(path)))
     except Exception:

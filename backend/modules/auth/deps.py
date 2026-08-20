@@ -9,9 +9,7 @@ from .security import BEARER_SCHEME, decode_bearer_token
 
 
 async def get_current_admin_token(credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME), db: AsyncSession = Depends(get_db)) -> str:
-    """Verify the admin token's ``jti`` is recorded in ``admin_sessions``
-    with ``is_active=True`` so a force-revoked token fails immediately
-    instead of waiting for natural JWT expiry."""
+    """校验 admin token 的 jti 在 admin_sessions 中 is_active=True，使强制吊销立即生效而非等 JWT 自然过期。"""
     payload = decode_bearer_token(credentials)
     if not payload.get("is_admin"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="非管理员令牌。")

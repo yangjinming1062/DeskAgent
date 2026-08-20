@@ -16,9 +16,7 @@ def schema_name(schema: dict[str, Any]) -> str:
     return schema["name"]
 
 
-# Tools may declare ``user_id``, ``llm_config``, ``user_settings`` as
-# normal kwargs without fearing LLM-injection — those keys are silently
-# dropped from the LLM-supplied args dict.
+# 工具的 ``user_id`` / ``llm_config`` / ``user_settings`` 是正常 kwargs，被注入时从 LLM 提供的 args 中静默剔除，避免受 LLM 注入。
 RESERVED_KEYS = frozenset({"user_id", "llm_config", "user_settings"})
 
 AvailabilityCheck = Callable[[dict[str, str]], bool]
@@ -29,9 +27,7 @@ def _always_available(_user_settings: dict[str, str]) -> bool:
 
 
 def _web_extract_available(user_settings: dict[str, str]) -> bool:
-    """Mirror ``web_extract_tool``'s runtime check so the schema is hidden
-    when the configured provider can't service extract.
-    """
+    """与 ``web_extract_tool`` 运行时检查互为镜像，让无法服务 extract 的供应商不暴露对应 schema。"""
     try:
         provider = resolve_extract_provider(user_settings)
         return provider.is_available() and provider.supports_extract()
@@ -44,14 +40,13 @@ def _build_backend_entry(func: Callable, availability_check: AvailabilityCheck) 
     return {"func": func, "is_coro": inspect.iscoroutinefunction(func), "availability_check": availability_check}
 
 
-# Well-known availability predicates — callable from tool modules when they
-# register themselves.
+# 知名可用性谓词，工具模块注册时可引用。
 ALWAYS_AVAILABLE: AvailabilityCheck = _always_available
 WEB_EXTRACT_AVAILABILITY: AvailabilityCheck = _web_extract_available
 
 
 class ToolsRegistry:
-    """Three buckets: backend (in-process), memory (DB), runner (per-user IPC)."""
+    """三个桶：backend（进程内）、memory（DB）、runner（按用户 IPC）。"""
 
     def __init__(self) -> None:
         self._backend_tools: dict[str, dict[str, Any]] = {}
@@ -59,19 +54,13 @@ class ToolsRegistry:
         self._runner_tools: dict[int, dict[str, dict[str, Any]]] = {}
 
     def register(self, name: str, schema: dict, func: Callable, availability_check: AvailabilityCheck = _always_available) -> None:
-        """Add (or replace) a backend tool. Idempotent at import time so
-        duplicate ``import`` cycles don't error.
-        """
+        """添加（或替换）一个 backend 工具；导入时幂等，重复 ``import`` 不会报错。"""
         entry = _build_backend_entry(func, availability_check)
         entry["schema"] = schema
         self._backend_tools[name] = entry
 
     def register_memory(self, name: str, schema: dict) -> None:
-        """Add a memory tool (no function — dispatched by ``NativeMemory``).
-
-        Stored as a flat ``{name: schema}`` map; the schema dict is appended
-        directly by :meth:`get_all_schemas` and ``_lookup`` wraps it on demand.
-        """
+        """添加 memory 工具（无函数——由 ``NativeMemory`` 派发），以扁平 ``{name: schema}`` 存储。"""
         self._memory_tools[name] = schema
 
     def update_runner_tools(self, user_id: int, schemas: list[dict[str, Any]]) -> None:
@@ -87,10 +76,7 @@ class ToolsRegistry:
         return bool(self._runner_tools.get(user_id))
 
     def get_all_schemas(self, user_id: int, user_settings: dict[str, str] | None = None) -> list[dict[str, Any]]:
-        # ``user_settings=None`` keeps the legacy "always include everything"
-        # behavior for subagent and pre-DB callers. With settings, each tool's
-        # availability_check decides visibility; predicates that raise hide
-        # the tool (fail-closed) so a bug can't 500 the whole call.
+        # ``user_settings=None`` 保留「无条件包含全部」的旧行为，给子代理和 pre-DB 调用方使用；传入 settings 时由各工具的 availability_check 决定可见性，谓词抛错则隐藏该工具（fail-closed），避免一个 bug 把整次调用拖到 500。
         schemas: list[dict[str, Any]] = []
         if user_settings is None:
             schemas.extend(e["schema"] for e in self._backend_tools.values())
@@ -131,7 +117,7 @@ class ToolsRegistry:
         if entry is None:
             return tool_error(f"Tool {name} not found in backend registry.")
 
-        # Reserved keys must always win — see module docstring.
+        # 保留键始终优先——见模块顶部 RESERVED_KEYS。
         call_args: dict[str, Any] = {k: v for k, v in (args or {}).items() if k not in RESERVED_KEYS}
         for k, v in context.items():
             call_args.setdefault(k, v)

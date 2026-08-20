@@ -92,7 +92,7 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 @router.delete("/users/{user_id}", response_model=MessageResponse)
 async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     await get_or_404(db, User, id=user_id, detail="用户不存在。")
-    # Kick active WS so a deleted user's renderer gets disconnected cleanly.
+    # 主动踢掉活动 WS，让被删除用户的 renderer 干净断开。
     ws = _MANAGER.active_connections.get(user_id)
     if ws is not None:
         with contextlib.suppress(Exception):
@@ -111,7 +111,7 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
         sess.runtime_sessions.clear()
     discard_user(user_id)
 
-    # Wipe user-scoped DB rows + on-disk assets (right-to-be-forgotten).
+    # 清除用户范围内的 DB 行与磁盘资产（被遗忘权）。
     avatar_rows = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id))).scalars().all()
     for av in avatar_rows:
         _delete_portrait_file(av.asset_url)
@@ -176,8 +176,7 @@ async def list_model_configs(_admin: str = Depends(get_current_admin_token), db:
 
 @router.put("/{user_id}/model-config")
 async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
-    # An admin write must be complete — a partially-filled row would silently
-    # break the user's chat chain (PROTOCOL §5.4).
+    # 管理员写入必须三字段齐全；行内字段不全会静默打断用户聊天链路（PROTOCOL §5.4）。
     if not (payload.llm_base_url and payload.llm_api_key and payload.llm_model_name):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="base_url、api_key、model_name 三字段必填。")
     await get_or_404(db, User, id=user_id, detail="用户不存在。")

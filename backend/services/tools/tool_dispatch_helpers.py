@@ -8,20 +8,20 @@ from components import get_logger
 
 logger = get_logger(__name__)
 
-# Tools that must never run concurrently (interactive / user-facing).
+# 绝不能并发执行的工具（交互性 / 面向用户）。
 _NEVER_PARALLEL_TOOLS = frozenset({"clarify"})
 
-# Read-only tools with no shared mutable session state.
+# 无共享可变会话状态的只读工具。
 _PARALLEL_SAFE_TOOLS = frozenset(
     {"ha_get_state", "ha_list_entities", "ha_list_services", "read_file", "search_files", "session_search", "skill_view", "skills_list", "web_extract", "web_search"}
 )
 
-# File tools can run concurrently when they target independent paths.
+# 文件类工具在目标路径互不重叠时可并发。
 _PATH_SCOPED_TOOLS = frozenset({"read_file", "write_file", "patch"})
 
 
 def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool:
-    """True when a tool-call batch is safe to run concurrently."""
+    """一批工具调用可安全并发时返回 True。"""
     tool_calls = list(tool_calls)
     if len(tool_calls) <= 1:
         return False
@@ -53,7 +53,7 @@ def should_parallelize_tool_batch(tool_calls: Iterable[tuple[str, str]]) -> bool
 
 
 def _extract_parallel_scope_path(tool_name: str, function_args: dict) -> Path | None:
-    """Normalized file target for path-scoped tools. Does NOT resolve() — the file may not exist yet."""
+    """路径作用域工具的规范化文件目标——不调用 resolve()，文件可能尚未存在。"""
     if tool_name not in _PATH_SCOPED_TOOLS:
         return None
     raw_path = function_args.get("path")
@@ -66,7 +66,7 @@ def _extract_parallel_scope_path(tool_name: str, function_args: dict) -> Path | 
 
 
 def _paths_overlap(left: Path, right: Path) -> bool:
-    """True when two paths may refer to the same subtree (prefix match, not strict equality)."""
+    """两条路径可能指向同一子树时返回 True（前缀匹配，非严格相等）。"""
     left_parts, right_parts = left.parts, right.parts
     if not left_parts or not right_parts:
         return bool(left_parts) and bool(right_parts)
@@ -74,12 +74,12 @@ def _paths_overlap(left: Path, right: Path) -> bool:
 
 
 def is_multimodal_tool_result(value: Any) -> bool:
-    """True if ``value`` is the ``{"_multimodal": True, "content": [...], "text_summary": ...}`` envelope."""
+    """``value`` 为 ``{"_multimodal": True, "content": [...], "text_summary": ...}`` 包裹结构时返回 True。"""
     return isinstance(value, dict) and value.get("_multimodal") is True and isinstance(value.get("content"), list)
 
 
 def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
-    """Mutate a multimodal envelope to append a subdir hint to the first text part (and text_summary)."""
+    """就地把子目录提示追加到 multimodal 包裹的第一个文本段（以及 text_summary）。"""
     if not is_multimodal_tool_result(value):
         return
     parts = value.get("content") or []
@@ -94,11 +94,7 @@ def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
         value["text_summary"] += hint
 
 
-# Tools whose output carries attacker-controllable content — wrapped in
-# <untrusted_tool_result> delimiters so the model treats it as DATA not
-# instructions (defense against indirect prompt injection from poisoned
-# web pages, GitHub issues, MCP responses, OCR'd phishing dialogs).
-# Short outputs (< 32 chars) are skipped — overhead > benefit.
+# 输出包含攻击者可控制内容的工具，包裹在 <untrusted_tool_result> 边界里让模型将其视为数据而非指令（防御来自被投毒网页、GitHub issue、MCP 响应、OCR 钓鱼文本的间接提示注入）。短输出（< 32 字符）跳过——开销大于收益。
 _UNTRUSTED_TOOL_NAMES = frozenset({"web_extract", "web_search", "cu_tool"})
 _UNTRUSTED_TOOL_PREFIXES = ("browser_", "mcp_")
 _UNTRUSTED_WRAP_MIN_CHARS = 32
@@ -116,17 +112,15 @@ def _wrap_text_payload(text: str, source: str) -> str:
 
 
 def _maybe_wrap_untrusted(name: str, content: Any) -> Any:
-    """Wrap string and multimodal text parts from high-risk tools in untrusted delimiters; leave image bytes untouched."""
+    """将高风险工具的字符串与 multimodal 文本段包裹在不可信边界内，图像字节保持原样。"""
     if not _is_untrusted_tool(name):
         return content
 
-    # Plain-string outputs.
     if isinstance(content, str):
         if len(content) < _UNTRUSTED_WRAP_MIN_CHARS or content.lstrip().startswith("<untrusted_tool_result"):
             return content
         return _wrap_text_payload(content, name)
 
-    # Multimodal envelope: ``{"_multimodal": True, "content": [...], "text_summary": ...}``.
     if isinstance(content, dict) and content.get("_multimodal") is True:
         wrapped = dict(content)
         summary = content.get("text_summary")
@@ -153,11 +147,5 @@ def _maybe_wrap_untrusted(name: str, content: Any) -> Any:
 
 
 def make_tool_result_message(name: str, content: Any, tool_call_id: str) -> dict:
-    """Build a tool-result message dict with the OpenAI-format ``name`` field and the internal ``tool_name`` for DB.
-
-    High-risk tools' string output gets wrapped in ``<untrusted_tool_result>``
-    delimiters so the model treats the payload as data, not instructions.
-    Multimodal list results pass through unwrapped — vision adapters need the
-    list structure intact.
-    """
+    """构造带 OpenAI 格式 ``name`` 字段与内部 ``tool_name``（DB 用）的 tool-result 消息字典；高风险工具的字符串输出会被包裹在不可信边界内，multimodal 列表按原样透传。"""
     return {"role": "tool", "name": name, "tool_name": name, "content": _maybe_wrap_untrusted(name, content), "tool_call_id": tool_call_id}

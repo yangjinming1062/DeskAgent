@@ -15,12 +15,7 @@ _VOICEDESIGN_PREFIX = "mimo_voicedesign:"
 
 
 class MiMoTTSProvider(TTSProvider):
-    """TTS via MiMo's ``audio={...}`` extension on Chat Completions.
-
-    Wire shape:
-        POST /v1/chat/completions
-        body: messages=[{user,""},{assistant,text}], audio={format,voice}
-    """
+    """通过 MiMo 在 Chat Completions 上的 audio={...} 扩展提供 TTS；POST /v1/chat/completions，body 含 messages=[{user,""},{assistant,text}] 与 audio={format,voice}。"""
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "mimo-v2.5-tts"}
@@ -71,9 +66,7 @@ class MiMoTTSProvider(TTSProvider):
             design_prompt = voice[len(_VOICEDESIGN_PREFIX) :]
             if not design_prompt.strip():
                 raise ValueError("voice design prompt is empty")
-            # Same cap the JSON-RPC design path enforces; the REST POST
-            # /api/media/tts path can carry an unbounded ``voice`` form field
-            # otherwise, which the voicedesign model would happily bill for.
+            # 与 JSON-RPC design 路径同长上限；REST /api/media/tts 的 voice 表单字段本无界，否则 voicedesign 模型会照单计费。
             if len(design_prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
                 raise ValueError(f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
             audio_kwargs: dict = {"format": fmt, "optimize_text_preview": True}

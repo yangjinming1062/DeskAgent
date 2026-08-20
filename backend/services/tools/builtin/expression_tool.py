@@ -12,9 +12,8 @@ logger = get_logger(__name__)
 async def create_expression_tool(
     name: str, description: str, label: str | None = None, valence: str | None = None, tags: list | None = None, icon: str | None = None, **kwargs
 ) -> str:
-    """Register a new custom emotion and generate its chat avatar image in the background."""
-    # Lazy import breaks the services.tools.builtin ↔ services.companion cycle
-    # (services.companion.avatar_service imports back into tools.builtin).
+    """注册新的自定义表情，并在后台生成其聊天头像图。"""
+    # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
     from services.companion import emit_companion_assets_updated, kick_background_generation, validate_and_sanitize_expression
 
     user_id = kwargs.get("user_id")

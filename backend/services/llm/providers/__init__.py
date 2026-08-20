@@ -1,11 +1,11 @@
 from components import SETTINGS
 
 from . import (
-    gemini,  # noqa: F401 — side-effect: registers gemini providers
-    grok,  # noqa: F401 — side-effect: registers grok providers
-    mimo,  # noqa: F401 — side-effect: registers mimo providers
-    minimax,  # noqa: F401 — side-effect: registers minimax providers
-    zhipu,  # noqa: F401 — side-effect: registers zhipu providers
+    gemini,  # noqa: F401 — 副作用：注册 gemini 供应商
+    grok,  # noqa: F401 — 副作用：注册 grok 供应商
+    mimo,  # noqa: F401 — 副作用：注册 mimo 供应商
+    minimax,  # noqa: F401 — 副作用：注册 minimax 供应商
+    zhipu,  # noqa: F401 — 副作用：注册 zhipu 供应商
 )
 from .base import (
     BaseProvider,
@@ -48,9 +48,7 @@ from .registry import (
 
 
 def resolve_context_tokens(provider: str, service_type: str) -> int:
-    # Precedence: env override → provider-class default → global fallback.
-    # Warn on a silent miss so a typo'd provider name doesn't masquerade
-    # as the global default.
+    # 优先级：env 覆盖 → provider 类默认 → 全局兜底；拼错时打 warning，避免静默落到全局默认。
     override = getattr(SETTINGS, f"{service_type}_context_tokens", None)
     if override is not None:
         return override
@@ -67,8 +65,6 @@ def resolve_context_tokens(provider: str, service_type: str) -> int:
     )
     return SETTINGS.default_llm_context_tokens
 
-
-# Side-effect imports register concrete providers in their family modules.
 
 __all__ = [
     "KNOWN_PROVIDERS",

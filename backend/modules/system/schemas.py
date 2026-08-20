@@ -7,14 +7,7 @@ from ..auth import ChatRequestClientContext
 
 
 class StatusResponse(BaseModel):
-    """Per-user backend status snapshot returned by GET /api/status.
-
-    `login_count` counts active LoginRecord rows for the current user
-    (single-device login → 0 or 1). `chat_count` counts Conversation rows
-    updated within `settings.chat_active_window_minutes` (default 30 min).
-    `connection_state` reflects whether the current user's chat WebSocket is
-    currently held by ConnectionManager.
-    """
+    """GET /api/status 返回的每用户后端状态快照：login_count 计数当前用户 active LoginRecord（单设备登录 → 0 或 1）；chat_count 计数 settings.chat_active_window_minutes（默认 30 分钟）内更新过的 Conversation 行；connection_state 反映当前用户聊天 WebSocket 是否被 ConnectionManager 持有。"""
 
     login_count: int
     chat_count: int
@@ -36,14 +29,14 @@ class DesktopConfigPutRequest(BaseModel):
 class ChatMessageRequest(BaseModel):
     role: str = Field(pattern="^(user|tool)$")
     content: str
-    tool_call_id: str | None = None  # Required if role == "tool"
+    tool_call_id: str | None = None  # role == "tool" 时必填
     attachments: list[dict] | None = None
 
 
 class ChatRequest(BaseModel):
     session_id: str = Field(pattern=r"^\d+$")
     message: ChatMessageRequest
-    model: str | None = None  # Optional override; pair with context_tokens when the override model's window differs from the provider default
+    model: str | None = None  # 可选覆盖；与 context_tokens 一起使用，覆盖模型的窗口与供应商默认不同时
     context_tokens: int | None = Field(default=None, gt=0)
     client_context: ChatRequestClientContext | None = None
     tools: list[dict] | None = None

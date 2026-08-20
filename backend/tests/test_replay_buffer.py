@@ -52,20 +52,18 @@ def test_replay_buffer_ack_pruning():
     assert buf.min_seq == 1
     assert buf.max_seq == 5
 
-    # Ack up to seq 3
     pruned = buf.ack(3)
     assert pruned == 3
     assert len(buf) == 2
     assert buf.min_seq == 4
     assert buf.max_seq == 5
 
-    # Replay since 3 should return seq 4 and 5
     replayed = buf.replay_since(3)
     assert replayed is not None
     assert len(replayed) == 2
     assert [f["params"]["seq"] for f in replayed] == [4, 5]
 
-    # Replay since 1 should return None (missed seq 2 and 3)
+    # seq 2/3 已 ack，回放无法补齐
     assert buf.replay_since(1) is None
     assert buf.can_replay(1) is False
 
@@ -81,13 +79,12 @@ def test_replay_buffer_capacity_overflow():
     assert buf.min_seq == 3
     assert buf.max_seq == 5
 
-    # Since 2: can replay [3, 4, 5]
     replayed = buf.replay_since(2)
     assert replayed is not None
     assert len(replayed) == 3
     assert [f["params"]["seq"] for f in replayed] == [3, 4, 5]
 
-    # Since 1: missed seq 2, cannot replay
+    # seq 2 已缺失，无法补齐
     assert buf.replay_since(1) is None
 
 
@@ -102,7 +99,7 @@ def test_replay_buffer_ttl_pruning(monkeypatch):
     monkeypatch.setattr(time, "monotonic", lambda: t1)
     buf.append({"method": "event", "params": {"type": "msg2"}})
 
-    # Advance time beyond 5.0s for msg1 but within for msg2
+    # 把时间推到 msg1 之外、msg2 之内（5.0s TTL）
     t2 = 106.0
     monkeypatch.setattr(time, "monotonic", lambda: t2)
 
@@ -111,7 +108,7 @@ def test_replay_buffer_ttl_pruning(monkeypatch):
     assert len(replayed) == 1
     assert replayed[0]["params"]["seq"] == 2
 
-    # Replay since 0 should fail because seq 1 expired
+    # seq 1 已过期
     assert buf.replay_since(0) is None
 
 
@@ -125,17 +122,15 @@ def test_replay_buffer_clear():
 
 
 def test_replay_buffer_can_replay_edge_cases():
-    # Fresh empty buffer: current_seq=0
     buf = ReplayBuffer()
-    assert buf.can_replay(0) is True  # client is up-to-date
-    assert buf.can_replay(5) is False  # client claims seq ahead of server -> desync
+    assert buf.can_replay(0) is True  # 客户端已对齐
+    assert buf.can_replay(5) is False  # 客户端声称的 seq 超过服务端 → desync
     assert buf.can_replay(-1) is False
 
-    # Buffer with items
     buf.append({"method": "event", "params": {"type": "msg1"}})
     buf.append({"method": "event", "params": {"type": "msg2"}})
     assert buf.current_seq == 2
-    assert buf.can_replay(2) is True  # up-to-date, 0 frames to replay
-    assert buf.can_replay(3) is False  # ahead of server -> desync
-    assert buf.can_replay(0) is True  # can replay seq 1, 2
+    assert buf.can_replay(2) is True  # 已对齐，需要补 0 帧
+    assert buf.can_replay(3) is False  # 超过服务端 → desync
+    assert buf.can_replay(0) is True  # 可补 seq 1、2
     assert buf.replay_since(2) == []

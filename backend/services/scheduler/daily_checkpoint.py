@@ -29,16 +29,10 @@ _SUMMARY_PROMPT_TEMPLATE = (
 
 _SUMMARY_MAX_TOKENS = 800
 
-# Checkpoint subtypes — daily_summary (nightly) and compress_summary (runtime
-# token-threshold). Both act as "everything before me is already summarised"
-# for the LLM read path (_history_to_messages).
+# Checkpoint 子类型——daily_summary（nightly）和 compress_summary（运行时 token 阈值）。两者在 LLM 读路径（_history_to_messages）都充当"我之前的内容已被摘要"。
 _CHECKPOINT_SUBTYPES: frozenset[str] = frozenset({"daily_summary", "compress_summary"})
 
-# Subtypes excluded from the daily-summary input: UI-only stubs, prior
-# daily_summary checkpoints (fed separately via prev_summary_block), and
-# in-turn tool markers. compress_summary IS included — its content must be
-# rolled forward into the new daily_summary, not lost when the new row
-# supersedes it as the read-start checkpoint.
+# 排除在 daily-summary 输入之外的 subtypes：UI-only 占位、之前的 daily_summary checkpoint（通过 prev_summary_block 单独喂入）、轮内工具标记。compress_summary 要保留——其内容必须前滚到新的 daily_summary，新行取代它作为读起点 checkpoint 后不能丢。
 _NON_SUMMARISABLE_SUBTYPES: frozenset[str] = frozenset(UI_ONLY_SUBTYPES | {"daily_summary", "tool_summary"})
 
 
@@ -56,21 +50,8 @@ def _gap_days(prev_date_str: str | None, today_str: str) -> int | None:
 
 
 async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id: int, utc_start: datetime, utc_end: datetime, local_date_str: str) -> None:
-    """生成每日上下文检查点：从最近的压缩节点（``daily_summary`` 或 ``compress_summary``）
-    到现在的全部内容，调一次 LLM 压成一条新的 ``daily_summary``。
-
-    读起点为最近任意类型的 checkpoint（inclusive）：checkpoint 之前的消息已被其摘要覆盖，
-    不再进入输入。compress_summary 行通过 summarisable filter（不被排除），其文本被纳入
-    ``chat_content``，由 LLM 融入新的 daily_summary——内容不会丢失。新 daily_summary 写入
-    后 id 更大，自动取代之前的 compress_summary 成为后续 turn 的读起点。
-
-    触发条件：进入自主活动阶段且当天存在真实交互消息（≥1 条 user/assistant）。
-    跳过条件：当天无真实交互，或最近 checkpoint 之后无新行。
-
-    只追加，不删除任何已有消息。
-    """
-    # Read and write phases hold their own short sessions — the LLM call in
-    # between must not pin a pool connection (README §4 short-transaction rule).
+    """生成每日上下文检查点：从最近 checkpoint（daily_summary 或 compress_summary，inclusive）到现在，调一次 LLM 压成新 daily_summary；compress_summary 行被 summarisable filter 包含进 chat_content，由 LLM 融入新 daily_summary——内容不丢；新行 id 更大自动取代旧 compress_summary 成后续读起点；触发=当天≥1 真交互，跳过=无真交互或最近 checkpoint 后无新行；只追加不删除。"""
+    # 读、写两阶段各自持有短 session——中间 LLM 调用不能 pin 连接池（README §4 短事务规则）。
     async with session_scope() as db:
         inputs = await _collect_inputs(db, user_id, utc_start, utc_end, local_date_str)
     if inputs is None:
@@ -104,7 +85,7 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
     if main_conv is None:
         return
 
-    # Today must have had at least one real interaction.
+    # 当天至少要有一次真交互。
     real_turns = _summarisable_filter()
     today_msg_count = (
         await db.execute(
@@ -116,17 +97,13 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
     if today_msg_count == 0:
         return
 
-    # Most recent checkpoint of ANY type (daily_summary or compress_summary) —
-    # defines the read boundary. Everything before it is already summarised.
+    # 最近任意类型的 checkpoint（daily_summary 或 compress_summary）——划定读边界；它之前的内容已被摘要。
     prev_checkpoint = (
         await db.execute(select(Message).where(Message.conversation_id == main_conv.id, Message.subtype.in_(tuple(_CHECKPOINT_SUBTYPES))).order_by(Message.id.desc()).limit(1))
     ).scalar_one_or_none()
     checkpoint_id = prev_checkpoint.id if prev_checkpoint else 0
 
-    # There must be at least one real user/assistant turn AFTER the checkpoint.
-    # If the checkpoint is the last thing in the conversation (no follow-up
-    # interaction), there's nothing new to summarise — the checkpoint itself
-    # already covers everything up to that point.
+    # checkpoint 之后必须至少有一条真 user/assistant turn；若 checkpoint 就是会话末条（无后续交互），没有新内容可摘要——checkpoint 本身已覆盖到那点。
     has_new_turns = (
         await db.execute(
             select(func.count())
@@ -137,18 +114,12 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
     if not has_new_turns:
         return
 
-    # Read from the checkpoint INCLUSIVE. The summarisable filter naturally
-    # includes compress_summary (its content rolls forward) but excludes
-    # daily_summary (fed separately via prev_summary_block below). Messages
-    # before the checkpoint — already represented by the checkpoint's summary —
-    # are excluded by the id >= bound.
+    # 从 checkpoint INCLUSIVE 读：summarisable filter 自然包含 compress_summary（其内容前滚）但排除 daily_summary（下面通过 prev_summary_block 单独喂入）；checkpoint 之前的消息——已由 checkpoint 摘要代表——被 id >= 边界排除。
     rows = (await db.execute(select(Message).where(Message.conversation_id == main_conv.id, Message.id >= checkpoint_id, real_turns).order_by(Message.id.asc()))).scalars().all()
     if not rows:
         return
 
-    # The last daily_summary specifically — for prev_summary_block (older
-    # historical context) and gap-day calculation. Falls back to the checkpoint
-    # itself when it IS a daily_summary.
+    # 上一条 daily_summary 专门取出——给 prev_summary_block（更早的历史上下文）和间隔天数计算；若 checkpoint 本身就是 daily_summary 则直接复用。
     prev_daily = (
         prev_checkpoint
         if prev_checkpoint is not None and prev_checkpoint.subtype == "daily_summary"

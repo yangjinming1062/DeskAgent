@@ -26,7 +26,7 @@ def test_compute_sha256(tmp_path: Path):
 
 
 def test_serve_full_file_200(tmp_path: Path):
-    content = b"0123456789" * 100  # 1000 bytes
+    content = b"0123456789" * 100
     f = tmp_path / "model.glb"
     f.write_bytes(content)
 
@@ -48,7 +48,6 @@ def test_serve_range_start_end_206(tmp_path: Path):
     f.write_bytes(content)
 
     client = TestClient(app)
-    # Request bytes 0 to 4 (5 bytes: 'abcde')
     resp = client.get(f"/test-file?path={f}", headers={"Range": "bytes=0-4"})
 
     assert resp.status_code == 206
@@ -64,7 +63,6 @@ def test_serve_range_start_only_206(tmp_path: Path):
     f.write_bytes(content)
 
     client = TestClient(app)
-    # Request bytes 20 to end ('uvwxyz')
     resp = client.get(f"/test-file?path={f}", headers={"Range": "bytes=20-"})
 
     assert resp.status_code == 206
@@ -79,7 +77,6 @@ def test_serve_range_suffix_only_206(tmp_path: Path):
     f.write_bytes(content)
 
     client = TestClient(app)
-    # Request last 4 bytes ('wxyz')
     resp = client.get(f"/test-file?path={f}", headers={"Range": "bytes=-4"})
 
     assert resp.status_code == 206
@@ -94,7 +91,6 @@ def test_serve_range_out_of_bounds_416(tmp_path: Path):
     f.write_bytes(content)
 
     client = TestClient(app)
-    # Request start out of bounds
     resp = client.get(f"/test-file?path={f}", headers={"Range": "bytes=100-"})
 
     assert resp.status_code == 416
@@ -137,12 +133,10 @@ def test_serve_sha256_cache(tmp_path: Path, monkeypatch):
     http_range._SHA256_CACHE.clear()
 
     client = TestClient(app)
-    # First call: computes sha
     resp1 = client.get(f"/test-file?path={f}")
     assert resp1.status_code == 200
     assert call_count == 1
 
-    # Second call: hits cache
     resp2 = client.get(f"/test-file?path={f}")
     assert resp2.status_code == 200
     assert call_count == 1

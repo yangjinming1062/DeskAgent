@@ -11,7 +11,7 @@ _DUE_COLS = ("id", "user_id", "name", "schedule", "next_run_at", "prompt", "one_
 
 
 async def _seed(SessionLocal, jobs: list[dict]) -> list:
-    """Insert a user + cron jobs; return rows shaped like ``_select_due_jobs``."""
+    """插入用户 + cron jobs，返回形如 ``_select_due_jobs`` 的行。"""
     async with SessionLocal() as db:
         user = User(username="cron-cas-user", is_active=True, can_use=True)
         db.add(user)
@@ -77,8 +77,7 @@ async def test_cas_loser_is_skipped(SessionLocal):
         ],
     )
 
-    # Simulate update_job advancing next_run_at mid-tick: the stale Row no
-    # longer matches, so the batch CAS must silently skip the loser.
+    # 模拟 update_job 在 tick 中途推进 next_run_at：过期 Row 已不再匹配，因此批量 CAS 必须静默跳过输家。
     moved = now + timedelta(hours=2)
     async with SessionLocal() as db:
         job = (await db.execute(select(CronJob))).scalar_one()
@@ -89,7 +88,7 @@ async def test_cas_loser_is_skipped(SessionLocal):
     jobs = await _rows(SessionLocal)
 
     assert winners == {}
-    # SQLite reads timestamptz back without tzinfo; PG preserves it.
+    # SQLite 读回 timestamptz 时丢掉 tzinfo；PG 保留 tzinfo。
     assert jobs[rows[0].id].next_run_at.replace(tzinfo=None) == moved.replace(
         tzinfo=None
     )
@@ -118,7 +117,7 @@ async def test_one_shot_winner_is_deleted(SessionLocal):
 
     jobs = await _rows(SessionLocal)
     assert set(winners) == {rows[0].id, rows[1].id}
-    assert rows[0].id not in jobs  # one-shot deleted after firing
+    assert rows[0].id not in jobs  # one-shot 触发后被删除
     assert rows[1].id in jobs
 
 
@@ -170,9 +169,7 @@ async def test_select_due_jobs_caps_database_read(SessionLocal, monkeypatch):
 
 
 async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch):
-    """The tick replica only writes a cron.turn.request ws_events row — the
-    connection-holding replica claims and executes it (multi-replica safe).
-    Quiet users and empty prompts write nothing."""
+    """tick 副本只写一条 cron.turn.request ws_events 行——持连接的副本认领并执行（多副本安全）。Quiet 用户和空 prompt 一律不写。"""
     import json as _json
 
     from modules.ws import WSEvent

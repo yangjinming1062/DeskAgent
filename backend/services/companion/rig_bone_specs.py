@@ -1,4 +1,4 @@
-# (bone_name, parent, human-readable description)
+# 每项为 (骨骼名, 父骨骼, 中文说明)
 RIG_BONE_HIERARCHIES: dict[str, list[tuple[str, str | None, str]]] = {
     "biped": [
         ("Hips", None, "根骨骼，骨盆中心"),

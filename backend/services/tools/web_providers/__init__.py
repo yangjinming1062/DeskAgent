@@ -6,7 +6,6 @@ __all__ = ["WebSearchProvider", "aclose"]
 
 
 async def aclose() -> None:
-    """Close long-lived ``httpx.AsyncClient`` singletons on lifespan shutdown.
-    Only ``brave_free`` and ``tavily`` hold persistent clients; ``ddgs`` does not."""
+    """在 lifespan 关闭时关闭长生命周期的 ``httpx.AsyncClient`` 单例——只有 ``brave_free`` 与 ``tavily`` 持有持久客户端，``ddgs`` 不持有。"""
     await aclose_brave()
     await aclose_tavily()

@@ -15,12 +15,10 @@ SEARCH_TOOLS_SCHEMA = {
 def search_tools_tool(query: str, **kwargs) -> str:
     user_id = kwargs.get("user_id")
     if user_id is None:
-        # Reserved-injected by ToolsRegistry.execute_backend_tool; absent on
-        # direct unit-test calls. Empty result, not crash.
+        # 由 ToolsRegistry.execute_backend_tool 注入保留键；直接单元测试调用时缺失，返回空结果而非崩溃。
         return json.dumps({"matched_tools": []}, ensure_ascii=False)
 
-    # Same gate as _build_turn_inputs — without this the tool would surface
-    # gated schemas (e.g. web_extract without a Tavily key) to the LLM.
+    # 与 _build_turn_inputs 同源过滤——否则会向 LLM 暴露受门控的 schema（如未配置 Tavily key 的 web_extract）。
     user_settings = kwargs.get("user_settings") or {}
     results = []
     query_lower = query.lower()

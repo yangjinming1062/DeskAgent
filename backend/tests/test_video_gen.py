@@ -8,7 +8,7 @@ from services.llm import MissingLlmConfigError, ProviderError
 
 
 def _async_handler(responses):
-    """Build an async httpx handler that returns the next queued response."""
+    """构造一个按队列顺序返回响应的异步 httpx handler。"""
     queue = list(responses)
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -63,8 +63,7 @@ class TestVideoGenRestEndpoints:
                 path = getattr(route, "path", None)
                 if path is not None:
                     paths.add(path)
-                # FastAPI wraps included routers in _IncludedRouter whose
-                # inner routes live on ``.original_router.routes``.
+                # FastAPI 把 included router 包装为 _IncludedRouter，内部路由位于 .original_router.routes。
                 orig = getattr(route, "original_router", None)
                 if orig is not None:
                     _walk(orig.routes)
@@ -77,13 +76,12 @@ class TestVideoGenRestEndpoints:
 
 
 class TestVideoGenJobRoundtrip:
-    """End-to-end submit → poll → success path using a mock provider."""
+    """使用 mock 供应商的端到端 submit → poll → success 路径。"""
 
     async def _run_roundtrip(
         self, monkeypatch, *, model, handler, duration, resolution, aspect_ratio
     ):
-        """Seed the user config, install the mock transport, enqueue a job and
-        wait for it to reach a terminal state. Returns the final job row."""
+        """写入用户配置、安装 mock transport、入队任务并等待其到达终态，返回最终 job 行。"""
         import asyncio
 
         from sqlalchemy import select
@@ -115,13 +113,8 @@ class TestVideoGenJobRoundtrip:
             cfg.video_gen_model_name = model
             await db.commit()
 
-        # Eagerly register a mock-transport-backed client so the cached
-        # ``get_http`` lookup returns our mock instead of building a real
-        # httpx client whose internal transport we can't easily swap.
-        # Replace ``services.media.video_jobs.httpx`` wholesale so the bare
-        # ``httpx.AsyncClient(...)`` inside ``_stream_download`` is also
-        # intercepted (the CDN URL points to ``example.com``, which would
-        # otherwise hit the open internet).
+        # 预先注册一个 mock transport 客户端，使缓存的 get_http 返回我们的 mock，避免创建内部 transport 难以替换的真正 httpx 客户端。
+        # 整体替换 services.media.video_jobs.httpx，以同时拦截 _stream_download 内部的裸 httpx.AsyncClient（CDN URL 指向 example.com，否则会访问公网）。
         import services.llm.providers.http as http_mod
 
         def _mock_async_client(timeout=None, **kwargs):
@@ -161,7 +154,7 @@ class TestVideoGenJobRoundtrip:
             assert job.status == "queued"
             assert job.provider_task_id == "task-test-1"
 
-        # Let the polling task complete (it polls every 5s in settings)
+        # 等待轮询任务完成（设置中默认每 5 秒轮询一次）
         for _ in range(20):
             await asyncio.sleep(0.2)
             async with SESSION_LOCAL() as db:
@@ -174,13 +167,12 @@ class TestVideoGenJobRoundtrip:
     async def test_v1_submit_poll_retrieve_download(
         self, monkeypatch, _patch_db, test_token
     ):
-        """Default path: MiniMax-Hailuo v1, three-stage (submit → poll →
-        files/retrieve → download)."""
+        """默认路径：MiniMax-Hailuo v1 三段式（submit → poll → files/retrieve → download）。"""
         calls: list[str] = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
             path = request.url.path
-            # The CDN download URL is absolute, not relative — match by full URL.
+            # CDN 下载 URL 是绝对地址而非相对路径，需按完整 URL 匹配。
             if str(request.url) == "https://example.com/video.mp4":
                 return httpx.Response(
                     200,
@@ -242,7 +234,7 @@ class TestVideoGenJobRoundtrip:
     async def test_v2_h3_inline_download_url_skips_retrieve(
         self, monkeypatch, _patch_db, test_token
     ):
-        """H3 v2 path: poll carries the URL inline, so files/retrieve is never hit."""
+        """H3 v2 路径：poll 直接返回 URL 内联，因此不会调用 files/retrieve。"""
         calls: list[str] = []
 
         async def handler(request: httpx.Request) -> httpx.Response:
@@ -293,9 +285,7 @@ class TestVideoGenJobRoundtrip:
     async def test_provider_failure_marks_job_failed(
         self, monkeypatch, _patch_db, test_token
     ):
-        # Bypass the multi-session visibility question: drive everything
-        # through the same SESSION_LOCAL session so the commit happens in
-        # the same transaction the test reads.
+        # 绕过多 session 可见性问题：全程复用同一个 SESSION_LOCAL，使 commit 与读取落在同一事务。
         from sqlalchemy import select
 
         import services.llm.providers.http as http_mod
@@ -357,9 +347,7 @@ class TestVideoGenJobRoundtrip:
                     aspect_ratio=None,
                 )
 
-            # Read via the SAME session the test session — _update_job
-            # opens its own session which on SQLite under SAVEPOINT may
-            # have visibility issues, so trust the test session.
+            # 通过与测试相同的 session 读取——_update_job 会自开 session，在 SQLite + SAVEPOINT 下可能存在可见性问题，故以测试 session 为准。
             from sqlalchemy import select
 
             from modules.media import VideoGenJob

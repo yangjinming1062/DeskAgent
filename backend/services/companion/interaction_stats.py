@@ -17,13 +17,11 @@ class _DailyCounters:
     date: str
     poke: int = 0
     chat_turn: int = 0
-    # Sparse map: keys are added only when an event lands in that hour,
-    # so an idle day allocates a 24-entry zero dict for nothing.
+    # 稀疏映射：仅在该小时真的发生事件时才建键，空闲日不必分配 24 项全零字典
     hour_buckets: dict[int, int] = field(default_factory=dict)
 
 
-# Process-local aggregation. Per ARCHITECTURE.md §5 "单实例语义", the
-# architecture ships single-instance; this dict is the source of truth.
+# 进程内聚合：按 ARCHITECTURE.md §5「单实例语义」，本字典即事实源
 _counters: dict[int, _DailyCounters] = {}
 
 
@@ -33,9 +31,7 @@ def _today_key() -> str:
 
 def _get_or_seed(user_id: int) -> _DailyCounters:
     today = _today_key()
-    # Opportunistic prune of stale entries for OTHER users on this
-    # user's day rollover — keeps the dict bounded across process
-    # lifetime as long as the most-active user pokes daily.
+    # 借本用户跨日的时机顺带清理其他用户的过期条目，使字典规模在进程生命周期内有界
     for stale_uid, stale in list(_counters.items()):
         if stale.date != today:
             _counters.pop(stale_uid, None)
@@ -48,7 +44,7 @@ def _get_or_seed(user_id: int) -> _DailyCounters:
 
 
 def _compute_peak_hour(buckets: dict[int, int]) -> int | None:
-    """Earliest hour with the maximum count; ``None`` when no activity yet."""
+    """取计数最大的最早小时；尚无活动时返回 None。"""
     best_hour: int | None = None
     best_count = 0
     for hour in range(24):
@@ -70,10 +66,7 @@ def _format_content(counters: _DailyCounters) -> str:
 
 
 async def _stats_memory_for(db: AsyncSession, user_id: int, date_str: str) -> Memory | None:
-    # ``first()`` not ``one_or_none()``: production Postgres has a PARTIAL
-    # unique index only on ``user_profile:*`` contexts (see main.py:99).
-    # ``interaction_stats:*`` rows have no uniqueness constraint, so a
-    # read-then-write race would otherwise raise MultipleResultsFound.
+    # 用 first() 而非 one_or_none()：interaction_stats:* 无唯一约束，读写竞态下可能出现多行
     return (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == f"interaction_stats:{date_str}"))).scalars().first()
 
 
@@ -93,7 +86,7 @@ async def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
 
 
 async def read_today_summary(user_id: int, date_str: str | None = None) -> dict | None:
-    """Read the interaction_stats memory row for ``date_str`` (UTC today if omitted)."""
+    """读取指定日期（默认 UTC 今日）的 interaction_stats 记忆行。"""
     if date_str is None:
         date_str = _today_key()
     async with SESSION_LOCAL() as db:
@@ -104,13 +97,7 @@ async def read_today_summary(user_id: int, date_str: str | None = None) -> dict 
 
 
 async def record_interaction(user_id: int, kind: str, hour: int) -> dict:
-    """Increment the day's counter for ``kind`` and possibly upsert Memory.
-
-    Returns ``{recorded, threshold_met, peak_hour}``. ``threshold_met``
-    is True iff, after this increment, either kind has crossed
-    ``STATS_THRESHOLD``. ``hour`` is the **UTC** hour of the event
-    (must match the UTC date key produced by ``_today_key``).
-    """
+    """累加当日 kind 计数并在越过阈值时写回 Memory；hour 必须是 UTC 小时，以与日期键保持一致。"""
     if kind not in VALID_KINDS:
         raise ValueError(f"unknown interaction kind: {kind!r}")
     if not isinstance(hour, int) or not 0 <= hour <= 23:

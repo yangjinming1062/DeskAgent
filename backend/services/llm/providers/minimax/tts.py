@@ -9,13 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class MiniMaxTTSProvider(TTSProvider):
-    """TTS via MiniMax's synchronous ``POST /v1/t2a_v2``.
-
-    Wire shape: ``{model, text, voice_setting:{voice_id, speed, vol}, audio_setting:{format, sample_rate}}``.
-    Returns hex-encoded audio in ``data.audio`` (we hex-decode back to bytes).
-    Async long-text variant (``/v1/t2a_async_v2``) is not wrapped here — chat
-    replies are short enough to fit in the 10 000-char sync limit.
-    """
+    """通过 MiniMax 同步 POST /v1/t2a_v2 提供 TTS（{model,text,voice_setting:{voice_id,speed,vol},audio_setting:{format,sample_rate}}，data.audio 为 hex 编码音频，本模块解码回字节）；异步长文本 /v1/t2a_async_v2 未封装，chat 回复足够短，落在 10000 字符同步上限内。"""
 
     provider_name = "minimax"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "speech-2.8-hd"}

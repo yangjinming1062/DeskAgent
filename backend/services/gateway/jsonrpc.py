@@ -19,56 +19,43 @@ class JsonRpcError(Exception):
         self.data = data
 
 
-# A handler returns its JSON-RPC result. Raising JsonRpcError surfaces as a
-# structured error reply; any other exception becomes -32603.
+# Handler 返回 JSON-RPC result。raise JsonRpcError 会以结构化错误回复；其他异常统一变 -32603。
 Handler = Callable[[dict], Awaitable[Any]]
 
-# Patterns that hint at server-side internals we must never surface to a
-# renderer (ARCH §11#2: -32603 严禁包含数据库账号、服务器本地路径等栈帧细节).
-# Curated rather than over-broad: filesystem paths, DSN/URL credentials,
-# OpenAI / httpx exception formatting, Python traceback lines.
+# 必须从给 renderer 的错误里抹掉的服务端内部痕迹（ARCH §11#2：-32603 严禁包含数据库账号、服务器本地路径等栈帧细节）。精选而非宽泛：文件系统路径、DSN/URL 凭据、OpenAI/httpx 异常格式、Python traceback 行。
 _REDACT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\s*Traceback \(most recent call last\):.*", re.DOTALL),
     re.compile(r"(/[A-Za-z0-9_.+-]+){2,}/[A-Za-z0-9_.-]+\.py:\d+"),
     re.compile(r"[A-Za-z]:\\[A-Za-z0-9_.\\ -]+\.py:\d+"),
-    # Generic filesystem paths (any /var/lib / /tmp / /etc) — the
-    # `.py` patterns above don't catch directories or non-Python files.
+    # 通用文件系统路径（/var/lib、/tmp、/etc 等）——上面的 .py 模式抓不到目录或非 Python 文件。
     re.compile(r"/(?:var|tmp|etc|home|root|opt|srv|mnt)/[A-Za-z0-9_./-]+"),
-    # postgresql / psycopg asyncpg DSN with embedded user:pass. The match
-    # extends past ``@`` to the next whitespace so the internal hostname
-    # after the credentials doesn't survive either.
+    # postgresql / psycopg / asyncpg 内嵌 user:pass 的 DSN；匹配延伸到 @ 后第一个空白字符，确保凭据后的内部主机名也一并被清掉。
     re.compile(r"postgresql(?:ql)?(?:\+[A-Za-z0-9_]+)?://[^@\s/]+:[^@\s/]+@\S+"),
-    # Non-postgres DSNs the prior regex missed: redis / mongodb / amqp / kafka.
+    # 上一条漏掉的非 postgres DSN：redis / mongodb / amqp / kafka。
     re.compile(r"(?:redis|mongodb|amqp|kafka)(?:\+[A-Za-z]+)?://[^@\s/]+:[^@\s/]+@\S+"),
-    # Bearer / API-key header value (Authorization / X-API-Key / openai-style)
+    # Bearer / API-key header 值（Authorization / X-API-Key / openai 风格）。
     re.compile(r"(?:Bearer\s+|(?:X-)?Api-Key:\s*|(?:sk|xai|gAAAA|hsk)-)[A-Za-z0-9._\-]{12,}"),
-    # OpenAI-style / GitHub / Slack tokens + a few of the more common
-    # new prefixes that ship with provider SDKs.
+    # OpenAI/GitHub/Slack 风格 token，以及 provider SDK 自带的若干新前缀。
     re.compile(r"(sk-|ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|xox[abp]-|xapp-[A-Za-z0-9-]{20,})[A-Za-z0-9_-]+"),
     re.compile(r"\b(?:[A-Za-z0-9_]+\.)*(?:OperationalError|IntegrityError|FileNotFoundError|ConnectionError|TimeoutError)\b|\bsqlalchemy\.exc\.[A-Za-z]+\b"),
-    # IPv4 (incl. RFC1918 / loopback) — caught here because the OperationalError
-    # scrub above doesn't reach a bare host:port fragment like "10.0.0.5:5432".
+    # IPv4（含 RFC1918 / loopback）——OperationalError 清理对 "10.0.0.5:5432" 这种裸 host:port 片段无效，专门在此处补上。
     re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b"),
-    # IPv6 — bracket-enclosed (psycopg/asyncpg format `[::1]:5432`) and
-    # bare forms (the host:port scrub above misses these entirely).
+    # IPv6：括号包裹（psycopg/asyncpg 形式 `[::1]:5432`）和裸形式（host:port 清理抓不到这两类）。
     re.compile(r"\[?[0-9a-fA-F:]+\]?:\d{2,5}"),
     re.compile(r"\b(?:fe80|fc|fd)[0-9a-fA-F:]{8,}\b"),
-    # Bare hostnames that show up in psycopg/asyncpg error strings
+    # psycopg/asyncpg 错误串里出现的裸主机名
     re.compile(r"\b(?:host|server)\s+(?:at\s+)?[A-Za-z0-9.-]+\.[A-Za-z]{2,}", re.IGNORECASE),
-    # PostgreSQL DSN user/role fragment (e.g. ``for user "postgres"``)
+    # PostgreSQL DSN user/role 片段（如 ``for user "postgres"``）
     re.compile(r"for user\s+\"[A-Za-z0-9_.-]+\"", re.IGNORECASE),
-    # SQLAlchemy / psycopg "password authentication failed" labels
+    # SQLAlchemy / psycopg "password authentication failed" 等标签
     re.compile(r"\b(?:password authentication failed|FATAL:\s+[A-Z][A-Za-z ]+?)\b", re.IGNORECASE),
-    # JWT-style three-segment dot-separated tokens.
+    # JWT 三段式点分 token
     re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"),
 )
 
 
 def redact_message(message: str) -> str:
-    """Strip server-side internals out of a -32603 message before it leaves
-    the gateway. The original (with all debug context) is preserved in
-    server-side logs via ``logger.exception``; only the curated label
-    reaches the renderer."""
+    """在 -32603 消息离开网关前清掉服务端内部痕迹：完整原文通过 logger.exception 留在服务端日志，仅清洗后的标签到达 renderer。"""
     out = message
     for pat in _REDACT_PATTERNS:
         out = pat.sub("[redacted]", out)
@@ -76,7 +63,7 @@ def redact_message(message: str) -> str:
 
 
 def _redact_data(data: Any) -> Any:
-    """Recursively scrub string leaves in structured error data through the redact pipeline."""
+    """递归清洗结构化 error data 中的字符串叶子。"""
     if isinstance(data, str):
         return redact_message(data)
     if isinstance(data, dict):
@@ -96,13 +83,11 @@ class JsonRpcDispatcher:
         self._hold_timeout_task: asyncio.Task | None = None
 
     def set_sender(self, send_json: Callable[[dict], Awaitable[None]]) -> None:
-        """Update the underlying frame sender callback (used during session takeover / reconnect)."""
+        """更新底层帧发送回调（用于会话接管 / 重连时切换）。"""
         self._send = send_json
 
     def enable_hold(self, timeout_seconds: float = 10.0) -> None:
-        """Activate event hold mode: push_event only appends to buffer and delays sending
-        until mount (session.resume / session.get_main / session.create) flushes it.
-        """
+        """激活事件 hold 模式：push_event 只追加到缓冲，等到 mount（session.resume / session.get_main / session.create）时再 flush。"""
         self._hold_events = True
         if self._hold_timeout_task and not self._hold_timeout_task.done():
             self._hold_timeout_task.cancel()
@@ -122,12 +107,7 @@ class JsonRpcDispatcher:
         self._handlers[method] = handler
 
     async def handle_raw(self, data: str) -> None:
-        """Parse a raw WebSocket frame and dispatch it.
-
-        Emits -32700 Parse error if the frame is not valid JSON, and -32600
-        Invalid Request if it parses to a non-object. ``id`` in the error
-        reply is null per JSON-RPC 2.0 §5.1.
-        """
+        """解析原始 WS 帧并派发：JSON 非法时返回 -32700 Parse error，解析成非对象时返回 -32600 Invalid Request；错误回复的 id 按 JSON-RPC 2.0 §5.1 为 null。"""
         try:
             msg = json.loads(data)
         except ValueError:
@@ -161,15 +141,14 @@ class JsonRpcDispatcher:
             await self._reply_error(msg_id, e.code, e.message, e.data)
             return
         except Exception as e:
-            # Don't leak internal details; log full exception server-side and
-            # ship a curated, redacted label to the renderer. ARCH §11#2.
+            # 不外泄内部细节：完整异常记在服务端日志，向 renderer 发清洗后的标签。ARCH §11#2。
             logger.exception("jsonrpc method failed", extra={"method": method})
             label = f"{type(e).__name__}: {e}"
             await self._reply_error(msg_id, JSONRPC_INTERNAL_ERROR, redact_message(label))
             return
 
         if msg_id is None:
-            # Notification: no id → caller does not expect a reply.
+            # 通知：无 id → 调用方不期待回复。
             return
         await self._reply_result(msg_id, result)
 
@@ -195,12 +174,11 @@ class JsonRpcDispatcher:
                 self._replay_buffer.mark_sent_through(seq)
 
     async def push_error_event(self, message: str, session_id: str | None = None) -> None:
-        # push_event bypasses _reply_error, so raw exception text must be
-        # redacted here explicitly (ARCH §11#2).
+        # push_event 绕开 _reply_error，原始异常文本必须在此处显式 redact（ARCH §11#2）。
         await self.push_event("error", {"message": redact_message(message)}, session_id=session_id)
 
     async def replay(self, last_seq: int) -> list[dict[str, Any]] | None:
-        """Perform snapshot and sequential replay within send lock, then release hold."""
+        """在 send lock 内执行快照+顺序 replay，然后释放 hold。"""
         if self._hold_timeout_task and not self._hold_timeout_task.done():
             self._hold_timeout_task.cancel()
             self._hold_timeout_task = None
@@ -222,7 +200,7 @@ class JsonRpcDispatcher:
                 max_replayed = max(f.get("params", {}).get("seq", f.get("seq", 0)) for f in replayed_frames)
                 self._replay_buffer.mark_sent_through(max_replayed)
 
-            # Drain loop: send any new frames appended while we were sending
+            # 排空循环：把发送期间新追加的帧一并发出去
             while True:
                 unsent = [f for f in self._replay_buffer.get_unsent() if f.seq > last_seq]
                 if not unsent:
@@ -235,7 +213,7 @@ class JsonRpcDispatcher:
             return replayed_frames
 
     async def flush_unsent(self) -> None:
-        """Flush all unsent buffered frames in sequence order within send lock, then release hold."""
+        """在 send lock 内按序 flush 所有未发缓冲帧，然后释放 hold。"""
         if self._hold_timeout_task and not self._hold_timeout_task.done():
             self._hold_timeout_task.cancel()
             self._hold_timeout_task = None
@@ -259,11 +237,7 @@ class JsonRpcDispatcher:
             await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "result": result})
 
     async def _reply_error(self, msg_id: Any, code: int, message: str, data: Any = None) -> None:
-        # Per spec §5.1: id in error reply is the request's id, or null if
-        # the request itself was unparseable. Curated messages only — the
-        # raise sites that synthesize messages (handler except branches,
-        # session.resume "not found", etc.) are responsible for keeping
-        # them user-friendly; we still run the redact pass as a backstop.
+        # 按规范 §5.1：错误回复的 id 为请求 id 或 null（请求不可解析时）。只接受清洗后的消息——合成消息的 raise 点（handler except、session.resume "not found" 等）负责保证对用户友好；此处仍跑 redact 作为兜底。
         error = {"code": code, "message": redact_message(message), **({"data": _redact_data(data)} if data is not None else {})}
         async with self._send_lock:
             await self._send({"jsonrpc": JSON_RPC_VERSION, "id": msg_id, "error": error})

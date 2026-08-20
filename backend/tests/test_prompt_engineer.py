@@ -1,4 +1,4 @@
-"""Test the prompt engineer's image-to-3D prompt builders."""
+"""测试 prompt engineer 的图生 3D 提示词构造器。"""
 
 import json
 from types import SimpleNamespace
@@ -9,10 +9,7 @@ from services.llm import prompt_engineer
 
 
 def _fake_response(content: str | None):
-    """Mimic the OpenAI ``chat.completions.create`` response shape — only
-    the bits ``prompt_engineer.chat`` reads (``choices[0].message.content``).
-    ``None`` produces a client that always raises (used for transport-error
-    tests)."""
+    """模拟 OpenAI ``chat.completions.create`` 返回结构——只暴露 ``prompt_engineer.chat`` 用到的字段；``None`` 构造一个始终抛错的客户端，用于传输错误测试。"""
 
     if content is None:
 
@@ -34,9 +31,7 @@ def _fake_response(content: str | None):
 
 
 def _fake_provider(content: str | None = "ok", *, raises: Exception | None = None):
-    """Stub for the chat provider. ``raw_client()`` is the only call
-    ``prompt_engineer.chat`` makes — the chat completion itself goes
-    through that client's ``chat.completions.create`` coroutine."""
+    """chat provider 的 stub。``prompt_engineer.chat`` 只调用 ``raw_client()``，chat 完成请求则经由该 client 的 ``chat.completions.create`` 协程发出。"""
 
     if raises is not None:
 
@@ -53,9 +48,6 @@ def _fake_provider(content: str | None = "ok", *, raises: Exception | None = Non
         )
 
     return _provider
-
-
-# ── enhance_avatar_prompt ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -89,8 +81,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
     assert payload["biological_type"] == "灵兽"
     assert "纯白平面背景" in captured["system"]
     assert "半身特写" in captured["system"]
-    # System prompt must instruct the beautifier to faithfully preserve the
-    # user's original wording (appearance + feedback) in the output.
+    # 系统提示必须指令美化器忠实保留用户原措辞（外貌 + 反馈）。
     assert "忠实保留" in captured["system"]
 
 
@@ -117,9 +108,6 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     assert out == "头像提示词"
 
 
-# ── is_preset_species ──────────────────────────────────────────────
-
-
 def test_is_preset_species_true():
     assert prompt_engineer.is_preset_species("人类") is True
 
@@ -135,15 +123,12 @@ def test_resolve_fullbody_style_presets_and_custom():
     assert prompt_engineer.resolve_fullbody_style("机甲") == "realistic"
     assert prompt_engineer.resolve_fullbody_style("灵兽") == "realistic"
     assert prompt_engineer.resolve_fullbody_style("幻形") == "realistic"
-    # Custom species: the LLM humanoid-face verdict decides.
+    # 自定义物种：由 LLM 人脸判定结果决定风格。
     assert prompt_engineer.resolve_fullbody_style("猫娘", True) == "anime"
     assert prompt_engineer.resolve_fullbody_style("机械狼", False) == "realistic"
-    # Unknown verdict (classifier didn't run) degrades to the mainstream branch.
+    # 判定器未运行（未知结论）时回落到主流分支。
     assert prompt_engineer.resolve_fullbody_style("龙") == "anime"
     assert prompt_engineer.resolve_fullbody_style(" 人类 ") == "anime"
-
-
-# ── strip_think_blocks ─────────────────────────────────────────────
 
 
 def test_strip_think_blocks_paired():
@@ -151,8 +136,7 @@ def test_strip_think_blocks_paired():
 
 
 def test_strip_think_blocks_unclosed_truncates_to_end():
-    # A reasoning model cut off mid-think never emitted the closer — the
-    # whole trailing block is artifact, so everything from the open marker goes.
+    # 推理模型若中途断开未发出结束标记，整段尾部皆为产物——从开始标记起全部丢弃。
     assert prompt_engineer.strip_think_blocks("<think>The user wants") == ""
 
 
@@ -163,9 +147,6 @@ def test_strip_think_blocks_preserves_plain_text():
 
 def test_strip_think_blocks_mid_text_closed_block():
     assert prompt_engineer.strip_think_blocks("前<think>x</think>后") == "前后"
-
-
-# ── chat error cases ──────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -182,7 +163,4 @@ async def test_chat_rejects_empty_response(monkeypatch):
         await prompt_engineer.chat(None, 1, "sys", "user")
 
 
-# (build_texture_prompt tests removed — the function is a pure dict lookup +
-# string concatenation whose outputs are spot-checked by the calling service
-# tests. Assertions like `assert "二次元" in prompt` only mirrored the literal
-# strings in `_TEXTURE_STYLE_CHANNEL_SUFFIX`, exercising no control flow.)
+# (build_texture_prompt tests 已移除——该函数是纯 dict 查表+字符串拼接，输出由调用方服务测试抽样校验；诸如 `assert "二次元" in prompt` 仅复述 `_TEXTURE_STYLE_CHANNEL_SUFFIX` 的字面值，不走任何控制流。)

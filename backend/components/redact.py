@@ -28,8 +28,7 @@ _SENSITIVE_QUERY_PARAMS = frozenset(
     }
 )
 
-# Snapshot at import time so runtime env mutations (e.g. LLM-generated
-# `export SPIRITAGENT_REDACT_SECRETS=false`) cannot disable redaction mid-session.
+# 导入时快照，避免运行时改 env（甚至 LLM 注入的 `export SPIRITAGENT_REDACT_SECRETS=false`）中途关闭脱敏。
 _REDACT_ENABLED = os.getenv("SPIRITAGENT_REDACT_SECRETS", "true").lower() in {"1", "true", "yes", "on"}
 
 _PREFIX_PATTERNS = [
@@ -88,24 +87,13 @@ _DB_CONNSTR_RE = re.compile(r"((?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|
 _JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{10,}(?:\.[A-Za-z0-9_=-]{4,}){0,2}")
 _SIGNAL_PHONE_RE = re.compile(r"(\+[1-9]\d{6,14})(?![A-Za-z0-9])")
 
-# Only matches when the *entire* text looks like a clean k=v&k=v form body.
-# Web URL query params are intentionally NOT redacted here — magic links and
-# OAuth callbacks routinely pass opaque tokens through query strings and
-# blanket-redacting would break those workflows. Known credential shapes
-# inside URLs are still caught by _PREFIX_RE / _JWT_RE above.
+# 只匹配「整段就是 k=v&k=v 形式体」的文本；Web URL 的 query string 故意不处理——magic link / OAuth 回调常走不透明 token，盲脱敏会破坏这些流程；URL 内的已知凭据形态仍由 _PREFIX_RE / _JWT_RE 兜底。
 _FORM_BODY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*=[^&\s]*(?:&[A-Za-z_][A-Za-z0-9_.-]*=[^&\s]*)+$")
-
 _PREFIX_RE = re.compile(r"(?<![A-Za-z0-9_-])(" + "|".join(_PREFIX_PATTERNS) + r")(?![A-Za-z0-9_-])")
 
 
 def mask_secret(value: str, *, head: int = 4, tail: int = 4, floor: int = SECRET_MASK_MIN_LENGTH, placeholder: str = "***", empty: str = "") -> str:
-    """Mask a secret for display, preserving ``head`` and ``tail`` characters.
-
-    >>> mask_secret("sk-proj-abcdef1234567890")
-    'sk-p...7890'
-    >>> mask_secret("short")
-    '***'
-    """
+    """Mask 凭据用于展示，保留首尾各 head / tail 个字符。"""
     if not value:
         return empty
     if len(value) < floor:
@@ -127,7 +115,7 @@ def _redact_query_string(query: str) -> str:
 
 
 def _redact_form_body(text: str) -> str:
-    """Redact sensitive values when the entire input is a clean form body."""
+    """仅当整段是干净的 form body 时脱敏。"""
     if not text or "\n" in text or "&" not in text:
         return text
     stripped = text.strip()
@@ -135,7 +123,7 @@ def _redact_form_body(text: str) -> str:
 
 
 def _sub_mask(match_value: str) -> str:
-    """Single-mask substitution used by every regex callback — avoids five copies of the same call."""
+    """统一的 mask 替换 helper，避免各 regex callback 重复写 mask_secret 调用。"""
     return mask_secret(match_value, head=SECRET_MASK_HEAD_CHARS, tail=SECRET_MASK_TAIL_CHARS, floor=SECRET_MASK_MIN_LENGTH, empty="***")
 
 
@@ -178,10 +166,7 @@ def _sub_private_key(_m: re.Match) -> str:
     return "[REDACTED PRIVATE KEY]"
 
 
-# Each rule is (substring gate, compiled pattern, substitution callback). The
-# gate eliminates 95%+ of regex executions on log lines that contain no
-# secrets — every pattern in _PREFIX_PATTERNS has its gated substring as a
-# literal prefix, so this never produces false negatives.
+# 每条规则是 (substring gate, compiled pattern, substitution callback)；gate 在无凭据日志行上能省掉 95%+ 的 regex 执行，且每个 _PREFIX_PATTERNS 的 gated 子串都是字面前缀，不会漏报。
 def _apply_gated_rules(text: str, rules: list[tuple[str, re.Pattern, Callable[[re.Match], str]]]) -> str:
     for gate, pattern, sub in rules:
         if gate in text:
@@ -200,8 +185,7 @@ _GATED_RULES_DEFAULT: list[tuple[str, re.Pattern, Callable[[re.Match], str]]] = 
     ("+", _SIGNAL_PHONE_RE, _sub_phone),
 ]
 
-# Skip ENV/JSON-field rules when the text is known to be source code —
-# `MAX_TOKENS=***` and `"apiKey": "test"` fixtures would otherwise false-positive.
+# 已知为源码时跳过 ENV/JSON-field 规则——`MAX_TOKENS=***` 和 `"apiKey": "test"` 这类 fixture 会误伤。
 _GATED_RULES_CODE_SAFE: list[tuple[str, re.Pattern, Callable[[re.Match], str]]] = [
     (":", _TELEGRAM_RE, _sub_telegram),
     ("BEGIN-----", _PRIVATE_KEY_RE, _sub_private_key),
@@ -212,7 +196,7 @@ _GATED_RULES_CODE_SAFE: list[tuple[str, re.Pattern, Callable[[re.Match], str]]] 
 
 
 def _extract_literal_prefix(pattern: str) -> str:
-    """Return the leading literal characters of a regex pattern (until the first metachar)."""
+    """取正则 pattern 从开头到首个元字符的字面前缀。"""
     meta = "[(\\.?*+|{^$"
     for i, ch in enumerate(pattern):
         if ch in meta:
@@ -220,9 +204,7 @@ def _extract_literal_prefix(pattern: str) -> str:
     return pattern
 
 
-# Every prefix regex starts with one of these literals — used as a cheap
-# pre-screen so the expensive _PREFIX_RE never runs unless a known
-# credential prefix might be present.
+# 每条 prefix regex 都以这些字面量打头——廉价预筛，只有命中已知前缀子串才跑昂贵的 _PREFIX_RE。
 _PREFIX_SUBSTRINGS = tuple(_extract_literal_prefix(p) for p in _PREFIX_PATTERNS)
 
 
@@ -231,13 +213,7 @@ def _has_known_prefix_substring(text: str) -> bool:
 
 
 def redact_sensitive_text(text: str | None, *, force: bool = False, code_file: bool = False) -> str | None:
-    """Apply all redaction patterns to a block of text.
-
-    Each regex is gated behind a substring pre-check; on a no-secret log line
-    this drops the full scan by ~68%. Use ``force=True`` for safety boundaries
-    that must never return raw secrets, and ``code_file=True`` to skip the
-    ENV/JSON-field rules when the text is known to be source.
-    """
+    """对文本应用所有脱敏 pattern；regex 都走 substring 预筛 gate，无凭据日志行全扫描降 ~68%；force=True 用于安全边界绝不返原文，code_file=True 时跳过 ENV/JSON-field 规则。"""
     if text is None:
         return None
     if not isinstance(text, str):

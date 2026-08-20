@@ -12,24 +12,14 @@ logger = get_logger(__name__)
 
 
 class MiniMaxImageGenProvider(ImageGenProvider):
-    """Image generation via MiniMax's ``/v1/image_generation`` endpoint.
-
-    Wire shape differs from the OpenAI Images API — MiniMax takes
-    ``aspect_ratio`` + ``response_format`` rather than ``size`` + ``quality``.
-    Output is returned as base64 by default (``response_format="base64"``);
-    the caller can opt into URL mode by setting
-    ``ImageGenRequest.response_format="url"`` (provider passes the flag
-    through; the response is a list of temporary MiniMax CDN URLs).
-    """
+    """通过 MiniMax 的 /v1/image_generation 端点生图；形态与 OpenAI Images API 不同（用 aspect_ratio+response_format 而非 size+quality），默认 base64，response_format="url" 时返回 MiniMax CDN 临时 URL。"""
 
     provider_name = "minimax"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "image-01"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
-    # Native i2i via ``subject_reference`` — ``image_file`` accepts a public
-    # URL or a ``data:image/*;base64,...`` data URI.
+    # 原生 i2i 经 subject_reference；image_file 接受公网 URL 或 data:image/*;base64,... URI。
     supports_reference_image: ClassVar[bool] = True
-    # subject_reference[] only accepts a single entry — MiniMax rejects two
-    # ("image_reference must be one"). The array is for multi-character scenes.
+    # subject_reference[] 仅接受单项；MiniMax 会拒绝两项（"image_reference must be one"），数组语义为多角色场景。
     supports_multiple_reference_images: ClassVar[bool] = False
 
     def __init__(self, config: ProviderConfig) -> None:
@@ -62,10 +52,7 @@ class MiniMaxImageGenProvider(ImageGenProvider):
                 assets.append(ImageAsset(url=url, mime="image/jpeg"))
 
         if not assets:
-            # 200 + base_resp 0 but empty image list — silent moderation,
-            # rejected subject_reference, or API field-name change. Raise so
-            # the chain can fall back; "returned no images" is load-bearing
-            # for the classifier's _EMPTY_IMAGE_RESULT_PATTERNS.
+            # 200 + base_resp 0 但 image 列表为空——可能是静默审核、subject_reference 被拒或 API 字段名变更；抛错让链回退，"returned no images" 是分类器 _EMPTY_IMAGE_RESULT_PATTERNS 的关键信号。
             raw_snippet = json.dumps(body, ensure_ascii=False)[:1000]
             logger.warning(
                 "minimax image_gen returned no images",
@@ -82,6 +69,4 @@ class MiniMaxImageGenProvider(ImageGenProvider):
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
 
     def raw_client(self) -> "object | None":
-        """Not OpenAI-compatible — image_gen REST handler should call
-        ``provider.generate()`` instead."""
         return None

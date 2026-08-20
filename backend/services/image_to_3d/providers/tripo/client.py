@@ -20,16 +20,16 @@ _RIG_SPECS: dict[str, str] = {"biped": "mixamo", "quadruped": "tripo", "avian": 
 
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
 
-# P-series models are low-poly-optimised and cap ``face_limit``; clamping protects operators who toggle ``tripo_model_version`` to a P-series id.
+# P 系列为低面数优化并封顶 ``face_limit``；封顶保护切换到 P 系列 id 的运营人员。
 _P_SERIES_FACE_LIMIT_MAX: int = 20_000
 
 
 class TripoApiError(RuntimeError):
-    """Non-zero ``code`` in the v3 response envelope."""
+    """v3 响应包中 ``code`` 非零。"""
 
 
 class TripoTaskFailed(RuntimeError):
-    """Polled task reached a terminal non-success status."""
+    """轮询任务进入终态非成功状态。"""
 
 
 def _base_url() -> str:
@@ -65,12 +65,7 @@ def _common_model_kwargs(
     texture_alignment: str | None = None,
     orientation: str | None = None,
 ) -> dict[str, Any]:
-    """Optional Tripo3D payload fields shared by the H- and M-series endpoints.
-
-    ``texture_alignment`` and ``orientation`` are multiview-only framing hints —
-    omitted from the payload when ``None`` so the single-image endpoint does not
-    receive fields its schema does not declare.
-    """
+    """H / M 系列端点共享的可选 Tripo3D 负载字段。``texture_alignment`` 与 ``orientation`` 是 multiview 专属 framing hints，``None`` 时不写入负载，避免单图端点收到 schema 之外的字段。"""
     payload: dict[str, Any] = {"model": model_version, "pbr": pbr}
     if texture_quality:
         payload["texture_quality"] = texture_quality
@@ -88,7 +83,7 @@ def _common_model_kwargs(
 
 
 def tripo_common_kwargs_from_settings(*, model_version: str | None = None, texture_alignment: str | None = None, orientation: str | None = None) -> dict[str, Any]:
-    """Build common call kwargs for Tripo endpoints from SETTINGS."""
+    """从 SETTINGS 构造 Tripo 端点的通用调用 kwargs。"""
     kwargs: dict[str, Any] = {
         "model_version": model_version if model_version is not None else SETTINGS.tripo_model_version,
         "pbr": True,
@@ -104,7 +99,7 @@ def tripo_common_kwargs_from_settings(*, model_version: str | None = None, textu
 
 
 async def upload_file(file_bytes: bytes, filename: str, content_type: str = "image/jpeg") -> str:
-    """POST /v3/files — multipart upload, returns a ``file_token`` for use as ``input`` in image-to-model."""
+    """POST /v3/files —— multipart 上传，返回 ``file_token``（在 image-to-model 中作为 ``input`` 使用）。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/files", headers={"Authorization": f"Bearer {_api_key()}"}, files={"file": (filename, file_bytes, content_type)})
     return _envelope(resp.json())["file_token"]
@@ -121,10 +116,7 @@ async def create_multiview_to_model(
     texture_alignment: str = "original_image",
     orientation: str = "align_image",
 ) -> str:
-    """views maps perspective keys ∈ {front, left, back, right} to file_token or public URL.
-
-    'front' is required; at least 2 views must be provided.
-    """
+    """views 把 ``{front, left, back, right}`` 中的视角键映射为 file_token 或公网 URL。'front' 必需；至少提供 2 个视角。"""
     if not views.get("front"):
         raise ValueError("multiview-to-model requires a 'front' view")
     if len(views) < 2:
@@ -156,7 +148,7 @@ async def create_image_to_model(
     face_limit: int | None = None,
     enable_autofix: bool | None = None,
 ) -> str:
-    """Single-image to 3D model (H系列 ``image-to-model`` endpoint)."""
+    """单图生 3D（H 系列 ``image-to-model`` 端点）。"""
     if not image_token:
         raise ValueError("image-to-model requires a non-empty image_token")
     payload = _common_model_kwargs(model_version=model_version, pbr=pbr, texture_quality=texture_quality, face_limit=face_limit, enable_autofix=enable_autofix)
@@ -169,7 +161,7 @@ async def create_image_to_model(
 
 
 async def get_task(task_id: str) -> dict[str, Any]:
-    """Single GET /v3/tasks/{id}; status mapping is the caller's job."""
+    """单次 GET /v3/tasks/{id}；状态映射由调用方负责。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.get(f"{_base_url()}/tasks/{task_id}", headers={"Authorization": f"Bearer {_api_key()}"})
     data = _envelope(resp.json())
@@ -179,7 +171,7 @@ async def get_task(task_id: str) -> dict[str, Any]:
 
 
 async def poll_task(task_id: str, *, interval: float = 5.0, timeout: float = 1800.0, on_progress: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
-    """Polls until terminal status; returns the final ``data`` payload (with ``output.model_url`` on success)."""
+    """轮询直至终态，返回最终的 ``data`` 负载（成功时含 ``output.model_url``）。"""
     deadline = time.monotonic() + timeout
     while True:
         data = await get_task(task_id)
@@ -202,14 +194,14 @@ async def account_balance() -> dict[str, float]:
 
 
 async def rig_check(task_id: str) -> str:
-    """Starts an ``animate_prerigcheck`` task. Returns the task_id; poll it to read ``output.rig_type`` and ``output.riggable``."""
+    """启动 ``animate_prerigcheck`` 任务；返回 task_id，轮询以读取 ``output.rig_type`` 与 ``output.riggable``。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(f"{_base_url()}/animations/rig-check", headers=_auth_headers(), json={"input": task_id})
     return _envelope(resp.json())["task_id"]
 
 
 async def poll_rig_check(task_id: str, *, interval: float = 2.0, timeout: float = 60.0) -> dict[str, Any]:
-    """Polls an ``animate_prerigcheck`` task until terminal status; returns its ``output`` dict."""
+    """轮询 ``animate_prerigcheck`` 任务至终态，返回其 ``output`` 字典。"""
     deadline = time.monotonic() + timeout
     while True:
         data = await get_task(task_id)
@@ -231,7 +223,7 @@ def rig_model_version(rig_type: str) -> str:
 
 
 async def rig(task_id: str, rig_type: str, *, spec: str | None = None, model_version: str | None = None) -> str:
-    """Bones the model produced by ``task_id``. Returns the new rigged task_id."""
+    """对 ``task_id`` 产出的模型绑骨，返回新的 rigged task_id。"""
     chosen_spec = spec or rig_spec(rig_type)
     chosen_version = model_version or rig_model_version(rig_type)
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -242,5 +234,5 @@ async def rig(task_id: str, rig_type: str, *, spec: str | None = None, model_ver
 
 
 async def download_model(model_url: str) -> bytes:
-    """Tripo model URLs are short-lived; download immediately after the rig task succeeds."""
+    """Tripo 模型 URL 短期有效，需在 rig 任务成功后立即下载。"""
     return await download_capped(model_url, max_bytes=100 * 1024 * 1024, timeout=_DOWNLOAD_TIMEOUT_SECONDS)

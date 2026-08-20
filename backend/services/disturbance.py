@@ -3,13 +3,7 @@ from modules.companion import CompanionPreference
 from sqlalchemy import select
 from sqlalchemy.dialects import postgresql, sqlite
 
-# Per-user disturbance tier (ARCHITECTURE.md §6). The desktop is the source
-# of truth: it owns both the user's manual choice (persisted in
-# localStorage) and the activity-monitor's focus-context classification.
-# On every change the desktop computes the effective tier locally and
-# pushes it via ``companion.set_disturbance_tier``; the backend persists it
-# in companion_preferences so the server-side gates (``send_message_tool``,
-# ``cron._kick_autonomous_turn``) survive a restart.
+# 打扰档位由客户端主导（本地 localStorage + 活动监视器分类），每次变化经 RPC 推送到后端持久化，供重启后服务端门控继续生效。
 ALLOWED_TIERS = frozenset({"proactive", "normal", "quiet"})
 DEFAULT_TIER = "normal"
 
@@ -21,9 +15,7 @@ def _normalize(tier: str) -> str:
 
 
 async def set_disturbance_tier(user_id: int, tier: str) -> str:
-    """Mirror the desktop's effective-tier computation. Caller is the
-    desktop's RPC push (manual change, activity-monitor override, or
-    WS-reconnect re-report)."""
+    """镜像客户端计算的有效档位：由 RPC 推送触发（手动变更 / 活动监视器覆盖 / WS 重连重报）。"""
     normalized = _normalize(tier)
     async with session_scope() as db:
         insert_cls = postgresql.insert if db.get_bind().dialect.name == "postgresql" else sqlite.insert

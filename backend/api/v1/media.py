@@ -22,17 +22,10 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 router = get_router()
 
 
-# ── Helpers ────────────────────────────────────────────────────────────
-
-
 def _llm_http_error(e: Exception, op: str) -> HTTPException:
-    """Classify and surface a non-leaking error envelope for upstream LLM/media errors."""
+    """分类上游 LLM/media 错误并返回非泄露错误信封。"""
     classified = classify_api_error(e, model=op)
-    # ``exc_info`` keeps the full traceback in backend logs — the API
-    # response stays non-leaking (only the classified reason + message
-    # reach the renderer), but the next time a TTS/STT/image call goes
-    # sideways, operators have the actual exception chain instead of just
-    # the one-line reason string the renderer echoes back.
+    # exc_info 保留完整 traceback 在服务端日志（API 响应仍非泄露，仅分类 reason+message 触达 renderer），便于事后排查 TTS/STT/生图侧翻时的真实异常链。
     logger.warning("media operation failed", extra={"operation": op, "reason": classified.reason.value, "status_code": classified.status_code, "error": str(e)}, exc_info=True)
     return classified_http_exception(classified)
 
@@ -42,7 +35,7 @@ def _http_error(status: int, code: str, reason: str) -> HTTPException:
 
 
 def _resolve_mime_type(content_type: str | None) -> str:
-    """Normalize content_type to a MIME type accepted by MiMo ASR."""
+    """把 content_type 归一为 MiMo ASR 支持的 MIME 类型。"""
     ct = content_type or ""
     if ct in ("audio/mp3", "audio/mpeg"):
         return "audio/mpeg"
@@ -50,7 +43,7 @@ def _resolve_mime_type(content_type: str | None) -> str:
 
 
 def _upload_size_or_none(audio_file: UploadFile) -> int | None:
-    """Best-effort Content-Length probe for an UploadFile."""
+    """尽力探测 UploadFile 的 Content-Length。"""
     headers = getattr(audio_file, "headers", None)
     if headers is not None:
         raw = headers.get("content-length")
@@ -73,12 +66,9 @@ def _upload_size_or_none(audio_file: UploadFile) -> int | None:
     return None
 
 
-# ── File Service (无需鉴权的临时文件访问) ───────────────────────────────
-
-
 @router.get("/files/{file_id}")
 async def serve_file(file_id: str) -> FileResponse:
-    """Serve a temporary media file. No auth required (public URL for LLM access)."""
+    """提供临时媒体文件（公开 URL，供 LLM 访问，无需鉴权）。"""
     result = get_file_path(file_id)
     if result is None:
         raise HTTPException(status_code=404, detail="File not found or expired")
@@ -86,18 +76,13 @@ async def serve_file(file_id: str) -> FileResponse:
     return FileResponse(path, media_type=content_type)
 
 
-# ── STT (语音识别) ─────────────────────────────────────────────────────
-
-
 @router.post("/stt")
 @limiter.limit(f"{SETTINGS.media_stt_rate_limit_per_minute}/minute")
 async def speech_to_text(request: Request, audio_file: UploadFile = File(...), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
-    """Speech-to-text via the provider chain (MiMo ASR; only MiMo registers STT)."""
+    """走供应商链路的语音转写（仅 MiMo 注册了 STT）。"""
     user, _ = auth_data
 
-    # The declared size (client-controlled multipart header) only short-circuits
-    # an obviously oversized upload; the streamed cap below is the real limit —
-    # trusting the header would allow an unbounded read into memory.
+    # 客户端 multipart 头声明的 size 仅用于拦截明显超大的上传；下方流式 cap 才是真正限制——信任 header 会让攻击者把任意大小数据读进内存。
     declared_size = _upload_size_or_none(audio_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
         raise HTTPException(
@@ -147,13 +132,10 @@ async def _extract_request_data(request: Request) -> dict[str, Any]:
         return {}
 
 
-# ── TTS (语音合成) ─────────────────────────────────────────────────────
-
-
 @router.post("/tts")
 @limiter.limit(f"{SETTINGS.media_tts_rate_limit_per_minute}/minute")
 async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> StreamingResponse:
-    """Text-to-speech via the provider chain (MiMo TTS or MiniMax TTS). Accepts JSON or Form body."""
+    """走供应商链路的语音合成（MiMo TTS 或 MiniMax TTS），接受 JSON 或 Form body。"""
     user, _ = auth_data
     data = await _extract_request_data(request)
     text = str(data.get("text") or "").strip()
@@ -178,17 +160,14 @@ async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] =
     except Exception as e:
         raise _llm_http_error(e, "tts") from e
 
-    # Report the actually-used voice so the desktop stays in sync after provider substitution.
+    # 回传实际使用的音色，让 desktop 在供应商切换后保持同步。
     return StreamingResponse(iter([result.audio]), media_type=result.mime, headers={"X-Voice-Used": quote(result.voice or "", safe="")})
-
-
-# ── Image Generation (图片生成) ────────────────────────────────────────
 
 
 @router.post("/image_gen")
 @limiter.limit(f"{SETTINGS.media_image_gen_rate_limit_per_minute}/minute")
 async def image_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
-    """Image generation via the provider chain. Accepts JSON or Form body."""
+    """走供应商链路的图片生成，接受 JSON 或 Form body。"""
     user, _ = auth_data
     data = await _extract_request_data(request)
     prompt = str(data.get("prompt") or "").strip()
@@ -213,12 +192,9 @@ async def image_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depe
 
     asset = result.images[0]
     if asset.url:
-        # DALL·E-style URL — pass through (URL is provider-hosted, usually
-        # valid for an hour).
+        # DALL·E 风格 URL 直传（供应商托管，通常一小时有效）。
         return {"success": True, "url": asset.url}
-    # base64 payload — persist locally and serve via our public files route so
-    # downstream callers (LLM image_url parts, browser previews) get a stable
-    # URL that survives MiniMax CDN eviction.
+    # base64 载荷本地持久化并通过公开 files 路由提供，让下游调用方（LLM image_url 部分、浏览器预览）拿到稳定 URL，不受 MiniMax CDN 清理影响。
     try:
         data_bytes = base64.b64decode(asset.b64 or "")
     except ValueError:
@@ -227,15 +203,10 @@ async def image_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depe
     return {"success": True, "url": public_url}
 
 
-# ── Video Generation (视频生成) ───────────────────────────────────────
-
-
 @router.post("/video_gen")
 @limiter.limit(f"{SETTINGS.media_video_gen_rate_limit_per_minute}/minute")
 async def video_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
-    """Submit a video generation job. Default response is 202 + task_id; if
-    ``wait_seconds`` > 0, the handler polls for up to that many seconds and
-    returns the resulting URL directly when the job finishes."""
+    """提交视频生成任务：默认 202 + task_id；若 wait_seconds > 0 则轮询至截止并直接返回最终 URL。"""
     user, _ = auth_data
     data = await _extract_request_data(request)
     prompt = str(data.get("prompt") or "").strip()
@@ -247,9 +218,7 @@ async def video_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depe
     wait_seconds = int(data.get("wait_seconds") or 0)
     if not prompt:
         raise HTTPException(status_code=400, detail={"error": "prompt is required", "reason": "missing_params", "status": 400})
-    # Permissive union of the v1 (Hailuo: 6/10s, 512P/768P/1080P) and v2
-    # (H3: 4-15s, 768P/2K) parameter spaces — the exact per-model rules are
-    # enforced in the provider and surface via _llm_http_error below.
+    # 兼容 v1（Hailuo：6/10s，512P/768P/1080P）与 v2（H3：4-15s，768P/2K）参数空间；逐模型精确校验由供应商完成并通过 _llm_http_error 抛出。
     if not 4 <= duration <= 15:
         raise HTTPException(status_code=400, detail={"error": "duration must be between 4 and 15 seconds", "reason": "invalid_params", "status": 400})
     if resolution not in ("512P", "768P", "1080P", "2K"):
@@ -275,9 +244,7 @@ async def video_gen(request: Request, auth_data: tuple[User, LoginRecord] = Depe
         raise _llm_http_error(e, "video_gen") from e
 
     if wait_seconds > 0:
-        # Bounded pseudo-sync: poll the DB for status until deadline. Most
-        # MiniMax generations complete well within 60s for short clips; for
-        # longer ones the caller polls ``GET /video_gen/{id}`` instead.
+        # 有界伪同步：轮询 DB 至截止；短片段多数 MiniMax 生成 60s 内完成，更长片段调用方改轮询 GET /video_gen/{id}。
         deadline = utc_now() + timedelta(seconds=wait_seconds)
         while utc_now() < deadline:
             await asyncio.sleep(2)

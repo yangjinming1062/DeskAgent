@@ -24,9 +24,7 @@ _SYSTEM_PROMPT = (
 
 _USER_TEMPLATE = "物种：{species}\n分类："
 
-# Custom companions are predominantly humanoid and anime is the product's
-# primary style carrier, so a failed classification degrades to the
-# mainstream path rather than the niche one.
+# 自定义伙伴以人形为主、二次元是产品的主要风格载体，故分类失败时退到主流路径而非小众路径
 _DEFAULT_CLASSIFICATION: tuple[str, bool] = ("biped", True)
 
 
@@ -35,14 +33,7 @@ class _ChatFn(Protocol):
 
 
 async def classify_species(chat: _ChatFn, species: str, *, db: AsyncSession | None = None, user_id: int | None = None) -> tuple[str, bool]:
-    """LLM picks the Tripo3D rig type and whether the face is humanoid.
-
-    Returns ``(rig_type, has_humanoid_face)`` — the face flag routes the
-    fullbody seed style (anime vs realistic). Falls back to
-    ``_DEFAULT_CLASSIFICATION`` on any error or unparsable response — never
-    raises, because a wrong verdict only changes style / animation library
-    selection, not correctness.
-    """
+    """由 LLM 判定骨骼类型与是否类人面孔；任何异常都回落默认值而不抛错——判错只影响风格与动画库选择，不影响正确性。"""
     try:
         species_text = species.strip() or "人类"
         user_payload = _USER_TEMPLATE.format(species=species_text)
@@ -60,6 +51,5 @@ async def classify_species(chat: _ChatFn, species: str, *, db: AsyncSession | No
 
 
 async def select_rig_type(chat: _ChatFn, species: str, *, db: AsyncSession | None = None, user_id: int | None = None) -> str:
-    """Rig-type-only view over ``classify_species`` for callers that don't
-    consume the humanoid-face flag (wardrobe, Blender fallback pipeline)."""
+    """classify_species 的骨骼类型视图，供不关心类人面孔标志的调用方使用。"""
     return (await classify_species(chat, species, db=db, user_id=user_id))[0]

@@ -21,10 +21,7 @@ def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 def _ssrf_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """Operator-declared IP ranges exempt from the reserved-range refusal —
-    the escape hatch for fake-ip TUN proxies (Clash et al.) that resolve every
-    hostname into 198.18.0.0/15. Cloud-metadata / CGNAT blocks and the
-    hostname blocklist stay unconditional."""
+    """运维声明的 IP 段豁免保留段拒绝——给 fake-ip TUN 代理（Clash 等，把所有域名解析到 198.18.0.0/15）的逃生口；云元数据 / CGNAT 块与 hostname 黑名单始终无条件。"""
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for part in (SETTINGS.ssrf_allowed_cidrs or "").split(","):
         part = part.strip()
@@ -65,10 +62,7 @@ def is_safe_outbound(host: str) -> tuple[bool, str]:
 
 
 def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
-    """SSRF-guarded AsyncClient factory. httpx has no connect-time hook — the
-    request hook is the last point before the TCP connect where the resolved
-    target can be re-verified, closing the pre-check-to-connect DNS-rebind
-    window to the same level as a pre-check alone (never wider)."""
+    """带 SSRF 守卫的 AsyncClient 工厂；httpx 没有 connect-time hook，request hook 是 TCP connect 之前唯一能复验解析目标的点，把 DNS-rebind 窗口压到与预检同水平。"""
 
     async def _verify(request: httpx.Request) -> None:
         safe, reason = is_safe_outbound(request.url.host or "")
@@ -79,9 +73,7 @@ def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
 
 
 async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, max_redirects: int = 5) -> bytes:
-    """Download a remote URL safely with size-capping, hop-by-hop SSRF validation,
-    protocol whitelist ({http, https}), and HTTPS->HTTP downgrade protection.
-    """
+    """下载远程 URL，封装大小上限、逐跳 SSRF 校验、协议白名单（{http, https}）与 HTTPS→HTTP 降级防护。"""
     current_url = url
     redirect_count = 0
 
@@ -110,11 +102,10 @@ async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, ma
                     target_url = urljoin(current_url, location)
                     target_parsed = urlparse(target_url)
 
-                    # Protocol whitelist
                     if target_parsed.scheme not in ("http", "https"):
                         raise ValueError(f"redirect to unsupported scheme: {target_parsed.scheme!r}")
 
-                    # Disallow HTTPS -> HTTP downgrade
+                    # 拒绝 HTTPS → HTTP 降级
                     if parsed.scheme == "https" and target_parsed.scheme == "http":
                         raise ValueError("refusing redirect downgrade from HTTPS to HTTP")
 

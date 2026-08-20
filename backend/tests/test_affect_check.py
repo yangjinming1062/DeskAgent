@@ -127,9 +127,7 @@ async def test_check_affect_should_express_false_returns_no_emit(
 
 @pytest.mark.asyncio
 async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
-    """LLM-invented emotion (outside BUILTIN_EMOTIONS) must NOT reach the
-    WSEvent emit — backend treats it as no-op and returns expressed=False
-    for the renderer."""
+    """LLM 捏造的未知 emotion 不应触发 WSEvent，应 no-op 返回 expressed=False。"""
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 2003)
@@ -223,7 +221,7 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
 
 @pytest.mark.asyncio
 async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_db):
-    """No ``model_name`` → silently return; never raise across the WS boundary."""
+    """无 ``model_name`` 时静默返回，绝不跨 WS 边界抛异常。"""
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 2006)
@@ -345,10 +343,7 @@ def test_affect_scrubber_truncated_flush():
 
 
 def test_affect_scrubber_tags_split_across_chunks():
-    """Real bug: the affect tag completes in one SSE chunk and the spatial
-    tag arrives in the next. The scrubber must keep buffering the spatial
-    tag, not short-circuit on the resolved affect and leak the second tag
-    to the user."""
+    """历史 bug：affect 标签在一条 SSE chunk 里完成，spatial 标签落在下一条。scrubber 必须继续缓存 spatial 标签，不能在 affect 解析后就短路、把第二个标签泄给用户。"""
     from services.chat.affect import AffectScrubber
 
     scrubber = AffectScrubber()
@@ -362,7 +357,7 @@ def test_affect_scrubber_tags_split_across_chunks():
 
 
 def test_affect_scrubber_partial_second_tag_in_separate_chunk():
-    """Edge of the multi-tag split: the spatial tag itself arrives split."""
+    """多标签拆分的最边缘情况：spatial 标签本身也是拆开到达的。"""
     from services.chat.affect import AffectScrubber
 
     scrubber = AffectScrubber()
@@ -377,8 +372,7 @@ def test_affect_scrubber_partial_second_tag_in_separate_chunk():
 
 
 def test_affect_scrubber_cjk_and_space_in_target():
-    """Localized app names (``微信``) and spaces (``Visual Studio Code``)
-    must survive the spatial regex — only ``]`` and newline are disallowed."""
+    """本地化应用名（``微信``）和带空格的（``Visual Studio Code``）必须能穿过 spatial 正则——仅 ``]`` 与换行被禁止。"""
     from services.chat.affect import AffectScrubber
 
     scrubber = AffectScrubber()
@@ -401,15 +395,12 @@ def test_affect_scrubber_cjk_and_space_in_target():
 
 
 def test_affect_scrubber_truncated_spatial_flush():
-    """Stream dies mid-spatial-tag — partial regex drops the leading '[' so
-    the user never sees a literal ``[spatial:perch,target:foo`` fragment."""
+    """流在 spatial 标签中间断开——部分正则把开头的 ``[`` 丢掉，用户不会看到 ``[spatial:perch,target:foo`` 之类的字面片段。"""
     from services.chat.affect import AffectScrubber
 
     scrubber = AffectScrubber()
     assert scrubber.feed("[spatial:perch,target:bilibili") == ""  # connection dies
     assert scrubber.flush() == ""
-    # Partial spatial doesn't expose a captured locale/target — the renderer
-    # treats it as no cue, the user never sees the literal fragment.
 
 
 def test_affect_scrubber_strips_action_narration():

@@ -8,7 +8,7 @@ def sha256_hex(value: str) -> str:
 
 
 def sha512_b64(path: Path) -> str:
-    """SHA-512 of a file as base64 (electron-updater format)."""
+    """文件 SHA-512 → base64（electron-updater 格式）。"""
     h = hashlib.sha512()
     with path.open("rb") as f:
         while chunk := f.read(65536):
@@ -17,5 +17,5 @@ def sha512_b64(path: Path) -> str:
 
 
 def normalize_sha512(value: str) -> str:
-    """Convert legacy 128-char hex SHA-512 to base64; pass through otherwise."""
+    """把旧版 128 字符 hex SHA-512 转 base64；其他格式透传。"""
     return base64.b64encode(bytes.fromhex(value)).decode() if len(value) == 128 else value

@@ -46,6 +46,5 @@ async def test_drain_once_handler_failure_marks_failed(SessionLocal, monkeypatch
     async with SessionLocal() as db:
         row = await db.get(RenderJob, job_id)
         assert row.status == "failed"
-        # job.error is served verbatim by the poll endpoint — fixed copy,
-        # never the raw exception text.
+        # job.error 由 poll 端点原样返回，使用固定文案而非原始异常文本。
         assert row.error == "生成失败，请稍后重试"

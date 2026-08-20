@@ -6,7 +6,7 @@ from ...registry import register
 from . import client
 from .client import TripoApiError, TripoTaskFailed
 
-# Tripo task status → Model3DPollResult.status; unknown values keep polling.
+# Tripo 任务状态 → Model3DPollResult.status；未知值继续轮询。
 _STATUS_MAP: dict[str, str] = {"queued": "queued", "running": "in_progress", "success": "completed", "failed": "failed", "cancelled": "failed", "banned": "failed"}
 
 _CONTENT_TYPES: dict[str, str] = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
@@ -29,7 +29,7 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
     async def submit_image_to_model(self, image_path: Path, *, multiview_paths: dict[str, Path] | None = None) -> Model3DJob:
         try:
             if multiview_paths:
-                # Multiview endpoint accepts the MV-only framing hints; image-to-model below does not.
+                # multiview 端点接受 MV 专属 framing hints；下方 image-to-model 不接受。
                 views = {key: await self._upload(path) for key, path in multiview_paths.items()}
                 task_id = await client.create_multiview_to_model(views, **client.tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image"))
             else:

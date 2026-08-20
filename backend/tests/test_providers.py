@@ -44,7 +44,7 @@ class TestProviderConfig:
 
 class TestResolveProviderConfig:
     async def test_image_gen_default_provider_is_minimax(self, monkeypatch):
-        """Empty image_gen settings → default provider minimax, provider default URL."""
+        """image_gen 配置为空时，默认 provider 为 minimax 且使用 provider 自带默认 URL。"""
         from services.llm.providers import PROVIDER_DEFAULT_URLS
 
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
@@ -60,10 +60,7 @@ class TestResolveProviderConfig:
     async def test_image_gen_default_provider_used_with_custom_base_url(
         self, monkeypatch
     ):
-        """Custom ``image_gen_base_url`` is honored verbatim; the provider
-        name comes from ``SERVICE_DEFAULT_PROVIDER['image_gen']`` (minimax),
-        not from host inference. To pin a different provider with a custom
-        URL, also set ``*_PROVIDER`` explicitly."""
+        """自定义 ``image_gen_base_url`` 原样生效，provider 名取自 ``SERVICE_DEFAULT_PROVIDER['image_gen']``（minimax），而非从 host 推断；若需在自定义 URL 下绑定其它 provider，还需同时设置 ``*_PROVIDER``。"""
         monkeypatch.setattr(
             "components.SETTINGS.image_gen_base_url", "https://api.minimaxi.com"
         )
@@ -85,7 +82,7 @@ class TestResolveProviderConfig:
         assert cfg.base_url == "https://api.minimaxi.com/v1"
 
     async def test_minimax_uses_minimax_key_not_llm_key(self, monkeypatch):
-        """minimax provider must use MINIMAX_API_KEY, never the MiMo LLM_API_KEY."""
+        """minimax provider 必须使用 MINIMAX_API_KEY，绝不能继承 MiMo 的 LLM_API_KEY。"""
         monkeypatch.setattr(
             "components.SETTINGS.llm_base_url", "https://api.xiaomimimo.com/v1"
         )
@@ -101,20 +98,14 @@ class TestResolveProviderConfig:
         assert cfg.api_key == "sk-minimax-dedicated", "must not inherit MiMo key"
 
     def test_minimax_missing_key_raises(self, monkeypatch):
-        # Skipped: image_gen's default provider is now minimax, which
-        # inherits ``llm_api_key`` when ``minimax_api_key`` is empty.
-        # The ``test_minimax_uses_minimax_key_not_llm_key`` test above
-        # covers the (correct) inherited behavior; this old stub
-        # asserted the pre-MiniMax-default code path that no longer
-        # applies (see ISSUES.md 类别 8).
+        # 已跳过：image_gen 现在默认 minimax，在 ``minimax_api_key`` 为空时继承 ``llm_api_key``。
+        # 上方 ``test_minimax_uses_minimax_key_not_llm_key`` 覆盖了正确的继承行为；本用例原先断言的是 MiniMax 默认化前的旧代码路径，已不再适用（见 ISSUES.md 类别 8）。
         pytest.skip(
             "outdated: image_gen default is now minimax; see test_minimax_uses_minimax_key_not_llm_key"
         )
 
     def test_missing_all_config_raises(self, monkeypatch):
-        # Skipped: ``image_gen`` now defaults to minimax with a
-        # default base URL, so the "no key + no url" branch is
-        # unreachable through this entry point. See ISSUES.md 类别 8.
+        # 已跳过：``image_gen`` 现在默认 minimax 且自带默认 base URL，"无 key + 无 url" 分支在此入口已不可达（见 ISSUES.md 类别 8）。
         pytest.skip("outdated: image_gen default is now minimax with default base_url")
 
     async def test_explicit_provider_overrides_host_inference(self, monkeypatch):
@@ -124,8 +115,7 @@ class TestResolveProviderConfig:
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "sk")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "image-01")
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "mimo")
-        # mimo has no image-gen default URL, so llm_base_url must be set for
-        # the provider to resolve a base_url.
+        # mimo 没有 image-gen 默认 URL，必须设置 llm_base_url 才能解析 base_url。
         monkeypatch.setattr(
             "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
         )
@@ -142,16 +132,11 @@ class TestResolveProviderConfig:
 
 class TestProviderForService:
     def test_llm_returns_mimo_provider(self, monkeypatch):
-        # Skip: minimax_api_key inherited from the test env makes the
-        # chain pick MiniMax first. The new model-registry tests
-        # (``TestRegistry::test_mimo_providers_registered`` /
-        # ``test_minimax_providers_registered``) cover the registration
-        # contract in a deterministic way — see ISSUES.md 类别 8.
+        # 已跳过：测试环境下 minimax_api_key 被继承会让 chain 优先选 MiniMax。新的 model-registry 测试（``TestRegistry::test_mimo_providers_registered`` / ``test_minimax_providers_registered``）以确定性方式覆盖注册契约（见 ISSUES.md 类别 8）。
         pytest.skip("outdated: covered by TestRegistry deterministic tests")
 
     async def test_image_gen_returns_mimo_image_provider(self, monkeypatch):
-        # Commit 3 sets image_gen defaults to MiniMax. Override them here so
-        # we exercise the "user opts into legacy DALL·E" path.
+        # Commit 3 将 image_gen 默认改为 MiniMax。此处覆盖默认值以便走"用户主动选择旧 DALL·E"的分支。
         monkeypatch.setattr("components.SETTINGS.image_gen_base_url", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_api_key", "")
         monkeypatch.setattr("components.SETTINGS.image_gen_model_name", "dall-e-3")
@@ -166,22 +151,17 @@ class TestProviderForService:
         assert provider.service_type == ServiceType.image_gen
 
     def test_tts_returns_mimo_tts_provider(self, monkeypatch):
-        # Skip: see ``test_llm_returns_mimo_provider`` — coverage now
-        # lives in TestRegistry. See ISSUES.md 类别 8.
+        # 已跳过：见 ``test_llm_returns_mimo_provider``——覆盖现归 TestRegistry（见 ISSUES.md 类别 8）。
         pytest.skip("outdated: covered by TestRegistry deterministic tests")
 
     def test_stt_returns_mimo_stt_provider(self, monkeypatch):
-        # Skip: see ``test_llm_returns_mimo_provider`` — coverage now
-        # lives in TestRegistry. See ISSUES.md 类别 8.
+        # 已跳过：见 ``test_llm_returns_mimo_provider``——覆盖现归 TestRegistry（见 ISSUES.md 类别 8）。
         pytest.skip("outdated: covered by TestRegistry deterministic tests")
 
 
 class TestProviderError:
     def test_fields_align_with_error_classifier(self):
-        """``error_classifier._extract_status_code`` reads ``.status_code`` /
-        ``.status`` and ``_extract_error_body`` reads ``.body``. ProviderError
-        must keep those attribute names so classify_api_error works without
-        changes."""
+        """``error_classifier._extract_status_code`` 读取 ``.status_code`` / ``.status``，``_extract_error_body`` 读取 ``.body``。ProviderError 必须保留这些字段名，classify_api_error 才能无需改动地工作。"""
         from services.llm import ProviderError
 
         err = ProviderError(
@@ -197,18 +177,16 @@ class TestProviderError:
         assert err.model == "y"
 
     def test_status_attribute_also_works(self):
-        """_extract_status_code falls back to ``.status`` (int 100-600) — make
-        sure ProviderError sets it as well, or relies on .status_code only."""
+        """_extract_status_code 回退到 ``.status``（int 100-600）——需确认 ProviderError 同时设置或仅依赖 .status_code。"""
         from services.llm import ProviderError
 
         err = ProviderError("x", status_code=429)
-        # _extract_status_code checks .status_code first
+        # _extract_status_code 优先读取 .status_code。
         code = getattr(err, "status_code", None) or getattr(err, "status", None)
         assert code == 429
 
     def test_classifier_handles_provider_error(self):
-        """Smoke-test: passing a ProviderError through classify_api_error yields
-        a sensible FailoverReason (not 'unknown' falling-through)."""
+        """冒烟测试：将 ProviderError 传入 classify_api_error 应给出合理的 FailoverReason（不应落到 unknown）。"""
         from services.llm import FailoverReason, ProviderError, classify_api_error
 
         err = ProviderError(
@@ -230,8 +208,7 @@ class TestRegistry:
         assert resolve(ServiceType.image_gen, "mimo") is MiMoImageGenProvider
 
     def test_minimax_providers_registered(self):
-        """commit 2: MiniMax chat/image/video/tts are registered; STT is
-        intentionally absent because MiniMax exposes no public ASR API."""
+        """commit 2：MiniMax 注册了 chat/image/video/tts；STT 故意缺省，因为 MiniMax 未对外开放 ASR API。"""
         from services.llm import resolve
         from services.llm.providers.minimax import (
             MiniMaxChatProvider,
@@ -248,9 +225,7 @@ class TestRegistry:
             resolve(ServiceType.stt, "minimax")
 
     def test_gemini_providers_registered(self):
-        """Gemini registers only chat and image_gen; STT/TTS are absent
-        because the all-multilingual voice catalog made cross-provider
-        tag matching ambiguous — mimo / minimax / zhipu cover those caps."""
+        """Gemini 仅注册 chat 和 image_gen；STT/TTS 缺省，因为其全多语种语音目录让跨 provider 标签匹配变得含糊，相关能力由 mimo / minimax / zhipu 覆盖。"""
         from services.llm import resolve
         from services.llm.providers.gemini import (
             GeminiChatProvider,
@@ -283,8 +258,7 @@ class TestRegistry:
             resolve(ServiceType.video_gen, "zhipu")
 
     def test_grok_providers_registered(self):
-        """Grok (xAI) registers all five capabilities: chat + stt + tts +
-        image_gen + video_gen. Single protocol family — no v1/v2 split."""
+        """Grok (xAI) 注册全部五种能力：chat + stt + tts + image_gen + video_gen。单一协议族，无 v1/v2 之分。"""
         from services.llm import resolve
         from services.llm.providers.grok import (
             GrokChatProvider,
@@ -303,9 +277,7 @@ class TestRegistry:
 
 class TestDefaultModels:
     def test_default_models_published(self):
-        """Each provider class declares a `DEFAULT_MODELS` dict; the registry
-        mirrors it via `default_model_for()` so resolvers don't import
-        individual provider classes."""
+        """每个 provider 类声明 `DEFAULT_MODELS` 字典；注册表通过 `default_model_for()` 镜像它，使解析器无需逐个导入 provider 类。"""
         from services.llm import default_model_for
 
         assert default_model_for("mimo", "llm") == "mimo-v2.5-pro"
@@ -329,17 +301,16 @@ class TestDefaultModels:
     def test_unsupported_cap_returns_empty(self):
         from services.llm import default_model_for
 
-        # mimo doesn't register video_gen — no default model published.
+        # mimo 未注册 video_gen——无默认模型。
         assert default_model_for("mimo", "video_gen") == ""
-        # minimax doesn't register stt.
+        # minimax 未注册 stt。
         assert default_model_for("minimax", "stt") == ""
-        # zhipu doesn't register video_gen.
+        # zhipu 未注册 video_gen。
         assert default_model_for("zhipu", "video_gen") == ""
 
 
 class TestDefaultContextTokens:
-    # Mirror of TestDefaultModels for the CONTEXT_TOKENS table; 0 means
-    # "no default published" so the resolver falls through.
+    # CONTEXT_TOKENS 表的 TestDefaultModels 镜像；0 表示"无默认值"，解析器顺势 fall through。
 
     def test_default_context_tokens_published(self):
         from services.llm import default_context_tokens_for
@@ -358,8 +329,7 @@ class TestDefaultContextTokens:
         assert default_context_tokens_for("zhipu", "stt") == 8_000
         assert default_context_tokens_for("zhipu", "tts") == 8_000
         assert default_context_tokens_for("zhipu", "image_gen") == 8_000
-        # grok: grok-4.5 docs publish a 500k window; other caps match the
-        # 8_000 convention used by every other text-to-X provider.
+        # grok：grok-4.5 文档公开 500k 窗口；其余能力沿用其它 text-to-X provider 的 8_000 约定。
         assert default_context_tokens_for("grok", "llm") == 500_000
         assert default_context_tokens_for("grok", "stt") == 8_000
         assert default_context_tokens_for("grok", "tts") == 8_000
@@ -369,15 +339,15 @@ class TestDefaultContextTokens:
     def test_unsupported_cap_returns_zero(self):
         from services.llm import default_context_tokens_for
 
-        # mimo doesn't register video_gen.
+        # mimo 未注册 video_gen。
         assert default_context_tokens_for("mimo", "video_gen") == 0
-        # minimax doesn't register stt.
+        # minimax 未注册 stt。
         assert default_context_tokens_for("minimax", "stt") == 0
-        # gemini registers only llm / image_gen.
+        # gemini 仅注册 llm / image_gen。
         assert default_context_tokens_for("gemini", "stt") == 0
         assert default_context_tokens_for("gemini", "tts") == 0
         assert default_context_tokens_for("gemini", "video_gen") == 0
-        # zhipu doesn't register video_gen.
+        # zhipu 未注册 video_gen。
         assert default_context_tokens_for("zhipu", "video_gen") == 0
 
     def test_unknown_provider_returns_zero(self):
@@ -437,8 +407,7 @@ class TestProviderChain:
     }
 
     def _reset_settings(self, monkeypatch):
-        """Reset per-capability and provider-level env-driven fields so
-        each test starts from a known empty state."""
+        """重置按能力 / 按 provider 的环境变量驱动字段，使每个测试都从已知空态开始。"""
         for field, default in self._EMPTY_DEFAULTS.items():
             monkeypatch.setattr(f"components.SETTINGS.{field}", default)
 
@@ -454,7 +423,7 @@ class TestProviderChain:
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
 
     async def test_chain_skips_unsupported_providers(self, monkeypatch):
-        """video_gen only registers minimax; mimo is dropped even when listed."""
+        """video_gen 仅注册 minimax；即使列了 mimo 也会被剔除。"""
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
@@ -465,18 +434,16 @@ class TestProviderChain:
         assert [c.provider_name for c in chain] == ["minimax"]
 
     async def test_soft_reorder_moves_pinned_provider_first(self, monkeypatch):
-        """`*_PROVIDER` pin moves the named provider to the front of the chain
-        but other PROVIDERS entries stay as fallback candidates."""
+        """`*_PROVIDER`` pin 会把指定 provider 提到 chain 最前，其它 PROVIDERS 项仍作为兜底候选保留。"""
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-mm")
-        # image_gen_provider pins minimax first; mimo stays as fallback.
+        # image_gen_provider 固定 minimax 优先，mimo 仍作兜底。
         monkeypatch.setattr("components.SETTINGS.image_gen_provider", "minimax")
-        # mimo has no image_gen default URL; provide the legacy llm_base_url
-        # fallback so the mimo slot can still resolve a base_url.
+        # mimo 无 image_gen 默认 URL；提供旧版 llm_base_url 回退，使 mimo 槽位仍能解析 base_url。
         monkeypatch.setattr(
             "components.SETTINGS.llm_base_url", "https://api.openai.com/v1"
         )
@@ -490,28 +457,25 @@ class TestProviderChain:
         self._reset_settings(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-mimo")
-        # No minimax_api_key → minimax slot has no key, gets dropped.
+        # minimax_api_key 未设置 → minimax 槽位无 key，被剔除。
 
         chain = await resolve_provider_chain(None, None, "llm")
         assert [c.provider_name for c in chain] == ["mimo"]
 
     async def test_empty_chain_raises(self, monkeypatch):
-        """`resolve_provider_chain` returns an empty list when no provider in
-        the chain has both a key and a base_url. `resolve_provider_config`
-        (the single-config back-compat wrapper) raises MissingLlmConfigError."""
+        """当 chain 中没有任何 provider 同时具备 key 与 base_url 时，`resolve_provider_chain` 返回空列表；`resolve_provider_config`（单配置向后兼容包装器）抛 MissingLlmConfigError。"""
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
         monkeypatch.setattr("components.SETTINGS.providers", [])
-        # No api keys anywhere → chain empty.
+        # 任何位置都没有 api key → chain 为空。
         chain = await resolve_provider_chain(None, None, "image_gen")
         assert chain == []
         with pytest.raises(MissingLlmConfigError):
             await resolve_provider_config(None, None, "image_gen")
 
     async def test_chain_falls_back_to_service_default(self, monkeypatch):
-        """When PROVIDERS is unset and no per-cap pin, the chain collapses to
-        `SERVICE_DEFAULT_PROVIDER[service]`."""
+        """当 PROVIDERS 未设置且无 per-cap pin 时，chain 收敛为 `SERVICE_DEFAULT_PROVIDER[service]`。"""
         from services.llm import resolve_provider_chain
 
         self._reset_settings(monkeypatch)
@@ -522,15 +486,10 @@ class TestProviderChain:
 
 
 class TestExecuteWithFallback:
-    """End-to-end coverage for the fallback dispatcher.
-
-    The chain resolver is exercised elsewhere; these tests use a 2-slot
-    chain and stub out the per-provider call to verify the dispatcher's
-    iteration, error classification, and stream-start guards."""
+    """对 fallback 调度器的端到端覆盖。chain resolver 在别处测试；这里使用 2-slot chain 并 stub 单 provider 调用，以验证调度器的迭代、错误分类与流起始守卫。"""
 
     def _two_provider_llm_chain(self, monkeypatch):
-        """Set up PROVIDERS=[mimo, minimax] with both keys; chat is
-        supported by both so chain has length 2."""
+        """搭建 PROVIDERS=[mimo, minimax] 并配置两个 key；chat 同时被两者支持，chain 长度为 2。"""
         for field in (
             "providers",
             "llm_provider",
@@ -562,7 +521,7 @@ class TestExecuteWithFallback:
 
         result = await execute_with_fallback(None, None, "llm", call_fn=call_fn)
         assert result == "ok"
-        assert calls == ["mimo"]  # second provider not tried on success
+        assert calls == ["mimo"]  # 成功时不尝试第二个 provider
 
     @pytest.mark.asyncio
     async def test_falls_back_on_should_fallback_error(self, monkeypatch):
@@ -574,7 +533,7 @@ class TestExecuteWithFallback:
         async def call_fn(provider):
             calls.append(provider.provider_name)
             if provider.provider_name == "mimo":
-                # Auth-classified error → should_fallback=True.
+                # auth 类错误 → should_fallback=True。
                 raise ProviderError(
                     "auth", status_code=401, body={}, provider="mimo", model="m"
                 )
@@ -586,8 +545,7 @@ class TestExecuteWithFallback:
 
     @pytest.mark.asyncio
     async def test_no_fallback_on_retryable_error(self, monkeypatch):
-        """should_fallback=False (e.g. server_error) means the per-provider
-        retry layer owns the recovery; the dispatcher should not advance."""
+        """should_fallback=False（如 server_error）由 per-provider 重试层负责恢复，调度器不应继续推进。"""
         from services.llm import ProviderError, execute_with_fallback
 
         self._two_provider_llm_chain(monkeypatch)
@@ -601,13 +559,11 @@ class TestExecuteWithFallback:
 
         with pytest.raises(ProviderError):
             await execute_with_fallback(None, None, "llm", call_fn=call_fn)
-        assert calls == ["mimo"]  # second provider never tried
+        assert calls == ["mimo"]  # 第二个 provider 从未尝试
 
     @pytest.mark.asyncio
     async def test_stream_started_blocks_fallback(self, monkeypatch):
-        """Once `stream_started` flips to True, the dispatcher must surface
-        the error rather than restart on a fresh provider (the renderer has
-        already received partial output)."""
+        """一旦 `stream_started` 翻转为 True，调度器必须把错误抛出，而不是切换到新 provider 重启（渲染端已收到部分输出）。"""
         from services.llm import ProviderError, execute_with_fallback
 
         self._two_provider_llm_chain(monkeypatch)
@@ -625,9 +581,9 @@ class TestExecuteWithFallback:
                 None,
                 "llm",
                 call_fn=call_fn,
-                stream_started=lambda: True,  # simulate first chunk already emitted
+                stream_started=lambda: True,  # 模拟首块已发出
             )
-        assert calls == ["mimo"]  # stream_started=True blocks the fallback
+        assert calls == ["mimo"]  # stream_started=True 时阻断 fallback
 
     @pytest.mark.asyncio
     async def test_all_providers_fail_surfaces_last_error(self, monkeypatch):
@@ -666,11 +622,8 @@ class TestExecuteWithFallback:
             await execute_with_fallback(None, None, "llm", call_fn=lambda p: None)
 
 
-# ── MiniMax providers (commit 2) ────────────────────────────────────
-
-
 def _async_handler(responses: list):
-    """Build an async httpx handler that returns the next queued response."""
+    """构造一个 async httpx handler，依次返回队列中的下一条响应。"""
     queue = list(responses)
 
     async def handler(request: httpx.Request) -> httpx.Response:
@@ -851,7 +804,7 @@ class TestMiniMaxImageGen:
 
     @pytest.mark.asyncio
     async def test_generate_empty_images_raises_and_enables_fallback(self):
-        """Empty image_base64 must raise ProviderError that classifies as should_fallback."""
+        """image_base64 为空时必须抛 ProviderError，并被分类为 should_fallback。"""
         from services.llm import classify_api_error
 
         handler = _async_handler(
@@ -878,8 +831,7 @@ class TestMiniMaxImageGen:
 
 
 class TestEmptyImageResultFallback:
-    """All image-gen providers that raise on empty results must classify as
-    should_fallback so execute_with_fallback tries the next provider."""
+    """所有在空结果上抛错的 image-gen provider 必须分类为 should_fallback，让 execute_with_fallback 尝试下一个 provider。"""
 
     @pytest.mark.parametrize(
         "message",
@@ -1038,9 +990,7 @@ class TestGeminiImageGen:
 
 
 class TestMiMoImageGenReference:
-    """The real MiMo provider is text-only: a caller-supplied
-    ``reference_image`` never reaches ``images.generate`` (the tool layer
-    strips it after folding a vision description into the prompt)."""
+    """真实的 MiMo provider 仅支持文本：调用方传入的 ``reference_image`` 永远不到达 ``images.generate``（工具层会把视觉描述并入提示词后再丢弃它）。"""
 
     @pytest.mark.asyncio
     async def test_generate_ignores_reference_image(self):
@@ -1084,8 +1034,7 @@ class TestMiMoImageGenReference:
 
 
 class TestZhipuImageGenReference:
-    """The real Zhipu provider is text-only: ``reference_image`` is ignored at
-    the wire level (the tool layer folds a description into the prompt)."""
+    """真实的 Zhipu provider 仅支持文本：``reference_image`` 在 wire 层被忽略（工具层会把描述并入提示词）。"""
 
     def _make_provider(self, handler):
         from services.llm.providers.zhipu import ZhipuImageGenProvider
@@ -1119,9 +1068,7 @@ class TestZhipuImageGenReference:
             return httpx.Response(200, content=b"\x89PNG")
 
         provider = self._make_provider(capture)
-        # Patch AFTER building the provider so ``_make_provider``'s own client
-        # keeps the real transport; only the anonymous CDN download client is
-        # swapped for the mock.
+        # 在 provider 构建完成后再 monkeypatch，确保 ``_make_provider`` 自带的 client 仍使用真实 transport，仅匿名 CDN 下载 client 被替换为 mock。
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
         monkeypatch.setattr(zhipu_image.httpx, "AsyncClient", lambda **kw: cdn_client)
 
@@ -1152,7 +1099,6 @@ class TestMiniMaxTTS:
 
     @pytest.mark.asyncio
     async def test_synthesize_decodes_hex_audio(self):
-        # "hello" -> 0x68 65 6c 6c 6f
         handler = _async_handler(
             [{"base_resp": {"status_code": 0}, "data": {"audio": "68656c6c6f"}}]
         )
@@ -1163,7 +1109,7 @@ class TestMiniMaxTTS:
 
 
 class TestMiniMaxVideoGen:
-    """v2 (MiniMax-H3) protocol path — selected by the model-name prefix."""
+    """v2（MiniMax-H3）协议路径——按模型名前缀选择。"""
 
     def _make_provider(self, handler):
         from services.llm.providers.minimax import MiniMaxVideoGenProvider
@@ -1263,7 +1209,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_queued(self):
-        # "queued" is its own lifecycle state per docs; do NOT collapse to processing.
+        # "queued" 按文档是独立的生命周期状态，不能合并到 processing。
         handler = _async_handler(
             [{"base_resp": {"status_code": 0}, "task": {"status": "queued"}}]
         )
@@ -1284,8 +1230,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_cancelled_maps_to_failed(self):
-        # Backend has no dedicated cancelled state; surface as failed so the
-        # caller sees a terminal status instead of polling forever.
+        # 后端没有专门的 cancelled 状态——映射为 failed，让调用方看到终态而非无限轮询。
         handler = _async_handler(
             [{"base_resp": {"status_code": 0}, "task": {"status": "cancelled"}}]
         )
@@ -1313,8 +1258,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_unexpected_body_shape_raises(self):
-        # docs strictly defines {task: VideoTask}; anything else must surface
-        # as poll_failed (not a half-parsed silent "processing").
+        # 文档严格定义 {task: VideoTask}；其它结构必须报为 poll_failed，不能静默地半解析成 "processing"。
         handler = _async_handler(
             [{"base_resp": {"status_code": 0}, "status": "succeeded"}]
         )
@@ -1324,8 +1268,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_non_dict_error_does_not_pollute_message(self):
-        # Defensive: if docs ever drift to a non-dict error, do not stringify
-        # the whole blob into the user-visible message field.
+        # 防御性：若文档日后偏移为非 dict 错误，禁止把整段 blob 字符串塞入面向用户的消息字段。
         handler = _async_handler(
             [
                 {
@@ -1342,7 +1285,7 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_submit_rejects_prompt_over_7000_chars(self):
-        # docs: ContentItem.text ≤ 7000 chars. Catch before hitting the API.
+        # 文档：ContentItem.text ≤ 7000 字符，必须在请求前拦截。
         from services.llm.providers.minimax.video import _MAX_PROMPT_CHARS
 
         provider = self._make_provider(_async_handler([]))
@@ -1354,14 +1297,14 @@ class TestMiniMaxVideoGen:
 
     @pytest.mark.asyncio
     async def test_fetch_is_unreachable_on_h3(self):
-        # H3 v2 returns the URL inline from poll(); fetch() must not be hit.
+        # H3 v2 在 poll() 即返回内联 URL，fetch() 不应被调用。
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(RuntimeError, match="H3"):
             await provider.fetch("file-xyz")
 
     @pytest.mark.asyncio
     async def test_submit_rejects_v1_only_params(self):
-        # 10s is legal on v1 but 1080P is not a v2 resolution.
+        # 10s 在 v1 合法，但 1080P 不是 v2 的分辨率。
         provider = self._make_provider(_async_handler([]))
         with pytest.raises(ValueError, match="v2. requires resolution"):
             await provider.submit(
@@ -1378,8 +1321,7 @@ class TestMiniMaxVideoGen:
 
 
 class TestMiniMaxVideoGenV1:
-    """v1 (Hailuo) protocol path — the default, since MiniMax-H3 (v2) is not
-    covered by the standard token-plan."""
+    """v1（Hailuo）协议路径——默认分支，因为 MiniMax-H3（v2）不在标准 token-plan 覆盖范围内。"""
 
     def _make_provider(self, handler, model: str = "MiniMax-Hailuo-2.3"):
         from services.llm.providers.minimax import MiniMaxVideoGenProvider
@@ -1423,7 +1365,7 @@ class TestMiniMaxVideoGenV1:
         assert captured[0].url.path == "/v1/video_generation"
         body = bodies[0]
         assert body["model"] == "MiniMax-Hailuo-2.3"
-        assert body["prompt"] == "a cat"  # flat prompt, not a content[] array
+        assert body["prompt"] == "a cat"  # 平铺 prompt，非 content[] 数组
         assert "content" not in body
         assert body["duration"] == 10
         assert body["resolution"] == "1080P"
@@ -1432,7 +1374,7 @@ class TestMiniMaxVideoGenV1:
 
     @pytest.mark.asyncio
     async def test_submit_allows_t2v_without_aspect_ratio(self):
-        # Unlike v2, v1 lets the server pick a default aspect ratio.
+        # 与 v2 不同，v1 允许服务端选取默认宽高比。
         handler = _async_handler(
             [{"base_resp": {"status_code": 0}, "task_id": "task-v1-t2v"}]
         )
@@ -1473,7 +1415,7 @@ class TestMiniMaxVideoGenV1:
         assert captured[0].url.params["task_id"] == "task-v1"
         assert job.status == "succeeded"
         assert job.file_id == "file-42"
-        # v1 gates the URL behind fetch() — the worker must take that branch.
+        # v1 把 URL 放在 fetch() 之后返回——worker 必须走该分支。
         assert job.download_url is None
 
     @pytest.mark.asyncio
@@ -1538,8 +1480,7 @@ class TestMiniMaxVideoGenV1:
 
     @pytest.mark.asyncio
     async def test_unknown_model_routes_to_v1(self):
-        # Safe side: an unrecognized model name must not land on the paid v2
-        # endpoint the standard token-plan doesn't cover.
+        # 安全侧：未识别的模型名不能落到标准 token-plan 不覆盖的付费 v2 endpoint。
         from services.llm.providers.minimax.video import _api_version
 
         assert _api_version("some-future-model") == "v1"
@@ -1560,13 +1501,8 @@ class TestMiniMaxVideoGenV1:
         assert captured[0].url.path == "/v1/video_generation"
 
 
-# ── Grok (xAI) providers ───────────────────────────────────────────
-
-
 def _mock_grok_http(handler) -> httpx.AsyncClient:
-    # base_url omits /v1 so mock-transport-captured request paths mirror the
-    # live wire paths (the real base_url includes /v1; the provider posts
-    # relative paths to avoid double-prefixing).
+    # base_url 去掉 /v1，使 mock transport 捕获的路径与线上 wire 路径一致（真实 base_url 含 /v1；provider 提交相对路径以避免重复前缀）。
     return httpx.AsyncClient(
         base_url="https://api.x.ai", transport=httpx.MockTransport(handler)
     )
@@ -1617,7 +1553,7 @@ class TestGrokImageGen:
         assert len(result.images) == 2
         assert result.images[0].b64 == "iVBORw=="
         assert result.model == "grok-imagine-image-quality"
-        # Generation payload was sent as expected.
+        # 生成请求按预期发出。
         body = captured[0]
         assert body["model"] == "grok-imagine-image-quality"
         assert body["prompt"] == "a cat"
@@ -1716,8 +1652,7 @@ class TestGrokTTS:
         assert result.mime == "audio/mpeg"
         assert result.voice == "eve"
         body = captured[0]
-        # xAI's /v1/tts has no ``model`` field — assert absence so a future
-        # regression that adds it is caught.
+        # xAI /v1/tts 没有 ``model`` 字段——断言缺失以防未来回归添加该字段。
         assert "model" not in body
         assert body["text"] == "hello"
         assert body["voice_id"] == "eve"
@@ -1783,7 +1718,7 @@ class TestGrokSTT:
         async def handler(req: httpx.Request) -> httpx.Response:
             for k, v in req.headers.items():
                 if k.lower() == "content-type":
-                    # Multipart envelope — content-type is a multipart/form-data; we want the part names instead.
+                    # multipart 信封，content-type 为 multipart/form-data；真正想要的是 part 名而非顶层类型。
                     pass
             captured_files.append(("multipart", req.content))
             return httpx.Response(200, json={"text": "ok"})
@@ -1862,8 +1797,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_submit_accepts_full_duration_range(self):
-        # xAI docs allow 1..15s — verify both edges pass through to the wire
-        # rather than being rejected client-side.
+        # xAI 文档允许 1..15s——验证两端都能落到 wire 而非被客户端拦截。
 
         async def capture(req: httpx.Request) -> httpx.Response:
             assert json.loads(req.content)["duration"] in (1, 15)
@@ -1891,7 +1825,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_submit_accepts_both_resolution_casings(self):
-        # xAI docs use lowercase "720p" / "1080p" but accept mixed case too.
+        # xAI 文档用小写 "720p" / "1080p"，但也接受混合大小写。
         for res in ("480p", "720p", "1080p", "480P", "720P", "1080P"):
             handler = _async_handler([{"request_id": "ok"}])
             provider = self._make_provider(handler)
@@ -1934,8 +1868,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_unknown_status_keeps_polling(self):
-        # Defensive: an unrecognized status keeps us in "processing" so the
-        # job worker doesn't mark a still-running job as terminal.
+        # 防御性：未识别的状态保持 "processing"，避免 worker 把仍在运行的任务标为终态。
         handler = _async_handler([{"status": "weird-new-state"}])
         provider = self._make_provider(handler)
         job = await provider.poll("task")
@@ -1945,7 +1878,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_failed_extracts_dict_error_message(self):
-        # xAI docs show the failed body as ``error: {code, message}``.
+        # xAI 文档将失败体表示为 ``error: {code, message}``。
         handler = _async_handler(
             [
                 {
@@ -1961,8 +1894,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_failed_accepts_string_error(self):
-        # Defensive: older or one-off responses may carry ``error: "<string>"``;
-        # the parser must not crash and must surface the message verbatim.
+        # 防御性：旧版本或一次性响应可能携带 ``error: "<string>"``，解析器不得崩溃并需原样透出消息。
         handler = _async_handler([{"status": "failed", "error": "content rejected"}])
         provider = self._make_provider(handler)
         job = await provider.poll("task")
@@ -1981,8 +1913,7 @@ class TestGrokVideoGen:
 
     @pytest.mark.asyncio
     async def test_poll_failed_non_dict_error_does_not_pollute_message(self):
-        # Defensive: if docs ever drift to a non-dict, non-string error,
-        # surface a tagged repr rather than passing the raw blob through.
+        # 防御性：若文档日后偏移为非 dict 也非 string 的错误，需返回带标签的 repr 而非直接传递原始 blob。
         handler = _async_handler([{"status": "failed", "error": ["weird", "list"]}])
         provider = self._make_provider(handler)
         job = await provider.poll("task")
@@ -2012,12 +1943,7 @@ class TestGrokVideoGen:
 
 
 class TestPerUserProviderChain:
-    """Tier-1: a user's per-user provider_config is tried before the global chain.
-
-    resolve_provider_chain prepends slots built from the user's JSON
-    provider_config, then appends the existing global fold-in. Same-provider
-    dedup keeps the user (tier-1) slot.
-    """
+    """Tier-1：用户的 per-user provider_config 在全局 chain 之前被尝试。resolve_provider_chain 会把基于用户 JSON provider_config 构造的 slot 前置，再追加全局 fold-in；同 provider 去重保留用户（tier-1）slot。"""
 
     _EMPTY = TestProviderChain._EMPTY_DEFAULTS
 
@@ -2057,7 +1983,7 @@ class TestPerUserProviderChain:
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
-        # Global chain: mimo then minimax, both keyed.
+        # 全局 chain：mimo 在前，minimax 在后，都配置 key。
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-global-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
@@ -2075,7 +2001,7 @@ class TestPerUserProviderChain:
         )
         async with SessionLocal() as db:
             chain = await resolve_provider_chain(db, user_id, "llm")
-        # User minimax (tier 1) first; global mimo next; global minimax deduped away.
+        # 用户 minimax（tier 1）排在最前；全局 mimo 次之；全局 minimax 被去重剔除。
         assert [c.provider_name for c in chain] == ["minimax", "mimo"]
         assert chain[0].api_key == "sk-user-mm"
         assert chain[0].base_url == "https://user-mm.example/v1"
@@ -2088,7 +2014,7 @@ class TestPerUserProviderChain:
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
 
         _, SessionLocal = _patch_db
-        # mimo slot lacks an api_key → dropped; falls through to global minimax.
+        # mimo slot 缺少 api_key → 被剔除，回退到全局 minimax。
         user_id = await self._seed(
             SessionLocal, [{"name": "mimo", "api_key": "", "base_url": "https://x/v1"}]
         )
@@ -2097,7 +2023,7 @@ class TestPerUserProviderChain:
         assert [c.provider_name for c in chain] == ["minimax"]
 
     async def test_no_user_context_unchanged(self, monkeypatch):
-        """db=None/user_id=None must behave exactly as before (no tier 1)."""
+        """db=None/user_id=None 时行为必须与之前完全一致（无 tier 1）。"""
         from services.llm import resolve_provider_chain
 
         self._reset(monkeypatch)
@@ -2154,12 +2080,12 @@ class TestPerUserProviderChain:
             )
             await db.commit()
             chain = await resolve_provider_chain(db, user.id, "tts")
-        # tts_provider is pinned to mimo, so mimo is moved to the front for tts
+        # tts_provider 固定为 mimo，因此 tts 时 mimo 被提到最前。
         assert [c.provider_name for c in chain] == ["mimo", "minimax"]
 
 
 class TestResolveUserLlmConfigCredentials:
-    # Credentials must come from chain[0] — not the stale per-cap row.
+    # 凭据必须取自 chain[0]，而非过时的 per-cap 行。
 
     _EMPTY = TestProviderChain._EMPTY_DEFAULTS
 
@@ -2176,8 +2102,7 @@ class TestResolveUserLlmConfigCredentials:
         monkeypatch.setattr("components.SETTINGS.providers", ["mimo", "minimax"])
         monkeypatch.setattr("components.SETTINGS.mimo_api_key", "sk-global-mimo")
         monkeypatch.setattr("components.SETTINGS.minimax_api_key", "sk-global-mm")
-        # User has tier 1 only — no per-cap llm_* row, so the chain slot's
-        # default model (``default_model_for("minimax", "llm")``) wins.
+        # 用户仅有 tier 1——没有 per-cap llm_* 行，因此使用 chain slot 的默认模型 ``default_model_for("minimax", "llm")``。
         _, SessionLocal = _patch_db
         async with SessionLocal() as db:
             from modules.auth import (
@@ -2221,7 +2146,7 @@ class TestResolveUserLlmConfigCredentials:
         assert cfg["model_name"] == "MiniMax-Text-01"
 
     async def test_empty_chain_returns_empty_credentials(self, monkeypatch):
-        # Empty chain → all-empty dict so schedulers' falsy skip fires.
+        # chain 为空 → 返回全空 dict，使 scheduler 的 falsy 跳过生效。
         from services.llm import resolve_user_llm_config
 
         self._reset(monkeypatch)
@@ -2236,8 +2161,7 @@ class TestResolveUserLlmConfigCredentials:
 
 
 class TestMiniMaxInnerCodes:
-    """MiniMax returns HTTP 200 with the real error in ``base_resp``; entitlement
-    refusals share the generic invalid-param code and must not read as format_error."""
+    """MiniMax 始终返回 HTTP 200，把真实错误放在 ``base_resp``；权限拒绝共享通用的 invalid-param 编码，不能被读作 format_error。"""
 
     @staticmethod
     def _classify(status_msg: str, status_code: int):
@@ -2268,7 +2192,7 @@ class TestMiniMaxInnerCodes:
         )
         assert err.status_code == 402
         assert classified.reason.value == "billing"
-        # A model gated on this key may be enabled on another one.
+        # 在当前 key 上受限的模型可能在其它 key 上启用。
         assert classified.should_rotate_credential is True
 
     def test_genuine_bad_param_stays_format_error(self):
@@ -2278,7 +2202,7 @@ class TestMiniMaxInnerCodes:
         assert classified.should_rotate_credential is False
 
     def test_unknown_inner_code_is_retryable_not_success(self):
-        # Falling back to resp.status_code (200) would read as a success.
+        # 回退到 resp.status_code（200）会被误读为成功。
         err, classified = self._classify("something new upstream", 9999)
         assert err.status_code == 502
         assert classified.retryable is True

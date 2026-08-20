@@ -26,8 +26,7 @@ async def _summarize_doc(client: AsyncOpenAI, model_name: str, doc: dict) -> Non
         )
         doc["content"] = response.choices[0].message.content
     except Exception as e:
-        # Per-doc catch: a single bad doc must not abort the whole gather
-        # batch (httpx, JSON parse, LLMRuntimeError, or empty choices all land here).
+        # 单文档失败必须隔离，否则会拖垮整批 gather（httpx、JSON 解析、LLMRuntimeError、空 choices 都落在这一层）。
         logger.warning("Failed to summarize content", extra={"error_msg": str(e)})
         doc["content"] = content[:5000]
 
@@ -37,7 +36,7 @@ async def _summarize_documents(documents: list[dict], llm_config: dict) -> None:
         return
     model_name = llm_config["model_name"]
     client = client_for_config(llm_config)
-    # Bounded concurrency so a 50-URL extract doesn't open 50 simultaneous LLM streams.
+    # 限制并发数，避免 50 个 URL 时同时打开 50 条 LLM 流。
     sem = asyncio.Semaphore(4)
 
     async def _guarded(doc: dict) -> None:
@@ -83,13 +82,12 @@ async def web_extract_tool(urls: list[str] | str, llm_config: dict, use_llm_proc
     except Exception as e:
         return tool_error(f"Extraction error: {e!s}")
 
-    # Some providers return the legacy envelope {success, data: ...} — unwrap.
+    # 部分供应商返回旧式 {success, data: ...} 包裹结构，这里统一拆开。
     if isinstance(documents, dict) and "data" in documents:
         documents = documents["data"]
 
     if use_llm_processing and isinstance(documents, list):
-        # Fan out summarization across documents in parallel so a 10-URL extract
-        # is bounded by the slowest single doc, not 10x latency.
+        # 并行展开摘要，10 URL 提取的耗时由最慢的那一份决定，而非 10 倍叠加。
         await _summarize_documents(documents, llm_config)
 
     return json.dumps({"success": True, "data": {"web": documents}}, ensure_ascii=False)

@@ -19,23 +19,20 @@ logger = get_logger(__name__)
 
 WORKER_ID = f"{socket.gethostname()}-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
-# kind → handler(job, io_dir); populated by services.worker.handlers at import.
-# A dict return value is persisted on the job row for callers that poll.
+# kind → handler(job, io_dir)；由 services.worker.handlers 在 import 时填充。dict 返回值会持久化到 job 行供轮询调用方使用。
 Handler = Callable[[RenderJob, Path], Awaitable[dict | None]]
 HANDLERS: dict[str, Handler] = {}
 
 
 def job_io_dir(job_id: int) -> Path:
-    """Fresh per-claim workspace: everything the sandbox container may see is
-    copied in here and only this dir is mounted at /io."""
+    """每次认领都全新的工作区：sandbox 容器能看到的全部内容先拷贝到这里，只有此目录挂在 /io。"""
     io_dir = Path(SETTINGS.data_dir) / "job-io" / str(job_id)
     io_dir.mkdir(parents=True, exist_ok=True)
     return io_dir
 
 
 async def drain_once() -> int:
-    """Claim one job and run it to completion (finish/fail). Both the worker
-    tick and tests enter here."""
+    """认领一个 job 并跑到结束（finish/fail）：worker tick 和测试都走这里。"""
     jobs = await queue.claim_batch(WORKER_ID, 1)
     for job in jobs:
         io_dir = job_io_dir(job.id)
@@ -47,8 +44,7 @@ async def drain_once() -> int:
             await queue.finish(job.id, WORKER_ID, result=result)
         except Exception:
             logger.exception("render job failed", extra={"job_id": job.id, "kind": job.kind, "user_id": job.user_id})
-            # job.error is served verbatim by the poll endpoint — fixed copy
-            # only; the traceback lives in the log line above.
+            # job.error 由 poll 端点原样下发——只用固定文案；traceback 在上面日志里。
             await queue.fail(job.id, WORKER_ID, "生成失败，请稍后重试")
         finally:
             shutil.rmtree(io_dir, ignore_errors=True)
@@ -72,8 +68,7 @@ async def _stale_reclaim_loop() -> None:
 
 
 async def _gc_stale_io_dirs() -> None:
-    # Age-guarded so a second worker booting can't wipe a peer's active job
-    # workspace; live dirs get cleaned by drain_once's finally anyway.
+    # 按年龄保护，避免第二个 worker 启动时擦掉同伴的活跃 job 工作区；活的目录反正会被 drain_once 的 finally 清掉。
     root = Path(SETTINGS.data_dir) / "job-io"
     if not root.exists():
         return
@@ -87,8 +82,7 @@ async def _gc_stale_io_dirs() -> None:
 
 
 async def _listen_loop(dsn: str, wakeup: asyncio.Event) -> None:
-    """Dedicated LISTEN connection: enqueue NOTIFYs wake the worker loops
-    instantly; drops reconnect after 5s (mirrors gateway.ws_event_loop)."""
+    """专用 LISTEN 连接：enqueue NOTIFY 即刻唤醒 worker 循环；掉线 5s 后重连（与 gateway.ws_event_loop 一致）。"""
 
     def _listener(_conn, _pid, _channel, _payload):
         wakeup.set()
@@ -116,10 +110,7 @@ def _raw_pg_dsn() -> str:
 async def main() -> None:
     setup_logging()
     logger.info("render worker starting", extra={"worker_id": WORKER_ID, "concurrency": SETTINGS.worker_concurrency})
-    # The model-gen pipeline runs HERE, not in web — a worker crash leaves
-    # rows in generating/pending_download/downloading that only this process's
-    # restart can observe as dead. Web runs the same sweep for its own
-    # restarts; both are idempotent.
+    # model-gen 流水线跑在这里（而非 web）——worker 崩溃会在 generating/pending_download/downloading 留下行，只有本进程重启才能观察到这些行已死；web 也跑同一清扫应付自己的重启，两边都幂等。
     from services.companion import recover_stuck_model_generations
 
     await recover_stuck_model_generations()
@@ -131,7 +122,7 @@ async def main() -> None:
     await _gc_stale_io_dirs()
 
     wakeup = asyncio.Event()
-    wakeup.set()  # initial pass drains anything queued before startup
+    wakeup.set()  # 初次遍历清空启动前排队的 job
 
     tasks = [asyncio.create_task(_worker_loop(wakeup)) for _ in range(max(1, SETTINGS.worker_concurrency))]
     tasks.append(asyncio.create_task(_stale_reclaim_loop()))

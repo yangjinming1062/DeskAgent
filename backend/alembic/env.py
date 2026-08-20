@@ -14,11 +14,7 @@ from common.model import ModelBase
 from components.config import SETTINGS
 
 config = context.config
-# fileConfig 默认 disable_existing_loggers=True 且会用 alembic.ini 的
-# [logger_root]（WARNING + stderr）整个替换 root —— 应用内启动迁移
-# （main.py lifespan 已先 setup_logging）绝不能走这条路径，否则迁移
-# 一跑完整个 web 进程就"失明"（无 access log、无应用日志）。仅 CLI
-# 调用 alembic 时才配置日志。
+# fileConfig 默认会替换 root logger；main.py 内启动迁移时（lifespan 已先 setup_logging）必须跳过，否则 web 进程会"失明"。仅 CLI 调用 alembic 时才配置日志。
 if config.config_file_name and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
@@ -32,11 +28,7 @@ target_metadata = ModelBase.metadata
 
 
 def _include_object(obj, name, type_, reflected, compare_to):
-    # 迁移管理的索引（partial unique / hnsw / gin trgm）只存在于迁移文件、
-    # 不在模型 metadata 中（声明进模型会让 SQLite create_all 丢失 WHERE 语义
-    # 变成全量唯一索引）。跳过"仅存在于数据库"的索引，autogenerate 才不会
-    # 提议删除它们。代价：从模型中删除 Index 时 autogenerate 不会生成对应
-    # drop_index，需手写。
+    # 迁移管理的索引（partial unique / hnsw / gin trgm）只存在于迁移文件，不在模型 metadata（声明进模型会让 SQLite create_all 丢 WHERE 语义）。跳过"仅存在于数据库"的索引，autogenerate 才会不提议删除它们。
     if type_ == "index" and reflected and compare_to is None:
         return False
     return True

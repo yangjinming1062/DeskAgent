@@ -69,10 +69,7 @@ MUTATING_TOOL_NAMES = frozenset(
     }
 )
 
-# ``terminal`` is intentionally NOT here — its dangerous surface is shell
-# redirection (``> ~/.ssh/authorized_keys``) inside the command string, not an
-# explicit path argument. A separate runner-side scan of the command text
-# closes that bypass; backend path-arg scanning cannot without parsing shell.
+# ``terminal`` 故意不在此列——其危险面是命令字符串里的 shell 重定向（``> ~/.ssh/authorized_keys``），不是显式路径参数。runner 侧对命令文本做独立扫描来堵住这种绕过；后端仅扫路径参数无法在不解析 shell 的前提下覆盖。
 _FILE_PATH_TOOLS = frozenset({"write_file", "patch", "read_file", "search_files"})
 _FILE_PATH_ARG_NAMES = ("path", "file_path", "filepath", "target", "filename")
 _WRITE_DENIED_TOOLS = frozenset({"write_file", "patch"})
@@ -94,12 +91,7 @@ _MEMORY_FULL_PHRASES = (
 
 
 def check_file_safety(tool_name: str, args: Mapping[str, Any] | None) -> "ToolGuardrailDecision | None":
-    """Run the file-safety denylist before dispatch. Returns a ``block`` decision or None.
-
-    Pure: does not mutate controller state. The caller decides how to surface
-    the decision (typically: short-circuit ``before_call`` and feed it into
-    ``toolguard_synthetic_result``).
-    """
+    """派发前运行文件安全黑名单，返回 ``block`` 决策或 None；纯函数，调用方决定如何呈现。"""
     if tool_name not in _FILE_PATH_TOOLS or not isinstance(args, Mapping):
         return None
     for arg_name in _FILE_PATH_ARG_NAMES:
@@ -122,7 +114,7 @@ def check_file_safety(tool_name: str, args: Mapping[str, Any] | None) -> "ToolGu
 
 @dataclass(frozen=True)
 class ToolCallGuardrailConfig:
-    """Per-turn loop-detection thresholds. Warnings always on; hard-stop is explicit opt-in."""
+    """单回合循环检测阈值；警告默认开启，硬停止需显式开启。"""
 
     warnings_enabled: bool = True
     hard_stop_enabled: bool = False
@@ -157,7 +149,7 @@ class ToolCallGuardrailConfig:
 
 @dataclass(frozen=True)
 class ToolCallSignature:
-    """Stable, non-reversible identity for a tool name + canonical args."""
+    """工具名 + 规范化参数 的稳定、不可逆标识。"""
 
     tool_name: str
     args_hash: str
@@ -172,7 +164,7 @@ class ToolCallSignature:
 
 @dataclass(frozen=True)
 class ToolGuardrailDecision:
-    """Decision returned by the tool-call guardrail controller."""
+    """工具调用守卫控制器返回的决策。"""
 
     action: str = "allow"  # allow | warn | block | halt
     code: str = "allow"
@@ -197,18 +189,14 @@ class ToolGuardrailDecision:
 
 
 def canonical_tool_args(args: Mapping[str, Any]) -> str:
-    """Sorted compact JSON for parsed tool arguments."""
+    """对解析后的工具参数生成排序紧凑 JSON。"""
     if not isinstance(args, Mapping):
         raise TypeError(f"tool args must be a mapping, got {type(args).__name__}")
     return json.dumps(args, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
 def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]:
-    """Safety-fallback classifier for callers that don't pass ``failed=`` explicitly.
-
-    Production callers always pass an explicit ``failed=``; this is here so
-    standalone callers (tests, tooling) still get consistent behavior.
-    """
+    """未显式传 ``failed=`` 时的安全兜底分类器——生产调用方总会传 ``failed=``，这里仅为测试与工具脚本提供一致行为。"""
     if result is None:
         return False, ""
 
@@ -236,7 +224,7 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
 
 
 class ToolCallGuardrailController:
-    """Per-turn controller for repeated failed / non-progressing tool calls."""
+    """单回合内对反复失败/无进展的工具调用进行控制。"""
 
     def __init__(self, config: ToolCallGuardrailConfig | None = None) -> None:
         self.config = config or ToolCallGuardrailConfig()
@@ -371,12 +359,12 @@ class ToolCallGuardrailController:
 
 
 def toolguard_synthetic_result(decision: ToolGuardrailDecision) -> str:
-    """Synthetic ``role=tool`` content for a blocked tool call."""
+    """为被拦截的工具调用合成 ``role=tool`` 内容。"""
     return json.dumps({"error": decision.message, "guardrail": decision.to_metadata()}, ensure_ascii=False)
 
 
 def append_toolguard_guidance(result: str, decision: ToolGuardrailDecision) -> str:
-    """Append runtime guidance to a tool result. Multimodal envelopes get the hint on the first text part."""
+    """向工具结果追加运行时提示；multimodal 包裹会把提示加到第一个文本段。"""
     if decision.action not in {"warn", "halt"} or not decision.message:
         return result
     label = "Tool loop hard stop" if decision.action == "halt" else "Tool loop warning"
@@ -395,7 +383,7 @@ def append_toolguard_guidance(result: str, decision: ToolGuardrailDecision) -> s
 
 
 def _tool_failure_recovery_hint(tool_name: str, count: int) -> str:
-    """Action-oriented guidance for recovering from repeated tool failures."""
+    """针对反复工具失败给出可操作的恢复指引。"""
     common = f"{tool_name} has failed {count} times this turn. This looks like a loop. Do not switch to text-only replies; keep using tools, but diagnose before retrying. First inspect the latest error/output and verify your assumptions. "
     if tool_name == "terminal":
         return (
@@ -428,7 +416,7 @@ def _result_hash(result: str | None) -> str:
 
 @dataclass(frozen=True)
 class _GuardrailThresholdSet:
-    """The three warn-or-block thresholds that share a key name."""
+    """共享同一键名的三条 warn/block 阈值。"""
 
     exact_failure: int
     same_tool_failure: int
@@ -438,7 +426,7 @@ class _GuardrailThresholdSet:
 def _resolve_guardrail_thresholds(
     data: Mapping[str, Any], warn_after: Mapping[str, Any], hard_stop_after: Mapping[str, Any], defaults: "ToolCallGuardrailConfig"
 ) -> tuple[_GuardrailThresholdSet, _GuardrailThresholdSet]:
-    """Split a config dict into warn-tier and hard-stop-tier threshold triples."""
+    """将配置字典拆成 warn 级与硬停止级两组阈值三元组。"""
     nested_keys = ("exact_failure", "same_tool_failure", "idempotent_no_progress")
     warn_keys = ("exact_failure_warn_after", "same_tool_failure_warn_after", "no_progress_warn_after")
     block_keys = ("exact_failure_block_after", "same_tool_failure_halt_after", "no_progress_block_after")

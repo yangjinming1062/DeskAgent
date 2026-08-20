@@ -24,33 +24,7 @@ async def execute_with_fallback(
     stream_started: Callable[[], bool] | None = None,
     _chain: list[ProviderConfig] | None = None,
 ) -> T:
-    """Run ``call_fn`` against the resolved provider chain; on
-    ``ClassifiedError.should_fallback`` try the next provider.
-
-    The chain is built by :func:`resolve_provider_chain` from the
-    provider-first env (``PROVIDERS`` list, with optional ``*_PROVIDER``
-    soft-reorder). Each iteration instantiates the provider class and
-    invokes ``call_fn(provider)``; the inner per-provider retry layer
-    (``call_with_retry`` for chat, none yet for image_gen / tts / video_gen)
-    handles transient errors before the fallback decision is made here.
-
-    Falls back only when ``should_fallback=True`` (auth, billing, model
-    not found, content policy). Transient errors (``retryable=True``,
-    ``should_fallback=False``) stay within the per-provider retry loop.
-
-    ``stream_started`` — for streaming calls, pass a callable returning
-    True once the first chunk has been emitted to the client. When the
-    current provider raises after that point, fallback is aborted (the
-    user has already received partial output).
-
-    ``_chain`` — pre-resolved chain (advanced). Lets callers resolve the
-    chain under their own DB session and close it before the (potentially
-    long) upstream await, so the pool connection isn't held for the entire
-    call. Internal — production callers should use ``db`` / ``user_id``.
-
-    Raises :class:`MissingLlmConfigError` when the chain is empty
-    (no provider configured at all for this service).
-    """
+    """按 ``resolve_provider_chain`` 解析的供应商链依次调用 ``call_fn``；仅当 ``ClassifiedError.should_fallback=True``（鉴权 / 计费 / 模型缺失 / 内容策略）时切换到下一家，瞬时错误留在 per-provider 重试层内处理。链为空时抛 ``MissingLlmConfigError``。"""
     chain = _chain if _chain is not None else await resolve_provider_chain(db, user_id, service_type)
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
@@ -63,9 +37,7 @@ async def execute_with_fallback(
     for idx, config in enumerate(chain):
         provider_cls = resolve(config.service_type, config.provider_name)
         provider = provider_cls(config)
-        # Per-call request/response lines come from the chat retry wrapper
-        # or the provider method itself; this chain-level line tells the
-        # reader which slot is firing and where fallback landed on success.
+        # 单次 request/response 日志由 chat 重试包装或 provider 方法自身打；这条链级日志告诉读者当前命中哪个槽以及回退落到哪里。
         log_event(
             call_id=chain_call_id,
             service=service_type,
@@ -80,9 +52,7 @@ async def execute_with_fallback(
         try:
             started = time.monotonic()
             result = await call_fn(provider)
-            # Every billed capability funnels through here — sync calls have
-            # no task_id, so the paid-calls breadcrumb is provider + model +
-            # duration instead.
+            # 所有计费能力都从此经过 —— 同步调用无 task_id，paid-calls 面包屑退化为 provider + model + duration。
             duration_ms = round((time.monotonic() - started) * 1000)
             log_paid_call(config.provider_name, service_type, user_id=user_id, model=config.model, duration_ms=duration_ms)
             log_event(
@@ -104,11 +74,7 @@ async def execute_with_fallback(
             last_error = exc
             classified = getattr(exc, "classified", None) or classify_api_error(exc, provider=config.provider_name, model=config.model)
 
-            # Track content-policy blocks — when the entire chain is exhausted,
-            # prefer raising this over the last error so callers can run prompt
-            # sanitization and retry. Without this, a cascading failure on a
-            # later provider (e.g. vision LLM can't describe a reference image)
-            # masks the actionable root cause.
+            # 记录内容策略拦截：链耗尽时优先抛它而非 last_error，便于调用方执行 prompt 清洗并重试。否则后续供应商级联失败（如视觉 LLM 无法描述参考图）会掩盖真正的可操作根因。
             if classified.reason == FailoverReason.content_policy_blocked:
                 content_policy_error = exc
 
@@ -122,8 +88,7 @@ async def execute_with_fallback(
                         "model": config.model,
                         "reason": classified.reason.value,
                         "status_code": classified.status_code,
-                        # The reason bucket alone is unactionable when a provider
-                        # hides the cause in a 200 body (MiniMax ``base_resp``).
+                        # 仅 reason 字段无法操作 —— 某些供应商把根因藏在 200 body（如 MiniMax ``base_resp``）
                         "error": classified.message,
                         "next_provider": next_provider,
                     },
@@ -146,12 +111,7 @@ async def execute_with_fallback(
                 )
                 continue
 
-            # Either not a fallback condition, stream already emitted, or this
-            # was the last slot. Surface the original exception unchanged —
-            # call sites classify it via ``classify_api_error`` if they need a
-            # ``ClassifiedError``.  Prefer a content-policy error from an earlier
-            # provider when present so the caller's moderation-retry can fire
-            # instead of being masked by an unrelated cascading failure.
+            # 非回退条件 / 流已开始 / 已到末槽：原样抛出原异常（调用方需 ``ClassifiedError`` 时再调 ``classify_api_error``）；若链内有更早的内容策略错误，优先抛它便于调用方的 moderation-retry 触发，而非被级联失败掩盖。
             log_event(
                 call_id=chain_call_id,
                 service=service_type,
@@ -170,8 +130,7 @@ async def execute_with_fallback(
             )
             raise content_policy_error or last_error
 
-    # Unreachable with an empty last_error: the chain is non-empty (checked
-    # above) and every iteration either returns or records last_error.
+    # 链非空（上面已检查）且每轮要么 return 要么记录 last_error，因此以下仅作防御性兜底。
     log_event(
         call_id=chain_call_id,
         service=service_type,

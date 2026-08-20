@@ -31,12 +31,12 @@ def _patch_pipeline(monkeypatch, tmp_path: Path, answer: str | None) -> None:
 @pytest.mark.parametrize(
     ("answer", "expected_yaw"),
     [
-        ("A", 0.0),  # front → mesh faces the canonical -Y
-        ("B", 90.0),  # right → face toward +X
+        ("A", 0.0),  # front → mesh 面向规范 -Y
+        ("B", 90.0),  # right → 面向 +X
         ("C", 180.0),
         ("D", -90.0),
-        ("答案是 B。", 90.0),  # prose around the letter still parses
-        ("<think>hmm</think>C", 180.0),  # reasoning-model think prefix stripped
+        ("答案是 B。", 90.0),  # 字母周围带散文也要能解析
+        ("<think>hmm</think>C", 180.0),  # reasoning 模型的 思考 前缀会被剥离
     ],
 )
 async def test_detect_face_yaw_parses_verdict(monkeypatch, tmp_path, answer, expected_yaw):
@@ -68,5 +68,5 @@ async def test_detect_face_yaw_no_vision_chain(monkeypatch, tmp_path):
         return []
 
     monkeypatch.setattr(rig_orientation, "resolve_vision_chain", _empty)
-    # _render_views still runs first; a missing script is also a covered failure path.
+    # _render_views 仍先跑；脚本缺失也是被覆盖的失败路径
     assert await rig_orientation.detect_face_yaw(b"glb", workdir=tmp_path) == 0.0

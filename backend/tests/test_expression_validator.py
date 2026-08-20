@@ -18,8 +18,7 @@ def test_valid_minimal_fields():
 
 
 def test_description_is_required():
-    # description doubles as the avatar-image generation clause — an empty one
-    # would generate a face with no expression.
+    # description 同时是头像生图子句，空值会生成无表情的脸
     assert validate_and_sanitize_expression(_raw(description="")) is None
     assert validate_and_sanitize_expression({"name": "x_y"}) is None
 

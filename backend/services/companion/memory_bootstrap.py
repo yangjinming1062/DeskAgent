@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 _USER_PROFILE_TAGS_JSON = '["onboarding", "user_profile"]'
 
-# Friendly on-memory labels for the 5 known user_* keys; unknown user_*
-# keys fall through to ``user_profile:<raw_key>``.
+# 已知 user_* 键的友好上下文标签；未知键回落为 user_profile:<raw_key>
 _CONTEXT_LABELS: dict[str, str] = {
     "user_call_name": "user_profile:preferred_name",
     "user_gender": "user_profile:gender",
@@ -26,14 +25,11 @@ def extract_user_profile(payload: dict[str, Any]) -> dict[str, str]:
 
 
 async def read_user_profile(db: AsyncSession, user_id: int) -> dict[str, str]:
-    """Reverse of ``record_user_profile``: return the user's current
-    ``user_*`` answers as ``{raw_key: content}``, e.g.
-    ``{"user_call_name": "小明", "user_hobbies": "摄影"}``. Used by the
-    retune wizard to pre-populate its user_* step."""
+    """record_user_profile 的逆操作：以 {raw_key: content} 返回用户当前的 user_* 回答。"""
     rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like("user_profile:%")))).scalars().all()
     out: dict[str, str] = {}
     for row in rows:
-        suffix = row.context.split(":", 1)[1]  # preferred_name, gender, ...
+        suffix = row.context.split(":", 1)[1]
         raw_key = _REVERSE_CONTEXT_LABELS.get(row.context, f"user_{suffix}")
         out[raw_key] = row.content or ""
     return out
@@ -43,9 +39,7 @@ async def build_user_profile_extras(db: AsyncSession, user_id: int) -> str:
     rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like("user_profile:%")))).scalars().all()
     if not rows:
         return ""
-    # Render the 5 known fields in declaration order, then any extras
-    # alphabetically — keeps the LLM-facing shape stable for downstream
-    # prompt consumers.
+    # 已知字段按声明顺序、其余按字典序渲染，保证给 LLM 的形状稳定
     by_ctx = {row.context: row for row in rows}
     known_ctxs = list(_CONTEXT_LABELS.values())
     ordered = [by_ctx[c] for c in known_ctxs if c in by_ctx] + [by_ctx[c] for c in sorted(by_ctx) if c not in known_ctxs]
@@ -57,10 +51,7 @@ async def build_user_profile_extras(db: AsyncSession, user_id: int) -> str:
 
 
 async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str, str]) -> None:
-    """Upsert user_* → Memory rows. Empty values are skipped (no insert,
-    no delete) so the persona editor can re-save without wiping the rows;
-    user-revocation goes through ``memory_forget``. Caller commits once.
-    """
+    """把 user_* 字段写入 Memory；空值跳过（不插不删），使人设编辑器可重复保存而不清空既有行。"""
     for user_key, val in profile.items():
         if not val:
             continue

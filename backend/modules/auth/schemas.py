@@ -56,10 +56,7 @@ def public_provider_slots(raw: str | None) -> list[ProviderSlotPublic]:
 
 
 class _UserModelConfigBase(BaseModel):
-    """Per-capability fields for the admin model-config request.
-
-    Every field defaults to ``""`` so an admin can clear any capability.
-    """
+    """admin 模型配置请求的每 capability 字段集合；字段默认 ``""`` 以允许清空任一 capability。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -87,13 +84,11 @@ class _UserModelConfigBase(BaseModel):
 
 
 class UserModelConfigRequest(_UserModelConfigBase):
-    """Admin model config."""
+    pass
 
 
 class UserModelConfigListItem(BaseModel):
-    """Admin-facing view of ``UserModelConfig`` — shows ``llm_api_key_fingerprint``
-    + ``*_set`` flags instead of raw credentials.
-    """
+    """管理员视角的 UserModelConfig：用 ``llm_api_key_fingerprint`` + ``*_set`` 标志展示，绝不返原始凭据。"""
 
     model_config = ConfigDict(from_attributes=True)
 

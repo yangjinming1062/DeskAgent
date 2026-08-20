@@ -48,8 +48,7 @@ class _MockTransport(httpx.AsyncBaseTransport):
         self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: (
             httpx.Response(200, json={})
         )
-        # (method, absolute url, headers, json body) — headers stay an
-        # httpx.Headers so case-insensitive lookups keep working.
+        # (method, 绝对 url, headers, json body) — headers 保持 httpx.Headers 以便大小写无关查找。
         self.calls: list[tuple[str, str, httpx.Headers, dict[str, Any] | None]] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
@@ -386,9 +385,7 @@ class TestRegistryAndFallback:
 
 @pytest.mark.e2e("HUNYUAN_API_KEY")
 class TestHunyuanLiveE2E:
-    # Real TokenHub round-trip: submit → poll → download. Auto-skipped by
-    # conftest unless HUNYUAN_API_KEY is explicitly exported, so the default
-    # suite never pays generation cost.
+    # 真实 TokenHub 端到端：submit → poll → download。conftest 默认自动跳过，除非显式导出 HUNYUAN_API_KEY，所以默认套件不会产生生成费用。
     @pytest.mark.asyncio
     async def test_full_pipeline(self, tmp_path):
         import os

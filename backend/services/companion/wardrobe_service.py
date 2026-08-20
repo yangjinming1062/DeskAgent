@@ -22,10 +22,10 @@ from .rig_type_selector import select_rig_type
 
 logger = get_logger(__name__)
 
-# Companion-assets URL fields on WardrobeItem for re-signing and unlinking.
+# WardrobeItem 上需要重新签名与删除的 companion-assets URL 字段
 _COMPANION_ASSET_URL_ATTRS: tuple[str, ...] = ("texture_url", "normal_url", "roughness_url", "metalness_url", "displacement_url", "mesh_url")
 
-# Cache body model joint names to avoid re-reading multi-MB GLBs on each preview.
+# 缓存身体模型骨骼名，避免每次预览都重读数 MB 的 GLB
 _BODY_JOINT_NAMES_CACHE: dict[str, list[str]] = {}
 _TEXTURE_RECOVERY_TASKS: dict[tuple[int, int], asyncio.Task[None]] = {}
 
@@ -57,11 +57,11 @@ No commentary.
 
 
 class WardrobeSourceExpiredError(Exception):
-    """Raised when confirming a wardrobe preview whose temp-media source has expired or is missing."""
+    """确认衣柜预览时，其 temp-media 源文件已过期或缺失。"""
 
 
 async def fetch_texture_bytes(url: str) -> bytes | None:
-    """Resolve a generated-asset URL to bytes (local temp-media or remote)."""
+    """把生成结果 URL（本地 temp-media 或远端）解析为字节。"""
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
         res = get_file_path(fid)
@@ -76,7 +76,7 @@ async def fetch_texture_bytes(url: str) -> bytes | None:
 
 
 def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, str]]:
-    """Yield ``(attr_name, uid, filename)`` for every companion-assets URL on ``item`` (PBR channels + garment mesh)."""
+    """逐一产出条目上每个 companion-assets URL 对应的 (字段名, uid, 文件名)。"""
     for attr in _COMPANION_ASSET_URL_ATTRS:
         url = getattr(item, attr, None)
         if not url:
@@ -94,11 +94,11 @@ def _iter_companion_asset_paths(item: WardrobeItem) -> Iterator[tuple[str, str, 
 
 
 def _re_sign_texture(item: WardrobeItem) -> None:
-    """Re-sign all companion-assets URLs on the item (5-min TTL) and sanitize stale 404 URLs."""
+    """重新签名条目上的所有 companion-assets URL，并清理已失效的 temp-media 链接。"""
     for attr, uid, filename in _iter_companion_asset_paths(item):
         setattr(item, attr, build_signed_asset_url(int(uid), filename))
 
-    # If temp-media URL is present but file is expired, set attribute to None so client falls back cleanly
+    # temp-media 文件已过期时把字段置空，让客户端干净地降级
     for attr in _COMPANION_ASSET_URL_ATTRS:
         val = getattr(item, attr, None)
         if val and "/api/media/files/" in val:
@@ -108,7 +108,7 @@ def _re_sign_texture(item: WardrobeItem) -> None:
 
 
 async def check_and_recover_missing_texture(user_id: int, item: WardrobeItem) -> None:
-    """Background task: If an equipped wardrobe item's texture is missing, regenerate PBR textures using its outfit_description."""
+    """后台任务：已装备条目贴图缺失时，用其 outfit_description 重新生成 PBR 贴图。"""
     if item.kind not in (None, "texture") and not item.texture_url:
         return
     desc = item.outfit_description or item.prompt or item.name
@@ -169,6 +169,7 @@ def _spawn_texture_recovery_once(user_id: int, item: WardrobeItem) -> None:
 
 
 async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
+    """列出用户衣柜条目，并对资源 URL 重新签名。"""
     items = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id).order_by(WardrobeItem.created_at))).scalars().all()
     for item in items:
         _re_sign_texture(item)
@@ -176,7 +177,7 @@ async def list_wardrobe(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
 
 
 async def get_equipped_item(db: AsyncSession, user_id: int) -> WardrobeItem | None:
-    """Return the most recently updated equipped item."""
+    """返回最近更新的已装备条目。"""
     equipped = await _query_equipped(db, user_id)
     item = equipped[-1] if equipped else None
     if item:
@@ -187,7 +188,7 @@ async def get_equipped_item(db: AsyncSession, user_id: int) -> WardrobeItem | No
 
 
 async def get_equipped_items(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
-    """All equipped items (multi-equip: up to one per slot), oldest first."""
+    """返回全部已装备条目（每个槽位至多一件），按时间正序。"""
     items = await _query_equipped(db, user_id)
     for item in items:
         _re_sign_texture(item)
@@ -197,7 +198,7 @@ async def get_equipped_items(db: AsyncSession, user_id: int) -> list[WardrobeIte
 
 
 async def _resolve_rig_type(db: AsyncSession, user_id: int) -> str:
-    """Resolve the companion's rig type from active model or persona species."""
+    """从激活模型或人设物种推断骨骼类型。"""
     model = await get_active_model(db, user_id)
     if model and model.rig_type:
         return model.rig_type
@@ -213,9 +214,7 @@ async def _resolve_rig_type(db: AsyncSession, user_id: int) -> str:
 
 
 async def _resolve_style(db: AsyncSession, user_id: int) -> str:
-    """Resolve the render style from the active model; falls back to the
-    species preset routing (a custom species without a model row gets the
-    anime mainstream default)."""
+    """从激活模型解析渲染风格；无模型行时按物种预设回落到主流默认风格。"""
     model = await get_active_model(db, user_id)
     if model and model.style:
         return model.style
@@ -228,14 +227,14 @@ async def _resolve_style(db: AsyncSession, user_id: int) -> str:
 
 @dataclass
 class WardrobeRouting:
-    kind: str  # texture | garment | accessory
+    kind: str
     slot: str
     socket: str | None
     physics: str
 
     @classmethod
     def default(cls) -> "WardrobeRouting":
-        """Classifier-failure fallback — the always-capable garment path."""
+        """分类失败时的兜底——选择永远可用的服装管线。"""
         return cls(kind="garment", slot="torso", socket=None, physics="skin")
 
     def assembly_json(self) -> str:
@@ -253,7 +252,7 @@ class WardrobeRouting:
 
 
 def _resolve_socket(requested: str | None, slot: str, body_joint_names: list[str]) -> str | None:
-    """Match socket bone name against body skeleton (exact or suffix match)."""
+    """把挂点骨骼名与身体骨架匹配（精确或后缀匹配）。"""
     if not body_joint_names:
         return None
     stripped = [j.split(":")[-1] for j in body_joint_names]
@@ -268,7 +267,7 @@ def _resolve_socket(requested: str | None, slot: str, body_joint_names: list[str
 
 
 async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSession | None, body_joint_names: list[str]) -> WardrobeRouting:
-    """Classify description into texture, garment, or accessory routing."""
+    """把换装描述分类为贴图 / 服装 / 挂件三条管线之一。"""
     joint_hint = ("Available bones for socket: " + ", ".join(body_joint_names)) if body_joint_names else ""
     fallback = WardrobeRouting.default()
     try:
@@ -283,7 +282,7 @@ async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSessi
         physics = "cloth" if parsed.get("physics") == "cloth" and kind == "garment" else "skin"
         socket = _resolve_socket(parsed.get("socket"), slot, body_joint_names) if kind == "accessory" else None
         if kind == "accessory" and socket is None:
-            # No resolvable socket → degrade to a garment in the nearest slot.
+            # 找不到可用挂点，降级为最接近槽位的服装
             kind, slot, physics = ("garment", slot if slot != "outfit" else "torso", "skin")
         return WardrobeRouting(kind=kind, slot=slot, socket=socket, physics=physics)
     except Exception as exc:
@@ -295,10 +294,7 @@ async def _classify_wardrobe_kind(description: str, user_id: int, db: AsyncSessi
 async def preview_wardrobe_outfit(
     db: AsyncSession, *, user_id: int, description: str, image_bytes: bytes | None = None, content_type: str | None = None, feedback: str | None = None, io_dir: Path | None = None
 ) -> WardrobePreviewResponse:
-    """Route description and generate a wardrobe preview (texture or geometric).
-
-    ``io_dir`` (render worker) hosts the geometric pipeline's Blender
-    workspace under the host-visible per-job directory."""
+    """按分类路由生成换装预览（贴图或几何体）。"""
     joints = await _body_joint_names(db, user_id)
     routing = await _classify_wardrobe_kind(description, user_id, db, joints)
     logger.info("wardrobe pipeline routed", extra={"user_id": user_id, "kind": routing.kind, "slot": routing.slot})
@@ -312,7 +308,7 @@ async def preview_wardrobe_outfit(
 
 
 def _read_model_json_chunk(asset_url: str) -> bytes:
-    """Read glTF JSON chunk from a GLB without loading binary buffer payloads."""
+    """只读取 GLB 的 glTF JSON 块，避免把二进制缓冲一并载入内存。"""
     parts = asset_url.split("/", 2)
     if len(parts) != 3:
         raise RuntimeError(f"malformed model asset_url: {asset_url}")
@@ -320,14 +316,14 @@ def _read_model_json_chunk(asset_url: str) -> bytes:
     if resolved is None:
         raise RuntimeError(f"body model file not found: {asset_url}")
     with open(resolved[0], "rb") as f:
-        f.read(12)  # magic + version + total length
+        f.read(12)
         chunk_len = int.from_bytes(f.read(4), "little")
-        f.read(4)  # chunk type ('JSON')
+        f.read(4)
         return f.read(chunk_len)
 
 
 async def _body_joint_names(db: AsyncSession, user_id: int) -> list[str]:
-    """Extract active body model skin joint names."""
+    """提取激活身体模型的蒙皮骨骼名。"""
     model = await get_active_model(db, user_id)
     if model is None or not model.asset_url:
         return []
@@ -346,7 +342,7 @@ async def _body_joint_names(db: AsyncSession, user_id: int) -> list[str]:
 async def _generate_pbr_channels(
     *, description: str, feedback: str | None, rig_type: str, reference_data_uri: str | None, user_id: int, style: str = "realistic"
 ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
-    """Generate 5-channel PBR textures concurrently; raises if albedo fails."""
+    """并发生成 5 个 PBR 通道贴图；albedo 失败则抛错。"""
     prompts = {ch: build_texture_prompt(description=description, feedback=feedback, rig_type=rig_type, channel=ch, style=style) for ch in _PBR_CHANNELS}
 
     async def _gen_one(ch: str) -> tuple[str, str] | None:
@@ -378,7 +374,7 @@ async def _generate_pbr_channels(
 
 
 def _preview_response(res_dict: dict[str, tuple[str, str]], prompts: dict[str, str], **geometric: str | None) -> WardrobePreviewResponse:
-    """Assemble WardrobePreviewResponse from PBR textures and optional geometric fields."""
+    """把 PBR 贴图与可选的几何体字段组装成预览响应。"""
     n_url, n_fid = res_dict.get("normal", (None, None))
     r_url, r_fid = res_dict.get("roughness", (None, None))
     m_url, m_fid = res_dict.get("metalness", (None, None))
@@ -409,6 +405,7 @@ async def preview_wardrobe_texture(
     feedback: str | None = None,
     rig_type: str | None = None,
 ) -> WardrobePreviewResponse:
+    """生成纯贴图换装预览（不改变几何体）。"""
     style = "realistic"
     if rig_type is None:
         if db is not None:
@@ -426,9 +423,9 @@ async def preview_wardrobe_texture(
 
 
 async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None:
-    """Download remote texture via SSRF-safe client and detect content type."""
+    """经防 SSRF 的客户端下载远端贴图并识别内容类型。"""
     if "/api/media/files/" in url:
-        # Already-resolved temp-media URLs don't go through here — handled above.
+        # 已解析的 temp-media 地址由上游处理，不应走到这里
         return None
     try:
         content = await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
@@ -446,7 +443,7 @@ async def _download_texture_with_mime(url: str) -> tuple[bytes, str, str] | None
 
 
 def _read_model_bytes(asset_url: str) -> bytes:
-    """Read companion-models/<uid>/<file> GLB bytes from disk."""
+    """从磁盘读取身体模型的 GLB 字节。"""
     parts = asset_url.split("/", 2)
     if len(parts) != 3:
         raise RuntimeError(f"malformed model asset_url: {asset_url}")
@@ -468,7 +465,7 @@ async def preview_garment(
     body_joint_names: list[str] | None = None,
     io_dir: Path | None = None,
 ) -> WardrobePreviewResponse:
-    """Generate geometric unit (garment or accessory) via LLM-Blender pipeline."""
+    """经 LLM-Blender 管线生成几何单元（服装或挂件）。"""
     model = await get_active_model(db, user_id)
     if model is None or not model.asset_url:
         raise RuntimeError("没有找到 3D 身体模型，请先生成身体模型")
@@ -482,7 +479,7 @@ async def preview_garment(
     reference_data_uri = build_data_uri(image_bytes, content_type) if image_bytes else None
     rig_type = model.rig_type or "biped"
     assembly = routing.assembly_json()
-    # The geometry pipeline (minutes) and PBR fan-out (seconds) are independent.
+    # 几何管线（分钟级）与 PBR 扇出（秒级）互不依赖，可并行
     garment_task = asyncio.create_task(
         run_garment_pipeline(
             description=description,
@@ -503,19 +500,15 @@ async def preview_garment(
             description=description, feedback=feedback, rig_type=rig_type, reference_data_uri=reference_data_uri, user_id=user_id, style=model.style or "realistic"
         )
     )
-    # gather returns exceptions so the minute-long garment pipeline is not
-    # cancelled on a seconds-scale PBR failure; the runner's ``finally: rmtree(io_dir)``
-    # is responsible for its own tempdir cleanup regardless of which side raises.
+    # gather 收集异常而非抛出，避免秒级的 PBR 失败取消掉分钟级的服装管线
     garment_result, pbr_result = await asyncio.gather(garment_task, pbr_task, return_exceptions=True)
     if isinstance(garment_result, BaseException):
-        # Cancel PBR if still running so we don't leak its task; raise the garment
-        # exception first since the minute-long pipeline is what the user is waiting on.
+        # 取消仍在跑的 PBR 任务以免泄漏；优先抛服装异常，因为那才是用户在等的长任务
         if not pbr_task.done():
             pbr_task.cancel()
         raise garment_result
     if isinstance(pbr_result, BaseException):
-        # PBR raised but garment succeeded — surface the PBR error (texture channels are
-        # required for the preview to be usable).
+        # 贴图通道是预览可用的必要条件，故 PBR 失败也须上抛
         raise pbr_result
     glb_bytes = garment_result
     res_dict, prompts = pbr_result
@@ -545,12 +538,7 @@ async def confirm_wardrobe_item(
     vision_chain: list | None = None,
     db: AsyncSession | None = None,
 ) -> WardrobeItem:
-    """Write a wardrobe item. Caller pre-resolves ``persona_definition`` and
-    ``vision_chain`` in a short session so the LLM normalisation call does not
-    hold a DB connection across its multi-second await. ``db`` is opened
-    here only for the short write path (add/flush/commit/equip/sync) and
-    must be closed by the caller (or pass ``None`` to let this function
-    manage its own short session)."""
+    """落库一条衣柜条目；调用方须预先解析 persona_definition 与 vision_chain，使数秒的 LLM 规范化调用不占用数据库连接。"""
     res = get_file_path(file_id)
     if res is None:
         raise WardrobeSourceExpiredError(f"temp-media file expired for file_id {file_id}")
@@ -581,19 +569,16 @@ async def confirm_wardrobe_item(
         _resolve_channel(displacement_file_id, "wardrobe_displacement"),
         _resolve_channel(mesh_file_id, "wardrobe_mesh", ext="glb"),
     )
-    # The garment GLB is required when requested — expiry/unreadability must 409,
-    # not silently degrade to a texture row.
+    # 请求了服装 GLB 就必须拿到：过期或不可读须报错，不能悄悄降级成贴图条目
     if mesh_file_id and mesh_url is None:
         raise WardrobeSourceExpiredError(f"temp-media garment GLB expired or unreadable for file_id {mesh_file_id}")
-    # Geometric units carry their kind in assembly_json (texture|garment|accessory);
-    # mesh-less rows with a stray assembly payload degrade to texture.
+    # 几何单元的 kind 记录在 assembly_json 中；无 mesh 却带 assembly 的行一律降级为贴图
     asm = safe_json_loads(assembly_json, default={}) if assembly_json else {}
     asm_kind = asm.get("kind") if isinstance(asm, dict) else None
     kind = asm_kind if mesh_url and asm_kind in ("garment", "accessory") else ("garment" if mesh_url else "texture")
     final_assembly = assembly_json or "{}"
 
-    # LLM call uses db=None + caller-pre-resolved persona/vision_chain so the
-    # multi-second generation does not hold a pool connection.
+    # 传 db=None 并使用调用方预解析的人设/视觉链，使这次数秒的生成不占用连接池
     outfit_desc = await normalize_outfit(chat, raw_input=prompt or name, persona_definition=persona_definition, user_id=user_id, db=None, vision_chain=vision_chain)
 
     item = WardrobeItem(
@@ -633,7 +618,7 @@ async def confirm_wardrobe_item(
 
 
 async def _confirm_write(db: AsyncSession, item: WardrobeItem, *, equip: bool, user_id: int) -> WardrobeItem:
-    """Short write path used when caller did not pass an open session."""
+    """调用方未提供已开会话时使用的短写路径。"""
     if equip:
         await _equip(db, item)
     db.add(item)
@@ -647,7 +632,7 @@ async def _confirm_write(db: AsyncSession, item: WardrobeItem, *, equip: bool, u
 
 
 def slot_of(item: WardrobeItem) -> str:
-    """Resolve mutual-exclusion slot from item kind and assembly metadata."""
+    """由条目类型与装配元数据解析出互斥槽位。"""
     kind = getattr(item, "kind", None) or "texture"
     if kind == "texture" or not item.mesh_url:
         return _SLOT_TEXTURE
@@ -657,12 +642,12 @@ def slot_of(item: WardrobeItem) -> str:
 
 
 async def _query_equipped(db: AsyncSession, user_id: int) -> list[WardrobeItem]:
-    """Equipped rows oldest-first, without read-path side effects (no re-signing)."""
+    """按时间正序返回已装备条目，且不带读路径副作用（不重新签名）。"""
     return (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.equipped.is_(True)).order_by(WardrobeItem.updated_at))).scalars().all()
 
 
 async def _unequip_slot(db: AsyncSession, user_id: int, slot: str, *, exclude_id: int | None = None) -> None:
-    """Unequip existing items occupying the same slot."""
+    """卸下占用同一槽位的其他条目。"""
     equipped = await _query_equipped(db, user_id)
     ids = [i.id for i in equipped if i.id != exclude_id and slot_of(i) == slot]
     if ids:
@@ -670,7 +655,7 @@ async def _unequip_slot(db: AsyncSession, user_id: int, slot: str, *, exclude_id
 
 
 async def _equip(db: AsyncSession, item: WardrobeItem) -> None:
-    """Equip item with same-slot mutual exclusion and gift state resolution."""
+    """装备条目，处理同槽位互斥与礼物状态流转。"""
     await _unequip_slot(db, item.user_id, slot_of(item), exclude_id=item.id)
     item.equipped = True
     if item.gift_state in ("pending", "declined"):
@@ -678,23 +663,20 @@ async def _equip(db: AsyncSession, item: WardrobeItem) -> None:
 
 
 async def _sync_persona_outfit(db: AsyncSession, user_id: int) -> None:
-    """Sync concatenated descriptions of all equipped items to Persona appearance."""
+    """把所有已装备条目的描述拼接同步到人设的着装字段。"""
     equipped = await _query_equipped(db, user_id)
     desc = "；".join(i.outfit_description for i in equipped if i.outfit_description)
     await update_outfit_field(db, user_id, desc)
 
 
 def discard_wardrobe_preview(file_id: str, *, user_id: int) -> bool:
-    """Best-effort delete of an unconfirmed wardrobe preview from temp-media.
-
-    The marker written by ``save_file(meta_marker=f"wardrobe_preview:{user_id}")``
-    must match the caller's user_id — a cross-user DELETE on another user's
-    preview is rejected with ``TempFileMarkerMismatch``."""
+    """尽力删除未确认的换装预览；标记必须与调用方 user_id 一致，跨用户删除会被拒绝。"""
     return temp_file_delete(file_id, required_marker=f"wardrobe_preview:{user_id}")
 
 
 async def equip_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> WardrobeItem:
-    # Check ownership before un-equipping — a bad item_id would otherwise strip the current outfit and 404.
+    """装备指定衣柜条目并同步人设着装。"""
+    # 先校验归属再卸装：否则错误的 item_id 会先把当前装扮卸掉再返回 404
     item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise ValueError("Wardrobe item not found")
@@ -705,12 +687,11 @@ async def equip_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> W
 
 
 async def decline_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> WardrobeItem:
+    """拒收伙伴赠送的待确认礼物条目。"""
     item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         raise ValueError("Wardrobe item not found")
-    # Only pending companion-origin gifts can be declined — guarding here
-    # prevents accidentally stamping "declined" on a user-created or already
-    # resolved item.
+    # 只有伙伴赠送且待确认的条目可拒收，避免误把用户自建或已处理的条目标记为 declined
     if item.origin != "companion" or item.gift_state != "pending":
         raise ValueError("Wardrobe item is not a pending gift")
     item.gift_state = "declined"
@@ -720,14 +701,15 @@ async def decline_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) ->
 
 
 async def delete_wardrobe_item(db: AsyncSession, user_id: int, item_id: int) -> bool:
-    # Capture paths before delete — nothing sweeps orphaned companion-assets.
+    """删除衣柜条目及其关联的资源文件。"""
+    # 删行前先取出资源路径——没有其他机制会清扫孤儿 companion-assets 文件
     item = (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == user_id, WardrobeItem.id == item_id))).scalar_one_or_none()
     if item is None:
         return False
     paths = list(_iter_companion_asset_paths(item))
     was_equipped = item.equipped
     await db.delete(item)
-    # Refresh the persona outfit field from the surviving equipped set.
+    # 依据剩余的已装备集合刷新人设着装字段
     if was_equipped:
         await _sync_persona_outfit(db, user_id)
     else:

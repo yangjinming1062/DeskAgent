@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
-# Bounds: UI list pagination + length cap on edit.
+# 界限：列表分页上限与编辑时的长度上限
 _LIST_DEFAULT_LIMIT = 100
 _LIST_MAX_LIMIT = 500
 
@@ -20,7 +20,7 @@ async def _owned(db: AsyncSession, user_id: int, memory_id: int) -> Memory | Non
 
 
 async def upsert_slotted_memory(db: AsyncSession, user_id: int, context: str, content: str, tags: str) -> None:
-    """Caller is responsible for content caps and tag formatting."""
+    """按 context 插入或更新槽位记忆；内容长度限制与标签格式由调用方负责。"""
     existing = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == context))).scalar_one_or_none()
     if existing is not None:
         existing.content = content
@@ -44,12 +44,7 @@ def _row_to_dict(row: Memory) -> dict[str, Any]:
 async def list_memories(
     db: AsyncSession, user_id: int, *, kind: str | None = None, tag: str | None = None, q: str | None = None, limit: int = _LIST_DEFAULT_LIMIT
 ) -> list[dict[str, Any]]:
-    """Return the user's memories, optionally filtered.
-
-    ``kind`` ∈ {recall, auto_inject, user_profile, interaction_stats};
-    ``tag`` must be in ``RECALL_TAGS`` when given; ``q`` does a substring
-    match on ``content`` and ``context``.
-    """
+    """列出用户记忆，可按 kind / tag 过滤，q 对 content 与 context 做子串匹配。"""
     if kind is not None and kind not in KIND_TO_PREFIX:
         raise ValueError(f"kind must be one of {sorted(KIND_TO_PREFIX)}")
     if tag is not None and tag not in RECALL_TAGS:
@@ -61,8 +56,7 @@ async def list_memories(
     if kind is not None:
         stmt = stmt.where(Memory.context.like(KIND_TO_PREFIX[kind] + "%"))
     if tag:
-        # tags is JSON; substring match is good enough for the UI (each row
-        # carries ≤ a handful of short tokens).
+        # tags 是 JSON 字符串；每行只有寥寥数个短 token，子串匹配足够 UI 使用
         stmt = stmt.where(Memory.tags.ilike(f'%"{tag}"%'))
     if q:
         like = f"%{q}%"
@@ -78,15 +72,7 @@ async def get_memory(db: AsyncSession, user_id: int, memory_id: int) -> dict[str
 
 
 async def update_memory(db: AsyncSession, user_id: int, memory_id: int, *, content: str) -> dict[str, Any] | None:
-    """Update ``content`` only. ``context``/tags cannot change here — that
-    requires writing a new row (auto_inject slots auto-upsert by design).
-
-    The cap is context-aware: auto_inject slots are 500 chars (the LLM
-    write path enforces this too — keeping the admin path consistent
-    matters because partial unique index + later consolidator both
-    rely on auto_inject slots being short). All other rows use the
-    recall-pool cap.
-    """
+    """只更新 content；长度上限随 context 而定（auto_inject 槽位必须短，唯一索引与后续整合逻辑依赖这一点）。"""
     content = (content or "").strip()
     if not content:
         raise ValueError("content must be non-empty")
@@ -112,12 +98,7 @@ async def delete_memory(db: AsyncSession, user_id: int, memory_id: int) -> bool:
 
 
 async def memory_counts(db: AsyncSession, user_id: int) -> dict[str, int]:
-    """Bucket the user's rows by namespace prefix. Row set is bounded
-    (≈5 auto_inject + ≤50 recall + ≤5 user_profile + ~1 interaction_stats
-    per active day) so a Python pass is cheaper than a hand-rolled SQL
-    CASE-WHEN aggregate. Rows with NULL or unknown context bucket under
-    ``"other"``.
-    """
+    """按命名空间前缀统计记忆条数；行数本就有界，Python 侧聚合比手写 SQL CASE-WHEN 更划算。"""
     counts: dict[str, int] = dict.fromkeys(KIND_TO_PREFIX, 0)
     counts[_OTHER_BUCKET] = 0
     for (ctx,) in (await db.execute(select(Memory.context).where(Memory.user_id == user_id))).all():

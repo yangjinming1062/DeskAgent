@@ -8,10 +8,7 @@ from .ipc import await_future, discard_user, dispatch_user_event, resolve_future
 from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError, redact_message
 from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, SessionRuntimeInfo, ToolsSyncResult, new_runtime_session, runtime_info_snapshot
 
-# ``handlers`` pulls the entire service graph (chat orchestrator + llm + tools),
-# so it is deferred via ``__getattr__`` to keep this package importable during
-# the chat<->gateway cycle (handlers imports services.chat, which must not
-# re-enter gateway's __init__ before it finishes).
+# handlers 会拉起整个服务图（chat orchestrator + llm + tools），通过 __getattr__ 延迟导入，避免 chat<->gateway 循环（handlers 依赖 services.chat，不能让它在 gateway __init__ 完成前再次进入）。
 _HANDLER_NAMES = frozenset({"handle_chat_websocket"})
 
 __all__ = [

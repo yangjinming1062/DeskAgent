@@ -11,9 +11,7 @@ import modules
 import modules.media.models  # noqa: F401
 from common import ModelBase
 
-# All async tests and fixtures share one session-scoped event loop: the
-# session-scoped sqlite_engine (StaticPool = one aiosqlite connection) cannot
-# hop between function-scoped loops.
+# 所有 async 测试与 fixture 共享同一个 session 级事件循环：StaticPool 单连接不能在 function 级循环之间跳跃。
 pytest_plugins = []
 
 
@@ -21,13 +19,7 @@ pytest_plugins = []
 async def sqlite_engine():
     engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
 
-    # aiosqlite inherits the pysqlite quirks (SQLAlchemy docs "Serializable
-    # isolation / Savepoints / Transactional DDL"): with the driver's default
-    # implicit BEGIN/COMMIT, ``RELEASE SAVEPOINT`` on the outermost savepoint
-    # commits the data, so the outer-transaction rollback in ``_patch_db``
-    # becomes a no-op and committed rows leak between tests. Disabling the
-    # driver-level transaction handling and emitting our own ``BEGIN`` makes
-    # savepoints real again.
+    # aiosqlite 继承 pysqlite 怪癖（SQLAlchemy 文档 "Serializable isolation / Savepoints / Transactional DDL"）：驱动默认隐式 BEGIN/COMMIT 时，最外层 savepoint 的 ``RELEASE SAVEPOINT`` 会提交数据，让 ``_patch_db`` 的回滚失效、行在测试间泄漏。关掉驱动事务处理、自己发 ``BEGIN`` 才能让 savepoint 真正生效。
     @event.listens_for(engine.sync_engine, "connect")
     def _sqlite_serializable(dbapi_connection, _record):
         dbapi_connection.isolation_level = None
@@ -36,27 +28,20 @@ async def sqlite_engine():
     def _sqlite_begin(connection):
         connection.exec_driver_sql("BEGIN")
 
-    # Production Postgres has partial unique indexes on memories (see
-    # backend/alembic/versions/0001_baseline.py) — only the ``<kind>:*``
-    # contexts are uniquely keyed, so the read-then-write paths can persist
-    # both rows across write boundaries. Mirrored here so fixtures exercise
-    # the same upsert contract.
+    # 生产 Postgres 在 memories 上有 partial unique 索引（见 backend/alembic/versions/0001_baseline.py）：只有 ``<kind>:*`` 上下文才被唯一约束，所以读后写路径能在写边界间持久化两行。fixture 里镜像一份，使 upsert 契约一致。
     ddls = (
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_user_context ON memories (user_id, context) WHERE context LIKE 'user_profile:%'",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_auto_inject_slot ON memories (user_id, context) WHERE context LIKE 'auto_inject:%'",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_inferred_profile_slot ON memories (user_id, context) WHERE context LIKE 'inferred_profile:%'",
         "CREATE UNIQUE INDEX IF NOT EXISTS uq_memories_diary_day ON memories (user_id, context) WHERE context LIKE 'diary:%'",
-        # SQLite ignores ``DESC`` in older builds; the index is still useful
-        # for the partial scan even without the explicit order.
+        # 老版 SQLite 忽略 ``DESC``，但索引对部分扫描仍有价值。
         "CREATE INDEX IF NOT EXISTS ix_memories_recall_user_updated ON memories (user_id, updated_at) WHERE context LIKE 'recall:%'",
     )
     async with engine.begin() as conn:
         await conn.run_sync(ModelBase.metadata.create_all)
         for ddl in ddls:
             await conn.execute(text(ddl))
-    # ``_signing_key()`` raises when the key is empty and test mode is off;
-    # flip the flag so tests that exercise companion asset URLs don't need to
-    # call ``_enable_test_signer_key`` themselves.
+    # ``_signing_key()`` 在 key 为空且未开 test 模式时抛错；flip 标志让走 companion asset URL 的测试不用各自调 ``_enable_test_signer_key``。
     from services.companion import asset_store
 
     asset_store._enable_test_signer_key()
@@ -65,15 +50,7 @@ async def sqlite_engine():
 
 @pytest.fixture(autouse=True)
 async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
-    """All DB access goes to a SAVEPOINT in in-memory SQLite.
-
-    Each test gets its own connection with a SAVEPOINT.  The outer
-    transaction is never committed — after the test it is rolled back,
-    guaranteeing zero side-effects on other tests.
-    join_transaction_mode="create_savepoint" makes session commit/rollback
-    operate on nested savepoints, so no event listener is needed to restart
-    them.
-    """
+    """所有 DB 访问走内存 SQLite 上的 SAVEPOINT：每个测试独占连接，事务永不提交、测试结束回滚，保证彼此零副作用。"""
     import components
 
     monkeypatch.setattr(components.SETTINGS, "data_dir", str(tmp_path))
@@ -149,13 +126,7 @@ def SessionLocal(_patch_db) -> async_sessionmaker:
 
 
 async def _seed_user(SessionLocal, username="testuser"):
-    """Insert a user + active LoginRecord + model config.
-
-    Returns a dict with:
-      - ``token``: a valid JWT (created in-process, no HTTP round-trip).
-      - ``activation_code``: base64url code for tests that exercise
-        ``POST /api/user/activate`` directly.
-    """
+    """插入用户 + active LoginRecord + 模型配置，返回 ``{"token", "activation_code"}``（activation_code 仅给直走 ``POST /api/user/activate`` 的测试用）。"""
     from modules.auth import (
         LoginRecord,
         User,
@@ -166,7 +137,6 @@ async def _seed_user(SessionLocal, username="testuser"):
         hash_activation_token,
     )
 
-    # Retrieve real credentials from the environment for unmocked testing
     mimo_key = os.getenv("MIMO_API_KEY", "sk-fake-for-unit-tests")
     mimo_url = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
 
@@ -220,10 +190,7 @@ async def test_app(_patch_db):
 
     from api.v1 import chat, llm, media, sessions, user
 
-    # ``/health`` is mounted at app root in ``main.py`` since commit 3963571
-    # (moved off the /api prefix so Docker HEALTHCHECK / k8s livenessProbe
-    # hit 200). The conftest's ``test_app`` fixture only assembles the
-    # /api routers; tests that need /health should mount it explicitly.
+    # ``/health`` 在 ``main.py`` 自 3963571 起挂在 app 根（脱离 /api 前缀，让 Docker HEALTHCHECK / k8s livenessProbe 命中 200）；``test_app`` 只装配 /api 路由，需要 /health 的测试自行挂上。
     for _r in (user.router, chat.router, sessions.router, media.router, llm.router):
         app.include_router(_r)
     yield app
@@ -233,9 +200,7 @@ async def test_app(_patch_db):
 async def test_client(test_app):
     import httpx
 
-    # ASGITransport does not run the app lifespan — tests never relied on it
-    # (test_app assembles its own bare FastAPI), so this matches the sync
-    # TestClient behavior it replaces.
+    # ASGITransport 不跑 app lifespan：测试本就不依赖它（test_app 自己装了一个裸 FastAPI），与所替代的同步 TestClient 行为一致。
     transport = httpx.ASGITransport(app=test_app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
@@ -243,31 +208,21 @@ async def test_client(test_app):
 
 @pytest.fixture()
 async def test_token(_patch_db):
-    """Create a valid JWT with an active LoginRecord in the test DB."""
+    """在测试 DB 里生成带 active LoginRecord 的有效 JWT。"""
     _, SessionLocal = _patch_db
     return (await _seed_user(SessionLocal))["token"]
 
 
 @pytest.fixture()
 async def test_user_credentials(_patch_db):
-    """Seed a user and return ``{"token", "activation_code"}``.
-
-    Tests that exercise ``POST /api/user/activate`` directly should use this
-    fixture; tests that only need a bearer token should use ``test_token``.
-    """
+    """种入用户并返回 ``{"token", "activation_code"}``。需要走 ``POST /api/user/activate`` 的测试用它；只要 bearer token 的用 ``test_token``。"""
     _, SessionLocal = _patch_db
     return await _seed_user(SessionLocal)
 
 
 @pytest.fixture()
 async def ws_ticket(_patch_db):
-    """Create a 60-second ``purpose: "ws"`` JWT for the WS handshake.
-
-    ARCHITECTURE.md §7.1: the long-lived bearer never reaches the WS
-    path. Tests that exercise the WS endpoint should use this fixture
-    and pass ``?ticket=...`` rather than minting a bearer and passing
-    ``?token=...``.
-    """
+    """生成 60 秒 ``purpose: "ws"`` JWT 给 WS 握手。ARCHITECTURE.md §7.1：长效 bearer 不走 WS 路径，WS 端点测试应传 ``?ticket=...``，不要铸 bearer 再 ``?token=...``。"""
     from sqlalchemy import select
 
     from modules.auth import User, create_access_token
@@ -299,16 +254,8 @@ def _default_image_to_3d_settings(monkeypatch):
     monkeypatch.setattr(SETTINGS, "image_to_3d_provider", "tripo")
 
 
-# ── E2E test auto-skip ──────────────────────────────────────────────
-
-
 def pytest_collection_modifyitems(config, items):
-    """Auto-skip e2e tests when their required API-key env is not set.
-
-    Bare ``@pytest.mark.e2e`` requires ``MIMO_API_KEY``; the parametrized form
-    ``@pytest.mark.e2e("HUNYUAN_API_KEY")`` requires exactly the listed env
-    vars, so opt-in live tests never run — or cost — by default.
-    """
+    """缺少所需 API-key 环境变量时自动跳过 e2e：裸 ``@pytest.mark.e2e`` 要 ``MIMO_API_KEY``；形参形式 ``@pytest.mark.e2e("HUNYUAN_API_KEY")`` 要所列环境变量，所以默认不会跑/不会花钱。"""
     for item in items:
         marker = item.get_closest_marker("e2e")
         if marker is None:

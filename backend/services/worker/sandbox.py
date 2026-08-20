@@ -13,14 +13,12 @@ logger = get_logger(__name__)
 CONTAINER_LABEL = "spiritagent-worker"
 CONTAINER_PREFIX = "spiritagent-job-"
 
-# Single source of truth for the sandbox tag. docker-compose.yml's
-# blender-sandbox service must carry the same literal (drift-guarded by
-# test_compose_image_tag_matches_sandbox_constant).
+# sandbox tag 的唯一真相源。docker-compose.yml 的 blender-sandbox 服务必须使用相同字面量（由 test_compose_image_tag_matches_sandbox_constant 防漂移）。
 SANDBOX_IMAGE = "spiritagent-blender-sandbox:latest"
 _SANDBOX_BUILD_TIMEOUT: float = 3600.0
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
-# Filesystems whose mountinfo "source" is not a daemon-visible path.
+# mountinfo 中 "source" 不是 daemon 可见路径的文件系统类型。
 _VIRTUAL_FS = {"overlay", "tmpfs", "proc", "sysfs", "cgroup", "cgroup2", "devpts", "mqueue", "shm"}
 _CONTAINER_MARKERS = (Path("/.dockerenv"), Path("/run/.containerenv"))
 _MOUNTINFO = Path("/proc/self/mountinfo")
@@ -31,15 +29,7 @@ def _unescape_mountinfo(field: str) -> str:
 
 
 def _data_dir_on_daemon(data_root: Path) -> str:
-    """data_root as the docker daemon sees it — the -v mount source prefix.
-
-    Bare-metal worker shares the daemon's filesystem, so the local path is
-    already daemon-visible. A containerized worker's paths aren't, but the
-    kernel records the daemon-supplied source of the data_dir bind mount in
-    /proc/self/mountinfo; translating it back to a daemon-side path is exact
-    except for exotic setups (remote DOCKER_HOST), which
-    blender_sandbox_host_data_root overrides.
-    """
+    """docker daemon 视角下的 data_root——-v 挂载源前缀。裸机 worker 与 daemon 共享文件系统，本地路径已对 daemon 可见；容器化 worker 的路径不是，但内核在 /proc/self/mountinfo 记下 data_dir bind mount 的 daemon 源；除远程 DOCKER_HOST 等特殊情况（由 blender_sandbox_host_data_root 覆盖）外，反译 daemon 侧路径是精确的。"""
     if SETTINGS.blender_sandbox_host_data_root:
         return SETTINGS.blender_sandbox_host_data_root.rstrip("/")
     if not any(marker.exists() for marker in _CONTAINER_MARKERS):
@@ -57,16 +47,14 @@ def _data_dir_on_daemon(data_root: Path) -> str:
         left, right = line.split(" - ", 1)
         fields = left.split()
         parts = right.split()
-        # fields: ID parent major:minor bind_root mount_point options —
-        # a bind of a subpath splits the daemon path across source+bind_root.
+        # fields: ID parent major:minor bind_root mount_point options——
+        # 子路径 bind 会把 daemon 路径拆到 source+bind_root。
         if len(fields) < 6 or len(parts) < 2 or parts[0] in _VIRTUAL_FS:
             continue
         source, bind_root, point = _unescape_mountinfo(parts[1]), fields[3], fields[4]
         if not data_root.is_relative_to(Path(point)) or len(point) <= len(best_point):
             continue
-        # Docker Desktop (WSL2) shares host drives as 9p/drvfs mounts whose
-        # source is the bare drive (C:\); the daemon-side equivalent is
-        # /run/desktop/mnt/host/<drive>/<bind_root>.
+        # Docker Desktop（WSL2）以 9p/drvfs 挂载宿主机盘，source 是裸盘符（如 C:\）；daemon 侧等价为 /run/desktop/mnt/host/<盘符>/<bind_root>。
         if drive := re.fullmatch(r"([A-Za-z]):[\\/]+", source):
             best_path = f"/run/desktop/mnt/host/{drive.group(1).lower()}{bind_root}"
         elif not source.startswith("/"):
@@ -81,14 +69,10 @@ def _data_dir_on_daemon(data_root: Path) -> str:
 
 
 def _docker_cmd(container: str, io_dir: Path, script_name: str, args: Sequence[str]) -> list[str]:
-    """Build the sandboxed `docker run` argv. Args carrying absolute paths
-    under io_dir are remapped to /io so the container sees one self-contained
-    workspace; anything outside io_dir stays verbatim (and will fail loudly
-    inside the container)."""
+    """构造沙箱化 docker run argv：携带 io_dir 内绝对路径的 args 重映射到 /io，让容器看到一个自洽工作区；io_dir 外的路径保持原样（容器内会明显报错）。"""
     io_root = io_dir.resolve()
     data_root = Path(SETTINGS.data_dir).resolve()
-    # docker -v source paths resolve on the HOST daemon — only data_dir is a
-    # host bind mount, so anything else would silently mount as an empty dir.
+    # docker -v source 在宿主机 daemon 解析——只有 data_dir 是宿主 bind mount，其他路径会被静默挂成空目录。
     if not io_root.is_relative_to(data_root):
         raise RuntimeError(f"sandbox io_dir must live under data_dir, got {io_root}")
     mount_source = f"{_data_dir_on_daemon(data_root)}/{io_root.relative_to(data_root).as_posix()}"
@@ -127,8 +111,7 @@ def _bare_cmd(io_dir: Path, script_name: str, args: Sequence[str]) -> list[str]:
 
 
 async def _kill_container(container: str) -> None:
-    # Killing the docker CLI client leaves the container running — the daemon
-    # must be told explicitly, else a timed-out Blender keeps burning CPU.
+    # 只 kill docker CLI 客户端不会停容器——必须显式告诉 daemon，否则超时的 Blender 会继续烧 CPU。
     try:
         proc = await asyncio.create_subprocess_exec(SETTINGS.blender_sandbox_docker_binary, "kill", container, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
     except FileNotFoundError:
@@ -137,10 +120,7 @@ async def _kill_container(container: str) -> None:
 
 
 async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, timeout: float, name_hint: str = "adhoc") -> tuple[int | None, str]:
-    """Execute headless Blender on ``io_dir/<script_name>`` with ``args``.
-    Returns ``(returncode, combined stdout+stderr)``; returncode 124 marks the
-    timeout kill. Raises FileNotFoundError when the blender/docker binary is
-    missing so callers keep their existing not-found handling."""
+    """在 io_dir/<script_name> 上以 args 跑无头 Blender：返回 (returncode, stdout+stderr 合并串)；returncode 124 表示超时 kill。blender/docker 二进制缺失时抛 FileNotFoundError，调用方保留原有的 not-found 处理。"""
     container: str | None = None
     if SETTINGS.blender_sandbox_enabled:
         container = f"{CONTAINER_PREFIX}{name_hint}-{uuid.uuid4().hex[:12]}"
@@ -149,8 +129,7 @@ async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, ti
         cmd = _bare_cmd(io_dir, script_name, args)
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     try:
-        # communicate() drains both pipes while waiting — a bare wait() would
-        # deadlock once Blender's log output fills the OS pipe buffer.
+        # communicate() 在等待时排空两路管道——裸 wait() 会在 Blender 日志填满 OS pipe 缓冲后死锁。
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except TimeoutError:
         if container:
@@ -167,11 +146,7 @@ async def run_blender(io_dir: Path, script_name: str, args: Sequence[str], *, ti
 
 
 async def ensure_sandbox_image() -> bool:
-    """Worker-startup guard: build the sandbox image when the daemon doesn't
-    have it, so a fresh deployment doesn't fail every Blender job on a missing
-    image. Returns True when the image is usable (or the sandbox is disabled);
-    a failed build only logs — jobs then fail per-run in their recoverable
-    states instead of the worker crash-looping."""
+    """worker 启动守门——没有 sandbox image 就 build，避免新部署因为缺镜像让每个 Blender job 都失败：镜像可用（或 sandbox 关闭）返回 True；build 失败仅记日志，让 job 在可恢复状态下逐次失败而非让 worker 崩循环。"""
     if not SETTINGS.blender_sandbox_enabled:
         return True
     binary = SETTINGS.blender_sandbox_docker_binary
@@ -187,10 +162,7 @@ async def ensure_sandbox_image() -> bool:
         logger.error("Dockerfile not found; cannot build the sandbox image")
         return False
     logger.info("blender sandbox image missing; building", extra={"image": SANDBOX_IMAGE})
-    # The sandbox target's stage chain COPYs nothing, so an empty context
-    # suffices and the build only needs the Dockerfile + daemon-side layer
-    # cache. Killing the CLI on timeout leaves the daemon-side build running
-    # (same tradeoff as _kill_container) — the next startup re-checks.
+    # sandbox target 的 stage 链不 COPY 任何东西，空 context 就够——build 只需 Dockerfile + daemon 侧层缓存。超时 kill CLI 会让 daemon 侧 build 继续跑（与 _kill_container 同权衡）——下次启动再检查。
     with tempfile.TemporaryDirectory() as ctx:
         proc = await asyncio.create_subprocess_exec(
             binary, "build", "-f", str(dockerfile), "--target", "sandbox", "-t", SANDBOX_IMAGE, ctx, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
@@ -210,9 +182,7 @@ async def ensure_sandbox_image() -> bool:
 
 
 async def sweep_orphan_containers() -> int:
-    """Remove sandbox containers left behind by a crashed worker run (matched
-    by label; safe to run while live jobs are queued because a healthy worker
-    only sweeps once at startup, before claiming anything)."""
+    """清理 worker 崩溃留下的 sandbox 容器（按 label 匹配；活 job 入队时跑也安全，因为健康 worker 只在启动时、claim 任何东西前清一次）。"""
     if not SETTINGS.blender_sandbox_enabled:
         return 0
     binary = SETTINGS.blender_sandbox_docker_binary

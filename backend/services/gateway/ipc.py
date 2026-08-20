@@ -25,7 +25,7 @@ def resolve_future(user_id: int, call_id: str, result: str) -> bool:
 
 
 def discard_user(user_id: int) -> int:
-    """Drop all pending futures for ``user_id``; returns the count removed."""
+    """丢弃 user_id 的所有 pending future，返回移除数量。"""
     keys = [k for k in _PENDING if k[0] == user_id]
     for k in keys:
         fut = _PENDING.pop(k, None)
@@ -42,14 +42,7 @@ def discard_call(user_id: int, call_id: str) -> asyncio.Future | None:
 
 
 async def await_future(user_id: int, call_id: str, *, timeout: float | None = None) -> str:
-    """Wait for the runner to resolve ``call_id``, bounded by ``timeout`` seconds.
-
-    On timeout, returns a synthetic JSON-RPC -32603 Internal error so the
-    chat loop never hangs on a dead desktop. The future is cancelled and
-    popped so a late tool_result from the runner cannot resurrect a dead
-    turn. The shape is ``{code, message}`` (not ``{error}``) so downstream
-    consumers can pattern-match on the standard JSON-RPC error code.
-    """
+    """等待 runner 解析 call_id，超时上限为 timeout 秒；超时返回合成的 JSON-RPC -32603 让 chat loop 不会因桌面端死亡而卡住，同时取消并 pop 该 future，避免迟到的 tool_result 复活已死的 turn；返回 {code, message}（非 {error}）以匹配标准错误码。"""
     effective_timeout = timeout if timeout is not None else SETTINGS.ipc_future_timeout_seconds
     fut = create_future(user_id, call_id)
     try:
@@ -62,26 +55,10 @@ async def await_future(user_id: int, call_id: str, *, timeout: float | None = No
 
 
 async def dispatch_user_event(user_id: int, event_type: str, payload: dict, *, dispatcher: JsonRpcDispatcher, timeout: float | None = None) -> dict:
-    """Emit a JSON-RPC event to the desktop and await a matching ``tool.result``.
-
-    Used by handlers like ``reload.mcp`` that need to invoke a Runner-side
-    capability the chat tool loop doesn't model. The desktop forwards the
-    event to the Runner, awaits its response, and ships it back via the
-    existing ``tool.result`` JSON-RPC request — keyed by the ``call_id`` we
-    inject into the outbound payload.
-
-    Returns the decoded JSON body of the tool result, or ``{"raw": "<str>"}``
-    when the runner replied with a non-JSON string, or
-    ``{"code": INTERNAL_ERROR, "message": "<timeout reason>"}`` when the wait
-    times out (matching ``await_future`` semantics).
-    """
+    """向桌面发 JSON-RPC 事件并等待匹配的 tool.result（用于 reload.mcp 等 chat tool loop 未建模的 Runner 能力，桌面转发给 Runner 后通过现有 tool.result 带回响应，以注入到出站 payload 的 call_id 关联）；返回 tool result 的 JSON 解码体，非 JSON 字符串返回 {"raw": "<str>"}，超时返回 {"code": INTERNAL_ERROR, "message": "<原因>"}（语义同 await_future）。"""
     call_id = new_request_id()
     outbound = {**payload, "call_id": call_id}
-    # ``await_future`` calls ``create_future`` synchronously before its
-    # ``await`` — same coroutine, no yield point in between — so the future
-    # is in _PENDING before the runner can possibly see the event. The old
-    # explicit ``create_future`` here was redundant and got overwritten by
-    # await_future's own registration.
+    # await_future 在 await 之前同步调用 create_future，同协程中间没有 yield 点，所以 future 在 runner 看到事件前已注册到 _PENDING。原先这里显式 create_future 是多余的，会被 await_future 自己的注册覆盖。
     await dispatcher.push_event(event_type, outbound)
     raw = await await_future(user_id, call_id, timeout=timeout)
     decoded = safe_json_loads(raw)

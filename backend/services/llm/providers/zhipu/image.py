@@ -9,12 +9,7 @@ from ..http import download_as_b64, get_http
 
 
 class ZhipuImageGenProvider(ImageGenProvider):
-    """Image generation via Zhipu's ``POST /images/generations``.
-
-    Model ``glm-image`` (default) or ``cogview-4-250304``.
-    Returns image URLs (30-day temporary links); we download and re-encode
-    as base64 so callers don't need to handle external URLs.
-    """
+    """通过 Zhipu 的 POST /images/generations 生图（默认 glm-image，可选 cogview-4-250304）；返回 30 天临时 URL，统一下载并重编码为 base64 以屏蔽外部 URL。"""
 
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "glm-image"}
@@ -34,8 +29,7 @@ class ZhipuImageGenProvider(ImageGenProvider):
         resp = await self._client.post("/images/generations", json=payload)
         body = raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
-        # Download images in parallel — one anonymous client, no Bearer header
-        # leaking to the CDN (mirrors VideoGenProvider.download in base.py).
+        # 并行下载 CDN 图，使用匿名客户端防止 Bearer 透出到 CDN（与 base.py 中 VideoGenProvider.download 保持一致）。
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as cdn:
             urls = [u for item in body.get("data") or [] if (u := item.get("url"))]
             b64s = await asyncio.gather(*(download_as_b64(cdn, u) for u in urls))

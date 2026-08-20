@@ -10,7 +10,7 @@ MAX_ATTEMPTS = 3
 
 
 async def enqueue(kind: str, user_id: int, payload: dict) -> int:
-    """Insert a queued row; the render_jobs_notify trigger wakes PG workers."""
+    """插入一行 queued；render_jobs_notify 触发器唤醒 PG worker。"""
     async with session_scope() as db:
         job = RenderJob(user_id=user_id, kind=kind, payload=payload)
         db.add(job)
@@ -19,13 +19,7 @@ async def enqueue(kind: str, user_id: int, payload: dict) -> int:
 
 
 async def claim_batch(worker_id: str, limit: int = 1) -> list[RenderJob]:
-    """Atomically claim up to ``limit`` queued jobs for ``worker_id``.
-
-    The UPDATE re-checks status='queued' so the claim is a CAS even on
-    dialects without FOR UPDATE SKIP LOCKED (SQLite tests); on Postgres the
-    locked candidate subquery additionally keeps concurrent workers from
-    blocking on each other.
-    """
+    """原子性认领最多 limit 个 queued job 给 worker_id：UPDATE 再次检查 status='queued' 让它在不支持 FOR UPDATE SKIP LOCKED 的方言（SQLite 测试）下也表现为 CAS；Postgres 上的 locked candidate 子查询还顺便避免并发 worker 互相阻塞。"""
     async with session_scope() as db:
         candidates = (
             select(RenderJob.id)
@@ -54,9 +48,7 @@ async def claim_batch(worker_id: str, limit: int = 1) -> list[RenderJob]:
 
 
 async def finish(job_id: int, worker_id: str, result: dict | None = None) -> None:
-    # The claim predicate mirrors claim_batch's CAS: a job reclaimed after a
-    # stale timeout now belongs to another worker — a late finish here must
-    # not clobber the replacement's processing row.
+    # 谓词镜像 claim_batch 的 CAS：被超时回收重领的 job 已属于别的 worker——此处迟到的 finish 不能踩坏新主人的 processing 行。
     async with session_scope() as db:
         await db.execute(
             update(RenderJob)
@@ -77,8 +69,7 @@ async def fail(job_id: int, worker_id: str, error: str) -> None:
 
 
 async def requeue_stale(stale_seconds: int) -> int:
-    """Recover processing rows whose claimant died: back to queued, or failed
-    when the attempts budget is spent. Returns the number of recovered rows."""
+    """回收认领者已死的 processing 行：回到 queued，或在尝试预算耗尽时标 failed。返回回收数量。"""
     async with session_scope() as db:
         cutoff = utc_now() - timedelta(seconds=stale_seconds)
         expired = select(RenderJob.id).where(RenderJob.status == "processing", RenderJob.claimed_at < cutoff)

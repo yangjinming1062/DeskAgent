@@ -26,9 +26,7 @@ logger = get_logger(__name__)
 
 def _conversation_to_session_info(conv: Conversation, msg_count: int, input_tok: int, output_tok: int, tool_count: int) -> DesktopSessionInfo:
     preview = None
-    # ``conv.messages`` must be eagerly loaded by the caller (selectinload)
-    # — otherwise iterating it here would issue N+1 SELECTs per row in
-    # the list / search results.
+    # 调用方需用 selectinload 预加载 conv.messages，否则此处遍历会对列表/搜索每行触发 N+1 SELECT。
     for msg in conv.messages:
         if msg.role == "user" and msg.content:
             preview = msg.content[:SESSION_PREVIEW_MAX_CHARS]
@@ -54,7 +52,7 @@ def _conversation_to_session_info(conv: Conversation, msg_count: int, input_tok:
 
 
 async def _get_conversation_or_404(db: AsyncSession, user: User, session_id: str) -> Conversation:
-    """Fetch a Conversation by id, enforcing ownership; raises 404 on miss."""
+    """按 id 查会话并强制归属校验，未命中抛 404。"""
     conv = await Conversation.by_session_id(db, session_id, user_id=user.id)
     if conv is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -73,12 +71,9 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionListResponse:
     user, _ = current
-    # selectinload(Conversation.messages) so _conversation_to_session_info can
-    # walk conv.messages to compute ``preview`` without an N+1 SELECT per row.
-    # Exclude internal cron scratchpad conversations from user-facing lists.
+    # selectinload 让 _conversation_to_session_info 遍历 conv.messages 取 preview 时避免每行 N+1 SELECT；排除内部 cron scratchpad 会话。
     q = select(Conversation).options(selectinload(Conversation.messages)).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
-    # Subquery for message counts
     msg_stats = (
         select(
             Message.conversation_id,
@@ -95,34 +90,20 @@ async def list_sessions(
     q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
     q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
 
-    # The aggregate columns must ride along in the SELECT — ``.scalars()``
-    # would otherwise drop them and every count would read back as 0.
+    # 聚合列必须随 SELECT 返回；否则 .scalars() 会丢掉它们，所有计数读回 0。
     q = q.add_columns(msg_stats.c.msg_count, msg_stats.c.input_tok, msg_stats.c.output_tok, tool_stats.c.tool_count)
 
     if archived == "only":
-        # Self-referencing parent_id marks archived; real lineage (parent_id
-        # pointing at a different conversation) is a subagent and stays visible.
+        # 自指 parent_id 标记归档；parent_id 指向其他会话的是子代理，仍可见。
         q = q.where(Conversation.parent_id == Conversation.id)
     elif archived == "exclude":
-        # Default (include_subagents=False): only top-level conversations —
-        # rows where parent_id IS NULL. Subagents (parent_id pointing at a
-        # different conversation) are hidden from the sidebar by default.
-        # Self-archived rows (parent_id == self.id) are also excluded by
-        # ``is_(None)``, so archived main conversations stay hidden here.
-        # Opt-in (include_subagents=True): show main + subagents, still
-        # hiding self-archived rows.
+        # 默认（include_subagents=False）仅 parent_id IS NULL 的顶层会话；自指归档行也被 is_(None) 排除。开启 include_subagents=True 显示主+子代理，但仍隐藏自指归档行。
         if include_subagents:
             q = q.where((Conversation.parent_id.is_(None)) | (Conversation.parent_id != Conversation.id))
         else:
             q = q.where(Conversation.parent_id.is_(None))
-    # Any other value: the Literal validator rejects unknown ``archived``
-    # at the HTTP boundary with 422, so this fallthrough is unreachable in
-    # practice — left as a no-op for future string inputs.
-    # ``include_subagents`` only affects ``archived="exclude"``; the
-    # ``"only"`` and ``"include"`` paths ignore it (self-archived rows and
-    # all rows respectively), which is the intended semantics — subagent
-    # navigation lives on the search endpoint and direct URL, not in the
-    # ``archived`` toggle UI.
+    # 其他 archived 取值由 Literal 在 HTTP 边界 422 拦截，此处 fallthrough 实际不可达，保留 no-op 供未来扩展。
+    # include_subagents 仅作用于 archived="exclude"；"only"/"include" 路径忽略它（子代理导航走搜索端点与直链，不在 archived 切换 UI 内）。
 
     if min_messages > 0:
         q = q.where(func.coalesce(msg_stats.c.msg_count, 0) >= min_messages)
@@ -149,25 +130,17 @@ async def search_sessions(
     current: tuple[User, object] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionSearchResponse:
-    """Search sessions by title, conversation id, or any message in the conversation.
-
-    Per-user, capped at 20 hits (most recently updated first). ``q`` is
-    required (empty/missing returns 422) and length-capped.
-    """
+    """按标题、会话 id 或会话内任意消息检索；每用户最多 20 条（按最近活跃排序），q 必填且限长。"""
     user, _ = current
 
-    # Cap the search term length; SQLite LIKE on multi-KB strings is slow
-    # and there's no legitimate UX reason to search for 10k chars at once.
+    # 限制搜索词长度——SQLite LIKE 对多 KB 字符串慢，无 UX 理由让用户搜 10k 字符。
     if len(q) > SEARCH_INPUT_MAX_LEN:
         q = q[:SEARCH_INPUT_MAX_LEN]
-    # Escape SQL LIKE metachars so user input is treated as a literal.
+    # 转义 SQL LIKE 元字符，保证用户输入按字面量匹配。
     escaped = q.replace(SQL_LIKE_ESCAPE_CHAR, SQL_LIKE_ESCAPE_CHAR * 2).replace("%", f"{SQL_LIKE_ESCAPE_CHAR}%").replace("_", f"{SQL_LIKE_ESCAPE_CHAR}_")
     pattern = f"%{escaped}%"
 
-    # Two separate queries: conversations whose title/id matches, and
-    # conversations that contain a matching message. Merge in Python to
-    # avoid UNION subquery patterns that some dialects (SQLite) handle
-    # poorly with nested subqueries.
+    # 拆两条查询：标题/id 匹配 vs 包含匹配消息的会话；Python 端合并避开部分方言（SQLite）对嵌套子查询的 UNION 处理不佳。
     title_match_ids = [
         row[0]
         for row in (
@@ -180,8 +153,7 @@ async def search_sessions(
             )
         ).all()
     ]
-    # The content scan is the most expensive path (full-table LIKE on
-    # ``messages.content``). Cap at 200 distinct conversation ids.
+    # 内容扫描是最贵路径（messages.content 全表 LIKE），封顶 200 个独立会话 id。
     content_match_ids = [
         row[0]
         for row in (
@@ -250,16 +222,11 @@ async def delete_session(session_id: str, current: tuple[User, object] = Depends
     deleted_id = conv.id
     await db.delete(conv)
     await db.commit()
-    # Cascade-cleanup of remote-mode attachments. Best-effort — a
-    # filesystem failure (permissions, disk full) must not strand a deleted
-    # session row, so we log and swallow. gc_session validates ``session_id``
-    # shape and refuses path traversal; the underlying rmtree is bounded
-    # by SETTINGS.data_dir/desktop-attachments/.
+    # 级联清理远端模式附件，尽力而为——文件系统错误（权限、磁盘满）不能让已删除会话行残留，日志记录后吞掉；gc_session 校验 session_id 形态并拒绝路径穿越，rmtree 仅作用于 SETTINGS.data_dir/desktop-attachments/。
     try:
         attachments_gc_session(SETTINGS.data_dir, str(deleted_id))
     except Exception:
         logger.warning("attachments_gc_session failed for session %s", deleted_id, exc_info=True)
-    # Also clean up temp media files for this session
     try:
         temp_files_gc_session(str(deleted_id))
     except Exception:

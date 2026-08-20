@@ -15,20 +15,13 @@ WEBHOOK_TIMEOUT = 10.0
 
 
 async def _emit_companion_message(user_id: int, text: str, affect: str | None = None, followup_timeout_seconds: float | None = None) -> None:
-    """Push a proactive companion message to the user's desktop via the WS
-    outbox (ARCHITECTURE.md §5.1.A / §6). The desktop receives `companion.message`
-    and decides text-vs-affect-vs-bubble based on the user's disturbance tier.
-
-    The backend never short-circuits the emit — the desktop owns the
-    presentation gate, so disturbance tier and event delivery stay
-    consistent regardless of which thread enqueues the outbox row."""
+    """通过 WS outbox 主动把伙伴消息推送到客户端（ARCHITECTURE.md §5.1.A / §6），是否展示由客户端打扰档位决定。"""
     payload: dict = {"text": text}
     if affect:
         payload["affect"] = {"emotion": affect}
     async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
-        # status_proactive stays in the LLM context (the user can reply to it),
-        # so an empty message must not accrue a blank turn there.
+        # status_proactive 留在 LLM 上下文中（用户可回复），空消息不应在那里累积出一段空白对话回合。
         if text.strip():
             main_conv = await get_or_create_main_conversation(db, user_id)
             db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
@@ -43,26 +36,13 @@ async def _emit_companion_affect(user_id: int, emotion: str) -> None:
 
 
 async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, follow_up_after_seconds: float | None = None, **kwargs) -> str:
-    # Companion-native proactive path: no webhook ⇒ deliver straight to the
-    # user's desktop as a companion.message (ARCHITECTURE.md §7.4 repurposes this
-    # tool as the companion's proactive-reach-out channel).
-    #
-    # The desktop is the source of truth for the disturbance tier, but the
-    # backend also gates at the source as defense-in-depth: a non-official
-    # client connecting via /api/chat/ws bypasses the desktop-side filter, so
-    # quiet → no WSEvent, normal/proactive → emit. The cron-driven autonomous
-    # turn checks the same gate before kicking off
-    # (services/scheduler/cron.py::_kick_autonomous_turn) so a quiet user
-    # doesn't burn LLM quota on suppressed messages.
+    # 伙伴原生主动路径：未传 webhook 时直接以 companion.message 形式投递给客户端（ARCHITECTURE.md §7.4 将本工具复用为伙伴主动触达通道）。
+    # 客户端是打扰档位的单一事实源，但后端在源头也做一次防御性拦截：非官方客户端走 /api/chat/ws 会绕过客户端侧过滤器，故 quiet 时不写 WSEvent。
     if not target_webhook:
         user_id = kwargs.get("user_id")
         quiet = False
         if isinstance(user_id, int):
-            # Quiet tier: the spoken/written message is gated, but the
-            # LLM-reasoned affect still flows so the companion's emotion is
-            # visible (ARCHITECTURE.md §6: 断消息不断 affect). This is not a
-            # Desktop rule-engine fallback — the emotion is produced by the
-            # persona-+memory-driven LLM that called this tool (§7.6).
+            # Quiet 档位：文字消息被压住，但 LLM 推理出的 affect 仍下发以保留情绪可视化（ARCHITECTURE.md §6 断消息不断 affect）。
             quiet = await is_quiet(user_id)
             if quiet:
                 await _emit_companion_affect(user_id, affect or "neutral")
@@ -80,7 +60,7 @@ async def send_message_tool(message: str, target_webhook: str | None = None, aff
 
     try:
         async with safe_outbound_async_client() as client:
-            # Webhooks vary on payload shape; send both common keys.
+            # 各 webhook 平台载荷字段不一，同时发送 text 与 content 两个常见键。
             response = await client.post(target_webhook, json={"text": message, "content": message}, timeout=WEBHOOK_TIMEOUT)
             response.raise_for_status()
         logger.info("Message sent to webhook", extra={"webhook_prefix": target_webhook[:32]})

@@ -100,12 +100,7 @@ async def analyze_personality_tags(
     db: AsyncSession | None = None,
     provider_config: ProviderConfig | None = None,
 ) -> list[str]:
-    """LLM 分析 persona 设定并提取性格标签列表。
-
-    - 优先结合对应物种/骨骼类型的种子词汇
-    - 完全开放：不过滤新自创标签，直接保留
-    - 返回 3-10 个去重标签
-    """
+    """LLM 分析 persona 设定，返回 3-10 个去重后的性格标签；不过滤自创标签。"""
     try:
         data = safe_json_loads(definition_json, default={})
         if not isinstance(data, dict):

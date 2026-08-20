@@ -3,44 +3,24 @@ import json
 
 from ..base import ProviderError
 
-# MiniMax uses ``base_resp.status_code`` to carry its own error taxonomy on top
-# of the HTTP status code.  Mappings below are tuned so that
-# ``error_classifier.classify_api_error`` lands in the same FailoverReason
-# buckets that an OpenAI-shaped error would for the same condition.
+# MiniMax 用 base_resp.status_code 承载自有错误分类（叠加在 HTTP 状态码之上）；下表映射使 error_classifier.classify_api_error 与同条件 OpenAI 错误落到同一 FailoverReason 桶。
 _BASE_RESP_TO_HTTP: dict[int, int] = {
     1002: 429,  # rate limit
     1004: 401,  # auth
     1008: 402,  # billing
     1013: 400,  # bad params
-    1026: 400,  # content moderation — sensitive input, classified by message keyword downstream
-    1027: 400,  # content filter — classified by message keyword downstream
+    1026: 400,  # content moderation — 敏感输入，下游按消息关键字分类
+    1027: 400,  # content filter — 下游按消息关键字分类
     1039: 429,  # concurrency / quota
     2013: 400,  # invalid param
 }
 
-# MiniMax bills plan/credit refusals under its generic invalid-param codes, so
-# the inner code alone can't distinguish them from a genuinely malformed request.
+# MiniMax 把套餐/额度拒单归到通用 invalid-param 码下，单凭内部码无法与真正格式错误区分。
 _ENTITLEMENT_SIGNALS = ("tokenplan", "credit")
 
 
 def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
-    """Translate a MiniMax HTTP response into a dict body or raise
-    :class:`ProviderError` with fields shaped for ``classify_api_error``.
-
-    MiniMax wraps most error info in ``{"base_resp": {"status_code": N,
-    "status_msg": "..."}, "data": null}`` — but the HTTP status is often
-    still 200 even when ``base_resp.status_code != 0``. The HTTP-level
-    4xx/5xx responses come back with their own JSON shape, so we handle both.
-
-    Known inner codes land in ``_BASE_RESP_TO_HTTP``. Unknown inner codes
-    map to 502 (provider upstream failure) instead of falling back to
-    ``resp.status_code`` — the latter is often 200, which would tell
-    error_classifier the call succeeded.
-
-    A non-numeric non-zero ``base_resp.status_code`` (e.g. a gateway
-    returning ``"SYSTEM_ERROR"``) raises ``ProviderError(502)`` instead
-    of silently treating the call as successful (which would happen if
-    we coerced ``inner_int = 0``)."""
+    """把 MiniMax HTTP 响应翻译为 dict 体或抛字段对齐 classify_api_error 的 ProviderError；MiniMax 把错误信息裹在 {"base_resp":{"status_code":N,"status_msg":"..."},"data":null}，且 HTTP 状态常为 200 即便 base_resp.status_code≠0；HTTP 4xx/5xx 自带另一 JSON 形态，本函数两种都处理；已知内部码走 _BASE_RESP_TO_HTTP，未知码映射为 502（避免回退到常为 200 的 resp.status_code）；非数值的非零 base_resp.status_code（如网关返回 "SYSTEM_ERROR"）抛 502 ProviderError（避免 inner_int=0 静默成功）。"""
     try:
         body = resp.json()
     except (json.JSONDecodeError, ValueError):
@@ -60,8 +40,7 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
             elif inner_int in _BASE_RESP_TO_HTTP:
                 http = _BASE_RESP_TO_HTTP[inner_int]
             else:
-                # Don't fall back to resp.status_code (likely 200); surface
-                # as a generic 502 so error_classifier marks it retryable.
+                # 不回退到常为 200 的 resp.status_code；统一以 502 上抛，error_classifier 标记为可重试。
                 http = 502
             extra_body = {"error": {"code": str(raw_inner_code), "message": inner_msg}, "base_resp": base}
             raise ProviderError(f"minimax {provider} error {raw_inner_code}: {inner_msg}", status_code=http, body=extra_body, provider=provider, model=model)
@@ -79,7 +58,6 @@ def raise_for_minimax_response(resp, *, provider: str, model: str) -> dict:
 
 
 def extract_minimax_audio(body: dict) -> bytes:
-    """MiniMax TTS returns audio as a hex-encoded string under data.audio."""
     data = body.get("data") or {}
     audio_hex = data.get("audio") or ""
     if audio_hex:

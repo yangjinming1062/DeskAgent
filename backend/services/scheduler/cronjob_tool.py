@@ -17,7 +17,7 @@ def _build_updates(prompt: str | None, name: str | None, schedule: str | None) -
         updates["name"] = name
     if schedule is not None:
         updates["schedule"] = schedule
-        # A new schedule implicitly unpauses the job.
+        # 新 schedule 隐含取消暂停。
         updates["is_paused"] = False
     return updates
 

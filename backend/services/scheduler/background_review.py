@@ -46,12 +46,12 @@ def _trim_tool_output(msg: dict) -> dict:
 
 
 async def run_background_memory_review(user_id: int, llm_config: dict, messages_snapshot: list[dict]) -> None:
-    """Fire-and-forget: review the conversation and save any durable memories."""
+    """fire-and-forget：复盘会话并把值得长期记住的事存下来。"""
     messages = [{"role": "system", "content": _BACKGROUND_REVIEW_PROMPT}]
     for msg in messages_snapshot:
         if msg.get("role") == "system":
             continue
-        # Tool outputs can be huge; cap to keep the review call cheap.
+        # 工具输出可能很大，截断以保持 review 调用便宜。
         messages.append(_trim_tool_output(msg) if msg.get("role") == "tool" else msg)
 
     api_key = llm_config.get("api_key")
@@ -63,15 +63,13 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
     client = client_for_config(llm_config)
 
     try:
-        # No bound session: the review LLM call below runs connection-free;
-        # each memory_retain opens its own short session.
+        # 不绑 session：下面的 review LLM 调用直连无 DB；每个 memory_retain 自己开短 session。
         native_memory = NativeMemory(None, user_id)
         schemas = [RETAIN_SCHEMA]
 
         provider_name = llm_config.get("provider_name", "")
         if not provider_name:
-            # Resolver will fall through to the global default; warn so a
-            # misconfigured chain doesn't silently use a 1M budget.
+            # resolver 会回落到全局默认；告警以避免配置错的链静默使用 1M 上下文。
             logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
         context_length = resolve_context_tokens(provider_name, ServiceType.llm)
         response = await call_with_retry(client, context_length=context_length, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
@@ -84,6 +82,6 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
                 if args and isinstance(args, dict):
                     logger.info("Background review extracting memory", extra={"func_args": args})
                     await native_memory.execute_tool(fn.name, args)
-        # If no tool calls, review simply found nothing to remember.
+        # 没工具调用说明 review 没找到要记的事。
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})

@@ -3,9 +3,7 @@ import pytest
 
 @pytest.fixture
 def pin_handlers():
-    """Import the handler module without invoking handle_chat_websocket
-    (which needs a real WS). Then patch the dispatcher to capture
-    registrations."""
+    """仅导入 handlers 模块，不触发需要真实 WS 的 handle_chat_websocket。"""
     from services.gateway import handlers
 
     return handlers
@@ -13,8 +11,7 @@ def pin_handlers():
 
 @pytest.fixture
 def dispatcher(pin_handlers):
-    """Session handlers registered on a bare dispatcher, so tests invoke
-    methods exactly as the WS dispatch path does."""
+    """把 session handlers 注册到裸 dispatcher，让测试与 WS 派发路径调用方式一致。"""
     from services.gateway.jsonrpc import JsonRpcDispatcher
 
     disp = JsonRpcDispatcher(lambda msg: None)
@@ -26,8 +23,7 @@ def dispatcher(pin_handlers):
 async def test_companion_set_disturbance_tier_normalizes_unknown(
     pin_handlers, SessionLocal
 ):
-    """``companion.set_disturbance_tier`` must reject unknown tiers
-    by falling back to the default — never raise JSONRPC_INVALID_PARAMS."""
+    """未知 tier 应回退到默认，绝不抛 JSONRPC_INVALID_PARAMS。"""
     from services.disturbance import set_disturbance_tier
 
     assert await set_disturbance_tier(1, "quiet") == "quiet"
@@ -37,9 +33,7 @@ async def test_companion_set_disturbance_tier_normalizes_unknown(
 
 @pytest.mark.asyncio
 async def test_companion_check_affect_coerces_inputs(dispatcher, pin_handlers, monkeypatch):
-    """``companion.check_affect`` normalizes context fields before the
-    service call: negative ``idle_seconds`` → 0.0, out-of-range
-    ``local_hour`` → -1 (documented "unknown" sentinel)."""
+    """check_affect 调用前规范化字段：负 idle_seconds→0.0，超界 local_hour→-1。"""
     captured: dict = {}
 
     async def _capture(_user_id, idle_seconds, local_hour, _cfg):
@@ -58,8 +52,7 @@ async def test_companion_check_affect_coerces_inputs(dispatcher, pin_handlers, m
 
 @pytest.mark.asyncio
 async def test_companion_set_disturbance_tier_persists(pin_handlers, SessionLocal):
-    """Persistence contract: ``quiet`` survives across reads until
-    overwritten (mirrors the P0-4 desktop re-report on reconnect)."""
+    """持久化契约：quiet 写入后跨读保持直至被覆盖（对应 P0-4 重连重报）。"""
     from services.disturbance import get_disturbance_tier, set_disturbance_tier
 
     await set_disturbance_tier(42, "quiet")
@@ -111,10 +104,7 @@ def test_companion_interact_and_should_act_registered(dispatcher):
 async def test_companion_interact_drops_when_prompt_inflight(
     dispatcher, pin_handlers, monkeypatch
 ):
-    """companion.interact must short-circuit with reason='user_busy' while a
-    prompt.submit turn is in-flight for the same user — otherwise the poke's
-    status_interaction/status_reaction land interleaved with the user message
-    on the main conversation."""
+    """prompt.submit 进行中时，companion.interact 必须以 user_busy 短路，否则戳的状态行会与用户消息交错。"""
     async def _must_not_run(*a, **kw):
         raise AssertionError("interact() must not run while prompt.submit is in-flight")
 
@@ -131,9 +121,7 @@ async def test_companion_interact_drops_when_prompt_inflight(
 
 @pytest.mark.asyncio
 async def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monkeypatch):
-    """prompt.submit must reject while companion.interact is in-flight, so
-    the user message and the poke's status rows can't cross on the main
-    conversation timeline."""
+    """companion.interact 进行中时 prompt.submit 必须拒绝，避免用户消息与戳的状态行错位。"""
     from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
     from services.gateway.runtime import RuntimeSession
 
@@ -190,7 +178,6 @@ async def test_websocket_boot_failure_cleans_up(monkeypatch):
 
     await handle_chat_websocket(ws, "valid_token")
 
-    # Assert manager slot is not retained and session not leaked
     assert not MANAGER.is_connected(9999)
     assert 9999 not in _USER_SESSIONS
     assert ws.closed_code == 1011
@@ -198,7 +185,7 @@ async def test_websocket_boot_failure_cleans_up(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_companion_interact_rejects_drag(dispatcher):
-    """companion.interact must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
+    """companion.interact 对 kind='drag' 应返回 JSONRPC_INVALID_PARAMS。"""
     from components import JSONRPC_INVALID_PARAMS
     from services.gateway.jsonrpc import JsonRpcError
 
@@ -210,7 +197,7 @@ async def test_companion_interact_rejects_drag(dispatcher):
 
 @pytest.mark.asyncio
 async def test_companion_record_interaction_stats_rejects_drag(dispatcher):
-    """companion.record_interaction_stats must reject kind='drag' with JSONRPC_INVALID_PARAMS (-32602)."""
+    """companion.record_interaction_stats 对 kind='drag' 应返回 JSONRPC_INVALID_PARAMS。"""
     from components import JSONRPC_INVALID_PARAMS
     from services.gateway.jsonrpc import JsonRpcError
 

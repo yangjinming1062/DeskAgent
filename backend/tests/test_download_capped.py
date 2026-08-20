@@ -155,11 +155,8 @@ async def test_download_capped_redirect_downgrade_blocked(monkeypatch):
 
 
 class TestSsrfAllowedCidrs:
-    """SSRF_ALLOWED_CIDRS exempts matching resolved IPs from the reserved-range
-    refusal only — hostname blocklist and cloud-metadata blocks stay on."""
+    """SSRF_ALLOWED_CIDRS 仅豁免匹配 IP 的保留网段拦截，域名/云元数据黑名单不受影响。"""
 
-    # IPv4 literals, not "localhost" — dual-stack resolution returns ::1
-    # alongside 127.0.0.1 and ::1 is outside an IPv4 allow range.
     def test_private_ip_refused_by_default(self, monkeypatch):
         monkeypatch.setattr(SETTINGS, "ssrf_allowed_cidrs", "")
         safe, _ = is_safe_outbound("127.0.0.1")

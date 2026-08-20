@@ -1,9 +1,4 @@
-"""Tests for the memory kind split (recall / auto_inject) and the user-facing admin CRUD.
-
-See plan §9 — these cover the closed-set taxonomy, write-time caps, upsert vs append
-semantics, the user_profile/interaction_stats forgery defense, the NULL-context
-filter fix, and ownership enforcement.
-"""
+"""覆盖 memory kind 分类（recall / auto_inject）、用户管理 CRUD、命名空间防伪造与所有权校验。"""
 
 import json
 
@@ -16,7 +11,7 @@ def _json_args(**kwargs):
 
 
 async def _make_user(SessionLocal, user_id: int = 1001):
-    """Seed a User row so the FK on Memory.user_id is satisfied."""
+    """插入 User 行以满足 Memory.user_id 的外键约束。"""
     from modules.auth import User, generate_activation_token, hash_activation_token
 
     async with SessionLocal() as db:
@@ -43,9 +38,6 @@ async def seeded(_patch_db):
     await _make_user(SessionLocal, 1001)
     await _make_user(SessionLocal, 1002)
     return SessionLocal
-
-
-# ── _retain: closed-set taxonomy + caps ──────────────────────────────
 
 
 async def test_retain_recall_requires_closed_tag(seeded):
@@ -101,7 +93,7 @@ async def test_retain_auto_inject_upserts(seeded):
             ),
         )
         assert json.loads(out1)
-        # Second call with the same slot updates in place.
+        # 二次同槽写入应原地更新。
         out2 = await mem.execute_tool(
             "memory_retain",
             _json_args(
@@ -111,8 +103,6 @@ async def test_retain_auto_inject_upserts(seeded):
             ),
         )
         assert json.loads(out2)
-        # memory_id is the row id from the first retain; the second should
-        # not have created a new row, so we look at the row count.
         rows = (
             await db.execute(
                 text(
@@ -168,9 +158,6 @@ async def test_retain_auto_inject_caps_content_length(seeded):
         assert "error" not in json.loads(out_ok)
 
 
-# ── _retain: forged context defense (live bug fix) ───────────────────
-
-
 async def test_retain_rejects_forged_user_profile_context(seeded):
     SessionLocal = seeded
     from services.tools import NativeMemory
@@ -205,16 +192,12 @@ async def test_retain_rejects_forged_interaction_stats_context(seeded):
         assert "error" in json.loads(out)
 
 
-# ── _recall: filter excludes reserved namespaces + surfaces NULL context ─
-
-
 async def test_recall_excludes_other_kinds(seeded):
     SessionLocal = seeded
     from services.tools import NativeMemory
 
     async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
-        # Seed one row in each namespace.
         await mem.execute_tool(
             "memory_retain",
             _json_args(kind="recall", content="likes python", tags=["likes"]),
@@ -230,16 +213,12 @@ async def test_recall_excludes_other_kinds(seeded):
         out = await mem.execute_tool("memory_recall", _json_args(query="python"))
         parsed = json.loads(out)
         assert "likes python" in parsed["result"]
-        # auto_inject row's content must NOT appear in recall.
+        # auto_inject 行内容不应出现在 recall 中。
         assert "terse" not in parsed["result"]
 
 
 async def test_format_memories_block_includes_null_context(seeded):
-    """LLM-written memories with NULL context (legacy / pre-backfill state)
-    used to be silently dropped by ``format_memories_block`` because the
-    ``~Memory.context.like('user_profile:%')`` predicate evaluates to NULL
-    in SQL three-valued logic. The fix surfaces them.
-    """
+    """回归测试：SQL 三值逻辑下 context 为 NULL 的历史记忆曾被 ``~Memory.context.like`` 静默丢弃，现已修复需正常返回。"""
     SessionLocal = seeded
     from modules.memory import Memory
     from services.companion import format_memories_block
@@ -258,15 +237,12 @@ async def test_format_memories_block_includes_null_context(seeded):
         assert "orphaned but real" in block
 
 
-# ── format_auto_inject_block: slot order, no truncation ──────────────
-
-
 async def test_format_auto_inject_block_renders_full_content(seeded):
     SessionLocal = seeded
     from services.companion import format_auto_inject_block
     from services.tools import NativeMemory
 
-    payload = "x" * 400  # under the 500-char cap
+    payload = "x" * 400  # 500 字符上限之内
 
     async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
@@ -287,13 +263,10 @@ async def test_format_auto_inject_block_renders_full_content(seeded):
             ),
         )
         block = await format_auto_inject_block(db, 1001)
-        # Full content renders — no render-time truncate.
+        # 渲染层不应截断完整内容。
         assert payload in block
-        # Slot order is the canonical AUTO_INJECT_SLOTS order.
+        # 槽位顺序遵循 AUTO_INJECT_SLOTS 定义。
         assert block.index("communication style") < block.index("rapport state")
-
-
-# ── memory_admin: ownership enforcement + filtering ──────────────────
 
 
 async def test_memory_admin_update_requires_ownership(seeded):
@@ -306,11 +279,11 @@ async def test_memory_admin_update_requires_ownership(seeded):
         db.add(row)
         await db.commit()
         await db.refresh(row)
-        # user 1002 cannot edit user 1001's row.
+        # 用户 1002 不能修改用户 1001 的记录。
         assert (
             await memory_admin.update_memory(db, 1002, row.id, content="evil") is None
         )
-        # user 1001 can.
+        # 用户 1001 可以修改自己的记录。
         updated = await memory_admin.update_memory(db, 1001, row.id, content="ok")
         assert updated is not None
         assert updated["content"] == "ok"
@@ -369,17 +342,11 @@ async def test_memory_admin_counts_breakdown(seeded):
         assert counts["user_profile"] == 1
 
 
-# ── consolidator: replaces old rows with summaries ──────────────────
-
-
 @pytest.mark.asyncio
 async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
-    """Stub the LLM call so the test is hermetic; verify source rows are
-    replaced by the LLM's summaries.
-    """
+    """Stub LLM 调用以保证测试自洽，验证源行被 LLM 生成的摘要替换。"""
     SessionLocal = seeded
-    # Insert exactly MEMORY_CONSOLIDATE_TRIGGER_ROWS so the read window
-    # consumes all of them; consolidator deletes the window and writes summaries.
+    # 精确插入 MEMORY_CONSOLIDATE_TRIGGER_ROWS 行，使合并器读取窗口完整消费并写出摘要。
     from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
     from modules.memory import Memory
     from services.scheduler import memory_consolidator
@@ -435,7 +402,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
             .scalars()
             .all()
         )
-        # Source 51 rows replaced with the 2 summaries.
+        # 源 51 行已被 2 条摘要替换。
         assert len(rows) == 2
         contexts = {r.context for r in rows}
         assert contexts == {"recall:merged_a", "recall:merged_b"}
@@ -445,9 +412,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
 async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
     seeded, monkeypatch
 ):
-    """Adversarial LLM returns summaries with empty content. The
-    consolidator MUST roll back instead of deleting the user's pool.
-    """
+    """对抗场景：LLM 返回空摘要时合并器必须回滚，禁止删除用户记忆池。"""
     SessionLocal = seeded
     from components import MEMORY_CONSOLIDATE_TRIGGER_ROWS
     from modules.memory import Memory
@@ -499,13 +464,12 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
             .scalars()
             .all()
         )
-        # Source rows are preserved when the LLM returns no usable content.
+        # LLM 无可用内容时源行必须保留。
         assert len(rows) == MEMORY_CONSOLIDATE_TRIGGER_ROWS
 
 
 async def test_update_memory_enforces_auto_inject_cap(seeded):
-    """The 500-char cap on auto_inject rows must hold on the admin update
-    path, not just on the LLM write path."""
+    """500 字符上限在 admin 更新路径上同样生效，并非仅 LLM 写入路径。"""
     SessionLocal = seeded
     from modules.memory import Memory
     from services.companion import memory_admin

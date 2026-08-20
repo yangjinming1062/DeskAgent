@@ -9,8 +9,7 @@ from .. import WebSearchProvider
 logger = get_logger(__name__)
 
 _BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
-# Module-level client keeps the connection pool warm across calls —
-# recreating per-request pays a TLS handshake on every search.
+# 模块级客户端保持连接池预热——每次新建都要重新走 TLS 握手。
 _HTTP_CLIENT = httpx.AsyncClient(timeout=15)
 
 
@@ -20,14 +19,12 @@ async def aclose_brave() -> None:
 
 class BraveFreeWebSearchProvider(WebSearchProvider):
     def __init__(self, *, api_key: str | None = None) -> None:
-        # Per-user key from the dispatcher (loaded out of `user_settings`)
-        # wins; fall back to deployment-level ``BRAVE_SEARCH_API_KEY`` for
-        # operators who want a single shared key.
+        # 来自 dispatcher（从 ``user_settings`` 加载）的用户级 key 优先，回退到部署级 ``BRAVE_SEARCH_API_KEY`` 给运维共享密钥的场景。
         self._api_key = (api_key or os.getenv("BRAVE_SEARCH_API_KEY", "")).strip()
 
     @property
     def name(self) -> str:
-        # Hyphen form preserved for backward compat with existing config keys.
+        # 保留连字符形式以兼容既有配置键。
         return "brave-free"
 
     @property
@@ -48,7 +45,7 @@ class BraveFreeWebSearchProvider(WebSearchProvider):
         if not api_key:
             return {"success": False, "error": "Brave Search API key is not configured"}
 
-        # Brave's `count` is capped at 20.
+        # Brave 的 `count` 上限为 20。
         count = max(1, min(int(limit), 20))
 
         try:

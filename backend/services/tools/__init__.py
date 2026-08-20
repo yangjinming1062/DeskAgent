@@ -1,4 +1,4 @@
-from . import memory  # noqa: F401 — side-effect: registers memory tools
+from . import memory  # noqa: F401
 from .extract_provider import resolve_extract_provider, resolve_search_provider
 from .file_safety import get_read_block_error, is_write_denied
 from .memory import (
@@ -38,17 +38,14 @@ from .web_providers import aclose
 
 __all__ = [
     "aclose",
-    # registry
     "REGISTRY",
     "RESERVED_KEYS",
     "ToolsRegistry",
     "schema_name",
     "ALWAYS_AVAILABLE",
     "WEB_EXTRACT_AVAILABILITY",
-    # file_safety
     "is_write_denied",
     "get_read_block_error",
-    # memory
     "AUTO_INJECT_SLOTS",
     "FORGET_SCHEMA",
     "INFERRED_PROFILE_SLOTS",
@@ -64,21 +61,15 @@ __all__ = [
     "RESERVED_FROM_RECALL",
     "normalize_recall_context",
     "normalize_recall_tags",
-    # search_tools_tool
     "SEARCH_TOOLS_SCHEMA",
     "search_tools_tool",
-    # extract_provider
     "resolve_extract_provider",
     "resolve_search_provider",
-    # model_tools
     "coerce_tool_args",
-    # tool_result_classification
     "file_mutation_result_landed",
-    # tool_dispatch_helpers
     "is_multimodal_tool_result",
     "should_parallelize_tool_batch",
     "make_tool_result_message",
-    # tool_guardrails
     "check_file_safety",
     "ToolCallGuardrailController",
     "ToolCallGuardrailConfig",

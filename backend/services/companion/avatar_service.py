@@ -29,8 +29,7 @@ _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
-# Per-user lock shared between the REST avatar routes and the WS RPC handlers
-# so a concurrent regen + select for the same user can't race on the row.
+# 按用户加锁，避免 REST 头像路由与 WS RPC 并发再生成/选择时抢同一行
 _avatar_job_locks: dict[int, asyncio.Lock] = {}
 
 _MODERATION_SANITIZATION_PROMPT = (
@@ -42,9 +41,7 @@ _MODERATION_SANITIZATION_PROMPT = (
 
 
 async def _sanitize_prompt_for_moderation(user_id: int, prompt: str) -> str:
-    """Mildly sanitize *prompt* for content moderation. Returns the original on failure.
-    Uses its own DB session — may run inside ``asyncio.gather`` where the caller's session is shared.
-    """
+    """温和改写提示词以绕过内容审核，失败时返回原文；自建 DB 会话以兼容 gather 并发调用。"""
     try:
         async with SESSION_LOCAL() as db:
             sanitized = await chat(db, user_id, _MODERATION_SANITIZATION_PROMPT, prompt)
@@ -65,7 +62,7 @@ async def _generate_one_portrait_with_moderation_retry(
     persist: bool = True,
     preferred_provider: str | list[str] | None = None,
 ) -> tuple[str, str, str, str]:
-    """Generate one portrait, retrying with a sanitized prompt on content-moderation failure."""
+    """生成一张立绘；命中内容审核时用改写后的提示词重试一次。"""
     try:
         return await _generate_one_portrait(
             prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist, preferred_provider=preferred_provider
@@ -76,7 +73,7 @@ async def _generate_one_portrait_with_moderation_retry(
         logger.info("avatar gen blocked by moderation, sanitizing prompt", extra={"user_id": user_id})
         sanitized = await _sanitize_prompt_for_moderation(user_id, prompt)
         if sanitized == prompt:
-            raise  # Sanitization produced no change — don't waste another API call.
+            raise  # 改写后内容无变化，再调一次 API 也是白费
         try:
             return await _generate_one_portrait(
                 sanitized,
@@ -92,12 +89,7 @@ async def _generate_one_portrait_with_moderation_retry(
 
 
 class AvatarGenerationError(RuntimeError):
-    """Raised when avatar generation cannot complete. Distinct from a
-    provider rate-limit retry so callers can render a user-friendly
-    "伙伴形象生成失败，请稍后重试" UI without leaking the upstream error.
-
-    ``str(exc)`` is always the curated public message; the raw provider /
-    transport error rides in ``internal`` for logs and control flow only."""
+    """形象生成失败；str(exc) 恒为可展示的公开文案，上游原始错误只放在 internal 供日志与流程判断。"""
 
     def __init__(self, public: str, internal: str = "") -> None:
         super().__init__(public)
@@ -105,47 +97,36 @@ class AvatarGenerationError(RuntimeError):
 
 
 class AvatarNotFoundError(AvatarGenerationError):
-    """An avatar row lookup targeted a row that doesn't exist or doesn't
-    belong to the caller."""
+    """目标头像行不存在或不属于调用者。"""
 
 
 class FullbodyGenerationError(AvatarGenerationError):
-    """Raised when fullbody image generation fails."""
+    """全身图生成失败。"""
 
 
 class FrontSeedMissingError(FullbodyGenerationError):
-    """Raised when attempting multiview generation without a confirmed front seed."""
+    """未确认正面种子图就尝试生成多视图。"""
 
 
 class UnknownFullbodyStyleError(AvatarGenerationError):
-    """Raised when a fullbody style id is outside the STYLE_CATALOG."""
+    """全身图风格 id 不在 STYLE_CATALOG 中。"""
 
 
 class SeedPromptMissingError(FullbodyGenerationError):
-    """Raised when the avatar row has no cached prompt for fullbody generation."""
+    """头像行缺少可用于全身图生成的缓存提示词。"""
 
 
 class AvatarSourceUnreadableError(AvatarGenerationError):
-    """The avatar file can't be read from disk; the user needs to regenerate
-    the avatar before retrying."""
+    """头像文件已无法从磁盘读取，需用户重新生成后再重试。"""
 
 
 def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
-    """Lazily create + return a per-user ``asyncio.Lock``. The dict grows to
-    the user's peak concurrency; entries aren't removed (locks are tiny and
-    the user-id keyspace is bounded)."""
+    """惰性创建并返回用户级锁；条目不回收（锁很小且 user_id 空间有限）。"""
     return _avatar_job_locks.setdefault(user_id, asyncio.Lock())
 
 
 async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
-    """Write portrait bytes to the persistent ``companion-avatars/`` dir and
-    return ``(bare_storage_path, file_id, ext)``.
-
-    The bytes are written verbatim; the extension follows the response
-    content_type. Portrait is consumed as an opaque image (avatar panel
-    crops with object-cover; GLB texture pass uses it as a provider
-    reference image), so there is no in-process re-encoding.
-    """
+    """把立绘字节原样写入 companion-avatars/ 并返回 (裸存储路径, file_id, ext)。"""
     src_content_type = content_type.split(";")[0].strip().lower()
     final_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
     file_id = secrets.token_urlsafe(16)
@@ -156,21 +137,17 @@ async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, 
     with open(filepath, "wb") as f:
         f.write(data)
 
-    # The row stores the *bare* path under ``companion-avatars/`` rather than
-    # a signed URL, so it never expires. ``get_active_avatar`` and the public
-    # file route re-sign on read so the URL is always fresh.
+    # 行内存裸路径而非签名 URL，避免过期；读取时再签名
     return _avatar_storage_path(file_id, final_ext), file_id, final_ext
 
 
 def _avatar_storage_path(file_id: str, ext: str) -> str:
-    """Return the canonical *bare* storage path for a portrait, as
-    ``companion-avatars/<file_id>.<ext>`` — re-signed to a URL by
-    ``get_active_avatar`` at every read."""
+    """返回立绘的规范裸存储路径 companion-avatars/<file_id>.<ext>。"""
     return f"companion-avatars/{file_id}.{ext}"
 
 
 def _temp_media_public_url(bare_path: str) -> str:
-    """Temp-media paths skip HMAC signing — served unauthenticated at ``/api/media/files/{file_id}``."""
+    """temp-media 路径不做 HMAC 签名，由 /api/media/files/{file_id} 免鉴权提供。"""
     if bare_path.startswith("temp-media/"):
         file_id = bare_path.split("/", 1)[1]
         return f"/api/media/files/{file_id}"
@@ -178,19 +155,7 @@ def _temp_media_public_url(bare_path: str) -> str:
 
 
 async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
-    """Resolve a generated-asset URL to ``(bytes, content_type)``. Handles
-    local temp-media paths (the common case from
-    ``image_generation_tool``) and remote provider URLs alike. Returns
-    ``None`` when the URL is unreachable so the caller can surface a
-    friendly ``AvatarGenerationError`` instead of crashing on a missing
-    temp file.
-
-    Remote URLs are fetched with ``follow_redirects=False`` and pass the
-    ``is_safe_outbound`` check (which blocks loopback, link-local, private,
-    multicast, and reserved IPs at the DNS-resolution layer) so a poisoned
-    provider response can't redirect into cloud metadata or other internal
-    hosts.
-    """
+    """把生成结果 URL 解析为 (bytes, content_type)，不可达时返回 None；远端请求禁用重定向并走出网安全校验。"""
     if "/api/media/files/" in url:
         fid = url.rsplit("/", 1)[-1].split("?")[0]
         res = get_file_path(fid)
@@ -227,9 +192,7 @@ async def _generate_one_portrait(
     persist: bool = True,
     preferred_provider: str | list[str] | None = None,
 ) -> tuple[str, str, str, str]:
-    """``persist=False`` keeps the image in temp-media/ (onboarding); ``persist=True``
-    downloads and writes to companion-avatars/. Returns ``(bare_path, file_id, ext, source_url)``.
-    """
+    """persist=False 时图片留在 temp-media/（引导流程），True 时落盘到 companion-avatars/。"""
     result_json = await image_generation_tool(
         prompt=prompt,
         llm_config={},
@@ -244,8 +207,7 @@ async def _generate_one_portrait(
 
     source_url = first_image_url(result_json)
     if source_url is None:
-        # The raw provider error must stay reachable for the moderation-retry
-        # sniff, but never crosses into str(exc) (user-visible surface).
+        # 原始供应商错误需保留给审核重试判定，但不可进入 str(exc)（用户可见面）
         parsed = safe_json_loads(result_json, default=None)
         tool_err = parsed.get("error") if isinstance(parsed, dict) else None
         err_msg = str(tool_err or "image-gen provider returned no URL")
@@ -287,12 +249,12 @@ async def _write_avatar_step(
     if feedback is not None:
         prompt_payload["feedback"] = feedback
     if reference_image is not None:
-        # Audit row keeps a marker (``data:image/png``), not the base64 blob.
+        # 审计行只留 data URI 前缀标记，不落 base64 大字段
         prompt_payload["reference_image"] = reference_image.split(",", 1)[0]
     if secondary_reference_image is not None:
         prompt_payload["secondary_reference_image"] = secondary_reference_image.split(",", 1)[0]
     asset = AvatarAsset(user_id=user_id, prompt_json=json.dumps(prompt_payload, ensure_ascii=False), asset_url=asset_url, style=style, seed=secrets.randbelow(2**31), active=True)
-    # Explicit SQL update ensures persona confirmation is reset even if caller's persona is a detached instance.
+    # 用显式 SQL 更新，确保调用方传入的 persona 是游离实例时确认标记依然会被重置
     await db.execute(update(Persona).where(Persona.user_id == user_id).values(is_portrait_confirmed=False, portrait_confirmed_at=None))
     db.add(asset)
     await db.commit()
@@ -303,7 +265,7 @@ async def _write_avatar_step(
         if previous is not None:
             _delete_portrait_file(previous.asset_url)
     else:
-        # Onboarding: temp-media URL — convert to a path the client can resolve.
+        # 引导流程：temp-media URL——转换为客户端可解析的路径
         asset.asset_url = _temp_media_public_url(asset_url)
 
     return asset
@@ -321,8 +283,7 @@ async def _generate_avatar_step(
     secondary_reference_image: str | None = None,
     persist: bool = False,
 ) -> AvatarAsset:
-    """Avatar (bust) only. Generates portrait without holding a long DB session,
-    then commits the fresh active ``AvatarAsset`` row in a short write session."""
+    """先在短会话外完成立绘生成，再用一次短写会话提交新的 active AvatarAsset 行。"""
     (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
         avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
     )
@@ -361,12 +322,11 @@ async def _generate_avatar_step(
 
 
 def _delete_portrait_file(asset_url: str | None) -> None:
-    """Best-effort unlink of a portrait file, accepting signed URL, bare
-    companion-avatars/ path, or temp-media/ draft path."""
+    """尽力删除立绘文件，兼容签名 URL、companion-avatars/ 裸路径与 temp-media/ 草稿路径。"""
     if not asset_url:
         return
 
-    # Temp-media draft: delete via temp_files metadata lookup.
+    # temp-media 草稿：需经 temp_files 元数据查出真实路径再删
     temp_marker = "temp-media/"
     temp_idx = asset_url.find(temp_marker)
     if temp_idx >= 0:
@@ -381,12 +341,10 @@ def _delete_portrait_file(asset_url: str | None) -> None:
 
     name: str | None = None
 
-    # Signed URL form.
     idx = asset_url.find("/api/companion/avatar/file/")
     if idx >= 0:
         name = Path(asset_url[idx + len("/api/companion/avatar/file/") :]).name
 
-    # Bare persisted path form.
     if name is None:
         marker = "companion-avatars/"
         idx = asset_url.find(marker)
@@ -402,7 +360,7 @@ def _delete_portrait_file(asset_url: str | None) -> None:
 
 
 async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None) -> AvatarAsset:
-    """Generate the initial portrait after onboarding completes."""
+    """引导流程完成后生成首张立绘。"""
     if user_id is None:
         raise ValueError("user_id is required")
     if persona is None:
@@ -429,7 +387,7 @@ async def get_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | Non
 
 
 async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> AvatarAsset:
-    """Set the specified avatar as active and deactivate all others for this user."""
+    """将指定头像设为激活态，并取消该用户其余头像的激活。"""
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
     if asset is None:
         raise AvatarNotFoundError(f"avatar {avatar_id} not found")
@@ -450,9 +408,7 @@ async def list_avatar_history(db: AsyncSession, user_id: int, limit: int = 20) -
 
 
 def _re_sign_bare_path(bare_path: str | None) -> str | None:
-    """Re-sign a bare ``companion-avatars/<file_id>.<ext>`` path into a fresh URL.
-    For ``temp-media/<file_id>`` paths (onboarding drafts), convert to a
-    ``/api/media/files/<file_id>`` URL."""
+    """把裸路径重新签名为新鲜 URL；temp-media 草稿则转为 /api/media/files/ 形式。"""
     if not bare_path:
         return None
     if bare_path.startswith("temp-media/"):
@@ -484,7 +440,7 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
 async def regenerate_avatar(
     db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None, feedback: str | None = None, style: str = _DEFAULT_STYLE
 ) -> AvatarAsset:
-    """Regenerate the portrait. Optional ``feedback`` (e.g. "longer hair") is folded into the prompt."""
+    """重新生成立绘；可选的 feedback 会并入提示词。"""
     if user_id is None:
         raise ValueError("user_id is required")
     if persona is None:
@@ -511,7 +467,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
 
     clean_path = asset_url_or_path.replace("\\", "/")
 
-    # 1. Onboarding draft: temp-media/{file_id} or /api/media/files/{file_id} — resolve via temp_files sidecar.
+    # 1. 引导草稿：需经 temp_files 边车元数据解析
     temp_file_id: str | None = None
     if "temp-media/" in clean_path:
         temp_idx = clean_path.find("temp-media/")
@@ -531,7 +487,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
             except OSError:
                 pass
 
-    # 2. Extract potential filename from path or signed URL
+    # 2. 从裸路径或签名 URL 中提取文件名
     filename: str | None = None
     bare_marker = "companion-avatars/"
     bare_idx = clean_path.find(bare_marker)
@@ -564,7 +520,7 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
                     except OSError:
                         pass
 
-    # 3. Companion asset fallback (companion-assets/{user_id}/{filename})
+    # 3. 兜底：按 companion-assets 资产路径解析
     if "companion-assets/" in clean_path or "/api/companion/asset/" in clean_path:
         parts = clean_path.split("?")[0].split("/")
         if len(parts) >= 2:
@@ -598,10 +554,7 @@ async def regenerate_avatar_from_image(
     presentation_content_type: str | None = None,
     style: str = _DEFAULT_STYLE,
 ) -> AvatarAsset:
-    """Regenerate the portrait using a user-uploaded image as the subject
-    reference (inline data URI). An optional second image
-    (``presentation_data``) acts as a presentation/style reference alongside
-    the identity anchor — only consumed by multi-reference providers."""
+    """以用户上传图作为主体参考重新生成立绘；可选的 presentation_data 作为风格参考，仅多参考图供应商会消费。"""
     if user_id is None:
         raise ValueError("user_id is required")
     if persona is None:
@@ -632,7 +585,7 @@ async def regenerate_avatar_from_image(
 
 
 def resolve_uploaded_avatar_path(filename: str) -> tuple[Path, str] | None:
-    """Locate an avatar file on disk for the serving route."""
+    """为文件下发路由定位磁盘上的头像文件。"""
     name = Path(filename).name
     if "/" in name or "\\" in name or ".." in name:
         return None
@@ -645,7 +598,7 @@ def resolve_uploaded_avatar_path(filename: str) -> tuple[Path, str] | None:
 
 
 def _read_temp_media_bytes(bare_path: str) -> tuple[bytes, str] | None:
-    """Returns ``None`` if the file is missing (TTL expired) or unreadable."""
+    """读取 temp-media 文件字节；文件因 TTL 过期或不可读时返回 None。"""
     temp_file_id = bare_path.split("/", 1)[1]
     res = get_file_path(temp_file_id)
     if res is None:
@@ -659,10 +612,7 @@ def _read_temp_media_bytes(bare_path: str) -> tuple[bytes, str] | None:
 
 
 async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
-    """Copy the active avatar's images from temp-media to companion-avatars.
-    Two-phase: reads all bytes first (abort on any TTL expiry), then persists —
-    avoids orphaned companion-avatars files on partial failure. Idempotent.
-    Raises ``AvatarSourceUnreadableError`` if any temp-media file has expired."""
+    """把激活头像的图片从 temp-media 转存到 companion-avatars；先全量读取再落盘，避免部分失败留下孤儿文件。"""
     asset = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
     if asset is None:
         return None
@@ -717,7 +667,7 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
 async def generate_fullbody_style_samples(
     db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, reference_image: str | None = None, reference_content_type: str | None = None
 ) -> dict[str, str]:
-    """Generate 1 front sample image for each style in STYLE_CATALOG concurrently."""
+    """并发为 STYLE_CATALOG 中每种风格各生成一张正面样图。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -782,10 +732,7 @@ async def generate_fullbody_style_samples(
         err_msg = getattr(first_err, "internal", str(first_err))
         raise FullbodyGenerationError("所有风格样图生成失败，请稍后重试", internal=err_msg)
 
-    # Sample paths ride the avatar row so a client restart rehydrates the style
-    # picker instead of paying for generation again. They are drafts in
-    # temp-media (TTL-bound); confirm-front promotes the picked one to
-    # companion-avatars, and an expired draft falls back to regeneration.
+    # 样图路径写回头像行，客户端重启可直接复原风格选择器而不必重新付费生成
     async def _persist_samples(session: AsyncSession) -> None:
         target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
         if target is None:
@@ -807,10 +754,7 @@ async def generate_fullbody_style_samples(
 
 
 async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str) -> AvatarAsset:
-    """Persist the picked fullbody style so a restart resumes at the front
-    preview instead of regenerating samples. The selected style's sample
-    becomes the front-seed candidate — mirroring the client swapping its
-    preview to the sample card."""
+    """持久化选中的全身风格，并把该风格样图作为正面种子候选，使重启后可从正面预览续接。"""
     if user_id is None:
         raise ValueError("user_id is required")
     if style not in _STYLE_IDS:
@@ -853,7 +797,7 @@ async def generate_fullbody_front(
     reference_image: str | None = None,
     reference_content_type: str | None = None,
 ) -> AvatarAsset:
-    """Generate or regenerate the front fullbody view in the selected style."""
+    """按选定风格生成或重新生成正面全身图。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -927,7 +871,7 @@ async def generate_fullbody_front(
 async def confirm_fullbody_front(
     db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None
 ) -> AvatarAsset:
-    """Confirm the front fullbody view and generate only missing right/back views."""
+    """确认正面全身图，并只补生成缺失的侧面/背面视图。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -970,7 +914,7 @@ async def confirm_fullbody_front(
     results = []
 
     if missing_views:
-        # The confirmed front image serves as the subject reference for missing views.
+        # 已确认的正面图作为缺失视图的主体参考，保证多视图同一形象
         front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
 
         cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
@@ -1023,9 +967,7 @@ async def confirm_fullbody_front(
             target.seed_right_url = generated["right"]
         if "back" in generated:
             target.seed_back_url = generated["back"]
-        # Confirmation promotes draft seeds from temp-media to companion-avatars
-        # (same lifecycle as finalize_avatar for the bust). An expired draft
-        # surfaces a regenerable 409 instead of a silently dead URL.
+        # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
         for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
             current = getattr(target, attr)
             if current.startswith("temp-media/"):

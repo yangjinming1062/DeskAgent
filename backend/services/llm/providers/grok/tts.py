@@ -8,12 +8,8 @@ from ..http import get_http
 logger = logging.getLogger(__name__)
 
 
-# Subset of xAI's published built-in voice catalog
-# (https://docs.x.ai/docs/rest-api-reference/inference/voice — `GET /v1/tts/voices`).
-# Picked to give the picker one entry per gender / tone bucket; the live service
-# can expand this from the runtime endpoint when an API key is configured.
+# xAI 已发布内置音色目录的子集（https://docs.x.ai/docs/rest-api-reference/inference/voice — GET /v1/tts/voices）；按性别/音色分桶每桶取一条；运行时若配置了 API key 可向运行端点扩展。
 _GROK_VOICES: tuple[tuple[str, str, str], ...] = (
-    # (voice_id, display name, gender)
     ("eve", "Eve", "female"),  # docs default
     ("ara", "Ara", "female"),
     ("sal", "Sal", "neutral"),
@@ -26,18 +22,7 @@ _GROK_VOICES: tuple[tuple[str, str, str], ...] = (
 
 
 class GrokTTSProvider(TTSProvider):
-    """TTS via xAI's unary ``POST /v1/tts``.
-
-    Wire shape (request, per xAI REST reference):
-        {"text", "voice_id", "language", "output_format": {"codec", "sample_rate", "bit_rate"}, "speed"}
-
-    Notes:
-    - No ``model`` field — xAI's TTS endpoint doesn't take one.
-    - ``language`` is required: BCP-47 (``"en"``, ``"zh"``) or ``"auto"``. We
-      default to ``"en"`` because the published built-in voice catalog is
-      English-only; Chinese-capable voices are user-supplied custom-voice IDs.
-    - Response is raw audio bytes on 200 (default codec MP3).
-    """
+    """通过 xAI 的单次 POST /v1/tts 提供 TTS（请求 {text, voice_id, language, output_format{codec,sample_rate,bit_rate}, speed}）；不支持 model 字段；language 必填（BCP-47 或 "auto"），内置目录仅英文故默认 en，中文音色依赖用户自定义 ID；200 直接返回音频字节（默认 MP3）。"""
 
     provider_name = "grok"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "grok-voice-think-fast-1.0"}
@@ -67,9 +52,7 @@ class GrokTTSProvider(TTSProvider):
 
         resp = await self._client.post("/tts", json=payload)
 
-        # TTS returns raw audio bytes on 200. raise_for_provider_response
-        # inspects the JSON envelope and returns {} harmlessly when the body
-        # isn't JSON; same pattern as zhipu/tts.py.
+        # TTS 200 直接返回音频字节；raise_for_provider_response 检查 JSON 信封，体非 JSON 时返回 {}，与 zhipu/tts.py 保持同一模式。
         raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
         mime = "audio/mpeg" if codec == "mp3" else f"audio/{codec}"

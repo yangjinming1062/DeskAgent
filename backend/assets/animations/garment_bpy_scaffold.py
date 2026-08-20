@@ -7,13 +7,12 @@ import bpy
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
 
-_SHRINKWRAP_OFFSET = 0.0015  # 1.5 mm material gap
-_SOLIDIFY_THICKNESS = 0.002  # 2 mm
+_SHRINKWRAP_OFFSET = 0.0015
+_SOLIDIFY_THICKNESS = 0.002
 _SUBSURF_VERT_THRESHOLD = 4000
-_COLLISION_CLEARANCE = 0.003  # 3 mm
+_COLLISION_CLEARANCE = 0.003
 
 
-# ─── Placeholder replaced by orchestrator ───────────────────────
 def _build_garment(ctx: dict) -> None:  # pragma: no cover  -- replaced at runtime
     __BUILD_GARMENT__  # noqa: F821 -- placeholder marker
 
@@ -34,9 +33,6 @@ def _reset_scene() -> None:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     for obj in list(bpy.data.objects):
         bpy.data.objects.remove(obj, do_unlink=True)
-
-
-# ─── Stage 0: Import & normalize ─────────────────────────────────
 
 
 def _import_body_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object, list[bpy.types.Object]]:
@@ -62,9 +58,6 @@ def _build_ctx(armature: bpy.types.Object, body_mesh: bpy.types.Object, socket: 
     return {"body": {"armature": armature, "mesh": body_mesh}, "bones": bones, "body_bounds": body_bounds, "params": {"socket": socket} if socket else {}}
 
 
-# ─── Stage 1: Fit — shrinkwrap VG_ANCHOR to body surface ─────────
-
-
 def _fit_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object) -> None:
     if "VG_ANCHOR" not in garment.vertex_groups:
         raise RuntimeError(f"garment '{garment.name}' missing VG_ANCHOR vertex group")
@@ -78,17 +71,8 @@ def _fit_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object) -> None
     bpy.ops.object.modifier_apply(modifier=mod.name)
 
 
-# ─── Stage 2: Drape — static cloth gravity simulation ────────────
-
-
 def _drape_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, frames: int = 20) -> None:
-    """Bake static gravity drape into single-layer rest geometry before solidify/skinning.
-
-    Anchors VG_ANCHOR so waist/collar stays fixed while the skirt/hems drape
-    naturally over the body collision mesh. In Blender 5.2, a vertex with weight
-    1.0 in the cloth mass vertex group is held in place (effectively pinned);
-    no separate pin group / pin_stiffness is used.
-    """
+    """把静态重力垂落烘焙成单层 rest geometry，再做加厚与蒙皮。Blender 5.2 在 cloth mass 顶点组上权重 1.0 的顶点被原地锁住，没有独立的 pin 组。"""
     bpy.context.view_layer.objects.active = body_mesh
     body_mesh.select_set(True)
     body_col = body_mesh.modifiers.new(name="BodyCollision", type="COLLISION")
@@ -111,9 +95,6 @@ def _drape_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, frame
         body_mesh.modifiers.remove(body_col)
 
 
-# ─── Stage 3: Thickness & density ────────────────────────────────
-
-
 def _solidify_garment(garment: bpy.types.Object) -> None:
     bpy.context.view_layer.objects.active = garment
     garment.select_set(True)
@@ -128,11 +109,7 @@ def _solidify_garment(garment: bpy.types.Object) -> None:
         bpy.ops.object.modifier_apply(modifier=subsurf.name)
 
 
-# ─── Stage 4: Skin — Data Transfer + ARMATURE modifier ────────────
-
-
 def _skin_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, armature: bpy.types.Object) -> None:
-    # Transfer vertex weights from body mesh via nearest-face interpolation.
     bpy.context.view_layer.objects.active = garment
     garment.select_set(True)
     dt = garment.modifiers.new(name="WeightTransfer", type="DATA_TRANSFER")
@@ -146,13 +123,9 @@ def _skin_garment(garment: bpy.types.Object, body_mesh: bpy.types.Object, armatu
     dt.mix_factor = 1.0
     bpy.ops.object.modifier_apply(modifier=dt.name)
 
-    # Bind to body armature so the garment deforms with body skeleton.
     arm_mod = garment.modifiers.new(name="Armature", type="ARMATURE")
     arm_mod.object = armature
     arm_mod.use_vertex_groups = True
-
-
-# ─── Stage 5: Collision — rest-pose anti-penetration ──────────────
 
 
 def _build_body_bvh(body_mesh: bpy.types.Object) -> BVHTree:
@@ -185,9 +158,6 @@ def _collision_fix(garment: bpy.types.Object, body_bvh: BVHTree) -> None:
     bm_garment.free()
 
 
-# ─── Stage 6: Validate ───────────────────────────────────────────
-
-
 def _validate(garment_meshes: list[bpy.types.Object], armature: bpy.types.Object) -> None:
     bone_names = {b.name for b in armature.data.bones}
     for gm in garment_meshes:
@@ -201,9 +171,6 @@ def _validate(garment_meshes: list[bpy.types.Object], armature: bpy.types.Object
         orphan_groups = {vg.name for vg in gm.vertex_groups} - bone_names - {"VG_ANCHOR"}
         if orphan_groups:
             raise RuntimeError(f"garment '{gm.name}' has vertex groups with no matching bone: {orphan_groups}")
-
-
-# ─── Stage 7: Export with assembly extras ────────────────────────
 
 
 def _export_glb(output_path: str, assembly: dict) -> None:
@@ -225,15 +192,8 @@ def _export_glb(output_path: str, assembly: dict) -> None:
     )
 
 
-# ─── Preview render ───────────────────────────────────────────────
-
-
 def _render_preview(output_path: str) -> None:
-    """Low-quality Cycles CPU render for the render-compare-refine loop.
-
-    EEVEE is unreliable in headless containers (needs an OpenGL context);
-    Cycles CPU works everywhere.
-    """
+    """渲染-比较-精化循环用的低质量 Cycles CPU 预览。无头容器里 EEVEE 不可靠（需要 OpenGL 上下文），Cycles CPU 通用。"""
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
     scene.cycles.samples = 16
@@ -277,9 +237,6 @@ def _render_preview(output_path: str) -> None:
     bpy.ops.render.render(write_still=True)
 
 
-# ─── Main ────────────────────────────────────────────────────────
-
-
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
     _reset_scene()
@@ -293,11 +250,7 @@ def main(argv: list[str]) -> int:
         raise RuntimeError("LLM code created no garment meshes")
 
     if args.kind == "accessory":
-        # Accessories skip fit/solidify/skin/collision — they are rigid meshes
-        # attached to a socket bone at runtime (backend/README.md 已知限制).
-        # Render while the body is still in scene so the eval/refine loop sees
-        # the wear position, then drop the body so the export contains only
-        # the accessory geometry.
+        # 配件跳过 fit/solidify/skin/collision：它们是刚体网格，运行时挂在 socket 骨上（见 backend/README.md 已知限制）。渲染时保留身体以让 eval/refine 循环看到穿戴位置，再移除身体使导出只含配件几何。
         if args.render_output:
             _render_preview(args.render_output)
             print(f"[scaffold] preview rendered to {args.render_output}")
@@ -305,7 +258,7 @@ def main(argv: list[str]) -> int:
             if obj.name in bpy.data.objects:
                 bpy.data.objects.remove(bpy.data.objects[obj.name], do_unlink=True)
     else:
-        # The body is immutable across the loop — build the collision BVH once.
+        # 循环中身体不变，碰撞 BVH 只构建一次。
         body_bvh = _build_body_bvh(body_mesh)
         for gm in garment_meshes:
             _fit_garment(gm, body_mesh)
@@ -320,8 +273,7 @@ def main(argv: list[str]) -> int:
             _render_preview(args.render_output)
             print(f"[scaffold] preview rendered to {args.render_output}")
 
-        # The garment GLB contains only the garment skinned mesh(es) and the
-        # body armature (MODEL_SPEC.md §4.1). Remove imported meshes before export.
+        # 服装 GLB 只含服装蒙皮网格与身体 armature（MODEL_SPEC.md §4.1），导出前移除导入的身体网格。
         for obj in imported_objects:
             if obj.name in bpy.data.objects:
                 live_obj = bpy.data.objects[obj.name]

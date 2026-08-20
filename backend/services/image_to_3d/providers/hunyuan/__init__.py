@@ -13,13 +13,13 @@ from .client import HunyuanApiError
 
 logger = get_logger(__name__)
 
-# TokenHub takes bare base64; flip to a data-URI prefix if custom proxy requires it.
+# TokenHub 接受裸 base64；自定义代理需要 data-URI 时改为前缀
 IMAGE_BASE64_PREFIX = ""
 
 _MAX_IMAGE_BYTES = 10 * 1024 * 1024
 _ALLOWED_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
-# TokenHub job status → Model3DPollResult.status; unknown values keep polling.
+# TokenHub 任务状态 → Model3DPollResult.status；未知值继续轮询。
 _STATUS_MAP: dict[str, str] = {
     "queued": "queued",
     "pending": "queued",
@@ -32,8 +32,7 @@ _STATUS_MAP: dict[str, str] = {
 
 
 class HunyuanImageTo3DProvider(ImageTo3DProvider):
-    """腾讯混元生3D（TokenHub OpenAI 兼容接入）。支持单图与多视图生3D；
-    产物骨骼由本地 Blender 自动绑骨后处理补齐。"""
+    """腾讯混元生 3D（TokenHub OpenAI 兼容接入），支持单图与多视图；骨骼由本地 Blender 自动绑骨后处理补齐。"""
 
     provider_name = "hunyuan"
     SUPPORTS_RIGGING = False

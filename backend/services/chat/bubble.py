@@ -1,33 +1,25 @@
-"""Streaming splitter for consecutive assistant chat bubbles.
-
-The LLM may separate multiple short replies inside a single turn with a markdown
-horizontal-rule line (``---``). This splitter buffers the stream and
-replaces each separator with a ``BubbleEvent(is_break=True)`` so the emitter
-can insert a ``bubble.break`` frame (and the desktop can pause between the
-two bubbles).
-"""
+"""连续助手气泡的流式切分器：将 markdown 分隔线 ``---`` 转换为 BubbleEvent 让发射器插入 bubble.break 帧。"""
 
 from dataclasses import dataclass
 
-# Longest first so ``\n\n---\n\n`` wins over the nested ``\n---\n``.
+# 优先匹配最长分隔符，避免 ``\n\n---\n\n`` 被嵌套的 ``\n---\n`` 抢先命中。
 _SEPARATORS: tuple[str, ...] = ("\n\n---\n\n", "\n---\n")
-# Every proper prefix of every separator, longest first — the suffixes we hold
-# back so a separator split across two chunks is never emitted as text.
+# 各分隔符的全部真前缀（降序），用于在跨 chunk 切分时暂留尾部，防止分隔符被当成文本输出。
 _PARTIAL_PREFIXES: tuple[str, ...] = tuple(sorted({sep[:i] for sep in _SEPARATORS for i in range(1, len(sep))}, key=len, reverse=True))
-# Suffixes with a dash that indicate an incomplete separator at end-of-stream.
+# 流结束时需要丢弃的含连字符的前缀（不完整分隔符）。
 _INCOMPLETE_DASH_PREFIXES: tuple[str, ...] = tuple(sorted({p for p in _PARTIAL_PREFIXES if "-" in p}, key=len, reverse=True))
 
 
 @dataclass(frozen=True)
 class BubbleEvent:
-    """One unit of the assistant bubble stream: text or a bubble boundary."""
+    """助手气泡流的最小单元：文本片段或气泡边界。"""
 
     is_break: bool
     text: str = ""
 
 
 class BubbleSplitter:
-    """Buffer a text stream and split it into chat bubbles on ``---`` lines."""
+    """缓冲文本流并在 ``---`` 行处切分为多个气泡。"""
 
     def __init__(self) -> None:
         self._buf = ""
@@ -39,9 +31,7 @@ class BubbleSplitter:
         return self._drain()
 
     def flush(self) -> list[BubbleEvent]:
-        """End-of-stream: drop a trailing separator (or incomplete dash prefix) and emit any
-        residual text. A separator at the very end has no following bubble, so
-        it must not surface as a break or as literal ``---`` text."""
+        """流结束时丢弃尾部残留的分隔符/不完整连字符前缀再输出残余文本，避免尾部 ``---`` 暴露为 break 或字面文本。"""
         while True:
             stripped = False
             for sep in _SEPARATORS:
@@ -76,8 +66,7 @@ class BubbleSplitter:
             events.append(BubbleEvent(is_break=True))
             self._buf = self._buf[idx + sep_len :]
 
-        # Emit resolved text, holding back only a suffix that could still grow
-        # into a separator (arriving split across chunks).
+        # 仅输出已确定不是分隔符前缀的部分，暂留可能跨 chunk 演变为分隔符的后缀。
         for prefix in _PARTIAL_PREFIXES:
             if self._buf.endswith(prefix):
                 emit = self._buf[: -len(prefix)]

@@ -6,15 +6,12 @@ from components import get_logger
 logger = get_logger(__name__)
 
 
-# OpenAI / Anthropic / Gemini image part types. Single source — the trajectory
-# normaliser below is the only consumer; tool dispatch doesn't need to
-# normalise persisted history (it operates on already-stored conversations).
+# OpenAI / Anthropic / Gemini 的图片 part 类型，单一来源；只供下面的轨迹规整器使用，工具派发无需再规整已持久化历史。
 _IMAGE_PART_TYPES = frozenset({"image_url", "image", "input_image"})
 
 
 def _trajectory_normalize_msg(msg: dict) -> dict:
-    """Replace image blobs in a stored message with ``[screenshot]`` placeholders
-    so old turns stay readable when rendered without re-fetching the asset."""
+    """把已存消息中的图片 blob 替换为 ``[screenshot]`` 占位符，使老轮次无需重新取图也可读。"""
     if not isinstance(msg, dict):
         return msg
     content = msg.get("content")
@@ -53,11 +50,7 @@ def _escape_invalid_chars_in_json_strings(raw: str) -> str:
 
 
 def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
-    """Best-effort JSON repair for malformed LLM tool-call arguments.
-
-    Returns ``"{}"`` when the input is unrepairable — chat loop must never hang
-    on a single broken tool call.
-    """
+    """尽力修复 LLM tool-call 参数中的畸形 JSON；不可修复时返回 ``"{}"``，避免单个坏调用阻塞聊天循环。"""
     raw_stripped = raw_args.strip() if isinstance(raw_args, str) else ""
 
     if not raw_stripped:
@@ -84,8 +77,7 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
         fixed += "}" * open_curly
     if open_bracket > 0:
         fixed += "]" * open_bracket
-    # Bounded: only continues while trailing `}`/`]` exceed openers, which can
-    # happen at most len(fixed) times.
+    # 终止条件：仅当末尾 }/] 多于开括号时继续剪枝，最多执行 len(fixed) 次。
     while True:
         try:
             json.loads(fixed)
@@ -120,19 +112,14 @@ def truncate_chat_history(messages: list[dict], max_recent_messages: int = 40, n
     if not messages:
         return []
 
-    # Only the LEADING system block is the pinned prompt. Later system rows are
-    # in-conversation markers (tool_summary) whose meaning depends on where they
-    # sit — hoisting them to the front would detach them from the turn they
-    # stand in for.
+    # 仅开头的 system 块是钉住的 prompt；其后出现的 system 行是会话内标记（tool_summary），其含义依赖于位置，提升到开头会脱离所在轮次。
     pinned = 0
     while pinned < len(messages) and messages[pinned].get("role") == "system":
         pinned += 1
     sys_msgs = messages[:pinned]
     non_sys = messages[pinned:]
 
-    # Walk back past leading tool results so the assistant tool_call that owns
-    # them stays first in the window. Bounded — tool runs produce at most a
-    # handful of consecutive results before the next assistant turn.
+    # 越过开头的 tool 结果回退，保证对应的 assistant tool_call 落在窗口首部；工具执行通常最多连续产生几条结果即进入下一轮 assistant。
     keep_start = max(0, len(non_sys) - max_recent_messages)
     for _ in range(max_recent_messages):
         if keep_start <= 0 or non_sys[keep_start].get("role") != "tool":
@@ -149,11 +136,7 @@ def truncate_chat_history(messages: list[dict], max_recent_messages: int = 40, n
         out.append(processed)
 
     if keep_start > 0:
-        # Always preserve an anchor message so the model has a continuous
-        # history: the earliest dropped user message (sub-agent contexts can
-        # have an assistant turn at the head), or a generic placeholder if no
-        # user message exists at all. Searching only the dropped prefix keeps
-        # an in-window user message from being injected twice.
+        # 保留一条锚定消息保证历史连续：取被丢弃前缀中最早的 user 消息（子代理上下文首条可能是 assistant），无则用占位符；只在丢弃前缀内搜索，避免窗口内 user 消息被重复注入。
         anchor = next((m for m in non_sys[:keep_start] if m.get("role") == "user"), None)
         removed = keep_start - (1 if anchor is not None else 0)
         marker = {"role": "user", "content": f"[... {removed} early conversation turns removed for context window management ...]"}

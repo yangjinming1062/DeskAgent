@@ -6,11 +6,7 @@ from ._errors import raise_for_minimax_response
 
 
 class MiniMaxEmbeddingProvider(EmbeddingProvider):
-    """Embeddings via MiniMax's native /v1/embeddings HTTP API.
-
-    MiniMax requires `texts` (list of strings) and `type` ("db" or "query").
-    Returns `vectors`: list of float vectors (dim: 1536 for embo-01).
-    """
+    """通过 MiniMax 原生 /v1/embeddings HTTP API 提供 embeddings；要求 texts（字符串列表）与 type（"db" 或 "query"），返回 vectors 浮点向量列表（embo-01 维度 1536）。"""
 
     provider_name = "minimax"
     service_type = ServiceType.embedding

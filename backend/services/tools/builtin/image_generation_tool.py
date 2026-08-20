@@ -13,21 +13,7 @@ logger = get_logger(__name__)
 async def _image_gen_chain(
     db: AsyncSession | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None, *, preferred_provider: str | list[str] | None = None
 ) -> tuple[list[ProviderConfig], str | None]:
-    """Filter the image_gen chain to reference-capable providers when
-    ``reference_image`` is given. Returns ``(chain, error)``: error is set
-    only when image_gen is configured but no provider supports image-to-image;
-    an empty chain with no error means image_gen isn't configured.
-
-    When ``secondary_reference_image`` is present, prefer providers that
-    consume both images (supports_multiple_reference_images); if none, degrade
-    to single-ref capable providers (the secondary image is silently dropped).
-
-    ``preferred_provider`` reorders the chain: accepts a single provider name
-    or a priority list (e.g. ``["grok", "gemini", "minimax"]``). Providers in
-    the list come first in the given order; unlisted providers follow in their
-    original chain order. Used by full-body generation to prefer Grok → Gemini
-    → MiniMax while other image-gen calls use the normal provider chain.
-    """
+    """在传入 reference_image 时按图生图能力过滤 image_gen 供应商链；其余行为见参数说明。"""
     full = await resolve_provider_chain(db, user_id, "image_gen")
     if preferred_provider:
         priority = [preferred_provider] if isinstance(preferred_provider, str) else list(preferred_provider)
@@ -41,8 +27,7 @@ async def _image_gen_chain(
     if secondary_reference_image:
         multi = [c for c in capable if resolve(ServiceType.image_gen, c.provider_name).supports_multiple_reference_images]
         if multi:
-            # Prefer multi-ref providers but keep single-ref as fallback —
-            # single-ref providers silently ignore the secondary image.
+            # 优先多参考图供应商，单参考图供应商作为兜底——单参考图供应商会静默忽略第二张图。
             multi_names = {c.provider_name for c in multi}
             capable = sorted(capable, key=lambda c: 0 if c.provider_name in multi_names else 1)
         else:
@@ -61,17 +46,7 @@ async def image_generation_tool(
     preferred_provider: str | list[str] | None = None,
     **kwargs,
 ) -> str:
-    """Image generation via the per-service provider chain. base64 payloads
-    are saved locally and returned as our own /api/media/files/<id> URLs so
-    the LLM can safely reference them in image_url parts even after the
-    upstream CDN evicts.
-
-    ``reference_image`` (companion avatar-from-image flow) is only offered
-    to providers that consume it natively — text-only image providers are
-    skipped rather than degraded via image→text→image.
-    ``secondary_reference_image`` (presentation/style ref alongside the
-    identity anchor) is consumed only by multi-ref providers; others silently
-    ignore it."""
+    """通过 image_gen 供应商链生成图片，base64 结果会落地为本服务的 /api/media/files/<id> 链接。"""
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image, secondary_reference_image=secondary_reference_image)
     try:
         if user_id is not None:
@@ -119,11 +94,7 @@ async def image_generation_tool(
 
 
 def first_image_url(result_json: str) -> str | None:
-    """Pull the first image URL out of ``image_generation_tool``'s JSON
-    result. The tool returns ``{"success": true, "urls": [...]}`` on success
-    and ``{"success": false, "error": ...}`` on failure. Centralised here
-    so the 3 call sites (avatar / wardrobe / model PBR channels) all share
-    one definition of "first usable URL"."""
+    """从 image_generation_tool 的 JSON 结果中取出第一张可用图片 URL，供头像/衣橱/PBR 三个调用点共用。"""
     parsed = safe_json_loads(result_json, default=None)
     if not isinstance(parsed, dict) or not parsed.get("success"):
         return None
@@ -134,8 +105,7 @@ def first_image_url(result_json: str) -> str | None:
     return first if isinstance(first, str) and first else None
 
 
-# MiniMax aspect ratios + the legacy DALL·E pixel sizes that map to them via
-# the provider's size→aspect_ratio table.
+# MiniMax 长宽比 + 通过供应商 size→aspect_ratio 映射回传统 DALL·E 像素尺寸的兼容集合。
 IMAGE_GENERATION_SIZES = ["1024x1024", "1024x1792", "1792x1024", "1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9"]
 
 IMAGE_GENERATION_SCHEMA = {

@@ -39,7 +39,7 @@ _INTERACT_PROMPT_TEMPLATE = (
 
 
 async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> InteractResult:
-    """LLM reasoning for user interaction response (poke)."""
+    """针对用户互动（戳一戳）用 LLM 生成口头反应与表情。"""
     if kind != "poke":
         return InteractResult(text=None, reason="invalid_kind")
 

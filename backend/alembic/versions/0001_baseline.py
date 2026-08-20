@@ -1,13 +1,4 @@
-"""baseline: full pre-launch schema — 21 tables + pgvector/pg_trgm extensions,
-partial unique indexes, HNSW/GIN indexes and the ws_events / render_jobs NOTIFY
-triggers. Single squashed revision (no live deployments when introduced); new
-migrations chain from here.
-
-Revision ID: 0001
-Revises:
-Create Date: 2026-08-17
-
-"""
+"""baseline：发布前完整 schema，21 张表 + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events / render_jobs NOTIFY 触发器；首次压缩版本（引入时无在用部署），后续迁移从此接力。"""
 
 from collections.abc import Sequence
 
@@ -15,7 +6,7 @@ import sqlalchemy as sa
 from alembic import op
 from pgvector.sqlalchemy import Vector
 
-# revision identifiers, used by Alembic.
+# Alembic 用的版本标识符。
 revision: str = "0001"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
@@ -23,8 +14,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    # Extensions first: memories.embedding is vector(1536), so the type must
-    # exist before its create_table below.
+    # 先建扩展：memories.embedding 是 vector(1536)，必须在 create_table 之前存在该类型。
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 
@@ -433,34 +423,31 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", name="uq_companion_preferences_user_id"),
     )
 
-    # ── Partial unique indexes (cannot be expressed in declarative models) ──
-    # Concurrent POST /model would otherwise leave two active rows.
+    # Partial unique 索引（声明式模型无法表达）。
+    # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     op.create_index("uq_companion_models_one_active", "companion_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
-    # _ensure_presets relies on this index for dedup instead of a SELECT.
+    # _ensure_presets 依赖该索引做去重，不再额外 SELECT。
     op.create_index("uq_wardrobe_items_user_name", "wardrobe_items", ["user_id", "name"], unique=True)
-    # One main conversation per user; a full (user_id, kind) unique would forbid
-    # multiple "standard" conversations. Guards the get_or_create race between
-    # concurrent boot / cron kick / prompt.submit.
+    # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
     op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
-    # One waiting/switch sprite per user; resolve_sprite deletes the prior row
-    # before inserting so this holds concurrent requests too.
+    # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
     op.create_index("uq_companion_sprites_one_waiting", "companion_sprite_images", ["user_id"], unique=True, postgresql_where=sa.text("role = 'waiting'"))
     op.create_index("uq_companion_expressions_user_name", "companion_expressions", ["user_id", "name"], unique=True)
     op.create_index("uq_memories_user_context", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))
-    # One row per (user, slot) so memory_retain(kind='auto_inject') upserts atomically.
+    # 每 (user, slot) 一行，让 memory_retain(kind='auto_inject') 原子 upsert。
     op.create_index("uq_memories_auto_inject_slot", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'auto_inject:%'"))
     op.create_index("uq_memories_inferred_profile_slot", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'inferred_profile:%'"))
     op.create_index("uq_memories_diary_day", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'diary:%'"))
-    # Speeds up the recall consolidator's count-and-recent queries.
+    # 加速 recall consolidator 的 count-and-recent 查询。
     op.create_index("ix_memories_recall_user_updated", "memories", ["user_id", sa.text("updated_at DESC")], unique=False, postgresql_where=sa.text("context LIKE 'recall:%'"))
 
-    # ── Vector / trigram retrieval indexes ──
+    # 向量 / trigram 检索索引。
     op.create_index("ix_memories_embedding", "memories", ["embedding"], unique=False, postgresql_using="hnsw", postgresql_ops={"embedding": "vector_cosine_ops"})
     op.create_index("ix_memories_content_trgm", "memories", ["content"], unique=False, postgresql_using="gin", postgresql_ops={"content": "gin_trgm_ops"})
     op.create_index("ix_memories_context_trgm", "memories", ["context"], unique=False, postgresql_using="gin", postgresql_ops={"context": "gin_trgm_ops"})
 
-    # ── Outbox / render-queue LISTEN/NOTIFY wakeup triggers (ARCHITECTURE.md §5) ──
+    # Outbox / render-queue 的 LISTEN/NOTIFY 唤醒触发器（ARCHITECTURE.md §5）。
     op.execute("""
 CREATE FUNCTION notify_ws_event() RETURNS trigger AS $$
 BEGIN
@@ -494,7 +481,7 @@ def downgrade() -> None:
     op.execute("DROP FUNCTION IF EXISTS notify_render_job()")
     op.execute("DROP TRIGGER IF EXISTS ws_event_notify_trigger ON ws_events")
     op.execute("DROP FUNCTION IF EXISTS notify_ws_event()")
-    # Children before parents (messages → conversations → users).
+    # 先子表再父表（messages → conversations → users）。
     for table in (
         "messages",
         "ws_events",

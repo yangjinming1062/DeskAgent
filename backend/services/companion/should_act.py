@@ -55,7 +55,7 @@ async def should_act(
     seconds_since_last_action: float = 0.0,
     llm_config: UserLlmConfig | dict[str, Any] | None = None,
 ) -> ShouldActResult:
-    """LLM inverse driving decision service for companion autonomous space actions."""
+    """由 LLM 决策伙伴此刻是否要采取自主空间行为。"""
     if kind not in ("periodic_provision",):
         return ShouldActResult(should_act=False, reason="invalid_kind")
 

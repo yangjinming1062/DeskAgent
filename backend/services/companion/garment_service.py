@@ -20,8 +20,6 @@ _GARMENT_BUILD_MARKER = "    __BUILD_GARMENT__"
 MAX_ITERATIONS_FALLBACK = 6
 
 
-# ─── System prompts ──────────────────────────────────────────────
-
 _CODE_GEN_SYSTEM_PROMPT = """\
 你是一位精通 Blender Python API (bpy) 的 3D 服装建模师。你的任务是根据服装描述和参考图，\
 在已有的角色身体上创建服装几何体。
@@ -217,12 +215,8 @@ _EVAL_SYSTEM_PROMPT = """\
 """
 
 
-# The fix/refine loops are shared by garment and accessory iterations; only the
-# anchor contract differs (garments need VG_ANCHOR, accessories must stay solid).
+# 修复/精修循环由服装与挂件共用，仅锚点契约不同（服装需 VG_ANCHOR，挂件须保持实体）
 _ANCHOR_HINTS = {"garment": "确保 VG_ANCHOR 顶点组存在且非空。", "accessory": "挂件保持实体网格，佩戴点对准挂点骨骼。"}
-
-
-# ─── LLM call wrappers ───────────────────────────────────────────
 
 
 async def _code_call(system: str, instruction: str, images: list[str], user_id: int, db: AsyncSession | None) -> str:
@@ -278,9 +272,6 @@ async def _llm_evaluate_garment(
     return EvaluationResult(score=int(parsed.get("score", 0)), converged=bool(parsed.get("converged", False)), critique=str(parsed.get("critique", "")))
 
 
-# ─── GLB validation ──────────────────────────────────────────────
-
-
 def joint_names_from_gltf(gltf: dict[str, Any]) -> list[str]:
     names: list[str] = []
     nodes = gltf.get("nodes") or []
@@ -301,7 +292,7 @@ def _extract_joint_names(glb_bytes: bytes) -> list[str]:
 
 
 def _validate_garment_glb(glb_bytes: bytes, body_joint_names: list[str], *, kind: str = "garment") -> list[str]:
-    """Validate garment joint consistency with body skeleton or accessory parseability."""
+    """校验服装骨骼与身体骨架是否一致；挂件只校验 GLB 可解析。"""
     if kind == "accessory":
         return [] if parse_glb_json(glb_bytes) is not None else ["accessory GLB unparseable"]
     garment_joints = _extract_joint_names(glb_bytes)
@@ -310,9 +301,6 @@ def _validate_garment_glb(glb_bytes: bytes, body_joint_names: list[str], *, kind
     if garment_joints != body_joint_names:
         return [f"joint mismatch: garment has {len(garment_joints)} joints, body has {len(body_joint_names)}"]
     return []
-
-
-# ─── Main pipeline ───────────────────────────────────────────────
 
 
 async def run_garment_pipeline(
@@ -329,12 +317,7 @@ async def run_garment_pipeline(
     user_id: int,
     io_dir: Path | None = None,
 ) -> bytes:
-    """Iterate LLM-Blender-evaluation loop until convergence; returns best garment GLB bytes.
-
-    ``io_dir`` hosts the body GLB + per-iteration scripts in the worker's
-    per-job directory (host-visible for the sandbox mount). Each LLM call
-    opens its own short session — the loop spans minutes and must not pin a
-    caller's session across Blender runs."""
+    """迭代「LLM 生成 → Blender 执行 → 视觉评估」直至收敛，返回最佳服装 GLB；每次 LLM 调用自建短会话，避免长循环占住调用方会话。"""
     reference_uris = reference_uris or []
     body_joint_names = _extract_joint_names(body_glb_bytes) if body_joint_names is None else body_joint_names
     ctx_bones_info = _build_ctx_bones_info(body_joint_names)

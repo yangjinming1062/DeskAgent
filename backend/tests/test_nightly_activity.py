@@ -22,7 +22,7 @@ from services.tools import INFERRED_PROFILE_SLOTS, NativeMemory
 
 
 def _mock_llm_response(payload):
-    """Build an async fake ``call_llm_once`` that yields *payload* as content."""
+    """构造一个 async fake ``call_llm_once``，把 *payload* 作为 content 返回。"""
     content = (
         payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
     )
@@ -36,7 +36,7 @@ def _mock_llm_response(payload):
 async def _make_user(
     SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shanghai"
 ):
-    """Seed a User row and model config so LLM and FK constraints are met."""
+    """插入 User 行和模型配置，以满足 LLM 调用和外键约束。"""
     from modules.auth import (
         LoginRecord,
         User,
@@ -89,9 +89,6 @@ async def seeded(_patch_db):
     await _make_user(SessionLocal, 1001, "Asia/Shanghai")
     await _make_user(SessionLocal, 1002, "America/New_York")
     return SessionLocal
-
-
-# ── Namespace & Forgery Defense ─────────────────────────────────────────
 
 
 async def test_retain_recall_rejects_inferred_profile_context(seeded):
@@ -171,12 +168,12 @@ async def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
         out = await mem.execute_tool("memory_recall", {"query": "python"})
         parsed = json.loads(out)
         result_text = parsed.get("result", "")
-        # Regular recall is returned
+        # 普通 recall 应被返回。
         assert "Regular recall python preference" in result_text
-        # Diary is searchable via recall
+        # 日记也应可通过 recall 命中。
         assert "Diary note about python project" in result_text
 
-        # Inferred profile is NOT returned
+        # 推断画像不应被 recall 返回。
         out_profile = await mem.execute_tool("memory_recall", {"query": "engineer"})
         assert "Inferred: software engineer" not in json.loads(out_profile).get(
             "result", ""
@@ -186,7 +183,7 @@ async def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
 async def test_format_inferred_profile_block_renders_in_order(seeded):
     SessionLocal = seeded
     async with SessionLocal() as db:
-        # Empty when no rows
+        # 无行时应返回空串。
         assert await format_inferred_profile_block(db, 1001) == ""
 
         db.add_all(
@@ -215,7 +212,7 @@ async def test_format_inferred_profile_block_renders_in_order(seeded):
 
         block = await format_inferred_profile_block(db, 1001)
         assert "# Inferred user profile" in block
-        # Order must match INFERRED_PROFILE_SLOTS (basic_info before work_schedule before interests)
+        # 顺序必须符合 INFERRED_PROFILE_SLOTS：basic_info → work_schedule → interests。
         assert (
             block.index("basic info")
             < block.index("work schedule")
@@ -254,9 +251,6 @@ async def test_format_memories_block_excludes_inferred_profile_and_diary(seeded)
         assert "actual durable memory" in block
         assert "inferred secret" not in block
         assert "private companion diary" not in block
-
-
-# ── Conversation Preprocessing ──────────────────────────────────────────
 
 
 def test_preprocess_conversation_strips_noise():
@@ -321,17 +315,11 @@ def test_preprocess_conversation_unknown_content_type_fallback():
 def test_parse_llm_json_utility():
     from components import parse_llm_json
 
-    # Clean JSON
     assert parse_llm_json('{"key": "val"}') == {"key": "val"}
-    # Code fence
     assert parse_llm_json('```json\n{"key": "val"}\n```') == {"key": "val"}
-    # Text surrounding object
     assert parse_llm_json('Here is the json: {"a": 1} Thanks!') == {"a": 1}
-    # Text surrounding array
     assert parse_llm_json("Output: [1, 2, 3] end") == [1, 2, 3]
-    # Invalid JSON
     assert parse_llm_json("Not json at all") is None
-    # None / Empty
     assert parse_llm_json(None) is None
 
 
@@ -343,9 +331,6 @@ def test_reflection_prompt_slots_invariant():
         assert slot in _REFLECTION_SYSTEM_PROMPT
     for slot in AUTO_INJECT_SLOTS:
         assert slot in _REFLECTION_SYSTEM_PROMPT
-
-
-# ── Pipeline Stages ───────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -475,7 +460,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
 
     cfg = {"api_key": "k", "base_url": "u", "model_name": "m", "provider_name": "mimo"}
 
-    # Test rollback when summaries are empty
+    # 摘要为空时应回滚。
     monkeypatch.setattr(
         nightly_activity,
         "call_llm_once",
@@ -487,7 +472,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
     ok = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
     assert ok is False
     async with SessionLocal() as db:
-        # Original rows kept
+        # 原始行应保留。
         assert (
             await db.execute(
                 select(func.count())
@@ -496,7 +481,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
             )
         ).scalar_one() == 2
 
-    # Test successful consolidation
+    # 成功合并路径。
     monkeypatch.setattr(
         nightly_activity,
         "call_llm_once",
@@ -566,7 +551,7 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
         assert job.schedule == "0 1 15 8 *"
         assert job.prompt == "Wish the user a happy birthday!"
 
-    # Now fill up to max 10 active cron jobs
+    # 把活跃 cron 数量补到上限 10。
     async with SessionLocal() as db:
         for i in range(9):
             db.add(
@@ -580,7 +565,7 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
             )
         await db.commit()
 
-    # Now with 10 jobs active, next creation attempt should fail gracefully
+    # 已达 10 个活跃任务时，再次创建应优雅失败。
     created_over_cap = await _stage_3_planning(cfg, 1001, {}, {}, [], {}, {})
     assert created_over_cap == 0
 
@@ -611,7 +596,7 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
         assert "聊得很开心" in diary.content
         assert json.loads(diary.tags) == ["diary", "self_reflection"]
 
-    # Rerunning on same day updates the single diary row in place
+    # 同日再次执行应原地更新唯一的日记行。
     monkeypatch.setattr(
         nightly_activity,
         "call_llm_once",
@@ -635,21 +620,17 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
         assert diaries[0].content == "更新后的日记反思。"
 
 
-# ── Eligibility & Cron Trigger ─────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
     SessionLocal = seeded
-    # User 1001 is in Asia/Shanghai (UTC+8).
-    # If UTC now is 2026-08-12 18:00:00, Beijing local time is 2026-08-13 02:00:00 (in [0, 5) window).
+    # 用户 1001 在 Asia/Shanghai (UTC+8)。UTC 2026-08-12 18:00 对应北京时间 2026-08-13 02:00（落在 [0,5) 窗口内）。
     simulated_now_utc = datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC)
 
-    # Clean cron scan/run throttle
+    # 清理 cron scan/run 节流状态。
     cron._LAST_NIGHTLY_SCAN = 0.0
     cron._LAST_NIGHTLY_RUN.clear()
 
-    # Seed conversation with 5 user messages within yesterday's local day
+    # 插入昨日本地日内的 5 条用户消息。
     async with SessionLocal() as db:
         conv = Conversation(user_id=1001, kind="main")
         db.add(conv)
@@ -675,29 +656,28 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
 
     monkeypatch.setattr(cron, "run_nightly_pipeline", fake_pipeline)
 
-    # 1. Trigger within window with >= 5 messages -> executes
+    # 1. 窗口内且消息数>=5，应执行。
     await cron._maybe_run_autonomous_activity(simulated_now_utc)
     assert len(pipeline_runs) == 1
-    # The pipeline digests the local day that just ended, derived from one instant.
+    # pipeline 处理刚刚结束的本地日，参考时间来自同一时刻。
     assert pipeline_runs[0] == (1001, simulated_now_utc - timedelta(days=1))
     assert cron._LAST_NIGHTLY_RUN[1001] == "2026-08-12"
 
-    # 2. Same day second tick -> skipped by _LAST_NIGHTLY_RUN
+    # 2. 同日第二次 tick 由 _LAST_NIGHTLY_RUN 跳过。
     pipeline_runs.clear()
     cron._LAST_NIGHTLY_SCAN = 0.0
     await cron._maybe_run_autonomous_activity(simulated_now_utc)
     assert len(pipeline_runs) == 0
 
-    # 3. Outside window (e.g. UTC 23:00 -> Beijing 07:00, hour=7) -> skipped
+    # 3. 窗口外（如 UTC 23:00 对应北京时间 07:00，hour=7），跳过。
     cron._LAST_NIGHTLY_RUN.clear()
     cron._LAST_NIGHTLY_SCAN = 0.0
     outside_window_utc = datetime(2026, 8, 12, 23, 0, 0)
     await cron._maybe_run_autonomous_activity(outside_window_utc)
     assert len(pipeline_runs) == 0
 
-    # 4. Without enough messages (< 5) -> skipped
+    # 4. 消息不足（<5）时跳过。
     async with SessionLocal() as db:
-        # Delete messages
         await db.execute(delete(Message))
         await db.commit()
         for i in range(3):
@@ -719,9 +699,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypatch):
-    """The gate counts the local day that just ended; the pipeline must digest
-    that same day. Deriving bounds twice from different instants made the
-    pipeline read the (empty) hours since midnight and bail out."""
+    """回归测试：门控和 pipeline 必须读到同一个刚结束的本地日；之前用不同瞬时分别推窗口会让 pipeline 只读到空白的凌晨时段而早退。"""
     from services.scheduler import nightly_activity
 
     SessionLocal = seeded
@@ -734,7 +712,7 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
         await db.commit()
         await db.refresh(conv)
         for i in range(NIGHTLY_MIN_MESSAGES_TODAY):
-            # 2026-08-12 01:30 UTC == 09:30 Beijing on 2026-08-12.
+            # 2026-08-12 01:30 UTC == 09:30 Beijing（2026-08-12）。
             db.add(
                 Message(
                     conversation_id=conv.id,
@@ -754,33 +732,28 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
         return result
 
     monkeypatch.setattr(nightly_activity, "get_local_day_utc_bounds", spy_bounds)
-    # Unwind right after the window is resolved — this test is about which day
-    # the pipeline reads, not about the stages.
+    # 窗口解析后就阻断后续——本测试只关注 pipeline 读取哪一天，而非各阶段行为。
 
     async def _empty_cfg(db, uid):
         return {}
 
     monkeypatch.setattr(nightly_activity, "resolve_user_llm_config", _empty_cfg)
 
-    # 2026-08-12 18:00 UTC == 2026-08-13 02:00 Beijing (inside the 0–5 window),
-    # so the day that just ended is 2026-08-12.
+    # 2026-08-12 18:00 UTC 对应北京时间 2026-08-13 02:00（落在 0–5 窗口内），
+    # 因此刚刚结束的本地日就是 2026-08-12。
     await cron._maybe_run_autonomous_activity(
         datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC)
     )
 
-    # The pipeline got far enough to resolve its own window, and it resolved to
-    # the same local day the gate counted.
+    # pipeline 至少解析到自己的窗口，且与门控选中的本地日一致。
     assert "2026-08-12" in seen_windows
     assert "2026-08-13" not in seen_windows
-
-
-# ── E2E Full Run (Skipped if no MIMO_API_KEY) ──────────────────────────
 
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_e2e_nightly_full_run(seeded):
-    """End-to-end full run against real LLM provider."""
+    """针对真实 LLM provider 的端到端整跑（无 MIMO_API_KEY 时自动跳过）。"""
     import os
 
     if not os.environ.get("MIMO_API_KEY"):
@@ -792,7 +765,7 @@ async def test_e2e_nightly_full_run(seeded):
         await db.commit()
         await db.refresh(conv)
 
-        # Seed realistic day conversation
+        # 注入一日真实对话样本。
         db.add_all(
             [
                 Message(
@@ -927,8 +900,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     monkeypatch.setattr(nightly_activity, "confirm_wardrobe_item", _mock_confirm)
     monkeypatch.setattr(nightly_activity, "resolve_provider_chain", _mock_chain)
     monkeypatch.setattr(nightly_activity, "generate_animation_clips", _mock_gen_clips)
-    # Kick runs a fire-and-forget avatar generation on the shared test
-    # connection — record the call instead of interleaving a second session.
+    # kick 会在共享测试连接上 fire-and-forget 头像生成——只记录调用而不并发打开第二会话。
     kicked: list[str] = []
     monkeypatch.setattr(nightly_activity, "kick_background_generation", lambda uid, name: kicked.append(name))
 

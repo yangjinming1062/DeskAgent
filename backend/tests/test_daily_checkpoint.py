@@ -1,16 +1,4 @@
-"""Tests for the daily checkpoint logic.
-
-Coverage:
-- Skips when today had no real interaction
-- Skips when the only checkpoint is already up-to-date (no new messages after it)
-- Inserts a daily_summary message with summary_date column set
-- Starts from the most recent checkpoint regardless of type (daily_summary or compress_summary)
-- Gap days surface in the prompt when applicable
-- No main conversation → no-op
-- summary_date column is the structured source for the next checkpoint
-- compress_summary rows are not folded into the summarisable input
-- tool_summary rows are not folded into the summarisable input
-"""
+"""每日 checkpoint 逻辑测试：无主对话/空日/仅状态行等场景应跳过，summary_date 列为下一天的锚点。"""
 
 from datetime import UTC, datetime, timedelta
 
@@ -154,7 +142,7 @@ async def test_daily_checkpoint_empty_day_skip(seeded, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeypatch):
-    """Poke/drag traces are not interaction worth summarizing, even with history."""
+    """戳一戳/拖拽痕迹不算真实互动，即使有历史也不应触发摘要。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
@@ -192,7 +180,7 @@ async def test_daily_checkpoint_skip_when_only_status_rows_today(seeded, monkeyp
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monkeypatch):
-    """Enough today → creates a daily_summary message with summary_date set."""
+    """当日真实消息足够时，生成带 summary_date 的 daily_summary 行。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
@@ -246,15 +234,11 @@ async def test_daily_checkpoint_summary_inserted_with_summary_date(seeded, monke
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkeypatch):
-    """When a compress_summary exists between the last daily_summary and now,
-    its content is included in the daily_summary input — not stranded above
-    the new checkpoint. The daily_summary folds the compress_summary + new
-    messages into one unified summary."""
+    """compress_summary 应折入当日摘要输入而非被孤立在新 checkpoint 上方。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
 
-    # Old messages before any checkpoint
     for i in range(10):
         await _add_message(
             SessionLocal,
@@ -264,7 +248,6 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
             base - timedelta(hours=2) + timedelta(minutes=i),
         )
 
-    # A compress_summary checkpoint landed mid-day
     async with SessionLocal() as db:
         db.add(
             Message(
@@ -277,7 +260,6 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
         )
         await db.commit()
 
-    # New messages after the compress
     for i in range(3):
         await _add_message(
             SessionLocal, conv_id, "user", f"new_{i}", base + timedelta(minutes=i)
@@ -302,13 +284,9 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
         )
 
     chat_content = captured["chat_content"]
-    # The compress_summary content IS in the summarisable input (not lost)
     assert "旧压缩摘要" in chat_content
-    # Post-compress messages are also included
     assert "new_0" in chat_content
     assert "new_2" in chat_content
-    # Old messages that were compressed away are NOT in the input (they're
-    # represented by the compress_summary)
     assert "old_" not in chat_content
 
 
@@ -316,14 +294,12 @@ async def test_daily_checkpoint_includes_compress_summary_content(seeded, monkey
 async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(
     seeded, monkeypatch
 ):
-    """If the most recent row is already a daily_summary or compress_summary and
-    no real turn follows it, skip — there's nothing new to summarise."""
+    """最近一行已是 checkpoint 且其后无真实交互时跳过。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
 
     await _add_message(SessionLocal, conv_id, "user", "hello", base)
-    # A compress_summary is the last row — no user interaction after it
     async with SessionLocal() as db:
         db.add(
             Message(
@@ -355,13 +331,10 @@ async def test_daily_checkpoint_skips_when_last_message_is_checkpoint(
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypatch):
-    """Even a single message since the last checkpoint gets summarised — the
-    daily_summary is the starting point for the next day, not a length-gated
-    compression."""
+    """即便只有一条消息也要生成 daily_summary，它是下一天的起点而非长度阈值触发的压缩。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
-    # Yesterday's checkpoint
     async with SessionLocal() as db:
         db.add(
             Message(
@@ -374,7 +347,6 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
             )
         )
         await db.commit()
-    # Today: exactly one real turn
     await _add_message(SessionLocal, conv_id, "user", "就一句话", base)
 
     called = False
@@ -400,7 +372,7 @@ async def test_daily_checkpoint_single_message_still_summarises(seeded, monkeypa
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_gap_days_in_prompt(seeded, monkeypatch):
-    """When the previous summary is from 3+ days ago, the prompt mentions the gap."""
+    """上一次摘要距今 3 天以上时，提示中应提及日期缺口。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
@@ -494,7 +466,7 @@ def test_gap_days():
 async def test_daily_checkpoint_does_not_re_summarise_prior_summary(
     seeded, monkeypatch
 ):
-    """A prior daily_summary row must not be folded into the new chat_content."""
+    """前一日的 daily_summary 行不应被再次折入当日 chat_content。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
@@ -541,7 +513,7 @@ async def test_daily_checkpoint_does_not_re_summarise_prior_summary(
 
 @pytest.mark.asyncio
 async def test_daily_checkpoint_does_not_fold_tool_summary_rows(seeded, monkeypatch):
-    """In-turn tool_summary rows are not summarisable."""
+    """回合内的 tool_summary 行不参与摘要输入。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 2001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)

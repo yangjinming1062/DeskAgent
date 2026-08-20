@@ -4,24 +4,21 @@ from services.llm import ServiceType, VoiceDesignResult, VoiceEntry, resolve, re
 
 _LANG_KEYWORDS: dict[str, list[str]] = {"zh": ["中文", "普通话", "国语", "chinese", "mandarin"], "en": ["英文", "英语", "english"]}
 
-# Tokens (whole-word, case-insensitive) that bias the matcher toward a gender.
-# Avoid the old substring bug where "male" in "female voice" matched female.
+# 按整词（不分大小写）匹配的性别关键词，避免子串误判（"male" 命中 "female voice"）
 _GENDER_KEYWORDS: dict[str, list[str]] = {"female": ["female", "女", "女声", "少女", "御姐", "女神"], "male": ["male", "男", "男声", "少年", "正太"]}
 
 
 DEFAULT_VOICE = VoiceEntry(id="", label="默认音色", gender="neutral", tags=["默认"], description="使用引擎默认音色。")
 
-# Stable sort: zh → multi → ∅ → en. Original order preserved within each bucket.
-# Module-level so we don't re-allocate the dict on every ``list_tts_voices`` call.
+# 稳定排序序位：zh → multi → ∅ → en，桶内保持原始顺序；放模块级避免每次调用重新分配
 _LANGUAGE_BUCKET: dict[str, int] = {"zh": 0, "multi": 1, "": 2, "en": 3}
 
-# Derived from _LANGUAGE_BUCKET so the supported set can never drift from
-# the sort order; unknown values fall through to the unfiltered catalog.
+# 由 _LANGUAGE_BUCKET 派生，保证支持集合与排序顺序不会失同步
 SUPPORTED_VOICE_LANGUAGES: frozenset[str] = frozenset(_LANGUAGE_BUCKET)
 
 
 def normalize_voice_language(value: object) -> str | None:
-    """Single null-rendering rule shared by REST + JSON-RPC list endpoints."""
+    """REST 与 JSON-RPC 列表接口共用的语言取值归一化规则，非法值统一返回 None。"""
     return value if isinstance(value, str) and value in SUPPORTED_VOICE_LANGUAGES else None
 
 
@@ -35,12 +32,7 @@ def _sort_voices_by_language(voices: list[VoiceEntry]) -> list[VoiceEntry]:
 
 
 async def list_tts_voices(db: AsyncSession, user_id: int, language: str | None = None) -> dict:
-    """Return voice catalog, optionally filtered by ``language`` (zh/en/multi/'').
-
-    Filtering applies AFTER the language-aware sort so a zh-only view still
-    leads with the curated zh ordering. ``default_voice`` falls back to the
-    unfiltered DEFAULT_VOICE stub when the filter empties the catalog.
-    """
+    """返回音色目录，可按语言过滤；过滤在语言排序之后进行，使单语言视图仍保留既定顺序。"""
     provider = await active_tts_provider(db, user_id)
     cls = try_resolve(ServiceType.tts, provider) if provider else None
     guide = cls.VOICE_DESIGN_GUIDE if cls else None
@@ -72,14 +64,13 @@ def _score(preference: str, voice: VoiceEntry) -> int:
         kws = _LANG_KEYWORDS.get(voice.language, [])
         if any(kw.lower() in p for kw in kws):
             score += 2
-    # Token-level gender bias — avoids the old substring bug where
-    # ``"male" in "female voice"`` returned True.
+    # 性别偏好按 token 匹配，避免子串误判（"male" 命中 "female voice"）
     if voice.gender in _GENDER_KEYWORDS:
         for kw in _GENDER_KEYWORDS[voice.gender]:
             if kw.lower() in p_tokens:
                 score += 2
                 break
-            # CJK gender keyword; substring against the whole preference blob.
+            # 中文关键词无法分词，改为对整段偏好文本做子串匹配
             if any("一" <= c <= "鿿" for c in kw) and kw.lower() in p:
                 score += 2
                 break
@@ -99,6 +90,7 @@ def match_voice(preference: str, voices: list[VoiceEntry]) -> tuple[VoiceEntry, 
 
 
 async def match_user_voice(db: AsyncSession, user_id: int, preference: str) -> dict:
+    """按用户偏好文本在当前 TTS 供应商音色中挑选最佳音色与备选项。"""
     provider = await active_tts_provider(db, user_id)
     voices = voices_for_provider(provider)
     best, alternatives = match_voice(preference or "", voices)
@@ -106,6 +98,7 @@ async def match_user_voice(db: AsyncSession, user_id: int, preference: str) -> d
 
 
 async def design_voice(db: AsyncSession, user_id: int, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
+    """调用当前 TTS 供应商的音色设计能力生成自定义音色。"""
     chain = await resolve_provider_chain(db, user_id, "tts")
     if not chain:
         raise ValueError("no TTS provider configured")

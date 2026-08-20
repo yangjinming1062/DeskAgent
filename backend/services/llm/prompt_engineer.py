@@ -87,17 +87,11 @@ from .providers import ProviderConfig, ServiceType, resolve_context_tokens
 
 logger = get_logger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Small helpers (strip_think_blocks, persona payload shaping)
-# ─────────────────────────────────────────────────────────────────────────────
-
 _THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 
 
 def strip_think_blocks(raw: str) -> str:
-    """Strip reasoning-model ``<think>…</think>`` blocks, including an
-    unclosed ``<think>`` running to end-of-string (output got truncated
-    before the closer ever arrived)."""
+    """剥离推理模型的 ``<think>…</think>`` 块；包含未闭合的 ``<think>`` 直至字符串末尾（输出在闭合符前就被截断）。"""
     cleaned = _THINK_BLOCK.sub("", raw)
     if "<think>" in cleaned:
         cleaned = cleaned.split("<think>", 1)[0]
@@ -105,11 +99,7 @@ def strip_think_blocks(raw: str) -> str:
 
 
 def _strip_markdown_fence(raw: str) -> str:
-    """Strip a single outer ```...``` wrapper.
-
-    Only matches the first opening fence and a closing fence at end-of-string,
-    so an inner ``` substring inside the JSON body is preserved.
-    """
+    """剥离最外层 ```...``` 包装；只匹配首个开 fence 与字符串末尾的闭 fence，避免破坏 JSON 内的 ``` 子串。"""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         first_newline = cleaned.find("\n")
@@ -119,17 +109,12 @@ def _strip_markdown_fence(raw: str) -> str:
 
 
 def _persona_payload(persona: Persona) -> dict:
-    """Falls back to ``{}`` so a half-finished persona still yields a prompt."""
+    """回退到 ``{}``，使未填写完成的 persona 仍能产出 prompt。"""
     raw = getattr(persona, "definition_json", None) or "{}"
     return safe_json_loads(raw, default={})
 
 
-# LLM-facing key is ``appearance`` (mapped from the wire-side
-# ``appearance_core`` — the visual anchor); consumed by both enhancers.
-# Intentionally does NOT include ``appearance_outfit`` — that field is an
-# LLM-maintained outfit description (see ``outfit_normalizer.py``), not a
-# visual specification. The 3D body silhouette is governed by appearance_core
-# + wardrobe textures, not by the outfit text.
+# LLM 端键名为 ``appearance``（映射自线协议的 ``appearance_core``，即视觉锚点）；刻意不引入 ``appearance_outfit``——后者是 LLM 维护的着装描述（见 ``outfit_normalizer.py``），并非视觉规格；3D 体型由 appearance_core + 衣柜贴图决定，不由 outfit 文本决定。
 def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str, str]:
     definition = _persona_payload(persona)
     return {
@@ -142,13 +127,8 @@ def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str,
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM helpers (generic chat round-trip; not 3D-specific)
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str, user_payload: str, *, provider_config: ProviderConfig | None = None) -> str:
-    """Single non-streaming chat round-trip. Empty content is an error so a blank prompt never reaches the image-gen provider."""
+    """单次非流式 chat 往返；空内容视为错误，避免把空 prompt 透传给生图供应商。"""
     provider = provider_from_config(provider_config) if provider_config is not None else await provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
@@ -161,7 +141,7 @@ async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str,
 
 
 async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payload: Any, *, max_tokens: int) -> str | None:
-    """``user_payload`` is JSON-serialized when it is a dict/list, otherwise ``str()``-ed."""
+    """``user_payload`` 为 dict / list 时走 JSON 序列化，否则 ``str()``。"""
     client = client_for_config(llm_cfg)
     provider_name = llm_cfg.get("provider_name", "")
     context_length = resolve_context_tokens(provider_name, ServiceType.llm)
@@ -177,13 +157,7 @@ async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payloa
     return resp.choices[0].message.content if resp and resp.choices else None
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Avatar prompt (LLM-based — the only LLM round-trip in the image-to-3D path)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Chinese-first (persona is Chinese, frontend handles it natively); the
-# 纯白平面背景 clause keeps bust avatars displayable on light UI surfaces
-# and clean as reference input — nothing downstream chroma-keys them.
+# 中文优先（persona 是中文，前端原生处理）；"纯白平面背景"使半身头像在浅色 UI 上可展示，且作为参考图干净 —— 下游不做色键。
 _AVATAR_SYSTEM_PROMPT = (
     "你是一个专业的角色头像提示词工程师。你需要为角色生成一张高精度的半身头像图（avatar）提示词。\n"
     "\n"
@@ -212,34 +186,24 @@ _AVATAR_SYSTEM_PROMPT = (
 async def enhance_avatar_prompt(
     db: AsyncSession | None, user_id: int | None, persona: Persona, *, feedback: str | None = None, provider_config: ProviderConfig | None = None
 ) -> str:
-    """Rewrite persona definition into a single focused Chinese avatar (bust) prompt.
-
-    The result is persisted on the ``AvatarAsset`` row as ``avatar_prompt`` and
-    re-used as the identity anchor by ``build_fullbody_prompt`` so the fullbody
-    seeds stay visually consistent with the avatar.
-    """
+    """把 persona 定义改写为一段聚焦的中文半身头像（bust）prompt；结果写入 ``AvatarAsset.avatar_prompt``，供 ``build_fullbody_prompt`` 作为身份锚点保证全身图与头像视觉一致。"""
     payload = _persona_visual_payload(persona, feedback)
     user_payload = f"请根据以下角色定义生成半身头像图的提示词：\n```json\n{json.dumps(payload, ensure_ascii=False)}\n```"
     raw = await chat(db, user_id, _AVATAR_SYSTEM_PROMPT, user_payload, provider_config=provider_config)
     return _strip_markdown_fence(raw)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Fullbody prompt (deterministic — Stage 1 of image-to-3D)
-# ─────────────────────────────────────────────────────────────────────────────
-
 FullbodyStyle = Literal["anime", "realistic"]
 
-# Preset species carry the style outright; custom species are routed by the
-# LLM humanoid-face verdict (see ``rig_type_selector.classify_species``).
+# 预设物种直接带风格；自定义物种由 LLM 人脸判定路由（见 ``rig_type_selector.classify_species``）
 _SPECIES_STYLE: dict[str, FullbodyStyle] = {"人类": "anime", "精灵": "anime", "机甲": "realistic", "灵兽": "realistic", "幻形": "realistic"}
 
-# Rig-preset species — fixed body plans, no LLM rig classification needed.
+# 骨骼预设物种：固定体型，无需 LLM 骨骼分类
 _PRESET_SPECIES: frozenset[str] = frozenset({"人类", "精灵", "机甲"})
 
 
 def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) -> FullbodyStyle:
-    """Resolve the 3D style route for a species."""
+    """根据物种解析 3D 风格路由。"""
     preset = _SPECIES_STYLE.get(species.strip())
     if preset is not None:
         return preset
@@ -247,11 +211,10 @@ def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) 
 
 
 def is_preset_species(species: str) -> bool:
-    """True if the species has a fixed body plan (no rig-type classification needed)."""
+    """若物种拥有固定体型（无需骨骼类型分类）则返回 True。"""
     return species in _PRESET_SPECIES
 
 
-# ── 全身图风格词 ───────────────────────────────────────────────────
 _FULLBODY_STYLE_WORDING: dict[str, str] = {
     "cel_shading": "日系赛璐珞动漫角色立绘风格（cel-shading anime character art），清晰利落的线条勾勒与分明纯净的阴影色块，明亮通透的色彩，自然流畅的人体线条与平滑细腻的皮肤，纯净清爽的面部与发丝结构。",
     "anime_game_cg": "次世代二次元游戏CG风格（anime game 3D CGI），原神与崩铁级现代3D二次元角色建模质感，全景全身立绘，精致立体的角色形体与层次分明的发束，柔和通透的次表面散射与自然肤质，微立体阴影与平滑材质，8K超清。",
@@ -349,7 +312,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
 
 
 def resolve_fullbody_template(species: str, rig_type: str = "biped", style: str = "cel_shading") -> FullbodyTemplate:
-    """Resolve a complete fullbody template."""
+    """解析完整的全身图模板。"""
     if species in _SPECIES_TEMPLATES:
         template = _SPECIES_TEMPLATES[species]
     else:
@@ -374,19 +337,7 @@ def build_fullbody_prompt(
     avatar_prompt: str = "",
     persona: Persona | dict | None = None,
 ) -> str:
-    """Assemble an image-gen prompt for one fullbody view. No LLM round-trip.
-
-    The final prompt shape is:
-
-        {view_name}，{template.pose}{view_features}从头到脚完整可见，平视角度拍摄。纯白背景，均匀专业棚拍布光。{style_wording}[角色设定（外形特征：…；性格特点：…）。][{flavor}][（用户反馈：…）]
-
-    Called by ``services.companion.avatar_service`` once per view:
-
-    * ``generate_fullbody_style_samples`` — builds 1 front sample per style
-      in ``STYLE_CATALOG`` (so the user can pick a style).
-    * ``generate_fullbody_front`` / ``confirm_fullbody_front`` — builds the
-      front, then right + back seeds that the image-to-3D provider uploads.
-    """
+    """为某个视角拼装一条生图 prompt（无 LLM 往返）；由 ``services.companion.avatar_service`` 按视角调用一次：每个风格的前视图样例、front/right/back 种子。"""
     style_key = style_id or template.style or "cel_shading"
     style_wording = _FULLBODY_STYLE_WORDING.get(style_key, _FULLBODY_STYLE_WORDING["cel_shading"])
     features = getattr(template, f"{view}_features", "")
@@ -418,15 +369,7 @@ def build_fullbody_prompt(
     return prompt
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Texture prompt (deterministic — wardrobe PBR textures)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Tiled across UV islands on a 3D model; a directional light baked into the
-# map would clash with the GLB's runtime lighting.  Each rig-type prefix
-# adapts the texture subject to the body plan (clothing for bipeds, mecha
-# plating for mecha, fur/scale patterns for quadrupeds, feather patterns for
-# avians, etc.).
+# 贴图铺在 3D 模型 UV 岛上；若 bake 进方向光会与 GLB 运行时灯光冲突。每个 rig_type 前缀把贴图对象适配到体型（人形服装 / 机甲装甲 / 四足毛鳞 / 鸟类羽毛等）。
 _TEXTURE_RIG_PREFIX: dict[str, str] = {
     "biped": (
         "顶视图服装面料平铺图（top-down flat lay），适合直接贴到三维人形 UV。"
@@ -464,15 +407,10 @@ _TEXTURE_RIG_PREFIX: dict[str, str] = {
 
 _TEXTURE_FORMAT_SUFFIX = "seamless 平铺、可平铺（tileable）。均匀打光、无方向性阴影（even diffuse lighting, no directional shadows）。高细节、清晰可辨。无背景、无边框、无水印。"
 
-# Non-albedo channels don't encode lighting, so the "even diffuse lighting" /
-# "no directional shadows" clauses are misleading. Use a trimmed suffix that
-# keeps the universally-relevant directives (tileable, no watermark, no border).
+# 非 albedo 通道不编码光照，"均匀打光/无方向性阴影"指令会误导；使用裁剪版后缀，仅保留通用指令（可平铺、无水印、无边框）
 _TEXTURE_FORMAT_SUFFIX_TECHNICAL = "seamless 平铺、可平铺（tileable）。高细节、清晰可辨。无背景、无边框、无水印。"
 
-# Per-channel & style-specific suffix.
-# In cel-shading anime and 3D game CG, photorealistic micro-creases, pores, and noisy
-# normals cause severe dirty-shading artifacts on stylized toon shaders.
-# Each channel is adapted to the companion's art style.
+# 写实微褶皱、毛孔、噪点法线会在赛璐珞 / 二次元 CG 的 toon 着色器上造成脏渲；按通道适配画风。
 _TEXTURE_STYLE_CHANNEL_SUFFIX: dict[str, dict[str, str]] = {
     "cel_shading": {
         "albedo": " 日系赛璐珞二次元动漫配色：纯净平滑的明快色块、清晰的色块边界，自然流畅的二次元色彩分布，无写实噪点、毛孔与杂乱织物纤维特写。",
@@ -508,16 +446,7 @@ def _normalize_texture_style(style: str) -> str:
 
 
 def build_texture_prompt(*, description: str, feedback: str | None = None, rig_type: str = "biped", channel: str = "albedo", style: str = "realistic", species: str = "") -> str:
-    """Direct-construct PBR texture image-gen prompt — no LLM round-trip.
-
-    Called by ``services.companion.wardrobe_service`` when previewing a
-    wardrobe item (贴图/几何服装/挂件 path). ``rig_type`` selects the
-    texture-type prefix (clothing for bipeds, mecha plating for mecha,
-    fur/scale patterns for quadrupeds, feather patterns for avians, etc.).
-    ``channel`` supports 'albedo', 'normal', 'roughness', 'metalness', and
-    'displacement'. ``style`` routes the material channel requirements across
-    cel-shading anime, anime game 3D CG, and realistic rendering.
-    """
+    """直接拼装 PBR 贴图生图 prompt（无 LLM 往返）；由 ``services.companion.wardrobe_service`` 在预览贴图 / 几何服装 / 挂件时调用。``rig_type`` 选择贴图主题前缀（人形服装 / 机甲装甲 / 四足毛鳞 / 鸟类羽毛等）；``channel`` 支持 albedo / normal / roughness / metalness / displacement；``style`` 在赛璐珞、二次元游戏 CG、写实之间路由通道需求。"""
     effective_rig = "mecha" if (species == "机甲" or rig_type == "mecha") else rig_type
     prefix = _TEXTURE_RIG_PREFIX.get(effective_rig, _TEXTURE_RIG_PREFIX["biped"])
     prompt = f"{prefix} {description}。"
@@ -529,8 +458,6 @@ def build_texture_prompt(*, description: str, feedback: str | None = None, rig_t
     if channel_clause := style_table.get(channel):
         prompt += channel_clause
 
-    # Albedo (color) maps need even-lighting instructions; technical maps
-    # (normal/roughness/metalness/displacement) use the trimmed suffix to avoid
-    # misleading lighting directives that dilute the channel-specific instructions.
+    # Albedo（颜色）通道需要均匀光照指令；技术通道（normal/roughness/metalness/displacement）使用裁剪版后缀以避免误导性的光照指令稀释通道专属指令。
     format_suffix = _TEXTURE_FORMAT_SUFFIX if channel == "albedo" else _TEXTURE_FORMAT_SUFFIX_TECHNICAL
     return prompt + format_suffix

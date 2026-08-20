@@ -71,9 +71,7 @@ async def test_fullbody_generate_samples(SessionLocal):
                 assert call.kwargs.get("preferred_provider") == ["gemini", "grok"]
                 assert call.kwargs.get("persist") is False
 
-        # Draft sample paths ride the avatar row so a restart rehydrates the
-        # picker instead of regenerating paid images; they stay in temp-media
-        # until confirm-front promotes the picked one.
+        # 草稿样本路径挂在 avatar 行上，重启可重水化选择器而无需重生付费图像
         await db.refresh(avatar)
         payload = json.loads(avatar.prompt_json)
         assert payload["fullbody_samples"] == {
@@ -121,7 +119,6 @@ async def test_fullbody_select_style(SessionLocal):
         assert res.fullbody_style == "anime_game_cg"
         assert res.seed_front_url == "/api/media/files/sample_cg"
 
-        # Switching style swaps the front-seed candidate to that style's sample.
         asset = await select_fullbody_style(
             db, user_id, avatar_id=avatar.id, style="cel_shading"
         )
@@ -133,9 +130,7 @@ async def test_fullbody_select_style(SessionLocal):
 
 @pytest.mark.asyncio
 async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
-    """confirm-front moves draft seeds from temp-media to companion-avatars
-    and drops the stored sample set; an expired draft raises a regenerable
-    error instead of committing a dead URL."""
+    """confirm-front 把草稿从 temp-media 提升到 companion-avatars 并清空样本；过期草稿抛出可重生错误。"""
     user_id = 408
     async with SessionLocal() as db:
         avatar = AvatarAsset(
@@ -183,7 +178,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
         payload = json.loads(confirmed.prompt_json)
         assert "fullbody_samples" not in payload
 
-        # Expired draft → regenerable error, row untouched.
+        # 过期草稿 → 抛可重生错误，行不被修改
         await db.execute(
             update(AvatarAsset)
             .where(AvatarAsset.id == avatar.id)
@@ -216,8 +211,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
 
 @pytest.mark.asyncio
 async def test_fullbody_select_style_without_samples_keeps_seed(SessionLocal):
-    """Legacy rows without persisted samples: persist the style only, never
-    fabricate a front seed."""
+    """无样本的旧行：只持久化样式选择，绝不伪造 front seed。"""
     user_id = 407
     async with SessionLocal() as db:
         avatar = AvatarAsset(
@@ -261,7 +255,6 @@ async def test_fullbody_front_and_confirm(SessionLocal):
                 "https://source.example/test.jpg",
             )
 
-            # 1. Generate front image
             asset = await generate_fullbody_front(
                 db,
                 user_id,
@@ -272,7 +265,6 @@ async def test_fullbody_front_and_confirm(SessionLocal):
             assert asset.seed_front_url is not None
             assert "seed_front" in asset.seed_front_url
 
-            # 2. Confirm front image -> triggers side + back generation
             confirmed_asset = await confirm_fullbody_front(
                 db, user_id, avatar_id=avatar.id, style="cel_shading"
             )
@@ -472,7 +464,6 @@ async def test_fullbody_direct_confirm_with_sample_url(SessionLocal):
                 "https://source.example/test.jpg",
             )
 
-            # Direct confirmation passing sample url as front_url
             confirmed_asset = await confirm_fullbody_front(
                 db,
                 user_id,

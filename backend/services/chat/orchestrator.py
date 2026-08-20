@@ -30,10 +30,7 @@ async def run_chat_turn(
     *,
     runtime: RuntimeSession | None = None,
 ) -> None:
-    # Turn start is the only multi-read phase; it runs in one short session.
-    # Every later DB touchpoint opens its own, so no pool connection is held
-    # across the (multi-second) LLM awaits below. ``conv`` stays usable
-    # detached — persistence reads only loaded columns (id/kind/title).
+    # 轮次起始是唯一的多读阶段，集中在一个短 session 内完成；之后每次 DB 访问都开新 session，避免跨多秒 LLM 等待持有连接。
     async with session_scope() as db:
         conv = await Conversation.by_session_id(db, req.session_id, user_id=user_id)
         if not conv:
@@ -43,9 +40,7 @@ async def run_chat_turn(
 
         await _persist_user_message(db, conv, req)
 
-        # Per-session overrides merge over global UserSettings for this turn.
-        # Built once and shared by both the registry gate and tool dispatch
-        # so schema visibility matches runtime behavior.
+        # 会话级覆写与全局 UserSettings 合并，仅构建一次并被注册表门控和工具派发共用，保证 schema 可见性与运行时一致。
         effective_settings = _merge_session_settings(user_settings, runtime)
         inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
@@ -62,11 +57,7 @@ async def run_chat_turn(
         threshold_ratio=compression_threshold,
         language=effective_settings.get("language", DEFAULT_LANGUAGE),
     )
-    # Persist the compress checkpoint so the next turn's _history_to_messages
-    # starts from here — the compressed-away messages stay in the DB but drop
-    # out of the LLM read path. Applies to ALL conversation kinds, not just main:
-    # a standard work conversation that crosses the token threshold needs the
-    # same read-start anchor.
+    # 持久化压缩检查点，使下一轮 _history_to_messages 从此开始读取；被压缩的消息仍留在 DB，但不再进入 LLM 读路径。对所有会话类型均生效。
     if compress_info is not None:
         async with session_scope() as db:
             db.add(
@@ -82,12 +73,10 @@ async def run_chat_turn(
 
     guardrails = ToolCallGuardrailController()
     budget = IterationBudget(max_total=AGENT_MAX_LOOP_TURNS)
-    # Seeded from the registry's filtered set; search_tools grows both
-    # names and schemas at runtime so active_schemas stays in lockstep.
+    # 初始来自注册表过滤集合；search_tools 在运行时同时增扩名称与 schema，保持 active_schemas 同步。
     active_tool_names: set[str] = {schema_name(s) for s in inputs.all_schemas}
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
-    # Names actually invoked this turn — the tool_summary row is built from
-    # these rather than re-queried, so it can't anchor onto a neighbouring turn.
+    # 本轮实际调用过的工具名；tool_summary 行据此直接构建而非重新查询，避免与相邻轮次错位。
     invoked_tool_names: set[str] = set()
 
     dispatch_ctx = _ToolDispatchContext(
@@ -103,11 +92,7 @@ async def run_chat_turn(
                 break
 
             active_schemas = [schemas_by_name[n] for n in active_tool_names if n in schemas_by_name]
-            # Provider-chain wrapper: try the configured providers in order;
-            # fallback only fires when no chunk has been emitted yet. Use the
-            # per-slot provider's model on each attempt so a fallback provider
-            # doesn't receive the head provider's model name (which it may not
-            # accept → model_not_found → chain exhausts unnecessarily).
+            # 供应商链包装：按顺序尝试已配置供应商，仅在尚未输出 chunk 时触发回退；每次尝试使用对应槽位的 model，避免回退供应商收到不识别的模型名导致 model_not_found、链提前耗尽。
             stream_emitted = False
 
             async def _call(provider):
@@ -115,8 +100,7 @@ async def run_chat_turn(
                 if client is None:
                     raise RuntimeError(f"provider {provider.provider_name} is not OpenAI-compatible")
                 model_for_slot = inputs.model_override or provider.config.model
-                # Renderer-pinned window wins; else re-resolve so a
-                # fallback provider's smaller default applies.
+                # 渲染端钉住的窗口优先；否则按供应商重新解析，使回退供应商更小的默认窗口生效。
                 if inputs.context_tokens_override is not None:
                     slot_ctx_length = inputs.ctx_length
                 else:
@@ -139,13 +123,10 @@ async def run_chat_turn(
                 stream_emitted = True
 
             try:
-                # db=None: the chain is pre-resolved above, so no session is held
-                # across the streaming LLM call or its provider fallbacks.
+                # db=None：链已在上方预解析，流式调用与回退期间不持有 session。
                 llm_result = await execute_with_fallback(None, user_id, "llm", call_fn=_call, stream_started=lambda: stream_emitted, _chain=inputs.llm_chain)
             except LLMRuntimeError as exc:
-                # Chain exhausted (or non-fallback error / mid-stream after
-                # chunks already shipped). Emit the closing error frame so
-                # the renderer's message state machine gets a clean end.
+                # 链已耗尽（非回退错误或已输出 chunk 后中断）：补发结尾 error 帧，让渲染端消息状态机干净收尾。
                 reason_val = exc.classified.reason.value if getattr(exc, "classified", None) else "unknown"
                 prov_val = getattr(getattr(exc, "classified", None), "provider", None)
                 model_val = getattr(getattr(exc, "classified", None), "model", None)
@@ -153,9 +134,7 @@ async def run_chat_turn(
                 await _emit_llm_error(emitter, exc)
                 break
             except (MissingLlmConfigError, RuntimeError) as exc:
-                # Empty chain or non-OpenAI-compatible provider slot. The
-                # dispatcher surfaces these only when no fallback is
-                # possible; emit a curated error and unwind the turn.
+                # 空链或槽位供应商非 OpenAI 兼容：仅在无回退时派发器才暴露此类错误，输出定制化错误并结束本轮。
                 logger.warning("LLM chain failed to start: %s", exc)
                 await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
                 break

@@ -1,8 +1,5 @@
 from . import auth, companion, conversation, jobs, memory, scheduler, settings, system, update, ws
 
-# Importing each package registers its ORM models on ``ModelBase.metadata`` so
-# ``create_all`` sees every table. ``modules.media`` is intentionally omitted
-# because its mapper triggers an import-time crash on stale DB connections —
-# callers that need ``VideoGenJob`` on ``create_all`` must import it explicitly.
+# 导入每个子包会注册其 ORM 模型到 ModelBase.metadata，使 create_all 看到所有表；modules.media 故意省略——其 mapper 在陈旧 DB 连接上会触发 import-time crash，需要 VideoGenJob 进 create_all 的 caller 必须显式 import。
 
 __all__ = ["auth", "companion", "conversation", "jobs", "memory", "scheduler", "settings", "system", "update", "ws"]

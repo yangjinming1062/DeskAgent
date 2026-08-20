@@ -24,7 +24,7 @@ _USER_PROACTIVE_STATE: dict[int, UserProactiveRecord] = {}
 
 
 def record_user_outreach(user_id: int, text: str, followup_timeout_seconds: float | None = None) -> None:
-    """Record an outgoing proactive message sent to the user."""
+    """记录发送给用户的主动消息。"""
     rec = _USER_PROACTIVE_STATE.setdefault(user_id, UserProactiveRecord())
     if rec.state == ProactiveState.OUTREACHED:
         rec.state = ProactiveState.FOLLOWUP_SENT
@@ -39,10 +39,10 @@ def record_user_outreach(user_id: int, text: str, followup_timeout_seconds: floa
 
 
 def reset_user_outreach(user_id: int) -> None:
-    """Reset follow-up state back to IDLE when the user sends a message."""
+    """用户发消息时把跟进状态重置回 IDLE。"""
     _USER_PROACTIVE_STATE[user_id] = UserProactiveRecord(state=ProactiveState.IDLE, last_outreach_ts=0.0, last_proactive_text="")
 
 
 def get_user_proactive_record(user_id: int) -> UserProactiveRecord:
-    """Get the current proactive tracking record for a user."""
+    """获取用户当前的主动跟踪记录。"""
     return _USER_PROACTIVE_STATE.get(user_id, UserProactiveRecord())

@@ -1,10 +1,4 @@
-"""Face-direction detection for local auto-rigging: renders four horizontal
-view snapshots headlessly and asks the vision LLM which one shows the face.
-Geometric heuristics (head-vertex density) proved unreliable — long-hair
-meshes flatten the density contrast between face and back of skull — while
-face recognition is trivially reliable for a vision model. The detected yaw
-feeds ``auto_rig.py --yaw`` so the bbox-template skeleton lands inside the
-limbs instead of heat-binding onto the torso sideways."""
+"""本地绑骨用的面朝向检测：无头渲染四个水平视角快照后交由视觉 LLM 判断哪面露脸。几何启发式（头部顶点密度）在长发网格上失效，而人脸识别对视觉模型极其可靠。"""
 
 import asyncio
 import base64
@@ -26,9 +20,7 @@ _PROMPT = "这四张图是同一个3D角色模型的四个视角快照，顺序�
 
 
 async def detect_face_yaw(glb_bytes: bytes, *, workdir: Path, user_id: int | None = None, db=None) -> float:
-    """Render + LLM round-trip inside ``workdir`` (caller owns its lifetime —
-    the job-io dir for the render worker). Returns 0.0 on any failure so
-    rigging degrades to the legacy yaw instead of aborting the generation."""
+    """在 workdir 内完成渲染与 LLM 往返；任何失败都返回 0.0，让绑骨退化到默认朝向而非中断整个生成。"""
     try:
         return await _detect(glb_bytes, workdir, user_id=user_id, db=db)
     except Exception:

@@ -1,11 +1,4 @@
-"""Render four horizontal view snapshots of a GLB for vision-LLM face
-detection (feeds ``rig_orientation.detect_face_yaw``). View names map to the
-face direction they reveal: front→-Y, right→+X, back→+Y, left→-X (Blender
-world axes, canonical front = -Y).
-
-    blender --background --python render_face_views.py -- \
-        --input in.glb --outdir dir
-"""
+"""渲染 GLB 的四张水平视角快照，供视觉 LLM 检测朝向（喂给 ``rig_orientation.detect_face_yaw``）。视角名对应被揭示的面部方向：front→-Y、right→+X、back→+Y、left→-X（Blender 世界坐标，约定前向 = -Y）。"""
 
 import argparse
 import sys

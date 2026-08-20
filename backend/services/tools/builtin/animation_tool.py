@@ -11,8 +11,8 @@ _NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
 async def create_animation_tool(name: str, description: str, category: str | None = None, tags: list | None = None, **kwargs) -> str:
-    """Create a new animation clip for the companion's 3D avatar via LLM keyframe generation."""
-    # Lazy imports break the services.tools.builtin ↔ services.companion cycle.
+    """为伙伴 3D 形象通过 LLM 关键帧生成新动画片段。"""
+    # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖。
     from services.companion import emit_companion_assets_updated, generate_named_animation_clip, get_active_model, get_or_create_persona, get_rig_bones
     from services.llm import chat
 
@@ -27,9 +27,7 @@ async def create_animation_tool(name: str, description: str, category: str | Non
     if not desc:
         return json.dumps({"success": False, "error": "description is required"}, ensure_ascii=False)
 
-    # Short read-only session: gather static config + reject duplicates. The
-    # multi-second LLM keyframe call runs OUTSIDE this session so no pool
-    # connection is held across it (mirrors the nightly clip path).
+    # 短只读会话：收集静态配置并剔除重名；多秒级的 LLM 关键帧调用在会话外执行，避免长时间占用连接池。
     async with SESSION_LOCAL() as db:
         model = await get_active_model(db, user_id)
         if model is None:
@@ -65,7 +63,7 @@ async def create_animation_tool(name: str, description: str, category: str | Non
     if clip is None:
         return json.dumps({"success": False, "error": "clip generation failed"}, ensure_ascii=False)
 
-    # Short merge session: re-check + append + commit.
+    # 短合并会话：再次校验后追加并提交。
     async with SESSION_LOCAL() as db:
         model = await get_active_model(db, user_id)
         if model is None:

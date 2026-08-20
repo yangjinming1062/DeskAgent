@@ -37,13 +37,11 @@ async def test_session_ack_handler():
         user_session=user_session,
     )
 
-    # Push some events to buffer
     await dispatcher.push_event("message.delta", {"text": "hello"}, session_id="s1")
     await dispatcher.push_event("message.delta", {"text": " world"}, session_id="s1")
     assert len(replay_buffer) == 2
     assert replay_buffer.max_seq == 2
 
-    # Send session.ack for seq 1
     ack_res = await dispatcher._handlers["session.ack"]({"seq": 1})
     assert ack_res == {"acked": 1, "pruned": 1}
     assert len(replay_buffer) == 1
@@ -78,20 +76,18 @@ async def test_session_resume_incremental_replay(SessionLocal, monkeypatch):
         user_session=user_session,
     )
 
-    # Create dummy conversation in db
     async with SessionLocal() as db:
         conv = Conversation(id=1010, user_id=101, cwd="/test")
         db.add(conv)
         await db.commit()
 
-    # Emit 3 events
     await dispatcher.push_event("message.start", {}, session_id="1010")
     await dispatcher.push_event("message.delta", {"text": "chunk1"}, session_id="1010")
     await dispatcher.push_event("message.delta", {"text": "chunk2"}, session_id="1010")
 
     sent_frames.clear()
 
-    # Resume from last_seq = 1 (client missed seq 2 and 3)
+    # 从 last_seq = 1 续传（客户端漏掉 seq 2/3）
     resume_res = await dispatcher._handlers["session.resume"](
         {"session_id": "1010", "last_seq": 1}
     )
@@ -136,7 +132,7 @@ async def test_session_resume_fallback_on_expired_seq(SessionLocal):
         db.add(conv)
         await db.commit()
 
-    # Push 4 events into capacity-2 buffer (seq 1 and 2 are evicted)
+    # 给 capacity-2 buffer 推 4 个事件（seq 1、2 会被淘汰）
     for i in range(4):
         await dispatcher.push_event(
             "message.delta", {"text": str(i)}, session_id="1020"
@@ -144,14 +140,14 @@ async def test_session_resume_fallback_on_expired_seq(SessionLocal):
 
     sent_frames.clear()
 
-    # Client asks for last_seq = 1 which was evicted -> fallback to DB history
+    # 客户端 last_seq = 1 已淘汰 → 回退到 DB 历史
     resume_res = await dispatcher._handlers["session.resume"](
         {"session_id": "1020", "last_seq": 1}
     )
     assert resume_res["resumed"] is False
     assert resume_res["replayed_count"] == 0
     assert "messages" in resume_res
-    assert len(sent_frames) == 0  # No frames replayed over WS
+    assert len(sent_frames) == 0  # WS 上无回放帧
 
 
 @pytest.mark.asyncio
@@ -161,7 +157,7 @@ async def test_session_resume_server_restarted_ahead_seq(SessionLocal):
     async def _send(frame):
         sent_frames.append(frame)
 
-    # Server restarted: fresh ReplayBuffer with current_seq = 0
+    # Server 已重启：ReplayBuffer 全新，current_seq = 0
     replay_buffer = ReplayBuffer()
     dispatcher = JsonRpcDispatcher(_send, replay_buffer=replay_buffer)
     runtime_sessions: dict[str, RuntimeSession] = {}
@@ -188,11 +184,11 @@ async def test_session_resume_server_restarted_ahead_seq(SessionLocal):
         db.add(conv)
         await db.commit()
 
-    # Client reconnects with old last_seq=42 from before server restart
+    # 客户端带着 server 重启前的旧 last_seq=42 重连
     resume_res = await dispatcher._handlers["session.resume"](
         {"session_id": "1030", "last_seq": 42}
     )
-    # Server must reject replay (42 > 0) and trigger full reload with current_seq=0
+    # Server 必须拒绝 replay（42 > 0），并以 current_seq=0 触发全量重载
     assert resume_res["resumed"] is False
     assert resume_res["current_seq"] == 0
     assert resume_res["replayed_count"] == 0
@@ -232,33 +228,33 @@ async def test_session_resume_hold_prevents_live_frame_reorder(SessionLocal):
         db.add(conv)
         await db.commit()
 
-    # Disconnect happened when server had emitted seq 1, 2
+    # 断开时 server 已发出 seq 1、2
     await dispatcher.push_event("chunk", {"text": "1"}, session_id="1040")
     await dispatcher.push_event("chunk", {"text": "2"}, session_id="1040")
     assert len(sent_frames) == 2
     sent_frames.clear()
 
-    # Reconnect handshake activates hold
+    # Reconnect handshake 激活 hold
     dispatcher.enable_hold()
 
-    # Background task emits live chunk 3 while client hasn't sent session.resume yet
+    # 后台任务在客户端尚未发 session.resume 时发出 live chunk 3
     await dispatcher.push_event("chunk", {"text": "3"}, session_id="1040")
-    # Hold is active: chunk 3 recorded in buffer as seq 3 but NOT sent over the wire
+    # Hold 生效：chunk 3 写入 buffer 为 seq 3，但不下发
     assert len(sent_frames) == 0
     assert replay_buffer.max_seq == 3
 
-    # Client now sends session.resume with last_seq=1 (needs seq 2 and 3)
+    # 客户端发 session.resume，last_seq=1（需要 seq 2、3）
     resume_res = await dispatcher._handlers["session.resume"](
         {"session_id": "1040", "last_seq": 1}
     )
     assert resume_res["resumed"] is True
     assert resume_res["replayed_count"] == 2
-    # replayed frames must be seq 2 and seq 3 in strict order
+    # 回放帧必须按 seq 2、3 严格顺序
     assert len(sent_frames) == 2
     assert sent_frames[0]["params"]["seq"] == 2
     assert sent_frames[1]["params"]["seq"] == 3
 
-    # After resume, hold is released and future events go through immediately
+    # resume 后 hold 释放，后续事件立刻下发
     await dispatcher.push_event("chunk", {"text": "4"}, session_id="1040")
     assert len(sent_frames) == 3
     assert sent_frames[2]["params"]["seq"] == 4
@@ -297,21 +293,21 @@ async def test_session_resume_fallback_and_create_release_hold(SessionLocal):
         db.add(conv)
         await db.commit()
 
-    # Enable hold on handshake
+    # handshake 时启用 hold
     dispatcher.enable_hold()
 
-    # Fallback resume path:
+    # Fallback resume 路径：
     resume_res = await dispatcher._handlers["session.resume"](
         {"session_id": "1050", "last_seq": 999}
     )
     assert resume_res["resumed"] is False
 
-    # Verify hold is released
+    # hold 此时已被释放
     await dispatcher.push_event("chunk", {"text": "hello"}, session_id="1050")
     assert len(sent_frames) == 1
     assert sent_frames[0]["params"]["payload"]["text"] == "hello"
 
-    # Test session.create also releases hold
+    # session.create 也会释放 hold
     sent_frames.clear()
     dispatcher.enable_hold()
     await dispatcher._handlers["session.create"]({})

@@ -5,10 +5,7 @@ from ..http import get_http
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):
-    """Embeddings via Google Gemini's Generative Language API.
-
-    Supports `gemini-embedding-001` and `gemini-embedding-2`.
-    """
+    """通过 Google Gemini 的 Generative Language API 提供 embeddings，支持 gemini-embedding-001 与 gemini-embedding-2。"""
 
     provider_name = "gemini"
     service_type = ServiceType.embedding

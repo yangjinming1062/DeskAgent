@@ -44,7 +44,7 @@ _AFFECT_CHECK_PROMPT_TEMPLATE = (
 
 
 async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> AffectCheckResult:
-    """Idle-triggered LLM reasoning for companion contextual emotion expression."""
+    """空闲触发的 LLM 推理，判断伴侣此刻是否应表达情境化情绪。"""
     ctx = await load_companion_prompt_context(user_id)
     if ctx is None:
         return AffectCheckResult(expressed=False, reason="persona not ready")

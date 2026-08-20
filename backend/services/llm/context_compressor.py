@@ -60,7 +60,7 @@ def _summary_prompt(language: str) -> str:
 
 
 def _approx_tokens(messages: list[dict[str, Any]] | None) -> int:
-    """Best-effort token estimate; prefers recorded ``completion_tokens`` over char math."""
+    """估算 token；优先使用消息上记录的 ``completion_tokens``，缺失时回退按字符估算。"""
     if not messages:
         return 0
     tokens = 0
@@ -81,7 +81,7 @@ def _approx_tokens(messages: list[dict[str, Any]] | None) -> int:
 
 
 def _split_system_and_rest(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Stable system content must never be summarized away — it carries per-session instructions."""
+    """稳定的 system 内容不可被摘要替换 —— 它承载会话级指令。"""
     system_msgs: list[dict[str, Any]] = []
     rest: list[dict[str, Any]] = []
     for m in messages:
@@ -90,7 +90,7 @@ def _split_system_and_rest(messages: list[dict[str, Any]]) -> tuple[list[dict[st
 
 
 def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: int, preserve_recent: int = 4) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Pick the oldest contiguous non-system block to compress; keep the recent tail intact."""
+    """挑选最旧的连续非 system 块进行压缩；保留最近的若干条消息不动。"""
     if len(rest) <= preserve_recent + 1:
         return [], rest
     candidates = rest[:-preserve_recent] if preserve_recent else rest
@@ -101,11 +101,7 @@ def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: 
 
 
 async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int, language: str = DEFAULT_LANGUAGE) -> tuple[str, bool]:
-    """Summarize ``block`` via the LLM. Returns ``(summary_text, was_truncated)``.
-
-    ``was_truncated`` is True when ``finish_reason == "length"`` — caller should
-    fall back to ``truncate_chat_history`` because the summary may be incomplete.
-    """
+    """通过 LLM 对 ``block`` 生成摘要；``was_truncated`` 为 True 表示 ``finish_reason == "length"``，调用方应回退到 ``truncate_chat_history``。"""
     summary_messages = [
         {"role": "system", "content": _summary_prompt(language)},
         {"role": "user", "content": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}"},
@@ -129,17 +125,7 @@ async def compress_history_if_needed(
     max_input_messages: int | None = None,
     language: str = DEFAULT_LANGUAGE,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """Return ``(compressed_messages, compress_info)``.
-
-    On success ``compress_info`` is ``{"summary": str, "replaced_count": int}``;
-    on any no-op path (disabled / below threshold / call failed / empty) it is
-    ``None``. The caller persists ``compress_info`` as a ``compress_summary``
-    checkpoint row so subsequent turns and the nightly ``daily_summary`` start
-    reading from it instead of re-loading the compressed-away messages.
-
-    Best-effort: any failure returns ``(messages, None)`` so
-    ``truncate_chat_history`` is always a deterministic fallback.
-    """
+    """按需压缩历史；成功返回 ``(compressed_messages, compress_info)``，失败或无需压缩返回 ``(messages, None)``，保证 ``truncate_chat_history`` 是确定性兜底。"""
     if enabled is None:
         enabled = SETTINGS.enable_context_compression
     if not enabled:

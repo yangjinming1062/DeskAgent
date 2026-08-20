@@ -27,18 +27,7 @@ class CompletionRequest(BaseModel):
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_minute}/minute")
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_ip_per_minute}/minute", key_func=get_remote_address)
 async def create_completion(req: CompletionRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
-    """A stateless completion endpoint for the Desktop Runner to proxy LLM calls.
-
-    Error contract: surfaces a classified, non-leaking envelope. Full exception
-    text (which can carry provider URLs and partial auth headers) stays in
-    server-side logs; the renderer only sees ``{error, reason, status}`` where
-    ``reason`` is a stable ``FailoverReason`` enum value. This mirrors the
-    -32603 "no internal detail" requirement in ``ARCHITECTURE.md §3.1``.
-
-    Calls run through the provider chain; if the head provider returns an
-    auth/billing/model-not-found error, the next configured provider is tried
-    transparently.
-    """
+    """Desktop Runner 代理 LLM 调用的无状态补全端点：错误响应走非泄露分类信封（异常细节留在服务端日志，renderer 只看到 {error, reason, status}，reason 为稳定 FailoverReason 枚举值，对应 ARCHITECTURE.md §3.1 的 -32603 约束）；调用走 provider 链路，首个供应商遇鉴权/计费/模型不存在错误时自动透明切换下一家。"""
     user, _login_record = current
 
     model_override = req.model
@@ -59,11 +48,7 @@ async def create_completion(req: CompletionRequest, request: Request, current: t
         return await client.chat.completions.create(**_kwargs(model))
 
     try:
-        # Resolve the chain under the session, then release the DB connection
-        # before the (potentially long) upstream await so the pool isn't held
-        # for the entire LLM call. ``resolve_provider_chain`` reads SETTINGS
-        # + a single UserModelConfig row — no further DB access during the
-        # call itself.
+        # 在会话内解析链路后立即释放连接，避免上游 await 期间长时间占用连接池；resolve_provider_chain 只读 SETTINGS + 单行 UserModelConfig，期间不再访问 DB。
         async with SESSION_LOCAL() as db:
             chain = await resolve_provider_chain(db, user.id, "llm")
         if not chain:

@@ -39,11 +39,7 @@ _BG_TASKS: set[asyncio.Task] = set()
 
 
 async def drain() -> None:
-    """Cancel + await every background task; tolerates CancelledError.
-
-    Called by ``main.py`` lifespan on shutdown so SIGTERM doesn't leave a
-    video poll / memory consolidator mid-``db.commit()`` when the engine
-    gets disposed."""
+    """取消并 await 所有后台 task，容忍 CancelledError；由 main.py lifespan 关停时调用，避免 SIGTERM 在 db.commit() 中途被 engine 释放。"""
     if not _BG_TASKS:
         return
     pending = list(_BG_TASKS)
@@ -55,41 +51,25 @@ async def drain() -> None:
 
 SCHEDULER_INTERVAL_SECONDS = 60
 
-# Per-user timestamp of last consolidator run. Process-local — matches the
-# ARCH §5 single-instance semantic (multi-replica would split state).
+# per-user 最近一次 consolidator 运行时间戳：进程本地——匹配 ARCH §5 单实例语义（多 replica 会分裂状态）。
 _LAST_MEMORY_CONSOLIDATE: dict[int, float] = {}
 
-# Per-user local date string of last successful nightly pipeline run.
+# per-user 最近一次成功的 nightly pipeline 运行的本地日期字符串。
 _LAST_NIGHTLY_RUN: dict[int, str] = {}
 
-# Outer throttle on the recall-pool scan itself. The scan is cheap (partial
-# index) but pointless every minute when no user qualifies. 10 min keeps
-# the discovery lag low while the per-user 6 h throttle keeps the heavy
-# LLM call rate bounded.
+# recall-pool 扫描本身的外层节流：扫描便宜（部分索引），但没用户符合时每分钟跑一次没意义。10 min 让发现延迟可控，由 per-user 6h 节流把重 LLM 调用频率压住。
 _LAST_CONSOLIDATE_SCAN: float = 0.0
 _CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
 
-# Outer throttle on the nightly activity scan.
+# nightly activity 扫描的外层节流。
 _LAST_NIGHTLY_SCAN: float = 0.0
 
-# Hard cap on due jobs processed per tick — bounds the batch CAS statement
-# size and per-tick work on backlog catch-up after a long pause (e.g. 60
-# minutes of ``* * * * *`` schedules = 3,600 due jobs on the first tick).
-# Jobs past the cap keep their old ``next_run_at`` and re-fire on the next tick.
+# 每个 tick 处理的到期 job 硬上限——限制批量 CAS 的语句大小和单 tick 工作量，避免长时间停摆后的回追（例如 60 分钟 ``* * * * *`` 调度，第一 tick 有 3600 个到期）。超出上限的 job 保留原 next_run_at，下一 tick 再触发。
 _MAX_DUE_PER_TICK = 200
 
 
 async def _select_due_jobs() -> list[Row]:
-    """Read due jobs.
-
-    Selects only the columns the CAS + autonomous-turn kickoff need
-    (drops ``deliver``, ``created_at``, ``updated_at``, ``is_paused``).
-    ``prompt`` is kept because the autonomous-turn kickoff reads it
-    directly, and ``CronJob.prompt`` is a Text column that may be
-    MB-sized, so the cost is real. The ``ORDER BY next_run_at, id``
-    clause gives a deterministic subset when the ``_MAX_DUE_PER_TICK``
-    cap slices a backlog.
-    """
+    """读取到期 job：只选 CAS + autonomous-turn kickoff 需要的列（去掉 deliver、created_at、updated_at、is_paused）；保留 prompt 因为 autonomous-turn kickoff 直接读它，而 CronJob.prompt 是 Text 列可能达 MB，节省是有意义的。ORDER BY next_run_at, id 在 _MAX_DUE_PER_TICK 截断积压时给出确定子集。"""
     now = utc_now()
     async with session_scope() as db:
         return (
@@ -103,25 +83,8 @@ async def _select_due_jobs() -> list[Row]:
 
 
 async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dict[str, Any]]:
-    """Batched CAS advancing ``next_run_at`` for every due job.
-
-    The CAS predicate ``(id, next_run_at, schedule)`` guards against a
-    user-driven ``update_job`` advancing ``next_run_at`` mid-tick — rows
-    that break the match silently lose and are skipped. One statement per
-    kind (recurring UPDATE / one-shot DELETE) via row-value ``IN`` —
-    supported by both Postgres and SQLite ≥ 3.15 — instead of ≤200
-    sequential round-trips.
-    Returns ``{job_id: {user_id, is_paused, payload}}`` for the jobs that
-    won the CAS. Jobs that lost (absent from RETURNING) are dropped.
-
-    ``db.commit()`` is explicit because :func:`utils.session_scope`
-    only auto-closes — it does not commit. Without the explicit commit,
-    ``db.close()`` ends an uncommitted transaction and SQLAlchemy discards
-    the UPDATE on connection return. Tests pass accidentally because
-    conftest wires one connection wrapped in an outer transaction so the
-    ``session_scope`` writes are visible across calls but no commit
-    cleanup runs until the test tears down.
-    """
+    """批量 CAS 推进每个到期 job 的 next_run_at：CAS 谓词 (id, next_run_at, schedule) 防止 update_job 在 tick 中途推进 next_run_at（不匹配的行静默落败被丢弃）；用行值 IN 让 recurring UPDATE / one-shot DELETE 各一次语句搞定（PG 和 SQLite ≥ 3.15 都支持），避免最多 200 次串行往返。返回 {job_id: {user_id, is_paused, payload}} 给 CAS 胜者，RETURNING 里没出现的视为落败丢弃。
+    db.commit() 必须显式：utils.session_scope 只 auto-close 不 commit；不显式 commit 时 db.close() 结束未提交事务，SQLAlchemy 在连接归还时丢弃 UPDATE。测试能巧合通过是因为 conftest 把一条连接裹在外层事务里，session_scope 写入跨调用可见但 commit 清理要等测试拆除时才跑。"""
     if not due_jobs:
         return {}
 
@@ -130,7 +93,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
 
     for job in due_jobs:
         if job.one_shot:
-            # One-shot jobs fire once then are deleted — no next_run to compute.
+            # 一次性 job 触发后删除——无需计算下次运行。
             new_runs[job.id] = None
             winners[job.id] = {"user_id": job.user_id, "is_paused": False, "payload": {"prompt": job.prompt}}
         else:
@@ -144,10 +107,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
 
     async with session_scope() as db:
         if recurring:
-            # PG: CAST gives asyncpg the parameter type in the CASE branch (it
-            # can't infer from the assignment target); the column is
-            # timestamptz so the cast must match. SQLite: no cast — its CAST
-            # applies NUMERIC affinity and truncates the ISO string.
+            # PG：CAST 让 asyncpg 拿到 CASE 分支里的参数类型（它无法从赋值目标推断），列类型是 timestamptz 所以 cast 必须匹配。SQLite：不写 CAST——其 CAST 会套 NUMERIC 亲和截断 ISO 串。
             is_pg = db.bind is not None and db.bind.dialect.name == "postgresql"
             then = "CAST(:next_{i} AS timestamptz)" if is_pg else ":next_{i}"
             next_case = " ".join(f"WHEN :id_{i} THEN {then.format(i=i)}" for i in range(len(recurring)))
@@ -155,8 +115,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
             params: dict[str, Any] = {}
             for i, job in enumerate(recurring):
                 params |= {f"id_{i}": job.id, f"next_{i}": new_runs[job.id], f"old_{i}": job.next_run_at, f"sched_{i}": job.schedule}
-            # is_paused derives from the same CASE: croniter exhausted (= None)
-            # is the only state that parks a job.
+            # is_paused 由同一 CASE 派生：croniter 耗尽（= None）是唯一会让 job 停摆的状态。
             res = await db.execute(
                 text(
                     f"UPDATE cron_jobs SET next_run_at = CASE id {next_case} END, is_paused = (CASE id {next_case} END) IS NULL "
@@ -166,8 +125,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
             )
             won.update(r[0] for r in res.all())
         if one_shots:
-            # Delete one-shot jobs after firing so they don't accumulate.
-            # The CAS predicate on next_run_at prevents double-fire.
+            # 触发后删除一次性 job，避免堆积；next_run_at 上的 CAS 谓词防止双重触发。
             match = ", ".join(f"(:oid_{i}, :oold_{i})" for i in range(len(one_shots)))
             params = {f"oid_{i}": job.id for i, job in enumerate(one_shots)} | {f"oold_{i}": job.next_run_at for i, job in enumerate(one_shots)}
             res = await db.execute(text(f"DELETE FROM cron_jobs WHERE (id, next_run_at) IN ({match}) RETURNING id"), params)
@@ -178,15 +136,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
 
 
 async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
-    """Tx1 (bulk CAS) + autonomous chat turn kickoff.
-
-    The autonomous turn is the actual product path — cron is the
-    infrastructure for the companion to reach out proactively. Delivery
-    flows through the same ``message.complete`` / ``companion.message``
-    pipeline as a user-typed message, so the LLM can call
-    ``send_message_tool`` and the desktop's disturbance-tier gate applies
-    (plan §4.2).
-    """
+    """Tx1（批量 CAS）+ 自主 chat turn kickoff：自主 turn 是真正产品路径——cron 是伙伴主动触达的基础设施；投递复用与用户消息相同的 message.complete / companion.message 流水线，让 LLM 可以调 send_message_tool 并受桌面端打扰档位门控（plan §4.2）。"""
     winners = await _bulk_cas_advance(due_jobs, now)
     for job_id, meta in winners.items():
         if meta.get("is_paused"):
@@ -196,27 +146,19 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
             _BG_TASKS.add(t)
             t.add_done_callback(_BG_TASKS.discard)
         except RuntimeError:
-            # No running loop — drop this tick; the job's next_run_at was
-            # already advanced, so the next tick will pick it up again.
+            # 没有运行中的 loop——跳过本 tick；job 的 next_run_at 已推进，下一 tick 会再拾起。
             logger.warning("cron: no running loop, skipping autonomous turn", extra={"job_id": job_id})
 
 
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
-    """Request an autonomous chat turn for the replica holding the user's WS.
-
-    The turn executes on the connection's process — streaming deltas,
-    tool futures and the runtime session are process-local — so the tick
-    replica only writes a ws_events row (``cron.turn.request``). The outbox
-    claim loop (connection._process_events, filtered by ``local_user_ids()``)
-    picks it up; a user offline on every replica gets the row reaped by GC.
-    """
+    """向持有该用户 WS 的 replica 申请自主 chat turn：turn 在连接所在进程内执行（流式 delta、tool future、runtime session 都是进程本地的），所以 tick 所在 replica 只写一条 ws_events（cron.turn.request）；outbox claim 循环（connection._process_events，按 local_user_ids() 过滤）拣起；用户在所有 replica 都离线则被 GC 收割。"""
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()
     if not prompt:
         return
 
     if await is_quiet(user_id):
-        # Quiet suppresses autonomous outreach; gate before writing the row.
+        # 静默模式抑制自主触达；先 gate 再写行。
         logger.debug("cron: user is quiet, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 
@@ -227,7 +169,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
 
 
 async def _maybe_run_proactive_followups(now: datetime) -> None:
-    """Scan users with an unanswered proactive outreach and trigger a follow-up autonomous turn."""
+    """扫描未应答主动外联的用户，触发跟进自主 turn。"""
     cur_time = time.monotonic()
     online_uids = MANAGER.local_user_ids()
     for uid in online_uids:
@@ -242,7 +184,7 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
                 f"[环境感知：你在大约 {waited_minutes} 分钟前向用户主动发送了：“{last_text}”，但用户一直没有回复你。"
                 "请根据你的人设性格（例如傲娇吐槽、轻微担心、自言自语或选择保持安静）决定是否要跟进。若要跟进发送消息，请调用 send_message_tool 工具，若决定不再打扰则直接结束回复。]"
             )
-            # Advance state to FOLLOWUP_SENT to prevent re-triggering
+            # 把状态推进到 FOLLOWUP_SENT，防止再次触发
             record_user_outreach(uid, last_text)
             async with session_scope() as db:
                 db.add(WSEvent(user_id=uid, event_type="cron.turn.request", payload=json.dumps({"job_id": -1, "prompt": prompt}, ensure_ascii=False)))
@@ -251,17 +193,9 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
 
 
 async def _tick() -> None:
-    """CAS-advance ``next_run_at`` for due jobs and request autonomous turns.
-
-    Each due job writes a ``cron.turn.request`` ws_events row; whichever
-    replica holds the user's WS connection claims it via the outbox loop and
-    runs the turn there. No double-fire hazard: the CAS UPDATE serialises
-    winners, and the outbox DELETE..RETURNING claim is single-consumer.
-    """
+    """为到期 job CAS 推进 next_run_at 并申请自主 turn：每个到期 job 写一条 cron.turn.request ws_events，持有该用户 WS 的 replica 通过 outbox 循环拣走并在本地运行 turn；无双触发风险——CAS UPDATE 串行化胜者，outbox DELETE..RETURNING 是单消费者。"""
     now = utc_now()
-    # Memory consolidator runs independently of cron-job dispatch — it must
-    # not be gated by ``if not due_jobs`` because installs with no cron jobs
-    # would otherwise never trigger consolidation.
+    # Memory consolidator 与 cron-job 派发独立——不能用 ``if not due_jobs`` gate，否则没有 cron job 的安装永远不会触发 consolidation。
     await _maybe_run_memory_consolidator(now)
     await _maybe_run_autonomous_activity(now)
     await _maybe_run_proactive_followups(now)
@@ -275,13 +209,7 @@ async def _tick() -> None:
 
 
 async def _maybe_run_memory_consolidator(now: datetime) -> None:
-    """Run the recall consolidator for users whose recall pool is over threshold.
-
-    Outer scan is throttled (``_CONSOLIDATE_SCAN_INTERVAL_SECONDS``); per-user
-    throttle (``MEMORY_CONSOLIDATE_INTERVAL_SECONDS``) keeps the same user
-    from being merged repeatedly. Per-user calls run concurrently via
-    ``asyncio.gather`` so the tick pays max-LLM-latency instead of sum.
-    """
+    """为 recall pool 超阈值的用户跑 recall consolidator：外层扫描受 _CONSOLIDATE_SCAN_INTERVAL_SECONDS 节流；per-user 节流（MEMORY_CONSOLIDATE_INTERVAL_SECONDS）防同一用户反复合并；per-user 调用通过 asyncio.gather 并发，单 tick 只付最大 LLM 延迟而非总和。"""
     global _LAST_CONSOLIDATE_SCAN
     if now.timestamp() - _LAST_CONSOLIDATE_SCAN < _CONSOLIDATE_SCAN_INTERVAL_SECONDS:
         return
@@ -300,14 +228,11 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
     if not eligible:
         return
 
-    # Apply the per-user throttle only after the consolidator actually
-    # ran for that user — a failed LLM call must not lock the user out
-    # of future attempts.
+    # per-user 节流只在 consolidator 真的为该用户跑过之后才生效——LLM 失败不该把用户锁在后续尝试之外。
     results = await asyncio.gather(*(maybe_consolidate_one_user(uid) for uid in eligible), return_exceptions=True)
     for uid, result in zip(eligible, results, strict=True):
         if isinstance(result, Exception):
-            # Not inside an except block — pass the exception explicitly or
-            # exc_info would be empty and the traceback lost.
+            # 不在 except 块里——必须显式传异常，否则 exc_info 为空，traceback 丢失。
             logger.error("memory_consolidator: tick failed", exc_info=result, extra={"user_id": uid})
             continue
         if result is True:
@@ -332,9 +257,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
             tz_str = (tz_content or "").strip()
             if not tz_str:
                 continue
-            # The window gate reads the *current* local hour; the pipeline
-            # digests the local day that just ended. Deriving the hour from the
-            # shifted instant would be off by one across a DST boundary.
+            # 窗口门读当前本地小时；流水线消化刚结束的本地日。若从偏移后的 instant 派生小时，DST 边界会差 1。
             try:
                 _, _, user_local_dt, _ = get_local_day_utc_bounds(now, tz_str)
                 reference_utc = now - timedelta(days=1)
@@ -357,8 +280,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
                         Conversation.user_id == uid,
                         Conversation.kind != CRON_KIND,
                         Message.role == "user",
-                        # status_interaction rows are role="user"; a poke storm is
-                        # not five real messages worth of material to reflect on.
+                        # status_interaction 行 role 也是 "user"；戳一戳风暴不等于五条真消息的反思素材。
                         Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
                         Message.created_at >= utc_start,
                         Message.created_at < utc_end,
@@ -383,16 +305,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
 
 
 async def scheduler_loop() -> None:
-    """Cron tick loop driven by ``SCHEDULER_INTERVAL_SECONDS``.
-
-    Single-tick resolution — sub-minute schedules not supported.
-
-    Uncaught exception in ``_tick()`` propagates out → BackgroundTask dies →
-    operation-layer visibility is high (Task exited with error). This is
-    intentional: a permanent bug should not silently log-flood once per
-    60 seconds but crash visibly so it gets fixed. ``_tick()`` already
-    try/excepts per job, so a single bad job cannot terminate the loop.
-    """
+    """以 SCHEDULER_INTERVAL_SECONDS 为周期的 cron tick 循环：单 tick 粒度——不支持分钟以下调度。_tick() 未捕获的异常会冒泡导致 BackgroundTask 死亡，运维侧曝光度高（Task exited with error）——这是故意的：持久 bug 不该每 60 秒静默刷日志，而应显式崩溃以便修复；_tick() 已逐 job try/except，单个坏 job 不会让循环终止。"""
     logger.info("Starting background cron scheduler loop.")
     while True:
         begin_local_scope()
@@ -404,12 +317,10 @@ _SCHEDULER = BackgroundTask("scheduler.cron_loop")
 
 
 def start_scheduler() -> None:
-    """Spawn the scheduler loop as a background task; ``stop_scheduler`` cancels it on shutdown."""
+    """把 scheduler loop 作为后台 task spawn；stop_scheduler 在关停时取消。"""
     _SCHEDULER.start(scheduler_loop())
 
 
 async def stop_scheduler() -> None:
-    """Cancel the scheduler task and await its exit. Awaiting prevents
-    late ticks from kicking autonomous turns after the dispatcher has
-    already been torn down (those turns would lose their emitter)."""
+    """取消 scheduler task 并等待其退出；await 防止晚到的 tick 在 dispatcher 已拆除后还触发自主 turn（那些 turn 会失去 emitter）。"""
     await _SCHEDULER.stop()

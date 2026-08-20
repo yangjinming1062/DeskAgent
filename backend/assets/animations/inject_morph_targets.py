@@ -6,10 +6,7 @@ import sys
 import bpy
 from mathutils import Matrix, Vector
 
-# Only the morphs the runtime consumes: blink (per-eye) and TTS jaw-open,
-# plus the six body-shape params driven by morph_params. Emotion faces moved
-# to the generated chat avatar image — every unused expression shape costs a
-# full vertex buffer per shape in each exported GLB.
+# 仅注入运行时真正消费的 morph：单眼眨眼、TTS 张嘴，以及 morph_params 控制的 6 项身材参数；表情面挪到聊天半身像生成上——每个未用到的表情 shape 都会让导出 GLB 多一个完整顶点缓冲。
 BLENDSHAPES: tuple[str, ...] = ("eyeBlinkLeft", "eyeBlinkRight", "jawOpen", "Body_Height", "Body_Weight", "Body_Muscle", "Body_Shoulders", "Face_Width", "Face_Jaw")
 
 
@@ -40,7 +37,6 @@ def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
     armatures = [o for o in bpy.context.scene.objects if o.type == "ARMATURE"]
     armature = armatures[0] if armatures else None
 
-    # Pick the character mesh (attached to armature or possessing materials)
     character_mesh = None
     for o in bpy.context.scene.objects:
         if (
@@ -56,12 +52,11 @@ def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
     if not character_mesh:
         raise RuntimeError(f"no mesh in {path}")
 
-    # Remove orphan / helper objects (like Icosphere)
     for o in list(bpy.context.scene.objects):
         if o.type == "MESH" and o != character_mesh:
             bpy.data.objects.remove(o, do_unlink=True)
 
-    # Orientation check: if arms are spread along Y instead of X (Tripo model modeled sideways), rotate -90 deg around Z
+    # 朝向校正：Tripo 模型若沿 Y 而非 X 展臂（侧向建模），绕 Z 旋转 -90°
     if armature:
         left_hand = next((b for b in armature.data.bones if "lefthand" in b.name.lower() or "left_hand" in b.name.lower()), None)
         if left_hand and abs(left_hand.head_local.y) > abs(left_hand.head_local.x):
@@ -70,7 +65,6 @@ def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
             bpy.context.view_layer.objects.active = armature
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
-    # Standardize bone and vertex group names (strip mixamorig: prefix per Mixamo spec)
     if armature:
         for b in armature.data.bones:
             orig = b.name
@@ -91,7 +85,7 @@ def _import_glb(path: str) -> tuple[bpy.types.Object, bpy.types.Object | None]:
 
 
 def _body_region(mesh: bpy.types.Object, armature: bpy.types.Object | None = None) -> dict[str, Vector]:
-    """Returns bounding-box centroids per ARKit region, anchored on the Head bone."""
+    """返回各 ARKit 区域的包围盒中心（锚定 Head 骨）。"""
     head_bone = None
     if armature and armature.data.bones:
         for b in armature.data.bones:

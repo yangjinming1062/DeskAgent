@@ -2,15 +2,7 @@ from .base import ProviderError
 
 
 def _format_err(family: str, err) -> str:
-    """Render a provider error payload into a single string.
-
-    Tolerates the four observed shapes:
-      * ``{"code": "...", "message": "..."}`` — full envelope (most providers)
-      * ``"plain string"`` — Grok /images/edits when the upstream returns
-        ``{"error": "<string>"}`` (rarely documented but seen in the wild)
-      * ``None`` / falsy — empty envelope
-      * arbitrary nested objects with a stringifiable ``message`` field
-    """
+    """把供应商错误体渲染为单行字符串；容忍 dict/str/None/任意嵌套形态。"""
     if not err:
         return f"{family} error (no detail)"
     if isinstance(err, str):
@@ -23,18 +15,7 @@ def _format_err(family: str, err) -> str:
 
 
 def raise_for_provider_response(resp, *, family: str, model: str) -> dict:
-    """Translate an HTTP response into a dict body or raise :class:`ProviderError`.
-
-    Providers that wrap errors as ``{"error": {"code": ..., "message": ...}}``
-    on 4xx/5xx (or on 200-with-error-envelope) route through here so the retry
-    loop can classify the failure and walk the failover chain. ``family`` is
-    the provider label used in the message and ``ProviderError.provider``.
-
-    The error payload's ``error`` field can be a dict (typical OpenAI / Gemini
-    shape), a plain string (Grok /images/edits observed), ``None``, or any
-    other nested form — ``_format_err`` normalizes all of them so this helper
-    never blows up on a weird provider payload.
-    """
+    """把 HTTP 响应翻译为 dict 体或抛 ProviderError；``family`` 同时用作消息前缀与 ProviderError.provider 字段。"""
     try:
         body = resp.json()
     except Exception:

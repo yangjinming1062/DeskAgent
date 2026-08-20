@@ -10,7 +10,7 @@ logger = get_logger(__name__)
 
 
 async def text_to_speech_tool(text: str, voice: str = "", user_id: int | None = None, **_) -> str:
-    """TTS via the provider chain (MiMo chat completions API or MiniMax TTS)."""
+    """通过 TTS 供应商链合成语音（MiMo chat completions 或 MiniMax TTS）。"""
     active_provider: list[str] = []
 
     def _call(p):

@@ -30,10 +30,7 @@ def _get_file_sha256(file_path: Path) -> str:
 
 
 def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | None:
-    """Parses a Range header string like 'bytes=0-499', 'bytes=500-', or 'bytes=-500'.
-
-    Returns (start, end) inclusive, or None if invalid/unsatisfiable.
-    """
+    """解析 Range 头（bytes=0-499 / 500- / -500），返回闭区间 (start, end)，非法或不可满足时返回 None。"""
     match = _RANGE_PATTERN.match(range_header.strip())
     if not match:
         return None
@@ -64,11 +61,7 @@ def _parse_range_header(range_header: str, file_size: int) -> tuple[int, int] | 
 
 
 async def serve_ranged_file(request: Request, file_path: Path, media_type: str, *, content_sha256: str | None = None) -> Response:
-    """Serves a file with full HTTP Range (206/416), ETag, and immutable cache headers.
-
-    Streaming generators are used so even large models (hundreds of MBs) never
-    get loaded into backend process memory at once.
-    """
+    """以流式方式下发文件，支持 Range(206/416)、ETag 与不可变缓存头，避免大模型文件整体进内存。"""
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -78,14 +71,12 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
 
     base_headers = {"Accept-Ranges": "bytes", "ETag": etag, "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Sha256": sha256}
 
-    # Conditional 304 Not Modified check
     if_none_match = request.headers.get("if-none-match")
     if if_none_match and if_none_match.strip() in (etag, sha256, "*"):
         return Response(status_code=304, headers=base_headers)
 
     range_header = request.headers.get("range")
 
-    # If no Range header, stream the entire file with 200 OK
     if not range_header:
 
         async def full_file_iterator() -> AsyncIterator[bytes]:
@@ -102,10 +93,8 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
         headers = {**base_headers, "Content-Length": str(file_size)}
         return StreamingResponse(full_file_iterator(), status_code=200, media_type=media_type, headers=headers)
 
-    # Process Range request
     range_bounds = _parse_range_header(range_header, file_size)
     if range_bounds is None:
-        # 416 Range Not Satisfiable
         return Response(status_code=416, headers={**base_headers, "Content-Range": f"bytes */{file_size}"})
 
     start, end = range_bounds

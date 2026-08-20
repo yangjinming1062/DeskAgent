@@ -1,49 +1,29 @@
 from .base import BaseProvider, ServiceType
 
-# (service_type, provider_name) → concrete class.
-# Provider families register themselves by importing this module and calling
-# :func:`register`.
+# (service_type, provider_name) → 具体类；供应商族通过 import 本模块并调用 register 完成自注册。
 _REGISTRY: dict[tuple[ServiceType, str], type[BaseProvider]] = {}
 
-# provider_name → service_type → default MODEL_NAME. Populated at register()
-# time from each provider class's `DEFAULT_MODELS` ClassVar; looked up by
-# `default_model_for()`. Per-cap `*_MODEL_NAME` env overrides win at resolve.
+# provider_name → service_type → 默认 MODEL_NAME；register() 时从各 provider 类的 DEFAULT_MODELS 镜像，default_model_for 查询；env 中 per-cap *_MODEL_NAME 覆盖优先。
 _PROVIDER_DEFAULT_MODELS: dict[str, dict[str, str]] = {}
 
-# provider_name → service_type → default CONTEXT_TOKENS. Populated at
-# register() time from each provider class's `DEFAULT_CONTEXT_TOKENS`
-# ClassVar; looked up by `default_context_tokens_for()`. The global
-# ``SETTINGS.default_llm_context_tokens`` fallback is applied by the
-# ``resolve_context_tokens`` wrapper in ``providers/__init__.py`` — this
-# cache stays a pure lookup table.
+# provider_name → service_type → 默认 CONTEXT_TOKENS；register() 时从各 provider 类的 DEFAULT_CONTEXT_TOKENS 镜像；全局 SETTINGS.default_llm_context_tokens 兜底由 providers/__init__.py 的 resolve_context_tokens 包装应用，本表保持纯查找。
 _PROVIDER_DEFAULT_CONTEXT_TOKENS: dict[str, dict[str, int]] = {}
 
-# Chat providers that accept image input; resolve_vision_provider skips the rest.
+# 接受图片输入的 chat 供应商集合；resolve_vision_provider 跳过其余。
 _PROVIDER_SUPPORTS_VISION: set[str] = set()
-# provider_name → vision MODEL_NAME (empty = reuse text default).
+# provider_name → 视觉 MODEL_NAME（空表示沿用文本默认）。
 _PROVIDER_VISION_MODELS: dict[str, str] = {}
 
-# Provider families SpiritAgent ships. ``*_PROVIDER`` env vars must be one
-# of these; adding a new family means registering its classes AND extending
-# the dicts below.
+# SpiritAgent 内置供应商族；*_PROVIDER env 只能取其中之一，新增族需同时注册类与扩充下表。
 KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})
 
-# Providers that expose an OpenAI-shaped ``/v1/embeddings`` endpoint. Native
-# providers (e.g. minimax's ``/v1/embeddings`` uses ``texts`` not ``input``) are
-# excluded — the embedding fallback in ``llm_client._resolve_embedding_provider``
-# only constructs an OpenAI-compatible fallback for this set.
+# 提供 OpenAI 形态 /v1/embeddings 端点的供应商；原生端点（如 minimax /v1/embeddings 用 texts 而非 input）被排除，llm_client._resolve_embedding_provider 仅对集合内的供应商构造 OpenAI 兼容兜底。
 OPENAI_COMPATIBLE_PROVIDERS: frozenset[str] = frozenset({"openai", "mimo"})
 
-# Default provider when ``SETTINGS.<svc>_provider`` is empty. Chat/STT/TTS
-# default to MiMo (OpenAI-compatible); image/video gen default to MiniMax.
+# SETTINGS.<svc>_provider 为空时的默认供应商；Chat/STT/TTS 默认 MiMo（OpenAI 兼容），image/video gen 默认 MiniMax。
 SERVICE_DEFAULT_PROVIDER: dict[str, str] = {"llm": "mimo", "stt": "mimo", "tts": "mimo", "image_gen": "minimax", "video_gen": "minimax", "embedding": "minimax"}
 
-# Default base_url per (provider, service). An empty string means the
-# provider doesn't offer that service (e.g. MiniMax has no public STT API).
-# Operators override per-deployment via ``*_BASE_URL``.
-#
-# MiMo URLs include /v1 (OpenAI SDK needs the full base_url); MiniMax URLs
-# exclude /v1 (the minimax httpx providers post to /v1/<endpoint> themselves).
+# (provider, service) 的默认 base_url；空字符串表示该供应商不提供该能力（如 MiniMax 无公开 STT）。MiMo 含 /v1（OpenAI SDK 需要完整 base_url），MiniMax 不含 /v1（其 httpx provider 自拼 /v1/<endpoint>）。
 PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
     "mimo": {
         "llm": "https://token-plan-cn.xiaomimimo.com/v1",
@@ -87,13 +67,12 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
 
 def register(service_type: ServiceType, provider_name: str, cls: type[BaseProvider]) -> None:
     _REGISTRY[(service_type, provider_name)] = cls
-    # Mirror DEFAULT_MODELS into the registry cache so capability resolvers
-    # don't need to know about individual provider classes.
+    # 把 DEFAULT_MODELS 镜像到 registry 缓存，能力解析无需 import 各 provider 类。
     for svc, model in getattr(cls, "DEFAULT_MODELS", {}).items():
         _PROVIDER_DEFAULT_MODELS.setdefault(provider_name, {})[svc] = model
     for svc, ctx in getattr(cls, "DEFAULT_CONTEXT_TOKENS", {}).items():
         _PROVIDER_DEFAULT_CONTEXT_TOKENS.setdefault(provider_name, {})[svc] = ctx
-    # Mirror vision capability + overrides for resolve_vision_provider.
+    # 镜像视觉能力与覆写，供 resolve_vision_provider 使用。
     if getattr(cls, "supports_vision", False):
         _PROVIDER_SUPPORTS_VISION.add(provider_name)
         vm = getattr(cls, "DEFAULT_VISION_MODELS", {}).get("llm", "")
@@ -117,35 +96,26 @@ def default_base_url(provider: str, service_type: str) -> str:
 
 
 def default_model_for(provider: str, service_type: str) -> str:
-    """Default MODEL_NAME a provider publishes for this capability.
-
-    Returns "" when the provider doesn't publish a default — caller falls back
-    to `SETTINGS.<svc>_model_name` or the chain terminal.
-    """
+    """该 provider 在此能力上发布的默认 MODEL_NAME；未发布时返回 ""，调用方回退到 SETTINGS.<svc>_model_name 或链末。"""
     return _PROVIDER_DEFAULT_MODELS.get(provider, {}).get(service_type, "")
 
 
 def default_context_tokens_for(provider: str, service_type: str) -> int:
-    # 0 signals "no default published" so the resolver can fall through
-    # to its terminal fallback. Caller decides what 0 means.
+    # 0 表示"未发布默认值"，由解析器回退到终端兜底；0 的具体含义由调用方决定。
     return _PROVIDER_DEFAULT_CONTEXT_TOKENS.get(provider, {}).get(service_type, 0)
 
 
 def supports_vision(provider_name: str) -> bool:
-    """True if this provider registered a vision-capable chat class."""
+    """是否注册了具备视觉能力的 chat 类。"""
     return provider_name in _PROVIDER_SUPPORTS_VISION
 
 
 def default_vision_model_for(provider_name: str) -> str:
-    """Vision MODEL_NAME for this provider's chat capability. Empty string
-    means 'use the provider's regular llm model' (vision and text share one)."""
+    """视觉 MODEL_NAME；空字符串表示沿用普通 llm 模型（视觉与文本共用一个）。"""
     return _PROVIDER_VISION_MODELS.get(provider_name, "")
 
 
 def providers_supporting(service_type: ServiceType | str) -> list[str]:
-    """Provider names that registered a class for this capability, in
-    registration order. Used by the fallback chain to know which providers
-    can be tried at all.
-    """
+    """按注册顺序排列、已注册该能力类的供应商名列表，供回退链筛选可尝试的供应商。"""
     svc = ServiceType(service_type) if not isinstance(service_type, ServiceType) else service_type
     return list(dict.fromkeys(name for registered_svc, name in _REGISTRY if registered_svc == svc))

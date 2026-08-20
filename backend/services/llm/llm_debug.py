@@ -8,9 +8,7 @@ _debug_logger = get_logger(DEBUG_LOGGER_NAME)
 
 
 def is_enabled() -> bool:
-    # Master switch — honors the explicit toggle. Root log level stays
-    # independent, so flipping ``log_level = DEBUG`` without the toggle
-    # doesn't accidentally ship user prompts to stdout.
+    # 主开关：尊重显式开关。根日志级别独立 —— 仅调 ``log_level = DEBUG`` 而未开此开关时不会把用户 prompt 发到 stdout。
     return bool(getattr(SETTINGS, "llm_debug_logging", False))
 
 
@@ -19,8 +17,7 @@ def _max_chars() -> int:
 
 
 def truncate_for_log(text: Any, *, max_chars: int | None = None) -> tuple[str | None, int]:
-    """Return ``(preview, original_len)``. Non-string input becomes a short
-    type marker instead of a misleading string repr."""
+    """返回 ``(preview, original_len)``；非字符串输入被替换为简短类型标记，避免误导性的 repr。"""
     cap = _max_chars() if max_chars is None else max(0, max_chars)
     if text is None:
         return None, 0
@@ -40,8 +37,7 @@ def _summarize_content_part(part: Any) -> Any:
     if ptype == "text":
         return {"type": "text", "text": truncate_for_log(part.get("text", ""))[0]}
     if ptype == "image_url":
-        # Elide the URL — image content can carry base64 payloads + any
-        # signed-URL expiry the provider embedded.
+        # 省略 URL：图像内容可能带 base64 与供应商签名的过期 URL
         url = part.get("image_url") or {}
         return {"type": "image_url", "image_url": {"url": "<elided>" if isinstance(url, dict) and url.get("url") else url}}
     return {"type": ptype or "unknown", "keys": sorted(part.keys())}
@@ -78,10 +74,7 @@ def _summarize_message(msg: Any) -> dict[str, Any]:
 
 
 def summarize_chat_request(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """Reduce ``client.chat.completions.create(**kwargs)`` to a log-safe dict
-    — model, messages (truncated), tool names, sampling params. Excludes
-    SDK flags like ``stream_options`` that add noise without diagnostic value.
-    """
+    """将 ``client.chat.completions.create(**kwargs)`` 压缩为日志安全字典（model、截断的 messages、工具名、采样参数）；排除 ``stream_options`` 等无诊断价值的 SDK 标志。"""
     out: dict[str, Any] = {"model": kwargs.get("model"), "stream": bool(kwargs.get("stream"))}
     if (messages := kwargs.get("messages")) is not None:
         out["messages"] = [_summarize_message(m) for m in messages]
@@ -98,8 +91,7 @@ def summarize_chat_request(kwargs: dict[str, Any]) -> dict[str, Any]:
 
 
 def summarize_chat_response(response: Any) -> dict[str, Any]:
-    """Pull content + usage + finish_reason out of a ChatCompletion. Tolerates
-    missing fields (non-OpenAI providers sometimes omit ``usage``)."""
+    """从 ChatCompletion 中抽出 content / usage / finish_reason；容忍缺失字段（非 OpenAI 供应商偶尔省略 ``usage``）。"""
     if response is None:
         return {"present": False}
     out: dict[str, Any] = {"present": True}
@@ -128,8 +120,7 @@ def summarize_chat_response(response: Any) -> dict[str, Any]:
 
 
 def summarize_error(exc: BaseException) -> dict[str, Any]:
-    """Digest enough to grep, not enough to leak the provider's full error
-    body (may carry request IDs / internal URLs)."""
+    """压缩错误到足够 grep 的粒度，但避免泄露供应商完整错误体（可能含 request ID / 内部 URL）。"""
     out: dict[str, Any] = {"type": type(exc).__name__, "message": str(exc)[:500]}
     if classified := getattr(exc, "classified", None):
         out["reason"] = classified.reason.value if classified.reason else None
@@ -156,9 +147,7 @@ def log_event(
     error: dict[str, Any] | None = None,
     **extras: Any,
 ) -> None:
-    """Single emission point. ``phase`` lets the reader reconstruct the
-    timeline (request → response / error). ``extras`` lands verbatim for
-    layer-specific fields like ``chain_index`` / ``next_provider``."""
+    """统一日志出口。``phase`` 用于还原时间线（request → response / error），``extras`` 直接透传层专属字段如 ``chain_index`` / ``next_provider``。"""
     if not is_enabled():
         return
     fields: dict[str, Any] = {"call_id": call_id, "service": service, "provider": provider, "model": model, "call_site": call_site, "phase": phase}
@@ -177,8 +166,7 @@ def log_event(
 
 
 def new_call_id() -> str:
-    # 12 hex chars: enough entropy to be unique across concurrent calls
-    # while staying grep-friendly (uuid4's full 32 chars is too long).
+    # 12 位 hex：熵足以跨并发调用唯一且保持 grep 友好（uuid4 全 32 位太长）。
     return uuid.uuid4().hex[:12]
 
 

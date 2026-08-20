@@ -11,7 +11,6 @@ FALSY_STRINGS: frozenset[str] = frozenset({"0", "false", "no", "off", "disabled"
 
 
 def apply_partial(obj: Any, payload: BaseModel, /, *, exclude: frozenset[str] = frozenset()) -> None:
-    """Set ``obj`` attributes from ``payload``; both unset and explicit-null are skipped."""
     for field, value in payload.model_dump(exclude_unset=True, exclude=exclude).items():
         if value is None:
             continue
@@ -19,7 +18,6 @@ def apply_partial(obj: Any, payload: BaseModel, /, *, exclude: frozenset[str] = 
 
 
 def safe_json_loads(text: str, default: Any = None) -> Any:
-    """Parse JSON, returning *default* on any parse error."""
     try:
         return json.loads(text)
     except (json.JSONDecodeError, TypeError, ValueError):
@@ -27,7 +25,6 @@ def safe_json_loads(text: str, default: Any = None) -> Any:
 
 
 def parse_llm_json(text: str | None) -> Any:
-    """Extract and parse JSON from an LLM text response."""
     if not text:
         return None
     s = text.strip()
@@ -57,17 +54,17 @@ def parse_llm_json(text: str | None) -> Any:
 
 
 def tool_error(msg: str) -> str:
-    """Serialize a tool-side failure as a JSON string the LLM can read back."""
+    """把工具侧失败序列化成 LLM 可读的 JSON 字符串。"""
     return json.dumps({"success": False, "error": msg}, ensure_ascii=False)
 
 
 def utc_now() -> datetime:
-    """Timezone-aware UTC ``datetime`` — matches the DB convention (timestamptz columns)."""
+    """带时区的 UTC datetime，与 DB 约定一致（timestamptz 列）。"""
     return datetime.now(UTC)
 
 
 def ensure_utc(dt: datetime) -> datetime:
-    """Re-attach UTC to naive datetimes read back from SQLite (PG keeps tzinfo)."""
+    """给 SQLite 读回的 naive datetime 补 UTC（PG 自带 tzinfo）。"""
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 
@@ -98,7 +95,7 @@ def positive_int(value: Any, default: int) -> int:
 
 
 def coerce_int(value: Any, default: int | None) -> int | None:
-    """``int(value)`` with fallback. Allows ``default=None`` for an "invalid" signal."""
+    """``int(value)`` + fallback；允许 ``default=None`` 表示「非法」信号。"""
     if value is None:
         return default
     try:
@@ -108,9 +105,7 @@ def coerce_int(value: Any, default: int | None) -> int | None:
 
 
 def coerce_non_negative_int(value: Any, default: int = 0) -> int:
-    """``max(0, int(value))`` with fallback. For activity-context fields like
-    ``idle_seconds`` where the renderer always sends a non-negative int but a
-    bad value should silently fall back to ``default`` rather than raise."""
+    """``max(0, int(value))`` + fallback；用于 renderer 总发非负 int 的活动上下文字段（如 ``idle_seconds``），坏值静默回退。"""
     if value is None:
         return default
     try:
@@ -120,9 +115,7 @@ def coerce_non_negative_int(value: Any, default: int = 0) -> int:
 
 
 def coerce_non_negative_float(value: Any, default: float = 0.0) -> float:
-    """``max(0.0, float(value))`` with fallback. For activity-context fields like
-    ``idle_seconds`` / ``seconds_since_last_action`` that carry sub-second
-    precision; ``coerce_non_negative_int`` would truncate it."""
+    """``max(0.0, float(value))`` + fallback；用于带亚秒精度的字段（如 ``seconds_since_last_action``），``coerce_non_negative_int`` 会截断。"""
     if value is None:
         return default
     try:
@@ -132,16 +125,14 @@ def coerce_non_negative_float(value: Any, default: float = 0.0) -> float:
 
 
 def coerce_hour_0_23(value: Any) -> int:
-    """``int(value)`` in [0, 23], or -1 for "unknown / out of range". For
-    ``local_hour`` and similar time-of-day fields where -1 has a documented
-    "unknown" semantic."""
+    """``int(value)`` 落入 [0, 23]，否则返 -1 表示「未知 / 越界」（用于 ``local_hour`` 等时段字段的「未知」语义）。"""
     if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 23:
         return -1
     return value
 
 
 def unquote_user_setting(val: str | None) -> str | None:
-    """Undo ``put_config._flatten``'s ``json.dumps`` quoting for string-valued settings."""
+    """撤销 ``put_config._flatten`` 对字符串型 setting 的 ``json.dumps`` 转义。"""
     if val is None:
         return None
     s = str(val).strip()
@@ -153,7 +144,7 @@ def unquote_user_setting(val: str | None) -> str | None:
 
 
 def approx_message_tokens(messages: list[dict] | None) -> int:
-    """Character-based token estimate across a messages list."""
+    """基于字符数的 token 估算。"""
     if not messages:
         return 0
     return sum(len(str(m.get("content") or "")) for m in messages) // CHARS_PER_TOKEN

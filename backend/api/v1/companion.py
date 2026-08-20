@@ -115,7 +115,7 @@ logger = get_logger(__name__)
 
 
 async def _resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
-    """Read the persona's definition draft (short read; called inside a short session)."""
+    """读取 persona 定义草稿（短读，需在短会话内调用）。"""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return {}
@@ -145,9 +145,7 @@ async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depe
         persona = await update_persona(db, user.id, data)
     except PersonaValidationError as exc:
         raise HTTPException(status_code=422, detail={"error": "Persona validation error", "reason": str(exc)})
-    # Tag LLM extraction is deferred — keeping it inline would block the PUT
-    # past the renderer's 15s socket timeout, preventing the follow-up
-    # ``POST /avatar`` from ever firing during onboarding.
+    # 延迟调度标签 LLM 抽取；同步执行会阻塞 PUT 超过 renderer 的 15s socket 超时，导致 onboarding 阶段后续 POST /avatar 无法触发。
     schedule_personality_tag_refresh(persona.id, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
     return PersonaResponse(is_complete=persona.is_complete, definition_json=persona.definition_json, personality_tags=tags if isinstance(tags, list) else [])
@@ -160,11 +158,9 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
         await finalize_avatar(db, user.id)
     except AvatarSourceUnreadableError as exc:
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
-    # Only confirm the portrait after finalize succeeds — avoids a poisoned
-    # state where is_portrait_confirmed=True but avatar files are gone.
+    # 仅在 finalize 成功后确认 portrait；避免 is_portrait_confirmed=True 但头像文件已丢失的污染状态。
     persona = await confirm_portrait(db, user.id)
-    # Derive the initial outfit description async from the avatar prompt +
-    # appearance_core (vision-first, text fallback).
+    # 异步从头像 prompt + appearance_core 派生初始 outfit 描述（vision 优先，文本回退）。
     schedule_onboarding_outfit_extraction(persona.id, user.id)
     return {"ok": True}
 
@@ -237,7 +233,7 @@ async def delete_animation(name: str, auth: tuple[User, LoginRecord] = Depends(g
     return AnimationClipResponse(clips=filtered)
 
 
-# Hub has no gateway — REST mirror of the gateway tts.list_voices method.
+# Hub 无 gateway；此 REST 接口镜像 gateway 的 tts.list_voices 方法。
 @router.get("/voices")
 async def list_voices(language: str | None = None, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = auth
@@ -250,7 +246,7 @@ async def get_avatar(auth: tuple[User, LoginRecord] = Depends(get_current_sessio
     asset = await get_active_avatar(db, user.id)
     if asset is None:
         raise HTTPException(status_code=404, detail="No avatar found")
-    # get_active_avatar already re-signs asset_url on read; never re-sign here.
+    # get_active_avatar 读时已重签 asset_url，此处禁止再次重签。
     return avatar_response(asset)
 
 
@@ -281,7 +277,7 @@ async def post_avatar(
 
 
 def _decode_upload_image(image_b64: str | None, content_type: str | None) -> tuple[bytes | None, str | None]:
-    """Raises ``HTTPException(415)`` for unsupported MIME, ``HTTPException(400)`` for bad base64."""
+    """不支持的 MIME 抛 415；base64 损坏抛 400。"""
     if not image_b64:
         return None, None
     normalized = (content_type or "image/png").split(";")[0].strip().lower()
@@ -384,7 +380,7 @@ async def post_fullbody_samples(
 async def post_fullbody_select_style(
     avatar_id: int, body: FullbodySelectStyleRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
 ) -> AvatarAssetResponse:
-    """Persist the picked style (fast DB write — no generation, no rate limit)."""
+    """持久化所选画风（纯 DB 写入，无生成、无速率限制）。"""
     user, _ = auth
     try:
         asset = await select_fullbody_style(db, user.id, avatar_id=avatar_id, style=body.style)
@@ -552,9 +548,7 @@ async def post_wardrobe(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
 ) -> WardrobeItemResponse:
     user, _ = auth
-    # Generate-then-confirm in one call. The generation itself runs on the
-    # render worker (README §1: web never hosts Blender pipelines); this
-    # endpoint long-polls the job to keep the synchronous 201 contract.
+    # 一次调用完成生成与确认；生成本身跑在渲染 worker 上（README §1：web 不承载 Blender 管线），此处长轮询任务以维持同步 201 契约。
     job_id = await render_queue.enqueue("garment_preview", user.id, {"description": body.description})
     deadline = utc_now() + timedelta(seconds=SETTINGS.blender_llm_timeout * SETTINGS.blender_llm_max_iterations)
     job: RenderJob | None = None
@@ -569,8 +563,7 @@ async def post_wardrobe(
     if job is None or job.status != "succeeded":
         raise HTTPException(status_code=504, detail={"error": "换装生成超时，请稍后重试"})
     result = job.result or {}
-    # Pre-resolve persona + vision chain in a short session so the LLM
-    # call inside confirm_wardrobe_item does not hold a pool connection.
+    # 在短会话内预解析 persona + 视觉链路，让 confirm_wardrobe_item 内的 LLM 调用不长时间占用连接池。
     async with SESSION_LOCAL() as pre_db:
         persona_definition = await _resolve_persona_definition(pre_db, user.id)
         vision_chain = await resolve_vision_chain(pre_db, user.id)
@@ -636,8 +629,7 @@ async def post_wardrobe_preview(
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> WardrobePreviewAcceptedResponse:
-    """Enqueue the preview (texture seconds, geometric garment minutes) and
-    return immediately; poll the GET or listen for wardrobe.preview.* events."""
+    """入队预览任务（贴图秒级、服装几何分钟级）后立即返回；轮询 GET 或监听 wardrobe.preview.* 事件获取结果。"""
     user, _ = auth
     raw_bytes, content_type = _decode_upload_image(body.image, body.content_type)
     payload = {
@@ -666,8 +658,7 @@ async def get_wardrobe_preview(job_id: int, auth: tuple[User, LoginRecord] = Dep
 @router.post("/wardrobe/confirm", response_model=WardrobeItemResponse, status_code=status.HTTP_201_CREATED)
 async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> WardrobeItemResponse:
     user, _ = auth
-    # Pre-resolve persona + vision chain in a short session so the LLM call
-    # inside confirm_wardrobe_item does not hold a pool connection.
+    # 在短会话内预解析 persona + 视觉链路，让 confirm_wardrobe_item 内的 LLM 调用不长时间占用连接池。
     async with SESSION_LOCAL() as pre_db:
         persona_definition = await _resolve_persona_definition(pre_db, user.id)
         vision_chain = await resolve_vision_chain(pre_db, user.id)
@@ -697,9 +688,7 @@ async def post_wardrobe_confirm(body: WardrobeConfirmRequest, auth: tuple[User, 
 
 @router.delete("/wardrobe/preview/{file_id}")
 async def delete_wardrobe_preview(file_id: str, auth: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, bool]:
-    """Best-effort delete of an unconfirmed wardrobe preview. Called when the
-    Wardrobe Studio discards or closes so the temp-media file isn't held
-    until ``cleanup_expired`` sweeps it. Cross-user deletes are refused."""
+    """尽力删除未确认的 wardrobe 预览（Wardrobe Studio 关闭/丢弃时调用，避免临时媒体文件滞留到 cleanup_expired 回收）；跨用户删除会被拒绝。"""
     user, _ = auth
     try:
         deleted = discard_wardrobe_preview(file_id, user_id=user.id)

@@ -19,12 +19,7 @@ _AVATAR_SIZE = "1:1"
 _ALBUM_CAP = 300
 _GENERATION_COOLDOWN_S = 300
 
-# One deterministic template, no LLM authoring pass — the emotion semantics
-# are already authoritative (builtin map / registry description). What
-# per-character content rides along (core features reinforcing the reference
-# anchor, wardrobe-mirrored outfit, personality) is decided in
-# _PERSONA_ANCHOR_FIELDS below; the rest is generic presentation wording plus
-# the chroma-background contract keying depends on.
+# 固定模板、不走 LLM 二次撰写：情绪语义本身已是权威来源，剩下的只是通用表述与抠图依赖的纯色背景约定
 _EXPRESSION_PROMPT_TEMPLATE = (
     "角色头部特写，取参考图角色最具辨识度的头部区域，居中朝向观众、占据画面主要位置。"
     "物种与外貌严格以参考图为准，不改变任何外形特征。"
@@ -33,13 +28,7 @@ _EXPRESSION_PROMPT_TEMPLATE = (
     "纯色平面背景（{bg_hex} {bg_label}），无阴影、无渐变、无背景图案、无其他物体。"
 )
 
-# Persona fields carried into the prompt: appearance_core states the core
-# visual features — text reinforcing the reference image's identity anchor;
-# appearance_outfit mirrors the wardrobe system's equipped set (the reference
-# bust freezes the onboarding outfit and goes stale once the user changes
-# clothes); personality shapes the reaction — the same emotion reads
-# differently on different characters. Species and gender stay with the
-# reference image.
+# 带入提示词的人设字段：着装取衣柜同步值（参考图冻结在引导期着装，换装后会过期），性格影响同一情绪的表现方式
 _PERSONA_ANCHOR_FIELDS: tuple[tuple[str, str], ...] = (("appearance_core", "外形特征"), ("appearance_outfit", "当前着装"), ("personality", "性格"))
 
 
@@ -50,31 +39,27 @@ async def _persona_setting_clause(db: AsyncSession, user_id: int) -> str:
     parts = [f"{label}：{value}" for key, label in _PERSONA_ANCHOR_FIELDS if (value := str(definition.get(key) or "").strip())]
     if not parts:
         return ""
-    # Override the reference outfit only when the wardrobe field has content —
-    # an empty field means "no wardrobe info", not "wear nothing".
+    # 仅当衣柜字段有内容时才覆盖参考图着装——空值意味着「无着装信息」而非「不穿衣服」
     return f"角色设定（{'；'.join(parts)}）。" + ("着装以该设定为准，不以参考图为准。" if outfit else "")
 
 
 class NeutralEmotionError(Exception):
-    """[affect:neutral] is the no-op emotion — the portrait already covers it."""
+    """[affect:neutral] 是空操作情绪，形象头像本身已覆盖。"""
 
 
 class UnknownEmotionError(Exception):
-    """Token is neither a builtin emotion nor a registered custom expression."""
+    """该 token 既非内置情绪，也未注册为自定义表情。"""
 
 
 class ExpressionSeedMissingError(Exception):
-    """Raised when the user has no active avatar bust to anchor identity."""
+    """用户尚无可用于锁定身份的激活头像。"""
 
 
 class ExpressionCooldownError(Exception):
-    """A recent generation for this (user, emotion) failed; retrying immediately
-    would just re-bill the provider on every emotion trigger."""
+    """该 (用户, 情绪) 刚生成失败，立即重试只会在每次情绪触发时重复计费。"""
 
 
-# Process-local generation coordination. In-flight tasks dedup the 10–60s
-# generation window (every emotion trigger re-fetches; concurrent requests
-# share one generation); failed keys cool down instead of retry-storming.
+# 进程内生成协调：in-flight 表让并发请求共享同一次生成，失败键进入冷却避免重试风暴
 _inflight: dict[tuple[int, str, int], asyncio.Task[CompanionExpressionAvatar]] = {}
 _failed_at: dict[tuple[int, str, int], float] = {}
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
@@ -85,9 +70,7 @@ def signed_expression_avatar_url(row: CompanionExpressionAvatar) -> str | None:
 
 
 async def resolve_expression_avatar(*, user_id: int, name: str, force_new: bool = False) -> tuple[CompanionExpressionAvatar, bool]:
-    """Exact-match lookup-or-generate keyed by (user_id, name, avatar_id).
-    Returns ``(row, generated)``. Stale rows (regenerated avatar) and missing
-    files count as misses and regenerate — cache loss is always recoverable."""
+    """按 (user_id, name, avatar_id) 精确查找或生成表情头像；行过期或文件缺失均算未命中并重新生成。"""
     normalized = name.strip().lower()
     if normalized == "neutral":
         raise NeutralEmotionError("neutral 情绪无需生成表情头像，直接使用形象头像")
@@ -114,8 +97,7 @@ async def resolve_expression_avatar(*, user_id: int, name: str, force_new: bool 
         ):
             return row, False
 
-        # Generation-only inputs stay below the hit check — the steady-state
-        # path (cached row) must not pay the registry/avatar-file/persona reads.
+        # 仅生成路径才需要的输入放在命中判断之后，避免稳态命中还要付出注册表/文件/人设读取代价
         clause = EXPRESSION_SEMANTICS.get(normalized)
         if clause is None:
             reg = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id, CompanionExpression.name == normalized))).scalar_one_or_none()
@@ -136,18 +118,14 @@ async def resolve_expression_avatar(*, user_id: int, name: str, force_new: bool 
         raise ExpressionCooldownError("表情头像生成暂时不可用，请稍后再试")
 
     task = asyncio.create_task(_generate_and_store(user_id=user_id, name=normalized, avatar_id=avatar_id, clause=clause, setting_clause=setting_clause, subject_ref=subject_ref))
-    # Cleanup rides task completion, not the awaiting request: a cancelled
-    # caller (client disconnect mid-generation) must not pop the key while
-    # the generation still runs — the next resolve would re-bill the provider.
+    # 清理挂在任务完成而非等待方上：调用方被取消（生成途中断连）时不能提前弹出键，否则下次解析会重复计费
     _inflight[key] = task
     task.add_done_callback(lambda _t, _key=key: _inflight.pop(_key, None))
     return await asyncio.shield(task), True
 
 
 def kick_background_generation(user_id: int, name: str) -> None:
-    """Warm-start generation for a freshly registered emotion (create_expression
-    tool / nightly creation). Fire-and-forget: the tool returns immediately and
-    the client resolves lazily on first [affect:NAME] if this loses the race."""
+    """为新注册的情绪预热生成，失败不影响主流程——客户端首次 [affect:NAME] 时会惰性补生成。"""
 
     async def _run() -> None:
         try:
@@ -183,7 +161,7 @@ async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause
 
 
 async def _upsert_row(db, *, user_id: int, name: str, avatar_id: int, prompt: str, path: str, png: bytes) -> CompanionExpressionAvatar:
-    # force_new / stale-file replacements land here: one row per key, old file unlinked.
+    # force_new / 文件失效的替换也走这里：每个键只保留一行，旧文件同步删除
     if (
         old := (
             await db.execute(

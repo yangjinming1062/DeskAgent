@@ -14,14 +14,14 @@ logger = get_logger(__name__)
 
 
 def _call_site_from_client(client: Any) -> str:
-    # SDK client carries no provider label — fall back to the base_url host.
+    # SDK client 不携带供应商标签 —— 回退到 base_url 的 host
     base_url = getattr(client, "base_url", None)
     host = getattr(base_url, "host", None) if base_url is not None else None
     return host or (str(base_url) if base_url else "unknown")
 
 
 def _jittered_backoff(attempt: int, *, base_delay: float, max_delay: float, jitter_ratio: float = 0.5) -> float:
-    """Exponential backoff with additive jitter on the monotonic clock — no locks needed under concurrent retries."""
+    """基于单调时钟的指数退避 + 加性抖动，并发重试无需加锁。"""
     base_delay = max(base_delay, LLM_RETRY_MIN_DELAY)
     max_delay = max(max_delay, base_delay)
     jitter_ratio = max(0.0, min(jitter_ratio, 1.0))
@@ -35,7 +35,7 @@ def _jittered_backoff(attempt: int, *, base_delay: float, max_delay: float, jitt
 
 
 class LLMRuntimeError(Exception):
-    """Wraps a classified API error; original is preserved on ``__cause__``."""
+    """包装已分类的 API 错误；原异常挂在 ``__cause__`` 上。"""
 
     def __init__(self, classified: ClassifiedError, original: BaseException | None = None) -> None:
         self.classified = classified
@@ -44,12 +44,7 @@ class LLMRuntimeError(Exception):
 
 
 async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> AsyncIterator:
-    """Wrap a streaming response so the *entire* iteration is deadline-bounded.
-
-    ``timeout`` is the budget for the whole stream, not per chunk. The
-    underlying stream is always aclose()'d in finally so a chat-loop cancel
-    doesn't leak the HTTP connection back to the SDK pool.
-    """
+    """包装流式响应，使整个迭代受 deadline 约束（``timeout`` 是整个流的预算而非每 chunk）；finally 中始终 aclose() 流，避免 chat-loop 取消时 HTTP 连接泄漏到 SDK 池。"""
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     try:
@@ -76,8 +71,7 @@ async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> As
 
 
 async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provider: str, model: str, call_site: str, call_started: float) -> AsyncIterator:
-    """Pass-through that accumulates stream chunks and emits one final
-    breadcrumb on iteration end (success, mid-stream raise, or cancel)."""
+    """透传流并累积 chunk，迭代结束时（成功 / 流中异常 / 取消）统一打一条面包屑。"""
     chunks: list[Any] = []
     accumulated_content = ""
     usage = None
@@ -171,13 +165,7 @@ async def call_with_retry(
     max_delay: float | None = None,
     **create_kwargs: Any,
 ) -> Any:
-    """Wrap ``client.chat.completions.create(**kwargs)`` with timeout + backoff.
-
-    For ``stream=True``, returns an AsyncIterator whose iteration is bounded by
-    the same per-call timeout.  For non-stream, returns the SDK Response after
-    at least one successful attempt.  Raises :class:`LLMRuntimeError` when the
-    classifier marks the error non-retryable or all attempts are exhausted.
-    """
+    """为 ``client.chat.completions.create(**kwargs)`` 包装超时与退避；流式返回受同一 timeout 约束的 AsyncIterator，非流式返回至少一次成功后的 SDK Response。分类器标为不可重试或重试耗尽时抛 :class:`LLMRuntimeError`。"""
     timeout = max(timeout if timeout is not None else SETTINGS.llm_request_timeout_seconds, LLM_RETRY_MIN_TIMEOUT)
     max_attempts = max_attempts if max_attempts is not None else max(1, SETTINGS.llm_max_retry_attempts)
     base_delay = max(base_delay if base_delay is not None else SETTINGS.llm_base_retry_delay, LLM_RETRY_MIN_DELAY)
@@ -203,8 +191,7 @@ async def call_with_retry(
     approx_tokens = approx_message_tokens(messages)
     num_messages = len(messages or [])
 
-    # Emit the request-side breadcrumb up front so failure-only log readers
-    # still see the prompt that was sent.
+    # 提前打 request 面包屑，确保仅看失败日志的读者仍能看到已发出的 prompt。
     call_id = new_call_id()
     call_site = _call_site_from_client(client)
     call_started = time.monotonic()
@@ -231,9 +218,7 @@ async def call_with_retry(
     success = False
 
     def _emit_failure_breadcrumb(exc: BaseException | None) -> None:
-        # The original ``exc`` may not carry ``.classified`` (only the
-        # ClassifiedError record does); merge so the breadcrumb surfaces
-        # the classifier's reason bucket alongside the raw exception shape.
+        # 原 ``exc`` 不一定带 ``.classified``（只有 ``ClassifiedError`` 才有）；合并以让面包屑同时展现分类器的原因桶与原异常形状。
         digest = summarize_error(exc) if exc is not None else {"type": "unknown"}
         if last_classified is not None:
             digest.setdefault("reason", last_classified.reason.value)
@@ -257,9 +242,7 @@ async def call_with_retry(
         try:
             coro = client.chat.completions.create(**create_kwargs)
             if is_stream:
-                # One deadline covers connection + iteration so a stream can't
-                # spend ``timeout`` connecting and another ``timeout`` streaming;
-                # the connect leg is additionally capped at 60s.
+                # 一个 deadline 覆盖连接 + 迭代，避免流先花 ``timeout`` 连接再花 ``timeout`` 流式（连接段再额外封顶 60s）
                 loop = asyncio.get_running_loop()
                 deadline = loop.time() + timeout
                 stream = await asyncio.wait_for(coro, timeout=min(timeout, 60))
@@ -308,8 +291,7 @@ async def call_with_retry(
 
     assert success, "call_with_retry exited retry loop without raising or succeeding"
 
-    # Stream result: hand off to the debug wrapper so the response breadcrumb
-    # fires when iteration completes.
+    # 流式结果：交给 debug 包装器，让 response 面包屑在迭代结束时再打。
     if is_stream:
         return _wrap_stream_for_debug(success_result, call_id=call_id, provider=call_site, model=model, call_site=call_site, call_started=call_started)
 
@@ -329,7 +311,7 @@ async def call_with_retry(
 
 
 def _compute_retry_delay(classified: ClassifiedError, attempt: int, base_delay: float, max_delay: float) -> float:
-    """Pick the next retry sleep; clamp provider-suggested values to a sane ceiling."""
+    """选择下一次重试等待时间；将供应商建议值封顶在合理上限。"""
     suggested = classified.suggested_delay
     if suggested and suggested > 0:
         if suggested > LLM_RETRY_MAX_SUGGESTED_DELAY:

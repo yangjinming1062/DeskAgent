@@ -56,14 +56,11 @@ from .memory_consolidator import replace_recall_pool
 
 logger = get_logger(__name__)
 
-# Number of recall rows passed to the planning stage as highlights.
+# 传给 planning 阶段的 recall 行数（用作高亮）。
 _PLANNING_RECALL_HIGHLIGHTS: int = 10
-# Work-conversation turns forwarded to the reflection stage; the companion
-# conversation is the primary signal, work traffic is only mined for interests.
+# 转发到 reflection 阶段的工作会话轮次：陪伴会话是主信号，工作流量只用于挖掘兴趣。
 _REFLECTION_MAX_WORK_MESSAGES: int = 50
 
-
-# ── Prompts ────────────────────────────────────────────────────────────
 
 _REFLECTION_SYSTEM_PROMPT = """You are SpiritAgent's nightly reflection engine. Analyze today's conversations between the user and their AI companion to extract durable user profile updates and assess relationship/emotional dynamics.
 
@@ -194,11 +191,8 @@ Output valid JSON only:
 """
 
 
-# ── Helpers ────────────────────────────────────────────────────────────
-
-
 def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[str, str]]:
-    """Clean conversation stream by stripping tool calls, system prompts, and pure tool executions."""
+    """清洗会话流：去掉工具调用、系统 prompt 和纯工具执行。"""
     clean: list[dict[str, str]] = []
     for msg in messages:
         if msg.role in ("system", "tool"):
@@ -218,13 +212,13 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
 
 
 async def resolve_user_timezone(db: AsyncSession, user_id: int) -> str | None:
-    """Read-only lookup for the user's onboarding timezone string."""
+    """只读查询用户的 onboarding 时区字符串。"""
     val = (await db.execute(select(Memory.content).where(Memory.user_id == user_id, Memory.context == "user_profile:timezone"))).scalar()
     return (val or "").strip() or None
 
 
 def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, datetime, datetime, str]:
-    """Calculates user local midnight boundaries as aware UTC datetimes."""
+    """计算用户本地午夜的 UTC aware 边界。"""
     zone = ZoneInfo(tz_str)
     user_now = now_utc.astimezone(zone)
     local_start = datetime(user_now.year, user_now.month, user_now.day, 0, 0, 0, tzinfo=zone)
@@ -236,11 +230,7 @@ def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, 
 
 
 def _local_9am_cron(tz_str: str | None) -> str:
-    """Build a 5-field cron expression for "tomorrow 09:00 local", converted to UTC.
-
-    Falls back to ``0 1 * * *`` when no timezone is resolvable — close to 09:00 UTC
-    so behaviour is bounded rather than wrong-by-default.
-    """
+    """构造"明天 09:00 本地"换算成 UTC 后的 5 字段 cron；时区无法解析时回落到 0 1 * * *（接近 09:00 UTC），让行为受控而非默认错。"""
     if not tz_str:
         return "0 1 * * *"
     try:
@@ -253,11 +243,8 @@ def _local_9am_cron(tz_str: str | None) -> str:
         return "0 1 * * *"
 
 
-# ── Pipeline Stages ───────────────────────────────────────────────────
-
-
 async def _nightly_resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
-    """Read persona definition draft (short read; called inside a short session)."""
+    """读取 persona 定义草稿（短读，在短 session 内调用）。"""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return {}
@@ -279,10 +266,10 @@ async def _stage_1_daily_reflection(
     clean_work_messages: list[dict[str, str]] | None = None,
     interaction_stats_today: dict[str, Any] | None = None,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Stage 1: Daily Reflection — Updates inferred_profile and auto_inject."""
+    """Stage 1：每日反思——更新 inferred_profile 和 auto_inject。"""
     payload = {
         "today_companion_conversations": clean_messages,
-        # Newest work turns matter more than the morning's; the list is ascending.
+        # 列表是升序，最新的工作轮比早上更重要。
         "today_work_conversations": (clean_work_messages or [])[-_REFLECTION_MAX_WORK_MESSAGES:],
         "current_inferred_profile": inferred_profile,
         "current_auto_inject": auto_inject,
@@ -333,7 +320,7 @@ async def _stage_1_daily_reflection(
 
 
 async def _stage_2_memory_consolidation(llm_cfg: dict[str, Any], user_id: int, recall_rows: list[dict[str, Any]], inferred_profile: dict[str, str], local_date_str: str) -> bool:
-    """Stage 2: Memory Consolidation and Decay."""
+    """Stage 2：记忆合并与衰减。"""
     if not recall_rows:
         logger.info("nightly_activity: stage 2 skipped, recall pool empty", extra={"user_id": user_id})
         return True
@@ -364,7 +351,7 @@ async def _stage_3_planning(
     date_context: dict[str, Any],
     anomaly_stats: dict[str, Any],
 ) -> int:
-    """Stage 3: Planning — Creates proactive CronJob entries when appropriate."""
+    """Stage 3：计划——在合适时创建主动触达的 CronJob。"""
     payload = {"inferred_profile": inferred_profile, "auto_inject_state": auto_inject, "recall_highlights": recall_highlights, **date_context, **anomaly_stats}
     raw = await call_llm_once(llm_cfg, _PLANNING_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_PLANNING_MAX_TOKENS)
     parsed = parse_llm_json(raw)
@@ -395,7 +382,7 @@ async def _stage_3_planning(
 async def _stage_4_self_diary(
     llm_cfg: dict[str, Any], user_id: int, clean_messages: list[dict[str, str]], inferred_profile: dict[str, str], auto_inject: dict[str, str], local_date_str: str
 ) -> bool:
-    """Stage 4: Self Diary — Companion writes a personal reflection for today."""
+    """Stage 4：自我日记——伙伴写下当天的个人反思。"""
     payload = {"today_conversations": clean_messages, "inferred_profile": inferred_profile, "auto_inject": auto_inject, "local_date": local_date_str}
     raw = await call_llm_once(llm_cfg, _DIARY_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_DIARY_MAX_TOKENS)
     parsed = parse_llm_json(raw)
@@ -425,33 +412,32 @@ async def _stage_5_creation(
     local_date_str: str,
     tz_str: str | None = None,
 ) -> bool:
-    """Stage 5: Autonomous Creation — Companion creates expressions, animation clips, and costume gifts."""
+    """Stage 5：自主创作——伙伴生成表情、动画片段和装扮礼物。"""
     if not NIGHTLY_CREATION_ENABLED:
         return False
 
     async with session_scope() as db:
-        # Fetch diary entry from Stage 4
+        # 取 Stage 4 的日记
         diary_context = f"diary:{local_date_str}"
         diary_row = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == diary_context))).scalar_one_or_none()
         diary_text = diary_row.content if diary_row else ""
 
-        # Fetch persona personality tags
+        # 取 persona 人格标签
         persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
         personality_tags = safe_json_loads(persona.personality_tags_json or "[]", default=[]) if persona else []
 
-        # Check existing expressions
+        # 检查已有表情
         existing_expr_rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id))).scalars().all()
         existing_expr_names = [e.name for e in existing_expr_rows]
 
-        # Check active model and existing clips — also capture rig_type/species
-        # here so we don't need a second session later (they're static config).
+        # 检查 active model 和已有片段——顺便在此取 rig_type/species，避免后面再开 session（它们是静态配置）。
         model = await get_active_model(db, user_id)
         existing_clips = safe_json_loads(model.animation_clips_json or "[]", default=[]) if model else []
         existing_clip_names = [c.get("name") for c in existing_clips if isinstance(c, dict) and c.get("name")]
         rig_type = model.rig_type if model else "biped"
         species = model.species if model else "人类"
 
-        # Single wardrobe query — derive pending count, existing names, and last gift in Python.
+        # 一次 wardrobe 查询——在 Python 里派生 pending 数、已有名字、上次礼物时间。
         wardrobe_rows = (
             await db.execute(select(WardrobeItem.name, WardrobeItem.gift_state, WardrobeItem.origin, WardrobeItem.created_at).where(WardrobeItem.user_id == user_id))
         ).all()
@@ -460,14 +446,14 @@ async def _stage_5_creation(
         companion_gifts = [r for r in wardrobe_rows if r[2] == "companion" and r[3] is not None]
         last_companion_gift_created_at = max((r[3] for r in companion_gifts), default=None)
 
-        # Check image_gen provider capability
+        # 检查 image_gen provider 能力
         img_chain = await resolve_provider_chain(db, user_id, "image_gen")
         image_gen_available = bool(img_chain)
 
         days_since_last_gift = (utc_now() - ensure_utc(last_companion_gift_created_at)).days if last_companion_gift_created_at else 999
         allow_wardrobe = image_gen_available and (pending_wardrobe_count == 0) and (days_since_last_gift >= NIGHTLY_CREATION_WARDROBE_MIN_INTERVAL_DAYS)
 
-    # Build creation prompt
+    # 构造创作 prompt
     system_prompt = _CREATION_SYSTEM_PROMPT
     payload = {
         "today_conversations": clean_messages,
@@ -493,9 +479,8 @@ async def _stage_5_creation(
     new_clip_count = 0
     created_wardrobe_item = None
 
-    # 1. Process gaps -> Expressions & Clips — one session_scope for the whole batch.
-    # The LLM keyframe calls run first (independent of DB); the merge is then
-    # a single read-modify-write transaction.
+    # 1. 处理 gaps -> 表情 & 片段——整批用同一个 session_scope。
+    # LLM keyframe 调用先跑（与 DB 独立），merge 是单一 read-modify-write 事务。
     if isinstance(gaps, list):
         pending_clip_tag_sets: list[list[str]] = []
         pending_expressions: list[dict[str, Any]] = []
@@ -512,12 +497,10 @@ async def _stage_5_creation(
             if gap.get("clip_brief"):
                 pending_clip_tag_sets.append(gap.get("tags") or personality_tags[:2])
 
-        # rig_type/species were captured in the initial session above; the LLM
-        # call only needs the static bone list, not a live DB session.
+        # rig_type/species 已在上面初次 session 中捕获；LLM 调用只需静态 bone list，不需要活的 DB session。
         bone_list = get_rig_bones(rig_type)
 
-        # LLM-bound keyframe generation runs concurrently per gap spec — no DB
-        # contention between independent calls.
+        # 受 LLM 限制的 keyframe 生成按 gap spec 并发跑——独立调用之间没有 DB 竞争。
         async def _gen_clips_for(tags: list[str]) -> list[dict]:
             return await generate_animation_clips(
                 chat, rig_type=rig_type, bone_list=bone_list, personality_tags=tags, species=species, categories=["interaction"], user_id=user_id, db=None
@@ -525,7 +508,7 @@ async def _stage_5_creation(
 
         clip_results = await asyncio.gather(*[_gen_clips_for(tags) for tags in pending_clip_tag_sets[:NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT]])
 
-        # Single session for the merge write.
+        # merge 写入用单个 session。
         async with session_scope() as db:
             for expr in pending_expressions:
                 db.add(
@@ -543,11 +526,8 @@ async def _stage_5_creation(
 
             active_model = await get_active_model(db, user_id)
             if active_model:
-                # Read-modify-write within this transaction. A concurrent
-                # ``POST /animations/generate`` from the user could interleave,
-                # but the nightly job runs in the user's sleep window so the
-                # collision probability is negligible; SQLite's serial writers
-                # make the last commit win rather than corrupting the JSON.
+                # 在该事务内 read-modify-write。用户的并发 ``POST /animations/generate`` 可能交错，
+                # 但 nightly 任务跑在用户睡眠窗口，碰撞概率可忽略；SQLite 串行写入保证最后提交胜出而非损坏 JSON。
                 curr_raw = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
                 curr_clips = curr_raw if isinstance(curr_raw, list) else []
                 added = 0
@@ -563,12 +543,11 @@ async def _stage_5_creation(
                     new_clip_count = added
             await db.commit()
 
-        # Warm-start avatar generation so the images exist before the morning
-        # "show your new creations" message has the companion use them.
+        # 预热形象生成，让图片在早晨"展示新创作"消息让伙伴用到之前就到位。
         for expr in pending_expressions:
             kick_background_generation(user_id, expr["name"])
 
-    # 2. Process Wardrobe Gift
+    # 2. 处理装扮礼物
     if allow_wardrobe and isinstance(wardrobe_spec, dict):
         w_name = str(wardrobe_spec.get("name") or "").strip()
         w_desc = str(wardrobe_spec.get("description") or "").strip()
@@ -576,9 +555,7 @@ async def _stage_5_creation(
         w_msg = str(wardrobe_spec.get("message") or "").strip()
         if w_name and w_desc:
             try:
-                # Pre-resolve persona + vision chain (short read); then run preview
-                # and confirm with db=None so their image-gen and LLM calls don't hold
-                # pool connections across multi-second awaits.
+                # 预解析 persona + vision chain（短读）；再跑 preview 和 confirm 时传 db=None，让它们的图像生成与 LLM 调用在多秒级 await 期间不占连接池。
                 async with session_scope() as pre_db:
                     persona_definition = await _nightly_resolve_persona_definition(pre_db, user_id)
                     vision_chain = await resolve_vision_chain(pre_db, user_id)
@@ -600,14 +577,12 @@ async def _stage_5_creation(
                     persona_definition=persona_definition,
                     vision_chain=vision_chain,
                 )
-                # Emit a wardrobe.gift event so an online client hydrates and
-                # announces proactively. Offline clients pick it up on reconnect
-                # via the WSEvent backlog, and the morning cron is the fallback.
+                # 发 wardrobe.gift 事件让在线客户端水合并主动宣布；离线客户端通过 WSEvent 积压重连时拿到，早晨 cron 是兜底。
                 await emit_wardrobe_gift(user_id, name=w_name, message=w_msg or None, reason=w_reason or None)
             except Exception as exc:
                 logger.warning("nightly_activity: stage 5 wardrobe gift generation failed", extra={"user_id": user_id, "error": str(exc)})
 
-    # 3. Schedule morning notification cron job if assets were created
+    # 3. 若生成了资产，安排早晨通知的 cron job
     if new_expr_count > 0 or new_clip_count > 0 or created_wardrobe_item is not None:
         summary_parts = []
         if new_expr_count > 0:
@@ -621,9 +596,7 @@ async def _stage_5_creation(
         if created_wardrobe_item is not None:
             cron_prompt += f"你有礼物待用户拆开（{created_wardrobe_item.gift_reason}），可以温馨地提醒用户在装扮屋里拆开礼物。"
 
-        # Schedule for next local 09:00 — cron uses UTC, so convert from user
-        # timezone. ``one_shot=True`` deletes the job after firing so the
-        # one-time "show your new creations" message doesn't recur daily.
+        # 安排到下次本地 09:00——cron 用 UTC，从用户时区换算；one_shot=True 让 job 触发后删除，一次性"展示新创作"消息不会每天重复。
         schedule = _local_9am_cron(tz_str)
         try:
             await create_job(user_id=user_id, prompt=cron_prompt, schedule=schedule, name="Creation gift follow-up", deliver="local", one_shot=True)
@@ -635,12 +608,7 @@ async def _stage_5_creation(
 
 
 async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = None) -> bool:
-    """Execute the 5-stage nightly autonomous activity pipeline for one user.
-
-    ``reference_utc`` picks which local day to process — the cron gate passes the
-    day that just ended, so bounds and date label are derived from one instant
-    instead of being computed twice and drifting apart.
-    """
+    """为单用户执行 5 阶段夜间自主活动流水线；reference_utc 决定处理哪个本地日——cron 门控传刚结束的当天，边界与日期标签由同一 instant 派生，避免算两次发生漂移。"""
     now_utc = reference_utc or utc_now()
     async with session_scope() as db:
         tz_str = await resolve_user_timezone(db, user_id)
@@ -653,7 +621,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
             logger.warning("nightly_activity: timezone resolution error", extra={"user_id": user_id, "error": str(exc)})
             return False
 
-        # Stage 0: Gather Context
+        # Stage 0：收集上下文
         all_today_tuples = (
             await db.execute(
                 select(Message, Conversation.kind)
@@ -674,15 +642,13 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
 
         clean_main_messages = _preprocess_conversation_for_nightly(main_msgs)
         clean_work_messages = _preprocess_conversation_for_nightly(work_msgs)
-        # Chronological across both kinds — the diary and creation prompts read
-        # this as one day's dialogue, so concatenating the two buckets would
-        # invent an ordering that never happened.
+        # 跨两类按时间顺序——日记和创作 prompt 把这一天的对话视为整体，简单拼接会凭空造出从未发生的顺序。
         clean_messages = _preprocess_conversation_for_nightly([m for m, _ in all_today_tuples])
         if not any(m["role"] == "user" for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
             return False
 
-        # Load existing memory namespaces — one query for all three prefixes.
+        # 加载已有 memory 命名空间——一个 query 取三种前缀。
         ns_rows = (
             (
                 await db.execute(
@@ -710,8 +676,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
 
         recall_rows = await list_memories(db, user_id, kind="recall", limit=NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS)
 
-        # Baseline 7-day activity stats (main conversation, real turns only —
-        # poke status rows are role="user" and would read as engagement).
+        # 7 天基线活动统计（主会话，仅真轮——戳一戳 status 行 role 也是 "user"，会被当成参与度）。
         seven_days_ago_utc = utc_start - timedelta(days=7)
         past_7_count = (
             await db.execute(
@@ -731,7 +696,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user")
         seven_day_avg = round(past_7_count / 7.0, 2)
 
-        # Date projections
+        # 日期推算
         tomorrow_dt = user_local_dt + timedelta(days=1)
         date_context = {
             "tomorrow_date": tomorrow_dt.strftime("%Y-%m-%d"),
@@ -746,7 +711,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
             logger.info("nightly_activity: skipped, missing llm config", extra={"user_id": user_id})
             return False
 
-    # Execute stages sequentially with isolated failure domains
+    # 各阶段顺序执行，失败域相互隔离
     updated_inferred = inferred_profile
     updated_auto_inject = auto_inject
     today_stats = await read_today_summary(user_id, local_today_str)
@@ -781,9 +746,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     except Exception as exc:
         logger.exception("nightly_activity: stage 4 diary failed", extra={"user_id": user_id, "error": str(exc)})
 
-    # Daily checkpoint and stage-5 creation are independent (separate session_scope,
-    # separate LLM calls, no shared state) — run them concurrently to save a wall-
-    # clock LLM roundtrip per user per night.
+    # Daily checkpoint 和 stage-5 creation 相互独立（独立 session_scope、独立 LLM 调用、无共享状态）——并发跑，每用户每晚省一次 LLM 往返墙钟时间。
     async def _checkpoint() -> None:
         await run_daily_checkpoint(llm_cfg, user_id, utc_start, utc_end, local_today_str)
 
@@ -792,8 +755,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
     )
     for label, result in zip(("daily checkpoint", "stage 5 creation"), results, strict=True):
         if isinstance(result, Exception):
-            # Not inside an except block — pass the exception explicitly or
-            # exc_info would be empty and the traceback lost.
+            # 不在 except 块里——必须显式传异常，否则 exc_info 为空，traceback 丢失。
             logger.error(f"nightly_activity: {label} failed", exc_info=result, extra={"user_id": user_id})
 
     return True

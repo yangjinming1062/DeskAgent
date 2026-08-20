@@ -21,16 +21,7 @@ async def video_generation_tool(
     session_id: str | None = None,
     **_,
 ) -> str:
-    """Video generation via MiniMax. Submits an async job and waits
-    up to ``video_gen_tool_wait_seconds`` (default 180s) for completion;
-    returns the local /api/media/files/<id> URL on success, or a pending
-    marker with the task_id for long-running jobs that the model can
-    re-query via :func:`video_generate_status`.
-
-    Validation here is the permissive *union* of the v1 (Hailuo) and v2 (H3)
-    parameter spaces — the tool can't know which model resolves for this
-    user. The exact per-version rules live in the provider and fail the
-    submit with a precise message."""
+    """通过 MiniMax 异步生成视频；本工具等待 video_gen_tool_wait_seconds（默认 180s）后返回链接或待查询的 task_id。"""
     if not isinstance(duration, int) or not 4 <= duration <= 15:
         return tool_error("duration must be an integer between 4 and 15 seconds")
     if resolution not in ("512P", "768P", "1080P", "2K"):
@@ -58,7 +49,7 @@ async def video_generation_tool(
         logger.exception("video_generation_tool submit failed")
         return tool_error(str(e))
 
-    # Bounded wait: poll the DB row until terminal status or deadline.
+    # 限时等待：轮询 DB 行直到终态或截止。
     deadline = utc_now() + timedelta(seconds=SETTINGS.video_gen_tool_wait_seconds)
     interval = min(SETTINGS.video_gen_poll_interval_seconds, 5.0)
     while utc_now() < deadline:
@@ -73,13 +64,13 @@ async def video_generation_tool(
         if row.status == "failed":
             return tool_error(row.error_message or "video generation failed")
 
-    # Timed out — job continues in background; model can poll later.
+    # 已超时——任务在后台继续，模型可后续查询。
     logger.info("video_generation_tool timed out, job continues", extra={"job_id": job.id})
     return json.dumps({"success": True, "pending": True, "task_id": str(job.id), "hint": "视频仍在生成中，请稍后用 video_generate_status 查询结果"}, ensure_ascii=False)
 
 
 async def video_generate_status_tool(task_id: int, user_id: int | None = None, **_) -> str:
-    """Poll the status of a previously-submitted video generation job."""
+    """查询之前提交的 video 生成任务状态。"""
     if user_id is None:
         return tool_error("需要用户上下文")
     try:

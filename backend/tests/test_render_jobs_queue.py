@@ -51,8 +51,7 @@ async def test_finish_and_fail_are_terminal(SessionLocal):
 
 
 async def test_finish_by_stale_claimant_does_not_clobber(SessionLocal):
-    """After a stale timeout requeues and another worker re-claims the job, a
-    late finish from the original worker must be a no-op."""
+    """过期超时重新入队后被其他 worker 抢占，原始 worker 的迟到 finish/fail 必须是 no-op。"""
     job_id = await queue.enqueue("model_generate", 1, {})
     await queue.claim_batch("slow-worker", 1)
     await _backdate_claim(SessionLocal, job_id, hours=3)
@@ -82,7 +81,7 @@ async def test_requeue_stale_recovers_once_then_caps(SessionLocal):
         stale = await db.get(RenderJob, stale_id)
         assert stale.status == "queued"
         assert stale.claimed_by is None
-        # recently-claimed row untouched
+        # 刚刚被 claim 的行不应被影响
         assert (await db.get(RenderJob, fresh_id)).status == "processing"
 
     await queue.claim_batch("w2", 1)  # stale_id: attempts 1 → 2

@@ -9,28 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
-# Persona field order — part of the contract downstream prompt consumers
-# reason about, since it dictates the rendered system-prompt snippet shape.
+# 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
 _REQUIRED_FIELDS: tuple[str, ...] = ("name", "personality", "speaking_style")
-# Split from "appearance" so the locked-vs-outfit split is first-class:
-# `assemblePersona` preserves `appearance_core` across edits; outfit stays editable.
+# 从 appearance 拆出，使「锁定外形」与「可换着装」成为一等概念：编辑时保留 appearance_core，outfit 保持可改
 _OPTIONAL_FIELDS: tuple[str, ...] = ("appearance_core", "appearance_outfit", "background", "biological_type", "gender")
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
-# Onboarding raw-answer fields, in question order: character sub-stage
-# (name..speaking_style) → 形象确认 → voice → user sub-stage. Stored as a draft
-# in ``Persona.definition_json`` while ``is_complete`` is False; user_* reach
-# Memory via ``update_persona`` server-side routing. ``voice`` rides the
-# draft for breakpoint recovery but is not a persona field.
-#
-# Note: ``appearance_outfit`` is intentionally NOT collected here — the seed
-# image focuses on body silhouette. The initial outfit is derived async from
-# the avatar prompt + appearance_core after portrait confirmation (see
-# ``_schedule_onboarding_outfit_extraction`` in companion.py). Subsequent
-# updates happen at wardrobe-equip time via ``update_outfit_field`` below,
-# which swaps in the equipped item's ``outfit_description``. The field is
-# LLM-normalized (see ``outfit_normalizer.py``), never raw user input.
+# 引导问答的原始字段，按提问顺序排列；未完成时以草稿形式存在 definition_json 中，user_* 由 update_persona 路由进 Memory。
+# 注意：appearance_outfit 刻意不在此收集——初始着装在确认立绘后由头像提示词异步推导，之后随衣柜换装更新，且始终经 LLM 规范化而非原始用户输入。
 ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",
@@ -48,18 +35,15 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
 )
 _ONBOARDING_MAX_LEN: int = 2000
 
-# ``voice`` splits ONBOARDING_FIELDS into the character sub-stage (before it)
-# and the post-character fields (after it). Both sub-tuples derive from the
-# single source of truth above so a field add/remove can't desync them.
+# voice 把 ONBOARDING_FIELDS 切成角色阶段与后置阶段；两个子元组均由上面的唯一事实源派生，避免增删字段时失同步
 _VOICE_FIELD_INDEX: int = ONBOARDING_FIELDS.index("voice")
 _CHARACTER_ONBOARDING_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[:_VOICE_FIELD_INDEX]
-# Gating is_complete on these prevents skip-on-crash resume.
+# is_complete 以这些字段为门槛，防止中途崩溃后跳步续接
 _POST_CHARACTER_FIELDS: tuple[str, ...] = ONBOARDING_FIELDS[_VOICE_FIELD_INDEX + 1 :]
 
 
 class PersonaValidationError(ValueError):
-    """``field`` is the offending field name when known; ``None`` for
-    structural errors (e.g. not-a-dict)."""
+    """人设校验失败；field 为出错字段名，结构性错误时为 None。"""
 
     def __init__(self, message: str, field: str | None = None) -> None:
         super().__init__(message)
@@ -86,13 +70,7 @@ def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
 
 
 async def get_or_create_persona(db: AsyncSession, user_id: int) -> Persona:
-    """Look up the user's persona, or stage an insert for one if none
-    exists. Does NOT ``db.commit()`` so the caller can keep the whole
-    ``user_profile + persona`` write in a single transaction (ARCH §7.5
-    single-PUT dual-write contract) — committing here would flush any
-    uncommitted Memory rows from ``record_user_profile`` and create a
-    half-write state if the follow-up commit failed.
-    """
+    """查询人设，不存在则暂存一条待插入行。刻意不 commit，以便调用方把 user_profile + persona 放在同一事务里写（ARCH §7.5）。"""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         persona = Persona(user_id=user_id, definition_json="{}", system_prompt_extras="")
@@ -126,9 +104,7 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
         return persona
 
     persona = await _dual_write()
-    # Retry on the partial-unique race — rollback discards the pending persona
-    # assignments too, so the whole dual write replays (record_user_profile is
-    # idempotent).
+    # 部分唯一索引冲突时重试：回滚会连带丢弃待提交的 persona 赋值，故整个双写重放（record_user_profile 幂等）
     try:
         await db.commit()
     except IntegrityError:
@@ -149,17 +125,14 @@ async def confirm_portrait(db: AsyncSession, user_id: int) -> Persona:
 
 
 def build_system_prompt_extras(persona: Persona | None) -> str:
-    """Empty string when persona is missing or incomplete so callers can
-    unconditionally prepend the value without a guard."""
+    """人设缺失或未完成时返回空串，使调用方可以无条件拼接。"""
     if persona is None or not persona.is_complete or not persona.system_prompt_extras:
         return ""
     return persona.system_prompt_extras
 
 
 def render_extras(definition: dict[str, str]) -> str:
-    """Render the persona fields into the prompt snippet. Field order is
-    fixed (see ``_REQUIRED_FIELDS``) so downstream prompt-consumers see
-    a stable shape."""
+    """把人设字段渲染成提示词片段；字段顺序固定，保证下游看到稳定形状。"""
     lines = ["# Companion persona"]
     for key in _REQUIRED_FIELDS + _OPTIONAL_FIELDS:
         if key in definition:
@@ -169,7 +142,7 @@ def render_extras(definition: dict[str, str]) -> str:
 
 
 async def update_outfit_field(db: AsyncSession, user_id: int, outfit: str) -> None:
-    """Swap ``appearance_outfit`` + re-render ``system_prompt_extras`` without full re-validation. Empty string clears the field."""
+    """替换 appearance_outfit 并重渲染 system_prompt_extras，不做完整校验；传空串则清除该字段。"""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is not None:
         definition = _load_draft(persona)
@@ -192,11 +165,7 @@ def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, A
 
 
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
-    """Resume onboarding state from database rows.
-
-    ``answers``: every field already submitted; ``next_field``: first unanswered step.
-    ``complete`` is gated on portrait confirmation, fullbody confirmation, voice, and user profile fields.
-    """
+    """从数据库恢复引导进度；complete 以立绘确认、全身确认、音色与用户资料字段共同为门槛。"""
     persona = await get_or_create_persona(db, user_id)
     if persona.is_complete:
         draft = _load_draft(persona)
@@ -205,15 +174,13 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
         if not persona.is_portrait_confirmed:
             return _state(merged, "portrait", False)
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        # Front seed alone can exist before confirmation (style pick / refine
-        # redraw); the aux seeds are written atomically by confirm-front, so
-        # their presence is what unlocks the voice / user sub-stages.
+        # 正面种子图可能在确认前就存在（选风格/重绘），而侧背种子图由 confirm-front 原子写入，故以后者作为解锁后续阶段的判据
         if avatar is None or not (getattr(avatar, "seed_front_url", None) and getattr(avatar, "seed_back_url", None)):
             return _state(merged, "fullbody", False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")
         if voice_missing or missing_users:
-            # Merge draft + Memory so the desktop rehydrates every answered field in one shot.
+            # 合并草稿与 Memory，让桌面端一次性恢复所有已答字段
             next_field = "voice" if voice_missing else missing_users[0]
             return _state(merged, next_field, False)
         return _state({}, None, True)
@@ -225,21 +192,19 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
 
 
 async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, value: str | None) -> dict[str, Any]:
-    """Persist one onboarding answer. After is_complete=True, only user_*/voice remain editable; character fields (incl. speaking_style) require PUT /persona."""
+    """写入一条引导回答；is_complete 之后仅 user_*/voice 可改，角色字段须走 PUT /persona。"""
     if field not in ONBOARDING_FIELDS:
         raise PersonaValidationError(f"unknown onboarding field: {field!r}", field)
     persona = await get_or_create_persona(db, user_id)
     if persona.is_complete:
-        # Post-character fields accepted here; see single-PUT dual-write contract.
+        # 后置阶段字段仍允许在此提交，详见单 PUT 双写契约
         if field.startswith("user_"):
             if value and value.strip():
                 await record_user_profile(db, user_id, {field: value.strip()[:_ONBOARDING_MAX_LEN]})
                 await db.commit()
-            # Empty value: leave the Memory row alone so revocation stays the
-            # only path that wipes a user_* entry (memory_forget).
+            # 传空值不动 Memory 行：清除 user_* 条目只能经 memory_forget 撤回
             return _state(_load_draft(persona), None, True)
-        # voice is not a persona field, so the draft is the only thing that
-        # moves here — system_prompt_extras stays as update_persona left it.
+        # voice 不是人设字段，故此处只动草稿，system_prompt_extras 保持 update_persona 写入的内容
         if field == "voice":
             draft = _load_draft(persona)
             if value and value.strip():

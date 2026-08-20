@@ -5,13 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def build_session_messages(conv_id: int, db: AsyncSession) -> list[dict]:
-    """Forward-pass message reconstruction for a conversation.
-
-    Tool calls are emitted in ``created_at`` order so an earlier assistant
-    message always precedes its tool results in the same loop; we use that
-    to populate the ``call_id → name`` map before any tool-result rows
-    look it up.
-    """
+    """会话消息的前向重建：按 ``created_at`` 顺序遍历，保证 assistant 的 tool_calls 早于同轮 tool 结果，从而预先填充 ``call_id → name`` 映射。"""
     messages = (await db.execute(select(Message).where(Message.conversation_id == conv_id).order_by(Message.id))).scalars().all()
     tool_name_by_call_id: dict[str, str] = {}
     result: list[dict] = []

@@ -340,12 +340,7 @@ async def generate_named_animation_clip(
     user_id: int | None = None,
     db: AsyncSession | None = None,
 ) -> dict | None:
-    """Generate ONE animation clip with a caller-specified name + description.
-
-    Reuses :func:`validate_and_sanitize_clip` for the same bounds as the
-    nightly batch path, but forces the requested name so the LLM cannot rename
-    the clip. Returns the sanitized clip dict or ``None`` on any failure.
-    """
+    """按调用方指定的名称与描述生成单个动画 Clip，失败返回 None。"""
     effective_bones = bone_list if bone_list else get_rig_bones(rig_type)
     allowed_bones = set(effective_bones)
     tags = list(personality_tags or [])
@@ -370,7 +365,7 @@ async def generate_named_animation_clip(
         parsed = safe_json_loads(cleaned_raw, default=None)
         if not isinstance(parsed, dict):
             return None
-        # Force the requested name so a wayward model can't rename the clip.
+        # 强制回填请求的名称，避免模型擅自改名导致后续按名查找失效
         parsed["name"] = name
         sanitized = validate_and_sanitize_clip(parsed, allowed_bones)
         if sanitized and not sanitized["tags"]:

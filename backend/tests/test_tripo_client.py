@@ -41,7 +41,6 @@ def fake_key(monkeypatch):
 
 @pytest.fixture
 def mock_http(monkeypatch, fake_key):
-    """Replace httpx.AsyncClient with a single shared MockTransport instance."""
     transport = _MockTransport()
     clients: list[httpx.AsyncClient] = []
 
@@ -65,7 +64,7 @@ def _err(code: int, message: str) -> dict:
 
 @pytest.mark.asyncio
 async def test_create_image_to_model_rejects_empty_token(mock_http):
-    """An empty ``image_token`` should raise before any HTTP call."""
+    """空的 image_token 需在发出任何 HTTP 请求前抛错。"""
     import pytest as _pytest
 
     with _pytest.raises(ValueError, match="image_token"):
@@ -74,7 +73,7 @@ async def test_create_image_to_model_rejects_empty_token(mock_http):
 
 @pytest.mark.asyncio
 async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
-    """P-series caps ``face_limit`` at 20,000; clamp the payload so an H-series-tuned config doesn't 400 when the model is switched."""
+    """P 系列 face_limit 上限为 20000；裁剪载荷以防 H 系列配置在切换模型时返回 400。"""
     mock_http.responder = lambda _r: httpx.Response(
         200, json=_ok({"task_id": "task_p"})
     )
@@ -183,7 +182,7 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
 
 @pytest.mark.asyncio
 async def test_poll_task_raises_on_error_envelope(mock_http):
-    """A non-zero code mid-poll must fail fast instead of polling to the deadline."""
+    """轮询中遇到非零 code 必须快速失败，而不是一直轮询到超时。"""
     mock_http.responder = lambda _r: httpx.Response(
         200, json=_err(2010, "insufficient credit")
     )

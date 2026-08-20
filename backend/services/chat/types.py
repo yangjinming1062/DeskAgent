@@ -6,7 +6,7 @@ TrackTask = Callable[[asyncio.Task], None]
 
 
 class IterationBudget:
-    """Consume-once counter; returns False when ``max_total`` is exhausted."""
+    """一次性计数器；``max_total`` 用尽时返回 False。"""
 
     def __init__(self, max_total: int):
         self.max_total = max_total

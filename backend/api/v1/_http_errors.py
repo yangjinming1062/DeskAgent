@@ -3,17 +3,12 @@ from services.llm import ClassifiedError
 
 
 def classified_http_exception(classified: ClassifiedError) -> HTTPException:
-    """Build an HTTPException from a classified upstream error.
-
-    Preserve the upstream status code for all 4xx (401 for invalid key,
-    403 for quota, 422 for bad params, etc.) so the renderer can route
-    per-code remediation flows.  Only 5xx is normalised to 500.
-    """
+    """保留上游 4xx 让 renderer 按状态码分流处理，仅把 5xx / 越界状态归一为 500。"""
     upstream = classified.status_code or 500
     if upstream >= 500:
         http_status = 500
     elif upstream < 400:
-        # Non-HTTP or misclassified status — treat as server error
+        # 非 HTTP 或状态码越界，统一视为服务端错误
         http_status = 500
     else:
         http_status = upstream
@@ -23,6 +18,5 @@ def classified_http_exception(classified: ClassifiedError) -> HTTPException:
 
 
 def missing_config_http(svc_label: str, status_code: int = 400) -> HTTPException:
-    """Standard 400/501 envelope for ``MissingLlmConfigError`` raised by
-    the chain resolver when no provider is configured for ``svc_label``."""
+    """链路解析器抛 MissingLlmConfigError 时的统一 400/501 响应信封。"""
     return HTTPException(status_code=status_code, detail={"error": f"{svc_label} provider not configured", "reason": "missing_config", "status": status_code})

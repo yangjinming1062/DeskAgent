@@ -33,9 +33,7 @@ class ChromaCandidate(NamedTuple):
     label: str
 
 
-# Maximally saturated hues spread across the wheel; orange sits last because
-# it is closest to skin tones and only wins when the subject rules out every
-# other hue. White is deliberately absent — light clothing must stay wearable.
+# 覆盖色环的高饱和候选色；橙色排最后是因为它最接近肤色，只有其他色相都被主体占用时才选它。白色刻意缺席，否则浅色衣物会被抠掉
 _CHROMA_CANDIDATES = (
     ChromaCandidate((0, 255, 77), "#00FF4D", "亮绿色"),
     ChromaCandidate((255, 0, 168), "#FF00A8", "品红色"),
@@ -43,8 +41,7 @@ _CHROMA_CANDIDATES = (
     ChromaCandidate((122, 0, 255), "#7A00FF", "紫罗兰色"),
     ChromaCandidate((255, 106, 0), "#FF6A00", "橙色"),
 )
-# Plain RGB Euclidean distance in 0–255 units; thresholds await calibration
-# against real provider output the way the retired white-key thresholds were.
+# 阈值按 0–255 的 RGB 欧氏距离计，仍待用真实供应商产出校准
 _KEY_CORE_DIST = 40
 _KEY_SOFT_DIST = 100
 _ALPHA_HARD_FLOOR = 16
@@ -55,10 +52,9 @@ _PALETTE_PCT = 5
 _REF_BG_BRIGHT = 236
 _MIN_OPAQUE_FRAC = 0.15
 _MAX_SEMI_FRAC = 0.08
-# Smaller-than-this enclosed soft-band components are character features
-# (eye highlights, specular dots) and survive even inside the body silhouette.
+# 小于此面积的封闭软边区域属于角色特征（眼部高光、镜面反光点），即使落在轮廓内也保留
 _ISLAND_MIN_PX = 100
-_ISLAND_MIN_FRAC = 200  # ≈ 0.5 % of image
+_ISLAND_MIN_FRAC = 200  # 约为整图面积的 0.5%
 
 _SPRITE_MATCH_SYSTEM = """\
 You match a semantic sprite request against an existing image album.
@@ -91,17 +87,16 @@ No commentary.
 
 
 class SpriteSeedMissingError(Exception):
-    """Raised when the user has no active avatar bust to anchor sprite identity."""
+    """用户尚无可用于锁定精灵身份的激活头像。"""
 
 
 class SpriteGenerationError(Exception):
-    """Raised when no provider produced a sprite with a keyable background."""
+    """所有供应商都没能产出可抠背景的精灵图。"""
 
 
 def has_real_transparency(data: bytes) -> bool:
-    # Opaque/semi fractions guard the hollow-silhouette failure mode (light
-    # clothing keyed away, only the outline surviving) that min-alpha alone
-    # happily accepts.
+    """判断 PNG 是否带有真实透明通道。"""
+    # 同时校验不透明/半透明像素占比，以拦住只剩轮廓的「空心剪影」——仅看最小 alpha 会误判为合格
     try:
         img = Image.open(io.BytesIO(data))
         if img.mode not in ("RGBA", "LA") and not (img.mode == "P" and "transparency" in img.info):
@@ -118,17 +113,14 @@ def _palette_pixels(img: Image.Image) -> np.ndarray:
     thumb = img.convert("RGB")
     thumb.thumbnail((_PALETTE_THUMB_PX, _PALETTE_THUMB_PX))
     px = np.asarray(thumb, dtype=np.float32).reshape(-1, 3)
-    # The bust reference itself carries the white-background contract —
-    # strip it or every candidate scores against white, not the subject.
+    # 参考图自带白底约定，须先剔除，否则每个候选色都是在跟白色而不是主体比距离
     near_white = (px.max(axis=1) >= _REF_BG_BRIGHT) & (px.max(axis=1) - px.min(axis=1) <= 10)
     subject = px[~near_white]
     return subject if subject.size else px
 
 
 def _select_chroma_candidate(img: Image.Image) -> ChromaCandidate:
-    # Low percentile, not mean/min: robust to small same-hue accessories
-    # without being hostage to single-pixel noise. argmax keeps ties on the
-    # first candidate so selection stays deterministic for tests.
+    # 取低分位而非均值/最小值：既能容忍同色小配饰，又不被单像素噪点绑架；argmax 保证并列时取首个候选，结果可复现
     px = _palette_pixels(img)
     scores = [float(np.percentile(np.linalg.norm(px - np.asarray(c.rgb, dtype=np.float32), axis=1), _PALETTE_PCT)) for c in _CHROMA_CANDIDATES]
     return _CHROMA_CANDIDATES[scores.index(max(scores))]
@@ -152,13 +144,7 @@ def _estimate_border_background(rgb: np.ndarray) -> tuple[np.ndarray, float]:
 
 
 def chroma_key_to_alpha(img: Image.Image, bg: np.ndarray) -> Image.Image:
-    """Two-pass flood on RGB distance to ``bg``: border-connected soft-band
-    pixels are keyed out, plus any enclosed soft-band component large enough
-    to be a backdrop continuation (e.g. between-the-legs). Small enclosed
-    pockets stay as character features. Alpha uses a squared ease-out, then
-    a hard floor shears off sub-threshold haze (the faint residue that made
-    the old white-key output clickable outside the silhouette); despill
-    unmixes the background tint out of the feathered edge pixels."""
+    """按与背景色的 RGB 距离两遍泛洪抠图：边界连通的软边像素与足够大的封闭软边区域一并抠除，小块封闭区域保留为角色特征；alpha 采用平方缓出并设硬地板消除残雾，最后对羽化边做去色溢。"""
     rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
     h, w = rgb.shape[:2]
     dist = np.linalg.norm(rgb - bg, axis=2)
@@ -229,10 +215,7 @@ def chroma_key_to_alpha(img: Image.Image, bg: np.ndarray) -> Image.Image:
 
 
 def _key_sprite_png(data: bytes, requested: ChromaCandidate) -> bytes | None:
-    """Key whatever solid color the border ring actually carries — a provider
-    ignoring the requested hue degrades to the estimated background instead
-    of failing. None means no dominant border color: scene background or
-    subject flooding the frame edge."""
+    """按边缘环实际呈现的纯色抠图，使忽略指定色相的供应商仍能降级处理；返回 None 表示边缘无主导色（场景背景或主体顶到画边）。"""
     img = Image.open(io.BytesIO(data))
     rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
     bg, dominant = _estimate_border_background(rgb)
@@ -281,8 +264,9 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     return prompt.strip(), tag.strip()[:64]
 
 
-# Public: expression_avatar_service reuses this for chat expression avatars.
+# 公开给 expression_avatar_service 复用于聊天表情头像生成
 async def generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, requested: ChromaCandidate, size: str = _SPRITE_SIZE) -> bytes:
+    """按供应商链依次尝试生成并抠图，返回带透明通道的精灵 PNG。"""
     chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
         raise SpriteGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
@@ -314,9 +298,7 @@ async def list_sprites(db: AsyncSession, user_id: int) -> list[CompanionSpriteIm
 
 
 async def _drop_missing_files(db: AsyncSession, rows: list[CompanionSpriteImage]) -> list[CompanionSpriteImage]:
-    """Files deleted out-of-band (manual cleanup, disk wipe) leave orphan rows
-    that sign URLs straight into 404s — such rows are pruned on sight so the
-    next resolve regenerates instead of serving a dead entry."""
+    """文件被带外删除会留下签名即 404 的孤儿行，发现即清理，使下次解析重新生成而非下发死链。"""
     alive: list[CompanionSpriteImage] = []
     for row in rows:
         if companion_asset_exists(row.asset_url):
@@ -360,9 +342,7 @@ async def _write_sprite(
 
 
 async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, request_text: str, role: str | None = None, force_new: bool = False) -> tuple[CompanionSpriteImage, bool]:
-    """Album lookup-or-generate. Returns ``(row, generated)``. The waiting-role
-    short-circuit skips both LLM calls — it is the first-priority image the
-    client hits on every static-mode entry, so its steady state must be free."""
+    """在精灵相册中查找或生成。waiting 角色走短路分支跳过两次 LLM 调用——它是静态模式入口的首选图，稳态必须零成本。"""
     if db is None:
         async with SESSION_LOCAL() as read_db:
             asset = await get_active_avatar(read_db, user_id)
@@ -380,9 +360,7 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
                     .all(),
                 )
             avatar_id = asset.id
-            # Sprite is a user-visible static-fallback fullbody image and stays
-            # in the realistic identity-anchor tier — anchored on the bust
-            # avatar so sprite and avatar keep the same visual identity.
+            # 精灵图以头像为身份锚点，确保精灵与头像视觉同一
             subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
 
         if entries and (hit := await _match_album(None, user_id, entries, request_text)):
@@ -401,7 +379,7 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
             if entries and (hit := await _match_album(db, user_id, entries, request_text)):
                 return hit, False
         avatar_id = asset.id
-        # See note above: bust is the sprite's identity anchor.
+        # 同上：以头像作为精灵的身份锚点
         subject_ref = load_avatar_bytes_as_data_uri(asset.asset_url)
 
     if subject_ref is None:

@@ -11,17 +11,12 @@ from components import SETTINGS, get_logger
 
 logger = get_logger(__name__)
 
-# 5 min — desktop re-fetches frequently anyway
+# 仅 5 分钟：桌面端本就频繁重新拉取，短 TTL 降低链接泄露风险
 _ASSET_URL_TTL_SECONDS = 300
 
 
 def build_data_uri(data: bytes, content_type: str | None = None) -> str:
-    """Encode image bytes as a ``data:<mime>;base64,...`` reference URI.
-
-    The provider consumes the seed image inline (MiniMax ``subject_reference``,
-    Gemini ``inlineData``, or the vision-describe step) so generation does not
-    depend on the backend being publicly reachable.
-    """
+    """把图片字节编码为 data URI，使供应商内联读取种子图，无需后端可公网访问。"""
     mime = (content_type or "image/png").split(";")[0].strip().lower() or "image/png"
     return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
 
@@ -43,8 +38,7 @@ def _signing_key() -> bytes:
     return _TEST_SIGNER_KEY
 
 
-# Set by the pytest sqlite_engine fixture; in production paths,
-# _signing_key() is reached only after lifespan has already validated the key.
+# 由 pytest 的 sqlite_engine fixture 设置；生产路径下 lifespan 已先校验过签名密钥
 _TEST_MODE = False
 
 
@@ -62,7 +56,7 @@ def _sign(user_id: int, filename: str, expires_at: int) -> str:
 
 
 def build_signed_asset_url(user_id: int, filename: str, *, ttl_seconds: int = _ASSET_URL_TTL_SECONDS) -> str:
-    """Do not cache — expires in 5 min; the desktop re-signs on every list refresh."""
+    """签发资产 URL；调用方不要缓存——5 分钟即过期，每次列表刷新都应重新签名。"""
     expires_at = int(time.time()) + ttl_seconds
     sig = _sign(user_id, filename, expires_at)
     qs = urlencode({"expires": expires_at, "sig": sig})
@@ -100,7 +94,7 @@ def verify_signed_avatar_request(filename: str, expires: int | None, sig: str | 
 
 
 def save_companion_asset(data: bytes, *, user_id: int, label: str, ext: str) -> str:
-    """Returns the bare storage path; read paths re-sign on demand. ``label`` is a filename prefix only, never a lookup key."""
+    """保存资产并返回裸存储路径；label 仅作文件名前缀，不可当查找键使用。"""
     safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)[:48] or "asset"
     user_dir = _assets_root() / str(user_id)
     user_dir.mkdir(parents=True, exist_ok=True)
@@ -126,9 +120,7 @@ def resolve_companion_asset_path(user_id: int, filename: str) -> tuple[Path, str
 
 
 def parse_companion_asset_path(storage_path: str | None) -> tuple[int, str] | None:
-    """Split a bare ``companion-assets/<uid>/<filename>`` storage path.
-    None on anything malformed. The schema has no subdirs; extra slashes
-    silently mis-pair uid / filename and 404 the signed URL."""
+    """拆分裸存储路径为 (uid, filename)；该结构不允许子目录，多余斜杠会错配导致签名 URL 404。"""
     if not storage_path or not storage_path.startswith("companion-assets/"):
         return None
     parts = storage_path.split("/", 2)
@@ -141,7 +133,7 @@ def parse_companion_asset_path(storage_path: str | None) -> tuple[int, str] | No
 
 
 def signed_companion_asset_url(storage_path: str) -> str | None:
-    """Sign a bare storage path for the /asset file route; None when malformed."""
+    """将裸存储路径签名为 /asset 路由 URL；路径非法时返回 None。"""
     parsed = parse_companion_asset_path(storage_path)
     if parsed is None:
         return None
@@ -149,14 +141,13 @@ def signed_companion_asset_url(storage_path: str) -> str | None:
 
 
 def companion_asset_exists(storage_path: str) -> bool:
-    """Whether the file behind a bare storage path is still on disk — orphan
-    rows whose files vanished count as cache misses, not dead hits."""
+    """判断裸存储路径对应文件是否仍在磁盘上——文件丢失的孤儿记录应算缓存未命中。"""
     parsed = parse_companion_asset_path(storage_path)
     return parsed is not None and resolve_companion_asset_path(*parsed) is not None
 
 
 def unlink_companion_asset(storage_path: str | None) -> Path | None:
-    """Best-effort unlink of a bare ``companion-assets/<uid>/<filename>`` path. Returns the path that was targeted, or ``None`` on malformed/missing."""
+    """尽力删除裸存储路径对应文件，返回被删路径；路径非法或文件缺失时返回 None。"""
     parsed = parse_companion_asset_path(storage_path)
     if parsed is None:
         return None
@@ -171,18 +162,14 @@ def unlink_companion_asset(storage_path: str | None) -> Path | None:
 
 
 def compress_glb(data: bytes) -> bytes:
-    """Losslessly compress GLB bytes using gzip level 6.
-
-    Preserves 100% bit-for-bit vertex precision and texture fidelity while
-    reducing transport payload by 60%~90% on sparse morph target buffers.
-    """
+    """用 gzip level 6 无损压缩 GLB 字节，保持逐位精度的同时大幅缩减传输体积。"""
     if len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B:
         return data
     return gzip.compress(data, compresslevel=6)
 
 
 def decompress_glb_if_needed(data: bytes) -> bytes:
-    """Transparently decompresses gzip-compressed GLB bytes if magic header is present."""
+    """带 gzip 魔数时透明解压 GLB 字节，否则原样返回。"""
     if len(data) >= 2 and data[0] == 0x1F and data[1] == 0x8B:
         return gzip.decompress(data)
     return data

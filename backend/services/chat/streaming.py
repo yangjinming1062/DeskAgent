@@ -15,19 +15,14 @@ from .think_scrubber import StreamingThinkScrubber
 
 logger = get_logger(__name__)
 
-# Visual pacing between consecutive assistant bubbles (plan §2.4).
+# 连续助手气泡之间的视觉节奏（plan §2.4）。
 BUBBLE_BREAK_MIN_SECONDS = 0.5
 BUBBLE_BREAK_MAX_SECONDS = 1.5
 
 
 @dataclass
 class _LLMTurnResult:
-    """Per-LLM-call output: streamed text + accumulated tool calls + usage.
-
-    Not frozen — the orchestrator mutates ``tool_calls_list`` in place via
-    ``_ensure_tool_call_ids`` (fills missing ids). The mutation is bounded
-    to this turn's orchestrator, so the lack of immutability is intentional.
-    """
+    """单次 LLM 调用的输出：流式文本 + 累积的 tool 调用 + usage；orchestrator 会就地补全 tool_call_id，故不冻结。"""
 
     turn_content: str
     tool_calls_list: list[dict]
@@ -42,11 +37,7 @@ class _LLMTurnResult:
 
 
 def _llm_error_user_message(exc: LLMRuntimeError) -> str:
-    """Curated user-facing message for an LLM error.
-
-    `attachment_fetch_failed` gets a short sentence — the raw error body may
-    include internal details that don't tell the user what to change.
-    """
+    """为 LLM 错误生成面向用户的提示语；attachment_fetch_failed 给出简短说明，避免暴露内部细节。"""
     if exc.classified.reason == FailoverReason.attachment_fetch_failed:
         return (
             "The LLM provider couldn't fetch the media file attached to this turn. The file may have expired or the URL may not be publicly accessible. Try re-uploading the file."
@@ -55,19 +46,12 @@ def _llm_error_user_message(exc: LLMRuntimeError) -> str:
 
 
 async def _emit_llm_error(emitter: Emitter, exc: LLMRuntimeError) -> None:
-    """Surface a curated LLM error so the chat turn always ends with a
-    closing ``error`` event — setup-time and mid-stream failures share this
-    path so a partial transcript never strands the UI.
-    """
+    """输出定制化的 LLM 错误帧，确保聊天轮次总能以 ``error`` 事件收尾；启动期与流中途失败共用此路径。"""
     await emitter.send_json({"type": "error", "message": _llm_error_user_message(exc)})
 
 
 def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
-    """Guarantee a unique, non-empty call_id per tool call.
-
-    Streaming providers sometimes omit ``id`` on arguments-only deltas, and
-    duplicates would collapse into one ipc future and hang a gather coroutine.
-    """
+    """为每个 tool call 保证唯一非空的 call_id；流式供应商在仅参数增量时常省略 id，重复 id 会合并同一 ipc future 导致 gather 挂起。"""
     seen: set[str] = set()
     for tc in tool_calls_list:
         cid = tc.get("id")
@@ -84,7 +68,7 @@ def _usage_payload(usage: Any) -> dict:
 
 
 def _accumulate_tool_call_delta(tool_calls_dict: dict[int, dict], tc: Any) -> None:
-    """``tc.function`` is None on arguments-only deltas — guard before reading name/arguments."""
+    """仅参数增量时 ``tc.function`` 为 None，读取 name/arguments 前需判空。"""
     fn = tc.function
     if tc.index not in tool_calls_dict:
         tool_calls_dict[tc.index] = {"id": tc.id, "type": "function", "function": {"name": fn.name if fn else "", "arguments": ""}}
@@ -105,13 +89,7 @@ async def _stream_llm_response(
     service_tier: str | None = None,
     allowed_emotions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
-    """One LLM call: stream text + accumulate tool calls + capture usage.
-
-    ``on_first_chunk`` fires exactly once after the first chunk ships to
-    the emitter — the fallback dispatcher uses this to decide whether
-    provider failure can still trigger fallback (no chunks emitted) or
-    must surface to the client (tokens already shipped).
-    """
+    """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     kwargs: dict = {"model": model_name, "messages": current_messages, "stream": True, "stream_options": {"include_usage": True}}
     if active_schemas:
         kwargs["tools"] = active_schemas
@@ -120,11 +98,7 @@ async def _stream_llm_response(
     if service_tier:
         kwargs["service_tier"] = service_tier
 
-    # Log the part shape going to the LLM (multimodal only). A 400
-    # ``INVALID_ARGUMENT`` from the Vertex beta API almost always means
-    # the proxy couldn't translate the part to ``inline_data``; having the
-    # actual part list in the log lets us confirm shape without a packet
-    # capture.
+    # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
     image_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
     if image_parts:
         logger.info("multimodal request shape", extra={"model_name": model_name, "image_messages": len(image_parts), "sample_content": image_parts[0]["content"]})
@@ -133,13 +107,11 @@ async def _stream_llm_response(
     try:
         stream = await call_with_retry(client, context_length=ctx_length, **kwargs)
     except LLMRuntimeError:
-        # Setup-time failure: the orchestrator's fallback wrapper may swap
-        # providers, and it owns error-event emission so the renderer never
-        # sees an error frame followed by content from the next provider.
+        # 启动期失败：交给 orchestrator 的回退包装器处理，它负责错误事件发出，避免渲染端先看到错误帧又收到下一供应商内容。
         raise
 
-    turn_parts: list[str] = []  # one entry per bubble (joined text of its chunks)
-    bubble_parts: list[str] = []  # chunks of the current bubble
+    turn_parts: list[str] = []
+    bubble_parts: list[str] = []
     tool_calls_dict: dict[int, dict] = {}
     final_prompt_tokens = final_completion_tokens = 0
     final_usage_payload: dict | None = None
@@ -159,16 +131,12 @@ async def _stream_llm_response(
     async def _emit_bubble_events(events: list[BubbleEvent]) -> None:
         for event in events:
             if event.is_break:
-                # The --- separator is transport-only: emit the break frame for
-                # the renderer, but never fold it into turn_content. That text is
-                # persisted AND shipped as message.complete.text, which the
-                # renderer feeds to TTS — a spoken "---" must not leak.
+                # --- 分隔符仅作传输用：发 break 帧给渲染端，但不要合并到 turn_content（持久化文本会被 TTS 朗读，不能漏出 ---）。
                 if bubble_parts:
                     turn_parts.append("".join(bubble_parts))
                     bubble_parts.clear()
                 await emitter.send_json({"type": "bubble.break"})
-                # Visual pacing between consecutive bubbles: let bubble 1
-                # settle before bubble 2 starts streaming.
+                # 连续气泡间的视觉节奏：让上一个气泡先稳态再开始下一个的流式输出。
                 await asyncio.sleep(random.uniform(BUBBLE_BREAK_MIN_SECONDS, BUBBLE_BREAK_MAX_SECONDS))
             elif event.text:
                 bubble_parts.append(event.text)
@@ -181,17 +149,12 @@ async def _stream_llm_response(
     try:
         try:
             async for chunk in stream:
-                # A usage-only chunk still proves the stream is live and
-                # that swapping providers would orphan the renderer. Fire
-                # on_first_chunk BEFORE the skip so the fallback dispatcher
-                # sees the stream as started.
+                # 仅含 usage 的 chunk 仍代表流是活的，换供应商会让渲染端内容孤立；在跳过前先触发 on_first_chunk，让回退派发器把流视为已开始。
                 if on_first_chunk is not None:
                     on_first_chunk()
-                    on_first_chunk = None  # fire once
+                    on_first_chunk = None
                 await _ensure_message_start()
-                # Some providers emit a final chunk with choices == []
-                # carrying only usage info — skip rather than crash on
-                # chunk.choices[0].
+                # 部分供应商的最终 chunk 只携带 usage、choices 为空；直接跳过避免 chunk.choices[0] 崩溃。
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
@@ -205,31 +168,22 @@ async def _stream_llm_response(
                     final_completion_tokens = getattr(chunk.usage, "completion_tokens", 0)
                     final_usage_payload = _usage_payload(chunk.usage)
         except LLMRuntimeError:
-            # Mid-stream classifier error: provider 4xx after some chunks
-            # already shipped. The orchestrator's fallback wrapper sees
-            # stream_emitted=True and refuses to swap providers; it surfaces
-            # this exception and emits the closing error event so the
-            # renderer gets a clean transcript.
+            # 流中途分类错误：已发出 chunk 后供应商 4xx；orchestrator 看到 stream_emitted=True 拒绝换供应商，抛出此异常并发出收尾 error 帧，让渲染端拿到干净的转写。
             raise
 
-        # Flush affect's residual buffer through the think scrubber so any
-        # ``<think>`` fragments buffered during a tag-strip window also get
-        # filtered.
+        # 把 affect 的残余缓冲也走一遍 think scrubber，避免 tag 剥离窗口内残留的 ``<think>`` 片段漏网。
         await _feed_clean(scrubber.feed(affect.flush()) + scrubber.flush())
     finally:
-        # Flush the bubble splitter so residual buffered text lands even when
-        # the stream died mid-chunk. A trailing separator is dropped.
+        # 流中途死亡时也要 flush bubble splitter，使残余缓冲文本落地，尾部不完整分隔符会被丢弃。
         await _emit_bubble_events(bubbles.flush())
 
-    # Close out the final bubble. An empty trailing bubble (stream ended right
-    # after a break) is dropped — bubble_parts is empty then, so nothing is
-    # appended and turn_parts already holds the earlier bubble.
+    # 收尾最后气泡：若 break 后立即结束，bubble_parts 为空则不追加，turn_parts 已持有前面气泡。
     if bubble_parts:
         turn_parts.append("".join(bubble_parts))
 
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
 
-    tool_calls_list = list(tool_calls_dict.values())  # insertion order == streaming order
+    tool_calls_list = list(tool_calls_dict.values())  # 插入顺序即为流式顺序
     turn_content = "\n\n".join(turn_parts)
 
     return _LLMTurnResult(

@@ -39,8 +39,7 @@ def test_bubble_splitter_no_separator_is_plain_text():
 
 def test_bubble_splitter_trailing_separator_dropped_on_flush():
     s = BubbleSplitter()
-    # A trailing separator has no second bubble: flush must not surface a break
-    # or the literal "---".
+    # 末尾分隔符没有第二个气泡：flush 不能出 break 或字面 "---"。
     assert _evs(s, "only one\n\n---\n\n") == ["only one", "<break>"]
     assert s.flush() == []
 
@@ -87,7 +86,7 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
         emitted.append(uid)
 
     monkeypatch.setattr(expression_tool, "emit_companion_assets_updated", _fake_emit, raising=False)
-    # The tool lazy-imports these from the services.companion barrel — patch there.
+    # 工具从 services.companion 桶内 lazy-import 这些项——在那一处 patch。
     import services.companion as companion_pkg
 
     monkeypatch.setattr(companion_pkg, "kick_background_generation", lambda uid, name: kicked.append(name))
@@ -105,9 +104,9 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
         row = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == 1))).scalar_one()
         assert (row.name, row.label, row.valence, row.description, row.icon) == ("tender_worry", "心疼", "negative", "心疼又担忧地看着你", "🥺")
 
-    # Missing description → rejected without touching the registry.
+    # 缺少 description → 拒绝且不写入表。
     assert json_mod.loads(await expression_tool.create_expression_tool("blank_mind", "", user_id=1))["success"] is False
-    # Duplicate name → rejected.
+    # 重复 name → 拒绝。
     assert json_mod.loads(await expression_tool.create_expression_tool("tender_worry", "另一个描述", user_id=1))["success"] is False
 
 
@@ -122,9 +121,8 @@ def test_affect_trace_content():
 
 
 def test_affect_trace_reaches_llm_context():
-    """status_affect rows must NOT be filtered out of the LLM context — an
-    affect-only reaction has to survive into the next turn so the companion
-    remembers it expressed a body-language reply."""
+    """status_affect 行不能被从 LLM 上下文中过滤掉——纯 affect 反应必须保留到下一轮，否则伙伴就忘了它表达过肢体语言回复。"""
+
     from modules.conversation import Message
     from services.chat.turn_inputs import _history_to_messages
     from services.conversation import AFFECT_TRACE_SUBTYPE
@@ -138,4 +136,4 @@ def test_affect_trace_reaches_llm_context():
     assistant_contents = [m["content"] for m in out if m.get("role") == "assistant"]
 
     assert "[affect:pout]" in assistant_contents
-    assert "（戳了戳精灵）" not in assistant_contents  # status_reaction is UI-only
+    assert "（戳了戳精灵）" not in assistant_contents  # status_reaction 仅 UI

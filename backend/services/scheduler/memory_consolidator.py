@@ -39,14 +39,7 @@ omit it — but only when omitting is clearly safe. When uncertain, keep the fac
 
 
 async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: list[dict]) -> int:
-    """Delete the source recall rows and write the consolidated summaries.
-
-    Returns the number of rows written, or **-1** if the operation was
-    rolled back because every summary was empty — the source rows are
-    preserved as a safety net so the user's recall pool is never wiped
-    by an all-empty LLM payload.  Shared by the daytime threshold
-    consolidator and the nightly pipeline's Stage 2.
-    """
+    """删除源 recall 行并写入合并后的摘要：返回写入行数；若所有 summary 都空则回滚返回 -1（保留源行作为安全网，避免 LLM 全空 payload 把用户 recall pool 清空）；日间阈值 consolidator 与 nightly pipeline Stage 2 共用。"""
     async with session_scope() as db:
         source_ids = [r["id"] for r in source_rows]
         await db.execute(delete(Memory).where(Memory.id.in_(source_ids), Memory.user_id == user_id))
@@ -68,9 +61,7 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
                 )
             )
             written += 1
-        # Never wipe the source rows without writing at least one summary
-        # back — an LLM that returned an all-empty (or whitespace-only)
-        # payload would otherwise delete the user's recall pool.
+        # 至少写一条 summary 才允许删除源行——LLM 返回全空（或仅空白）payload 时否则会清空用户 recall pool。
         if written == 0:
             await db.rollback()
             return -1
@@ -79,11 +70,7 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
 
 
 async def maybe_consolidate_one_user(user_id: int) -> bool:
-    """Consolidate the user's recall pool if it exceeds the trigger threshold.
-
-    Returns True if consolidation ran, False otherwise. Per-user throttle is
-    the caller's responsibility (cron tick tracks ``_LAST_MEMORY_CONSOLIDATE``).
-    """
+    """recall pool 超过触发阈值时合并；跑了返回 True，否则 False。per-user 节流由调用方负责（cron tick 维护 _LAST_MEMORY_CONSOLIDATE）。"""
     async with session_scope() as db:
         recent_rows = await memory_admin.list_memories(db, user_id, kind="recall", limit=MEMORY_CONSOLIDATE_WINDOW_ROWS)
         if len(recent_rows) < MEMORY_CONSOLIDATE_TRIGGER_ROWS:

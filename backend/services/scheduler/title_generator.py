@@ -43,7 +43,7 @@ def _clean_title(raw: str) -> str:
 
 
 async def auto_generate_title(conversation_id: int, user_message: str, assistant_response: str, llm_config: dict[str, str], language: str = DEFAULT_LANGUAGE) -> None:
-    """Generate a session title using the LLM and persist it (only if still the default)."""
+    """用 LLM 生成会话标题并持久化（仅在仍是默认标题时覆盖）。"""
     messages = [
         {"role": "system", "content": _title_prompt(language)},
         {"role": "user", "content": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}"},

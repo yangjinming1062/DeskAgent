@@ -8,6 +8,7 @@ from .wardrobe_service import slot_of
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
+    """把头像行转换为接口响应，并对全身样图路径重新签名。"""
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     payload = prompt_payload if isinstance(prompt_payload, dict) else {}
     raw_samples = payload.get("fullbody_samples")
@@ -28,6 +29,7 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
 
 
 def model_response(model: CompanionModel) -> CompanionModelResponse:
+    """把 3D 模型行转换为接口响应，补齐签名地址与内容哈希。"""
     content_hash = model.content_hash or None
     if not content_hash and model.asset_url:
         parts = model.asset_url.split("/", 2)
@@ -54,6 +56,7 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
 
 
 def wardrobe_response(item: WardrobeItem) -> WardrobeItemResponse:
+    """把衣柜条目转换为接口响应。"""
     return WardrobeItemResponse(
         id=item.id,
         name=item.name,

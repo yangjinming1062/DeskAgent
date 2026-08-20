@@ -5,8 +5,7 @@ from components import get_logger
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
-# Built-in baseline emotions (ARCHITECTURE §7.5). Unknown LLM tokens fall
-# back to ``neutral`` so a malformed emit doesn't poison renderer state.
+# 内置基础情绪；未识别的 LLM token 兜底为 neutral，避免脏数据污染渲染端状态。
 BUILTIN_EMOTIONS: frozenset[str] = frozenset(
     {
         "happy",
@@ -34,7 +33,6 @@ BUILTIN_EMOTIONS: frozenset[str] = frozenset(
     }
 )
 
-# Spatial locales the desktop maps to a position/locomotion pair.
 ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "chat", "perch", "roam", "sleep"})
 
 COMPANION_OUTFIT_GUIDANCE = (
@@ -50,38 +48,30 @@ COMPANION_OUTFIT_GUIDANCE = (
     "without breaking character or mentioning the outfit unless the user asks.\n"
 )
 
-# Tag patterns anchored at the buffer's leading edge. ``target`` allows
-# any non-bracket, non-newline character so localized app names (e.g.
-# ``微信``) and spaces (``Visual Studio Code``) survive the regex.
+# 锚定缓冲区开头的 tag 正则；target 允许非 ]/非换行字符，以容纳本地化应用名（如「微信」）与空格（如「Visual Studio Code」）。
 _AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)\]\n?", re.IGNORECASE)
 _SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)(?:,target:([^\]\n]+))?\]\n?", re.IGNORECASE)
 
-# Partial patterns — used at ``flush()`` to salvage whatever parsed before
-# the stream died mid-tag, so the user never sees ``[affect:foo``.
+# 部分匹配正则：flush() 时抢救流中断前的解析结果，避免把半截标签（如 [affect:foo）暴露给用户。
 _PARTIAL_AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)?", re.IGNORECASE)
 _PARTIAL_SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)?(?:,target:([^\]\n]*))?", re.IGNORECASE)
 
-# Leading third-person action narration (asterisk-delimited), e.g. *（气鼓鼓地别过头去）*.
-# Stripped from the stream so it is never shown as text or spoken — only the
-# [affect:...] emotion drives the 3D reaction.
+# 星号包裹的第三人称动作旁白（不显示不朗读，仅由 [affect:...] 驱动 3D 反应）。
 _ACTION_NARRATION_RE = re.compile(r"^\s*\*[^*]*\*\s*")
 _PARTIAL_ACTION_RE = re.compile(r"^\s*\*[^*]*$")
 
-# Structured action tag: [action:slug] — the LLM names a specific physical
-# movement; the desktop maps it to a clip, falling back to the emotion valence.
+# 结构化动作 tag：[action:slug] 由 LLM 命名具体肢体动作，客户端映射到动画 clip 并在缺失时回退到情绪 valence。
 _ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)\]\n?", re.IGNORECASE)
 _PARTIAL_ACTION_TAG_RE = re.compile(r"^\s*\[action:([a-z_]+)?", re.IGNORECASE)
 
-# Generous upper bound — a real tag (including a long app-name target)
-# fits well under 256 chars; anything beyond that is unparseable input
-# the scrubber drains so downstream code surfaces it as text.
+# 合理上限：含长 app 名的真实 tag 远小于 256 字符；超出视为不可解析输入，由 scrubber 丢弃并以文本形式下传。
 _MAX_TAG_LEN: int = 256
 
 logger = get_logger(__name__)
 
 
 async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
-    """Return BUILTIN_EMOTIONS merged with user's custom CompanionExpression names."""
+    """返回 BUILTIN_EMOTIONS 与用户自定义 CompanionExpression 名称的并集。"""
     if user_id is None or db is None:
         return BUILTIN_EMOTIONS
     try:
@@ -95,7 +85,7 @@ async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> froze
 
 
 async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> list[Any]:
-    """Shared CompanionExpression fetch for resolve_allowed_emotions + prompt builder."""
+    """resolve_allowed_emotions 与 prompt builder 共用的 CompanionExpression 查询。"""
     if user_id is None or db is None:
         return []
     try:
@@ -106,7 +96,7 @@ async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> lis
 
 
 def build_affect_guidance(custom_expressions: list[Any] | None = None, available_actions: list[str] | None = None) -> str:
-    """Build affect guidance prompt including builtin emotions, user-custom expressions, and available action animations."""
+    """构建 affect 引导 prompt：内置情绪 + 用户自定义情绪 + 可用动作动画。"""
     emotions_set = set(BUILTIN_EMOTIONS)
     custom_desc_lines: list[str] = []
     if custom_expressions:
@@ -155,7 +145,7 @@ def build_affect_guidance(custom_expressions: list[Any] | None = None, available
 
 
 def _is_potential_prefix(buf: str) -> bool:
-    """Buffer might be a still-arriving tag or action-narration prefix."""
+    """缓冲区可能仍是尚未到达的 tag 或动作旁白前缀。"""
     s = buf.lstrip()
     if s.startswith("[") and "]" not in s:
         return True
@@ -163,8 +153,7 @@ def _is_potential_prefix(buf: str) -> bool:
 
 
 class AffectScrubber:
-    """Strip leading ``[affect:...]``/``[spatial:...]`` markers and asterisk
-    action narrations from an LLM stream, surfacing the captured values."""
+    """从 LLM 流中剥离开头的 ``[affect:...]``/``[spatial:...]`` 标记与星号动作旁白，并向外暴露解析值。"""
 
     def __init__(self, allowed_emotions: frozenset[str] | None = None) -> None:
         self._buf: str = ""
@@ -197,7 +186,7 @@ class AffectScrubber:
         return self._try_resolve()
 
     def flush(self) -> str:
-        """End-of-stream: try one more full match, then handle partials."""
+        """流结束：再做一次完整匹配，再处理部分匹配。"""
         if not self._buf:
             return ""
         self._try_match_tags()
@@ -228,7 +217,7 @@ class AffectScrubber:
         return out
 
     def _try_match_tags(self) -> None:
-        """Consume complete tag prefixes from ``self._buf`` in place."""
+        """就地消费 ``self._buf`` 开头的完整 tag 前缀。"""
         while True:
             m_aff = _AFFECT_RE.match(self._buf)
             if m_aff:
@@ -270,8 +259,7 @@ class AffectScrubber:
         self._action = token.lower()
 
     def _consume(self, m: re.Match[str], *, strip_bracket: bool = False) -> None:
-        """Advance ``self._buf`` past the match; optionally eat a trailing
-        ``]`` left behind by a partial regex."""
+        """将 ``self._buf`` 推进到匹配之后；可选地吃掉部分正则残留的尾随 ``]``。"""
         self._buf = self._buf[m.end() :]
         if strip_bracket and self._buf.startswith("]"):
             self._buf = self._buf[1:]

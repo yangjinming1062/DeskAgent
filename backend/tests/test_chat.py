@@ -6,8 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-# ── TestLLMClient (pure business logic, no mock) ────────────────────
-
 
 class TestLLMClient:
     def test_client_for_config_uses_cached_factory(self):
@@ -46,7 +44,7 @@ class TestLLMClient:
 
 
 class TestResolveContextTokens:
-    # Three layers: env override → provider default → terminal fallback.
+    # 三层：env 覆盖 → provider 默认 → 终态兜底。
 
     def test_per_provider_default_mimo_llm(self):
         from services.llm import resolve_context_tokens
@@ -78,8 +76,7 @@ class TestResolveContextTokens:
         assert resolve_context_tokens("gemini", "llm") == 250_000
 
     def test_global_fallback_on_unsupported_capability(self, caplog):
-        # Provider publishes no default for the cap → terminal fallback wins
-        # AND a warning surfaces so the silent miss is visible.
+        # provider 未发布该 cap 的默认 → 走终态兜底，同时输出 warning 让静默遗漏可见。
         import logging
 
         from services.llm import resolve_context_tokens
@@ -99,8 +96,7 @@ class TestResolveContextTokens:
         assert resolve_context_tokens("mimo", "llm") == 1_000_000
 
     def test_zero_string_override_falls_through(self):
-        # ``.env`` blank/0/non-numeric must collapse to None instead of
-        # tripping Pydantic's ``Field(gt=0)``.
+        # ``.env`` 是空/0/非数字时必须折叠为 None，避免触发 Pydantic 的 ``Field(gt=0)``。
         from components.config import Settings
 
         for raw in ("0", "-1", "", "abc"):
@@ -185,8 +181,7 @@ class TestResolveContextTokens:
         assert "ctx_length" in fields
 
     def test_orchestrator_honors_context_tokens_override_per_slot(self):
-        # ``is not None`` (not truthy) — schema forbids 0 today but a
-        # future relaxation shouldn't silently drop the override.
+        # 这里用 ``is not None`` 而非 truthy：当前 schema 禁止 0，但未来放宽时不应静默丢覆盖。
         import inspect
 
         from services.chat import orchestrator
@@ -244,9 +239,6 @@ class TestResolveContextTokens:
         assert content == "Just text"
 
 
-# ── TestChatE2E (real MiMo API calls) ───────────────────────────────
-
-
 def _make_silent_wav(duration_sec: float = 1.0, sample_rate: int = 8000) -> bytes:
     num_samples = int(sample_rate * duration_sec)
     data = b"\x00\x00" * num_samples
@@ -298,7 +290,7 @@ def _make_tiny_png() -> bytes:
 @pytest.mark.e2e
 class TestChatE2E:
     async def test_stateless_completion(self, test_client, test_token):
-        """Test the actual /api/llm/completion endpoint without mocks."""
+        """非 mock，跑真实的 /api/llm/completion 端点。"""
         headers = {"Authorization": f"Bearer {test_token}"}
         payload = {
             "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
@@ -317,15 +309,12 @@ class TestChatE2E:
     async def test_websocket_chat_flow(
         self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
     ):
-        """Test the actual WebSocket chat flow from session creation to prompt completion without mocks."""
-        # httpx has no websocket support — the sync TestClient drives the
-        # async app on its portal loop (fine with the shared aiosqlite conn).
+        """非 mock，跑真实 WebSocket 聊天流：从建会话到 prompt 完成。"""
+        # httpx 没有 WebSocket 支持——同步 TestClient 通过 portal loop 驱动 async app（共享 aiosqlite 连接）。
         from fastapi.testclient import TestClient
         from services.gateway import handlers
 
-        # ``services.gateway.handlers`` is not in conftest's SESSION_LOCAL
-        # patch list (direct import binding) — point the WS boot session at
-        # the test DB like every other patched module.
+        # ``services.gateway.handlers`` 不在 conftest 的 SESSION_LOCAL patch 列表（直接 import 绑定）——按其他模块的模式把 WS 启动 session 指向测试 DB。
         monkeypatch.setattr(handlers, "SESSION_LOCAL", _patch_db[1])
 
         test_client = TestClient(test_app)
@@ -375,7 +364,7 @@ class TestChatE2E:
             assert len(full_text) > 0
 
     async def test_websocket_auth_rejection(self, test_app):
-        """Test that the WebSocket connection is rejected with an invalid token."""
+        """无效 token 时 WebSocket 应当被拒绝。"""
         from fastapi.testclient import TestClient
         from starlette.testclient import WebSocketDisconnect
 
@@ -389,24 +378,22 @@ class TestChatE2E:
     async def test_websocket_session_lifecycle(
         self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
     ):
-        """Test creating a session and verifying prompt submission after interrupt."""
+        """建会话并在 interrupt 后验证 prompt 提交仍可用。"""
         from fastapi.testclient import TestClient
         from services.gateway import handlers
 
-        # Same conftest patch-list gap as the chat-flow test above.
+        # 同上一个聊天流测试中，conftest patch-list 的遗漏。
         monkeypatch.setattr(handlers, "SESSION_LOCAL", _patch_db[1])
 
         test_client = TestClient(test_app)
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
-            # Create session
             ws.send_json(
                 {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
             )
             resp = ws.receive_json()
             session_id = resp["result"]["session_id"]
 
-            # Interrupt (no-op when no turn is running) — confirms the handler
-            # is reachable on a freshly mounted session.
+            # interrupt（无 turn 时是 no-op）——验证刚挂载的会话能命中 handler。
             ws.send_json(
                 {
                     "jsonrpc": "2.0",
@@ -455,7 +442,6 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
         user_id=1, llm_config={}, user_settings={}, session_id="s1", native_memory=None, guardrails=None, emitter=None
     )
 
-    # 1. Calling _persist_assistant_with_tool_calls_and_results raises CancelledError
     with pytest.raises(asyncio.CancelledError):
         await _persist_assistant_with_tool_calls_and_results(
             conv,
@@ -470,10 +456,8 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
             schemas,
         )
 
-    # 2. Finally block executes persist_tool_summary
     await persist_tool_summary(conv, {"test_tool"})
 
-    # 3. Assert DB contains assistant, tool cancelled, and tool_summary messages
     async with SessionLocal() as db:
         messages = (await db.execute(select(Message).where(Message.conversation_id == conv_id).order_by(Message.id))).scalars().all()
         assert len(messages) == 3

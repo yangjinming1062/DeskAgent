@@ -122,13 +122,7 @@ _LAYOUTS = {
 
 
 def layout_skeleton(rig_type: str) -> dict[str, LayoutBone]:
-    """Deterministic bbox-proportioned skeleton layout for a rig type.
-
-    Coordinates are fractions of the mesh's world bounding box: x/z in
-    [-0.5, 0.5] of width/depth around the box centre, y in [0, 1] of height
-    from the bottom. ``auto_rig.py`` scales them to the imported GLB. Model
-    faces -Z (glTF convention).
-    """
+    """按骨骼类型生成确定性骨架布局；坐标是网格包围盒的比例值（x/z 相对中心取 [-0.5,0.5]，y 自底部取 [0,1]），由 auto_rig.py 缩放到实际 GLB，模型面向 -Z。"""
     hierarchy = get_bone_hierarchy(rig_type)
     parent_of = {name: parent for name, parent, _ in hierarchy}
     out: dict[str, LayoutBone] = {}

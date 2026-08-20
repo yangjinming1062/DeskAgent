@@ -26,8 +26,7 @@ class User(ModelBase, TimestampMixin):
 
     @property
     def entitlement_expired(self) -> bool:
-        # Checked on every authenticated request, not just at activate —
-        # otherwise a disabled/expired user keeps refreshing tokens forever.
+        # 每个鉴权请求都查（非仅 activate 时），否则停用/过期用户能一直刷 token。
         return not self.can_use or (self.expires_at is not None and self.expires_at.date() < utc_now().date())
 
     login_records: Mapped[list["LoginRecord"]] = relationship(back_populates="user", passive_deletes=True)
@@ -57,8 +56,7 @@ class LoginRecord(ModelBase):
     user: Mapped[User] = relationship(back_populates="login_records")
 
 
-# Admin tokens carry a DB-backed ``jti`` so they can be force-revoked by
-# setting ``is_active=False`` (e.g. on suspected key compromise).
+# Admin token 携带 DB 后端的 jti，便于疑似密钥泄露时设 is_active=False 强制吊销。
 class AdminSession(ModelBase):
     __tablename__ = "admin_sessions"
     __table_args__ = (UniqueConstraint("token_jti", name="uq_admin_sessions_token_jti"),)
@@ -97,8 +95,7 @@ class UserModelConfig(ModelBase, TimestampMixin):
     video_gen_base_url: Mapped[str] = mapped_column(String(255), default="")
     video_gen_api_key: Mapped[str] = mapped_column(Text, default="")
     video_gen_model_name: Mapped[str] = mapped_column(String(128), default="")
-    # Per-user provider slots as JSON — schema-free so a new provider family
-    # can be added without a migration. Tried before capability credentials.
+    # 每用户供应商 slot 以 JSON 存，无 schema 约束以便加新供应商族时不需 migration；优先级高于 capability 凭据。
     provider_config: Mapped[str] = mapped_column(Text, default="[]")
 
     user: Mapped[User] = relationship(back_populates="model_config")

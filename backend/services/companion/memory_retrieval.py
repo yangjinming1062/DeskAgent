@@ -11,16 +11,16 @@ from services.tools import RESERVED_FROM_RECALL, context_not_in
 
 logger = get_logger(__name__)
 
-# RRF smoothing constant (standard TREC / IR setting)
+# RRF 平滑常数（TREC/IR 标准取值）
 RRF_K: int = 60
-# Ebbinghaus decay parameter lambda (half-life ~ 14 days)
+# 艾宾浩斯遗忘衰减系数（半衰期约 14 天）
 TIME_DECAY_LAMBDA: float = 0.05
-# Minimum retention floor for decay (prevents durable memories from zeroing out)
+# 衰减保底值，避免长期记忆被归零
 TIME_DECAY_FLOOR: float = 0.30
 
 
 def cosine_similarity(vec_a: list[float] | None, vec_b: list[float] | None) -> float:
-    """Compute cosine similarity between two float vectors in [-1.0, 1.0]."""
+    """计算两个向量的余弦相似度，取值范围 [-1.0, 1.0]。"""
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
         return 0.0
     dot = sum(a * b for a, b in zip(vec_a, vec_b, strict=False))
@@ -39,7 +39,7 @@ def _compute_time_decay(updated_at: Any, now: Any) -> float:
 
 
 async def _dense_search(db: AsyncSession, user_id: int, query_embedding: list[float], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
-    """Dense semantic retrieval via pgvector <=> operator or in-memory fallback."""
+    """稠密语义检索：优先用 pgvector 距离算子，失败时回落内存余弦计算。"""
     is_postgres = db.bind is not None and db.bind.dialect.name == "postgresql"
     stmt = select(Memory).where(Memory.user_id == user_id, Memory.embedding.isnot(None), *[context_not_in(p) for p in excluded_namespaces])
     if is_postgres:
@@ -48,7 +48,7 @@ async def _dense_search(db: AsyncSession, user_id: int, query_embedding: list[fl
         except Exception as exc:
             logger.debug("PostgreSQL pgvector distance query failed, falling back to in-memory cosine", extra={"error": str(exc)})
 
-    # In-memory cosine similarity fallback (SQLite / missing extension)
+    # 回落路径：SQLite 或缺少 pgvector 扩展时在内存中算余弦相似度
     rows = (await db.execute(stmt)).scalars().all()
     scored = []
     for r in rows:
@@ -60,7 +60,7 @@ async def _dense_search(db: AsyncSession, user_id: int, query_embedding: list[fl
 
 
 def _extract_search_terms(query: str) -> list[str]:
-    """Extract search terms: whitespace tokens for latin words, plus 2-4 char n-grams for CJK text."""
+    """提取检索词：拉丁词按空白切分，中文另加 2-4 字 n-gram。"""
     q = (query or "").strip()
     if not q:
         return []
@@ -79,7 +79,7 @@ def _extract_search_terms(query: str) -> list[str]:
 
 
 async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], limit: int = 30, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL) -> list[Memory]:
-    """Sparse keyword retrieval using substring matching."""
+    """稀疏关键词检索，基于子串匹配。"""
     if not keywords:
         return []
     conditions = [c for kw in keywords for c in (Memory.content.ilike(f"%{kw}%"), Memory.context.ilike(f"%{kw}%"))]
@@ -95,7 +95,7 @@ async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], li
         .scalars()
         .all()
     )
-    # Score by keyword coverage in content and context
+    # 按关键词在 content 与 context 中的覆盖率打分，context 命中权重减半
     scored = []
     for r in rows:
         c_low = (r.content or "").lower()
@@ -110,7 +110,7 @@ async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], li
 async def retrieve_hybrid_memories(
     db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 10, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL
 ) -> list[dict[str, Any]]:
-    """Hybrid search combining Dense (pgvector) and Sparse (keyword) with RRF and Ebbinghaus time decay."""
+    """稠密与稀疏检索的混合搜索，用 RRF 融合排名并叠加艾宾浩斯时间衰减。"""
     q_str = (query or "").strip()
     if not q_str and not query_embedding:
         return []
@@ -128,7 +128,6 @@ async def retrieve_hybrid_memories(
     if not dense_candidates and not sparse_candidates:
         return []
 
-    # Map candidate memories by id
     all_memories: dict[int, Memory] = {r.id: r for r in dense_candidates + sparse_candidates}
 
     dense_ranks = {r.id: rank + 1 for rank, r in enumerate(dense_candidates)}
@@ -159,7 +158,7 @@ async def retrieve_hybrid_memories(
 async def retrieve_proactive_memories(
     db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 3, min_score: float = 0.002
 ) -> list[dict[str, Any]]:
-    """Retrieve top-N relevant recall memories to proactively inject into conversation."""
+    """检索与当前语境最相关的若干条记忆，用于主动注入对话。"""
     q_str = (query or "").strip()
     if not q_str or len(q_str) <= 1:
         return []

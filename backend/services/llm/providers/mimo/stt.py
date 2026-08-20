@@ -8,12 +8,7 @@ from ..http import get_async_client
 
 
 class MiMoSTTProvider(STTProvider):
-    """STT via MiMo's ``input_audio`` content block + ``asr_options`` body.
-
-    Wire shape:
-        POST /v1/chat/completions
-        body: messages=[{user,[{input_audio,...}]}], extra_body.asr_options={language}
-    """
+    """通过 MiMo 的 input_audio 内容块 + asr_options 体提供 STT；POST /v1/chat/completions，body 含 messages=[{user,[{input_audio,...}]}] 与 extra_body.asr_options={language}。"""
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "mimo-v2.5-asr"}
@@ -24,7 +19,6 @@ class MiMoSTTProvider(STTProvider):
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 
     def raw_client(self) -> AsyncOpenAI | None:
-        """Return the underlying AsyncOpenAI client."""
         return self._client
 
     async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult:

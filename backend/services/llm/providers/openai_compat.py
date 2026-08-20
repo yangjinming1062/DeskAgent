@@ -7,10 +7,7 @@ from .http import get_async_client
 
 
 class OpenAICompatChatProvider(ChatProvider):
-    """Shared base for any provider that speaks the OpenAI Chat Completions
-    wire protocol (MiMo, MiniMax when accessed via OpenAI SDK, OpenAI itself,
-    OpenRouter, etc.). Subclasses only customize request shaping and event
-    emission — the SDK does the heavy lifting."""
+    """任意走 Chat Completions 协议的供应商共用基类（MiMo、经 SDK 调用的 MiniMax、OpenAI、OpenRouter 等），子类只定制请求/事件形态，SDK 处理核心逻辑。"""
 
     def __init__(self, config: ProviderConfig) -> None:
         super().__init__(config)
@@ -21,8 +18,7 @@ class OpenAICompatChatProvider(ChatProvider):
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):
-    """Shared embedding provider for any provider with an OpenAI-compatible
-    embeddings endpoint."""
+    """任意 OpenAI 兼容 /embeddings 端点供应商共用基类。"""
 
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"embedding": "text-embedding-3-small"}
 

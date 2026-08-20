@@ -1,19 +1,4 @@
-"""Tests for tool-summary persistence, LLM-context filtering and context_window.
-
-Tool summary:
-- Written for a main conversation when the turn invoked tools
-- Skipped for standard conversations and for tool-free turns
-
-LLM context:
-- Main conversation drops tool intermediates (a tool_summary stands in)
-- Standard conversation keeps them
-
-Context window:
-- Returns most recent N messages in chronological order
-- Filters out UI-only subtypes (status_interaction, status_reaction)
-- Returns empty string when no main conversation exists
-- Excludes messages with tool_calls (multi-step tool-only assistant turns)
-"""
+"""测试工具总结的持久化、LLM 上下文过滤与 context_window。"""
 
 import json
 from datetime import UTC, datetime, timedelta
@@ -119,9 +104,6 @@ async def _add_msg(
         return m.id
 
 
-# ── persist_tool_summary ──────────────────────────────────────────────
-
-
 class _Conv:
     def __init__(self, conv_id: int, kind: str):
         self.id = conv_id
@@ -179,9 +161,6 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     assert "browser_navigate" in summary.content
 
 
-# ── _history_to_messages ──────────────────────────────────────────────
-
-
 def _tool_turn_history() -> list[Message]:
     return [
         Message(role="user", content="帮我查天气"),
@@ -234,12 +213,6 @@ def test_history_always_drops_ui_only_subtypes():
         assert all(m["content"] != "(poked)" for m in out)
 
 
-# ── context_window ────────────────────────────────────────────────────
-
-
-# ── context_window.load_recent_context_window ────────────────────────
-
-
 async def test_context_window_returns_empty_for_no_main(seeded):
     SessionLocal = seeded
     async with SessionLocal() as db:
@@ -250,11 +223,11 @@ async def test_context_window_returns_empty_for_no_main(seeded):
 
 
 async def test_context_window_returns_chronological_recent(seeded):
-    """Returns the most recent N messages in chronological order."""
+    """按时间顺序返回最近 N 条消息。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
-    # Seed 12 messages; only the last 10 should be returned
+    # 注入 12 条消息，只应返回最后 10 条
     for i in range(12):
         await _add_msg(
             SessionLocal,
@@ -269,22 +242,22 @@ async def test_context_window_returns_chronological_recent(seeded):
             db, 3001, max_messages=10
         )
 
-    # Chronological order (msg_02 first, msg_11 last)
+    # 时间顺序（msg_02 在首，msg_11 在尾）
     lines = result.split("\n")
     assert len(lines) == 10
     assert "msg_02" in lines[0]
     assert "msg_11" in lines[-1]
-    # msg_00 and msg_01 should be dropped (oldest)
+    # msg_00 和 msg_01 应被丢弃（最旧）
     assert "msg_00" not in result
     assert "msg_01" not in result
 
 
 async def test_context_window_filters_ui_only_subtypes(seeded):
-    """status_interaction, status_reaction, hint should be excluded."""
+    """status_interaction、status_reaction、hint 应被排除。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
-    # A normal pair
+    # 一对普通消息
     await _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
     await _add_msg(
         SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1)
@@ -314,7 +287,7 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
         subtype="hint",
         at=base + timedelta(minutes=4),
     )
-    # proactive assistant — should NOT be filtered (it's a real turn)
+    # proactive assistant——不应被过滤（这是真实一轮）
     await _add_msg(
         SessionLocal,
         conv_id,
@@ -334,12 +307,12 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
     assert "戳了戳精灵" not in result
     assert "反应" not in result
     assert "提示" not in result
-    # proactive is intentionally not UI-only
+    # proactive 刻意不算 UI-only
     assert "早晚问候" in result
 
 
 async def test_context_window_filters_tool_calls_messages(seeded):
-    """Assistant messages with tool_calls (intermediate steps) are excluded."""
+    """携带 tool_calls 的 assistant 消息（中间步骤）被排除。"""
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
@@ -363,7 +336,7 @@ async def test_context_window_filters_tool_calls_messages(seeded):
 
     assert "查天气" in result
     assert "北京 22 度" in result
-    # The intermediate tool-call assistant message has no content; nothing to leak
+    # 中间 tool-call 的 assistant 消息无 content，无可泄露
     assert "search_web" not in result
 
 
@@ -381,18 +354,15 @@ async def test_context_window_respects_character_cap(seeded):
             db, 3001, max_messages=10
         )
 
-    # Each line is capped at 200 chars (format_messages_compact default)
+    # 每行被截到 200 字符（format_messages_compact 默认值）
     for line in result.split("\n"):
-        # Strip the "用户: " / "伙伴: " prefix to get the actual content length
+        # 剥掉 "用户: " / "伙伴: " 前缀得到实际 content 长度
         body = line.split(": ", 1)[1] if ": " in line else line
         assert len(body) <= 200
 
 
 async def test_context_window_extracts_text_from_multimodal_v1(seeded):
-    """Image-bearing user messages store a JSON parts array under
-    ``content_type == 'multimodal_v1'``. The recent context window must
-    surface the user-visible text only — leaking the raw JSON would dump
-    ``[{"type": "image_url", ...}]`` straight into the LLM prompt."""
+    """带图片的用户消息把 JSON parts 数组存到 ``content_type == 'multimodal_v1'`` 下。最近上下文窗口应只露出用户可见文本——若泄露原始 JSON，``[{"type": "image_url", ...}]`` 会直接进入 LLM prompt。"""
     from services.conversation.formatting import format_messages_compact
 
     SessionLocal = seeded
@@ -420,8 +390,7 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
     assert "image_url" not in result
     assert "https://example.com" not in result
 
-    # Direct call covers the daily_checkpoint / interact / affect_check path
-    # that also feeds format_messages_compact.
+    # 直接调用覆盖同样喂 format_messages_compact 的 daily_checkpoint / interact / affect_check 路径。
     async with SessionLocal() as db:
         msgs = (
             (
@@ -439,17 +408,8 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
     assert "image_url" not in compact
 
 
-# ── get_or_create_main_conversation idempotency ───────────────────────
-
-
 async def test_get_or_create_main_conversation_is_idempotent(seeded):
-    """Two sequential calls must yield the same Conversation row.
-
-    The function is hit from the WS boot path, the cron autonomous-turn
-    kickoff, and the prompt.submit path — all on the same single-instance
-    process. A regression that re-creates the row on every call would split
-    the main conversation's history across two tables.
-    """
+    """两次顺序调用必须返回同一个 Conversation 行。该函数从 WS boot 路径、cron 自启轮次、prompt.submit 路径同步命中——都在同一单实例进程上。若每次调用都重建行，主对话历史会被拆到两张表。"""
     from services.conversation import get_or_create_main_conversation
 
     SessionLocal = seeded
@@ -460,7 +420,7 @@ async def test_get_or_create_main_conversation_is_idempotent(seeded):
         second = await get_or_create_main_conversation(db, 3001)
     assert second.id == first_id
 
-    # The hint message was written once, not twice.
+    # hint 消息只写入一次，不会重复。
     async with SessionLocal() as db:
         from modules.conversation import Message as _M
 
@@ -477,10 +437,7 @@ async def test_get_or_create_main_conversation_is_idempotent(seeded):
 async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_main(
     seeded,
 ):
-    """The cron conversation must be a singleton per user and must not collide
-    with the main one — autonomous cron turns need their own scratchpad so a
-    renderer's ``session.get_main`` cannot cancel an in-flight cron via
-    ``_mount_runtime`` (different conversation_id → no match)."""
+    """cron 会话必须是每用户单例，且不能与主会话冲突——cron 自启轮次需要自己的草稿区，否则 renderer 的 ``session.get_main`` 可通过 ``_mount_runtime`` 取消正在进行的 cron（conversation_id 不同 → 无法匹配）。"""
     from services.conversation import (
         CRON_KIND,
         get_or_create_cron_conversation,
@@ -500,13 +457,8 @@ async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_m
     assert cron_second.id == cron_first.id
 
 
-# ── truncate_chat_history keeps in-conversation system markers in place ──
-
-
 def test_truncate_keeps_tool_summary_in_chronological_position():
-    """tool_summary stands in for the dropped tool frames, so hoisting it to the
-    front of the context (as a blanket system-message pin would) detaches it from
-    the turn it describes."""
+    """tool_summary 顶替被丢弃的 tool frames，若按一刀切的 system-message 钉死方式把它前置到上下文会去脱离它所描述的轮次。"""
     from services.chat.message_sanitization import truncate_chat_history
 
     messages = [
@@ -537,8 +489,7 @@ def _long_history(first_user_in_window: bool) -> list[dict]:
 
 
 def test_truncate_anchor_searches_only_dropped_prefix():
-    """The first user message inside the kept window must not be re-injected
-    as an anchor — it is already present, and duplicating it double-counts."""
+    """保留窗口内首条 user 消息不应被重新注入作为 anchor——它已经存在，重复出现会造成双计。"""
     from services.chat.message_sanitization import truncate_chat_history
 
     out = truncate_chat_history(
@@ -566,8 +517,7 @@ def test_truncate_anchor_from_dropped_prefix_leads_window():
 
 
 def test_truncate_marker_leads_when_no_user_in_prefix():
-    """With no user message to anchor on, the marker must still sit at the
-    head — inserting it after the first kept message would scramble roles."""
+    """没有 user 消息可作 anchor 时，marker 仍应位于首部——若插在第一条保留消息之后会扰乱角色顺序。"""
     from services.chat.message_sanitization import truncate_chat_history
 
     messages = [{"role": "system", "content": "SYS"}]
@@ -633,23 +583,19 @@ def test_proactive_state_machine_flow():
     rec = get_user_proactive_record(uid)
     assert rec.state == ProactiveState.IDLE
 
-    # 1. First proactive message
     record_user_outreach(uid, "你今天过得好吗？")
     rec = get_user_proactive_record(uid)
     assert rec.state == ProactiveState.OUTREACHED
     assert rec.last_proactive_text == "你今天过得好吗？"
 
-    # 2. Follow-up triggered
     record_user_outreach(uid, "喂～怎么不理我")
     rec = get_user_proactive_record(uid)
     assert rec.state == ProactiveState.FOLLOWUP_SENT
 
-    # 3. Subsequent outreach suppressed
     record_user_outreach(uid, "好吧")
     rec = get_user_proactive_record(uid)
     assert rec.state == ProactiveState.SUPPRESSED
 
-    # 4. User replies -> reset to IDLE
     reset_user_outreach(uid)
     rec = get_user_proactive_record(uid)
     assert rec.state == ProactiveState.IDLE
@@ -665,7 +611,7 @@ def test_proactive_state_records_followup_timeout():
     assert rec.state == ProactiveState.OUTREACHED
     assert rec.followup_timeout_seconds == 120.0
 
-    # Omitted deadline means the LLM chose no follow-up.
+    # 未传 deadline 意味着 LLM 选择了不跟进。
     reset_user_outreach(uid)
     record_user_outreach(uid, "在吗？")
     assert get_user_proactive_record(uid).followup_timeout_seconds == 0.0

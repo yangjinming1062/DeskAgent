@@ -75,12 +75,7 @@ def _user_messages_q(user_id: int, since: datetime) -> Select[tuple[Message]]:
 
 
 async def _aggregate_user_messages(db: AsyncSession, user_id: int, since: datetime) -> dict[str, int]:
-    """One round-trip for total / assistant-token / assistant-duration aggregates.
-
-    ``tool_calls`` per-row fetch stays separate (Python needs the raw JSON to
-    parse tool names) — that one is a row fetch, not an aggregate, so it
-    cannot be merged into the FILTER aggregate.
-    """
+    """一次往返获取 total / assistant-token / assistant-duration 聚合；tool_calls 需逐行 fetch 解析 JSON 名称，无法合并进 FILTER 聚合。"""
     row = (
         await db.execute(
             text("""
@@ -100,14 +95,7 @@ async def _aggregate_user_messages(db: AsyncSession, user_id: int, since: dateti
 
 
 async def _daily_activity(db: AsyncSession, user_id: int, since: datetime) -> list[dict[str, Any]]:
-    """Per-day message counts, oldest→newest, capped at ``ACTIVITY_DAY_BUCKETS`` days.
-
-    Returns ``[{date: 'YYYY-MM-DD', messages: int}, ...]``. Days with no
-    messages are omitted (the renderer pads gaps on its end). If the
-    caller asks for more days than the cap, the result is the most-recent
-    ``ACTIVITY_DAY_BUCKETS`` days only — older days are dropped, not
-    rolled up.
-    """
+    """按日统计消息数（最早→最新，最多 ACTIVITY_DAY_BUCKETS 天）；无消息的日期省略（renderer 自行补缺），超出上限只取最近 N 天，旧日丢弃不汇总。"""
     rows = (
         await db.execute(
             select(func.date(Message.created_at).label("day"), func.count(Message.id).label("cnt"))
@@ -122,14 +110,7 @@ async def _daily_activity(db: AsyncSession, user_id: int, since: datetime) -> li
 
 
 async def _platform_breakdown(db: AsyncSession, user_id: int, since: datetime) -> list[dict[str, Any]]:
-    """Count distinct ``client_version`` strings from active login records in the window.
-
-    Coarse platform hint — the renderer already filters on
-    ``client_context.platform_hints`` for tool routing, but that's per-WS,
-    not historical. ``login_records`` is the only persistent signal.
-    Restricted to ``is_active=True`` so logged-out historical records
-    don't inflate the breakdown.
-    """
+    """统计窗口内活跃登录记录的不同 client_version；仅 login_records 是历史持久信号（renderer 的 platform_hints 是 per-WS 实时数据），并限制 is_active=True 防止历史登出记录虚增占比。"""
     rows = (
         await db.execute(
             select(LoginRecord.client_version, func.count(LoginRecord.id))
@@ -142,16 +123,9 @@ async def _platform_breakdown(db: AsyncSession, user_id: int, since: datetime) -
 
 
 async def _model_breakdown(db: AsyncSession, user_id: int) -> list[dict[str, Any]]:
-    """LLM models the user has configured (DB row, falling back to env).
-
-    We don't track model per-message, so this reflects "what models is this
-    user set up to use" rather than "what models have been used". Sufficient
-    for the overview card; detailed per-message accounting lives in
-    ``sessions.py /api/sessions/{id}/messages``.
-    """
+    """返回用户已配置的 LLM 模型（DB 行优先，回落到环境变量）；不按消息追踪，仅反映"已配置"，逐消息的明细在 sessions.py /api/sessions/{id}/messages。"""
     config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
-    # DB row wins for the field when set; otherwise fall back to env so
-    # env-only deployments (no per-user row) still see the configured model.
+    # DB 行优先；未设置则回落环境变量，让纯 env 部署（无 per-user 行）也能看到所配模型。
     model_name = (config.llm_model_name if config and config.llm_model_name else "") or SETTINGS.llm_model_name
     base_url = (config.llm_base_url if config and config.llm_base_url else "") or SETTINGS.llm_base_url
     if not model_name:
@@ -160,8 +134,7 @@ async def _model_breakdown(db: AsyncSession, user_id: int) -> list[dict[str, Any
 
 
 async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dict[str, Any]:
-    """Aggregate counts from the memory table — closest thing we have to
-    'skills' the user has built up (memories are extracted from past sessions)."""
+    """聚合 memory 表的计数——最接近"用户已积累的技能"的概念（memory 从历史会话提取）。"""
     counts = (
         await db.execute(
             text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
@@ -170,11 +143,7 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
     rows = (await db.execute(select(Memory.tags).where(Memory.user_id == user_id, Memory.tags.isnot(None)))).scalars().all()
     tag_counter: Counter[str] = Counter()
     for tags_raw in rows:
-        # ``Memory.tags`` is a Text column (JSON-encoded string), not a
-        # SQLAlchemy ``JSON`` column, so we always get a string back. If
-        # the column type ever changes, ``safe_json_loads`` of a list
-        # would TypeError and we'd silently drop that row's tags — not
-        # great, but better than crashing the overview.
+        # Memory.tags 是 Text（JSON 字符串）而非 SQLAlchemy JSON 列；safe_json_loads 拿到列表时 TypeError 会静默丢弃该行 tag（不理想但优于让 overview 崩溃）。
         parsed = safe_json_loads(tags_raw or "", default=[])
         if isinstance(parsed, list):
             for t in parsed:
@@ -200,11 +169,7 @@ async def get_insights_overview(
     total_output_tokens = agg["total_output_tokens"]
     total_duration_ms = agg["total_duration_ms"]
 
-    # ``tool_calls`` is a Text column; SQL cannot aggregate tool-name counts
-    # without a JSONB migration. We fetch the rows and parse on the Python
-    # side. ``!= '[]'`` is defensive — current no-tool branches leave the
-    # column NULL, but a future regression that writes ``"[]"`` would
-    # otherwise inflate ``total_tool_calls``.
+    # tool_calls 是 Text 列，SQL 不迁移到 JSONB 就无法聚合工具名；拉行回 Python 解析。`!= '[]'` 是防御——当前无工具分支保持 NULL，但若未来回归写入 "[]" 会虚增 total_tool_calls。
     tool_rows = (
         await db.execute(
             _user_messages_q(current_user.id, since)

@@ -10,10 +10,7 @@ if TYPE_CHECKING:
 
 
 class CompanionPreference(ModelBase, TimestampMixin):
-    """Per-user server-side companion gates. The desktop remains the source
-    of truth for the disturbance tier and re-reports it on every change and
-    WS reconnect; the persisted row keeps server-side gates (proactive
-    send_message_tool, cron kicks) effective across backend restarts."""
+    """每用户服务端伴侣门控；desktop 仍是打扰档位的真源并在每次变更/WS 重连时重报，持久化行保证服务端门控（proactive send_message_tool、cron kicks）在后端重启后仍生效。"""
 
     __tablename__ = "companion_preferences"
 
@@ -22,11 +19,7 @@ class CompanionPreference(ModelBase, TimestampMixin):
 
 
 class CompanionModel(ModelBase, TimestampMixin):
-    """Provider-generated 3D model. status transitions:
-    generating → pending_download → downloading → succeeded | failed;
-    any download-stage failure → download_failed (retryable via
-    ``companion.model.retryDownload`` — the paid result survives in
-    provider_task_id + download_urls_json)."""
+    """供应商生成的 3D 模型；status 流转：generating → pending_download → downloading → succeeded | failed；下载阶段任意失败 → download_failed（可通过 ``companion.model.retryDownload`` 重试，付费结果保存在 provider_task_id + download_urls_json 中）。"""
 
     __tablename__ = "companion_models"
 
@@ -37,9 +30,7 @@ class CompanionModel(ModelBase, TimestampMixin):
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
     rig_type: Mapped[str] = mapped_column(String(32), default="biped", server_default=text("'biped'"), index=True)
     rig_naming: Mapped[str] = mapped_column(String(16), default="mixamo", server_default=text("'mixamo'"))
-    # Seed-image style the model was generated from (anime | realistic) —
-    # routes the client render style; legacy rows default to realistic so old
-    # models keep their PBR look unchanged.
+    # 模型生成所用的 seed 图风格（anime | realistic）—— 路由客户端渲染风格；旧行默认 realistic 以保留 PBR 外观。
     style: Mapped[str] = mapped_column(String(16), default="realistic", server_default=text("'realistic'"))
     rig_original_url: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
     morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
@@ -50,19 +41,13 @@ class CompanionModel(ModelBase, TimestampMixin):
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
-    # Paid-result recovery handle: written the moment generation completes,
-    # before the download starts, so a download failure never loses the
-    # billed asset. provider_task_id is the id whose query re-yields the URLs
-    # (the rig task for cloud-rigged providers, the submit id otherwise).
+    # 付费结果恢复句柄：生成完成瞬间、下载开始前写入，保证下载失败也不丢已计费资产；provider_task_id 是「再次查问即得 URL」的 id（云端 rigged 用 rig task id，其他用 submit id）。
     provider_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, default=None)
     download_urls_json: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
 
 
 class CompanionExpression(ModelBase, TimestampMixin):
-    """Custom emotion registry: LLM-created emotion tokens usable as [affect:NAME].
-    The avatar image for an emotion (builtin or custom) lives in
-    CompanionExpressionAvatar keyed by name — this table only registers the
-    token and its clip-matching/display metadata."""
+    """自定义情绪注册表：LLM 创建的情绪 token，可用作 [affect:NAME]；情绪头像图（内置或自定义）存在 CompanionExpressionAvatar 里按 name 索引，本表只登记 token 与 clip 匹配 / 展示元数据。"""
 
     __tablename__ = "companion_expressions"
 
@@ -71,23 +56,18 @@ class CompanionExpression(ModelBase, TimestampMixin):
     label: Mapped[str] = mapped_column(String(32))
     valence: Mapped[str] = mapped_column(String(16), default="neutral")
     description: Mapped[str] = mapped_column(Text, default="")
-    # Optional single-emoji icon shown next to the label in the chat dock.
+    # 可选单个 emoji 图标，聊天坞站 label 旁展示。
     icon: Mapped[str | None] = mapped_column(String(16), nullable=True)
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
 
 
 class CompanionExpressionAvatar(ModelBase, TimestampMixin):
-    """Chat-window expression avatar image cache, keyed by emotion token and
-    the avatar identity it was generated from. Lookup is exact-match on
-    (user_id, name, avatar_id); a regenerated avatar makes old rows stale and
-    they regenerate lazily. Loss is tolerable — a missing row or file just
-    means one more generation."""
+    """聊天窗口情绪头像图缓存，按情绪 token + 头像身份复合键。Lookup 为 (user_id, name, avatar_id) 完全匹配；头像重生成后旧行作废，按需 lazy 重建，丢失可容忍（多生成一次而已）。"""
 
     __tablename__ = "companion_expression_avatars"
     __table_args__ = (UniqueConstraint("user_id", "name", "avatar_id", name="uq_companion_expression_avatars_key"),)
 
-    # No separate user_id index: the unique (user_id, name, avatar_id)
-    # constraint's index already covers user_id-prefix lookups.
+    # 不另起 user_id 索引：unique (user_id, name, avatar_id) 自带的索引已覆盖 user_id-prefix 查询。
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(64))
     avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -97,13 +77,7 @@ class CompanionExpressionAvatar(ModelBase, TimestampMixin):
 
 
 class WardrobeItem(ModelBase, TimestampMixin):
-    """material_overrides_json keys are mesh names; "*" applies to all meshes.
-
-    `texture_url` is the albedo channel; `normal_url` / `roughness_url` /
-    `metalness_url` / `displacement_url` are the matching PBR channels for the GLB texture pass.
-    All five are nullable so legacy rows (albedo-only) and colour-preset
-    rows (no textures at all) coexist with full PBR sets.
-    """
+    """material_overrides_json 的 key 是 mesh 名，"*" 表示所有 mesh；texture_url 为 albedo，normal/roughness/metalness/displacement 为同 GLB 纹理 pass 的 PBR 通道；五者均可空，与旧 albedo-only 行与无纹理色卡行并存。"""
 
     __tablename__ = "wardrobe_items"
 
@@ -117,11 +91,10 @@ class WardrobeItem(ModelBase, TimestampMixin):
     metalness_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     displacement_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # LLM-normalized outfit description (visual: style, color, material, cut).
-    # Generated at creation time; swapped into Persona.appearance_outfit on equip.
+    # LLM 规范化的穿搭描述（visual: style、color、material、cut）；创建时生成，equip 时换入 Persona.appearance_outfit。
     outfit_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipped: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
-    # Geometric wardrobe (PROTOCOL.md §1.6): kind ∈ {texture, garment, accessory}.
+    # 几何衣橱（PROTOCOL.md §1.6）：kind ∈ {texture, garment, accessory}。
     kind: Mapped[str] = mapped_column(String(16), default="texture", server_default=text("'texture'"))
     mesh_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     assembly_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
@@ -132,7 +105,7 @@ class WardrobeItem(ModelBase, TimestampMixin):
 
 
 class Persona(ModelBase, TimestampMixin):
-    """system_prompt_extras is its own column so a persona edit re-renders one row, not every historical message."""
+    """system_prompt_extras 单列，使 persona 改动只重渲一行而不是所有历史消息。"""
 
     __tablename__ = "personas"
 
@@ -148,10 +121,10 @@ class Persona(ModelBase, TimestampMixin):
 
 
 class AvatarAsset(ModelBase):
-    """asset_url lives in companion-avatars/ (durable) so re-login survives the 24h temp-media TTL."""
+    """asset_url 存在 companion-avatars/（持久）以让重新登录跨过 24h temp-media TTL。"""
 
     __tablename__ = "avatar_assets"
-    # Partial unique index (one active per user) lives in the alembic baseline — needs WHERE.
+    # 部分唯一索引（每用户一个 active）位于 alembic baseline——需要 WHERE 子句。
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     prompt_json: Mapped[str] = mapped_column(Text)
@@ -168,14 +141,7 @@ class AvatarAsset(ModelBase):
 
 
 class CompanionSpriteImage(ModelBase, TimestampMixin):
-    """Static 2D sprite album entry, lazily generated while no 3D model renders.
-
-    `tag` is the LLM-authored free-form label used as the album matching key;
-    `role='waiting'` is the one-per-user waiting/switch sprite (partial unique
-    index in the alembic baseline). Rows whose avatar_id no longer
-    matches the active avatar are a stale identity — excluded from matching.
-    asset_url is a bare companion-assets/<uid>/ path; re-signed on read.
-    """
+    """静态 2D 精灵相册条目，3D 模型尚未渲染时按需 lazy 生成。tag 为 LLM 自撰自由标签作相册匹配 key；role='waiting' 是每用户一张的等待/切换精灵（部分唯一索引在 alembic baseline）；avatar_id 与当前 active 不一致视为陈旧身份，排除在匹配之外。asset_url 是裸 companion-assets/<uid>/ 路径，读取时重新签名。"""
 
     __tablename__ = "companion_sprite_images"
 

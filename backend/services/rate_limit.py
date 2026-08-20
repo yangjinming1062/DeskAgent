@@ -14,34 +14,14 @@ logger = get_logger(__name__)
 
 
 def _user_key(request: Request) -> str:
-    """per-user primary; falls back to per-IP when no JWT was stashed.
-
-    ``stash_user_id_middleware`` (below) verifies the JWT signature and
-    puts ``user_id`` on ``request.state``; the ``@limiter.limit`` decorator
-    on the handler runs after that middleware, so this reads the stashed
-    value. If a request reaches a JWT-authed endpoint without a valid
-    token, ``get_current_session`` in the handler returns 401 — but the
-    rate-limit key still falls back to per-IP here, so an unauth'd
-    request cannot bypass per-user limits by simply omitting the token.
-    """
+    """主键按 user_id，无 JWT 时降级按 IP 兜底，避免未认证请求绕过每用户配额。"""
     user_id = getattr(request.state, "user_id", None)
     if user_id is not None:
         return f"user:{user_id}"
     return f"ip:{get_remote_address(request)}"
 
 
-# Storage backend: defaults to memory:// for single-process local deployment.
-# Can be overridden via SETTINGS.rate_limit_storage_url (e.g. redis:// or memcached://).
-# When ``rate_limit_enabled`` is False slowapi's ``enabled`` flag short-circuits
-# the decorator so ``@limiter.limit(...)`` stays inert — no per-call
-# noop stub needed.
-#
-# ``config_filename=""`` skips slowapi's auto-read of ``./.env`` — the
-# rate-limit keys never look at it (slowapi doesn't read ``app_config``
-# anywhere in this codebase), and starlette's default ``open(file_name)``
-# crashes on Windows + cp936 locales when ``.env`` carries a UTF-8 BOM.
-# Settings themselves are loaded by pydantic-settings in
-# ``components.SETTINGS``.
+# 默认内存存储（单进程）；可由 SETTINGS.rate_limit_storage_url 覆盖；config_filename="" 关闭 slowapi 自动读 .env（其默认 open 在 Windows cp936 遇到 UTF-8 BOM 会崩，配项由 pydantic-settings 加载）。
 def create_limiter(storage_uri: str | None = None) -> Limiter:
     uri = storage_uri if storage_uri is not None else (SETTINGS.rate_limit_storage_url.strip() if SETTINGS.rate_limit_storage_url else "memory://")
     return Limiter(key_func=_user_key, enabled=SETTINGS.rate_limit_enabled, storage_uri=uri, config_filename="")
@@ -51,22 +31,7 @@ limiter = create_limiter()
 
 
 async def stash_user_id_middleware(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-    """Best-effort: decode the ``Authorization: Bearer`` JWT and stash
-    ``user_id`` on ``request.state`` for the rate-limit key function.
-
-    Only runs on ``/api/*`` paths — health checks, ``/updates/*`` static
-    mounts, and other non-API traffic don't have JWT-authed handlers, so
-    the decode work is pure overhead for them. Lightweight: signature
-    verification only (reuses ``utils.decode_access_token`` so the
-    secret/algorithm config stays in one place). No DB lookups — the
-    handler's ``Depends(get_current_session)`` still does the full
-    validation (expiry, jti revocation, ``user.is_active``) and returns
-    401 on its own. A bad / missing / expired token silently skips
-    stashing here, the rate-limit key falls back to per-IP, and the
-    handler's auth dependency rejects the request. No security impact
-    from the rate-limit side: a forged token either fails signature
-    verification (no stash → per-IP fallback) or passes with a real
-    ``sub`` (the legitimate user gets the per-user bucket anyway)."""
+    """尽力解析 Bearer JWT 并把 user_id 暂存到 request.state，供限流 key 使用；仅校验签名不做 DB 校验，鉴权失败由 handler 的 Depends 兜底。"""
     if not request.url.path.startswith("/api/"):
         return await call_next(request)
     auth = request.headers.get("authorization")
@@ -89,18 +54,7 @@ async def stash_user_id_middleware(request: Request, call_next: Callable[[Reques
 
 
 async def rate_limit_exception_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
-    """429 envelope in ``{error, reason, status}`` shape with ``Retry-After``.
-
-    Mirrors ``ARCHITECTURE.md §5.3`` and the upstream 429 path: server log
-    keeps the full context, the renderer sees the stable
-    ``FailoverReason.rate_limit`` enum value
-    (``core/error_classifier.py:26``) so its error handling is uniform
-    with upstream 429s that come through ``classified_http_exception``.
-
-    ``Retry-After`` is derived from the hit limit's actual window
-    (``RateLimitItem.get_expiry()``) so it stays correct if future
-    limits use ``/hour`` or ``/day`` instead of ``/minute``.
-    """
+    """429 响应：标准 {error, reason, status} 信封 + Retry-After（从限流项实际窗口推导，与上游 429 路径统一 reason 枚举）。"""
     retry_after = int(exc.limit.limit.get_expiry())
     response = JSONResponse(status_code=429, content={"error": "Rate limit exceeded", "reason": "rate_limit", "status": 429})
     response.headers["Retry-After"] = str(retry_after)

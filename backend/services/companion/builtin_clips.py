@@ -1,16 +1,4 @@
-"""Built-in companion animation clip names, keyed by rig type.
-
-This is the backend mirror of the desktop's procedural clip libraries
-(``client/renderer/companion/3d/clips-*.ts`` + ``clips-registry.ts``).
-The desktop is the render-time source of truth; this module exists so the LLM
-prompt can enumerate the *full* available ``[action:...]`` token set without
-guessing. Keep the names in sync with the client when adding/removing clips.
-
-The 9 core state clips (idle/listening/thinking/... ) are driven by the
-companion state machine, not by the LLM, so ``BUILTIN_ACTION_CLIPS_BY_RIG``
-excludes them — they would only confuse the model into emitting
-``[action:idle]``-style no-ops.
-"""
+"""按骨骼类型索引的内置动画 Clip 名表——桌面端 clips-*.ts 的后端镜像，用于让 LLM 枚举可用的 [action:...] 取值；新增/删除 clip 时须与客户端同步。"""
 
 BUILTIN_STATE_CLIPS: frozenset[str] = frozenset({"idle", "listening", "thinking", "speaking", "working", "sleeping", "interacting", "emotional_idle", "disconnected"})
 
@@ -340,11 +328,7 @@ BUILTIN_CLIPS_BY_RIG: dict[str, frozenset[str]] = {
 
 
 def builtin_action_clips(rig_type: str | None) -> frozenset[str]:
-    """Built-in clip names eligible as ``[action:...]`` tokens for a rig.
-
-    Falls back to biped for an unknown/missing rig type (matches the client's
-    ``getClipDefs`` default). State clips are excluded.
-    """
+    """返回该骨骼可作为 [action:...] 的内置 clip；状态类 clip 由状态机驱动故排除，未知骨骼回落 biped。"""
     normalized = (rig_type or "").strip().lower()
     clips = BUILTIN_CLIPS_BY_RIG.get(normalized, BUILTIN_CLIPS_BY_RIG["biped"])
     return clips - BUILTIN_STATE_CLIPS

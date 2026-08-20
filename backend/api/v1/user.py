@@ -24,20 +24,13 @@ WS_TICKET_TTL_SECONDS = 60
 
 router = get_router()
 
-# Short-lived ticket TTL: wide enough to open the WS, narrow enough to expire before replay.
+# 短期 ticket TTL：足以开 WS、重放前已过期。
 
 
 @router.post("/activate", response_model=TokenResponse)
 @limiter.limit(f"{SETTINGS.login_rate_limit_per_minute}/minute", key_func=get_remote_address)
 async def activate(payload: ActivateRequest, request: Request, db: AsyncSession = Depends(get_db)) -> TokenResponse:
-    """Exchange an activation code for a session JWT.
-
-    The activation code is a base64url-encoded JSON ``{b, t}`` blob.  The
-    ``t`` field is the opaque activation token; we hash it and look up the
-    user by ``activation_token_hash``.  On success the flow is identical to
-    the old login: deactivate prior sessions, mint a session JWT, write a
-    LoginRecord.
-    """
+    """用激活码换取会话 JWT：激活码是 base64url JSON {b, t}，t 字段经哈希后按 activation_token_hash 查用户；成功后流程同旧登录（停用旧会话、签发 JWT、写 LoginRecord）。"""
     try:
         _base_url, raw_token = decode_activation_code(payload.code)
     except Exception:
@@ -76,7 +69,7 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
 
 @router.post("/ws-ticket", response_model=TokenResponse)
 async def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current_session)) -> TokenResponse:
-    """Mint a short-lived WS-only JWT so the renderer never holds the long-lived bearer."""
+    """签发仅供 WS 的短期 JWT，避免 renderer 持有长寿命 bearer。"""
     user, _session = current
     token, expires_in, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=WS_TICKET_TTL_SECONDS, purpose="ws")
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
@@ -89,12 +82,10 @@ async def refresh_session(
     user, login_record = current
     now = utc_now()
 
-    # Invalidate old session
     login_record.is_active = False
     login_record.logout_at = now
     db.add(login_record)
 
-    # Issue new token with the updated client_context
     client_ctx_dict = payload.client_context.model_dump(exclude_none=True) if payload.client_context else None
     token, expires_in, token_jti = create_access_token(user_id=user.id, username=user.username, client_context=client_ctx_dict)
 

@@ -24,9 +24,6 @@ class _FakeChat:
         return self.content
 
 
-# ── classify_species ────────────────────────────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_classify_species_parses_json_verdict():
     chat = _FakeChat(content='{"rig_type": "quadruped", "has_humanoid_face": false}')
@@ -77,9 +74,6 @@ async def test_classify_species_uses_default_species_when_blank():
 async def test_classify_species_normalizes_case_and_whitespace():
     chat = _FakeChat(content='{"rig_type": "  BIPED  ", "has_humanoid_face": true}')
     assert await classify_species(chat, "人类") == ("biped", True)
-
-
-# ── select_rig_type (rig-only view) ─────────────────────────────────
 
 
 @pytest.mark.asyncio

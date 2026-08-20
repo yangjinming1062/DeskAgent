@@ -10,7 +10,7 @@ def _bone_segment_distance(point: Any, bone: Any) -> float:
 
 
 def sanitize_head_weights(meshes: list[Any], arm_obj: Any) -> int:
-    """Keep appendage influences out of the head and neck volume."""
+    """把躯干/四肢骨的影响清出头颈体素，避免头颈在动画时抽动。"""
     head = arm_obj.data.bones.get("Head")
     neck = arm_obj.data.bones.get("Neck")
     if head is None or neck is None:

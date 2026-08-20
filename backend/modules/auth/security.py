@@ -12,10 +12,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .models import AdminSession
 
-# Activation token parameters — opaque random tokens (not user-chosen
-# passwords), so SHA-256 is sufficient (no PBKDF2 slow-hash needed).
+# 激活 token 是不可猜随机串（非用户密码），SHA-256 已够，不需要 PBKDF2 慢哈希。
 ACTIVATION_TOKEN_BYTES = 32
-
 BEARER_SCHEME = HTTPBearer(auto_error=False)
 
 
@@ -29,30 +27,23 @@ def _b64decode(value: str) -> bytes:
 
 
 def generate_activation_token() -> str:
-    """Generate a random URL-safe activation token (~43 chars)."""
+    """生成 URL-safe 随机激活 token（~43 字符）。"""
     return secrets.token_urlsafe(ACTIVATION_TOKEN_BYTES)
 
 
 def hash_activation_token(token: str) -> str:
-    """SHA-256 hash of an activation token for DB storage + lookup."""
+    """激活 token 的 SHA-256 摘要，用于 DB 存储与查找。"""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def encode_activation_code(base_url: str, token: str) -> str:
-    """Pack ``{baseUrl, token}`` into a single opaque base64url string.
-
-    The result looks like gibberish to the end user; the client decodes it
-    to recover the backend address and activation token.
-    """
+    """把 ``{baseUrl, token}`` 打包成一个不透明的 base64url 串，对用户呈现为乱码；客户端解码以拿到后端地址与激活 token。"""
     payload = json.dumps({"b": base_url, "t": token}, separators=(",", ":"))
     return _to_urlsafe_b64(payload.encode("utf-8"))
 
 
 def decode_activation_code(code: str) -> tuple[str, str]:
-    """Reverse of :func:`encode_activation_code`.
-
-    Returns ``(base_url, token)``. Raises ``ValueError`` on malformed input.
-    """
+    """encode_activation_code 的反向操作；返回 ``(base_url, token)``，格式错误抛 ValueError。"""
     raw = _b64decode(code)
     data = json.loads(raw)
     base_url = data.get("b")
@@ -86,8 +77,7 @@ async def create_admin_token(client_version: str = "", ip_address: str = "", use
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": "admin", "username": SETTINGS.admin_username, "is_admin": True, "jti": jti, "exp": expires_at}
     token = jwt.encode(payload, SETTINGS.jwt_secret_key, algorithm=SETTINGS.jwt_algorithm)
-    # deps.get_current_admin_token requires the jti row to exist, so a failed
-    # insert must surface instead of minting a token that 401s on first use.
+    # deps.get_current_admin_token 要求 jti 行已存在，insert 失败必须抛出来而非 mint 一个首调就 401 的 token。
     async with SESSION_LOCAL() as db:
         db.add(
             AdminSession(
@@ -112,20 +102,10 @@ def decode_bearer_token(credentials: HTTPAuthorizationCredentials | None) -> dic
 
 
 def fingerprint_api_key(api_key: str | None) -> str:
-    """Stable, non-reversible display tag for an LLM API key.
-
-    Used by the admin model-config list and the desktop config response so
-    callers can show which key is on file without ever sending the raw
-    secret over the wire. Returns ``"<empty>"`` for missing keys and
-    ``"<short>"`` for keys shorter than the slicing window — these are
-    almost always typos or misconfigurations, and we refuse to leak a 1-2
-    char key.
-    """
+    """稳定的、不可逆的 LLM API key 显示标签（首 3 + "…" + 末 2），用于 admin 模型配置列表与 desktop 配置响应；key 为空返 ``"<empty>"``，<8 字符返 ``"<short>"`` 以免把 1-2 字符的疑似误配 key 当成准完整指纹。"""
     if not api_key:
         return "<empty>"
-    # Format: first 3 chars + "…" + last 2 chars, e.g. "sk-…7a".
-    # Requires at least 8 chars so a truncated / misconfigured short
-    # value doesn't surface as a near-full-key fingerprint.
+    # 至少 8 字符，避免截断 / 误配的短值呈现为「接近完整」的指纹。
     if len(api_key) < 8:
         return "<short>"
     return f"{api_key[:3]}…{api_key[-2:]}"

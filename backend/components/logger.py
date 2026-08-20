@@ -6,16 +6,10 @@ from datetime import UTC, datetime
 
 from .config import SETTINGS
 
-# stdlib LogRecord attributes — derived at import time so future Python
-# releases that add new fields don't silently leak into JSON output.
-# `color_message` is uvicorn's; `message`/`asctime` are populated by
-# Formatter.format() and can collide with `extra=` keys.
+# stdlib LogRecord 属性集合——导入时取，未来 Python 增加字段不会悄悄泄漏到 JSON；`color_message` 来自 uvicorn，`message`/`asctime` 由 Formatter.format() 填充，会与 `extra=` 冲突。
 _RESERVED_LOGRECORD_KEYS: frozenset[str] = frozenset(set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {"message", "asctime", "color_message"})
 
-# Caller 在 HTTP 入口 (services.correlation.correlation_id_middleware) 或
-# 长生命周期 task tick 顶部 (services.cron.scheduler_loop / services.gateway.connection.
-# _process_events) 调 set_request_id(...) 注入; _RequestContextFilter
-# 自动透传到每条 LogRecord.
+# HTTP 入口（correlation_id_middleware）与长生命周期 task tick 顶部（scheduler_loop / _process_events）显式 set_request_id() 注入；_RequestContextFilter 自动透传到每条 LogRecord。
 _user_id_var: ContextVar[int | None] = ContextVar("logger_user_id", default=None)
 _request_id_var: ContextVar[str | None] = ContextVar("logger_request_id", default=None)
 
@@ -29,17 +23,16 @@ def set_request_id(request_id: str | None) -> None:
 
 
 def current_request_id() -> str | None:
-    """Public reader — prefer over touching `_request_id_var` directly."""
+    """对外 reader；优先于直接碰 `_request_id_var`。"""
     return _request_id_var.get()
 
 
 def _extras(record: logging.LogRecord) -> dict[str, object]:
-    """non-reserved user extras + ContextVar-injected fields."""
     return {k: v for k, v in record.__dict__.items() if k not in _RESERVED_LOGRECORD_KEYS and not k.startswith("_")}
 
 
 class _RequestContextFilter(logging.Filter):
-    """把 ContextVar 注入到每条 LogRecord. caller 显式 extra= 优先."""
+    """把 ContextVar 注入到每条 LogRecord；caller 显式 extra= 优先。"""
 
     def filter(self, record: logging.LogRecord) -> bool:
         uid = _user_id_var.get()
@@ -52,7 +45,7 @@ class _RequestContextFilter(logging.Filter):
 
 
 class _JsonFormatter(logging.Formatter):
-    """JSON 行输出. 不做脱敏 — 信任上游已脱敏的字符串."""
+    """JSON 行输出；不做脱敏——信任上游已脱敏的字符串。"""
 
     def format(self, record: logging.LogRecord) -> str:
         msg = super().format(record)
@@ -70,7 +63,7 @@ class _JsonFormatter(logging.Formatter):
 
 
 class _TextFormatter(logging.Formatter):
-    """人类可读 fallback (dev 模式 env=LOG_FORMAT=text). extras 追加在尾部."""
+    """人类可读 fallback（LOG_FORMAT=text），extras 追加在尾部。"""
 
     DEFAULT_FMT = "%(asctime)s.%(msecs)03d %(levelname)-5s [%(name)s] %(message)s"
 
@@ -89,15 +82,11 @@ _FORMATTERS: dict[str, type[logging.Formatter]] = {"json": _JsonFormatter, "text
 
 
 def setup_logging() -> None:
-    """Lifespan 第一行调一次. 接管 root logger.
-
-    不用 dictConfig — dictConfig 解析 handler dict 时会重新实例化,
-    丢弃我们手动挂的 formatter/filter.
-    """
+    """lifespan 入口调一次接管 root logger；不用 dictConfig（会重新实例化 handler、丢弃我们挂的 formatter/filter）。"""
     try:
         formatter_cls = _FORMATTERS[SETTINGS.log_format]
     except KeyError:
-        # pydantic Literal 已拒; 这里只对 test monkey-patch 路径生效
+        # pydantic Literal 已拦截，此处只对测试 monkey-patch 生效。
         raise ValueError(f"invalid log_format: {SETTINGS.log_format!r}") from None
 
     handler = logging.StreamHandler(sys.stdout)
@@ -116,5 +105,5 @@ def setup_logging() -> None:
 
 
 def get_logger(name: str | None = None) -> logging.Logger:
-    """统一 logger 入口. None 走 logging.getLogger() 拿真正的 root."""
+    """统一 logger 入口；传 None 时拿真正的 root logger。"""
     return logging.getLogger(name) if name is not None else logging.getLogger()

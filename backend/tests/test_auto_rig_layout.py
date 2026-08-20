@@ -30,8 +30,7 @@ class TestLayoutSkeleton:
 
     @pytest.mark.parametrize("rig_type", _ALL_RIG_TYPES)
     def test_child_attaches_at_parent_height(self, rig_type):
-        # Lateral (x) offsets and ring attachments (tentacles/fins, z-spread)
-        # are legitimate; only the vertical attachment must line up.
+        # 横向(x)偏移与环形附着(触手/鳍沿 z 铺开)允许，仅垂直方向必须对齐父骨。
         layout = layout_skeleton(rig_type)
         for name, bone in layout.items():
             if bone.parent is None:
@@ -50,8 +49,7 @@ class TestLayoutSkeleton:
 
 @pytest.mark.asyncio
 async def test_auto_rig_failure_fails_generation(monkeypatch, tmp_path):
-    """auto-rig is not best-effort: a Blender failure must raise, never ship
-    an unrigged model with ``has_rig=True``."""
+    """auto-rig 非尽力式：Blender 失败必须抛错，绝不允许 ``has_rig=True`` 但实际未绑骨的模型上线。"""
 
     async def _boom(io_dir, script, args, *, timeout, name_hint="adhoc"):
         return 1, "blender exploded"
@@ -75,8 +73,7 @@ bpy.ops.export_scene.gltf(filepath=argv[0], export_format="GLB")
 @pytest.mark.skipif(not _HAS_BLENDER, reason="blender binary not on PATH")
 @pytest.mark.asyncio
 async def test_auto_rig_blender_roundtrip(tmp_path, monkeypatch):
-    """Sphere in → rigged GLB out, then morph injection keeps the armature.
-    Guards the rig→morph ordering assumption (weights survive export)."""
+    """球体进入 → 绑骨 GLB 出来，再注入 morph 仍保留骨架；守护 rig→morph 的顺序假设（权重在导出后不丢）。"""
     gen_script = tmp_path / "make_cube.py"
     gen_script.write_text(_MAKE_CUBE_SCRIPT)
     bare_glb = tmp_path / "sphere.glb"

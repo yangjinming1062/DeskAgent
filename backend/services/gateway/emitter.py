@@ -3,8 +3,7 @@ from typing import Any
 from ..chat import Emitter
 from .jsonrpc import JsonRpcDispatcher
 
-# Raw ``type`` → JSON-RPC ``params.type``.  Every raw frame is either
-# translated into a JSON-RPC event envelope or dropped (unknown types).
+# 原始 ``type`` → JSON-RPC ``params.type``。每个原始帧要么翻译成 JSON-RPC 事件信封，要么丢弃（未知类型）。
 _TRANSLATED: dict[str, str] = {
     "chunk": "message.delta",
     "message.start": "message.start",
@@ -18,12 +17,7 @@ _TRANSLATED: dict[str, str] = {
 
 
 class JsonRpcEmitter:
-    """Translate raw ``chat_service`` frames into JSON-RPC event envelopes.
-
-    The renderer (``events.ts``) dispatches on ``params.type`` and reads
-    ``params.payload``; ``JsonRpcDispatcher.push_event`` shapes that envelope.
-    Every known raw type is translated; unknown types are dropped silently.
-    """
+    """把原始 chat_service 帧翻译成 JSON-RPC 事件信封：renderer（events.ts）按 params.type 分发并读 params.payload，由 JsonRpcDispatcher.push_event 构造信封；已知类型必翻译，未知类型静默丢弃。"""
 
     def __init__(self, raw: Emitter | None, *, dispatcher: JsonRpcDispatcher, session_id: str) -> None:
         self._raw = raw
@@ -36,7 +30,7 @@ class JsonRpcEmitter:
             if self._raw is not None:
                 await self._raw.send_json(data)
             return
-        # Unknown types go raw.
+        # 未知类型按原始帧透传。
         if raw_type not in _TRANSLATED:
             if self._raw is not None:
                 await self._raw.send_json(data)
@@ -55,12 +49,7 @@ class JsonRpcEmitter:
             return {"message": data.get("message", "Unknown error")}
         if raw_type == "message.complete":
             usage = data.get("usage")
-            # P0: persist.py (lines 138-145) embeds ``affect: {emotion: ...}``
-            # on the raw frame; the previous translate dropped it so the
-            # desktop's ``payload?.affect?.emotion`` access returned
-            # undefined and every reply landed in ``idle`` instead of
-            # ``EMOTIONAL(affect)``. Forward the nested affect object
-            # through the JSON-RPC envelope so the channel stays alive.
+            # P0：persist.py（138-145 行）在原始帧上挂 ``affect: {emotion: ...}``；旧 translate 把这字段丢掉，导致桌面端 ``payload?.affect?.emotion`` 取到 undefined，所有回复都掉到 ``idle`` 而不是 ``EMOTIONAL(affect)``。把嵌套 affect 透传到 JSON-RPC 信封以让通道继续生效。
             return {
                 "text": data.get("text", ""),
                 **({"affect": data["affect"]} if isinstance(data.get("affect"), dict) else {}),
@@ -70,5 +59,5 @@ class JsonRpcEmitter:
             return {}
         if raw_type == "bubble.break":
             return {}
-        # tool_call
+        # 兜底：tool_call
         return {"name": data.get("name"), "args": data.get("args"), "call_id": data.get("call_id")}

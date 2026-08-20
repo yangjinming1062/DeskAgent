@@ -1,15 +1,4 @@
-"""Builtin emotion → expression clause for chat avatar generation.
-
-21 entries — the 22-item ``BUILTIN_EMOTIONS`` minus ``neutral`` (neutral is
-the portrait itself and never generates). Clauses describe the emotional
-intent in human-readable terms; expression_avatar_service pairs them with a
-single generic template — identity rides the reference image (reinforced by
-the persona's core-features text), with the outfit (the wardrobe-mirrored
-persona field) and personality colouring riding along, so the clause is the
-only per-emotion content in the prompt. This module is the generation-side
-authority; the client's EMOTION_MAP / sprite-semantics tables are
-display-only and intentionally not shared. Custom CompanionExpression tokens
-fall back to their registry description at the call site."""
+"""内置情绪到表情描述子句的映射，供表情头像生成使用；neutral 不在其中（直接复用形象头像）。此表是生成侧权威，客户端的展示用映射不与之共享。"""
 
 EXPRESSION_SEMANTICS: dict[str, str] = {
     "happy": "开心地笑，眼角弯起",

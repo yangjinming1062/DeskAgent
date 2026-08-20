@@ -18,7 +18,7 @@ _MAX_EXACT_FLOAT_INTEGER = 16_777_216
 
 
 class GlbFidelityError(ValueError):
-    """A post-processing stage changed protected display data."""
+    """后处理阶段改动了受保护的展示数据。"""
 
 
 @dataclass(frozen=True)
@@ -195,7 +195,7 @@ def _signature(data: bytes) -> _GlbSignature:
 
 
 def _compact_glb_buffer(gltf: dict[str, Any], binary: bytes) -> tuple[dict[str, Any], bytes]:
-    """Copy only referenced embedded views into a fresh binary buffer."""
+    """只把被引用的内嵌 bufferView 复制进新的二进制缓冲区。"""
     buffers = gltf.get("buffers", [])
     if len(buffers) != 1 or buffers[0].get("uri") is not None:
         raise GlbFidelityError("GLB compaction requires a single embedded buffer")
@@ -299,7 +299,7 @@ def _append_view(gltf: dict[str, Any], appended: bytearray, data: bytes, byte_st
 
 
 def add_source_vertex_uv(source: bytes) -> bytes:
-    """Encode source vertex indices in the first free temporary UV channel."""
+    """把源顶点索引编码进第一个空闲的临时 UV 通道。"""
     gltf, binary = _parse_glb(source)
     if not gltf.get("buffers") or gltf["buffers"][0].get("uri") is not None:
         raise GlbFidelityError("source vertex mapping requires an embedded GLB buffer")
@@ -435,7 +435,7 @@ def _restore_targets(
 
 
 def restore_preserved_vertex_attributes(source: bytes, processed: bytes) -> bytes:
-    """Restore source display attributes while retaining added rig and morph data."""
+    """恢复源模型的展示属性，同时保留后处理新增的骨骼与 morph 数据。"""
     source_gltf, source_binary = _parse_glb(source)
     processed_gltf, processed_binary = _parse_glb(processed)
     appended = bytearray(processed_binary)
@@ -503,7 +503,7 @@ def restore_preserved_vertex_attributes(source: bytes, processed: bytes) -> byte
 
 
 def assert_preserves_display(source: bytes, processed: bytes) -> None:
-    """Raise when processing removes or rewrites protected display data."""
+    """若后处理删除或改写了受保护的展示数据则抛错。"""
     try:
         source_signature = _signature(source)
         processed_signature = _signature(processed)

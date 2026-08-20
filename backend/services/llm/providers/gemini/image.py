@@ -10,10 +10,7 @@ from ._parts import iter_parts
 
 
 class GeminiImageGenProvider(ImageGenProvider):
-    """Image generation via Gemini's ``generateContent`` with
-    ``responseModalities: ["IMAGE"]``. A ``reference_image`` is passed as an
-    ``inlineData`` part ahead of the text prompt, which drives Gemini's native
-    image-editing mode (keep the subject, re-render to the prompt)."""
+    """通过 Gemini 的 generateContent（responseModalities=["IMAGE"]）生成图像；reference_image 作为 inlineData 部件置于文本前，触发 Gemini 原生图像编辑模式（保留主体、按提示重绘）。"""
 
     provider_name = "gemini"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "gemini-3.1-flash-lite-image"}

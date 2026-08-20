@@ -20,7 +20,6 @@ class TestTTSTool:
             "model_name": "mimo-v2.5-tts",
         }
 
-        # Call the actual codebase tool function directly without mock
         result_str = await text_to_speech_tool(
             text="Hello, this is a test.", llm_config=llm_config, voice="mimo_default"
         )
@@ -42,7 +41,6 @@ class TestTTSTool:
             "model_name": "mimo-v2.5-tts",
         }
 
-        # Call the actual codebase tool function directly without mock
         result_str = await text_to_speech_tool(
             text="你好，这是一个测试。", llm_config=llm_config, voice="冰糖"
         )
@@ -55,7 +53,6 @@ class TestTTSTool:
 @pytest.mark.e2e
 class TestSTTTool:
     async def test_stt_basic(self, test_client, test_token):
-        # Generate 2 seconds of silence WAV
         sample_rate = 8000
         num_samples = sample_rate * 2
         data = b"\x00\x00" * num_samples
@@ -78,7 +75,6 @@ class TestSTTTool:
         buf.write(data)
         wav_bytes = buf.getvalue()
 
-        # Call the actual API endpoint /api/media/stt without mock
         headers = {"Authorization": f"Bearer {test_token}"}
         files = {"audio_file": ("test.wav", wav_bytes, "audio/wav")}
         resp = test_client.post("/api/media/stt", headers=headers, files=files)
@@ -102,7 +98,6 @@ class TestImageGenTool:
             "model_name": "mimo-v2.5",
         }
 
-        # Call the actual codebase tool function directly without mock
         try:
             result_str = await image_generation_tool(
                 prompt="A tiny red square on white background",
@@ -142,7 +137,6 @@ class TestWebSearch:
     async def test_search_basic(self):
         from services.tools.builtin.web_tools import web_search_tool
 
-        # Call the actual web search provider (DDGS) directly without mock
         result_str = await web_search_tool(query="python programming language", limit=2)
         result = json.loads(result_str)
         assert result["success"] is True
@@ -154,9 +148,7 @@ class TestWebSearch:
 
 
 class TestReferenceImageChain:
-    """A ``reference_image`` is offered only to providers that consume it
-    natively; text-only image providers are skipped for reference requests,
-    never degraded via an image→text→image round-trip."""
+    """reference_image 只传给原生支持的供应商，跳过纯文本供应商而不走图→文→图退化路径。"""
 
     @staticmethod
     def _cfg(name: str):
@@ -232,9 +224,7 @@ class TestReferenceImageChain:
         assert [c.provider_name for c in chain] == ["zhipu", "minimax"]
 
     async def test_chain_no_error_when_image_gen_unconfigured(self, monkeypatch):
-        """An empty full chain (image_gen not configured at all) is NOT the
-        reference-specific error — it falls through to execute_with_fallback's
-        MissingLlmConfigError → '图片生成服务未配置'."""
+        """空的全链路（image_gen 完全未配置）不应视为参考图专用错误，而是透传给 MissingLlmConfigError。"""
         import importlib
 
         tool_mod = importlib.import_module(
@@ -291,7 +281,7 @@ class TestReferenceImageChain:
 
     @pytest.mark.asyncio
     async def test_tool_works_without_reference(self, monkeypatch):
-        """No reference_image → chain is unfiltered, any image provider works."""
+        """无 reference_image 时链路不过滤，任何图像供应商都可使用。"""
         import importlib
 
         from services.llm import ImageAsset, ImageGenResult
@@ -353,8 +343,7 @@ class TestReferenceImageChain:
 
 @pytest.mark.asyncio
 async def test_safe_outbound_client_request_hook_blocks_unsafe_host(monkeypatch):
-    """The request-hook guard must actually fire (the old "connect" hook key
-    was silently ignored by httpx and never executed)."""
+    """请求钩子守卫必须真正触发（旧版 connect 钩子键被 httpx 静默忽略）。"""
     import httpx
 
     import components.network as net

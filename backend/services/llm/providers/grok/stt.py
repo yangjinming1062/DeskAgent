@@ -6,30 +6,10 @@ from ..http import get_http
 
 
 class GrokSTTProvider(STTProvider):
-    """STT via xAI's unary ``POST /v1/stt``.
-
-    Wire shape (multipart, per xAI REST reference):
-        ``file`` — audio bytes
-        ``url``  — alternative to ``file`` (server-side download)
-
-    Optional form fields: ``audio_format`` / ``sample_rate`` (only for raw
-    formats like pcm/mulaw/alaw — container formats auto-detect), ``language``,
-    ``format``, ``multichannel`` / ``channels``, ``diarize``, ``keyterm``,
-    ``filler_words``, ``vad_threshold``.
-
-    Notes:
-    - No ``model`` field — xAI's STT endpoint has no model selector; the
-      service uses grok-transcribe under the hood (mirrors the streaming
-      WebSocket endpoint's ``audio.input.transcription.model`` default).
-    - ``language`` is unused here (xAI auto-detects) so the corresponding
-      parameter is a no-op kept for the :class:`STTProvider` ABC contract.
-    - Response: ``{"text", "language", "duration", "words"?}``.
-    """
+    """通过 xAI 的单次 POST /v1/stt 提供 STT（multipart 形态，file 字段为音频字节，url 字段为服务端下载替代）；xAI 无 model 选择器，底层固定 grok-transcribe；language 由 xAI 自动识别故不生效，仅为符合 STTProvider ABC 契约保留；响应 {"text","language","duration","words"?}。"""
 
     provider_name = "grok"
-    # grok-transcribe is the underlying model (per the streaming STT docs);
-    # the unary endpoint doesn't take a selector, so the default is purely
-    # metadata for the registry mirror and never sent on the wire.
+    # grok-transcribe 是底层模型（见流式 STT 文档）；单次端点不接受选择器，此默认值仅为 registry 镜像的元数据，不会随请求发出。
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "grok-transcribe"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"stt": 8_000}
 
@@ -38,8 +18,7 @@ class GrokSTTProvider(STTProvider):
         self._client = get_http(config.base_url, config.api_key)
 
     async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult:
-        # xAI auto-detects container formats from the file header — the
-        # multipart filename just needs to be plausible.
+        # xAI 通过文件头自动识别容器格式，multipart 文件名只需看起来合理。
         if "wav" in mime_type:
             ext = "wav"
         elif "mpeg" in mime_type or "mp3" in mime_type:

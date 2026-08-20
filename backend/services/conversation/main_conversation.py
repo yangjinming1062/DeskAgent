@@ -4,23 +4,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 MAIN_KIND = "main"
-# Autonomous cron-driven turns run on a dedicated conversation so the renderer's
-# ``session.get_main`` cannot cancel an in-flight cron's chat_task via
-# ``_mount_runtime`` (different conversation_id → no match), and cron's writes
-# don't interleave with the user's main-conversation prompt.submit. The renderer
-# never mounts it; only the WS dispatcher does.
+# 自发的 cron 轮次独占独立会话：渲染端的 ``session.get_main`` 无法通过 conversation_id 匹配去取消进行中的 cron chat_task，cron 写入也不会与主会话 prompt.submit 交错；该会话仅 WS 派发器挂载。
 CRON_KIND = "cron"
 
-# UI-only subtypes: shown in the renderer but excluded from the LLM context.
-# Kept next to MAIN_KIND so every conversation reader agrees on the set.
-# status_proactive is intentionally NOT in this set — proactive assistant
-# messages are real conversation turns the user can reply to.
+# UI-only 子类型：渲染端展示但排除出 LLM 上下文；与 MAIN_KIND 同处一处保证所有会话读取者一致。status_proactive 故意不在此集合——它是用户可回应的真实轮次。
 UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "status_reaction"})
 
-# Body-language-only chat reply (an [affect:...]/[action:...] tag with no text).
-# Persisted as an assistant-role row so the NEXT turn's LLM context remembers the
-# companion reacted without speaking; the renderer shows it as a recessive trace,
-# not a text bubble. Deliberately NOT in UI_ONLY_SUBTYPES — it must reach the LLM.
+# 仅肢体语言回复（无文本、只有 [affect:...]/[action:...] tag）：以 assistant 行持久化，让下一轮 LLM 上下文仍记得伙伴已做出反应；渲染端显示为淡化痕迹而非气泡。故意不在 UI_ONLY_SUBTYPES，必须送入 LLM。
 AFFECT_TRACE_SUBTYPE: str = "status_affect"
 
 HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
@@ -31,14 +21,7 @@ async def get_main_conversation(db: AsyncSession, user_id: int) -> Conversation 
 
 
 async def get_or_create_main_conversation(db: AsyncSession, user_id: int) -> Conversation:
-    """Get the user's main conversation, creating it on first access.
-
-    Concurrent callers (WS boot, cron kick, prompt.submit) each open their
-    own SESSION_LOCAL, so the read-then-insert is not atomic across them.
-    The unique partial index ``uq_conversations_user_main`` (alembic baseline
-    migration) makes a duplicate insert fail; we roll
-    back and re-read so the loser converges on the winner's row.
-    """
+    """获取用户主会话，首次访问时创建：并发调用方各自打开 SESSION_LOCAL，读-插非原子；唯一局部索引 ``uq_conversations_user_main`` 使重复插入失败，回滚重读使败者收敛到胜者行。"""
     conv = await get_main_conversation(db, user_id)
     if conv is not None:
         return conv
@@ -59,12 +42,7 @@ async def get_or_create_main_conversation(db: AsyncSession, user_id: int) -> Con
 
 
 async def get_or_create_cron_conversation(db: AsyncSession, user_id: int) -> Conversation:
-    """Per-user scratchpad for autonomous cron turns. One row per user, so
-    successive cron ticks accumulate context onto the same conversation; the
-    renderer never mounts it so a WS reconnect cannot touch an in-flight cron.
-    Race protection mirrors :func:`get_or_create_main_conversation`: the
-    unique partial index on ``(user_id, kind)`` makes a duplicate insert fail
-    and the loser converges on the winner's row."""
+    """每用户一个 cron scratchpad 会话：连续 cron tick 在同一会话累积上下文；渲染端从不挂载，WS 重连不会触碰进行中的 cron。竞争保护机制同主会话：``(user_id, kind)`` 唯一索引使重复插入失败，败者收敛。"""
     existing = (await db.execute(select(Conversation).where(Conversation.user_id == user_id, Conversation.kind == CRON_KIND))).scalar_one_or_none()
     if existing is not None:
         return existing

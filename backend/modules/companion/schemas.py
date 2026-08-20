@@ -2,9 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Persona blob travels as one JSON string; 32 KiB caps DoS at the HTTP
-# boundary while leaving headroom for the largest persona field (2000 chars)
-# plus user_* fields and JSON overhead.
+# Persona blob 整体作为 JSON 字符串传输；32 KiB 在 HTTP 边界把 DoS 封顶，同时给最大 persona 字段（2000 字符）+ user_* 字段 + JSON 开销留余量。
 _PERSONA_JSON_MAX_LEN: int = 32 * 1024
 
 
@@ -20,8 +18,7 @@ class PersonaResponse(BaseModel):
     personality_tags: list[str] = Field(default_factory=list)
 
 
-# Generation is synchronous — every persisted asset is succeeded. Pinning
-# the literal keeps the contract honest if async generation ever lands.
+# 生成是同步的——所有持久化资产都是 succeeded；钉死字面量以便未来若改为异步时契约仍清楚。
 SucceededStatus = Literal["succeeded"]
 
 
@@ -31,8 +28,7 @@ class AvatarAssetResponse(BaseModel):
     seed_front_url: str = ""
     seed_right_url: str = ""
     seed_back_url: str = ""
-    # Picked fullbody style + durable style-sample URLs, re-signed on read —
-    # the resume surface for the fullbody confirmation stage.
+    # 已选 fullbody 风格 + 持久 style-sample URL（读取时重签名），作为全身确认阶段的 resume 入口。
     fullbody_style: str = ""
     fullbody_samples: dict[str, str] = Field(default_factory=dict)
     prompt: str = ""
@@ -85,12 +81,11 @@ class AvatarGenerateRequest(BaseModel):
 class AvatarFromImageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Same 8 MiB cap as upload: the image is both a provider seed (via a
-    # signed URL) and the source of truth the provider re-renders from.
+    # 与上传相同的 8 MiB 上限：图同时是供应商 seed（经签名 URL）和供应商重新渲染的真相源。
     image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
     content_type: str | None = Field(default=None, max_length=64)
     description: str | None = Field(default=None, max_length=500)
-    # Optional presentation/style reference alongside the identity anchor.
+    # 身份锚之外的呈现/风格参考图（可选）。
     presentation_image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
     presentation_content_type: str | None = Field(default=None, max_length=64)
 
@@ -106,7 +101,7 @@ class CompanionModelResponse(BaseModel):
     species: str = "人类"
     rig_type: str = "biped"
     rig_naming: str = "mixamo"
-    # Seed style the model was generated from — routes the client render style.
+    # 模型生成所用的 seed 风格，路由客户端渲染风格。
     style: str = "realistic"
     morph_params: dict = Field(default_factory=dict)
     status: str = "succeeded"
@@ -120,7 +115,7 @@ class ModelGenerateRequest(BaseModel):
 
     species_override: str | None = Field(default=None, max_length=64)
     provider: Literal["tripo", "hunyuan"] | None = None
-    # False returns existing active model idempotently; True forces paid regeneration.
+    # False 幂等返回现有 active 模型；True 强制付费重新生成。
     force: bool = False
 
 
@@ -128,7 +123,7 @@ class SpriteResolveRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     request: str = Field(min_length=1, max_length=500)
-    # "waiting" = the first-priority waiting/switch sprite (one per user, album-match bypassed).
+    # "waiting" = 最高优先级等待/切换精灵（每用户一张，跳过相册匹配）。
     role: Literal["waiting"] | None = None
     force_new: bool = False
 
@@ -211,9 +206,7 @@ class WardrobePreviewAcceptedResponse(BaseModel):
 
 
 class WardrobePreviewJobResponse(WardrobePreviewResponse):
-    """Polled job status; the preview fields only carry values once
-    ``status == "succeeded``" (hence every inherited field re-declared
-    optional)."""
+    """轮询的 job 状态；preview 字段仅在 ``status == "succeeded"`` 时有值，因此所有继承字段被重新声明为可选。"""
 
     job_id: int
     status: str

@@ -5,14 +5,7 @@ from ..openai_compat import OpenAICompatChatProvider
 
 
 class GrokChatProvider(OpenAICompatChatProvider):
-    """Chat via xAI's OpenAI-compatible ``/v1/chat/completions``.
-
-    Base URL: ``https://api.x.ai/v1`` (set in
-    ``services.llm.providers.registry.PROVIDER_DEFAULT_URLS``).
-    Authentication: Bearer token.
-    Model: ``grok-4.5`` — docs recommend it as the default for both chat and
-    code. Context window is 500k tokens (matches the published docs).
-    """
+    """通过 xAI 的 OpenAI 兼容 /v1/chat/completions 提供 chat；base_url 由 registry.PROVIDER_DEFAULT_URLS 给出，Bearer token 鉴权；默认模型 grok-4.5（文档推荐 chat 与 code 同用），上下文 500k。"""
 
     provider_name = "grok"
     service_type = ServiceType.llm

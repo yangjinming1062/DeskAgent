@@ -9,11 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class ZhipuTTSProvider(TTSProvider):
-    """TTS via Zhipu's ``POST /audio/speech``.
-
-    Model ``glm-tts``. Default voice ``tongtong``.
-    Response format follows the ``fmt`` kwarg; mime is derived from it.
-    """
+    """通过 Zhipu 的 POST /audio/speech 提供 TTS；模型 glm-tts，默认音色 tongtong；响应格式跟随 fmt 参数，mime 由其派生。"""
 
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "glm-tts"}
@@ -43,8 +39,7 @@ class ZhipuTTSProvider(TTSProvider):
 
         resp = await self._client.post("/audio/speech", json=payload)
 
-        # TTS returns raw audio bytes on success (200); raise_for_provider_response
-        # inspects the JSON envelope and returns {} harmlessly when the body isn't JSON.
+        # TTS 成功（200）直接返回音频字节；raise_for_provider_response 检查 JSON 信封，体非 JSON 时返回 {}。
         raise_for_provider_response(resp, family=self.provider_name, model=self.config.model)
 
         mime = "audio/mpeg" if response_format == "mp3" else f"audio/{response_format}"

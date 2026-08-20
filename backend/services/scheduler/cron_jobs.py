@@ -15,7 +15,7 @@ MAX_ACTIVE_CRON_JOBS = 10
 
 def _compute_next_run_at(schedule: str, base: datetime) -> datetime | None:
     try:
-        # croniter preserves the base's tzinfo — aware in, aware out.
+        # croniter 保留 base 的 tzinfo——aware 进 aware 出。
         return croniter(schedule, base).get_next(datetime)
     except Exception as exc:
         logger.error("Invalid cron expression", extra={"schedule": schedule, "error": str(exc)})

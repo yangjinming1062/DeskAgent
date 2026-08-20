@@ -34,7 +34,7 @@ class EvaluationResult:
 
 
 async def _vision_llm_call(db: AsyncSession | None, user_id: int, system_prompt: str, text_instruction: str, image_data_uris: list[str], **create_kwargs: object) -> str:
-    """Direct multimodal LLM call using the first resolved vision provider."""
+    """用首个可用 vision provider 直接发起多模态调用。"""
     chain = await resolve_vision_chain(db, user_id)
     if not chain:
         raise ModelGenerationError("没有可用的 vision LLM provider，无法分析图像")
@@ -57,7 +57,7 @@ _FENCE_PATTERN = re.compile(r"^```\w*\n", re.MULTILINE)
 
 
 def _strip_code_fences(text: str) -> str:
-    r"""Remove ```language ... ``` wrappers if present."""
+    r"""剥离 LLM 输出外层的 ``` 代码围栏。"""
     cleaned = text.strip()
     cleaned = _FENCE_PATTERN.sub("", cleaned, count=1)
     if cleaned.endswith("```"):
@@ -71,17 +71,14 @@ def _read_scaffold(path: Path) -> str:
 
 
 def _merge_scaffold(llm_code: str, scaffold_path: Path, build_marker: str) -> str:
-    """Substitute LLM function body into scaffold."""
+    """把 LLM 生成的函数体替换进脚手架脚本。"""
     return _read_scaffold(scaffold_path).replace(build_marker, textwrap.indent(llm_code.strip(), "    "), 1)
 
 
 async def run_blender_scaffold(
     scaffold_path: Path, llm_code: str, build_marker: str, payload_args: list[str], *, render_preview: bool = True, script_name: str = "build_script.py", io_dir: Path | None = None
 ) -> BlenderResult:
-    """Merge LLM code into scaffold and execute headless Blender. ``io_dir``
-    lets the worker host everything (script, inputs, outputs) in the per-job
-    directory it mounts into the sandbox container; the default private
-    tempdir is cleaned up here instead."""
+    """合并脚手架后执行无头 Blender；传入 io_dir 时复用 worker 挂载进沙箱的作业目录，否则用自建临时目录并在此清理。"""
     if not scaffold_path.exists():
         return BlenderResult(success=False, stderr=f"scaffold not found: {scaffold_path}")
 

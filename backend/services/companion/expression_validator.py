@@ -8,10 +8,7 @@ _ALLOWED_VALENCE = {"positive", "negative", "neutral"}
 
 
 def validate_and_sanitize_expression(expr_data: dict[str, Any]) -> dict[str, Any] | None:
-    """Validate and sanitize a custom-emotion registry spec (create_expression
-    tool / nightly creation). ``description`` is required — it doubles as the
-    generation clause for the emotion's avatar image, so an empty one would
-    produce a face with no expression. Returns sanitized dict or None if invalid."""
+    """校验并清洗自定义情绪注册项；description 必填，因为它同时充当该情绪头像的生成子句。"""
     if not isinstance(expr_data, dict):
         return None
 
@@ -31,8 +28,7 @@ def validate_and_sanitize_expression(expr_data: dict[str, Any]) -> dict[str, Any
     if not description:
         return None
 
-    # Optional emoji chip; sequences (ZWJ/skin-tone) run several code points,
-    # so cap by length rather than validating grapheme structure.
+    # emoji 序列（ZWJ/肤色修饰）会占多个码点，故按长度截断而非校验字形结构
     icon = str(expr_data.get("icon", "")).strip()[:16] or None
 
     return {"name": name, "label": label, "valence": valence, "description": description, "icon": icon, "tags": parse_tags(expr_data.get("tags"))}

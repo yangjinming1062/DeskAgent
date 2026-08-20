@@ -13,8 +13,7 @@ logger = get_logger(__name__)
 
 
 class CompanionPromptContext(BaseModel):
-    """Persona + memory + allowed-emotions snapshot, loaded once per prompt so
-    callers don't repeat the Persona/Memory/CompanionExpression queries."""
+    """人设 + 记忆 + 允许情绪的快照，每次提示词只加载一次，避免调用方重复查询。"""
 
     persona_name: str
     persona_extras: str
@@ -23,15 +22,14 @@ class CompanionPromptContext(BaseModel):
 
 
 class PromptOutcome(NamedTuple):
-    """``run_prompt_json`` result: ``parsed`` dict on success, else ``None`` + a
-    discriminating ``reason`` (``"llm_error"`` vs ``"unparseable"``)."""
+    """run_prompt_json 的结果：成功时 parsed 有值，失败时以 reason 区分错误类型。"""
 
     parsed: dict | None
-    reason: str | None  # None on success; "llm_error" | "unparseable" on failure
+    reason: str | None
 
 
 async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext | None:
-    """Returns a persona+memory snapshot for prompting; ``None`` if persona is not ready."""
+    """返回用于提示词的人设与记忆快照；人设未就绪时返回 None。"""
     async with SESSION_LOCAL() as db:
         persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
         if persona is None or not persona.is_complete or not persona.system_prompt_extras:
@@ -49,9 +47,7 @@ async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext 
 async def run_prompt_json(
     user_id: int, llm_config: UserLlmConfig | dict[str, Any], template: str, prompt_args: dict[str, Any], *, max_tokens: int, log_prefix: str
 ) -> PromptOutcome:
-    """One-shot JSON persona prompt. ``parsed`` is set on success; on failure
-    ``reason`` discriminates ``"llm_error"`` (no model / transport) from
-    ``"unparseable"`` (non-JSON response)."""
+    """一次性的人设 JSON 提示词调用；失败时用 reason 区分模型/传输错误与响应无法解析。"""
     model_name = llm_config.model_name if isinstance(llm_config, UserLlmConfig) else (llm_config.get("model_name") if isinstance(llm_config, dict) else "")
     if not model_name:
         return PromptOutcome(parsed=None, reason="llm_error")

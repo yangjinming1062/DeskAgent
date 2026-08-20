@@ -30,17 +30,15 @@ from .system_prompt import build_system_prompt
 logger = get_logger(__name__)
 
 
-# OpenAI reasoning_effort accepts this exact set; older models ignore it.
+# OpenAI reasoning_effort 仅接受该枚举；旧模型忽略此参数。
 ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
-# OpenAI service_tier accepts this exact set; older models ignore it.
+# OpenAI service_tier 仅接受该枚举；旧模型忽略此参数。
 ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
 
 
 @dataclass(frozen=True)
 class _TurnInputs:
-    """Outputs of :func:`_build_turn_inputs` — fields the orchestrator and
-    per-iteration helpers need without re-querying the DB.
-    """
+    """``_build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
 
     messages: list[dict]
     client: Any
@@ -61,21 +59,7 @@ async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
 
 
 def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None) -> dict:
-    """Build the effective settings dict for this turn.
-
-    Per-session overrides (``runtime.settings``, populated from
-    ``Conversation.settings_json``) win over global ``UserSetting`` values,
-    so a tool that reads ``user_settings.get('agent.reasoning_effort')`` sees the
-    session-scoped value when set via the session settings path.
-
-    Per-session keys defined in ``SESSION_TO_GLOBAL_KEY_ALIASES`` are translated into
-    their global counterparts so consumer code (slash commands, guardrails,
-    future-tool reads) sees one consistent namespace.
-
-    Downstream tool dispatch reads ``ctx.user_settings`` so this is the
-    single injection point — every guardrail path sees the
-    effective value without re-resolving.
-    """
+    """构建本轮生效的 settings：会话级覆写覆盖全局 UserSetting；``SESSION_TO_GLOBAL_KEY_ALIASES`` 指定的会话键会重映射到对应全局键，使下游（斜杠命令、guardrail、未来工具）看到一致命名空间。"""
     merged = dict(user_settings)
     if runtime is not None and runtime.settings:
         for k, v in runtime.settings.items():
@@ -85,7 +69,7 @@ def _merge_session_settings(user_settings: dict, runtime: RuntimeSession | None)
 
 
 def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_ctx: ChatRequestClientContext | None) -> ChatRequestClientContext | None:
-    """Request overrides session; either may be None."""
+    """request 覆盖 session；任一可为 None。"""
     if not session_ctx and not request_ctx:
         return None
     merged = (session_ctx.model_dump(exclude_none=True) if session_ctx else {}) | (request_ctx.model_dump(exclude_none=True) if request_ctx else {})
@@ -93,7 +77,7 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
 
 
 def _normalize_content_to_parts(content: str | list) -> list[dict]:
-    """Normalize str or list content into a list of multimodal parts dicts."""
+    """把 str 或 list 内容规整为多模态 parts 字典列表。"""
     if isinstance(content, str):
         return [{"type": "text", "text": content}] if content else []
     if isinstance(content, list):
@@ -108,10 +92,7 @@ def _normalize_content_to_parts(content: str | list) -> list[dict]:
 
 
 def _compact_adjacent_user_messages(messages: list[dict]) -> list[dict]:
-    """Fold consecutive 'user' role messages into a single message to satisfy
-    providers with strict alternating-role validation (e.g. Anthropic, Gemini).
-    Handles both plain strings and multimodal parts without raising TypeError.
-    """
+    """合并相邻 user 消息以满足严格角色交替校验（如 Anthropic、Gemini）；同时处理纯字符串与多模态 parts 不抛 TypeError。"""
     compacted: list[dict] = []
     for msg in messages:
         if not compacted or msg.get("role") != "user" or compacted[-1].get("role") != "user":
@@ -146,11 +127,7 @@ def _compact_adjacent_user_messages(messages: list[dict]) -> list[dict]:
 
 
 def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> list[dict]:
-    """``drop_tool_intermediates`` is only set for the main conversation, where
-    every tool-using turn leaves a ``tool_summary`` row standing in for the
-    dropped frames. Standard conversations keep the raw call/result pairs —
-    dropping them there would erase the working context with nothing to replace it.
-    """
+    """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
 
     for msg in db_msgs:
@@ -180,13 +157,8 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_too
 async def _build_turn_inputs(
     db: AsyncSession, conv: Conversation, user_id: int, req: ChatRequest, session_client_context: ChatRequestClientContext | None, user_settings: dict
 ) -> _TurnInputs:
-    """Resolve identity prompt, schemas, agent_config, history, and the
-    LLM client. The native_memory's addition is injected into the system
-    message here so the orchestrator stays linear.
-    """
-    # LLM context starts at the newest checkpoint — either a nightly daily_summary
-    # or an in-flight compress_summary. Everything before it is covered by the
-    # summary; the rows stay in the DB, this only narrows the read.
+    """解析身份 prompt、schemas、agent_config、历史与 LLM client；native_memory 补充内容在此注入系统消息，使 orchestrator 保持线性。"""
+    # LLM 上下文从最新检查点开始（夜间 daily_summary 或进行中 compress_summary），其前消息已被摘要覆盖；原行留在 DB，仅缩窄本次读取范围。
     checkpoint_id = (await db.execute(select(func.max(Message.id)).where(Message.conversation_id == conv.id, Message.subtype.in_(("daily_summary", "compress_summary"))))).scalar()
 
     stmt = select(Message).where(Message.conversation_id == conv.id)
@@ -196,10 +168,7 @@ async def _build_turn_inputs(
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
-    # History carries image content → filter the llm chain to vision-capable
-    # providers with vision models, so both the compression client and the
-    # streaming call (which receives this chain via _chain=) use models that
-    # accept image_url parts.
+    # 历史含图片时把 LLM 链筛选到具备视觉能力的供应商模型，确保压缩客户端与流式调用（接收同一 _chain）都使用能处理 image_url 的模型。
     turn_has_images = any(getattr(m, "content_type", "text") == "multimodal_v1" for m in history if m.role == "user")
     llm_chain = None
     provider = None
@@ -218,8 +187,7 @@ async def _build_turn_inputs(
         ctx_length = req.context_tokens
     else:
         if req.model and req.model != provider.config.model:
-            # Renderer overrode the model but didn't pin the window — warn
-            # so a budget mismatch surfaces in logs.
+            # 渲染端覆写模型但未钉住窗口：告警以便预算不匹配的问题能在日志中暴露。
             logger.warning("request model override without context_tokens", extra={"provider": provider.provider_name, "request_model": req.model})
         ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
 
@@ -227,10 +195,9 @@ async def _build_turn_inputs(
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    # Pre-onboarding users have no user_profile rows — skip the SELECT.
+    # 未完成 onboarding 的用户没有 user_profile 行，跳过 SELECT。
     user_profile_extras = await build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
-    # auto_inject memories are independent of persona completion: even an
-    # unstated persona can carry LLM-maintained background context.
+    # auto_inject 记忆与 persona 是否完成无关：未声明 persona 也能承载 LLM 维护的背景上下文。
     auto_inject_extras = await format_auto_inject_block(db, user_id)
     inferred_profile_extras = await format_inferred_profile_block(db, user_id)
     query_text = (req.message.content if req.message.role == "user" else (first_user_msg_content or "")) or ""
@@ -243,9 +210,7 @@ async def _build_turn_inputs(
         clips = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
         if isinstance(clips, list):
             available_actions = [str(c.get("name")) for c in clips if isinstance(c, dict) and c.get("name")]
-        # Merge the desktop's built-in procedural clips (the render-time library)
-        # so the LLM can reference the full [action:...] token set, not only the
-        # model-specific generated clips. Dedupe + sort for a stable prompt.
+        # 合并客户端内置过程化 clip（运行时库），让 LLM 能引用完整 [action:...] token 集合，而非仅限于模型专属生成的 clip；去重排序保证 prompt 稳定。
         available_actions = sorted(set(available_actions) | set(builtin_action_clips(active_model.rig_type)))
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
@@ -265,8 +230,7 @@ async def _build_turn_inputs(
     )
     messages = _history_to_messages(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
 
-    # No bound session: each memory tool call opens its own, so the turn's
-    # connection isn't pinned across the LLM loop.
+    # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
     native_memory = NativeMemory(None, user_id)
     if addition := native_memory.format_for_system_prompt():
         messages[0]["content"] += "\n\n" + addition
@@ -288,10 +252,7 @@ async def _build_turn_inputs(
 
 
 def _parse_reasoning_effort(raw: str | None) -> str | None:
-    """Normalize the persisted reasoning_effort value to a string the OpenAI
-    SDK accepts. ``None`` or an out-of-set value means "don't pass the param" —
-    the API rejects unknown values, so we only forward recognized ones.
-    """
+    """规范化持久化的 reasoning_effort：``None`` 或集合外的值表示「不传参」，API 拒绝未知值，仅透传枚举成员。"""
     if not raw:
         return None
     raw = raw.strip().lower()
@@ -299,7 +260,7 @@ def _parse_reasoning_effort(raw: str | None) -> str | None:
 
 
 def _parse_service_tier(raw: str | None) -> str | None:
-    """Normalize the persisted service_tier value. Same policy as reasoning_effort."""
+    """规范化持久化的 service_tier；策略与 reasoning_effort 一致。"""
     if not raw:
         return None
     raw = raw.strip().lower()

@@ -4,7 +4,6 @@ from .base import ImageTo3DError, ImageTo3DProvider
 
 logger = get_logger(__name__)
 
-# provider_name → concrete ImageTo3DProvider class
 _REGISTRY: dict[str, type[ImageTo3DProvider]] = {}
 
 DEFAULT_PROVIDER_URLS: dict[str, str] = {"tripo": "https://openapi.tripo3d.ai/v3", "hunyuan": "https://tokenhub.tencentmaas.com"}
@@ -37,8 +36,6 @@ def list_providers() -> list[str]:
 
 def resolve_provider(name: str | None = None) -> ImageTo3DProvider:
     _ensure_registered()
-    """Explicit selection only — commercial providers never fail over into
-    each other. Key and endpoint are loaded from the provider's dedicated settings."""
     provider_name = (name or SETTINGS.image_to_3d_provider or "tripo").strip().lower()
 
     if provider_name not in _REGISTRY:
@@ -46,7 +43,6 @@ def resolve_provider(name: str | None = None) -> ImageTo3DProvider:
 
     cls = _REGISTRY[provider_name]
 
-    # Resolve API key and base URL per provider
     api_key = getattr(SETTINGS, f"{provider_name}_api_key", "") or ""
     base_url = getattr(SETTINGS, f"{provider_name}_base_url", "") or DEFAULT_PROVIDER_URLS.get(provider_name, "")
 

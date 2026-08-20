@@ -6,10 +6,7 @@ from typing import Any
 
 
 class BackgroundTask:
-    """Owns a single long-lived ``asyncio.Task`` and its done-callback.
-    Use one instance per background loop (``scheduler``, ``ws_event_loop``).
-    Sharing the lifecycle here keeps start/stop shapes uniform so future
-    loops don't drift."""
+    """封装单个长生命周期 asyncio.Task 与 done 回调；统一各后台循环（scheduler、ws_event_loop）的 start/stop 形态。"""
 
     def __init__(self, name: str) -> None:
         self._name = name

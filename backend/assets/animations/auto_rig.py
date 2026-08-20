@@ -1,11 +1,4 @@
-"""Blender headless auto-rigging for cloud image-to-3D providers without a
-rig API. Consumes a JSON skeleton spec (normalized bbox fractions produced by
-``services/companion/rig_layout.py``), builds the armature, parents every
-mesh with automatic bone-heat weights and exports a rigged GLB.
-
-    blender --background --python auto_rig.py -- \
-        --input in.glb --output out.glb --spec rig_spec.json
-"""
+"""Blender headless 自动绑骨：读取 JSON 骨架规格（来自 rig_layout.layout_skeleton 的归一化 bbox 分数），构建 armature、用 bone-heat 自动蒙皮并导出 rigged GLB。"""
 
 import argparse
 import json
@@ -19,10 +12,7 @@ from mathutils import Matrix, Vector
 
 _MIN_BONE_LENGTH = 1e-3
 
-# Bone heat solves reliably at this scale; the million-vertex text-to-3D
-# meshes diverge outright. Above it, weights are solved on a decimated
-# proxy and transferred back (the solved deformation matters, not the
-# vertex count it was solved on).
+# bone-heat 在该顶点数下求解稳定；百万顶点级的文生 3D 网格会直接发散。超过此值则在减面代理上求解再回传权重（关键是解得的形变，而不是求解时的顶点数）。
 _PROXY_MAX_VERTICES: int = 120_000
 
 
@@ -67,7 +57,7 @@ def _weights_complete(objects: list[bpy.types.Object]) -> bool:
 
 
 def _validate_automatic_weights(objects: list[bpy.types.Object], arm_obj: bpy.types.Object) -> None:
-    """Reject a silent bone-heat failure before nearest-bone weighting can ship."""
+    """在用最近骨补救权重前，拦截静默的 bone-heat 求解失败。"""
     critical_bones = [bone for bone in arm_obj.data.bones if not bone.children and bone.name.lower().startswith(("left", "right")) and not bone.name.lower().endswith("eye")]
     for bone in critical_bones:
         if not any(any(group.weight > 0.0 for group in vertex.groups if obj.vertex_groups[group.group].name == bone.name) for obj in objects for vertex in obj.data.vertices):
@@ -93,7 +83,7 @@ def _make_proxy(obj: bpy.types.Object) -> bpy.types.Object:
 
 
 def _transfer_weights(proxy: bpy.types.Object, obj: bpy.types.Object, arm_obj: bpy.types.Object) -> None:
-    # Data transfer fills only target groups that already exist, matched by name.
+    # Data Transfer 只填充目标已存在的同名顶点组。
     for bone in arm_obj.data.bones:
         obj.vertex_groups.new(name=bone.name)
     mod = obj.modifiers.new("WeightTransfer", "DATA_TRANSFER")
@@ -116,9 +106,7 @@ def _normalize_weights(obj: bpy.types.Object) -> None:
 
 
 def _assign_strays_to_nearest_bone(obj: bpy.types.Object, arm_obj: bpy.types.Object) -> int:
-    """GLB skinning needs nonzero vertex-group weights everywhere — a vertex
-    the solver left bare is rigid forever, tearing the mesh on first pose.
-    Rescue it with a unit weight on the nearest bone."""
+    """GLB 蒙皮要求每个顶点都带非零顶点组权重；bone-heat 求解遗漏的顶点会永远刚性、首次姿态就撕裂网格。用最近骨单位权重兜底。"""
     stray = [v.index for v in obj.data.vertices if not any(g.weight > 0.0 for g in v.groups)]
     if not stray:
         return 0
@@ -131,12 +119,7 @@ def _assign_strays_to_nearest_bone(obj: bpy.types.Object, arm_obj: bpy.types.Obj
 
 
 def _face_yaw(args: argparse.Namespace) -> float:
-    """Skeleton yaw in radians from the ``--yaw`` degree argument. The spec
-    skeleton faces Blender -Y; text-to-3D meshes ship in arbitrary yaw, which
-    would leave arm bones floating beside (heat-binding onto) the torso. The
-    caller resolves the face direction beforehand — a vision LLM reading four
-    view snapshots; head-vertex-density heuristics proved unreliable (long
-    hair flattens the contrast between face and back of skull)."""
+    """把 ``--yaw`` 度数转弧度：规格骨架面朝 Blender -Y；文生 3D 网格朝向任意，若不旋转会导致手臂骨"漂"在躯干侧面（被 heat 绑到躯干上）。朝向由调用方预先解析——视觉 LLM 读四张快照；头部顶点密度启发式不可靠（长发会拉平面部与颅背的对比）。"""
     return math.radians(args.yaw)
 
 
@@ -145,9 +128,7 @@ def _export(path: str) -> None:
 
 
 def _apply_canonical_yaw(yaw: float) -> None:
-    """Rotate rig + meshes together to the canonical -Y front, then bake —
-    the glTF exporter drops unapplied object rotations, and writing
-    rotation_euler is a no-op on quaternion-mode imports."""
+    """把 rig 与网格一起旋转到 -Y 朝前并烘焙：glTF 导出器会丢弃未应用的物体旋转，而 quaternion 模式下写 rotation_euler 不生效。"""
     if abs(yaw) <= 1e-3:
         return
     back = Matrix.Rotation(-yaw, 4, "Z")
@@ -162,9 +143,7 @@ def _apply_canonical_yaw(yaw: float) -> None:
 
 
 def _strip_bone_prefixes() -> int:
-    """Rename ``mixamorig:X`` bones to bare ``X`` — cloud-rigged GLBs carry
-    the prefix while the client clip tracks target bare names. Vertex groups
-    are renamed in lockstep (renaming edit bones does not touch them)."""
+    """把 ``mixamorig:X`` 重命名为 ``X``：云端 rig 的 GLB 带前缀，客户端 clip 追踪的目标是裸名。顶点组同步重命名（仅重命名 edit bone 不会带动顶点组）。"""
     renamed = 0
     for arm_obj in (o for o in bpy.context.scene.objects if o.type == "ARMATURE"):
         renames = {b.name: b.name.split(":")[-1] for b in arm_obj.data.bones if ":" in b.name}
@@ -213,9 +192,7 @@ def main() -> int:
         print("auto_rig: imported GLB contains no mesh", file=sys.stderr)
         return 1
 
-    # glTF import leaves the +90° X axis conversion on the object while the
-    # data is already upright — re-exporting applies it twice and the mesh
-    # ships lying. Bake it into the data (world pose unchanged).
+    # glTF 导入把 +90° X 轴换算留在物体上，但数据本身已正立；再导出相当于应用两次，网格躺着落地。烘焙到数据里（世界姿态不变）。
     bpy.ops.object.select_all(action="DESELECT")
     for obj in meshes:
         obj.select_set(True)
@@ -226,8 +203,7 @@ def main() -> int:
     size = Vector(max(c - d, _MIN_BONE_LENGTH) for c, d in zip(mx, mn))
     center = Vector(((mn.x + mx.x) / 2, (mn.y + mx.y) / 2, mn.z))
 
-    # Spec is glTF-convention (Y up, front -Z, left -X); remap into Blender's
-    # Z-up world where imported meshes front -Y with the character's left at +X.
+    # 规格使用 glTF 约定（Y 朝上，前方 -Z，左侧 -X）；重映射到 Blender 的 Z 朝上世界（导入后网格前方 -Y、角色左侧在 +X）。
     def to_world(frac: list[float]) -> Vector:
         return Vector((center.x - frac[0] * size.x, center.y + frac[2] * size.y, center.z + frac[1] * size.z))
 

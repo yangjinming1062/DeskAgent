@@ -7,13 +7,7 @@ from ..http import get_async_client
 
 
 class MiMoImageGenProvider(ImageGenProvider):
-    """Image generation via the OpenAI Images API (compatible with any provider
-    that exposes ``client.images.generate()`` — DALL·E, legacy MiMo image, etc.).
-
-    The OpenAI SDK handles the wire shape; provider_name "mimo" is the legacy
-    default. ``MiniMaxImageGenProvider`` overrides this for deployments that
-    route image_gen through MiniMax's native endpoint.
-    """
+    """通过 OpenAI Images API 生图（兼容任何暴露 client.images.generate() 的供应商，如 DALL·E、legacy MiMo image）；线缆形态由 OpenAI SDK 处理，provider_name "mimo" 为旧默认；走 MiniMax 原生端点的部署由 MiniMaxImageGenProvider 覆写。"""
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "dall-e-3"}
@@ -24,7 +18,6 @@ class MiMoImageGenProvider(ImageGenProvider):
         self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
 
     def raw_client(self) -> AsyncOpenAI | None:
-        # The image_gen REST handler drives ``client.images.generate()`` directly.
         return self._client
 
     async def generate(self, req: ImageGenRequest) -> ImageGenResult:

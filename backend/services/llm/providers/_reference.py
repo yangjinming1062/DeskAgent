@@ -5,7 +5,6 @@ from components import download_capped, is_safe_outbound
 
 
 def _parse_data_uri(reference: str) -> tuple[bytes, str] | None:
-    """Decode a ``data:<mime>;base64,<payload>`` reference; None for URLs."""
     if not reference.startswith("data:"):
         return None
     meta, _, payload = reference.partition(",")
@@ -17,9 +16,7 @@ def _parse_data_uri(reference: str) -> tuple[bytes, str] | None:
 
 
 async def resolve_reference_bytes(reference_image: str) -> tuple[bytes, str]:
-    """Return ``(bytes, content_type)`` for a reference image given as a
-    ``data:`` URI or an http(s) URL.
-    """
+    """返回参考图的 (bytes, content_type)；接受 data URI 或 http(s) URL。"""
     from_uri = _parse_data_uri(reference_image)
     if from_uri is not None:
         return from_uri

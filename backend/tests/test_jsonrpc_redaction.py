@@ -4,9 +4,7 @@ from services.gateway import JsonRpcDispatcher, redact_message
 
 
 def testredact_message_strips_paths_and_credentials():
-    """P1-9: -32603 messages must never leak server-side internals — DB
-    DSNs, absolute paths, traceback frames, known API-key prefixes, or
-    Python exception class names from third-party libs."""
+    """P1-9：-32603 消息不得泄露 DSN/绝对路径/traceback/已知 API key 前缀或第三方异常类名。"""
     leak = (
         "OperationalError: (psycopg2.OperationalError) connection to server at "
         "10.0.0.5 (10.0.0.5), port 5432 failed: FATAL: password authentication "
@@ -47,7 +45,7 @@ def testredact_message_strips_dsn():
 
 
 def testredact_message_caps_length():
-    """Backstop: a runaway exception message can't blow up the WS frame."""
+    """保底：异常消息过长时裁剪，避免撑爆 WS 帧。"""
     msg = "x" * 5000
     redacted = redact_message(msg)
     assert len(redacted) <= 512
@@ -60,8 +58,7 @@ def testredact_message_keeps_clean_messages_intact():
 
 @pytest.mark.asyncio
 async def test_jsonrpc_internal_error_redacts_handler_exception():
-    """End-to-end: a handler raising a non-JsonRpcError returns -32603
-    with a redacted message; full exception goes to the server log only."""
+    """端到端：handler 抛非 JsonRpcError 时返回 -32603 且消息已脱敏，完整异常仅入服务端日志。"""
     import logging
 
     captured_frames: list[dict] = []
@@ -97,8 +94,7 @@ async def test_jsonrpc_internal_error_redacts_handler_exception():
 
 @pytest.mark.asyncio
 async def test_push_error_event_redacts_raw_exception():
-    """push_event bypasses _reply_error — the error-event channel must run the
-    same redact pipeline or raw DSN/traceback text reaches the renderer."""
+    """push_event 绕过 _reply_error，错误事件通道必须走同一脱敏流水线以免原始 DSN/traceback 触达渲染端。"""
     captured_frames: list[dict] = []
 
     async def _send(frame: dict) -> None:
@@ -117,8 +113,7 @@ async def test_push_error_event_redacts_raw_exception():
 
 
 def test_avatar_generation_error_str_is_curated():
-    """str(exc) crosses into 502 `reason` fields and WS payloads — the raw
-    provider error must ride in `.internal` only."""
+    """str(exc) 会进入 502 reason 与 WS 载荷，原始 provider 错误只应留在 .internal。"""
     from services.companion import AvatarGenerationError
 
     exc = AvatarGenerationError(

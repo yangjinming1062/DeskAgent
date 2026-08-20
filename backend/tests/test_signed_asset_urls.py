@@ -13,12 +13,10 @@ from services.companion import (
 
 def test_signed_asset_url_round_trip():
     url = build_signed_asset_url(42, "idle_video_abc.mp4")
-    # The query string is part of the URL.
     assert "?" in url
     assert "expires=" in url
     assert "sig=" in url
 
-    # Parse it back to the verify function.
     from urllib.parse import parse_qs, urlparse
 
     parsed = urlparse(url)
@@ -35,7 +33,7 @@ def test_signed_asset_url_rejects_wrong_user():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert not verify_signed_asset_request(
-        99,  # different user — must not be valid for the same URL
+        99,  # 同一 URL 不能换用户校验通过
         "idle_video_abc.mp4",
         int(qs["expires"][0]),
         qs["sig"][0],
@@ -50,7 +48,7 @@ def test_signed_asset_url_rejects_wrong_filename():
     qs = parse_qs(parsed.query)
     assert not verify_signed_asset_request(
         42,
-        "idle_video_xxx.mp4",  # different filename
+        "idle_video_xxx.mp4",  # 不同文件名
         int(qs["expires"][0]),
         qs["sig"][0],
     )
@@ -70,8 +68,7 @@ def test_signed_asset_url_rejects_tampered_sig():
 def test_signed_asset_url_rejects_expired():
     from services.companion.asset_store import _sign
 
-    # Forge an expired URL by recomputing the signature against a
-    # past timestamp.
+    # 用过去时间戳重新签名，伪造一个过期 URL
     past = int(time.time()) - 60
     sig = _sign(42, "idle_video_abc.mp4", past)
     assert not verify_signed_asset_request(42, "idle_video_abc.mp4", past, sig)
@@ -97,16 +94,14 @@ def test_signed_avatar_url_rejects_wrong_filename():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert not verify_signed_avatar_request(
-        "other.png",  # wrong filename
+        "other.png",  # 错误文件名
         int(qs["expires"][0]),
         qs["sig"][0],
     )
 
 
 def test_signer_key_raises_outside_test_mode(monkeypatch):
-    """P2-12 belt-and-suspenders: if the deploy reaches ``_signing_key()``
-    with an empty signing key AND test mode was not flipped on, refuse to
-    sign URLs with the public test key. Catch misconfiguration loudly."""
+    """P2-12 兜底：线上部署若空 signing key + 未开 test mode 时调用 _signing_key()，拒绝用公开 test key 签 URL，把配错暴露出来。"""
     monkeypatch.setattr(asset_store.SETTINGS, "companion_asset_signing_key", "")
     monkeypatch.setattr(asset_store, "_TEST_MODE", False)
 
@@ -126,7 +121,6 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
 
     _, SessionLocal = _patch_db
 
-    # Create dummy avatar and companion asset
     avatar_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     avatar_dir.mkdir(parents=True, exist_ok=True)
     test_avatar = avatar_dir / "dual_auth_avatar.png"
@@ -150,14 +144,12 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. Unauthenticated request without signature fails 403
         resp = await client.get("/api/companion/avatar/file/dual_auth_avatar.png")
         assert resp.status_code == 403
 
         resp = await client.get("/api/companion/asset/42/model_test.glb")
         assert resp.status_code == 403
 
-        # 2. Authenticated user request without signature succeeds 200
         resp = await client.get(
             "/api/companion/avatar/file/dual_auth_avatar.png",
             headers={"Authorization": f"Bearer {token_user42}"},
@@ -172,7 +164,6 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
         assert resp.status_code == 200
         assert resp.content == b"glTF\x02\x00\x00\x00testmodel"
 
-        # 3. Valid HMAC signature without token succeeds 200
         avatar_url = build_signed_avatar_url("dual_auth_avatar", "png")
         qs = avatar_url.split("?", 1)[1]
         resp = await client.get(f"/api/companion/avatar/file/dual_auth_avatar.png?{qs}")
@@ -190,23 +181,18 @@ def test_load_avatar_bytes_as_data_uri_path_variations(tmp_path, monkeypatch):
     img_file = avatar_dir / "test_avatar_123.jpg"
     img_file.write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00fakejpg")
 
-    # 1. Standard bare path with slash
     res1 = load_avatar_bytes_as_data_uri("companion-avatars/test_avatar_123.jpg")
     assert res1 is not None and res1.startswith("data:image/jpeg;base64,")
 
-    # 2. Windows backslash path
     res2 = load_avatar_bytes_as_data_uri("companion-avatars\\test_avatar_123.jpg")
     assert res2 is not None and res2.startswith("data:image/jpeg;base64,")
 
-    # 3. Bare filename without prefix
     res3 = load_avatar_bytes_as_data_uri("test_avatar_123.jpg")
     assert res3 is not None and res3.startswith("data:image/jpeg;base64,")
 
-    # 4. Bare filename without extension
     res4 = load_avatar_bytes_as_data_uri("test_avatar_123")
     assert res4 is not None and res4.startswith("data:image/jpeg;base64,")
 
-    # 5. Full URL path with query params
     res5 = load_avatar_bytes_as_data_uri("/api/companion/avatar/file/test_avatar_123.jpg?expires=123456&sig=abcdef")
     assert res5 is not None and res5.startswith("data:image/jpeg;base64,")
 
@@ -230,7 +216,6 @@ async def test_media_tts_supports_json_and_form_body(_patch_db, monkeypatch):
         db.add(LoginRecord(user_id=101, token_jti=token_jti, is_active=True))
         await db.commit()
 
-    # Mock TTS synthesis in execute_with_fallback
     async def fake_execute(*args, **kwargs):
         return TTSResult(audio=b"fake-mp3-audio-bytes", mime="audio/mpeg", voice="mimo_voice")
 
@@ -242,7 +227,6 @@ async def test_media_tts_supports_json_and_form_body(_patch_db, monkeypatch):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # 1. JSON body request (Client fetch)
         resp = await client.post(
             "/api/media/tts",
             json={"text": "你好，这是测试语音", "voice": "custom_voice"},
@@ -252,7 +236,6 @@ async def test_media_tts_supports_json_and_form_body(_patch_db, monkeypatch):
         assert resp.content == b"fake-mp3-audio-bytes"
         assert resp.headers["content-type"] == "audio/mpeg"
 
-        # 2. Form body request
         resp_form = await client.post(
             "/api/media/tts",
             data={"text": "你好，这是测试语音表单", "voice": "custom_voice"},

@@ -55,12 +55,7 @@ async def normalize_outfit(
     provider_config: ProviderConfig | None = None,
     vision_chain: list[ProviderConfig] | None = None,
 ) -> str:
-    """Vision-first (if *image_data_uri* given) text-fallback outfit normalization.
-    Always returns a non-empty string — falls back to truncated raw_input on error.
-
-    ``provider_config`` / ``vision_chain`` let the background onboarding task
-    pre-resolve chains under its own short session and call the LLM with
-    ``db=None`` (no connection held across the generation call)."""
+    """规范化着装描述：有图走视觉模型、否则退回纯文本，出错时截断原始输入返回，保证非空。"""
     user_payload = _build_user_payload(raw_input, persona_definition)
 
     if image_data_uri:

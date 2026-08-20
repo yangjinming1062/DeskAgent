@@ -26,46 +26,28 @@ class ProviderConfig:
 
 
 class BaseProvider(ABC):
-    """Root of the provider tree. Concrete subclasses declare ``service_type``
-    (a :class:`ServiceType`) and ``provider_name`` (str) as class attributes;
-    per-service ABCs below add the protocol-specific abstract methods."""
+    """供应商根类：子类声明 service_type 与 provider_name，按能力走下方对应 ABC。"""
 
     service_type: ServiceType = ServiceType.llm
     provider_name: str = ""
-    # Which prompt-guidance family this provider's models belong to. Drives
-    # tool-use enforcement + execution-discipline block selection in
-    # ``system_prompt.build_system_prompt_parts``. ``"openai"`` is the default
-    # (OpenAI-compatible discipline suits mimo / minimax / zhipu / any
-    # OpenAI-protocol endpoint); Google models override to ``"google"``.
+    # 提示词规约族，影响 system_prompt 中工具调用与执行纪律段落的选择；非 Google 模型保持 "openai"。
     PROMPT_FAMILY: ClassVar[str] = "openai"
-    # Per-capability default MODEL_NAME published by this provider. Mirrored
-    # into ``registry._PROVIDER_DEFAULT_MODELS`` at register() time so the
-    # capability resolver can pull defaults without importing each provider
-    # class. Subclasses populate the keys for capabilities they implement;
-    # absent keys fall back to ``SETTINGS.<svc>_model_name``.
+    # 各能力默认模型；register() 时镜像到 registry，能力解析不需 import 各 provider 类。
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {}
-    # Per-capability default CONTEXT_TOKENS paired with DEFAULT_MODELS rows.
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {}
-    # Vision MODEL_NAME override when it differs from DEFAULT_MODELS["llm"]
-    # (e.g. mimo: ``mimo-v2.5`` for vision vs ``mimo-v2.5-pro`` for text).
+    # 与 DEFAULT_MODELS["llm"] 不同时的视觉模型（如 mimo 用 mimo-v2.5、文生用 mimo-v2.5-pro）。
     DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {}
 
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
 
     def raw_client(self) -> "AsyncOpenAI | None":
-        """Default: no OpenAI SDK client. Chat subclasses override this when
-        the wire protocol is OpenAI-compatible; callers use it to detect
-        whether the AsyncOpenAI path is reachable."""
+        """默认无 OpenAI 客户端；OpenAI 兼容子类覆写此方法。"""
         return None
 
 
 class ProviderError(Exception):
-    """Provider-level error. Fields align with error_classifier readers:
-
-    - ``status_code`` is read by ``_extract_status_code`` (int or None)
-    - ``body`` is read by ``_extract_error_body`` (dict, may be empty)
-    """
+    """供应商级错误；字段对齐 error_classifier：status_code 给 _extract_status_code，body 给 _extract_error_body。"""
 
     def __init__(self, message: str, *, status_code: int | None = None, body: dict | None = None, provider: str = "", model: str = "") -> None:
         super().__init__(message)
@@ -75,23 +57,15 @@ class ProviderError(Exception):
         self.model = model
 
 
-# ── Chat ────────────────────────────────────────────────────────────────
-
-
 class ChatProvider(BaseProvider):
     service_type: ServiceType = ServiceType.llm
 
-    # True → image_url content parts accepted (on a vision variant if the
-    # text model is text-only — see DEFAULT_VISION_MODELS).
+    # True 表示接受 image_url 内容部件；文本模型仅文本时需配合视觉变体（见 DEFAULT_VISION_MODELS）。
     supports_vision: ClassVar[bool] = False
 
     @abstractmethod
     def raw_client(self) -> AsyncOpenAI | None:
-        """Return the underlying cached ``AsyncOpenAI`` if the provider can be
-        reached via the OpenAI SDK; ``None`` for non-OpenAI-compatible providers."""
-
-
-# ── Image generation ───────────────────────────────────────────────────
+        """若该供应商走 OpenAI SDK 则返回缓存的 AsyncOpenAI，否则返回 None。"""
 
 
 @dataclass(frozen=True)
@@ -102,8 +76,7 @@ class ImageGenRequest:
     aspect_ratio: str | None = None
     quality: str | None = None
     reference_image: str | None = None
-    # Secondary reference (e.g. a presentation/style ref alongside the identity
-    # anchor). Only consumed by providers with supports_multiple_reference_images.
+    # 第二参考图（如风格/演示参考）；只有 supports_multiple_reference_images 的供应商会消费。
     secondary_reference_image: str | None = None
     response_format: Literal["b64", "url"] = "b64"
 
@@ -125,19 +98,13 @@ class ImageGenResult:
 class ImageGenProvider(BaseProvider):
     service_type: ServiceType = ServiceType.image_gen
 
-    # True → provider consumes ``reference_image`` natively (image-to-image).
-    # False → skipped for reference-image requests (no image→text→image).
+    # True 表示供应商原生消费 reference_image（图生图）；False 则对参考图请求跳过，避免图→文→图。
     supports_reference_image: ClassVar[bool] = False
-    # True → provider also consumes ``secondary_reference_image`` (dual i2i).
-    # When False, the chain filters this provider out for dual-ref requests,
-    # degrading to single-ref providers rather than silently dropping the image.
+    # True 表示同时消费 secondary_reference_image（双参考图生图）；False 时调用链会过滤掉，退而求其次选单参考图供应商。
     supports_multiple_reference_images: ClassVar[bool] = False
 
     @abstractmethod
     async def generate(self, req: ImageGenRequest) -> ImageGenResult: ...
-
-
-# ── Video generation ───────────────────────────────────────────────────
 
 
 @dataclass(frozen=True)
@@ -155,9 +122,7 @@ class VideoJobStatus:
     task_id: str
     status: Literal["queued", "processing", "succeeded", "failed"]
     file_id: str | None = None
-    # Providers whose success path returns the file URL inline (no separate
-    # ``files/retrieve`` step — MiniMax H3 v2) populate this so the job
-    # worker can skip the second hop. ``None`` means "call fetch(file_id)".
+    # 成功路径直接返回下载 URL 的供应商（如 MiniMax H3 v2，无 files/retrieve）填这里，让 worker 跳过二次拉取；None 表示需走 fetch(file_id)。
     download_url: str | None = None
     error: str | None = None
     raw: Any = None
@@ -184,14 +149,11 @@ class VideoGenProvider(BaseProvider):
     async def fetch(self, file_id: str) -> VideoAsset: ...
 
 
-# ── TTS / STT ──────────────────────────────────────────────────────────
-
-
 @dataclass(frozen=True)
 class TTSResult:
     audio: bytes
     mime: str
-    # Substituted voice id after provider fallback; surfaces in X-Voice-Used.
+    # 供应商回退后的音色 id，透出到 X-Voice-Used。
     voice: str = ""
 
 
@@ -207,8 +169,7 @@ class TTSProvider(BaseProvider):
 
     VOICE_CATALOG: ClassVar[list[dict]] = []
 
-    # None → provider doesn't support voice design. A non-empty guide string
-    # → provider supports it; the string is shown to users as a writing guide.
+    # None 表示不支持声纹设计；非空字符串表示支持并作为面向用户的撰写指引。
     VOICE_DESIGN_GUIDE: ClassVar[str | None] = None
 
     @abstractmethod
@@ -231,9 +192,6 @@ class STTProvider(BaseProvider):
     async def transcribe(self, audio: bytes, *, mime_type: str = "audio/wav", language: str = "auto") -> STTResult: ...
 
 
-# ── Embedding ──────────────────────────────────────────────────────────
-
-
 class EmbeddingProvider(BaseProvider):
     service_type: ServiceType = ServiceType.embedding
     dimension: ClassVar[int] = 1536
@@ -247,7 +205,5 @@ class EmbeddingProvider(BaseProvider):
 
 
 def pick_catalog_voice(voice: str, catalog: list[dict]) -> str:
-    """Catalog-membership guard for provider ``synthesize`` paths that bypass
-    ``pick_voice_id`` — a foreign id falls back to the catalog default instead
-    of passing through and 400ing at the provider."""
+    """voice 不在 catalog 时回退到目录首位，避免向供应商传入陌生 id 触发 400。"""
     return voice if voice and any(v.get("id") == voice for v in catalog) else catalog[0]["id"]

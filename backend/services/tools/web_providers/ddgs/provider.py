@@ -50,8 +50,7 @@ class DDGSWebSearchProvider(WebSearchProvider):
         return {"success": True, "data": {"web": web_results}}
 
     async def search(self, query: str, limit: int = 5) -> dict[str, Any]:
-        # ``ddgs`` is sync-only — push the blocking HTTP call onto a worker
-        # thread so the asyncio loop stays responsive while DuckDuckGo replies.
+        # ``ddgs`` 仅同步——把阻塞 HTTP 调用投递到工作线程，避免阻塞 asyncio 事件循环。
         return await asyncio.to_thread(self._sync_search, query, max(1, int(limit)))
 
     def get_setup_schema(self) -> dict[str, Any]:
@@ -60,7 +59,6 @@ class DDGSWebSearchProvider(WebSearchProvider):
             "badge": "free · no key · search only",
             "tag": "Search via the ddgs Python package — no API key (pair with any extract provider)",
             "env_vars": [],
-            # Trigger `_run_post_setup("ddgs")` after the user picks this row
-            # so the ddgs Python package gets pip-installed on first selection.
+            # 用户选中后触发 `_run_post_setup("ddgs")`，确保首次选择时自动 pip install ddgs 包。
             "post_setup": "ddgs",
         }

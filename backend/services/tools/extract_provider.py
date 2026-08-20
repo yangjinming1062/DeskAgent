@@ -7,16 +7,12 @@ from .web_providers.tavily import TavilyWebSearchProvider
 
 logger = get_logger(__name__)
 
-# Default backend per dispatcher kind. Source of truth for the
-# "no provider configured" fallback in both tool paths and the
-# except-branch recovery in ``_get_provider``.
+# 每个 dispatcher 种类的默认后端，是工具路径与 ``_get_provider`` 异常回退的「未配置」兜底来源。
 _DEFAULT_BY_KIND: dict[str, str] = {"search": "ddgs", "extract": "tavily"}
 
 _PROVIDERS: dict[str, type[WebSearchProvider]] = {"ddgs": DDGSWebSearchProvider, "brave-free": BraveFreeWebSearchProvider, "tavily": TavilyWebSearchProvider}
 
-# ``provider.__init__`` kwargs → ``user_settings`` keys. Empty dict means
-# the provider takes no per-user credentials (and ``cls(**{})`` collapses
-# to ``cls()``).
+# ``provider.__init__`` kwargs → ``user_settings`` 键；空字典表示该供应商无需用户级凭据（``cls(**{})`` 退化为 ``cls()``）。
 _PROVIDER_SETTING_KWARGS: dict[str, dict[str, str]] = {
     "brave-free": {"api_key": "web.brave_api_key"},
     "tavily": {"api_key": "web.tavily_api_key", "base_url": "web.tavily_base_url"},
@@ -24,12 +20,7 @@ _PROVIDER_SETTING_KWARGS: dict[str, dict[str, str]] = {
 
 
 def _resolve_provider_name(name: str | None, *, kind: str) -> str:
-    """Resolve a configured provider name to a known backend.
-
-    ``kind`` is ``"search"`` or ``"extract"``. Unknown names are logged
-    and remapped to the kind's default so misconfigured ``user_settings``
-    never silently break the tool path.
-    """
+    """将配置项中的供应商名解析到已知后端；未知名称会回退到该 kind 的默认后端，避免误配置静默失败。"""
     if name in _PROVIDERS:
         return name
     fallback = _DEFAULT_BY_KIND[kind]
@@ -50,10 +41,7 @@ def _get_provider(provider_name: str | None, user_settings: dict | None = None, 
 
 
 def resolve_search_provider(user_settings: dict | None) -> WebSearchProvider:
-    """Resolve the configured search backend, auto-falling back to the key-less
-    default when the user's pick is unavailable. Only search does this — extract
-    has no key-less backend, so a misconfigured extract provider surfaces its error.
-    """
+    """解析配置中的搜索后端；不可用时回退到无需密钥的默认。仅搜索路径有此回退，extract 没有对应免密钥后端。"""
     user_settings = user_settings or {}
     selected = unquote_user_setting(user_settings.get("web.backend")) or _DEFAULT_BY_KIND["search"]
     provider = _get_provider(selected, user_settings, kind="search")
@@ -64,8 +52,7 @@ def resolve_search_provider(user_settings: dict | None) -> WebSearchProvider:
 
 
 def resolve_extract_provider(user_settings: dict | None) -> WebSearchProvider:
-    # Shared by web_extract_tool and the registry's availability gate so
-    # both consult the same web.extract_backend → web.backend → default chain.
+    # 等同于 web_extract_tool 与 registry 可用性网关共用，统一走 web.extract_backend → web.backend → 默认 的链。
     user_settings = user_settings or {}
     selected_extract = unquote_user_setting(user_settings.get("web.extract_backend"))
     selected_search = unquote_user_setting(user_settings.get("web.backend"))

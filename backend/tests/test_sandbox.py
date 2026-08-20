@@ -13,8 +13,7 @@ def _flag(cmd: list[str], flag: str) -> str:
 
 
 def test_docker_cmd_rejects_io_outside_data_dir(tmp_path, monkeypatch):
-    """docker -v sources resolve on the host daemon; only data_dir is a host
-    bind mount, so anything else would silently mount as an empty directory."""
+    """只有 data_dir 是 host bind mount，其他目录若放开会被 docker 当空目录挂载。"""
     monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path / "data"))
     outside = tmp_path / "elsewhere"
     outside.mkdir()
@@ -23,9 +22,7 @@ def test_docker_cmd_rejects_io_outside_data_dir(tmp_path, monkeypatch):
 
 
 def test_docker_cmd_translates_mount_source_via_host_root(tmp_path, monkeypatch):
-    """A containerized worker's data_dir doesn't exist on the host daemon —
-    the -v source must be translated through the configured host-side root,
-    else the daemon auto-creates an empty dir and Blender finds no script."""
+    """容器内 data_dir 在 host daemon 上不存在，-v 源必须通过 host 端根目录转换，否则 daemon 会自动建空目录，Blender 找不到脚本。"""
     monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path / "data"))
     monkeypatch.setattr(SETTINGS, "blender_sandbox_host_data_root", "/run/desktop/mnt/host/c/svc/data")
     io = tmp_path / "data" / "job-io" / "7"
@@ -69,7 +66,6 @@ def test_docker_command_flags_and_io_mapping(tmp_path, monkeypatch):
     assert _flag(cmd, "--tmpfs") == "/tmp:rw,size=256m"
     assert _flag(cmd, "-v").replace("\\", "/").endswith(":/io")
     assert _flag(cmd, "-v").rsplit(":", 1)[1] == "/io"
-    # container argv: image → blender → script under /io
     image_idx = cmd.index("blender-sbx:9.9")
     assert cmd[image_idx + 1 : image_idx + 6] == [
         "blender",
@@ -183,8 +179,7 @@ def _proc(*, returncode: int = 0, out: bytes = b"") -> MagicMock:
 
 
 def test_compose_image_tag_matches_sandbox_constant():
-    """The compose blender-sandbox service must tag the same image the worker
-    runs — a drifted tag would make manual --profile builds useless."""
+    """compose 的 blender-sandbox service 必须和 worker 跑同一镜像 tag，否则手动 --profile build 出来的镜像无用。"""
     compose = (Path(__file__).resolve().parents[1] / "docker-compose.yml").read_text(encoding="utf-8")
     assert f"image: {sandbox.SANDBOX_IMAGE}" in compose
 
@@ -240,9 +235,7 @@ async def test_ensure_reports_failed_build(monkeypatch):
 
 
 def test_data_dir_on_daemon_translates_bind_mount_source(tmp_path, monkeypatch):
-    """In-container: the data_dir bind mount's daemon-side path is rebuilt
-    from /proc/self/mountinfo — Docker Desktop's drive-form 9p source and a
-    plain native bind both translate; ancestor mounts carry the remainder."""
+    """容器内：从 /proc/self/mountinfo 重建 data_dir bind mount 的 daemon 端路径；Docker Desktop 9p 盘符形式和普通原生 bind 都能翻译，祖先挂载点承载剩余路径。"""
     monkeypatch.setattr(sandbox, "_CONTAINER_MARKERS", (tmp_path / "in-container",))
     (tmp_path / "in-container").write_text("")
     data = tmp_path / "data"
@@ -255,9 +248,9 @@ def test_data_dir_on_daemon_translates_bind_mount_source(tmp_path, monkeypatch):
         f"2 0 0:1 / {tmp_path.as_posix()}/app rw - ext4 /srv/svc rw 0\n"
         f"3 0 0:2 /Code/SpiritAgent/backend/data {data.as_posix()} rw - 9p C:\\134 rw,aname=drvfs;path=C:\\ 0\n"
     )
-    # Docker Desktop drive mount: source C:\ + bind_root subpath
+    # Docker Desktop 盘符挂载：源 C:\ + bind_root 子路径
     assert sandbox._data_dir_on_daemon(data) == "/run/desktop/mnt/host/c/Code/SpiritAgent/backend/data"
-    # native ancestor bind: /srv/svc is mounted at <tmp>/app, data sits one level deeper
+    # 原生祖先 bind：/srv/svc 挂到 <tmp>/app，data 在更下一层
     assert sandbox._data_dir_on_daemon(app_data) == "/srv/svc/data"
 
 

@@ -16,7 +16,7 @@ from services.companion.rig_bone_specs import (
 
 def _make_glb(gltf_dict: dict) -> bytes:
     json_bytes = json.dumps(gltf_dict).encode("utf-8")
-    # Pad to 4-byte alignment with spaces (GLB spec requirement).
+    # 按 GLB 规范用空格补齐到 4 字节对齐。
     while len(json_bytes) % 4 != 0:
         json_bytes += b" "
     bin_data = b"\x00" * 4
@@ -87,7 +87,7 @@ class TestStripCodeFences:
         assert _strip_code_fences("print('hello')") == "print('hello')"
 
     def test_unclosed_opening_fence(self):
-        # LLM emitted opening fence but no closing — strip opening, keep body.
+        # LLM 输出了开围栏但没有收尾——剥除开围栏，保留正文。
         raw = "```python\nprint('hello')"
         assert _strip_code_fences(raw) == "print('hello')"
 
@@ -125,7 +125,7 @@ class TestScaffoldMerge:
 
     def test_merge_indents_code(self, tmp_path):
         merged = blender_tools._merge_scaffold("if True:\n    pass", self._scaffold(tmp_path), self._MARKER)
-        # 8 spaces = 4 (function body indent from marker) + 4 (if-body indent in source).
+        # 8 空格 = 4（marker 处函数体缩进）+ 4（源码 if 体缩进）。
         assert "        pass" in merged
 
 

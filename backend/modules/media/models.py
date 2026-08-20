@@ -6,18 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class VideoGenJob(ModelBase):
-    """Background row for a single MiniMax video generation submission.
-
-    Lifecycle:
-        queued    — submitted to provider, awaiting first poll
-        processing — provider is rendering (poll in flight)
-        succeeded  — downloaded to local disk, ``file_id`` points to /api/media/files/<id>
-        failed     — provider error, see ``error_reason`` / ``error_message``
-
-    Process restart: rows in ``queued`` or ``processing`` are picked up by
-    ``services.media.video_jobs.resume_pending_jobs`` from the FastAPI
-    lifespan so an OOM / deploy doesn't strand work.
-    """
+    """MiniMax 视频生成单次提交的后台行（queued/processing/succeeded/failed）；重启后 queued/processing 行由 services.media.video_jobs.resume_pending_jobs 在 FastAPI lifespan 接手。"""
 
     __tablename__ = "video_gen_jobs"
 
@@ -28,9 +17,7 @@ class VideoGenJob(ModelBase):
     prompt: Mapped[str] = mapped_column(Text)
     params_json: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
-    # Nullable for the brief window between row insert and submit completion;
-    # the polling task sets this on its first iteration via the task_id
-    # returned by MiniMax. Without nullable=True, SQLite rejects the insert.
+    # 行插入与 submit 完成之间的短暂窗口必须可空；轮询任务首轮用 MiniMax 返回的 task_id 回填。不加 nullable=True SQLite 会拒插。
     provider_task_id: Mapped[str | None] = mapped_column(String(128), index=True)
     provider_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     file_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

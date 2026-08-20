@@ -92,7 +92,7 @@ async def test_builtin_miss_generates_and_persists(db_session, gen_mocks):
     assert row.avatar_id == asset.id
     assert row.asset_url.startswith("companion-assets/")
     assert row.content_hash
-    assert "开心地笑" in row.prompt  # authoritative builtin clause landed in the template
+    assert "开心地笑" in row.prompt
     saved = Path(SETTINGS.data_dir) / row.asset_url
     assert has_real_transparency(saved.read_bytes())
 
@@ -146,12 +146,9 @@ async def test_prompt_carries_outfit_personality_and_dynamic_clause(db_session, 
     row, generated = await resolve_expression_avatar(user_id=1, name="happy")
     assert generated
     assert "开心地笑" in row.prompt and "写实风格" in row.prompt
-    # Core features reinforce the reference anchor; outfit (wardrobe source of
-    # truth — the reference bust goes stale) and personality (emotion reaction
-    # colouring) ride the prompt.
+    # 核心特征走参考图锚点；着装/性格注入提示词；物种跟着参考图
     assert "蓝色金属鳞片" in row.prompt and "装甲披风" in row.prompt and "傲娇毒舌" in row.prompt
     assert "着装以该设定为准，不以参考图为准" in row.prompt
-    # Species stays with the reference image.
     assert "机械龙" not in row.prompt
 
 
@@ -192,10 +189,6 @@ async def test_concurrent_resolves_share_one_generation(db_session, gen_mocks, m
     import asyncio
 
     asset = await _avatar(db_session)
-    # Deterministic join without interleaving sessions on the shared test
-    # connection (concurrent sessions violate sqlite savepoint LIFO): hold
-    # the generation at the provider call until the second resolve has
-    # finished its read phase and parked on the in-flight task.
     gate = asyncio.Event()
 
     async def gated_tool(*a, **k):
@@ -209,10 +202,7 @@ async def test_concurrent_resolves_share_one_generation(db_session, gen_mocks, m
     while (1, "happy", asset.id) not in expression_avatar_service._inflight:
         await asyncio.sleep(0)
 
-    # Barrier: wait until the second resolve has actually started reading
-    # (its first await is get_active_avatar; the cache-row and persona reads
-    # remain before the in-flight join), so its read session never interleaves
-    # with the generation's write session on the shared test connection.
+    # 等第二个 resolve 读完进入 in-flight join，避免读写 session 在共享连接上交错
     read_done = asyncio.Event()
     origin_avatar = expression_avatar_service.get_active_avatar
 
@@ -248,4 +238,4 @@ async def test_failure_cools_down_key(db_session, gen_mocks, monkeypatch):
         await resolve_expression_avatar(user_id=1, name="happy")
     with pytest.raises(ExpressionCooldownError):
         await resolve_expression_avatar(user_id=1, name="happy")
-    assert calls["dead"] == 1  # cooldown never re-billed the provider
+    assert calls["dead"] == 1

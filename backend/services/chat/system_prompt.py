@@ -100,10 +100,7 @@ SKILLS_GUIDANCE = (
     "Skills that aren't maintained become liabilities."
 )
 
-# Injected for every session that has any tools at all — including
-# sessions where the runner hasn't finished registering yet, so the LLM
-# can surface "Runner not registered" instead of guessing or falling
-# back to web_search.
+# 任何带工具的会话都注入，包括 Runner 尚未注册完成的会话，使 LLM 能提示「Runner 未注册」而非靠 web_search 兜底猜测。
 ATTACHMENT_GUIDANCE = (
     "User messages may include inline attachment directives — "
     "`@file:<path>` for a local file, `@folder:<path>` for a local "
@@ -446,7 +443,7 @@ def _join_nonempty(parts: list[str]) -> str:
 
 
 def _resolve_language(language: str) -> str:
-    """Normalise to a supported language code; fall back to default."""
+    """规范化到受支持的语言代码；不支持时回退到默认。"""
     lang = (language or "").strip().lower()
     return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
@@ -465,20 +462,15 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
     stable_parts.append(SPIRIT_AGENT_HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
-        # Companion persona drives a visible avatar — instruct the LLM to
-        # emit an inline affect tag so the desktop's animation state machine
-        # gets an emotion cue with every response.
+        # 伙伴 persona 驱动可见头像：提示 LLM 输出内联 affect tag，让客户端动画状态机每条回复都有情绪线索。
         stable_parts.append(build_affect_guidance(config.custom_expressions, config.available_actions))
         if "**Appearance outfit**" in config.persona_extras:
             stable_parts.append(COMPANION_OUTFIT_GUIDANCE)
     if config.user_profile_extras:
-        # Inject structured user identity so the LLM doesn't need a memory_recall
-        # round-trip just to know "this user is 老板, male, 26-35, likes music".
+        # 注入结构化用户身份信息，避免 LLM 每次都靠 memory_recall 回查「老板、男、26-35、喜欢音乐」。
         stable_parts.append(config.user_profile_extras)
     if config.auto_inject_extras:
-        # LLM-maintained background context that shapes every exchange (rapport,
-        # interaction rhythm, communication style, mood pattern, relationship
-        # signal). Slot length is bounded at write time, no render-time cap.
+        # LLM 维护的背景上下文（rapport、互动节奏、沟通风格、情绪模式、关系信号）影响每次交流；写入时已限制长度，渲染侧不再裁剪。
         stable_parts.append(config.auto_inject_extras)
     if config.inferred_profile_extras:
         stable_parts.append(config.inferred_profile_extras)
@@ -489,10 +481,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 
     if valid_tools:
         tool_guidance = [g for name, g in (("memory", MEMORY_GUIDANCE), ("session_search", SESSION_SEARCH_GUIDANCE), ("skill_manage", SKILLS_GUIDANCE)) if name in valid_tools]
-        # Always attach the inline-attachment hint when the session has any
-        # tools. The hint's "no tools" fallback clause tells the LLM to
-        # surface a Runner-registration problem instead of guessing at file
-        # contents.
+        # 一旦会话有工具就强制附加内联附件提示；提示中「无工具」兜底条款使 LLM 在 Runner 未注册时直接报错而非猜测文件内容。
         tool_guidance.append(ATTACHMENT_GUIDANCE)
         if tool_guidance:
             stable_parts.append(" ".join(tool_guidance))
@@ -505,9 +494,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
                 stable_parts.append(OPENAI_MODEL_EXECUTION_GUIDANCE)
 
     if client_ctx and client_ctx.skills:
-        # Desktop is the ground truth for which local skills are callable.
-        # Backend trusts the live list verbatim — no cross-check, no
-        # disabled-set derivation. Runner refuses disabled tool calls.
+        # 客户端是本地可调用技能的权威：后端直接信任该实时列表，不做交叉校验也不派生禁用集合；Runner 负责拒绝禁用调用。
         stable_parts.append(f"Enabled local skills (from $SPIRITAGENT_HOME/skills): {', '.join(client_ctx.skills)}.")
 
     if client_ctx and client_ctx.environment_hints:
@@ -526,7 +513,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
 
 
 def _should_inject_tool_use_enforcement(setting: str) -> bool:
-    """``tool_use_enforcement`` resolves to on unless explicitly disabled."""
+    """``tool_use_enforcement`` 除非显式关闭，否则视为开启。"""
     return setting.lower() not in TOOL_ENFORCE_OFF_VALUES
 
 
@@ -534,9 +521,7 @@ def _format_volatile_header(config: AgentPromptConfig) -> str:
     now = utc_now()
     lang = _resolve_language(config.language)
     if lang not in _VOLATILE_LABELS:
-        # Unsupported language for the volatile header (the rest of the system
-        # prompt already localises). One-shot warning so adding a language
-        # elsewhere without updating _VOLATILE_LABELS surfaces in logs.
+        # volatile header 不支持此语言（系统 prompt 其余部分已本地化）：一次性日志告警，便于发现新加语言后忘更新 _VOLATILE_LABELS。
         logger.warning("volatile header: unknown language %r, falling back to %s", lang, DEFAULT_LANGUAGE)
     labels = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
     if lang == "zh":

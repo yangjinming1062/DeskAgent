@@ -10,23 +10,13 @@ _clients_openai: dict[tuple[str, str], AsyncOpenAI] = {}
 
 
 async def download_as_b64(client: httpx.AsyncClient, url: str) -> str:
-    """Fetch a provider-hosted image URL and return it base64-encoded."""
     resp = await client.get(url)
     resp.raise_for_status()
     return base64.b64encode(resp.content).decode("utf-8")
 
 
 def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None = None) -> httpx.AsyncClient:
-    """Return a cached ``httpx.AsyncClient`` keyed on (base_url, api_key).
-
-    MiniMax / MiMo-native endpoints (image_generation, video_generation,
-    t2a_v2) are *not* OpenAI-compatible and bypass the ``openai`` SDK; this
-    pool is the single place those transports go through.
-
-    ``auth_header`` overrides the default ``Authorization: Bearer {key}`` —
-    e.g. Gemini's native ``generateContent`` takes ``x-goog-api-key`` as a
-    raw header value. Pass ``{"x-goog-api-key": api_key}`` to use it.
-    """
+    """按 (base_url, api_key) 缓存 httpx 客户端；非 OpenAI 兼容端点（MiniMax/MiMo 的 image_generation、video_generation、t2a_v2）统一走此池；auth_header 覆盖默认 Authorization（如 Gemini 用 x-goog-api-key）。"""
     key = (base_url.rstrip("/"), api_key)
     client = _clients.get(key)
     if client is not None:
@@ -49,21 +39,13 @@ async def aclose_all() -> None:
 
 
 def cache_clear() -> None:
-    """Test fixture entry point: drop both caches. The conftest autouse
-    fixture calls this to isolate tests. Synchronous because the test
-    fixture is sync — AsyncOpenAI/AsyncClient ``aclose()`` is best-effort
-    and will run when the underlying event loop tears down."""
+    """测试夹具入口：清空两个缓存；conftest autouse 夹具同步调用此方法以隔离测试，AsyncClient.aclose 在事件循环销毁时尽力执行。"""
     _clients.clear()
     _clients_openai.clear()
 
 
 def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
-    """Cached ``AsyncOpenAI`` keyed on (api_key, base_url).
-
-    Lives here (not in :mod:`llm_client`) to break the import cycle between
-    :mod:`providers.openai_compat` and :mod:`llm_client`. ``llm_client``
-    re-exports this symbol so existing call sites need no change.
-    """
+    """按 (api_key, base_url) 缓存 AsyncOpenAI；放在本模块（而非 llm_client）以切断 openai_compat 与 llm_client 的循环依赖，llm_client 转发此符号以保留调用点。"""
     key = (api_key, base_url.rstrip("/"))
     client = _clients_openai.get(key)
     if client is not None:

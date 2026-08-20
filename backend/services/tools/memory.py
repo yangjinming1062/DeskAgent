@@ -14,60 +14,41 @@ from .registry import REGISTRY
 
 logger = get_logger(__name__)
 
-# Closed-set taxonomy (see plan §2). LLM picks exactly from these lists
-# — free-form labels are rejected at write time so the consolidator and
-# UI can rely on a stable vocabulary across sessions and providers.
-#
-# Classification principle: how the fact "shows up" in conversation.
-# auto_inject = background context that shapes every exchange (两人对话
-# 时先天就在的背景). recall = specific facts retrieved when relevant
-# (需要时调出来用的小事实).
+# 封闭分类（见 plan §2）。LLM 必须从这些列表中选取标签，自由形式标签在写入时被拒绝，确保不同会话/供应商间词汇稳定。
+# 分类原则：按事实「在对话中如何呈现」划分——auto_inject 是每次对话的背景上下文（两人对话时先天就在的背景），recall 是按需检索的零散事实（需要时调出来用的小事实）。
 
 RECALL_TAGS: frozenset[str] = frozenset(
     {
-        "user_preference",  # how user wants to be addressed / formatted
-        "likes",  # what user enjoys
-        "dislikes",  # what user is averse to
-        "key_constraints",  # hard taboos (only relevant in matching scenarios)
-        "other",  # catch-all for small person-oriented facts
-        "tool_quirk",  # tool/runtime gotchas the LLM hit
-        "environment",  # OS paths, account handles, repo layouts
+        "user_preference",  # 用户希望被称呼/格式化的方式
+        "likes",  # 用户喜欢的事物
+        "dislikes",  # 用户反感的事物
+        "key_constraints",  # 硬性禁忌（仅在匹配场景相关）
+        "other",  # 其他面向个人的小事实
+        "tool_quirk",  # LLM 踩过的工具/运行时坑
+        "environment",  # OS 路径、账号句柄、仓库布局
     }
 )
 
 AUTO_INJECT_SLOTS: tuple[str, ...] = (
-    "auto_inject:communication_style",  # how user wants responses framed
-    "auto_inject:rapport_state",  # current relationship stage
-    "auto_inject:interaction_pattern",  # user's typical use rhythm
-    "auto_inject:mood_pattern",  # user's emotional tendency (pattern, not moment)
-    "auto_inject:relationship_signal",  # trust / tease-frequency / formality
+    "auto_inject:communication_style",  # 用户希望回复的框架
+    "auto_inject:rapport_state",  # 当前关系阶段
+    "auto_inject:interaction_pattern",  # 用户常见使用节奏
+    "auto_inject:mood_pattern",  # 用户情绪倾向（倾向，不是瞬时）
+    "auto_inject:relationship_signal",  # 信任度 / 调侃频率 / 正式程度
 )
 
 INFERRED_PROFILE_SLOTS: tuple[str, ...] = (
-    "inferred_profile:basic_info",  # birthday, age bucket, location, job
-    "inferred_profile:work_schedule",  # working hours, daily routine
-    "inferred_profile:interests",  # deeper interests & hobbies
-    "inferred_profile:preferences",  # communication, clothing, food preferences
-    "inferred_profile:important_dates",  # birthday, anniversary, exams, deadlines
-    "inferred_profile:relationships",  # key people, social circle
-    "inferred_profile:goals_stressors",  # current goals, stressors, aspirations
-    "inferred_profile:freeform",  # rich unclassified inferences
+    "inferred_profile:basic_info",  # 生日、年龄段、所在地区、职业
+    "inferred_profile:work_schedule",  # 工作时段、日常作息
+    "inferred_profile:interests",  # 深入兴趣与爱好
+    "inferred_profile:preferences",  # 沟通、服饰、饮食偏好
+    "inferred_profile:important_dates",  # 生日、纪念日、考试、截止日
+    "inferred_profile:relationships",  # 关键人物、社交圈
+    "inferred_profile:goals_stressors",  # 当前目标、压力源、志向
+    "inferred_profile:freeform",  # 难以归类的丰富推断
 )
 
-# ── Namespace registry ────────────────────────────────────────────────
-#
-# Single source of truth for all memory-namespace policy.  Each entry
-# declares the prefix plus three independent policy flags, so adding a
-# new namespace is ONE entry here — the prefix map, forgery filter,
-# recall-exclusion set, and static-block-exclusion set are all derived.
-#
-# Policy flags:
-#   forbidden_from_llm       — chat-time LLM cannot write via memory_retain
-#   reserved_from_recall     — excluded from memory_recall results
-#   excluded_from_static_block — excluded from format_memories_block
-#
-# diary is NOT reserved_from_recall: the companion can search past diary
-# entries via memory_recall for conversational continuity.
+# 命名空间注册表：所有 memory 命名空间策略的唯一来源。每条目声明前缀与三个独立策略标志——新增命名空间只需在这里多加一条，前缀映射、伪造过滤、recall 排除、静态块排除集合全部由此派生。
 
 
 @dataclass(frozen=True)
@@ -91,7 +72,7 @@ NAMESPACE_SPECS: dict[str, NamespaceSpec] = {
     "diary": NamespaceSpec("diary", "diary:", forbidden_from_llm=True, excluded_from_static_block=True),
 }
 
-# Derived views — stable value-equal replacements for the former hand-maintained sets.
+# 派生视图——取代原先手工维护的多个集合，保持值相等。
 KIND_TO_PREFIX: dict[str, str] = {s.name: s.prefix for s in NAMESPACE_SPECS.values()}
 _FORBIDDEN_FROM_LLM: frozenset[str] = frozenset(s.prefix for s in NAMESPACE_SPECS.values() if s.forbidden_from_llm)
 RESERVED_FROM_RECALL: frozenset[str] = frozenset(s.prefix for s in NAMESPACE_SPECS.values() if s.reserved_from_recall)
@@ -102,22 +83,12 @@ _RECALL_TAG_FALLBACK = "other"
 
 
 def context_not_in(prefix: str) -> ColumnElement[bool]:
-    """SQL predicate: ``context IS NULL OR context NOT LIKE '<prefix>%'``.
-
-    Three-valued logic would otherwise drop NULL-context rows under
-    ``~Memory.context.like(...)`` alone — every caller in this codebase
-    needs the NULL-exempt form. Public (no underscore) because the
-    recall filter and ``format_memories_block`` both import it.
-    """
+    """SQL 谓词：``context IS NULL OR context NOT LIKE '<prefix>%'``——NULL 上下文行在纯 ``~like`` 下会被三值逻辑吞掉，调用方都需要这种 NULL 豁免形式。"""
     return or_(Memory.context.is_(None), ~Memory.context.like(f"{prefix}%"))
 
 
 def normalize_recall_context(raw: str | None, *, default: str = "general") -> str:
-    """Strip, default, and prefix a recall-row context label.
-
-    Used by both the LLM-side write path and the consolidator so the
-    ``recall:`` namespace is enforced identically in both writers.
-    """
+    """裁剪、缺省、补齐 recall 行的 context 前缀；LLM 写入与 consolidator 共用，确保 ``recall:`` 命名空间在两端被强制一致。"""
     label = (raw or "").strip() or default
     if not label.startswith(KIND_TO_PREFIX["recall"]):
         label = f"{KIND_TO_PREFIX['recall']}{label[:_RECALL_LABEL_MAX]}"
@@ -125,7 +96,7 @@ def normalize_recall_context(raw: str | None, *, default: str = "general") -> st
 
 
 def normalize_recall_tags(raw: list | None) -> list[str]:
-    """Filter LLM-supplied tags against ``RECALL_TAGS``; fall back to 'other'."""
+    """过滤 LLM 给出的标签，仅保留 ``RECALL_TAGS`` 集合内的项；空结果回退为 'other'。"""
     cleaned = [t for t in (raw or []) if t in RECALL_TAGS]
     return cleaned or [_RECALL_TAG_FALLBACK]
 
@@ -192,9 +163,7 @@ FORGET_SCHEMA = {
 
 
 class NativeMemory:
-    """Per-turn memory view. ``db=None`` (chat-turn path) opens a short
-    session per tool call so no pool connection is held across LLM awaits;
-    callers with their own single session pass it and it is reused as-is."""
+    """单回合 memory 视图。``db=None``（聊天回合路径）每次工具调用都开短会话，避免在 LLM await 期间占用连接池；调用方自带会话时直接复用。"""
 
     def __init__(self, db: AsyncSession | None, user_id: int) -> None:
         self.db = db
@@ -251,7 +220,7 @@ class NativeMemory:
             try:
                 await db.commit()
             except IntegrityError:
-                # Concurrent upsert on the partial unique index.
+                # 部分唯一索引上的并发 upsert。
                 await db.rollback()
                 return tool_error("concurrent auto_inject write; retry")
         return json.dumps({"result": "Auto-inject memory updated.", "context": context})
@@ -309,9 +278,7 @@ class NativeMemory:
     _HANDLERS: ClassVar[dict[str, object]] = {"memory_retain": _retain, "memory_recall": _recall, "memory_forget": _forget}
 
 
-# Self-register: this module is the canonical source for the three memory schemas
-# and the only place that knows about ``NativeMemory``. Imported eagerly by
-# ``services.tools.__init__`` so LLM schema enumeration includes them.
+# 自注册：此模块是三个 memory schema 的唯一权威源，也是唯一知道 ``NativeMemory`` 的地方。被 ``services.tools.__init__`` 主动导入，使 LLM schema 列举能包含它们。
 REGISTRY.register_memory("memory_retain", RETAIN_SCHEMA)
 REGISTRY.register_memory("memory_recall", RECALL_SCHEMA)
 REGISTRY.register_memory("memory_forget", FORGET_SCHEMA)

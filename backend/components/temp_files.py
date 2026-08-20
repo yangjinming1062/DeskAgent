@@ -58,13 +58,7 @@ def _metadata_path(meta: dict) -> Path | None:
 
 
 def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta_marker: str | None = None) -> tuple[str, str]:
-    """Save bytes to temp storage, return (file_id, public_url).
-
-    ``meta_marker`` is an opaque ownership/identity tag (e.g.
-    ``"wardrobe_preview:{user_id}"``); it lands in meta and is checked by
-    ``temp_file_delete`` so that DELETE /temp/{file_id} endpoints can refuse
-    cross-owner deletes. A failed meta write unlinks the data file to avoid
-    orphans without TTL tracking."""
+    """保存字节到 temp 存储，返回 (file_id, public_url)；meta_marker 是所有权/身份标签（如 ``"wardrobe_preview:{user_id}"``），写入 meta 后由 temp_file_delete 校验以拒绝跨 owner 删除；meta 写失败时 unlink 数据文件，避免无 TTL 跟踪的孤儿。"""
     file_id = secrets.token_urlsafe(16)
     filepath = _media_path(file_id, ext)
 
@@ -92,7 +86,7 @@ def _build_public_url(file_id: str) -> str:
 
 
 def get_file_path(file_id: str) -> tuple[Path, str] | None:
-    """Get file path and content_type by ID. Returns None if not found/expired."""
+    """按 ID 取文件路径与 content_type；未找到/已过期返 None。"""
     if not _valid_file_id(file_id):
         return None
     mp = _meta_path(file_id)
@@ -174,20 +168,11 @@ def gc_session(session_id: str) -> None:
 
 
 class TempFileMarkerMismatch(PermissionError):
-    """Caller-supplied ``required_marker`` does not match the file's recorded marker.
-
-    Raised by ``delete_file`` / ``temp_file_delete`` so the route layer can
-    translate to 403 / 404 without leaking existence to other users."""
+    """caller 提供的 required_marker 与文件记录的 marker 不一致；供路由层区分 403 / 404 避免向其他用户泄漏存在性。"""
 
 
 def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
-    """Best-effort delete of a single temp-media file by id. Returns True when something was removed.
-
-    ``required_marker``: when set, the file's ``marker`` meta field must
-    equal this string (substring-equality on the prefix portion is allowed
-    so the route can pass ``"wardrobe_preview:"`` and the file may carry
-    ``"wardrobe_preview:{user_id}"``). Mismatch raises ``TempFileMarkerMismatch``
-    so the caller can distinguish cross-owner attempts from missing files."""
+    """尽力删除单个 temp-media 文件；删了东西返 True。required_marker 命中规则：完全相等，或 required_marker 以 ':' 结尾且 marker 以它为前缀（支持 category 共享 marker，如 wardrobe_preview:）。"""
     if not _valid_file_id(file_id):
         return False
     mp = _meta_path(file_id)
@@ -200,7 +185,7 @@ def delete_file(file_id: str, *, required_marker: str | None = None) -> bool:
     if required_marker is not None:
         marker = meta.get("marker", "")
         marker = marker if isinstance(marker, str) else ""
-        # Accept exact match, or category prefix match only if required_marker ends with ':'.
+        # 仅当 required_marker 以 ':' 结尾时允许 category 前缀匹配。
         is_match = marker == required_marker or (required_marker.endswith(":") and marker.startswith(required_marker))
         if not is_match:
             raise TempFileMarkerMismatch(f"file_id {file_id!r} marker {marker!r} does not match required {required_marker!r}")

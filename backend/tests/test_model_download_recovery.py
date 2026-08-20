@@ -1,6 +1,4 @@
-"""Paid-result download recovery: persist-before-download, download_failed
-state, retryDownload (query-only refresh + download), and the bounded
-auto-retry classification. See model_service + PROTOCOL.md §1.2."""
+"""付费生成下载恢复：先持久化再下载、download_failed 状态、retryDownload（仅查询刷新+下载）以及有界自动重试分类（详见 model_service + PROTOCOL.md §1.2）。"""
 
 import gzip
 import json as _json
@@ -16,7 +14,7 @@ from services.companion import model_service
 from services.image_to_3d import Model3DAsset, Model3DPollResult
 from sqlalchemy import select
 
-_GLB = b"\x00" * 20  # tiny but valid GLB per the parser's 20-byte floor
+_GLB = b"\x00" * 20  # 满足解析器 20 字节下限的最小合法 GLB
 
 
 def _status_error(code: int) -> httpx.HTTPStatusError:
@@ -25,12 +23,7 @@ def _status_error(code: int) -> httpx.HTTPStatusError:
 
 
 class RecordingProvider:
-    """ImageTo3DProvider stand-in recording poll/download calls. The retry
-    helpers only touch ``poll`` (URL refresh on 403) and ``download`` (raw
-    asset pull); ``submit_*`` is never called because the paid task_id is
-    already persisted on the model row. ``outcomes`` items are exceptions to
-    raise or bytes to write; exhausting the list falls back to a successful
-    write."""
+    """ImageTo3DProvider 的测试替身，记录 poll/download 调用。重试逻辑只触碰 ``poll``（403 时刷新 URL）和 ``download``（拉取原始资产）；``submit_*`` 永不调用，因为付费 task_id 已持久化在模型行上。``outcomes`` 中元素为待抛异常或待写入字节，列表耗尽则视为成功写入。"""
 
     provider_name = "hunyuan"
     SUPPORTS_RIGGING = False
@@ -94,8 +87,7 @@ def _fast_retry(monkeypatch):
 
 @pytest.fixture
 def mock_finalize(monkeypatch):
-    """Local Blender post-processing is exercised elsewhere; stub the two
-    subprocess stages so these tests stay on the download/recovery path."""
+    """本地 Blender 后处理在别处覆盖；此处 stub 两个子流程，让测试聚焦于下载/恢复路径。"""
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(model_service, "_auto_rig_with_blender", AsyncMock(return_value=_GLB))
@@ -109,8 +101,7 @@ async def _run_retry(monkeypatch, provider: RecordingProvider, user_id: int, mod
 
 @pytest.mark.asyncio
 async def test_retry_never_submits(SessionLocal, mock_finalize, monkeypatch):
-    """Acceptance 2: the retryDownload path only queries + downloads — the
-    paid generation is never re-submitted."""
+    """验收 2：retryDownload 路径只查询+下载，绝不重新提交付费生成。"""
     provider = RecordingProvider()
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -123,9 +114,7 @@ async def test_retry_never_submits(SessionLocal, mock_finalize, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ready_is_last_model_event(SessionLocal, mock_finalize, monkeypatch):
-    """PROTOCOL §1.3 ordering: model.ready is the terminal model.* event — a
-    model.gen.progress landing after it resurrects the client's generating
-    overlay on the already-loaded model."""
+    """PROTOCOL §1.3：model.ready 是终态 model.* 事件，之后若再收到 model.gen.progress 会让客户端在已加载模型上重现"生成中"遮罩。"""
     provider = RecordingProvider()
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -140,8 +129,7 @@ async def test_ready_is_last_model_event(SessionLocal, mock_finalize, monkeypatc
 
 @pytest.mark.asyncio
 async def test_retry_refreshes_expired_url_on_403(SessionLocal, mock_finalize, monkeypatch):
-    """Acceptance 3: a 403 (expired signature) triggers a provider query, the
-    row's URLs are refreshed, and the download succeeds with the fresh URL."""
+    """验收 3：403（签名过期）触发 provider 查询、行内 URL 被刷新，下载最终通过新 URL 成功。"""
     provider = RecordingProvider(outcomes=[_status_error(403)], poll_url="https://cos.example/fresh.glb")
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -155,8 +143,7 @@ async def test_retry_refreshes_expired_url_on_403(SessionLocal, mock_finalize, m
 
 @pytest.mark.asyncio
 async def test_transient_download_errors_auto_retried(SessionLocal, mock_finalize, monkeypatch):
-    """Acceptance 4: 1-2 transient failures are absorbed by the bounded
-    auto-retry — no download_failed terminal state."""
+    """验收 4：1-2 次瞬时失败由有界自动重试吸收，不会落得 download_failed 终态。"""
     provider = RecordingProvider(outcomes=[httpx.ConnectError("reset"), httpx.ReadTimeout("read timed out")])
     user_id, model_id = await _seed_model(SessionLocal, status="pending_download")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -167,8 +154,7 @@ async def test_transient_download_errors_auto_retried(SessionLocal, mock_finaliz
 
 @pytest.mark.asyncio
 async def test_permanent_4xx_not_auto_retried(SessionLocal, mock_finalize, monkeypatch):
-    """Non-403 4xx responses surface immediately — one download call, then the
-    manually-recoverable download_failed state."""
+    """非 403 的 4xx 立即上报——一次下载后即落到可手动恢复的 download_failed。"""
     provider = RecordingProvider(outcomes=[_status_error(404)] * model_service._DOWNLOAD_ATTEMPTS)
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -181,9 +167,7 @@ async def test_permanent_4xx_not_auto_retried(SessionLocal, mock_finalize, monke
 
 @pytest.mark.asyncio
 async def test_refresh_budget_exhausted_lands_recoverable(SessionLocal, mock_finalize, monkeypatch):
-    """Every attempt 403s: the refresh budget caps out, the row stays
-    recoverable, and the LAST refreshed URLs are persisted for the manual
-    retry."""
+    """每次都 403：刷新预算耗尽，行保持可恢复状态，并持久化最后一次刷新的 URL 以便手动重试。"""
     provider = RecordingProvider(outcomes=[_status_error(403)] * model_service._DOWNLOAD_ATTEMPTS)
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -197,8 +181,7 @@ async def test_refresh_budget_exhausted_lands_recoverable(SessionLocal, mock_fin
 
 @pytest.mark.asyncio
 async def test_refresh_on_final_attempt_surfaces_the_403(SessionLocal, mock_finalize, monkeypatch):
-    """A 403 whose refresh lands on the last attempt must surface the error —
-    never fall out of the retry loop without one."""
+    """最后一次重试落到 403 时必须把错误抛出，不能在没有错误的情况下跳出重试循环。"""
     provider = RecordingProvider(outcomes=[httpx.ConnectError("reset"), _status_error(403), _status_error(403)])
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     await _run_retry(monkeypatch, provider, user_id, model_id)
@@ -210,11 +193,7 @@ async def test_refresh_on_final_attempt_surfaces_the_403(SessionLocal, mock_fina
 
 @pytest.mark.asyncio
 async def test_finalize_failure_keeps_raw_download(SessionLocal, monkeypatch):
-    """A post-download processing failure must not lose the paid GLB nor turn
-    terminal: the raw provider output is persisted to the model store before
-    auto-rig runs, and the row lands in the retryable download_failed state
-    (a terminal ``failed`` would make client hydration re-submit a paid
-    generation)."""
+    """下载后处理失败时不能丢失付费 GLB 也不应进入终态：原始 provider 输出在 auto-rig 之前已持久化，行落到可重试的 download_failed（终态 failed 会让客户端 hydrate 重新发起付费生成）。"""
     from unittest.mock import AsyncMock
 
     monkeypatch.setattr(model_service, "_auto_rig_with_blender", AsyncMock(side_effect=model_service.ModelGenerationError("本地自动绑骨失败")))
@@ -257,8 +236,7 @@ async def test_startup_sweep_recovers_interrupted_downloads(SessionLocal):
 
 @pytest.mark.asyncio
 async def test_generate_returns_retryable_row_without_rebilling(SessionLocal):
-    """Hydration auto-generation must return the download_failed row instead
-    of silently enqueueing a second paid generation."""
+    """hydrate 触发的自动生成应直接返回 download_failed 行，绝不能悄悄再排一次付费生成。"""
     user_id, model_id = await _seed_model(SessionLocal, status="download_failed")
     async with SessionLocal() as db:
         db.add(Persona(user_id=user_id, definition_json="{}", is_complete=True))
@@ -292,8 +270,7 @@ class _EnqueueStub:
 
 @pytest.fixture
 def dispatcher():
-    """Session handlers on a bare dispatcher (same shape as
-    test_jsonrpc_handlers.dispatcher), pinned to user_id=1001."""
+    """裸 dispatcher 上的会话处理（与 test_jsonrpc_handlers.dispatcher 同形），固定 user_id=1001。"""
     from services.gateway import handlers as pin
     from services.gateway.jsonrpc import JsonRpcDispatcher
 
@@ -327,9 +304,7 @@ async def test_request_retry_validates_and_enqueues(SessionLocal, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_gateway_retry_download_handler(dispatcher, SessionLocal, monkeypatch):
-    """The WS method validates params, maps domain errors to JSONRPC errors,
-    and returns the row status on success. The dispatcher fixture registers
-    with user_id=1001, so the seeded user adopts that id."""
+    """WS 方法需校验参数、把领域错误映射为 JSONRPC 错误，成功时返回行状态。dispatcher fixture 以 user_id=1001 注册，所以种子用户也用该 id。"""
     from services.gateway.jsonrpc import JsonRpcError
 
     retry_fn = dispatcher._handlers["companion.model.retryDownload"]

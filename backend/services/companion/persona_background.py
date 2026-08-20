@@ -17,13 +17,12 @@ from .personality_tagger import analyze_personality_tags
 
 logger = get_logger(__name__)
 
-# Strong-ref set so create_task'd refreshes aren't GC'd; tests and shutdown
-# drains can introspect the in-flight work.
+# 强引用集合，避免 create_task 的后台任务被 GC 回收
 _TASKS: set[asyncio.Task] = set()
 
 
 async def drain() -> None:
-    """Cancel + await every background task; tolerates CancelledError."""
+    """取消并等待所有后台任务，容忍 CancelledError。"""
     if not _TASKS:
         return
     pending = list(_TASKS)
@@ -33,9 +32,7 @@ async def drain() -> None:
     await asyncio.gather(*pending, return_exceptions=True)
 
 
-# Per-attempt timeout deliberately much shorter than ``call_with_retry``'s
-# 300s default — these tasks run in the background and a hung call must not
-# pin a worker indefinitely.
+# 单次尝试超时刻意远小于 call_with_retry 的 300s 默认值：后台任务卡住不能长期占住 worker
 _BG_TASK_PER_ATTEMPT_TIMEOUT = 30.0
 _BG_TASK_MAX_ATTEMPTS = 3
 _BG_TASK_BASE_DELAY = 5.0
@@ -55,7 +52,7 @@ async def _run_with_retry(label: str, persona_id: int, user_id: int, attempt: Ca
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             if isinstance(exc, MissingLlmConfigError):
-                break  # retrying a missing provider never helps
+                break  # 缺少 provider 属于配置问题，重试无意义
         if i < _BG_TASK_MAX_ATTEMPTS:
             await asyncio.sleep(min(_BG_TASK_MAX_DELAY, _BG_TASK_BASE_DELAY * 2 ** (i - 1)) * (0.5 + 0.5 * random.random()))
     logger.warning("%s failed after %d attempts for persona_id=%s user_id=%s: %s", label, _BG_TASK_MAX_ATTEMPTS, persona_id, user_id, last_exc)
@@ -73,15 +70,12 @@ def schedule_personality_tag_refresh(persona_id: int, user_id: int) -> None:
 
 async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
     async def attempt() -> None:
-        # Re-queries the Persona row at the start of every attempt so a concurrent
-        # PUT wins the last-write-wins race with the freshest definition_json.
-        # Read → LLM → write phases each hold their own short session; the LLM
-        # call runs with a pre-resolved provider and no connection pinned.
+        # 每次尝试都重新查询 Persona，使并发 PUT 能以最新 definition_json 参与「后写者胜」；读/调用/写各持一个短会话，LLM 调用期间不占连接
         t_query = time.monotonic()
         async with SESSION_LOCAL() as db:
             persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
             if persona is None:
-                return  # row vanished (user deleted?) — nothing to do
+                return  # 行已消失（用户被删？），无事可做
             definition = safe_json_loads(persona.definition_json, default={})
             species = definition.get("biological_type") if isinstance(definition, dict) else None
             chain = await resolve_provider_chain(db, user_id, "llm")
@@ -90,8 +84,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
         t_llm = time.monotonic()
         tags = await analyze_personality_tags(chat, definition_json, user_id=user_id, species=species, db=None, provider_config=tag_provider)
         async with SESSION_LOCAL() as db:
-            # Single-column update: a concurrent definition PUT during the
-            # LLM call still wins last-write-wins on every other column.
+            # 只更新单列：LLM 调用期间发生的 definition PUT 在其余列上仍按后写者胜生效
             await db.execute(update(Persona).where(Persona.id == persona_id).values(personality_tags_json=json.dumps(tags, ensure_ascii=False)))
             await db.commit()
             t_commit = time.monotonic()
@@ -113,8 +106,7 @@ def schedule_onboarding_outfit_extraction(persona_id: int, user_id: int) -> None
 
 async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
     async def attempt() -> None:
-        # Read → LLM → write with a session per phase; the generation
-        # call runs on pre-resolved chains with no connection pinned.
+        # 读 / 调用 / 写各持一个短会话，生成调用期间不占用连接
         async with SESSION_LOCAL() as db:
             persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
             if persona is None:
@@ -127,9 +119,7 @@ async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
             if avatar:
                 prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
                 avatar_prompt = prompt_payload.get("avatar_prompt", "") if isinstance(prompt_payload, dict) else ""
-            # Vision reference is the bust avatar — the fullbody seed's
-            # A-pose sports underwear is a pipeline constraint, not the
-            # user's outfit intent (it leaked into appearance_outfit here).
+            # 视觉参考取头像而非全身种子图：后者的 A-pose 运动内衣是流水线约束，不代表用户的着装意图
             avatar_url = avatar.asset_url if avatar else None
             if not avatar_prompt and not appearance_core:
                 return

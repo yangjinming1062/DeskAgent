@@ -16,9 +16,7 @@ async def _emit(user_id: int, event_type: str, payload: dict) -> None:
 
 
 async def _model_retry_download(job: RenderJob, io_dir: Path) -> None:
-    # Download-only recovery of an already-paid generation result — the model
-    # row is the source of truth (task id + URLs); the pipeline never
-    # re-submits here.
+    # 仅下载已付费生成结果的恢复——model 行是真相源（task id + URL），流水线在此不重新提交。
     from services.companion import model_service
 
     await model_service.run_model_download_retry(job.user_id, job.payload["model_id"], io_dir=io_dir)
@@ -36,8 +34,7 @@ async def _image_model_generate(job: RenderJob, io_dir: Path) -> None:
 
 
 async def _garment_preview(job: RenderJob, io_dir: Path) -> dict:
-    # preview_wardrobe_outfit only reads through ``db`` (persona/model/avatar)
-    # and writes artifacts via save_file — all reproducible worker-side.
+    # preview_wardrobe_outfit 仅通过 db 读（persona/model/avatar）并通过 save_file 写产物——全在 worker 端可复现。
     from services.companion import preview_wardrobe_outfit
 
     payload = job.payload

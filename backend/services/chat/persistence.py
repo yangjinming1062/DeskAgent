@@ -18,9 +18,7 @@ logger = get_logger(__name__)
 
 
 async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:
-    """Main-conversation turns drop their raw tool frames from the LLM context
-    (``_history_to_messages``); this row is what stands in for them, so it must
-    be written whichever way the turn ended."""
+    """主会话轮次从 LLM 上下文中丢弃原始 tool 帧，此行作为替代，故无论轮次如何结束都必须写入。"""
     if conv.kind != MAIN_KIND or not tool_names:
         return
     async with session_scope() as db:
@@ -29,7 +27,7 @@ async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None
 
 
 def _coerce_tool_result_content(content: Any) -> str:
-    """Message.content is a Text column — JSON-encode non-string payloads so commit doesn't blow up."""
+    """Message.content 是 Text 列，非字符串负载 JSON 编码后提交，避免类型错误。"""
     if isinstance(content, str):
         return content
     try:
@@ -54,20 +52,14 @@ def _build_persisted_content_from_parts(text: str, attachments: list[dict] | Non
 
 
 def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
-    """Translate req.message + attachments into ``(content, content_type)``
-    for the Message row. Pure text → ``("text", str)``; multimodal → a JSON
-    parts array tagged ``multimodal_v1`` so the read path can trust the
-    column instead of substring-sniffing.
-
-    Attachments are emitted as ``image_url`` parts. URL source: ``file_url``.
-    """
+    """把 req.message + 附件转换为 ``(content, content_type)``：纯文本返回 ``(str, "text")``；多模态返回带 ``multimodal_v1`` 标签的 JSON parts 数组，附件以 ``image_url`` 发出。"""
     text = req.message.content or ""
     attachments = getattr(req.message, "attachments", None) or []
     return _build_persisted_content_from_parts(text, attachments)
 
 
 async def persist_extra_user_messages(db: AsyncSession, conv_id: int, items: list[dict]) -> None:
-    """Persist precursor user messages in a batch before running the turn on the final message."""
+    """在运行最终消息轮次前，批量持久化前置 user 消息。"""
     for item in items:
         text = item.get("text") or ""
         attachments = item.get("attachments") or []
@@ -77,20 +69,14 @@ async def persist_extra_user_messages(db: AsyncSession, conv_id: int, items: lis
 
 
 async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatRequest) -> None:
-    """Insert the user-role Message row and commit."""
+    """插入 user 角色 Message 行并提交。"""
     db_content, db_content_type = _build_persisted_content(req)
     db.add(Message(conversation_id=conv.id, role=req.message.role, content=db_content, content_type=db_content_type, tool_call_id=req.message.tool_call_id))
     await db.commit()
 
 
 def _affect_trace_content(emotion: str | None, action: str | None) -> str:
-    """Structured marker for a body-language-only reply (no text).
-
-    Persisted as an assistant-role row so the NEXT turn's LLM context still sees
-    that the companion reacted (a pout/action with no words would otherwise
-    vanish from the conversation and break emotional continuity). The renderer
-    maps this subtype to a recessive trace instead of a text bubble.
-    """
+    """纯肢体语言回复（无文本）的结构化标记：以 assistant 行持久化，确保下一轮 LLM 上下文仍能看到伙伴已做出反应。"""
     parts: list[str] = []
     if emotion and emotion != "neutral":
         parts.append(f"[affect:{emotion}]")
@@ -120,23 +106,7 @@ async def _persist_assistant_no_tool_turn(
     spatial_locale: str | None = None,
     spatial_target: str | None = None,
 ) -> None:
-    """Terminal path: assistant produced text only. Persist Message, kick
-    off optional title + background review, emit ``message.complete``.
-
-    Background tasks created here are pinned by the event loop's task
-    set for their natural lifetime; ``track_task`` is the only required
-    explicit keeper (when set). Returning a task list was misleading —
-    ``asyncio.create_task`` already retains the strong reference, and
-    callers dropping the return value couldn't tell whether the tasks
-    were being kept alive or being GC'd.
-
-    Takes ``effective_settings`` (per-session overrides merged over
-    ``UserSetting``) so per-session config like
-    ``agent.enable_background_review=false`` is honored here just like it
-    is on the tool path (``dispatch_ctx.user_settings``). Bare-key
-    ``enable_background_review`` is also read as a fallback for legacy
-    sessions that predate the namespaced key.
-    """
+    """终端路径：助手只产出文本；持久化 Message、触发可选的标题生成与后台 review、发出 ``message.complete``。"""
     if turn_content:
         async with session_scope() as db:
             db.add(
@@ -151,10 +121,7 @@ async def _persist_assistant_no_tool_turn(
             )
             await db.commit()
     elif (emotion and emotion != "neutral") or action:
-        # Affect-only reply: no text, just a body-language reaction. Persist a
-        # lightweight assistant-role trace so the next turn's LLM context is
-        # complete — otherwise the companion's pout/action would vanish from
-        # history and a later "还在生气吗?" would lack the earlier reaction.
+        # 仅情绪反应：无文本，持久化轻量 assistant 行作为下一轮 LLM 上下文的反应痕迹，避免嘟嘴/动作在历史中消失。
         async with session_scope() as db:
             db.add(
                 Message(
@@ -176,8 +143,7 @@ async def _persist_assistant_no_tool_turn(
         if track_task:
             track_task(title_task)
 
-    # Read namespaced key first (settings UI writes ``agent.enable_background_review``);
-    # fall back to bare ``enable_background_review`` for legacy data.
+    # 优先读命名空间键（设置 UI 写入 ``agent.enable_background_review``），旧数据回退到裸键 ``enable_background_review``。
     bg_review = effective_settings.get("agent.enable_background_review") or effective_settings.get("enable_background_review") or BACKGROUND_REVIEW_DEFAULT
     if bg_review.lower() == BACKGROUND_REVIEW_DEFAULT:
         review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, current_messages.copy()))
@@ -207,22 +173,7 @@ async def _persist_assistant_with_tool_calls_and_results(
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
 ) -> list[dict]:
-    """Persist assistant-with-tool_calls Message, run the tool batch, persist
-    tool result Messages, return the tool result messages for the next LLM
-    iteration.
-
-    The tool batch (runner IPC / LLM calls) runs BETWEEN two short
-    sessions — no pool connection is held across it. On ``CancelledError``
-    mid-batch we still write the assistant row (already committed above)
-    AND emit a short-session ``tool`` row per pending tool_call with
-    ``{"error": "cancelled"}`` content so the next LLM context has a
-    self-consistent tool_calls ↔ tool results pair (no orphan tool_calls).
-
-    ``active_tool_names`` and ``schemas_by_name`` are mutated in place when
-    ``search_tools`` unlocks new tool names so the next iteration's
-    ``active_schemas`` includes them. Names returned here already passed
-    the availability gate (gated inside search_tools_tool itself).
-    """
+    """持久化含 tool_calls 的 assistant Message、跑工具批处理、持久化 tool 结果 Message，返回供下一轮 LLM 使用的 tool 结果消息。"""
     current_messages.append(
         {
             "role": "assistant",
@@ -246,14 +197,11 @@ async def _persist_assistant_with_tool_calls_and_results(
         )
         await db.commit()
 
-    # Run the tool batch OUTSIDE any DB transaction — pool connection must
-    # not be held while the runner / LLM call is in flight.
+    # 工具批处理必须在 DB 事务外执行，避免 runner / LLM 调用期间持有连接。
     try:
         tool_results = await _run_tool_batch(tool_calls_list, dispatch_ctx)
     except asyncio.CancelledError:
-        # Synthesize a tool result per pending tool_call so the assistant
-        # row above is never orphaned (a row with tool_calls but no matching
-        # tool-result rows makes the next LLM turn's context malformed).
+        # 为每个未完成的 tool_call 合成一条 tool 结果，避免 assistant 行出现孤立 tool_calls 导致下一轮 LLM 上下文畸形。
         cancelled_results = [
             {"role": "tool", "name": tc.get("function", {}).get("name", ""), "tool_call_id": tc.get("id", ""), "content": json.dumps({"error": "cancelled"}, ensure_ascii=False)}
             for tc in tool_calls_list

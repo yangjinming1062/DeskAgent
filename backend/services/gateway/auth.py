@@ -7,7 +7,7 @@ logger = get_logger(__name__)
 
 
 async def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | None]:
-    """Return (user, payload) on success or (None, None) on any failure mode."""
+    """验证 WS ticket，成功返回 (user, payload)，任何失败均返回 (None, None)。"""
     if not isinstance(token, str) or not token:
         return None, None
     try:
@@ -29,7 +29,7 @@ async def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | 
     except (ValueError, TypeError):
         return None, None
 
-    # WS tickets aren't tracked in LoginRecord; revocation flows through session deactivation.
+    # WS ticket 不在 LoginRecord 中，撤销通过会话停用流程处理。
     async with SESSION_LOCAL() as db:
         user = (await db.execute(select(User).where(User.id == uid, User.is_active.is_(True)))).scalar_one_or_none()
         if user is not None and user.entitlement_expired:

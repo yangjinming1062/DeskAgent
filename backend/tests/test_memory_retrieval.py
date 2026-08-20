@@ -86,7 +86,7 @@ def test_time_decay_ebbinghaus():
 async def test_hybrid_search_sparse_and_dense(seeded):
     SessionLocal = seeded
     async with SessionLocal() as db:
-        # Create test memories: one with embedding, one with text matching
+        # 测试记忆：一条有 embedding，一条仅文本匹配
         dim = 1536
         vec_tech = [1.0 if i == 0 else 0.0 for i in range(dim)]
         vec_food = [1.0 if i == 1 else 0.0 for i in range(dim)]
@@ -110,7 +110,7 @@ async def test_hybrid_search_sparse_and_dense(seeded):
         db.add_all([m1, m2])
         await db.commit()
 
-        # Query with tech vector
+        # 用技术向量查询
         results = await retrieve_hybrid_memories(
             db, 1001, "Python", query_embedding=vec_tech, limit=5
         )
@@ -118,7 +118,7 @@ async def test_hybrid_search_sparse_and_dense(seeded):
         assert results[0]["id"] == m1.id
         assert "Python" in results[0]["content"]
 
-        # Query with food keywords without vector
+        # 不带向量，用食物关键词查询
         results_food = await retrieve_hybrid_memories(db, 1001, "火锅", limit=5)
         assert len(results_food) >= 1
         assert results_food[0]["id"] == m2.id
@@ -222,7 +222,7 @@ async def test_native_memory_retain_and_recall_with_importance(seeded):
         parsed_retain = json.loads(retain_res)
         assert "memory_id" in parsed_retain
 
-        # Verify importance is persisted
+        # 验证 importance 已持久化
         row = (
             await db.execute(
                 select(Memory).where(Memory.id == parsed_retain["memory_id"])
@@ -231,7 +231,7 @@ async def test_native_memory_retain_and_recall_with_importance(seeded):
         assert row is not None
         assert row.importance == 2.0
 
-        # Verify recall finds it
+        # 验证 recall 能找到它
         recall_res = await mem.execute_tool("memory_recall", {"query": "Rust"})
         parsed_recall = json.loads(recall_res)
         assert "用户精通 Rust" in parsed_recall["result"]
@@ -247,12 +247,12 @@ def test_system_prompt_includes_proactive_memory():
 
 
 async def test_semantic_retrieval_bridges_lexical_gap(seeded):
-    """Verify that vector similarity retrieves memories with zero keyword overlap."""
+    """验证零关键词重叠时仍可通过向量相似度召回记忆。"""
     SessionLocal = seeded
     async with SessionLocal() as db:
         # "我最近工作压力很大" vs "主人今天项目上线遇到了严重挫折"
         dim = 1536
-        # Let vector index 0 represent high work stress semantics
+        # 向量索引 0 代表工作高压的语义。
         stress_vec = [1.0 if i == 0 else 0.0 for i in range(dim)]
 
         m_stress = Memory(
@@ -266,7 +266,7 @@ async def test_semantic_retrieval_bridges_lexical_gap(seeded):
         db.add(m_stress)
         await db.commit()
 
-        # Query has completely different wording: "我最近工作压力很大", but carries the stress vector
+        # 查询文本完全换措辞，但向量承载同样的压力语义。
         results = await retrieve_hybrid_memories(
             db,
             1001,
@@ -280,7 +280,7 @@ async def test_semantic_retrieval_bridges_lexical_gap(seeded):
 
 
 async def test_turn_inputs_proactive_injection(seeded):
-    """Verify _build_turn_inputs automatically injects relevant memory into system message."""
+    """验证 _build_turn_inputs 会自动将相关记忆注入到系统消息中。"""
     SessionLocal = seeded
     async with SessionLocal() as db:
         conv = Conversation(user_id=1001, kind="main")
@@ -288,7 +288,7 @@ async def test_turn_inputs_proactive_injection(seeded):
         await db.commit()
         await db.refresh(conv)
 
-        # Seed a relevant recall memory
+        # 植入一条相关的 recall 记忆
         db.add(
             Memory(
                 user_id=1001,
@@ -314,14 +314,13 @@ async def test_turn_inputs_proactive_injection(seeded):
             session_client_context=None,
             user_settings={},
         )
-        # Check system message in turn.messages[0]
-        sys_msg = turn.messages[0]["content"]
+        # 检查 turn.messages[0] 里的 system 消息        sys_msg = turn.messages[0]["content"]
         assert "Relevant long-term memories" in sys_msg
         assert "极其讨厌啰嗦的废话" in sys_msg
 
 
 def test_provider_embedding_models_registered():
-    """Verify supported LLM providers register their vendor-specific embedding model, and unsupported ones are not registered."""
+    """验证已支持的 LLM provider 注册了对应 embedding 模型，未支持的 provider 不注册。"""
     from services.llm import ServiceType, default_model_for, try_resolve
 
     # Supported providers

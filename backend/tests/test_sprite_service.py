@@ -50,19 +50,16 @@ def _keyed(data: bytes) -> Image.Image:
     return sprite_service.chroma_key_to_alpha(Image.open(io.BytesIO(data)), np.asarray(GREEN_RGB, dtype=np.float32))
 
 
-SPRITE_BG_PNG = _png(lambda img: None)  # solid white, nothing else
+SPRITE_BG_PNG = _png(lambda img: None)  # 纯白无内容
 SPRITE_BODY_PNG = _png(lambda img: img.paste((200, 30, 30), (10, 20, 50, 60)))
 SPRITE_DARK_PNG = _png(
     lambda img: img.paste((100, 100, 100), (0, 0, 60, 80))
-)  # solid gray → keys entirely, fails the opaque floor
-AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))  # blue subject on the white-bg contract
+)  # 纯灰 → 整体被键出，违反 opaque floor
+AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))  # 白底契约下的蓝色主体
 
 
 def test_chroma_key_keeps_small_enclosed_pockets():
-    # Green bg + red body + a small enclosed green pocket inside the red
-    # region. The pocket is below the island threshold (max(100, w*h//200)
-    # = 100 for a 60×80 image; pocket is 7×8 = 56 px), so it survives as a
-    # character feature — the analogue of an eye highlight or specular dot.
+    # 口袋大小低于 island 阈值（max(100, w*h//200)，60×80 阈值=100，7×8=56 px）时保留为角色特征（如高光点）。
     data = _green_png(
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
@@ -70,15 +67,13 @@ def test_chroma_key_keeps_small_enclosed_pockets():
         )
     )
     out = _keyed(data)
-    assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
-    assert out.getpixel((30, 50))[3] == 255  # body kept
-    assert out.getpixel((28, 34))[3] == 255  # small enclosed pocket preserved
+    assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
+    assert out.getpixel((30, 50))[3] == 255  # 主体保留
+    assert out.getpixel((28, 34))[3] == 255  # 小孤立口袋保留为角色特征
 
 
 def test_chroma_key_removes_large_enclosed_islands():
-    # Same body, but the enclosed green pocket is enlarged past the island
-    # threshold — the analogue of a "between-the-legs" backdrop continuation.
-    # Threshold = max(100, w*h//200) = 100; pocket is 30×30 = 900 px.
+    # 封闭口袋超过 island 阈值（60×80 阈值=100，30×30=900 px）时被视为背景延续，需要键出。
     data = _green_png(
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
@@ -86,26 +81,21 @@ def test_chroma_key_removes_large_enclosed_islands():
         )
     )
     out = _keyed(data)
-    assert out.getpixel((0, 0))[3] == 0  # corner: background keyed out
-    assert out.getpixel((10, 50))[3] == 255  # red body strip (left of pocket)
-    assert out.getpixel((35, 45))[3] == 0  # large enclosed pocket keyed out
+    assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
+    assert out.getpixel((10, 50))[3] == 255  # 口袋左侧的红色主体条
+    assert out.getpixel((35, 45))[3] == 0  # 大封闭口袋被键出
 
 
 def test_chroma_key_soft_band_feather():
-    # Pure-green left half seeds the flood; it expands into the dimmer green
-    # right half (distance 80 sits inside the 40–100 soft band), which gets
-    # a partial alpha via the squared ease-out.
+    # 纯绿一侧作为种子向暗绿一侧扩散，距离 80 落入 40–100 soft band，按 squared ease-out 给到部分 alpha。
     data = _green_png(lambda img: img.paste((0, 175, 77), (30, 0, 60, 80)))
     out = _keyed(data)
-    assert out.getpixel((5, 40))[3] == 0  # pure-green half: fully keyed
-    assert 0 < out.getpixel((45, 40))[3] < 255  # soft band: feathered
+    assert out.getpixel((5, 40))[3] == 0  # 纯绿侧：完全键出
+    assert 0 < out.getpixel((45, 40))[3] < 255  # soft band：羽化
 
 
 def test_chroma_key_keeps_light_clothing():
-    # Regression anchor: the retired white-key washed out any subject pixel
-    # whose luminance crossed its soft band, so light-gray fabric vanished.
-    # On a chroma background light fabric is >300 distance units away and
-    # stays fully opaque.
+    # 回归锚：旧的白色 key 一旦亮度跨越 soft band 就会洗掉主体像素，浅灰衣物直接消失；chroma 背景下浅织物距离 >300 保持完全不透明。
     data = _green_png(lambda img: img.paste((230, 230, 235), (5, 10, 55, 70)))
     out = _keyed(data)
     a = np.asarray(out.getchannel("A"))
@@ -114,8 +104,7 @@ def test_chroma_key_keeps_light_clothing():
 
 
 def test_chroma_key_hard_floor_shears_faint_residue():
-    # Distance 50 computes alpha≈7 — below the 16 floor it must shear to 0,
-    # while distance 60 (alpha≈28) survives: no 0<alpha<16 haze anywhere.
+    # 距离 50 算得 alpha≈7，低于 16 floor 必须剪切为 0；距离 60（alpha≈28）保留，全图不应出现 0<alpha<16 的雾化。
     data = _green_png(
         lambda img: (
             img.paste((50, 255, 77), (30, 0, 45, 80)),
@@ -130,31 +119,28 @@ def test_chroma_key_hard_floor_shears_faint_residue():
 
 
 def test_chroma_key_despills_feathered_edges():
-    # A mid-band edge pixel is a bg/foreground blend; despill unmixes it back
-    # toward the foreground hue instead of leaving a green fringe.
+    # 中间带边缘像素是 bg/前景混合，despill 要把它反混回前景色，避免留下绿色边缘。
     data = _green_png(
         lambda img: (
-            img.paste((0, 175, 77), (20, 0, 40, 80)),  # blend of green bg and (0, 75, 77)
+            img.paste((0, 175, 77), (20, 0, 40, 80)),  # 绿背景与 (0, 75, 77) 的混合色
             img.paste((0, 75, 77), (40, 0, 60, 80)),
         )
     )
     out = _keyed(data)
     edge = out.getpixel((30, 40))
     assert 0 < edge[3] < 255
-    assert abs(edge[1] - 75) <= 6  # G channel unmixes toward the foreground value
-    assert out.getpixel((50, 40))[1] == 75  # opaque foreground untouched
+    assert abs(edge[1] - 75) <= 6  # G 通道反混到前景值
+    assert out.getpixel((50, 40))[1] == 75  # 不透明的前景色未变
 
 
 def test_key_sprite_png_rejects_undominant_border():
-    # Subject flooding the frame edge leaves no dominant border color — the
-    # ring guard must refuse to key instead of carving the subject up.
+    # 主体铺到画面边缘时不再有 dominant border color，环形守卫必须拒绝键控以免切坏主体。
     data = _green_png(lambda img: img.paste((200, 30, 30), (0, 40, 60, 80)))
     assert sprite_service._key_sprite_png(data, sprite_service._CHROMA_CANDIDATES[0]) is None
 
 
 def test_key_sprite_png_keys_disobeyed_white_background():
-    # Provider ignoring the requested hue still yields a keyable solid white
-    # background: the estimate degrades gracefully instead of hard-failing.
+    # 即使 provider 不按指定 hue，估算也能优雅降级到可键的纯白背景，而不是硬失败。
     png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
     assert png is not None and has_real_transparency(png)
 
@@ -165,8 +151,7 @@ def test_select_chroma_candidate_avoids_subject_hues():
 
 
 def test_select_chroma_candidate_on_white_reference():
-    # A white-only palette strips every subject pixel; the fallback keeps the
-    # full pixel set and the farthest saturated hue from white wins.
+    # 只有白色的 palette 会把主体像素全部剥离；fallback 保留全像素集，选离白色最远的最饱和色。
     white_ref = Image.new("RGB", (50, 50), (255, 255, 255))
     assert sprite_service._select_chroma_candidate(white_ref).hex_code == "#00FF4D"
 
@@ -174,14 +159,12 @@ def test_select_chroma_candidate_on_white_reference():
 def test_has_real_transparency():
     png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
     assert png is not None and has_real_transparency(png)
-    assert not has_real_transparency(SPRITE_BODY_PNG)  # opaque RGB PNG
+    assert not has_real_transparency(SPRITE_BODY_PNG)  # 不透明 RGB PNG
     assert not has_real_transparency(SPRITE_BG_PNG)
 
 
 def test_has_real_transparency_rejects_hollow_silhouette():
-    # The washed-out failure mode: transparent border, thin opaque outline,
-    # semi-transparent interior. Min-alpha alone accepts it; the fraction
-    # gates must not.
+    # 洗白失败模式：透明边框、细不透明描边、半透明内部。仅 min-alpha 会误判，比例门禁必须挡住。
     alpha = np.full((60, 80), 100, dtype=np.uint8)
     alpha[:2, :] = 0
     alpha[:, :2] = 0
@@ -216,7 +199,7 @@ async def _row(
     )
     db.add(row)
     await db.commit()
-    # Album rows whose backing file exists; resolve treats missing files as misses.
+    # Album 行配套的文件真实存在；resolve 把文件缺失视为未命中。
     path = Path(SETTINGS.data_dir) / row.asset_url
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"png")
@@ -225,7 +208,7 @@ async def _row(
 
 @pytest.fixture()
 def gen_mocks(monkeypatch, tmp_path):
-    """Wire generation to succeed without touching LLMs/providers/disk."""
+    """把生成链路全部 stub 掉，不真正调用 LLM/provider/写盘。"""
     calls = {"llm": [], "providers": [], "unlinked": []}
 
     async def _fake_chain(db, uid, svc):
@@ -307,7 +290,7 @@ async def test_resolve_miss_generates_and_persists(
     async def fake_vision(db, uid, system, text, images, **k):
         if "match_id" in system:
             return json.dumps({"match_id": None})
-        assert "request" in text  # author payload carries the semantic request
+        assert "request" in text  # 作者 payload 携带语义化请求
         return json.dumps({"prompt": "一个开心的角色", "tag": "开心挥手"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
@@ -319,10 +302,10 @@ async def test_resolve_miss_generates_and_persists(
     assert row.tag == "开心挥手"
     assert row.avatar_id == asset.id
     assert row.asset_url.startswith("companion-assets/")
-    assert row.content_hash  # SHA-256 of the keyed PNG
+    assert row.content_hash  # keyed PNG 的 SHA-256
     saved = (
         tmp_path / row.asset_url
-    )  # save_companion_asset writes under <data_dir>/companion-assets/
+    )  # save_companion_asset 写到 <data_dir>/companion-assets/
     assert has_real_transparency(saved.read_bytes())
 
 
@@ -365,7 +348,7 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
     await _avatar(db_session)
     await _row(
         db_session, 1, avatar_id=999, tag="旧身份的图"
-    )  # stale: avatar regen invalidates
+    )  # 过期：avatar 重新生成后该行失效
 
     seen: list[object] = []
 
@@ -381,7 +364,7 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
     _, generated = await resolve_sprite(
         db_session, user_id=1, request_text="任何姿态"
     )
-    assert generated  # stale row never matched → generated a fresh sprite
+    assert generated  # 过期行永远匹配不上 → 生成新精灵
     assert "旧身份的图" not in str(seen)
 
 
@@ -425,7 +408,7 @@ async def test_resolve_regenerates_when_album_file_deleted(
             .all()
         )
     }
-    assert hit.asset_url not in remaining  # orphan row pruned, not left to 404
+    assert hit.asset_url not in remaining  # 孤立行被删掉，不留 404
 
 
 @pytest.mark.asyncio
@@ -437,14 +420,14 @@ async def test_resolve_waiting_regenerates_when_file_deleted(
     (Path(SETTINGS.data_dir) / waiting.asset_url).unlink()
 
     async def fake_vision(db, uid, system, text, images, **k):
-        assert "match_id" not in system  # dead waiting row means no album at all
+        assert "match_id" not in system  # waiting 行死了意味着 album 完全空
         return json.dumps({"prompt": "p", "tag": "新等待"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(
         db_session, user_id=1, request_text="安静站立等待", role="waiting"
     )
-    # sqlite reuses the freed autoincrement id — asset_url is the identity here
+    # sqlite 会复用空出的自增 id，asset_url 才是稳定身份
     assert generated and row.asset_url != waiting.asset_url and row.role == "waiting"
 
 
@@ -470,7 +453,7 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
         return json.dumps({"success": True, "urls": ["http://x/y.jpg"]})
 
     async def dark_fetch(url):
-        return SPRITE_DARK_PNG  # no white bg → keyed result stays opaque
+        return SPRITE_DARK_PNG  # 没有白底 → 键后仍不透明
 
     monkeypatch.setattr(sprite_service, "image_generation_tool", opaque_tool)
     monkeypatch.setattr(sprite_service, "fetch_texture_bytes", dark_fetch)
@@ -551,7 +534,7 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
     app.include_router(companion_api.router)
     client = TestClient(app)
 
-    # No avatar → friendly 404, not a raw provider error.
+    # 无 avatar → 友好 404，而不是裸 provider 错误
     resp = client.post("/api/companion/sprite", json={"request": "等待"})
     assert resp.status_code == 404
     assert resp.json()["detail"]["error"]
@@ -587,13 +570,8 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
     assert resp.status_code == 422
 
 
-# ── sprite subject-reference anchor: the bust avatar ───────────────────
-
-
 def test_sprite_subject_reference_anchors_on_bust():
-    """The sprite is a user-visible static-fallback fullbody image that must
-    stay in the realistic identity-anchor tier — anchored on the bust avatar
-    so sprite and avatar keep the same visual identity."""
+    """sprite 是用户可见的静态 fallback 全身图，必须与 bust avatar 共用同一身份锚点。"""
     import re
 
     with open(sprite_service.__file__, encoding="utf-8") as _f:

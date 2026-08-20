@@ -10,24 +10,18 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, ge
 
 from .config import SETTINGS
 
-# Prometheus Metrics Definitions
 HTTP_REQUESTS_TOTAL = Counter("spiritagent_http_requests_total", "Total HTTP requests", ["method", "path", "status"])
-
 HTTP_REQUEST_DURATION_SECONDS = Histogram("spiritagent_http_request_duration_seconds", "HTTP request latency in seconds", ["method", "path"])
-
 WS_CONNECTIONS_ACTIVE = Gauge("spiritagent_ws_connections_active", "Active WebSocket connections count")
-
 RPC_REQUESTS_TOTAL = Counter("spiritagent_rpc_requests_total", "Total JSON-RPC requests handled over WebSocket", ["method", "status"])
-
 RPC_REQUEST_DURATION_SECONDS = Histogram("spiritagent_rpc_request_duration_seconds", "JSON-RPC execution duration in seconds", ["method"])
 
-# ContextVar for JSON-RPC Trace Context Propagation
 _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_trace_id", default=None)
 _CURRENT_SPAN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_span_id", default=None)
 
 
 def get_current_trace_id() -> str:
-    """Return the active trace ID, or generate a new one if not present."""
+    """返回当前 trace_id；缺失时现场 mint 一个。"""
     tid = _CURRENT_TRACE_ID.get()
     if not tid:
         tid = secrets.token_hex(16)
@@ -36,13 +30,13 @@ def get_current_trace_id() -> str:
 
 
 def get_current_span_id() -> str | None:
-    """Return the active span ID, if any."""
+    """返回当前 span_id（无则 None）。"""
     return _CURRENT_SPAN_ID.get()
 
 
 @asynccontextmanager
 async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) -> AsyncIterator[dict[str, Any]]:
-    """Async context manager to record trace span and JSON-RPC metrics."""
+    """async 上下文管理器：记录 trace span 并上报 JSON-RPC 指标。"""
     trace_id = get_current_trace_id()
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
@@ -65,7 +59,7 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
 
 @contextmanager
 def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
-    """Sync context manager to record trace span."""
+    """sync 上下文管理器：记录 trace span。"""
     trace_id = get_current_trace_id()
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
@@ -77,7 +71,7 @@ def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iter
 
 
 def check_metrics_auth(auth_header: str | None, token_header: str | None) -> None:
-    """Enforce token authentication on metrics endpoint if configured."""
+    """配置了 metrics_auth_token 时强制 token 鉴权。"""
     expected_token = SETTINGS.metrics_auth_token.strip()
     if not expected_token:
         return
@@ -96,7 +90,7 @@ def check_metrics_auth(auth_header: str | None, token_header: str | None) -> Non
 
 
 def render_metrics_response(auth_header: str | None = None, token_header: str | None = None) -> Response:
-    """Render Prometheus metrics response with optional security guard."""
+    """渲染 Prometheus 指标响应（可选鉴权）。"""
     check_metrics_auth(auth_header, token_header)
     content = generate_latest()
     return Response(content=content, media_type=CONTENT_TYPE_LATEST)

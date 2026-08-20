@@ -27,7 +27,7 @@ async def test_disturbance_tier_store_defaults_and_normalizes(SessionLocal):
     assert await disturbance.set_disturbance_tier(1, "quiet") == "quiet"
     assert await disturbance.is_quiet(1) is True
 
-    # Unknown tiers fall back to the default, never raise.
+    # 未知 tier 退回默认，绝不抛异常。
     assert await disturbance.set_disturbance_tier(1, "bogus") == "normal"
     assert await disturbance.is_quiet(1) is False
 
@@ -84,8 +84,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
-    """Quiet tier: message text is suppressed but the LLM-reasoned affect
-    still flows via ``companion.affect`` (§6: 断消息不断 affect)."""
+    """Quiet tier：消息文本被抑制，但 LLM 推理的 affect 仍通过 ``companion.affect`` 发出（§6：断消息不断 affect）。"""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     messages: list[tuple[int, str, str | None]] = []
@@ -117,10 +116,7 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
-    """P1-5: quiet tier + no affect: text is suppressed, but a
-    ``companion.affect({emotion: 'neutral'})`` event fires so the
-    sprite isn't left in a stale state. The desktop maps ``neutral``
-    to idle (events.ts P1-5)."""
+    """P1-5：quiet tier 且无 affect 时，文本被抑制，但 ``companion.affect({emotion: 'neutral'})`` 仍触发，避免 sprite 停留旧态。desktop 将 ``neutral`` 映射为空闲（events.ts P1-5）。"""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     messages: list[tuple[int, str, str | None]] = []
@@ -143,15 +139,15 @@ async def test_send_message_quiet_tier_no_affect_emits_neutral(monkeypatch):
     result = json.loads(await smt.send_message_tool(message="psst", user_id=1))
 
     assert result["success"] is True
-    # Text suppressed under quiet.
+    # quiet 模式下文本被抑制。
     assert messages == []
-    # Neutral affect fires to keep the sprite in sync.
+    # 同时触发 neutral affect 让 sprite 不停留在旧态。
     assert affects == [(1, "neutral")]
 
 
 @pytest.mark.asyncio
 async def test_send_message_normal_tier_emits(monkeypatch):
-    """P0-5: normal tier (or any non-quiet) lets the WSEvent through."""
+    """P0-5：normal tier（或非 quiet）允许 WSEvent 通过。"""
     smt = importlib.import_module("services.tools.builtin.send_message_tool")
 
     captured: list[tuple[int, str, str | None, float | None]] = []
@@ -174,9 +170,6 @@ async def test_send_message_normal_tier_emits(monkeypatch):
     assert captured == [(7, "hi", "happy", None)]
 
 
-# ── Onboarding per-field persistence (design §7.5) ──
-
-
 async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     _, SessionLocal = _patch_db
     from services.companion import (
@@ -186,7 +179,6 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
     )
 
     async with SessionLocal() as db:
-        # Fresh user: no answers, next field is the first question.
         state = await get_onboarding_state(db, 100)
         assert state == {
             "answers": {},
@@ -194,30 +186,25 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
             "complete": False,
         }
 
-        # Submit one field — it persists immediately.
         state = await submit_onboarding_field(db, 100, "name", "小光")
         assert state["answers"]["name"] == "小光"
         assert state["next_field"] == "species"
 
-        # A new session (simulating crash/restart) recovers the draft.
         state = await get_onboarding_state(db, 100)
         assert state["answers"]["name"] == "小光"
         assert state["next_field"] == "species"
 
-        # Empty value clears the field.
         await submit_onboarding_field(db, 100, "name", None)
         state = await get_onboarding_state(db, 100)
         assert "name" not in state["answers"]
         assert state["next_field"] == "name"
 
-        # Unknown field is rejected.
         from services.companion import PersonaValidationError
 
         with pytest.raises(PersonaValidationError):
             await submit_onboarding_field(db, 100, "bogus", "x")
 
-        # Once persona is finalized but portrait is not yet confirmed, get_state
-        # routes to "portrait". Once confirmed, it routes to "fullbody" (if seed missing) then "voice".
+        # persona 最终化但 portrait 未确认时，get_state 路由到 "portrait"；确认后路由到 "fullbody"（若缺 seed）再到 "voice"。
         await update_persona(
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
@@ -247,7 +234,7 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
         await db.commit()
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
-        # Front seed alone = not confirmed yet (style pick / refine redraw).
+        # 仅 front seed 仍未确认（风格挑选 / refine 重绘阶段）。
         assert state["next_field"] == "fullbody"
 
         avatar.seed_back_url = "companion-avatars/test_back.jpg"
@@ -258,9 +245,7 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
 
 
 async def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
-    """Reordered onboarding: character is finalized before q-user / voice.
-    submit_onboarding_field must accept user_* → Memory and voice → draft
-    even when is_complete=True, while still rejecting character fields."""
+    """重排后的 onboarding：character 在 q-user / voice 之前最终化。submit_onboarding_field 即便 is_complete=True 也得接受 user_* → Memory、voice → draft；同时仍拒绝修改 character 字段。"""
     _, SessionLocal = _patch_db
     from services.companion import (
         PersonaValidationError,
@@ -277,34 +262,32 @@ async def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
         )
         await confirm_portrait(db, 100)
 
-        # user_* lands in Memory, not persona draft.
+        # user_* 写入 Memory，不进入 persona draft。
         await submit_onboarding_field(db, 100, "user_call_name", "老板")
         await submit_onboarding_field(db, 100, "user_hobbies", "摄影")
         profile = await read_user_profile(db, 100)
         assert profile["user_call_name"] == "老板"
         assert profile["user_hobbies"] == "摄影"
 
-        # voice lands in draft.
+        # voice 写入 draft。
         await submit_onboarding_field(db, 100, "voice", "温柔女声")
         state = await get_onboarding_state(db, 100)
         assert state["answers"]["voice"] == "温柔女声"
         assert state["answers"]["user_call_name"] == "老板"
 
-        # Empty user_* writes are a no-op (revocation goes through memory_forget).
+        # 空 user_* 写入是 no-op（撤销走 memory_forget）。
         before = await read_user_profile(db, 100)
         await submit_onboarding_field(db, 100, "user_call_name", None)
         after = await read_user_profile(db, 100)
         assert before == after
 
-        # Character fields are still rejected once persona is finalized.
+        # persona 最终化后，character 字段仍被拒绝。
         with pytest.raises(PersonaValidationError):
             await submit_onboarding_field(db, 100, "name", "新名字")
 
 
 async def test_onboarding_complete_only_when_post_character_fields_filled(_patch_db):
-    """get_onboarding_state must gate complete=True on portrait confirmation +
-    voice + user_* being answered, so a mid-onboarding crash resumes instead of
-    skipping onboarding."""
+    """get_onboarding_state 必须把 complete=True 门控在 portrait 确认 + voice + user_* 都填完；中途崩溃后能续上，而不是跳过 onboarding。"""
     _, SessionLocal = _patch_db
     from services.companion import (
         confirm_portrait,
@@ -318,7 +301,6 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
             db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
 
-        # Unconfirmed portrait routes to portrait.
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "portrait"
@@ -338,32 +320,32 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
 
         await confirm_portrait(db, 100)
 
-        # Portrait confirmed & fullbody confirmed (aux seeds present), voice missing → voice wins over (also missing) user_*.
+        # portrait 已确认、fullbody 也确认（aux seeds 齐全），voice 缺失 → voice 优先于 user_*。
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "voice"
 
         await submit_onboarding_field(db, 100, "voice", "温柔女声")
 
-        # Voice answered, user_* all missing → first user field.
+        # voice 已答，user_* 全空 → 第一个 user 字段。
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "user_call_name"
 
-        # Partial: only user_call_name filled.
+        # 仅填了 user_call_name 的部分状态。
         await submit_onboarding_field(db, 100, "user_call_name", "老板")
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "user_gender"
 
-        # Fill the rest of user_*.
+        # 把其余 user_* 填完。
         for f in ("user_gender", "user_age_bucket", "user_hobbies", "user_freeform"):
             await submit_onboarding_field(db, 100, f, "x")
 
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is True
 
-        # Clearing voice re-opens the flow at voice, ahead of the answered user_*.
+        # 清空 voice 会让流程回到 voice 之前，且优先于已答的 user_*。
         await submit_onboarding_field(db, 100, "voice", None)
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
@@ -371,12 +353,7 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
 
 
 async def test_portrait_confirmation_and_resume(_patch_db):
-    """Test full lifecycle of is_portrait_confirmed:
-    - Persona unconfirmed without avatar -> next_field="portrait"
-    - Persona unconfirmed with avatar -> still "portrait" (avatar confirmation)
-    - POST /api/companion/portrait/confirm marks it confirmed
-    - update_persona / regen resets is_portrait_confirmed to False
-    """
+    """is_portrait_confirmed 的完整生命周期：无 avatar→portrait / 有 avatar→仍是 portrait / confirm 接口标记确认 / update_persona 或 regen 会重置。"""
     _, SessionLocal = _patch_db
     from modules.companion import AvatarAsset
     from services.companion import (
@@ -392,13 +369,13 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         assert persona.is_portrait_confirmed is False
         assert persona.portrait_confirmed_at is None
 
-        # 1. No avatar row yet -> portrait
+        # 1. 尚无 avatar 行 → portrait
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
         assert state["complete"] is False
         assert "fullbody_mode" not in state
 
-        # 2. Avatar row present but unconfirmed -> still portrait (its confirmation step)
+        # 2. avatar 行存在但未确认 → 仍是 portrait（这步确认它）
         avatar = AvatarAsset(
             user_id=101,
             prompt_json="{}",
@@ -411,7 +388,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "portrait"
 
-        # 3. Confirm portrait -> next_field moves to fullbody when seed_front_url missing
+        # 3. confirm portrait → 缺 seed_front_url 时 next_field 进入 fullbody
         confirmed = await confirm_portrait(db, 101)
         assert confirmed.is_portrait_confirmed is True
         assert confirmed.portrait_confirmed_at is not None
@@ -419,7 +396,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "fullbody"
 
-        # 4. Front seed alone keeps the fullbody stage open; aux seeds (confirm-front) advance to voice
+        # 4. 仅 front seed 仍停留在 fullbody；aux seed（confirm-front）齐全后进入 voice
         avatar.seed_front_url = "companion-avatars/test_front.jpg"
         await db.commit()
         state = await get_onboarding_state(db, 101)
@@ -430,7 +407,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         state = await get_onboarding_state(db, 101)
         assert state["next_field"] == "voice"
 
-        # 5. Re-finalizing persona with new character fields resets confirmation
+        # 5. 用新 character 字段重新最终化 persona 会重置确认状态
         updated = await update_persona(
             db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"}
         )
@@ -442,9 +419,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
 
 
 async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
-    """When onboarding finishes, PUT /persona saves user_* and voice with the same
-    character definition — this must NOT reset is_portrait_confirmed, so restarting
-    the client stays complete=True and does not re-open the onboarding dialog."""
+    """onboarding 结束时，PUT /persona 与同 character 定义一起保存 user_* 与 voice——不能重置 is_portrait_confirmed，否则客户端重启后会停留在 complete=True、不会重开 onboarding 对话框。"""
     _, SessionLocal = _patch_db
     from modules.companion import AvatarAsset
     from services.companion import (
@@ -454,7 +429,6 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
     )
 
     async with SessionLocal() as db:
-        # Step 1: Character definition saved
         await update_persona(
             db, 105, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
         )
@@ -469,13 +443,11 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
         db.add(avatar)
         await db.commit()
 
-        # Step 2: Confirm portrait and submit voice
         await confirm_portrait(db, 105)
         from services.companion import submit_onboarding_field
 
         await submit_onboarding_field(db, 105, "voice", "温柔女声")
 
-        # Step 3: Finish onboarding by saving payload with user profile (matching assemblePersona)
         full_payload = {
             "name": "小光",
             "personality": "温柔",
@@ -495,9 +467,7 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
 
 
 async def test_speaking_style_rejected_after_finalization(_patch_db):
-    """speaking_style is collected in the character sub-stage and finalized by
-    the enterHatching PUT, so onboarding.submit must refuse it afterwards —
-    later edits go through PUT /api/companion/persona (retune wizard)."""
+    """speaking_style 在 character 子阶段已被 enterHatching PUT 最终化，onboarding.submit 之后必须拒绝；后续编辑走 PUT /api/companion/persona（retune wizard）。"""
     _, SessionLocal = _patch_db
     from services.companion import (
         PersonaValidationError,
@@ -518,9 +488,6 @@ async def test_speaking_style_rejected_after_finalization(_patch_db):
 
         with pytest.raises(PersonaValidationError):
             await submit_onboarding_field(db, 100, "speaking_style", "专业干练")
-
-
-# ── Affect scrubber (design §7.5) ──
 
 
 def test_affect_scrubber_extracts_and_strips_tag():
@@ -553,17 +520,13 @@ def test_affect_scrubber_rejects_unknown_emotion():
 
     s = AffectScrubber()
     out = s.feed("[affect:bogus]\nHi")
-    # Unknown emotion falls back to neutral (ARCH §7.5) — the tag must NOT
-    # leak to the user, and the desktop still receives an affect cue.
+    # 未知 emotion 退回 neutral（ARCH §7.5）——标签不能泄露给用户，且 desktop 仍收到 affect cue。
     assert s.emotion == "neutral"
     assert out == "Hi"
 
 
-# ── Affect check: idle-triggered LLM reasoning (§7.6) ──
-
-
 class _MockResponse:
-    """Minimal stand-in for the OpenAI response shape check_affect reads."""
+    """充当 check_affect 读取的 OpenAI 响应形状最小替身。"""
 
     def __init__(self, content: str):
         self.choices = [
@@ -672,8 +635,7 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
 
 @pytest.mark.asyncio
 async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
-    """Even if the LLM says should_express=true, emotion=neutral is filtered —
-    it would ping a meaningless badge on every idle check (P1-5)."""
+    """即便 LLM 说 should_express=true，emotion=neutral 也要被过滤——否则每次 idle 检查都会弹一个无意义徽标（P1-5）。"""
     _, SessionLocal = _patch_db
     ac = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 555)
@@ -740,16 +702,10 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
 
 
 def test_message_complete_emits_nested_affect_object():
-    """`message.complete` carries ``affect: {emotion: <token>}`` (not a bare
-    string) so the desktop's ``payload?.affect?.emotion`` access works.
-    Without the wrapper, every reply lands in ``idle`` instead of
-    ``EMOTIONAL(affect)`` and the entire emotion channel is dead."""
+    """``message.complete`` 携带 ``affect: {emotion: <token>}``（裸字符串形态）让 desktop 的 ``payload?.affect?.emotion`` 访问生效；没有这层包裹，所有回复都会落到 ``idle`` 而非 ``EMOTIONAL(affect)``，整条情绪通道就废了。"""
     from services.chat.affect import AffectScrubber
 
-    # The shape is what desktop reads as ``payload?.affect?.emotion``; if
-    # we ever flatten this back to a bare string, the desktop will silently
-    # drop every emotion cue. Lock the wrapper here by building the dict
-    # the helper would emit and checking the structure.
+    # 该结构就是 desktop 读取的 ``payload?.affect?.emotion``；若今后扁平化为裸字符串，desktop 会静默丢弃所有情绪 cue。这里构造 helper 该发出的 dict 结构并断言，以锁住这层包裹。
     emitted: dict = {
         "type": "message.complete",
         "text": "hello",
@@ -758,15 +714,11 @@ def test_message_complete_emits_nested_affect_object():
     assert isinstance(emitted["affect"], dict)
     assert emitted["affect"]["emotion"] == "happy"
 
-    # Scrubber's behavior when emotion is present and known — proves the
-    # contract end-to-end without spinning up a real DB.
+    # Scrubber 在 emotion 已知且匹配时的行为——不依赖真实 DB 也能端到端验证契约。
     scrubber = AffectScrubber()
     out = scrubber.feed("[affect:excited]\nhi")
     assert scrubber.emotion == "excited"
     assert out == "hi"
-
-
-# ── Voice catalog + matching ──
 
 
 def test_voice_catalog_match_by_tag():
@@ -781,9 +733,7 @@ def test_voice_catalog_match_by_tag():
 
 
 def test_voice_catalog_gender_scoring():
-    # English male preference on a non-MiMo catalog (whose tags don't embed
-    # the literal "male" / "female" tokens) — exercised the old regression
-    # where _score returned 0 for gender and defaulted to the first voice.
+    # 非 MiMo 目录上的英文男性偏好（其 tags 不含字面 "male" / "female" token）—— 复现历史回归：_score 对性别返回 0，回退到首条 voice。
     best, _ = voice_catalog.match_voice("male", voices_for_provider("minimax"))
     assert best.gender == "male"
 
@@ -795,9 +745,7 @@ def test_voice_catalog_gender_scoring():
 
 
 def test_voice_catalog_no_match_falls_back_neutral():
-    # Non-empty catalog with a nonsense preference scores 0 on every voice;
-    # the matcher must fall back to a neutral entry rather than the first
-    # gendered voice.
+    # 非空目录且偏好毫无意义时，每条 voice 都得 0 分；matcher 必须回退到中性条目，而不是首条性别化 voice。
     from services.llm import VoiceEntry
 
     catalog = [
@@ -846,24 +794,24 @@ def test_voice_catalog_language_field():
 
 
 async def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
-    """Onboarding voice picker is what users see on first launch — zh-first matches "default Chinese"."""
+    """首次启动的 onboarding 语音选择器上中文靠前——zh-first 匹配「默认中文」的设定。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
     )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     langs = [v["language"] for v in result["voices"]]
-    # All zh must come before any en (multi sits between them).
+    # 所有 zh 必须排在 en 之前（multi 位于中间）。
     first_en = langs.index("en") if "en" in langs else len(langs)
     last_zh = (
         max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
     )
     assert last_zh < first_en, f"zh voices must precede en voices: {langs}"
-    # The first voice must be a Chinese one (not mimo_default which is "multi").
+    # 首条必须是中文 voice（不是 mimo_default 那种 "multi"）。
     assert result["voices"][0]["language"] == "zh", result["voices"][0]
 
 
 def test_voice_catalog_zh_first_preserves_within_language_order():
-    """Catches accidental re-orderings that would break provider-curated within-language sequences."""
+    """捕捉 provider 整理的同语言内部顺序被无意中打乱。"""
     from services.companion.voice_catalog import _sort_voices_by_language
     from services.llm import voices_for_provider
 
@@ -875,7 +823,7 @@ def test_voice_catalog_zh_first_preserves_within_language_order():
 
 
 def test_voice_catalog_minimax_all_zh_stays_unchanged():
-    """All-zh catalogs (MiniMax) keep their original order — sort is a no-op for them."""
+    """全 zh 目录（MiniMax）保持原顺序——对这些目录排序是 no-op。"""
     from services.companion.voice_catalog import _sort_voices_by_language
     from services.llm import voices_for_provider
 
@@ -885,7 +833,7 @@ def test_voice_catalog_minimax_all_zh_stays_unchanged():
 
 
 async def test_voice_catalog_language_filter_zh(monkeypatch):
-    """list_voices(language='zh') returns only Chinese voices."""
+    """list_voices(language='zh') 只返回中文 voice。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
     )
@@ -896,7 +844,7 @@ async def test_voice_catalog_language_filter_zh(monkeypatch):
 
 
 async def test_voice_catalog_language_filter_en(monkeypatch):
-    """list_voices(language='en') returns only English voices."""
+    """list_voices(language='en') 只返回英文 voice。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
     )
@@ -906,7 +854,7 @@ async def test_voice_catalog_language_filter_en(monkeypatch):
 
 
 async def test_voice_catalog_language_filter_multi(monkeypatch):
-    """list_voices(language='multi') returns only multilingual voices."""
+    """list_voices(language='multi') 只返回多语言 voice。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
     )
@@ -916,17 +864,17 @@ async def test_voice_catalog_language_filter_multi(monkeypatch):
 
 
 async def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
-    """list_voices(language=None) returns the full sorted catalog."""
+    """list_voices(language=None) 返回完整排序目录。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
     )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language=None)
-    # Same as the default call — all 9 voices.
+    # 与默认调用一致——共 9 条 voice。
     assert len(result["voices"]) == 9
 
 
 async def test_voice_catalog_language_filter_empty_zh_subset_keeps_default(monkeypatch):
-    """Provider that registers no TTS catalog → empty voices + DEFAULT_VOICE stub."""
+    """未注册 TTS 目录的 provider → 空 voices + DEFAULT_VOICE 占位。"""
     monkeypatch.setattr(
         voice_catalog, "active_tts_provider", AsyncMock(return_value="gemini")
     )
@@ -1042,23 +990,14 @@ async def test_list_voices_empty_when_no_provider(monkeypatch):
     )
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["provider"] == "minimax"
-    # catalog[0] is the default for users who never picked a voice.
+    # catalog[0] 是从未选过 voice 的用户的默认项。
     assert result["voices"][0]["id"] == "female-shaonv"
-    # Backend ships the default voice so the renderer doesn't need its own
-    # mirror literal (C7).
+    # 后端附带默认 voice，renderer 无需自己镜像字面量（C7）。
     assert result["default_voice"]["id"] == "female-shaonv"
 
 
-# ── Persona + memory dual-write (post-hatching flow) ──
-
-
 async def test_dual_write_routes_user_profile_to_memory(_patch_db):
-    """A single PUT carrying character + user_* fields writes the persona
-    blob to ``personas`` and the 5 user_* entries to ``memories`` with
-    the canonical ``user_profile:*`` context labels. ``definition_json``
-    must not contain any ``user_*`` keys — they're routed away before the
-    persona validator runs, so the persona strict schema never sees them.
-    """
+    """一次 PUT 同时带 character + user_* 字段，persona 整体写入 ``personas``，5 条 user_* 写入 ``memories``，使用规范的 ``user_profile:*`` 上下文标签。``definition_json`` 不能包含任何 ``user_*`` 键——它们在 persona 校验器运行之前就被路由走，严格 schema 根本看不到。"""
     _, SessionLocal = _patch_db
     from modules.memory import Memory
     from services.companion import update_persona
@@ -1080,12 +1019,12 @@ async def test_dual_write_routes_user_profile_to_memory(_patch_db):
         persona = await update_persona(db, 777, payload)
         await db.refresh(persona)
         assert persona.is_complete is True
-        # 3 new character fields land in definition_json
+        # 3 个新 character 字段进入 definition_json
         definition = json.loads(persona.definition_json)
         assert definition["biological_type"] == "灵兽"
         assert definition["gender"] == "女"
         assert definition["appearance_core"] == "金发绿眼"
-        # user_* keys do NOT bleed into definition_json
+        # user_* 键不能渗入 definition_json
         for key in (
             "user_call_name",
             "user_gender",
@@ -1116,17 +1055,14 @@ async def test_dual_write_routes_user_profile_to_memory(_patch_db):
             "user_profile:hobbies",
             "user_profile:freeform",
         }
-        # tags JSON matches the rest of the Memory table (NativeMemory._retain
-        # emits the same shape, so any consumer doing json.loads stays happy).
+        # tags JSON 与 Memory 表其余部分一致（NativeMemory._retain 发出同形结构，所有 json.loads 消费者都正常工作）。
         for row in rows:
             tags = json.loads(row.tags or "[]")
             assert set(tags) == {"onboarding", "user_profile"}
 
 
 async def test_dual_write_is_idempotent(_patch_db):
-    """Repeating PUT for the same user_* keeps the memory row count at 5
-    (query-then-update upsert, dialect-agnostic).
-    """
+    """重复对同一 user_* 做 PUT 仍保持内存行数 5（query-then-update upsert，跨方言一致）。"""
     _, SessionLocal = _patch_db
     from modules.memory import Memory
     from services.companion import update_persona
@@ -1158,12 +1094,7 @@ async def test_dual_write_is_idempotent(_patch_db):
 
 
 async def test_record_user_profile_survives_stale_read(_patch_db, monkeypatch):
-    """The final onboarding PUT may race the last incremental user_* submit.
-
-    Simulate the stale read from that race: the SELECT sees no row while the
-    unique index already contains it. The upsert must update that row instead
-    of inserting a second one.
-    """
+    """最后一次 onboarding PUT 可能与最近一次增量 user_* 提交赛跑。模拟该赛跑中的过期读：SELECT 看不到行，但唯一索引里其实已经存在；upsert 必须更新该行而不是再插一条。"""
     from sqlalchemy.ext.asyncio import AsyncSession
     from sqlalchemy.sql import Select
 
@@ -1203,11 +1134,7 @@ async def test_record_user_profile_survives_stale_read(_patch_db, monkeypatch):
 
 
 async def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
-    """When the persona editor sends back only persona fields (no user_*),
-    ``record_user_profile`` short-circuits to no-op: existing user_profile
-    rows must not be touched or deleted. (Editor is intentionally persona-
-    only; user info editing lives behind memory_retain/forget tools.)
-    """
+    """persona 编辑器只回传 persona 字段（无 user_*）时，``record_user_profile`` 短路为 no-op：现有 user_profile 行不能被改动或删除。（编辑器刻意只面向 persona；用户信息编辑由 memory_retain/forget 工具承担。）"""
     _, SessionLocal = _patch_db
     from modules.memory import Memory
     from services.companion import update_persona
@@ -1224,7 +1151,7 @@ async def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
                 "user_hobbies": "音乐",
             },
         )
-        # Editor re-saves persona only
+        # 编辑器仅重保存 persona
         await update_persona(
             db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
         )
@@ -1238,9 +1165,7 @@ async def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
 
 
 async def test_dual_write_empty_user_fields_skip(_patch_db):
-    """Empty / whitespace-only user_* values are skipped — no insert, no
-    delete of existing rows (user-revocation semantics).
-    """
+    """空 / 仅空白的 user_* 值跳过——不插入、不删除现有行（用户撤销语义）。"""
     _, SessionLocal = _patch_db
     from modules.memory import Memory
     from services.companion import update_persona
@@ -1275,10 +1200,7 @@ async def test_dual_write_empty_user_fields_skip(_patch_db):
 
 
 async def test_build_user_profile_extras_renders_known_rows(_patch_db):
-    """``build_user_profile_extras`` formats user_profile:* rows in the
-    ``_CONTEXT_LABELS`` declaration order. Header is ``# User profile`` so
-    the LLM can distinguish from the ``# Companion persona`` block.
-    """
+    """``build_user_profile_extras`` 按 ``_CONTEXT_LABELS`` 声明顺序渲染 user_profile:* 行。Header 是 ``# User profile``，让 LLM 区别于 ``# Companion persona`` 块。"""
     _, SessionLocal = _patch_db
     from services.companion import build_user_profile_extras, update_persona
 
@@ -1300,7 +1222,7 @@ async def test_build_user_profile_extras_renders_known_rows(_patch_db):
         out = await build_user_profile_extras(db, 333)
 
     assert out.startswith("# User profile")
-    # Order matches ``_CONTEXT_LABELS`` (preferred_name → gender → age_bucket → hobbies → freeform)
+    # 顺序匹配 ``_CONTEXT_LABELS``（preferred_name → gender → age_bucket → hobbies → freeform）
     sections = out.splitlines()[1:]
     assert sections[0].startswith("- **Preferred name**:")
     assert sections[1].startswith("- **Gender**:")
@@ -1310,10 +1232,7 @@ async def test_build_user_profile_extras_renders_known_rows(_patch_db):
 
 
 async def test_build_user_profile_extras_empty_when_no_rows(_patch_db):
-    """A user with no profile rows (pre-onboarding, or all skipped fields)
-    yields an empty string — the system prompt caller skips empty strings
-    naturally so no ``# User profile`` header is added without content.
-    """
+    """无 profile 行的用户（pre-onboarding、或所有字段都跳过）返回空字符串——系统 prompt 调用方天然跳过空串，所以 ``# User profile`` header 不会在无内容时出现。"""
     _, SessionLocal = _patch_db
     from services.companion import build_user_profile_extras
 
@@ -1322,9 +1241,7 @@ async def test_build_user_profile_extras_empty_when_no_rows(_patch_db):
 
 
 async def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
-    """Only the rows actually stored get rendered; missing keys are silently
-    skipped (don't fabricate empty headers).
-    """
+    """仅渲染实际存在的行；缺失的键静默跳过（不要捏造空 header）。"""
     _, SessionLocal = _patch_db
     from services.companion import build_user_profile_extras, update_persona
 
@@ -1338,7 +1255,7 @@ async def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
                 "user_hobbies": "音乐",
-                # user_gender / user_age_bucket / user_freeform intentionally not set
+                # user_gender / user_age_bucket / user_freeform 故意不设
             },
         )
         out = await build_user_profile_extras(db, 444)
@@ -1376,8 +1293,7 @@ def test_persona_update_schema_rejects_unknown_keys():
 
     with pytest.raises(ValidationError):
         PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
-    # Flat persona fields are no longer accepted at the top level — the
-    # whole definition travels as definition_json.
+    # 扁平 persona 字段不再在顶层接受——整个定义必须走 definition_json。
     with pytest.raises(ValidationError):
         PersonaUpdate(name="x", personality="y", speaking_style="z")
 
@@ -1403,8 +1319,7 @@ def test_onboarding_field_order_matches_question_sequence():
 
 
 def test_onboarding_field_partitions_split_at_voice():
-    """character + voice + post-character must reconstruct ONBOARDING_FIELDS —
-    catches a mis-insertion that would put a field on the wrong side of voice."""
+    """character + voice + post-character 三段必须能拼回 ONBOARDING_FIELDS——捕捉把字段错插到 voice 另一侧的回归。"""
     from services.companion import ONBOARDING_FIELDS
     from services.companion.persona_service import (
         _CHARACTER_ONBOARDING_FIELDS,
@@ -1421,9 +1336,7 @@ def test_onboarding_field_partitions_split_at_voice():
 
 @pytest.mark.asyncio
 async def test_from_image_refuses_when_persona_incomplete(_patch_db):
-    """P0-1.4: from-image avatar generation must require ``is_complete=True`` —
-    otherwise a user could burn image- and video-gen quota on a portrait for a
-    persona with no system prompt yet."""
+    """P0-1.4：from-image 头像生成必须要求 ``is_complete=True``——否则用户可能为一个没有 system prompt 的 persona 烧掉图片和视频生成 quota。"""
     _, SessionLocal = _patch_db
     from modules.companion import Persona
     from services.companion.avatar_service import (
@@ -1442,10 +1355,7 @@ async def test_from_image_refuses_when_persona_incomplete(_patch_db):
 
 
 async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
-    """Adding a new ``user_*`` field to PersonaUpdate must not 400 —
-    extract_user_profile picks it up via the ``user_`` prefix and lands
-    it in Memory as ``user_profile:<raw_key>``.
-    """
+    """给 PersonaUpdate 新增一个 ``user_*`` 字段不能 400——extract_user_profile 通过 ``user_`` 前缀捕获它，并以 ``user_profile:<raw_key>`` 形式写入 Memory。"""
     _, SessionLocal = _patch_db
     from modules.memory import Memory
     from services.companion import update_persona
@@ -1459,7 +1369,7 @@ async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
                 "personality": "温柔",
                 "speaking_style": "轻柔",
                 "user_call_name": "老板",
-                "user_timezone": "Asia/Shanghai",  # not in _CONTEXT_LABELS
+                "user_timezone": "Asia/Shanghai",  # 未在 _CONTEXT_LABELS 中
             },
         )
         rows = (
@@ -1475,19 +1385,16 @@ async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
             .all()
         )
         contexts = {r.context for r in rows}
-        # Known field uses the friendly label, unknown field uses the raw key.
+        # 已知字段用友好标签，未知字段用原始键名。
         assert "user_profile:preferred_name" in contexts
         assert "user_profile:timezone" in contexts
 
 
 def test_voice_catalog_score_cjk_substring():
-    """P1-13: CJK preference matching works via substring in both
-    directions. ``"温柔少女音"`` previously matched nothing because
-    the latin-only path split on .split() and never compared the
-    single CJK token against the catalog."""
+    """P1-13：CJK 偏好匹配通过双向 substring 工作。``"温柔少女音"`` 此前匹配不到任何条目，因为仅 latin 路径用 .split()，永远不会把单个 CJK token 与目录对比。"""
     from services.llm import VoiceEntry
 
-    # Build a minimal catalog with a single ZH tag-bag voice.
+    # 构造一个仅含 ZH tag-bag voice 的最小目录。
     voices = [
         VoiceEntry(
             id="少女",
@@ -1518,9 +1425,7 @@ def test_voice_catalog_score_cjk_substring():
 
 
 def test_pick_voice_id_design_prefix_only():
-    """P0-10: ``mimo_voicedesign:<prompt>`` is the only colon-bearing
-    id that should pass through. ``"foo:bar"`` is a foreign id that
-    must fall back to the provider default."""
+    """P0-10：``mimo_voicedesign:<prompt>`` 是唯一允许带冒号穿透的 id。``"foo:bar"`` 属于外部 id，必须回退到 provider 默认。"""
     from services.llm import pick_voice_id
 
     assert pick_voice_id("mimo_voicedesign:cool", "mimo") == "mimo_voicedesign:cool"
@@ -1529,15 +1434,12 @@ def test_pick_voice_id_design_prefix_only():
 
 @pytest.mark.asyncio
 async def test_disturbance_tier_persists_across_reload(SessionLocal):
-    """The tier lives in companion_preferences: a backend restart (fresh
-    process, no in-memory state) keeps quiet-hours gating active until the
-    desktop reports otherwise."""
+    """tier 存在 companion_preferences：后端重启（新进程，无内存状态）后 quiet-hours 闸门仍生效，直至 desktop 报告修改。"""
     from modules.companion import CompanionPreference
     from services import disturbance
 
     await disturbance.set_disturbance_tier(7, "quiet")
-    # A restart would start with an empty ORM identity map; simulate by
-    # expiring all cached instances before re-reading.
+    # 重启会让 ORM identity map 清空；通过让所有缓存实例 expire 后重读来模拟。
     async with SessionLocal() as db:
         db.expire_all()
         row = (
@@ -1554,10 +1456,7 @@ async def test_disturbance_tier_persists_across_reload(SessionLocal):
 
 
 async def test_ws_ticket_mints_short_lived_jwt():
-    """P0-12 §7.1: POST /api/user/ws-ticket returns a 60s JWT with
-    ``purpose: "ws"``. The full-fat access token (no purpose) must
-    be rejected by authenticate_ws_token (returns (None, None)
-    tuple when invalid)."""
+    """P0-12 §7.1：POST /api/user/ws-ticket 返回 60s JWT 且 ``purpose: "ws"``。完整 access token（无 purpose）必须被 authenticate_ws_token 拒绝（无效时返回 (None, None)）。"""
     from modules.auth import create_access_token
     from services.gateway import authenticate_ws_token
 
@@ -1568,30 +1467,27 @@ async def test_ws_ticket_mints_short_lived_jwt():
         user_id=42, username="alice", expires_in_seconds=600
     )
 
-    # Both tokens fail because there's no DB user in the test env,
-    # but the ticket path doesn't get blocked at the purpose gate.
-    # Verify the purpose gate by mocking a fake user lookup.
+    # 两个 token 都因测试环境没有 DB 用户而失败，但 ticket 路径不会被 purpose gate 拦住。
+    # 通过 mock 假用户查找来验证 purpose gate。
     import jwt as _jwt
     from components import SETTINGS
 
-    # A valid-purpose token passes the purpose gate; an invalid one
-    # returns (None, None) before the user lookup.
+    # 带合法 purpose 的 token 通过 purpose gate；非法 token 在用户查找之前就返回 (None, None)。
     decoded = _jwt.decode(
         short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm]
     )
     assert decoded.get("purpose") == "ws"
 
-    # Forge a token without purpose: the function returns (None, None)
-    # at the purpose gate before even looking up the user.
+    # 伪造一个无 purpose 的 token：函数在 purpose gate 就返回 (None, None)，根本不会查用户。
     fake, _, _ = create_access_token(
         user_id=42, username="alice", expires_in_seconds=60
     )
     user, payload = await authenticate_ws_token(fake)
-    assert user is None and payload is None  # missing purpose gate kicks in
+    assert user is None and payload is None  # 缺 purpose gate 立即返回
 
 
 async def test_ws_ticket_endpoint_success(test_client, test_token):
-    """Verify POST /api/user/ws-ticket responds 200 with access_token and user info."""
+    """POST /api/user/ws-ticket 返回 200 并附带 access_token 与用户信息。"""
     resp = await test_client.post(
         "/api/user/ws-ticket", headers={"Authorization": f"Bearer {test_token}"}
     )
@@ -1603,9 +1499,7 @@ async def test_ws_ticket_endpoint_success(test_client, test_token):
 
 
 def test_voice_catalog_cjk_score_prefers_specific_match():
-    """P2-11: CJK preference scoring prefers the most specific match.
-    A '少女' preference should score higher than a generic '女' on
-    the 少女音 catalog entry."""
+    """P2-11：CJK 偏好打分时倾向最具体匹配。「少女」偏好在 少女音 目录条目上应高于「女」。"""
     from services.companion.voice_catalog import _score
     from services.llm import VoiceEntry
 
@@ -1625,21 +1519,19 @@ def test_voice_catalog_cjk_score_prefers_specific_match():
         tags=["御姐", "成熟", "女"],
         description="",
     )
-    # '少女' prefers 少女音 over 御姐音.
+    # 「少女」应优先选 少女音，而非 御姐音。
     assert _score("少女", shaonv) > _score("少女", yujie)
-    # '御姐' prefers 御姐音 over 少女音.
+    # 「御姐」应优先选 御姐音，而非 少女音。
     assert _score("御姐", yujie) > _score("御姐", shaonv)
 
 
 def test_voice_catalog_mimo_design_prefix_match():
-    """P2-11: pick_voice_id passes through mimo_voicedesign: tokens
-    (now the only colon-bearing id that goes through; see P0-10)."""
+    """P2-11：pick_voice_id 直接放行 mimo_voicedesign: token（目前唯一允许带冒号穿透的 id，参见 P0-10）。"""
     from services.llm import pick_voice_id
 
     token = "mimo_voicedesign:cool girl"
     assert pick_voice_id(token, "mimo") == token
-    # Other providers see the same id, but the actual synthesis gate
-    # is in the mimo provider's mimo_voicedesign: branch.
+    # 其他 provider 看到同一个 id，但实际合成闸门在 mimo provider 的 mimo_voicedesign: 分支。
     assert pick_voice_id(token, "zhipu") == token
 
 
@@ -1667,14 +1559,9 @@ def test_voice_catalog_tag_scoring_picks_matching_voice():
     assert _score("明亮", bright) > _score("明亮", warm)
 
 
-# ── Avatar generation from a user-uploaded base image ────────────────────────
-
-
 @pytest.mark.asyncio
 async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_db):
-    """A user-uploaded base image is passed inline as a data-URI reference,
-    the description is folded into the prompt, and the regenerated portrait
-    becomes active."""
+    """用户上传的基础图以 data-URI 内联引用，描述被折进 prompt，重新生成的肖像置为 active。"""
     import json as _json
 
     from modules.auth import User
@@ -1732,7 +1619,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         )
         await db.refresh(asset)
 
-        # Step-1 fires exactly one image-gen call (avatar bust only).
+        # 步骤 1：image-gen 仅调用一次（仅头像半身）。
         assert len(all_calls) == 1
         call = all_calls[0]
         assert call["prompt"].startswith("bust portrait")
@@ -1740,7 +1627,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
         assert "把背景改成纯白" in call["prompt"]
         assert asset.active is True
         payload = _json.loads(asset.prompt_json)
-        # Audit row keeps a marker, not the base64 blob.
+        # 审计行只保留标记符，不存 base64 块。
         assert payload["reference_image"] == "data:image/png;base64"
         assert payload["feedback"] == "把背景改成纯白"
         assert payload["source_url"] == "http://provider/gen.png"
@@ -1749,8 +1636,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
 
 @pytest.mark.asyncio
 async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_patch_db):
-    """The from-image path must require a finalized persona so a half-finished
-    onboarding cannot burn image-gen quota on a portrait without a prompt."""
+    """from-image 路径必须要求 persona 已最终化，避免未完成的 onboarding 在没有 prompt 的肖像上烧掉 image-gen quota。"""
     import json as _json
 
     from modules.auth import User
@@ -1781,8 +1667,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
 
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
-    """POST /avatar/from-image rejects unsupported MIME with 415 and maps an
-    incomplete persona to 409 (provider failures stay 502)."""
+    """POST /avatar/from-image 拒绝不支持的 MIME 时返回 415，不完整的 persona 映射为 409（provider 失败仍为 502）。"""
     from api.v1 import companion as companion_api
     from components import get_db
     from fastapi import FastAPI
@@ -1828,13 +1713,7 @@ def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
 
 
 def test_companion_rest_contract(_patch_db, monkeypatch):
-    """New-contract shapes for persona / avatar / model / wardrobe endpoints.
-
-    Regression guard for the route↔schema mismatch that used to 500 every
-    endpoint: GET /persona returns only {definition_json, is_complete},
-    PUT /persona takes definition_json, absent assets are 404 (not null),
-    and POST /model surfaces generation failures as 502 (not 500).
-    """
+    """persona / avatar / model / wardrobe 端点的新契约 schema 形态。守护 route↔schema 错配的回归——以前所有端点都 500：GET /persona 只返回 {definition_json, is_complete}，PUT /persona 接受 definition_json，缺失资源 404（而非 null），POST /model 把生成失败以 502 暴露（而非 500）。"""
     from api.v1 import companion as companion_api
     from components import get_db
     from fastapi import FastAPI
@@ -1860,13 +1739,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     app.include_router(companion_api.router)
     client = TestClient(app)
 
-    # The PUT handler now schedules a background personality-tag refresh
-    # task. The conftest's single-connection SAVEPOINT can't tolerate a
-    # second session on the same connection releasing that SAVEPOINT
-    # mid-test, so suppress the schedule here — the dedicated
-    # ``test_persona_put_schedules_background_tag_refresh`` and
-    # ``test_persona_tag_refresh_retries_transient_failures`` tests
-    # cover the background behaviour on their own.
+    # PUT handler 现在会调度后台 personality-tag 刷新任务。conftest 的单连接 SAVEPOINT 难以承受同一连接第二个会话中途释放 SAVEPOINT，所以此处屏蔽 schedule——专门的 ``test_persona_put_schedules_background_tag_refresh`` 和 ``test_persona_tag_refresh_retries_transient_failures`` 各自覆盖后台行为。
     monkeypatch.setattr(
         companion_api, "schedule_personality_tag_refresh", lambda *a, **kw: None
     )
@@ -1901,30 +1774,23 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     assert client.get("/api/companion/model").status_code == 404
     assert client.get("/api/companion/wardrobe/equipped").status_code == 404
 
-    # POST /api/companion/model — the base-GLB pipeline is gone; generation
-    # raises ModelGenerationError until the Tripo3D path lands.
+    # POST /api/companion/model——base-GLB 管线已下线；Tripo3D 路径落地前，生成会抛 ModelGenerationError。
     model_resp = client.post("/api/companion/model")
     assert model_resp.status_code == 502
     assert model_resp.json()["detail"]["error"]
 
     items = client.get("/api/companion/wardrobe")
     assert items.status_code == 200
-    # Presets removed — wardrobe starts empty until the user generates an item.
+    # 预设已移除——直到用户生成首件之前，wardrobe 保持空。
     assert items.json() == []
 
 
 @pytest.mark.asyncio
 async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypatch):
-    """``PUT /api/companion/persona`` must not block on the LLM call —
-    it persists the persona and hands the LLM-tag work off to a
-    background task. End-to-end row writes are covered by
-    ``test_persona_tag_refresh_retries_transient_failures``; this test
-    focuses on the schedule contract.
-    """
+    """``PUT /api/companion/persona`` 不能在 LLM 调用上阻塞——它持久化 persona 并把 LLM-tag 工作交给后台任务。端到端行写入由 ``test_persona_tag_refresh_retries_transient_failures`` 覆盖；本测试聚焦 schedule 契约。"""
     _, SessionLocal = _patch_db
 
-    # Seed a finalized persona so update_persona runs on an existing row
-    # (the post-character-onboarding state the renderer actually hits).
+    # 预置一个已最终化 persona，让 update_persona 命中现有行（renderer 实际命中的 post-character-onboarding 状态）。
     async with SessionLocal() as db:
         persona = Persona(
             user_id=4242,
@@ -1947,8 +1813,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
         companion_api, "schedule_personality_tag_refresh", _record_schedule
     )
 
-    # Tripwire: if the handler ever awaits the LLM inline, the explode
-    # below surfaces it as a test failure rather than a silent regression.
+    # 绊线：若 handler 任何时候 inline 等 LLM，下面的 explode 会把它作为测试失败暴露，而不是静默回归。
     def _explode_if_called(*_a, **_kw):  # pragma: no cover
         raise AssertionError("analyze_personality_tags should NOT be awaited inline")
 
@@ -1993,9 +1858,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
 
 @pytest.mark.asyncio
 async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeypatch):
-    """A flaky LLM that fails twice then succeeds still produces tags on
-    the third attempt; the PUT response itself never sees the LLM call.
-    """
+    """不稳定的 LLM 失败两次后第三次成功，仍能产出 tags；PUT 响应本身不会看到 LLM 调用。"""
     _, SessionLocal = _patch_db
 
     attempts = {"n": 0}
@@ -2015,7 +1878,7 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         return ""
 
     monkeypatch.setattr(companion_svc.persona_background, "chat", _noop_chat)
-    # Shrink the backoff so the test runs in well under a second total.
+    # 压缩 backoff 让测试总耗时远小于 1 秒。
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_BASE_DELAY", 0.01)
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_MAX_DELAY", 0.05)
     monkeypatch.setattr(
@@ -2051,10 +1914,7 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
 
 @pytest.mark.asyncio
 async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkeypatch):
-    """All retries exhausted → leave prior tags untouched. The downstream
-    animation pipeline tolerates an empty list, so the warning log is
-    the only signal that something went wrong.
-    """
+    """重试耗尽后保留旧 tags 不动。下游动画流水线容忍空列表，warning 日志是唯一异常信号。"""
     _, SessionLocal = _patch_db
 
     async def _always_fail(*_a, **_kw):
@@ -2101,8 +1961,7 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
 
 @pytest.mark.asyncio
 async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
-    """A second generation while one is in flight is rejected (409) instead of
-    spawning overlapping pipelines that race over the active row."""
+    """正在执行一次生成时，第二次生成请求被拒绝（409），避免相互竞争的并发流水线抢同一 active 行。"""
 
     from modules.auth import User
     from modules.companion import AvatarAsset, CompanionModel
@@ -2139,8 +1998,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
         with pytest.raises(ModelGenerationInProgressError):
             await generate_companion_model(db, user_id=uid)
 
-    # The generating row is the durable in-flight marker: even after the
-    # no-op pipeline "finishes", a fresh call still sees the in-flight row.
+    # generating 行是持久在飞标记：即便 no-op 流水线"结束"，新调用仍能看到在飞行。
     async with SessionLocal() as db:
         assert (
             await db.execute(
@@ -2158,8 +2016,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
 async def test_model_generation_failure_keeps_previous_model_active(
     _patch_db, monkeypatch
 ):
-    """A failed regeneration marks its own row failed (inactive) and never
-    touches the previously active model — the user keeps a working companion."""
+    """生成失败的再生会把自己标为 failed（inactive），绝不触碰原先 active 的模型——用户始终保留一个可用的伙伴。"""
     import json as _json
 
     from modules.auth import User
@@ -2176,10 +2033,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
     def _seed_unreadable(*_a, **_kw):
         raise ModelGenerationError("seed view file not on disk")
 
-    # The image-to-3D pipeline's seed views live on disk under
-    # companion-avatars/ and the worker resolves them via
-    # ``resolve_uploaded_avatar_path``. Force a failure there so the test
-    # exercises the post-generation failure path without spending API credits.
+    # image-to-3D 管线的 seed 视图落在 companion-avatars/ 下的磁盘，由 worker 通过 ``resolve_uploaded_avatar_path`` 解析。强制该处失败以便测试覆盖生成后失败路径，且不消耗 API 配额。
     monkeypatch.setattr(
         "services.companion.model_service.resolve_uploaded_avatar_path",
         _seed_unreadable,
@@ -2221,15 +2075,14 @@ async def test_model_generation_failure_keeps_previous_model_active(
         uid = user.id
         previous_id = previous.id
 
-    # The pipeline runs on the render worker; drain the enqueued job inline.
+    # 流水线在 render worker 上跑；这里把入队任务 inline 排干。
     from services.worker import handlers as worker_handlers
     from services.worker import runner
 
     worker_handlers.register()
 
     async with SessionLocal() as db:
-        # force=True: an active succeeded model exists, so this is an explicit
-        # regeneration rather than the idempotent first-time path.
+        # force=True：当前已存在 active succeeded 模型，所以这是显式再生，而不是幂等首跑路径。
         await generate_companion_model(db, user_id=uid, force=True)
 
         await runner.drain_once()
@@ -2265,9 +2118,7 @@ async def test_model_generation_failure_keeps_previous_model_active(
 async def test_generate_companion_model_is_idempotent_when_model_exists(
     _patch_db, monkeypatch
 ):
-    """Without ``force``, an existing succeeded active model is returned as-is —
-    no new row, no pipeline, no paid provider call. Onboarding-complete can
-    re-fire on resume/re-login and must not burn Tripo credits again."""
+    """无 ``force`` 时，已存在的 succeeded active 模型原样返回——不新增行、不启流水线、不付费调用 provider。onboarding-complete 在 resume/re-login 时可能再次触发，不应再次消耗 Tripo 配额。"""
     import json as _json
 
     from modules.auth import User
@@ -2332,7 +2183,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
             .scalars()
             .all()
         )
-        assert len(rows) == 1, "no additional generation row may be created"
+        assert len(rows) == 1, "不能再创建额外的生成行"
 
 
 @pytest.mark.asyncio
@@ -2340,8 +2191,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
 async def test_generate_companion_model_without_provider_key_rejects(
     _patch_db, monkeypatch
 ):
-    """No provider key → explicit rejection before any row or enqueue —
-    generation is disabled and the companion stays in sprite mode."""
+    """没有 provider key 时，应在创建任何行或入队之前显式拒绝——生成被禁用，伙伴停留在 sprite 模式。"""
     import json as _json
 
     from modules.auth import User
@@ -2397,7 +2247,7 @@ async def test_generate_companion_model_without_provider_key_rejects(
 
 @pytest.mark.asyncio
 async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
-    """End-to-end test for wardrobe preview (temp-media) and confirm (persist + equip)."""
+    """wardrobe preview（temp-media）和 confirm（持久化 + 装备）的端到端测试。"""
     import base64
 
     from api.v1 import companion as companion_api
@@ -2434,7 +2284,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     app.include_router(companion_api.router)
     client = TestClient(app)
 
-    # 1. Mock LLM & image generation for preview
+    # 1. mock LLM 与图像生成以便做 preview
     captured_tool_args: dict = {}
 
     async def _fake_resolve_rig_type(db, user_id):
@@ -2491,9 +2341,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
         "services.companion.wardrobe_service.normalize_outfit", _fake_normalize_outfit
     )
 
-    # 2. Preview without image: POST enqueues (202), the worker host runs it
-    #    (drained here against the same mocks), result comes back via the
-    #    job-status GET.
+    # 2. 无图 preview：POST 入队（202），worker 宿主执行（这里用同一组 mock 排干），结果通过 job-status GET 返回。
     from services.worker import handlers, runner
 
     handlers.register()
@@ -2516,7 +2364,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert preview_data["file_id"]
     file_id = preview_data["file_id"]
 
-    # Preview does not write any DB row
+    # preview 不写任何 DB 行
     async with SessionLocal() as db:
         items = (
             (
@@ -2548,7 +2396,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert captured_tool_args["reference_image"] == f"data:image/png;base64,{img_b64}"
     assert "用户反馈：添加霓虹蓝色线条" in captured_tool_args["prompt"]
 
-    # 4. Preview validation errors
+    # 4. preview 校验错误
     bad_mime = client.post(
         "/api/companion/wardrobe/preview",
         json={
@@ -2569,7 +2417,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     )
     assert bad_b64.status_code == 400
 
-    # 5. Confirm valid preview
+    # 5. 确认合法 preview
     ws_emitted: list[int] = []
 
     async def _emit(user_id):
@@ -2594,7 +2442,7 @@ async def test_wardrobe_preview_and_confirm_lifecycle(_patch_db, monkeypatch):
     assert confirmed["outfit_description"] is not None
     assert ws_emitted == [uid]
 
-    # Verify DB state: new row persisted, equipped=True, other items equipped=False
+    # 校验 DB 状态：新行已写入，equipped=True，其他项 equipped=False
     async with SessionLocal() as db:
         items = (
             (await db.execute(select(WardrobeItem).where(WardrobeItem.user_id == uid)))
@@ -2655,14 +2503,9 @@ async def test_wardrobe_confirm_502_redacted_error(_patch_db, monkeypatch):
     assert resp.json() == {"detail": {"error": "换装确认失败，请稍后重试"}}
 
 
-# ---------------------------------------------------------------------------
-# Outfit normalization
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_normalize_outfit_text_path():
-    """Text-only normalize_outfit returns cleaned LLM output."""
+    """纯文本 normalize_outfit 返回清理后的 LLM 输出。"""
     from services.companion import normalize_outfit
 
     async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
@@ -2679,7 +2522,7 @@ async def test_normalize_outfit_text_path():
 
 @pytest.mark.asyncio
 async def test_normalize_outfit_fallback_on_error():
-    """When the LLM raises, normalize_outfit returns the truncated raw_input."""
+    """LLM 抛错时，normalize_outfit 返回截断的 raw_input。"""
     from services.companion import normalize_outfit
 
     async def _explode(*a, **kw):
@@ -2693,7 +2536,7 @@ async def test_normalize_outfit_fallback_on_error():
 
 @pytest.mark.asyncio
 async def test_normalize_outfit_strips_markdown_fences():
-    """Markdown code fences are stripped from the LLM response."""
+    """Markdown 代码围栏会被从 LLM 响应中剥除。"""
     from services.companion import normalize_outfit
 
     async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
@@ -2707,8 +2550,7 @@ async def test_normalize_outfit_strips_markdown_fences():
 
 @pytest.mark.asyncio
 async def test_normalize_outfit_strips_think_blocks():
-    """Reasoning-model <think>…</think> prefixes (including an unclosed one
-    truncated mid-reasoning) never reach appearance_outfit."""
+    """推理模型 think 标签前缀（包括未闭合、推理中途被截断的）绝不能进 appearance_outfit。"""
     from services.companion import normalize_outfit
 
     async def _closed(db, user_id, system_prompt, user_payload, **kwargs):
@@ -2728,7 +2570,7 @@ async def test_normalize_outfit_strips_think_blocks():
 
 @pytest.mark.asyncio
 async def test_normalize_outfit_empty_response_falls_back():
-    """Empty LLM response triggers fallback to raw_input."""
+    """LLM 响应为空时回退到 raw_input。"""
     from services.companion import normalize_outfit
 
     async def _empty_chat(*a, **kw):
@@ -2741,8 +2583,7 @@ async def test_normalize_outfit_empty_response_falls_back():
 
 
 async def test_update_outfit_field_surgical(_patch_db):
-    """update_outfit_field modifies only appearance_outfit + re-renders extras,
-    leaving other persona fields untouched."""
+    """update_outfit_field 只修改 appearance_outfit 并重新渲染 extras，其它 persona 字段不动。"""
     _, SessionLocal = _patch_db
     from services.companion import update_outfit_field, update_persona
 
@@ -2759,16 +2600,16 @@ async def test_update_outfit_field_surgical(_patch_db):
         ).scalar_one()
         definition = json.loads(persona.definition_json)
         assert definition["appearance_outfit"] == "粉色碎花洋裙"
-        # Other fields untouched
+        # 其它字段不动
         assert definition["name"] == "小光"
         assert definition["personality"] == "温柔"
-        # System prompt extras re-rendered with the outfit line
+        # system prompt extras 已用新的 outfit 行重新渲染
         assert "Appearance outfit" in persona.system_prompt_extras
         assert "粉色碎花洋裙" in persona.system_prompt_extras
 
 
 def test_outfit_guidance_injected_only_when_outfit_present():
-    """system_prompt.py conditionally appends COMPANION_OUTFIT_GUIDANCE."""
+    """system_prompt.py 仅在条件满足时追加 COMPANION_OUTFIT_GUIDANCE。"""
     from modules.system import AgentPromptConfig
     from services.chat.system_prompt import build_system_prompt
 
@@ -2790,11 +2631,11 @@ def test_outfit_guidance_injected_only_when_outfit_present():
         language="zh",
     )
 
-    # No persona_extras -> no outfit guidance
+    # 无 persona_extras → 没有 outfit guidance
     prompt_without = build_system_prompt(base_config)
     assert "Outfit-Behaviour Alignment" not in prompt_without
 
-    # persona_extras with outfit line -> outfit guidance present
+    # persona_extras 含 outfit 行 → 出现 outfit guidance
     config_with_outfit = base_config.model_copy(
         update={
             "persona_extras": "# Companion persona\n- **Name**: 小光\n- **Appearance outfit**: 比基尼"
@@ -2803,7 +2644,7 @@ def test_outfit_guidance_injected_only_when_outfit_present():
     prompt_with = build_system_prompt(config_with_outfit)
     assert "Outfit-Behaviour Alignment" in prompt_with
 
-    # persona_extras without outfit line -> no outfit guidance
+    # persona_extras 不含 outfit 行 → 没有 outfit guidance
     config_without_outfit = base_config.model_copy(
         update={"persona_extras": "# Companion persona\n- **Name**: 小光"}
     )
@@ -2880,6 +2721,7 @@ async def test_get_expressions_endpoint(_patch_db):
 
 @pytest.mark.asyncio
 async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
+    """礼物装扮的创建 / 拒绝 / 装备流程。"""
     client, SessionLocal, uid = await _make_authenticated_client(_patch_db, uid=3002)
     import tempfile
     from pathlib import Path
@@ -2899,7 +2741,7 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
         lambda data, user_id, **kw: f"companion-assets/{user_id}/dummy.png",
     )
 
-    # Create gift costume item with equip=False, origin='companion', gift_state='pending'
+    # 创建礼物装扮项：equip=False、origin='companion'、gift_state='pending'
     async with SessionLocal() as db:
         gift_item = await confirm_wardrobe_item(
             user_id=uid,
@@ -2918,13 +2760,13 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
         assert gift_item.gift_state == "pending"
         assert gift_item.origin == "companion"
 
-    # Decline gift endpoint test
+    # 拒绝礼物端点测试
     decline_resp = client.put(f"/api/companion/wardrobe/{gift_id}/decline")
     assert decline_resp.status_code == 200
     assert decline_resp.json()["gift_state"] == "declined"
     assert decline_resp.json()["equipped"] is False
 
-    # Equip gift item test -> gift_state becomes 'accepted', equipped=True
+    # 装备礼物项 → gift_state 变为 'accepted'，equipped=True
     equip_resp = client.put("/api/companion/wardrobe/equip", json={"item_id": gift_id})
     assert equip_resp.status_code == 200
     assert equip_resp.json()["gift_state"] == "accepted"
@@ -2933,8 +2775,7 @@ async def test_companion_gift_creation_and_decline_flow(monkeypatch, _patch_db):
 
 @pytest.mark.asyncio
 async def test_slot_based_multi_equip(_patch_db):
-    """Same-slot items replace each other; different slots coexist; texture
-    items occupy the outfit slot without stripping geometric units."""
+    """同 slot 项相互替换；不同 slot 共存；texture 项占据 outfit slot 且不剥离几何单元。"""
     from modules.auth import User
     from modules.companion import WardrobeItem
     from services.companion import equip_wardrobe_item, get_equipped_items
@@ -2983,19 +2824,19 @@ async def test_slot_based_multi_equip(_patch_db):
         )
         texture = await _mk("红裙配色", "texture", "{}")
 
-        # Equip legs + hat + torso_a: all different slots → all stay equipped.
+        # 装备 trousers + hat + torso_a：互不冲突的 slot → 全部保持装备。
         for item in (legs, hat, torso_a):
             await equip_wardrobe_item(db, uid, item.id)
         equipped_names = {i.name for i in await get_equipped_items(db, uid)}
         assert equipped_names == {"夹克", "长裤", "帽子"}
 
-        # A new torso garment replaces only the same-slot item.
+        # 新 torso 服装只替换同 slot 项。
         torso_b = await _mk("西装", "garment", _asm("torso"))
         await equip_wardrobe_item(db, uid, torso_b.id)
         equipped_names = {i.name for i in await get_equipped_items(db, uid)}
         assert equipped_names == {"西装", "长裤", "帽子"}
 
-        # A texture item occupies the outfit slot; geometric units coexist.
+        # texture 项占据 outfit slot，几何单元共存。
         await equip_wardrobe_item(db, uid, texture.id)
         equipped_names = {i.name for i in await get_equipped_items(db, uid)}
         assert equipped_names == {"西装", "长裤", "帽子", "红裙配色"}
@@ -3010,15 +2851,15 @@ def test_resolve_socket_exact_suffix_fallback():
         "mixamorig:Head",
         "mixamorig:RightHand",
     ]
-    # Exact match
+    # 精确匹配
     assert _resolve_socket("mixamorig:Head", "head", joints) == "mixamorig:Head"
-    # Suffix match (LLM spec name -> mixamorig bone)
+    # 后缀匹配（LLM 规格名 -> mixamorig 骨）
     assert _resolve_socket("Head", "head", joints) == "mixamorig:Head"
     assert _resolve_socket("RightHand", "hands", joints) == "mixamorig:RightHand"
-    # Default fallback when requested is None or unknown
+    # 请求为 None 或未知时走默认 fallback
     assert _resolve_socket("UnknownBone", "head", joints) == "mixamorig:Head"
     assert _resolve_socket(None, "head", joints) == "mixamorig:Head"
-    # Graceful degradation on empty / unmatched joint list (no recursion error)
+    # 空 / 未匹配 joint 列表时优雅降级（不递归错误）
     assert _resolve_socket("Head", "head", []) is None
     assert _resolve_socket(None, "unknown_slot", []) is None
 
@@ -3067,8 +2908,7 @@ async def test_confirm_wardrobe_with_displacement_channel(monkeypatch, _patch_db
 
 @pytest.mark.asyncio
 async def test_garment_pipeline_threads_io_dir(_patch_db, monkeypatch):
-    """The worker's per-job io_dir must reach the Blender scaffold — the
-    sandbox can only mount paths under the host-visible data_dir."""
+    """worker 的 per-job io_dir 必须到 Blender scaffold——沙箱只能挂载 host 可见 data_dir 下的路径。"""
     from pathlib import Path as _Path
 
     from components import SETTINGS as _SETTINGS
@@ -3121,14 +2961,14 @@ async def test_temp_files_marker_strict_isolation():
         b"preview_1", "", "image/png", "png", meta_marker="wardrobe_preview:1"
     )
 
-    # User 1 cannot delete user 10's preview despite prefix similarity
+    # 用户 1 即便前缀相似，也不能删用户 10 的 preview
     with pytest.raises(TempFileMarkerMismatch):
         delete_file(fid_10, required_marker="wardrobe_preview:1")
 
-    # Category prefix match (ends with ':') works
+    # 类别前缀匹配（以 ':' 结尾）可工作
     assert delete_file(fid_10, required_marker="wardrobe_preview:") is True
 
-    # Exact match works
+    # 精确匹配可工作
     assert delete_file(fid_1, required_marker="wardrobe_preview:1") is True
 
 
@@ -3155,12 +2995,12 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
     app.include_router(companion_api.router)
     client = TestClient(app)
 
-    # 1. Incomplete persona returns 409
+    # 1. 不完整的 persona 返回 409
     resp = client.post("/api/companion/avatar")
     assert resp.status_code == 409
     assert "onboarding" in resp.json()["detail"]["error"]
 
-    # 2. Mark persona complete and verified
+    # 2. 标记 persona 完整且已验证
     async with SessionLocal() as db:
         persona = await avatar_service.get_or_create_persona(db, fake_user.id)
         persona.is_complete = True
@@ -3190,7 +3030,7 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
     assert resp.status_code == 201
     assert resp.json()["id"] == 999
 
-    # 3. Verify detached-safe write in _write_avatar_step
+    # 3. 验证 _write_avatar_step 内 detached-safe 写入
     async with SessionLocal() as db:
         asset = await avatar_service._write_avatar_step(
             db,
@@ -3258,7 +3098,7 @@ async def test_select_avatar_and_history(_patch_db, monkeypatch):
         await db.refresh(a2)
         a1_id = a1.id
 
-    # 1. select a1 -> a1 becomes active, a2 inactive
+    # 1. 选 a1 → a1 变为 active，a2 inactive
     resp = client.put(f"/api/companion/avatar/{a1_id}/select")
     assert resp.status_code == 200
     assert resp.json()["id"] == a1_id
@@ -3267,6 +3107,6 @@ async def test_select_avatar_and_history(_patch_db, monkeypatch):
         active = await avatar_service.get_active_avatar(db, user.id)
         assert active is not None and active.id == a1_id
 
-    # 2. selecting non-existent returns 404
+    # 2. 选择不存在的 ID 返回 404
     resp404 = client.put("/api/companion/avatar/99999/select")
     assert resp404.status_code == 404

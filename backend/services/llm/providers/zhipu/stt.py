@@ -6,10 +6,7 @@ from ..http import get_http
 
 
 class ZhipuSTTProvider(STTProvider):
-    """STT via Zhipu's ``POST /audio/transcriptions`` (multipart upload).
-
-    Model ``glm-asr-2512`` supports .wav/.mp3, max 25 MB / 30 s.
-    """
+    """通过 Zhipu 的 POST /audio/transcriptions（multipart 上传）提供 STT；glm-asr-2512 支持 .wav/.mp3，单文件 ≤25 MB / 30 秒。"""
 
     provider_name = "zhipu"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"stt": "glm-asr-2512"}

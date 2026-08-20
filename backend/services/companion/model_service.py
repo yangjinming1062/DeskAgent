@@ -28,15 +28,13 @@ from .rig_type_selector import classify_species, select_rig_type
 
 logger = get_logger(__name__)
 
-# Statuses that mean "a pipeline owns this row right now" — the durable
-# in-flight marker (see generate_companion_model / _finalize_generation).
+# 这些状态表示「某条流水线正持有该行」，作为可持久化的在途标记
 IN_FLIGHT_STATUSES: tuple[str, ...] = ("generating", "pending_download", "downloading")
 RETRYABLE_DOWNLOAD_STATUSES: tuple[str, ...] = ("pending_download", "download_failed")
 
 _DOWNLOAD_ATTEMPTS: int = 3
 _DOWNLOAD_RETRY_BASE_DELAY: float = 2.0
-# 403 on a COS signed URL means expired signature — refresh via a provider
-# query rather than counting against the network-retry budget.
+# COS 签名地址返回 403 表示签名过期：应向供应商重新查询刷新，而不占用网络重试预算
 _DOWNLOAD_URL_REFRESH_LIMIT: int = 2
 
 
@@ -45,45 +43,24 @@ class ModelGenerationError(RuntimeError):
 
 
 class ModelProviderNotConfiguredError(ModelGenerationError):
-    """No image-to-3D provider is usable. Generation is rejected outright —
-    there is no local modelling fallback; the client keeps interacting in
-    sprite mode."""
+    """无可用的 image-to-3D 供应商；没有本地建模兜底，客户端继续以精灵图模式运行。"""
 
 
 class ModelGenerationInProgressError(ModelGenerationError):
-    """Another generation is already running for this user — the background
-    pipeline is fire-and-forget, so concurrent requests must be rejected at
-    the row level instead of racing over the active model."""
+    """该用户已有生成任务在跑；后台流水线是 fire-and-forget，并发请求须在行级别拒绝。"""
 
 
-# Per-user lock serialising the "any generation in flight?" check + row
-# creation so two simultaneous POST /model calls can't both pass the check
-# (TOCTOU) and spawn overlapping pipelines. Mirrors the avatar pipeline's
-# ``get_avatar_job_lock``; the row's ``status="generating"`` is the durable
-# lock that survives across the fire-and-forget background task.
+# 按用户串行化「是否有任务在途」的检查与建行，避免两个并发请求同时通过检查（TOCTOU）而起两条流水线
 _model_job_locks: dict[int, asyncio.Lock] = {}
 
 
 def get_model_job_lock(user_id: int) -> asyncio.Lock:
-    """Lazily create + return a per-user ``asyncio.Lock``. Same pattern as
-    ``avatar_service.get_avatar_job_lock``; entries are never removed (locks
-    are tiny, the user-id keyspace is bounded)."""
+    """惰性创建并返回用户级锁；条目不回收（锁很小且 user_id 空间有限）。"""
     return _model_job_locks.setdefault(user_id, asyncio.Lock())
 
 
 async def recover_stuck_model_generations() -> None:
-    """Startup sweep for rows orphaned by a restart.
-
-    ``generating`` rows lost their in-flight provider job (the pipeline runs
-    fire-and-forget; restart kills the task) and are the durable lock that
-    must not survive — fail them so new generation isn't blocked
-    (``ModelGenerationInProgressError``).
-
-    ``pending_download`` / ``downloading`` rows already hold the paid result
-    (provider_task_id + download_urls_json were persisted before the download
-    started) — flip to ``download_failed`` so the user recovers via
-    ``companion.model.retryDownload`` instead of paying for regeneration.
-    """
+    """启动时清理被重启遗弃的行：generating 直接判失败以免挡住新生成；下载中的行已握有付费结果，改判 download_failed 供用户重试下载而非重新付费生成。"""
     async with SESSION_LOCAL() as db:
         stuck = await db.execute(
             CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False)
@@ -105,7 +82,7 @@ async def get_active_model(db: AsyncSession, user_id: int) -> CompanionModel | N
 
 
 def signed_model_url(model: CompanionModel | None) -> str | None:
-    """Never mutates the row — an ORM write would leak the expiring URL into the next autoflush."""
+    """签发模型访问 URL；不写回行对象，否则会过期的 URL 会随下次 autoflush 落库。"""
     if model is None or not model.asset_url or not model.asset_url.startswith("companion-models/"):
         return None
     parts = model.asset_url.split("/", 2)
@@ -115,8 +92,7 @@ def signed_model_url(model: CompanionModel | None) -> str | None:
 
 
 def _resolve_model_provider(name: str | None) -> ImageTo3DProvider:
-    """Explicit selection only — commercial providers never fail over into
-    each other. Key precedence and endpoint are handled inside image_to_3d.resolve_provider."""
+    """只按显式指定解析供应商——商业供应商之间绝不互相故障转移。"""
     try:
         return resolve_provider(name)
     except (ImageTo3DError, LookupError) as exc:
@@ -170,7 +146,7 @@ async def _finalize_generation(
     morph_names: list[str] | tuple[str, ...] = (),
     content_hash: str = "",
 ) -> bool:
-    """Persist a succeeded generation. Returns True if not superseded by a newer run."""
+    """落库一次成功的生成；若已被更新的任务取代则返回 False。"""
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is None:
@@ -219,8 +195,7 @@ async def _mark_generation_failed(model_id: int, reason: str) -> None:
 async def generate_companion_model(
     db: AsyncSession, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False
 ) -> CompanionModel:
-    """Creates a ``status="generating"`` row immediately and returns it;
-    the pipeline runs on the render worker and emits progress events."""
+    """立即建一条 status="generating" 的行并返回；实际流水线在渲染 worker 上跑并推送进度事件。"""
     persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = species_override or (definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类")
@@ -246,7 +221,7 @@ async def generate_companion_model(
 
         provider = _resolve_model_provider(provider_override)
 
-        # Image-to-3D reads the confirmed avatar and fullbody seeds
+        # image-to-3D 读取已确认的头像与全身多视角种子图
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
         if avatar is None or not (avatar.seed_front_url or avatar.asset_url):
             raise ModelGenerationError("没有找到形象头像，请先完成引导流程中的形象生成")
@@ -314,7 +289,7 @@ async def run_image_model_gen_pipeline(
 
         rig_type = await select_rig_type(chat, species, user_id=user_id)
 
-        # Persist BEFORE downloading: the generation is already billed.
+        # 先落库再下载：这次生成已经产生费用，不能因下载失败而丢失恢复句柄
         await _persist_download_source(model_id, user_id=user_id, task_id=task_id, assets=gen_result.assets, provider_label=provider_label, rig_type=rig_type)
     except Exception:
         logger.warning(
@@ -328,15 +303,12 @@ async def run_image_model_gen_pipeline(
 
 
 def _raw_provider_name(label: str) -> str:
-    """Registered provider names never contain '_' — the result-label prefix
-    (``hunyuan_multiview_to_3d`` → ``hunyuan``) is the registry key."""
+    """注册的供应商名不含下划线，故结果标签的首段即注册表键。"""
     return label.split("_", 1)[0]
 
 
 async def _persist_download_source(model_id: int, *, user_id: int, task_id: str, assets: tuple[Model3DAsset, ...], provider_label: str, rig_type: str) -> None:
-    """Durably record the paid result's recovery handle (provider task id +
-    download URLs + finalize inputs) before any download attempt. The INFO
-    line doubles as the ops breadcrumb for reconstructing a download by hand."""
+    """在任何下载尝试之前，先持久化付费结果的恢复句柄（任务 id、下载地址与收尾所需输入）。"""
     urls = [{"kind": a.kind, "url": a.url} for a in assets]
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
@@ -353,9 +325,7 @@ async def _persist_download_source(model_id: int, *, user_id: int, task_id: str,
 
 
 async def _cas_model_status(model_id: int, *, from_statuses: tuple[str, ...], to_status: str) -> bool:
-    """Conditional status transition — the row-level mutex keeping two
-    download attempts (pipeline vs retryDownload, double-click) from both
-    claiming the same model."""
+    """条件状态跃迁：作为行级互斥量，防止流水线与重试下载同时认领同一模型。"""
     async with SESSION_LOCAL() as db:
         result = await db.execute(update(CompanionModel).where(CompanionModel.id == model_id, CompanionModel.status.in_(from_statuses)).values(status=to_status))
         await db.commit()
@@ -368,9 +338,7 @@ async def _load_model_record(model_id: int) -> CompanionModel | None:
 
 
 async def _mark_download_failed(model_id: int, reason: str) -> None:
-    """Download- or finalize-stage failure: keep the row recoverable — task_id
-    and URLs are never cleared and the row stays distinct from terminal
-    ``failed`` so the client offers retryDownload instead of paid regeneration."""
+    """下载或收尾阶段失败：保留 task_id 与下载地址，状态区别于终态 failed，使客户端提供重试下载而非付费重生成。"""
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
         if model is not None:
@@ -380,8 +348,7 @@ async def _mark_download_failed(model_id: int, reason: str) -> None:
 
 
 async def _refresh_download_urls(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str) -> list[Model3DAsset]:
-    """Query-only refresh of expired signed URLs via the persisted provider
-    task. Never (re-)submits generation."""
+    """仅通过查询已持久化的供应商任务刷新过期签名地址，绝不重新提交生成。"""
     result = await provider.poll(Model3DJob(job_id=task_id))
     if result.status != "completed" or not result.assets:
         raise ModelGenerationError(f"刷新模型下载地址失败: provider 任务 {task_id} 状态 {result.status}")
@@ -394,11 +361,7 @@ async def _refresh_download_urls(provider: ImageTo3DProvider, *, user_id: int, m
 
 
 async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str | None, assets: list[Model3DAsset], dest_dir: Path) -> Path:
-    """Bounded auto-retry with exponential backoff. Network-class errors
-    (connect/timeout/transport — incl. SSRF-refusals) and 5xx retry; 403
-    treats the signed URL as expired and refreshes it via a provider query;
-    other 4xx surface immediately — retrying a permanent client error only
-    burns the window."""
+    """有界指数退避重试：网络类错误与 5xx 重试，403 视为签名过期并刷新地址，其余 4xx 立即上抛。"""
     refreshes = 0
     last_exc: Exception | None = None
     for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
@@ -411,8 +374,7 @@ async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, mod
                 assets = await _refresh_download_urls(provider, user_id=user_id, model_id=model_id, task_id=task_id)
                 if attempt < _DOWNLOAD_ATTEMPTS:
                     continue
-                # Last attempt: the refreshed URLs are already persisted for
-                # the manual retry — surface the 403 now instead of looping.
+                # 最后一次尝试：刷新后的地址已落库供手动重试，此处直接上抛而非继续循环
                 raise
             if not 400 <= status_code < 500:
                 last_exc = exc
@@ -427,13 +389,7 @@ async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, mod
 
 
 async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, user_id: int, task_id: str | None, assets: list[Model3DAsset], io_dir: Path | None = None) -> None:
-    """Download + finalize an already-persisted generation result. Shared by
-    the generation pipeline and the retryDownload path.
-
-    Both download-stage and post-download processing failures land in
-    ``download_failed`` (recoverable — the paid result stays in the row and
-    the raw GLB is persisted before post-processing); a terminal ``failed``
-    here would make the next client hydration re-submit a paid generation."""
+    """下载并收尾一次已落库的生成结果；失败一律归入可恢复的 download_failed，避免下次客户端补水时重复付费生成。"""
     if not await _cas_model_status(model_id, from_statuses=RETRYABLE_DOWNLOAD_STATUSES, to_status="downloading"):
         logger.info("model download attempt skipped; another attempt owns the row", extra={"user_id": user_id, "model_id": model_id, "task_id": task_id})
         return
@@ -460,14 +416,7 @@ async def _run_download_phase(provider: ImageTo3DProvider, *, model_id: int, use
 
 
 async def _rig_locally_with_cloud_fallback(glb_bytes: bytes, record: CompanionModel, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> bytes:
-    """Local auto-rig for every provider; cloud rigging only as a fallback.
-
-    The local path yields bare mixamo-style bone names (what the client clip
-    tracks target) and the canonical yaw, while cloud-rigged GLBs need a
-    normalize pass (``auto_rig.py --mode normalize``) for both. The provider
-    prerigcheck is deliberately skipped — it conservatively reports
-    text-to-3D meshes as ``others``/unriggable while forced rigging succeeds
-    on them."""
+    """所有供应商一律先本地绑骨，云端绑骨仅作兜底；本地路径直接产出裸 mixamo 骨名与规范朝向，云端产物还需归一化。供应商的 prerigcheck 刻意跳过——它常把可强制绑骨的网格误判为不可绑。"""
     try:
         return await _auto_rig_with_blender(glb_bytes, record.rig_type, user_id=record.user_id, io_dir=io_dir)
     except Exception:
@@ -505,15 +454,11 @@ async def _rig_locally_with_cloud_fallback(glb_bytes: bytes, record: CompanionMo
 
 
 async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: ImageTo3DProvider, io_dir: Path | None = None) -> None:
-    """Post-download processing shared by the pipeline and the retry path:
-    local auto-rig with cloud fallback, artifact persistence, morph
-    injection, activation + ``model.ready``."""
+    """下载后的统一收尾：本地绑骨（云端兜底）、产物落盘、注入 morph、激活并推送 model.ready。"""
     user_id = record.user_id
     glb_bytes = await asyncio.to_thread(glb_path.read_bytes)
 
-    # job-io is wiped the moment the render job ends — persist the paid
-    # provider output to the durable store before local post-processing so a
-    # rig/morph failure never loses it.
+    # 渲染作业结束即清空 job-io，故先把付费产物存入持久存储，避免绑骨/morph 失败连原始件一起丢
     rig_original_url = save_companion_model(glb_bytes, user_id=user_id)
 
     await _emit_progress(user_id, "rigging", 90, provider=provider.provider_name)
@@ -543,8 +488,7 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
         logger.info("3D generation superseded by a newer run; asset saved without activating", extra={"user_id": user_id, "model_id": record.id})
         return
 
-    # PROTOCOL §1.3: progress strictly precedes model.ready — a later progress
-    # event would resurrect the client's generating overlay on a loaded model.
+    # PROTOCOL §1.3：progress 必须严格先于 model.ready，否则迟到的进度事件会让客户端在已加载模型上重现生成遮罩
     await _emit_progress(user_id, "done", 100, provider=provider.provider_name)
     await _emit_model_ready(user_id, record.id, asset_url, species=record.species, rig_type=record.rig_type, style=record.style or "realistic")
     logger.info(
@@ -554,9 +498,7 @@ async def _finalize_model(record: CompanionModel, glb_path: Path, *, provider: I
 
 
 async def run_model_download_retry(user_id: int, model_id: int, *, io_dir: Path | None = None) -> None:
-    """Worker entry for ``companion.model.retryDownload``: replay the download
-    + finalize phases from the persisted provider task — never submits a new
-    generation."""
+    """companion.model.retryDownload 的 worker 入口：基于已存的供应商任务重放下载与收尾，绝不提交新生成。"""
     record = await _load_model_record(model_id)
     if record is None or record.user_id != user_id:
         logger.warning("model download retry skipped: row not found", extra={"user_id": user_id, "model_id": model_id})
@@ -575,9 +517,7 @@ async def run_model_download_retry(user_id: int, model_id: int, *, io_dir: Path 
 
 
 async def request_model_download_retry(db: AsyncSession, *, user_id: int, model_id: int) -> CompanionModel:
-    """Validate + enqueue a download-only retry on the render worker (the
-    finalize path needs Blender — web never runs it). Raises
-    ``ModelGenerationError`` on unknown/unretryable rows."""
+    """校验并把「仅下载」的重试投递到渲染 worker（收尾需要 Blender，web 侧不跑）。"""
     model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id, CompanionModel.user_id == user_id))).scalar_one_or_none()
     if model is None:
         raise ModelGenerationError("未找到对应的 3D 模型记录")
@@ -589,9 +529,7 @@ async def request_model_download_retry(db: AsyncSession, *, user_id: int, model_
 
 
 async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user_id: int, stage: str, start_pct: int, end_pct: int) -> Model3DPollResult:
-    # The emit is an async session write but poll() is awaited inline —
-    # schedule each emit as a task and drain them before returning so no
-    # progress event is dropped or GC'd mid-poll.
+    # 推送事件本身是异步写库，而 poll() 是内联 await：把每次推送挂成任务并在返回前 drain，避免进度事件丢失或被 GC
     emit_tasks: set[asyncio.Task] = set()
     deadline = time.monotonic() + SETTINGS.image_to_3d_max_poll_seconds
     started = time.monotonic()
@@ -614,8 +552,7 @@ async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user
         if result.status == "failed":
             await _drain()
             raise ModelGenerationError(f"3D 生成任务失败: {result.error or stage}")
-        # Providers without a numeric progress signal (hunyuan) interpolate by
-        # elapsed time so the client sees the stage crawl instead of freezing.
+        # 无数值进度信号的供应商按耗时插值，让客户端看到阶段缓慢推进而不是卡死
         raw = result.progress or min(100, int(100 * (time.monotonic() - started) / SETTINGS.image_to_3d_max_poll_seconds))
         _emit(start_pct + (end_pct - start_pct) * raw // 100)
         if time.monotonic() > deadline:
@@ -625,10 +562,7 @@ async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user
 
 
 async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: int | None = None, io_dir: Path | None = None) -> bytes:
-    """Local Blender auto-rigging for providers without a cloud rig API
-    (hunyuan). Deterministic bbox-proportioned skeleton via ``rig_layout``;
-    unlike morph injection this is not best-effort — a failure fails the
-    generation rather than shipping an unrigged model."""
+    """本地 Blender 自动绑骨，按包围盒比例生成确定性骨架；与 morph 注入不同，失败即判本次生成失败而不下发未绑骨模型。"""
     script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "auto_rig.py"
     helper_path = script_path.with_name("auto_rig_helpers.py")
     if not script_path.exists() or not helper_path.exists():
@@ -665,12 +599,7 @@ async def _auto_rig_with_blender(glb_bytes: bytes, rig_type: str, *, user_id: in
 
 
 async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None) -> bytes:
-    """Best-effort Blender headless morph target injection.
-
-    Returns the original GLB if Blender is unavailable or the script fails —
-    the model still works, just without facial expressions. ``io_dir`` keeps
-    the workspace host-visible for the sandboxed docker mount.
-    """
+    """尽力而为地注入 morph target；Blender 缺失或脚本失败时原样返回，模型仍可用只是没有表情。"""
     script_path = Path(__file__).parent.parent.parent / "assets" / "animations" / "inject_morph_targets.py"
     if not script_path.exists():
         logger.info("Morph injection script not found, skipping")
@@ -708,14 +637,14 @@ async def _inject_morph_targets(glb_bytes: bytes, *, io_dir: Path | None = None)
 
 
 def parse_glb_json(glb_data: bytes) -> dict | None:
-    """Returns ``None`` on any malformed input (length, magic, chunk header)."""
+    """解析 GLB 的 JSON 块；长度、魔数或块头异常时返回 None。"""
     glb_data = decompress_glb_if_needed(glb_data)
     if len(glb_data) < 20:
         return None
-    if int.from_bytes(glb_data[0:4], "little") != 0x46546C67:  # 'glTF'
+    if int.from_bytes(glb_data[0:4], "little") != 0x46546C67:
         return None
     chunk_length = int.from_bytes(glb_data[12:16], "little")
-    if int.from_bytes(glb_data[16:20], "little") != 0x4E4F534A:  # 'JSON'
+    if int.from_bytes(glb_data[16:20], "little") != 0x4E4F534A:
         return None
     if 20 + chunk_length > len(glb_data):
         return None
@@ -780,9 +709,7 @@ async def _emit_model_ready(
 
 async def _emit_model_failed(user_id: int, reason: str, *, retry_download: bool = False, model_id: int | None = None) -> None:
     payload: dict = {"reason": reason}
-    # retry_download=true marks a download-only failure — the paid result
-    # survives and the client offers companion.model.retryDownload instead of
-    # paid regeneration (PROTOCOL.md §1.3).
+    # retry_download=true 表示只是下载环节失败：付费结果仍在，客户端应提供重试下载而非付费重生成（PROTOCOL.md §1.3）
     if retry_download:
         payload["retry_download"] = True
     if model_id is not None:
@@ -805,10 +732,7 @@ async def emit_wardrobe_updated(user_id: int) -> None:
 
 
 async def emit_companion_assets_updated(user_id: int) -> None:
-    """Emit a ``companion.assets.updated`` event so an online client re-hydrates
-    generated animation clips + custom expressions after the companion creates
-    one live (``create_expression`` / ``create_animation`` tools). Mirrors
-    ``emit_wardrobe_updated`` for the clip/expression atoms."""
+    """推送 companion.assets.updated，让在线客户端重新拉取新生成的动画 clip 与自定义表情。"""
     try:
         async with SESSION_LOCAL() as db:
             db.add(WSEvent(user_id=user_id, event_type="companion.assets.updated", payload="{}"))
@@ -818,8 +742,7 @@ async def emit_companion_assets_updated(user_id: int) -> None:
 
 
 async def emit_wardrobe_gift(user_id: int, *, name: str, message: str | None = None, reason: str | None = None) -> None:
-    """Emit a ``wardrobe.gift`` event so an online client can hydrate wardrobe
-    and announce the companion-generated gift proactively."""
+    """推送 wardrobe.gift，让在线客户端补水衣柜并主动播报伙伴赠送的礼物。"""
     try:
         payload = json.dumps({"name": name, "message": message, "reason": reason})
         async with SESSION_LOCAL() as db:

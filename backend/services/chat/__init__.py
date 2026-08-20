@@ -9,12 +9,7 @@ from .message_sanitization import truncate_chat_history
 from .system_prompt import build_system_prompt, build_system_prompt_parts
 from .think_scrubber import StreamingThinkScrubber
 
-# Lazy-load the heavy modules that pull the full service graph (gateway / llm /
-# tools). Importing them eagerly here breaks the chat↔gateway cycle (gateway's
-# own __init__ may still be mid-import when chat is first touched). The list
-# is structural, not curated — adding a new public symbol in orchestrator /
-# turn_inputs / agent_delegate does NOT require updating it; __getattr__
-# resolves on demand.
+# 延迟加载重模块（orchestrator / turn_inputs / agent_delegate / persistence），避免 eager import 触发 chat↔gateway 循环依赖；列表结构化，新符号由 __getattr__ 按需解析。
 _LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate", "persistence")
 
 
@@ -29,8 +24,7 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-# Mark the lazy submodules so ``from services.chat import orchestrator``
-# (rare but legitimate) still works via __getattr__.
+# 声明懒加载子模块以便 ``from services.chat import orchestrator`` 仍能通过 __getattr__ 解析；新符号无需在此同步。
 __all__ = [
     "BUILTIN_EMOTIONS",
     "Emitter",
@@ -41,10 +35,7 @@ __all__ = [
     "build_system_prompt",
     "build_system_prompt_parts",
     "StreamingThinkScrubber",
-    # Names exposed via __getattr__ on the lazy submodules — listed only so
-    # ``from services.chat import *`` keeps working. New symbols added inside
-    # orchestrator / turn_inputs / agent_delegate are resolved on demand by
-    # __getattr__ above without updating this list.
+    # 懒加载子模块对外符号，新符号由 __getattr__ 按需解析无需同步此列表
     "load_user_settings",
     "run_chat_turn",
     "agent_delegate_tool",

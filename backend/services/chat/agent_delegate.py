@@ -16,10 +16,7 @@ async def agent_delegate_tool(task_description: str, user_id: int, llm_config: d
     sid: str | None = None
 
     try:
-        # Short-lived: just insert the Conversation row to obtain its id.
-        # ``session_scope`` matches the codebase convention used by
-        # background_review / cron — auto-close, no implicit commit, explicit
-        # ``db.commit()`` below to land the new row before ``run_chat_turn``.
+        # 仅用于插入 Conversation 行以获取 id；显式 commit 以便 run_chat_turn 能读到新会话。
         async with session_scope() as db:
             conv = Conversation(user_id=user_id, parent_id=int(parent_session_id) if parent_session_id else None, title="Subagent Task")
             db.add(conv)
@@ -27,9 +24,7 @@ async def agent_delegate_tool(task_description: str, user_id: int, llm_config: d
             await db.refresh(conv)
             sid = str(conv.id)
 
-        # HeadlessEmitter captures all frames so the final answer can be
-        # drained from chunk/message.complete/error events. Subagent progress
-        # forwarding was removed — the companion never consumed the frames.
+        # HeadlessEmitter 捕获全部帧，最终结果从 chunk/message.complete/error 事件中抽取。
         headless = HeadlessEmitter()
 
         req = ChatRequest(

@@ -6,19 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 
 class RenderJob(ModelBase, TimestampMixin):
-    """Blender-hosted job row claimed by the worker process.
-
-    Lifecycle (PROTOCOL.md render job state machine):
-        queued    — enqueued by web, awaiting a worker claim
-        processing — claimed (attempts bumped, claimed_by/at set)
-        succeeded  — worker called ``queue.finish``
-        failed     — worker called ``queue.fail`` or ``requeue_stale`` hit the
-                     attempts cap; see ``error``
-
-    Crashed workers surface as stale ``processing`` rows: ``requeue_stale``
-    puts them back to ``queued`` until the attempts budget is exhausted, so
-    a job survives at most MAX_ATTEMPTS claims in total.
-    """
+    """Blender 端 worker 进程申领的 job 行（PROTOCOL.md render job 状态机）；崩溃 worker 表现为 stale processing 行，由 requeue_stale 放回 queued 至多 MAX_ATTEMPTS 次。"""
 
     __tablename__ = "render_jobs"
 
@@ -31,6 +19,5 @@ class RenderJob(ModelBase, TimestampMixin):
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Handler return value for kinds whose caller polls (garment_preview:
-    # the full WardrobePreviewResponse fields).
+    # handler 返回值，给调用方轮询的 kind 用（garment_preview: 完整 WardrobePreviewResponse 字段）。
     result: Mapped[dict | None] = mapped_column(JSON, nullable=True)

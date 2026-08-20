@@ -12,12 +12,7 @@ _SENTINEL = object()
 
 
 def get_router(*, prefix: Any = _SENTINEL, tag: str | None = None, dependencies: list | None = None) -> APIRouter:
-    """Build an APIRouter whose prefix defaults to ``/api/<resource>``, where
-    ``resource`` is the caller module's leaf name (e.g. ``api.v1.sessions`` →
-    ``sessions`` → prefix ``/api/sessions``). Pass ``prefix=""`` to mount at
-    root (used by the admin page router), or ``dependencies=[...]`` to apply
-    router-level auth. The derived prefix replaces the old pattern of declaring
-    ``prefix="/<resource>"`` on the router and re-adding ``/api`` at mount time."""
+    """默认 prefix 由 caller 模块的 leaf 名推导为 ``/api/<resource>``；传 ``prefix=""`` 挂载到根（admin 页面 router 用）。"""
     resource = inspect.currentframe().f_back.f_globals["__name__"].rsplit(".", 1)[-1]
     if prefix is _SENTINEL:
         prefix = f"{SETTINGS.api_prefix}/{resource}"
@@ -34,7 +29,6 @@ def list_response(records: Iterable[Any], item_cls: type[BaseModel], response_cl
 
 
 async def get_or_404(db: AsyncSession, model: type, /, detail: str | None = None, **filters) -> Any:
-    """``select(model).filter_by(**filters)`` + 404 raise."""
     obj = (await db.execute(select(model).filter_by(**filters))).scalar_one_or_none()
     if obj is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail or f"{model.__name__} not found")

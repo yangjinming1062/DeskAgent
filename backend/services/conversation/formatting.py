@@ -5,13 +5,7 @@ _ROLE_LABELS: dict[str, str] = {"user": "用户", "assistant": "伙伴"}
 
 
 def _message_text(m: Message) -> str:
-    """Extract plain text from a Message row.
-
-    ``content_type == "multimodal_v1"`` rows carry a JSON parts array; the LLM
-    prompt path (interact / affect_check / daily_checkpoint) must see the user
-    text only — leaking the raw JSON array would dump ``[{"type": "image_url",
-    ...}]`` straight into the prompt.
-    """
+    """从 Message 行抽取纯文本；``content_type == "multimodal_v1"`` 行只返回 text part，避免 JSON 数组泄到 prompt 里。"""
     raw = (m.content or "").strip()
 
     if not raw or getattr(m, "content_type", "text") != "multimodal_v1":

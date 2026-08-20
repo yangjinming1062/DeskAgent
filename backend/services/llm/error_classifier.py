@@ -11,62 +11,52 @@ logger = get_logger(__name__)
 _CAUSE_CHAIN_MAX_DEPTH = 5
 
 
-# ── Error taxonomy ──────────────────────────────────────────────────────
-
-
 class FailoverReason(enum.Enum):
-    """Why an API call failed — determines recovery strategy."""
+    """API 调用失败原因枚举 —— 用于决定恢复策略。"""
 
-    # Authentication / authorization
-    auth = "auth"  # Transient auth (401/403) — refresh/rotate
+    # 鉴权 / 授权
+    auth = "auth"  # 401/403 瞬时鉴权失败 —— 刷新或轮换密钥
 
-    # Billing / quota
-    billing = "billing"  # 402 or confirmed credit exhaustion — rotate immediately
-    rate_limit = "rate_limit"  # 429 or quota-based throttling — backoff then rotate
+    # 计费 / 配额
+    billing = "billing"  # 402 或确认的额度耗尽 —— 立即轮换密钥
+    rate_limit = "rate_limit"  # 429 或配额限流 —— 退避后轮换
 
-    # Server-side
-    overloaded = "overloaded"  # 503/529 — provider overloaded, backoff
-    server_error = "server_error"  # 500/502 — internal server error, retry
+    # 服务端
+    overloaded = "overloaded"  # 503/529 —— 供应商过载，退避重试
+    server_error = "server_error"  # 500/502 —— 内部错误，可重试
 
-    # Transport
-    timeout = "timeout"  # Connection/read timeout — rebuild client + retry
+    # 传输
+    timeout = "timeout"  # 连接/读取超时 —— 重建客户端后重试
 
-    # Context / payload
-    context_overflow = "context_overflow"  # Context too large — compress, not failover
-    payload_too_large = "payload_too_large"  # 413 — compress payload
-    image_too_large = "image_too_large"  # Native image part exceeds provider's per-image limit — shrink and retry
+    # 上下文 / 负载
+    context_overflow = "context_overflow"  # 上下文超限 —— 压缩而非切换供应商
+    payload_too_large = "payload_too_large"  # 413 —— 压缩请求负载
+    image_too_large = "image_too_large"  # 单图超出供应商限制 —— 缩小后重试
 
-    # Model / provider policy
-    model_not_found = "model_not_found"  # 404 or invalid model — fallback to different model
-    provider_policy_blocked = "provider_policy_blocked"  # Aggregator (e.g. OpenRouter) blocked the only endpoint due to account data/privacy policy
-    content_policy_blocked = "content_policy_blocked"  # Provider safety filter rejected this prompt — deterministic per-request, don't retry unchanged
+    # 模型 / 供应商策略
+    model_not_found = "model_not_found"  # 404 或模型无效 —— 回退到其他模型
+    provider_policy_blocked = "provider_policy_blocked"  # 聚合商（如 OpenRouter）因账号隐私策略屏蔽唯一端点
+    content_policy_blocked = "content_policy_blocked"  # 供应商安全过滤拒绝该 prompt —— 对同一请求是确定性的，不重试
 
-    # Request format
-    format_error = "format_error"  # 400 bad request — abort or strip + retry
-    invalid_encrypted_content = "invalid_encrypted_content"  # Responses replay blob rejected — strip replay state and retry
-    multimodal_tool_content_unsupported = (
-        "multimodal_tool_content_unsupported"  # Provider rejected list-type content in tool messages (e.g. Xiaomi MiMo) — downgrade to text and retry
-    )
-    attachment_fetch_failed = (
-        "attachment_fetch_failed"  # Provider couldn't fetch a URL from an image_url part. The backend has nothing else to try on retry; surface a curated user-facing message.
-    )
+    # 请求格式
+    format_error = "format_error"  # 400 bad request —— 中止或剥离后重试
+    invalid_encrypted_content = "invalid_encrypted_content"  # Responses 加密重放 blob 被拒 —— 剥离重放状态后重试
+    multimodal_tool_content_unsupported = "multimodal_tool_content_unsupported"  # 供应商拒绝 tool message 中的列表型 content（如 Xiaomi MiMo）—— 降级为文本后重试
+    attachment_fetch_failed = "attachment_fetch_failed"  # 供应商拉取 image_url 内的 URL 失败；后端无法重试，需要返回给用户提示信息
 
-    # Provider-specific
-    thinking_signature = "thinking_signature"  # Anthropic thinking block sig invalid
-    long_context_tier = "long_context_tier"  # Anthropic "extra usage" tier gate
-    oauth_long_context_beta_forbidden = "oauth_long_context_beta_forbidden"  # Anthropic OAuth subscription rejects 1M context beta — disable beta and retry
-    llama_cpp_grammar_pattern = "llama_cpp_grammar_pattern"  # llama.cpp json-schema-to-grammar rejects regex escapes in `pattern` / `format` — strip from tools and retry
+    # 供应商专属
+    thinking_signature = "thinking_signature"  # Anthropic thinking block 签名无效
+    long_context_tier = "long_context_tier"  # Anthropic "extra usage" 长上下文档位门禁
+    oauth_long_context_beta_forbidden = "oauth_long_context_beta_forbidden"  # Anthropic OAuth 订阅拒绝 1M 上下文 beta —— 去掉 beta 后重试
+    llama_cpp_grammar_pattern = "llama_cpp_grammar_pattern"  # llama.cpp json-schema-to-grammar 拒绝 `pattern` / `format` 内的正则转义 —— 从 tools 中剥离后重试
 
-    # Catch-all
-    unknown = "unknown"  # Unclassifiable — retry with backoff
-
-
-# ── Classification result ───────────────────────────────────────────────
+    # 兜底
+    unknown = "unknown"  # 不可分类 —— 带退避重试
 
 
 @dataclass
 class ClassifiedError:
-    """Structured classification of an API error with recovery hints."""
+    """结构化的 API 错误分类与恢复建议。"""
 
     reason: FailoverReason
     status_code: int | None = None
@@ -75,8 +65,7 @@ class ClassifiedError:
     message: str = ""
     error_context: dict[str, Any] = field(default_factory=dict)
 
-    # Recovery action hints — the retry loop checks these instead of
-    # re-classifying the error itself.
+    # 恢复动作提示 —— 重试循环直接读这些字段，不必自己再次分类。
     retryable: bool = True
     should_compress: bool = False
     should_rotate_credential: bool = False
@@ -87,9 +76,7 @@ class ClassifiedError:
 _ClassifierBuilder = Callable[..., ClassifiedError]
 
 
-# ── Provider-specific patterns ──────────────────────────────────────────
-
-# Patterns that indicate billing exhaustion (not transient rate limit)
+# 计费耗尽（非瞬时限流）的判别模式
 _BILLING_PATTERNS = [
     "insufficient credits",
     "insufficient_quota",
@@ -114,7 +101,7 @@ _BILLING_PATTERNS = [
     "配额不足",
 ]
 
-# Patterns that indicate rate limiting (transient, will resolve)
+# 限流（瞬时、可恢复）的判别模式
 _RATE_LIMIT_PATTERNS = [
     "rate limit",
     "rate_limit",
@@ -126,79 +113,54 @@ _RATE_LIMIT_PATTERNS = [
     "try again in",
     "please retry after",
     "resource_exhausted",
-    "rate increased too quickly",  # Alibaba/DashScope throttling
-    # AWS Bedrock throttling
-    "throttlingexception",
+    "rate increased too quickly",  # Alibaba/DashScope 限流
+    "throttlingexception",  # AWS Bedrock 限流
     "too many concurrent requests",
     "servicequotaexceededexception",
 ]
 
-# Provider/aggregator couldn't fetch an image URL embedded in an image_url
-# part. Litellm SigV4-presigns gs:// into https://storage.googleapis.com and
-# GCS returns 400 when HMAC mismatches; some proxies emit the generic "unable
-# to fetch" wording. Match before the format_error fall-through so the user
-# sees a curated reason instead of a misleading 400 tail.
+# 供应商 / 聚合商无法拉取 image_url 中的图像 URL：必须早于 format_error 匹配，以免用户看到被 400 文案误导。
 _ATTACHMENT_FETCH_PATTERNS = ["unable to fetch image from url", "unable to fetch the image", "could not fetch image", "error fetching image", "failed to download image from url"]
 
-# Usage-limit patterns that need disambiguation (could be billing OR rate_limit)
+# 用量上限模式（可能属于计费或限流，需进一步消歧）
 _USAGE_LIMIT_PATTERNS = ["usage limit", "quota", "limit exceeded", "key limit exceeded"]
 
-# Patterns confirming usage limit is transient (not billing)
+# 表明用量上限为瞬时（而非计费耗尽）的模式
 _USAGE_LIMIT_TRANSIENT_SIGNALS = ["try again", "retry", "resets at", "reset in", "wait", "requests remaining", "periodic", "window"]
 
-# Payload-too-large patterns detected from message text (no status_code attr).
-# Proxies and some backends embed the HTTP status in the error message.
+# 从消息文本（无 status_code 字段）识别 payload 过大：代理或后端把 HTTP 状态码嵌入错误信息。
 _PAYLOAD_TOO_LARGE_PATTERNS = ["request entity too large", "payload too large", "error code: 413"]
 
-# Image-size patterns.  Matched against 400 bodies (not 413) because most
-# providers return a 400 with a specific image-too-big message before the
-# whole request hits the 413 size limit.  Anthropic's wording is the most
-# important here (hard 5 MB per image, returned as
-# "messages.N.content.K.image.source.base64: image exceeds 5 MB maximum").
+# 单图过大：在 400 而非 413 上匹配，因为多数供应商在整请求超 413 前会先以 400 + 明确图像过大提示返回；Anthropic 单图 5 MB 上限为关键场景。
 _IMAGE_TOO_LARGE_PATTERNS = [
     "image exceeds",  # Anthropic: "image exceeds 5 MB maximum"
-    "image too large",  # generic
-    "image_too_large",  # error_code variant
-    "image size exceeds",  # variant
+    "image too large",  # 通用
+    "image_too_large",  # error_code 变体
+    "image size exceeds",  # 变体
     "image dimensions exceed",  # Anthropic: "image dimensions exceed max allowed size: 8000 pixels"
-    "dimensions exceed max allowed size",  # Anthropic dimension-cap (wording variant)
-    "max allowed size: 8000",  # Anthropic dimension-cap (explicit pixel ceiling)
-    # "request_too_large" on a request known to contain an image → image is
-    # the likely culprit; we still try the shrink path before giving up.
+    "dimensions exceed max allowed size",  # Anthropic 尺寸上限（措辞变体）
+    "max allowed size: 8000",  # Anthropic 尺寸上限（像素数显式）
 ]
 
-# Image-gen providers that returned 200 + no error code but zero images.
-# Not retryable on the same provider (deterministic), but the next may succeed.
+# 生图供应商返回 200 但零张图：同一供应商上重试无意义，下一家可能成功。
 _EMPTY_IMAGE_RESULT_PATTERNS = ["returned no images"]
 
-# Providers that follow the OpenAI spec strictly require tool message
-# ``content`` to be a string.  Some (Anthropic native, Codex Responses,
-# Gemini native, first-party OpenAI) extend this to accept a content-parts
-# list (text + image_url) so multimodal tool results survive.  Others
-# (Xiaomi MiMo, some Alibaba endpoints, a long tail of OpenAI-compatible
-# providers) reject the list with a 400 — the patterns below are the most
-# common error shapes we see.  Recovery: strip image parts from tool
-# messages in-place, record the (provider, model) for the rest of the
-# session so we don't waste another call learning the same lesson, retry.
-#
+# 部分供应商严格遵循 OpenAI 规范，要求 tool message 的 ``content`` 是字符串；另一些（Anthropic 原生、Codex Responses、Gemini 原生、OpenAI 官方）扩展接受多模态列表；小米 MiMo、阿里部分端点及大量 OpenAI 兼容供应商会以 400 拒绝。命中后从 tool 消息中剥离图像部分并记录该 (provider, model) 以避免重复试错。
 # See: https://github.com/NousResearch/spirit-agent/issues/27344
 _MULTIMODAL_TOOL_CONTENT_PATTERNS = [
     # Xiaomi MiMo: {"error":{"code":"400","message":"Param Incorrect","param":"text is not set"}}
     "text is not set",
-    # Generic "tool message must be string" shapes
-    "tool message content must be a string",
+    "tool message content must be a string",  # 通用 "tool message 必须为字符串"
     "tool content must be a string",
     "tool message must be a string",
-    # OpenAI-compat servers that reject list-type tool content with a
-    # schema-validation message
+    # 拒绝列表型 tool content 的 OpenAI 兼容服务的 schema 校验消息
     "expected string, got list",
     "expected string, got array",
-    # Alibaba/DashScope variant
+    # Alibaba/DashScope 变体
     "tool_call.content must be string",
 ]
 
-# Provider model exists but rejects image input — fall through to the next
-# chain provider. Reuses model_not_found's failover behavior (same recovery).
+# 模型存在但拒绝图像输入 —— 走 model_not_found 的回退路径。
 _VISION_UNSUPPORTED_PATTERNS = [
     "no endpoints found that support image input",  # mimo token-plan verbatim
     "does not support image input",
@@ -208,7 +170,7 @@ _VISION_UNSUPPORTED_PATTERNS = [
     "does not support multimodal",
 ]
 
-# Context overflow patterns
+# 上下文溢出模式
 _CONTEXT_OVERFLOW_PATTERNS = [
     "context length",
     "context size",
@@ -222,40 +184,32 @@ _CONTEXT_OVERFLOW_PATTERNS = [
     "prompt exceeds max length",
     "max_tokens",
     "maximum number of tokens",
-    # vLLM / local inference server patterns
+    # vLLM / 本地推理服务
     "exceeds the max_model_len",
     "max_model_len",
     "prompt length",  # "engine prompt length X exceeds"
     "input is too long",
     "maximum model length",
-    # Ollama patterns
+    # Ollama
     "context length exceeded",
     "truncating input",
-    # llama.cpp / llama-server patterns
+    # llama.cpp / llama-server
     "slot context",  # "slot context: N tokens, prompt N tokens"
     "n_ctx_slot",
-    # Chinese error messages (some providers return these)
+    # 中文错误信息
     "超过最大长度",
     "上下文长度",
-    # AWS Bedrock Converse API error patterns
+    # AWS Bedrock Converse API
     "input is too long",
     "max input token",
     "input token",
     "exceeds the maximum number of input tokens",
 ]
 
-# Model not found patterns
+# 模型未找到模式
 _MODEL_NOT_FOUND_PATTERNS = ["is not a valid model", "invalid model", "model not found", "model_not_found", "does not exist", "no such model", "unknown model", "unsupported model"]
 
-# Request-validation patterns — the request is malformed and will fail
-# identically on every retry. Some OpenAI-compatible gateways (notably
-# codex.nekos.me) return these as 5xx instead of the standard 4xx, which
-# makes the generic "5xx → retryable server_error" rule misfire: the retry
-# loop hammers the same deterministic rejection 3+ times, then the
-# transport-recovery path resets the counter and does it again, producing
-# a request flood. When a 5xx body carries one of these unambiguous
-# request-validation signals, classify as a non-retryable format_error so
-# the loop fails fast and falls back instead of looping.
+# 请求校验失败模式：请求畸形，每次重试结果相同；某些 OpenAI 兼容网关（如 codex.nekos.me）会把它当作 5xx 返回，会让通用 "5xx → 可重试" 规则误触发重试风暴。命中后归为不可重试的 format_error，快速失败并回退。
 _REQUEST_VALIDATION_PATTERNS = [
     "unknown parameter",
     "unsupported parameter",
@@ -267,97 +221,50 @@ _REQUEST_VALIDATION_PATTERNS = [
 
 _REQUEST_VALIDATION_ERROR_CODES = frozenset({"invalid_request_error", "unknown_parameter", "unsupported_parameter"})
 
-# OpenRouter aggregator policy-block patterns.
-#
-# When a user's OpenRouter account privacy setting (or a per-request
-# `provider.data_collection: deny` preference) excludes the only endpoint
-# serving a model, OpenRouter returns 404 with a *specific* message that is
-# distinct from "model not found":
-#
-#   "No endpoints available matching your guardrail restrictions and
-#    data policy. Configure: https://openrouter.ai/settings/privacy"
-#
-# We classify this as `provider_policy_blocked` rather than
-# `model_not_found` because:
-#   - The model *exists* — model_not_found is misleading in logs
-#   - Provider fallback won't help: the account-level setting applies to
-#     every call on the same OpenRouter account
-#   - The error body already contains the fix URL, so the user gets
-#     actionable guidance without us rewriting the message
+# 当用户 OpenRouter 账号隐私设置（或单次请求的 `provider.data_collection: deny` 偏好）排除唯一可用端点时，OpenRouter 返回带特定文案的 404，区别于 "model not found"：模型实际存在，回退到其他供应商也无效（账号级设置适用于同一账号所有请求），错误体已包含修复 URL。
 _PROVIDER_POLICY_BLOCKED_PATTERNS = [
     "no endpoints available matching your guardrail",
     "no endpoints available matching your data policy",
     "no endpoints found matching your data policy",
 ]
 
-# Provider content-policy / safety-filter blocks. Distinct from
-# ``provider_policy_blocked`` above (which is an OpenRouter *account*-level
-# data/privacy guardrail) — these are *per-prompt* safety decisions made by
-# the upstream model provider. They are deterministic for the unchanged
-# request, so retrying the same prompt three times just reproduces the same
-# block and burns paid attempts on a refusal. The recovery is to switch to a
-# configured fallback model/provider immediately, or surface the block to
-# the user with actionable guidance if no fallback exists.
-#
-# Patterns are intentionally narrow — each phrase is a verbatim string from
-# a specific provider's safety pipeline, not a generic word like "policy" or
-# "violation" that could collide with billing/auth/format errors:
-#   • OpenAI Codex cybersecurity refusal (gpt-5.5)
-#   • OpenAI moderation refusal ("violates our usage policies", with
-#     "usage policies" disambiguating from billing's "exceeded ... policy")
-#   • Anthropic safety refusal ("prompt was flagged by ... safety system")
-#   • OpenAI Responses content filter
-#   • MiniMax safety refusal ("violated safety policy" — base_resp 1027)
+# 供应商内容策略 / 安全过滤拦截：与上文的 OpenRouter 账号级策略（``provider_policy_blocked``）不同，这是供应商对单条 prompt 的安全判断，对同一请求是确定性的，三次重试只会重复同一拒绝。命中后立即切换到配置的兜底模型 / 供应商；无兜底则返回给用户带修复建议的消息。模式故意收窄，避免与计费 / 鉴权 / 格式错误误撞。
 _CONTENT_POLICY_BLOCKED_PATTERNS = [
-    # OpenAI Codex — message may arrive without an HTTP status
+    # OpenAI Codex —— 消息可能不带 HTTP 状态码
     "flagged for possible cybersecurity risk",
     "trusted access for cyber",
-    # OpenAI moderation — chat completions / responses
+    # OpenAI 内容审核 —— chat completions / responses
     "violates our usage policies",
     "violates openai's usage policies",
     "your request was flagged by",
-    # Anthropic safety system
+    # Anthropic 安全系统
     "prompt was flagged by our safety",
     "responses cannot be generated due to safety",
-    # MiniMax (base_resp.status_code 1027) — verbatim message seen in their
-    # safety pipeline. ``violated safety policy`` is enough to distinguish
-    # from billing's "exceeded ... policy" without false positives.
+    # MiniMax（base_resp.status_code 1027）安全拒绝原文
     "violated safety policy",
-    # MiniMax (base_resp.status_code 1026) — sensitive input moderation.
-    # ``new_sensitive`` is the verbatim status_msg token for this code.
+    # MiniMax（base_resp.status_code 1026）敏感输入审核，``new_sensitive`` 为该码的原文 status_msg
     "new_sensitive",
-    # Generic content-filter wording seen on Azure / OpenAI Responses.
-    # ``content_filter`` (underscore) is the OpenAI-standard error/finish
-    # token surfaced verbatim by their SDKs when a request is blocked.
-    # ``responsibleaipolicyviolation`` is Azure OpenAI's error code.
-    # Deliberately NOT matching the space variant ("content filter") — it
-    # appears in benign config descriptions and tooltip text that providers
-    # echo back; the underscore form is provider-specific enough.
+    # Azure / OpenAI Responses 通用文案：``content_filter``（下划线）是 OpenAI 标准 token，``responsibleaipolicyviolation`` 是 Azure 错误码；不匹配带空格的 "content filter" —— 后者出现在良性配置描述中
     "content_filter",
     "responsibleaipolicyviolation",
-    # Gemini image generation — finishReason IMAGE_SAFETY with
-    # "Generative AI Prohibited Use policy" in the finishMessage.
+    # Gemini 生图 IMAGE_SAFETY + finishMessage 含 "Generative AI Prohibited Use policy"
     "image_safety",
     "generative ai prohibited use policy",
 ]
 
 
 def is_content_policy_error_message(msg: str) -> bool:
-    """Checks the same pattern list as ``classify_api_error`` but on a raw string."""
+    """用与 ``classify_api_error`` 相同的模式列表对原始字符串做匹配。"""
     return any(p in msg.lower() for p in _CONTENT_POLICY_BLOCKED_PATTERNS)
 
 
-# Auth patterns (non-status-code signals)
+# 鉴权模式（非状态码信号）
 _AUTH_PATTERNS = ["invalid api key", "invalid_api_key", "authentication", "unauthorized", "forbidden", "invalid token", "token expired", "token revoked", "access denied"]
 
-# Message-string patterns that indicate a provider-side timeout even when
-# the exception type is generic (e.g. RuntimeError from a local shim that
-# wraps a subprocess timeout).  Checked before the type-based transport
-# heuristics so custom-provider "timed out" errors don't fall through to
-# the unknown bucket and get misreported as empty responses.
+# 供应商侧超时（即使异常类型是通用类型，如本地 shim 包装子进程超时产生的 RuntimeError）的消息字符串模式；在基于异常类型的传输启发式之前检查，避免自定义供应商的 "timed out" 落入 unknown 而被错报为空响应。
 _TIMEOUT_MESSAGE_PATTERNS = ["timed out", "turn timed out", "request timed out", "deadline exceeded", "operation timed out", "upstream timed out"]
 
-# Transport error type names
+# 传输错误类型名（含 SSL/TLS：ssl.SSLError 继承 OSError，按名收录以兼容 SDK 重新抛出后丢失异常链的情况）
 _TRANSPORT_ERROR_TYPES = frozenset(
     {
         "ReadTimeout",
@@ -372,30 +279,18 @@ _TRANSPORT_ERROR_TYPES = frozenset(
         "TimeoutError",
         "ReadError",
         "ServerDisconnectedError",
-        # SSL/TLS transport errors — transient mid-stream handshake/record
-        # failures that should retry rather than surface as a stalled session.
-        # ssl.SSLError subclasses OSError (caught by isinstance) but we list
-        # the type names here so provider-wrapped SSL errors (e.g. when the
-        # SDK re-raises without preserving the exception chain) still classify
-        # as transport rather than falling through to the unknown bucket.
         "SSLError",
         "SSLZeroReturnError",
         "SSLWantReadError",
         "SSLWantWriteError",
         "SSLEOFError",
         "SSLSyscallError",
-        # OpenAI SDK errors (not subclasses of Python builtins)
-        "APIConnectionError",
+        "APIConnectionError",  # OpenAI SDK（非内置异常子类）
         "APITimeoutError",
     }
 )
 
-# Server disconnect patterns (no status code, but transport-level).
-# These are the "ambiguous" patterns — a plain connection close could be
-# transient transport hiccup OR server-side context overflow rejection
-# (common when the API gateway disconnects instead of returning an HTTP
-# error for oversized requests).  A large session + one of these patterns
-# triggers the context-overflow-with-compression recovery path.
+# 服务端断开模式（无状态码但属于传输层）：大会话 + 这些模式触发带压缩的上下文溢出恢复路径。
 _SERVER_DISCONNECT_PATTERNS = [
     "server disconnected",
     "peer closed connection",
@@ -406,38 +301,19 @@ _SERVER_DISCONNECT_PATTERNS = [
     "incomplete chunked read",
 ]
 
-# SSL/TLS transient failure patterns — intentionally distinct from
-# _SERVER_DISCONNECT_PATTERNS above.
-#
-# An SSL alert mid-stream is almost always a transport-layer hiccup
-# (flaky network, mid-session TLS renegotiation failure, load balancer
-# dropping the connection) — NOT a server-side context overflow signal.
-# So we want the retry path but NOT the compression path; lumping these
-# into _SERVER_DISCONNECT_PATTERNS would trigger unnecessary (and
-# expensive) context compression on any large-session SSL hiccup.
-#
-# The OpenSSL library constructs error codes by prepending a format string
-# to the uppercased alert reason; OpenSSL 3.x changed the separator
-# (e.g. `SSLV3_ALERT_BAD_RECORD_MAC` → `SSL/TLS_ALERT_BAD_RECORD_MAC`),
-# which silently stopped matching anything explicit.  Matching on the
-# stable substrings (`bad record mac`, `ssl alert`, `tls alert`, etc.)
-# survives future OpenSSL format churn without code changes.
+# SSL/TLS 瞬时失败模式：与上述 ``_SERVER_DISCONNECT_PATTERNS`` 区分 —— SSL alert 几乎都是传输层抖动（网络不稳、TLS 重新协商失败、负载均衡丢连），不是服务端上下文溢出；只走重试，不走压缩。匹配稳定子串以兼容 OpenSSL 格式变更（OpenSSL 3.x 改了分隔符）。
 _SSL_TRANSIENT_PATTERNS = [
-    # Space-separated (human-readable form, Python ssl module, most SDKs)
-    "bad record mac",
+    "bad record mac",  # 人类可读（Python ssl，多数 SDK）
     "ssl alert",
     "tls alert",
     "ssl handshake failure",
     "tlsv1 alert",
     "sslv3 alert",
-    # Underscore-separated (OpenSSL error code tokens, e.g.
-    # `ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC`, `SSLV3_ALERT_BAD_RECORD_MAC`)
-    "bad_record_mac",
+    "bad_record_mac",  # OpenSSL 错误码 token
     "ssl_alert",
     "tls_alert",
     "tls_alert_internal_error",
-    # Python ssl module prefix, e.g. "[SSL: BAD_RECORD_MAC]"
-    "[ssl:",
+    "[ssl:",  # Python ssl 模块前缀，如 "[SSL: BAD_RECORD_MAC]"
 ]
 
 _BILLING_ERROR_CODES = frozenset(
@@ -451,53 +327,18 @@ _MODEL_NOT_FOUND_ERROR_CODES = frozenset({"model_not_found", "model_not_availabl
 _CONTEXT_OVERFLOW_ERROR_CODES = frozenset({"context_length_exceeded", "max_tokens_exceeded"})
 
 
-# ── Classification pipeline ─────────────────────────────────────────────
-
-
 def classify_api_error(error: Exception, *, provider: str = "", model: str = "", approx_tokens: int = 0, context_length: int = 200000, num_messages: int = 0) -> ClassifiedError:
-    """Classify an API error into a structured recovery recommendation.
-
-    Priority-ordered pipeline:
-      1. Special-case provider-specific patterns (thinking sigs, tier gates)
-      2. HTTP status code + message-aware refinement
-      3. Error code classification (from body)
-      4. Message pattern matching (billing vs rate_limit vs context vs auth)
-      5. SSL/TLS transient alert patterns → retry as timeout
-      6. Server disconnect + large session → context overflow
-      7. Transport error heuristics
-      8. Fallback: unknown (retryable with backoff)
-
-    Args:
-        error: The exception from the API call.
-        provider: Current provider name (e.g. "openrouter", "anthropic").
-        model: Current model slug.
-        approx_tokens: Approximate token count of the current context.
-        context_length: Maximum context length for the current model.
-
-    Returns:
-        ClassifiedError with reason and recovery action hints.
-    """
+    """按优先级把 API 异常分类为结构化的恢复建议（特殊供应商模式 → 状态码 → 错误码 → 消息模式 → SSL 告警 → 大会话断连 → 传输启发式 → unknown 兜底）。"""
     status_code = _extract_status_code(error)
     suggested_delay = _extract_suggested_delay(error)
     error_type = type(error).__name__
-    # Copilot/GitHub Models RateLimitError may not set .status_code; force 429
-    # so downstream rate-limit handling (classifier reason, pool rotation,
-    # fallback gating) fires correctly instead of misclassifying as generic.
+    # Copilot/GitHub Models 的 RateLimitError 不一定带 .status_code；强制设为 429 让下游限流处理（分类原因、池轮换、回退门禁）正确触发，避免被误归类为通用错误。
     if status_code is None and error_type == "RateLimitError":
         status_code = 429
     body = _extract_error_body(error)
     error_code = _extract_error_code(body)
 
-    # Build a comprehensive error message string for pattern matching.
-    # str(error) alone may not include the body message (e.g. OpenAI SDK's
-    # APIStatusError.__str__ returns the first arg, not the body).  Append
-    # the body message so patterns like "try again" in 402 disambiguation
-    # are detected even when only present in the structured body.
-    #
-    # Also extract metadata.raw — OpenRouter wraps upstream provider errors
-    # inside {"error": {"message": "Provider returned error", "metadata":
-    # {"raw": "<actual error JSON>"}}} and the real error message (e.g.
-    # "context length exceeded") is only in the inner JSON.
+    # 拼出尽可能完整的错误消息字符串供模式匹配：str(error) 不一定包含 body（如 OpenAI SDK APIStatusError.__str__ 只返回首参），需追加 body 中的 message；并提取 metadata.raw —— OpenRouter 把上游供应商错误包成 {"error":{"message":"Provider returned error","metadata":{"raw":"<实际 JSON>"}}}，真实消息（如 "context length exceeded"）只在最内层 JSON。
     error_msg = _build_error_message(error, body)
     provider_lower = (provider or "").strip().lower()
     model_lower = (model or "").strip().lower()
@@ -514,12 +355,8 @@ def classify_api_error(error: Exception, *, provider: str = "", model: str = "",
         defaults.update(overrides)
         return ClassifiedError(**defaults)
 
-    # ── 1. Provider-specific patterns (highest priority) ────────────
-
     if special := _classify_provider_specific(error_msg, status_code, _result):
         return special
-
-    # ── 2. HTTP status code classification ──────────────────────────
 
     if status_code is not None:
         classified = _classify_by_status(
@@ -537,128 +374,62 @@ def classify_api_error(error: Exception, *, provider: str = "", model: str = "",
         if classified is not None:
             return classified
 
-    # ── 3. Error code classification ────────────────────────────────
-
     if error_code:
         classified = _classify_by_error_code(error_code, error_msg, _result)
         if classified is not None:
             return classified
 
-    # ── 4. Message pattern matching (no status code) ────────────────
-
     classified = _classify_by_message(error_msg, error_type, approx_tokens=approx_tokens, context_length=context_length, result_fn=_result)
     if classified is not None:
         return classified
 
-    # ── 5. SSL/TLS transient errors → retry as timeout (not compression) ──
-    # SSL alerts mid-stream are transport hiccups, not server-side context
-    # overflow signals.  Classify before the disconnect check so a large
-    # session doesn't incorrectly trigger context compression when the real
-    # cause is a flaky TLS handshake.  Also matches when the error is
-    # wrapped in a generic exception whose message string carries the SSL
-    # alert text but the type isn't ssl.SSLError (happens with some SDKs
-    # that re-raise without chaining).
+    # SSL/TLS 瞬时 alert 走超时路径而非压缩 —— 是传输层抖动，不是上下文溢出；优先匹配以避免大会话上的 TLS 抖动触发不必要的上下文压缩。
     if any(p in error_msg for p in _SSL_TRANSIENT_PATTERNS):
         return _result(FailoverReason.timeout, retryable=True)
 
-    # ── 6. Server disconnect + large session → context overflow ─────
-    # Must come BEFORE generic transport error catch — a disconnect on
-    # a large session is more likely context overflow than a transient
-    # transport hiccup.  Without this ordering, RemoteProtocolError
-    # always maps to timeout regardless of session size.
-
+    # 服务端断开 + 大会话 → 上下文溢出（必须早于通用传输启发式：否则 RemoteProtocolError 总会映射到 timeout，不分会话大小）。
     if any(p in error_msg for p in _SERVER_DISCONNECT_PATTERNS) and not status_code:
-        # Absolute token/message-count thresholds are only a proxy for smaller
-        # context windows.  Large-context sessions can have hundreds of
-        # messages while still being far below their actual token budget.
+        # 绝对 token / 消息数阈值只是小上下文窗口的近似；大上下文会话可能在远低于实际 token 预算时就累积上百条消息。
         is_large = approx_tokens > context_length * 0.6 or (context_length <= 256000 and (approx_tokens > 120000 or num_messages > 200))
         if is_large:
             return _result(FailoverReason.context_overflow, retryable=True, should_compress=True)
         return _result(FailoverReason.timeout, retryable=True)
 
-    # ── 7. Transport / timeout heuristics ───────────────────────────
-
     if error_type in _TRANSPORT_ERROR_TYPES or isinstance(error, (TimeoutError, ConnectionError, OSError)):
         return _result(FailoverReason.timeout, retryable=True)
-
-    # ── 8. Fallback: unknown ────────────────────────────────────────
 
     return _result(FailoverReason.unknown, retryable=True)
 
 
 def _classify_provider_specific(error_msg: str, status_code: int | None, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
-    """Classify provider-specific patterns that take priority over status codes."""
-    # Provider content-policy / safety-filter block. The provider has made a
-    # deterministic refusal decision about THIS prompt — retrying unchanged
-    # just reproduces the same refusal and burns paid attempts. Must run
-    # before status-based classification so a 400 safety block isn't
-    # downgraded to a generic ``format_error`` and a status-less block
-    # (OpenAI Codex SDK can raise without one) isn't left in the retryable
-    # ``unknown`` bucket.
+    """优先于状态码分类的供应商特定模式。"""
+    # 内容策略 / 安全过滤拦截（必须早于状态码分类：避免 400 安全拦截被降级为通用 format_error，避免无状态码的拦截（OpenAI Codex SDK 可不带）落入可重试的 unknown）
     if any(p in error_msg for p in _CONTENT_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.content_policy_blocked, retryable=False, should_fallback=True)
 
-    # Anthropic thinking block signature invalid (400).
-    # Don't gate on provider — OpenRouter proxies Anthropic errors, so the
-    # provider may be "openrouter" even though the error is Anthropic-specific.
-    # The message pattern ("signature" + "thinking") is unique enough.
+    # Anthropic thinking block 签名失效（400）：不按供应商门禁，错误可能由 OpenRouter 代理；"signature"+"thinking" 组合已足够独特。
     if status_code == 400 and "signature" in error_msg and "thinking" in error_msg:
         return result_fn(FailoverReason.thinking_signature, retryable=True, should_compress=False)
 
-    # Anthropic long-context tier gate (429 "extra usage" + "long context")
+    # Anthropic 长上下文档位门禁（429 "extra usage" + "long context"）
     if status_code == 429 and "extra usage" in error_msg and "long context" in error_msg:
         return result_fn(FailoverReason.long_context_tier, retryable=True, should_compress=True)
 
-    # Anthropic OAuth subscription rejects the 1M-context beta header.
-    # Observed error body: "The long context beta is not yet available for
-    # this subscription." Returned as HTTP 400 from native Anthropic when
-    # the subscription doesn't include 1M context, even though the request
-    # carries ``anthropic-beta: context-1m-2025-08-07``. The recovery path
-    # in run_agent.py rebuilds the Anthropic client with the beta stripped
-    # and retries once. Pattern is narrow enough that it won't collide with
-    # the 429 tier-gate pattern above (different status, different phrase).
+    # Anthropic OAuth 订阅拒绝 1M 上下文 beta header：原文 "The long context beta is not yet available for this subscription."；状态码与文案均与上一条 429 门禁不同，不会冲突。
     if status_code == 400 and "long context beta" in error_msg and "not yet available" in error_msg:
         return result_fn(FailoverReason.oauth_long_context_beta_forbidden, retryable=True, should_compress=False)
 
-    # llama.cpp's ``json-schema-to-grammar`` converter (used by its OAI
-    # server to build GBNF tool-call parsers) rejects regex escape classes
-    # like ``\d``/``\w``/``\s`` and most ``format`` values. MCP servers
-    # routinely emit ``"pattern": "\\d{4}-\\d{2}-\\d{2}"`` for date/phone/
-    # email params. llama.cpp surfaces this as HTTP 400 with one of a few
-    # recognizable phrases; on match we strip ``pattern``/``format`` from
-    # ``self.tools`` in the retry loop and retry once. Cloud providers are
-    # unaffected — they accept these keywords and we never hit this branch.
+    # llama.cpp 的 ``json-schema-to-grammar`` 拒绝正则转义类（``\d``/``\w``/``\s``）及大部分 ``format`` 值；命中后从工具中剥离 pattern/format 后重试。云端供应商不受影响。
     if status_code == 400 and (
         "error parsing grammar" in error_msg or "json-schema-to-grammar" in error_msg or ("unable to generate parser" in error_msg and "template" in error_msg)
     ):
         return result_fn(FailoverReason.llama_cpp_grammar_pattern, retryable=True, should_compress=False)
 
-    # xAI Grok subscription entitlement errors.
-    #
-    # xAI returns "You have either run out of available resources or do not
-    # have an active Grok subscription" through two distinct code paths:
-    #
-    #   • HTTP 403 — status_code is set; _classify_by_status (step 2) routes
-    #     it to FailoverReason.auth correctly, and _is_entitlement_failure
-    #     then prevents the credential-refresh loop.
-    #
-    #   • SSE ``type=error`` frame — surfaced as _StreamErrorEvent with
-    #     status_code=None.  _classify_by_status is skipped entirely, and
-    #     "grok subscription" / "out of available resources" appear in none
-    #     of the message-pattern lists below.  Without this guard the error
-    #     falls through to FailoverReason.unknown (retryable=True), burning
-    #     max_retries before the agent stops — and _is_entitlement_failure
-    #     is never called because it only runs under FailoverReason.auth.
-    #
-    # Both X Premium+ and SuperGrok subscribers hit this path when their
-    # subscription tier does not cover the requested model or feature.
+    # xAI Grok 订阅 entitlement 错误（403 由 _classify_by_status 走 auth；SSE ``type=error`` 不带 status_code 时落 unknown 烧光重试 —— 这里拦截）
     if "do not have an active grok subscription" in error_msg or ("out of available resources" in error_msg and "grok" in error_msg):
         return result_fn(FailoverReason.auth, retryable=False, should_fallback=True)
 
     return None
-
-
-# ── Status code classification ──────────────────────────────────────────
 
 
 def _classify_by_status(
@@ -674,7 +445,7 @@ def _classify_by_status(
     num_messages: int = 0,
     result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
-    """Classify based on HTTP status code with message-aware refinement."""
+    """基于 HTTP 状态码分类，并结合消息文案做精化。"""
     match status_code:
         case 401:
             return result_fn(FailoverReason.auth, retryable=False, should_rotate_credential=True, should_fallback=True)
@@ -710,11 +481,7 @@ def _classify_by_status(
             )
 
         case 500 | 502:
-            # Some OpenAI-compatible gateways return request-validation errors
-            # with a 5xx status (codex.nekos.me returns 502 for unknown/
-            # unsupported parameters). These are deterministic — every retry
-            # gets the identical rejection — so the generic "5xx → retryable
-            # server_error" rule turns one bad request into a retry flood.
+            # 某些 OpenAI 兼容网关（codex.nekos.me 对 unknown/unsupported parameter 返回 502）把请求校验错误以 5xx 返回 —— 是确定性的，命中后归为不可重试的 format_error，避免重试风暴。
             if any(p in error_msg for p in _REQUEST_VALIDATION_PATTERNS) or error_code.lower() in _REQUEST_VALIDATION_ERROR_CODES:
                 return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
             return result_fn(FailoverReason.server_error, retryable=True)
@@ -733,42 +500,24 @@ def _classify_by_status(
 
 
 def _classify_404(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
-    """Classify 404 — billing, policy-block, model-not-found, or unknown."""
-    # Nous API currently surfaces HA/NAS credit depletion as a paid model
-    # becoming unavailable on the Free Tier, returned as 404 rather than
-    # 402. Treat that as entitlement/billing exhaustion, not a missing
-    # model, so the retry loop can show credit/top-up guidance.
+    """对 404 进行分类（计费 / 策略屏蔽 / 模型缺失 / 未知）。"""
+    # Nous API 把 Free Tier 付费模型失效以 404 而非 402 返回 —— 视作 entitlement / 计费耗尽而非模型缺失，便于展示充值指引。
     if any(p in error_msg for p in _BILLING_PATTERNS):
         return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
-    # OpenRouter policy-block 404 — distinct from "model not found".
-    # The model exists; the user's account privacy setting excludes the
-    # only endpoint serving it. Falling back to another provider won't
-    # help (same account setting applies).  The error body already
-    # contains the fix URL, so just surface it.
+    # OpenRouter 策略屏蔽 404：模型实际存在，回退也无效（账号级设置对同账号所有调用生效），错误体已含修复 URL。
     if any(p in error_msg for p in _PROVIDER_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.provider_policy_blocked, retryable=False, should_fallback=False)
     if any(p in error_msg for p in _MODEL_NOT_FOUND_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
-    # Vision-unsupported — fall through to a vision-capable provider.
+    # 不支持视觉：回退到具备视觉能力的供应商。
     if any(p in error_msg for p in _VISION_UNSUPPORTED_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
-    # Generic 404 with no "model not found" signal — could be a wrong
-    # endpoint path (common with local llama.cpp / Ollama / vLLM when
-    # the URL is slightly misconfigured), a proxy routing glitch, or
-    # a transient backend issue.  Classifying these as model_not_found
-    # silently falls back to a different provider and tells the model
-    # the model is missing, which is wrong and wastes a turn.  Treat
-    # as unknown so the retry loop surfaces the real error instead.
+    # 通用 404 无模型缺失信号：可能是端点路径错配（本地 llama.cpp / Ollama / vLLM）、代理路由抖动或后端瞬时问题；归为 unknown 让重试循环把真实错误暴露给上层。
     return result_fn(FailoverReason.unknown, retryable=True)
 
 
 def _classify_402(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
-    """Disambiguate 402: billing exhaustion vs transient usage limit.
-
-    The key insight from OpenClaw: some 402s are transient rate limits
-    disguised as payment errors.  "Usage limit, try again in 5 minutes"
-    is NOT a billing problem — it's a periodic quota that resets.
-    """
+    """消歧 402：计费耗尽 vs 瞬时用量上限。"Usage limit, try again in 5 minutes" 之类的周期配额属限流而非计费。"""
     has_usage_limit = any(p in error_msg for p in _USAGE_LIMIT_PATTERNS)
     has_transient_signal = any(p in error_msg for p in _USAGE_LIMIT_TRANSIENT_SIGNALS)
 
@@ -781,31 +530,19 @@ def _classify_402(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedEr
 def _classify_400(
     error_msg: str, error_code: str, body: dict, *, provider: str, model: str, approx_tokens: int, context_length: int, num_messages: int = 0, result_fn: _ClassifierBuilder
 ) -> ClassifiedError:
-    """Classify 400 Bad Request — context overflow, format error, or generic."""
-    # Multimodal tool content rejected from 400.  Must be checked BEFORE
-    # image_too_large because the recovery is different (strip image parts
-    # from tool messages, mark the model as no-list-tool-content for the
-    # rest of the session) and BEFORE context_overflow because some of the
-    # patterns ("text is not set") are ambiguous in isolation but become
-    # specific when combined with a 400 on a request known to contain
-    # multimodal tool content.
+    """对 400 Bad Request 进行分类（上下文溢出 / 格式错误 / 通用）。"""
+    # 多模态 tool 内容被 400 拒绝（必须早于 image_too_large：恢复路径不同 —— 剥离图像并记录到 session；同时早于 context_overflow：部分模式如 "text is not set" 单独看有歧义，结合 400 + 已知含多模态才确定）
     if any(p in error_msg for p in _MULTIMODAL_TOOL_CONTENT_PATTERNS):
         return result_fn(FailoverReason.multimodal_tool_content_unsupported, retryable=True)
-    # Vision-unsupported (checked before image_too_large — different recovery).
+    # 不支持视觉（早于 image_too_large：恢复路径不同）
     if any(p in error_msg for p in _VISION_UNSUPPORTED_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
 
-    # Image-too-large from 400 (Anthropic's 5 MB per-image check fires this way).
-    # Must be checked BEFORE context_overflow because messages can trip both
-    # patterns ("exceeds" + "image") and image-shrink is a cheaper recovery.
+    # 400 上的 image_too_large（Anthropic 5 MB 单图检查即此方式返回；早于 context_overflow：消息可能同时命中两模式 ("exceeds"+"image")，缩图是更便宜的恢复路径）
     if any(p in error_msg for p in _IMAGE_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.image_too_large, retryable=True)
 
-    # Invalid encrypted reasoning replay blob (OpenAI Responses API).  Must be
-    # checked BEFORE context_overflow because some surfaces emit messages that
-    # contain context-like phrasing ("encrypted content … could not be
-    # verified") which could otherwise trip the context_overflow heuristics.
-    # ``error_msg`` is lowercased upstream — match accordingly.
+    # OpenAI Responses 的加密推理重放 blob 失效（早于 context_overflow：部分文案含上下文类措辞）
     error_code_lower = (error_code or "").lower()
     if (
         error_code_lower == "invalid_encrypted_content"
@@ -817,31 +554,26 @@ def _classify_400(
     if any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return result_fn(FailoverReason.context_overflow, retryable=True, should_compress=True)
 
-    # Some providers return model-not-found as 400 instead of 404 (e.g. OpenRouter).
+    # 部分供应商（OpenRouter）以 400 而非 404 返回 model-not-found
     if any(p in error_msg for p in _PROVIDER_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.provider_policy_blocked, retryable=False, should_fallback=False)
     if any(p in error_msg for p in _MODEL_NOT_FOUND_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
 
-    # Some providers return rate limit / billing errors as 400 instead of 429/402.
+    # 部分供应商以 400 而非 429/402 返回限流 / 计费错误
     if any(p in error_msg for p in _RATE_LIMIT_PATTERNS):
         return result_fn(FailoverReason.rate_limit, retryable=True, should_rotate_credential=True, should_fallback=True)
     if any(p in error_msg for p in _BILLING_PATTERNS):
         return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
 
-    # Provider couldn't fetch the URL embedded in an image_url part.
-    # Distinguished from generic format_error because retrying unchanged
-    # won't help; the user needs a curated message saying so.
+    # 供应商无法拉取 image_url 内的 URL（区别于通用 format_error —— 重试也无效，需返回给用户）
     if any(p in error_msg for p in _ATTACHMENT_FETCH_PATTERNS):
         return result_fn(FailoverReason.attachment_fetch_failed, retryable=False, should_fallback=False)
 
-    # Generic 400 + large session → probable context overflow
-    # Anthropic sometimes returns a bare "Error" message when context is too large
+    # 通用 400 + 大会话 → 可能为上下文溢出（Anthropic 上下文过大时偶尔返回裸 "Error" 消息）
     err_body_msg = _extract_body_message(body)
     is_generic = len(err_body_msg) < 30 or err_body_msg in {"error", ""}
-    # Absolute token/message-count thresholds are only a proxy for smaller
-    # context windows.  Large-context sessions can have many messages while
-    # still being far below their actual token budget.
+    # 绝对 token / 消息数阈值只是小上下文窗口的近似；大上下文会话可能在远低于预算时就累积很多消息。
     is_large = approx_tokens > context_length * 0.4 or (context_length <= 256000 and (approx_tokens > 80000 or num_messages > 80))
 
     if is_generic and is_large:
@@ -850,11 +582,8 @@ def _classify_400(
     return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
 
 
-# ── Error code classification ───────────────────────────────────────────
-
-
 def _classify_by_error_code(error_code: str, error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
-    """Classify by structured error codes from the response body."""
+    """基于响应体里的结构化错误码分类。"""
     code_lower = error_code.lower()
     if code_lower in _RATE_LIMIT_ERROR_CODES:
         return result_fn(FailoverReason.rate_limit, retryable=True, should_rotate_credential=True)
@@ -869,11 +598,8 @@ def _classify_by_error_code(error_code: str, error_msg: str, result_fn: _Classif
     return None
 
 
-# ── Message pattern classification ──────────────────────────────────────
-
-
 def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int, context_length: int, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
-    """Classify based on error message patterns when no status code is available."""
+    """在没有状态码时基于错误消息模式分类。"""
     if any(p in error_msg for p in _PAYLOAD_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.payload_too_large, retryable=True, should_compress=True)
 
@@ -883,14 +609,11 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
     if any(p in error_msg for p in _IMAGE_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.image_too_large, retryable=True)
 
-    # Image-gen provider returned success but zero images — try the next
-    # provider rather than surfacing an empty-result error to the user.
+    # 生图供应商返回成功但零张图：交给下一家
     if any(p in error_msg for p in _EMPTY_IMAGE_RESULT_PATTERNS):
         return result_fn(FailoverReason.unknown, retryable=False, should_fallback=True)
 
-    # Usage-limit patterns need disambiguation: a transient signal
-    # ("try again", "resets at", …) means it's a periodic quota, not
-    # billing exhaustion.
+    # 用量上限需消歧：含瞬时信号（try again / resets at 等）说明是周期配额而非计费耗尽
     if any(p in error_msg for p in _USAGE_LIMIT_PATTERNS):
         has_transient_signal = any(p in error_msg for p in _USAGE_LIMIT_TRANSIENT_SIGNALS)
         if has_transient_signal:
@@ -906,10 +629,7 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
     if any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return result_fn(FailoverReason.context_overflow, retryable=True, should_compress=True)
 
-    # Auth errors should NOT be retried directly — the credential is invalid
-    # and retrying with the same key will always fail.  Set retryable=False
-    # so the caller triggers credential rotation or provider fallback
-    # rather than an immediate retry loop.
+    # 鉴权错误不可直接重试：密钥无效，重试同一密钥必然失败；设 retryable=False 让调用方走密钥轮换或供应商回退。
     if any(p in error_msg for p in _AUTH_PATTERNS):
         return result_fn(FailoverReason.auth, retryable=False, should_rotate_credential=True, should_fallback=True)
 
@@ -919,21 +639,15 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
     if any(p in error_msg for p in _MODEL_NOT_FOUND_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
 
-    # Generic exception types (e.g. RuntimeError) raised by local shims or
-    # custom providers that internally wrap a subprocess/HTTP timeout.
-    # Classified as transport timeout so the retry loop rebuilds the
-    # client instead of treating the turn as an empty model response.
+    # 本地 shim / 自定义供应商用通用异常（RuntimeError）包装子进程 / HTTP 超时 —— 归为传输超时，让重试循环重建客户端而非视为空响应。
     if any(p in error_msg for p in _TIMEOUT_MESSAGE_PATTERNS):
         return result_fn(FailoverReason.timeout, retryable=True)
 
     return None
 
 
-# ── Helpers ─────────────────────────────────────────────────────────────
-
-
 def _build_error_message(error: Exception, body: dict) -> str:
-    """Combine str(error), the body message, and OpenRouter's wrapped metadata.raw."""
+    """合并 str(error)、body 消息与 OpenRouter 嵌套的 metadata.raw。"""
     raw_msg = str(error).lower()
     body_msg = ""
     metadata_msg = ""
@@ -961,7 +675,7 @@ def _build_error_message(error: Exception, body: dict) -> str:
 
 
 def _extract_body_message(body: dict) -> str:
-    """Lowercased message from the body (error.message or top-level message)."""
+    """返回 body 里的消息（error.message 或顶层 message，已转小写）。"""
     if not isinstance(body, dict):
         return ""
     err_obj = body.get("error", {})
@@ -973,14 +687,13 @@ def _extract_body_message(body: dict) -> str:
 
 
 def _extract_status_code(error: Exception) -> int | None:
-    """Walk the error and its cause chain to find an HTTP status code."""
+    """沿异常链向上查找 HTTP 状态码。"""
     current = error
     for _ in range(_CAUSE_CHAIN_MAX_DEPTH):
         code = getattr(current, "status_code", None)
         if isinstance(code, int):
             return code
-        # Some SDKs use .status instead of .status_code
-        code = getattr(current, "status", None)
+        code = getattr(current, "status", None)  # 部分 SDK 用 .status 而非 .status_code
         if isinstance(code, int) and 100 <= code < 600:
             return code
         cause = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
@@ -991,7 +704,7 @@ def _extract_status_code(error: Exception) -> int | None:
 
 
 def _extract_error_body(error: Exception) -> dict:
-    """Extract the structured error body from an SDK exception."""
+    """从 SDK 异常中取出结构化的错误体。"""
     body = getattr(error, "body", None)
     if isinstance(body, dict):
         return body
@@ -1007,7 +720,7 @@ def _extract_error_body(error: Exception) -> dict:
 
 
 def _extract_error_code(body: dict) -> str:
-    """Extract an error code string from the response body."""
+    """从响应体中提取错误码字符串。"""
     if not body:
         return ""
 
@@ -1032,9 +745,7 @@ def _extract_error_code(body: dict) -> str:
         if isinstance(code, str) and code.strip() and code.strip() != "400":
             return code.strip()
 
-        # Some providers wrap the real JSON error body as a string inside
-        # error.message — peek into it for a nested code (e.g. Responses API
-        # surfaces ``invalid_encrypted_content`` this way).
+        # 部分供应商把真实 JSON 错误体以字符串塞进 error.message —— 拆开取内层 code（如 Responses API 的 ``invalid_encrypted_content``）
         message = error_obj.get("message")
         if isinstance(message, str) and message.strip().startswith("{"):
             inner = safe_json_loads(message)
@@ -1051,7 +762,7 @@ def _extract_error_code(body: dict) -> str:
 
 
 def _extract_message(error: Exception, body: dict) -> str:
-    """Extract the most informative error message."""
+    """提取最具信息量的错误消息。"""
     if body:
         error_obj = body.get("error", {})
         if isinstance(error_obj, dict):
@@ -1068,7 +779,7 @@ _RESET_HEADER_PATTERN = re.compile(r"^\d+(\.\d+)?$")
 
 
 def _extract_suggested_delay(error: Exception) -> float | None:
-    """Extract rate limit reset / retry-after delay from headers in seconds."""
+    """从响应头中提取 rate limit reset / retry-after 延迟（秒）。"""
     response = getattr(error, "response", None)
     if response is None:
         return None
@@ -1085,7 +796,7 @@ def _extract_suggested_delay(error: Exception) -> float | None:
 
 
 def _parse_delay(value: str) -> float | None:
-    """Parse a delay value with optional unit suffix (ms/s/m/h) or bare number."""
+    """解析带可选单位后缀（ms/s/m/h）或裸数字的延迟字符串。"""
     if value.endswith("ms"):
         return float(value[:-2]) / 1000.0
     if value.endswith("s"):

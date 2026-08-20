@@ -16,7 +16,7 @@ def test_validate_and_sanitize_clip():
                 {
                     "t": 1.5,
                     "r": [0.5, 0.5, 0.5],
-                },  # loop will fix final keyframe to t=2.0 and r=[0, 0, 0]
+                },  # loop 会把末帧修正为 t=2.0 且 r=[0,0,0]
             ]
         },
     }

@@ -26,14 +26,7 @@ async def _get_latest(db: AsyncSession) -> UpdateVersion:
 
 
 def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
-    """Return the last sorted file in ``versions_dir`` matching any pattern.
-
-    Patterns are concatenated in call order then sorted, matching the prior
-    per-block ``sorted(.../*.zip) + sorted(.../*.dmg)`` semantics: files
-    matching later patterns sort AFTER earlier patterns only when their
-    names tie. Temp / staging entries (``*.tmp.zip`` and any upload-time
-    leftovers) are excluded so the picker never returns an incomplete file.
-    """
+    """按调用顺序拼接 pattern 后排序，取 versions_dir 中最后一条匹配文件；临时/暂存条目（*.tmp.zip 等上传残留）排除，避免返回不完整文件。"""
     if not patterns:
         return None
     matches: list[Path] = []
@@ -56,13 +49,7 @@ async def get_latest_mac_yml(db: AsyncSession = Depends(get_db)) -> dict:
 
 @router.get("/latest-runner.yml", response_class=FileResponse)
 async def get_latest_runner_yml(db: AsyncSession = Depends(get_db)) -> FileResponse:
-    """Serve the signed runner manifest written by `scripts/build_client.ps1`'s
-    `Build-UpdateZip` step. The desktop main process reads this BEFORE the
-    restart, downloads the wheel + server.py locally, and only AFTER both
-    have staged + verified does it allow the user to click "Restart". On next
-    launch the new Electron runs `installPending`, which `pip install
-    --upgrade` the wheel in place and overwrites `server.py`.
-    """
+    """提供 Build-UpdateZip 写入的签名 runner manifest：desktop 主进程在重启前读取它、本地暂存 wheel + server.py，校验通过后才允许点 "Restart"；下次启动由新 Electron 跑 installPending 执行 pip install --upgrade 并覆盖 server.py。"""
     latest = await _get_latest(db)
     if not latest.runner_filename:
         raise HTTPException(status_code=404, detail="No active release with a runner asset")
@@ -79,7 +66,7 @@ async def list_versions(_admin: str = Depends(get_current_admin_token), db: Asyn
 
 
 def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
-    """Extract allowed desktop + runner entries from an update zip."""
+    """从更新 zip 中解压允许的 desktop + runner 条目。"""
     versions_dir_resolved = versions_dir.resolve()
     with zipfile.ZipFile(zip_path, "r") as zf:
         for name in zf.namelist():
@@ -100,12 +87,11 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
 async def create_version(
     file: UploadFile = File(...), release_notes: str = Form(""), _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)
 ) -> UpdateVersionItem:
-    # Squirrel build-output zip; must contain a *.exe.
+    # Squirrel 构建产物 zip，必须含 *.exe。
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(status_code=400, detail="File must be a .zip file")
 
-    # Constrain to a bare semver — the value becomes a path segment under
-    # VERSIONS_DIR, so anything else would let the filename escape the dir.
+    # 限定为纯 semver——该值会成为 VERSIONS_DIR 下的路径片段，否则文件名可逃出目录。
     if not (match := re.search(r"\d+\.\d+\.\d+", file.filename)):
         raise HTTPException(status_code=400, detail="Filename must contain a version like 1.2.3")
     version = match.group(0)
@@ -115,8 +101,7 @@ async def create_version(
 
     versions_dir = VERSIONS_DIR / version
     versions_dir.mkdir(parents=True, exist_ok=True)
-    # Stage the upload in a per-process unique temp dir so two concurrent
-    # admin uploads of the same version don't clobber each other's bytes.
+    # 在进程唯一的临时目录暂存上传，避免两个并发管理上传同一版本时互相覆盖字节。
     with tempfile.TemporaryDirectory(dir=VERSIONS_DIR, prefix=f".upload_{version}_") as tmp_dir:
         zip_path = Path(tmp_dir) / "upload.zip"
         with open(zip_path, "wb") as f:
@@ -128,10 +113,7 @@ async def create_version(
         except zipfile.BadZipFile:
             raise HTTPException(status_code=400, detail="Invalid zip file")
 
-    # Validate the embedded manifest.json. The build script (Build-UpdateZip)
-    # always writes one and its `version` field must match the version we
-    # extracted from the upload filename — otherwise the zip is from a
-    # different release and we refuse to accept it.
+    # 校验内嵌 manifest.json：构建脚本（Build-UpdateZip）总会写入，其 version 必须匹配从文件名解析出的版本，否则视为不同发布并拒绝。
     manifest_path = versions_dir / "manifest.json"
     if not manifest_path.exists():
         shutil.rmtree(versions_dir, ignore_errors=True)
@@ -156,8 +138,7 @@ async def create_version(
 
     mac_file = _pick_asset(versions_dir, "*.zip", "*.dmg")
 
-    # Runner-half. The wheel + server.py are extracted into runner/ by
-    # _extract_archive_entries; latest-runner.yml lives at the root.
+    # Runner 侧：wheel + server.py 由 _extract_archive_entries 解压到 runner/，latest-runner.yml 位于根。
     wheel_file = _pick_asset(versions_dir, "runner/spirit-agent-*.whl")
 
     record = UpdateVersion(

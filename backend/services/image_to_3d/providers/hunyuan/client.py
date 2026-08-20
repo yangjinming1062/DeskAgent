@@ -14,13 +14,13 @@ MODEL_VERSION_EXPRESS: str = "hy-3d-express"
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
 _DOWNLOAD_MAX_BYTES: int = 100 * 1024 * 1024
 
-# Face count bounds per Tencent Hunyuan 3D specs
+# 面数上下界（腾讯混元 3D 规格）
 _MIN_FACE_COUNT: int = 3_000
 _MAX_FACE_COUNT: int = 1_500_000
 
 
 class HunyuanApiError(RuntimeError):
-    """API error returned by Hunyuan 3D service."""
+    """腾讯混元 3D 服务返回的 API 错误。"""
 
 
 def _base_url() -> str:
@@ -42,7 +42,7 @@ def _auth_headers() -> dict[str, str]:
 def _common_model_kwargs(
     *, model: str, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None, prompt: str | None = None
 ) -> dict[str, Any]:
-    """Build common payload fields for Hunyuan 3D API in snake_case."""
+    """构造 Hunyuan 3D API 通用 snake_case 负载字段。"""
     payload: dict[str, Any] = {"model": model, "enable_pbr": enable_pbr, "result_format": (result_format or "GLB").upper()}
     if generate_type:
         payload["generate_type"] = generate_type
@@ -56,7 +56,7 @@ def _common_model_kwargs(
 def hunyuan_common_kwargs_from_settings(
     *, model: str | None = None, generate_type: str | None = None, face_count: int | None = None, enable_pbr: bool | None = None, result_format: str | None = None
 ) -> dict[str, Any]:
-    """Build common call kwargs for Hunyuan endpoints from SETTINGS."""
+    """从 SETTINGS 构造 Hunyuan 端点的通用调用 kwargs。"""
     raw_face_count = face_count if face_count is not None else getattr(SETTINGS, "hunyuan_face_count", 0)
     fc = raw_face_count if (raw_face_count is not None and raw_face_count > 0) else None
     rf = result_format if result_format is not None else (getattr(SETTINGS, "hunyuan_result_format", "") or "GLB")
@@ -70,7 +70,7 @@ def hunyuan_common_kwargs_from_settings(
 
 
 async def _submit_job(payload: dict[str, Any], *, paid_label: str) -> str:
-    """POST /v1/api/3d/submit shared by every submission mode."""
+    """所有提交模式共享的 POST /v1/api/3d/submit。"""
     timeout = httpx.Timeout(60.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{_base_url()}/v1/api/3d/submit", headers=_auth_headers(), json=payload)
@@ -94,7 +94,7 @@ async def create_image_to_model(
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> str:
-    """Submit a single-image to 3D model generation job."""
+    """提交单图生 3D 模型任务。"""
     if not image_base64:
         raise ValueError("image-to-model requires a non-empty image_base64")
     payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
@@ -113,12 +113,7 @@ async def create_multiview_to_model(
     face_count: int | None = None,
     prompt: str | None = None,
 ) -> str:
-    """Submit a multi-view to 3D model generation job.
-
-    ``front_image_base64`` is the main front view (passed in ``image_base64``).
-    ``views`` maps perspective keys (e.g. ``right``, ``back``, ``left``, ``top``, ``bottom``)
-    to base64 strings or URLs, which are formatted into ``multi_view_images``.
-    """
+    """提交多视图生 3D 模型任务。``front_image_base64`` 是正面主图（放入 ``image_base64``），``views`` 把视角键（如 ``right`` / ``back`` / ``left`` / ``top`` / ``bottom``）映射为 base64 或 URL，组装到 ``multi_view_images``。"""
     if not front_image_base64:
         raise ValueError("multiview-to-model requires a front image")
 
@@ -134,7 +129,7 @@ async def create_multiview_to_model(
 
 
 async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[str, Any]:
-    """Single POST /v1/api/3d/query to check task status."""
+    """通过单次 POST /v1/api/3d/query 检查任务状态。"""
     timeout = httpx.Timeout(60.0, connect=10.0)
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(f"{_base_url()}/v1/api/3d/query", headers=_auth_headers(), json={"id": job_id, "model": model})
@@ -145,5 +140,5 @@ async def get_task(job_id: str, *, model: str = MODEL_VERSION_DEFAULT) -> dict[s
 
 
 async def download_model(model_url: str) -> bytes:
-    """Download model asset with download_capped."""
+    """通过 download_capped 下载模型资产。"""
     return await download_capped(model_url, max_bytes=_DOWNLOAD_MAX_BYTES, timeout=_DOWNLOAD_TIMEOUT_SECONDS)

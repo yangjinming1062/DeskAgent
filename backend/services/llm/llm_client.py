@@ -31,42 +31,23 @@ logger = get_logger(__name__)
 
 
 def _log_embedding(*, call_id: str, phase: str, provider: str, model: str, user_id: int | None, status: str | None = None, latency_ms: int | None = None, **extras: Any) -> None:
-    """Embedding chokepoint has stable caller-supplied defaults (service /
-    call_site); fold them in here so the call sites only spell out the
-    per-event fields."""
+    """Embedding 入口拥有稳定的调用方默认字段（service / call_site），在此处统一注入，使调用方只需关心每次事件的字段。"""
     log_event(
         call_id=call_id, service="embedding", provider=provider, model=model, call_site=__name__, phase=phase, status=status, latency_ms=latency_ms, user_id=user_id, **extras
     )
 
 
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
-    """Build an ``AsyncOpenAI`` from an already-resolved ``llm_config`` dict.
-
-    Raises ``KeyError`` on a missing key — callers that may receive incomplete
-    dicts (e.g. background queue) should pre-validate first.
-    """
+    """从已解析的 ``llm_config`` 字典构建 ``AsyncOpenAI``；缺键时抛 ``KeyError``（可能拿到不完整字典的调用方如后台队列需自行预校验）。"""
     return get_async_client(llm_config["api_key"], llm_config["base_url"])
 
 
 class MissingLlmConfigError(Exception):
-    """Raised when user-scoped LLM config is unavailable.
-
-    Callers should map this to their endpoint-specific 400 envelope
-    (e.g. ``routers/llm.py`` returns ``{error, reason, status}``;
-    ``routers/media.py`` returns localized Chinese detail strings).
-    """
+    """用户级 LLM 配置缺失时抛出；调用方按端点协议映射为 400 响应包。"""
 
 
 async def resolve_service_row(db: AsyncSession | None, user_id: int | None, prefix: str, *, user_cfg: UserModelConfig | None = None) -> tuple[str, str, str]:
-    """Return ``(base_url, api_key, model_name)`` for a service prefix.
-
-    DB row wins when present (an explicit user-cleared empty field is
-    honored); when no row exists or no user context is available, falls
-    back to ``SETTINGS.<prefix>_*``. The renderer-facing handler and the
-    provider builder both consult this so the field-shape stays
-    in one place. ``user_cfg`` lets callers that already loaded the row
-    pass it through instead of re-querying.
-    """
+    """按服务前缀返回 ``(base_url, api_key, model_name)``；DB 行优先（显式清空也保留），无行或无用户上下文时回退到 ``SETTINGS.<prefix>_*``。``user_cfg`` 允许调用方直接传已加载的行避免重复查询。"""
     config = user_cfg
     if config is None and db is not None and user_id is not None:
         config = (await db.execute(select(UserModelConfig).where(UserModelConfig.user_id == user_id))).scalar_one_or_none()
@@ -74,26 +55,14 @@ async def resolve_service_row(db: AsyncSession | None, user_id: int | None, pref
 
 
 def _provider_level_key(name: str) -> str:
-    """Provider-level API key for a given provider name.
-
-    MiniMax keys never inherit MiMo keys (host-mismatch 401 avoidance).
-    Other providers fall back to ``SETTINGS.<name>_api_key``, then to the
-    legacy ``SETTINGS.llm_api_key`` so existing single-key deployments keep
-    working when ``MIMO_API_KEY`` is left unset.
-    """
+    """按供应商名取供应商级 API key。MiniMax 永不继承 MiMo key（避免 host-mismatch 401），其余先 ``SETTINGS.<name>_api_key`` 再回退到 ``SETTINGS.llm_api_key`` 兼容单 key 部署。"""
     if name == "minimax":
         return SETTINGS.minimax_api_key
     return getattr(SETTINGS, f"{name}_api_key", "") or SETTINGS.llm_api_key
 
 
 def _provider_level_url(name: str, service_type: str) -> str:
-    """Provider-level BASE_URL: env override, built-in default, then legacy
-    fallback to ``SETTINGS.llm_base_url`` for non-minimax providers.
-
-    MiniMax paths already embed ``/v1`` (``/v1/t2a_v2``, ``/v1/voice_design``)
-    and httpx joins a trailing ``/v1`` again → 404. The OpenAI SDK on llm
-    *does* need that suffix, so we strip it only for non-llm capabilities.
-    """
+    """供应商级 BASE_URL：env 覆盖 → 内置默认 → 非 minimax 时回退 ``SETTINGS.llm_base_url``。MiniMax 路径已内嵌 ``/v1``（``/v1/t2a_v2``、``/v1/voice_design``），httpx 拼接 ``/v1`` 会导致 404；而 OpenAI SDK 在 llm 上需要该后缀，因此仅对非 llm 能力剥离。"""
     explicit = getattr(SETTINGS, f"{name}_base_url", "") or ""
     default = default_base_url(name, service_type)
     if name == "minimax":
@@ -105,17 +74,7 @@ def _provider_level_url(name: str, service_type: str) -> str:
 
 
 def _resolve_slot_config(name: str, service_type: str, row: tuple[str, str, str]) -> ProviderConfig | None:
-    """Resolve one provider's ``ProviderConfig`` for one capability slot.
-
-    Resolution order (first non-empty wins):
-      1. user per-cap row (already folded in via ``row``; ``resolve_service_row``
-         falls back to ``SETTINGS.<svc>_*`` when no DB row exists)
-      2. provider-level (``SETTINGS.<NAME>_API_KEY`` / ``SETTINGS.<NAME>_BASE_URL``)
-      3. built-in defaults (``PROVIDER_DEFAULT_URLS``, ``DEFAULT_MODELS``)
-
-    Returns ``None`` when no api_key resolves — the chain skips this slot and
-    tries the next provider. Returns a populated ``ProviderConfig`` otherwise.
-    """
+    """解析单个供应商在某个能力槽上的 ``ProviderConfig``：依次尝试用户 per-cap 行 → 供应商级 env → 内置默认；未取到 api_key 时返回 ``None`` 让链跳过该槽。"""
     user_base_url, user_api_key, user_model = row
 
     base_url = user_base_url or _provider_level_url(name, service_type)
@@ -129,16 +88,7 @@ def _resolve_slot_config(name: str, service_type: str, row: tuple[str, str, str]
 
 
 def _build_chain_order(service_type: str, user_cfg: UserModelConfig | None = None) -> list[str]:
-    """Build the ordered list of provider names to try for ``service_type``.
-
-    Source priority:
-      1. ``user_cfg.<svc>_provider`` or ``SETTINGS.<svc>_provider`` — soft-reorder:
-         move named provider to front of ``PROVIDERS`` order (chain stays multi-element).
-      2. ``SETTINGS.providers`` — comma-separated priority order.
-      3. ``SERVICE_DEFAULT_PROVIDER[svc]`` — single-element chain (legacy).
-
-    Only providers registered for this service are kept.
-    """
+    """按用户 pin → 全局 pin → ``SETTINGS.providers`` 顺序 → ``SERVICE_DEFAULT_PROVIDER`` 兜底构造 ``service_type`` 的供应商候选链；只保留已注册该服务的供应商。"""
     user_pin = getattr(user_cfg, f"{service_type}_provider", "") if user_cfg else ""
     pin = user_pin or getattr(SETTINGS, f"{service_type}_provider", "") or ""
     if pin and pin not in KNOWN_PROVIDERS:
@@ -159,13 +109,7 @@ async def _load_user_config(db: AsyncSession | None, user_id: int | None) -> Use
 
 
 def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[ProviderConfig]:
-    """Tier-1 chain slots from a user's per-user provider_config (JSON list).
-
-    One slot per entry in stored order, filtered to providers registered for
-    ``service_type``. A slot needs both an api_key and a resolvable base_url.
-    If a per-capability preferred provider is set (e.g. ``llm_provider``),
-    that provider's slot is pinned to the front of the user slots.
-    """
+    """从用户 ``provider_config`` JSON 列表中生成 tier-1 链槽，每条记录对应一个槽（仅保留已注册该服务的供应商，且必须同时具备 api_key 与 base_url）；per-cap pin 的供应商置顶。"""
     supporting = set(providers_supporting(service_type))
     slots: list[ProviderConfig] = []
     for entry in json.loads(user_cfg.provider_config or "[]"):
@@ -188,25 +132,10 @@ def _user_provider_slots(user_cfg: UserModelConfig, service_type: str) -> list[P
 
 
 async def resolve_provider_chain(db: AsyncSession | None, user_id: int | None, service_type: str, *, user_cfg: UserModelConfig | None = None) -> list[ProviderConfig]:
-    """Resolve the ordered fallback chain for ``service_type``.
-
-    Resolution tiers (first provider with both a key and a base_url wins):
-      1. user provider — per-user provider_config (JSON) + provider-level keys
-      2. user capability credentials — ``UserModelConfig.<svc>_*``
-      3. global provider — ``SETTINGS.providers`` / ``<svc>_provider`` + keys
-      4. global capability credentials — ``SETTINGS.<svc>_*``
-
-    Tiers 2-4 reuse the per-cap/provider fold-in (``_resolve_slot_config``)
-    so legacy single-key deployments keep working unchanged; tier 1 is
-    prepended and deduped by provider name. Empty list → the dispatcher
-    raises ``MissingLlmConfigError``. ``user_cfg`` lets callers that
-    already loaded the row (e.g. ``resolve_user_llm_config``) pass it
-    through to avoid a duplicate ``UserModelConfig`` query.
-    """
+    """按用户 provider → 用户 capability → 全局 provider → 全局 capability 四层顺序解析 ``service_type`` 的回退链；前两个具备 api_key 与 base_url 的供应商胜出；空列表由调用方抛 ``MissingLlmConfigError``。"""
     if user_cfg is None:
         user_cfg = await _load_user_config(db, user_id)
-    # ``resolve_service_row`` hits the DB; the row is per-user-per-service
-    # and identical across chain slots, so hoist once.
+    # ``resolve_service_row`` 会查 DB；该行在链内每个槽都相同，提前取一次。
     row = await resolve_service_row(db, user_id, service_type, user_cfg=user_cfg)
     chain: list[ProviderConfig | None] = []
     if user_cfg is not None:
@@ -223,14 +152,7 @@ async def resolve_provider_chain(db: AsyncSession | None, user_id: int | None, s
 
 
 async def resolve_provider_config(db: AsyncSession | None, user_id: int | None, service_type: str) -> ProviderConfig:
-    """Resolve the active provider config for a service (single, back-compat).
-
-    Thin wrapper over :func:`resolve_provider_chain` that returns the first
-    element. Existing call sites of ``resolve_provider_config`` keep their
-    1-element contract; new code can iterate the chain directly. Raises
-    :class:`MissingLlmConfigError` when no provider in the chain has both a
-    key and a base_url.
-    """
+    """``resolve_provider_chain`` 的薄包装，返回链首元素以保持旧 API 单值契约；链为空时抛 ``MissingLlmConfigError``。"""
     chain = await resolve_provider_chain(db, user_id, service_type)
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
@@ -238,8 +160,7 @@ async def resolve_provider_config(db: AsyncSession | None, user_id: int | None, 
 
 
 async def resolve_vision_chain(db: AsyncSession | None, user_id: int | None, *, service_type: str = "llm") -> list[ProviderConfig]:
-    """Vision-capable providers in the ``service_type`` chain, each with its
-    vision model substituted. Empty when none support vision."""
+    """``service_type`` 链中所有支持视觉的供应商，model 已替换为视觉模型。"""
     return [
         replace(cfg, model=default_vision_model_for(cfg.provider_name) or cfg.model)
         for cfg in await resolve_provider_chain(db, user_id, service_type)
@@ -248,13 +169,13 @@ async def resolve_vision_chain(db: AsyncSession | None, user_id: int | None, *, 
 
 
 def provider_from_config(config: ProviderConfig) -> BaseProvider:
-    """Construct a provider from a pre-resolved config; skips the DB lookup ``provider_for_service`` does."""
+    """从已解析的 config 直接构造供应商实例，跳过 ``provider_for_service`` 的 DB 查询。"""
     cls = resolve(config.service_type, config.provider_name)
     return cls(config)
 
 
 async def provider_for_service(db: AsyncSession | None, user_id: int | None, service_type: str) -> BaseProvider:
-    """Resolve config → instantiate provider. Returns chain[0]; for multi-provider fallback see ``execute_with_fallback``."""
+    """解析 config 并实例化供应商，返回链首；多供应商回退请用 ``execute_with_fallback``。"""
     return provider_from_config(await resolve_provider_config(db, user_id, service_type))
 
 
@@ -262,11 +183,7 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
     try:
         chain = await resolve_provider_chain(db, user_id, "embedding")
         if not chain:
-            # Fall back to the chat provider with the OpenAI-compatible default embedding
-            # model, but only for providers that actually expose an OpenAI-shaped
-            # ``/v1/embeddings`` endpoint. Native providers (minimax uses ``texts`` not
-            # ``input``) would 404 / return malformed bodies — silently degrading
-            # semantic memory without surfacing the misconfiguration.
+            # 回退到 chat 供应商并使用 OpenAI 兼容的默认 embedding 模型，但仅限真正暴露 OpenAI 形态 ``/v1/embeddings`` 端点的供应商；原生供应商（minimax 用 ``texts`` 而非 ``input``）会 404 / 返回畸形 body —— 会静默降级语义记忆而不暴露误配。
             from .providers import OPENAI_COMPATIBLE_PROVIDERS
 
             llm_cfg = await resolve_provider_config(db, user_id, "llm")
@@ -284,7 +201,7 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
 
 
 async def generate_embedding(text: str, user_id: int | None = None, db: AsyncSession | None = None, timeout_seconds: float = 2.0) -> list[float] | None:
-    """Generate embedding vector for a single text. Returns None if unconfigured or failed."""
+    """为单段文本生成 embedding 向量；未配置或失败时返回 None。"""
     if not text or not text.strip():
         return None
     call_id = new_call_id()
@@ -333,7 +250,7 @@ async def generate_embedding(text: str, user_id: int | None = None, db: AsyncSes
 
 
 async def generate_embeddings(texts: list[str], user_id: int | None = None, db: AsyncSession | None = None, timeout_seconds: float = 5.0) -> list[list[float]] | None:
-    """Generate embedding vectors for multiple texts."""
+    """为多段文本生成 embedding 向量列表。"""
     if not texts:
         return []
     call_id = new_call_id()

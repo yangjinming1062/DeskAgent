@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 
 @dataclass(frozen=True)
 class _ToolDispatchContext:
-    """Per-turn context plumbed through tool dispatch — one parameter pack so adding a field is one line here instead of three signatures."""
+    """贯穿单轮工具派发的上下文参数包：新增字段只需在此一行扩展，避免改三处签名。"""
 
     user_id: int
     llm_config: dict
@@ -40,7 +40,7 @@ class _ToolDispatchContext:
 
 
 def _redact_tool_payload(result_str: str) -> str | list:
-    """Redact secrets, unwrapping ``_multimodal`` envelopes so each text part is redacted in place."""
+    """对结果脱敏；解包 ``_multimodal`` 包裹后对每个 text 段逐段脱敏。"""
     if result_str.lstrip().startswith("{"):
         parsed = safe_json_loads(result_str)
         if is_multimodal_tool_result(parsed):
@@ -52,19 +52,14 @@ def _redact_tool_payload(result_str: str) -> str | list:
 
 
 async def _dispatch_runner_tool(user_id: int, name: str, args: dict, call_id: str, emitter: Emitter) -> str:
-    """Send a runner tool call over the user's WS and await its ipc future."""
-    # Fast-fail when Desktop is offline (not connected and no grace session) or Runner hasn't synced its tools yet.
-    # Without this check the IPC future hangs for ipc_future_timeout_seconds
-    # (default 300s) before returning a synthetic timeout error.
+    """通过用户 WS 派发 runner 工具调用并等待其 ipc future。"""
+    # 客户端离线（未连接也无 grace session）或 Runner 未同步工具时快速失败；否则 IPC future 会挂 ipc_future_timeout_seconds（默认 300s）才返回合成超时错误。
     if not MANAGER.is_available(user_id):
         return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
     if not REGISTRY.has_runner_tools(user_id):
         return tool_error("Runner is not available. No runner tools registered for this session.")
 
-    # Sleep/wake race: WS may close between the in-MANAGER check and the
-    # actual send. WSEmitter.send_json swallows WebSocketDisconnect and the
-    # post-close starlette RuntimeError, so catching them here allows checking
-    # if the user still has an active/grace session in the gateway.
+    # 睡眠/唤醒竞态：MANAGER 内检查与实际 send 之间 WS 可能已断开；WSEmitter.send_json 会吞掉 WebSocketDisconnect 与关闭后的 starlette RuntimeError，此处捕获后重新检查用户在网关中的活动/grace 会话。
     try:
         await emitter.send_json({"type": "tool_call", "name": name, "args": args, "call_id": call_id})
     except (WebSocketDisconnect, RuntimeError) as e:
@@ -82,16 +77,13 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
 
     try:
         args = safe_json_loads(_repair_tool_call_arguments(raw_args_str, name), default={}) if raw_args_str else {}
-        # JSON ``null`` parses to Python ``None`` which skips ``safe_json_loads``'s
-        # default branch. Treat ``arguments: "null"`` (LLM's "no args" gesture)
-        # the same as ``arguments: "{}"`` so the downstream ``coerce_tool_args``
-        # gets a dict.
+        # JSON ``null`` 解析为 Python ``None``，会绕过 ``safe_json_loads`` 的 default 分支；把 LLM 用 ``arguments: "null"`` 表示「无参数」统一视作 ``arguments: "{}"``，确保下游 ``coerce_tool_args`` 拿到 dict。
         if not isinstance(args, dict):
             args = {}
 
         args = coerce_tool_args(name, args, REGISTRY.get_schema(ctx.user_id, name))
 
-        # Strip reserved keys at the entry point so all three tool locations (backend/memory/runner) get the filter.
+        # 在入口处统一剥离保留键，使 backend / memory / runner 三类工具都受同一过滤。
         if isinstance(args, dict):
             args = {k: v for k, v in args.items() if k not in RESERVED_KEYS}
 
@@ -134,20 +126,12 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
 async def _run_tool_batch(tool_calls_list: list[dict], ctx: _ToolDispatchContext) -> list[dict]:
     coros = [_execute_single_tool(tc, ctx) for tc in tool_calls_list]
     if len(tool_calls_list) > 1 and should_parallelize_tool_batch([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls_list]):
-        # ``return_exceptions=True`` so a single tool's raise (e.g. IPC
-        # future timeout in :func:`_dispatch_runner_tool`, ``CancelledError``
-        # leaking through a tool's httpx stream, or any unexpected
-        # ``Exception`` from the tool body) doesn't cancel the sibling
-        # coroutines. Without this, one failing tool strands every other
-        # in-flight tool call: the running IPC future waits the full
-        # ``ipc_future_timeout_seconds`` (300 s) before the orphan resolves,
-        # and the LLM loses those tool results in the current turn.
+        # ``return_exceptions=True``：单个工具抛出（如 IPC future 超时、工具 httpx 流漏出的 ``CancelledError`` 或工具体异常）不会取消兄弟协程；否则一个失败会拖住其余所有进行中的调用，挂满 ``ipc_future_timeout_seconds``（300s）才返回，本轮其他工具结果会丢失。
         results = await asyncio.gather(*coros, return_exceptions=True)
         out: list[dict] = []
         for tc, r in zip(tool_calls_list, results):
             if isinstance(r, BaseException):
-                # Synthetic tool_result_message so the LLM sees the failure
-                # for the one tool while the surviving siblings still deliver.
+                # 为失败工具合成 tool_result_message，使 LLM 看到单工具失败的同时，其余成功兄弟仍能交付。
                 name = (tc.get("function") or {}).get("name", "<unknown>")
                 out.append(make_tool_result_message(name, tool_error(f"Tool crashed: {r!r}"), tc["id"]))
             else:

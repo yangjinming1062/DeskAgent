@@ -10,36 +10,12 @@ from ..http import download_as_b64, get_http
 
 
 class GrokImageGenProvider(ImageGenProvider):
-    """Image generation via xAI's image endpoints.
-
-    Two endpoints, chosen from the request shape:
-
-    - ``POST /images/generations`` — text-only; returns
-      ``{"data": [{"url": ...}, ...]}`` by default. Honors ``n``, ``aspect_ratio``.
-    - ``POST /images/edits`` — text + source image; payload uses
-      ``{"model", "prompt", "image": {"url": <url>, "type": "image_url"}}``.
-      Source image may be a public URL or a ``data:image/...;base64,...`` URI.
-
-    The leading ``/v1`` lives in the configured ``base_url`` (so the OpenAI
-    SDK chat path can reuse the same URL); raw httpx calls post relative paths
-    here to avoid double-including the prefix.
-
-    xAI returns URLs (no inline b64 by default). We download each URL
-    anonymously and re-encode as base64 so callers don't have to handle
-    external CDN links (mirrors ``zhipu/image.py``).
-
-    ``size`` is intentionally ignored — xAI's wire shape is
-    aspect-ratio-driven, not pixel-size-driven. Callers that pass
-    ``ImageGenRequest.size`` should migrate to ``aspect_ratio``; passing
-    both is fine because ``size`` falls through.
-    """
+    """通过 xAI 的两个图像端点生图：/images/generations（纯文，返回 URL 列表，认 n 与 aspect_ratio）与 /images/edits（文+参考图，image 字段支持 URL 或 data URI）；base_url 含 /v1，原生 httpx 调用仅用相对路径以避免双前缀；xAI 默认返回 URL，统一匿名下载再 base64；xAI 协议按 aspect_ratio 驱动，size 故意忽略。"""
 
     provider_name = "grok"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "grok-imagine-image-quality"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"image_gen": 8_000}
-    # xAI's /images/edits natively consumes ``reference_image``; the tool
-    # layer can pass it through without falling back to a vision-model
-    # description.
+    # xAI /images/edits 原生消费 reference_image，工具层可直接透传，无需回退到视觉模型描述。
     supports_reference_image: ClassVar[bool] = True
 
     def __init__(self, config: ProviderConfig) -> None:
@@ -50,8 +26,6 @@ class GrokImageGenProvider(ImageGenProvider):
         if req.reference_image:
             return await self._generate_with_reference(req)
         return await self._generate_text_only(req)
-
-    # ── text-only ──────────────────────────────────────────────────────
 
     async def _generate_text_only(self, req: ImageGenRequest) -> ImageGenResult:
         payload: dict = {"model": self.config.model, "prompt": req.prompt, "n": req.n}
@@ -66,15 +40,12 @@ class GrokImageGenProvider(ImageGenProvider):
         if not urls:
             raise RuntimeError(f"grok image_gen returned no images: {body}")
 
-        # Download images in parallel — one anonymous client, no Bearer header
-        # leaking to the CDN (mirrors zhipu/image.py).
+        # 并行下载 CDN 图，使用匿名客户端防止 Bearer 透出到 CDN（与 zhipu/image.py 保持一致）。
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as cdn:
             b64s = await asyncio.gather(*(download_as_b64(cdn, u) for u in urls))
         assets = [ImageAsset(b64=b, mime="image/png") for b in b64s]
 
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
-
-    # ── text + reference image ─────────────────────────────────────────
 
     async def _generate_with_reference(self, req: ImageGenRequest) -> ImageGenResult:
         payload: dict = {"model": self.config.model, "prompt": req.prompt, "n": req.n, "image": {"url": req.reference_image, "type": "image_url"}}

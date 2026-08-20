@@ -1,5 +1,4 @@
-"""Regression tests for batch-1 functional fixes (admin login, session stats,
-cron consolidator Row unpacking)."""
+"""回归测试：admin 登录、会话统计、cron consolidator Row 解包。"""
 
 from unittest.mock import AsyncMock
 
@@ -8,8 +7,7 @@ from sqlalchemy import select
 
 
 async def test_admin_login_awaits_token_creation(monkeypatch):
-    """create_admin_token is async — forgetting the await made the endpoint
-    unpack a coroutine and 500 on every admin login."""
+    """create_admin_token 是 async，漏 await 会让端点解包一个 coroutine 而每次 admin 登录都 500。"""
     from api.v1 import page
     from components import SETTINGS
     from modules.auth import AdminLoginRequest
@@ -34,8 +32,7 @@ async def test_admin_login_awaits_token_creation(monkeypatch):
 
 
 async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypatch):
-    """`int(Row)` raised TypeError and killed the whole scheduler_loop once a
-    user's recall pool crossed the trigger threshold."""
+    """`int(Row)` 抛 TypeError，曾在用户 recall 池跨过触发阈值时拖垮整轮 scheduler_loop。"""
 
     from components import utc_now
     from modules.auth import User
@@ -107,8 +104,7 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
 async def test_search_sessions_by_numeric_id_substring(
     test_client, test_token, _patch_db
 ):
-    """Conversation.id is an Integer column; the search predicate must cast it
-    (Postgres has no integer ~~ unknown operator)."""
+    """Conversation.id 是 Integer 列；搜索谓词必须显式 cast（Postgres 没有 integer ~~ unknown 操作符）。"""
     _, SessionLocal = _patch_db
     from modules.conversation import Conversation
 
@@ -142,8 +138,7 @@ async def _expire_seeded_user(SessionLocal, **updates):
 async def test_disabled_user_rejected_by_session_guard(
     test_client, test_token, _patch_db
 ):
-    """can_use=False must block every authenticated request, not just the
-    next activate — the old check let a disabled user refresh forever."""
+    """can_use=False 必须拦截所有认证请求而非下一次 activate——旧检查让被禁用用户能一直 refresh。"""
     _, SessionLocal = _patch_db
     await _expire_seeded_user(SessionLocal, can_use=False)
 
@@ -205,7 +200,6 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
 
     _, SessionLocal = _patch_db
 
-    # Create dummy user
     async with SessionLocal() as db:
         user = User(username="del_user", is_active=True, can_use=True)
         db.add(user)
@@ -213,7 +207,6 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
         await db.refresh(user)
         user_id = user.id
 
-    # Create dummy files
     avatar_dir = Path(SETTINGS.data_dir) / "companion-avatars"
     avatar_dir.mkdir(parents=True, exist_ok=True)
     portrait_file = avatar_dir / "del_avatar.jpg"
@@ -237,7 +230,6 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
         resp = await admin_api.delete_user(user_id=user_id, _admin=token, db=db)
         assert resp["message"] == "用户已删除。"
 
-    # Verify physical files are unlinked
     assert not portrait_file.exists()
 
 
@@ -255,7 +247,6 @@ async def test_user_activation_code_lifecycle(_patch_db):
 
     admin_tok, _ = await create_admin_token()
 
-    # 1. Create user with base_url
     async with SessionLocal() as db:
         resp = await admin_api.create_user(
             UserCreate(username="code_user", base_url="http://spirit.test:10620"),
@@ -268,7 +259,6 @@ async def test_user_activation_code_lifecycle(_patch_db):
         assert b == "http://spirit.test:10620"
         user_id = resp.id
 
-    # 2. Get user & list users return activation_code
     async with SessionLocal() as db:
         fetched = await admin_api.get_user(user_id=user_id, _admin=admin_tok, db=db)
         assert fetched.activation_code == resp.activation_code
@@ -278,7 +268,6 @@ async def test_user_activation_code_lifecycle(_patch_db):
         assert matched is not None
         assert matched.activation_code == resp.activation_code
 
-    # 3. Update base_url without regenerate_token
     async with SessionLocal() as db:
         updated = await admin_api.update_user(
             user_id=user_id,
@@ -289,10 +278,9 @@ async def test_user_activation_code_lifecycle(_patch_db):
         assert updated.activation_code is not None
         new_b, token_v2 = decode_activation_code(updated.activation_code)
         assert new_b == "https://spirit-prod.internal:8443"
-        # Token remains the exact same, so existing user authorization is undisturbed
+        # token 保持不变，已有用户授权不被打扰
         assert token_v1 == token_v2
 
-    # 4. Update with regenerate_token
     async with SessionLocal() as db:
         regen = await admin_api.update_user(
             user_id=user_id,

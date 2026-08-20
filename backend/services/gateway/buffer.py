@@ -19,16 +19,7 @@ class BufferedFrame:
 
 
 class ReplayBuffer:
-    """A sliding-window replay buffer for JSON-RPC frames with sequence tracking.
-
-    Maintains a monotonically increasing sequence ID for frames sent to the client.
-    Enables seamless session resume across short-term disconnects (< 30s) by replaying
-    un-acknowledged frames that occurred during the disconnection gap.
-
-    Frames are stored in a ``dict[int, BufferedFrame]`` keyed by seq; Python 3.7+
-    dicts guarantee insertion order, so iteration order matches send order without
-    needing a separate ``_seq_order`` list (which would create sync hazards on
-    prune / clear)."""
+    """JSON-RPC 帧的滑动窗口重放缓冲区：单调递增 seq 用于断线 < 30s 内的续接，dict 插入顺序保证迭代顺序即发送顺序，无需额外 _seq_order 列表。"""
 
     def __init__(self, capacity: int = DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds: float = DEFAULT_REPLAY_BUFFER_TTL_SECONDS) -> None:
         self.capacity = capacity
@@ -52,25 +43,21 @@ class ReplayBuffer:
         return len(self._buffer)
 
     def get_unsent(self) -> list[BufferedFrame]:
-        """Return all frames in the buffer that have not yet been sent over the wire."""
+        """返回缓冲区中尚未发送的所有帧。"""
         return [f for f in self._buffer.values() if not f.sent]
 
     def mark_sent_through(self, max_seq: int) -> None:
-        """Mark all buffered frames with seq <= max_seq as sent.
-
-        Frames are NOT removed here — ``ack`` is the only deletion path so the
-        30s replay window keeps un-acknowledged frames available for catch-up
-        on reconnect. O(n) over the dict; n is bounded by capacity (500)."""
+        """将 seq <= max_seq 的所有缓冲帧标记为已发送（不删除，ack 是唯一的删除路径，让 30s 重放窗口内未确认帧可用于重连补帧；O(n)，n ≤ capacity 500）。"""
         for f in self._buffer.values():
             if f.seq <= max_seq:
                 f.sent = True
 
     def append(self, frame: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        """Assign a monotonic sequence ID to the frame, stamp it, and record in the buffer."""
+        """为帧分配单调递增的 seq、打戳并写入缓冲区。"""
         self._current_seq += 1
         seq = self._current_seq
 
-        # Deep copy/inject sequence ID into frame
+        # 深拷贝并注入 seq 到帧
         stamped_frame = dict(frame)
         if stamped_frame.get("method") == "event" and isinstance(stamped_frame.get("params"), dict):
             params = dict(stamped_frame["params"])
@@ -85,7 +72,7 @@ class ReplayBuffer:
         return seq, stamped_frame
 
     def ack(self, ack_seq: int) -> int:
-        """Prune all frames with seq <= ack_seq. Returns the number of pruned frames."""
+        """裁剪 seq <= ack_seq 的所有帧，返回被裁剪的数量。"""
         if not self._buffer:
             return 0
         oldest_seq = next(iter(self._buffer.values())).seq
@@ -97,33 +84,29 @@ class ReplayBuffer:
         return len(pruned_keys)
 
     def can_replay(self, last_seq: int) -> bool:
-        """Check whether all frames since `last_seq` are still present in the buffer."""
+        """检查 last_seq 之后的所有帧是否仍保留在缓冲区中。"""
         if last_seq < 0:
             return False
 
-        # Client is ahead of server (server restarted/sequence reset) -> desync, force full reload
+        # 客户端 seq 超过服务端（服务端重启/seq 重置）→ 不同步，强制完整重载
         if last_seq > self._current_seq:
             return False
 
-        # Client is already at current seq (including fresh buffer where both are 0) -> valid, 0 frames to replay
+        # 客户端已与服务端对齐（含新缓冲区双方都是 0）→ 合法，无须重放
         if last_seq == self._current_seq:
             return True
 
-        # If buffer is empty but last_seq < current_seq, frames were pruned
+        # 缓冲区空但 last_seq < current_seq，说明帧已被裁剪
         if not self._buffer:
             return False
 
-        # The oldest available frame in buffer
+        # 缓冲区中最旧的可用帧
         oldest_seq = next(iter(self._buffer.values())).seq
-        # We can replay if last_seq is immediately before or within our buffer range
+        # last_seq 紧邻或在缓冲区范围内即可重放
         return (last_seq + 1) >= oldest_seq
 
     def replay_since(self, last_seq: int) -> list[dict[str, Any]] | None:
-        """Retrieve all frames with seq > last_seq.
-
-        Returns a list of stamped frames if continuous replay is possible,
-        or None if buffer overrun/expiry occurred (caller must fallback to full state sync).
-        """
+        """返回 seq > last_seq 的所有帧；缓冲区溢出/过期时返回 None（调用方需走完整状态同步兜底）。"""
         now = time.monotonic()
         self._prune(now)
 
@@ -133,9 +116,9 @@ class ReplayBuffer:
         return [f.frame for f in self._buffer.values() if f.seq > last_seq]
 
     def _prune(self, now: float) -> None:
-        """Prune frames older than ttl_seconds or exceeding max capacity."""
+        """裁剪超过 ttl 或超出 capacity 的帧。"""
         cutoff = now - self.ttl_seconds
-        # TTL: drop the head of the dict while it's stale
+        # TTL：从 dict 头部丢弃过期帧
         while self._buffer:
             oldest_key = next(iter(self._buffer))
             if self._buffer[oldest_key].timestamp < cutoff:
@@ -143,13 +126,13 @@ class ReplayBuffer:
             else:
                 break
 
-        # Capacity: keep the newest ``capacity`` items (insertion-ordered)
+        # 容量：按插入顺序保留最新 capacity 个
         if len(self._buffer) > self.capacity:
             excess = len(self._buffer) - self.capacity
             for k in list(self._buffer)[:excess]:
                 del self._buffer[k]
 
     def clear(self) -> None:
-        """Reset the buffer and sequence counter."""
+        """重置缓冲区和 seq 计数器。"""
         self._buffer.clear()
         self._current_seq = 0

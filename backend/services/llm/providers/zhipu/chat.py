@@ -5,11 +5,7 @@ from ..openai_compat import OpenAICompatChatProvider
 
 
 class ZhipuChatProvider(OpenAICompatChatProvider):
-    """Chat via Zhipu's OpenAI-compatible ``/chat/completions``.
-
-    Base URL: ``https://open.bigmodel.cn/api/paas/v4``
-    Authentication: Bearer token.
-    """
+    """通过 Zhipu 的 OpenAI 兼容 /chat/completions 提供 chat；base_url https://open.bigmodel.cn/api/paas/v4，Bearer token 鉴权。"""
 
     provider_name = "zhipu"
     service_type = ServiceType.llm
