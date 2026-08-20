@@ -11,7 +11,6 @@ import { buildClipsForRig, getClipDefs } from './clips-registry'
 import { hasGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
 import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames, type CompanionExpression } from './model-store'
-import { MorphController } from './MorphController'
 import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
@@ -84,8 +83,6 @@ const _QUAT = new THREE.Quaternion()
 const _EULER = new THREE.Euler()
 
 export class CharacterController {
-  private readonly morph = new MorphController()
-
   root = new THREE.Group()
   private mixer: THREE.AnimationMixer | null = null
   private clips = new Map<string, THREE.AnimationClip>()
@@ -204,20 +201,12 @@ export class CharacterController {
         this.boneRestQuats.clear()
         this.root.traverse(child => {
           if (child instanceof THREE.Bone) {
-            if (child.name.startsWith('mixamorig:')) {
-              child.name = child.name.slice(10)
-            } else if (child.name.startsWith('mixamorig_')) {
-              child.name = child.name.slice(10)
-            } else if (child.name.startsWith('mixamorig') && child.name.length > 9) {
-              child.name = child.name.slice(9)
-            }
-
+            // 供应商必须按 SPEC.md §3 输出零前缀 GLB。
             this.boneRestQuats.set(child.name, child.quaternion.clone())
-            const name = child.name.toLowerCase()
 
-            if (child.name === 'Head' || child.name === 'mixamorigHead' || name.endsWith('head')) {
+            if (child.name === 'Head') {
               this.headBone = child
-            } else if (child.name === 'Neck' || child.name === 'mixamorigNeck' || name.endsWith('neck')) {
+            } else if (child.name === 'Neck') {
               this.neckBone = child
             }
           }
@@ -234,14 +223,11 @@ export class CharacterController {
 
         this.actionNames = new Set(this.clips.keys())
         $availableClipNames.set(new Set(this.actionNames))
-        this.morph.discover(this.root)
         this.applyState(this.currentState, null)
 
         return {
-          hasMorphTargets: this.morph.hasTargets(),
           hasAnimations: this.clips.size > 0,
           clipNames: [...this.clips.keys()],
-          morphNames: this.morph.targetNames(),
           procedural: false
         }
       } catch (err) {
@@ -251,7 +237,7 @@ export class CharacterController {
 
     this.createProcedural(scene)
 
-    return { hasMorphTargets: false, hasAnimations: false, clipNames: [], morphNames: [], procedural: true }
+    return { hasAnimations: false, clipNames: [], procedural: true }
   }
 
   private disposeRoot(scene: THREE.Scene | null): void {
@@ -392,12 +378,8 @@ export class CharacterController {
   }
 
   setLipSyncAmplitude(amp: number): void {
-    if (this.isProcedural) {
-      if (this.proc) {
-        this.proc.mouth.scale.y = 1 + amp * 3.5
-      }
-    } else {
-      this.morph.setLipSyncAmplitude(amp)
+    if (this.isProcedural && this.proc) {
+      this.proc.mouth.scale.y = 1 + amp * 3.5
     }
   }
 
@@ -408,30 +390,6 @@ export class CharacterController {
         this.proc.rightEye.scale.y = 1
       }
     }
-  }
-
-  /** 施加身材形变形目标权重（0.0–1.0）。 */
-  setMorphs(params: Record<string, number>): void {
-    this.root.traverse(child => {
-      if (!(child instanceof THREE.Mesh)) {
-        return
-      }
-
-      const dict = child.morphTargetDictionary
-      const infls = child.morphTargetInfluences
-
-      if (!dict || !infls) {
-        return
-      }
-
-      for (const [name, value] of Object.entries(params)) {
-        const idx = dict[name]
-
-        if (idx !== undefined) {
-          infls[idx] = value
-        }
-      }
-    })
   }
 
   setLookTarget(nx: number, ny: number): void {
@@ -451,7 +409,6 @@ export class CharacterController {
   update(delta: number): void {
     this.breathPhase += delta
     this.mixer?.update(delta)
-    this.morph.update(delta)
 
     // 平滑衰减拖拽倾角
     this.dragTilt.x = THREE.MathUtils.lerp(this.dragTilt.x, 0, 0.1)

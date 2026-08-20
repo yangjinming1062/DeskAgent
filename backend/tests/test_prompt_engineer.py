@@ -4,7 +4,6 @@ import json
 from types import SimpleNamespace
 
 import pytest
-
 from services.llm import prompt_engineer
 
 
@@ -16,18 +15,12 @@ def _fake_response(content: str | None):
         async def _boom(*_a, **_kw):
             raise RuntimeError("network down")
 
-        return SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=_boom))
-        )
+        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_boom)))
 
     async def _create(*_a, **_kw):
-        return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
-        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
-    return SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
-    )
+    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
 
 
 def _fake_provider(content: str | None = "ok", *, raises: Exception | None = None):
@@ -98,12 +91,8 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     class _FakePersona:
         definition_json = json.dumps({"name": "小光"})
 
-    out = await prompt_engineer.enhance_avatar_prompt(
-        None, 1, _FakePersona(), feedback="更长的头发"
-    )
-    payload = json.loads(
-        seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0]
-    )
+    out = await prompt_engineer.enhance_avatar_prompt(None, 1, _FakePersona(), feedback="更长的头发")
+    payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
     assert payload["feedback"] == "更长的头发"
     assert out == "头像提示词"
 
@@ -161,6 +150,3 @@ async def test_chat_rejects_empty_response(monkeypatch):
     monkeypatch.setattr(prompt_engineer, "provider_for_service", _provider)
     with pytest.raises(RuntimeError, match="empty response"):
         await prompt_engineer.chat(None, 1, "sys", "user")
-
-
-# (build_texture_prompt tests 已移除——该函数是纯 dict 查表+字符串拼接，输出由调用方服务测试抽样校验；诸如 `assert "二次元" in prompt` 仅复述 `_TEXTURE_STYLE_CHANNEL_SUFFIX` 的字面值，不走任何控制流。)

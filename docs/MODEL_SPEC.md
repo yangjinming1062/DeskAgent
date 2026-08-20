@@ -1,16 +1,14 @@
 # 伙伴 3D 模型与动画规格
 
 > **谁需要读这份文档**：编写或审查 `client/renderer/companion/3d/clips-*.ts` 动画库、
-> `client/renderer/companion/3d/MorphController.ts` morph 控制、以及任何新增 clip /
-> morph / 材质通道的开发者。
+> 以及任何新增 clip / 材质通道的开发者。
 >
 > **怎么使用**：当作可执行的 checklist 而非教程——
 >
 > 1. 对照 §1 骨骼命名，确认 clip track 引用的 bone name 存在于对应 spec 的 GLB 节点里；
 > 2. 对照 §2 动画 clip 目录，逐条核对命名、循环标志、时长；新加 clip 时也按 §2 的分类补；
-> 3. 对照 §3 morph target 命名与分组；新加 morph 必须落到 ARKit 标准命名；
-> 4. 对照 §4 材质通道清单做材质相关改动；
-> 5. 改动完成后用 §5 checklist 自检一遍。
+> 3. 对照 §3 材质通道清单做材质相关改动；
+> 4. 改动完成后用 §4 checklist 自检一遍。
 >
 > **范围声明**：本文档只描述动画与模型设计层面的事实约束（骨骼、clip、morph、材质），
 > 不覆盖「这些资源从哪里来」——生成管线、API 调用、TLS、持久化等都在代码里。
@@ -80,7 +78,7 @@ clip 按骨骼类型分库存放（`clips-biped.ts` / `clips-quadruped.ts` / …
 | `idle` | 循环 | 4~5s | 腹呼吸、重心微移；用户 80% 时间看到 |
 | `listening` | 循环 | 3~4s | 头微偏向用户、身体前倾 |
 | `thinking` | 循环 | 3~4s | 手托下巴、目光上移 |
-| `speaking` | 循环 | 3~4s | 嘴型由 `jawOpen` morph 实时驱动，clip 不含嘴部关键帧 |
+| `speaking` | 循环 | 3~4s | 躯干 + 头部微动；clip 不含嘴部关键帧（无 morph 驱动口型） |
 | `working` | 循环 | 3~4s | 前倾、双手模拟打字 |
 | `sleeping` | 循环 | 5~6s | 头倾、呼吸深缓；最慢循环 |
 | `interacting` | 单次 | 1~1.5s | 被点击后的轻跳 + 回头 |
@@ -136,34 +134,6 @@ IDLE 中每 10~15s 随机插入；缺失时退回 `idle`。
 
 ---
 
-## 3. Morph Target（9 个）
-
-morph target 用 ARKit BlendShape 标准命名，由资源管线注入到 GLB。情绪不驱动任何面部
-morph——情绪的面部表达由聊天窗表情头像承载（[PROTOCOL.md §1.4](../PROTOCOL.md)），管线
-只注入运行时实际消费的面部信号与体型调节组。
-
-### 3.1 面部信号（3）
-
-| 部位 | 名称 | 消费方 |
-|------|------|--------|
-| 眼 | `eyeBlinkLeft` `eyeBlinkRight` | 自动眨眼 |
-| 嘴 | `jawOpen` | TTS 口型同步 |
-
-### 3.2 体型调节（6）
-
-`Body_Height` `Body_Weight` `Body_Muscle` `Body_Shoulders` `Face_Width` `Face_Jaw`
-（均 0.0~1.0）
-
-### 缺失时的退化行为
-
-| 缺失 | 引擎行为 |
-|------|----------|
-| `eyeBlink*` | 不眨眼 |
-| `jawOpen` | TTS 期间无嘴型同步 |
-| 体型 morph | 使用模型默认体型 |
-
----
-
 ## 4. 材质与渲染
 
 每个模型至少两个材质 slot：`Skin`（身体，roughness 0.55）· `Eyes`（眼珠，roughness 0.12）。
@@ -181,7 +151,7 @@ PBR 纹理由资源管线生成并嵌入 GLB，支持原生 PBR 材质渲染。
 ### 5.1 模型质量第一原则（Quality Priority）
 
 - **保留最高面数上限**：Tripo3D 等生成阶段启用最高面数上限（`tripo_face_limit` 最大化），以呈现高精度的发丝轮廓、服饰褶皱及细腻五官微结构；
-- **禁止破坏性有损后处理**：形变注入与资产处理管线严禁对模型执行有损减面（Decimation）或有损量化（如 Draco Quantization），确保 3D 资产的几何曲面与贴图法线 100% 保真。
+- **GLB 形态由供应商直接产出**：供应商负责几何曲面与贴图法线 100% 保真；后端不做云端 rig 兜底、morph 注入、draco 量化、减面或 SPEC 校验——云端产物即最终产物,直接落盘交付。
 
 ### 5.2 整文件无损压缩与客户端透明解压
 
@@ -198,6 +168,5 @@ PBR 纹理由资源管线生成并嵌入 GLB，支持原生 PBR 材质渲染。
 - [ ] 每个 clip 引用的 bone name 在 §1 骨骼层级中存在
 - [ ] 循环 clip 首尾帧值一致（无视觉跳变）
 - [ ] 旋转值在合理范围（手臂 Z ±1.5、肩部 ±0.5、头部 ±0.3）
-- [ ] morph target 命名覆盖 §3 全部名称
 - [ ] `clips-registry.ts` 的 `getClipDefs(rigType)` 能正确路由到对应库
 - [ ] 至少一个 walk / fly / sleep 状态的真实关键帧（非 placeholder 兜底）

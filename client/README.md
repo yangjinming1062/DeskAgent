@@ -45,7 +45,7 @@ client/
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层
 │   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
-│   │   └── 3d/            # Three.js 引擎 + 动画 clip 库 + MorphController
+│   │   └── 3d/            # Three.js 引擎 + 动画 clip 库
 │   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点

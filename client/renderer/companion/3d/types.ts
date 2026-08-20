@@ -7,10 +7,8 @@ export interface EngineOptions {
 export type EngineBackendKind = 'webgpu' | 'webgl2' | 'classic-webgl'
 
 export interface LoadedModelInfo {
-  hasMorphTargets: boolean
   hasAnimations: boolean
   clipNames: string[]
-  morphNames: string[]
   /** True when load() fell through to the procedural egg (no bytes / parse failed). */
   procedural: boolean
 }

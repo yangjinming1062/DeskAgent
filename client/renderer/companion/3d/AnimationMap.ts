@@ -1,21 +1,18 @@
 import type { SpriteStateName } from '@/companion/companion-store'
 
-// 动作名遵循 MODEL_SPEC.md §3。每个状态的规范名作为第一条；
-// 备选项兼容 Mixamo / Ready Player Me 等早于规范的临时模型。
-// resolveClip 按顺序尝试名称，首个命中即返回。
-// 若全部不匹配则返回 null——引擎回退到程序化兜底。
+// 动画名严格遵循 MODEL_SPEC.md §3。供应商必须按规范命名,客户端只匹配规范名。
+// resolveClip 按顺序尝试名称,首个命中即返回；全部不匹配 → null,引擎走回退。
 
 const STATE_CLIPS: Record<SpriteStateName, string[]> = {
-  // 规范 §3.1 必选动作
-  idle: ['idle', 'Idle', 'Idle_Neutral', 'breathing_idle'],
-  listening: ['listening', 'Listen', 'Idle_Listening'],
-  thinking: ['thinking', 'Think', 'Thinking', 'Idle_Thinking'],
-  speaking: ['speaking', 'Talk', 'Talking'],
-  working: ['working', 'Work', 'Working', 'typing', 'Typing'],
-  sleeping: ['sleeping', 'Sleep', 'Sleeping'],
-  interacting: ['interacting', 'poke_reaction_light', 'wave', 'Wave'],
-  emotional: ['emotional_idle', 'idle', 'Idle'],
-  disconnected: ['disconnected', 'Sleep', 'Sleeping', 'idle']
+  idle: ['idle'],
+  listening: ['listening'],
+  thinking: ['thinking'],
+  speaking: ['speaking'],
+  working: ['working'],
+  sleeping: ['sleeping'],
+  interacting: ['interacting'],
+  emotional: ['emotional_idle'],
+  disconnected: ['disconnected']
 }
 
 export function resolveClip(state: SpriteStateName, available: Set<string>): string | null {

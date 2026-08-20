@@ -15,9 +15,7 @@ export interface ModelInfo {
   asset_url: string | null
   species: string | null
   provider: string | null
-  morph_params: Record<string, number>
   has_rig: boolean
-  has_morph_targets: boolean
   status: string
   rig_type: string
   rig_naming: string
@@ -39,12 +37,10 @@ interface CompanionModelResponse {
   asset_url: string | null
   provider: string
   species: string
-  morph_params: Record<string, number>
   status: string
   rig_type: string
   rig_naming: string
   has_rig: boolean
-  has_morph_targets: boolean
   content_hash?: string | null
 }
 
@@ -53,9 +49,7 @@ export const $modelInfo = atom<ModelInfo>({
   asset_url: null,
   species: null,
   provider: null,
-  morph_params: {},
   has_rig: false,
-  has_morph_targets: false,
   status: 'pending',
   rig_type: 'biped',
   rig_naming: 'mixamo',
@@ -154,9 +148,7 @@ export async function hydrateModel(): Promise<void> {
         asset_url: res.asset_url,
         species: res.species,
         provider: res.provider,
-        morph_params: res.morph_params ?? {},
         has_rig: res.has_rig,
-        has_morph_targets: res.has_morph_targets,
         status: res.status,
         rig_type: res.rig_type ?? 'biped',
         rig_naming: res.rig_naming ?? 'mixamo',

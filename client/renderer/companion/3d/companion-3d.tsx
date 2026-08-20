@@ -296,17 +296,12 @@ export function Companion3D(): React.JSX.Element {
       if (cancelled) {
         return
       }
-
-      // 重新应用 morph 参数，让重载后仍保留用户的身材定制。
-      if (Object.keys(modelInfo.morph_params).length) {
-        engine.character.setMorphs(modelInfo.morph_params)
-      }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.morph_params, modelInfo.rig_type])
+  }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.rig_type])
 
   const genState = useStore($modelGenState)
   const genProgress = useStore($modelGenProgress)
@@ -454,11 +449,10 @@ export function Companion3D(): React.JSX.Element {
 const STAGE_LABELS: Record<string, string> = {
   uploading: '上传种子图…',
   generating: '生成 3D 几何…',
-  checking_rig: '检测骨骼结构…',
-  rigging: '绑定骨骼…',
+  rigging: '绑骨中…',
+  animate_binding: '绑动画中…',
+  validating: '校验模型…',
   downloading: '下载模型…',
-  injecting_morphs: '注入表情…',
-  finalizing: '保存中…',
   done: '完成！'
 }
 

@@ -10,11 +10,9 @@
 - **左右前缀**：`L_` / `R_`；
 - **Twist 辅助骨**：四肢大段各多 1~2 个 `*Twist01` / `*Twist02`，用于平滑蒙皮变形，
   **不要**在动画 track 里直接引用，让蒙皮自动接管；
-- **缺少 Eye / Jaw**：面部动画 100% 走 morph target，没有 Eye/Jaw 骨骼；
-- **morph / blendshape**：Tripo 默认不生成；下游 morph 由资源管线注入。
+- **缺少 Eye / Jaw**：面部动画不在 3D 模型上做，没有 Eye/Jaw 骨骼；情绪的面部表达由聊天窗表情头像承载。
 
 ---
-
 ## 2. 完整骨骼层级
 
 ### 2.1 Biped（41 关节）
@@ -118,14 +116,14 @@ Tripo3D `POST /v3/animations/rig`：
 }
 ```
 
-参数路由实现在 `backend/services/llm/providers/tripo/client.py::rig_spec` / `rig_model_version`（`_RIG_SPECS` / `_RIG_MODEL_VERSIONS` 常量是唯一权威）。
+参数路由实现在 `backend/services/image_to_3d/providers/tripo/client.py::rig_spec` / `rig_model_version`（`_RIG_SPECS` / `_RIG_MODEL_VERSIONS` 常量是唯一权威）。
 
 ---
 
 ## 5. 参考实现
 
-- 骨骼路由：`backend/services/llm/providers/tripo/client.py`（`_RIG_SPECS`、
-  `_RIG_MODEL_VERSIONS`、`rig_spec()`、`rig_model_version()`）
+- 骨骼路由：`backend/services/image_to_3d/providers/tripo/client.py`（`_RIG_SPECS`、`rig_spec()`）
+- 能力链编排：`backend/services/companion/pipeline.py::run_capability_chain`
 - 各 rig_type 的 clip 库：`client/renderer/companion/3d/clips-<rig_type>.ts`，
   顶部 `*_BONES` 常量定义实际槽位映射
 - 缺失骨骼的兜底：`_placeholder` / `*Manifest` helper 生成 idle 微动，确保

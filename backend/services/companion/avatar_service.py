@@ -30,7 +30,7 @@ ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 # 按用户加锁，避免 REST 头像路由与 WS RPC 并发再生成/选择时抢同一行
-_avatar_job_locks: dict[int, asyncio.Lock] = {}
+AVATAR_JOB_LOCKS: dict[int, asyncio.Lock] = {}
 
 _MODERATION_SANITIZATION_PROMPT = (
     "以下图像生成提示词被内容审核拦截。请在保持角色核心视觉特征"
@@ -122,7 +122,7 @@ class AvatarSourceUnreadableError(AvatarGenerationError):
 
 def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
     """惰性创建并返回用户级锁；条目不回收（锁很小且 user_id 空间有限）。"""
-    return _avatar_job_locks.setdefault(user_id, asyncio.Lock())
+    return AVATAR_JOB_LOCKS.setdefault(user_id, asyncio.Lock())
 
 
 async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:

@@ -79,7 +79,7 @@ mindmap
 
 ### 5. 🛡️ 工业级三模块物理解耦与安全隔离
 * **物理隔离架构**：
-  * **云端大脑 (Backend)**：负责大模型编排、长期记忆、角色定义与资产生成，**绝不接触**用户本地操作系统；渲染 Worker 在一次性沙箱容器中执行 3D 后处理；
+  * **云端大脑 (Backend)**：负责大模型编排、长期记忆、角色定义与资产生成，**绝不接触**用户本地操作系统；
   * **桌面枢纽 (Client)**：Electron 原生凭证加密保护 (safeStorage)，作为唯一可信网关路由双向流量与管理 Runner 进程生命周期；
   * **本地手脚 (Runner)**：**零凭证**孤立运行，所有大模型调用经 Client 代理，彻底阻断 Prompt 注入与凭据泄露风险；Windows Job Object 内核级绑定防孤儿进程。
 
@@ -90,10 +90,9 @@ mindmap
 ```
      ┌─────────────────────────────────────────────────────────────┐
      │                        Backend (云端)                       │
-     │                   FastAPI + PostgreSQL + Worker             │
+     │                   FastAPI + PostgreSQL + asyncio             │
      │  - 伙伴人格（角色定义持久化 + 长期/短期记忆管理）           │
-     │  - 专属形象资产生成编排（半身像 + 多风格立绘 + 图生 3D）    │
-     │  - 渲染 Worker 沙箱执行（自动绑骨 + 变形目标注入）          │
+     │  - 专属形象资产生成编排（半身像 + 多风格立绘 + 图生 3D 能力链）│
      │  - LLM 编排与系统提示词装配 / Outbox 事件发布               │
      └─────────────────────────┬───────────────────────────────────┘
                                │ WebSocket 长连接（JWT 鉴权）
@@ -192,7 +191,7 @@ bash scripts/build_client.sh
 | **系统架构与物理边界** | [ARCHITECTURE.md](ARCHITECTURE.md) | 深入了解三模块物理隔离、通信链路、跨模块不变量 |
 | **伙伴交互与产品设计** | [DESIGN.md](DESIGN.md) | 形象体系、动画状态机、空间行为、Onboarding 生命周期与陪伴范式 |
 | **跨模块协议与安全契约** | [PROTOCOL.md](PROTOCOL.md) | JSON-RPC 2.0 方法规范、事件流、枚举定义、四层安全防御机制 |
-| **后端核心实现 (Backend)** | [backend/README.md](backend/README.md) | FastAPI 架构、数据模型、记忆管理、Prompt 装配与渲染 Worker |
+| **后端核心实现 (Backend)** | [backend/README.md](backend/README.md) | FastAPI 架构、数据模型、记忆管理、Prompt 装配与 3D 能力链 |
 | **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、动画状态机与表情驱动 |
 | **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化、MCP 客户端与工具库 |
 | **安装器与引导机制 (Installer)** | [installer/README.md](installer/README.md) | Tauri 2 极简轻量安装引导与环境配置流程 |

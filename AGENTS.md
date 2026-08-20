@@ -19,6 +19,7 @@ The repo already maintains thorough, authoritative docs in Chinese. Read **[RULE
 | Installer module & install protocol | [installer/README.md](installer/README.md) |
 | 3D model & animation specs (bones / clips / morph / materials) | [docs/MODEL_SPEC.md](docs/MODEL_SPEC.md) |
 | Tripo3D bone naming authority (`spec=tripo` / `spec=mixamo`) | [docs/tripo-spec.md](docs/tripo-spec.md) + [docs/mixamo-spec.md](docs/mixamo-spec.md) |
+| 3D 模型生成能力链与 SPEC 校验门 | [docs/PIPELINE.md](docs/PIPELINE.md) |
 | Build / test / release scripts | [scripts/README.md](scripts/README.md) |
 
 ## Pointers for Quick Reference

@@ -65,7 +65,7 @@ tripo_geometry_quality = "detailed"
 # 是否启用模型自动修复
 tripo_enable_autofix = true
 
-# ── 腾讯混元 3D 配置（TokenHub 接入，支持单图/多视图生模 + 本地 Blender 自动绑骨）──
+# ── 腾讯混元 3D 配置（TokenHub 接入，支持单图/多视图生模；当前无云端绑骨 / 动画绑定能力,产物为静态 GLB,客户端可消费但仅显示静态模型）──
 # 腾讯混元 3D API Key
 hunyuan_api_key = ""
 # 腾讯混元 3D API 基础地址
@@ -80,30 +80,6 @@ hunyuan_face_count = 1500000
 hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
 hunyuan_result_format = "GLB"
-
-[worker]
-# 渲染与后台任务 Worker 进程并发数（对应 docker-compose 的 worker 服务）
-worker_concurrency = 1
-# 任务防假死回收超时时间（秒）：处理中任务超过该时间未更新心跳将被重新入队或判定失败
-worker_stale_reclaim_seconds = 7200
-# 当 PostgreSQL LISTEN/NOTIFY 不可用时的降级轮询间隔（秒）
-worker_poll_interval_seconds = 5.0
-
-[blender_sandbox]
-# 是否启用 Docker 容器沙箱隔离执行 LLM 生成的 Blender 脚本（false 则直接在宿主机/worker 容器内以子进程运行 blender）
-blender_sandbox_enabled = false
-# data_dir 在宿主 Docker daemon 侧的路径覆盖项（-v 挂载源前缀）。默认留空自动探测：
-# worker 容器内从 /proc/self/mountinfo 读取 data_dir bind mount 的 daemon 侧源路径，
-# 裸机直跑 worker 直接用本机路径。仅当探测不可行（如远程 DOCKER_HOST）才手动填写。
-blender_sandbox_host_data_root = ""
-# Docker 执行命令路径
-blender_sandbox_docker_binary = "docker"
-# 沙箱容器 CPU 配额限制（核数）
-blender_sandbox_cpus = 2.0
-# 沙箱容器内存配额限制
-blender_sandbox_memory = "4g"
-# 沙箱临时 tmpfs 挂载大小
-blender_sandbox_tmpfs_size = "1g"
 
 [providers]
 # 供应商优先回退链（按数组顺序匹配第一个可用的服务商）。支持：mimo, minimax, gemini, grok, zhipu

@@ -32,11 +32,8 @@ class CompanionModel(ModelBase, TimestampMixin):
     rig_naming: Mapped[str] = mapped_column(String(16), default="mixamo", server_default=text("'mixamo'"))
     # 模型生成所用的 seed 图风格（anime | realistic）—— 路由客户端渲染风格；旧行默认 realistic 以保留 PBR 外观。
     style: Mapped[str] = mapped_column(String(16), default="realistic", server_default=text("'realistic'"))
-    rig_original_url: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
-    morph_params_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
-    has_morph_targets: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
     animation_clips_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)

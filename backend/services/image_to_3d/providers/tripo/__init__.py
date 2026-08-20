@@ -17,6 +17,8 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
     SUPPORTS_RIGGING = True
     SUPPORTS_MULTIVIEW = True
     SUPPORTS_NEGATIVE_PROMPT = True
+    # 当前 Tripo animate API 尚未对所有 rig 类型放量；保留为 False 直到 SDK 升级再开。届时 `start_animate_bind` 同步启用。
+    SUPPORTS_ANIMATE_BIND = False
 
     def __init__(self, api_key: str = "", base_url: str = "") -> None:
         self.api_key = api_key

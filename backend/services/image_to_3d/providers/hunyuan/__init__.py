@@ -32,11 +32,12 @@ _STATUS_MAP: dict[str, str] = {
 
 
 class HunyuanImageTo3DProvider(ImageTo3DProvider):
-    """腾讯混元生 3D（TokenHub OpenAI 兼容接入），支持单图与多视图；骨骼由本地 Blender 自动绑骨后处理补齐。"""
+    """腾讯混元生 3D（TokenHub OpenAI 兼容接入），支持单图与多视图。当前无云端 rig / animate-bind 端点——客户端可消费产物但仅显示静态模型(无法驱动骨骼动画)。"""
 
     provider_name = "hunyuan"
     SUPPORTS_RIGGING = False
     SUPPORTS_MULTIVIEW = True
+    SUPPORTS_ANIMATE_BIND = False
     DEFAULT_MODEL = "hy-3d-3.1"
 
     def __init__(self, api_key: str = "", base_url: str = "") -> None:

@@ -21,7 +21,6 @@ services:
     build:
       context: ..
       dockerfile: backend/Dockerfile
-      target: backend
     container_name: spiritagent-backend
     restart: unless-stopped
     depends_on:
@@ -41,46 +40,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-
-  # Render worker: same image as backend + docker-cli. Owns the Blender/LLM
-  # pipelines so the web process stays responsive. docker.sock is required
-  # for sandboxed bpy execution — that mount is effectively host root, keep
-  # it out of anything multi-tenant (ARCHITECTURE.md §10).
-  worker:
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
-      target: worker
-    container_name: spiritagent-worker
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-    env_file:
-      - path: .env
-        required: false
-    environment:
-      BLENDER_SANDBOX_ENABLED: "true"
-    volumes:
-      - ./config.toml:/app/config.toml:ro
-      - ./data:/app/data
-      - /var/run/docker.sock:/var/run/docker.sock
-
-  # Build-only Blender sandbox image (--profile build) for manual rebuilds;
-  # the worker also auto-builds it at startup when the daemon is missing it.
-  # The tag must match services/worker/sandbox.py:SANDBOX_IMAGE (drift-guarded
-  # by test).
-  blender-sandbox:
-    build:
-      context: ..
-      dockerfile: backend/Dockerfile
-      target: sandbox
-    image: spiritagent-blender-sandbox:latest
-    profiles:
-      - build
-    command: ["true"]
 
   # Optional Prometheus metrics observability platform (--profile monitoring)
   prometheus:

@@ -53,7 +53,7 @@
 | 免打扰等级 | 打扰档位 | disturbance tier |
 | 面部表情变形（眨眼/口型） | 变形目标 | morph（注入/表情/target）、blendshape |
 
-行业标准词保留英文：LLM、URL、GLB、WebSocket、JSON-RPC、Blender、Cron、token、schema、JWT、IPC、WS、REST、venv、wheel、onboarding。Runner、Installer 作为模块专名保留。
+行业标准词保留英文:LLM、URL、GLB、WebSocket、JSON-RPC、Cron、token、schema、JWT、IPC、WS、REST、venv、wheel、onboarding。Runner、Installer 作为模块专名保留。
 
 **散文不写代码标识符**（函数/类/常量/字段/状态名，含反引号包裹）。标识符只出现在其职责处：契约表中的方法与事件名、架构地图文件树、命令块、配置键与路径引用。散文用自然语言指代——写"供应商任务 id 与下载 URL 持久化进模型行"，不写字段名。
 

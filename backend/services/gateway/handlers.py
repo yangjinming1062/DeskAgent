@@ -31,6 +31,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
 from services.companion import (
+    AVATAR_JOB_LOCKS,
+    MODEL_JOB_LOCKS,
     AvatarGenerationError,
     ModelGenerationError,
     PersonaValidationError,
@@ -271,12 +273,6 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                                     if not t.done():
                                         t.cancel()
                                 target_sess.runtime_sessions.clear()
-                            from services.companion.avatar_service import (
-                                _avatar_job_locks,
-                            )
-                            from services.companion.model_service import (
-                                _model_job_locks,
-                            )
 
                             from .connection import cancel_user_cron_turns
 
@@ -292,8 +288,8 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             _last_llm_respond_ts.pop(uid, None)
                             _last_check_affect_ts.pop(uid, None)
                             _last_should_act_ts.pop(uid, None)
-                            _avatar_job_locks.pop(uid, None)
-                            _model_job_locks.pop(uid, None)
+                            AVATAR_JOB_LOCKS.pop(uid, None)
+                            MODEL_JOB_LOCKS.pop(uid, None)
                     except asyncio.CancelledError:
                         pass
 
@@ -862,7 +858,7 @@ def _register_session_handlers(
     dispatcher.register("avatar.regenerate", avatar_regenerate)
 
     async def companion_model_retry_download(params: dict) -> dict:
-        # 仅下载已付费 3D 生成结果的恢复：重活（下载 + Blender 定稿）跑在 render worker，状态更新通过 model.gen.progress / model.ready / model.failed 事件汇报，与首次流水线一致。
+        # 仅下载已付费 3D 生成结果的恢复：在 web 进程内调 ``request_model_download_retry``，由能力链重新驱动到 SPEC 校验；状态走 model.gen.progress / model.ready / model.failed 事件。
         model_id = params.get("model_id")
         if not _is_nonneg_int(model_id) or model_id <= 0:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "model_id must be a positive int")

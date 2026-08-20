@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.companion import recover_stuck_model_generations
 from services.companion.persona_background import drain as _persona_drain
+from services.companion.pipeline import _resume_inflight_pipelines
 from services.gateway import start_ws_event_loop, stop_ws_event_loop
 from services.gateway.connection import drain as _conn_drain
 from services.gateway.handlers import drain as _handlers_drain
@@ -36,7 +37,6 @@ from services.rate_limit import limiter, rate_limit_exception_handler, stash_use
 from services.scheduler import start_scheduler, stop_scheduler
 from services.scheduler.cron import drain as _cron_drain
 from services.tools import aclose
-from services.worker import queue as render_queue
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy.engine import make_url
 
@@ -77,8 +77,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     start_ws_event_loop(_raw_pg_dsn() if is_pg else None)
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()
-    # 仅按时间阈值回收 worker 中途死亡的渲染任务；年轻 claim 不动，避免 web 重启把仍在执行的 worker 任务重复入队。
-    await render_queue.requeue_stale(SETTINGS.worker_stale_reclaim_seconds)
+    # 3D 模型管道并入 web 后：从持久状态（companion_models.status IN FLIGHT）重启尚未完成的 task。
+    await _resume_inflight_pipelines()
 
     async def _cleanup_loop():
         while True:

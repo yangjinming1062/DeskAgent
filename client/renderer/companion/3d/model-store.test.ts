@@ -19,12 +19,10 @@ const baseModelResponse = {
   asset_url: 'http://localhost:8000/api/companion/model/file/1/abc.glb?expires=1&sig=1',
   provider: 'base_texture',
   species: '精灵',
-  morph_params: { height: 0.4 },
   status: 'succeeded',
   rig_type: 'biped',
   rig_naming: 'mixamo',
   has_rig: true,
-  has_morph_targets: true,
   content_hash: 'sha256_mock_hash_123'
 }
 
@@ -43,9 +41,7 @@ describe('hydrateModel', () => {
       asset_url: null,
       species: null,
       provider: null,
-      morph_params: {},
       has_rig: false,
-      has_morph_targets: false,
       status: 'pending',
       rig_type: 'biped',
       rig_naming: 'mixamo',
@@ -71,9 +67,7 @@ describe('hydrateModel', () => {
       asset_url: baseModelResponse.asset_url,
       species: '精灵',
       provider: 'base_texture',
-      morph_params: { height: 0.4 },
       has_rig: true,
-      has_morph_targets: true,
       status: 'succeeded',
       rig_type: 'biped',
       rig_naming: 'mixamo',

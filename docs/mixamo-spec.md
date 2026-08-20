@@ -46,29 +46,19 @@ Hips
 | 嘴型（fallback） | `Jaw` |
 | 双手交叉动作 | `Spine2` 用来补偿躯干旋转 |
 
-**禁用模式**：不要在动画 track 里引用 `mixamorig_*` 前缀（Blender FBX 导出残留），
-必须用干净命名。
+**禁用模式**：不要在动画 track 里引用 `mixamorig_*` 前缀;Tripo 在云端 rig 链路上可能仍以该前缀生产 GLB,供应商需直出零前缀或由 Tripo SDK 自带清洗钩子。
 
 ---
 
-## 4. 管线清洗与规范化契约
+## 4. 供应商责任
 
-Tripo3D 在 `spec=mixamo` 模式下生成的原始 GLB/FBX 通常具备以下特征：
-- 骨骼命名自带 `mixamorig:` 前缀（例如 `mixamorig:Hips`、`mixamorig:Spine`）；
-- 原始坐标系可能为侧向建模（双臂沿 Y 轴展开，正面朝向 -X）；
-- 场景中可能附带未绑定的辅助几何体（如 `Icosphere`）。
-
-**后端形变注入管线（`inject_morph_targets.py`）的规范化职责**：
-1. **网格提取与清理**：精准筛选挂载在骨架上的蒙皮材质网格，剥离 `Icosphere` 等辅助体；
-2. **坐标系前向对齐**：自动检测手臂展开方向，对侧向模型旋转对齐至前向标准坐标系（双臂沿 X 轴对称展开，正面朝向镜头）；
-3. **命名清洗**：自动去除所有骨骼及对应蒙皮顶点组（Vertex Groups）的 `mixamorig:` 前缀，输出符合本规范的纯净 Mixamo 骨骼树；
-4. **ARKit 形变注入**：基于 Head 骨骼局部坐标精确定位五官与面部区域，注入 44 组 ARKit Blendshapes。
+Tripo3D 在 `spec=mixamo` 模式下输出的 GLB 在云端 rig 链路上由 Tripo(`POST /v3/animations/rig`)保证直出合规:命名零前缀、几何仅含挂载骨架的蒙皮网格(无 `Icosphere` 等未绑定辅助体)、坐标系按本规范前向对齐。客户端 GLB 加载即信任 SPEC,后端不做任何内省或校验;3D 模型无表情 morph,面部动画由聊天窗表情头像承载。
 
 ---
 
 ## 5. API 调用参数
 
-Tripo3D `POST /v3/animations/rig`：
+Tripo3D `POST /v3/animations/rig`:
 
 ```json
 {
@@ -79,14 +69,12 @@ Tripo3D `POST /v3/animations/rig`：
 }
 ```
 
-参数路由实现在 `backend/services/companion/tripo_client.py::rig_spec` / `rig_model_version`（`_RIG_SPECS` / `_RIG_MODEL_VERSIONS` 常量是唯一权威）。
+参数路由在 `backend/services/image_to_3d/providers/tripo/client.py` 的 `rig_spec` / `_RIG_SPECS` 常量里(`SUPPORTS_RIGGING=True` 决定该跳是否进入 chain)。
 
 ---
 
 ## 6. 参考实现
 
-- 骨骼路由：`backend/services/companion/tripo_client.py`（`_RIG_SPECS`、
-  `_RIG_MODEL_VERSIONS`、`rig_spec()`、`rig_model_version()`）
-- 形变与规范化管线：`backend/assets/animations/inject_morph_targets.py`
-- biped clip 库：`client/renderer/companion/3d/clips-biped.ts`（动画库中所有
-  `bone` 常量）
+- 骨骼路由:`backend/services/image_to_3d/providers/tripo/client.py`(`_RIG_SPECS` / `rig_spec()`)
+- 能力链编排:`backend/services/companion/pipeline.py::run_capability_chain`
+- biped clip 库:`client/renderer/companion/3d/clips-biped.ts`(动画库中所有 `bone` 常量)

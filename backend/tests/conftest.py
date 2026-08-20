@@ -1,15 +1,13 @@
 import os
-from collections.abc import Callable
-
-import pytest
-from sqlalchemy import event, text
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
 import components.database as _db_mod
 import modules
 import modules.media.models  # noqa: F401
+import pytest
 from common import ModelBase
+from sqlalchemy import event, text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 # 所有 async 测试与 fixture 共享同一个 session 级事件循环：StaticPool 单连接不能在 function 级循环之间跳跃。
 pytest_plugins = []
@@ -93,11 +91,10 @@ async def _patch_db(monkeypatch, sqlite_engine, tmp_path):
         "services.companion.interact",
         "services.companion.interaction_stats",
         "services.companion.memory_admin",
-        "services.companion.model_service",
+        "services.companion.pipeline",
         "services.companion.persona_background",
         "services.companion.prompt_runtime",
         "services.companion.sprite_service",
-        "services.worker.queue",
         "services.companion.should_act",
         "modules.auth",
         "modules.auth.security",
@@ -162,9 +159,7 @@ async def _seed_user(SessionLocal, username="testuser"):
         )
         await db.commit()
 
-        token, _expires, jti = create_access_token(
-            user_id=user.id, username=user.username
-        )
+        token, _expires, jti = create_access_token(user_id=user.id, username=user.username)
         db.add(LoginRecord(user_id=user.id, token_jti=jti, is_active=True))
         await db.commit()
     return {
@@ -175,9 +170,8 @@ async def _seed_user(SessionLocal, username="testuser"):
 
 @pytest.fixture()
 async def test_app(_patch_db):
-    from fastapi import FastAPI
-
     from components import get_db
+    from fastapi import FastAPI
 
     app = FastAPI(title="spiritagent-test")
 
@@ -222,18 +216,13 @@ async def test_user_credentials(_patch_db):
 @pytest.fixture()
 async def ws_ticket(_patch_db):
     """生成 60 秒 ``purpose: "ws"`` JWT 给 WS 握手。ARCHITECTURE.md §7.1：长效 bearer 不走 WS 路径，WS 端点测试应传 ``?ticket=...``，不要铸 bearer 再 ``?token=...``。"""
-    from sqlalchemy import select
-
     from modules.auth import User, create_access_token
+    from sqlalchemy import select
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = (
-            await db.execute(select(User).where(User.is_active.is_(True)))
-        ).scalar_one()
-        token, _, _ = create_access_token(
-            user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws"
-        )
+        user = (await db.execute(select(User).where(User.is_active.is_(True)))).scalar_one()
+        token, _, _ = create_access_token(user_id=user.id, username=user.username, expires_in_seconds=60, purpose="ws")
     return token
 
 

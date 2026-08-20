@@ -18,6 +18,7 @@ from .asset_store import (
 )
 from .avatar_service import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
+    AVATAR_JOB_LOCKS,
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
@@ -59,19 +60,7 @@ from .memory_admin import delete_memory, list_memories, memory_counts, update_me
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
-from .model_service import (
-    ModelGenerationError,
-    ModelGenerationInProgressError,
-    ModelProviderNotConfiguredError,
-    emit_companion_assets_updated,
-    generate_companion_model,
-    get_active_model,
-    parse_glb_json,
-    recover_stuck_model_generations,
-    request_model_download_retry,
-    run_image_model_gen_pipeline,
-    signed_model_url,
-)
+from .model_service import generate_companion_model, request_model_download_retry
 from .outfit_normalizer import normalize_outfit
 from .persona_background import schedule_onboarding_outfit_extraction, schedule_personality_tag_refresh
 from .persona_service import (
@@ -86,6 +75,16 @@ from .persona_service import (
     update_persona,
 )
 from .personality_tagger import analyze_personality_tags
+from .pipeline import (
+    MODEL_JOB_LOCKS,
+    ModelGenerationError,
+    ModelGenerationInProgressError,
+    ModelProviderNotConfiguredError,
+    emit_companion_assets_updated,
+    get_active_model,
+    recover_stuck_model_generations,
+    signed_model_url,
+)
 from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response
 from .rig_type_selector import classify_species, select_rig_type
@@ -96,8 +95,10 @@ from .voice_catalog import design_voice, list_tts_voices, match_user_voice, norm
 __all__ = [
     "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
+    "AVATAR_JOB_LOCKS",
     "BUILTIN_CLIPS_BY_RIG",
     "BUILTIN_STATE_CLIPS",
+    "MODEL_JOB_LOCKS",
     "ONBOARDING_FIELDS",
     "RIG_DEFAULT_BONES",
     "STYLE_CATALOG",
@@ -178,7 +179,6 @@ __all__ = [
     "model_response",
     "normalize_outfit",
     "normalize_voice_language",
-    "parse_glb_json",
     "read_today_summary",
     "read_user_profile",
     "record_interaction",
@@ -194,7 +194,6 @@ __all__ = [
     "resolve_uploaded_avatar_path",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
-    "run_image_model_gen_pipeline",
     "run_prompt_json",
     "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",

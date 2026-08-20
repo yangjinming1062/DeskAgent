@@ -1,4 +1,4 @@
-"""baseline：发布前完整 schema，21 张表 + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events / render_jobs NOTIFY 触发器；首次压缩版本（引入时无在用部署），后续迁移从此接力。"""
+"""baseline：完整 schema，20 张表 + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器；首次压缩版本。"""
 
 from collections.abc import Sequence
 
@@ -133,11 +133,8 @@ def upgrade() -> None:
         sa.Column("rig_type", sa.String(length=32), server_default=sa.text("'biped'"), nullable=False),
         sa.Column("rig_naming", sa.String(length=16), server_default=sa.text("'mixamo'"), nullable=False),
         sa.Column("style", sa.String(length=16), server_default=sa.text("'realistic'"), nullable=False),
-        sa.Column("rig_original_url", sa.Text(), server_default=sa.text("''"), nullable=False),
-        sa.Column("morph_params_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("has_rig", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
-        sa.Column("has_morph_targets", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("animation_clips_json", sa.Text(), server_default=sa.text("'[]'"), nullable=False),
         sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
@@ -364,26 +361,6 @@ def upgrade() -> None:
     op.create_index(op.f("ix_messages_subtype"), "messages", ["subtype"], unique=False)
     op.create_index(op.f("ix_messages_summary_date"), "messages", ["summary_date"], unique=False)
     op.create_table(
-        "render_jobs",
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("kind", sa.String(length=32), nullable=False),
-        sa.Column("payload", sa.JSON(), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("attempts", sa.Integer(), nullable=False),
-        sa.Column("claimed_by", sa.String(length=64), nullable=True),
-        sa.Column("claimed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("result", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_render_jobs_status"), "render_jobs", ["status"], unique=False)
-    op.create_index(op.f("ix_render_jobs_user_id"), "render_jobs", ["user_id"], unique=False)
-    op.create_table(
         "companion_preferences",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("disturbance_tier", sa.String(length=16), nullable=False),
@@ -417,7 +394,7 @@ def upgrade() -> None:
     op.create_index("ix_memories_content_trgm", "memories", ["content"], unique=False, postgresql_using="gin", postgresql_ops={"content": "gin_trgm_ops"})
     op.create_index("ix_memories_context_trgm", "memories", ["context"], unique=False, postgresql_using="gin", postgresql_ops={"context": "gin_trgm_ops"})
 
-    # Outbox / render-queue 的 LISTEN/NOTIFY 唤醒触发器（ARCHITECTURE.md §5）。
+    # Outbox 表的 LISTEN/NOTIFY 唤醒触发器（ARCHITECTURE.md §5）。
     op.execute("""
 CREATE FUNCTION notify_ws_event() RETURNS trigger AS $$
 BEGIN
@@ -431,24 +408,9 @@ CREATE TRIGGER ws_event_notify_trigger
 AFTER INSERT ON ws_events
 FOR EACH STATEMENT EXECUTE FUNCTION notify_ws_event();
 """)
-    op.execute("""
-CREATE FUNCTION notify_render_job() RETURNS trigger AS $$
-BEGIN
-  PERFORM pg_notify('render_jobs_channel', 'wakeup');
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-""")
-    op.execute("""
-CREATE TRIGGER render_jobs_notify_trigger
-AFTER INSERT ON render_jobs
-FOR EACH ROW WHEN (NEW.status = 'queued') EXECUTE FUNCTION notify_render_job();
-""")
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER IF EXISTS render_jobs_notify_trigger ON render_jobs")
-    op.execute("DROP FUNCTION IF EXISTS notify_render_job()")
     op.execute("DROP TRIGGER IF EXISTS ws_event_notify_trigger ON ws_events")
     op.execute("DROP FUNCTION IF EXISTS notify_ws_event()")
     # 先子表再父表（messages → conversations → users）。
@@ -467,7 +429,6 @@ def downgrade() -> None:
         "companion_models",
         "companion_expressions",
         "avatar_assets",
-        "render_jobs",
         "companion_preferences",
         "conversations",
         "users",

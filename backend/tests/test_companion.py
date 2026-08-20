@@ -48,9 +48,7 @@ async def test_send_message_companion_path_emits_ws_event(monkeypatch):
 
     monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
-    result = json.loads(
-        await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7)
-    )
+    result = json.loads(await smt.send_message_tool(message="你好呀，想我了吗？", user_id=7))
 
     assert result["success"] is True
     assert result["channel"] == "companion"
@@ -74,9 +72,7 @@ async def test_send_message_companion_path_emits_with_affect(monkeypatch):
 
     monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
-    result = json.loads(
-        await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3)
-    )
+    result = json.loads(await smt.send_message_tool(message="晚上好呀！", affect="happy", user_id=3))
 
     assert result["success"] is True
     assert captured == [(3, "晚上好呀！", "happy", None)]
@@ -104,9 +100,7 @@ async def test_send_message_quiet_tier_diverts_affect_only(monkeypatch):
 
     monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
-    result = json.loads(
-        await smt.send_message_tool(message="psst", affect="concerned", user_id=1)
-    )
+    result = json.loads(await smt.send_message_tool(message="psst", affect="concerned", user_id=1))
 
     assert result["success"] is True
     assert result["quiet_suppressed"] is True
@@ -162,9 +156,7 @@ async def test_send_message_normal_tier_emits(monkeypatch):
 
     monkeypatch.setattr(smt, "is_quiet", _is_quiet)
 
-    result = json.loads(
-        await smt.send_message_tool(message="hi", affect="happy", user_id=7)
-    )
+    result = json.loads(await smt.send_message_tool(message="hi", affect="happy", user_id=7))
 
     assert result["success"] is True
     assert captured == [(7, "hi", "happy", None)]
@@ -205,9 +197,7 @@ async def test_onboarding_incremental_persistence_and_recovery(_patch_db):
             await submit_onboarding_field(db, 100, "bogus", "x")
 
         # persona 最终化但 portrait 未确认时，get_state 路由到 "portrait"；确认后路由到 "fullbody"（若缺 seed）再到 "voice"。
-        await update_persona(
-            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        await update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
         assert state["next_field"] == "portrait"
@@ -257,9 +247,7 @@ async def test_post_character_onboarding_accepts_user_and_voice(_patch_db):
     )
 
     async with SessionLocal() as db:
-        await update_persona(
-            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        await update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         await confirm_portrait(db, 100)
 
         # user_* 写入 Memory，不进入 persona draft。
@@ -297,9 +285,7 @@ async def test_onboarding_complete_only_when_post_character_fields_filled(_patch
     )
 
     async with SessionLocal() as db:
-        await update_persona(
-            db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        await update_persona(db, 100, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
 
         state = await get_onboarding_state(db, 100)
         assert state["complete"] is False
@@ -363,9 +349,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
     )
 
     async with SessionLocal() as db:
-        persona = await update_persona(
-            db, 101, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        persona = await update_persona(db, 101, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         assert persona.is_portrait_confirmed is False
         assert persona.portrait_confirmed_at is None
 
@@ -408,9 +392,7 @@ async def test_portrait_confirmation_and_resume(_patch_db):
         assert state["next_field"] == "voice"
 
         # 5. 用新 character 字段重新最终化 persona 会重置确认状态
-        updated = await update_persona(
-            db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"}
-        )
+        updated = await update_persona(db, 101, {"name": "小光", "personality": "活泼", "speaking_style": "轻快"})
         assert updated.is_portrait_confirmed is False
         assert updated.portrait_confirmed_at is None
 
@@ -429,9 +411,7 @@ async def test_onboarding_finish_save_persona_preserves_confirmation(_patch_db):
     )
 
     async with SessionLocal() as db:
-        await update_persona(
-            db, 105, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        await update_persona(db, 105, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         avatar = AvatarAsset(
             user_id=105,
             prompt_json="{}",
@@ -529,9 +509,7 @@ class _MockResponse:
     """充当 check_affect 读取的 OpenAI 响应形状最小替身。"""
 
     def __init__(self, content: str):
-        self.choices = [
-            type("Choice", (), {"message": type("Msg", (), {"content": content})()})()
-        ]
+        self.choices = [type("Choice", (), {"message": type("Msg", (), {"content": content})()})()]
 
 
 async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
@@ -542,9 +520,7 @@ async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
             Persona(
                 user_id=user_id,
                 definition_json='{"name":"小光","personality":"温柔","speaking_style":"轻柔"}',
-                system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
-                if complete
-                else "",
+                system_prompt_extras="你是小光，一个温柔的桌面伙伴。" if complete else "",
                 is_complete=complete,
             )
         )
@@ -560,9 +536,7 @@ async def test_affect_check_no_persona_skips_llm(monkeypatch, _patch_db):
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail_call)
 
-    result = await ac.check_affect(
-        user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
-    )
+    result = await ac.check_affect(user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
 
     assert result.expressed is False
     assert result.reason == "persona not ready"
@@ -574,14 +548,10 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 777)
 
-    monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
-    )
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse(
-            '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}'
-        )
+        return _MockResponse('{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}')
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
@@ -592,9 +562,7 @@ async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
 
     monkeypatch.setattr(ac, "emit_companion_affect", _emit)
 
-    result = await ac.check_affect(
-        user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
-    )
+    result = await ac.check_affect(user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
 
     assert result.expressed is True
     assert result.emotion == "lonely"
@@ -607,14 +575,10 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 666)
 
-    monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
-    )
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse(
-            '{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}'
-        )
+        return _MockResponse('{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}')
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
@@ -625,9 +589,7 @@ async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
 
     monkeypatch.setattr(ac, "emit_companion_affect", _emit)
 
-    result = await ac.check_affect(
-        user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"}
-    )
+    result = await ac.check_affect(user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"})
 
     assert result.expressed is False
     assert emitted == []
@@ -640,14 +602,10 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
     ac = importlib.import_module("services.companion.affect_check")
     await _seed_persona(SessionLocal, 555)
 
-    monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
-    )
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _mock_call(*a, **kw):
-        return _MockResponse(
-            '{"should_express": true, "emotion": "neutral", "reason": "..."}'
-        )
+        return _MockResponse('{"should_express": true, "emotion": "neutral", "reason": "..."}')
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
 
@@ -658,9 +616,7 @@ async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
 
     monkeypatch.setattr(ac, "emit_companion_affect", _emit)
 
-    result = await ac.check_affect(
-        user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
-    )
+    result = await ac.check_affect(user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
 
     assert result.expressed is False
     assert emitted == []
@@ -674,14 +630,10 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
 
     from services.llm import ClassifiedError, FailoverReason, LLMRuntimeError
 
-    monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
-    )
+    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
 
     async def _raise(*a, **kw):
-        raise LLMRuntimeError(
-            ClassifiedError(reason=FailoverReason.unknown, message="boom")
-        )
+        raise LLMRuntimeError(ClassifiedError(reason=FailoverReason.unknown, message="boom"))
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _raise)
 
@@ -692,9 +644,7 @@ async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
 
     monkeypatch.setattr(ac, "emit_companion_affect", _emit)
 
-    result = await ac.check_affect(
-        user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"}
-    )
+    result = await ac.check_affect(user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
 
     assert result.expressed is False
     assert result.reason == "llm_error"
@@ -795,16 +745,12 @@ def test_voice_catalog_language_field():
 
 async def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     """首次启动的 onboarding 语音选择器上中文靠前——zh-first 匹配「默认中文」的设定。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     langs = [v["language"] for v in result["voices"]]
     # 所有 zh 必须排在 en 之前（multi 位于中间）。
     first_en = langs.index("en") if "en" in langs else len(langs)
-    last_zh = (
-        max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
-    )
+    last_zh = max(i for i, lang in enumerate(langs) if lang == "zh") if "zh" in langs else -1
     assert last_zh < first_en, f"zh voices must precede en voices: {langs}"
     # 首条必须是中文 voice（不是 mimo_default 那种 "multi"）。
     assert result["voices"][0]["language"] == "zh", result["voices"][0]
@@ -834,9 +780,7 @@ def test_voice_catalog_minimax_all_zh_stays_unchanged():
 
 async def test_voice_catalog_language_filter_zh(monkeypatch):
     """list_voices(language='zh') 只返回中文 voice。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="zh")
     assert all(v["language"] == "zh" for v in result["voices"])
     assert len(result["voices"]) == 4  # 冰糖 / 茉莉 / 苏打 / 白桦
@@ -845,9 +789,7 @@ async def test_voice_catalog_language_filter_zh(monkeypatch):
 
 async def test_voice_catalog_language_filter_en(monkeypatch):
     """list_voices(language='en') 只返回英文 voice。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="en")
     assert all(v["language"] == "en" for v in result["voices"])
     assert len(result["voices"]) == 4  # Mia / Chloe / Milo / Dean
@@ -855,9 +797,7 @@ async def test_voice_catalog_language_filter_en(monkeypatch):
 
 async def test_voice_catalog_language_filter_multi(monkeypatch):
     """list_voices(language='multi') 只返回多语言 voice。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="multi")
     assert all(v["language"] == "multi" for v in result["voices"])
     assert result["default_voice"]["id"] == "mimo_default"
@@ -865,9 +805,7 @@ async def test_voice_catalog_language_filter_multi(monkeypatch):
 
 async def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
     """list_voices(language=None) 返回完整排序目录。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language=None)
     # 与默认调用一致——共 9 条 voice。
     assert len(result["voices"]) == 9
@@ -875,9 +813,7 @@ async def test_voice_catalog_language_filter_none_returns_full(monkeypatch):
 
 async def test_voice_catalog_language_filter_empty_zh_subset_keeps_default(monkeypatch):
     """未注册 TTS 目录的 provider → 空 voices + DEFAULT_VOICE 占位。"""
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="gemini")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="gemini"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999, language="zh")
     assert result["voices"] == []
     assert result["default_voice"]["id"] == ""
@@ -891,16 +827,12 @@ def test_voice_catalog_language_scoring():
 
 
 async def test_voice_catalog_supports_voice_design(monkeypatch):
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["supports_voice_design"] is True
     assert result["voice_design_guide"]
 
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="zhipu")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="zhipu"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["supports_voice_design"] is False
 
@@ -932,9 +864,7 @@ async def test_design_voice_calls_provider(monkeypatch):
 
     monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: FakeDesign)
 
-    result = await voice_catalog.design_voice(
-        db=None, user_id=1, prompt="warm female voice", preview_text="hello"
-    )
+    result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
 
     assert result.voice_id == "custom-voice-123"
     assert design_calls == [("warm female voice", "hello")]
@@ -977,17 +907,13 @@ def test_pick_voice_id_unknown_falls_back_to_default():
 
 
 async def test_list_voices_empty_when_no_provider(monkeypatch):
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value=""))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["provider"] == ""
     assert result["voices"] == []
     assert result["supports_voice_design"] is False
 
-    monkeypatch.setattr(
-        voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax")
-    )
+    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax"))
     result = await voice_catalog.list_tts_voices(db=None, user_id=999)
     assert result["provider"] == "minimax"
     # catalog[0] 是从未选过 voice 的用户的默认项。
@@ -1095,11 +1021,10 @@ async def test_dual_write_is_idempotent(_patch_db):
 
 async def test_record_user_profile_survives_stale_read(_patch_db, monkeypatch):
     """最后一次 onboarding PUT 可能与最近一次增量 user_* 提交赛跑。模拟该赛跑中的过期读：SELECT 看不到行，但唯一索引里其实已经存在；upsert 必须更新该行而不是再插一条。"""
-    from sqlalchemy.ext.asyncio import AsyncSession
-    from sqlalchemy.sql import Select
-
     from modules.memory import Memory
     from services.companion import memory_bootstrap
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql import Select
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
@@ -1123,11 +1048,7 @@ async def test_record_user_profile_survives_stale_read(_patch_db, monkeypatch):
         await db.commit()
 
     async with SessionLocal() as db:
-        rows = (
-            (await original_execute(db, select(Memory).where(Memory.user_id == 444)))
-            .scalars()
-            .all()
-        )
+        rows = (await original_execute(db, select(Memory).where(Memory.user_id == 444))).scalars().all()
         assert len(rows) == 1
         assert rows[0].content == "新值"
         assert rows[0].tags == '["onboarding", "user_profile"]'
@@ -1152,14 +1073,8 @@ async def test_dual_write_editor_path_leaves_memory_alone(_patch_db):
             },
         )
         # 编辑器仅重保存 persona
-        await update_persona(
-            db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
-        )
-        rows = (
-            (await db.execute(select(Memory).where(Memory.user_id == 888)))
-            .scalars()
-            .all()
-        )
+        await update_persona(db, 888, {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"})
+        rows = (await db.execute(select(Memory).where(Memory.user_id == 888))).scalars().all()
         contents = {r.content for r in rows}
         assert "老板" in contents and "音乐" in contents
 
@@ -1326,10 +1241,7 @@ def test_onboarding_field_partitions_split_at_voice():
         _POST_CHARACTER_FIELDS,
     )
 
-    assert (
-        _CHARACTER_ONBOARDING_FIELDS + ("voice",) + _POST_CHARACTER_FIELDS
-        == ONBOARDING_FIELDS
-    )
+    assert _CHARACTER_ONBOARDING_FIELDS + ("voice",) + _POST_CHARACTER_FIELDS == ONBOARDING_FIELDS
     assert "voice" not in _CHARACTER_ONBOARDING_FIELDS
     assert "voice" not in _POST_CHARACTER_FIELDS
 
@@ -1349,9 +1261,7 @@ async def test_from_image_refuses_when_persona_incomplete(_patch_db):
         db.add(persona)
         await db.commit()
         with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
-            await regenerate_avatar_from_image(
-                db, 4242, persona, b"\x89PNG\r\n", "image/png"
-            )
+            await regenerate_avatar_from_image(db, 4242, persona, b"\x89PNG\r\n", "image/png")
 
 
 async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
@@ -1415,9 +1325,7 @@ def test_voice_catalog_score_cjk_substring():
     ]
     src = "from services.companion.voice_catalog import _score, match_voice"
     exec(src, {})
-    score = __import__(
-        "services.companion.voice_catalog", fromlist=["_score", "match_voice"]
-    )
+    score = __import__("services.companion.voice_catalog", fromlist=["_score", "match_voice"])
     scored = score._score("温柔少女音", voices[0])
     assert scored >= 2, f"少女 voice should match 温柔少女音, got {scored}"
     matched, _ = score.match_voice("温柔少女音", voices)
@@ -1442,11 +1350,7 @@ async def test_disturbance_tier_persists_across_reload(SessionLocal):
     # 重启会让 ORM identity map 清空；通过让所有缓存实例 expire 后重读来模拟。
     async with SessionLocal() as db:
         db.expire_all()
-        row = (
-            await db.execute(
-                select(CompanionPreference).where(CompanionPreference.user_id == 7)
-            )
-        ).scalar_one()
+        row = (await db.execute(select(CompanionPreference).where(CompanionPreference.user_id == 7))).scalar_one()
         assert row.disturbance_tier == "quiet"
     assert await disturbance.get_disturbance_tier(7) == "quiet"
     assert await disturbance.is_quiet(7) is True
@@ -1460,12 +1364,8 @@ async def test_ws_ticket_mints_short_lived_jwt():
     from modules.auth import create_access_token
     from services.gateway import authenticate_ws_token
 
-    short_jwt, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=60, purpose="ws"
-    )
-    full_jwt, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=600
-    )
+    short_jwt, _, _ = create_access_token(user_id=42, username="alice", expires_in_seconds=60, purpose="ws")
+    full_jwt, _, _ = create_access_token(user_id=42, username="alice", expires_in_seconds=600)
 
     # 两个 token 都因测试环境没有 DB 用户而失败，但 ticket 路径不会被 purpose gate 拦住。
     # 通过 mock 假用户查找来验证 purpose gate。
@@ -1473,24 +1373,18 @@ async def test_ws_ticket_mints_short_lived_jwt():
     from components import SETTINGS
 
     # 带合法 purpose 的 token 通过 purpose gate；非法 token 在用户查找之前就返回 (None, None)。
-    decoded = _jwt.decode(
-        short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm]
-    )
+    decoded = _jwt.decode(short_jwt, SETTINGS.jwt_secret_key, algorithms=[SETTINGS.jwt_algorithm])
     assert decoded.get("purpose") == "ws"
 
     # 伪造一个无 purpose 的 token：函数在 purpose gate 就返回 (None, None)，根本不会查用户。
-    fake, _, _ = create_access_token(
-        user_id=42, username="alice", expires_in_seconds=60
-    )
+    fake, _, _ = create_access_token(user_id=42, username="alice", expires_in_seconds=60)
     user, payload = await authenticate_ws_token(fake)
     assert user is None and payload is None  # 缺 purpose gate 立即返回
 
 
 async def test_ws_ticket_endpoint_success(test_client, test_token):
     """POST /api/user/ws-ticket 返回 200 并附带 access_token 与用户信息。"""
-    resp = await test_client.post(
-        "/api/user/ws-ticket", headers={"Authorization": f"Bearer {test_token}"}
-    )
+    resp = await test_client.post("/api/user/ws-ticket", headers={"Authorization": f"Bearer {test_token}"})
     assert resp.status_code == 200
     data = resp.json()
     assert "access_token" in data
@@ -1578,9 +1472,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     async def fake_download(url):
         return b"\x89PNG\r\n\x1a\n", "image/png"
 
-    async def fake_enhance_avatar(
-        db, user_id, persona, *, feedback=None, provider_config=None
-    ):
+    async def fake_enhance_avatar(db, user_id, persona, *, feedback=None, provider_config=None):
         suffix = f", 追加：{feedback}" if feedback else ""
         return f"bust portrait of 测试角色, 纯白平面背景, no scenery, no gradient, no shadow{suffix}"
 
@@ -1661,9 +1553,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
         db.add(persona)
         await db.commit()
         with pytest.raises(AvatarGenerationError, match="persona is incomplete"):
-            await regenerate_avatar_from_image(
-                db, user.id, persona, b"ref", "image/png"
-            )
+            await regenerate_avatar_from_image(db, user.id, persona, b"ref", "image/png")
 
 
 def test_avatar_from_image_route_validation(_patch_db, monkeypatch):
@@ -1740,9 +1630,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     client = TestClient(app)
 
     # PUT handler 现在会调度后台 personality-tag 刷新任务。conftest 的单连接 SAVEPOINT 难以承受同一连接第二个会话中途释放 SAVEPOINT，所以此处屏蔽 schedule——专门的 ``test_persona_put_schedules_background_tag_refresh`` 和 ``test_persona_tag_refresh_retries_transient_failures`` 各自覆盖后台行为。
-    monkeypatch.setattr(
-        companion_api, "schedule_personality_tag_refresh", lambda *a, **kw: None
-    )
+    monkeypatch.setattr(companion_api, "schedule_personality_tag_refresh", lambda *a, **kw: None)
 
     resp = client.get("/api/companion/persona")
     assert resp.status_code == 200
@@ -1753,19 +1641,10 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     assert onboarding_state.json()["complete"] is False
     assert "answers" in onboarding_state.json()
 
-    assert (
-        client.put(
-            "/api/companion/persona", json={"definition_json": "not json"}
-        ).status_code
-        == 422
-    )
+    assert client.put("/api/companion/persona", json={"definition_json": "not json"}).status_code == 422
     ok = client.put(
         "/api/companion/persona",
-        json={
-            "definition_json": json.dumps(
-                {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-            )
-        },
+        json={"definition_json": json.dumps({"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})},
     )
     assert ok.status_code == 200
     assert ok.json()["is_complete"] is True
@@ -1773,7 +1652,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     assert client.get("/api/companion/avatar").status_code == 404
     assert client.get("/api/companion/model").status_code == 404
 
-    # POST /api/companion/model——base-GLB 管线已下线；Tripo3D 路径落地前，生成会抛 ModelGenerationError。
+    # POST /api/companion/model——未配置供应商时,生成会抛 ModelGenerationError。
     model_resp = client.post("/api/companion/model")
     assert model_resp.status_code == 502
     assert model_resp.json()["detail"]["error"]
@@ -1788,9 +1667,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
     async with SessionLocal() as db:
         persona = Persona(
             user_id=4242,
-            definition_json=json.dumps(
-                {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
-            ),
+            definition_json=json.dumps({"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}),
             is_complete=True,
         )
         db.add(persona)
@@ -1803,18 +1680,14 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
     def _record_schedule(persona_id: int, user_id: int) -> None:
         scheduled.append((persona_id, user_id))
 
-    monkeypatch.setattr(
-        companion_api, "schedule_personality_tag_refresh", _record_schedule
-    )
+    monkeypatch.setattr(companion_api, "schedule_personality_tag_refresh", _record_schedule)
 
     # 绊线：若 handler 任何时候 inline 等 LLM，下面的 explode 会把它作为测试失败暴露，而不是静默回归。
     def _explode_if_called(*_a, **_kw):  # pragma: no cover
         raise AssertionError("analyze_personality_tags should NOT be awaited inline")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _explode_if_called)
-    monkeypatch.setattr(
-        companion_svc.persona_background, "analyze_personality_tags", _explode_if_called
-    )
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _explode_if_called)
 
     fake_user_id = 4242
 
@@ -1838,16 +1711,10 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
 
     resp = TestClient(app).put(
         "/api/companion/persona",
-        json={
-            "definition_json": json.dumps(
-                {"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"}
-            )
-        },
+        json={"definition_json": json.dumps({"name": "小光", "personality": "温柔体贴", "speaking_style": "轻柔"})},
     )
     assert resp.status_code == 200, resp.text
-    assert scheduled == [(seeded_persona_id, fake_user_id)], (
-        f"expected schedule call with (persona_id, user_id), got {scheduled!r}"
-    )
+    assert scheduled == [(seeded_persona_id, fake_user_id)], f"expected schedule call with (persona_id, user_id), got {scheduled!r}"
 
 
 @pytest.mark.asyncio
@@ -1864,9 +1731,7 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         return ["retry", "ok"]
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _flaky_tag_extract)
-    monkeypatch.setattr(
-        companion_svc.persona_background, "analyze_personality_tags", _flaky_tag_extract
-    )
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _flaky_tag_extract)
 
     async def _noop_chat(*_a, **_kw):
         return ""
@@ -1875,16 +1740,12 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
     # 压缩 backoff 让测试总耗时远小于 1 秒。
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_BASE_DELAY", 0.01)
     monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_MAX_DELAY", 0.05)
-    monkeypatch.setattr(
-        companion_svc.persona_background, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0
-    )
+    monkeypatch.setattr(companion_svc.persona_background, "_BG_TASK_PER_ATTEMPT_TIMEOUT", 5.0)
 
     async with SessionLocal() as db:
         persona = Persona(
             user_id=31337,
-            definition_json=json.dumps(
-                {"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}
-            ),
+            definition_json=json.dumps({"name": "梦鳞", "personality": "俏皮", "speaking_style": "利落"}),
             is_complete=True,
         )
         db.add(persona)
@@ -1893,15 +1754,11 @@ async def test_persona_tag_refresh_retries_transient_failures(_patch_db, monkeyp
         persona_id = persona.id
 
     companion_api.schedule_personality_tag_refresh(persona_id, 31337)
-    await asyncio.gather(
-        *companion_svc.persona_background._TASKS, return_exceptions=True
-    )
+    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
 
     assert attempts["n"] == 3, f"expected 3 attempts, got {attempts['n']}"
     async with SessionLocal() as db:
-        persona = (
-            await db.execute(select(Persona).where(Persona.id == persona_id))
-        ).scalar_one()
+        persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one()
         tags = json.loads(persona.personality_tags_json or "[]")
     assert tags == ["retry", "ok"]
 
@@ -1915,9 +1772,7 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         raise RuntimeError("simulated permanent LLM error")
 
     monkeypatch.setattr(companion_svc, "analyze_personality_tags", _always_fail)
-    monkeypatch.setattr(
-        companion_svc.persona_background, "analyze_personality_tags", _always_fail
-    )
+    monkeypatch.setattr(companion_svc.persona_background, "analyze_personality_tags", _always_fail)
 
     async def _noop_chat(*_a, **_kw):
         return ""
@@ -1929,9 +1784,7 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
     async with SessionLocal() as db:
         persona = Persona(
             user_id=31338,
-            definition_json=json.dumps(
-                {"name": "x", "personality": "p", "speaking_style": "s"}
-            ),
+            definition_json=json.dumps({"name": "x", "personality": "p", "speaking_style": "s"}),
             is_complete=True,
             personality_tags_json=json.dumps(["pre-existing"]),
         )
@@ -1941,14 +1794,10 @@ async def test_persona_tag_refresh_gives_up_after_max_attempts(_patch_db, monkey
         persona_id = persona.id
 
     companion_api.schedule_personality_tag_refresh(persona_id, 31338)
-    await asyncio.gather(
-        *companion_svc.persona_background._TASKS, return_exceptions=True
-    )
+    await asyncio.gather(*companion_svc.persona_background._TASKS, return_exceptions=True)
 
     async with SessionLocal() as db:
-        persona = (
-            await db.execute(select(Persona).where(Persona.id == persona_id))
-        ).scalar_one()
+        persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one()
         tags = json.loads(persona.personality_tags_json or "[]")
     assert tags == ["pre-existing"]
 
@@ -1962,11 +1811,11 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     from services.companion import (
         ModelGenerationInProgressError,
         generate_companion_model,
-        model_service,
+        pipeline,
     )
 
     _, SessionLocal = _patch_db
-    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
+    monkeypatch.setattr(pipeline.SETTINGS, "tripo_api_key", "tsk_test")
 
     async with SessionLocal() as db:
         user = User(username="mgen", is_active=True, can_use=True)
@@ -2007,9 +1856,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_model_generation_failure_keeps_previous_model_active(
-    _patch_db, monkeypatch
-):
+async def test_model_generation_failure_keeps_previous_model_active(_patch_db, monkeypatch):
     """生成失败的再生会把自己标为 failed（inactive），绝不触碰原先 active 的模型——用户始终保留一个可用的伙伴。"""
     import json as _json
 
@@ -2018,18 +1865,18 @@ async def test_model_generation_failure_keeps_previous_model_active(
     from services.companion import (
         ModelGenerationError,
         generate_companion_model,
-        model_service,
+        pipeline,
     )
 
     _, SessionLocal = _patch_db
-    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "tsk_test")
+    monkeypatch.setattr(pipeline.SETTINGS, "tripo_api_key", "tsk_test")
 
     def _seed_unreadable(*_a, **_kw):
         raise ModelGenerationError("seed view file not on disk")
 
     # image-to-3D 管线的 seed 视图落在 companion-avatars/ 下的磁盘，由 worker 通过 ``resolve_uploaded_avatar_path`` 解析。强制该处失败以便测试覆盖生成后失败路径，且不消耗 API 配额。
     monkeypatch.setattr(
-        "services.companion.model_service.resolve_uploaded_avatar_path",
+        "services.companion.avatar_service.resolve_uploaded_avatar_path",
         _seed_unreadable,
     )
 
@@ -2061,7 +1908,6 @@ async def test_model_generation_failure_keeps_previous_model_active(
             asset_url="companion-models/1/old.glb",
             active=True,
             has_rig=True,
-            has_morph_targets=True,
         )
         db.add(previous)
         await db.commit()
@@ -2069,17 +1915,26 @@ async def test_model_generation_failure_keeps_previous_model_active(
         uid = user.id
         previous_id = previous.id
 
-    # 流水线在 render worker 上跑；这里把入队任务 inline 排干。
-    from services.worker import handlers as worker_handlers
-    from services.worker import runner
+    # 管线并入 web 后内联运行；把 fire-and-forget 的 _launch_pipeline_task 改成同步 await 以便测试立即观察终态。
+    from services.companion import pipeline as _pipeline
 
-    worker_handlers.register()
+    async def _run_pipeline_sync(*, model_id: int, user_id: int, **kw):
+        await _pipeline.run_capability_chain(model_id=model_id, user_id=user_id, **kw)
+
+    monkeypatch.setattr("services.companion.pipeline._launch_pipeline_task", _run_pipeline_sync)
 
     async with SessionLocal() as db:
         # force=True：当前已存在 active succeeded 模型，所以这是显式再生，而不是幂等首跑路径。
         await generate_companion_model(db, user_id=uid, force=True)
-
-        await runner.drain_once()
+        await _run_pipeline_sync(
+            model_id=(await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid, CompanionModel.status == "generating"))).scalar_one().id,
+            user_id=uid,
+            provider_name="tripo",
+            view_filenames={"front": "seed.png"},
+            species="人类",
+            style="realistic",
+            retry_only=False,
+        )
 
         failed = (
             (
@@ -2095,23 +1950,13 @@ async def test_model_generation_failure_keeps_previous_model_active(
         )
         assert failed.error == "3D 模型生成失败，请稍后重试"
         assert failed.active is False
-        prev = (
-            (
-                await db.execute(
-                    select(CompanionModel).where(CompanionModel.id == previous_id)
-                )
-            )
-            .scalars()
-            .one()
-        )
+        prev = (await db.execute(select(CompanionModel).where(CompanionModel.id == previous_id))).scalars().one()
         assert prev.active is True
         assert prev.status == "succeeded"
 
 
 @pytest.mark.asyncio
-async def test_generate_companion_model_is_idempotent_when_model_exists(
-    _patch_db, monkeypatch
-):
+async def test_generate_companion_model_is_idempotent_when_model_exists(_patch_db, monkeypatch):
     """无 ``force`` 时，已存在的 succeeded active 模型原样返回——不新增行、不启流水线、不付费调用 provider。onboarding-complete 在 resume/re-login 时可能再次触发，不应再次消耗 Tripo 配额。"""
     import json as _json
 
@@ -2124,9 +1969,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
     def _must_not_run(*_a, **_kw):
         raise AssertionError("pipeline must not start when a model already exists")
 
-    monkeypatch.setattr(
-        "services.companion.model_service.resolve_uploaded_avatar_path", _must_not_run
-    )
+    monkeypatch.setattr("services.companion.avatar_service.resolve_uploaded_avatar_path", _must_not_run)
 
     async with SessionLocal() as db:
         user = User(username="mgenidem", is_active=True, can_use=True)
@@ -2156,7 +1999,6 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
             asset_url="companion-models/1/old.glb",
             active=True,
             has_rig=True,
-            has_morph_targets=True,
         )
         db.add(existing)
         await db.commit()
@@ -2168,23 +2010,13 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(
         assert returned.id == existing_id
 
     async with SessionLocal() as db:
-        rows = (
-            (
-                await db.execute(
-                    select(CompanionModel).where(CompanionModel.user_id == uid)
-                )
-            )
-            .scalars()
-            .all()
-        )
+        rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid))).scalars().all()
         assert len(rows) == 1, "不能再创建额外的生成行"
 
 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
-async def test_generate_companion_model_without_provider_key_rejects(
-    _patch_db, monkeypatch
-):
+async def test_generate_companion_model_without_provider_key_rejects(_patch_db, monkeypatch):
     """没有 provider key 时，应在创建任何行或入队之前显式拒绝——生成被禁用，伙伴停留在 sprite 模式。"""
     import json as _json
 
@@ -2193,13 +2025,13 @@ async def test_generate_companion_model_without_provider_key_rejects(
     from services.companion import (
         ModelProviderNotConfiguredError,
         generate_companion_model,
-        model_service,
+        pipeline,
     )
 
     _, SessionLocal = _patch_db
-    monkeypatch.setattr(model_service.SETTINGS, "tripo_api_key", "")
-    monkeypatch.setattr(model_service.SETTINGS, "hunyuan_api_key", "")
-    monkeypatch.setattr(model_service.SETTINGS, "image_to_3d_provider", "tripo")
+    monkeypatch.setattr(pipeline.SETTINGS, "tripo_api_key", "")
+    monkeypatch.setattr(pipeline.SETTINGS, "hunyuan_api_key", "")
+    monkeypatch.setattr(pipeline.SETTINGS, "image_to_3d_provider", "tripo")
 
     async with SessionLocal() as db:
         user = User(username="mgen_nokey", is_active=True, can_use=True)
@@ -2230,13 +2062,7 @@ async def test_generate_companion_model_without_provider_key_rejects(
             await generate_companion_model(db, user_id=uid)
 
     async with SessionLocal() as db:
-        assert (
-            await db.execute(
-                select(func.count())
-                .select_from(CompanionModel)
-                .where(CompanionModel.user_id == uid)
-            )
-        ).scalar_one() == 0
+        assert (await db.execute(select(func.count()).select_from(CompanionModel).where(CompanionModel.user_id == uid))).scalar_one() == 0
 
 
 @pytest.mark.asyncio
@@ -2264,9 +2090,7 @@ async def test_normalize_outfit_fallback_on_error():
     async def _explode(*a, **kw):
         raise RuntimeError("LLM unavailable")
 
-    result = await normalize_outfit(
-        _explode, raw_input="比基尼" * 100, persona_definition=None
-    )
+    result = await normalize_outfit(_explode, raw_input="比基尼" * 100, persona_definition=None)
     assert result == ("比基尼" * 100)[:300]
 
 
@@ -2278,9 +2102,7 @@ async def test_normalize_outfit_strips_markdown_fences():
     async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
         return "```\n白色晚礼服，丝绸面料\n```"
 
-    result = await normalize_outfit(
-        _fake_chat, raw_input="晚礼服", persona_definition=None
-    )
+    result = await normalize_outfit(_fake_chat, raw_input="晚礼服", persona_definition=None)
     assert result == "白色晚礼服，丝绸面料"
 
 
@@ -2298,9 +2120,7 @@ async def test_normalize_outfit_strips_think_blocks():
     async def _unclosed(db, user_id, system_prompt, user_payload, **kwargs):
         return "<think>The user wants me to generate a normalized clothing"
 
-    result = await normalize_outfit(
-        _unclosed, raw_input="运动装", persona_definition=None
-    )
+    result = await normalize_outfit(_unclosed, raw_input="运动装", persona_definition=None)
     assert result == "运动装"
 
 
@@ -2312,9 +2132,7 @@ async def test_normalize_outfit_empty_response_falls_back():
     async def _empty_chat(*a, **kw):
         return ""
 
-    result = await normalize_outfit(
-        _empty_chat, raw_input="运动装", persona_definition=None
-    )
+    result = await normalize_outfit(_empty_chat, raw_input="运动装", persona_definition=None)
     assert result == "运动装"
 
 
@@ -2324,16 +2142,12 @@ async def test_update_outfit_field_surgical(_patch_db):
     from services.companion import update_outfit_field, update_persona
 
     async with SessionLocal() as db:
-        await update_persona(
-            db, 9900, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"}
-        )
+        await update_persona(db, 9900, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
         await update_outfit_field(db, 9900, "粉色碎花洋裙")
 
         from modules.companion import Persona
 
-        persona = (
-            await db.execute(select(Persona).where(Persona.user_id == 9900))
-        ).scalar_one()
+        persona = (await db.execute(select(Persona).where(Persona.user_id == 9900))).scalar_one()
         definition = json.loads(persona.definition_json)
         assert definition["appearance_outfit"] == "粉色碎花洋裙"
         # 其它字段不动
@@ -2372,18 +2186,12 @@ def test_outfit_guidance_injected_only_when_outfit_present():
     assert "Outfit-Behaviour Alignment" not in prompt_without
 
     # persona_extras 含 outfit 行 → 出现 outfit guidance
-    config_with_outfit = base_config.model_copy(
-        update={
-            "persona_extras": "# Companion persona\n- **Name**: 小光\n- **Appearance outfit**: 比基尼"
-        }
-    )
+    config_with_outfit = base_config.model_copy(update={"persona_extras": "# Companion persona\n- **Name**: 小光\n- **Appearance outfit**: 比基尼"})
     prompt_with = build_system_prompt(config_with_outfit)
     assert "Outfit-Behaviour Alignment" in prompt_with
 
     # persona_extras 不含 outfit 行 → 没有 outfit guidance
-    config_without_outfit = base_config.model_copy(
-        update={"persona_extras": "# Companion persona\n- **Name**: 小光"}
-    )
+    config_without_outfit = base_config.model_copy(update={"persona_extras": "# Companion persona\n- **Name**: 小光"})
     prompt_without_outfit = build_system_prompt(config_without_outfit)
     assert "Outfit-Behaviour Alignment" not in prompt_without_outfit
 
@@ -2459,12 +2267,8 @@ async def test_get_expressions_endpoint(_patch_db):
 async def test_temp_files_marker_strict_isolation():
     from components.temp_files import TempFileMarkerMismatch, delete_file, save_file
 
-    fid_10, _ = save_file(
-        b"preview_10", "", "image/png", "png", meta_marker="avatar_preview:10"
-    )
-    fid_1, _ = save_file(
-        b"preview_1", "", "image/png", "png", meta_marker="avatar_preview:1"
-    )
+    fid_10, _ = save_file(b"preview_10", "", "image/png", "png", meta_marker="avatar_preview:10")
+    fid_1, _ = save_file(b"preview_1", "", "image/png", "png", meta_marker="avatar_preview:1")
 
     # 用户 1 即便前缀相似，也不能删用户 10 的 preview
     with pytest.raises(TempFileMarkerMismatch):
@@ -2510,9 +2314,7 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
         persona = await avatar_service.get_or_create_persona(db, fake_user.id)
         persona.is_complete = True
         persona.is_portrait_confirmed = True
-        persona.definition_json = json.dumps(
-            {"biological_type": "人类", "gender": "female"}, ensure_ascii=False
-        )
+        persona.definition_json = json.dumps({"biological_type": "人类", "gender": "female"}, ensure_ascii=False)
         await db.commit()
 
     async def _fake_gen_step(db, user_id, *, avatar_prompt, style, persona=None, **kw):
@@ -2550,9 +2352,7 @@ async def test_post_avatar_endpoint_and_detached_persona_reset(_patch_db, monkey
         )
         assert asset.active is True
 
-        refreshed_persona = (
-            await db.execute(select(Persona).where(Persona.user_id == fake_user.id))
-        ).scalar_one()
+        refreshed_persona = (await db.execute(select(Persona).where(Persona.user_id == fake_user.id))).scalar_one()
         assert refreshed_persona.is_portrait_confirmed is False
 
 
@@ -2582,9 +2382,7 @@ async def test_select_avatar_and_history(_patch_db, monkeypatch):
     async with SessionLocal() as db:
         persona = await avatar_service.get_or_create_persona(db, user.id)
         persona.is_complete = True
-        persona.definition_json = json.dumps(
-            {"biological_type": "人类"}, ensure_ascii=False
-        )
+        persona.definition_json = json.dumps({"biological_type": "人类"}, ensure_ascii=False)
         a1 = AvatarAsset(
             user_id=user.id,
             prompt_json=json.dumps({"avatar_prompt": "prompt1"}),

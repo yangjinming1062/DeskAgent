@@ -101,10 +101,8 @@ class CompanionModelResponse(BaseModel):
     rig_naming: str = "mixamo"
     # 模型生成所用的 seed 风格，路由客户端渲染风格。
     style: str = "realistic"
-    morph_params: dict = Field(default_factory=dict)
     status: str = "succeeded"
     has_rig: bool
-    has_morph_targets: bool
     content_hash: str | None = None
 
 
