@@ -106,74 +106,31 @@ IDLE 中每 10~15s 随机插入；缺失时退回 `idle`。
 | `idle_calm` | Reader |
 | `idle_engaged` | Gaming |
 
-### 2.4 移动（biped MUST walk + SHOULD = 4）
+### 2.4 移动（biped = 4）
 
-`walk`（循环 1~1.2s，步幅对应 60~100 px/s）· `idle_to_walk` · `walk_to_idle` · `fly`（循环 2~2.5s）· `drag`（单次 0.5s）
+`walk`（循环 1~1.2s，步幅对应 60~100 px/s）· `jump`（单次 1s，蹲下→起跳→滞空→落地）· `fly`（循环 2~2.5s）· `drag`（循环 1.6s）
 
-### 2.5 互动反应（biped SHOULD = 6）
+### 2.5 互动反应（biped = 4）
 
 被点击的反馈。缺失时退回 `interacting`。
 
-`poke_light`（轻触怀疑）· `poke_heavy`（高强度惊跳）· `poke_happy`（贴人形反馈）· `poke_angry`（被骚扰）
-· `poke_shy`（缩肩低头）· `drag_end`（拖拽结束松手回弹）
+`poke_light`（轻触怀疑）· `poke_heavy`（高强度惊跳）· `poke_happy`（贴人形反馈）· `drag_end`（拖拽结束松手回弹）
 
-### 2.6 仪式动作（biped SHOULD = 3）
+### 2.6 仪式动作（biped = 2）
 
-`greeting`（孵化 / 首次问候挥手）· `goodbye`（告别挥手）· `wake_up`（从 SLEEPING 唤醒揉眼）
+`greeting`（孵化 / 首次问候挥手）· `goodbye`（告别挥手）
 
-### 2.7 正面情绪（biped SHOULD = 8）
+### 2.7 正面情绪（biped = 1）
 
-`dance_happy` · `celebrate` · `giggle` · `cheer` · `clap` · `spin_happy` · `jump_joy` · `heart_pose`
+`clap`（双手前伸合击）。其他正面情绪 clip（`dance_happy` / `celebrate` / `giggle` / `cheer` / `spin_happy` / `jump_joy` / `heart_pose`）不在内置库内，触发时静默降级到 `emotional_idle`。
 
-### 2.8 负面情绪（biped SHOULD = 8）
+### 2.8–2.18 类别说明
 
-`pout`（撅嘴撒娇）· `stomp_angry`（跺脚）· `sulk`（低头嘟嘴）· `cry`（抽泣）
-· `tremble_fear`（发抖）· `collapse_sad`（低头沮丧）· `shake_frustration`（摇头甩手）· `withdrawal`（蜷缩后退）
-
-### 2.9 社交（biped SHOULD = 6）
-
-`wave_warm` · `bow` · `fold_arms`（循环）· `standing_relax`（循环）· `shrug` · `shake_head`
-
-### 2.10 亲密互动（biped SHOULD = 10）
-
-`hug_offer` · `hug_receive` · `kiss_lips` · `kiss_cheek` · `lap_pillow`（循环）
-· `lean_on_shoulder`（循环）· `whisper` · `cuddle`（循环）· `hold_hand`（循环）· `pat_receive`
-
-### 2.11 私密互动（biped SHOULD = 5）
-
-`intimate_embrace`（循环）· `sleep_together`（循环）· `carry_princess`（循环）· `forehead_touch` · `nuzzle`
-
-### 2.12 日常活动（biped SHOULD = 6）
-
-`sit`（循环）· `eat`（循环）· `drink`（循环）· `read`（循环）· `pet_animal`（循环）· `exercise_stretch`（循环）
-
-### 2.13 惊喜反应（biped SHOULD = 7）
-
-`surprise_jump` · `shock_stepback` · `dizzy`（循环）· `embarrassed_cover` · `proud_pose` · `relieved_sigh` · `curious_lean`
-
-### 2.14 安抚 / 疗愈（biped SHOULD = 6）
-
-`comfort_pat` · `pat_head_give` · `wipe_tears` · `warm_smile` · `reassure_nod` · `hug_comfort`
-
-### 2.15 天气 / 环境（biped SHOULD = 5）
-
-`shiver_cold`（循环）· `fan_self` · `sneeze` · `rain_look` · `sunbathe`（循环）
-
-### 2.16 负面情绪扩展（biped SHOULD = 5）
-
-`glare` · `silent_treatment`（循环）· `disappointed_walk` · `jealous_pout` · `envy_sigh`
-
-### 2.17 亲密扩展（biped SHOULD = 5）
-
-`forehead_kiss` · `nose_boop` · `hand_kiss` · `spoon`（循环）· `piggyback`（循环）
-
-### 2.18 音乐 / 舞蹈扩展（biped SHOULD = 3）
-
-`dance_sway`（循环）· `dance_spin` · `conduct_music`（循环）
+负面情绪 / 亲密互动 / 私密互动 / 日常活动 / 惊喜反应 / 安抚 / 天气 / 负面扩展 / 亲昵扩展 / 音乐舞蹈扩展等 SHOULD 类别在 biped 库内未提供 clip；`clip-dispatch.ts` 命中这些类别时静默回退到 `emotional_idle`。如需为某个具体类别补手写关键帧，按 §6 流程新增即可。
 
 ### 总览与性格标签驱动调度
 
-- **骨骼静态库**：biped 库包含 **109 clip**（9 MUST + 100 SHOULD），其余 6 类 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）均含 **9 个规范状态 clip**（`idle` / `listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` / `disconnected`）及各自物种多骨骼关键帧动作，各 rig 库动作数均达 20~45+。
+- **骨骼静态库**：biped 库共 **37 clip**（9 MUST + 12 idle micro/context + 4 移动 + 4 互动 + 2 仪式 + 1 正面 + 5 社交），其中大部分为手写关键帧；其余 6 类 rig（quadruped / avian / serpentine / aquatic / hexapod / octopod）均含 **9 个规范状态 clip**（`idle` / `listening` / `thinking` / `speaking` / `working` / `sleeping` / `interacting` / `emotional_idle` / `disconnected`）及各自物种多骨骼关键帧动作，各 rig 库动作数均达 20~45+。
 - **性格标签驱动调度**：每个 clip 可声明 `tags?: readonly string[]`（如 `["温柔", "活泼", "护主"]` 等），与伴侣当前性格标签求交集；在互动（poke / drag）、情绪状态切换与 idle 微动中优先命中重合度最高的动作，交集相同时随机挑选。
 - **LLM 动画生成与动态注入**：后端基于 `POST /api/companion/animations/generate` 支持依据 rig_type、骨骼结构及性格标签动态生成专属关键帧并清洗校验；客户端通过 `$generatedClips` 及 `CharacterController.appendClipDefs()` 实现运行时动态加载。
 

@@ -104,7 +104,7 @@ describe('clips-registry', () => {
 
   it('按骨骼类型暴露 clip 名称', () => {
     expect(getClipNames('biped')).toContain('idle')
-    expect(getClipNames('biped')).toContain('comfort_pat')
+    expect(getClipNames('biped')).toContain('clap')
     expect(getClipNames('quadruped')).toContain('quad_idle')
     expect(getClipNames('avian')).toContain('avian_fly_flap')
     expect(getClipNames('serpentine')).toContain('serpent_slither')

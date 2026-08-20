@@ -35,13 +35,6 @@ export interface ClipDef {
 const _QUAT = new THREE.Quaternion()
 const _EULER = new THREE.Euler()
 
-function _q(x: number, y: number, z: number): readonly [number, number, number, number] {
-  _EULER.set(x, y, z, 'XYZ')
-  _QUAT.setFromEuler(_EULER)
-
-  return [_QUAT.x, _QUAT.y, _QUAT.z, _QUAT.w] as const
-}
-
 export function buildClip(def: ClipDef, restQuats?: ReadonlyMap<string, THREE.Quaternion>): THREE.AnimationClip {
   const tracks: THREE.QuaternionKeyframeTrack[] = []
 
@@ -132,9 +125,7 @@ export function buildStateClipsForBones(spine: string, head: string): Readonly<R
   }
 }
 
-// "只呼吸" 占位 clip 的辅助函数 —— 用轻微的 Spine / Spine1 / Head 动作
-// 加自然的静息手臂姿态，让模型在完整关键帧设计完成前就有活体感。
-// 待 LLM 设计按 spec §2 落地后，这些占位会被完整关键帧替换。
+// 闲置微动作与场景 idle 用 —— 轻微脊柱/手臂活动，比 idle 更省关键帧
 function _placeholder(
   name: string,
   duration: number,
@@ -166,6 +157,7 @@ function _placeholder(
   }
 }
 
+const _HIPS = 'Hips'
 const _SPINE = 'Spine'
 const _SPINE1 = 'Spine1'
 const _NECK = 'Neck'
@@ -352,6 +344,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_RIGHT_FORE]: [kf(0, 0.18, 0, 0.06), kf(2.5, 0.2, 0, 0.08), kf(5, 0.18, 0, 0.06)]
     }
   },
+  // ── §3.2 / §3.3 闲置微动作（4 手写 + 8 scene-idle 占位） ──
   idle_look_around: {
     name: 'idle_look_around',
     duration: 2.5,
@@ -404,6 +397,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
   idle_bounce: _placeholder('idle_bounce', 3, true, 'context', ['活泼', '元气', '开朗']),
   idle_calm: _placeholder('idle_calm', 5, true, 'context', ['冷静', '沉稳', '高冷']),
   idle_engaged: _placeholder('idle_engaged', 3.5, true, 'context', ['聪明', '严谨', '知性']),
+  // ── §3.4 移动（locomotion: walk / jump / fly / drag） ──
   walk: {
     name: 'walk',
     duration: 1.2,
@@ -420,8 +414,71 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_SPINE]: [kf(0, -0.04, 0, 0), kf(0.6, -0.02, 0, 0), kf(1.2, -0.04, 0, 0)]
     }
   },
-  idle_to_walk: _placeholder('idle_to_walk', 0.5, false, 'locomotion', ['灵动']),
-  walk_to_idle: _placeholder('walk_to_idle', 0.5, false, 'locomotion', ['沉稳']),
+  // 蹲下蓄力 → 起跳 → 滞空 → 落地回正
+  jump: {
+    name: 'jump',
+    duration: 1.0,
+    loop: false,
+    category: 'locomotion',
+    tags: ['元气', '好动', '活泼'],
+    tracks: {
+      [_HIPS]: [
+        kf(0, 0, 0, 0),
+        kf(0.3, 0, 0, 0),
+        kf(0.5, 0, 0, 0.4),
+        kf(0.7, 0, 0, -0.2),
+        kf(1.0, 0, 0, 0)
+      ],
+      [_LEFT_UP]: [
+        kf(0, 0.01, 0, -0.01),
+        kf(0.3, -0.5, 0, 0),
+        kf(0.5, 0.6, 0, 0),
+        kf(0.7, 0.05, 0, 0),
+        kf(1.0, 0.01, 0, -0.01)
+      ],
+      [_RIGHT_UP]: [
+        kf(0, -0.01, 0, 0.01),
+        kf(0.3, -0.5, 0, 0),
+        kf(0.5, 0.6, 0, 0),
+        kf(0.7, 0.05, 0, 0),
+        kf(1.0, -0.01, 0, 0.01)
+      ],
+      [_LEFT_LEG]: [
+        kf(0, -0.1, 0, 0),
+        kf(0.3, 0.4, 0, 0),
+        kf(0.5, -0.2, 0, 0),
+        kf(0.7, 0.1, 0, 0),
+        kf(1.0, -0.1, 0, 0)
+      ],
+      [_RIGHT_LEG]: [
+        kf(0, 0.15, 0, 0),
+        kf(0.3, 0.4, 0, 0),
+        kf(0.5, -0.2, 0, 0),
+        kf(0.7, 0.1, 0, 0),
+        kf(1.0, 0.15, 0, 0)
+      ],
+      [_LEFT_ARM]: [
+        kf(0, -0.12, 0.04, -1.1),
+        kf(0.3, -0.3, 0.2, -0.6),
+        kf(0.5, -0.5, 0.4, -0.4),
+        kf(0.7, -0.4, 0.3, -0.3),
+        kf(1.0, -0.12, 0.04, -1.1)
+      ],
+      [_RIGHT_ARM]: [
+        kf(0, 0.12, -0.04, 1.1),
+        kf(0.3, -0.3, -0.2, 0.6),
+        kf(0.5, -0.5, -0.4, 0.4),
+        kf(0.7, -0.4, -0.3, 0.3),
+        kf(1.0, 0.12, -0.04, 1.1)
+      ],
+      [_SPINE]: [
+        kf(0, -0.04, 0, 0),
+        kf(0.3, 0.15, 0, 0),
+        kf(0.5, -0.1, 0, 0),
+        kf(1.0, -0.04, 0, 0)
+      ]
+    }
+  },
   fly: {
     name: 'fly',
     duration: 2.5,
@@ -454,6 +511,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_RIGHT_LEG]: [kf(0, 0.02, 0, 0), kf(0.8, 0.08, 0, 0), kf(1.6, 0.02, 0, 0)]
     }
   },
+  // ── §3.5 互动反应（interaction: poke_light / poke_heavy / poke_happy / drag_end） ──
   poke_light: {
     name: 'poke_light',
     duration: 0.8,
@@ -488,8 +546,6 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_RIGHT_ARM]: [kf(0, 0, 0, 0), kf(0.3, 0.2, 0, -0.3), kf(0.7, 0.1, 0, -0.15), kf(1, 0, 0, 0)]
     }
   },
-  poke_angry: _placeholder('poke_angry', 1, false, 'interaction', ['暴躁', '冷漠', '强势']),
-  poke_shy: _placeholder('poke_shy', 1, false, 'interaction', ['害羞', '社恐', '软萌', '温婉']),
   drag_end: {
     name: 'drag_end',
     duration: 0.5,
@@ -509,6 +565,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_RIGHT_LEG]: [kf(0, 0.05, 0, 0), kf(0.2, 0.08, 0, 0), kf(0.5, 0, 0, 0)]
     }
   },
+  // ── §3.6 仪式动作（ritual: greeting / goodbye） ──
   greeting: {
     name: 'greeting',
     duration: 2.5,
@@ -538,12 +595,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       [_HEAD]: [kf(0, 0, 0, 0), kf(0.5, 0.04, -0.05, 0), kf(2, 0, 0, 0)]
     }
   },
-  wake_up: _placeholder('wake_up', 2.5, false, 'ritual', ['慵懒', '软萌', '呆萌']),
-  // ── §3.7 正面情绪（SHOULD 8）───────────────────────────
-  dance_happy: _placeholder('dance_happy', 2.5, false, 'emotion-positive', ['活泼', '元气', '阳光', '开朗']),
-  celebrate: _placeholder('celebrate', 1.8, false, 'emotion-positive', ['热血', '元气', '阳光', '社牛']),
-  giggle: _placeholder('giggle', 1.2, false, 'emotion-positive', ['俏皮', '调皮', '搞怪', '呆萌']),
-  cheer: _placeholder('cheer', 1.3, false, 'emotion-positive', ['元气', '开朗', '好动']),
+  // ── §3.7 正面情绪（clap） ──
   clap: {
     name: 'clap',
     duration: 1.2,
@@ -567,20 +619,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
       ]
     }
   },
-  spin_happy: _placeholder('spin_happy', 2, false, 'emotion-positive', ['活泼', '灵动', '仙气']),
-  jump_joy: _placeholder('jump_joy', 1, false, 'emotion-positive', ['元气', '好动', '活泼']),
-  heart_pose: _placeholder('heart_pose', 1.8, false, 'emotion-positive', ['软萌', '粘人', '俏皮', '妩媚']),
-  // ── §3.8 负面情绪（SHOULD 8）───────────────────────────
-  pout: _placeholder('pout', 1.5, false, 'emotion-negative', ['傲娇', '俏皮', '粘人']),
-  stomp_angry: _placeholder('stomp_angry', 1.5, false, 'emotion-negative', ['暴躁', '叛逆', '傲娇']),
-  sulk: _placeholder('sulk', 3.5, true, 'emotion-negative', ['傲娇', '孤僻', '忧郁']),
-  cry: _placeholder('cry', 2.5, false, 'emotion-negative', ['多愁善感', '软萌', '敏感']),
-  tremble_fear: _placeholder('tremble_fear', 2.5, true, 'emotion-negative', ['胆小', '社恐', '害羞']),
-  collapse_sad: _placeholder('collapse_sad', 2, false, 'emotion-negative', ['忧郁', '多愁善感', '敏感']),
-  shake_frustration: _placeholder('shake_frustration', 1.5, false, 'emotion-negative', ['暴躁', '毒舌', '严谨']),
-  withdrawal: _placeholder('withdrawal', 3.5, true, 'emotion-negative', ['孤僻', '高冷', '社恐']),
-  // ── §3.9 社交（SHOULD 6）─────────────────────────────────────
-  wave_warm: _placeholder('wave_warm', 1.8, false, 'social', ['温柔', '体贴', '阳光', '开朗']),
+  // ── §3.9 社交（5 个：bow / fold_arms / standing_relax / shrug / shake_head） ──
   bow: {
     name: 'bow',
     duration: 1.5,
@@ -642,66 +681,5 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     tracks: {
       [_HEAD]: [kf(0, 0, 0, 0), kf(0.2, 0, 0.2, 0), kf(0.5, 0, -0.2, 0), kf(0.8, 0, 0.1, 0), kf(1, 0, 0, 0)]
     }
-  },
-  // ── §3.10 亲昵（SHOULD 10）────────────────────────────────
-  hug_offer: _placeholder('hug_offer', 2, false, 'intimate', ['温柔', '暖心', '体贴', '粘人']),
-  hug_receive: _placeholder('hug_receive', 2, false, 'intimate', ['温柔', '软萌', '粘人']),
-  kiss_lips: _placeholder('kiss_lips', 1.5, false, 'intimate', ['深情', '妩媚', '妖娆', '温柔']),
-  kiss_cheek: _placeholder('kiss_cheek', 1.5, false, 'intimate', ['俏皮', '可爱', '体贴']),
-  lap_pillow: _placeholder('lap_pillow', 3.5, true, 'intimate', ['温婉', '体贴', '母性', '温柔']),
-  lean_on_shoulder: _placeholder('lean_on_shoulder', 3.5, true, 'intimate', ['粘人', '害羞', '文静']),
-  whisper: _placeholder('whisper', 1.5, false, 'intimate', ['腹黑', '俏皮', '神秘']),
-  cuddle: _placeholder('cuddle', 3.5, true, 'intimate', ['粘人', '软萌', '温顺']),
-  hold_hand: _placeholder('hold_hand', 2.5, true, 'intimate', ['温暖', '忠诚', '体贴']),
-  pat_receive: _placeholder('pat_receive', 1.5, false, 'intimate', ['乖巧', '软萌', '温顺']),
-  // ── §3.11 私密（SHOULD 5）──────────────────────────────────
-  intimate_embrace: _placeholder('intimate_embrace', 3.5, true, 'private', ['深情', '温柔', '妩媚']),
-  sleep_together: _placeholder('sleep_together', 5, true, 'private', ['温情', '安详', '体贴']),
-  carry_princess: _placeholder('carry_princess', 3.5, true, 'private', ['霸道', '强势', '热血']),
-  forehead_touch: _placeholder('forehead_touch', 2, false, 'private', ['细腻', '深情', '温柔']),
-  nuzzle: _placeholder('nuzzle', 2, false, 'private', ['撒娇', '粘人', '软萌']),
-  // ── §3.12 日常（SHOULD 6）─────────────────────────────────────
-  sit: _placeholder('sit', 3.5, true, 'daily', ['安静', '文静', '随和']),
-  eat: _placeholder('eat', 2.5, true, 'daily', ['贪吃', '呆萌', '活泼']),
-  drink: _placeholder('drink', 2.5, true, 'daily', ['优雅', '从容不迫']),
-  read: _placeholder('read', 3.5, true, 'daily', ['知性', '博学', '严谨']),
-  pet_animal: _placeholder('pet_animal', 2.5, true, 'daily', ['温柔', '亲人', '爱心']),
-  exercise_stretch: _placeholder('exercise_stretch', 3.5, true, 'daily', ['阳光', '元气', '好动']),
-  // ── §3.13 惊讶（SHOULD 7）──────────────────────────────────
-  surprise_jump: _placeholder('surprise_jump', 1, false, 'surprise', ['胆小', '敏锐', '活泼']),
-  shock_stepback: _placeholder('shock_stepback', 1, false, 'surprise', ['敏感', '警惕']),
-  dizzy: _placeholder('dizzy', 2.5, true, 'surprise', ['呆萌', '中二', '搞怪']),
-  embarrassed_cover: _placeholder('embarrassed_cover', 1.5, false, 'surprise', ['害羞', '社恐', '软萌']),
-  proud_pose: _placeholder('proud_pose', 1.5, false, 'surprise', ['傲娇', '贵气', '自信']),
-  relieved_sigh: _placeholder('relieved_sigh', 1.5, false, 'surprise', ['随和', '从容']),
-  curious_lean: _placeholder('curious_lean', 1.5, false, 'surprise', ['好奇', '灵动', '聪明']),
-  // ── §3.15 安慰 / 治愈（SHOULD 6）─────────────────────────
-  comfort_pat: _placeholder('comfort_pat', 1.5, false, 'comfort', ['温柔', '体贴', '暖心']),
-  pat_head_give: _placeholder('pat_head_give', 2, false, 'comfort', ['温柔', '大度', '关爱']),
-  wipe_tears: _placeholder('wipe_tears', 2, false, 'comfort', ['细腻', '体贴', '深情']),
-  warm_smile: _placeholder('warm_smile', 1.5, false, 'comfort', ['温柔', '暖心', '治愈']),
-  reassure_nod: _placeholder('reassure_nod', 1.5, false, 'comfort', ['沉稳', '忠诚', '可靠']),
-  hug_comfort: _placeholder('hug_comfort', 2, false, 'comfort', ['暖心', '体贴', '温柔']),
-  // ── §3.16 天气 / 环境（SHOULD 5）─────────────────────
-  shiver_cold: _placeholder('shiver_cold', 2.5, true, 'weather', ['脆弱', '惹人怜爱']),
-  fan_self: _placeholder('fan_self', 2, false, 'weather', ['娇憨', '活泼']),
-  sneeze: _placeholder('sneeze', 0.8, false, 'weather', ['呆萌', '可爱']),
-  rain_look: _placeholder('rain_look', 1.5, false, 'weather', ['多愁善感', '文静', '忧郁']),
-  sunbathe: _placeholder('sunbathe', 4, true, 'weather', ['惬意', '慵懒', '阳光']),
-  // ── §3.17 负面情绪扩展（SHOULD 5）──────────────────────
-  glare: _placeholder('glare', 1.5, false, 'neg-ext', ['高冷', '冷漠', '毒舌', '强势']),
-  silent_treatment: _placeholder('silent_treatment', 3, true, 'neg-ext', ['傲娇', '冷漠', '孤僻']),
-  disappointed_walk: _placeholder('disappointed_walk', 1.5, false, 'neg-ext', ['失落', '忧郁']),
-  jealous_pout: _placeholder('jealous_pout', 1.5, false, 'neg-ext', ['吃醋', '傲娇', '占有欲']),
-  envy_sigh: _placeholder('envy_sigh', 1.5, false, 'neg-ext', ['细腻', '多愁善感']),
-  // ── §3.18 亲昵扩展（SHOULD 5）───────────────────────────
-  forehead_kiss: _placeholder('forehead_kiss', 1.5, false, 'intim-ext', ['温柔', '珍视', '体贴']),
-  nose_boop: _placeholder('nose_boop', 1, false, 'intim-ext', ['调皮', '俏皮', '亲密']),
-  hand_kiss: _placeholder('hand_kiss', 1.5, false, 'intim-ext', ['优雅', '贵气', '忠诚']),
-  spoon: _placeholder('spoon', 4, true, 'intim-ext', ['依偎', '温存', '粘人']),
-  piggyback: _placeholder('piggyback', 3, true, 'intim-ext', ['活泼', '依赖', '元气']),
-  // ── §3.19 音乐 / 舞蹈扩展（SHOULD 3）──────────────────
-  dance_sway: _placeholder('dance_sway', 3, true, 'music', ['优雅', '仙气', '妩媚', '妖娆']),
-  dance_spin: _placeholder('dance_spin', 2, false, 'music', ['华丽', '灵动', '活泼']),
-  conduct_music: _placeholder('conduct_music', 3, true, 'music', ['优雅', '严谨', '艺术'])
+  }
 }

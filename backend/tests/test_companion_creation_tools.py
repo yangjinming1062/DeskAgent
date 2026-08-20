@@ -61,7 +61,8 @@ def test_builtin_action_clips_exclude_state_clips():
     assert "idle" not in biped
     assert "thinking" not in biped
     assert "clap" in biped
-    assert "stomp_angry" in biped
+    assert "jump" in biped
+    assert "stomp_angry" not in biped
     assert len(biped) == len(builtin_action_clips("unknown_rig"))  # biped fallback
 
 
