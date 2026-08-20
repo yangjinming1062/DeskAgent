@@ -345,6 +345,48 @@ def _source_vertex_order(
     return None, None
 
 
+def _uv_vertex_order(
+    source_attributes: dict[str, int],
+    processed_attributes: dict[str, int],
+    source_gltf: dict[str, Any],
+    source_binary: bytes,
+    processed_gltf: dict[str, Any],
+    processed_binary: bytes,
+) -> np.ndarray | None:
+    source_index = source_attributes.get("TEXCOORD_0")
+    processed_index = processed_attributes.get("TEXCOORD_0")
+    if source_index is None or processed_index is None:
+        return None
+
+    source_values, source_accessor = _accessor(source_gltf, source_binary, source_index)
+    processed_values, processed_accessor = _accessor(processed_gltf, processed_binary, processed_index)
+    if source_accessor.get("componentType") != 5126 or processed_accessor.get("componentType") != 5126:
+        return None
+    if source_accessor.get("type") != "VEC2" or processed_accessor.get("type") != "VEC2":
+        return None
+
+    source_uv = source_values.reshape(-1, 2)
+    processed_uv = processed_values.reshape(-1, 2)
+    if len(source_uv) != len(processed_uv) or not np.all(np.isfinite(source_uv)) or not np.all(np.isfinite(processed_uv)):
+        return None
+
+    source_bits = np.ascontiguousarray(source_uv, dtype="<f4").view("<u4")
+    processed_bits = np.ascontiguousarray(processed_uv, dtype="<f4").view("<u4")
+    source_keys = (source_bits[:, 0].astype("<u8") << 32) | source_bits[:, 1].astype("<u8")
+    processed_keys = (processed_bits[:, 0].astype("<u8") << 32) | processed_bits[:, 1].astype("<u8")
+    if np.unique(source_keys).size != len(source_keys) or np.unique(processed_keys).size != len(processed_keys):
+        return None
+
+    source_order = np.argsort(source_keys, kind="stable")
+    processed_order = np.argsort(processed_keys, kind="stable")
+    if not np.array_equal(source_keys[source_order], processed_keys[processed_order]):
+        return None
+
+    processed_to_source = np.empty(len(processed_keys), dtype=np.int64)
+    processed_to_source[processed_order] = source_order
+    return processed_to_source
+
+
 def _copy_accessor(
     gltf: dict[str, Any], binary: bytes, target_gltf: dict[str, Any], appended: bytearray, accessor_index: int, order: np.ndarray | None = None, index_map: np.ndarray | None = None
 ) -> int:
@@ -458,6 +500,8 @@ def restore_preserved_vertex_attributes(source: bytes, processed: bytes) -> byte
                 raise GlbFidelityError("mesh primitive has no POSITION attribute")
             source_count = source_gltf["accessors"][source_position_index]["count"]
             mapping_attribute, processed_to_source = _source_vertex_order(source_attributes, processed_attributes, processed_gltf, processed_binary, source_count)
+            if processed_to_source is None:
+                processed_to_source = _uv_vertex_order(source_attributes, processed_attributes, source_gltf, source_binary, processed_gltf, processed_binary)
             if processed_to_source is None:
                 if processed_gltf["accessors"][processed_position_index]["count"] != source_count:
                     raise GlbFidelityError("primitive vertex count changed without a source mapping")

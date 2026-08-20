@@ -76,17 +76,19 @@ def _source_glb() -> bytes:
     return _pack(gltf, binary)
 
 
-def _processed_reorder(source: bytes) -> bytes:
+def _processed_reorder(source: bytes, *, by_source_uv: bool = False) -> bytes:
     gltf, _binary = _parse_glb(source)
     positions = np.array([(1, 0, 0), (0, 1, 0), (0, 0, 0)], dtype="<f4")
-    mapping = np.array([(1, 1), (2, 1), (0, 1)], dtype="<f4")
+    source_uv = np.array([(0, 0), (0.5, 0), (0, 0.5)], dtype="<f4")
+    mapping = source_uv[[1, 2, 0]] if by_source_uv else np.array([(1, 1), (2, 1), (0, 1)], dtype="<f4")
+    mapping_name = "TEXCOORD_0" if by_source_uv else "TEXCOORD_2"
     joints = np.array([(1, 0, 0, 0), (2, 0, 0, 0), (0, 0, 0, 0)], dtype="<u1")
     weights = np.array([(0.2, 0, 0, 0), (0.3, 0, 0, 0), (0.5, 0, 0, 0)], dtype="<f4")
     indices = np.array([2, 0, 1], dtype="<u2")
     payload = positions.tobytes() + mapping.tobytes() + joints.tobytes() + weights.tobytes() + indices.tobytes()
     offsets = [0, 36, 60, 72, 120]
     gltf["meshes"][0]["primitives"][0] = {
-        "attributes": {"POSITION": 0, "TEXCOORD_2": 1, "JOINTS_0": 2, "WEIGHTS_0": 3},
+        "attributes": {"POSITION": 0, mapping_name: 1, "JOINTS_0": 2, "WEIGHTS_0": 3},
         "indices": 4,
         "material": 0,
     }
@@ -143,6 +145,17 @@ def test_source_mapping_selects_free_uv_and_restores_vertex_order():
     )[0]
     assert np.array_equal(restored_indices, source_indices)
     assert _parse_glb(restored)[0]["materials"] == [{"alphaMode": "MASK"}]
+    assert_preserves_display(source, restored)
+
+
+def test_matching_source_uv_restores_vertex_order_without_temp_channel():
+    source = _source_glb()
+    restored = restore_preserved_vertex_attributes(source, _processed_reorder(source, by_source_uv=True))
+
+    assert _attribute_values(restored, "POSITION", "<f4", 3, 3).reshape(-1, 3)[:, 0].tolist() == [0, 1, 0]
+    assert _attribute_values(restored, "NORMAL", "<f4", 3, 3).reshape(-1, 3)[:, 2].tolist() == [1, 2, 3]
+    assert _attribute_values(restored, "JOINTS_0", "|u1", 3, 4).reshape(-1, 4)[:, 0].tolist() == [0, 1, 2]
+    assert _attribute_values(restored, "WEIGHTS_0", "<f4", 3, 4).reshape(-1, 4)[:, 0].tolist() == pytest.approx([0.5, 0.2, 0.3])
     assert_preserves_display(source, restored)
 
 

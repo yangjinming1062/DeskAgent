@@ -167,10 +167,15 @@ def _strip_bone_prefixes() -> int:
 def _normalize_cloud_rigged(args: argparse.Namespace) -> int:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.gltf(filepath=args.input)
-    if not any(o.type == "ARMATURE" for o in bpy.context.scene.objects):
+    armature = next((o for o in bpy.context.scene.objects if o.type == "ARMATURE"), None)
+    if armature is None:
         print("auto_rig: normalize input contains no armature", file=sys.stderr)
         return 1
     _strip_bone_prefixes()
+    meshes = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    corrected = sanitize_head_weights(meshes, armature)
+    if corrected:
+        print(f"auto_rig: cleaned appendage weights on {corrected} head-region vertices", file=sys.stderr)
     _apply_canonical_yaw(_face_yaw(args))
     _export(args.output)
     return 0

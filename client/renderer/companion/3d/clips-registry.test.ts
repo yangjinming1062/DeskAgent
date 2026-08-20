@@ -148,13 +148,13 @@ describe('clips-registry', () => {
     expect(idle.tracks).toHaveProperty('Spine')
     expect(idle.tracks).toHaveProperty('Head')
 
-    // 自然下垂的手臂应把臂部朝向躯干旋转（LeftArm Z < -1.0 rad（约 -57°+），RightArm Z > 1.0 rad（约 +57°+））
+    // Mixamo 静息角下左右上臂需用相反符号的 X 向躯干外侧展开。
     for (const kf of idle.tracks.LeftArm) {
-      expect(kf.r[2]).toBeLessThan(-1.0)
+      expect(kf.r[0]).toBeLessThanOrEqual(-0.08)
     }
 
     for (const kf of idle.tracks.RightArm) {
-      expect(kf.r[2]).toBeGreaterThan(1.0)
+      expect(kf.r[0]).toBeGreaterThanOrEqual(0.08)
     }
 
     // 前臂应有自然的肘部弯曲（> 0.1 rad）

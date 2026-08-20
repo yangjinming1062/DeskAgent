@@ -10,24 +10,26 @@ def _bone_segment_distance(point: Any, bone: Any) -> float:
 
 
 def sanitize_head_weights(meshes: list[Any], arm_obj: Any) -> int:
-    """把躯干/四肢骨的影响清出头颈体素，避免头颈在动画时抽动。"""
+    """清理比头颈骨骼更近的躯干/四肢串权。"""
     head = arm_obj.data.bones.get("Head")
     neck = arm_obj.data.bones.get("Neck")
     if head is None or neck is None:
         return 0
 
     allowed = {head.name, neck.name, *(bone.name for bone in head.children_recursive)}
-    neck_base = arm_obj.matrix_world @ neck.head_local
     corrected = 0
     for obj in meshes:
         invalid: dict[str, list[int]] = {}
         for vertex in obj.data.vertices:
-            if (obj.matrix_world @ vertex.co).z < neck_base.z:
-                continue
             invalid_weights = {
                 obj.vertex_groups[group.group].name: group.weight for group in vertex.groups if group.weight > 1e-6 and obj.vertex_groups[group.group].name not in allowed
             }
             if sum(invalid_weights.values()) < 1e-6:
+                continue
+            point = arm_obj.matrix_world.inverted() @ (obj.matrix_world @ vertex.co)
+            nearest_allowed = min((_bone_segment_distance(point, arm_obj.data.bones[name]) for name in allowed if name in arm_obj.data.bones), default=float("inf"))
+            nearest_foreign = min((_bone_segment_distance(point, arm_obj.data.bones[name]) for name in invalid_weights if name in arm_obj.data.bones), default=float("inf"))
+            if nearest_allowed >= nearest_foreign:
                 continue
             valid_weights = {obj.vertex_groups[group.group].name: group.weight for group in vertex.groups if group.weight > 1e-6 and obj.vertex_groups[group.group].name in allowed}
             for name in invalid_weights:
@@ -37,7 +39,6 @@ def sanitize_head_weights(meshes: list[Any], arm_obj: Any) -> int:
                 for name, weight in valid_weights.items():
                     obj.vertex_groups[name].add([vertex.index], weight / total, "REPLACE")
             else:
-                point = arm_obj.matrix_world.inverted() @ (obj.matrix_world @ vertex.co)
                 nearest = min((arm_obj.data.bones[name] for name in allowed if name in arm_obj.data.bones), key=lambda bone: _bone_segment_distance(point, bone))
                 nearest_group = obj.vertex_groups.get(nearest.name)
                 if nearest_group is None:

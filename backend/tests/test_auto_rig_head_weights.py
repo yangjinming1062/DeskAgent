@@ -148,6 +148,31 @@ def test_head_vertex_creates_missing_head_group():
     assert mesh.vertex_groups.get("Head").assigned[9] == 1.0
 
 
+def test_head_height_vertex_keeps_nearest_foreign_bone_weight():
+    armature = make_armature()
+    shoulder = FakeBone("RightShoulder", FakeVector(0.4, 0.0, 0.8), FakeVector(0.45, 0.0, 0.85))
+    armature.bones["RightShoulder"] = shoulder
+    group = FakeVertexGroup("RightShoulder")
+    vertex = FakeVertex(11, FakeVector(0.45, 0.0, 0.85))
+    vertex.groups = [FakeGroup(0, 1.0)]
+    mesh = FakeObject([group], [vertex])
+
+    assert sanitize_head_weights([mesh], armature) == 0
+    assert group.assigned == {}
+
+
+def test_head_vertex_renormalizes_remaining_head_weight():
+    armature = make_armature()
+    groups = {name: FakeVertexGroup(name) for name in armature.bones}
+    vertex = FakeVertex(12, FakeVector(0.01, 0, 0.85))
+    vertex.groups = [FakeGroup(0, 0.6), FakeGroup(2, 0.4)]
+    mesh = FakeObject(list(groups.values()), [vertex])
+
+    assert sanitize_head_weights([mesh], armature) == 1
+    assert groups["Head"].assigned[12] == 1.0
+    assert groups["RightForeArm"].assigned == {}
+
+
 def test_body_vertex_keeps_appendage_weight():
     armature = make_armature()
     mesh, groups = make_mesh(armature, FakeVector(0.4, 0, 0.4))

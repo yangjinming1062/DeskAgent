@@ -20,7 +20,7 @@ from services.worker import run_blender
 
 from .asset_store import build_signed_model_url, decompress_glb_if_needed, save_companion_model
 from .avatar_service import resolve_uploaded_avatar_path
-from .glb_fidelity import add_source_vertex_uv, assert_preserves_display, restore_preserved_vertex_attributes
+from .glb_fidelity import GlbFidelityError, add_source_vertex_uv, assert_preserves_display, restore_preserved_vertex_attributes
 from .persona_service import get_or_create_persona
 from .rig_layout import layout_skeleton
 from .rig_orientation import detect_face_yaw
@@ -446,10 +446,15 @@ async def _rig_locally_with_cloud_fallback(glb_bytes: bytes, record: CompanionMo
             raise ModelGenerationError(f"云端绑骨产物归一化失败: {stderr[-300:]}")
         normalized = await asyncio.to_thread(out.read_bytes)
         try:
-            restored = restore_preserved_vertex_attributes(cloud_bytes, normalized)
-            assert_preserves_display(cloud_bytes, restored)
-        except Exception as error:
-            raise ModelGenerationError(f"云端绑骨归一化破坏模型展示数据: {error}") from error
+            restored = restore_preserved_vertex_attributes(glb_bytes, normalized)
+            assert_preserves_display(glb_bytes, restored)
+        except GlbFidelityError:
+            logger.warning("cloud rig cannot map back to source vertices by UV; preserving cloud-rigged display data")
+            try:
+                restored = restore_preserved_vertex_attributes(cloud_bytes, normalized)
+                assert_preserves_display(cloud_bytes, restored)
+            except GlbFidelityError as error:
+                raise ModelGenerationError(f"云端绑骨归一化破坏模型展示数据: {error}") from error
         return restored
 
 
