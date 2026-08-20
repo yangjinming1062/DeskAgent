@@ -4,8 +4,6 @@ import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 import { $gateway } from '@/shared/store/gateway'
 
-import type { ClipDef } from './clips-biped'
-
 // 3D 伙伴的模型与资产目录。
 // 后端接口：/api/companion/model；
 // 通过网关推送 model.ready 事件，并在 lifecycle=ready 时由 ``hydrateModel`` 拉取一次。
@@ -19,6 +17,7 @@ export interface ModelInfo {
   status: string
   rig_type: string
   rig_naming: string
+  style: string
   content_hash: string | null
 }
 
@@ -42,6 +41,7 @@ interface CompanionModelResponse {
   rig_naming: string
   has_rig: boolean
   content_hash?: string | null
+  clip_map?: Readonly<Record<string, string>>
 }
 
 export const $modelInfo = atom<ModelInfo>({
@@ -52,7 +52,8 @@ export const $modelInfo = atom<ModelInfo>({
   has_rig: false,
   status: 'pending',
   rig_type: 'biped',
-  rig_naming: 'mixamo',
+  rig_naming: 'tripo',
+  style: 'realistic',
   content_hash: null
 })
 
@@ -61,7 +62,8 @@ export const $modelInfo = atom<ModelInfo>({
 // 不受 idle/sleep 信号影响。
 export const $modelLoadSettled = atom<boolean>(false)
 export const $availableClipNames = atom<Set<string>>(new Set())
-export const $generatedClips = atom<ClipDef[]>([])
+// 供应商声明的「语义键 → GLB 内 clip 名」；空表即该产物不含动画。
+export const $clipMap = atom<Readonly<Record<string, string>>>({})
 
 // ── Generation progress tracking ──
 // model.gen.progress → $modelGenState='generating' + $modelGenProgress
@@ -151,9 +153,10 @@ export async function hydrateModel(): Promise<void> {
         has_rig: res.has_rig,
         status: res.status,
         rig_type: res.rig_type ?? 'biped',
-        rig_naming: res.rig_naming ?? 'mixamo',
+        rig_naming: res.rig_naming ?? 'tripo',
         content_hash: res.content_hash ?? null
       })
+      $clipMap.set(res.clip_map ?? {})
 
       return
     }
@@ -163,8 +166,7 @@ export async function hydrateModel(): Promise<void> {
     }
   }
 
-  // lifecycle=ready 阶段还没有可用模型时，自动启动生成
-  void ensureModelGeneration()
+  // hydrateModel 只读不写：3D 生成由 confirm-front 成功后显式触发，避免 onboarding 中段误启动
 }
 
 export const $expressions = atom<CompanionExpression[]>([])
@@ -189,10 +191,6 @@ async function hydrateArray<T>(
       log.warn('model-store', `${label} failed`, error)
     }
   }
-}
-
-export async function hydrateGeneratedClips(): Promise<void> {
-  await hydrateArray<ClipDef>('/api/companion/animations', $generatedClips, 'clips', 'hydrateGeneratedClips')
 }
 
 export async function hydrateExpressions(): Promise<void> {

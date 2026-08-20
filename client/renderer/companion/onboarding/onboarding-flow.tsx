@@ -61,6 +61,7 @@ import { speakScripted, stopSpeaking } from '../tts'
 import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
 
+import { computeBackTransition } from './back-transition'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import { Chip, HistoryGallery, type HistoryGalleryItem, PortraitLightbox, PortraitPanel } from './onboarding-components'
 
@@ -413,6 +414,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const voicePreparing = useStore($voicePreparing)
   const { requestGateway } = useGatewayRequest()
   const [phase, setPhase] = useState<Phase>('q-character')
+  // confirm-front 成功后置 true:形象已锁死 + 3D 已启动,任何返回到 portrait-avatar / fullbody-3d 的路径都禁用
+  const [imageSealed, setImageSealed] = useState(false)
   const [qIndex, setQIndex] = useState(0)
   const onboardingSubmissionsRef = useRef(Promise.resolve())
   const [answers, setAnswers] = useState<OnboardingAnswers>({})
@@ -766,36 +769,32 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   }
 
   const onBack = () => {
-    if (phase === 'q-character') {
-      if (qIndex > 0) {
-        setQIndex(qIndex - 1)
-      }
+    // 形象确认后 3D 已启动,任何返回路径都禁用——纯函数 ``computeBackTransition`` 在 imageSealed 时直接返 null。
+    const intent = computeBackTransition({ phase, qIndex, voiceStage, imageSealed }, CHARACTER_QUESTIONS.length)
 
+    if (!intent) {
       return
     }
 
-    if (phase === 'voice') {
-      if (voiceStage === 'describe') {
-        setPhase('q-character')
-        setQIndex(CHARACTER_QUESTIONS.length - 1)
-      }
-
-      return
+    if (intent.phase !== phase) {
+      setPhase(intent.phase)
     }
 
-    if (phase === 'q-user') {
-      if (qIndex > 0) {
-        setQIndex(qIndex - 1)
-      } else {
-        setPhase('voice')
-        setVoiceStage('catalog')
-      }
+    if (intent.qIndex !== undefined && intent.qIndex !== qIndex) {
+      setQIndex(intent.qIndex)
+    }
 
-      return
+    if (intent.voiceStage !== undefined && intent.voiceStage !== voiceStage) {
+      setVoiceStage(intent.voiceStage)
     }
   }
 
   const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
+    // 形象已锁死时不应再进入头像/全身图阶段。深度防御:onBack 守卫 + 此处显式短路,即使上游误调也无效。
+    if (imageSealed) {
+      return
+    }
+
     // 只有同时有服务端行 AND 有效的头像图时才能跳过生成。
     // TTL 到期后续传时，$activeAvatarId 还在但 $portraitUrl 已经为 null——这种情况必须重新生成。
     if (activeAvatarId != null && $portraitUrl.get()) {
@@ -1486,6 +1485,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           id: res?.id,
           assetUrl: res?.asset_url
         })
+        // 形象确认后立即锁死 onBack 路径(返回到 voice → q-character → portrait-avatar → fullbody-3d 会让
+        // 用户重新调整正面视图,与已启动的 3D 生成不一致)。
+        setImageSealed(true)
+        // 形象确认后立即异步启动 3D 生成,不等 onboarding 剩余步骤(语音/性格) 完成;
+        // 生成在 web 进程内 fire-and-forget,失败静默——用户在客户端随时可重试
+        void window.spiritagent
+          .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
+          .catch(() => undefined)
       })
       .catch(() => {
         // 后台派生是异步的，对用户 onboarding 流程不构成阻塞
@@ -1702,7 +1709,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 <div className="mt-4 flex items-center justify-between text-xs">
                   <button
                     className="text-white/60 transition hover:text-white disabled:opacity-30"
-                    disabled={phase === 'q-character' && qIndex === 0}
+                    disabled={imageSealed || (phase === 'q-character' && qIndex === 0)}
                     onClick={onBack}
                     type="button"
                   >

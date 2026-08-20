@@ -11,7 +11,6 @@ from components import (
     NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS,
     NIGHTLY_CONSOLIDATION_MAX_TOKENS,
     NIGHTLY_CREATION_ENABLED,
-    NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_TOKENS,
     NIGHTLY_DIARY_MAX_TOKENS,
@@ -31,18 +30,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.companion import (
-    generate_animation_clips,
-    get_active_model,
-    get_rig_bones,
-    kick_background_generation,
-    list_memories,
-    read_today_summary,
-    upsert_slotted_memory,
-    validate_and_sanitize_expression,
-)
+from services.companion import kick_background_generation, list_memories, read_today_summary, upsert_slotted_memory, validate_and_sanitize_expression
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
-from services.llm import call_llm_once, chat, resolve_user_llm_config
+from services.llm import call_llm_once, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
 from .cron_jobs import create_job
@@ -150,18 +140,18 @@ Output valid JSON only:
 }
 """
 
-_CREATION_SYSTEM_PROMPT = """You are SpiritAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing assets to identify specific moments where the companion wanted to express something but lacked a matching expression or animation asset.
+_CREATION_SYSTEM_PROMPT = """You are SpiritAgent's autonomous asset creation engine. Analyze today's interactions, the companion's private diary, current user profile, personality tags, and existing expressions to identify specific moments where the companion wanted to express something but lacked a matching expression.
 
 Conservative Principle:
-- ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional or physical expression.
-- If existing assets are already sufficient or today was routine, return empty lists: {{"gaps": []}}.
+- ONLY create assets if there is a concrete, grounded moment from today's conversation where the companion lacked an effective emotional expression.
+- If existing expressions are already sufficient or today was routine, return empty lists: {{"gaps": []}}.
 - Do NOT generate generic or repetitive assets.
 
 Asset specifications:
 1. "gaps": List of identified expression gaps (max 3). Each item produces:
    - "moment": Brief explanation of the specific moment today.
-   - "want_to_express": Emotional or physical intent.
-   - "expression": (optional) Custom emotion object:
+   - "want_to_express": Emotional intent.
+   - "expression": Custom emotion object:
      {{
        "name": "snake_case_name", // e.g. "tender_worry"
        "label": "心疼",
@@ -170,7 +160,6 @@ Asset specifications:
        "icon": "🥺", // optional single emoji
        "tags": ["温柔", "心疼"]
      }}
-   - "clip_brief": Description of physical gesture/movement desired for this moment.
    - "tags": ["温柔", "心疼"]
 
 Output valid JSON only:
@@ -401,7 +390,7 @@ async def _stage_5_creation(
     local_date_str: str,
     tz_str: str | None = None,
 ) -> bool:
-    """Stage 5：自主创作——伙伴生成表情和动画片段。"""
+    """Stage 5：自主创作——伙伴生成新表情。"""
     if not NIGHTLY_CREATION_ENABLED:
         return False
 
@@ -419,13 +408,6 @@ async def _stage_5_creation(
         existing_expr_rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user_id))).scalars().all()
         existing_expr_names = [e.name for e in existing_expr_rows]
 
-        # 检查 active model 和已有片段——顺便在此取 rig_type/species，避免后面再开 session（它们是静态配置）。
-        model = await get_active_model(db, user_id)
-        existing_clips = safe_json_loads(model.animation_clips_json or "[]", default=[]) if model else []
-        existing_clip_names = [c.get("name") for c in existing_clips if isinstance(c, dict) and c.get("name")]
-        rig_type = model.rig_type if model else "biped"
-        species = model.species if model else "人类"
-
     # 构造创作 prompt
     system_prompt = _CREATION_SYSTEM_PROMPT
     payload = {
@@ -434,7 +416,6 @@ async def _stage_5_creation(
         "inferred_profile": inferred_profile,
         "personality_tags": personality_tags,
         "existing_expressions": existing_expr_names,
-        "existing_clip_names": existing_clip_names,
     }
 
     raw = await call_llm_once(llm_cfg, system_prompt, payload, max_tokens=NIGHTLY_CREATION_MAX_TOKENS)
@@ -446,38 +427,19 @@ async def _stage_5_creation(
     gaps = parsed.get("gaps") or []
 
     new_expr_count = 0
-    new_clip_count = 0
 
-    # 1. 处理 gaps -> 表情 & 片段——整批用同一个 session_scope。
-    # LLM keyframe 调用先跑（与 DB 独立），merge 是单一 read-modify-write 事务。
     if isinstance(gaps, list):
-        pending_clip_tag_sets: list[list[str]] = []
         pending_expressions: list[dict[str, Any]] = []
         for gap in gaps:
-            if not isinstance(gap, dict):
+            if not isinstance(gap, dict) or len(pending_expressions) >= NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT:
                 continue
-            if len(pending_expressions) < NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT:
-                expr_spec = gap.get("expression")
-                if isinstance(expr_spec, dict):
-                    sanitized_expr = validate_and_sanitize_expression(expr_spec)
-                    if sanitized_expr and sanitized_expr["name"] not in existing_expr_names:
-                        pending_expressions.append(sanitized_expr)
-                        existing_expr_names.append(sanitized_expr["name"])
-            if gap.get("clip_brief"):
-                pending_clip_tag_sets.append(gap.get("tags") or personality_tags[:2])
+            expr_spec = gap.get("expression")
+            if isinstance(expr_spec, dict):
+                sanitized_expr = validate_and_sanitize_expression(expr_spec)
+                if sanitized_expr and sanitized_expr["name"] not in existing_expr_names:
+                    pending_expressions.append(sanitized_expr)
+                    existing_expr_names.append(sanitized_expr["name"])
 
-        # rig_type/species 已在上面初次 session 中捕获；LLM 调用只需静态 bone list，不需要活的 DB session。
-        bone_list = get_rig_bones(rig_type)
-
-        # 受 LLM 限制的 keyframe 生成按 gap spec 并发跑——独立调用之间没有 DB 竞争。
-        async def _gen_clips_for(tags: list[str]) -> list[dict]:
-            return await generate_animation_clips(
-                chat, rig_type=rig_type, bone_list=bone_list, personality_tags=tags, species=species, categories=["interaction"], user_id=user_id, db=None
-            )
-
-        clip_results = await asyncio.gather(*[_gen_clips_for(tags) for tags in pending_clip_tag_sets[:NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT]])
-
-        # merge 写入用单个 session。
         async with session_scope() as db:
             for expr in pending_expressions:
                 db.add(
@@ -492,24 +454,6 @@ async def _stage_5_creation(
                     )
                 )
                 new_expr_count += 1
-
-            active_model = await get_active_model(db, user_id)
-            if active_model:
-                # 在该事务内 read-modify-write。用户的并发 ``POST /animations/generate`` 可能交错，
-                # 但 nightly 任务跑在用户睡眠窗口，碰撞概率可忽略；SQLite 串行写入保证最后提交胜出而非损坏 JSON。
-                curr_raw = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
-                curr_clips = curr_raw if isinstance(curr_raw, list) else []
-                added = 0
-                for generated in clip_results:
-                    if added >= NIGHTLY_CREATION_MAX_CLIPS_PER_NIGHT:
-                        break
-                    if not generated:
-                        continue
-                    curr_clips.extend(generated)
-                    added += len(generated)
-                if added:
-                    active_model.animation_clips_json = json.dumps(curr_clips, ensure_ascii=False)
-                    new_clip_count = added
             await db.commit()
 
         # 预热形象生成，让图片在早晨"展示新创作"消息让伙伴用到之前就到位。
@@ -517,14 +461,8 @@ async def _stage_5_creation(
             kick_background_generation(user_id, expr["name"])
 
     # 2. 若生成了资产，安排早晨通知的 cron job
-    if new_expr_count > 0 or new_clip_count > 0:
-        summary_parts = []
-        if new_expr_count > 0:
-            summary_parts.append(f"创造了 {new_expr_count} 个新表情")
-        if new_clip_count > 0:
-            summary_parts.append(f"创造了 {new_clip_count} 个新动作")
-
-        cron_prompt = f"昨晚你默默为用户完成了一轮创作（{', '.join(summary_parts)}）。在今天的聊天中，请自然地展示你的新表情和动作。"
+    if new_expr_count > 0:
+        cron_prompt = f"昨晚你默默为用户完成了一轮创作（创造了 {new_expr_count} 个新表情）。在今天的聊天中，请自然地展示你的新表情。"
 
         # 安排到下次本地 09:00——cron 用 UTC，从用户时区换算；one_shot=True 让 job 触发后删除，一次性"展示新创作"消息不会每天重复。
         schedule = _local_9am_cron(tz_str)
@@ -533,7 +471,7 @@ async def _stage_5_creation(
         except Exception as exc:
             logger.warning("nightly_activity: stage 5 cron creation failed", extra={"user_id": user_id, "error": str(exc)})
 
-    logger.info("nightly_activity: stage 5 completed", extra={"user_id": user_id, "expressions": new_expr_count, "clips": new_clip_count})
+    logger.info("nightly_activity: stage 5 completed", extra={"user_id": user_id, "expressions": new_expr_count})
     return True
 
 

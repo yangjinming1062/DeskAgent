@@ -156,7 +156,7 @@
 - **全局变量统一定义在文件头部。** 单文件内所有模块级常量、全局变量必须在 import 块下方集中定义，不得散落在文件中部或函数之间。
 - **禁止越级深层导入。** 跨模块调用时，必须通过目标模块的公共入口（barrel file / `__init__`），绝不能直接深入到内部文件。正确：`from app.models import MessageType` / `import { MessageType } from '@/models'`；错误：`from app.models.message import MessageType` / `import { MessageType } from '@/models/message'`。
 - **保持目录入口干净。** 入口目录只放入口、配置和数据模型；业务逻辑下沉到领域模块（`core/`、`tools/`、`routers/` 等，或 `renderer/companion/`、`renderer/hub/` 等）。
-- **提交前先格式化。** 提交前执行 `uvx pre-commit run -a`（自动触发 Python ruff 与 Desktop eslint/prettier 检查与修复）。
+- **提交前先格式化。** 提交前执行 `uv tool run pre-commit run -a`（严禁直接运行裸ruff，会和项目本身的配置有不一致的格式化效果）。
 
 ### 注释
 

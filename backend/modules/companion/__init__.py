@@ -1,7 +1,5 @@
 from .models import AvatarAsset, CompanionExpression, CompanionExpressionAvatar, CompanionModel, CompanionPreference, CompanionSpriteImage, Persona
 from .schemas import (
-    AnimationClipResponse,
-    AnimationGenerateRequest,
     AvatarAssetResponse,
     AvatarFromImageRequest,
     AvatarGenerateRequest,
@@ -22,8 +20,6 @@ from .schemas import (
 )
 
 __all__ = [
-    "AnimationClipResponse",
-    "AnimationGenerateRequest",
     "AvatarAsset",
     "AvatarAssetResponse",
     "AvatarFromImageRequest",

@@ -65,9 +65,7 @@ def _err(code: int, message: str) -> dict:
 @pytest.mark.asyncio
 async def test_create_image_to_model_rejects_empty_token(mock_http):
     """空的 image_token 需在发出任何 HTTP 请求前抛错。"""
-    import pytest as _pytest
-
-    with _pytest.raises(ValueError, match="image_token"):
+    with pytest.raises(ValueError, match="image_token"):
         await tripo_client.create_image_to_model("")
 
 
@@ -95,22 +93,22 @@ async def test_create_multiview_to_model_validates_front_and_min_views():
 
 
 @pytest.mark.asyncio
-async def test_rig_picks_spec_and_version_by_rig_type(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "rig_1"}))
-    await tripo_client.rig("task_x", "biped")
-    body = mock_http.calls[0][2]
-    assert body["rig_type"] == "biped"
-    assert body["spec"] == "mixamo"
-    assert body["model"] == tripo_client.MODEL_VERSION_MIXAMO
-
-
-@pytest.mark.asyncio
-async def test_rig_uses_tripo_spec_for_non_biped(mock_http):
-    mock_http.responder = lambda _r: httpx.Response(200, json=_ok({"task_id": "rig_q"}))
-    await tripo_client.rig("task_x", "quadruped")
-    body = mock_http.calls[0][2]
-    assert body["spec"] == "tripo"
-    assert body["model"] == tripo_client.MODEL_VERSION_TRIPO
+async def test_rig_pins_tripo_naming_and_splits_model_by_rig_type(mock_http):
+    """spec 与 model 正交：命名必须统一 tripo（retarget 拒绝 mixamo 骨骼），算法版本按骨架分流。"""
+    for rig_type, version in (
+        ("biped", tripo_client.MODEL_VERSION_RIG_BIPED),
+        ("quadruped", tripo_client.MODEL_VERSION_RIG_ANIMAL),
+        ("avian", tripo_client.MODEL_VERSION_RIG_ANIMAL),
+    ):
+        mock_http.calls.clear()
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json=_ok({"task_id": "rig_1"})
+        )
+        await tripo_client.rig("task_x", rig_type)
+        body = mock_http.calls[0][2]
+        assert body["rig_type"] == rig_type
+        assert body["spec"] == "tripo"
+        assert body["model"] == version
 
 
 @pytest.mark.asyncio
@@ -190,15 +188,62 @@ async def test_poll_task_raises_on_error_envelope(mock_http):
         await tripo_client.poll_task("task_x", interval=0.001)
 
 
-def test_rig_spec_helper_known_types():
-    assert tripo_client.rig_spec("biped") == "mixamo"
-    assert tripo_client.rig_spec("quadruped") == "tripo"
-    assert tripo_client.rig_spec("avian") == "tripo"
-
-
-def test_rig_model_version_helper_known_specs():
-    assert tripo_client.rig_model_version("biped") == tripo_client.MODEL_VERSION_MIXAMO
-    assert (
-        tripo_client.rig_model_version("unknown_type")
-        == tripo_client.MODEL_VERSION_TRIPO
+@pytest.mark.asyncio
+async def test_retarget_submits_deduped_flat_preset_array(mock_http):
+    mock_http.responder = lambda _r: httpx.Response(
+        200, json=_ok({"task_id": "anim_1"})
     )
+    assert await tripo_client.retarget("task_rigged", "biped") == "anim_1"
+    body = mock_http.calls[0][2]
+    assert body["input"] == "task_rigged"
+    assert body["out_format"] == "glb"
+    assert body["bake_animation"] is True
+    # 供应商收的是扁平字符串数组，不是对象数组；多个语义键复用同一预设，去重后才提交。
+    assert body["animations"] == list(dict.fromkeys(body["animations"]))
+    assert all(
+        isinstance(a, str) and a.startswith("preset:biped:") for a in body["animations"]
+    )
+    assert "preset:biped:idle" in body["animations"]
+    # 每个预设单独计费，biped 只绑产品必需的最小集。
+    assert len(body["animations"]) == 6
+
+
+@pytest.mark.asyncio
+async def test_retarget_submits_single_preset_for_non_biped(mock_http):
+    for rig_type, preset in (
+        ("quadruped", "preset:quadruped:walk"),
+        ("serpentine", "preset:serpentine:march"),
+    ):
+        mock_http.calls.clear()
+        mock_http.responder = lambda _r: httpx.Response(
+            200, json=_ok({"task_id": "anim_q"})
+        )
+        await tripo_client.retarget("task_rigged", rig_type)
+        assert mock_http.calls[0][2]["animations"] == [preset]
+
+
+@pytest.mark.asyncio
+async def test_retarget_rejects_rig_without_presets():
+    with pytest.raises(ValueError, match="avian"):
+        await tripo_client.retarget("task_rigged", "avian")
+
+
+def test_retarget_clips_avian_is_empty():
+    """avian 在 v2.5-20260210 下没有任何预设；空映射即「该骨架不产出动画」的信号。"""
+    assert tripo_client.retarget_clips("avian") == {}
+    assert tripo_client.retarget_clips("unknown_rig") == {}
+
+
+def test_retarget_clips_values_match_submitted_presets():
+    """映射的值域必须与提交集合一致，否则客户端会去兑现一个从未被烘焙的 clip。"""
+    for rig_type in (
+        "biped",
+        "quadruped",
+        "hexapod",
+        "octopod",
+        "serpentine",
+        "aquatic",
+    ):
+        clips = tripo_client.retarget_clips(rig_type)
+        assert clips, rig_type
+        assert set(clips.values()) == set(dict.fromkeys(clips.values()))

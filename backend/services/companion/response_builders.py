@@ -3,7 +3,7 @@ from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, 
 
 from .asset_store import get_companion_model_sha256
 from .avatar_service import _re_sign_bare_path
-from .model_service import signed_model_url
+from .pipeline import signed_model_url
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
@@ -47,4 +47,5 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
         rig_naming=model.rig_naming,
         style=model.style or "realistic",
         content_hash=content_hash,
+        clip_map=safe_json_loads(model.clip_map_json or "{}", default={}),
     )

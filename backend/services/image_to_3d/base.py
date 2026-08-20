@@ -76,5 +76,9 @@ class ImageTo3DProvider(ABC):
     async def start_rig(self, job_id: str, rig_type: str) -> Model3DJob:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support cloud rigging", provider=self.provider_name)
 
-    async def start_animate_bind(self, job_id: str) -> Model3DJob:
+    async def start_animate_bind(self, job_id: str, rig_type: str) -> Model3DJob:
         raise ImageTo3DError(f"{self.provider_name or type(self).__name__} does not support cloud animate-bind", provider=self.provider_name)
+
+    def animation_clips(self, rig_type: str) -> dict[str, str]:
+        """该 rig 下「语义键 → 供应商烘焙的 clip 名」映射；空字典代表该骨架不产出动画。客户端据此兑现，自身不持有任何供应商命名。"""
+        return {}

@@ -21,7 +21,7 @@ const baseModelResponse = {
   species: '精灵',
   status: 'succeeded',
   rig_type: 'biped',
-  rig_naming: 'mixamo',
+  rig_naming: 'tripo',
   has_rig: true,
   content_hash: 'sha256_mock_hash_123'
 }
@@ -44,7 +44,8 @@ describe('hydrateModel', () => {
       has_rig: false,
       status: 'pending',
       rig_type: 'biped',
-      rig_naming: 'mixamo',
+      rig_naming: 'tripo',
+      style: 'realistic',
       content_hash: null
     })
     vi.spyOn(log, 'warn').mockImplementation(() => undefined)
@@ -62,6 +63,8 @@ describe('hydrateModel', () => {
     await hydrateModel()
 
     expect(api).toHaveBeenCalledWith({ path: '/api/companion/model' })
+    // 成功路径也只读——hydrateModel 不负责触发新生成
+    expect(api).not.toHaveBeenCalledWith({ path: '/api/companion/model', method: 'POST', body: {} })
     expect($modelInfo.get()).toEqual({
       id: 7,
       asset_url: baseModelResponse.asset_url,
@@ -70,13 +73,14 @@ describe('hydrateModel', () => {
       has_rig: true,
       status: 'succeeded',
       rig_type: 'biped',
-      rig_naming: 'mixamo',
+      rig_naming: 'tripo',
+      style: 'realistic',
       content_hash: 'sha256_mock_hash_123'
     })
     expect(log.warn).not.toHaveBeenCalled()
   })
 
-  it('把 404 当作正常情况（没有激活行），并触发模型生成', async () => {
+  it('把 404 当作正常情况（没有激活行），不触发新生成——3D 生成由 confirm-front 显式触发', async () => {
     $modelInfo.set({ ...$modelInfo.get(), species: '人类' })
     const before = $modelInfo.get()
 
@@ -94,7 +98,8 @@ describe('hydrateModel', () => {
 
     expect($modelInfo.get()).toEqual(before)
     expect(api).toHaveBeenCalledWith({ path: '/api/companion/model' })
-    expect(api).toHaveBeenCalledWith({ path: '/api/companion/model', method: 'POST', body: {} })
+    // 关键断言:404 时 hydrateModel 只读不写,不调 POST /api/companion/model
+    expect(api).not.toHaveBeenCalledWith({ path: '/api/companion/model', method: 'POST', body: {} })
     expect(log.warn).not.toHaveBeenCalled()
   })
 
@@ -113,6 +118,8 @@ describe('hydrateModel', () => {
 
     expect($modelInfo.get().status).toBe('pending')
     expect(log.warn).toHaveBeenCalledWith('model-store', 'hydrateModel failed', expect.any(Error))
+    // 同样:5xx 时也不应该触发 POST
+    expect(api).not.toHaveBeenCalledWith({ path: '/api/companion/model', method: 'POST', body: {} })
   })
 })
 

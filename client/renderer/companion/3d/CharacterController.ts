@@ -2,15 +2,11 @@ import * as THREE from 'three'
 
 import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store'
 import { log } from '@/shared/lib/log'
-import type { ReactionBucket } from '@/shared/types/reactions'
 
-import { resolveClip } from './AnimationMap'
-import { resolveEmotionClip, resolveInteractionClip } from './clip-dispatch'
-import { buildClip, type ClipDef } from './clips-biped'
-import { buildClipsForRig, getClipDefs } from './clips-registry'
+import { type ClipMap, resolveClip } from './AnimationMap'
 import { hasGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
 import { createGLTFLoader } from './gltf-loader-factory'
-import { $availableClipNames, type CompanionExpression } from './model-store'
+import { $availableClipNames } from './model-store'
 import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
@@ -88,7 +84,7 @@ export class CharacterController {
   private clips = new Map<string, THREE.AnimationClip>()
   private actions = new Map<string, THREE.AnimationAction>()
   private actionNames = new Set<string>()
-  private injectedClipDefs: ClipDef[] = []
+  private clipMap: ClipMap = {}
   private currentAction: THREE.AnimationAction | null = null
   private isProcedural = false
   private proc: ProcParts | null = null
@@ -181,9 +177,9 @@ export class CharacterController {
         this.mixer = new THREE.AnimationMixer(this.root)
         this.mixer.addEventListener('finished', () => {
           if (this.mixer && !this.isProcedural) {
-            const baseClip = resolveClip(this.currentState, this.actionNames)
+            const baseClip = resolveClip(this.currentState, this.clipMap, this.actionNames)
 
-            if (baseClip && this.actionNames.has(baseClip)) {
+            if (baseClip) {
               this.playClip(baseClip, 0.3)
             }
           }
@@ -206,20 +202,12 @@ export class CharacterController {
 
             if (child.name === 'Head') {
               this.headBone = child
-            } else if (child.name === 'Neck') {
+            } else if (child.name === 'Neck' || (child.name === 'NeckTwist01' && !this.neckBone)) {
+              // spec=tripo 的 biped 层级里没有 Neck，颈段是 NeckTwist01 → NeckTwist02。
               this.neckBone = child
             }
           }
         })
-
-        for (const clip of buildClipsForRig(rigType, this.boneRestQuats)) {
-          this.clips.set(clip.name, clip)
-        }
-
-        for (const def of this.injectedClipDefs) {
-          const clip = buildClip(def, this.boneRestQuats)
-          this.clips.set(clip.name, clip)
-        }
 
         this.actionNames = new Set(this.clips.keys())
         $availableClipNames.set(new Set(this.actionNames))
@@ -269,33 +257,16 @@ export class CharacterController {
     this.root = new THREE.Group()
   }
 
-  /** 运行时注入 clip 定义（不重载模型）。 */
-  appendClipDefs(defs: readonly ClipDef[]): void {
-    for (const def of defs) {
-      this.injectedClipDefs = this.injectedClipDefs.filter(d => d.name !== def.name)
-      this.injectedClipDefs.push(def)
-
-      const clip = buildClip(def, this.boneRestQuats)
-      this.clips.set(clip.name, clip)
-      this.actionNames.add(clip.name)
-
-      if (this.mixer && this.actions.has(clip.name)) {
-        const oldAction = this.actions.get(clip.name)
-        oldAction?.stop()
-        this.mixer.uncacheClip(clip)
-        this.actions.delete(clip.name)
-      }
-    }
-
-    $availableClipNames.set(new Set(this.actionNames))
+  /** 运行时更新语义映射（不重载模型）。 */
+  setClipMap(clipMap: ClipMap): void {
+    this.clipMap = clipMap
+    this.applyState(this.currentState, null)
   }
 
   applyState(
     state: SpriteStateName,
     emotion: SpriteEmotion | null,
     opts?: {
-      companionTags?: readonly string[] | string[]
-      customExpressions?: readonly CompanionExpression[] | CompanionExpression[]
       clipOverride?: string | null
       action?: string | null
     }
@@ -314,32 +285,18 @@ export class CharacterController {
       return
     }
 
-    // 1. 如果有伴随的情绪，尝试从 emotion / injected 动作库解析一次性表情动作
-    if (emotion) {
-      const library = getClipDefs(this.rigType)
-      const companionTags = opts?.companionTags ? Array.from(opts.companionTags) : []
-      const customExprs = opts?.customExpressions ? Array.from(opts.customExpressions) : []
-      const emoClip = resolveEmotionClip(emotion, companionTags, library, available, customExprs, opts?.action)
+    // LLM 的 [action:NAME] 与情绪 token 都是映射表里的一等语义键，命中即单次播放。
+    for (const key of [opts?.action, emotion]) {
+      const oneShot = key ? resolveClip(key, this.clipMap, available) : null
 
-      if (emoClip && available.has(emoClip)) {
-        const act = this.getAction(emoClip)
-
-        if (act) {
-          act.reset().setLoop(THREE.LoopOnce, 1)
-          act.clampWhenFinished = true
-          this.currentAction?.crossFadeTo(act, 0.25, false)
-          act.play()
-          this.currentAction = act
-
-          return
-        }
+      if (oneShot && this.playOnce(oneShot, 0.25)) {
+        return
       }
     }
 
-    // 2. 无专属情绪动作或情绪动作为空时，播放状态的基础循环动作
-    const targetClipName = resolveClip(state, available)
+    const targetClipName = resolveClip(state, this.clipMap, available)
 
-    if (targetClipName && available.has(targetClipName)) {
+    if (targetClipName) {
       this.playClip(targetClipName, 0.35)
     }
   }
@@ -348,21 +305,9 @@ export class CharacterController {
     this.applyState(this.currentState, emotion)
   }
 
-  /** 播放交互反应动作（一次性），播放完毕后自动回到当前状态的基础动作。 */
-  applyReaction(bucket: ReactionBucket, companionTags?: string[]): boolean {
-    if (this.isProcedural) {
-      return false
-    }
-
-    const available = this.actionNames
-    const library = getClipDefs(this.rigType)
-    const clipName = resolveInteractionClip(bucket, companionTags ?? [], library, available)
-
-    if (!clipName || !available.has(clipName)) {
-      return false
-    }
-
-    const act = this.getAction(clipName)
+  /** 单次播放并在结束后由 mixer 的 finished 回调切回基础状态；返回是否真的播了。 */
+  private playOnce(name: string, fade: number): boolean {
+    const act = this.getAction(name)
 
     if (!act) {
       return false
@@ -370,7 +315,7 @@ export class CharacterController {
 
     act.reset().setLoop(THREE.LoopOnce, 1)
     act.clampWhenFinished = true
-    this.currentAction?.crossFadeTo(act, 0.2, false)
+    this.currentAction?.crossFadeTo(act, fade, false)
     act.play()
     this.currentAction = act
 
@@ -439,7 +384,8 @@ export class CharacterController {
       return
     }
 
-    next.reset().setEffectiveWeight(1).setEffectiveTimeScale(1)
+    next.reset().setLoop(THREE.LoopRepeat, Infinity).setEffectiveWeight(1).setEffectiveTimeScale(1)
+    next.clampWhenFinished = false
     this.currentAction?.crossFadeTo(next, fade, false)
     next.play()
     this.currentAction = next
@@ -460,7 +406,9 @@ export class CharacterController {
     // 人像摄影里约 3° 的下颌内收能让下颌线更柔和、视线更聚焦，
     // 避免 AI 原始骨骼那种"仰头看天花板"的脱节感。
     if (this.headBone && this.isBipedRig) {
-      const restHead = this.boneRestQuats.get(this.headBone.name)
+      // 有动作在播时 mixer 每帧已写入该骨骼的绝对四元数，直接叠加即可（不会累加溢出）；
+      // 无动作在播时 mixer 不碰骨骼，必须以静止姿势为基准，否则逐帧相乘会让头部旋转发散。
+      const animated = this.currentAction?.isRunning() ?? false
       const chinTuckPitch = 0.05
       const lookPitch = -this.lookY * 0.06
       const lookYaw = this.lookX * 0.1
@@ -468,22 +416,24 @@ export class CharacterController {
       _EULER.set(chinTuckPitch + lookPitch, lookYaw, 0, 'YXZ')
       _QUAT.setFromEuler(_EULER)
 
-      if (restHead) {
-        this.headBone.quaternion.copy(restHead).multiply(_QUAT)
-      } else {
-        this.headBone.quaternion.multiply(_QUAT)
+      const restHead = this.boneRestQuats.get(this.headBone.name)
+
+      if (!animated && restHead) {
+        this.headBone.quaternion.copy(restHead)
       }
+
+      this.headBone.quaternion.multiply(_QUAT)
 
       if (this.neckBone) {
         const restNeck = this.boneRestQuats.get(this.neckBone.name)
         _EULER.set((chinTuckPitch + lookPitch) * 0.25, lookYaw * 0.25, 0, 'YXZ')
         _QUAT.setFromEuler(_EULER)
 
-        if (restNeck) {
-          this.neckBone.quaternion.copy(restNeck).multiply(_QUAT)
-        } else {
-          this.neckBone.quaternion.multiply(_QUAT)
+        if (!animated && restNeck) {
+          this.neckBone.quaternion.copy(restNeck)
         }
+
+        this.neckBone.quaternion.multiply(_QUAT)
       }
     }
   }

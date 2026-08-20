@@ -5,9 +5,6 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 
-import { buildClip } from '@/companion/3d/clips-biped'
-import { getClipDefs } from '@/companion/3d/clips-registry'
-
 import { createProceduralMannequin, parseGlbBuffer, readGlbFile } from './model-loader'
 import { createHologramMaterial, createSkeletonViz, type SkeletonViz } from './skeleton-viz'
 import {
@@ -603,26 +600,9 @@ export function Viewport3D(): React.JSX.Element {
         const currentActive = $activeClip.get()
 
         if (currentActive) {
-          playTargetClip(currentActive, parsed.boneRestQuats, mixer, 0)
+          playTargetClip(currentActive, mixer, 0)
         } else if (parsed.embeddedClips.length > 0) {
           selectClip(parsed.embeddedClips[0])
-        } else {
-          const rigDefs = getClipDefs(selectedRig)
-          const firstKey = Object.keys(rigDefs)[0]
-
-          if (firstKey) {
-            const firstDef = rigDefs[firstKey]
-            selectClip({
-              id: `${selectedRig}:${firstDef.name}`,
-              name: firstDef.name,
-              duration: firstDef.duration,
-              loop: firstDef.loop,
-              category: firstDef.category,
-              tags: firstDef.tags,
-              trackCount: Object.keys(firstDef.tracks).length,
-              clipDef: firstDef
-            })
-          }
         }
       } catch (err: any) {
         if (!isStale) {
@@ -638,19 +618,8 @@ export function Viewport3D(): React.JSX.Element {
     }
   }, [selectedRig, customGlb])
 
-  const playTargetClip = (
-    item: ClipItem,
-    restQuats: Map<string, THREE.Quaternion>,
-    mixer: THREE.AnimationMixer,
-    fadeDuration = 0.25
-  ) => {
-    let animClip: THREE.AnimationClip | null = null
-
-    if (item.animationClip) {
-      animClip = item.animationClip
-    } else if (item.clipDef) {
-      animClip = buildClip(item.clipDef, restQuats)
-    }
+  const playTargetClip = (item: ClipItem, mixer: THREE.AnimationMixer, fadeDuration = 0.25) => {
+    const animClip = item.animationClip
 
     if (!animClip) {
       return
@@ -693,7 +662,7 @@ export function Viewport3D(): React.JSX.Element {
       return
     }
 
-    playTargetClip(activeClip, boneRestQuatsRef.current, mixerRef.current, $playbackState.get().crossFadeDuration)
+    playTargetClip(activeClip, mixerRef.current, $playbackState.get().crossFadeDuration)
   }, [activeClip])
 
   // 监听 Scrubbing 时间轴拖拽

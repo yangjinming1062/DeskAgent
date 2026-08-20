@@ -2,8 +2,6 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import delete, func, select, text
-
 from components import MAX_INFERRED_PROFILE_CONTENT_CHARS, NIGHTLY_MIN_MESSAGES_TODAY
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
@@ -19,6 +17,7 @@ from services.scheduler.nightly_activity import (
     run_nightly_pipeline,
 )
 from services.tools import INFERRED_PROFILE_SLOTS, NativeMemory
+from sqlalchemy import delete, func, select, text
 
 
 def _mock_llm_response(payload):
@@ -847,7 +846,6 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
                     "icon": "😤",
                     "tags": ["同仇敌徾"],
                 },
-                "clip_brief": "愤怒跺脚与挥拳",
                 "tags": ["同仇敌徾"],
             }
         ],
@@ -857,13 +855,13 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
         nightly_activity, "call_llm_once", _mock_llm_response(llm_payload)
     )
 
-    async def _mock_gen_clips(*a, **kw):
-        return [{"name": "angry_stomp", "duration": 1.0, "tracks": []}]
-
-    monkeypatch.setattr(nightly_activity, "generate_animation_clips", _mock_gen_clips)
     # kick 会在共享测试连接上 fire-and-forget 头像生成——只记录调用而不并发打开第二会话。
     kicked: list[str] = []
-    monkeypatch.setattr(nightly_activity, "kick_background_generation", lambda uid, name: kicked.append(name))
+    monkeypatch.setattr(
+        nightly_activity,
+        "kick_background_generation",
+        lambda uid, name: kicked.append(name),
+    )
 
     ok = await _stage_5_creation(
         llm_cfg={"model_name": "test"},

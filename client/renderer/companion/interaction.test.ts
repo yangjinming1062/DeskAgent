@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { $effectiveTierOverride, $spriteState, $userPreferredTier } from './companion-store'
+import { $availableClipNames, $clipMap } from './3d/model-store'
+import { $clipOverride, $effectiveTierOverride, $spriteState, $userPreferredTier } from './companion-store'
 import { handleDragEndInteraction, handlePokeInteraction } from './interaction'
 
 const hoisted = vi.hoisted(() => {
@@ -119,5 +120,27 @@ describe('poke / drag dispatch into reaction audio', () => {
     expect(hoisted.playReactionAudio).toHaveBeenCalledTimes(1)
     $effectiveTierOverride.set(null)
     $userPreferredTier.set('normal')
+  })
+})
+
+describe('poke 兑现到 GLB 内嵌 clip', () => {
+  it('把语义键 poke 兑现进 $clipOverride，而非一律落到通用 interacting 动作', () => {
+    $clipMap.set({ idle: 'preset:biped:idle', poke: 'preset:biped:jump' })
+    $availableClipNames.set(new Set(['preset:biped:idle', 'preset:biped:jump']))
+    $clipOverride.set(null)
+
+    handlePokeInteraction()
+
+    expect($clipOverride.get()).toBe('preset:biped:jump')
+  })
+
+  it('映射为空（avian / 存量老模型）时不设置覆盖，角色停在绑定姿势', () => {
+    $clipMap.set({})
+    $availableClipNames.set(new Set())
+    $clipOverride.set(null)
+
+    handlePokeInteraction()
+
+    expect($clipOverride.get()).toBeNull()
   })
 })

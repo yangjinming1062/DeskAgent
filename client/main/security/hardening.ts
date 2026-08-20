@@ -27,7 +27,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs 
 }
 
 export const AVATAR_SLOW_PATH_PATTERN =
-  /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody\/(?:samples|front|confirm-front))?|sprite|animations\/generate)|media\/(?:image_gen|video_gen))$/i
+  /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody\/(?:samples|front|confirm-front))?|sprite)|media\/(?:image_gen|video_gen))$/i
 
 // 仅 POST 路径——读路径只是数据库查询，不涉及供应商调用。
 export function resolvePathTimeoutMs(

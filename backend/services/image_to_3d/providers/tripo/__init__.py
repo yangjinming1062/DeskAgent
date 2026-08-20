@@ -17,8 +17,7 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
     SUPPORTS_RIGGING = True
     SUPPORTS_MULTIVIEW = True
     SUPPORTS_NEGATIVE_PROMPT = True
-    # 当前 Tripo animate API 尚未对所有 rig 类型放量；保留为 False 直到 SDK 升级再开。届时 `start_animate_bind` 同步启用。
-    SUPPORTS_ANIMATE_BIND = False
+    SUPPORTS_ANIMATE_BIND = True
 
     def __init__(self, api_key: str = "", base_url: str = "") -> None:
         self.api_key = api_key
@@ -73,6 +72,15 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
             return Model3DJob(job_id=await client.rig(job_id, rig_type))
         except TripoApiError as exc:
             raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
+
+    async def start_animate_bind(self, job_id: str, rig_type: str) -> Model3DJob:
+        try:
+            return Model3DJob(job_id=await client.retarget(job_id, rig_type))
+        except (TripoApiError, ValueError) as exc:
+            raise ImageTo3DError(str(exc), provider=self.provider_name) from exc
+
+    def animation_clips(self, rig_type: str) -> dict[str, str]:
+        return client.retarget_clips(rig_type)
 
 
 register("tripo", TripoImageTo3DProvider)

@@ -18,7 +18,6 @@ import {
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
-import { log } from '@/shared/lib/log'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
@@ -282,16 +281,10 @@ export function CompanionRoot(): React.JSX.Element {
   }
 
   // onboarding 完成触发 3D 模型生成（base_texture 供应商是即时的——
-  // model.ready 同一 tick 就到，引擎重载）。POST /model 在 body 模型已存在时
-  // 服务端是幂等的，所以这里重复触发也安全——客户端不用加守卫。
-  // 失败静默：用户可以从设置里重试。
+  // 3D 生成触发在 confirm-front 成功回调里完成——onboarding 流程只负责"展示与完成"，不再触发 3D 任务。
   const onOnboardingComplete = () => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
-
-    void window.spiritagent
-      .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
-      .catch(err => log.warn('companion', 'initial model generation failed:', err))
   }
 
   return (

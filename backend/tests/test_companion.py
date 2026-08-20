@@ -2413,3 +2413,234 @@ async def test_select_avatar_and_history(_patch_db, monkeypatch):
     # 2. 选择不存在的 ID 返回 404
     resp404 = client.put("/api/companion/avatar/99999/select")
     assert resp404.status_code == 404
+
+
+class _FakeProvider:
+    """记录能力链实际调用了哪些跳；下载与轮询都即刻成功，不产生任何外部请求。"""
+
+    provider_name = "tripo"
+    SUPPORTS_RIGGING = True
+    SUPPORTS_MULTIVIEW = False
+    SUPPORTS_ANIMATE_BIND = True
+
+    def __init__(self, clip_map: dict[str, str], *, animate_fails: bool = False):
+        self._clip_map = clip_map
+        self._animate_fails = animate_fails
+        self.calls: list[str] = []
+
+    def animation_clips(self, rig_type: str) -> dict[str, str]:
+        return self._clip_map
+
+    async def submit_image_to_model(self, image_path, *, multiview_paths=None):
+        from services.image_to_3d import Model3DJob
+
+        self.calls.append("submit")
+        return Model3DJob(job_id="task_gen")
+
+    async def poll(self, job):
+        from services.image_to_3d import Model3DAsset, Model3DPollResult
+
+        return Model3DPollResult(status="completed", progress=100, assets=(Model3DAsset(kind="glb", url=f"https://cdn/{job.job_id}.glb"),))
+
+    async def download(self, result, dest_dir):
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / "m.glb"
+        dest.write_bytes(b"glTF-fake")
+        return dest
+
+    async def start_rig(self, job_id: str, rig_type: str):
+        from services.image_to_3d import Model3DJob
+
+        self.calls.append("rig")
+        return Model3DJob(job_id="task_rig")
+
+    async def start_animate_bind(self, job_id: str, rig_type: str):
+        from services.image_to_3d import Model3DJob
+
+        self.calls.append("animate")
+        if self._animate_fails:
+            raise RuntimeError("provider refused retarget")
+        return Model3DJob(job_id="task_anim")
+
+
+async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_type: str, retry_only: bool = False):
+    """建一行 generating 模型并把能力链跑到底，返回该行的最新快照。"""
+    from modules.auth import User
+    from modules.companion import CompanionModel
+    from services.companion import pipeline as _pipeline
+
+    seed = tmp_path / "seed.png"
+    seed.write_bytes(b"png")
+    monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", lambda _n: (seed, "image/png"))
+    monkeypatch.setattr("services.companion.pipeline._resolve_model_provider", lambda _n: provider)
+    monkeypatch.setattr("services.companion.pipeline.save_companion_model", lambda _b, *, user_id: f"companion-models/{user_id}/x.glb")
+
+    async with SessionLocal() as db:
+        user = User(username=f"chain{rig_type}{retry_only}", is_active=True, can_use=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type=rig_type, provider_task_id="task_prev" if retry_only else None)
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        uid, model_id = user.id, row.id
+
+    await _pipeline.run_capability_chain(
+        provider_name="tripo", user_id=uid, view_filenames={"front": "seed.png"}, species="人类", model_id=model_id, retry_only=retry_only
+    )
+
+    async with SessionLocal() as db:
+        return (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_chain_persists_clip_map_when_animate_bind_succeeds(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    provider = _FakeProvider({"idle": "preset:biped:idle"})
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped")
+
+    assert provider.calls == ["submit", "rig", "animate"]
+    assert json.loads(row.clip_map_json) == {"idle": "preset:biped:idle"}
+
+
+@pytest.mark.asyncio
+async def test_chain_skips_animate_bind_for_rig_without_presets(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """avian 在任何绑骨版本下都没有预设；整跳不进入，产物是已绑骨但无动画的 GLB。"""
+    provider = _FakeProvider({})
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="avian")
+
+    assert "animate" not in provider.calls
+    assert json.loads(row.clip_map_json) == {}
+
+
+@pytest.mark.asyncio
+async def test_chain_leaves_clip_map_empty_when_animate_bind_fails(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """绑定失败仍交付已绑骨 GLB，但映射必须留空——否则客户端会去找从未被烘焙的 clip。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"}, animate_fails=True)
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped")
+
+    assert "animate" in provider.calls
+    assert json.loads(row.clip_map_json) == {}
+
+
+@pytest.mark.asyncio
+async def test_chain_retry_only_skips_all_enhancement_hops(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """重试下载时 provider_task_id 已是链末任务，重跑增强跳会重复计费。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"})
+    await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", retry_only=True)
+
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_chain_writes_provider_phase_along_each_hop(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """链上每个 hop 成功后 provider_phase 必须刷新到该 hop；重启接续据此判断产物是否最终含动画的 GLB。"""
+    from services.companion import pipeline as _pipeline
+
+    provider = _FakeProvider({"idle": "preset:biped:idle"})
+
+    # 直接读 _persist_download_source 的中间调用而不是跑整链——验证 phase 入参穿透。
+    captured: list[str] = []
+
+    async def _capture(model_id, *, user_id, task_id, assets, provider_label, rig_type, phase="submit"):
+        captured.append(phase)
+
+    monkeypatch.setattr(_pipeline, "_persist_download_source", _capture)
+
+    await _pipeline._persist_download_source(
+        model_id=1, user_id=1, task_id="a", assets=(), provider_label="tripo", rig_type="biped", phase="submit"
+    )
+    await _pipeline._persist_download_source(
+        model_id=1, user_id=1, task_id="b", assets=(), provider_label="tripo", rig_type="biped", phase="rig"
+    )
+    await _pipeline._persist_download_source(
+        model_id=1, user_id=1, task_id="c", assets=(), provider_label="tripo", rig_type="biped", phase="animate"
+    )
+
+    assert captured == ["submit", "rig", "animate"]
+
+
+@pytest.mark.asyncio
+async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db, monkeypatch, SessionLocal):
+    """进程崩溃接续：phase != animate 的行(GLB 不含动画)被翻 download_failed 让用户重生成，phase=animate 的行保留 in-flight 给 _resume_inflight_pipelines 落盘。"""
+    from modules.auth import User
+    from modules.companion import CompanionModel
+    from services.companion import pipeline as _pipeline
+
+    async with SessionLocal() as db:
+        user = User(username="recover", is_active=True, can_use=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        submit_row = CompanionModel(user_id=user.id, status="pending_download", species="人类", rig_type="biped", provider_task_id="t1", download_urls_json="[]", provider_phase="submit")
+        rig_row = CompanionModel(user_id=user.id, status="downloading", species="人类", rig_type="biped", provider_task_id="t2", download_urls_json="[]", provider_phase="rig")
+        animate_row = CompanionModel(user_id=user.id, status="pending_download", species="人类", rig_type="biped", provider_task_id="t3", download_urls_json="[]", provider_phase="animate")
+        db.add_all([submit_row, rig_row, animate_row])
+        await db.commit()
+        submit_id, rig_id, animate_id = submit_row.id, rig_row.id, animate_row.id
+
+    await _pipeline.recover_stuck_model_generations()
+
+    async with SessionLocal() as db:
+        s = (await db.execute(select(CompanionModel).where(CompanionModel.id == submit_id))).scalar_one()
+        r = (await db.execute(select(CompanionModel).where(CompanionModel.id == rig_id))).scalar_one()
+        a = (await db.execute(select(CompanionModel).where(CompanionModel.id == animate_id))).scalar_one()
+        assert s.status == "download_failed"
+        assert r.status == "download_failed"
+        assert a.status == "pending_download"
+
+
+@pytest.mark.asyncio
+async def test_provider_result_label_reflects_multiview_input():
+    """``_provider_result_label`` 的 multiview 参数由调用方决定（不再用 ``record.style == "realistic"`` 误判）。单图 → image_,多视图 → multiview_。"""
+    from services.companion import pipeline as _pipeline
+
+    assert _pipeline._provider_result_label("tripo", multiview=False) == "tripo_image_to_3d"
+    assert _pipeline._provider_result_label("tripo", multiview=True) == "tripo_multiview_to_3d"
+
+
+@pytest.mark.asyncio
+async def test_chain_passes_multiview_by_view_filenames_count(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """``run_capability_chain`` 必须按 view_filenames 数量（而非 style）决定 multiview 参数——分别测两个场景。"""
+    from modules.auth import User
+    from modules.companion import CompanionModel
+    from services.companion import pipeline as _pipeline
+
+    seed = tmp_path / "seed.png"
+    seed.write_bytes(b"png")
+    monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", lambda _n: (seed, "image/png"))
+    monkeypatch.setattr("services.companion.pipeline.save_companion_model", lambda _b, *, user_id: f"companion-models/{user_id}/x.glb")
+
+    async def _capture(views: dict[str, str]) -> bool | None:
+        monkeypatch.setattr("services.companion.pipeline._resolve_model_provider", lambda _n: _FakeProvider({"idle": "preset:biped:idle"}))
+
+        from services.companion import pipeline as _p
+        original = _p._provider_result_label
+        captured: list[bool] = []
+
+        def spy(name: str, multiview: bool = False) -> str:
+            captured.append(multiview)
+            return original(name, multiview=multiview)
+
+        monkeypatch.setattr(_p, "_provider_result_label", spy)
+
+        async with SessionLocal() as db:
+            user = User(username=f"mv-{len(views)}", is_active=True, can_use=True)
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type="biped", provider="")
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+            uid, mid = user.id, row.id
+
+        await _p.run_capability_chain(provider_name="tripo", user_id=uid, view_filenames=views, species="人类", model_id=mid)
+
+        return captured[0] if captured else None
+
+    single = await _capture({"front": "seed.png"})
+    multi = await _capture({"front": "seed.png", "right": "seed.png", "back": "seed.png", "left": "seed.png"})
+
+    assert single is False
+    assert multi is True

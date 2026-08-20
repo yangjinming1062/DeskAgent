@@ -1,13 +1,10 @@
 import base64
-import json
 
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
 from fastapi import Body, Depends, HTTPException, Request, Response, status
 from modules.auth import LoginRecord, User, get_current_session, get_optional_current_session
 from modules.companion import (
-    AnimationClipResponse,
-    AnimationGenerateRequest,
     AvatarAssetResponse,
     AvatarFromImageRequest,
     AvatarGenerateRequest,
@@ -52,7 +49,6 @@ from services.companion import (
     confirm_fullbody_front,
     confirm_portrait,
     finalize_avatar,
-    generate_animation_clips,
     generate_avatar,
     generate_companion_model,
     generate_fullbody_front,
@@ -61,7 +57,6 @@ from services.companion import (
     get_active_model,
     get_onboarding_state,
     get_or_create_persona,
-    get_rig_bones,
     list_avatar_history,
     list_tts_voices,
     model_response,
@@ -83,7 +78,7 @@ from services.companion import (
     verify_signed_asset_request,
     verify_signed_avatar_request,
 )
-from services.llm import MissingLlmConfigError, chat
+from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -144,16 +139,6 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
     return {"ok": True}
 
 
-@router.get("/animations", response_model=AnimationClipResponse)
-async def get_animations(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AnimationClipResponse:
-    user, _ = auth
-    model = await get_active_model(db, user.id)
-    if model is None:
-        return AnimationClipResponse(clips=[])
-    clips = safe_json_loads(model.animation_clips_json or "[]", default=[])
-    return AnimationClipResponse(clips=clips if isinstance(clips, list) else [])
-
-
 @router.get("/expressions")
 async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict[str, list[dict]]:
     user, _ = auth
@@ -172,44 +157,6 @@ async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_s
             }
         )
     return {"expressions": exprs}
-
-
-@router.post("/animations/generate", response_model=AnimationClipResponse)
-async def post_animations_generate(
-    body: AnimationGenerateRequest = Body(default_factory=AnimationGenerateRequest),
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
-) -> AnimationClipResponse:
-    user, _ = auth
-    model = await get_active_model(db, user.id)
-    if model is None:
-        raise HTTPException(status_code=404, detail="No active companion model found")
-    persona = await get_or_create_persona(db, user.id)
-    tags = body.tags or safe_json_loads(persona.personality_tags_json or "[]", default=[])
-    if not tags:
-        tags = ["活泼", "温柔"]
-    existing = safe_json_loads(model.animation_clips_json or "[]", default=[])
-    bone_list = get_rig_bones(model.rig_type)
-    new_clips = await generate_animation_clips(
-        chat, rig_type=model.rig_type, bone_list=bone_list, personality_tags=tags, species=model.species, categories=body.categories, user_id=user.id, db=db
-    )
-    combined = (existing if isinstance(existing, list) else []) + new_clips
-    model.animation_clips_json = json.dumps(combined, ensure_ascii=False)
-    await db.commit()
-    return AnimationClipResponse(clips=combined)
-
-
-@router.delete("/animations/{name}", response_model=AnimationClipResponse)
-async def delete_animation(name: str, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> AnimationClipResponse:
-    user, _ = auth
-    model = await get_active_model(db, user.id)
-    if model is None:
-        raise HTTPException(status_code=404, detail="No active companion model found")
-    existing = safe_json_loads(model.animation_clips_json or "[]", default=[])
-    filtered = [c for c in existing if isinstance(c, dict) and c.get("name") != name] if isinstance(existing, list) else []
-    model.animation_clips_json = json.dumps(filtered, ensure_ascii=False)
-    await db.commit()
-    return AnimationClipResponse(clips=filtered)
 
 
 # Hub 无 gateway；此 REST 接口镜像 gateway 的 tts.list_voices 方法。

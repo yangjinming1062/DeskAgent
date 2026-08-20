@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..companion import (
     build_system_prompt_extras,
     build_user_profile_extras,
-    builtin_action_clips,
     format_auto_inject_block,
     format_inferred_profile_block,
     format_proactive_memory_block,
@@ -34,6 +33,8 @@ logger = get_logger(__name__)
 ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
 # OpenAI service_tier 仅接受该枚举；旧模型忽略此参数。
 ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
+# 映射表键里由应用状态机与用户交互驱动的那些；LLM 只能主动请求剩下的动作 token。
+NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "drag"})
 
 
 @dataclass(frozen=True)
@@ -207,11 +208,9 @@ async def _build_turn_inputs(
     available_actions: list[str] = []
     active_model = await get_active_model(db, user_id)
     if active_model is not None:
-        clips = safe_json_loads(active_model.animation_clips_json or "[]", default=[])
-        if isinstance(clips, list):
-            available_actions = [str(c.get("name")) for c in clips if isinstance(c, dict) and c.get("name")]
-        # 合并客户端内置过程化 clip（运行时库），让 LLM 能引用完整 [action:...] token 集合，而非仅限于模型专属生成的 clip；去重排序保证 prompt 稳定。
-        available_actions = sorted(set(available_actions) | set(builtin_action_clips(active_model.rig_type)))
+        clip_map = safe_json_loads(active_model.clip_map_json or "{}", default={})
+        # 键即客户端能兑现的语义名；剔除状态与交互反馈，只留 LLM 可主动请求的动作 token。
+        available_actions = sorted(set(clip_map) - NON_ACTION_CLIP_KEYS) if isinstance(clip_map, dict) else []
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,

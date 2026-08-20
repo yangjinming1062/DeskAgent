@@ -1,4 +1,4 @@
-import type { RigType } from './3d/clips-registry'
+import type { RigType } from './3d/rig'
 
 /** 按骨骼类型分类的初始种子词汇表（客户端与后端共享常量）。
  *  包含通用维度与 7 大骨骼类型特有维度，共 150+ 种子标签。

@@ -24,7 +24,7 @@
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
 - **3D 实时渲染 + 三级降级**：GLB 加载成功时骨骼动画 + 面部变形目标覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时静态精灵相册接管——按状态/情绪向后端相册请求身份一致的透明背景立绘，淡入淡出切换，GLB 解析完成后交还；相册不可用才渲染程序化兜底蛋（呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"且永远是用户选定的角色。
-- **多骨骼动画库 + 性格标签驱动**：7 大骨骼体系（人形最全，100+ 动作），按模型骨骼类型注入对应动画库，按伙伴性格标签交集匹配驱动动作调度。详见 [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md)。
+- **动画全部由供应商烘焙进 GLB**：客户端不持有任何 clip 库或供应商命名——后端随模型下发该次生成的「语义键 → 预设 token」映射，客户端按三级降级兑现为 GLB 内真实存在的 clip；映射缺键或兑现落空时角色停在绑定姿势（永不空白）。详见 [docs/PIPELINE.md §10–12](../docs/PIPELINE.md)。
 - **打扰档位唯一权威**：客户端持有用户偏好（本地持久化）+ 活动上下文（活动感知器），独立计算生效值（应用「手动安静永远不被覆盖」+ 沉浸式/全屏 → 安静规则），单向推后端；后端持有的只是镜像，不是独立推导。契约见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)。
 - **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
 - **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
@@ -45,7 +45,7 @@ client/
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层
 │   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
-│   │   └── 3d/            # Three.js 引擎 + 动画 clip 库
+│   │   └── 3d/            # Three.js 引擎 + 供应商烘焙 clip 的兑现逻辑
 │   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
@@ -85,7 +85,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **渲染循环自研调度与能耗档位**：引擎自主调度动画循环（不依赖 Three.js 内部循环），支持活跃全速 / 空闲降频 / 休眠低频轮询与彻底停止，解决休眠档位能耗控制。
 - **3D 模型传输与本地缓存**：3D 模型 GLB 采用 Draco 压缩，渲染端流式解压（解码器本地托管）；主进程按内容哈希磁盘缓存，支持断点续传与 LRU 淘汰。传输契约见 [PROTOCOL.md §1.5](../PROTOCOL.md)。
 - **模型下载失败与生成失败分流**：失败事件载荷带"可重试下载"标记时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（绝不重新计费），不给"重新生成"入口；启动水合收到下载失败行同样进该态，避免每次启动静默重刷一次计费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
-- **独立 3D 动画与模型调试套件（`pnpm clip`）**：为解决 3D 动作、面部变形目标与后端 GLB 模型质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；7 大骨骼体系全动作库即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
+- **独立 3D 模型调试套件（`pnpm clip`）**：为解决 3D 产物、面部变形目标与 GLB 质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；按 GLB 内嵌 clip 即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：用户快速连发多条时，聊天层用数秒防抖窗口把消息合并成一次批量提交，只触发一次 LLM 调用（[DESIGN.md §6.6](../DESIGN.md)）。这是**刻意**的合并，不是发送延迟：窗口内逐条重置计时器，且回合完成 / 错误 / 用户停止时会立即冲刷。
 
@@ -110,7 +110,8 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | IPC 命名空间 `spiritagent:*` 前缀（`spiritagent:sprite:*` / `spiritagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
 | 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费后端 `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
 | 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费后端 `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
-| 伙伴性格标签驱动的动画调度 | 本模块独有 | 本 README §2 + [docs/MODEL_SPEC.md §2](../docs/MODEL_SPEC.md) |
+| 伙伴性格标签驱动的动画调度 | 本模块独有 | 本 README §2 + [docs/PIPELINE.md §10](../docs/PIPELINE.md) |
+| 「语义键 → 预设 token」映射的客户端兑现（三级降级，兑现落空回绑定姿势） | 对后端（随模型下发） | [PROTOCOL.md §1.3](../PROTOCOL.md) + [docs/PIPELINE.md §11](../docs/PIPELINE.md) |
 | 激活码格式（base64 编码 `{b, t}` JSON） | 对后端 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
 | Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |
 

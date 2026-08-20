@@ -98,12 +98,14 @@ class CompanionModelResponse(BaseModel):
     provider: str
     species: str = "人类"
     rig_type: str = "biped"
-    rig_naming: str = "mixamo"
+    rig_naming: str = "tripo"
     # 模型生成所用的 seed 风格，路由客户端渲染风格。
     style: str = "realistic"
     status: str = "succeeded"
     has_rig: bool
     content_hash: str | None = None
+    # 语义键 → GLB 内 clip 名；客户端据此兑现动作，自身不持有任何供应商命名。
+    clip_map: dict[str, str] = Field(default_factory=dict)
 
 
 class ModelGenerateRequest(BaseModel):
@@ -137,14 +139,3 @@ class ExpressionAvatarRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=64)
     force_new: bool = False
-
-
-class AnimationGenerateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    categories: list[str] | None = Field(default=None)
-    tags: list[str] | None = Field(default=None)
-
-
-class AnimationClipResponse(BaseModel):
-    clips: list[dict] = Field(default_factory=list)

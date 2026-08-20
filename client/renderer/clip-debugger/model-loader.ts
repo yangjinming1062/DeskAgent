@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 
-import type { RigType } from '@/companion/3d/clips-registry'
 import { createGLTFLoader } from '@/companion/3d/gltf-loader-factory'
+import type { RigType } from '@/companion/3d/rig'
 
 import type { ClipItem, ModelStats, MorphTargetInfo } from './types'
 
@@ -98,9 +98,8 @@ export function inspectScene(
     name: anim.name || `Embedded_${idx + 1}`,
     duration: anim.duration,
     loop: true,
-    category: 'embedded',
+    category: anim.name?.startsWith('preset:') ? 'preset' : 'embedded',
     trackCount: anim.tracks.length,
-    isEmbedded: true,
     animationClip: anim
   }))
 

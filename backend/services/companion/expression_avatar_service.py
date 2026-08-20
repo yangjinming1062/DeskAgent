@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .expression_semantics import EXPRESSION_SEMANTICS
-from .model_service import emit_companion_assets_updated
 from .persona_service import get_or_create_persona
+from .pipeline import emit_companion_assets_updated
 from .sprite_service import generate_sprite_png, select_bg_from_data_uri
 
 logger = get_logger(__name__)

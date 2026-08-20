@@ -1,6 +1,5 @@
 from . import asset_store, memory_admin, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
-from .animation_generator import RIG_DEFAULT_BONES, generate_animation_clips, generate_named_animation_clip, get_rig_bones
 from .asset_store import (
     build_data_uri,
     build_signed_asset_url,
@@ -41,7 +40,6 @@ from .avatar_service import (
     select_avatar,
     select_fullbody_style,
 )
-from .builtin_clips import BUILTIN_CLIPS_BY_RIG, BUILTIN_STATE_CLIPS, builtin_action_clips
 from .expression_avatar_service import (
     ExpressionCooldownError,
     ExpressionSeedMissingError,
@@ -96,11 +94,8 @@ __all__ = [
     "ALLOWED_ACTIONS",
     "ALLOWED_AVATAR_UPLOAD_MIME_TYPES",
     "AVATAR_JOB_LOCKS",
-    "BUILTIN_CLIPS_BY_RIG",
-    "BUILTIN_STATE_CLIPS",
     "MODEL_JOB_LOCKS",
     "ONBOARDING_FIELDS",
-    "RIG_DEFAULT_BONES",
     "STYLE_CATALOG",
     "AffectCheckResult",
     "AvatarGenerationError",
@@ -133,7 +128,6 @@ __all__ = [
     "build_signed_model_url",
     "build_system_prompt_extras",
     "build_user_profile_extras",
-    "builtin_action_clips",
     "check_affect",
     "classify_species",
     "compress_glb",
@@ -151,19 +145,16 @@ __all__ = [
     "format_inferred_profile_block",
     "format_memories_block",
     "format_proactive_memory_block",
-    "generate_animation_clips",
     "generate_avatar",
     "generate_companion_model",
     "generate_fullbody_front",
     "generate_fullbody_style_samples",
-    "generate_named_animation_clip",
     "get_active_avatar",
     "get_active_model",
     "get_avatar_job_lock",
     "get_companion_model_sha256",
     "get_onboarding_state",
     "get_or_create_persona",
-    "get_rig_bones",
     "get_waiting_sprite",
     "has_real_transparency",
     "interact",

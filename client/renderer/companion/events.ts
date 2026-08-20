@@ -1,10 +1,10 @@
 import {
+  $clipMap,
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
   clearModelRetry,
   hydrateExpressions,
-  hydrateGeneratedClips,
   setModelFailed,
   setModelInfo
 } from '@/companion/3d/model-store'
@@ -294,7 +294,16 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 只要 $modelInfo.asset_url 变化，3D 引擎就会重新加载（见 companion-3d.tsx）。
       // error 字段用于展示生成失败；目前 UI 只是记录日志，恢复流程在后续切片。
       const p = event.payload as
-        | { model_id?: number; asset_url?: string; species?: string; rig_type?: string; error?: string }
+        | {
+            model_id?: number
+            asset_url?: string
+            species?: string
+            rig_type?: string
+            style?: string
+            content_hash?: string
+            error?: string
+            clip_map?: Readonly<Record<string, string>>
+          }
         | undefined
 
       if (p?.error) {
@@ -313,15 +322,25 @@ export function handleCompanionEvent(event: RpcEvent): void {
         asset_url: p?.asset_url ?? null,
         species: p?.species ?? null,
         rig_type: p?.rig_type ?? 'biped',
-        status: 'succeeded'
+        style: p?.style ?? 'realistic',
+        content_hash: p?.content_hash ?? null,
+        status: 'succeeded',
+        has_rig: true
       })
+      // 运行时新生成的模型必须在此接住映射，否则角色会一直静止到下次水合。
+      $clipMap.set(p?.clip_map ?? {})
 
       break
     }
 
     case 'model.gen.progress': {
       const p = event.payload as { stage?: string; progress?: number } | undefined
-      // 'done' 是终态——晚到的 progress 事件不应在已加载的模型上重新唤醒覆盖层。
+
+      // 终态已定后,迟到的 progress 不能再把它打回 'generating' —— 否则覆盖层会重现。
+      if ($modelGenState.get() === 'succeeded') {
+        break
+      }
+
       $modelGenState.set(p?.stage === 'done' ? 'succeeded' : 'generating')
       $modelGenProgress.set({ stage: p?.stage ?? '', progress: p?.progress ?? 0 })
 
@@ -339,9 +358,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.assets.updated': {
-      // 伙伴即时创建了新的表情 / 动画片段（create_expression / create_animation 工具）。
-      // 重新拉取这两项，让 3D 头像无需重启即可绑定。
-      void hydrateGeneratedClips()
+      // 伙伴即时创建了新表情（create_expression 工具）；重新拉取让聊天窗无需重启即可用上。
       void hydrateExpressions()
 
       break

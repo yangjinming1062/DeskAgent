@@ -1,6 +1,6 @@
 import { atom, map } from 'nanostores'
 
-import { getClipDefs, type RigType } from '@/companion/3d/clips-registry'
+import type { RigType } from '@/companion/3d/rig'
 
 import type {
   ClipItem,
@@ -74,37 +74,8 @@ export const RIG_LABELS: Record<RigType, { label: string; en: string; icon: stri
 
 export const CATEGORY_LABELS: Record<string, string> = {
   all: '全部动作',
-  state: '核心状态',
-  micro: '微小待机',
-  locomotion: '位移走跑',
-  interaction: '互动点击',
-  'emotion-positive': '正向情绪',
-  'emotion-negative': '负向情绪',
-  ritual: '习惯仪式',
-  social: '社交肢体',
-  intimate: '亲密互动',
-  daily: '日常动作',
-  surprise: '惊讶反应',
-  comfort: '安抚反应',
-  music: '音乐舞蹈',
+  preset: '预制动作',
   embedded: '模型内置'
-}
-
-/** 获取指定 Rig 下所有库定义转换为 ClipItem 列表 */
-export function getRigClipItems(rig: RigType): ClipItem[] {
-  const defs = getClipDefs(rig)
-
-  return Object.values(defs).map(def => ({
-    id: `${rig}:${def.name}`,
-    name: def.name,
-    duration: def.duration,
-    loop: def.loop,
-    category: def.category,
-    tags: def.tags,
-    trackCount: Object.keys(def.tracks).length,
-    isEmbedded: false,
-    clipDef: def
-  }))
 }
 
 export function selectClip(clip: ClipItem): void {

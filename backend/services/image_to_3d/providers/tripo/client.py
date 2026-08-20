@@ -11,12 +11,45 @@ logger = get_logger(__name__)
 DEFAULT_BASE_URL: str = "https://openapi.tripo3d.ai/v3"
 
 MODEL_VERSION_DEFAULT: str = "v3.1-20260211"
-MODEL_VERSION_MIXAMO: str = "v1.0-20240301"
-MODEL_VERSION_TRIPO: str = "v2.5-20260210"
+# 绑骨算法版本按骨架分流：v1.0 仅适用于双足类人型并解锁 90+ 个 preset:biped:* 预设，v2.5 适用于非类人动物骨架。
+MODEL_VERSION_RIG_BIPED: str = "v1.0-20240301"
+MODEL_VERSION_RIG_ANIMAL: str = "v2.5-20260210"
 
-_RIG_MODEL_VERSIONS: dict[str, str] = {"mixamo": MODEL_VERSION_MIXAMO, "tripo": MODEL_VERSION_TRIPO}
+# 骨骼命名规范，与算法版本正交。必须是 tripo：retarget 不接受 mixamo 命名的骨骼（供应商 error_code 1004）。
+RIG_SPEC: str = "tripo"
 
-_RIG_SPECS: dict[str, str] = {"biped": "mixamo", "quadruped": "tripo", "avian": "tripo", "serpentine": "tripo", "aquatic": "tripo", "hexapod": "tripo", "octopod": "tripo"}
+# 语义键 → 该 rig 下的预设 token。每个预设单独计费，故只绑产品必需的几个。
+# 键是扁平单一命名空间，同时容纳应用状态、交互反馈与 LLM 动作 token；avian 无任何预设，有意缺席。
+_RETARGET_CLIPS: dict[str, dict[str, str]] = {
+    "biped": {
+        "idle": "preset:biped:idle",
+        "emotional": "preset:biped:laugh_01",
+        "interacting": "preset:biped:jump",
+        "poke": "preset:biped:jump",
+        "drag": "preset:biped:jump",
+        "walk": "preset:biped:walk",
+        "jump": "preset:biped:jump",
+        "greet": "preset:biped:greet_01",
+        "laugh": "preset:biped:laugh_01",
+        "cry": "preset:biped:sob",
+    }
+}
+
+# 非 biped 每类只有一个预设，全部语义键收敛到它。
+_SEMANTIC_KEYS: tuple[str, ...] = ("idle", "emotional", "interacting", "poke", "drag")
+
+_RETARGET_CLIPS.update(
+    {
+        rig_type: dict.fromkeys(_SEMANTIC_KEYS, preset)
+        for rig_type, preset in (
+            ("quadruped", "preset:quadruped:walk"),
+            ("hexapod", "preset:hexapod:walk"),
+            ("octopod", "preset:octopod:walk"),
+            ("serpentine", "preset:serpentine:march"),
+            ("aquatic", "preset:aquatic:march"),
+        )
+    }
+)
 
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
 
@@ -214,23 +247,35 @@ async def poll_rig_check(task_id: str, *, interval: float = 2.0, timeout: float 
         await asyncio.sleep(interval)
 
 
-def rig_spec(rig_type: str) -> str:
-    return _RIG_SPECS.get(rig_type, "tripo")
+def retarget_clips(rig_type: str) -> dict[str, str]:
+    """该 rig 的语义键 → 预设 token 映射；空字典代表该骨架无可用预设（avian）。"""
+    return _RETARGET_CLIPS.get(rig_type, {})
 
 
 def rig_model_version(rig_type: str) -> str:
-    return _RIG_MODEL_VERSIONS.get(rig_spec(rig_type), MODEL_VERSION_TRIPO)
+    return MODEL_VERSION_RIG_BIPED if rig_type == "biped" else MODEL_VERSION_RIG_ANIMAL
 
 
-async def rig(task_id: str, rig_type: str, *, spec: str | None = None, model_version: str | None = None) -> str:
+async def rig(task_id: str, rig_type: str) -> str:
     """对 ``task_id`` 产出的模型绑骨，返回新的 rigged task_id。"""
-    chosen_spec = spec or rig_spec(rig_type)
-    chosen_version = model_version or rig_model_version(rig_type)
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
-            f"{_base_url()}/animations/rig", headers=_auth_headers(), json={"input": task_id, "rig_type": rig_type, "spec": chosen_spec, "model": chosen_version}
+            f"{_base_url()}/animations/rig", headers=_auth_headers(), json={"input": task_id, "rig_type": rig_type, "spec": RIG_SPEC, "model": rig_model_version(rig_type)}
         )
     return _envelope(resp.json())["task_id"]
+
+
+async def retarget(task_id: str, rig_type: str) -> str:
+    """把该 rig 的全部预设动画烘焙进已绑骨模型，返回新的 task_id；批量提交产出单个含多 clip 的 GLB。"""
+    presets = list(dict.fromkeys(retarget_clips(rig_type).values()))
+    if not presets:
+        raise ValueError(f"no retarget presets for rig_type={rig_type}")
+    payload = {"input": task_id, "animations": presets, "out_format": "glb", "bake_animation": True, "export_with_geometry": True}
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(f"{_base_url()}/animations/retarget", headers=_auth_headers(), json=payload)
+    new_task_id = _envelope(resp.json())["task_id"]
+    log_paid_call("tripo", "animate_bind_submit", task_id=new_task_id, urls=presets)
+    return new_task_id
 
 
 async def download_model(model_url: str) -> bytes:

@@ -29,12 +29,15 @@ class CompanionModel(ModelBase, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(64), default="base_texture")
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
     rig_type: Mapped[str] = mapped_column(String(32), default="biped", server_default=text("'biped'"), index=True)
-    rig_naming: Mapped[str] = mapped_column(String(16), default="mixamo", server_default=text("'mixamo'"))
+    rig_naming: Mapped[str] = mapped_column(String(16), default="tripo", server_default=text("'tripo'"))
     # 模型生成所用的 seed 图风格（anime | realistic）—— 路由客户端渲染风格；旧行默认 realistic 以保留 PBR 外观。
     style: Mapped[str] = mapped_column(String(16), default="realistic", server_default=text("'realistic'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
-    animation_clips_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
+    # 供应商声明的「语义键 → 烘焙进 GLB 的 clip 名」；空字典即该产物不含动画。
+    clip_map_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
+    # 当前 provider_task_id 在链上的阶段：submit / rig / animate —— 用于进程崩溃接续时判断"该 task_id 指向的产物是不是最终含动画的 GLB"，避免把未完成链中的中间产物当终产物落盘。
+    provider_phase: Mapped[str] = mapped_column(String(16), default="submit", server_default=text("'submit'"))
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)

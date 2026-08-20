@@ -1,20 +1,19 @@
 import type * as THREE from 'three'
 
-import type { ClipDef } from '@/companion/3d/clips-biped'
-import type { RigType } from '@/companion/3d/clips-registry'
+import type { RigType } from '@/companion/3d/rig'
 
 export type { RigType }
+
+export type ClipCategory = 'preset' | 'embedded'
 
 export interface ClipItem {
   id: string
   name: string
   duration: number
   loop: boolean
-  category: string
+  category: ClipCategory
   tags?: readonly string[]
   trackCount: number
-  isEmbedded?: boolean
-  clipDef?: ClipDef
   animationClip?: THREE.AnimationClip
 }
 

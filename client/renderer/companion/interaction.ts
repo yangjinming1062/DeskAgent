@@ -1,9 +1,8 @@
 import { $gateway } from '@/shared/store/gateway'
 import type { ReactionBucket } from '@/shared/types/reactions'
 
-import { resolveInteractionClip } from './3d/clip-dispatch'
-import { getClipDefs } from './3d/clips-registry'
-import { $availableClipNames, $modelInfo } from './3d/model-store'
+import { resolveClip } from './3d/AnimationMap'
+import { $availableClipNames, $clipMap } from './3d/model-store'
 import { $lastIdleSeconds, reportInteractionStat } from './activity'
 import { $clipOverride, $spriteEmotion, setSpriteState } from './companion-store'
 import { $personalityTags } from './persona-store'
@@ -126,12 +125,10 @@ export function handlePokeInteraction(): void {
   }, 4000)
 
   const tags = $personalityTags.get()
-  const library = getClipDefs($modelInfo.get().rig_type)
-  const available = $availableClipNames.get()
   const bucket = bucketForPokeCount()
 
-  const clip = resolveInteractionClip(bucket, tags, library, available)
-  $clipOverride.set(clip)
+  // 音效资产按 kebab 分档，线上语义键统一 snake 且不分档。
+  $clipOverride.set(resolveClip('poke', $clipMap.get(), $availableClipNames.get()))
   setSpriteState('interacting', { durationMs: 2000 })
 
   void triggerReaction(bucket, tags)

@@ -29,7 +29,6 @@ test('resolvePathTimeoutMs routes avatar and generative AI POSTs to the slow buc
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar/1/fullbody/confirm-front', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/API/COMPANION/AVATAR', 'post'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/companion/sprite', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
-  assert.equal(resolvePathTimeoutMs('/api/companion/animations/generate', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('/api/media/image_gen', 'POST'), AVATAR_FETCH_TIMEOUT_MS)
 })
 

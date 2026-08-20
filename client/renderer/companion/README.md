@@ -39,7 +39,7 @@
 情绪的渲染分工（3D 面部不承载情绪表情——生成模型脸部在桌面尺寸下精细度不足）：
 
 - **表情头像**：情绪激活时 chat-dock 左栏头像换为对应表情图（`POST /api/companion/expression-avatar` 按情绪 token 后端 match-or-generate）。store 按情绪 token 缓存结果（token 与服务端缓存行 1:1，单缓存即可）、失败 60s backoff；**生成结果永不浪费**——只要情绪未变，无论多晚生成完就换入；即便错过本次（情绪已切换）也同时落库落缓存，下次同情绪即时命中；情绪结束 / 未就绪 / 失败显示一律回退 portrait。订阅挂在 ChatDock 组件内——聊天窗关闭即不请求，桌面-only 情绪不触发生成。avatar 重生（`avatar.regenerated`）清全部缓存（身份锚点变了）。
-- **肢体动画**：clip-dispatch 按 valence（自创情绪读注册表 valence）+ tags 选肢体 clip，无对应回退 idle。情绪胶囊显示 = 内置 `EMOTION_MAP` ∪ 注册表自创情绪（label/icon），未水合 token 兜底渲染。
+- **肢体动画**：按当前状态的语义键在「语义键 → 预设 token」映射中兑现为 GLB 内真实存在的 clip，缺键或兑现落空时回退到 `idle`；自创情绪不携带专属肢体动画，复用现有 clip。情绪胶囊显示 = 内置 `EMOTION_MAP` ∪ 注册表自创情绪（label/icon），未水合 token 兜底渲染。
 
 ## 3. 三档打扰（双层模型）
 

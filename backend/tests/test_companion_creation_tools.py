@@ -1,7 +1,5 @@
 import pytest
-
 from services.chat.bubble import BubbleSplitter
-from services.companion import builtin_action_clips
 from services.tools import REGISTRY
 
 
@@ -56,18 +54,7 @@ def test_bubble_splitter_trailing_incomplete_dash_stripped_on_flush():
     assert s.flush() == []
 
 
-def test_builtin_action_clips_exclude_state_clips():
-    biped = builtin_action_clips("biped")
-    assert "idle" not in biped
-    assert "thinking" not in biped
-    assert "clap" in biped
-    assert "jump" in biped
-    assert "stomp_angry" not in biped
-    assert len(biped) == len(builtin_action_clips("unknown_rig"))  # biped fallback
-
-
-def test_create_animation_and_expression_registered():
-    assert REGISTRY.get_schema(0, "create_animation") is not None
+def test_create_expression_registered():
     assert REGISTRY.get_schema(0, "create_expression") is not None
 
 
@@ -86,36 +73,73 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
     async def _fake_emit(uid):
         emitted.append(uid)
 
-    monkeypatch.setattr(expression_tool, "emit_companion_assets_updated", _fake_emit, raising=False)
+    monkeypatch.setattr(
+        expression_tool, "emit_companion_assets_updated", _fake_emit, raising=False
+    )
     # 工具从 services.companion 桶内 lazy-import 这些项——在那一处 patch。
     import services.companion as companion_pkg
 
-    monkeypatch.setattr(companion_pkg, "kick_background_generation", lambda uid, name: kicked.append(name))
+    monkeypatch.setattr(
+        companion_pkg,
+        "kick_background_generation",
+        lambda uid, name: kicked.append(name),
+    )
     monkeypatch.setattr(companion_pkg, "emit_companion_assets_updated", _fake_emit)
 
     result = json_mod.loads(
         await expression_tool.create_expression_tool(
-            "tender_worry", "心疼又担忧地看着你", label="心疼", valence="negative", tags=["温柔"], icon="🥺", user_id=1
+            "tender_worry",
+            "心疼又担忧地看着你",
+            label="心疼",
+            valence="negative",
+            tags=["温柔"],
+            icon="🥺",
+            user_id=1,
         )
     )
     assert result["success"] is True
     assert kicked == ["tender_worry"] and emitted == [1]
 
     async with SessionLocal() as db:
-        row = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == 1))).scalar_one()
-        assert (row.name, row.label, row.valence, row.description, row.icon) == ("tender_worry", "心疼", "negative", "心疼又担忧地看着你", "🥺")
+        row = (
+            await db.execute(
+                select(CompanionExpression).where(CompanionExpression.user_id == 1)
+            )
+        ).scalar_one()
+        assert (row.name, row.label, row.valence, row.description, row.icon) == (
+            "tender_worry",
+            "心疼",
+            "negative",
+            "心疼又担忧地看着你",
+            "🥺",
+        )
 
     # 缺少 description → 拒绝且不写入表。
-    assert json_mod.loads(await expression_tool.create_expression_tool("blank_mind", "", user_id=1))["success"] is False
+    assert (
+        json_mod.loads(
+            await expression_tool.create_expression_tool("blank_mind", "", user_id=1)
+        )["success"]
+        is False
+    )
     # 重复 name → 拒绝。
-    assert json_mod.loads(await expression_tool.create_expression_tool("tender_worry", "另一个描述", user_id=1))["success"] is False
+    assert (
+        json_mod.loads(
+            await expression_tool.create_expression_tool(
+                "tender_worry", "另一个描述", user_id=1
+            )
+        )["success"]
+        is False
+    )
 
 
 def test_affect_trace_content():
     from services.chat.persistence import _affect_trace_content
 
     assert _affect_trace_content("pout", None) == "[affect:pout]"
-    assert _affect_trace_content("pout", "stomp_angry") == "[affect:pout]\n[action:stomp_angry]"
+    assert (
+        _affect_trace_content("pout", "stomp_angry")
+        == "[affect:pout]\n[action:stomp_angry]"
+    )
     assert _affect_trace_content("neutral", "stomp_angry") == "[action:stomp_angry]"
     assert _affect_trace_content(None, None) == ""
     assert _affect_trace_content("neutral", None) == ""
@@ -130,7 +154,9 @@ def test_affect_trace_reaches_llm_context():
 
     msgs = [
         Message(role="user", content="你太懒了"),
-        Message(role="assistant", content="[affect:pout]", subtype=AFFECT_TRACE_SUBTYPE),
+        Message(
+            role="assistant", content="[affect:pout]", subtype=AFFECT_TRACE_SUBTYPE
+        ),
         Message(role="assistant", content="（戳了戳精灵）", subtype="status_reaction"),
     ]
     out = _history_to_messages(msgs, "sys", drop_tool_intermediates=True)

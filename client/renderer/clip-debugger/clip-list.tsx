@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useMemo } from 'react'
 
-import { SUPPORTED_RIG_TYPES } from '@/companion/3d/clips-registry'
+import { SUPPORTED_RIG_TYPES } from '@/companion/3d/rig'
 
 import {
   $activeClip,
@@ -11,11 +11,10 @@ import {
   $selectedCategory,
   $selectedRig,
   CATEGORY_LABELS,
-  getRigClipItems,
   RIG_LABELS,
   selectClip
 } from './store'
-import type { ClipItem, RigType } from './types'
+import type { RigType } from './types'
 
 export function ClipList(): React.JSX.Element {
   const selectedRig = useStore($selectedRig)
@@ -24,11 +23,7 @@ export function ClipList(): React.JSX.Element {
   const activeClip = useStore($activeClip)
   const embeddedClips = useStore($embeddedClips)
 
-  const allClips = useMemo<ClipItem[]>(() => {
-    const rigClips = getRigClipItems(selectedRig)
-
-    return [...embeddedClips, ...rigClips]
-  }, [selectedRig, embeddedClips])
+  const allClips = embeddedClips
 
   const { categories, filteredClips } = useMemo(() => {
     const catSet = new Set<string>(['all'])

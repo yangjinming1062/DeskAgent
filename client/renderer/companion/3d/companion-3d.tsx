@@ -12,7 +12,6 @@ import {
   type SpriteStateName
 } from '@/companion/companion-store'
 import { probeInteractiveRegions, useInteractiveRegion } from '@/companion/interactive-regions'
-import { $personalityTags } from '@/companion/persona-store'
 import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
@@ -22,8 +21,7 @@ import { $contextMenuOpen } from '../sprite/context-menu-store'
 import { Engine } from './Engine'
 import { fetchGlbWithCache } from './glb-opfs-cache'
 import {
-  $expressions,
-  $generatedClips,
+  $clipMap,
   $modelGenError,
   $modelGenProgress,
   $modelGenState,
@@ -32,7 +30,6 @@ import {
   $modelRetryable,
   $modelRetryModelId,
   hydrateExpressions,
-  hydrateGeneratedClips,
   retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
@@ -87,22 +84,12 @@ export function Companion3D(): React.JSX.Element {
       engine = created
 
       const initial = captureSpriteSnapshot()
-      eng.character.applyState(initial.state, initial.emotion, {
-        companionTags: $personalityTags.get(),
-        action: initial.action
-      })
-
-      const initialGenerated = $generatedClips.get()
-
-      if (initialGenerated.length > 0) {
-        eng.character.appendClipDefs(initialGenerated)
-      }
+      eng.character.setClipMap($clipMap.get())
+      eng.character.applyState(initial.state, initial.emotion, { action: initial.action })
 
       const unsubState = $spriteState.listen(state => {
-        const tags = $personalityTags.get()
         const override = state === 'interacting' ? $clipOverride.get() : undefined
         eng.character.applyState(state, $spriteEmotion.get(), {
-          companionTags: tags,
           clipOverride: override,
           action: $spriteAction.get()
         })
@@ -113,18 +100,10 @@ export function Companion3D(): React.JSX.Element {
       })
 
       const unsubEmotion = $spriteEmotion.listen(emotion => {
-        eng.character.applyState($spriteState.get(), emotion, {
-          companionTags: $personalityTags.get(),
-          customExpressions: $expressions.get(),
-          action: $spriteAction.get()
-        })
+        eng.character.applyState($spriteState.get(), emotion, { action: $spriteAction.get() })
       })
 
-      const unsubGenerated = $generatedClips.listen(clips => {
-        if (clips.length > 0) {
-          eng.character.appendClipDefs(clips)
-        }
-      })
+      const unsubGenerated = $clipMap.listen(clipMap => eng.character.setClipMap(clipMap))
 
       // TTS 唇形同步 —— audio-track 的 AnalyserNode 在音频播放期间逐帧推振幅；
       // 我们只做转发。
@@ -203,7 +182,6 @@ export function Companion3D(): React.JSX.Element {
 
     engineReadyRef.current = ready
 
-    void hydrateGeneratedClips()
     void hydrateExpressions()
 
     void ready.catch(err => {
