@@ -429,7 +429,7 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
         signed = _re_sign_bare_path(asset.asset_url)
         if signed:
             asset.asset_url = signed
-    for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
+    for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
         val = getattr(asset, attr, None)
         if val:
             signed = _re_sign_bare_path(val)
@@ -618,7 +618,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
         return None
 
     pending: list[tuple[str, bytes, str]] = []
-    for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url"):
+    for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
         current = getattr(asset, attr, None)
         if current and current.startswith("temp-media/"):
             result = _read_temp_media_bytes(current)
@@ -767,7 +767,7 @@ async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | N
         payload = safe_json_loads(target.prompt_json, default={})
         if not isinstance(payload, dict):
             payload = {}
-        if (target.seed_right_url or target.seed_back_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+        if (target.seed_right_url or target.seed_back_url or target.seed_left_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
             payload["fullbody_aux_style"] = payload["fullbody_style"]
         payload["fullbody_style"] = style
         stored = payload.get("fullbody_samples")
@@ -847,7 +847,7 @@ async def generate_fullbody_front(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
-            if (target.seed_right_url or target.seed_back_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+            if (target.seed_right_url or target.seed_back_url or target.seed_left_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
                 payload["fullbody_aux_style"] = payload["fullbody_style"]
             payload["fullbody_style"] = style
             if feedback is not None:
@@ -909,8 +909,8 @@ async def confirm_fullbody_front(
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
-    generated = {view: getattr(asset, f"seed_{view}_url") for view in ("right", "back") if getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style}
-    missing_views = tuple(view for view in ("right", "back") if view not in generated)
+    generated = {view: getattr(asset, f"seed_{view}_url") for view in ("right", "back", "left") if getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style}
+    missing_views = tuple(view for view in ("right", "back", "left") if view not in generated)
     results = []
 
     if missing_views:
@@ -956,7 +956,7 @@ async def confirm_fullbody_front(
 
     if len(generated) < 2:
         first_err = errors[0] if errors else RuntimeError("all aux views failed")
-        raise FullbodyGenerationError("侧面与背面生成失败，请稍后重试", internal=getattr(first_err, "internal", str(first_err)))
+        raise FullbodyGenerationError("多视角种子图生成失败，请稍后重试", internal=getattr(first_err, "internal", str(first_err)))
 
     async def _write(session: AsyncSession) -> AvatarAsset:
         target = await session.get(AvatarAsset, avatar_id)
@@ -967,8 +967,10 @@ async def confirm_fullbody_front(
             target.seed_right_url = generated["right"]
         if "back" in generated:
             target.seed_back_url = generated["back"]
+        if "left" in generated:
+            target.seed_left_url = generated["left"]
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
-        for attr in ("seed_front_url", "seed_right_url", "seed_back_url"):
+        for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
             current = getattr(target, attr)
             if current.startswith("temp-media/"):
                 moved = _read_temp_media_bytes(current)

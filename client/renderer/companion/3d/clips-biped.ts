@@ -422,13 +422,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
     category: 'locomotion',
     tags: ['元气', '好动', '活泼'],
     tracks: {
-      [_HIPS]: [
-        kf(0, 0, 0, 0),
-        kf(0.3, 0, 0, 0),
-        kf(0.5, 0, 0, 0.4),
-        kf(0.7, 0, 0, -0.2),
-        kf(1.0, 0, 0, 0)
-      ],
+      [_HIPS]: [kf(0, 0, 0, 0), kf(0.3, 0, 0, 0), kf(0.5, 0, 0, 0.4), kf(0.7, 0, 0, -0.2), kf(1.0, 0, 0, 0)],
       [_LEFT_UP]: [
         kf(0, 0.01, 0, -0.01),
         kf(0.3, -0.5, 0, 0),
@@ -471,12 +465,7 @@ export const BIPED_CLIPS: Readonly<Record<string, ClipDef>> = {
         kf(0.7, -0.4, -0.3, 0.3),
         kf(1.0, 0.12, -0.04, 1.1)
       ],
-      [_SPINE]: [
-        kf(0, -0.04, 0, 0),
-        kf(0.3, 0.15, 0, 0),
-        kf(0.5, -0.1, 0, 0),
-        kf(1.0, -0.04, 0, 0)
-      ]
+      [_SPINE]: [kf(0, -0.04, 0, 0), kf(0.3, 0.15, 0, 0), kf(0.5, -0.1, 0, 0), kf(1.0, -0.04, 0, 0)]
     }
   },
   fly: {

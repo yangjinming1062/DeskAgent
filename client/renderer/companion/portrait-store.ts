@@ -8,9 +8,6 @@ import { resolvePortraitUrl } from './avatar-image'
 // 伙伴 2D 头像的解析后 data URL。启动时从 GET /api/companion/avatar 水合，
 // 每次重生后刷新。3D 模型独立；这里管的是聊天头部和「形象」区的可见身份。
 export const $portraitUrl = atom<string | null>(null)
-export const $seedFrontUrl = atom<string | null>(null)
-export const $seedRightUrl = atom<string | null>(null)
-export const $seedBackUrl = atom<string | null>(null)
 export const $fullbodyStyle = atom<string>('cel_shading')
 export const $fullbodySamples = atom<Record<string, string>>({})
 
@@ -20,18 +17,6 @@ export const $activeAvatarId = atom<number | null>(null)
 
 export function setPortraitUrl(url: string | null): void {
   $portraitUrl.set(url)
-}
-
-export function setSeedFrontUrl(url: string | null): void {
-  $seedFrontUrl.set(url)
-}
-
-export function setSeedRightUrl(url: string | null): void {
-  $seedRightUrl.set(url)
-}
-
-export function setSeedBackUrl(url: string | null): void {
-  $seedBackUrl.set(url)
 }
 
 export function setFullbodyStyle(style: string): void {
@@ -49,32 +34,16 @@ export function setActiveAvatarId(id: number | null): void {
 export interface PortraitUrls {
   assetUrl?: string | null
   seedFrontUrl?: string | null
-  seedRightUrl?: string | null
-  seedBackUrl?: string | null
   id?: number | null
 }
 
-// 把新拿到的 asset_url 解析成 data URL。写入全局 $portraitUrl atom，返回解析后的 URL。
+// 把新拿到的 asset_url 与正面种子解析成 data URL。asset_url 写入全局 $portraitUrl；
 export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seedFront: string | null }> {
   const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
   const seedFront = urls.seedFrontUrl === undefined ? null : await resolvePortraitUrl(urls.seedFrontUrl)
-  const seedRight = urls.seedRightUrl === undefined ? null : await resolvePortraitUrl(urls.seedRightUrl)
-  const seedBack = urls.seedBackUrl === undefined ? null : await resolvePortraitUrl(urls.seedBackUrl)
 
   if (avatar) {
     setPortraitUrl(avatar)
-  }
-
-  if (seedFront !== null) {
-    setSeedFrontUrl(seedFront)
-  }
-
-  if (seedRight !== null) {
-    setSeedRightUrl(seedRight)
-  }
-
-  if (seedBack !== null) {
-    setSeedBackUrl(seedBack)
   }
 
   if (urls.id != null) {
@@ -91,19 +60,13 @@ export async function hydratePortrait(): Promise<void> {
     const res = await window.spiritagent.api<{
       id?: number
       asset_url?: string
-      seed_front_url?: string
-      seed_right_url?: string
-      seed_back_url?: string
     }>({
       path: '/api/companion/avatar'
     })
 
     await applyPortrait({
       id: res?.id,
-      assetUrl: res?.asset_url,
-      seedFrontUrl: res?.seed_front_url,
-      seedRightUrl: res?.seed_right_url,
-      seedBackUrl: res?.seed_back_url
+      assetUrl: res?.asset_url
     })
   } catch (error) {
     if (!isClientErrorIpc(error)) {

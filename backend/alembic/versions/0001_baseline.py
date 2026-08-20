@@ -82,6 +82,7 @@ def upgrade() -> None:
         sa.Column("seed_front_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed_right_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed_back_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
+        sa.Column("seed_left_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed", sa.Integer(), nullable=True),
         sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),

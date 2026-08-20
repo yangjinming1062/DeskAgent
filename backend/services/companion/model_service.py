@@ -233,14 +233,18 @@ async def generate_companion_model(
 
         right_seed = avatar.seed_right_url
         back_seed = avatar.seed_back_url
+        left_seed = avatar.seed_left_url
         right_filename = right_seed.split("/")[-1].split("?")[0] if right_seed else ""
         back_filename = back_seed.split("/")[-1].split("?")[0] if back_seed else ""
+        left_filename = left_seed.split("/")[-1].split("?")[0] if left_seed else ""
 
         view_filenames: dict[str, str] = {"front": front_filename}
         if right_filename:
             view_filenames["right"] = right_filename
         if back_filename:
             view_filenames["back"] = back_filename
+        if left_filename:
+            view_filenames["left"] = left_filename
 
         prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
         selected_style = prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None
@@ -278,7 +282,7 @@ async def run_image_model_gen_pipeline(
                 raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
             return resolved[0]
 
-        multiview = {key: _seed(key) for key in ("front", "right", "back") if key in view_filenames} if getattr(provider, "SUPPORTS_MULTIVIEW", False) else None
+        multiview = {key: _seed(key) for key in ("front", "right", "back", "left") if key in view_filenames} if getattr(provider, "SUPPORTS_MULTIVIEW", False) else None
 
         await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
         job = await provider.submit_image_to_model(_seed("front"), multiview_paths=multiview)

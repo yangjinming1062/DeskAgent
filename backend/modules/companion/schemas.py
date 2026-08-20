@@ -26,8 +26,6 @@ class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
     seed_front_url: str = ""
-    seed_right_url: str = ""
-    seed_back_url: str = ""
     # 已选 fullbody 风格 + 持久 style-sample URL（读取时重签名），作为全身确认阶段的 resume 入口。
     fullbody_style: str = ""
     fullbody_samples: dict[str, str] = Field(default_factory=dict)

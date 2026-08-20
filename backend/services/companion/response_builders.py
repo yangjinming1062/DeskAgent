@@ -19,8 +19,6 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
         id=asset.id,
         asset_url=asset.asset_url,
         seed_front_url=getattr(asset, "seed_front_url", None) or "",
-        seed_right_url=getattr(asset, "seed_right_url", None) or "",
-        seed_back_url=getattr(asset, "seed_back_url", None) or "",
         fullbody_style=str(payload.get("fullbody_style") or ""),
         fullbody_samples=fullbody_samples,
         prompt=payload.get("prompt", ""),

@@ -175,6 +175,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
         assert "promoted.png" in confirmed.seed_front_url
         assert "aux_view.jpg" in confirmed.seed_right_url
         assert "aux_view.jpg" in confirmed.seed_back_url
+        assert "aux_view.jpg" in confirmed.seed_left_url
         payload = json.loads(confirmed.prompt_json)
         assert "fullbody_samples" not in payload
 
@@ -271,6 +272,7 @@ async def test_fullbody_front_and_confirm(SessionLocal):
             assert confirmed_asset.seed_front_url is not None
             assert confirmed_asset.seed_right_url is not None
             assert confirmed_asset.seed_back_url is not None
+            assert confirmed_asset.seed_left_url is not None
 
 
 @pytest.mark.asyncio
@@ -303,6 +305,7 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             seed_front_url="companion-avatars/old_front.jpg",
             seed_right_url="companion-avatars/old_right.jpg",
             seed_back_url="companion-avatars/old_back.jpg",
+            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -322,6 +325,7 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             assert "new_front.jpg" in confirmed.seed_front_url
             assert "old_right.jpg" in confirmed.seed_right_url
             assert "old_back.jpg" in confirmed.seed_back_url
+            assert "old_left.jpg" in confirmed.seed_left_url
 
             mock_gen.return_value = (
                 "companion-avatars/refined_front.jpg",
@@ -340,6 +344,7 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             assert "refined_front.jpg" in regenerated.seed_front_url
             assert "old_right.jpg" in regenerated.seed_right_url
             assert "old_back.jpg" in regenerated.seed_back_url
+            assert "old_left.jpg" in regenerated.seed_left_url
 
 
 @pytest.mark.asyncio
@@ -352,6 +357,7 @@ async def test_fullbody_confirm_generates_only_missing_auxiliary_seed(SessionLoc
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/front.jpg",
             seed_right_url="companion-avatars/old_right.jpg",
+            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -375,6 +381,7 @@ async def test_fullbody_confirm_generates_only_missing_auxiliary_seed(SessionLoc
             assert mock_gen.await_count == 1
             assert "old_right.jpg" in confirmed.seed_right_url
             assert "new_back.jpg" in confirmed.seed_back_url
+            assert "old_left.jpg" in confirmed.seed_left_url
 
 
 @pytest.mark.asyncio
@@ -388,6 +395,7 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
             seed_front_url="companion-avatars/old_front.jpg",
             seed_right_url="companion-avatars/old_right.jpg",
             seed_back_url="companion-avatars/old_back.jpg",
+            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -416,6 +424,12 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
                     "jpg",
                     "https://source.example/test.jpg",
                 ),
+                (
+                    "companion-avatars/new_left.jpg",
+                    "file4",
+                    "jpg",
+                    "https://source.example/test.jpg",
+                ),
             ]
 
             regenerated = await generate_fullbody_front(
@@ -427,15 +441,17 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
             assert mock_gen.await_count == 1
             assert "old_right.jpg" in regenerated.seed_right_url
             assert "old_back.jpg" in regenerated.seed_back_url
+            assert "old_left.jpg" in regenerated.seed_left_url
 
             confirmed = await confirm_fullbody_front(
                 db,
                 user_id,
                 avatar_id=avatar.id,
             )
-            assert mock_gen.await_count == 3
+            assert mock_gen.await_count == 4
             assert "new_right.jpg" in confirmed.seed_right_url
             assert "new_back.jpg" in confirmed.seed_back_url
+            assert "new_left.jpg" in confirmed.seed_left_url
             payload = json.loads(confirmed.prompt_json)
             assert payload["fullbody_aux_style"] == "anime_game_cg"
 
@@ -474,6 +490,7 @@ async def test_fullbody_direct_confirm_with_sample_url(SessionLocal):
             assert "sample_front" in confirmed_asset.seed_front_url
             assert "aux_view" in confirmed_asset.seed_right_url
             assert "aux_view" in confirmed_asset.seed_back_url
+            assert "aux_view" in confirmed_asset.seed_left_url
 
 
 @pytest.mark.asyncio

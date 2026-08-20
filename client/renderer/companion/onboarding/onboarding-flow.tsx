@@ -1393,8 +1393,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         id?: number
         asset_url?: string
         seed_front_url?: string
-        seed_right_url?: string
-        seed_back_url?: string
       }>({
         path: `/api/companion/avatar/${activeAvatarId}/fullbody/front`,
         method: 'POST',
@@ -1409,9 +1407,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       const applied = await applyPortrait({
         id: res?.id,
         assetUrl: res?.asset_url,
-        seedFrontUrl: res?.seed_front_url,
-        seedRightUrl: res?.seed_right_url,
-        seedBackUrl: res?.seed_back_url
+        seedFrontUrl: res?.seed_front_url
       })
 
       const rawFront = res?.seed_front_url || null
@@ -1477,9 +1473,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       .api<{
         id?: number
         asset_url?: string
-        seed_front_url?: string
-        seed_right_url?: string
-        seed_back_url?: string
       }>({
         path: `/api/companion/avatar/${avatarId}/fullbody/confirm-front`,
         method: 'POST',
@@ -1491,10 +1484,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       .then(async res => {
         await applyPortrait({
           id: res?.id,
-          assetUrl: res?.asset_url,
-          seedFrontUrl: res?.seed_front_url,
-          seedRightUrl: res?.seed_right_url,
-          seedBackUrl: res?.seed_back_url
+          assetUrl: res?.asset_url
         })
       })
       .catch(() => {

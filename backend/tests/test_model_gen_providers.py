@@ -108,6 +108,8 @@ class TestSubmit:
         right_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x11" * 16)
         back_seed = tmp_path / "back.png"
         back_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x22" * 16)
+        left_seed = tmp_path / "left.png"
+        left_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x33" * 16)
         mock_http.responder = lambda _r: httpx.Response(
             200, json={"id": "job_mv", "status": "queued"}
         )
@@ -117,18 +119,18 @@ class TestSubmit:
         )
         job = await provider.submit_image_to_model(
             png_seed,
-            multiview_paths={"right": right_seed, "back": back_seed},
+            multiview_paths={"right": right_seed, "back": back_seed, "left": left_seed},
         )
         assert job.job_id == "job_mv"
         body = mock_http.calls[0][3]
         assert body["model"] == "hy-3d-3.1"
         assert body["result_format"] == "GLB"
-        assert len(body["multi_view_images"]) == 2
+        assert len(body["multi_view_images"]) == 3
         by_view = {
             item["view_type"]: item["view_image_base64"]
             for item in body["multi_view_images"]
         }
-        assert set(by_view) == {"right", "back"}
+        assert set(by_view) == {"right", "back", "left"}
         assert by_view["right"] == base64.b64encode(right_seed.read_bytes()).decode(
             "ascii"
         )

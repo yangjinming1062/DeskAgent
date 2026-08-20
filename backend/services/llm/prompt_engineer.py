@@ -40,14 +40,14 @@
 对外公开的提示词构建方法
 ======================
 enhance_avatar_prompt()   [LLM]      Persona 角色定义 → 半身头像图（bust avatar）提示词
-build_fullbody_prompt()   [确定性]   视角(front/right/back) + 物种姿态模板 + 画风 + Persona 设定 → 全身立绘提示词
+build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种姿态模板 + 画风 + Persona 设定 → 全身立绘提示词
 build_texture_prompt()    [确定性]   贴图描述 + PBR 通道(albedo/normal/roughness/metalness/displacement) → 材质贴图提示词
 
 全身图提示词组装脉络与公式
 =========================
 最终生成的全身图提示词由以下 8 个部分按顺序组装而成：
 
-  [1. 视角主谓前缀]       _VIEW_PREFIX[view]：正面 / 右侧面 / 背面全身角色立绘。
+  [1. 视角主谓前缀]       _VIEW_PREFIX[view]：正面 / 右侧面 / 背面 / 左侧面全身角色立绘。
   ＋
   [2. 姿态与体态模板]     template.pose：根据物种与骨骼类型（双足人形 A-pose、四足、有翼等）决定的标准站姿与打底服装。
   ＋
@@ -55,6 +55,7 @@ build_texture_prompt()    [确定性]   贴图描述 + PBR 通道(albedo/normal/
                           - 正面：身体朝向正前方，正面视点。
                           - 右侧面：右侧面视点（角色顺时针转体90°朝向右侧），展现身体与四肢完整的右侧轮廓。
                           - 背面：背面视点（角色转身180°背向镜头），展现背影、背部与后发细节，看不到正面面部。
+                          - 左侧面：左侧面视点（角色逆时针转体90°朝向左侧），展现身体与四肢完整的左侧轮廓。
   ＋
   [4. 画幅与影棚约束]     从头到脚完整可见，平视角度拍摄。纯白背景，均匀专业棚拍布光。
   ＋
@@ -226,6 +227,7 @@ class FullbodyTemplate:
     front_features: str
     right_features: str
     back_features: str
+    left_features: str
     pose: str
     flavor: str = ""
     rig_type: str = "biped"
@@ -243,6 +245,7 @@ _BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
     front_features="身体朝向正前方，正面视点。",
     right_features="右侧面视点（角色顺时针转体90°朝向右侧），展现身体与四肢完整的右侧轮廓。",
     back_features="背面视点（角色转身180°背向镜头），展现背影、背部与后发细节，看不到正面面部。",
+    left_features="左侧面视点（角色逆时针转体90°朝向左侧），展现身体与四肢完整的左侧轮廓。",
     pose=_BIPED_A_POSE,
     rig_type="biped",
 )
@@ -253,6 +256,7 @@ _SPECIES_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="机体朝向正前方，正面视点。",
         right_features="右侧面视点（机体顺时针转体90°朝向右侧），机体侧面轮廓与装甲结构清晰。",
         back_features="背面视点（机体转身180°背向镜头），机体后背与推进器结构清晰，看不到正面面部。",
+        left_features="左侧面视点（机体逆时针转体90°朝向左侧），机体侧面轮廓与装甲结构清晰。",
         pose=_BIPED_A_POSE,
         rig_type="biped",
         style="cel_shading",
@@ -270,6 +274,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="正前方视点，身体朝前。",
         right_features="右侧面视点（转体90°），四肢与躯干侧面轮廓完整。",
         back_features="背面视点（转身180°），身体背部与尾部清晰，看不到面部。",
+        left_features="左侧面视点（转体90°），四肢与躯干侧面轮廓完整。",
         pose="四足自然直立站立，四腿分开；脊椎水平，头抬起；尾巴自然舒展。",
         rig_type="quadruped",
     ),
@@ -277,6 +282,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="正前方视点，胸腹部与面部朝前。",
         right_features="右侧面视点（转体90°），翅膀外侧与体侧轮廓清晰。",
         back_features="背面视点（转身180°），背部羽毛与双翼背侧清晰，看不到面部。",
+        left_features="左侧面视点（转体90°），翅膀外侧与体侧轮廓清晰。",
         pose="双足直立站立，双翼向两侧半展约30-45度；身体直立。",
         rig_type="avian",
     ),
@@ -284,6 +290,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="",
         right_features="右侧面（90°），躯体侧面曲线清晰。",
         back_features="背面，脊背纹理连贯至尾尖。",
+        left_features="左侧面（90°），躯体侧面曲线清晰。",
         pose="身体水平自然伸展或S形蜿蜒，全身完整可见；头部抬起。",
         rig_type="serpentine",
     ),
@@ -291,6 +298,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="",
         right_features="右侧面（90°），各鳍形态清晰。",
         back_features="背面，背鳍与尾鳍形态清晰。",
+        left_features="左侧面（90°），各鳍形态清晰。",
         pose="身体水平伸展，各鱼鳍完全展开；尾鳍自然伸展。",
         rig_type="aquatic",
     ),
@@ -298,6 +306,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="",
         right_features="右侧面（90°），六足排列清晰。",
         back_features="背面，背甲纹理清晰。",
+        left_features="左侧面（90°），六足排列清晰。",
         pose="六足自然直立站立，六腿对称分开；各体段完整可见。",
         rig_type="hexapod",
     ),
@@ -305,6 +314,7 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
         front_features="",
         right_features="右侧面（90°），步足排列清晰。",
         back_features="背面，背甲轮廓清晰。",
+        left_features="左侧面（90°），步足排列清晰。",
         pose="八足对称展开于身体两侧，每条腿清晰可辨；身体居中。",
         rig_type="octopod",
     ),
@@ -323,7 +333,7 @@ def resolve_fullbody_template(species: str, rig_type: str = "biped", style: str 
     return template if template.style == style else replace(template, style=style)
 
 
-_VIEW_PREFIX = {"front": "正面全身角色立绘", "right": "右侧面全身角色立绘", "back": "背面全身角色立绘"}
+_VIEW_PREFIX = {"front": "正面全身角色立绘", "right": "右侧面全身角色立绘", "back": "背面全身角色立绘", "left": "左侧面全身角色立绘"}
 
 
 def build_fullbody_prompt(
@@ -337,7 +347,7 @@ def build_fullbody_prompt(
     avatar_prompt: str = "",
     persona: Persona | dict | None = None,
 ) -> str:
-    """为某个视角拼装一条生图 prompt（无 LLM 往返）；由 ``services.companion.avatar_service`` 按视角调用一次：每个风格的前视图样例、front/right/back 种子。"""
+    """为某个视角拼装一条生图 prompt（无 LLM 往返）；由 ``services.companion.avatar_service`` 按视角调用一次：每个风格的前视图样例、front/right/back/left 种子。"""
     style_key = style_id or template.style or "cel_shading"
     style_wording = _FULLBODY_STYLE_WORDING.get(style_key, _FULLBODY_STYLE_WORDING["cel_shading"])
     features = getattr(template, f"{view}_features", "")
