@@ -2,7 +2,7 @@
 
 > 读者：后端 pipeline 维护者、新供应商接入方、客户端 3D 引擎维护者。
 >
-> 本文档描述链拓扑、不变量、产物契约、客户端消费策略；具体代码位置与函数路径见 §8 参考实现。
+> 本文档是 3D 生成链路的唯一权威：种子图编排、供应商能力、链拓扑、失败语义、产物契约与客户端兑现策略只在这里展开。产品流程见 [DESIGN.md](../DESIGN.md)，跨模块接口见 [PROTOCOL.md](../PROTOCOL.md)，后端实现取舍见 [backend/README.md](../backend/README.md)。
 
 ## 1. 链拓扑
 
@@ -12,6 +12,11 @@ submit(seed) → poll → raw task
 [SUPPORTS_ANIMATE_BIND & animation_clips(rig_type) ≠ {}] → start_animate_bind → poll → animated task
 chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 ```
+
+**种子图编排**：
+
+- 正面全身图确认后，后端按供应商多视图能力准备模型输入：支持多视图时补齐左 / 右 / 背面种子图并按多图模式提交；不支持时仅提交正面图。
+- 同一画风的左 / 右 / 背面种子图在正面微调重绘时复用；换画风确认时重绘三张背景种子图，避免不同画风混用。
 
 **关键不变量**：
 

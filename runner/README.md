@@ -1,6 +1,6 @@
 # Runner
 
-本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。以 uv build wheel 形式发布，安装器在 `$SPIRITAGENT_HOME/runner/.venv` 创建 venv 并安装；客户端直接 spawn venv Python 调用 `server.py`，通过本地 OS IPC（Windows 命名管道 / macOS UDS，承载 WebSocket 帧）接收 JSON-RPC 2.0 工具调用指令并在用户机器上执行。
+本地手脚——纯粹的工具执行器，承载伙伴"能帮用户做的事"。Runner 以 wheel 形式发布，由安装器落盘、客户端启动，经本地 IPC 承载的 JSON-RPC 2.0 调用在用户机器上执行工具。
 
 Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行等底层能力 100% 保留，伙伴人格完全由后端承载、伙伴形象完全由客户端渲染。
 
@@ -47,12 +47,12 @@ runner/
 
 依赖方向：`utils/` ← `tools/` ← `server.py`，`utils/` 不反向依赖任何工具；`tools/` 之间跨包直接 import 共享子包（如 `terminal/environment/`）。
 
-**Wheel 产物**：`dist/spirit-agent-*.whl`。客户端 spawn `$SPIRITAGENT_HOME/runner/.venv/{bin/python,Scripts/python.exe} $SPIRITAGENT_HOME/runner/server.py --desktop-endpoint <path> --desktop-auth <token>`。安装布局详 [installer/README.md](../installer/README.md)。
+**Wheel 产物**：`dist/spirit-agent-*.whl`。客户端按安装器建立的运行时布局启动 Runner；布局见 [installer/README.md](../installer/README.md)。
 
 ## 4. 关键设计决策
 
-- **OS IPC + WebSocket 帧而非 stdio 重定向**：客户端监听命名管道（Windows）/ UDS（macOS），Runner 主动连入，链路承载 WebSocket 帧协议——避免 C 库底层日志或 Python print 污染标准输入输出帧；全双工并发按 id 异步匹配响应；零端口暴露，端点与握手 token 由客户端单向下发、Runner 重连间重读文件跟随客户端重启（完整权衡见 [ARCHITECTURE.md §4.1B](../ARCHITECTURE.md)，鉴权细节见 [PROTOCOL.md §2.1](../PROTOCOL.md)）。为什么不用 stdio：PTY/C 库会与控制台帧冲突，异步 RPC 也会被全局锁退化为串行。
-- **反向 RPC 速率守卫在客户端而非后端**：转发前统计单会话请求次数与载荷大小硬限流（契约见 [PROTOCOL.md §3](../PROTOCOL.md)）。为什么是客户端：客户端是流量入口，能在 IPC 边界做最严格的拒绝。
+- **本地 IPC 客户端而非 stdio**：Runner 主动连接客户端下发的本地端点，重连时重读端点信息以跟随客户端重启；链路选型与鉴权见 [ARCHITECTURE.md §4.1B](../ARCHITECTURE.md) 和 [PROTOCOL.md §2.1](../PROTOCOL.md)。
+- **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
 - **Tirith 扫描作为 shell 命令前置过滤器**：所有 shell 命令执行前拉起本地 Tirith 模块做参数签名与静态审查，默认 fail-secure，二进制未安装时友好降级并告警。为什么不在 LLM 层做：LLM 层做参数校验是治标，执行边界做拦截更彻底。
@@ -65,18 +65,11 @@ runner/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| `runner_ready` payload（含 version + capabilities + capabilities_health） | 对客户端 | [PROTOCOL.md §2.3](../PROTOCOL.md) |
-| `spiritagent.info` 完整运行快照 | 对客户端 | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| RPC 方法清单（`runner_ready` / `get_tools` / `execute_tool` / `spiritagent.cancel` / `spiritagent.config.update` / `spiritagent.info` / `mcp.reload` / `request_llm` / `tools_changed`） | 对客户端 | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| 反向 RPC 桥接（`request_llm` → 客户端 → `/api/llm/completion`） | 对客户端 | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 反向 RPC 速率守卫（200 帧；文本 1MB / 视觉 10MB 上限） | 对客户端（客户端转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
-| Reserved Keys 不适用 | — | Reserved Key 是 LLM 工具入参约束，不在 Runner 层 |
-| IPC future 键语义（仅后端侧约束） | — | Runner 只被动响应 `execute_tool` 请求，不持有 future |
-| 工具 schema 经 `get_tools` 上报 + `tools.sync` 推后端 | 对客户端（透传） | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| **本地安全防线**：危险命令阻断 + Windows 路径不敏感写限制 + SSRF + Tirith 扫描 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
-| 工具三层分类中的 runner tools（需 IPC 下发） | — | 由后端决策，Runner 只接收 `execute_tool` |
-| MCP 动态加载 + Skills frontmatter 平台过滤 | 本模块独有 | 本 README §2 |
-| 音频引擎内置于基础 wheel | 本模块独有（[installer/README.md §2](../installer/README.md) 携带 Piper voices） | 本 README §2 |
+| 就绪握手、能力上报与 RPC 方法 | 对客户端 | [PROTOCOL.md §2](../PROTOCOL.md) |
+| 反向 RPC 与速率守卫 | 经客户端到后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
+| 本地执行安全防线 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
+| MCP 动态加载与 Skills 平台过滤 | 本模块独有 | 本 README §2 / §4 |
+| 音频运行时依赖打包 | 与 Installer 协作 | [installer/README.md](../installer/README.md) |
 
 ## 6. 已知限制
 

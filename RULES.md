@@ -68,6 +68,15 @@
 | [DESIGN.md](DESIGN.md) | 产品功能设计与思考：形象、动画、生命周期、onboarding、陪伴范式、语音、故障态 | **无任何代码相关内容**——字段名、RPC 方法名、配置键、供应商名、类型签名一律不出现（归 PROTOCOL 或模块 README） |
 | [PROTOCOL.md](PROTOCOL.md) | 跨模块契约的**思想层**描述：有哪些契约、改一处需同步哪些模块（防只改一处导致遗漏） | 不复述代码（config schema 表、JSON 示例、逐参数方法签名）、不写实现细节 |
 
+专项事实只由专项文档展开：
+
+| 专项 | 权威文档 |
+|------|----------|
+| 3D 生成链路、供应商能力、种子图编排、产物与客户端兑现 | [docs/PIPELINE.md](docs/PIPELINE.md) |
+| 构建、发布、导入检查与仓库级脚本 | [scripts/README.md](scripts/README.md) |
+
+顶层文档与模块 README 只链接专项事实，不复制其规则、阈值或流程。
+
 **通用原则**：
 - ARCHITECTURE / DESIGN / README 三者均为**描述性质**，不描述具体代码逻辑。
 - 判断"权威归属"再写：这份事实的权威定义属于哪个文档，就只在那里展开，其余文档链接引用。判断标准是"改这个事实时，开发者必须去改哪个文档"。
@@ -85,7 +94,7 @@
 
 ### §1 职责与边界（3–8 行）
 
-这个模块是什么、**不是**什么。一句话定位 + 显式排除（它**不**做哪些事）。链接 [ARCHITECTURE.md](../ARCHITECTURE.md) 对应锚定读者该先读架构层定位。
+这个模块是什么、**不是**什么。一句话定位 + 显式排除（它**不**做哪些事）。链接 [ARCHITECTURE.md](ARCHITECTURE.md) 对应锚定读者该先读架构层定位。
 
 **不**放：架构图（已在根 ARCHITECTURE.md）、依赖方向、文件树。
 
@@ -113,7 +122,7 @@
 
 ### §5 与外部的契约（5–15 行）
 
-本模块对外承诺的契约 + 依赖的外部契约。**本模块独有的**写在这里，跨模块共有的**链**到 [PROTOCOL.md](../PROTOCOL.md) / [ARCHITECTURE.md](../ARCHITECTURE.md)。表格形式：**契约名 + 方向 + 在哪定义**（`PROTOCOL.md §X` / `本模块独有` / `ARCHITECTURE.md §X`）。
+本模块对外承诺的契约 + 依赖的外部契约。**本模块独有的**写在这里，跨模块共有的**链**到 [PROTOCOL.md](PROTOCOL.md) / [ARCHITECTURE.md](ARCHITECTURE.md)。表格形式：**契约名 + 方向 + 在哪定义**（`PROTOCOL.md §X` / `本模块独有` / `ARCHITECTURE.md §X`）。
 
 ### §6 已知限制（表格式，必备）
 
@@ -122,7 +131,7 @@
 ### 子模块 README 反模式（不要出现）
 
 - 逐文件列职责、逐函数列调用链、provider 协议对比表（代码 review 时该看的）
-- 复述 [PROTOCOL.md](../PROTOCOL.md) / [ARCHITECTURE.md](../ARCHITECTURE.md) / [DESIGN.md](../DESIGN.md) 已有的契约（链过去即可）
+- 复述 [PROTOCOL.md](PROTOCOL.md) / [ARCHITECTURE.md](ARCHITECTURE.md) / [DESIGN.md](DESIGN.md) 已有的契约（链过去即可）
 - 列版本号、字段长度、配置项默认值（那些是代码）
 - "以前 X，现在 Y"的叙事（git log 负责）
 - "TODO" / "待补"占位段（要么删要么补，不留空的）

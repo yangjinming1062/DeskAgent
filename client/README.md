@@ -10,7 +10,7 @@
 - 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转
 - 统一自更新（Electron 二进制 + Runner wheel，两阶段契约）
-- **打扰档位的唯一权威**：持有用户偏好 + 活动上下文，独立计算生效值并单向推后端
+- **打扰档位权威**：本地计算生效档位并单向推后端
 
 **不**做：
 - **不渲染伙伴人格层**（角色定义 / 长期记忆 / 主动消息生成）——这是后端责任
@@ -23,9 +23,8 @@
 ## 2. 设计意图
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
-- **3D 实时渲染 + 三级降级**：GLB 加载成功时骨骼动画 + 面部变形目标覆盖全部状态；GLB 不可用（生成中/失败/无 key/换模空挡）时静态精灵相册接管——按状态/情绪向后端相册请求身份一致的透明背景立绘，淡入淡出切换，GLB 解析完成后交还；相册不可用才渲染程序化兜底蛋（呼吸/眨眼/说话浮动），保证形象从启动第一帧起就"活着"且永远是用户选定的角色。
-- **动画全部由供应商烘焙进 GLB**：客户端不持有任何 clip 库或供应商命名——后端随模型下发该次生成的「语义键 → 预设 token」映射，客户端按三级降级兑现为 GLB 内真实存在的 clip；映射缺键或兑现落空时角色停在绑定姿势（永不空白）。详见 [docs/PIPELINE.md §10–12](../docs/PIPELINE.md)。
-- **打扰档位唯一权威**：客户端持有用户偏好（本地持久化）+ 活动上下文（活动感知器），独立计算生效值（应用「手动安静永远不被覆盖」+ 沉浸式/全屏 → 安静规则），单向推后端；后端持有的只是镜像，不是独立推导。契约见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)。
+- **3D 实时渲染与产品兜底**：客户端负责加载模型、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略；3D 产物与动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+- **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位并单向推后端；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
 - **透明置顶精灵窗口作为唯一常驻主窗口**：登录、应用设置、登录态界面是从托盘唤起的按需工具窗口，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
 - **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
 
@@ -83,37 +82,20 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **3D 材质安全回退与拖拽动力学**：加载 GLB 时记录模型内嵌原生基础贴图，自定义 PBR 贴图 404 或网络故障时自动回退原生材质，杜绝模型白板。拖拽时捕获即时速度向量注入物理惯性倾角（横滚/俯仰），结合"悬空摆动"与"落地缓冲"专属动作呈现被"拎起"的交互质感；精灵基准尺寸随屏幕高度自适应，兼容高分辨率屏。
 - **精灵窗口单显示器跟踪 + 跨屏拖拽接力**：透明精灵窗口同一时刻只覆盖一块显示器（贴合当前显示器工作区；分辨率变化原地重贴，显示器被拔掉时自动落回最近屏）。拖拽中指针越出视口即光标已跨入邻屏——渲染层请主进程把窗口挪到光标所在屏；渲染层只把精灵位置平移新旧窗口原点差、拖拽基准不动（切换后指针坐标已在新视口空间，拖拽公式自然产出平移后的值），并按返回的光标点判定最新指针坐标属于旧/新视口空间，避免接力往返期间已到达的新空间事件被二次平移；拖拽结束时窗口原点随位置一并持久化，下次启动先贴回精灵所在显示器再恢复位置。为什么不做覆盖整个虚拟桌面的窗口：全桌面合成层 + 跨屏 DPI 差异的坐标/命中测试复杂度远高于单屏窗口接力，且鼠标穿透范围会被迫覆盖所有屏。
 - **渲染循环自研调度与能耗档位**：引擎自主调度动画循环（不依赖 Three.js 内部循环），支持活跃全速 / 空闲降频 / 休眠低频轮询与彻底停止，解决休眠档位能耗控制。
-- **3D 模型传输与本地缓存**：3D 模型 GLB 采用 Draco 压缩，渲染端流式解压（解码器本地托管）；主进程按内容哈希磁盘缓存，支持断点续传与 LRU 淘汰。传输契约见 [PROTOCOL.md §1.5](../PROTOCOL.md)。
-- **模型下载失败与生成失败分流**：失败事件载荷带"可重试下载"标记时，生成结果已付费且仍留在后端——失败浮层只给"重试下载"（绝不重新计费），不给"重新生成"入口；启动水合收到下载失败行同样进该态，避免每次启动静默重刷一次计费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
+- **模型下载失败与生成失败分流**：失败浮层按协议标记区分"重试下载"与重新生成，启动水合保持同一分流，避免误触发付费生成。契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
 - **独立 3D 模型调试套件（`pnpm clip`）**：为解决 3D 产物、面部变形目标与 GLB 质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；按 GLB 内嵌 clip 即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
-- **连发消息合并窗口**：用户快速连发多条时，聊天层用数秒防抖窗口把消息合并成一次批量提交，只触发一次 LLM 调用（[DESIGN.md §6.6](../DESIGN.md)）。这是**刻意**的合并，不是发送延迟：窗口内逐条重置计时器，且回合完成 / 错误 / 用户停止时会立即冲刷。
+- **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对后端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `companion.assets.updated` / `model.ready` 等）与聊天流事件（`message.start` / `message.delta` / `message.break` / `message.complete` / `tool.*` / `error`） | 接后端推送 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| Affect emotion / locale 枚举消费 | 接后端 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名消费 + 本地缓存 | 接后端 | [PROTOCOL.md §1.5](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏消费 | 接后端 | [PROTOCOL.md §1.6](../PROTOCOL.md) |
-| Runner `runner_ready` payload + capabilities 消费 | 对 Runner | [PROTOCOL.md §2.3](../PROTOCOL.md) |
-| 反向 RPC `request_llm` 代理 | 对 Runner + 后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 反向 RPC 速率守卫（200 帧；文本 1MB / 多模态视觉 10MB 上限） | 对 Runner（客户端转发前限流） | [PROTOCOL.md §3](../PROTOCOL.md) |
-| 打扰档位权威边界 | 对后端（客户端推、后端镜像） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) + [DESIGN.md §6.2](../DESIGN.md) |
-| 打扰档位双层模型（用户偏好 + 生效覆盖 + 生效值） | 本模块独有（持久层 + 活动感知器） | 本 README §2 + DESIGN §6.2 |
-| LLM 反应与自主开关（本地持久化，不上报后端） | 本模块独有 | [DESIGN.md §6.3](../DESIGN.md) |
-| safeStorage 跨平台一致（DPAPI/Keychain/libsecret） | 平台 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
-| Electron 二进制自更新（`electron-updater` RSA + Runner wheel RSA + SHA-512） | 对后端 | [PROTOCOL.md §5.5](../PROTOCOL.md) |
-| 自更新两阶段契约（Stage 1 prefetch / Stage 2 install + Sentinel + 降级） | 对后端 | [PROTOCOL.md §5.5](../PROTOCOL.md) |
-| IPC 命名空间 `spiritagent:*` 前缀（`spiritagent:sprite:*` / `spiritagent:auth:changed` 等） | 本模块独有 | 本 README §3 |
-| 动画状态机（`IDLE` / `LISTENING` / `THINKING` / `SPEAKING` / `WORKING` / `EMOTIONAL` / `SLEEPING` / `INTERACTING` / `DISCONNECTED`） | 本模块独有（消费后端 `affect` + 用户操作） | 本 README §2 + DESIGN §2 |
-| 空间行为场所：协议 5 项（`home` / `chat` / `perch` / `roam` / `sleep`）+ 客户端内部 `target`（仪式行走专用，工具调用触发、非协议枚举）+ 缩放范围 0.5×–2× | 本模块独有（消费后端 `affect.locale`；`target` 仅本模块内部触发） | 本 README §2 + DESIGN §3 + PROTOCOL §1.3 |
-| 伙伴性格标签驱动的动画调度 | 本模块独有 | 本 README §2 + [docs/PIPELINE.md §10](../docs/PIPELINE.md) |
-| 「语义键 → 预设 token」映射的客户端兑现（三级降级，兑现落空回绑定姿势） | 对后端（随模型下发） | [PROTOCOL.md §1.3](../PROTOCOL.md) + [docs/PIPELINE.md §11](../docs/PIPELINE.md) |
-| 激活码格式（base64 编码 `{b, t}` JSON） | 对后端 | [PROTOCOL.md §5.3](../PROTOCOL.md) |
-| Skills frontmatter 平台过滤（仅 `macos` / `windows`，历史 `linux` 值兼容翻译表） | 本模块独有 | 本 README §3 + [installer/README.md §2](../installer/README.md) |
+| 伙伴生命周期、事件、Affect、资产、错误与凭据契约 | 对后端 / Runner | [PROTOCOL.md](../PROTOCOL.md) |
+| 3D 产物与动画映射 | 对后端 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
+| 打扰档位权威边界 | 对后端 | [ARCHITECTURE.md §5.1](../ARCHITECTURE.md) |
+| 渲染状态机与空间行为 | Renderer 内部 | [client/renderer/companion/README.md](renderer/companion/README.md) |
+| IPC 命名空间与 Skills 平台过滤 | 本模块独有 | 本 README §3 / §4 |
 
 ## 6. 已知限制
 

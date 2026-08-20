@@ -4,7 +4,7 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型生成(图生3D 供应商:tripo / hunyuan)由 web 进程内 `services/companion/pipeline.py` 的能力链直接编排(submit → poll → 可选 cloud_rig → 可选 cloud_animate_bind → download → 落盘),长任务跑在 web 进程同一事件循环里。详细链拓扑与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型生成在 web 进程内编排能力链；链路与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 
 **不**做:
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner;图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。
@@ -57,11 +57,11 @@ backend/
 - **WS 关闭码 1008(鉴权失效)立即退出重连流程**：凭据问题靠重试无法恢复,不把请求堆到过期账号上。
 - **形象生成失败对用户返回固定友好文案并支持重试**：不透传供应商原始错误——错误体常含 URL / 部分 auth 头,且用户对生图服务错误无处理能力。
 - **错误统一归类为有限分类决定恢复策略**(退避重试 / 凭证轮换 / 压缩上下文 / 不重试)。为什么不暴露原始异常：供应商错误常含 URL / auth 头 / 私有调用栈,必须脱敏。
-- **3D 模型生成以图生3D为主路、多画风正面确认后自动多视角**：独立于通用 LLM 模块的 3D 生成服务,供应商接口为提交 / 轮询 / 下载三段式并带能力开关,经同一注册表自注册；生成主路为图生3D（由用户在引导流程中对比日系赛璐珞与二次元游戏CG两款画风样图、锁定画风并确认正面全身图）。当前供应商支持多视图时,后端补齐缺失的左/右/背面视角并把四张种子图提交多图生模；不支持时只保留并提交正面图。同一画风的左/右/背面种子跨正面重绘复用；画风变化时在确认时重绘左/右/背面,避免不同画风种子混用。**绑骨 / 动画绑定由供应商能力链消费**——动画绑定 hop 把该骨架的预设动画烘焙进 GLB,产品侧的语义键到预设 token 的映射由供应商适配器声明、随模型一起下发,客户端只做兑现,不持有任何供应商命名（映射权威列表见 [docs/PIPELINE.md §8](../docs/PIPELINE.md)）。
-- **已付费 3D 任务先持久化，失败重试仅触发下载而不重新计费**（跨模块契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)「下载失败可恢复」）：`pipeline._persist_download_source` 在下载前把付费 task_id 与 URL 写行；能力链每跳成功后立即刷新 task_id，链末只下载一次，保证 `companion.model.retryDownload` 永远回到"最近一次成功产物"重查重下。整链路在 web 进程内 `asyncio.create_task` 跑，由 `_resume_inflight_pipelines()` 在启动时扫 `IN_FLIGHT_STATUSES` 行接续旧的悬挂任务。
+- **3D 生成独立于通用 LLM 供应商链**：图生3D 供应商经同一注册表自注册，按能力声明进入能力链；后端只负责编排、持久化与下发，不在通用 LLM 模块中复制供应商逻辑。种子图、绑骨、动画与产物规则见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+- **3D 长任务与 web 进程同生命周期**：请求路径只创建异步任务，启动时扫描未完成行并交给能力链接续；下载恢复语义见 [docs/PIPELINE.md §3](../docs/PIPELINE.md)。
 - **SSRF 保留段检查默认严格、按部署显式豁免**：fake-ip TUN 代理（Clash 类）把所有域名解析进 198.18.0.0/15，供应商产物的对象存储下载会被 SSRF 保留段检查拦截——API 调用走普通客户端不受影响，唯独下载失败且已计费。命中豁免网段只跳过保留段拒绝，域名黑名单、协议白名单、HTTPS→HTTP 降级拦截、云元数据/CGNAT 拦截无条件保留。为什么默认不豁免：多租户部署里该段同样可能是真实内网，"本部署跑在 fake-ip 代理后"是部署者的知识，豁免必须显式配置。
 - **全身立绘提示词模板 + A-pose + 严格画风词典**：全身立绘生成收敛至双画风（日系赛璐珞 `cel_shading` 与二次元游戏CG `anime_game_cg`），生图供应商优先使用 Gemini / Grok；A-pose（双臂微张、对称站姿）与干净背景保障绑骨识别与多视角一致性。风格随模型行持久化：建行时单次解析写入，随模型就绪事件与模型接口下发，供客户端路由 NPR/PBR 渲染。
-- **全身样图草稿可恢复、确认才转正**（断点恢复契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)）：样图与微调正面图以 temp-media 草稿形态生成，草稿路径与用户已选画风随形象行持久化——客户端重启断点恢复时重放样图与正面预览，不重复触发生图；草稿过期按未生成处理，由客户端重新生成。正面确认时四张种子图才从 temp-media 转存 companion-avatars（与半身像 finalize 同一生命周期），转存失败返回可重试错误而非落死链。为什么确认才转正：未确认产物可能被整组丢弃（换画风/微调重绘），提前转正会在正式存储堆积孤儿文件。
+- **全身样图草稿可恢复、确认才转正**（断点恢复契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)）：样图与微调正面图以临时媒体草稿生成，草稿路径与已选画风随形象行持久化；确认时才转存正式资产，转存失败返回可重试错误。为什么确认才转正：未确认产物可能被整组丢弃，提前转正会在正式存储堆积孤儿文件。跨模块恢复行为见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
 - **用户可见图像风格分层（半身像 / 精灵恒写实）**：半身像持续写实；精灵是 GLB 缺位或生成失败期的桌面降级渲染源（用户可见），主体参考锁半身像并显式锁写实人像措辞，保持与半身像视觉一致。为什么不删精灵：等不到 GLB 的窗口期与生成失败期仍需要静态占位，精灵是最稳的可见层。
 - **双参考图仅 Gemini 消费**：第二张参考图（身份锚点之外的风格/体态参考）只有 Gemini 的图生图原生支持双参考融合；Grok 与 MiniMax 都是单参考，收到第二张时**静默忽略**。供应商链在双参考请求下把 Gemini 排在单参考家之前、单参考兜底。
 - **静态精灵相册懒生成 + 写实锚点**：无 3D 模型期的降级渲染源，主体参考锁半身像、措辞显式锁写实人像；LLM 按自由语义在相册标签中匹配（命中零生成成本），未命中才撰写提示词生成，等待图每用户唯一且命中即返。为什么懒生成而非预生成全集：语义空间开放（状态×情绪×反应），预生成既浪费也永远不齐，懒生成让每张图都被真实需求验证。相册按头像失效、有数量上限与每分钟频控（防 LLM 循环刷请求）；命中/短路返回前校验文件在盘，带外删除（手动清理/换盘）产生的孤儿行即删并按未命中再生成——签名 URL 不会持续指向 404。抠图走**自适应色键**：从候选色（亮绿/品红/青/紫罗兰/橙）按半身像调色板选与主体距离最远的颜色写入提示词（后端选色而非让模型自由挑色——模型可能选中与服装冲突的颜色），生成后按边框环估计的实际背景色做双阈值 flood fill 抠图（边界连通才抠、封闭大连通域补抠、去溢色、残余硬化）。为什么不用纯白背景：亮度键无法区分白背景与白色/浅色服装；为什么不用 ML 分割：引入 onnxruntime 级重依赖且不确定，色键确定性强。供应商无视颜色指令渲染成白底时按估计背景色退化抠图（仅记日志不硬失败）；复合质量门（实心占比 + 半透明占比）拦截"只剩轮廓"的洗坏产出。
@@ -70,7 +70,6 @@ backend/
 - **Alembic 版本化迁移 + 启动自动升级**：lifespan 内自动升级到 head，无独立部署步骤——单实例部署且无 CI/CD，应用启动是最不易漏的迁移时机。单一 baseline（全量 schema 上线前 squash 而来），此后只追加迁移、不重写历史；类型与默认值比对全开，校验必须零差异。autogenerate 两个坑：视频生成任务模型不被模型包入口导入，迁移环境脚本的显式 import 勿删；partial unique / 向量 / 全文索引只存在于迁移文件（声明进模型会让 SQLite 建表丢失语义），因此从模型删索引不会自动生成 drop，需手写。
 - **全异步数据访问层，单一连接池**：所有会话经同一 asyncpg 池（此前同步池与异步池并存、职责重叠且连接数翻倍，合并后单池 + 一条监听专线）；事件监听独占一条进程生命周期直连，断线自动重连，非 PG 后端回退轮询。纪律（async 下的坑）：关系属性必须显式预加载（懒加载运行时直接抛错）；全库时间戳带时区、参数必须 aware（SQLite 回读丢时区，跨方言算术需容错）；**短事务——会话不跨 LLM await**：回合起点、每个持久化点、工具批处理前后、压缩检查点各自开短会话，后台任务按"读 → LLM → 写"三段各持短会话，LLM 调用以无会话方式执行。
 - **交互频控与汇总门限**：戳击主动反应设分钟级封顶作为成本闸门，不影响自主行为与统计；互动统计按 OR 门限（戳击或对话任一达标）写小时级汇总，供夜间反思。
-- **3D 模型本地快速调试入口（`pnpm clip`）**：调整图生3D 管线、自动绑骨、变形目标注入或骨骼朝向时，无须启动完整客户端或等待 LLM 链路——独立动画调试器直连本地后端下载渲染伴侣模型。详见 [client/README.md §4](../client/README.md)。
 - **内容风控快速失败**：供应商内容风控拒绝映射为不可重试错误，避免无意义重试白烧配额。
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 
@@ -78,25 +77,11 @@ backend/
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
-| 伙伴层 JSON-RPC 方法（onboarding / avatar / companion / model / tts） | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| 事件类型（`companion.affect` / `model.ready` 等） | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| Affect emotion / locale 枚举 | 对 LLM 提示词 → 客户端渲染 | [PROTOCOL.md §1.4](../PROTOCOL.md) |
-| 资产 URL 5 分钟 HMAC 签名 | 对客户端 | [PROTOCOL.md §1.5](../PROTOCOL.md) |
-| 错误信封 `{error, reason, status}` + JSON-RPC 错误码脱敏 | 对客户端 | [PROTOCOL.md §1.6](../PROTOCOL.md) |
-| Reserved Keys 防注入（`user_id` / `llm_config` / `user_settings`） | 对 LLM 工具入参 | [PROTOCOL.md §5.1](../PROTOCOL.md) |
-| API Key 永不离后端（指纹化 + 留空即保留） | 对管理端 | [PROTOCOL.md §5.4](../PROTOCOL.md) |
-| Outbox `ws_events` LISTEN/NOTIFY 调度 | 内部（业务 / Cron → 客户端） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
-| IPC future `(user_id, call_id)` 键语义 + 超时 + JWT 过期兜底 | 内部（后端 ↔ 客户端 IPC） | [PROTOCOL.md §4](../PROTOCOL.md) |
-| 打扰档位持久化（重启不丢） | 接客户端推送（见 [PROTOCOL.md §1.2](../PROTOCOL.md) `companion.set_disturbance_tier`） | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
-| 供应商链三层入口（按服务取供应商 / 取客户端 / 带回退执行） | 本模块独有 | 本 README §4 |
-| 供应商优先配置 + 回落链 | 本模块独有（供应商自注册产物） | 本 README §4 |
-| 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 + backend 代码 |
-| `ModelGenerateRequest.provider` 取值与触发条件 | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `companion.model.retryDownload`（仅重试下载，绝不重新计费）与 `model.failed` 载荷的 `retry_download` / `model_id` | 对客户端 | [PROTOCOL.md §1.2](../PROTOCOL.md) |
-| `model.ready` / `model.gen.progress` 载荷 `provider` 字段 | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `model.ready` `provider` 来源标识（`tripo_image_to_3d` / `hunyuan_image_to_3d`，多视图管线下分别带 `_multiview_`） | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) |
-| `model.ready` 与 `GET /api/companion/model` 响应中的「语义键 → 预设 token」映射（动画绑定 hop 真正成功时随模型固化；空映射代表该骨架无可烘焙动画） | 对客户端 | [PROTOCOL.md §1.3](../PROTOCOL.md) + [docs/PIPELINE.md §10](../docs/PIPELINE.md) |
-| Cron 自主回合内部事件 `cron.turn.request`（outbox 路由到持连副本） | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| 伙伴生命周期、事件、枚举、资产与错误契约 | 对客户端 / 管理端 | [PROTOCOL.md §1 / §5](../PROTOCOL.md) |
+| 3D 生成输入、能力链、产物与动画映射 | 对客户端 + 供应商 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
+| Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
+| 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
+| 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
 
 ## 6. 已知限制
 
@@ -124,4 +109,4 @@ backend/
 
 ### LLM 调试日志
 
-排查对话失败时按需开启的开关。开启后每个 LLM 调用在专用 logger 上按调用粒度输出供应商、模型、请求/响应摘要、延迟与失败原因（字段与默认截断长度见 `llm_debug.py`）。默认关闭——开启会把对话内容原样落到 stdout，仅在复现失败时临时启用。注意两点：事件以 DEBUG 级别发出，需同时设 `log_level = "DEBUG"` 才可见；日志落在实际执行调用的容器里——头像/全身图生成、对话在 backend 容器，3D 模型管线（绑骨选型等）在 worker 容器。
+排查对话失败时按需开启的开关。开启后每个 LLM 调用在专用 logger 上按调用粒度输出供应商、模型、请求/响应摘要、延迟与失败原因（字段与默认截断长度见 `llm_debug.py`）。默认关闭——开启会把对话内容原样落到 stdout，仅在复现失败时临时启用。注意两点：事件以 DEBUG 级别发出，需同时设 `log_level = "DEBUG"` 才可见；日志落在实际执行调用的容器里。

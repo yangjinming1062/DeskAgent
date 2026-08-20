@@ -19,7 +19,7 @@
 
 ## 🌟 视觉呈现：从“蛋”到专属 3D 伙伴的诞生
 
-SpiritAgent 区别于传统桌面宠物或纯聊天插件的核心，在于伙伴拥有**从无到有的生成式诞生闭环**。首次安装时它是一颗温润呼吸的“蛋”；在完成一段自然温暖的对话后，系统即时生成专属半身像；随后并发生成多风格全身立绘样图供用户选择与微调；正面立绘确认后按 3D 供应商能力派生多视图或直接使用正面图，进入图生 3D 管线，供应商在云端完成绑骨、动画烘焙与几何压缩，赋予伙伴专属的 3D 模型与相册资产：
+SpiritAgent 区别于传统桌面宠物或纯聊天插件的核心，在于伙伴拥有**从无到有的生成式诞生闭环**：从一颗温润呼吸的“蛋”开始，经自然对话定制形象与人格，最终成为常驻桌面的专属 3D 伙伴。生成体验见 [DESIGN.md](DESIGN.md)，3D 能力链见 [docs/PIPELINE.md](docs/PIPELINE.md)。
 
 | 1. 初始破壳「蛋」形态 | 2. 对话定制半身像 | 3. 全身立绘：日系赛璐珞 | 4. 全身立绘：二次元游戏CG | 5. 专属伙伴常驻桌面 |
 | :---: | :---: | :---: | :---: | :---: |
@@ -149,41 +149,6 @@ pnpm dev
 
 ---
 
-## 🛠️ 开发者专属：3D 模型快速调试工具 (`pnpm clip`)
-
-在调整 3D 生成管线、测试自定义 GLB 模型或验证自动绑骨时，**无需等待 LLM 链路**，直接运行独立调试器：
-
-```bash
-# 进入 client/ 目录后启动
-pnpm clip
-```
-
-- **直连后端模型**：粘贴管理后台激活码，一键自动拉取当前伴侣的 `.glb` 模型（支持流式 Gzip 解压与 71° 手臂自然下垂 Rest Pose 映射）；
-- **GLB 内嵌 clip 即点即播**：检视该模型烘焙进 GLB 的全部 clip，支持交叉淡入淡出、倍速与单帧步进；
-- **智能姿态纠偏**：自动识别 Z-up 平躺模型并立起、自动双脚贴地与水平居中；
-- **3D 交互手柄**：内置 TransformControls（位移 / 旋转 / 缩放）坐标轴拖拽与精确数值微调；
-- **表情与嘴型**：支持面部变形目标调节与 TTS 口型振幅模拟。
-
----
-
-## 📦 客户端安装包构建 (Release)
-
-如需分发给最终用户，可使用一键脚本打包原生安装器（包含 Installer 引导器与 Runner 运行时）：
-
-```bash
-# Windows 平台
-pwsh scripts/build_client.ps1
-
-# macOS 平台
-bash scripts/build_client.sh
-```
-
-**产物说明**：
-* `release/SpiritAgent-Setup-{ver}.exe` (Windows) / `.dmg` (macOS)：全新安装与修复程序。
-* `release/SpiritAgent-{ver}-update.zip`：静默增量自更新包（可通过后台管理界面上传发布）。
-
----
-
 ## 📚 详细文档导航
 
 | 想了解什么 | 推荐阅读 | 说明 |
@@ -195,5 +160,6 @@ bash scripts/build_client.sh
 | **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、动画状态机与表情驱动 |
 | **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化、MCP 客户端与工具库 |
 | **安装器与引导机制 (Installer)** | [installer/README.md](installer/README.md) | Tauri 2 极简轻量安装引导与环境配置流程 |
-| **3D 模型生成能力链与产物契约** | [docs/PIPELINE.md](docs/PIPELINE.md) | 链拓扑、Tripo 骨骼规范、语义键映射、客户端兑现策略、渲染与压缩 |
+| **3D 模型生成能力链与产物契约** | [docs/PIPELINE.md](docs/PIPELINE.md) | 链拓扑、供应商能力、产物契约与客户端兑现策略 |
+| **构建与仓库级脚本** | [scripts/README.md](scripts/README.md) | 安装包构建、导入检查与脚本工具说明 |
 | **代码与协作开发规范** | [RULES.md](RULES.md) | 仓库代码风格、文档更新原则、Git Commit 提交模板 |

@@ -21,7 +21,7 @@
 - 所有下发事件均附加递增序列号 `seq`（从 1 开始）；序列号与客户端 `lastReceivedSeq` 均为**连接级（Connection/User 级）**状态，跨 Session 共享。客户端维护 `lastReceivedSeq` 保证去重与有序消费。
 - 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度（带 id 的标准 RPC 请求），服务端自重放缓冲中修剪已确认帧。
 - **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后后端保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时、溢出或服务端重启导致序列号失同步，则返回 `resumed: false`、当前最大 `current_seq` 与完整 DB 历史进行全量重水化。重连且收到 `resumed: false`（或降级走 `session.get_main`）时，客户端**必须**重置 `lastReceivedSeq = current_seq` 以防旧水位导致事件黑洞；普通会话切换（活连接上）严禁重置水位。
-- WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不再尝试。
+- WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不继续尝试。
 
 ---
 
@@ -56,9 +56,9 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定（草稿落 temp-media，路径随形象行持久化供断点恢复复用） | Backend 生成 + Client 风格选择卡片 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/select-style | 持久化用户选定的画风（不触发生成），重启恢复到正面预览而非重新出样图 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front | 按选定画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图；同画风仅补齐缺失左/右/背面，换画风重绘三者，并解开音色/用户子阶段 | Backend 生成 + Client 流程 |
-| GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成（图生3D：基于已确认的正面种子图提交供应商生成，支持多视图的供应商追加左/右/背种子图）；响应携带该模型烘焙进 GLB 的「语义键 → 预设 token」映射 | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
-| companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果(供应商查询接口刷新过期 URL + 下载 + 能力链再驱动;**绝不重新提交生成/计费**) | Backend 生成管线 + Client 失败态入口 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图并解开音色/用户子阶段；后续种子图准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md) | Backend 生成 + Client 流程 |
+| GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
+| companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/sprite | 静态精灵相册解析（降级渲染源） | Backend 生成 + Client 降级层 + DESIGN §1.2 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
@@ -66,7 +66,7 @@
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的样图与已选画风随形象行持久化，断点恢复直接重放、不重复触发生成；样图草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
 - **形象锁定**：形象确认即锁定，物种/性别/基础外貌不可再改，3D 模型/头像重新生成路径关闭。
-- **下载失败可恢复（已付费结果绝不丢）**：3D 生成成功后、下载开始前，供应商task_id 与下载 URL 已持久化；下载失败只置下载失败态并随 `model.failed` 事件下发 `retry_download: true` + `model_id`——客户端必须据此提供"重试下载"入口（`companion.model.retryDownload`），而非引导重新生成。重试路径只调供应商查询与下载接口；服务重启中断的下载同样进入该可恢复态。
+- **下载失败可恢复（已付费结果绝不丢）**：下载失败态随 `model.failed` 事件下发可重试标记与模型标识；客户端必须据此提供"重试下载"入口，而非引导重新生成。持久化与恢复语义见 [docs/PIPELINE.md §3](docs/PIPELINE.md)。
 
 ### 1.3 事件类型
 
@@ -74,7 +74,7 @@
 |-----------|----------|--------|
 | companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
-| model.ready / model.gen.progress / model.failed | 3D 模型就绪（含语义键到预设 token 的映射）/ 进度 / 失败 | Client 加载 + 兑现动画 / 进度展示 / 降级 |
+| model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 | reload.mcp | MCP 配置变更后通知重载 | Client 转发 Runner，重载后回同步工具表 |
@@ -93,9 +93,9 @@
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（档位门控 + 对话开启抑制）。
 
-**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case）。后端在提示词中注入该模型当下「语义键 → 预设 token」映射中可主动请求的键（剔除状态与交互反馈类键，详见 [docs/PIPELINE.md §10](docs/PIPELINE.md)）——LLM 永远无法命名一个客户端无法兑现的动作。解析后经 message.complete 的 affect.action 字段下发，客户端按映射兑现为 GLB 内真实存在的 clip，兑现落空时角色停在绑定姿势。
+**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），且只能来自后端注入的可请求动作清单；解析后随对话完成事件下发。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5](docs/PIPELINE.md)。
 
-**表情的渲染分工**：情绪驱动两处渲染——3D 面部仅保留眨眼与 TTS 口型，情绪的面部表达由客户端经表情头像端点换图实现（聊天窗左栏头像）。LLM 找不到合适情绪时可调用 create_expression 工具注册自创情绪 token（description 必填、兼任头像生成语义、icon 可选），注册后 token 并入情绪白名单、后台预热生成头像图。
+**表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 
 **连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
@@ -116,7 +116,7 @@
 
 ### 1.6 错误信封
 
-REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何供应商失败不再 fallback。
+REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何供应商失败都不切换 fallback。
 
 ---
 
@@ -145,11 +145,11 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 2.3 runner_ready capabilities 与 health 状态
 
-capabilities 字段由**运行时探测**：microphone / screen_capture / system_activity 真实枚举设备、调用底层 API；local_stt / local_tts 执行原生加载器的 import 探测。**不用存在性检查**——那会欺骗 UI 让用户点不能用按钮。`runner_ready` 与 `spiritagent.info` 同时返回平铺的 `capabilities`（布尔映射向后兼容）与结构化的 `capabilities_health`（`{ [capability_name]: { available: boolean, reason?: string } }`），供客户端对各子能力展示精细化诊断与局部优雅降级。`probe_failed=true` 仅在探测流程发生致命未捕获异常时置位。语音通话 / 唤醒词在对应 capability 为 false 时由客户端优雅降级或提供具体故障原因 Tooltip 引导。
+capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探测设计见 [runner/README.md §2](runner/README.md)）：前者是向后兼容的布尔映射，后者按子能力给出可用性与失败原因。致命探测异常置 probe_failed；客户端按能力缺失做局部降级或给出可操作提示。
 
 ### 2.4 配置推送所有权
 
-**客户端是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 持有在内存、每次工具调用读取——**不再读写磁盘配置文件**。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。客户端把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
+**客户端是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 仅在内存持有配置、每次工具调用读取，不读写磁盘配置文件。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。客户端把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
 
 ---
 
