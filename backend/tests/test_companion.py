@@ -1817,6 +1817,11 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     _, SessionLocal = _patch_db
     monkeypatch.setattr(pipeline.SETTINGS, "tripo_api_key", "tsk_test")
 
+    def _do_not_launch(**_kwargs):
+        return None
+
+    monkeypatch.setattr("services.companion.model_service._launch_pipeline_task", _do_not_launch)
+
     async with SessionLocal() as db:
         user = User(username="mgen", is_active=True, can_use=True)
         db.add(user)
@@ -1871,14 +1876,14 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
     _, SessionLocal = _patch_db
     monkeypatch.setattr(pipeline.SETTINGS, "tripo_api_key", "tsk_test")
 
+    def _do_not_launch(**_kwargs):
+        return None
+
     def _seed_unreadable(*_a, **_kw):
         raise ModelGenerationError("seed view file not on disk")
 
     # image-to-3D 管线的 seed 视图落在 companion-avatars/ 下的磁盘，由 worker 通过 ``resolve_uploaded_avatar_path`` 解析。强制该处失败以便测试覆盖生成后失败路径，且不消耗 API 配额。
-    monkeypatch.setattr(
-        "services.companion.avatar_service.resolve_uploaded_avatar_path",
-        _seed_unreadable,
-    )
+    monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", _seed_unreadable)
 
     async with SessionLocal() as db:
         user = User(username="mgenfail", is_active=True, can_use=True)
@@ -1915,13 +1920,13 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
         uid = user.id
         previous_id = previous.id
 
-    # 管线并入 web 后内联运行；把 fire-and-forget 的 _launch_pipeline_task 改成同步 await 以便测试立即观察终态。
+    # 控制器测试禁用自动调度，由测试手动 await 管线以立即观察终态。
     from services.companion import pipeline as _pipeline
 
     async def _run_pipeline_sync(*, model_id: int, user_id: int, **kw):
         await _pipeline.run_capability_chain(model_id=model_id, user_id=user_id, **kw)
 
-    monkeypatch.setattr("services.companion.pipeline._launch_pipeline_task", _run_pipeline_sync)
+    monkeypatch.setattr("services.companion.model_service._launch_pipeline_task", _do_not_launch)
 
     async with SessionLocal() as db:
         # force=True：当前已存在 active succeeded 模型，所以这是显式再生，而不是幂等首跑路径。
