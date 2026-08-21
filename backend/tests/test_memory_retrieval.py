@@ -314,7 +314,7 @@ async def test_turn_inputs_proactive_injection(seeded):
             session_client_context=None,
             user_settings={},
         )
-        sys_msg = turn.context.instructions
+        sys_msg = turn.context["instructions"]
         assert "Relevant long-term memories" in sys_msg
         assert "极其讨厌啰嗦的废话" in sys_msg
 

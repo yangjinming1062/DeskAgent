@@ -511,6 +511,16 @@ class _MockResponse:
     def __init__(self, content: str):
         self.output = [{"type": "message", "content": [{"type": "output_text", "text": content}]}]
 
+    @property
+    def output_text(self) -> str:
+        texts: list[str] = []
+        for item in self.output:
+            if item.get("type") == "message":
+                for part in item.get("content", []):
+                    if part.get("type") == "output_text":
+                        texts.append(part["text"])
+        return "".join(texts)
+
 
 async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
     from modules.companion import Persona

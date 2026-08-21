@@ -4,7 +4,7 @@ import json
 from components import coerce_int, get_logger, tool_error
 from openai import AsyncOpenAI
 
-from services.llm import ResponsesContext, call_with_retry, client_for_config, output_text_from_response, response_request_kwargs
+from services.llm import build_responses_kwargs, call_with_retry, client_for_config
 from services.tools import ALWAYS_AVAILABLE, REGISTRY, WEB_EXTRACT_AVAILABILITY, resolve_extract_provider, resolve_search_provider
 
 logger = get_logger(__name__)
@@ -15,12 +15,14 @@ async def _summarize_doc(client: AsyncOpenAI, model_name: str, doc: dict) -> Non
     if not content or len(content) <= 1000:
         return
     try:
-        context = ResponsesContext(
+        request = build_responses_kwargs(
+            model=model_name,
             instructions="Summarize the web content and extract key information in markdown format. Be concise.",
-            items=[{"role": "user", "content": [{"type": "input_text", "text": f"URL: {doc.get('url')}\nContent: {content[:50000]}"}]}],
+            input_items=[{"role": "user", "content": [{"type": "input_text", "text": f"URL: {doc.get('url')}\nContent: {content[:50000]}"}]}],
+            temperature=0.1,
         )
-        response = await call_with_retry(client, **response_request_kwargs(model=model_name, context=context, temperature=0.1))
-        doc["content"] = output_text_from_response(response)
+        response = await call_with_retry(client, **request)
+        doc["content"] = response.output_text
     except Exception as e:
         # 单文档失败必须隔离，否则会拖垮整批 gather（httpx、JSON 解析、LLMRuntimeError、空 choices 都落在这一层）。
         logger.warning("Failed to summarize content", extra={"error_msg": str(e)})

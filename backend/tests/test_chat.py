@@ -375,7 +375,7 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
         _ToolDispatchContext,
         persist_tool_summary,
     )
-    from services.llm import ResponsesContext
+    from services.llm import copy_responses_context
     from sqlalchemy import select
 
     _, SessionLocal = _patch_db
@@ -393,7 +393,7 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
     monkeypatch.setattr(persistence, "_run_tool_batch", _cancelled_tool_batch)
 
     tool_calls = [{"type": "function_call", "call_id": "call_123", "name": "test_tool", "arguments": "{}"}]
-    context = ResponsesContext(instructions="SYS", items=[])
+    context = {"instructions": "SYS", "input": []}
     active_tools = {"test_tool"}
     schemas = {}
     dispatch_ctx = _ToolDispatchContext(user_id=1, llm_config={}, user_settings={}, session_id="s1", native_memory=None, guardrails=None, emitter=None)

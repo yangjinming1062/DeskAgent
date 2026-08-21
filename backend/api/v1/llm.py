@@ -5,16 +5,7 @@ from components import SESSION_LOCAL, SETTINGS, get_logger
 from fastapi import Depends, HTTPException, Request
 from modules.auth import LoginRecord, User, get_current_session
 from pydantic import BaseModel
-from services.llm import (
-    MissingLlmConfigError,
-    ServiceType,
-    call_with_retry,
-    classify_api_error,
-    execute_with_fallback,
-    output_text_from_response,
-    resolve_context_tokens,
-    resolve_provider_chain,
-)
+from services.llm import MissingLlmConfigError, ServiceType, call_with_retry, classify_api_error, execute_with_fallback, resolve_context_tokens, resolve_provider_chain
 from services.rate_limit import limiter
 from slowapi.util import get_remote_address
 
@@ -68,7 +59,7 @@ async def create_completion(req: CompletionRequest, request: Request, current: t
         logger.warning("LLM completion failed user=%s reason=%s status=%s", user.id, classified.reason.value, classified.status_code)
         raise classified_http_exception(classified) from e
 
-    content = output_text_from_response(response)
+    content = response.output_text
     if not content:
         logger.warning("LLM returned 2xx with empty output user=%s", user.id)
         raise classified_http_exception(classify_api_error(RuntimeError("LLM returned no output"), model=req.model or ""))

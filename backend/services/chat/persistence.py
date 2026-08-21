@@ -8,7 +8,7 @@ from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..conversation import AFFECT_TRACE_SUBTYPE, MAIN_KIND
-from ..llm import ResponsesContext, message_to_response_items
+from ..llm import copy_responses_context, message_to_response_items
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
@@ -99,7 +99,7 @@ async def _persist_assistant_no_tool_turn(
     turn_duration_ms: int,
     llm_config: dict,
     first_user_msg_content: str | None,
-    context: ResponsesContext,
+    context: dict[str, Any],
     track_task: TrackTask | None = None,
     *,
     emotion: str | None = None,
@@ -147,7 +147,7 @@ async def _persist_assistant_no_tool_turn(
     # 优先读命名空间键（设置 UI 写入 ``agent.enable_background_review``），旧数据回退到裸键 ``enable_background_review``。
     bg_review = effective_settings.get("agent.enable_background_review") or effective_settings.get("enable_background_review") or BACKGROUND_REVIEW_DEFAULT
     if bg_review.lower() == BACKGROUND_REVIEW_DEFAULT:
-        review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, context.copy()))
+        review_task = asyncio.create_task(run_background_memory_review(user_id, llm_config, copy_responses_context(context)))
         if track_task:
             track_task(review_task)
 
@@ -170,14 +170,14 @@ async def _persist_assistant_with_tool_calls_and_results(
     final_completion_tokens: int,
     turn_duration_ms: int,
     dispatch_ctx: _ToolDispatchContext,
-    context: ResponsesContext,
+    context: dict[str, Any],
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
 ) -> list[dict]:
     """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹。"""
     if turn_content:
-        context.append({"role": "assistant", "content": [{"type": "output_text", "text": turn_content}]})
-    context.extend(tool_calls_list)
+        context["input"].append({"role": "assistant", "content": [{"type": "output_text", "text": turn_content}]})
+    context["input"].extend(tool_calls_list)
     async with session_scope() as db:
         db.add(
             Message(
@@ -212,7 +212,7 @@ async def _persist_assistant_with_tool_calls_and_results(
         raise
 
     for res in tool_results:
-        context.append(*message_to_response_items(res))
+        context["input"].extend(message_to_response_items(res))
         if res.get("name") == "search_tools":
             parsed = safe_json_loads(res.get("content", ""))
             if isinstance(parsed, dict):

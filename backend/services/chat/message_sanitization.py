@@ -4,8 +4,6 @@ from typing import Any
 
 from components import get_logger
 
-from ..llm import ResponsesContext
-
 logger = get_logger(__name__)
 
 
@@ -119,9 +117,9 @@ def _normalize_older_response_item(item: dict, *, replace_images: bool, max_char
     return _truncate_response_text(normalized, max_chars)
 
 
-def truncate_responses_context(context: ResponsesContext, max_recent_items: int = 40, normalize_older_than: int = 10, max_chars_per_item: int = 15000) -> ResponsesContext:
+def truncate_responses_context(context: dict[str, Any], max_recent_items: int = 40, normalize_older_than: int = 10, max_chars_per_item: int = 15000) -> dict[str, Any]:
     """deterministic Responses input-window fallback; instructions are never dropped."""
-    items = context.items
+    items = context["input"]
     keep_start = max(0, len(items) - max_recent_items)
     for _ in range(max_recent_items):
         if keep_start <= 0 or items[keep_start].get("type") != "function_call_output":
@@ -135,4 +133,4 @@ def truncate_responses_context(context: ResponsesContext, max_recent_items: int 
         removed = keep_start - (1 if anchor is not None else 0)
         marker = {"role": "user", "content": [{"type": "input_text", "text": f"[... {removed} early conversation items removed for context window management ...]"}]}
         kept = [_normalize_older_response_item(anchor, replace_images=True, max_chars=max_chars_per_item), marker] if anchor is not None else [marker]
-    return ResponsesContext(context.instructions, kept)
+    return {"instructions": context["instructions"], "input": kept}

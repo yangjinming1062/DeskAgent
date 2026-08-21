@@ -7,7 +7,7 @@ from typing import Any
 
 from components import TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
-from ..llm import FailoverReason, LLMRuntimeError, ResponsesContext, call_with_retry, response_request_kwargs, response_usage
+from ..llm import FailoverReason, LLMRuntimeError, build_responses_kwargs, call_with_retry
 from .affect import AffectScrubber
 from .bubble import BubbleEvent, BubbleSplitter
 from .chat_emitter import Emitter
@@ -66,8 +66,14 @@ def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
         seen.add(tc["call_id"])
 
 
-def _usage_payload(usage: Any) -> dict:
-    payload = response_usage(usage)
+def _usage_payload(usage: Any) -> dict[str, Any]:
+    payload = {
+        "prompt_tokens": usage.input_tokens,
+        "completion_tokens": usage.output_tokens,
+        "total_tokens": usage.total_tokens,
+        "input_tokens": usage.input_tokens,
+        "output_tokens": usage.output_tokens,
+    }
     if details := getattr(usage, "output_tokens_details", None):
         payload["reasoning_tokens"] = getattr(details, "reasoning_tokens", 0)
     return payload
@@ -76,7 +82,7 @@ def _usage_payload(usage: Any) -> dict:
 async def _stream_llm_response(
     emitter: Emitter,
     model_name: str,
-    context: ResponsesContext,
+    context: dict[str, Any],
     active_schemas: list[dict],
     ctx_length: int,
     provider: Any,
@@ -88,11 +94,11 @@ async def _stream_llm_response(
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     client = provider.raw_client()
     reasoning = {"effort": reasoning_effort} if reasoning_effort and reasoning_effort in getattr(provider, "REASONING_EFFORTS", frozenset()) else None
-    kwargs = response_request_kwargs(model=model_name, context=context, tools=active_schemas, stream=True, reasoning=reasoning)
+    kwargs = build_responses_kwargs(model=model_name, instructions=context["instructions"], input_items=context["input"], tools=active_schemas, stream=True, reasoning=reasoning)
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
     image_items = [
-        item for item in context.items if isinstance(item.get("content"), list) and any(isinstance(part, dict) and part.get("type") == "input_image" for part in item["content"])
+        item for item in context["input"] if isinstance(item.get("content"), list) and any(isinstance(part, dict) and part.get("type") == "input_image" for part in item["content"])
     ]
     if image_items:
         logger.info("multimodal request shape", extra={"model_name": model_name, "image_items": len(image_items)})
@@ -155,7 +161,7 @@ async def _stream_llm_response(
                     if item is not None and getattr(item, "type", None) == "function_call":
                         tool_calls_list.append(_function_call_to_dict(item))
                     elif item is not None and getattr(item, "type", None) == "reasoning" and hasattr(item, "model_dump"):
-                        context.append(item.model_dump(exclude_none=True))
+                        context["input"].append(item.model_dump(exclude_none=True))
                 elif event_type in {"response.completed", "response.incomplete"}:
                     if usage := getattr(getattr(chunk, "response", None), "usage", None):
                         final_prompt_tokens, final_completion_tokens = usage.input_tokens, usage.output_tokens

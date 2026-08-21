@@ -4,7 +4,7 @@ from typing import Any
 from components import CONTEXT_SUMMARY_HEADROOM_FACTOR, DEFAULT_LANGUAGE, SETTINGS, get_logger
 
 from .llm_retry import call_with_retry
-from .responses import ResponsesContext, approx_context_tokens, output_text_from_response, response_request_kwargs, response_was_truncated
+from .responses import approx_responses_tokens, build_responses_kwargs
 
 logger = get_logger(__name__)
 
@@ -73,9 +73,10 @@ def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: 
 
 async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int, language: str = DEFAULT_LANGUAGE) -> tuple[str, bool]:
     """通过 Responses API 对输入项生成摘要；输出截断时保留原上下文。"""
-    context = ResponsesContext(
+    request = build_responses_kwargs(
+        model=model,
         instructions=_summary_prompt(language),
-        items=[
+        input_items=[
             {
                 "role": "user",
                 "content": [
@@ -83,14 +84,16 @@ async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: s
                 ],
             }
         ],
+        temperature=0.0,
+        max_output_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR,
     )
-    request = response_request_kwargs(model=model, context=context, temperature=0.0, max_output_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR)
     response = await call_with_retry(client, **request)
-    return output_text_from_response(response).strip(), response_was_truncated(response)
+    was_truncated = response.status == "incomplete" and getattr(getattr(response, "incomplete_details", None), "reason", None) == "max_output_tokens"
+    return response.output_text.strip(), was_truncated
 
 
 async def compress_history_if_needed(
-    context: ResponsesContext,
+    context: dict[str, Any],
     *,
     client: Any,
     model: str,
@@ -100,7 +103,7 @@ async def compress_history_if_needed(
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
     language: str = DEFAULT_LANGUAGE,
-) -> tuple[ResponsesContext, dict[str, Any] | None]:
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """按需压缩历史；成功返回压缩后的 Responses 上下文，失败或无需压缩返回原上下文。"""
     if enabled is None:
         enabled = SETTINGS.enable_context_compression
@@ -111,11 +114,11 @@ async def compress_history_if_needed(
     target = target_tokens if target_tokens is not None else SETTINGS.context_summary_target_tokens
     cap = max_input_messages if max_input_messages is not None else SETTINGS.context_summary_max_input_messages
 
-    current_tokens = approx_context_tokens(context)
+    current_tokens = approx_responses_tokens(context["instructions"], context["input"])
     if context_length <= 0 or current_tokens < context_length * threshold:
         return context, None
 
-    block, keep = _pick_compressible_block(context.items, max_input_messages=cap)
+    block, keep = _pick_compressible_block(context["input"], max_input_messages=cap)
     if not block:
         return context, None
 
@@ -135,15 +138,15 @@ async def compress_history_if_needed(
 
     replaced_count = len(block)
     placeholder = {"role": "user", "content": [{"type": "input_text", "text": f"[Conversation summary — {replaced_count} earlier items compressed]\n\n{summary}"}]}
-    compressed = ResponsesContext(context.instructions, [placeholder, *keep])
+    compressed: dict[str, Any] = {"instructions": context["instructions"], "input": [placeholder, *keep]}
     logger.info(
         "context_compressor: summarized messages into one summary",
         extra={
             "replaced_count": replaced_count,
-            "input_tokens": approx_context_tokens(ResponsesContext(items=block)),
-            "output_tokens": approx_context_tokens(ResponsesContext(items=[placeholder])),
-            "original_count": len(context.items),
-            "new_count": len(compressed.items),
+            "input_tokens": approx_responses_tokens("", block),
+            "output_tokens": approx_responses_tokens("", [placeholder]),
+            "original_count": len(context["input"]),
+            "new_count": len(compressed["input"]),
         },
     )
     return compressed, {"summary": summary, "replaced_count": replaced_count}

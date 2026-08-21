@@ -24,7 +24,6 @@ from ..gateway import RuntimeSession
 from ..llm import (
     MissingLlmConfigError,
     ProviderConfig,
-    ResponsesContext,
     ServiceType,
     message_to_response_items,
     provider_for_service,
@@ -49,7 +48,7 @@ NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "d
 class _TurnInputs:
     """``_build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
 
-    context: ResponsesContext
+    context: dict[str, Any]
     client: Any
     native_memory: NativeMemory
     model_name: str
@@ -85,9 +84,9 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
-def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> ResponsesContext:
+def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> dict[str, Any]:
     """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
-    context = ResponsesContext(instructions=system_prompt)
+    context: dict[str, Any] = {"instructions": system_prompt, "input": []}
 
     for msg in db_msgs:
         if msg.subtype in UI_ONLY_SUBTYPES:
@@ -104,13 +103,13 @@ def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *,
         if msg.tool_call_id:
             item["tool_call_id"] = msg.tool_call_id
         if msg.role == "system":
-            context.append({"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]})
+            context["input"].append({"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]})
             continue
-        context.append(*message_to_response_items(item))
+        context["input"].extend(message_to_response_items(item))
         if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
             for call in calls:
                 if isinstance(call, dict):
-                    context.append(call)
+                    context["input"].append(call)
 
     return context
 
@@ -192,7 +191,7 @@ async def _build_turn_inputs(
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
     native_memory = NativeMemory(None, user_id)
     if addition := native_memory.format_for_system_prompt():
-        context.instructions += "\n\n" + addition
+        context["instructions"] += "\n\n" + addition
 
     allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
     return _TurnInputs(

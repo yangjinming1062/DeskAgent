@@ -18,7 +18,10 @@ def _fake_response(content: str | None):
         return SimpleNamespace(responses=SimpleNamespace(create=_boom))
 
     async def _create(*_a, **_kw):
-        return SimpleNamespace(output=[{"type": "message", "content": [{"type": "output_text", "text": content}]}])
+        output = [{"type": "message", "content": [{"type": "output_text", "text": content}]}]
+        resp = SimpleNamespace(output=output)
+        resp.output_text = content
+        return resp
 
     return SimpleNamespace(responses=SimpleNamespace(create=_create))
 

@@ -14,18 +14,7 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import (
-    MissingLlmConfigError,
-    ResponsesContext,
-    ServiceType,
-    call_with_retry,
-    output_text_from_response,
-    provider_from_config,
-    resolve,
-    resolve_provider_chain,
-    resolve_vision_chain,
-    response_request_kwargs,
-)
+from ..llm import MissingLlmConfigError, ServiceType, build_responses_kwargs, call_with_retry, provider_from_config, resolve, resolve_provider_chain, resolve_vision_chain
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
@@ -293,9 +282,9 @@ async def _vision_llm_call(db: AsyncSession | None, user_id: int, system_prompt:
     text: dict[str, Any] | None = None
     if "response_format" in create_kwargs:
         text = {"format": create_kwargs["response_format"]}
-    context = ResponsesContext(instructions=system_prompt, items=[{"role": "user", "content": content}])
-    response = await call_with_retry(client, **response_request_kwargs(model=provider.config.model, context=context, text=text))
-    return output_text_from_response(response).strip()
+    request = build_responses_kwargs(model=provider.config.model, instructions=system_prompt, input_items=[{"role": "user", "content": content}], text=text)
+    response = await call_with_retry(client, **request)
+    return response.output_text.strip()
 
 
 async def _fetch_image_bytes(url: str) -> bytes | None:

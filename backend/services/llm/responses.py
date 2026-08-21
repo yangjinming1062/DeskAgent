@@ -1,24 +1,17 @@
-"""Responses API context and result helpers."""
-
-from dataclasses import dataclass, field
 from typing import Any
 
 from components import CHARS_PER_TOKEN
 
+# Responses API: DB↔input-item conversion, token estimation, kwargs assembly.
 
-@dataclass
-class ResponsesContext:
-    instructions: str = ""
-    items: list[dict[str, Any]] = field(default_factory=list)
 
-    def copy(self) -> "ResponsesContext":
-        return ResponsesContext(self.instructions, [dict(item) for item in self.items])
+def copy_responses_context(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Deep-copy a context dict (``{instructions, input}``) so mutations don't leak."""
+    return {"instructions": ctx["instructions"], "input": [dict(item) for item in ctx["input"]]}
 
-    def append(self, *items: dict[str, Any]) -> None:
-        self.items.extend(items)
 
-    def extend(self, items: list[dict[str, Any]]) -> None:
-        self.items.extend(items)
+def approx_responses_tokens(instructions: str, input_items: Any) -> int:
+    return (len(instructions or "") + _value_chars(input_items)) // CHARS_PER_TOKEN
 
 
 def _value_chars(value: Any) -> int:
@@ -31,14 +24,6 @@ def _value_chars(value: Any) -> int:
     if isinstance(value, list):
         return sum(_value_chars(item) for item in value)
     return len(str(value)) if value is not None else 0
-
-
-def approx_responses_tokens(instructions: str, input_items: Any) -> int:
-    return (len(instructions or "") + _value_chars(input_items)) // CHARS_PER_TOKEN
-
-
-def approx_context_tokens(context: ResponsesContext) -> int:
-    return approx_responses_tokens(context.instructions, context.items)
 
 
 def _input_text(text: Any) -> dict[str, Any]:
@@ -84,48 +69,11 @@ def tool_schema_for_responses(schema: dict[str, Any]) -> dict[str, Any]:
     return converted
 
 
-def _as_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    return value.model_dump(exclude_none=True) if hasattr(value, "model_dump") else {}
-
-
-def output_text_from_response(response: Any) -> str:
-    if direct := getattr(response, "output_text", None):
-        return direct
-    output = getattr(response, "output", None) or []
-    chunks: list[str] = []
-    for item in output:
-        item_dict = _as_dict(item)
-        if item_dict.get("type") != "message":
-            continue
-        for part in item_dict.get("content") or []:
-            part_dict = _as_dict(part)
-            if part_dict.get("type") == "output_text" and part_dict.get("text"):
-                chunks.append(str(part_dict["text"]))
-    return "".join(chunks)
-
-
-def response_usage(usage: Any) -> dict[str, Any]:
-    input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-    output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-    total_tokens = int(getattr(usage, "total_tokens", input_tokens + output_tokens) or input_tokens + output_tokens)
-    return {"prompt_tokens": input_tokens, "completion_tokens": output_tokens, "total_tokens": total_tokens, "input_tokens": input_tokens, "output_tokens": output_tokens}
-
-
-def response_was_truncated(response: Any) -> bool:
-    status = getattr(response, "status", None)
-    if status != "incomplete":
-        return False
-    details = getattr(response, "incomplete_details", None)
-    reason = getattr(details, "reason", None)
-    return reason == "max_output_tokens"
-
-
-def response_request_kwargs(
+def build_responses_kwargs(
     *,
     model: str,
-    context: ResponsesContext,
+    instructions: str,
+    input_items: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None = None,
     stream: bool = False,
     temperature: float | None = None,
@@ -133,7 +81,8 @@ def response_request_kwargs(
     reasoning: dict[str, Any] | None = None,
     text: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    request: dict[str, Any] = {"model": model, "instructions": context.instructions, "input": context.items, "stream": stream, "store": False}
+    """Assemble kwargs for ``client.responses.create(**kwargs)``."""
+    request: dict[str, Any] = {"model": model, "instructions": instructions, "input": input_items, "stream": stream, "store": False}
     if tools:
         request["tools"] = [tool_schema_for_responses(tool) for tool in tools]
     for key, value in (("temperature", temperature), ("max_output_tokens", max_output_tokens), ("reasoning", reasoning), ("text", text)):

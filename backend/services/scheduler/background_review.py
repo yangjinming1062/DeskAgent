@@ -1,6 +1,8 @@
+from typing import Any
+
 from components import get_logger, safe_json_loads
 
-from services.llm import ResponsesContext, ServiceType, call_with_retry, client_for_config, resolve_context_tokens, response_request_kwargs
+from services.llm import ServiceType, build_responses_kwargs, call_with_retry, client_for_config, resolve_context_tokens
 from services.tools import RETAIN_SCHEMA, NativeMemory
 
 logger = get_logger(__name__)
@@ -45,10 +47,10 @@ def _trim_tool_output(item: dict) -> dict:
     return item
 
 
-async def run_background_memory_review(user_id: int, llm_config: dict, context_snapshot: ResponsesContext) -> None:
+async def run_background_memory_review(user_id: int, llm_config: dict, context_snapshot: dict[str, Any]) -> None:
     """fire-and-forget：复盘会话并把值得长期记住的事存下来。"""
     # 工具输出可能很大，截断以保持 review 调用便宜。
-    items = [_trim_tool_output(item) if item.get("type") == "function_call_output" else item for item in context_snapshot.items]
+    items = [_trim_tool_output(item) if item.get("type") == "function_call_output" else item for item in context_snapshot["input"]]
 
     api_key = llm_config.get("api_key")
     base_url = llm_config.get("base_url")
@@ -68,8 +70,7 @@ async def run_background_memory_review(user_id: int, llm_config: dict, context_s
             # resolver 会回落到全局默认；告警以避免配置错的链静默使用 1M 上下文。
             logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
         context_length = resolve_context_tokens(provider_name, ServiceType.llm)
-        context = ResponsesContext(instructions=_BACKGROUND_REVIEW_PROMPT, items=items)
-        request = response_request_kwargs(model=model_name, context=context, tools=schemas, max_output_tokens=500)
+        request = build_responses_kwargs(model=model_name, instructions=_BACKGROUND_REVIEW_PROMPT, input_items=items, tools=schemas, max_output_tokens=500)
         response = await call_with_retry(client, context_length=context_length, **request)
         for item in getattr(response, "output", []) or []:
             if getattr(item, "type", None) != "function_call":

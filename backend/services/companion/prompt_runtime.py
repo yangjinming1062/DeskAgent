@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from ..chat.affect import resolve_allowed_emotions
-from ..llm import LLMRuntimeError, ResponsesContext, UserLlmConfig, call_with_retry, client_for_config, output_text_from_response, response_request_kwargs
+from ..llm import LLMRuntimeError, UserLlmConfig, build_responses_kwargs, call_with_retry, client_for_config
 from .memory_format import format_memories_block
 
 logger = get_logger(__name__)
@@ -56,14 +56,19 @@ async def run_prompt_json(
 
     try:
         client = client_for_config(llm_config)
-        context = ResponsesContext(items=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}])
-        request = response_request_kwargs(model=model_name, context=context, temperature=0.7, max_output_tokens=max_output_tokens)
+        request = build_responses_kwargs(
+            model=model_name,
+            instructions="",
+            input_items=[{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
+            temperature=0.7,
+            max_output_tokens=max_output_tokens,
+        )
         response = await call_with_retry(client, **request)
     except (TimeoutError, LLMRuntimeError) as exc:
         logger.warning(f"{log_prefix}: LLM call failed", extra={"user_id": user_id, "error": str(exc)})
         return PromptOutcome(parsed=None, reason="llm_error")
 
-    raw = output_text_from_response(response)
+    raw = response.output_text
     parsed = safe_json_loads(raw)
     if not isinstance(parsed, dict):
         logger.warning(f"{log_prefix}: unparseable LLM response", extra={"user_id": user_id, "raw": raw[:200]})

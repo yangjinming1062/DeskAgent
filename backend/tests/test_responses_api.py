@@ -4,41 +4,42 @@ import pytest
 
 from services.chat.streaming import _stream_llm_response
 from services.chat.message_sanitization import truncate_responses_context
-from services.llm import ResponsesContext, approx_context_tokens, response_request_kwargs
+from services.llm import build_responses_kwargs, approx_responses_tokens
 from services.llm.llm_retry import _wrap_stream_for_debug
 
 
-def test_response_request_uses_instructions_items_and_flat_tools():
-    context = ResponsesContext(instructions="SYS", items=[{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}])
+def test_build_responses_kwargs_uses_instructions_items_and_flat_tools():
     schema = {"name": "demo", "parameters": {"type": "object"}}
+    items = [{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}]
 
-    request = response_request_kwargs(model="m", context=context, tools=[schema], stream=True)
+    request = build_responses_kwargs(model="m", instructions="SYS", input_items=items, tools=[schema], stream=True)
 
     assert request["instructions"] == "SYS"
-    assert request["input"] == context.items
+    assert request["input"] == items
     assert request["tools"] == [{"type": "function", "name": "demo", "parameters": {"type": "object"}}]
     assert request["store"] is False
 
 
 def test_truncate_responses_context_preserves_recent_image_payloads():
     image_url = "data:image/png;base64," + "a" * 20000
-    context = ResponsesContext(
-        items=[
+    context = {
+        "instructions": "",
+        "input": [
             {"role": "user", "content": [{"type": "input_text", "text": "old"}]},
             {"role": "user", "content": [{"type": "input_image", "image_url": image_url}]},
-        ]
-    )
+        ],
+    }
 
     truncated = truncate_responses_context(context, max_chars_per_item=100)
 
-    image_parts = [part for item in truncated.items for part in item.get("content", []) if part.get("type") == "input_image"]
+    image_parts = [part for item in truncated["input"] for part in item.get("content", []) if part.get("type") == "input_image"]
     assert image_parts == [{"type": "input_image", "image_url": image_url}]
 
 
 def test_approx_context_tokens_counts_images_as_fixed_payload():
-    context = ResponsesContext(items=[{"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64," + "a" * 100_000}]}])
+    items = [{"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64," + "a" * 100_000}]}]
 
-    assert approx_context_tokens(context) < 300
+    assert approx_responses_tokens("", items) < 300
 
 
 @pytest.mark.asyncio
@@ -112,7 +113,7 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
         emitter.sent.append(data)
 
     emitter = SimpleNamespace(sent=[], send_json=_send)
-    context = ResponsesContext(instructions="SYS", items=[])
+    context = {"instructions": "SYS", "input": []}
     schema = {"name": "demo", "parameters": {"type": "object"}}
     provider = SimpleNamespace(raw_client=lambda: object(), REASONING_EFFORTS=frozenset({"none", "low", "medium", "high"}))
 
@@ -133,7 +134,7 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
     assert result.turn_content == "hello"
     assert result.tool_calls_list == [{"type": "function_call", "call_id": "call_1", "name": "demo", "arguments": '{"x":1}'}]
     # Reasoning item was appended directly into the passed-in context (stream -> Responses history).
-    assert context.items[-1] == {"type": "reasoning", "summary": []}
+    assert context["input"][-1] == {"type": "reasoning", "summary": []}
     assert result.final_prompt_tokens == 3
     assert result.final_completion_tokens == 5
     assert result.final_usage_payload["reasoning_tokens"] == 2

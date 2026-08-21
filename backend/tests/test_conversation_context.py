@@ -10,7 +10,6 @@ from modules.conversation import Conversation, Message
 from services.chat.persistence import persist_tool_summary
 from services.chat.turn_inputs import _history_to_responses_context
 from services.conversation import context_window
-from services.llm import ResponsesContext
 
 
 async def _seed_user(SessionLocal, user_id: int = 3001):
@@ -177,29 +176,29 @@ def _tool_turn_history() -> list[Message]:
 
 def test_history_drops_tool_intermediates_for_main():
     context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=True)
-    assert context.instructions == "SYS"
-    roles = [item.get("role") for item in context.items]
+    assert context["instructions"] == "SYS"
+    roles = [item.get("role") for item in context["input"]]
     assert roles == ["user", "assistant", "user"]
-    assert not any(item.get("type") == "function_call" for item in context.items)
-    assert context.items[-1]["content"][0]["text"].startswith("[")
+    assert not any(item.get("type") == "function_call" for item in context["input"])
+    assert context["input"][-1]["content"][0]["text"].startswith("[")
 
 
 def test_history_keeps_tool_intermediates_for_standard():
     context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=False)
-    assert [item.get("role") or item.get("type") for item in context.items] == [
+    assert [item.get("role") or item.get("type") for item in context["input"]] == [
         "user",
         "function_call",
         "function_call_output",
         "assistant",
         "user",
     ]
-    assert context.items[1]["name"] == "search_web"
+    assert context["input"][1]["name"] == "search_web"
 
 
 def test_history_always_drops_ui_only_subtypes():
     for drop in (True, False):
         context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=drop)
-        assert all(item.get("content") != [{"type": "input_text", "text": "(poked)"}] for item in context.items)
+        assert all(item.get("content") != [{"type": "input_text", "text": "(poked)"}] for item in context["input"])
 
 
 async def test_context_window_returns_empty_for_no_main(seeded):
@@ -422,22 +421,22 @@ def test_truncate_keeps_tool_summary_in_chronological_position():
         {"role": "user", "content": [{"type": "input_text", "text": "[执行了工具调用：search_web]"}]},
         {"role": "user", "content": [{"type": "input_text", "text": "那明天呢"}]},
     ]
-    context = ResponsesContext("SYS", items)
+    context = {"instructions": "SYS", "input": items}
 
     out = truncate_responses_context(context)
 
-    assert out.instructions == "SYS"
-    assert out.items == items
+    assert out["instructions"] == "SYS"
+    assert out["input"] == items
 
 
-def _long_context(first_user_in_window: bool) -> ResponsesContext:
+def _long_context(first_user_in_window: bool) -> dict:
     items: list[dict] = []
     if not first_user_in_window:
         items.append({"role": "user", "content": [{"type": "input_text", "text": "旧的第一条用户消息"}]})
     assistant_count = 38 if first_user_in_window else 45
     items.extend({"role": "assistant", "content": [{"type": "output_text", "text": f"turn {i}"}]} for i in range(assistant_count))
     items.append({"role": "user", "content": [{"type": "input_text", "text": "最新一条用户消息"}]})
-    return ResponsesContext("SYS", items)
+    return {"instructions": "SYS", "input": items}
 
 
 def test_truncate_anchor_searches_only_dropped_prefix():
@@ -446,7 +445,7 @@ def test_truncate_anchor_searches_only_dropped_prefix():
 
     out = truncate_responses_context(_long_context(first_user_in_window=True), max_recent_items=40)
 
-    user_contents = [item["content"][0]["text"] for item in out.items if item.get("role") == "user"]
+    user_contents = [item["content"][0]["text"] for item in out["input"] if item.get("role") == "user"]
     assert user_contents.count("最新一条用户消息") == 1
     assert "旧的第一条用户消息" not in user_contents
 
@@ -456,22 +455,22 @@ def test_truncate_anchor_from_dropped_prefix_leads_window():
 
     out = truncate_responses_context(_long_context(first_user_in_window=False), max_recent_items=40)
 
-    assert out.items[0]["content"][0]["text"] == "旧的第一条用户消息"
-    assert out.items[1].get("role") == "user" and "removed for context window management" in out.items[1]["content"][0]["text"]
+    assert out["input"][0]["content"][0]["text"] == "旧的第一条用户消息"
+    assert out["input"][1].get("role") == "user" and "removed for context window management" in out["input"][1]["content"][0]["text"]
 
 
 def test_truncate_marker_leads_when_no_user_in_prefix():
     """没有 user 消息可作 anchor 时，marker 仍应位于首部——若插在第一条保留消息之后会扰乱角色顺序。"""
     from services.chat.message_sanitization import truncate_responses_context
 
-    context = ResponsesContext(
-        "SYS",
-        [{"role": "assistant", "content": [{"type": "output_text", "text": f"turn {i}"}]} for i in range(45)],
-    )
+    context = {
+        "instructions": "SYS",
+        "input": [{"role": "assistant", "content": [{"type": "output_text", "text": f"turn {i}"}]} for i in range(45)],
+    }
 
     out = truncate_responses_context(context, max_recent_items=40)
 
-    assert out.items[0].get("role") == "user" and "removed for context window management" in out.items[0]["content"][0]["text"]
+    assert out["input"][0].get("role") == "user" and "removed for context window management" in out["input"][0]["content"][0]["text"]
 
 
 def test_history_preserves_adjacent_user_input_items():
@@ -482,8 +481,8 @@ def test_history_preserves_adjacent_user_input_items():
         Message(role="user", content="晚上吃火锅吗？"),
     ]
     context = _history_to_responses_context(history, "SYS", drop_tool_intermediates=False)
-    assert [item.get("role") for item in context.items] == ["user", "user", "assistant", "user"]
-    assert context.items[0]["content"] == [{"type": "input_text", "text": "今天好累"}]
+    assert [item.get("role") for item in context["input"]] == ["user", "user", "assistant", "user"]
+    assert context["input"][0]["content"] == [{"type": "input_text", "text": "今天好累"}]
 
 
 def test_proactive_state_machine_flow():

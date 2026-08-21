@@ -162,7 +162,7 @@ def test_affect_trace_reaches_llm_context():
     context = _history_to_responses_context(msgs, "sys", drop_tool_intermediates=True)
     assistant_contents = [
         part["text"]
-        for item in context.items
+        for item in context["input"]
         if item.get("role") == "assistant"
         for part in item.get("content", [])
         if part.get("type") == "output_text"

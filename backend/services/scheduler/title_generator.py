@@ -13,7 +13,7 @@ from components import (
 from modules.conversation import Conversation
 from sqlalchemy import select
 
-from ..llm import LLMRuntimeError, ResponsesContext, call_with_retry, client_for_config, output_text_from_response, response_request_kwargs
+from ..llm import LLMRuntimeError, build_responses_kwargs, call_with_retry, client_for_config
 
 logger = get_logger(__name__)
 
@@ -44,23 +44,27 @@ def _clean_title(raw: str) -> str:
 
 async def auto_generate_title(conversation_id: int, user_message: str, assistant_response: str, llm_config: dict[str, str], language: str = DEFAULT_LANGUAGE) -> None:
     """用 LLM 生成会话标题并持久化（仅在仍是默认标题时覆盖）。"""
-    context = ResponsesContext(
-        instructions=_title_prompt(language),
-        items=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}"}
-                ],
-            }
-        ],
-    )
-
     try:
         client = client_for_config(llm_config)
-        request = response_request_kwargs(model=llm_config["model_name"], context=context, temperature=TITLE_GENERATION_TEMPERATURE, max_output_tokens=TITLE_GENERATION_MAX_TOKENS)
+        request = build_responses_kwargs(
+            model=llm_config["model_name"],
+            instructions=_title_prompt(language),
+            input_items=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}",
+                        }
+                    ],
+                }
+            ],
+            temperature=TITLE_GENERATION_TEMPERATURE,
+            max_output_tokens=TITLE_GENERATION_MAX_TOKENS,
+        )
         response = await call_with_retry(client, **request)
-        if not (title := _clean_title(output_text_from_response(response))):
+        if not (title := _clean_title(response.output_text)):
             return
 
         async with SESSION_LOCAL() as db:
