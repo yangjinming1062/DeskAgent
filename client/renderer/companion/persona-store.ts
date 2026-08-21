@@ -11,11 +11,8 @@ export interface PersonaDefinition {
   background?: string
   biological_type?: string
   gender?: string
-  // appearance_core：锁定的视觉锚点——脸 / 体型 / 标记。
-  // 种子确认后的编辑里，assemblePersona 会保留这一字段。
-  appearance_core?: string
-  // appearance_outfit：初始着装描述；保持可编辑。
-  appearance_outfit?: string
+  // appearance：外貌特征（脸 / 体型 / 标志性细节）。
+  appearance?: string
 }
 
 export const $persona = atom<PersonaDefinition | null>(null)
@@ -50,8 +47,7 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
         background: parsed.background,
         biological_type: parsed.biological_type,
         gender: parsed.gender,
-        appearance_core: parsed.appearance_core,
-        appearance_outfit: parsed.appearance_outfit
+        appearance: parsed.appearance
       })
     )
 

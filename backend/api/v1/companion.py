@@ -67,7 +67,6 @@ from services.companion import (
     resolve_expression_avatar,
     resolve_sprite,
     resolve_uploaded_avatar_path,
-    schedule_onboarding_outfit_extraction,
     schedule_personality_tag_refresh,
     select_avatar,
     select_fullbody_style,
@@ -133,9 +132,7 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
     except AvatarSourceUnreadableError as exc:
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # 仅在 finalize 成功后确认 portrait；避免 is_portrait_confirmed=True 但头像文件已丢失的污染状态。
-    persona = await confirm_portrait(db, user.id)
-    # 异步从头像 prompt + appearance_core 派生初始 outfit 描述（vision 优先，文本回退）。
-    schedule_onboarding_outfit_extraction(persona.id, user.id)
+    await confirm_portrait(db, user.id)
     return {"ok": True}
 
 

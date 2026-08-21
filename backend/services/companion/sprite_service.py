@@ -259,7 +259,7 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
         async with SESSION_LOCAL() as probe_db:
             persona = await get_or_create_persona(probe_db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
-    anchor = {k: definition.get(k) for k in ("biological_type", "gender", "appearance_core", "appearance_outfit") if definition.get(k)}
+    anchor = {k: definition.get(k) for k in ("biological_type", "gender", "appearance") if definition.get(k)}
     raw = await _vision_llm_call(
         db,
         user_id,

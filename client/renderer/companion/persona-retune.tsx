@@ -36,7 +36,7 @@ const presetClass = PERSONA_PRESET_CLASS
 // 字段 schema：每一步持有一组字段。``presets`` 的类型是全部已知 preset token 的联合再加 ''
 // （speakingStyle 用的「自动派生」标记）。这样 STEPS 里写成「喜爱」这种拼写错误会编译失败，
 // 而不是默默渲染出一个空 chip。
-// species / character_gender / appearance_core / appearance_outfit 在这里不可编辑。
+// species / character_gender / appearance 在这里不可编辑。
 type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
 type FieldSchema = {
@@ -91,7 +91,7 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
 ]
 
 // 回顾步骤也是数据驱动的：每条状态切片对应一个 Row，带标签。
-// 锁定的视觉锚点字段（species / gender / appearance_core）在这里不可编辑，
+// 锁定的视觉锚点字段（species / gender / appearance）在这里不可编辑，
 // 可以在设置里的角色区查看。
 const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }[] = [
   { key: 'name', label: '名字' },

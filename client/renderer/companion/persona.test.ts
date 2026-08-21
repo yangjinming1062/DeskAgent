@@ -13,12 +13,12 @@ describe('assemblePersona', () => {
       name: '梦鳞',
       species: '灵兽',
       character_gender: '女',
-      appearance_core: '金发绿眼'
+      appearance: '金发绿眼'
     })
 
     expect(p.biological_type).toBe('灵兽')
     expect(p.gender).toBe('女')
-    expect(p.appearance_core).toBe('金发绿眼')
+    expect(p.appearance).toBe('金发绿眼')
   })
 
   it('passes user_* fields through verbatim (backend routes them to memory)', () => {
@@ -41,16 +41,10 @@ describe('assemblePersona', () => {
     expect(p).not.toHaveProperty('user_hobbies')
   })
 
-  it('truncates appearance_core to 500 chars (matches schema max_length)', () => {
+  it('truncates appearance to 500 chars (matches schema max_length)', () => {
     const long = '金'.repeat(800)
-    const p = assemblePersona({ name: '小光', appearance_core: long })
-    expect(p.appearance_core?.length).toBe(500)
-  })
-
-  it('truncates appearance_outfit to 500 chars (matches schema max_length)', () => {
-    const long = '音'.repeat(800)
-    const p = assemblePersona({ name: '小光', appearance_outfit: long })
-    expect(p.appearance_outfit?.length).toBe(500)
+    const p = assemblePersona({ name: '小光', appearance: long })
+    expect(p.appearance?.length).toBe(500)
   })
 
   it('truncates user_* free-text fields to 2000 chars (matches schema max_length)', () => {
@@ -70,20 +64,19 @@ describe('assemblePersona', () => {
 
   it('preserves locked visual-anchor fields from previous when not in answers', () => {
     // 「锁定」特性允许锁定后的调用方（persona-editor / persona-retune）在 `answers` 里
-    // 省略 species / character_gender / appearance_core。后端 PUT /persona 做的是整体替换，
+    // 省略 species / character_gender / appearance。后端 PUT /persona 做的是整体替换，
     // 所以客户端必须把当前 persona 里的这些字段重新带过去，否则会被清空。
     const previous = {
       biological_type: '灵兽',
       gender: '女',
-      appearance_core: '金发绿眼',
-      background: '专属管家',
-      appearance_outfit: '黑色礼帽'
+      appearance: '金发绿眼',
+      background: '专属管家'
     }
 
     const p = assemblePersona({ name: '小光', personality: '温柔', role: '管家' }, previous)
     expect(p.biological_type).toBe('灵兽')
     expect(p.gender).toBe('女')
-    expect(p.appearance_core).toBe('金发绿眼')
+    expect(p.appearance).toBe('金发绿眼')
     expect(p.background).toBe('管家')
   })
 
@@ -91,15 +84,13 @@ describe('assemblePersona', () => {
     const previous = {
       biological_type: '灵兽',
       gender: '女',
-      appearance_core: '金发绿眼',
-      background: '专属管家',
-      appearance_outfit: '黑色礼帽'
+      appearance: '金发绿眼',
+      background: '专属管家'
     }
 
-    const p = assemblePersona({ name: '小光', appearance_outfit: '白色连衣裙' }, previous)
-    expect(p.appearance_outfit).toBe('白色连衣裙')
-    // appearance_core not in answers → preserved from previous
-    expect(p.appearance_core).toBe('金发绿眼')
+    const p = assemblePersona({ name: '小光', appearance: '银发红瞳' }, previous)
+    expect(p.appearance).toBe('银发红瞳')
+    expect(p.biological_type).toBe('灵兽')
   })
 
   it('prefers user-picked speaking_style, falling back to previous otherwise', () => {
@@ -112,26 +103,22 @@ describe('assemblePersona', () => {
   })
 
   it('regression: persona-editor save must not wipe locked fields (P0)', () => {
-    // 模拟 persona-editor 的保存路径：调用方只知道 name / role / personality / appearance_outfit，
-    // 但绝不能清掉 biological_type / gender / appearance_core。
+    // 模拟 persona-editor 的保存路径：调用方只知道 name / role / personality，
+    // 但绝不能清掉 biological_type / gender / appearance。
     const previous = {
       biological_type: '灵兽',
       gender: '女',
-      appearance_core: '金发绿眼'
+      appearance: '金发绿眼'
     }
 
-    const p = assemblePersona(
-      { name: '小光', personality: '专业干练', role: '管家', appearance_outfit: '西装' },
-      previous
-    )
+    const p = assemblePersona({ name: '小光', personality: '专业干练', role: '管家' }, previous)
 
     expect(p.biological_type).toBe('灵兽')
     expect(p.gender).toBe('女')
-    expect(p.appearance_core).toBe('金发绿眼')
+    expect(p.appearance).toBe('金发绿眼')
     expect(p.name).toBe('小光')
     expect(p.personality).toBe('专业干练')
     expect(p.background).toBe('管家')
-    expect(p.appearance_outfit).toBe('西装')
   })
 
   it('regression: persona-editor save preserves custom speaking_style via previous fallback', () => {
@@ -167,17 +154,6 @@ describe('assemblePersona', () => {
 
     expect(p.speaking_style).toBe('专业干练')
   })
-
-  it('keeps appearance_core and appearance_outfit as independent fields', () => {
-    const p = assemblePersona({
-      name: '小光',
-      appearance_core: '金发绿眼',
-      appearance_outfit: '黑色礼帽'
-    })
-
-    expect(p.appearance_core).toBe('金发绿眼')
-    expect(p.appearance_outfit).toBe('黑色礼帽')
-  })
 })
 
 describe('assembleCharacterPersona', () => {
@@ -196,12 +172,12 @@ describe('assembleCharacterPersona', () => {
     expect(p).not.toHaveProperty('user_freeform')
   })
 
-  it('preserves character fields verbatim (species/role/appearance_core/background)', () => {
+  it('preserves character fields verbatim (species/role/appearance/background)', () => {
     const p = assembleCharacterPersona({
       name: '梦鳞',
       species: '灵兽',
       character_gender: '女',
-      appearance_core: '金发',
+      appearance: '金发',
       role: '专属管家',
       personality: '温柔体贴',
       speaking_style: '利落'
@@ -210,7 +186,7 @@ describe('assembleCharacterPersona', () => {
     expect(p.name).toBe('梦鳞')
     expect(p.biological_type).toBe('灵兽')
     expect(p.gender).toBe('女')
-    expect(p.appearance_core).toBe('金发')
+    expect(p.appearance).toBe('金发')
     expect(p.background).toBe('专属管家')
     expect(p.personality).toBe('温柔体贴')
     expect(p.speaking_style).toBe('利落')

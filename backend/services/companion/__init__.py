@@ -59,8 +59,7 @@ from .memory_bootstrap import build_user_profile_extras, extract_user_profile, r
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
 from .model_service import generate_companion_model, request_model_download_retry
-from .outfit_normalizer import normalize_outfit
-from .persona_background import schedule_onboarding_outfit_extraction, schedule_personality_tag_refresh
+from .persona_background import schedule_personality_tag_refresh
 from .persona_service import (
     ONBOARDING_FIELDS,
     PersonaValidationError,
@@ -69,7 +68,6 @@ from .persona_service import (
     get_onboarding_state,
     get_or_create_persona,
     submit_onboarding_field,
-    update_outfit_field,
     update_persona,
 )
 from .personality_tagger import analyze_personality_tags
@@ -168,7 +166,6 @@ __all__ = [
     "memory_admin",
     "memory_counts",
     "model_response",
-    "normalize_outfit",
     "normalize_voice_language",
     "read_today_summary",
     "read_user_profile",
@@ -186,7 +183,6 @@ __all__ = [
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
     "run_prompt_json",
-    "schedule_onboarding_outfit_extraction",
     "schedule_personality_tag_refresh",
     "select_avatar",
     "select_fullbody_style",
@@ -198,7 +194,6 @@ __all__ = [
     "signed_sprite_url",
     "submit_onboarding_field",
     "update_memory",
-    "update_outfit_field",
     "update_persona",
     "upsert_slotted_memory",
     "validate_and_sanitize_expression",

@@ -62,7 +62,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
                 "name": "小光",
                 "biological_type": "灵兽",
                 "gender": "女",
-                "appearance_core": "金发绿眼",
+                "appearance": "金发绿眼",
             }
         )
 
@@ -72,6 +72,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
     payload = json.loads(captured["user"].split("```json\n", 1)[1].split("\n```", 1)[0])
     assert "name" not in payload
     assert payload["biological_type"] == "灵兽"
+    assert payload["appearance"] == "金发绿眼"
     assert "纯白平面背景" in captured["system"]
     assert "半身特写" in captured["system"]
     # 系统提示必须指令美化器忠实保留用户原措辞（外貌 + 反馈）。
@@ -95,6 +96,21 @@ async def test_enhance_avatar_prompt_includes_feedback(monkeypatch):
     payload = json.loads(seen["user_payload"].split("```json\n", 1)[1].split("\n```", 1)[0])
     assert payload["feedback"] == "更长的头发"
     assert out == "头像提示词"
+
+
+def test_build_fullbody_prompt_no_sports_underwear():
+    template = prompt_engineer.resolve_fullbody_template("人类", "biped")
+    prompt = prompt_engineer.build_fullbody_prompt(
+        "front",
+        template=template,
+        appearance="银发红瞳，白色连衣裙",
+        personality="温柔",
+    )
+    assert "运动内衣" not in prompt
+    assert "运动短裤" not in prompt
+    assert "标准A-pose站姿" in prompt
+    assert "外形特征：银发红瞳，白色连衣裙" in prompt
+    assert "性格特点：温柔" in prompt
 
 
 def test_is_preset_species_true():

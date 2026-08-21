@@ -35,19 +35,6 @@ BUILTIN_EMOTIONS: frozenset[str] = frozenset(
 
 ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "chat", "perch", "roam", "sleep"})
 
-COMPANION_OUTFIT_GUIDANCE = (
-    "# Outfit-Behaviour Alignment\n"
-    'Your "Appearance outfit" line describes what you are currently wearing. '
-    "This outfit must actively shape your behaviour, affect choices, and conversational posture:\n"
-    "- Match your emotional palette to the outfit's character. Formal/elegant wear -> composed, "
-    "poised, refined; swimwear or revealing attire -> playful, relaxed, or subtly alluring; "
-    "armour/tactical -> alert, capable, concise; casual/loungewear -> natural, warm, unhurried.\n"
-    "- Your [affect:EMOTION] tag must be plausible for someone dressed this way — "
-    "no exuberant bouncing in an evening gown, no stiff formality in pyjamas.\n"
-    "- Let the outfit subtly colour your vocabulary, topic leanings, and spatial behaviour — "
-    "without breaking character or mentioning the outfit unless the user asks.\n"
-)
-
 # 锚定缓冲区开头的 tag 正则；target 允许非 ]/非换行字符，以容纳本地化应用名（如「微信」）与空格（如「Visual Studio Code」）。
 _AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)\]\n?", re.IGNORECASE)
 _SPATIAL_RE = re.compile(r"^\s*\[spatial:([a-z_]+)(?:,target:([^\]\n]+))?\]\n?", re.IGNORECASE)

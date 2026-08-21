@@ -29,18 +29,16 @@ _EXPRESSION_PROMPT_TEMPLATE = (
 )
 
 # 带入提示词的人设字段：性格影响同一情绪的表现方式
-_PERSONA_ANCHOR_FIELDS: tuple[tuple[str, str], ...] = (("appearance_core", "外形特征"), ("appearance_outfit", "当前着装"), ("personality", "性格"))
+_PERSONA_ANCHOR_FIELDS: tuple[tuple[str, str], ...] = (("appearance", "外形特征"), ("personality", "性格"))
 
 
 async def _persona_setting_clause(db: AsyncSession, user_id: int) -> str:
     persona = await get_or_create_persona(db, user_id)
     definition = safe_json_loads(persona.definition_json or "{}", default={})
-    outfit = str(definition.get("appearance_outfit") or "").strip()
     parts = [f"{label}：{value}" for key, label in _PERSONA_ANCHOR_FIELDS if (value := str(definition.get(key) or "").strip())]
     if not parts:
         return ""
-    # 仅当衣柜字段有内容时才覆盖参考图着装——空值意味着「无着装信息」而非「不穿衣服」
-    return f"角色设定（{'；'.join(parts)}）。" + ("着装以该设定为准，不以参考图为准。" if outfit else "")
+    return f"角色设定（{'；'.join(parts)}）。"
 
 
 class NeutralEmotionError(Exception):

@@ -934,7 +934,7 @@ async def test_dual_write_routes_user_profile_to_memory(_patch_db):
         "speaking_style": "轻柔",
         "biological_type": "灵兽",
         "gender": "女",
-        "appearance_core": "金发绿眼",
+        "appearance": "金发绿眼",
         "user_call_name": "老板",
         "user_gender": "男",
         "user_age_bucket": "26-35",
@@ -949,7 +949,7 @@ async def test_dual_write_routes_user_profile_to_memory(_patch_db):
         definition = json.loads(persona.definition_json)
         assert definition["biological_type"] == "灵兽"
         assert definition["gender"] == "女"
-        assert definition["appearance_core"] == "金发绿眼"
+        assert definition["appearance"] == "金发绿眼"
         # user_* 键不能渗入 definition_json
         for key in (
             "user_call_name",
@@ -1190,7 +1190,7 @@ def test_persona_update_schema_accepts_definition_json():
                 "speaking_style": "轻柔",
                 "biological_type": "灵兽",
                 "gender": "女",
-                "appearance_core": "金发绿眼",
+                "appearance": "金发绿眼",
                 "user_call_name": "老板",
                 "user_gender": "男",
                 "user_age_bucket": "26-35",
@@ -1220,7 +1220,7 @@ def test_onboarding_field_order_matches_question_sequence():
         "name",
         "species",
         "character_gender",
-        "appearance_core",
+        "appearance",
         "role",
         "personality",
         "speaking_style",
@@ -1491,7 +1491,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
                 {
                     "name": "小光",
                     "biological_type": "人类",
-                    "appearance_core": "金发绿眼",
+                    "appearance": "金发绿眼",
                 }
             ),
             system_prompt_extras="",
@@ -2070,119 +2070,6 @@ async def test_generate_companion_model_without_provider_key_rejects(_patch_db, 
         assert (await db.execute(select(func.count()).select_from(CompanionModel).where(CompanionModel.user_id == uid))).scalar_one() == 0
 
 
-@pytest.mark.asyncio
-async def test_normalize_outfit_text_path():
-    """纯文本 normalize_outfit 返回清理后的 LLM 输出。"""
-    from services.companion import normalize_outfit
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
-        return "一件黑色哥特风格的长裙，蕾丝装饰，搭配银色十字架项链"
-
-    result = await normalize_outfit(
-        _fake_chat,
-        raw_input="黑色哥特裙",
-        persona_definition={"biological_type": "精灵", "gender": "女"},
-    )
-    assert "哥特" in result
-    assert len(result) <= 300
-
-
-@pytest.mark.asyncio
-async def test_normalize_outfit_fallback_on_error():
-    """LLM 抛错时，normalize_outfit 返回截断的 raw_input。"""
-    from services.companion import normalize_outfit
-
-    async def _explode(*a, **kw):
-        raise RuntimeError("LLM unavailable")
-
-    result = await normalize_outfit(_explode, raw_input="比基尼" * 100, persona_definition=None)
-    assert result == ("比基尼" * 100)[:300]
-
-
-@pytest.mark.asyncio
-async def test_normalize_outfit_strips_markdown_fences():
-    """Markdown 代码围栏会被从 LLM 响应中剥除。"""
-    from services.companion import normalize_outfit
-
-    async def _fake_chat(db, user_id, system_prompt, user_payload, **kwargs):
-        return "```\n白色晚礼服，丝绸面料\n```"
-
-    result = await normalize_outfit(_fake_chat, raw_input="晚礼服", persona_definition=None)
-    assert result == "白色晚礼服，丝绸面料"
-
-
-@pytest.mark.asyncio
-async def test_normalize_outfit_empty_response_falls_back():
-    """LLM 响应为空时回退到 raw_input。"""
-    from services.companion import normalize_outfit
-
-    async def _empty_chat(*a, **kw):
-        return ""
-
-    result = await normalize_outfit(_empty_chat, raw_input="运动装", persona_definition=None)
-    assert result == "运动装"
-
-
-async def test_update_outfit_field_surgical(_patch_db):
-    """update_outfit_field 只修改 appearance_outfit 并重新渲染 extras，其它 persona 字段不动。"""
-    _, SessionLocal = _patch_db
-    from services.companion import update_outfit_field, update_persona
-
-    async with SessionLocal() as db:
-        await update_persona(db, 9900, {"name": "小光", "personality": "温柔", "speaking_style": "轻柔"})
-        await update_outfit_field(db, 9900, "粉色碎花洋裙")
-
-        from modules.companion import Persona
-
-        persona = (await db.execute(select(Persona).where(Persona.user_id == 9900))).scalar_one()
-        definition = json.loads(persona.definition_json)
-        assert definition["appearance_outfit"] == "粉色碎花洋裙"
-        # 其它字段不动
-        assert definition["name"] == "小光"
-        assert definition["personality"] == "温柔"
-        # system prompt extras 已用新的 outfit 行重新渲染
-        assert "Appearance outfit" in persona.system_prompt_extras
-        assert "粉色碎花洋裙" in persona.system_prompt_extras
-
-
-def test_outfit_guidance_injected_only_when_outfit_present():
-    """system_prompt.py 仅在条件满足时追加 COMPANION_OUTFIT_GUIDANCE。"""
-    from modules.system import AgentPromptConfig
-    from services.chat.system_prompt import build_system_prompt
-
-    base_config = AgentPromptConfig(
-        valid_tool_names=[],
-        model=None,
-        tools=None,
-        client_context=None,
-        identity_prompt=None,
-        platform="webui",
-        pass_session_id=False,
-        session_id=None,
-        task_completion_guidance=False,
-        tool_use_enforcement="off",
-        prompt_family="openai",
-        persona_extras=None,
-        user_profile_extras=None,
-        auto_inject_extras="",
-        language="zh",
-    )
-
-    # 无 persona_extras → 没有 outfit guidance
-    prompt_without = build_system_prompt(base_config)
-    assert "Outfit-Behaviour Alignment" not in prompt_without
-
-    # persona_extras 含 outfit 行 → 出现 outfit guidance
-    config_with_outfit = base_config.model_copy(update={"persona_extras": "# Companion persona\n- **Name**: 小光\n- **Appearance outfit**: 比基尼"})
-    prompt_with = build_system_prompt(config_with_outfit)
-    assert "Outfit-Behaviour Alignment" in prompt_with
-
-    # persona_extras 不含 outfit 行 → 没有 outfit guidance
-    config_without_outfit = base_config.model_copy(update={"persona_extras": "# Companion persona\n- **Name**: 小光"})
-    prompt_without_outfit = build_system_prompt(config_without_outfit)
-    assert "Outfit-Behaviour Alignment" not in prompt_without_outfit
-
-
 async def _make_authenticated_client(_patch_db, uid: int = 3001):
     from api.v1 import companion as companion_api
     from components import get_db
@@ -2625,7 +2512,6 @@ async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeyp
     """多视图标签由供应商能力与可用视角共同决定；不支持时即使库里残留辅助图也按单图提交。"""
     from modules.auth import User
     from modules.companion import CompanionModel
-    from services.companion import pipeline as _pipeline
 
     seed = tmp_path / "seed.png"
     seed.write_bytes(b"png")

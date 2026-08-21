@@ -11,18 +11,16 @@ from .memory_bootstrap import extract_user_profile, read_user_profile, record_us
 
 # 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
 _REQUIRED_FIELDS: tuple[str, ...] = ("name", "personality", "speaking_style")
-# 从 appearance 拆出，使「锁定外形」与「可换着装」成为一等概念：编辑时保留 appearance_core，outfit 保持可改
-_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance_core", "appearance_outfit", "background", "biological_type", "gender")
+_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "background", "biological_type", "gender")
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
 # 引导问答的原始字段，按提问顺序排列；未完成时以草稿形式存在 definition_json 中，user_* 由 update_persona 路由进 Memory。
-# 注意：appearance_outfit 刻意不在此收集——初始着装在确认立绘后由头像提示词异步推导，且始终经 LLM 规范化而非原始用户输入。
 ONBOARDING_FIELDS: tuple[str, ...] = (
     "name",
     "species",
     "character_gender",
-    "appearance_core",
+    "appearance",
     "role",
     "personality",
     "speaking_style",
@@ -92,9 +90,7 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
         current_draft = _load_draft(persona)
         if current_draft.get("voice"):
             cleaned["voice"] = current_draft["voice"]
-        if "appearance_outfit" not in cleaned and current_draft.get("appearance_outfit"):
-            cleaned["appearance_outfit"] = current_draft["appearance_outfit"]
-        definition_changed = any(cleaned.get(k) != current_draft.get(k) for k in _KNOWN_FIELDS if k != "appearance_outfit")
+        definition_changed = any(cleaned.get(k) != current_draft.get(k) for k in _KNOWN_FIELDS)
         persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
         persona.system_prompt_extras = render_extras(cleaned)
         persona.is_complete = True
@@ -139,20 +135,6 @@ def render_extras(definition: dict[str, str]) -> str:
             label = key.replace("_", " ").capitalize()
             lines.append(f"- **{label}**: {definition[key]}")
     return "\n".join(lines)
-
-
-async def update_outfit_field(db: AsyncSession, user_id: int, outfit: str) -> None:
-    """替换 appearance_outfit 并重渲染 system_prompt_extras，不做完整校验；传空串则清除该字段。"""
-    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    if persona is not None:
-        definition = _load_draft(persona)
-        if outfit:
-            definition["appearance_outfit"] = outfit[:_MAX_FIELD_LEN]
-        else:
-            definition.pop("appearance_outfit", None)
-        persona.definition_json = json.dumps(definition, ensure_ascii=False)
-        persona.system_prompt_extras = render_extras(definition)
-    await db.commit()
 
 
 def _load_draft(persona: Persona) -> dict[str, str]:

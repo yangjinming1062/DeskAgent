@@ -2,13 +2,9 @@ export interface OnboardingAnswers {
   name?: string
   species?: string
   character_gender?: string
-  // appearance_core：锁定的视觉锚点（脸 / 体型 / 标记）。驱动 3D 模型生成 prompt；
+  // appearance：外貌特征（脸 / 体型 / 标志性细节）。驱动 3D 模型生成与提示词；
   // 锁定之后的编辑里会被保留。
-  appearance_core?: string
-  // appearance_outfit：由 LLM 维护的着装描述（如「粉点碎花洋裙」）。
-  // onboarding 阶段不收集——由头像 prompt 与 appearance_core 在确认头像后异步派生。
-  // 渲染进 LLM system prompt，但不进入生图 prompt。
-  appearance_outfit?: string
+  appearance?: string
   role?: string
   personality?: string
   speaking_style?: string
@@ -27,8 +23,7 @@ export interface PersonaPayload {
   background?: string
   biological_type?: string
   gender?: string
-  appearance_core?: string
-  appearance_outfit?: string
+  appearance?: string
   user_call_name?: string
   user_gender?: string
   user_age_bucket?: string
@@ -77,8 +72,7 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
   const optional: Array<[keyof PersonaPayload, string | undefined, number]> = [
     ['biological_type', answers.species ?? prev.biological_type, MAX_SPECIES_GENDER],
     ['gender', answers.character_gender ?? prev.gender, MAX_SPECIES_GENDER],
-    ['appearance_core', answers.appearance_core ?? prev.appearance_core, MAX_APPEARANCE],
-    ['appearance_outfit', answers.appearance_outfit ?? prev.appearance_outfit, MAX_APPEARANCE],
+    ['appearance', answers.appearance ?? prev.appearance, MAX_APPEARANCE],
     ['background', answers.role ?? prev.background, MAX_BACKGROUND],
     ['user_call_name', answers.user_call_name ?? prev.user_call_name, MAX_USER_TEXT],
     ['user_gender', answers.user_gender ?? prev.user_gender, MAX_USER_TEXT],

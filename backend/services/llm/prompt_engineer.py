@@ -3,14 +3,14 @@
 整个图生 3D 管线（多视角生图 → 3D建模）中，全身提示词的各个组成部分来源与流转脉络如下：
                               ┌──────────────────────────────────────────────────────────┐
                               │                    1. Persona 数据库表                    │
-                              │ (definition_json: appearance_core / personality / 物种)  │
+                              │     (definition_json: appearance / personality / 物种)    │
                               └────────────────────────────┬─────────────────────────────┘
                                                            │
                       ┌────────────────────────────────────┴────────────────────────────────────┐
                       ▼                                                                         ▼
        ┌──────────────────────────────┐                                          ┌──────────────────────────────┐
        │   物种模板 & 骨骼姿态路由    │                                          │      角色身份与设定提取      │
-       │ (resolve_fullbody_template)  │                                          │ (appearance_core/personality)│
+       │ (resolve_fullbody_template)  │                                          │    (appearance/personality)  │
        └──────────────┬───────────────┘                                          └──────────────┬───────────────┘
                       │ (pose + view_features + flavor)                                         │ (外貌与性格设定)
                       │                                                                         │
@@ -48,7 +48,7 @@ build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种�
 
   [1. 视角主谓前缀]       _VIEW_PREFIX[view]：正面 / 右侧面 / 背面 / 左侧面全身角色立绘。
   ＋
-  [2. 姿态与体态模板]     template.pose：根据物种与骨骼类型（双足人形 A-pose、四足、有翼等）决定的标准站姿与打底服装。
+  [2. 姿态与体态模板]     template.pose：根据物种与骨骼类型（双足人形 A-pose、四足、有翼等）决定的标准站姿。
   ＋
   [3. 视角专项特征]       template.{view}_features：
                           - 正面：身体朝向正前方，正面视点。
@@ -62,7 +62,7 @@ build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种�
                           - cel_shading（日系赛璐珞）：动漫角色立绘风格，清晰线条勾勒，分明纯净色块，自然流畅人体与平滑皮肤。
                           - anime_game_cg（二次元游戏CG）：次世代游戏 3D 角色渲染，全景全身建模质感，柔和次表面散射与自然肤质。
   ＋
-  [6. 角色身份设定]       从 Persona.definition_json 提取 appearance_core 与 personality：
+  [6. 角色身份设定]       从 Persona.definition_json 提取 appearance 与 personality：
                           角色设定（外形特征：…；性格特点：…）。
   ＋
   [7. 物种特殊气质]       template.flavor（可选）：灵兽发光纹路、幻形虚幻粒子等（人类/精灵默认无）。
@@ -104,13 +104,12 @@ def _persona_payload(persona: Persona) -> dict:
     return safe_json_loads(raw, default={})
 
 
-# LLM 端键名为 ``appearance``（映射自线协议的 ``appearance_core``，即视觉锚点）；刻意不引入 ``appearance_outfit``——后者是 LLM 维护的着装描述（见 ``outfit_normalizer.py``），并非视觉规格；3D 体型由 appearance_core + 衣柜贴图决定，不由 outfit 文本决定。
 def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str, str]:
     definition = _persona_payload(persona)
     return {
         "biological_type": definition.get("biological_type") or "",
         "gender": definition.get("gender") or "",
-        "appearance": definition.get("appearance_core") or "",
+        "appearance": definition.get("appearance") or "",
         "background": definition.get("background") or "",
         "personality": definition.get("personality") or "",
         "feedback": (feedback or "").strip(),
@@ -219,11 +218,7 @@ class FullbodyTemplate:
     style: str = "cel_shading"
 
 
-_BIPED_A_POSE = (
-    "标准A-pose站姿，身体直立，双臂自然向身体两侧微张45度，手臂与躯干自然分开，手肘微屈，手指自然舒展，"
-    "双腿直立，双脚分开与肩同宽；"
-    "穿着贴身设计的深灰色运动内衣与深灰色运动短裤，躯干与四肢呈现自然完整的形体与皮肤质感。"
-)
+_BIPED_A_POSE = "标准A-pose站姿，身体直立，双臂自然向身体两侧微张45度，手臂与躯干自然分开，手肘微屈，手指自然舒展，双腿直立，双脚分开与肩同宽。"
 
 _BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
     front_features="身体朝向正前方，正面视点。",
@@ -326,7 +321,7 @@ def build_fullbody_prompt(
     template: FullbodyTemplate,
     style_id: str | None = None,
     feedback: str | None = None,
-    appearance_core: str = "",
+    appearance: str = "",
     personality: str = "",
     avatar_prompt: str = "",
     persona: Persona | dict | None = None,
@@ -338,16 +333,16 @@ def build_fullbody_prompt(
 
     if persona is not None:
         definition = persona if isinstance(persona, dict) else _persona_payload(persona)
-        if not appearance_core:
-            appearance_core = str(definition.get("appearance_core") or "").strip()
+        if not appearance:
+            appearance = str(definition.get("appearance") or "").strip()
         if not personality:
             personality = str(definition.get("personality") or "").strip()
 
     prompt = f"{_VIEW_PREFIX.get(view, '正面全身角色立绘')}，{template.pose}{features}从头到脚完整可见，平视角度拍摄。纯白背景，均匀专业棚拍布光。{style_wording}"
 
     identity_parts: list[str] = []
-    if appearance_core and appearance_core.strip():
-        identity_parts.append(f"外形特征：{appearance_core.strip()}")
+    if appearance and appearance.strip():
+        identity_parts.append(f"外形特征：{appearance.strip()}")
     if personality and personality.strip():
         identity_parts.append(f"性格特点：{personality.strip()}")
 

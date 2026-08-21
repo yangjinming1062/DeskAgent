@@ -10,7 +10,7 @@ const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
 // 可编辑的 persona 字段：name / role / personality。
-// 锁定的视觉锚点字段（species / gender / appearance_core / appearance_outfit）刻意不可编辑——见 DESIGN.md §5.4。
+// 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 DESIGN.md §5.4。
 export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)
@@ -95,7 +95,7 @@ export function PersonaSection(): React.JSX.Element {
         <div className="space-y-0.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
           <p className="font-medium text-white">{persona?.name ?? '伙伴'}</p>
           <p className="text-white/50">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
-          {persona?.appearance_outfit && <p className="text-white/40">{persona.appearance_outfit}</p>}
+          {persona?.appearance && <p className="text-white/40">{persona.appearance}</p>}
         </div>
         <button
           className="mt-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15"
@@ -154,14 +154,6 @@ export function PersonaSection(): React.JSX.Element {
             ))}
           </div>
         </label>
-        {persona?.appearance_outfit && (
-          <div>
-            <span className="mb-1 block text-[11px] text-white/50">当前着装</span>
-            <p className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
-              {persona.appearance_outfit}
-            </p>
-          </div>
-        )}
         {hint && <p className="text-[11px] text-amber-300/80">{hint}</p>}
         <div className="flex gap-2 pt-1">
           <button

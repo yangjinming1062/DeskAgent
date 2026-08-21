@@ -159,9 +159,8 @@ const QUESTIONS: readonly Question[] = [
     presets: CHARACTER_GENDER_PRESETS
   },
   {
-    // appearance_core：锁定的视觉锚点——既会喂给 3D 模型 prompt，
-    // 又会在用户确认头像图后从 PUT /persona 中被剔除。标签旁的红色 `*`
-    key: 'appearance_core',
+    // appearance：外貌特征——驱动 3D 模型 prompt 与角色外貌描述。
+    key: 'appearance',
     text: '您希望我长什么样？说说头发、眼睛、体型、标志性细节…',
     placeholder: '比如：金发绿眼、额间一道疤、机械义眼…',
     required: false,
@@ -262,7 +261,7 @@ const QUESTIONS: readonly Question[] = [
 
 // 这些字段的值会驱动 3D 模型，因此用户在确认头像后不能再改。
 // 题面旁边会渲染一个红色 `*`，向导顶部还有 banner 提示用户这一限制。
-const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance_core'])
+const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance'])
 
 // 分段边界由 ``voice`` 这道题的位置决定——之前全是角色子阶段，
 // 它本身是声音子阶段，之后都是用户子阶段。对应后端 ONBOARDING_FIELDS 的顺序。
@@ -318,12 +317,11 @@ const DRAG_THRESHOLD = 6
 
 // 可经 onboarding.submit 提交的 question key——与后端 ONBOARDING_FIELDS 对齐。
 // 映射都是恒等的（question key === 后端字段名），所以用 Set 就够了。
-// appearance_outfit 不在其中：它是 Persona 字段，由 persona-editor / persona-retune 编辑，不在 onboarding 里收集。
 const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
   'name',
   'species',
   'character_gender',
-  'appearance_core',
+  'appearance',
   'role',
   'personality',
   'speaking_style',

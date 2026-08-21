@@ -5,14 +5,11 @@ import time
 from collections.abc import Awaitable, Callable
 
 from components import SESSION_LOCAL, get_logger, safe_json_loads
-from modules.companion import AvatarAsset, Persona
+from modules.companion import Persona
 from sqlalchemy import select, update
 
-from services.llm import MissingLlmConfigError, chat, resolve_provider_chain, resolve_vision_chain
+from services.llm import MissingLlmConfigError, chat, resolve_provider_chain
 
-from .avatar_service import load_avatar_bytes_as_data_uri
-from .outfit_normalizer import normalize_outfit
-from .persona_service import update_outfit_field
 from .personality_tagger import analyze_personality_tags
 
 logger = get_logger(__name__)
@@ -89,7 +86,7 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
             await db.commit()
             t_commit = time.monotonic()
         logger.info(
-            "persona-tags-timing persona_id=%s query=%.3fs llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
+            "persona-tags-timing persona_id=%s query_and_llm=%.3fs commit=%.3fs total=%.3fs n_tags=%d",
             persona_id,
             t_llm - t_query,
             t_commit - t_llm,
@@ -98,46 +95,3 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
         )
 
     await _run_with_retry("personality tag refresh", persona_id, user_id, attempt)
-
-
-def schedule_onboarding_outfit_extraction(persona_id: int, user_id: int) -> None:
-    _spawn(f"outfit-onboarding-{persona_id}", _refresh_outfit_onboarding(persona_id, user_id))
-
-
-async def _refresh_outfit_onboarding(persona_id: int, user_id: int) -> None:
-    async def attempt() -> None:
-        # 读 / 调用 / 写各持一个短会话，生成调用期间不占用连接
-        async with SESSION_LOCAL() as db:
-            persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
-            if persona is None:
-                return
-            definition = safe_json_loads(persona.definition_json or "{}", default={})
-            persona_def = definition if isinstance(definition, dict) else {}
-            appearance_core = persona_def.get("appearance_core", "")
-            avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-            avatar_prompt = ""
-            if avatar:
-                prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
-                avatar_prompt = prompt_payload.get("avatar_prompt", "") if isinstance(prompt_payload, dict) else ""
-            # 视觉参考取头像而非全身种子图：后者的 A-pose 运动内衣是流水线约束，不代表用户的着装意图
-            avatar_url = avatar.asset_url if avatar else None
-            if not avatar_prompt and not appearance_core:
-                return
-            chain = await resolve_provider_chain(db, user_id, "llm")
-            vision_chain = await resolve_vision_chain(db, user_id) if avatar_url else []
-        raw_input = f"头像生成提示词：{avatar_prompt}\n形象核心描述：{appearance_core}"
-        image_data_uri = await asyncio.to_thread(load_avatar_bytes_as_data_uri, avatar_url)
-        outfit = await normalize_outfit(
-            chat,
-            raw_input=raw_input,
-            persona_definition=persona_def,
-            image_data_uri=image_data_uri,
-            user_id=user_id,
-            db=None,
-            provider_config=chain[0] if chain else None,
-            vision_chain=vision_chain,
-        )
-        async with SESSION_LOCAL() as db:
-            await update_outfit_field(db, user_id, outfit)
-
-    await _run_with_retry("outfit onboarding extraction", persona_id, user_id, attempt)

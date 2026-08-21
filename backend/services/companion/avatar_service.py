@@ -705,7 +705,7 @@ async def generate_fullbody_style_samples(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
-    appearance_core = str(definition.get("appearance_core") or "").strip()
+    appearance = str(definition.get("appearance") or "").strip()
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", "cel_shading")
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
@@ -717,7 +717,7 @@ async def generate_fullbody_style_samples(
             template=template,
             style_id=style_info.id,
             feedback=prompt_payload.get("feedback"),
-            appearance_core=appearance_core,
+            appearance=appearance,
             personality=personality,
             avatar_prompt=cached_avatar_prompt,
         )
@@ -835,14 +835,14 @@ async def generate_fullbody_front(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
-    appearance_core = str(definition.get("appearance_core") or "").strip()
+    appearance = str(definition.get("appearance") or "").strip()
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
     prompt = build_fullbody_prompt(
-        "front", template=template, style_id=style, feedback=effective_feedback, appearance_core=appearance_core, personality=personality, avatar_prompt=cached_avatar_prompt
+        "front", template=template, style_id=style, feedback=effective_feedback, appearance=appearance, personality=personality, avatar_prompt=cached_avatar_prompt
     )
 
     try:
@@ -916,7 +916,7 @@ async def confirm_fullbody_front(
 
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
-    appearance_core = str(definition.get("appearance_core") or "").strip()
+    appearance = str(definition.get("appearance") or "").strip()
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", effective_style)
 
@@ -941,7 +941,7 @@ async def confirm_fullbody_front(
                 template=template,
                 style_id=effective_style,
                 feedback=prompt_payload.get("fullbody_feedback"),
-                appearance_core=appearance_core,
+                appearance=appearance,
                 personality=personality,
                 avatar_prompt=cached_avatar_prompt,
             )

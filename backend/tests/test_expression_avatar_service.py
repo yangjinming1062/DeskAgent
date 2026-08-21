@@ -6,7 +6,11 @@ from types import SimpleNamespace
 
 import pytest
 from components import SETTINGS
-from modules.companion import AvatarAsset, CompanionExpression, CompanionExpressionAvatar
+from modules.companion import (
+    AvatarAsset,
+    CompanionExpression,
+    CompanionExpressionAvatar,
+)
 from PIL import Image
 from services.companion import expression_avatar_service, sprite_service
 from services.companion.expression_avatar_service import (
@@ -132,13 +136,13 @@ async def test_custom_emotion_description_becomes_clause(db_session, gen_mocks):
 
 
 @pytest.mark.asyncio
-async def test_prompt_carries_outfit_personality_and_dynamic_clause(db_session, gen_mocks):
+async def test_prompt_carries_appearance_personality_and_dynamic_clause(db_session, gen_mocks):
     from modules.companion import Persona
 
     db_session.add(
         Persona(
             user_id=1,
-            definition_json=json.dumps({"biological_type": "机械龙", "appearance_core": "蓝色金属鳞片", "appearance_outfit": "装甲披风", "personality": "傲娇毒舌"}, ensure_ascii=False),
+            definition_json=json.dumps({"biological_type": "机械龙", "appearance": "蓝色金属鳞片", "personality": "傲娇毒舌"}, ensure_ascii=False),
         )
     )
     await db_session.commit()
@@ -146,9 +150,8 @@ async def test_prompt_carries_outfit_personality_and_dynamic_clause(db_session, 
     row, generated = await resolve_expression_avatar(user_id=1, name="happy")
     assert generated
     assert "开心地笑" in row.prompt and "写实风格" in row.prompt
-    # 核心特征走参考图锚点；着装/性格注入提示词；物种跟着参考图
-    assert "蓝色金属鳞片" in row.prompt and "装甲披风" in row.prompt and "傲娇毒舌" in row.prompt
-    assert "着装以该设定为准，不以参考图为准" in row.prompt
+    # 核心特征走参考图锚点；外形/性格注入提示词；物种跟着参考图
+    assert "蓝色金属鳞片" in row.prompt and "傲娇毒舌" in row.prompt
     assert "机械龙" not in row.prompt
 
 
