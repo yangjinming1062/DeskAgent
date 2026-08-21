@@ -39,26 +39,25 @@ const presetClass = PERSONA_PRESET_CLASS
 // species / character_gender / appearance 在这里不可编辑。
 type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
 
+type PersonaFieldKey =
+  | 'background'
+  | 'name'
+  | 'personality'
+  | 'speakingStyle'
+  | 'userAgeBucket'
+  | 'userCallName'
+  | 'userFreeform'
+  | 'userGender'
+  | 'userHobbies'
+
 type FieldSchema = {
-  key: keyof typeof EMPTY
+  key: PersonaFieldKey
   label: string
   presets?: readonly PresetValue[]
   max?: number
   placeholder?: string
   multiline?: boolean
 }
-
-const EMPTY = {
-  name: '',
-  background: '',
-  personality: '',
-  speakingStyle: '',
-  userCallName: '',
-  userGender: '',
-  userAgeBucket: '',
-  userHobbies: '',
-  userFreeform: ''
-} as const
 
 const STEPS: { title: string; fields: FieldSchema[] }[] = [
   {
@@ -93,11 +92,11 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
 // 回顾步骤也是数据驱动的：每条状态切片对应一个 Row，带标签。
 // 锁定的视觉锚点字段（species / gender / appearance）在这里不可编辑，
 // 可以在设置里的角色区查看。
-const REVIEW_ROWS: { key: keyof typeof EMPTY; label: string; fallback?: string }[] = [
+const REVIEW_ROWS: { fallback?: string; key: PersonaFieldKey; label: string }[] = [
   { key: 'name', label: '名字' },
   { key: 'background', label: '关系' },
   { key: 'personality', label: '性格' },
-  { key: 'speakingStyle', label: '说话风格', fallback: '自动派生' },
+  { fallback: '自动派生', key: 'speakingStyle', label: '说话风格' },
   { key: 'userCallName', label: '称呼' },
   { key: 'userGender', label: '我的性别' },
   { key: 'userAgeBucket', label: '年龄段' },
@@ -109,7 +108,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const persona = useStore($persona)
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
-  const [hint, setHint] = useState<string | null>(null)
+  const [hint, setHint] = useState<null | string>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
   useInteractiveRegion('persona-retune', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
@@ -134,28 +133,28 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const [userFreeform, setUserFreeform] = useState(initial.user_freeform)
 
   // 以字段 ``key`` 为键的 setter 映射。避免每一步写 switch/case。
-  const setters: Record<keyof typeof EMPTY, (v: string) => void> = {
-    name: setName,
+  const setters: Record<PersonaFieldKey, (v: string) => void> = {
     background: setBackground,
+    name: setName,
     personality: setPersonality,
     speakingStyle: setSpeakingStyle,
-    userCallName: setUserCallName,
-    userGender: setUserGender,
     userAgeBucket: setUserAgeBucket,
-    userHobbies: setUserHobbies,
-    userFreeform: setUserFreeform
+    userCallName: setUserCallName,
+    userFreeform: setUserFreeform,
+    userGender: setUserGender,
+    userHobbies: setUserHobbies
   }
 
-  const values: Record<keyof typeof EMPTY, string> = {
-    name,
+  const values: Record<PersonaFieldKey, string> = {
     background,
+    name,
     personality,
     speakingStyle,
-    userCallName,
-    userGender,
     userAgeBucket,
-    userHobbies,
-    userFreeform
+    userCallName,
+    userFreeform,
+    userGender,
+    userHobbies
   }
 
   const totalSteps = STEPS.length + 1

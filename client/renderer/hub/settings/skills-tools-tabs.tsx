@@ -11,7 +11,7 @@ type SkillsToolsSubtab = (typeof SUBTABS)[number]
 
 export function SkillsToolsTabs(): React.JSX.Element {
   const t = strings
-  const [subtab, setSubtab] = useRouteEnumParam('subtab', SUBTABS, 'skills')
+  const [subtab, setSubtab] = useRouteEnumParam<SkillsToolsSubtab>('subtab', SUBTABS, 'skills')
 
   return (
     <SettingsContent>

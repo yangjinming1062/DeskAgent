@@ -1,21 +1,23 @@
+import { z } from 'zod'
+
 type GatewayEventName =
-  | 'message.start'
-  | 'message.delta'
-  | 'message.complete'
-  | 'tool.start'
-  | 'tool.complete'
-  | 'tool.call'
   | 'error'
+  | 'message.complete'
+  | 'message.delta'
+  | 'message.start'
+  | 'tool.call'
+  | 'tool.complete'
+  | 'tool.start'
   | (string & {})
 
 export interface GatewayEvent<P = unknown> {
   payload?: P
+  seq?: number
   session_id?: string
   type: GatewayEventName
-  seq?: number
 }
 
-export type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
+export type ConnectionState = 'closed' | 'connecting' | 'error' | 'idle' | 'open'
 
 type PendingCall = {
   reject: (error: Error) => void
@@ -28,21 +30,39 @@ export interface GatewayClientOptions {
   connectErrorMessage?: string
   connectTimeoutMs?: number
   createRequestId?: (nextId: number) => number | string
+  notConnectedErrorMessage?: string
   requestIdPrefix?: string
   requestTimeoutMs?: number
   socketFactory?: (url: string) => WebSocketLike
-  notConnectedErrorMessage?: string
 }
 
 type GatewayRequestId = number | string
-type JsonRpcFrame = {
-  error?: { code?: number; data?: unknown; message?: string }
-  id?: GatewayRequestId | null
-  method?: string
-  params?: GatewayEvent
-  result?: unknown
-  seq?: number
-}
+
+export const JsonRpcFrameSchema = z.object({
+  error: z
+    .object({
+      code: z.number().optional(),
+      data: z.unknown().optional(),
+      message: z.string().optional()
+    })
+    .optional(),
+  id: z.union([z.string(), z.number()]).nullish(),
+  jsonrpc: z.string().optional(),
+  method: z.string().optional(),
+  params: z
+    .object({
+      payload: z.unknown().optional(),
+      seq: z.number().optional(),
+      session_id: z.string().optional(),
+      type: z.string()
+    })
+    .passthrough()
+    .optional(),
+  result: z.unknown().optional(),
+  seq: z.number().optional()
+})
+
+type JsonRpcFrame = z.infer<typeof JsonRpcFrameSchema>
 type WebSocketLike = WebSocket
 
 // JSON-RPC 2.0 标准错误码——与后端 jsonrpc_dispatcher.py 保持同步，
@@ -382,7 +402,14 @@ export class JsonRpcGatewayClient {
     let frame: JsonRpcFrame
 
     try {
-      frame = JSON.parse(raw) as JsonRpcFrame
+      const parsed = JSON.parse(raw)
+      const parseResult = JsonRpcFrameSchema.safeParse(parsed)
+
+      if (!parseResult.success) {
+        return
+      }
+
+      frame = parseResult.data
     } catch {
       return
     }

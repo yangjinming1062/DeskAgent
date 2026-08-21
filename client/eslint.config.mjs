@@ -8,24 +8,17 @@ import hooksPlugin from 'eslint-plugin-react-hooks'
 import unusedImports from 'eslint-plugin-unused-imports'
 import globals from 'globals'
 
-const noopRule = {
-  meta: { schema: [], type: 'problem' },
-  create: () => ({})
-}
-
-const customRules = {
-  rules: {
-    'no-process-cwd': noopRule,
-    'no-process-env-top-level': noopRule,
-    'no-sync-fs': noopRule,
-    'no-top-level-dynamic-import': noopRule,
-    'no-top-level-side-effects': noopRule
-  }
-}
-
 export default [
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**', 'src/**/*.js']
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/dist-electron/**',
+      'assets/**',
+      'public/**',
+      'src/**/*.js',
+      '*.config.*'
+    ]
   },
   js.configs.recommended,
   {
@@ -35,18 +28,37 @@ export default [
       parserOptions: {
         ecmaFeatures: { jsx: true },
         ecmaVersion: 'latest',
-        sourceType: 'module'
+        project: ['./tsconfig.json', './tsconfig.main.json'],
+        sourceType: 'module',
+        tsconfigRootDir: import.meta.dirname
       }
     },
     plugins: {
       '@typescript-eslint': typescriptEslint,
-      'custom-rules': customRules,
       perfectionist,
       'unused-imports': unusedImports
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports' }],
-      '@typescript-eslint/no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': [
+        'error',
+        {
+          checksVoidReturn: {
+            attributes: false
+          }
+        }
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_',
+          varsIgnorePattern: '^_'
+        }
+      ],
       curly: ['error', 'all'],
       'no-fallthrough': ['error', { allowEmptyCase: true }],
       'no-undef': 'off',
@@ -108,9 +120,12 @@ export default [
       'react-hooks': hooksPlugin
     },
     rules: {
+      ...reactPlugin.configs.recommended.rules,
       'react-compiler/react-compiler': 'warn',
       'react-hooks/exhaustive-deps': 'warn',
-      'react-hooks/rules-of-hooks': 'error'
+      'react-hooks/rules-of-hooks': 'error',
+      'react/prop-types': 'off',
+      'react/react-in-jsx-scope': 'off'
     },
     settings: {
       react: { version: 'detect' }
@@ -159,15 +174,25 @@ export default [
     }
   },
   {
-    files: ['**/*.js', '**/*.cjs', '**/*.mjs'],
-    ignores: ['**/node_modules/**', '**/dist/**', '**/dist-electron/**'],
+    files: ['**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'off'
+    }
+  },
+  {
+    files: ['**/*.mjs', '**/vite.config.*', '**/vitest.config.*'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      globals: { ...globals.node },
+      sourceType: 'module'
+    }
+  },
+  {
+    files: ['**/*.js', '**/*.cjs'],
     languageOptions: {
       ecmaVersion: 'latest',
       globals: { ...globals.node },
       sourceType: 'commonjs'
     }
-  },
-  {
-    ignores: ['*.config.*']
   }
 ]

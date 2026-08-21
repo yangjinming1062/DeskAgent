@@ -155,8 +155,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const locale = payload?.affect?.locale
       const target = payload?.affect?.target
 
-      // 对安静用户与锁屏状态下，抑制渲染层的提示。
-      const quiet = $effectiveTier.get() === 'quiet'
+      // 锁屏状态下，抑制渲染层的提示。
       const screenLocked = $screenLocked.get()
 
       // 多气泡回合：每个气泡各自携带流式文本；

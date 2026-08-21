@@ -10,6 +10,7 @@ import type { ModelDiskCache } from './model-disk-cache'
 export interface ConnectionIpcDeps {
   defaultFetchTimeoutMs?: number
   ensureBackend: () => Promise<SpiritAgentConnection>
+  fetchImpl?: typeof globalThis.fetch
   fetchJson: (
     url: string,
     token?: string,
@@ -25,6 +26,7 @@ export interface ConnectionIpcDeps {
 export function registerConnectionIpc({
   defaultFetchTimeoutMs = 15_000,
   ensureBackend,
+  fetchImpl,
   fetchJson,
   getBootProgressState,
   ipcMain,
@@ -79,8 +81,9 @@ export function registerConnectionIpc({
     const pathAndQuery = `${pathname}${search}`
 
     const timeoutMs = defaultFetchTimeoutMs
+    const caller = fetchImpl || globalThis.fetch
 
-    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+    const res = await caller(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
       signal: AbortSignal.timeout(timeoutMs)
     })
@@ -103,6 +106,34 @@ export function registerConnectionIpc({
     return dataUrlFromBuffer(Buffer.from(await res.arrayBuffer()), mime)
   })
 
+  ipcMain.handle(
+    'spiritagent:api:asset-model-url',
+    async (_event, request?: { contentHash?: string; url?: string }): Promise<string> => {
+      const connection = await ensureBackend()
+      const raw = String(request?.url || '')
+
+      if (!raw) {
+        throw new Error('asset url is required')
+      }
+
+      if (!modelDiskCache) {
+        throw new Error('model disk cache is not available')
+      }
+
+      const cached = await modelDiskCache.ensureCached({
+        baseUrl: connection.baseUrl,
+        contentHash: request?.contentHash,
+        fetchFn: fetchImpl,
+        token: connection.token || undefined,
+        url: raw
+      })
+
+      const normalizedPath = cached.filePath.replace(/\\/g, '/')
+
+      return `spiritagent-media:///${normalizedPath}`
+    }
+  )
+
   ipcMain.handle('spiritagent:api:asset-buffer', async (_event, request?: { contentHash?: string; url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
@@ -120,6 +151,7 @@ export function registerConnectionIpc({
       const cached = await modelDiskCache.ensureCached({
         baseUrl: connection.baseUrl,
         contentHash: request?.contentHash,
+        fetchFn: fetchImpl,
         token: connection.token || undefined,
         url: raw
       })
@@ -129,8 +161,9 @@ export function registerConnectionIpc({
 
     const pathAndQuery = `${pathname}${search}`
     const timeoutMs = defaultFetchTimeoutMs
+    const caller = fetchImpl || globalThis.fetch
 
-    const res = await fetch(`${connection.baseUrl}${pathAndQuery}`, {
+    const res = await caller(`${connection.baseUrl}${pathAndQuery}`, {
       headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
       signal: AbortSignal.timeout(timeoutMs)
     })

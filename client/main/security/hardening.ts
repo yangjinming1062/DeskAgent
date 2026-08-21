@@ -5,6 +5,20 @@ import { fileURLToPath } from 'node:url'
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000
 export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 
+export const DEFAULT_CSP_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: spiritagent-media: https:",
+  "media-src 'self' data: blob: spiritagent-media: https:",
+  "connect-src 'self' data: blob: ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https: wss: spiritagent-media:",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'"
+].join('; ')
+
 // 头像 / 精灵 / 衣橱生成：供应商调用 + Pillow 重编码 + 关键帧写入通常要 15–25 秒，
 // 默认 15 秒会在后端返回 201 之前就超时，所以这里放宽。
 export const AVATAR_FETCH_TIMEOUT_MS = 120_000

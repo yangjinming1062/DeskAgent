@@ -54,17 +54,21 @@ function decodeDataUrl(dataUrl?: string): { data: Buffer; mime: string } {
 }
 
 async function postMultipart({
+  fetchImpl,
   form,
   timeoutMs,
   token,
   url
 }: {
+  fetchImpl?: typeof globalThis.fetch
   form: FormData
   timeoutMs: number
   token?: string
   url: string
 }): Promise<{ body: Buffer; contentType: string; headers: Headers }> {
-  const res = await fetch(url, {
+  const caller = fetchImpl || globalThis.fetch
+
+  const res = await caller(url, {
     body: form,
     headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     method: 'POST',
@@ -212,12 +216,14 @@ async function tryLocalTts({ bridge, text }: { bridge: RunnerBridgeLike | null |
 async function sttViaBackend({
   data,
   ensureBackend,
+  fetchImpl = globalThis.fetch,
   filename,
   language,
   mime
 }: {
   data: Buffer
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
+  fetchImpl?: typeof globalThis.fetch
   filename?: string
   language?: string
   mime: string
@@ -231,6 +237,7 @@ async function sttViaBackend({
   const url = `${connection.baseUrl}/api/media/stt${qs}`
 
   const { body } = await postMultipart({
+    fetchImpl,
     form,
     timeoutMs: STT_TIMEOUT_MS,
     token: connection.token || undefined,
@@ -248,11 +255,13 @@ async function sttViaBackend({
 
 async function ttsViaBackend({
   ensureBackend,
+  fetchImpl,
   language,
   text,
   voice
 }: {
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
+  fetchImpl?: typeof globalThis.fetch
   language?: string
   text: string
   voice?: string
@@ -270,7 +279,9 @@ async function ttsViaBackend({
     payload.language = language
   }
 
-  const res = await fetch(url, {
+  const caller = fetchImpl || globalThis.fetch
+
+  const res = await caller(url, {
     body: JSON.stringify(payload),
     headers: {
       'Content-Type': 'application/json',
@@ -304,9 +315,11 @@ export interface EnginePrefs {
 
 export function createEnginePrefsCache({
   ensureBackend,
+  fetchImpl,
   ttlMs = CONFIG_CACHE_TTL_MS
 }: {
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
+  fetchImpl?: typeof globalThis.fetch
   ttlMs?: number
 }): () => Promise<EnginePrefs> {
   let cached: null | EnginePrefs = null
@@ -321,7 +334,9 @@ export function createEnginePrefsCache({
     try {
       const connection = await ensureBackend()
 
-      const res = await fetch(`${connection.baseUrl}/api/config`, {
+      const caller = fetchImpl || globalThis.fetch
+
+      const res = await caller(`${connection.baseUrl}/api/config`, {
         headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
         signal: AbortSignal.timeout(10_000)
       })
@@ -393,6 +408,7 @@ function setCachedTts(key: string, value: { dataUrl: string; mimeType: string })
 export interface MediaIpcDeps {
   spiritagentHome?: null | string
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
+  fetchImpl?: typeof globalThis.fetch
   getEnginePrefs?: () => Promise<EnginePrefs>
   getRunnerBridge?: () => RunnerBridgeLike | null | undefined
   ipcMain: IpcMain
@@ -402,12 +418,15 @@ export interface MediaIpcDeps {
 export function registerMediaIpc({
   spiritagentHome,
   ensureBackend,
+  fetchImpl,
   getEnginePrefs,
   getRunnerBridge,
   ipcMain,
   log = () => {}
 }: MediaIpcDeps): void {
-  const resolvePrefs = typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend })
+  const resolvePrefs =
+    typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend, fetchImpl })
+
   const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
   const diskCache = createTtsDiskCache({ spiritagentHome })
 
@@ -468,7 +487,7 @@ export function registerMediaIpc({
       }
 
       try {
-        const text = await sttViaBackend({ data, ensureBackend, filename, language, mime })
+        const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
         sttLog('done', {
           chars: text.length,
           ms: Date.now() - startedAt,
@@ -483,7 +502,7 @@ export function registerMediaIpc({
         throw err
       }
     } else if (engine === 'cloud') {
-      const text = await sttViaBackend({ data, ensureBackend, filename, language, mime })
+      const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
       sttLog('done', { chars: text.length, ms: Date.now() - startedAt, route: 'cloud' })
 
       return { text }
@@ -609,7 +628,7 @@ export function registerMediaIpc({
     let fellBackToLocal = false
 
     const callBackendThrottled = async () =>
-      scheduleTtsBackend(() => ttsViaBackend({ ensureBackend, language, text, voice }))
+      scheduleTtsBackend(() => ttsViaBackend({ ensureBackend, fetchImpl, language, text, voice }))
 
     const finishCloud = async (result: { dataUrl: string; mimeType: string; voiceOut?: string }) => {
       const value = { dataUrl: result.dataUrl, mimeType: result.mimeType }

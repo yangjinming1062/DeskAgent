@@ -104,10 +104,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let graceTimer: ReturnType<typeof setTimeout> | null = null
     let reconnectAttempt = 0
-    // 每次断连只弹一次"请重新登录"，而不是每个退避 tick都弹——
-    // 过期的 OAuth 票据会让每次尝试都失败，否则会堆出大量相同的错误 toast
-    // （以及它们的触感反馈）。在下一次干净的 open 时重置。
-    let reauthNotified = false
 
     const dismissOverlayOnce = () => {
       if (bootOverlayDismissed) {
@@ -230,7 +226,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
       if (st === 'open') {
         reconnectAttempt = 0
-        reauthNotified = false
         clearReconnectTimer()
         clearGraceTimer()
         clearSleepEscalation()

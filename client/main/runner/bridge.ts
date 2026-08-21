@@ -432,10 +432,12 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       clearTimeout(_toolsChangedDebounce)
     }
 
-    _toolsChangedDebounce = setTimeout(async () => {
-      _toolsChangedDebounce = null
-      await _fetchAndCacheTools()
-      emit.emit('event', { tools: cachedTools, type: 'tools_changed' })
+    _toolsChangedDebounce = setTimeout(() => {
+      void (async () => {
+        _toolsChangedDebounce = null
+        await _fetchAndCacheTools()
+        emit.emit('event', { tools: cachedTools, type: 'tools_changed' })
+      })()
     }, 300)
   }
 

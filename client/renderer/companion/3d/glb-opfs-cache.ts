@@ -62,10 +62,81 @@ export async function readCachedGlb(contentHash: string): Promise<ArrayBuffer | 
     if (blobFile.size !== meta.size) {
       return null
     }
+    // 命中时异步回写 writtenAt，维持 LRU 顺序
+    void (async () => {
+      try {
+        meta.writtenAt = Date.now()
+        const updatedMetaHandle = await dir.getFileHandle(metaKey(contentHash), { create: true })
+        const writable = await updatedMetaHandle.createWritable()
+        await writable.write(JSON.stringify(meta))
+        await writable.close()
+      } catch {
+        /* 忽略更新时间戳失败 */
+      }
+    })()
 
     return await blobFile.arrayBuffer()
   } catch {
     return null
+  }
+}
+
+const MAX_CACHED_FILES = 5
+const MAX_CACHED_BYTES = 512 * 1024 * 1024
+
+async function pruneGlbCache(
+  dir: FileSystemDirectoryHandle,
+  maxFiles = MAX_CACHED_FILES,
+  maxBytes = MAX_CACHED_BYTES
+): Promise<void> {
+  try {
+    const entries: { hash: string; size: number; writtenAt: number }[] = []
+    let totalBytes = 0
+
+    for await (const handle of (dir as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values()) {
+      if (handle.kind === 'file' && typeof handle.name === 'string' && handle.name.endsWith('.meta.json')) {
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile()
+          const meta = JSON.parse(await file.text()) as MetaFile
+
+          if (meta.contentHash && typeof meta.writtenAt === 'number') {
+            entries.push({
+              hash: meta.contentHash,
+              size: typeof meta.size === 'number' ? meta.size : 0,
+              writtenAt: meta.writtenAt
+            })
+            totalBytes += meta.size || 0
+          }
+        } catch {
+          /* 忽略异常 meta */
+        }
+      }
+    }
+
+    if (entries.length <= maxFiles && totalBytes <= maxBytes) {
+      return
+    }
+
+    // 最久未访问的排前面
+    entries.sort((a, b) => a.writtenAt - b.writtenAt)
+
+    while (entries.length > maxFiles || totalBytes > maxBytes) {
+      const oldest = entries.shift()
+
+      if (!oldest) {
+        break
+      }
+
+      try {
+        await dir.removeEntry(blobKey(oldest.hash))
+        await dir.removeEntry(metaKey(oldest.hash))
+        totalBytes -= oldest.size
+      } catch {
+        /* 忽略删除异常 */
+      }
+    }
+  } catch (err) {
+    log.warn('glb-opfs-cache', 'prune failed:', err)
   }
 }
 
@@ -88,22 +159,24 @@ export async function writeCachedGlb(contentHash: string, bytes: ArrayBuffer): P
     await blobWritable.close()
 
     const meta: MetaFile = {
-      version: SCHEMA_VERSION,
       contentHash,
-      writtenAt: Date.now(),
-      size: bytes.byteLength
+      size: bytes.byteLength,
+      version: SCHEMA_VERSION,
+      writtenAt: Date.now()
     }
 
     const metaHandle = await dir.getFileHandle(metaKey(contentHash), { create: true })
     const metaWritable = await metaHandle.createWritable()
     await metaWritable.write(JSON.stringify(meta))
     await metaWritable.close()
+
+    void pruneGlbCache(dir)
   } catch (err) {
     log.warn('glb-opfs-cache', 'write failed:', err)
   }
 }
 
-/** 围绕主进程 `apiAssetBuffer` IPC 的带缓存包装。先尝试 OPFS，失败则走网络 IPC，成功后回填缓存。键是 `contentHash`（后端签发），不是 URL —— URL 是会轮换的签名查询串。 */
+/** 围绕主进程模型缓存与流媒体协议的带缓存包装。先尝试 OPFS，失败则走自定义协议流式 fetch，成功后回填 OPFS 缓存。键是 `contentHash`（后端签发），不是 URL —— URL 是会轮换的签名查询串。 */
 export async function fetchGlbWithCache(url: string, contentHash?: string): Promise<ArrayBuffer | null> {
   if (contentHash) {
     const cached = await readCachedGlb(contentHash)
@@ -116,14 +189,29 @@ export async function fetchGlbWithCache(url: string, contentHash?: string): Prom
   let bytes: ArrayBuffer | null = null
 
   try {
-    const u8 = await window.spiritagent.apiAssetBuffer({
-      url,
-      contentHash: contentHash || undefined
-    })
+    if (typeof window.spiritagent?.apiAssetModelUrl === 'function') {
+      const mediaUrl = await window.spiritagent.apiAssetModelUrl({
+        url,
+        contentHash: contentHash || undefined
+      })
 
-    bytes = u8.slice().buffer
+      const res = await fetch(mediaUrl)
+
+      if (!res.ok) {
+        throw new Error(`Media protocol fetch failed with status ${res.status}`)
+      }
+
+      bytes = await res.arrayBuffer()
+    } else {
+      const u8 = await window.spiritagent.apiAssetBuffer({
+        url,
+        contentHash: contentHash || undefined
+      })
+
+      bytes = u8.slice().buffer
+    }
   } catch (err) {
-    log.warn('glb-opfs-cache', 'IPC fetch failed:', err)
+    log.warn('glb-opfs-cache', 'GLB fetch failed:', err)
 
     return null
   }

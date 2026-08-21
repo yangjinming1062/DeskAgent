@@ -12,7 +12,6 @@ import { pickReaction, playReactionAudio } from './reactions/reaction-audio'
 let lastPokeTime = 0
 let pokeCount = 0
 let resetTimer: ReturnType<typeof setTimeout> | null = null
-let hoverThrottleTimer: ReturnType<typeof setTimeout> | null = null
 let lastLlmPokeAt = 0
 
 export function resetPokeLlmCooldown(): void {

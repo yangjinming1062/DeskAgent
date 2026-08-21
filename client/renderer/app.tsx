@@ -1,10 +1,15 @@
-import type React from 'react'
+import React, { Suspense } from 'react'
 
-import { ClipDebugger } from '@/clip-debugger/clip-debugger'
 import { CompanionRoot } from '@/companion'
 import { ToolRoot } from '@/hub'
 
-function readRole(): 'sprite' | 'tool' | 'clip' {
+const ClipDebugger = React.lazy(async () => {
+  const mod = await import('@/clip-debugger/clip-debugger')
+
+  return { default: mod.ClipDebugger }
+})
+
+function readRole(): 'clip' | 'sprite' | 'tool' {
   const params = new URLSearchParams(window.location.search)
   const role = params.get('role')
 
@@ -31,7 +36,11 @@ export default function App(): React.JSX.Element {
   }
 
   if (role === 'clip') {
-    return <ClipDebugger />
+    return (
+      <Suspense fallback={<div className="h-screen w-screen bg-[#0d0d0d]" />}>
+        <ClipDebugger />
+      </Suspense>
+    )
   }
 
   return <ToolRoot />

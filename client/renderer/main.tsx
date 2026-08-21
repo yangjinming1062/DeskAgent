@@ -1,6 +1,5 @@
 import './styles.css'
 
-import { QueryClientProvider } from '@tanstack/react-query'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
@@ -8,7 +7,6 @@ import { HashRouter } from 'react-router-dom'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
-import { queryClient } from '@/shared/lib/query-client'
 import type { DesktopUpdateEvent } from '@/shared/types/global'
 
 import App from './app'
@@ -73,13 +71,11 @@ window.spiritagent?.update?.onRunnerEvent?.(() => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary label="root">
-      <QueryClientProvider client={queryClient}>
-        <HapticsProvider>
-          <HashRouter>
-            <App />
-          </HashRouter>
-        </HapticsProvider>
-      </QueryClientProvider>
+      <HapticsProvider>
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </HapticsProvider>
     </ErrorBoundary>
   </StrictMode>
 )

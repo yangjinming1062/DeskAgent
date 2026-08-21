@@ -195,7 +195,6 @@ export function CompanionRoot(): React.JSX.Element {
 
   const authed = auth.kind === 'authenticated'
   const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
-  const showReady = authed && lifecycle === 'ready'
 
   useEffect(() => {
     if (lifecycle !== 'ready') {

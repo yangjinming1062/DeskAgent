@@ -71,7 +71,12 @@ export function ToolsetsSettings(): React.JSX.Element {
 
     return TOOLSET_CATALOG.flatMap<ToolsetView>(entry => {
       const roster = rosterById.get(entry.id)
-      const texts = toolsetText[entry.id]
+
+      const texts = (toolsetText as Record<string, { description: string; label: string }>)[entry.id] ?? {
+        description: '',
+        label: entry.id
+      }
+
       const toolNames = roster?.toolNames ?? []
 
       const matches =

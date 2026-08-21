@@ -1,3 +1,4 @@
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
@@ -22,7 +23,7 @@ export function getDracoLoader(): DRACOLoader | null {
 }
 
 /**
- * Returns a new GLTFLoader configured with the singleton DRACOLoader.
+ * Returns a new GLTFLoader configured with the singleton DRACOLoader and MeshoptDecoder.
  */
 export function createGLTFLoader(): GLTFLoader {
   const loader = new GLTFLoader()
@@ -30,6 +31,14 @@ export function createGLTFLoader(): GLTFLoader {
 
   if (draco) {
     loader.setDRACOLoader(draco)
+  }
+
+  if (typeof MeshoptDecoder !== 'undefined') {
+    try {
+      loader.setMeshoptDecoder(MeshoptDecoder)
+    } catch {
+      /* fallback if wasm initialization fails */
+    }
   }
 
   return loader

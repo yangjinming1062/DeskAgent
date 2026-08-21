@@ -162,7 +162,7 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
 
     // Runner 发来的入站请求（同时有 id 和 method）——反向 RPC
     if (id !== undefined && id !== null && method) {
-      handleReverseRpc(id, method, message.params || {})
+      void handleReverseRpc(id, method, message.params || {})
 
       return
     }

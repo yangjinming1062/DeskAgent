@@ -5,6 +5,8 @@ export const MEDIA_MIME_TYPES: Record<string, string> = {
   '.bmp': 'image/bmp',
   '.flac': 'audio/flac',
   '.gif': 'image/gif',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
   '.m4a': 'audio/mp4',
@@ -21,10 +23,10 @@ export const MEDIA_MIME_TYPES: Record<string, string> = {
   '.webp': 'image/webp'
 }
 
-// 派生：MIME 以 audio/ 或 video/ 开头的所有扩展名。
+// 派生：MIME 以 audio/、video/ 或 model/ 开头的所有扩展名。
 export const STREAMABLE_MEDIA_EXTS: Set<string> = new Set(
   Object.entries(MEDIA_MIME_TYPES)
-    .filter(([, mime]) => mime.startsWith('audio/') || mime.startsWith('video/'))
+    .filter(([, mime]) => mime.startsWith('audio/') || mime.startsWith('video/') || mime.startsWith('model/'))
     .map(([ext]) => ext)
 )
 

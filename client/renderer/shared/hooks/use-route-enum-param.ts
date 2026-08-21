@@ -28,7 +28,7 @@ export function useRouteEnumParam<T extends string>(
       }
 
       const qs = params.toString()
-      navigate({ hash, pathname, search: qs ? `?${qs}` : '' }, { replace: true })
+      void navigate({ hash, pathname, search: qs ? `?${qs}` : '' }, { replace: true })
     },
     [fallback, hash, key, navigate, pathname, search]
   )

@@ -19,6 +19,7 @@ export interface RunnerUpdaterDeps {
     ensureBackendSession?: () => any
     runnerBridge?: any
   }
+  fetchImpl?: typeof globalThis.fetch
   getMainWindow: () => any
   log?: (level: string, message: string, ...args: any[]) => void
   sendToMain: (win: any, channel: string, payload: any) => void
@@ -26,12 +27,14 @@ export interface RunnerUpdaterDeps {
 
 export class RunnerUpdater {
   bridgeDeps: RunnerUpdaterDeps['bridgeDeps']
+  fetchImpl: typeof globalThis.fetch
   getMainWindow: RunnerUpdaterDeps['getMainWindow']
   log?: RunnerUpdaterDeps['log']
   sendToMain: RunnerUpdaterDeps['sendToMain']
 
-  constructor({ bridgeDeps, getMainWindow, log, sendToMain }: RunnerUpdaterDeps) {
+  constructor({ bridgeDeps, fetchImpl = globalThis.fetch, getMainWindow, log, sendToMain }: RunnerUpdaterDeps) {
     this.bridgeDeps = bridgeDeps
+    this.fetchImpl = fetchImpl
     this.getMainWindow = getMainWindow
     this.sendToMain = sendToMain
     this.log = log
@@ -425,7 +428,7 @@ export class RunnerUpdater {
   }
 
   async _fetchText(url: string): Promise<string> {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
+    const res = await this.fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
 
     if (!res.ok) {
       throw new Error(`${res.status} ${res.statusText}`)
@@ -440,7 +443,7 @@ export class RunnerUpdater {
     expectedSize: null | number,
     onProgress?: (pct: number) => void
   ): Promise<void> {
-    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
+    const res = await this.fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
 
     if (!res.ok) {
       throw new Error(`${res.status} ${res.statusText}`)

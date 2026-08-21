@@ -8,13 +8,13 @@ const APP_ROOT = path.resolve(__dirname, '..')
 // `packages: ['.']`); node-pty lives directly under APP_ROOT/node_modules,
 // not hoisted to a parent. APP_ROOT is therefore the root for resolving
 // workspace deps.
-const REPO_ROOT = APP_ROOT
+const _REPO_ROOT = APP_ROOT
 const STAGE_ROOT = path.join(APP_ROOT, 'build', 'native-deps')
 
 // The target arch may be overridden by electron-builder via npm_config_arch
 // (e.g. `pnpm run dist -- --arm64`); fall back to the build host's arch.
-const TARGET_ARCH = process.env.npm_config_arch || process.arch
-const TARGET_PLATFORM = process.platform
+const _TARGET_ARCH = process.env.npm_config_arch || process.arch
+const _TARGET_PLATFORM = process.platform
 
 // Native modules to stage inside build/native-deps/.
 // Empty after removing node-pty — kept so the build step pipeline remains clean.

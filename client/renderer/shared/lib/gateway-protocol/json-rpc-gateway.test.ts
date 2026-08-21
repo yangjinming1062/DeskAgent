@@ -75,15 +75,19 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
   /** 创建带 mock socket 的客户端，推进计时器使 connect() 完成。 */
   async function connectClient() {
     let mockSocket!: MockWebSocket
+
     const client = new JsonRpcGatewayClient({
       socketFactory: () => {
         mockSocket = new MockWebSocket()
+
         return mockSocket as unknown as WebSocket
       }
     })
+
     const connectPromise = client.connect('ws://localhost:8000')
     await vi.advanceTimersByTimeAsync(0)
     await connectPromise
+
     return { client, socket: mockSocket }
   }
 
@@ -135,5 +139,26 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(0)
     client.resetSeq(42)
     expect(client.lastReceivedSeq).toBe(42)
+  })
+
+  it('safely drops invalid schema frames without throwing', async () => {
+    let mockSocket: MockWebSocket | null = null
+
+    const client = new JsonRpcGatewayClient({
+      socketFactory: () => {
+        mockSocket = new MockWebSocket()
+
+        return mockSocket as unknown as WebSocket
+      }
+    })
+
+    const connectPromise = client.connect('ws://localhost:9999')
+    vi.runAllTimers()
+    await connectPromise
+
+    expect(() => {
+      mockSocket?.emitMessage('not json at all')
+      mockSocket?.emitMessage(JSON.stringify({ notAValidRpcFrame: 123 }))
+    }).not.toThrow()
   })
 })

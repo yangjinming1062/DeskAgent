@@ -6,7 +6,7 @@
 type LogLevel = 'error' | 'info' | 'warn'
 
 function emit(level: LogLevel, scope: string, args: unknown[]): void {
-  window.spiritagent?.log?.({ level, scope, args })
+  void window.spiritagent?.log?.({ level, scope, args })
 }
 
 export const log = {

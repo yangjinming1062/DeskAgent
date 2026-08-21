@@ -21,8 +21,9 @@ export function computeFileSha256(filePath: string): Promise<string> {
 }
 
 export interface ModelDiskCacheOptions {
-  spiritagentHome?: null | string
+  defaultFetchFn?: typeof globalThis.fetch
   inactivityTimeoutMs?: number
+  spiritagentHome?: null | string
 }
 
 export interface EnsureCachedOptions {
@@ -44,8 +45,9 @@ export interface ModelDiskCache {
 }
 
 export function createModelDiskCache({
-  spiritagentHome,
-  inactivityTimeoutMs = DEFAULT_INACTIVITY_TIMEOUT_MS
+  defaultFetchFn,
+  inactivityTimeoutMs = DEFAULT_INACTIVITY_TIMEOUT_MS,
+  spiritagentHome
 }: ModelDiskCacheOptions): ModelDiskCache {
   if (!spiritagentHome) {
     throw new Error('createModelDiskCache: spiritagentHome is required')
@@ -139,7 +141,7 @@ export function createModelDiskCache({
   async function _download({
     baseUrl,
     contentHash,
-    fetchFn = globalThis.fetch,
+    fetchFn = defaultFetchFn || globalThis.fetch,
     token,
     url
   }: EnsureCachedOptions): Promise<{ contentHash: string; filePath: string; fromCache: boolean }> {

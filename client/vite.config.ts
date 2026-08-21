@@ -15,14 +15,7 @@ export default defineConfig({
     postcss: { plugins: [] }
   },
   build: {
-    // Shiki 默认产出大量动态 chunk，electron-builder 扫描数千文件会 OOM。
-    // 刻意合并为单 chunk（~22 MB），阈值调高以静默 500 kB 警告。
-    chunkSizeWarningLimit: 25000,
-    rolldownOptions: {
-      output: {
-        codeSplitting: false
-      }
-    }
+    chunkSizeWarningLimit: 1000
   },
   resolve: {
     alias: {

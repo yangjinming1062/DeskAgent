@@ -1,6 +1,4 @@
-import type { Translations } from './types'
-
-export const strings: Translations = {
+export const strings = {
   common: {
     apply: '应用',
     back: '返回',
@@ -42,7 +40,7 @@ export const strings: Translations = {
 
   boot: {
     ready: 'SpiritAgent 桌面版已就绪',
-    desktopBootFailedWithMessage: message => `桌面启动失败：${message}`,
+    desktopBootFailedWithMessage: (message: string) => `桌面启动失败：${message}`,
     steps: {
       connectingGateway: '正在连接桌面网关',
       loadingSettings: '正在加载 SpiritAgent 设置',
@@ -73,7 +71,7 @@ export const strings: Translations = {
     region: '通知',
     hide: '隐藏',
     show: '显示',
-    more: count => `另外 ${count} 条通知`,
+    more: (count: number) => `另外 ${count} 条通知`,
     clearAll: '全部清除',
     dismiss: '关闭通知',
     details: '详情',
@@ -85,12 +83,14 @@ export const strings: Translations = {
       methodNotAllowed: '桌面后端拒绝了该请求 (405 Method Not Allowed)。请尝试重启 SpiritAgent Desktop。',
       microphonePermission: '麦克风权限已被拒绝。',
       openaiRejectedApiKey: 'OpenAI 拒绝了该 API key。',
-      openaiRejectedApiKeyWithStatus: status => `OpenAI 拒绝了该 API key (${status} invalid_api_key)。`,
+      openaiRejectedApiKeyWithStatus: (status: number | string) =>
+        `OpenAI 拒绝了该 API key (${status} invalid_api_key)。`,
       openaiTtsNeedsKey: 'OpenAI TTS 需要 VOICE_TOOLS_OPENAI_KEY 或 OPENAI_API_KEY。'
     },
     voice: {
       invalidTitle: '音色已失效',
-      invalidMessage: name => `你之前选的音色「${name}」已不在当前目录，已临时用默认音色，去伙伴设置里重新挑一个吧～`,
+      invalidMessage: (name: string) =>
+        `你之前选的音色「${name}」已不在当前目录，已临时用默认音色，去伙伴设置里重新挑一个吧～`,
       invalidAction: '去设置'
     }
   },
@@ -114,15 +114,15 @@ export const strings: Translations = {
     },
     about: {
       heading: 'SpiritAgent Desktop',
-      version: value => `版本 ${value}`,
+      version: (value: number | string) => `版本 ${value}`,
       versionUnavailable: '版本不可用',
       checkForUpdates: '检查更新',
       checking: '检查中…',
       upToDate: '已是最新版本',
-      upToDateWithVersion: value => `已是最新版本（v${value}）`,
-      updateAvailable: value => `v${value} 可用`,
-      updateDownloaded: value => `v${value} 已就绪,等待重启安装`,
-      updateError: value => `检查更新失败:${value}`
+      upToDateWithVersion: (value: number | string) => `已是最新版本（v${value}）`,
+      updateAvailable: (value: number | string) => `v${value} 可用`,
+      updateDownloaded: (value: number | string) => `v${value} 已就绪,等待重启安装`,
+      updateError: (value: string) => `检查更新失败:${value}`
     },
     mcp: {
       loading: '正在加载 MCP 服务器...',
@@ -139,7 +139,7 @@ export const strings: Translations = {
       reloadedMessage: '新的工具 schema 将应用到后续回合。',
       reloadFailed: 'MCP 重新加载失败',
       savedTitle: 'MCP 服务器已保存',
-      savedMessage: name => `${name} 会在 MCP 重新加载后生效。`,
+      savedMessage: (name: string) => `${name} 会在 MCP 重新加载后生效。`,
       newServer: '新服务器',
       reload: '重新加载 MCP',
       reloading: '重新加载中...',
@@ -322,7 +322,7 @@ export const strings: Translations = {
     noToolsetsTitle: '未找到工具集',
     noToolsetsDesc: '尝试更宽泛的搜索词。',
     noDescription: '暂无描述。',
-    toolsetsEnabled: (enabled, total) => `已启用 ${enabled}/${total} 个工具集`,
+    toolsetsEnabled: (enabled: number, total: number) => `已启用 ${enabled}/${total} 个工具集`,
     skillsLoadFailed: '技能加载失败',
     toolsetsRefreshFailed: '工具集刷新失败'
   },
@@ -359,3 +359,5 @@ export const strings: Translations = {
     }
   }
 }
+
+export type Translations = typeof strings

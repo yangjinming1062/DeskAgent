@@ -16,7 +16,6 @@ import { type ChatFormState, ContextCompressionSection } from './account/context
 import { type WebFormState, WebSearchSection } from './account/web-search-section'
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
-const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
 const REASONING_OPTIONS = ['none', 'low', 'medium', 'high'] as const
 
 const EMPTY_WEB: WebFormState = {
@@ -42,8 +41,6 @@ const EMPTY_CHAT: ChatFormState = {
   enable_context_compression: true,
   context_compression_threshold: 0.7
 }
-
-const THRESHOLD_OPTIONS = ['0.5', '0.6', '0.7', '0.8', '0.9'] as const
 
 const readWebState = (config: SpiritAgentConfigResponse): WebFormState => {
   const web = config.web

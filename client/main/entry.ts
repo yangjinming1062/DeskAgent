@@ -1,7 +1,5 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
-import http from 'node:http'
-import https from 'node:https'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -57,6 +55,7 @@ import { createRunnerWsServer } from './runner/rpc-ws'
 import { RunnerUpdater } from './runner/updater'
 import {
   DATA_URL_READ_MAX_BYTES,
+  DEFAULT_CSP_POLICY,
   DEFAULT_FETCH_TIMEOUT_MS,
   resolvePathTimeoutMs,
   resolveReadableFileForIpc,
@@ -185,8 +184,9 @@ function registerMediaProtocol() {
 
     try {
       const url = new URL(request.url)
+      const rawPath = decodeURIComponent(url.pathname)
 
-      const filePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''))
+      const filePath = process.platform === 'win32' ? rawPath.replace(/^\/+([A-Za-z]:)/, '$1') : rawPath
 
       ;({ resolvedPath } = await resolveReadableFileForIpc(filePath, { purpose: 'Media stream' }))
     } catch {
@@ -379,82 +379,54 @@ function resolveSpiritAgentVersion(): string {
   return app.getVersion()
 }
 
-function fetchJson(url: string, token?: string, options: any = {}): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const body = options.body === undefined ? undefined : Buffer.from(JSON.stringify(options.body))
-    const parsed = new URL(url)
-    const client = parsed.protocol === 'https:' ? https : http
-    const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
+async function fetchJson(url: string, token?: string, options: any = {}): Promise<any> {
+  const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
+  const body = options.body !== undefined ? JSON.stringify(options.body) : undefined
 
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      reject(new Error(`Unsupported SpiritAgent backend URL protocol: ${parsed.protocol}`))
+  const headers: Record<string, string> = {
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {})
+  }
 
-      return
-    }
-
-    const req = client.request(
-      parsed,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(body ? { 'Content-Length': String(body.length) } : {})
-        },
-        method: options.method || 'GET'
-      },
-      res => {
-        const chunks: Buffer[] = []
-        res.on('error', reject)
-        res.on('data', chunk => chunks.push(chunk))
-        res.on('end', () => {
-          const text = Buffer.concat(chunks).toString('utf8')
-
-          if ((res.statusCode || 500) >= 400) {
-            reject(new Error(`${res.statusCode} ${parsed.pathname}: ${text || res.statusMessage}`))
-
-            return
-          }
-
-          if (!text) {
-            resolve(null)
-
-            return
-          }
-
-          const looksHtml = /^\s*<(?:!doctype|html)/i.test(text)
-          const contentType = String(res.headers['content-type'] || '')
-
-          if (looksHtml || contentType.includes('text/html')) {
-            reject(
-              new Error(
-                `Expected JSON from ${url} but got HTML (status ${res.statusCode}). ` +
-                  'The endpoint is likely missing on the SpiritAgent backend.'
-              )
-            )
-
-            return
-          }
-
-          try {
-            resolve(JSON.parse(text))
-          } catch {
-            reject(new Error(`Invalid JSON from ${url} (status ${res.statusCode}): ${text.slice(0, 200)}`))
-          }
-        })
-      }
-    )
-
-    req.on('error', reject)
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`Timed out connecting to SpiritAgent backend after ${timeoutMs}ms`))
-    })
-
-    if (body) {
-      req.write(body)
-    }
-
-    req.end()
+  const res = await electronNet.fetch(url, {
+    body,
+    headers,
+    method: options.method || 'GET',
+    signal: AbortSignal.timeout(timeoutMs)
   })
+
+  const text = await res.text().catch(() => '')
+
+  if (!res.ok) {
+    let pathname = url
+
+    try {
+      pathname = new URL(url).pathname
+    } catch {
+      /* ignore invalid url formatting in error */
+    }
+
+    throw new Error(`${res.status} ${pathname}: ${text || res.statusText}`)
+  }
+
+  if (!text) {
+    return null
+  }
+
+  const looksHtml = /^\s*<(?:!doctype|html)/i.test(text)
+  const contentType = String(res.headers.get('content-type') || '')
+
+  if (looksHtml || contentType.includes('text/html')) {
+    throw new Error(
+      `Expected JSON from ${url} but got HTML (status ${res.status}). The endpoint is likely missing on the SpiritAgent backend.`
+    )
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error(`Invalid JSON from ${url} (status ${res.status}): ${text.slice(0, 200)}`)
+  }
 }
 
 function filenameFromUrl(rawUrl: string, fallback = 'image'): string {
@@ -494,31 +466,18 @@ async function resourceBufferFromUrl(rawUrl: string): Promise<{ buffer: Buffer; 
     return { buffer, mimeType: mimeTypeForPath(filePath) }
   }
 
-  const parsed = new URL(rawUrl)
-  const client = parsed.protocol === 'https:' ? https : http
+  const res = await electronNet.fetch(rawUrl)
 
-  return new Promise((resolve, reject) => {
-    const req = client.get(parsed, res => {
-      if ((res.statusCode || 500) >= 400) {
-        reject(new Error(`Failed to fetch ${rawUrl}: ${res.statusCode}`))
-        res.resume()
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ${rawUrl}: ${res.status}`)
+  }
 
-        return
-      }
+  const arrayBuf = await res.arrayBuffer()
 
-      const chunks: Buffer[] = []
-      res.on('error', reject)
-      res.on('data', chunk => chunks.push(chunk))
-      res.on('end', () => {
-        resolve({
-          buffer: Buffer.concat(chunks),
-          mimeType: (res.headers['content-type'] as string) || 'application/octet-stream'
-        })
-      })
-    })
-
-    req.on('error', reject)
-  })
+  return {
+    buffer: Buffer.from(arrayBuf),
+    mimeType: res.headers.get('content-type') || 'application/octet-stream'
+  }
 }
 
 async function copyImageFromUrl(rawUrl: string): Promise<void> {
@@ -977,6 +936,17 @@ function installMediaPermissions(): void {
   })
 }
 
+function installContentSecurityPolicy(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [DEFAULT_CSP_POLICY]
+      }
+    })
+  })
+}
+
 const UPDATE_INITIAL_CHECK_DELAY_MS = 30_000
 
 let runnerUpdaterSingleton: RunnerUpdater | null = null
@@ -988,6 +958,7 @@ function getRunnerUpdater(): RunnerUpdater {
 
   runnerUpdaterSingleton = new RunnerUpdater({
     bridgeDeps,
+    fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch,
     getMainWindow: () => mainWindow,
     sendToMain
   })
@@ -1249,11 +1220,10 @@ function createToolWindow(): void {
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,
-      devTools: true,
+      devTools: !app.isPackaged,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.cjs'),
-      sandbox: true,
-      webviewTag: true
+      sandbox: true
     },
     width: 1220
   })
@@ -1269,7 +1239,7 @@ function createToolWindow(): void {
   installContextMenu(toolWindow)
   installStandardWindowHandlers(toolWindow)
 
-  toolWindow.loadURL(rendererUrlFor('tool'))
+  void toolWindow.loadURL(rendererUrlFor('tool'))
 
   toolWindow.webContents.once('did-finish-load', () => {
     restorePersistedZoomLevel(toolWindow)
@@ -1311,7 +1281,7 @@ function createSpriteWindow(): void {
     webPreferences: {
       backgroundThrottling: false,
       contextIsolation: true,
-      devTools: true,
+      devTools: !app.isPackaged,
       nodeIntegration: false,
       preload: path.join(__dirname, 'preload.cjs'),
       sandbox: true
@@ -1340,7 +1310,7 @@ function createSpriteWindow(): void {
 
   installStandardWindowHandlers(mainWindow)
 
-  mainWindow.loadURL(rendererUrlFor('sprite'))
+  void mainWindow.loadURL(rendererUrlFor('sprite'))
   mainWindow.webContents.once('did-finish-load', () => {
     broadcastBootProgress()
     mainWindow?.showInactive()
@@ -1423,10 +1393,17 @@ registerOnboardingAudioIpc({
   ipcMain,
   mimeTypeForPath
 })
-const modelDiskCache = createModelDiskCache({ spiritagentHome: SPIRITAGENT_HOME })
+const electronFetch = electronNet.fetch as unknown as typeof globalThis.fetch
+
+const modelDiskCache = createModelDiskCache({
+  defaultFetchFn: electronFetch,
+  spiritagentHome: SPIRITAGENT_HOME
+})
+
 registerConnectionIpc({
   defaultFetchTimeoutMs: DEFAULT_FETCH_TIMEOUT_MS,
   ensureBackend,
+  fetchImpl: electronFetch,
   fetchJson,
   getBootProgressState: () => bootProgressState,
   ipcMain,
@@ -1437,7 +1414,11 @@ registerConnectionIpc({
 registerMediaIpc({
   spiritagentHome: SPIRITAGENT_HOME,
   ensureBackend,
-  getEnginePrefs: createEnginePrefsCache({ ensureBackend }),
+  fetchImpl: electronFetch,
+  getEnginePrefs: createEnginePrefsCache({
+    ensureBackend,
+    fetchImpl: electronFetch
+  }),
   getRunnerBridge: () => bridgeDeps.runnerBridge,
   ipcMain,
   log: chunk => rememberLog(chunk)
@@ -1579,7 +1560,7 @@ try {
   /* 忽略 */
 }
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   if (IS_MAC) {
     Menu.setApplicationMenu(buildApplicationMenu())
   } else {
@@ -1587,6 +1568,7 @@ app.whenReady().then(async () => {
   }
 
   installMediaPermissions()
+  installContentSecurityPolicy()
   registerMediaProtocol()
   configureSpellChecker()
   registerPowerResumeListeners()

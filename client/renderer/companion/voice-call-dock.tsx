@@ -37,7 +37,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const durationSecRef = useRef(0)
-  const audioAnimRef = useRef<number | null>(null)
+  const vadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
   const lastActivityTimeRef = useRef<number>(Date.now())
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -165,11 +165,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                   silenceTimerRef.current = null
                 }
               }
-
-              audioAnimRef.current = requestAnimationFrame(checkVolume)
             }
 
-            audioAnimRef.current = requestAnimationFrame(checkVolume)
+            // 定时器驱动（30ms），避免窗口隐藏 / 遮挡时 requestAnimationFrame 被 Chromium 节流暂停导致语音识别失效。
+            vadIntervalRef.current = setInterval(checkVolume, 30)
           }
         } catch {
           /* AudioContext fallback — mic works, VAD disabled */
@@ -268,8 +267,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     }
 
     return () => {
-      if (audioAnimRef.current) {
-        cancelAnimationFrame(audioAnimRef.current)
+      if (vadIntervalRef.current) {
+        clearInterval(vadIntervalRef.current)
+        vadIntervalRef.current = null
       }
 
       if (timerRef.current) {

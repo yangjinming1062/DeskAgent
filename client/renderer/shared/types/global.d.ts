@@ -17,6 +17,8 @@ declare global {
       /** 把后端服务的二进制资产以原始字节取回——用于大体积负载（GLB），
        * 不能接受 base64 膨胀。支持通过 contentHash 做磁盘缓存。 */
       apiAssetBuffer: (request: { url: string; contentHash?: string }) => Promise<Uint8Array>
+      /** 获取缓存的模型流媒体协议 URL（spiritagent-media://...），供前端零拷贝流式加载。 */
+      apiAssetModelUrl: (request: { url: string; contentHash?: string }) => Promise<string>
       readFileDataUrl: (filePath: string) => Promise<string>
       selectPaths: (options?: SpiritAgentSelectPathsOptions) => Promise<string[]>
       writeClipboard: (text: string) => Promise<boolean>

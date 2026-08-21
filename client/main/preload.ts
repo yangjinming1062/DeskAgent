@@ -22,6 +22,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
   apiAsset: (request: { url: string }) => ipcRenderer.invoke('spiritagent:api:asset', request),
   apiAssetBuffer: (request: { contentHash?: string; url: string }) =>
     ipcRenderer.invoke('spiritagent:api:asset-buffer', request),
+  apiAssetModelUrl: (request: { contentHash?: string; url: string }) =>
+    ipcRenderer.invoke('spiritagent:api:asset-model-url', request),
   getBootProgress: () => ipcRenderer.invoke('spiritagent:boot-progress:get'),
   getConnection: () => ipcRenderer.invoke('spiritagent:connection'),
   getGatewayWsUrl: () => ipcRenderer.invoke('spiritagent:gateway:ws-url'),
