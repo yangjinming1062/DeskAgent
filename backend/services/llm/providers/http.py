@@ -1,5 +1,6 @@
 import base64
 import contextlib
+from typing import Any
 
 import httpx
 from components import SETTINGS
@@ -7,6 +8,16 @@ from openai import AsyncOpenAI
 
 _clients: dict[tuple[str, str], httpx.AsyncClient] = {}
 _clients_openai: dict[tuple[str, str], AsyncOpenAI] = {}
+
+# 请求校验失败模式：请求畸形，每次重试结果相同；某些 OpenAI 兼容网关（如 codex.nekos.me）会把它当作 5xx 返回，会让通用 "5xx → 可重试" 规则误触发重试风暴。命中后归为不可重试的 format_error，快速失败并回退。
+_REQUEST_VALIDATION_PATTERNS = (
+    "unknown parameter",
+    "unsupported parameter",
+    "unrecognized request argument",
+    "invalid_request_error",
+    "unknown_parameter",
+    "unsupported_parameter",
+)
 
 
 async def download_as_b64(client: httpx.AsyncClient, url: str) -> str:
@@ -44,12 +55,28 @@ def cache_clear() -> None:
     _clients_openai.clear()
 
 
+class _RetryAwareAsyncOpenAI(AsyncOpenAI):
+    """在 SDK 默认 ``_should_retry`` 之外拦截 500/502 中的请求校验错误（畸形请求每次重试都失败），其余决策完全继承父类。"""
+
+    def _should_retry(self, response: httpx.Response, *args: Any, **kwargs: Any) -> bool:  # type: ignore[override]
+        if response.status_code in (500, 502):
+            body = response.text or ""
+            if body and any(pattern in body for pattern in _REQUEST_VALIDATION_PATTERNS):
+                return False
+        return super()._should_retry(response, *args, **kwargs)
+
+
+def _openai_timeout() -> httpx.Timeout:
+    request_seconds = float(SETTINGS.llm_request_timeout_seconds)
+    return httpx.Timeout(connect=10.0, read=request_seconds, write=request_seconds, pool=10.0)
+
+
 def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
     """按 (api_key, base_url) 缓存 AsyncOpenAI；放在本模块（而非 llm_client）以切断 openai_compat 与 llm_client 的循环依赖，llm_client 转发此符号以保留调用点。"""
     key = (api_key, base_url.rstrip("/"))
     client = _clients_openai.get(key)
     if client is not None:
         return client
-    client = AsyncOpenAI(api_key=api_key, base_url=key[1])
+    client = _RetryAwareAsyncOpenAI(api_key=api_key, base_url=key[1], max_retries=max(0, int(SETTINGS.llm_max_retry_attempts)), timeout=_openai_timeout())
     _clients_openai[key] = client
     return client

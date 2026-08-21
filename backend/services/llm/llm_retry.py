@@ -1,13 +1,12 @@
 import asyncio
 import contextlib
-import random
 import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from components import LLM_RETRY_MAX_SUGGESTED_DELAY, LLM_RETRY_MIN_DELAY, LLM_RETRY_MIN_TIMEOUT, SETTINGS, get_logger
+from components import LLM_RETRY_MIN_TIMEOUT, SETTINGS, get_logger
 
-from .error_classifier import ClassifiedError, classify_api_error
+from .error_classifier import classify_api_error
 from .llm_debug import log_event, new_call_id, summarize_error, summarize_llm_request, summarize_llm_response, truncate_for_log
 from .responses import approx_responses_tokens
 
@@ -21,24 +20,10 @@ def _call_site_from_client(client: Any) -> str:
     return host or (str(base_url) if base_url else "unknown")
 
 
-def _jittered_backoff(attempt: int, *, base_delay: float, max_delay: float, jitter_ratio: float = 0.5) -> float:
-    """基于单调时钟的指数退避 + 加性抖动，并发重试无需加锁。"""
-    base_delay = max(base_delay, LLM_RETRY_MIN_DELAY)
-    max_delay = max(max_delay, base_delay)
-    jitter_ratio = max(0.0, min(jitter_ratio, 1.0))
-
-    exponent = max(0, attempt - 1)
-    delay = base_delay * (2**exponent) if exponent < 63 else max_delay
-    delay = min(delay, max_delay)
-
-    rng = random.Random(time.monotonic_ns())
-    return min(delay + rng.uniform(0, jitter_ratio * delay), max_delay)
-
-
 class LLMRuntimeError(Exception):
     """包装已分类的 API 错误；原异常挂在 ``__cause__`` 上。"""
 
-    def __init__(self, classified: ClassifiedError, original: BaseException | None = None) -> None:
+    def __init__(self, classified: Any, original: BaseException | None = None) -> None:
         self.classified = classified
         self.original = original
         super().__init__(classified.message or classified.reason.value)
@@ -158,21 +143,17 @@ async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provide
             )
 
 
-async def call_with_retry(
-    client: Any,
-    *,
-    context_length: int = 200000,
-    timeout: float | None = None,
-    max_attempts: int | None = None,
-    base_delay: float | None = None,
-    max_delay: float | None = None,
-    **create_kwargs: Any,
-) -> Any:
-    """为 ``client.responses.create(**kwargs)`` 包装超时与退避；流式返回受同一 timeout 约束的 AsyncIterator，非流式返回至少一次成功后的 SDK Response。分类器标为不可重试或重试耗尽时抛 :class:`LLMRuntimeError`。"""
-    timeout = max(timeout if timeout is not None else SETTINGS.llm_request_timeout_seconds, LLM_RETRY_MIN_TIMEOUT)
-    max_attempts = max_attempts if max_attempts is not None else max(1, SETTINGS.llm_max_retry_attempts)
-    base_delay = max(base_delay if base_delay is not None else SETTINGS.llm_base_retry_delay, LLM_RETRY_MIN_DELAY)
-    max_delay = max(max_delay if max_delay is not None else SETTINGS.llm_max_retry_delay, base_delay)
+async def call_with_retry(client: Any, *, context_length: int = 200000, timeout: float | None = None, **create_kwargs: Any) -> Any:
+    """为 ``client.responses.create(**kwargs)`` 编排 SDK 重试、流式 deadline 与分类。
+
+    重试由构造时的 ``AsyncOpenAI(max_retries=...)`` 接管；SDK 自动遵循 ``Retry-After`` /
+    ``retry-after-ms`` 响应头并对 408/409/429/500/502/503/504 退避重试。本函数只在终端异常
+    上跑一次分类器，并把结果封装为 :class:`LLMRuntimeError`；后续 fallback 决策交给
+    :func:`execute_with_fallback`。流式响应额外受单一 ``timeout`` deadline 约束（httpx
+    ``read`` 是按次读超时，不等价），并经 ``_wrap_stream_for_debug`` 在迭代结束时统一发
+    面包屑。
+    """
+    timeout = max(timeout if timeout is not None else float(SETTINGS.llm_request_timeout_seconds), LLM_RETRY_MIN_TIMEOUT)
 
     model = str(create_kwargs.get("model") or "")
     input_items = create_kwargs.get("input")
@@ -182,10 +163,10 @@ async def call_with_retry(
     approx_tokens = approx_responses_tokens(instructions, input_items)
     num_messages = len(input_items or [])
 
-    # 提前打 request 面包屑，确保仅看失败日志的读者仍能看到已发出的 prompt。
     call_id = new_call_id()
     call_site = _call_site_from_client(client)
     call_started = time.monotonic()
+
     log_event(
         call_id=call_id,
         service="llm",
@@ -197,26 +178,35 @@ async def call_with_retry(
         stream=is_stream,
         context_length=context_length,
         timeout_seconds=timeout,
-        max_attempts=max_attempts,
     )
 
-    last_classified: ClassifiedError | None = None
-    last_exc: BaseException | None = None
-    started_at = time.monotonic()
+    extra_headers = {"Idempotency-Key": call_id}
     classifier_kwargs = {"model": model, "approx_tokens": approx_tokens, "context_length": context_length, "num_messages": num_messages}
 
-    success_result: Any = None
-    success = False
+    try:
+        if is_stream:
+            raw_stream = await client.responses.create(**create_kwargs, extra_headers=extra_headers)
+            deadline_stream = _stream_with_timeout(raw_stream, timeout, model=model)
+            return _wrap_stream_for_debug(deadline_stream, call_id=call_id, provider=call_site, model=model, call_site=call_site, call_started=call_started)
 
-    def _emit_failure_breadcrumb(exc: BaseException | None) -> None:
-        # 原 ``exc`` 不一定带 ``.classified``（只有 ``ClassifiedError`` 才有）；合并以让面包屑同时展现分类器的原因桶与原异常形状。
-        digest = summarize_error(exc) if exc is not None else {"type": "unknown"}
-        if last_classified is not None:
-            digest.setdefault("reason", last_classified.reason.value)
-            digest.setdefault("status_code", last_classified.status_code)
-            digest.setdefault("retryable", last_classified.retryable)
-            digest.setdefault("should_fallback", last_classified.should_fallback)
-            digest.setdefault("classified_message", last_classified.message)
+        result = await client.responses.create(**create_kwargs, extra_headers=extra_headers)
+        log_event(
+            call_id=call_id,
+            service="llm",
+            provider=call_site,
+            model=model,
+            call_site=call_site,
+            phase="response",
+            latency_ms=int((time.monotonic() - call_started) * 1000),
+            status="success",
+            response=summarize_llm_response(result),
+            stream=False,
+        )
+        return result
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        classified = classify_api_error(exc, **classifier_kwargs)
         log_event(
             call_id=call_id,
             service="llm",
@@ -226,90 +216,12 @@ async def call_with_retry(
             phase="error",
             latency_ms=int((time.monotonic() - call_started) * 1000),
             status="error",
-            error=digest,
+            error={
+                **summarize_error(exc),
+                "reason": classified.reason.value,
+                "retryable": classified.retryable,
+                "should_fallback": classified.should_fallback,
+                "classified_message": classified.message,
+            },
         )
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            coro = client.responses.create(**create_kwargs)
-            if is_stream:
-                # 一个 deadline 覆盖连接 + 迭代，避免流先花 ``timeout`` 连接再花 ``timeout`` 流式（连接段再额外封顶 60s）
-                loop = asyncio.get_running_loop()
-                deadline = loop.time() + timeout
-                stream = await asyncio.wait_for(coro, timeout=min(timeout, 60))
-                remaining = max(deadline - loop.time(), 0.1)
-                success_result = _stream_with_timeout(stream, remaining, model=model)
-            else:
-                success_result = await asyncio.wait_for(coro, timeout=timeout)
-            success = True
-            break
-        except TimeoutError as exc:
-            last_classified = classify_api_error(exc, **classifier_kwargs)
-            last_exc = exc
-            logger.info("LLM call timed out", extra={"attempt": attempt, "max_attempts": max_attempts, "model": model})
-        except asyncio.CancelledError:
-            raise
-        except LLMRuntimeError as exc:
-            last_classified = exc.classified
-            last_exc = exc.original or exc
-        except Exception as exc:
-            last_classified = classify_api_error(exc, **classifier_kwargs)
-            last_exc = exc
-            logger.info(
-                "LLM call failed", extra={"attempt": attempt, "max_attempts": max_attempts, "reason": last_classified.reason.value, "error_message": last_classified.message}
-            )
-
-        assert last_classified is not None
-        if not last_classified.retryable:
-            logger.warning(
-                "LLM error not retryable", extra={"reason": last_classified.reason.value, "status_code": last_classified.status_code, "error_message": last_classified.message}
-            )
-            _emit_failure_breadcrumb(last_exc)
-            raise LLMRuntimeError(last_classified, original=last_exc) from last_exc
-
-        if attempt >= max_attempts:
-            logger.warning(
-                "LLM retries exhausted: attempts=%d elapsed=%.2fs reason=%s msg=%s",
-                max_attempts,
-                time.monotonic() - started_at,
-                last_classified.reason.value,
-                last_classified.message,
-            )
-            _emit_failure_breadcrumb(last_exc)
-            raise LLMRuntimeError(last_classified, original=last_exc) from last_exc
-
-        await asyncio.sleep(_compute_retry_delay(last_classified, attempt, base_delay, max_delay))
-
-    assert success, "call_with_retry exited retry loop without raising or succeeding"
-
-    # 流式结果：交给 debug 包装器，让 response 面包屑在迭代结束时再打。
-    if is_stream:
-        return _wrap_stream_for_debug(success_result, call_id=call_id, provider=call_site, model=model, call_site=call_site, call_started=call_started)
-
-    log_event(
-        call_id=call_id,
-        service="llm",
-        provider=call_site,
-        model=model,
-        call_site=call_site,
-        phase="response",
-        latency_ms=int((time.monotonic() - call_started) * 1000),
-        status="success",
-        response=summarize_llm_response(success_result),
-        stream=False,
-    )
-    return success_result
-
-
-def _compute_retry_delay(classified: ClassifiedError, attempt: int, base_delay: float, max_delay: float) -> float:
-    """选择下一次重试等待时间；将供应商建议值封顶在合理上限。"""
-    suggested = classified.suggested_delay
-    if suggested and suggested > 0:
-        if suggested > LLM_RETRY_MAX_SUGGESTED_DELAY:
-            logger.warning("Suggested delay %.2fs is too long, capping to %.0fs", suggested, LLM_RETRY_MAX_SUGGESTED_DELAY)
-            return LLM_RETRY_MAX_SUGGESTED_DELAY
-        logger.info("Using proactive rate-limit delay of %.2fs", suggested)
-        return suggested
-    delay = _jittered_backoff(attempt, base_delay=base_delay, max_delay=max_delay)
-    logger.debug("LLM retry", extra={"attempt": attempt + 1, "delay_seconds": delay, "reason": classified.reason.value})
-    return delay
+        raise LLMRuntimeError(classified, original=exc) from exc
