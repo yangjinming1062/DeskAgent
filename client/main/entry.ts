@@ -1057,8 +1057,8 @@ function getBundledPublicKeyPath(): null | string {
       path.join(APP_ROOT, 'update.pub'),
       path.join(__dirname, '..', 'update.pub'),
       path.join(__dirname, 'update.pub'),
-      path.join(APP_ROOT, '..', 'scripts', 'secrets', 'update.pub'),
-      path.resolve(APP_ROOT, '../../scripts/secrets/update.pub')
+      path.join(APP_ROOT, '..', 'scripts', 'release-keys', 'update.pub'),
+      path.resolve(APP_ROOT, '../../scripts/release-keys/update.pub')
     ]
 
     for (const candidate of candidates) {

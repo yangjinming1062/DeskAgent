@@ -114,6 +114,9 @@ temp/
 images/
 *.ppk
 *.pem
+*.key
+*.p12
+*.pfx
 privvy*
 demo.*
 

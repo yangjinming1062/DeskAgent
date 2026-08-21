@@ -19,20 +19,31 @@ function Resolve-OpenSsl {
     throw "openssl not found. Install Git for Windows (includes openssl) or add openssl to PATH."
 }
 
-# 定位签名用的 PEM 私钥（返回 scripts/secrets/update.key 绝对路径）。该文件已入库，正常 clone 后应始终存在，缺失则抛错。
+# Resolve-UpdateSigningKey — locates the PEM private key used to sign release manifests.
+# The key MUST live outside the repo: an env var points to it, otherwise the well-known
+# per-user default is used. An earlier revision stored the key under scripts/secrets/
+# in the repo itself, which forced a wholesale keypair rotation and history rewrite
+# (see SECURITY.md).
 function Resolve-UpdateSigningKey {
     [CmdletBinding()]
     param()
 
-    $scriptDir = Split-Path -Parent $PSCommandPath
-    $repoRoot = (Resolve-Path (Join-Path $scriptDir '..\..')).Path
-    $keyPath = Join-Path $repoRoot 'scripts\secrets\update.key'
+    if ($env:SPIRITAGENT_UPDATE_SIGNING_KEY) {
+        $explicit = $env:SPIRITAGENT_UPDATE_SIGNING_KEY
+        if (-not (Test-Path -LiteralPath $explicit)) {
+            throw "SPIRITAGENT_UPDATE_SIGNING_KEY=$explicit does not exist."
+        }
 
-    if (-not (Test-Path $keyPath)) {
-        throw "Update signing key not found at scripts\secrets\update.key. The key is committed to the repo — ensure the file exists."
+        return (Resolve-Path -LiteralPath $explicit).Path
     }
 
-    return $keyPath
+    $default = Join-Path $HOME '.spiritagent\update.key'
+    if (Test-Path -LiteralPath $default) {
+        return (Resolve-Path -LiteralPath $default).Path
+    }
+
+    throw "Release signing key not found. Set SPIRITAGENT_UPDATE_SIGNING_KEY to the PEM key path, " +
+          "or place the key at $default."
 }
 
 # 就地签署 Squirrel 风格 manifest：根据顶层 `path` 字段计算 SHA-512（大写），用 openssl 对 "<path>|<sha512>" 签出 `signature`，并同步回写 `sha512` 与 `files[]`。
