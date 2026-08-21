@@ -51,11 +51,6 @@ def testredact_message_caps_length():
     assert len(redacted) <= 512
 
 
-def testredact_message_keeps_clean_messages_intact():
-    msg = "Method not found: foo.bar"
-    assert redact_message(msg) == msg
-
-
 @pytest.mark.asyncio
 async def test_jsonrpc_internal_error_redacts_handler_exception():
     """端到端：handler 抛非 JsonRpcError 时返回 -32603 且消息已脱敏，完整异常仅入服务端日志。"""

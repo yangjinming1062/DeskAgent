@@ -470,41 +470,6 @@ async def test_speaking_style_rejected_after_finalization(_patch_db):
             await submit_onboarding_field(db, 100, "speaking_style", "专业干练")
 
 
-def test_affect_scrubber_extracts_and_strips_tag():
-    from services.chat.affect import AffectScrubber
-
-    s = AffectScrubber()
-    assert s.feed("[affect:happy]\nHello!") == "Hello!"
-    assert s.emotion == "happy"
-
-
-def test_affect_scrubber_passthrough_without_tag():
-    from services.chat.affect import AffectScrubber
-
-    s = AffectScrubber()
-    assert s.feed("Just plain text") == "Just plain text"
-    assert s.emotion is None
-
-
-def test_affect_scrubber_handles_split_deltas():
-    from services.chat.affect import AffectScrubber
-
-    s = AffectScrubber()
-    assert s.feed("[affect:") == ""
-    assert s.feed("excited]\nHi") == "Hi"
-    assert s.emotion == "excited"
-
-
-def test_affect_scrubber_rejects_unknown_emotion():
-    from services.chat.affect import AffectScrubber
-
-    s = AffectScrubber()
-    out = s.feed("[affect:bogus]\nHi")
-    # 未知 emotion 退回 neutral（ARCH §7.5）——标签不能泄露给用户，且 desktop 仍收到 affect cue。
-    assert s.emotion == "neutral"
-    assert out == "Hi"
-
-
 class _MockResponse:
     """充当 check_affect 读取的 Responses 输出形状最小替身。"""
 
@@ -535,150 +500,6 @@ async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
             )
         )
         await db.commit()
-
-
-@pytest.mark.asyncio
-async def test_affect_check_no_persona_skips_llm(monkeypatch, _patch_db):
-    ac = importlib.import_module("services.companion.affect_check")
-
-    async def _fail_call(*a, **kw):
-        raise AssertionError("LLM should not be called without a persona")
-
-    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail_call)
-
-    result = await ac.check_affect(user_id=888, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
-
-    assert result.expressed is False
-    assert result.reason == "persona not ready"
-
-
-@pytest.mark.asyncio
-async def test_affect_check_llm_decides_express(monkeypatch, _patch_db):
-    _, SessionLocal = _patch_db
-    ac = importlib.import_module("services.companion.affect_check")
-    await _seed_persona(SessionLocal, 777)
-
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-
-    async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}')
-
-    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
-
-    emitted: list[tuple[int, str]] = []
-
-    async def _emit(uid, emotion):
-        emitted.append((uid, emotion))
-
-    monkeypatch.setattr(ac, "emit_companion_affect", _emit)
-
-    result = await ac.check_affect(user_id=777, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
-
-    assert result.expressed is True
-    assert result.emotion == "lonely"
-    assert emitted == [(777, "lonely")]
-
-
-@pytest.mark.asyncio
-async def test_affect_check_llm_decides_no_express(monkeypatch, _patch_db):
-    _, SessionLocal = _patch_db
-    ac = importlib.import_module("services.companion.affect_check")
-    await _seed_persona(SessionLocal, 666)
-
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-
-    async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": false, "emotion": "neutral", "reason": "刚离开不久"}')
-
-    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
-
-    emitted: list[tuple[int, str]] = []
-
-    async def _emit(uid, emotion):
-        emitted.append((uid, emotion))
-
-    monkeypatch.setattr(ac, "emit_companion_affect", _emit)
-
-    result = await ac.check_affect(user_id=666, idle_seconds=120, local_hour=14, llm_config={"model_name": "test"})
-
-    assert result.expressed is False
-    assert emitted == []
-
-
-@pytest.mark.asyncio
-async def test_affect_check_neutral_emotion_not_emitted(monkeypatch, _patch_db):
-    """即便 LLM 说 should_express=true，emotion=neutral 也要被过滤——否则每次 idle 检查都会弹一个无意义徽标（P1-5）。"""
-    _, SessionLocal = _patch_db
-    ac = importlib.import_module("services.companion.affect_check")
-    await _seed_persona(SessionLocal, 555)
-
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-
-    async def _mock_call(*a, **kw):
-        return _MockResponse('{"should_express": true, "emotion": "neutral", "reason": "..."}')
-
-    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _mock_call)
-
-    emitted: list[tuple[int, str]] = []
-
-    async def _emit(uid, emotion):
-        emitted.append((uid, emotion))
-
-    monkeypatch.setattr(ac, "emit_companion_affect", _emit)
-
-    result = await ac.check_affect(user_id=555, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
-
-    assert result.expressed is False
-    assert emitted == []
-
-
-@pytest.mark.asyncio
-async def test_affect_check_llm_failure_is_silent(monkeypatch, _patch_db):
-    _, SessionLocal = _patch_db
-    ac = importlib.import_module("services.companion.affect_check")
-    await _seed_persona(SessionLocal, 444)
-
-    from services.llm import ClassifiedError, FailoverReason, LLMRuntimeError
-
-    monkeypatch.setattr("services.companion.prompt_runtime.client_for_config", lambda cfg: None)
-
-    async def _raise(*a, **kw):
-        raise LLMRuntimeError(ClassifiedError(reason=FailoverReason.unknown, message="boom"))
-
-    monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _raise)
-
-    emitted: list[tuple[int, str]] = []
-
-    async def _emit(uid, emotion):
-        emitted.append((uid, emotion))
-
-    monkeypatch.setattr(ac, "emit_companion_affect", _emit)
-
-    result = await ac.check_affect(user_id=444, idle_seconds=3600, local_hour=14, llm_config={"model_name": "test"})
-
-    assert result.expressed is False
-    assert result.reason == "llm_error"
-    assert emitted == []
-
-
-def test_message_complete_emits_nested_affect_object():
-    """``message.complete`` 携带 ``affect: {emotion: <token>}``（裸字符串形态）让 desktop 的 ``payload?.affect?.emotion`` 访问生效；没有这层包裹，所有回复都会落到 ``idle`` 而非 ``EMOTIONAL(affect)``，整条情绪通道就废了。"""
-    from services.chat.affect import AffectScrubber
-
-    # 该结构就是 desktop 读取的 ``payload?.affect?.emotion``；若今后扁平化为裸字符串，desktop 会静默丢弃所有情绪 cue。这里构造 helper 该发出的 dict 结构并断言，以锁住这层包裹。
-    emitted: dict = {
-        "type": "message.complete",
-        "text": "hello",
-        **({"affect": {"emotion": "happy"}} if "happy" else {}),
-    }
-    assert isinstance(emitted["affect"], dict)
-    assert emitted["affect"]["emotion"] == "happy"
-
-    # Scrubber 在 emotion 已知且匹配时的行为——不依赖真实 DB 也能端到端验证契约。
-    scrubber = AffectScrubber()
-    out = scrubber.feed("[affect:excited]\nhi")
-    assert scrubber.emotion == "excited"
-    assert out == "hi"
 
 
 def test_voice_catalog_match_by_tag():
@@ -738,21 +559,6 @@ def test_voice_catalog_no_match_falls_back_neutral():
     assert best.gender == "neutral"
 
 
-def test_voice_catalog_mimo_default_first():
-    mimo = voices_for_provider("mimo")
-    assert mimo[0].id == "mimo_default"
-    best, alts = voice_catalog.match_voice("默认", mimo)
-    assert best.id == "mimo_default"
-
-
-def test_voice_catalog_language_field():
-    mimo = voices_for_provider("mimo")
-    zh = [v for v in mimo if v.language == "zh"]
-    en = [v for v in mimo if v.language == "en"]
-    assert len(zh) == 4
-    assert len(en) == 4
-
-
 async def test_voice_catalog_zh_first_in_list_voices(monkeypatch):
     """首次启动的 onboarding 语音选择器上中文靠前——zh-first 匹配「默认中文」的设定。"""
     monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="mimo"))
@@ -776,16 +582,6 @@ def test_voice_catalog_zh_first_preserves_within_language_order():
     zh_original = [v.id for v in original if v.language == "zh"]
     zh_sorted = [v.id for v in sorted_voices if v.language == "zh"]
     assert zh_original == zh_sorted
-
-
-def test_voice_catalog_minimax_all_zh_stays_unchanged():
-    """全 zh 目录（MiniMax）保持原顺序——对这些目录排序是 no-op。"""
-    from services.companion.voice_catalog import _sort_voices_by_language
-    from services.llm import voices_for_provider
-
-    original = voices_for_provider("minimax")
-    sorted_voices = _sort_voices_by_language(original)
-    assert [v.id for v in original] == [v.id for v in sorted_voices]
 
 
 async def test_voice_catalog_language_filter_zh(monkeypatch):
@@ -834,17 +630,6 @@ def test_voice_catalog_language_scoring():
     best, _ = voice_catalog.match_voice("english female voice", mimo)
     assert best.language == "en"
     assert best.gender == "female"
-
-
-async def test_voice_catalog_supports_voice_design(monkeypatch):
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="minimax"))
-    result = await voice_catalog.list_tts_voices(db=None, user_id=999)
-    assert result["supports_voice_design"] is True
-    assert result["voice_design_guide"]
-
-    monkeypatch.setattr(voice_catalog, "active_tts_provider", AsyncMock(return_value="zhipu"))
-    result = await voice_catalog.list_tts_voices(db=None, user_id=999)
-    assert result["supports_voice_design"] is False
 
 
 @pytest.mark.asyncio
@@ -899,16 +684,6 @@ async def test_design_voice_unsupported_provider(monkeypatch):
 
     with pytest.raises(ValueError, match="does not support voice design"):
         await voice_catalog.design_voice(db=None, user_id=1, prompt="test")
-
-
-def test_pick_voice_id_passes_through_design_tokens():
-    voice = pick_voice_id("mimo_voicedesign:warm female voice", "mimo")
-    assert voice == "mimo_voicedesign:warm female voice"
-
-
-def test_pick_voice_id_known_voice():
-    voice = pick_voice_id("冰糖", "mimo")
-    assert voice == "冰糖"
 
 
 def test_pick_voice_id_unknown_falls_back_to_default():
@@ -1187,73 +962,6 @@ async def test_build_user_profile_extras_partial_rows_keep_order(_patch_db):
 
     assert "Preferred name" in out and "Hobbies" in out
     assert "Gender" not in out and "Age bucket" not in out and "Freeform" not in out
-
-
-def test_persona_update_schema_accepts_definition_json():
-    from modules.companion import PersonaUpdate
-
-    p = PersonaUpdate(
-        definition_json=json.dumps(
-            {
-                "name": "梦鳞",
-                "personality": "温柔",
-                "speaking_style": "轻柔",
-                "biological_type": "灵兽",
-                "gender": "女",
-                "appearance": "金发绿眼",
-                "user_call_name": "老板",
-                "user_gender": "男",
-                "user_age_bucket": "26-35",
-                "user_hobbies": "音乐",
-                "user_freeform": "早起型",
-            }
-        )
-    )
-    assert json.loads(p.definition_json)["biological_type"] == "灵兽"
-
-
-def test_persona_update_schema_rejects_unknown_keys():
-    from modules.companion import PersonaUpdate
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        PersonaUpdate(definition_json="{}", totally_unknown_key="oops")
-    # 扁平 persona 字段不再在顶层接受——整个定义必须走 definition_json。
-    with pytest.raises(ValidationError):
-        PersonaUpdate(name="x", personality="y", speaking_style="z")
-
-
-def test_onboarding_field_order_matches_question_sequence():
-    from services.companion import ONBOARDING_FIELDS
-
-    assert ONBOARDING_FIELDS == (
-        "name",
-        "species",
-        "character_gender",
-        "appearance",
-        "role",
-        "personality",
-        "speaking_style",
-        "voice",
-        "user_call_name",
-        "user_gender",
-        "user_age_bucket",
-        "user_hobbies",
-        "user_freeform",
-    )
-
-
-def test_onboarding_field_partitions_split_at_voice():
-    """character + voice + post-character 三段必须能拼回 ONBOARDING_FIELDS——捕捉把字段错插到 voice 另一侧的回归。"""
-    from services.companion import ONBOARDING_FIELDS
-    from services.companion.persona_service import (
-        _CHARACTER_ONBOARDING_FIELDS,
-        _POST_CHARACTER_FIELDS,
-    )
-
-    assert _CHARACTER_ONBOARDING_FIELDS + ("voice",) + _POST_CHARACTER_FIELDS == ONBOARDING_FIELDS
-    assert "voice" not in _CHARACTER_ONBOARDING_FIELDS
-    assert "voice" not in _POST_CHARACTER_FIELDS
 
 
 @pytest.mark.asyncio

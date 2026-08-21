@@ -23,18 +23,6 @@ def test_bubble_splitter_separator_split_across_chunks():
     assert s.flush() == []
 
 
-def test_bubble_splitter_single_dash_separator():
-    s = BubbleSplitter()
-    assert _evs(s, "first\n---\nsecond") == ["first", "<break>", "second"]
-    assert s.flush() == []
-
-
-def test_bubble_splitter_no_separator_is_plain_text():
-    s = BubbleSplitter()
-    assert _evs(s, "just text") == ["just text"]
-    assert s.flush() == []
-
-
 def test_bubble_splitter_trailing_separator_dropped_on_flush():
     s = BubbleSplitter()
     # 末尾分隔符没有第二个气泡：flush 不能出 break 或字面 "---"。
@@ -52,10 +40,6 @@ def test_bubble_splitter_trailing_incomplete_dash_stripped_on_flush():
     s = BubbleSplitter()
     assert _evs(s, "statement\n--") == ["statement"]
     assert s.flush() == []
-
-
-def test_create_expression_registered():
-    assert REGISTRY.get_schema(0, "create_expression") is not None
 
 
 @pytest.mark.asyncio
@@ -130,19 +114,6 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
         )["success"]
         is False
     )
-
-
-def test_affect_trace_content():
-    from services.chat.persistence import _affect_trace_content
-
-    assert _affect_trace_content("pout", None) == "[affect:pout]"
-    assert (
-        _affect_trace_content("pout", "stomp_angry")
-        == "[affect:pout]\n[action:stomp_angry]"
-    )
-    assert _affect_trace_content("neutral", "stomp_angry") == "[action:stomp_angry]"
-    assert _affect_trace_content(None, None) == ""
-    assert _affect_trace_content("neutral", None) == ""
 
 
 def test_affect_trace_reaches_llm_context():

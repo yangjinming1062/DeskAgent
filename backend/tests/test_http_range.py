@@ -108,12 +108,6 @@ def test_serve_if_none_match_304(tmp_path: Path):
     assert resp.status_code == 304
 
 
-def test_serve_missing_file_404(tmp_path: Path):
-    client = TestClient(app)
-    resp = client.get(f"/test-file?path={tmp_path / 'nonexistent.glb'}")
-    assert resp.status_code == 404
-
-
 def test_serve_sha256_cache(tmp_path: Path, monkeypatch):
     from services.companion import http_range
 

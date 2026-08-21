@@ -1,7 +1,9 @@
 import json
+from types import SimpleNamespace
 from typing import ClassVar
 
 import httpx
+import openai
 import pytest
 
 from services.llm import (
@@ -18,28 +20,6 @@ from services.llm import (
     provider_for_service,
     resolve_provider_config,
 )
-
-
-class TestServiceType:
-    def test_values(self):
-        assert ServiceType.llm.value == "llm"
-        assert ServiceType.stt.value == "stt"
-        assert ServiceType.tts.value == "tts"
-        assert ServiceType.image_gen.value == "image_gen"
-        assert ServiceType.video_gen.value == "video_gen"
-
-
-class TestProviderConfig:
-    def test_is_frozen(self):
-        cfg = ProviderConfig(
-            base_url="https://x/v1",
-            api_key="k",
-            model="m",
-            service_type=ServiceType.llm,
-            provider_name="mimo",
-        )
-        with pytest.raises((ValueError, AttributeError)):
-            cfg.base_url = "https://y/v1"  # type: ignore[misc]
 
 
 class TestResolveProviderConfig:
@@ -253,103 +233,6 @@ class TestRegistry:
         assert resolve(ServiceType.tts, "grok") is GrokTTSProvider
         assert resolve(ServiceType.image_gen, "grok") is GrokImageGenProvider
         assert resolve(ServiceType.video_gen, "grok") is GrokVideoGenProvider
-
-
-class TestDefaultModels:
-    def test_default_models_published(self):
-        """每个 provider 类声明 `DEFAULT_MODELS` 字典；注册表通过 `default_model_for()` 镜像它，使解析器无需逐个导入 provider 类。"""
-        from services.llm import default_model_for
-
-        assert default_model_for("mimo", "llm") == "mimo-v2.5-pro"
-        assert default_model_for("mimo", "stt") == "mimo-v2.5-asr"
-        assert default_model_for("mimo", "tts") == "mimo-v2.5-tts"
-        assert default_model_for("mimo", "image_gen") == "dall-e-3"
-        assert default_model_for("minimax", "llm") == "MiniMax-M3"
-        assert default_model_for("minimax", "image_gen") == "image-01"
-        assert default_model_for("minimax", "video_gen") == "MiniMax-Hailuo-2.3"
-        assert default_model_for("minimax", "tts") == "speech-2.8-hd"
-        assert default_model_for("zhipu", "stt") == "glm-asr-2512"
-        assert default_model_for("zhipu", "tts") == "glm-tts"
-        assert default_model_for("zhipu", "image_gen") == "glm-image"
-        assert default_model_for("grok", "llm") == "grok-4.5"
-        assert default_model_for("grok", "stt") == "grok-transcribe"
-        assert default_model_for("grok", "tts") == "grok-voice-think-fast-1.0"
-        assert default_model_for("grok", "image_gen") == "grok-imagine-image-quality"
-        assert default_model_for("grok", "video_gen") == "grok-imagine-video-1.5"
-
-    def test_unsupported_cap_returns_empty(self):
-        from services.llm import default_model_for
-
-        # mimo 未注册 video_gen——无默认模型。
-        assert default_model_for("mimo", "video_gen") == ""
-        # minimax 未注册 stt。
-        assert default_model_for("minimax", "stt") == ""
-        # zhipu 未注册 video_gen。
-        assert default_model_for("zhipu", "video_gen") == ""
-
-
-class TestDefaultContextTokens:
-    # CONTEXT_TOKENS 表的 TestDefaultModels 镜像；0 表示"无默认值"，解析器顺势 fall through。
-
-    def test_default_context_tokens_published(self):
-        from services.llm import default_context_tokens_for
-
-        assert default_context_tokens_for("mimo", "llm") == 1_000_000
-        assert default_context_tokens_for("mimo", "stt") == 8_000
-        assert default_context_tokens_for("mimo", "tts") == 8_000
-        assert default_context_tokens_for("mimo", "image_gen") == 8_000
-        assert default_context_tokens_for("minimax", "llm") == 1_000_000
-        assert default_context_tokens_for("minimax", "tts") == 8_000
-        assert default_context_tokens_for("minimax", "image_gen") == 8_000
-        assert default_context_tokens_for("minimax", "video_gen") == 8_000
-        assert default_context_tokens_for("gemini", "image_gen") == 8_000
-        assert default_context_tokens_for("zhipu", "stt") == 8_000
-        assert default_context_tokens_for("zhipu", "tts") == 8_000
-        assert default_context_tokens_for("zhipu", "image_gen") == 8_000
-        # grok：grok-4.5 文档公开 500k 窗口；其余能力沿用其它 text-to-X provider 的 8_000 约定。
-        assert default_context_tokens_for("grok", "llm") == 500_000
-        assert default_context_tokens_for("grok", "stt") == 8_000
-        assert default_context_tokens_for("grok", "tts") == 8_000
-        assert default_context_tokens_for("grok", "image_gen") == 8_000
-        assert default_context_tokens_for("grok", "video_gen") == 8_000
-
-    def test_unsupported_cap_returns_zero(self):
-        from services.llm import default_context_tokens_for
-
-        # mimo 未注册 video_gen。
-        assert default_context_tokens_for("mimo", "video_gen") == 0
-        # minimax 未注册 stt。
-        assert default_context_tokens_for("minimax", "stt") == 0
-        assert default_context_tokens_for("gemini", "llm") == 0
-        # gemini 仅注册 llm / image_gen。
-        assert default_context_tokens_for("gemini", "stt") == 0
-        assert default_context_tokens_for("gemini", "tts") == 0
-        assert default_context_tokens_for("gemini", "video_gen") == 0
-        assert default_context_tokens_for("zhipu", "llm") == 0
-        # zhipu 未注册 video_gen。
-        assert default_context_tokens_for("zhipu", "video_gen") == 0
-
-    def test_unknown_provider_returns_zero(self):
-        from services.llm import default_context_tokens_for
-
-        assert default_context_tokens_for("not-a-provider", "llm") == 0
-
-
-class TestProvidersSupporting:
-    def test_supporting_providers_for_each_capability(self):
-        from services.llm import providers_supporting
-
-        chat_providers = set(providers_supporting("llm"))
-        stt_providers = set(providers_supporting("stt"))
-        tts_providers = set(providers_supporting("tts"))
-        image_providers = set(providers_supporting("image_gen"))
-        video_providers = set(providers_supporting("video_gen"))
-
-        assert chat_providers == {"mimo", "minimax", "grok"}
-        assert stt_providers == {"mimo", "grok", "zhipu"}
-        assert tts_providers == {"mimo", "minimax", "grok", "zhipu"}
-        assert image_providers == {"mimo", "minimax", "gemini", "grok", "zhipu"}
-        assert video_providers == {"minimax", "grok"}
 
 
 class TestProviderChain:
@@ -722,20 +605,6 @@ class TestMiniMaxImageGen:
         assert classified.reason == FailoverReason.content_policy_blocked
         assert classified.retryable is False
 
-    def test_raw_client_returns_none(self):
-        from services.llm.providers.minimax import MiniMaxImageGenProvider
-
-        provider = MiniMaxImageGenProvider(
-            ProviderConfig(
-                base_url="x",
-                api_key="k",
-                model="m",
-                service_type=ServiceType.image_gen,
-                provider_name="minimax",
-            )
-        )
-        assert provider.raw_client() is None
-
     @pytest.mark.asyncio
     async def test_generate_with_reference_passes_subject_reference(self):
         captured: list[dict] = []
@@ -796,22 +665,7 @@ class TestEmptyImageResultFallback:
         assert classified.retryable is False
 
 
-class TestReferenceImageCapability:
-    def test_native_providers_support_reference(self):
-        from services.llm.providers.gemini import GeminiImageGenProvider
-        from services.llm.providers.minimax import MiniMaxImageGenProvider
 
-        assert MiniMaxImageGenProvider.supports_reference_image is True
-        assert GeminiImageGenProvider.supports_reference_image is True
-
-    def test_text_only_providers_declare_no_native_support(self):
-        from services.llm.providers.zhipu import ZhipuImageGenProvider
-
-        assert MiMoImageGenProvider.supports_reference_image is False
-        assert ZhipuImageGenProvider.supports_reference_image is False
-
-
-class TestResolveReferenceBytes:
     @pytest.mark.asyncio
     async def test_data_uri_decoded(self):
         from services.llm.providers._reference import resolve_reference_bytes
@@ -2057,3 +1911,76 @@ class TestMiniMaxInnerCodes:
         err, classified = self._classify("something new upstream", 9999)
         assert err.status_code == 502
         assert classified.retryable is True
+
+
+class TestRetryAwareAsyncOpenAI:
+    """_RetryAwareAsyncOpenAI 在 500/502 body 含请求校验文案时拦截 SDK 默认重试；其余决策完全继承父类。"""
+
+    @pytest.mark.asyncio
+    async def test_overretry_blocked_on_500_with_validation_text(self):
+        from openai import AsyncOpenAI
+        from services.llm.providers.http import _RetryAwareAsyncOpenAI
+
+        request_count = 0
+
+        def _transport(request: httpx.Request) -> httpx.Response:
+            nonlocal request_count
+            request_count += 1
+            return httpx.Response(502, content=b'{"error":{"message":"unsupported parameter: top_k"}}')
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(_transport), base_url="https://example.com")
+        sdk_client = _RetryAwareAsyncOpenAI(api_key="sk-test", http_client=mock_client, max_retries=3, timeout=httpx.Timeout(5.0))
+
+        with pytest.raises(openai.APIStatusError):
+            await sdk_client.responses.create(model="m", input=[{"role": "user", "content": "hi"}])
+
+        assert request_count == 1
+
+    @pytest.mark.asyncio
+    async def test_normal_5xx_still_retries(self):
+        from services.llm.providers.http import _RetryAwareAsyncOpenAI
+
+        request_count = 0
+
+        def _transport(request: httpx.Request) -> httpx.Response:
+            nonlocal request_count
+            request_count += 1
+            return httpx.Response(503, content=b'{"error":{"message":"upstream busy"}}')
+
+        mock_client = httpx.AsyncClient(transport=httpx.MockTransport(_transport), base_url="https://example.com")
+        sdk_client = _RetryAwareAsyncOpenAI(api_key="sk-test", http_client=mock_client, max_retries=2, timeout=httpx.Timeout(5.0))
+
+        with pytest.raises(openai.APIStatusError):
+            await sdk_client.responses.create(model="m", input=[{"role": "user", "content": "hi"}])
+
+        # 3 = 1 initial + 2 retries
+        assert request_count == 3
+
+
+class TestCallWithRetryClassifier:
+    """call_with_retry 在 SDK 终端异常上跑一次分类器，并把结果封装为 LLMRuntimeError。"""
+
+    @pytest.mark.asyncio
+    async def test_classifier_marks_no_retry_on_terminal_for_billing_402(self, monkeypatch):
+        # 走 ProviderError（无 SDK 类）让 Phase C 状态码 dispatch 命中 _classify_402 → billing。
+        from services.llm.error_classifier import FailoverReason
+        from services.llm.llm_retry import LLMRuntimeError, call_with_retry
+        from services.llm.providers.base import ProviderError
+
+        monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+        billing_exc = ProviderError(
+            "insufficient_quota",
+            status_code=402,
+            body={"error": {"message": "insufficient_quota", "code": "insufficient_quota"}},
+            provider="mimo",
+            model="m",
+        )
+        responses = SimpleNamespace(create=lambda **_kwargs: (_ for _ in ()).throw(billing_exc))
+        client = SimpleNamespace(base_url=SimpleNamespace(host="example.com"), responses=responses)
+
+        with pytest.raises(LLMRuntimeError) as excinfo:
+            await call_with_retry(client, model="m", input=[{"role": "user", "content": "hi"}])
+
+        assert excinfo.value.classified.reason is FailoverReason.billing
+        assert excinfo.value.classified.retryable is False

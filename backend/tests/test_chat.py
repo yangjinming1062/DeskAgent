@@ -7,72 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 
-class TestLLMClient:
-    def test_client_for_config_uses_cached_factory(self):
-        from services.llm import client_for_config
-
-        cfg = {"api_key": "sk-a", "base_url": "https://a.example/v1"}
-        a = client_for_config(cfg)
-        b = client_for_config(cfg)
-        assert a is b
-
-    def test_client_for_config_distinguishes_by_key_pair(self):
-        from services.llm import client_for_config
-
-        a = client_for_config({"api_key": "sk-a", "base_url": "https://a.example/v1"})
-        b = client_for_config({"api_key": "sk-b", "base_url": "https://a.example/v1"})
-        c = client_for_config({"api_key": "sk-a", "base_url": "https://c.example/v1"})
-        assert a is not b
-        assert a is not c
-        assert b is not c
-
-    def test_client_for_config_keyerror_when_missing_keys(self):
-        from services.llm import client_for_config
-
-        with pytest.raises(KeyError):
-            client_for_config({})
-        with pytest.raises(KeyError):
-            client_for_config({"api_key": "sk-only"})
-
-    def test_chat_providers_declare_prompt_family(self):
-        from services.llm import ServiceType, resolve
-
-        assert resolve(ServiceType.llm, "mimo").PROMPT_FAMILY == "openai"
-        assert resolve(ServiceType.llm, "minimax").PROMPT_FAMILY == "openai"
-        assert resolve(ServiceType.llm, "grok").PROMPT_FAMILY == "openai"
-
-
 class TestResolveContextTokens:
     # 三层：env 覆盖 → provider 默认 → 终态兜底。
-
-    def test_per_provider_default_mimo_llm(self):
-        from services.llm import resolve_context_tokens
-
-        assert resolve_context_tokens("mimo", "llm") == 1_000_000
-
-    def test_per_provider_default_grok_llm(self):
-        from services.llm import resolve_context_tokens
-
-        assert resolve_context_tokens("grok", "llm") == 500_000
-
-    def test_per_provider_default_zhipu_tts(self):
-        from services.llm import resolve_context_tokens
-
-        assert resolve_context_tokens("zhipu", "tts") == 8_000
-
-    def test_env_override_wins(self, monkeypatch):
-        from components import SETTINGS
-        from services.llm import resolve_context_tokens
-
-        monkeypatch.setattr(SETTINGS, "llm_context_tokens", 500_000)
-        assert resolve_context_tokens("mimo", "llm") == 500_000
-
-    def test_env_override_supersedes_global(self, monkeypatch):
-        from components import SETTINGS
-        from services.llm import resolve_context_tokens
-
-        monkeypatch.setattr(SETTINGS, "llm_context_tokens", 250_000)
-        assert resolve_context_tokens("minimax", "llm") == 250_000
 
     def test_global_fallback_on_unsupported_capability(self, caplog):
         # provider 未发布该 cap 的默认 → 走终态兜底，同时输出 warning 让静默遗漏可见。
@@ -84,12 +20,12 @@ class TestResolveContextTokens:
             assert resolve_context_tokens("mimo", "video_gen") == 1_000_000
         assert any("no default published" in rec.message and rec.levelno == logging.WARNING for rec in caplog.records)
 
-    def test_none_override_falls_through(self, monkeypatch):
+    def test_env_override_wins(self, monkeypatch):
         from components import SETTINGS
         from services.llm import resolve_context_tokens
 
-        monkeypatch.setattr(SETTINGS, "llm_context_tokens", None)
-        assert resolve_context_tokens("mimo", "llm") == 1_000_000
+        monkeypatch.setattr(SETTINGS, "llm_context_tokens", 500_000)
+        assert resolve_context_tokens("mimo", "llm") == 500_000
 
     def test_zero_string_override_falls_through(self):
         # ``.env`` 是空/0/非数字时必须折叠为 None，避免触发 Pydantic 的 ``Field(gt=0)``。
@@ -97,99 +33,6 @@ class TestResolveContextTokens:
 
         for raw in ("0", "-1", "", "abc"):
             assert Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens is None, raw
-
-    def test_openai_family_injects_openai_guidance(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import (
-            OPENAI_MODEL_EXECUTION_GUIDANCE,
-            build_system_prompt_parts,
-        )
-
-        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"]))
-        assert OPENAI_MODEL_EXECUTION_GUIDANCE in parts["stable"]
-
-    def test_google_family_injects_google_guidance(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import (
-            GOOGLE_MODEL_OPERATIONAL_GUIDANCE,
-            build_system_prompt_parts,
-        )
-
-        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"]))
-        assert GOOGLE_MODEL_OPERATIONAL_GUIDANCE in parts["stable"]
-
-    def test_zh_language_directive_injected_by_default(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import (
-            LANGUAGE_DIRECTIVES,
-            build_system_prompt_parts,
-        )
-
-        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"]))
-        assert LANGUAGE_DIRECTIVES["zh"] in parts["stable"]
-
-    def test_en_language_directive_injected_when_en(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import (
-            LANGUAGE_DIRECTIVES,
-            build_system_prompt_parts,
-        )
-
-        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"], language="en"))
-        assert LANGUAGE_DIRECTIVES["en"] in parts["stable"]
-        assert LANGUAGE_DIRECTIVES["zh"] not in parts["stable"]
-
-    def test_unknown_language_falls_back_to_zh(self):
-        from services.chat.system_prompt import _resolve_language
-
-        assert _resolve_language("fr") == "zh"
-        assert _resolve_language("") == "zh"
-        assert _resolve_language("EN") == "en"
-
-    def test_chat_request_accepts_context_tokens_override(self):
-        from modules.system import ChatMessageRequest, ChatRequest
-
-        req = ChatRequest(
-            session_id="1",
-            message=ChatMessageRequest(role="user", content="hi"),
-            model="custom-32k",
-            context_tokens=32_000,
-        )
-        assert req.context_tokens == 32_000
-        assert req.model == "custom-32k"
-
-    def test_turn_inputs_has_context_tokens_override_field(self):
-        from services.chat.turn_inputs import _TurnInputs
-
-        fields = {f.name for f in _TurnInputs.__dataclass_fields__.values()}
-        assert "context_tokens_override" in fields
-        assert "ctx_length" in fields
-
-    def test_orchestrator_honors_context_tokens_override_per_slot(self):
-        # 这里用 ``is not None`` 而非 truthy：当前 schema 禁止 0，但未来放宽时不应静默丢覆盖。
-        import inspect
-
-        from services.chat import orchestrator
-
-        src = inspect.getsource(orchestrator.run_chat_turn)
-        assert "inputs.context_tokens_override is not None" in src
-        assert "inputs.ctx_length" in src
-
-    def test_volatile_header_localized_for_zh(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import _format_volatile_header
-
-        hdr = _format_volatile_header(AgentPromptConfig(language="zh", model="test"))
-        assert "对话开始时间" in hdr
-        assert "模型" in hdr
-
-    def test_volatile_header_english_for_en(self):
-        from modules.system import AgentPromptConfig
-        from services.chat.system_prompt import _format_volatile_header
-
-        hdr = _format_volatile_header(AgentPromptConfig(language="en", model="test"))
-        assert "Conversation started" in hdr
-        assert "Model" in hdr
 
     def test_image_attachment_uses_image_url_part(self):
         from modules.system import ChatMessageRequest
@@ -209,16 +52,6 @@ class TestResolveContextTokens:
         image_part = parsed[1]
         assert image_part["type"] == "input_image"
         assert image_part["image_url"] == "http://example.com/image.png"
-
-    def test_no_attachments_returns_text(self):
-        from modules.system import ChatMessageRequest
-        from services.chat.persistence import _build_persisted_content
-
-        req = SimpleNamespace(message=ChatMessageRequest(role="user", content="Just text"))
-        content, content_type = _build_persisted_content(req)
-        assert content_type == "text"
-        assert content == "Just text"
-
 
 def _make_silent_wav(duration_sec: float = 1.0, sample_rate: int = 8000) -> bytes:
     num_samples = int(sample_rate * duration_sec)

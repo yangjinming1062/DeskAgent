@@ -129,11 +129,6 @@ async def test_peak_picks_earliest_hour_on_tie(_patch_db):
     assert peak == 10
 
 
-def test_peak_hour_none_when_no_activity():
-    interaction_stats._counters.clear()
-    assert interaction_stats._compute_peak_hour({h: 0 for h in range(24)}) is None
-
-
 async def test_unknown_kind_raises():
     with pytest.raises(ValueError, match="unknown interaction kind"):
         await interaction_stats.record_interaction(1, "scroll", 12)

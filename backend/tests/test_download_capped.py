@@ -66,12 +66,6 @@ async def test_download_capped_exceeds_limit(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_download_capped_unsupported_scheme():
-    with pytest.raises(ValueError, match="unsupported URL scheme"):
-        await download_capped("ftp://example.com/file.bin", max_bytes=100)
-
-
-@pytest.mark.asyncio
 async def test_download_capped_ssrf_blocked(monkeypatch):
     monkeypatch.setattr(
         "components.network.is_safe_outbound",

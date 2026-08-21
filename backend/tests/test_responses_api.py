@@ -1,11 +1,14 @@
 from types import SimpleNamespace
 
+import httpx
+import openai
 import pytest
 
 from services.chat.streaming import _stream_llm_response
 from services.chat.message_sanitization import truncate_responses_context
 from services.llm import build_responses_kwargs, approx_responses_tokens
-from services.llm.llm_retry import _wrap_stream_for_debug
+from services.llm.error_classifier import FailoverReason
+from services.llm.llm_retry import LLMRuntimeError, _stream_with_timeout, _wrap_stream_for_debug, call_with_retry
 
 
 def test_build_responses_kwargs_uses_instructions_items_and_flat_tools():
@@ -139,3 +142,101 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
     assert result.final_completion_tokens == 5
     assert result.final_usage_payload["reasoning_tokens"] == 2
     assert emitter.sent == [{"type": "message.start"}, {"type": "chunk", "content": "he"}, {"type": "chunk", "content": "llo"}]
+
+
+def _stub_base_url_client(host: str = "example.com") -> object:
+    """构造一个仅含 base_url 属性的桩对象，供 _call_site_from_client 解析。"""
+
+    return SimpleNamespace(base_url=SimpleNamespace(host=host))
+
+
+def _auth_error(message: str = "invalid api key") -> openai.AuthenticationError:
+    request = httpx.Request("POST", "https://example.com/v1/responses")
+    response = httpx.Response(401, request=request, text=message)
+    return openai.AuthenticationError(message, response=response, body={"error": {"message": message, "type": "authentication_error", "code": "invalid_api_key"}})
+
+
+@pytest.mark.asyncio
+async def test_classifier_runs_on_terminal_sdk_exception(monkeypatch):
+    logged: list[dict] = []
+
+    def _capture(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", _capture)
+
+    auth_exc = _auth_error()
+    responses = SimpleNamespace(create=lambda **_kwargs: (_ for _ in ()).throw(auth_exc))
+    client = SimpleNamespace(base_url=SimpleNamespace(host="example.com"), responses=responses)
+
+    with pytest.raises(LLMRuntimeError) as excinfo:
+        await call_with_retry(client, model="m", input=[{"role": "user", "content": "hi"}])
+
+    assert excinfo.value.classified.reason is FailoverReason.auth
+    assert excinfo.value.classified.retryable is False
+    phases = [entry["phase"] for entry in logged]
+    assert phases[0] == "request"
+    assert "error" in phases
+
+
+@pytest.mark.asyncio
+async def test_stream_deadline_fires_on_stalled_stream(monkeypatch):
+    import asyncio as _asyncio
+
+    async def _stalled():
+        # never yields — deadline must fire before any chunk
+        await _asyncio.sleep(10)
+        if False:
+            yield None
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+    with pytest.raises(LLMRuntimeError) as excinfo:
+        stream = _stream_with_timeout(_stalled(), timeout=0.05, model="m")
+        async for _ in stream:
+            pass
+
+    assert excinfo.value.classified.reason is FailoverReason.timeout
+
+
+@pytest.mark.asyncio
+async def test_request_breadcrumb_emitted_upfront(monkeypatch):
+    logged: list[dict] = []
+
+    def _capture(**kwargs):
+        logged.append(kwargs)
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", _capture)
+
+    auth_exc = _auth_error()
+    responses = SimpleNamespace(create=lambda **_kwargs: (_ for _ in ()).throw(auth_exc))
+    client = SimpleNamespace(base_url=SimpleNamespace(host="example.com"), responses=responses)
+
+    with pytest.raises(LLMRuntimeError):
+        await call_with_retry(client, model="m", input=[{"role": "user", "content": "hi"}])
+
+    assert logged[0]["phase"] == "request"
+    assert logged[0]["request"]["model"] == "m"
+
+
+@pytest.mark.asyncio
+async def test_idempotency_key_header_passed_per_call(monkeypatch):
+    captured_headers: list[dict] = []
+
+    async def _create(**kwargs):
+        captured_headers.append(kwargs.get("extra_headers") or {})
+        response = httpx.Response(200, request=httpx.Request("POST", "https://example.com"))
+        return SimpleNamespace(id="r", status="completed", output=[], usage=None, model_dump=lambda **_kwargs: {"id": "r", "output": []})
+
+    responses = SimpleNamespace(create=_create)
+    client = SimpleNamespace(base_url=SimpleNamespace(host="example.com"), responses=responses)
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+    await call_with_retry(client, model="m", input=[{"role": "user", "content": "a"}])
+    await call_with_retry(client, model="m", input=[{"role": "user", "content": "b"}])
+
+    assert len(captured_headers) == 2
+    keys = [hdr.get("Idempotency-Key") for hdr in captured_headers]
+    assert all(key and len(key) == 12 for key in keys)
+    assert keys[0] != keys[1]
