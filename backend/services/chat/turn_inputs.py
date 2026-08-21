@@ -26,7 +26,6 @@ from ..llm import (
     ProviderConfig,
     ResponsesContext,
     ServiceType,
-    chat_tool_calls_to_response_items,
     message_to_response_items,
     provider_for_service,
     provider_from_config,
@@ -41,9 +40,7 @@ logger = get_logger(__name__)
 
 
 # 三家 Responses 供应商共同接受的安全枚举；供应商专属档位在 provider 层过滤。
-ALLOWED_REASONING_EFFORTS = frozenset({"low", "high"})
-# MiniMax Responses 接受该枚举；MiMo/Grok 未声明支持时不透传。
-ALLOWED_SERVICE_TIERS = frozenset({"standard", "priority"})
+ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high"})
 # 映射表键里由应用状态机与用户交互驱动的那些；LLM 只能主动请求剩下的动作 token。
 NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "drag"})
 
@@ -104,8 +101,6 @@ def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *,
             content_val = parsed if isinstance(parsed, list) else content_val
 
         item: dict = {"role": msg.role, "content": content_val}
-        if msg.tool_calls and (parsed := safe_json_loads(msg.tool_calls)) is not None:
-            item["tool_calls"] = parsed
         if msg.tool_call_id:
             item["tool_call_id"] = msg.tool_call_id
         if msg.role == "system":
@@ -113,7 +108,9 @@ def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *,
             continue
         context.append(*message_to_response_items(item))
         if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
-            context.append(*chat_tool_calls_to_response_items(calls))
+            for call in calls:
+                if isinstance(call, dict):
+                    context.append(call)
 
     return context
 
@@ -219,11 +216,3 @@ def _parse_reasoning_effort(raw: str | None) -> str | None:
         return None
     raw = raw.strip().lower()
     return raw if raw in ALLOWED_REASONING_EFFORTS else None
-
-
-def _parse_service_tier(raw: str | None) -> str | None:
-    """规范化持久化的 service_tier；策略与 reasoning_effort 一致。"""
-    if not raw:
-        return None
-    raw = raw.strip().lower()
-    return raw if raw in ALLOWED_SERVICE_TIERS else None

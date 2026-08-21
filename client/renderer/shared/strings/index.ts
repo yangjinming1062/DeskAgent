@@ -238,18 +238,14 @@ export const strings: Translations = {
         heading: '智能体默认',
         intro: '新会话的用户级默认设置,不影响已存在的会话。',
         reasoningEffort: '推理深度',
-        reasoningEffortDesc: '模型每轮推理的强度。',
-        serviceTier: '服务等级',
-        serviceTierDesc: 'LLM服务等级：standard 是默认档，priority 获得优先调度但计费更高。',
+        reasoningEffortDesc: '模型每轮推理的强度。none 关闭推理，low/medium/high 逐级加深。',
         backgroundReview: '后台记忆整理',
         backgroundReviewDesc: '异步从历史会话中抽取记忆。',
         reasoningOptions: {
+          none: '关闭',
           low: '低',
+          medium: '中',
           high: '高'
-        },
-        serviceTierOptions: {
-          standard: '标准',
-          priority: '优先'
         }
       },
       contextCompression: {

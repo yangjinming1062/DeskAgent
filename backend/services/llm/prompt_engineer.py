@@ -73,7 +73,6 @@ build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种�
 """
 
 import json
-import re
 from dataclasses import dataclass, replace
 from typing import Any, Literal
 
@@ -87,16 +86,6 @@ from .providers import ProviderConfig, ServiceType, resolve_context_tokens
 from .responses import ResponsesContext, output_text_from_response, response_request_kwargs
 
 logger = get_logger(__name__)
-
-_THINK_BLOCK = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
-
-
-def strip_think_blocks(raw: str) -> str:
-    """剥离推理模型的 ``<think>…</think>`` 块；包含未闭合的 ``<think>`` 直至字符串末尾（输出在闭合符前就被截断）。"""
-    cleaned = _THINK_BLOCK.sub("", raw)
-    if "<think>" in cleaned:
-        cleaned = cleaned.split("<think>", 1)[0]
-    return cleaned.strip()
 
 
 def _strip_markdown_fence(raw: str) -> str:

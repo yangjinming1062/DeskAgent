@@ -25,7 +25,6 @@ from .prompt_engineer import (
     is_preset_species,
     resolve_fullbody_style,
     resolve_fullbody_template,
-    strip_think_blocks,
 )
 from .providers import (
     SERVICE_DEFAULT_PROVIDER,
@@ -65,10 +64,8 @@ from .providers import (
 from .responses import (
     ResponsesContext,
     approx_context_tokens,
-    chat_tool_calls_to_response_items,
     message_to_response_items,
     output_text_from_response,
-    response_items_to_chat_tool_calls,
     response_request_kwargs,
     response_usage,
     tool_schema_for_responses,
@@ -134,7 +131,6 @@ __all__ = [
     "provider_for_service",
     "provider_from_config",
     "providers_supporting",
-    "response_items_to_chat_tool_calls",
     "response_request_kwargs",
     "response_usage",
     "register",
@@ -145,13 +141,11 @@ __all__ = [
     "resolve_provider_chain",
     "resolve_provider_config",
     "resolve_service_row",
-    "chat_tool_calls_to_response_items",
     "message_to_response_items",
     "output_text_from_response",
     "tool_schema_for_responses",
     "resolve_user_llm_config",
     "resolve_vision_chain",
-    "strip_think_blocks",
     "try_resolve",
     "voices_for_provider",
 ]

@@ -45,7 +45,7 @@ def _redact_tool_payload(result_str: str) -> str | list:
         parsed = safe_json_loads(result_str)
         if is_multimodal_tool_result(parsed):
             for p in parsed["content"]:
-                if isinstance(p, dict) and p.get("type") == "text" and "text" in p:
+                if isinstance(p, dict) and p.get("type") == "input_text" and "text" in p:
                     p["text"] = redact_sensitive_text(p["text"])
             return parsed["content"]
     return redact_sensitive_text(result_str)
@@ -70,10 +70,10 @@ async def _dispatch_runner_tool(user_id: int, name: str, args: dict, call_id: st
 
 
 async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
-    name = tc["function"]["name"]
-    raw_args_str = tc["function"]["arguments"]
+    name = tc["name"]
+    raw_args_str = tc["arguments"]
 
-    await ctx.emitter.send_json({"type": "tool_start", "name": name, "call_id": tc["id"]})
+    await ctx.emitter.send_json({"type": "tool_start", "name": name, "call_id": tc["call_id"]})
 
     try:
         args = safe_json_loads(_repair_tool_call_arguments(raw_args_str, name), default={}) if raw_args_str else {}
@@ -90,15 +90,15 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
         safety_decision = check_file_safety(name, args)
         if safety_decision is not None and safety_decision.should_halt:
             result_str = toolguard_synthetic_result(safety_decision)
-            return make_tool_result_message(name, result_str, tc["id"])
+            return make_tool_result_message(name, result_str, tc["call_id"])
 
         pre_decision = ctx.guardrails.before_call(name, args)
         if pre_decision.should_halt:
             result_str = toolguard_synthetic_result(pre_decision)
-            return make_tool_result_message(name, result_str, tc["id"])
+            return make_tool_result_message(name, result_str, tc["call_id"])
 
         tool_location = REGISTRY.get_location(ctx.user_id, name)
-        async with async_trace_span(f"tool.{name}", attributes={"tool.location": tool_location, "tool.call_id": tc["id"]}):
+        async with async_trace_span(f"tool.{name}", attributes={"tool.location": tool_location, "tool.call_id": tc["call_id"]}):
             match tool_location:
                 case "backend":
                     result_str = await REGISTRY.execute_backend_tool(
@@ -107,7 +107,7 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
                 case "memory":
                     result_str = await ctx.native_memory.execute_tool(name, args)
                 case "runner":
-                    result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["id"], ctx.emitter)
+                    result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["call_id"], ctx.emitter)
                 case _:
                     result_str = tool_error(f"Unknown tool location for {name}")
 
@@ -118,22 +118,22 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
             result_str += "\n[System: The file write/patch operation successfully landed.]"
 
         final_content = _redact_tool_payload(result_str)
-        return make_tool_result_message(name, final_content, tc["id"])
+        return make_tool_result_message(name, final_content, tc["call_id"])
     finally:
-        await ctx.emitter.send_json({"type": "tool_end", "name": name, "call_id": tc["id"]})
+        await ctx.emitter.send_json({"type": "tool_end", "name": name, "call_id": tc["call_id"]})
 
 
 async def _run_tool_batch(tool_calls_list: list[dict], ctx: _ToolDispatchContext) -> list[dict]:
     coros = [_execute_single_tool(tc, ctx) for tc in tool_calls_list]
-    if len(tool_calls_list) > 1 and should_parallelize_tool_batch([(tc["function"]["name"], tc["function"]["arguments"]) for tc in tool_calls_list]):
+    if len(tool_calls_list) > 1 and should_parallelize_tool_batch([(tc["name"], tc["arguments"]) for tc in tool_calls_list]):
         # ``return_exceptions=True``：单个工具抛出（如 IPC future 超时、工具 httpx 流漏出的 ``CancelledError`` 或工具体异常）不会取消兄弟协程；否则一个失败会拖住其余所有进行中的调用，挂满 ``ipc_future_timeout_seconds``（300s）才返回，本轮其他工具结果会丢失。
         results = await asyncio.gather(*coros, return_exceptions=True)
         out: list[dict] = []
         for tc, r in zip(tool_calls_list, results):
             if isinstance(r, BaseException):
                 # 为失败工具合成 tool_result_message，使 LLM 看到单工具失败的同时，其余成功兄弟仍能交付。
-                name = (tc.get("function") or {}).get("name", "<unknown>")
-                out.append(make_tool_result_message(name, tool_error(f"Tool crashed: {r!r}"), tc["id"]))
+                name = tc.get("name", "<unknown>")
+                out.append(make_tool_result_message(name, tool_error(f"Tool crashed: {r!r}"), tc["call_id"]))
             else:
                 out.append(r)
         return out

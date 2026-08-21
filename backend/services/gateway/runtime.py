@@ -55,7 +55,7 @@ def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: st
 
 
 def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession) -> dict:
-    """发给 renderer 的 SessionRuntimeInfo 负载：{cwd, branch, model, provider, running, settings}；renderer 容忍缺失字段，未读的 settings 键（personality、service_tier、version 等）暂不输出，不在契约内。"""
+    """发给 renderer 的 SessionRuntimeInfo 负载：{cwd, branch, model, provider, running, settings}；renderer 容忍缺失字段，未读的 settings 键（personality、version 等）暂不输出，不在契约内。"""
     return {
         "cwd": runtime.cwd,
         "branch": None,

@@ -84,11 +84,11 @@ def _append_subdir_hint_to_multimodal(value: dict[str, Any], hint: str) -> None:
         return
     parts = value.get("content") or []
     for p in parts:
-        if isinstance(p, dict) and p.get("type") == "text":
+        if isinstance(p, dict) and p.get("type") == "input_text":
             p["text"] = str(p.get("text", "")) + hint
             break
     else:
-        parts.insert(0, {"type": "text", "text": hint})
+        parts.insert(0, {"type": "input_text", "text": hint})
         value["content"] = parts
     if isinstance(value.get("text_summary"), str):
         value["text_summary"] += hint

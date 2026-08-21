@@ -74,7 +74,7 @@ def summarize_llm_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     if tools := kwargs.get("tools"):
         out["tools"] = [{"type": tool.get("type"), "name": tool.get("name")} for tool in tools if isinstance(tool, dict)]
         out["num_tools"] = len(tools)
-    for key in ("temperature", "top_p", "max_output_tokens", "reasoning", "service_tier", "text"):
+    for key in ("temperature", "top_p", "max_output_tokens", "reasoning", "text"):
         if kwargs.get(key) is not None:
             out[key] = kwargs[key]
     return out

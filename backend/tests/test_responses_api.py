@@ -114,7 +114,7 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
     emitter = SimpleNamespace(sent=[], send_json=_send)
     context = ResponsesContext(instructions="SYS", items=[])
     schema = {"type": "function", "function": {"name": "demo", "parameters": {"type": "object"}}}
-    provider = SimpleNamespace(raw_client=lambda: object(), REASONING_EFFORTS=frozenset({"low"}), SERVICE_TIERS=frozenset())
+    provider = SimpleNamespace(raw_client=lambda: object(), REASONING_EFFORTS=frozenset({"none", "low", "medium", "high"}))
 
     result = await _stream_llm_response(
         emitter,
@@ -131,7 +131,7 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
     assert captured["tools"][0]["name"] == "demo"
     assert captured["reasoning"] == {"effort": "low"}
     assert result.turn_content == "hello"
-    assert result.tool_calls_list == [{"id": "call_1", "type": "function", "function": {"name": "demo", "arguments": '{"x":1}'}}]
+    assert result.tool_calls_list == [{"type": "function_call", "call_id": "call_1", "name": "demo", "arguments": '{"x":1}'}]
     # Reasoning item was appended directly into the passed-in context (stream -> Responses history).
     assert context.items[-1] == {"type": "reasoning", "summary": []}
     assert result.final_prompt_tokens == 3

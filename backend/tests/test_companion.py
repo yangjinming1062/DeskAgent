@@ -2112,24 +2112,6 @@ async def test_normalize_outfit_strips_markdown_fences():
 
 
 @pytest.mark.asyncio
-async def test_normalize_outfit_strips_think_blocks():
-    """推理模型 think 标签前缀（包括未闭合、推理中途被截断的）绝不能进 appearance_outfit。"""
-    from services.companion import normalize_outfit
-
-    async def _closed(db, user_id, system_prompt, user_payload, **kwargs):
-        return "<think>user wants outfit</think>粉色和服，樱花刺绣"
-
-    result = await normalize_outfit(_closed, raw_input="和服", persona_definition=None)
-    assert result == "粉色和服，樱花刺绣"
-
-    async def _unclosed(db, user_id, system_prompt, user_payload, **kwargs):
-        return "<think>The user wants me to generate a normalized clothing"
-
-    result = await normalize_outfit(_unclosed, raw_input="运动装", persona_definition=None)
-    assert result == "运动装"
-
-
-@pytest.mark.asyncio
 async def test_normalize_outfit_empty_response_falls_back():
     """LLM 响应为空时回退到 raw_input。"""
     from services.companion import normalize_outfit

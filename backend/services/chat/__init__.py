@@ -7,7 +7,6 @@ from .chat_emitter import Emitter, HeadlessEmitter
 from .history import build_session_messages
 from .message_sanitization import truncate_responses_context
 from .system_prompt import build_system_prompt, build_system_prompt_parts
-from .think_scrubber import StreamingThinkScrubber
 
 # 延迟加载重模块（orchestrator / turn_inputs / agent_delegate / persistence），避免 eager import 触发 chat↔gateway 循环依赖；列表结构化，新符号由 __getattr__ 按需解析。
 _LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate", "persistence")
@@ -34,7 +33,6 @@ __all__ = [
     "truncate_responses_context",
     "build_system_prompt",
     "build_system_prompt_parts",
-    "StreamingThinkScrubber",
     # 懒加载子模块对外符号，新符号由 __getattr__ 按需解析无需同步此列表
     "load_user_settings",
     "run_chat_turn",

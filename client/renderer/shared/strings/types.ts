@@ -236,17 +236,13 @@ export interface Translations {
         intro: string
         reasoningEffort: string
         reasoningEffortDesc: string
-        serviceTier: string
-        serviceTierDesc: string
         backgroundReview: string
         backgroundReviewDesc: string
         reasoningOptions: {
+          none: string
           low: string
+          medium: string
           high: string
-        }
-        serviceTierOptions: {
-          standard: string
-          priority: string
         }
       }
       contextCompression: {

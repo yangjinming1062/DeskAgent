@@ -52,7 +52,7 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
 
 function extractText(m: SessionMessage): string {
   // ``SessionMessage.content`` 类型未知——multimodal_v1 的用户消息
-  // 以 JSON parts 数组到达；只渲染用户可见文本，避免漏出 ``[{"type": "image_url", ...}]``。
+  // 以 JSON parts 数组到达；只渲染用户可见文本，避免漏出 ``[{"type": "input_image", ...}]``。
   if (typeof m.content !== 'string') {
     return ''
   }
@@ -71,7 +71,7 @@ function extractText(m: SessionMessage): string {
 
   return parsed
     .filter((p): p is { type?: string; text?: string } => typeof p === 'object' && p !== null)
-    .filter(p => p.type === 'text' && typeof p.text === 'string')
+    .filter(p => p.type === 'input_text' && typeof p.text === 'string')
     .map(p => p.text as string)
     .join('\n')
 }

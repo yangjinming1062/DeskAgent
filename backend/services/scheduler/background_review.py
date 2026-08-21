@@ -1,6 +1,6 @@
 from components import get_logger, safe_json_loads
 
-from services.llm import ResponsesContext, ServiceType, call_with_retry, client_for_config, resolve_context_tokens, response_items_to_chat_tool_calls, response_request_kwargs
+from services.llm import ResponsesContext, ServiceType, call_with_retry, client_for_config, resolve_context_tokens, response_request_kwargs
 from services.tools import RETAIN_SCHEMA, NativeMemory
 
 logger = get_logger(__name__)
@@ -71,16 +71,15 @@ async def run_background_memory_review(user_id: int, llm_config: dict, context_s
         context = ResponsesContext(instructions=_BACKGROUND_REVIEW_PROMPT, items=items)
         request = response_request_kwargs(model=model_name, context=context, tools=schemas, max_output_tokens=500)
         response = await call_with_retry(client, context_length=context_length, **request)
-        tool_calls = response_items_to_chat_tool_calls(getattr(response, "output", []) or [])
-        if tool_calls:
-            for tc in tool_calls:
-                fn = tc.get("function") if isinstance(tc.get("function"), dict) else None
-                if not (fn and fn.get("name") == "memory_retain"):
-                    continue
-                args = safe_json_loads(fn.get("arguments") or "{}")
-                if args and isinstance(args, dict):
-                    logger.info("Background review extracting memory", extra={"func_args": args})
-                    await native_memory.execute_tool(str(fn.get("name")), args)
+        for item in getattr(response, "output", []) or []:
+            if getattr(item, "type", None) != "function_call":
+                continue
+            if getattr(item, "name", "") != "memory_retain":
+                continue
+            args = safe_json_loads(getattr(item, "arguments", "") or "{}")
+            if args and isinstance(args, dict):
+                logger.info("Background review extracting memory", extra={"func_args": args})
+                await native_memory.execute_tool(item.name, args)
         # 没工具调用说明 review 没找到要记的事。
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})

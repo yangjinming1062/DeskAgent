@@ -17,12 +17,15 @@ class ResponsesContext:
     def append(self, *items: dict[str, Any]) -> None:
         self.items.extend(items)
 
+    def extend(self, items: list[dict[str, Any]]) -> None:
+        self.items.extend(items)
+
 
 def _value_chars(value: Any) -> int:
     if isinstance(value, str):
         return len(value)
     if isinstance(value, dict):
-        return sum(1024 if key in {"image_url", "input_image"} else _value_chars(item) for key, item in value.items())
+        return sum(1024 if key in {"input_image", "image_url"} else _value_chars(item) for key, item in value.items())
     if isinstance(value, list):
         return sum(_value_chars(item) for item in value)
     return len(str(value)) if value is not None else 0
@@ -45,16 +48,11 @@ def _input_part(part: Any) -> dict[str, Any] | None:
         return _input_text(part)
     if not isinstance(part, dict):
         return None
-    part_type = part.get("type")
-    if part_type in {"input_text", "text"}:
+    if part.get("type") == "input_text":
         return _input_text(part.get("text"))
-    if part_type in {"input_image", "image_url", "image"}:
-        image = part.get("image_url", part.get("image", ""))
-        if isinstance(image, dict):
-            image = image.get("url", "")
-        if not image:
-            return None
-        return {"type": "input_image", "image_url": str(image)}
+    if part.get("type") == "input_image":
+        image = part.get("image_url")
+        return {"type": "input_image", "image_url": str(image)} if image else None
     return part
 
 
@@ -65,45 +63,16 @@ def message_to_response_items(message: dict[str, Any]) -> list[dict[str, Any]]:
         call_id = str(message.get("tool_call_id") or message.get("call_id") or "")
         return [{"type": "function_call_output", "call_id": call_id, "output": content if content is not None else ""}]
 
-    parts = content if isinstance(content, list) else ([{"type": "text", "text": content}] if content else [])
+    if content is None:
+        return []
+    parts = content if isinstance(content, list) else ([content] if content else [])
     normalized = [normalized for part in parts if (normalized := _input_part(part)) is not None]
     if role in {"assistant", "model"}:
         output = [{"type": "output_text", "text": part["text"]} for part in normalized if part.get("type") == "input_text"]
         return [{"role": "assistant", "content": output}] if output else []
     if role == "user":
         return [{"role": "user", "content": normalized}] if normalized else []
-    return [{"role": "user", "content": [_input_text(content)]}] if content else []
-
-
-def chat_tool_calls_to_response_items(tool_calls: list[Any]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    for call in tool_calls:
-        if not isinstance(call, dict):
-            continue
-        function = call.get("function") if isinstance(call.get("function"), dict) else {}
-        result.append(
-            {
-                "type": "function_call",
-                "call_id": str(call.get("id") or call.get("call_id") or ""),
-                "name": str(call.get("name") or function.get("name") or ""),
-                "arguments": str(call.get("arguments") or function.get("arguments") or "{}"),
-            }
-        )
-    return result
-
-
-def response_items_to_chat_tool_calls(items: list[Any]) -> list[dict[str, Any]]:
-    result: list[dict[str, Any]] = []
-    for item in items:
-        item_type = item.get("type") if isinstance(item, dict) else getattr(item, "type", None)
-        if item_type != "function_call":
-            continue
-        if isinstance(item, dict):
-            call_id, name, arguments = item.get("call_id", ""), item.get("name", ""), item.get("arguments", "{}")
-        else:
-            call_id, name, arguments = getattr(item, "call_id", ""), getattr(item, "name", ""), getattr(item, "arguments", "{}")
-        result.append({"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments or "{}"}})
-    return result
+    return []
 
 
 def tool_schema_for_responses(schema: dict[str, Any]) -> dict[str, Any]:
@@ -121,10 +90,7 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def output_text_from_response(response: Any) -> str:
-    if isinstance(response, dict):
-        output = response.get("output") or []
-    else:
-        output = getattr(response, "output", None) or []
+    output = getattr(response, "output", None) or []
     chunks: list[str] = []
     for item in output:
         item_dict = _as_dict(item)
@@ -145,18 +111,11 @@ def response_usage(usage: Any) -> dict[str, Any]:
 
 
 def response_was_truncated(response: Any) -> bool:
-    if isinstance(response, dict):
-        status = response.get("status")
-        details = response.get("incomplete_details")
-    else:
-        status = getattr(response, "status", None)
-        details = getattr(response, "incomplete_details", None)
+    status = getattr(response, "status", None)
     if status != "incomplete":
         return False
-    if isinstance(details, dict):
-        reason = details.get("reason")
-    else:
-        reason = getattr(details, "reason", None)
+    details = getattr(response, "incomplete_details", None)
+    reason = getattr(details, "reason", None)
     return reason == "max_output_tokens"
 
 
@@ -169,13 +128,12 @@ def response_request_kwargs(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     reasoning: dict[str, Any] | None = None,
-    service_tier: str | None = None,
     text: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request: dict[str, Any] = {"model": model, "instructions": context.instructions, "input": context.items, "stream": stream, "store": False}
     if tools:
         request["tools"] = [tool_schema_for_responses(tool) for tool in tools]
-    for key, value in (("temperature", temperature), ("max_output_tokens", max_output_tokens), ("reasoning", reasoning), ("service_tier", service_tier), ("text", text)):
+    for key, value in (("temperature", temperature), ("max_output_tokens", max_output_tokens), ("reasoning", reasoning), ("text", text)):
         if value is not None:
             request[key] = value
     return request

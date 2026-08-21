@@ -120,24 +120,6 @@ def test_resolve_fullbody_style_presets_and_custom():
     assert prompt_engineer.resolve_fullbody_style(" 人类 ") == "anime"
 
 
-def test_strip_think_blocks_paired():
-    assert prompt_engineer.strip_think_blocks("<think>reasoning…</think>正文") == "正文"
-
-
-def test_strip_think_blocks_unclosed_truncates_to_end():
-    # 推理模型若中途断开未发出结束标记，整段尾部皆为产物——从开始标记起全部丢弃。
-    assert prompt_engineer.strip_think_blocks("<think>The user wants") == ""
-
-
-def test_strip_think_blocks_preserves_plain_text():
-    text = "不含思考标记的普通输出"
-    assert prompt_engineer.strip_think_blocks(text) == text
-
-
-def test_strip_think_blocks_mid_text_closed_block():
-    assert prompt_engineer.strip_think_blocks("前<think>x</think>后") == "前后"
-
-
 @pytest.mark.asyncio
 async def test_chat_rejects_empty_response(monkeypatch):
     async def _provider(_db, _uid, _svc):

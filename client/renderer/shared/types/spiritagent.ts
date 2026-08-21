@@ -138,7 +138,6 @@ export type SpeechEngine = 'auto' | 'local' | 'cloud'
 export interface SpiritAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
-    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {
@@ -177,7 +176,6 @@ export interface SpiritAgentConfigResponse {
 export interface SpiritAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
-    service_tier?: string
     enable_background_review?: boolean
   }
   chat?: {

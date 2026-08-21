@@ -162,7 +162,7 @@ def _tool_turn_history() -> list[Message]:
         Message(
             role="assistant",
             content=None,
-            tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
+            tool_calls=json.dumps([{"type": "function_call", "call_id": "c1", "name": "search_web", "arguments": "{}"}]),
         ),
         Message(role="tool", content="results", tool_call_id="c1"),
         Message(role="assistant", content="北京 22 度"),
@@ -303,7 +303,7 @@ async def test_context_window_filters_tool_calls_messages(seeded):
         conv_id,
         "assistant",
         "",
-        tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
+        tool_calls=json.dumps([{"type": "function_call", "call_id": "c1", "name": "search_web", "arguments": "{}"}]),
         at=base + timedelta(minutes=1),
     )
     await _add_msg(SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2))

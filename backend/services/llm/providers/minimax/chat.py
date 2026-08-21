@@ -14,5 +14,4 @@ class MiniMaxChatProvider(OpenAIResponsesChatProvider):
     supports_vision: ClassVar[bool] = True
     # 文本与视觉共用 M3。
     DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-M3"}
-    REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "minimal", "low", "medium", "high"})
-    SERVICE_TIERS: ClassVar[frozenset[str]] = frozenset({"standard", "priority"})
+    REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "low", "medium", "high"})

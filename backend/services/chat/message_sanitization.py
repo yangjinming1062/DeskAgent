@@ -9,8 +9,8 @@ from ..llm import ResponsesContext
 logger = get_logger(__name__)
 
 
-# 持久化图片 part 与 Responses 输入图片 part 的兼容集合，只供老轮次图片占位符替换使用。
-_IMAGE_PART_TYPES = frozenset({"image_url", "image", "input_image"})
+# Responses API 输入图片 part 类型，``truncate_responses_context`` 老轮次图片占位符替换使用。
+_IMAGE_PART_TYPES = frozenset({"input_image"})
 
 
 def _escape_invalid_chars_in_json_strings(raw: str) -> str:

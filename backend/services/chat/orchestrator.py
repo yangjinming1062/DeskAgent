@@ -13,7 +13,7 @@ from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
-from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, _parse_service_tier
+from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort
 from .types import IterationBudget, TrackTask
 
 logger = get_logger(__name__)
@@ -47,7 +47,6 @@ async def run_chat_turn(
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
-    service_tier = _parse_service_tier(effective_settings.get("agent.service_tier") or effective_settings.get("service_tier"))
     compressed_context, compress_info = await compress_history_if_needed(
         inputs.context,
         client=inputs.client,
@@ -113,7 +112,6 @@ async def run_chat_turn(
                     provider,
                     on_first_chunk=set_stream_emitted,
                     reasoning_effort=reasoning_effort,
-                    service_tier=service_tier,
                     allowed_emotions=inputs.allowed_emotions,
                 )
 
@@ -165,11 +163,10 @@ async def run_chat_turn(
                 break
 
             for tc in llm_result.tool_calls_list:
-                if isinstance((fn := tc.get("function")), dict):
-                    name = fn.get("name")
-                    if isinstance(name, str) and name:
-                        active_tool_names.add(name)
-                        invoked_tool_names.add(name)
+                name = tc.get("name")
+                if isinstance(name, str) and name:
+                    active_tool_names.add(name)
+                    invoked_tool_names.add(name)
             _ensure_tool_call_ids(llm_result.tool_calls_list)
 
             await _persist_assistant_with_tool_calls_and_results(

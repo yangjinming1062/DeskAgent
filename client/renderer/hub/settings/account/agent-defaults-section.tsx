@@ -8,12 +8,10 @@ export type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDe
 
 export interface AgentFormState {
   reasoning_effort: string
-  service_tier: string
   enable_background_review: boolean
 }
 
-const REASONING_OPTIONS = ['low', 'high'] as const
-const SERVICE_TIER_OPTIONS = ['standard', 'priority'] as const
+const REASONING_OPTIONS = ['none', 'low', 'medium', 'high'] as const
 
 export function AgentDefaultsSection({
   disabled,
@@ -49,29 +47,6 @@ export function AgentDefaultsSection({
         }
         description={t.reasoningEffortDesc}
         title={t.reasoningEffort}
-      />
-
-      <ListRow
-        action={
-          <Select
-            disabled={disabled}
-            onValueChange={value => update({ service_tier: value })}
-            value={state.service_tier}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SERVICE_TIER_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.serviceTierOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        }
-        description={t.serviceTierDesc}
-        title={t.serviceTier}
       />
 
       <ListRow

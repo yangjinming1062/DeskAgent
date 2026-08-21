@@ -7,11 +7,10 @@ from typing import Any
 
 from components import TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
-from ..llm import FailoverReason, LLMRuntimeError, ResponsesContext, call_with_retry, response_items_to_chat_tool_calls, response_request_kwargs, response_usage
+from ..llm import FailoverReason, LLMRuntimeError, ResponsesContext, call_with_retry, response_request_kwargs, response_usage
 from .affect import AffectScrubber
 from .bubble import BubbleEvent, BubbleSplitter
 from .chat_emitter import Emitter
-from .think_scrubber import StreamingThinkScrubber
 
 logger = get_logger(__name__)
 
@@ -50,14 +49,26 @@ async def _emit_llm_error(emitter: Emitter, exc: LLMRuntimeError) -> None:
     await emitter.send_json({"type": "error", "message": _llm_error_user_message(exc)})
 
 
+def _function_call_to_dict(item: Any) -> dict:
+    """Responses API 的 ``function_call`` 输出项 → Responses shape dict（与 DB / 工具派发共用）。"""
+    if hasattr(item, "model_dump"):
+        return item.model_dump(exclude_none=True)
+    return {
+        "type": "function_call",
+        "call_id": getattr(item, "call_id", "") or getattr(item, "id", ""),
+        "name": getattr(item, "name", ""),
+        "arguments": getattr(item, "arguments", "{}") or "{}",
+    }
+
+
 def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
     """为每个 tool call 保证唯一非空的 call_id；流式供应商在仅参数增量时常省略 id，重复 id 会合并同一 ipc future 导致 gather 挂起。"""
     seen: set[str] = set()
     for tc in tool_calls_list:
-        cid = tc.get("id")
+        cid = tc.get("call_id")
         if not isinstance(cid, str) or not cid or cid in seen:
-            tc["id"] = f"call_{new_request_id()[:TOOL_CALL_ID_HEX_PREFIX_LEN]}"
-        seen.add(tc["id"])
+            tc["call_id"] = f"call_{new_request_id()[:TOOL_CALL_ID_HEX_PREFIX_LEN]}"
+        seen.add(tc["call_id"])
 
 
 def _usage_payload(usage: Any) -> dict:
@@ -77,14 +88,12 @@ async def _stream_llm_response(
     *,
     on_first_chunk: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
-    service_tier: str | None = None,
     allowed_emotions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     client = provider.raw_client()
     reasoning = {"effort": reasoning_effort} if reasoning_effort and reasoning_effort in getattr(provider, "REASONING_EFFORTS", frozenset()) else None
-    selected_tier = service_tier if service_tier and service_tier in getattr(provider, "SERVICE_TIERS", frozenset()) else None
-    kwargs = response_request_kwargs(model=model_name, context=context, tools=active_schemas, stream=True, reasoning=reasoning, service_tier=selected_tier)
+    kwargs = response_request_kwargs(model=model_name, context=context, tools=active_schemas, stream=True, reasoning=reasoning)
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
     image_items = [
@@ -116,7 +125,6 @@ async def _stream_llm_response(
             message_start_sent = True
             await emitter.send_json({"type": "message.start"})
 
-    scrubber = StreamingThinkScrubber()
     affect = AffectScrubber(allowed_emotions)
     bubbles = BubbleSplitter()
 
@@ -148,12 +156,12 @@ async def _stream_llm_response(
                 await _ensure_message_start()
                 event_type = str(getattr(chunk, "type", ""))
                 if event_type == "response.output_text.delta":
-                    await _feed_clean(scrubber.feed(affect.feed(chunk.delta)))
+                    await _feed_clean(affect.feed(chunk.delta))
                 elif event_type == "response.output_item.done":
                     item = getattr(chunk, "item", None)
-                    if getattr(item, "type", None) == "function_call":
-                        tool_calls_list.extend(response_items_to_chat_tool_calls([item]))
-                    elif getattr(item, "type", None) == "reasoning" and hasattr(item, "model_dump"):
+                    if item is not None and getattr(item, "type", None) == "function_call":
+                        tool_calls_list.append(_function_call_to_dict(item))
+                    elif item is not None and getattr(item, "type", None) == "reasoning" and hasattr(item, "model_dump"):
                         context.append(item.model_dump(exclude_none=True))
                 elif event_type in {"response.completed", "response.incomplete"}:
                     if usage := getattr(getattr(chunk, "response", None), "usage", None):
@@ -167,8 +175,7 @@ async def _stream_llm_response(
             # 流中途分类错误：已发出 chunk 后供应商 4xx；orchestrator 看到 stream_emitted=True 拒绝换供应商，抛出此异常并发出收尾 error 帧，让渲染端拿到干净的转写。
             raise
 
-        # 把 affect 的残余缓冲也走一遍 think scrubber，避免 tag 剥离窗口内残留的 ``<think>`` 片段漏网。
-        await _feed_clean(scrubber.feed(affect.flush()) + scrubber.flush())
+        await _feed_clean(affect.flush())
     finally:
         # 流中途死亡时也要 flush bubble splitter，使残余缓冲文本落地，尾部不完整分隔符会被丢弃。
         await _emit_bubble_events(bubbles.flush())

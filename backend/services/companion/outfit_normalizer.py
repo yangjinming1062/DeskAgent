@@ -3,16 +3,7 @@ from typing import Protocol
 from components import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import (
-    ProviderConfig,
-    ResponsesContext,
-    call_with_retry,
-    output_text_from_response,
-    provider_from_config,
-    resolve_vision_chain,
-    response_request_kwargs,
-    strip_think_blocks,
-)
+from ..llm import ProviderConfig, ResponsesContext, call_with_retry, output_text_from_response, provider_from_config, resolve_vision_chain, response_request_kwargs
 
 logger = get_logger(__name__)
 
@@ -47,7 +38,7 @@ def _build_user_payload(raw_input: str, persona_definition: dict[str, str] | Non
 
 
 def _clean(raw: str) -> str:
-    cleaned = strip_think_blocks(raw)
+    cleaned = raw
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     return cleaned

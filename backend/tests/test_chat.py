@@ -207,8 +207,8 @@ class TestResolveContextTokens:
         parsed = json.loads(content)
         assert len(parsed) == 2
         image_part = parsed[1]
-        assert image_part["type"] == "image_url"
-        assert image_part["image_url"]["url"] == "http://example.com/image.png"
+        assert image_part["type"] == "input_image"
+        assert image_part["image_url"] == "http://example.com/image.png"
 
     def test_no_attachments_returns_text(self):
         from modules.system import ChatMessageRequest
@@ -392,7 +392,7 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
 
     monkeypatch.setattr(persistence, "_run_tool_batch", _cancelled_tool_batch)
 
-    tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "test_tool", "arguments": "{}"}}]
+    tool_calls = [{"type": "function_call", "call_id": "call_123", "name": "test_tool", "arguments": "{}"}]
     context = ResponsesContext(instructions="SYS", items=[])
     active_tools = {"test_tool"}
     schemas = {}

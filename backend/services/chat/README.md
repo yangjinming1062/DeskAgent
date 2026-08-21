@@ -10,9 +10,8 @@ Backend 单次对话回合的编排核心：把“系统指令 + 用户输入 + 
 chat/
 ├── orchestrator.py          # run_chat_turn：单回合主循环（压缩、budget、guardrail、affect 透传）
 ├── turn_inputs.py           # 组装 system prompt（persona + user_profile + memory）+ schemas + LLM client
-├── streaming.py             # 单次 LLM call 全流程：chunk → 影响 scrubber + think scrubber + usage → message.* 帧
+├── streaming.py             # 单次 LLM call 全流程：chunk → 影响 scrubber + usage → message.* 帧
 ├── affect.py                # BUILTIN_EMOTIONS + AffectScrubber（流式剥离 `[affect:…]` tag）
-├── think_scrubber.py        # StreamingThinkScrubber：流式过滤 `<think>` 标签
 ├── persistence.py           # Message 行落库；触发 title 生成 / background review；emit message.complete
 ├── tool_dispatch.py         # 并行 dispatch + return_exceptions 容错；并行白名单见 services/tools/tool_dispatch_helpers
 ├── system_prompt.py         # 全部 prompt 模板（identity / persona / user_profile / language / task / steer / 平台 / volatile）
@@ -31,7 +30,7 @@ chat/
 - **provider fallback 边界**：`execute_with_fallback` 的 `on_first_chunk` 哨兵防止 mid-stream 切换 provider——一旦已开始向 renderer 流式输出，下一 call 就锁死在当前 provider，避免同一回合混合两个模型的输出。
 - **Responses 边界**：持久化层保留按角色建模的消息行；仅在读历史、工具回灌与后台 LLM 调用时转换为指令区 + 输入项。同一工具回合内的推理输出项保留到函数调用与输出闭合，近期图片载荷按二进制附件预算处理，不参与长文本截断。
 - **影响 scrubber 在流式阶段就解析**：`AffectScrubber.feed` 在 chunk 层面拆 tag，orchestrator 拿到完整 emotion 在 turn 结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到 `message.complete` 时 affect 字段已就位，TTS/EMOTIONAL 切换一次到位。
-- **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES` 是历史图片内容类型集合；tool dispatch 不重复定义，旧对话读回时统一归一为 Responses 图片输入项。
+- **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
 - **懒加载子模块动态解析**：`_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 由 `__init__.__getattr__` 按需动态解析，避免循环依赖与无谓的顶层 import 开销。
 
 ## 已知限制

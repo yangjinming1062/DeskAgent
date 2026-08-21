@@ -8,7 +8,7 @@ from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..conversation import AFFECT_TRACE_SUBTYPE, MAIN_KIND
-from ..llm import ResponsesContext, chat_tool_calls_to_response_items, message_to_response_items
+from ..llm import ResponsesContext, message_to_response_items
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
@@ -40,12 +40,12 @@ def _coerce_tool_result_content(content: Any) -> str:
 def _build_persisted_content_from_parts(text: str, attachments: list[dict] | None) -> tuple[str, str]:
     if not attachments:
         return text or "", "text"
-    parts = [{"type": "text", "text": text or ""}]
+    parts = [{"type": "input_text", "text": text or ""}]
     media_uris: list[str] = []
     for att in attachments:
         url = att.get("file_url")
         if url:
-            parts.append({"type": "image_url", "image_url": {"url": url}})
+            parts.append({"type": "input_image", "image_url": url})
             media_uris.append(url)
     if media_uris:
         logger.info("multimodal parts sent to LLM", extra={"media_count": len(media_uris), "media_uris": media_uris})
@@ -53,7 +53,7 @@ def _build_persisted_content_from_parts(text: str, attachments: list[dict] | Non
 
 
 def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
-    """把 req.message + 附件转换为 ``(content, content_type)``：纯文本返回 ``(str, "text")``；多模态返回带 ``multimodal_v1`` 标签的 JSON parts 数组，附件以 ``image_url`` 发出。"""
+    """把 req.message + 附件转换为 ``(content, content_type)``：纯文本返回 ``(str, "text")``；多模态返回带 ``multimodal_v1`` 标签的 JSON parts 数组，附件以 ``input_image`` 发出（扁平 URL，与 Responses API 形状一致）。"""
     text = req.message.content or ""
     attachments = getattr(req.message, "attachments", None) or []
     return _build_persisted_content_from_parts(text, attachments)
@@ -177,7 +177,7 @@ async def _persist_assistant_with_tool_calls_and_results(
     """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹。"""
     if turn_content:
         context.append({"role": "assistant", "content": [{"type": "output_text", "text": turn_content}]})
-    context.append(*chat_tool_calls_to_response_items(tool_calls_list))
+    context.extend(tool_calls_list)
     async with session_scope() as db:
         db.add(
             Message(
@@ -198,7 +198,7 @@ async def _persist_assistant_with_tool_calls_and_results(
     except asyncio.CancelledError:
         # 为每个未完成的 tool_call 合成一条 tool 结果，避免 assistant 行出现孤立 tool_calls 导致下一轮 LLM 上下文畸形。
         cancelled_results = [
-            {"role": "tool", "name": tc.get("function", {}).get("name", ""), "tool_call_id": tc.get("id", ""), "content": json.dumps({"error": "cancelled"}, ensure_ascii=False)}
+            {"role": "tool", "name": tc.get("name", ""), "tool_call_id": tc.get("call_id", ""), "content": json.dumps({"error": "cancelled"}, ensure_ascii=False)}
             for tc in tool_calls_list
         ]
 
