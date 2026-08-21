@@ -73,7 +73,7 @@ def as_bool(value: Any, default: bool) -> bool:
         return default
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return bool(value)
     if isinstance(value, str):
         lowered = value.strip().lower()

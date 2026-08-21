@@ -20,7 +20,7 @@ def coerce_tool_args(tool_name: str, args: dict[str, Any], schema: dict | None) 
             continue
         expected = prop_schema.get("type")
 
-        if expected == "array" and value is not None and not isinstance(value, (list, tuple)):
+        if expected == "array" and value is not None and not isinstance(value, list | tuple):
             if isinstance(value, str):
                 coerced = _coerce_value(value, expected, schema=prop_schema)
                 if coerced is not value:

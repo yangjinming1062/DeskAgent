@@ -28,7 +28,7 @@ def _in_any(ranges: list[tuple[int, int]], lineno: int) -> bool:
 def _names_imported_under_tc(tree: ast.Module, tc_ranges: list[tuple[int, int]]) -> set[str]:
     out: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, (ast.Import, ast.ImportFrom)):
+        if not isinstance(node, ast.Import | ast.ImportFrom):
             continue
         if not _in_any(tc_ranges, node.lineno):
             continue
@@ -88,7 +88,7 @@ def _facade_exports(init_path: Path) -> set[str] | None:
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "__all__":
-                    if isinstance(node.value, (ast.List, ast.Tuple)):
+                    if isinstance(node.value, ast.List | ast.Tuple):
                         for elt in node.value.elts:
                             if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                                 names.add(elt.value)

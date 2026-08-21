@@ -64,7 +64,7 @@ def _get_max_read_chars() -> int:
     try:
         cfg = load_config()
         val = cfg.get("file_read_max_chars")
-        if isinstance(val, (int, float)) and val > 0:
+        if isinstance(val, int | float) and val > 0:
             _max_read_chars_cached = int(val)
             return _max_read_chars_cached
     except Exception:

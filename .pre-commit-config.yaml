@@ -12,7 +12,7 @@ repos:
           - --line-length=180
           - --target-version=py313
           - --select=E,F,I,SIM,C4,UP,FA,ARG,PLC,ERA,COM812,COM819
-          - --ignore=PLC0415,ARG001,ARG002,E501,UP038,UP046,UP047
+          - --ignore=PLC0415,ARG001,ARG002,E501
         # Match against the repo-root-relative path; ``runner/tests/`` and
         # ``backend/tests/`` and ``installer/`` should NOT be linted
         # (the test files have their own conventions; the installer

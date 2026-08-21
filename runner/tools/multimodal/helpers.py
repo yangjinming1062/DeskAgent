@@ -77,7 +77,7 @@ def _classify_api_error(error: Exception, media_label: str) -> str:
 
 
 def _is_retryable_download_error(error: Exception) -> bool:
-    if isinstance(error, (PermissionError, ValueError)):
+    if isinstance(error, PermissionError | ValueError):
         return False
     if isinstance(error, httpx.HTTPStatusError):
         status = getattr(getattr(error, "response", None), "status_code", None)
@@ -85,7 +85,7 @@ def _is_retryable_download_error(error: Exception) -> bool:
             return False
         return status == 429 or status >= 500
     # httpx 传输层错误（ConnectError、RemoteProtocolError、ReadTimeout 等）— 瞬时错误，值得重试
-    return bool(isinstance(error, (httpx.TransportError, httpx.TimeoutException, ConnectionError, OSError)))
+    return bool(isinstance(error, httpx.TransportError | httpx.TimeoutException | ConnectionError | OSError))
 
 
 async def _download_media(url: str, destination: Path, *, accept: str, max_bytes: int, timeout: float, media_label: str, max_retries: int = 3) -> Path:

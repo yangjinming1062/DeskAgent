@@ -68,7 +68,7 @@ def _redact_data(data: Any) -> Any:
         return redact_message(data)
     if isinstance(data, dict):
         return {k: _redact_data(v) for k, v in data.items()}
-    if isinstance(data, (list, tuple)):
+    if isinstance(data, list | tuple):
         return [_redact_data(v) for v in data]
     return data
 

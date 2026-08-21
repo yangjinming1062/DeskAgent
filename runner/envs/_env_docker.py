@@ -44,7 +44,7 @@ def _normalize_forward_env_names(forward_env: list[str] | None) -> list[str]:
 
 def _normalize_env_dict(env: dict | None) -> dict[str, str]:
     return (
-        {key.strip(): str(value) for key, value in env.items() if isinstance(key, str) and _ENV_VAR_NAME_RE.match(key.strip()) and isinstance(value, (str, int, float, bool))}
+        {key.strip(): str(value) for key, value in env.items() if isinstance(key, str) and _ENV_VAR_NAME_RE.match(key.strip()) and isinstance(value, str | int | float | bool)}
         if isinstance(env, dict)
         else {}
     )

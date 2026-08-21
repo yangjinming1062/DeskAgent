@@ -392,7 +392,7 @@ def _resolve_client_cert(server_name: str, config: dict) -> str | tuple[str, str
             raise FileNotFoundError(f"MCP server '{server_name}': {label} not found at {expanded!r}")
         return expanded
 
-    if isinstance(raw_cert, (list, tuple)):
+    if isinstance(raw_cert, list | tuple):
         if raw_key is not None:
             raise ValueError(f"MCP server '{server_name}': specify client_cert list or client_cert + client_key, not both")
         if len(raw_cert) == 2:
@@ -2104,7 +2104,7 @@ def _normalize_name_filter(value: Any, label: str) -> set[str]:
         return set()
     if isinstance(value, str):
         return {value}
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list | tuple | set):
         return {str(item) for item in value}
     logger.warning("MCP config %s must be a string or list of strings; ignoring %r", label, value)
     return set()

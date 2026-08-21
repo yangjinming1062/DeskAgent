@@ -342,7 +342,7 @@ class _CuaDriverSession:
         return (
             name in {"ClosedResourceError", "BrokenResourceError", "EndOfStream"}
             or ("anyio" in getattr(exc.__class__, "__module__", "") and "Resource" in name)
-            or isinstance(exc, (BrokenPipeError, EOFError))
+            or isinstance(exc, BrokenPipeError | EOFError)
         )
 
     def _restart_session_locked(self) -> None:

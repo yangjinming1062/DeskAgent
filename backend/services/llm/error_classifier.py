@@ -379,7 +379,7 @@ def _classify_by_exception_type(
             num_messages=num_messages,
             result_fn=result_fn,
         )
-    if isinstance(error, (openai.UnprocessableEntityError, openai.ConflictError)):
+    if isinstance(error, openai.UnprocessableEntityError | openai.ConflictError):
         return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
     # APIResponseValidationError（APIError 子类，非 APIStatusError）：有 .response 但无 .status_code；status_code 已由 _extract_status_code 从 .response.status_code 修复。
     api_response_validation_error = getattr(openai, "APIResponseValidationError", None)
@@ -429,7 +429,7 @@ def _classify_by_exception_type(
         return result_fn(FailoverReason.timeout, retryable=True)
 
     # 标准库传输 / SSL
-    if isinstance(error, (TimeoutError, ConnectionError, OSError, ssl.SSLError)):
+    if isinstance(error, TimeoutError | ConnectionError | OSError | ssl.SSLError):
         return result_fn(FailoverReason.timeout, retryable=True)
 
     # 内部边界类型（Gemini/Zhipu/raw httpx 走 ProviderError 而非 SDK；状态码缺位时 defer 到 Phase B/D）
@@ -772,7 +772,7 @@ def _extract_error_code(error: Exception, body: dict) -> str:
             if isinstance(nested, str) and nested.strip() and nested.strip() != "400":
                 return nested.strip()
         code = payload.get("code") or payload.get("error_code") or ""
-        if isinstance(code, (str, int)):
+        if isinstance(code, str | int):
             text = str(code).strip()
             if text and text != "400":
                 return text
@@ -795,7 +795,7 @@ def _extract_error_code(error: Exception, body: dict) -> str:
 
     # 4. 顶层 body["code"] / body["error_code"]（部分供应商的扁平 schema）
     code = body.get("code") or body.get("error_code") or ""
-    if isinstance(code, (str, int)):
+    if isinstance(code, str | int):
         text = str(code).strip()
         if text and text != "400":
             return text

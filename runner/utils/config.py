@@ -78,7 +78,7 @@ def cfg_json(section: dict[str, Any], key: str, default: Any = None) -> Any:
     v = section.get(key)
     if v is None:
         return default
-    if isinstance(v, (list, dict)):
+    if isinstance(v, list | dict):
         return v
     try:
         return json.loads(str(v))

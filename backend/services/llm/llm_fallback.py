@@ -1,6 +1,5 @@
 import time
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 from components import get_logger, log_paid_call
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,10 +11,8 @@ from .providers import BaseProvider, ProviderConfig, resolve
 
 logger = get_logger(__name__)
 
-T = TypeVar("T")
 
-
-async def execute_with_fallback(
+async def execute_with_fallback[T](
     db: AsyncSession | None,
     user_id: int | None,
     service_type: str,

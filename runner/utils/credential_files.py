@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def get_external_skills_dirs() -> list[Path]:
     try:
-        return [Path(p) for p in raw if isinstance(p, (str, Path))] if isinstance(raw := cfg_get(load_config(), "skills", "external_dirs", default=[]), list) else []
+        return [Path(p) for p in raw if isinstance(p, str | Path)] if isinstance(raw := cfg_get(load_config(), "skills", "external_dirs", default=[]), list) else []
     except Exception:
         return []
 
