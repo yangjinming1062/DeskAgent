@@ -165,9 +165,8 @@ class TestChatE2E:
         from starlette.testclient import WebSocketDisconnect
 
         test_client = TestClient(test_app)
-        with pytest.raises(WebSocketDisconnect):
-            with test_client.websocket_connect("/api/chat/ws?ticket=invalid-ticket-abc"):
-                pass
+        with pytest.raises(WebSocketDisconnect), test_client.websocket_connect("/api/chat/ws?ticket=invalid-ticket-abc"):
+            pass
 
     async def test_websocket_session_lifecycle(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
         """建会话并在 interrupt 后验证 prompt 提交仍可用。"""

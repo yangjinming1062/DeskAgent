@@ -29,9 +29,7 @@ target_metadata = ModelBase.metadata
 
 def _include_object(obj, name, type_, reflected, compare_to):
     # 迁移管理的索引（partial unique / hnsw / gin trgm）只存在于迁移文件，不在模型 metadata（声明进模型会让 SQLite create_all 丢 WHERE 语义）。跳过"仅存在于数据库"的索引，autogenerate 才会不提议删除它们。
-    if type_ == "index" and reflected and compare_to is None:
-        return False
-    return True
+    return not (type_ == "index" and reflected and compare_to is None)
 
 
 def run_migrations_offline() -> None:

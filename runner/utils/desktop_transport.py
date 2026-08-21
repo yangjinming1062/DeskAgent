@@ -105,10 +105,9 @@ def read_endpoint() -> DesktopEndpoint | None:
         if not isinstance(token, str) or not token:
             return None
         # 跳过 Desktop 崩溃留下的过期文件。用 pid_exists() 而不是 os.kill(pid, 0)，后者在 Windows 上不安全（bpo-14484）。
-        if isinstance(pid, int) and pid > 0:
-            if not pid_exists(pid):
-                logger.debug("Desktop PID %s is gone, ignoring stale endpoint file", pid)
-                return None
+        if isinstance(pid, int) and pid > 0 and not pid_exists(pid):
+            logger.debug("Desktop PID %s is gone, ignoring stale endpoint file", pid)
+            return None
         return DesktopEndpoint(transport=transport, path=path, token=token, pid=pid if isinstance(pid, int) else None)
     except Exception:
         return None

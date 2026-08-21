@@ -273,9 +273,7 @@ def _is_blocked_device_path(path: str) -> str | bool:
         return True
     # /proc/*/environ、/proc/*/cmdline、/proc/*/maps 可能泄露宿主进程的
     # 凭据、命令行参数与内存布局。
-    if normalized.startswith("/proc/") and normalized.endswith(("/environ", "/cmdline", "/maps")):
-        return True
-    return False
+    return bool(normalized.startswith("/proc/") and normalized.endswith(("/environ", "/cmdline", "/maps")))
 
 
 def _is_blocked_device(filepath: str) -> bool:
@@ -291,9 +289,7 @@ def _is_blocked_device(filepath: str) -> bool:
         resolved = os.path.realpath(normalized)
     except (OSError, ValueError):
         return False
-    if resolved != normalized and _is_blocked_device_path(resolved):
-        return True
-    return False
+    return bool(resolved != normalized and _is_blocked_device_path(resolved))
 
 
 # 文件工具应拒绝写入、必须经终端工具审批系统的路径。按 ``os.path.realpath``
@@ -464,9 +460,7 @@ def _is_expected_write_exception(exc: Exception) -> bool:
     """返回 True 表示是可预期的写入拒绝（不应记入 error 日志）。"""
     if isinstance(exc, PermissionError):
         return True
-    if isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS:
-        return True
-    return False
+    return bool(isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS)
 
 
 _file_ops_lock = threading.Lock()
@@ -604,9 +598,7 @@ def _is_internal_file_status_text(content: str) -> bool:
         return False
     if stripped == _READ_DEDUP_STATUS_MESSAGE:
         return True
-    if _READ_DEDUP_STATUS_MESSAGE in stripped and len(stripped) <= 2 * len(_READ_DEDUP_STATUS_MESSAGE):
-        return True
-    return False
+    return bool(_READ_DEDUP_STATUS_MESSAGE in stripped and len(stripped) <= 2 * len(_READ_DEDUP_STATUS_MESSAGE))
 
 
 def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileOperations:

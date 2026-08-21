@@ -71,10 +71,8 @@ def _cleanup_inactive_envs(lifetime_seconds: int = 300) -> None:
         # creation_locks 条目刻意不弹出：删除一个别的线程正在持有的锁对象（环境创建中途），会让第三个线程创建一把新锁进入同一临界区——一个任务两个环境。条目随进程生命周期驻留，由 task_id 空间限定上限。
     for task_id, env in envs_to_stop:
         for hook in _cleanup_hooks:
-            try:
+            with contextlib.suppress(Exception):
                 hook(task_id)
-            except Exception:
-                pass
         try:
             _stop_env(env)
             logger.info("Cleaned up inactive environment for task: %s", task_id)
@@ -147,10 +145,8 @@ def cleanup_vm(task_id: str, *, force_remove: bool = False) -> None:
     with creation_locks_lock:
         creation_locks.pop(task_id, None)
     for hook in _cleanup_hooks:
-        try:
+        with contextlib.suppress(Exception):
             hook(task_id)
-        except Exception:
-            pass
     if env is None:
         return
     try:

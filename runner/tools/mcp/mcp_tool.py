@@ -81,14 +81,14 @@ def _get_mcp_stderr_log() -> Any:
             # Line-buffered so server output lands on disk promptly; errors=
             # "replace" tolerates garbled binary output from misbehaving
             # servers.
-            fh = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)
+            fh = open(log_path, "a", encoding="utf-8", errors="replace", buffering=1)  # noqa: SIM115
             # Sanity-check: confirm a real fd is available before we commit.
             fh.fileno()
             _mcp_stderr_log_fh = fh
         except Exception as exc:  # pragma: no cover — best-effort fallback
             logger.debug("Failed to open MCP stderr log, using devnull: %s", exc)
             try:
-                _mcp_stderr_log_fh = open(os.devnull, "w", encoding="utf-8")
+                _mcp_stderr_log_fh = open(os.devnull, "w", encoding="utf-8")  # noqa: SIM115
             except Exception:
                 # Last resort: the real stderr.
                 _mcp_stderr_log_fh = sys.stderr
@@ -244,7 +244,7 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
     resolved_env = dict(env or {})
 
     if os.sep not in resolved_command:
-        path_arg = resolved_env["PATH"] if "PATH" in resolved_env else None
+        path_arg = resolved_env.get("PATH")
         which_hit = shutil.which(resolved_command, path=path_arg)
         if which_hit:
             resolved_command = which_hit
@@ -421,9 +421,8 @@ def _format_connect_error(exc: BaseException) -> str:
             if match := _MISSING_FILE_RE.search(str(cur)):
                 return match.group(1)
         for attr in ("__cause__", "__context__"):
-            if isinstance(nested_exc := getattr(cur, attr, None), BaseException):
-                if m := _find_missing(nested_exc):
-                    return m
+            if isinstance(nested_exc := getattr(cur, attr, None), BaseException) and (m := _find_missing(nested_exc)):
+                return m
         return None
 
     def _flatten_messages(cur: BaseException) -> list[str]:
@@ -1488,7 +1487,7 @@ def _snapshot_child_pids() -> set:
     except (FileNotFoundError, OSError, ValueError):
         pass
 
-    # Fallback: psutil
+    # Use psutil as fallback method
     try:
         return {c.pid for c in psutil.Process(my_pid).children()}
     except Exception:
@@ -2005,7 +2004,7 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 
         if repaired.get("type") == "object":
             if "properties" not in repaired or not isinstance(repaired.get("properties"), dict):
-                repaired["properties"] = {} if "properties" not in repaired else repaired["properties"]
+                repaired["properties"] = repaired.get("properties", {})
                 if not isinstance(repaired.get("properties"), dict):
                     repaired["properties"] = {}
 

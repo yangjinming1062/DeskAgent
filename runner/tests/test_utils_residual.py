@@ -164,7 +164,7 @@ class TestIsWriteDenied:
         from ctypes import wintypes
 
         # Get the short name for C:\Windows (typically C:\WINDOWS or similar).
-        windows_dir = os.environ.get("SystemRoot", r"C:\Windows")
+        windows_dir = os.environ.get("SYSTEMROOT", r"C:\Windows")
         buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
         # GetShortPathNameW returns the short path length.
         length = ctypes.windll.kernel32.GetShortPathNameW(

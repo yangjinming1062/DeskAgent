@@ -149,10 +149,7 @@ def _rewrite_real_sudo_invocations(command: str) -> tuple[str, bool]:
             found = True
         else:
             out.append(token)
-        if command_start and _looks_like_env_assignment(token):
-            command_start = True
-        else:
-            command_start = False
+        command_start = bool(command_start and _looks_like_env_assignment(token))
         i = next_i
     return "".join(out), found
 

@@ -3,7 +3,7 @@ import json
 import logging
 import re
 import sys
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
@@ -45,7 +45,7 @@ def _skill_lookup_path_error(name: str) -> str | None:
     return "Skill name cannot contain '..' path traversal components." if has_traversal_component(candidate) else None
 
 
-class SkillReadinessStatus(str, Enum):
+class SkillReadinessStatus(StrEnum):
     AVAILABLE = "available"
     SETUP_NEEDED = "setup_needed"
     UNSUPPORTED = "unsupported"
@@ -203,9 +203,7 @@ def _is_disabled(name: str, category: str | None, disabled: set[str]) -> bool:
     """纯成员检查：若 name 或 category 在 disabled 集合中则视为 disabled。顶层 skill（category=None）仅按 name 匹配；嵌套 skill 按 name 或 category 匹配，使单条 entry 覆盖该文件夹下每个 SKILL.md。"""
     if name in disabled:
         return True
-    if category is not None and category in disabled:
-        return True
-    return False
+    return bool(category is not None and category in disabled)
 
 
 def _is_skill_disabled(name: str, category: str | None = None, platform: str | None = None) -> bool:

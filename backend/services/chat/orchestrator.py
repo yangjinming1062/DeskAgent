@@ -105,10 +105,7 @@ async def run_chat_turn(
                     raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
                 model_for_slot = inputs.model_override or provider.config.model
                 # 渲染端钉住的窗口优先；否则按供应商重新解析，使回退供应商更小的默认窗口生效。
-                if inputs.context_tokens_override is not None:
-                    slot_ctx_length = inputs.ctx_length
-                else:
-                    slot_ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
+                slot_ctx_length = inputs.ctx_length if inputs.context_tokens_override is not None else resolve_context_tokens(provider.provider_name, ServiceType.llm)
                 return await _stream_llm_response(
                     emitter,
                     model_for_slot,

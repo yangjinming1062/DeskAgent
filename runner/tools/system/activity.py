@@ -156,7 +156,7 @@ def _work_area_windows() -> dict[str, int]:
             _fields_ = [("left", wintypes.LONG), ("top", wintypes.LONG), ("right", wintypes.LONG), ("bottom", wintypes.LONG)]
 
         rect = _RECT()
-        # SPI_GETWORKAREA = 0x0030
+        # Use SPI_GETWORKAREA (0x0030) to get the work area rectangle
         if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
             return {"x": int(rect.left), "y": int(rect.top), "w": int(max(0, rect.right - rect.left)), "h": int(max(0, rect.bottom - rect.top))}
     except Exception as e:

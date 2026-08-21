@@ -406,9 +406,8 @@ class DockerEnvironment(BaseEnvironment):
 
     def execute(self, command: str, cwd: str = "", **kwargs) -> dict:
         result = super().execute(command, cwd, **kwargs)
-        if result.get("returncode", 0) != 0 and self._is_container_gone(result.get("output", "")) and self._persist_across_processes:
-            if self._recreate_container():
-                result = super().execute(command, cwd, **kwargs)
+        if result.get("returncode", 0) != 0 and self._is_container_gone(result.get("output", "")) and self._persist_across_processes and self._recreate_container():
+            result = super().execute(command, cwd, **kwargs)
         return result
 
     @staticmethod

@@ -96,10 +96,10 @@ def build_write_denied_prefixes(home: str) -> list[str]:
         Path("C:/Windows/Boot"),
         Path("C:/Windows/Recovery"),
         # WinSxS 体量巨大且结构敏感——禁止在线编辑；Boot/Recovery 存放引导/恢复二进制；System32/SysWOW64 是系统 DLL 主目录。
-        Path(os.environ.get("SystemRoot", "C:/Windows")),
-        Path(os.environ.get("ProgramData", "C:/ProgramData")),
-        Path(os.environ.get("ProgramFiles", "C:/Program Files")),
-        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")),
+        Path(os.environ.get("SYSTEMROOT", "C:/Windows")),
+        Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")),
+        Path(os.environ.get("PROGRAMFILES", "C:/Program Files")),
+        Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)")),
         p_home / "AppData/Roaming/Microsoft",
         p_home / "AppData/Local/Microsoft",
     ]

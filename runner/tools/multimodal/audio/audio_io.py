@@ -134,9 +134,8 @@ def wav_to_wav_pcm16(src_path: str | Path, dst_path: str | Path, max_bytes: int 
     # 快路径：若源已是标准 WAV 容器，直接通过 Python + numpy 原生解码/重采样
     with open(src, "rb") as probe:
         head = probe.read(16)
-    if sniff_container(head) == "wav":
-        if _native_wav_to_pcm16(src, dst):
-            return dst
+    if sniff_container(head) == "wav" and _native_wav_to_pcm16(src, dst):
+        return dst
 
     resolved_bin = _resolve_ffmpeg_bin(ffmpeg_bin)
     cmd = [

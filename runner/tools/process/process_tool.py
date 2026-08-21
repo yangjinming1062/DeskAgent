@@ -782,10 +782,7 @@ class ProcessRegistry:
             full_output = clean_output(session.output_buffer)
         lines = full_output.splitlines()
         total_lines = len(lines)
-        if offset == 0 and limit > 0:
-            selected = lines[-limit:]
-        else:
-            selected = lines[offset : offset + limit]
+        selected = lines[-limit:] if offset == 0 and limit > 0 else lines[offset : offset + limit]
         result = {
             "session_id": session.id,
             "status": "exited" if session.exited else "running",
@@ -910,10 +907,7 @@ class ProcessRegistry:
         if hasattr(session, "_pty") and session._pty:
             try:
                 # pywinpty 在 Windows 上要 str; ptyprocess 在 POSIX 上要 bytes。
-                if IS_WINDOWS:
-                    pty_data = str(data)
-                else:
-                    pty_data = data.encode("utf-8") if isinstance(data, str) else data
+                pty_data = str(data) if IS_WINDOWS else data.encode("utf-8") if isinstance(data, str) else data
                 session._pty.write(pty_data)
                 return {"status": "ok", "bytes_written": len(data)}
             except Exception as e:

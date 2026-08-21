@@ -63,10 +63,7 @@ def create_access_token(
     purpose: str | None = None,
 ) -> tuple[str, int, str]:
     token_jti = jti or uuid4().hex
-    if expires_in_seconds is None:
-        expires_delta = timedelta(minutes=SETTINGS.access_token_expire_minutes)
-    else:
-        expires_delta = timedelta(seconds=expires_in_seconds)
+    expires_delta = timedelta(minutes=SETTINGS.access_token_expire_minutes) if expires_in_seconds is None else timedelta(seconds=expires_in_seconds)
     expires_at = datetime.now(UTC) + expires_delta
     payload = {"sub": str(user_id), "username": username, "jti": token_jti, "exp": expires_at}
     if client_context:

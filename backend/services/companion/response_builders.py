@@ -1,3 +1,5 @@
+import contextlib
+
 from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse
 
@@ -34,10 +36,8 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
     if not content_hash and model.asset_url:
         parts = model.asset_url.split("/", 2)
         if len(parts) == 3:
-            try:
+            with contextlib.suppress(Exception):
                 content_hash = get_companion_model_sha256(int(parts[1]), parts[2])
-            except Exception:
-                pass
 
     return CompanionModelResponse(
         id=model.id,

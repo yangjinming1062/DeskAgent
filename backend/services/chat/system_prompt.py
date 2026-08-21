@@ -522,10 +522,7 @@ def _format_volatile_header(config: AgentPromptConfig) -> str:
         # volatile header 不支持此语言（系统 prompt 其余部分已本地化）：一次性日志告警，便于发现新加语言后忘更新 _VOLATILE_LABELS。
         logger.warning("volatile header: unknown language %r, falling back to %s", lang, DEFAULT_LANGUAGE)
     labels = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
-    if lang == "zh":
-        date_str = f"{now.year}年{now.month}月{now.day}日"
-    else:
-        date_str = now.strftime("%A, %B %d, %Y")
+    date_str = f"{now.year}年{now.month}月{now.day}日" if lang == "zh" else now.strftime("%A, %B %d, %Y")
     line = f"{labels['started']}{date_str}"
     if config.pass_session_id and config.session_id:
         line += f"{labels['session_id']}{config.session_id}"

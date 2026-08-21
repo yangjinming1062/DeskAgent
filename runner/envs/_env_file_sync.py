@@ -13,7 +13,6 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeAlias
 
 from utils import get_credential_file_mounts, get_spiritagent_home, iter_cache_files, iter_skills_files
 
@@ -32,11 +31,11 @@ _sleep = time.sleep
 _SYNC_INTERVAL_SECONDS = 5.0
 _FORCE_SYNC_ENV = "SPIRITAGENT_FORCE_FILE_SYNC"
 
-UploadFn: TypeAlias = Callable[[str, str], None]
-BulkUploadFn: TypeAlias = Callable[[list[tuple[str, str]]], None]
-BulkDownloadFn: TypeAlias = Callable[[Path], None]
-DeleteFn: TypeAlias = Callable[[list[str]], None]
-GetFilesFn: TypeAlias = Callable[[], list[tuple[str, str]]]
+type UploadFn = Callable[[str, str], None]
+type BulkUploadFn = Callable[[list[tuple[str, str]]], None]
+type BulkDownloadFn = Callable[[Path], None]
+type DeleteFn = Callable[[list[str]], None]
+type GetFilesFn = Callable[[], list[tuple[str, str]]]
 
 
 def iter_sync_files(container_base: str = "/root/.spiritagent") -> list[tuple[str, str]]:

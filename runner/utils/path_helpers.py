@@ -52,8 +52,8 @@ def find_bash() -> str:
     candidates = [
         os.path.join(lap, "spiritagent", "git", "bin", "bash.exe"),
         os.path.join(lap, "spiritagent", "git", "usr", "bin", "bash.exe"),
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES", r"C:\Program Files"), "Git", "bin", "bash.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
     ]
     if lap:
         candidates.append(os.path.join(lap, "Programs", "Git", "bin", "bash.exe"))
@@ -76,15 +76,11 @@ def append_sane_path_entries(existing_path: str) -> str:
 @functools.lru_cache(maxsize=1)
 def find_python() -> str | None:
     """定位用户 spiritagent venv 对应的 uv 管理 Python；找不到可用解释器时返回 None（调用方回落到 ``sys.executable``）。"""
-    if override := os.environ.get("SPIRITAGENT_PYTHON"):
-        if Path(override).is_file():
-            return override
+    if (override := os.environ.get("SPIRITAGENT_PYTHON")) and Path(override).is_file():
+        return override
 
     root = Path(get_spiritagent_home()) / "runner" / ".venv"
-    if IS_WINDOWS:
-        candidates = (root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe")
-    else:
-        candidates = (root / "bin" / "python", root / "bin" / "python3")
+    candidates = (root / "Scripts" / "python.exe", root / "Scripts" / "python3.exe") if IS_WINDOWS else (root / "bin" / "python", root / "bin" / "python3")
     for c in candidates:
         if c.is_file() and os.access(c, os.X_OK):
             return str(c)

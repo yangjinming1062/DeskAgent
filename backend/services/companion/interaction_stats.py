@@ -57,10 +57,7 @@ def _compute_peak_hour(buckets: dict[int, int]) -> int | None:
 
 def _format_content(counters: _DailyCounters) -> str:
     peak = _compute_peak_hour(counters.hour_buckets)
-    if peak is None:
-        peak_str = "n/a"
-    else:
-        peak_str = f"{peak:02d}-{(peak + 1) % 24:02d}h"
+    peak_str = "n/a" if peak is None else f"{peak:02d}-{(peak + 1) % 24:02d}h"
     sorted_buckets = {k: counters.hour_buckets[k] for k in sorted(counters.hour_buckets)}
     return f"{counters.date}: poke={counters.poke}, chat_turns={counters.chat_turn}; peak={peak_str}; hour_counts={sorted_buckets}"
 

@@ -228,7 +228,7 @@ def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | N
         with contextlib.suppress(Exception):
             match_error += format_no_match_hint(match_error, match_count, old_string, content)
         return {"success": False, "error": match_error, "file_preview": content[:500] + ("..." if len(content) > 500 else "")}
-    if err := _validate_content_size(new_content, label="SKILL.md" if not file_path else file_path):
+    if err := _validate_content_size(new_content, label=file_path if file_path else "SKILL.md"):
         return {"success": False, "error": err}
     if not file_path and (err := _validate_frontmatter(new_content)):
         return {"success": False, "error": f"Patch would break SKILL.md structure: {err}"}
@@ -237,7 +237,7 @@ def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | N
     if scan_err := _security_scan_skill(skill_dir):
         atomic_replace(str(target), orig)
         return {"success": False, "error": scan_err}
-    return {"success": True, "message": f"Patched {'SKILL.md' if not file_path else file_path} in skill '{name}' ({match_count} replacement{'s' if match_count > 1 else ''})."}
+    return {"success": True, "message": f"Patched {file_path if file_path else 'SKILL.md'} in skill '{name}' ({match_count} replacement{'s' if match_count > 1 else ''})."}
 
 
 def _delete_skill(name: str, absorbed_into: str | None = None) -> dict[str, Any]:

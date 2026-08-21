@@ -127,10 +127,7 @@ def _triangle_signature(gltf: dict[str, Any], binary: bytes, primitive: dict[str
     if primitive.get("mode", 4) != 4:
         raise GlbFidelityError("companion GLB fidelity only supports TRIANGLES primitives")
     indices_index = primitive.get("indices")
-    if indices_index is None:
-        indices = np.arange(len(positions), dtype=np.int64)
-    else:
-        indices = _accessor(gltf, binary, indices_index)[0].astype(np.int64, copy=False)
+    indices = np.arange(len(positions), dtype=np.int64) if indices_index is None else _accessor(gltf, binary, indices_index)[0].astype(np.int64, copy=False)
     if len(indices) % 3 or indices.min(initial=0) < 0 or indices.max(initial=-1) >= len(positions):
         raise GlbFidelityError("mesh primitive has invalid triangle indices")
 

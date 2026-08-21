@@ -592,9 +592,8 @@ def _load_skill_ignore(skill_dir: Path) -> Callable[[str], bool]:
                 continue
             if fnmatch.fnmatch(rel_posix, p):
                 return True
-            if not anchored:
-                if fnmatch.fnmatch(base, p) or rel_posix.startswith(p + "/") or any(fnmatch.fnmatch(seg, p) for seg in rel_posix.split("/")):
-                    return True
+            if not anchored and (fnmatch.fnmatch(base, p) or rel_posix.startswith(p + "/") or any(fnmatch.fnmatch(seg, p) for seg in rel_posix.split("/"))):
+                return True
         return False
 
     return ignore

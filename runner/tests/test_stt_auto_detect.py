@@ -43,9 +43,8 @@ async def _invoke(args: dict, decode_result: dict):
 
     with mock.patch.object(
         stt_tool, "_decode_and_transcribe", _decode_mock(decode_result)
-    ):
-        with mock.patch.object(stt_tool, "wav_to_wav_pcm16", _stub_wav_to_wav_pcm16):
-            return await stt_tool.speech_to_text_tool(args)
+    ), mock.patch.object(stt_tool, "wav_to_wav_pcm16", _stub_wav_to_wav_pcm16):
+        return await stt_tool.speech_to_text_tool(args)
 
 
 def _run(coro):

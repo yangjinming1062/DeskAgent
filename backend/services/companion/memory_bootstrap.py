@@ -58,10 +58,7 @@ async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str,
         ctx = _CONTEXT_LABELS.get(user_key, f"user_profile:{user_key.removeprefix('user_')}")
         values = {"user_id": user_id, "content": val, "context": ctx, "tags": _USER_PROFILE_TAGS_JSON}
 
-        if db.bind is not None and db.bind.dialect.name == "postgresql":
-            statement = postgres_insert(Memory).values(**values)
-        else:
-            statement = sqlite_insert(Memory).values(**values)
+        statement = postgres_insert(Memory).values(**values) if db.bind is not None and db.bind.dialect.name == "postgresql" else sqlite_insert(Memory).values(**values)
 
         statement = statement.on_conflict_do_update(
             index_elements=["user_id", "context"],

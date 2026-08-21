@@ -511,15 +511,9 @@ def _map_normalized_positions(original: str, normalized: str, normalized_matches
 
     original_matches = []
     for norm_start, norm_end in normalized_matches:
-        if norm_start in norm_to_orig_start:
-            orig_start = norm_to_orig_start[norm_start]
-        else:
-            orig_start = min(i for i, n in enumerate(orig_to_norm) if n >= norm_start)
+        orig_start = norm_to_orig_start[norm_start] if norm_start in norm_to_orig_start else min(i for i, n in enumerate(orig_to_norm) if n >= norm_start)
 
-        if norm_end - 1 in norm_to_orig_end:
-            orig_end = norm_to_orig_end[norm_end - 1] + 1
-        else:
-            orig_end = orig_start + (norm_end - norm_start)
+        orig_end = norm_to_orig_end[norm_end - 1] + 1 if norm_end - 1 in norm_to_orig_end else orig_start + (norm_end - norm_start)
 
         while orig_end < len(original) and original[orig_end] in " \t":
             orig_end += 1
@@ -542,7 +536,7 @@ def find_closest_lines(old_string: str, content: str, context_lines: int = 2, ma
 
     anchor = old_lines[0].strip()
     if not anchor:
-        candidates = [l.strip() for l in old_lines if l.strip()]
+        candidates = [line.strip() for line in old_lines if line.strip()]
         if not candidates:
             return ""
         anchor = candidates[0]

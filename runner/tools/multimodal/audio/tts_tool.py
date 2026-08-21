@@ -151,10 +151,15 @@ def _synth_pyttsx3(text: str, voice: str | None, speed: float, dst: Path) -> dic
     com_initialized = False
     if sys.platform == "win32":
         try:
-            pythoncom.CoInitialize()
-            com_initialized = True
-        except Exception:
-            com_initialized = False
+            import pythoncom as pc
+        except ImportError:
+            pc = None  # type: ignore[assignment]
+        if pc is not None:
+            try:
+                pc.CoInitialize()
+                com_initialized = True
+            except Exception:
+                com_initialized = False
 
     try:
         engine = pyttsx3.init()
@@ -263,11 +268,9 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
         cfg_default = default_voice_id()
         piper_voice_for_chain: str | None = None
         for candidate in (voice, *([cfg_default] if voice != cfg_default else [])):
-            if PIPER_VOICE_RE.match(candidate):
-                # ensure_voice_installed 在语音已在磁盘上时短路返回 True；否则尝试下载
-                if ensure_voice_installed(candidate):
-                    piper_voice_for_chain = candidate
-                    break
+            if PIPER_VOICE_RE.match(candidate) and ensure_voice_installed(candidate):
+                piper_voice_for_chain = candidate
+                break
         if piper_voice_for_chain is not None:
             engine_chain.append(("piper", piper_voice_for_chain))
         if pyttsx3_available():
@@ -284,11 +287,8 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     info: dict[str, Any] | None = None
     for eng_name, eng_voice in engine_chain:
         try:
-            if eng_name == "piper":
-                info = _synth_piper(normalized, eng_voice, speed, dst)
-            else:
-                # 链路中 pyttsx3 这一槽永远不携带 voice id — _synth_pyttsx3 在其 COM 作用域内对 CJK 文本自动挑中文 SAPI5 语音
-                info = _synth_pyttsx3(normalized, None, speed, dst)
+            # 链路中 pyttsx3 这一槽永远不携带 voice id — _synth_pyttsx3 在其 COM 作用域内对 CJK 文本自动挑中文 SAPI5 语音
+            info = _synth_piper(normalized, eng_voice, speed, dst) if eng_name == "piper" else _synth_pyttsx3(normalized, None, speed, dst)
             break
         except Exception as e:
             last_error = e

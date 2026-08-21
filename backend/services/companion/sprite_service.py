@@ -404,9 +404,8 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
             asset = await get_active_avatar(read_db, user_id)
             if asset is None:
                 raise SpriteSeedMissingError("形象种子图尚未生成，请先完成形象确认")
-            if role == "waiting" and not force_new and (row := await get_waiting_sprite(read_db, user_id)):
-                if alive := await _drop_missing_files(read_db, [row]):
-                    return alive[0], False
+            if role == "waiting" and not force_new and (row := await get_waiting_sprite(read_db, user_id)) and (alive := await _drop_missing_files(read_db, [row])):
+                return alive[0], False
             entries = []
             if not force_new:
                 entries = await _drop_missing_files(
@@ -425,9 +424,8 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
         asset = await get_active_avatar(db, user_id)
         if asset is None:
             raise SpriteSeedMissingError("形象种子图尚未生成，请先完成形象确认")
-        if role == "waiting" and not force_new and (row := await get_waiting_sprite(db, user_id)):
-            if alive := await _drop_missing_files(db, [row]):
-                return alive[0], False
+        if role == "waiting" and not force_new and (row := await get_waiting_sprite(db, user_id)) and (alive := await _drop_missing_files(db, [row])):
+            return alive[0], False
         if not force_new:
             entries = await _drop_missing_files(
                 db,

@@ -877,10 +877,7 @@ class WellKnownSkillSource(SkillSource):
             skill_url = f"{base_url}/{skill_name}"
             return {"index_url": clean_url, "base_url": base_url, "skill_name": skill_name, "skill_url": skill_url}
 
-        if clean_url.endswith("/SKILL.md"):
-            skill_url = clean_url[: -len("/SKILL.md")]
-        else:
-            skill_url = clean_url.rstrip("/")
+        skill_url = clean_url[: -len("/SKILL.md")] if clean_url.endswith("/SKILL.md") else clean_url.rstrip("/")
 
         if f"{self.BASE_PATH}/" not in skill_url:
             return None
@@ -1545,7 +1542,7 @@ class SkillsShSource(SkillSource):
         return match.group("count")
 
     @staticmethod
-    def _extract_security_audits(html: str, identifier: str) -> dict[str, str]:
+    def _extract_security_audits(html: str, _identifier: str) -> dict[str, str]:
         audits: dict[str, str] = {}
         for audit in ("agent-trust-hub", "socket", "snyk"):
             idx = html.find(f"/security/{audit}")
@@ -1791,7 +1788,7 @@ class ClawHubSource(SkillSource):
         return final_results
 
     def fetch(self, identifier: str) -> SkillBundle | None:
-        slug = identifier.split("/")[-1]
+        slug = identifier.rsplit("/", 1)[-1]
 
         skill_data = self._get_json(f"{self.BASE_URL}/skills/{slug}")
         if not isinstance(skill_data, dict):
@@ -1823,7 +1820,7 @@ class ClawHubSource(SkillSource):
         return SkillBundle(name=slug, files=files, source="clawhub", identifier=slug, trust_level="community")
 
     def inspect(self, identifier: str) -> SkillMeta | None:
-        slug = identifier.split("/")[-1]
+        slug = identifier.rsplit("/", 1)[-1]
         data = self._coerce_skill_payload(self._get_json(f"{self.BASE_URL}/skills/{slug}"))
         if not isinstance(data, dict):
             return None

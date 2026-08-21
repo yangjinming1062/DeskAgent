@@ -43,10 +43,7 @@ def microphone_available() -> bool:
             import sounddevice as sd  # type: ignore[import-not-found]
 
             devices = sd.query_devices()
-            for entry in devices:
-                if int(entry.get("max_input_channels", 0)) >= 1:
-                    return True
-            return False
+            return any(int(entry.get("max_input_channels", 0)) >= 1 for entry in devices)
         except (ImportError, OSError):
             return False
     return False

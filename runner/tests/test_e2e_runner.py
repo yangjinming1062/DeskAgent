@@ -170,10 +170,8 @@ class _Peer:
 
         async def driver():
             session = await self._fake.accept()
-            try:
+            with contextlib.suppress(ConnectionError, OSError):
                 await self._handle(SessionWsAdapter(session))
-            except (ConnectionError, OSError):
-                pass
 
         self._driver_task = asyncio.create_task(driver())
 

@@ -32,10 +32,7 @@ def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None 
     client = _clients.get(key)
     if client is not None:
         return client
-    if auth_header is None:
-        headers = {"Authorization": f"Bearer {api_key}"}
-    else:
-        headers = {name: value.format(api_key=api_key) for name, value in auth_header.items()}
+    headers = {"Authorization": f"Bearer {api_key}"} if auth_header is None else {name: value.format(api_key=api_key) for name, value in auth_header.items()}
     timeout = httpx.Timeout(SETTINGS.llm_request_timeout_seconds, connect=10.0)
     client = httpx.AsyncClient(base_url=key[0], timeout=timeout, headers=headers)
     _clients[key] = client

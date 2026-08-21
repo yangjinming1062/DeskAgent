@@ -310,10 +310,9 @@ def _make_spiritagent_provider_class() -> type:
                 self.context.update_token_expiry(tokens)
 
             storage = self.context.storage
-            if isinstance(storage, SpiritAgentTokenStorage) and self.context.oauth_metadata is None:
-                if (meta := storage.load_oauth_metadata()) is not None:
-                    self.context.oauth_metadata = meta
-                    logger.debug("MCP OAuth '%s': restored metadata from disk", self._spiritagent_server_name)
+            if isinstance(storage, SpiritAgentTokenStorage) and self.context.oauth_metadata is None and (meta := storage.load_oauth_metadata()) is not None:
+                self.context.oauth_metadata = meta
+                logger.debug("MCP OAuth '%s': restored metadata from disk", self._spiritagent_server_name)
 
             if tokens is not None and self.context.oauth_metadata is None:
                 try:
@@ -369,7 +368,7 @@ def _make_spiritagent_provider_class() -> type:
 
             inner = super().async_auth_flow(request)
             try:
-                outgoing = await inner.__anext__()
+                outgoing = await anext(inner)
                 while True:
                     incoming = yield outgoing
                     outgoing = await inner.asend(incoming)

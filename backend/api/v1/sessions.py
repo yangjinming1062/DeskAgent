@@ -98,10 +98,7 @@ async def list_sessions(
         q = q.where(Conversation.parent_id == Conversation.id)
     elif archived == "exclude":
         # 默认（include_subagents=False）仅 parent_id IS NULL 的顶层会话；自指归档行也被 is_(None) 排除。开启 include_subagents=True 显示主+子代理，但仍隐藏自指归档行。
-        if include_subagents:
-            q = q.where((Conversation.parent_id.is_(None)) | (Conversation.parent_id != Conversation.id))
-        else:
-            q = q.where(Conversation.parent_id.is_(None))
+        q = q.where(Conversation.parent_id.is_(None) | (Conversation.parent_id != Conversation.id)) if include_subagents else q.where(Conversation.parent_id.is_(None))
     # 其他 archived 取值由 Literal 在 HTTP 边界 422 拦截，此处 fallthrough 实际不可达，保留 no-op 供未来扩展。
     # include_subagents 仅作用于 archived="exclude"；"only"/"include" 路径忽略它（子代理导航走搜索端点与直链，不在 archived 切换 UI 内）。
 
@@ -110,10 +107,7 @@ async def list_sessions(
 
     total_q = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
 
-    if order == "recent":
-        q = q.order_by(desc(Conversation.updated_at))
-    else:
-        q = q.order_by(asc(Conversation.created_at))
+    q = q.order_by(desc(Conversation.updated_at)) if order == "recent" else q.order_by(asc(Conversation.created_at))
 
     rows = (await db.execute(q.offset(offset).limit(limit))).all()
 

@@ -129,7 +129,7 @@ def _resolve_facade_init(importer: Path, level: int, module: str | None) -> Path
         candidate = (scan_root / module / "__init__.py").resolve()
         return candidate if candidate.is_file() else None
 
-    # Relative: level >= 1
+    # Handle relative imports (level >= 1)
     if module and "." in module:
         return None
     parent_parts = importer.parent.resolve().parts

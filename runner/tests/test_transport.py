@@ -279,10 +279,8 @@ if IS_WINDOWS:
             """Stop replying without closing — forces the client's teardown path."""
             if self._pump is not None:
                 self._pump.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._pump
-                except asyncio.CancelledError:
-                    pass
 
         async def abort(self) -> None:
             """Tear the transport down without the close handshake (peer drop)."""

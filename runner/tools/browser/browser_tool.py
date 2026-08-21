@@ -178,10 +178,7 @@ def _resolve_cdp_override(cdp_url: str) -> str:
         else:
             return raw
 
-    if discovery_url.lower().endswith("/json/version"):
-        version_url = discovery_url
-    else:
-        version_url = discovery_url.rstrip("/") + "/json/version"
+    version_url = discovery_url if discovery_url.lower().endswith("/json/version") else discovery_url.rstrip("/") + "/json/version"
 
     try:
         response = httpx.get(version_url, timeout=10)
@@ -299,9 +296,7 @@ def _should_inject_engine(engine: str) -> bool:
     """只在非 auto、本地非 Camofox 会话里给 agent-browser 加 --engine 参数。"""
     if engine == "auto":
         return False
-    if is_camofox_mode():
-        return False
-    return True
+    return not is_camofox_mode()
 
 
 def _using_lightpanda_engine() -> bool:
@@ -433,8 +428,8 @@ def _run_chrome_fallback_command(task_id: str, command: str, args: list[str], ti
             #   temp-file stdout/stderr). Without this, some parents leak
             #   console handles that break downstream grandchild spawns — the
             #   agent-browser Rust binary spawns a detached daemon grandchild,
-            #   and that grandchild's CreateProcess dies silently
-            #   ("Daemon process exited during startup with no error output")
+            #   and that grandchild's CreateProcess dies silently with the error
+            #   'Daemon process exited during startup with no error output'
             #   when inherited parent handles are in a weird state. Observed
             #   in the SpiritAgent CLI where sys.stdout and sys.stderr both report
             #   fileno=1 (stderr dup'd onto stdout at the OS level).
@@ -700,7 +695,7 @@ def _reap_orphaned_browser_sessions() -> None:
     reaped = 0
     for socket_dir in socket_dirs:
         dir_name = os.path.basename(socket_dir)
-        # dir_name is "agent-browser-{session_name}"
+        # Extract session name from dir_name which has format 'agent-browser-{session_name}'
         session_name = dir_name.removeprefix("agent-browser-")
         if not session_name:
             continue
@@ -722,11 +717,10 @@ def _reap_orphaned_browser_sessions() -> None:
             # Owner is alive — this session belongs to a live spiritagent process.
             continue
 
-        if owner_alive is None:
-            # No owner_pid file (legacy daemon).  Fall back to in-process
-            # tracking: if this process knows about the session, leave alone.
-            if session_name in tracked_names:
-                continue
+        # No owner_pid file (legacy daemon).  Fall back to in-process
+        # tracking: if this process knows about the session, leave alone.
+        if owner_alive is None and session_name in tracked_names:
+            continue
 
         # owner_alive is False (dead owner) OR legacy daemon not tracked here.
         pid_file = os.path.join(socket_dir, f"{session_name}.pid")
@@ -1140,10 +1134,7 @@ def _get_session_info(task_id: str | None = None) -> dict[str, str]:
     force_local = _is_local_sidecar_key(task_id)
 
     cdp_override = _get_cdp_override()
-    if cdp_override and not force_local:
-        session_info = _create_cdp_session(task_id, cdp_override)
-    else:
-        session_info = _create_local_session(task_id)
+    session_info = _create_cdp_session(task_id, cdp_override) if cdp_override and not force_local else _create_local_session(task_id)
 
     with _cleanup_lock:
         # Double-check: another thread may have created a session while we
@@ -1451,10 +1442,7 @@ def _run_browser_command(task_id: str, command: str, args: list[str] | None = No
         logger.info("Lightpanda fallback: retrying '%s' with Chrome (task=%s): %s", command, task_id, fallback_reason)
         # For screenshots, use the dedicated Chrome fallback helper
         # (spins up a separate Chrome session to the same URL).
-        if command == "screenshot":
-            fallback_result = _chrome_fallback_screenshot(task_id, args or [], timeout)
-        else:
-            fallback_result = _run_chrome_fallback_command(task_id, command, args, timeout)
+        fallback_result = _chrome_fallback_screenshot(task_id, args or [], timeout) if command == "screenshot" else _run_chrome_fallback_command(task_id, command, args, timeout)
         return _annotate_lightpanda_fallback(fallback_result, fallback_reason)
 
     return result
@@ -2172,9 +2160,8 @@ def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: flo
     """通过点击 snapshot 引用或直跳 URL 触发下载，阻塞至拿到文件（需 CDP 后端；无 supervisor 时轮询下载目录）。"""
     if is_camofox_mode():
         return _camofox_unsupported("browser_download")
-    if ref_or_url and ref_or_url.startswith(("http://", "https://")):
-        if not is_safe_url(ref_or_url):
-            return json.dumps({"success": False, "error": f"URL rejected by security policy: {ref_or_url}"}, ensure_ascii=False)
+    if ref_or_url and ref_or_url.startswith(("http://", "https://")) and not is_safe_url(ref_or_url):
+        return json.dumps({"success": False, "error": f"URL rejected by security policy: {ref_or_url}"}, ensure_ascii=False)
 
     effective_task_id = _last_session_key(task_id or "default")
     downloads_dir = _get_downloads_dir()
@@ -2338,9 +2325,8 @@ def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
     """新建浏览器标签页并设为活动目标（CDP Target.createTarget，需 CDP 后端）。"""
     if is_camofox_mode():
         return _camofox_unsupported("browser_tab_new")
-    if url and url.startswith(("http://", "https://")):
-        if not is_safe_url(url):
-            return json.dumps({"success": False, "error": f"URL rejected by security policy: {url}"}, ensure_ascii=False)
+    if url and url.startswith(("http://", "https://")) and not is_safe_url(url):
+        return json.dumps({"success": False, "error": f"URL rejected by security policy: {url}"}, ensure_ascii=False)
     effective_task_id = _last_session_key(task_id or "default")
     supervisor = SUPERVISOR_REGISTRY.get(effective_task_id)
     if supervisor is None:
@@ -2681,10 +2667,7 @@ def browser_get_images(task_id: str | None = None) -> str:
         raw_result = data.get("result", "[]")
 
         try:
-            if isinstance(raw_result, str):
-                images = json.loads(raw_result)
-            else:
-                images = raw_result
+            images = json.loads(raw_result) if isinstance(raw_result, str) else raw_result
 
             response = {"success": True, "images": images, "count": len(images)}
             return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -3022,10 +3005,9 @@ def _chromium_installed() -> bool:
 
     # 1. config["browser"]["executable_path"]：用户显式指定的浏览器二进制。
     ab_path = str(cfg_get(load_config(), "browser", "executable_path", default="")).strip()
-    if ab_path:
-        if os.path.isfile(ab_path) or shutil.which(ab_path):
-            _cached_chromium_installed = True
-            return True
+    if ab_path and (os.path.isfile(ab_path) or shutil.which(ab_path)):
+        _cached_chromium_installed = True
+        return True
 
     # 2. 系统 PATH 上的 Chrome/Chromium（常见名称）。
     system_chrome = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("chrome")
@@ -3070,10 +3052,7 @@ def check_browser_requirements() -> bool:
         return True
 
     # Local Chrome 模式：agent-browser 需要磁盘上有 Chromium；否则首次调用 CLI 会挂起到命令超时触发。
-    if not _chromium_installed():
-        return False
-
-    return True
+    return _chromium_installed()
 
 
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
@@ -3094,14 +3073,14 @@ registry.register_tool("browser_scroll", check_fn=check_browser_requirements, sc
     lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_back", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_back"))(
-    lambda args, **kw: browser_back(task_id=kw.get("task_id")),
+    lambda _args, **kw: browser_back(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_press", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_press"))(
     lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id")),
 )
 
 registry.register_tool("browser_get_images", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_get_images"))(
-    lambda args, **kw: browser_get_images(task_id=kw.get("task_id")),
+    lambda _args, **kw: browser_get_images(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_vision", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_vision"))(
     lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id")),
@@ -3163,7 +3142,7 @@ registry.register_tool("browser_tab_close", check_fn=check_browser_requirements,
     lambda args, **kw: browser_tab_close(tab_id=args.get("tab_id"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_tab_list", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_list"))(
-    lambda args, **kw: browser_tab_list(task_id=kw.get("task_id")),
+    lambda _args, **kw: browser_tab_list(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_set_viewport", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_viewport"))(
     lambda args, **kw: browser_set_viewport(

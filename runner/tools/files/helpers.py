@@ -12,7 +12,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import Any
 
 import yaml
 
@@ -47,7 +47,7 @@ def _strip_terminal_fence_leaks(text: str) -> str:
         cleaned = _OSC_SEQUENCE_RE.sub("", line)
         cleaned = _FENCE_MARKER_RE.sub("", cleaned)
         cleaned = cleaned.replace("\x07", "")
-        if had_terminal_wrapper and cleaned.strip("'\r\n\t ") == "":
+        if had_terminal_wrapper and not cleaned.strip("'\r\n\t "):
             continue
         cleaned_lines.append(cleaned)
     return "".join(cleaned_lines)
@@ -827,10 +827,7 @@ class ShellFileOperations(FileOperations):
 
     def _search_files(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
         """按 glob 模式按文件名搜索。"""
-        if not pattern.startswith("**/") and "/" not in pattern:
-            search_pattern = pattern
-        else:
-            search_pattern = pattern.split("/")[-1]
+        search_pattern = pattern if not pattern.startswith("**/") and "/" not in pattern else pattern.rsplit("/", 1)[-1]
         search_root = Path(path)
         has_hidden_path_ancestor = any(part not in {".", ".."} and part.startswith(".") for part in search_root.parts)
         if self._has_command("rg"):
@@ -875,10 +872,7 @@ class ShellFileOperations(FileOperations):
 
     def _search_files_rg(self, pattern: str, path: str, limit: int, offset: int) -> SearchResult:
         """用 ripgrep 的 --files 模式按文件名搜索。"""
-        if "/" not in pattern and not pattern.startswith("*"):
-            glob_pattern = f"*{pattern}"
-        else:
-            glob_pattern = pattern
+        glob_pattern = f"*{pattern}" if "/" not in pattern and not pattern.startswith("*") else pattern
         # 多取一条以让「恰好 limit 条」不被错判为截断（仅 >= 检查无法区分）。
         fetch_limit = limit + offset + 1
         cmd_sorted = f"rg --files --sortr=modified -g {self._escape_shell_arg(glob_pattern)} {self._escape_shell_arg(path)} 2>/dev/null | head -n {fetch_limit}"
@@ -1014,7 +1008,7 @@ class ShellFileOperations(FileOperations):
 
 # ── File State ─────────────────────────────────────────────────────────────
 
-ReadStamp: TypeAlias = tuple[float, float, bool]
+type ReadStamp = tuple[float, float, bool]
 _MAX_PATHS_PER_AGENT = 4096
 _MAX_GLOBAL_WRITERS = 4096
 
@@ -1207,7 +1201,7 @@ def _flush(op: PatchOperation | None, hunk: Hunk | None, sink: list[PatchOperati
 
 
 def _hunk_text(hunk: Hunk, prefix_set: str) -> str:
-    return "\n".join(l.content for l in hunk.lines if l.prefix in prefix_set)
+    return "\n".join(line.content for line in hunk.lines if line.prefix in prefix_set)
 
 
 def _hunk_to_search_replace(hunk: Hunk) -> tuple[str, str]:
@@ -1374,10 +1368,10 @@ def _validate_operations(operations: list[PatchOperation], file_ops: Any) -> lis
 
 
 def _apply_add(op: PatchOperation, file_ops: Any) -> tuple[bool, str]:
-    content = "\n".join(l.content for h in op.hunks for l in h.lines if l.prefix == "+")
+    content = "\n".join(line.content for h in op.hunks for line in h.lines if line.prefix == "+")
     if (result := file_ops.write_file(op.file_path, content)).error:
         return False, result.error
-    diff = f"--- /dev/null\n+++ b/{op.file_path}\n" + "\n".join(f"+{l}" for l in content.split("\n"))
+    diff = f"--- /dev/null\n+++ b/{op.file_path}\n" + "\n".join(f"+{line}" for line in content.split("\n"))
     return True, diff
 
 

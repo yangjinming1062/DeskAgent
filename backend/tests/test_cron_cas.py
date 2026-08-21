@@ -6,6 +6,7 @@ from components import utc_now
 from modules.auth import User
 from modules.scheduler import CronJob
 from services.scheduler.cron import _bulk_cas_advance, _compute_next_run_at
+import contextlib
 
 _DUE_COLS = ("id", "user_id", "name", "schedule", "next_run_at", "prompt", "one_shot")
 
@@ -219,10 +220,8 @@ async def test_cancel_user_cron_turns():
     )
 
     async def _dummy_coro():
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await asyncio.sleep(10)
-        except asyncio.CancelledError:
-            pass
 
     task1 = asyncio.create_task(_dummy_coro())
     task2 = asyncio.create_task(_dummy_coro())

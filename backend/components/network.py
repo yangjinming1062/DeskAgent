@@ -17,7 +17,7 @@ _BLOCKED_AWS_META_IPV6 = ipaddress.ip_address("fd00:ec2::254")
 
 
 def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return ip in _BLOCKED_CGNAT or ip == _BLOCKED_ALIBABA_META or ip == _BLOCKED_AWS_META_IPV6
+    return ip in (_BLOCKED_ALIBABA_META, _BLOCKED_AWS_META_IPV6) or ip in _BLOCKED_CGNAT
 
 
 def _ssrf_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
@@ -88,38 +88,37 @@ async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, ma
         if not safe:
             raise httpx.ConnectError(f"SSRF check failed for {parsed.hostname}: {reason}")
 
-        async with safe_outbound_async_client(timeout=client_timeout) as client:
-            async with client.stream("GET", current_url) as resp:
-                if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
-                    redirect_count += 1
-                    if redirect_count > max_redirects:
-                        raise RuntimeError(f"too many redirects ({redirect_count} > {max_redirects})")
+        async with safe_outbound_async_client(timeout=client_timeout) as client, client.stream("GET", current_url) as resp:
+            if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
+                redirect_count += 1
+                if redirect_count > max_redirects:
+                    raise RuntimeError(f"too many redirects ({redirect_count} > {max_redirects})")
 
-                    location = resp.headers.get("location")
-                    if not location:
-                        raise RuntimeError("redirect response missing location header")
+                location = resp.headers.get("location")
+                if not location:
+                    raise RuntimeError("redirect response missing location header")
 
-                    target_url = urljoin(current_url, location)
-                    target_parsed = urlparse(target_url)
+                target_url = urljoin(current_url, location)
+                target_parsed = urlparse(target_url)
 
-                    if target_parsed.scheme not in ("http", "https"):
-                        raise ValueError(f"redirect to unsupported scheme: {target_parsed.scheme!r}")
+                if target_parsed.scheme not in ("http", "https"):
+                    raise ValueError(f"redirect to unsupported scheme: {target_parsed.scheme!r}")
 
-                    # 拒绝 HTTPS → HTTP 降级
-                    if parsed.scheme == "https" and target_parsed.scheme == "http":
-                        raise ValueError("refusing redirect downgrade from HTTPS to HTTP")
+                # 拒绝 HTTPS → HTTP 降级
+                if parsed.scheme == "https" and target_parsed.scheme == "http":
+                    raise ValueError("refusing redirect downgrade from HTTPS to HTTP")
 
-                    current_url = target_url
-                    continue
+                current_url = target_url
+                continue
 
-                resp.raise_for_status()
+            resp.raise_for_status()
 
-                sink = bytearray()
-                total = 0
-                async for chunk in resp.aiter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes:
-                        raise ValueError(f"download exceeded size limit of {max_bytes} bytes")
-                    sink.extend(chunk)
+            sink = bytearray()
+            total = 0
+            async for chunk in resp.aiter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"download exceeded size limit of {max_bytes} bytes")
+                sink.extend(chunk)
 
-                return bytes(sink)
+            return bytes(sink)

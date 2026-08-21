@@ -102,7 +102,7 @@ async def serve_ranged_file(request: Request, file_path: Path, media_type: str, 
 
     async def ranged_iterator() -> AsyncIterator[bytes]:
         def _open_and_seek():
-            fh = open(file_path, "rb")
+            fh = open(file_path, "rb")  # noqa: SIM115
             fh.seek(start)
             return fh
 

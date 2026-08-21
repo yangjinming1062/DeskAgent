@@ -128,10 +128,8 @@ async def desktop_peer(tmp_path):
 
     async def peer_driver():
         session = await fake.accept()
-        try:
+        with contextlib.suppress(ConnectionError, OSError):
             await peer_obj.run_peer(SessionWsAdapter(session))
-        except (ConnectionError, OSError):
-            pass
 
     peer_task = asyncio.create_task(peer_driver())
     runner_task = asyncio.create_task(server.runner_loop(make_peer_endpoint(fake)))
