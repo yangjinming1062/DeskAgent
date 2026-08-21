@@ -19,7 +19,6 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 import jwt  # PyJWT
 import yaml
-
 from utils import cfg_get, check_website_access, get_skills_dir, is_safe_url, load_config
 
 from .helpers import get_spiritagent_metadata
@@ -2320,14 +2319,16 @@ class BrowseShSource(SkillSource):
         query_lower = query.lower()
         results = []
         for item in catalog:
-            text = " ".join([
-                item.get("name", ""),
-                item.get("title", ""),
-                item.get("description", ""),
-                item.get("hostname", ""),
-                item.get("category", ""),
-                " ".join(item.get("tags", [])),
-            ]).lower()
+            text = " ".join(
+                [
+                    item.get("name", ""),
+                    item.get("title", ""),
+                    item.get("description", ""),
+                    item.get("hostname", ""),
+                    item.get("category", ""),
+                    " ".join(item.get("tags", [])),
+                ],
+            ).lower()
             if not query_lower or query_lower in text:
                 meta = self._item_to_meta(item)
                 if meta:
@@ -2718,15 +2719,17 @@ def check_for_skill_updates(name: str | None = None, *, lock: HubLockFile | None
         current_hash = entry.get("content_hash", "")
         latest_hash = bundle_content_hash(bundle)
         status = "up_to_date" if current_hash == latest_hash else "update_available"
-        results.append({
-            "name": entry.get("name", ""),
-            "identifier": identifier,
-            "source": source_name,
-            "status": status,
-            "current_hash": current_hash,
-            "latest_hash": latest_hash,
-            "bundle": bundle,
-        })
+        results.append(
+            {
+                "name": entry.get("name", ""),
+                "identifier": identifier,
+                "source": source_name,
+                "status": status,
+                "current_hash": current_hash,
+                "latest_hash": latest_hash,
+                "bundle": bundle,
+            },
+        )
 
     return results
 

@@ -19,7 +19,6 @@ from collections.abc import Callable
 from typing import Any
 
 import psutil
-
 from envs import (
     active_environments,
     create_environment,
@@ -58,30 +57,32 @@ _SECRET_SUBSTRINGS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSW
 
 SPIRITAGENT_CHILD_ALLOWED = frozenset({"SPIRITAGENT_HOME", "SPIRITAGENT_PROFILE", "SPIRITAGENT_CONFIG", "SPIRITAGENT_ENV"})
 
-_WINDOWS_ESSENTIAL_ENV_VARS = frozenset({
-    "SYSTEMROOT",
-    "SYSTEMDRIVE",
-    "WINDIR",
-    "COMSPEC",
-    "PATHEXT",
-    "OS",
-    "PROCESSOR_ARCHITECTURE",
-    "NUMBER_OF_PROCESSORS",
-    "PUBLIC",
-    "ALLUSERSPROFILE",
-    "PROGRAMDATA",
-    "PROGRAMFILES",
-    "PROGRAMFILES(X86)",
-    "PROGRAMW6432",
-    "APPDATA",
-    "LOCALAPPDATA",
-    "USERPROFILE",
-    "USERDOMAIN",
-    "USERNAME",
-    "HOMEDRIVE",
-    "HOMEPATH",
-    "COMPUTERNAME",
-})
+_WINDOWS_ESSENTIAL_ENV_VARS = frozenset(
+    {
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "OS",
+        "PROCESSOR_ARCHITECTURE",
+        "NUMBER_OF_PROCESSORS",
+        "PUBLIC",
+        "ALLUSERSPROFILE",
+        "PROGRAMDATA",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMW6432",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "USERPROFILE",
+        "USERDOMAIN",
+        "USERNAME",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "COMPUTERNAME",
+    },
+)
 
 
 def _scrub_child_env(source_env: dict[str, str], is_passthrough: Callable[[str], bool] | None = None, is_windows: bool | None = None) -> dict[str, str]:
@@ -641,12 +642,14 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
     try:
         py_check = env.execute("command -v python3 >/dev/null 2>&1 && echo OK", cwd="/", timeout=15)
         if "OK" not in py_check.get("output", ""):
-            return json.dumps({
-                "status": "error",
-                "error": (f"Python 3 is not available in the {env_type} terminal environment. Install Python to use execute_code with remote backends."),
-                "tool_calls_made": 0,
-                "duration_seconds": 0,
-            })
+            return json.dumps(
+                {
+                    "status": "error",
+                    "error": (f"Python 3 is not available in the {env_type} terminal environment. Install Python to use execute_code with remote backends."),
+                    "tool_calls_made": 0,
+                    "duration_seconds": 0,
+                },
+            )
         env.execute(f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10)
         tools_src = generate_spiritagent_tools_module(list(sandbox_tools), transport="file")
         _ship_file_to_remote(env, f"{sandbox_dir}/spiritagent_tools.py", tools_src)

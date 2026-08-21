@@ -12,9 +12,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import websockets
-from websockets.asyncio.client import ClientConnection
-
 from utils import safe_schedule_threadsafe
+from websockets.asyncio.client import ClientConnection
 
 logger = logging.getLogger(__name__)
 

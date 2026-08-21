@@ -588,15 +588,17 @@ def _windows_macos() -> dict[str, Any]:
             if not b or b.get("Width", 0) <= 0:
                 continue
             owner = win.get("kCGWindowOwnerName", "")
-            results.append({
-                "title": win.get("kCGWindowName", "") or owner,
-                "name": owner,
-                "x": int(b.get("X", 0)),
-                "y": int(b.get("Y", 0)),
-                "w": int(b["Width"]),
-                "h": int(b["Height"]),
-                "focused": win.get("kCGWindowOwnerPID", -1) == focused_pid,
-            })
+            results.append(
+                {
+                    "title": win.get("kCGWindowName", "") or owner,
+                    "name": owner,
+                    "x": int(b.get("X", 0)),
+                    "y": int(b.get("Y", 0)),
+                    "w": int(b["Width"]),
+                    "h": int(b["Height"]),
+                    "focused": win.get("kCGWindowOwnerPID", -1) == focused_pid,
+                },
+            )
         return {"windows": results}
     except Exception as e:
         logger.debug("macos get_windows failed: %s", e)

@@ -6,9 +6,8 @@ import logging
 from typing import Any
 
 import websockets
-from websockets.exceptions import WebSocketException
-
 from utils import safe_schedule_threadsafe
+from websockets.exceptions import WebSocketException
 
 from ..registry import registry, tool_error
 from .browser_supervisor import SUPERVISOR_REGISTRY

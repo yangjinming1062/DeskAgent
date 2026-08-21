@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
-
 from utils import async_is_safe_url, cfg_get, check_website_access, create_safe_async_client, load_config
 
 logger = logging.getLogger(__name__)

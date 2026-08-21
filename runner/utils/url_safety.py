@@ -64,13 +64,15 @@ def normalize_url_for_request(url: str) -> str:
             ascii_host = hostname
         if ascii_host != hostname:
             netloc = netloc.replace(hostname, ascii_host, 1)
-    return urlunsplit((
-        parsed.scheme,
-        netloc,
-        quote(parsed.path, safe="/%:@!$&'()*+,;="),
-        quote(parsed.query, safe="/%:@!$&'()*+,;=?"),
-        quote(parsed.fragment, safe="/%:@!$&'()*+,;=?"),
-    ))
+    return urlunsplit(
+        (
+            parsed.scheme,
+            netloc,
+            quote(parsed.path, safe="/%:@!$&'()*+,;="),
+            quote(parsed.query, safe="/%:@!$&'()*+,;=?"),
+            quote(parsed.fragment, safe="/%:@!$&'()*+,;=?"),
+        ),
+    )
 
 
 def _global_allow_private_urls() -> bool:

@@ -445,18 +445,20 @@ def terminal_tool(
                     result_data["notify_on_complete"] = True
                     if proc_session.watcher_platform:
                         proc_session.watcher_interval = 5
-                        process_registry.pending_watchers.append({
-                            "session_id": proc_session.id,
-                            "check_interval": 5,
-                            "session_key": session_key,
-                            "platform": proc_session.watcher_platform,
-                            "chat_id": proc_session.watcher_chat_id,
-                            "user_id": proc_session.watcher_user_id,
-                            "user_name": proc_session.watcher_user_name,
-                            "thread_id": proc_session.watcher_thread_id,
-                            "message_id": proc_session.watcher_message_id,
-                            "notify_on_complete": True,
-                        })
+                        process_registry.pending_watchers.append(
+                            {
+                                "session_id": proc_session.id,
+                                "check_interval": 5,
+                                "session_key": session_key,
+                                "platform": proc_session.watcher_platform,
+                                "chat_id": proc_session.watcher_chat_id,
+                                "user_id": proc_session.watcher_user_id,
+                                "user_name": proc_session.watcher_user_name,
+                                "thread_id": proc_session.watcher_thread_id,
+                                "message_id": proc_session.watcher_message_id,
+                                "notify_on_complete": True,
+                            },
+                        )
                 if watch_patterns and background:
                     proc_session.watch_patterns = list(watch_patterns)
                     result_data["watch_patterns"] = proc_session.watch_patterns

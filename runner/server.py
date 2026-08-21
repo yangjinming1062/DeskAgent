@@ -10,10 +10,9 @@ import time
 import uuid
 from typing import Any
 
-import websockets
-
 import utils.credential_files
 import utils.env_passthrough
+import websockets
 from runner_version import __version__
 from tools import ToolError, discover_builtin_tools, registry
 from tools.files import reset_max_read_chars_cache

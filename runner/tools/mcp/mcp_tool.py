@@ -40,7 +40,6 @@ from mcp.types import (
     TextContent,
     ToolListChangedNotification,
 )
-
 from utils import call_llm, get_spiritagent_home, is_interrupted, load_config, safe_schedule_threadsafe, set_interrupt
 
 from ..registry import registry, tool_error

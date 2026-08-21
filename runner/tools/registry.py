@@ -9,8 +9,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-import tools
 from utils import redact_sensitive_text
+
+import tools
 
 from .toolsets import excluded_tool_names
 

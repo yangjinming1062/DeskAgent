@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from utils import build_write_denied_paths, build_write_denied_prefixes, cfg_get, is_write_denied, load_config, strip_ansi
 
 from ..tool_output_limits import get_max_line_length, get_max_lines

@@ -25,7 +25,6 @@ from typing import Any
 from urllib.parse import unquote, urlparse
 
 import httpx
-
 from utils import (
     CREATE_NO_WINDOW,
     SECRET_PREFIX_RE,
@@ -2590,10 +2589,12 @@ def _camofox_eval(expression: str, task_id: str | None = None) -> str:
         error_msg = str(e)
         # Graceful degradation — server may not support eval
         if any(code in error_msg for code in ("404", "405", "501")):
-            return json.dumps({
-                "success": False,
-                "error": "JavaScript evaluation is not supported by this Camofox server. Use browser_snapshot or browser_vision to inspect page state.",
-            })
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "JavaScript evaluation is not supported by this Camofox server. Use browser_snapshot or browser_vision to inspect page state.",
+                },
+            )
         return tool_error(error_msg, success=False)
 
 

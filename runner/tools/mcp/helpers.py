@@ -29,7 +29,6 @@ from mcp.client.auth.utils import (
 )
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthMetadata, OAuthToken
 from pydantic import AnyUrl
-
 from utils import get_spiritagent_home, secure_parent_dir
 
 logger = logging.getLogger(__name__)

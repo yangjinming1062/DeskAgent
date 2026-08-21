@@ -84,21 +84,23 @@ _LARGE_FILE_HINT_BYTES = 512_000  # 512 KB
 
 # 设备路径黑名单——读取它们会让进程挂起（无限输出或阻塞输入）。仅按路径判定（不发起 I/O）。
 
-_BLOCKED_DEVICE_PATHS = frozenset({
-    # Infinite output — never reach EOF
-    "/dev/zero",
-    "/dev/random",
-    "/dev/urandom",
-    "/dev/full",
-    "/dev/stdin",
-    "/dev/tty",
-    "/dev/console",
-    "/dev/stdout",
-    "/dev/stderr",
-    "/dev/fd/0",
-    "/dev/fd/1",
-    "/dev/fd/2",
-})
+_BLOCKED_DEVICE_PATHS = frozenset(
+    {
+        # Infinite output — never reach EOF
+        "/dev/zero",
+        "/dev/random",
+        "/dev/urandom",
+        "/dev/full",
+        "/dev/stdin",
+        "/dev/tty",
+        "/dev/console",
+        "/dev/stdout",
+        "/dev/stderr",
+        "/dev/fd/0",
+        "/dev/fd/1",
+        "/dev/fd/2",
+    },
+)
 
 
 def _resolve_path(filepath: str, task_id: str = "default") -> Path:

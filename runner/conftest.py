@@ -4,7 +4,6 @@
 # Session 级 autouse: 工具发现流程只跑一次, 任何触及 registry / schema 面的测试都能看到已填充的单例。
 # 幂等 — registry._tool_handlers 按名字索引, 重复发现是 no-op。
 import pytest
-
 from tools import discover_builtin_tools
 
 

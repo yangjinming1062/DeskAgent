@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from utils import atomic_replace, cfg_get, get_external_skills_dirs, get_skills_dir, has_traversal_component, is_interrupted, is_truthy_value, load_config, validate_within_dir
 
 from ..files import format_no_match_hint, fuzzy_find_and_replace

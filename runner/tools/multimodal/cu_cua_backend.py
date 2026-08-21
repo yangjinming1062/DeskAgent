@@ -15,7 +15,6 @@ from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-
 from utils import cfg_get, is_env_passthrough, load_config, safe_schedule_threadsafe
 
 from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, ComputerUseBackend, UIElement
@@ -33,24 +32,26 @@ _MACOS_SHELL_APP_NAMES = frozenset({"finder", "dock"})
 # 不在此列表的变量都会从子进程 env 中剔除，避免 Desktop JWT / Backend URL / safeStorage 密文泄漏到 cua-driver 进程树中。
 #
 # 拆分为精确匹配（单个变量名）和前缀匹配（变量族），让每条都明确是名还是命名空间
-_CUA_DRIVER_SAFE_ENV_EXACT = frozenset({
-    # 路径 / 身份 / locale / shell
-    "PATH",
-    "HOME",
-    "USER",
-    "LOGNAME",
-    "SHELL",
-    "LANG",
-    "LANGUAGE",
-    "TERM",
-    "TMPDIR",
-    "TMP",
-    "TEMP",
-    # X11 / Wayland 显示服务提示
-    "DISPLAY",
-    "QT5",
-    "QT6",
-})
+_CUA_DRIVER_SAFE_ENV_EXACT = frozenset(
+    {
+        # 路径 / 身份 / locale / shell
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LANGUAGE",
+        "TERM",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        # X11 / Wayland 显示服务提示
+        "DISPLAY",
+        "QT5",
+        "QT6",
+    },
+)
 _CUA_DRIVER_SAFE_ENV_PREFIXES = (
     # locale、XDG / freedesktop
     "LC_",
@@ -80,16 +81,18 @@ _CUA_DRIVER_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "P
 # （KEYBOARD_LAYOUT 得以保留，但 STRIPE_KEY 仍被丢弃）。
 _CUA_DRIVER_SECRET_WORD_BOUNDARY = ("KEY", "AUTH")
 # 对已知公开标识符的显式非密钥覆盖，否则会被前缀白名单误杀。按变量名精确匹配
-_CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset({
-    "OAUTH_CLIENT_ID",
-    "OAUTH_ISSUER",
-    "OAUTH_AUTHORIZE_URL",
-    "OAUTH_TOKEN_URL",
-    "OAUTH_USER_INFO_URL",
-    "OAUTH_REDIRECT_URI",
-    "AUTHORITY",
-    "AUTHORITY_URL",
-})
+_CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset(
+    {
+        "OAUTH_CLIENT_ID",
+        "OAUTH_ISSUER",
+        "OAUTH_AUTHORIZE_URL",
+        "OAUTH_TOKEN_URL",
+        "OAUTH_USER_INFO_URL",
+        "OAUTH_REDIRECT_URI",
+        "AUTHORITY",
+        "AUTHORITY_URL",
+    },
+)
 # 名字不包含上述子串但仍然敏感的变量精确丢弃列表（例如 SPIRITAGENT_JWT 包含 "JWT" 已能被捕获；
 # SPIRITAGENT_DESKTOP_TOKEN 包含 "TOKEN" 也能被捕获 — 此处保留作为双保险锚点）
 _CUA_DRIVER_DROP_EXACT: frozenset[str] = frozenset()

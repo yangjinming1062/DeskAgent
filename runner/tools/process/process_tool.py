@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import psutil
-
 from envs import register_active_process_checker
 from utils import (
     CREATE_NO_WINDOW,
@@ -240,17 +239,19 @@ class ProcessRegistry:
             if should_disable:
                 # 发一条 watch_disabled 汇总事件让 agent / 用户看到"为什么安静了"。
                 msg = self._watcher_event_base(session)
-                msg.update({
-                    "type": "watch_disabled",
-                    "suppressed": session._watch_suppressed,
-                    "message": (
-                        f"Watch patterns disabled for process {session.id} — "
-                        f"{WATCH_STRIKE_LIMIT} consecutive rate-limit windows triggered "
-                        f"(min spacing {WATCH_MIN_INTERVAL_SECONDS}s). "
-                        f"Falling back to notify_on_complete semantics; you'll get "
-                        f"exactly one notification when the process exits."
-                    ),
-                })
+                msg.update(
+                    {
+                        "type": "watch_disabled",
+                        "suppressed": session._watch_suppressed,
+                        "message": (
+                            f"Watch patterns disabled for process {session.id} — "
+                            f"{WATCH_STRIKE_LIMIT} consecutive rate-limit windows triggered "
+                            f"(min spacing {WATCH_MIN_INTERVAL_SECONDS}s). "
+                            f"Falling back to notify_on_complete semantics; you'll get "
+                            f"exactly one notification when the process exits."
+                        ),
+                    },
+                )
                 self.completion_queue.put(msg)
             return
 
@@ -333,23 +334,25 @@ class ProcessRegistry:
         if release_msg is not None:
             self.completion_queue.put(release_msg)
         if trip_now is not None:
-            self.completion_queue.put({
-                "session_id": "",
-                "session_key": "",
-                "command": "",
-                "type": "watch_overflow_tripped",
-                "message": (
-                    f"Watch-pattern overflow: >{WATCH_GLOBAL_MAX_PER_WINDOW} "
-                    f"notifications in {WATCH_GLOBAL_WINDOW_SECONDS}s across all processes. "
-                    f"Suppressing further watch_match events for "
-                    f"{WATCH_GLOBAL_COOLDOWN_SECONDS}s."
-                ),
-                "platform": "",
-                "chat_id": "",
-                "user_id": "",
-                "user_name": "",
-                "thread_id": "",
-            })
+            self.completion_queue.put(
+                {
+                    "session_id": "",
+                    "session_key": "",
+                    "command": "",
+                    "type": "watch_overflow_tripped",
+                    "message": (
+                        f"Watch-pattern overflow: >{WATCH_GLOBAL_MAX_PER_WINDOW} "
+                        f"notifications in {WATCH_GLOBAL_WINDOW_SECONDS}s across all processes. "
+                        f"Suppressing further watch_match events for "
+                        f"{WATCH_GLOBAL_COOLDOWN_SECONDS}s."
+                    ),
+                    "platform": "",
+                    "chat_id": "",
+                    "user_id": "",
+                    "user_name": "",
+                    "thread_id": "",
+                },
+            )
         return admit
 
     @staticmethod
@@ -658,14 +661,16 @@ class ProcessRegistry:
         # 仅在第一次移过来时入队完成通知 — 不做这个守卫, kill_process() 和 reader 线程可能各自调用一次, 产出重复 ``[IMPORTANT: ...]`` 消息。
         if was_running and session.notify_on_complete:
             output_tail = clean_output(session.output_buffer[-2000:]) if session.output_buffer else ""
-            self.completion_queue.put({
-                "type": "completion",
-                "session_id": session.id,
-                "session_key": session.session_key,
-                "command": session.command,
-                "exit_code": session.exit_code,
-                "output": output_tail,
-            })
+            self.completion_queue.put(
+                {
+                    "type": "completion",
+                    "session_id": session.id,
+                    "session_key": session.session_key,
+                    "command": session.command,
+                    "exit_code": session.exit_code,
+                    "output": output_tail,
+                },
+            )
 
     # ----- Query Methods -----
     def is_completion_consumed(self, session_id: str) -> bool:
@@ -1036,25 +1041,27 @@ class ProcessRegistry:
                 entries = []
                 for s in self._running.values():
                     if not s.exited:
-                        entries.append({
-                            "session_id": s.id,
-                            "command": s.command,
-                            "pid": s.pid,
-                            "pid_scope": s.pid_scope,
-                            "cwd": s.cwd,
-                            "started_at": s.started_at,
-                            "task_id": s.task_id,
-                            "session_key": s.session_key,
-                            "watcher_platform": s.watcher_platform,
-                            "watcher_chat_id": s.watcher_chat_id,
-                            "watcher_user_id": s.watcher_user_id,
-                            "watcher_user_name": s.watcher_user_name,
-                            "watcher_thread_id": s.watcher_thread_id,
-                            "watcher_message_id": s.watcher_message_id,
-                            "watcher_interval": s.watcher_interval,
-                            "notify_on_complete": s.notify_on_complete,
-                            "watch_patterns": s.watch_patterns,
-                        })
+                        entries.append(
+                            {
+                                "session_id": s.id,
+                                "command": s.command,
+                                "pid": s.pid,
+                                "pid_scope": s.pid_scope,
+                                "cwd": s.cwd,
+                                "started_at": s.started_at,
+                                "task_id": s.task_id,
+                                "session_key": s.session_key,
+                                "watcher_platform": s.watcher_platform,
+                                "watcher_chat_id": s.watcher_chat_id,
+                                "watcher_user_id": s.watcher_user_id,
+                                "watcher_user_name": s.watcher_user_name,
+                                "watcher_thread_id": s.watcher_thread_id,
+                                "watcher_message_id": s.watcher_message_id,
+                                "watcher_interval": s.watcher_interval,
+                                "notify_on_complete": s.notify_on_complete,
+                                "watch_patterns": s.watch_patterns,
+                            },
+                        )
             atomic_replace(str(CHECKPOINT_PATH), json.dumps(entries))
         except Exception as e:
             logger.debug("Failed to write checkpoint file: %s", e, exc_info=True)
@@ -1105,18 +1112,20 @@ class ProcessRegistry:
                 logger.info("Recovered detached process: %s (pid=%d)", session.command[:60], pid)
                 # 把 watcher 重新入队, gateway 续接通知。
                 if session.watcher_interval > 0:
-                    self.pending_watchers.append({
-                        "session_id": session.id,
-                        "check_interval": session.watcher_interval,
-                        "session_key": session.session_key,
-                        "platform": session.watcher_platform,
-                        "chat_id": session.watcher_chat_id,
-                        "user_id": session.watcher_user_id,
-                        "user_name": session.watcher_user_name,
-                        "thread_id": session.watcher_thread_id,
-                        "message_id": session.watcher_message_id,
-                        "notify_on_complete": session.notify_on_complete,
-                    })
+                    self.pending_watchers.append(
+                        {
+                            "session_id": session.id,
+                            "check_interval": session.watcher_interval,
+                            "session_key": session.session_key,
+                            "platform": session.watcher_platform,
+                            "chat_id": session.watcher_chat_id,
+                            "user_id": session.watcher_user_id,
+                            "user_name": session.watcher_user_name,
+                            "thread_id": session.watcher_thread_id,
+                            "message_id": session.watcher_message_id,
+                            "notify_on_complete": session.notify_on_complete,
+                        },
+                    )
         self._write_checkpoint()
         return recovered
 
