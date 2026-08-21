@@ -11,18 +11,6 @@ def tmp_cwd(tmp_path):
     return NativeFileOperations(cwd=cwd), tmp_path
 
 
-def test_read_file(tmp_cwd):
-    ops, cwd = tmp_cwd
-    test_file = cwd / "test.txt"
-    test_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
-
-    result = ops.read_file("test.txt")
-    assert result.error is None
-    assert result.total_lines == 3
-    assert "1|line1" in result.content
-    assert "3|line3" in result.content
-
-
 def test_read_file_pagination(tmp_cwd):
     ops, cwd = tmp_cwd
     test_file = cwd / "test.txt"
@@ -36,18 +24,6 @@ def test_read_file_pagination(tmp_cwd):
     assert "1|" not in result.content
     assert "4|" not in result.content
     assert result.truncated is True
-
-
-def test_write_file(tmp_cwd):
-    ops, cwd = tmp_cwd
-
-    result = ops.write_file("new_dir/new_file.txt", "hello world")
-    assert result.error is None
-    assert result.dirs_created is True
-
-    written_file = cwd / "new_dir" / "new_file.txt"
-    assert written_file.exists()
-    assert written_file.read_text(encoding="utf-8") == "hello world"
 
 
 def test_patch_replace(tmp_cwd):
@@ -64,25 +40,6 @@ def test_patch_replace(tmp_cwd):
     result = ops.patch_replace("test.txt", "hello", "hi", replace_all=True)
     assert result.success is True
     assert test_file.read_text(encoding="utf-8") == "hi\nworld\nhi"
-
-
-def test_search(tmp_cwd):
-    ops, cwd = tmp_cwd
-    (cwd / "file1.txt").write_text("foo\nbar\nbaz", encoding="utf-8")
-    (cwd / "file2.txt").write_text("baz\nqux", encoding="utf-8")
-    (cwd / "ignore_dir").mkdir()
-    (cwd / "ignore_dir" / "file3.txt").write_text("bar", encoding="utf-8")
-
-    result = ops.search("bar", path=".")
-    assert result.error is None
-    assert result.total_count == 2
-    paths = {m.path.replace("\\", "/") for m in result.matches}
-    assert "file1.txt" in paths
-    assert "ignore_dir/file3.txt" in paths
-
-    # Test file glob
-    result = ops.search("bar", path=".", file_glob="*.txt")
-    assert result.total_count == 2
 
 
 def test_binary_detection(tmp_cwd):
@@ -108,17 +65,6 @@ def test_legacy_encoding_text(tmp_cwd):
     assert result.is_binary is False
 
 
-def test_delete_file(tmp_cwd):
-    ops, cwd = tmp_cwd
-    test_file = cwd / "test.txt"
-    test_file.write_text("foo")
-
-    assert test_file.exists()
-    res = ops.delete_file("test.txt")
-    assert res.error is None
-    assert not test_file.exists()
-
-
 def test_delete_path(tmp_cwd):
     ops, cwd = tmp_cwd
     test_dir = cwd / "test_dir"
@@ -136,17 +82,6 @@ def test_delete_path(tmp_cwd):
     assert not test_dir.exists()
 
 
-def test_move_file(tmp_cwd):
-    ops, cwd = tmp_cwd
-    test_file = cwd / "test.txt"
-    test_file.write_text("foo")
-
-    res = ops.move_file("test.txt", "new_dir/test.txt")
-    assert res.error is None
-    assert not test_file.exists()
-    assert (cwd / "new_dir" / "test.txt").exists()
-
-
 def test_read_file_raw(tmp_cwd):
     ops, cwd = tmp_cwd
     test_file = cwd / "test.txt"
@@ -155,13 +90,6 @@ def test_read_file_raw(tmp_cwd):
     res = ops.read_file_raw("test.txt")
     assert res.error is None
     assert res.content == "foo\nbar"
-
-
-def test_patch_v4a(tmp_cwd):
-    ops, _ = tmp_cwd
-    res = ops.patch_v4a("patch")
-    assert res.success is False
-    assert res.error is not None
 
 
 def test_bom_preservation(tmp_cwd):

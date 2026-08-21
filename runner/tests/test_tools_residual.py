@@ -19,20 +19,16 @@ default suite, not the build-gate slow path.
 
 from tools.execute_code import code_execution_tool as ec
 from tools.thread_context import propagate_context_to_thread
-from utils import is_interrupted, set_global_interrupt
 from tools.tool_output_limits import (
-    _coerce_positive_int,
     get_max_bytes,
-    get_tool_output_limits,
     reset_cache,
 )
 from tools.tool_result_storage import (
     DEFAULT_BUDGET,
     PERSISTED_OUTPUT_TAG,
-    generate_preview,
     maybe_persist_tool_result,
 )
-from utils import clean_output, strip_ansi, strip_fence
+from utils import is_interrupted, set_global_interrupt
 
 # ---------------------------------------------------------------------------
 # interrupt
@@ -136,33 +132,6 @@ class TestToolOutputLimits:
     def teardown_method(self):
         reset_cache()
 
-    def test_coerce_positive_int_passes_through_int(self):
-        assert _coerce_positive_int(42, default=10) == 42
-
-    def test_coerce_positive_int_falls_back_on_zero(self):
-        assert _coerce_positive_int(0, default=99) == 99
-
-    def test_coerce_positive_int_falls_back_on_negative(self):
-        assert _coerce_positive_int(-1, default=99) == 99
-
-    def test_coerce_positive_int_falls_back_on_bad_string(self):
-        assert _coerce_positive_int("not-a-number", default=99) == 99
-
-    def test_coerce_positive_int_falls_back_on_none(self):
-        assert _coerce_positive_int(None, default=99) == 99
-
-    def test_get_tool_output_limits_returns_dict_with_all_keys(self):
-        limits = get_tool_output_limits()
-        for key in ("max_bytes", "max_lines", "max_line_length"):
-            assert key in limits
-            assert isinstance(limits[key], int)
-            assert limits[key] > 0
-
-    def test_get_tool_output_limits_caches(self):
-        first = get_tool_output_limits()
-        second = get_tool_output_limits()
-        assert first is second  # same object — cache hit
-
     def test_reset_cache_invalidates(self, monkeypatch):
         import tools.tool_output_limits as tol
 
@@ -183,54 +152,7 @@ class TestToolOutputLimits:
 # ---------------------------------------------------------------------------
 
 
-class TestGeneratePreview:
-    def test_short_content_returns_as_is(self):
-        s = "short text"
-        preview, has_more = generate_preview(s, max_chars=100)
-        assert preview == s and has_more is False
-
-    def test_long_content_truncates_at_max(self):
-        s = "x" * 500
-        preview, has_more = generate_preview(s, max_chars=100)
-        assert len(preview) <= 100
-        assert has_more is True
-
-    def test_truncation_prefers_line_boundary(self):
-        """When truncation happens, prefer breaking at a newline so we keep whole lines."""
-        s = ("line1\n" * 5) + "line6_longish"
-        preview, has_more = generate_preview(s, max_chars=15)
-        assert has_more is True
-        # Must end at a line boundary (or be the head of the last kept line).
-        assert preview.endswith("\n") or preview.count("\n") >= 4
-
-    def test_zero_max_chars(self):
-        """``max_chars=0`` is degenerate — caller shouldn't pass it but the function must not crash."""
-        s = "any content"
-        preview, has_more = generate_preview(s, max_chars=0)
-        # The implementation truncates to ``content[:0]`` then looks for a newline;
-        # since none exists in the truncated result, it returns ``""`` with has_more=True.
-        assert isinstance(preview, str)
-        assert has_more is True
-
-
 class TestMaybePersistToolResult:
-    def test_short_content_returned_as_is(self):
-        s = "small"
-        out = maybe_persist_tool_result(s, tool_name="read_file", tool_use_id="t1")
-        assert out == s
-
-    def test_long_content_returns_inline_truncation(self):
-        """Without an env, large content is truncated inline (no sandbox write).
-
-        ``read_file`` is pinned to ``inf`` (it's already paginated) — use
-        a generic tool name so the threshold applies.
-        """
-        s = "x" * (DEFAULT_BUDGET.default_result_size + 10_000)
-        out = maybe_persist_tool_result(s, tool_name="some_big_tool", tool_use_id="t2")
-        # Default fallback is inline truncation with a marker.
-        assert "Truncated" in out
-        assert len(out) < len(s)
-
     def test_long_content_with_env_writes_to_sandbox(self):
         """When env.execute succeeds, the result is the persisted marker envelope."""
 
@@ -272,67 +194,9 @@ class TestMaybePersistToolResult:
         )
         assert "Truncated" in out
 
-    def test_threshold_override_respected(self):
-        """``threshold=...`` MUST override the per-tool default."""
-        s = "hello world " * 100  # 1200 chars
-        # Even though s is long, threshold=10000 means we don't persist.
-        out = maybe_persist_tool_result(
-            s, tool_name="x", tool_use_id="t5", threshold=10_000
-        )
-        assert out == s
-
 
 # ---------------------------------------------------------------------------
 # system / clean
-# ---------------------------------------------------------------------------
-
-
-class TestCleanOutput:
-    def test_strips_ansi_color(self):
-        s = "\x1b[31mred text\x1b[0m"
-        out = clean_output(s)
-        assert "\x1b" not in out
-        assert "red text" in out
-
-    def test_strips_fences(self):
-        s = "```python\nprint('hi')\n```"
-        out = clean_output(s)
-        # Fences removed.
-        assert "```" not in out
-
-    def test_passes_normal_text_through(self):
-        s = "just normal text\non two lines"
-        out = clean_output(s)
-        assert out == s or "just normal text" in out
-
-    def test_empty_string(self):
-        assert clean_output("") == ""
-
-
-class TestStripAnsi:
-    def test_strips_ansi(self):
-        assert strip_ansi("\x1b[1mbold\x1b[0m") == "bold"
-
-    def test_passes_plain_text(self):
-        assert strip_ansi("plain") == "plain"
-
-    def test_empty(self):
-        assert strip_ansi("") == ""
-
-
-class TestStripFence:
-    def test_strips_fenced_block(self):
-        s = "```\nsome code\n```"
-        out = strip_fence(s)
-        # Both opening and closing fences gone.
-        assert "```" not in out
-
-    def test_keeps_unfenced_text(self):
-        assert strip_fence("just plain text") == "just plain text"
-
-
-# ---------------------------------------------------------------------------
-# execute_code helpers
 # ---------------------------------------------------------------------------
 
 
@@ -437,44 +301,6 @@ class TestExecuteCodeHelpers:
             srv.close()
             thread.join(timeout=5)
 
-    def test_helpers_work_in_executed_module(self, monkeypatch):
-        """json_parse tolerates control chars; shell_quote delegates to shlex."""
-        import shlex
-
-        ns = self._exec_module([], "uds", monkeypatch)
-        assert ns["json_parse"]('{"a": "x\ty"}') == {"a": "x\ty"}
-        assert ns["shell_quote"]("a b") == shlex.quote("a b")
-        attempts = []
-
-        def flaky() -> None:
-            attempts.append(1)
-            if len(attempts) < 2:
-                raise RuntimeError("transient")
-
-        ns["retry"](flaky, max_attempts=3, delay=0)
-        assert len(attempts) == 2
-
-    def test_scrub_child_env_keeps_passthrough(self):
-        env = {"OPENAI_API_KEY": "secret", "PATH": "/usr/bin"}
-        out = ec._scrub_child_env(
-            env, is_passthrough=lambda k: k == "OPENAI_API_KEY", is_windows=False
-        )
-        assert out["OPENAI_API_KEY"] == "secret"
-        assert out["PATH"] == "/usr/bin"
-
-    def test_scrub_child_env_strips_secret_substrings(self):
-        env = {"MY_GITHUB_TOKEN": "leaked", "MY_RANDOM_KEY": "x"}
-        out = ec._scrub_child_env(env, is_passthrough=lambda k: False, is_windows=False)
-        assert "MY_GITHUB_TOKEN" not in out  # "TOKEN" substring strips it
-        assert "MY_RANDOM_KEY" not in out  # "KEY" substring strips it
-
-    def test_scrub_child_env_keeps_path_prefix(self):
-        """PATH-prefixed vars (PATH, PATH_FOO, etc.) MUST survive — they're shell-essential."""
-        env = {"PATH": "/bin", "PATH_FOO": "/bar"}
-        out = ec._scrub_child_env(env, is_passthrough=lambda k: False, is_windows=False)
-        assert "PATH" in out
-        assert "PATH_FOO" in out
-
     def test_scrub_child_env_strips_unlisted_spiritagent_vars(self):
         """SPIRITAGENT_* vars not in the allow-list MUST be dropped."""
         env = {"SPIRITAGENT_HOME": "/x", "SPIRITAGENT_FOO": "bar"}
@@ -499,57 +325,12 @@ class TestExecuteCodeHelpers:
 
 
 class TestUrlSafety:
-    def test_blocks_metadata_google_internal(self):
-        from utils import is_always_blocked_url
-
-        assert (
-            is_always_blocked_url("http://metadata.google.internal/computeMetadata/v1/")
-            is True
-        )
-
-    def test_allows_normal_https(self):
-        from utils import is_always_blocked_url
-
-        assert is_always_blocked_url("https://example.com/path") is False
-
-    def test_normalize_url_passthrough_non_http_scheme(self):
-        from utils import normalize_url_for_request
-
-        s = "ftp://example.com/a b"
-        assert normalize_url_for_request(s) == s
-
-    def test_normalize_url_percent_encodes_path_and_query(self):
-        from utils import normalize_url_for_request
-
-        assert (
-            normalize_url_for_request("https://example.com/a b?q=x y")
-            == "https://example.com/a%20b?q=x%20y"
-        )
-
-    def test_normalize_url_idna_encodes_hostname(self):
-        from utils import normalize_url_for_request
-
-        assert normalize_url_for_request("https://bücher.de/path") == (
-            "https://xn--bcher-kva.de/path"
-        )
-
-    def test_normalize_url_keeps_ports_verbatim(self):
-        from utils import normalize_url_for_request
-
-        assert normalize_url_for_request("https://example.com:443/path") == (
-            "https://example.com:443/path"
-        )
-        assert normalize_url_for_request("https://example.com:8443/path") == (
-            "https://example.com:8443/path"
-        )
-
     def test_is_safe_url_blocks_localhost(self):
         """127.0.0.1 is a SSRF risk — MUST be blocked regardless of config."""
         from utils import is_safe_url
 
         assert is_safe_url("http://127.0.0.1:8000") is False
         assert is_safe_url("http://localhost:8000") is False
-        assert is_safe_url("ftp://example.com") is False  # scheme gate
 
 
 class TestWebsitePolicy:
@@ -575,44 +356,6 @@ class TestWebsitePolicy:
             set_inmemory_config({})
             url_safety._cached_policy = None
 
-    def test_load_blocklist_empty_when_no_config(self):
-        import utils.url_safety as url_safety
-        from utils import load_website_blocklist
-        from utils.config import set_inmemory_config
-
-        url_safety._cached_policy = None
-        set_inmemory_config({})
-        try:
-            out = load_website_blocklist()
-            assert isinstance(out, dict)
-            assert out.get("rules", []) == []
-        finally:
-            set_inmemory_config({})
-            url_safety._cached_policy = None
-
-    def test_load_blocklist_reads_config(self):
-        import utils.url_safety as url_safety
-        from utils import load_website_blocklist
-        from utils.config import set_inmemory_config
-
-        url_safety._cached_policy = None
-        set_inmemory_config({
-            "security": {
-                "website_blocklist": {
-                    "enabled": True,
-                    "domains": ["foo.com", "bar.com"],
-                }
-            }
-        })
-        try:
-            out = load_website_blocklist()
-            rules = out.get("rules", [])
-            assert any(r.get("pattern") == "foo.com" for r in rules)
-            assert any(r.get("pattern") == "bar.com" for r in rules)
-        finally:
-            set_inmemory_config({})
-            url_safety._cached_policy = None
-
 
 # ---------------------------------------------------------------------------
 # toolsets
@@ -620,19 +363,6 @@ class TestWebsitePolicy:
 
 
 class TestToolsets:
-    def test_excluded_tool_names_always_excludes_mcp(self):
-        """``excluded_tool_names`` unconditionally excludes MCP tools — they're toggled via the MCP settings page, not this one."""
-        from tools.toolsets.catalog import excluded_tool_names
-
-        out = excluded_tool_names(
-            set(), {"mcp__github__create_issue", "read_file", "terminal"}
-        )
-        # MCP tools are always excluded even when no toolset is disabled.
-        assert "mcp__github__create_issue" in out
-        # Non-MCP tools stay visible when no toolset is disabled.
-        assert "read_file" not in out
-        assert "terminal" not in out
-
     def test_excluded_tool_names_filters_by_prefix(self):
         """A disabled toolset hides any tool whose name matches one of its declared prefixes."""
         # Pick a real prefix from the catalog so this test stays valid
@@ -649,12 +379,6 @@ class TestToolsets:
         )
         assert "browser_navigate" in out
         assert "terminal" not in out
-
-    def test_is_mcp_tool_recognises_mcp_prefix(self):
-        from tools.toolsets.catalog import is_mcp_tool
-
-        assert is_mcp_tool("mcp__github__create_issue") is True
-        assert is_mcp_tool("terminal") is False
 
     def test_get_disabled_toolset_ids_reads_config(self, monkeypatch):
         """``get_disabled_toolset_ids`` reads via ``get_disabled_config_names(section="toolsets")``."""

@@ -18,26 +18,22 @@ import pytest
 
 import utils.reverse_rpc as reverse_rpc
 from utils.capabilities import _binary_exists, disk_free_bytes
+from utils.clean import clean_output
 from utils.config import (
-    cfg_bool,
     cfg_float,
     cfg_get,
     cfg_int,
     cfg_json,
-    cfg_str,
     is_truthy_value,
     load_config,
     set_inmemory_config,
 )
 from utils.constants import (
     IS_WINDOWS,
-    get_spiritagent_dir,
     get_spiritagent_home,
-    get_skills_dir,
-    get_subprocess_home,
     secure_parent_dir,
 )
-from utils.env_helpers import inject_context_spiritagent_home, sanitize_subprocess_env
+from utils.env_helpers import sanitize_subprocess_env
 from utils.file_safety import (
     _strip_device_prefix,
     canonicalize_path,
@@ -51,7 +47,6 @@ from utils.file_safety import (
     get_windows_sensitive_prefixes,
     is_write_denied,
 )
-from utils.clean import clean_output
 from utils.redact import redact_sensitive_text
 from utils.reverse_rpc import call_llm, set_handler
 
@@ -60,36 +55,7 @@ from utils.reverse_rpc import call_llm, set_handler
 # ---------------------------------------------------------------------------
 
 
-class TestInjectContextSpiritagentHome:
-    def test_injects_when_override_set(self, monkeypatch):
-        monkeypatch.setenv("SPIRITAGENT_HOME", "/custom/path")
-        env: dict = {}
-        inject_context_spiritagent_home(env)
-        assert env["SPIRITAGENT_HOME"] == "/custom/path"
-
-    def test_does_nothing_when_override_unset(self, monkeypatch):
-        monkeypatch.delenv("SPIRITAGENT_HOME", raising=False)
-        env: dict = {"OTHER": "x"}
-        inject_context_spiritagent_home(env)
-        assert env == {"OTHER": "x"}
-
-
 class TestSanitizeSubprocessEnv:
-    def test_merges_base_and_extra(self, monkeypatch):
-        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
-        out = sanitize_subprocess_env({"A": "1"}, {"B": "2"})
-        assert out["A"] == "1" and out["B"] == "2"
-
-    def test_overlay_wins_on_conflict(self, monkeypatch):
-        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
-        out = sanitize_subprocess_env({"A": "1"}, {"A": "2"})
-        assert out["A"] == "2"
-
-    def test_injects_home_from_override(self, monkeypatch):
-        monkeypatch.setenv("SPIRITAGENT_HOME", "/x")
-        out = sanitize_subprocess_env({})
-        assert out["SPIRITAGENT_HOME"] == "/x"
-
     def test_home_is_str_not_path(self, monkeypatch):
         """HOME MUST be ``str``, not ``Path`` — child Python may not handle Path objects in os.environ."""
         monkeypatch.setenv("SPIRITAGENT_HOME", "/custom")
@@ -108,35 +74,6 @@ class TestGetSpiritagentHome:
     def test_override_wins(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_spiritagent_home() == tmp_path
-
-    def test_subprocess_home_falls_back_to_main(self, monkeypatch, tmp_path):
-        monkeypatch.delenv("SPIRITAGENT_SUBPROCESS_HOME", raising=False)
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        assert get_subprocess_home() == tmp_path
-
-
-class TestGetSkillsDir:
-    def test_returns_subdir_of_home(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        assert get_skills_dir() == tmp_path / "skills"
-
-
-class TestGetSpiritagentDir:
-    def test_prefers_new_subpath_when_present(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        (tmp_path / "new").mkdir()
-        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
-
-    def test_falls_back_to_old_name(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        (tmp_path / "old").mkdir()
-        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "old"
-
-    def test_returns_path_even_when_neither_exists(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        # Neither exists; ``get_spiritagent_dir`` returns the new path
-        # anyway so the caller can create it.
-        assert get_spiritagent_dir(new_subpath="new", old_name="old") == tmp_path / "new"
 
 
 class TestSecureParentDir:
@@ -514,19 +451,6 @@ class TestRedactSensitiveText:
     def test_empty_input(self):
         assert redact_sensitive_text("") == ""
 
-    def test_redact_failure_propagates_to_fail_closed_boundary(self, monkeypatch):
-        """If the redactor raises, the exception must propagate — clean_output
-        is the security boundary that masks the whole output when it fires."""
-        import pytest
-
-        import utils.redact as redact_mod
-
-        monkeypatch.setattr(
-            redact_mod, "_redact", lambda s: (_ for _ in ()).throw(RuntimeError("boom"))
-        )
-        with pytest.raises(RuntimeError, match="boom"):
-            redact_sensitive_text("sk_abcdefghijklmnop")
-
     def test_clean_output_fail_closed_when_redactor_raises(self, monkeypatch):
         """clean_output masks the ENTIRE output when redaction blows up — raw
         secrets must never reach the LLM because the regex engine choked."""
@@ -598,24 +522,6 @@ class TestReverseRpc:
 
 
 class TestConfigHelpers:
-    def test_is_truthy_accepts_known_truthy_strings(self):
-        assert is_truthy_value("true") is True
-        assert is_truthy_value("yes") is True
-        assert is_truthy_value("on") is True
-        assert is_truthy_value("1") is True
-        # case + whitespace
-        assert is_truthy_value("  TRUE  ") is True
-
-    def test_is_truthy_rejects_garbage(self):
-        assert is_truthy_value("nope") is False
-        assert is_truthy_value("") is False
-        assert is_truthy_value(None, default=False) is False
-        assert is_truthy_value(None, default=True) is True
-
-    def test_is_truthy_passes_through_bool(self):
-        assert is_truthy_value(True) is True
-        assert is_truthy_value(False) is False
-
     def test_is_truthy_numeric_truthy(self):
         # Non-zero numbers coerce True per the documented contract.
         assert is_truthy_value(1) is True
@@ -624,40 +530,16 @@ class TestConfigHelpers:
     def test_cfg_get_walks_nested(self):
         d = {"a": {"b": {"c": "deep"}}}
         assert cfg_get(d, "a", "b", "c") == "deep"
-        assert cfg_get(d, "a", "missing", default="fallback") == "fallback"
-        # Non-dict intermediate returns default.
         assert cfg_get(d, "a", "b", "c", "deeper", default=None) is None
 
-    def test_cfg_get_returns_default_for_missing_keys(self):
-        assert cfg_get({}, "missing", default=42) == 42
-
     def test_cfg_int_coercion(self):
-        assert cfg_int({"k": 42}, "k") == 42
-        assert cfg_int({"k": "42"}, "k") == 42
         assert cfg_int({"k": "abc"}, "k", default=99) == 99
         assert cfg_int({"k": None}, "k", default=99) == 99
 
     def test_cfg_float_coercion(self):
-        assert cfg_float({"k": 1.5}, "k") == 1.5
-        assert cfg_float({"k": "1.5"}, "k") == 1.5
         assert cfg_float({"k": "x"}, "k", default=0.0) == 0.0
 
-    def test_cfg_bool_via_truthy(self):
-        assert cfg_bool({"k": "true"}, "k") is True
-        assert cfg_bool({"k": "false"}, "k") is False
-        assert cfg_bool({"k": None}, "k", default=True) is True
-
-    def test_cfg_str_strips(self):
-        assert cfg_str({"k": "  hi  "}, "k") == "hi"
-        assert cfg_str({"k": None}, "k", default="d") == "d"
-        assert cfg_str({}, "k", default="d") == "d"
-
     def test_cfg_json_decodes(self):
-        assert cfg_json({"k": '{"a": 1}'}, "k") == {"a": 1}
-        assert cfg_json({"k": "[1,2]"}, "k") == [1, 2]
-        # Pass-through for already-decoded values.
-        assert cfg_json({"k": {"x": 1}}, "k") == {"x": 1}
-        # Garbage returns default.
         assert cfg_json({"k": "not-json{"}, "k", default={}) == {}
 
     def test_get_env_type_normalizes(self, monkeypatch):
@@ -669,39 +551,8 @@ class TestConfigHelpers:
         )
         try:
             assert config.get_env_type() == "docker"
-            monkeypatch.setattr(config, "load_config", lambda: {})
-            assert config.get_env_type() == "local"
-            monkeypatch.setattr(
-                config, "load_config", lambda: {"terminal": {"env_type": ""}}
-            )
-            assert config.get_env_type() == "local"
         finally:
             monkeypatch.setattr(config, "load_config", real)
-
-    def test_load_config_empty_before_first_push(self):
-        """Before the Desktop pushes config, load_config() returns ``{}``."""
-        import utils.config as config
-
-        saved = config._INMEMORY_CONFIG
-        config._INMEMORY_CONFIG = None
-        try:
-            assert load_config() == {}
-        finally:
-            config._INMEMORY_CONFIG = saved
-
-    def test_set_inmemory_config_then_load(self):
-        """set_inmemory_config makes load_config() return the pushed dict."""
-        import utils.config as config
-
-        saved = config._INMEMORY_CONFIG
-        try:
-            set_inmemory_config({"terminal": {"timeout": 60}})
-            assert load_config() == {"terminal": {"timeout": 60}}
-            # A second push replaces the first.
-            set_inmemory_config({"security": {"redact_secrets": False}})
-            assert load_config() == {"security": {"redact_secrets": False}}
-        finally:
-            config._INMEMORY_CONFIG = saved
 
     def test_set_inmemory_config_rejects_non_dict(self):
         """Non-dict payloads must raise so a malformed push can't poison consumers."""

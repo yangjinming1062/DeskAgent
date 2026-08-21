@@ -1,4 +1,3 @@
-import time
 from unittest.mock import patch
 
 from utils.capabilities import (

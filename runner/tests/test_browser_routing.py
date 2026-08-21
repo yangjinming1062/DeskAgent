@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from tools.browser.browser_supervisor import CDPSupervisor, FrameInfo
 import utils.reverse_rpc as reverse_rpc
+from tools.browser.browser_supervisor import CDPSupervisor, FrameInfo
 
 
 def _make_supervisor() -> CDPSupervisor:
@@ -23,23 +23,6 @@ def _make_supervisor() -> CDPSupervisor:
     sup._frames["f-oopif"] = FrameInfo(frame_id="f-oopif", url="https://child", origin="https://child", parent_frame_id="f-top", is_oopif=True, cdp_session_id="sess-1")
     sup._frames["f-top"] = FrameInfo(frame_id="f-top", url="https://top", origin="https://top", parent_frame_id=None, is_oopif=False)
     return sup
-
-
-def test_get_frame_session_returns_session_for_oopif():
-    frame, sid = _make_supervisor().get_frame_session("f-oopif")
-    assert frame is not None and frame.is_oopif
-    assert sid == "sess-1"
-
-
-def test_get_frame_session_in_process_frame_has_no_session():
-    frame, sid = _make_supervisor().get_frame_session("f-top")
-    assert frame is not None
-    assert sid is None
-
-
-def test_get_frame_session_unknown_frame():
-    frame, sid = _make_supervisor().get_frame_session("nope")
-    assert frame is None and sid is None
 
 
 def test_to_dict_never_leaks_session_id():

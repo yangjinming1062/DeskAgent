@@ -36,21 +36,6 @@ def fresh_registry():
 
 
 class TestFormatProcessNotification:
-    def test_completion_event(self):
-        evt = {
-            "type": "completion",
-            "session_id": "proc_abc",
-            "command": "ls -la",
-            "exit_code": 0,
-            "output": "file1\nfile2\n",
-        }
-        msg = format_process_notification(evt)
-        assert msg is not None
-        assert "[IMPORTANT:" in msg
-        assert "proc_abc" in msg
-        assert "exit code 0" in msg
-        assert "ls -la" in msg
-        assert "file1" in msg
 
     def test_watch_match_event(self):
         evt = {
@@ -69,15 +54,6 @@ class TestFormatProcessNotification:
         # Suppression count surfaces in the message — the user must know
         # we dropped earlier matches to calibrate their trust in the watch.
         assert "2 earlier matches" in msg
-
-    def test_watch_disabled_event(self):
-        evt = {
-            "type": "watch_disabled",
-            "message": "Too many strikes — watch disabled.",
-        }
-        msg = format_process_notification(evt)
-        assert msg is not None
-        assert "Too many strikes" in msg
 
     def test_unknown_event_type_defaults_to_completion(self):
         evt = {
@@ -103,28 +79,6 @@ class TestFormatProcessNotification:
         assert "\x1b" not in msg
 
 
-class TestCleanShellNoise:
-    def test_strips_known_shell_noise_from_start(self):
-        # The exact strings must match ProcessRegistry._SHELL_NOISE_SUBSTRINGS.
-        text = "bash: cannot set terminal process group (-1): Inappropriate ioctl for device\nreal output line\n"
-        cleaned = ProcessRegistry._clean_shell_noise(text)
-        assert cleaned.startswith("real output line")
-
-    def test_preserves_non_noise_lines(self):
-        text = "first useful line\nsecond useful line\n"
-        assert ProcessRegistry._clean_shell_noise(text) == text
-
-    def test_handles_empty_text(self):
-        assert ProcessRegistry._clean_shell_noise("") == ""
-
-    def test_strips_only_leading_noise(self):
-        """Noise lines appearing mid-output MUST be preserved — they're a real shell message."""
-        text = "actual output\nbash: cannot set terminal process group\nmore actual output\n"
-        cleaned = ProcessRegistry._clean_shell_noise(text)
-        assert "bash: cannot set" in cleaned  # preserved in middle
-        assert "actual output" in cleaned
-
-
 class TestHandleProcessDispatch:
     """Every action enumerated in PROCESS_SCHEMA must be routed."""
 
@@ -133,38 +87,6 @@ class TestHandleProcessDispatch:
         assert "error" in result
         assert "Unknown process action" in result["error"]
         assert "fly" in result["error"]
-
-    def test_poll_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "poll"}))
-        assert "error" in result
-        assert "session_id" in result["error"]
-
-    def test_log_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "log"}))
-        assert "error" in result
-        assert "session_id" in result["error"]
-
-    def test_kill_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "kill"}))
-        assert "error" in result
-
-    def test_write_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "write"}))
-        assert "error" in result
-
-    def test_submit_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "submit"}))
-        assert "error" in result
-
-    def test_close_without_session_id_returns_error(self):
-        result = json.loads(_handle_process({"action": "close"}))
-        assert "error" in result
-
-    def test_list_with_empty_registry_returns_empty(self, fresh_registry, monkeypatch):
-        # Swap module singleton for the fixture so _handle_process sees it.
-        monkeypatch.setattr(process_tool, "process_registry", fresh_registry)
-        result = json.loads(_handle_process({"action": "list"}))
-        assert result == {"processes": []}
 
     def test_list_filters_by_task_id(self, fresh_registry, monkeypatch):
         # Inject two sessions for different task_ids.

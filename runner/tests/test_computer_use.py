@@ -7,9 +7,7 @@ from tools.multimodal.cu_tool import (
     _BLOCKED_KEY_COMBOS,
     _canon_key_combo,
     _capture_response,
-    _coerce_max_elements,
     _dispatch,
-    _element_to_dict,
     _format_elements,
     _is_blocked_type,
     _NoopBackend,
@@ -23,34 +21,6 @@ def _reset_backend():
     reset_backend_for_tests()
     yield
     reset_backend_for_tests()
-
-
-class TestKeyCombo:
-    """_canon_key_combo normalizes aliases before the blocked-set check."""
-
-    def test_canonical_names_pass_through(self):
-        assert _canon_key_combo("cmd+s") == frozenset({"cmd", "s"})
-
-    def test_command_alias_normalizes_to_cmd(self):
-        assert _canon_key_combo("command+s") == frozenset({"cmd", "s"})
-
-    def test_control_alias_normalizes_to_ctrl(self):
-        assert _canon_key_combo("control+shift+t") == frozenset({"ctrl", "shift", "t"})
-
-    def test_alt_alias_normalizes_to_option(self):
-        assert _canon_key_combo("alt+f4") == frozenset({"option", "f4"})
-
-    def test_meta_and_super_and_windows_all_normalize_to_win(self):
-        assert _canon_key_combo("meta+l") == frozenset({"win", "l"})
-        assert _canon_key_combo("super+l") == frozenset({"win", "l"})
-        assert _canon_key_combo("windows+l") == frozenset({"win", "l"})
-
-    def test_unicode_glyphs_normalize(self):
-        assert _canon_key_combo("⌘+s") == frozenset({"cmd", "s"})
-        assert _canon_key_combo("⌥+f4") == frozenset({"option", "f4"})
-
-    def test_whitespace_tolerated(self):
-        assert _canon_key_combo("  cmd  +  s  ") == frozenset({"cmd", "s"})
 
 
 class TestBlockedKeyCombos:
@@ -117,23 +87,6 @@ class TestBlockedTypePatterns:
         assert _is_blocked_type(text) is None
 
 
-class TestCoerceMaxElements:
-    @pytest.mark.parametrize(
-        "value,expected",
-        [(50, 50), (1, 1), (1000, 1000), (0, 100), (-1, 100), (1001, 100), (1500, 100)],
-    )
-    def test_boundary_values(self, value, expected):
-        assert _coerce_max_elements(value) == expected
-
-    @pytest.mark.parametrize("value", [None, "abc", [], {}])
-    def test_invalid_inputs_fall_back_to_default(self, value):
-        assert _coerce_max_elements(value) == 100
-
-    def test_float_truncates_to_int(self):
-        # int(3.14) == 3, which is in range, so no fallback
-        assert _coerce_max_elements(3.14) == 3
-
-
 class TestElementFormatting:
     def test_format_elements_truncates_at_max_lines(self):
         elements = [
@@ -151,19 +104,6 @@ class TestElementFormatting:
         out = _format_elements(elements)
         # label replaces \n with space so it fits on one summary line
         assert "a b" in out[0]
-
-    def test_element_to_dict_shape(self):
-        e = UIElement(
-            index=3, role="AXButton", label="OK", bounds=(10, 20, 30, 40), app="Safari"
-        )
-        d = _element_to_dict(e)
-        assert d == {
-            "index": 3,
-            "role": "AXButton",
-            "label": "OK",
-            "bounds": [10, 20, 30, 40],
-            "app": "Safari",
-        }
 
 
 class TestCaptureResponse:

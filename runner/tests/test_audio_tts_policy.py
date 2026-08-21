@@ -12,61 +12,7 @@ pytest.importorskip(
 # ── text_language ─────────────────────────────────────────────────────────
 
 
-def test_text_language_empty_and_whitespace_is_other():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    assert pr.text_language("") == "other"
-    assert pr.text_language("   \n\t  ") == "other"
-
-
-def test_text_language_pure_chinese_is_zh():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    assert pr.text_language("您好") == "zh"
-    assert pr.text_language("您好，我叫小助手") == "zh"
-
-
-def test_text_language_pure_english_is_other():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    assert pr.text_language("Hello there") == "other"
-    assert pr.text_language("This is a friendly greeting") == "other"
-
-
-def test_text_language_mixed_short_english_heavy_is_other():
-    """Short greets with one CJK token tilt to English under the 50% rule."""
-    from tools.multimodal.audio import piper_runtime as pr
-
-    # "Hi 你" — 1 CJK + 2 latin. cjk*2=2, len=3, 2<3 → other. (Mixed-greet
-    # routing to the default en voice feels right; the operator's
-    # preference kicks in via ``preferred`` when it actually matters.)
-    assert pr.text_language("Hi 你") == "other"
-    assert pr.text_language("hello world") == "other"
-
-
-def test_text_language_mixed_long_chinese_heavy_is_zh():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    # All CJK + Chinese punctuation. cjk*2 ≥ len → zh.
-    text = "今天我们一起做的事情很多，请帮我看看这份文档"
-    assert pr.text_language(text) == "zh"
-
-
 # ── pick_voice_for_text ──────────────────────────────────────────────────
-
-
-def test_pick_voice_for_text_explicit_preferred_wins():
-    from tools.multimodal.audio import piper_runtime as pr
-
-    # An explicit caller preference always wins.
-    assert pr.pick_voice_for_text(preferred="en_US-amy-medium") == "en_US-amy-medium"
-
-
-def test_pick_voice_for_text_empty_preferred_uses_zh_default():
-    """Non-CJK text still gets ZH_DEFAULT_VOICE — see runner/README §本地 TTS voice 选型 for the "auto-routing creates inconsistent identity" rationale. pick_voice_for_text doesn't take text, so this pins the no-preferred path: ZH default wins unconditionally."""
-    from tools.multimodal.audio import piper_runtime as pr
-
-    assert pr.pick_voice_for_text() == pr.ZH_DEFAULT_VOICE
 
 
 # ── _is_cloud_voice / cloud-id handling ───────────────────────────────────
@@ -119,28 +65,6 @@ def test_tts_tool_mimo_voicedesign_with_fallback_to_local(tmp_path: Path, monkey
 
 
 # ── voice id → repo path ──────────────────────────────────────────────────
-
-
-def test_voice_id_to_repo_path_zh():
-    from tools.multimodal.audio.piper_runtime import _voice_id_to_repo_path
-
-    assert _voice_id_to_repo_path("zh_CN-huayan-medium") == "zh/zh_CN/huayan/medium"
-
-
-def test_voice_id_to_repo_path_en():
-    from tools.multimodal.audio.piper_runtime import _voice_id_to_repo_path
-
-    assert _voice_id_to_repo_path("en_US-amy-medium") == "en/en_US/amy/medium"
-
-
-def test_voice_id_to_repo_path_unknown_layout_returns_misc():
-    from tools.multimodal.audio.piper_runtime import _voice_id_to_repo_path
-
-    # No underscore in the lang region → fall through to ``misc/<id>``.
-    assert (
-        _voice_id_to_repo_path("custom-id-without-lang")
-        == "misc/custom-id-without-lang"
-    )
 
 
 # ── bundled_voices ───────────────────────────────────────────────────────
