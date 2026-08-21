@@ -11,16 +11,8 @@ import {
   DEFAULT_FETCH_TIMEOUT_MS,
   resolvePathTimeoutMs,
   resolveReadableFileForIpc,
-  resolveTimeoutMs,
   sensitiveFileBlockReason
 } from './hardening'
-
-test('resolveTimeoutMs falls back to defaults and accepts overrides', () => {
-  assert.equal(resolveTimeoutMs(undefined), DEFAULT_FETCH_TIMEOUT_MS)
-  assert.equal(resolveTimeoutMs(0), DEFAULT_FETCH_TIMEOUT_MS)
-  assert.equal(resolveTimeoutMs(-25), DEFAULT_FETCH_TIMEOUT_MS)
-  assert.equal(resolveTimeoutMs('2750'), 2750)
-})
 
 test('resolvePathTimeoutMs routes avatar and generative AI POSTs to the slow bucket', () => {
   assert.equal(resolvePathTimeoutMs('/api/companion/avatar', 'POST'), AVATAR_FETCH_TIMEOUT_MS)

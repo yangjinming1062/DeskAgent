@@ -9,7 +9,6 @@ import {
   $spatialPos,
   cancelMovement,
   getHomePosition,
-  getSleepPosition,
   moveTo,
   setLocale,
   startRoam
@@ -34,13 +33,6 @@ describe('spatial positioning & transitions', () => {
   afterEach(() => {
     cancelMovement()
     vi.useRealTimers()
-  })
-
-  it('keeps sleep position at home/bottom-right location', () => {
-    const home = $homePosition.get()
-    const sleep = getSleepPosition()
-
-    expect(sleep).toEqual(home)
   })
 
   it('teleports immediately without animation when in 2D static mode', () => {

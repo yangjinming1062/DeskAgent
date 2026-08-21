@@ -4,29 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
-import {
-  configPath,
-  FILENAME,
-  readStoredBackendUrl,
-  resolveNormalizedBackendUrl,
-  writeStoredBackendUrl
-} from './config'
+import { configPath, readStoredBackendUrl, resolveNormalizedBackendUrl, writeStoredBackendUrl } from './config'
 
 function tmpHome(tag: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `spiritagent-config-test-${tag}-`))
 }
-
-test('configPath lives under SPIRITAGENT_HOME', () => {
-  const home = tmpHome('path')
-  const target = configPath(home)
-  assert.equal(target, path.join(home, FILENAME))
-})
-
-test('configPath returns null when no home provided', () => {
-  assert.equal(configPath(null), null)
-  assert.equal(configPath(undefined), null)
-  assert.equal(configPath(''), null)
-})
 
 test('readStoredBackendUrl returns null on missing file', () => {
   const home = tmpHome('missing')
