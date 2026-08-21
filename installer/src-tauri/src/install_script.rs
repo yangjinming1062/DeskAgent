@@ -88,10 +88,6 @@ fn resolve_bundled(resource_dir: &Path, kind: ScriptKind) -> Result<PathBuf> {
     if script_path.is_file() {
         return Ok(script_path);
     }
-    let embedded_path = crate::embedded_resources::extract_resources().join(kind.filename());
-    if embedded_path.is_file() {
-        return Ok(embedded_path);
-    }
     Err(anyhow!(
         "install script not found in Tauri bundle: {}\n\
          The SpiritAgent-Setup binary was built without `payload/{}` in its\n\
@@ -139,17 +135,6 @@ mod tests {
             "#!/bin/sh\necho fake\n"
         );
 
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    /// 当标准 bundle 路径为空时回退到嵌入资源（include_bytes!）；测试二进制带 payload 时可成功。
-    #[test]
-    fn resolve_bundled_falls_back_to_embedded_resources() {
-        let tmp = unique_tmp_dir("bundled-missing");
-        let resolved = resolve_bundled(&tmp, ScriptKind::Sh);
-        if let Ok(path) = resolved {
-            assert!(path.ends_with("install.sh"));
-        }
         let _ = fs::remove_dir_all(&tmp);
     }
 

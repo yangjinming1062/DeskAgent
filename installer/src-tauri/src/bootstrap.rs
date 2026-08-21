@@ -720,12 +720,6 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
     let bundle_dir = app.path().resource_dir().ok();
     let payload = bundle_dir.as_ref().map(|d| d.join("payload"));
 
-    let effective_payload = if payload.as_ref().is_some_and(|p| p.join("runner").is_dir()) {
-        payload
-    } else {
-        Some(crate::embedded_resources::extract_resources().to_path_buf())
-    };
-
     let installer_format = if cfg!(target_os = "macos") {
         "dmg"
     } else {
@@ -735,11 +729,11 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
 
     BundleContext {
         bundle_dir,
-        bundled_runner_dir: effective_payload.as_ref().map(|d| d.join("runner")),
-        bundled_desktop_dir: effective_payload.as_ref().map(|d| d.join("desktop")),
-        bundled_skills_dir: effective_payload.as_ref().map(|d| d.join("skills")),
-        bundled_voices_dir: effective_payload.as_ref().map(|d| d.join("voices")),
-        bundled_onboarding_audio_dir: effective_payload.as_ref().map(|d| d.join("onboarding-audio")),
+        bundled_runner_dir: payload.as_ref().map(|d| d.join("runner")),
+        bundled_desktop_dir: payload.as_ref().map(|d| d.join("desktop")),
+        bundled_skills_dir: payload.as_ref().map(|d| d.join("skills")),
+        bundled_voices_dir: payload.as_ref().map(|d| d.join("voices")),
+        bundled_onboarding_audio_dir: payload.as_ref().map(|d| d.join("onboarding-audio")),
         installer_format: Some(installer_format),
     }
 }
