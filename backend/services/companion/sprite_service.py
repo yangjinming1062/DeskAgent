@@ -103,7 +103,7 @@ def has_real_transparency(data: bytes) -> bool:
             return False
         alpha = np.asarray(img.convert("RGBA").getchannel("A"), dtype=np.uint8)
         return bool(
-            alpha.min() <= 8 and np.count_nonzero(alpha == 255) >= _MIN_OPAQUE_FRAC * alpha.size and np.count_nonzero((alpha > 0) & (alpha < 255)) <= _MAX_SEMI_FRAC * alpha.size
+            alpha.min() <= 8 and np.count_nonzero(alpha == 255) >= _MIN_OPAQUE_FRAC * alpha.size and np.count_nonzero((alpha > 0) & (alpha < 255)) <= _MAX_SEMI_FRAC * alpha.size,
         )
     except OSError:
         return False
@@ -365,14 +365,30 @@ def signed_sprite_url(row: CompanionSpriteImage) -> str | None:
 
 
 async def _write_sprite(
-    db: AsyncSession, *, user_id: int, avatar_id: int, role: str | None, tag: str, prompt: str, request_text: str, path: str, png: bytes
+    db: AsyncSession,
+    *,
+    user_id: int,
+    avatar_id: int,
+    role: str | None,
+    tag: str,
+    prompt: str,
+    request_text: str,
+    path: str,
+    png: bytes,
 ) -> CompanionSpriteImage:
     if role == "waiting":
         for old in (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.role == "waiting"))).scalars().all():
             unlink_companion_asset(old.asset_url)
             await db.delete(old)
     row = CompanionSpriteImage(
-        user_id=user_id, avatar_id=avatar_id, role=role, tag=tag, prompt=prompt, request_text=request_text[:500], asset_url=path, content_hash=compute_bytes_sha256(png)
+        user_id=user_id,
+        avatar_id=avatar_id,
+        role=role,
+        tag=tag,
+        prompt=prompt,
+        request_text=request_text[:500],
+        asset_url=path,
+        content_hash=compute_bytes_sha256(png),
     )
     db.add(row)
     await _prune_album(db, user_id)
@@ -414,7 +430,8 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
                 return alive[0], False
         if not force_new:
             entries = await _drop_missing_files(
-                db, (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all()
+                db,
+                (await db.execute(select(CompanionSpriteImage).where(CompanionSpriteImage.user_id == user_id, CompanionSpriteImage.avatar_id == asset.id))).scalars().all(),
             )
             if entries and (hit := await _match_album(db, user_id, entries, request_text)):
                 return hit, False

@@ -80,9 +80,12 @@ async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: s
             {
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}"}
+                    {
+                        "type": "input_text",
+                        "text": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}",
+                    },
                 ],
-            }
+            },
         ],
         temperature=0.0,
         max_output_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR,

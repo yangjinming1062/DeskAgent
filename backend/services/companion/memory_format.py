@@ -13,7 +13,7 @@ async def format_memories_block(db: AsyncSession, user_id: int) -> str:
     rows = (
         (
             await db.execute(
-                select(Memory).where(Memory.user_id == user_id, *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED]).order_by(Memory.updated_at.desc()).limit(MAX_MEMORIES)
+                select(Memory).where(Memory.user_id == user_id, *[context_not_in(p) for p in STATIC_BLOCK_EXCLUDED]).order_by(Memory.updated_at.desc()).limit(MAX_MEMORIES),
             )
         )
         .scalars()

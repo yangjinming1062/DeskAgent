@@ -52,7 +52,7 @@ def _write_denied_paths(home: str) -> frozenset[str]:
             *(_join_real(home_real, *parts) for parts in _WRITE_DENIED_RELATIVE_PATHS),
             *(_join_real(spiritagent_home, name) for name in SPIRITAGENT_CONTROL_FILE_BASENAMES),
             *(os.path.realpath(p) for p in _WRITE_DENIED_ABSOLUTE_PATHS),
-        }
+        },
     )
 
 

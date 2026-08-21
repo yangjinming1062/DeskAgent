@@ -86,7 +86,8 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
     declared_size = _upload_size_or_none(audio_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
         raise HTTPException(
-            status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
+            status_code=413,
+            detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413},
         )
 
     sink = bytearray()
@@ -94,7 +95,8 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
         sink.extend(chunk)
         if len(sink) > STT_MAX_AUDIO_BYTES:
             raise HTTPException(
-                status_code=413, detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413}
+                status_code=413,
+                detail={"error": f"Audio file too large (max {STT_MAX_AUDIO_BYTES // (1024 * 1024)} MB)", "reason": "payload_too_large", "status": 413},
             )
     file_bytes = bytes(sink)
 
@@ -106,7 +108,11 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
         if not chain:
             raise missing_config_http("STT")
         result = await execute_with_fallback(
-            db=None, user_id=user.id, service_type="stt", call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"), _chain=chain
+            db=None,
+            user_id=user.id,
+            service_type="stt",
+            call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"),
+            _chain=chain,
         )
         return {"success": True, "text": result.text}
     except HTTPException:
@@ -151,7 +157,11 @@ async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] =
         if not chain:
             raise missing_config_http("TTS")
         result = await execute_with_fallback(
-            db=None, user_id=user.id, service_type="tts", call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)), _chain=chain
+            db=None,
+            user_id=user.id,
+            service_type="tts",
+            call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)),
+            _chain=chain,
         )
     except HTTPException:
         raise

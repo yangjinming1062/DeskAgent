@@ -33,7 +33,7 @@ IDEMPOTENT_TOOL_NAMES = frozenset(
         "mcp_filesystem_directory_tree",
         "mcp_filesystem_get_file_info",
         "mcp_filesystem_search_files",
-    }
+    },
 )
 
 MUTATING_TOOL_NAMES = frozenset(
@@ -66,7 +66,7 @@ MUTATING_TOOL_NAMES = frozenset(
         "send_message",
         "cronjob",
         "process",
-    }
+    },
 )
 
 # ``terminal`` 故意不在此列——其危险面是命令字符串里的 shell 重定向（``> ~/.ssh/authorized_keys``），不是显式路径参数。runner 侧对命令文本做独立扫描来堵住这种绕过；后端仅扫路径参数无法在不解析 shell 的前提下覆盖。
@@ -277,7 +277,13 @@ class ToolCallGuardrailController:
         return ToolGuardrailDecision(tool_name=tool_name, signature=signature)
 
     def after_call(
-        self, tool_name: str, args: Mapping[str, Any] | None, result: str | None, *, failed: bool | None = None, signature: ToolCallSignature | None = None
+        self,
+        tool_name: str,
+        args: Mapping[str, Any] | None,
+        result: str | None,
+        *,
+        failed: bool | None = None,
+        signature: ToolCallSignature | None = None,
     ) -> ToolGuardrailDecision:
         args = _coerce_args(args)
         signature = signature or ToolCallSignature.from_call(tool_name, args)
@@ -424,7 +430,10 @@ class _GuardrailThresholdSet:
 
 
 def _resolve_guardrail_thresholds(
-    data: Mapping[str, Any], warn_after: Mapping[str, Any], hard_stop_after: Mapping[str, Any], defaults: "ToolCallGuardrailConfig"
+    data: Mapping[str, Any],
+    warn_after: Mapping[str, Any],
+    hard_stop_after: Mapping[str, Any],
+    defaults: "ToolCallGuardrailConfig",
 ) -> tuple[_GuardrailThresholdSet, _GuardrailThresholdSet]:
     """将配置字典拆成 warn 级与硬停止级两组阈值三元组。"""
     nested_keys = ("exact_failure", "same_tool_failure", "idempotent_no_progress")
@@ -433,7 +442,7 @@ def _resolve_guardrail_thresholds(
 
     def _tier(tier_after: Mapping[str, Any], flat_keys: tuple[str, str, str], def_keys: tuple[str, str, str]) -> _GuardrailThresholdSet:
         return _GuardrailThresholdSet(
-            *(positive_int(tier_after.get(nested, data.get(flat)), getattr(defaults, default_attr)) for nested, flat, default_attr in zip(nested_keys, flat_keys, def_keys))
+            *(positive_int(tier_after.get(nested, data.get(flat)), getattr(defaults, default_attr)) for nested, flat, default_attr in zip(nested_keys, flat_keys, def_keys)),
         )
 
     return _tier(warn_after, warn_keys, warn_keys), _tier(hard_stop_after, block_keys, block_keys)

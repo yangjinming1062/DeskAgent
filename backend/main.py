@@ -139,7 +139,8 @@ if SETTINGS.metrics_enabled:
 
     @app.get(SETTINGS.metrics_path)
     def metrics_endpoint(
-        authorization: str | None = Header(default=None, alias="Authorization"), x_metrics_token: str | None = Header(default=None, alias="X-Metrics-Token")
+        authorization: str | None = Header(default=None, alias="Authorization"),
+        x_metrics_token: str | None = Header(default=None, alias="X-Metrics-Token"),
     ) -> Response:
         return render_metrics_response(auth_header=authorization, token_header=x_metrics_token)
 

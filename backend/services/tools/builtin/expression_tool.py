@@ -10,7 +10,13 @@ logger = get_logger(__name__)
 
 
 async def create_expression_tool(
-    name: str, description: str, label: str | None = None, valence: str | None = None, tags: list | None = None, icon: str | None = None, **kwargs
+    name: str,
+    description: str,
+    label: str | None = None,
+    valence: str | None = None,
+    tags: list | None = None,
+    icon: str | None = None,
+    **kwargs,
 ) -> str:
     """注册新的自定义表情，并在后台生成其聊天头像图。"""
     # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
@@ -21,7 +27,7 @@ async def create_expression_tool(
         return json.dumps({"success": False, "error": "missing user_id"}, ensure_ascii=False)
 
     sanitized = validate_and_sanitize_expression(
-        {"name": name, "label": label or "", "description": description, "valence": valence or "neutral", "tags": tags or [], "icon": icon or ""}
+        {"name": name, "label": label or "", "description": description, "valence": valence or "neutral", "tags": tags or [], "icon": icon or ""},
     )
     if sanitized is None:
         return json.dumps({"success": False, "error": "invalid expression spec (name and a facial description are required)"}, ensure_ascii=False)
@@ -39,14 +45,15 @@ async def create_expression_tool(
                 description=sanitized["description"],
                 icon=sanitized["icon"],
                 tags_json=json.dumps(sanitized["tags"], ensure_ascii=False),
-            )
+            ),
         )
         await db.commit()
 
     await emit_companion_assets_updated(user_id)
     kick_background_generation(user_id, sanitized["name"])
     return json.dumps(
-        {"success": True, "name": sanitized["name"], "label": sanitized["label"], "note": "表情头像正在后台生成；首次使用 [affect:NAME] 时若未就绪会自动生成"}, ensure_ascii=False
+        {"success": True, "name": sanitized["name"], "label": sanitized["label"], "note": "表情头像正在后台生成；首次使用 [affect:NAME] 时若未就绪会自动生成"},
+        ensure_ascii=False,
     )
 
 

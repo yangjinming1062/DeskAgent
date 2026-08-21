@@ -118,7 +118,7 @@ async def _persist_assistant_no_tool_turn(
                     prompt_tokens=final_prompt_tokens,
                     completion_tokens=final_completion_tokens,
                     turn_duration_ms=turn_duration_ms,
-                )
+                ),
             )
             await db.commit()
     elif (emotion and emotion != "neutral") or action:
@@ -133,13 +133,13 @@ async def _persist_assistant_no_tool_turn(
                     prompt_tokens=final_prompt_tokens,
                     completion_tokens=final_completion_tokens,
                     turn_duration_ms=turn_duration_ms,
-                )
+                ),
             )
             await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
         title_task = asyncio.create_task(
-            auto_generate_title(conv.id, first_user_msg_content, turn_content, llm_config, language=effective_settings.get("language", DEFAULT_LANGUAGE))
+            auto_generate_title(conv.id, first_user_msg_content, turn_content, llm_config, language=effective_settings.get("language", DEFAULT_LANGUAGE)),
         )
         if track_task:
             track_task(title_task)
@@ -188,7 +188,7 @@ async def _persist_assistant_with_tool_calls_and_results(
                 prompt_tokens=final_prompt_tokens,
                 completion_tokens=final_completion_tokens,
                 turn_duration_ms=turn_duration_ms,
-            )
+            ),
         )
         await db.commit()
 

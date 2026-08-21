@@ -77,7 +77,7 @@ async def _select_due_jobs() -> list[Row]:
                 select(CronJob.id, CronJob.user_id, CronJob.name, CronJob.schedule, CronJob.next_run_at, CronJob.prompt, CronJob.one_shot)
                 .where(CronJob.is_paused.is_(False), CronJob.next_run_at.is_not(None), CronJob.next_run_at <= now)
                 .order_by(CronJob.next_run_at, CronJob.id)
-                .limit(_MAX_DUE_PER_TICK + 1)
+                .limit(_MAX_DUE_PER_TICK + 1),
             )
         ).all()
 
@@ -119,7 +119,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
             res = await db.execute(
                 text(
                     f"UPDATE cron_jobs SET next_run_at = CASE id {next_case} END, is_paused = (CASE id {next_case} END) IS NULL "
-                    f"WHERE (id, next_run_at, schedule) IN ({match}) RETURNING id"
+                    f"WHERE (id, next_run_at, schedule) IN ({match}) RETURNING id",
                 ),
                 params,
             )
@@ -284,7 +284,7 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
                         Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
                         Message.created_at >= utc_start,
                         Message.created_at < utc_end,
-                    )
+                    ),
                 )
             ).scalar_one()
             if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:

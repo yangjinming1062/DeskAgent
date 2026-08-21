@@ -36,5 +36,9 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                     except Exception:
                         body = None
             raise ProviderError(
-                f"{self.provider_name} embedding error: {exc}", status_code=getattr(exc, "status_code", None), body=body, provider=self.provider_name, model=model
+                f"{self.provider_name} embedding error: {exc}",
+                status_code=getattr(exc, "status_code", None),
+                body=body,
+                provider=self.provider_name,
+                model=model,
             ) from exc

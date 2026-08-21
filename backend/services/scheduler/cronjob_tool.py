@@ -81,7 +81,14 @@ async def _handle_cron_action(action: str, user_id: int, job_id_raw: int | str |
 
 
 async def cronjob(
-    action: str, user_id: int, job_id: int | None = None, prompt: str | None = None, schedule: str | None = None, name: str | None = None, deliver: str = "local", **_
+    action: str,
+    user_id: int,
+    job_id: int | None = None,
+    prompt: str | None = None,
+    schedule: str | None = None,
+    name: str | None = None,
+    deliver: str = "local",
+    **_,
 ) -> str:
     normalized = (action or "").strip().lower()
     try:

@@ -123,7 +123,9 @@ async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str,
     if client is None:
         raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' does not expose the Responses API")
     request = build_responses_kwargs(
-        model=provider.config.model, instructions=system_prompt, input_items=[{"role": "user", "content": [{"type": "input_text", "text": user_payload}]}]
+        model=provider.config.model,
+        instructions=system_prompt,
+        input_items=[{"role": "user", "content": [{"type": "input_text", "text": user_payload}]}],
     )
     response = await call_with_retry(client, **request)
     text = response.output_text.strip()
@@ -175,7 +177,12 @@ _AVATAR_SYSTEM_PROMPT = (
 
 
 async def enhance_avatar_prompt(
-    db: AsyncSession | None, user_id: int | None, persona: Persona, *, feedback: str | None = None, provider_config: ProviderConfig | None = None
+    db: AsyncSession | None,
+    user_id: int | None,
+    persona: Persona,
+    *,
+    feedback: str | None = None,
+    provider_config: ProviderConfig | None = None,
 ) -> str:
     """把 persona 定义改写为一段聚焦的中文半身头像（bust）prompt；结果写入 ``AvatarAsset.avatar_prompt``，供 ``build_fullbody_prompt`` 作为身份锚点保证全身图与头像视觉一致。"""
     payload = _persona_visual_payload(persona, feedback)

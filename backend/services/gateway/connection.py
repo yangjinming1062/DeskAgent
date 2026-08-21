@@ -183,7 +183,7 @@ async def _process_events(wakeup: asyncio.Event):
             try:
                 deleted_rows = (
                     await db.execute(
-                        delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at)
+                        delete(WSEvent).where(WSEvent.user_id.in_(local_user_ids)).returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at),
                     )
                 ).all()
                 # DELETE ... RETURNING 不保证顺序；按创建顺序重排还原旧 SELECT ... ORDER BY 的 FIFO。

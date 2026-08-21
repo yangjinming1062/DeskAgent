@@ -28,7 +28,7 @@ async def load_recent_context_window(db: AsyncSession, user_id: int, max_message
                     Message.tool_calls.is_(None),
                 )
                 .order_by(Message.id.desc())
-                .limit(max_messages)
+                .limit(max_messages),
             )
         )
         .scalars()

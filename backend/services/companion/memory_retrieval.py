@@ -89,7 +89,7 @@ async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], li
                 select(Memory)
                 .where(Memory.user_id == user_id, or_(*conditions), *[context_not_in(p) for p in excluded_namespaces])
                 .order_by(Memory.updated_at.desc())
-                .limit(limit * 2)
+                .limit(limit * 2),
             )
         )
         .scalars()
@@ -108,7 +108,13 @@ async def _sparse_search(db: AsyncSession, user_id: int, keywords: list[str], li
 
 
 async def retrieve_hybrid_memories(
-    db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 10, excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL
+    db: AsyncSession,
+    user_id: int,
+    query: str,
+    *,
+    query_embedding: list[float] | None = None,
+    limit: int = 10,
+    excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL,
 ) -> list[dict[str, Any]]:
     """稠密与稀疏检索的混合搜索，用 RRF 融合排名并叠加艾宾浩斯时间衰减。"""
     q_str = (query or "").strip()
@@ -148,7 +154,7 @@ async def retrieve_hybrid_memories(
         final_score = rrf_score * decay * importance
 
         results.append(
-            {"id": mem.id, "content": mem.content, "context": mem.context, "tags": mem.tags, "importance": importance, "score": final_score, "updated_at": mem.updated_at}
+            {"id": mem.id, "content": mem.content, "context": mem.context, "tags": mem.tags, "importance": importance, "score": final_score, "updated_at": mem.updated_at},
         )
 
     results.sort(key=lambda x: x["score"], reverse=True)
@@ -156,7 +162,13 @@ async def retrieve_hybrid_memories(
 
 
 async def retrieve_proactive_memories(
-    db: AsyncSession, user_id: int, query: str, *, query_embedding: list[float] | None = None, limit: int = 3, min_score: float = 0.002
+    db: AsyncSession,
+    user_id: int,
+    query: str,
+    *,
+    query_embedding: list[float] | None = None,
+    limit: int = 3,
+    min_score: float = 0.002,
 ) -> list[dict[str, Any]]:
     """检索与当前语境最相关的若干条记忆，用于主动注入对话。"""
     q_str = (query or "").strip()

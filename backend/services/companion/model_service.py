@@ -25,7 +25,12 @@ logger = get_logger(__name__)
 
 
 async def generate_companion_model(
-    db: AsyncSession, *, user_id: int, species_override: str | None = None, provider_override: str | None = None, force: bool = False
+    db: AsyncSession,
+    *,
+    user_id: int,
+    species_override: str | None = None,
+    provider_override: str | None = None,
+    force: bool = False,
 ) -> CompanionModel:
     """建一条 status="generating" 行并 in-process 派活到 ``pipeline._launch_pipeline_task``。"""
     persona = await get_or_create_persona(db, user_id)
@@ -44,7 +49,7 @@ async def generate_companion_model(
                 return existing
             retryable = (
                 await db.execute(
-                    select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "download_failed").order_by(CompanionModel.id.desc()).limit(1)
+                    select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.status == "download_failed").order_by(CompanionModel.id.desc()).limit(1),
                 )
             ).scalar_one_or_none()
             if retryable is not None:
@@ -88,7 +93,13 @@ async def generate_companion_model(
         await db.refresh(model)
 
     _launch_pipeline_task(
-        model_id=model.id, user_id=user_id, provider_name=provider.provider_name, view_filenames=view_filenames, species=species, style=selected_style, retry_only=False
+        model_id=model.id,
+        user_id=user_id,
+        provider_name=provider.provider_name,
+        view_filenames=view_filenames,
+        species=species,
+        style=selected_style,
+        retry_only=False,
     )
     logger.info("image-to-3d model generation dispatched in-process", extra={"user_id": user_id, "species": species, "provider": provider.provider_name})
     return model

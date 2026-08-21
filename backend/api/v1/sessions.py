@@ -149,7 +149,7 @@ async def search_sessions(
                     Conversation.user_id == user.id,
                     Conversation.kind != CRON_KIND,
                     or_(Conversation.title.ilike(pattern, escape=SQL_LIKE_ESCAPE_CHAR), cast(Conversation.id, String).like(pattern, escape=SQL_LIKE_ESCAPE_CHAR)),
-                )
+                ),
             )
         ).all()
     ]
@@ -163,7 +163,7 @@ async def search_sessions(
                 .join(Conversation, Conversation.id == Message.conversation_id)
                 .where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
                 .distinct()
-                .limit(200)
+                .limit(200),
             )
         ).all()
     ]
@@ -180,7 +180,7 @@ async def search_sessions(
             .where(Conversation.id.in_(merged_ids))
             .group_by(Conversation.id)
             .order_by(desc(Conversation.updated_at))
-            .limit(20)
+            .limit(20),
         )
     ).all()
 

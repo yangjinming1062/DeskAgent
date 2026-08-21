@@ -179,7 +179,7 @@ def _signature(data: bytes) -> _GlbSignature:
                     vertex_attributes=attributes,
                     material_index=primitive.get("material"),
                     target_names=_target_names(mesh, primitive),
-                )
+                ),
             )
 
     def canonical(value: list[dict[str, Any]]) -> tuple[str, ...]:
@@ -283,7 +283,7 @@ def _pack_glb(gltf: dict[str, Any], binary: bytes) -> bytes:
             json_bytes,
             struct.pack("<II", len(binary), 0x004E4942),
             binary,
-        )
+        ),
     )
 
 
@@ -325,7 +325,11 @@ def add_source_vertex_uv(source: bytes) -> bytes:
 
 
 def _source_vertex_order(
-    source_attributes: dict[str, int], processed_attributes: dict[str, int], processed_gltf: dict[str, Any], processed_binary: bytes, source_vertex_count: int
+    source_attributes: dict[str, int],
+    processed_attributes: dict[str, int],
+    processed_gltf: dict[str, Any],
+    processed_binary: bytes,
+    source_vertex_count: int,
 ) -> tuple[str | None, np.ndarray | None]:
     for name, accessor_index in processed_attributes.items():
         if name in source_attributes or _TEXCOORD_ATTRIBUTE.fullmatch(name) is None:
@@ -388,7 +392,13 @@ def _uv_vertex_order(
 
 
 def _copy_accessor(
-    gltf: dict[str, Any], binary: bytes, target_gltf: dict[str, Any], appended: bytearray, accessor_index: int, order: np.ndarray | None = None, index_map: np.ndarray | None = None
+    gltf: dict[str, Any],
+    binary: bytes,
+    target_gltf: dict[str, Any],
+    appended: bytearray,
+    accessor_index: int,
+    order: np.ndarray | None = None,
+    index_map: np.ndarray | None = None,
 ) -> int:
     accessor = gltf["accessors"][accessor_index]
     sparse = accessor.get("sparse")
@@ -526,7 +536,16 @@ def restore_preserved_vertex_attributes(source: bytes, processed: bytes) -> byte
             else:
                 processed_primitive.pop("indices", None)
             _restore_targets(
-                source_mesh, source_primitive, processed_mesh, processed_primitive, source_gltf, source_binary, processed_gltf, processed_binary, appended, source_to_processed
+                source_mesh,
+                source_primitive,
+                processed_mesh,
+                processed_primitive,
+                source_gltf,
+                source_binary,
+                processed_gltf,
+                processed_binary,
+                appended,
+                source_to_processed,
             )
 
     restored_images: list[dict[str, Any]] = []

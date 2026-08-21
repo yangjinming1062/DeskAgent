@@ -97,7 +97,10 @@ class TavilyWebSearchProvider(WebSearchProvider):
         try:
             logger.info("Tavily search: '%s' (limit=%d)", query, limit)
             raw = await _tavily_request(
-                "search", {"query": query, "max_results": min(limit, 20), "include_raw_content": False, "include_images": False}, api_key=self._api_key, base_url=self._base_url
+                "search",
+                {"query": query, "max_results": min(limit, 20), "include_raw_content": False, "include_images": False},
+                api_key=self._api_key,
+                base_url=self._base_url,
             )
             return _normalize_tavily_search_results(raw)
         except ValueError as exc:

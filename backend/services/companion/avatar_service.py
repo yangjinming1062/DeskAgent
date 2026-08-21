@@ -67,7 +67,13 @@ async def _generate_one_portrait_with_moderation_retry(
     """生成一张立绘；命中内容审核时用改写后的提示词重试一次。"""
     try:
         return await _generate_one_portrait(
-            prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, size=size, persist=persist, preferred_provider=preferred_provider
+            prompt,
+            user_id,
+            reference_image=reference_image,
+            secondary_reference_image=secondary_reference_image,
+            size=size,
+            persist=persist,
+            preferred_provider=preferred_provider,
         )
     except AvatarGenerationError as first_exc:
         if not is_content_policy_error_message(first_exc.internal):
@@ -287,7 +293,11 @@ async def _generate_avatar_step(
 ) -> AvatarAsset:
     """先在短会话外完成立绘生成，再用一次短写会话提交新的 active AvatarAsset 行。"""
     (asset_url, file_id, final_ext, avatar_source_url) = await _generate_one_portrait_with_moderation_retry(
-        avatar_prompt, user_id, reference_image=reference_image, secondary_reference_image=secondary_reference_image, persist=persist
+        avatar_prompt,
+        user_id,
+        reference_image=reference_image,
+        secondary_reference_image=secondary_reference_image,
+        persist=persist,
     )
 
     if db is None:
@@ -440,7 +450,11 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
 
 
 async def regenerate_avatar(
-    db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None, feedback: str | None = None, style: str = _DEFAULT_STYLE
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    persona: Persona | None = None,
+    feedback: str | None = None,
+    style: str = _DEFAULT_STYLE,
 ) -> AvatarAsset:
     """重新生成立绘；可选的 feedback 会并入提示词。"""
     if user_id is None:
@@ -668,7 +682,12 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
 
 
 async def generate_fullbody_style_samples(
-    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, reference_image: str | None = None, reference_content_type: str | None = None
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    *,
+    avatar_id: int,
+    reference_image: str | None = None,
+    reference_content_type: str | None = None,
 ) -> dict[str, str]:
     """并发为 STYLE_CATALOG 中每种风格各生成一张正面样图。"""
     if user_id is None:
@@ -706,8 +725,13 @@ async def generate_fullbody_style_samples(
         prompt = build_fullbody_prompt("front", template=template, style_id=style_info.id, feedback=None, appearance=appearance, personality=personality)
         tasks.append(
             _generate_one_portrait_with_moderation_retry(
-                prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
-            )
+                prompt,
+                user_id,
+                reference_image=ref_uri,
+                size=_FULLBODY_SIZE,
+                persist=False,
+                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+            ),
         )
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -828,7 +852,12 @@ async def generate_fullbody_front(
 
     try:
         front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
-            prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
+            prompt,
+            user_id,
+            reference_image=ref_uri,
+            size=_FULLBODY_SIZE,
+            persist=False,
+            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
     except Exception as exc:
         err_msg = getattr(exc, "internal", str(exc))
@@ -864,7 +893,13 @@ async def generate_fullbody_front(
 
 
 async def generate_fullbody_back(
-    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str = "cel_shading", feedback: str | None = None, front_url: str | None = None
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    *,
+    avatar_id: int,
+    style: str = "cel_shading",
+    feedback: str | None = None,
+    front_url: str | None = None,
 ) -> AvatarAsset:
     """按正面立绘作为参考图生成/重绘背面全身图。"""
     if user_id is None:
@@ -909,7 +944,12 @@ async def generate_fullbody_back(
 
     try:
         back_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
-            prompt, user_id, reference_image=front_ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
+            prompt,
+            user_id,
+            reference_image=front_ref_uri,
+            size=_FULLBODY_SIZE,
+            persist=False,
+            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
     except Exception as exc:
         err_msg = getattr(exc, "internal", str(exc))
@@ -942,7 +982,13 @@ async def generate_fullbody_back(
 
 
 async def confirm_fullbody_front(
-    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None, back_url: str | None = None
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    *,
+    avatar_id: int,
+    style: str | None = None,
+    front_url: str | None = None,
+    back_url: str | None = None,
 ) -> AvatarAsset:
     """确认正面全身图，并只补生成缺失的侧面/背面视图。"""
     if user_id is None:
@@ -1002,7 +1048,12 @@ async def confirm_fullbody_front(
 
         prompts = {
             view: build_fullbody_prompt(
-                view, template=template, style_id=effective_style, feedback=prompt_payload.get("fullbody_feedback"), appearance=appearance, personality=personality
+                view,
+                template=template,
+                style_id=effective_style,
+                feedback=prompt_payload.get("fullbody_feedback"),
+                appearance=appearance,
+                personality=personality,
             )
             for view in missing_views
         }

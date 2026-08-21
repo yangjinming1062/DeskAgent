@@ -56,9 +56,9 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
                         {
                             "type": "input_text",
                             "text": f"User: {(user_message or '')[:TITLE_SNIPPET_MAX_CHARS]}\n\nAssistant: {(assistant_response or '')[:TITLE_SNIPPET_MAX_CHARS]}",
-                        }
+                        },
                     ],
-                }
+                },
             ],
             temperature=TITLE_GENERATION_TEMPERATURE,
             max_output_tokens=TITLE_GENERATION_MAX_TOKENS,

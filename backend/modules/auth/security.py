@@ -54,7 +54,13 @@ def decode_activation_code(code: str) -> tuple[str, str]:
 
 
 def create_access_token(
-    *, user_id: int, username: str, jti: str | None = None, client_context: dict | None = None, expires_in_seconds: int | None = None, purpose: str | None = None
+    *,
+    user_id: int,
+    username: str,
+    jti: str | None = None,
+    client_context: dict | None = None,
+    expires_in_seconds: int | None = None,
+    purpose: str | None = None,
 ) -> tuple[str, int, str]:
     token_jti = jti or uuid4().hex
     if expires_in_seconds is None:
@@ -81,8 +87,13 @@ async def create_admin_token(client_version: str = "", ip_address: str = "", use
     async with SESSION_LOCAL() as db:
         db.add(
             AdminSession(
-                token_jti=jti, username=SETTINGS.admin_username, client_version=client_version[:64], ip_address=ip_address[:64], user_agent=user_agent[:1024], is_active=True
-            )
+                token_jti=jti,
+                username=SETTINGS.admin_username,
+                client_version=client_version[:64],
+                ip_address=ip_address[:64],
+                user_agent=user_agent[:1024],
+                is_active=True,
+            ),
         )
         await db.commit()
     return token, int(expires_delta.total_seconds())

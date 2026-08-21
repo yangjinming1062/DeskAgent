@@ -58,7 +58,7 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
                     context=normalize_recall_context(s.get("context"), default="consolidated"),
                     tags=json.dumps(normalize_recall_tags(s.get("tags"))),
                     importance=imp,
-                )
+                ),
             )
             written += 1
         # 至少写一条 summary 才允许删除源行——LLM 返回全空（或仅空白）payload 时否则会清空用户 recall pool。

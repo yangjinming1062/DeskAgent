@@ -406,7 +406,11 @@ def _register_session_handlers(
         cfg = user_session.llm_config if user_session else llm_config
         await dispatcher.flush_unsent()
         return SessionResumeResult(
-            session_id=runtime.session_id, message_count=len(messages), messages=messages, info=runtime_info_snapshot(cfg, runtime), current_seq=effective_buffer.max_seq
+            session_id=runtime.session_id,
+            message_count=len(messages),
+            messages=messages,
+            info=runtime_info_snapshot(cfg, runtime),
+            current_seq=effective_buffer.max_seq,
         ).model_dump()
 
     dispatcher.register("session.get_main", session_get_main)

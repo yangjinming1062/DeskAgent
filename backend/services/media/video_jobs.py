@@ -87,7 +87,13 @@ async def enqueue_video_job(
         raise MissingLlmConfigError("no provider configured for service 'video_gen'")
     head_cfg = chain[0]
     job = VideoGenJob(
-        user_id=user_id, session_id=session_id, provider=head_cfg.provider_name, model=req.model or head_cfg.model, prompt=prompt, params_json=json.dumps(params), status="queued"
+        user_id=user_id,
+        session_id=session_id,
+        provider=head_cfg.provider_name,
+        model=req.model or head_cfg.model,
+        prompt=prompt,
+        params_json=json.dumps(params),
+        status="queued",
     )
     db.add(job)
     await db.commit()
@@ -233,7 +239,7 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                         await db.execute(
                             update(VideoGenJob)
                             .where(VideoGenJob.id == job_id, VideoGenJob.status.notin_(("succeeded", "failed", "downloading")))
-                            .values(status="downloading", provider_file_id=status.file_id)
+                            .values(status="downloading", provider_file_id=status.file_id),
                         )
                     ).rowcount
                     await db.commit()
@@ -290,7 +296,7 @@ async def resume_pending_video_jobs() -> None:
         stuck = await db.execute(
             VideoGenJob.__table__.update()
             .where(VideoGenJob.status == "downloading")
-            .values(status="failed", error_reason="download_interrupted", error_message=_FAILURE_COPY["download_interrupted"])
+            .values(status="failed", error_reason="download_interrupted", error_message=_FAILURE_COPY["download_interrupted"]),
         )
         rows = (await db.execute(select(VideoGenJob).where(VideoGenJob.status.in_(("queued", "processing"))))).scalars().all()
         job_ids = [r.id for r in rows]

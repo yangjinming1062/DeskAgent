@@ -33,7 +33,7 @@ def _signing_key() -> bytes:
         raise RuntimeError(
             "companion_asset_signing_key is empty outside test mode — "
             "lifespan startup should have failed before this point. "
-            "Refusing to sign URLs with the public test key in production."
+            "Refusing to sign URLs with the public test key in production.",
         )
     return _TEST_SIGNER_KEY
 

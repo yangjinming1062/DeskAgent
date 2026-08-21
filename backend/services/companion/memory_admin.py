@@ -42,7 +42,13 @@ def _row_to_dict(row: Memory) -> dict[str, Any]:
 
 
 async def list_memories(
-    db: AsyncSession, user_id: int, *, kind: str | None = None, tag: str | None = None, q: str | None = None, limit: int = _LIST_DEFAULT_LIMIT
+    db: AsyncSession,
+    user_id: int,
+    *,
+    kind: str | None = None,
+    tag: str | None = None,
+    q: str | None = None,
+    limit: int = _LIST_DEFAULT_LIMIT,
 ) -> list[dict[str, Any]]:
     """列出用户记忆，可按 kind / tag 过滤，q 对 content 与 context 做子串匹配。"""
     if kind is not None and kind not in KIND_TO_PREFIX:

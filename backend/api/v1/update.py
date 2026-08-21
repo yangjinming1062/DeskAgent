@@ -85,7 +85,10 @@ def _extract_archive_entries(zip_path: Path, versions_dir: Path) -> None:
 
 @router.post("/versions", response_model=UpdateVersionItem, status_code=201)
 async def create_version(
-    file: UploadFile = File(...), release_notes: str = Form(""), _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)
+    file: UploadFile = File(...),
+    release_notes: str = Form(""),
+    _admin: str = Depends(get_current_admin_token),
+    db: AsyncSession = Depends(get_db),
 ) -> UpdateVersionItem:
     # Squirrel 构建产物 zip，必须含 *.exe。
     if not file.filename or not file.filename.endswith(".zip"):

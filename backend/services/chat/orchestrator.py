@@ -65,7 +65,7 @@ async def run_chat_turn(
                     role="system",
                     content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
                     subtype="compress_summary",
-                )
+                ),
             )
             await db.commit()
     current_context = truncate_responses_context(compressed_context)
@@ -79,14 +79,20 @@ async def run_chat_turn(
     invoked_tool_names: set[str] = set()
 
     dispatch_ctx = _ToolDispatchContext(
-        user_id=user_id, llm_config=llm_config, user_settings=effective_settings, session_id=sid, native_memory=inputs.native_memory, guardrails=guardrails, emitter=emitter
+        user_id=user_id,
+        llm_config=llm_config,
+        user_settings=effective_settings,
+        session_id=sid,
+        native_memory=inputs.native_memory,
+        guardrails=guardrails,
+        emitter=emitter,
     )
 
     try:
         while True:
             if not budget.consume():
                 await emitter.send_json(
-                    {"type": "error", "message": f"Max tool execution turns ({AGENT_MAX_LOOP_TURNS}) reached. Terminating loop to prevent unbounded execution."}
+                    {"type": "error", "message": f"Max tool execution turns ({AGENT_MAX_LOOP_TURNS}) reached. Terminating loop to prevent unbounded execution."},
                 )
                 break
 

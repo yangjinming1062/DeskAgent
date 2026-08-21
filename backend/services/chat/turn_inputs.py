@@ -115,7 +115,12 @@ def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *,
 
 
 async def _build_turn_inputs(
-    db: AsyncSession, conv: Conversation, user_id: int, req: ChatRequest, session_client_context: ChatRequestClientContext | None, user_settings: dict
+    db: AsyncSession,
+    conv: Conversation,
+    user_id: int,
+    req: ChatRequest,
+    session_client_context: ChatRequestClientContext | None,
+    user_settings: dict,
 ) -> _TurnInputs:
     """解析身份 prompt、schemas、agent_config、历史与 LLM client；native_memory 补充内容在此注入系统消息，使 orchestrator 保持线性。"""
     # LLM 上下文从最新检查点开始（夜间 daily_summary 或进行中 compress_summary），其前消息已被摘要覆盖；原行留在 DB，仅缩窄本次读取范围。

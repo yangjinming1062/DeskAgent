@@ -85,8 +85,10 @@ async def resolve_expression_avatar(*, user_id: int, name: str, force_new: bool 
                 row := (
                     await db.execute(
                         select(CompanionExpressionAvatar).where(
-                            CompanionExpressionAvatar.user_id == user_id, CompanionExpressionAvatar.name == normalized, CompanionExpressionAvatar.avatar_id == avatar_id
-                        )
+                            CompanionExpressionAvatar.user_id == user_id,
+                            CompanionExpressionAvatar.name == normalized,
+                            CompanionExpressionAvatar.avatar_id == avatar_id,
+                        ),
                     )
                 ).scalar_one_or_none()
             )
@@ -164,8 +166,10 @@ async def _upsert_row(db, *, user_id: int, name: str, avatar_id: int, prompt: st
         old := (
             await db.execute(
                 select(CompanionExpressionAvatar).where(
-                    CompanionExpressionAvatar.user_id == user_id, CompanionExpressionAvatar.name == name, CompanionExpressionAvatar.avatar_id == avatar_id
-                )
+                    CompanionExpressionAvatar.user_id == user_id,
+                    CompanionExpressionAvatar.name == name,
+                    CompanionExpressionAvatar.avatar_id == avatar_id,
+                ),
             )
         ).scalar_one_or_none()
     ) is not None:

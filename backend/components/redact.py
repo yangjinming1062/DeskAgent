@@ -25,7 +25,7 @@ _SENSITIVE_QUERY_PARAMS = frozenset(
         "code",
         "signature",
         "x-amz-signature",
-    }
+    },
 )
 
 # 导入时快照，避免运行时改 env（甚至 LLM 注入的 `export SPIRITAGENT_REDACT_SECRETS=false`）中途关闭脱敏。

@@ -153,7 +153,7 @@ async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_s
                 "description": r.description,
                 "icon": r.icon,
                 "tags": safe_json_loads(r.tags_json or "[]", default=[]),
-            }
+            },
         )
     return {"expressions": exprs}
 
@@ -303,7 +303,10 @@ async def post_fullbody_samples(
 
 @router.post("/avatar/{avatar_id}/fullbody/select-style", response_model=AvatarAssetResponse)
 async def post_fullbody_select_style(
-    avatar_id: int, body: FullbodySelectStyleRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    avatar_id: int,
+    body: FullbodySelectStyleRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     """持久化所选画风（纯 DB 写入，无生成、无速率限制）。"""
     user, _ = auth
@@ -319,14 +322,24 @@ async def post_fullbody_select_style(
 @router.post("/avatar/{avatar_id}/fullbody/front", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_front(
-    request: Request, avatar_id: int, body: FullbodyFrontGenerateRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    request: Request,
+    avatar_id: int,
+    body: FullbodyFrontGenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
     try:
         asset = await generate_fullbody_front(
-            db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, reference_image=ref_b64, reference_content_type=content_type
+            db,
+            user.id,
+            avatar_id=avatar_id,
+            style=body.style,
+            feedback=body.feedback,
+            reference_image=ref_b64,
+            reference_content_type=content_type,
         )
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
@@ -345,7 +358,11 @@ async def post_fullbody_front(
 @router.post("/avatar/{avatar_id}/fullbody/back", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_back(
-    request: Request, avatar_id: int, body: FullbodyBackGenerateRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    request: Request,
+    avatar_id: int,
+    body: FullbodyBackGenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
@@ -367,7 +384,11 @@ async def post_fullbody_back(
 @router.post("/avatar/{avatar_id}/fullbody/confirm-front", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_confirm_front(
-    request: Request, avatar_id: int, body: FullbodyConfirmFrontRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    request: Request,
+    avatar_id: int,
+    body: FullbodyConfirmFrontRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
@@ -477,7 +498,11 @@ public_router = get_router()
 
 @public_router.get("/avatar/file/{filename}")
 async def serve_avatar_file(
-    request: Request, filename: str, expires: int | None = None, sig: str | None = None, session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session)
+    request: Request,
+    filename: str,
+    expires: int | None = None,
+    sig: str | None = None,
+    session: tuple[User, LoginRecord] | None = Depends(get_optional_current_session),
 ) -> Response:
     if session is None and not verify_signed_avatar_request(filename, expires, sig):
         raise HTTPException(status_code=403, detail="Invalid or expired signature")

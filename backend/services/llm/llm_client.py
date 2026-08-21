@@ -33,7 +33,16 @@ logger = get_logger(__name__)
 def _log_embedding(*, call_id: str, phase: str, provider: str, model: str, user_id: int | None, status: str | None = None, latency_ms: int | None = None, **extras: Any) -> None:
     """Embedding 入口拥有稳定的调用方默认字段（service / call_site），在此处统一注入，使调用方只需关心每次事件的字段。"""
     log_event(
-        call_id=call_id, service="embedding", provider=provider, model=model, call_site=__name__, phase=phase, status=status, latency_ms=latency_ms, user_id=user_id, **extras
+        call_id=call_id,
+        service="embedding",
+        provider=provider,
+        model=model,
+        call_site=__name__,
+        phase=phase,
+        status=status,
+        latency_ms=latency_ms,
+        user_id=user_id,
+        **extras,
     )
 
 
@@ -191,8 +200,12 @@ async def _resolve_embedding_provider(db: AsyncSession | None, user_id: int | No
                 return None
             chain = [
                 ProviderConfig(
-                    base_url=llm_cfg.base_url, api_key=llm_cfg.api_key, model="text-embedding-3-small", service_type=ServiceType.embedding, provider_name=llm_cfg.provider_name
-                )
+                    base_url=llm_cfg.base_url,
+                    api_key=llm_cfg.api_key,
+                    model="text-embedding-3-small",
+                    service_type=ServiceType.embedding,
+                    provider_name=llm_cfg.provider_name,
+                ),
             ]
         provider = provider_from_config(chain[0])
         return provider if isinstance(provider, EmbeddingProvider) else None

@@ -32,7 +32,7 @@ _RETARGET_CLIPS: dict[str, dict[str, str]] = {
         "greet": "preset:biped:greet_01",
         "laugh": "preset:biped:laugh_01",
         "cry": "preset:biped:sob",
-    }
+    },
 }
 
 # 非 biped 每类只有一个预设，全部语义键收敛到它。
@@ -48,7 +48,7 @@ _RETARGET_CLIPS.update(
             ("serpentine", "preset:serpentine:march"),
             ("aquatic", "preset:aquatic:march"),
         )
-    }
+    },
 )
 
 _DOWNLOAD_TIMEOUT_SECONDS: float = 120.0
@@ -251,7 +251,9 @@ async def rig(task_id: str, rig_type: str) -> str:
     """对 ``task_id`` 产出的模型绑骨，返回新的 rigged task_id。"""
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
-            f"{_base_url()}/animations/rig", headers=_auth_headers(), json={"input": task_id, "rig_type": rig_type, "spec": RIG_SPEC, "model": rig_model_version(rig_type)}
+            f"{_base_url()}/animations/rig",
+            headers=_auth_headers(),
+            json={"input": task_id, "rig_type": rig_type, "spec": RIG_SPEC, "model": rig_model_version(rig_type)},
         )
     return _envelope(resp.json())["task_id"]
 

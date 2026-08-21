@@ -30,7 +30,7 @@ BUILTIN_EMOTIONS: frozenset[str] = frozenset(
         "smug",
         "scared",
         "relieved",
-    }
+    },
 )
 
 ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "chat", "perch", "roam", "sleep"})

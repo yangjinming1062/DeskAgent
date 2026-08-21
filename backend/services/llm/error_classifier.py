@@ -219,7 +219,7 @@ _SSL_TRANSIENT_PATTERNS = (
 )
 
 _BILLING_ERROR_CODES = frozenset(
-    {"insufficient_quota", "billing_not_active", "payment_required", "insufficient_credits", "no_usable_credits", "balance_depleted", "model_not_supported_on_free_tier"}
+    {"insufficient_quota", "billing_not_active", "payment_required", "insufficient_credits", "no_usable_credits", "balance_depleted", "model_not_supported_on_free_tier"},
 )
 
 _RATE_LIMIT_ERROR_CODES = frozenset({"resource_exhausted", "throttled", "rate_limit_exceeded"})
@@ -369,7 +369,15 @@ def _classify_by_exception_type(
         return _classify_404(error_msg, result_fn)
     if isinstance(error, openai.BadRequestError):
         return _classify_400(
-            error_msg, error_code, body, provider=provider, model=model, approx_tokens=approx_tokens, context_length=context_length, num_messages=num_messages, result_fn=result_fn
+            error_msg,
+            error_code,
+            body,
+            provider=provider,
+            model=model,
+            approx_tokens=approx_tokens,
+            context_length=context_length,
+            num_messages=num_messages,
+            result_fn=result_fn,
         )
     if isinstance(error, (openai.UnprocessableEntityError, openai.ConflictError)):
         return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
@@ -545,7 +553,16 @@ def _classify_402(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedEr
 
 
 def _classify_400(
-    error_msg: str, error_code: str, body: dict, *, provider: str, model: str, approx_tokens: int, context_length: int, num_messages: int = 0, result_fn: _ClassifierBuilder
+    error_msg: str,
+    error_code: str,
+    body: dict,
+    *,
+    provider: str,
+    model: str,
+    approx_tokens: int,
+    context_length: int,
+    num_messages: int = 0,
+    result_fn: _ClassifierBuilder,
 ) -> ClassifiedError:
     """对 400 Bad Request 进行分类（上下文溢出 / 格式错误 / 通用）。"""
     # 不支持视觉（早于 image_too_large：恢复路径不同）

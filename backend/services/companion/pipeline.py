@@ -209,7 +209,14 @@ async def _mark_download_failed(model_id: int, reason: str) -> None:
 
 
 async def _persist_download_source(
-    model_id: int, *, user_id: int, task_id: str, assets: tuple[Model3DAsset, ...], provider_label: str, rig_type: str, phase: str = "submit"
+    model_id: int,
+    *,
+    user_id: int,
+    task_id: str,
+    assets: tuple[Model3DAsset, ...],
+    provider_label: str,
+    rig_type: str,
+    phase: str = "submit",
 ) -> None:
     """在任何下载尝试之前，先持久化付费结果的恢复句柄。``phase`` 是 task_id 在链上的阶段（submit / rig / animate），供进程崩溃接续时区分"链未跑完的中间产物"和"最终产物"——只有 phase=animate 才是含动画的可落盘 GLB。"""
     urls = [{"kind": a.kind, "url": a.url} for a in assets]
@@ -350,7 +357,13 @@ async def _maybe_apply_capability(
         new_job: Model3DJob = await submit()
         result = await _poll_with_progress(provider, new_job, user_id, progress_stage, start_pct, end_pct)
         await _persist_download_source(
-            model_id, user_id=user_id, task_id=new_job.job_id, assets=result.assets, provider_label=provider.provider_name, rig_type=rig_type, phase=phase
+            model_id,
+            user_id=user_id,
+            task_id=new_job.job_id,
+            assets=result.assets,
+            provider_label=provider.provider_name,
+            rig_type=rig_type,
+            phase=phase,
         )
         return _PipelineState(provider_task_id=new_job.job_id, assets=result.assets), True
     except Exception:
@@ -359,7 +372,14 @@ async def _maybe_apply_capability(
 
 
 async def run_capability_chain(
-    *, provider_name: str | None, user_id: int, view_filenames: dict[str, str], species: str, model_id: int, style: str = "realistic", retry_only: bool = False
+    *,
+    provider_name: str | None,
+    user_id: int,
+    view_filenames: dict[str, str],
+    species: str,
+    model_id: int,
+    style: str = "realistic",
+    retry_only: bool = False,
 ) -> None:
     """submit → poll → 可选 cloud_rig / cloud_animate_bind → download → 落库。``retry_only=True`` 跳过 submit,直接用持久 ``provider_task_id`` 重新驱动后续跳。"""
     try:
@@ -410,7 +430,9 @@ async def run_capability_chain(
         state = _PipelineState(provider_task_id=job.job_id, assets=gen_result.assets)
     except Exception as exc:
         logger.warning(
-            "3D model generation failed", extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "error": str(exc)}, exc_info=True
+            "3D model generation failed",
+            extra={"user_id": user_id, "provider": provider.provider_name if provider else provider_name, "error": str(exc)},
+            exc_info=True,
         )
         await _emit_model_failed(user_id, "3D 模型生成失败，请稍后重试")
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
@@ -459,7 +481,14 @@ async def run_capability_chain(
         glb_bytes = await _download_one_step(provider=provider, user_id=user_id, model_id=model_id, task_id=state.provider_task_id, assets=state.assets)
         asset_url = await asyncio.to_thread(save_companion_model, glb_bytes, user_id=user_id)
         activated = await _finalize_generation(
-            model_id, user_id, asset_url=asset_url, provider=provider_label, species=species, rig_type=rig_type, style=record.style or style, clip_map=clip_map
+            model_id,
+            user_id,
+            asset_url=asset_url,
+            provider=provider_label,
+            species=species,
+            rig_type=rig_type,
+            style=record.style or style,
+            clip_map=clip_map,
         )
 
         if not activated:
@@ -498,12 +527,12 @@ async def recover_stuck_model_generations() -> None:
     """启动时清理被重启遗弃的行:``generating`` 直接判失败以免挡住新生成;下载中的行按 ``provider_phase`` 分别处理——``animate`` 阶段已握有含动画的终产物,保留 in-flight 给 ``_resume_inflight_pipelines`` 接续落盘;``rig`` / ``submit`` 阶段只是中间产物(GLB 没有动画),改判 ``download_failed`` 让用户重生成——重试下载救不回来。"""
     async with SESSION_LOCAL() as db:
         await db.execute(
-            CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False)
+            CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
         )
         await db.execute(
             CompanionModel.__table__.update()
             .where(CompanionModel.status.in_(("pending_download", "downloading")), CompanionModel.provider_phase != "animate")
-            .values(status="download_failed", error="服务重启时模型生成未完成到动画绑定，请重新生成")
+            .values(status="download_failed", error="服务重启时模型生成未完成到动画绑定，请重新生成"),
         )
         await db.commit()
 

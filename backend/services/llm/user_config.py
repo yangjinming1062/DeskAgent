@@ -49,5 +49,8 @@ async def resolve_user_llm_config(db: AsyncSession | None, user_id: int) -> User
     chain = await resolve_provider_chain(db, user_id, "llm", user_cfg=config)
     head = chain[0] if chain else None
     return UserLlmConfig(
-        api_key=head.api_key if head else "", base_url=head.base_url if head else "", model_name=head.model if head else "", provider_name=head.provider_name if head else ""
+        api_key=head.api_key if head else "",
+        base_url=head.base_url if head else "",
+        model_name=head.model if head else "",
+        provider_name=head.provider_name if head else "",
     )

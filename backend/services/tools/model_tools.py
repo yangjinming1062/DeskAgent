@@ -28,7 +28,8 @@ def coerce_tool_args(tool_name: str, args: dict[str, Any], schema: dict | None) 
                     continue
                 if value.strip().startswith("["):
                     logger.warning(
-                        "coerce_tool_args: looks like a JSON array string but could not be parsed, falling back to single-element list", extra={"tool_name": tool_name, "key": key}
+                        "coerce_tool_args: looks like a JSON array string but could not be parsed, falling back to single-element list",
+                        extra={"tool_name": tool_name, "key": key},
                     )
             args[key] = [value]
             continue

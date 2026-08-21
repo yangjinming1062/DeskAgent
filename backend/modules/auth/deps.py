@@ -60,7 +60,8 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
 
 
 async def get_optional_current_session(
-    credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME), db: AsyncSession = Depends(get_db)
+    credentials: HTTPAuthorizationCredentials | None = Depends(BEARER_SCHEME),
+    db: AsyncSession = Depends(get_db),
 ) -> tuple[User, LoginRecord] | None:
     if credentials is None or not credentials.credentials:
         return None

@@ -26,7 +26,7 @@ RECALL_TAGS: frozenset[str] = frozenset(
         "other",  # 其他面向个人的小事实
         "tool_quirk",  # LLM 踩过的工具/运行时坑
         "environment",  # OS 路径、账号句柄、仓库布局
-    }
+    },
 )
 
 AUTO_INJECT_SLOTS: tuple[str, ...] = (
@@ -67,7 +67,12 @@ NAMESPACE_SPECS: dict[str, NamespaceSpec] = {
     "user_profile": NamespaceSpec("user_profile", "user_profile:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True),
     "interaction_stats": NamespaceSpec("interaction_stats", "interaction_stats:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True),
     "inferred_profile": NamespaceSpec(
-        "inferred_profile", "inferred_profile:", forbidden_from_llm=True, reserved_from_recall=True, excluded_from_static_block=True, slots=INFERRED_PROFILE_SLOTS
+        "inferred_profile",
+        "inferred_profile:",
+        forbidden_from_llm=True,
+        reserved_from_recall=True,
+        excluded_from_static_block=True,
+        slots=INFERRED_PROFILE_SLOTS,
     ),
     "diary": NamespaceSpec("diary", "diary:", forbidden_from_llm=True, excluded_from_static_block=True),
 }

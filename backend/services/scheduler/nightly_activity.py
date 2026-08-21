@@ -358,7 +358,12 @@ async def _stage_3_planning(
 
 
 async def _stage_4_self_diary(
-    llm_cfg: dict[str, Any], user_id: int, clean_messages: list[dict[str, str]], inferred_profile: dict[str, str], auto_inject: dict[str, str], local_date_str: str
+    llm_cfg: dict[str, Any],
+    user_id: int,
+    clean_messages: list[dict[str, str]],
+    inferred_profile: dict[str, str],
+    auto_inject: dict[str, str],
+    local_date_str: str,
 ) -> bool:
     """Stage 4：自我日记——伙伴写下当天的个人反思。"""
     payload = {"today_conversations": clean_messages, "inferred_profile": inferred_profile, "auto_inject": auto_inject, "local_date": local_date_str}
@@ -451,7 +456,7 @@ async def _stage_5_creation(
                         description=expr["description"],
                         icon=expr.get("icon"),
                         tags_json=json.dumps(expr["tags"], ensure_ascii=False),
-                    )
+                    ),
                 )
                 new_expr_count += 1
             await db.commit()
@@ -502,7 +507,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                     Message.role.in_(("user", "assistant")),
                     Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
                 )
-                .order_by(Message.id.asc())
+                .order_by(Message.id.asc()),
             )
         ).all()
         main_msgs = [m for m, k in all_today_tuples if k == MAIN_KIND]
@@ -525,7 +530,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                         Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")
                         | Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")
                         | Memory.context.like(KIND_TO_PREFIX["user_profile"] + "%"),
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -558,7 +563,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                     Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
                     Message.created_at >= seven_days_ago_utc,
                     Message.created_at < utc_start,
-                )
+                ),
             )
         ).scalar_one()
         today_msg_count = sum(1 for m in clean_main_messages if m["role"] == "user")
@@ -619,7 +624,9 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         await run_daily_checkpoint(llm_cfg, user_id, utc_start, utc_end, local_today_str)
 
     results = await asyncio.gather(
-        _checkpoint(), _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str), return_exceptions=True
+        _checkpoint(),
+        _stage_5_creation(llm_cfg, user_id, clean_messages, updated_inferred, updated_auto_inject, local_today_str, tz_str=tz_str),
+        return_exceptions=True,
     )
     for label, result in zip(("daily checkpoint", "stage 5 creation"), results, strict=True):
         if isinstance(result, Exception):

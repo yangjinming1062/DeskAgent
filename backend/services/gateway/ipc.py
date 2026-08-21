@@ -50,7 +50,7 @@ async def await_future(user_id: int, call_id: str, *, timeout: float | None = No
     except TimeoutError:
         discard_call(user_id, call_id)
         return json.dumps(
-            {"code": JSONRPC_INTERNAL_ERROR, "message": f"Tool execution timeout for call {call_id} (no response within {effective_timeout}s). The desktop runner may be offline."}
+            {"code": JSONRPC_INTERNAL_ERROR, "message": f"Tool execution timeout for call {call_id} (no response within {effective_timeout}s). The desktop runner may be offline."},
         )
 
 

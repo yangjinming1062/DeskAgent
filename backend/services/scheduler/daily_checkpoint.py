@@ -74,7 +74,7 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
 
     async with session_scope() as wdb:
         wdb.add(
-            Message(conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str)
+            Message(conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str),
         )
         await wdb.commit()
     logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str})
@@ -91,7 +91,7 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
         await db.execute(
             select(func.count())
             .select_from(Message)
-            .where(Message.conversation_id == main_conv.id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")), real_turns)
+            .where(Message.conversation_id == main_conv.id, Message.created_at >= utc_start, Message.created_at < utc_end, Message.role.in_(("user", "assistant")), real_turns),
         )
     ).scalar_one()
     if today_msg_count == 0:
@@ -108,7 +108,7 @@ async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, u
         await db.execute(
             select(func.count())
             .select_from(Message)
-            .where(Message.conversation_id == main_conv.id, Message.id > checkpoint_id, Message.role.in_(("user", "assistant")), real_turns)
+            .where(Message.conversation_id == main_conv.id, Message.id > checkpoint_id, Message.role.in_(("user", "assistant")), real_turns),
         )
     ).scalar_one()
     if not has_new_turns:

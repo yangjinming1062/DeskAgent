@@ -35,7 +35,9 @@ class TripoImageTo3DProvider(ImageTo3DProvider):
                 # multiview 端点接受 MV 专属 framing hints；单图端点不接受。
                 auxiliary_tokens = {key: await self._upload(path) for key, path in auxiliary_paths.items()}
                 task_id = await client.create_image_to_model(
-                    front_token, multiview_tokens=auxiliary_tokens, **client.tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image")
+                    front_token,
+                    multiview_tokens=auxiliary_tokens,
+                    **client.tripo_common_kwargs_from_settings(texture_alignment="original_image", orientation="align_image"),
                 )
             else:
                 task_id = await client.create_image_to_model(front_token, **client.tripo_common_kwargs_from_settings())

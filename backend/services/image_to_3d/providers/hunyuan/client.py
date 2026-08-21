@@ -40,7 +40,13 @@ def _auth_headers() -> dict[str, str]:
 
 
 def _common_model_kwargs(
-    *, model: str, enable_pbr: bool = True, result_format: str = "GLB", generate_type: str | None = None, face_count: int | None = None, prompt: str | None = None
+    *,
+    model: str,
+    enable_pbr: bool = True,
+    result_format: str = "GLB",
+    generate_type: str | None = None,
+    face_count: int | None = None,
+    prompt: str | None = None,
 ) -> dict[str, Any]:
     """构造 Hunyuan 3D API 通用 snake_case 负载字段。"""
     payload: dict[str, Any] = {"model": model, "enable_pbr": enable_pbr, "result_format": (result_format or "GLB").upper()}
@@ -54,7 +60,12 @@ def _common_model_kwargs(
 
 
 def hunyuan_common_kwargs_from_settings(
-    *, model: str | None = None, generate_type: str | None = None, face_count: int | None = None, enable_pbr: bool | None = None, result_format: str | None = None
+    *,
+    model: str | None = None,
+    generate_type: str | None = None,
+    face_count: int | None = None,
+    enable_pbr: bool | None = None,
+    result_format: str | None = None,
 ) -> dict[str, Any]:
     """从 SETTINGS 构造 Hunyuan 端点的通用调用 kwargs。"""
     raw_face_count = face_count if face_count is not None else getattr(SETTINGS, "hunyuan_face_count", 0)

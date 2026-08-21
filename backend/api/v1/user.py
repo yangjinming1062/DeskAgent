@@ -61,7 +61,7 @@ async def activate(payload: ActivateRequest, request: Request, db: AsyncSession 
             is_active=True,
             login_at=now,
             last_seen_at=now,
-        )
+        ),
     )
     await db.commit()
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))
@@ -77,7 +77,10 @@ async def mint_ws_ticket(current: tuple[User, LoginRecord] = Depends(get_current
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_session(
-    payload: RefreshRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    payload: RefreshRequest,
+    request: Request,
+    current: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> TokenResponse:
     user, login_record = current
     now = utc_now()
@@ -99,7 +102,7 @@ async def refresh_session(
             is_active=True,
             login_at=now,
             last_seen_at=now,
-        )
+        ),
     )
     await db.commit()
     return TokenResponse(access_token=token, expires_in=expires_in, user=UserInfo.model_validate(user))

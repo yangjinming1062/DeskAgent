@@ -103,7 +103,7 @@ async def _daily_activity(db: AsyncSession, user_id: int, since: datetime) -> li
             .where(Conversation.user_id == user_id, Message.created_at >= since, Message.role == "user")
             .group_by(text("day"))
             .order_by(text("day DESC"))
-            .limit(ACTIVITY_DAY_BUCKETS)
+            .limit(ACTIVITY_DAY_BUCKETS),
         )
     ).all()
     return [{"date": str(row.day), "messages": int(row.cnt)} for row in reversed(rows)]
@@ -115,7 +115,7 @@ async def _platform_breakdown(db: AsyncSession, user_id: int, since: datetime) -
         await db.execute(
             select(LoginRecord.client_version, func.count(LoginRecord.id))
             .where(LoginRecord.user_id == user_id, LoginRecord.is_active.is_(True), LoginRecord.login_at >= since)
-            .group_by(LoginRecord.client_version)
+            .group_by(LoginRecord.client_version),
         )
     ).all()
     total = sum(c for _, c in rows) or 1
@@ -137,7 +137,8 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
     """聚合 memory 表的计数——最接近"用户已积累的技能"的概念（memory 从历史会话提取）。"""
     counts = (
         await db.execute(
-            text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"), {"uid": user_id, "since": since}
+            text("SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE created_at >= :since) AS recent FROM memories WHERE user_id = :uid"),
+            {"uid": user_id, "since": since},
         )
     ).one()
     rows = (await db.execute(select(Memory.tags).where(Memory.user_id == user_id, Memory.tags.isnot(None)))).scalars().all()
@@ -154,7 +155,9 @@ async def _skill_summary(db: AsyncSession, user_id: int, since: datetime) -> dic
 
 @router.get("/overview", response_model=InsightsOverviewResponse)
 async def get_insights_overview(
-    days: int = Query(DEFAULT_INSIGHTS_DAYS, ge=1, le=90), session_data: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+    days: int = Query(DEFAULT_INSIGHTS_DAYS, ge=1, le=90),
+    session_data: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     current_user, _ = session_data
     since = utc_now() - timedelta(days=days)
@@ -174,7 +177,7 @@ async def get_insights_overview(
         await db.execute(
             _user_messages_q(current_user.id, since)
             .with_only_columns(Message.tool_calls)
-            .where(Message.tool_calls.isnot(None), Message.tool_calls != "", Message.tool_calls != "[]")
+            .where(Message.tool_calls.isnot(None), Message.tool_calls != "", Message.tool_calls != "[]"),
         )
     ).all()
     tool_counts: Counter[str] = Counter(

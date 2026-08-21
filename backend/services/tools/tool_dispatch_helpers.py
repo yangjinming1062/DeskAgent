@@ -13,7 +13,7 @@ _NEVER_PARALLEL_TOOLS = frozenset({"clarify"})
 
 # 无共享可变会话状态的只读工具。
 _PARALLEL_SAFE_TOOLS = frozenset(
-    {"ha_get_state", "ha_list_entities", "ha_list_services", "read_file", "search_files", "session_search", "skill_view", "skills_list", "web_extract", "web_search"}
+    {"ha_get_state", "ha_list_entities", "ha_list_services", "read_file", "search_files", "session_search", "skill_view", "skills_list", "web_extract", "web_search"},
 )
 
 # 文件类工具在目标路径互不重叠时可并发。

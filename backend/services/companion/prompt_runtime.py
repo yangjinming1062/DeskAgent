@@ -45,7 +45,13 @@ async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext 
 
 
 async def run_prompt_json(
-    user_id: int, llm_config: UserLlmConfig | dict[str, Any], template: str, prompt_args: dict[str, Any], *, max_output_tokens: int, log_prefix: str
+    user_id: int,
+    llm_config: UserLlmConfig | dict[str, Any],
+    template: str,
+    prompt_args: dict[str, Any],
+    *,
+    max_output_tokens: int,
+    log_prefix: str,
 ) -> PromptOutcome:
     """一次性的人设 JSON 提示词调用；失败时用 reason 区分模型/传输错误与响应无法解析。"""
     model_name = llm_config.model_name if isinstance(llm_config, UserLlmConfig) else (llm_config.get("model_name") if isinstance(llm_config, dict) else "")

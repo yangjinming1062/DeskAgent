@@ -102,7 +102,13 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
             match tool_location:
                 case "backend":
                     result_str = await REGISTRY.execute_backend_tool(
-                        name, args, user_id=ctx.user_id, llm_config=ctx.llm_config, user_settings=ctx.user_settings, parent_session_id=ctx.session_id, emitter=ctx.emitter
+                        name,
+                        args,
+                        user_id=ctx.user_id,
+                        llm_config=ctx.llm_config,
+                        user_settings=ctx.user_settings,
+                        parent_session_id=ctx.session_id,
+                        emitter=ctx.emitter,
                     )
                 case "memory":
                     result_str = await ctx.native_memory.execute_tool(name, args)

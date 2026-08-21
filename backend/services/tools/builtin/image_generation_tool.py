@@ -11,7 +11,12 @@ logger = get_logger(__name__)
 
 
 async def _image_gen_chain(
-    db: AsyncSession | None, user_id: int | None, reference_image: str | None, secondary_reference_image: str | None = None, *, preferred_provider: str | list[str] | None = None
+    db: AsyncSession | None,
+    user_id: int | None,
+    reference_image: str | None,
+    secondary_reference_image: str | None = None,
+    *,
+    preferred_provider: str | list[str] | None = None,
 ) -> tuple[list[ProviderConfig], str | None]:
     """在传入 reference_image 时按图生图能力过滤 image_gen 供应商链；其余行为见参数说明。"""
     full = await resolve_provider_chain(db, user_id, "image_gen")
