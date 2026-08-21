@@ -1,5 +1,6 @@
 from typing import ClassVar
 
+import httpx
 from openai import AsyncOpenAI
 
 from .base import EmbeddingProvider, ProviderConfig, ProviderError
@@ -23,4 +24,17 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
             res = await self._client.embeddings.create(input=texts, model=model)
             return [item.embedding for item in sorted(res.data, key=lambda x: x.index)]
         except Exception as exc:
-            raise ProviderError(f"{self.provider_name} embedding error: {exc}", provider=self.provider_name, model=model) from exc
+            # 保留 status_code + 结构化 body —— 让 error_classifier 的 Phase B（错误码 fallback）可读；
+            # 之前直接重抛 ProviderError(...) 会丢掉这些字段，强制走消息模式匹配（脆弱）。
+            body = getattr(exc, "body", None)
+            if body is None:
+                response = getattr(exc, "response", None)
+                if isinstance(response, httpx.Response):
+                    try:
+                        json_body = response.json()
+                        body = json_body if isinstance(json_body, dict) else None
+                    except Exception:
+                        body = None
+            raise ProviderError(
+                f"{self.provider_name} embedding error: {exc}", status_code=getattr(exc, "status_code", None), body=body, provider=self.provider_name, model=model
+            ) from exc
