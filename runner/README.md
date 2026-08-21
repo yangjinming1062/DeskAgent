@@ -40,8 +40,7 @@ runner/
 │   ├── mcp/               # 动态 MCP 客户端
 │   ├── multimodal/        # 视觉理解 / 图像生成
 │   ├── system/            # 系统感知（焦点 / 空闲 / 屏幕 / 麦克风）
-│   ├── toolsets/          # 工具集启用/禁用配置
-│   └── security/          # Tirith 扫描 / 路径白名单
+│   └── toolsets/          # 工具集启用/禁用配置
 └── utils/                 # 纯 helper 层：路径 / 配置 / 脱敏 / 文件安全 / PID / 反向 RPC / capabilities / Desktop IPC 传输
 ```
 
@@ -55,7 +54,6 @@ runner/
 - **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
-- **Tirith 扫描作为 shell 命令前置过滤器**：所有 shell 命令执行前拉起本地 Tirith 模块做参数签名与静态审查，默认 fail-secure，二进制未安装时友好降级并告警。为什么不在 LLM 层做：LLM 层做参数校验是治标，执行边界做拦截更彻底。
 - **SSRF 建连前 + 建连时双重校验**：仅域名解析预检会被预检-建连之间的 DNS 重绑定绕过；httpx 的 connect 事件钩子捕获实际目标 IP 二次过滤。为什么不只信任 URL 形式：URL 里的 host 解析后可以被重新指向。
 - **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明（含平台 marker），"有就是有、没有就是没有"，不需要在导入时再判断。try-except import 只允许两类合法场景：① 运行时能力探测（故意执行原生加载器的 import 验证二进制真能加载）；② OS 框架/平台导入（ctypes / Quartz / pythoncom 等非 pip 依赖）。对已声明依赖残留的 try-except 属历史遗留，方向是移除。
 - **代码执行沙箱 RPC 令牌鉴权**：每次代码执行生成一次性能力 token，子进程首帧校验；Windows loopback TCP 端点防范本地未授权进程访问。

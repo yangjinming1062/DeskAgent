@@ -41,7 +41,7 @@ logger = logging.getLogger("spiritagent_runner")
 
 
 def _require_supported_host() -> None:
-    """Runner 只在 Windows + macOS 上分发; 在其他平台直接拒绝启动 — 跑在不支持的主机上, 多项子系统(麦克风探测、system-activity 后端、cu_* 工具、Tirith 多语言提示)都会悄悄失效, 不如直接在此硬失败, 给运维/CI 一个明确信号。"""
+    """Runner 只在 Windows + macOS 上分发; 在其他平台直接拒绝启动 — 跑在不支持的主机上, 多项子系统(麦克风探测、system-activity 后端、cu_* 工具)都会悄悄失效, 不如直接在此硬失败, 给运维/CI 一个明确信号。"""
     if sys.platform not in {"win32", "darwin"}:
         raise SystemExit(f"SpiritAgent Runner does not support the {sys.platform!r} host. Supported hosts are Windows and macOS only.")
 

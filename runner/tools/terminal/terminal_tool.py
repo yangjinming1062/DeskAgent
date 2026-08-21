@@ -13,7 +13,6 @@ from utils import cfg_get, clean_output, load_config
 
 from ..process import process_registry
 from ..registry import registry
-from ..security import check_command_security
 from ._env_singularity import _get_scratch_dir
 from .environment import (
     active_environments,
@@ -226,7 +225,6 @@ def terminal_tool(
     background: bool = False,
     timeout: int | None = None,
     task_id: str | None = None,
-    force: bool = False,
     workdir: str | None = None,
     pty: bool = False,
     notify_on_complete: bool = False,
@@ -339,10 +337,6 @@ def terminal_tool(
                         last_activity[effective_task_id] = time.time()
                         env = new_env
                     logger.info("%s environment ready for task %s", env_type, effective_task_id[:8])
-        if not force:
-            tirith_err = check_command_security(command)
-            if tirith_err and tirith_err.get("action") == "block":
-                return json.dumps({"output": "", "exit_code": -1, "error": tirith_err, "status": "error"}, ensure_ascii=False)
         if workdir:
             workdir_error = _validate_workdir(workdir)
             if workdir_error:
@@ -553,11 +547,6 @@ TERMINAL_SCHEMA = {
                 "description": "Run in pseudo-terminal (PTY) mode for interactive CLI tools like Codex, Claude Code, or Python REPL. Only works with local and SSH backends. Default: false.",
                 "default": False,
             },
-            "force": {
-                "type": "boolean",
-                "description": "Skip the tirith safety scan for this single command (YOLO mode). Useful only when the user explicitly trusts the command — never set this for untrusted or model-originated input. Default: false.",
-                "default": False,
-            },
             "notify_on_complete": {
                 "type": "boolean",
                 "description": "When true (and background=true), you'll be automatically notified exactly once when the process finishes. **This is the right choice for almost every long-running task** — tests, builds, deployments, multi-item batch jobs, anything that takes over a minute and has a defined end. Use this and keep working on other things; the system notifies you on exit. MUTUALLY EXCLUSIVE with watch_patterns — when both are set, watch_patterns is dropped.",
@@ -584,7 +573,6 @@ def _handle_terminal(args: dict[str, Any], **kw: Any) -> str:
         pty=args.get("pty", False),
         notify_on_complete=args.get("notify_on_complete", False),
         watch_patterns=args.get("watch_patterns"),
-        force=args.get("force", False),
     )
 
 
