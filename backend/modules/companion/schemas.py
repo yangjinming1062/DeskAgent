@@ -26,6 +26,8 @@ class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
     seed_front_url: str = ""
+    seed_back_url: str = ""
+    supports_multiview: bool = False
     # 已选 fullbody 风格 + 持久 style-sample URL（读取时重签名），作为全身确认阶段的 resume 入口。
     fullbody_style: str = ""
     fullbody_samples: dict[str, str] = Field(default_factory=dict)
@@ -59,11 +61,20 @@ class FullbodyFrontGenerateRequest(BaseModel):
     content_type: str | None = Field(default=None, max_length=64)
 
 
+class FullbodyBackGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    style: str = Field(default="cel_shading", max_length=64)
+    feedback: str | None = Field(default=None, max_length=500)
+    front_url: str | None = Field(default=None, max_length=2048)
+
+
 class FullbodyConfirmFrontRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     style: str | None = Field(default=None, max_length=64)
     front_url: str | None = Field(default=None, max_length=2048)
+    back_url: str | None = Field(default=None, max_length=2048)
 
 
 class FullbodySelectStyleRequest(BaseModel):

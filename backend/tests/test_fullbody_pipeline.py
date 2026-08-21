@@ -2,21 +2,24 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from api.v1.companion import router as companion_router
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from modules.companion import AvatarAsset
+from sqlalchemy import update
+
+from api.v1.companion import router as companion_router
+from modules.companion import AvatarAsset, Persona
 from services.companion import (
     AvatarSourceUnreadableError,
     FrontSeedMissingError,
     UnknownFullbodyStyleError,
     avatar_response,
     confirm_fullbody_front,
+    generate_fullbody_back,
     generate_fullbody_front,
     generate_fullbody_style_samples,
+    get_onboarding_state,
     select_fullbody_style,
 )
-from sqlalchemy import update
 
 
 @pytest.mark.asyncio
@@ -292,13 +295,16 @@ async def test_fullbody_confirm_keeps_front_only_without_multiview(SessionLocal)
         db.add(avatar)
         await db.commit()
 
-        with patch(
-            "services.companion.avatar_service._configured_model_provider_supports_multiview",
-            return_value=False,
-        ), patch(
-            "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
-            new_callable=AsyncMock,
-        ) as mock_gen:
+        with (
+            patch(
+                "services.image_to_3d.provider_supports_multiview",
+                return_value=False,
+            ),
+            patch(
+                "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+                new_callable=AsyncMock,
+            ) as mock_gen,
+        ):
             confirmed = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
 
         assert mock_gen.await_count == 0
@@ -586,3 +592,157 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
                 last_call.kwargs.get("reference_image")
                 == f"data:image/png;base64,{custom_ref_b64}"
             )
+
+
+@pytest.mark.asyncio
+async def test_fullbody_back_and_confirm_with_back_url(SessionLocal):
+    """测试生成背面立绘，并在确认正面时复用传入的背面图，仅补齐侧面视图。"""
+    user_id = 412
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "精灵弓手", "fullbody_style": "cel_shading"}',
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="companion-avatars/front.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with (
+            patch(
+                "services.companion.avatar_service._generate_one_portrait_with_moderation_retry",
+                new_callable=AsyncMock,
+            ) as mock_gen,
+            patch(
+                "services.companion.avatar_service.load_avatar_bytes_as_data_uri",
+                return_value="data:image/jpeg;base64,mockfront",
+            ),
+        ):
+            mock_gen.return_value = (
+                "temp-media/back_draft.jpg",
+                "f_back",
+                "jpg",
+                "https://source.example/back.jpg",
+            )
+            back_asset = await generate_fullbody_back(
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="cel_shading",
+                feedback="头发加长，背上有箭袋",
+            )
+            assert "back_draft.jpg" in back_asset.seed_back_url
+            payload = json.loads(back_asset.prompt_json)
+            assert payload["fullbody_back_feedback"] == "头发加长，背上有箭袋"
+            res = avatar_response(back_asset)
+            assert "back_draft.jpg" in res.seed_back_url
+            assert res.supports_multiview is True
+
+            # 确认时显式传入已生成的 back_url，mock_gen 应只为缺失的 right 和 left 调用 2 次
+            mock_gen.reset_mock()
+            mock_gen.side_effect = [
+                (
+                    "companion-avatars/aux_right.jpg",
+                    "f_r",
+                    "jpg",
+                    "https://source.example/r.jpg",
+                ),
+                (
+                    "companion-avatars/aux_left.jpg",
+                    "f_l",
+                    "jpg",
+                    "https://source.example/l.jpg",
+                ),
+            ]
+            with (
+                patch(
+                    "services.companion.avatar_service._read_temp_media_bytes",
+                    return_value=(b"back_bytes", "image/jpeg"),
+                ),
+                patch(
+                    "services.companion.avatar_service._persist_portrait_bytes",
+                    new_callable=AsyncMock,
+                    return_value=("companion-avatars/promoted_back.jpg", "f_p", "jpg"),
+                ),
+            ):
+                confirmed = await confirm_fullbody_front(
+                    db,
+                    user_id,
+                    avatar_id=avatar.id,
+                    style="cel_shading",
+                    front_url="companion-avatars/front.jpg",
+                    back_url="temp-media/back_draft.jpg",
+                )
+
+            assert "promoted_back.jpg" in confirmed.seed_back_url
+            assert "aux_right.jpg" in confirmed.seed_right_url
+            assert "aux_left.jpg" in confirmed.seed_left_url
+            assert mock_gen.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_fullbody_back_without_front_raises(SessionLocal):
+    user_id = 413
+    async with SessionLocal() as db:
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "少女"}',
+            asset_url="companion-avatars/test.jpg",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+
+        with pytest.raises(FrontSeedMissingError):
+            await generate_fullbody_back(db, user_id, avatar_id=avatar.id)
+
+
+@pytest.mark.asyncio
+async def test_fullbody_onboarding_state_with_and_without_multiview(SessionLocal):
+    """支持多视角时需 front+back 均存在才推进；不支持多视角时仅需 front 存在。"""
+    user_id = 414
+    async with SessionLocal() as db:
+        persona = Persona(
+            user_id=user_id,
+            definition_json=json.dumps(
+                {
+                    "name": "艾莉丝",
+                    "species": "人类",
+                    "character_gender": "女",
+                    "appearance": "金发碧眼",
+                    "role": "助手",
+                    "personality": "温和",
+                    "speaking_style": "礼貌",
+                }
+            ),
+            is_complete=True,
+            is_portrait_confirmed=True,
+        )
+        avatar = AvatarAsset(
+            user_id=user_id,
+            prompt_json='{"avatar_prompt": "金发少女", "fullbody_style": "cel_shading"}',
+            asset_url="companion-avatars/test.jpg",
+            seed_front_url="companion-avatars/front.jpg",
+            seed_back_url="",
+            active=True,
+        )
+        db.add(persona)
+        db.add(avatar)
+        await db.commit()
+
+        # 支持多视角时（Tripo/Hunyuan），无 seed_back_url 保持停留在 fullbody
+        with patch(
+            "services.image_to_3d.provider_supports_multiview",
+            return_value=True,
+        ):
+            state = await get_onboarding_state(db, user_id)
+            assert state["next_field"] == "fullbody"
+
+        # 不支持多视角时，有 seed_front_url 即可推进至 voice
+        with patch(
+            "services.image_to_3d.provider_supports_multiview",
+            return_value=False,
+        ):
+            state = await get_onboarding_state(db, user_id)
+            assert state["next_field"] == "voice"

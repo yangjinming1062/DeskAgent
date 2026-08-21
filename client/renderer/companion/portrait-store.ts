@@ -10,6 +10,7 @@ import { resolvePortraitUrl } from './avatar-image'
 export const $portraitUrl = atom<string | null>(null)
 export const $fullbodyStyle = atom<string>('cel_shading')
 export const $fullbodySamples = atom<Record<string, string>>({})
+export const $supportsMultiview = atom<boolean>(false)
 
 // 当前 avatar 行 id——由 hydrate 与每次创建新行的重生写入。
 // 3D 流水线是在服务端读取当前 avatar 行，所以这里只是为画廊选择做镜像。
@@ -27,6 +28,10 @@ export function setFullbodySamples(samples: Record<string, string>): void {
   $fullbodySamples.set(samples)
 }
 
+export function setSupportsMultiview(supported: boolean): void {
+  $supportsMultiview.set(supported)
+}
+
 export function setActiveAvatarId(id: number | null): void {
   $activeAvatarId.set(id)
 }
@@ -34,13 +39,17 @@ export function setActiveAvatarId(id: number | null): void {
 export interface PortraitUrls {
   assetUrl?: string | null
   seedFrontUrl?: string | null
+  seedBackUrl?: string | null
   id?: number | null
 }
 
-// 把新拿到的 asset_url 与正面种子解析成 data URL。asset_url 写入全局 $portraitUrl；
-export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: string | null; seedFront: string | null }> {
+// 把新拿到的 asset_url 与正面/背面种子解析成 data URL。asset_url 写入全局 $portraitUrl；
+export async function applyPortrait(
+  urls: PortraitUrls
+): Promise<{ avatar: string | null; seedBack: string | null; seedFront: string | null }> {
   const avatar = urls.assetUrl === undefined ? null : await resolvePortraitUrl(urls.assetUrl)
   const seedFront = urls.seedFrontUrl === undefined ? null : await resolvePortraitUrl(urls.seedFrontUrl)
+  const seedBack = urls.seedBackUrl === undefined ? null : await resolvePortraitUrl(urls.seedBackUrl)
 
   if (avatar) {
     setPortraitUrl(avatar)
@@ -50,7 +59,7 @@ export async function applyPortrait(urls: PortraitUrls): Promise<{ avatar: strin
     setActiveAvatarId(urls.id)
   }
 
-  return { avatar, seedFront }
+  return { avatar, seedBack, seedFront }
 }
 
 // 应用启动时从后端拉当前头像。由 root.tsx 在用户鉴权通过后触发；

@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import image_to_3d
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
 # 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
@@ -156,8 +157,8 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
         if not persona.is_portrait_confirmed:
             return _state(merged, "portrait", False)
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        # 正面种子图可能在确认前就存在（选风格/重绘），而侧背种子图由 confirm-front 原子写入，故以后者作为解锁后续阶段的判据
-        if avatar is None or not (getattr(avatar, "seed_front_url", None) and getattr(avatar, "seed_back_url", None)):
+        supports_multiview = image_to_3d.provider_supports_multiview()
+        if avatar is None or not getattr(avatar, "seed_front_url", None) or (supports_multiview and not getattr(avatar, "seed_back_url", None)):
             return _state(merged, "fullbody", False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")

@@ -40,7 +40,8 @@ import {
   selectAvatar,
   selectPortraitEntry,
   setActiveAvatarId,
-  setRegenFeedback
+  setRegenFeedback,
+  setSupportsMultiview
 } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
@@ -461,6 +462,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
 
   const [styleCatalog, setStyleCatalog] = useState<FullbodyStyleOption[]>([])
+  const [supportsMultiview, setSupportsMultiviewState] = useState(false)
+  const [fullbodyViewTab, setFullbodyViewTab] = useState<'front' | 'back'>('front')
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
   const [fullbodyLoadingText, setFullbodyLoadingText] = useState('正在为您生成不同风格的全身样图…')
   const [fullbodySamples, setFullbodySamplesState] = useState<Record<string, string>>({})
@@ -470,6 +473,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [fullbodyFrontUrl, setFullbodyFrontUrl] = useState<string | null>(null)
   const [fullbodyFrontRawUrl, setFullbodyFrontRawUrl] = useState<string | null>(null)
   const [fullbodyFeedback, setFullbodyFeedback] = useState<string>('')
+  const [fullbodyBackUrl, setFullbodyBackUrl] = useState<string | null>(null)
+  const [fullbodyBackRawUrl, setFullbodyBackRawUrl] = useState<string | null>(null)
+  const [fullbodyBackFeedback, setFullbodyBackFeedback] = useState<string>('')
   const [fullbodyHint, setFullbodyHint] = useState<string | null>(null)
   const [fullbodyZoomUrl, setFullbodyZoomUrl] = useState<string | null>(null)
 
@@ -478,6 +484,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   >({})
 
   const [fullbodyHistoryIndices, setFullbodyHistoryIndices] = useState<Record<string, number>>({})
+
+  const [fullbodyBackHistories, setFullbodyBackHistories] = useState<
+    Record<string, Array<{ rawUrl: string | null; previewUrl: string }>>
+  >({})
+
+  const [fullbodyBackHistoryIndices, setFullbodyBackHistoryIndices] = useState<Record<string, number>>({})
 
   // 在「形象描述」题目提交上来的参考图。本地用 IndexedDB 草稿缓存持久化，
   // 这样半身生成前崩溃后重启也能带回来。
@@ -876,6 +888,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const avatarRes = await window.spiritagent.api<{
       asset_url?: string | null
       seed_front_url?: string | null
+      seed_back_url?: string | null
+      supports_multiview?: boolean
       id?: number
       fullbody_style?: string | null
       fullbody_samples?: Record<string, string>
@@ -883,6 +897,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       path: '/api/companion/avatar',
       method: 'GET'
     })
+
+    const isMultiview = avatarRes?.supports_multiview ?? false
+    setSupportsMultiviewState(isMultiview)
+    setSupportsMultiview(isMultiview)
 
     await applyLocalPortrait(avatarRes)
     setPhase('fullbody-3d')
@@ -932,6 +950,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyFrontRawUrl(initialFrontRaw)
     setFullbodyFrontUrl(initialFrontResolved)
 
+    let initialBackRaw: string | null = null
+    let initialBackResolved: string | null = null
+
+    if (avatarRes?.seed_back_url) {
+      initialBackRaw = avatarRes.seed_back_url
+      initialBackResolved = await resolvePortraitUrl(avatarRes.seed_back_url)
+    }
+
+    setFullbodyBackRawUrl(initialBackRaw)
+    setFullbodyBackUrl(initialBackResolved)
+
     const initialHistories: Record<string, Array<{ rawUrl: string | null; previewUrl: string }>> = {}
     const initialIndices: Record<string, number> = {}
 
@@ -959,6 +988,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     setFullbodyHistories(initialHistories)
     setFullbodyHistoryIndices(initialIndices)
+
+    const initialBackHistories: Record<string, Array<{ rawUrl: string | null; previewUrl: string }>> = {}
+    const initialBackIndices: Record<string, number> = {}
+
+    if (style && initialBackResolved) {
+      initialBackHistories[style] = [{ rawUrl: initialBackRaw, previewUrl: initialBackResolved }]
+      initialBackIndices[style] = 0
+    }
+
+    setFullbodyBackHistories(initialBackHistories)
+    setFullbodyBackHistoryIndices(initialBackIndices)
 
     if (avatarRes?.id != null && (Object.keys(rawSamples).length === 0 || Object.keys(resolvedSamples).length === 0)) {
       // 没有持久化样图，或者 temp-media 草稿已过 TTL——重新生成，别显示死卡。
@@ -1239,9 +1279,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPhase('fullbody-3d')
     setFullbodyStyleState(null)
     setSelectedStyleKey('')
+    setFullbodyViewTab('front')
     setFullbodyFrontUrl(null)
     setFullbodyFrontRawUrl(null)
+    setFullbodyBackUrl(null)
+    setFullbodyBackRawUrl(null)
     setFullbodyFeedback('')
+    setFullbodyBackFeedback('')
     setFullbodyHint(null)
     setFullbodyZoomUrl(null)
 
@@ -1320,6 +1364,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const selectStyle = (styleId: string) => {
     setSelectedStyleKey(styleId)
     setFullbodyStyleState(styleId)
+    setFullbodyViewTab('front')
 
     const historyList = fullbodyHistories[styleId] || []
     const historyIdx = fullbodyHistoryIndices[styleId] ?? 0
@@ -1345,6 +1390,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     setFullbodyFrontRawUrl(frontRaw)
     setFullbodyFrontUrl(frontResolved)
+
+    const backHistoryList = fullbodyBackHistories[styleId] || []
+    const backHistoryIdx = fullbodyBackHistoryIndices[styleId] ?? 0
+
+    if (backHistoryList.length > 0 && backHistoryList[backHistoryIdx]) {
+      setFullbodyBackRawUrl(backHistoryList[backHistoryIdx].rawUrl)
+      setFullbodyBackUrl(backHistoryList[backHistoryIdx].previewUrl)
+    } else {
+      setFullbodyBackRawUrl(null)
+      setFullbodyBackUrl(null)
+    }
+
     setFullbodyHint(null)
 
     // 持久化本次选择，让重启能从正面预览处继续，而不是重新生成样图。
@@ -1378,8 +1435,26 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     [fullbodyHistories, fullbodyStyle]
   )
 
+  const onSelectFullbodyBackHistoryEntry = useCallback(
+    (idx: number) => {
+      if (!fullbodyStyle) {
+        return
+      }
+
+      const list = fullbodyBackHistories[fullbodyStyle] || []
+
+      if (idx >= 0 && idx < list.length) {
+        const entry = list[idx]
+        setFullbodyBackHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: idx }))
+        setFullbodyBackUrl(entry.previewUrl)
+        setFullbodyBackRawUrl(entry.rawUrl)
+      }
+    },
+    [fullbodyBackHistories, fullbodyStyle]
+  )
+
   const regenerateFullbodyFront = async () => {
-    if (!activeAvatarId || !fullbodyStyle) {
+    if (!activeAvatarId || !fullbodyStyle || fullbodyLoading) {
       return
     }
 
@@ -1423,6 +1498,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       if (resolvedUrl) {
         setFullbodyFrontRawUrl(rawFront)
         setFullbodyFrontUrl(resolvedUrl)
+        setFullbodyBackUrl(null)
+        setFullbodyBackRawUrl(null)
 
         let targetIdx = 0
         setFullbodyHistories(prev => {
@@ -1452,6 +1529,92 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
+  const regenerateFullbodyBack = async () => {
+    if (!activeAvatarId || !fullbodyStyle || fullbodyLoading) {
+      return
+    }
+
+    setFullbodyLoading(true)
+    setFullbodyLoadingText('正在按要求生成背面全身图…')
+    setFullbodyHint(null)
+
+    try {
+      const res = await window.spiritagent.api<{
+        id?: number
+        asset_url?: string
+        seed_front_url?: string
+        seed_back_url?: string
+      }>({
+        path: `/api/companion/avatar/${activeAvatarId}/fullbody/back`,
+        method: 'POST',
+        body: {
+          style: fullbodyStyle,
+          feedback: fullbodyBackFeedback.trim() || undefined,
+          front_url: fullbodyFrontRawUrl || undefined
+        }
+      })
+
+      const applied = await applyPortrait({
+        id: res?.id,
+        assetUrl: res?.asset_url,
+        seedFrontUrl: res?.seed_front_url,
+        seedBackUrl: res?.seed_back_url
+      })
+
+      const rawBack = res?.seed_back_url || null
+      let resolvedUrl: string | null = null
+
+      if (applied.seedBack) {
+        resolvedUrl = applied.seedBack
+      } else if (rawBack) {
+        resolvedUrl = await resolvePortraitUrl(rawBack)
+      }
+
+      if (resolvedUrl) {
+        setFullbodyBackRawUrl(rawBack)
+        setFullbodyBackUrl(resolvedUrl)
+
+        let targetIdx = 0
+        setFullbodyBackHistories(prev => {
+          let currentList = prev[fullbodyStyle] || []
+
+          if (currentList.length === 0 && fullbodyBackUrl) {
+            currentList = [{ rawUrl: fullbodyBackRawUrl, previewUrl: fullbodyBackUrl }]
+          }
+
+          const nextList = [...currentList, { rawUrl: rawBack, previewUrl: resolvedUrl }]
+
+          if (nextList.length > 5) {
+            nextList.shift()
+          }
+
+          targetIdx = nextList.length - 1
+
+          return { ...prev, [fullbodyStyle]: nextList }
+        })
+
+        setFullbodyBackHistoryIndices(prev => ({ ...prev, [fullbodyStyle]: targetIdx }))
+      }
+    } catch (err) {
+      setFullbodyHint(err instanceof Error ? err.message : '生成背面全身图失败，请重试')
+    } finally {
+      setFullbodyLoading(false)
+    }
+  }
+
+  const goToBackView = () => {
+    if (fullbodyLoading) {
+      return
+    }
+
+    setFullbodyViewTab('back')
+    setFullbodyHint(null)
+
+    if (!fullbodyBackUrl) {
+      void regenerateFullbodyBack()
+    }
+  }
+
   const confirmFullbodyFront = () => {
     if (!activeAvatarId || !fullbodyStyle) {
       return
@@ -1460,6 +1623,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const avatarId = activeAvatarId
     const style = fullbodyStyle
     const frontUrl = fullbodyFrontRawUrl
+    const backUrl = supportsMultiview ? fullbodyBackRawUrl : undefined
 
     // 立刻推进到 voice 阶段，不等后台的多视图生成完成
     setPhase('voice')
@@ -1479,7 +1643,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         method: 'POST',
         body: {
           style,
-          front_url: frontUrl || undefined
+          front_url: frontUrl || undefined,
+          back_url: backUrl || undefined
         }
       })
       .then(async res => {
@@ -1596,6 +1761,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     return list.map(item => ({ url: item.previewUrl }))
   }, [fullbodyHistories, fullbodyStyle])
+
+  const currentFullbodyBackHistory: HistoryGalleryItem[] = useMemo(() => {
+    if (!fullbodyStyle) {
+      return []
+    }
+
+    const list = fullbodyBackHistories[fullbodyStyle] || []
+
+    return list.map(item => ({ url: item.previewUrl }))
+  }, [fullbodyBackHistories, fullbodyStyle])
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
@@ -1961,84 +2136,213 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     </div>
                     <button
                       className="text-xs text-white/60 transition hover:text-white"
-                      onClick={() => setFullbodyStyleState(null)}
+                      onClick={() => {
+                        setFullbodyStyleState(null)
+                        setFullbodyViewTab('front')
+                      }}
                       type="button"
                     >
                       更换画风
                     </button>
                   </div>
 
-                  <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
-                    {fullbodyFrontUrl ? (
+                  {supportsMultiview && (
+                    <div className="mt-2.5 flex rounded-lg bg-white/10 p-0.5 text-xs">
                       <button
-                        aria-label="放大查看"
-                        className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
-                        onClick={() => setFullbodyZoomUrl(fullbodyFrontUrl)}
+                        className={`flex-1 rounded-md py-1 font-medium transition ${
+                          fullbodyViewTab === 'front' ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white'
+                        } disabled:opacity-40`}
+                        disabled={fullbodyLoading}
+                        onClick={() => setFullbodyViewTab('front')}
                         type="button"
                       >
-                        <img alt="正面全身立绘" className="h-full w-full object-cover" src={fullbodyFrontUrl} />
-                        <div className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white/80 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 hover:text-white">
-                          <svg
-                            className="h-3.5 w-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth={2}
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </div>
+                        正面立绘
                       </button>
-                    ) : (
-                      <div className="text-xs text-white/40">暂无预览图</div>
-                    )}
-                  </div>
-
-                  {currentFullbodyHistory.length > 1 && (
-                    <div className="mt-2">
-                      <HistoryGallery
-                        entries={currentFullbodyHistory}
-                        onSelect={onSelectFullbodyHistoryEntry}
-                        selectedIdx={fullbodyHistoryIndices[fullbodyStyle] ?? currentFullbodyHistory.length - 1}
-                      />
+                      <button
+                        className={`flex-1 rounded-md py-1 font-medium transition ${
+                          fullbodyViewTab === 'back' ? 'bg-white text-black shadow' : 'text-white/70 hover:text-white'
+                        } disabled:opacity-40`}
+                        disabled={fullbodyLoading}
+                        onClick={() => goToBackView()}
+                        type="button"
+                      >
+                        背面立绘
+                      </button>
                     </div>
                   )}
 
-                  <div className="mt-3">
-                    <textarea
-                      className={`${INPUT_CLASS} text-xs`}
-                      maxLength={MAX_APPEARANCE}
-                      onChange={e => setFullbodyFeedback(e.target.value)}
-                      placeholder="对正面立绘有微调要求？例如：头发再长一点、换个服饰配色…（可留空直接确认）"
-                      rows={2}
-                      value={fullbodyFeedback}
-                    />
-                  </div>
+                  {fullbodyViewTab === 'front' ? (
+                    <>
+                      <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
+                        {fullbodyFrontUrl ? (
+                          <button
+                            aria-label="放大查看"
+                            className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
+                            onClick={() => setFullbodyZoomUrl(fullbodyFrontUrl)}
+                            type="button"
+                          >
+                            <img alt="正面全身立绘" className="h-full w-full object-cover" src={fullbodyFrontUrl} />
+                            <div className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white/80 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 hover:text-white">
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="text-xs text-white/40">暂无预览图</div>
+                        )}
+                      </div>
 
-                  {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
+                      {currentFullbodyHistory.length > 1 && (
+                        <div className="mt-2">
+                          <HistoryGallery
+                            entries={currentFullbodyHistory}
+                            onSelect={onSelectFullbodyHistoryEntry}
+                            selectedIdx={fullbodyHistoryIndices[fullbodyStyle] ?? currentFullbodyHistory.length - 1}
+                          />
+                        </div>
+                      )}
 
-                  <div className="mt-3 flex items-center justify-between text-xs">
-                    <button
-                      className="text-white/70 transition hover:text-white disabled:opacity-40"
-                      disabled={fullbodyLoading}
-                      onClick={() => void regenerateFullbodyFront()}
-                      type="button"
-                    >
-                      微调重绘
-                    </button>
-                    <button
-                      className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
-                      disabled={fullbodyLoading || !fullbodyFrontUrl}
-                      onClick={() => void confirmFullbodyFront()}
-                      type="button"
-                    >
-                      确认形象
-                    </button>
-                  </div>
+                      <div className="mt-3">
+                        <textarea
+                          className={`${INPUT_CLASS} text-xs`}
+                          maxLength={MAX_APPEARANCE}
+                          onChange={e => setFullbodyFeedback(e.target.value)}
+                          placeholder="对正面立绘有微调要求？例如：头发再长一点、换个服饰配色…（可留空直接确认）"
+                          rows={2}
+                          value={fullbodyFeedback}
+                        />
+                      </div>
+
+                      {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
+
+                      <div className="mt-3 flex items-center justify-between text-xs">
+                        <button
+                          className="text-white/70 transition hover:text-white disabled:opacity-40"
+                          disabled={fullbodyLoading}
+                          onClick={() => void regenerateFullbodyFront()}
+                          type="button"
+                        >
+                          微调重绘
+                        </button>
+                        {supportsMultiview ? (
+                          <button
+                            className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                            disabled={fullbodyLoading || !fullbodyFrontUrl}
+                            onClick={() => goToBackView()}
+                            type="button"
+                          >
+                            下一步：查看背面
+                          </button>
+                        ) : (
+                          <button
+                            className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                            disabled={fullbodyLoading || !fullbodyFrontUrl}
+                            onClick={() => void confirmFullbodyFront()}
+                            type="button"
+                          >
+                            确认形象
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
+                        {fullbodyBackUrl ? (
+                          <button
+                            aria-label="放大查看"
+                            className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
+                            onClick={() => setFullbodyZoomUrl(fullbodyBackUrl)}
+                            type="button"
+                          >
+                            <img alt="背面全身立绘" className="h-full w-full object-cover" src={fullbodyBackUrl} />
+                            <div className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white/80 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 hover:text-white">
+                              <svg
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth={2}
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </div>
+                          </button>
+                        ) : (
+                          <div className="text-xs text-white/40">正在生成背面立绘…</div>
+                        )}
+                      </div>
+
+                      {currentFullbodyBackHistory.length > 1 && (
+                        <div className="mt-2">
+                          <HistoryGallery
+                            entries={currentFullbodyBackHistory}
+                            onSelect={onSelectFullbodyBackHistoryEntry}
+                            selectedIdx={
+                              fullbodyBackHistoryIndices[fullbodyStyle] ?? currentFullbodyBackHistory.length - 1
+                            }
+                          />
+                        </div>
+                      )}
+
+                      <div className="mt-3">
+                        <textarea
+                          className={`${INPUT_CLASS} text-xs`}
+                          maxLength={MAX_APPEARANCE}
+                          onChange={e => setFullbodyBackFeedback(e.target.value)}
+                          placeholder="对背面立绘有微调要求？例如：发型细节、背部服饰/配饰…（可留空直接确认）"
+                          rows={2}
+                          value={fullbodyBackFeedback}
+                        />
+                      </div>
+
+                      {fullbodyHint && <p className="mt-2 text-xs text-rose-300/90">{fullbodyHint}</p>}
+
+                      <div className="mt-3 flex items-center justify-between text-xs">
+                        <div className="flex gap-2">
+                          <button
+                            className="text-white/60 transition hover:text-white disabled:opacity-40"
+                            disabled={fullbodyLoading}
+                            onClick={() => setFullbodyViewTab('front')}
+                            type="button"
+                          >
+                            返回正面
+                          </button>
+                          <button
+                            className="text-white/70 transition hover:text-white disabled:opacity-40"
+                            disabled={fullbodyLoading}
+                            onClick={() => void regenerateFullbodyBack()}
+                            type="button"
+                          >
+                            微调重绘
+                          </button>
+                        </div>
+                        <button
+                          className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                          disabled={fullbodyLoading || !fullbodyBackUrl}
+                          onClick={() => void confirmFullbodyFront()}
+                          type="button"
+                        >
+                          确认形象
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

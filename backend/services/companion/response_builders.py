@@ -1,6 +1,7 @@
 from components import safe_json_loads
 from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse
 
+from .. import image_to_3d
 from .asset_store import get_companion_model_sha256
 from .avatar_service import _re_sign_bare_path
 from .pipeline import signed_model_url
@@ -18,6 +19,8 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
         id=asset.id,
         asset_url=asset.asset_url,
         seed_front_url=getattr(asset, "seed_front_url", None) or "",
+        seed_back_url=getattr(asset, "seed_back_url", None) or "",
+        supports_multiview=image_to_3d.provider_supports_multiview(),
         fullbody_style=str(payload.get("fullbody_style") or ""),
         fullbody_samples=fullbody_samples,
         prompt=payload.get("prompt", ""),

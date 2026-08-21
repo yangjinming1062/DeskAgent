@@ -12,6 +12,7 @@ from modules.companion import (
     CompanionExpression,
     CompanionModelResponse,
     ExpressionAvatarRequest,
+    FullbodyBackGenerateRequest,
     FullbodyConfirmFrontRequest,
     FullbodyFrontGenerateRequest,
     FullbodySamplesRequest,
@@ -51,6 +52,7 @@ from services.companion import (
     finalize_avatar,
     generate_avatar,
     generate_companion_model,
+    generate_fullbody_back,
     generate_fullbody_front,
     generate_fullbody_style_samples,
     get_active_avatar,
@@ -340,6 +342,28 @@ async def post_fullbody_front(
     return avatar_response(asset)
 
 
+@router.post("/avatar/{avatar_id}/fullbody/back", response_model=AvatarAssetResponse)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
+async def post_fullbody_back(
+    request: Request, avatar_id: int, body: FullbodyBackGenerateRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)
+) -> AvatarAssetResponse:
+    user, _ = auth
+    try:
+        asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, front_url=body.front_url)
+    except AvatarNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except FrontSeedMissingError as exc:
+        raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
+    except FullbodyGenerationError as exc:
+        err_detail = getattr(exc, "internal", str(exc))
+        logger.warning("fullbody back generation failed", extra={"user_id": user.id, "error": err_detail})
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": err_detail})
+    except MissingLlmConfigError as exc:
+        logger.warning("post_fullbody_back missing config", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
+    return avatar_response(asset)
+
+
 @router.post("/avatar/{avatar_id}/fullbody/confirm-front", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
 async def post_fullbody_confirm_front(
@@ -347,7 +371,7 @@ async def post_fullbody_confirm_front(
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
-        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url)
+        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url, back_url=body.back_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except FrontSeedMissingError as exc:

@@ -11,8 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.image_to_3d import get_provider_class
-
+from .. import image_to_3d
 from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, resolve_fullbody_template
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
@@ -33,15 +32,6 @@ _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
 
 # 按用户加锁，避免 REST 头像路由与 WS RPC 并发再生成/选择时抢同一行
 AVATAR_JOB_LOCKS: dict[int, asyncio.Lock] = {}
-
-
-def _configured_model_provider_supports_multiview() -> bool:
-    try:
-        provider_class = get_provider_class(SETTINGS.image_to_3d_provider or "tripo")
-    except LookupError:
-        logger.warning("configured image-to-3D provider is unknown; keeping front seed only", extra={"provider": SETTINGS.image_to_3d_provider})
-        return False
-    return bool(getattr(provider_class, "SUPPORTS_MULTIVIEW", False))
 
 
 _MODERATION_SANITIZATION_PROMPT = (
@@ -873,8 +863,86 @@ async def generate_fullbody_front(
     return await _write(db)
 
 
+async def generate_fullbody_back(
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str = "cel_shading", feedback: str | None = None, front_url: str | None = None
+) -> AvatarAsset:
+    """按正面立绘作为参考图生成/重绘背面全身图。"""
+    if user_id is None:
+        raise ValueError("user_id is required")
+
+    async def _fetch(session: AsyncSession):
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
+        if asset is None:
+            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        persona = await get_or_create_persona(session, user_id)
+        return asset, persona
+
+    if db is None:
+        async with SESSION_LOCAL() as probe_db:
+            asset, persona = await _fetch(probe_db)
+    else:
+        asset, persona = await _fetch(db)
+
+    effective_front_url = asset.seed_front_url
+    if front_url:
+        normalized_front = _normalize_avatar_url_to_bare(front_url)
+        if normalized_front:
+            effective_front_url = normalized_front
+
+    if not effective_front_url:
+        raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
+
+    prompt_payload = safe_json_loads(asset.prompt_json, default={})
+    if not isinstance(prompt_payload, dict):
+        prompt_payload = {}
+    effective_style = style or prompt_payload.get("fullbody_style") or "cel_shading"
+
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    species = (definition.get("biological_type") or "").strip()
+    appearance = str(definition.get("appearance") or "").strip()
+    personality = str(definition.get("personality") or "").strip()
+    template = resolve_fullbody_template(species, "biped", effective_style)
+
+    front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
+    effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
+    prompt = build_fullbody_prompt("back", template=template, style_id=effective_style, feedback=effective_feedback, appearance=appearance, personality=personality)
+
+    try:
+        back_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
+            prompt, user_id, reference_image=front_ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
+        )
+    except Exception as exc:
+        err_msg = getattr(exc, "internal", str(exc))
+        raise FullbodyGenerationError("背面全身图生成失败，请稍后重试", internal=err_msg) from exc
+
+    async def _write(session: AsyncSession) -> AvatarAsset:
+        target = await session.get(AvatarAsset, avatar_id)
+        if target is None:
+            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        payload = safe_json_loads(target.prompt_json, default={})
+        if isinstance(payload, dict):
+            payload["fullbody_style"] = effective_style
+            payload["fullbody_aux_style"] = effective_style
+            if effective_feedback is not None:
+                payload["fullbody_back_feedback"] = effective_feedback
+            else:
+                payload.pop("fullbody_back_feedback", None)
+            target.prompt_json = json.dumps(payload, ensure_ascii=False)
+        target.seed_back_url = back_url
+        await session.commit()
+        await session.refresh(target)
+        session.expunge(target)
+        _re_sign_avatar_url(target)
+        return target
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write(write_db)
+    return await _write(db)
+
+
 async def confirm_fullbody_front(
-    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None
+    db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str | None = None, front_url: str | None = None, back_url: str | None = None
 ) -> AvatarAsset:
     """确认正面全身图，并只补生成缺失的侧面/背面视图。"""
     if user_id is None:
@@ -913,13 +981,18 @@ async def confirm_fullbody_front(
     personality = str(definition.get("personality") or "").strip()
     template = resolve_fullbody_template(species, "biped", effective_style)
 
-    supports_multiview = _configured_model_provider_supports_multiview()
+    supports_multiview = image_to_3d.provider_supports_multiview()
     auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
     generated = {
         view: getattr(asset, f"seed_{view}_url")
         for view in ("right", "back", "left")
         if supports_multiview and getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style
     }
+    if supports_multiview and back_url:
+        normalized_back = _normalize_avatar_url_to_bare(back_url)
+        if normalized_back:
+            generated["back"] = normalized_back
+
     missing_views = tuple(view for view in ("right", "back", "left") if view not in generated) if supports_multiview else ()
     results = []
 
@@ -966,13 +1039,13 @@ async def confirm_fullbody_front(
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         target.seed_front_url = effective_front_url
-        target.seed_right_url = generated.get("right", "")
-        target.seed_back_url = generated.get("back", "")
-        target.seed_left_url = generated.get("left", "")
+        target.seed_right_url = generated.get("right", "") if supports_multiview else ""
+        target.seed_back_url = generated.get("back", "") if supports_multiview else ""
+        target.seed_left_url = generated.get("left", "") if supports_multiview else ""
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
         for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
             current = getattr(target, attr)
-            if current.startswith("temp-media/"):
+            if current and current.startswith("temp-media/"):
                 moved = _read_temp_media_bytes(current)
                 if moved is None:
                     raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the fullbody front")
