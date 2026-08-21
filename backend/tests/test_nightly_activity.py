@@ -56,7 +56,7 @@ async def _make_user(
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()

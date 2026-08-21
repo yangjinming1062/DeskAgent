@@ -53,7 +53,7 @@ async def create_user(payload: UserCreate, _admin: str = Depends(get_current_adm
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="用户名已存在。")
     raw_token = generate_activation_token()
     code = encode_activation_code(payload.base_url, raw_token)
-    user = User(username=payload.username, activation_code=code, activation_token_hash=hash_activation_token(raw_token), can_use=payload.can_use, expires_at=payload.expires_at)
+    user = User(username=payload.username, activation_code=code, activation_token_hash=hash_activation_token(raw_token), nightly_activity_enabled=payload.nightly_activity_enabled)
     db.add(user)
     await db.commit()
     await db.refresh(user)
@@ -80,9 +80,6 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
                 user.activation_code = encode_activation_code(payload.base_url, token)
             except Exception:
                 pass
-    # 显式 null 清空:不放入 apply_partial.exclude,否则正常的"设置未来过期时间"也会被跳过
-    if "expires_at" in payload.model_fields_set and payload.expires_at is None:
-        user.expires_at = None
     apply_partial(user, payload, exclude={"regenerate_token", "base_url"})
     await db.commit()
     await db.refresh(user)

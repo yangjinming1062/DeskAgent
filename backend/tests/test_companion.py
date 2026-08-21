@@ -1199,7 +1199,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
     monkeypatch.setattr(avatar_service, "enhance_avatar_prompt", fake_enhance_avatar)
 
     async with SessionLocal() as db:
-        user = User(username="imguser", is_active=True, can_use=True)
+        user = User(username="imguser", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1258,7 +1258,7 @@ async def test_regenerate_avatar_from_image_refuses_when_persona_incomplete(_pat
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = User(username="incomplete", is_active=True, can_use=True)
+        user = User(username="incomplete", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1412,7 +1412,7 @@ async def test_persona_put_schedules_background_tag_refresh(_patch_db, monkeypat
     class _FakeUser:
         id = fake_user_id
         is_active = True
-        can_use = True
+        nightly_activity_enabled = True
 
     async def _fake_auth():
         return _FakeUser(), None
@@ -1541,7 +1541,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
     monkeypatch.setattr("services.companion.model_service._launch_pipeline_task", _do_not_launch)
 
     async with SessionLocal() as db:
-        user = User(username="mgen", is_active=True, can_use=True)
+        user = User(username="mgen", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1604,7 +1604,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
     monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", _seed_unreadable)
 
     async with SessionLocal() as db:
-        user = User(username="mgenfail", is_active=True, can_use=True)
+        user = User(username="mgenfail", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1695,7 +1695,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(_patch_d
     monkeypatch.setattr("services.companion.avatar_service.resolve_uploaded_avatar_path", _must_not_run)
 
     async with SessionLocal() as db:
-        user = User(username="mgenidem", is_active=True, can_use=True)
+        user = User(username="mgenidem", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1757,7 +1757,7 @@ async def test_generate_companion_model_without_provider_key_rejects(_patch_db, 
     monkeypatch.setattr(pipeline.SETTINGS, "image_to_3d_provider", "tripo")
 
     async with SessionLocal() as db:
-        user = User(username="mgen_nokey", is_active=True, can_use=True)
+        user = User(username="mgen_nokey", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -1802,7 +1802,7 @@ async def _make_authenticated_client(_patch_db, uid: int = 3001):
                 id=uid,
                 username=f"u_{uid}",
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             db.add(
@@ -1823,7 +1823,7 @@ async def _make_authenticated_client(_patch_db, uid: int = 3001):
         async with SessionLocal() as db:
             yield db
 
-    fake_user = type("U", (), {"id": uid, "is_active": True, "can_use": True})()
+    fake_user = type("U", (), {"id": uid, "is_active": True, "nightly_activity_enabled": True})()
     app.dependency_overrides[get_db] = _test_get_db
     app.dependency_overrides[get_current_session] = lambda: (fake_user, None)
     return TestClient(app), SessionLocal, uid
@@ -2075,7 +2075,7 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
     monkeypatch.setattr("services.companion.pipeline.save_companion_model", lambda _b, *, user_id: f"companion-models/{user_id}/x.glb")
 
     async with SessionLocal() as db:
-        user = User(username=f"chain{rig_type}{retry_only}", is_active=True, can_use=True)
+        user = User(username=f"chain{rig_type}{retry_only}", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2194,7 +2194,7 @@ async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db
     from services.companion import pipeline as _pipeline
 
     async with SessionLocal() as db:
-        user = User(username="recover", is_active=True, can_use=True)
+        user = User(username="recover", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2252,7 +2252,7 @@ async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeyp
         monkeypatch.setattr(_p, "_provider_result_label", spy)
 
         async with SessionLocal() as db:
-            user = User(username=f"mv-{len(views)}-{supports_multiview}", is_active=True, can_use=True)
+            user = User(username=f"mv-{len(views)}-{supports_multiview}", is_active=True, nightly_activity_enabled=True)
             db.add(user)
             await db.commit()
             await db.refresh(user)

@@ -187,8 +187,6 @@ class Settings(BaseSettings):
     llm_debug_logging: bool = Field(default=False, validation_alias="LLM_DEBUG_LOGGING")
     llm_debug_max_chars: int = Field(default=4000, validation_alias="LLM_DEBUG_MAX_CHARS")
 
-    nightly_activity_enabled: bool = True
-
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore")
 
     @classmethod

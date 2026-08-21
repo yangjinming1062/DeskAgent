@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from components import utc_now
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,13 +20,7 @@ class User(ModelBase, TimestampMixin):
     activation_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     activation_token_hash: Mapped[str | None] = mapped_column(String(128), unique=True, index=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
-    can_use: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    @property
-    def entitlement_expired(self) -> bool:
-        # 每个鉴权请求都查（非仅 activate 时），否则停用/过期用户能一直刷 token。
-        return not self.can_use or (self.expires_at is not None and self.expires_at.date() < utc_now().date())
+    nightly_activity_enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"))
 
     login_records: Mapped[list["LoginRecord"]] = relationship(back_populates="user", passive_deletes=True)
     model_config: Mapped["UserModelConfig | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)

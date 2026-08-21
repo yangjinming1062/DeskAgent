@@ -1687,7 +1687,7 @@ class TestPerUserProviderChain:
                 username="u",
                 activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()
@@ -1766,7 +1766,7 @@ class TestPerUserProviderChain:
                 username="u_pin",
                 activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()
@@ -1827,7 +1827,7 @@ class TestResolveUserLlmConfigCredentials:
                 username="u",
                 activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()

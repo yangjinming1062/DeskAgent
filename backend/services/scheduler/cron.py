@@ -13,13 +13,13 @@ from components import (
     NIGHTLY_SCAN_INTERVAL_SECONDS,
     NIGHTLY_WINDOW_END_HOUR,
     NIGHTLY_WINDOW_START_HOUR,
-    SETTINGS,
     BackgroundTask,
     begin_local_scope,
     get_logger,
     session_scope,
     utc_now,
 )
+from modules.auth import User
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
@@ -274,16 +274,19 @@ async def _maybe_run_memory_consolidator(now: datetime) -> None:
 
 
 async def _maybe_run_autonomous_activity(now: datetime) -> None:
-    if not SETTINGS.nightly_activity_enabled:
-        return
-
     global _LAST_NIGHTLY_SCAN
     if now.timestamp() - _LAST_NIGHTLY_SCAN < NIGHTLY_SCAN_INTERVAL_SECONDS:
         return
     _LAST_NIGHTLY_SCAN = now.timestamp()
 
     async with session_scope() as db:
-        rows = (await db.execute(select(Memory.user_id, Memory.content).where(Memory.context == "user_profile:timezone"))).all()
+        rows = (
+            await db.execute(
+                select(Memory.user_id, Memory.content)
+                .join(User, User.id == Memory.user_id)
+                .where(Memory.context == "user_profile:timezone", User.nightly_activity_enabled.is_(True)),
+            )
+        ).all()
 
         eligible: list[tuple[int, datetime, str]] = []
         for uid_raw, tz_content in rows:

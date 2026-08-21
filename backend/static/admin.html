@@ -481,9 +481,9 @@ input[type="file"] { font-size: 0.78rem; }
                             <div class="table-scroll">
                                 <table>
                                     <thead><tr>
-                                        <th>ID</th><th>用户名</th><th>使用权限</th><th>有效期</th><th>状态</th><th style="text-align:right">操作</th>
+                                        <th>ID</th><th>用户名</th><th>夜间活动</th><th>状态</th><th style="text-align:right">操作</th>
                                     </tr></thead>
-                                    <tbody id="userList"><tr class="state-row"><td colspan="6"><div class="state-msg">加载中…</div></td></tr></tbody>
+                                    <tbody id="userList"><tr class="state-row"><td colspan="5"><div class="state-msg">加载中…</div></td></tr></tbody>
                                 </table>
                             </div>
                         </div>
@@ -573,12 +573,7 @@ input[type="file"] { font-size: 0.78rem; }
                 <input type="text" id="baseUrl" placeholder="http://localhost:10620" value="http://localhost:10620" autocomplete="off" required>
                 <div class="hint">嵌入激活码的后端地址，用户激活时客户端将连接此地址。</div>
             </div>
-            <label class="checkbox-row"><input type="checkbox" id="canUse" checked> 允许使用客户端</label>
-            <div class="field" style="margin-top:0.95rem">
-                <label for="expiresAt">到期日期</label>
-                <input type="date" id="expiresAt">
-                <div class="hint">留空表示永久有效</div>
-            </div>
+            <label class="checkbox-row"><input type="checkbox" id="nightlyEnabled" checked> 启用夜间活动</label>
             <div class="field" id="regenField" style="display:none; margin-top:0.95rem; padding-top:0.95rem; border-top:1px solid var(--border);">
                 <label>激活码</label>
                 <button type="button" class="btn btn--ghost btn--sm" onclick="regenerateToken()">重新生成激活码</button>
@@ -905,24 +900,19 @@ async function loadUsers() {
         const data = await (await apiFetch('/api/admin/users')).json();
         tabCache.users = data;
         renderUsers(data);
-    } catch (e) { $('#userList').innerHTML = stateRow(6, '加载失败：' + e.message, '', true); }
+    } catch (e) { $('#userList').innerHTML = stateRow(5, '加载失败：' + e.message, '', true); }
 }
 
 function renderUsers(data) {
     const tbody = $('#userList');
     const items = getItems(data);
     $('#userCount').textContent = items.length ? `${items.length} 个用户` : '';
-    if (!items.length) { tbody.innerHTML = stateRow(6, '暂无用户', '点击右上角“创建用户”添加'); return; }
+    if (!items.length) { tbody.innerHTML = stateRow(5, '暂无用户', '点击右上角“创建用户”添加'); return; }
     tbody.innerHTML = items.map(u => {
-        const expired = u.expires_at && new Date(u.expires_at) < new Date();
-        const expir = u.expires_at
-            ? `<span class="${expired ? 'text-red' : ''}">${fmtDate(u.expires_at)}</span>${expired ? ' ' + pill('已过期', 'red') : ''}`
-            : '<span class="text-3">永久</span>';
         return `<tr>
             <td class="td-id">${u.id}</td>
             <td><div class="cell-strong">${esc(u.username)}</div></td>
-            <td>${u.can_use ? pill('允许', 'green') : pill('禁止', 'muted')}</td>
-            <td>${expir}</td>
+            <td>${u.nightly_activity_enabled ? pill('启用', 'green') : pill('关闭', 'muted')}</td>
             <td>${u.is_active ? pill('启用', 'green') : pill('停用', 'red')}</td>
             <td class="td-actions">
                 <button class="btn btn--ghost btn--sm" onclick="manageActivation(${u.id})">激活码</button>
@@ -940,8 +930,7 @@ function showCreateUser() {
     $('#username').value = ''; $('#username').disabled = false;
     $('#baseUrl').value = 'http://localhost:10620';
     $('#baseUrl').disabled = false;
-    $('#canUse').checked = true;
-    $('#expiresAt').value = '';
+    $('#nightlyEnabled').checked = true;
     $('#regenField').style.display = 'none';
     openModal('userModal');
     $('#username').focus();
@@ -955,8 +944,7 @@ async function editUser(id) {
         $('#username').value = u.username; $('#username').disabled = true;
         $('#baseUrl').value = 'http://localhost:10620';
         $('#baseUrl').disabled = false;
-        $('#canUse').checked = u.can_use;
-        $('#expiresAt').value = fmtDateOnly(u.expires_at);
+        $('#nightlyEnabled').checked = u.nightly_activity_enabled;
         $('#regenField').style.display = '';
         openModal('userModal');
     } catch (e) { toast(e.message, 'err'); }
@@ -966,8 +954,7 @@ async function saveUser() {
     const id = $('#editUserId').value;
     const baseUrl = $('#baseUrl').value.trim();
     if (!baseUrl) { toast('请填写后端地址', 'err'); $('#baseUrl').focus(); return; }
-    const payload = { can_use: $('#canUse').checked };
-    const ea = $('#expiresAt').value; payload.expires_at = ea || null;
+    const payload = { nightly_activity_enabled: $('#nightlyEnabled').checked };
     if (!id) {
         payload.username = $('#username').value.trim();
     }

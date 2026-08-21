@@ -237,7 +237,3 @@ log_format = "json"
 llm_debug_logging = false
 # 单字段最大保留字符数，超过则截断并标注原长度
 llm_debug_max_chars = 4000
-
-[nightly]
-# 是否启用伴侣夜间日记与状态自省定时任务
-nightly_activity_enabled = true

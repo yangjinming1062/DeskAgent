@@ -132,7 +132,7 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
     test_asset.write_bytes(b"glTF\x02\x00\x00\x00testmodel")
 
     async with SessionLocal() as db:
-        user42 = User(id=42, username="user42", is_active=True, can_use=True)
+        user42 = User(id=42, username="user42", is_active=True, nightly_activity_enabled=True)
         db.add(user42)
         await db.commit()
 
@@ -207,7 +207,7 @@ async def test_media_tts_supports_json_and_form_body(_patch_db, monkeypatch):
     _, SessionLocal = _patch_db
 
     async with SessionLocal() as db:
-        user1 = User(id=101, username="tts_user", is_active=True, can_use=True)
+        user1 = User(id=101, username="tts_user", is_active=True, nightly_activity_enabled=True)
         db.add(user1)
         await db.commit()
 

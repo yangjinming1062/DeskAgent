@@ -135,13 +135,11 @@ class AdminTokenResponse(BaseModel):
 class UserCreate(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     base_url: str = Field(min_length=1, max_length=255)
-    can_use: bool = True
-    expires_at: datetime | None = None
+    nightly_activity_enabled: bool = True
 
 
 class UserUpdate(BaseModel):
-    can_use: bool | None = None
-    expires_at: datetime | None = None
+    nightly_activity_enabled: bool | None = None
     regenerate_token: bool = False
     base_url: str | None = Field(default=None, min_length=1, max_length=255)
 
@@ -151,8 +149,7 @@ class UserResponse(BaseModel):
 
     id: int
     username: str
-    can_use: bool
-    expires_at: datetime | None
+    nightly_activity_enabled: bool
     is_active: bool
     created_at: datetime
     activation_code: str | None = None

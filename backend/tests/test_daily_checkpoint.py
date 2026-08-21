@@ -31,7 +31,7 @@ async def _seed_user(SessionLocal, user_id: int = 2001):
                     generate_activation_token()
                 ),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()

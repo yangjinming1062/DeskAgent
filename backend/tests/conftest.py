@@ -143,7 +143,7 @@ async def _seed_user(SessionLocal, username="testuser"):
             activation_code=encode_activation_code("http://localhost:10620", raw_token),
             activation_token_hash=hash_activation_token(raw_token),
             is_active=True,
-            can_use=True,
+            nightly_activity_enabled=True,
         )
         db.add(user)
         await db.commit()

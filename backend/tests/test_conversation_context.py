@@ -29,7 +29,7 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
                 username=f"u{user_id}",
                 activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
-                can_use=True,
+                nightly_activity_enabled=True,
             )
             db.add(user)
             await db.commit()

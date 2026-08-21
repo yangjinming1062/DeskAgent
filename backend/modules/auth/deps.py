@@ -48,8 +48,6 @@ async def get_current_session(credentials: HTTPAuthorizationCredentials | None =
     user = (await db.execute(select(User).where(User.id == uid, User.is_active.is_(True)))).scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在或已停用。")
-    if user.entitlement_expired:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="该用户已超过有效使用期限，需要续费后才能继续使用。")
 
     now = utc_now()
     if login_record.last_seen_at is None or (now - ensure_utc(login_record.last_seen_at)).total_seconds() > LOGIN_HEARTBEAT_INTERVAL_SECONDS:

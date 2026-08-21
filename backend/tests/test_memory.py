@@ -26,7 +26,7 @@ async def _make_user(SessionLocal, user_id: int = 1001):
                         generate_activation_token()
                     ),
                     is_active=True,
-                    can_use=True,
+                    nightly_activity_enabled=True,
                 )
             )
             await db.commit()

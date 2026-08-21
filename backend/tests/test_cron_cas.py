@@ -13,7 +13,7 @@ _DUE_COLS = ("id", "user_id", "name", "schedule", "next_run_at", "prompt", "one_
 async def _seed(SessionLocal, jobs: list[dict]) -> list:
     """插入用户 + cron jobs，返回形如 ``_select_due_jobs`` 的行。"""
     async with SessionLocal() as db:
-        user = User(username="cron-cas-user", is_active=True, can_use=True)
+        user = User(username="cron-cas-user", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.flush()
         for spec in jobs:
@@ -152,7 +152,7 @@ async def test_select_due_jobs_caps_database_read(SessionLocal, monkeypatch):
 
     now = utc_now()
     async with SessionLocal() as db:
-        user = User(username="cron-cap-user", is_active=True, can_use=True)
+        user = User(username="cron-cap-user", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.flush()
         for index in range(cron_mod._MAX_DUE_PER_TICK + 2):

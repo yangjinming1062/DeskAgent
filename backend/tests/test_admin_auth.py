@@ -41,7 +41,7 @@ async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypat
 
     _, SessionLocal = _patch_db
     async with SessionLocal() as db:
-        user = User(username="consolidate-me", is_active=True, can_use=True)
+        user = User(username="consolidate-me", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.flush()
         for i in range(3):
@@ -123,31 +123,6 @@ async def test_search_sessions_by_numeric_id_substring(
     assert any(s["id"] == conv_id for s in resp.json()["sessions"])
 
 
-async def _expire_seeded_user(SessionLocal, **updates):
-    from sqlalchemy import update
-
-    from modules.auth import User
-
-    async with SessionLocal() as db:
-        await db.execute(
-            update(User).where(User.username == "testuser").values(**updates)
-        )
-        await db.commit()
-
-
-async def test_disabled_user_rejected_by_session_guard(
-    test_client, test_token, _patch_db
-):
-    """can_use=False 必须拦截所有认证请求而非下一次 activate——旧检查让被禁用用户能一直 refresh。"""
-    _, SessionLocal = _patch_db
-    await _expire_seeded_user(SessionLocal, can_use=False)
-
-    resp = await test_client.get(
-        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
-    )
-    assert resp.status_code == 403
-
-
 async def test_ws_ticket_cannot_drive_rest_refresh(_patch_db, test_client, test_token):
     from modules.auth import LoginRecord, create_access_token
 
@@ -162,34 +137,6 @@ async def test_ws_ticket_cannot_drive_rest_refresh(_patch_db, test_client, test_
     assert resp.status_code == 401
 
 
-async def test_expired_user_rejected_by_session_guard(
-    test_client, test_token, _patch_db
-):
-    _, SessionLocal = _patch_db
-    from datetime import UTC, datetime, timedelta
-
-    await _expire_seeded_user(
-        SessionLocal, expires_at=datetime.now(UTC) - timedelta(days=1)
-    )
-
-    resp = await test_client.get(
-        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
-    )
-    assert resp.status_code == 403
-
-
-async def test_expired_user_rejected_on_ws_handshake(
-    _patch_db, test_user_credentials, ws_ticket
-):
-    from services.gateway.auth import authenticate_ws_token
-
-    _, SessionLocal = _patch_db
-    await _expire_seeded_user(SessionLocal, can_use=False)
-
-    user, payload = await authenticate_ws_token(ws_ticket)
-    assert user is None and payload is None
-
-
 async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypatch):
     from pathlib import Path
 
@@ -201,7 +148,7 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
     _, SessionLocal = _patch_db
 
     async with SessionLocal() as db:
-        user = User(username="del_user", is_active=True, can_use=True)
+        user = User(username="del_user", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)

@@ -375,7 +375,7 @@ async def test_video_gen_status_endpoint_returns_reason(
     from modules.media import VideoGenJob
 
     async with SessionLocal() as db:
-        user = User(username="vg-user", is_active=True, can_use=True)
+        user = User(username="vg-user", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.flush()
         job = VideoGenJob(
