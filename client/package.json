@@ -22,7 +22,11 @@
     "dist:mac:dmg": "pnpm run build && pnpm run builder -- --mac dmg",
     "dist:win": "pnpm run build && pnpm run builder -- --win",
     "dist:win:nsis": "pnpm run build && pnpm run builder -- --win nsis",
-    "fix": "eslint renderer/ main/ --fix && prettier --write \"renderer/**/*.{ts,tsx}\" \"main/**/*.{ts,tsx}\" \"scripts/**/*.{cjs,mjs,ts}\" \"vite.config.ts\" \"tsup.config.ts\" && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json"
+    "fix": "eslint renderer/ main/ --fix && prettier --write \"renderer/**/*.{ts,tsx}\" \"main/**/*.{ts,tsx}\" \"scripts/**/*.{cjs,mjs,ts}\" \"vite.config.ts\" \"tsup.config.ts\" && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
+    "test": "vitest run && node --test --import tsx \"main/**/*.test.ts\"",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json",
+    "lint": "eslint renderer/ main/"
   },
   "dependencies": {
     "electron-log": "^5.2.0",

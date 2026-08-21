@@ -239,6 +239,11 @@ try {
         try {
             & pnpm install --frozen-lockfile
             if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
+            # 发布闸口：先跑全量测试（渲染器 vitest + 主进程 node:test），再交给 electron-builder。
+            # 跟 runner 那边的"pytest tests/ -q 后再 uv build --wheel"对齐——单元测试是 wheel/installer
+            # 的安全网，跑红则禁止打包。脚本化是 pre-commit fast-subset 的权威版本。
+            & pnpm test
+            if ($LASTEXITCODE -ne 0) { throw "pnpm test failed" }
             & pnpm run $DesktopPnpmTarget
             if ($LASTEXITCODE -ne 0) { throw "pnpm run $DesktopPnpmTarget failed" }
         } finally { Pop-Location }

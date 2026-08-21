@@ -76,6 +76,16 @@ repos:
         language: system
         files: ^client/.*\.(ts|tsx|js|cjs|mjs|json|css)$
         pass_filenames: false
+      - id: client-test-fast
+        name: client vitest (pre-commit fast subset of pnpm test)
+        # Fast subset: 渲染器 Vitest only。Full `pnpm test`（vitest + node:test 主进程）
+        # 在 scripts/build_client.{sh,ps1} 的 electron-builder 闸口前跑；这个钩子是为了
+        # 在 push 之前就把红的渲染器测试 surface 出来——和 runner-startup-imports 同思路。
+        # `pass_filenames: false` 让 pre-commit 不要把 staged 文件名追加成额外位置参数。
+        entry: pnpm --dir client exec vitest run
+        language: system
+        files: ^client/renderer/.*\.(ts|tsx)$
+        pass_filenames: false
       - id: runner-startup-imports
         name: runner startup imports (pre-commit fast subset of the build_client gate)
         # Strict subset of the build_client.{ps1,sh} gate, which runs
