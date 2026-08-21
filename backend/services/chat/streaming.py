@@ -53,12 +53,7 @@ def _function_call_to_dict(item: Any) -> dict:
     """Responses API 的 ``function_call`` 输出项 → Responses shape dict（与 DB / 工具派发共用）。"""
     if hasattr(item, "model_dump"):
         return item.model_dump(exclude_none=True)
-    return {
-        "type": "function_call",
-        "call_id": getattr(item, "call_id", "") or getattr(item, "id", ""),
-        "name": getattr(item, "name", ""),
-        "arguments": getattr(item, "arguments", "{}") or "{}",
-    }
+    return {"type": "function_call", "call_id": getattr(item, "call_id", ""), "name": getattr(item, "name", ""), "arguments": getattr(item, "arguments", "{}") or "{}"}
 
 
 def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
@@ -97,9 +92,7 @@ async def _stream_llm_response(
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
     image_items = [
-        item
-        for item in context.items
-        if isinstance(item.get("content"), list) and any(isinstance(part, dict) and part.get("type") in {"input_image", "image_url"} for part in item["content"])
+        item for item in context.items if isinstance(item.get("content"), list) and any(isinstance(part, dict) and part.get("type") == "input_image" for part in item["content"])
     ]
     if image_items:
         logger.info("multimodal request shape", extra={"model_name": model_name, "image_items": len(image_items)})

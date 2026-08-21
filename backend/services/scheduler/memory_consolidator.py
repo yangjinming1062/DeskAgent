@@ -82,7 +82,7 @@ async def maybe_consolidate_one_user(user_id: int) -> bool:
         rows_payload = [{"id": r["id"], "context": r["context"], "tags": r["tags"], "content": r["content"]} for r in recent_rows]
 
     try:
-        content = await call_llm_once(llm_cfg, _CONSOLIDATE_PROMPT, rows_payload, max_tokens=2000)
+        content = await call_llm_once(llm_cfg, _CONSOLIDATE_PROMPT, rows_payload, max_output_tokens=2000)
         parsed = parse_llm_json(content)
     except Exception as exc:
         logger.warning("memory_consolidator: llm call failed", extra={"user_id": user_id, "error": str(exc)})

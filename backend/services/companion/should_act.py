@@ -81,7 +81,7 @@ async def should_act(
             "fullscreen": "是" if fullscreen else "否",
             "screen_locked": "是" if screen_locked else "否",
         },
-        max_tokens=_MAX_RESPONSE_TOKENS,
+        max_output_tokens=_MAX_RESPONSE_TOKENS,
         log_prefix="should_act",
     )
     if parsed is None:

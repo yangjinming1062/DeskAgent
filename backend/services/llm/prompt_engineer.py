@@ -131,14 +131,14 @@ async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str,
     return text
 
 
-async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payload: Any, *, max_tokens: int) -> str | None:
+async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payload: Any, *, max_output_tokens: int) -> str | None:
     """``user_payload`` 为 dict / list 时走 JSON 序列化，否则 ``str()``。"""
     client = client_for_config(llm_cfg)
     provider_name = llm_cfg.get("provider_name", "")
     context_length = resolve_context_tokens(provider_name, ServiceType.llm)
     user_content = json.dumps(user_payload, ensure_ascii=False) if isinstance(user_payload, dict | list) else str(user_payload)
     context = ResponsesContext(instructions=system_prompt, items=[{"role": "user", "content": [{"type": "input_text", "text": user_content}]}])
-    request = response_request_kwargs(model=llm_cfg["model_name"], context=context, max_output_tokens=max_tokens)
+    request = response_request_kwargs(model=llm_cfg["model_name"], context=context, max_output_tokens=max_output_tokens)
     resp = await call_with_retry(client, context_length=context_length, **request)
     return output_text_from_response(resp) if resp else None
 

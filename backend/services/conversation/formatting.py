@@ -16,7 +16,7 @@ def _message_text(m: Message) -> str:
     if not isinstance(parsed, list):
         return raw
 
-    return "\n".join(p.get("text", "") for p in parsed if isinstance(p, dict) and p.get("type") == "text").strip()
+    return "\n".join(p.get("text", "") for p in parsed if isinstance(p, dict) and p.get("type") in {"input_text", "text"}).strip()
 
 
 def format_messages_compact(msgs: list[Message], *, char_cap: int | None = None) -> str:

@@ -63,7 +63,7 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
         llm_cfg,
         _SUMMARY_PROMPT_TEMPLATE,
         {"prev_summary_block": f"已有历史摘要：\n{prev_summary_text}" if prev_summary_text else "暂无之前摘要。", "chat_content": chat_content, "gap_instruction": gap_instruction},
-        max_tokens=_SUMMARY_MAX_TOKENS,
+        max_output_tokens=_SUMMARY_MAX_TOKENS,
         log_prefix="daily_checkpoint",
     )
     if not parsed:

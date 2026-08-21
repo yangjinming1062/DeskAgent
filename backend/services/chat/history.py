@@ -22,8 +22,8 @@ async def build_session_messages(conv_id: int, db: AsyncSession) -> list[dict]:
                     for call in calls:
                         if not isinstance(call, dict):
                             continue
-                        call_id = call.get("call_id") or call.get("id")
-                        name = call.get("name") or (call.get("function") or {}).get("name")
+                        call_id = call.get("call_id")
+                        name = call.get("name")
                         if isinstance(call_id, str) and isinstance(name, str) and name:
                             tool_name_by_call_id[call_id] = name
             else:

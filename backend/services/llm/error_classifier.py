@@ -41,11 +41,9 @@ class FailoverReason(enum.Enum):
     # 请求格式
     format_error = "format_error"  # 400 bad request —— 中止或剥离后重试
     invalid_encrypted_content = "invalid_encrypted_content"  # Responses 加密重放 blob 被拒 —— 剥离重放状态后重试
-    multimodal_tool_content_unsupported = "multimodal_tool_content_unsupported"  # 供应商拒绝 tool message 中的列表型 content（如 Xiaomi MiMo）—— 降级为文本后重试
     attachment_fetch_failed = "attachment_fetch_failed"  # 供应商拉取 image_url 内的 URL 失败；后端无法重试，需要返回给用户提示信息
 
     # 供应商专属
-    thinking_signature = "thinking_signature"  # Anthropic thinking block 签名无效
     long_context_tier = "long_context_tier"  # Anthropic "extra usage" 长上下文档位门禁
     oauth_long_context_beta_forbidden = "oauth_long_context_beta_forbidden"  # Anthropic OAuth 订阅拒绝 1M 上下文 beta —— 去掉 beta 后重试
     llama_cpp_grammar_pattern = "llama_cpp_grammar_pattern"  # llama.cpp json-schema-to-grammar 拒绝 `pattern` / `format` 内的正则转义 —— 从 tools 中剥离后重试
@@ -145,20 +143,6 @@ _IMAGE_TOO_LARGE_PATTERNS = [
 # 生图供应商返回 200 但零张图：同一供应商上重试无意义，下一家可能成功。
 _EMPTY_IMAGE_RESULT_PATTERNS = ["returned no images"]
 
-# 部分供应商严格遵循 OpenAI 规范，要求 tool message 的 ``content`` 是字符串；另一些（Anthropic 原生、Codex Responses、Gemini 原生、OpenAI 官方）扩展接受多模态列表；小米 MiMo、阿里部分端点及大量 OpenAI 兼容供应商会以 400 拒绝。命中后从 tool 消息中剥离图像部分并记录该 (provider, model) 以避免重复试错。
-# See: https://github.com/NousResearch/spirit-agent/issues/27344
-_MULTIMODAL_TOOL_CONTENT_PATTERNS = [
-    # Xiaomi MiMo: {"error":{"code":"400","message":"Param Incorrect","param":"text is not set"}}
-    "text is not set",
-    "tool message content must be a string",  # 通用 "tool message 必须为字符串"
-    "tool content must be a string",
-    "tool message must be a string",
-    # 拒绝列表型 tool content 的 OpenAI 兼容服务的 schema 校验消息
-    "expected string, got list",
-    "expected string, got array",
-    # Alibaba/DashScope 变体
-    "tool_call.content must be string",
-]
 
 # 模型存在但拒绝图像输入 —— 走 model_not_found 的回退路径。
 _VISION_UNSUPPORTED_PATTERNS = [
@@ -407,10 +391,6 @@ def _classify_provider_specific(error_msg: str, status_code: int | None, result_
     if any(p in error_msg for p in _CONTENT_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.content_policy_blocked, retryable=False, should_fallback=True)
 
-    # Anthropic thinking block 签名失效（400）：不按供应商门禁，错误可能由 OpenRouter 代理；"signature"+"thinking" 组合已足够独特。
-    if status_code == 400 and "signature" in error_msg and "thinking" in error_msg:
-        return result_fn(FailoverReason.thinking_signature, retryable=True, should_compress=False)
-
     # Anthropic 长上下文档位门禁（429 "extra usage" + "long context"）
     if status_code == 429 and "extra usage" in error_msg and "long context" in error_msg:
         return result_fn(FailoverReason.long_context_tier, retryable=True, should_compress=True)
@@ -531,9 +511,6 @@ def _classify_400(
     error_msg: str, error_code: str, body: dict, *, provider: str, model: str, approx_tokens: int, context_length: int, num_messages: int = 0, result_fn: _ClassifierBuilder
 ) -> ClassifiedError:
     """对 400 Bad Request 进行分类（上下文溢出 / 格式错误 / 通用）。"""
-    # 多模态 tool 内容被 400 拒绝（必须早于 image_too_large：恢复路径不同 —— 剥离图像并记录到 session；同时早于 context_overflow：部分模式如 "text is not set" 单独看有歧义，结合 400 + 已知含多模态才确定）
-    if any(p in error_msg for p in _MULTIMODAL_TOOL_CONTENT_PATTERNS):
-        return result_fn(FailoverReason.multimodal_tool_content_unsupported, retryable=True)
     # 不支持视觉（早于 image_too_large：恢复路径不同）
     if any(p in error_msg for p in _VISION_UNSUPPORTED_PATTERNS):
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
@@ -602,9 +579,6 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
     """在没有状态码时基于错误消息模式分类。"""
     if any(p in error_msg for p in _PAYLOAD_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.payload_too_large, retryable=True, should_compress=True)
-
-    if any(p in error_msg for p in _MULTIMODAL_TOOL_CONTENT_PATTERNS):
-        return result_fn(FailoverReason.multimodal_tool_content_unsupported, retryable=True)
 
     if any(p in error_msg for p in _IMAGE_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.image_too_large, retryable=True)

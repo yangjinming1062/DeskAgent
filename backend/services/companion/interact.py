@@ -70,7 +70,7 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
             "idle_minutes": idle_minutes,
             "allowed_emotions": ", ".join(sorted(ctx.allowed_emotions)),
         },
-        max_tokens=_MAX_RESPONSE_TOKENS,
+        max_output_tokens=_MAX_RESPONSE_TOKENS,
         log_prefix="interact",
     )
     if parsed is None:

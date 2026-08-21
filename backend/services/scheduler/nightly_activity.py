@@ -183,7 +183,7 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
             if getattr(msg, "content_type", "text") == "multimodal_v1":
                 parsed = safe_json_loads(msg.content or "")
                 if isinstance(parsed, list):
-                    text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") == "text" and (t := (p.get("text") or "").strip()))
+                    text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") in {"input_text", "text"} and (t := (p.get("text") or "").strip()))
             if text_content:
                 clean.append({"role": "user", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
     return clean
@@ -256,7 +256,7 @@ async def _stage_1_daily_reflection(
     }
     if interaction_stats_today is not None:
         payload["interaction_stats_today"] = interaction_stats_today
-    raw = await call_llm_once(llm_cfg, _REFLECTION_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_REFLECTION_MAX_TOKENS)
+    raw = await call_llm_once(llm_cfg, _REFLECTION_SYSTEM_PROMPT, payload, max_output_tokens=NIGHTLY_REFLECTION_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict):
         logger.warning("nightly_activity: stage 1 failed to parse JSON", extra={"user_id": user_id})
@@ -304,7 +304,7 @@ async def _stage_2_memory_consolidation(llm_cfg: dict[str, Any], user_id: int, r
         return True
 
     payload = {"recall_pool": recall_rows, "inferred_profile": inferred_profile, "local_date": local_date_str}
-    raw = await call_llm_once(llm_cfg, _CONSOLIDATION_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_CONSOLIDATION_MAX_TOKENS)
+    raw = await call_llm_once(llm_cfg, _CONSOLIDATION_SYSTEM_PROMPT, payload, max_output_tokens=NIGHTLY_CONSOLIDATION_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("summaries"), list):
         logger.warning("nightly_activity: stage 2 failed to parse summaries", extra={"user_id": user_id})
@@ -331,7 +331,7 @@ async def _stage_3_planning(
 ) -> int:
     """Stage 3：计划——在合适时创建主动触达的 CronJob。"""
     payload = {"inferred_profile": inferred_profile, "auto_inject_state": auto_inject, "recall_highlights": recall_highlights, **date_context, **anomaly_stats}
-    raw = await call_llm_once(llm_cfg, _PLANNING_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_PLANNING_MAX_TOKENS)
+    raw = await call_llm_once(llm_cfg, _PLANNING_SYSTEM_PROMPT, payload, max_output_tokens=NIGHTLY_PLANNING_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict) or not isinstance(parsed.get("actions"), list):
         logger.info("nightly_activity: stage 3 no actions parsed", extra={"user_id": user_id})
@@ -362,7 +362,7 @@ async def _stage_4_self_diary(
 ) -> bool:
     """Stage 4：自我日记——伙伴写下当天的个人反思。"""
     payload = {"today_conversations": clean_messages, "inferred_profile": inferred_profile, "auto_inject": auto_inject, "local_date": local_date_str}
-    raw = await call_llm_once(llm_cfg, _DIARY_SYSTEM_PROMPT, payload, max_tokens=NIGHTLY_DIARY_MAX_TOKENS)
+    raw = await call_llm_once(llm_cfg, _DIARY_SYSTEM_PROMPT, payload, max_output_tokens=NIGHTLY_DIARY_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict):
         logger.warning("nightly_activity: stage 4 failed to parse diary JSON", extra={"user_id": user_id})
@@ -418,7 +418,7 @@ async def _stage_5_creation(
         "existing_expressions": existing_expr_names,
     }
 
-    raw = await call_llm_once(llm_cfg, system_prompt, payload, max_tokens=NIGHTLY_CREATION_MAX_TOKENS)
+    raw = await call_llm_once(llm_cfg, system_prompt, payload, max_output_tokens=NIGHTLY_CREATION_MAX_TOKENS)
     parsed = parse_llm_json(raw)
     if not isinstance(parsed, dict):
         logger.warning("nightly_activity: stage 5 failed to parse JSON", extra={"user_id": user_id})

@@ -1,6 +1,6 @@
 # `services/chat/`
 
-Backend 单次对话回合的编排核心：把“系统指令 + 用户输入 + 历史 + 工具 schema”组装成 Responses 上下文喂给 LLM，对流式事件做脱敏 / 情绪采集 / think-tag 剥离，把工具调用下发给本地 Runner，等回灌后再次送入模型直到 budget 用尽或 LLM 自决终止，最后把 assistant 回复持久化并 emit `message.complete`。
+Backend 单次对话回合的编排核心：把“系统指令 + 用户输入 + 历史 + 工具 schema”组装成 Responses 上下文喂给 LLM，对流式事件做脱敏与情绪采集，把工具调用下发给本地 Runner，等回灌后再次送入模型直到 budget 用尽或 LLM 自决终止，最后把 assistant 回复持久化并 emit `message.complete`。
 
 架构上下文与跨模块契约见 [ARCHITECTURE.md §4.2.I / §6.3 / §6.4](../../ARCHITECTURE.md)；本文件只记 chat 包内独有的设计决策与边界。
 

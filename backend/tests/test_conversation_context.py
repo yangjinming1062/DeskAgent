@@ -343,8 +343,8 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     parts = json.dumps(
         [
-            {"type": "text", "text": "看这张图"},
-            {"type": "image_url", "image_url": {"url": "https://example.com/x.png"}},
+            {"type": "input_text", "text": "看这张图"},
+            {"type": "input_image", "image_url": "https://example.com/x.png"},
         ]
     )
     await _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")

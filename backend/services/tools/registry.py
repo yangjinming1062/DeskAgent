@@ -11,9 +11,7 @@ logger = get_logger(__name__)
 
 
 def schema_name(schema: dict[str, Any]) -> str:
-    if "function" in schema:
-        return schema["function"]["name"]
-    return schema["name"]
+    return schema.get("name", "")
 
 
 # 工具的 ``user_id`` / ``llm_config`` / ``user_settings`` 是正常 kwargs，被注入时从 LLM 提供的 args 中静默剔除，避免受 LLM 注入。
@@ -86,10 +84,7 @@ class ToolsRegistry:
                     if entry["availability_check"](user_settings):
                         schemas.append(entry["schema"])
                 except Exception as e:
-                    logger.warning(
-                        "availability_check raised; hiding tool",
-                        extra={"tool_name": entry["schema"].get("name") or entry["schema"].get("function", {}).get("name"), "error_msg": str(e)},
-                    )
+                    logger.warning("availability_check raised; hiding tool", extra={"tool_name": entry["schema"].get("name", ""), "error_msg": str(e)})
         schemas.extend(self._memory_tools.values())
         schemas.extend(self._runner_tools.get(user_id, {}).values())
         return schemas

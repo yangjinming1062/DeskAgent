@@ -64,7 +64,7 @@ async def check_affect(user_id: int, idle_seconds: float, local_hour: int, llm_c
             "local_hour": h if (h := coerce_hour_0_23(local_hour)) >= 0 else "未知",
             "allowed_emotions": ", ".join(sorted(ctx.allowed_emotions)),
         },
-        max_tokens=_MAX_RESPONSE_TOKENS,
+        max_output_tokens=_MAX_RESPONSE_TOKENS,
         log_prefix="affect_check",
     )
     if parsed is None:

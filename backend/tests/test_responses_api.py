@@ -10,7 +10,7 @@ from services.llm.llm_retry import _wrap_stream_for_debug
 
 def test_response_request_uses_instructions_items_and_flat_tools():
     context = ResponsesContext(instructions="SYS", items=[{"role": "user", "content": [{"type": "input_text", "text": "hello"}]}])
-    schema = {"type": "function", "function": {"name": "demo", "parameters": {"type": "object"}}}
+    schema = {"name": "demo", "parameters": {"type": "object"}}
 
     request = response_request_kwargs(model="m", context=context, tools=[schema], stream=True)
 
@@ -113,7 +113,7 @@ async def test_stream_llm_response_consumes_response_events(monkeypatch):
 
     emitter = SimpleNamespace(sent=[], send_json=_send)
     context = ResponsesContext(instructions="SYS", items=[])
-    schema = {"type": "function", "function": {"name": "demo", "parameters": {"type": "object"}}}
+    schema = {"name": "demo", "parameters": {"type": "object"}}
     provider = SimpleNamespace(raw_client=lambda: object(), REASONING_EFFORTS=frozenset({"none", "low", "medium", "high"}))
 
     result = await _stream_llm_response(

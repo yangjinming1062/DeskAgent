@@ -25,7 +25,9 @@ def _value_chars(value: Any) -> int:
     if isinstance(value, str):
         return len(value)
     if isinstance(value, dict):
-        return sum(1024 if key in {"input_image", "image_url"} else _value_chars(item) for key, item in value.items())
+        if value.get("type") == "input_image":
+            return 1024
+        return sum(_value_chars(item) for item in value.values())
     if isinstance(value, list):
         return sum(_value_chars(item) for item in value)
     return len(str(value)) if value is not None else 0
@@ -67,7 +69,7 @@ def message_to_response_items(message: dict[str, Any]) -> list[dict[str, Any]]:
         return []
     parts = content if isinstance(content, list) else ([content] if content else [])
     normalized = [normalized for part in parts if (normalized := _input_part(part)) is not None]
-    if role in {"assistant", "model"}:
+    if role == "assistant":
         output = [{"type": "output_text", "text": part["text"]} for part in normalized if part.get("type") == "input_text"]
         return [{"role": "assistant", "content": output}] if output else []
     if role == "user":
@@ -76,9 +78,8 @@ def message_to_response_items(message: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def tool_schema_for_responses(schema: dict[str, Any]) -> dict[str, Any]:
-    function = schema.get("function") if isinstance(schema.get("function"), dict) else schema
-    converted = {"type": "function", "name": function.get("name"), "parameters": function.get("parameters") or {"type": "object", "properties": {}}}
-    if description := function.get("description"):
+    converted = {"type": "function", "name": schema.get("name"), "parameters": schema.get("parameters") or {"type": "object", "properties": {}}}
+    if description := schema.get("description"):
         converted["description"] = description
     return converted
 
@@ -90,6 +91,8 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 
 def output_text_from_response(response: Any) -> str:
+    if direct := getattr(response, "output_text", None):
+        return direct
     output = getattr(response, "output", None) or []
     chunks: list[str] = []
     for item in output:
