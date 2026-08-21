@@ -247,7 +247,15 @@ class FileOperations(ABC):
 
     @abstractmethod
     def search(
-        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
+        self,
+        pattern: str,
+        path: str = ".",
+        target: str = "content",
+        file_glob: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output_mode: str = "content",
+        context: int = 0,
     ) -> SearchResult: ...
 
 
@@ -721,7 +729,7 @@ class ShellFileOperations(FileOperations):
                     f"(wrote {len(_new_content_normalized)} chars, read back "
                     f"{len(_verify_stdout_normalized)} chars after normalizing line endings). "
                     "The patch did not persist. Re-read the file and try again."
-                )
+                ),
             )
         diff = self._unified_diff(content, new_content, path)
         lint_result = self._check_lint_delta(path, pre_content=content, post_content=new_content)
@@ -779,7 +787,15 @@ class ShellFileOperations(FileOperations):
         return LintResult(success=False, output=("New lint errors introduced by this edit (pre-existing errors filtered out):\n" + "\n".join(post_lines)))
 
     def search(
-        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
+        self,
+        pattern: str,
+        path: str = ".",
+        target: str = "content",
+        file_glob: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output_mode: str = "content",
+        context: int = 0,
     ) -> SearchResult:
         """搜索内容或文件名。"""
         offset, limit = normalize_search_pagination(offset, limit)
@@ -1444,6 +1460,8 @@ def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> Pat
     base = {"diff": "\n".join(all_diffs), "files_modified": files_modified, "files_created": files_created, "files_deleted": files_deleted, "lint": lint_results or None}
     if apply_errors:
         return PatchResult(
-            success=False, error="Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + "\n".join(f"  • {e}" for e in apply_errors), **base
+            success=False,
+            error="Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + "\n".join(f"  • {e}" for e in apply_errors),
+            **base,
         )
     return PatchResult(success=True, **base)

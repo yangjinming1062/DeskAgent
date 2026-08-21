@@ -285,12 +285,26 @@ class WinBackend(ComputerUseBackend):
         window_title = self._get_hwnd_title(self._active_hwnd) if self._active_hwnd else ""
 
         return CaptureResult(
-            mode=mode, width=width, height=height, png_b64=png_b64, elements=elements, app=self._active_app, window_title=window_title, png_bytes_len=png_bytes_len
+            mode=mode,
+            width=width,
+            height=height,
+            png_b64=png_b64,
+            elements=elements,
+            app=self._active_app,
+            window_title=window_title,
+            png_bytes_len=png_bytes_len,
         )
 
     @_serialized
     def click(
-        self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
+        self,
+        *,
+        element: int | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        button: str = "left",
+        click_count: int = 1,
+        modifiers: list[str] | None = None,
     ) -> ActionResult:
         if element is not None:
             if element < 0 or element >= len(self._element_cache):
@@ -344,7 +358,14 @@ class WinBackend(ComputerUseBackend):
 
     @_serialized
     def scroll(
-        self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
+        self,
+        *,
+        direction: str,
+        amount: int = 3,
+        element: int | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        modifiers: list[str] | None = None,
     ) -> ActionResult:
         if element is not None:
             if element < 0 or element >= len(self._element_cache):
@@ -582,7 +603,7 @@ class WinBackend(ComputerUseBackend):
                             pid=getattr(ctrl.element_info, "process_id", 0),
                             window_id=self._active_hwnd,
                             attributes={"automation_id": getattr(ctrl.element_info, "automation_id", "") or ""},
-                        )
+                        ),
                     )
                     idx += 1
                 except Exception:

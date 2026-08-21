@@ -8,7 +8,7 @@ import uuid
 from typing import Any
 from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
-import requests
+import httpx
 
 from utils import call_llm_sync, cfg_get, get_spiritagent_home, load_config, redact_sensitive_text
 
@@ -42,7 +42,7 @@ def check_camofox_available() -> bool:
     if not (url := get_camofox_url()):
         return False
     try:
-        resp = requests.get(f"{url}/health", timeout=5)
+        resp = httpx.get(f"{url}/health", timeout=5)
         if resp.status_code == 200 and not _vnc_url_checked:
             if isinstance(vnc_port := resp.json().get("vncPort"), int) and 1 <= vnc_port <= 65535:
                 _vnc_url = f"http://{urlparse(url).hostname or 'localhost'}:{vnc_port}"
@@ -183,7 +183,7 @@ def _ensure_tab(task_id: str | None, url: str = "about:blank") -> dict[str, Any]
     if session["tab_id"]:
         return session
     base = get_camofox_url()
-    resp = requests.post(f"{base}/tabs", json={"userId": session["user_id"], "sessionKey": session["session_key"], "url": url}, timeout=_DEFAULT_TIMEOUT)
+    resp = httpx.post(f"{base}/tabs", json={"userId": session["user_id"], "sessionKey": session["session_key"], "url": url}, timeout=_DEFAULT_TIMEOUT)
     resp.raise_for_status()
     session["tab_id"] = resp.json().get("tabId")
     return session
@@ -206,25 +206,25 @@ def camofox_soft_cleanup(task_id: str | None = None) -> bool:
 
 
 def _post(path: str, body: dict, timeout: int = _DEFAULT_TIMEOUT) -> dict:
-    resp = requests.post(f"{get_camofox_url()}{path}", json=body, timeout=timeout)
+    resp = httpx.post(f"{get_camofox_url()}{path}", json=body, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
 def _get(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
-    resp = requests.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
+    resp = httpx.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
 
-def _get_raw(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> requests.Response:
-    resp = requests.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
+def _get_raw(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> httpx.Response:
+    resp = httpx.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
     resp.raise_for_status()
     return resp
 
 
 def _delete(path: str, body: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
-    resp = requests.delete(f"{get_camofox_url()}{path}", json=body, timeout=timeout)
+    resp = httpx.request("DELETE", f"{get_camofox_url()}{path}", json=body, timeout=timeout)
     resp.raise_for_status()
     return resp.json()
 
@@ -258,9 +258,9 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
         except Exception:
             pass
         return json.dumps(result)
-    except requests.HTTPError as e:
+    except httpx.HTTPStatusError as e:
         return tool_error(f"Navigation failed: {e}", success=False)
-    except requests.ConnectionError:
+    except (httpx.ConnectError, httpx.RequestError):
         return json.dumps({"success": False, "error": f"Cannot connect to Camofox at {get_camofox_url()}. Is the server running? Start it first."})
     except Exception as e:
         return tool_error(str(e), success=False)
@@ -410,7 +410,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
                         {"type": "text", "text": vision_prompt},
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(resp.content).decode('utf-8')}"}},
                     ],
-                }
+                },
             ],
             task="vision",
             temperature=_vision_temperature,

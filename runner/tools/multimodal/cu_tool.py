@@ -6,9 +6,8 @@ import sys
 import threading
 from typing import Any
 
-from utils import cfg_get, clean_output, load_config
+from utils import cfg_get, clean_output, is_interrupted, load_config
 
-from ..interrupt import is_interrupted
 from .cu_backend import ActionResult, CaptureResult, ComputerUseBackend, UIElement
 from .cu_cua_backend import CuaDriverBackend, cua_driver_binary_available
 from .cu_win_backend import WinBackend
@@ -227,7 +226,12 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
             button = "right" if action == "right_click" else "middle" if action == "middle_click" else args.get("button") or "left"
             coord = args.get("coordinate") or (None, None)
             res = backend.click(
-                element=args.get("element"), x=coord[0], y=coord[1], button=button, click_count=2 if action == "double_click" else 1, modifiers=args.get("modifiers")
+                element=args.get("element"),
+                x=coord[0],
+                y=coord[1],
+                button=button,
+                click_count=2 if action == "double_click" else 1,
+                modifiers=args.get("modifiers"),
             )
             return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "drag":
@@ -245,7 +249,12 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
         case "scroll":
             coord = args.get("coordinate") or (None, None)
             res = backend.scroll(
-                direction=args.get("direction", "down"), amount=int(args.get("amount", 3)), element=args.get("element"), x=coord[0], y=coord[1], modifiers=args.get("modifiers")
+                direction=args.get("direction", "down"),
+                amount=int(args.get("amount", 3)),
+                element=args.get("element"),
+                x=coord[0],
+                y=coord[1],
+                modifiers=args.get("modifiers"),
             )
             return _maybe_follow_capture(backend, _tag(res), capture_after)
         case "type":
@@ -304,7 +313,14 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     # 一次性丢弃超尺寸 PNG 并提示调用方改为更窄的 app= 或纯文本的 mode='ax'
     if cap.png_b64 and cap.mode != "ax" and (cap.png_bytes_len or 0) > _MAX_CAPTURE_BYTES:
         cap = CaptureResult(
-            mode=cap.mode, width=cap.width, height=cap.height, png_b64=None, elements=cap.elements, app=cap.app, window_title=cap.window_title, png_bytes_len=cap.png_bytes_len
+            mode=cap.mode,
+            width=cap.width,
+            height=cap.height,
+            png_b64=None,
+            elements=cap.elements,
+            app=cap.app,
+            window_title=cap.window_title,
+            png_bytes_len=cap.png_bytes_len,
         )
         summary_lines.append(f"  (PNG dropped — {cap.png_bytes_len:,} bytes exceeds {_MAX_CAPTURE_BYTES:,}-byte cap; pass app= or mode='ax' to narrow the capture)")
 
@@ -332,7 +348,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
             "total_elements": total,
             "summary": summary,
         }
-        | ({"truncated_elements": truncated} if truncated else {})
+        | ({"truncated_elements": truncated} if truncated else {}),
     )
 
 
@@ -371,7 +387,7 @@ def _maybe_follow_capture(backend: ComputerUseBackend, res: ActionResult, do_cap
         prefix = " ".join(prefix_parts)
         resp["content"][0]["text"] = f"{prefix}\n\n{resp['content'][0]['text']}"
         resp["text_summary"] = f"{prefix}\n\n{resp['text_summary']}"
-        # 在 envelope 层镜像 verdict 字段，ACP / TUI 消费者无需解析文本 payload 即可获取
+        # 在 envelope 层镜像 verdict 字段，调用方无需解析文本 payload 即可直接获取
         resp.update(action_payload)
         return resp
     try:

@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 
+import httpx
+
 from .config import is_truthy_value, load_config
 from .constants import get_spiritagent_home
 
@@ -126,6 +128,18 @@ def _allows_private_ip_resolution(hostname: str, scheme: str) -> bool:
     return scheme == "https" and hostname in _TRUSTED_PRIVATE_IP_HOSTS
 
 
+def verify_ip_not_blocked(ip: str | ipaddress.IPv4Address | ipaddress.IPv6Address, hostname: str = "", scheme: str = "https") -> None:
+    """校验单个 IP 是否违反 SSRF 防护策略；违规时抛出 ValueError。"""
+    if isinstance(ip, str):
+        ip = ipaddress.ip_address(ip.strip("[]"))
+    if _is_always_blocked(ip):
+        raise ValueError(f"Blocked request to cloud metadata address: {ip}")
+    allow_all_private = _global_allow_private_urls()
+    allow_private_ip = bool(hostname and _allows_private_ip_resolution(hostname, scheme))
+    if not allow_all_private and not allow_private_ip and _is_blocked_ip(ip):
+        raise ValueError(f"Blocked request to private/internal address: {ip}")
+
+
 def is_safe_url(url: str) -> bool:
     try:
         parsed = urlparse(url)
@@ -140,9 +154,6 @@ def is_safe_url(url: str) -> bool:
             logger.warning("Blocked request to internal hostname: %s", hostname)
             return False
 
-        allow_all_private = _global_allow_private_urls()
-        allow_private_ip = _allows_private_ip_resolution(hostname, scheme)
-
         try:
             addr_info = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
         except socket.gaierror:
@@ -150,21 +161,15 @@ def is_safe_url(url: str) -> bool:
             return False
 
         for _, _, _, _, sockaddr in addr_info:
-            ip_str = sockaddr[0]
             try:
-                ip = ipaddress.ip_address(ip_str)
-            except ValueError:
-                continue
-            if _is_always_blocked(ip):
-                logger.warning("Blocked request to cloud metadata address: %s -> %s", hostname, ip_str)
-                return False
-            if not allow_all_private and not allow_private_ip and _is_blocked_ip(ip):
-                logger.warning("Blocked request to private/internal address: %s -> %s", hostname, ip_str)
+                verify_ip_not_blocked(sockaddr[0], hostname=hostname, scheme=scheme)
+            except ValueError as e:
+                logger.warning("%s: %s -> %s", e, hostname, sockaddr[0])
                 return False
 
-        if allow_all_private:
+        if _global_allow_private_urls():
             logger.debug("Allowing private/internal resolution (security.allow_private_urls=true): %s", hostname)
-        elif allow_private_ip:
+        elif _allows_private_ip_resolution(hostname, scheme):
             logger.debug("Allowing trusted hostname despite private/internal resolution: %s", hostname)
         return True
     except Exception as exc:
@@ -174,6 +179,40 @@ def is_safe_url(url: str) -> bool:
 
 async def async_is_safe_url(url: str) -> bool:
     return await asyncio.to_thread(is_safe_url, url)
+
+
+class SafeHTTPTransport(httpx.HTTPTransport):
+    """在建连前与重定向请求时做 SSRF 与 DNS 预检/二次过滤的同步 HTTP 传输层。"""
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if not is_safe_url(url_str):
+            raise ValueError(f"SSRF guard blocked request to unsafe URL: {url_str}")
+        return super().handle_request(request)
+
+
+class SafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    """在建连前与重定向请求时做 SSRF 与 DNS 预检/二次过滤的异步 HTTP 传输层。"""
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if not await async_is_safe_url(url_str):
+            raise ValueError(f"SSRF guard blocked request to unsafe URL: {url_str}")
+        return await super().handle_async_request(request)
+
+
+def create_safe_client(**kwargs: Any) -> httpx.Client:
+    """创建挂载了 ``SafeHTTPTransport`` 的同步 ``httpx.Client``。"""
+    if "transport" not in kwargs:
+        kwargs["transport"] = SafeHTTPTransport()
+    return httpx.Client(**kwargs)
+
+
+def create_safe_async_client(**kwargs: Any) -> httpx.AsyncClient:
+    """创建挂载了 ``SafeAsyncHTTPTransport`` 的异步 ``httpx.AsyncClient``。"""
+    if "transport" not in kwargs:
+        kwargs["transport"] = SafeAsyncHTTPTransport()
+    return httpx.AsyncClient(**kwargs)
 
 
 def check_redirect_url_safety(original_url: str, redirect_url: str) -> bool:

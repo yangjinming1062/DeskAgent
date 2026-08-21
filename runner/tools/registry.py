@@ -74,7 +74,14 @@ class ToolRegistry:
         return decorator
 
     def register(
-        self, name: str, handler: Callable | None = None, *, toolset: str | None = None, schema: dict | None = None, check_fn: Callable[[], bool] | None = None, **kwargs: Any
+        self,
+        name: str,
+        handler: Callable | None = None,
+        *,
+        toolset: str | None = None,
+        schema: dict | None = None,
+        check_fn: Callable[[], bool] | None = None,
+        **kwargs: Any,
     ) -> Callable:
         """直接调用形式注册工具(handler 与 schema 都必填)。"""
         handler = handler or kwargs.pop("handler", None)

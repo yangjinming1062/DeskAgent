@@ -2,7 +2,7 @@
 surfaces that aren't tested elsewhere.
 
 Targets:
-- ``tools.interrupt`` — per-thread + global flag semantics
+- ``utils.interrupt`` — per-thread + global flag semantics
 - ``tools.thread_context`` — contextvar propagation semantics
 - ``tools.tool_output_limits`` — config coercion + cache invalidation
 - ``tools.tool_result_storage`` — preview generation + persisted-message shape
@@ -18,8 +18,8 @@ default suite, not the build-gate slow path.
 """
 
 from tools.execute_code import code_execution_tool as ec
-from tools.interrupt import is_interrupted, set_global_interrupt
 from tools.thread_context import propagate_context_to_thread
+from utils import is_interrupted, set_global_interrupt
 from tools.tool_output_limits import (
     _coerce_positive_int,
     get_max_bytes,

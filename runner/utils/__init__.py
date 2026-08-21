@@ -50,20 +50,26 @@ from .file_safety import (
     is_write_denied,
     validate_within_dir,
 )
+from .interrupt import _debug_interrupt_enabled, is_interrupted, set_global_interrupt, set_interrupt
 from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
 from .url_safety import (
+    SafeAsyncHTTPTransport,
+    SafeHTTPTransport,
     WebsitePolicyError,
     async_is_safe_url,
     check_redirect_url_safety,
     check_website_access,
+    create_safe_async_client,
+    create_safe_client,
     is_always_blocked_url,
     is_safe_url,
     load_website_blocklist,
     normalize_url_for_request,
+    verify_ip_not_blocked,
 )
 
 __all__ = [
@@ -74,6 +80,8 @@ __all__ = [
     "IS_MACOS",
     "IS_WINDOWS",
     "PIPE_TRANSPORT",
+    "SafeAsyncHTTPTransport",
+    "SafeHTTPTransport",
     "UNIX_TRANSPORT",
     "SECRET_PREFIX_RE",
     "WebsitePolicyError",
@@ -95,6 +103,8 @@ __all__ = [
     "check_website_access",
     "clean_output",
     "connect_desktop",
+    "create_safe_async_client",
+    "create_safe_client",
     "disk_free_bytes",
     "find_bash",
     "find_python",
@@ -122,6 +132,7 @@ __all__ = [
     "inject_context_spiritagent_home",
     "is_always_blocked_url",
     "is_env_passthrough",
+    "is_interrupted",
     "is_job_object_active",
     "is_safe_url",
     "is_truthy_value",
@@ -147,8 +158,10 @@ __all__ = [
     "sanitize_subprocess_env",
     "screen_capture_available",
     "secure_parent_dir",
+    "set_global_interrupt",
     "set_handler",
     "set_inmemory_config",
+    "set_interrupt",
     "set_main_loop",
     "snapshot",
     "snapshot_health",
@@ -157,4 +170,6 @@ __all__ = [
     "strip_fence",
     "system_activity_available",
     "validate_within_dir",
+    "verify_ip_not_blocked",
+    "_debug_interrupt_enabled",
 ]

@@ -3,7 +3,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from .terminal import get_sudo_password_callback, set_sudo_password_callback
+from envs import get_sudo_password_callback, set_sudo_password_callback
 
 logger = logging.getLogger(__name__)
 

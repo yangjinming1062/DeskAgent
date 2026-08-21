@@ -13,13 +13,13 @@ from utils import (
     get_external_skills_dirs,
     get_skills_dir,
     has_traversal_component,
+    is_interrupted,
     load_config,
     register_credential_file,
     register_env_passthrough,
     validate_within_dir,
 )
 
-from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 from .helpers import get_disabled_skill_names, get_spiritagent_metadata, iter_skill_index_files, parse_frontmatter
 from .skill_usage import bump_use, bump_view, is_excluded_skill_path
@@ -273,7 +273,8 @@ def skills_list(category: str | None = None, task_id: str | None = None) -> str:
         if not SKILLS_DIR.exists():
             SKILLS_DIR.mkdir(parents=True, exist_ok=True)
             return json.dumps(
-                {"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $SPIRITAGENT_HOME/skills/."}, ensure_ascii=False
+                {"success": True, "skills": [], "categories": [], "message": "No skills found. Skills directory created at $SPIRITAGENT_HOME/skills/."},
+                ensure_ascii=False,
             )
         all_skills = _find_all_skills()
         if not all_skills:
@@ -404,19 +405,22 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
 
         if not skill_matches_platform(parsed_frontmatter):
             return json.dumps(
-                {"success": False, "error": f"Skill '{name}' is not supported on this platform.", "readiness_status": SkillReadinessStatus.UNSUPPORTED.value}, ensure_ascii=False
+                {"success": False, "error": f"Skill '{name}' is not supported on this platform.", "readiness_status": SkillReadinessStatus.UNSUPPORTED.value},
+                ensure_ascii=False,
             )
 
         resolved_name = parsed_frontmatter.get("name", skill_md.parent.name)
         if _is_skill_disabled(resolved_name, category=_get_category_from_path(skill_md)):
             return json.dumps(
-                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `spiritagent skills` or inspect the files directly on disk."}, ensure_ascii=False
+                {"success": False, "error": f"Skill '{resolved_name}' is disabled. Enable it with `spiritagent skills` or inspect the files directly on disk."},
+                ensure_ascii=False,
             )
 
         if file_path and skill_dir:
             if has_traversal_component(file_path):
                 return json.dumps(
-                    {"success": False, "error": "Path traversal ('..') is not allowed.", "hint": "Use a relative path within the skill directory"}, ensure_ascii=False
+                    {"success": False, "error": "Path traversal ('..') is not allowed.", "hint": "Use a relative path within the skill directory"},
+                    ensure_ascii=False,
                 )
             target_file = skill_dir / file_path
             if traversal_error := validate_within_dir(target_file, skill_dir):

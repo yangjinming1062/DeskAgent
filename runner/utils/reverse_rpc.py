@@ -35,4 +35,8 @@ def call_llm_sync(**kwargs: Any) -> str:
         raise RuntimeError("Main event loop not registered; server.py must call set_main_loop() at startup")
     timeout = float(kwargs.get("timeout") or 300)
     fut = asyncio.run_coroutine_threadsafe(call_llm(**kwargs), _main_loop)
-    return fut.result(timeout=timeout + 30)
+    try:
+        return fut.result(timeout=timeout + 30)
+    except Exception:
+        fut.cancel()
+        raise

@@ -145,8 +145,7 @@ def test_debug_switches_read_config_at_call_time():
     Desktop pushes the config long after module import, so import-time
     reads made them permanently unreachable."""
     from tools.debug_helpers import DebugSession
-    from tools.interrupt import _debug_interrupt_enabled
-    from utils import set_inmemory_config
+    from utils import _debug_interrupt_enabled, set_inmemory_config
 
     try:
         assert _debug_interrupt_enabled() is False

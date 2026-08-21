@@ -1,7 +1,7 @@
 import logging
 import threading
 
-from utils import cfg_get, load_config
+from .config import cfg_get, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -11,10 +11,6 @@ def _debug_interrupt_enabled() -> bool:
     return bool(cfg_get(load_config(), "debug", "interrupt", default=False))
 
 
-# 两条独立的取消通道:
-#   * ``_interrupted_threads`` — 遗留的每线程集合, 由 MCP 发现流程在复用执行线程时清理陈旧状态。
-#   * ``_global_interrupt`` — WS 消息循环在新请求到达时置位, 在 dispatch 结束时清除。跨线程存活, 这样
-#     在工作池线程里跑的长任务处理器仍能在下一个 ``is_interrupted()`` 检查里看到用户的取消信号。
 _interrupted_threads: set[int] = set()
 _global_interrupt = False
 _LOCK = threading.Lock()

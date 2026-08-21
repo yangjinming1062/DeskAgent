@@ -338,7 +338,7 @@ async def test_execute_tool_wraps_tool_error_as_jsonrpc_error():
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
-    from tools.interrupt import is_interrupted, set_global_interrupt
+    from utils import is_interrupted, set_global_interrupt
 
     set_global_interrupt(False)
     sent: list[dict[str, Any]] = []
@@ -360,7 +360,7 @@ async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
 async def test_non_execute_tool_request_keeps_stale_interrupt():
     """Diagnostic polls (spiritagent.info / get_tools) must NOT clear a pending
     cancel — only a subsequent execute_tool does."""
-    from tools.interrupt import is_interrupted, set_global_interrupt
+    from utils import is_interrupted, set_global_interrupt
 
     set_global_interrupt(True)  # simulate leftover from prior cancel
     sent: list[dict[str, Any]] = []
@@ -379,7 +379,7 @@ async def test_non_execute_tool_request_keeps_stale_interrupt():
 
 
 async def test_execute_tool_clears_stale_interrupt():
-    from tools.interrupt import is_interrupted, set_global_interrupt
+    from utils import is_interrupted, set_global_interrupt
 
     set_global_interrupt(True)  # simulate leftover from prior cancel
     sent: list[dict[str, Any]] = []

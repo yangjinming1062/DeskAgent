@@ -10,6 +10,19 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
+from envs import (
+    active_environments,
+    create_environment,
+    creation_locks,
+    creation_locks_lock,
+    env_lock,
+    get_env_config,
+    last_activity,
+    register_env_cleanup_hook,
+    resolve_container_task_id,
+    start_cleanup_thread,
+    task_env_overrides,
+)
 from utils import (
     IS_WINDOWS,
     get_container_mirror_warning,
@@ -25,18 +38,6 @@ from utils import (
 )
 
 from ..registry import registry, tool_error
-from ..terminal.environment import (
-    active_environments,
-    create_environment,
-    creation_locks,
-    creation_locks_lock,
-    env_lock,
-    get_env_config,
-    last_activity,
-    resolve_container_task_id,
-    start_cleanup_thread,
-    task_env_overrides,
-)
 from .binary_extensions import has_binary_extension
 from .helpers import DEFAULT_READ_LIMIT, MAX_LINES, ShellFileOperations, check_stale, lock_path, normalize_read_pagination, normalize_search_pagination, note_write, record_read
 from .native_ops import NativeFileOperations
@@ -733,6 +734,9 @@ def clear_file_ops_cache(task_id: str | None = None) -> None:
     # 绝对路径解析是按路径作用域（而非按任务），缓存可在任务切换间存活。
 
 
+register_env_cleanup_hook(clear_file_ops_cache)
+
+
 # 若 worktree 切换确实改变了符号链接，需显式调用 _resolve_absolute_path.cache_clear()。
 
 
@@ -888,7 +892,8 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         # for a narrow window, nudge toward targeted reads.
         if file_size and file_size > _LARGE_FILE_HINT_BYTES and limit > 200 and result_dict.get("truncated"):
             result_dict.setdefault(
-                "_hint", (f"This file is large ({file_size:,} bytes). Consider reading only the section you need with offset and limit to keep context usage efficient.")
+                "_hint",
+                (f"This file is large ({file_size:,} bytes). Consider reading only the section you need with offset and limit to keep context usage efficient."),
             )
 
         # ── Track for consecutive-loop detection ──────────────────────
@@ -1151,7 +1156,7 @@ def patch_tool(
                 return tool_error(
                     f"V4A patch header contains '..' traversal: {v4a_path!r}. "
                     "Use the agent's cwd-relative path (no '..') or an absolute "
-                    "path in '*** Update File:' / '*** Add File:' / '*** Delete File:' headers."
+                    "path in '*** Update File:' / '*** Add File:' / '*** Delete File:' headers.",
                 )
             _paths_to_check.append(v4a_path)
     for _p in _paths_to_check:

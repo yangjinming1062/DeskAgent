@@ -31,7 +31,7 @@ def _spiritagent_home_path() -> Path:
     try:
         return get_spiritagent_home()
     except Exception:
-        return Path(os.path.expanduser("~/.spiritagent"))
+        return Path("~/.spiritagent").expanduser()
 
 
 _denied_paths_cache: tuple[str, set[str]] | None = None
@@ -45,7 +45,7 @@ def build_write_denied_paths(home: str) -> set[str]:
         return _denied_paths_cache[1]
     spiritagent, p_home = _spiritagent_home_path(), Path(home)
     result = {
-        os.path.realpath(p)
+        str(Path(p).resolve())
         for p in [
             p_home / ".ssh/authorized_keys",
             p_home / ".ssh/id_rsa",
@@ -104,7 +104,7 @@ def build_write_denied_prefixes(home: str) -> list[str]:
         p_home / "AppData/Local/Microsoft",
     ]
     sources = [*posix_prefixes, *windows_prefixes] if IS_WINDOWS else posix_prefixes
-    result = [os.path.realpath(p) + os.sep for p in sources if str(p)]
+    result = [str(Path(p).resolve()) + os.sep for p in sources if str(p)]
     _denied_prefixes_cache = (home, result)
     return result
 
@@ -142,7 +142,7 @@ def _enumerate_windows_drives() -> tuple[str, ...]:
 def _get_safe_write_root() -> str | None:
     try:
         root = cfg_get(load_config(), "security", "write_safe_root", default="")
-        return os.path.realpath(os.path.expanduser(root)) if root else None
+        return str(Path(root).expanduser().resolve()) if root else None
     except Exception:
         return None
 
@@ -216,7 +216,13 @@ def _get_final_path_by_handle(path_str: str) -> str | None:
         return None
     try:
         h = kernel32.CreateFileW(
-            path_str, _FILE_READ_ATTRIBUTES, _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE, None, _OPEN_EXISTING, _FILE_FLAG_BACKUP_SEMANTICS, None
+            path_str,
+            _FILE_READ_ATTRIBUTES,
+            _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+            None,
+            _OPEN_EXISTING,
+            _FILE_FLAG_BACKUP_SEMANTICS,
+            None,
         )
         if h == wintypes.HANDLE(-1).value or h == -1:
             return None
@@ -239,9 +245,9 @@ def canonicalize_path(path: str) -> str:
     """跨平台权威路径规范化（Windows 上处理 NT 设备前缀、ADS、8.3 短名、符号链接/连接点，缺失路径回溯到已存在父目录）。"""
     if not path:
         return ""
-    expanded = os.path.expanduser(str(path))
+    expanded = str(Path(str(path)).expanduser())
     if not IS_WINDOWS:
-        return os.path.realpath(expanded)
+        return str(Path(expanded).resolve())
 
     cleaned = _strip_device_prefix(expanded)
     base_path, stream_suffix = _split_ads_stream(cleaned)
@@ -344,7 +350,7 @@ def is_write_denied(path: str) -> bool:
                     or base_resolved_norm.startswith(safe_root.replace("\\", "/").lower() + "/")
                 )
             )
-        )
+        ),
     )
 
 
@@ -432,7 +438,7 @@ class MirrorTarget:
 
 def classify_cross_profile_target(path: str) -> CrossProfileTarget | None:
     try:
-        target = Path(os.path.expanduser(str(path))).resolve()
+        target = Path(str(path)).expanduser().resolve()
         root_real = _spiritagent_home_path().resolve()
         rel = target.relative_to(root_real)
         parts = rel.parts
@@ -466,10 +472,12 @@ def _find_sandbox_mirror_segments(parts: tuple) -> int | None:
 
 def classify_sandbox_mirror_target(path: str) -> MirrorTarget | None:
     try:
-        target = Path(os.path.expanduser(str(path))).resolve()
+        target = Path(str(path)).expanduser().resolve()
         if (idx := _find_sandbox_mirror_segments(target.parts)) is not None:
             return MirrorTarget(
-                target_path=str(target), mirror_root=str(Path(*target.parts[: idx + 1])), inner_path=str(Path(*target.parts[idx + 1 :])) if idx + 1 < len(target.parts) else ""
+                target_path=str(target),
+                mirror_root=str(Path(*target.parts[: idx + 1])),
+                inner_path=str(Path(*target.parts[idx + 1 :])) if idx + 1 < len(target.parts) else "",
             )
     except (OSError, RuntimeError):
         pass
@@ -486,7 +494,7 @@ def classify_container_mirror_target(path: str, mirror_prefix: str | None = None
     if not mirror_prefix:
         return None
     try:
-        target, prefix_real = (Path(os.path.expanduser(str(path))).resolve(), Path(os.path.expanduser(mirror_prefix)).resolve())
+        target, prefix_real = (Path(str(path)).expanduser().resolve(), Path(str(mirror_prefix)).expanduser().resolve())
         rel = target.relative_to(prefix_real)
         return MirrorTarget(target_path=str(target), mirror_root=str(prefix_real), inner_path=str(Path(*rel.parts)) if rel.parts else "")
     except (OSError, RuntimeError, ValueError):

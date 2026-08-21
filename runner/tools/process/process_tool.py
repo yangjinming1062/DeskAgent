@@ -14,6 +14,7 @@ from typing import Any
 
 import psutil
 
+from envs import register_active_process_checker
 from utils import (
     CREATE_NO_WINDOW,
     IS_WINDOWS,
@@ -22,6 +23,7 @@ from utils import (
     clean_output,
     find_bash,
     get_spiritagent_home,
+    is_interrupted,
     kill_tree,
     load_config,
     pid_exists,
@@ -29,17 +31,12 @@ from utils import (
     sanitize_subprocess_env,
 )
 
-from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 
-# winpty 只在 Windows 上存在; 工具发现阶段在 POSIX 上导入会崩, 因此用平台检查守住。
-_PtyProcessCls = None
 if IS_WINDOWS:
-    with contextlib.suppress(ImportError):
-        from winpty import PtyProcess as _PtyProcessCls
+    from winpty import PtyProcess as _PtyProcessCls
 else:
-    with contextlib.suppress(ImportError):
-        from ptyprocess import PtyProcess as _PtyProcessCls
+    from ptyprocess import PtyProcess as _PtyProcessCls
 
 # ``fcntl`` 仅 POSIX 标准库, Windows 编译期就没有, try/except 也会永远抛; 在 POSIX 上无条件 import。
 # (下面的 fcntl 代码路径只为 ptyprocess 输出用, 而 ptyprocess 本身也是 POSIX-only, 因此 Windows 根本走不到。)
@@ -419,7 +416,12 @@ class ProcessRegistry:
         ``use_pty=True`` 用 ptyprocess 打开伪终端, 给交互式 CLI(Codex / Claude Code / Python REPL)用; ptyprocess 缺失则回落到 ``subprocess.Popen``。
         """
         session = ProcessSession(
-            id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=resolve_safe_cwd(cwd or os.getcwd()), started_at=time.time()
+            id=f"proc_{uuid.uuid4().hex[:12]}",
+            command=command,
+            task_id=task_id,
+            session_key=session_key,
+            cwd=resolve_safe_cwd(cwd or os.getcwd()),
+            started_at=time.time(),
         )
         if use_pty:
             try:
@@ -496,7 +498,14 @@ class ProcessRegistry:
         不支持实时 stdout pipe 和 stdin 输入 — 但能保证命令跑在正确的 sandbox 上下文里。
         """
         session = ProcessSession(
-            id=f"proc_{uuid.uuid4().hex[:12]}", command=command, task_id=task_id, session_key=session_key, cwd=cwd, started_at=time.time(), env_ref=env, pid_scope="sandbox"
+            id=f"proc_{uuid.uuid4().hex[:12]}",
+            command=command,
+            task_id=task_id,
+            session_key=session_key,
+            cwd=cwd,
+            started_at=time.time(),
+            env_ref=env,
+            pid_scope="sandbox",
         )
         temp_dir = self._env_temp_dir(env)
         log_path = f"{temp_dir}/spiritagent_bg_{session.id}.log"
@@ -1119,6 +1128,7 @@ class ProcessRegistry:
 
 
 process_registry = ProcessRegistry()
+register_active_process_checker(process_registry.has_active_processes)
 
 
 def format_process_notification(evt: dict) -> "str | None":

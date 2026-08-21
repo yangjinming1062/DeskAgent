@@ -461,7 +461,10 @@ class CuaDriverBackend(ComputerUseBackend):
             shell = [w for w in windows if w["app_name"].lower() in _MACOS_SHELL_APP_NAMES]
             if not shell:
                 return CaptureResult(
-                    mode=mode, width=0, height=0, window_title=f"<no shell window found; sentinel app={app!r} requires Finder/Dock to be visible on the active Space>"
+                    mode=mode,
+                    width=0,
+                    height=0,
+                    window_title=f"<no shell window found; sentinel app={app!r} requires Finder/Dock to be visible on the active Space>",
                 )
             # 哨兵命中 — 使用 shell 窗口列表并跳过下面的子串过滤。
             # 否则后续 `if app:` 会丢弃 shell 窗口（因为 'desktop' 不是 'finder'/'dock' 的子串）。
@@ -525,7 +528,14 @@ class CuaDriverBackend(ComputerUseBackend):
         )
 
     def click(
-        self, *, element: int | None = None, x: int | None = None, y: int | None = None, button: str = "left", click_count: int = 1, modifiers: list[str] | None = None
+        self,
+        *,
+        element: int | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        button: str = "left",
+        click_count: int = 1,
+        modifiers: list[str] | None = None,
     ) -> ActionResult:
         if (pid := self._active_pid) is None:
             return ActionResult(ok=False, action="click", message="No active window — call capture() first.")
@@ -567,7 +577,14 @@ class CuaDriverBackend(ComputerUseBackend):
         return self._action("drag", args)
 
     def scroll(
-        self, *, direction: str, amount: int = 3, element: int | None = None, x: int | None = None, y: int | None = None, modifiers: list[str] | None = None
+        self,
+        *,
+        direction: str,
+        amount: int = 3,
+        element: int | None = None,
+        x: int | None = None,
+        y: int | None = None,
+        modifiers: list[str] | None = None,
     ) -> ActionResult:
         if (pid := self._active_pid) is None:
             return ActionResult(ok=False, action="scroll", message="No active window — call capture() first.")
@@ -630,7 +647,9 @@ class CuaDriverBackend(ComputerUseBackend):
             target = matched[0]
             self._active_pid, self._active_window_id, self._last_app = (target["pid"], target["window_id"], target["app_name"])
             return ActionResult(
-                ok=True, action="focus_app", message=f"Targeted {target['app_name']} (pid {self._active_pid}, window {self._active_window_id}) without raising window."
+                ok=True,
+                action="focus_app",
+                message=f"Targeted {target['app_name']} (pid {self._active_pid}, window {self._active_window_id}) without raising window.",
             )
         return ActionResult(ok=False, action="focus_app", message=f"No on-screen window found for app '{app}'.")
 

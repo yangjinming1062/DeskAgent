@@ -138,7 +138,8 @@ class NativeFileOperations(FileOperations):
             file_size = p.stat().st_size
             if file_size > MAX_FILE_SIZE:
                 return ReadResult(
-                    file_size=file_size, error=f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. Use read_file with offset/limit instead."
+                    file_size=file_size,
+                    error=f"File size {file_size:,} bytes exceeds safety cap of {MAX_FILE_SIZE:,} bytes. Use read_file with offset/limit instead.",
                 )
             content = p.read_text(encoding="utf-8", errors="replace")
             return ReadResult(content=content, total_lines=len(content.splitlines()), file_size=file_size)
@@ -283,7 +284,15 @@ class NativeFileOperations(FileOperations):
             return WriteResult(error=f"Failed to move file: {e}")
 
     def search(
-        self, pattern: str, path: str = ".", target: str = "content", file_glob: str | None = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0
+        self,
+        pattern: str,
+        path: str = ".",
+        target: str = "content",
+        file_glob: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        output_mode: str = "content",
+        context: int = 0,
     ) -> SearchResult:
         if target == "files":
             return self._search_files_by_name(pattern, path, limit, offset)

@@ -44,7 +44,7 @@ def _save_snapshots(data: dict) -> None:
     _save_json_store(_SNAPSHOT_STORE, data)
 
 
-def _get_scratch_dir() -> Path:
+def get_singularity_scratch_dir() -> Path:
     if custom_scratch := cfg_get(load_config(), "terminal", "singularity", "scratch_dir", default=""):
         (p := Path(custom_scratch)).mkdir(parents=True, exist_ok=True)
         return p
@@ -59,7 +59,7 @@ def _get_apptainer_cache_dir() -> Path:
     if cache_dir := os.getenv("APPTAINER_CACHEDIR"):
         (p := Path(cache_dir)).mkdir(parents=True, exist_ok=True)
         return p
-    (cache_path := _get_scratch_dir() / ".apptainer").mkdir(parents=True, exist_ok=True)
+    (cache_path := get_singularity_scratch_dir() / ".apptainer").mkdir(parents=True, exist_ok=True)
     return cache_path
 
 
@@ -99,7 +99,15 @@ class SingularityEnvironment(BaseEnvironment):
     """基于 Apptainer/Singularity 的隔离终端：每个会话对应一个长驻 instance，命令通过 `exec` 注入。"""
 
     def __init__(
-        self, image: str, cwd: str = "~", timeout: int = 60, cpu: float = 0, memory: int = 0, disk: int = 0, persistent_filesystem: bool = False, task_id: str = "default"
+        self,
+        image: str,
+        cwd: str = "~",
+        timeout: int = 60,
+        cpu: float = 0,
+        memory: int = 0,
+        disk: int = 0,
+        persistent_filesystem: bool = False,
+        task_id: str = "default",
     ):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()
@@ -112,7 +120,7 @@ class SingularityEnvironment(BaseEnvironment):
         self._cpu = cpu
         self._memory = memory
         if self._persistent:
-            overlay_base = _get_scratch_dir() / "spiritagent-overlays"
+            overlay_base = get_singularity_scratch_dir() / "spiritagent-overlays"
             overlay_base.mkdir(parents=True, exist_ok=True)
             self._overlay_dir = overlay_base / f"overlay-{task_id}"
             self._overlay_dir.mkdir(parents=True, exist_ok=True)

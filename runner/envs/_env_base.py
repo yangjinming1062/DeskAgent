@@ -14,9 +14,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import IO, Protocol
 
-from utils import CREATE_NO_WINDOW, cfg_get, get_spiritagent_home, load_config
+from utils import CREATE_NO_WINDOW, cfg_get, get_spiritagent_home, is_interrupted, load_config
 
-from ..interrupt import is_interrupted
 from ._cmd_rewrite import _rewrite_compound_background, _transform_sudo_command
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,6 @@ import os
 import re
 import secrets
 import shutil
-import signal
 import sys
 import tempfile
 import threading
@@ -42,19 +41,19 @@ from mcp.types import (
     ToolListChangedNotification,
 )
 
-from utils import IS_WINDOWS, call_llm, get_spiritagent_home, kill_tree, load_config, pid_exists, safe_schedule_threadsafe
+from utils import call_llm, get_spiritagent_home, is_interrupted, load_config, safe_schedule_threadsafe, set_interrupt
 
-from ..interrupt import is_interrupted, set_interrupt
 from ..registry import registry, tool_error
 from .helpers import get_manager
+from .mcp_supervisor import circuit_breaker, stdio_supervisor
 from .osv_check import check_package_for_malware
 
 logger = logging.getLogger(__name__)
 
 # MCP SDK 的 ``stdio_client(server, errlog=sys.stderr)`` 默认把子进程 stderr
-# 接到父进程的真实 stderr（即用户 TTY）。这意味着启动时拉起的 MCP server
-# （FastMCP 横幅、slack-mcp-server 启动 JSON 日志等）会直接往终端写，
-# 在 prompt_toolkit / Rich 渲染 TUI 时污染显示并可能卡死会话。
+# 接到父进程的真实 stderr。这意味着启动时拉起的 MCP server
+# （FastMCP 横幅、slack-mcp-server 启动 JSON 日志等）会直接往输出写，
+# 污染控制台并可能阻塞会话。
 #
 # 这里改为把每个 stdio MCP 子进程的 stderr 重定向到 per-profile 共享日志
 # （~/.spiritagent/logs/mcp-stderr.log），用 server 名标记边界以便排错。
@@ -91,8 +90,7 @@ def _get_mcp_stderr_log() -> Any:
             try:
                 _mcp_stderr_log_fh = open(os.devnull, "w", encoding="utf-8")
             except Exception:
-                # Last resort: the real stderr.  Not ideal for TUI users but
-                # it matches pre-fix behavior.
+                # Last resort: the real stderr.
                 _mcp_stderr_log_fh = sys.stderr
         return _mcp_stderr_log_fh
 
@@ -130,30 +128,8 @@ _MAX_RECONNECT_RETRIES = 5
 _MAX_INITIAL_CONNECT_RETRIES = 3  # retries for the very first connection attempt
 _MAX_BACKOFF_SECONDS = 60
 
-# ── Module state (single block per RULES — no mid-file globals) ──
-
+_stdio_pids = stdio_supervisor._stdio_pids
 _servers: dict["MCPServerTask"] = {}
-
-# Circuit breaker: consecutive error counts per server.  After
-# _CIRCUIT_BREAKER_THRESHOLD consecutive failures, the handler returns
-# a "server unreachable" message that tells the model to stop retrying.
-#
-# State machine:
-#   closed    — error count below threshold; all calls go through.
-#   open      — threshold reached; calls short-circuit until the
-#               cooldown elapses.
-#   half-open — cooldown elapsed; the next call is a probe that
-#               actually hits the session. Probe success → closed.
-#               Probe failure → reopens (cooldown re-armed).
-#
-# ``_server_breaker_opened_at`` records the monotonic timestamp when
-# the breaker most recently transitioned into the open state. Use the
-# ``_bump_server_error`` / ``_reset_server_error`` helpers to mutate
-# this state — they keep the count and timestamp in sync.
-_server_error_counts: dict[str, int] = {}
-_server_breaker_opened_at: dict[str, float] = {}
-_CIRCUIT_BREAKER_THRESHOLD = 3
-_CIRCUIT_BREAKER_COOLDOWN_SEC = 60.0
 
 # In-flight connects (name -> task) so a connect_timeout can tear down the
 # spawned MCPServerTask that wait_for's cancellation cannot reach.
@@ -176,33 +152,8 @@ _mcp_loop: asyncio.AbstractEventLoop | None = None
 _mcp_thread: threading.Thread | None = None
 
 # Protects _mcp_loop, _mcp_thread, _servers, _parallel_safe_servers,
-# _mcp_tool_server_names, and _stdio_pids.
+# and _mcp_tool_server_names.
 _lock = threading.Lock()
-
-# PIDs of stdio MCP server subprocesses.  Tracked so we can force-kill
-# them on shutdown if the graceful cleanup (SDK context-manager teardown)
-# fails or times out.  PIDs are added after connection and removed on
-# normal server shutdown.
-_stdio_pids: dict[int, str] = {}  # pid -> server_name
-
-# PIDs that survived their session context exit (SDK teardown failed to
-# terminate them).  These are detected in _run_stdio's finally block and
-# can be cleaned up asynchronously by _kill_orphaned_mcp_children() —
-# only entries no longer owned by live sessions (e.g. concurrent cron jobs
-# or live user chats).
-_orphan_stdio_pids: set = set()
-
-# The MCP SDK spawns stdio children with ``start_new_session=True`` so each
-# direct child becomes its own session/pgroup leader (PGID == its own PID).
-# Grandchildren spawned by that child (e.g. a wrapper MCP server that itself
-# launches helper subprocesses like ``claude mcp serve``) inherit that PGID
-# unless they call ``setsid`` themselves.  When the direct child exits, those
-# grandchildren reparent to init/systemd-user but keep the original PGID, so
-# ``killpg(pgid, sig)`` still reaches them.  Tracked separately from
-# ``_stdio_pids`` so we retain the PGID even after the direct child has
-# exited and been removed from the active map.  Empty on Windows
-# (``os.getpgid`` is POSIX-only).
-_stdio_pgids: dict[int, int] = {}  # pid -> pgid
 
 
 _SAFE_ENV_KEYS = frozenset({"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR"})
@@ -917,9 +868,7 @@ class MCPServerTask:
         pids_before = _snapshot_child_pids()
         new_pids: set = set()
 
-        # (FastMCP banners, slack-mcp startup JSON, etc.) don't dump onto
-        # the user's TTY and corrupt the TUI.  Preserves debuggability via
-        # ~/.spiritagent/logs/mcp-stderr.log.
+        # 重定向子进程 stderr 避免输出污染，日志保存在 ~/.spiritagent/logs/mcp-stderr.log 中。
         _write_stderr_log_header(self.name)
         _errlog = _get_mcp_stderr_log()
         try:
@@ -927,18 +876,7 @@ class MCPServerTask:
                 # Capture the newly spawned subprocess PID for force-kill cleanup.
                 new_pids = _snapshot_child_pids() - pids_before
                 if new_pids:
-                    # Capture pgid while the child is alive — once it exits we
-                    # can no longer call ``os.getpgid`` on it, and the cleanup
-
-                    # (e.g. ``claude mcp serve`` spawned by a stdio wrapper).
-                    new_pgids: dict[int, int] = {}
-                    for _pid in new_pids:
-                        with contextlib.suppress(AttributeError, ProcessLookupError, OSError):
-                            new_pgids[_pid] = os.getpgid(_pid)
-                    with _lock:
-                        for _pid in new_pids:
-                            _stdio_pids[_pid] = self.name
-                        _stdio_pgids.update(new_pgids)
+                    stdio_supervisor.register_stdio_session(new_pids, self.name)
                 async with ClientSession(read_stream, write_stream, **sampling_kwargs) as session:
                     self.initialize_result = await session.initialize()
                     self.session = session
@@ -950,36 +888,8 @@ class MCPServerTask:
                     await self._wait_for_lifecycle_event()
         finally:
             # Runs on clean exit, exceptions, AND asyncio cancellation.
-            # If any of the spawned PIDs are still alive, the SDK's
-            # teardown failed (common when the task is cancelled mid-way
-            # on Linux, where setsid() children escape the parent cgroup).
-            # Mark them as orphans so the next cleanup sweep can reap them.
             if new_pids:
-                _killpg = getattr(os, "killpg", None)
-                with _lock:
-                    for _pid in new_pids:
-                        _stdio_pids.pop(_pid, None)
-                    for pid in new_pids:
-                        # ``os.kill(pid, 0)`` is NOT a no-op on Windows
-                        # (bpo-14484). Use the cross-platform check.
-                        pid_alive = pid_exists(pid)
-                        pgroup_alive = False
-                        pgid = _stdio_pgids.get(pid)
-                        if not pid_alive and pgid is not None and _killpg is not None:
-                            # in its pgroup (e.g. ``claude mcp serve`` spawned
-                            # by an MCP wrapper that exited first).  Probe with
-                            # signal 0 — succeeds iff any pgroup member is alive.
-                            try:
-                                _killpg(pgid, 0)
-                                pgroup_alive = True
-                            except (ProcessLookupError, PermissionError, OSError):
-                                pgroup_alive = False
-                        if pid_alive or pgroup_alive:
-                            _orphan_stdio_pids.add(pid)
-                        else:
-                            # Nothing left to reap — drop the pgid entry so
-                            # PID-reuse can't surface stale pgroup state later.
-                            _stdio_pgids.pop(pid, None)
+                stdio_supervisor.on_session_exit(new_pids)
 
     # Content types a real MCP Streamable-HTTP endpoint may return on the
     # initial POST/GET. Anything else on a 2xx response means the URL is not
@@ -1036,7 +946,7 @@ class MCPServerTask:
             f"{', '.join(self._MCP_CONTENT_TYPES)}). The URL most likely "
             "points at a web page rather than an MCP endpoint — check it "
             "resolves to a Streamable HTTP / SSE endpoint "
-            "(e.g. https://host/mcp, not https://host/)."
+            "(e.g. https://host/mcp, not https://host/).",
         )
 
     async def _run_http(self, config: dict) -> None:
@@ -1213,7 +1123,10 @@ class MCPServerTask:
                 try:
                     _probe_headers = dict(config.get("headers") or {})
                     await self._preflight_content_type(
-                        config["url"], headers=_probe_headers, ssl_verify=config.get("ssl_verify", True), client_cert=_resolve_client_cert(self.name, config)
+                        config["url"],
+                        headers=_probe_headers,
+                        ssl_verify=config.get("ssl_verify", True),
+                        client_cert=_resolve_client_cert(self.name, config),
                     )
                 except NonMcpEndpointError as exc:
                     logger.warning("%s", exc)
@@ -1279,7 +1192,12 @@ class MCPServerTask:
                         return
 
                     logger.warning(
-                        "MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s", self.name, initial_retries, _MAX_INITIAL_CONNECT_RETRIES, backoff, exc
+                        "MCP server '%s' initial connection failed (attempt %d/%d), retrying in %.0fs: %s",
+                        self.name,
+                        initial_retries,
+                        _MAX_INITIAL_CONNECT_RETRIES,
+                        backoff,
+                        exc,
                     )
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, _MAX_BACKOFF_SECONDS)
@@ -1346,15 +1264,11 @@ class MCPServerTask:
 
 
 def _bump_server_error(server_name: str) -> None:
-    n = _server_error_counts.get(server_name, 0) + 1
-    _server_error_counts[server_name] = n
-    if n >= _CIRCUIT_BREAKER_THRESHOLD:
-        _server_breaker_opened_at[server_name] = time.monotonic()
+    circuit_breaker.bump_error(server_name)
 
 
 def _reset_server_error(server_name: str) -> None:
-    _server_error_counts[server_name] = 0
-    _server_breaker_opened_at.pop(server_name, None)
+    circuit_breaker.reset_error(server_name)
 
 
 _AUTH_ERROR_TYPES: tuple = ()
@@ -1549,10 +1463,10 @@ def _handle_session_expired_and_retry(server_name: str, exc: BaseException, retr
         try:
             parsed = json.loads(result)
             if "error" not in parsed:
-                _server_error_counts[server_name] = 0
+                _reset_server_error(server_name)
                 return result
         except (json.JSONDecodeError, TypeError):
-            _server_error_counts[server_name] = 0
+            _reset_server_error(server_name)
             return result
     except Exception as retry_exc:
         logger.warning("MCP %s/%s retry after session reconnect failed: %s", server_name, op_description, retry_exc)
@@ -1728,34 +1642,20 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
         # has already moved on.
         if is_interrupted():
             return json.dumps({"error": "Interrupted", "interrupted": True}, ensure_ascii=False)
-        # Circuit breaker: if this server has failed too many times
-        # consecutively, short-circuit with a clear message so the model
-        # stops retrying and uses alternative approaches.
-        #
-        # Once the cooldown elapses, the breaker transitions to
-        # half-open: we let the *next* call through as a probe. On
-        # success the success-path below resets the breaker; on
-        # failure the error paths below bump the count again, which
-        # re-stamps the open-time via _bump_server_error (re-arming
-        # the cooldown).
-        if _server_error_counts.get(server_name, 0) >= _CIRCUIT_BREAKER_THRESHOLD:
-            opened_at = _server_breaker_opened_at.get(server_name, 0.0)
-            age = time.monotonic() - opened_at
-            if age < _CIRCUIT_BREAKER_COOLDOWN_SEC:
-                remaining = max(1, int(_CIRCUIT_BREAKER_COOLDOWN_SEC - age))
-                return json.dumps(
-                    {
-                        "error": (
-                            f"MCP server '{server_name}' is unreachable after "
-                            f"{_server_error_counts[server_name]} consecutive "
-                            f"failures. Auto-retry available in ~{remaining}s. "
-                            f"Do NOT retry this tool yet — use alternative "
-                            f"approaches or ask the user to check the MCP server."
-                        )
-                    },
-                    ensure_ascii=False,
-                )
-            # Cooldown elapsed → fall through as a half-open probe.
+        is_open, fail_count, remaining = circuit_breaker.is_open(server_name)
+        if is_open:
+            return json.dumps(
+                {
+                    "error": (
+                        f"MCP server '{server_name}' is unreachable after "
+                        f"{fail_count} consecutive "
+                        f"failures. Auto-retry available in ~{remaining}s. "
+                        f"Do NOT retry this tool yet — use alternative "
+                        f"approaches or ask the user to check the MCP server."
+                    ),
+                },
+                ensure_ascii=False,
+            )
 
         with _lock:
             server = _servers.get(server_name)
@@ -2597,85 +2497,8 @@ def reload_mcp_servers() -> dict:
 
 
 def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
-    """尽力优雅关闭 stdio MCP 子进程以回收孤儿进程。
-
-    孤儿指 SDK teardown 未杀掉的 PID（Linux 下 stdio 子进程在取消时逃出
-    父 cgroup 比较常见）。默认仅回收 ``_orphan_stdio_pids`` 中的条目，避免
-    影响并发的 cron 任务与活跃用户会话。
-
-    先发 SIGTERM，等 2 秒后对仍在的进程升级为 SIGKILL，避免多 spiritagent
-    进程在同一主机上共享资源时冲突（每个进程各自持有 ``_stdio_pids`` dict）。
-
-    POSIX 上若记录了 spawn-time pgid，通过 ``os.killpg`` 向进程组发信号，
-    让同组中再被收养的孙进程（如 stdio MCP 包装器先退出后留下的
-    ``claude mcp serve``）一并回收。Windows 或无 pgid 时回退到 ``os.kill``。
-
-    ``include_active=True`` 还会杀 ``_stdio_pids`` 中所有 PID，仅在最终
-    关闭时使用——此时 MCP 事件循环已停，不会有进行中的会话。
-    """
-
-    with _lock:
-        pids: dict[int, str] = {}
-        for opid in _orphan_stdio_pids:
-            pids[opid] = "orphan"
-        _orphan_stdio_pids.clear()
-        if include_active:
-            pids.update(dict(_stdio_pids))
-            _stdio_pids.clear()
-        # Snapshot pgids for the pids we're about to kill, then drop the
-        # entries so a future spawn can't collide with stale state.
-        pgids: dict[int, int] = {pid: _stdio_pgids[pid] for pid in pids if pid in _stdio_pgids}
-        for pid in pgids:
-            _stdio_pgids.pop(pid, None)
-
-    # Fast path: no tracked stdio PIDs to reap. Skip the SIGTERM/sleep/SIGKILL
-    # dance entirely — otherwise every MCP-free shutdown pays a 2s sleep tax.
-    if not pids:
-        return
-
-    _sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
-
-    def _send_signal(pid: int, sig: int, server_name: str) -> None:
-        """POSIX 通过进程组发 SIGTERM/SIGKILL，否则退回到 pid 信号。
-
-        Windows 上用 ``kill_tree``，避免 stdio MCP server 包装的子进程被
-        重新挂到系统 init 下并幸存。
-        """
-        if IS_WINDOWS:
-            force = sig == _sigkill
-            if not kill_tree(pid, force=force):
-                logger.debug("taskkill failed for MCP server '%s' pid=%d sig=%s; tree may be partial", server_name, pid, sig)
-            return
-        pgid = pgids.get(pid)
-        killpg = getattr(os, "killpg", None)
-        if pgid is not None and killpg is not None:
-            try:
-                killpg(pgid, sig)
-                return
-            except (ProcessLookupError, PermissionError, OSError) as exc:
-                # Pgroup gone (all members exited) or refused — fall back to
-                # the per-pid path so we still try the direct child if alive.
-                logger.debug("killpg(%d, %d) failed for MCP server '%s': %s; falling back to kill(pid)", pgid, sig, server_name, exc)
-        with contextlib.suppress(ProcessLookupError, PermissionError, OSError):
-            os.kill(pid, sig)
-
-    # Phase 1: SIGTERM (graceful)
-    for pid, server_name in pids.items():
-        _send_signal(pid, signal.SIGTERM, server_name)
-        logger.debug("Sent SIGTERM to orphaned MCP process %d (%s)", pid, server_name)
-
-    # Phase 2: Wait for graceful exit
-    time.sleep(2)
-
-    # Phase 3: SIGKILL any survivors
-    # ``os.kill(pid, 0)`` is NOT a no-op on Windows. Use the cross-platform
-    # existence check before escalating to SIGKILL.
-
-    for pid, server_name in pids.items():
-        if not pid_exists(pid):
-            continue  # Good — exited after SIGTERM
-        _send_signal(pid, _sigkill, server_name)
-        logger.warning("Force-killed MCP process %d (%s) after SIGTERM timeout", pid, server_name)
+    """尽力优雅关闭 stdio MCP 子进程以回收孤儿进程。"""
+    stdio_supervisor.kill_orphaned_children(include_active=include_active)
 
 
 def _stop_mcp_loop() -> None:

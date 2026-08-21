@@ -8,10 +8,9 @@ from collections.abc import Awaitable
 from pathlib import Path
 from typing import Any
 
-from utils import call_llm, clean_output, get_spiritagent_dir
+from utils import call_llm, clean_output, get_spiritagent_dir, is_interrupted
 
 from ..debug_helpers import DebugSession
-from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 from .helpers import (
     _MAX_BASE64_BYTES,

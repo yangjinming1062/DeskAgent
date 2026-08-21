@@ -8,10 +8,9 @@ from typing import Any
 
 import yaml
 
-from utils import atomic_replace, cfg_get, get_external_skills_dirs, get_skills_dir, has_traversal_component, is_truthy_value, load_config, validate_within_dir
+from utils import atomic_replace, cfg_get, get_external_skills_dirs, get_skills_dir, has_traversal_component, is_interrupted, is_truthy_value, load_config, validate_within_dir
 
 from ..files import format_no_match_hint, fuzzy_find_and_replace
-from ..interrupt import is_interrupted
 from ..registry import registry, tool_error
 from .skill_provenance import is_background_review
 from .skill_usage import bump_patch, forget, get_record, is_excluded_skill_path, mark_agent_created

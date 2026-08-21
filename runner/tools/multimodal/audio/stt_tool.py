@@ -69,7 +69,12 @@ def _decode_and_transcribe(audio_path: str | Path, *, language: str | None, mode
     # 把 "auto" / None 归一为 None，让第三方 API 只看到 explicit-or-auto 契约
     whisper_language = None if language in (None, "auto") else language
     segments, info = model.transcribe(
-        str(audio_path), language=whisper_language, beam_size=beam_size, initial_prompt=initial_prompt, vad_filter=True, condition_on_previous_text=False
+        str(audio_path),
+        language=whisper_language,
+        beam_size=beam_size,
+        initial_prompt=initial_prompt,
+        vad_filter=True,
+        condition_on_previous_text=False,
     )
 
     detected_language: str | None = None

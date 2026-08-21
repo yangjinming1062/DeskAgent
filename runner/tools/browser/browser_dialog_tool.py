@@ -61,5 +61,5 @@ def browser_dialog(action: str, prompt_text: str | None = None, dialog_id: str |
 
 
 registry.register_tool("browser_dialog", schema=BROWSER_DIALOG_SCHEMA)(
-    lambda args, **kw: browser_dialog(action=args.get("action", ""), prompt_text=args.get("prompt_text"), dialog_id=args.get("dialog_id"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_dialog(action=args.get("action", ""), prompt_text=args.get("prompt_text"), dialog_id=args.get("dialog_id"), task_id=kw.get("task_id")),
 )

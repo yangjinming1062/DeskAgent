@@ -351,7 +351,7 @@ def scan_file(file_path: Path, rel_path: str = "") -> list[Finding]:
                         line=i,
                         match=f"U+{ord(char):04X} ({char_name})",
                         description=f"invisible unicode character {char_name} (possible text hiding/injection)",
-                    )
+                    ),
                 )
                 break  # one finding per line for invisible chars
 
@@ -394,7 +394,13 @@ def scan_skill(skill_path: Path, source: str = "community") -> ScanResult:
     summary = _build_summary(skill_name, source, trust_level, verdict, all_findings)
 
     return ScanResult(
-        skill_name=skill_name, source=source, trust_level=trust_level, verdict=verdict, findings=all_findings, scanned_at=datetime.now(UTC).isoformat(), summary=summary
+        skill_name=skill_name,
+        source=source,
+        trust_level=trust_level,
+        verdict=verdict,
+        findings=all_findings,
+        scanned_at=datetime.now(UTC).isoformat(),
+        summary=summary,
     )
 
 
@@ -500,7 +506,7 @@ def _check_structure(skill_dir: Path, ignore: Callable[[str], bool] | None = Non
                 findings.append(Finding("binary_file", "critical", "structural", rel, 0, f"binary: {ext}", f"binary/executable file ({ext}) should not be in a skill"))
             if ext not in {".sh", ".bash", ".py", ".rb", ".pl"} and f.stat().st_mode & 0o111:
                 findings.append(
-                    Finding("unexpected_executable", "medium", "structural", rel, 0, "executable bit set", "file has executable permission but is not a recognized script type")
+                    Finding("unexpected_executable", "medium", "structural", rel, 0, "executable bit set", "file has executable permission but is not a recognized script type"),
                 )
         except OSError:
             pass
@@ -509,8 +515,14 @@ def _check_structure(skill_dir: Path, ignore: Callable[[str], bool] | None = Non
     if total_size > MAX_TOTAL_SIZE_KB * 1024:
         findings.append(
             Finding(
-                "oversized_skill", "high", "structural", "(directory)", 0, f"{total_size // 1024}KB total", f"skill is {total_size // 1024}KB total (limit: {MAX_TOTAL_SIZE_KB}KB)"
-            )
+                "oversized_skill",
+                "high",
+                "structural",
+                "(directory)",
+                0,
+                f"{total_size // 1024}KB total",
+                f"skill is {total_size // 1024}KB total (limit: {MAX_TOTAL_SIZE_KB}KB)",
+            ),
         )
     return findings
 

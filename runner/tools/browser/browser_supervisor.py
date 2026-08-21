@@ -328,7 +328,13 @@ class CDPSupervisor:
             console = tuple(self._console_events[-CONSOLE_HISTORY_MAX:])
             active = self._active
         return SupervisorSnapshot(
-            pending_dialogs=dialogs, recent_dialogs=recent, frame_tree=frames_tree, console_errors=console, active=active, cdp_url=self.cdp_url, task_id=self.task_id
+            pending_dialogs=dialogs,
+            recent_dialogs=recent,
+            frame_tree=frames_tree,
+            console_errors=console,
+            active=active,
+            cdp_url=self.cdp_url,
+            task_id=self.task_id,
         )
 
     def get_frame_session(self, frame_id: str) -> tuple[FrameInfo | None, str | None]:
@@ -963,7 +969,13 @@ class CDPSupervisor:
     def _archive_dialog_locked(self, dialog: PendingDialog, closed_by: str) -> None:
         """把 pending dialog 移到 recent_dialogs 环形缓冲区；调用方必须持有 state_lock。"""
         record = DialogRecord(
-            id=dialog.id, type=dialog.type, message=dialog.message, opened_at=dialog.opened_at, closed_at=time.time(), closed_by=closed_by, frame_id=dialog.frame_id
+            id=dialog.id,
+            type=dialog.type,
+            message=dialog.message,
+            opened_at=dialog.opened_at,
+            closed_at=time.time(),
+            closed_by=closed_by,
+            frame_id=dialog.frame_id,
         )
         self._recent_dialogs.append(record)
         if len(self._recent_dialogs) > RECENT_DIALOGS_MAX * 2:
@@ -1319,7 +1331,13 @@ class _SupervisorRegistry:
             return self._by_task.get(task_id)
 
     def get_or_start(
-        self, task_id: str, cdp_url: str, *, dialog_policy: str = DEFAULT_DIALOG_POLICY, dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S, start_timeout: float = 15.0
+        self,
+        task_id: str,
+        cdp_url: str,
+        *,
+        dialog_policy: str = DEFAULT_DIALOG_POLICY,
+        dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S,
+        start_timeout: float = 15.0,
     ) -> CDPSupervisor:
         with self._lock:
             if (existing := self._by_task.get(task_id)) is not None:

@@ -20,11 +20,7 @@ from typing import Any
 
 import psutil
 
-from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, is_env_passthrough, kill_tree, load_config
-
-from ..interrupt import is_interrupted
-from ..registry import registry, tool_error
-from ..terminal.environment import (
+from envs import (
     active_environments,
     create_environment,
     creation_locks,
@@ -36,6 +32,9 @@ from ..terminal.environment import (
     start_cleanup_thread,
     task_env_overrides,
 )
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, is_env_passthrough, is_interrupted, kill_tree, load_config
+
+from ..registry import registry, tool_error
 from ..thread_context import propagate_context_to_thread
 
 logger = logging.getLogger(__name__)
@@ -353,7 +352,13 @@ def _read_conn_line(conn: socket.socket, buf: bytes) -> tuple[bytes | None, byte
 
 
 def _rpc_server_loop(
-    server_sock: socket.socket, task_id: str, tool_call_log: list[Any], tool_call_counter: list[int], max_tool_calls: int, allowed_tools: frozenset[str], expected_token: str
+    server_sock: socket.socket,
+    task_id: str,
+    tool_call_log: list[Any],
+    tool_call_counter: list[int],
+    max_tool_calls: int,
+    allowed_tools: frozenset[str],
+    expected_token: str,
 ) -> None:
     """本机沙箱的父进程侧 RPC 监听循环: accept 一条已认证连接 + 串行派发工具调用。"""
     conn = None
@@ -836,7 +841,9 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
         stdout_head_chunks: list = []
         stdout_tail_chunks: list = []
         stdout_reader = threading.Thread(
-            target=_drain_head_tail, args=(proc.stdout, stdout_head_chunks, stdout_tail_chunks, _STDOUT_HEAD_BYTES, _STDOUT_TAIL_BYTES, stdout_total_bytes), daemon=True
+            target=_drain_head_tail,
+            args=(proc.stdout, stdout_head_chunks, stdout_tail_chunks, _STDOUT_HEAD_BYTES, _STDOUT_TAIL_BYTES, stdout_total_bytes),
+            daemon=True,
         )
         stderr_reader = threading.Thread(target=_drain, args=(proc.stderr, stderr_chunks, MAX_STDERR_BYTES), daemon=True)
         stdout_reader.start()
@@ -1067,7 +1074,7 @@ EXECUTE_CODE_SCHEMA = {
             "code": {
                 "type": "string",
                 "description": "Python code to execute. Import tools with `from spiritagent_tools import web_search, terminal, ...` and print your final result to stdout.",
-            }
+            },
         },
         "required": ["code"],
     },
@@ -1075,5 +1082,5 @@ EXECUTE_CODE_SCHEMA = {
 
 
 registry.register_tool("execute_code", schema=EXECUTE_CODE_SCHEMA)(
-    lambda args, **kw: execute_code(code=args.get("code", ""), task_id=kw.get("task_id"), enabled_tools=kw.get("enabled_tools"))
+    lambda args, **kw: execute_code(code=args.get("code", ""), task_id=kw.get("task_id"), enabled_tools=kw.get("enabled_tools")),
 )

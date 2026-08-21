@@ -33,7 +33,6 @@ _docker_executable: str | None = None
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _LABEL_VALUE_OK_RE = re.compile(r"[^A-Za-z0-9_.-]")
 
-
 # Windows：抑制 runner 每次派生 docker/ssh/singularity 子进程时闪现的控制台窗口。
 _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
@@ -127,7 +126,12 @@ def maybe_reap_docker_orphans(container_config: dict, lifetime_seconds: int | No
 def _container_finished_at(docker_exe: str, container_id: str) -> datetime.datetime | None:
     try:
         res = subprocess.run(
-            [docker_exe, "inspect", "--format", "{{.State.FinishedAt}}", container_id], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW
+            [docker_exe, "inspect", "--format", "{{.State.FinishedAt}}", container_id],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+            **_NO_WINDOW,
         )
         if res.returncode == 0 and (raw := res.stdout.strip()) and not raw.startswith("0001-01-01"):
             return datetime.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", raw).replace("Z", "+00:00"))
@@ -184,7 +188,12 @@ def _build_security_args(run_as_host_user: bool, run_exec: bool = False) -> list
 def _image_uses_init_entrypoint(docker_exe: str, image: str) -> bool:
     try:
         res = subprocess.run(
-            [docker_exe, "image", "inspect", image, "--format", "{{json .Config.Entrypoint}}"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW
+            [docker_exe, "image", "inspect", image, "--format", "{{json .Config.Entrypoint}}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            stdin=subprocess.DEVNULL,
+            **_NO_WINDOW,
         )
         if res.returncode == 0 and (raw := (res.stdout or "").strip()) and raw != "null":
             ep = json.loads(raw)
@@ -412,7 +421,12 @@ class DockerEnvironment(BaseEnvironment):
             info = subprocess.run([docker, "info", "--format", "{{.Driver}}"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
             if info.stdout.strip().lower() == "overlay2":
                 probe = subprocess.run(
-                    [docker, "create", "--storage-opt", "size=1m", "hello-world"], capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW
+                    [docker, "create", "--storage-opt", "size=1m", "hello-world"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    stdin=subprocess.DEVNULL,
+                    **_NO_WINDOW,
                 )
                 if probe.returncode == 0:
                     if cid := probe.stdout.strip():

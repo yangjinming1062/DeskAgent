@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import httpx
 from PIL import Image
 
-from utils import async_is_safe_url, cfg_get, check_website_access, load_config
+from utils import async_is_safe_url, cfg_get, check_website_access, create_safe_async_client, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ async def _download_media(url: str, destination: Path, *, accept: str, max_bytes
         try:
             if blocked := check_website_access(url):
                 raise PermissionError(blocked.message)
-            async with httpx.AsyncClient(timeout=timeout, follow_redirects=True, event_hooks={"response": [_guard]}) as client:
+            async with create_safe_async_client(timeout=timeout, follow_redirects=True, event_hooks={"response": [_guard]}) as client:
                 res = await client.stream(
                     "GET",
                     url,
@@ -139,13 +139,20 @@ async def _download_media(url: str, destination: Path, *, accept: str, max_bytes
 
 async def _download_image(image_url: str, destination: Path, max_retries: int = 3) -> Path:
     return await _download_media(
-        image_url, destination, accept="image/*,*/*;q=0.8", max_bytes=_VISION_MAX_DOWNLOAD_BYTES, timeout=_resolve_download_timeout(), media_label="image", max_retries=max_retries
+        image_url,
+        destination,
+        accept="image/*,*/*;q=0.8",
+        max_bytes=_VISION_MAX_DOWNLOAD_BYTES,
+        timeout=_resolve_download_timeout(),
+        media_label="image",
+        max_retries=max_retries,
     )
 
 
 def _guess_mime_from_extension(image_path: Path) -> str:
     return {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp", ".svg": "image/svg+xml"}.get(
-        image_path.suffix.lower(), "image/jpeg"
+        image_path.suffix.lower(),
+        "image/jpeg",
     )
 
 

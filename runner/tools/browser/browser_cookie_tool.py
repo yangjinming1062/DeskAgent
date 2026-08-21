@@ -25,7 +25,7 @@ BROWSER_COOKIES_GET_SCHEMA: dict[str, Any] = {
             "url": {
                 "type": "string",
                 "description": ("Optional URL whose cookies to retrieve (e.g. 'https://example.com'). If omitted, returns all cookies for the current browser context."),
-            }
+            },
         },
         "required": [],
     },
@@ -107,7 +107,7 @@ registry.register_tool("browser_cookies_set", schema=BROWSER_COOKIES_SET_SCHEMA)
         secure=args.get("secure", False),
         same_site=args.get("sameSite"),
         task_id=kw.get("task_id"),
-    )
+    ),
 )
 
 
@@ -147,7 +147,7 @@ def browser_cookies_clear(session: bool = True, storage: bool = True, task_id: s
 
 
 registry.register_tool("browser_cookies_clear", schema=BROWSER_COOKIES_CLEAR_SCHEMA)(
-    lambda args, **kw: browser_cookies_clear(session=args.get("session", True), storage=args.get("storage", True), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_cookies_clear(session=args.get("session", True), storage=args.get("storage", True), task_id=kw.get("task_id")),
 )
 
 
@@ -185,7 +185,7 @@ def browser_storage_get(key: str, origin: str, kind: str = "localStorage", task_
 
 
 registry.register_tool("browser_storage_get", schema=BROWSER_STORAGE_GET_SCHEMA)(
-    lambda args, **kw: browser_storage_get(key=args.get("key", ""), origin=args.get("origin", ""), kind=args.get("kind", "localStorage"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_storage_get(key=args.get("key", ""), origin=args.get("origin", ""), kind=args.get("kind", "localStorage"), task_id=kw.get("task_id")),
 )
 
 
@@ -221,6 +221,10 @@ def browser_storage_set(key: str, value: str, origin: str, kind: str = "localSto
 
 registry.register_tool("browser_storage_set", schema=BROWSER_STORAGE_SET_SCHEMA)(
     lambda args, **kw: browser_storage_set(
-        key=args.get("key", ""), value=args.get("value", ""), origin=args.get("origin", ""), kind=args.get("kind", "localStorage"), task_id=kw.get("task_id")
-    )
+        key=args.get("key", ""),
+        value=args.get("value", ""),
+        origin=args.get("origin", ""),
+        kind=args.get("kind", "localStorage"),
+        task_id=kw.get("task_id"),
+    ),
 )

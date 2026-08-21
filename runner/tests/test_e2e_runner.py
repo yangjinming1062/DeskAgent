@@ -38,8 +38,8 @@ from test_transport import (
 )
 
 import server
+from envs import factory as env_factory
 from tools import registry
-from tools.terminal.environment import factory as env_factory
 from utils import IS_WINDOWS, DesktopEndpoint
 
 # ---------------------------------------------------------------------------
@@ -657,7 +657,7 @@ def test_create_environment_routes_local(monkeypatch):
 
     LocalEnvironment stores the flag in a private attribute (``_persistent``).
     """
-    from tools.terminal._env_local import LocalEnvironment
+    from envs import LocalEnvironment
 
     env = env_factory.create_environment(
         env_type="local",

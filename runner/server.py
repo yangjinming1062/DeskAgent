@@ -17,7 +17,6 @@ import utils.env_passthrough
 from runner_version import __version__
 from tools import ToolError, discover_builtin_tools, registry
 from tools.files import reset_max_read_chars_cache
-from tools.interrupt import set_global_interrupt, set_interrupt
 from tools.mcp import discover_mcp_tools, get_active_mcp_servers, reload_mcp_servers
 from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
@@ -29,8 +28,10 @@ from utils import (
     init_runner_job_object,
     network_reachable,
     read_endpoint,
+    set_global_interrupt,
     set_handler,
     set_inmemory_config,
+    set_interrupt,
     set_main_loop,
     snapshot,
     snapshot_health,

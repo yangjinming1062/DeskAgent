@@ -8,5 +8,5 @@ __all__ = [
     "is_image_size_error",
     "resize_image_for_vision",
     "resolve_vision_params",
-    "audio"
+    "audio",
 ]  # fmt: skip

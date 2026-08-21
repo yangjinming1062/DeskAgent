@@ -9,23 +9,23 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from utils import cfg_get, clean_output, load_config
-
-from ..process import process_registry
-from ..registry import registry
-from ._env_singularity import _get_scratch_dir
-from .environment import (
+from envs import (
     active_environments,
     create_environment,
     creation_locks,
     creation_locks_lock,
     env_lock,
     get_env_config,
+    get_singularity_scratch_dir,
     last_activity,
     resolve_container_task_id,
     start_cleanup_thread,
     task_env_overrides,
 )
+from utils import cfg_get, clean_output, load_config
+
+from ..process import process_registry
+from ..registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_
 
 def _check_disk_usage_warning() -> bool:
     try:
-        scratch_dir = _get_scratch_dir()
+        scratch_dir = get_singularity_scratch_dir()
         total_bytes = 0
         for path in glob.glob(str(scratch_dir / "spiritagent-*")):
             for f in Path(path).rglob("*"):
@@ -255,7 +255,7 @@ def terminal_tool(
                         f"Foreground timeout {timeout}s exceeds the maximum of "
                         f"{FOREGROUND_MAX_TIMEOUT}s. Use background=true with "
                         f"notify_on_complete=true for long-running commands."
-                    )
+                    ),
                 },
                 ensure_ascii=False,
             )
@@ -330,7 +330,8 @@ def terminal_tool(
                         )
                     except ImportError as e:
                         return json.dumps(
-                            {"output": "", "exit_code": -1, "error": f"Terminal tool disabled: environment creation failed ({e})", "status": "disabled"}, ensure_ascii=False
+                            {"output": "", "exit_code": -1, "error": f"Terminal tool disabled: environment creation failed ({e})", "status": "disabled"},
+                            ensure_ascii=False,
                         )
                     with env_lock:
                         active_environments[effective_task_id] = new_env
@@ -432,7 +433,9 @@ def terminal_tool(
                         proc_session.watcher_thread_id = _gw_thread_id
                         proc_session.watcher_message_id = _gw_message_id
                 watch_patterns, conflict_note = _resolve_notification_flag_conflict(
-                    notify_on_complete=bool(notify_on_complete), watch_patterns=watch_patterns, background=bool(background)
+                    notify_on_complete=bool(notify_on_complete),
+                    watch_patterns=watch_patterns,
+                    background=bool(background),
                 )
                 if conflict_note:
                     logger.warning("background proc %s: %s", proc_session.id, conflict_note)

@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-import requests
+import httpx
 
 from utils import (
     CREATE_NO_WINDOW,
@@ -36,6 +36,7 @@ from utils import (
     get_spiritagent_dir,
     get_spiritagent_home,
     is_always_blocked_url,
+    is_interrupted,
     is_safe_url,
     is_truthy_value,
     kill_tree,
@@ -45,7 +46,6 @@ from utils import (
     redact_sensitive_text,
 )
 
-from ..interrupt import is_interrupted
 from ..multimodal import RESIZE_TARGET_BYTES, is_image_size_error, resize_image_for_vision, resolve_vision_params
 from ..process import ProcessRegistry
 from ..registry import registry, tool_error
@@ -184,7 +184,7 @@ def _resolve_cdp_override(cdp_url: str) -> str:
         version_url = discovery_url.rstrip("/") + "/json/version"
 
     try:
-        response = requests.get(version_url, timeout=10)
+        response = httpx.get(version_url, timeout=10)
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
@@ -833,7 +833,7 @@ BROWSER_TOOL_SCHEMAS = [
                     "type": "boolean",
                     "description": "If true, returns complete page content. If false (default), returns compact view with interactive elements only.",
                     "default": False,
-                }
+                },
             },
             "required": [],
         },
@@ -1049,7 +1049,7 @@ BROWSER_TOOL_SCHEMAS = [
                     "type": "object",
                     "description": 'Header name → value map, e.g. {"Referer": "https://example.com", "X-API-Key": "secret"}.',
                     "additionalProperties": {"type": "string"},
-                }
+                },
             },
             "required": ["headers"],
         },
@@ -1169,7 +1169,7 @@ def _find_agent_browser() -> str:
                 "agent-browser CLI not found (cached). Install it with: "
                 f"{_browser_install_hint()}\n"
                 "Or run 'npm install' in the repo root to install locally.\n"
-                "Or ensure npx is available in your PATH."
+                "Or ensure npx is available in your PATH.",
             )
         return _cached_agent_browser
 
@@ -1213,7 +1213,7 @@ def _find_agent_browser() -> str:
         "agent-browser CLI not found. Install it with: "
         f"{_browser_install_hint()}\n"
         "Or run 'npm install' in the repo root to install locally.\n"
-        "Or ensure npx is available in your PATH."
+        "Or ensure npx is available in your PATH.",
     )
 
 
@@ -2225,7 +2225,12 @@ def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: flo
 
 
 def browser_pdf(
-    save_as: str | None = None, landscape: bool = False, print_background: bool = True, paper_width: float = 8.5, paper_height: float = 11.0, task_id: str | None = None
+    save_as: str | None = None,
+    landscape: bool = False,
+    print_background: bool = True,
+    paper_width: float = 8.5,
+    paper_height: float = 11.0,
+    task_id: str | None = None,
 ) -> str:
     """把当前页面保存为 PDF（CDP Page.printToPDF，需 CDP 后端）；返回路径、页数、SHA-256。"""
     if is_camofox_mode():
@@ -2240,7 +2245,8 @@ def browser_pdf(
         return json.dumps({"success": False, "error": "browser_pdf requires a CDP-capable backend (local Chrome or CDP override)"}, ensure_ascii=False)
 
     cdp_result = supervisor.send_cdp(
-        "Page.printToPDF", {"landscape": landscape, "printBackground": print_background, "paperWidth": paper_width, "paperHeight": paper_height, "transferMode": "ReturnAsBase64"}
+        "Page.printToPDF",
+        {"landscape": landscape, "printBackground": print_background, "paperWidth": paper_width, "paperHeight": paper_height, "transferMode": "ReturnAsBase64"},
     )
     if not cdp_result.get("ok"):
         return json.dumps({"success": False, "error": f"browser_pdf: CDP error: {cdp_result.get('error', 'unknown')}"}, ensure_ascii=False)
@@ -2318,7 +2324,8 @@ def browser_screenshot_element(ref: str, save_as: str | None = None, task_id: st
     file_path.write_bytes(img_bytes)
 
     return json.dumps(
-        {"success": True, "path": str(file_path), "width": int(r["width"] + pad * 2), "height": int(r["height"] + pad * 2), "size_bytes": len(img_bytes)}, ensure_ascii=False
+        {"success": True, "path": str(file_path), "width": int(r["width"] + pad * 2), "height": int(r["height"] + pad * 2), "size_bytes": len(img_bytes)},
+        ensure_ascii=False,
     )
 
 
@@ -2438,14 +2445,22 @@ def browser_set_user_agent(user_agent: str | None = None, platform: str | None =
     if accept_language is not None:
         params["acceptLanguage"] = accept_language
     return _run_cdp_override(
-        "browser_set_user_agent", "Network.setUserAgentOverride", params, {"user_agent": user_agent, "platform": platform, "accept_language": accept_language}, task_id
+        "browser_set_user_agent",
+        "Network.setUserAgentOverride",
+        params,
+        {"user_agent": user_agent, "platform": platform, "accept_language": accept_language},
+        task_id,
     )
 
 
 def browser_set_extra_headers(headers: dict[str, str], task_id: str | None = None) -> str:
     """通过 CDP Network.setExtraHTTPHeaders 整批替换后续导航的额外 HTTP 头（空 dict 清空所有覆盖）。"""
     return _run_cdp_override(
-        "browser_set_extra_headers", "Network.setExtraHTTPHeaders", {"headers": headers}, {"count": len(headers), "header_names": list(headers.keys())}, task_id
+        "browser_set_extra_headers",
+        "Network.setExtraHTTPHeaders",
+        {"headers": headers},
+        {"count": len(headers), "header_names": list(headers.keys())},
+        task_id,
     )
 
 
@@ -2815,7 +2830,9 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
         except Exception as _api_err:
             if is_image_size_error(_api_err) and len(data_url) > RESIZE_TARGET_BYTES:
                 logger.info(
-                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...", len(data_url) / (1024 * 1024), RESIZE_TARGET_BYTES / (1024 * 1024)
+                    "Vision API rejected screenshot (%.1f MB); auto-resizing to ~%.0f MB and retrying...",
+                    len(data_url) / (1024 * 1024),
+                    RESIZE_TARGET_BYTES / (1024 * 1024),
                 )
                 data_url = resize_image_for_vision(screenshot_path, mime_type="image/png")
                 call_kwargs["messages"][0]["content"][1]["image_url"]["url"] = data_url
@@ -3062,57 +3079,66 @@ def check_browser_requirements() -> bool:
 _BROWSER_SCHEMA_MAP = {s["name"]: s for s in BROWSER_TOOL_SCHEMAS}
 
 registry.register_tool("browser_navigate", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_navigate"))(
-    lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_navigate(url=args.get("url", ""), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_snapshot", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_snapshot"))(
-    lambda args, **kw: browser_snapshot(full=args.get("full", False), task_id=kw.get("task_id"), user_task=kw.get("user_task"))
+    lambda args, **kw: browser_snapshot(full=args.get("full", False), task_id=kw.get("task_id"), user_task=kw.get("user_task")),
 )
 registry.register_tool("browser_click", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_click"))(
-    lambda args, **kw: browser_click(ref=args.get("ref", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_click(ref=args.get("ref", ""), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_type", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_type"))(
-    lambda args, **kw: browser_type(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_type(ref=args.get("ref", ""), text=args.get("text", ""), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_scroll", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_scroll"))(
-    lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_scroll(direction=args.get("direction", "down"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_back", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_back"))(
-    lambda args, **kw: browser_back(task_id=kw.get("task_id"))
+    lambda args, **kw: browser_back(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_press", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_press"))(
-    lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_press(key=args.get("key", ""), task_id=kw.get("task_id")),
 )
 
 registry.register_tool("browser_get_images", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_get_images"))(
-    lambda args, **kw: browser_get_images(task_id=kw.get("task_id"))
+    lambda args, **kw: browser_get_images(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_vision", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_vision"))(
-    lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_console", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_console"))(
-    lambda args, **kw: browser_console(clear=args.get("clear", False), expression=args.get("expression"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_console(clear=args.get("clear", False), expression=args.get("expression"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_hover", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_hover"))(
-    lambda args, **kw: browser_hover(ref=args.get("ref", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_hover(ref=args.get("ref", ""), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_wait_for", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_wait_for"))(
     lambda args, **kw: browser_wait_for(
-        selector=args.get("selector"), text=args.get("text"), timeout_s=args.get("timeout_s", 10.0), return_snapshot=args.get("return_snapshot", True), task_id=kw.get("task_id")
-    )
+        selector=args.get("selector"),
+        text=args.get("text"),
+        timeout_s=args.get("timeout_s", 10.0),
+        return_snapshot=args.get("return_snapshot", True),
+        task_id=kw.get("task_id"),
+    ),
 )
 registry.register_tool("browser_find", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_find"))(
-    lambda args, **kw: browser_find(query=args.get("query", ""), ref_only=args.get("ref_only", True), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_find(query=args.get("query", ""), ref_only=args.get("ref_only", True), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_drag", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_drag"))(
-    lambda args, **kw: browser_drag(from_ref=args.get("from_ref", ""), to_ref=args.get("to_ref", ""), hold_key=args.get("hold_key"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_drag(from_ref=args.get("from_ref", ""), to_ref=args.get("to_ref", ""), hold_key=args.get("hold_key"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_select", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_select"))(
     lambda args, **kw: browser_select(
-        ref=args.get("ref", ""), value=args.get("value"), label=args.get("label"), index=args.get("index"), open_delay_s=args.get("open_delay_s", 0.5), task_id=kw.get("task_id")
-    )
+        ref=args.get("ref", ""),
+        value=args.get("value"),
+        label=args.get("label"),
+        index=args.get("index"),
+        open_delay_s=args.get("open_delay_s", 0.5),
+        task_id=kw.get("task_id"),
+    ),
 )
 registry.register_tool("browser_download", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_download"))(
-    lambda args, **kw: browser_download(ref_or_url=args.get("ref_or_url", ""), save_as=args.get("save_as"), timeout_s=args.get("timeout_s", 30.0), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_download(ref_or_url=args.get("ref_or_url", ""), save_as=args.get("save_as"), timeout_s=args.get("timeout_s", 30.0), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_pdf", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_pdf"))(
     lambda args, **kw: browser_pdf(
@@ -3122,22 +3148,22 @@ registry.register_tool("browser_pdf", check_fn=check_browser_requirements, schem
         paper_width=args.get("paper_width", 8.5),
         paper_height=args.get("paper_height", 11.0),
         task_id=kw.get("task_id"),
-    )
+    ),
 )
 registry.register_tool("browser_screenshot_element", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_screenshot_element"))(
-    lambda args, **kw: browser_screenshot_element(ref=args.get("ref", ""), save_as=args.get("save_as"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_screenshot_element(ref=args.get("ref", ""), save_as=args.get("save_as"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_tab_new", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_new"))(
-    lambda args, **kw: browser_tab_new(url=args.get("url"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_tab_new(url=args.get("url"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_tab_switch", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_switch"))(
-    lambda args, **kw: browser_tab_switch(tab_id=args.get("tab_id", ""), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_tab_switch(tab_id=args.get("tab_id", ""), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_tab_close", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_close"))(
-    lambda args, **kw: browser_tab_close(tab_id=args.get("tab_id"), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_tab_close(tab_id=args.get("tab_id"), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_tab_list", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_tab_list"))(
-    lambda args, **kw: browser_tab_list(task_id=kw.get("task_id"))
+    lambda args, **kw: browser_tab_list(task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_set_viewport", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_viewport"))(
     lambda args, **kw: browser_set_viewport(
@@ -3146,16 +3172,19 @@ registry.register_tool("browser_set_viewport", check_fn=check_browser_requiremen
         device_scale_factor=args.get("device_scale_factor", 1.0),
         mobile=args.get("mobile", False),
         task_id=kw.get("task_id"),
-    )
+    ),
 )
 registry.register_tool("browser_set_user_agent", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_user_agent"))(
     lambda args, **kw: browser_set_user_agent(
-        user_agent=args.get("user_agent"), platform=args.get("platform"), accept_language=args.get("accept_language"), task_id=kw.get("task_id")
-    )
+        user_agent=args.get("user_agent"),
+        platform=args.get("platform"),
+        accept_language=args.get("accept_language"),
+        task_id=kw.get("task_id"),
+    ),
 )
 registry.register_tool("browser_set_extra_headers", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_extra_headers"))(
-    lambda args, **kw: browser_set_extra_headers(headers=args.get("headers", {}), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_set_extra_headers(headers=args.get("headers", {}), task_id=kw.get("task_id")),
 )
 registry.register_tool("browser_set_geolocation", check_fn=check_browser_requirements, schema=_BROWSER_SCHEMA_MAP.get("browser_set_geolocation"))(
-    lambda args, **kw: browser_set_geolocation(lat=args.get("lat", 0.0), lon=args.get("lon", 0.0), accuracy=args.get("accuracy", 100.0), task_id=kw.get("task_id"))
+    lambda args, **kw: browser_set_geolocation(lat=args.get("lat", 0.0), lon=args.get("lon", 0.0), accuracy=args.get("accuracy", 100.0), task_id=kw.get("task_id")),
 )

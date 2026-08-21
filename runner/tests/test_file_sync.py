@@ -16,7 +16,7 @@ import time
 
 import pytest
 
-from tools.terminal._env_file_sync import FileSyncManager
+from envs import FileSyncManager
 from utils import IS_WINDOWS
 
 _REMOTE = "/root/.spiritagent/a.txt"
@@ -98,7 +98,7 @@ def test_sync_back_once_deferred_sigint_raises_keyboard_interrupt(
 def test_wait_for_process_survives_orphaned_descendant(tmp_path):
     """A grandchild holding the pipe's write end must not leak a blocked drain
     thread after the direct child exits."""
-    from tools.terminal._env_local import LocalEnvironment
+    from envs import LocalEnvironment
 
     env = LocalEnvironment(cwd=str(tmp_path), timeout=30)
     inner = "import subprocess,sys;subprocess.Popen([sys.executable,'-c','import time;time.sleep(3)']);print('marker',flush=True)"

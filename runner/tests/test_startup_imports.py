@@ -13,8 +13,8 @@ STARTUP_IMPORTS = [
         "from tools.files.file_tools import reset_max_read_chars_cache",
     ),
     (
-        "tools.interrupt",
-        "from tools.interrupt import set_global_interrupt, set_interrupt",
+        "utils.interrupt",
+        "from utils import set_global_interrupt, set_interrupt",
     ),
     (
         "tools.mcp.discover_mcp_tools (load-bearing)",

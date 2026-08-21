@@ -320,7 +320,9 @@ def restore_skill(skill_name: str) -> tuple[bool, str]:
         return False, "no archive directory"
 
     candidates = [p for p in archive_root.rglob("*") if p.is_dir() and p.name == skill_name] or sorted(
-        [p for p in archive_root.rglob("*") if p.is_dir() and p.name.startswith(f"{skill_name}-")], key=lambda p: p.name, reverse=True
+        [p for p in archive_root.rglob("*") if p.is_dir() and p.name.startswith(f"{skill_name}-")],
+        key=lambda p: p.name,
+        reverse=True,
     )
     if not candidates:
         return False, f"skill '{skill_name}' not found in archive"

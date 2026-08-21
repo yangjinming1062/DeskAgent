@@ -774,7 +774,7 @@ class WellKnownSkillSource(SkillSource):
                     trust_level="community",
                     path=name,
                     extra={"index_url": parsed["index_url"], "base_url": parsed["base_url"], "files": files if isinstance(files, list) else ["SKILL.md"]},
-                )
+                ),
             )
         return results
 
@@ -1232,7 +1232,7 @@ class SkillsShSource(SkillSource):
                         repo=repo,
                         path=skill_name,
                         extra={"detail_url": f"{self.BASE_URL}/{canonical}", "repo_url": f"https://github.com/{repo}"},
-                    )
+                    ),
                 )
 
         if not results:
@@ -1275,7 +1275,7 @@ class SkillsShSource(SkillSource):
                     trust_level=self.github.trust_level_for(canonical),
                     repo=repo,
                     path=skill_path,
-                )
+                ),
             )
             if len(results) >= limit:
                 break
@@ -2075,7 +2075,7 @@ class ClaudeMarketplaceSource(SkillSource):
                             identifier=identifier,
                             trust_level=self.trust_level_for(identifier),
                             repo=marketplace_repo,
-                        )
+                        ),
                     )
 
         return results[:limit]
@@ -2155,7 +2155,7 @@ class LobeHubSource(SkillSource):
                         identifier=f"lobehub/{identifier}",
                         trust_level="community",
                         tags=tags if isinstance(tags, list) else [],
-                    )
+                    ),
                 )
 
             if len(results) >= limit:

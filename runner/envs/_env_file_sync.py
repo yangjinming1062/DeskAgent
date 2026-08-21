@@ -15,7 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TypeAlias
 
-from utils import get_spiritagent_home
+from utils import get_credential_file_mounts, get_spiritagent_home, iter_cache_files, iter_skills_files
 
 from ._env_base import _file_mtime_key
 
@@ -25,8 +25,6 @@ if sys.platform == "win32":
     import msvcrt
 else:
     import fcntl
-
-from utils import get_credential_file_mounts, iter_cache_files, iter_skills_files
 
 logger = logging.getLogger(__name__)
 
