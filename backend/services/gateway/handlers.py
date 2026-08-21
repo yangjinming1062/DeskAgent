@@ -393,6 +393,11 @@ def _register_session_handlers(
 
     dispatcher.register("session.ack", session_ack)
 
+    async def session_ping(_params: dict) -> dict:
+        return {}
+
+    dispatcher.register("session.ping", session_ping)
+
     async def session_get_main(_params: dict) -> dict:
         async with SESSION_LOCAL() as db:
             conv = await get_or_create_main_conversation(db, user_id)

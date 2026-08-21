@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { JsonRpcGatewayClient, SpiritAgentRpcError, SpiritAgentRpcErrorCode } from './json-rpc-gateway'
 
@@ -27,6 +27,14 @@ describe('SpiritAgentRpcError', () => {
 })
 
 describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   class MockWebSocket {
     static OPEN = 1
     readyState = MockWebSocket.OPEN
@@ -64,23 +72,28 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     }
   }
 
-  it('updates lastReceivedSeq and drops duplicate frames', async () => {
+  /** 创建带 mock socket 的客户端，推进计时器使 connect() 完成。 */
+  async function connectClient() {
     let mockSocket!: MockWebSocket
-
     const client = new JsonRpcGatewayClient({
       socketFactory: () => {
         mockSocket = new MockWebSocket()
-
         return mockSocket as unknown as WebSocket
       }
     })
+    const connectPromise = client.connect('ws://localhost:8000')
+    await vi.advanceTimersByTimeAsync(0)
+    await connectPromise
+    return { client, socket: mockSocket }
+  }
+
+  it('updates lastReceivedSeq and drops duplicate frames', async () => {
+    const { client, socket: mockSocket } = await connectClient()
 
     const received: string[] = []
     client.on('message.delta', ev => {
       received.push((ev.payload as { text: string }).text)
     })
-
-    await client.connect('ws://localhost:8000')
 
     // 接收 seq=1 的帧
     mockSocket.emitMessage(

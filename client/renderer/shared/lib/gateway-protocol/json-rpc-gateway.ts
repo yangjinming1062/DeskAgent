@@ -68,11 +68,15 @@ export class SpiritAgentRpcError extends Error {
 }
 
 const ANY = '*'
-const DEFAULT_REQUEST_TIMEOUT_MS = 120_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 // A reconnect after sleep/wake must not hang forever in 'connecting' (which
 // keeps the composer disabled and stuck on "Starting SpiritAgent..."). If the open
 // handshake doesn't land in this window, fail to 'error' so callers can retry.
 const DEFAULT_CONNECT_TIMEOUT_MS = 15_000
+
+// 空闲 15s 发 session.ping；30s 无任何帧则判定半开连接，close(4000) 触发重连
+const HEARTBEAT_INTERVAL_MS = 15_000
+const HEARTBEAT_DEADLINE_MS = 30_000
 
 export class JsonRpcGatewayClient {
   private nextId = 0
@@ -82,6 +86,8 @@ export class JsonRpcGatewayClient {
   private _lastCloseCode: number | null = null
   private _lastReceivedSeq = 0
   private _ackTimer: ReturnType<typeof setTimeout> | null = null
+  private _lastMessageAt = 0
+  private _heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private readonly eventHandlers = new Map<string, Set<(event: GatewayEvent) => void>>()
   private readonly stateHandlers = new Set<(state: ConnectionState) => void>()
   private readonly options: Required<Omit<GatewayClientOptions, 'socketFactory'>> &
@@ -158,6 +164,7 @@ export class JsonRpcGatewayClient {
         return
       }
 
+      this.stopHeartbeat()
       this._lastCloseCode = event.code
       this.socket = null
       this.setState('closed')
@@ -184,6 +191,8 @@ export class JsonRpcGatewayClient {
 
         settled = true
         cleanup()
+        this._lastMessageAt = Date.now()
+        this.startHeartbeat()
         this.setState('open')
         resolve()
       }
@@ -234,6 +243,8 @@ export class JsonRpcGatewayClient {
       clearTimeout(this._ackTimer)
       this._ackTimer = null
     }
+
+    this.stopHeartbeat()
 
     if (this.socket) {
       this.socket.close()
@@ -317,7 +328,51 @@ export class JsonRpcGatewayClient {
     })
   }
 
+  private startHeartbeat(): void {
+    if (this._heartbeatTimer !== null) {
+      return
+    }
+
+    this._heartbeatTimer = setInterval(() => {
+      const socket = this.socket
+
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        this.stopHeartbeat()
+
+        return
+      }
+
+      const elapsed = Date.now() - this._lastMessageAt
+
+      // 超时无帧 → 半开连接，主动 close 触发既有重连链路
+      if (elapsed > HEARTBEAT_DEADLINE_MS) {
+        try {
+          socket.close(4000, 'heartbeat')
+        } catch {
+          /* 忽略 */
+        }
+
+        return
+      }
+
+      // 空闲足够久 → 发轻量 ping 保活 NAT 映射；错误由 close 事件兜底
+      if (elapsed > HEARTBEAT_INTERVAL_MS) {
+        this.request('session.ping').catch(() => {})
+      }
+    }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  private stopHeartbeat(): void {
+    if (this._heartbeatTimer !== null) {
+      clearInterval(this._heartbeatTimer)
+      this._heartbeatTimer = null
+    }
+  }
+
   private handleMessage(raw: unknown): void {
+    // 任何入帧（含 ping 响应）均重置空闲计时
+    this._lastMessageAt = Date.now()
+
     if (typeof raw !== 'string') {
       // 二进制帧（Blob / ArrayBuffer）不属于 JSON-RPC 契约的一部分；
       // 把它们 stringify 会丢失内容，因此这里显式丢弃。
