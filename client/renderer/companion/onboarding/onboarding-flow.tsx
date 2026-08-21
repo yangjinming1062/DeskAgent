@@ -1259,14 +1259,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyLoadingText('正在为您生成不同风格的全身样图…')
     setFullbodyHint(null)
 
+    const effectiveRef = refImage ?? presentationRef
+
     try {
       const res = await window.spiritagent.api<{ samples?: Record<string, string> }>({
         path: `/api/companion/avatar/${avatarId}/fullbody/samples`,
         method: 'POST',
-        body: refImage
+        body: effectiveRef
           ? {
-              image: refImage.base64,
-              content_type: refImage.contentType
+              image: effectiveRef.base64,
+              content_type: effectiveRef.contentType
             }
           : undefined
       })
@@ -1385,6 +1387,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setFullbodyLoadingText('正在按要求重新生成正面全身图…')
     setFullbodyHint(null)
 
+    const effectiveRef = refImage ?? presentationRef
+
     try {
       const res = await window.spiritagent.api<{
         id?: number
@@ -1396,8 +1400,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         body: {
           style: fullbodyStyle,
           feedback: fullbodyFeedback.trim() || undefined,
-          image: refImage?.base64,
-          content_type: refImage?.contentType
+          image: effectiveRef?.base64,
+          content_type: effectiveRef?.contentType
         }
       })
 

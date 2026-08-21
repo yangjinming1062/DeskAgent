@@ -67,7 +67,7 @@ build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种�
   ＋
   [7. 物种特殊气质]       template.flavor（可选）：灵兽发光纹路、幻形虚幻粒子等（人类/精灵默认无）。
   ＋
-  [8. 用户微调反馈]       feedback（可选）：（用户反馈：…）。
+  [8. 用户额外要求]       feedback（可选）：（要求：…）。
 
 辅助工具说明：物种骨骼路由、视角名称映射、骨骼体态模板定义见下文各常量与类。
 """
@@ -326,7 +326,7 @@ def build_fullbody_prompt(
     avatar_prompt: str = "",
     persona: Persona | dict | None = None,
 ) -> str:
-    """为某个视角拼装一条生图 prompt（无 LLM 往返）；由 ``services.companion.avatar_service`` 按视角调用一次：每个风格的前视图样例、front/right/back/left 种子。"""
+    """为某个视角拼装一条生图 prompt（无 LLM 往返）；由 ``services.companion.avatar_service`` 按视角调用。全身图由外貌设定、性格特点、画风词典与用户额外要求装配，外形特征由原参考图/头像锚定，不带入头像阶段特异性的 avatar_prompt。"""
     style_key = style_id or template.style or "cel_shading"
     style_wording = _FULLBODY_STYLE_WORDING.get(style_key, _FULLBODY_STYLE_WORDING["cel_shading"])
     features = getattr(template, f"{view}_features", "")
@@ -348,11 +348,9 @@ def build_fullbody_prompt(
 
     if identity_parts:
         prompt += f"角色设定（{'；'.join(identity_parts)}）。"
-    elif avatar_prompt and avatar_prompt.strip():
-        prompt += f"角色身份：{avatar_prompt.strip()}。"
 
     if template.flavor:
         prompt += template.flavor
     if feedback and feedback.strip():
-        prompt += f"（用户反馈：{feedback.strip()}）"
+        prompt += f"（要求：{feedback.strip()}）"
     return prompt

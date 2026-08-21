@@ -670,6 +670,7 @@ def _normalize_avatar_url_to_bare(url: str | None) -> str:
 
 
 def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | None = None, reference_content_type: str | None = None) -> str | None:
+    """获取全身图生成的主体参考图 URI（始终使用原参考图/半身像，绝不使用已生成的全身图，避免迭代失真）。"""
     if reference_image:
         mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
         return f"data:{mime};base64,{reference_image}"
@@ -712,15 +713,7 @@ async def generate_fullbody_style_samples(
 
     tasks = []
     for style_info in STYLE_CATALOG:
-        prompt = build_fullbody_prompt(
-            "front",
-            template=template,
-            style_id=style_info.id,
-            feedback=prompt_payload.get("feedback"),
-            appearance=appearance,
-            personality=personality,
-            avatar_prompt=cached_avatar_prompt,
-        )
+        prompt = build_fullbody_prompt("front", template=template, style_id=style_info.id, feedback=None, appearance=appearance, personality=personality)
         tasks.append(
             _generate_one_portrait_with_moderation_retry(
                 prompt, user_id, reference_image=ref_uri, size=_FULLBODY_SIZE, persist=False, preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS)
@@ -809,7 +802,7 @@ async def generate_fullbody_front(
     reference_image: str | None = None,
     reference_content_type: str | None = None,
 ) -> AvatarAsset:
-    """按选定风格生成或重新生成正面全身图。"""
+    """按选定画风与用户微调要求生成/重绘正面全身图。主体参考始终使用原参考图/半身像，避免多轮迭代细节丢失。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -840,10 +833,8 @@ async def generate_fullbody_front(
     template = resolve_fullbody_template(species, "biped", style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
-    effective_feedback = feedback if feedback is not None else prompt_payload.get("feedback")
-    prompt = build_fullbody_prompt(
-        "front", template=template, style_id=style, feedback=effective_feedback, appearance=appearance, personality=personality, avatar_prompt=cached_avatar_prompt
-    )
+    effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
+    prompt = build_fullbody_prompt("front", template=template, style_id=style, feedback=effective_feedback, appearance=appearance, personality=personality)
 
     try:
         front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
@@ -862,8 +853,10 @@ async def generate_fullbody_front(
             if (target.seed_right_url or target.seed_back_url or target.seed_left_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
                 payload["fullbody_aux_style"] = payload["fullbody_style"]
             payload["fullbody_style"] = style
-            if feedback is not None:
-                payload["fullbody_feedback"] = feedback
+            if effective_feedback is not None:
+                payload["fullbody_feedback"] = effective_feedback
+            else:
+                payload.pop("fullbody_feedback", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         target.seed_front_url = front_url
         await session.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
@@ -934,16 +927,9 @@ async def confirm_fullbody_front(
         # 已确认的正面图作为缺失视图的主体参考，保证多视图同一形象
         front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
 
-        cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt") or ""
         prompts = {
             view: build_fullbody_prompt(
-                view,
-                template=template,
-                style_id=effective_style,
-                feedback=prompt_payload.get("fullbody_feedback"),
-                appearance=appearance,
-                personality=personality,
-                avatar_prompt=cached_avatar_prompt,
+                view, template=template, style_id=effective_style, feedback=prompt_payload.get("fullbody_feedback"), appearance=appearance, personality=personality
             )
             for view in missing_views
         }
