@@ -1,10 +1,15 @@
 import enum
 import re
+import ssl
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+import httpx
+import openai
 from components import get_logger, redact_sensitive_text, safe_json_loads
+
+from .providers.base import ProviderError
 
 logger = get_logger(__name__)
 
@@ -74,88 +79,48 @@ class ClassifiedError:
 _ClassifierBuilder = Callable[..., ClassifiedError]
 
 
-# 计费耗尽（非瞬时限流）的判别模式
-_BILLING_PATTERNS = [
-    "insufficient credits",
-    "insufficient_quota",
-    "insufficient balance",
-    "credit balance",
-    "credits exhausted",
-    "credits have been exhausted",
-    "no usable credits",
-    "top up your credits",
-    "payment required",
-    "billing hard limit",
-    "exceeded your current quota",
-    "account is deactivated",
-    "plan does not include",
-    "out of funds",
-    "run out of funds",
-    "balance_depleted",
-    "model_not_supported_on_free_tier",
-    "not available on the free tier",
-    "余额不足",
-    "额度不足",
-    "配额不足",
-]
+# 403/404 消歧与无 SDK 信号的消息 fallback 用；主路径已被 SDK RateLimitError + _BILLING_ERROR_CODES 覆盖。
+_BILLING_PATTERNS = ("insufficient credits", "credit balance", "credits exhausted", "exceeded your current quota", "plan does not include", "key limit exceeded")
 
-# 限流（瞬时、可恢复）的判别模式
-_RATE_LIMIT_PATTERNS = [
-    "rate limit",
-    "rate_limit",
-    "too many requests",
-    "throttled",
-    "requests per minute",
-    "tokens per minute",
-    "requests per day",
-    "try again in",
-    "please retry after",
-    "resource_exhausted",
-    "rate increased too quickly",  # Alibaba/DashScope 限流
-    "throttlingexception",  # AWS Bedrock 限流
-    "too many concurrent requests",
-    "servicequotaexceededexception",
-]
+# 仅在 Phase D（无 SDK 类、无结构化错误码）的兜底中使用；SDK RateLimitError + _RATE_LIMIT_ERROR_CODES 覆盖主路径。
+_RATE_LIMIT_MESSAGE_PATTERNS = ("rate limit", "rate_limit", "too many requests", "rate limit exceeded", "try again in", "please retry after")
 
 # 供应商 / 聚合商无法拉取 image_url 中的图像 URL：必须早于 format_error 匹配，以免用户看到被 400 文案误导。
-_ATTACHMENT_FETCH_PATTERNS = ["unable to fetch image from url", "unable to fetch the image", "could not fetch image", "error fetching image", "failed to download image from url"]
+_ATTACHMENT_FETCH_PATTERNS = ("unable to fetch image from url", "unable to fetch the image", "could not fetch image", "error fetching image", "failed to download image from url")
 
-# 用量上限模式（可能属于计费或限流，需进一步消歧）
-_USAGE_LIMIT_PATTERNS = ["usage limit", "quota", "limit exceeded", "key limit exceeded"]
-
-# 表明用量上限为瞬时（而非计费耗尽）的模式
-_USAGE_LIMIT_TRANSIENT_SIGNALS = ["try again", "retry", "resets at", "reset in", "wait", "requests remaining", "periodic", "window"]
+# 用量上限 —— 402 与部分 429/400 消息中"quota"等词需进一步消歧（瞬时 vs 计费耗尽）。
+_USAGE_LIMIT_PATTERNS = ("usage limit", "quota", "limit exceeded", "key limit exceeded")
+_USAGE_LIMIT_TRANSIENT_SIGNALS = ("try again", "resets at", "reset in", "requests remaining", "periodic")
 
 # 从消息文本（无 status_code 字段）识别 payload 过大：代理或后端把 HTTP 状态码嵌入错误信息。
-_PAYLOAD_TOO_LARGE_PATTERNS = ["request entity too large", "payload too large", "error code: 413"]
+_PAYLOAD_TOO_LARGE_PATTERNS = ("request entity too large", "payload too large", "error code: 413")
 
 # 单图过大：在 400 而非 413 上匹配，因为多数供应商在整请求超 413 前会先以 400 + 明确图像过大提示返回；Anthropic 单图 5 MB 上限为关键场景。
-_IMAGE_TOO_LARGE_PATTERNS = [
+_IMAGE_TOO_LARGE_PATTERNS = (
     "image exceeds",  # Anthropic: "image exceeds 5 MB maximum"
     "image too large",  # 通用
     "image_too_large",  # error_code 变体
     "image size exceeds",  # 变体
     "image dimensions exceed",  # Anthropic: "image dimensions exceed max allowed size: 8000 pixels"
-    "dimensions exceed max allowed size",  # Anthropic 尺寸上限（措辞变体）
     "max allowed size: 8000",  # Anthropic 尺寸上限（像素数显式）
-]
+)
 
 # 生图供应商返回 200 但零张图：同一供应商上重试无意义，下一家可能成功。
-_EMPTY_IMAGE_RESULT_PATTERNS = ["returned no images"]
+_EMPTY_IMAGE_RESULT_PATTERNS = ("returned no images",)
 
 
 # 模型存在但拒绝图像输入 —— 走 model_not_found 的回退路径。
-_VISION_UNSUPPORTED_PATTERNS = [
+_VISION_UNSUPPORTED_PATTERNS = (
     "no endpoints found that support image input",  # mimo token-plan verbatim
     "does not support image input",
     "image input not supported",
     "does not support vision",
     "multimodal input not supported",
     "does not support multimodal",
-]
+)
 
-# 上下文溢出模式
-_CONTEXT_OVERFLOW_PATTERNS = [
+# 上下文溢出模式（BadRequestError 内 sub-bucket —— SDK 不区分 sub-class，跨供应商只能靠消息消歧）
+_CONTEXT_OVERFLOW_PATTERNS = (
     "context length",
     "context size",
     "maximum context",
@@ -166,7 +131,6 @@ _CONTEXT_OVERFLOW_PATTERNS = [
     "context window",
     "prompt is too long",
     "prompt exceeds max length",
-    "max_tokens",
     "maximum number of tokens",
     # vLLM / 本地推理服务
     "exceeds the max_model_len",
@@ -184,36 +148,34 @@ _CONTEXT_OVERFLOW_PATTERNS = [
     "超过最大长度",
     "上下文长度",
     # AWS Bedrock Converse API
-    "input is too long",
     "max input token",
-    "input token",
     "exceeds the maximum number of input tokens",
-]
+)
 
-# 模型未找到模式
-_MODEL_NOT_FOUND_PATTERNS = ["is not a valid model", "invalid model", "model not found", "model_not_found", "does not exist", "no such model", "unknown model", "unsupported model"]
+# 模型未找到模式（_MODEL_NOT_FOUND_ERROR_CODES 已覆盖代码层 case；此处仅作 message fallback）
+_MODEL_NOT_FOUND_PATTERNS = ("is not a valid model", "invalid model", "model not found", "model_not_found")
 
 # 请求校验失败模式：请求畸形，每次重试结果相同；某些 OpenAI 兼容网关（如 codex.nekos.me）会把它当作 5xx 返回，会让通用 "5xx → 可重试" 规则误触发重试风暴。命中后归为不可重试的 format_error，快速失败并回退。
-_REQUEST_VALIDATION_PATTERNS = [
+_REQUEST_VALIDATION_PATTERNS = (
     "unknown parameter",
     "unsupported parameter",
     "unrecognized request argument",
     "invalid_request_error",
     "unknown_parameter",
     "unsupported_parameter",
-]
+)
 
 _REQUEST_VALIDATION_ERROR_CODES = frozenset({"invalid_request_error", "unknown_parameter", "unsupported_parameter"})
 
 # 当用户 OpenRouter 账号隐私设置（或单次请求的 `provider.data_collection: deny` 偏好）排除唯一可用端点时，OpenRouter 返回带特定文案的 404，区别于 "model not found"：模型实际存在，回退到其他供应商也无效（账号级设置适用于同一账号所有请求），错误体已包含修复 URL。
-_PROVIDER_POLICY_BLOCKED_PATTERNS = [
+_PROVIDER_POLICY_BLOCKED_PATTERNS = (
     "no endpoints available matching your guardrail",
     "no endpoints available matching your data policy",
     "no endpoints found matching your data policy",
-]
+)
 
 # 供应商内容策略 / 安全过滤拦截：与上文的 OpenRouter 账号级策略（``provider_policy_blocked``）不同，这是供应商对单条 prompt 的安全判断，对同一请求是确定性的，三次重试只会重复同一拒绝。命中后立即切换到配置的兜底模型 / 供应商；无兜底则返回给用户带修复建议的消息。模式故意收窄，避免与计费 / 鉴权 / 格式错误误撞。
-_CONTENT_POLICY_BLOCKED_PATTERNS = [
+_CONTENT_POLICY_BLOCKED_PATTERNS = (
     # OpenAI Codex —— 消息可能不带 HTTP 状态码
     "flagged for possible cybersecurity risk",
     "trusted access for cyber",
@@ -234,7 +196,7 @@ _CONTENT_POLICY_BLOCKED_PATTERNS = [
     # Gemini 生图 IMAGE_SAFETY + finishMessage 含 "Generative AI Prohibited Use policy"
     "image_safety",
     "generative ai prohibited use policy",
-]
+)
 
 
 def is_content_policy_error_message(msg: str) -> bool:
@@ -242,63 +204,19 @@ def is_content_policy_error_message(msg: str) -> bool:
     return any(p in msg.lower() for p in _CONTENT_POLICY_BLOCKED_PATTERNS)
 
 
-# 鉴权模式（非状态码信号）
-_AUTH_PATTERNS = ["invalid api key", "invalid_api_key", "authentication", "unauthorized", "forbidden", "invalid token", "token expired", "token revoked", "access denied"]
-
 # 供应商侧超时（即使异常类型是通用类型，如本地 shim 包装子进程超时产生的 RuntimeError）的消息字符串模式；在基于异常类型的传输启发式之前检查，避免自定义供应商的 "timed out" 落入 unknown 而被错报为空响应。
-_TIMEOUT_MESSAGE_PATTERNS = ["timed out", "turn timed out", "request timed out", "deadline exceeded", "operation timed out", "upstream timed out"]
-
-# 传输错误类型名（含 SSL/TLS：ssl.SSLError 继承 OSError，按名收录以兼容 SDK 重新抛出后丢失异常链的情况）
-_TRANSPORT_ERROR_TYPES = frozenset(
-    {
-        "ReadTimeout",
-        "ConnectTimeout",
-        "PoolTimeout",
-        "ConnectError",
-        "RemoteProtocolError",
-        "ConnectionError",
-        "ConnectionResetError",
-        "ConnectionAbortedError",
-        "BrokenPipeError",
-        "TimeoutError",
-        "ReadError",
-        "ServerDisconnectedError",
-        "SSLError",
-        "SSLZeroReturnError",
-        "SSLWantReadError",
-        "SSLWantWriteError",
-        "SSLEOFError",
-        "SSLSyscallError",
-        "APIConnectionError",  # OpenAI SDK（非内置异常子类）
-        "APITimeoutError",
-    }
-)
+_TIMEOUT_MESSAGE_PATTERNS = ("timed out", "deadline exceeded", "request timed out")
 
 # 服务端断开模式（无状态码但属于传输层）：大会话 + 这些模式触发带压缩的上下文溢出恢复路径。
-_SERVER_DISCONNECT_PATTERNS = [
-    "server disconnected",
-    "peer closed connection",
-    "connection reset by peer",
-    "connection was closed",
-    "network connection lost",
-    "unexpected eof",
-    "incomplete chunked read",
-]
+_SERVER_DISCONNECT_PATTERNS = ("server disconnected", "peer closed connection", "connection reset by peer", "connection was closed", "network connection lost", "unexpected eof")
 
-# SSL/TLS 瞬时失败模式：与上述 ``_SERVER_DISCONNECT_PATTERNS`` 区分 —— SSL alert 几乎都是传输层抖动（网络不稳、TLS 重新协商失败、负载均衡丢连），不是服务端上下文溢出；只走重试，不走压缩。匹配稳定子串以兼容 OpenSSL 格式变更（OpenSSL 3.x 改了分隔符）。
-_SSL_TRANSIENT_PATTERNS = [
+# SSL/TLS 瞬时失败模式：ssl.SSLError isinstance 覆盖大多数情况；这里仅作为 message-text 兜底，匹配稳定子串以兼容 OpenSSL 格式变更。
+_SSL_TRANSIENT_PATTERNS = (
     "bad record mac",  # 人类可读（Python ssl，多数 SDK）
-    "ssl alert",
-    "tls alert",
     "ssl handshake failure",
     "tlsv1 alert",
-    "sslv3 alert",
-    "bad_record_mac",  # OpenSSL 错误码 token
-    "ssl_alert",
-    "tls_alert",
-    "tls_alert_internal_error",
     "[ssl:",  # Python ssl 模块前缀，如 "[SSL: BAD_RECORD_MAC]"
-]
+)
 
 _BILLING_ERROR_CODES = frozenset(
     {"insufficient_quota", "billing_not_active", "payment_required", "insufficient_credits", "no_usable_credits", "balance_depleted", "model_not_supported_on_free_tier"}
@@ -312,15 +230,11 @@ _CONTEXT_OVERFLOW_ERROR_CODES = frozenset({"context_length_exceeded", "max_token
 
 
 def classify_api_error(error: Exception, *, provider: str = "", model: str = "", approx_tokens: int = 0, context_length: int = 200000, num_messages: int = 0) -> ClassifiedError:
-    """按优先级把 API 异常分类为结构化的恢复建议（特殊供应商模式 → 状态码 → 错误码 → 消息模式 → SSL 告警 → 大会话断连 → 传输启发式 → unknown 兜底）。"""
+    """按优先级把 API 异常分类为结构化的恢复建议（供应商特定模式 → SDK 异常类层级 → 结构化错误码 → 状态码 → 消息模式 → 大会话断连 → SSL 告警 → unknown 兜底）。"""
     status_code = _extract_status_code(error)
     suggested_delay = _extract_suggested_delay(error)
-    error_type = type(error).__name__
-    # Copilot/GitHub Models 的 RateLimitError 不一定带 .status_code；强制设为 429 让下游限流处理（分类原因、池轮换、回退门禁）正确触发，避免被误归类为通用错误。
-    if status_code is None and error_type == "RateLimitError":
-        status_code = 429
     body = _extract_error_body(error)
-    error_code = _extract_error_code(body)
+    error_code = _extract_error_code(error, body)
 
     # 拼出尽可能完整的错误消息字符串供模式匹配：str(error) 不一定包含 body（如 OpenAI SDK APIStatusError.__str__ 只返回首参），需追加 body 中的 message；并提取 metadata.raw —— OpenRouter 把上游供应商错误包成 {"error":{"message":"Provider returned error","metadata":{"raw":"<实际 JSON>"}}}，真实消息（如 "context length exceeded"）只在最内层 JSON。
     error_msg = _build_error_message(error, body)
@@ -339,9 +253,33 @@ def classify_api_error(error: Exception, *, provider: str = "", model: str = "",
         defaults.update(overrides)
         return ClassifiedError(**defaults)
 
+    # 优先匹配：供应商特定模式（早于 SDK 类与状态码 —— 内容策略必须早于 400 format_error）
     if special := _classify_provider_specific(error_msg, status_code, _result):
         return special
 
+    # Phase A — SDK 异常类层级 dispatch（绝大多数带 SDK 异常的请求在此终结）
+    if classified := _classify_by_exception_type(
+        error,
+        status_code,
+        body,
+        error_code,
+        error_msg,
+        provider=provider_lower,
+        model=model_lower,
+        approx_tokens=approx_tokens,
+        context_length=context_length,
+        num_messages=num_messages,
+        result_fn=_result,
+    ):
+        return classified
+
+    # Phase B — 结构化错误码（按 error.code / body["error"]["code"] / body["code"] 顺序读）
+    if error_code:
+        classified = _classify_by_error_code(error_code, error_msg, _result)
+        if classified is not None:
+            return classified
+
+    # Phase C — 状态码兜底（剩余场景：ProviderError 等无 SDK 类的边界类型）
     if status_code is not None:
         classified = _classify_by_status(
             status_code,
@@ -358,35 +296,28 @@ def classify_api_error(error: Exception, *, provider: str = "", model: str = "",
         if classified is not None:
             return classified
 
-    if error_code:
-        classified = _classify_by_error_code(error_code, error_msg, _result)
-        if classified is not None:
-            return classified
-
-    classified = _classify_by_message(error_msg, error_type, approx_tokens=approx_tokens, context_length=context_length, result_fn=_result)
+    # Phase D — 消息模式 fallback（无 SDK 类、无状态码、无错误码的纯裸消息）
+    classified = _classify_by_message(error_msg, approx_tokens=approx_tokens, context_length=context_length, result_fn=_result)
     if classified is not None:
         return classified
 
-    # SSL/TLS 瞬时 alert 走超时路径而非压缩 —— 是传输层抖动，不是上下文溢出；优先匹配以避免大会话上的 TLS 抖动触发不必要的上下文压缩。
-    if any(p in error_msg for p in _SSL_TRANSIENT_PATTERNS):
-        return _result(FailoverReason.timeout, retryable=True)
-
-    # 服务端断开 + 大会话 → 上下文溢出（必须早于通用传输启发式：否则 RemoteProtocolError 总会映射到 timeout，不分会话大小）。
-    if any(p in error_msg for p in _SERVER_DISCONNECT_PATTERNS) and not status_code:
+    # 服务端断开 + 大会话 → 上下文溢出（必须早于通用传输启发式：否则 RemoteProtocolError 总会映射到 timeout，不分会话大小）
+    if any(p in error_msg for p in _SERVER_DISCONNECT_PATTERNS):
         # 绝对 token / 消息数阈值只是小上下文窗口的近似；大上下文会话可能在远低于实际 token 预算时就累积上百条消息。
         is_large = approx_tokens > context_length * 0.6 or (context_length <= 256000 and (approx_tokens > 120000 or num_messages > 200))
         if is_large:
             return _result(FailoverReason.context_overflow, retryable=True, should_compress=True)
         return _result(FailoverReason.timeout, retryable=True)
 
-    if error_type in _TRANSPORT_ERROR_TYPES or isinstance(error, (TimeoutError, ConnectionError, OSError)):
+    # SSL/TLS 瞬时 alert 走超时路径而非压缩 —— 是传输层抖动，不是上下文溢出；优先匹配以避免大会话上的 TLS 抖动触发不必要的上下文压缩。
+    if any(p in error_msg for p in _SSL_TRANSIENT_PATTERNS):
         return _result(FailoverReason.timeout, retryable=True)
 
     return _result(FailoverReason.unknown, retryable=True)
 
 
 def _classify_provider_specific(error_msg: str, status_code: int | None, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
-    """优先于状态码分类的供应商特定模式。"""
+    """优先于 SDK 类 / 状态码的供应商特定模式（必须早于 SDK dispatch，否则内容安全过滤会被降级为通用 400）。"""
     # 内容策略 / 安全过滤拦截（必须早于状态码分类：避免 400 安全拦截被降级为通用 format_error，避免无状态码的拦截（OpenAI Codex SDK 可不带）落入可重试的 unknown）
     if any(p in error_msg for p in _CONTENT_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.content_policy_blocked, retryable=False, should_fallback=True)
@@ -412,6 +343,107 @@ def _classify_provider_specific(error_msg: str, status_code: int | None, result_
     return None
 
 
+def _classify_by_exception_type(
+    error: Exception,
+    status_code: int | None,
+    body: dict,
+    error_code: str,
+    error_msg: str,
+    *,
+    provider: str,
+    model: str,
+    approx_tokens: int,
+    context_length: int,
+    num_messages: int,
+    result_fn: _ClassifierBuilder,
+) -> ClassifiedError | None:
+    """按 SDK 异常类层级 dispatch（Phase A）—— openai / httpx / stdlib / ProviderError，most-specific-first。"""
+    # OpenAI SDK 状态码异常族（4xx/5xx —— 含 status_code）
+    if isinstance(error, openai.RateLimitError):
+        return result_fn(FailoverReason.rate_limit, retryable=True, should_rotate_credential=True, should_fallback=True)
+    if isinstance(error, openai.AuthenticationError):
+        return result_fn(FailoverReason.auth, retryable=False, should_rotate_credential=True, should_fallback=True)
+    if isinstance(error, openai.PermissionDeniedError):
+        return _classify_403(error_msg, result_fn)
+    if isinstance(error, openai.NotFoundError):
+        return _classify_404(error_msg, result_fn)
+    if isinstance(error, openai.BadRequestError):
+        return _classify_400(
+            error_msg, error_code, body, provider=provider, model=model, approx_tokens=approx_tokens, context_length=context_length, num_messages=num_messages, result_fn=result_fn
+        )
+    if isinstance(error, (openai.UnprocessableEntityError, openai.ConflictError)):
+        return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
+    # APIResponseValidationError（APIError 子类，非 APIStatusError）：有 .response 但无 .status_code；status_code 已由 _extract_status_code 从 .response.status_code 修复。
+    api_response_validation_error = getattr(openai, "APIResponseValidationError", None)
+    if api_response_validation_error is not None and isinstance(error, api_response_validation_error):
+        if status_code is not None and any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
+            return result_fn(FailoverReason.context_overflow, retryable=True, should_compress=True)
+        return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
+    if isinstance(error, openai.APIStatusError):
+        if status_code is not None:
+            return _classify_by_status(
+                status_code,
+                error_msg,
+                error_code,
+                body,
+                provider=provider,
+                model=model,
+                approx_tokens=approx_tokens,
+                context_length=context_length,
+                num_messages=num_messages,
+                result_fn=result_fn,
+            )
+        return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
+
+    # OpenAI SDK 传输层异常（无 status_code；APITimeoutError 是 APIConnectionError 的子类）
+    if isinstance(error, openai.APIConnectionError):
+        return result_fn(FailoverReason.timeout, retryable=True)
+
+    # httpx 异常族 —— HTTPStatusError 的状态码在 .response.status_code（已由 _extract_status_code 提取）
+    if isinstance(error, httpx.HTTPStatusError):
+        if status_code is not None:
+            return _classify_by_status(
+                status_code,
+                error_msg,
+                error_code,
+                body,
+                provider=provider,
+                model=model,
+                approx_tokens=approx_tokens,
+                context_length=context_length,
+                num_messages=num_messages,
+                result_fn=result_fn,
+            )
+        return result_fn(FailoverReason.format_error, retryable=False, should_fallback=True)
+    if isinstance(error, httpx.TimeoutException):
+        return result_fn(FailoverReason.timeout, retryable=True)
+    if isinstance(error, httpx.RequestError):
+        return result_fn(FailoverReason.timeout, retryable=True)
+
+    # 标准库传输 / SSL
+    if isinstance(error, (TimeoutError, ConnectionError, OSError, ssl.SSLError)):
+        return result_fn(FailoverReason.timeout, retryable=True)
+
+    # 内部边界类型（Gemini/Zhipu/raw httpx 走 ProviderError 而非 SDK；状态码缺位时 defer 到 Phase B/D）
+    if isinstance(error, ProviderError):
+        if status_code is not None:
+            return _classify_by_status(
+                status_code,
+                error_msg,
+                error_code,
+                body,
+                provider=provider,
+                model=model,
+                approx_tokens=approx_tokens,
+                context_length=context_length,
+                num_messages=num_messages,
+                result_fn=result_fn,
+            )
+        return None
+
+    return None
+
+
 def _classify_by_status(
     status_code: int,
     error_msg: str,
@@ -425,15 +457,13 @@ def _classify_by_status(
     num_messages: int = 0,
     result_fn: _ClassifierBuilder,
 ) -> ClassifiedError | None:
-    """基于 HTTP 状态码分类，并结合消息文案做精化。"""
+    """基于 HTTP 状态码分类，并结合消息文案做精化（Phase C，主要承接 ProviderError 等无 SDK 类的场景）。"""
     match status_code:
         case 401:
             return result_fn(FailoverReason.auth, retryable=False, should_rotate_credential=True, should_fallback=True)
 
         case 403:
-            if "key limit exceeded" in error_msg or "spending limit" in error_msg or any(p in error_msg for p in _BILLING_PATTERNS):
-                return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
-            return result_fn(FailoverReason.auth, retryable=False, should_fallback=True)
+            return _classify_403(error_msg, result_fn)
 
         case 402:
             return _classify_402(error_msg, result_fn)
@@ -477,6 +507,13 @@ def _classify_by_status(
 
         case _:
             return None
+
+
+def _classify_403(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
+    """403 → billing vs auth 消歧（PermissionDeniedError SDK 类层级无法区分）。"""
+    if "key limit exceeded" in error_msg or "spending limit" in error_msg or any(p in error_msg for p in _BILLING_PATTERNS):
+        return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
+    return result_fn(FailoverReason.auth, retryable=False, should_fallback=True)
 
 
 def _classify_404(error_msg: str, result_fn: _ClassifierBuilder) -> ClassifiedError:
@@ -528,7 +565,8 @@ def _classify_400(
     ):
         return result_fn(FailoverReason.invalid_encrypted_content, retryable=True, should_fallback=False)
 
-    if any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
+    # 错误码 ``context_length_exceeded`` / ``max_tokens_exceeded`` 是 OpenAI/Anthropic 在 400 上的标准信号，SDK 类层级无法表达 —— 必须在此用 error_code 消歧（避免错过结构化信号后再走 Phase B —— Phase A 先终结）。
+    if error_code_lower in _CONTEXT_OVERFLOW_ERROR_CODES or any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return result_fn(FailoverReason.context_overflow, retryable=True, should_compress=True)
 
     # 部分供应商（OpenRouter）以 400 而非 404 返回 model-not-found
@@ -538,7 +576,7 @@ def _classify_400(
         return result_fn(FailoverReason.model_not_found, retryable=False, should_fallback=True)
 
     # 部分供应商以 400 而非 429/402 返回限流 / 计费错误
-    if any(p in error_msg for p in _RATE_LIMIT_PATTERNS):
+    if any(p in error_msg for p in _RATE_LIMIT_MESSAGE_PATTERNS):
         return result_fn(FailoverReason.rate_limit, retryable=True, should_rotate_credential=True, should_fallback=True)
     if any(p in error_msg for p in _BILLING_PATTERNS):
         return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
@@ -575,8 +613,8 @@ def _classify_by_error_code(error_code: str, error_msg: str, result_fn: _Classif
     return None
 
 
-def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int, context_length: int, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
-    """在没有状态码时基于错误消息模式分类。"""
+def _classify_by_message(error_msg: str, *, approx_tokens: int, context_length: int, result_fn: _ClassifierBuilder) -> ClassifiedError | None:
+    """在没有 SDK 类 / 状态码 / 错误码时基于错误消息模式分类（Phase D 兜底）。"""
     if any(p in error_msg for p in _PAYLOAD_TOO_LARGE_PATTERNS):
         return result_fn(FailoverReason.payload_too_large, retryable=True, should_compress=True)
 
@@ -597,15 +635,11 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
     if any(p in error_msg for p in _BILLING_PATTERNS):
         return result_fn(FailoverReason.billing, retryable=False, should_rotate_credential=True, should_fallback=True)
 
-    if any(p in error_msg for p in _RATE_LIMIT_PATTERNS):
+    if any(p in error_msg for p in _RATE_LIMIT_MESSAGE_PATTERNS):
         return result_fn(FailoverReason.rate_limit, retryable=True, should_rotate_credential=True, should_fallback=True)
 
     if any(p in error_msg for p in _CONTEXT_OVERFLOW_PATTERNS):
         return result_fn(FailoverReason.context_overflow, retryable=True, should_compress=True)
-
-    # 鉴权错误不可直接重试：密钥无效，重试同一密钥必然失败；设 retryable=False 让调用方走密钥轮换或供应商回退。
-    if any(p in error_msg for p in _AUTH_PATTERNS):
-        return result_fn(FailoverReason.auth, retryable=False, should_rotate_credential=True, should_fallback=True)
 
     if any(p in error_msg for p in _PROVIDER_POLICY_BLOCKED_PATTERNS):
         return result_fn(FailoverReason.provider_policy_blocked, retryable=False, should_fallback=False)
@@ -621,7 +655,7 @@ def _classify_by_message(error_msg: str, error_type: str, *, approx_tokens: int,
 
 
 def _build_error_message(error: Exception, body: dict) -> str:
-    """合并 str(error)、body 消息与 OpenRouter 嵌套的 metadata.raw。"""
+    """拼出尽可能完整的错误消息：str(error) + body message + OpenRouter 嵌套的 metadata.raw —— 上游的真实错误常埋在最深一层。"""
     raw_msg = str(error).lower()
     body_msg = ""
     metadata_msg = ""
@@ -649,7 +683,6 @@ def _build_error_message(error: Exception, body: dict) -> str:
 
 
 def _extract_body_message(body: dict) -> str:
-    """返回 body 里的消息（error.message 或顶层 message，已转小写）。"""
     if not isinstance(body, dict):
         return ""
     err_obj = body.get("error", {})
@@ -661,7 +694,7 @@ def _extract_body_message(body: dict) -> str:
 
 
 def _extract_status_code(error: Exception) -> int | None:
-    """沿异常链向上查找 HTTP 状态码。"""
+    """沿异常链向上查找 HTTP 状态码：``.status_code`` / ``.status`` / ``.response.status_code``（覆盖 httpx.HTTPStatusError / openai.APIResponseValidationError）。"""
     current = error
     for _ in range(_CAUSE_CHAIN_MAX_DEPTH):
         code = getattr(current, "status_code", None)
@@ -670,6 +703,12 @@ def _extract_status_code(error: Exception) -> int | None:
         code = getattr(current, "status", None)  # 部分 SDK 用 .status 而非 .status_code
         if isinstance(code, int) and 100 <= code < 600:
             return code
+        # httpx.HTTPStatusError / openai.APIResponseValidationError：状态码挂在 .response.status_code
+        response = getattr(current, "response", None)
+        if response is not None:
+            code = getattr(response, "status_code", None)
+            if isinstance(code, int) and 100 <= code < 600:
+                return code
         cause = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
         if cause is None or cause is current:
             break
@@ -678,7 +717,7 @@ def _extract_status_code(error: Exception) -> int | None:
 
 
 def _extract_error_body(error: Exception) -> dict:
-    """从 SDK 异常中取出结构化的错误体。"""
+    """从 SDK 异常中取出结构化的错误体（``.body`` 直接拿 dict；否则从 ``.response.json()`` 解析）。"""
     body = getattr(error, "body", None)
     if isinstance(body, dict):
         return body
@@ -693,8 +732,17 @@ def _extract_error_body(error: Exception) -> dict:
     return {}
 
 
-def _extract_error_code(body: dict) -> str:
-    """从响应体中提取错误码字符串。"""
+def _extract_error_code(error: Exception, body: dict) -> str:
+    """按优先级读 SDK 异常属性 + body 字段提取结构化错误码：e.code → e.type → body["error"]["code"] → body["error"]["type"] → body["code"] → body["error_code"] → Responses-API message 内嵌 JSON。"""
+    # 1. SDK 异常自身的 .code / .type 字段（APIError 基类提供；openai 真实响应通常为 None，因为 code 嵌套在 body["error"]["code"]）
+    # 1. SDK 异常自身的 .code / .type 字段（APIError 基类提供；openai-shaped 响应通常 None，因为 real shape 把 code 嵌套在 body["error"]["code"]）
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code.strip() and code.strip() != "400":
+        return code.strip()
+    type_attr = getattr(error, "type", None)
+    if isinstance(type_attr, str) and type_attr.strip() and type_attr.strip() != "400":
+        return type_attr.strip()
+
     if not body:
         return ""
 
@@ -715,11 +763,12 @@ def _extract_error_code(body: dict) -> str:
 
     error_obj = body.get("error", {})
     if isinstance(error_obj, dict):
+        # 2. body["error"]["code"] / body["error"]["type"]（OpenAI real shape 标准位置）
         code = error_obj.get("code") or error_obj.get("type") or ""
         if isinstance(code, str) and code.strip() and code.strip() != "400":
             return code.strip()
 
-        # 部分供应商把真实 JSON 错误体以字符串塞进 error.message —— 拆开取内层 code（如 Responses API 的 ``invalid_encrypted_content``）
+        # 3. 部分供应商把真实 JSON 错误体以字符串塞进 error.message —— 拆开取内层 code（如 Responses API 的 ``invalid_encrypted_content``）
         message = error_obj.get("message")
         if isinstance(message, str) and message.strip().startswith("{"):
             inner = safe_json_loads(message)
@@ -727,6 +776,7 @@ def _extract_error_code(body: dict) -> str:
             if nested_code:
                 return nested_code
 
+    # 4. 顶层 body["code"] / body["error_code"]（部分供应商的扁平 schema）
     code = body.get("code") or body.get("error_code") or ""
     if isinstance(code, (str, int)):
         text = str(code).strip()
@@ -736,17 +786,17 @@ def _extract_error_code(body: dict) -> str:
 
 
 def _extract_message(error: Exception, body: dict) -> str:
-    """提取最具信息量的错误消息。"""
+    """提取最具信息量的错误消息（2000 字符上限 —— 部分 Anthropic 4xx 消息很长）。"""
     if body:
         error_obj = body.get("error", {})
         if isinstance(error_obj, dict):
             msg = error_obj.get("message", "")
             if isinstance(msg, str) and msg.strip():
-                return msg.strip()[:500]
+                return msg.strip()[:2000]
         msg = body.get("message", "")
         if isinstance(msg, str) and msg.strip():
-            return msg.strip()[:500]
-    return redact_sensitive_text(str(error))[:500]
+            return msg.strip()[:2000]
+    return redact_sensitive_text(str(error))[:2000]
 
 
 _RESET_HEADER_PATTERN = re.compile(r"^\d+(\.\d+)?$")
