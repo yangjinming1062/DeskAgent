@@ -57,6 +57,8 @@ installer/
 ## 4. 关键设计决策
 
 - **install 协议 6 stage 拆分**：welcome → install-python → unpack-runner → unpack-desktop → install-skills → finalize；finalize 写完成 marker，Runner 配置由客户端经 WS 协议推送。为什么一次性安装 + 拷贝不行：分阶段让 Tauri 可以单独 retry / 单独回滚单 stage；崩溃可以从断点恢复；进度条粒度更细。
+- **安装脚本结构化帧经 NDJSON 哨兵前缀提取**：脚本 stdout 混杂第三方工具输出（pip/uv/robocopy），阶段结果与 manifest 均带显式哨兵前缀单行输出，避免盲目反扫与 JSON 解析歧义。
+- **macOS 自拷贝签名显式判定防静默降级**：自拷贝到 `$SPIRITAGENT_HOME` 后通过 `codesign -d` 区分未签名（补 ad-hoc 签名以支持 Apple Silicon 运行）、损坏 ad-hoc 签名（重新签）与权威证书签名（严格校验，严禁静默降级覆盖为 ad-hoc 签名）。
 - **uv pip install 失败后自动用镜像重试**：`SPIRITAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量优先，缺省阿里云镜像。为什么不内置 pip mirror 配置：用户自托管 / 企业代理场景可能需要私有 index；env var 优先 + 兜底镜像覆盖大多数情况。
 - **macOS fast path 完整性自检与自愈**：让 `/Applications/SpiritAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁。已安装判定不止看 marker，还深度校验 Runner venv 核心依赖可导入，检测到损坏自动回退完整安装/修复流程；`--reinstall` / `--repair` 显式跳过 fast path。
 - **Piper voice 按内容判定拷贝**：只有当目标目录同时缺 onnx 模型与配套 json 时才拷贝，避免每次启动都重写大文件。为什么不是每次覆盖：60MB × 3 个 voice × 每次 reinstall 都是几百 MB IO；按内容判定让 reinstall 几乎零 IO。

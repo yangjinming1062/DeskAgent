@@ -48,16 +48,7 @@ if (-not $InstallerFormat) {
 }
 
 function Emit-Manifest {
-    @"
-{"protocol_version": $ProtocolVersion, "stages": [
-  {"name": "welcome", "title": "\u51c6\u5907\u5b89\u88c5", "category": "setup", "needs_user_input": false},
-  {"name": "install-python", "title": "\u5b89\u88c5 Python \u8fd0\u884c\u65f6", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "\u5b89\u88c5 SpiritAgent \u8fd0\u884c\u5668", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "\u5b89\u88c5 SpiritAgent \u684c\u9762\u5e94\u7528", "category": "payload", "needs_user_input": false},
-  {"name": "install-skills", "title": "\u5b89\u88c5\u5185\u7f6e\u6280\u80fd", "category": "payload", "needs_user_input": false},
-  {"name": "finalize", "title": "\u5b8c\u6210\u5b89\u88c5", "category": "finalize", "needs_user_input": false}
-]}
-"@
+    Write-Output "__SPIRITAGENT_MANIFEST__:{`"protocol_version`": $ProtocolVersion, `"stages`": [{`"name`": `"welcome`", `"title`": `"\u51c6\u5907\u5b89\u88c5`", `"category`": `"setup`", `"needs_user_input`": false}, {`"name`": `"install-python`", `"title`": `"\u5b89\u88c5 Python \u8fd0\u884c\u65f6`", `"category`": `"prereqs`", `"needs_user_input`": false}, {`"name`": `"unpack-runner`", `"title`": `"\u5b89\u88c5 SpiritAgent \u8fd0\u884c\u5668`", `"category`": `"payload`", `"needs_user_input`": false}, {`"name`": `"unpack-desktop`", `"title`": `"\u5b89\u88c5 SpiritAgent \u684c\u9762\u5e94\u7528`", `"category`": `"payload`", `"needs_user_input`": false}, {`"name`": `"install-skills`", `"title`": `"\u5b89\u88c5\u5185\u7f6e\u6280\u80fd`", `"category`": `"payload`", `"needs_user_input`": false}, {`"name`": `"finalize`", `"title`": `"\u5b8c\u6210\u5b89\u88c5`", `"category`": `"finalize`", `"needs_user_input`": false}]}"
 }
 
 function Escape-JsonString([string]$s) {
@@ -67,14 +58,14 @@ function Escape-JsonString([string]$s) {
 
 function Emit-StageOk([string]$stage, [bool]$skipped = $false, [string]$reason = "") {
     if ($skipped -and $reason) {
-        Write-Output "{`"ok`": true, `"stage`": `"$stage`", `"skipped`": true, `"reason`": `"" + (Escape-JsonString $reason) + "`"}"
+        Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"$stage`", `"skipped`": true, `"reason`": `"" + (Escape-JsonString $reason) + "`"}"
     } else {
-        Write-Output "{`"ok`": true, `"stage`": `"$stage`"}"
+        Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"$stage`"}"
     }
 }
 
 function Emit-StageErr([string]$stage, [string]$reason) {
-    Write-Output "{`"ok`": false, `"stage`": `"$stage`", `"reason`": `"" + (Escape-JsonString $reason) + "`"}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": false, `"stage`": `"$stage`", `"reason`": `"" + (Escape-JsonString $reason) + "`"}"
 }
 
 function Install-Uv {
@@ -176,7 +167,7 @@ function Stage-Welcome {
     $isReinstall = Test-Path $marker
 
     $escHome = Escape-JsonString $SpiritAgentHome
-    Write-Output "{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"spiritagent_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"welcome`", `"data`": {`"spiritagent_home`": `"$escHome`", `"is_reinstall`": $($isReinstall.ToString().ToLower())}}"
     return 0
 }
 
@@ -184,7 +175,7 @@ function Stage-Welcome {
 function Stage-InstallPython {
     if (Test-Python) {
         $escVer = Escape-JsonString $script:PythonVersion
-        Write-Output "{`"ok`": true, `"stage`": `"install-python`", `"data`": {`"version`": `"$escVer`"}}"
+        Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"install-python`", `"data`": {`"version`": `"$escVer`"}}"
         return 0
     }
 
@@ -283,7 +274,7 @@ function Stage-UnpackRunner {
     $size = $wheel.Length
     $escVenv = Escape-JsonString $venvDir
     $escWheel = Escape-JsonString $wheel.Name
-    Write-Output "{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount, `"onboarding_audio_copied`": $audioCount}}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount, `"onboarding_audio_copied`": $audioCount}}"
     return 0
 }
 
@@ -330,7 +321,7 @@ function Stage-UnpackDesktop {
                 return 1
             }
             $escPath = Escape-JsonString $installDir
-            Write-Output "{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"nsis`"}}"
+            Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"nsis`"}}"
             return 0
         }
         "msi" {
@@ -345,7 +336,7 @@ function Stage-UnpackDesktop {
             $localPrograms = Join-Path $env:LOCALAPPDATA "Programs"
             $installDir = Join-Path $localPrograms "SpiritAgent"
             $escPath = Escape-JsonString $installDir
-            Write-Output "{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"msi`"}}"
+            Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"msi`"}}"
             return 0
         }
         "zip" {
@@ -355,7 +346,7 @@ function Stage-UnpackDesktop {
             if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
             Expand-Archive -Path $artifactPath -DestinationPath $dest -Force
             $escPath = Escape-JsonString $dest
-            Write-Output "{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"zip`"}}"
+            Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-desktop`", `"data`": {`"installed_path`": `"$escPath`", `"format`": `"zip`"}}"
             return 0
         }
     }
@@ -391,7 +382,7 @@ function Stage-InstallSkills {
     }
 
     $bundledCount = (Get-ChildItem -Path $skillsDir -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
-    Write-Output "{`"ok`": true, `"stage`": `"install-skills`", `"data`": {`"bundled_count`": $bundledCount}}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"install-skills`", `"data`": {`"bundled_count`": $bundledCount}}"
     return 0
 }
 
@@ -401,7 +392,7 @@ function Stage-Finalize {
     Set-Content -Path $marker -Value "" -NoNewline
 
     $escMarker = Escape-JsonString $marker
-    Write-Output "{`"ok`": true, `"stage`": `"finalize`", `"data`": {`"marker`": `"$escMarker`"}}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"finalize`", `"data`": {`"marker`": `"$escMarker`"}}"
     return 0
 }
 

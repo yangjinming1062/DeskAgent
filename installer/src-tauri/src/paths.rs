@@ -78,21 +78,75 @@ pub fn copy_self_to_spiritagent_home() -> std::io::Result<()> {
 #[cfg(target_os = "macos")]
 fn repair_macos_installer_helper(path: &Path) {
     // 拷贝后的文件可能继承下载安装器的 quarantine 属性；桌面快捷方式会再次启动它，需先祛除隔离属性。
-    let _ = Command::new("/usr/bin/xattr")
+    let xattr_status = Command::new("/usr/bin/xattr")
         .args(["-cr"])
         .arg(path)
         .status();
+    if let Err(e) = xattr_status {
+        tracing::warn!(?path, ?e, "failed to execute xattr -cr on installer copy");
+    }
 
-    let verify = Command::new("/usr/bin/codesign")
-        .arg("--verify")
+    let display_out = Command::new("/usr/bin/codesign")
+        .args(["-d", "--verbose=2"])
         .arg(path)
-        .status();
+        .output();
 
-    if !matches!(verify, Ok(status) if status.success()) {
-        let _ = Command::new("/usr/bin/codesign")
-            .args(["--force", "--sign", "-"])
-            .arg(path)
-            .status();
+    match display_out {
+        Ok(out) => {
+            let info = String::from_utf8_lossy(&out.stderr);
+            if !out.status.success() || info.contains("code object is not signed at all") {
+                // 显式未签名（如本地开发/无证书构建）：补 ad-hoc 签名以保证 Apple Silicon / macOS 能直接执行
+                tracing::info!(?path, "installer binary is unsigned; applying ad-hoc signature");
+                let sign_res = Command::new("/usr/bin/codesign")
+                    .args(["--force", "--sign", "-"])
+                    .arg(path)
+                    .status();
+                if let Err(e) = sign_res {
+                    tracing::warn!(?path, ?e, "failed to apply ad-hoc signature to installer copy");
+                }
+            } else if info.contains("Signature=adhoc") {
+                // 显式 ad-hoc 签名：校验有效性，若损坏则重新补签
+                let verify = Command::new("/usr/bin/codesign")
+                    .arg("--verify")
+                    .arg(path)
+                    .status();
+                if !matches!(verify, Ok(status) if status.success()) {
+                    tracing::info!(?path, "installer ad-hoc signature invalid; re-signing ad-hoc");
+                    let _ = Command::new("/usr/bin/codesign")
+                        .args(["--force", "--sign", "-"])
+                        .arg(path)
+                        .status();
+                }
+            } else {
+                // 显式具备权威证书签名（Developer ID / Authority 等）：严格校验，严禁静默降级覆盖为 ad-hoc
+                let verify = Command::new("/usr/bin/codesign")
+                    .arg("--verify")
+                    .arg(path)
+                    .status();
+                match verify {
+                    Ok(status) if status.success() => {
+                        tracing::debug!(?path, "installer binary developer signature is valid");
+                    }
+                    Ok(status) => {
+                        tracing::error!(
+                            ?path,
+                            ?status,
+                            "installer binary has developer signature but failed verification; preserving signature without ad-hoc downgrade"
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            ?path,
+                            ?e,
+                            "failed to verify installer developer signature"
+                        );
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!(?path, ?e, "could not query installer codesign status");
+        }
     }
 }
 

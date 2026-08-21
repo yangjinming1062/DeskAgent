@@ -1,8 +1,7 @@
 import { atom, computed } from 'nanostores'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 
-// bootstrap 状态的单一数据源；按 payload.type 派发 Tauri 'bootstrap' 事件。
+// bootstrap 状态的单一数据源；按 payload.type 处理 Channel 传递的事件。
 
 export interface StageInfo {
   name: string
@@ -106,7 +105,6 @@ type BootstrapEvent =
   | BootstrapCompleteEvent
   | BootstrapFailedEvent
 
-let unlisten: UnlistenFn | null = null
 let routeTimer: ReturnType<typeof setTimeout> | null = null
 
 function clearRouteTimer(): void {
@@ -116,15 +114,90 @@ function clearRouteTimer(): void {
   }
 }
 
-export async function initialize(): Promise<void> {
-  if (unlisten) return
+function handleBootstrapEvent(payload: BootstrapEvent): void {
+  const cur = $bootstrap.get()
+  switch (payload.type) {
+    case 'manifest': {
+      clearRouteTimer()
+      const stages: Record<string, StageRecord> = {}
+      const order: string[] = []
+      for (const s of payload.stages) {
+        stages[s.name] = { info: s, state: null }
+        order.push(s.name)
+      }
+      $bootstrap.set({
+        ...cur,
+        status: 'running',
+        protocolVersion: payload.protocolVersion,
+        stages,
+        stageOrder: order,
+        currentStage: null,
+        installRoot: null,
+        error: null,
+        logs: []
+      })
+      $route.set('progress')
+      break
+    }
+    case 'stage': {
+      const existing = cur.stages[payload.name]
+      if (!existing) {
+        console.warn('stage event for unknown stage', payload.name)
+        break
+      }
+      const next: StageRecord = {
+        ...existing,
+        state: payload.state,
+        durationMs: payload.durationMs,
+        error: payload.error
+      }
+      $bootstrap.set({
+        ...cur,
+        stages: { ...cur.stages, [payload.name]: next },
+        currentStage:
+          payload.state === 'running' ? payload.name : cur.currentStage
+      })
+      break
+    }
+    case 'log': {
+      const logs = [...cur.logs, { stage: payload.stage, line: payload.line, stream: payload.stream }]
+      // 长流程日志可上万行，限制滚动缓冲以避免前端 OOM。
+      const trimmed = logs.length > 2000 ? logs.slice(-2000) : logs
+      $bootstrap.set({ ...cur, logs: trimmed })
+      break
+    }
+    case 'complete':
+      clearRouteTimer()
+      $bootstrap.set({
+        ...cur,
+        status: 'completed',
+        installRoot: payload.installRoot,
+        currentStage: null
+      })
+      routeTimer = setTimeout(() => {
+        routeTimer = null
+        $route.set('success')
+      }, 2200)
+      break
+    case 'failed':
+      clearRouteTimer()
+      $bootstrap.set({
+        ...cur,
+        status: 'failed',
+        error: payload.error,
+        currentStage: null
+      })
+      routeTimer = setTimeout(() => {
+        routeTimer = null
+        $route.set('failure')
+      }, 1500)
+      break
+  }
+}
 
+export async function initialize(): Promise<void> {
   const cleanup = () => {
     clearRouteTimer()
-    if (unlisten) {
-      unlisten()
-      unlisten = null
-    }
   }
 
   if (typeof window !== 'undefined') {
@@ -142,88 +215,6 @@ export async function initialize(): Promise<void> {
   } catch (err) {
     console.warn('failed to fetch installer paths', err)
   }
-
-  unlisten = await listen<BootstrapEvent>('bootstrap', (event) => {
-    const payload = event.payload
-    const cur = $bootstrap.get()
-    switch (payload.type) {
-      case 'manifest': {
-        clearRouteTimer()
-        const stages: Record<string, StageRecord> = {}
-        const order: string[] = []
-        for (const s of payload.stages) {
-          stages[s.name] = { info: s, state: null }
-          order.push(s.name)
-        }
-        $bootstrap.set({
-          ...cur,
-          status: 'running',
-          protocolVersion: payload.protocolVersion,
-          stages,
-          stageOrder: order,
-          currentStage: null,
-          installRoot: null,
-          error: null,
-          logs: []
-        })
-        $route.set('progress')
-        break
-      }
-      case 'stage': {
-        const existing = cur.stages[payload.name]
-        if (!existing) {
-          console.warn('stage event for unknown stage', payload.name)
-          break
-        }
-        const next: StageRecord = {
-          ...existing,
-          state: payload.state,
-          durationMs: payload.durationMs,
-          error: payload.error
-        }
-        $bootstrap.set({
-          ...cur,
-          stages: { ...cur.stages, [payload.name]: next },
-          currentStage:
-            payload.state === 'running' ? payload.name : cur.currentStage
-        })
-        break
-      }
-      case 'log': {
-        const logs = [...cur.logs, { stage: payload.stage, line: payload.line, stream: payload.stream }]
-        // 长流程日志可上万行，限制滚动缓冲以避免前端 OOM。
-        const trimmed = logs.length > 2000 ? logs.slice(-2000) : logs
-        $bootstrap.set({ ...cur, logs: trimmed })
-        break
-      }
-      case 'complete':
-        clearRouteTimer()
-        $bootstrap.set({
-          ...cur,
-          status: 'completed',
-          installRoot: payload.installRoot,
-          currentStage: null
-        })
-        routeTimer = setTimeout(() => {
-          routeTimer = null
-          $route.set('success')
-        }, 2200)
-        break
-      case 'failed':
-        clearRouteTimer()
-        $bootstrap.set({
-          ...cur,
-          status: 'failed',
-          error: payload.error,
-          currentStage: null
-        })
-        routeTimer = setTimeout(() => {
-          routeTimer = null
-          $route.set('failure')
-        }, 1500)
-        break
-    }
-  })
 }
 
 export async function startInstall(): Promise<void> {
@@ -231,13 +222,20 @@ export async function startInstall(): Promise<void> {
   // 重试前重置状态；安装脚本在构建期 pin 完毕，commit/branch 始终为 null。
   $bootstrap.set(INITIAL)
   $route.set('progress')
+
+  const channel = new Channel<BootstrapEvent>()
+  channel.onmessage = (payload) => {
+    handleBootstrapEvent(payload)
+  }
+
   await invoke('start_bootstrap', {
     args: {
       commit: null,
       branch: null,
       include_desktop: true,
       spiritagent_home: null
-    }
+    },
+    onEvent: channel
   })
 }
 

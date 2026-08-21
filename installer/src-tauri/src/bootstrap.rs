@@ -7,7 +7,8 @@ use std::time::Instant;
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::{mpsc, Mutex};
 
 use crate::events::{BootstrapEvent, LogStream, Manifest, StageState};
@@ -49,6 +50,7 @@ pub async fn start_bootstrap(
     app: AppHandle,
     state: State<'_, Arc<AppState>>,
     args: StartBootstrapArgs,
+    on_event: Channel<BootstrapEvent>,
 ) -> Result<(), String> {
     let mut guard = state.bootstrap.lock().await;
     if let Some(h) = guard.as_ref() {
@@ -77,7 +79,7 @@ pub async fn start_bootstrap(
     let cancel_rx = Arc::new(Mutex::new(Some(cancel_rx)));
 
     tokio::spawn(async move {
-        let result = run_bootstrap(app_for_task.clone(), args_for_task, cancel_rx).await;
+        let result = run_bootstrap(app_for_task.clone(), args_for_task, cancel_rx, on_event).await;
 
         // 把终态回写到 AppState，使 get_bootstrap_status() 在任务结束后仍可读。
         let mut guard = state_for_task.bootstrap.lock().await;
@@ -342,6 +344,7 @@ async fn run_bootstrap(
     app: AppHandle,
     args: StartBootstrapArgs,
     cancel_rx_holder: Arc<Mutex<Option<mpsc::Receiver<()>>>>,
+    on_event: Channel<BootstrapEvent>,
 ) -> Result<String> {
     let kind = ScriptKind::for_current_os();
 
@@ -363,10 +366,10 @@ async fn run_bootstrap(
         "bootstrap starting"
     );
 
-    let app_for_log = app.clone();
+    let on_event_for_log = on_event.clone();
     let emit_log = move |line: &str| {
         emit_event(
-            &app_for_log,
+            &on_event_for_log,
             BootstrapEvent::Log {
                 stage: None,
                 line: line.to_string(),
@@ -383,7 +386,7 @@ async fn run_bootstrap(
         .map_err(|e| {
             let msg = format!("resolve install script failed: {e:#}");
             emit_event(
-                &app,
+                &on_event,
                 BootstrapEvent::Failed {
                     stage: None,
                     error: msg.clone(),
@@ -408,7 +411,7 @@ async fn run_bootstrap(
     let bundle_ctx = build_bundle_context(&app);
 
     let manifest_result = run_install_script(
-        &app,
+        &on_event,
         &script.path,
         &manifest_args,
         args.spiritagent_home.as_deref(),
@@ -425,7 +428,7 @@ async fn run_bootstrap(
             manifest_result.stderr.trim()
         );
         emit_event(
-            &app,
+            &on_event,
             BootstrapEvent::Failed {
                 stage: None,
                 error: err.clone(),
@@ -440,7 +443,7 @@ async fn run_bootstrap(
             truncate(&manifest_result.stdout, MANIFEST_PREVIEW_CHARS)
         );
         emit_event(
-            &app,
+            &on_event,
             BootstrapEvent::Failed {
                 stage: None,
                 error: err.clone(),
@@ -450,7 +453,7 @@ async fn run_bootstrap(
     })?;
 
     emit_event(
-        &app,
+        &on_event,
         BootstrapEvent::Manifest {
             stages: manifest.stages.clone(),
             protocol_version: manifest.protocol_version,
@@ -462,7 +465,7 @@ async fn run_bootstrap(
         if cancellation_signalled(&cancel_rx_holder).await {
             let err = "bootstrap cancelled by user".to_string();
             emit_event(
-                &app,
+                &on_event,
                 BootstrapEvent::Failed {
                     stage: Some(stage.name.clone()),
                     error: err.clone(),
@@ -473,7 +476,7 @@ async fn run_bootstrap(
 
         let started = Instant::now();
         emit_event(
-            &app,
+            &on_event,
             BootstrapEvent::Stage {
                 name: stage.name.clone(),
                 state: StageState::Running,
@@ -494,7 +497,7 @@ async fn run_bootstrap(
         let local_cancel_rx = cancel_rx_holder.lock().await.take();
 
         let stage_result = run_install_script(
-            &app,
+            &on_event,
             &script.path,
             &stage_args,
             args.spiritagent_home.as_deref(),
@@ -508,7 +511,7 @@ async fn run_bootstrap(
 
         if stage_result.killed {
             emit_event(
-                &app,
+                &on_event,
                 BootstrapEvent::Stage {
                     name: stage.name.clone(),
                     state: StageState::Failed,
@@ -518,7 +521,7 @@ async fn run_bootstrap(
                 },
             );
             emit_event(
-                &app,
+                &on_event,
                 BootstrapEvent::Failed {
                     stage: Some(stage.name.clone()),
                     error: "cancelled by user".into(),
@@ -547,7 +550,7 @@ async fn run_bootstrap(
                     stage.name, stage_result.exit_code, stdout_preview, stderr_preview
                 );
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Stage {
                         name: stage.name.clone(),
                         state: StageState::Failed,
@@ -557,7 +560,7 @@ async fn run_bootstrap(
                     },
                 );
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Failed {
                         stage: Some(stage.name.clone()),
                         error: err.clone(),
@@ -567,7 +570,7 @@ async fn run_bootstrap(
             }
             Some(frame) if frame.ok && frame.skipped => {
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Stage {
                         name: stage.name.clone(),
                         state: StageState::Skipped,
@@ -579,7 +582,7 @@ async fn run_bootstrap(
             }
             Some(frame) if frame.ok => {
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Stage {
                         name: stage.name.clone(),
                         state: StageState::Succeeded,
@@ -595,7 +598,7 @@ async fn run_bootstrap(
                     .clone()
                     .unwrap_or_else(|| format!("exit code {:?}", stage_result.exit_code));
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Stage {
                         name: stage.name.clone(),
                         state: StageState::Failed,
@@ -605,7 +608,7 @@ async fn run_bootstrap(
                     },
                 );
                 emit_event(
-                    &app,
+                    &on_event,
                     BootstrapEvent::Failed {
                         stage: Some(stage.name.clone()),
                         error: err.clone(),
@@ -632,7 +635,7 @@ async fn run_bootstrap(
     }
 
     emit_event(
-        &app,
+        &on_event,
         BootstrapEvent::Complete {
             install_root: install_root.to_string_lossy().into_owned(),
             marker: Some(serde_json::json!({
@@ -655,7 +658,7 @@ async fn cancellation_signalled(holder: &Arc<Mutex<Option<mpsc::Receiver<()>>>>)
 }
 
 async fn run_install_script(
-    app: &AppHandle,
+    on_event: &Channel<BootstrapEvent>,
     script_path: &std::path::Path,
     args: &[String],
     spiritagent_home_override: Option<&str>,
@@ -663,9 +666,9 @@ async fn run_install_script(
     cancel_rx: Option<mpsc::Receiver<()>>,
     stage_name: Option<String>,
 ) -> Result<powershell::ScriptResult> {
-    let app_for_stdout = app.clone();
+    let on_event_stdout = on_event.clone();
     let stage_for_stdout = stage_name.clone();
-    let app_for_stderr = app.clone();
+    let on_event_stderr = on_event.clone();
     let stage_for_stderr = stage_name.clone();
     let stage_for_stdout_log = stage_name.clone();
     let stage_for_stderr_log = stage_name.clone();
@@ -673,7 +676,7 @@ async fn run_install_script(
     let sink = StreamSink {
         on_stdout_line: Box::new(move |line: &str| {
             emit_event(
-                &app_for_stdout,
+                &on_event_stdout,
                 BootstrapEvent::Log {
                     stage: stage_for_stdout.clone(),
                     line: line.to_string(),
@@ -690,7 +693,7 @@ async fn run_install_script(
         }),
         on_stderr_line: Box::new(move |line: &str| {
             emit_event(
-                &app_for_stderr,
+                &on_event_stderr,
                 BootstrapEvent::Log {
                     stage: stage_for_stderr.clone(),
                     line: line.to_string(),
@@ -738,7 +741,7 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
     }
 }
 
-fn emit_event(app: &AppHandle, event: BootstrapEvent) {
+fn emit_event(on_event: &Channel<BootstrapEvent>, event: BootstrapEvent) {
     // 关键状态翻转也落到滚动日志，避免只剩 "starting" + 最终摘要；日志行已在 sink 回调内自处理，这里只覆盖生命周期帧。
     match &event {
         BootstrapEvent::Manifest { stages, .. } => {
@@ -773,8 +776,8 @@ fn emit_event(app: &AppHandle, event: BootstrapEvent) {
             // 日志行已通过 run_install_script 的 sink 回调落日志，此处不再重复。
         }
     }
-    if let Err(e) = app.emit(BootstrapEvent::CHANNEL, &event) {
-        tracing::warn!(?e, "failed to emit bootstrap event");
+    if let Err(e) = on_event.send(event) {
+        tracing::warn!(?e, "failed to send bootstrap event via ipc channel");
     }
 }
 

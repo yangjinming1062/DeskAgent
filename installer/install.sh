@@ -88,16 +88,7 @@ BUNDLED_ONBOARDING_AUDIO_DIR="${SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDL
 DESKTOP_FORMAT="${SPIRITAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
 emit_manifest() {
-  cat <<EOF
-{"protocol_version": ${PROTOCOL_VERSION}, "stages": [
-  {"name": "welcome", "title": "准备安装", "category": "setup", "needs_user_input": false},
-  {"name": "install-python", "title": "安装 Python 运行时", "category": "prereqs", "needs_user_input": false},
-  {"name": "unpack-runner", "title": "安装 SpiritAgent 运行器", "category": "payload", "needs_user_input": false},
-  {"name": "unpack-desktop", "title": "安装 SpiritAgent 桌面应用", "category": "payload", "needs_user_input": false},
-  {"name": "install-skills", "title": "安装内置技能", "category": "payload", "needs_user_input": false},
-  {"name": "finalize", "title": "完成安装", "category": "finalize", "needs_user_input": false}
-]}
-EOF
+  printf '__SPIRITAGENT_MANIFEST__:{"protocol_version": %s, "stages": [{"name": "welcome", "title": "准备安装", "category": "setup", "needs_user_input": false}, {"name": "install-python", "title": "安装 Python 运行时", "category": "prereqs", "needs_user_input": false}, {"name": "unpack-runner", "title": "安装 SpiritAgent 运行器", "category": "payload", "needs_user_input": false}, {"name": "unpack-desktop", "title": "安装 SpiritAgent 桌面应用", "category": "payload", "needs_user_input": false}, {"name": "install-skills", "title": "安装内置技能", "category": "payload", "needs_user_input": false}, {"name": "finalize", "title": "完成安装", "category": "finalize", "needs_user_input": false}]}\n' "$PROTOCOL_VERSION"
 }
 
 # emit_stage_ok <stage> [skipped=0|1] [reason]
@@ -107,9 +98,9 @@ emit_stage_ok() {
     # reason 中的双引号转义后嵌入 JSON，保证结果帧合法。
     local esc="${reason//\\/\\\\}"
     esc="${esc//\"/\\\"}"
-    printf '{"ok": true, "stage": "%s", "skipped": true, "reason": "%s"}\n' "$stage" "$esc"
+    printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "%s", "skipped": true, "reason": "%s"}\n' "$stage" "$esc"
   else
-    printf '{"ok": true, "stage": "%s"}\n' "$stage"
+    printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "%s"}\n' "$stage"
   fi
 }
 
@@ -118,7 +109,7 @@ emit_stage_err() {
   local stage="$1" reason="$2"
   local esc="${reason//\\/\\\\}"
   esc="${esc//\"/\\\"}"
-  printf '{"ok": false, "stage": "%s", "reason": "%s"}\n' "$stage" "$esc"
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": false, "stage": "%s", "reason": "%s"}\n' "$stage" "$esc"
 }
 
 install_uv() {
@@ -195,14 +186,14 @@ stage_welcome() {
   local is_reinstall="false"
   [[ -f "$marker" ]] && is_reinstall="true"
 
-  printf '{"ok": true, "stage": "welcome", "data": {"spiritagent_home": "%s", "is_reinstall": %s}}\n' \
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "welcome", "data": {"spiritagent_home": "%s", "is_reinstall": %s}}\n' \
     "$SPIRITAGENT_HOME_RESOLVED" "$is_reinstall"
 }
 
 # 阶段 2：安装 Python
 stage_install_python() {
   if test_python; then
-    printf '{"ok": true, "stage": "install-python", "data": {"version": "%s"}}\n' "$PYTHON_VERSION"
+    printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "install-python", "data": {"version": "%s"}}\n' "$PYTHON_VERSION"
     return 0
   fi
 
@@ -303,7 +294,7 @@ stage_unpack_runner() {
 
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
-  printf '{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s, "onboarding_audio_copied": %s}}\n' \
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s, "onboarding_audio_copied": %s}}\n' \
     "$SPIRITAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
 }
 
@@ -363,7 +354,7 @@ stage_unpack_desktop() {
       cp -R "$mount_point/SpiritAgent.app" /Applications/SpiritAgent.app
       hdiutil detach "$mount_point" 2>/dev/null || true
       xattr -cr /Applications/SpiritAgent.app 2>/dev/null || true
-      printf '{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/SpiritAgent.app", "format": "dmg"}}\n'
+      printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "unpack-desktop", "data": {"installed_path": "/Applications/SpiritAgent.app", "format": "dmg"}}\n'
       ;;
     nsis|zip)
       # POSIX 上不支持这些格式；Windows 用户改走 install.ps1。
@@ -401,7 +392,7 @@ stage_install_skills() {
   local bundled_count
   bundled_count=$(find "$SPIRITAGENT_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 
-  printf '{"ok": true, "stage": "install-skills", "data": {"bundled_count": %s}}\n' \
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "install-skills", "data": {"bundled_count": %s}}\n' \
     "$bundled_count"
 }
 
@@ -409,7 +400,7 @@ stage_install_skills() {
 stage_finalize() {
   : > "$SPIRITAGENT_HOME_RESOLVED/.spiritagent-bootstrap-complete"
 
-  printf '{"ok": true, "stage": "finalize", "data": {"marker": "%s/.spiritagent-bootstrap-complete"}}\n' \
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "finalize", "data": {"marker": "%s/.spiritagent-bootstrap-complete"}}\n' \
     "$SPIRITAGENT_HOME_RESOLVED"
 }
 

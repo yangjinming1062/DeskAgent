@@ -265,9 +265,22 @@ fn interpreter_label() -> String {
     "bash".to_string()
 }
 
-/// 解析 stdout 中最后一个匹配 install.ps1 阶段结果约定的 JSON 行 `{ok: bool, stage: string, ...}`。
-/// install.ps1 可能在结果帧前输出 info/banner，从末尾向前扫描。
+pub const STAGE_RESULT_SENTINEL: &str = "__SPIRITAGENT_STAGE_RESULT__:";
+pub const MANIFEST_SENTINEL: &str = "__SPIRITAGENT_MANIFEST__:";
+
+/// 解析 stdout 中由 sentinel 前缀标记的阶段结果 JSON 行 `{ok: bool, stage: string, ...}`。
+/// 优先按 sentinel 精准匹配，未匹配时向前回退至普通 JSON 行以保持兼容。
 pub fn parse_stage_result(stdout: &str) -> Option<crate::events::StageResultPayload> {
+    for line in stdout.lines().rev() {
+        let trimmed = line.trim();
+        if let Some(payload_str) = trimmed.strip_prefix(STAGE_RESULT_SENTINEL) {
+            if let Ok(parsed) = serde_json::from_str::<crate::events::StageResultPayload>(payload_str.trim()) {
+                return Some(parsed);
+            }
+        }
+    }
+
+    // 兼容兜底：未找到 sentinel 时按裸 JSON 行解析
     for line in stdout.lines().rev() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -288,9 +301,18 @@ pub fn parse_stage_result(stdout: &str) -> Option<crate::events::StageResultPayl
     None
 }
 
-/// `-Manifest` 负载解析：找最后一个含 `stages` 数组的 JSON。
-/// 同时兼容单行 JSON 与多行 JSON（PowerShell `Emit-Manifest` 走 here-string 时为多行）。
+/// `-Manifest` 负载解析：找由 sentinel 前缀标记的单行 NDJSON 负载。
+/// 优先按 sentinel 精准匹配，未匹配时向前回退至裸 JSON 或多行 JSON。
 pub fn parse_manifest(stdout: &str) -> Option<crate::events::Manifest> {
+    for line in stdout.lines().rev() {
+        let trimmed = line.trim();
+        if let Some(payload_str) = trimmed.strip_prefix(MANIFEST_SENTINEL) {
+            if let Ok(parsed) = serde_json::from_str::<crate::events::Manifest>(payload_str.trim()) {
+                return Some(parsed);
+            }
+        }
+    }
+
     fn try_parse(blob: &str) -> Option<crate::events::Manifest> {
         let value = serde_json::from_str::<serde_json::Value>(blob).ok()?;
         if value.get("stages")?.as_array().is_none() {
@@ -318,7 +340,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_stage_result_picks_last_json_line() {
+    fn parse_stage_result_with_sentinel_picks_last_sentinel_line() {
+        let stdout = r#"
+[bootstrap] some info
+__SPIRITAGENT_STAGE_RESULT__:{"ok": false, "stage": "venv", "reason": "bad python"}
+__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "venv"}
+final non-json banner
+"#;
+        let result = parse_stage_result(stdout).unwrap();
+        assert_eq!(result.stage, "venv");
+        assert!(result.ok);
+    }
+
+    #[test]
+    fn parse_stage_result_fallback_picks_last_json_line() {
         let stdout = r#"
 [bootstrap] some info
 {"ok": false, "stage": "venv", "reason": "bad python"}
@@ -331,7 +366,20 @@ final non-json banner
     }
 
     #[test]
-    fn parse_manifest_finds_stages_array() {
+    fn parse_manifest_with_sentinel_finds_stages_array() {
+        let stdout = r#"
+info line
+__SPIRITAGENT_MANIFEST__:{"stages": [{"name": "uv", "title": "uv", "category": "prereqs", "needs_user_input": false}], "protocol_version": 1}
+trailing info
+"#;
+        let m = parse_manifest(stdout).unwrap();
+        assert_eq!(m.stages.len(), 1);
+        assert_eq!(m.stages[0].name, "uv");
+        assert_eq!(m.protocol_version, Some(1));
+    }
+
+    #[test]
+    fn parse_manifest_fallback_finds_stages_array() {
         let stdout = r#"
 info line
 {"stages": [{"name": "uv", "title": "uv", "category": "prereqs", "needs_user_input": false}], "protocol_version": 1}
