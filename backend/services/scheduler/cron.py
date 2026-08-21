@@ -1,7 +1,9 @@
 import asyncio
 import json
 import time
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timedelta
+from functools import partial
 from typing import Any
 
 from components import (
@@ -37,6 +39,9 @@ logger = get_logger(__name__)
 
 _BG_TASKS: set[asyncio.Task] = set()
 
+# 每个慢扫描的在飞 task：LLM 流水线可能比扫描间隔跑得更久，而 per-user 去重标记只在成功后才写——不挡住重入会让同一用户的流水线并行跑两遍。
+_SCANS: dict[str, asyncio.Task] = {}
+
 
 async def drain() -> None:
     """取消并 await 所有后台 task，容忍 CancelledError；由 main.py lifespan 关停时调用，避免 SIGTERM 在 db.commit() 中途被 engine 释放。"""
@@ -66,6 +71,34 @@ _LAST_NIGHTLY_SCAN: float = 0.0
 
 # 每个 tick 处理的到期 job 硬上限——限制批量 CAS 的语句大小和单 tick 工作量，避免长时间停摆后的回追（例如 60 分钟 ``* * * * *`` 调度，第一 tick 有 3600 个到期）。超出上限的 job 保留原 next_run_at，下一 tick 再触发。
 _MAX_DUE_PER_TICK = 200
+
+
+def _log_task_error(name: str, task: asyncio.Task) -> None:
+    """旁路 task 的失败落日志而不冒泡：scheduler_loop 靠 _tick 的异常杀死 BackgroundTask 来曝光派发路径的持久 bug，而 kickoff / 扫描的失败不该连坐停掉定时派发。"""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("cron: background task failed", exc_info=exc, extra={"task": name})
+
+
+def _spawn_scan(name: str, factory: Callable[[], Coroutine[Any, Any, None]]) -> None:
+    """把慢扫描移出 tick 的关键路径——它内部 await 多阶段 LLM 流水线，inline 会让本 tick 的到期 job CAS 排在几分钟的模型调用之后；上一轮同名扫描仍在飞则跳过本轮。"""
+    running = _SCANS.get(name)
+    if running is not None and not running.done():
+        logger.warning("cron: scan still in flight, skipping", extra={"scan": name})
+        return
+
+    async def _scoped() -> None:
+        # 扫描已是独立于 tick 的工作单元，mint 自己的 request_id 才能把它跨越的几轮 tick 的日志归到一起。
+        begin_local_scope()
+        await factory()
+
+    task = asyncio.create_task(_scoped(), name=f"scheduler.{name}")
+    _SCANS[name] = task
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
+    task.add_done_callback(partial(_log_task_error, name))
 
 
 async def _select_due_jobs() -> list[Row]:
@@ -145,6 +178,7 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
             t = asyncio.create_task(_kick_autonomous_turn(job_id, meta))
             _BG_TASKS.add(t)
             t.add_done_callback(_BG_TASKS.discard)
+            t.add_done_callback(partial(_log_task_error, f"kick:{job_id}"))
         except RuntimeError:
             # 没有运行中的 loop——跳过本 tick；job 的 next_run_at 已推进，下一 tick 会再拾起。
             logger.warning("cron: no running loop, skipping autonomous turn", extra={"job_id": job_id})
@@ -195,9 +229,9 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
 async def _tick() -> None:
     """为到期 job CAS 推进 next_run_at 并申请自主 turn：每个到期 job 写一条 cron.turn.request ws_events，持有该用户 WS 的 replica 通过 outbox 循环拣走并在本地运行 turn；无双触发风险——CAS UPDATE 串行化胜者，outbox DELETE..RETURNING 是单消费者。"""
     now = utc_now()
-    # Memory consolidator 与 cron-job 派发独立——不能用 ``if not due_jobs`` gate，否则没有 cron job 的安装永远不会触发 consolidation。
-    await _maybe_run_memory_consolidator(now)
-    await _maybe_run_autonomous_activity(now)
+    # 两个慢扫描与 cron-job 派发独立——不能用 ``if not due_jobs`` gate，否则没有 cron job 的安装永远不会触发 consolidation。
+    _spawn_scan("memory_consolidator", lambda: _maybe_run_memory_consolidator(now))
+    _spawn_scan("nightly_activity", lambda: _maybe_run_autonomous_activity(now))
     await _maybe_run_proactive_followups(now)
     due_jobs = await _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
@@ -305,12 +339,18 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
 
 
 async def scheduler_loop() -> None:
-    """以 SCHEDULER_INTERVAL_SECONDS 为周期的 cron tick 循环：单 tick 粒度——不支持分钟以下调度。_tick() 未捕获的异常会冒泡导致 BackgroundTask 死亡，运维侧曝光度高（Task exited with error）——这是故意的：持久 bug 不该每 60 秒静默刷日志，而应显式崩溃以便修复；_tick() 已逐 job try/except，单个坏 job 不会让循环终止。"""
+    """以 SCHEDULER_INTERVAL_SECONDS 为周期的 cron tick 循环：单 tick 粒度——不支持分钟以下调度。按 deadline 对齐而非 tick 结束后固定 sleep——后者的实际周期是 60s + tick 耗时，误差逐轮累积；落后超过一整周期时丢弃错过的槽位，避免停摆恢复后连打。_tick() 未捕获的异常会冒泡导致 BackgroundTask 死亡，运维侧曝光度高（Task exited with error）——这是故意的：持久 bug 不该每 60 秒静默刷日志，而应显式崩溃以便修复；派发出去的自主 turn 与扫描各自在独立 task 里失败并落日志，不会终止循环。"""
     logger.info("Starting background cron scheduler loop.")
+    loop = asyncio.get_running_loop()
+    next_at = loop.time()
     while True:
         begin_local_scope()
         await _tick()
-        await asyncio.sleep(SCHEDULER_INTERVAL_SECONDS)
+        next_at += SCHEDULER_INTERVAL_SECONDS
+        now = loop.time()
+        if next_at <= now:
+            next_at = now + SCHEDULER_INTERVAL_SECONDS
+        await asyncio.sleep(next_at - now)
 
 
 _SCHEDULER = BackgroundTask("scheduler.cron_loop")

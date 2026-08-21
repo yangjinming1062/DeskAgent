@@ -97,10 +97,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         with contextlib.suppress(asyncio.CancelledError):
             await cleanup_task
 
+        # 先停调度器再 drain：tick 会往 cron 的模块级任务集合里 spawn 新 task，反过来的顺序留下一个能逃过 drain 的窗口。
+        await stop_scheduler()
+
         # 释放引擎前先 drain 模块级任务集合；避免 SIGTERM 把持有连接池的协程留在 commit 中途。
         await asyncio.gather(_cron_drain(), _persona_drain(), _video_drain(), _conn_drain(), _handlers_drain(), return_exceptions=True)
 
-        await stop_scheduler()
         await stop_ws_event_loop()
 
         await ENGINE.dispose()
