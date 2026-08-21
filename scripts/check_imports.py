@@ -175,7 +175,7 @@ def check_facade_consistency(path: Path) -> list[str]:
                 errors.append(
                     f"{path}:{node.lineno}: '{alias.name}' imported via {where} "
                     f"is not re-exported by {rel}/__init__ — "
-                    "either add the re-export or import from the underlying module"
+                    "either add the re-export or import from the underlying module",
                 )
     return errors
 

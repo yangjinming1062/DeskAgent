@@ -2,17 +2,18 @@
 
 两类制品，刻意保持薄。**Install 脚本不在此处** —— 它们与 installer 同目录（[installer/install.{sh,ps1,cmd}](../installer/README.md)），让 Tauri 程序与其 worker 脚本作为一个自洽单元分发。
 
-## 1. 构建安装器 — `build_client.{sh,ps1}`
+## 1. 构建安装器 — `build.py` / `build_client.{sh,ps1}`
 
-单一入口，端到端编排 **runner (uv build wheel) → client (electron-builder) → stage → Tauri (installer)**。末尾 `build_client.ps1`（Windows）额外构建 `release/SpiritAgent-{ver}-update.zip`——合并 client 二进制与 runner wheel 的自更新 artifact，供客户端 `electron-updater` 消费。`build_client.sh`（macOS）不构建此 zip，各平台 update artifact 由 electron-builder 直接产出。
+单一入口，端到端编排 **runner (uv build wheel) → client (electron-builder) → stage → Tauri (installer)**。跨平台的纯文本编辑、版本同步与 payload 暂存由 `scripts/lib/build_helpers.py` 统一定义，`build_client.sh`（macOS）与 `build_client.ps1`（Windows）作为系统原生包装层调用共享逻辑。Windows 构建额外产出 `release/SpiritAgent-{ver}-update.zip` 自更新产物。
 
 ```bash
+uv run python scripts/build.py --version 0.16.0
 scripts/build_client.sh --version 0.16.0 --target mac
 pwsh scripts/build_client.ps1 -Version 0.16.0
 ```
 
 - 写版本号到 `client/package.json`、`installer/package.json`、`installer/src-tauri/tauri.conf.json`、`installer/src-tauri/Cargo.toml`、`runner/pyproject.toml`
-- Staging 到 `installer/payload/`（symlink skills 与 install 脚本，copy config + runner wheel + client artifact）
+- Staging 到 `installer/payload/`（symlink/junction skills 与 install 脚本，copy config + runner wheel + client artifact）
 - macOS code-sign + notarize（`--sign-identity` / `--notary-profile`）；Windows signtool（`-CertThumbprint`）
 - Tauri 2 默认对 `bundle.resources` 缺失文件**报错**；构建脚本在 tauri build 之前临时 patch `tauri.conf.json` 的 `bundle.resources` 列表，把占位文件替换为当前 host 的实际 client artifact，build 后 restore（git 状态保持干净）
 - **跨平台 build 不可行** —— macOS code-sign 必须 mac host，Windows 必须 win host。脚本校验 `host/target` 匹配

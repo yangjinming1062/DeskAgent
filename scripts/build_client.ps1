@@ -19,79 +19,34 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path "$ScriptDir\..").Path
+$BuildHelpersPy = Join-Path $ScriptDir "lib\build_helpers.py"
 
 # 加载共享签名 + manifest 助手（Sign-Manifest / New-RunnerManifest / Resolve-UpdateSigningKey）。
 . (Join-Path $ScriptDir 'lib/UpdateManifest.ps1')
 
 if (-not $OutputDir) { $OutputDir = Join-Path $RepoRoot "release" }
 
-$RunnerWheelGlob = "spiritagent-agent-*.whl"
 $DesktopPnpmTarget = "dist:win:nsis"
 $DesktopArtifactGlob = "SpiritAgent-${Version}-win-*.exe"
-$DesktopFormat = "nsis"
-$TauriBundleDir = "nsis"
 
 function Set-Version([string]$v) {
-    Write-Output "==> Writing version $v to package.json/pyproject.toml"
-    $desktopPkg = Join-Path $RepoRoot "client\package.json"
-    $installerPkg = Join-Path $RepoRoot "installer\package.json"
-    $tauriConf = Join-Path $RepoRoot "installer\src-tauri\tauri.conf.json"
-    $cargoToml = Join-Path $RepoRoot "installer\src-tauri\Cargo.toml"
-    $runnerPyproject = Join-Path $RepoRoot "runner\pyproject.toml"
-
-    foreach ($p in @($desktopPkg, $installerPkg, $tauriConf)) {
-        $text = Get-Content $p -Raw -Encoding UTF8
-        $text = [regex]::Replace($text, '^(\s*)"version"\s*:\s*"[^"]*"', "`$1`"version`": `"$v`"", "Multiline")
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $text, $utf8NoBom)
-    }
-
-    foreach ($p in @($cargoToml, $runnerPyproject)) {
-        $text = Get-Content $p -Raw -Encoding UTF8
-        $text = [regex]::Replace($text, '^version = "[^"]+"', "version = `"$v`"", "Multiline")
-        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $text, $utf8NoBom)
-    }
+    & uv run python $BuildHelpersPy set-version $v
+    if ($LASTEXITCODE -ne 0) { throw "Set-Version failed" }
 }
 
 function Stage-Payload {
-    Write-Output "==> Staging payload in installer\payload\"
-    $payloadRunner = Join-Path $RepoRoot "installer\payload\runner"
-    $payloadDesktop = Join-Path $RepoRoot "installer\payload\client"
-    if (Test-Path $payloadRunner) { Remove-Item -Recurse -Force $payloadRunner }
-    if (Test-Path $payloadDesktop) { Remove-Item -Recurse -Force $payloadDesktop }
-    New-Item -ItemType Directory -Force -Path $payloadRunner | Out-Null
-    New-Item -ItemType Directory -Force -Path $payloadDesktop | Out-Null
+    & uv run python $BuildHelpersPy stage-payload --target win
+    if ($LASTEXITCODE -ne 0) { throw "Stage-Payload failed" }
+}
 
-    $runnerWheel = Get-ChildItem -Path (Join-Path $RepoRoot "runner\dist") -Filter $RunnerWheelGlob -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    if (-not $runnerWheel) {
-        throw "no wheel matching '$RunnerWheelGlob' in runner\dist\ (build runner first)"
-    }
-    $runnerDst = Join-Path $payloadRunner $runnerWheel.Name
-    Copy-Item -Force $runnerWheel.FullName $runnerDst
-    # server.py 一起打包到 payload，便于 install.sh/ps1 部署到 $SPIRITAGENT_HOME/runner/。
-    Copy-Item -Force (Join-Path $RepoRoot "runner\server.py") (Join-Path $payloadRunner "server.py")
+function Patch-TauriConfig {
+    & uv run python $BuildHelpersPy patch-tauri-config
+    if ($LASTEXITCODE -ne 0) { throw "Patch-TauriConfig failed" }
+}
 
-    # 把 skills 与 install.{sh,ps1} 链入 payload：目录走 junction（Windows 原生目录符号链接），文件走 hardlink；源都在 installer/ 子树内，相对解析简单。
-    $skillsLink = Join-Path $RepoRoot "installer\payload\skills"
-    $installShLink = Join-Path $RepoRoot "installer\payload\install.sh"
-    $installPs1Link = Join-Path $RepoRoot "installer\payload\install.ps1"
-    foreach ($p in @($skillsLink, $installShLink, $installPs1Link)) {
-        if (Test-Path $p) { Remove-Item -Recurse -Force $p }
-    }
-
-    $cmdOutput = & cmd /c "mklink /J `"$skillsLink`" `"$RepoRoot\installer\skills`"" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "mklink skills failed: $cmdOutput" }
-    # install.sh / install.ps1 是文件不是目录，改用 hardlink。
-    $cmdOutput = & cmd /c "mklink /H `"$installShLink`" `"$RepoRoot\installer\install.sh`"" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "mklink install.sh failed: $cmdOutput" }
-    $cmdOutput = & cmd /c "mklink /H `"$installPs1Link`" `"$RepoRoot\installer\install.ps1`"" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "mklink install.ps1 failed: $cmdOutput" }
-
-    $size = (Get-Item (Join-Path $payloadRunner $runnerWheel.Name)).Length
-    Write-Output "    runner: $size bytes"
-    Write-Output "    desktop: $((Get-ChildItem $payloadDesktop | Select-Object -ExpandProperty Name) -join ' ')"
-    Write-Output "    install scripts: install.sh, install.ps1"
+function Restore-TauriConfig {
+    & uv run python $BuildHelpersPy restore-tauri-config
+    if ($LASTEXITCODE -ne 0) { throw "Restore-TauriConfig failed" }
 }
 
 function Build-UpdateZip {
@@ -182,34 +137,6 @@ function Build-UpdateZip {
     }
 }
 
-function Patch-TauriConfig {
-    $conf = Join-Path $RepoRoot "installer\src-tauri\tauri.conf.json"
-    $bak = "$conf.build_client.bak"
-    Copy-Item -Force $conf $bak
-
-    $desktopDir = Join-Path $RepoRoot "installer\payload\client"
-    $desktopFile = Get-ChildItem -Path $desktopDir -File | Select-Object -First 1
-    if (-not $desktopFile) { throw "no desktop artifact in $desktopDir" }
-    $desktopRel = "..\payload\client\$($desktopFile.Name)"
-
-    Write-Output "==> Patching ${conf}: bundle.resources += $desktopRel"
-    $json = Get-Content $conf -Raw -Encoding UTF8 | ConvertFrom-Json
-    $resources = @($json.bundle.resources) + $desktopRel
-    $json.bundle.resources = $resources
-    $jsonStr = ($json | ConvertTo-Json -Depth 100)
-    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($conf, $jsonStr, $utf8NoBom)
-}
-
-function Restore-TauriConfig {
-    $conf = Join-Path $RepoRoot "installer\src-tauri\tauri.conf.json"
-    $bak = "$conf.build_client.bak"
-    if (Test-Path $bak) {
-        Write-Output "==> Restoring $conf"
-        Move-Item -Force $bak $conf
-    }
-}
-
 Push-Location $RepoRoot
 try {
     Set-Version $Version
@@ -260,7 +187,6 @@ try {
     Stage-Payload
     Copy-Item -Force $desktopArtifact.FullName (Join-Path $RepoRoot "installer\payload\client\$($desktopArtifact.Name)")
 
-
     if ($CertThumbprint) {
         Write-Output "==> Code-signing $($desktopArtifact.Name)"
         & $SignTool sign /tr http://timestamp.digicert.com /td sha256 /fd sha256 /a /sha1 $CertThumbprint $desktopArtifact.FullName
@@ -298,12 +224,15 @@ try {
     Write-Output "==> Final installer: $(Join-Path $OutputDir $finalName)"
 
     # 同一构建再产一个自更新 zip：已安装客户端从后端拉它自更桌面端 + runner，无需重跑 Tauri 安装器。
-    Build-UpdateZip `
-        -Version $Version `
-        -DesktopReleaseDir (Join-Path (Join-Path $RepoRoot 'desktop') 'release') `
-        -RunnerWheelPath (Get-ChildItem (Join-Path $RepoRoot 'installer\payload\runner') -Filter 'spiritagent-agent-*.whl' | Select-Object -First 1).FullName `
-        -ServerPyPath (Join-Path $RepoRoot 'installer\payload\runner\server.py') `
-        -OutputDir $OutputDir
+    $wheel = Get-ChildItem (Join-Path $RepoRoot 'installer\payload\runner') -Filter '*.whl' | Select-Object -First 1
+    if ($wheel) {
+        Build-UpdateZip `
+            -Version $Version `
+            -DesktopReleaseDir (Join-Path $RepoRoot 'client\release') `
+            -RunnerWheelPath $wheel.FullName `
+            -ServerPyPath (Join-Path $RepoRoot 'installer\payload\runner\server.py') `
+            -OutputDir $OutputDir
+    }
 } finally {
     Pop-Location
 }

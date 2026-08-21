@@ -77,7 +77,7 @@ DESKTOP_FORMAT="dmg"
 TAURI_BUNDLE_DIR="dmg"
 
 # 通用构建依赖；缺则报错并打印缺哪一个。
-for cmd in uv pnpm node python3 rsync; do
+for cmd in uv pnpm node python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "error: required build dep '$cmd' not found in PATH" >&2
     exit 1
@@ -92,103 +92,23 @@ for cmd in hdiutil codesign; do
   fi
 done
 
-# jq 在下方 patch_tauri_config 阶段才用到；这里提前校验，便于给出指向明确步骤的错误。
-if ! command -v jq >/dev/null 2>&1; then
-  echo "error: 'jq' is required to patch tauri.conf.json for the desktop artifact" >&2
-  exit 1
-fi
-
 set_version() {
-  local v="$1"
-  echo "==> Writing version $v to package.json/pyproject.toml"
-  python3 - "$v" <<'PY'
-import json, sys, re, pathlib
-v = sys.argv[1]
-
-p = pathlib.Path("client/package.json")
-data = json.loads(p.read_text())
-data["version"] = v
-p.write_text(json.dumps(data, indent=2) + "\n")
-
-p = pathlib.Path("installer/package.json")
-data = json.loads(p.read_text())
-data["version"] = v
-p.write_text(json.dumps(data, indent=2) + "\n")
-
-p = pathlib.Path("installer/src-tauri/tauri.conf.json")
-data = json.loads(p.read_text())
-data["version"] = v
-p.write_text(json.dumps(data, indent=2) + "\n")
-
-# Cargo.toml 已含 version 字段，直接就地替换
-p = pathlib.Path("installer/src-tauri/Cargo.toml")
-text = p.read_text()
-text = re.sub(r'^version = "[^"]+"', f'version = "{v}"', text, count=1, flags=re.MULTILINE)
-p.write_text(text)
-
-p = pathlib.Path("runner/pyproject.toml")
-text = p.read_text()
-text = re.sub(r'^version = "[^"]+"', f'version = "{v}"', text, count=1, flags=re.MULTILINE)
-p.write_text(text)
-PY
+  python3 "$SCRIPT_DIR/lib/build_helpers.py" set-version "$1"
 }
 
 stage_payload() {
-  echo "==> Staging payload in installer/payload/"
-  rm -rf installer/payload/runner installer/payload/client
-  mkdir -p installer/payload/runner installer/payload/client
-
-  local wheel
-  wheel=$(ls -1 runner/dist/spiritagent-agent-*.whl 2>/dev/null | head -1 || true)
-  if [[ -z "$wheel" ]]; then
-    echo "error: no wheel found in runner/dist/ (build runner first)" >&2
-    exit 1
-  fi
-  cp "$wheel" "installer/payload/runner/$(basename "$wheel")"
-  # server.py 也拷到 payload，便于 install 脚本部署到 $SPIRITAGENT_HOME/runner/。
-  cp runner/server.py installer/payload/runner/server.py
-
-  # 用符号链入 skills/install 脚本，避免在仓库内出现重复副本；
-  # build_client.{sh,ps1} 是单次调用，staging 阶段用软链足够。
-  rm -rf installer/payload/skills \
-         installer/payload/install.sh \
-         installer/payload/install.ps1
-  ln -s ../skills installer/payload/skills
-  ln -s ../install.sh installer/payload/install.sh
-  ln -s ../install.ps1 installer/payload/install.ps1
-  echo "    runner: $(ls -l installer/payload/runner/*.whl | awk '{print $5}') bytes"
-  echo "    desktop: $(ls -1 installer/payload/client/ | tr '\n' ' ')"
-  echo "    install scripts: $(ls -1 installer/payload/install.{sh,ps1} 2>/dev/null | tr '\n' ' ')"
+  python3 "$SCRIPT_DIR/lib/build_helpers.py" stage-payload --target mac
 }
 
 patch_tauri_config() {
-  if ! command -v jq >/dev/null 2>&1; then
-    echo "error: 'jq' is required to patch tauri.conf.json" >&2
-    exit 1
-  fi
-
-  local conf="installer/src-tauri/tauri.conf.json"
-  local bak="$conf.build_client.bak"
-  cp "$conf" "$bak"
-
-  local desktop_rel="payload/client/$(ls -1 installer/payload/client/ | head -1)"
-  echo "==> Patching $conf: bundle.resources += ../${desktop_rel}"
-  jq --arg d "../$desktop_rel" \
-     '.bundle.resources += [$d]' \
-     "$conf" > "$conf.new"
-  mv "$conf.new" "$conf"
+  python3 "$SCRIPT_DIR/lib/build_helpers.py" patch-tauri-config
 }
 
 restore_tauri_config() {
-  local conf="installer/src-tauri/tauri.conf.json"
-  local bak="$conf.build_client.bak"
-  if [[ -f "$bak" ]]; then
-    echo "==> Restoring $conf"
-    mv "$bak" "$conf"
-  fi
+  python3 "$SCRIPT_DIR/lib/build_helpers.py" restore-tauri-config
 }
 
-# Run a command, but always restore tauri.conf.json on exit (success or fail).
+# 退出时无论成败始终还原 tauri.conf.json
 trap restore_tauri_config EXIT
 
 cd "$REPO_ROOT"
@@ -197,7 +117,6 @@ set_version "$VERSION"
 
 if [[ $SKIP_RUNNER -eq 0 ]]; then
   echo "==> Building runner (uv build wheel → dist/spiritagent-agent-*.whl)"
-  # 打包前的环境闸口：env-rot 状态（如 0 字节 typing_extensions.py / mcp 的 .py）会跟着钻进 wheel，安装期 smoke 仅 `import tools, utils` 太浅，曾放走坏 wheel。详见 runner/tests/test_startup_imports.py docstring。
   ( cd runner && \
       uv sync --frozen --extra dev && \
       uv run --frozen --no-sync pytest tests/ -q && \
@@ -209,9 +128,6 @@ fi
 
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
   echo "==> Building client (electron-builder → release/SpiritAgent-${VERSION}-${TARGET}*)"
-  # 发布闸口：先跑全量测试（渲染器 vitest + 主进程 node:test），再交给 electron-builder。
-  # 跟 runner 那边的"pytest tests/ -q 后再 uv build --wheel"对齐——单元测试是 wheel/installer
-  # 的安全网，跑红则禁止打包。脚本化是 pre-commit fast-subset 的权威版本。
   ( cd client && pnpm install --frozen-lockfile && pnpm test && pnpm run $DESKTOP_PNPM_TARGET ) \
     || { echo "FAIL: client test suite failed — see vitest/node --test output above." >&2; exit 1; }
 else
@@ -251,6 +167,10 @@ FINAL_DIR="installer/src-tauri/target/release/bundle/$TAURI_BUNDLE_DIR"
 FINAL_GLOB="SpiritAgent-Setup_${VERSION}_*.dmg"
 FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"
 if [[ -z "$FINAL" ]]; then
+  FINAL_GLOB="*.dmg"
+  FINAL="$(ls -1 $FINAL_DIR/$FINAL_GLOB 2>/dev/null | head -1 || true)"
+fi
+if [[ -z "$FINAL" ]]; then
   echo "error: Tauri build did not produce $FINAL_DIR/$FINAL_GLOB" >&2
   exit 1
 fi
@@ -258,5 +178,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 FINAL_NAME="$(basename "$FINAL")"
 cp "$FINAL" "$OUTPUT_DIR/$FINAL_NAME"
+# 同时生成标准命名的别名副本，方便统一消费
+cp "$FINAL" "$OUTPUT_DIR/SpiritAgent-Setup-${VERSION}.dmg"
 echo ""
-echo "==> Final installer: $OUTPUT_DIR/$FINAL_NAME"
+echo "==> Final installer: $OUTPUT_DIR/SpiritAgent-Setup-${VERSION}.dmg (also $OUTPUT_DIR/$FINAL_NAME)"
