@@ -8,23 +8,23 @@ from services.llm import prompt_engineer
 
 
 def _fake_response(content: str | None):
-    """模拟 OpenAI ``chat.completions.create`` 返回结构——只暴露 ``prompt_engineer.chat`` 用到的字段；``None`` 构造一个始终抛错的客户端，用于传输错误测试。"""
+    """模拟 OpenAI Responses 返回结构——只暴露 ``prompt_engineer.chat`` 用到的字段；``None`` 构造一个始终抛错的客户端，用于传输错误测试。"""
 
     if content is None:
 
         async def _boom(*_a, **_kw):
             raise RuntimeError("network down")
 
-        return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_boom)))
+        return SimpleNamespace(responses=SimpleNamespace(create=_boom))
 
     async def _create(*_a, **_kw):
-        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+        return SimpleNamespace(output=[{"type": "message", "content": [{"type": "output_text", "text": content}]}])
 
-    return SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=_create)))
+    return SimpleNamespace(responses=SimpleNamespace(create=_create))
 
 
 def _fake_provider(content: str | None = "ok", *, raises: Exception | None = None):
-    """chat provider 的 stub。``prompt_engineer.chat`` 只调用 ``raw_client()``，chat 完成请求则经由该 client 的 ``chat.completions.create`` 协程发出。"""
+    """chat provider 的 stub。``prompt_engineer.chat`` 只调用 ``raw_client()``，请求经由该 client 的 ``responses.create`` 协程发出。"""
 
     if raises is not None:
 

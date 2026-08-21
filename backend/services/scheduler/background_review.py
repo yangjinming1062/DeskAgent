@@ -1,6 +1,6 @@
 from components import get_logger, safe_json_loads
 
-from services.llm import ServiceType, call_with_retry, client_for_config, resolve_context_tokens
+from services.llm import ResponsesContext, ServiceType, call_with_retry, client_for_config, resolve_context_tokens, response_items_to_chat_tool_calls, response_request_kwargs
 from services.tools import RETAIN_SCHEMA, NativeMemory
 
 logger = get_logger(__name__)
@@ -38,21 +38,17 @@ _TRUNCATE_SUFFIX = "\n...(truncated)"
 _TOOL_OUTPUT_CAP = 1000
 
 
-def _trim_tool_output(msg: dict) -> dict:
-    content = msg.get("content", "")
-    if isinstance(content, str) and len(content) > _TOOL_OUTPUT_CAP:
-        return {**msg, "content": content[:_TOOL_OUTPUT_CAP] + _TRUNCATE_SUFFIX}
-    return msg
+def _trim_tool_output(item: dict) -> dict:
+    output = item.get("output", "")
+    if isinstance(output, str) and len(output) > _TOOL_OUTPUT_CAP:
+        return {**item, "output": output[:_TOOL_OUTPUT_CAP] + _TRUNCATE_SUFFIX}
+    return item
 
 
-async def run_background_memory_review(user_id: int, llm_config: dict, messages_snapshot: list[dict]) -> None:
+async def run_background_memory_review(user_id: int, llm_config: dict, context_snapshot: ResponsesContext) -> None:
     """fire-and-forget：复盘会话并把值得长期记住的事存下来。"""
-    messages = [{"role": "system", "content": _BACKGROUND_REVIEW_PROMPT}]
-    for msg in messages_snapshot:
-        if msg.get("role") == "system":
-            continue
-        # 工具输出可能很大，截断以保持 review 调用便宜。
-        messages.append(_trim_tool_output(msg) if msg.get("role") == "tool" else msg)
+    # 工具输出可能很大，截断以保持 review 调用便宜。
+    items = [_trim_tool_output(item) if item.get("type") == "function_call_output" else item for item in context_snapshot.items]
 
     api_key = llm_config.get("api_key")
     base_url = llm_config.get("base_url")
@@ -72,16 +68,19 @@ async def run_background_memory_review(user_id: int, llm_config: dict, messages_
             # resolver 会回落到全局默认；告警以避免配置错的链静默使用 1M 上下文。
             logger.warning("background_review: empty provider_name", extra={"user_id": user_id})
         context_length = resolve_context_tokens(provider_name, ServiceType.llm)
-        response = await call_with_retry(client, context_length=context_length, model=model_name, messages=messages, tools=schemas, stream=False, max_tokens=500)
-        if response.choices and response.choices[0].message.tool_calls:
-            for tc in response.choices[0].message.tool_calls:
-                fn = tc.function
-                if not (fn and fn.name == "memory_retain"):
+        context = ResponsesContext(instructions=_BACKGROUND_REVIEW_PROMPT, items=items)
+        request = response_request_kwargs(model=model_name, context=context, tools=schemas, max_output_tokens=500)
+        response = await call_with_retry(client, context_length=context_length, **request)
+        tool_calls = response_items_to_chat_tool_calls(getattr(response, "output", []) or [])
+        if tool_calls:
+            for tc in tool_calls:
+                fn = tc.get("function") if isinstance(tc.get("function"), dict) else None
+                if not (fn and fn.get("name") == "memory_retain"):
                     continue
-                args = safe_json_loads(fn.arguments or "{}")
+                args = safe_json_loads(fn.get("arguments") or "{}")
                 if args and isinstance(args, dict):
                     logger.info("Background review extracting memory", extra={"func_args": args})
-                    await native_memory.execute_tool(fn.name, args)
+                    await native_memory.execute_tool(str(fn.get("name")), args)
         # 没工具调用说明 review 没找到要记的事。
     except Exception as exc:
         logger.warning("Background memory review failed", extra={"error": str(exc)})

@@ -20,16 +20,31 @@ export interface ReverseRpcOptions {
 export interface LlmMessageContentPart {
   image?: unknown
   image_url?: unknown
+  text?: string
   type?: string
 }
 
 export interface LlmMessage {
   content?: string | LlmMessageContentPart[]
   role?: string
+  tool_call_id?: string
+  tool_calls?: Array<Record<string, unknown>>
+}
+
+export interface LlmResponseInputItem {
+  arguments?: string
+  call_id?: string
+  content?: Array<Record<string, unknown>>
+  name?: string
+  output?: unknown
+  role?: string
+  type?: string
 }
 
 export interface LlmCompletionParams {
   max_tokens?: number
+  input?: unknown
+  instructions?: string
   messages?: LlmMessage[]
   model?: string
   temperature?: number
@@ -52,22 +67,131 @@ export function createReverseRpc(
   let sessionMessagesSent = 0
   let sessionBytesSent = 0
 
-  function isVisionRequest(messages: LlmMessage[]): boolean {
-    if (!Array.isArray(messages)) {
+  function hasVisionContent(content: unknown): boolean {
+    if (!Array.isArray(content)) {
       return false
     }
 
-    for (const msg of messages) {
-      if (Array.isArray(msg?.content)) {
-        for (const part of msg.content) {
-          if (part?.type === 'image_url' || part?.type === 'image' || part?.image_url) {
-            return true
-          }
-        }
+    for (const part of content) {
+      if (
+        typeof part === 'object' &&
+        part !== null &&
+        ((part as LlmMessageContentPart).type === 'input_image' ||
+          (part as LlmMessageContentPart).type === 'image_url' ||
+          (part as LlmMessageContentPart).image_url !== undefined)
+      ) {
+        return true
       }
     }
 
     return false
+  }
+
+  function contentToInputParts(content: unknown): Array<Record<string, unknown>> {
+    if (typeof content === 'string') {
+      return content ? [{ type: 'input_text', text: content }] : []
+    }
+
+    if (!Array.isArray(content)) {
+      return []
+    }
+
+    const parts: Array<Record<string, unknown>> = []
+
+    for (const part of content) {
+      if (typeof part === 'string') {
+        parts.push({ type: 'input_text', text: part })
+
+        continue
+      }
+
+      if (typeof part !== 'object' || part === null) {
+        continue
+      }
+
+      const source = part as LlmMessageContentPart
+
+      if (source.type === 'text' || source.type === 'input_text') {
+        parts.push({ type: 'input_text', text: source.text ?? '' })
+      } else if (source.type === 'image' || source.type === 'image_url' || source.type === 'input_image') {
+        const image = source.image_url ?? source.image
+        const url = typeof image === 'object' && image !== null ? (image as { url?: unknown }).url : image
+
+        if (url !== undefined && url !== null && url !== '') {
+          parts.push({ type: 'input_image', image_url: url })
+        }
+      }
+    }
+
+    return parts
+  }
+
+  function toResponsesPayload(params: LlmCompletionParams): {
+    instructions: string
+    input: LlmResponseInputItem[] | string
+  } {
+    if (params.input !== undefined) {
+      return {
+        instructions: params.instructions ?? '',
+        input: typeof params.input === 'string' ? params.input : (params.input as LlmResponseInputItem[])
+      }
+    }
+
+    const messages = params.messages ?? []
+    const instructionParts: string[] = []
+    const items: LlmResponseInputItem[] = []
+    let sawConversationItem = false
+
+    for (const message of messages) {
+      const role = message?.role
+
+      if (role === 'system' && !sawConversationItem) {
+        if (typeof message.content === 'string' && message.content) {
+          instructionParts.push(message.content)
+        }
+
+        continue
+      }
+
+      sawConversationItem = true
+
+      if (role === 'tool') {
+        items.push({
+          type: 'function_call_output',
+          call_id: message.tool_call_id ?? '',
+          output: message.content ?? ''
+        })
+
+        continue
+      }
+
+      const sourceParts = Array.isArray(message.content)
+        ? message.content.map(part => part as Record<string, unknown>)
+        : typeof message.content === 'string'
+          ? [{ type: 'text', text: message.content }]
+          : []
+
+      const content =
+        role === 'assistant'
+          ? contentToInputParts(sourceParts).map(part => ({ type: 'output_text', text: part.text }))
+          : contentToInputParts(sourceParts)
+
+      if (content.length > 0) {
+        items.push({ role: role ?? 'user', content })
+      }
+
+      for (const call of message.tool_calls ?? []) {
+        const fn = (call.function ?? {}) as Record<string, unknown>
+        items.push({
+          type: 'function_call',
+          call_id: typeof call.id === 'string' ? call.id : '',
+          name: typeof fn.name === 'string' ? fn.name : '',
+          arguments: typeof fn.arguments === 'string' ? fn.arguments : '{}'
+        })
+      }
+    }
+
+    return { instructions: instructionParts.join('\n\n'), input: items }
   }
 
   async function handleRequestLlm(params: unknown): Promise<unknown> {
@@ -80,6 +204,7 @@ export function createReverseRpc(
     const payloadObj = (params as LlmCompletionParams) || {}
     const messages = payloadObj.messages || []
     const messageCount = messages.length
+    const responsesPayload = toResponsesPayload(payloadObj)
 
     if (messageCount > MAX_MESSAGES_PER_SESSION) {
       throw new Error(
@@ -87,8 +212,14 @@ export function createReverseRpc(
       )
     }
 
-    const payloadBytes = Buffer.byteLength(JSON.stringify(messages), 'utf8')
-    const isVision = isVisionRequest(messages)
+    const payloadBytes = Buffer.byteLength(
+      JSON.stringify({ input: responsesPayload.input, instructions: responsesPayload.instructions }),
+      'utf8'
+    )
+
+    const isVision =
+      Array.isArray(responsesPayload.input) && responsesPayload.input.some(item => hasVisionContent(item.content))
+
     const maxRequestBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
     const maxSessionBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
 
@@ -96,7 +227,7 @@ export function createReverseRpc(
       throw new Error(`request_llm rejected: messages payload too large (${payloadBytes} bytes > ${maxRequestBytes}).`)
     }
 
-    sessionMessagesSent += messageCount
+    sessionMessagesSent += messageCount || (Array.isArray(responsesPayload.input) ? responsesPayload.input.length : 1)
 
     if (sessionMessagesSent > MAX_MESSAGES_PER_SESSION) {
       throw new Error(
@@ -110,8 +241,9 @@ export function createReverseRpc(
       throw new Error(`request_llm rejected: session exceeded ${maxSessionBytes} bytes (sent ${sessionBytesSent}).`)
     }
 
+    const itemCount = Array.isArray(responsesPayload.input) ? responsesPayload.input.length : 1
     log(
-      `[reverse-rpc] request_llm (${messageCount} messages, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`
+      `[reverse-rpc] request_llm (${itemCount} input items, ${payloadBytes} bytes, session ${sessionMessagesSent}/${sessionBytesSent})`
     )
 
     const token =
@@ -124,8 +256,9 @@ export function createReverseRpc(
 
     return client.post('/api/llm/completion', {
       body: {
-        max_tokens: payloadObj.max_tokens || undefined,
-        messages,
+        input: responsesPayload.input,
+        instructions: responsesPayload.instructions || undefined,
+        max_output_tokens: payloadObj.max_tokens || undefined,
         model: payloadObj.model || undefined,
         temperature: payloadObj.temperature || undefined
       },

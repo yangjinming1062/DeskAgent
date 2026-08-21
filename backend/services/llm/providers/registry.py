@@ -41,11 +41,7 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "video_gen": "https://api.minimaxi.com",
         "embedding": "https://api.minimaxi.com",
     },
-    "gemini": {
-        "llm": "https://generativelanguage.googleapis.com/v1beta/openai/",
-        "image_gen": "https://generativelanguage.googleapis.com",
-        "embedding": "https://generativelanguage.googleapis.com",
-    },
+    "gemini": {"llm": "", "image_gen": "https://generativelanguage.googleapis.com", "embedding": "https://generativelanguage.googleapis.com"},
     "grok": {
         "llm": "https://api.x.ai/v1",
         "stt": "https://api.x.ai/v1",
@@ -55,7 +51,7 @@ PROVIDER_DEFAULT_URLS: dict[str, dict[str, str]] = {
         "embedding": "",
     },
     "zhipu": {
-        "llm": "https://open.bigmodel.cn/api/paas/v4",
+        "llm": "",
         "stt": "https://open.bigmodel.cn/api/paas/v4",
         "tts": "https://open.bigmodel.cn/api/paas/v4",
         "image_gen": "https://open.bigmodel.cn/api/paas/v4",

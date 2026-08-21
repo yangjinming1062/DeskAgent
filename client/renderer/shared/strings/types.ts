@@ -241,16 +241,12 @@ export interface Translations {
         backgroundReview: string
         backgroundReviewDesc: string
         reasoningOptions: {
-          minimal: string
           low: string
-          medium: string
           high: string
-          max: string
         }
         serviceTierOptions: {
-          auto: string
-          default: string
-          flex: string
+          standard: string
+          priority: string
         }
       }
       contextCompression: {

@@ -84,6 +84,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
 from .llm_retry import call_with_retry
 from .providers import ProviderConfig, ServiceType, resolve_context_tokens
+from .responses import ResponsesContext, output_text_from_response, response_request_kwargs
 
 logger = get_logger(__name__)
 
@@ -132,9 +133,10 @@ async def chat(db: AsyncSession | None, user_id: int | None, system_prompt: str,
     provider = provider_from_config(provider_config) if provider_config is not None else await provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
-        raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
-    response = await client.chat.completions.create(model=provider.config.model, messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_payload}])
-    text = (response.choices[0].message.content or "").strip()
+        raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' does not expose the Responses API")
+    context = ResponsesContext(instructions=system_prompt, items=[{"role": "user", "content": [{"type": "input_text", "text": user_payload}]}])
+    response = await call_with_retry(client, **response_request_kwargs(model=provider.config.model, context=context))
+    text = output_text_from_response(response).strip()
     if not text:
         raise RuntimeError("prompt enhancer returned an empty response")
     return text
@@ -146,15 +148,10 @@ async def call_llm_once(llm_cfg: dict[str, Any], system_prompt: str, user_payloa
     provider_name = llm_cfg.get("provider_name", "")
     context_length = resolve_context_tokens(provider_name, ServiceType.llm)
     user_content = json.dumps(user_payload, ensure_ascii=False) if isinstance(user_payload, dict | list) else str(user_payload)
-    resp = await call_with_retry(
-        client,
-        context_length=context_length,
-        model=llm_cfg["model_name"],
-        messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}],
-        stream=False,
-        max_tokens=max_tokens,
-    )
-    return resp.choices[0].message.content if resp and resp.choices else None
+    context = ResponsesContext(instructions=system_prompt, items=[{"role": "user", "content": [{"type": "input_text", "text": user_content}]}])
+    request = response_request_kwargs(model=llm_cfg["model_name"], context=context, max_output_tokens=max_tokens)
+    resp = await call_with_retry(client, context_length=context_length, **request)
+    return output_text_from_response(resp) if resp else None
 
 
 # 中文优先（persona 是中文，前端原生处理）；"纯白平面背景"使半身头像在浅色 UI 上可展示，且作为参考图干净 —— 下游不做色键。

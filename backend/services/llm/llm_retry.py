@@ -5,10 +5,11 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from components import LLM_RETRY_MAX_SUGGESTED_DELAY, LLM_RETRY_MIN_DELAY, LLM_RETRY_MIN_TIMEOUT, SETTINGS, approx_message_tokens, get_logger
+from components import LLM_RETRY_MAX_SUGGESTED_DELAY, LLM_RETRY_MIN_DELAY, LLM_RETRY_MIN_TIMEOUT, SETTINGS, get_logger
 
 from .error_classifier import ClassifiedError, classify_api_error
-from .llm_debug import log_event, new_call_id, summarize_chat_request, summarize_chat_response, summarize_error, truncate_for_log
+from .llm_debug import log_event, new_call_id, summarize_error, summarize_llm_request, summarize_llm_response, truncate_for_log
+from .responses import approx_responses_tokens
 
 logger = get_logger(__name__)
 
@@ -72,11 +73,11 @@ async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> As
 
 async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provider: str, model: str, call_site: str, call_started: float) -> AsyncIterator:
     """透传流并累积 chunk，迭代结束时（成功 / 流中异常 / 取消）统一打一条面包屑。"""
-    chunks: list[Any] = []
+    events_count = 0
     accumulated_content = ""
     usage = None
     finish_reason: Any = None
-    tool_call_delta_count = 0
+    function_call_count = 0
     first_chunk_at: float | None = None
     error: BaseException | None = None
 
@@ -84,22 +85,24 @@ async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provide
         async for chunk in stream:
             if first_chunk_at is None:
                 first_chunk_at = time.monotonic()
-            chunks.append(chunk)
-            choices = getattr(chunk, "choices", None) or []
-            if choices:
-                delta = getattr(choices[0], "delta", None)
-                if delta is not None:
-                    content = getattr(delta, "content", None)
-                    if isinstance(content, str):
-                        accumulated_content += content
-                    if getattr(delta, "tool_calls", None):
-                        tool_call_delta_count += len(delta.tool_calls)
-                fr = getattr(choices[0], "finish_reason", None)
-                if fr:
-                    finish_reason = fr
-            chunk_usage = getattr(chunk, "usage", None)
-            if chunk_usage is not None:
-                usage = chunk_usage
+            events_count += 1
+            event_type = str(getattr(chunk, "type", ""))
+            delta = getattr(chunk, "delta", None)
+            if isinstance(delta, str):
+                accumulated_content += delta
+            if event_type == "response.output_item.done":
+                item = getattr(chunk, "item", None)
+                if getattr(item, "type", None) == "function_call":
+                    function_call_count += 1
+            if event_type in {"response.completed", "response.incomplete"}:
+                response = getattr(chunk, "response", None)
+                usage = getattr(response, "usage", usage)
+                details = getattr(response, "incomplete_details", None)
+                finish_reason = getattr(details, "reason", None) or getattr(response, "status", None)
+            else:
+                event_usage = getattr(chunk, "usage", None)
+                if event_usage is not None:
+                    usage = event_usage
             yield chunk
     except asyncio.CancelledError:
         error = asyncio.CancelledError()
@@ -111,16 +114,16 @@ async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provide
         latency_ms = int((time.monotonic() - call_started) * 1000)
         preview, original_len = truncate_for_log(accumulated_content)
         response_summary: dict[str, Any] = {
-            "num_chunks": len(chunks),
+            "num_events": events_count,
             "content_preview": preview,
             "content_original_chars": original_len,
             "finish_reason": finish_reason,
-            "tool_call_delta_count": tool_call_delta_count,
+            "function_call_count": function_call_count,
         }
         if usage is not None:
             response_summary["usage"] = {
-                "prompt_tokens": getattr(usage, "prompt_tokens", None),
-                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "input_tokens": getattr(usage, "input_tokens", None),
+                "output_tokens": getattr(usage, "output_tokens", None),
                 "total_tokens": getattr(usage, "total_tokens", None),
             }
         extras: dict[str, Any] = {"stream": True}
@@ -165,31 +168,19 @@ async def call_with_retry(
     max_delay: float | None = None,
     **create_kwargs: Any,
 ) -> Any:
-    """为 ``client.chat.completions.create(**kwargs)`` 包装超时与退避；流式返回受同一 timeout 约束的 AsyncIterator，非流式返回至少一次成功后的 SDK Response。分类器标为不可重试或重试耗尽时抛 :class:`LLMRuntimeError`。"""
+    """为 ``client.responses.create(**kwargs)`` 包装超时与退避；流式返回受同一 timeout 约束的 AsyncIterator，非流式返回至少一次成功后的 SDK Response。分类器标为不可重试或重试耗尽时抛 :class:`LLMRuntimeError`。"""
     timeout = max(timeout if timeout is not None else SETTINGS.llm_request_timeout_seconds, LLM_RETRY_MIN_TIMEOUT)
     max_attempts = max_attempts if max_attempts is not None else max(1, SETTINGS.llm_max_retry_attempts)
     base_delay = max(base_delay if base_delay is not None else SETTINGS.llm_base_retry_delay, LLM_RETRY_MIN_DELAY)
     max_delay = max(max_delay if max_delay is not None else SETTINGS.llm_max_retry_delay, base_delay)
 
     model = str(create_kwargs.get("model") or "")
-    messages = create_kwargs.get("messages")
+    input_items = create_kwargs.get("input")
     is_stream = bool(create_kwargs.get("stream"))
 
-    if create_kwargs.get("tools"):
-        raw_tools = create_kwargs["tools"]
-        wrapped_tools = []
-        for t in raw_tools:
-            if isinstance(t, dict):
-                if "type" in t and t["type"] == "function":
-                    wrapped_tools.append(t)
-                else:
-                    wrapped_tools.append({"type": "function", "function": t})
-            else:
-                wrapped_tools.append(t)
-        create_kwargs["tools"] = wrapped_tools
-
-    approx_tokens = approx_message_tokens(messages)
-    num_messages = len(messages or [])
+    instructions = str(create_kwargs.get("instructions") or "")
+    approx_tokens = approx_responses_tokens(instructions, input_items)
+    num_messages = len(input_items or [])
 
     # 提前打 request 面包屑，确保仅看失败日志的读者仍能看到已发出的 prompt。
     call_id = new_call_id()
@@ -202,7 +193,7 @@ async def call_with_retry(
         model=model,
         call_site=call_site,
         phase="request",
-        request=summarize_chat_request(create_kwargs),
+        request=summarize_llm_request(create_kwargs),
         stream=is_stream,
         context_length=context_length,
         timeout_seconds=timeout,
@@ -240,7 +231,7 @@ async def call_with_retry(
 
     for attempt in range(1, max_attempts + 1):
         try:
-            coro = client.chat.completions.create(**create_kwargs)
+            coro = client.responses.create(**create_kwargs)
             if is_stream:
                 # 一个 deadline 覆盖连接 + 迭代，避免流先花 ``timeout`` 连接再花 ``timeout`` 流式（连接段再额外封顶 60s）
                 loop = asyncio.get_running_loop()
@@ -304,7 +295,7 @@ async def call_with_retry(
         phase="response",
         latency_ms=int((time.monotonic() - call_started) * 1000),
         status="success",
-        response=summarize_chat_response(success_result),
+        response=summarize_llm_response(success_result),
         stream=False,
     )
     return success_result

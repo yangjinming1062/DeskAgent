@@ -5,7 +5,7 @@ from typing import Any
 from .affect import BUILTIN_EMOTIONS
 from .chat_emitter import Emitter, HeadlessEmitter
 from .history import build_session_messages
-from .message_sanitization import truncate_chat_history
+from .message_sanitization import truncate_responses_context
 from .system_prompt import build_system_prompt, build_system_prompt_parts
 from .think_scrubber import StreamingThinkScrubber
 
@@ -31,7 +31,7 @@ __all__ = [
     "HeadlessEmitter",
     "build_session_messages",
     "persist_extra_user_messages",
-    "truncate_chat_history",
+    "truncate_responses_context",
     "build_system_prompt",
     "build_system_prompt_parts",
     "StreamingThinkScrubber",

@@ -7,7 +7,7 @@ from typing import Any
 
 from components import TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
-from ..llm import FailoverReason, LLMRuntimeError, call_with_retry
+from ..llm import FailoverReason, LLMRuntimeError, ResponsesContext, call_with_retry, response_items_to_chat_tool_calls, response_request_kwargs, response_usage
 from .affect import AffectScrubber
 from .bubble import BubbleEvent, BubbleSplitter
 from .chat_emitter import Emitter
@@ -61,28 +61,19 @@ def _ensure_tool_call_ids(tool_calls_list: list[dict]) -> None:
 
 
 def _usage_payload(usage: Any) -> dict:
-    payload = {"prompt_tokens": getattr(usage, "prompt_tokens", 0), "completion_tokens": getattr(usage, "completion_tokens", 0), "total_tokens": getattr(usage, "total_tokens", 0)}
-    if details := getattr(usage, "completion_tokens_details", None):
+    payload = response_usage(usage)
+    if details := getattr(usage, "output_tokens_details", None):
         payload["reasoning_tokens"] = getattr(details, "reasoning_tokens", 0)
     return payload
-
-
-def _accumulate_tool_call_delta(tool_calls_dict: dict[int, dict], tc: Any) -> None:
-    """仅参数增量时 ``tc.function`` 为 None，读取 name/arguments 前需判空。"""
-    fn = tc.function
-    if tc.index not in tool_calls_dict:
-        tool_calls_dict[tc.index] = {"id": tc.id, "type": "function", "function": {"name": fn.name if fn else "", "arguments": ""}}
-    if fn and fn.arguments:
-        tool_calls_dict[tc.index]["function"]["arguments"] += fn.arguments
 
 
 async def _stream_llm_response(
     emitter: Emitter,
     model_name: str,
-    current_messages: list[dict],
+    context: ResponsesContext,
     active_schemas: list[dict],
     ctx_length: int,
-    client: Any,
+    provider: Any,
     *,
     on_first_chunk: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
@@ -90,18 +81,19 @@ async def _stream_llm_response(
     allowed_emotions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
-    kwargs: dict = {"model": model_name, "messages": current_messages, "stream": True, "stream_options": {"include_usage": True}}
-    if active_schemas:
-        kwargs["tools"] = active_schemas
-    if reasoning_effort:
-        kwargs["reasoning_effort"] = reasoning_effort
-    if service_tier:
-        kwargs["service_tier"] = service_tier
+    client = provider.raw_client()
+    reasoning = {"effort": reasoning_effort} if reasoning_effort and reasoning_effort in getattr(provider, "REASONING_EFFORTS", frozenset()) else None
+    selected_tier = service_tier if service_tier and service_tier in getattr(provider, "SERVICE_TIERS", frozenset()) else None
+    kwargs = response_request_kwargs(model=model_name, context=context, tools=active_schemas, stream=True, reasoning=reasoning, service_tier=selected_tier)
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
-    image_parts = [m for m in current_messages if isinstance(m.get("content"), list) and any(isinstance(p, dict) and p.get("type") == "image_url" for p in m["content"])]
-    if image_parts:
-        logger.info("multimodal request shape", extra={"model_name": model_name, "image_messages": len(image_parts), "sample_content": image_parts[0]["content"]})
+    image_items = [
+        item
+        for item in context.items
+        if isinstance(item.get("content"), list) and any(isinstance(part, dict) and part.get("type") in {"input_image", "image_url"} for part in item["content"])
+    ]
+    if image_items:
+        logger.info("multimodal request shape", extra={"model_name": model_name, "image_items": len(image_items)})
 
     turn_start_time = time.monotonic()
     try:
@@ -112,7 +104,7 @@ async def _stream_llm_response(
 
     turn_parts: list[str] = []
     bubble_parts: list[str] = []
-    tool_calls_dict: dict[int, dict] = {}
+    tool_calls_list: list[dict] = []
     final_prompt_tokens = final_completion_tokens = 0
     final_usage_payload: dict | None = None
 
@@ -154,19 +146,23 @@ async def _stream_llm_response(
                     on_first_chunk()
                     on_first_chunk = None
                 await _ensure_message_start()
-                # 部分供应商的最终 chunk 只携带 usage、choices 为空；直接跳过避免 chunk.choices[0] 崩溃。
-                if not chunk.choices:
-                    continue
-                delta = chunk.choices[0].delta
-                if delta and delta.content:
-                    await _feed_clean(scrubber.feed(affect.feed(delta.content)))
-                if delta and delta.tool_calls:
-                    for tc in delta.tool_calls:
-                        _accumulate_tool_call_delta(tool_calls_dict, tc)
-                if hasattr(chunk, "usage") and chunk.usage:
-                    final_prompt_tokens = getattr(chunk.usage, "prompt_tokens", 0)
-                    final_completion_tokens = getattr(chunk.usage, "completion_tokens", 0)
-                    final_usage_payload = _usage_payload(chunk.usage)
+                event_type = str(getattr(chunk, "type", ""))
+                if event_type == "response.output_text.delta":
+                    await _feed_clean(scrubber.feed(affect.feed(chunk.delta)))
+                elif event_type == "response.output_item.done":
+                    item = getattr(chunk, "item", None)
+                    if getattr(item, "type", None) == "function_call":
+                        tool_calls_list.extend(response_items_to_chat_tool_calls([item]))
+                    elif getattr(item, "type", None) == "reasoning" and hasattr(item, "model_dump"):
+                        context.append(item.model_dump(exclude_none=True))
+                elif event_type in {"response.completed", "response.incomplete"}:
+                    if usage := getattr(getattr(chunk, "response", None), "usage", None):
+                        final_prompt_tokens, final_completion_tokens = usage.input_tokens, usage.output_tokens
+                        final_usage_payload = _usage_payload(usage)
+                elif event_type == "response.failed":
+                    response = getattr(chunk, "response", None)
+                    error = getattr(response, "error", None)
+                    raise RuntimeError(getattr(error, "message", None) or "LLM response failed")
         except LLMRuntimeError:
             # 流中途分类错误：已发出 chunk 后供应商 4xx；orchestrator 看到 stream_emitted=True 拒绝换供应商，抛出此异常并发出收尾 error 帧，让渲染端拿到干净的转写。
             raise
@@ -183,7 +179,6 @@ async def _stream_llm_response(
 
     turn_duration_ms = int((time.monotonic() - turn_start_time) * 1000)
 
-    tool_calls_list = list(tool_calls_dict.values())  # 插入顺序即为流式顺序
     turn_content = "\n\n".join(turn_parts)
 
     return _LLMTurnResult(

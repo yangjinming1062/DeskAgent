@@ -19,7 +19,7 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 
 - **剥离大脑逻辑**：系统提示词、供应商适配、对话记忆全部由后端承载。Runner 是单纯的"接 JSON-RPC 工具调用 → 执行 → 返回结果"的执行器。
 - **零凭证 / 无网络出站**：Runner 不保存任何用户 Token 或云端地址，无法直接访问后端。所有需 LLM 的工具走反向 RPC 经客户端代为调用（[PROTOCOL.md §3](../PROTOCOL.md)）。**这是不可破坏的不变量**——即便 prompt 注入攻陷 Runner 工具逻辑，最坏情况也只是借客户端调用受限用户账户下的 LLM，不会泄露后端凭证。
-- **供应商范围**：产品 LLM 交互只面向 OpenAI-compatible 供应商，不接 Anthropic。nullable union 原样传递，由目标供应商决定能否接受。
+- **Responses 输入边界**：Runner 工具可提交原生 Responses 指令与输入项，也可提交旧消息数组；Client 在零凭证代理边界统一成后端契约，供应商选择与兼容性过滤由后端承载。
 - **环境状态与工具解耦**：终端环境共享态（活跃实例表、工厂、清理线程）下沉到终端工具的 environment 子包，文件与代码执行工具跨包共享同一批环境实例，绕开仍含命令处理 + 安全审批逻辑的终端主模块，避免循环依赖。
 - **能力上报尽量运行时探测**：麦克风（枚举 WASAPI/AVFoundation 设备）、屏幕捕获（枚举监视器）、系统活跃度（真实调底层 API）是运行时探测；本地 STT/TTS 是执行原生加载器的 import 探测（其 import 会加载推理二进制，失败即不可用）。不用存在性检查——那会欺骗 UI 让用户点不能用按钮。
 - **音频引擎默认在基础 wheel 内**：本地语音栈核心依赖（faster-whisper / piper-tts / sounddevice / numpy）从基础 wheel 直接可用（[DESIGN §7](../DESIGN.md)）；`pyttsx3` 用平台 marker 限制（macOS / Windows 上有 SAPI5 / NSSpeechSynthesizer 兜底）。运行时仍要求系统 PATH 有 `ffmpeg`。

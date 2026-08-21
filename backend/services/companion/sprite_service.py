@@ -14,7 +14,18 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import MissingLlmConfigError, ServiceType, provider_from_config, resolve, resolve_provider_chain, resolve_vision_chain
+from ..llm import (
+    MissingLlmConfigError,
+    ResponsesContext,
+    ServiceType,
+    call_with_retry,
+    output_text_from_response,
+    provider_from_config,
+    resolve,
+    resolve_provider_chain,
+    resolve_vision_chain,
+    response_request_kwargs,
+)
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
@@ -273,15 +284,18 @@ async def _vision_llm_call(db: AsyncSession | None, user_id: int, system_prompt:
     provider = provider_from_config(chain[0])
     client = provider.raw_client()
     if client is None:
-        raise MissingLlmConfigError(f"vision provider '{provider.provider_name}' is not OpenAI-compatible")
+        raise MissingLlmConfigError(f"vision provider '{provider.provider_name}' does not expose the Responses API")
 
-    content: list[dict[str, Any]] = [{"type": "text", "text": text_instruction}]
+    content: list[dict[str, Any]] = [{"type": "input_text", "text": text_instruction}]
     for uri in image_data_uris:
-        content.append({"type": "image_url", "image_url": {"url": uri}})
+        content.append({"type": "input_image", "image_url": uri})
 
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": content}]
-    response = await client.chat.completions.create(model=provider.config.model, messages=messages, **create_kwargs)
-    return (response.choices[0].message.content or "").strip()
+    text: dict[str, Any] | None = None
+    if "response_format" in create_kwargs:
+        text = {"format": create_kwargs["response_format"]}
+    context = ResponsesContext(instructions=system_prompt, items=[{"role": "user", "content": content}])
+    response = await call_with_retry(client, **response_request_kwargs(model=provider.config.model, context=context, text=text))
+    return output_text_from_response(response).strip()
 
 
 async def _fetch_image_bytes(url: str) -> bytes | None:

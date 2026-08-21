@@ -34,86 +34,63 @@ def _summarize_content_part(part: Any) -> Any:
     if not isinstance(part, dict):
         return f"<{type(part).__name__}>"
     ptype = part.get("type")
-    if ptype == "text":
-        return {"type": "text", "text": truncate_for_log(part.get("text", ""))[0]}
-    if ptype == "image_url":
+    if ptype in {"text", "input_text", "output_text"}:
+        return {"type": ptype, "text": truncate_for_log(part.get("text", ""))[0]}
+    if ptype in {"image_url", "input_image"}:
         # 省略 URL：图像内容可能带 base64 与供应商签名的过期 URL
-        url = part.get("image_url") or {}
-        return {"type": "image_url", "image_url": {"url": "<elided>" if isinstance(url, dict) and url.get("url") else url}}
+        url = part.get("image_url", "")
+        return {"type": ptype, "image_url": "<elided>" if url else None}
     return {"type": ptype or "unknown", "keys": sorted(part.keys())}
 
 
-def _summarize_tool_call(tc: Any) -> dict[str, Any]:
-    if not isinstance(tc, dict):
-        return {"id": None, "function": {"name": None, "arguments_preview": None}}
-    fn = tc.get("function") or {}
-    return {"id": tc.get("id"), "function": {"name": fn.get("name"), "arguments_preview": truncate_for_log(fn.get("arguments") or "")[0]}}
-
-
-def _summarize_message(msg: Any) -> dict[str, Any]:
-    if not isinstance(msg, dict):
-        return {"role": f"<{type(msg).__name__}>"}
-    out: dict[str, Any] = {"role": msg.get("role")}
-    if msg.get("name"):
-        out["name"] = msg["name"]
-    content = msg.get("content")
-    if isinstance(content, list):
-        out["content_preview"] = [_summarize_content_part(p) for p in content]
-    elif content is None:
-        out["content_preview"] = None
-    else:
-        preview, original = truncate_for_log(content)
-        out["content_preview"] = preview
-        if original:
-            out["content_original_chars"] = original
-    if msg.get("tool_calls"):
-        out["tool_calls"] = [_summarize_tool_call(tc) for tc in msg["tool_calls"]]
-    if msg.get("tool_call_id"):
-        out["tool_call_id"] = msg["tool_call_id"]
+def _summarize_response_item(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {"type": getattr(item, "type", f"<{type(item).__name__}>")}
+    out: dict[str, Any] = {"type": item.get("type") or item.get("role", "unknown")}
+    if item.get("role"):
+        out["role"] = item["role"]
+    if item.get("name"):
+        out["name"] = item["name"]
+    if isinstance(item.get("content"), list):
+        out["content_preview"] = [_summarize_content_part(part) for part in item["content"]]
+    elif isinstance(item.get("content"), str):
+        out["content_preview"] = truncate_for_log(item["content"])[0]
+    if item.get("call_id"):
+        out["call_id"] = item["call_id"]
+    if item.get("arguments") is not None:
+        out["arguments_preview"] = truncate_for_log(item["arguments"])[0]
+    if item.get("output") is not None:
+        out["output_preview"] = truncate_for_log(item["output"])[0]
     return out
 
 
-def summarize_chat_request(kwargs: dict[str, Any]) -> dict[str, Any]:
-    """将 ``client.chat.completions.create(**kwargs)`` 压缩为日志安全字典（model、截断的 messages、工具名、采样参数）；排除 ``stream_options`` 等无诊断价值的 SDK 标志。"""
+def summarize_llm_request(kwargs: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {"model": kwargs.get("model"), "stream": bool(kwargs.get("stream"))}
-    if (messages := kwargs.get("messages")) is not None:
-        out["messages"] = [_summarize_message(m) for m in messages]
-        out["num_messages"] = len(messages)
+    if (instructions := kwargs.get("instructions")) is not None:
+        out["instructions_preview"] = truncate_for_log(instructions)[0]
+    if (items := kwargs.get("input")) is not None:
+        out["input"] = [_summarize_response_item(item) for item in items]
+        out["num_input_items"] = len(items)
     if tools := kwargs.get("tools"):
-        out["tools"] = [
-            {"type": t.get("type") if isinstance(t, dict) else None, "function": ((t.get("function") or {}).get("name") if isinstance(t, dict) else None)} for t in tools
-        ]
+        out["tools"] = [{"type": tool.get("type"), "name": tool.get("name")} for tool in tools if isinstance(tool, dict)]
         out["num_tools"] = len(tools)
-    for key in ("temperature", "top_p", "max_tokens", "max_completion_tokens", "reasoning_effort", "service_tier", "response_format"):
+    for key in ("temperature", "top_p", "max_output_tokens", "reasoning", "service_tier", "text"):
         if kwargs.get(key) is not None:
             out[key] = kwargs[key]
     return out
 
 
-def summarize_chat_response(response: Any) -> dict[str, Any]:
-    """从 ChatCompletion 中抽出 content / usage / finish_reason；容忍缺失字段（非 OpenAI 供应商偶尔省略 ``usage``）。"""
+def summarize_llm_response(response: Any) -> dict[str, Any]:
     if response is None:
         return {"present": False}
-    out: dict[str, Any] = {"present": True}
-    if choices := getattr(response, "choices", None):
-        choice0 = choices[0] if choices else None
-        if choice0 is not None:
-            if msg := getattr(choice0, "message", None):
-                content = getattr(msg, "content", None)
-                if isinstance(content, str):
-                    preview, original = truncate_for_log(content)
-                    out["content_preview"] = preview
-                    if original:
-                        out["content_original_chars"] = original
-                elif content is not None:
-                    out["content_preview"] = f"<{type(content).__name__}>"
-                if tool_calls := getattr(msg, "tool_calls", None):
-                    out["tool_calls"] = [{"id": getattr(tc, "id", None), "function": getattr(getattr(tc, "function", None), "name", None)} for tc in tool_calls]
-            out["finish_reason"] = getattr(choice0, "finish_reason", None)
+    out: dict[str, Any] = {"present": True, "id": getattr(response, "id", None), "status": getattr(response, "status", None)}
+    output = getattr(response, "output", None) or []
+    out["output"] = [_summarize_response_item(item) for item in output]
+    out["num_output_items"] = len(output)
     if usage := getattr(response, "usage", None):
         out["usage"] = {
-            "prompt_tokens": getattr(usage, "prompt_tokens", None),
-            "completion_tokens": getattr(usage, "completion_tokens", None),
+            "input_tokens": getattr(usage, "input_tokens", None),
+            "output_tokens": getattr(usage, "output_tokens", None),
             "total_tokens": getattr(usage, "total_tokens", None),
         }
     return out
@@ -170,4 +147,4 @@ def new_call_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-__all__ = ["DEBUG_LOGGER_NAME", "is_enabled", "log_event", "new_call_id", "summarize_chat_request", "summarize_chat_response", "summarize_error", "truncate_for_log"]
+__all__ = ["DEBUG_LOGGER_NAME", "is_enabled", "log_event", "new_call_id", "summarize_error", "summarize_llm_request", "summarize_llm_response", "truncate_for_log"]

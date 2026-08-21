@@ -3,7 +3,16 @@ from typing import Protocol
 from components import get_logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import ProviderConfig, provider_from_config, resolve_vision_chain, strip_think_blocks
+from ..llm import (
+    ProviderConfig,
+    ResponsesContext,
+    call_with_retry,
+    output_text_from_response,
+    provider_from_config,
+    resolve_vision_chain,
+    response_request_kwargs,
+    strip_think_blocks,
+)
 
 logger = get_logger(__name__)
 
@@ -67,12 +76,12 @@ async def normalize_outfit(
                 provider = provider_from_config(chain[0])
                 client = provider.raw_client()
                 if client is not None:
-                    messages: list = [
-                        {"role": "system", "content": _OUTFIT_NORMALIZER_SYSTEM_PROMPT},
-                        {"role": "user", "content": [{"type": "text", "text": user_payload}, {"type": "image_url", "image_url": {"url": image_data_uri}}]},
-                    ]
-                    response = await client.chat.completions.create(model=provider.config.model, messages=messages)
-                    result = _clean(response.choices[0].message.content or "")
+                    context = ResponsesContext(
+                        instructions=_OUTFIT_NORMALIZER_SYSTEM_PROMPT,
+                        items=[{"role": "user", "content": [{"type": "input_text", "text": user_payload}, {"type": "input_image", "image_url": image_data_uri}]}],
+                    )
+                    response = await call_with_retry(client, **response_request_kwargs(model=provider.config.model, context=context))
+                    result = _clean(output_text_from_response(response))
                     if result:
                         return result[:_MAX_OUTFIT_LEN]
         except Exception:

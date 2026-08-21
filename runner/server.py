@@ -113,32 +113,9 @@ async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
 
 
 def _extract_llm_content(result: dict[str, Any]) -> str:
-    """从 Backend 补全响应里抽文本。
-
-    ``/api/llm/completion`` 代理返回 ``{"content": str, "usage": ...}``(旧规整形式)或原始 OpenAI 兼容
-    ``{"choices": [{"message": {"content": str}}], ...}``; 部分供应商用内容块列表
-    (``{"choices": [{"message": {"content": [{"type": "text", "text": "..."}]}}]}``)。没有文本键时返回
-    ``""``, 调用方能优雅降级而不至于整个工具调用失败。
-    """
-    if "content" in result and isinstance(result["content"], str):
-        return result["content"]
-    if "text" in result and isinstance(result["text"], str):
-        return result["text"]
-    choices = result.get("choices")
-    if isinstance(choices, list) and choices:
-        message = choices[0].get("message") if isinstance(choices[0], dict) else None
-        if isinstance(message, dict):
-            inner = message.get("content")
-            if isinstance(inner, str):
-                return inner
-            if isinstance(inner, list):
-                parts = []
-                for block in inner:
-                    if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
-                        parts.append(block["text"])
-                if parts:
-                    return "".join(parts)
-    return ""
+    """``/api/llm/completion`` 代理返回 ``{"content": str, "usage": ...}``。缺失时返回空串，让调用方优雅处理而非让整个工具调用失败。"""
+    content = result.get("content")
+    return content if isinstance(content, str) else ""
 
 
 async def process_request(ws: Any, req: dict[str, Any]) -> None:

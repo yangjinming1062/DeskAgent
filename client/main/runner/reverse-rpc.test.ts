@@ -100,12 +100,61 @@ test('handleRequest() calls client().post() with correct params', async () => {
   assert.equal(fakeClient.lastPost?.path, '/api/llm/completion')
   assert.equal(fakeClient.lastPost?.options?.token, 'my-token')
   const body = fakeClient.lastPost?.options?.body as Record<string, unknown>
-  assert.deepEqual(body?.messages, [{ content: 'hello', role: 'user' }])
+  assert.deepEqual(body?.input, [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }])
+  assert.equal(body?.instructions, undefined)
   assert.equal(body?.model, 'gpt-x')
   assert.equal(body?.temperature, 0.7)
-  assert.equal(body?.max_tokens, 256)
+  assert.equal(body?.max_output_tokens, 256)
   assert.ok(Number.isFinite(fakeClient.lastPost?.options?.timeoutMs))
   assert.equal(result.content, 'response')
+})
+
+test('handleRequest() maps tool trajectories to Responses input items', async () => {
+  fakeClient = makeFakeClient()
+
+  const handler = createReverseRpc({
+    backendSession: makeFakeSession(),
+    log: () => {}
+  })
+
+  await handler('request_llm', {
+    messages: [
+      { content: 'sys', role: 'system' },
+      { content: 'look', role: 'user' },
+      {
+        content: undefined,
+        role: 'assistant',
+        tool_calls: [{ id: 'call_1', function: { arguments: '{}', name: 'demo' } }]
+      },
+      { content: 'result', role: 'tool', tool_call_id: 'call_1' }
+    ]
+  })
+
+  const body = fakeClient.lastPost?.options?.body as Record<string, unknown>
+  assert.equal(body?.instructions, 'sys')
+  assert.deepEqual(body?.input, [
+    { role: 'user', content: [{ type: 'input_text', text: 'look' }] },
+    { arguments: '{}', call_id: 'call_1', name: 'demo', type: 'function_call' },
+    { call_id: 'call_1', output: 'result', type: 'function_call_output' }
+  ])
+})
+
+test('handleRequest() sends native Responses payloads without message conversion', async () => {
+  fakeClient = makeFakeClient()
+
+  const handler = createReverseRpc({
+    backendSession: makeFakeSession(),
+    log: () => {}
+  })
+
+  await handler('request_llm', {
+    input: [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }],
+    instructions: 'sys'
+  })
+
+  const body = fakeClient.lastPost?.options?.body as Record<string, unknown>
+  assert.equal(body?.instructions, 'sys')
+  assert.deepEqual(body?.input, [{ role: 'user', content: [{ type: 'input_text', text: 'hello' }] }])
 })
 
 test('handleRequest() propagates client errors', async () => {

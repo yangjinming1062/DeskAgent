@@ -506,10 +506,10 @@ def test_affect_scrubber_rejects_unknown_emotion():
 
 
 class _MockResponse:
-    """充当 check_affect 读取的 OpenAI 响应形状最小替身。"""
+    """充当 check_affect 读取的 Responses 输出形状最小替身。"""
 
     def __init__(self, content: str):
-        self.choices = [type("Choice", (), {"message": type("Msg", (), {"content": content})()})()]
+        self.output = [{"type": "message", "content": [{"type": "output_text", "text": content}]}]
 
 
 async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):

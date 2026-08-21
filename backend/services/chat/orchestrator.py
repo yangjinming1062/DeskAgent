@@ -9,7 +9,7 @@ from ..gateway import RuntimeSession
 from ..llm import LLMRuntimeError, MissingLlmConfigError, ServiceType, compress_history_if_needed, execute_with_fallback, resolve_context_tokens
 from ..tools import ToolCallGuardrailController, schema_name
 from .chat_emitter import Emitter
-from .message_sanitization import truncate_chat_history
+from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
@@ -48,8 +48,8 @@ async def run_chat_turn(
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
     service_tier = _parse_service_tier(effective_settings.get("agent.service_tier") or effective_settings.get("service_tier"))
-    compressed_messages, compress_info = await compress_history_if_needed(
-        inputs.messages,
+    compressed_context, compress_info = await compress_history_if_needed(
+        inputs.context,
         client=inputs.client,
         model=inputs.model_name,
         context_length=inputs.ctx_length,
@@ -57,7 +57,7 @@ async def run_chat_turn(
         threshold_ratio=compression_threshold,
         language=effective_settings.get("language", DEFAULT_LANGUAGE),
     )
-    # 持久化压缩检查点，使下一轮 _history_to_messages 从此开始读取；被压缩的消息仍留在 DB，但不再进入 LLM 读路径。对所有会话类型均生效。
+    # 持久化压缩检查点，使下一轮历史重建从此开始读取；被压缩的消息仍留在 DB，但不再进入 LLM 读路径。对所有会话类型均生效。
     if compress_info is not None:
         async with session_scope() as db:
             db.add(
@@ -69,7 +69,7 @@ async def run_chat_turn(
                 )
             )
             await db.commit()
-    current_messages = truncate_chat_history(compressed_messages)
+    current_context = truncate_responses_context(compressed_context)
 
     guardrails = ToolCallGuardrailController()
     budget = IterationBudget(max_total=AGENT_MAX_LOOP_TURNS)
@@ -96,9 +96,8 @@ async def run_chat_turn(
             stream_emitted = False
 
             async def _call(provider):
-                client = provider.raw_client()
-                if client is None:
-                    raise RuntimeError(f"provider {provider.provider_name} is not OpenAI-compatible")
+                if provider.raw_client() is None:
+                    raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
                 model_for_slot = inputs.model_override or provider.config.model
                 # 渲染端钉住的窗口优先；否则按供应商重新解析，使回退供应商更小的默认窗口生效。
                 if inputs.context_tokens_override is not None:
@@ -108,10 +107,10 @@ async def run_chat_turn(
                 return await _stream_llm_response(
                     emitter,
                     model_for_slot,
-                    current_messages,
+                    current_context,
                     active_schemas,
                     slot_ctx_length,
-                    client,
+                    provider,
                     on_first_chunk=set_stream_emitted,
                     reasoning_effort=reasoning_effort,
                     service_tier=service_tier,
@@ -134,7 +133,7 @@ async def run_chat_turn(
                 await _emit_llm_error(emitter, exc)
                 break
             except (MissingLlmConfigError, RuntimeError) as exc:
-                # 空链或槽位供应商非 OpenAI 兼容：仅在无回退时派发器才暴露此类错误，输出定制化错误并结束本轮。
+                # 空链或槽位供应商未暴露 Responses API：仅在无回退时派发器才暴露此类错误，输出定制化错误并结束本轮。
                 logger.warning("LLM chain failed to start: %s", exc)
                 await emitter.send_json({"type": "error", "message": f"LLM unavailable: {exc}"})
                 break
@@ -156,7 +155,7 @@ async def run_chat_turn(
                     llm_result.turn_duration_ms,
                     llm_config,
                     inputs.first_user_msg_content,
-                    current_messages,
+                    current_context,
                     track_task,
                     emotion=llm_result.emotion,
                     action=llm_result.action,
@@ -181,7 +180,7 @@ async def run_chat_turn(
                 llm_result.final_completion_tokens,
                 llm_result.turn_duration_ms,
                 dispatch_ctx,
-                current_messages,
+                current_context,
                 active_tool_names,
                 schemas_by_name,
             )

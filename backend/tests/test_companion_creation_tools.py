@@ -149,7 +149,7 @@ def test_affect_trace_reaches_llm_context():
     """status_affect 行不能被从 LLM 上下文中过滤掉——纯 affect 反应必须保留到下一轮，否则伙伴就忘了它表达过肢体语言回复。"""
 
     from modules.conversation import Message
-    from services.chat.turn_inputs import _history_to_messages
+    from services.chat.turn_inputs import _history_to_responses_context
     from services.conversation import AFFECT_TRACE_SUBTYPE
 
     msgs = [
@@ -159,8 +159,14 @@ def test_affect_trace_reaches_llm_context():
         ),
         Message(role="assistant", content="（戳了戳精灵）", subtype="status_reaction"),
     ]
-    out = _history_to_messages(msgs, "sys", drop_tool_intermediates=True)
-    assistant_contents = [m["content"] for m in out if m.get("role") == "assistant"]
+    context = _history_to_responses_context(msgs, "sys", drop_tool_intermediates=True)
+    assistant_contents = [
+        part["text"]
+        for item in context.items
+        if item.get("role") == "assistant"
+        for part in item.get("content", [])
+        if part.get("type") == "output_text"
+    ]
 
     assert "[affect:pout]" in assistant_contents
     assert "（戳了戳精灵）" not in assistant_contents  # status_reaction 仅 UI

@@ -6,7 +6,7 @@ from modules.auth import fingerprint_api_key
 from modules.settings import UserSetting
 
 DEFAULT_CONFIG = {
-    "agent": {"reasoning_effort": "medium", "service_tier": "auto"},
+    "agent": {"reasoning_effort": "low", "service_tier": "standard"},
     "chat": {"enable_context_compression": True, "context_compression_threshold": 0.70},
     "stt": {"enabled": True, "engine": "auto", "silent_fallback": True},
     "tts": {"engine": "auto"},

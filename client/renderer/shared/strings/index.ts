@@ -240,20 +240,16 @@ export const strings: Translations = {
         reasoningEffort: '推理深度',
         reasoningEffortDesc: '模型每轮推理的强度。',
         serviceTier: '服务等级',
-        serviceTierDesc: 'LLM服务等级：auto 由模型自行选择，default 是默认档，flex 倾向成本更低的资源调度。',
+        serviceTierDesc: 'LLM服务等级：standard 是默认档，priority 获得优先调度但计费更高。',
         backgroundReview: '后台记忆整理',
         backgroundReviewDesc: '异步从历史会话中抽取记忆。',
         reasoningOptions: {
-          minimal: '最低',
           low: '低',
-          medium: '中',
-          high: '高',
-          max: '最高'
+          high: '高'
         },
         serviceTierOptions: {
-          auto: '自动',
-          default: '默认',
-          flex: '灵活(Flex)'
+          standard: '标准',
+          priority: '优先'
         }
       },
       contextCompression: {

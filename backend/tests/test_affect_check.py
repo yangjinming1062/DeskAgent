@@ -6,14 +6,9 @@ import pytest
 from modules.companion import Persona
 
 
-class _MockChoice:
-    def __init__(self, content):
-        self.message = type("Msg", (), {"content": content})()
-
-
 class _MockResponse:
     def __init__(self, content: str):
-        self.choices = [_MockChoice(content)]
+        self.output = [{"type": "message", "content": [{"type": "output_text", "text": content}]}]
 
 
 async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):

@@ -1,9 +1,10 @@
 import json
 from typing import Any
 
-from components import CHARS_PER_TOKEN, CONTEXT_SUMMARY_HEADROOM_FACTOR, DEFAULT_LANGUAGE, SETTINGS, get_logger
+from components import CONTEXT_SUMMARY_HEADROOM_FACTOR, DEFAULT_LANGUAGE, SETTINGS, get_logger
 
 from .llm_retry import call_with_retry
+from .responses import ResponsesContext, approx_context_tokens, output_text_from_response, response_request_kwargs, response_was_truncated
 
 logger = get_logger(__name__)
 
@@ -59,36 +60,6 @@ def _summary_prompt(language: str) -> str:
     return _SUMMARY_PROMPTS.get(lang, _SUMMARY_PROMPTS[DEFAULT_LANGUAGE])
 
 
-def _approx_tokens(messages: list[dict[str, Any]] | None) -> int:
-    """估算 token；优先使用消息上记录的 ``completion_tokens``，缺失时回退按字符估算。"""
-    if not messages:
-        return 0
-    tokens = 0
-    for m in messages:
-        if m.get("role") == "assistant" and m.get("completion_tokens"):
-            tokens += m["completion_tokens"]
-            continue
-        chars = 0
-        match m.get("content"):
-            case str() as text:
-                chars += len(text)
-            case list() as parts:
-                chars += sum(len(p["text"]) for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str))
-        if tool_calls := m.get("tool_calls"):
-            chars += len(str(tool_calls))
-        tokens += chars // CHARS_PER_TOKEN
-    return tokens
-
-
-def _split_system_and_rest(messages: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """稳定的 system 内容不可被摘要替换 —— 它承载会话级指令。"""
-    system_msgs: list[dict[str, Any]] = []
-    rest: list[dict[str, Any]] = []
-    for m in messages:
-        (system_msgs if not system_msgs and m.get("role") == "system" else rest).append(m)
-    return system_msgs, rest
-
-
 def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: int, preserve_recent: int = 4) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """挑选最旧的连续非 system 块进行压缩；保留最近的若干条消息不动。"""
     if len(rest) <= preserve_recent + 1:
@@ -101,20 +72,25 @@ def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: 
 
 
 async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int, language: str = DEFAULT_LANGUAGE) -> tuple[str, bool]:
-    """通过 LLM 对 ``block`` 生成摘要；``was_truncated`` 为 True 表示 ``finish_reason == "length"``，调用方应回退到 ``truncate_chat_history``。"""
-    summary_messages = [
-        {"role": "system", "content": _summary_prompt(language)},
-        {"role": "user", "content": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}"},
-    ]
-    response = await call_with_retry(client, model=model, messages=summary_messages, temperature=0.0, max_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR)
-    if not response.choices:
-        return "", True
-    content = response.choices[0].message.content or ""
-    return content.strip(), getattr(response.choices[0], "finish_reason", None) == "length"
+    """通过 Responses API 对输入项生成摘要；输出截断时保留原上下文。"""
+    context = ResponsesContext(
+        instructions=_summary_prompt(language),
+        items=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": f"Summarize this conversation history. Target: ~{target_tokens} tokens.\n\n{json.dumps(block, ensure_ascii=False, default=str)}"}
+                ],
+            }
+        ],
+    )
+    request = response_request_kwargs(model=model, context=context, temperature=0.0, max_output_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR)
+    response = await call_with_retry(client, **request)
+    return output_text_from_response(response).strip(), response_was_truncated(response)
 
 
 async def compress_history_if_needed(
-    messages: list[dict[str, Any]],
+    context: ResponsesContext,
     *,
     client: Any,
     model: str,
@@ -124,51 +100,50 @@ async def compress_history_if_needed(
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
     language: str = DEFAULT_LANGUAGE,
-) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    """按需压缩历史；成功返回 ``(compressed_messages, compress_info)``，失败或无需压缩返回 ``(messages, None)``，保证 ``truncate_chat_history`` 是确定性兜底。"""
+) -> tuple[ResponsesContext, dict[str, Any] | None]:
+    """按需压缩历史；成功返回压缩后的 Responses 上下文，失败或无需压缩返回原上下文。"""
     if enabled is None:
         enabled = SETTINGS.enable_context_compression
     if not enabled:
-        return messages, None
+        return context, None
 
     threshold = threshold_ratio if threshold_ratio is not None else SETTINGS.context_compression_threshold
     target = target_tokens if target_tokens is not None else SETTINGS.context_summary_target_tokens
     cap = max_input_messages if max_input_messages is not None else SETTINGS.context_summary_max_input_messages
 
-    current_tokens = _approx_tokens(messages)
+    current_tokens = approx_context_tokens(context)
     if context_length <= 0 or current_tokens < context_length * threshold:
-        return messages, None
+        return context, None
 
-    system_msgs, rest = _split_system_and_rest(messages)
-    block, keep = _pick_compressible_block(rest, max_input_messages=cap)
+    block, keep = _pick_compressible_block(context.items, max_input_messages=cap)
     if not block:
-        return messages, None
+        return context, None
 
     try:
         summary, was_truncated = await _summarize_block(block, client=client, model=model, target_tokens=target, language=language)
     except Exception as exc:
         logger.warning("context_compressor: summary call failed, leaving history unchanged", extra={"error": str(exc)})
-        return messages, None
+        return context, None
 
     if was_truncated:
         logger.warning("context_compressor: LLM hit max_tokens cap while summarizing, leaving history unchanged", extra={"message_count": len(block)})
-        return messages, None
+        return context, None
 
     if not summary:
         logger.info("context_compressor: LLM returned empty summary; leaving history unchanged")
-        return messages, None
+        return context, None
 
     replaced_count = len(block)
-    placeholder = {"role": "user", "content": f"[Conversation summary — {replaced_count} earlier turns compressed]\n\n{summary}"}
-    new_messages = [*system_msgs, placeholder, *keep]
+    placeholder = {"role": "user", "content": [{"type": "input_text", "text": f"[Conversation summary — {replaced_count} earlier items compressed]\n\n{summary}"}]}
+    compressed = ResponsesContext(context.instructions, [placeholder, *keep])
     logger.info(
         "context_compressor: summarized messages into one summary",
         extra={
             "replaced_count": replaced_count,
-            "input_tokens": _approx_tokens(block),
-            "output_tokens": _approx_tokens([placeholder]),
-            "original_count": len(messages),
-            "new_count": len(new_messages),
+            "input_tokens": approx_context_tokens(ResponsesContext(items=block)),
+            "output_tokens": approx_context_tokens(ResponsesContext(items=[placeholder])),
+            "original_count": len(context.items),
+            "new_count": len(compressed.items),
         },
     )
-    return new_messages, {"summary": summary, "replaced_count": replaced_count}
+    return compressed, {"summary": summary, "replaced_count": replaced_count}

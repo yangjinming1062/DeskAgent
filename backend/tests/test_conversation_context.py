@@ -8,8 +8,9 @@ from sqlalchemy import func, select
 
 from modules.conversation import Conversation, Message
 from services.chat.persistence import persist_tool_summary
-from services.chat.turn_inputs import _history_to_messages
+from services.chat.turn_inputs import _history_to_responses_context
 from services.conversation import context_window
+from services.llm import ResponsesContext
 
 
 async def _seed_user(SessionLocal, user_id: int = 3001):
@@ -23,15 +24,11 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
     )
 
     async with SessionLocal() as db:
-        if (
-            await db.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none() is None:
+        if (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none() is None:
             user = User(
                 id=user_id,
                 username=f"u{user_id}",
-                activation_token_hash=hash_activation_token(
-                    generate_activation_token()
-                ),
+                activation_token_hash=hash_activation_token(generate_activation_token()),
                 is_active=True,
                 can_use=True,
             )
@@ -151,9 +148,7 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
     async with SessionLocal() as db:
-        await persist_tool_summary(
-            _Conv(conv_id, "main"), {"search_web", "browser_navigate"}
-        )
+        await persist_tool_summary(_Conv(conv_id, "main"), {"search_web", "browser_navigate"})
 
     summary = (await _summaries(SessionLocal, conv_id))[0]
     assert summary.role == "system"
@@ -181,44 +176,36 @@ def _tool_turn_history() -> list[Message]:
 
 
 def test_history_drops_tool_intermediates_for_main():
-    out = _history_to_messages(
-        _tool_turn_history(), "SYS", drop_tool_intermediates=True
-    )
-    roles = [m["role"] for m in out]
-    assert roles == ["system", "user", "assistant", "system"]
-    assert not any("tool_calls" in m for m in out)
-    assert out[-1]["content"].startswith("[")
+    context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=True)
+    assert context.instructions == "SYS"
+    roles = [item.get("role") for item in context.items]
+    assert roles == ["user", "assistant", "user"]
+    assert not any(item.get("type") == "function_call" for item in context.items)
+    assert context.items[-1]["content"][0]["text"].startswith("[")
 
 
 def test_history_keeps_tool_intermediates_for_standard():
-    out = _history_to_messages(
-        _tool_turn_history(), "SYS", drop_tool_intermediates=False
-    )
-    assert [m["role"] for m in out] == [
-        "system",
+    context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=False)
+    assert [item.get("role") or item.get("type") for item in context.items] == [
         "user",
+        "function_call",
+        "function_call_output",
         "assistant",
-        "tool",
-        "assistant",
-        "system",
+        "user",
     ]
-    assert out[2]["tool_calls"][0]["function"]["name"] == "search_web"
+    assert context.items[1]["name"] == "search_web"
 
 
 def test_history_always_drops_ui_only_subtypes():
     for drop in (True, False):
-        out = _history_to_messages(
-            _tool_turn_history(), "SYS", drop_tool_intermediates=drop
-        )
-        assert all(m["content"] != "(poked)" for m in out)
+        context = _history_to_responses_context(_tool_turn_history(), "SYS", drop_tool_intermediates=drop)
+        assert all(item.get("content") != [{"type": "input_text", "text": "(poked)"}] for item in context.items)
 
 
 async def test_context_window_returns_empty_for_no_main(seeded):
     SessionLocal = seeded
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
     assert result == ""
 
 
@@ -238,9 +225,7 @@ async def test_context_window_returns_chronological_recent(seeded):
         )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     # 时间顺序（msg_02 在首，msg_11 在尾）
     lines = result.split("\n")
@@ -259,9 +244,7 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     # 一对普通消息
     await _add_msg(SessionLocal, conv_id, "user", "你好", at=base)
-    await _add_msg(
-        SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1)
-    )
+    await _add_msg(SessionLocal, conv_id, "assistant", "你好！", at=base + timedelta(minutes=1))
     # UI-only subtypes
     await _add_msg(
         SessionLocal,
@@ -298,9 +281,7 @@ async def test_context_window_filters_ui_only_subtypes(seeded):
     )
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "你好" in result
     assert "你好！" in result
@@ -325,14 +306,10 @@ async def test_context_window_filters_tool_calls_messages(seeded):
         tool_calls=json.dumps([{"id": "c1", "function": {"name": "search_web"}}]),
         at=base + timedelta(minutes=1),
     )
-    await _add_msg(
-        SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2)
-    )
+    await _add_msg(SessionLocal, conv_id, "assistant", "北京 22 度", at=base + timedelta(minutes=2))
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "查天气" in result
     assert "北京 22 度" in result
@@ -345,14 +322,10 @@ async def test_context_window_respects_character_cap(seeded):
     conv_id = await _make_main_conv(SessionLocal, 3001)
     base = datetime(2026, 8, 13, 10, 0, 0, tzinfo=UTC)
     await _add_msg(SessionLocal, conv_id, "user", "x" * 1000, at=base)
-    await _add_msg(
-        SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1)
-    )
+    await _add_msg(SessionLocal, conv_id, "assistant", "y" * 1000, at=base + timedelta(minutes=1))
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     # 每行被截到 200 字符（format_messages_compact 默认值）
     for line in result.split("\n"):
@@ -374,17 +347,11 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
             {"type": "image_url", "image_url": {"url": "https://example.com/x.png"}},
         ]
     )
-    await _add_msg(
-        SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1"
-    )
-    await _add_msg(
-        SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1)
-    )
+    await _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")
+    await _add_msg(SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1))
 
     async with SessionLocal() as db:
-        result = await context_window.load_recent_context_window(
-            db, 3001, max_messages=10
-        )
+        result = await context_window.load_recent_context_window(db, 3001, max_messages=10)
 
     assert "看这张图" in result
     assert "image_url" not in result
@@ -392,17 +359,7 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
 
     # 直接调用覆盖同样喂 format_messages_compact 的 daily_checkpoint / interact / affect_check 路径。
     async with SessionLocal() as db:
-        msgs = (
-            (
-                await db.execute(
-                    select(Message)
-                    .where(Message.conversation_id == conv_id)
-                    .order_by(Message.id)
-                )
-            )
-            .scalars()
-            .all()
-        )
+        msgs = (await db.execute(select(Message).where(Message.conversation_id == conv_id).order_by(Message.id))).scalars().all()
         compact = format_messages_compact(msgs)
     assert "看这张图" in compact
     assert "image_url" not in compact
@@ -424,13 +381,7 @@ async def test_get_or_create_main_conversation_is_idempotent(seeded):
     async with SessionLocal() as db:
         from modules.conversation import Message as _M
 
-        hint_count = (
-            await db.execute(
-                select(func.count())
-                .select_from(_M)
-                .where(_M.conversation_id == first_id, _M.subtype == "hint")
-            )
-        ).scalar_one()
+        hint_count = (await db.execute(select(func.count()).select_from(_M).where(_M.conversation_id == first_id, _M.subtype == "hint"))).scalar_one()
     assert hint_count == 1
 
 
@@ -459,120 +410,80 @@ async def test_get_or_create_cron_conversation_is_idempotent_and_distinct_from_m
 
 def test_truncate_keeps_tool_summary_in_chronological_position():
     """tool_summary 顶替被丢弃的 tool frames，若按一刀切的 system-message 钉死方式把它前置到上下文会去脱离它所描述的轮次。"""
-    from services.chat.message_sanitization import truncate_chat_history
+    from services.chat.message_sanitization import truncate_responses_context
 
-    messages = [
-        {"role": "system", "content": "SYS"},
+    items = [
         {
-            "role": "system",
-            "content": "[截至 2026-08-12 的对话摘要]",
-            "subtype": "daily_summary",
+            "role": "user",
+            "content": [{"type": "input_text", "text": "[截至 2026-08-12 的对话摘要]"}],
         },
-        {"role": "user", "content": "帮我查天气"},
-        {"role": "assistant", "content": "北京 22 度"},
-        {"role": "system", "content": "[执行了工具调用：search_web]"},
-        {"role": "user", "content": "那明天呢"},
+        {"role": "user", "content": [{"type": "input_text", "text": "帮我查天气"}]},
+        {"role": "assistant", "content": [{"type": "output_text", "text": "北京 22 度"}]},
+        {"role": "user", "content": [{"type": "input_text", "text": "[执行了工具调用：search_web]"}]},
+        {"role": "user", "content": [{"type": "input_text", "text": "那明天呢"}]},
     ]
+    context = ResponsesContext("SYS", items)
 
-    out = truncate_chat_history(messages)
+    out = truncate_responses_context(context)
 
-    assert [m["content"] for m in out] == [m["content"] for m in messages]
+    assert out.instructions == "SYS"
+    assert out.items == items
 
 
-def _long_history(first_user_in_window: bool) -> list[dict]:
-    messages = [{"role": "system", "content": "SYS"}]
+def _long_context(first_user_in_window: bool) -> ResponsesContext:
+    items: list[dict] = []
     if not first_user_in_window:
-        messages.append({"role": "user", "content": "旧的第一条用户消息"})
-    messages.extend({"role": "assistant", "content": f"turn {i}"} for i in range(45))
-    messages.append({"role": "user", "content": "最新一条用户消息"})
-    return messages
+        items.append({"role": "user", "content": [{"type": "input_text", "text": "旧的第一条用户消息"}]})
+    assistant_count = 38 if first_user_in_window else 45
+    items.extend({"role": "assistant", "content": [{"type": "output_text", "text": f"turn {i}"}]} for i in range(assistant_count))
+    items.append({"role": "user", "content": [{"type": "input_text", "text": "最新一条用户消息"}]})
+    return ResponsesContext("SYS", items)
 
 
 def test_truncate_anchor_searches_only_dropped_prefix():
     """保留窗口内首条 user 消息不应被重新注入作为 anchor——它已经存在，重复出现会造成双计。"""
-    from services.chat.message_sanitization import truncate_chat_history
+    from services.chat.message_sanitization import truncate_responses_context
 
-    out = truncate_chat_history(
-        _long_history(first_user_in_window=True), max_recent_messages=40
-    )
+    out = truncate_responses_context(_long_context(first_user_in_window=True), max_recent_items=40)
 
-    user_contents = [m["content"] for m in out if m["role"] == "user"]
+    user_contents = [item["content"][0]["text"] for item in out.items if item.get("role") == "user"]
     assert user_contents.count("最新一条用户消息") == 1
     assert "旧的第一条用户消息" not in user_contents
 
 
 def test_truncate_anchor_from_dropped_prefix_leads_window():
-    from services.chat.message_sanitization import truncate_chat_history
+    from services.chat.message_sanitization import truncate_responses_context
 
-    out = truncate_chat_history(
-        _long_history(first_user_in_window=False), max_recent_messages=40
-    )
+    out = truncate_responses_context(_long_context(first_user_in_window=False), max_recent_items=40)
 
-    non_sys = out[1:]
-    assert non_sys[0]["content"] == "旧的第一条用户消息"
-    assert (
-        non_sys[1]["role"] == "user"
-        and "removed for context window management" in non_sys[1]["content"]
-    )
+    assert out.items[0]["content"][0]["text"] == "旧的第一条用户消息"
+    assert out.items[1].get("role") == "user" and "removed for context window management" in out.items[1]["content"][0]["text"]
 
 
 def test_truncate_marker_leads_when_no_user_in_prefix():
     """没有 user 消息可作 anchor 时，marker 仍应位于首部——若插在第一条保留消息之后会扰乱角色顺序。"""
-    from services.chat.message_sanitization import truncate_chat_history
+    from services.chat.message_sanitization import truncate_responses_context
 
-    messages = [{"role": "system", "content": "SYS"}]
-    messages.extend({"role": "assistant", "content": f"turn {i}"} for i in range(45))
-
-    out = truncate_chat_history(messages, max_recent_messages=40)
-
-    assert (
-        out[1]["role"] == "user"
-        and "removed for context window management" in out[1]["content"]
+    context = ResponsesContext(
+        "SYS",
+        [{"role": "assistant", "content": [{"type": "output_text", "text": f"turn {i}"}]} for i in range(45)],
     )
 
+    out = truncate_responses_context(context, max_recent_items=40)
 
-def test_compact_adjacent_user_messages_plain_text():
-    from services.chat.turn_inputs import _compact_adjacent_user_messages
+    assert out.items[0].get("role") == "user" and "removed for context window management" in out.items[0]["content"][0]["text"]
 
-    input_msgs = [
-        {"role": "system", "content": "SYS"},
-        {"role": "user", "content": "今天好累"},
-        {"role": "user", "content": "老板又改需求了"},
-        {"role": "assistant", "content": "辛苦了！"},
-        {"role": "user", "content": "晚上吃火锅吗？"},
+
+def test_history_preserves_adjacent_user_input_items():
+    history = [
+        Message(role="user", content="今天好累"),
+        Message(role="user", content="老板又改需求了"),
+        Message(role="assistant", content="辛苦了！"),
+        Message(role="user", content="晚上吃火锅吗？"),
     ]
-    out = _compact_adjacent_user_messages(input_msgs)
-    assert len(out) == 4
-    assert out[1]["role"] == "user"
-    assert out[1]["content"] == "今天好累\n\n老板又改需求了"
-    assert out[2]["role"] == "assistant"
-    assert out[3]["role"] == "user"
-    assert out[3]["content"] == "晚上吃火锅吗？"
-
-
-def test_compact_adjacent_user_messages_multimodal():
-    from services.chat.turn_inputs import _compact_adjacent_user_messages
-
-    input_msgs = [
-        {"role": "system", "content": "SYS"},
-        {"role": "user", "content": "看这张图"},
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "还有这个"},
-                {"type": "image_url", "image_url": {"url": "https://example.com/a.png"}},
-            ],
-        },
-        {"role": "user", "content": "怎么修？"},
-    ]
-    out = _compact_adjacent_user_messages(input_msgs)
-    assert len(out) == 2
-    assert out[1]["role"] == "user"
-    assert isinstance(out[1]["content"], list)
-    texts = [p["text"] for p in out[1]["content"] if p.get("type") == "text"]
-    assert "看这张图\n\n还有这个\n\n怎么修？" in texts
-    images = [p["image_url"]["url"] for p in out[1]["content"] if p.get("type") == "image_url"]
-    assert images == ["https://example.com/a.png"]
+    context = _history_to_responses_context(history, "SYS", drop_tool_intermediates=False)
+    assert [item.get("role") for item in context.items] == ["user", "user", "assistant", "user"]
+    assert context.items[0]["content"] == [{"type": "input_text", "text": "今天好累"}]
 
 
 def test_proactive_state_machine_flow():

@@ -17,9 +17,8 @@ import { type WebFormState, WebSearchSection } from './account/web-search-sectio
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
 const WEB_BACKEND_OPTIONS = ['ddgs', 'brave-free', 'tavily'] as const
-const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
-// OpenAI service_tier 仅接受 {auto, default, flex}，UI 必须与 API 允许集一致
-const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
+const REASONING_OPTIONS = ['low', 'high'] as const
+const SERVICE_TIER_OPTIONS = ['standard', 'priority'] as const
 
 const EMPTY_WEB: WebFormState = {
   backend: 'ddgs',
@@ -36,8 +35,8 @@ const EMPTY_WEB: WebFormState = {
 }
 
 const EMPTY_AGENT: AgentFormState = {
-  reasoning_effort: 'medium',
-  service_tier: 'auto',
+  reasoning_effort: 'low',
+  service_tier: 'standard',
   enable_background_review: true
 }
 
@@ -70,8 +69,9 @@ const readAgentState = (config: SpiritAgentConfigResponse): AgentFormState => {
   const agent = config.agent
 
   return {
-    reasoning_effort: agent?.reasoning_effort ?? EMPTY_AGENT.reasoning_effort,
-    service_tier: agent?.service_tier ?? EMPTY_AGENT.service_tier,
+    reasoning_effort:
+      REASONING_OPTIONS.find(option => option === agent?.reasoning_effort) ?? EMPTY_AGENT.reasoning_effort,
+    service_tier: SERVICE_TIER_OPTIONS.find(option => option === agent?.service_tier) ?? EMPTY_AGENT.service_tier,
     enable_background_review: agent?.enable_background_review ?? EMPTY_AGENT.enable_background_review
   }
 }

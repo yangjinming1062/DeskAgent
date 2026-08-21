@@ -12,9 +12,8 @@ export interface AgentFormState {
   enable_background_review: boolean
 }
 
-const REASONING_OPTIONS = ['minimal', 'low', 'medium', 'high', 'max'] as const
-// OpenAI service_tier 仅接受 {auto, default, flex}，UI 必须与 API 允许集一致
-const SERVICE_TIER_OPTIONS = ['auto', 'default', 'flex'] as const
+const REASONING_OPTIONS = ['low', 'high'] as const
+const SERVICE_TIER_OPTIONS = ['standard', 'priority'] as const
 
 export function AgentDefaultsSection({
   disabled,

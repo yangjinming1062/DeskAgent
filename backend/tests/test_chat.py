@@ -39,8 +39,7 @@ class TestLLMClient:
 
         assert resolve(ServiceType.llm, "mimo").PROMPT_FAMILY == "openai"
         assert resolve(ServiceType.llm, "minimax").PROMPT_FAMILY == "openai"
-        assert resolve(ServiceType.llm, "gemini").PROMPT_FAMILY == "google"
-        assert resolve(ServiceType.llm, "zhipu").PROMPT_FAMILY == "openai"
+        assert resolve(ServiceType.llm, "grok").PROMPT_FAMILY == "openai"
 
 
 class TestResolveContextTokens:
@@ -51,10 +50,10 @@ class TestResolveContextTokens:
 
         assert resolve_context_tokens("mimo", "llm") == 1_000_000
 
-    def test_per_provider_default_gemini_llm(self):
+    def test_per_provider_default_grok_llm(self):
         from services.llm import resolve_context_tokens
 
-        assert resolve_context_tokens("gemini", "llm") == 1_000_000
+        assert resolve_context_tokens("grok", "llm") == 500_000
 
     def test_per_provider_default_zhipu_tts(self):
         from services.llm import resolve_context_tokens
@@ -73,7 +72,7 @@ class TestResolveContextTokens:
         from services.llm import resolve_context_tokens
 
         monkeypatch.setattr(SETTINGS, "llm_context_tokens", 250_000)
-        assert resolve_context_tokens("gemini", "llm") == 250_000
+        assert resolve_context_tokens("minimax", "llm") == 250_000
 
     def test_global_fallback_on_unsupported_capability(self, caplog):
         # provider 未发布该 cap 的默认 → 走终态兜底，同时输出 warning 让静默遗漏可见。
@@ -83,10 +82,7 @@ class TestResolveContextTokens:
 
         with caplog.at_level(logging.WARNING, logger="services.llm.providers"):
             assert resolve_context_tokens("mimo", "video_gen") == 1_000_000
-        assert any(
-            "no default published" in rec.message and rec.levelno == logging.WARNING
-            for rec in caplog.records
-        )
+        assert any("no default published" in rec.message and rec.levelno == logging.WARNING for rec in caplog.records)
 
     def test_none_override_falls_through(self, monkeypatch):
         from components import SETTINGS
@@ -100,10 +96,7 @@ class TestResolveContextTokens:
         from components.config import Settings
 
         for raw in ("0", "-1", "", "abc"):
-            assert (
-                Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens
-                is None
-            ), raw
+            assert Settings.model_validate({"llm_context_tokens": raw}).llm_context_tokens is None, raw
 
     def test_openai_family_injects_openai_guidance(self):
         from modules.system import AgentPromptConfig
@@ -112,9 +105,7 @@ class TestResolveContextTokens:
             build_system_prompt_parts,
         )
 
-        parts = build_system_prompt_parts(
-            AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"])
-        )
+        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="openai", valid_tool_names=["terminal"]))
         assert OPENAI_MODEL_EXECUTION_GUIDANCE in parts["stable"]
 
     def test_google_family_injects_google_guidance(self):
@@ -124,9 +115,7 @@ class TestResolveContextTokens:
             build_system_prompt_parts,
         )
 
-        parts = build_system_prompt_parts(
-            AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"])
-        )
+        parts = build_system_prompt_parts(AgentPromptConfig(prompt_family="google", valid_tool_names=["terminal"]))
         assert GOOGLE_MODEL_OPERATIONAL_GUIDANCE in parts["stable"]
 
     def test_zh_language_directive_injected_by_default(self):
@@ -136,9 +125,7 @@ class TestResolveContextTokens:
             build_system_prompt_parts,
         )
 
-        parts = build_system_prompt_parts(
-            AgentPromptConfig(valid_tool_names=["terminal"])
-        )
+        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"]))
         assert LANGUAGE_DIRECTIVES["zh"] in parts["stable"]
 
     def test_en_language_directive_injected_when_en(self):
@@ -148,9 +135,7 @@ class TestResolveContextTokens:
             build_system_prompt_parts,
         )
 
-        parts = build_system_prompt_parts(
-            AgentPromptConfig(valid_tool_names=["terminal"], language="en")
-        )
+        parts = build_system_prompt_parts(AgentPromptConfig(valid_tool_names=["terminal"], language="en"))
         assert LANGUAGE_DIRECTIVES["en"] in parts["stable"]
         assert LANGUAGE_DIRECTIVES["zh"] not in parts["stable"]
 
@@ -214,9 +199,7 @@ class TestResolveContextTokens:
             message=ChatMessageRequest(
                 role="user",
                 content="Describe this image",
-                attachments=[
-                    {"type": "image", "file_url": "http://example.com/image.png"}
-                ],
+                attachments=[{"type": "image", "file_url": "http://example.com/image.png"}],
             )
         )
         content, content_type = _build_persisted_content(req)
@@ -231,9 +214,7 @@ class TestResolveContextTokens:
         from modules.system import ChatMessageRequest
         from services.chat.persistence import _build_persisted_content
 
-        req = SimpleNamespace(
-            message=ChatMessageRequest(role="user", content="Just text")
-        )
+        req = SimpleNamespace(message=ChatMessageRequest(role="user", content="Just text"))
         content, content_type = _build_persisted_content(req)
         assert content_type == "text"
         assert content == "Just text"
@@ -267,21 +248,11 @@ def _make_tiny_png() -> bytes:
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
     ihdr_crc = zlib.crc32(b"IHDR" + ihdr_data)
-    ihdr = (
-        struct.pack(">I", 13)
-        + b"IHDR"
-        + ihdr_data
-        + struct.pack(">I", ihdr_crc & 0xFFFFFFFF)
-    )
+    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + struct.pack(">I", ihdr_crc & 0xFFFFFFFF)
     raw_data = b"\x00\xff\x00\x00"
     compressed = zlib.compress(raw_data)
     idat_crc = zlib.crc32(b"IDAT" + compressed)
-    idat = (
-        struct.pack(">I", len(compressed))
-        + b"IDAT"
-        + compressed
-        + struct.pack(">I", idat_crc & 0xFFFFFFFF)
-    )
+    idat = struct.pack(">I", len(compressed)) + b"IDAT" + compressed + struct.pack(">I", idat_crc & 0xFFFFFFFF)
     iend_crc = zlib.crc32(b"IEND")
     iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", iend_crc & 0xFFFFFFFF)
     return sig + ihdr + idat + iend
@@ -293,22 +264,18 @@ class TestChatE2E:
         """非 mock，跑真实的 /api/llm/completion 端点。"""
         headers = {"Authorization": f"Bearer {test_token}"}
         payload = {
-            "messages": [{"role": "user", "content": "Say 'hello' in one word."}],
+            "input": [{"role": "user", "content": [{"type": "input_text", "text": "Say 'hello' in one word."}]}],
             "model": "mimo-v2.5-pro",
             "temperature": 0.5,
-            "max_tokens": 50,
+            "max_output_tokens": 50,
         }
-        resp = await test_client.post(
-            "/api/llm/completion", headers=headers, json=payload
-        )
+        resp = await test_client.post("/api/llm/completion", headers=headers, json=payload)
         assert resp.status_code == 200
         body = resp.json()
         assert body["content"] is not None
         assert len(body["content"]) > 0
 
-    async def test_websocket_chat_flow(
-        self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
-    ):
+    async def test_websocket_chat_flow(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
         """非 mock，跑真实 WebSocket 聊天流：从建会话到 prompt 完成。"""
         # httpx 没有 WebSocket 支持——同步 TestClient 通过 portal loop 驱动 async app（共享 aiosqlite 连接）。
         from fastapi.testclient import TestClient
@@ -319,9 +286,7 @@ class TestChatE2E:
 
         test_client = TestClient(test_app)
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
-            ws.send_json(
-                {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
-            )
+            ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
             resp = ws.receive_json()
             assert "result" in resp, f"Unexpected response: {resp}"
             session_id = resp["result"]["session_id"]
@@ -348,9 +313,7 @@ class TestChatE2E:
                     params = msg.get("params", {})
                     event_type = params.get("type")
                     if event_type == "error":
-                        raise RuntimeError(
-                            f"Chat turn failed with error: {params.get('payload') or params.get('message')}"
-                        )
+                        raise RuntimeError(f"Chat turn failed with error: {params.get('payload') or params.get('message')}")
                     events.append(params)
                     if event_type == "message.complete":
                         break
@@ -370,14 +333,10 @@ class TestChatE2E:
 
         test_client = TestClient(test_app)
         with pytest.raises(WebSocketDisconnect):
-            with test_client.websocket_connect(
-                "/api/chat/ws?ticket=invalid-ticket-abc"
-            ):
+            with test_client.websocket_connect("/api/chat/ws?ticket=invalid-ticket-abc"):
                 pass
 
-    async def test_websocket_session_lifecycle(
-        self, test_app, test_token, ws_ticket, monkeypatch, _patch_db
-    ):
+    async def test_websocket_session_lifecycle(self, test_app, test_token, ws_ticket, monkeypatch, _patch_db):
         """建会话并在 interrupt 后验证 prompt 提交仍可用。"""
         from fastapi.testclient import TestClient
         from services.gateway import handlers
@@ -387,9 +346,7 @@ class TestChatE2E:
 
         test_client = TestClient(test_app)
         with test_client.websocket_connect(f"/api/chat/ws?ticket={ws_ticket}") as ws:
-            ws.send_json(
-                {"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}}
-            )
+            ws.send_json({"jsonrpc": "2.0", "id": 1, "method": "session.create", "params": {}})
             resp = ws.receive_json()
             session_id = resp["result"]["session_id"]
 
@@ -418,6 +375,7 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
         _ToolDispatchContext,
         persist_tool_summary,
     )
+    from services.llm import ResponsesContext
     from sqlalchemy import select
 
     _, SessionLocal = _patch_db
@@ -435,12 +393,10 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
     monkeypatch.setattr(persistence, "_run_tool_batch", _cancelled_tool_batch)
 
     tool_calls = [{"id": "call_123", "type": "function", "function": {"name": "test_tool", "arguments": "{}"}}]
-    current_messages = []
+    context = ResponsesContext(instructions="SYS", items=[])
     active_tools = {"test_tool"}
     schemas = {}
-    dispatch_ctx = _ToolDispatchContext(
-        user_id=1, llm_config={}, user_settings={}, session_id="s1", native_memory=None, guardrails=None, emitter=None
-    )
+    dispatch_ctx = _ToolDispatchContext(user_id=1, llm_config={}, user_settings={}, session_id="s1", native_memory=None, guardrails=None, emitter=None)
 
     with pytest.raises(asyncio.CancelledError):
         await _persist_assistant_with_tool_calls_and_results(
@@ -451,7 +407,7 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
             20,
             100,
             dispatch_ctx,
-            current_messages,
+            context,
             active_tools,
             schemas,
         )

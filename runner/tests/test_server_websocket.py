@@ -420,33 +420,6 @@ async def test_pending_request_llm_future_drains_on_disconnect():
 @pytest.mark.timeout(15)
 def test_extract_llm_content_handles_all_backend_shapes():
     assert server._extract_llm_content({"content": "plain"}) == "plain"
-    assert server._extract_llm_content({"text": "openai-style"}) == "openai-style"
-    assert (
-        server._extract_llm_content({
-            "choices": [{"message": {"content": "openai-complete"}}]
-        })
-        == "openai-complete"
-    )
-    assert (
-        server._extract_llm_content({
-            "choices": [
-                {
-                    "message": {
-                        "content": [
-                            {"type": "text", "text": "x"},
-                            {"type": "image_url"},
-                        ]
-                    }
-                }
-            ]
-        })
-        == "x"
-    )
-    assert server._extract_llm_content({"choices": []}) == ""
-    assert server._extract_llm_content({"choices": [{}]}) == ""
-    assert (
-        server._extract_llm_content({"choices": [{"message": {"content": 123}}]}) == ""
-    )
     assert server._extract_llm_content({}) == ""
 
 

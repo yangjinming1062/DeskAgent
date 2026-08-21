@@ -29,7 +29,7 @@ _SUMMARY_PROMPT_TEMPLATE = (
 
 _SUMMARY_MAX_TOKENS = 800
 
-# Checkpoint 子类型——daily_summary（nightly）和 compress_summary（运行时 token 阈值）。两者在 LLM 读路径（_history_to_messages）都充当"我之前的内容已被摘要"。
+# Checkpoint 子类型——daily_summary（nightly）和 compress_summary（运行时 token 阈值）。两者在 LLM 读路径都充当"我之前的内容已被摘要"。
 _CHECKPOINT_SUBTYPES: frozenset[str] = frozenset({"daily_summary", "compress_summary"})
 
 # 排除在 daily-summary 输入之外的 subtypes：UI-only 占位、之前的 daily_summary checkpoint（通过 prev_summary_block 单独喂入）、轮内工具标记。compress_summary 要保留——其内容必须前滚到新的 daily_summary，新行取代它作为读起点 checkpoint 后不能丢。

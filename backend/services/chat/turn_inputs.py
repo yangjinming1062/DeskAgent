@@ -21,7 +21,18 @@ from ..companion import (
 )
 from ..conversation import MAIN_KIND, UI_ONLY_SUBTYPES
 from ..gateway import RuntimeSession
-from ..llm import MissingLlmConfigError, ProviderConfig, ServiceType, provider_for_service, provider_from_config, resolve_context_tokens, resolve_vision_chain
+from ..llm import (
+    MissingLlmConfigError,
+    ProviderConfig,
+    ResponsesContext,
+    ServiceType,
+    chat_tool_calls_to_response_items,
+    message_to_response_items,
+    provider_for_service,
+    provider_from_config,
+    resolve_context_tokens,
+    resolve_vision_chain,
+)
 from ..tools import REGISTRY, NativeMemory, schema_name
 from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
 from .system_prompt import build_system_prompt
@@ -29,10 +40,10 @@ from .system_prompt import build_system_prompt
 logger = get_logger(__name__)
 
 
-# OpenAI reasoning_effort 仅接受该枚举；旧模型忽略此参数。
-ALLOWED_REASONING_EFFORTS = frozenset({"minimal", "low", "medium", "high", "max"})
-# OpenAI service_tier 仅接受该枚举；旧模型忽略此参数。
-ALLOWED_SERVICE_TIERS = frozenset({"auto", "default", "flex"})
+# 三家 Responses 供应商共同接受的安全枚举；供应商专属档位在 provider 层过滤。
+ALLOWED_REASONING_EFFORTS = frozenset({"low", "high"})
+# MiniMax Responses 接受该枚举；MiMo/Grok 未声明支持时不透传。
+ALLOWED_SERVICE_TIERS = frozenset({"standard", "priority"})
 # 映射表键里由应用状态机与用户交互驱动的那些；LLM 只能主动请求剩下的动作 token。
 NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "drag"})
 
@@ -41,7 +52,7 @@ NON_ACTION_CLIP_KEYS = frozenset({"idle", "emotional", "interacting", "poke", "d
 class _TurnInputs:
     """``_build_turn_inputs`` 的输出：orchestrator 与各轮辅助函数所需字段，避免重复查询 DB。"""
 
-    messages: list[dict]
+    context: ResponsesContext
     client: Any
     native_memory: NativeMemory
     model_name: str
@@ -77,59 +88,9 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
-def _normalize_content_to_parts(content: str | list) -> list[dict]:
-    """把 str 或 list 内容规整为多模态 parts 字典列表。"""
-    if isinstance(content, str):
-        return [{"type": "text", "text": content}] if content else []
-    if isinstance(content, list):
-        parts: list[dict] = []
-        for p in content:
-            if isinstance(p, dict):
-                parts.append(p)
-            elif isinstance(p, str):
-                parts.append({"type": "text", "text": p})
-        return parts
-    return []
-
-
-def _compact_adjacent_user_messages(messages: list[dict]) -> list[dict]:
-    """合并相邻 user 消息以满足严格角色交替校验（如 Anthropic、Gemini）；同时处理纯字符串与多模态 parts 不抛 TypeError。"""
-    compacted: list[dict] = []
-    for msg in messages:
-        if not compacted or msg.get("role") != "user" or compacted[-1].get("role") != "user":
-            compacted.append(dict(msg))
-            continue
-
-        prev = compacted[-1]
-        prev_parts = _normalize_content_to_parts(prev.get("content", ""))
-        curr_parts = _normalize_content_to_parts(msg.get("content", ""))
-
-        merged_parts: list[dict] = []
-        prev_texts = [p["text"] for p in prev_parts if p.get("type") == "text" and isinstance(p.get("text"), str)]
-        curr_texts = [p["text"] for p in curr_parts if p.get("type") == "text" and isinstance(p.get("text"), str)]
-        all_texts = prev_texts + curr_texts
-
-        if all_texts:
-            merged_parts.append({"type": "text", "text": "\n\n".join(all_texts)})
-
-        for p in prev_parts:
-            if p.get("type") != "text":
-                merged_parts.append(p)
-        for p in curr_parts:
-            if p.get("type") != "text":
-                merged_parts.append(p)
-
-        if all(p.get("type") == "text" for p in merged_parts):
-            prev["content"] = "\n\n".join(p["text"] for p in merged_parts) if merged_parts else ""
-        else:
-            prev["content"] = merged_parts
-
-    return compacted
-
-
-def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> list[dict]:
+def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> ResponsesContext:
     """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
-    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    context = ResponsesContext(instructions=system_prompt)
 
     for msg in db_msgs:
         if msg.subtype in UI_ONLY_SUBTYPES:
@@ -142,17 +103,19 @@ def _history_to_messages(db_msgs: list[Message], system_prompt: str, *, drop_too
             parsed = safe_json_loads(content_val if isinstance(content_val, str) else "")
             content_val = parsed if isinstance(parsed, list) else content_val
 
-        m: dict = {"role": msg.role, "content": content_val}
-        if getattr(msg, "prompt_tokens", None):
-            m["prompt_tokens"] = msg.prompt_tokens
-            m["completion_tokens"] = msg.completion_tokens
-        if msg.tool_call_id:
-            m["tool_call_id"] = msg.tool_call_id
+        item: dict = {"role": msg.role, "content": content_val}
         if msg.tool_calls and (parsed := safe_json_loads(msg.tool_calls)) is not None:
-            m["tool_calls"] = parsed
-        messages.append(m)
+            item["tool_calls"] = parsed
+        if msg.tool_call_id:
+            item["tool_call_id"] = msg.tool_call_id
+        if msg.role == "system":
+            context.append({"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]})
+            continue
+        context.append(*message_to_response_items(item))
+        if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
+            context.append(*chat_tool_calls_to_response_items(calls))
 
-    return _compact_adjacent_user_messages(messages)
+    return context
 
 
 async def _build_turn_inputs(
@@ -182,7 +145,7 @@ async def _build_turn_inputs(
         provider = await provider_for_service(db, user_id, "llm")
     client = provider.raw_client()
     if client is None:
-        raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' is not OpenAI-compatible")
+        raise MissingLlmConfigError(f"llm provider '{provider.provider_name}' does not expose the Responses API")
     model_name = req.model or provider.config.model
     if req.context_tokens is not None:
         ctx_length = req.context_tokens
@@ -227,16 +190,16 @@ async def _build_turn_inputs(
         available_actions=available_actions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
-    messages = _history_to_messages(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
+    context = _history_to_responses_context(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
 
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
     native_memory = NativeMemory(None, user_id)
     if addition := native_memory.format_for_system_prompt():
-        messages[0]["content"] += "\n\n" + addition
+        context.instructions += "\n\n" + addition
 
     allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
     return _TurnInputs(
-        messages=messages,
+        context=context,
         client=client,
         native_memory=native_memory,
         model_name=model_name,

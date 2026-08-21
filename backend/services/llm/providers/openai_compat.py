@@ -2,19 +2,8 @@ from typing import ClassVar
 
 from openai import AsyncOpenAI
 
-from .base import ChatProvider, EmbeddingProvider, ProviderConfig, ProviderError
+from .base import EmbeddingProvider, ProviderConfig, ProviderError
 from .http import get_async_client
-
-
-class OpenAICompatChatProvider(ChatProvider):
-    """任意走 Chat Completions 协议的供应商共用基类（MiMo、经 SDK 调用的 MiniMax、OpenAI、OpenRouter 等），子类只定制请求/事件形态，SDK 处理核心逻辑。"""
-
-    def __init__(self, config: ProviderConfig) -> None:
-        super().__init__(config)
-        self._client: AsyncOpenAI = get_async_client(config.api_key, config.base_url)
-
-    def raw_client(self) -> AsyncOpenAI | None:
-        return self._client
 
 
 class OpenAIEmbeddingProvider(EmbeddingProvider):

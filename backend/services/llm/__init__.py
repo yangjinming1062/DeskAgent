@@ -62,6 +62,17 @@ from .providers import (
     resolve_context_tokens,
     try_resolve,
 )
+from .responses import (
+    ResponsesContext,
+    approx_context_tokens,
+    chat_tool_calls_to_response_items,
+    message_to_response_items,
+    output_text_from_response,
+    response_items_to_chat_tool_calls,
+    response_request_kwargs,
+    response_usage,
+    tool_schema_for_responses,
+)
 from .user_config import UserLlmConfig, merge_provider_json, resolve_user_llm_config
 from .voice_catalog import VoiceEntry, pick_voice_id, voices_for_provider
 
@@ -86,6 +97,7 @@ __all__ = [
     "MissingLlmConfigError",
     "ProviderConfig",
     "ProviderError",
+    "ResponsesContext",
     "STTProvider",
     "STTResult",
     "ServiceType",
@@ -99,6 +111,7 @@ __all__ = [
     "VoiceDesignResult",
     "VoiceEntry",
     "aclose_all",
+    "approx_context_tokens",
     "build_fullbody_prompt",
     "call_llm_once",
     "call_with_retry",
@@ -121,6 +134,9 @@ __all__ = [
     "provider_for_service",
     "provider_from_config",
     "providers_supporting",
+    "response_items_to_chat_tool_calls",
+    "response_request_kwargs",
+    "response_usage",
     "register",
     "resolve",
     "resolve_context_tokens",
@@ -129,6 +145,10 @@ __all__ = [
     "resolve_provider_chain",
     "resolve_provider_config",
     "resolve_service_row",
+    "chat_tool_calls_to_response_items",
+    "message_to_response_items",
+    "output_text_from_response",
+    "tool_schema_for_responses",
     "resolve_user_llm_config",
     "resolve_vision_chain",
     "strip_think_blocks",
