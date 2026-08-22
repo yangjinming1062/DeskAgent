@@ -87,8 +87,6 @@ function applySpatialCue(locale?: string, target?: string): void {
       setLocale('perch', { position: perch, locomotion: 'fly' })
     } else if (locale === 'home' && !$chatOpen.get()) {
       setLocale('home', { locomotion: 'fly' })
-    } else if (locale === 'chat') {
-      setLocale('chat')
     } else if (locale === 'roam') {
       startRoam()
     }

@@ -45,7 +45,7 @@ const EMOTION_SCALE_BOOST: Record<string, number> = {
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 2
 
-export type SpatialLocale = 'home' | 'chat' | 'perch' | 'target' | 'roam'
+export type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 export type Locomotion = 'still' | 'walk' | 'fly' | 'drag'
 
 export const $spatialLocale = atom<SpatialLocale>('home')
@@ -78,19 +78,6 @@ export function getHomePosition(): { x: number; y: number } {
   return {
     x: Math.max(REST_MARGIN, window.innerWidth - w - REST_MARGIN),
     y: Math.max(REST_MARGIN, window.innerHeight - h - REST_MARGIN)
-  }
-}
-
-export function getChatPosition(): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return { x: 0, y: 0 }
-  }
-
-  const w = getBaseSpriteWidth()
-
-  return {
-    x: Math.round((window.innerWidth - w) / 2),
-    y: Math.round(window.innerHeight * 0.16)
   }
 }
 
@@ -330,9 +317,6 @@ function localePosition(locale: SpatialLocale): { x: number; y: number } {
     case 'home':
       return $homePosition.get()
 
-    case 'chat':
-      return getChatPosition()
-
     default:
       return $homePosition.get()
   }
@@ -340,9 +324,6 @@ function localePosition(locale: SpatialLocale): { x: number; y: number } {
 
 function defaultLocomotion(locale: SpatialLocale): 'walk' | 'fly' | 'still' {
   switch (locale) {
-    case 'chat':
-      return 'fly'
-
     case 'target':
       return 'fly'
 
@@ -609,8 +590,8 @@ export function initSpatial(): () => void {
 
     const locale = $spatialLocale.get()
 
-    if (locale === 'home' || locale === 'chat') {
-      setLocale(locale, { instant: true })
+    if (locale === 'home') {
+      setLocale('home', { instant: true })
     }
   }
 
