@@ -1,18 +1,54 @@
 import { log } from '@/shared/lib/log'
 
-/** 基于 OPFS 的原始 GLB 字节缓存 —— 同一模型的二次加载直接从磁盘取，省去 IPC + 签名 URL 往返（典型 200–800 ms → 0 ms）。用 OPFS Web 标准，而不是 `caches.open`（Cache Storage 是给 HTTP 响应用的；OPFS 才是面向二进制 blob 的真实文件系统）。任何 OPFS 失败都静默回退到 IPC 路径。 */
+// OPFS 是面向二进制 blob 的真实文件系统；Cache Storage 留给 HTTP 响应，不复用。
 
-const OPFS_DIR = 'glb-cache'
-const SCHEMA_VERSION = 1
+export const OPFS_DIR = 'glb-cache'
+export const SCHEMA_VERSION = 1
+export const MAX_CACHED_FILES = 5
+export const MAX_CACHED_BYTES = 512 * 1024 * 1024
+export const META_SUFFIX = '.meta.json'
+export const BLOB_SUFFIX = '.glb'
 
-interface MetaFile {
+export interface MetaFile {
   version: number
   contentHash: string
   writtenAt: number
   size: number
 }
 
-function rootDir(): Promise<FileSystemDirectoryHandle | null> {
+export function metaKey(contentHash: string): string {
+  return `${contentHash}${META_SUFFIX}`
+}
+
+export function blobKey(contentHash: string): string {
+  return `${contentHash}${BLOB_SUFFIX}`
+}
+
+export function isMetaFile(name: string): boolean {
+  return name.endsWith(META_SUFFIX)
+}
+
+export function hashFromMetaFile(name: string): string | null {
+  if (!name.endsWith(META_SUFFIX)) {
+    return null
+  }
+
+  return name.slice(0, -META_SUFFIX.length)
+}
+
+export function isBlobFile(name: string): boolean {
+  return name.endsWith(BLOB_SUFFIX)
+}
+
+export function hashFromBlobFile(name: string): string | null {
+  if (!name.endsWith(BLOB_SUFFIX)) {
+    return null
+  }
+
+  return name.slice(0, -BLOB_SUFFIX.length)
+}
+
+function defaultRootDir(): Promise<FileSystemDirectoryHandle | null> {
   if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) {
     return Promise.resolve(null)
   }
@@ -27,159 +63,297 @@ function rootDir(): Promise<FileSystemDirectoryHandle | null> {
     })
 }
 
-function metaKey(contentHash: string): string {
-  return `${contentHash}.meta`
+export interface GlbOpfsCacheOptions {
+  getDirectory?: () => Promise<FileSystemDirectoryHandle | null>
+  maxFiles?: number
+  maxBytes?: number
 }
 
-function blobKey(contentHash: string): string {
-  return `${contentHash}.glb`
-}
+export class GlbOpfsCache {
+  private readonly getDir: () => Promise<FileSystemDirectoryHandle | null>
+  private readonly maxFiles: number
+  private readonly maxBytes: number
+  private queue: Promise<unknown> = Promise.resolve()
+  private readonly lastTouched = new Map<string, number>()
 
-/** 读取 `contentHash` 对应的缓存 GLB 字节。未命中或任何 OPFS 错误时返回 null —— 调用方把 null 当作"回退到 IPC"。 */
-export async function readCachedGlb(contentHash: string): Promise<ArrayBuffer | null> {
-  if (!contentHash) {
-    return null
+  constructor(options?: GlbOpfsCacheOptions) {
+    this.getDir = options?.getDirectory ?? defaultRootDir
+    this.maxFiles = options?.maxFiles ?? MAX_CACHED_FILES
+    this.maxBytes = options?.maxBytes ?? MAX_CACHED_BYTES
   }
 
-  const dir = await rootDir()
+  private runSerialized<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(
+      () => task(),
+      () => task()
+    )
 
-  if (!dir) {
-    return null
+    this.queue = next.then(
+      () => undefined,
+      () => undefined
+    )
+
+    return next
   }
 
-  try {
-    const metaHandle = await dir.getFileHandle(metaKey(contentHash))
-    const metaFile = await metaHandle.getFile()
-    const meta = JSON.parse(await metaFile.text()) as MetaFile
-
-    if (meta.version !== SCHEMA_VERSION || meta.contentHash !== contentHash) {
+  /** 未命中或 OPFS 错误时返回 null，调用方据此回退到 IPC。 */
+  async read(contentHash: string): Promise<ArrayBuffer | null> {
+    if (!contentHash) {
       return null
     }
 
-    const blobHandle = await dir.getFileHandle(blobKey(contentHash))
-    const blobFile = await blobHandle.getFile()
+    const dir = await this.getDir()
 
-    if (blobFile.size !== meta.size) {
+    if (!dir) {
       return null
     }
-    // 命中时异步回写 writtenAt，维持 LRU 顺序
-    void (async () => {
-      try {
-        meta.writtenAt = Date.now()
-        const updatedMetaHandle = await dir.getFileHandle(metaKey(contentHash), { create: true })
-        const writable = await updatedMetaHandle.createWritable()
-        await writable.write(JSON.stringify(meta))
-        await writable.close()
-      } catch {
-        /* 忽略更新时间戳失败 */
+
+    try {
+      const metaHandle = await dir.getFileHandle(metaKey(contentHash))
+      const metaFile = await metaHandle.getFile()
+      const meta = JSON.parse(await metaFile.text()) as Partial<MetaFile>
+
+      if (
+        meta.version !== SCHEMA_VERSION ||
+        meta.contentHash !== contentHash ||
+        typeof meta.size !== 'number' ||
+        meta.size < 0 ||
+        typeof meta.writtenAt !== 'number'
+      ) {
+        return null
       }
-    })()
 
-    return await blobFile.arrayBuffer()
-  } catch {
-    return null
-  }
-}
+      const blobHandle = await dir.getFileHandle(blobKey(contentHash))
+      const blobFile = await blobHandle.getFile()
 
-const MAX_CACHED_FILES = 5
-const MAX_CACHED_BYTES = 512 * 1024 * 1024
-
-async function pruneGlbCache(
-  dir: FileSystemDirectoryHandle,
-  maxFiles = MAX_CACHED_FILES,
-  maxBytes = MAX_CACHED_BYTES
-): Promise<void> {
-  try {
-    const entries: { hash: string; size: number; writtenAt: number }[] = []
-    let totalBytes = 0
-
-    for await (const handle of (dir as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values()) {
-      if (handle.kind === 'file' && typeof handle.name === 'string' && handle.name.endsWith('.meta.json')) {
-        try {
-          const file = await (handle as FileSystemFileHandle).getFile()
-          const meta = JSON.parse(await file.text()) as MetaFile
-
-          if (meta.contentHash && typeof meta.writtenAt === 'number') {
-            entries.push({
-              hash: meta.contentHash,
-              size: typeof meta.size === 'number' ? meta.size : 0,
-              writtenAt: meta.writtenAt
-            })
-            totalBytes += meta.size || 0
-          }
-        } catch {
-          /* 忽略异常 meta */
-        }
+      if (blobFile.size !== meta.size) {
+        return null
       }
+
+      const buffer = await blobFile.arrayBuffer()
+
+      // 命中时回写 writtenAt 维持 LRU 顺序；通过串行队列与后续 write/prune 排队。
+      void this.runSerialized(() => this.touchInternal(dir, contentHash))
+
+      return buffer
+    } catch {
+      return null
     }
+  }
 
-    if (entries.length <= maxFiles && totalBytes <= maxBytes) {
+  /** 写入失败（配额等）时静默吞掉，调用方流水线继续运行。 */
+  async write(contentHash: string, bytes: ArrayBuffer): Promise<void> {
+    if (!contentHash || !bytes) {
       return
     }
 
-    // 最久未访问的排前面
-    entries.sort((a, b) => a.writtenAt - b.writtenAt)
+    await this.runSerialized(() => this.writeInternal(contentHash, bytes))
+  }
 
-    while (entries.length > maxFiles || totalBytes > maxBytes) {
-      const oldest = entries.shift()
+  async prune(maxFiles = this.maxFiles, maxBytes = this.maxBytes): Promise<void> {
+    const dir = await this.getDir()
 
-      if (!oldest) {
-        break
+    if (!dir) {
+      return
+    }
+
+    await this.runSerialized(() => this.pruneInternal(dir, maxFiles, maxBytes))
+  }
+
+  private async touchInternal(dir: FileSystemDirectoryHandle, contentHash: string): Promise<void> {
+    const now = Date.now()
+    const last = this.lastTouched.get(contentHash) ?? 0
+
+    if (now - last < 1000) {
+      return
+    }
+
+    try {
+      const metaHandle = await dir.getFileHandle(metaKey(contentHash))
+      const metaFile = await metaHandle.getFile()
+      const meta = JSON.parse(await metaFile.text()) as Partial<MetaFile>
+
+      if (meta.version !== SCHEMA_VERSION || meta.contentHash !== contentHash) {
+        return
       }
 
-      try {
-        await dir.removeEntry(blobKey(oldest.hash))
-        await dir.removeEntry(metaKey(oldest.hash))
+      // 先确认 blob 仍在，避免给已被 prune 掉的 blob 续 meta。
+      await dir.getFileHandle(blobKey(contentHash))
+
+      meta.writtenAt = now
+      const writable = await metaHandle.createWritable()
+      await writable.write(JSON.stringify(meta))
+      await writable.close()
+      this.lastTouched.set(contentHash, now)
+    } catch {}
+  }
+
+  private async writeInternal(contentHash: string, bytes: ArrayBuffer): Promise<void> {
+    const dir = await this.getDir()
+
+    if (!dir) {
+      return
+    }
+
+    let blobWritten = false
+    let metaWritten = false
+
+    try {
+      const blobHandle = await dir.getFileHandle(blobKey(contentHash), { create: true })
+      const blobWritable = await blobHandle.createWritable()
+      await blobWritable.write(bytes)
+      await blobWritable.close()
+      blobWritten = true
+
+      const meta: MetaFile = {
+        contentHash,
+        size: bytes.byteLength,
+        version: SCHEMA_VERSION,
+        writtenAt: Date.now()
+      }
+
+      const metaHandle = await dir.getFileHandle(metaKey(contentHash), { create: true })
+      const metaWritable = await metaHandle.createWritable()
+      await metaWritable.write(JSON.stringify(meta))
+      await metaWritable.close()
+      metaWritten = true
+      this.lastTouched.set(contentHash, meta.writtenAt)
+
+      await this.pruneInternal(dir, this.maxFiles, this.maxBytes)
+    } catch (err) {
+      log.warn('glb-opfs-cache', 'write failed:', err)
+
+      if (blobWritten || metaWritten) {
+        try {
+          await dir.removeEntry(blobKey(contentHash))
+        } catch {}
+
+        try {
+          await dir.removeEntry(metaKey(contentHash))
+        } catch {}
+
+        this.lastTouched.delete(contentHash)
+      }
+    }
+  }
+
+  private async pruneInternal(dir: FileSystemDirectoryHandle, maxFiles: number, maxBytes: number): Promise<void> {
+    try {
+      const metaEntries: { hash: string; size: number; writtenAt: number }[] = []
+      const blobHashes = new Set<string>()
+      const metaHashes = new Set<string>()
+
+      for await (const handle of (dir as unknown as { values: () => AsyncIterable<FileSystemHandle> }).values()) {
+        if (handle.kind === 'file' && typeof handle.name === 'string') {
+          if (isMetaFile(handle.name)) {
+            const hash = hashFromMetaFile(handle.name)
+
+            if (!hash) {
+              continue
+            }
+
+            metaHashes.add(hash)
+
+            try {
+              const file = await (handle as FileSystemFileHandle).getFile()
+              const meta = JSON.parse(await file.text()) as Partial<MetaFile>
+
+              if (
+                meta.version === SCHEMA_VERSION &&
+                meta.contentHash === hash &&
+                typeof meta.writtenAt === 'number' &&
+                typeof meta.size === 'number' &&
+                meta.size >= 0
+              ) {
+                metaEntries.push({
+                  hash: meta.contentHash,
+                  size: meta.size,
+                  writtenAt: meta.writtenAt
+                })
+              } else {
+                try {
+                  await dir.removeEntry(handle.name)
+                } catch {}
+              }
+            } catch {
+              try {
+                await dir.removeEntry(handle.name)
+              } catch {}
+            }
+          } else if (isBlobFile(handle.name)) {
+            const hash = hashFromBlobFile(handle.name)
+
+            if (hash) {
+              blobHashes.add(hash)
+            }
+          }
+        }
+      }
+
+      for (const blobHash of blobHashes) {
+        if (!metaHashes.has(blobHash)) {
+          try {
+            await dir.removeEntry(blobKey(blobHash))
+          } catch {}
+        }
+      }
+
+      const validEntries: typeof metaEntries = []
+      let totalBytes = 0
+
+      for (const entry of metaEntries) {
+        if (blobHashes.has(entry.hash)) {
+          validEntries.push(entry)
+          totalBytes += entry.size
+        } else {
+          try {
+            await dir.removeEntry(metaKey(entry.hash))
+          } catch {}
+
+          this.lastTouched.delete(entry.hash)
+        }
+      }
+
+      if (validEntries.length <= maxFiles && totalBytes <= maxBytes) {
+        return
+      }
+
+      validEntries.sort((a, b) => a.writtenAt - b.writtenAt)
+
+      while (validEntries.length > maxFiles || totalBytes > maxBytes) {
+        const oldest = validEntries.shift()
+
+        if (!oldest) {
+          break
+        }
+
+        try {
+          await dir.removeEntry(blobKey(oldest.hash))
+        } catch {}
+
+        try {
+          await dir.removeEntry(metaKey(oldest.hash))
+        } catch {}
+
+        this.lastTouched.delete(oldest.hash)
         totalBytes -= oldest.size
-      } catch {
-        /* 忽略删除异常 */
       }
+    } catch (err) {
+      log.warn('glb-opfs-cache', 'prune failed:', err)
     }
-  } catch (err) {
-    log.warn('glb-opfs-cache', 'prune failed:', err)
   }
 }
 
-/** 把 GLB 字节写入 OPFS。尽力而为：写入失败（配额等）时静默吞掉错误，让调用方的流水线继续运行。 */
-export async function writeCachedGlb(contentHash: string, bytes: ArrayBuffer): Promise<void> {
-  if (!contentHash) {
-    return
-  }
+export const defaultGlbOpfsCache = new GlbOpfsCache()
 
-  const dir = await rootDir()
-
-  if (!dir) {
-    return
-  }
-
-  try {
-    const blobHandle = await dir.getFileHandle(blobKey(contentHash), { create: true })
-    const blobWritable = await blobHandle.createWritable()
-    await blobWritable.write(bytes)
-    await blobWritable.close()
-
-    const meta: MetaFile = {
-      contentHash,
-      size: bytes.byteLength,
-      version: SCHEMA_VERSION,
-      writtenAt: Date.now()
-    }
-
-    const metaHandle = await dir.getFileHandle(metaKey(contentHash), { create: true })
-    const metaWritable = await metaHandle.createWritable()
-    await metaWritable.write(JSON.stringify(meta))
-    await metaWritable.close()
-
-    void pruneGlbCache(dir)
-  } catch (err) {
-    log.warn('glb-opfs-cache', 'write failed:', err)
-  }
-}
-
-/** 围绕主进程模型缓存与流媒体协议的带缓存包装。先尝试 OPFS，失败则走自定义协议流式 fetch，成功后回填 OPFS 缓存。键是 `contentHash`（后端签发），不是 URL —— URL 是会轮换的签名查询串。 */
-export async function fetchGlbWithCache(url: string, contentHash?: string): Promise<ArrayBuffer | null> {
+// 键是 contentHash 而非 URL —— 后端的签名 URL 查询串会轮换。
+export async function fetchGlbWithCache(
+  url: string,
+  contentHash?: string,
+  cacheInstance: GlbOpfsCache = defaultGlbOpfsCache
+): Promise<ArrayBuffer | null> {
   if (contentHash) {
-    const cached = await readCachedGlb(contentHash)
+    const cached = await cacheInstance.read(contentHash)
 
     if (cached) {
       return cached
@@ -217,8 +391,8 @@ export async function fetchGlbWithCache(url: string, contentHash?: string): Prom
   }
 
   if (contentHash && bytes) {
-    // 即发即忘 —— 调用方已经拿到数据，不应该等缓存写入完成。
-    void writeCachedGlb(contentHash, bytes)
+    // 调用方已拿到数据，缓存写入不阻塞主流程。
+    void cacheInstance.write(contentHash, bytes)
   }
 
   return bytes

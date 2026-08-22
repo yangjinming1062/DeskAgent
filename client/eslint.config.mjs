@@ -60,6 +60,7 @@ export default [
         }
       ],
       curly: ['error', 'all'],
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'no-fallthrough': ['error', { allowEmptyCase: true }],
       'no-undef': 'off',
       'no-unused-vars': 'off',
