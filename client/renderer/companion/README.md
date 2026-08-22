@@ -2,18 +2,17 @@
 
 > Client 伙伴层的运行时契约。`ARCHITECTURE.md` 锁定跨模块设计意图，本文件记录 Client 侧独有的状态机优先级、表情覆盖、过渡语义与不能从代码结构直接读出的边界。
 
-## 1. 动画状态机（9 态）
+## 1. 动画状态机（8 态）
 
 | 状态 | 优先级 | 触发源 | 持续 |
 |---|---|---|---|
-| `disconnected` | 100 | Backend WS 断连 | 持续；恢复需 WS 重连 + 5min grace 后升级为 `sleeping` |
+| `disconnected` | 100 | Backend WS 断连 | 持续；恢复需 WS 重连 |
 | `interacting` | 80 | 用户戳 / 拖 / 悬停 | 瞬态 1.5–2.0s，回到 `previousState` |
 | `working` | 70 | 用户活动 ≥ 6 次/10s | 持续；10s 无活动 `force: true` 回 `idle` |
 | `speaking` | 60 | TTS 播放 | 与 TTS 音频等长 |
 | `thinking` | 50 | LLM 流式响应开始 | 持续至 `message.complete` |
 | `listening` | 40 | 用户开始输入 | 持续至用户停止输入或后端响应 |
 | `emotional` | 35 | `affect` cue 到达 | 瞬态 2.5s，回到 `previousState`（**叠加非抢占**） |
-| `sleeping` | 30 | 深夜 23:00–7:00 或长断连 | 持续；poke / chat-dock 打开 → `wakeUpFromSleep()` |
 | `idle` | 10 | 默认 | 持续；10–25s 随机切 IDLE 变体 |
 
 ### 1.1 状态切换规则
@@ -51,7 +50,7 @@
 
 视觉兜底层级见 [DESIGN.md §1.2](../../../DESIGN.md)。本节只记录切换实现：静态精灵层叠在画布上，收到模型字节并完成解析后才淡出交还，避免把“模型就绪事件早于字节落地”误当成可渲染状态；相册请求去重、按内容哈希缓存、失败保持当前图，图间淡切并尊重减少动态偏好。
 
-**渲染功耗三档**（[3d/PowerProfile.ts](3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（sleeping 状态、`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`、static-sprite 完全覆盖）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
+**渲染功耗三档**（[3d/PowerProfile.ts](3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`、static-sprite 完全覆盖）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
 
 两条防坑约束：**Ready 保护**——首个模型 `loadCharacter` 落定（`$modelLoadSettled`）前强制 active，避免孵化动画被误降频拉长；**隐藏窗口降级**——Chromium 对 hidden 窗口硬停 rAF（禁节流开关管不到合成层），active/idle 档在 `document.hidden` 时改由 16/37ms timer 驱动，`visibilitychange` 恢复 rAF。dormant 恒为 250ms timer（进程级禁 timer 节流，锁屏下稳定）；档位回升时 Engine 层把 delta 钳制到 50ms，防 mixer 在长暂停后跳变。
 
@@ -124,9 +123,9 @@
 
 **移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s；2D 静态卡片模式下跳过中间平移过程直接瞬移至目标坐标。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
 
-**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（sleep 位 + 自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）、$staticMode（2D 模式取消正在进行的平移与漫游）。返回 cleanup 函数。
+**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）、$staticMode（2D 模式取消正在进行的平移与漫游）。返回 cleanup 函数。
 
-**决策树**（`updateSpatialDecision`）：drag > chat(listener) > sleeping → sleep 位（默认保持右下角 home 位安稳躺卧）> quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 无 perch 目标 + 非 2D 模式 → roam > home。每次 tier / focus / state 变化触发重评估。
+**决策树**（`updateSpatialDecision`）：drag > chat(listener) > quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 无 perch 目标 + 非 2D 模式 → roam > home。每次 tier / focus / state 变化触发重评估。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧，两侧均溢出则放弃（窗口太宽）。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 

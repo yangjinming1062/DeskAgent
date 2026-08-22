@@ -88,7 +88,7 @@
 
 **emotion 枚举**（22 项，权威源 backend/services/chat/affect.py）：happy / sad / surprised / excited / confused / concerned / shy / proud / grateful / playful / bored / lonely / sleepy / curious / embarrassed / apologetic / neutral / pout / angry / smug / scared / relieved。
 
-**locale 枚举**（5 项，权威源在后端白名单）：home / chat / perch / roam / sleep。
+**locale 枚举**（4 项，权威源在后端白名单）：home / chat / perch / roam。
 
 **spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。客户端经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
 
