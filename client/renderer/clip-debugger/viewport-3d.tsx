@@ -129,8 +129,8 @@ export function Viewport3D(): React.JSX.Element {
     })
 
     const helper =
-      typeof (transformControls as any).getHelper === 'function'
-        ? (transformControls as any).getHelper()
+      typeof transformControls.getHelper === 'function'
+        ? transformControls.getHelper()
         : (transformControls as unknown as THREE.Object3D)
 
     scene.add(helper)
@@ -604,9 +604,9 @@ export function Viewport3D(): React.JSX.Element {
         } else if (parsed.embeddedClips.length > 0) {
           selectClip(parsed.embeddedClips[0])
         }
-      } catch (err: any) {
+      } catch (err) {
         if (!isStale) {
-          setLoadError(err?.message || '加载模型失败')
+          setLoadError(err instanceof Error ? err.message : '加载模型失败')
         }
       }
     }
@@ -744,8 +744,8 @@ export function Viewport3D(): React.JSX.Element {
       try {
         const loaded = await readGlbFile(glbFile)
         $customGlbBuffer.set(loaded)
-      } catch (err: any) {
-        setLoadError(err?.message || '解析拖拽模型文件失败')
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : '解析拖拽模型文件失败')
       }
     }
   }

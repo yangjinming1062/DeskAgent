@@ -1,12 +1,14 @@
-import type { App, BrowserWindow, Menu, nativeImage, Tray } from 'electron'
+import type { App, BrowserWindow, Menu, MenuItemConstructorOptions, nativeImage, Tray } from 'electron'
+
+import type { BackendSessionLike } from '../runner/reverse-rpc'
 
 export interface TrayDeps {
   Menu: typeof Menu
   Tray: typeof Tray
   app: App
   bridgeDeps: {
-    backendSession?: any
-    ensureBackendSession?: () => any
+    backendSession?: BackendSessionLike | null
+    ensureBackendSession?: () => BackendSessionLike | null | undefined
     getMainWindow: () => BrowserWindow | null | undefined
     isQuitting?: boolean
     showToolWindow: () => void
@@ -67,7 +69,7 @@ export function buildTrayMenu() {
     mainActionClick = () => showMainWindow()
   }
 
-  const template: any[] = [
+  const template: MenuItemConstructorOptions[] = [
     {
       label: mainActionLabel,
       click: mainActionClick
@@ -181,16 +183,18 @@ export function installTray(deps: TrayDeps): null | Tray {
 
       return null
     }
-  } catch (err: any) {
-    deps.rememberLog(`[tray] icon load failed: ${err?.message || err} — operating in hide-only mode`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.rememberLog(`[tray] icon load failed: ${message} — operating in hide-only mode`)
 
     return null
   }
 
   try {
     trayInstance = new deps.Tray(image)
-  } catch (err: any) {
-    deps.rememberLog(`[tray] init failed: ${err?.message || err} — operating in hide-only mode`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    deps.rememberLog(`[tray] init failed: ${message} — operating in hide-only mode`)
 
     return null
   }

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+import type { App, BrowserWindow, Menu, MenuItemConstructorOptions, NativeImage, nativeImage, Tray } from 'electron'
+
 import {
   buildTrayMenu,
   destroyTray,
@@ -10,6 +12,39 @@ import {
   toggleMainWindow,
   type TrayDeps
 } from './tray'
+
+interface FakeMenuEntry {
+  click?: () => void
+  label?: string
+  type?: string
+}
+
+interface FakeBuiltMenu {
+  items: FakeMenuEntry[]
+  template: FakeMenuEntry[]
+}
+
+interface FakeMenu {
+  buildFromTemplate: (template: MenuItemConstructorOptions[]) => FakeBuiltMenu
+}
+
+interface FakeNativeImage {
+  createFromPath: (p: string) => { isEmpty: () => boolean; path: string }
+}
+
+interface FakeTray {
+  contextMenu: FakeBuiltMenu | null
+  destroyed: boolean
+  image: NativeImage
+  listeners: Record<string, Function[]>
+  tooltip: string
+  destroy: () => void
+  emit: (event: string, ...args: unknown[]) => void
+  isDestroyed: () => boolean
+  on: (event: string, fn: Function) => void
+  setContextMenu: (menu: FakeBuiltMenu | null) => void
+  setToolTip: (tip: string) => void
+}
 
 interface FakeWindow {
   destroyed: boolean
@@ -27,9 +62,9 @@ interface FakeWindow {
   focus: () => void
   setSkipTaskbar: (skip: boolean) => void
   on: (event: string, fn: Function) => void
-  emit: (event: string, ...args: any[]) => void
+  emit: (event: string, ...args: unknown[]) => void
   webContents: {
-    send: (channel: string, ...args: any[]) => void
+    send: (channel: string, ...args: unknown[]) => void
   }
 }
 
@@ -75,7 +110,7 @@ function createFakeWindow(initial: Partial<FakeWindow> = {}): FakeWindow {
 
       win.listeners[event].push(fn)
     },
-    emit(event: string, ...args: any[]) {
+    emit(event: string, ...args: unknown[]) {
       for (const fn of win.listeners[event] || []) {
         fn(...args)
       }
@@ -90,46 +125,45 @@ function createFakeWindow(initial: Partial<FakeWindow> = {}): FakeWindow {
 
 function createMockDeps(options: { authed?: boolean; fakeWin?: FakeWindow | null; createWindow?: () => void }): {
   deps: TrayDeps
-  trayInstances: any[]
-  lastBuiltMenu: any
+  trayInstances: FakeTray[]
+  lastBuiltMenu: MenuItemConstructorOptions[] | null
 } {
-  const trayInstances: any[] = []
-  let lastBuiltMenu: any = null
+  const trayInstances: FakeTray[] = []
+  let lastBuiltMenu: MenuItemConstructorOptions[] | null = null
 
-  const fakeMenu: any = {
-    buildFromTemplate: (template: any[]) => {
+  const fakeMenu: FakeMenu = {
+    buildFromTemplate: (template: MenuItemConstructorOptions[]) => {
       lastBuiltMenu = template
 
-      return { template, items: template }
+      return { template: template as unknown as FakeMenuEntry[], items: template as unknown as FakeMenuEntry[] }
     }
   }
 
-  class FakeTray {
-    image: any
-    tooltip = ''
-    contextMenu: any = null
+  class FakeTrayImpl {
+    contextMenu: FakeBuiltMenu | null = null
     destroyed = false
+    image!: NativeImage
     listeners: Record<string, Function[]> = {}
 
-    constructor(image: any) {
+    tooltip = ''
+
+    constructor(image: NativeImage) {
       this.image = image
       trayInstances.push(this)
     }
 
-    setToolTip(tip: string) {
-      this.tooltip = tip
+    destroy() {
+      this.destroyed = true
     }
 
-    setContextMenu(menu: any) {
-      this.contextMenu = menu
+    emit(event: string, ...args: unknown[]) {
+      for (const fn of this.listeners[event] || []) {
+        fn(...args)
+      }
     }
 
     isDestroyed() {
       return this.destroyed
-    }
-
-    destroy() {
-      this.destroyed = true
     }
 
     on(event: string, fn: Function) {
@@ -140,14 +174,16 @@ function createMockDeps(options: { authed?: boolean; fakeWin?: FakeWindow | null
       this.listeners[event].push(fn)
     }
 
-    emit(event: string, ...args: any[]) {
-      for (const fn of this.listeners[event] || []) {
-        fn(...args)
-      }
+    setContextMenu(menu: FakeBuiltMenu | null) {
+      this.contextMenu = menu
+    }
+
+    setToolTip(tip: string) {
+      this.tooltip = tip
     }
   }
 
-  const fakeNativeImage: any = {
+  const fakeNativeImage: FakeNativeImage = {
     createFromPath: (p: string) => ({
       isEmpty: () => false,
       path: p
@@ -157,21 +193,21 @@ function createMockDeps(options: { authed?: boolean; fakeWin?: FakeWindow | null
   const deps: TrayDeps = {
     app: {
       quit: () => {}
-    } as any,
+    } as unknown as App,
     bridgeDeps: {
       backendSession: {
         getSession: () => (options.authed ? { hasToken: true } : { hasToken: false })
       },
-      getMainWindow: () => options.fakeWin as any,
+      getMainWindow: () => options.fakeWin as unknown as BrowserWindow | null | undefined,
       isQuitting: false,
       showToolWindow: () => {}
     },
     createWindow: options.createWindow || (() => {}),
     getAppIconPath: () => '/mock/icon.png',
-    Menu: fakeMenu,
-    nativeImage: fakeNativeImage,
+    Menu: fakeMenu as unknown as typeof Menu,
+    nativeImage: fakeNativeImage as unknown as typeof nativeImage,
     rememberLog: () => {},
-    Tray: FakeTray as any
+    Tray: FakeTrayImpl as unknown as typeof Tray
   }
 
   return {
@@ -209,12 +245,12 @@ test('buildTrayMenu shows "隐藏" when unauthenticated but sprite is visible', 
   const { deps } = createMockDeps({ authed: false, fakeWin })
   installTray(deps)
 
-  const menu = buildTrayMenu() as any
+  const menu = buildTrayMenu() as unknown as FakeBuiltMenu
   assert.ok(menu)
   assert.equal(menu.template[0].label, '隐藏')
 
   // 点击应隐藏窗口
-  menu.template[0].click()
+  menu.template[0].click?.()
   assert.equal(fakeWin.hidden, true)
 
   destroyTray()
@@ -225,12 +261,12 @@ test('buildTrayMenu shows "激活..." when unauthenticated and sprite is hidden'
   const { deps } = createMockDeps({ authed: false, fakeWin })
   installTray(deps)
 
-  const menu = buildTrayMenu() as any
+  const menu = buildTrayMenu() as unknown as FakeBuiltMenu
   assert.ok(menu)
   assert.equal(menu.template[0].label, '激活...')
 
   // 点击应显示窗口
-  menu.template[0].click()
+  menu.template[0].click?.()
   assert.equal(fakeWin.hidden, false)
 
   destroyTray()
@@ -241,11 +277,11 @@ test('buildTrayMenu shows "隐藏" and full menu when authenticated and sprite i
   const { deps } = createMockDeps({ authed: true, fakeWin })
   installTray(deps)
 
-  const menu = buildTrayMenu() as any
+  const menu = buildTrayMenu() as unknown as FakeBuiltMenu
   assert.ok(menu)
   assert.equal(menu.template[0].label, '隐藏')
 
-  const labels = menu.template.map((item: any) => item.label).filter(Boolean)
+  const labels = menu.template.map(item => item.label).filter(Boolean)
   assert.deepEqual(labels, ['隐藏', '反激活', '退出客户端'])
 
   destroyTray()
@@ -256,11 +292,11 @@ test('buildTrayMenu shows "显示" and full menu when authenticated and sprite i
   const { deps } = createMockDeps({ authed: true, fakeWin })
   installTray(deps)
 
-  const menu = buildTrayMenu() as any
+  const menu = buildTrayMenu() as unknown as FakeBuiltMenu
   assert.ok(menu)
   assert.equal(menu.template[0].label, '显示')
 
-  const labels = menu.template.map((item: any) => item.label).filter(Boolean)
+  const labels = menu.template.map(item => item.label).filter(Boolean)
   assert.deepEqual(labels, ['显示', '反激活', '退出客户端'])
 
   destroyTray()
@@ -269,17 +305,17 @@ test('buildTrayMenu shows "显示" and full menu when authenticated and sprite i
 test('toggleMainWindow switches between hidden and visible', () => {
   const fakeWin = createFakeWindow({ hidden: false })
   const { deps } = createMockDeps({ authed: true, fakeWin })
-  const tray = installTray(deps) as any
+  const tray = installTray(deps) as unknown as FakeTray
 
   assert.equal(fakeWin.hidden, false)
 
   toggleMainWindow()
   assert.equal(fakeWin.hidden, true)
-  assert.equal(tray.contextMenu.template[0].label, '显示')
+  assert.equal(tray.contextMenu?.template[0].label, '显示')
 
   toggleMainWindow()
   assert.equal(fakeWin.hidden, false)
-  assert.equal(tray.contextMenu.template[0].label, '隐藏')
+  assert.equal(tray.contextMenu?.template[0].label, '隐藏')
 
   destroyTray()
 })
@@ -287,10 +323,10 @@ test('toggleMainWindow switches between hidden and visible', () => {
 test('installCloseInterceptor rebuilds tray menu on window lifecycle events', () => {
   const fakeWin = createFakeWindow({ hidden: false })
   const { deps } = createMockDeps({ authed: true, fakeWin })
-  const tray = installTray(deps) as any
-  installCloseInterceptor(fakeWin as any)
+  const tray = installTray(deps) as unknown as FakeTray
+  installCloseInterceptor(fakeWin as unknown as BrowserWindow)
 
-  assert.equal(tray.contextMenu.template[0].label, '隐藏')
+  assert.equal(tray.contextMenu?.template[0].label, '隐藏')
 
   // 触发 close 事件 → 被拦截并隐藏
   const closeEvent = {
@@ -303,11 +339,11 @@ test('installCloseInterceptor rebuilds tray menu on window lifecycle events', ()
   fakeWin.emit('close', closeEvent)
   assert.equal(closeEvent.defaultPrevented, true)
   assert.equal(fakeWin.hidden, true)
-  assert.equal(tray.contextMenu.template[0].label, '显示')
+  assert.equal(tray.contextMenu?.template[0].label, '显示')
 
   // 触发 show 事件 → 菜单更新为 '隐藏'
   fakeWin.show()
-  assert.equal(tray.contextMenu.template[0].label, '隐藏')
+  assert.equal(tray.contextMenu?.template[0].label, '隐藏')
 
   destroyTray()
 })
@@ -315,7 +351,7 @@ test('installCloseInterceptor rebuilds tray menu on window lifecycle events', ()
 test('installTray handles tray click and double-click events', () => {
   const fakeWin = createFakeWindow({ hidden: false })
   const { deps } = createMockDeps({ authed: true, fakeWin })
-  const tray = installTray(deps) as any
+  const tray = installTray(deps) as unknown as FakeTray
 
   // 单击托盘图标切换显示状态
   tray.emit('click')

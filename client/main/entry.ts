@@ -21,7 +21,9 @@ import {
   Tray
 } from 'electron'
 import log from 'electron-log/main'
+import type { UpdateInfo } from 'electron-updater'
 
+import type { BackendSession, SessionSnapshot } from './backend/session'
 import { createBackendSession } from './backend/session'
 import { registerAuthIpc } from './ipc/auth'
 import { registerClipboardIpc } from './ipc/clipboard'
@@ -48,6 +50,7 @@ import {
   registerSingleInstanceForwarder,
   showMainWindow
 } from './lifecycle/tray'
+import type { RunnerBridge } from './runner/bridge'
 import { createRunnerBridge } from './runner/bridge'
 import { createRunnerProcess } from './runner/process'
 import { createReverseRpc } from './runner/reverse-rpc'
@@ -263,8 +266,9 @@ function openExternalUrl(rawUrl: string): boolean {
 
         try {
           shell.showItemInFolder(localPath)
-        } catch (revealError: any) {
-          rememberLog(`[file] showItemInFolder failed: ${revealError.message}`)
+        } catch (revealError) {
+          const msg = revealError instanceof Error ? revealError.message : String(revealError)
+          rememberLog(`[file] showItemInFolder failed: ${msg}`)
         }
       })
       .catch(error => rememberLog(`[file] openPath rejected: ${error.message}`))
@@ -282,7 +286,7 @@ function openExternalUrl(rawUrl: string): boolean {
   return true
 }
 
-function clampBootProgress(value: any): number {
+function clampBootProgress(value: unknown): number {
   const numeric = Number(value)
 
   if (!Number.isFinite(numeric)) {
@@ -296,7 +300,7 @@ function broadcastBootProgress(): void {
   sendToMain(mainWindow, 'spiritagent:boot-progress', bootProgressState)
 }
 
-function updateBootProgress(update: any, options: { allowDecrease?: boolean } = {}): void {
+function updateBootProgress(update: Partial<DesktopBootProgress>, options: { allowDecrease?: boolean } = {}): void {
   const nextProgressRaw =
     typeof update.progress === 'number' ? clampBootProgress(update.progress) : bootProgressState.progress
 
@@ -379,7 +383,11 @@ function resolveSpiritAgentVersion(): string {
   return app.getVersion()
 }
 
-async function fetchJson(url: string, token?: string, options: any = {}): Promise<any> {
+async function fetchJson(
+  url: string,
+  token?: string,
+  options: { body?: unknown; method?: string; timeoutMs?: number } = {}
+): Promise<unknown> {
   const timeoutMs = resolveTimeoutMs(options.timeoutMs, DEFAULT_FETCH_TIMEOUT_MS)
   const body = options.body !== undefined ? JSON.stringify(options.body) : undefined
 
@@ -528,20 +536,21 @@ async function writeComposerImage(buffer: Buffer, ext = '.png'): Promise<string>
 
 async function waitForSpiritAgent(baseUrl: string, token?: string): Promise<void> {
   const deadline = Date.now() + 45_000
-  let lastError: any = null
+  let lastError: unknown = null
 
   while (Date.now() < deadline) {
     try {
       await fetchJson(`${baseUrl}/health`, token)
 
       return
-    } catch (error: any) {
+    } catch (error) {
       lastError = error
       await sleep(500)
     }
   }
 
-  throw new Error(`SpiritAgent backend did not become ready: ${lastError?.message || 'timeout'}`)
+  const lastErrorMsg = lastError instanceof Error ? lastError.message : String(lastError ?? '')
+  throw new Error(`SpiritAgent backend did not become ready: ${lastErrorMsg || 'timeout'}`)
 }
 
 function getWindowButtonPosition(): { x: number; y: number } | null {
@@ -564,7 +573,10 @@ function getWindowState() {
   }
 }
 
-function sameWindowButtonPosition(a: any, b: any): boolean {
+function sameWindowButtonPosition(
+  a: null | undefined | { x: number; y: number },
+  b: null | undefined | { x: number; y: number }
+): boolean {
   return !!a && !!b && a.x === b.x && a.y === b.y
 }
 
@@ -608,7 +620,7 @@ function sendWindowStateChanged(nextIsFullscreen?: boolean): void {
 }
 
 function buildApplicationMenu(): Menu {
-  const template: any[] = []
+  const template: Electron.MenuItemConstructorOptions[] = []
 
   if (IS_MAC) {
     template.push({
@@ -798,7 +810,7 @@ function installZoomShortcuts(targetWin: BrowserWindow): void {
 
 function installContextMenu(targetWin: BrowserWindow): void {
   targetWin.webContents.on('context-menu', (_event, params) => {
-    const template: any[] = []
+    const template: Electron.MenuItemConstructorOptions[] = []
     const hasSelection = Boolean(params.selectionText?.trim())
     const hasImage = params.mediaType === 'image' && Boolean(params.srcURL)
     const hasLink = Boolean(params.linkURL)
@@ -898,7 +910,14 @@ function installContextMenu(targetWin: BrowserWindow): void {
   })
 }
 
-function isAudioCapturePermission(permission: string, details: any): boolean {
+function isAudioCapturePermission(
+  permission: string,
+  details:
+    | Electron.PermissionRequest
+    | Electron.FilesystemPermissionRequest
+    | Electron.MediaAccessPermissionRequest
+    | Electron.OpenExternalPermissionRequest
+): boolean {
   if (permission === 'audioCapture') {
     return true
   }
@@ -907,7 +926,8 @@ function isAudioCapturePermission(permission: string, details: any): boolean {
     return false
   }
 
-  const mediaTypes = details?.mediaTypes
+  const mediaTypes =
+    'mediaTypes' in details ? (details as { mediaTypes?: ReadonlyArray<string> }).mediaTypes : undefined
 
   if (!Array.isArray(mediaTypes) || mediaTypes.length === 0) {
     return true
@@ -960,7 +980,9 @@ function getRunnerUpdater(): RunnerUpdater {
     bridgeDeps,
     fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch,
     getMainWindow: () => mainWindow,
-    sendToMain
+    sendToMain: (win: unknown, channel: string, payload: unknown) => {
+      sendToMain(win as BrowserWindow | null | undefined, channel, payload)
+    }
   })
 
   return runnerUpdaterSingleton
@@ -997,7 +1019,7 @@ function setupAutoUpdater(): void {
     url: updateBaseUrl
   })
 
-  autoUpdater.on('update-downloaded', (info: any) => {
+  autoUpdater.on('update-downloaded', (info: UpdateInfo) => {
     log.info('desktop update downloaded; starting runner prefetch', info?.version)
     getRunnerUpdater()
       .prefetchRunnerAssets({
@@ -1011,8 +1033,9 @@ function setupAutoUpdater(): void {
   })
 
   const timer = setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((error: any) => {
-      log.warn('initial update check failed:', error?.message || error)
+    autoUpdater.checkForUpdates().catch((error: unknown) => {
+      const msg = error instanceof Error ? error.message : String(error)
+      log.warn('initial update check failed:', msg)
     })
   }, UPDATE_INITIAL_CHECK_DELAY_MS)
 
@@ -1180,27 +1203,46 @@ function installStandardWindowHandlers(win: BrowserWindow): void {
 
         try {
           win.webContents.reload()
-        } catch (err: any) {
-          rememberLog(`[renderer] reload after crash failed: ${err?.message || err}`)
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          rememberLog(`[renderer] reload after crash failed: ${msg}`)
         }
       })
     }
   })
   win.webContents.on('unresponsive', () => rememberLog('[renderer] webContents became unresponsive'))
 
-  win.webContents.on('console-message', (_event: any, detailsOrLevel: any, message: any, line: any, sourceId: any) => {
-    const details = detailsOrLevel && typeof detailsOrLevel === 'object' ? detailsOrLevel : null
-    const level = details ? details.level : detailsOrLevel
+  win.webContents.on(
+    'console-message',
+    (
+      _event: Electron.Event,
+      detailsOrLevel: number | Electron.WebContentsConsoleMessageEventParams,
+      message?: string,
+      line?: number,
+      sourceId?: string
+    ) => {
+      const details = detailsOrLevel && typeof detailsOrLevel === 'object' ? detailsOrLevel : null
 
-    if (level !== 3) {
-      return
+      const level: number = details
+        ? details.level === 'error'
+          ? 3
+          : details.level === 'warning'
+            ? 2
+            : details.level === 'info'
+              ? 1
+              : 0
+        : (detailsOrLevel as number)
+
+      if (level !== 3) {
+        return
+      }
+
+      const text = details ? details.message : (message ?? '')
+      const src = details ? details.sourceId : (sourceId ?? '')
+      const lineNo = details ? details.lineNumber : (line ?? 0)
+      rememberLog(`[renderer console] ${text} (${src}:${lineNo})`)
     }
-
-    const text = details ? details.message : message
-    const src = details ? details.sourceUrl : sourceId
-    const lineNo = details ? details.lineNumber : line
-    rememberLog(`[renderer console] ${text} (${src}:${lineNo})`)
-  })
+  )
   installCloseInterceptor(win)
 }
 
@@ -1349,7 +1391,7 @@ function hideToolWindow(): void {
   }
 }
 
-function broadcastAuthChanged(snapshot: any): void {
+function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   rebuildTrayMenu()
   const authenticated = Boolean(snapshot?.hasToken)
   const payload = { authenticated, snapshot: authenticated ? snapshot : null }
@@ -1433,8 +1475,46 @@ function showAboutPanelFresh(): void {
   app.showAboutPanel()
 }
 
-const bridgeDeps: any = {
-  app,
+interface RunnerBridgeDeps {
+  app: { getPath: (name: string) => string; [key: string]: unknown }
+  atomicWriteFile: typeof atomicWriteFile
+  autoStartBridge: () => void
+  autoStopBridge: () => void
+  backendSession: null | BackendSession
+  broadcastAuthChanged: (snapshot: null | SessionSnapshot) => void
+  buildClientContext: () => ReturnType<typeof buildClientContext>
+  createBackendSession: typeof createBackendSession
+  createReverseRpc: typeof createReverseRpc
+  createRunnerBridge: typeof createRunnerBridge
+  createRunnerProcess: typeof createRunnerProcess
+  createRunnerWsServer: typeof createRunnerWsServer
+  electronNet: typeof electronNet
+  ensureBackendSession: () => BackendSession
+  fetchJson: (
+    url: string,
+    token?: string,
+    options?: { body?: unknown; method?: string; timeoutMs?: number }
+  ) => Promise<unknown>
+  fileExists: typeof fileExists
+  getMainWindow: () => BrowserWindow | null
+  getSpriteWindow: () => BrowserWindow | null
+  getToolWindow: () => BrowserWindow | null
+  hideToolWindow: () => void
+  isQuitting: boolean
+  rebuildTrayMenu: () => void
+  rememberLog: (chunk: string) => void
+  resetBackendCache: () => void
+  resolveSpiritAgentVersion: () => string
+  rewireAuthToken: () => void
+  runnerBridge: null | RunnerBridge
+  safeStorage: typeof safeStorage
+  showToolWindow: () => void
+  spiritagentHome: string
+  taggedLogger: (prefix: string) => (chunk: string) => void
+}
+
+const bridgeDeps: RunnerBridgeDeps = {
+  app: app as unknown as { getPath: (name: string) => string; [key: string]: unknown },
   atomicWriteFile,
   autoStartBridge: () => autoStartBridge(bridgeDeps),
   autoStopBridge: () => autoStopBridge(bridgeDeps),
@@ -1460,7 +1540,7 @@ const bridgeDeps: any = {
     bridgeDeps.backendSession = createBackendSession({
       appVersion: resolveSpiritAgentVersion(),
       defaultBaseUrl: readStoredBackendUrl(SPIRITAGENT_HOME) || null,
-      fetchImpl: (url: string, options: any) => electronNet.fetch(url, options),
+      fetchImpl: (url: string, options?: RequestInit) => electronNet.fetch(url, options),
       log: (chunk: string) => rememberLog(chunk),
       safeStorage,
       userDataDir: app.getPath('userData')
@@ -1469,7 +1549,7 @@ const bridgeDeps: any = {
     try {
       bridgeDeps.backendSession
         .restoreSession()
-        .then((snapshot: any) => {
+        .then((snapshot: null | SessionSnapshot) => {
           if (snapshot) {
             broadcastAuthChanged(snapshot)
             autoStartBridge(bridgeDeps)
@@ -1477,12 +1557,14 @@ const bridgeDeps: any = {
             rebuildTrayMenu()
           }
         })
-        .catch((error: any) => {
-          rememberLog(`[session] restore failed: ${error?.message || error}`)
+        .catch((error: unknown) => {
+          const msg = error instanceof Error ? error.message : String(error)
+          rememberLog(`[session] restore failed: ${msg}`)
           rebuildTrayMenu()
         })
-    } catch (error: any) {
-      rememberLog(`[session] restore failed: ${error?.message || error}`)
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error)
+      rememberLog(`[session] restore failed: ${msg}`)
     }
 
     return bridgeDeps.backendSession
@@ -1495,7 +1577,7 @@ const bridgeDeps: any = {
   hideToolWindow,
   isQuitting: false,
   rebuildTrayMenu: () => rebuildTrayMenu(),
-  rememberLog,
+  rememberLog: (chunk: string) => rememberLog(chunk),
   resetBackendCache,
   resolveSpiritAgentVersion,
   rewireAuthToken: () => {
@@ -1628,8 +1710,9 @@ function configureSpellChecker(): void {
     const chosen = candidates.find(lang => available.includes(lang)) || 'en-US'
 
     defaultSession.setSpellCheckerLanguages([chosen])
-  } catch (error: any) {
-    rememberLog(`Spellchecker setup failed: ${error.message}`)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    rememberLog(`Spellchecker setup failed: ${msg}`)
   }
 }
 
@@ -1639,9 +1722,10 @@ app.on('before-quit', () => {
 
   if (bridgeDeps.runnerBridge) {
     try {
-      bridgeDeps.runnerBridge.stop({ reason: 'app-quit' })
-    } catch (error: any) {
-      rememberLog(`[runner-bridge] quit cleanup failed: ${error?.message || error}`)
+      void bridgeDeps.runnerBridge.stop({ reason: 'app-quit' })
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      rememberLog(`[runner-bridge] quit cleanup failed: ${msg}`)
     }
   }
 

@@ -5,24 +5,33 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+
 import { registerOnboardingAudioIpc } from './onboarding-audio'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-function makeFakeIpc() {
-  const handlers = new Map<string, (...args: any[]) => any>()
+type Handler = (event: IpcMainInvokeEvent, tag: string) => Promise<unknown> | unknown
+
+function makeFakeIpc(): {
+  handle: (channel: string, handler: Handler) => void
+  invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
+} {
+  const handlers = new Map<string, Handler>()
 
   return {
-    handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler),
-    invoke: (channel: string, ...args: any[]) => {
+    handle: (channel, handler) => {
+      handlers.set(channel, handler)
+    },
+    invoke: async (channel, ...args) => {
       const h = handlers.get(channel)
 
       if (!h) {
         throw new Error(`no handler for ${channel}`)
       }
 
-      return h({}, ...args)
+      return h({} as IpcMainInvokeEvent, args[0] as string)
     }
   }
 }
@@ -43,16 +52,16 @@ test('onboardingAudio:read resolves audio file from spiritagentHome or dev fallb
     spiritagentHome: tmpDir,
     devAudioRoot,
     hardening: { resolveReadableFileForIpc },
-    ipcMain: ipcMain as any,
+    ipcMain: ipcMain as unknown as IpcMain,
     mimeTypeForPath
   })
 
   // 1. Tag matching repo payload falls back when tmpDir has no files
   const res = await ipcMain.invoke('spiritagent:onboardingAudio:read', 'onboarding.q0')
-  assert.equal(res.tag, 'onboarding.q0')
-  assert.equal(res.mimeType, 'audio/mpeg')
-  assert.ok(res.dataUrl.startsWith('data:audio/mpeg;base64,'))
-  assert.ok(res.bytes > 0)
+  assert.equal((res as { tag: string }).tag, 'onboarding.q0')
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/mpeg')
+  assert.ok((res as { dataUrl: string }).dataUrl.startsWith('data:audio/mpeg;base64,'))
+  assert.ok((res as { bytes: number }).bytes > 0)
 
   // 2. Local spiritagentHome file takes precedence over dev payload
   const localDir = path.join(tmpDir, 'audio', 'onboarding', 'zh')
@@ -60,7 +69,7 @@ test('onboardingAudio:read resolves audio file from spiritagentHome or dev fallb
   fs.writeFileSync(path.join(localDir, 'onboarding.q0.mp3'), Buffer.from('fake-mp3-content'))
 
   const localRes = await ipcMain.invoke('spiritagent:onboardingAudio:read', 'onboarding.q0')
-  assert.equal(localRes.bytes, Buffer.from('fake-mp3-content').length)
+  assert.equal((localRes as { bytes: number }).bytes, Buffer.from('fake-mp3-content').length)
 
   // 3. Invalid tags reject
   await assert.rejects(

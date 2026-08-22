@@ -4,24 +4,46 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
+import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+
+import type { MediaIpcDeps } from './media'
 import { type EngineMode, registerMediaIpc, ttsAudioCache } from './media'
 import { cacheKey } from './tts-disk-cache'
 
+type FakeBridge = NonNullable<ReturnType<NonNullable<MediaIpcDeps['getRunnerBridge']>>>
+type InvokeArgs = Parameters<NonNullable<FakeBridge['invoke']>>[1]
+type BridgeTools = ReturnType<NonNullable<FakeBridge['getTools']>>
+
+interface BridgeSpy {
+  calls: Array<{ args: InvokeArgs; name: string }>
+  getTools: () => BridgeTools
+  invoke: (name: string, args: InvokeArgs) => Promise<unknown>
+}
+
 const ORIG_FETCH = global.fetch
 
-function makeFakeIpc() {
-  const handlers = new Map<string, (event: any, payload: any) => any>()
+type IpcHandler = (event: IpcMainInvokeEvent, payload: unknown) => unknown
+
+interface FakeIpc {
+  handle: (channel: string, handler: IpcHandler) => void
+  invoke: (channel: string, payload?: unknown) => Promise<unknown>
+}
+
+function makeFakeIpc(): FakeIpc {
+  const handlers = new Map<string, IpcHandler>()
 
   return {
-    handle: (channel: string, handler: (event: any, payload: any) => any) => handlers.set(channel, handler),
-    invoke: (channel: string, payload: any) => {
+    handle: (channel, handler) => {
+      handlers.set(channel, handler)
+    },
+    invoke: async (channel, payload) => {
       const h = handlers.get(channel)
 
       if (!h) {
         throw new Error(`no handler for ${channel}`)
       }
 
-      return h({}, payload)
+      return h({} as IpcMainInvokeEvent, payload) as Promise<unknown>
     }
   }
 }
@@ -30,13 +52,13 @@ function makeBridge({
   invokeResult = null,
   invokeThrows = null,
   tools = []
-}: { invokeResult?: any; invokeThrows?: null | string; tools?: any[] } = {}) {
-  const calls: any[] = []
+}: { invokeResult?: unknown; invokeThrows?: null | string; tools?: BridgeTools } = {}): BridgeSpy {
+  const calls: Array<{ args: InvokeArgs; name: string }> = []
 
   return {
     calls,
     getTools: () => tools,
-    invoke: async (name: string, args: any) => {
+    invoke: async (name: string, args: InvokeArgs) => {
       calls.push({ args, name })
 
       if (invokeThrows) {
@@ -59,7 +81,7 @@ function setup({
   sttSilentFallback = true,
   tts = 'auto' as EngineMode
 }: {
-  bridge?: any
+  bridge?: BridgeSpy | null
   spiritagentHome?: null | string
   stt?: EngineMode
   sttSilentFallback?: boolean
@@ -76,23 +98,50 @@ function setup({
       sttSilentFallback,
       tts
     }),
-    getRunnerBridge: () => bridge,
-    ipcMain: ipc as any
+    getRunnerBridge: () => bridge as unknown as FakeBridge,
+    ipcMain: ipc as unknown as IpcMain
   })
 
   return ipc
 }
 
-function cloudFetch({ bytes = null, contentType = 'application/json', json = null, status = 200 }: any = {}) {
-  return async () =>
-    ({
-      arrayBuffer: async () => bytes ?? Buffer.from(JSON.stringify(json)),
-      headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? contentType : null) },
-      ok: status >= 200 && status < 300,
-      status,
-      statusText: 'OK',
-      text: async () => JSON.stringify(json)
-    }) as any
+interface FakeResponse {
+  arrayBuffer: () => Promise<ArrayBufferLike>
+  headers: { get: (k: string) => null | string }
+  ok: boolean
+  status: number
+  statusText: string
+  text: () => Promise<string>
+}
+
+interface CloudFetchOptions {
+  bytes?: Buffer | null
+  contentType?: string
+  json?: unknown
+  status?: number
+}
+
+function makeFakeResponse({
+  bytes = null,
+  contentType = 'application/json',
+  json = null,
+  status = 200
+}: CloudFetchOptions): FakeResponse {
+  const data = bytes ?? Buffer.from(JSON.stringify(json))
+  const arrayBuf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)
+
+  return {
+    arrayBuffer: async () => arrayBuf,
+    headers: { get: (k: string) => (k.toLowerCase() === 'content-type' ? contentType : null) },
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: 'OK',
+    text: async () => JSON.stringify(json)
+  }
+}
+
+function cloudFetch(options: CloudFetchOptions = {}): typeof globalThis.fetch {
+  return (async () => makeFakeResponse(options)) as unknown as typeof globalThis.fetch
 }
 
 const STT_DATA_URL = `data:audio/webm;base64,${Buffer.from('fake-audio').toString('base64')}`
@@ -107,10 +156,13 @@ test('STT auto + local available + success → uses local, base64 passed through
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL, filename: 'voice.webm' })
 
-  assert.equal(res.text, 'hello')
+  assert.equal((res as { text: string }).text, 'hello')
   assert.equal(bridge.calls[0].name, 'speech_to_text')
-  assert.equal(bridge.calls[0].args.audio_base64, Buffer.from('fake-audio').toString('base64'))
-  assert.equal(bridge.calls[0].args.mime_type, 'audio/webm')
+  assert.equal(
+    (bridge.calls[0].args as { audio_base64: string }).audio_base64,
+    Buffer.from('fake-audio').toString('base64')
+  )
+  assert.equal((bridge.calls[0].args as { mime_type: string }).mime_type, 'audio/webm')
 })
 
 test('STT auto + local returns success:false → falls back to cloud', async () => {
@@ -120,7 +172,7 @@ test('STT auto + local returns success:false → falls back to cloud', async () 
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
 })
 
 test('STT auto + local throws → falls back to cloud', async () => {
@@ -130,7 +182,7 @@ test('STT auto + local throws → falls back to cloud', async () => {
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
 })
 
 test('STT auto + local not available → cloud directly (invoke never called)', async () => {
@@ -140,7 +192,7 @@ test('STT auto + local not available → cloud directly (invoke never called)', 
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
 })
 
@@ -150,7 +202,7 @@ test('STT auto + bridge null → cloud', async () => {
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
 })
 
 test('STT cloud → always cloud even when local available', async () => {
@@ -160,7 +212,7 @@ test('STT cloud → always cloud even when local available', async () => {
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
 })
 
@@ -174,7 +226,7 @@ test('STT local + success → uses local', async () => {
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'local-text')
+  assert.equal((res as { text: string }).text, 'local-text')
 })
 
 test('STT local + failure → throws, no cloud fallback', async () => {
@@ -216,7 +268,7 @@ test('STT auto + silent_fallback=false + local unavailable → still falls back 
 
   const res = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
 
-  assert.equal(res.text, 'cloud-text')
+  assert.equal((res as { text: string }).text, 'cloud-text')
   assert.equal(bridge.calls.length, 0)
 })
 
@@ -241,8 +293,8 @@ test('TTS auto + cloud available + success → uses cloud, never invokes local',
 
   const res = await ipc.invoke('spiritagent:media:tts', { text: 'hi', voice: 'en_US-amy-medium' })
 
-  assert.equal(res.mimeType, 'audio/mpeg')
-  assert.ok(res.dataUrl.startsWith('data:audio/mpeg;base64,'))
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/mpeg')
+  assert.ok((res as { dataUrl: string }).dataUrl.startsWith('data:audio/mpeg;base64,'))
   assert.equal(bridge.calls.length, 0, 'auto must not invoke local TTS when cloud succeeds')
 })
 
@@ -253,10 +305,10 @@ test('TTS auto + cloud fails → falls back to local', async () => {
 
   const res = await ipc.invoke('spiritagent:media:tts', { text: 'cloud-fails' })
 
-  assert.equal(res.mimeType, 'audio/wav')
-  assert.ok(res.dataUrl.startsWith('data:audio/wav;base64,'))
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/wav')
+  assert.ok((res as { dataUrl: string }).dataUrl.startsWith('data:audio/wav;base64,'))
   assert.equal(bridge.calls[0].name, 'text_to_speech')
-  assert.equal(bridge.calls[0].args.text, 'cloud-fails')
+  assert.equal((bridge.calls[0].args as { text: string }).text, 'cloud-fails')
   assert.equal(Object.prototype.hasOwnProperty.call(bridge.calls[0].args, 'voice'), false)
 })
 
@@ -276,7 +328,7 @@ test('TTS local + cloud-throw irrelevant → still returns local wav', async () 
 
   const res = await ipc.invoke('spiritagent:media:tts', { text: 'local-pref' })
 
-  assert.equal(res.mimeType, 'audio/wav')
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/wav')
   assert.equal(bridge.calls.length, 1)
 })
 
@@ -287,7 +339,7 @@ test('TTS cloud → always cloud', async () => {
 
   const res = await ipc.invoke('spiritagent:media:tts', { text: 'always-cloud' })
 
-  assert.equal(res.mimeType, 'audio/mpeg')
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/mpeg')
   assert.equal(bridge.calls.length, 0)
 })
 
@@ -324,8 +376,8 @@ test('TTS back-to-back calls throttle to MIN_TTS_INTERVAL_MS apart', async () =>
   global.fetch = (async () => {
     timestamps.push(Date.now())
 
-    return cloudFetch({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })()
-  }) as any
+    return makeFakeResponse({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
+  }) as unknown as typeof globalThis.fetch
 
   await Promise.all([
     ipc.invoke('spiritagent:media:tts', { text: 'a' }),
@@ -354,8 +406,8 @@ test('TTS persist → cloud result lands on disk and the next call skips synthes
   global.fetch = (async () => {
     fetches += 1
 
-    return cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })()
-  }) as any
+    return makeFakeResponse({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })
+  }) as unknown as typeof globalThis.fetch
 
   const first = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
   assert.equal(fetches, 1)
@@ -365,8 +417,8 @@ test('TTS persist → cloud result lands on disk and the next call skips synthes
   const second = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'persist-me', voice: '冰糖' })
 
   assert.equal(fetches, 1, 'second call must be served from disk')
-  assert.equal(second.dataUrl, first.dataUrl)
-  assert.equal(second.mimeType, 'audio/mpeg')
+  assert.equal((second as { dataUrl: string }).dataUrl, (first as { dataUrl: string }).dataUrl)
+  assert.equal((second as { mimeType: string }).mimeType, 'audio/mpeg')
 })
 
 test('TTS without persist → nothing is written to disk', async () => {
@@ -386,7 +438,7 @@ test('TTS persist + local engine → Piper output is not persisted', async () =>
 
   const res = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'local-scripted', voice: '冰糖' })
 
-  assert.equal(res.mimeType, 'audio/wav')
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/wav')
   assert.deepEqual(cachedFiles(home), [])
 })
 
@@ -401,8 +453,11 @@ test('TTS persist → a disk hit is served even under tts.engine=local', async (
 
   const res = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'already-baked', voice: '冰糖' })
 
-  assert.equal(res.mimeType, 'audio/mpeg')
-  assert.equal(res.dataUrl, `data:audio/mpeg;base64,${Buffer.from('disk-bytes').toString('base64')}`)
+  assert.equal((res as { mimeType: string }).mimeType, 'audio/mpeg')
+  assert.equal(
+    (res as { dataUrl: string }).dataUrl,
+    `data:audio/mpeg;base64,${Buffer.from('disk-bytes').toString('base64')}`
+  )
 })
 
 test('TTS concurrent identical calls collapse to a single synthesis', async () => {
@@ -411,8 +466,8 @@ test('TTS concurrent identical calls collapse to a single synthesis', async () =
   global.fetch = (async () => {
     fetches += 1
 
-    return cloudFetch({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })()
-  }) as any
+    return makeFakeResponse({ bytes: Buffer.from('mp3-bytes'), contentType: 'audio/mpeg' })
+  }) as unknown as typeof globalThis.fetch
 
   const [a, b] = await Promise.all([
     ipc.invoke('spiritagent:media:tts', { text: 'spam-poke', voice: '冰糖' }),
@@ -420,5 +475,5 @@ test('TTS concurrent identical calls collapse to a single synthesis', async () =
   ])
 
   assert.equal(fetches, 1, 'ten rapid pokes must not become ten cloud calls')
-  assert.equal(a.dataUrl, b.dataUrl)
+  assert.equal((a as { dataUrl: string }).dataUrl, (b as { dataUrl: string }).dataUrl)
 })

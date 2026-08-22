@@ -9,6 +9,7 @@ import test from 'node:test'
 import WebSocket from 'ws'
 
 import { createRunnerWsServer } from './rpc-ws'
+import type { RunnerWsEvent } from './rpc-ws'
 
 const AUTH_TOKEN = 'a'.repeat(64)
 
@@ -68,12 +69,14 @@ test('stop() returns ok when not started', async () => {
 test('call() rejects when server is closed', async () => {
   const server = makeWsServer()
   await server.stop()
-  await assert.rejects(server.call('test', {}), (err: any) => /closed/.test(err.message))
+  await assert.rejects(server.call('test', {}), (err: unknown) =>
+    err instanceof Error ? /closed/.test(err.message) : false
+  )
 })
 
 test('onEvent() returns unsubscribe function', async () => {
   const server = makeWsServer()
-  const events: any[] = []
+  const events: RunnerWsEvent[] = []
   const unsub = server.onEvent(ev => events.push(ev))
   unsub()
   assert.ok(typeof unsub === 'function')
@@ -91,7 +94,9 @@ test('start() can be called twice (idempotent)', async () => {
 
 test('start() requires an authToken', async () => {
   const server = createRunnerWsServer({ log: () => {} })
-  await assert.rejects(server.start({ path: makeIpcPath() }), (err: any) => /authToken/.test(err.message))
+  await assert.rejects(server.start({ path: makeIpcPath() }), (err: unknown) =>
+    err instanceof Error ? /authToken/.test(err.message) : false
+  )
 })
 
 test('authenticated client completes the handshake and delivers notifications', async () => {
@@ -99,7 +104,7 @@ test('authenticated client completes the handshake and delivers notifications', 
   const ipcPath = makeIpcPath()
   await server.start({ path: ipcPath })
 
-  const events: any[] = []
+  const events: RunnerWsEvent[] = []
   server.onEvent(ev => events.push(ev))
   const client = wsConnect(ipcPath)
   await once(client, 'open')
@@ -146,7 +151,7 @@ test('a bad handshake token gets HTTP 401 and never opens; existing connections 
 
   const bad = wsConnect(ipcPath, { 'x-spiritagent-auth': '0'.repeat(64) })
   const [error] = await once(bad, 'error')
-  assert.match(String((error as any).message), /401|Unexpected server response/)
+  assert.match(String(error instanceof Error ? error.message : String(error)), /401|Unexpected server response/)
 
   bad.terminate()
   await Promise.race([once(bad, 'close'), new Promise(resolve => setTimeout(resolve, 500))])

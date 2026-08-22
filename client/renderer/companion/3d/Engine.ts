@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { WebGPURenderer } from 'three/webgpu'
+import { WebGPUBackend, WebGPURenderer } from 'three/webgpu'
 
 import { log } from '@/shared/lib/log'
 
@@ -113,7 +113,7 @@ export class Engine {
 
       await renderer.init()
 
-      const backendKind: EngineBackendKind = (renderer.backend as any)?.isWebGPUBackend ? 'webgpu' : 'webgl2'
+      const backendKind: EngineBackendKind = renderer.backend instanceof WebGPUBackend ? 'webgpu' : 'webgl2'
 
       log.info('3d', `Engine initialized with ${backendKind} backend (${width}x${height} @ ${dpr}x)`)
 

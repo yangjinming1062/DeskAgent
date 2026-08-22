@@ -74,8 +74,8 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
 
       setSuccessMsg(`成功拉取并载入伴侣模型: ${res.name}`)
       setTimeout(() => onClose(), 800)
-    } catch (err: any) {
-      setErrorMsg(err?.message || '获取后端模型失败')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '获取后端模型失败')
     } finally {
       setLoading(false)
     }
@@ -96,8 +96,8 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
 
       setSuccessMsg(`成功载入模型: ${res.name}`)
       setTimeout(() => onClose(), 800)
-    } catch (err: any) {
-      setErrorMsg(err?.message || '下载并解析模型 URL 失败')
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '下载并解析模型 URL 失败')
     } finally {
       setLoading(false)
     }
@@ -115,8 +115,8 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
         $customGlbBuffer.set(res)
         setSuccessMsg(`成功载入本地模型: ${file.name}`)
         setTimeout(() => onClose(), 600)
-      } catch (err: any) {
-        setErrorMsg(err?.message || '解析本地模型失败')
+      } catch (err) {
+        setErrorMsg(err instanceof Error ? err.message : '解析本地模型失败')
       } finally {
         setLoading(false)
       }

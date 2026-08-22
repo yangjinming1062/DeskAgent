@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
-import type { BrowserWindow, Screen } from 'electron'
+import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, Screen } from 'electron'
 
 import { POSITION_FILE, readRestPosition, registerSpriteIpc } from './sprite'
 
@@ -20,19 +20,28 @@ interface FakeDisplay {
 const PRIMARY: FakeDisplay = { id: 1, workArea: { height: 1040, width: 1920, x: 0, y: 0 } }
 const SECONDARY: FakeDisplay = { id: 2, workArea: { height: 720, width: 1280, x: 1920, y: 0 } }
 
-function makeFakeIpc() {
-  const handlers = new Map<string, (...args: any[]) => any>()
+type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown> | unknown
+
+interface FakeIpc {
+  handle: (channel: string, handler: Handler) => void
+  invoke: (channel: string, ...args: unknown[]) => Promise<unknown>
+}
+
+function makeFakeIpc(): FakeIpc {
+  const handlers = new Map<string, Handler>()
 
   return {
-    handle: (channel: string, handler: (...args: any[]) => any) => handlers.set(channel, handler),
-    invoke: (channel: string, ...args: any[]) => {
+    handle: (channel, handler) => {
+      handlers.set(channel, handler)
+    },
+    invoke: async (channel, ...args) => {
       const h = handlers.get(channel)
 
       if (!h) {
         throw new Error(`no handler for ${channel}`)
       }
 
-      return h({}, ...args)
+      return h({} as IpcMainInvokeEvent, ...args)
     }
   }
 }
@@ -69,7 +78,7 @@ function makeFakeWindow(initial: FakeDisplay['workArea']): {
     },
     setBoundsCalls,
     win
-  } as any
+  }
 }
 
 function makeFakeScreen(opts: { cursor: { x: number; y: number }; nearest: FakeDisplay }): Screen {
@@ -93,7 +102,7 @@ function setup(opts: { cursor: { x: number; y: number }; nearest?: FakeDisplay; 
       getUserDataDir: () => tmpDir,
       screen: makeFakeScreen({ cursor: opts.cursor, nearest: opts.nearest ?? PRIMARY })
     },
-    ipcMain: ipc as any
+    ipcMain: ipc as unknown as IpcMain
   })
 
   return { fakeWin, ipc, setBoundsCalls: fakeWin.setBoundsCalls, tmpDir }

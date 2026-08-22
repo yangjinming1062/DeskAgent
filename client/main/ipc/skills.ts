@@ -44,7 +44,8 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
 
     if (wasDisabled !== enabled) {
       const result = await store.mutate(config => {
-        const list = Array.isArray(config?.skills?.disabled) ? config.skills.disabled : []
+        const skills = (config.skills as { disabled?: unknown } | undefined) ?? {}
+        const list = Array.isArray(skills.disabled) ? skills.disabled : []
         const next = new Set(list.map(String))
 
         if (enabled) {
@@ -53,11 +54,7 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
           next.add(name)
         }
 
-        if (!config.skills) {
-          config.skills = {}
-        }
-
-        config.skills.disabled = [...next].sort()
+        config.skills = { ...skills, disabled: [...next].sort() }
 
         return next
       })
@@ -110,7 +107,8 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
 
     if (wasDisabled !== enabled) {
       const result = await store.mutate(config => {
-        const list = Array.isArray(config?.toolsets?.disabled) ? config.toolsets.disabled : []
+        const toolsets = (config.toolsets as { disabled?: unknown } | undefined) ?? {}
+        const list = Array.isArray(toolsets.disabled) ? toolsets.disabled : []
         const next = new Set(list.map(String))
 
         if (enabled) {
@@ -119,11 +117,7 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
           next.add(id)
         }
 
-        if (!config.toolsets) {
-          config.toolsets = {}
-        }
-
-        config.toolsets.disabled = [...next].sort()
+        config.toolsets = { ...toolsets, disabled: [...next].sort() }
 
         return next
       })

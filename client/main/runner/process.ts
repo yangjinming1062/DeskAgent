@@ -21,6 +21,13 @@ export interface RunnerProcessState {
   startedAt: null | number
 }
 
+export type RunnerProcessEvent =
+  | { args: string[]; command: string; pid: null | number | undefined; type: 'start' }
+  | { data: string; type: 'stderr' | 'stdout' }
+  | { code: null | number; signal: null | string; type: 'exit' }
+  | { error: Error; type: 'error' }
+  | { type: 'ready' }
+
 export interface CreateRunnerProcessOptions {
   spiritagentHome?: null | string
   devPython?: null | string
@@ -43,7 +50,7 @@ export interface RunnerProcessStartArgs {
 
 export interface RunnerProcess {
   getStatus: () => RunnerProcessState
-  onEvent: (callback: (event: any) => void) => () => void
+  onEvent: (callback: (event: RunnerProcessEvent) => void) => () => void
   restart: (args: RunnerProcessStartArgs) => Promise<RunnerProcessState>
   signalReady: () => void
   start: (args: RunnerProcessStartArgs) => Promise<RunnerProcessState>
@@ -115,7 +122,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
   let child: ChildProcess | null = null
 
-  function emit(event: any): void {
+  function emit(event: RunnerProcessEvent): void {
     emitter.emit('event', event)
   }
 
@@ -189,7 +196,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       const err = error instanceof Error ? error : new Error(String(error))
       setState({ lastError: err.message })
       log(`[runner] spawn failed: ${err.message}`)
@@ -283,8 +290,9 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
               try {
                 target.kill('SIGTERM')
-              } catch (error: any) {
-                log(`[runner] SIGTERM fallback failed: ${error.message}`)
+              } catch (error: unknown) {
+                const msg = error instanceof Error ? error.message : String(error)
+                log(`[runner] SIGTERM fallback failed: ${msg}`)
               }
             }
           }
@@ -292,8 +300,9 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
       } else {
         try {
           target.kill('SIGTERM')
-        } catch (error: any) {
-          log(`[runner] SIGTERM failed: ${error.message}`)
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error)
+          log(`[runner] SIGTERM failed: ${msg}`)
         }
       }
 
@@ -306,8 +315,9 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
 
         try {
           target.kill('SIGKILL')
-        } catch (error: any) {
-          log(`[runner] SIGKILL failed: ${error.message}`)
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error)
+          log(`[runner] SIGKILL failed: ${msg}`)
         }
 
         setTimeout(() => {
@@ -329,7 +339,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
     return start(args)
   }
 
-  function onEvent(callback: (event: any) => void): () => void {
+  function onEvent(callback: (event: RunnerProcessEvent) => void): () => void {
     emitter.on('event', callback)
 
     return () => emitter.off('event', callback)
@@ -350,7 +360,7 @@ export function createRunnerProcess(options: CreateRunnerProcessOptions = {}): R
         reject(new Error(`Runner failed to become ready within ${timeoutMs}ms`))
       }, timeoutMs)
 
-      const onEventHandler = (ev: any) => {
+      const onEventHandler = (ev: RunnerProcessEvent) => {
         if (ev.type === 'ready') {
           detach()
           clearTimeout(timer)

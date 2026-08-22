@@ -43,7 +43,7 @@ test('resolvePathTimeoutMs tolerates garbage inputs', () => {
   assert.equal(resolvePathTimeoutMs(undefined, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs('', 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
   assert.equal(resolvePathTimeoutMs(null, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
-  assert.equal(resolvePathTimeoutMs(42 as any, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
+  assert.equal(resolvePathTimeoutMs(42 as unknown as string, 'POST'), DEFAULT_FETCH_TIMEOUT_MS)
 })
 
 test('resolvePathTimeoutMs honors a custom fallbackMs', () => {

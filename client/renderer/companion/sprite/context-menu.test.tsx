@@ -74,9 +74,9 @@ describe('SpriteContextMenu', () => {
 
     const hideMock = vi.fn().mockResolvedValue(undefined)
 
-    ;(window as any).spiritagent = {
+    window.spiritagent = {
       sprite: { hide: hideMock }
-    }
+    } as unknown as typeof window.spiritagent
 
     render(
       <SpriteContextMenu

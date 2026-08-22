@@ -6,18 +6,18 @@ import { atomicWriteFile } from '../utils'
 export const FILENAME = 'desktop-settings.json'
 
 let _storePath: null | string = null
-let _config: Record<string, any> = {}
+let _config: Record<string, unknown> = {}
 let _loaded = false
-let _writeLock: null | Promise<any> = null
+let _writeLock: null | Promise<unknown> = null
 // 由 bridge 设置；登录前为 null。吞掉的错误表示 Runner 尚未连接。
-let _pushTarget: null | ((config: Record<string, any>) => Promise<any> | void) = null
+let _pushTarget: null | ((config: Record<string, unknown>) => Promise<unknown> | void) = null
 
 export function init({ spiritagentHome }: { spiritagentHome: null | string }): void {
   _storePath = spiritagentHome ? path.join(spiritagentHome, FILENAME) : null
   _loaded = false
 }
 
-function _load(): Record<string, any> {
+function _load(): Record<string, unknown> {
   if (_loaded) {
     return _config
   }
@@ -44,11 +44,11 @@ function _load(): Record<string, any> {
 }
 
 /** 跨调用共享同一引用；变更必须经由 ``write`` / ``patch`` / ``mutate`` 进行。*/
-export function read(): Record<string, any> {
+export function read(): Record<string, unknown> {
   return _load()
 }
 
-export function setPushTarget(fn: null | ((config: Record<string, any>) => Promise<any> | void)): void {
+export function setPushTarget(fn: null | ((config: Record<string, unknown>) => Promise<unknown> | void)): void {
   _pushTarget = typeof fn === 'function' ? fn : null
 }
 
@@ -57,10 +57,11 @@ async function _runLocked<T>(task: () => Promise<T>): Promise<T> {
     await _writeLock.catch(() => {})
   }
 
-  _writeLock = task()
+  const inflight = task()
+  _writeLock = inflight
 
   try {
-    return await _writeLock
+    return await inflight
   } finally {
     _writeLock = null
   }
@@ -88,7 +89,7 @@ export async function write(obj: unknown): Promise<{ error?: string; ok: boolean
       return { error: 'config must be a plain object', ok: false }
     }
 
-    _config = obj as Record<string, any>
+    _config = obj as Record<string, unknown>
     await _persistAndPush()
 
     return { ok: true }
@@ -122,7 +123,7 @@ export async function patch(
 
 /** fn 在写锁内就地变更配置；其返回值会作为 ``mutated`` 透出。*/
 export async function mutate<T>(
-  fn: (config: Record<string, any>) => T
+  fn: (config: Record<string, unknown>) => T
 ): Promise<{ error?: string; mutated?: T; ok: boolean }> {
   if (typeof fn !== 'function') {
     return { error: 'mutate requires a function', ok: false }
@@ -148,13 +149,16 @@ export async function mutate<T>(
     })
 
     return { mutated, ok: true }
-  } catch (err: any) {
-    return { error: err.message, ok: false }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+
+    return { error: msg, ok: false }
   }
 }
 
 export function getDisabledSet(section = 'skills'): Set<string> {
-  const raw = _load()?.[section]?.disabled
+  const sectionData = _load()[section] as { disabled?: unknown } | undefined
+  const raw = sectionData?.disabled
 
   if (!Array.isArray(raw)) {
     return new Set()
@@ -163,8 +167,8 @@ export function getDisabledSet(section = 'skills'): Set<string> {
   return new Set(raw.map(String))
 }
 
-function setIn(obj: Record<string, any>, keyPath: readonly (number | string)[], value: unknown): void {
-  let cursor: Record<string, any> = obj
+function setIn(obj: Record<string, unknown>, keyPath: readonly (number | string)[], value: unknown): void {
+  let cursor: Record<string, unknown> = obj
 
   for (let i = 0; i < keyPath.length - 1; i++) {
     const k = keyPath[i]
@@ -173,14 +177,14 @@ function setIn(obj: Record<string, any>, keyPath: readonly (number | string)[], 
       cursor[k] = {}
     }
 
-    cursor = cursor[k]
+    cursor = cursor[k] as Record<string, unknown>
   }
 
   cursor[keyPath[keyPath.length - 1]] = value
 }
 
-function deleteIn(obj: Record<string, any>, keyPath: readonly (number | string)[]): void {
-  let cursor: Record<string, any> = obj
+function deleteIn(obj: Record<string, unknown>, keyPath: readonly (number | string)[]): void {
+  let cursor: Record<string, unknown> = obj
 
   for (let i = 0; i < keyPath.length - 1; i++) {
     const k = keyPath[i]
@@ -189,7 +193,7 @@ function deleteIn(obj: Record<string, any>, keyPath: readonly (number | string)[
       return
     }
 
-    cursor = cursor[k]
+    cursor = cursor[k] as Record<string, unknown>
   }
 
   delete cursor[keyPath[keyPath.length - 1]]

@@ -229,8 +229,9 @@ export function decodeActivationCode(code: string): { baseUrl: string; token: st
     }
 
     return { baseUrl: json.b, token: json.t }
-  } catch (err: any) {
-    throw new Error(`激活码解析失败: ${err?.message || '格式无效'}`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : '格式无效'
+    throw new Error(`激活码解析失败: ${message}`)
   }
 }
 
@@ -240,7 +241,7 @@ export function decodeActivationCode(code: string): { baseUrl: string; token: st
 export async function fetchBackendCompanionModel(
   backendUrl = 'http://127.0.0.1:8000',
   token?: string
-): Promise<{ buffer: ArrayBuffer; name: string; info: any }> {
+): Promise<{ buffer: ArrayBuffer; name: string; info: unknown }> {
   const base = backendUrl.replace(/\/+$/, '')
   const headers: HeadersInit = {}
 
@@ -274,7 +275,7 @@ export async function fetchBackendCompanionModel(
 export async function fetchBackendCompanionModelWithActivationCode(
   activationCode: string,
   overrideBackendUrl?: string
-): Promise<{ buffer: ArrayBuffer; name: string; info: any }> {
+): Promise<{ buffer: ArrayBuffer; name: string; info: unknown }> {
   let resolvedHost = overrideBackendUrl?.trim()
 
   if (!resolvedHost) {
@@ -294,8 +295,9 @@ export async function fetchBackendCompanionModelWithActivationCode(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: activationCode.trim() })
     })
-  } catch (err: any) {
-    throw new Error(`连接后端服务失败 (${activateUrl}): ${err?.message || err}`)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`连接后端服务失败 (${activateUrl}): ${message}`)
   }
 
   if (!activateRes.ok) {

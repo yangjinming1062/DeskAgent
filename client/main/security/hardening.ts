@@ -164,8 +164,9 @@ export async function resolveReadableFileForIpc(
 
   try {
     stat = await fs.promises.stat(resolvedPath)
-  } catch (error: any) {
-    const code = error && typeof error === 'object' ? error.code : ''
+  } catch (error: unknown) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : ''
 
     if (code === 'ENOENT' || code === 'ENOTDIR') {
       throw new Error(`${purpose} failed: file does not exist.`)

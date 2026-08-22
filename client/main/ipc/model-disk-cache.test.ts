@@ -31,19 +31,19 @@ test('model disk cache stores downloaded model and hits on subsequent calls', as
 
   let fetchCalls = 0
 
-  const mockFetch = (async () => {
+  const mockFetch: typeof globalThis.fetch = async () => {
     fetchCalls++
 
     return {
-      body: Readable.from(modelBytes),
-      headers: new Map([
+      body: Readable.from(modelBytes) as unknown as ReadableStream,
+      headers: new Map<string, string>([
         ['content-type', 'model/gltf-binary'],
         ['x-content-sha256', sha256]
-      ]),
+      ]) as unknown as Headers,
       ok: true,
       status: 200
-    } as any
-  }) as any
+    } as unknown as Response
+  }
 
   const result1 = await cache.ensureCached({
     baseUrl: 'http://127.0.0.1:8000',
@@ -87,21 +87,22 @@ test('model disk cache supports Range resumable download', async t => {
 
   let receivedRangeHeader: null | string = null
 
-  const mockFetch = (async (_url: string, opts: any) => {
-    receivedRangeHeader = opts?.headers?.['Range'] || null
+  const mockFetch: typeof globalThis.fetch = async (_url, init) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    receivedRangeHeader = headers['Range'] || null
     const remaining = fullBytes.subarray(10)
 
     return {
-      body: Readable.from(remaining),
-      headers: new Map([
+      body: Readable.from(remaining) as unknown as ReadableStream,
+      headers: new Map<string, string>([
         ['content-type', 'model/gltf-binary'],
         ['content-range', `bytes 10-${fullBytes.length - 1}/${fullBytes.length}`],
         ['x-content-sha256', sha256]
-      ]),
+      ]) as unknown as Headers,
       ok: true,
       status: 206
-    } as any
-  }) as any
+    } as unknown as Response
+  }
 
   const result = await cache.ensureCached({
     baseUrl: 'http://127.0.0.1:8000',
@@ -132,29 +133,30 @@ test('model disk cache handles 416 Range Not Satisfiable by refetching from 0', 
 
   let callCount = 0
 
-  const mockFetch = (async (_url: string, opts: any) => {
+  const mockFetch: typeof globalThis.fetch = async (_url, init) => {
     callCount++
+    const headers = (init?.headers ?? {}) as Record<string, string>
 
-    if (opts?.headers?.['Range']) {
+    if (headers['Range']) {
       return {
-        headers: new Map(),
+        headers: new Map<string, string>(),
         ok: false,
         status: 416,
         statusText: 'Range Not Satisfiable',
         text: async () => 'Requested Range Not Satisfiable'
-      } as any
+      } as unknown as Response
     }
 
     return {
-      body: Readable.from(fullBytes),
-      headers: new Map([
+      body: Readable.from(fullBytes) as unknown as ReadableStream,
+      headers: new Map<string, string>([
         ['content-type', 'model/gltf-binary'],
         ['x-content-sha256', sha256]
-      ]),
+      ]) as unknown as Headers,
       ok: true,
       status: 200
-    } as any
-  }) as any
+    } as unknown as Response
+  }
 
   const result = await cache.ensureCached({
     baseUrl: 'http://127.0.0.1:8000',

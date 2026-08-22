@@ -8,21 +8,74 @@ import { promisify } from 'node:util'
 import YAML from 'yaml'
 
 import { sleep } from '../shared/utils'
+import type { sendToMain as sendToMainFn } from '../shared/utils'
 
 import { venvPythonFor } from './venv'
 
 const execFileP = promisify(execFile)
 
+export interface RunnerUpdateManifest {
+  path: string
+  runner: { server_py_sha256: string }
+  sha512: string
+  signature: string
+  size?: number
+}
+
+export interface PendingRunnerSentinel {
+  attempt_count: number
+  last_error?: string
+  max_attempts: number
+  prepared_at: string
+  server_py_path: string
+  version: string
+  wheel_path: string
+}
+
+export type RunnerUpdateEvent =
+  | {
+      kind: 'runner-installing'
+      percent: number
+      phase: 'pip' | 'starting'
+      version?: string
+    }
+  | {
+      kind: 'runner-prefetching'
+      percent?: number
+      phase: 'manifest' | 'prefetch' | 'server' | 'wheel'
+      version?: string
+    }
+  | { kind: 'runner-installed'; version?: string }
+  | { kind: 'runner-ready'; version?: string }
+  | {
+      kind: 'runner-recovered'
+      recoverable: boolean
+      version?: string
+    }
+  | {
+      detail?: string
+      error: string
+      kind: 'runner-failed'
+      phase?: string
+      recoverable?: boolean
+      version?: string
+    }
+
+interface MinimalRunnerBridge {
+  start: (options: { backendSession?: unknown; readyTimeoutMs?: number }) => Promise<unknown>
+  stop: (options: { reason: string }) => Promise<unknown>
+}
+
 export interface RunnerUpdaterDeps {
   bridgeDeps: {
     spiritagentHome: string
-    ensureBackendSession?: () => any
-    runnerBridge?: any
+    ensureBackendSession?: () => unknown
+    runnerBridge?: null | MinimalRunnerBridge
   }
   fetchImpl?: typeof globalThis.fetch
-  getMainWindow: () => any
-  log?: (level: string, message: string, ...args: any[]) => void
-  sendToMain: (win: any, channel: string, payload: any) => void
+  getMainWindow: () => Parameters<typeof sendToMainFn>[0]
+  log?: (level: string, message: string, ...args: unknown[]) => void
+  sendToMain: typeof sendToMainFn
 }
 
 export class RunnerUpdater {
@@ -60,8 +113,8 @@ export class RunnerUpdater {
 
     const MANIFEST_FETCH_ATTEMPTS = 3
     const MANIFEST_FETCH_BACKOFF_MS = 1500
-    let manifest: any
-    let primaryErr: any
+    let manifest: null | RunnerUpdateManifest = null
+    let primaryErr: unknown = null
 
     for (let attempt = 1; attempt <= MANIFEST_FETCH_ATTEMPTS; attempt++) {
       try {
@@ -80,8 +133,15 @@ export class RunnerUpdater {
     }
 
     if (!manifest) {
+      const detail =
+        primaryErr === null || primaryErr === undefined
+          ? 'unknown error'
+          : primaryErr instanceof Error
+            ? primaryErr.message
+            : String(primaryErr)
+
       this._emit({
-        error: `manifest fetch failed after ${MANIFEST_FETCH_ATTEMPTS} attempts: ${primaryErr?.message || primaryErr}`,
+        error: `manifest fetch failed after ${MANIFEST_FETCH_ATTEMPTS} attempts: ${detail}`,
         kind: 'runner-failed',
         phase: 'prefetch',
         version
@@ -123,7 +183,7 @@ export class RunnerUpdater {
     this._emit({ kind: 'runner-prefetching', percent: 0, phase: 'wheel', version })
     this._emit({ kind: 'runner-prefetching', percent: 0, phase: 'server', version })
     await Promise.all([
-      this._fetchToFile(wheelUrl, wheelStagingPath, manifest.size, pct => {
+      this._fetchToFile(wheelUrl, wheelStagingPath, manifest.size ?? null, pct => {
         this._emit({ kind: 'runner-prefetching', percent: pct, phase: 'wheel', version })
       }),
       this._fetchToFile(serverPyUrlFinal, serverPyStagingPath, null, pct => {
@@ -181,13 +241,14 @@ export class RunnerUpdater {
       return { noop: true, ok: true }
     }
 
-    let sentinel: any
+    let sentinel: PendingRunnerSentinel
 
     try {
-      sentinel = JSON.parse(await fsp.readFile(sentinelPath, 'utf8'))
-    } catch (err: any) {
+      sentinel = JSON.parse(await fsp.readFile(sentinelPath, 'utf8')) as PendingRunnerSentinel
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
       this._emit({
-        error: `sentinel unreadable: ${err?.message || err}`,
+        error: `sentinel unreadable: ${msg}`,
         kind: 'runner-failed',
         recoverable: false
       })
@@ -209,13 +270,17 @@ export class RunnerUpdater {
 
     const venvPython = venvPythonFor(home)
 
-    let stopResult: any
+    let stopResult: unknown
     let startedNew = false
 
-    const fail = async (reason: string, recoverable: boolean, error?: any) => {
+    const fail = async (reason: string, recoverable: boolean, error?: unknown) => {
       await this._bumpAttempt(sentinel, sentinelPath, reason)
+
+      const detail =
+        error === undefined ? reason : `${reason}: ${error instanceof Error ? error.message : String(error)}`
+
       this._emit({
-        error: error ? `${reason}: ${error?.message || error}` : reason,
+        error: detail,
         kind: 'runner-failed',
         recoverable,
         version: sentinel.version
@@ -355,9 +420,10 @@ export class RunnerUpdater {
             readyTimeoutMs: 8_000
           })
           this._emit({ kind: 'runner-recovered', recoverable: true, version: sentinel.version })
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const detail = err instanceof Error ? err.message : String(err)
           this._emit({
-            detail: err?.message || String(err),
+            detail,
             error: 'restart-failed-after-update',
             kind: 'runner-failed',
             recoverable: true
@@ -385,7 +451,7 @@ export class RunnerUpdater {
     }
   }
 
-  async _bumpAttempt(sentinel: any, sentinelPath: string, reason: string): Promise<void> {
+  async _bumpAttempt(sentinel: PendingRunnerSentinel, sentinelPath: string, reason: string): Promise<void> {
     sentinel.attempt_count = (sentinel.attempt_count || 0) + 1
     sentinel.last_error = reason
 
@@ -396,7 +462,7 @@ export class RunnerUpdater {
     }
   }
 
-  _emit(payload: any): void {
+  _emit(payload: RunnerUpdateEvent): void {
     if (typeof this.sendToMain === 'function') {
       this.sendToMain(this.getMainWindow?.(), 'spiritagent:runner-update-event', payload)
     }
@@ -454,7 +520,13 @@ export class RunnerUpdater {
     const file = fs.createWriteStream(dest)
 
     try {
-      for await (const chunk of (res as any).body) {
+      const body = res.body
+
+      if (!body) {
+        throw new Error('Response body is empty')
+      }
+
+      for await (const chunk of body) {
         const ok = file.write(chunk)
 
         if (!ok) {
@@ -469,7 +541,7 @@ export class RunnerUpdater {
       }
     } finally {
       await new Promise<void>((resolve, reject) => {
-        file.end((err: any) => (err ? reject(err) : resolve()))
+        file.end((err?: unknown) => (err ? reject(new Error(String(err))) : resolve()))
       })
     }
   }

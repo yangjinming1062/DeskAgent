@@ -53,11 +53,11 @@ test('writeStoredBackendUrl rejects empty input', () => {
   const home = tmpHome('empty-input')
   assert.equal(writeStoredBackendUrl(home, ''), false)
   assert.equal(writeStoredBackendUrl(home, '   '), false)
-  assert.equal(writeStoredBackendUrl(home, null as any), false)
+  assert.equal(writeStoredBackendUrl(home, null as unknown as string), false)
 })
 
 test('writeStoredBackendUrl returns false without home', () => {
-  assert.equal(writeStoredBackendUrl(null as any, 'https://api.example.com'), false)
+  assert.equal(writeStoredBackendUrl(null, 'https://api.example.com'), false)
 })
 
 test('resolveNormalizedBackendUrl returns stored URL or null (trailing slash stripped)', () => {
