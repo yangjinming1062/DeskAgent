@@ -42,13 +42,21 @@ async def stash_user_id_middleware(request: Request, call_next: Callable[[Reques
         return await call_next(request)
     try:
         payload = decode_access_token(token)
+        # admin token 的 sub 是 "admin" 字符串，跳过 stash：限流装饰器不挂在 admin 端点，且 _user_id_var 类型是 int。
+        if payload.get("is_admin"):
+            return await call_next(request)
         sub = payload.get("sub")
         if sub is not None:
-            uid = int(sub)
+            if isinstance(sub, int):
+                uid = sub
+            elif isinstance(sub, str) and sub.isdigit():
+                uid = int(sub)
+            else:
+                return await call_next(request)
             request.state.user_id = uid
             # 同步到 logger 的 ContextVar, 后续本 task log 自动带 user_id 字段
             set_request_user_id(uid)
-    except (jwt.PyJWTError, ValueError):
+    except jwt.PyJWTError:
         logger.debug("rate_limit: JWT decode failed in stash middleware", exc_info=True)
     return await call_next(request)
 
