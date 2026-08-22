@@ -16,29 +16,148 @@ const CONFIG_CACHE_TTL_MS = 10_000
 const DEFAULT_TTS_LANGUAGE = 'zh'
 const DEFAULT_STT_LANGUAGE = 'zh'
 const MIN_TTS_INTERVAL_MS = 750
+const STT_MAX_CONCURRENCY = 2
+const STT_BURST = 4
+const STT_REFILL_RATE = 2
+const TTS_MAX_QUEUE_SIZE = 8
 
 let ttsSeq = 0
 let sttSeq = 0
-let lastTtsTime = 0
-let ttsChain: Promise<unknown> = Promise.resolve()
 
-function scheduleTtsBackend<T>(fn: () => Promise<T>): Promise<T> {
-  const next = ttsChain.then(async () => {
+interface TtsQueueItem<T> {
+  fn: () => Promise<T>
+  reject: (err: unknown) => void
+  resolve: (value: T) => void
+}
+
+class SttLimiter {
+  private activeCount = 0
+  private readonly burst: number
+  private lastRefill: number
+  private readonly maxConcurrency: number
+  private readonly refillRate: number
+  private tokens: number
+
+  constructor({
+    burst = STT_BURST,
+    maxConcurrency = STT_MAX_CONCURRENCY,
+    refillRate = STT_REFILL_RATE
+  }: {
+    burst?: number
+    maxConcurrency?: number
+    refillRate?: number
+  } = {}) {
+    this.maxConcurrency = maxConcurrency
+    this.burst = burst
+    this.refillRate = refillRate
+    this.tokens = burst
+    this.lastRefill = Date.now()
+  }
+
+  acquire(): () => void {
     const now = Date.now()
-    const waitMs = MIN_TTS_INTERVAL_MS - (now - lastTtsTime)
+    const elapsed = (now - this.lastRefill) / 1000
+    this.tokens = Math.min(this.burst, this.tokens + elapsed * this.refillRate)
+    this.lastRefill = now
+
+    if (this.tokens < 1) {
+      throw new Error('STT is busy: rate limit exceeded')
+    }
+
+    if (this.activeCount >= this.maxConcurrency) {
+      throw new Error('STT is busy: maximum concurrency reached')
+    }
+
+    this.tokens -= 1
+    this.activeCount += 1
+
+    let released = false
+
+    return () => {
+      if (!released) {
+        released = true
+        this.activeCount = Math.max(0, this.activeCount - 1)
+      }
+    }
+  }
+
+  getActiveCount(): number {
+    return this.activeCount
+  }
+}
+
+class BoundedTtsQueue {
+  private isProcessing = false
+  private lastCloudTtsTime = 0
+  private readonly maxQueueSize: number
+  private readonly minCloudIntervalMs: number
+  private readonly queue: Array<TtsQueueItem<unknown>> = []
+
+  constructor({
+    maxQueueSize = TTS_MAX_QUEUE_SIZE,
+    minCloudIntervalMs = MIN_TTS_INTERVAL_MS
+  }: {
+    maxQueueSize?: number
+    minCloudIntervalMs?: number
+  } = {}) {
+    this.maxQueueSize = maxQueueSize
+    this.minCloudIntervalMs = minCloudIntervalMs
+  }
+
+  get pendingCount(): number {
+    return this.queue.length
+  }
+
+  enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error('TTS is busy: queue is full')
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push({
+        fn: fn as () => Promise<unknown>,
+        reject,
+        resolve: resolve as (value: unknown) => void
+      })
+      void this.processNext()
+    })
+  }
+
+  async throttleCloud(): Promise<void> {
+    const now = Date.now()
+    const waitMs = this.minCloudIntervalMs - (now - this.lastCloudTtsTime)
 
     if (waitMs > 0) {
       await sleep(waitMs)
     }
 
-    lastTtsTime = Date.now()
+    this.lastCloudTtsTime = Date.now()
+  }
 
-    return await fn()
-  })
+  private async processNext(): Promise<void> {
+    if (this.isProcessing || this.queue.length === 0) {
+      return
+    }
 
-  ttsChain = next.catch(() => {})
+    this.isProcessing = true
+    const item = this.queue.shift()
 
-  return next
+    if (!item) {
+      this.isProcessing = false
+
+      return
+    }
+
+    try {
+      const result = await item.fn()
+      item.resolve(result)
+    } catch (err) {
+      item.reject(err)
+    } finally {
+      this.isProcessing = false
+      void this.processNext()
+    }
+  }
 }
 
 function decodeDataUrl(dataUrl?: string): { data: Buffer; mime: string } {
@@ -369,7 +488,7 @@ export function createEnginePrefsCache({
 }
 
 export const TTS_CACHE_MAX_ENTRIES = 100
-export const TTS_CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutes
+export const TTS_CACHE_TTL_MS = 10 * 60 * 1000
 
 export const ttsAudioCache: Map<string, { dataUrl: string; expiresAt: number; mimeType: string }> = new Map()
 const inflightTts = new Map<string, Promise<{ dataUrl: string; mimeType: string }>>()
@@ -413,6 +532,11 @@ export interface MediaIpcDeps {
   getRunnerBridge?: () => RunnerBridgeLike | null | undefined
   ipcMain: IpcMain
   log?: (msg: string) => void
+  minTtsIntervalMs?: number
+  sttBurst?: number
+  sttMaxConcurrency?: number
+  sttRefillRate?: number
+  ttsMaxQueueSize?: number
 }
 
 export function registerMediaIpc({
@@ -422,13 +546,20 @@ export function registerMediaIpc({
   getEnginePrefs,
   getRunnerBridge,
   ipcMain,
-  log = () => {}
+  log = () => {},
+  minTtsIntervalMs,
+  sttBurst,
+  sttMaxConcurrency,
+  sttRefillRate,
+  ttsMaxQueueSize
 }: MediaIpcDeps): void {
   const resolvePrefs =
     typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend, fetchImpl })
 
   const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
   const diskCache = createTtsDiskCache({ spiritagentHome })
+  const sttLimiter = new SttLimiter({ burst: sttBurst, maxConcurrency: sttMaxConcurrency, refillRate: sttRefillRate })
+  const ttsQueue = new BoundedTtsQueue({ maxQueueSize: ttsMaxQueueSize, minCloudIntervalMs: minTtsIntervalMs })
 
   ipcMain.handle(IPC.invoke.mediaStt, async (_event, payload?: MediaSttPayload) => {
     const sttId = ++sttSeq
@@ -438,32 +569,79 @@ export function registerMediaIpc({
       throw new Error(`Audio too large (${data.length} bytes; max ${STT_MAX_AUDIO_BYTES})`)
     }
 
-    const language = payload?.language || DEFAULT_STT_LANGUAGE
-    const filename = payload?.filename
-    const context = payload?.context || 'default'
-    const startedAt = Date.now()
+    const release = sttLimiter.acquire()
 
-    const sttLog = makeLog(log, '[stt]', {
-      bytes: data.length,
-      ctx: context,
-      id: sttId,
-      lang: language,
-      mime
-    })
+    try {
+      const language = payload?.language || DEFAULT_STT_LANGUAGE
+      const filename = payload?.filename
+      const context = payload?.context || 'default'
+      const startedAt = Date.now()
 
-    sttLog('start')
+      const sttLog = makeLog(log, '[stt]', {
+        bytes: data.length,
+        ctx: context,
+        id: sttId,
+        lang: language,
+        mime
+      })
 
-    const prefs = await resolvePrefs()
+      sttLog('start')
 
-    if (!prefs.sttEnabled) {
-      sttLog('done', { disabled: true, ms: Date.now() - startedAt })
-      throw new Error('STT is disabled in configuration')
-    }
+      const prefs = await resolvePrefs()
 
-    const engine = prefs.stt
-    let fellBackToLocal = false
+      if (!prefs.sttEnabled) {
+        sttLog('done', { disabled: true, ms: Date.now() - startedAt })
+        throw new Error('STT is disabled in configuration')
+      }
 
-    if (engine === 'auto') {
+      const engine = prefs.stt
+      let fellBackToLocal = false
+
+      if (engine === 'auto') {
+        if (localToolAvailable(bridge(), 'speech_to_text')) {
+          const res = await tryLocalStt({ bridge: bridge(), data, language, mime })
+
+          if (res.ok && res.value) {
+            sttLog('done', {
+              chars: res.value.text.length,
+              ms: Date.now() - startedAt,
+              route: 'local'
+            })
+
+            return { text: res.value.text }
+          }
+
+          if (!prefs.sttSilentFallback) {
+            sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
+            throw res.error
+          }
+
+          fellBackToLocal = true
+          sttLog('fallback', { from: 'local', reason: res.error?.message, to: 'cloud' })
+        }
+
+        try {
+          const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
+          sttLog('done', {
+            chars: text.length,
+            ms: Date.now() - startedAt,
+            route: 'cloud',
+            ...(fellBackToLocal ? { silent_fallback_used: true } : {})
+          })
+
+          return { text }
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err)
+          sttLog('done', { error: msg, ms: Date.now() - startedAt, route: 'cloud' })
+          throw err
+        }
+      } else if (engine === 'cloud') {
+        const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
+        sttLog('done', { chars: text.length, ms: Date.now() - startedAt, route: 'cloud' })
+
+        return { text }
+      }
+
       if (localToolAvailable(bridge(), 'speech_to_text')) {
         const res = await tryLocalStt({ bridge: bridge(), data, language, mime })
 
@@ -477,61 +655,20 @@ export function registerMediaIpc({
           return { text: res.value.text }
         }
 
-        if (!prefs.sttSilentFallback) {
-          sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
-          throw res.error
-        }
-
-        fellBackToLocal = true
-        sttLog('fallback', { from: 'local', reason: res.error?.message, to: 'cloud' })
+        sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
+        throw res.error
       }
 
-      try {
-        const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
-        sttLog('done', {
-          chars: text.length,
-          ms: Date.now() - startedAt,
-          route: 'cloud',
-          ...(fellBackToLocal ? { silent_fallback_used: true } : {})
-        })
+      sttLog('done', { error: 'Local STT unavailable', ms: Date.now() - startedAt, route: 'local' })
 
-        return { text }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        sttLog('done', { error: msg, ms: Date.now() - startedAt, route: 'cloud' })
-        throw err
-      }
-    } else if (engine === 'cloud') {
-      const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
-      sttLog('done', { chars: text.length, ms: Date.now() - startedAt, route: 'cloud' })
-
-      return { text }
-    }
-
-    if (localToolAvailable(bridge(), 'speech_to_text')) {
-      const res = await tryLocalStt({ bridge: bridge(), data, language, mime })
-
-      if (res.ok && res.value) {
-        sttLog('done', {
-          chars: res.value.text.length,
-          ms: Date.now() - startedAt,
-          route: 'local'
-        })
-
-        return { text: res.value.text }
+      if (engine === 'local') {
+        throw new Error('Local STT unavailable: runner not connected or speech_to_text tool missing')
       }
 
-      sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
-      throw res.error
+      throw new Error('STT failed: cloud unreachable and local STT unavailable')
+    } finally {
+      release()
     }
-
-    sttLog('done', { error: 'Local STT unavailable', ms: Date.now() - startedAt, route: 'local' })
-
-    if (engine === 'local') {
-      throw new Error('Local STT unavailable: runner not connected or speech_to_text tool missing')
-    }
-
-    throw new Error('STT failed: cloud unreachable and local STT unavailable')
   })
 
   ipcMain.handle(IPC.invoke.mediaTts, async (_event, payload?: MediaTtsPayload) => {
@@ -581,7 +718,35 @@ export function registerMediaIpc({
       return await pending
     }
 
-    const task = synthesizeTts({ cacheKey, isDesigned, language, persist, startedAt, text, ttsLog, voice })
+    const runSynthesis = async (): Promise<{ dataUrl: string; mimeType: string }> => {
+      if (persist) {
+        const hit = await diskCache.read({ language, text, voice })
+
+        if (hit) {
+          const value = { dataUrl: dataUrlFromBuffer(hit, 'audio/mpeg'), mimeType: 'audio/mpeg' }
+          setCachedTts(cacheKey, value)
+          ttsLog('done', { bytes: hit.length, cached: true, ms: Date.now() - startedAt, route: 'disk' })
+
+          return value
+        }
+      }
+
+      return await ttsQueue.enqueue(() =>
+        synthesizeTts({
+          cacheKey,
+          isDesigned,
+          language,
+          persist,
+          startedAt,
+          text,
+          ttsLog,
+          ttsQueue,
+          voice
+        })
+      )
+    }
+
+    const task = runSynthesis()
     inflightTts.set(cacheKey, task)
 
     try {
@@ -599,6 +764,7 @@ export function registerMediaIpc({
     startedAt,
     text,
     ttsLog,
+    ttsQueue: queue,
     voice
   }: {
     cacheKey: string
@@ -608,27 +774,19 @@ export function registerMediaIpc({
     startedAt: number
     text: string
     ttsLog: (event: string, extra?: Record<string, unknown>) => void
+    ttsQueue: BoundedTtsQueue
     voice: string
   }): Promise<{ dataUrl: string; mimeType: string }> {
-    if (persist) {
-      const hit = await diskCache.read({ language, text, voice })
-
-      if (hit) {
-        const value = { dataUrl: dataUrlFromBuffer(hit, 'audio/mpeg'), mimeType: 'audio/mpeg' }
-        setCachedTts(cacheKey, value)
-        ttsLog('done', { bytes: hit.length, cached: true, ms: Date.now() - startedAt, route: 'disk' })
-
-        return value
-      }
-    }
-
     const prefs = await resolvePrefs()
     const engine = isDesigned ? 'cloud' : prefs.tts
 
     let fellBackToLocal = false
 
-    const callBackendThrottled = async () =>
-      scheduleTtsBackend(() => ttsViaBackend({ ensureBackend, fetchImpl, language, text, voice }))
+    const callBackendThrottled = async () => {
+      await queue.throttleCloud()
+
+      return await ttsViaBackend({ ensureBackend, fetchImpl, language, text, voice })
+    }
 
     const finishCloud = async (result: { dataUrl: string; mimeType: string; voiceOut?: string }) => {
       const value = { dataUrl: result.dataUrl, mimeType: result.mimeType }

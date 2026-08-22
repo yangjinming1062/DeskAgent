@@ -5,6 +5,7 @@ import { setSpriteState } from '@/companion/companion-store'
 import {
   getAudioExtensionForMime,
   getSupportedOpusMimeType,
+  isMediaBusyError,
   VOICE_CALL_AUDIO_CONSTRAINTS
 } from '@/companion/voice-call-dock'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
@@ -87,8 +88,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       const text = (res.text ?? '').trim()
 
       return text || null
-    } catch {
-      setAssistantError('没听清，用打字吧～')
+    } catch (err: unknown) {
+      setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，用打字吧～')
 
       return null
     }

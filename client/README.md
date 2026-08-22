@@ -88,6 +88,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **独立 3D 模型调试套件（`pnpm clip`）**：为解决 3D 产物、面部变形目标与 GLB 质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；按 GLB 内嵌 clip 即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
+- **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防本地 Whisper/云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 
 ## 5. 与外部的契约
 

@@ -68,6 +68,15 @@ export function getAudioExtensionForMime(mime: string): string {
   return 'webm'
 }
 
+// 嗅探后端/Runner 抛出的"忙/背压/限流"消息，用于给用户区别提示。
+const BUSY_ERROR_PATTERN = /busy|backpressure|rate limit/i
+
+export function isMediaBusyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+
+  return BUSY_ERROR_PATTERN.test(msg)
+}
+
 // 实时半双工语音通话：麦克风持续录制，静音检测切片转写后提交 prompt，支持插话打断。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
@@ -191,7 +200,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                   userSpeakingRef.current = true
                   setSpriteState('listening')
                   startRecorder()
-                  // 无条件清除；已清除时为空操作。
                   clearTimeout(silenceTimerRef.current ?? undefined)
                   silenceTimerRef.current = null
                 } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
@@ -255,9 +263,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         const ext = getAudioExtensionForMime(selectedMime)
         const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
         text = (res.text ?? '').trim()
-      } catch {
+      } catch (err: unknown) {
         // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。
-        setAssistantError('没听清，请再说一次')
+        setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，请再说一次')
         text = ''
       }
 

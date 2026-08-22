@@ -76,16 +76,26 @@ function toolSchema(name: string) {
 
 function setup({
   bridge = null,
+  minTtsIntervalMs,
   spiritagentHome = null,
   stt = 'auto' as EngineMode,
+  sttBurst,
+  sttMaxConcurrency,
+  sttRefillRate,
   sttSilentFallback = true,
-  tts = 'auto' as EngineMode
+  tts = 'auto' as EngineMode,
+  ttsMaxQueueSize
 }: {
   bridge?: BridgeSpy | null
+  minTtsIntervalMs?: number
   spiritagentHome?: null | string
   stt?: EngineMode
+  sttBurst?: number
+  sttMaxConcurrency?: number
+  sttRefillRate?: number
   sttSilentFallback?: boolean
   tts?: EngineMode
+  ttsMaxQueueSize?: number
 } = {}) {
   const ipc = makeFakeIpc()
   registerMediaIpc({
@@ -99,7 +109,12 @@ function setup({
       tts
     }),
     getRunnerBridge: () => bridge as unknown as FakeBridge,
-    ipcMain: ipc as unknown as IpcMain
+    ipcMain: ipc as unknown as IpcMain,
+    minTtsIntervalMs,
+    sttBurst,
+    sttMaxConcurrency,
+    sttRefillRate,
+    ttsMaxQueueSize
   })
 
   return ipc
@@ -476,4 +491,150 @@ test('TTS concurrent identical calls collapse to a single synthesis', async () =
 
   assert.equal(fetches, 1, 'ten rapid pokes must not become ten cloud calls')
   assert.equal((a as { dataUrl: string }).dataUrl, (b as { dataUrl: string }).dataUrl)
+})
+
+test('STT concurrent calls exceeding maxConcurrency fail fast with busy error', async () => {
+  let activeInvokes = 0
+  let maxActiveObserved = 0
+
+  const bridge: BridgeSpy = {
+    calls: [],
+    getTools: () => [toolSchema('speech_to_text')],
+    invoke: async () => {
+      activeInvokes += 1
+      maxActiveObserved = Math.max(maxActiveObserved, activeInvokes)
+      await new Promise(r => setTimeout(r, 60))
+      activeInvokes -= 1
+
+      return { success: true, text: 'transcribed' }
+    }
+  }
+
+  const ipc = setup({ bridge, stt: 'local', sttMaxConcurrency: 2 })
+
+  const results = await Promise.allSettled([
+    ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }),
+    ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }),
+    ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }),
+    ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
+  ])
+
+  const fulfilled = results.filter(r => r.status === 'fulfilled')
+  const rejected = results.filter(r => r.status === 'rejected')
+
+  assert.equal(fulfilled.length, 2, 'only 2 concurrent tasks should execute')
+  assert.equal(rejected.length, 2, 'excess tasks should be rejected immediately')
+  assert.equal(maxActiveObserved, 2, 'runner should never observe >2 concurrent STT calls')
+
+  for (const r of rejected) {
+    assert.match((r as PromiseRejectedResult).reason.message, /STT is busy: maximum concurrency reached/)
+  }
+
+  const subsequent = await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
+  assert.equal((subsequent as { text: string }).text, 'transcribed')
+})
+
+test('STT burst exceeding token bucket fails fast with rate limit error', async () => {
+  const bridge = makeBridge({ invokeResult: { success: true, text: 'ok' }, tools: [toolSchema('speech_to_text')] })
+  const ipc = setup({ bridge, stt: 'local', sttBurst: 2, sttMaxConcurrency: 10, sttRefillRate: 0 })
+
+  await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
+  await ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL })
+
+  await assert.rejects(
+    ipc.invoke('spiritagent:media:stt', { dataUrl: STT_DATA_URL }),
+    /STT is busy: rate limit exceeded/
+  )
+})
+
+test('TTS queue full immediately returns busy error without appending to promise chain', async () => {
+  let finishRunning: () => void = () => {}
+
+  const runningPromise = new Promise<void>(resolve => {
+    finishRunning = resolve
+  })
+
+  global.fetch = (async () => {
+    await runningPromise
+
+    return makeFakeResponse({ bytes: Buffer.from('audio'), contentType: 'audio/mpeg' })
+  }) as unknown as typeof globalThis.fetch
+
+  const ipc = setup({ minTtsIntervalMs: 0, tts: 'cloud', ttsMaxQueueSize: 2 })
+
+  const task1 = ipc.invoke('spiritagent:media:tts', { text: 'item-1' })
+  const task2 = ipc.invoke('spiritagent:media:tts', { text: 'item-2' })
+  const task3 = ipc.invoke('spiritagent:media:tts', { text: 'item-3' })
+
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: 'item-4' }), /TTS is busy: queue is full/)
+
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: 'item-5' }), /TTS is busy: queue is full/)
+
+  finishRunning()
+  const [res1, res2, res3] = await Promise.all([task1, task2, task3])
+  assert.equal((res1 as { mimeType: string }).mimeType, 'audio/mpeg')
+  assert.equal((res2 as { mimeType: string }).mimeType, 'audio/mpeg')
+  assert.equal((res3 as { mimeType: string }).mimeType, 'audio/mpeg')
+})
+
+test('TTS local engine is also bounded by the queue', async () => {
+  let finishRunning: () => void = () => {}
+
+  const runningPromise = new Promise<void>(resolve => {
+    finishRunning = resolve
+  })
+
+  const bridge: BridgeSpy = {
+    calls: [],
+    getTools: () => [toolSchema('text_to_speech')],
+    invoke: async (name, args) => {
+      bridge.calls.push({ args, name })
+      await runningPromise
+
+      return { path: tmpWav, success: true }
+    }
+  }
+
+  const ipc = setup({ bridge, tts: 'local', ttsMaxQueueSize: 1 })
+
+  const task1 = ipc.invoke('spiritagent:media:tts', { text: 'local-1' })
+  const task2 = ipc.invoke('spiritagent:media:tts', { text: 'local-2' })
+
+  await assert.rejects(ipc.invoke('spiritagent:media:tts', { text: 'local-3' }), /TTS is busy: queue is full/)
+
+  finishRunning()
+  await Promise.all([task1, task2])
+})
+
+test('TTS memory and disk cache hits do not consume queue capacity or delay backend calls', async () => {
+  const home = makeHome()
+  const dir = path.join(home, 'audio', 'tts-cache', 'zh')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, `${cacheKey('冰糖', 'disk-item')}.mp3`), Buffer.from('disk-audio'))
+
+  let cloudCalls = 0
+  global.fetch = (async () => {
+    cloudCalls += 1
+
+    return makeFakeResponse({ bytes: Buffer.from('cloud-audio'), contentType: 'audio/mpeg' })
+  }) as unknown as typeof globalThis.fetch
+
+  const ipc = setup({ minTtsIntervalMs: 1000, spiritagentHome: home, tts: 'cloud', ttsMaxQueueSize: 0 })
+
+  ttsAudioCache.set('冰糖::zh::memory-item', {
+    dataUrl: 'data:audio/mpeg;base64,bWVtb3J5',
+    expiresAt: Date.now() + 60000,
+    mimeType: 'audio/mpeg'
+  })
+
+  const memRes = await ipc.invoke('spiritagent:media:tts', { text: 'memory-item', voice: '冰糖' })
+  assert.equal((memRes as { dataUrl: string }).dataUrl, 'data:audio/mpeg;base64,bWVtb3J5')
+
+  const diskRes = await ipc.invoke('spiritagent:media:tts', { persist: true, text: 'disk-item', voice: '冰糖' })
+  assert.equal(
+    (diskRes as { dataUrl: string }).dataUrl,
+    `data:audio/mpeg;base64,${Buffer.from('disk-audio').toString('base64')}`
+  )
+
+  assert.equal(cloudCalls, 0, 'cache hits must never call cloud or consume backend quota')
 })
