@@ -1,8 +1,35 @@
-import asyncio
+import logging
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
 
-from utils import call_llm, in_async_loop, redact_sensitive_text
+from utils import call_llm_sync, get_spiritagent_dir, redact_sensitive_text
+
+logger = logging.getLogger(__name__)
 
 SNAPSHOT_SUMMARIZE_THRESHOLD = 8000
+
+
+def _safe_save_name(save_as: str | None, default: str) -> str:
+    """仅保留 save_as 的 basename，防 LLM 用绝对路径或 ``..`` 越界写入缓存目录外。"""
+    name = Path(save_as or "").name
+    return name or default
+
+
+def _unlink_files_older_than(paths: Iterable[Path] | Any, cutoff_s: float) -> None:
+    # 退出时尽力清理，忽略单文件清理异常
+    for p in paths:
+        try:
+            if p.is_file() and p.stat().st_mtime < cutoff_s:
+                p.unlink()
+        except Exception as e:
+            logger.debug("Failed to clean old file %s: %s", p, e)
+
+
+def _get_downloads_dir() -> Path:
+    d = get_spiritagent_dir("cache/downloads", "browser_downloads")
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _truncate_snapshot(snapshot_text: str, max_chars: int = 8000) -> str:
@@ -50,10 +77,13 @@ def _extract_relevant_content(snapshot_text: str, user_task: str | None = None) 
     extraction_prompt = redact_sensitive_text(extraction_prompt)
 
     try:
-        call_kwargs = {"task": "web_extract", "messages": [{"role": "user", "content": extraction_prompt}], "max_tokens": 4000, "temperature": 0.1}
-        if in_async_loop():
-            return _truncate_snapshot(snapshot_text)
-        response = asyncio.run(call_llm(**call_kwargs))
+        response = call_llm_sync(
+            task="web_extract",
+            messages=[{"role": "user", "content": extraction_prompt}],
+            max_tokens=4000,
+            temperature=0.1,
+            timeout=30.0,
+        )
         extracted = (response or "").strip() or _truncate_snapshot(snapshot_text)
         return redact_sensitive_text(extracted)
     except Exception:

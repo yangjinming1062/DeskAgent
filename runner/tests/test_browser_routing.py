@@ -1,12 +1,4 @@
-"""Routing surfaces that browser_cdp depends on but that never had tests.
-
-- ``CDPSupervisor.get_frame_session`` — the only sanctioned way to resolve a
-  frame's CDP session id (``to_dict()`` deliberately omits it so session ids
-  never leak into LLM-visible snapshots).
-- ``utils.reverse_rpc.call_llm_sync`` — the worker-thread → main-loop bridge
-  sync browser tools must use instead of ``asyncio.run`` (whose pending
-  future would live on the wrong loop and stall until the LLM timeout).
-"""
+"""浏览器路由与反向 RPC 同步桥测试。"""
 
 import asyncio
 import threading
@@ -14,7 +6,8 @@ import time
 
 import pytest
 import utils.reverse_rpc as reverse_rpc
-from tools.browser.browser_supervisor import CDPSupervisor, FrameInfo
+from tools.browser.helpers import _safe_save_name
+from tools.browser.supervisor import CDPSupervisor, FrameInfo
 
 
 def _make_supervisor() -> CDPSupervisor:
@@ -52,26 +45,16 @@ async def test_call_llm_sync_rejects_running_on_loop():
         reverse_rpc.call_llm_sync(task="vision")
 
 
-# ── browser_tool: save_as sanitization + screenshot path recovery ──
+# ── 路径安全净化与下载等待 ──
 
 
 def test_safe_save_name_strips_escape_attempts():
-    from tools.browser.browser_tool import _safe_save_name
-
     assert _safe_save_name("C:/evil/x.png", "default.png") == "x.png"
     assert _safe_save_name(r"\server\share\x.png", "default.png") == "x.png"
     assert _safe_save_name("../../etc/passwd", "default.png") == "passwd"
     assert _safe_save_name("", "default.png") == "default.png"
     assert _safe_save_name(None, "default.png") == "default.png"
     assert _safe_save_name("plain.pdf", "default.pdf") == "plain.pdf"
-
-
-def test_extract_screenshot_path_recovers_windows_drive_paths():
-    from tools.browser.browser_tool import _extract_screenshot_path_from_text
-
-    assert _extract_screenshot_path_from_text(r"Screenshot saved to 'C:\Users\a\AppData\Local\Temp\x.png'") == r"C:\Users\a\AppData\Local\Temp\x.png"
-    assert _extract_screenshot_path_from_text("Screenshot saved to /tmp/shot.png") == "/tmp/shot.png"
-    assert _extract_screenshot_path_from_text("no path here") is None
 
 
 def test_wait_for_download_waits_for_late_begin_event():
@@ -99,4 +82,4 @@ def test_wait_for_download_errors_after_grace_window():
     result = sup.wait_for_download(timeout=5.0)
     assert result["ok"] is False
     assert "no pending download" in result["error"]
-    assert time.monotonic() - start >= 1.5  # waited the ~2s grace window
+    assert time.monotonic() - start >= 1.5  # 等待 ~2s 宽限窗口超时

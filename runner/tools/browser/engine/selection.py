@@ -1,0 +1,95 @@
+import json
+import time
+from collections.abc import Callable
+from typing import Any
+
+
+def select_option_with_eval(
+    eval_fn: Callable[[str], str | dict[str, Any]],
+    ref: str,
+    *,
+    value: str | None = None,
+    label: str | None = None,
+    index: int | None = None,
+    open_delay_s: float = 0.5,
+) -> dict[str, Any]:
+    """在 <select> 或自定义下拉菜单中选择目标项。"""
+    if value is None and label is None and index is None:
+        return {"success": False, "error": "At least one of `value`, `label`, or `index` must be provided."}
+
+    ref_id = ref.removeprefix("@")
+    safe_ref = json.dumps(ref_id)
+
+    if value is not None:
+        value_str = str(value)
+        match_js = f"if(o.value==={json.dumps(value_str)}||o.textContent.trim()==={json.dumps(value_str)})o.selected=true;"
+    elif label is not None:
+        match_js = f"if((o.textContent||'').toLowerCase().includes({json.dumps(label.lower())}))o.selected=true;"
+    else:
+        match_js = f"if(i==={index})o.selected=true;"
+
+    select_js = (
+        "(function(){"
+        f"const el=document.querySelector('[aria-ref=' + {safe_ref} + ']');"
+        "if(!el)return{_:'not_found'};"
+        "if(el.tagName==='SELECT'){"
+        "const opts=Array.from(el.options);"
+        "for(let i=0;i<opts.length;i++){const o=opts[i];" + match_js + "}"
+        "el.dispatchEvent(new Event('change',{bubbles:true}));"
+        "return{_:'native',value:el.value,text:el.options[el.selectedIndex]?.text||''};"
+        "}"
+        "el.click();"
+        "return{_:'clicked'};"
+        "})()"
+    )
+
+    raw_eval = eval_fn(select_js)
+    if isinstance(raw_eval, str):
+        try:
+            parsed = json.loads(raw_eval)
+        except Exception:
+            return {"success": False, "error": "browser_select: failed to parse JS evaluation output"}
+    elif isinstance(raw_eval, dict):
+        parsed = raw_eval
+    else:
+        return {"success": False, "error": "browser_select: unexpected evaluation result"}
+
+    result = parsed.get("result", parsed) if isinstance(parsed, dict) else {}
+    if not isinstance(result, dict):
+        return {"success": False, "error": "browser_select: invalid result payload"}
+
+    if result.get("_") == "native":
+        return {"success": True, "selected": result.get("value"), "text": result.get("text"), "method": "native"}
+    if result.get("_") == "not_found":
+        return {"success": False, "error": f"browser_select: element {ref} not found. Run browser_snapshot first."}
+
+    # 自定义下拉：等待动画展开并查找 option
+    time.sleep(min(0.5, max(0.1, open_delay_s)))
+    label_query = label or value or ""
+    kb_js = (
+        "(function(){"
+        'const opts=document.querySelectorAll(\'[role="option"], [class*="option"], [class*="item"], li\');'
+        "const q=" + json.dumps(label_query.lower()) + ";"
+        "for(const o of opts){"
+        "if((o.textContent||'').toLowerCase().includes(q)&&o.getBoundingClientRect().width>0){"
+        "o.click();return{_:'custom',text:o.textContent.trim()};}}"
+        "return{_:'no_match'};"
+        "})()"
+    )
+
+    kb_raw = eval_fn(kb_js)
+    if isinstance(kb_raw, str):
+        try:
+            kb_parsed = json.loads(kb_raw)
+        except Exception:
+            return {"success": False, "error": "browser_select: failed to parse custom dropdown result"}
+    elif isinstance(kb_raw, dict):
+        kb_parsed = kb_raw
+    else:
+        kb_parsed = {}
+
+    kb_result = kb_parsed.get("result", kb_parsed) if isinstance(kb_parsed, dict) else {}
+    if isinstance(kb_result, dict) and kb_result.get("_") == "custom":
+        return {"success": True, "selected": kb_result.get("text"), "method": "custom_click"}
+
+    return {"success": False, "error": f"browser_select: option matching {label_query!r} not found in custom dropdown"}

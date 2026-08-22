@@ -37,7 +37,7 @@ def resolve_profile_dir(profile_name: str = "default") -> Path:
 
 
 def is_profile_locked(profile_dir: Path) -> bool:
-    """锁文件在 ``_LOCK_FRESHNESS_S`` 秒内被修改过返回 True（说明有别的 agent-browser 在用）；过期锁视为残留以便复用持久 profile。"""
+    """锁文件在 ``_LOCK_FRESHNESS_S`` 秒内被修改过返回 True（说明有别的浏览器实例在用）；过期锁视为残留以便复用持久 profile。"""
     if not profile_dir.is_dir():
         return False
     cutoff = time.time() - _LOCK_FRESHNESS_S
@@ -53,7 +53,7 @@ def cleanup_old_profiles(retention_hours: int = DEFAULT_RETENTION_HOURS) -> int:
     cutoff = time.time() - retention_hours * 3600
     deleted = 0
     try:
-        root = resolve_profile_dir().parent  # the profiles root, not the leaf
+        root = resolve_profile_dir().parent
     except Exception as e:
         logger.debug("Could not resolve profile root for cleanup: %s", e)
         return 0
@@ -65,9 +65,9 @@ def cleanup_old_profiles(retention_hours: int = DEFAULT_RETENTION_HOURS) -> int:
             continue
         try:
             if entry.stat().st_mtime >= cutoff:
-                continue  # recently used, skip
+                continue
             if not _looks_like_chromium_profile(entry):
-                continue  # safety: never rmtree an unrelated sibling
+                continue
             shutil.rmtree(entry, ignore_errors=True)
             deleted += 1
         except Exception as e:

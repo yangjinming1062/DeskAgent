@@ -9,12 +9,22 @@ from typing import Any
 from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
 import httpx
-from utils import call_llm_sync, cfg_get, get_spiritagent_home, load_config, redact_sensitive_text
+from utils import (
+    call_llm_sync,
+    cfg_get,
+    get_spiritagent_home,
+    load_config,
+    redact_sensitive_text,
+)
 
 from ..multimodal import resolve_vision_params
 from ..registry import tool_error
-from .browser_camofox_state import get_camofox_identity
-from .helpers import SNAPSHOT_SUMMARIZE_THRESHOLD, _extract_relevant_content, _truncate_snapshot
+from .camofox_state import get_camofox_identity
+from .helpers import (
+    SNAPSHOT_SUMMARIZE_THRESHOLD,
+    _extract_relevant_content,
+    _truncate_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,8 +182,6 @@ def _get_session(task_id: str | None) -> dict[str, Any]:
                     "adopt_existing_tab": False,
                 }
         session = _sessions[task_id]
-    # Adoption hits the camofox HTTP API — keep it outside the sessions lock
-    # so a slow /tabs call can't stall every other session lookup.
     return _adopt_existing_tab(session)
 
 
@@ -229,7 +237,7 @@ def _delete(path: str, body: dict | None = None, timeout: int = _DEFAULT_TIMEOUT
 
 
 def camofox_navigate(url: str, task_id: str | None = None) -> str:
-    """通过 Camofox REST 后端导航到 url，返回含页面快照与（若有）VNC 链接的 JSON。"""
+    """通过 Camofox REST 后端导航到 url。"""
     try:
         browser_url, rewrite_info = _rewrite_loopback_url_for_camofox(url)
         session = _get_session(task_id)
@@ -268,7 +276,7 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
 
 
 def camofox_snapshot(full: bool = False, task_id: str | None = None, user_task: str | None = None) -> str:
-    """取 Camofox 后端的页面可访问性树快照，超长时按 user_task 调用 LLM 抽取或截断。"""
+    """取 Camofox 后端的页面快照。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -283,7 +291,7 @@ def camofox_snapshot(full: bool = False, task_id: str | None = None, user_task: 
 
 
 def camofox_click(ref: str, task_id: str | None = None) -> str:
-    """在 Camofox 当前 tab 上点击 ref 元素（自动剥掉前导 @）。"""
+    """在 Camofox 当前 tab 上点击 ref 元素。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -309,7 +317,7 @@ def camofox_type(ref: str, text: str, task_id: str | None = None) -> str:
 
 
 def camofox_scroll(direction: str, task_id: str | None = None) -> str:
-    """在 Camofox 当前 tab 上按 direction（up/down）滚动。"""
+    """在 Camofox 当前 tab 上按 direction 滚动。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -345,7 +353,7 @@ def camofox_press(key: str, task_id: str | None = None) -> str:
 
 
 def camofox_close(task_id: str | None = None) -> str:
-    """关闭 task 对应的 Camofox 会话（直接调用 /sessions/{user_id}）。"""
+    """关闭 task 对应的 Camofox 会话。"""
     try:
         if session := _drop_session(task_id):
             _delete(f"/sessions/{session['user_id']}")
@@ -375,7 +383,7 @@ def camofox_get_images(task_id: str | None = None) -> str:
 
 
 def camofox_vision(question: str, annotate: bool = False, task_id: str | None = None) -> str:
-    """截图 Camofox 当前 tab 并请视觉模型回答 question；可选标注 ref。"""
+    """截图 Camofox 当前 tab 并请视觉模型回答 question。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -424,7 +432,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
 
 
 def camofox_console(clear: bool = False, task_id: str | None = None) -> str:
-    """Camofox 不支持 console 捕获，直接返回「不支持」说明。"""
+    """Camofox 不支持 console 捕获。"""
     return json.dumps(
         {
             "success": True,
