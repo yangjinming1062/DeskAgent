@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { $expressions } from '@/companion/3d/model-store'
 import { ChatDock } from '@/companion/chat-dock'
-import { $chatMessages } from '@/companion/chat-store'
+import { resetChatMessages } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import { $expressionAvatar, resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { $portraitUrl } from '@/companion/portrait-store'
@@ -19,7 +19,7 @@ const avatarImg = (): HTMLImageElement => screen.getByAltText('角色形象') as
 
 describe('ChatDock', () => {
   beforeEach(() => {
-    $chatMessages.set([])
+    resetChatMessages()
     $gatewayState.set('open')
     $spriteState.set('idle')
     $spriteEmotion.set(null)

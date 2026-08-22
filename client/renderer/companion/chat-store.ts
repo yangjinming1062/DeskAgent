@@ -1,24 +1,35 @@
-import { atom } from 'nanostores'
+import { atom, map } from 'nanostores'
 
 import { setSpriteState } from '@/companion/companion-store'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { SessionMessage } from '@/shared/types/spiritagent'
 
-export interface ChatMessage {
+// 消息身份与稳定元数据，挂载于 $chatMessageList。
+export interface ChatMessageListItem {
   id: string
   role: 'user' | 'assistant'
-  text: string
   subtype?: string
-  streaming?: boolean
-  attachments?: string[]
-  toolName?: string | null
-  error?: string
-  /** User-initiated stop (vs an error). Rendered neutrally, not as 😬. */
-  cancelled?: boolean
 }
 
-export const $chatMessages = atom<ChatMessage[]>([])
+// 消息可变主体，按 id 键入 $chatMessageBodies。
+export interface ChatMessageBody {
+  text: string
+  streaming?: boolean
+  toolName?: string | null
+  error?: string
+  cancelled?: boolean
+  attachments?: string[]
+}
+
+export interface ChatMessage extends ChatMessageListItem, ChatMessageBody {}
+
+export const $chatMessageList = atom<ChatMessageListItem[]>([])
+export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
+// 尾部助手消息是否处于流式中。ChatDock 借此感知生成状态，无需全量订阅 bodies。
+export const $lastAssistantStreaming = atom<boolean>(false)
+// 流式增量递增计数器，供 ChatScrollAutoFollow 独立订阅触发滚动，不重渲染 ChatDock 容器。
+export const $chatStreamingTick = atom<number>(0)
 export const $chatSessionId = atom<string | null>(null)
 export const $chatOpen = atom(false)
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
@@ -33,21 +44,34 @@ export function setChatOpen(open: boolean): void {
 
 export function setChatSession(id: string | null): void {
   clearPendingPrompts()
+  cancelPendingFlush()
+  $chatTurnInFlight.set(false)
+  $turnHadBubbleBreak.set(false)
   $chatSessionId.set(id)
 }
 
-/** 用从后端加载的会话替换面板的聊天记录。
- * `system` / `tool` 行保留 subtype，以便气泡渲染器选择正确的呈现；布局上折叠到助手侧。 */
+// 用从后端加载的会话替换面板的聊天记录。
 export function hydrateChatMessages(messages: SessionMessage[]): void {
-  $chatMessages.set(
-    messages.map(m => ({
-      id: nextId(),
+  const items: ChatMessageListItem[] = []
+  const bodies: Record<string, ChatMessageBody> = {}
+
+  for (const m of messages) {
+    const id = nextId()
+    items.push({
+      id,
       role: m.role === 'user' ? 'user' : 'assistant',
+      subtype: m.subtype
+    })
+    bodies[id] = {
       text: extractText(m),
-      subtype: m.subtype,
-      toolName: m.tool_name ?? null
-    }))
-  )
+      toolName: m.tool_name ?? null,
+      streaming: false
+    }
+  }
+
+  $chatMessageBodies.set(bodies)
+  $chatMessageList.set(items)
+  $lastAssistantStreaming.set(false)
 }
 
 function extractText(m: SessionMessage): string {
@@ -81,15 +105,20 @@ export function setProactiveBubble(text: string | null): void {
 }
 
 export function pushProactiveMessage(text: string): void {
-  $chatMessages.set([...$chatMessages.get(), { id: nextId(), role: 'assistant', text, subtype: 'status_proactive' }])
+  const id = nextId()
+  $chatMessageBodies.setKey(id, { text, streaming: false, toolName: null })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_proactive' }])
 }
 
 export function pushUserMessage(text: string, attachments?: string[]): string {
   const id = nextId()
-  $chatMessages.set([
-    ...$chatMessages.get(),
-    { id, role: 'user', text, attachments: attachments?.length ? attachments : undefined }
-  ])
+  $chatMessageBodies.setKey(id, {
+    text,
+    attachments: attachments?.length ? attachments : undefined,
+    streaming: false,
+    toolName: null
+  })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'user' }])
 
   return id
 }
@@ -118,18 +147,14 @@ export function clearPendingPrompts(): void {
 
 export const $chatTurnInFlight = atom<boolean>(false)
 
-// 当后端在 in-flight 回合期间发出 bubble.break 时置位——这样 message.complete
-// 收尾的是最后一个气泡自己的流式文本，而不是用整轮多气泡文本覆盖它。
+// 当后端在 in-flight 回合期间发出 bubble.break 时置位，防止 message.complete 全文覆盖末尾气泡。
 export const $turnHadBubbleBreak = atom<boolean>(false)
 
 export function setTurnHadBubbleBreak(v: boolean): void {
   $turnHadBubbleBreak.set(v)
 }
 
-// 连发消息的合并窗口（DESIGN §6.6 场景 3）：
-// 在该窗口内连发的多条消息会被合并成一次 prompt.submit → 一次 LLM 调用。
-// 这是**刻意**的合并，不是发送延迟——schedulePendingFlush 在每次按键发送时重置，
-// 而批量会在 message.complete / 错误 / 用户停止时通过 submitPendingBatch / handleStop 立即冲刷。
+// 连发消息的合并窗口（在窗口内合并为一次 prompt.submit）。
 const FLUSH_DEBOUNCE_MS = 4000
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -151,7 +176,7 @@ export function cancelPendingFlush(): void {
   }
 }
 
-/** Drain the pending prompt batch and submit it as one coalesced turn. */
+// 冲刷排队的提示批次并作为合并回合提交。
 export function submitPendingBatch(): void {
   if ($chatTurnInFlight.get()) {
     return
@@ -210,33 +235,46 @@ export function submitPendingBatch(): void {
   void submitWithRetry()
 }
 
-// 在填充增量或工具状态前，确保存在一个活跃的流式助手气泡。
+// 确保存在活跃的流式助手气泡。
 export function beginAssistantMessage(): void {
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
+  const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
 
-  if (last?.role === 'assistant' && last.streaming) {
-    if (!last.text.trim() && !last.toolName && !last.error && !last.cancelled) {
-      // 之前的流式气泡没有可见文本或工具调用；复用它以避免出现幽灵的「…」气泡
+  // 复用无内容的流式气泡，避免出现空白占位。
+  if (lastItem?.role === 'assistant' && lastBody?.streaming) {
+    if (!lastBody.text.trim() && !lastBody.toolName && !lastBody.error && !lastBody.cancelled) {
       return
     }
 
-    const finalized: ChatMessage = { ...last, streaming: false }
-    const id = nextId()
-    $chatMessages.set([...msgs.slice(0, -1), finalized, { id, role: 'assistant', text: '', streaming: true }])
+    // 多气泡 break：结束上一段并开启新段。
+    const finalizedBody: ChatMessageBody = {
+      ...lastBody,
+      streaming: false,
+      toolName: null
+    }
+
+    const newId = nextId()
+    $chatMessageBodies.setKey(lastItem.id, finalizedBody)
+    $chatMessageBodies.setKey(newId, { text: '', streaming: true, toolName: null })
+    $chatMessageList.set([...list, { id: newId, role: 'assistant' }])
+    $lastAssistantStreaming.set(true)
 
     return
   }
 
   const id = nextId()
-  $chatMessages.set([...msgs, { id, role: 'assistant', text: '', streaming: true }])
+  $chatMessageBodies.setKey(id, { text: '', streaming: true, toolName: null })
+  $chatMessageList.set([...list, { id, role: 'assistant' }])
+  $lastAssistantStreaming.set(true)
 }
 
 export function ensureAssistantMessage(): void {
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
+  const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
 
-  if (last && last.role === 'assistant' && last.streaming) {
+  if (lastItem && lastItem.role === 'assistant' && lastBody?.streaming) {
     return
   }
 
@@ -245,79 +283,152 @@ export function ensureAssistantMessage(): void {
 
 export function appendAssistantDelta(text: string): void {
   ensureAssistantMessage()
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
 
-  if (!last || last.role !== 'assistant') {
+  if (!lastItem || lastItem.role !== 'assistant') {
     return
   }
 
-  $chatMessages.set([...msgs.slice(0, -1), { ...last, text: last.text + text }])
+  const body = $chatMessageBodies.get()[lastItem.id]
+
+  if (!body) {
+    return
+  }
+
+  // 仅更新当前流式消息 body，不改动 list 引用。
+  $chatMessageBodies.setKey(lastItem.id, { ...body, text: body.text + text })
+  $chatStreamingTick.set($chatStreamingTick.get() + 1)
 }
 
 export function setAssistantTool(name: string | null): void {
   ensureAssistantMessage()
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
 
-  if (!last || last.role !== 'assistant') {
+  if (!lastItem || lastItem.role !== 'assistant') {
     return
   }
 
-  $chatMessages.set([...msgs.slice(0, -1), { ...last, toolName: name }])
+  const body = $chatMessageBodies.get()[lastItem.id]
+
+  if (!body) {
+    return
+  }
+
+  $chatMessageBodies.setKey(lastItem.id, { ...body, toolName: name })
 }
 
 export function finalizeAssistantMessage(text?: string): void {
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
 
-  if (!last || last.role !== 'assistant') {
+  if (!lastItem || lastItem.role !== 'assistant') {
     return
   }
 
-  const finalStr = typeof text === 'string' ? text : last.text
+  const body = $chatMessageBodies.get()[lastItem.id]
 
-  // 助手消息为空且无工具/错误/取消时，剪掉以避免出现幽灵气泡
-  if (!finalStr.trim() && !last.toolName && !last.error && !last.cancelled && !last.attachments?.length) {
-    $chatMessages.set(msgs.slice(0, -1))
+  if (!body) {
+    return
+  }
+
+  const finalStr = typeof text === 'string' ? text : body.text
+
+  // 助手消息为空且无工具/错误/取消时剪掉，避免空白气泡。
+  const isEmpty = !finalStr.trim() && !body.toolName && !body.error && !body.cancelled && !body.attachments?.length
+
+  if (isEmpty) {
+    $chatMessageList.set(list.slice(0, -1))
+    $chatMessageBodies.setKey(lastItem.id, undefined)
+    $lastAssistantStreaming.set(false)
 
     return
   }
 
-  const finalized: ChatMessage = { ...last, text: finalStr, streaming: false, toolName: null }
-  $chatMessages.set([...msgs.slice(0, -1), finalized])
+  $chatMessageBodies.setKey(lastItem.id, {
+    ...body,
+    text: finalStr,
+    streaming: false,
+    toolName: null
+  })
+  $lastAssistantStreaming.set(false)
 }
 
 export function setAssistantError(message: string): void {
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
-  const isStreaming = last?.role === 'assistant' && last.streaming
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
+  const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
+  const isStreaming = lastItem?.role === 'assistant' && lastBody?.streaming
 
-  const error: ChatMessage = isStreaming
-    ? { ...last, streaming: false, error: message }
-    : { id: nextId(), role: 'assistant', text: '', error: message }
+  if (isStreaming && lastItem && lastBody) {
+    $chatMessageBodies.setKey(lastItem.id, {
+      ...lastBody,
+      streaming: false,
+      error: message
+    })
+    $lastAssistantStreaming.set(false)
 
-  // 收尾流式助手消息时替换；否则追加，避免覆盖用户的最后一条消息。
-  $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), error] : [...msgs, error])
+    return
+  }
+
+  const id = nextId()
+  $chatMessageBodies.setKey(id, {
+    text: '',
+    error: message,
+    streaming: false,
+    toolName: null
+  })
+  $chatMessageList.set([...list, { id, role: 'assistant' }])
+  $lastAssistantStreaming.set(false)
 }
 
-// 用户在第一条助手片段到达前主动停止。与 setAssistantError 的区别在于：
-// 取消不是失败——气泡应以中性样式渲染，而不是带 😬 错误图标。
+// 用户在第一条助手片段到达前主动停止。
 export function setAssistantCancelled(): void {
-  const msgs = $chatMessages.get()
-  const last = msgs[msgs.length - 1]
-  const isStreaming = last?.role === 'assistant' && last.streaming
+  const list = $chatMessageList.get()
+  const lastItem = list[list.length - 1]
+  const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
+  const isStreaming = lastItem?.role === 'assistant' && lastBody?.streaming
 
-  const cancelled: ChatMessage = isStreaming
-    ? { ...last, streaming: false, cancelled: true }
-    : { id: nextId(), role: 'assistant', text: '', cancelled: true }
+  if (isStreaming && lastItem && lastBody) {
+    $chatMessageBodies.setKey(lastItem.id, {
+      ...lastBody,
+      streaming: false,
+      cancelled: true
+    })
+    $lastAssistantStreaming.set(false)
 
-  // 收尾流式助手消息时替换；否则追加，避免覆盖用户的最后一条消息。
-  $chatMessages.set(isStreaming ? [...msgs.slice(0, -1), cancelled] : [...msgs, cancelled])
+    return
+  }
+
+  const id = nextId()
+  $chatMessageBodies.setKey(id, {
+    text: '',
+    cancelled: true,
+    streaming: false,
+    toolName: null
+  })
+  $chatMessageList.set([...list, { id, role: 'assistant' }])
+  $lastAssistantStreaming.set(false)
 }
 
 export function clearChat(): void {
   clearPendingPrompts()
-  $chatMessages.set([])
+  cancelPendingFlush()
+  $chatMessageList.set([])
+  $chatMessageBodies.set({})
   $chatSessionId.set(null)
+  $lastAssistantStreaming.set(false)
+  $chatStreamingTick.set(0)
+  $chatTurnInFlight.set(false)
+  $turnHadBubbleBreak.set(false)
+}
+
+// 重置消息列表与 bodies，不触碰 $chatSessionId 与 pending batch。
+export function resetChatMessages(): void {
+  $chatMessageList.set([])
+  $chatMessageBodies.set({})
+  $lastAssistantStreaming.set(false)
+  $chatTurnInFlight.set(false)
+  $turnHadBubbleBreak.set(false)
 }

@@ -1,44 +1,48 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { $modelGenState } from './3d/model-store'
-import { $chatMessages, clearChat, setChatSession } from './chat-store'
+import { $chatMessageBodies, $chatMessageList, clearChat, setChatSession } from './chat-store'
 import { $spriteState } from './companion-store'
 import { handleCompanionEvent } from './events'
 
 beforeEach(() => {
   clearChat()
   setChatSession('main-1')
-  $chatMessages.set([])
 })
 
 describe('handleCompanionEvent session filter', () => {
   it('ignores message.start emitted on a non-active session (cron)', () => {
     handleCompanionEvent({ type: 'message.start', session_id: 'cron-1', payload: {} })
 
-    expect($chatMessages.get()).toHaveLength(0)
+    expect($chatMessageList.get()).toHaveLength(0)
   })
 
   it('processes message.start on the active session', () => {
     handleCompanionEvent({ type: 'message.start', session_id: 'main-1', payload: {} })
 
-    expect($chatMessages.get()).toHaveLength(1)
-    expect($chatMessages.get()[0]).toMatchObject({ role: 'assistant', streaming: true })
+    const list = $chatMessageList.get()
+    expect(list).toHaveLength(1)
+    expect(list[0]).toMatchObject({ role: 'assistant' })
+    expect($chatMessageBodies.get()[list[0]!.id]?.streaming).toBe(true)
   })
 
   it('ignores message.complete with mismatched session even when text arrives', () => {
     handleCompanionEvent({ type: 'message.complete', session_id: 'cron-1', payload: { text: 'cron 文本' } })
 
-    expect($chatMessages.get()).toHaveLength(0)
+    expect($chatMessageList.get()).toHaveLength(0)
   })
 
   it('passes WSEvent-driven events through the session filter', () => {
-    // companion.message 没有 session_id，必须能走到对应分支：
-    // affect 落到精灵，主动气泡路径则不创建聊天流式消息。
+    // companion.message 无 session_id，直接放行 affect，不创建聊天流式消息。
     $spriteState.set('idle')
     handleCompanionEvent({ type: 'companion.message', payload: { text: '今天好', affect: { emotion: 'happy' } } })
 
     expect($spriteState.get()).toBe('emotional')
-    expect($chatMessages.get().every(m => m.role !== 'assistant' || m.streaming !== true)).toBe(true)
+
+    const bodies = $chatMessageBodies.get()
+    const list = $chatMessageList.get()
+
+    expect(list.every(item => item.role !== 'assistant' || bodies[item.id]?.streaming !== true)).toBe(true)
   })
 })
 

@@ -2,7 +2,15 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { $chatMessages, $chatSessionId, setAssistantError, setChatOpen, setChatSession } from '@/companion/chat-store'
+import {
+  $chatMessageBodies,
+  $chatMessageList,
+  $chatSessionId,
+  $lastAssistantStreaming,
+  setAssistantError,
+  setChatOpen,
+  setChatSession
+} from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
@@ -23,13 +31,11 @@ const SILENCE_END_MS = 1300
 // 在没有任何 message.start 到达时释放 awaiting-reply 锁，使麦克风能再次开启。
 const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
-// 实时半双工语音通话——麦克风持续开启；音量分析器把语音切成片段
-// （说话 → 持续静音 = 一回合结束）。每段语音被转写（云端 STT）后
-// 作为 prompt 发出，回流结束后读出回复。打断：伙伴说话时用户开口
-// 会切断 TTS，回到倾听（plan §4.1）。
+// 实时半双工语音通话：麦克风持续录制，静音检测切片转写后提交 prompt，支持插话打断。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
-  const messages = useStore($chatMessages)
+  const list = useStore($chatMessageList)
+  const lastAssistantStreaming = useStore($lastAssistantStreaming)
   const spriteState = useStore($spriteState)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
@@ -300,24 +306,29 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     }
   }, [requestGateway, gatewayStateRef, onCloseRef])
 
-  // 念出助手已完成的回复，然后回到倾听。聊天事件流（events.ts）负责
-  // 流式推送与状态机；本 effect 只对已结束的助手回合做出反应。
+  // 朗读已完成的回复。本组件不订阅 $chatMessageBodies，仅在 list 与流式状态切换时同步读取最新文本。
   useEffect(() => {
     if (!micActive) {
       return
     }
 
-    const last = messages[messages.length - 1]
+    const lastItem = list[list.length - 1]
 
-    if (!last || last.role !== 'assistant' || last.streaming || last.error) {
+    if (!lastItem || lastItem.role !== 'assistant' || lastAssistantStreaming) {
       return
     }
 
-    if (last.id === lastSpokenIdRef.current) {
+    const body = $chatMessageBodies.get()[lastItem.id]
+
+    if (!body || body.streaming || body.error || body.cancelled) {
       return
     }
 
-    lastSpokenIdRef.current = last.id
+    if (lastItem.id === lastSpokenIdRef.current) {
+      return
+    }
+
+    lastSpokenIdRef.current = lastItem.id
     awaitingReplyRef.current = false
 
     if (awaitingReplyTimerRef.current) {
@@ -325,7 +336,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       awaitingReplyTimerRef.current = null
     }
 
-    if (!last.text.trim()) {
+    if (!body.text.trim()) {
       setSpriteState('listening')
 
       return
@@ -334,7 +345,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     assistantSpeakingRef.current = true
     setSpriteState('speaking')
     const gen = ++speakGenRef.current
-    void speak(last.text).then(() => {
+    void speak(body.text).then(() => {
       if (gen !== speakGenRef.current) {
         return
       }
@@ -342,7 +353,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       assistantSpeakingRef.current = false
       setSpriteState('listening')
     })
-  }, [messages, micActive])
+  }, [list, lastAssistantStreaming, micActive])
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60)

@@ -9,12 +9,7 @@ type Options = {
   onTranscribed?: (text: string) => Promise<void> | void
 }
 
-// 负责完整的语音消息生命周期：MediaRecorder + 音频块 + 自动停止计时器
-// + 全局 mouseup 钩子 + STT 提交。调用方只需切换 `recording`
-// 并监听 `onTranscribed` 以把结果写入自己的状态。
-//
-// 该 hook 负责在 stop 与 unmount 时关闭音轨，
-// 避免 OS 级别的麦克风指示灯在录音结束后仍保持亮起。
+// 语音消息生命周期管理：录音、自动停止、全局事件解绑、音轨清理与转写提交。
 
 export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
   recording: boolean
@@ -131,8 +126,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       try {
         const sessionId = await ensureSession()
         $chatTurnInFlight.set(true)
-        await requestGateway('prompt.submit', { session_id: sessionId, text })
         await onTranscribed?.(text)
+        await requestGateway('prompt.submit', { session_id: sessionId, text })
       } catch (err) {
         $chatTurnInFlight.set(false)
         setSpriteState('idle')

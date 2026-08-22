@@ -5,9 +5,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { $expressions } from '@/companion/3d/model-store'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
-  $chatMessages,
+  $chatMessageBodies,
+  $chatMessageList,
   $chatSessionId,
+  $chatStreamingTick,
   $chatTurnInFlight,
+  $lastAssistantStreaming,
   cancelPendingFlush,
   clearPendingPrompts,
   finalizeAssistantMessage,
@@ -85,8 +88,26 @@ interface ChatDockProps {
   onOpenVoiceCall?: () => void
 }
 
+// 独立订阅 $chatStreamingTick：流式输出期间触发滚动跟随，避免 ChatDock 容器重渲染。
+function ChatScrollAutoFollow({ scrollRef }: { scrollRef: React.RefObject<HTMLDivElement | null> }): null {
+  const tick = useStore($chatStreamingTick)
+
+  useEffect(() => {
+    const el = scrollRef.current
+
+    if (!el) {
+      return
+    }
+
+    el.scrollTo?.({ top: el.scrollHeight, behavior: 'smooth' })
+  }, [tick, scrollRef])
+
+  return null
+}
+
 export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.ReactElement {
-  const messages = useStore($chatMessages)
+  const list = useStore($chatMessageList)
+  const lastAssistantStreaming = useStore($lastAssistantStreaming)
   const gatewayState = useStore($gatewayState)
   const portraitUrl = useStore($portraitUrl)
   const spriteEmotion = useStore($spriteEmotion)
@@ -130,10 +151,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     inputRef.current?.focus()
   }, [])
 
-  // 表情脸：在 affect 激活时替换左栏头像；
-  // 没有情绪或图片未就绪时回退到半身像。
-  // 订阅放在这里（而不是 store 里），是为了让仅桌面端的表情
-  // 在聊天窗口关闭时不会触发生成。
+  // 情绪激活时替换左栏头像，回退到半身像。
   useEffect(() => {
     if (spriteEmotion && spriteEmotion !== 'neutral') {
       void requestExpressionAvatar(spriteEmotion)
@@ -146,7 +164,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages])
+  }, [list])
 
   const ensureSession = async (): Promise<string> => {
     const existing = $chatSessionId.get()
@@ -182,7 +200,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             setPendingImage(path)
           }
         } catch {
-          /* ignore clipboard read failure */
+          /* 忽略剪贴板读取失败 */
         }
 
         return
@@ -220,7 +238,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             }
           }
         } catch {
-          /* keep the local path */
+          /* 保留本地路径 */
         }
 
         const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
@@ -253,12 +271,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
-  const lastIsUser = messages[messages.length - 1]?.role === 'user'
+  const lastIsUser = list[list.length - 1]?.role === 'user'
   const showTyping = lastIsUser && gatewayState === 'open'
-  const lastMsg = messages[messages.length - 1]
 
-  const isGenerating =
-    gatewayState === 'open' && (showTyping || (lastMsg?.role === 'assistant' && lastMsg.streaming === true))
+  const isGenerating = gatewayState === 'open' && (showTyping || lastAssistantStreaming)
 
   const handleStop = async () => {
     cancelPendingFlush()
@@ -270,15 +286,16 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       try {
         await requestGateway('session.interrupt', { session_id: sid })
       } catch {
-        /* best effort */
+        /* 尽力而为 */
       }
     }
 
     void window.spiritagent?.runnerCancel?.().catch(() => {})
 
-    const last = $chatMessages.get().at(-1)
+    const lastItem = $chatMessageList.get().at(-1)
+    const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
 
-    if (last?.role === 'assistant' && last.streaming) {
+    if (lastItem?.role === 'assistant' && lastBody?.streaming && lastBody.text.trim()) {
       finalizeAssistantMessage()
     } else {
       setAssistantCancelled()
@@ -443,17 +460,18 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
           {/* Messages Area */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
-            {messages.length === 0 && !sending && (
+            {list.length === 0 && !sending && (
               <p className="mt-8 text-center text-sm text-white/40">说点什么，或粘贴一张图给我看看～</p>
             )}
-            {messages.map(m => (
-              <MessageBubble key={m.id} message={m} />
+            {list.map(item => (
+              <MessageBubble key={item.id} message={item} />
             ))}
             {showTyping && (
               <div className="flex justify-start">
                 <span className="rounded-2xl rounded-bl-sm bg-white/10 px-3 py-2 text-sm text-white/60">…</span>
               </div>
             )}
+            <ChatScrollAutoFollow scrollRef={scrollRef} />
           </div>
 
           {pendingImage && (

@@ -1,6 +1,7 @@
 import { atom } from 'nanostores'
 
-import { $chatMessages, $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
+import { $chatSessionId, hydrateChatMessages, resetChatMessages, setChatSession } from '@/companion/chat-store'
+import { log } from '@/shared/lib/log'
 import { $gateway } from '@/shared/store/gateway'
 import type { SessionInfo, SessionResumeResponse } from '@/shared/types/spiritagent'
 
@@ -30,7 +31,7 @@ export async function fetchSessions(): Promise<void> {
       $sessions.set(res.sessions || [])
     }
   } catch (err) {
-    console.error('Failed to fetch sessions', err)
+    log.error('session-list', 'Failed to fetch sessions:', err)
   } finally {
     if (token === fetchToken) {
       $sessionsLoading.set(false)
@@ -48,12 +49,12 @@ export async function createNewSession(): Promise<string | null> {
   try {
     const res = await gw.request<{ session_id: string }>('session.create', {})
     setChatSession(res.session_id)
-    $chatMessages.set([])
+    resetChatMessages()
     void fetchSessions()
 
     return res.session_id
   } catch (err) {
-    console.error('Failed to create session', err)
+    log.error('session-list', 'Failed to create session:', err)
 
     return null
   }
@@ -72,11 +73,11 @@ export async function switchSession(sessionId: string): Promise<void> {
     setChatSession(sessionId)
     hydrateChatMessages(res.messages || [])
   } catch (err) {
-    console.error('Failed to switch session', err)
+    log.error('session-list', 'Failed to switch session:', err)
   }
 }
 
-/** 挂载主会话并加载其对话流。同时也是 dock 还没有会话时的恢复路径——主会话始终存在。 */
+// 挂载主会话并加载其对话流。
 export async function openMainSession(onMounted?: (res: SessionResumeResponse) => void): Promise<string | null> {
   const gw = $gateway.get()
 
@@ -92,7 +93,7 @@ export async function openMainSession(onMounted?: (res: SessionResumeResponse) =
 
     return res.session_id
   } catch (err) {
-    console.error('Failed to open main session', err)
+    log.error('session-list', 'Failed to open main session:', err)
 
     return null
   }
@@ -102,7 +103,7 @@ export async function deleteSession(sessionId: string): Promise<void> {
   try {
     await window.spiritagent.api({ method: 'DELETE', path: `/api/v1/sessions/${sessionId}` })
   } catch (err) {
-    console.error('Failed to delete session', err)
+    log.error('session-list', 'Failed to delete session:', err)
 
     return
   }

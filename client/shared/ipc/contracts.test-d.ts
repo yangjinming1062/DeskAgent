@@ -41,22 +41,10 @@ import type {
   ToolsetItem
 } from './contracts'
 
-// ---- 穷举校验：IPC.invoke  必须包含契约中全部 40 个 invoke key ---------------
-//
-// `keyof typeof IPC.invoke` 与 `keyof IpcInvokeContract` 互为子集;
-// 任一边缺失某个 key(例如新增契约条目忘加 IPC 常量,或漏写某个 IPC key),
-// 这一行的赋值类型不兼容,编译错误。
-type _AllInvokeKeysCovered = keyof typeof IPC.invoke & keyof IpcInvokeContract
-// 强制消费这个类型别名,确保分支被求值。
-const _checkAllInvokeKeys: _AllInvokeKeysCovered[] = []
-
-// ---- 穷举校验：IPC.event 必须包含契约中全部 9 个 event key -------------------
-type _AllEventKeysCovered = keyof typeof IPC.event & keyof IpcEventContract
-const _checkAllEventKeys: _AllEventKeysCovered[] = []
-
-// ---- 穷举校验：IPC.send 必须包含契约中全部 send key --------------------------
-type _AllSendKeysCovered = keyof typeof IPC.send & keyof IpcSendContract
-const _checkAllSendKeys: _AllSendKeysCovered[] = []
+// ---- 穷举校验：IPC 常量值必须与契约 channel 严格一致 -------------------------
+expectTypeOf<(typeof IPC.invoke)[keyof typeof IPC.invoke]>().toEqualTypeOf<keyof IpcInvokeContract>()
+expectTypeOf<(typeof IPC.event)[keyof typeof IPC.event]>().toEqualTypeOf<keyof IpcEventContract>()
+expectTypeOf<(typeof IPC.send)[keyof typeof IPC.send]>().toEqualTypeOf<keyof IpcSendContract>()
 
 // ---- Auth (用户需求 §5 重点契约) -------------------------------------------
 
@@ -65,9 +53,7 @@ expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:auth:activate']>>
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:auth:refresh']>[0]>().toEqualTypeOf<
   Record<string, unknown> | undefined
 >()
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:auth:logout']>>>().toEqualTypeOf<
-  DesktopLogoutResult
->()
+expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:auth:logout']>>>().toEqualTypeOf<DesktopLogoutResult>()
 expectTypeOf<
   Awaited<ReturnType<IpcInvokeContract['spiritagent:auth:get-session']>>
 >().toEqualTypeOf<DesktopAuthSnapshot | null>()
@@ -92,10 +78,12 @@ expectTypeOf<IpcEventContract['spiritagent:window-state-changed']>().toEqualType
 
 // ---- Runner state -------------------------------------------------------
 
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:get-state']>>>().toEqualTypeOf<DesktopRunnerState>()
 expectTypeOf<
-  Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:get-tools']>>
->().toEqualTypeOf<Array<Record<string, unknown>>>()
+  Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:get-state']>>
+>().toEqualTypeOf<DesktopRunnerState>()
+expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:get-tools']>>>().toEqualTypeOf<
+  Array<Record<string, unknown>>
+>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:cancel']>>>().toEqualTypeOf<unknown>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:invoke']>>>().toEqualTypeOf<unknown>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:runner:invoke']>>().toEqualTypeOf<
@@ -133,17 +121,15 @@ expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner-config:wri
   error?: string
   ok: boolean
 }>()
-expectTypeOf<Parameters<IpcInvokeContract['spiritagent:runner-config:patch']>[0]>().toEqualTypeOf<
-  RunnerConfigPatch
->()
+expectTypeOf<Parameters<IpcInvokeContract['spiritagent:runner-config:patch']>[0]>().toEqualTypeOf<RunnerConfigPatch>()
 
 // ---- Files / clipboard / log --------------------------------------------
 
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:readFileDataUrl']>[0]>().toEqualTypeOf<string>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:readFileDataUrl']>>>().toEqualTypeOf<string>()
-expectTypeOf<
-  Parameters<IpcInvokeContract['spiritagent:selectPaths']>[0]
->().toEqualTypeOf<SpiritAgentSelectPathsOptions | undefined>()
+expectTypeOf<Parameters<IpcInvokeContract['spiritagent:selectPaths']>[0]>().toEqualTypeOf<
+  SpiritAgentSelectPathsOptions | undefined
+>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:selectPaths']>>>().toEqualTypeOf<string[]>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:writeClipboard']>[0]>().toEqualTypeOf<string>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:writeClipboard']>>>().toEqualTypeOf<boolean>()
@@ -158,9 +144,7 @@ expectTypeOf<Parameters<IpcInvokeContract['spiritagent:log:emit']>[0]>().toEqual
 // ---- Window / version / system -------------------------------------------
 
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:window:show-tool']>>>().toEqualTypeOf<void>()
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:version']>>>().toEqualTypeOf<
-  DesktopVersionInfo
->()
+expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:version']>>>().toEqualTypeOf<DesktopVersionInfo>()
 
 // ---- Media STT / TTS (用户需求 §5 重点契约) -------------------------------
 
@@ -182,43 +166,41 @@ expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:onboardingAudio:r
 // ---- Sprite -------------------------------------------------------------
 
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:hide']>>>().toEqualTypeOf<void>()
-expectTypeOf<
-  Parameters<IpcInvokeContract['spiritagent:sprite:set-ignore-mouse-events']>[0]
->().toEqualTypeOf<{ forward?: boolean; ignore: boolean }>()
+expectTypeOf<Parameters<IpcInvokeContract['spiritagent:sprite:set-ignore-mouse-events']>[0]>().toEqualTypeOf<{
+  forward?: boolean
+  ignore: boolean
+}>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:set-always-on-top']>>>().toEqualTypeOf<void>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:sprite:set-always-on-top']>[0]>().toEqualTypeOf<{
   on: boolean
 }>()
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:get-position']>>>().toEqualTypeOf<
-  null | { origin?: { x: number; y: number }; x: number; y: number }
->()
+expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:get-position']>>>().toEqualTypeOf<null | {
+  origin?: { x: number; y: number }
+  x: number
+  y: number
+}>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:sprite:set-position']>[0]>().toEqualTypeOf<{
   x: number
   y: number
 }>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:set-position']>>>().toEqualTypeOf<void>()
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:move-to-cursor-display']>>>().toEqualTypeOf<
-  | null
-  | {
-      cursor: { x: number; y: number }
-      from: { x: number; y: number }
-      to: { x: number; y: number }
-    }
->()
+expectTypeOf<
+  Awaited<ReturnType<IpcInvokeContract['spiritagent:sprite:move-to-cursor-display']>>
+>().toEqualTypeOf<null | {
+  cursor: { x: number; y: number }
+  from: { x: number; y: number }
+  to: { x: number; y: number }
+}>()
 
 // ---- Update (用户需求 §5 重点契约) ----------------------------------------
 
 expectTypeOf<IpcEventContract['spiritagent:update-event']>().toEqualTypeOf<[payload: DesktopUpdateEvent]>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:update:check']>>>().toEqualTypeOf<void>()
-expectTypeOf<IpcEventContract['spiritagent:runner-update-event']>().toEqualTypeOf<
-  [payload: DesktopRunnerUpdateEvent]
->()
+expectTypeOf<IpcEventContract['spiritagent:runner-update-event']>().toEqualTypeOf<[payload: DesktopRunnerUpdateEvent]>()
 
 // ---- API proxy (用户需求 §5) + 资产通道 -----------------------------------
 
-expectTypeOf<Parameters<IpcInvokeContract['spiritagent:api']>[0]>().toEqualTypeOf<
-  SpiritAgentApiRequest
->()
+expectTypeOf<Parameters<IpcInvokeContract['spiritagent:api']>[0]>().toEqualTypeOf<SpiritAgentApiRequest>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:api']>>>().toEqualTypeOf<unknown>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:api:asset']>[0]>().toEqualTypeOf<{ url: string }>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:api:asset']>>>().toEqualTypeOf<string>()
@@ -238,11 +220,6 @@ expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:api:asset-model-u
 expectTypeOf<IpcEventContract['spiritagent:auth:session-expired']>().toEqualTypeOf<[]>()
 expectTypeOf<IpcEventContract['spiritagent:power-resume']>().toEqualTypeOf<[]>()
 expectTypeOf<IpcEventContract['spiritagent:tray:logout']>().toEqualTypeOf<[]>()
-
-// 截断 const  声明以避免 lint 报未使用变量。
-void _checkAllInvokeKeys
-void _checkAllEventKeys
-void _checkAllSendKeys
 
 // ---- IPC 运行时 channel 常量 (spot checks) --------------------------------
 
