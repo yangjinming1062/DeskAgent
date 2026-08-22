@@ -83,7 +83,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
   refreshSession: (payload?: Record<string, unknown>) => ipcRenderer.invoke(IPC.invoke.authRefresh, payload),
-  reloadMcp: () => ipcRenderer.invoke(IPC.invoke.runnerReloadMcp),
   runnerCancel: () => ipcRenderer.invoke(IPC.invoke.runnerCancel),
   runnerConfig: {
     patch: (patch: RunnerConfigPatch) => ipcRenderer.invoke(IPC.invoke.runnerConfigPatch, patch),

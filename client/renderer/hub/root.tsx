@@ -6,7 +6,7 @@ import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/a
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 
 // 工具窗口仅在认证后承载设置面板；未认证时由精灵窗口处理激活流程。
-// 纯 REST 模式——不启动网关，MCP 重载按钮会优雅降级（gateway={null}）。
+// 纯 REST 模式——不启动网关。
 const SettingsView = lazy(() => import('./settings').then(m => ({ default: m.SettingsView })))
 
 export function ToolRoot(): React.JSX.Element {
@@ -55,7 +55,7 @@ export function ToolRoot(): React.JSX.Element {
   // window.close() 走拦截器隐藏窗口而非销毁——设置面板是按需打开的
   return (
     <Suspense fallback={null}>
-      <SettingsView gateway={null} onClose={() => window.close()} />
+      <SettingsView onClose={() => window.close()} />
     </Suspense>
   )
 }

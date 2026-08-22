@@ -106,7 +106,6 @@ export const strings = {
     resetFailed: '重置失败',
     nav: {
       account: '账户',
-      mcp: 'MCP',
       about: '关于',
       runner: '执行器',
       skills: '技能与工具',
@@ -123,34 +122,6 @@ export const strings = {
       updateAvailable: (value: number | string) => `v${value} 可用`,
       updateDownloaded: (value: number | string) => `v${value} 已就绪,等待重启安装`,
       updateError: (value: string) => `检查更新失败:${value}`
-    },
-    mcp: {
-      loading: '正在加载 MCP 服务器...',
-      failedLoad: 'MCP 配置加载失败',
-      nameRequiredTitle: '需要名称',
-      nameRequiredMessage: '请为此 MCP 服务器提供配置键。',
-      objectRequired: '服务器配置必须是 JSON 对象',
-      invalidJson: 'MCP JSON 无效',
-      saveFailed: '保存失败',
-      removeFailed: '移除失败',
-      gatewayUnavailableTitle: '网关不可用',
-      gatewayUnavailableMessage: '重新加载 MCP 前请先重连网关。',
-      reloadedTitle: 'MCP 工具已重新加载',
-      reloadedMessage: '新的工具 schema 将应用到后续回合。',
-      reloadFailed: 'MCP 重新加载失败',
-      savedTitle: 'MCP 服务器已保存',
-      savedMessage: (name: string) => `${name} 会在 MCP 重新加载后生效。`,
-      newServer: '新服务器',
-      reload: '重新加载 MCP',
-      reloading: '重新加载中...',
-      emptyTitle: '没有 MCP 服务器',
-      emptyDesc: '添加 stdio 或 HTTP 服务器以暴露 MCP 工具。',
-      disabled: '已禁用',
-      editServer: '编辑服务器',
-      name: '名称',
-      serverJson: '服务器 JSON',
-      remove: '移除',
-      saveServer: '保存服务器'
     },
     runner: {
       title: '执行器配置',
@@ -341,7 +312,7 @@ export const strings = {
     messaging: { label: '消息', description: '通过 Webhook 发送消息。' },
     scheduled_tasks: { label: '定时任务', description: 'Cron 触发与周期调度。' },
     agent_delegation: { label: '子代理委托', description: '派生子会话与子代理。' },
-    computer_use: { label: '桌面操控', description: '通过 CUA / Win 后端接管桌面。' },
+    computer_use: { label: '桌面操控', description: '通过 Windows 后端接管桌面。' },
     media_analysis: { label: '多媒体分析', description: '图片分析。' }
   },
 

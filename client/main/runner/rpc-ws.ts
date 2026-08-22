@@ -37,7 +37,6 @@ export type RunnerWsEvent =
   | { error: unknown; type: 'error' }
   | { method: string; params: unknown; type: 'notification' }
   | { type: 'connected' }
-  | { type: 'tools_changed' }
 
 export interface RunnerWsServer {
   call: <T = unknown>(
@@ -177,8 +176,6 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           type: 'runner_ready',
           version: message.params?.version ?? null
         })
-      } else if (method === 'tools_changed') {
-        emit({ type: 'tools_changed' })
       } else {
         emit({ method, params: message.params || {}, type: 'notification' })
       }

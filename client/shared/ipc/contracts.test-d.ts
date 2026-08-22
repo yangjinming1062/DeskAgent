@@ -97,7 +97,6 @@ expectTypeOf<
   Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:get-tools']>>
 >().toEqualTypeOf<Array<Record<string, unknown>>>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:cancel']>>>().toEqualTypeOf<unknown>()
-expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:reload-mcp']>>>().toEqualTypeOf<unknown>()
 expectTypeOf<Awaited<ReturnType<IpcInvokeContract['spiritagent:runner:invoke']>>>().toEqualTypeOf<unknown>()
 expectTypeOf<Parameters<IpcInvokeContract['spiritagent:runner:invoke']>>().toEqualTypeOf<
   [name: string, args: Record<string, unknown>]

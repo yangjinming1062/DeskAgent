@@ -5,7 +5,6 @@ import json
 import logging
 import platform
 import sys
-import threading
 import time
 import uuid
 from typing import Any
@@ -16,7 +15,6 @@ import websockets
 from runner_version import __version__
 from tools import ToolError, discover_builtin_tools, registry
 from tools.files import reset_max_read_chars_cache
-from tools.mcp import discover_mcp_tools, get_active_mcp_servers, reload_mcp_servers
 from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import (
@@ -49,8 +47,6 @@ def _require_supported_host() -> None:
 _ACTIVE_WS: Any | None = None
 _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
 _PENDING_RPC: dict[str, asyncio.Future] = {}
-# 进程级: MCP 工具缓存随 runner 生命周期存活, 首次连接做一次发现即可。
-_discovery_started = False
 _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
 
@@ -150,7 +146,7 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             return
 
         if method == "spiritagent.config.update":
-            # 重置缓存对标 mcp.reload, 让派生限制立刻看到新 config。
+            # 重置缓存, 让派生限制立刻看到新 config。
             config = params.get("config")
             if not isinstance(config, dict):
                 raise ValueError("spiritagent.config.update requires a 'config' object")
@@ -160,18 +156,6 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             utils.env_passthrough.reset_cache()
             utils.credential_files.reset_cache()
             await _send(ws, req_id, result={"ok": True})
-            return
-
-        if method == "mcp.reload":
-            # 清掉 config 缓存, 让 tool_output_limits / file_read_max_chars 不需要重启 runner 就能看到改动。
-            reset_cache()
-            reset_max_read_chars_cache()
-            utils.env_passthrough.reset_cache()
-            utils.credential_files.reset_cache()
-            # 卸载到线程: reload_mcp_servers 会 join MCP loop 线程, 关停最长等 15s — 同步执行会阻塞
-            # runner 的 WS event loop, 把 spiritagent.cancel / 心跳掐死。
-            result = await asyncio.to_thread(reload_mcp_servers)
-            await _send(ws, req_id, result=result)
             return
 
         if method == "execute_tool":
@@ -233,8 +217,6 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     attempt = 0  # 连接成功后重置
                     try:
                         await _send_notification(ws, "runner_ready", await _runner_ready_payload())
-                        _schedule_background_mcp_discovery()
-
                         async for message in ws:
                             try:
                                 data = json.loads(message)
@@ -338,7 +320,6 @@ async def _build_info() -> dict[str, Any]:
             health = {}
     except Exception:
         health = {}
-    mcp_servers = get_active_mcp_servers()
     try:
         tool_names = registry.get_all_tool_names()
     except Exception:
@@ -354,7 +335,6 @@ async def _build_info() -> dict[str, Any]:
         "capabilities_health": health,
         "system": {"platform": sys.platform, "python": sys.version.split()[0], "release": platform.release(), "machine": platform.machine()},
         "tool_count": len(tool_names),
-        "mcp_servers": mcp_servers,
         "network_reachable": reachable,
         "disk_free_bytes": disk_free_bytes(get_spiritagent_home()),
     }
@@ -378,36 +358,6 @@ def main() -> None:
         asyncio.run(runner_loop(endpoint))
     except KeyboardInterrupt:
         logger.info("Runner stopped.")
-
-
-def _schedule_background_mcp_discovery() -> None:
-    """``discover_mcp_tools()`` 跑在 WS event loop 之外; 进程级(重连时不重复) — 并发的发现线程会在 60-120s 的 stdio spawn 窗口里争抢共享 registry。"""
-    global _discovery_started
-    if _discovery_started:
-        return
-    _discovery_started = True
-
-    def _run() -> None:
-        try:
-            discover_mcp_tools()
-        except Exception as e:
-            logger.warning(f"MCP discovery in background failed: {e}")
-        finally:
-            _notify_tools_changed()
-
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def _notify_tools_changed() -> None:
-    """通过当前 WS 向 Desktop 发 ``tools_changed``; WS 还没连上时(发现先于连接)或已关闭时 no-op。"""
-    ws = _ACTIVE_WS
-    loop = _RUNNER_LOOP
-    if ws is None or loop is None or loop.is_closed():
-        return
-    try:
-        asyncio.run_coroutine_threadsafe(_send_notification(ws, "tools_changed", {}), loop)
-    except Exception as e:
-        logger.warning(f"Failed to dispatch tools_changed notification: {e}")
 
 
 if __name__ == "__main__":

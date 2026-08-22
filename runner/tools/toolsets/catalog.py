@@ -8,8 +8,6 @@ class ToolsetDef:
     extra_tools: tuple[str, ...] = ()
 
 
-# MCP 工具(``mcp_*``)由运行时过滤器排除 — 见下面的 ``is_mcp_tool``。目录本身只声明非 MCP 形态;
-# 运行时过滤器防止未来目录漂移错误地把 MCP 工具塞进来。
 TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
     ToolsetDef(id="browser_automation", prefixes=("browser_",)),
     ToolsetDef(id="file_operations", extra_tools=("read_file", "write_file", "patch", "list_directory", "search_files")),
@@ -29,27 +27,17 @@ TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
 )
 
 
-def is_mcp_tool(name: str) -> bool:
-    """判断工具名是否属于 MCP 集成(MCP 设置页有自己的开关, 不走 ``toolsets.disabled``)。"""
-    return name.startswith("mcp_")
-
-
 def excluded_tool_names(disabled_ids: set[str], available_tool_names: set[str]) -> set[str]:
     """计算因所属 toolset 被禁用而要从 LLM-facing schema 中隐藏的具体工具名集合。
 
     ``available_tool_names`` 一般来自 ``registry.get_all_tool_names()`` — 因为前缀展开需要用具体名字过滤,
-    所以我们拿实际名字来比对而不是伪造合成条目。MCP 工具(``mcp_*``)无论目录是否列入都无条件排除。
+    所以我们拿实际名字来比对而不是伪造合成条目。
     """
     disabled_prefixes: tuple[str, ...] = tuple(p for d in TOOLSET_CATALOG if d.id in disabled_ids for p in d.prefixes)
     disabled_extras: set[str] = {n for d in TOOLSET_CATALOG if d.id in disabled_ids for n in d.extra_tools}
 
     excluded: set[str] = set()
     for name in available_tool_names:
-        if is_mcp_tool(name):
-            excluded.add(name)
-
-            continue
-
         if name in disabled_extras or any(name.startswith(p) for p in disabled_prefixes):
             excluded.add(name)
 

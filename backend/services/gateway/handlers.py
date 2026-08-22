@@ -73,7 +73,6 @@ from . import (
     ToolsSyncResult,
     authenticate_ws_token,
     discard_user,
-    dispatch_user_event,
     new_runtime_session,
     resolve_future,
     runtime_info_snapshot,
@@ -596,26 +595,10 @@ def _register_session_handlers(
         path = _require_str(params, "path")
         return path_attach_ref(path)
 
-    async def reload_mcp(params: dict) -> dict:
-        confirm = bool(params.get("confirm"))
-        if not confirm:
-            return {"status": "cancelled"}
-        # MCP server 配置在 runner 主机的 $SPIRITAGENT_HOME/config.yaml；runner 在下一次 mcp_* 工具调用时延迟重载，所以这里只需转发 reload 信号——不用附带 server 列表。
-        from .jsonrpc import redact_message
-
-        try:
-            return await dispatch_user_event(user_id, "mcp.reload", {}, dispatcher=dispatcher, timeout=60.0)
-        except asyncio.CancelledError:
-            return {"status": "cancelled"}
-        except Exception as e:
-            logger.warning("reload.mcp dispatch failed", extra={"error": str(e)})
-            return {"status": "runner_offline", "error": redact_message(str(e))}
-
     dispatcher.register("session.create", session_create)
     dispatcher.register("session.resume", session_resume)
     dispatcher.register("session.interrupt", session_interrupt)
     dispatcher.register("image.attach", image_attach)
-    dispatcher.register("reload.mcp", reload_mcp)
 
     async def companion_set_disturbance_tier(params: dict) -> dict:
         # Desktop 报告当前生效的打扰档位；companion 的主动外联（send_message → companion.message）受其控制。桌面端也在客户端拦播放，是纵深防御。

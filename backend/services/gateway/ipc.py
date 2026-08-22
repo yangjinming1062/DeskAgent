@@ -1,9 +1,7 @@
 import asyncio
 import json
 
-from components import JSONRPC_INTERNAL_ERROR, SETTINGS, get_logger, new_request_id, safe_json_loads
-
-from .jsonrpc import JsonRpcDispatcher
+from components import JSONRPC_INTERNAL_ERROR, SETTINGS, get_logger
 
 logger = get_logger(__name__)
 
@@ -52,16 +50,3 @@ async def await_future(user_id: int, call_id: str, *, timeout: float | None = No
         return json.dumps(
             {"code": JSONRPC_INTERNAL_ERROR, "message": f"Tool execution timeout for call {call_id} (no response within {effective_timeout}s). The desktop runner may be offline."},
         )
-
-
-async def dispatch_user_event(user_id: int, event_type: str, payload: dict, *, dispatcher: JsonRpcDispatcher, timeout: float | None = None) -> dict:
-    """向桌面发 JSON-RPC 事件并等待匹配的 tool.result（用于 reload.mcp 等 chat tool loop 未建模的 Runner 能力，桌面转发给 Runner 后通过现有 tool.result 带回响应，以注入到出站 payload 的 call_id 关联）；返回 tool result 的 JSON 解码体，非 JSON 字符串返回 {"raw": "<str>"}，超时返回 {"code": INTERNAL_ERROR, "message": "<原因>"}（语义同 await_future）。"""
-    call_id = new_request_id()
-    outbound = {**payload, "call_id": call_id}
-    # await_future 在 await 之前同步调用 create_future，同协程中间没有 yield 点，所以 future 在 runner 看到事件前已注册到 _PENDING。原先这里显式 create_future 是多余的，会被 await_future 自己的注册覆盖。
-    await dispatcher.push_event(event_type, outbound)
-    raw = await await_future(user_id, call_id, timeout=timeout)
-    decoded = safe_json_loads(raw)
-    if decoded is not None:
-        return decoded
-    return {"raw": raw}

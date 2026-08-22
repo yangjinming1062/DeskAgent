@@ -121,7 +121,7 @@ if [[ $SKIP_RUNNER -eq 0 ]]; then
       uv sync --frozen --extra dev && \
       uv run --frozen --no-sync pytest tests/ -q && \
       uv build --wheel --out-dir dist ) \
-    || { echo "FAIL: runner test suite failed — see pytest output. Common cause: stale or corrupt transitive dep (typing_extensions, mcp, annotated_types) that would make the shipped wheel unstartable on user machines. Fix the env (try \`uv cache clean\` + \`uv sync\`) before retrying the build." >&2; exit 1; }
+    || { echo "FAIL: runner test suite failed — see pytest output. Common cause: stale or corrupt transitive deps that would make the shipped wheel unstartable on user machines. Fix the env (try \`uv cache clean\` + \`uv sync\`) before retrying the build." >&2; exit 1; }
 else
   echo "==> Skipping runner build (--skip-runner)"
 fi

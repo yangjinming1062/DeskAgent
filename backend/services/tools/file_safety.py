@@ -29,7 +29,7 @@ _WRITE_DENIED_ABSOLUTE_PATHS: tuple[str, ...] = ("/etc/sudoers", "/etc/passwd", 
 _WRITE_DENIED_PREFIXES_RELATIVE: tuple[tuple[str, ...], ...] = ((".ssh",), (".aws",), (".gnupg",), (".kube",), (".docker",), (".azure",), (".config", "gh"), (".config", "gcloud"))
 
 _WRITE_DENIED_PREFIXES_ABSOLUTE: tuple[str, ...] = ("/etc/sudoers.d", "/etc/systemd")
-_WRITE_DENIED_SPIRITAGENT_PREFIXES: tuple[str, ...] = ("mcp-tokens", "pairing", "skills/.hub")
+_WRITE_DENIED_SPIRITAGENT_PREFIXES: tuple[str, ...] = ("pairing", "skills/.hub")
 
 
 @functools.lru_cache(maxsize=1)
@@ -91,10 +91,7 @@ def _read_block_messages() -> tuple[tuple[str, str], ...]:
 @functools.lru_cache(maxsize=4)
 def _read_block_prefixes() -> tuple[tuple[str, str], ...]:
     spiritagent_home = _spiritagent_home()
-    return (
-        (_join_real(spiritagent_home, "mcp-tokens") + os.sep, "Blocked: cannot read SpiritAgent credential directory (~/.spiritagent/mcp-tokens/)."),
-        (_join_real(spiritagent_home, "pairing") + os.sep, "Blocked: cannot read SpiritAgent credential directory (~/.spiritagent/pairing/)."),
-    )
+    return ((_join_real(spiritagent_home, "pairing") + os.sep, "Blocked: cannot read SpiritAgent credential directory (~/.spiritagent/pairing/)."),)
 
 
 def get_read_block_error(path: str) -> str | None:

@@ -317,7 +317,7 @@ def is_write_denied(path: str) -> bool:
                 target_norm = (base_norm + "/" + n).lower() if IS_WINDOWS else os.path.join(base_real, n)
                 if resolved_norm == target_norm or base_resolved_norm == target_norm or resolved == os.path.join(base_real, n) or base_resolved == os.path.join(base_real, n):
                     return True
-            for sub in ("mcp-tokens", "pairing"):
+            for sub in ("pairing",):
                 sub_norm = (base_norm + "/" + sub).lower() if IS_WINDOWS else os.path.join(base_real, sub)
                 sub_real = os.path.join(base_real, sub)
                 if (
@@ -389,12 +389,6 @@ def get_read_block_error(path: str) -> str | None:
             target_norm = zd_norm + "/" + name if IS_WINDOWS else str((zd / name).resolve())
             if resolved_norm == target_norm or base_resolved_norm == target_norm or resolved == (zd / name).resolve() or base_resolved == (zd / name).resolve():
                 return f"Access denied: {path} is a SpiritAgent credential store and cannot be read directly."
-
-    for zd in spiritagent_dirs:
-        zd_norm = str(zd).replace("\\", "/").lower() if IS_WINDOWS else str(zd)
-        mcp_target = zd_norm + "/mcp-tokens"
-        if resolved_norm == mcp_target or resolved_norm.startswith(mcp_target + "/") or base_resolved_norm == mcp_target or base_resolved_norm.startswith(mcp_target + "/"):
-            return f"Access denied: {path} is a SpiritAgent MCP token file and cannot be read directly."
 
     name_check = resolved.name.lower() if IS_WINDOWS else resolved.name
     base_name_check = base_resolved.name.lower() if IS_WINDOWS else base_resolved.name

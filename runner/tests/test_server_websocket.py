@@ -4,7 +4,7 @@ Bridges the gap left by ``test_runner_runtime.py`` (which only asserts payload
 shapes in isolation) and ``test_startup_imports.py`` (which only verifies
 imports): every RPC method the runner exposes to Desktop (``runner_ready``,
 ``request_llm``, ``get_tools``, ``spiritagent.info``, ``execute_tool``,
-``mcp.reload``, ``spiritagent.cancel``, unknown-method) is exercised here
+``spiritagent.cancel``, unknown-method) is exercised here
 against a real ``websockets`` wire so the JSON envelope, ID routing, future
 plumbing, error responses, and disconnect-drain machinery are validated
 together.
@@ -218,7 +218,6 @@ async def test_spiritagent_info_shape_via_process_request():
         "capabilities",
         "system",
         "tool_count",
-        "mcp_servers",
         "network_reachable",
         "disk_free_bytes",
     ):
@@ -448,7 +447,6 @@ async def test_build_info_handles_individual_subfailures(monkeypatch):
     info = await server._build_info()
     assert info["capabilities"] == {}
     assert isinstance(info["tool_count"], int)
-    assert isinstance(info["mcp_servers"], list)
 
 
 @pytest.mark.timeout(15)

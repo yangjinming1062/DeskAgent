@@ -151,7 +151,7 @@ try {
             # 默认静默：release 路径 99% 通过，-v 报告会淹没真实信号；pytest 在 -q 失败时自己回退到 -v，不必手动重跑。
             & uv run --frozen --no-sync pytest tests/ -q
             if ($LASTEXITCODE -ne 0) {
-                throw "runner test suite failed — see pytest output. Common cause: stale or corrupt transitive dep (typing_extensions, mcp, annotated_types) that would make the shipped wheel unstartable on user machines. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build."
+                throw "runner test suite failed — see pytest output. Common cause: stale or corrupt transitive deps that would make the shipped wheel unstartable on user machines. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build."
             }
             & uv build --wheel --out-dir dist
             if ($LASTEXITCODE -ne 0) { throw "uv build failed" }

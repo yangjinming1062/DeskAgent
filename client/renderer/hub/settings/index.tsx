@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { ConfirmDialog, Tip } from '@/shared/components/ui'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { AudioLines, Info, KeyRound, Settings, Sparkles, Wrench } from '@/shared/lib/icons'
+import { AudioLines, Info, KeyRound, Settings, Sparkles } from '@/shared/lib/icons'
 import { getSpiritAgentConfig, getSpiritAgentConfigDefaults, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -15,7 +15,6 @@ import { OverlayView } from '../overlays/overlay-view'
 
 import { AboutSettings } from './about-settings'
 import { AccountSettings } from './account-settings'
-import { McpSettings } from './mcp-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
@@ -28,11 +27,10 @@ const SETTINGS_VIEWS = [
   'voices',
   'runner',
   'skills',
-  'mcp',
   'about'
 ] as const satisfies readonly SettingsViewId[]
 
-export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
+export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
 
@@ -133,13 +131,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
           />
           <div className="my-2 h-px bg-white/10" />
           <OverlayNavItem
-            active={activeView === 'mcp'}
-            icon={Wrench}
-            label={t.settings.nav.mcp}
-            onClick={() => setActiveView('mcp')}
-          />
-          <div className="my-2 h-px bg-white/10" />
-          <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
             label={t.settings.nav.about}
@@ -186,8 +177,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved }: SettingsPagePr
             <RunnerSettings />
           ) : activeView === 'skills' ? (
             <SkillsToolsTabs />
-          ) : activeView === 'mcp' ? (
-            <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
           ) : (
             <AboutSettings />
           )}

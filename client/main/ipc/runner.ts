@@ -206,12 +206,6 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     }
   })
 
-  ipcMain.handle(IPC.invoke.runnerReloadMcp, async () => {
-    const bridge = ensureRunnerBridge(deps)
-
-    return bridge.dispatch('mcp.reload', {})
-  })
-
   ipcMain.handle(IPC.invoke.runnerCancel, async () => {
     const bridge = ensureRunnerBridge(deps)
 

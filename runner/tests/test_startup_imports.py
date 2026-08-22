@@ -16,14 +16,6 @@ STARTUP_IMPORTS = [
         "utils.interrupt",
         "from utils import set_global_interrupt, set_interrupt",
     ),
-    (
-        "tools.mcp.discover_mcp_tools (load-bearing)",
-        "from tools.mcp import discover_mcp_tools",
-    ),
-    (
-        "tools.mcp.mcp_tool.reload_mcp_servers (load-bearing)",
-        "from tools.mcp.mcp_tool import reload_mcp_servers",
-    ),
     ("tools.tool_output_limits", "from tools.tool_output_limits import reset_cache"),
     ("tools.toolsets", "from tools.toolsets import get_disabled_toolset_ids"),
     (

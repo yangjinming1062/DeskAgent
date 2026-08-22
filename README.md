@@ -11,7 +11,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-blue?style=flat-square)](#)
 [![Backend](https://img.shields.io/badge/Backend-FastAPI%20%7C%20PostgreSQL-green?style=flat-square)](#)
 [![Client](https://img.shields.io/badge/Client-Electron%20%7C%20React%2019%20%7C%20Three.js-cyan?style=flat-square)](#)
-[![Runner](https://img.shields.io/badge/Runner-Python%203.13%20%7C%20MCP-orange?style=flat-square)](#)
+[![Runner](https://img.shields.io/badge/Runner-Python%203.13-orange?style=flat-square)](#)
 
 </div>
 
@@ -51,7 +51,7 @@ mindmap
     硬核生产力手脚
       独立 Python 3.13 Runner 沙箱
       PTY 交互终端与文件管理
-      动态 MCP 协议与浏览器自动化
+      浏览器自动化与技能扩展
       系统环境多模态实时感知
     企业级安全防御
       云端/本地/Runner 三层物理隔离
@@ -64,9 +64,9 @@ mindmap
 * **无需 3D 建模基础与外部资产**：你只需像和新朋友聊天一样描述名字、物种、性格、说话风格与外貌，AI 即可自动化完成半身像绘制、日系赛璐珞与二次元游戏CG双画风全身立绘生成、按供应商能力派生多视图与图生 3D 绑骨建模。
 * **视觉永不空白（3 级降级兜底）**：`3D GLB 模型 ➔ 静态精灵相册 ➔ 程序化蛋形` 级联兜底，即便无网络或在生成空挡期，角色也时刻维持生动呼吸，绝不出现卡死或空白加载态。
 
-### 2. 🦾 拥有真实“手和脚”的桌面生产力（Runner + MCP）
+### 2. 🦾 拥有真实“手和脚”的桌面生产力（Runner）
 * **不只是聊天挂件，更是桌面超级 Agent**：搭载独立的本地 Python 3.13 Runner，支持交互式 PTY 终端、文件读写沙箱、Playwright 浏览器自动化与系统级环境感知。
-* **原生支持 MCP（Model Context Protocol）**：可无缝接入标准 MCP 服务生态，让伙伴调度各种本地工具帮你在桌面上真正解决编程、写脚本、查资料等复杂任务。
+* **可扩展的本地工具体系**：内置 Skills、代码执行、文件与终端工具，让伙伴在桌面上真正解决编程、写脚本、查资料等复杂任务。
 
 ### 3. 🕊️ 细腻的桌面空间自主性与“仪式性行走”
 * **不是钉在屏幕角落的死板贴图**：伙伴拥有空间自主意识，会在桌面静默漫游（`roam`）、栖息在你的 IDE 或工作窗口边缘（`perch`）、或在深夜移至安静角落打瞌睡（`sleep`）。
@@ -109,7 +109,7 @@ mindmap
      │                        Runner (本地)                        │
      │                    Python 3.13 隔离进程                     │
      │  - 本地环境执行器（PTY 交互终端、文件沙箱、浏览器控制）     │
-     │  - 动态 MCP 客户端协议集成 / 本地工具安全扫描与审查         │
+     │  - 本地工具安全扫描与审查 / Skills 平台过滤                 │
      │  - 零凭证孤立运行 / 反向 RPC 代理中转                       │
      └─────────────────────────────────────────────────────────────┘
 ```
@@ -158,7 +158,7 @@ pnpm dev
 | **跨模块协议与安全契约** | [PROTOCOL.md](PROTOCOL.md) | JSON-RPC 2.0 方法规范、事件流、枚举定义、四层安全防御机制 |
 | **后端核心实现 (Backend)** | [backend/README.md](backend/README.md) | FastAPI 架构、数据模型、记忆管理、Prompt 装配与 3D 能力链 |
 | **桌面客户端实现 (Client)** | [client/README.md](client/README.md) | Three.js 渲染引擎、Electron 主进程、动画状态机与表情驱动 |
-| **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化、MCP 客户端与工具库 |
+| **本地手脚执行器 (Runner)** | [runner/README.md](runner/README.md) | PTY 终端实现、Playwright 浏览器自动化与工具库 |
 | **安装器与引导机制 (Installer)** | [installer/README.md](installer/README.md) | Tauri 2 极简轻量安装引导与环境配置流程 |
 | **3D 模型生成能力链与产物契约** | [docs/PIPELINE.md](docs/PIPELINE.md) | 链拓扑、供应商能力、产物契约与客户端兑现策略 |
 | **构建与仓库级脚本** | [scripts/README.md](scripts/README.md) | 安装包构建、导入检查与脚本工具说明 |

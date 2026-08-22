@@ -1,5 +1,4 @@
 import json
-import sys
 
 
 def test_runner_version_resolves():
@@ -9,23 +8,6 @@ def test_runner_version_resolves():
     assert len(parts) >= 2
     assert all(p.isdigit() for p in parts[:2])
     assert __version__ != "0.0.0+unknown"
-
-
-def test_kill_orphaned_mcp_children_survives_dead_pid():
-    """The orphan-reap path must not raise on any platform — a tracked-but-dead
-    stdio pid is its normal input (regression: ``_sigkill`` used-before-bound
-    made every Windows ``mcp.reload`` with live servers fatal)."""
-    import subprocess
-
-    from tools.mcp import mcp_tool
-
-    proc = subprocess.Popen([sys.executable, "-c", "pass"])
-    proc.wait()
-    mcp_tool._stdio_pids[proc.pid] = "test-orphan"
-    try:
-        mcp_tool._kill_orphaned_mcp_children(include_active=True)
-    finally:
-        mcp_tool._stdio_pids.pop(proc.pid, None)
 
 
 def test_registry_check_fn_filters_unavailable_tools():
@@ -244,8 +226,7 @@ def test_audio_tool_schemas_registered():
 
 
 async def test_info_payload_shape():
-    """_build_info() in server.py returns the documented shape, no exceptions
-    even when MCP tools aren't initialized."""
+    """_build_info() in server.py returns the documented shape, no exceptions."""
     import asyncio
     import importlib
 
@@ -261,13 +242,11 @@ async def test_info_payload_shape():
         "capabilities",
         "system",
         "tool_count",
-        "mcp_servers",
         "network_reachable",
         "disk_free_bytes",
     ):
         assert k in info
     assert isinstance(info["tool_count"], int)
-    assert isinstance(info["mcp_servers"], list)
 
 
 async def test_runner_ready_payload_shape():
@@ -336,8 +315,7 @@ def test_capabilities_microphone_uses_sounddevice(monkeypatch):
 
 
 def test_registry_deregister_drops_check_fn():
-    """A re-registration after deregister (the mcp.reload path) must not
-    silently reuse the previous availability check."""
+    """A re-registration after deregister must not silently reuse the previous availability check."""
     from tools.registry import ToolRegistry
 
     reg = ToolRegistry()
@@ -354,36 +332,6 @@ def test_registry_deregister_drops_check_fn():
     reg.deregister("fake_reloaded")
     assert reg._check_fns.get("fake_reloaded") is None
     assert reg._check_fn_cache.get("fake_reloaded") is None
-
-
-async def test_discover_timeout_shuts_down_spawned_task(monkeypatch):
-    """A connect_timeout must tear down the MCPServerTask that wait_for's
-    cancellation cannot reach — otherwise it reconnects forever with a live
-    stdio child, invisible to every shutdown path."""
-    import asyncio
-
-    import pytest
-    from tools.mcp import mcp_tool
-
-    shutdown_calls: list[str] = []
-
-    class _FakeTask:
-        name = "victim"
-
-        async def shutdown(self) -> None:
-            shutdown_calls.append(self.name)
-
-    async def fake_connect(name, config):  # noqa: ARG001
-        mcp_tool._connecting[name] = _FakeTask()  # type: ignore[assignment]
-        await asyncio.sleep(60)
-
-    monkeypatch.setattr(mcp_tool, "_connect_server", fake_connect)
-    try:
-        with pytest.raises(TimeoutError):
-            await mcp_tool._discover_and_register_server("victim", {"connect_timeout": 0.2})
-    finally:
-        mcp_tool._connecting.pop("victim", None)
-    assert shutdown_calls == ["victim"]
 
 
 def test_capabilities_snapshot_ttl_cache():

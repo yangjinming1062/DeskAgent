@@ -397,11 +397,11 @@ class TestToolsets:
         monkeypatch.setattr(
             toolsets_helpers,
             "get_disabled_config_names",
-            lambda section="skills": ({"skill_lab", "mcp_staging"} if section == "toolsets" else set()),
+            lambda section="skills": ({"skill_lab", "toolset_staging"} if section == "toolsets" else set()),
         )
         try:
             ids = toolsets_helpers.get_disabled_toolset_ids()
             assert "skill_lab" in ids
-            assert "mcp_staging" in ids
+            assert "toolset_staging" in ids
         finally:
             monkeypatch.setattr(toolsets_helpers, "get_disabled_config_names", real)

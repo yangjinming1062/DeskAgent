@@ -1,8 +1,5 @@
 import type { ToolsetItem } from '@ipc/contracts'
 
-const EXCLUDED_PREFIXES = ['mcp_']
-const EXCLUDED_PREFIX_RE = new RegExp(`^(?:${EXCLUDED_PREFIXES.join('|')})`)
-
 interface ToolsetDef {
   extraTools?: string[]
   id: string
@@ -35,10 +32,6 @@ function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>): stri
   if (def.prefixes) {
     for (const prefix of def.prefixes) {
       for (const name of availableNames) {
-        if (EXCLUDED_PREFIX_RE.test(name)) {
-          continue
-        }
-
         if (name.startsWith(prefix) && !seen.has(name)) {
           names.push(name)
           seen.add(name)
@@ -49,10 +42,6 @@ function toolNamesForToolset(def: ToolsetDef, availableNames: Set<string>): stri
 
   if (def.extraTools) {
     for (const name of def.extraTools) {
-      if (EXCLUDED_PREFIX_RE.test(name)) {
-        continue
-      }
-
       if (seen.has(name)) {
         continue
       }

@@ -6,7 +6,7 @@ Runner 不感知"伙伴"语义——终端、文件、浏览器、代码执行�
 
 ## 1. 职责与边界
 
-**职责**：在用户本机执行后端 LLM 决策调用的工具（终端 / 文件 / 浏览器 / 代码沙箱 / 系统感知 / 音频 / MCP 动态加载 / Skills）；就绪握手时上报本地 OS 能力（真实探测，见 §2）；按需经反向 RPC 借客户端 → 后端调用 LLM。
+**职责**：在用户本机执行后端 LLM 决策调用的工具（终端 / 文件 / 浏览器 / 代码沙箱 / 系统感知 / 音频 / Skills）；就绪握手时上报本地 OS 能力（真实探测，见 §2）；按需经反向 RPC 借客户端 → 后端调用 LLM。
 
 **不**做：
 - **不持有后端 Token 或云端地址**——需借 LLM 时通过反向 RPC 由客户端代理。
@@ -38,7 +38,6 @@ runner/
 │   ├── execute_code/      # 代码沙箱
 │   ├── process/           # 进程管理与 PTY 交互
 │   ├── skills/            # Skills 加载与过滤
-│   ├── mcp/               # 动态 MCP 客户端（含 mcp_supervisor）
 │   ├── multimodal/        # 视觉理解 / 图像生成
 │   ├── system/            # 系统感知（焦点 / 空闲 / 屏幕 / 麦克风）
 │   └── toolsets/          # 工具集启用/禁用配置
@@ -55,7 +54,6 @@ runner/
 - **统一 HTTP 客户端栈**：移除 `requests` 与 `aiohttp` 重复依赖，所有同步/异步 HTTP 请求统一收敛到 `httpx[socks]`，减小 wheel 体积与审计面。
 - **SSRF 建连前 + 建连时双重校验**：`SafeHTTPTransport` / `SafeAsyncHTTPTransport` 在 `handle_request` 之前对 URL 字符串做白名单与（hostname + IP 字面量）预检；最终 socket.connect 不再走 httpcore 默认的 `socket.create_connection`，而是被替换为 `_SafeSyncBackend` / `_SafeAsyncBackend`，在每次建连时强制重新调用 `getaddrinfo` 校验所有解析结果，并直接使用已校验 IP 建连，原始 Host / TLS SNI / 证书主机名校验保持不变。重定向后每一跳都重新走同一校验路径，DNS 解析被移到工作线程避免阻塞事件循环，彻底消灭预检到建连之间的 TOCTOU 窗口。
 - **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
-- **MCP 进程监管与熔断保护**：`mcp_supervisor.py` 统一管理所有 stdio 子进程生命周期，自动回收孤儿进程并对故障服务器实施带冷却的熔断（Circuit Breaker），防止向失效端点风暴重试。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
 - **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明（含平台 marker），"有就是有、没有就是没有"，不需要在导入时再判断。try-except import 只允许两类合法场景：① 运行时能力探测（故意执行原生加载器的 import 验证二进制真能加载）；② OS 框架/平台导入（ctypes / Quartz / pythoncom 等非 pip 依赖）。
@@ -69,7 +67,7 @@ runner/
 | 就绪握手、能力上报与 RPC 方法 | 对客户端 | [PROTOCOL.md §2](../PROTOCOL.md) |
 | 反向 RPC 与速率守卫 | 经客户端到后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
 | 本地执行安全防线 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
-| MCP 动态加载与 Skills 平台过滤 | 本模块独有 | 本 README §2 / §4 |
+| Skills 平台过滤 | 本模块独有 | 本 README §4 |
 | 音频运行时依赖打包 | 与 Installer 协作 | [installer/README.md](../installer/README.md) |
 
 ## 6. 已知限制

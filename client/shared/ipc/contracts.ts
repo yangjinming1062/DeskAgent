@@ -80,12 +80,6 @@ export type DesktopRunnerStatusEvent =
       tools: unknown[] | null
       type: 'running'
     }
-  | {
-      capabilities?: null | RunnerCapabilities
-      capabilitiesHealth?: null | RunnerCapabilitiesHealth
-      tools: unknown[] | null
-      type: 'tools_changed'
-    }
   | { errors?: string[]; reason?: string; type: 'stopped' }
 
 export type DesktopRunnerPhase = 'error' | 'idle' | 'running' | 'starting' | 'stopped' | 'stopping'
@@ -249,7 +243,6 @@ export interface IpcInvokeContract {
 
   // Runner
   'spiritagent:runner:invoke': (name: string, args: Record<string, unknown>) => Promise<unknown> | unknown
-  'spiritagent:runner:reload-mcp': () => Promise<unknown> | unknown
   'spiritagent:runner:cancel': () => unknown | Promise<unknown>
   'spiritagent:runner:get-state': () => DesktopRunnerState | Promise<DesktopRunnerState>
   'spiritagent:runner:get-tools': () => Array<Record<string, unknown>> | Promise<Array<Record<string, unknown>>>
@@ -362,7 +355,6 @@ export const IPC = {
     logEmit: 'spiritagent:log:emit',
     version: 'spiritagent:version',
     runnerInvoke: 'spiritagent:runner:invoke',
-    runnerReloadMcp: 'spiritagent:runner:reload-mcp',
     runnerCancel: 'spiritagent:runner:cancel',
     runnerGetState: 'spiritagent:runner:get-state',
     runnerGetTools: 'spiritagent:runner:get-tools',

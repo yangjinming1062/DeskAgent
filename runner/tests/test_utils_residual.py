@@ -111,11 +111,6 @@ class TestIsWriteDenied:
         target = tmp_path / "auth.json"
         assert is_write_denied(str(target)) is True
 
-    def test_denies_mcp_tokens_dir(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        target = tmp_path / "mcp-tokens" / "github.json"
-        assert is_write_denied(str(target)) is True
-
     def test_denies_pairing_dir(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         target = tmp_path / "pairing" / "device.json"
@@ -216,7 +211,7 @@ class TestIsWriteDenied:
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         # Uppercase filename inside SPIRITAGENT_HOME must be blocked
         assert is_write_denied(str(tmp_path / "AUTH.JSON")) is True
-        assert is_write_denied(str(tmp_path / "MCP-TOKENS" / "GITHUB.JSON")) is True
+        assert is_write_denied(str(tmp_path / "PAIRING" / "DEVICE.JSON")) is True
 
 
 class TestGetReadBlockError:
@@ -241,13 +236,6 @@ class TestGetReadBlockError:
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_read_block_error(str(tmp_path / "AUTH.JSON")) is not None
         assert get_read_block_error(str(tmp_path / "ANTHROPIC_OAUTH.JSON")) is not None
-        assert get_read_block_error(str(tmp_path / "MCP-TOKENS" / "KEY.JSON")) is not None
-
-    def test_blocks_mcp_token_file(self, monkeypatch, tmp_path):
-        monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
-        target = tmp_path / "mcp-tokens" / "github.json"
-        err = get_read_block_error(str(target))
-        assert err is not None
 
     def test_blocks_dotenv_basename(self, monkeypatch, tmp_path):
         """A ``.env`` file in a project dir MUST be denied — secrets policy."""

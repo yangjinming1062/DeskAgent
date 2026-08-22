@@ -79,7 +79,6 @@
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
-| reload.mcp | MCP 配置变更后通知重载 | Client 转发 Runner，重载后回同步工具表 |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理。
 
@@ -140,7 +139,6 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 | get_tools | Client → Runner | 获取工具 schema（已过滤禁用项） | Runner 过滤 + Client + Backend |
 | spiritagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
 | execute_tool | Client → Runner | 执行工具调用 | Backend 路由 + Client 中转 + Runner 执行 |
-| mcp.reload | Client → Runner | 重载 MCP server 配置 | Client 配置推送 + Runner 重载 |
 | spiritagent.cancel | Client → Runner | 置全局中断标记（异步生效） | Client 中断 + Runner 轮询 |
 | spiritagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
@@ -175,8 +173,6 @@ call_id 是 Backend IPC future 字典的**唯一 Future Key**，标识单次 RPC
 
 **JWT 过期边界**：token 在飞行途中过期时客户端回传被拒 → future 挂起直到超时；token 过期不触发 WS 断开，当前靠超时兜底。
 
-**通用事件分发**：复用同一 future 通道发任意 JSON-RPC 事件（如 reload.mcp）。
-
 ---
 
 ## 5. 跨模块安全契约
@@ -189,7 +185,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 
 ### 5.2 不可信工具结果包裹
 
-外部（Web 搜索 / 浏览器抓取 / MCP 外部资源）获取的字符串注入 LLM 上下文前强制包裹。短字符串不包——注入风险低 + 节省 token。
+外部（Web 搜索 / 浏览器抓取）获取的字符串注入 LLM 上下文前强制包裹。短字符串不包——注入风险低 + 节省 token。
 
 ### 5.3 凭据落盘
 

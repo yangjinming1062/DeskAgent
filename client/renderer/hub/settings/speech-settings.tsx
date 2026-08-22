@@ -60,7 +60,7 @@ export function SpeechSettings(): React.JSX.Element {
   const isLoading = configLoader.isLoading
 
   // 探测 Runner 当前可用的本地引擎（check_fn 门控），让用户知道 "local"/"auto" 是否会真正使用本地引擎。
-  // 在 Runner 阶段切换时重新探测——`running` 表示 bridge 已就绪，`tools_changed` 表示 MCP 发现完成。
+  // 在 Runner 阶段切换时重新探测——`running` 表示 bridge 已就绪。
   useEffect(() => {
     let cancelled = false
 

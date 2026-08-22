@@ -9,9 +9,7 @@ stability, the runner must:
    on the runner → request_llm again with tool result → final answer).
 2. Reconnect to the Desktop peer with exponential backoff when the
    connection drops mid-session, and re-read the endpoint file.
-3. Run ``mcp.reload`` end-to-end (RPC → reload call → cache reset →
-   tools_changed notification).
-4. Route ``terminal.env_type`` through every backend factory branch.
+3. Route ``terminal.env_type`` through every backend factory branch.
 5. Gate vision / TTS / STT tools on their optional deps so the LLM
    never sees a broken tool.
 
@@ -59,7 +57,6 @@ class _Peer:
         self.received: list[dict] = []
         self.request_llm_responses: dict[str, dict] = {}  # req_id → response payload
         self.request_llm_handler = None  # callable(req_id, params) → response dict | None
-        self.tools_changed: list[dict] = []
         self.handshakes: list[dict] = []
         self.path: str | None = None
         self.token: str | None = None
@@ -84,9 +81,6 @@ class _Peer:
                     # runner's reader (server→client direction).
                     self._runner_server_ws = ws
                     continue
-                if method == "tools_changed":
-                    self.tools_changed.append(msg.get("params") or {})
-                    continue
                 if method == "request_llm":
                     params = msg.get("params") or {}
                     response = None
@@ -110,17 +104,6 @@ class _Peer:
                                 },
                             ),
                         )
-                    continue
-                if method == "mcp.reload":
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "result": {"reloaded": True},
-                            },
-                        ),
-                    )
                     continue
                 if method == "execute_tool":
                     # ``execute_tool`` is a runner-side RPC; in production
@@ -500,143 +483,6 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     # Reconnect counter must have advanced — the initial attempt was
     # rejected before the file refresh succeeded.
     assert server._RECONNECT_COUNT >= 1, "reconnect counter did not advance during Desktop restart recovery"
-
-
-# ---------------------------------------------------------------------------
-# (3) MCP reload RPC end-to-end
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.timeout(15)
-@pytest.mark.asyncio
-async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
-    """``mcp.reload`` MUST walk the real call chain end-to-end.
-
-    The RPC handler in ``server.process_request`` invokes
-    ``reload_mcp_servers`` (via ``asyncio.to_thread``) and replies with
-    the reload result. We assert on three things:
-
-      1. The real ``reload_mcp_servers`` is called (not a mock) and
-         returns its production dict shape (``reloaded`` /
-         ``errors`` / ``servers`` / ``connected``).
-      2. Both caches (tool_output_limits + read_file max chars) reset
-         before the reload runs — the RPC handler must clear stale
-         config even when the reload body is a no-op.
-      3. The result envelope survives ``asyncio.to_thread`` round-trip
-         without corruption.
-
-    Note: we don't try to drive ``reload_mcp_servers``'s shutdown
-    coroutine (which would deadlock against the running loop without a
-    dedicated MCP thread) — that path is covered by the
-    ``test_real_reload_mcp_servers_shuts_down_live_servers`` test
-    below, which calls the reload body directly under a thread.
-    """
-    # Real ``reload_mcp_servers`` invoked via ``asyncio.to_thread`` so
-    # the production thread boundary is preserved. With an empty
-    # registry, it just runs ``discover_mcp_tools`` and returns the
-    # no-op shape.
-    import tools.mcp.mcp_tool as real_mcp_tool
-
-    monkeypatch.setattr(server, "reload_mcp_servers", real_mcp_tool.reload_mcp_servers)
-
-    # Seed caches with sentinel values to prove the reset clears them.
-    import tools.tool_output_limits as tol
-    from tools.files.file_tools import reset_max_read_chars_cache
-    from tools.tool_output_limits import reset_cache as reset_output_limits_cache
-
-    reset_output_limits_cache()
-    reset_max_read_chars_cache()
-    tol._cached_limits = {"max_bytes": 1, "max_lines": 2, "max_line_length": 3}
-    import tools.files.file_tools as ft
-
-    ft._max_read_chars_cached = 999
-
-    sent: list[dict] = []
-
-    class _FakeWS:
-        async def send(self, payload):
-            sent.append(json.loads(payload))
-
-    await server.process_request(
-        _FakeWS(),
-        {"id": "r1", "method": "mcp.reload", "params": {}},
-    )
-
-    assert sent[-1]["id"] == "r1"
-    result = sent[-1]["result"]
-
-    # Real ``reload_mcp_servers`` returned shape.
-    assert set(result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(result)}"
-    assert result["reloaded"] == 0
-    assert result["servers"] == 0
-    assert result["errors"] == 0
-    assert isinstance(result["connected"], int)
-
-    # Caches reset by process_request BEFORE the reload runs.
-    assert tol._cached_limits is None
-    assert ft._max_read_chars_cached is None
-    reset_output_limits_cache()
-    reset_max_read_chars_cache()
-
-
-def test_real_reload_mcp_servers_shuts_down_live_servers():
-    """``reload_mcp_servers`` MUST walk its real shutdown path end-to-end.
-
-    Inject fake server objects into ``tools.mcp.mcp_tool._servers``,
-    start the production MCP event-loop thread via ``_ensure_mcp_loop``
-    (the same helper the rest of ``mcp_tool`` uses), then call the
-    real ``reload_mcp_servers`` and assert that:
-
-      - Each fake server's real ``shutdown`` coroutine was awaited.
-      - The live ``_servers`` registry was cleared after reload.
-      - The returned envelope has the production keys/values.
-
-    The shutdown coroutine runs on the MCP event-loop thread —
-    production uses this same threading (see ``_ensure_mcp_loop`` in
-    ``tools/mcp/mcp_tool.py``) so ``safe_schedule_threadsafe`` can post
-    the ``asyncio.gather`` without deadlocking against the runner's
-    main loop. We tear the MCP loop down at the end with
-    ``_stop_mcp_loop`` so the daemon thread exits.
-    """
-    import tools.mcp.mcp_tool as real_mcp_tool
-
-    class _FakeMCPServer:
-        def __init__(self, name: str) -> None:
-            self.name = name
-            self.shutdown_called = {"n": 0}
-
-        async def shutdown(self) -> None:
-            self.shutdown_called["n"] += 1
-
-    fake_alpha = _FakeMCPServer("alpha")
-    fake_beta = _FakeMCPServer("beta")
-
-    real_mcp_tool._servers["alpha"] = fake_alpha
-    real_mcp_tool._servers["beta"] = fake_beta
-    # Start the production MCP event-loop thread (mirrors how production
-    # uses it from ``discover_mcp_tools`` / ``probe_mcp_server_tools``).
-    real_mcp_tool._ensure_mcp_loop()
-    try:
-        reload_result = real_mcp_tool.reload_mcp_servers()
-
-        assert set(reload_result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(reload_result)}"
-        assert reload_result["reloaded"] == 2, f"reload should have torn down 2 servers, got {reload_result}"
-        assert reload_result["servers"] == 2
-        assert reload_result["errors"] == 0
-        assert isinstance(reload_result["connected"], int)
-
-        # Each fake server's real ``shutdown`` coroutine was awaited —
-        # proving the shutdown path actually executed.
-        assert fake_alpha.shutdown_called["n"] == 1
-        assert fake_beta.shutdown_called["n"] == 1
-        # Registry cleared.
-        assert "alpha" not in real_mcp_tool._servers
-        assert "beta" not in real_mcp_tool._servers
-    finally:
-        with contextlib.suppress(Exception):
-            real_mcp_tool._stop_mcp_loop()
-        real_mcp_tool._servers.pop("alpha", None)
-        real_mcp_tool._servers.pop("beta", None)
 
 
 @pytest.mark.timeout(10)

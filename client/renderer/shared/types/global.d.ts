@@ -72,7 +72,6 @@ declare global {
       log: AsyncIpc<IpcInvokeContract['spiritagent:log:emit']>
       runnerInvoke: AsyncIpc<IpcInvokeContract['spiritagent:runner:invoke']>
       runnerCancel: AsyncIpc<IpcInvokeContract['spiritagent:runner:cancel']>
-      reloadMcp: AsyncIpc<IpcInvokeContract['spiritagent:runner:reload-mcp']>
       runnerGetState: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-state']>
       runnerGetTools: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-tools']>
       setTitleBarTheme: (payload: IpcSendContract['spiritagent:titlebar-theme'][0]) => void

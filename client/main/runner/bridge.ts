@@ -90,7 +90,6 @@ export type RunnerBridgeEvent =
     }
   | { error: Error; phase: string; type: 'error' }
   | { errors?: string[]; reason?: string; type: 'stopped' }
-  | { tools: Record<string, unknown>[] | null; type: 'tools_changed' }
 
 export interface RunnerBridge {
   dispatch: <T = unknown>(
@@ -304,8 +303,6 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
     const offWs = wsServer.onEvent?.((ev: RunnerWsEvent) => {
       if (ev.type === 'runner_ready') {
         void handleRunnerReady(ev)
-      } else if (ev.type === 'tools_changed') {
-        void handleToolsChanged()
       } else if (ev.type === 'disconnected') {
         if (state.phase === 'running') {
           fail('stopped', new Error('Runner disconnected from WS server.'))
@@ -422,24 +419,6 @@ export function createRunnerBridge(options: RunnerBridgeOptions = {}): RunnerBri
       tools: cachedTools,
       type: 'running'
     })
-  }
-
-  let _toolsChangedDebounce: NodeJS.Timeout | null = null
-
-  async function handleToolsChanged(): Promise<void> {
-    log('[runner-bridge] tools_changed received')
-
-    if (_toolsChangedDebounce) {
-      clearTimeout(_toolsChangedDebounce)
-    }
-
-    _toolsChangedDebounce = setTimeout(() => {
-      void (async () => {
-        _toolsChangedDebounce = null
-        await _fetchAndCacheTools()
-        emit.emit('event', { tools: cachedTools, type: 'tools_changed' })
-      })()
-    }, 300)
   }
 
   async function _fetchAndCacheTools(): Promise<void> {

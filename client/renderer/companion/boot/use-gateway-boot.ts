@@ -335,7 +335,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     document.addEventListener('visibilitychange', onVisible)
 
     const offRunnerStatus = desktop.onRunnerStatus?.(ev => {
-      if (ev.type === 'running' || ev.type === 'runner_ready' || ev.type === 'tools_changed') {
+      if (ev.type === 'running' || ev.type === 'runner_ready') {
         if (gateway.connectionState === 'open') {
           void syncRunnerTools(gateway)
         }

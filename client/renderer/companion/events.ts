@@ -109,7 +109,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
   // 例如 cron 的自动回合通过 cron 会话流式输出文本；没有这道门的话，
   // 用户会看到 cron 的回复，好像它回答了主会话上一条消息。
   // WSEvent 驱动的事件（companion.message/affect、model.*、
-  // avatar.regenerated、reload.mcp）没有 session_id，直接放行。
+  // avatar.regenerated）没有 session_id，直接放行。
   if (event.session_id !== undefined) {
     const current = $chatSessionId.get()
 

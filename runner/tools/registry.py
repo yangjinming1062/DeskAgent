@@ -137,17 +137,17 @@ class ToolRegistry:
         return ok
 
     def clear_availability_cache(self) -> None:
-        """丢弃缓存的能力探测结果(由 ``mcp.reload`` 等触发)。"""
+        """丢弃缓存的能力探测结果。"""
         with self._lock:
             self._check_fn_cache.clear()
 
     def deregister(self, name: str) -> None:
-        """注销某个工具, 一并清掉它的能力探测缓存(否则 ``mcp.reload`` 重注册会复用旧结果)。"""
+        """注销某个工具, 一并清掉它的能力探测缓存。"""
         with self._lock:
             self._tools.pop(name, None)
             self._toolset.pop(name, None)
             self._schemas.pop(name, None)
-            # 不清掉的话 mcp.reload 的重新注册会静默复用旧 check_fn 及其缓存结果。
+            # 不清掉的话重新注册会静默复用旧 check_fn 及其缓存结果。
             self._check_fns.pop(name, None)
             self._check_fn_cache.pop(name, None)
 
@@ -188,8 +188,7 @@ class ToolRegistry:
     def get_schemas_for_llm(self, disabled_toolset_ids: set[str]) -> list[dict]:
         """根据 ``toolsets.disabled`` 过滤后的 schema 列表 — 由 ``server.py`` 的 ``get_tools`` RPC 用, 防止 Desktop 把禁用 toolset 喂给后端 LLM。
 
-        MCP 工具无论是否在禁用名单中始终排除(它们的开关在 MCP 设置页, 不在这里); 一次性
-        持锁获取 schema 快照, 避免与并发的 ``register_tool`` 互相越界。
+        一次性持锁获取 schema 快照, 避免与并发的 ``register_tool`` 互相越界。
         """
         with self._lock:
             items = list(self._schemas.items())
@@ -262,9 +261,9 @@ class ToolRegistry:
 def discover_builtin_tools() -> list[str]:
     """遍历 ``tools/`` 子包并 import, 作为注册副作用触发每个工具模块的 ``register_tool``。"""
     imported = []
-    # 跳过不含工具的模块(registry / mcp_tool)以免触发重型可选依赖加载。
+    # 跳过不含工具的 registry 模块。
     for _, name, _ in pkgutil.walk_packages(tools.__path__, tools.__name__ + "."):
-        if name.endswith("registry") or name.endswith("mcp_tool"):
+        if name.endswith("registry"):
             continue
         try:
             importlib.import_module(name)
