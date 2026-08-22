@@ -333,12 +333,22 @@ def upgrade() -> None:
         sa.Column("event_type", sa.String(length=128), nullable=False),
         sa.Column("payload", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("status", sa.String(length=16), server_default=sa.text("'PENDING'"), nullable=False),
+        sa.Column("retry_count", sa.Integer(), server_default=sa.text("0"), nullable=False),
+        sa.Column("next_retry_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("locked_by", sa.String(length=64), nullable=True),
+        sa.Column("locked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_ws_events_created_at"), "ws_events", ["created_at"], unique=False)
+    op.create_index(op.f("ix_ws_events_next_retry_at"), "ws_events", ["next_retry_at"], unique=False)
+    op.create_index(op.f("ix_ws_events_status"), "ws_events", ["status"], unique=False)
     op.create_index(op.f("ix_ws_events_user_id"), "ws_events", ["user_id"], unique=False)
+    op.create_index("ix_ws_events_poll", "ws_events", ["user_id", "status", "next_retry_at"], unique=False)
     op.create_table(
         "messages",
         sa.Column("conversation_id", sa.Integer(), nullable=False),

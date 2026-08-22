@@ -23,7 +23,7 @@ from modules.auth import User
 from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
-from modules.ws import WSEvent
+from modules.ws import CRON_TURN_EVENT, WSEvent
 from sqlalchemy import func, select, text
 from sqlalchemy.engine import Row
 
@@ -69,6 +69,10 @@ _CONSOLIDATE_SCAN_INTERVAL_SECONDS: int = 600
 # nightly activity 扫描的外层节流。
 _LAST_NIGHTLY_SCAN: float = 0.0
 
+# outbox gc 扫描的外层节流（每 15 分钟运行一次）。
+_LAST_OUTBOX_GC_SCAN: float = 0.0
+_OUTBOX_GC_INTERVAL_SECONDS: int = 900
+
 # 每个 tick 处理的到期 job 硬上限——限制批量 CAS 的语句大小和单 tick 工作量，避免长时间停摆后的回追（例如 60 分钟 ``* * * * *`` 调度，第一 tick 有 3600 个到期）。超出上限的 job 保留原 next_run_at，下一 tick 再触发。
 _MAX_DUE_PER_TICK = 200
 
@@ -77,7 +81,7 @@ _NIGHTLY_USER_BATCH_SIZE = 500
 
 
 def _log_task_error(name: str, task: asyncio.Task) -> None:
-    """旁路 task 的失败落日志而不冒泡：scheduler_loop 靠 _tick 的异常杀死 BackgroundTask 来曝光派发路径的持久 bug，而 kickoff / 扫描的失败不该连坐停掉定时派发。"""
+    """旁路 task 失败落日志不冒泡——_tick 的异常会杀死 BackgroundTask 曝光派发路径 bug，kickoff / 扫描失败不该连坐停掉定时派发。"""
     if task.cancelled():
         return
     exc = task.exception()
@@ -86,14 +90,14 @@ def _log_task_error(name: str, task: asyncio.Task) -> None:
 
 
 def _spawn_scan(name: str, factory: Callable[[], Coroutine[Any, Any, None]]) -> None:
-    """把慢扫描移出 tick 的关键路径——它内部 await 多阶段 LLM 流水线，inline 会让本 tick 的到期 job CAS 排在几分钟的模型调用之后；上一轮同名扫描仍在飞则跳过本轮。"""
+    """把慢扫描移出 tick 关键路径——内部 await 多阶段 LLM 流水线，inline 会让本 tick 的 CAS 排在几分钟模型调用之后；同名扫描仍在飞则跳过本轮。"""
     running = _SCANS.get(name)
     if running is not None and not running.done():
         logger.warning("cron: scan still in flight, skipping", extra={"scan": name})
         return
 
     async def _scoped() -> None:
-        # 扫描已是独立于 tick 的工作单元，mint 自己的 request_id 才能把它跨越的几轮 tick 的日志归到一起。
+        # 扫描是独立于 tick 的工作单元，mint 自己的 request_id 才能把它跨越几轮 tick 的日志归到一起。
         begin_local_scope()
         await factory()
 
@@ -105,7 +109,7 @@ def _spawn_scan(name: str, factory: Callable[[], Coroutine[Any, Any, None]]) -> 
 
 
 async def _select_due_jobs() -> list[Row]:
-    """读取到期 job：只选 CAS + autonomous-turn kickoff 需要的列（去掉 deliver、created_at、updated_at、is_paused）；保留 prompt 因为 autonomous-turn kickoff 直接读它，而 CronJob.prompt 是 Text 列可能达 MB，节省是有意义的。ORDER BY next_run_at, id 在 _MAX_DUE_PER_TICK 截断积压时给出确定子集。"""
+    """读取到期 job：只选 CAS + kickoff 需要的列，prompt 保留（kickoff 直接读，Text 列可能达 MB）；ORDER BY (next_run_at, id) 让 _MAX_DUE_PER_TICK 截断积压时给出确定子集。"""
     now = utc_now()
     async with session_scope() as db:
         return (
@@ -172,7 +176,7 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
 
 
 async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
-    """Tx1（批量 CAS）+ 自主 chat turn kickoff：自主 turn 是真正产品路径——cron 是伙伴主动触达的基础设施；投递复用与用户消息相同的 message.complete / companion.message 流水线，让 LLM 可以调 send_message_tool 并受桌面端打扰档位门控（plan §4.2）。"""
+    """批量 CAS 推进 next_run_at 并 kickoff 自主 chat turn——投递复用与用户消息相同的 message.complete / companion.message 流水线，让 LLM 可调 send_message_tool 并受桌面端打扰档位门控。"""
     winners = await _bulk_cas_advance(due_jobs, now)
     for job_id, meta in winners.items():
         if meta.get("is_paused"):
@@ -188,7 +192,7 @@ async def _advance_due_jobs(due_jobs: list[Row], now: datetime) -> None:
 
 
 async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
-    """向持有该用户 WS 的 replica 申请自主 chat turn：turn 在连接所在进程内执行（流式 delta、tool future、runtime session 都是进程本地的），所以 tick 所在 replica 只写一条 ws_events（cron.turn.request）；outbox claim 循环（connection._process_events，按 local_user_ids() 过滤）拣起；用户在所有 replica 都离线则被 GC 收割。"""
+    """向持有该用户 WS 的 replica 申请自主 turn——流式 delta、tool future、runtime session 都是进程本地的，tick 所在 replica 只写一条 ws_events，由 outbox claim 循环拣起；全副本离线则被 GC 收割。"""
     user_id = meta["user_id"]
     prompt = (meta["payload"].get("prompt") or "").strip()
     if not prompt:
@@ -200,7 +204,7 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
         return
 
     async with session_scope() as db:
-        db.add(WSEvent(user_id=user_id, event_type="cron.turn.request", payload=json.dumps({"job_id": job_id, "prompt": prompt}, ensure_ascii=False)))
+        db.add(WSEvent(user_id=user_id, event_type=CRON_TURN_EVENT, payload=json.dumps({"job_id": job_id, "prompt": prompt}, ensure_ascii=False)))
         await db.commit()
     logger.info("cron: autonomous turn requested", extra={"user_id": user_id, "job_id": job_id})
 
@@ -224,17 +228,18 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
             # 把状态推进到 FOLLOWUP_SENT，防止再次触发
             record_user_outreach(uid, last_text)
             async with session_scope() as db:
-                db.add(WSEvent(user_id=uid, event_type="cron.turn.request", payload=json.dumps({"job_id": -1, "prompt": prompt}, ensure_ascii=False)))
+                db.add(WSEvent(user_id=uid, event_type=CRON_TURN_EVENT, payload=json.dumps({"job_id": -1, "prompt": prompt}, ensure_ascii=False)))
                 await db.commit()
             logger.info("cron: proactive follow-up turn requested", extra={"user_id": uid, "last_outreach_text": last_text})
 
 
 async def _tick() -> None:
-    """为到期 job CAS 推进 next_run_at 并申请自主 turn：每个到期 job 写一条 cron.turn.request ws_events，持有该用户 WS 的 replica 通过 outbox 循环拣走并在本地运行 turn；无双触发风险——CAS UPDATE 串行化胜者，outbox DELETE..RETURNING 是单消费者。"""
+    """为到期 job CAS 推进 next_run_at 并申请自主 turn——每个到期 job 写一条 cron.turn.request ws_events，持有该用户 WS 的 replica 通过 outbox 循环拣走；CAS + outbox 两阶段锁避免双触发。"""
     now = utc_now()
-    # 两个慢扫描与 cron-job 派发独立——不能用 ``if not due_jobs`` gate，否则没有 cron job 的安装永远不会触发 consolidation。
+    # 慢扫描与 cron-job 派发独立——不能用 ``if not due_jobs`` gate，否则没有 cron job 的安装永远不会触发 consolidation/GC。
     _spawn_scan("memory_consolidator", lambda: _maybe_run_memory_consolidator(now))
     _spawn_scan("nightly_activity", lambda: _maybe_run_autonomous_activity(now))
+    _spawn_scan("outbox_gc", lambda: _maybe_run_outbox_gc(now))
     await _maybe_run_proactive_followups(now)
     due_jobs = await _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:
@@ -245,8 +250,19 @@ async def _tick() -> None:
     await _advance_due_jobs(due_jobs, now)
 
 
+async def _maybe_run_outbox_gc(now: datetime) -> None:
+    """定期执行 WS Outbox 历史事件与过期内部 cron 事件的物理清理。"""
+    global _LAST_OUTBOX_GC_SCAN
+    if now.timestamp() - _LAST_OUTBOX_GC_SCAN < _OUTBOX_GC_INTERVAL_SECONDS:
+        return
+    _LAST_OUTBOX_GC_SCAN = now.timestamp()
+    from .outbox_gc import run_outbox_gc
+
+    await run_outbox_gc()
+
+
 async def _maybe_run_memory_consolidator(now: datetime) -> None:
-    """为 recall pool 超阈值的用户跑 recall consolidator：外层扫描受 _CONSOLIDATE_SCAN_INTERVAL_SECONDS 节流；per-user 节流（MEMORY_CONSOLIDATE_INTERVAL_SECONDS）防同一用户反复合并；per-user 调用通过 asyncio.gather 并发，单 tick 只付最大 LLM 延迟而非总和。"""
+    """为 recall pool 超阈值的用户跑 recall consolidator——外层按 _CONSOLIDATE_SCAN_INTERVAL_SECONDS 节流，per-user 按 MEMORY_CONSOLIDATE_INTERVAL_SECONDS 节流，并发通过 gather 单 tick 只付最大 LLM 延迟。"""
     global _LAST_CONSOLIDATE_SCAN
     if now.timestamp() - _LAST_CONSOLIDATE_SCAN < _CONSOLIDATE_SCAN_INTERVAL_SECONDS:
         return
@@ -375,7 +391,6 @@ _SCHEDULER = BackgroundTask("scheduler.cron_loop")
 
 
 def start_scheduler() -> None:
-    """把 scheduler loop 作为后台 task spawn；stop_scheduler 在关停时取消。"""
     _SCHEDULER.start(scheduler_loop())
 
 

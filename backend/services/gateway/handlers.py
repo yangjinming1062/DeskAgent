@@ -102,7 +102,7 @@ _USER_SESSIONS: dict[int, UserGatewaySession] = {}
 
 
 async def drain() -> None:
-    """取消 UserGatewaySession 中所有 per-user background task；模块级 _avatar_regen_tasks 不在此处 drain——自 Commit 9 后它们只活在 per-user background_tasks 集合里。"""
+    """取消 UserGatewaySession 中所有 per-user background task。"""
     pending: list[asyncio.Task] = []
     for sess in _USER_SESSIONS.values():
         pending.extend(sess.background_tasks)
@@ -170,11 +170,10 @@ _HANDSHAKE_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 async def handle_chat_websocket(websocket: WebSocket, token: str):
-    # BaseHTTPMiddleware 跳过 WS upgrade——中间件不会在这里设 request_id，所以从 upgrade 的 X-Request-ID 重新关联（仅脚本化客户端）。
-    # 必须在 authenticate 之前 set，不然 gateway/auth 里的 'WS token decode failed' log 行没有 request_id。客户端收不到 header echo（WS close frame 不带 header）是 WS 协议限制，无法修复。
+    # BaseHTTPMiddleware 跳过 WS upgrade——在 authenticate 前从 upgrade 的 X-Request-ID 重建 request_id，auth 失败行的日志才不会丢关联。
     adopt_inbound(websocket.headers.get(REQUEST_ID_HEADER))
 
-    # accept 之前先 authenticate，抵御未认证连接洪泛；被拒握手在传输层快速失败为 4001 Unauthorized，不占 ConnectionManager 槽位。
+    # accept 前先 authenticate；被拒握手在传输层快速失败为 1008，不占 ConnectionManager 槽位。
     user, payload = await authenticate_ws_token(token)
     if user is None:
         await websocket.close(code=1008)
@@ -213,7 +212,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                 user_session = existing_session
                 dispatcher = user_session.dispatcher
                 runtime_sessions = user_session.runtime_sessions
-                background_tasks = user_session.background_tasks
+                MANAGER.register_dispatcher(user_id, dispatcher)
                 logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
             else:
                 replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
@@ -280,7 +279,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             _HANDSHAKE_LOCKS.pop(uid, None)
                             discard_user(uid)
                             REGISTRY.clear_runner_tools(uid)
-                            # per-user 进程本地的状态——完整清理时清掉，避免长跑部署下这些 dict 单调膨胀，也防止 stale 的 _inflight_prompt 用 user_busy 锁掉用户的下次 prompt.submit。
+                            # 完整清理时清掉 per-user 进程本地状态，避免长跑部署下 dict 单调膨胀，防止 stale 的 _inflight_prompt 用 user_busy 锁掉下次 prompt.submit。
                             _inflight_prompt.discard(uid)
                             _inflight_interact.difference_update({(u, k) for u, k in _inflight_interact if u == uid})
                             _last_interact_ts.pop(uid, None)
@@ -437,7 +436,6 @@ def _register_session_handlers(
 
         cfg = user_session.llm_config if user_session else llm_config
 
-        # 客户端给了 last_seq 且 ReplayBuffer 保留所有 delta 时走连续 replay
         if isinstance(last_seq, int) and effective_buffer.can_replay(last_seq):
             runtime = _mount_runtime(conv, conv.cwd, cancel_existing=False)
             replayed_frames = await dispatcher.replay(last_seq) or []
@@ -452,7 +450,7 @@ def _register_session_handlers(
                 current_seq=effective_buffer.max_seq,
             ).model_dump()
 
-        # 回落到完整 DB 历史重载
+        # 客户端给的 last_seq 已被覆盖 / 不可 replay——回落到完整 DB 历史重载。
         async with SESSION_LOCAL() as db:
             messages = await build_session_messages(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd, cancel_existing=True)
@@ -485,7 +483,6 @@ def _register_session_handlers(
         sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
         runtime = _get_runtime(sess_runtime, params)
         if runtime.chat_task and not runtime.chat_task.done():
-            # 短暂等 task 跑完最后清理阶段
             try:
                 await asyncio.wait_for(asyncio.shield(runtime.chat_task), timeout=0.3)
             except asyncio.CancelledError:
@@ -495,7 +492,7 @@ def _register_session_handlers(
             if runtime.chat_task and not runtime.chat_task.done():
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"session {runtime.session_id!r} already has an in-flight turn")
 
-        # 跨门：companion 反应（戳一戳）正在该用户主会话上空跑。
+        # 跨门：companion 反应正在该用户主会话上空跑。
         if any(uid == user_id for uid, _ in _inflight_interact):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "companion reaction in-flight; please retry after it lands")
 
@@ -609,7 +606,7 @@ def _register_session_handlers(
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
 
     async def companion_check_affect(params: dict) -> dict:
-        # idle 触发的情境 affect 推理：desktop 的 idle 监视器在用户超过阈值+冷却时间后调用；后端加载 persona + memory，问 LLM 此刻是否该表达情境情绪，决策为是则发 companion.affect，让现有事件处理器把精灵切到 EMOTIONAL（无气泡、无 TTS）。
+        # desktop idle 监视器在阈值+冷却后调用；LLM 决策是否发出 companion.affect 切换到情境情绪（无气泡、无 TTS）。
         now = time.monotonic()
         if _user_throttled(_last_check_affect_ts, user_id, CHECK_AFFECT_MIN_INTERVAL_SECONDS, now):
             logger.debug("check_affect: throttled", extra={"user_id": user_id, "since_sec": round(now - _last_check_affect_ts.get(user_id, 0.0), 3)})
@@ -624,7 +621,7 @@ def _register_session_handlers(
     dispatcher.register("companion.check_affect", companion_check_affect)
 
     async def companion_record_interaction_stats(params: dict) -> dict:
-        # 每事件统计（poke / chat_turn）供每日 Memory 汇总用，无 LLM 开销。Desktop 自己合并 stats RPC：先每事件发送直到达到 STATS_THRESHOLD，再切到每分钟每 kind 一次 RPC（见 activity.ts::STATS_POST_THRESHROTTLE_MS），所以过阈值后的高频点击者不再每戳一次往返一次 WS。
+        # poke / chat_turn 每事件统计供每日 Memory 汇总用，无 LLM 开销；desktop 侧合并到 STATS_THRESHOLD 后切分钟级节流。
         kind = params.get("kind")
         hour = params.get("hour")
         if not isinstance(hour, int) or not 0 <= hour <= 23:
@@ -644,7 +641,7 @@ def _register_session_handlers(
         if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
             return {"text": None, "emotion": None, "reason": "throttled"}
 
-        # 跨门：renderer 发起的 chat turn 正在该用户主会话上空跑。若不检查，戳一戳可能在 in-flight 用户消息入库前写入 status_interaction 行，或 status_reaction 落在还在生成的助手回复前。静默丢弃（与 throttled 契约一致）——会话已经在忙，这次看不到反应是正确选择。
+        # 跨门：renderer 发起的 chat turn 正在主会话上空跑——戳一戳可能在 in-flight 用户消息入库前写入 status_interaction 行，或 status_reaction 落在还在生成的助手回复前；按 throttled 契约静默丢弃。
         if user_id in _inflight_prompt:
             return {"text": None, "emotion": None, "reason": "user_busy"}
 
@@ -772,12 +769,12 @@ def _register_session_handlers(
     dispatcher.register("memory.delete", memory_delete)
 
     async def onboarding_get_state(_params: dict) -> dict:
-        # 断点恢复：desktop 启动时调用，以了解已收集的 onboarding 字段与该从哪个问题继续；persona 定稿后返回 complete: true，desktop 直接跳过 onboarding。
+        # desktop 启动时拉取 onboarding 进度；persona 定稿后 complete: true，desktop 跳过 onboarding。
         async with SESSION_LOCAL() as db:
             return await get_onboarding_state(db, user_id)
 
     async def onboarding_submit(params: dict) -> dict:
-        # 每字段增量持久化：每次 onboarding.submit {field, value} 立即落库，onboarding 中途崩溃/退出最多丢失当前一题。
+        # 每字段增量落库，崩溃最多丢当前一题。
         field = params.get("field")
         if not isinstance(field, str) or not field:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "field must be a non-empty string")
@@ -794,9 +791,7 @@ def _register_session_handlers(
     dispatcher.register("onboarding.submit", onboarding_submit)
 
     async def avatar_regenerate(params: dict) -> dict:
-        # 基于当前 persona 重新生成形象，可选附带自由文本反馈到 prompt。
-        #
-        # 10-60s 的图像生成调用以后台 task 跑，立即返回 job_id + queued: true，避免阻塞 WS 接收循环——否则并发的 tool.result 帧会在 socket 缓冲里堆积。结果通过 avatar.regenerated 事件返回，desktop 收到后换形象。
+        # 10-60s 同步生图以后台 task 跑，立即返回 queued: true 不阻塞 WS 接收循环；结果通过 avatar.regenerated 事件回。
         feedback = params.get("feedback")
         if feedback is not None and not isinstance(feedback, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "feedback must be a string")
@@ -850,7 +845,7 @@ def _register_session_handlers(
     dispatcher.register("avatar.regenerate", avatar_regenerate)
 
     async def companion_model_retry_download(params: dict) -> dict:
-        # 仅下载已付费 3D 生成结果的恢复：在 web 进程内调 ``request_model_download_retry``，由能力链重新驱动到 SPEC 校验；状态走 model.gen.progress / model.ready / model.failed 事件。
+        # 已付费 3D 结果的下载恢复：在 web 进程内调 request_model_download_retry，能力链重新驱动到 SPEC 校验。
         model_id = params.get("model_id")
         if not _is_nonneg_int(model_id) or model_id <= 0:
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "model_id must be a positive int")
@@ -873,7 +868,7 @@ def _register_session_handlers(
             return await list_tts_voices(db, user_id, language=language)
 
     async def tts_match_voice(params: dict) -> dict:
-        # 把自由文本语音偏好映射为当前 provider 目录中的具体 voice id（plan §3.2）。基于标签的打分是瞬时且确定性的——onboarding 不该为一个已有目录覆盖的窄标签任务付 LLM 延迟。
+        # 把自由文本语音偏好映射到 provider 目录中的具体 voice id；onboarding 不为已有目录覆盖的窄标签任务付 LLM 延迟。
         preference = params.get("preference")
         if not isinstance(preference, str):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "preference must be a string")

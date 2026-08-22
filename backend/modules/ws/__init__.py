@@ -1,3 +1,5 @@
 from .models import WSEvent
 
-__all__ = ["WSEvent"]
+CRON_TURN_EVENT = "cron.turn.request"
+
+__all__ = ["CRON_TURN_EVENT", "WSEvent"]
