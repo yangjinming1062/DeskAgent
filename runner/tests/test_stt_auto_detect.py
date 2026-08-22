@@ -41,9 +41,14 @@ def _stub_wav_to_wav_pcm16(src, dst, max_bytes):
 async def _invoke(args: dict, decode_result: dict):
     from tools.multimodal.audio import stt_tool
 
-    with mock.patch.object(
-        stt_tool, "_decode_and_transcribe", _decode_mock(decode_result)
-    ), mock.patch.object(stt_tool, "wav_to_wav_pcm16", _stub_wav_to_wav_pcm16):
+    with (
+        mock.patch.object(
+            stt_tool,
+            "_decode_and_transcribe",
+            _decode_mock(decode_result),
+        ),
+        mock.patch.object(stt_tool, "wav_to_wav_pcm16", _stub_wav_to_wav_pcm16),
+    ):
         return await stt_tool.speech_to_text_tool(args)
 
 
@@ -65,8 +70,8 @@ def test_auto_detect_empty_result_returns_error():
                     "language_probability": 0.95,
                     "segments": [],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     assert payload["success"] is False
@@ -85,8 +90,8 @@ def test_auto_detect_low_confidence_returns_error():
                     "language_probability": 0.4,
                     "segments": [{"text": "uhhh"}],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     assert payload["success"] is False
@@ -105,8 +110,8 @@ def test_auto_detect_high_confidence_returns_success():
                     "language_probability": 0.92,
                     "segments": [{"text": "您好"}],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     assert payload["success"] is True
@@ -126,8 +131,8 @@ def test_explicit_language_skips_confidence_check():
                     "language_probability": 0.3,
                     "segments": [{"text": "hello"}],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     assert payload["success"] is True
@@ -146,8 +151,8 @@ def test_explicit_language_empty_result_returns_error():
                     "language_probability": 1.0,
                     "segments": [],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     assert payload["success"] is False
@@ -166,8 +171,8 @@ def test_no_language_arg_defaults_to_auto_detect():
                     "language_probability": 0.95,
                     "segments": [],
                 },
-            )
-        )
+            ),
+        ),
     )
 
     # Empty text in auto-detect mode → tool_error (the same as language="auto").

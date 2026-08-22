@@ -1,5 +1,4 @@
 import pytest
-
 from services.companion import classify_species, select_rig_type
 
 
@@ -9,7 +8,13 @@ class _FakeChat:
         self.calls: list[dict] = []
 
     async def __call__(
-        self, db, user_id, system_prompt, user_payload, *, provider_config=None
+        self,
+        db,
+        user_id,
+        system_prompt,
+        user_payload,
+        *,
+        provider_config=None,
     ):
         self.calls.append(
             {
@@ -17,7 +22,7 @@ class _FakeChat:
                 "user_id": user_id,
                 "system": system_prompt,
                 "user": user_payload,
-            }
+            },
         )
         if isinstance(self.content, Exception):
             raise self.content

@@ -15,7 +15,6 @@ import os
 import sys
 
 import pytest
-
 import utils.reverse_rpc as reverse_rpc
 from utils.capabilities import _binary_exists, disk_free_bytes
 from utils.clean import clean_output
@@ -140,14 +139,8 @@ class TestIsWriteDenied:
     def test_device_prefix_stripping(self):
         from utils.file_safety import canonicalize_path
 
-        assert (
-            canonicalize_path(r"\\?\C:\Windows\System32").replace("/", "\\").lower()
-            == r"c:\windows\system32"
-        )
-        assert (
-            canonicalize_path(r"\\.\C:\Windows\System32").replace("/", "\\").lower()
-            == r"c:\windows\system32"
-        )
+        assert canonicalize_path(r"\\?\C:\Windows\System32").replace("/", "\\").lower() == r"c:\windows\system32"
+        assert canonicalize_path(r"\\.\C:\Windows\System32").replace("/", "\\").lower() == r"c:\windows\system32"
 
     def test_device_prefix_read_block_bypass(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
@@ -156,7 +149,8 @@ class TestIsWriteDenied:
         assert err is not None and "credential store" in err
 
     @pytest.mark.skipif(
-        not IS_WINDOWS, reason="Windows 8.3 short names are Windows-only"
+        not IS_WINDOWS,
+        reason="Windows 8.3 short names are Windows-only",
     )
     def test_windows_8_3_short_name_resolves_to_long_form(self):
         """canonicalize_path must expand 8.3 short names (PROGRA~1 → Program Files)."""
@@ -182,7 +176,8 @@ class TestIsWriteDenied:
         assert resolved.lower() == windows_dir.lower()
 
     @pytest.mark.skipif(
-        not IS_WINDOWS, reason="Windows-only path canonicalization tests"
+        not IS_WINDOWS,
+        reason="Windows-only path canonicalization tests",
     )
     def test_canonicalize_path_unc_and_ads_streams(self):
         from utils.file_safety import canonicalize_path, is_write_denied
@@ -214,7 +209,8 @@ class TestIsWriteDenied:
         assert canonicalize_path(unc_lower).startswith(r"\\localhost\c$\Windows")
 
     @pytest.mark.skipif(
-        not IS_WINDOWS, reason="Windows-only case-insensitive security tests"
+        not IS_WINDOWS,
+        reason="Windows-only case-insensitive security tests",
     )
     def test_windows_case_insensitive_write_denied(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
@@ -238,15 +234,14 @@ class TestGetReadBlockError:
         assert err is not None and "credential store" in err
 
     @pytest.mark.skipif(
-        not IS_WINDOWS, reason="Windows-only case-insensitive read block tests"
+        not IS_WINDOWS,
+        reason="Windows-only case-insensitive read block tests",
     )
     def test_blocks_uppercase_credentials_on_windows(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
         assert get_read_block_error(str(tmp_path / "AUTH.JSON")) is not None
         assert get_read_block_error(str(tmp_path / "ANTHROPIC_OAUTH.JSON")) is not None
-        assert (
-            get_read_block_error(str(tmp_path / "MCP-TOKENS" / "KEY.JSON")) is not None
-        )
+        assert get_read_block_error(str(tmp_path / "MCP-TOKENS" / "KEY.JSON")) is not None
 
     def test_blocks_mcp_token_file(self, monkeypatch, tmp_path):
         monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
@@ -261,7 +256,8 @@ class TestGetReadBlockError:
         assert err is not None and "secret-bearing" in err
 
     @pytest.mark.skipif(
-        not IS_WINDOWS, reason="Windows-only case-insensitive .env tests"
+        not IS_WINDOWS,
+        reason="Windows-only case-insensitive .env tests",
     )
     def test_blocks_uppercase_dotenv_basename_on_windows(self, tmp_path):
         """Uppercase `.ENV` or `.Env.local` must be blocked on Windows."""
@@ -323,17 +319,7 @@ class TestSandboxMirror:
     def test_classifies_sandbox_mirror_path(self, tmp_path):
         # ``_find_sandbox_mirror_segments`` matches ``sandboxes/<backend>/<id>/home/.spiritagent/...``.
         # The 5-segment prefix is ``(sandboxes, backend, id, home, .spiritagent)``.
-        target = (
-            tmp_path
-            / "sandboxes"
-            / "docker"
-            / "abc123"
-            / "home"
-            / ".spiritagent"
-            / "skills"
-            / "x"
-            / "SKILL.md"
-        )
+        target = tmp_path / "sandboxes" / "docker" / "abc123" / "home" / ".spiritagent" / "skills" / "x" / "SKILL.md"
         info = classify_sandbox_mirror_target(str(target))
         assert info is not None
         # The inner_path is everything after ``.spiritagent``.
@@ -351,10 +337,7 @@ class TestContainerMirror:
         prefix = tmp_path / "prefix"
         prefix.mkdir()
         target = tmp_path / "other" / "file"
-        assert (
-            classify_container_mirror_target(str(target), mirror_prefix=str(prefix))
-            is None
-        )
+        assert classify_container_mirror_target(str(target), mirror_prefix=str(prefix)) is None
 
     def test_warning_when_target_inside_prefix(self, tmp_path):
         prefix = tmp_path / "prefix"
@@ -378,7 +361,9 @@ class TestRedactSensitiveText:
 
         real = redact_mod.load_config
         monkeypatch.setattr(
-            redact_mod, "load_config", lambda: {"security": {"redact_secrets": False}}
+            redact_mod,
+            "load_config",
+            lambda: {"security": {"redact_secrets": False}},
         )
         s = "sk-ant-api03-abcdefghijklmnop1234567890 should NOT be redacted"
         out = redact_sensitive_text(s)
@@ -457,7 +442,9 @@ class TestRedactSensitiveText:
         import utils.redact as redact_mod
 
         monkeypatch.setattr(
-            redact_mod, "_redact", lambda s: (_ for _ in ()).throw(RuntimeError("boom"))
+            redact_mod,
+            "_redact",
+            lambda _s: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         assert clean_output("sk_abcdefghijklmnop") == "***REDACTED (error)***"
 
@@ -547,7 +534,9 @@ class TestConfigHelpers:
 
         real = config.load_config
         monkeypatch.setattr(
-            config, "load_config", lambda: {"terminal": {"env_type": "  Docker  "}}
+            config,
+            "load_config",
+            lambda: {"terminal": {"env_type": "  Docker  "}},
         )
         try:
             assert config.get_env_type() == "docker"
@@ -577,7 +566,8 @@ class TestCheckRedirectUrlSafety:
 
         assert (
             check_redirect_url_safety(
-                "http://example.com", "http://169.254.169.254/latest/meta-data/"
+                "http://example.com",
+                "http://169.254.169.254/latest/meta-data/",
             )
             is False
         )
@@ -590,13 +580,14 @@ class TestCheckRedirectUrlSafety:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda *args, **kwargs: [
-                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+            lambda *_args, **_kwargs: [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443)),
             ],
         )
         assert (
             check_redirect_url_safety(
-                "http://example.com", "https://example.org/landing"
+                "http://example.com",
+                "https://example.org/landing",
             )
             is True
         )

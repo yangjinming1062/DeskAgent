@@ -3,7 +3,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-
 from services.companion.asset_store import compute_bytes_sha256
 from services.companion.http_range import compute_file_sha256, serve_ranged_file
 

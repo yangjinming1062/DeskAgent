@@ -1,9 +1,7 @@
 import json
-from types import SimpleNamespace
 
 import httpx
 import pytest
-
 from services.llm import MissingLlmConfigError, ProviderError
 
 
@@ -70,39 +68,39 @@ class TestVideoGenRestEndpoints:
 
         _walk(test_app.routes)
         assert "/api/media/video_gen" in paths, "POST /video_gen not registered"
-        assert "/api/media/video_gen/{task_id}" in paths, (
-            "GET /video_gen/{task_id} not registered"
-        )
+        assert "/api/media/video_gen/{task_id}" in paths, "GET /video_gen/{task_id} not registered"
 
 
 class TestVideoGenJobRoundtrip:
     """使用 mock 供应商的端到端 submit → poll → success 路径。"""
 
     async def _run_roundtrip(
-        self, monkeypatch, *, model, handler, duration, resolution, aspect_ratio
+        self,
+        monkeypatch,
+        *,
+        model,
+        handler,
+        duration,
+        resolution,
+        aspect_ratio,
     ):
         """写入用户配置、安装 mock transport、入队任务并等待其到达终态，返回最终 job 行。"""
         import asyncio
 
-        from sqlalchemy import select
-
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job, get_job
+        from sqlalchemy import select
 
         async with SESSION_LOCAL() as db:
-            user = (
-                (await db.execute(select(User).where(User.username == "testuser")))
-                .scalars()
-                .first()
-            )
+            user = (await db.execute(select(User).where(User.username == "testuser"))).scalars().first()
             user_id = user.id
             cfg = (
                 (
                     await db.execute(
                         select(UserModelConfig).where(
-                            UserModelConfig.user_id == user_id
-                        )
+                            UserModelConfig.user_id == user_id,
+                        ),
                     )
                 )
                 .scalars()
@@ -125,10 +123,12 @@ class TestVideoGenJobRoundtrip:
             )
 
         monkeypatch.setattr(
-            "components.network.safe_outbound_async_client", _mock_async_client
+            "components.network.safe_outbound_async_client",
+            _mock_async_client,
         )
         monkeypatch.setattr(
-            "components.network.is_safe_outbound", lambda host: (True, "")
+            "components.network.is_safe_outbound",
+            lambda _host: (True, ""),
         )
 
         mock_client = httpx.AsyncClient(
@@ -165,7 +165,10 @@ class TestVideoGenJobRoundtrip:
 
     @pytest.mark.asyncio
     async def test_v1_submit_poll_retrieve_download(
-        self, monkeypatch, _patch_db, test_token
+        self,
+        monkeypatch,
+        _patch_db,
+        test_token,
     ):
         """默认路径：MiniMax-Hailuo v1 三段式（submit → poll → files/retrieve → download）。"""
         calls: list[str] = []
@@ -221,18 +224,17 @@ class TestVideoGenJobRoundtrip:
             resolution="768P",
             aspect_ratio=None,
         )
-        assert row.status == "succeeded", (
-            f"job ended in {row.status}: {row.error_message}"
-        )
-        assert row.video_url.startswith("/api/media/files/"), (
-            f"video_url should be our relative media path, got {row.video_url!r}"
-        )
+        assert row.status == "succeeded", f"job ended in {row.status}: {row.error_message}"
+        assert row.video_url.startswith("/api/media/files/"), f"video_url should be our relative media path, got {row.video_url!r}"
         assert row.file_id is not None
         assert calls == ["submit", "poll", "retrieve"], calls
 
     @pytest.mark.asyncio
     async def test_v2_h3_inline_download_url_skips_retrieve(
-        self, monkeypatch, _patch_db, test_token
+        self,
+        monkeypatch,
+        _patch_db,
+        test_token,
     ):
         """H3 v2 路径：poll 直接返回 URL 内联，因此不会调用 files/retrieve。"""
         calls: list[str] = []
@@ -275,30 +277,30 @@ class TestVideoGenJobRoundtrip:
             resolution="768P",
             aspect_ratio="16:9",
         )
-        assert row.status == "succeeded", (
-            f"job ended in {row.status}: {row.error_message}"
-        )
+        assert row.status == "succeeded", f"job ended in {row.status}: {row.error_message}"
         assert row.video_url.startswith("/api/media/files/")
         assert calls == ["submit", "poll"], calls
 
     @pytest.mark.asyncio
     async def test_provider_failure_marks_job_failed(
-        self, monkeypatch, _patch_db, test_token
+        self,
+        monkeypatch,
+        _patch_db,
+        test_token,
     ):
         # 绕过多 session 可见性问题：全程复用同一个 SESSION_LOCAL，使 commit 与读取落在同一事务。
-        from sqlalchemy import select
-
         import services.llm.providers.http as http_mod
         from components import SESSION_LOCAL
         from modules.auth import User, UserModelConfig
         from services.media import enqueue_video_job
+        from sqlalchemy import select
 
         async def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/video_generation":
                 return httpx.Response(
                     200,
                     json={
-                        "base_resp": {"status_code": 1004, "status_msg": "auth fail"}
+                        "base_resp": {"status_code": 1004, "status_msg": "auth fail"},
                     },
                 )
             return httpx.Response(404)
@@ -312,18 +314,14 @@ class TestVideoGenJobRoundtrip:
         http_mod._clients[("https://api.minimaxi.com", "sk-test")] = mock_client
 
         async with SESSION_LOCAL() as db:
-            user = (
-                (await db.execute(select(User).where(User.username == "testuser")))
-                .scalars()
-                .first()
-            )
+            user = (await db.execute(select(User).where(User.username == "testuser"))).scalars().first()
             user_id = user.id
             cfg = (
                 (
                     await db.execute(
                         select(UserModelConfig).where(
-                            UserModelConfig.user_id == user_id
-                        )
+                            UserModelConfig.user_id == user_id,
+                        ),
                     )
                 )
                 .scalars()
@@ -348,15 +346,14 @@ class TestVideoGenJobRoundtrip:
                 )
 
             # 通过与测试相同的 session 读取——_update_job 会自开 session，在 SQLite + SAVEPOINT 下可能存在可见性问题，故以测试 session 为准。
-            from sqlalchemy import select
-
             from modules.media import VideoGenJob
+            from sqlalchemy import select
 
             db.expire_all()
             rows = (
                 (
                     await db.execute(
-                        select(VideoGenJob).where(VideoGenJob.user_id == user_id)
+                        select(VideoGenJob).where(VideoGenJob.user_id == user_id),
                     )
                 )
                 .scalars()
@@ -369,7 +366,9 @@ class TestVideoGenJobRoundtrip:
 
 @pytest.mark.asyncio
 async def test_video_gen_status_endpoint_returns_reason(
-    test_client, test_app, SessionLocal
+    test_client,
+    test_app,
+    SessionLocal,
 ):
     from modules.auth import User, get_current_session
     from modules.media import VideoGenJob

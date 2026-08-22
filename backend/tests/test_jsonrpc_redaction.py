@@ -1,5 +1,4 @@
 import pytest
-
 from services.gateway import JsonRpcDispatcher, redact_message
 
 
@@ -19,11 +18,7 @@ def testredact_message_strips_paths_and_credentials():
 
 
 def testredact_message_strips_traceback():
-    msg = (
-        "Something: Traceback (most recent call last):\n"
-        '  File "/srv/app/backend/x.py", line 99, in foo\n'
-        "    raise RuntimeError('boom')"
-    )
+    msg = "Something: Traceback (most recent call last):\n  File \"/srv/app/backend/x.py\", line 99, in foo\n    raise RuntimeError('boom')"
     redacted = redact_message(msg)
     assert "Traceback" not in redacted
     assert "/srv/app/" not in redacted
@@ -65,7 +60,7 @@ async def test_jsonrpc_internal_error_redacts_handler_exception():
 
     async def _boom(params: dict):
         raise RuntimeError(
-            "connection to postgresql://app:s3cret@db:5432/x failed at /srv/app/main.py:10"
+            "connection to postgresql://app:s3cret@db:5432/x failed at /srv/app/main.py:10",
         )
 
     dispatcher.register("boom", _boom)
@@ -74,7 +69,7 @@ async def test_jsonrpc_internal_error_redacts_handler_exception():
     logging.disable(logging.CRITICAL)
     try:
         await dispatcher.handle(
-            {"jsonrpc": "2.0", "id": 1, "method": "boom", "params": {}}
+            {"jsonrpc": "2.0", "id": 1, "method": "boom", "params": {}},
         )
     finally:
         logging.disable(previous_level)

@@ -30,12 +30,6 @@ from typing import Any
 
 import pytest
 import websockets
-from websockets.datastructures import Headers
-from websockets.frames import OP_CONT, OP_PONG, OP_TEXT, Frame
-from websockets.http11 import Response
-from websockets.protocol import State
-from websockets.server import ServerProtocol
-
 from utils import (
     IS_WINDOWS,
     PIPE_TRANSPORT,
@@ -45,6 +39,11 @@ from utils import (
     read_endpoint,
 )
 from utils.desktop_transport import DesktopConnection, _connect_pipe_handle, _PipeStream
+from websockets.datastructures import Headers
+from websockets.frames import OP_CONT, OP_PONG, OP_TEXT, Frame
+from websockets.http11 import Response
+from websockets.protocol import State
+from websockets.server import ServerProtocol
 
 EXPECTED_TRANSPORT = PIPE_TRANSPORT if IS_WINDOWS else UNIX_TRANSPORT
 
@@ -118,11 +117,7 @@ class SessionWsAdapter:
         self._session = session
 
     async def send(self, payload) -> None:
-        text = (
-            payload.decode("utf-8", "replace")
-            if isinstance(payload, (bytes, bytearray))
-            else payload
-        )
+        text = payload.decode("utf-8", "replace") if isinstance(payload, bytes | bytearray) else payload
         await self._session.send(text)
 
     def __aiter__(self):
@@ -162,7 +157,10 @@ if IS_WINDOWS:
                 if error == _ERROR_IO_PENDING:
                     count = wintypes.DWORD(0)
                     if not _k32.GetOverlappedResult(
-                        pipe_handle, ctypes.byref(overlapped), ctypes.byref(count), True
+                        pipe_handle,
+                        ctypes.byref(overlapped),
+                        ctypes.byref(count),
+                        True,
                     ):
                         return ctypes.get_last_error() == _ERROR_PIPE_CONNECTED
                 elif error != _ERROR_PIPE_CONNECTED:
@@ -193,7 +191,7 @@ if IS_WINDOWS:
                 for event in self._protocol.events_received():
                     if not hasattr(event, "headers"):
                         raise ConnectionError(
-                            f"unexpected pre-handshake event: {event!r}"
+                            f"unexpected pre-handshake event: {event!r}",
                         )
                     self.handshake_token = event.headers.get("X-SpiritAgent-Auth")
                     if self.handshake_token != self._expect_token:
@@ -201,7 +199,7 @@ if IS_WINDOWS:
                         # with plain HTTP 401 and never complete the WS
                         # handshake.
                         await self._stream.write(
-                            b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n"
+                            b"HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n",
                         )
                         await self._stream.close()
                         return False
@@ -242,7 +240,7 @@ if IS_WINDOWS:
                             fragments.append(event.data)
                             if event.fin:
                                 self.messages.append(
-                                    b"".join(fragments).decode("utf-8")
+                                    b"".join(fragments).decode("utf-8"),
                                 )
                                 fragments = []
                                 message_opcode = None
@@ -385,7 +383,11 @@ else:
         """UDS Desktop double (macOS): websockets.serve — independent implementation."""
 
         def __init__(
-            self, tmp_path=None, *, path: str | None = None, token: str | None = None
+            self,
+            tmp_path=None,
+            *,
+            path: str | None = None,
+            token: str | None = None,
         ):
             base = tmp_path if tmp_path is not None else Path(tempfile.gettempdir())
             self.path = path or str(base / ("runner-" + uuid.uuid4().hex[:8] + ".sock"))
@@ -397,7 +399,10 @@ else:
             def process_request(connection, request):
                 if request.headers.get("X-SpiritAgent-Auth") != self.token:
                     return Response(
-                        401, "Unauthorized", Headers([("Connection", "close")]), b""
+                        401,
+                        "Unauthorized",
+                        Headers([("Connection", "close")]),
+                        b"",
                     )
                 return None
 
@@ -444,7 +449,9 @@ async def desktop(tmp_path):
 def make_peer_endpoint(fake: FakeDesktop) -> DesktopEndpoint:
     """DesktopEndpoint for a FakeDesktop, on this platform's transport."""
     return DesktopEndpoint(
-        transport=EXPECTED_TRANSPORT, path=fake.path, token=fake.token
+        transport=EXPECTED_TRANSPORT,
+        path=fake.path,
+        token=fake.token,
     )
 
 
@@ -472,7 +479,9 @@ async def test_handshake_and_roundtrip(desktop):
 
 async def test_auth_rejected_with_http_401(desktop):
     bad = DesktopEndpoint(
-        transport=EXPECTED_TRANSPORT, path=desktop.path, token="0" * 128
+        transport=EXPECTED_TRANSPORT,
+        path=desktop.path,
+        token="0" * 128,
     )
     # Windows: consume the server side so the raw 401 actually gets written
     # (FakeDesktop loops a fresh instance after the rejection, so the accept
@@ -527,7 +536,8 @@ async def test_close_handshake_acknowledged(desktop):
 
 
 @pytest.mark.skipif(
-    not IS_WINDOWS, reason="named-pipe reader thread teardown is Windows-specific"
+    not IS_WINDOWS,
+    reason="named-pipe reader thread teardown is Windows-specific",
 )
 async def test_reader_thread_teardown_without_peer_reply(desktop):
     connection, session = await _connect(desktop)
@@ -547,7 +557,7 @@ async def test_concurrent_sends_stay_serialized(desktop):
     connection, session = await _connect(desktop)
     async with connection:
         await asyncio.gather(
-            *(connection.send(json.dumps({"seq": i})) for i in range(20))
+            *(connection.send(json.dumps({"seq": i})) for i in range(20)),
         )
         got = set()
         for _ in range(20):
@@ -562,9 +572,7 @@ async def test_concurrent_sends_stay_serialized(desktop):
         (
             {
                 "transport": EXPECTED_TRANSPORT,
-                "path": "\\\\.\\pipe\\spiritagent-runner-123"
-                if IS_WINDOWS
-                else "/tmp/runner.sock",
+                "path": "\\\\.\\pipe\\spiritagent-runner-123" if IS_WINDOWS else "/tmp/runner.sock",
                 "token": "a" * 64,
                 "pid": os.getpid(),
             },
@@ -603,7 +611,8 @@ async def test_concurrent_sends_stay_serialized(desktop):
 async def test_read_endpoint_schema(tmp_path, monkeypatch, payload, expect_valid):
     monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     (tmp_path / "desktop-endpoint.json").write_text(
-        json.dumps(payload), encoding="utf-8"
+        json.dumps(payload),
+        encoding="utf-8",
     )
     endpoint = read_endpoint()
     if expect_valid:
@@ -626,30 +635,34 @@ async def test_read_endpoint_missing_file(tmp_path, monkeypatch):
         ("", False),  # genuinely empty file
         ("{not json", False),
         (
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "token": "a" * 64,
-                "pid": os.getpid(),
-            }),
+            json.dumps(
+                {
+                    "transport": EXPECTED_TRANSPORT,
+                    "token": "a" * 64,
+                    "pid": os.getpid(),
+                },
+            ),
             False,
         ),  # missing path key
         (
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "path": "\\\\.\\pipe\\spiritagent-runner-123"
-                if IS_WINDOWS
-                else "/tmp/runner.sock",
-                "pid": os.getpid(),
-            }),
+            json.dumps(
+                {
+                    "transport": EXPECTED_TRANSPORT,
+                    "path": "\\\\.\\pipe\\spiritagent-runner-123" if IS_WINDOWS else "/tmp/runner.sock",
+                    "pid": os.getpid(),
+                },
+            ),
             False,
         ),  # missing token key
         (
-            json.dumps({
-                "transport": EXPECTED_TRANSPORT,
-                "path": "/tmp/runner.sock",
-                "token": "a" * 64,
-                "pid": 0,
-            }),
+            json.dumps(
+                {
+                    "transport": EXPECTED_TRANSPORT,
+                    "path": "/tmp/runner.sock",
+                    "token": "a" * 64,
+                    "pid": 0,
+                },
+            ),
             True,
         ),  # pid=0 ignored — same leniency as the port-based era
     ],
@@ -668,22 +681,25 @@ async def test_read_endpoint_corrupt_bodies(tmp_path, monkeypatch, body, expect_
 async def test_read_endpoint_stale_pid(tmp_path, monkeypatch):
     import utils.desktop_transport as transport_module
 
-    monkeypatch.setattr(transport_module, "pid_exists", lambda pid: False)
+    monkeypatch.setattr(transport_module, "pid_exists", lambda _pid: False)
     monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     (tmp_path / "desktop-endpoint.json").write_text(
-        json.dumps({
-            "transport": EXPECTED_TRANSPORT,
-            "path": "p",
-            "token": "t",
-            "pid": 4194304,
-        }),
+        json.dumps(
+            {
+                "transport": EXPECTED_TRANSPORT,
+                "path": "p",
+                "token": "t",
+                "pid": 4194304,
+            },
+        ),
         encoding="utf-8",
     )
     assert read_endpoint() is None
 
 
 @pytest.mark.skipif(
-    not IS_WINDOWS, reason="named-pipe connect races are Windows-specific"
+    not IS_WINDOWS,
+    reason="named-pipe connect races are Windows-specific",
 )
 async def test_connect_pipe_handle_times_out_when_missing():
     with pytest.raises(TimeoutError):
@@ -695,7 +711,8 @@ async def test_connect_pipe_handle_times_out_when_missing():
 
 
 @pytest.mark.skipif(
-    not IS_WINDOWS, reason="named-pipe connect races are Windows-specific"
+    not IS_WINDOWS,
+    reason="named-pipe connect races are Windows-specific",
 )
 async def test_connect_pipe_handle_waits_for_instance():
     """ERROR_PIPE_BUSY must be retried via WaitNamedPipeW, not surfaced."""
@@ -719,7 +736,9 @@ async def test_connect_pipe_handle_waits_for_instance():
 
         late = asyncio.create_task(asyncio.to_thread(_late_listener))
         second_client = await asyncio.to_thread(
-            _connect_pipe_handle, path, timeout_s=5.0
+            _connect_pipe_handle,
+            path,
+            timeout_s=5.0,
         )
         _k32.CloseHandle(second_client)
         _k32.CloseHandle(await late)

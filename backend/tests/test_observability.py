@@ -5,10 +5,7 @@ from components.observability import (
     async_trace_span,
     get_current_span_id,
     get_current_trace_id,
-    render_metrics_response,
-    sync_trace_span,
 )
-from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from main import app
 

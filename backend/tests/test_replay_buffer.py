@@ -12,7 +12,7 @@ def test_replay_buffer_sequence_increment():
         {
             "method": "event",
             "params": {"type": "message.delta", "payload": {"text": "hello"}},
-        }
+        },
     )
     assert seq1 == 1
     assert f1["params"]["seq"] == 1
@@ -23,7 +23,7 @@ def test_replay_buffer_sequence_increment():
         {
             "method": "event",
             "params": {"type": "message.delta", "payload": {"text": " world"}},
-        }
+        },
     )
     assert seq2 == 2
     assert f2["params"]["seq"] == 2
@@ -45,7 +45,7 @@ def test_replay_buffer_ack_pruning():
             {
                 "method": "event",
                 "params": {"type": "message.delta", "payload": {"text": str(i)}},
-            }
+            },
         )
 
     assert len(buf) == 5
@@ -72,7 +72,7 @@ def test_replay_buffer_capacity_overflow():
     buf = ReplayBuffer(capacity=3, ttl_seconds=60.0)
     for i in range(5):
         buf.append(
-            {"method": "event", "params": {"type": "chunk", "payload": {"i": i}}}
+            {"method": "event", "params": {"type": "chunk", "payload": {"i": i}}},
         )
 
     assert len(buf) == 3

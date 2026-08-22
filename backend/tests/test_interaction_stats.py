@@ -1,7 +1,6 @@
 import pytest
-from sqlalchemy import select
-
 from services.companion import interaction_stats
+from sqlalchemy import select
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +15,9 @@ async def _seed_user(SessionLocal):
 
     async with SessionLocal() as db:
         user = User(
-            username="statsuser", is_active=True, nightly_activity_enabled=True
+            username="statsuser",
+            is_active=True,
+            nightly_activity_enabled=True,
         )
         db.add(user)
         await db.commit()
@@ -36,11 +37,7 @@ async def test_single_kind_below_threshold_does_not_write(_patch_db):
     from modules.memory import Memory
 
     async with SessionLocal() as db:
-        rows = (
-            (await db.execute(select(Memory).where(Memory.user_id == user_id)))
-            .scalars()
-            .all()
-        )
+        rows = (await db.execute(select(Memory).where(Memory.user_id == user_id))).scalars().all()
         assert rows == []
 
 
@@ -62,7 +59,7 @@ async def test_single_kind_at_threshold_writes_summary(_patch_db):
                     select(Memory).where(
                         Memory.user_id == user_id,
                         Memory.context.like("interaction_stats:%"),
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -78,7 +75,8 @@ async def test_single_kind_at_threshold_writes_summary(_patch_db):
         assert "hour_counts=" in row.content
 
     summary = await interaction_stats.read_today_summary(
-        user_id, interaction_stats._today_key()
+        user_id,
+        interaction_stats._today_key(),
     )
     assert summary is not None
     assert summary["date"] == interaction_stats._today_key()
@@ -104,7 +102,7 @@ async def test_second_threshold_cross_updates_existing_row(_patch_db):
                     select(Memory).where(
                         Memory.user_id == user_id,
                         Memory.context.like("interaction_stats:%"),
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -124,7 +122,7 @@ async def test_peak_picks_earliest_hour_on_tie(_patch_db):
     await interaction_stats.record_interaction(1, "poke", 14)
 
     peak = interaction_stats._compute_peak_hour(
-        interaction_stats._counters[1].hour_buckets
+        interaction_stats._counters[1].hour_buckets,
     )
     assert peak == 10
 

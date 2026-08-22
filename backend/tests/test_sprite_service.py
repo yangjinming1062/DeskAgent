@@ -50,10 +50,10 @@ def _keyed(data: bytes) -> Image.Image:
     return sprite_service.chroma_key_to_alpha(Image.open(io.BytesIO(data)), np.asarray(GREEN_RGB, dtype=np.float32))
 
 
-SPRITE_BG_PNG = _png(lambda img: None)  # 纯白无内容
+SPRITE_BG_PNG = _png(lambda _img: None)  # 纯白无内容
 SPRITE_BODY_PNG = _png(lambda img: img.paste((200, 30, 30), (10, 20, 50, 60)))
 SPRITE_DARK_PNG = _png(
-    lambda img: img.paste((100, 100, 100), (0, 0, 60, 80))
+    lambda img: img.paste((100, 100, 100), (0, 0, 60, 80)),
 )  # 纯灰 → 整体被键出，违反 opaque floor
 AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))  # 白底契约下的蓝色主体
 
@@ -64,7 +64,7 @@ def test_chroma_key_keeps_small_enclosed_pockets():
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
             img.paste(GREEN_RGB, (25, 30, 32, 38)),
-        )
+        ),
     )
     out = _keyed(data)
     assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
@@ -78,7 +78,7 @@ def test_chroma_key_removes_large_enclosed_islands():
         lambda img: (
             img.paste((200, 30, 30), (5, 10, 55, 70)),
             img.paste(GREEN_RGB, (20, 30, 50, 60)),
-        )
+        ),
     )
     out = _keyed(data)
     assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
@@ -109,7 +109,7 @@ def test_chroma_key_hard_floor_shears_faint_residue():
         lambda img: (
             img.paste((50, 255, 77), (30, 0, 45, 80)),
             img.paste((60, 255, 77), (45, 0, 60, 80)),
-        )
+        ),
     )
     out = _keyed(data)
     a = np.asarray(out.getchannel("A"))
@@ -124,7 +124,7 @@ def test_chroma_key_despills_feathered_edges():
         lambda img: (
             img.paste((0, 175, 77), (20, 0, 40, 80)),  # 绿背景与 (0, 75, 77) 的混合色
             img.paste((0, 75, 77), (40, 0, 60, 80)),
-        )
+        ),
     )
     out = _keyed(data)
     edge = out.getpixel((30, 40))
@@ -188,7 +188,11 @@ async def _avatar(db, user_id: int = 1) -> AvatarAsset:
 
 
 async def _row(
-    db, user_id: int, avatar_id: int, tag: str, role: str | None = None
+    db,
+    user_id: int,
+    avatar_id: int,
+    tag: str,
+    role: str | None = None,
 ) -> CompanionSpriteImage:
     row = CompanionSpriteImage(
         user_id=user_id,
@@ -218,12 +222,12 @@ def gen_mocks(monkeypatch, tmp_path):
     monkeypatch.setattr(
         sprite_service,
         "resolve",
-        lambda svc, name: SimpleNamespace(supports_reference_image=True),
+        lambda _svc, _name: SimpleNamespace(supports_reference_image=True),
     )
     monkeypatch.setattr(
         sprite_service,
         "load_avatar_bytes_as_data_uri",
-        lambda url: "data:image/png;base64," + base64.b64encode(AVATAR_REF_PNG).decode(),
+        lambda _url: "data:image/png;base64," + base64.b64encode(AVATAR_REF_PNG).decode(),
     )
 
     async def fake_tool(*a, **k):
@@ -245,7 +249,9 @@ def gen_mocks(monkeypatch, tmp_path):
 
 @pytest.mark.asyncio
 async def test_resolve_waiting_short_circuits_without_llm(
-    db_session, gen_mocks, monkeypatch
+    db_session,
+    gen_mocks,
+    monkeypatch,
 ):
     asset = await _avatar(db_session)
     waiting = await _row(db_session, 1, asset.id, "等待", role="waiting")
@@ -255,7 +261,10 @@ async def test_resolve_waiting_short_circuits_without_llm(
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", boom)
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="安静站立等待", role="waiting"
+        db_session,
+        user_id=1,
+        request_text="安静站立等待",
+        role="waiting",
     )
     assert (row.id, generated) == (waiting.id, False)
 
@@ -267,15 +276,13 @@ async def test_resolve_match_hit_skips_generation(db_session, gen_mocks, monkeyp
 
     async def fake_vision(db, uid, system, text, images, **k):
         gen_mocks["llm"].append(system.splitlines()[0])
-        return (
-            json.dumps({"match_id": hit.id})
-            if "match_id" in system
-            else json.dumps({"prompt": "p", "tag": "t"})
-        )
+        return json.dumps({"match_id": hit.id}) if "match_id" in system else json.dumps({"prompt": "p", "tag": "t"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="开心地挥手打招呼"
+        db_session,
+        user_id=1,
+        request_text="开心地挥手打招呼",
     )
     assert (row.id, generated) == (hit.id, False)
     assert gen_mocks["llm"]
@@ -283,7 +290,10 @@ async def test_resolve_match_hit_skips_generation(db_session, gen_mocks, monkeyp
 
 @pytest.mark.asyncio
 async def test_resolve_miss_generates_and_persists(
-    db_session, gen_mocks, monkeypatch, tmp_path
+    db_session,
+    gen_mocks,
+    monkeypatch,
+    tmp_path,
 ):
     asset = await _avatar(db_session)
 
@@ -296,44 +306,46 @@ async def test_resolve_miss_generates_and_persists(
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
 
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="开心地挥手打招呼"
+        db_session,
+        user_id=1,
+        request_text="开心地挥手打招呼",
     )
     assert generated
     assert row.tag == "开心挥手"
     assert row.avatar_id == asset.id
     assert row.asset_url.startswith("companion-assets/")
     assert row.content_hash  # keyed PNG 的 SHA-256
-    saved = (
-        tmp_path / row.asset_url
-    )  # save_companion_asset 写到 <data_dir>/companion-assets/
+    saved = tmp_path / row.asset_url  # save_companion_asset 写到 <data_dir>/companion-assets/
     assert has_real_transparency(saved.read_bytes())
 
 
 @pytest.mark.asyncio
 async def test_resolve_waiting_force_new_replaces_old_row(
-    db_session, gen_mocks, monkeypatch
+    db_session,
+    gen_mocks,
+    monkeypatch,
 ):
     asset = await _avatar(db_session)
     old = await _row(db_session, 1, asset.id, "旧等待", role="waiting")
 
     async def fake_vision(db, uid, system, text, images, **k):
-        return (
-            json.dumps({"match_id": None})
-            if "match_id" in system
-            else json.dumps({"prompt": "p", "tag": "新等待"})
-        )
+        return json.dumps({"match_id": None}) if "match_id" in system else json.dumps({"prompt": "p", "tag": "新等待"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="等待", role="waiting", force_new=True
+        db_session,
+        user_id=1,
+        request_text="等待",
+        role="waiting",
+        force_new=True,
     )
     assert generated and row.id != old.id and row.role == "waiting"
     remaining = (
         (
             await db_session.execute(
                 select(CompanionSpriteImage).where(
-                    CompanionSpriteImage.role == "waiting"
-                )
+                    CompanionSpriteImage.role == "waiting",
+                ),
             )
         )
         .scalars()
@@ -347,22 +359,23 @@ async def test_resolve_waiting_force_new_replaces_old_row(
 async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypatch):
     await _avatar(db_session)
     await _row(
-        db_session, 1, avatar_id=999, tag="旧身份的图"
+        db_session,
+        1,
+        avatar_id=999,
+        tag="旧身份的图",
     )  # 过期：avatar 重新生成后该行失效
 
     seen: list[object] = []
 
     async def fake_vision(db, uid, system, text, images, **k):
         seen.append(system)
-        return (
-            json.dumps({"match_id": None})
-            if "match_id" in system
-            else json.dumps({"prompt": "p", "tag": "新图"})
-        )
+        return json.dumps({"match_id": None}) if "match_id" in system else json.dumps({"prompt": "p", "tag": "新图"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     _, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="任何姿态"
+        db_session,
+        user_id=1,
+        request_text="任何姿态",
     )
     assert generated  # 过期行永远匹配不上 → 生成新精灵
     assert "旧身份的图" not in str(seen)
@@ -376,22 +389,22 @@ async def test_resolve_without_avatar_raises(db_session):
 
 @pytest.mark.asyncio
 async def test_resolve_regenerates_when_album_file_deleted(
-    db_session, gen_mocks, monkeypatch
+    db_session,
+    gen_mocks,
+    monkeypatch,
 ):
     asset = await _avatar(db_session)
     hit = await _row(db_session, 1, asset.id, "开心挥手")
     (Path(SETTINGS.data_dir) / hit.asset_url).unlink()
 
     async def fake_vision(db, uid, system, text, images, **k):
-        return (
-            json.dumps({"match_id": None})
-            if "match_id" in system
-            else json.dumps({"prompt": "p", "tag": "补图"})
-        )
+        return json.dumps({"match_id": None}) if "match_id" in system else json.dumps({"prompt": "p", "tag": "补图"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="开心地挥手打招呼"
+        db_session,
+        user_id=1,
+        request_text="开心地挥手打招呼",
     )
     assert generated and row.tag == "补图"
     remaining = {
@@ -400,8 +413,8 @@ async def test_resolve_regenerates_when_album_file_deleted(
             (
                 await db_session.execute(
                     select(CompanionSpriteImage).where(
-                        CompanionSpriteImage.user_id == 1
-                    )
+                        CompanionSpriteImage.user_id == 1,
+                    ),
                 )
             )
             .scalars()
@@ -413,7 +426,9 @@ async def test_resolve_regenerates_when_album_file_deleted(
 
 @pytest.mark.asyncio
 async def test_resolve_waiting_regenerates_when_file_deleted(
-    db_session, gen_mocks, monkeypatch
+    db_session,
+    gen_mocks,
+    monkeypatch,
 ):
     asset = await _avatar(db_session)
     waiting = await _row(db_session, 1, asset.id, "等待", role="waiting")
@@ -425,7 +440,10 @@ async def test_resolve_waiting_regenerates_when_file_deleted(
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
     row, generated = await resolve_sprite(
-        db_session, user_id=1, request_text="安静站立等待", role="waiting"
+        db_session,
+        user_id=1,
+        request_text="安静站立等待",
+        role="waiting",
     )
     # sqlite 会复用空出的自增 id，asset_url 才是稳定身份
     assert generated and row.asset_url != waiting.asset_url and row.role == "waiting"
@@ -445,9 +463,9 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
     monkeypatch.setattr(
         sprite_service,
         "resolve",
-        lambda svc, name: SimpleNamespace(supports_reference_image=True),
+        lambda _svc, _name: SimpleNamespace(supports_reference_image=True),
     )
-    monkeypatch.setattr(sprite_service, "_author_prompt", lambda *a, **k: ("p", "t"))
+    monkeypatch.setattr(sprite_service, "_author_prompt", lambda *_a, **_k: ("p", "t"))
 
     async def opaque_tool(*a, **k):
         return json.dumps({"success": True, "urls": ["http://x/y.jpg"]})
@@ -466,25 +484,27 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
 async def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
     unlinked: list[str] = []
     monkeypatch.setattr(
-        sprite_service, "unlink_companion_asset", lambda path: unlinked.append(path)
+        sprite_service,
+        "unlink_companion_asset",
+        lambda path: unlinked.append(path),
     )
     monkeypatch.setattr(sprite_service, "_SPRITE_ALBUM_CAP", 3)
     asset = await _avatar(db_session)
     base = datetime(2026, 8, 14, 12, 0, 0, tzinfo=UTC)
     oldest = await _row(db_session, 1, asset.id, "最旧")
     await db_session.execute(
-        update(CompanionSpriteImage)
-        .where(CompanionSpriteImage.id == oldest.id)
-        .values(created_at=base)
+        update(CompanionSpriteImage).where(CompanionSpriteImage.id == oldest.id).values(created_at=base),
     )
     for i, tag in enumerate(("中", "新", "等待"), start=1):
         row = await _row(
-            db_session, 1, asset.id, tag, role="waiting" if tag == "等待" else None
+            db_session,
+            1,
+            asset.id,
+            tag,
+            role="waiting" if tag == "等待" else None,
         )
         await db_session.execute(
-            update(CompanionSpriteImage)
-            .where(CompanionSpriteImage.id == row.id)
-            .values(created_at=base + timedelta(minutes=i))
+            update(CompanionSpriteImage).where(CompanionSpriteImage.id == row.id).values(created_at=base + timedelta(minutes=i)),
         )
     await db_session.commit()
 
@@ -496,8 +516,8 @@ async def test_prune_album_caps_and_keeps_waiting(db_session, monkeypatch):
             (
                 await db_session.execute(
                     select(CompanionSpriteImage).where(
-                        CompanionSpriteImage.user_id == 1
-                    )
+                        CompanionSpriteImage.user_id == 1,
+                    ),
                 )
             )
             .scalars()
@@ -549,22 +569,21 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
 
     async def happy(*a, **k):
         row = CompanionSpriteImage(
-            user_id=1, tag="等待", asset_url="companion-assets/1/sprite_x.png"
+            user_id=1,
+            tag="等待",
+            asset_url="companion-assets/1/sprite_x.png",
         )
         row.id = 7
         return row, True
 
     monkeypatch.setattr(companion_api, "resolve_sprite", happy)
     resp = client.post(
-        "/api/companion/sprite", json={"request": "等待", "role": "waiting"}
+        "/api/companion/sprite",
+        json={"request": "等待", "role": "waiting"},
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert (
-        body["tag"] == "等待"
-        and body["generated"]
-        and "/api/companion/asset/" in body["url"]
-    )
+    assert body["tag"] == "等待" and body["generated"] and "/api/companion/asset/" in body["url"]
 
     resp = client.post("/api/companion/sprite", json={"request": ""})
     assert resp.status_code == 422

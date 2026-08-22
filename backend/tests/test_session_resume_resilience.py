@@ -1,5 +1,4 @@
 import pytest
-
 from modules.conversation import Conversation
 from services.gateway.buffer import ReplayBuffer
 from services.gateway.handlers import (
@@ -89,7 +88,7 @@ async def test_session_resume_incremental_replay(SessionLocal, monkeypatch):
 
     # 从 last_seq = 1 续传（客户端漏掉 seq 2/3）
     resume_res = await dispatcher._handlers["session.resume"](
-        {"session_id": "1010", "last_seq": 1}
+        {"session_id": "1010", "last_seq": 1},
     )
     assert resume_res["resumed"] is True
     assert resume_res["replayed_count"] == 2
@@ -135,14 +134,16 @@ async def test_session_resume_fallback_on_expired_seq(SessionLocal):
     # 给 capacity-2 buffer 推 4 个事件（seq 1、2 会被淘汰）
     for i in range(4):
         await dispatcher.push_event(
-            "message.delta", {"text": str(i)}, session_id="1020"
+            "message.delta",
+            {"text": str(i)},
+            session_id="1020",
         )
 
     sent_frames.clear()
 
     # 客户端 last_seq = 1 已淘汰 → 回退到 DB 历史
     resume_res = await dispatcher._handlers["session.resume"](
-        {"session_id": "1020", "last_seq": 1}
+        {"session_id": "1020", "last_seq": 1},
     )
     assert resume_res["resumed"] is False
     assert resume_res["replayed_count"] == 0
@@ -186,7 +187,7 @@ async def test_session_resume_server_restarted_ahead_seq(SessionLocal):
 
     # 客户端带着 server 重启前的旧 last_seq=42 重连
     resume_res = await dispatcher._handlers["session.resume"](
-        {"session_id": "1030", "last_seq": 42}
+        {"session_id": "1030", "last_seq": 42},
     )
     # Server 必须拒绝 replay（42 > 0），并以 current_seq=0 触发全量重载
     assert resume_res["resumed"] is False
@@ -245,7 +246,7 @@ async def test_session_resume_hold_prevents_live_frame_reorder(SessionLocal):
 
     # 客户端发 session.resume，last_seq=1（需要 seq 2、3）
     resume_res = await dispatcher._handlers["session.resume"](
-        {"session_id": "1040", "last_seq": 1}
+        {"session_id": "1040", "last_seq": 1},
     )
     assert resume_res["resumed"] is True
     assert resume_res["replayed_count"] == 2
@@ -298,7 +299,7 @@ async def test_session_resume_fallback_and_create_release_hold(SessionLocal):
 
     # Fallback resume 路径：
     resume_res = await dispatcher._handlers["session.resume"](
-        {"session_id": "1050", "last_seq": 999}
+        {"session_id": "1050", "last_seq": 999},
     )
     assert resume_res["resumed"] is False
 

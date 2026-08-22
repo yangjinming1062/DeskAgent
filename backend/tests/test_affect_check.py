@@ -2,7 +2,6 @@ import importlib
 import json
 
 import pytest
-
 from modules.companion import Persona
 
 
@@ -27,13 +26,12 @@ async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
             Persona(
                 user_id=user_id,
                 definition_json=json.dumps(
-                    {"name": "小光", "personality": "温柔"}, ensure_ascii=False
+                    {"name": "小光", "personality": "温柔"},
+                    ensure_ascii=False,
                 ),
-                system_prompt_extras="你是小光，一个温柔的桌面伙伴。"
-                if complete
-                else "",
+                system_prompt_extras="你是小光，一个温柔的桌面伙伴。" if complete else "",
                 is_complete=complete,
-            )
+            ),
         )
         await db.commit()
 
@@ -52,7 +50,10 @@ async def test_check_affect_persona_not_ready_short_circuits(monkeypatch, _patch
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
 
     result = await aff.check_affect(
-        user_id=999, idle_seconds=600, local_hour=14, llm_config={"model_name": "x"}
+        user_id=999,
+        idle_seconds=600,
+        local_hour=14,
+        llm_config={"model_name": "x"},
     )
 
     assert result.expressed is False
@@ -67,12 +68,13 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
     await _seed_persona(SessionLocal, 2001)
 
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
 
     async def _ok(*a, **kw):
         return _MockResponse(
-            '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}'
+            '{"should_express": true, "emotion": "lonely", "reason": "用户离开很久了"}',
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
@@ -98,7 +100,8 @@ async def test_check_affect_should_express_true_emits(monkeypatch, _patch_db):
 
 @pytest.mark.asyncio
 async def test_check_affect_should_express_false_returns_no_emit(
-    monkeypatch, _patch_db
+    monkeypatch,
+    _patch_db,
 ):
     _, SessionLocal = _patch_db
     aff = importlib.import_module("services.companion.affect_check")
@@ -106,12 +109,13 @@ async def test_check_affect_should_express_false_returns_no_emit(
 
     async def _ok(*a, **kw):
         return _MockResponse(
-            '{"should_express": false, "emotion": "neutral", "reason": "用户刚离开"}'
+            '{"should_express": false, "emotion": "neutral", "reason": "用户刚离开"}',
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
 
     emitted: list[tuple[int, str]] = []
@@ -123,7 +127,10 @@ async def test_check_affect_should_express_false_returns_no_emit(
     monkeypatch.setattr(aff, "emit_companion_affect", _fail_emit)
 
     result = await aff.check_affect(
-        user_id=2002, idle_seconds=300, local_hour=10, llm_config={"model_name": "test"}
+        user_id=2002,
+        idle_seconds=300,
+        local_hour=10,
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is False
@@ -139,12 +146,13 @@ async def test_check_affect_unknown_emotion_skips_emit(monkeypatch, _patch_db):
 
     async def _ok(*a, **kw):
         return _MockResponse(
-            '{"should_express": true, "emotion": "joyful", "reason": ""}'
+            '{"should_express": true, "emotion": "joyful", "reason": ""}',
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
 
     emitted: list = []
@@ -176,7 +184,8 @@ async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
 
     async def _no_emit(*a):
@@ -185,7 +194,10 @@ async def test_check_affect_unparseable_response(monkeypatch, _patch_db):
     monkeypatch.setattr(aff, "emit_companion_affect", _no_emit)
 
     result = await aff.check_affect(
-        user_id=2004, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
+        user_id=2004,
+        idle_seconds=600,
+        local_hour=14,
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is False
@@ -203,8 +215,9 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
     async def _fail(*a, **kw):
         raise LLMRuntimeError(
             ClassifiedError(
-                reason=FailoverReason.server_error, message="upstream failed"
-            )
+                reason=FailoverReason.server_error,
+                message="upstream failed",
+            ),
         )
 
     async def _no_emit(*a):
@@ -212,12 +225,16 @@ async def test_check_affect_llm_error_returns_no_throw(monkeypatch, _patch_db):
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
     monkeypatch.setattr(aff, "emit_companion_affect", _no_emit)
 
     result = await aff.check_affect(
-        user_id=2005, idle_seconds=600, local_hour=14, llm_config={"model_name": "test"}
+        user_id=2005,
+        idle_seconds=600,
+        local_hour=14,
+        llm_config={"model_name": "test"},
     )
 
     assert result.expressed is False
@@ -239,7 +256,10 @@ async def test_check_affect_invalid_config_returns_no_throw(monkeypatch, _patch_
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _fail)
 
     result = await aff.check_affect(
-        user_id=2006, idle_seconds=600, local_hour=14, llm_config={}
+        user_id=2006,
+        idle_seconds=600,
+        local_hour=14,
+        llm_config={},
     )
 
     assert result.expressed is False
@@ -264,18 +284,19 @@ async def test_check_affect_custom_expression_accepted(monkeypatch, _patch_db):
                 valence="negative",
                 description="Used when companion feels concerned for the user",
                 tags_json='["心疼"]',
-            )
+            ),
         )
         await db.commit()
 
     async def _ok(*a, **kw):
         return _MockResponse(
-            '{"should_express": true, "emotion": "tender_worry", "reason": "心疼用户熬夜"}'
+            '{"should_express": true, "emotion": "tender_worry", "reason": "心疼用户熬夜"}',
         )
 
     monkeypatch.setattr("services.companion.prompt_runtime.call_with_retry", _ok)
     monkeypatch.setattr(
-        "services.companion.prompt_runtime.client_for_config", lambda cfg: None
+        "services.companion.prompt_runtime.client_for_config",
+        lambda _cfg: None,
     )
 
     emitted: list = []
@@ -381,17 +402,14 @@ def test_affect_scrubber_cjk_and_space_in_target():
     from services.chat.affect import AffectScrubber
 
     scrubber = AffectScrubber()
-    clean = (
-        scrubber.feed("[affect:curious]\n[spatial:perch,target:微信]\nHi!")
-        + scrubber.flush()
-    )
+    clean = scrubber.feed("[affect:curious]\n[spatial:perch,target:微信]\nHi!") + scrubber.flush()
     assert clean == "Hi!"
     assert scrubber.spatial_target == "微信"
 
     scrubber = AffectScrubber()
     clean = (
         scrubber.feed(
-            "[affect:curious]\n[spatial:perch,target:Visual Studio Code]\nHi!"
+            "[affect:curious]\n[spatial:perch,target:Visual Studio Code]\nHi!",
         )
         + scrubber.flush()
     )

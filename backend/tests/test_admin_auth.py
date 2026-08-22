@@ -15,11 +15,13 @@ async def test_admin_login_awaits_token_creation(monkeypatch):
     monkeypatch.setattr(SETTINGS, "admin_username", "admin")
     monkeypatch.setattr(SETTINGS, "admin_password", "secret")
     monkeypatch.setattr(
-        page, "create_admin_token", AsyncMock(return_value=("tok", 3600))
+        page,
+        "create_admin_token",
+        AsyncMock(return_value=("tok", 3600)),
     )
 
     resp = await page.admin_login(
-        AdminLoginRequest(username="admin", password="secret")
+        AdminLoginRequest(username="admin", password="secret"),
     )
 
     assert resp.access_token == "tok"
@@ -46,7 +48,7 @@ async def test_consolidator_scan_unpacks_single_column_rows(_patch_db, monkeypat
         await db.flush()
         for i in range(3):
             db.add(
-                Memory(user_id=user.id, context=f"recall:r{i}", content=f"memory {i}")
+                Memory(user_id=user.id, context=f"recall:r{i}", content=f"memory {i}"),
             )
         await db.commit()
         uid = user.id
@@ -77,8 +79,11 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
         await db.flush()
         db.add(
             Message(
-                conversation_id=conv.id, role="user", content="hello", prompt_tokens=11
-            )
+                conversation_id=conv.id,
+                role="user",
+                content="hello",
+                prompt_tokens=11,
+            ),
         )
         db.add(
             Message(
@@ -86,13 +91,14 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
                 role="assistant",
                 content="hi",
                 completion_tokens=7,
-            )
+            ),
         )
         await db.commit()
         conv_id = conv.id
 
     resp = await test_client.get(
-        "/api/sessions", headers={"Authorization": f"Bearer {test_token}"}
+        "/api/sessions",
+        headers={"Authorization": f"Bearer {test_token}"},
     )
     assert resp.status_code == 200
     entry = next(s for s in resp.json()["sessions"] if s["id"] == str(conv_id))
@@ -102,7 +108,9 @@ async def test_list_sessions_reports_message_counts(test_client, test_token, _pa
 
 
 async def test_search_sessions_by_numeric_id_substring(
-    test_client, test_token, _patch_db
+    test_client,
+    test_token,
+    _patch_db,
 ):
     """Conversation.id 是 Integer 列；搜索谓词必须显式 cast（Postgres 没有 integer ~~ unknown 操作符）。"""
     _, SessionLocal = _patch_db
@@ -166,7 +174,7 @@ async def test_delete_user_cleans_up_avatar_files_and_drafts(_patch_db, monkeypa
                 prompt_json="{}",
                 asset_url="companion-avatars/del_avatar.jpg",
                 active=True,
-            )
+            ),
         )
         await db.commit()
 
@@ -238,15 +246,16 @@ async def test_user_activation_code_lifecycle(_patch_db):
         assert regen.activation_code is not None
         _, token_v3 = decode_activation_code(regen.activation_code)
         assert token_v3 != token_v2
+
+
 async def test_admin_token_requires_active_registered_session(_patch_db):
+    from components import SETTINGS
     from fastapi import HTTPException
     from fastapi.security import HTTPAuthorizationCredentials
-    from sqlalchemy import update
-
-    from components import SETTINGS
     from modules.auth.deps import get_current_admin_token
     from modules.auth.models import AdminSession
     from modules.auth.security import create_admin_token, decode_access_token
+    from sqlalchemy import update
 
     _, SessionLocal = _patch_db
     token, _ = await create_admin_token()

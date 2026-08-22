@@ -1,7 +1,6 @@
 import time
 
 import pytest
-
 from services.companion import (
     asset_store,
     build_signed_asset_url,
@@ -22,7 +21,10 @@ def test_signed_asset_url_round_trip():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert verify_signed_asset_request(
-        42, "idle_video_abc.mp4", int(qs["expires"][0]), qs["sig"][0]
+        42,
+        "idle_video_abc.mp4",
+        int(qs["expires"][0]),
+        qs["sig"][0],
     )
 
 
@@ -61,7 +63,10 @@ def test_signed_asset_url_rejects_tampered_sig():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert not verify_signed_asset_request(
-        42, "idle_video_abc.mp4", int(qs["expires"][0]), "deadbeef" + qs["sig"][0][8:]
+        42,
+        "idle_video_abc.mp4",
+        int(qs["expires"][0]),
+        "deadbeef" + qs["sig"][0][8:],
     )
 
 
@@ -83,7 +88,9 @@ def test_signed_avatar_url_round_trip():
     parsed = urlparse(url)
     qs = parse_qs(parsed.query)
     assert verify_signed_avatar_request(
-        "fileid123.png", int(qs["expires"][0]), qs["sig"][0]
+        "fileid123.png",
+        int(qs["expires"][0]),
+        qs["sig"][0],
     )
 
 
@@ -113,9 +120,8 @@ def test_signer_key_raises_outside_test_mode(monkeypatch):
 async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(_patch_db):
     from pathlib import Path
 
-    from httpx import ASGITransport, AsyncClient
-
     from components import SETTINGS
+    from httpx import ASGITransport, AsyncClient
     from main import app
     from modules.auth import User, create_access_token
 
@@ -139,6 +145,7 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
     token_user42, _, token_jti = create_access_token(user_id=42, username="user42")
     async with SessionLocal() as db:
         from modules.auth import LoginRecord
+
         db.add(LoginRecord(user_id=42, token_jti=token_jti, is_active=True))
         await db.commit()
 
@@ -171,7 +178,6 @@ async def test_asset_dual_path_auth_serves_authenticated_user_without_valid_sig(
 
 
 def test_load_avatar_bytes_as_data_uri_path_variations(tmp_path, monkeypatch):
-    from pathlib import Path
     from components import SETTINGS
     from services.companion.avatar_service import load_avatar_bytes_as_data_uri
 

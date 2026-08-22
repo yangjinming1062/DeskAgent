@@ -29,16 +29,15 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import server
 import websockets
+from envs import factory as env_factory
 from test_transport import (
     EXPECTED_TRANSPORT,
     FakeDesktop,
     SessionWsAdapter,
     make_peer_endpoint,
 )
-
-import server
-from envs import factory as env_factory
 from tools import registry
 from utils import IS_WINDOWS, DesktopEndpoint
 
@@ -59,9 +58,7 @@ class _Peer:
     def __init__(self) -> None:
         self.received: list[dict] = []
         self.request_llm_responses: dict[str, dict] = {}  # req_id → response payload
-        self.request_llm_handler = (
-            None  # callable(req_id, params) → response dict | None
-        )
+        self.request_llm_handler = None  # callable(req_id, params) → response dict | None
         self.tools_changed: list[dict] = []
         self.handshakes: list[dict] = []
         self.path: str | None = None
@@ -101,24 +98,28 @@ class _Peer:
                     # response when the handler isn't installed.
                     if response is None and self.request_llm_handler is None:
                         response = self.request_llm_responses.get(req_id) or {
-                            "content": "default response"
+                            "content": "default response",
                         }
                     if response is not None:
                         await ws.send(
-                            json.dumps({
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "result": response,
-                            })
+                            json.dumps(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "result": response,
+                                },
+                            ),
                         )
                     continue
                 if method == "mcp.reload":
                     await ws.send(
-                        json.dumps({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "result": {"reloaded": True},
-                        })
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "result": {"reloaded": True},
+                            },
+                        ),
                     )
                     continue
                 if method == "execute_tool":
@@ -132,14 +133,16 @@ class _Peer:
                     continue
                 if req_id is not None:
                     await ws.send(
-                        json.dumps({
-                            "jsonrpc": "2.0",
-                            "id": req_id,
-                            "error": {
-                                "code": -32601,
-                                "message": "peer: unknown method",
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "error": {
+                                    "code": -32601,
+                                    "message": "peer: unknown method",
+                                },
                             },
-                        })
+                        ),
                     )
         except websockets.exceptions.ConnectionClosed:
             return
@@ -158,11 +161,7 @@ class _Peer:
         the runner's cached endpoint carries no file, so it redials the
         same path and must be accepted by the new listener.
         """
-        self._fake = (
-            FakeDesktop(path=path, token=token)
-            if IS_WINDOWS
-            else FakeDesktop(tmp_path, path=path, token=token)
-        )
+        self._fake = FakeDesktop(path=path, token=token) if IS_WINDOWS else FakeDesktop(tmp_path, path=path, token=token)
         if not IS_WINDOWS:
             await self._fake.start()
         self.path = self._fake.path
@@ -192,7 +191,9 @@ class _Peer:
 
 @contextlib.asynccontextmanager
 async def _running_runner(
-    endpoint: DesktopEndpoint | None = None, *, peer: _Peer | None = None
+    endpoint: DesktopEndpoint | None = None,
+    *,
+    peer: _Peer | None = None,
 ):
     """Start a peer, run ``runner_loop``, wait for handshake, yield, tear down."""
     if peer is None:
@@ -271,21 +272,21 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
             llm_round["count"] += 1
             if llm_round["count"] == 1:
                 return {
-                    "content": f"Please call write_file with path={target} and content=hello-from-agent-loop."
+                    "content": f"Please call write_file with path={target} and content=hello-from-agent-loop.",
                 }
             return {"content": "Tool wrote the file successfully. Done."}
 
         peer.request_llm_handler = _llm_handler
 
         # Round 1: runner → request_llm → peer → reply (REAL wire).
-        round1 = await server.request_llm_from_desktop({
-            "messages": [{"role": "user", "content": "write something"}],
-            "task": "agent",
-            "timeout": 5,
-        })
-        assert "write_file" in round1, (
-            f"LLM round 1 should request write_file, got: {round1}"
+        round1 = await server.request_llm_from_desktop(
+            {
+                "messages": [{"role": "user", "content": "write something"}],
+                "task": "agent",
+                "timeout": 5,
+            },
         )
+        assert "write_file" in round1, f"LLM round 1 should request write_file, got: {round1}"
 
         # Round 2 (execute_tool): drive ``process_request`` directly with
         # a recording WS. The dispatch still runs through the real
@@ -316,23 +317,21 @@ async def test_full_agent_loop_request_llm_dispatches_tool_then_finalizes(tmp_pa
         assert target.read_text(encoding="utf-8") == "hello-from-agent-loop"
 
         # Round 3: another request_llm confirms the wire is alive after dispatch.
-        round2 = await server.request_llm_from_desktop({
-            "messages": [
-                {"role": "user", "content": "now read it back"},
-                {"role": "tool", "content": "wrote ok"},
-            ],
-            "task": "agent",
-            "timeout": 5,
-        })
-        assert "Done" in round2 or "wrote" in round2.lower(), (
-            f"Round 3 reply unexpected: {round2}"
+        round2 = await server.request_llm_from_desktop(
+            {
+                "messages": [
+                    {"role": "user", "content": "now read it back"},
+                    {"role": "tool", "content": "wrote ok"},
+                ],
+                "task": "agent",
+                "timeout": 5,
+            },
         )
+        assert "Done" in round2 or "wrote" in round2.lower(), f"Round 3 reply unexpected: {round2}"
 
         # Wire-level: peer observed exactly two request_llm notifications.
         req_llm_frames = [m for m in peer.received if m.get("method") == "request_llm"]
-        assert len(req_llm_frames) == 2, (
-            f"expected 2 request_llm notifications, got {len(req_llm_frames)}"
-        )
+        assert len(req_llm_frames) == 2, f"expected 2 request_llm notifications, got {len(req_llm_frames)}"
 
 
 # ---------------------------------------------------------------------------
@@ -375,12 +374,14 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
     peer = _Peer()
     await peer.start()
     (tmp_path / "desktop-endpoint.json").write_text(
-        json.dumps({
-            "transport": EXPECTED_TRANSPORT,
-            "path": peer.path,
-            "token": peer.token,
-            "pid": os.getpid(),
-        })
+        json.dumps(
+            {
+                "transport": EXPECTED_TRANSPORT,
+                "path": peer.path,
+                "token": peer.token,
+                "pid": os.getpid(),
+            },
+        ),
     )
     runner_task = asyncio.create_task(server.runner_loop(peer.endpoint))
 
@@ -414,12 +415,8 @@ async def test_runner_reconnects_after_peer_drop_with_backoff(monkeypatch, tmp_p
         await runner_task
     await peer2.stop()
 
-    assert len(peer2.handshakes) > 0, (
-        "reconnect did not produce a fresh runner_ready handshake on the second peer"
-    )
-    assert rc_at_reconnect > before, (
-        f"reconnect counter did not advance (before={before}, after={rc_at_reconnect})"
-    )
+    assert len(peer2.handshakes) > 0, "reconnect did not produce a fresh runner_ready handshake on the second peer"
+    assert rc_at_reconnect > before, f"reconnect counter did not advance (before={before}, after={rc_at_reconnect})"
 
 
 @pytest.mark.timeout(20)
@@ -462,18 +459,22 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     # Desktop "restarted": the file carries the fresh token (and this
     # test process's live PID — ``read_endpoint`` requires liveness).
     endpoint_file.write_text(
-        json.dumps({
-            "transport": EXPECTED_TRANSPORT,
-            "path": peer.path,
-            "token": peer.token,
-            "pid": os.getpid(),
-        })
+        json.dumps(
+            {
+                "transport": EXPECTED_TRANSPORT,
+                "path": peer.path,
+                "token": peer.token,
+                "pid": os.getpid(),
+            },
+        ),
     )
 
     # The runner starts holding the STALE session's token — the live
     # peer answers its upgrade with HTTP 401.
     stale_endpoint = DesktopEndpoint(
-        transport=EXPECTED_TRANSPORT, path=peer.path, token="0" * 128
+        transport=EXPECTED_TRANSPORT,
+        path=peer.path,
+        token="0" * 128,
     )
     runner_task = asyncio.create_task(server.runner_loop(stale_endpoint))
 
@@ -492,19 +493,13 @@ async def test_runner_recovers_from_desktop_restart(monkeypatch, tmp_path):
     # The peer received a ``runner_ready`` — proving the runner dropped
     # the stale token after the 401, read the endpoint file, and completed
     # the post-restart handshake with the fresh one.
-    assert peer.handshakes, (
-        "runner did not recover with the new token after Desktop restart"
-    )
+    assert peer.handshakes, "runner did not recover with the new token after Desktop restart"
     handshake = peer.handshakes[0]
-    assert "version" in handshake and "capabilities" in handshake, (
-        f"handshake missing required keys: {handshake}"
-    )
+    assert "version" in handshake and "capabilities" in handshake, f"handshake missing required keys: {handshake}"
 
     # Reconnect counter must have advanced — the initial attempt was
     # rejected before the file refresh succeeded.
-    assert server._RECONNECT_COUNT >= 1, (
-        "reconnect counter did not advance during Desktop restart recovery"
-    )
+    assert server._RECONNECT_COUNT >= 1, "reconnect counter did not advance during Desktop restart recovery"
 
 
 # ---------------------------------------------------------------------------
@@ -563,16 +558,15 @@ async def test_mcp_reload_rpc_invokes_reload_and_resets_caches(monkeypatch):
             sent.append(json.loads(payload))
 
     await server.process_request(
-        _FakeWS(), {"id": "r1", "method": "mcp.reload", "params": {}}
+        _FakeWS(),
+        {"id": "r1", "method": "mcp.reload", "params": {}},
     )
 
     assert sent[-1]["id"] == "r1"
     result = sent[-1]["result"]
 
     # Real ``reload_mcp_servers`` returned shape.
-    assert set(result) == {"reloaded", "errors", "servers", "connected"}, (
-        f"unexpected reload result keys: {sorted(result)}"
-    )
+    assert set(result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(result)}"
     assert result["reloaded"] == 0
     assert result["servers"] == 0
     assert result["errors"] == 0
@@ -625,12 +619,8 @@ def test_real_reload_mcp_servers_shuts_down_live_servers():
     try:
         reload_result = real_mcp_tool.reload_mcp_servers()
 
-        assert set(reload_result) == {"reloaded", "errors", "servers", "connected"}, (
-            f"unexpected reload result keys: {sorted(reload_result)}"
-        )
-        assert reload_result["reloaded"] == 2, (
-            f"reload should have torn down 2 servers, got {reload_result}"
-        )
+        assert set(reload_result) == {"reloaded", "errors", "servers", "connected"}, f"unexpected reload result keys: {sorted(reload_result)}"
+        assert reload_result["reloaded"] == 2, f"reload should have torn down 2 servers, got {reload_result}"
         assert reload_result["servers"] == 2
         assert reload_result["errors"] == 0
         assert isinstance(reload_result["connected"], int)
@@ -708,7 +698,7 @@ def test_create_environment_routes_docker(monkeypatch):
             self.kwargs = kwargs
 
     monkeypatch.setattr(env_factory, "DockerEnvironment", _FakeDocker)
-    monkeypatch.setattr(env_factory, "maybe_reap_docker_orphans", lambda *a, **kw: None)
+    monkeypatch.setattr(env_factory, "maybe_reap_docker_orphans", lambda *_a, **_kw: None)
 
     env = env_factory.create_environment(
         env_type="docker",
@@ -738,7 +728,10 @@ def test_create_environment_rejects_unknown_env_type():
     """An unknown ``env_type`` MUST raise ``ValueError`` — silent fallback would mask config errors."""
     with pytest.raises(ValueError, match="Unknown environment type"):
         env_factory.create_environment(
-            env_type="quantum", image="", cwd="/tmp", timeout=10
+            env_type="quantum",
+            image="",
+            cwd="/tmp",
+            timeout=10,
         )
 
 
@@ -757,9 +750,7 @@ def test_vision_tool_visibility_is_locked_to_schema(monkeypatch):
     registry.clear_availability_cache()
     schemas = registry.get_schemas_for_llm(set())
     names = {s["name"] for s in schemas}
-    assert "vision_analyze" in names, (
-        f"vision_analyze missing despite no check_fn: {sorted(names)[:5]}"
-    )
+    assert "vision_analyze" in names, f"vision_analyze missing despite no check_fn: {sorted(names)[:5]}"
 
 
 @pytest.mark.timeout(10)
@@ -777,9 +768,7 @@ def test_tts_tool_visibility_matches_piper_availability(monkeypatch):
     registry._check_fns["text_to_speech"] = lambda: False
     registry.clear_availability_cache()
     names_hidden = {s["name"] for s in registry.get_schemas_for_llm(set())}
-    assert "text_to_speech" not in names_hidden, (
-        f"text_to_speech leaked: {sorted(names_hidden)[:5]}"
-    )
+    assert "text_to_speech" not in names_hidden, f"text_to_speech leaked: {sorted(names_hidden)[:5]}"
 
     registry._check_fns["text_to_speech"] = lambda: True
     registry.clear_availability_cache()
@@ -804,9 +793,7 @@ def test_stt_tool_visibility_matches_whisper_availability(monkeypatch):
     registry._check_fns["speech_to_text"] = lambda: False
     registry.clear_availability_cache()
     names_hidden = {s["name"] for s in registry.get_schemas_for_llm(set())}
-    assert "speech_to_text" not in names_hidden, (
-        f"speech_to_text leaked: {sorted(names_hidden)[:5]}"
-    )
+    assert "speech_to_text" not in names_hidden, f"speech_to_text leaked: {sorted(names_hidden)[:5]}"
 
     registry._check_fns["speech_to_text"] = lambda: True
     registry.clear_availability_cache()
@@ -868,12 +855,14 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
         # path the runner's reader uses (server→client) — prove it's
         # still running and dispatching.
         await runner_server_ws.send(
-            json.dumps({
-                "jsonrpc": "2.0",
-                "id": "after-bad",
-                "method": "spiritagent.info",
-                "params": {},
-            }).encode()
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "after-bad",
+                    "method": "spiritagent.info",
+                    "params": {},
+                },
+            ).encode(),
         )
 
         # Wait for the runner's reply frame on the peer's recorded list.
@@ -881,25 +870,15 @@ async def test_runner_loop_survives_partial_and_invalid_json_frames():
         reply = None
         while time.monotonic() < deadline:
             reply = next(
-                (
-                    m
-                    for m in peer.received
-                    if m.get("id") == "after-bad" and "method" not in m
-                ),
+                (m for m in peer.received if m.get("id") == "after-bad" and "method" not in m),
                 None,
             )
             if reply is not None:
                 break
             await asyncio.sleep(0.05)
-        assert reply is not None, (
-            f"runner did not reply after receiving bad frames; peer.received={peer.received}"
-        )
-        assert "result" in reply, (
-            f"runner returned error frame after bad frames: {reply}"
-        )
-        assert "version" in reply["result"], (
-            f"spiritagent.info result missing version: {reply}"
-        )
+        assert reply is not None, f"runner did not reply after receiving bad frames; peer.received={peer.received}"
+        assert "result" in reply, f"runner returned error frame after bad frames: {reply}"
+        assert "version" in reply["result"], f"spiritagent.info result missing version: {reply}"
 
 
 @pytest.mark.timeout(15)
@@ -952,13 +931,15 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         # future to be PENDING at the moment we cancel.
         request_task = asyncio.create_task(
             asyncio.wait_for(
-                server.request_llm_from_desktop({
-                    "messages": [{"role": "user", "content": "will hang"}],
-                    "task": "agent",
-                    "timeout": 10,
-                }),
+                server.request_llm_from_desktop(
+                    {
+                        "messages": [{"role": "user", "content": "will hang"}],
+                        "task": "agent",
+                        "timeout": 10,
+                    },
+                ),
                 timeout=10,
-            )
+            ),
         )
 
         # Wait for the runner to actually emit the request_llm frame
@@ -969,7 +950,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
         for _ in range(100):
             for m in peer.received:
                 if m.get("method") == "request_llm" and m.get("id", "").startswith(
-                    "req_llm_"
+                    "req_llm_",
                 ):
                     llm_emitted_at = time.monotonic()
                     break
@@ -980,7 +961,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
             raise AssertionError(
                 f"request_llm did not park a future in _PENDING_RPC; "
                 f"peer.received request_llm frames={[m for m in peer.received if m.get('method') == 'request_llm']}, "
-                f"server._PENDING_RPC={server._PENDING_RPC}, _ACTIVE_WS={server._ACTIVE_WS!r}"
+                f"server._PENDING_RPC={server._PENDING_RPC}, _ACTIVE_WS={server._ACTIVE_WS!r}",
             )
         pending_ids = list(server._PENDING_RPC.keys())
 
@@ -998,7 +979,7 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
             await asyncio.wait_for(request_task, timeout=5)
         except TimeoutError:
             raise AssertionError(
-                f"request_llm future not drained on cancel; _PENDING_RPC={server._PENDING_RPC}"
+                f"request_llm future not drained on cancel; _PENDING_RPC={server._PENDING_RPC}",
             )
         except ConnectionError:
             # Expected: the drain set ConnectionError.
@@ -1007,14 +988,12 @@ async def test_runner_loop_cancel_drains_pending_rpc_futures():
             # Other exception types are a regression — surface them so
             # the test fails with the actual error.
             raise AssertionError(
-                f"unexpected exception from cancelled request_llm: {exc!r}"
+                f"unexpected exception from cancelled request_llm: {exc!r}",
             )
 
         # The pending futures MUST be cleared from _PENDING_RPC.
         for fid in pending_ids:
-            assert fid not in server._PENDING_RPC, (
-                f"future {fid} leaked in _PENDING_RPC after cancel"
-            )
+            assert fid not in server._PENDING_RPC, f"future {fid} leaked in _PENDING_RPC after cancel"
     finally:
         if not runner_task.done():
             runner_task.cancel()

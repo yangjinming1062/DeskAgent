@@ -3,7 +3,6 @@ import os
 import tempfile
 
 import pytest
-
 from tools import discover_builtin_tools, registry
 
 
@@ -29,7 +28,7 @@ class TestRegistry:
 class TestTerminal:
     def test_echo(self):
         r = json.loads(
-            registry.dispatch("terminal", {"command": "echo hello", "force": True})
+            registry.dispatch("terminal", {"command": "echo hello", "force": True}),
         )
         assert "hello" in str(r)
 
@@ -52,7 +51,7 @@ class TestFileTools:
             registry.dispatch(
                 "search_files",
                 {"pattern": "*.txt", "target": "files", "path": str(tmp_path)},
-            )
+            ),
         )
         assert "error" not in r
         assert {f.replace("\\", "/") for f in r.get("files", [])} == {"keep.txt"}

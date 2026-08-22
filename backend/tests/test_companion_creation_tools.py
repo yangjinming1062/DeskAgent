@@ -1,6 +1,5 @@
 import pytest
 from services.chat.bubble import BubbleSplitter
-from services.tools import REGISTRY
 
 
 def _evs(s: BubbleSplitter, text: str) -> list[str]:
@@ -58,7 +57,10 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
         emitted.append(uid)
 
     monkeypatch.setattr(
-        expression_tool, "emit_companion_assets_updated", _fake_emit, raising=False
+        expression_tool,
+        "emit_companion_assets_updated",
+        _fake_emit,
+        raising=False,
     )
     # 工具从 services.companion 桶内 lazy-import 这些项——在那一处 patch。
     import services.companion as companion_pkg
@@ -66,7 +68,7 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
     monkeypatch.setattr(
         companion_pkg,
         "kick_background_generation",
-        lambda uid, name: kicked.append(name),
+        lambda _uid, name: kicked.append(name),
     )
     monkeypatch.setattr(companion_pkg, "emit_companion_assets_updated", _fake_emit)
 
@@ -79,7 +81,7 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
             tags=["温柔"],
             icon="🥺",
             user_id=1,
-        )
+        ),
     )
     assert result["success"] is True
     assert kicked == ["tender_worry"] and emitted == [1]
@@ -87,7 +89,7 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
     async with SessionLocal() as db:
         row = (
             await db.execute(
-                select(CompanionExpression).where(CompanionExpression.user_id == 1)
+                select(CompanionExpression).where(CompanionExpression.user_id == 1),
             )
         ).scalar_one()
         assert (row.name, row.label, row.valence, row.description, row.icon) == (
@@ -101,7 +103,7 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
     # 缺少 description → 拒绝且不写入表。
     assert (
         json_mod.loads(
-            await expression_tool.create_expression_tool("blank_mind", "", user_id=1)
+            await expression_tool.create_expression_tool("blank_mind", "", user_id=1),
         )["success"]
         is False
     )
@@ -109,8 +111,10 @@ async def test_create_expression_registers_and_kicks_generation(_patch_db, monke
     assert (
         json_mod.loads(
             await expression_tool.create_expression_tool(
-                "tender_worry", "另一个描述", user_id=1
-            )
+                "tender_worry",
+                "另一个描述",
+                user_id=1,
+            ),
         )["success"]
         is False
     )
@@ -126,18 +130,14 @@ def test_affect_trace_reaches_llm_context():
     msgs = [
         Message(role="user", content="你太懒了"),
         Message(
-            role="assistant", content="[affect:pout]", subtype=AFFECT_TRACE_SUBTYPE
+            role="assistant",
+            content="[affect:pout]",
+            subtype=AFFECT_TRACE_SUBTYPE,
         ),
         Message(role="assistant", content="（戳了戳精灵）", subtype="status_reaction"),
     ]
     context = _history_to_responses_context(msgs, "sys", drop_tool_intermediates=True)
-    assistant_contents = [
-        part["text"]
-        for item in context["input"]
-        if item.get("role") == "assistant"
-        for part in item.get("content", [])
-        if part.get("type") == "output_text"
-    ]
+    assistant_contents = [part["text"] for item in context["input"] if item.get("role") == "assistant" for part in item.get("content", []) if part.get("type") == "output_text"]
 
     assert "[affect:pout]" in assistant_contents
     assert "（戳了戳精灵）" not in assistant_contents  # status_reaction 仅 UI

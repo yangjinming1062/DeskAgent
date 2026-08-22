@@ -43,7 +43,7 @@ class TestResolveContextTokens:
                 role="user",
                 content="Describe this image",
                 attachments=[{"type": "image", "file_url": "http://example.com/image.png"}],
-            )
+            ),
         )
         content, content_type = _build_persisted_content(req)
         assert content_type == "multimodal_v1"
@@ -52,6 +52,7 @@ class TestResolveContextTokens:
         image_part = parsed[1]
         assert image_part["type"] == "input_image"
         assert image_part["image_url"] == "http://example.com/image.png"
+
 
 def _make_silent_wav(duration_sec: float = 1.0, sample_rate: int = 8000) -> bytes:
     num_samples = int(sample_rate * duration_sec)
@@ -134,7 +135,7 @@ class TestChatE2E:
                         "session_id": session_id,
                         "text": "Say 'ok' in one word.",
                     },
-                }
+                },
             )
             resp = ws.receive_json()
             assert resp["result"] == {"queued": True}
@@ -189,7 +190,7 @@ class TestChatE2E:
                     "id": 2,
                     "method": "session.interrupt",
                     "params": {"session_id": session_id},
-                }
+                },
             )
             resp = ws.receive_json()
             assert resp["result"] == {}
@@ -207,7 +208,6 @@ async def test_chat_tool_batch_cancellation_persists_cancelled_results_and_summa
         _ToolDispatchContext,
         persist_tool_summary,
     )
-    from services.llm import copy_responses_context
     from sqlalchemy import select
 
     _, SessionLocal = _patch_db

@@ -155,7 +155,7 @@ async def _seed_user(SessionLocal, username="testuser"):
                 llm_base_url=mimo_url,
                 llm_api_key=mimo_key,
                 llm_model_name="mimo-v2.5-pro",
-            )
+            ),
         )
         await db.commit()
 

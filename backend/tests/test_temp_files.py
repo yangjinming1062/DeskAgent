@@ -34,6 +34,8 @@ def test_get_file_path_rejects_metadata_escape(tmp_path, monkeypatch):
 
     assert get_file_path(file_id) is None
     assert outside.exists()
+
+
 def test_get_file_path_rejects_malformed_metadata(tmp_path, monkeypatch):
     monkeypatch.setattr(SETTINGS, "data_dir", str(tmp_path))
     file_id, _ = save_file(b"temporary", "session", "image/png", "png")

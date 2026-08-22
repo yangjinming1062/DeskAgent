@@ -1,5 +1,4 @@
 import pytest
-
 from services.companion.should_act import should_act
 
 

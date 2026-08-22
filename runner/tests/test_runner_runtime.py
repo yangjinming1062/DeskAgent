@@ -36,7 +36,8 @@ def test_registry_check_fn_filters_unavailable_tools():
     reg = ToolRegistry()
 
     @reg.register_tool(
-        "fake_always", schema={"name": "fake_always", "parameters": {"type": "object"}}
+        "fake_always",
+        schema={"name": "fake_always", "parameters": {"type": "object"}},
     )
     def _h():  # pragma: no cover — never invoked
         return "{}"
@@ -228,9 +229,7 @@ def test_audio_check_fn_hidden_when_dep_missing(monkeypatch):
     registry.clear_availability_cache()
     try:
         names = {s["name"] for s in registry.get_schemas_for_llm(set())}
-        assert "speech_to_text" not in names, (
-            "speech_to_text leaked despite missing faster_whisper"
-        )
+        assert "speech_to_text" not in names, "speech_to_text leaked despite missing faster_whisper"
     finally:
         registry.clear_availability_cache()
 
@@ -296,7 +295,9 @@ async def test_runner_ready_payload_probe_failed_flag(monkeypatch):
 
     server = importlib.import_module("server")
     monkeypatch.setattr(
-        server, "snapshot", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+        server,
+        "snapshot",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     payload = await server._runner_ready_payload()
     assert payload["probe_failed"] is True
@@ -327,7 +328,7 @@ def test_capabilities_microphone_uses_sounddevice(monkeypatch):
     class _Empty:
         def query_devices(self):
             return [
-                {"name": "loopback", "max_input_channels": 0, "max_output_channels": 2}
+                {"name": "loopback", "max_input_channels": 0, "max_output_channels": 2},
             ]
 
     monkeypatch.setitem(__import__("sys").modules, "sounddevice", _Empty())
@@ -362,7 +363,6 @@ async def test_discover_timeout_shuts_down_spawned_task(monkeypatch):
     import asyncio
 
     import pytest
-
     from tools.mcp import mcp_tool
 
     shutdown_calls: list[str] = []

@@ -22,9 +22,7 @@ from sqlalchemy import delete, func, select, text
 
 def _mock_llm_response(payload):
     """构造一个 async fake ``call_llm_once``，把 *payload* 作为 content 返回。"""
-    content = (
-        payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
-    )
+    content = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
 
     async def _fake(*args, **kwargs):
         return content
@@ -33,7 +31,9 @@ def _mock_llm_response(payload):
 
 
 async def _make_user(
-    SessionLocal, user_id: int = 1001, timezone_str: str = "Asia/Shanghai"
+    SessionLocal,
+    user_id: int = 1001,
+    timezone_str: str = "Asia/Shanghai",
 ):
     """插入 User 行和模型配置，以满足 LLM 调用和外键约束。"""
     from modules.auth import (
@@ -46,14 +46,12 @@ async def _make_user(
     )
 
     async with SessionLocal() as db:
-        if (
-            await db.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none() is None:
+        if (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none() is None:
             user = User(
                 id=user_id,
                 username=f"u{user_id}",
                 activation_token_hash=hash_activation_token(
-                    generate_activation_token()
+                    generate_activation_token(),
                 ),
                 is_active=True,
                 nightly_activity_enabled=True,
@@ -66,7 +64,7 @@ async def _make_user(
                     llm_base_url="https://fake-llm.example.com",
                     llm_api_key="sk-fake-key",
                     llm_model_name="test-model",
-                )
+                ),
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
             db.add(LoginRecord(user_id=user_id, token_jti=jti, is_active=True))
@@ -77,7 +75,7 @@ async def _make_user(
                         content=timezone_str,
                         context="user_profile:timezone",
                         tags='["onboarding", "user_profile"]',
-                    )
+                    ),
                 )
             await db.commit()
 
@@ -106,8 +104,8 @@ async def test_retain_recall_rejects_inferred_profile_context(seeded):
         rows = (
             await db.execute(
                 text(
-                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'inferred_profile:%'"
-                )
+                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'inferred_profile:%'",
+                ),
             )
         ).scalar()
         assert rows == 0
@@ -129,8 +127,8 @@ async def test_retain_recall_rejects_diary_context(seeded):
         rows = (
             await db.execute(
                 text(
-                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'diary:%'"
-                )
+                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'diary:%'",
+                ),
             )
         ).scalar()
         assert rows == 0
@@ -160,7 +158,7 @@ async def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
                     context="recall:preferences",
                     tags='["likes"]',
                 ),
-            ]
+            ],
         )
         await db.commit()
 
@@ -175,7 +173,8 @@ async def test_recall_excludes_inferred_profile_but_includes_diary(seeded):
         # 推断画像不应被 recall 返回。
         out_profile = await mem.execute_tool("memory_recall", {"query": "engineer"})
         assert "Inferred: software engineer" not in json.loads(out_profile).get(
-            "result", ""
+            "result",
+            "",
         )
 
 
@@ -205,18 +204,14 @@ async def test_format_inferred_profile_block_renders_in_order(seeded):
                     context="inferred_profile:interests",
                     tags='["inferred_profile"]',
                 ),
-            ]
+            ],
         )
         await db.commit()
 
         block = await format_inferred_profile_block(db, 1001)
         assert "# Inferred user profile" in block
         # 顺序必须符合 INFERRED_PROFILE_SLOTS：basic_info → work_schedule → interests。
-        assert (
-            block.index("basic info")
-            < block.index("work schedule")
-            < block.index("interests")
-        )
+        assert block.index("basic info") < block.index("work schedule") < block.index("interests")
 
 
 async def test_format_memories_block_excludes_inferred_profile_and_diary(seeded):
@@ -242,7 +237,7 @@ async def test_format_memories_block_excludes_inferred_profile_and_diary(seeded)
                     context="recall:hobby",
                     tags='["likes"]',
                 ),
-            ]
+            ],
         )
         await db.commit()
 
@@ -255,7 +250,10 @@ async def test_format_memories_block_excludes_inferred_profile_and_diary(seeded)
 def test_preprocess_conversation_strips_noise():
     msg_system = Message(id=1, role="system", content="System instruction")
     msg_tool = Message(
-        id=2, role="tool", content='{"result": "file read"}', tool_call_id="call_1"
+        id=2,
+        role="tool",
+        content='{"result": "file read"}',
+        tool_call_id="call_1",
     )
     msg_pure_tool_call = Message(
         id=3,
@@ -277,7 +275,7 @@ def test_preprocess_conversation_strips_noise():
             [
                 {"type": "text", "text": "Look at this:"},
                 {"type": "image_url", "image_url": "http://..."},
-            ]
+            ],
         ),
         content_type="multimodal_v1",
     )
@@ -290,7 +288,7 @@ def test_preprocess_conversation_strips_noise():
             msg_assistant_mixed,
             msg_user_text,
             msg_user_multimodal,
-        ]
+        ],
     )
 
     assert len(clean) == 3
@@ -365,13 +363,19 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                     },
                     {"slot": "auto_inject:invalid_slot", "content": "skip me"},
                 ],
-            }
+            },
         ),
     )
 
     cfg = {"api_key": "k", "base_url": "u", "model_name": "m", "provider_name": "mimo"}
     updated_inferred, updated_auto_inject = await _stage_1_daily_reflection(
-        cfg, 1001, [{"role": "user", "content": "hi"}], {}, {}, {}, "2026-08-12"
+        cfg,
+        1001,
+        [{"role": "user", "content": "hi"}],
+        {},
+        {},
+        {},
+        "2026-08-12",
     )
 
     assert "inferred_profile:basic_info" in updated_inferred
@@ -382,7 +386,7 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                 select(Memory).where(
                     Memory.user_id == 1001,
                     Memory.context == "inferred_profile:basic_info",
-                )
+                ),
             )
         ).scalar_one_or_none()
         assert basic is not None
@@ -393,7 +397,7 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                 select(Memory).where(
                     Memory.user_id == 1001,
                     Memory.context == "inferred_profile:freeform",
-                )
+                ),
             )
         ).scalar_one_or_none()
         assert freeform is not None
@@ -404,7 +408,7 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                 select(Memory).where(
                     Memory.user_id == 1001,
                     Memory.context == "auto_inject:rapport_state",
-                )
+                ),
             )
         ).scalar_one_or_none()
         assert rapport is not None
@@ -415,7 +419,7 @@ async def test_stage_1_daily_reflection_upserts_and_caps(seeded, monkeypatch):
                 select(Memory).where(
                     Memory.user_id == 1001,
                     Memory.context == "inferred_profile:invalid_slot",
-                )
+                ),
             )
         ).scalar_one_or_none()
         assert invalid_slot is None
@@ -439,7 +443,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                     context="recall:topic2",
                     tags='["likes"]',
                 ),
-            ]
+            ],
         )
         await db.commit()
         rows = [
@@ -448,8 +452,9 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                 (
                     await db.execute(
                         select(Memory).where(
-                            Memory.user_id == 1001, Memory.context.like("recall:%")
-                        )
+                            Memory.user_id == 1001,
+                            Memory.context.like("recall:%"),
+                        ),
                     )
                 )
                 .scalars()
@@ -464,7 +469,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
         nightly_activity,
         "call_llm_once",
         _mock_llm_response(
-            {"summaries": [{"content": "", "tags": ["likes"], "context": "x"}]}
+            {"summaries": [{"content": "", "tags": ["likes"], "context": "x"}]},
         ),
     )
 
@@ -474,9 +479,7 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
         # 原始行应保留。
         assert (
             await db.execute(
-                select(func.count())
-                .select_from(Memory)
-                .where(Memory.user_id == 1001, Memory.context.like("recall:%"))
+                select(func.count()).select_from(Memory).where(Memory.user_id == 1001, Memory.context.like("recall:%")),
             )
         ).scalar_one() == 2
 
@@ -491,9 +494,9 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
                         "content": "consolidated fact",
                         "tags": ["likes"],
                         "context": "consolidated",
-                    }
-                ]
-            }
+                    },
+                ],
+            },
         ),
     )
     ok_succ = await _stage_2_memory_consolidation(cfg, 1001, rows, {}, "2026-08-12")
@@ -503,8 +506,9 @@ async def test_stage_2_consolidation_and_rollback(seeded, monkeypatch):
             (
                 await db.execute(
                     select(Memory).where(
-                        Memory.user_id == 1001, Memory.context.like("recall:%")
-                    )
+                        Memory.user_id == 1001,
+                        Memory.context.like("recall:%"),
+                    ),
                 )
             )
             .scalars()
@@ -529,9 +533,9 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
                         "name": "Birthday Greeting",
                         "schedule": "0 1 15 8 *",
                         "prompt": "Wish the user a happy birthday!",
-                    }
-                ]
-            }
+                    },
+                ],
+            },
         ),
     )
 
@@ -542,8 +546,9 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
         job = (
             await db.execute(
                 select(CronJob).where(
-                    CronJob.user_id == 1001, CronJob.name == "Birthday Greeting"
-                )
+                    CronJob.user_id == 1001,
+                    CronJob.name == "Birthday Greeting",
+                ),
             )
         ).scalar_one_or_none()
         assert job is not None
@@ -560,7 +565,7 @@ async def test_stage_3_planning_creates_cron_and_respects_cap(seeded, monkeypatc
                     schedule="0 0 * * *",
                     prompt="x",
                     is_paused=False,
-                )
+                ),
             )
         await db.commit()
 
@@ -587,8 +592,9 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
         diary = (
             await db.execute(
                 select(Memory).where(
-                    Memory.user_id == 1001, Memory.context == "diary:2026-08-12"
-                )
+                    Memory.user_id == 1001,
+                    Memory.context == "diary:2026-08-12",
+                ),
             )
         ).scalar_one_or_none()
         assert diary is not None
@@ -608,8 +614,9 @@ async def test_stage_4_self_diary_upsert(seeded, monkeypatch):
             (
                 await db.execute(
                     select(Memory).where(
-                        Memory.user_id == 1001, Memory.context == "diary:2026-08-12"
-                    )
+                        Memory.user_id == 1001,
+                        Memory.context == "diary:2026-08-12",
+                    ),
                 )
             )
             .scalars()
@@ -643,7 +650,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     role="user",
                     content=f"Message {i}",
                     created_at=datetime(2026, 8, 11, 17, 30, 0, tzinfo=UTC),
-                )
+                ),
             )
         await db.commit()
 
@@ -686,7 +693,7 @@ async def test_eligibility_and_tick_trigger(seeded, monkeypatch):
                     role="user",
                     content=f"Few msg {i}",
                     created_at=datetime(2026, 8, 11, 17, 30, 0, tzinfo=UTC),
-                )
+                ),
             )
         await db.commit()
 
@@ -718,7 +725,7 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
                     role="user",
                     content=f"Message {i}",
                     created_at=datetime(2026, 8, 12, 1, 30, 0, tzinfo=UTC),
-                )
+                ),
             )
         await db.commit()
 
@@ -741,7 +748,7 @@ async def test_eligibility_gate_and_pipeline_read_the_same_day(seeded, monkeypat
     # 2026-08-12 18:00 UTC 对应北京时间 2026-08-13 02:00（落在 0–5 窗口内），
     # 因此刚刚结束的本地日就是 2026-08-12。
     await cron._maybe_run_autonomous_activity(
-        datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC)
+        datetime(2026, 8, 12, 18, 0, 0, tzinfo=UTC),
     )
 
     # pipeline 至少解析到自己的窗口，且与门控选中的本地日一致。
@@ -817,7 +824,7 @@ async def test_e2e_nightly_full_run(seeded):
                     role="assistant",
                     content="晚安张伟，祝你明天面试顺利！",
                 ),
-            ]
+            ],
         )
         await db.commit()
 
@@ -847,12 +854,14 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
                     "tags": ["同仇敌徾"],
                 },
                 "tags": ["同仇敌徾"],
-            }
+            },
         ],
     }
 
     monkeypatch.setattr(
-        nightly_activity, "call_llm_once", _mock_llm_response(llm_payload)
+        nightly_activity,
+        "call_llm_once",
+        _mock_llm_response(llm_payload),
     )
 
     # kick 会在共享测试连接上 fire-and-forget 头像生成——只记录调用而不并发打开第二会话。
@@ -860,7 +869,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
     monkeypatch.setattr(
         nightly_activity,
         "kick_background_generation",
-        lambda uid, name: kicked.append(name),
+        lambda _uid, name: kicked.append(name),
     )
 
     ok = await _stage_5_creation(
@@ -880,7 +889,7 @@ async def test_stage_5_creation_pipeline(monkeypatch, _patch_db):
                 select(CompanionExpression).where(
                     CompanionExpression.user_id == 1005,
                     CompanionExpression.name == "angry_outrage",
-                )
+                ),
             )
         ).scalar_one_or_none()
         assert expr is not None

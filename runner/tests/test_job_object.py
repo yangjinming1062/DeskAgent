@@ -2,7 +2,6 @@ import subprocess
 import sys
 
 import pytest
-
 from utils.constants import IS_WINDOWS
 from utils.job_object import (
     get_runner_job_handle,

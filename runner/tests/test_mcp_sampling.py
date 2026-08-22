@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 import pytest
-
 from tools.mcp import mcp_tool
 from tools.mcp.mcp_tool import SamplingHandler
 

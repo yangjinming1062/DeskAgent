@@ -58,6 +58,7 @@ def _load_network_module():
 
         def _stub_logger(name):
             import logging
+
             return logging.getLogger(name)
 
         logger_mod.get_logger = _stub_logger
@@ -65,7 +66,8 @@ def _load_network_module():
         components_pkg.logger = logger_mod
 
     spec = importlib.util.spec_from_file_location(
-        "components.network", backend_dir / "components" / "network.py"
+        "components.network",
+        backend_dir / "components" / "network.py",
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -138,7 +140,7 @@ class TestResolveAndValidate:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["8.8.8.8", "1.1.1.1"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["8.8.8.8", "1.1.1.1"], p),
         )
         result = NETWORK._resolve_and_validate("good.example.com", 443)
         assert len(result) == 2
@@ -150,7 +152,7 @@ class TestResolveAndValidate:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["8.8.8.8", "127.0.0.1"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["8.8.8.8", "127.0.0.1"], p),
         )
         with pytest.raises(httpcore.ConnectError, match="loopback"):
             NETWORK._resolve_and_validate("evil.example.com", 443)
@@ -164,7 +166,7 @@ class TestResolveAndValidate:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["169.254.169.254"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["169.254.169.254"], p),
         )
         with pytest.raises(httpcore.ConnectError, match="link-local"):
             NETWORK._resolve_and_validate("evil.example.com", 443)
@@ -174,7 +176,7 @@ class TestResolveAndValidate:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["100.100.100.200"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["100.100.100.200"], p),
         )
         with pytest.raises(httpcore.ConnectError, match="cloud-metadata"):
             NETWORK._resolve_and_validate("evil.example.com", 443)
@@ -211,7 +213,7 @@ class TestSafeOutboundAsyncBackend:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["127.0.0.1"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["127.0.0.1"], p),
         )
         with pytest.raises(httpcore.ConnectError, match="loopback"):
             await backend.connect_tcp("evil.example.com", 443, timeout=5.0)
@@ -222,7 +224,7 @@ class TestSafeOutboundAsyncBackend:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1", 443))],
+            lambda _h, _p, *_a, **_kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1", 443))],
         )
         with pytest.raises(httpcore.ConnectError, match="link-local"):
             await backend.connect_tcp("evil.example.com", 443, timeout=5.0)
@@ -272,7 +274,7 @@ class TestSafeOutboundAsyncBackend:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["8.8.8.8"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["8.8.8.8"], p),
         )
         import anyio
 
@@ -330,7 +332,7 @@ class TestDownloadCappedRedirects:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
+            lambda _h, _p, *_a, **_kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))],
         )
         with pytest.raises(httpx.ConnectError, match="10.0.0.1"):
             await NETWORK.download_capped("https://example.com/file.bin", max_bytes=100)

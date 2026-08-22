@@ -70,8 +70,8 @@ def gen_mocks(monkeypatch):
         pass
 
     monkeypatch.setattr(sprite_service, "resolve_provider_chain", _fake_chain)
-    monkeypatch.setattr(sprite_service, "resolve", lambda svc, name: SimpleNamespace(supports_reference_image=True))
-    monkeypatch.setattr(expression_avatar_service, "load_avatar_bytes_as_data_uri", lambda url: "data:image/png;base64," + base64.b64encode(AVATAR_REF_PNG).decode())
+    monkeypatch.setattr(sprite_service, "resolve", lambda _svc, _name: SimpleNamespace(supports_reference_image=True))
+    monkeypatch.setattr(expression_avatar_service, "load_avatar_bytes_as_data_uri", lambda _url: "data:image/png;base64," + base64.b64encode(AVATAR_REF_PNG).decode())
 
     async def fake_tool(*a, **k):
         calls["providers"].append(k.get("preferred_provider"))
@@ -103,7 +103,7 @@ async def test_builtin_miss_generates_and_persists(db_session, gen_mocks):
 
 @pytest.mark.asyncio
 async def test_hit_skips_generation(db_session, gen_mocks):
-    asset = await _avatar(db_session)
+    await _avatar(db_session)
     first, generated = await resolve_expression_avatar(user_id=1, name="sad")
     assert generated
     calls_after_first = len(gen_mocks["providers"])
@@ -143,7 +143,7 @@ async def test_prompt_carries_appearance_personality_and_dynamic_clause(db_sessi
         Persona(
             user_id=1,
             definition_json=json.dumps({"biological_type": "机械龙", "appearance": "蓝色金属鳞片", "personality": "傲娇毒舌"}, ensure_ascii=False),
-        )
+        ),
     )
     await db_session.commit()
     await _avatar(db_session)
@@ -176,7 +176,7 @@ async def test_stale_avatar_rows_do_not_match(db_session, gen_mocks):
 
 @pytest.mark.asyncio
 async def test_missing_file_regenerates_and_replaces_row(db_session, gen_mocks):
-    asset = await _avatar(db_session)
+    await _avatar(db_session)
     old, _ = await resolve_expression_avatar(user_id=1, name="happy")
     (Path(SETTINGS.data_dir) / old.asset_url).unlink()
 

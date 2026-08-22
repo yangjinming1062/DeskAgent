@@ -21,7 +21,9 @@ class TestTTSTool:
         }
 
         result_str = await text_to_speech_tool(
-            text="Hello, this is a test.", llm_config=llm_config, voice="mimo_default"
+            text="Hello, this is a test.",
+            llm_config=llm_config,
+            voice="mimo_default",
         )
         result = json.loads(result_str)
         assert result["success"] is True
@@ -42,7 +44,9 @@ class TestTTSTool:
         }
 
         result_str = await text_to_speech_tool(
-            text="你好，这是一个测试。", llm_config=llm_config, voice="冰糖"
+            text="你好，这是一个测试。",
+            llm_config=llm_config,
+            voice="冰糖",
         )
         result = json.loads(result_str)
         assert result["success"] is True
@@ -107,27 +111,18 @@ class TestImageGenTool:
             result = json.loads(result_str)
             if not result.get("success"):
                 error_msg = result.get("error", "")
-                if (
-                    "404" in error_msg
-                    or "Not Found" in error_msg
-                    or "未配置" in error_msg
-                ):
+                if "404" in error_msg or "Not Found" in error_msg or "未配置" in error_msg:
                     pytest.skip(
-                        "Image generation endpoint not supported or not configured"
+                        "Image generation endpoint not supported or not configured",
                     )
                 else:
                     assert False, f"Image generation failed: {error_msg}"
             assert len(result["urls"]) > 0
             assert result["urls"][0].startswith("http") or result["urls"][0].startswith("/api/media/files/")
         except Exception as e:
-            if (
-                getattr(e, "status_code", None) == 404
-                or "NotFoundError" in type(e).__name__
-                or "404" in str(e)
-                or "Not Found" in str(e)
-            ):
+            if getattr(e, "status_code", None) == 404 or "NotFoundError" in type(e).__name__ or "404" in str(e) or "Not Found" in str(e):
                 pytest.skip(
-                    "Image generation endpoint not supported by the current LLM provider"
+                    "Image generation endpoint not supported by the current LLM provider",
                 )
             raise
 
@@ -160,7 +155,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
 
         async def _chain(db, uid, svc):
@@ -175,8 +170,10 @@ class TestReferenceImageChain:
         monkeypatch.setattr(
             tool_mod,
             "resolve",
-            lambda svc, name: type(
-                "P", (), {"supports_reference_image": capable[name]}
+            lambda _svc, name: type(
+                "P",
+                (),
+                {"supports_reference_image": capable[name]},
             )(),
         )
 
@@ -188,7 +185,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
 
         async def _chain(db, uid, svc):
@@ -198,7 +195,7 @@ class TestReferenceImageChain:
         monkeypatch.setattr(
             tool_mod,
             "resolve",
-            lambda svc, name: type("P", (), {"supports_reference_image": False})(),
+            lambda _svc, _name: type("P", (), {"supports_reference_image": False})(),
         )
 
         chain, err = await tool_mod._image_gen_chain(None, None, "https://ref/seed.png")
@@ -210,7 +207,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
         full = [self._cfg("zhipu"), self._cfg("minimax")]
 
@@ -228,7 +225,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
 
         async def _chain(db, uid, svc):
@@ -247,7 +244,7 @@ class TestReferenceImageChain:
         from services.llm import ImageAsset, ImageGenResult
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
         seen: dict = {}
 
@@ -257,7 +254,8 @@ class TestReferenceImageChain:
             async def generate(self, req):
                 seen["req"] = req
                 return ImageGenResult(
-                    images=[ImageAsset(url="http://out/1.png")], model="image-01"
+                    images=[ImageAsset(url="http://out/1.png")],
+                    model="image-01",
                 )
 
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
@@ -287,7 +285,7 @@ class TestReferenceImageChain:
         from services.llm import ImageAsset, ImageGenResult
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
         seen: dict = {}
 
@@ -297,7 +295,8 @@ class TestReferenceImageChain:
             async def generate(self, req):
                 seen["req"] = req
                 return ImageGenResult(
-                    images=[ImageAsset(url="http://out/1.png")], model="glm-image"
+                    images=[ImageAsset(url="http://out/1.png")],
+                    model="glm-image",
                 )
 
         async def _fake_execute(db, user_id, service_type, call_fn, **kwargs):
@@ -310,7 +309,9 @@ class TestReferenceImageChain:
         monkeypatch.setattr(tool_mod, "execute_with_fallback", _fake_execute)
 
         result = await tool_mod.image_generation_tool(
-            prompt="portrait", llm_config={}, user_id=None
+            prompt="portrait",
+            llm_config={},
+            user_id=None,
         )
         payload = json.loads(result)
         assert payload["success"] is True
@@ -322,7 +323,7 @@ class TestReferenceImageChain:
         import importlib
 
         tool_mod = importlib.import_module(
-            "services.tools.builtin.image_generation_tool"
+            "services.tools.builtin.image_generation_tool",
         )
 
         async def _fake_chain(*a, **kw):
@@ -344,9 +345,8 @@ class TestReferenceImageChain:
 @pytest.mark.asyncio
 async def test_safe_outbound_client_request_hook_blocks_unsafe_host(monkeypatch):
     """请求钩子守卫必须真正触发（旧版 connect 钩子键被 httpx 静默忽略）。"""
-    import httpx
-
     import components.network as net
+    import httpx
     from components import safe_outbound_async_client
 
     def _fake(host: str):

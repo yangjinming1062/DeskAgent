@@ -13,14 +13,10 @@ repos:
           - --target-version=py313
           - --select=E,F,I,SIM,C4,UP,FA,ARG,PLC,ERA,COM812,COM819
           - --ignore=PLC0415,ARG001,ARG002,E501
-        # Match against the repo-root-relative path; ``runner/tests/`` and
-        # ``backend/tests/`` and ``installer/`` should NOT be linted
-        # (the test files have their own conventions; the installer
-        # script lives outside the Python project).
-        exclude: ^(runner/tests|backend/tests|installer)/
+        exclude: ^(installer)/
       - id: ruff-format
         args: [ --line-length=180 ]
-        exclude: ^(runner/tests|backend/tests|installer)/
+        exclude: ^(installer)/
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:

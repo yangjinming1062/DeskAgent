@@ -1,5 +1,4 @@
 import pytest
-
 from tools.multimodal import helpers
 
 
@@ -32,8 +31,8 @@ async def test_download_media_rejects_stream_over_limit_without_writing(monkeypa
         async def stream(self, method, url, headers):
             return FakeResponse()
 
-    monkeypatch.setattr(helpers.httpx, "AsyncClient", lambda **kwargs: FakeClient())
-    monkeypatch.setattr(helpers, "check_website_access", lambda url: None)
+    monkeypatch.setattr(helpers.httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    monkeypatch.setattr(helpers, "check_website_access", lambda _url: None)
     destination = tmp_path / "downloads" / "image.jpg"
 
     with pytest.raises(ValueError, match="Image too large"):

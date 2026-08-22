@@ -66,7 +66,7 @@ async def test_enhance_avatar_prompt_returns_text(monkeypatch):
                 "biological_type": "灵兽",
                 "gender": "女",
                 "appearance": "金发绿眼",
-            }
+            },
         )
 
     out = await prompt_engineer.enhance_avatar_prompt(None, 7, _FakePersona())

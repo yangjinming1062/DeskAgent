@@ -14,7 +14,6 @@ import sys
 
 import psutil
 import pytest
-
 from utils.constants import CREATE_NO_WINDOW
 from utils.pid import kill_tree, pid_exists
 
@@ -113,7 +112,7 @@ def test_kill_tree_handles_real_success(monkeypatch):
     class _FakeResult:
         returncode = 0
 
-    monkeypatch.setattr("subprocess.run", lambda *a, **kw: _FakeResult())
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_kw: _FakeResult())
     assert kill_tree(12345, timeout=5.0) is True
 
 
@@ -124,7 +123,7 @@ def test_kill_tree_returns_false_on_failure(monkeypatch):
     class _FakeResult:
         returncode = 1  # actual failure
 
-    monkeypatch.setattr("subprocess.run", lambda *a, **kw: _FakeResult())
+    monkeypatch.setattr("subprocess.run", lambda *_a, **_kw: _FakeResult())
     assert kill_tree(12345, timeout=5.0) is False
 
 

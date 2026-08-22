@@ -3,7 +3,6 @@ import struct
 
 import numpy as np
 import pytest
-
 from services.companion.glb_fidelity import (
     GlbFidelityError,
     _accessor,
@@ -52,9 +51,9 @@ def _source_glb() -> bytes:
                         },
                         "indices": 4,
                         "material": 0,
-                    }
-                ]
-            }
+                    },
+                ],
+            },
         ],
         "materials": [{"alphaMode": "MASK"}],
         "accessors": [
@@ -220,7 +219,7 @@ def test_sparse_accessor_reordering_stays_sparse():
                     "indices": {"bufferView": 0, "componentType": 5123},
                     "values": {"bufferView": 1},
                 },
-            }
+            },
         ],
     }
     target = {"accessors": [], "bufferViews": [], "buffers": [{"byteLength": 0}]}

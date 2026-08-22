@@ -14,14 +14,15 @@ def dispatcher(pin_handlers):
     """把 session handlers 注册到裸 dispatcher，让测试与 WS 派发路径调用方式一致。"""
     from services.gateway.jsonrpc import JsonRpcDispatcher
 
-    disp = JsonRpcDispatcher(lambda msg: None)
+    disp = JsonRpcDispatcher(lambda _msg: None)
     pin_handlers._register_session_handlers(disp, {}, {}, user_id=1001)
     return disp
 
 
 @pytest.mark.asyncio
 async def test_companion_set_disturbance_tier_normalizes_unknown(
-    pin_handlers, SessionLocal
+    pin_handlers,
+    SessionLocal,
 ):
     """未知 tier 应回退到默认，绝不抛 JSONRPC_INVALID_PARAMS。"""
     from services.disturbance import set_disturbance_tier
@@ -44,7 +45,7 @@ async def test_companion_check_affect_coerces_inputs(dispatcher, pin_handlers, m
     monkeypatch.setattr(pin_handlers, "_last_check_affect_ts", {})
 
     result = await dispatcher._handlers["companion.check_affect"](
-        {"idle_seconds": -5, "local_hour": 99}
+        {"idle_seconds": -5, "local_hour": 99},
     )
     assert captured == {"idle": 0.0, "hour": -1}
     assert result == {"emotion": None, "reason": "captured"}
@@ -102,9 +103,12 @@ def test_companion_interact_and_should_act_registered(dispatcher):
 
 @pytest.mark.asyncio
 async def test_companion_interact_drops_when_prompt_inflight(
-    dispatcher, pin_handlers, monkeypatch
+    dispatcher,
+    pin_handlers,
+    monkeypatch,
 ):
     """prompt.submit 进行中时，companion.interact 必须以 user_busy 短路，否则戳的状态行会与用户消息交错。"""
+
     async def _must_not_run(*a, **kw):
         raise AssertionError("interact() must not run while prompt.submit is in-flight")
 
@@ -122,12 +126,11 @@ async def test_companion_interact_drops_when_prompt_inflight(
 @pytest.mark.asyncio
 async def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monkeypatch):
     """companion.interact 进行中时 prompt.submit 必须拒绝，避免用户消息与戳的状态行错位。"""
+    from components import JSONRPC_INVALID_PARAMS
     from services.gateway.jsonrpc import JsonRpcDispatcher, JsonRpcError
     from services.gateway.runtime import RuntimeSession
 
-    from components import JSONRPC_INVALID_PARAMS
-
-    dispatcher = JsonRpcDispatcher(lambda msg: None)
+    dispatcher = JsonRpcDispatcher(lambda _msg: None)
     runtime_sessions = {"123": RuntimeSession(conversation_id=123)}
     pin_handlers._register_session_handlers(dispatcher, runtime_sessions, {}, user_id=1001)
 
@@ -135,7 +138,7 @@ async def test_prompt_submit_rejects_while_companion_inflight(pin_handlers, monk
     try:
         with pytest.raises(JsonRpcError) as exc_info:
             await dispatcher._handlers["prompt.submit"](
-                {"session_id": "123", "text": "hi"}
+                {"session_id": "123", "text": "hi"},
             )
     finally:
         pin_handlers._inflight_interact.discard((1001, "poke"))
@@ -173,7 +176,8 @@ async def test_websocket_boot_failure_cleans_up(monkeypatch):
         raise RuntimeError("DB connection failure during boot")
 
     monkeypatch.setattr(
-        "services.gateway.handlers.resolve_user_llm_config", _failing_resolve
+        "services.gateway.handlers.resolve_user_llm_config",
+        _failing_resolve,
     )
 
     await handle_chat_websocket(ws, "valid_token")

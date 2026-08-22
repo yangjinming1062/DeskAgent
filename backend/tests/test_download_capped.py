@@ -1,7 +1,7 @@
-import httpcore
+import socket
+
 import httpx
 import pytest
-import socket
 from components import SETTINGS
 from components.network import download_capped, is_safe_outbound
 
@@ -31,7 +31,7 @@ async def test_download_capped_success(monkeypatch):
         return MockStreamResponse()
 
     monkeypatch.setattr(httpx.AsyncClient, "stream", _mock_stream)
-    monkeypatch.setattr("components.network.is_safe_outbound", lambda host: (True, ""))
+    monkeypatch.setattr("components.network.is_safe_outbound", lambda _host: (True, ""))
 
     res = await download_capped("https://example.com/file.bin", max_bytes=100)
     assert res == data
@@ -61,7 +61,7 @@ async def test_download_capped_exceeds_limit(monkeypatch):
         return MockStreamResponse()
 
     monkeypatch.setattr(httpx.AsyncClient, "stream", _mock_stream)
-    monkeypatch.setattr("components.network.is_safe_outbound", lambda host: (True, ""))
+    monkeypatch.setattr("components.network.is_safe_outbound", lambda _host: (True, ""))
 
     with pytest.raises(ValueError, match="exceeded size limit"):
         await download_capped("https://example.com/large.bin", max_bytes=100)
@@ -117,7 +117,7 @@ async def test_download_capped_redirect_success(monkeypatch):
         return MockStreamResponse(step)
 
     monkeypatch.setattr(httpx.AsyncClient, "stream", _mock_stream)
-    monkeypatch.setattr("components.network.is_safe_outbound", lambda host: (True, ""))
+    monkeypatch.setattr("components.network.is_safe_outbound", lambda _host: (True, ""))
 
     res = await download_capped("https://example.com/initial", max_bytes=100)
     assert res == b"redirected_content"
@@ -147,10 +147,11 @@ async def test_download_capped_redirect_downgrade_blocked(monkeypatch):
         return MockStreamResponse()
 
     monkeypatch.setattr(httpx.AsyncClient, "stream", _mock_stream)
-    monkeypatch.setattr("components.network.is_safe_outbound", lambda host: (True, ""))
+    monkeypatch.setattr("components.network.is_safe_outbound", lambda _host: (True, ""))
 
     with pytest.raises(
-        ValueError, match="refusing redirect downgrade from HTTPS to HTTP"
+        ValueError,
+        match="refusing redirect downgrade from HTTPS to HTTP",
     ):
         await download_capped("https://example.com/secure", max_bytes=100)
 

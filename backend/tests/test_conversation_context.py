@@ -4,12 +4,11 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import func, select
-
 from modules.conversation import Conversation, Message
 from services.chat.persistence import persist_tool_summary
 from services.chat.turn_inputs import _history_to_responses_context
 from services.conversation import context_window
+from sqlalchemy import func, select
 
 
 async def _seed_user(SessionLocal, user_id: int = 3001):
@@ -39,7 +38,7 @@ async def _seed_user(SessionLocal, user_id: int = 3001):
                     llm_base_url="https://fake.example.com",
                     llm_api_key="sk-fake",
                     llm_model_name="mimo-v2.5-pro",
-                )
+                ),
             )
             token, _, jti = create_access_token(user_id=user_id, username=user.username)
             db.add(LoginRecord(user_id=user_id, token_jti=jti, is_active=True))
@@ -114,7 +113,7 @@ async def _summaries(SessionLocal, conv_id: int) -> list[Message]:
                     select(Message).where(
                         Message.conversation_id == conv_id,
                         Message.subtype == "tool_summary",
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -126,7 +125,7 @@ async def test_persist_tool_summary_skips_non_main(seeded):
     SessionLocal = seeded
     conv_id = await _make_standard_conv(SessionLocal, 3001)
 
-    async with SessionLocal() as db:
+    async with SessionLocal():
         await persist_tool_summary(_Conv(conv_id, "standard"), {"search_web"})
 
     assert await _summaries(SessionLocal, conv_id) == []
@@ -136,7 +135,7 @@ async def test_persist_tool_summary_skips_when_no_tools_invoked(seeded):
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
-    async with SessionLocal() as db:
+    async with SessionLocal():
         await persist_tool_summary(_Conv(conv_id, "main"), set())
 
     assert await _summaries(SessionLocal, conv_id) == []
@@ -146,7 +145,7 @@ async def test_persist_tool_summary_lists_invoked_tool_names(seeded):
     SessionLocal = seeded
     conv_id = await _make_main_conv(SessionLocal, 3001)
 
-    async with SessionLocal() as db:
+    async with SessionLocal():
         await persist_tool_summary(_Conv(conv_id, "main"), {"search_web", "browser_navigate"})
 
     summary = (await _summaries(SessionLocal, conv_id))[0]
@@ -344,7 +343,7 @@ async def test_context_window_extracts_text_from_multimodal_v1(seeded):
         [
             {"type": "input_text", "text": "看这张图"},
             {"type": "input_image", "image_url": "https://example.com/x.png"},
-        ]
+        ],
     )
     await _add_msg(SessionLocal, conv_id, "user", parts, at=base, content_type="multimodal_v1")
     await _add_msg(SessionLocal, conv_id, "assistant", "好的看到了", at=base + timedelta(minutes=1))

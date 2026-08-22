@@ -13,7 +13,6 @@ import threading
 import time
 
 import pytest
-
 import utils.reverse_rpc as reverse_rpc
 from tools.browser.browser_supervisor import CDPSupervisor, FrameInfo
 
@@ -54,6 +53,7 @@ async def test_call_llm_sync_rejects_running_on_loop():
 
 
 # ── browser_tool: save_as sanitization + screenshot path recovery ──
+
 
 def test_safe_save_name_strips_escape_attempts():
     from tools.browser.browser_tool import _safe_save_name

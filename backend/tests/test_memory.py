@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 
 
 def _json_args(**kwargs):
-    return {k: v for k, v in kwargs.items()}
+    return dict(kwargs)
 
 
 async def _make_user(SessionLocal, user_id: int = 1001):
@@ -15,19 +15,17 @@ async def _make_user(SessionLocal, user_id: int = 1001):
     from modules.auth import User, generate_activation_token, hash_activation_token
 
     async with SessionLocal() as db:
-        if (
-            await db.execute(select(User).where(User.id == user_id))
-        ).scalar_one_or_none() is None:
+        if (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none() is None:
             db.add(
                 User(
                     id=user_id,
                     username=f"u{user_id}",
                     activation_token_hash=hash_activation_token(
-                        generate_activation_token()
+                        generate_activation_token(),
                     ),
                     is_active=True,
                     nightly_activity_enabled=True,
-                )
+                ),
             )
             await db.commit()
 
@@ -47,12 +45,11 @@ async def test_retain_recall_requires_closed_tag(seeded):
     async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
         out = await mem.execute_tool(
-            "memory_retain", _json_args(kind="recall", content="x", tags=["bogus"])
+            "memory_retain",
+            _json_args(kind="recall", content="x", tags=["bogus"]),
         )
         assert "error" in json.loads(out)
-        rows = (
-            await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))
-        ).scalar()
+        rows = (await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))).scalar()
         assert rows == 0
 
 
@@ -63,16 +60,18 @@ async def test_retain_recall_appends(seeded):
     async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
         await mem.execute_tool(
-            "memory_retain", _json_args(kind="recall", content="first", tags=["likes"])
+            "memory_retain",
+            _json_args(kind="recall", content="first", tags=["likes"]),
         )
         await mem.execute_tool(
-            "memory_retain", _json_args(kind="recall", content="second", tags=["likes"])
+            "memory_retain",
+            _json_args(kind="recall", content="second", tags=["likes"]),
         )
         rows = (
             await db.execute(
                 text(
-                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'recall:%'"
-                )
+                    "SELECT count(*) FROM memories WHERE user_id = 1001 AND context LIKE 'recall:%'",
+                ),
             )
         ).scalar()
         assert rows == 2
@@ -106,7 +105,7 @@ async def test_retain_auto_inject_upserts(seeded):
         rows = (
             await db.execute(
                 text(
-                    "SELECT id, content FROM memories WHERE user_id = 1001 AND context = :c"
+                    "SELECT id, content FROM memories WHERE user_id = 1001 AND context = :c",
                 ),
                 {"c": "auto_inject:communication_style"},
             )
@@ -167,13 +166,13 @@ async def test_retain_rejects_forged_user_profile_context(seeded):
         out = await mem.execute_tool(
             "memory_retain",
             _json_args(
-                kind="recall", content="malicious", context="user_profile:gender"
+                kind="recall",
+                content="malicious",
+                context="user_profile:gender",
             ),
         )
         assert "error" in json.loads(out)
-        rows = (
-            await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))
-        ).scalar()
+        rows = (await db.execute(text("SELECT count(*) FROM memories WHERE user_id = 1001"))).scalar()
         assert rows == 0
 
 
@@ -186,7 +185,9 @@ async def test_retain_rejects_forged_interaction_stats_context(seeded):
         out = await mem.execute_tool(
             "memory_retain",
             _json_args(
-                kind="recall", content="x", context="interaction_stats:2026-08-05"
+                kind="recall",
+                content="x",
+                context="interaction_stats:2026-08-05",
             ),
         )
         assert "error" in json.loads(out)
@@ -230,7 +231,7 @@ async def test_format_memories_block_includes_null_context(seeded):
                 content="orphaned but real",
                 context=None,
                 tags='["likes"]',
-            )
+            ),
         )
         await db.commit()
         block = await format_memories_block(db, 1001)
@@ -280,9 +281,7 @@ async def test_memory_admin_update_requires_ownership(seeded):
         await db.commit()
         await db.refresh(row)
         # 用户 1002 不能修改用户 1001 的记录。
-        assert (
-            await memory_admin.update_memory(db, 1002, row.id, content="evil") is None
-        )
+        assert await memory_admin.update_memory(db, 1002, row.id, content="evil") is None
         # 用户 1001 可以修改自己的记录。
         updated = await memory_admin.update_memory(db, 1001, row.id, content="ok")
         assert updated is not None
@@ -297,12 +296,15 @@ async def test_memory_admin_list_filters_by_kind(seeded):
     async with SessionLocal() as db:
         mem = NativeMemory(db, 1001)
         await mem.execute_tool(
-            "memory_retain", _json_args(kind="recall", content="a", tags=["likes"])
+            "memory_retain",
+            _json_args(kind="recall", content="a", tags=["likes"]),
         )
         await mem.execute_tool(
             "memory_retain",
             _json_args(
-                kind="auto_inject", content="b", context="auto_inject:rapport_state"
+                kind="auto_inject",
+                content="b",
+                context="auto_inject:rapport_state",
             ),
         )
         recall_rows = await memory_admin.list_memories(db, 1001, kind="recall")
@@ -333,7 +335,7 @@ async def test_memory_admin_counts_breakdown(seeded):
                     context="user_profile:gender",
                     tags='["onboarding"]',
                 ),
-            ]
+            ],
         )
         await db.commit()
         counts = await memory_admin.memory_counts(db, 1001)
@@ -360,7 +362,7 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
                     content=f"fact {i}",
                     context=f"recall:topic_{i}",
                     tags=json.dumps([next(iter(RECALL_TAGS))]),
-                )
+                ),
             )
         await db.commit()
 
@@ -370,8 +372,8 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
                 "summaries": [
                     {"content": "merged a", "tags": ["likes"], "context": "merged_a"},
                     {"content": "merged b", "tags": ["likes"], "context": "merged_b"},
-                ]
-            }
+                ],
+            },
         )
 
     async def fake_resolve_user_llm_config(db, uid):
@@ -384,7 +386,9 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
 
     monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call_llm_once)
     monkeypatch.setattr(
-        memory_consolidator, "resolve_user_llm_config", fake_resolve_user_llm_config
+        memory_consolidator,
+        "resolve_user_llm_config",
+        fake_resolve_user_llm_config,
     )
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
@@ -395,8 +399,9 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
             (
                 await db.execute(
                     select(Memory).where(
-                        Memory.user_id == 1001, Memory.context.like("recall:%")
-                    )
+                        Memory.user_id == 1001,
+                        Memory.context.like("recall:%"),
+                    ),
                 )
             )
             .scalars()
@@ -410,7 +415,8 @@ async def test_consolidator_replaces_old_rows(seeded, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
-    seeded, monkeypatch
+    seeded,
+    monkeypatch,
 ):
     """对抗场景：LLM 返回空摘要时合并器必须回滚，禁止删除用户记忆池。"""
     SessionLocal = seeded
@@ -427,13 +433,13 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
                     content=f"fact {i}",
                     context=f"recall:topic_{i}",
                     tags=json.dumps([next(iter(RECALL_TAGS))]),
-                )
+                ),
             )
         await db.commit()
 
     async def fake_call(*a, **kw):
         return json.dumps(
-            {"summaries": [{"content": "", "tags": ["likes"], "context": "empty"}]}
+            {"summaries": [{"content": "", "tags": ["likes"], "context": "empty"}]},
         )
 
     async def fake_resolve_user_llm_config(db, uid):
@@ -446,7 +452,9 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
 
     monkeypatch.setattr(memory_consolidator, "call_llm_once", fake_call)
     monkeypatch.setattr(
-        memory_consolidator, "resolve_user_llm_config", fake_resolve_user_llm_config
+        memory_consolidator,
+        "resolve_user_llm_config",
+        fake_resolve_user_llm_config,
     )
 
     ran = await memory_consolidator.maybe_consolidate_one_user(1001)
@@ -457,8 +465,9 @@ async def test_consolidator_keeps_source_rows_when_all_summaries_empty(
             (
                 await db.execute(
                     select(Memory).where(
-                        Memory.user_id == 1001, Memory.context.like("recall:%")
-                    )
+                        Memory.user_id == 1001,
+                        Memory.context.like("recall:%"),
+                    ),
                 )
             )
             .scalars()

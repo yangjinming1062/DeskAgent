@@ -1,12 +1,11 @@
+import contextlib
 from datetime import timedelta
-
-from sqlalchemy import select
 
 from components import utc_now
 from modules.auth import User
 from modules.scheduler import CronJob
 from services.scheduler.cron import _bulk_cas_advance, _compute_next_run_at
-import contextlib
+from sqlalchemy import select
 
 _DUE_COLS = ("id", "user_id", "name", "schedule", "next_run_at", "prompt", "one_shot")
 
@@ -30,7 +29,7 @@ async def _seed(SessionLocal, jobs: list[dict]) -> list:
                     CronJob.next_run_at,
                     CronJob.prompt,
                     CronJob.one_shot,
-                ).order_by(CronJob.id)
+                ).order_by(CronJob.id),
             )
         ).all()
     return rows
@@ -51,7 +50,7 @@ async def test_recurring_winner_advances(SessionLocal):
                 "name": "r1",
                 "schedule": "* * * * *",
                 "next_run_at": now - timedelta(minutes=5),
-            }
+            },
         ],
     )
 
@@ -74,7 +73,7 @@ async def test_cas_loser_is_skipped(SessionLocal):
                 "name": "r1",
                 "schedule": "* * * * *",
                 "next_run_at": now - timedelta(minutes=5),
-            }
+            },
         ],
     )
 
@@ -91,7 +90,7 @@ async def test_cas_loser_is_skipped(SessionLocal):
     assert winners == {}
     # SQLite 读回 timestamptz 时丢掉 tzinfo；PG 保留 tzinfo。
     assert jobs[rows[0].id].next_run_at.replace(tzinfo=None) == moved.replace(
-        tzinfo=None
+        tzinfo=None,
     )
 
 
@@ -131,13 +130,13 @@ async def test_exhausted_schedule_pauses(SessionLocal, monkeypatch):
                 "name": "dead",
                 "schedule": "* * * * *",
                 "next_run_at": now - timedelta(minutes=5),
-            }
+            },
         ],
     )
 
     import services.scheduler.cron as cron_mod
 
-    monkeypatch.setattr(cron_mod, "_compute_next_run_at", lambda schedule, now: None)
+    monkeypatch.setattr(cron_mod, "_compute_next_run_at", lambda _schedule, _now: None)
     winners = await _bulk_cas_advance(rows, now)
 
     jobs = await _rows(SessionLocal)
@@ -185,11 +184,7 @@ async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch)
     await cron_mod._kick_autonomous_turn(5, meta)
 
     async with SessionLocal() as db:
-        rows = (
-            (await db.execute(select(WSEvent).where(WSEvent.user_id == 9)))
-            .scalars()
-            .all()
-        )
+        rows = (await db.execute(select(WSEvent).where(WSEvent.user_id == 9))).scalars().all()
         assert len(rows) == 1
         assert rows[0].event_type == "cron.turn.request"
         assert _json.loads(rows[0].payload) == {"job_id": 5, "prompt": "想你了"}
@@ -202,11 +197,7 @@ async def test_kick_autonomous_turn_routes_via_outbox(SessionLocal, monkeypatch)
     await cron_mod._kick_autonomous_turn(7, {"user_id": 9, "payload": {"prompt": "  "}})
 
     async with SessionLocal() as db:
-        remaining = (
-            (await db.execute(select(WSEvent).where(WSEvent.user_id == 9)))
-            .scalars()
-            .all()
-        )
+        remaining = (await db.execute(select(WSEvent).where(WSEvent.user_id == 9))).scalars().all()
         assert [r.id for r in remaining] == [rows[0].id]
 
 

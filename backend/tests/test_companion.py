@@ -497,7 +497,7 @@ async def _seed_persona(SessionLocal, user_id: int, *, complete: bool = True):
                 definition_json='{"name":"小光","personality":"温柔","speaking_style":"轻柔"}',
                 system_prompt_extras="你是小光，一个温柔的桌面伙伴。" if complete else "",
                 is_complete=complete,
-            )
+            ),
         )
         await db.commit()
 
@@ -657,7 +657,7 @@ async def test_design_voice_calls_provider(monkeypatch):
                 trial_audio_mime="audio/mpeg",
             )
 
-    monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: FakeDesign)
+    monkeypatch.setattr(voice_catalog, "resolve", lambda _st, _name: FakeDesign)
 
     result = await voice_catalog.design_voice(db=None, user_id=1, prompt="warm female voice", preview_text="hello")
 
@@ -680,7 +680,7 @@ async def test_design_voice_unsupported_provider(monkeypatch):
         def __init__(self, config):
             pass
 
-    monkeypatch.setattr(voice_catalog, "resolve", lambda st, name: NoDesign)
+    monkeypatch.setattr(voice_catalog, "resolve", lambda _st, _name: NoDesign)
 
     with pytest.raises(ValueError, match="does not support voice design"):
         await voice_catalog.design_voice(db=None, user_id=1, prompt="test")
@@ -753,7 +753,7 @@ async def test_dual_write_routes_user_profile_to_memory(_patch_db):
                         Memory.user_id == 777,
                         Memory.context.like("user_profile:%"),
                     )
-                    .order_by(Memory.context)
+                    .order_by(Memory.context),
                 )
             )
             .scalars()
@@ -794,7 +794,7 @@ async def test_dual_write_is_idempotent(_patch_db):
                     select(Memory).where(
                         Memory.user_id == 555,
                         Memory.context == "user_profile:preferred_name",
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -889,7 +889,7 @@ async def test_dual_write_empty_user_fields_skip(_patch_db):
                     select(Memory).where(
                         Memory.user_id == 666,
                         Memory.context.like("user_profile:%"),
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -1006,7 +1006,7 @@ async def test_dynamic_user_profile_key_lands_in_memory(_patch_db):
                     select(Memory).where(
                         Memory.user_id == 2222,
                         Memory.context.like("user_profile:%"),
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -1210,7 +1210,7 @@ async def test_regenerate_avatar_from_image_uses_reference(monkeypatch, _patch_d
                     "name": "小光",
                     "biological_type": "人类",
                     "appearance": "金发绿眼",
-                }
+                },
             ),
             system_prompt_extras="",
             is_complete=True,
@@ -1348,7 +1348,7 @@ def test_companion_rest_contract(_patch_db, monkeypatch):
     client = TestClient(app)
 
     # PUT handler 现在会调度后台 personality-tag 刷新任务。conftest 的单连接 SAVEPOINT 难以承受同一连接第二个会话中途释放 SAVEPOINT，所以此处屏蔽 schedule——专门的 ``test_persona_put_schedules_background_tag_refresh`` 和 ``test_persona_tag_refresh_retries_transient_failures`` 各自覆盖后台行为。
-    monkeypatch.setattr(companion_api, "schedule_personality_tag_refresh", lambda *a, **kw: None)
+    monkeypatch.setattr(companion_api, "schedule_personality_tag_refresh", lambda *_a, **_kw: None)
 
     resp = client.get("/api/companion/persona")
     assert resp.status_code == 200
@@ -1551,7 +1551,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
                 active=True,
-            )
+            ),
         )
         await db.commit()
         uid = user.id
@@ -1573,7 +1573,7 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
                 .where(
                     CompanionModel.user_id == uid,
                     CompanionModel.status == "generating",
-                )
+                ),
             )
         ).scalar_one() == 1
 
@@ -1614,7 +1614,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
                 definition_json=_json.dumps({"name": "小光"}),
                 system_prompt_extras="",
                 is_complete=True,
-            )
+            ),
         )
         db.add(
             AvatarAsset(
@@ -1622,7 +1622,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
                 active=True,
-            )
+            ),
         )
         previous = CompanionModel(
             user_id=user.id,
@@ -1665,7 +1665,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
                     select(CompanionModel).where(
                         CompanionModel.user_id == uid,
                         CompanionModel.status == "failed",
-                    )
+                    ),
                 )
             )
             .scalars()
@@ -1705,7 +1705,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(_patch_d
                 definition_json=_json.dumps({"name": "小光"}),
                 system_prompt_extras="",
                 is_complete=True,
-            )
+            ),
         )
         db.add(
             AvatarAsset(
@@ -1713,7 +1713,7 @@ async def test_generate_companion_model_is_idempotent_when_model_exists(_patch_d
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
                 active=True,
-            )
+            ),
         )
         existing = CompanionModel(
             user_id=user.id,
@@ -1767,7 +1767,7 @@ async def test_generate_companion_model_without_provider_key_rejects(_patch_db, 
                 definition_json=_json.dumps({"name": "x"}),
                 system_prompt_extras="",
                 is_complete=True,
-            )
+            ),
         )
         db.add(
             AvatarAsset(
@@ -1775,7 +1775,7 @@ async def test_generate_companion_model_without_provider_key_rejects(_patch_db, 
                 prompt_json='{"source": "test"}',
                 asset_url="companion-avatars/seed.png",
                 active=True,
-            )
+            ),
         )
         await db.commit()
         uid = user.id
@@ -1812,7 +1812,7 @@ async def _make_authenticated_client(_patch_db, uid: int = 3001):
                     llm_api_key="k",
                     llm_base_url="http://x",
                     llm_model_name="m",
-                )
+                ),
             )
             await db.commit()
 
@@ -1843,7 +1843,7 @@ async def test_get_expressions_endpoint(_patch_db):
                 description="Tender worry",
                 icon="🥺",
                 tags_json='["心疼"]',
-            )
+            ),
         )
         await db.commit()
 
@@ -2016,7 +2016,12 @@ class _FakeProvider:
     SUPPORTS_ANIMATE_BIND = True
 
     def __init__(
-        self, clip_map: dict[str, str], *, animate_fails: bool = False, supports_rigging: bool = True, supports_animate_bind: bool = True
+        self,
+        clip_map: dict[str, str],
+        *,
+        animate_fails: bool = False,
+        supports_rigging: bool = True,
+        supports_animate_bind: bool = True,
     ):
         self._clip_map = clip_map
         self._animate_fails = animate_fails
@@ -2079,14 +2084,26 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type=rig_type, provider_task_id="task_prev" if retry_only else None, provider_phase="animate" if retry_only else "submit")
+        row = CompanionModel(
+            user_id=user.id,
+            status="generating",
+            species="人类",
+            rig_type=rig_type,
+            provider_task_id="task_prev" if retry_only else None,
+            provider_phase="animate" if retry_only else "submit",
+        )
         db.add(row)
         await db.commit()
         await db.refresh(row)
         uid, model_id = user.id, row.id
 
     await _pipeline.run_capability_chain(
-        provider_name="tripo", user_id=uid, view_filenames={"front": "seed.png"}, species="人类", model_id=model_id, retry_only=retry_only
+        provider_name="tripo",
+        user_id=uid,
+        view_filenames={"front": "seed.png"},
+        species="人类",
+        model_id=model_id,
+        retry_only=retry_only,
     )
 
     async with SessionLocal() as db:
@@ -2163,7 +2180,7 @@ async def test_chain_writes_provider_phase_along_each_hop(_patch_db, monkeypatch
     """链上每个 hop 成功后 provider_phase 必须刷新到该 hop；重启接续据此判断产物是否最终含动画的 GLB。"""
     from services.companion import pipeline as _pipeline
 
-    provider = _FakeProvider({"idle": "preset:biped:idle"})
+    _FakeProvider({"idle": "preset:biped:idle"})
 
     # 直接读 _persist_download_source 的中间调用而不是跑整链——验证 phase 入参穿透。
     captured: list[str] = []
@@ -2174,13 +2191,31 @@ async def test_chain_writes_provider_phase_along_each_hop(_patch_db, monkeypatch
     monkeypatch.setattr(_pipeline, "_persist_download_source", _capture)
 
     await _pipeline._persist_download_source(
-        model_id=1, user_id=1, task_id="a", assets=(), provider_label="tripo", rig_type="biped", phase="submit"
+        model_id=1,
+        user_id=1,
+        task_id="a",
+        assets=(),
+        provider_label="tripo",
+        rig_type="biped",
+        phase="submit",
     )
     await _pipeline._persist_download_source(
-        model_id=1, user_id=1, task_id="b", assets=(), provider_label="tripo", rig_type="biped", phase="rig"
+        model_id=1,
+        user_id=1,
+        task_id="b",
+        assets=(),
+        provider_label="tripo",
+        rig_type="biped",
+        phase="rig",
     )
     await _pipeline._persist_download_source(
-        model_id=1, user_id=1, task_id="c", assets=(), provider_label="tripo", rig_type="biped", phase="animate"
+        model_id=1,
+        user_id=1,
+        task_id="c",
+        assets=(),
+        provider_label="tripo",
+        rig_type="biped",
+        phase="animate",
     )
 
     assert captured == ["submit", "rig", "animate"]
@@ -2198,9 +2233,25 @@ async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db
         db.add(user)
         await db.commit()
         await db.refresh(user)
-        submit_row = CompanionModel(user_id=user.id, status="pending_download", species="人类", rig_type="biped", provider_task_id="t1", download_urls_json="[]", provider_phase="submit")
+        submit_row = CompanionModel(
+            user_id=user.id,
+            status="pending_download",
+            species="人类",
+            rig_type="biped",
+            provider_task_id="t1",
+            download_urls_json="[]",
+            provider_phase="submit",
+        )
         rig_row = CompanionModel(user_id=user.id, status="downloading", species="人类", rig_type="biped", provider_task_id="t2", download_urls_json="[]", provider_phase="rig")
-        animate_row = CompanionModel(user_id=user.id, status="pending_download", species="人类", rig_type="biped", provider_task_id="t3", download_urls_json="[]", provider_phase="animate")
+        animate_row = CompanionModel(
+            user_id=user.id,
+            status="pending_download",
+            species="人类",
+            rig_type="biped",
+            provider_task_id="t3",
+            download_urls_json="[]",
+            provider_phase="animate",
+        )
         db.add_all([submit_row, rig_row, animate_row])
         await db.commit()
         submit_id, rig_id, animate_id = submit_row.id, rig_row.id, animate_row.id
@@ -2242,6 +2293,7 @@ async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeyp
         monkeypatch.setattr("services.companion.pipeline._resolve_model_provider", lambda _n: provider)
 
         from services.companion import pipeline as _p
+
         original = _p._provider_result_label
         captured: list[bool] = []
 

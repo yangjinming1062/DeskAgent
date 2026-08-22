@@ -33,7 +33,9 @@ async def test_completed_event_uses_task_id(monkeypatch):
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
     await video_jobs._emit_ws_event(
-        42, "video_gen.completed", {"task_id": "42", "url": "http://x/v.mp4"}
+        42,
+        "video_gen.completed",
+        {"task_id": "42", "url": "http://x/v.mp4"},
     )
 
     assert captured["event_type"] == "video_gen.completed"
@@ -69,7 +71,9 @@ async def test_failed_event_uses_task_id(monkeypatch):
     monkeypatch.setattr(video_jobs, "WSEvent", _StubEvent)
 
     await video_jobs._emit_ws_event(
-        7, "video_gen.failed", {"task_id": "7", "error": "timeout"}
+        7,
+        "video_gen.failed",
+        {"task_id": "7", "error": "timeout"},
     )
 
     assert captured["event_type"] == "video_gen.failed"

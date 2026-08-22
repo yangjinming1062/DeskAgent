@@ -19,7 +19,6 @@ import os
 import time
 
 import pytest
-
 from tools.process import process_tool
 from tools.process.process_tool import (
     ProcessRegistry,
@@ -36,7 +35,6 @@ def fresh_registry():
 
 
 class TestFormatProcessNotification:
-
     def test_watch_match_event(self):
         evt = {
             "type": "watch_match",
@@ -120,17 +118,21 @@ class TestHandleProcessDispatch:
         assert result["processes"][0]["session_id"] == "proc_a"
 
     def test_poll_with_unknown_session_id_returns_safe_error(
-        self, fresh_registry, monkeypatch
+        self,
+        fresh_registry,
+        monkeypatch,
     ):
         monkeypatch.setattr(process_tool, "process_registry", fresh_registry)
         result = json.loads(
-            _handle_process({"action": "poll", "session_id": "proc_nope"})
+            _handle_process({"action": "poll", "session_id": "proc_nope"}),
         )
         assert result["status"] == "not_found"
         assert "proc_nope" in result["error"]
 
     def test_session_id_accepts_integer_and_coerces_to_string(
-        self, fresh_registry, monkeypatch
+        self,
+        fresh_registry,
+        monkeypatch,
     ):
         """Some models send session_id as an integer — must NOT crash the dispatch."""
         monkeypatch.setattr(process_tool, "process_registry", fresh_registry)

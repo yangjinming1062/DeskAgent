@@ -15,7 +15,6 @@ import threading
 import time
 
 import pytest
-
 from envs import FileSyncManager
 from utils import IS_WINDOWS
 
@@ -29,8 +28,8 @@ def _sha256_bytes(data: bytes) -> str:
 def _make_manager(mapping, bulk_download_fn) -> FileSyncManager:
     return FileSyncManager(
         get_files_fn=lambda: mapping,
-        upload_fn=lambda h, r: None,
-        delete_fn=lambda paths: None,
+        upload_fn=lambda _h, _r: None,
+        delete_fn=lambda _paths: None,
         bulk_download_fn=bulk_download_fn,
     )
 
@@ -77,11 +76,12 @@ def test_sync_back_keeps_unchanged_file(tmp_path):
 
 
 def test_sync_back_once_deferred_sigint_raises_keyboard_interrupt(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     """A Ctrl+C deferred during sync must surface as KeyboardInterrupt, not
     terminate the process (Windows os.kill(SIGINT) is TerminateProcess)."""
-    manager = _make_manager([], lambda path: None)
+    manager = _make_manager([], lambda _path: None)
 
     def fake_locked(lock_path):
         handler = signal.getsignal(signal.SIGINT)
@@ -114,10 +114,6 @@ def test_wait_for_process_survives_orphaned_descendant(tmp_path):
     assert result["returncode"] == 0
     assert "marker" in result["output"]
     deadline = time.monotonic() + 3
-    while time.monotonic() < deadline and any(
-        t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()
-    ):
+    while time.monotonic() < deadline and any(t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()):
         time.sleep(0.05)
-    assert not any(
-        t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate()
-    )
+    assert not any(t.name == "proc-output-drain" and t.is_alive() for t in threading.enumerate())

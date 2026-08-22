@@ -5,7 +5,6 @@ from typing import ClassVar
 import httpx
 import openai
 import pytest
-
 from services.llm import (
     ImageGenRequest,
     MiMoChatProvider,
@@ -469,7 +468,7 @@ class TestExecuteWithFallback:
         ):
             monkeypatch.setattr(f"components.SETTINGS.{field}", "" if field != "providers" else [])
         with pytest.raises(MissingLlmConfigError):
-            await execute_with_fallback(None, None, "llm", call_fn=lambda p: None)
+            await execute_with_fallback(None, None, "llm", call_fn=lambda _p: None)
 
 
 def _async_handler(responses: list):
@@ -508,7 +507,7 @@ class TestMiniMaxImageGen:
                 model="image-01",
                 service_type=ServiceType.image_gen,
                 provider_name="minimax",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -520,8 +519,8 @@ class TestMiniMaxImageGen:
                 {
                     "base_resp": {"status_code": 0, "status_msg": "success"},
                     "data": {"image_base64": ["aGVsbG8=", "d29ybGQ="]},
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         result = await provider.generate(ImageGenRequest(prompt="a cat"))
@@ -560,9 +559,9 @@ class TestMiniMaxImageGen:
                     "base_resp": {
                         "status_code": 1004,
                         "status_msg": "login fail: invalid api key",
-                    }
-                }
-            ]
+                    },
+                },
+            ],
         )
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError) as exc_info:
@@ -594,9 +593,9 @@ class TestMiniMaxImageGen:
                     "base_resp": {
                         "status_code": 1027,
                         "status_msg": "violated safety policy",
-                    }
-                }
-            ]
+                    },
+                },
+            ],
         )
         provider = self._make_provider(handler)
         with pytest.raises(ProviderError) as exc_info:
@@ -664,8 +663,6 @@ class TestEmptyImageResultFallback:
         assert classified.should_fallback is True
         assert classified.retryable is False
 
-
-
     @pytest.mark.asyncio
     async def test_data_uri_decoded(self):
         from services.llm.providers._reference import resolve_reference_bytes
@@ -704,7 +701,7 @@ class TestGeminiImageGen:
                 model="gemini-2.5-flash-image",
                 service_type=ServiceType.image_gen,
                 provider_name="gemini",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -722,12 +719,12 @@ class TestGeminiImageGen:
                                     "inlineData": {
                                         "mimeType": "image/png",
                                         "data": "aGVsbG8=",
-                                    }
-                                }
-                            ]
-                        }
-                    }
-                ]
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
             },
         )
 
@@ -801,8 +798,8 @@ class TestMiMoImageGenReference:
                                 "_Item",
                                 (),
                                 {"url": "http://out/1.png", "b64_json": None},
-                            )()
-                        ]
+                            )(),
+                        ],
                     },
                 )()
 
@@ -813,7 +810,7 @@ class TestMiMoImageGenReference:
                 model="dall-e-3",
                 service_type=ServiceType.image_gen,
                 provider_name="mimo",
-            )
+            ),
         )
         provider._client = type("_Client", (), {"images": _Images()})()
         result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
@@ -836,7 +833,7 @@ class TestZhipuImageGenReference:
                 model="glm-image",
                 service_type=ServiceType.image_gen,
                 provider_name="zhipu",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -857,7 +854,7 @@ class TestZhipuImageGenReference:
         provider = self._make_provider(capture)
         # 在 provider 构建完成后再 monkeypatch，确保 ``_make_provider`` 自带的 client 仍使用真实 transport，仅匿名 CDN 下载 client 被替换为 mock。
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
-        monkeypatch.setattr(zhipu_image.httpx, "AsyncClient", lambda **kw: cdn_client)
+        monkeypatch.setattr(zhipu_image.httpx, "AsyncClient", lambda **_kw: cdn_client)
 
         result = await provider.generate(ImageGenRequest(prompt="a cat", reference_image="https://ref/seed.png"))
         assert result.images[0].b64 == "iVBORw=="
@@ -877,7 +874,7 @@ class TestMiniMaxTTS:
                 model="speech-2.8-hd",
                 service_type=ServiceType.tts,
                 provider_name="minimax",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -905,7 +902,7 @@ class TestMiniMaxVideoGen:
                 model="MiniMax-H3",
                 service_type=ServiceType.video_gen,
                 provider_name="minimax",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -950,7 +947,7 @@ class TestMiniMaxVideoGen:
                 prompt="x",
                 first_frame_image="https://example.com/seed.png",
                 aspect_ratio="9:16",
-            )
+            ),
         )
         body = captured[0]
         assert body["content"][1] == {
@@ -970,8 +967,8 @@ class TestMiniMaxVideoGen:
                         "status": "succeeded",
                         "content": {"url": "https://filecdn.minimax.chat/abc.mp4"},
                     },
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
@@ -1013,8 +1010,8 @@ class TestMiniMaxVideoGen:
                         "status": "failed",
                         "error": {"code": "bad_prompt", "message": "prompt too long"},
                     },
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
@@ -1037,8 +1034,8 @@ class TestMiniMaxVideoGen:
                 {
                     "base_resp": {"status_code": 0},
                     "task": {"status": "failed", "error": "some string error"},
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task-abc")
@@ -1091,7 +1088,7 @@ class TestMiniMaxVideoGenV1:
                 model=model,
                 service_type=ServiceType.video_gen,
                 provider_name="minimax",
-            )
+            ),
         )
         provider._client = client
         return provider
@@ -1114,7 +1111,7 @@ class TestMiniMaxVideoGenV1:
                 resolution="1080P",
                 aspect_ratio="16:9",
                 first_frame_image="https://example.com/seed.png",
-            )
+            ),
         )
         assert job.task_id == "task-v1"
         assert captured[0].url.path == "/v1/video_generation"
@@ -1187,8 +1184,8 @@ class TestMiniMaxVideoGenV1:
                     "base_resp": {"status_code": 0},
                     "status": "Fail",
                     "error_message": "content rejected",
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task-v1")
@@ -1264,7 +1261,7 @@ class TestGrokImageGen:
                 model="grok-imagine-image-quality",
                 service_type=ServiceType.image_gen,
                 provider_name="grok",
-            )
+            ),
         )
         provider._client = _mock_grok_http(handler)
         return provider
@@ -1283,7 +1280,7 @@ class TestGrokImageGen:
                     "data": [
                         {"url": "https://cdn.x.ai/1.png"},
                         {"url": "https://cdn.x.ai/2.png"},
-                    ]
+                    ],
                 },
             )
 
@@ -1292,7 +1289,7 @@ class TestGrokImageGen:
 
         provider = self._make_provider(grok_handler)
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
-        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **kw: cdn_client)
+        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **_kw: cdn_client)
 
         result = await provider.generate(ImageGenRequest(prompt="a cat", n=2))
         assert len(result.images) == 2
@@ -1322,14 +1319,14 @@ class TestGrokImageGen:
 
         provider = self._make_provider(handler)
         cdn_client = httpx.AsyncClient(transport=httpx.MockTransport(cdn_handler))
-        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **kw: cdn_client)
+        monkeypatch.setattr(image.httpx, "AsyncClient", lambda **_kw: cdn_client)
 
         await provider.generate(
             ImageGenRequest(
                 prompt="re-render",
                 reference_image="https://ref/seed.png",
                 aspect_ratio="16:9",
-            )
+            ),
         )
         assert captured[0].url.path == "/images/edits"
         assert bodies[0]["image"] == {
@@ -1360,7 +1357,7 @@ class TestGrokImageGen:
                 model="m",
                 service_type=ServiceType.image_gen,
                 provider_name="grok",
-            )
+            ),
         )
         assert provider.raw_client() is None
 
@@ -1376,7 +1373,7 @@ class TestGrokTTS:
                 model="grok-voice-think-fast-1.0",
                 service_type=ServiceType.tts,
                 provider_name="grok",
-            )
+            ),
         )
         provider._client = _mock_grok_http(handler)
         return provider
@@ -1440,7 +1437,7 @@ class TestGrokSTT:
                 model="grok-transcribe",
                 service_type=ServiceType.stt,
                 provider_name="grok",
-            )
+            ),
         )
         provider._client = _mock_grok_http(handler)
         return provider
@@ -1486,7 +1483,7 @@ class TestGrokVideoGen:
                 model=model,
                 service_type=ServiceType.video_gen,
                 provider_name="grok",
-            )
+            ),
         )
         provider._client = _mock_grok_http(handler)
         return provider
@@ -1515,7 +1512,7 @@ class TestGrokVideoGen:
                 resolution="720p",
                 first_frame_image="https://example.com/seed.png",
                 aspect_ratio="16:9",
-            )
+            ),
         )
         body = captured[0]
         assert body["model"] == "grok-imagine-video-1.5"
@@ -1609,8 +1606,8 @@ class TestGrokVideoGen:
                 {
                     "status": "failed",
                     "error": {"code": "invalid_argument", "message": "prompt too long"},
-                }
-            ]
+                },
+            ],
         )
         provider = self._make_provider(handler)
         job = await provider.poll("task")
@@ -1660,7 +1657,7 @@ class TestGrokVideoGen:
                 model="m",
                 service_type=ServiceType.video_gen,
                 provider_name="grok",
-            )
+            ),
         )
         assert provider.raw_client() is None
 
@@ -1713,7 +1710,7 @@ class TestPerUserProviderChain:
                     "name": "minimax",
                     "api_key": "sk-user-mm",
                     "base_url": "https://user-mm.example/v1",
-                }
+                },
             ],
         )
         async with SessionLocal() as db:
@@ -1787,9 +1784,9 @@ class TestPerUserProviderChain:
                                 "api_key": "sk-mimo",
                                 "base_url": "https://mimo/v1",
                             },
-                        ]
+                        ],
                     ),
-                )
+                ),
             )
             await db.commit()
             chain = await resolve_provider_chain(db, user.id, "tts")
@@ -1841,10 +1838,10 @@ class TestResolveUserLlmConfigCredentials:
                                 "name": "minimax",
                                 "api_key": "sk-user-mm",
                                 "base_url": "https://user-mm.example/v1",
-                            }
-                        ]
+                            },
+                        ],
                     ),
-                )
+                ),
             )
             await db.commit()
             cfg = await resolve_user_llm_config(db, user.id)
@@ -1883,7 +1880,7 @@ class TestMiniMaxInnerCodes:
             (),
             {
                 "status_code": 200,
-                "json": lambda self: {"base_resp": {"status_code": status_code, "status_msg": status_msg}},
+                "json": lambda _self: {"base_resp": {"status_code": status_code, "status_msg": status_msg}},
             },
         )()
         with pytest.raises(ProviderError) as exc:
@@ -1918,7 +1915,6 @@ class TestRetryAwareAsyncOpenAI:
 
     @pytest.mark.asyncio
     async def test_overretry_blocked_on_500_with_validation_text(self):
-        from openai import AsyncOpenAI
         from services.llm.providers.http import _RetryAwareAsyncOpenAI
 
         request_count = 0

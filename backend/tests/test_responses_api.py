@@ -3,10 +3,9 @@ from types import SimpleNamespace
 import httpx
 import openai
 import pytest
-
-from services.chat.streaming import _stream_llm_response
 from services.chat.message_sanitization import truncate_responses_context
-from services.llm import build_responses_kwargs, approx_responses_tokens
+from services.chat.streaming import _stream_llm_response
+from services.llm import approx_responses_tokens, build_responses_kwargs
 from services.llm.error_classifier import FailoverReason
 from services.llm.llm_retry import LLMRuntimeError, _stream_with_timeout, _wrap_stream_for_debug, call_with_retry
 
@@ -225,7 +224,6 @@ async def test_idempotency_key_header_passed_per_call(monkeypatch):
 
     async def _create(**kwargs):
         captured_headers.append(kwargs.get("extra_headers") or {})
-        response = httpx.Response(200, request=httpx.Request("POST", "https://example.com"))
         return SimpleNamespace(id="r", status="completed", output=[], usage=None, model_dump=lambda **_kwargs: {"id": "r", "output": []})
 
     responses = SimpleNamespace(create=_create)

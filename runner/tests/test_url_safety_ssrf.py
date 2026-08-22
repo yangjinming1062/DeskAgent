@@ -6,7 +6,6 @@ from typing import Any
 import httpcore
 import httpx
 import pytest
-
 from utils.url_safety import (
     SafeAsyncHTTPTransport,
     SafeHTTPTransport,
@@ -58,7 +57,7 @@ class TestSafeSyncBackendConnectTime:
 
     def test_rejects_link_local_v6(self, monkeypatch):
         backend = _SafeSyncBackend()
-        monkeypatch.setattr(socket, "getaddrinfo", lambda h, p, *a, **kw: _make_addr_info(["fe80::1"], p))
+        monkeypatch.setattr(socket, "getaddrinfo", lambda _h, p, *_a, **_kw: _make_addr_info(["fe80::1"], p))
         with pytest.raises(httpcore.ConnectError, match="SSRF guard"):
             backend.connect_tcp("evil.example.com", 443, timeout=5.0)
 
@@ -88,7 +87,7 @@ class TestSafeSyncBackendConnectTime:
                 self._closed = True
 
         # 8.8.8.8 = Google DNS, is_private() returns False
-        monkeypatch.setattr(socket, "getaddrinfo", lambda h, p, *a, **kw: _make_addr_info(["8.8.8.8"], p))
+        monkeypatch.setattr(socket, "getaddrinfo", lambda _h, p, *_a, **_kw: _make_addr_info(["8.8.8.8"], p))
         monkeypatch.setattr(socket, "socket", _FakeSock)
 
         from httpcore._backends.sync import SyncStream
@@ -107,7 +106,7 @@ class TestSafeAsyncBackendConnectTime:
     @pytest.mark.asyncio
     async def test_rejects_loopback_at_connect(self, monkeypatch):
         backend = _SafeAsyncBackend()
-        monkeypatch.setattr(socket, "getaddrinfo", lambda h, p, *a, **kw: _make_addr_info(["127.0.0.1"], p))
+        monkeypatch.setattr(socket, "getaddrinfo", lambda _h, p, *_a, **_kw: _make_addr_info(["127.0.0.1"], p))
         # Stub anyio.to_thread so we still exercise the validation logic synchronously
         import anyio
 
@@ -194,7 +193,7 @@ class TestRedirectPerHopValidation:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["127.0.0.1"], p),
+            lambda _h, p, *_a, **_kw: _make_addr_info(["127.0.0.1"], p),
         )
         with pytest.raises(httpcore.ConnectError, match="SSRF guard"):
             backend.connect_tcp("redirected.example.org", 443, timeout=5.0)
@@ -219,7 +218,7 @@ class TestPrefilterStillWorks:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["127.0.0.1"], 443),
+            lambda _h, _p, *_a, **_kw: _make_addr_info(["127.0.0.1"], 443),
         )
         assert is_safe_url("http://127.0.0.1/") is False
 
@@ -228,6 +227,6 @@ class TestPrefilterStillWorks:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p, *a, **kw: _make_addr_info(["127.0.0.1"], 443),
+            lambda _h, _p, *_a, **_kw: _make_addr_info(["127.0.0.1"], 443),
         )
         assert await async_is_safe_url("http://127.0.0.1/") is False

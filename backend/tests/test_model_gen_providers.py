@@ -45,9 +45,7 @@ def _pin_hunyuan_settings(monkeypatch):
 
 class _MockTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
-        self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: (
-            httpx.Response(200, json={})
-        )
+        self.responder: Callable[[httpx.Request], httpx.Response] = lambda _r: (httpx.Response(200, json={}))
         # (method, 绝对 url, headers, json body) — headers 保持 httpx.Headers 以便大小写无关查找。
         self.calls: list[tuple[str, str, httpx.Headers, dict[str, Any] | None]] = []
 
@@ -78,11 +76,13 @@ class TestSubmit:
     @pytest.mark.asyncio
     async def test_submit_posts_base64_image(self, png_seed, mock_http):
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"id": "job_1", "status": "queued"}
+            200,
+            json={"id": "job_1", "status": "queued"},
         )
 
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         job = await provider.create_image_to_model(png_seed)
         assert job.job_id == "job_1"
@@ -93,7 +93,7 @@ class TestSubmit:
         assert headers["Authorization"] == "Bearer hk_test"
         assert body["model"] == "hy-3d-3.1"
         assert body["image_base64"] == base64.b64encode(png_seed.read_bytes()).decode(
-            "ascii"
+            "ascii",
         )
         assert body["enable_pbr"] is True
         assert body["result_format"] == "GLB"
@@ -102,7 +102,10 @@ class TestSubmit:
 
     @pytest.mark.asyncio
     async def test_create_multiview_posts_multi_view_images(
-        self, png_seed, tmp_path, mock_http
+        self,
+        png_seed,
+        tmp_path,
+        mock_http,
     ):
         right_seed = tmp_path / "right.png"
         right_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x11" * 16)
@@ -111,11 +114,13 @@ class TestSubmit:
         left_seed = tmp_path / "left.png"
         left_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x33" * 16)
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"id": "job_mv", "status": "queued"}
+            200,
+            json={"id": "job_mv", "status": "queued"},
         )
 
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         job = await provider.create_image_to_model(
             png_seed,
@@ -126,36 +131,38 @@ class TestSubmit:
         assert body["model"] == "hy-3d-3.1"
         assert body["result_format"] == "GLB"
         assert len(body["multi_view_images"]) == 3
-        by_view = {
-            item["view_type"]: item["view_image_base64"]
-            for item in body["multi_view_images"]
-        }
+        by_view = {item["view_type"]: item["view_image_base64"] for item in body["multi_view_images"]}
         assert set(by_view) == {"right", "back", "left"}
         assert by_view["right"] == base64.b64encode(right_seed.read_bytes()).decode(
-            "ascii"
+            "ascii",
         )
 
     @pytest.mark.asyncio
     async def test_create_ignores_auxiliary_views_when_multiview_unsupported(
-        self, png_seed, tmp_path, mock_http
+        self,
+        png_seed,
+        tmp_path,
+        mock_http,
     ):
         right_seed = tmp_path / "right.png"
         right_seed.write_bytes(b"right")
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"id": "job_single", "status": "queued"}
+            200,
+            json={"id": "job_single", "status": "queued"},
         )
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         provider.SUPPORTS_MULTIVIEW = False
 
         job = await provider.create_image_to_model(
-            png_seed, multiview_paths={"front": png_seed, "right": right_seed}
+            png_seed,
+            multiview_paths={"front": png_seed, "right": right_seed},
         )
 
         assert job.job_id == "job_single"
         assert "multi_view_images" not in mock_http.calls[0][3]
-
 
     @pytest.mark.asyncio
     async def test_submit_with_custom_settings(self, png_seed, mock_http, monkeypatch):
@@ -165,11 +172,13 @@ class TestSubmit:
         monkeypatch.setattr(SETTINGS, "hunyuan_enable_pbr", False)
         monkeypatch.setattr(SETTINGS, "hunyuan_result_format", "obj")
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"id": "job_custom", "status": "queued"}
+            200,
+            json={"id": "job_custom", "status": "queued"},
         )
 
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         job = await provider.create_image_to_model(png_seed)
         assert job.job_id == "job_custom"
@@ -185,7 +194,8 @@ class TestSubmit:
         seed = tmp_path / "front.gif"
         seed.write_bytes(b"GIF89a")
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         with pytest.raises(ImageTo3DError, match="格式不支持"):
             await provider.create_image_to_model(seed)
@@ -195,7 +205,8 @@ class TestSubmit:
         seed = tmp_path / "front.png"
         seed.write_bytes(b"\x89PNG" + b"\x00" * (10 * 1024 * 1024 + 1))
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         with pytest.raises(ImageTo3DError, match="10MB"):
             await provider.create_image_to_model(seed)
@@ -205,7 +216,8 @@ class TestSubmit:
         mock_http.responder = lambda _r: httpx.Response(200, json={"status": "queued"})
 
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         with pytest.raises(ImageTo3DError, match="missing job id"):
             await provider.create_image_to_model(png_seed)
@@ -215,7 +227,8 @@ class TestSubmit:
         mock_http.responder = lambda _r: httpx.Response(401, text="unauthorized")
 
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         with pytest.raises(ImageTo3DError) as exc_info:
             await provider.create_image_to_model(png_seed)
@@ -226,7 +239,8 @@ class TestPoll:
     @pytest.mark.asyncio
     async def test_queued_and_in_progress_queries_task(self, mock_http):
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
 
         mock_http.responder = lambda _r: httpx.Response(200, json={"status": "queued"})
@@ -240,7 +254,8 @@ class TestPoll:
         assert body == {"id": "j", "model": "hy-3d-3.1"}
 
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"status": "in_progress"}
+            200,
+            json={"status": "in_progress"},
         )
         result = await provider.poll(Model3DJob(job_id="j"))
         assert result.status == "in_progress"
@@ -248,7 +263,8 @@ class TestPoll:
     @pytest.mark.asyncio
     async def test_completed_maps_assets(self, mock_http):
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         mock_http.responder = lambda _r: httpx.Response(
             200,
@@ -270,17 +286,21 @@ class TestPoll:
         assert result.assets == (
             Model3DAsset(kind="obj", url="https://x/m.obj", preview_image_url=None),
             Model3DAsset(
-                kind="glb", url="https://x/m.glb", preview_image_url="https://x/p.png"
+                kind="glb",
+                url="https://x/m.glb",
+                preview_image_url="https://x/p.png",
             ),
         )
 
     @pytest.mark.asyncio
     async def test_failed_passes_error_through(self, mock_http):
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"status": "failed", "error": "content rejected"}
+            200,
+            json={"status": "failed", "error": "content rejected"},
         )
         result = await provider.poll(Model3DJob(job_id="j"))
         assert result.status == "failed"
@@ -289,10 +309,12 @@ class TestPoll:
     @pytest.mark.asyncio
     async def test_unknown_status_keeps_polling(self, mock_http):
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         mock_http.responder = lambda _r: httpx.Response(
-            200, json={"status": "weird_new_status"}
+            200,
+            json={"status": "weird_new_status"},
         )
         assert (await provider.poll(Model3DJob(job_id="j"))).status == "in_progress"
 
@@ -306,7 +328,8 @@ class TestDownload:
 
         monkeypatch.setattr(hunyuan_client, "download_model", _fake_download)
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         result = Model3DPollResult(
             status="completed",
@@ -329,7 +352,8 @@ class TestDownload:
 
         monkeypatch.setattr(hunyuan_client, "download_model", _fake_download)
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         result = Model3DPollResult(
             status="completed",
@@ -351,7 +375,8 @@ class TestDownload:
 
         monkeypatch.setattr(hunyuan_client, "download_model", _fake_download)
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         result = Model3DPollResult(
             status="completed",
@@ -364,11 +389,13 @@ class TestDownload:
     @pytest.mark.asyncio
     async def test_no_assets_raises(self, tmp_path):
         provider = HunyuanImageTo3DProvider(
-            api_key="hk_test", base_url="https://tokenhub.test"
+            api_key="hk_test",
+            base_url="https://tokenhub.test",
         )
         with pytest.raises(ImageTo3DError, match="未返回模型下载地址"):
             await provider.download(
-                Model3DPollResult(status="completed", progress=100), tmp_path
+                Model3DPollResult(status="completed", progress=100),
+                tmp_path,
             )
 
 

@@ -17,9 +17,7 @@ def test_base_url_prefers_settings_over_default(monkeypatch):
 
 class _MockTransport(httpx.AsyncBaseTransport):
     def __init__(self) -> None:
-        self.responder: Callable[[httpx.Request], httpx.Response] = lambda r: (
-            httpx.Response(200, json={})
-        )
+        self.responder: Callable[[httpx.Request], httpx.Response] = lambda _r: (httpx.Response(200, json={}))
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
@@ -73,10 +71,13 @@ async def test_create_image_to_model_rejects_empty_token(mock_http):
 async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
     """P 系列 face_limit 上限为 20000；裁剪载荷以防 H 系列配置在切换模型时返回 400。"""
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_p"})
+        200,
+        json=_ok({"task_id": "task_p"}),
     )
     await tripo_client.create_image_to_model(
-        "file_x", model_version="P1-20260311", face_limit=500_000
+        "file_x",
+        model_version="P1-20260311",
+        face_limit=500_000,
     )
     body = mock_http.calls[0][2]
     assert body["face_limit"] == 20_000
@@ -85,7 +86,8 @@ async def test_create_image_to_model_clamps_face_limit_for_p_series(mock_http):
 @pytest.mark.asyncio
 async def test_create_image_to_model_selects_endpoint_by_auxiliary_views(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_single"})
+        200,
+        json=_ok({"task_id": "task_single"}),
     )
     await tripo_client.create_image_to_model("file_x")
     method, url, body = mock_http.calls[0]
@@ -100,7 +102,8 @@ async def test_create_image_to_model_selects_endpoint_by_auxiliary_views(mock_ht
 @pytest.mark.asyncio
 async def test_create_image_to_model_posts_multiview_inputs(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "task_mv"})
+        200,
+        json=_ok({"task_id": "task_mv"}),
     )
     await tripo_client.create_image_to_model(
         "file_f",
@@ -129,7 +132,8 @@ async def test_rig_pins_tripo_naming_and_splits_model_by_rig_type(mock_http):
     ):
         mock_http.calls.clear()
         mock_http.responder = lambda _r: httpx.Response(
-            200, json=_ok({"task_id": "rig_1"})
+            200,
+            json=_ok({"task_id": "rig_1"}),
         )
         await tripo_client.rig("task_x", rig_type)
         body = mock_http.calls[0][2]
@@ -141,7 +145,8 @@ async def test_rig_pins_tripo_naming_and_splits_model_by_rig_type(mock_http):
 @pytest.mark.asyncio
 async def test_envelope_raises_on_nonzero_code(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_err(2010, "insufficient credit")
+        200,
+        json=_err(2010, "insufficient credit"),
     )
     with pytest.raises(tripo_client.TripoApiError, match="2010"):
         await tripo_client.account_balance()
@@ -177,7 +182,8 @@ async def test_poll_task_returns_on_success(mock_http):
 @pytest.mark.asyncio
 async def test_poll_task_raises_on_failed(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"status": "failed", "message": "bad"})
+        200,
+        json=_ok({"status": "failed", "message": "bad"}),
     )
     with pytest.raises(tripo_client.TripoTaskFailed, match="failed"):
         await tripo_client.poll_task("task_x", interval=0.001)
@@ -188,7 +194,8 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
     queue = [
         lambda _r: httpx.Response(200, json=_ok({"status": "running", "progress": 30})),
         lambda _r: httpx.Response(
-            200, json=_ok({"status": "success", "progress": 100})
+            200,
+            json=_ok({"status": "success", "progress": 100}),
         ),
     ]
     seq = iter(queue)
@@ -199,7 +206,9 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
     mock_http.responder = _responder
     seen: list[int] = []
     data = await tripo_client.poll_task(
-        "task_x", interval=0.001, on_progress=lambda d: seen.append(d["progress"])
+        "task_x",
+        interval=0.001,
+        on_progress=lambda d: seen.append(d["progress"]),
     )
     assert seen == [30, 100]
     assert data["status"] == "success"
@@ -209,7 +218,8 @@ async def test_poll_task_invokes_on_progress_with_each_response(mock_http):
 async def test_poll_task_raises_on_error_envelope(mock_http):
     """轮询中遇到非零 code 必须快速失败，而不是一直轮询到超时。"""
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_err(2010, "insufficient credit")
+        200,
+        json=_err(2010, "insufficient credit"),
     )
     with pytest.raises(tripo_client.TripoApiError, match="2010"):
         await tripo_client.poll_task("task_x", interval=0.001)
@@ -218,7 +228,8 @@ async def test_poll_task_raises_on_error_envelope(mock_http):
 @pytest.mark.asyncio
 async def test_retarget_submits_deduped_flat_preset_array(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
-        200, json=_ok({"task_id": "anim_1"})
+        200,
+        json=_ok({"task_id": "anim_1"}),
     )
     assert await tripo_client.retarget("task_rigged", "biped") == "anim_1"
     body = mock_http.calls[0][2]
@@ -227,9 +238,7 @@ async def test_retarget_submits_deduped_flat_preset_array(mock_http):
     assert body["bake_animation"] is True
     # 供应商收的是扁平字符串数组，不是对象数组；多个语义键复用同一预设，去重后才提交。
     assert body["animations"] == list(dict.fromkeys(body["animations"]))
-    assert all(
-        isinstance(a, str) and a.startswith("preset:biped:") for a in body["animations"]
-    )
+    assert all(isinstance(a, str) and a.startswith("preset:biped:") for a in body["animations"])
     assert "preset:biped:idle" in body["animations"]
     # 每个预设单独计费，biped 只绑产品必需的最小集。
     assert len(body["animations"]) == 6
@@ -243,7 +252,8 @@ async def test_retarget_submits_single_preset_for_non_biped(mock_http):
     ):
         mock_http.calls.clear()
         mock_http.responder = lambda _r: httpx.Response(
-            200, json=_ok({"task_id": "anim_q"})
+            200,
+            json=_ok({"task_id": "anim_q"}),
         )
         await tripo_client.retarget("task_rigged", rig_type)
         assert mock_http.calls[0][2]["animations"] == [preset]

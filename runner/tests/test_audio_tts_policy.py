@@ -5,7 +5,8 @@ from unittest import mock
 import pytest
 
 pytest.importorskip(
-    "tools.multimodal.audio.piper_runtime", reason="piper runtime not importable"
+    "tools.multimodal.audio.piper_runtime",
+    reason="piper runtime not importable",
 )
 
 
@@ -33,10 +34,12 @@ def test_tts_tool_rejects_cloud_voice_ids():
 def test_tts_tool_rejects_mimo_voicedesign_token():
     from tools.multimodal.audio import tts_tool
 
-    result = tts_tool.text_to_speech_tool({
-        "text": "hi",
-        "voice": "mimo_voicedesign:cool girl",
-    })
+    result = tts_tool.text_to_speech_tool(
+        {
+            "text": "hi",
+            "voice": "mimo_voicedesign:cool girl",
+        },
+    )
     payload = json.loads(result)
     assert payload["success"] is False
 
@@ -53,11 +56,13 @@ def test_tts_tool_mimo_voicedesign_with_fallback_to_local(tmp_path: Path, monkey
 
     monkeypatch.setattr(tts_tool, "_synth_piper", fake_piper)
 
-    result = tts_tool.text_to_speech_tool({
-        "text": "hi",
-        "voice": "mimo_voicedesign:cool girl",
-        "fallback_to_local": True,
-    })
+    result = tts_tool.text_to_speech_tool(
+        {
+            "text": "hi",
+            "voice": "mimo_voicedesign:cool girl",
+            "fallback_to_local": True,
+        },
+    )
     payload = json.loads(result)
     assert payload["success"] is True
     assert payload["engine"] == "piper"
@@ -75,9 +80,7 @@ def test_bundled_voices_voice_ids_match_piper_pattern():
     from tools.multimodal.audio import piper_runtime as pr
 
     for vid in pr.bundled_voices():
-        assert pr.PIPER_VOICE_RE.match(vid), (
-            f"bundled voice id {vid!r} does not match Piper pattern"
-        )
+        assert pr.PIPER_VOICE_RE.match(vid), f"bundled voice id {vid!r} does not match Piper pattern"
 
 
 def test_discover_installed_voices(tmp_path: Path):
@@ -105,9 +108,7 @@ def test_ensure_voice_installed_no_op_when_present(tmp_path: Path):
     json_path.write_text("{}", encoding="utf-8")
 
     with mock.patch.object(pr, "download_voice") as dl:
-        assert (
-            pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path) is True
-        )
+        assert pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path) is True
         dl.assert_not_called()
 
 
@@ -115,13 +116,12 @@ def test_ensure_voice_installed_download_failure_returns_false(tmp_path: Path):
     from tools.multimodal.audio import piper_runtime as pr
 
     with mock.patch.object(
-        pr, "download_voice", side_effect=RuntimeError("network down")
+        pr,
+        "download_voice",
+        side_effect=RuntimeError("network down"),
     ):
         # Returns False (no exception) — caller falls back to pyttsx3 or cloud.
-        assert (
-            pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path)
-            is False
-        )
+        assert pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path) is False
 
 
 def test_ensure_voice_installed_download_success(tmp_path: Path):
@@ -136,9 +136,7 @@ def test_ensure_voice_installed_download_success(tmp_path: Path):
         return onnx
 
     with mock.patch.object(pr, "download_voice", side_effect=fake_download):
-        assert (
-            pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path) is True
-        )
+        assert pr.ensure_voice_installed("zh_CN-huayan-medium", voice_dir=tmp_path) is True
         assert onnx.is_file() and json_path.is_file()
 
 
@@ -195,7 +193,8 @@ def test_tts_auto_piper_succeeds_no_pyttsx3_call(tmp_path: Path, monkeypatch):
 
 
 def test_tts_auto_piper_fails_silently_falls_back_to_pyttsx3(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path,
+    monkeypatch,
 ):
     """Without silent Piper→pyttsx3 fallback, model corruption / OOM would surface as a hard TTS error."""
     from tools.multimodal.audio import tts_tool

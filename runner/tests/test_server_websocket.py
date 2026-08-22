@@ -25,12 +25,11 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import pytest
-import websockets
-from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
-
 import server
 import utils.credential_files
 import utils.env_passthrough
+import websockets
+from test_transport import FakeDesktop, SessionWsAdapter, make_peer_endpoint
 from utils import IS_WINDOWS, set_inmemory_config
 
 
@@ -51,7 +50,9 @@ class _Peer:
         self.response_queues: dict[str, asyncio.Queue[dict[str, Any]]] = {}
 
     def on(
-        self, method: str, handler: Callable[[dict[str, Any]], Awaitable[Any] | Any]
+        self,
+        method: str,
+        handler: Callable[[dict[str, Any]], Awaitable[Any] | Any],
     ) -> None:
         self._handlers[method] = handler
 
@@ -76,14 +77,16 @@ class _Peer:
                 if handler is None:
                     if req_id is not None:
                         await peer_ws.send(
-                            json.dumps({
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "error": {
-                                    "code": -32601,
-                                    "message": "Method not found",
+                            json.dumps(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "error": {
+                                        "code": -32601,
+                                        "message": "Method not found",
+                                    },
                                 },
-                            })
+                            ),
                         )
                     continue
                 try:
@@ -93,16 +96,18 @@ class _Peer:
                 except Exception as exc:
                     if req_id is not None:
                         await peer_ws.send(
-                            json.dumps({
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "error": {"code": -32000, "message": str(exc)},
-                            })
+                            json.dumps(
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": req_id,
+                                    "error": {"code": -32000, "message": str(exc)},
+                                },
+                            ),
                         )
                     continue
                 if req_id is not None:
                     await peer_ws.send(
-                        json.dumps({"jsonrpc": "2.0", "id": req_id, "result": result})
+                        json.dumps({"jsonrpc": "2.0", "id": req_id, "result": result}),
                     )
         except websockets.exceptions.ConnectionClosed:
             pass
@@ -136,9 +141,7 @@ async def desktop_peer(tmp_path):
 
     try:
         ready = await asyncio.wait_for(peer_obj.request_queue.get(), timeout=10)
-        assert ready.get("method") == "runner_ready", (
-            f"first message should be runner_ready, got {ready}"
-        )
+        assert ready.get("method") == "runner_ready", f"first message should be runner_ready, got {ready}"
         yield {"peer": peer_obj, "fake": fake, "runner_task": runner_task}
     finally:
         runner_task.cancel()
@@ -191,9 +194,7 @@ async def test_get_tools_returns_registry_schemas():
     names = {t["name"] for t in sent[0]["result"]["tools"]}
     # Tools that are platform-independent (always visible when deps import OK).
     for expected in ("write_file", "read_file", "list_directory", "skills_list"):
-        assert expected in names, (
-            f"{expected} missing from LLM-visible toolset: {sorted(names)[:10]}"
-        )
+        assert expected in names, f"{expected} missing from LLM-visible toolset: {sorted(names)[:10]}"
 
 
 @pytest.mark.timeout(15)
@@ -280,11 +281,7 @@ async def test_execute_tool_routes_to_registry_read_file(tmp_path):
     await server.process_request(_FakeWS(), req)
     assert len(sent) == 1 and sent[0]["id"] == "e1"
     assert "result" in sent[0]
-    payload = (
-        json.loads(sent[0]["result"])
-        if isinstance(sent[0]["result"], str)
-        else sent[0]["result"]
-    )
+    payload = json.loads(sent[0]["result"]) if isinstance(sent[0]["result"], str) else sent[0]["result"]
     assert "ready_steady_go" in str(payload)
 
 
@@ -346,7 +343,8 @@ async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
             sent.append(json.loads(payload))
 
     await server.process_request(
-        _FakeWS(), {"id": "c1", "method": "spiritagent.cancel", "params": {}}
+        _FakeWS(),
+        {"id": "c1", "method": "spiritagent.cancel", "params": {}},
     )
     assert sent[0]["result"] == {"ok": True}
     assert is_interrupted() is True
@@ -368,7 +366,8 @@ async def test_non_execute_tool_request_keeps_stale_interrupt():
             sent.append(json.loads(payload))
 
     await server.process_request(
-        _FakeWS(), {"id": "g3", "method": "get_tools", "params": {}}
+        _FakeWS(),
+        {"id": "g3", "method": "get_tools", "params": {}},
     )
     assert sent[0]["id"] == "g3"
     # The diagnostic poll must leave the cancel flag in place.
@@ -387,7 +386,8 @@ async def test_execute_tool_clears_stale_interrupt():
             sent.append(json.loads(payload))
 
     await server.process_request(
-        _FakeWS(), {"id": "e1", "method": "execute_tool", "params": {"name": "nonexistent_tool", "arguments": {}}}
+        _FakeWS(),
+        {"id": "e1", "method": "execute_tool", "params": {"name": "nonexistent_tool", "arguments": {}}},
     )
     # execute_tool (even one that errors on an unknown tool) clears the flag
     # before dispatch, and responds with a JSON-RPC error frame.
@@ -494,7 +494,7 @@ async def test_process_request_survives_failing_error_reply():
                 "method": "spiritagent.config.update",
                 "params": {"config": "not-a-dict"},
             },
-        )
+        ),
     )
     await asyncio.wait_for(task, 5)
     assert task.exception() is None

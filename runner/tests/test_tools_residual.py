@@ -137,7 +137,9 @@ class TestToolOutputLimits:
 
         real = tol.load_config
         monkeypatch.setattr(
-            tol, "load_config", lambda: {"tool_output": {"max_bytes": 99_999}}
+            tol,
+            "load_config",
+            lambda: {"tool_output": {"max_bytes": 99_999}},
         )
         try:
             reset_cache()
@@ -170,7 +172,10 @@ class TestMaybePersistToolResult:
         env = _FakeEnv()
         s = "x" * (DEFAULT_BUDGET.default_result_size + 10_000)
         out = maybe_persist_tool_result(
-            s, tool_name="some_big_tool", tool_use_id="t3", env=env
+            s,
+            tool_name="some_big_tool",
+            tool_use_id="t3",
+            env=env,
         )
         # Persisted marker MUST be present.
         assert PERSISTED_OUTPUT_TAG in out
@@ -190,7 +195,10 @@ class TestMaybePersistToolResult:
 
         s = "x" * (DEFAULT_BUDGET.default_result_size + 10_000)
         out = maybe_persist_tool_result(
-            s, tool_name="some_big_tool", tool_use_id="t4", env=_FakeEnv()
+            s,
+            tool_name="some_big_tool",
+            tool_use_id="t4",
+            env=_FakeEnv(),
         )
         assert "Truncated" in out
 
@@ -304,7 +312,7 @@ class TestExecuteCodeHelpers:
     def test_scrub_child_env_strips_unlisted_spiritagent_vars(self):
         """SPIRITAGENT_* vars not in the allow-list MUST be dropped."""
         env = {"SPIRITAGENT_HOME": "/x", "SPIRITAGENT_FOO": "bar"}
-        out = ec._scrub_child_env(env, is_passthrough=lambda k: False, is_windows=False)
+        out = ec._scrub_child_env(env, is_passthrough=lambda _k: False, is_windows=False)
         # SPIRITAGENT_HOME is in SPIRITAGENT_CHILD_ALLOWED so it's kept.
         assert "SPIRITAGENT_HOME" in out
         # SPIRITAGENT_FOO is NOT in the allow-list; MUST be dropped.
@@ -341,11 +349,13 @@ class TestWebsitePolicy:
         from utils.config import set_inmemory_config
 
         url_safety._cached_policy = None
-        set_inmemory_config({
-            "security": {
-                "website_blocklist": {"enabled": True, "domains": ["example.com"]}
-            }
-        })
+        set_inmemory_config(
+            {
+                "security": {
+                    "website_blocklist": {"enabled": True, "domains": ["example.com"]},
+                },
+            },
+        )
         try:
             out = check_website_access("https://WWW.Example.COM/path")
             assert out is not None, "blocklist rule must match after host normalization"
@@ -371,11 +381,10 @@ class TestToolsets:
 
         # Find a toolset with at least one prefix that matches a known
         # registered tool name; ``browser_*`` is a stable prefix.
-        browser_toolset = next(
-            d for d in TOOLSET_CATALOG if any(p == "browser_" for p in d.prefixes)
-        )
+        browser_toolset = next(d for d in TOOLSET_CATALOG if any(p == "browser_" for p in d.prefixes))
         out = excluded_tool_names(
-            {browser_toolset.id}, {"browser_navigate", "terminal"}
+            {browser_toolset.id},
+            {"browser_navigate", "terminal"},
         )
         assert "browser_navigate" in out
         assert "terminal" not in out
@@ -388,9 +397,7 @@ class TestToolsets:
         monkeypatch.setattr(
             toolsets_helpers,
             "get_disabled_config_names",
-            lambda section="skills": (
-                {"skill_lab", "mcp_staging"} if section == "toolsets" else set()
-            ),
+            lambda section="skills": ({"skill_lab", "mcp_staging"} if section == "toolsets" else set()),
         )
         try:
             ids = toolsets_helpers.get_disabled_toolset_ids()

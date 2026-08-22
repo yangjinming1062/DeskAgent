@@ -2,11 +2,9 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from api.v1.companion import router as companion_router
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import update
-
-from api.v1.companion import router as companion_router
 from modules.companion import AvatarAsset, Persona
 from services.companion import (
     AvatarSourceUnreadableError,
@@ -20,6 +18,7 @@ from services.companion import (
     get_onboarding_state,
     select_fullbody_style,
 )
+from sqlalchemy import update
 
 
 @pytest.mark.asyncio
@@ -64,7 +63,9 @@ async def test_fullbody_generate_samples(SessionLocal):
                 "https://source.example/test.jpg",
             )
             samples = await generate_fullbody_style_samples(
-                db, user_id, avatar_id=avatar.id
+                db,
+                user_id,
+                avatar_id=avatar.id,
             )
             assert len(samples) == 2
             assert "cel_shading" in samples
@@ -101,7 +102,7 @@ async def test_fullbody_select_style(SessionLocal):
                         "cel_shading": "temp-media/sample_cel",
                         "anime_game_cg": "temp-media/sample_cg",
                     },
-                }
+                },
             ),
             asset_url="companion-avatars/test.jpg",
             seed_right_url="companion-avatars/old_right.jpg",
@@ -112,7 +113,10 @@ async def test_fullbody_select_style(SessionLocal):
         await db.commit()
 
         asset = await select_fullbody_style(
-            db, user_id, avatar_id=avatar.id, style="anime_game_cg"
+            db,
+            user_id,
+            avatar_id=avatar.id,
+            style="anime_game_cg",
         )
         assert asset.seed_front_url == "/api/media/files/sample_cg"
         assert "old_right.jpg" in asset.seed_right_url
@@ -123,7 +127,10 @@ async def test_fullbody_select_style(SessionLocal):
         assert res.seed_front_url == "/api/media/files/sample_cg"
 
         asset = await select_fullbody_style(
-            db, user_id, avatar_id=avatar.id, style="cel_shading"
+            db,
+            user_id,
+            avatar_id=avatar.id,
+            style="cel_shading",
         )
         assert asset.seed_front_url == "/api/media/files/sample_cel"
 
@@ -143,7 +150,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
                     "avatar_prompt": "少女",
                     "fullbody_style": "cel_shading",
                     "fullbody_samples": {"cel_shading": "temp-media/sample_front"},
-                }
+                },
             ),
             asset_url="companion-avatars/test.jpg",
             seed_front_url="temp-media/sample_front",
@@ -190,7 +197,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
                 seed_front_url="temp-media/expired_front",
                 seed_right_url="",
                 seed_back_url="",
-            )
+            ),
         )
         await db.commit()
         with (
@@ -229,7 +236,10 @@ async def test_fullbody_select_style_without_samples_keeps_seed(SessionLocal):
         await db.commit()
 
         asset = await select_fullbody_style(
-            db, user_id, avatar_id=avatar.id, style="cel_shading"
+            db,
+            user_id,
+            avatar_id=avatar.id,
+            style="cel_shading",
         )
         assert "refined_front.jpg" in asset.seed_front_url
         assert avatar_response(asset).fullbody_style == "cel_shading"
@@ -270,7 +280,10 @@ async def test_fullbody_front_and_confirm(SessionLocal):
             assert "seed_front" in asset.seed_front_url
 
             confirmed_asset = await confirm_fullbody_front(
-                db, user_id, avatar_id=avatar.id, style="cel_shading"
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="cel_shading",
             )
             assert confirmed_asset.seed_front_url is not None
             assert confirmed_asset.seed_right_url is not None
@@ -330,7 +343,10 @@ async def test_fullbody_confirm_without_front_raises(SessionLocal):
 
         with pytest.raises(FrontSeedMissingError):
             await confirm_fullbody_front(
-                db, user_id, avatar_id=avatar.id, style="cel_shading"
+                db,
+                user_id,
+                avatar_id=avatar.id,
+                style="cel_shading",
             )
 
 
@@ -567,10 +583,7 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
             )
             assert len(samples) == 2
             for call in mock_gen.call_args_list:
-                assert (
-                    call.kwargs.get("reference_image")
-                    == f"data:image/png;base64,{custom_ref_b64}"
-                )
+                assert call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"
 
             mock_gen.return_value = (
                 "companion-avatars/front_custom.jpg",
@@ -588,10 +601,7 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
             )
             assert "front_custom" in asset.seed_front_url
             last_call = mock_gen.call_args_list[-1]
-            assert (
-                last_call.kwargs.get("reference_image")
-                == f"data:image/png;base64,{custom_ref_b64}"
-            )
+            assert last_call.kwargs.get("reference_image") == f"data:image/png;base64,{custom_ref_b64}"
 
 
 @pytest.mark.asyncio
@@ -714,7 +724,7 @@ async def test_fullbody_onboarding_state_with_and_without_multiview(SessionLocal
                     "role": "助手",
                     "personality": "温和",
                     "speaking_style": "礼貌",
-                }
+                },
             ),
             is_complete=True,
             is_portrait_confirmed=True,

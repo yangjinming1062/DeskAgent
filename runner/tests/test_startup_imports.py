@@ -37,7 +37,9 @@ STARTUP_IMPORTS = [
 
 
 @pytest.mark.parametrize(
-    "desc,stmt", STARTUP_IMPORTS, ids=[desc for desc, _ in STARTUP_IMPORTS]
+    "desc,stmt",
+    STARTUP_IMPORTS,
+    ids=[desc for desc, _ in STARTUP_IMPORTS],
 )
 def test_server_startup_import(desc: str, stmt: str) -> None:
     """Each row is consolidated from a contiguous block of
