@@ -2,9 +2,11 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 import time
 import traceback
+from copy import deepcopy
 from typing import Any
 
 from envs import (
@@ -91,9 +93,26 @@ def _safe_command_preview(command: Any, limit: int = 200) -> str:
         return f"<{type(command).__name__}>"
 
 
-TERMINAL_TOOL_DESCRIPTION = """Execute shell commands on a POSIX environment. Filesystem usually persists between calls.
+WINDOWS_TOOL_DESCRIPTION = """Execute shell commands on the user's Windows host through Git Bash.
+This is the user's desktop machine, not a virtual machine or Linux container. The host filesystem persists between calls.
+Paths may use Windows absolute form (C:\\Users\\name or C:/Users/name) or Git Bash MSYS form (/c/Users/name).
+Use Bash syntax for chaining, quoting, and pipes, but invoke Windows executables and CLI tools directly.
+Use winget, pip, npm, or cargo for packages. Do not use apt, apt-get, yum, dnf, pacman, systemctl, or sudo."""
 
-Do NOT use cat/head/tail to read files — use read_file instead.
+MACOS_TOOL_DESCRIPTION = """Execute shell commands on the user's macOS (Darwin) host terminal through its Bash-compatible shell.
+This is the user's desktop Mac, not a virtual machine or Linux container. The host filesystem persists between calls.
+Paths use standard POSIX form (/Users/name).
+macOS provides BSD command-line tools and native utilities such as open, pbcopy, and sw_vers; note BSD differences such as sed -i ''.
+Use brew, pip, npm, or cargo for packages. Do not use apt, apt-get, yum, dnf, pacman, or systemctl.
+The non-interactive shell cannot answer sudo password prompts; avoid sudo."""
+
+CONTAINER_TOOL_DESCRIPTION = """Execute shell commands in the configured Linux container through Bash.
+The filesystem and tools depend on the container configuration."""
+
+REMOTE_TOOL_DESCRIPTION = """Execute shell commands on the configured remote host through its Bash-compatible shell.
+The remote platform, tools, package manager, and filesystem depend on that host."""
+
+TERMINAL_COMMON_DESCRIPTION = """Do NOT use cat/head/tail to read files — use read_file instead.
 Do NOT use grep/rg/find to search — use search_files instead.
 Do NOT use ls to list directories — use search_files(target='files') instead.
 Do NOT use sed/awk to edit files — use patch instead.
@@ -112,6 +131,26 @@ PTY mode: Set pty=true for interactive CLI tools (Codex, Claude Code, Python REP
 
 Do NOT use vim/nano/interactive tools without pty=true — they hang without a pseudo-terminal. Pipe git output to cat if it might page.
 """
+
+
+def _normalize_terminal_platform(platform_name: str | None = None) -> str:
+    normalized = (platform_name or sys.platform).lower()
+    if normalized in {"win32", "windows", "cygwin", "msys"}:
+        return "win32"
+    if normalized in {"darwin", "macos"}:
+        return "darwin"
+    raise ValueError(f"Unsupported terminal host platform: {platform_name or sys.platform!r}. Use win32 or darwin.")
+
+
+def build_terminal_tool_description(platform_name: str | None = None, env_type: str = "local") -> str:
+    if env_type in {"docker", "singularity"}:
+        backend_description = CONTAINER_TOOL_DESCRIPTION
+    elif env_type == "ssh":
+        backend_description = REMOTE_TOOL_DESCRIPTION
+    else:
+        platform = _normalize_terminal_platform(platform_name)
+        backend_description = WINDOWS_TOOL_DESCRIPTION if platform == "win32" else MACOS_TOOL_DESCRIPTION
+    return backend_description + "\n\n" + TERMINAL_COMMON_DESCRIPTION
 
 
 def _interpret_exit_code(command: str, exit_code: int) -> str | None:
@@ -207,6 +246,41 @@ def _foreground_background_guidance(command: str) -> str | None:
     return None
 
 
+_COMMAND_START_RE = r"(?:^|[;&|`]\s*|\$\(\s*|\(\s*)"
+_ENV_ASSIGNMENT_PREFIX_RE = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+_SUDO_PREFIX_RE = r"(?:sudo(?:\s+-[A-Za-z0-9_-]+|\s+--\S+)*\s+)?"
+_LINUX_PACKAGE_COMMAND_RE = re.compile(
+    _COMMAND_START_RE + _ENV_ASSIGNMENT_PREFIX_RE + _SUDO_PREFIX_RE + r"(?:[^;&|\s]*[/\\])?(?P<command>apt-get|aptitude|apt|yum|dnf|pacman|zypper|apk)\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+_LINUX_SERVICE_COMMAND_RE = re.compile(
+    _COMMAND_START_RE + _ENV_ASSIGNMENT_PREFIX_RE + _SUDO_PREFIX_RE + r"(?:[^;&|\s]*[/\\])?systemctl\b",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _blocked_host_command_error(command: str, env_type: str, platform_name: str | None = None) -> str | None:
+    if env_type != "local":
+        return None
+    platform = _normalize_terminal_platform(platform_name)
+    unquoted = _strip_quotes(command)
+    package_match = _LINUX_PACKAGE_COMMAND_RE.search(unquoted)
+    if package_match:
+        blocked = package_match.group("command").lower()
+        alternatives = "winget, pip, npm, or cargo" if platform == "win32" else "brew, pip, npm, or cargo"
+        host = "Windows host running Git Bash" if platform == "win32" else "macOS host"
+        return f"On {host}, '{blocked}' is unavailable. Use {alternatives} instead of Linux package managers."
+    if _LINUX_SERVICE_COMMAND_RE.search(unquoted):
+        host = "Windows" if platform == "win32" else "macOS"
+        service_guidance = (
+            "On Windows, manage services with native service tooling when explicitly requested."
+            if platform == "win32"
+            else "On macOS, use launchd-aware tooling or open applications instead of systemctl."
+        )
+        return f"systemctl is unavailable on this {host} host. {service_guidance}"
+    return None
+
+
 def _resolve_notification_flag_conflict(*, notify_on_complete: bool, watch_patterns: list[str] | None, background: bool) -> tuple[list[str] | None, str]:
     if background and notify_on_complete and watch_patterns:
         note = "watch_patterns ignored because notify_on_complete=True; these two flags produce duplicate notifications when combined"
@@ -240,6 +314,8 @@ def terminal_tool(
             return json.dumps({"output": "", "exit_code": -1, "error": f"Invalid command: expected string, got {type(command).__name__}", "status": "error"}, ensure_ascii=False)
         config = get_env_config()
         env_type = config["env_type"]
+        if blocked_host_error := _blocked_host_command_error(command, env_type):
+            return json.dumps({"output": "", "exit_code": -1, "error": blocked_host_error, "status": "blocked"}, ensure_ascii=False)
         effective_task_id = resolve_container_task_id(task_id)
         overrides = (task_env_overrides.get(task_id) if task_id else None) or task_env_overrides.get(effective_task_id, {})
         if env_type == "docker":
@@ -532,13 +608,13 @@ def terminal_tool(
         return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {e!s}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
 
 
-TERMINAL_SCHEMA = {
+_TERMINAL_SCHEMA_TEMPLATE = {
     "name": "terminal",
-    "description": TERMINAL_TOOL_DESCRIPTION,
+    "description": "",
     "parameters": {
         "type": "object",
         "properties": {
-            "command": {"type": "string", "description": "The command to execute on the VM"},
+            "command": {"type": "string", "description": ""},
             "background": {
                 "type": "boolean",
                 "description": "Run the command in the background. Almost always pair with notify_on_complete=true — without it, the process runs silently and you'll have no way to learn it finished short of calling process(action='poll') yourself (easy to forget, leading to silent blindness on long jobs). Two legitimate patterns: (1) Long-lived processes that never exit (servers, watchers, daemons) — these stay silent because there's no exit to notify on. (2) Long-running bounded tasks (tests, builds, deploys, CI pollers, batch jobs) — these MUST set notify_on_complete=true. For short commands, prefer foreground with a generous timeout instead.",
@@ -571,6 +647,23 @@ TERMINAL_SCHEMA = {
 }
 
 
+def build_terminal_schema(platform_name: str | None = None, env_type: str = "local") -> dict[str, Any]:
+    if env_type in {"docker", "singularity"}:
+        command_description = "The shell command to execute in the configured Linux container."
+    elif env_type == "ssh":
+        command_description = "The shell command to execute on the configured remote host."
+    else:
+        platform = _normalize_terminal_platform(platform_name)
+        command_description = (
+            "The shell command to execute on the user's Windows host via Git Bash." if platform == "win32" else "The shell command to execute on the user's macOS host terminal."
+        )
+
+    schema = deepcopy(_TERMINAL_SCHEMA_TEMPLATE)
+    schema["description"] = build_terminal_tool_description(platform_name, env_type)
+    schema["parameters"]["properties"]["command"]["description"] = command_description
+    return schema
+
+
 def _handle_terminal(args: dict[str, Any], **kw: Any) -> str:
     return terminal_tool(
         command=args.get("command"),
@@ -584,4 +677,4 @@ def _handle_terminal(args: dict[str, Any], **kw: Any) -> str:
     )
 
 
-registry.register_tool("terminal", schema=TERMINAL_SCHEMA)(_handle_terminal)
+registry.register_tool("terminal", schema=build_terminal_schema(env_type=get_env_config()["env_type"]))(_handle_terminal)

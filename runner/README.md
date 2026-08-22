@@ -56,6 +56,7 @@ runner/
 - **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
+- **本地终端提示与宿主平台对齐**：本地终端按 Windows（Git Bash）或 macOS（Darwin/BSD）宿主环境动态装配提示词并在执行前拦截 Linux 发行版包管理器与服务命令；防止模型将用户桌面误判为 Linux 虚拟机导致执行中断；为什么不写成通用跨平台描述：模糊描述会导致模型反复试探无效 Linux 指令；为什么容器与 SSH 终端不套用拦截：这些后端可能本身就是真实 Linux 环境。
 - **依赖显式声明而非 try-except import**：Runner 以 uv wheel 分发、装到用户机器后依赖集即冻结、无法中途增补——所有 pip 依赖一律显式声明（含平台 marker），"有就是有、没有就是没有"，不需要在导入时再判断。try-except import 只允许两类合法场景：① 运行时能力探测（故意执行原生加载器的 import 验证二进制真能加载）；② OS 框架/平台导入（ctypes / Quartz / pythoncom 等非 pip 依赖）。
 - **代码执行沙箱 RPC 令牌鉴权**：每次代码执行生成一次性能力 token，子进程首帧校验；Windows loopback TCP 端点防范本地未授权进程访问。
 - **单进程 1:1 架构模型**：多用户或多实例场景下每个客户端单独 spawn 专属 Runner 进程，天然隔离各用户的本地权限、环境变量与进程上下文。
