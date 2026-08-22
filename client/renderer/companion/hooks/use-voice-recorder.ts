@@ -2,6 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
+import {
+  getAudioExtensionForMime,
+  getSupportedOpusMimeType,
+  VOICE_CALL_AUDIO_CONSTRAINTS
+} from '@/companion/voice-call-dock'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
 type Options = {
@@ -77,7 +82,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
         reader.readAsDataURL(blob)
       })
 
-      const res = await window.spiritagent.media.stt({ dataUrl, filename: 'voice.webm' })
+      const ext = getAudioExtensionForMime(blob.type)
+      const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
       const text = (res.text ?? '').trim()
 
       return text || null
@@ -107,7 +113,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       return
     }
 
-    const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+    const mimeType = recorder.mimeType || getSupportedOpusMimeType() || 'audio/webm'
+    const blob = new Blob(chunksRef.current, { type: mimeType })
 
     chunksRef.current = []
 
@@ -142,8 +149,9 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     let pending: Promise<void> | null = null
     pending = (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        const recorder = new MediaRecorder(stream)
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
+        const mimeType = getSupportedOpusMimeType()
+        const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
 
         streamRef.current = stream
         recorderRef.current = recorder

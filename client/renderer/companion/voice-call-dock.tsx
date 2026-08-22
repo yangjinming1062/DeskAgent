@@ -31,6 +31,43 @@ const SILENCE_END_MS = 1300
 // 在没有任何 message.start 到达时释放 awaiting-reply 锁，使麦克风能再次开启。
 const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
+export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  autoGainControl: true,
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  sampleRate: 16000
+}
+
+export const PREFERRED_OPUS_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+  'audio/mp4;codecs=opus',
+  'audio/mp4'
+] as const
+
+export function getSupportedOpusMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return undefined
+  }
+
+  return PREFERRED_OPUS_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type))
+}
+
+export function getAudioExtensionForMime(mime: string): string {
+  if (mime.includes('ogg')) {
+    return 'ogg'
+  }
+
+  if (mime.includes('mp4')) {
+    return 'mp4'
+  }
+
+  return 'webm'
+}
+
 // 实时半双工语音通话：麦克风持续录制，静音检测切片转写后提交 prompt，支持插话打断。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
@@ -73,7 +110,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
     let ctx: AudioContext | null = null
     navigator.mediaDevices
-      ?.getUserMedia({ audio: true })
+      ?.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
       .then(stream => {
         streamRef.current = stream
         setMicActive(true)
@@ -97,7 +134,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               }
 
               try {
-                const rec = new MediaRecorder(stream)
+                const mimeType = getSupportedOpusMimeType()
+                const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
                 const utteranceChunks: Blob[] = []
 
                 rec.ondataavailable = e => {
@@ -107,7 +145,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                 }
 
                 rec.onstop = () => {
-                  void transcribeAndSubmit(utteranceChunks)
+                  void transcribeAndSubmit(utteranceChunks, rec.mimeType || mimeType)
                 }
 
                 rec.start()
@@ -196,12 +234,13 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       }
     }, 1000)
 
-    async function transcribeAndSubmit(chunks: Blob[]): Promise<void> {
+    async function transcribeAndSubmit(chunks: Blob[], mimeType?: string): Promise<void> {
       if (!chunks.length) {
         return
       }
 
-      const blob = new Blob(chunks, { type: 'audio/webm' })
+      const selectedMime = mimeType || 'audio/webm'
+      const blob = new Blob(chunks, { type: selectedMime })
       let text = ''
 
       try {
@@ -213,7 +252,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           reader.readAsDataURL(blob)
         })
 
-        const res = await window.spiritagent.media.stt({ dataUrl, filename: 'voice.webm' })
+        const ext = getAudioExtensionForMime(selectedMime)
+        const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
         text = (res.text ?? '').trim()
       } catch {
         // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。

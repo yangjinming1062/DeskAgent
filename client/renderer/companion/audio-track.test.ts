@@ -5,6 +5,9 @@ const hoisted = vi.hoisted(() => ({
   resumeGate: undefined as (() => Promise<void>) | undefined
 }))
 
+let nextRafId = 1
+const rafCallbacks = new Map<number, FrameRequestCallback>()
+
 class FakeAudio {
   static instances: FakeAudio[] = []
 
@@ -37,7 +40,7 @@ class FakeAudio {
   pause(): void {}
 
   async play(): Promise<void> {
-    hoisted.events.push('play')
+    hoisted.events.push(`play:${this.src}`)
   }
 
   emit(type: 'ended' | 'error'): void {
@@ -64,14 +67,17 @@ vi.mock('@/shared/lib/audio-context-ctor', () => ({
           fftSize: 0,
           frequencyBinCount: 1024,
           connect: (node: unknown) => hoisted.events.push('analyser.connect', String(node === this.destination)),
-          getByteTimeDomainData: (buffer: Uint8Array) => buffer.fill(128)
+          getByteTimeDomainData: (buffer: Uint8Array) => buffer.fill(160)
         }
       }
 
       createMediaElementSource(audio: FakeAudio) {
         hoisted.events.push(`source:${audio.src}`)
 
-        return { connect: () => hoisted.events.push('source.connect') }
+        return {
+          connect: () => hoisted.events.push('source.connect'),
+          disconnect: () => hoisted.events.push(`disconnect:${audio.src}`)
+        }
       }
     }
 }))
@@ -79,12 +85,19 @@ vi.mock('@/shared/lib/audio-context-ctor', () => ({
 beforeEach(() => {
   vi.resetModules()
   vi.stubGlobal('Audio', FakeAudio)
-  vi.stubGlobal('requestAnimationFrame', () => {
-    hoisted.events.push('requestAnimationFrame')
+  nextRafId = 1
+  rafCallbacks.clear()
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    const id = nextRafId++
+    rafCallbacks.set(id, cb)
+    hoisted.events.push(`requestAnimationFrame:${id}`)
 
-    return 1
+    return id
   })
-  vi.stubGlobal('cancelAnimationFrame', () => {})
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+    rafCallbacks.delete(id)
+    hoisted.events.push(`cancelAnimationFrame:${id}`)
+  })
   FakeAudio.instances = []
   hoisted.events = []
   hoisted.resumeGate = undefined
@@ -98,10 +111,7 @@ describe('playDataUrl', () => {
     const { playDataUrl } = await import('./audio-track')
     const playback = playDataUrl('data:audio/mpeg;base64,α')
 
-    // play() 必须在 ctx.resume() 完成之前就触发——把两者并行启动正是这点。
-    // 之前的实现强制所有 TTS 播放等待 AudioContext.resume()
-    // （空闲时 50–150 ms），导致每句话的第一个音节听起来被截断。
-    await vi.waitFor(() => expect(hoisted.events).toContain('play'))
+    await vi.waitFor(() => expect(hoisted.events).toContain('play:data:audio/mpeg;base64,α'))
     await vi.waitFor(() => expect(hoisted.events).toContain('resume'))
 
     resolveResume?.()
@@ -116,11 +126,98 @@ describe('playDataUrl', () => {
     const { playDataUrl } = await import('./audio-track')
     const playback = playDataUrl('data:audio/mpeg;base64,β')
 
-    await vi.waitFor(() => expect(hoisted.events).toContain('play'))
+    await vi.waitFor(() => expect(hoisted.events).toContain('play:data:audio/mpeg;base64,β'))
     // resume 被拒时 analyser 管线不会接上——这是预期行为。音频本身仍然能播放。
     expect(hoisted.events).not.toContainEqual('source:data:audio/mpeg;base64,β')
 
     FakeAudio.instances[0].emit('ended')
     await expect(playback).resolves.toBe(true)
+  })
+
+  it('prevents stale playback from overriding analyser when fast interrupted by new playback', async () => {
+    let resolveResume1: (() => void) | undefined
+    let resolveResume2: (() => void) | undefined
+
+    let callCount = 0
+
+    hoisted.resumeGate = () => {
+      callCount++
+
+      if (callCount === 1) {
+        return new Promise<void>(resolve => (resolveResume1 = resolve))
+      }
+
+      return new Promise<void>(resolve => (resolveResume2 = resolve))
+    }
+
+    const { playDataUrl } = await import('./audio-track')
+
+    const playback1 = playDataUrl('data:audio/mpeg;base64,audio-1')
+    await vi.waitFor(() => expect(hoisted.events).toContain('play:data:audio/mpeg;base64,audio-1'))
+
+    const playback2 = playDataUrl('data:audio/mpeg;base64,audio-2')
+    await vi.waitFor(() => expect(hoisted.events).toContain('play:data:audio/mpeg;base64,audio-2'))
+
+    FakeAudio.instances[0].emit('ended')
+    await expect(playback1).resolves.toBe(false)
+
+    resolveResume1?.()
+
+    expect(hoisted.events).not.toContain('source:data:audio/mpeg;base64,audio-1')
+
+    resolveResume2?.()
+
+    await vi.waitFor(() => expect(hoisted.events).toContain('source:data:audio/mpeg;base64,audio-2'))
+
+    FakeAudio.instances[1].emit('ended')
+    await expect(playback2).resolves.toBe(true)
+  })
+
+  it('stops rAF loop and prevents late resume from starting rAF after stopAudio', async () => {
+    let resolveResume: (() => void) | undefined
+    hoisted.resumeGate = () => new Promise<void>(resolve => (resolveResume = resolve))
+
+    const { playDataUrl, stopAudio } = await import('./audio-track')
+    const playback = playDataUrl('data:audio/mpeg;base64,cancelled')
+
+    await vi.waitFor(() => expect(hoisted.events).toContain('play:data:audio/mpeg;base64,cancelled'))
+
+    stopAudio()
+    await expect(playback).resolves.toBe(false)
+
+    const rAfCountBefore = hoisted.events.filter(e => e.startsWith('requestAnimationFrame')).length
+
+    resolveResume?.()
+
+    await new Promise(r => setTimeout(r, 20))
+
+    expect(hoisted.events).not.toContain('source:data:audio/mpeg;base64,cancelled')
+    const rAfCountAfter = hoisted.events.filter(e => e.startsWith('requestAnimationFrame')).length
+    expect(rAfCountAfter).toBe(rAfCountBefore)
+  })
+
+  it('registers amplitude sink and feeds amplitude values during playback and resets to 0 on stop', async () => {
+    const { playDataUrl, registerAmplitudeSink, stopAudio } = await import('./audio-track')
+
+    const amplitudes: number[] = []
+    const unregister = registerAmplitudeSink(amp => amplitudes.push(amp))
+
+    const playback = playDataUrl('data:audio/mpeg;base64,amp-test')
+    await vi.waitFor(() => expect(hoisted.events).toContain('source:data:audio/mpeg;base64,amp-test'))
+
+    // 160 (mock fill) - 128 = 32 abs dev per sample; avg = 32; amp = min(1, 32 / 96) ≈ 0.333
+    expect(rafCallbacks.size).toBeGreaterThan(0)
+    const activeCb = [...rafCallbacks.values()][0]
+    activeCb(100)
+
+    expect(amplitudes.length).toBeGreaterThan(0)
+    expect(amplitudes[amplitudes.length - 1]).toBeCloseTo(0.333, 2)
+
+    stopAudio()
+    expect(amplitudes[amplitudes.length - 1]).toBe(0)
+
+    unregister()
+    FakeAudio.instances[0].emit('ended')
+    await expect(playback).resolves.toBe(false)
   })
 })

@@ -14,6 +14,8 @@ function detachListeners(audio: HTMLAudioElement): void {
 }
 
 export function stopAudio(): void {
+  playGen++
+
   if (current) {
     current.pause()
     // 释放 dataURL-backed src，让编码后的字节（最差约 256KB）即使在 ended/error
@@ -27,6 +29,16 @@ export function stopAudio(): void {
   if (currentDone) {
     currentDone()
     currentDone = null
+  }
+
+  if (analyserSource) {
+    try {
+      analyserSource.disconnect()
+    } catch {
+      /* ignore */
+    }
+
+    analyserSource = null
   }
 
   // 同时标记振幅循环退出，并立即取消待处理的帧。
@@ -50,6 +62,7 @@ export function isLatestGen(gen: number): boolean {
 
 export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise<boolean> {
   stopAudio()
+  const gen = nextGen()
   const audio = new Audio(dataUrl)
   current = audio
 
@@ -113,13 +126,13 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
   // 但嘴部在首帧本来也不会有可见动作，
   // analyser接好后仍然能采集到后续充足的数据。
   const playPromise = audio.play().catch(err => err)
-  void startAmplitudeLoop(audio).catch(() => undefined)
+  void startAmplitudeLoop(audio, gen).catch(() => undefined)
 
   const playResult = await playPromise
 
   if (playResult instanceof Error) {
-    if (current === audio) {
-      current = null
+    if (current === audio && isLatestGen(gen)) {
+      stopAudio()
     }
 
     fireDone(false)
@@ -168,7 +181,11 @@ function ensureAnalyser(): void {
   amplitudeBuffer = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount))
 }
 
-async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
+async function startAmplitudeLoop(audio: HTMLAudioElement, gen: number): Promise<void> {
+  if (!isLatestGen(gen) || current !== audio) {
+    return
+  }
+
   ensureAnalyser()
 
   const ctx = audioCtx
@@ -183,7 +200,7 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
     await ctx.resume().catch(() => undefined)
   }
 
-  if (ctx.state !== 'running') {
+  if (!isLatestGen(gen) || current !== audio || ctx.state !== 'running') {
     return
   }
 
@@ -200,6 +217,18 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
     return
   }
 
+  if (!isLatestGen(gen) || current !== audio) {
+    try {
+      analyserSource.disconnect()
+    } catch {
+      /* ignore */
+    }
+
+    analyserSource = null
+
+    return
+  }
+
   amplitudeActive = true
 
   if (amplitudeRaf !== null) {
@@ -210,7 +239,7 @@ async function startAmplitudeLoop(audio: HTMLAudioElement): Promise<void> {
   const buf = amplitudeBuffer as Uint8Array<ArrayBuffer>
 
   const tick = () => {
-    if (!amplitudeActive || !analyser) {
+    if (!amplitudeActive || !analyser || !isLatestGen(gen) || current !== audio) {
       return
     }
 
