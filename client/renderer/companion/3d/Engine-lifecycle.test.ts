@@ -1,7 +1,108 @@
 import * as THREE from 'three'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Engine } from './Engine'
+
+const captured = vi.hoisted(() => ({
+  webgpu: [] as unknown[],
+  webgl: [] as unknown[],
+  webgpuInitShouldFail: false
+}))
+
+vi.mock('three/webgpu', () => {
+  class MockWebGPUBackend {}
+
+  return {
+    WebGPUBackend: MockWebGPUBackend,
+    WebGPURenderer: class MockWebGPURenderer {
+      backend: unknown
+
+      constructor(options: unknown) {
+        captured.webgpu.push(options)
+        this.backend = new MockWebGPUBackend()
+      }
+
+      async init(): Promise<void> {
+        if (captured.webgpuInitShouldFail) {
+          throw new Error('simulated WebGPU init failure')
+        }
+      }
+
+      setPixelRatio(): void {}
+      setSize(): void {}
+      dispose(): void {}
+    }
+  }
+})
+
+vi.mock('three', async () => {
+  const actual = await vi.importActual<typeof THREE>('three')
+
+  class MockWebGLRenderer {
+    constructor(options: unknown) {
+      captured.webgl.push(options)
+    }
+
+    setPixelRatio(): void {}
+    setSize(): void {}
+    dispose(): void {}
+  }
+
+  return { ...actual, WebGLRenderer: MockWebGLRenderer }
+})
+
+// jsdom 无 WebGL 上下文；绕开 PMREM 真实渲染。
+vi.mock('./LightingRig', () => ({
+  LightingRig: class LightingRig {
+    scene: THREE.Scene
+
+    constructor(scene: THREE.Scene) {
+      this.scene = scene
+    }
+
+    dispose(): void {}
+  }
+}))
+
+describe('Engine.create — powerPreference 默认值与透传', () => {
+  beforeEach(() => {
+    captured.webgpu.length = 0
+    captured.webgl.length = 0
+    captured.webgpuInitShouldFail = false
+  })
+
+  function setupContainer(): HTMLElement {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    return container
+  }
+
+  async function createOnce(opts?: Parameters<typeof Engine.create>[1]): Promise<void> {
+    const engine = await Engine.create(setupContainer(), opts)
+    engine.dispose()
+  }
+
+  it('未传 powerPreference 时 WebGPU 与经典 WebGL 回退链均默认 low-power', async () => {
+    await createOnce()
+    expect(captured.webgpu[0]).toMatchObject({ powerPreference: 'low-power' })
+    expect(captured.webgl).toHaveLength(0)
+
+    captured.webgpuInitShouldFail = true
+    await createOnce()
+    expect(captured.webgpu).toHaveLength(2)
+    expect(captured.webgl[0]).toMatchObject({ powerPreference: 'low-power' })
+  })
+
+  it('显式 high-performance 时透传给 WebGPU 与经典 WebGL 回退链', async () => {
+    await createOnce({ powerPreference: 'high-performance' })
+    expect(captured.webgpu[0]).toMatchObject({ powerPreference: 'high-performance' })
+
+    captured.webgpuInitShouldFail = true
+    await createOnce({ powerPreference: 'high-performance' })
+    expect(captured.webgl[0]).toMatchObject({ powerPreference: 'high-performance' })
+  })
+})
 
 describe('Engine - Hitmap Lifecycle & Disposed Safety', () => {
   function createMockEngine(): Engine {
