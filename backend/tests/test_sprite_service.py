@@ -7,14 +7,21 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-from components import SETTINGS
+import rembg
+from components import (
+    SETTINGS,
+    MattingEngine,
+    has_real_transparency,
+    remove_background,
+    vectorized_matting,
+    warmup_matting_engine,
+)
 from modules.companion import AvatarAsset, CompanionSpriteImage
 from PIL import Image
 from services.companion import sprite_service
 from services.companion.sprite_service import (
     SpriteGenerationError,
     SpriteSeedMissingError,
-    has_real_transparency,
     resolve_sprite,
 )
 from sqlalchemy import select, update
@@ -35,136 +42,86 @@ def _png(draw) -> bytes:
     return buf.getvalue()
 
 
-GREEN_RGB = sprite_service._CHROMA_CANDIDATES[0].rgb
-
-
-def _green_png(draw) -> bytes:
-    img = Image.new("RGB", (60, 80), GREEN_RGB)
-    draw(img)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-
-def _keyed(data: bytes) -> Image.Image:
-    return sprite_service.chroma_key_to_alpha(Image.open(io.BytesIO(data)), np.asarray(GREEN_RGB, dtype=np.float32))
-
-
 SPRITE_BG_PNG = _png(lambda _img: None)  # 纯白无内容
 SPRITE_BODY_PNG = _png(lambda img: img.paste((200, 30, 30), (10, 20, 50, 60)))
-SPRITE_DARK_PNG = _png(
-    lambda img: img.paste((100, 100, 100), (0, 0, 60, 80)),
-)  # 纯灰 → 整体被键出，违反 opaque floor
-AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))  # 白底契约下的蓝色主体
+SPRITE_DARK_PNG = _png(lambda img: img.paste((100, 100, 100), (0, 0, 60, 80)))  # 纯灰无透明
+AVATAR_REF_PNG = _png(lambda img: img.paste((30, 144, 255), (0, 0, 30, 80)))
 
 
-def test_chroma_key_keeps_small_enclosed_pockets():
-    # 口袋大小低于 island 阈值（max(100, w*h//200)，60×80 阈值=100，7×8=56 px）时保留为角色特征（如高光点）。
-    data = _green_png(
-        lambda img: (
-            img.paste((200, 30, 30), (5, 10, 55, 70)),
-            img.paste(GREEN_RGB, (25, 30, 32, 38)),
-        ),
-    )
-    out = _keyed(data)
-    assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
-    assert out.getpixel((30, 50))[3] == 255  # 主体保留
-    assert out.getpixel((28, 34))[3] == 255  # 小孤立口袋保留为角色特征
+def test_vectorized_matting_removes_white_background():
+    out_bytes = vectorized_matting(SPRITE_BODY_PNG)
+    out = Image.open(io.BytesIO(out_bytes))
+    assert out.getpixel((0, 0))[3] == 0  # 角落背景抠除
+    assert out.getpixel((30, 40))[3] == 255  # 红色主体保留
+    assert has_real_transparency(out_bytes)
 
 
-def test_chroma_key_removes_large_enclosed_islands():
-    # 封闭口袋超过 island 阈值（60×80 阈值=100，30×30=900 px）时被视为背景延续，需要键出。
-    data = _green_png(
-        lambda img: (
-            img.paste((200, 30, 30), (5, 10, 55, 70)),
-            img.paste(GREEN_RGB, (20, 30, 50, 60)),
-        ),
-    )
-    out = _keyed(data)
-    assert out.getpixel((0, 0))[3] == 0  # 角落：背景被键出
-    assert out.getpixel((10, 50))[3] == 255  # 口袋左侧的红色主体条
-    assert out.getpixel((35, 45))[3] == 0  # 大封闭口袋被键出
-
-
-def test_chroma_key_soft_band_feather():
-    # 纯绿一侧作为种子向暗绿一侧扩散，距离 80 落入 40–100 soft band，按 squared ease-out 给到部分 alpha。
-    data = _green_png(lambda img: img.paste((0, 175, 77), (30, 0, 60, 80)))
-    out = _keyed(data)
-    assert out.getpixel((5, 40))[3] == 0  # 纯绿侧：完全键出
-    assert 0 < out.getpixel((45, 40))[3] < 255  # soft band：羽化
-
-
-def test_chroma_key_keeps_light_clothing():
-    # 回归锚：旧的白色 key 一旦亮度跨越 soft band 就会洗掉主体像素，浅灰衣物直接消失；chroma 背景下浅织物距离 >300 保持完全不透明。
-    data = _green_png(lambda img: img.paste((230, 230, 235), (5, 10, 55, 70)))
-    out = _keyed(data)
-    a = np.asarray(out.getchannel("A"))
+def test_vectorized_matting_keeps_subject():
+    data = _png(lambda img: img.paste((20, 180, 50), (5, 10, 55, 70)))
+    out_bytes = vectorized_matting(data)
+    out = Image.open(io.BytesIO(out_bytes))
     assert out.getpixel((0, 0))[3] == 0
-    assert (a[15:65, 10:50] == 255).all()
+    assert out.getpixel((30, 40))[3] == 255
 
 
-def test_chroma_key_hard_floor_shears_faint_residue():
-    # 距离 50 算得 alpha≈7，低于 16 floor 必须剪切为 0；距离 60（alpha≈28）保留，全图不应出现 0<alpha<16 的雾化。
-    data = _green_png(
-        lambda img: (
-            img.paste((50, 255, 77), (30, 0, 45, 80)),
-            img.paste((60, 255, 77), (45, 0, 60, 80)),
-        ),
-    )
-    out = _keyed(data)
+def test_vectorized_matting_soft_band_feather():
+    # 白色 (255,255,255) 渐变到 (215,215,215)，距离 69 落入软边缘过渡带
+    data = _png(lambda img: img.paste((215, 215, 215), (30, 0, 60, 80)))
+    out = Image.open(io.BytesIO(vectorized_matting(data)))
+    assert out.getpixel((5, 40))[3] == 0
+    assert 0 < out.getpixel((45, 40))[3] < 255
+
+
+def test_vectorized_matting_hard_floor():
+    # 距离靠近背景产生的极微弱 alpha 应被硬剪切为 0
+    data = _png(lambda img: img.paste((250, 250, 250), (30, 0, 60, 80)))
+    out = Image.open(io.BytesIO(vectorized_matting(data)))
     a = np.asarray(out.getchannel("A"))
     assert not np.any((a > 0) & (a < 16))
-    assert out.getpixel((37, 40))[3] == 0
-    assert 0 < out.getpixel((52, 40))[3] < 255
 
 
-def test_chroma_key_despills_feathered_edges():
-    # 中间带边缘像素是 bg/前景混合，despill 要把它反混回前景色，避免留下绿色边缘。
-    data = _green_png(
-        lambda img: (
-            img.paste((0, 175, 77), (20, 0, 40, 80)),  # 绿背景与 (0, 75, 77) 的混合色
-            img.paste((0, 75, 77), (40, 0, 60, 80)),
-        ),
-    )
-    out = _keyed(data)
+def test_vectorized_matting_despills_feathered_edges():
+    # 边缘羽化过渡带像素反混，消除白边污染
+    data = _png(lambda img: img.paste((210, 195, 195), (20, 0, 40, 80)))
+    out = Image.open(io.BytesIO(vectorized_matting(data)))
     edge = out.getpixel((30, 40))
     assert 0 < edge[3] < 255
-    assert abs(edge[1] - 75) <= 6  # G 通道反混到前景值
-    assert out.getpixel((50, 40))[1] == 75  # 不透明的前景色未变
 
 
-def test_key_sprite_png_rejects_undominant_border():
-    # 主体铺到画面边缘时不再有 dominant border color，环形守卫必须拒绝键控以免切坏主体。
-    data = _green_png(lambda img: img.paste((200, 30, 30), (0, 40, 60, 80)))
-    assert sprite_service._key_sprite_png(data, sprite_service._CHROMA_CANDIDATES[0]) is None
+def test_matting_engine_falls_back_when_rembg_fails(monkeypatch):
+    engine = MattingEngine()
+    monkeypatch.setattr(engine, "_ensure_session", lambda: None)
+    out = engine.remove_background(SPRITE_BODY_PNG)
+    assert has_real_transparency(out)
 
 
-def test_key_sprite_png_keys_disobeyed_white_background():
-    # 即使 provider 不按指定 hue，估算也能优雅降级到可键的纯白背景，而不是硬失败。
-    png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
-    assert png is not None and has_real_transparency(png)
+def test_matting_engine_ai_inference_success(monkeypatch):
+    engine = MattingEngine()
+    dummy_session = object()
+    monkeypatch.setattr(engine, "_ensure_session", lambda: dummy_session)
+    valid_png = vectorized_matting(SPRITE_BODY_PNG)
+    monkeypatch.setattr(rembg, "remove", lambda *_a, **_k: valid_png)
+    out = engine.remove_background(SPRITE_BODY_PNG)
+    assert out == valid_png
 
 
-def test_select_chroma_candidate_avoids_subject_hues():
-    green_ref = Image.new("RGB", (50, 50), GREEN_RGB)
-    assert sprite_service._select_chroma_candidate(green_ref).hex_code != sprite_service._CHROMA_CANDIDATES[0].hex_code
-
-
-def test_select_chroma_candidate_on_white_reference():
-    # 只有白色的 palette 会把主体像素全部剥离；fallback 保留全像素集，选离白色最远的最饱和色。
-    white_ref = Image.new("RGB", (50, 50), (255, 255, 255))
-    assert sprite_service._select_chroma_candidate(white_ref).hex_code == "#00FF4D"
+def test_warmup_matting_engine(monkeypatch):
+    engine = MattingEngine.get_instance()
+    dummy_session = object()
+    monkeypatch.setattr(engine, "_ensure_session", lambda: dummy_session)
+    assert warmup_matting_engine() is True
+    monkeypatch.setattr(engine, "_ensure_session", lambda: None)
+    assert warmup_matting_engine() is False
 
 
 def test_has_real_transparency():
-    png = sprite_service._key_sprite_png(SPRITE_BODY_PNG, sprite_service._CHROMA_CANDIDATES[0])
+    png = remove_background(SPRITE_BODY_PNG)
     assert png is not None and has_real_transparency(png)
-    assert not has_real_transparency(SPRITE_BODY_PNG)  # 不透明 RGB PNG
+    assert not has_real_transparency(SPRITE_BODY_PNG)
     assert not has_real_transparency(SPRITE_BG_PNG)
 
 
 def test_has_real_transparency_rejects_hollow_silhouette():
-    # 洗白失败模式：透明边框、细不透明描边、半透明内部。仅 min-alpha 会误判，比例门禁必须挡住。
     alpha = np.full((60, 80), 100, dtype=np.uint8)
     alpha[:2, :] = 0
     alpha[:, :2] = 0
@@ -203,7 +160,6 @@ async def _row(
     )
     db.add(row)
     await db.commit()
-    # Album 行配套的文件真实存在；resolve 把文件缺失视为未命中。
     path = Path(SETTINGS.data_dir) / row.asset_url
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"png")
@@ -212,7 +168,6 @@ async def _row(
 
 @pytest.fixture()
 def gen_mocks(monkeypatch, tmp_path):
-    """把生成链路全部 stub 掉，不真正调用 LLM/provider/写盘。"""
     calls = {"llm": [], "providers": [], "unlinked": []}
 
     async def _fake_chain(db, uid, svc):
@@ -300,7 +255,7 @@ async def test_resolve_miss_generates_and_persists(
     async def fake_vision(db, uid, system, text, images, **k):
         if "match_id" in system:
             return json.dumps({"match_id": None})
-        assert "request" in text  # 作者 payload 携带语义化请求
+        assert "request" in text
         return json.dumps({"prompt": "一个开心的角色", "tag": "开心挥手"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
@@ -314,8 +269,8 @@ async def test_resolve_miss_generates_and_persists(
     assert row.tag == "开心挥手"
     assert row.avatar_id == asset.id
     assert row.asset_url.startswith("companion-assets/")
-    assert row.content_hash  # keyed PNG 的 SHA-256
-    saved = tmp_path / row.asset_url  # save_companion_asset 写到 <data_dir>/companion-assets/
+    assert row.content_hash
+    saved = tmp_path / row.asset_url
     assert has_real_transparency(saved.read_bytes())
 
 
@@ -363,7 +318,7 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
         1,
         avatar_id=999,
         tag="旧身份的图",
-    )  # 过期：avatar 重新生成后该行失效
+    )
 
     seen: list[object] = []
 
@@ -377,7 +332,7 @@ async def test_resolve_filters_stale_avatar_rows(db_session, gen_mocks, monkeypa
         user_id=1,
         request_text="任何姿态",
     )
-    assert generated  # 过期行永远匹配不上 → 生成新精灵
+    assert generated
     assert "旧身份的图" not in str(seen)
 
 
@@ -421,7 +376,7 @@ async def test_resolve_regenerates_when_album_file_deleted(
             .all()
         )
     }
-    assert hit.asset_url not in remaining  # 孤立行被删掉，不留 404
+    assert hit.asset_url not in remaining
 
 
 @pytest.mark.asyncio
@@ -435,7 +390,7 @@ async def test_resolve_waiting_regenerates_when_file_deleted(
     (Path(SETTINGS.data_dir) / waiting.asset_url).unlink()
 
     async def fake_vision(db, uid, system, text, images, **k):
-        assert "match_id" not in system  # waiting 行死了意味着 album 完全空
+        assert "match_id" not in system
         return json.dumps({"prompt": "p", "tag": "新等待"})
 
     monkeypatch.setattr(sprite_service, "_vision_llm_call", fake_vision)
@@ -445,7 +400,6 @@ async def test_resolve_waiting_regenerates_when_file_deleted(
         request_text="安静站立等待",
         role="waiting",
     )
-    # sqlite 会复用空出的自增 id，asset_url 才是稳定身份
     assert generated and row.asset_url != waiting.asset_url and row.role == "waiting"
 
 
@@ -471,13 +425,14 @@ async def test_generate_rejects_all_opaque_outputs(db_session, monkeypatch):
         return json.dumps({"success": True, "urls": ["http://x/y.jpg"]})
 
     async def dark_fetch(url):
-        return SPRITE_DARK_PNG  # 没有白底 → 键后仍不透明
+        return SPRITE_DARK_PNG
 
     monkeypatch.setattr(sprite_service, "image_generation_tool", opaque_tool)
     monkeypatch.setattr(sprite_service, "fetch_texture_bytes", dark_fetch)
+    monkeypatch.setattr(sprite_service, "remove_background", lambda _raw: SPRITE_DARK_PNG)
 
     with pytest.raises(SpriteGenerationError):
-        await sprite_service.generate_sprite_png(db_session, 1, "p", "ref", sprite_service._CHROMA_CANDIDATES[0])
+        await sprite_service.generate_sprite_png(db_session, 1, "p", "ref")
 
 
 @pytest.mark.asyncio
@@ -554,7 +509,6 @@ def test_sprite_endpoint_contract(_patch_db, monkeypatch):
     app.include_router(companion_api.router)
     client = TestClient(app)
 
-    # 无 avatar → 友好 404，而不是裸 provider 错误
     resp = client.post("/api/companion/sprite", json={"request": "等待"})
     assert resp.status_code == 404
     assert resp.json()["detail"]["error"]

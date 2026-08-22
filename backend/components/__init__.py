@@ -80,6 +80,7 @@ from .functions import (
 )
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
+from .matting import MattingEngine, has_real_transparency, remove_background, vectorized_matting, warmup_matting_engine
 from .network import download_capped, is_safe_outbound, safe_outbound_async_client
 from .observability import (
     HTTP_REQUEST_DURATION_SECONDS,
@@ -132,6 +133,7 @@ __all__ = [
     "MEMORY_CONSOLIDATE_WINDOW_ROWS",
     "MEMORY_RECALL_MAX_RESULTS",
     "MS_PER_HOUR",
+    "MattingEngine",
     "NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS",
     "NIGHTLY_CONSOLIDATION_MAX_TOKENS",
     "NIGHTLY_CREATION_ENABLED",
@@ -189,6 +191,7 @@ __all__ = [
     "get_db",
     "get_file_path",
     "get_logger",
+    "has_real_transparency",
     "is_safe_outbound",
     "log_paid_call",
     "new_request_id",
@@ -197,6 +200,7 @@ __all__ = [
     "path_attach_ref",
     "positive_int",
     "redact_sensitive_text",
+    "remove_background",
     "render_metrics_response",
     "safe_json_loads",
     "safe_outbound_async_client",
@@ -212,4 +216,6 @@ __all__ = [
     "tool_error",
     "unquote_user_setting",
     "utc_now",
+    "vectorized_matting",
+    "warmup_matting_engine",
 ]

@@ -11,7 +11,7 @@ from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .expression_semantics import EXPRESSION_SEMANTICS
 from .persona_service import get_or_create_persona
 from .pipeline import emit_companion_assets_updated
-from .sprite_service import generate_sprite_png, select_bg_from_data_uri
+from .sprite_service import generate_sprite_png
 
 logger = get_logger(__name__)
 
@@ -19,13 +19,13 @@ _AVATAR_SIZE = "1:1"
 _ALBUM_CAP = 300
 _GENERATION_COOLDOWN_S = 300
 
-# 固定模板、不走 LLM 二次撰写：情绪语义本身已是权威来源，剩下的只是通用表述与抠图依赖的纯色背景约定
+# 固定模板、不走 LLM 二次撰写：情绪语义本身已是权威来源，剩下的只是通用表述与抠图依赖的纯白背景约定
 _EXPRESSION_PROMPT_TEMPLATE = (
     "角色头部特写，取参考图角色最具辨识度的头部区域，居中朝向观众、占据画面主要位置。"
     "物种与外貌严格以参考图为准，不改变任何外形特征。"
     "{setting_clause}表情：{clause}——结合角色性格以符合其反应方式的神态呈现，情绪表达鲜明生动，着重面部细节。"
     "写实风格，质感细腻、光影自然，与参考图保持视觉一致，呈现适合作为头像的精美肖像。"
-    "纯色平面背景（{bg_hex} {bg_label}），无阴影、无渐变、无背景图案、无其他物体。"
+    "干净纯白摄影背景，柔和自然影棚布光，无背景阴影、无渐变色、无背景图案、无其他物体。"
 )
 
 # 带入提示词的人设字段：性格影响同一情绪的表现方式
@@ -141,9 +141,8 @@ def kick_background_generation(user_id: int, name: str) -> None:
 async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause: str, setting_clause: str, subject_ref: str) -> CompanionExpressionAvatar:
     key = (user_id, name, avatar_id)
     try:
-        bg = await asyncio.to_thread(select_bg_from_data_uri, subject_ref)
-        prompt = _EXPRESSION_PROMPT_TEMPLATE.format(clause=clause, setting_clause=setting_clause, bg_hex=bg.hex_code, bg_label=bg.label)
-        png = await generate_sprite_png(None, user_id, prompt, subject_ref, bg, size=_AVATAR_SIZE)
+        prompt = _EXPRESSION_PROMPT_TEMPLATE.format(clause=clause, setting_clause=setting_clause)
+        png = await generate_sprite_png(None, user_id, prompt, subject_ref, size=_AVATAR_SIZE)
         path = save_companion_asset(png, user_id=user_id, label=f"expr_{name}", ext="png")
 
         async with SESSION_LOCAL() as db:

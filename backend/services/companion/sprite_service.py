@@ -1,22 +1,40 @@
 import asyncio
-import base64
-import io
 import json
-from collections import deque
-from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any
 
-import numpy as np
-from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, parse_llm_json, safe_json_loads
+from components import (
+    SESSION_LOCAL,
+    download_capped,
+    get_file_path,
+    get_logger,
+    has_real_transparency,
+    parse_llm_json,
+    remove_background,
+    safe_json_loads,
+)
 from modules.companion import CompanionSpriteImage
-from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..llm import MissingLlmConfigError, ServiceType, build_responses_kwargs, call_with_retry, provider_from_config, resolve, resolve_provider_chain, resolve_vision_chain
+from ..llm import (
+    MissingLlmConfigError,
+    ServiceType,
+    build_responses_kwargs,
+    call_with_retry,
+    provider_from_config,
+    resolve,
+    resolve_provider_chain,
+    resolve_vision_chain,
+)
 from ..tools.builtin import first_image_url, image_generation_tool
-from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
+from .asset_store import (
+    companion_asset_exists,
+    compute_bytes_sha256,
+    save_companion_asset,
+    signed_companion_asset_url,
+    unlink_companion_asset,
+)
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .model_service import ModelGenerationError
 from .persona_service import get_or_create_persona
@@ -25,36 +43,6 @@ logger = get_logger(__name__)
 
 _SPRITE_SIZE = "2:3"
 _SPRITE_ALBUM_CAP = 300
-
-
-class ChromaCandidate(NamedTuple):
-    rgb: tuple[int, int, int]
-    hex_code: str
-    label: str
-
-
-# 覆盖色环的高饱和候选色；橙色排最后是因为它最接近肤色，只有其他色相都被主体占用时才选它。白色刻意缺席，否则浅色衣物会被抠掉
-_CHROMA_CANDIDATES = (
-    ChromaCandidate((0, 255, 77), "#00FF4D", "亮绿色"),
-    ChromaCandidate((255, 0, 168), "#FF00A8", "品红色"),
-    ChromaCandidate((0, 229, 255), "#00E5FF", "青色"),
-    ChromaCandidate((122, 0, 255), "#7A00FF", "紫罗兰色"),
-    ChromaCandidate((255, 106, 0), "#FF6A00", "橙色"),
-)
-# 阈值按 0–255 的 RGB 欧氏距离计，仍待用真实供应商产出校准
-_KEY_CORE_DIST = 40
-_KEY_SOFT_DIST = 100
-_ALPHA_HARD_FLOOR = 16
-_BORDER_SAMPLE_PX = 8
-_BORDER_DOMINANT_FRAC = 0.6
-_PALETTE_THUMB_PX = 192
-_PALETTE_PCT = 5
-_REF_BG_BRIGHT = 236
-_MIN_OPAQUE_FRAC = 0.15
-_MAX_SEMI_FRAC = 0.08
-# 小于此面积的封闭软边区域属于角色特征（眼部高光、镜面反光点），即使落在轮廓内也保留
-_ISLAND_MIN_PX = 100
-_ISLAND_MIN_FRAC = 200  # 约为整图面积的 0.5%
 
 _SPRITE_MATCH_SYSTEM = """\
 You match a semantic sprite request against an existing image album.
@@ -74,13 +62,12 @@ The subject's visual identity comes from a bust reference image — never re-des
 change the character's face, hair, body or outfit; the prompt only directs pose/emotion/action.
 Requirements:
 - 单人角色，全身完整可见，居中站立于画面内
-- 通过姿态与表情表达所请求的情绪状态或动作
-- 纯色平面背景（{bg_hex} {bg_label}），无阴影、无渐变、无背景图案、无其他物体
-- 写实人像风格（realistic portrait photography），与半身像头像保持视觉一致，
-  skin texture 自然、面部细节清晰、光照均匀
+- 通过姿态与表情生动表达所请求的情绪或动作
+- 干净纯白摄影背景，柔和自然影棚布光，无背景阴影、无渐变色、无背景杂物
+- 写实人像风格（realistic portrait photography），面部细节细腻，发丝清晰，与半身像保持完全一致的视觉质感
 - consistent stylization with the persona (species)
 
-Respond with a single JSON object: {{"prompt": <str>, "tag": <str>}}
+Respond with a single JSON object: {"prompt": <str>, "tag": <str>}
 tag is a short Chinese label (≤16 字) describing the pose/emotion/action — it is the album matching key.
 No commentary.
 """
@@ -92,140 +79,6 @@ class SpriteSeedMissingError(Exception):
 
 class SpriteGenerationError(Exception):
     """所有供应商都没能产出可抠背景的精灵图。"""
-
-
-def has_real_transparency(data: bytes) -> bool:
-    """判断 PNG 是否带有真实透明通道。"""
-    # 同时校验不透明/半透明像素占比，以拦住只剩轮廓的「空心剪影」——仅看最小 alpha 会误判为合格
-    try:
-        img = Image.open(io.BytesIO(data))
-        if img.mode not in ("RGBA", "LA") and not (img.mode == "P" and "transparency" in img.info):
-            return False
-        alpha = np.asarray(img.convert("RGBA").getchannel("A"), dtype=np.uint8)
-        return bool(
-            alpha.min() <= 8 and np.count_nonzero(alpha == 255) >= _MIN_OPAQUE_FRAC * alpha.size and np.count_nonzero((alpha > 0) & (alpha < 255)) <= _MAX_SEMI_FRAC * alpha.size,
-        )
-    except OSError:
-        return False
-
-
-def _palette_pixels(img: Image.Image) -> np.ndarray:
-    thumb = img.convert("RGB")
-    thumb.thumbnail((_PALETTE_THUMB_PX, _PALETTE_THUMB_PX))
-    px = np.asarray(thumb, dtype=np.float32).reshape(-1, 3)
-    # 参考图自带白底约定，须先剔除，否则每个候选色都是在跟白色而不是主体比距离
-    near_white = (px.max(axis=1) >= _REF_BG_BRIGHT) & (px.max(axis=1) - px.min(axis=1) <= 10)
-    subject = px[~near_white]
-    return subject if subject.size else px
-
-
-def _select_chroma_candidate(img: Image.Image) -> ChromaCandidate:
-    # 取低分位而非均值/最小值：既能容忍同色小配饰，又不被单像素噪点绑架；argmax 保证并列时取首个候选，结果可复现
-    px = _palette_pixels(img)
-    scores = [float(np.percentile(np.linalg.norm(px - np.asarray(c.rgb, dtype=np.float32), axis=1), _PALETTE_PCT)) for c in _CHROMA_CANDIDATES]
-    return _CHROMA_CANDIDATES[scores.index(max(scores))]
-
-
-def select_bg_from_data_uri(ref: str) -> ChromaCandidate:
-    try:
-        return _select_chroma_candidate(Image.open(io.BytesIO(base64.b64decode(ref.partition(",")[2]))))
-    except (OSError, ValueError):
-        logger.info("reference palette analysis failed, defaulting chroma background", extra={"ref_prefix": ref[:48]})
-        return _CHROMA_CANDIDATES[0]
-
-
-def _estimate_border_background(rgb: np.ndarray) -> tuple[np.ndarray, float]:
-    h, w = rgb.shape[:2]
-    pad = min(_BORDER_SAMPLE_PX, h // 2, w // 2)
-    ring = np.concatenate([rgb[:pad].reshape(-1, 3), rgb[h - pad :].reshape(-1, 3), rgb[pad : h - pad, :pad].reshape(-1, 3), rgb[pad : h - pad, w - pad :].reshape(-1, 3)])
-    bg = np.median(ring, axis=0)
-    dominant = np.count_nonzero(np.linalg.norm(ring - bg, axis=1) <= _KEY_SOFT_DIST) / len(ring)
-    return bg, float(dominant)
-
-
-def chroma_key_to_alpha(img: Image.Image, bg: np.ndarray) -> Image.Image:
-    """按与背景色的 RGB 距离两遍泛洪抠图：边界连通的软边像素与足够大的封闭软边区域一并抠除，小块封闭区域保留为角色特征；alpha 采用平方缓出并设硬地板消除残雾，最后对羽化边做去色溢。"""
-    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
-    h, w = rgb.shape[:2]
-    dist = np.linalg.norm(rgb - bg, axis=2)
-    soft = dist <= _KEY_SOFT_DIST
-    core = (dist <= _KEY_CORE_DIST).ravel()
-    soft_flat = soft.ravel()
-    filled = np.zeros(w * h, dtype=bool)
-    queue: deque[int] = deque()
-
-    def neighbors(idx: int) -> Iterator[int]:
-        x, y = idx % w, idx // w
-        if x > 0:
-            yield idx - 1
-        if x < w - 1:
-            yield idx + 1
-        if y > 0:
-            yield idx - w
-        if y < h - 1:
-            yield idx + w
-
-    def seed(idx: int) -> None:
-        if not filled[idx] and soft_flat[idx] and core[idx]:
-            filled[idx] = True
-            queue.append(idx)
-
-    for x in range(w):
-        seed(x)
-        seed((h - 1) * w + x)
-    for y in range(h):
-        seed(y * w)
-        seed(y * w + w - 1)
-
-    while queue:
-        idx = queue.popleft()
-        for nxt in neighbors(idx):
-            if soft_flat[nxt] and not filled[nxt]:
-                filled[nxt] = True
-                queue.append(nxt)
-
-    island_threshold = max(_ISLAND_MIN_PX, (w * h) // _ISLAND_MIN_FRAC)
-    visited = np.zeros(w * h, dtype=bool)
-    for seed_idx in range(w * h):
-        if filled[seed_idx] or visited[seed_idx] or not soft_flat[seed_idx]:
-            continue
-        component: list[int] = []
-        queue.append(seed_idx)
-        visited[seed_idx] = True
-        while queue:
-            idx = queue.popleft()
-            component.append(idx)
-            for nxt in neighbors(idx):
-                if soft_flat[nxt] and not visited[nxt] and not filled[nxt]:
-                    visited[nxt] = True
-                    queue.append(nxt)
-        if len(component) >= island_threshold:
-            for idx in component:
-                filled[idx] = True
-
-    t = np.clip((dist - _KEY_CORE_DIST) / (_KEY_SOFT_DIST - _KEY_CORE_DIST), 0.0, 1.0)
-    alpha = np.where(filled.reshape(h, w), np.round(255.0 * t * t), 255.0).astype(np.uint8)
-    alpha[alpha < _ALPHA_HARD_FLOOR] = 0
-
-    a = np.maximum(alpha.astype(np.float32) / 255.0, 1.0 / 255.0)[..., None]
-    unmixed = np.clip((rgb - (1.0 - a) * bg) / a, 0.0, 255.0)
-    edge = ((alpha > 0) & (alpha < 255))[..., None]
-    out = np.where(edge, unmixed, rgb)
-    return Image.fromarray(np.dstack([out, alpha[..., None]]).astype(np.uint8), "RGBA")
-
-
-def _key_sprite_png(data: bytes, requested: ChromaCandidate) -> bytes | None:
-    """按边缘环实际呈现的纯色抠图，使忽略指定色相的供应商仍能降级处理；返回 None 表示边缘无主导色（场景背景或主体顶到画边）。"""
-    img = Image.open(io.BytesIO(data))
-    rgb = np.asarray(img.convert("RGB"), dtype=np.float32)
-    bg, dominant = _estimate_border_background(rgb)
-    if dominant < _BORDER_DOMINANT_FRAC:
-        return None
-    if float(np.linalg.norm(bg - np.asarray(requested.rgb, dtype=np.float32))) > _KEY_SOFT_DIST:
-        logger.info("provider ignored requested sprite background, keying estimated background", extra={"requested": requested.hex_code})
-    buf = io.BytesIO()
-    chroma_key_to_alpha(img, bg).save(buf, format="PNG")
-    return buf.getvalue()
 
 
 async def _match_album(db: AsyncSession | None, user_id: int, entries: list[CompanionSpriteImage], request_text: str) -> CompanionSpriteImage | None:
@@ -241,7 +94,7 @@ async def _match_album(db: AsyncSession | None, user_id: int, entries: list[Comp
     return next((e for e in entries if e.id == match_id), None)
 
 
-async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: str, bg: ChromaCandidate) -> tuple[str, str]:
+async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: str) -> tuple[str, str]:
     if db is not None:
         persona = await get_or_create_persona(db, user_id)
     else:
@@ -252,7 +105,7 @@ async def _author_prompt(db: AsyncSession | None, user_id: int, request_text: st
     raw = await _vision_llm_call(
         db,
         user_id,
-        _SPRITE_PROMPT_SYSTEM.format(bg_hex=bg.hex_code, bg_label=bg.label),
+        _SPRITE_PROMPT_SYSTEM,
         json.dumps({"request": request_text, "persona": anchor}, ensure_ascii=False),
         [],
         response_format={"type": "json_object"},
@@ -305,7 +158,7 @@ fetch_texture_bytes = _fetch_image_bytes
 
 
 # 公开给 expression_avatar_service 复用于聊天表情头像生成
-async def generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, requested: ChromaCandidate, size: str = _SPRITE_SIZE) -> bytes:
+async def generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, size: str = _SPRITE_SIZE) -> bytes:
     """按供应商链依次尝试生成并抠图，返回带透明通道的精灵 PNG。"""
     chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
@@ -319,13 +172,13 @@ async def generate_sprite_png(db: AsyncSession | None, user_id: int, prompt: str
             logger.warning("sprite image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
             continue
         try:
-            png = await asyncio.to_thread(_key_sprite_png, raw, requested)
-        except OSError:
-            logger.info("sprite keying failed", extra={"user_id": user_id, "provider": cfg.provider_name})
+            png = await asyncio.to_thread(remove_background, raw)
+        except Exception:
+            logger.info("sprite matting failed", extra={"user_id": user_id, "provider": cfg.provider_name})
             continue
         if png is not None and has_real_transparency(png):
             return png
-        logger.info("sprite background not keyable, trying next provider", extra={"user_id": user_id, "provider": cfg.provider_name})
+        logger.info("sprite background not mattable, trying next provider", extra={"user_id": user_id, "provider": cfg.provider_name})
     raise SpriteGenerationError("精灵形象生成失败，请稍后再试")
 
 
@@ -440,9 +293,8 @@ async def resolve_sprite(db: AsyncSession | None = None, *, user_id: int, reques
     if subject_ref is None:
         raise SpriteSeedMissingError("形象种子图不可读，请重新确认形象")
 
-    bg = await asyncio.to_thread(select_bg_from_data_uri, subject_ref)
-    prompt, tag = await _author_prompt(db, user_id, request_text, bg)
-    png = await generate_sprite_png(db, user_id, prompt, subject_ref, bg)
+    prompt, tag = await _author_prompt(db, user_id, request_text)
+    png = await generate_sprite_png(db, user_id, prompt, subject_ref)
     path = save_companion_asset(png, user_id=user_id, label="sprite", ext="png")
 
     if db is None:

@@ -77,6 +77,7 @@ class Settings(BaseSettings):
 
     temp_file_ttl_hours: int
     data_dir: str
+    matting_model: str = Field(default="u2netp", validation_alias="MATTING_MODEL")
 
     image_to_3d_provider: str = Field(default="tripo", validation_alias="IMAGE_TO_3D_PROVIDER")
     image_to_3d_poll_interval_seconds: float = Field(default=5.0, validation_alias="IMAGE_TO_3D_POLL_INTERVAL_SECONDS")

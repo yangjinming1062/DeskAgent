@@ -39,6 +39,11 @@ admin_password = "spiritagent@admin123"
 temp_file_ttl_hours = 24
 # 后端磁盘数据与产物存储根目录（支持相对或绝对路径）
 data_dir = "./data"
+# 静态精灵与表情抠图模型选择：
+# - "u2netp"：超轻量通用模型（约 4.7MB），加载极快，纯 CPU 推理耗时约 50~100ms，适合默认及轻量部署；
+# - "isnet-general-use"：高精度通用分割模型（约 170MB），发丝和半透明细节羽化更精细，CPU 推理约 150~300ms；
+# - "birefnet-general"：SOTA 级高分辨率精细分割模型（约 100~200MB），边缘分割最细腻，推荐高性能 CPU 或 GPU 运行。
+matting_model = "u2netp"
 
 [image_to_3d]
 # 图生 3D 供应商选择：可选 "tripo" 或 "hunyuan"（默认 tripo）
