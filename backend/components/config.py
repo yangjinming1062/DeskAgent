@@ -196,7 +196,7 @@ class Settings(BaseSettings):
         init_settings: PydanticBaseSettingsSource,
         env_settings: PydanticBaseSettingsSource,
         dotenv_settings: PydanticBaseSettingsSource,
-        _file_secret_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,  # noqa: ARG003 - pydantic-settings ≥2.15 由调用方按名传入
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         return (init_settings, env_settings, dotenv_settings, TomlConfigSource(settings_cls))
 
