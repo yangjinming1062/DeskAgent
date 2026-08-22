@@ -7,7 +7,7 @@ import {
   disposeThreeResources,
   gltfCacheStats,
   hasGltf,
-  releaseGltf,
+  pruneTemplates,
   stashGltf,
   takeGltfClone
 } from './gltf-instance-cache'
@@ -166,7 +166,7 @@ describe('gltf-instance-cache', () => {
     expect(texSpy).not.toHaveBeenCalled()
 
     // 实例释放归还引用 -> 触发延迟销毁
-    releaseGltf('ref-test')
+    clone?.release()
     expect(geoSpy).toHaveBeenCalledTimes(1)
     expect(matSpy).toHaveBeenCalledTimes(1)
     expect(texSpy).toHaveBeenCalledTimes(1)
@@ -197,12 +197,44 @@ describe('gltf-instance-cache', () => {
     expect(hasGltf('k3')).toBe(true)
 
     // 释放 k2
-    releaseGltf('k2')
+    c2?.release()
     // 插入 k4，淘汰 k2
     stashGltf('k4', m4.root, m4.animations, 100, 2, 1000)
     expect(hasGltf('k2')).toBe(false)
     expect(m2GeoSpy).toHaveBeenCalledTimes(1)
     expect(hasGltf('k3')).toBe(true)
     expect(hasGltf('k4')).toBe(true)
+  })
+
+  it('同 key 模板换代时，租约只释放所属模板代际', () => {
+    const oldModel = createSampleSkinnedModel()
+    const newModel = createSampleSkinnedModel()
+    const oldGeoSpy = vi.spyOn(oldModel.geometry, 'dispose')
+    const newGeoSpy = vi.spyOn(newModel.geometry, 'dispose')
+
+    stashGltf('same-key', oldModel.root, oldModel.animations, 1024)
+    const oldLease = takeGltfClone('same-key')
+    expect(oldLease).not.toBeNull()
+
+    stashGltf('same-key', newModel.root, newModel.animations, 1024)
+    const newLease = takeGltfClone('same-key')
+    expect(newLease).not.toBeNull()
+    expect(gltfCacheStats().activeRefs).toBe(2)
+
+    oldLease?.release()
+    expect(oldGeoSpy).toHaveBeenCalledTimes(1)
+    expect(gltfCacheStats().activeRefs).toBe(1)
+
+    pruneTemplates(0, 0)
+    expect(hasGltf('same-key')).toBe(true)
+    expect(newGeoSpy).not.toHaveBeenCalled()
+
+    newLease?.release()
+    pruneTemplates(0, 0)
+    expect(hasGltf('same-key')).toBe(false)
+    expect(newGeoSpy).toHaveBeenCalledTimes(1)
+
+    oldLease?.release()
+    expect(oldGeoSpy).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,8 +6,8 @@ import { log } from '@/shared/lib/log'
 /**
  * 客户端 GLB 模板缓存与资源所有权管理。
  * - 模板 Cache 拥有原始 GLB 的 geometry、material、texture 等 GPU 资源；
- * - 活跃实例通过 `takeGltfClone(key)` 取出深克隆对象（网格、骨骼与层级独立重建），并增加模板引用计数；
- * - 活跃实例卸载时调用 `releaseGltf(key)` 递减引用计数，不得释放模板持有的共享资源；
+ * - 活跃实例通过 `takeGltfClone(key)` 取出深克隆对象（网格、骨骼与层级独立重建）与专属租约，并增加对应模板代际的引用计数；
+ * - 活跃实例卸载时执行租约归还，不得影响同 key 后续模板代际的引用计数；
  * - 仅当模板引用计数降为 0 时，Cache 清理（`clearGltf` / `clearAllGltf` / LRU prune）才会真正执行 GPU 资源释放。
  */
 
@@ -131,14 +131,22 @@ export interface CachedTemplate {
   animations: THREE.AnimationClip[]
   bytes: number
   hits: number
+  id: number
   lastUsed: number
   pendingDispose?: boolean
   refCount: number
   scene: THREE.Group
 }
 
+export interface GltfLease {
+  animations: THREE.AnimationClip[]
+  release: () => void
+  scene: THREE.Group
+}
+
 const _cache = new Map<string, CachedTemplate>()
 const _pendingTemplates = new Map<string, CachedTemplate[]>()
+let _nextTemplateId = 1
 
 function addPendingTemplate(key: string, template: CachedTemplate): void {
   template.pendingDispose = true
@@ -185,6 +193,7 @@ export function stashGltf(
     animations,
     bytes,
     hits: 0,
+    id: _nextTemplateId++,
     lastUsed: Date.now(),
     refCount: 0,
     scene: gltf
@@ -232,7 +241,7 @@ export function pruneTemplates(maxTemplates = DEFAULT_MAX_TEMPLATES, maxBytes = 
  * - 独立克隆 AnimationClip 状态；
  * - 增加模板引用计数 `refCount`。
  */
-export function takeGltfClone(key: string): { animations: THREE.AnimationClip[]; scene: THREE.Group } | null {
+export function takeGltfClone(key: string): GltfLease | null {
   if (!key) {
     return null
   }
@@ -250,49 +259,46 @@ export function takeGltfClone(key: string): { animations: THREE.AnimationClip[];
   const clonedScene = cloneSkeleton(cached.scene) as THREE.Group
   const clonedAnimations = cached.animations.map(clip => clip.clone())
 
-  return {
-    animations: clonedAnimations,
-    scene: clonedScene
-  }
-}
+  let released = false
 
-/** 递减模板的活跃引用计数。当计数归零且被标记待释放时触发实际 GPU 销毁。 */
-export function releaseGltf(key: string): void {
-  if (!key) {
-    return
-  }
+  const release = (): void => {
+    if (released) {
+      return
+    }
 
-  const cached = _cache.get(key)
-
-  if (cached) {
+    released = true
     cached.refCount = Math.max(0, cached.refCount - 1)
 
     if (cached.refCount === 0 && cached.pendingDispose) {
       disposeTemplate(cached)
-      _cache.delete(key)
+      removePendingTemplate(key, cached)
     }
   }
 
+  return {
+    animations: clonedAnimations,
+    release,
+    scene: clonedScene
+  }
+}
+
+function removePendingTemplate(key: string, template: CachedTemplate): void {
   const pendingList = _pendingTemplates.get(key)
 
-  if (pendingList) {
-    const remaining: CachedTemplate[] = []
+  if (!pendingList) {
+    return
+  }
 
-    for (const pending of pendingList) {
-      pending.refCount = Math.max(0, pending.refCount - 1)
+  const index = pendingList.findIndex(pending => pending.id === template.id)
 
-      if (pending.refCount === 0) {
-        disposeTemplate(pending)
-      } else {
-        remaining.push(pending)
-      }
-    }
+  if (index < 0) {
+    return
+  }
 
-    if (remaining.length > 0) {
-      _pendingTemplates.set(key, remaining)
-    } else {
-      _pendingTemplates.delete(key)
-    }
+  pendingList.splice(index, 1)
+
+  if (pendingList.length === 0) {
+    _pendingTemplates.delete(key)
   }
 }
 

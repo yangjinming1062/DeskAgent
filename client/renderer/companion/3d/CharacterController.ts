@@ -4,7 +4,7 @@ import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store
 import { log } from '@/shared/lib/log'
 
 import { type ClipMap, resolveClip } from './AnimationMap'
-import { disposeThreeResources, hasGltf, releaseGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
+import { disposeThreeResources, type GltfLease, hasGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
 import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames } from './model-store'
 import { type LoadedModelInfo } from './types'
@@ -73,7 +73,7 @@ export class CharacterController {
   private rigType: string = 'biped'
   private headBone: THREE.Bone | null = null
   private neckBone: THREE.Bone | null = null
-  private activeContentHash: string | null = null
+  private activeGltfLease: GltfLease | null = null
 
   get isBipedRig(): boolean {
     return this.rigType === 'biped'
@@ -128,11 +128,11 @@ export class CharacterController {
           if (cached) {
             rootScene = cached.scene
             gltfAnimations = cached.animations
-            this.activeContentHash = contentHash
+            this.activeGltfLease = cached
           } else {
             rootScene = new THREE.Group()
             gltfAnimations = []
-            this.activeContentHash = null
+            this.activeGltfLease = null
           }
         } else {
           if (!bytes) {
@@ -151,16 +151,16 @@ export class CharacterController {
             if (cloned) {
               rootScene = cloned.scene
               gltfAnimations = cloned.animations
-              this.activeContentHash = contentHash
+              this.activeGltfLease = cloned
             } else {
               rootScene = gltf.scene
               gltfAnimations = gltf.animations
-              this.activeContentHash = null
+              this.activeGltfLease = null
             }
           } else {
             rootScene = gltf.scene
             gltfAnimations = gltf.animations
-            this.activeContentHash = null
+            this.activeGltfLease = null
           }
         }
 
@@ -252,10 +252,10 @@ export class CharacterController {
     this.proc = null
     this.boneRestQuats.clear()
 
-    if (this.activeContentHash) {
-      // 活跃实例归还模板引用；共享 GPU 资源由模板 Cache 负责管理与释放
-      releaseGltf(this.activeContentHash)
-      this.activeContentHash = null
+    if (this.activeGltfLease) {
+      // 活跃实例归还所属模板代际；共享 GPU 资源由模板 Cache 负责管理与释放
+      this.activeGltfLease.release()
+      this.activeGltfLease = null
     } else {
       // 未被模板缓存管理的独占资源（如程序化形象或无 hash 临时模型）在此释放
       disposeThreeResources(this.root)
