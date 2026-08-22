@@ -1,8 +1,10 @@
 from typing import Any
 
-from components import CHARS_PER_TOKEN
+from components import approx_text_tokens
 
 # Responses API: DB↔input-item conversion, token estimation, kwargs assembly.
+
+INPUT_IMAGE_TOKEN_ESTIMATE: int = 800
 
 
 def copy_responses_context(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -11,19 +13,19 @@ def copy_responses_context(ctx: dict[str, Any]) -> dict[str, Any]:
 
 
 def approx_responses_tokens(instructions: str, input_items: Any) -> int:
-    return (len(instructions or "") + _value_chars(input_items)) // CHARS_PER_TOKEN
+    return approx_text_tokens(instructions or "") + _value_tokens(input_items)
 
 
-def _value_chars(value: Any) -> int:
-    if isinstance(value, str):
-        return len(value)
+def _value_tokens(value: Any) -> int:
     if isinstance(value, dict):
         if value.get("type") == "input_image":
-            return 1024
-        return sum(_value_chars(item) for item in value.values())
+            return INPUT_IMAGE_TOKEN_ESTIMATE
+        return sum(_value_tokens(item) for item in value.values())
+    if isinstance(value, str):
+        return approx_text_tokens(value)
     if isinstance(value, list):
-        return sum(_value_chars(item) for item in value)
-    return len(str(value)) if value is not None else 0
+        return sum(_value_tokens(item) for item in value)
+    return approx_text_tokens(str(value)) if value is not None else 0
 
 
 def _input_text(text: Any) -> dict[str, Any]:

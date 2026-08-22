@@ -25,6 +25,7 @@ from ..llm import (
     MissingLlmConfigError,
     ProviderConfig,
     ServiceType,
+    approx_responses_tokens,
     message_to_response_items,
     provider_for_service,
     provider_from_config,
@@ -59,6 +60,7 @@ class _TurnInputs:
     first_user_msg_content: str | None
     llm_chain: list[ProviderConfig] | None
     allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
+    estimated_tokens: int = 0
 
 
 async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
@@ -84,34 +86,53 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
+def db_message_to_response_items(msg: Message, *, drop_tool_intermediates: bool = False) -> list[dict[str, Any]]:
+    """将一条 DB Message 行转换为 Responses API input items；统一处理多模态 JSON、UI 过滤与工具帧。"""
+    if msg.subtype in UI_ONLY_SUBTYPES:
+        return []
+    if drop_tool_intermediates and (msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)):
+        return []
+
+    content_val: str | list = msg.content or ""
+    if getattr(msg, "content_type", "text") == "multimodal_v1":
+        parsed = safe_json_loads(content_val if isinstance(content_val, str) else "")
+        content_val = parsed if isinstance(parsed, list) else content_val
+
+    item: dict = {"role": msg.role, "content": content_val}
+    if msg.tool_call_id:
+        item["tool_call_id"] = msg.tool_call_id
+    if msg.role == "system":
+        return [{"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]}]
+
+    items: list[dict[str, Any]] = message_to_response_items(item)
+    if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
+        for call in calls:
+            if isinstance(call, dict):
+                items.append(call)
+    return items
+
+
 def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> dict[str, Any]:
     """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
     context: dict[str, Any] = {"instructions": system_prompt, "input": []}
-
     for msg in db_msgs:
-        if msg.subtype in UI_ONLY_SUBTYPES:
-            continue
-        if drop_tool_intermediates and (msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)):
-            continue
-
-        content_val: str | list = msg.content or ""
-        if getattr(msg, "content_type", "text") == "multimodal_v1":
-            parsed = safe_json_loads(content_val if isinstance(content_val, str) else "")
-            content_val = parsed if isinstance(parsed, list) else content_val
-
-        item: dict = {"role": msg.role, "content": content_val}
-        if msg.tool_call_id:
-            item["tool_call_id"] = msg.tool_call_id
-        if msg.role == "system":
-            context["input"].append({"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]})
-            continue
-        context["input"].extend(message_to_response_items(item))
-        if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
-            for call in calls:
-                if isinstance(call, dict):
-                    context["input"].append(call)
-
+        context["input"].extend(db_message_to_response_items(msg, drop_tool_intermediates=drop_tool_intermediates))
     return context
+
+
+def _find_authoritative_token_baseline(history: list[Message], *, is_main_conversation: bool) -> tuple[int | None, list[Message]]:
+    """主会话候选 Assistant 含 tool_calls 或后随工具帧时弃用基线——prompt_tokens 含已裁剪的工具输出，不可信。"""
+    for i in range(len(history) - 2, -1, -1):
+        msg = history[i]
+        if msg.role == "assistant" and msg.prompt_tokens > 0:
+            if is_main_conversation:
+                if msg.tool_calls:
+                    return None, history
+                subsequent = history[i + 1 :]
+                if any(m.role == "tool" or m.subtype == "tool_summary" or (m.role == "assistant" and m.tool_calls) for m in subsequent):
+                    return None, history
+            return msg.prompt_tokens + msg.completion_tokens, history[i + 1 :]
+    return None, history
 
 
 async def _build_turn_inputs(
@@ -198,6 +219,20 @@ async def _build_turn_inputs(
     if addition := native_memory.format_for_system_prompt():
         context["instructions"] += "\n\n" + addition
 
+    # 计算上下文 Token 估算值：结合 Responses 权威基线与 CJK 全量/增量估算
+    full_context_tokens = approx_responses_tokens(context["instructions"], context["input"])
+    baseline, subsequent_msgs = _find_authoritative_token_baseline(history, is_main_conversation=(conv.kind == MAIN_KIND))
+    if baseline is not None:
+        drop_tools = conv.kind == MAIN_KIND
+        delta_items = [item for m in subsequent_msgs for item in db_message_to_response_items(m, drop_tool_intermediates=drop_tools)]
+        delta_tokens = approx_responses_tokens("", delta_items)
+        baseline_tokens = baseline + delta_tokens
+        # 提示词与 Schema 漂移保护：若基线估算与当前全量装配的上下文差异过大（>20% 且 >200 tokens），采用全量估算
+        drift = abs(baseline_tokens - full_context_tokens)
+        estimated_tokens = full_context_tokens if drift > max(200, int(full_context_tokens * 0.2)) else baseline_tokens
+    else:
+        estimated_tokens = full_context_tokens
+
     allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona is not None else BUILTIN_EMOTIONS
     return _TurnInputs(
         context=context,
@@ -211,6 +246,7 @@ async def _build_turn_inputs(
         first_user_msg_content=first_user_msg_content,
         llm_chain=llm_chain,
         allowed_emotions=allowed_emotions,
+        estimated_tokens=estimated_tokens,
     )
 
 

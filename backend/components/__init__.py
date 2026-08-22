@@ -64,6 +64,7 @@ from .database import ENGINE, SESSION_LOCAL, get_db, session_scope
 from .functions import (
     apply_partial,
     approx_message_tokens,
+    approx_text_tokens,
     as_bool,
     coerce_hour_0_23,
     coerce_int,
@@ -168,6 +169,7 @@ __all__ = [
     "adopt_inbound",
     "apply_partial",
     "approx_message_tokens",
+    "approx_text_tokens",
     "as_bool",
     "async_trace_span",
     "attachment_root",

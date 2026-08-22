@@ -71,7 +71,14 @@ def _pick_compressible_block(rest: list[dict[str, Any]], *, max_input_messages: 
     return block, keep
 
 
-async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: str, target_tokens: int, language: str = DEFAULT_LANGUAGE) -> tuple[str, bool]:
+async def _summarize_block(
+    block: list[dict[str, Any]],
+    *,
+    client: Any,
+    model: str,
+    target_tokens: int,
+    language: str = DEFAULT_LANGUAGE,
+) -> tuple[str, bool, int, int]:
     """通过 Responses API 对输入项生成摘要；输出截断时保留原上下文。"""
     request = build_responses_kwargs(
         model=model,
@@ -92,7 +99,10 @@ async def _summarize_block(block: list[dict[str, Any]], *, client: Any, model: s
     )
     response = await call_with_retry(client, **request)
     was_truncated = response.status == "incomplete" and getattr(getattr(response, "incomplete_details", None), "reason", None) == "max_output_tokens"
-    return response.output_text.strip(), was_truncated
+    usage = getattr(response, "usage", None)
+    prompt_tokens = getattr(usage, "input_tokens", 0) if usage else 0
+    completion_tokens = getattr(usage, "output_tokens", 0) if usage else 0
+    return response.output_text.strip(), was_truncated, prompt_tokens, completion_tokens
 
 
 async def compress_history_if_needed(
@@ -106,6 +116,7 @@ async def compress_history_if_needed(
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
     language: str = DEFAULT_LANGUAGE,
+    current_tokens: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     """按需压缩历史；成功返回压缩后的 Responses 上下文，失败或无需压缩返回原上下文。"""
     if enabled is None:
@@ -117,8 +128,8 @@ async def compress_history_if_needed(
     target = target_tokens if target_tokens is not None else SETTINGS.context_summary_target_tokens
     cap = max_input_messages if max_input_messages is not None else SETTINGS.context_summary_max_input_messages
 
-    current_tokens = approx_responses_tokens(context["instructions"], context["input"])
-    if context_length <= 0 or current_tokens < context_length * threshold:
+    tokens_to_check = current_tokens if current_tokens is not None else approx_responses_tokens(context["instructions"], context["input"])
+    if context_length <= 0 or tokens_to_check < context_length * threshold:
         return context, None
 
     block, keep = _pick_compressible_block(context["input"], max_input_messages=cap)
@@ -126,7 +137,13 @@ async def compress_history_if_needed(
         return context, None
 
     try:
-        summary, was_truncated = await _summarize_block(block, client=client, model=model, target_tokens=target, language=language)
+        summary, was_truncated, prompt_tokens, completion_tokens = await _summarize_block(
+            block,
+            client=client,
+            model=model,
+            target_tokens=target,
+            language=language,
+        )
     except Exception as exc:
         logger.warning("context_compressor: summary call failed, leaving history unchanged", extra={"error": str(exc)})
         return context, None
@@ -152,4 +169,9 @@ async def compress_history_if_needed(
             "new_count": len(compressed["input"]),
         },
     )
-    return compressed, {"summary": summary, "replaced_count": replaced_count}
+    return compressed, {
+        "summary": summary,
+        "replaced_count": replaced_count,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+    }

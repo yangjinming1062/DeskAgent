@@ -41,7 +41,7 @@ def test_truncate_responses_context_preserves_recent_image_payloads():
 def test_approx_context_tokens_counts_images_as_fixed_payload():
     items = [{"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64," + "a" * 100_000}]}]
 
-    assert approx_responses_tokens("", items) < 300
+    assert 800 <= approx_responses_tokens("", items) <= 805
 
 
 @pytest.mark.asyncio

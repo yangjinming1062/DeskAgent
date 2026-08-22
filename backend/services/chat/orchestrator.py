@@ -55,6 +55,7 @@ async def run_chat_turn(
         enabled=compression_enabled,
         threshold_ratio=compression_threshold,
         language=effective_settings.get("language", DEFAULT_LANGUAGE),
+        current_tokens=inputs.estimated_tokens,
     )
     # 持久化压缩检查点，使下一轮历史重建从此开始读取；被压缩的消息仍留在 DB，但不再进入 LLM 读路径。对所有会话类型均生效。
     if compress_info is not None:
@@ -65,6 +66,8 @@ async def run_chat_turn(
                     role="system",
                     content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
                     subtype="compress_summary",
+                    prompt_tokens=compress_info.get("prompt_tokens", 0),
+                    completion_tokens=compress_info.get("completion_tokens", 0),
                 ),
             )
             await db.commit()

@@ -4,8 +4,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .constants import CHARS_PER_TOKEN
-
 TRUTHY_STRINGS: frozenset[str] = frozenset({"1", "true", "yes", "on", "enabled"})
 FALSY_STRINGS: frozenset[str] = frozenset({"0", "false", "no", "off", "disabled"})
 
@@ -143,8 +141,36 @@ def unquote_user_setting(val: str | None) -> str | None:
     return s or None
 
 
+def approx_text_tokens(text: str) -> int:
+    """CJK 字符约 1.3 token/字、西文约 4 字符/token；空串返 0。"""
+    if not text:
+        return 0
+    cjk_count = 0
+    other_count = 0
+    for char in text:
+        cp = ord(char)
+        if (
+            0x4E00 <= cp <= 0x9FFF
+            or 0x3400 <= cp <= 0x4DBF
+            or 0x20000 <= cp <= 0x323AF
+            or 0xF900 <= cp <= 0xFAFF
+            or 0x2E80 <= cp <= 0x2EFF
+            or 0x3000 <= cp <= 0x303F
+            or 0xFF00 <= cp <= 0xFFEF
+            or 0x2000 <= cp <= 0x206F
+            or 0x2E00 <= cp <= 0x2E7F
+            or 0x31C0 <= cp <= 0x31EF
+            or 0x3200 <= cp <= 0x32FF
+            or 0x3300 <= cp <= 0x33FF
+        ):
+            cjk_count += 1
+        else:
+            other_count += 1
+    return max(1, int(cjk_count * 1.3 + (other_count + 3) // 4))
+
+
 def approx_message_tokens(messages: list[dict] | None) -> int:
-    """基于字符数的 token 估算。"""
+    """基于 CJK 与字符感知的 token 估算。"""
     if not messages:
         return 0
-    return sum(len(str(m.get("content") or "")) for m in messages) // CHARS_PER_TOKEN
+    return sum(approx_text_tokens(str(m.get("content") or "")) for m in messages)
