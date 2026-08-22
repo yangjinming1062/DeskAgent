@@ -29,7 +29,6 @@ import {
   $modelLoadSettled,
   $modelRetryable,
   $modelRetryModelId,
-  hydrateExpressions,
   retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
@@ -181,8 +180,6 @@ export function Companion3D(): React.JSX.Element {
     })
 
     engineReadyRef.current = ready
-
-    void hydrateExpressions()
 
     void ready.catch(err => {
       // 整条降级链都失败了 —— 完全拿不到 GPU 上下文。静态精灵图层是永不空白的兜底；

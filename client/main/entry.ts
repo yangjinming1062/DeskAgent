@@ -1067,9 +1067,11 @@ async function resolveRemoteBackend(): Promise<null | { baseUrl: string }> {
 
 let getAuthToken = (): string | null => null
 let cachedBackend: SpiritAgentConnection | null = null
+let pendingBackend: Promise<SpiritAgentConnection> | null = null
 
 function resetBackendCache(): void {
   cachedBackend = null
+  pendingBackend = null
 }
 
 async function mintWsTicket(baseUrl: string, token: string | null): Promise<string | null> {
@@ -1104,51 +1106,67 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
     ) {
       return cachedBackend
     }
-
-    const liveWindowState = getWindowState()
-    const wsBase = cachedBackend.baseUrl.replace(/^http/, 'ws')
-    const wsTicket = await mintWsTicket(cachedBackend.baseUrl, token)
-    cachedBackend = {
-      ...cachedBackend,
-      ...liveWindowState,
-      token,
-      wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`
-    }
-
-    return cachedBackend
   }
 
-  await advanceBootProgress('backend.resolve', 'Resolving SpiritAgent backend', 8)
-  const remote = await resolveRemoteBackend()
-
-  if (remote) {
-    const token = getAuthToken()
-    await advanceBootProgress('backend.remote', `Connecting to remote SpiritAgent backend at ${remote.baseUrl}`, 24)
-    await waitForSpiritAgent(remote.baseUrl, token || undefined)
-    updateBootProgress({
-      error: null,
-      message: 'Remote SpiritAgent backend is ready',
-      phase: 'backend.ready',
-      progress: 94,
-      running: true
-    })
-    const wsBase = remote.baseUrl.replace(/^http/, 'ws')
-    const wsTicket = await mintWsTicket(remote.baseUrl, token)
-    cachedBackend = {
-      authMode: 'token',
-      baseUrl: remote.baseUrl,
-      logs: desktopLogger.getLogs().slice(-80),
-      mode: 'remote',
-      source: 'env',
-      token,
-      wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`,
-      ...getWindowState()
-    }
-
-    return cachedBackend
+  // 并发调用共享一条 in-flight Promise,避免重复跑 boot phase
+  if (pendingBackend) {
+    return pendingBackend
   }
 
-  throw new Error('No remote SpiritAgent backend configured.')
+  pendingBackend = (async () => {
+    try {
+      if (cachedBackend) {
+        const liveWindowState = getWindowState()
+        const wsBase = cachedBackend.baseUrl.replace(/^http/, 'ws')
+        const token = getAuthToken()
+        const wsTicket = await mintWsTicket(cachedBackend.baseUrl, token)
+        cachedBackend = {
+          ...cachedBackend,
+          ...liveWindowState,
+          token,
+          wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`
+        }
+
+        return cachedBackend
+      }
+
+      await advanceBootProgress('backend.resolve', 'Resolving SpiritAgent backend', 8)
+      const remote = await resolveRemoteBackend()
+
+      if (!remote) {
+        throw new Error('No remote SpiritAgent backend configured.')
+      }
+
+      const token = getAuthToken()
+      await advanceBootProgress('backend.remote', `Connecting to remote SpiritAgent backend at ${remote.baseUrl}`, 24)
+      await waitForSpiritAgent(remote.baseUrl, token || undefined)
+      updateBootProgress({
+        error: null,
+        message: 'Remote SpiritAgent backend is ready',
+        phase: 'backend.ready',
+        progress: 94,
+        running: true
+      })
+      const wsBase = remote.baseUrl.replace(/^http/, 'ws')
+      const wsTicket = await mintWsTicket(remote.baseUrl, token)
+      cachedBackend = {
+        authMode: 'token',
+        baseUrl: remote.baseUrl,
+        logs: desktopLogger.getLogs().slice(-80),
+        mode: 'remote',
+        source: 'env',
+        token,
+        wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`,
+        ...getWindowState()
+      }
+
+      return cachedBackend
+    } finally {
+      pendingBackend = null
+    }
+  })()
+
+  return pendingBackend
 }
 
 function rendererUrlFor(role: string): string {
