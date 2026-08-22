@@ -7,7 +7,7 @@ export const DATA_URL_READ_MAX_BYTES = 16 * 1024 * 1024
 
 export const DEFAULT_CSP_POLICY = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+  "script-src 'self' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: spiritagent-media: https:",
   "media-src 'self' data: blob: spiritagent-media: https:",

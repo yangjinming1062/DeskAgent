@@ -168,7 +168,7 @@ class _SafeOutboundAsyncBackend(httpcore._backends.auto.AutoBackend):
 
 def _swap_pool_backend(pool: Any, backend: Any) -> None:
     """替换 httpcore ConnectionPool 的 NetworkBackend；保持现有连接池其余配置不变。"""
-    pool._network_backend = backend  # noqa: SLF001 - httpcore 没有公开的 setter
+    pool._network_backend = backend
 
 
 class _SafeOutboundAsyncTransport(httpx.AsyncHTTPTransport):
@@ -187,11 +187,12 @@ def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
     """带建连期 SSRF 守卫的 AsyncClient 工厂。
 
     不再用 request hook 预检：每个 socket.connect 都会在 DNS 解析完成
-    后立即校验所有目标 IP；保留 ``follow_redirects=False`` 以便上游
+    后立即校验所有目标 IP；默认 ``follow_redirects=False`` 以便上游
     ``download_capped`` 自己做逐跳校验。
     """
     transport = kwargs.pop("transport", None) or _SafeOutboundAsyncTransport()
-    return httpx.AsyncClient(follow_redirects=False, transport=transport, **kwargs)
+    follow_redirects = kwargs.pop("follow_redirects", False)
+    return httpx.AsyncClient(follow_redirects=follow_redirects, transport=transport, **kwargs)
 
 
 async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, max_redirects: int = 5) -> bytes:

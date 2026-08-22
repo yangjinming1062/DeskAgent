@@ -740,7 +740,7 @@ function installDevToolsShortcut(targetWin: BrowserWindow): void {
   })
 }
 
-const ZOOM_STORAGE_KEY = 'spiritagent:desktop:zoomLevel'
+const ZOOM_FILE = 'desktop-zoom.json'
 
 function clampZoomLevel(value: number): number {
   if (!Number.isFinite(value)) {
@@ -750,6 +750,32 @@ function clampZoomLevel(value: number): number {
   return Math.min(Math.max(value, -9), 9)
 }
 
+function readPersistedZoomLevel(): number | null {
+  try {
+    const filePath = path.join(app.getPath('userData'), ZOOM_FILE)
+    const raw = fs.readFileSync(filePath, 'utf8')
+    const parsed = JSON.parse(raw) as { zoomLevel?: unknown }
+
+    if (parsed && typeof parsed.zoomLevel === 'number') {
+      return clampZoomLevel(parsed.zoomLevel)
+    }
+  } catch {
+    // 尚未保存或文件损坏
+  }
+
+  return null
+}
+
+function writePersistedZoomLevel(zoomLevel: number): void {
+  try {
+    const filePath = path.join(app.getPath('userData'), ZOOM_FILE)
+    fs.writeFileSync(filePath, JSON.stringify({ zoomLevel }), 'utf8')
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error)
+    rememberLog(`[zoom] persist failed: ${msg}`)
+  }
+}
+
 function setAndPersistZoomLevel(targetWin: BrowserWindow | null, zoomLevel: number): void {
   if (!targetWin || targetWin.isDestroyed()) {
     return
@@ -757,11 +783,7 @@ function setAndPersistZoomLevel(targetWin: BrowserWindow | null, zoomLevel: numb
 
   const next = clampZoomLevel(zoomLevel)
   targetWin.webContents.setZoomLevel(next)
-  targetWin.webContents
-    .executeJavaScript(
-      `try { localStorage.setItem(${JSON.stringify(ZOOM_STORAGE_KEY)}, ${JSON.stringify(String(next))}) } catch {}`
-    )
-    .catch(error => rememberLog(`[zoom] persist failed: ${error?.message || error}`))
+  writePersistedZoomLevel(next)
 }
 
 function restorePersistedZoomLevel(targetWin: BrowserWindow | null): void {
@@ -769,19 +791,11 @@ function restorePersistedZoomLevel(targetWin: BrowserWindow | null): void {
     return
   }
 
-  targetWin.webContents
-    .executeJavaScript(
-      `(() => { try { return localStorage.getItem(${JSON.stringify(ZOOM_STORAGE_KEY)}) } catch { return null } })()`
-    )
-    .then(stored => {
-      if (stored == null || !targetWin || targetWin.isDestroyed()) {
-        return
-      }
+  const stored = readPersistedZoomLevel()
 
-      const level = clampZoomLevel(Number(stored))
-      targetWin.webContents.setZoomLevel(level)
-    })
-    .catch(error => rememberLog(`[zoom] restore failed: ${error?.message || error}`))
+  if (stored !== null) {
+    targetWin.webContents.setZoomLevel(stored)
+  }
 }
 
 function installZoomShortcuts(targetWin: BrowserWindow): void {

@@ -58,6 +58,39 @@ _ENDPOINT_POLL_S = 1.0
 
 _BG_TASKS: set[asyncio.Task] = set()
 
+# PROTOCOL §3 反向 RPC 速率守卫：单会话累计限额（200 帧 / 1MB 文本 / 10MB 视觉），防止工具失控刷爆 LLM。
+MAX_LLM_REQUESTS_PER_SESSION = 200
+MAX_LLM_TEXT_BYTES_PER_SESSION = 1 * 1024 * 1024  # 1 MiB
+MAX_LLM_VISION_BYTES_PER_SESSION = 10 * 1024 * 1024  # 10 MiB
+
+_llm_requests_count = 0
+_llm_bytes_count = 0
+
+
+def _has_vision_content(kwargs: dict[str, Any]) -> bool:
+    def _is_image_part(p: Any) -> bool:
+        return isinstance(p, dict) and (p.get("type") in ("input_image", "image_url", "image") or "image_url" in p or "image" in p)
+
+    for field in ("messages", "input"):
+        items = kwargs.get(field)
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    content = item.get("content")
+                    if isinstance(content, list) and any(_is_image_part(p) for p in content):
+                        return True
+                    parts = item.get("parts")
+                    if isinstance(parts, list) and any(_is_image_part(p) for p in parts):
+                        return True
+    return False
+
+
+def reset_llm_rate_limits() -> None:
+    """重置单会话反向 RPC 累计计数器（在建立新连接或测试时调用）。"""
+    global _llm_requests_count, _llm_bytes_count
+    _llm_requests_count = 0
+    _llm_bytes_count = 0
+
 
 async def _send(ws: Any, req_id: Any, **fields: Any) -> None:
     await ws.send(json.dumps({"jsonrpc": "2.0", "id": req_id, **fields}))
@@ -77,12 +110,26 @@ async def request_llm_from_desktop(kwargs: dict[str, Any]) -> str:
     给调用方纯 ``str``。不携带文本字段的 dict 降级为 ``""``(见 ``_extract_llm_content``); 既不是 str 也不是
     dict 的载荷按协议错误拒绝。
     """
+    global _llm_requests_count, _llm_bytes_count
+
     if (ws := _ACTIVE_WS) is None:
         raise RuntimeError("No active WebSocket connection")
+
+    payload_bytes = len(json.dumps(kwargs, default=str).encode("utf-8"))
+    max_bytes = MAX_LLM_VISION_BYTES_PER_SESSION if _has_vision_content(kwargs) else MAX_LLM_TEXT_BYTES_PER_SESSION
+
+    if _llm_requests_count >= MAX_LLM_REQUESTS_PER_SESSION:
+        raise RuntimeError("request_llm rate-limited by runner: exceeded maximum requests per session (200)")
+
+    if _llm_bytes_count + payload_bytes > max_bytes:
+        raise RuntimeError("request_llm rate-limited by runner: exceeded maximum payload bytes per session")
 
     req_id = f"req_llm_{uuid.uuid4().hex[:8]}"
     fut: asyncio.Future = asyncio.Future()
     _PENDING_RPC[req_id] = fut
+
+    _llm_requests_count += 1
+    _llm_bytes_count += payload_bytes
 
     await _send_notification(ws, "request_llm", kwargs, id=req_id)
 
@@ -214,6 +261,7 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     _ACTIVE_WS = ws
                     _RUNNER_LOOP = asyncio.get_running_loop()
                     set_main_loop(_RUNNER_LOOP)
+                    reset_llm_rate_limits()
                     attempt = 0  # 连接成功后重置
                     try:
                         await _send_notification(ws, "runner_ready", await _runner_ready_payload())

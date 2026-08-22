@@ -3,7 +3,7 @@ import contextlib
 from typing import Any
 
 import httpx
-from components import SETTINGS
+from components import SETTINGS, safe_outbound_async_client
 from openai import AsyncOpenAI
 
 _clients: dict[tuple[str, str], httpx.AsyncClient] = {}
@@ -34,7 +34,7 @@ def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None 
         return client
     headers = {"Authorization": f"Bearer {api_key}"} if auth_header is None else {name: value.format(api_key=api_key) for name, value in auth_header.items()}
     timeout = httpx.Timeout(SETTINGS.llm_request_timeout_seconds, connect=10.0)
-    client = httpx.AsyncClient(base_url=key[0], timeout=timeout, headers=headers)
+    client = safe_outbound_async_client(base_url=key[0], timeout=timeout, headers=headers)
     _clients[key] = client
     return client
 
@@ -44,6 +44,10 @@ async def aclose_all() -> None:
         with contextlib.suppress(Exception):
             await client.aclose()
     _clients.clear()
+    for client_openai in list(_clients_openai.values()):
+        with contextlib.suppress(Exception):
+            await client_openai.close()
+    _clients_openai.clear()
 
 
 def cache_clear() -> None:
@@ -74,6 +78,14 @@ def get_async_client(api_key: str, base_url: str) -> AsyncOpenAI:
     client = _clients_openai.get(key)
     if client is not None:
         return client
-    client = _RetryAwareAsyncOpenAI(api_key=api_key, base_url=key[1], max_retries=max(0, int(SETTINGS.llm_max_retry_attempts)), timeout=_openai_timeout())
+    timeout = _openai_timeout()
+    http_client = safe_outbound_async_client(timeout=timeout)
+    client = _RetryAwareAsyncOpenAI(
+        api_key=api_key,
+        base_url=key[1],
+        max_retries=max(0, int(SETTINGS.llm_max_retry_attempts)),
+        timeout=timeout,
+        http_client=http_client,
+    )
     _clients_openai[key] = client
     return client

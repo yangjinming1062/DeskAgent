@@ -92,11 +92,11 @@ class TestConnectTimeBackendSyncPreFlight:
         assert not ok and "blocked hostname" in reason
 
     def test_instance_data_blocked(self):
-        ok, reason = NETWORK._evaluate_hostname("instance-data.ec2.internal")
+        ok, _ = NETWORK._evaluate_hostname("instance-data.ec2.internal")
         assert not ok
 
     def test_empty_host_blocked(self):
-        ok, reason = NETWORK._evaluate_hostname("")
+        ok, _ = NETWORK._evaluate_hostname("")
         assert not ok
 
     def test_safe_hostname_passes(self):
@@ -336,3 +336,35 @@ class TestDownloadCappedRedirects:
         )
         with pytest.raises(httpx.ConnectError, match="10.0.0.1"):
             await NETWORK.download_capped("https://example.com/file.bin", max_bytes=100)
+
+
+class TestProviderHttpClientSsrf:
+    """``services.llm.providers.http`` 的 ``get_http`` 与 ``get_async_client`` 必须挂载 SSRF 守卫。"""
+
+    @pytest.mark.asyncio
+    async def test_get_http_blocks_private_ip(self, monkeypatch):
+        import httpx
+        from components.network import _SafeOutboundAsyncTransport
+        from services.llm.providers import http
+
+        http.cache_clear()
+        client = http.get_http("https://api.example.com", "test-key")
+        assert isinstance(client._transport, _SafeOutboundAsyncTransport)
+
+        monkeypatch.setattr(
+            socket,
+            "getaddrinfo",
+            lambda _h, _p, *_a, **_kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443))],
+        )
+        with pytest.raises(httpx.ConnectError):
+            await client.get("/v1/test")
+
+    def test_get_async_client_uses_safe_transport(self):
+        from components.network import _SafeOutboundAsyncTransport
+        from services.llm.providers import http
+
+        http.cache_clear()
+        client = http.get_async_client("test-key", "https://api.example.com")
+        http_client = getattr(client, "_client", None)
+        assert http_client is not None
+        assert isinstance(http_client._transport, _SafeOutboundAsyncTransport)

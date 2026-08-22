@@ -128,7 +128,8 @@ test('resolveReadableFileForIpc validates existence type size and sensitivity', 
 
 test('DEFAULT_CSP_POLICY enforces strict directives and allows necessary protocols', () => {
   assert.ok(DEFAULT_CSP_POLICY.includes("default-src 'self'"))
-  assert.ok(DEFAULT_CSP_POLICY.includes("script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'"))
+  assert.ok(DEFAULT_CSP_POLICY.includes("script-src 'self' 'wasm-unsafe-eval'"))
+  assert.ok(!DEFAULT_CSP_POLICY.includes("script-src 'self' 'unsafe-inline'"))
   assert.ok(DEFAULT_CSP_POLICY.includes("style-src 'self' 'unsafe-inline'"))
   assert.ok(DEFAULT_CSP_POLICY.includes('spiritagent-media:'))
   assert.ok(DEFAULT_CSP_POLICY.includes("object-src 'none'"))
@@ -141,5 +142,6 @@ test('index.html contains valid Content-Security-Policy meta tag', () => {
   const html = fs.readFileSync(indexPath, 'utf8')
   assert.ok(html.includes('http-equiv="Content-Security-Policy"'), 'index.html must have CSP meta tag')
   assert.ok(html.includes("default-src 'self'"), 'CSP meta tag must define default-src')
+  assert.ok(html.includes("script-src 'self' 'wasm-unsafe-eval'"), 'CSP meta tag must harden script-src')
   assert.ok(html.includes('spiritagent-media:'), 'CSP meta tag must allow spiritagent-media')
 })

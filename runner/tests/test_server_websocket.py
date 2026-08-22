@@ -526,3 +526,45 @@ async def test_config_update_resets_derived_caches():
         set_inmemory_config({})
         utils.env_passthrough.reset_cache()
         utils.credential_files.reset_cache()
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_request_llm_rate_limiting():
+    """request_llm_from_desktop 必须遵守 PROTOCOL §3 的 200 帧与载荷字节数上限守卫。"""
+    server.reset_llm_rate_limits()
+
+    class _MockWS:
+        async def send(self, payload):
+            msg = json.loads(payload)
+            req_id = msg.get("id")
+            if req_id and req_id in server._PENDING_RPC:
+                server._PENDING_RPC[req_id].set_result({"content": "ok"})
+
+    server._ACTIVE_WS = _MockWS()
+    try:
+        # 1. 模拟超过 200 次请求限制
+        server._llm_requests_count = server.MAX_LLM_REQUESTS_PER_SESSION
+        with pytest.raises(RuntimeError, match="rate-limited by runner: exceeded maximum requests"):
+            await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "hi"}]})
+
+        # 2. 重置后恢复
+        server.reset_llm_rate_limits()
+        res = await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "hi"}]})
+        assert res == "ok"
+
+        # 3. 模拟超出文本字节上限 (1 MiB)
+        server.reset_llm_rate_limits()
+        server._llm_bytes_count = server.MAX_LLM_TEXT_BYTES_PER_SESSION - 10
+        with pytest.raises(RuntimeError, match="rate-limited by runner: exceeded maximum payload bytes"):
+            await server.request_llm_from_desktop({"messages": [{"role": "user", "content": "x" * 100}]})
+
+        # 4. 视觉负载允许更大配额 (10 MiB)
+        server.reset_llm_rate_limits()
+        server._llm_bytes_count = 2 * 1024 * 1024  # 2MB > 1MB text limit
+        vision_msg = {"messages": [{"role": "user", "content": [{"type": "input_image", "image": "abc"}]}]}
+        res = await server.request_llm_from_desktop(vision_msg)
+        assert res == "ok"
+    finally:
+        server._ACTIVE_WS = None
+        server.reset_llm_rate_limits()
