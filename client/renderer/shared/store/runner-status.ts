@@ -1,6 +1,5 @@
+import type { DesktopRunnerPhase, DesktopRunnerStatusEvent } from '@ipc/contracts'
 import { atom, computed } from 'nanostores'
-
-import type { DesktopRunnerPhase, DesktopRunnerStatusEvent } from '@/shared/types/global'
 
 // 「Runner 网桥是否在线」的唯一真源。沿用 hydrateAuth + applyAuthBroadcast 的模式：
 // 一个 IPC 同步 getter 覆盖「我们订阅前网桥就已经跑起来」的情况

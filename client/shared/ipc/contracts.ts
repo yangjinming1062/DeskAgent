@@ -1,3 +1,8 @@
+// SpiritAgent Electron IPC 契约 —— 主进程与渲染进程的唯一真理源。
+// 通过 `@ipc/contracts` 别名同时被 `client/main/preload.ts` 和
+// `client/renderer/shared/types/global.d.ts` 导入。
+// 在此处新增或重命名通道/载荷字段，会在两侧类型检查时立即报错。
+
 export interface DesktopVersionInfo {
   appVersion: string
   electronVersion: string
@@ -28,11 +33,17 @@ export type DesktopUpdateEvent =
   | { type: 'checking' }
 
 export type DesktopRunnerUpdateEvent =
-  | { error: string; kind: 'runner-failed'; recoverable: boolean; version?: string }
-  | { kind: 'runner-installed'; version: string }
-  | { kind: 'runner-installing'; percent?: number; phase: 'pip' | 'starting'; version: string }
-  | { kind: 'runner-prefetching'; percent?: number; phase: 'manifest' | 'server' | 'wheel'; version: string }
-  | { kind: 'runner-ready'; version: string }
+  | { detail?: string; error: string; kind: 'runner-failed'; phase?: string; recoverable?: boolean; version?: string }
+  | { kind: 'runner-installed'; version?: string }
+  | { kind: 'runner-installing'; percent?: number; phase: 'pip' | 'starting'; version?: string }
+  | {
+      kind: 'runner-prefetching'
+      percent?: number
+      phase: 'manifest' | 'prefetch' | 'server' | 'wheel'
+      version?: string
+    }
+  | { kind: 'runner-ready'; version?: string }
+  | { kind: 'runner-recovered'; recoverable: boolean; version?: string }
 
 export interface CapabilityHealthItem {
   available: boolean
@@ -58,6 +69,7 @@ export type DesktopRunnerStatusEvent =
       capabilitiesHealth?: null | RunnerCapabilitiesHealth
       probeFailed?: boolean | null
       runnerVersion?: null | string
+      tools?: unknown[] | null
       type: 'runner_ready'
     }
   | {
@@ -65,16 +77,16 @@ export type DesktopRunnerStatusEvent =
       capabilitiesHealth?: null | RunnerCapabilitiesHealth
       probeFailed?: boolean | null
       runnerVersion?: null | string
-      tools: unknown[]
+      tools: unknown[] | null
       type: 'running'
     }
   | {
       capabilities?: null | RunnerCapabilities
       capabilitiesHealth?: null | RunnerCapabilitiesHealth
-      tools: unknown[]
+      tools: unknown[] | null
       type: 'tools_changed'
     }
-  | { errors: string[]; reason?: string; type: 'stopped' }
+  | { errors?: string[]; reason?: string; type: 'stopped' }
 
 export type DesktopRunnerPhase = 'error' | 'idle' | 'running' | 'starting' | 'stopped' | 'stopping'
 
@@ -201,7 +213,7 @@ export interface MediaTtsPayload {
   voice?: string
 }
 
-// 1. Request-Response (Renderer -> Main via ipcRenderer.invoke / ipcMain.handle)
+// 1. 请求-响应（渲染进程 -> 主进程，通过 ipcRenderer.invoke / ipcMain.handle）
 export interface IpcInvokeContract {
   // 连接与启动
   'spiritagent:connection': () => SpiritAgentConnection | Promise<SpiritAgentConnection>
@@ -213,7 +225,6 @@ export interface IpcInvokeContract {
   'spiritagent:auth:refresh': (payload?: Record<string, unknown>) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
   'spiritagent:auth:logout': () => DesktopLogoutResult | Promise<DesktopLogoutResult>
   'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
-  'spiritagent:auth:get-default-backend-url': () => null | string | Promise<null | string>
 
   // 窗口与界面
   'spiritagent:window:show-tool': () => Promise<void> | void
@@ -222,6 +233,7 @@ export interface IpcInvokeContract {
   'spiritagent:api': (request: SpiritAgentApiRequest) => Promise<unknown> | unknown
   'spiritagent:api:asset': (request: { url: string }) => Promise<string> | string
   'spiritagent:api:asset-buffer': (request: { contentHash?: string; url: string }) => Promise<Uint8Array> | Uint8Array
+  'spiritagent:api:asset-model-url': (request: { contentHash?: string; url: string }) => string | Promise<string>
 
   // 文件 / 剪贴板 / 日志
   'spiritagent:readFileDataUrl': (filePath: string) => Promise<string> | string
@@ -238,6 +250,7 @@ export interface IpcInvokeContract {
   // Runner
   'spiritagent:runner:invoke': (name: string, args: Record<string, unknown>) => Promise<unknown> | unknown
   'spiritagent:runner:reload-mcp': () => Promise<unknown> | unknown
+  'spiritagent:runner:cancel': () => unknown | Promise<unknown>
   'spiritagent:runner:get-state': () => DesktopRunnerState | Promise<DesktopRunnerState>
   'spiritagent:runner:get-tools': () => Array<Record<string, unknown>> | Promise<Array<Record<string, unknown>>>
   'spiritagent:runner-config:read': () =>
@@ -302,7 +315,7 @@ export interface IpcInvokeContract {
   'spiritagent:update:check': () => Promise<void> | void
 }
 
-// 2. Events pushed Main -> Renderer (via webContents.send / ipcRenderer.on)
+// 2. 主进程向渲染进程推送事件（通过 webContents.send / ipcRenderer.on）
 export interface IpcEventContract {
   'spiritagent:auth:changed': [payload: DesktopAuthBroadcast]
   'spiritagent:auth:session-expired': []
@@ -315,7 +328,7 @@ export interface IpcEventContract {
   'spiritagent:window-state-changed': [payload: SpiritAgentWindowState]
 }
 
-// 3. Unidirectional messages Renderer -> Main (via ipcRenderer.send / ipcMain.on)
+// 3. 渲染进程向主进程单向发送消息（通过 ipcRenderer.send / ipcMain.on）
 export interface IpcSendContract {
   'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
 }
@@ -323,3 +336,66 @@ export interface IpcSendContract {
 export type IpcChannel = keyof IpcInvokeContract
 export type IpcEventChannel = keyof IpcEventContract
 export type IpcSendChannel = keyof IpcSendContract
+
+// 运行时 channel 常量。用扁平键(camelCase)避免 `Record<string, Record<string, ...>>`
+// 守卫无法适配混合扁平/嵌套 channel 名的结构问题。每个叶子字符串都必须
+// 是对应契约接口的合法 key,任何拼写错误立即在 `satisfies` 检查处报错。
+// 在 main + preload 中以 `IPC.invoke.authActivate` 等方式使用,完全消除字面量字符串。
+export const IPC = {
+  invoke: {
+    authActivate: 'spiritagent:auth:activate',
+    authRefresh: 'spiritagent:auth:refresh',
+    authLogout: 'spiritagent:auth:logout',
+    authGetSession: 'spiritagent:auth:get-session',
+    connection: 'spiritagent:connection',
+    gatewayWsUrl: 'spiritagent:gateway:ws-url',
+    bootProgressGet: 'spiritagent:boot-progress:get',
+    api: 'spiritagent:api',
+    apiAsset: 'spiritagent:api:asset',
+    apiAssetBuffer: 'spiritagent:api:asset-buffer',
+    apiAssetModelUrl: 'spiritagent:api:asset-model-url',
+    windowShowTool: 'spiritagent:window:show-tool',
+    readFileDataUrl: 'spiritagent:readFileDataUrl',
+    selectPaths: 'spiritagent:selectPaths',
+    writeClipboard: 'spiritagent:writeClipboard',
+    saveClipboardImage: 'spiritagent:saveClipboardImage',
+    logEmit: 'spiritagent:log:emit',
+    version: 'spiritagent:version',
+    runnerInvoke: 'spiritagent:runner:invoke',
+    runnerReloadMcp: 'spiritagent:runner:reload-mcp',
+    runnerCancel: 'spiritagent:runner:cancel',
+    runnerGetState: 'spiritagent:runner:get-state',
+    runnerGetTools: 'spiritagent:runner:get-tools',
+    runnerConfigRead: 'spiritagent:runner-config:read',
+    runnerConfigWrite: 'spiritagent:runner-config:write',
+    runnerConfigPatch: 'spiritagent:runner-config:patch',
+    skillsList: 'spiritagent:skills:list',
+    skillSetEnabled: 'spiritagent:skill:set-enabled',
+    toolsetsList: 'spiritagent:toolsets:list',
+    toolsetSetEnabled: 'spiritagent:toolset:set-enabled',
+    mediaStt: 'spiritagent:media:stt',
+    mediaTts: 'spiritagent:media:tts',
+    onboardingAudioRead: 'spiritagent:onboardingAudio:read',
+    spriteHide: 'spiritagent:sprite:hide',
+    spriteSetIgnoreMouseEvents: 'spiritagent:sprite:set-ignore-mouse-events',
+    spriteSetAlwaysOnTop: 'spiritagent:sprite:set-always-on-top',
+    spriteGetPosition: 'spiritagent:sprite:get-position',
+    spriteSetPosition: 'spiritagent:sprite:set-position',
+    spriteMoveToCursorDisplay: 'spiritagent:sprite:move-to-cursor-display',
+    updateCheck: 'spiritagent:update:check'
+  } as const satisfies Record<string, IpcChannel>,
+  event: {
+    authChanged: 'spiritagent:auth:changed',
+    authSessionExpired: 'spiritagent:auth:session-expired',
+    bootProgress: 'spiritagent:boot-progress',
+    powerResume: 'spiritagent:power-resume',
+    runnerUpdateEvent: 'spiritagent:runner-update-event',
+    runnerStatus: 'spiritagent:runner:status',
+    trayLogout: 'spiritagent:tray:logout',
+    updateEvent: 'spiritagent:update-event',
+    windowStateChanged: 'spiritagent:window-state-changed'
+  } as const satisfies Record<string, IpcEventChannel>,
+  send: {
+    titleBarTheme: 'spiritagent:titlebar-theme'
+  } as const satisfies Record<string, IpcSendChannel>
+} as const

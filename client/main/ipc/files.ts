@@ -1,9 +1,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { IPC, type SpiritAgentSelectPathsOptions } from '@ipc/contracts'
 import type { BrowserWindow, Dialog, IpcMain } from 'electron'
 
-import type { SpiritAgentSelectPathsOptions } from '../shared/ipc-contracts'
 import { dataUrlFromBuffer } from '../shared/mime'
 
 export interface FilesIpcDeps {
@@ -25,7 +25,7 @@ export interface FilesIpcDeps {
 export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath }: FilesIpcDeps): void {
   const { dialog, getMainWindow } = electron
 
-  ipcMain.handle('spiritagent:readFileDataUrl', async (_event, filePath: string) => {
+  ipcMain.handle(IPC.invoke.readFileDataUrl, async (_event, filePath: string) => {
     const { resolvedPath } = await hardening.resolveReadableFileForIpc(filePath, {
       maxBytes: hardening.DATA_URL_READ_MAX_BYTES,
       purpose: 'File preview'
@@ -36,7 +36,7 @@ export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath
     return dataUrlFromBuffer(data, mimeTypeForPath(resolvedPath))
   })
 
-  ipcMain.handle('spiritagent:selectPaths', async (_event, options: SpiritAgentSelectPathsOptions = {}) => {
+  ipcMain.handle(IPC.invoke.selectPaths, async (_event, options: SpiritAgentSelectPathsOptions = {}) => {
     const properties: Array<'multiSelections' | 'openDirectory' | 'openFile'> = options?.directories
       ? ['openDirectory']
       : ['openFile']

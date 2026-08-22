@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import type { IpcEventChannel, IpcEventContract } from '@ipc/contracts'
 import type { BrowserWindow } from 'electron'
 
 export function fileExists(filePath: string): boolean {
@@ -21,7 +22,13 @@ export function directoryExists(filePath: string): boolean {
 }
 
 // 守护 mainWindow.webContents.send(...)：若已销毁则跳过（关闭/重载期间的竞态）。
-export function sendToMain(mainWindow: BrowserWindow | null | undefined, channel: string, payload?: unknown): void {
+// channel 收紧为 `IpcEventChannel`(`webContents.send` 是主→渲单向事件),
+// 不联合 `IpcSendChannel`(那是渲染→主的 `ipcRenderer.send` 方向,主进程不会走这里)。
+export function sendToMain<C extends IpcEventChannel>(
+  mainWindow: BrowserWindow | null | undefined,
+  channel: C,
+  ...payload: IpcEventContract[C]
+): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
   }
@@ -32,7 +39,7 @@ export function sendToMain(mainWindow: BrowserWindow | null | undefined, channel
     return
   }
 
-  webContents.send(channel, payload)
+  webContents.send(channel, ...payload)
 }
 
 // 先写再重命名，确保写入中途崩溃时旧文件保持完整。

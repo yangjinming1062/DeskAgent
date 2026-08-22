@@ -1,12 +1,21 @@
+import {
+  type DesktopUpdateEvent,
+  type DesktopUpdateInfo,
+  type DesktopUpdateProgress,
+  IPC,
+  type IpcEventContract
+} from '@ipc/contracts'
 import type { App, BrowserWindow, IpcMain } from 'electron'
-
-import type { DesktopUpdateEvent, DesktopUpdateInfo, DesktopUpdateProgress } from '../shared/ipc-contracts'
 
 export interface UpdateIpcDeps {
   electron: { app: App }
   getMainWindow: () => BrowserWindow | null | undefined
   ipcMain: IpcMain
-  sendToMain: (win: BrowserWindow | null | undefined, channel: string, payload: DesktopUpdateEvent) => void
+  sendToMain: <C extends keyof IpcEventContract>(
+    win: BrowserWindow | null | undefined,
+    channel: C,
+    ...payload: IpcEventContract[C]
+  ) => void
 }
 
 export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain }: UpdateIpcDeps): void {
@@ -22,10 +31,10 @@ export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain
 
   function broadcast(event: DesktopUpdateEvent): void {
     const win = getMainWindow()
-    sendToMain(win, 'spiritagent:update-event', event)
+    sendToMain(win, IPC.event.updateEvent, event)
   }
 
-  ipcMain.handle('spiritagent:update:check', async () => {
+  ipcMain.handle(IPC.invoke.updateCheck, async () => {
     try {
       await autoUpdater.checkForUpdates()
     } catch (e: unknown) {

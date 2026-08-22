@@ -1,3 +1,4 @@
+import { type DesktopRunnerState, IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain } from 'electron'
 
 import type { BackendSession } from '../backend/session'
@@ -11,7 +12,6 @@ import type {
 import type { CreateRunnerProcessOptions, RunnerProcess } from '../runner/process'
 import type { ReverseRpcOptions } from '../runner/reverse-rpc'
 import type { CreateRunnerWsServerOptions, RunnerWsServer } from '../runner/rpc-ws'
-import type { DesktopRunnerState } from '../shared/ipc-contracts'
 import * as store from '../shared/lib/runner-config-store'
 
 export interface RunnerIpcDeps {
@@ -75,7 +75,7 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
     const win = deps.getMainWindow?.()
 
     if (win && !win.isDestroyed()) {
-      win.webContents.send('spiritagent:runner:status', ev)
+      win.webContents.send(IPC.event.runnerStatus, ev)
     }
   })
 
@@ -171,7 +171,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     return
   }
 
-  ipcMain.handle('spiritagent:runner:invoke', async (_event, name: string, args?: Record<string, unknown>) => {
+  ipcMain.handle(IPC.invoke.runnerInvoke, async (_event, name: string, args?: Record<string, unknown>) => {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
     }
@@ -185,7 +185,7 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     return bridge.invoke(name, args && typeof args === 'object' ? args : {})
   })
 
-  ipcMain.handle('spiritagent:runner:get-state', async (): Promise<DesktopRunnerState> => {
+  ipcMain.handle(IPC.invoke.runnerGetState, async (): Promise<DesktopRunnerState> => {
     const bridge = deps.runnerBridge
 
     if (!bridge) {
@@ -206,13 +206,13 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
     }
   })
 
-  ipcMain.handle('spiritagent:runner:reload-mcp', async () => {
+  ipcMain.handle(IPC.invoke.runnerReloadMcp, async () => {
     const bridge = ensureRunnerBridge(deps)
 
     return bridge.dispatch('mcp.reload', {})
   })
 
-  ipcMain.handle('spiritagent:runner:cancel', async () => {
+  ipcMain.handle(IPC.invoke.runnerCancel, async () => {
     const bridge = ensureRunnerBridge(deps)
 
     return bridge.dispatch('spiritagent.cancel', {})

@@ -22,7 +22,8 @@ export default defineConfig({
       '@': path.resolve(__dirname, './renderer'),
       '@shared': path.resolve(__dirname, './renderer/shared'),
       '@companion': path.resolve(__dirname, './renderer/companion'),
-      '@hub': path.resolve(__dirname, './renderer/hub')
+      '@hub': path.resolve(__dirname, './renderer/hub'),
+      '@ipc/contracts': path.resolve(__dirname, './shared/ipc/contracts')
     },
     dedupe: ['react', 'react-dom']
   },
@@ -37,7 +38,14 @@ export default defineConfig({
   },
   // Vitest 负责渲染进程测试；主进程测试用 node --test（见 package.json）
   test: {
+    // 仅运行时测试。.test-d.ts 必须放在 typecheck.include 里,否则 Vitest
+    // 尝试执行无 it()/test() 的文件会报 "No test suite found"。
     include: ['renderer/**/*.{test,spec}.{ts,tsx}'],
-    environment: 'jsdom'
+    environment: 'jsdom',
+    typecheck: {
+      enabled: true,
+      include: ['shared/**/*.test-d.ts'],
+      tsconfig: './tsconfig.json'
+    }
   }
 })

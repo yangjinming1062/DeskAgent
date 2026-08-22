@@ -40,7 +40,9 @@ client/
 │   ├── security/          # 路径白名单 + 凭证保护 + hardening
 │   ├── lifecycle/         # tray + 单实例锁 + 关闭拦截
 │   ├── backend/           # REST 客户端 + session 会话管理 + ws 探测
-│   └── shared/            # 强类型 IPC 契约定义与通用工具库
+│   └── shared/            # 主进程通用工具库与状态存储
+├── shared/                # 跨进程共享契约定义（@ipc/contracts 别名）
+│   └── ipc/               # 强类型 IPC 通道、载荷与运行时常量
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层
 │   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
@@ -53,7 +55,7 @@ client/
 └── assets/                # icon
 ```
 
-**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过主进程的 IPC 契约定义与渲染进程的全局类型声明共享严格的 IPC 通道与载荷契约。
+**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
 
 **renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
 

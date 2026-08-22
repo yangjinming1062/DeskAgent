@@ -1,307 +1,146 @@
+// `window.spiritagent` 渲染层 API 面的 ambient 声明。
+//
+// 唯一的"载荷类型"与"通道名"真理源在 `@ipc/contracts` (`client/shared/ipc/contracts.ts`)。
+// 本文件只描述 *形状*:通道名 → 方法签名。所有参数与返回类型通过
+// `IpcInvokeContract[K]` / `IpcEventContract[K]` 查表引用契约,
+// 任何契约字段变更会在两侧 `tsc --noEmit` 同时报错。
+//
+// `api` 是例外 — 保留 `<T = unknown>` 泛型,因为渲染层有 11+ 处
+// `await window.spiritagent.api<MyResponse>(req)` 调用;契约
+// `IpcInvokeContract['spiritagent:api']` 是非泛型的,直接查表会让泛型调用点全报错。
+
+import type {
+  DesktopActivatePayload,
+  DesktopAuthBroadcast,
+  DesktopAuthSnapshot,
+  DesktopBootProgress,
+  DesktopRunnerState,
+  DesktopRunnerStatusEvent,
+  DesktopRunnerUpdateEvent,
+  DesktopUpdateEvent,
+  IpcEventContract,
+  IpcInvokeContract,
+  IpcSendContract,
+  MediaSttPayload,
+  MediaTtsPayload,
+  RunnerConfigPatch,
+  SpiritAgentApiRequest,
+  SpiritAgentConnection,
+  SpiritAgentSelectPathsOptions,
+  SpiritAgentTitleBarTheme,
+  SpiritAgentWindowState
+} from '@ipc/contracts'
+
+// 把契约里的 `(payload) => R | Promise<R>` 收窄为 `(...args) => Promise<R>`,
+// 渲染层所有调用点假设返回纯 `Promise<R>`(否则 `getGatewayWsUrl().then(...)`
+// 会因联合类型无法识别 `.then` 报错;且 `() => R | Promise<R>` 协变于
+// `() => Promise<R>`,反向赋值给期望 `() => Promise<R>` 的类型会失败)。
+type AsyncIpc<T extends (...args: never[]) => unknown> = (...args: Parameters<T>) => Promise<Awaited<ReturnType<T>>>
+
+// 事件订阅方法的形态辅助:`IpcEventContract[K]` 是 `[payload: T]` 元组(有载荷)
+// 或 `[]`(空)。根据长度分支:
+type EventSubscription<K extends keyof IpcEventContract> = IpcEventContract[K] extends [infer P]
+  ? (callback: (payload: P) => void) => () => void
+  : (callback: () => void) => () => void
+
 export {}
 
 declare global {
   interface Window {
     spiritagent: {
-      getConnection: () => Promise<SpiritAgentConnection>
-      getGatewayWsUrl: () => Promise<string>
-      getBootProgress: () => Promise<DesktopBootProgress>
-      activate: (payload: DesktopActivatePayload) => Promise<DesktopAuthSnapshot>
-      refreshSession: (payload?: Record<string, unknown>) => Promise<DesktopAuthSnapshot>
-      logout: () => Promise<DesktopLogoutResult>
-      getSession: () => Promise<DesktopAuthSnapshot | null>
-      showToolWindow: () => Promise<void>
-      api: <T>(request: SpiritAgentApiRequest) => Promise<T>
-      /** 把后端服务的二进制资产以 data URL 的形式取回（见 connection.cjs）。 */
-      apiAsset: (request: { url: string }) => Promise<string>
-      /** 把后端服务的二进制资产以原始字节取回——用于大体积负载（GLB），
+      getConnection: AsyncIpc<IpcInvokeContract['spiritagent:connection']>
+      getGatewayWsUrl: AsyncIpc<IpcInvokeContract['spiritagent:gateway:ws-url']>
+      getBootProgress: AsyncIpc<IpcInvokeContract['spiritagent:boot-progress:get']>
+      activate: AsyncIpc<IpcInvokeContract['spiritagent:auth:activate']>
+      refreshSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:refresh']>
+      logout: AsyncIpc<IpcInvokeContract['spiritagent:auth:logout']>
+      getSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:get-session']>
+      showToolWindow: AsyncIpc<IpcInvokeContract['spiritagent:window:show-tool']>
+      api: <T = unknown>(request: SpiritAgentApiRequest) => Promise<T>
+      /** 把后端服务的二进制资产以 data URL 的形式取回(见 connection.cjs)。 */
+      apiAsset: AsyncIpc<IpcInvokeContract['spiritagent:api:asset']>
+      /** 把后端服务的二进制资产以原始字节取回——用于大体积负载(GLB),
        * 不能接受 base64 膨胀。支持通过 contentHash 做磁盘缓存。 */
-      apiAssetBuffer: (request: { url: string; contentHash?: string }) => Promise<Uint8Array>
-      /** 获取缓存的模型流媒体协议 URL（spiritagent-media://...），供前端零拷贝流式加载。 */
-      apiAssetModelUrl: (request: { url: string; contentHash?: string }) => Promise<string>
-      readFileDataUrl: (filePath: string) => Promise<string>
-      selectPaths: (options?: SpiritAgentSelectPathsOptions) => Promise<string[]>
-      writeClipboard: (text: string) => Promise<boolean>
-      saveClipboardImage: () => Promise<string>
-      log: (payload: { level: 'error' | 'info' | 'warn'; scope: string; args: unknown[] }) => Promise<void>
-      runnerInvoke?: (name: string, args: Record<string, unknown>) => Promise<unknown>
-      runnerCancel?: () => Promise<unknown>
-      reloadMcp: () => Promise<unknown>
-      runnerGetState?: () => Promise<DesktopRunnerState>
-      runnerGetTools?: () => Promise<Array<Record<string, unknown>>>
-      setTitleBarTheme?: (payload: SpiritAgentTitleBarTheme) => void
+      apiAssetBuffer: AsyncIpc<IpcInvokeContract['spiritagent:api:asset-buffer']>
+      /** 获取缓存的模型流媒体协议 URL(spiritagent-media://...),
+       * 供前端零拷贝流式加载。 */
+      apiAssetModelUrl: AsyncIpc<IpcInvokeContract['spiritagent:api:asset-model-url']>
+      readFileDataUrl: AsyncIpc<IpcInvokeContract['spiritagent:readFileDataUrl']>
+      selectPaths: AsyncIpc<IpcInvokeContract['spiritagent:selectPaths']>
+      writeClipboard: AsyncIpc<IpcInvokeContract['spiritagent:writeClipboard']>
+      saveClipboardImage: AsyncIpc<IpcInvokeContract['spiritagent:saveClipboardImage']>
+      log: AsyncIpc<IpcInvokeContract['spiritagent:log:emit']>
+      runnerInvoke: AsyncIpc<IpcInvokeContract['spiritagent:runner:invoke']>
+      runnerCancel: AsyncIpc<IpcInvokeContract['spiritagent:runner:cancel']>
+      reloadMcp: AsyncIpc<IpcInvokeContract['spiritagent:runner:reload-mcp']>
+      runnerGetState: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-state']>
+      runnerGetTools: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-tools']>
+      setTitleBarTheme: (payload: IpcSendContract['spiritagent:titlebar-theme'][0]) => void
       runnerConfig: {
-        read: () => Promise<{ ok: boolean; content?: string; error?: string }>
-        write: (configString: string) => Promise<{ ok: boolean; error?: string }>
-        patch: (patch: {
-          path: readonly (string | number)[]
-          value?: unknown
-          op?: 'set' | 'delete'
-        }) => Promise<{ ok: boolean; error?: string }>
+        read: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:read']>
+        write: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:write']>
+        patch: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:patch']>
       }
       skills: {
-        list: () => Promise<{
-          ok: boolean
-          skills?: Array<{
-            category: string
-            name: string
-            description?: string
-            platforms?: string[] | null
-            compatible: boolean
-            enabled: boolean
-          }>
-          error?: string
-        }>
-        setEnabled: (payload: { name: string; enabled: boolean }) => Promise<{
-          ok: boolean
-          skills?: Array<{
-            category: string
-            name: string
-            description?: string
-            platforms?: string[] | null
-            compatible: boolean
-            enabled: boolean
-          }>
-          error?: string
-        }>
+        list: AsyncIpc<IpcInvokeContract['spiritagent:skills:list']>
+        setEnabled: AsyncIpc<IpcInvokeContract['spiritagent:skill:set-enabled']>
       }
       toolsets: {
-        list: () => Promise<{
-          ok: boolean
-          toolsets?: Array<{ id: string; toolNames: string[]; enabled: boolean }>
-          error?: string
-        }>
-        setEnabled: (payload: { id: string; enabled: boolean }) => Promise<{
-          ok: boolean
-          toolsets?: Array<{ id: string; toolNames: string[]; enabled: boolean }>
-          error?: string
-        }>
+        list: AsyncIpc<IpcInvokeContract['spiritagent:toolsets:list']>
+        setEnabled: AsyncIpc<IpcInvokeContract['spiritagent:toolset:set-enabled']>
       }
       media: {
-        stt: (payload: {
-          context?: string | null
-          dataUrl: string
-          filename?: string
-          language?: string
-        }) => Promise<{ text: string }>
-        tts: (payload: {
-          context?: string | null
-          persist?: boolean
-          text: string
-          voice?: string
-        }) => Promise<{ dataUrl: string; mimeType: string }>
+        stt: AsyncIpc<IpcInvokeContract['spiritagent:media:stt']>
+        tts: AsyncIpc<IpcInvokeContract['spiritagent:media:tts']>
         onboardingAudio: {
-          read: (tag: string) => Promise<{ dataUrl: string; mimeType: string; tag: string; bytes: number }>
+          read: AsyncIpc<IpcInvokeContract['spiritagent:onboardingAudio:read']>
         }
       }
       sprite: {
-        hide: () => Promise<void>
-        setIgnoreMouseEvents: (payload: { ignore: boolean; forward?: boolean }) => Promise<void>
-        setAlwaysOnTop: (payload: { on: boolean }) => Promise<void>
-        getPosition: () => Promise<{ origin?: { x: number; y: number }; x: number; y: number } | null>
-        moveToCursorDisplay: () => Promise<{
-          cursor: { x: number; y: number }
-          from: { x: number; y: number }
-          to: { x: number; y: number }
-        } | null>
-        setPosition: (payload: { x: number; y: number }) => Promise<void>
+        hide: AsyncIpc<IpcInvokeContract['spiritagent:sprite:hide']>
+        setIgnoreMouseEvents: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-ignore-mouse-events']>
+        setAlwaysOnTop: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-always-on-top']>
+        getPosition: AsyncIpc<IpcInvokeContract['spiritagent:sprite:get-position']>
+        setPosition: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-position']>
+        moveToCursorDisplay: AsyncIpc<IpcInvokeContract['spiritagent:sprite:move-to-cursor-display']>
       }
-      onWindowStateChanged?: (callback: (payload: SpiritAgentWindowState) => void) => () => void
-      onPowerResume?: (callback: () => void) => () => void
-      onBootProgress: (callback: (payload: DesktopBootProgress) => void) => () => void
-      onSessionExpired: (callback: () => void) => () => void
-      onAuthChanged: (callback: (payload: DesktopAuthBroadcast) => void) => () => void
-      onRunnerStatus?: (callback: (payload: DesktopRunnerStatusEvent) => void) => () => void
-      onTrayLogout?: (callback: () => void) => () => void
-      getVersion: () => Promise<DesktopVersionInfo>
-      update?: {
-        check: () => Promise<void>
-        onEvent: (callback: (payload: DesktopUpdateEvent) => void) => () => void
-        onRunnerEvent: (callback: (payload: DesktopRunnerUpdateEvent) => void) => () => void
+      onWindowStateChanged: EventSubscription<'spiritagent:window-state-changed'>
+      onPowerResume: EventSubscription<'spiritagent:power-resume'>
+      onBootProgress: EventSubscription<'spiritagent:boot-progress'>
+      onSessionExpired: EventSubscription<'spiritagent:auth:session-expired'>
+      onAuthChanged: EventSubscription<'spiritagent:auth:changed'>
+      onRunnerStatus: EventSubscription<'spiritagent:runner:status'>
+      onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
+      getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>
+      update: {
+        check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>
+        onEvent: EventSubscription<'spiritagent:update-event'>
+        onRunnerEvent: EventSubscription<'spiritagent:runner-update-event'>
       }
     }
   }
 }
 
-export interface DesktopVersionInfo {
-  appVersion: string
-  electronVersion: string
-  nodeVersion: string
-  platform: string
-}
-
-export interface DesktopUpdateInfo {
-  version: string
-  releaseDate?: string
-  releaseNotes?: string
-}
-
-export interface DesktopUpdateProgress {
-  bytesPerSecond: number
-  delta: number
-  percent: number
-  total: number
-  transferred: number
-}
-
-export type DesktopUpdateEvent =
-  | { type: 'checking' }
-  | { type: 'available'; info?: DesktopUpdateInfo }
-  | { type: 'none'; info?: DesktopUpdateInfo }
-  | { type: 'progress'; progress: DesktopUpdateProgress }
-  | { type: 'downloaded'; info?: DesktopUpdateInfo }
-  | { type: 'error'; message: string }
-
-// Runner 侧的更新事件，由 main.cjs → runner-updater.cjs 经 `spiritagent:runner-update-event`
-// IPC 通道转发。阶段 1（预取）在旧的 Electron 中、收到 `update-downloaded` 之后运行；
-// 阶段 2（安装）在新的 Electron 启动时运行。`recoverable: false` 表示用户必须重装。
-export type DesktopRunnerUpdateEvent =
-  | { kind: 'runner-prefetching'; version: string; phase: 'manifest' | 'wheel' | 'server'; percent?: number }
-  | { kind: 'runner-ready'; version: string }
-  | { kind: 'runner-installing'; version: string; phase: 'pip' | 'starting'; percent?: number }
-  | { kind: 'runner-installed'; version: string }
-  | { kind: 'runner-failed'; error: string; recoverable: boolean; version?: string }
-
-// Runner 能力探测结果。来自 `runner_ready` 事件、
-export interface CapabilityHealthItem {
-  available: boolean
-  reason?: string | null
-}
-
-export type RunnerCapabilitiesHealth = Record<string, CapabilityHealthItem>
-
-// runner-bridge.cjs 中的 `running` / `tools_changed` 生命周期变体——
-// 每个能力对应一个真实的、按平台的子体探测
-// （sounddevice、Win32 GetLastInputInfo、Quartz、loginctl，……）。
-export interface RunnerCapabilities {
-  microphone?: boolean
-  screen_capture?: boolean
-  local_stt?: boolean
-  local_tts?: boolean
-  system_activity?: boolean
-  platform?: string
-  python?: string
-}
-
-// 来自 runner-bridge.cjs 的 Runner 生命周期事件（`running` / `stopped` /
-// `error` / `tools_changed`），经 `spiritagent:runner:status` IPC 通道转发。
-// 渲染层通过 `onRunnerStatus` 订阅；见 use-gateway-boot.ts，
-// 其中 `running` 与 `tools_changed` 两个变体都会触发一次向后端的工具 schema 同步。
-export type DesktopRunnerStatusEvent =
-  | {
-      type: 'running'
-      tools: unknown[]
-      capabilities?: RunnerCapabilities | null
-      capabilitiesHealth?: RunnerCapabilitiesHealth | null
-      runnerVersion?: string | null
-      probeFailed?: boolean | null
-    }
-  | {
-      type: 'runner_ready'
-      capabilities?: RunnerCapabilities | null
-      capabilitiesHealth?: RunnerCapabilitiesHealth | null
-      runnerVersion?: string | null
-      probeFailed?: boolean | null
-    }
-  | {
-      type: 'tools_changed'
-      tools: unknown[]
-      capabilities?: RunnerCapabilities | null
-      capabilitiesHealth?: RunnerCapabilitiesHealth | null
-    }
-  | { type: 'stopped'; reason?: string; errors: string[] }
-  | { type: 'error'; phase: string; error: Error }
-
-// Runner 网桥生命周期的同步快照。由 ``runnerGetState`` 返回；
-// 后续转换由 ``DesktopRunnerStatusEvent`` 配合给出。
-// 与 runner-bridge.cjs 派发的 phase 取值一一对应。
-export type DesktopRunnerPhase = 'idle' | 'starting' | 'running' | 'stopping' | 'stopped' | 'error'
-
-export interface DesktopRunnerState {
-  phase: DesktopRunnerPhase
-  startedAt?: number | null
-  stoppedAt?: number | null
-  lastError?: string | null
-  capabilities?: RunnerCapabilities | null
-  capabilitiesHealth?: RunnerCapabilitiesHealth | null
-  runnerVersion?: string | null
-  probeFailed?: boolean | null
-}
-
-export interface SpiritAgentConnection {
-  baseUrl: string
-  isFullscreen: boolean
-  mode?: 'local' | 'remote'
-  nativeOverlayWidth: number
-  source?: 'env' | 'local' | 'settings'
-  token: null | string
-  wsUrl: string
-  logs: string[]
-  windowButtonPosition: { x: number; y: number } | null
-}
-
-export interface SpiritAgentTitleBarTheme {
-  background: string
-  foreground: string
-}
-
-export interface SpiritAgentWindowState {
-  isFullscreen: boolean
-  nativeOverlayWidth: number
-  windowButtonPosition: { x: number; y: number } | null
-}
-
-export interface DesktopBootProgress {
-  error: string | null
-  fakeMode: boolean
-  message: string
-  phase: string
-  progress: number
-  running: boolean
-  timestamp: number
-}
-
-export interface DesktopAuthUser {
-  id: number
-  username: string
-}
-
-export interface DesktopAuthSnapshot {
-  baseUrl: string | null
-  hasToken: boolean
-  tokenExpiresAt: number | null
-  user: DesktopAuthUser | null
-}
-
-export interface DesktopActivatePayload {
-  code: string
-}
-
-export interface DesktopLogoutResult {
-  backendUnreachable?: boolean
-  error?: string
-  ok: boolean
-}
-
-// 主进程 → 渲染层在每次登录 / 登出 / 刷新后的广播，同时发送给两个窗口，
-// 以保证各渲染层的每窗口 $auth 保持同步。精灵窗口从不展示登录界面，
-// 因此依赖此广播来感知新会话并启停自己的网关。
-export interface DesktopAuthBroadcast {
-  authenticated: boolean
-  snapshot: DesktopAuthSnapshot | null
-}
-
-export interface SpiritAgentApiRequest {
-  body?: unknown
-  method?: string
-  path: string
-  timeoutMs?: number
-}
-
-export interface SpiritAgentSelectPathsOptions {
-  defaultPath?: string
-  directories?: boolean
-  filters?: Array<{ extensions: string[]; name: string }>
-  multiple?: boolean
-  title?: string
+// 显式重新导出,避免 60+ 处 `window.spiritagent` 调用方需要重写导入;
+// `expectTypeOf<IpcInvokeContract[K]>()` 之类的类型测试也可以从同一个模块导入。
+export type {
+  DesktopActivatePayload,
+  DesktopAuthBroadcast,
+  DesktopAuthSnapshot,
+  DesktopBootProgress,
+  DesktopRunnerState,
+  DesktopRunnerStatusEvent,
+  DesktopRunnerUpdateEvent,
+  DesktopUpdateEvent,
+  IpcEventContract,
+  IpcInvokeContract,
+  IpcSendContract,
+  MediaSttPayload,
+  MediaTtsPayload,
+  RunnerConfigPatch,
+  SpiritAgentApiRequest,
+  SpiritAgentConnection,
+  SpiritAgentSelectPathsOptions,
+  SpiritAgentTitleBarTheme,
+  SpiritAgentWindowState
 }

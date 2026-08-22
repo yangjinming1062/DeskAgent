@@ -1,3 +1,4 @@
+import { IPC } from '@ipc/contracts'
 import type { Clipboard, IpcMain } from 'electron'
 
 export interface ClipboardIpcDeps {
@@ -9,13 +10,13 @@ export interface ClipboardIpcDeps {
 export function registerClipboardIpc({ electron, ipcMain, writeComposerImage }: ClipboardIpcDeps): void {
   const { clipboard } = electron
 
-  ipcMain.handle('spiritagent:writeClipboard', (_event, text) => {
+  ipcMain.handle(IPC.invoke.writeClipboard, (_event, text) => {
     clipboard.writeText(String(text || ''))
 
     return true
   })
 
-  ipcMain.handle('spiritagent:saveClipboardImage', async () => {
+  ipcMain.handle(IPC.invoke.saveClipboardImage, async () => {
     const image = clipboard.readImage()
 
     if (!image || image.isEmpty()) {

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
+import { type DesktopBootProgress, IPC, type SpiritAgentConnection } from '@ipc/contracts'
 import {
   app,
   BrowserWindow,
@@ -67,7 +68,6 @@ import {
 import { spiritagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
 import { readStoredBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
-import type { DesktopBootProgress, SpiritAgentConnection } from './shared/ipc-contracts'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
 import { atomicWriteFile, directoryExists, fileExists, sendToMain, sleep } from './shared/utils'
@@ -297,7 +297,7 @@ function clampBootProgress(value: unknown): number {
 }
 
 function broadcastBootProgress(): void {
-  sendToMain(mainWindow, 'spiritagent:boot-progress', bootProgressState)
+  sendToMain(mainWindow, IPC.event.bootProgress, bootProgressState)
 }
 
 function updateBootProgress(update: Partial<DesktopBootProgress>, options: { allowDecrease?: boolean } = {}): void {
@@ -581,7 +581,7 @@ function sameWindowButtonPosition(
 }
 
 function sendPowerResume(): void {
-  sendToMain(mainWindow, 'spiritagent:power-resume')
+  sendToMain(mainWindow, IPC.event.powerResume)
 }
 
 let powerResumeRegistered = false
@@ -616,7 +616,7 @@ function sendWindowStateChanged(nextIsFullscreen?: boolean): void {
     state.isFullscreen = nextIsFullscreen
   }
 
-  sendToMain(mainWindow, 'spiritagent:window-state-changed', state)
+  sendToMain(mainWindow, IPC.event.windowStateChanged, state)
 }
 
 function buildApplicationMenu(): Menu {
@@ -980,9 +980,7 @@ function getRunnerUpdater(): RunnerUpdater {
     bridgeDeps,
     fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch,
     getMainWindow: () => mainWindow,
-    sendToMain: (win: unknown, channel: string, payload: unknown) => {
-      sendToMain(win as BrowserWindow | null | undefined, channel, payload)
-    }
+    sendToMain
   })
 
   return runnerUpdaterSingleton
@@ -1398,7 +1396,7 @@ function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
 
   for (const win of [mainWindow, toolWindow]) {
     if (win && !win.isDestroyed()) {
-      win.webContents.send('spiritagent:auth:changed', payload)
+      win.webContents.send(IPC.event.authChanged, payload)
     }
   }
 }
@@ -1605,11 +1603,11 @@ registerSpriteIpc({
   ipcMain
 })
 
-ipcMain.handle('spiritagent:window:show-tool', async () => {
+ipcMain.handle(IPC.invoke.windowShowTool, async () => {
   showToolWindow()
 })
 
-ipcMain.handle('spiritagent:runner:get-tools', async () => {
+ipcMain.handle(IPC.invoke.runnerGetTools, async () => {
   const deadline = Date.now() + 5000
 
   while (!bridgeDeps.runnerBridge && Date.now() < deadline) {

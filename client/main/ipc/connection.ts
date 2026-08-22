@@ -1,8 +1,8 @@
 import fsp from 'node:fs/promises'
 
+import { type DesktopBootProgress, IPC, type SpiritAgentApiRequest, type SpiritAgentConnection } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
-import type { DesktopBootProgress, SpiritAgentApiRequest, SpiritAgentConnection } from '../shared/ipc-contracts'
 import { dataUrlFromBuffer } from '../shared/mime'
 
 import type { ModelDiskCache } from './model-disk-cache'
@@ -34,15 +34,15 @@ export function registerConnectionIpc({
   resolvePathTimeoutMs,
   resolveTimeoutMs
 }: ConnectionIpcDeps): void {
-  ipcMain.handle('spiritagent:connection', async () => ensureBackend())
-  ipcMain.handle('spiritagent:gateway:ws-url', async () => {
+  ipcMain.handle(IPC.invoke.connection, async () => ensureBackend())
+  ipcMain.handle(IPC.invoke.gatewayWsUrl, async () => {
     const connection = await ensureBackend()
 
     return connection.wsUrl
   })
-  ipcMain.handle('spiritagent:boot-progress:get', async () => getBootProgressState())
+  ipcMain.handle(IPC.invoke.bootProgressGet, async () => getBootProgressState())
 
-  ipcMain.handle('spiritagent:api', async (_event, request: SpiritAgentApiRequest) => {
+  ipcMain.handle(IPC.invoke.api, async (_event, request: SpiritAgentApiRequest) => {
     const connection = await ensureBackend()
     const fallback = resolvePathTimeoutMs(request?.path, request?.method, defaultFetchTimeoutMs)
     const timeoutMs = resolveTimeoutMs(request?.timeoutMs, fallback)
@@ -59,7 +59,7 @@ export function registerConnectionIpc({
 
       if (err?.message?.startsWith('401 ') && connection.token) {
         try {
-          _event.sender.send('spiritagent:auth:session-expired')
+          _event.sender.send(IPC.event.authSessionExpired)
         } catch {
           /* window may have been destroyed */
         }
@@ -69,7 +69,7 @@ export function registerConnectionIpc({
     }
   })
 
-  ipcMain.handle('spiritagent:api:asset', async (_event, request?: { url?: string }) => {
+  ipcMain.handle(IPC.invoke.apiAsset, async (_event, request?: { url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
 
@@ -91,7 +91,7 @@ export function registerConnectionIpc({
     if (!res.ok) {
       if (res.status === 401 && connection.token) {
         try {
-          _event.sender.send('spiritagent:auth:session-expired')
+          _event.sender.send(IPC.event.authSessionExpired)
         } catch {
           /* window may have been destroyed */
         }
@@ -107,34 +107,50 @@ export function registerConnectionIpc({
   })
 
   ipcMain.handle(
-    'spiritagent:api:asset-model-url',
-    async (_event, request?: { contentHash?: string; url?: string }): Promise<string> => {
+    IPC.invoke.apiAssetModelUrl,
+    async (_event, request: { contentHash?: string; url: string }): Promise<string> => {
       const connection = await ensureBackend()
-      const raw = String(request?.url || '')
+      const raw = String(request.url || '')
 
       if (!raw) {
         throw new Error('asset url is required')
       }
 
       if (!modelDiskCache) {
-        throw new Error('model disk cache is not available')
+        throw new Error('apiAssetModelUrl requires the model disk cache; ensure spiritagentHome is configured')
       }
 
-      const cached = await modelDiskCache.ensureCached({
-        baseUrl: connection.baseUrl,
-        contentHash: request?.contentHash,
-        fetchFn: fetchImpl,
-        token: connection.token || undefined,
-        url: raw
-      })
+      try {
+        const cached = await modelDiskCache.ensureCached({
+          baseUrl: connection.baseUrl,
+          contentHash: request.contentHash,
+          fetchFn: fetchImpl,
+          token: connection.token || undefined,
+          url: raw
+        })
 
-      const normalizedPath = cached.filePath.replace(/\\/g, '/')
+        const normalizedPath = cached.filePath.replace(/\\/g, '/')
 
-      return `spiritagent-media:///${normalizedPath}`
+        return `spiritagent-media:///${normalizedPath}`
+      } catch (error: unknown) {
+        // 与兄弟 handler `apiAsset` / `apiAssetBuffer` 对齐:401 触发广播,
+        // 渲染层 `onSessionExpired` 监听器可触发重新登录。
+        const message = error instanceof Error ? error.message : String(error)
+
+        if (message.startsWith('401 ') && connection.token) {
+          try {
+            _event.sender.send(IPC.event.authSessionExpired)
+          } catch {
+            /* window may have been destroyed */
+          }
+        }
+
+        throw error
+      }
     }
   )
 
-  ipcMain.handle('spiritagent:api:asset-buffer', async (_event, request?: { contentHash?: string; url?: string }) => {
+  ipcMain.handle(IPC.invoke.apiAssetBuffer, async (_event, request?: { contentHash?: string; url?: string }) => {
     const connection = await ensureBackend()
     const raw = String(request?.url || '')
 
@@ -171,7 +187,7 @@ export function registerConnectionIpc({
     if (!res.ok) {
       if (res.status === 401 && connection.token) {
         try {
-          _event.sender.send('spiritagent:auth:session-expired')
+          _event.sender.send(IPC.event.authSessionExpired)
         } catch {
           /* window may have been destroyed */
         }

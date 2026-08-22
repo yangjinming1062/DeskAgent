@@ -1,3 +1,4 @@
+import { IPC, type IpcEventChannel, type IpcEventContract } from '@ipc/contracts'
 import type { App, BrowserWindow, Menu, MenuItemConstructorOptions, nativeImage, Tray } from 'electron'
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
@@ -39,11 +40,11 @@ export function isSpriteVisible(): boolean {
   return win.isVisible() && !win.isMinimized()
 }
 
-function sendToMainWindow(channel: string): void {
+function sendToMainWindow<C extends IpcEventChannel>(channel: C, ...payload: IpcEventContract[C]): void {
   const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
   if (win && !win.isDestroyed()) {
-    win.webContents.send(channel)
+    win.webContents.send(channel, ...payload)
   }
 }
 
@@ -77,7 +78,7 @@ export function buildTrayMenu() {
   ]
 
   if (authed) {
-    template.push({ type: 'separator' }, { click: () => sendToMainWindow('spiritagent:tray:logout'), label: '反激活' })
+    template.push({ type: 'separator' }, { click: () => sendToMainWindow(IPC.event.trayLogout), label: '反激活' })
   }
 
   template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出客户端' })

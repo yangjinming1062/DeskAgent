@@ -1,10 +1,10 @@
+import { type DesktopActivatePayload, IPC } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
 import type { FetchFunction } from '../backend/client'
 import type { BackendSession, BackendSessionOptions, SessionSnapshot } from '../backend/session'
 import type { SafeStorageApi } from '../security/hardening'
 import { readStoredBackendUrl, writeStoredBackendUrl } from '../shared/config'
-import type { DesktopActivatePayload } from '../shared/ipc-contracts'
 
 export interface AuthIpcDeps {
   app: { getPath: (name: string) => string }
@@ -51,7 +51,7 @@ export function ensureBackendSession(deps: AuthIpcDeps): BackendSession {
 }
 
 export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain: IpcMain }): void {
-  ipcMain.handle('spiritagent:auth:activate', async (_event, payload: DesktopActivatePayload) => {
+  ipcMain.handle(IPC.invoke.authActivate, async (_event, payload: DesktopActivatePayload) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 
@@ -72,7 +72,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('spiritagent:auth:refresh', async (_event, payload?: { clientContext?: unknown }) => {
+  ipcMain.handle(IPC.invoke.authRefresh, async (_event, payload?: { clientContext?: unknown }) => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
 
@@ -88,7 +88,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('spiritagent:auth:logout', async () => {
+  ipcMain.handle(IPC.invoke.authLogout, async () => {
     const session = ensureBackendSession(deps)
     const result = await session.logout()
     deps.resetBackendCache?.()
@@ -98,13 +98,9 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle('spiritagent:auth:get-session', async () => {
+  ipcMain.handle(IPC.invoke.authGetSession, async () => {
     const session = ensureBackendSession(deps)
 
     return session.getSession()
-  })
-
-  ipcMain.handle('spiritagent:auth:get-default-backend-url', async () => {
-    return readStoredBackendUrl(deps.spiritagentHome)
   })
 }

@@ -1,5 +1,6 @@
 import './styles.css'
 
+import type { DesktopUpdateEvent } from '@ipc/contracts'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
@@ -7,7 +8,6 @@ import { HashRouter } from 'react-router-dom'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
-import type { DesktopUpdateEvent } from '@/shared/types/global'
 
 import App from './app'
 import { setUpdateStatus } from './hub/settings-store'

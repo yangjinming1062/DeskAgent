@@ -40,6 +40,6 @@ export { $desktopVersion, refreshDesktopVersion } from './store/version'
 export { strings } from './strings'
 export * from './themes'
 
-export type * from './types/global'
 export type * from './types/reactions'
 export type * from './types/spiritagent'
+export type * from '@ipc/contracts'

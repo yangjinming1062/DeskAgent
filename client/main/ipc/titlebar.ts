@@ -1,3 +1,4 @@
+import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, TitleBarOverlayOptions } from 'electron'
 
 export function isHexColor(value: unknown): value is string {
@@ -17,7 +18,7 @@ export function registerTitlebarIpc({
   ipcMain,
   setRendererTitleBarTheme
 }: TitlebarIpcDeps): void {
-  ipcMain.on('spiritagent:titlebar-theme', (event, payload) => {
+  ipcMain.on(IPC.send.titleBarTheme, (event, payload) => {
     const tool = getToolWindow()
 
     // 只有工具窗口的渲染层可以重设覆盖层样式——精灵窗口启动的是浅色主题，

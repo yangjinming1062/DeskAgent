@@ -1,8 +1,8 @@
 import fs from 'node:fs'
 
+import { IPC, type MediaSttPayload, type MediaTtsPayload } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
-import type { MediaSttPayload, MediaTtsPayload } from '../shared/ipc-contracts'
 import { dataUrlFromBuffer, dataUrlToBuffer } from '../shared/mime'
 import { sleep } from '../shared/utils'
 
@@ -430,7 +430,7 @@ export function registerMediaIpc({
   const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
   const diskCache = createTtsDiskCache({ spiritagentHome })
 
-  ipcMain.handle('spiritagent:media:stt', async (_event, payload?: MediaSttPayload) => {
+  ipcMain.handle(IPC.invoke.mediaStt, async (_event, payload?: MediaSttPayload) => {
     const sttId = ++sttSeq
     const { data, mime } = decodeDataUrl(payload?.dataUrl)
 
@@ -534,7 +534,7 @@ export function registerMediaIpc({
     throw new Error('STT failed: cloud unreachable and local STT unavailable')
   })
 
-  ipcMain.handle('spiritagent:media:tts', async (_event, payload?: MediaTtsPayload) => {
+  ipcMain.handle(IPC.invoke.mediaTts, async (_event, payload?: MediaTtsPayload) => {
     const ttsId = ++ttsSeq
     const text = String(payload?.text || '').trim()
 

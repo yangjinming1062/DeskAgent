@@ -15,7 +15,10 @@
     "noEmit": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@ipc/contracts": ["./shared/ipc/contracts"]
+    }
   },
-  "include": ["main", "scripts"]
+  "include": ["main", "scripts", "shared"]
 }

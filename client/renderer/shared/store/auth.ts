@@ -1,6 +1,5 @@
+import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@ipc/contracts'
 import { atom } from 'nanostores'
-
-import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@/shared/types/global'
 
 import { tearDownPrimaryGateway } from './gateway'
 

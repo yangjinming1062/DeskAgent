@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
+import { type DesktopRunnerUpdateEvent, IPC } from '@ipc/contracts'
 import YAML from 'yaml'
 
 import { sleep } from '../shared/utils'
@@ -32,34 +33,7 @@ export interface PendingRunnerSentinel {
   wheel_path: string
 }
 
-export type RunnerUpdateEvent =
-  | {
-      kind: 'runner-installing'
-      percent: number
-      phase: 'pip' | 'starting'
-      version?: string
-    }
-  | {
-      kind: 'runner-prefetching'
-      percent?: number
-      phase: 'manifest' | 'prefetch' | 'server' | 'wheel'
-      version?: string
-    }
-  | { kind: 'runner-installed'; version?: string }
-  | { kind: 'runner-ready'; version?: string }
-  | {
-      kind: 'runner-recovered'
-      recoverable: boolean
-      version?: string
-    }
-  | {
-      detail?: string
-      error: string
-      kind: 'runner-failed'
-      phase?: string
-      recoverable?: boolean
-      version?: string
-    }
+export type RunnerUpdateEvent = DesktopRunnerUpdateEvent
 
 interface MinimalRunnerBridge {
   start: (options: { backendSession?: unknown; readyTimeoutMs?: number }) => Promise<unknown>
@@ -464,7 +438,7 @@ export class RunnerUpdater {
 
   _emit(payload: RunnerUpdateEvent): void {
     if (typeof this.sendToMain === 'function') {
-      this.sendToMain(this.getMainWindow?.(), 'spiritagent:runner-update-event', payload)
+      this.sendToMain(this.getMainWindow?.(), IPC.event.runnerUpdateEvent, payload)
     }
   }
 

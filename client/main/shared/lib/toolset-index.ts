@@ -1,4 +1,4 @@
-import type { ToolsetItem } from '../ipc-contracts'
+import type { ToolsetItem } from '@ipc/contracts'
 
 const EXCLUDED_PREFIXES = ['mcp_']
 const EXCLUDED_PREFIX_RE = new RegExp(`^(?:${EXCLUDED_PREFIXES.join('|')})`)

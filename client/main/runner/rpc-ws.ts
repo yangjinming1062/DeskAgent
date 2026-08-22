@@ -3,10 +3,9 @@ import fs from 'node:fs'
 import http from 'node:http'
 import type { Socket } from 'node:net'
 
+import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '@ipc/contracts'
 import type WebSocket from 'ws'
 import { WebSocketServer } from 'ws'
-
-import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '../shared/ipc-contracts'
 
 export const DEFAULT_TIMEOUT_MS = 120_000
 export const JSON_RPC_VERSION = '2.0'

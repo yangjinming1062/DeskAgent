@@ -1,3 +1,4 @@
+import { IPC } from '@ipc/contracts'
 import type { App, IpcMain } from 'electron'
 
 export interface SystemIpcDeps {
@@ -8,7 +9,7 @@ export interface SystemIpcDeps {
 export function registerSystemIpc({ electron, ipcMain }: SystemIpcDeps): void {
   const { app } = electron
 
-  ipcMain.handle('spiritagent:version', async () => ({
+  ipcMain.handle(IPC.invoke.version, async () => ({
     appVersion: app.getVersion(),
     electronVersion: process.versions.electron,
     nodeVersion: process.versions.node,

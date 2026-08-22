@@ -1,5 +1,6 @@
 import path from 'node:path'
 
+import { IPC } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
 import * as store from '../shared/lib/runner-config-store'
@@ -15,12 +16,12 @@ export interface SkillsIpcDeps {
 export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }: SkillsIpcDeps): void {
   const skillsRoot = path.join(spiritagentHome || '', 'skills')
 
-  ipcMain.handle('spiritagent:skills:list', () => ({
+  ipcMain.handle(IPC.invoke.skillsList, () => ({
     ok: true,
     skills: buildSkillSummaries(skillsRoot, store.getDisabledSet())
   }))
 
-  ipcMain.handle('spiritagent:skill:set-enabled', async (_evt, payload) => {
+  ipcMain.handle(IPC.invoke.skillSetEnabled, async (_evt, payload) => {
     const { enabled, name } = payload ?? {}
 
     if (typeof name !== 'string' || !name) {
@@ -69,7 +70,7 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
     return { ok: true, skills: buildSkillSummaries(skillsRoot, store.getDisabledSet()) }
   })
 
-  ipcMain.handle('spiritagent:toolsets:list', () => {
+  ipcMain.handle(IPC.invoke.toolsetsList, () => {
     let schemas: Record<string, unknown>[] = []
 
     try {
@@ -83,7 +84,7 @@ export function registerSkillsIpc({ spiritagentHome, getRunnerBridge, ipcMain }:
     return { ok: true, toolsets: buildToolsetRoster(schemas, disabled) }
   })
 
-  ipcMain.handle('spiritagent:toolset:set-enabled', async (_evt, payload) => {
+  ipcMain.handle(IPC.invoke.toolsetSetEnabled, async (_evt, payload) => {
     const { enabled, id } = payload ?? {}
 
     if (typeof id !== 'string' || !id) {

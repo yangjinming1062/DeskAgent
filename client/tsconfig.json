@@ -21,9 +21,10 @@
       "@/*": ["./renderer/*"],
       "@shared/*": ["./renderer/shared/*"],
       "@companion/*": ["./renderer/companion/*"],
-      "@hub/*": ["./renderer/hub/*"]
+      "@hub/*": ["./renderer/hub/*"],
+      "@ipc/contracts": ["./shared/ipc/contracts"]
     }
   },
-  "include": ["renderer"],
+  "include": ["renderer", "shared"],
   "references": []
 }

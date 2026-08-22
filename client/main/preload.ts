@@ -1,136 +1,134 @@
+import {
+  type DesktopActivatePayload,
+  type DesktopAuthBroadcast,
+  type DesktopBootProgress,
+  type DesktopRunnerStatusEvent,
+  type DesktopRunnerUpdateEvent,
+  type DesktopUpdateEvent,
+  IPC,
+  type MediaSttPayload,
+  type MediaTtsPayload,
+  type RunnerConfigPatch,
+  type SpiritAgentApiRequest,
+  type SpiritAgentSelectPathsOptions,
+  type SpiritAgentTitleBarTheme,
+  type SpiritAgentWindowState
+} from '@ipc/contracts'
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 
-import type {
-  DesktopActivatePayload,
-  DesktopAuthBroadcast,
-  DesktopBootProgress,
-  DesktopRunnerStatusEvent,
-  DesktopRunnerUpdateEvent,
-  DesktopUpdateEvent,
-  MediaSttPayload,
-  MediaTtsPayload,
-  RunnerConfigPatch,
-  SpiritAgentApiRequest,
-  SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme,
-  SpiritAgentWindowState
-} from './shared/ipc-contracts'
-
 contextBridge.exposeInMainWorld('spiritagent', {
-  activate: (payload: DesktopActivatePayload) => ipcRenderer.invoke('spiritagent:auth:activate', payload),
-  api: (request: SpiritAgentApiRequest) => ipcRenderer.invoke('spiritagent:api', request),
-  apiAsset: (request: { url: string }) => ipcRenderer.invoke('spiritagent:api:asset', request),
+  activate: (payload: DesktopActivatePayload) => ipcRenderer.invoke(IPC.invoke.authActivate, payload),
+  api: (request: SpiritAgentApiRequest) => ipcRenderer.invoke(IPC.invoke.api, request),
+  apiAsset: (request: { url: string }) => ipcRenderer.invoke(IPC.invoke.apiAsset, request),
   apiAssetBuffer: (request: { contentHash?: string; url: string }) =>
-    ipcRenderer.invoke('spiritagent:api:asset-buffer', request),
+    ipcRenderer.invoke(IPC.invoke.apiAssetBuffer, request),
   apiAssetModelUrl: (request: { contentHash?: string; url: string }) =>
-    ipcRenderer.invoke('spiritagent:api:asset-model-url', request),
-  getBootProgress: () => ipcRenderer.invoke('spiritagent:boot-progress:get'),
-  getConnection: () => ipcRenderer.invoke('spiritagent:connection'),
-  getGatewayWsUrl: () => ipcRenderer.invoke('spiritagent:gateway:ws-url'),
-  getSession: () => ipcRenderer.invoke('spiritagent:auth:get-session'),
-  getVersion: () => ipcRenderer.invoke('spiritagent:version'),
+    ipcRenderer.invoke(IPC.invoke.apiAssetModelUrl, request),
+  getBootProgress: () => ipcRenderer.invoke(IPC.invoke.bootProgressGet),
+  getConnection: () => ipcRenderer.invoke(IPC.invoke.connection),
+  getGatewayWsUrl: () => ipcRenderer.invoke(IPC.invoke.gatewayWsUrl),
+  getSession: () => ipcRenderer.invoke(IPC.invoke.authGetSession),
+  getVersion: () => ipcRenderer.invoke(IPC.invoke.version),
   log: (payload: { args: unknown[]; level: 'error' | 'info' | 'warn'; scope: string }) =>
-    ipcRenderer.invoke('spiritagent:log:emit', payload),
-  logout: () => ipcRenderer.invoke('spiritagent:auth:logout'),
+    ipcRenderer.invoke(IPC.invoke.logEmit, payload),
+  logout: () => ipcRenderer.invoke(IPC.invoke.authLogout),
   media: {
     onboardingAudio: {
-      read: (tag: string) => ipcRenderer.invoke('spiritagent:onboardingAudio:read', tag)
+      read: (tag: string) => ipcRenderer.invoke(IPC.invoke.onboardingAudioRead, tag)
     },
-    stt: (payload: MediaSttPayload) => ipcRenderer.invoke('spiritagent:media:stt', payload),
-    tts: (payload: MediaTtsPayload) => ipcRenderer.invoke('spiritagent:media:tts', payload)
+    stt: (payload: MediaSttPayload) => ipcRenderer.invoke(IPC.invoke.mediaStt, payload),
+    tts: (payload: MediaTtsPayload) => ipcRenderer.invoke(IPC.invoke.mediaTts, payload)
   },
   onAuthChanged: (callback: (payload: DesktopAuthBroadcast) => void) => {
     const listener = (_event: IpcRendererEvent, payload: DesktopAuthBroadcast) => callback(payload)
-    ipcRenderer.on('spiritagent:auth:changed', listener)
+    ipcRenderer.on(IPC.event.authChanged, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:auth:changed', listener)
+    return () => ipcRenderer.removeListener(IPC.event.authChanged, listener)
   },
   onBootProgress: (callback: (payload: DesktopBootProgress) => void) => {
     const listener = (_event: IpcRendererEvent, payload: DesktopBootProgress) => callback(payload)
-    ipcRenderer.on('spiritagent:boot-progress', listener)
+    ipcRenderer.on(IPC.event.bootProgress, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:boot-progress', listener)
+    return () => ipcRenderer.removeListener(IPC.event.bootProgress, listener)
   },
   onPowerResume: (callback: () => void) => {
     const listener = () => callback()
-    ipcRenderer.on('spiritagent:power-resume', listener)
+    ipcRenderer.on(IPC.event.powerResume, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:power-resume', listener)
+    return () => ipcRenderer.removeListener(IPC.event.powerResume, listener)
   },
   onRunnerStatus: (callback: (payload: DesktopRunnerStatusEvent) => void) => {
     const listener = (_event: IpcRendererEvent, payload: DesktopRunnerStatusEvent) => callback(payload)
-    ipcRenderer.on('spiritagent:runner:status', listener)
+    ipcRenderer.on(IPC.event.runnerStatus, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:runner:status', listener)
+    return () => ipcRenderer.removeListener(IPC.event.runnerStatus, listener)
   },
   onSessionExpired: (callback: () => void) => {
     const listener = () => callback()
-    ipcRenderer.on('spiritagent:auth:session-expired', listener)
+    ipcRenderer.on(IPC.event.authSessionExpired, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:auth:session-expired', listener)
+    return () => ipcRenderer.removeListener(IPC.event.authSessionExpired, listener)
   },
   onTrayLogout: (callback: () => void) => {
     const listener = () => callback()
-    ipcRenderer.on('spiritagent:tray:logout', listener)
+    ipcRenderer.on(IPC.event.trayLogout, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:tray:logout', listener)
+    return () => ipcRenderer.removeListener(IPC.event.trayLogout, listener)
   },
   onWindowStateChanged: (callback: (payload: SpiritAgentWindowState) => void) => {
     const listener = (_event: IpcRendererEvent, payload: SpiritAgentWindowState) => callback(payload)
-    ipcRenderer.on('spiritagent:window-state-changed', listener)
+    ipcRenderer.on(IPC.event.windowStateChanged, listener)
 
-    return () => ipcRenderer.removeListener('spiritagent:window-state-changed', listener)
+    return () => ipcRenderer.removeListener(IPC.event.windowStateChanged, listener)
   },
-  readFileDataUrl: (filePath: string) => ipcRenderer.invoke('spiritagent:readFileDataUrl', filePath),
-  refreshSession: (payload?: Record<string, unknown>) => ipcRenderer.invoke('spiritagent:auth:refresh', payload),
-  reloadMcp: () => ipcRenderer.invoke('spiritagent:runner:reload-mcp'),
-  runnerCancel: () => ipcRenderer.invoke('spiritagent:runner:cancel'),
+  readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
+  refreshSession: (payload?: Record<string, unknown>) => ipcRenderer.invoke(IPC.invoke.authRefresh, payload),
+  reloadMcp: () => ipcRenderer.invoke(IPC.invoke.runnerReloadMcp),
+  runnerCancel: () => ipcRenderer.invoke(IPC.invoke.runnerCancel),
   runnerConfig: {
-    patch: (patch: RunnerConfigPatch) => ipcRenderer.invoke('spiritagent:runner-config:patch', patch),
-    read: () => ipcRenderer.invoke('spiritagent:runner-config:read'),
-    write: (configString: string) => ipcRenderer.invoke('spiritagent:runner-config:write', configString)
+    patch: (patch: RunnerConfigPatch) => ipcRenderer.invoke(IPC.invoke.runnerConfigPatch, patch),
+    read: () => ipcRenderer.invoke(IPC.invoke.runnerConfigRead),
+    write: (configString: string) => ipcRenderer.invoke(IPC.invoke.runnerConfigWrite, configString)
   },
-  runnerGetState: () => ipcRenderer.invoke('spiritagent:runner:get-state'),
-  runnerGetTools: () => ipcRenderer.invoke('spiritagent:runner:get-tools'),
-  runnerInvoke: (name: string, args?: Record<string, unknown>) =>
-    ipcRenderer.invoke('spiritagent:runner:invoke', name, args || {}),
-  saveClipboardImage: () => ipcRenderer.invoke('spiritagent:saveClipboardImage'),
-  selectPaths: (options?: SpiritAgentSelectPathsOptions) => ipcRenderer.invoke('spiritagent:selectPaths', options),
-  setTitleBarTheme: (payload: SpiritAgentTitleBarTheme) => ipcRenderer.send('spiritagent:titlebar-theme', payload),
-  showToolWindow: () => ipcRenderer.invoke('spiritagent:window:show-tool'),
+  runnerGetState: () => ipcRenderer.invoke(IPC.invoke.runnerGetState),
+  runnerGetTools: () => ipcRenderer.invoke(IPC.invoke.runnerGetTools),
+  runnerInvoke: (name: string, args: Record<string, unknown>) =>
+    ipcRenderer.invoke(IPC.invoke.runnerInvoke, name, args),
+  saveClipboardImage: () => ipcRenderer.invoke(IPC.invoke.saveClipboardImage),
+  selectPaths: (options?: SpiritAgentSelectPathsOptions) => ipcRenderer.invoke(IPC.invoke.selectPaths, options),
+  setTitleBarTheme: (payload: SpiritAgentTitleBarTheme) => ipcRenderer.send(IPC.send.titleBarTheme, payload),
+  showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),
   skills: {
-    list: () => ipcRenderer.invoke('spiritagent:skills:list'),
-    setEnabled: (payload: { enabled: boolean; name: string }) =>
-      ipcRenderer.invoke('spiritagent:skill:set-enabled', payload)
+    list: () => ipcRenderer.invoke(IPC.invoke.skillsList),
+    setEnabled: (payload: { enabled: boolean; name: string }) => ipcRenderer.invoke(IPC.invoke.skillSetEnabled, payload)
   },
   sprite: {
-    getPosition: () => ipcRenderer.invoke('spiritagent:sprite:get-position'),
-    hide: () => ipcRenderer.invoke('spiritagent:sprite:hide'),
-    moveToCursorDisplay: () => ipcRenderer.invoke('spiritagent:sprite:move-to-cursor-display'),
-    setAlwaysOnTop: (payload: { on: boolean }) => ipcRenderer.invoke('spiritagent:sprite:set-always-on-top', payload),
+    getPosition: () => ipcRenderer.invoke(IPC.invoke.spriteGetPosition),
+    hide: () => ipcRenderer.invoke(IPC.invoke.spriteHide),
+    moveToCursorDisplay: () => ipcRenderer.invoke(IPC.invoke.spriteMoveToCursorDisplay),
+    setAlwaysOnTop: (payload: { on: boolean }) => ipcRenderer.invoke(IPC.invoke.spriteSetAlwaysOnTop, payload),
     setIgnoreMouseEvents: (payload: { forward?: boolean; ignore: boolean }) =>
-      ipcRenderer.invoke('spiritagent:sprite:set-ignore-mouse-events', payload),
-    setPosition: (payload: { x: number; y: number }) => ipcRenderer.invoke('spiritagent:sprite:set-position', payload)
+      ipcRenderer.invoke(IPC.invoke.spriteSetIgnoreMouseEvents, payload),
+    setPosition: (payload: { x: number; y: number }) => ipcRenderer.invoke(IPC.invoke.spriteSetPosition, payload)
   },
   toolsets: {
-    list: () => ipcRenderer.invoke('spiritagent:toolsets:list'),
-    setEnabled: (payload: { enabled: boolean; id: string }) =>
-      ipcRenderer.invoke('spiritagent:toolset:set-enabled', payload)
+    list: () => ipcRenderer.invoke(IPC.invoke.toolsetsList),
+    setEnabled: (payload: { enabled: boolean; id: string }) => ipcRenderer.invoke(IPC.invoke.toolsetSetEnabled, payload)
   },
   update: {
-    check: () => ipcRenderer.invoke('spiritagent:update:check'),
+    check: () => ipcRenderer.invoke(IPC.invoke.updateCheck),
     onEvent: (callback: (payload: DesktopUpdateEvent) => void) => {
       const listener = (_event: IpcRendererEvent, payload: DesktopUpdateEvent) => callback(payload)
-      ipcRenderer.on('spiritagent:update-event', listener)
+      ipcRenderer.on(IPC.event.updateEvent, listener)
 
-      return () => ipcRenderer.removeListener('spiritagent:update-event', listener)
+      return () => ipcRenderer.removeListener(IPC.event.updateEvent, listener)
     },
     onRunnerEvent: (callback: (payload: DesktopRunnerUpdateEvent) => void) => {
       const listener = (_event: IpcRendererEvent, payload: DesktopRunnerUpdateEvent) => callback(payload)
-      ipcRenderer.on('spiritagent:runner-update-event', listener)
+      ipcRenderer.on(IPC.event.runnerUpdateEvent, listener)
 
-      return () => ipcRenderer.removeListener('spiritagent:runner-update-event', listener)
+      return () => ipcRenderer.removeListener(IPC.event.runnerUpdateEvent, listener)
     }
   },
-  writeClipboard: (text: string) => ipcRenderer.invoke('spiritagent:writeClipboard', text)
+  writeClipboard: (text: string) => ipcRenderer.invoke(IPC.invoke.writeClipboard, text)
 })

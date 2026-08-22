@@ -4,7 +4,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '../shared/ipc-contracts'
+import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '@ipc/contracts'
+
 import { atomicWriteFile } from '../shared/utils'
 
 import type { RunnerProcess, RunnerProcessStartArgs, RunnerProcessState } from './process'

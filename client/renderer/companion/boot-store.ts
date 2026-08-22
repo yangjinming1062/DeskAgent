@@ -1,7 +1,7 @@
+import type { DesktopBootProgress } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
 import { strings } from '@/shared/strings'
-import type { DesktopBootProgress } from '@/shared/types/global'
 
 export interface DesktopBootState extends DesktopBootProgress {
   visible: boolean

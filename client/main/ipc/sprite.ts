@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, Screen } from 'electron'
 
 export const POSITION_FILE = 'companion-position.json'
@@ -56,7 +57,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     }
   }
 
-  ipcMain.handle('spiritagent:sprite:hide', async () => {
+  ipcMain.handle(IPC.invoke.spriteHide, async () => {
     withWindow(win => {
       win.hide()
 
@@ -67,19 +68,19 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
   })
 
   ipcMain.handle(
-    'spiritagent:sprite:set-ignore-mouse-events',
+    IPC.invoke.spriteSetIgnoreMouseEvents,
     async (_event, payload?: { forward?: boolean; ignore: boolean }) => {
       const ignore = Boolean(payload?.ignore)
       withWindow(win => win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false }))
     }
   )
 
-  ipcMain.handle('spiritagent:sprite:set-always-on-top', async (_event, payload?: { on: boolean }) => {
+  ipcMain.handle(IPC.invoke.spriteSetAlwaysOnTop, async (_event, payload?: { on: boolean }) => {
     const on = Boolean(payload?.on)
     withWindow(win => win.setAlwaysOnTop(on, on ? 'floating' : undefined))
   })
 
-  ipcMain.handle('spiritagent:sprite:get-position', async () => {
+  ipcMain.handle(IPC.invoke.spriteGetPosition, async () => {
     const dir = getUserDataDir()
 
     if (!dir) {
@@ -89,7 +90,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
     return readRestPosition(dir)
   })
 
-  ipcMain.handle('spiritagent:sprite:set-position', async (_event, payload?: { x: number; y: number }) => {
+  ipcMain.handle(IPC.invoke.spriteSetPosition, async (_event, payload?: { x: number; y: number }) => {
     if (!payload || typeof payload.x !== 'number' || typeof payload.y !== 'number') {
       return
     }
@@ -110,7 +111,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
   // 拖拽过程中，当光标越过视口跨到另一块显示器时，渲染层会上报超出视口的指针坐标——
   // 此处把窗口贴到光标所在的显示器上，并返回两个窗口坐标与光标点，
   // 让渲染层重映射精灵位置、并判断最新指针坐标是窗口跳转前还是跳转后采样。
-  ipcMain.handle('spiritagent:sprite:move-to-cursor-display', async () => {
+  ipcMain.handle(IPC.invoke.spriteMoveToCursorDisplay, async () => {
     const win = getSpriteWindow()
 
     if (!win || win.isDestroyed()) {

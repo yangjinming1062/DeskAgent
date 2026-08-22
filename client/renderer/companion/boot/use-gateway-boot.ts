@@ -1,3 +1,4 @@
+import type { SpiritAgentConnection } from '@ipc/contracts'
 import { useEffect, useRef } from 'react'
 
 import { startAutonomyProvision, stopAutonomyProvision } from '@/companion/autonomy'
@@ -18,7 +19,6 @@ import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-import type { SpiritAgentConnection } from '@/shared/types/global'
 import type { RpcEvent, SessionResumeResponse } from '@/shared/types/spiritagent'
 
 // 后端对鉴权失败（token 过期 / 被吊销）使用 WS close 1008——

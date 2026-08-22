@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { IPC } from '@ipc/contracts'
 import type { App, IpcMain } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
@@ -64,7 +65,7 @@ export function registerOnboardingAudioIpc({
     devAudioRoot = path.resolve(repoRoot, 'installer/payload/onboarding-audio/zh')
   }
 
-  ipcMain.handle('spiritagent:onboardingAudio:read', async (_event, tag: string) => {
+  ipcMain.handle(IPC.invoke.onboardingAudioRead, async (_event, tag: string) => {
     if (typeof tag !== 'string' || !TAG_RE.test(tag)) {
       throw new Error(`invalid onboarding audio tag: ${tag}`)
     }

@@ -44,7 +44,18 @@ test('detectRemoteDisplay honors the SPIRITAGENT_DESKTOP_DISABLE_GPU override bo
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
   const electronDir = path.join(__dirname, '..')
   const entrypoints = ['entry.ts', 'preload.ts', 'lifecycle/platform.ts']
-  const allowedBareRequires = new Set(['electron', 'electron-updater', 'electron-log', 'electron-log/main', 'ws'])
+
+  // `@ipc/contracts` 是 tsconfig paths + tsup esbuildOptions 别名,
+  // 解析到 `client/shared/ipc/contracts.ts` 本地文件,不需要 npm 打包。
+  const allowedBareRequires = new Set([
+    'electron',
+    'electron-updater',
+    'electron-log',
+    'electron-log/main',
+    'ws',
+    '@ipc/contracts'
+  ])
+
   const requirePattern = /(?:require\(|from\s+)['"]([^'"]+)['"]/g
 
   for (const entrypoint of entrypoints) {
