@@ -61,8 +61,7 @@ function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
 
   const hour = new Date().getHours()
 
-  // 静默时段（23-7，与 companion-store.checkBedtimeAndAutoSleep 同步）：
-  // 跳过，避免 affect 提示在 SLEEPING 之后又把伙伴唤醒。
+  // 深夜时段跳过本轮 affect 轮询。
   if (hour >= 23 || hour < 7) {
     return
   }

@@ -45,7 +45,7 @@ const EMOTION_SCALE_BOOST: Record<string, number> = {
 export const MIN_SCALE = 0.5
 export const MAX_SCALE = 2
 
-export type SpatialLocale = 'home' | 'chat' | 'perch' | 'target' | 'roam' | 'sleep'
+export type SpatialLocale = 'home' | 'chat' | 'perch' | 'target' | 'roam'
 export type Locomotion = 'still' | 'walk' | 'fly' | 'drag'
 
 export const $spatialLocale = atom<SpatialLocale>('home')
@@ -92,62 +92,6 @@ export function getChatPosition(): { x: number; y: number } {
     x: Math.round((window.innerWidth - w) / 2),
     y: Math.round(window.innerHeight * 0.16)
   }
-}
-
-export type EdgeVariant = 'bottom' | 'left' | 'right' | null
-export const $edgeVariant = atom<EdgeVariant>(null)
-
-export function getEdgeVariantPosition(variant: 'bottom' | 'left' | 'right'): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return { x: 0, y: 0 }
-  }
-
-  const currentScale = $spatialScale.get()
-  const spriteW = Math.round(SPRITE_W * currentScale)
-  const spriteH = Math.round(SPRITE_H * currentScale)
-
-  switch (variant) {
-    case 'bottom':
-      return {
-        x: Math.max(
-          REST_MARGIN,
-          Math.min(window.innerWidth - spriteW - REST_MARGIN, Math.round((window.innerWidth - spriteW) * 0.7))
-        ),
-        y: Math.round(window.innerHeight - spriteH * 0.45)
-      }
-
-    case 'left':
-      return {
-        x: -Math.round(spriteW * 0.55),
-        y: Math.max(
-          REST_MARGIN,
-          Math.min(window.innerHeight - spriteH - REST_MARGIN, Math.round((window.innerHeight - spriteH) * 0.6))
-        )
-      }
-
-    case 'right':
-      return {
-        x: Math.round(window.innerWidth - spriteW * 0.45),
-        y: Math.max(
-          REST_MARGIN,
-          Math.min(window.innerHeight - spriteH - REST_MARGIN, Math.round((window.innerHeight - spriteH) * 0.6))
-        )
-      }
-  }
-}
-
-export function getSleepPosition(): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return { x: 0, y: 0 }
-  }
-
-  const variant = $edgeVariant.get()
-
-  if (variant) {
-    return getEdgeVariantPosition(variant)
-  }
-
-  return $homePosition.get()
 }
 
 export function computePerchPosition(geom: {
@@ -389,9 +333,6 @@ function localePosition(locale: SpatialLocale): { x: number; y: number } {
     case 'chat':
       return getChatPosition()
 
-    case 'sleep':
-      return getSleepPosition()
-
     default:
       return $homePosition.get()
   }
@@ -443,26 +384,9 @@ function updateSpatialDecision(): void {
 
   const state = $spriteState.get()
 
-  // LLM 自主模式负责 perch/roam/home 的切换；这里只处理 sleep 状态↔场所 的渲染
-  // （LLM 的 go_sleep/wake 依赖它）以及「安静」档位的硬约束（这是用户偏好，
-  // LLM 没有上下文可以参考）。
+  // LLM 自主模式负责 perch/roam/home 的切换；这里只保留「安静」档位的硬约束
+  // （这是用户偏好，LLM 没有上下文可以参考）。
   if ($llmAutonomy.get()) {
-    if (state === 'sleeping') {
-      stopRoam()
-
-      if ($spatialLocale.get() !== 'sleep') {
-        setLocale('sleep')
-      }
-
-      return
-    }
-
-    if ($spatialLocale.get() === 'sleep') {
-      setLocale('home')
-
-      return
-    }
-
     if ($effectiveTier.get() === 'quiet') {
       stopRoam()
 
@@ -472,22 +396,6 @@ function updateSpatialDecision(): void {
 
       return
     }
-
-    return
-  }
-
-  if (state === 'sleeping') {
-    stopRoam()
-
-    if ($spatialLocale.get() !== 'sleep') {
-      setLocale('sleep')
-    }
-
-    return
-  }
-
-  if ($spatialLocale.get() === 'sleep') {
-    setLocale('home')
 
     return
   }

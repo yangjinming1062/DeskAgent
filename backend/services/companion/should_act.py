@@ -8,7 +8,7 @@ from .prompt_runtime import load_companion_prompt_context, run_prompt_json
 
 logger = get_logger(__name__)
 
-ALLOWED_ACTIONS: frozenset[str] = frozenset({"go_sleep", "wake", "roam", "perch", "stay"})
+ALLOWED_ACTIONS: frozenset[str] = frozenset({"roam", "perch", "stay"})
 
 
 class ShouldActResult(BaseModel):
@@ -32,7 +32,6 @@ _SHOULD_ACT_PROMPT_TEMPLATE = (
     "- 是否全屏：{fullscreen}\n"
     "- 屏幕锁：{screen_locked}\n\n"
     "下面是系统建议（供你参考，不强制执行）：\n"
-    "- 本地时间 ≥ 23 点或 < 7 点：倾向于睡觉 (go_sleep)\n"
     "- 用户焦点在 IDE/阅读/游戏等专注应用：可以考虑栖身在窗口旁 (perch)\n"
     "- 空闲时间较长且屏幕解锁：可以轻度漫游 (roam)\n"
     "- 其他大部分时候：保持静止 (stay)，不轻易打扰用户\n\n"
@@ -40,7 +39,7 @@ _SHOULD_ACT_PROMPT_TEMPLATE = (
     "只返回 JSON，不要有任何其他文字：\n"
     '{{"should_act": true/false, "action": "ACTION", "params": {{}}, "reason": "简短说明"}}\n\n'
     "action 必须是以下之一（若 should_act=false，填 stay）：\n"
-    " go_sleep, wake, roam, perch, stay"
+    " roam, perch, stay"
 )
 
 

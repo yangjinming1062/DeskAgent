@@ -94,14 +94,6 @@ describe('autonomy provision loop and consultAutonomyLLM', () => {
     expect(mockRequest).toHaveBeenCalledTimes(2)
   })
 
-  it('executes allowed action "go_sleep" when should_act is true', async () => {
-    mockRequest.mockResolvedValueOnce({ should_act: true, action: 'go_sleep', reason: 'bedtime' })
-
-    await consult(true)
-    expect(mockRequest).toHaveBeenCalledTimes(1)
-    expect(spriteState.get()).toBe('sleeping')
-  })
-
   it('ignores invalid action names when should_act is true', async () => {
     mockRequest.mockResolvedValueOnce({ should_act: true, action: 'invalid_dance', reason: 'fun' })
     const stateBefore = spriteState.get()

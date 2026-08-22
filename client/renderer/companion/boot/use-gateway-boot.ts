@@ -9,7 +9,7 @@ import {
   setDesktopBootStep
 } from '@/companion/boot-store'
 import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
-import { $effectiveTier, $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
+import { $effectiveTier, $spriteState, setSpriteState } from '@/companion/companion-store'
 import { openMainSession } from '@/companion/session-list-store'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
@@ -212,15 +212,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
     callbacksRef.current.onGatewayReady(gateway)
     setPrimaryGateway(gateway)
 
-    let sleepEscalationTimer: ReturnType<typeof setTimeout> | null = null
-
-    const clearSleepEscalation = () => {
-      if (sleepEscalationTimer !== null) {
-        clearTimeout(sleepEscalationTimer)
-        sleepEscalationTimer = null
-      }
-    }
-
     const offState = gateway.onState(st => {
       reportPrimaryGatewayState(st)
 
@@ -228,7 +219,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         reconnectAttempt = 0
         clearReconnectTimer()
         clearGraceTimer()
-        clearSleepEscalation()
         // 重新上报打扰档位，让后端进程级字典在初次启动以及每次重连后
         // 都拿到用户持久化下来的选择（覆盖后端重启、OAuth 重新登录）。
         syncDisturbanceTier(gateway)
@@ -239,11 +229,11 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         // 初次启动时是 no-op。
         if (bootCompleted) {
           dismissOverlayOnce()
-          // 重连后"打起精神"：如果之前表达过 disconnected / sleeping 降级，
-          // 就回到 idle（plan §4.5）。若从未显示过降级，则静默恢复。
+          // 重连后"打起精神"：如果之前表达过 disconnected 降级，就回到 idle
+          // （plan §4.5）。若从未显示过降级，则静默恢复。
           const cur = $spriteState.get()
 
-          if (cur === 'disconnected' || cur === 'sleeping') {
+          if (cur === 'disconnected') {
             setSpriteState('idle', { force: true })
           }
 
@@ -288,30 +278,13 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           return
         }
 
-        // 安排断连宽限状态（前台 3 秒，后台 30 秒）
+        // 安排断连宽限状态；超时则固定进入 disconnected，重连前不再做额外升级。
         if (graceTimer === null) {
           const isForeground = document.visibilityState === 'visible'
           const graceMs = isForeground ? 3000 : 30000
           graceTimer = setTimeout(() => {
             graceTimer = null
             setSpriteState('disconnected')
-
-            // 长时间断连 → 进入休眠（plan §4.5），但语音通话在线时延后。
-            if (sleepEscalationTimer === null) {
-              sleepEscalationTimer = setTimeout(
-                () => {
-                  sleepEscalationTimer = null
-
-                  if ($voiceCallOpen.get()) {
-                    // 跳过——语音通话进行中；下一次断连时会再次排程。
-                    return
-                  }
-
-                  setSpriteState('sleeping', { force: true })
-                },
-                5 * 60 * 1000
-              )
-            }
           }, graceMs)
         }
 
@@ -381,7 +354,6 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
       cancelled = true
       clearReconnectTimer()
       clearGraceTimer()
-      clearSleepEscalation()
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
       offPowerResume?.()

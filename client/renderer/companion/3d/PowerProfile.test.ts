@@ -19,7 +19,7 @@ describe('resolvePowerProfile', () => {
   it('locks to active until the first model settles, overriding every dormant signal', () => {
     const boot: PowerSignals = {
       ...base,
-      spriteState: 'sleeping',
+      spriteState: 'idle',
       screenLocked: true,
       documentHidden: true,
       fullscreen: true,
@@ -31,7 +31,6 @@ describe('resolvePowerProfile', () => {
   })
 
   it.each([
-    ['sleeping state', withState('sleeping')],
     ['locked screen', { ...base, screenLocked: true }],
     ['hidden document', { ...base, documentHidden: true }],
     ['fullscreen foreground app', { ...base, fullscreen: true }],

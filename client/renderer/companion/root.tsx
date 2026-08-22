@@ -10,10 +10,8 @@ import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import {
   $companionLifecycle,
   $voiceCallOpen,
-  checkBedtimeAndAutoSleep,
   reportUserActivity,
-  setCompanionLifecycle,
-  wakeUpFromSleep
+  setCompanionLifecycle
 } from '@/companion/companion-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
@@ -201,12 +199,6 @@ export function CompanionRoot(): React.JSX.Element {
       return
     }
 
-    checkBedtimeAndAutoSleep()
-
-    const timer = setInterval(() => {
-      checkBedtimeAndAutoSleep()
-    }, 60000)
-
     const onKey = () => reportUserActivity()
     window.addEventListener('keydown', onKey)
 
@@ -214,7 +206,6 @@ export function CompanionRoot(): React.JSX.Element {
     void Promise.all([hydratePersona(), hydrateModel()])
 
     return () => {
-      clearInterval(timer)
       window.removeEventListener('keydown', onKey)
       stopActivity()
     }
@@ -251,7 +242,6 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      wakeUpFromSleep()
       handlePokeInteraction()
 
       return

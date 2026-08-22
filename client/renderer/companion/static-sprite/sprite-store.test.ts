@@ -101,11 +101,11 @@ describe('sprite-store', () => {
       api: vi
         .fn()
         .mockResolvedValueOnce(spriteResponse('h_idle', '站立'))
-        .mockResolvedValueOnce(spriteResponse('h_sleep', '睡觉')),
+        .mockResolvedValueOnce(spriteResponse('h_alt', '回应')),
       apiAsset: vi
         .fn()
         .mockResolvedValueOnce('data:image/png;base64,IDLE')
-        .mockResolvedValueOnce('data:image/png;base64,SLEEP')
+        .mockResolvedValueOnce('data:image/png;base64,ALT')
     }
 
     setWindowSpiritagent(mock)
@@ -114,8 +114,8 @@ describe('sprite-store', () => {
     expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,IDLE', tag: '站立' })
 
     vi.advanceTimersByTime(1500)
-    await requestSprite('睡觉请求')
-    expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,SLEEP', tag: '睡觉' })
+    await requestSprite('回应请求')
+    expect($activeSprite.get()).toEqual({ dataUrl: 'data:image/png;base64,ALT', tag: '回应' })
 
     // 再次请求已经解析过的 idle 请求时，立刻切换当前精灵
     await requestSprite('站立请求')
@@ -235,7 +235,7 @@ describe('$staticMode', () => {
 })
 
 describe('semanticRequestFor', () => {
-  it('covers all 9 states', () => {
+  it('covers all 8 states', () => {
     const states: SpriteStateName[] = [
       'idle',
       'listening',
@@ -243,7 +243,6 @@ describe('semanticRequestFor', () => {
       'speaking',
       'working',
       'emotional',
-      'sleeping',
       'interacting',
       'disconnected'
     ]

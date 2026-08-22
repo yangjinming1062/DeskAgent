@@ -11,7 +11,6 @@ const STATE_SEMANTICS: Record<SpriteStateName, string> = {
   speaking: '张嘴说话，双手做出表达手势',
   working: '专注忙碌，手持工具或对着笔记本操作',
   emotional: '情绪外露的反应神态',
-  sleeping: '闭眼安睡，头顶冒出泡泡',
   interacting: '被戳到时活泼可爱的反应',
   disconnected: '低头犯困打盹的等待神态'
 }

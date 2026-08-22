@@ -33,7 +33,7 @@ BUILTIN_EMOTIONS: frozenset[str] = frozenset(
     },
 )
 
-ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "chat", "perch", "roam", "sleep"})
+ALLOWED_LOCALES: frozenset[str] = frozenset({"home", "chat", "perch", "roam"})
 
 # 锚定缓冲区开头的 tag 正则；target 允许非 ]/非换行字符，以容纳本地化应用名（如「微信」）与空格（如「Visual Studio Code」）。
 _AFFECT_RE = re.compile(r"^\s*\[affect:([a-z_]+)\]\n?", re.IGNORECASE)

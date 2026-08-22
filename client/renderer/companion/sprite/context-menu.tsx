@@ -1,18 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
-import { setSpriteState } from '@/companion/companion-store'
 import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
-import {
-  Brain,
-  EyeOff,
-  KeyRound,
-  MessageSquareText,
-  Moon,
-  Phone,
-  Settings,
-  SlidersHorizontal
-} from '@/shared/lib/icons'
+import { Brain, EyeOff, KeyRound, MessageSquareText, Phone, Settings, SlidersHorizontal } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
@@ -206,17 +196,6 @@ export function SpriteContextMenu({
             >
               <Settings className="size-3.5 text-white/50 shrink-0" />
               <span>应用设置 (Settings)</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                setSpriteState('sleeping')
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <Moon className="size-3.5 text-white/50 shrink-0" />
-              <span>去睡觉 (Sleep)</span>
             </button>
             <div className="-mx-1 my-1 h-px bg-white/10" />
             <button

@@ -584,14 +584,6 @@ export class CharacterController {
         break
       }
 
-      case 'sleeping': {
-        this.proc.body.scale.set(0.8, 1.0 + breath * 0.01, 0.8)
-        this.proc.leftEye.scale.y = 0.1
-        this.proc.rightEye.scale.y = 0.1
-
-        return // skip eye reset below
-      }
-
       case 'working': {
         this.proc.group.position.y = Math.sin(t * 3) * 0.008
 
@@ -611,7 +603,7 @@ export class CharacterController {
       }
     }
 
-    // 程序化眨眼——上面 sleeping 已提前返回
+    // 程序化眨眼——某些 case 已提前返回
     const blinkCycle = t % (3 + (this.currentState.charCodeAt(0) % 3))
     const blinkWindow = blinkCycle > 2.8 && blinkCycle < 2.95
     const eyeScaleY = blinkWindow ? 0.1 : 1

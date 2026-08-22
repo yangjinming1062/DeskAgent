@@ -2,7 +2,6 @@ import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
-import { setSpriteState, wakeUpFromSleep } from './companion-store'
 import { $llmAutonomy } from './prefs'
 import { computePerchPosition, setLocale, startRoam } from './spatial'
 
@@ -40,16 +39,6 @@ function stateChanged(oldSnap: Snapshot, newSnap: Snapshot): boolean {
 
 function executeAutonomousAction(action: string): void {
   switch (action) {
-    case 'go_sleep':
-      setSpriteState('sleeping', { force: true })
-
-      break
-
-    case 'wake':
-      wakeUpFromSleep()
-
-      break
-
     case 'roam':
       startRoam()
 

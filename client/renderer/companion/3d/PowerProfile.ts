@@ -25,12 +25,7 @@ export function resolvePowerProfile(signals: PowerSignals): PowerProfile {
     return 'active'
   }
 
-  const dormant =
-    signals.screenLocked ||
-    signals.documentHidden ||
-    signals.fullscreen ||
-    signals.staticCovered ||
-    signals.spriteState === 'sleeping'
+  const dormant = signals.screenLocked || signals.documentHidden || signals.fullscreen || signals.staticCovered
 
   if (dormant) {
     return 'dormant'

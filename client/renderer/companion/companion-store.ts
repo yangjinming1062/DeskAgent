@@ -1,13 +1,11 @@
 import { atom, computed } from 'nanostores'
 
-import { $llmAutonomy } from './prefs'
-
 // 伙伴生命周期决定精灵窗口渲染的内容。渲染层按
 // unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
 // 第二阶段状态机（plan.md §2）：
-// IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / SLEEPING / INTERACTING / DISCONNECTED
+// IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / INTERACTING / DISCONNECTED
 export type SpriteStateName =
   | 'idle'
   | 'listening'
@@ -15,7 +13,6 @@ export type SpriteStateName =
   | 'speaking'
   | 'working'
   | 'emotional'
-  | 'sleeping'
   | 'interacting'
   | 'disconnected'
 
@@ -47,8 +44,7 @@ export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
 export const $spriteState = atom<SpriteStateName>('idle')
-// 通话进行中为 true；由 useGatewayBoot 读取以推迟 disconnected→sleeping 升级，
-// 避免网关抖动把正在进行的通话误判为断开。
+// 通话进行中。
 export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 // 可选的结构化动作提示（如 turn_away），用于细化情绪片段。
@@ -100,7 +96,6 @@ const STATE_PRIORITY: Record<SpriteStateName, number> = {
   thinking: 50,
   listening: 40,
   emotional: 35,
-  sleeping: 30,
   idle: 10
 }
 
@@ -186,29 +181,6 @@ export function setSpriteState(
   $spriteEmotion.set(options?.emotion ?? null)
   $spriteAction.set(options?.action ?? null)
   $spriteState.set(name)
-}
-
-export function checkBedtimeAndAutoSleep(): boolean {
-  if ($llmAutonomy.get()) {
-    return false
-  }
-
-  const hour = new Date().getHours()
-  const isNight = hour >= 23 || hour < 7
-
-  if (isNight && $spriteState.get() === 'idle') {
-    setSpriteState('sleeping')
-
-    return true
-  }
-
-  return false
-}
-
-export function wakeUpFromSleep(): void {
-  if ($spriteState.get() === 'sleeping') {
-    setSpriteState('idle', { force: true })
-  }
 }
 
 let activityCounter = 0

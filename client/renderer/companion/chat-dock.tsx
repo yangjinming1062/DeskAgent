@@ -331,9 +331,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       case 'listening':
         return { label: '专注倾听', icon: '🎙️' }
 
-      case 'sleeping':
-        return { label: '休息小憩', icon: '🌙' }
-
       case 'working':
         return { label: '专注工作中', icon: '💼' }
 
@@ -395,9 +392,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                         ? 'bg-blue-400 animate-pulse'
                         : spriteState === 'listening'
                           ? 'bg-rose-400 animate-pulse'
-                          : spriteState === 'sleeping'
-                            ? 'bg-purple-400'
-                            : 'bg-emerald-400'
+                          : 'bg-emerald-400'
                   }`}
                 />
                 <span>
@@ -407,9 +402,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                       ? '回复中…'
                       : spriteState === 'listening'
                         ? '聆听中…'
-                        : spriteState === 'sleeping'
-                          ? '小憩中'
-                          : '在线陪伴'}
+                        : '在线陪伴'}
                 </span>
               </div>
             </div>

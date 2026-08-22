@@ -49,7 +49,8 @@ describe('subscribePowerProfile', () => {
 
     expect(profiles).toEqual(['active'])
 
-    $spriteState.set('sleeping')
+    // 模型未稳定期间所有信号都被覆盖；一旦稳定，再切到 screenLocked 触发 dormant。
+    $screenLocked.set(true)
     expect(profiles).toEqual(['active'])
 
     $modelLoadSettled.set(true)

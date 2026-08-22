@@ -44,7 +44,7 @@ describe('spatial positioning & transitions', () => {
     const target = { x: home.x - 100, y: home.y - 100 }
     let arrived = false
 
-    setLocale('sleep', {
+    setLocale('perch', {
       position: target,
       onArrive: () => {
         arrived = true
