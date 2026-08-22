@@ -99,7 +99,6 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
       received.push((ev.payload as { text: string }).text)
     })
 
-    // 接收 seq=1 的帧
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -110,7 +109,6 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
 
-    // 接收重复的 seq=1 帧——应被丢弃
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -121,7 +119,6 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
 
-    // 接收 seq=2 的帧
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -160,5 +157,71 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
       mockSocket?.emitMessage('not json at all')
       mockSocket?.emitMessage(JSON.stringify({ notAValidRpcFrame: 123 }))
     }).not.toThrow()
+  })
+
+  it('drops event frame with non-string params.type', async () => {
+    const { client, socket: mockSocket } = await connectClient()
+
+    let dispatched = false
+    client.on('message.delta', () => {
+      dispatched = true
+    })
+
+    mockSocket.emitMessage(JSON.stringify({ method: 'event', params: { type: 42, seq: 1 } }))
+
+    expect(dispatched).toBe(false)
+    expect(client.lastReceivedSeq).toBe(0)
+  })
+
+  it('dispatches event when id is null alongside event shape', async () => {
+    const { client, socket: mockSocket } = await connectClient()
+
+    let captured: unknown = null
+    client.on('foo', ev => {
+      captured = ev
+    })
+
+    mockSocket.emitMessage(JSON.stringify({ id: null, method: 'event', params: { type: 'foo', seq: 1, tag: 'a' } }))
+
+    expect((captured as { tag: string } | null)?.tag).toBe('a')
+    expect(client.lastReceivedSeq).toBe(1)
+  })
+
+  it('drops frame with top-level seq that is not a number', async () => {
+    const { client, socket: mockSocket } = await connectClient()
+
+    let dispatched = false
+    client.on('message.delta', () => {
+      dispatched = true
+    })
+
+    mockSocket.emitMessage(JSON.stringify({ seq: '1', method: 'event', params: { type: 'message.delta', seq: 1 } }))
+
+    expect(dispatched).toBe(false)
+    expect(client.lastReceivedSeq).toBe(0)
+  })
+
+  it('preserves passthrough fields on params (event handler sees extras)', async () => {
+    const { client, socket: mockSocket } = await connectClient()
+
+    let captured: unknown = null
+    client.on('x', ev => {
+      captured = ev
+    })
+
+    mockSocket.emitMessage(JSON.stringify({ method: 'event', params: { type: 'x', seq: 1, custom: 'y' } }))
+
+    expect((captured as Record<string, unknown> | null)?.custom).toBe('y')
+  })
+
+  it('falls back to InternalError when response error.code is absent', async () => {
+    const { client, socket: mockSocket } = await connectClient()
+
+    const pending = client.request('test.method')
+
+    mockSocket.emitMessage(JSON.stringify({ id: 'r1', error: { message: 'failed' } }))
+
+    await expect(pending).rejects.toThrow(SpiritAgentRpcError)
+    await expect(pending).rejects.toMatchObject({ code: SpiritAgentRpcErrorCode.InternalError, message: 'failed' })
   })
 })

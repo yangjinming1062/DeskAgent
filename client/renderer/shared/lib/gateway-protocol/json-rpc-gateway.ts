@@ -1,5 +1,3 @@
-import { z } from 'zod'
-
 type GatewayEventName =
   | 'error'
   | 'message.complete'
@@ -38,31 +36,100 @@ export interface GatewayClientOptions {
 
 type GatewayRequestId = number | string
 
-export const JsonRpcFrameSchema = z.object({
-  error: z
-    .object({
-      code: z.number().optional(),
-      data: z.unknown().optional(),
-      message: z.string().optional()
-    })
-    .optional(),
-  id: z.union([z.string(), z.number()]).nullish(),
-  jsonrpc: z.string().optional(),
-  method: z.string().optional(),
-  params: z
-    .object({
-      payload: z.unknown().optional(),
-      seq: z.number().optional(),
-      session_id: z.string().optional(),
-      type: z.string()
-    })
-    .passthrough()
-    .optional(),
-  result: z.unknown().optional(),
-  seq: z.number().optional()
-})
+interface JsonRpcFrame {
+  error?: { code?: number; data?: unknown; message?: string }
+  id?: null | number | string
+  jsonrpc?: string
+  method?: string
+  params?: {
+    payload?: unknown
+    seq?: number
+    session_id?: string
+    type: string
+    [key: string]: unknown
+  }
+  result?: unknown
+  seq?: number
+}
 
-type JsonRpcFrame = z.infer<typeof JsonRpcFrameSchema>
+function parseJsonRpcFrame(raw: string): JsonRpcFrame | null {
+  let value: unknown
+
+  try {
+    value = JSON.parse(raw)
+  } catch {
+    return null
+  }
+
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null
+  }
+
+  const v = value as Record<string, unknown>
+
+  if ('jsonrpc' in v && typeof v.jsonrpc !== 'string') {
+    return null
+  }
+
+  if ('id' in v) {
+    const rawId = v.id
+
+    if (rawId !== null && typeof rawId !== 'string' && typeof rawId !== 'number') {
+      return null
+    }
+  }
+
+  if ('method' in v && typeof v.method !== 'string') {
+    return null
+  }
+
+  if ('error' in v) {
+    const e = v.error
+
+    if (typeof e !== 'object' || e === null || Array.isArray(e)) {
+      return null
+    }
+
+    const err = e as Record<string, unknown>
+
+    if ('code' in err && typeof err.code !== 'number') {
+      return null
+    }
+
+    if ('message' in err && typeof err.message !== 'string') {
+      return null
+    }
+  }
+
+  if ('params' in v) {
+    const p = v.params
+
+    if (typeof p !== 'object' || p === null || Array.isArray(p)) {
+      return null
+    }
+
+    const paramsObj = p as Record<string, unknown>
+
+    if (typeof paramsObj.type !== 'string') {
+      return null
+    }
+
+    if ('seq' in paramsObj && typeof paramsObj.seq !== 'number') {
+      return null
+    }
+
+    if ('session_id' in paramsObj && typeof paramsObj.session_id !== 'string') {
+      return null
+    }
+  }
+
+  if ('seq' in v && typeof v.seq !== 'number') {
+    return null
+  }
+
+  return v as unknown as JsonRpcFrame
+}
+
 type WebSocketLike = WebSocket
 
 // JSON-RPC 2.0 标准错误码——与后端 jsonrpc_dispatcher.py 保持同步，
@@ -244,9 +311,7 @@ export class JsonRpcGatewayClient {
           if (this.socket === socket) {
             try {
               socket.close()
-            } catch {
-              // 忽略
-            }
+            } catch {}
 
             this.socket = null
           }
@@ -368,9 +433,7 @@ export class JsonRpcGatewayClient {
       if (elapsed > HEARTBEAT_DEADLINE_MS) {
         try {
           socket.close(4000, 'heartbeat')
-        } catch {
-          /* 忽略 */
-        }
+        } catch {}
 
         return
       }
@@ -390,27 +453,15 @@ export class JsonRpcGatewayClient {
   }
 
   private handleMessage(raw: unknown): void {
-    // 任何入帧（含 ping 响应）均重置空闲计时
     this._lastMessageAt = Date.now()
 
     if (typeof raw !== 'string') {
-      // 二进制帧（Blob / ArrayBuffer）不属于 JSON-RPC 契约的一部分；
-      // 把它们 stringify 会丢失内容，因此这里显式丢弃。
       return
     }
 
-    let frame: JsonRpcFrame
+    const frame = parseJsonRpcFrame(raw)
 
-    try {
-      const parsed = JSON.parse(raw)
-      const parseResult = JsonRpcFrameSchema.safeParse(parsed)
-
-      if (!parseResult.success) {
-        return
-      }
-
-      frame = parseResult.data
-    } catch {
+    if (!frame) {
       return
     }
 
@@ -418,7 +469,6 @@ export class JsonRpcGatewayClient {
 
     if (typeof seq === 'number') {
       if (seq <= this._lastReceivedSeq) {
-        // 重复帧——幂等丢弃
         return
       }
 
