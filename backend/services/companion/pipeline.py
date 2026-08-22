@@ -11,6 +11,7 @@ import tempfile
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import httpx
@@ -35,6 +36,13 @@ RETRYABLE_DOWNLOAD_STATUSES: tuple[str, ...] = ("pending_download", "download_fa
 _DOWNLOAD_ATTEMPTS: int = 3
 _DOWNLOAD_RETRY_BASE_DELAY: float = 2.0
 _DOWNLOAD_URL_REFRESH_LIMIT: int = 2
+
+# 各 phase 在前端进度条上的区间；resume 时复用同一区间以保持 UX 一致。
+_PHASE_PROGRESS: dict[str, tuple[str, int, int]] = {
+    "submit": ("generating", 10, 50),
+    "rig": ("rigging", 90, 95),
+    "animate": ("animate_binding", 92, 96),
+}
 
 # web 进程内 asyncio 任务句柄,``recover_stuck_model_generations`` + ``_resume_inflight_pipelines`` 启动时负责回收与重派。
 _inflight_tasks: dict[int, asyncio.Task] = {}
@@ -79,9 +87,9 @@ def _provider_result_label(provider_name: str, multiview: bool = False) -> str:
     return f"{provider_name}_{'multiview' if multiview else 'image'}_to_3d"
 
 
-def _raw_provider_name(label: str) -> str:
+def _raw_provider_name(label: str | None) -> str | None:
     """注册表键是结果标签的下划线首段。"""
-    return label.split("_", 1)[0]
+    return label.split("_", 1)[0] if label else None
 
 
 async def _emit_progress(user_id: int, stage: str, progress_pct: int, *, provider: str | None = None) -> None:
@@ -173,6 +181,7 @@ async def _finalize_generation(
         model.status = "succeeded"
         model.has_rig = True
         model.clip_map_json = json.dumps(clip_map or {}, ensure_ascii=False)
+        model.error = None
 
         computed_hash = content_hash
         if not computed_hash and asset_url:
@@ -218,7 +227,7 @@ async def _persist_download_source(
     rig_type: str,
     phase: str = "submit",
 ) -> None:
-    """在任何下载尝试之前，先持久化付费结果的恢复句柄。``phase`` 是 task_id 在链上的阶段（submit / rig / animate），供进程崩溃接续时区分"链未跑完的中间产物"和"最终产物"——只有 phase=animate 才是含动画的可落盘 GLB。"""
+    """持久化当前阶段的任务恢复句柄，供重试下载与崩溃接续按阶段续跑。"""
     urls = [{"kind": a.kind, "url": a.url} for a in assets]
     async with SESSION_LOCAL() as db:
         model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
@@ -233,6 +242,31 @@ async def _persist_download_source(
         model.error = None
         await db.commit()
     log_paid_call(provider_label, "image_to_3d_result_persisted", task_id=task_id, user_id=user_id, model_id=model_id, urls=[u["url"] for u in urls])
+
+
+async def _mark_inflight_submitted(
+    model_id: int,
+    *,
+    user_id: int,
+    task_id: str,
+    provider_label: str,
+    rig_type: str,
+    phase: str,
+) -> None:
+    """提交任务后立即落库 task_id，防止轮询期间服务崩溃导致已付费任务句柄丢失。"""
+    async with SESSION_LOCAL() as db:
+        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        if model is None:
+            raise ModelGenerationError("companion model row vanished mid-generation")
+        model.provider_task_id = task_id
+        model.download_urls_json = None
+        model.provider = provider_label
+        model.rig_type = rig_type
+        model.provider_phase = phase
+        model.status = "pending_download"
+        model.error = None
+        await db.commit()
+    log_paid_call(provider_label, "image_to_3d_inflight_persisted", task_id=task_id, user_id=user_id, model_id=model_id, phase=phase)
 
 
 async def _persist_clip_map(model_id: int, clip_map: dict[str, str]) -> None:
@@ -379,9 +413,8 @@ async def run_capability_chain(
     species: str,
     model_id: int,
     style: str = "realistic",
-    retry_only: bool = False,
 ) -> None:
-    """submit → poll → 可选 cloud_rig / cloud_animate_bind → download → 落库。``retry_only=True`` 跳过 submit,直接用持久 ``provider_task_id`` 重新驱动后续跳。"""
+    """submit → poll → 可选 cloud_rig / cloud_animate_bind → download → 落库。"""
     try:
         provider = _resolve_model_provider(provider_name)
     except ModelProviderNotConfiguredError as exc:
@@ -390,44 +423,73 @@ async def run_capability_chain(
         await _mark_generation_failed(model_id, "provider 未配置")
         return
 
+    record = await _load_model_record(model_id)
+    if record is None:
+        raise ModelGenerationError("companion model row vanished mid-generation")
+
+    current_phase = record.provider_phase or "submit"
+    current_task_id = record.provider_task_id
+    rig_type = record.rig_type
+    provider_label = record.provider
+
     try:
-        await _emit_progress(user_id, "uploading", 5, provider=provider.provider_name)
+        if current_task_id is None:
+            await _emit_progress(user_id, "uploading", 5, provider=provider.provider_name)
 
-        def _seed(view_key: str) -> Path:
-            resolved = resolve_uploaded_avatar_path(view_filenames[view_key])
-            if resolved is None:
-                raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
-            return resolved[0]
+            def _seed(view_key: str) -> Path:
+                resolved = resolve_uploaded_avatar_path(view_filenames[view_key])
+                if resolved is None:
+                    raise ModelGenerationError(f"{view_key} 视角种子图文件不可读: {view_filenames[view_key]}")
+                return resolved[0]
 
-        record = await _load_model_record(model_id)
-        if record is None:
-            raise ModelGenerationError("companion model row vanished mid-generation")
-
-        multiview_paths: dict[str, Path] | None = None
-        if retry_only and record.provider_task_id:
-            job = Model3DJob(job_id=record.provider_task_id)
-            gen_result = await _poll_with_progress(provider, job, user_id, "uploading", 5, 50)
-        else:
             supports_multiview = bool(getattr(provider, "SUPPORTS_MULTIVIEW", False))
             multiview_paths = {key: _seed(key) for key in ("front", "right", "back", "left") if key in view_filenames} if supports_multiview else None
             await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
             job = await provider.create_image_to_model(_seed("front"), multiview_paths=multiview_paths)
-            gen_result = await _poll_with_progress(provider, job, user_id, "generating", 10, 50)
 
-        rig_type = record.rig_type or await select_rig_type(chat, species, user_id=user_id)
-        provider_label = record.provider or _provider_result_label(provider.provider_name, multiview=multiview_paths is not None and len(multiview_paths) > 1)
+            rig_type = rig_type or await select_rig_type(chat, species, user_id=user_id)
+            provider_label = provider_label or _provider_result_label(provider.provider_name, multiview=multiview_paths is not None and len(multiview_paths) > 1)
+            await _mark_inflight_submitted(
+                model_id,
+                user_id=user_id,
+                task_id=job.job_id,
+                provider_label=provider_label,
+                rig_type=rig_type,
+                phase="submit",
+            )
+            current_phase = "submit"
+            current_task_id = job.job_id
 
-        # 先落库付费任务恢复句柄；增强跳只消费 task_id，GLB 延迟到链末统一下载。
-        await _persist_download_source(
-            model_id,
-            user_id=user_id,
-            task_id=job.job_id,
-            assets=gen_result.assets,
-            provider_label=provider_label,
-            rig_type=rig_type,
-            phase=record.provider_phase if retry_only else "submit",
-        )
-        state = _PipelineState(provider_task_id=job.job_id, assets=gen_result.assets)
+            gen_result = await _poll_with_progress(provider, Model3DJob(job_id=job.job_id), user_id, "generating", 10, 50)
+            await _persist_download_source(
+                model_id,
+                user_id=user_id,
+                task_id=job.job_id,
+                assets=gen_result.assets,
+                provider_label=provider_label,
+                rig_type=rig_type,
+                phase="submit",
+            )
+            state = _PipelineState(provider_task_id=job.job_id, assets=gen_result.assets)
+        elif current_phase in _PHASE_PROGRESS:
+            rig_type = rig_type or await select_rig_type(chat, species, user_id=user_id)
+            provider_label = provider_label or _provider_result_label(provider.provider_name)
+            stage, start_pct, end_pct = _PHASE_PROGRESS[current_phase]
+            job = Model3DJob(job_id=current_task_id)
+            await _emit_progress(user_id, stage, start_pct, provider=provider.provider_name)
+            result = await _poll_with_progress(provider, job, user_id, stage, start_pct, end_pct)
+            await _persist_download_source(
+                model_id,
+                user_id=user_id,
+                task_id=current_task_id,
+                assets=result.assets,
+                provider_label=provider_label,
+                rig_type=rig_type,
+                phase=current_phase,
+            )
+            state = _PipelineState(provider_task_id=current_task_id, assets=result.assets)
+        else:
+            raise ModelGenerationError(f"unknown provider_phase: {current_phase!r}")
     except Exception as exc:
         logger.warning(
             "3D model generation failed",
@@ -438,13 +500,12 @@ async def run_capability_chain(
         await _mark_generation_failed(model_id, "3D 模型生成失败，请稍后重试")
         return
 
-    # 可选能力:cloud_rig / cloud_animate_bind。两跳通过同一个能力消费 shell 复用代码;
-    # ``submit`` 是预绑定参数的 lambda,避免根据 capability_attr 字符串后缀分发不同签名。
-    # retry_only 时 ``provider_task_id`` 已是链末任务,重跑增强跳会把它再喂回 start_rig 导致供应商报错或重复计费;
-    # 此时映射已由首轮的动画绑定跳固化在行上,直接读回。
-    clip_map: dict[str, str] = json.loads(record.clip_map_json or "{}") if retry_only else {}
-    if not retry_only:
-        state, rigged = await _maybe_apply_capability(
+    clip_map: dict[str, str] = json.loads(record.clip_map_json or "{}")
+    runs_rig = current_phase == "submit" and getattr(provider, "SUPPORTS_RIGGING", False)
+    rig_already_succeeded = current_phase == "rig"
+    rig_just_succeeded = False
+    if runs_rig:
+        state, rig_just_succeeded = await _maybe_apply_capability(
             state,
             capability_attr="SUPPORTS_RIGGING",
             progress_stage="rigging",
@@ -457,25 +518,22 @@ async def run_capability_chain(
             phase="rig",
             submit=lambda: provider.start_rig(state.provider_task_id, rig_type),
         )
-        # 空映射代表该骨架无可用预设(avian),整跳不进入——走异常分支会在正常生成里留下形似故障的堆栈。
-        provider_clips = provider.animation_clips(rig_type)
-        if rigged and provider_clips:
-            state, animated = await _maybe_apply_capability(
-                state,
-                capability_attr="SUPPORTS_ANIMATE_BIND",
-                progress_stage="animate_binding",
-                start_pct=92,
-                end_pct=96,
-                user_id=user_id,
-                model_id=model_id,
-                provider=provider,
-                rig_type=rig_type,
-                phase="animate",
-                submit=lambda: provider.start_animate_bind(state.provider_task_id, rig_type),
-            )
-            # 映射只在动画绑定真正成功时落库,否则客户端会去找 GLB 里根本不存在的 clip。
-            clip_map = provider_clips if animated else {}
-            await _persist_clip_map(model_id, clip_map)
+    if (rig_already_succeeded or rig_just_succeeded) and getattr(provider, "SUPPORTS_ANIMATE_BIND", False) and provider.animation_clips(rig_type):
+        state, animated = await _maybe_apply_capability(
+            state,
+            capability_attr="SUPPORTS_ANIMATE_BIND",
+            progress_stage="animate_binding",
+            start_pct=92,
+            end_pct=96,
+            user_id=user_id,
+            model_id=model_id,
+            provider=provider,
+            rig_type=rig_type,
+            phase="animate",
+            submit=lambda: provider.start_animate_bind(state.provider_task_id, rig_type),
+        )
+        clip_map = provider.animation_clips(rig_type) if animated else {}
+        await _persist_clip_map(model_id, clip_map)
 
     try:
         glb_bytes = await _download_one_step(provider=provider, user_id=user_id, model_id=model_id, task_id=state.provider_task_id, assets=state.assets)
@@ -524,57 +582,83 @@ def _launch_pipeline_task(*, model_id: int, user_id: int, **kwargs: object) -> N
 
 
 async def recover_stuck_model_generations() -> None:
-    """启动时清理被重启遗弃的行:``generating`` 直接判失败以免挡住新生成;下载中的行按 ``provider_phase`` 分别处理——``animate`` 阶段已握有含动画的终产物,保留 in-flight 给 ``_resume_inflight_pipelines`` 接续落盘;``rig`` / ``submit`` 阶段只是中间产物(GLB 没有动画),改判 ``download_failed`` 让用户重生成——重试下载救不回来。"""
+    """启动时把 generating 行判 failed（未完成 submit）；in-flight 行留给 _resume_inflight_pipelines 接续。"""
     async with SESSION_LOCAL() as db:
         await db.execute(
-            CompanionModel.__table__.update().where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
-        )
-        await db.execute(
-            CompanionModel.__table__.update()
-            .where(CompanionModel.status.in_(("pending_download", "downloading")), CompanionModel.provider_phase != "animate")
-            .values(status="download_failed", error="服务重启时模型生成未完成到动画绑定，请重新生成"),
+            update(CompanionModel).where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
         )
         await db.commit()
 
 
 async def _resume_inflight_pipelines() -> None:
-    """web 进程启动时扫仍处于 in-flight 状态的行,按 ``provider_phase`` 分别处理:
-
-    - ``animate`` 链已跑到含动画的终产物,``retry_only=True`` 跳过 submit + 增强跳,直接落盘;
-    - ``rig`` / ``submit`` 链未跑完到 animate,重跑增强跳会重复计费且无法回到"已完成"态——mark ``download_failed`` 让用户重生成。
-    """
+    """web 进程启动时扫描仍处于 in-flight 状态的行，交给 run_capability_chain 自驱接续。"""
     async with SESSION_LOCAL() as db:
         rows = (await db.execute(select(CompanionModel).where(CompanionModel.status.in_(IN_FLIGHT_STATUSES)))).scalars().all()
     for row in rows:
-        if row.provider_phase != "animate":
-            # 链未完成到 animate:付过费的中间产物(GLB 没有动画)直接当最终产物交付会失信于用户。
-            await _mark_download_failed(row.id, "服务重启时模型生成未完成到动画绑定，请重新生成")
-            await _emit_model_failed(row.user_id, "3D 模型生成未完成到动画绑定，请重新生成", retry_download=False, model_id=row.id)
-
+        if not row.provider_task_id:
+            await _mark_generation_failed(row.id, "服务重启时未捕获到 task_id，请重新生成")
+            await _emit_model_failed(row.user_id, "3D 模型生成未完成，请重新生成", retry_download=False, model_id=row.id)
             continue
-
-        await _persist_download_source(
-            row.id,
-            user_id=row.user_id,
-            task_id=row.provider_task_id or "",
-            assets=tuple(Model3DAsset(kind="glb", url=u["url"]) for u in json.loads(row.download_urls_json or "[]") if u.get("url")),
-            provider_label=row.provider or "",
-            rig_type=row.rig_type or "biped",
-            phase=row.provider_phase,
-        )
         _launch_pipeline_task(
             model_id=row.id,
             user_id=row.user_id,
-            provider_name=_raw_provider_name(row.provider or ""),
+            provider_name=_raw_provider_name(row.provider),
             view_filenames={},
             species=row.species or "人类",
             style=row.style or "realistic",
-            retry_only=True,
         )
 
 
 async def get_active_model(db: AsyncSession, user_id: int) -> CompanionModel | None:
     return (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)))).scalar_one_or_none()
+
+
+class _ResumeOutcome(Enum):
+    """``_probe_paid_failure`` 的三态返回值。"""
+
+    RESUMED = "resumed"
+    CONFIRMED_FAILED = "confirmed_failed"
+    UNKNOWN = "unknown"
+
+
+async def _probe_paid_failure(row: CompanionModel) -> _ResumeOutcome:
+    """查询供应商真实任务状态，区分可接续、已失败与未知状态，防止重复计费。"""
+    if not row.provider_task_id:
+        return _ResumeOutcome.UNKNOWN
+    try:
+        provider = _resolve_model_provider(_raw_provider_name(row.provider))
+        result = await provider.poll(Model3DJob(job_id=row.provider_task_id))
+    except Exception:
+        logger.warning(
+            "Probe tripo task errored; row kept as failed, no re-submit",
+            extra={"user_id": row.user_id, "model_id": row.id, "task_id": row.provider_task_id},
+            exc_info=True,
+        )
+        return _ResumeOutcome.UNKNOWN
+    if result.status == "completed":
+        async with SESSION_LOCAL() as db:
+            target = (await db.execute(select(CompanionModel).where(CompanionModel.id == row.id))).scalar_one_or_none()
+            if target is None:
+                return _ResumeOutcome.UNKNOWN
+            target.status = "pending_download"
+            target.error = None
+            await db.commit()
+        _launch_pipeline_task(
+            model_id=row.id,
+            user_id=row.user_id,
+            provider_name=_raw_provider_name(row.provider),
+            view_filenames={},
+            species=row.species or "人类",
+            style=row.style or "realistic",
+        )
+        logger.info(
+            "Resumed paid failure (tripo task was actually success)",
+            extra={"user_id": row.user_id, "model_id": row.id, "task_id": row.provider_task_id, "phase": row.provider_phase},
+        )
+        return _ResumeOutcome.RESUMED
+    if result.status == "failed":
+        return _ResumeOutcome.CONFIRMED_FAILED
+    return _ResumeOutcome.UNKNOWN
 
 
 def signed_model_url(model: CompanionModel | None) -> str | None:

@@ -239,9 +239,8 @@ async def test_retarget_submits_deduped_flat_preset_array(mock_http):
     # 供应商收的是扁平字符串数组，不是对象数组；多个语义键复用同一预设，去重后才提交。
     assert body["animations"] == list(dict.fromkeys(body["animations"]))
     assert all(isinstance(a, str) and a.startswith("preset:biped:") for a in body["animations"])
-    assert "preset:biped:idle" in body["animations"]
-    # 每个预设单独计费，biped 只绑产品必需的最小集。
-    assert len(body["animations"]) == 6
+    # Tripo retarget 端点单次上限 5 动画，biped 收敛为 4 个预设（idle/laugh_01/walk/sob）。
+    assert len(body["animations"]) == 4
 
 
 @pytest.mark.asyncio

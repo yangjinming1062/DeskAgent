@@ -1579,8 +1579,9 @@ async def test_model_generation_rejects_concurrent_run(_patch_db, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_model_generation_failure_keeps_previous_model_active(_patch_db, monkeypatch):
-    """生成失败的再生会把自己标为 failed（inactive），绝不触碰原先 active 的模型——用户始终保留一个可用的伙伴。"""
+async def test_model_generation_failure_marks_row_failed(_patch_db, monkeypatch):
+    """生成失败的再生把自己标为 failed（inactive）。单行原则下没有「previous」与「new」之分——
+    force=True 重置同一行,pipeline 失败时整行变 failed,用户需重新触发生成。"""
     import json as _json
 
     from modules.auth import User
@@ -1600,7 +1601,6 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
     def _seed_unreadable(*_a, **_kw):
         raise ModelGenerationError("seed view file not on disk")
 
-    # image-to-3D 管线的 seed 视图落在 companion-avatars/ 下的磁盘，由 worker 通过 ``resolve_uploaded_avatar_path`` 解析。强制该处失败以便测试覆盖生成后失败路径，且不消耗 API 配额。
     monkeypatch.setattr("services.companion.pipeline.resolve_uploaded_avatar_path", _seed_unreadable)
 
     async with SessionLocal() as db:
@@ -1624,7 +1624,7 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
                 active=True,
             ),
         )
-        previous = CompanionModel(
+        existing = CompanionModel(
             user_id=user.id,
             status="succeeded",
             species="人类",
@@ -1632,13 +1632,12 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
             active=True,
             has_rig=True,
         )
-        db.add(previous)
+        db.add(existing)
         await db.commit()
-        await db.refresh(previous)
+        await db.refresh(existing)
         uid = user.id
-        previous_id = previous.id
+        existing_id = existing.id
 
-    # 控制器测试禁用自动调度，由测试手动 await 管线以立即观察终态。
     from services.companion import pipeline as _pipeline
 
     async def _run_pipeline_sync(*, model_id: int, user_id: int, **kw):
@@ -1647,35 +1646,27 @@ async def test_model_generation_failure_keeps_previous_model_active(_patch_db, m
     monkeypatch.setattr("services.companion.model_service._launch_pipeline_task", _do_not_launch)
 
     async with SessionLocal() as db:
-        # force=True：当前已存在 active succeeded 模型，所以这是显式再生，而不是幂等首跑路径。
         await generate_companion_model(db, user_id=uid, force=True)
-        await _run_pipeline_sync(
-            model_id=(await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid, CompanionModel.status == "generating"))).scalar_one().id,
-            user_id=uid,
-            provider_name="tripo",
-            view_filenames={"front": "seed.png"},
-            species="人类",
-            style="realistic",
-            retry_only=False,
-        )
+        new_row_id = (await db.execute(select(CompanionModel.id).where(CompanionModel.user_id == uid, CompanionModel.status == "generating"))).scalar_one()
 
-        failed = (
-            (
-                await db.execute(
-                    select(CompanionModel).where(
-                        CompanionModel.user_id == uid,
-                        CompanionModel.status == "failed",
-                    ),
-                )
-            )
-            .scalars()
-            .one()
-        )
-        assert failed.error == "3D 模型生成失败，请稍后重试"
-        assert failed.active is False
-        prev = (await db.execute(select(CompanionModel).where(CompanionModel.id == previous_id))).scalars().one()
-        assert prev.active is True
-        assert prev.status == "succeeded"
+    await _run_pipeline_sync(
+        model_id=new_row_id,
+        user_id=uid,
+        provider_name="tripo",
+        view_filenames={"front": "seed.png"},
+        species="人类",
+        style="realistic",
+    )
+
+    async with SessionLocal() as db:
+        rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(rows) == 2
+        assert rows[0].id == existing_id
+        assert rows[0].active is False
+        assert rows[1].id == new_row_id
+        assert rows[1].status == "failed"
+        assert rows[1].active is False
+        assert rows[1].error == "3D 模型生成失败，请稍后重试"
 
 
 @pytest.mark.asyncio
@@ -2067,8 +2058,12 @@ class _FakeProvider:
         return Model3DJob(job_id="task_anim")
 
 
-async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_type: str, retry_only: bool = False):
-    """建一行 generating 模型并把能力链跑到底，返回该行的最新快照。"""
+async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_type: str, provider_task_id: str | None = None, provider_phase: str = "submit"):
+    """建一行 generating 模型并把能力链跑到底，返回该行的最新快照。
+
+    ``provider_task_id`` + ``provider_phase`` 模拟服务端重启后从中间阶段续跑：
+    默认两者皆空,fresh start 走 submit→rig→animate→download;设值后走自驱续跑。
+    """
     from modules.auth import User
     from modules.companion import CompanionModel
     from services.companion import pipeline as _pipeline
@@ -2080,7 +2075,7 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
     monkeypatch.setattr("services.companion.pipeline.save_companion_model", lambda _b, *, user_id: f"companion-models/{user_id}/x.glb")
 
     async with SessionLocal() as db:
-        user = User(username=f"chain{rig_type}{retry_only}", is_active=True, nightly_activity_enabled=True)
+        user = User(username=f"chain{rig_type}{provider_phase}{provider_task_id or 'fresh'}", is_active=True, nightly_activity_enabled=True)
         db.add(user)
         await db.commit()
         await db.refresh(user)
@@ -2089,8 +2084,8 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
             status="generating",
             species="人类",
             rig_type=rig_type,
-            provider_task_id="task_prev" if retry_only else None,
-            provider_phase="animate" if retry_only else "submit",
+            provider_task_id=provider_task_id,
+            provider_phase=provider_phase,
         )
         db.add(row)
         await db.commit()
@@ -2103,7 +2098,6 @@ async def _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, *, rig_
         view_filenames={"front": "seed.png"},
         species="人类",
         model_id=model_id,
-        retry_only=retry_only,
     )
 
     async with SessionLocal() as db:
@@ -2143,14 +2137,367 @@ async def test_chain_leaves_clip_map_empty_when_animate_bind_fails(_patch_db, mo
 
 
 @pytest.mark.asyncio
-async def test_chain_retry_only_skips_all_enhancement_hops(_patch_db, monkeypatch, SessionLocal, tmp_path):
-    """重试下载时 provider_task_id 已是链末任务，重跑增强跳会重复计费。"""
+async def test_chain_animate_phase_skips_enhancement_hops(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """phase=animate + task_id：链末产物已含动画，pipeline 只下载，不再跑 rig/animate（避免重复计费）。"""
     provider = _FakeProvider({"idle": "preset:biped:idle"})
-    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", retry_only=True)
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", provider_task_id="task_prev", provider_phase="animate")
 
     assert provider.calls == []
     assert provider.downloaded_urls == ["https://cdn/task_prev.glb"]
     assert row.provider_phase == "animate"
+
+
+@pytest.mark.asyncio
+async def test_chain_resumes_from_submit_phase(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """phase=submit + task_id：submit 已付过费，pipeline 跳过 submit,只跑 rig→animate→download。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"})
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", provider_task_id="task_submit", provider_phase="submit")
+
+    assert provider.calls == ["rig", "animate"]
+    assert provider.downloaded_urls == ["https://cdn/task_anim.glb"]
+    assert row.status == "succeeded"
+    assert row.provider_phase == "animate"
+
+
+@pytest.mark.asyncio
+async def test_chain_resumes_from_rig_phase(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """phase=rig + task_id：rig 已付过费，pipeline 只跑 animate→download,不再跑 rig。"""
+    provider = _FakeProvider({"idle": "preset:biped:idle"})
+    row = await _run_chain_with(monkeypatch, SessionLocal, tmp_path, provider, rig_type="biped", provider_task_id="task_rig", provider_phase="rig")
+
+    assert provider.calls == ["animate"]
+    assert provider.downloaded_urls == ["https://cdn/task_anim.glb"]
+    assert row.status == "succeeded"
+    assert row.provider_phase == "animate"
+
+
+@pytest.mark.asyncio
+async def test_mark_inflight_submitted_persists_task_id_before_poll(_patch_db, monkeypatch, SessionLocal):
+    """submit 提交后、轮询前,``_mark_inflight_submitted`` 必须把 task_id + phase + status 落库——
+    进程在轮询中崩了,_resume_inflight_pipelines 就能拿回 task_id。download_urls_json 留 None,
+    因为轮询还没拿到 model_url。"""
+    from modules.auth import User
+    from modules.companion import CompanionModel
+    from services.companion import pipeline as _pipeline
+
+    async with SessionLocal() as db:
+        user = User(username="inflight", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type="biped")
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+        mid = row.id
+        uid = user.id
+
+    await _pipeline._mark_inflight_submitted(
+        model_id=mid,
+        user_id=uid,
+        task_id="task_x",
+        provider_label="tripo_multiview_image_to_3d",
+        rig_type="biped",
+        phase="submit",
+    )
+
+    async with SessionLocal() as db:
+        r = (await db.execute(select(CompanionModel).where(CompanionModel.id == mid))).scalar_one()
+        assert r.provider_task_id == "task_x"
+        assert r.provider_phase == "submit"
+        assert r.provider == "tripo_multiview_image_to_3d"
+        assert r.rig_type == "biped"
+        assert r.status == "pending_download"
+        assert r.download_urls_json is None
+
+
+@pytest.mark.asyncio
+async def test_generate_resumes_retryable_download_failed_row(_patch_db, monkeypatch, SessionLocal):
+    """generate_companion_model 在存在 download_failed 且非 force 时返回重试行，不重发 submit。"""
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import model_service
+    from services.companion import pipeline as _pipeline
+
+    launched: list[int] = []
+    monkeypatch.setattr(model_service, "_launch_pipeline_task", lambda *, model_id, **_kwargs: launched.append(model_id))
+    monkeypatch.setattr(_pipeline, "_resolve_model_provider", lambda _n: _FakeProvider({"idle": "preset:biped:idle"}))
+
+    async with SessionLocal() as db:
+        user = User(username="resub-prevent", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        avatar = AvatarAsset(
+            user_id=user.id,
+            prompt_json="{}",
+            asset_url="avatars/x.png",
+            seed_front_url="seed-front.png",
+            active=True,
+        )
+        db.add(avatar)
+        await db.commit()
+        await db.refresh(avatar)
+        failed_row = CompanionModel(
+            user_id=user.id,
+            status="download_failed",
+            species="人类",
+            rig_type="biped",
+            provider="tripo_multiview_image_to_3d",
+            style="anime_game_cg",
+            provider_task_id="task_already_paid",
+            provider_phase="submit",
+            error="download error",
+        )
+        db.add(failed_row)
+        await db.commit()
+        await db.refresh(failed_row)
+        uid = user.id
+
+    async with SessionLocal() as db:
+        returned = await model_service.generate_companion_model(db, user_id=uid)
+
+    assert returned.id == failed_row.id
+    assert returned.status == "download_failed"
+    assert len(launched) == 0
+
+    async with SessionLocal() as db:
+        all_rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(all_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_resumes_failed_row_when_tripo_task_is_success(_patch_db, monkeypatch, SessionLocal):
+    """供应商任务成功时将失败记录置为待下载并自驱续跑，避免重复计费。"""
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import model_service
+    from services.companion import pipeline as _pipeline
+
+    launched: list[int] = []
+
+    def _capture_launch(*, model_id, **_kwargs):
+        launched.append(model_id)
+
+    monkeypatch.setattr(_pipeline, "_launch_pipeline_task", _capture_launch)
+    monkeypatch.setattr(_pipeline, "_resolve_model_provider", lambda _n: _FakeProvider({"idle": "preset:biped:idle"}))
+
+    async with SessionLocal() as db:
+        user = User(username="paid-failure-success", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="avatars/x.png", seed_front_url="seed-front.png", active=True))
+        failed_row = CompanionModel(
+            user_id=user.id,
+            status="failed",
+            species="人类",
+            rig_type="biped",
+            provider="tripo_multiview_image_to_3d",
+            style="anime_game_cg",
+            provider_task_id="task_already_paid_on_tripo",
+            provider_phase="submit",
+            error="local exception",
+            active=False,
+        )
+        db.add(failed_row)
+        await db.commit()
+        await db.refresh(failed_row)
+        uid, failed_id = user.id, failed_row.id
+
+    async with SessionLocal() as db:
+        returned = await model_service.generate_companion_model(db, user_id=uid)
+
+    assert returned.id == failed_id
+    assert returned.status == "pending_download"
+    assert returned.error is None
+    assert launched == [failed_id]
+
+    async with SessionLocal() as db:
+        all_rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(all_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_resubmits_when_tripo_task_is_actually_failed(_patch_db, monkeypatch, SessionLocal):
+    """供应商任务确认失败时允许创建新记录重新提交。"""
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import model_service
+    from services.companion import pipeline as _pipeline
+
+    launched: list[int] = []
+
+    def _capture_launch(*, model_id, **_kwargs):
+        launched.append(model_id)
+
+    monkeypatch.setattr(model_service, "_launch_pipeline_task", _capture_launch)
+
+    class _TripoFailedProvider(_FakeProvider):
+        async def poll(self, job):
+            from services.image_to_3d import Model3DPollResult
+
+            return Model3DPollResult(status="failed", error="tripo task was banned")
+
+    monkeypatch.setattr(_pipeline, "_resolve_model_provider", lambda _n: _TripoFailedProvider({"idle": "preset:biped:idle"}))
+
+    async with SessionLocal() as db:
+        user = User(username="paid-failure-actually-failed", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="avatars/x.png", seed_front_url="seed-front.png", active=True))
+        failed_row = CompanionModel(
+            user_id=user.id,
+            status="failed",
+            species="人类",
+            rig_type="biped",
+            provider="tripo_multiview_image_to_3d",
+            style="anime_game_cg",
+            provider_task_id="task_failed_on_tripo",
+            provider_phase="submit",
+            error="local exception",
+            active=False,
+        )
+        db.add(failed_row)
+        await db.commit()
+        await db.refresh(failed_row)
+        uid = user.id
+
+    async with SessionLocal() as db:
+        returned = await model_service.generate_companion_model(db, user_id=uid)
+
+    assert returned.id != failed_row.id
+    assert returned.status == "generating"
+    assert returned.provider_task_id is None
+    assert launched == [returned.id]
+
+    async with SessionLocal() as db:
+        all_rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(all_rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_leaves_row_untouched_when_tripo_probe_uncertain(_patch_db, monkeypatch, SessionLocal):
+    """供应商任务状态未知或排队中时保持原记录且不重发提交。"""
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import model_service
+    from services.companion import pipeline as _pipeline
+
+    launched: list[int] = []
+
+    def _capture_launch(*, model_id, **_kwargs):
+        launched.append(model_id)
+
+    monkeypatch.setattr(model_service, "_launch_pipeline_task", _capture_launch)
+
+    class _ProbeUncertainProvider(_FakeProvider):
+        async def poll(self, job):
+            from services.image_to_3d import Model3DPollResult
+
+            return Model3DPollResult(status="in_progress", progress=50)
+
+    monkeypatch.setattr(_pipeline, "_resolve_model_provider", lambda _n: _ProbeUncertainProvider({"idle": "preset:biped:idle"}))
+
+    async with SessionLocal() as db:
+        user = User(username="probe-uncertain", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        db.add(AvatarAsset(user_id=user.id, prompt_json="{}", asset_url="avatars/x.png", seed_front_url="seed-front.png", active=True))
+        failed_row = CompanionModel(
+            user_id=user.id,
+            status="failed",
+            species="人类",
+            rig_type="biped",
+            provider="tripo_multiview_image_to_3d",
+            style="anime_game_cg",
+            provider_task_id="task_in_progress_on_tripo",
+            provider_phase="submit",
+            error="local exception",
+            active=False,
+        )
+        db.add(failed_row)
+        await db.commit()
+        await db.refresh(failed_row)
+        uid, failed_id = user.id, failed_row.id
+
+    async with SessionLocal() as db:
+        returned = await model_service.generate_companion_model(db, user_id=uid)
+
+    assert returned.id == failed_id
+    assert returned.status == "failed"
+    assert returned.error == "local exception"
+    assert launched == []
+
+    async with SessionLocal() as db:
+        all_rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(all_rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_generate_force_creates_new_row_and_deactivates_old(_patch_db, monkeypatch, SessionLocal):
+    """强制生成时创建新记录行并将旧记录置为非生效。"""
+    from modules.auth import User
+    from modules.companion import AvatarAsset, CompanionModel
+    from services.companion import model_service
+    from services.companion import pipeline as _pipeline
+
+    launched_kwargs: list[dict] = []
+    monkeypatch.setattr(model_service, "_launch_pipeline_task", lambda **kwargs: launched_kwargs.append(kwargs))
+    monkeypatch.setattr(_pipeline, "_resolve_model_provider", lambda _n: _FakeProvider({"idle": "preset:biped:idle"}))
+
+    async with SessionLocal() as db:
+        user = User(username="force-resub", is_active=True, nightly_activity_enabled=True)
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        avatar = AvatarAsset(
+            user_id=user.id,
+            prompt_json=json.dumps({"fullbody_style": "anime_game_cg"}),
+            asset_url="avatars/front.png",
+            seed_front_url="seed-front.png",
+            active=True,
+        )
+        db.add(avatar)
+        existing_row = CompanionModel(
+            user_id=user.id,
+            status="succeeded",
+            species="猫",
+            style="realistic",
+            provider="tripo_image_to_3d",
+            provider_task_id="old_task",
+            provider_phase="animate",
+            asset_url="companion-models/1/old.glb",
+            active=True,
+        )
+        db.add(existing_row)
+        await db.commit()
+        await db.refresh(existing_row)
+        uid = user.id
+        old_id = existing_row.id
+
+    async with SessionLocal() as db:
+        returned = await model_service.generate_companion_model(db, user_id=uid, species_override="狗", force=True)
+
+    assert returned.id != old_id
+    assert returned.status == "generating"
+    assert returned.species == "狗"
+    assert returned.style == "anime_game_cg"
+    assert returned.active is False
+    assert len(launched_kwargs) == 1
+    assert launched_kwargs[0]["model_id"] == returned.id
+    assert launched_kwargs[0]["species"] == "狗"
+    assert launched_kwargs[0]["style"] == "anime_game_cg"
+
+    async with SessionLocal() as db:
+        all_rows = (await db.execute(select(CompanionModel).where(CompanionModel.user_id == uid).order_by(CompanionModel.id))).scalars().all()
+        assert len(all_rows) == 2
+        assert all_rows[0].id == old_id
+        assert all_rows[0].active is False
+        assert all_rows[1].id == returned.id
+        assert all_rows[1].active is False
 
 
 @pytest.mark.asyncio
@@ -2176,54 +2523,8 @@ async def test_chain_downloads_rigged_result_once_when_animate_bind_unsupported(
 
 
 @pytest.mark.asyncio
-async def test_chain_writes_provider_phase_along_each_hop(_patch_db, monkeypatch, SessionLocal, tmp_path):
-    """链上每个 hop 成功后 provider_phase 必须刷新到该 hop；重启接续据此判断产物是否最终含动画的 GLB。"""
-    from services.companion import pipeline as _pipeline
-
-    _FakeProvider({"idle": "preset:biped:idle"})
-
-    # 直接读 _persist_download_source 的中间调用而不是跑整链——验证 phase 入参穿透。
-    captured: list[str] = []
-
-    async def _capture(model_id, *, user_id, task_id, assets, provider_label, rig_type, phase="submit"):
-        captured.append(phase)
-
-    monkeypatch.setattr(_pipeline, "_persist_download_source", _capture)
-
-    await _pipeline._persist_download_source(
-        model_id=1,
-        user_id=1,
-        task_id="a",
-        assets=(),
-        provider_label="tripo",
-        rig_type="biped",
-        phase="submit",
-    )
-    await _pipeline._persist_download_source(
-        model_id=1,
-        user_id=1,
-        task_id="b",
-        assets=(),
-        provider_label="tripo",
-        rig_type="biped",
-        phase="rig",
-    )
-    await _pipeline._persist_download_source(
-        model_id=1,
-        user_id=1,
-        task_id="c",
-        assets=(),
-        provider_label="tripo",
-        rig_type="biped",
-        phase="animate",
-    )
-
-    assert captured == ["submit", "rig", "animate"]
-
-
-@pytest.mark.asyncio
-async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db, monkeypatch, SessionLocal):
-    """进程崩溃接续：phase != animate 的行(GLB 不含动画)被翻 download_failed 让用户重生成，phase=animate 的行保留 in-flight 给 _resume_inflight_pipelines 落盘。"""
+async def test_recover_stuck_leaves_inflight_rows_for_resume(_patch_db, monkeypatch, SessionLocal):
+    """进程崩溃接续：generating 判 failed，有 task_id 的 in-flight 行保留给接续逻辑。"""
     from modules.auth import User
     from modules.companion import CompanionModel
     from services.companion import pipeline as _pipeline
@@ -2252,9 +2553,10 @@ async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db
             download_urls_json="[]",
             provider_phase="animate",
         )
-        db.add_all([submit_row, rig_row, animate_row])
+        gen_row = CompanionModel(user_id=user.id, status="generating", species="人类", rig_type="biped", provider_task_id=None, provider_phase="submit")
+        db.add_all([submit_row, rig_row, animate_row, gen_row])
         await db.commit()
-        submit_id, rig_id, animate_id = submit_row.id, rig_row.id, animate_row.id
+        submit_id, rig_id, animate_id, gen_id = submit_row.id, rig_row.id, animate_row.id, gen_row.id
 
     await _pipeline.recover_stuck_model_generations()
 
@@ -2262,18 +2564,11 @@ async def test_recover_stuck_marks_incomplete_chain_as_download_failed(_patch_db
         s = (await db.execute(select(CompanionModel).where(CompanionModel.id == submit_id))).scalar_one()
         r = (await db.execute(select(CompanionModel).where(CompanionModel.id == rig_id))).scalar_one()
         a = (await db.execute(select(CompanionModel).where(CompanionModel.id == animate_id))).scalar_one()
-        assert s.status == "download_failed"
-        assert r.status == "download_failed"
+        g = (await db.execute(select(CompanionModel).where(CompanionModel.id == gen_id))).scalar_one()
+        assert s.status == "pending_download"
+        assert r.status == "downloading"
         assert a.status == "pending_download"
-
-
-@pytest.mark.asyncio
-async def test_provider_result_label_reflects_multiview_input():
-    """``_provider_result_label`` 的 multiview 参数由调用方决定（不再用 ``record.style == "realistic"`` 误判）。单图 → image_,多视图 → multiview_。"""
-    from services.companion import pipeline as _pipeline
-
-    assert _pipeline._provider_result_label("tripo", multiview=False) == "tripo_image_to_3d"
-    assert _pipeline._provider_result_label("tripo", multiview=True) == "tripo_multiview_to_3d"
+        assert g.status == "failed"
 
 
 @pytest.mark.asyncio

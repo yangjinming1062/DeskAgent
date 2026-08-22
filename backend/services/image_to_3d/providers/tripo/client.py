@@ -20,16 +20,12 @@ RIG_SPEC: str = "tripo"
 
 # 语义键 → 该 rig 下的预设 token。每个预设单独计费，故只绑产品必需的几个。
 # 键是扁平单一命名空间，同时容纳应用状态、交互反馈与 LLM 动作 token；avian 无任何预设，有意缺席。
+# biped 收敛到 4 个预设以满足 Tripo `/animations/retarget` 单次 ≤ 5 预设的限制。
 _RETARGET_CLIPS: dict[str, dict[str, str]] = {
     "biped": {
         "idle": "preset:biped:idle",
         "emotional": "preset:biped:laugh_01",
-        "interacting": "preset:biped:jump",
-        "poke": "preset:biped:jump",
-        "drag": "preset:biped:jump",
         "walk": "preset:biped:walk",
-        "jump": "preset:biped:jump",
-        "greet": "preset:biped:greet_01",
         "laugh": "preset:biped:laugh_01",
         "cry": "preset:biped:sob",
     },

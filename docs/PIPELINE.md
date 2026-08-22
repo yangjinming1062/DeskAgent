@@ -20,11 +20,12 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 **关键不变量**：
 
-- **`task_id` 串联**：每跳用前跳的 `task_id` 作为输入，链不传递 GLB bytes；链末产物只下载一次并落盘。
-- **能力缺位自动跳过**：`SUPPORTS_RIGGING=False` 或绑骨失败时交付 raw task 的 GLB；只有绑骨成功且 `SUPPORTS_ANIMATE_BIND=True`、`animation_clips(rig_type) != {}` 时才进入 animate_bind，否则交付已绑骨 task 的 GLB（avian 即此情况）。
-- **每跳成功就地刷新 `provider_task_id` + `download_urls_json`**：重试下载 / 进程崩溃接续都从这里恢复，**绝不重新计费**。
-- **`provider_phase` 标识当前 task_id 在链上的阶段**（submit / rig / animate）：崩溃接续据此判断产物是不是最终含动画的 GLB。
-- **`clip_map_json` 只在 animate_bind 真正成功时落**：`{}` 代表该骨架不产出动画（avian 或绑定失败）；客户端拿到非空映射会去 GLB 里兑现 clip，空映射是契约硬面。
+- **任务 id 串联**：每跳用前跳的任务 id 作为输入，链不传递 GLB 二进制；链末产物只下载一次并落盘。
+- **能力缺位自动跳过**：无云端绑骨能力或绑骨失败时交付生模阶段的 GLB；只有绑骨成功且支持动画绑定、骨架具有预设动作时才进入动画绑定，否则交付已绑骨任务的 GLB（avian 即此情况）。
+- **每跳成功就地刷新任务 id 与下载地址**：重试下载与进程崩溃接续都从已持久化的任务恢复，**绝不重新计费**。
+- **提交后立即持久化任务句柄**（轮询前）：进程在轮询中崩溃时任务 id 不丢失，避免已付费但重启后被当作无状态重发的重复计费。
+- **阶段标记标识当前任务在链上的位置**（submit / rig / animate）：崩溃接续据此判断产物是否为最终含动画的 GLB，并按序续跑后续跳。
+- **动作映射只在动画绑定真正成功时持久化**：空字典代表该骨架不产出动画（avian 或绑定失败）；客户端拿到非空映射会去 GLB 里兑现动作，空映射是契约硬面。
 
 ## 2. 能力声明
 
@@ -48,12 +49,21 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 | `download_failed_retryable` | 下载环节失败，付费结果仍在 | True |
 | `provider_unconfigured` | 未配置供应商 | False |
 
-**进程崩溃接续**（`_resume_inflight_pipelines`）：
+**进程崩溃接续**（启动时自驱接续）：
 
-- `provider_phase = "animate"` → 链已完整，`retry_only=True` 跳过 submit + 增强跳直接落盘
-- `provider_phase ∈ {submit, rig}` → 链未完成到 animate（中间产物无动画）→ mark `download_failed` 让用户重生成；`retry_download=false`，因为重试下载也救不回来
+- 动画绑定阶段 + 任务 id 存在 → 仅下载（链末产物已含动画）
+- 绑骨阶段 + 任务 id 存在 → 续跑动画绑定与下载（绑骨已付费，不重发）
+- 提交阶段 + 任务 id 存在 → 续跑绑骨、动画绑定与下载（生模已付费，不重发）
+- 任一阶段若任务 id 缺失 → 安全侧判定生成失败并允许用户重生成
 
-**`retry_only=True` 跳过增强跳**：`provider_task_id` 已是链末任务，再喂回 `start_rig` 会让供应商报错并重复计费。映射此时从 `clip_map_json` 直接读回。
+**模型记录与激活状态**：每次新生成请求创建独立记录行并解除旧记录激活态；新产物就绪后原子置为当前唯一生效模型。非强制生成请求自动复用已生效模型，避免重复调用。
+
+**失败重发的真实状态探针**：本地判为失败但记录持有任务 id 时，下次发起生成请求先向供应商查询真实任务状态——三态决策：
+- 供应商任务已成功 → 置为待下载并由流程自驱续跑（避免重复计费）
+- 供应商任务确认失败、取消或封禁 → 允许创建新记录重新提交（供应商失败不计费）
+- 网络异常、任务排队中或状态未知 → 保持现有状态且不重发提交，杜绝盲目重发带来的重复计费风险。
+
+本地异常退出不代表供应商任务失败：只有明确确认失败才允许重发；无法确认时保持现状供排查。
 
 ## 4. 产物契约（Tripo3D `spec=tripo`）
 
@@ -63,18 +73,18 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 **绑骨算法版本与 preset 命名空间正交**：`spec` 是骨骼命名，`model` 是绑骨算法版本。biped 走 `v1.0-20240301` 解锁 90+ 个 `preset:biped:*` 预设库；其余 6 类走 `v2.5-20260210`。
 
-**预设 token 表**（每条单独计费，故只绑产品必需最小集）：
+**预设 token 表**（每条单独计费，故只绑产品必需最小集；biped 还受 Tripo `retarget` 单次 ≤ 5 动画的硬限制约束——超出返回 `code=1004 "animations size must be <= 5"`）：
 
 | rig_type | 预设 token |
 |---|---|
-| biped | `idle` / `walk` / `laugh_01` / `jump` / `greet_01` / `sob`（10 个语义键收敛到这 6 条） |
+| biped | `idle` / `walk` / `laugh_01` / `sob` |
 | quadruped / hexapod / octopod | 该骨架唯一预设（`preset:<rig>:walk`） |
 | serpentine / aquatic | 该骨架唯一预设（`preset:<rig>:march`） |
 | avian | **空**——hop 整跳跳过 |
 
 ## 5. 客户端消费
 
-**语义键收敛**（LLM 不可请求 = 状态 / 交互反馈类，共 5 个）：`idle` / `emotional` / `interacting` / `poke` / `drag`。LLM 可请求的键 = biped 的 `walk` / `jump` / `laugh` / `greet` / `cry`（5 个，biped 独有；非 biped 的 LLM 清单为空）。后端组装提示词时只把 LLM 可请求的键注入清单——LLM 永远无法命名一个客户端无法兑现的动作。
+**语义键收敛**（LLM 不可请求 = 状态 / 交互反馈类，共 2 个）：`idle` / `emotional`。LLM 可请求的键 = biped 的 `walk` / `laugh` / `cry`（3 个，biped 独有；非 biped 的 LLM 清单为空）。后端组装提示词时只把 LLM 可请求的键注入清单——LLM 永远无法命名一个客户端无法兑现的动作。
 
 **映射下发路径**：`provider.animation_clips(rig_type)` 是声明式权威；落库到 `clip_map_json`；随 `model.ready` 事件 + `GET /api/companion/model` 响应一起下发。客户端**不持有任何供应商命名**。
 
