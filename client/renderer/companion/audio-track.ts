@@ -64,6 +64,15 @@ export function isLatestGen(gen: number): boolean {
   return gen === playGen
 }
 
+/** 把模块 AudioContext 拉到 running——q1 冷启动时调用，避免 MediaElementSource 重路由吃掉首帧。 */
+export function warmAudioContext(): void {
+  ensureAnalyser()
+
+  if (audioCtx && audioCtx.state === 'suspended') {
+    void audioCtx.resume().catch(() => undefined)
+  }
+}
+
 export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise<boolean> {
   stopAudio()
   const gen = nextGen()

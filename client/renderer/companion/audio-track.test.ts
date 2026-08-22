@@ -246,3 +246,52 @@ describe('playDataUrl', () => {
     unregister()
   })
 })
+
+describe('warmAudioContext', () => {
+  it('synchronously creates AudioContext and fire-and-forget resumes when suspended', async () => {
+    let resolveResume: (() => void) | undefined
+    hoisted.resumeGate = () => new Promise<void>(resolve => (resolveResume = resolve))
+
+    const { warmAudioContext } = await import('./audio-track')
+
+    warmAudioContext()
+
+    await vi.waitFor(() => expect(hoisted.events).toContain('resume'))
+
+    resolveResume?.()
+    await new Promise(r => setTimeout(r, 0))
+  })
+
+  it('does not call resume when AudioContext is already running', async () => {
+    let resolveResume: (() => void) | undefined
+    hoisted.resumeGate = () => new Promise<void>(resolve => (resolveResume = resolve))
+
+    const { warmAudioContext } = await import('./audio-track')
+
+    warmAudioContext()
+    resolveResume?.()
+    await new Promise(r => setTimeout(r, 0))
+
+    hoisted.events.length = 0
+
+    warmAudioContext()
+
+    expect(hoisted.events).not.toContain('resume')
+  })
+
+  it('is idempotent across multiple calls and does not recreate the AudioContext', async () => {
+    let resolveResume: (() => void) | undefined
+    hoisted.resumeGate = () => new Promise<void>(resolve => (resolveResume = resolve))
+
+    const { warmAudioContext } = await import('./audio-track')
+
+    warmAudioContext()
+    warmAudioContext()
+    warmAudioContext()
+
+    await vi.waitFor(() => expect(hoisted.events).toContain('resume'))
+
+    resolveResume?.()
+    await new Promise(r => setTimeout(r, 0))
+  })
+})

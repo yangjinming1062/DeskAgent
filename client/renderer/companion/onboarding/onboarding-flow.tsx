@@ -50,6 +50,7 @@ import { safeJsonParse } from '@/shared/lib/safe-json'
 import { sleep } from '@/shared/lib/utils'
 import { $gatewayState } from '@/shared/store/gateway'
 
+import { warmAudioContext } from '../audio-track'
 import {
   assembleCharacterPersona,
   assemblePersona,
@@ -545,6 +546,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     return () => {
       stopSpeaking()
     }
+  }, [])
+
+  // q1 之前预热 ctx，避免 MediaElementSource 重路由吃掉首帧。
+  useEffect(() => {
+    warmAudioContext()
   }, [])
 
   // 反馈 textarea 在多个头像面板之间共享。阶段切换时清空，
