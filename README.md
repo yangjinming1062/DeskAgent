@@ -21,10 +21,10 @@
 
 SpiritAgent 区别于传统桌面宠物或纯聊天插件的核心，在于伙伴拥有**从无到有的生成式诞生闭环**：从一颗温润呼吸的“蛋”开始，经自然对话定制形象与人格，最终成为常驻桌面的专属 3D 伙伴。生成体验见 [DESIGN.md](DESIGN.md)，3D 能力链见 [docs/PIPELINE.md](docs/PIPELINE.md)。
 
-| 1. 初始破壳「蛋」形态 | 2. 对话定制半身像 | 3. 全身立绘：日系赛璐珞 | 4. 全身立绘：二次元游戏CG | 5. 专属伙伴常驻桌面 |
+| 1. 初始破壳「蛋」形态 | 2. 对话定制半身像 | 3. 全身立绘：日系赛璐珞 | 4. 全身立绘：二次元游戏CG | 5. 专属 3D 伙伴·实机演示 |
 | :---: | :---: | :---: | :---: | :---: |
-| <img src="docs/assets/app_icon.png" width="130" alt="Egg Stage"/> | <img src="docs/assets/avatar_preview.jpg" width="130" alt="Avatar Preview"/> | <img src="docs/assets/cel_shading.jpg" width="130" alt="Cel Shading Style"/> | <img src="docs/assets/anime_game_cg.png" width="130" alt="Anime Game CG Style"/> | <img src="docs/assets/sprite_preview.png" width="130" alt="Sprite Preview"/> |
-| *安装初始·静候唤醒* | *性格与样貌确认* | *风格样图一（赛璐珞）* | *风格样图二（游戏CG）* | *常驻桌面·活灵活现* |
+| <img src="docs/assets/app_icon.png" width="130" alt="Egg Stage"/> | <img src="docs/assets/avatar_preview.jpg" width="130" alt="Avatar Preview"/> | <img src="docs/assets/cel_shading.jpg" width="130" alt="Cel Shading Style"/> | <img src="docs/assets/anime_game_cg.jpg" width="130" alt="Anime Game CG Style"/> | <video src="docs/assets/clip.mp4" width="200" autoplay loop muted playsinline></video> |
+| *安装初始·静候唤醒* | *性格与样貌确认* | *风格样图一（赛璐珞）* | *风格样图二（游戏CG）* | *骨骼动画·实时驱动* |
 
 ---
 
