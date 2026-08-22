@@ -6,17 +6,36 @@ export type InteractiveRegion = {
   id: string
 }
 
-// 按窗口分桶的 map，使每个窗口各自管理自己的交互区域——
-// 第二个窗口（各自的 SpriteStage）不会冲掉共享列表。
-const _regionsByWindow = new Map<number, Map<string, InteractiveRegion>>()
-const _probesByWindow = new Map<number, () => void>()
+interface GlobalInteractiveState {
+  isIgnoringByWindow: Map<number, boolean>
+  lastPoint: { x: number; y: number } | null
+  probesByWindow: Map<number, () => void>
+  regionsByWindow: Map<number, Map<string, InteractiveRegion>>
+  releaseTimers: Map<number, ReturnType<typeof setTimeout>>
+}
+
+const g = globalThis as unknown as {
+  __spiritagent_interactive_state__?: GlobalInteractiveState
+}
+
+if (!g.__spiritagent_interactive_state__) {
+  g.__spiritagent_interactive_state__ = {
+    isIgnoringByWindow: new Map(),
+    lastPoint: null,
+    probesByWindow: new Map(),
+    regionsByWindow: new Map(),
+    releaseTimers: new Map()
+  }
+}
+
+const state = g.__spiritagent_interactive_state__
 
 function _bucket(windowId: number): Map<string, InteractiveRegion> {
-  let m = _regionsByWindow.get(windowId)
+  let m = state.regionsByWindow.get(windowId)
 
   if (!m) {
     m = new Map()
-    _regionsByWindow.set(windowId, m)
+    state.regionsByWindow.set(windowId, m)
   }
 
   return m
@@ -30,7 +49,7 @@ export function registerInteractiveRegion(
 ): void {
   const m = _bucket(windowId)
   m.set(id, { getRect, hitTest, id })
-  _probesByWindow.get(windowId)?.()
+  state.probesByWindow.get(windowId)?.()
 }
 
 export function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
@@ -40,21 +59,21 @@ export function unregisterInteractiveRegion(id: string, windowId: number = 0): v
     return
   }
 
-  _probesByWindow.get(windowId)?.()
+  state.probesByWindow.get(windowId)?.()
 }
 
 export function setCaptureProbe(fn: (() => void) | null, windowId: number = 0): void {
   if (fn === null) {
-    _probesByWindow.delete(windowId)
+    state.probesByWindow.delete(windowId)
   } else {
-    _probesByWindow.set(windowId, fn)
+    state.probesByWindow.set(windowId, fn)
   }
 }
 
 /** Re-run the window's capture probe outside the mousemove path — e.g. an
  * async hit refinement just landed for a stationary cursor. */
 export function probeInteractiveRegions(windowId: number = 0): void {
-  _probesByWindow.get(windowId)?.()
+  state.probesByWindow.get(windowId)?.()
 }
 
 export function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
@@ -99,11 +118,7 @@ export function isRegionHit(id: string, x: number, y: number, windowId: number =
   return false
 }
 
-// React hook：在组件生命周期内注册一个交互区域，
-// 通过 ref 的 getBoundingClientRect() 派生矩形。
-// 传 `getRect` 可覆盖默认行为（如 boot-failure 覆盖层覆盖整个视口）。
-// 传 `hitTest` 可按像素细化命中——调用方必须保持其引用稳定，
-// 引用变化时区域会重新注册。在 `getRect` 中返回 `null` 可让该帧退出区域。
+// 通过 ref 获取可见矩形注册交互区域；返回 null 表示该帧退出交互。
 export function useInteractiveRegion(
   id: string,
   ref: RefObject<HTMLElement | null>,
@@ -124,4 +139,85 @@ export function useInteractiveRegion(
 
     return () => unregisterInteractiveRegion(id)
   }, [id, ref, getRect, hitTest])
+}
+
+// 状态与定时器挂在 globalThis 并在卸载时取消，避免 HMR 重载期间遗留定时器把窗口置为 ignore。
+export function useWindowMouseCapture(windowId: number = 0): void {
+  useEffect(() => {
+    const setIgnoreMouseEvents = (ignore: boolean, forward?: boolean) => {
+      try {
+        state.isIgnoringByWindow.set(windowId, ignore)
+        void window.spiritagent?.sprite?.setIgnoreMouseEvents?.({
+          forward: ignore && forward !== false,
+          ignore
+        })
+      } catch {
+        // 忽略测试或非 Electron 环境
+      }
+    }
+
+    const cancelPendingRelease = () => {
+      const timer = state.releaseTimers.get(windowId)
+
+      if (timer) {
+        clearTimeout(timer)
+        state.releaseTimers.delete(windowId)
+      }
+    }
+
+    const captureImmediate = () => {
+      cancelPendingRelease()
+      setIgnoreMouseEvents(false)
+    }
+
+    const releaseDebounced = () => {
+      cancelPendingRelease()
+
+      const timer = setTimeout(() => {
+        state.releaseTimers.delete(windowId)
+        setIgnoreMouseEvents(true, true)
+      }, 100)
+
+      state.releaseTimers.set(windowId, timer)
+    }
+
+    const probe = () => {
+      const p = state.lastPoint
+
+      if (!p) {
+        return
+      }
+
+      if (isPointInteractive(p.x, p.y, windowId)) {
+        captureImmediate()
+      } else {
+        releaseDebounced()
+      }
+    }
+
+    setCaptureProbe(probe, windowId)
+
+    const onMouseMove = (e: MouseEvent) => {
+      state.lastPoint = { x: e.clientX, y: e.clientY }
+
+      if (isPointInteractive(e.clientX, e.clientY, windowId)) {
+        captureImmediate()
+      } else {
+        releaseDebounced()
+      }
+    }
+
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    window.addEventListener('focus', probe)
+
+    // 挂载时立即执行一次 probe，以便在热重启/重新挂载时恢复上一次已知鼠标位置的交互态
+    probe()
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('focus', probe)
+      cancelPendingRelease()
+      setCaptureProbe(null, windowId)
+    }
+  }, [windowId])
 }

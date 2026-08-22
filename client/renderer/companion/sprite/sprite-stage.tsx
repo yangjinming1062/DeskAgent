@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import { $chatOpen } from '@/companion/chat-store'
-import { isPointInteractive, setCaptureProbe, useInteractiveRegion } from '@/companion/interactive-regions'
+import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
 import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
@@ -48,8 +48,6 @@ export function SpriteStage({
   hidden = false
 }: SpriteStageProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
-  const capturedRef = useRef(false)
-  const lastPointRef = useRef<{ x: number; y: number } | null>(null)
 
   const dragRef = useRef<{
     startX: number
@@ -77,56 +75,11 @@ export function SpriteStage({
     []
   )
 
-  const pendingToggleRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
   const pendingPosRef = useRef<{ x: number; y: number } | null>(null)
   const pendingVelRef = useRef<{ vx: number; vy: number } | null>(null)
   const dragRafRef = useRef<number | null>(null)
   const displayProbeAtRef = useRef(0)
   const lastDragPointRef = useRef<{ x: number; y: number } | null>(null)
-
-  // 捕获时零延迟取消忽略：setIgnoreMouseEvents(true, { forward: true })
-  // 不会把 mousedown/contextmenu 转发给渲染层，所以窗口必须在点击到达前
-  // 取消忽略——mousemove 是我们能收到的唯一信号。
-  const captureImmediate = useCallback(() => {
-    if (pendingToggleRef.current) {
-      clearTimeout(pendingToggleRef.current)
-      pendingToggleRef.current = null
-    }
-
-    void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: false })
-  }, [])
-
-  // 释放时 100ms 防抖：避免快速鼠标扫过边界时窗口在交互/穿透间反复翻转。
-  const releaseDebounced = useCallback(() => {
-    if (pendingToggleRef.current) {
-      clearTimeout(pendingToggleRef.current)
-    }
-
-    pendingToggleRef.current = setTimeout(() => {
-      pendingToggleRef.current = null
-      void window.spiritagent.sprite.setIgnoreMouseEvents({ ignore: true, forward: true })
-    }, 100)
-  }, [])
-
-  const capture = useCallback(() => {
-    if (capturedRef.current) {
-      return
-    }
-
-    capturedRef.current = true
-    handleHoverInteraction()
-    captureImmediate()
-  }, [captureImmediate])
-
-  const release = useCallback(() => {
-    if (!capturedRef.current) {
-      return
-    }
-
-    capturedRef.current = false
-    releaseDebounced()
-  }, [releaseDebounced])
 
   // spriteHit 经 ref 传递，以保证 region 的 hitTest 闭包稳定——
   // 否则每次图像切换都会重新注册/注销 region。
@@ -166,67 +119,13 @@ export function SpriteStage({
   useInteractiveRegion(SPRITE_REGION_ID, mountRef, stageRect, stageHitTest)
 
   useEffect(() => {
-    // 把 mousemove 合并到单个 rAF tick——每个 region 调 getBoundingClientRect()
-    // 都会触发布局，60+ Hz 的原始 mousemove 会让随后的 style 重算把帧预算烧光。
-    let moveRafId: number | null = null
-
-    const flushMove = () => {
-      moveRafId = null
-      const p = lastPointRef.current
-
-      if (!p || dragRef.current) {
-        return
-      }
-
-      if (isPointInteractive(p.x, p.y)) {
-        capture()
-      } else {
-        release()
-      }
-    }
-
-    const onMove = (e: MouseEvent) => {
-      lastPointRef.current = { x: e.clientX, y: e.clientY }
-
-      // 快路径：进入交互像素时立刻取消忽略，不必等下一帧 rAF
-      if (isPointInteractive(e.clientX, e.clientY)) {
-        capture()
-      } else if (moveRafId === null) {
-        moveRafId = requestAnimationFrame(flushMove)
-      }
-    }
-
-    const probe = () => {
-      const p = lastPointRef.current
-
-      if (p && !dragRef.current) {
-        if (isPointInteractive(p.x, p.y)) {
-          capture()
-        } else {
-          release()
-        }
-      }
-    }
-
-    window.addEventListener('mousemove', onMove)
-    setCaptureProbe(probe)
-
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      setCaptureProbe(null)
-      release()
-
-      if (moveRafId !== null) {
-        cancelAnimationFrame(moveRafId)
-        moveRafId = null
-      }
-
       if (dragRafRef.current !== null) {
         cancelAnimationFrame(dragRafRef.current)
         dragRafRef.current = null
       }
     }
-  }, [capture, release])
+  }, [])
 
   // 精灵窗口只占一块显示器；要把精灵搬到另一块显示器上就要移动窗口。
   // 主进程会把窗口对齐到光标所在显示器并返回两个窗口原点。
@@ -299,8 +198,6 @@ export function SpriteStage({
       return
     }
 
-    lastPointRef.current = { x: e.clientX, y: e.clientY }
-
     // 只在按下左键时捕获
     if (e.button !== 0) {
       return
@@ -325,7 +222,6 @@ export function SpriteStage({
       return
     }
 
-    lastPointRef.current = { x: e.clientX, y: e.clientY }
     const d = dragRef.current
 
     if (!d) {
@@ -341,7 +237,6 @@ export function SpriteStage({
       d.moved = true
       startDrag()
       e.currentTarget.setPointerCapture(e.pointerId)
-      capturedRef.current = true
     }
 
     if (d.moved) {

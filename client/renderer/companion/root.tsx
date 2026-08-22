@@ -13,6 +13,7 @@ import {
   reportUserActivity,
   setCompanionLifecycle
 } from '@/companion/companion-store'
+import { useWindowMouseCapture } from '@/companion/interactive-regions'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
@@ -55,6 +56,7 @@ function GatewayBooter(): null {
 }
 
 export function CompanionRoot(): React.JSX.Element {
+  useWindowMouseCapture()
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)

@@ -1,13 +1,14 @@
 import { render } from '@testing-library/react'
 import { useRef } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   isPointInteractive,
   isRegionHit,
   registerInteractiveRegion,
   unregisterInteractiveRegion,
-  useInteractiveRegion
+  useInteractiveRegion,
+  useWindowMouseCapture
 } from './interactive-regions'
 
 function RegionProbe({ id, getRect }: { id: string; getRect?: (el: HTMLElement) => DOMRect | null }) {
@@ -101,5 +102,83 @@ describe('useInteractiveRegion', () => {
     unregisterInteractiveRegion('sprite-test')
     unregisterInteractiveRegion('other-region')
     document.body.removeChild(div)
+  })
+})
+
+describe('useWindowMouseCapture', () => {
+  it('captures mouse when entering interactive region and releases on exit', async () => {
+    const setIgnoreMock = vi.fn().mockResolvedValue(undefined)
+    window.spiritagent = {
+      ...window.spiritagent,
+      sprite: {
+        ...window.spiritagent?.sprite,
+        setIgnoreMouseEvents: setIgnoreMock
+      }
+    } as never
+
+    const { unmount } = render(<RegionProbe getRect={() => new DOMRect(100, 100, 200, 200)} id="test-capture" />)
+
+    function CaptureHost() {
+      useWindowMouseCapture()
+
+      return null
+    }
+
+    const host = render(<CaptureHost />)
+
+    // 移动到可交互区域内 (150, 150)
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 150, clientY: 150 }))
+    expect(setIgnoreMock).toHaveBeenCalledWith({ forward: false, ignore: false })
+
+    setIgnoreMock.mockClear()
+
+    // 移动到可交互区域外 (500, 500)
+    vi.useFakeTimers()
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 500, clientY: 500 }))
+
+    // 未过 100ms 防抖前不立即 release
+    expect(setIgnoreMock).not.toHaveBeenCalledWith({ forward: true, ignore: true })
+
+    // 推进 100ms
+    vi.advanceTimersByTime(100)
+    expect(setIgnoreMock).toHaveBeenCalledWith({ forward: true, ignore: true })
+
+    vi.useRealTimers()
+    host.unmount()
+    unmount()
+  })
+
+  it('cancels pending release timer on unmount', () => {
+    const setIgnoreMock = vi.fn().mockResolvedValue(undefined)
+    window.spiritagent = {
+      ...window.spiritagent,
+      sprite: {
+        ...window.spiritagent?.sprite,
+        setIgnoreMouseEvents: setIgnoreMock
+      }
+    } as never
+
+    function CaptureHost() {
+      useWindowMouseCapture()
+
+      return null
+    }
+
+    vi.useFakeTimers()
+    const host = render(<CaptureHost />)
+
+    // 移动到外部触发 debounced release
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 10, clientY: 10 }))
+
+    // 立即卸载
+    host.unmount()
+
+    // 推进时间
+    setIgnoreMock.mockClear()
+    vi.advanceTimersByTime(200)
+
+    // 卸载后定时器已被取消，不触发 ignore
+    expect(setIgnoreMock).not.toHaveBeenCalled()
+    vi.useRealTimers()
   })
 })
