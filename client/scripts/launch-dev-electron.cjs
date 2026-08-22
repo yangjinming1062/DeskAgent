@@ -82,7 +82,7 @@ if (!fs.existsSync(distElectronDir)) {
 
 try {
   fs.watch(distElectronDir, (_eventType, filename) => {
-    if (filename && filename.includes('entry.cjs')) {
+    if (filename && filename.includes('entry.js')) {
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
         if (child && !isRestarting) {

@@ -2,15 +2,11 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
 
 import ts from 'typescript'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const PRELOAD_PATH = path.join(__dirname, 'preload.ts')
-const DECL_PATH = path.join(__dirname, '..', 'renderer', 'shared', 'types', 'global.d.ts')
+const PRELOAD_PATH = path.join(import.meta.dirname, 'preload.ts')
+const DECL_PATH = path.join(import.meta.dirname, '..', 'renderer', 'shared', 'types', 'global.d.ts')
 
 const PRELOAD_SOURCE = fs.readFileSync(PRELOAD_PATH, 'utf8')
 const DECL_SOURCE = fs.readFileSync(DECL_PATH, 'utf8')

@@ -6,7 +6,7 @@
   "description": "Native desktop shell for SpiritAgent Agent.",
   "author": "SpiritAgent",
   "type": "module",
-  "main": "dist-electron/entry.cjs",
+  "main": "dist-electron/entry.js",
   "packageManager": "pnpm@11.5.2",
   "engines": {
     "node": ">=24 <25",
@@ -14,7 +14,7 @@
   },
   "scripts": {
     "clip": "node scripts/assert-root-install.cjs && vite --host 127.0.0.1 --port 5174 --open \"/?role=clip\"",
-    "dev": "node scripts/assert-root-install.cjs && tsup && concurrently -k \"vite --host 127.0.0.1 --port 5174\" \"tsup --watch\" \"wait-on dist-electron/entry.cjs http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 SPIRITAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 node scripts/launch-dev-electron.cjs\"",
+    "dev": "node scripts/assert-root-install.cjs && tsup && concurrently -k \"vite --host 127.0.0.1 --port 5174\" \"tsup --watch\" \"wait-on dist-electron/entry.js http://127.0.0.1:5174 && cross-env XCURSOR_SIZE=24 SPIRITAGENT_DESKTOP_DEV_SERVER=http://127.0.0.1:5174 node scripts/launch-dev-electron.cjs\"",
     "build": "node scripts/assert-root-install.cjs && node scripts/write-build-stamp.cjs && node scripts/stage-native-deps.cjs && tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.main.json && tsup && vite build && node scripts/assert-dist-built.cjs",
     "builder": "cross-env NODE_OPTIONS=--max-old-space-size=16384 electron-builder",
     "pack": "pnpm run build && pnpm run builder -- --dir",
@@ -35,6 +35,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@electron/asar": "^3.4.1",
     "@eslint/js": "^9.39.4",
     "@nanostores/react": "^1.1.0",
     "@tabler/icons-react": "^3.41.1",

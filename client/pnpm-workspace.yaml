@@ -3,12 +3,6 @@ packages:
 
 overrides:
   app-builder-lib>@electron/get: 3.1.0
-# `nodeLinker: hoisted` lives at the workspace level (not .npmrc) so every
-# `pnpm install` lands in the hoisted layout without manual override. This
-# is defense-in-depth — the actual root cause of `app is undefined` is
-# a stale `ELECTRON_RUN_AS_NODE=1` in the shell; the hoisted layout just
-# keeps `node_modules/electron` consistent so the failure is reproducible.
-nodeLinker: hoisted
 onlyBuiltDependencies:
   - electron-winstaller
   - node-pty

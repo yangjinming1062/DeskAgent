@@ -2,11 +2,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-import { createRequire } from 'node:module'
 import { listPackage } from '@electron/asar'
 
-const DESKTOP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const DESKTOP_ROOT = path.resolve(import.meta.dirname, '..')
 const PACKAGE_JSON = JSON.parse(fs.readFileSync(path.join(DESKTOP_ROOT, 'package.json'), 'utf8'))
 const MODE = process.argv[2] || 'help'
 const ARCH = process.arch === 'arm64' ? 'arm64' : 'x64'
@@ -41,10 +39,10 @@ const APP = (() => {
   die(`Unsupported platform for desktop bundle validation: ${PLATFORM}`)
 })()
 
-const _require = createRequire(import.meta.url)
 let spiritagentHome
 try {
-  spiritagentHome = _require('../dist-electron/security/paths.cjs').spiritagentHome
+  const mod = await import('../dist-electron/security/paths.js')
+  spiritagentHome = mod.spiritagentHome
 } catch {
   spiritagentHome = () => {
     if (process.platform === 'win32') {

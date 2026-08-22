@@ -7,9 +7,10 @@ export default defineConfig({
     'security/paths': 'main/security/paths.ts'
   },
   outDir: 'dist-electron',
-  format: ['cjs'],
+  format: ['esm'],
   target: 'node24',
   platform: 'node',
+  outExtension: () => ({ js: '.js' }),
   external: ['electron', 'electron-log', 'electron-log/main', 'electron-updater', 'ws', 'yaml'],
   clean: true,
   sourcemap: true,

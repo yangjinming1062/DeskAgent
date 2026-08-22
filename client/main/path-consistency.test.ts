@@ -2,12 +2,8 @@ import assert from 'node:assert'
 import fs from 'node:fs'
 import path from 'node:path'
 import { test } from 'node:test'
-import { fileURLToPath } from 'node:url'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const ROOT = path.resolve(__dirname, '..', '..')
+const ROOT = path.resolve(import.meta.dirname, '..', '..')
 
 function read(rel: string): string {
   return fs.readFileSync(path.join(ROOT, rel), 'utf8')

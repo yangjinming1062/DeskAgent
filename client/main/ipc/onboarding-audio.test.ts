@@ -3,14 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
 
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 
 import { registerOnboardingAudioIpc } from './onboarding-audio'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 type Handler = (event: IpcMainInvokeEvent, tag: string) => Promise<unknown> | unknown
 
@@ -46,7 +42,7 @@ test('onboardingAudio:read resolves audio file from spiritagentHome or dev fallb
   })
 
   const mimeTypeForPath = () => 'audio/mpeg'
-  const devAudioRoot = path.resolve(__dirname, '../../../installer/payload/onboarding-audio/zh')
+  const devAudioRoot = path.resolve(import.meta.dirname, '../../../installer/payload/onboarding-audio/zh')
 
   registerOnboardingAudioIpc({
     spiritagentHome: tmpDir,

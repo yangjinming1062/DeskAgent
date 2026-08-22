@@ -55,7 +55,7 @@ client/
 └── assets/                # icon
 ```
 
-**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 CJS 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
+**TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（经 `tsup` 统一编译输出 ESM 产物至 `dist-electron/`），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
 
 **renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
 
@@ -106,4 +106,3 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 限制 | 说明 |
 |------|------|
 | **WebGPU 透明合成依赖 premultiplied** | 透明画布按预乘 alpha 配置；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
-| **Electron 42 + pnpm 11 需 hoisted** | 失去 phantom-deps 防护；等 Electron ESM 主进程支持 |

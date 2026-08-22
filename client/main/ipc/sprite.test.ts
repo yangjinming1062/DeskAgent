@@ -3,15 +3,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
 
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent, Screen } from 'electron'
 
 import { POSITION_FILE, readRestPosition, registerSpriteIpc } from './sprite'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
 interface FakeDisplay {
   id: number
   workArea: { height: number; width: number; x: number; y: number }
@@ -153,5 +148,5 @@ test('readRestPosition tolerates a legacy file without window origin', () => {
   fs.writeFileSync(path.join(tmpDir, POSITION_FILE), JSON.stringify({ x: 10, y: 20 }))
 
   assert.deepEqual(readRestPosition(tmpDir), { x: 10, y: 20 })
-  assert.equal(readRestPosition(path.join(__dirname, 'no-such-dir')), null)
+  assert.equal(readRestPosition(path.join(import.meta.dirname, 'no-such-dir')), null)
 })

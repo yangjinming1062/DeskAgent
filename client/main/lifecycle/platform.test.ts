@@ -2,12 +2,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import test from 'node:test'
-import { fileURLToPath } from 'node:url'
 
 import { detectRemoteDisplay } from './platform'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
 
 test('detectRemoteDisplay keeps GPU on for local sessions', () => {
   assert.equal(detectRemoteDisplay({ env: { SESSIONNAME: 'Console' }, platform: 'win32' }), null)
@@ -42,7 +38,7 @@ test('detectRemoteDisplay honors the SPIRITAGENT_DESKTOP_DISABLE_GPU override bo
 })
 
 test('packaged electron entrypoints do not require unpackaged npm modules', () => {
-  const electronDir = path.join(__dirname, '..')
+  const electronDir = path.join(import.meta.dirname, '..')
   const entrypoints = ['entry.ts', 'preload.ts', 'lifecycle/platform.ts']
 
   // `@ipc/contracts` 是 tsconfig paths + tsup esbuildOptions 别名,

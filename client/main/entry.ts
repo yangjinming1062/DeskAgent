@@ -1047,22 +1047,16 @@ function getBundledPublicKeyPath(): null | string {
     const candidates = [
       path.join(process.resourcesPath || '', 'update.pub'),
       path.join(APP_ROOT, 'update.pub'),
-      path.join(__dirname, '..', 'update.pub'),
-      path.join(__dirname, 'update.pub'),
+      path.join(import.meta.dirname, '..', 'update.pub'),
+      path.join(import.meta.dirname, 'update.pub'),
       path.join(APP_ROOT, '..', 'scripts', 'release-keys', 'update.pub'),
       path.resolve(APP_ROOT, '../../scripts/release-keys/update.pub')
     ]
 
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate
-      }
-    }
+    return candidates.find(candidate => fs.existsSync(candidate)) || null
   } catch {
-    // 尽力而为
+    return null
   }
-
-  return null
 }
 
 async function resolveRemoteBackend(): Promise<null | { baseUrl: string }> {
@@ -1262,7 +1256,7 @@ function createToolWindow(): void {
       contextIsolation: true,
       devTools: !app.isPackaged,
       nodeIntegration: false,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(import.meta.dirname, 'preload.js'),
       sandbox: true
     },
     width: 1220
@@ -1323,7 +1317,7 @@ function createSpriteWindow(): void {
       contextIsolation: true,
       devTools: !app.isPackaged,
       nodeIntegration: false,
-      preload: path.join(__dirname, 'preload.cjs'),
+      preload: path.join(import.meta.dirname, 'preload.js'),
       sandbox: true
     },
     width: 480
