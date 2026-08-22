@@ -1,8 +1,12 @@
 import ipaddress
 import socket
+from collections.abc import Iterable
+from functools import partial
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
+import anyio
+import httpcore
 import httpx
 
 from .config import SETTINGS
@@ -34,46 +38,169 @@ def _ssrf_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Netwo
     return networks
 
 
-def is_safe_outbound(host: str) -> tuple[bool, str]:
+def _evaluate_ip(ip_str: str) -> tuple[bool, str]:
+    """根据当前 SSRF 策略评估单个 IP。返回 (allowed, reason)。"""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False, f"unparseable address {ip_str!r}"
+
+    allowed = _ssrf_allowed_networks()
+    if any(ip in network for network in allowed):
+        return True, ""
+
+    if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
+        return (False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)")
+    if _ip_in_blocked(ip):
+        return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
+    return True, ""
+
+
+def _evaluate_hostname(host: str) -> tuple[bool, str]:
+    """对 hostname 走黑名单快速判定。IP 字面量的策略评估走 ``_evaluate_ip``。"""
     if not host:
         return False, "missing host"
     if host.lower() in BLOCKED_HOSTNAMES:
         return False, f"refusing to connect to blocked hostname {host!r}"
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as exc:
-        return False, f"DNS resolution failed: {exc}"
-
-    allowed = _ssrf_allowed_networks()
-    for info in infos:
-        ip_str = info[4][0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            return False, f"unparseable address {ip_str!r}"
-        if any(ip in network for network in allowed):
-            continue
-        if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
-            return (False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)")
-        if _ip_in_blocked(ip):
-            return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
-
     return True, ""
 
 
+def is_safe_outbound(host: str) -> tuple[bool, str]:
+    """对出站目标做完整的 SSRF 校验：hostname 黑名单 + (若是 IP 字面量)保留段检查 + DNS 解析 + 全部解析结果的策略评估。
+
+    同步函数：会执行 ``socket.getaddrinfo``。在事件循环里调用方请走
+    ``anyio.to_thread.run_sync`` / ``asyncio.to_thread``，或直接使用
+    ``_SafeOutboundAsyncBackend``（``safe_outbound_async_client`` / ``download_capped``）。
+    """
+    ok, reason = _evaluate_hostname(host)
+    if not ok:
+        return False, reason
+    try:
+        infos = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        return False, f"DNS resolution failed: {exc}"
+
+    for info in infos:
+        ok, reason = _evaluate_ip(info[4][0])
+        if not ok:
+            return False, reason
+    return True, ""
+
+
+def _resolve_and_validate(host: str, port: int) -> list[tuple[str, int]]:
+    """同步执行 DNS 解析并对所有解析结果做 SSRF 校验；返回通过校验的 (ip, port) 列表。
+
+    DNS 与校验都在调用方线程里跑；对 async 路径而言，调用方负责用
+    ``anyio.to_thread.run_sync`` 或 ``asyncio.to_thread`` 把它移出事件循环。
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise httpcore.ConnectError(f"DNS resolution failed for {host}: {exc}") from exc
+
+    if not infos:
+        raise httpcore.ConnectError(f"No addresses returned for {host}")
+
+    allowed: list[tuple[str, int]] = []
+    for info in infos:
+        ip_str = info[4][0]
+        ok, reason = _evaluate_ip(ip_str)
+        if not ok:
+            logger.warning("SSRF guard blocked %s -> %s: %s", host, ip_str, reason)
+            raise httpcore.ConnectError(f"refusing to connect to {ip_str} ({reason})")
+        allowed.append((ip_str, port))
+    return allowed
+
+
+class _SafeOutboundAsyncBackend(httpcore._backends.auto.AutoBackend):
+    """出站 AsyncClient 专用的 httpcore 后端：
+
+    * DNS 解析在工作线程内完成，事件循环不会被慢解析阻塞；
+    * 每个目标 IP 在 socket.connect 之前都过一次当前 SSRF 策略；
+    * 实际 connect 使用已校验 IP 直连，原始 host 仍由 httpcore 用于
+      HTTP Host、TLS SNI 与证书主机名校验；
+    * 重定向由 httpx 自动跟随，每一跳都会重新走 ``connect_tcp``。
+    """
+
+    async def connect_tcp(  # type: ignore[override]
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ) -> httpcore._backends.base.AsyncNetworkStream:
+        # hostname 黑名单在进 DNS 之前先判一次，省一次解析也省一次工作线程。
+        ok, reason = _evaluate_hostname(host)
+        if not ok:
+            logger.warning("SSRF guard refused %s: %s", host, reason)
+            raise httpcore.ConnectError(f"refusing to connect to {host} ({reason})")
+
+        validated = await anyio.to_thread.run_sync(partial(_resolve_and_validate, host, port))
+
+        await self._init_backend()
+        last_error: Exception | None = None
+        for ip_str, resolved_port in validated:
+            try:
+                return await self._backend.connect_tcp(
+                    ip_str,
+                    resolved_port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (OSError, TimeoutError, httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        raise httpcore.ConnectError(f"No validated addresses available for connect to {host}")
+
+    async def connect_unix_socket(  # type: ignore[override]
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ) -> httpcore._backends.base.AsyncNetworkStream:
+        await self._init_backend()
+        return await self._backend.connect_unix_socket(path, timeout=timeout, socket_options=socket_options)
+
+
+def _swap_pool_backend(pool: Any, backend: Any) -> None:
+    """替换 httpcore ConnectionPool 的 NetworkBackend；保持现有连接池其余配置不变。"""
+    pool._network_backend = backend  # noqa: SLF001 - httpcore 没有公开的 setter
+
+
+class _SafeOutboundAsyncTransport(httpx.AsyncHTTPTransport):
+    """挂载了 ``_SafeOutboundAsyncBackend`` 的异步 httpx 传输层。
+
+    实际建连时的目标 IP 校验由后端完成；这里保持 ``follow_redirects=False``
+    与默认行为一致，避免与上层 ``download_capped`` 的逐跳校验重复发请求。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        _swap_pool_backend(self._pool, _SafeOutboundAsyncBackend())
+
+
 def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
-    """带 SSRF 守卫的 AsyncClient 工厂；httpx 没有 connect-time hook，request hook 是 TCP connect 之前唯一能复验解析目标的点，把 DNS-rebind 窗口压到与预检同水平。"""
+    """带建连期 SSRF 守卫的 AsyncClient 工厂。
 
-    async def _verify(request: httpx.Request) -> None:
-        safe, reason = is_safe_outbound(request.url.host or "")
-        if not safe:
-            raise httpx.ConnectError(f"refusing to connect to {request.url.host} ({reason})")
-
-    return httpx.AsyncClient(follow_redirects=False, event_hooks={"request": [_verify]}, **kwargs)
+    不再用 request hook 预检：每个 socket.connect 都会在 DNS 解析完成
+    后立即校验所有目标 IP；保留 ``follow_redirects=False`` 以便上游
+    ``download_capped`` 自己做逐跳校验。
+    """
+    transport = kwargs.pop("transport", None) or _SafeOutboundAsyncTransport()
+    return httpx.AsyncClient(follow_redirects=False, transport=transport, **kwargs)
 
 
 async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, max_redirects: int = 5) -> bytes:
-    """下载远程 URL，封装大小上限、逐跳 SSRF 校验、协议白名单（{http, https}）与 HTTPS→HTTP 降级防护。"""
+    """下载远程 URL，封装大小上限、逐跳 SSRF 校验、协议白名单（{http, https}）与 HTTPS→HTTP 降级防护。
+
+    每跳的 SSRF 校验由 ``_SafeOutboundAsyncBackend.connect_tcp`` 在 socket
+    connect 之前完成（DNS 解析在工作线程里跑，不阻塞事件循环）；这里只做
+    协议 / 重定向层面的额外检查。
+    """
     current_url = url
     redirect_count = 0
 
@@ -83,10 +210,6 @@ async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, ma
         parsed = urlparse(current_url)
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"unsupported URL scheme: {parsed.scheme!r}")
-
-        safe, reason = is_safe_outbound(parsed.hostname or "")
-        if not safe:
-            raise httpx.ConnectError(f"SSRF check failed for {parsed.hostname}: {reason}")
 
         async with safe_outbound_async_client(timeout=client_timeout) as client, client.stream("GET", current_url) as resp:
             if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):

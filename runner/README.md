@@ -53,7 +53,7 @@ runner/
 
 - **本地 IPC 客户端而非 stdio**：Runner 主动连接客户端下发的本地端点（Windows Named Pipe 重叠 I/O 或 macOS UDS），借用 `websockets` sans-I/O 协议解析器实现轻量安全帧处理，规避 TCP loopback 端口监听暴露面；重连时重读端点信息以跟随客户端重启；链路选型与鉴权见 [ARCHITECTURE.md §4.1B](../ARCHITECTURE.md) 和 [PROTOCOL.md §2.1](../PROTOCOL.md)。
 - **统一 HTTP 客户端栈**：移除 `requests` 与 `aiohttp` 重复依赖，所有同步/异步 HTTP 请求统一收敛到 `httpx[socks]`，减小 wheel 体积与审计面。
-- **SSRF 建连前 + 建连时双重校验**：预检白名单 + 域名解析防私网 IP，并在 `SafeHTTPTransport` / `SafeAsyncHTTPTransport` 的 socket connect 阶段实施目标 IP 二次过滤，彻底防范 DNS 重绑定攻击。
+- **SSRF 建连前 + 建连时双重校验**：`SafeHTTPTransport` / `SafeAsyncHTTPTransport` 在 `handle_request` 之前对 URL 字符串做白名单与（hostname + IP 字面量）预检；最终 socket.connect 不再走 httpcore 默认的 `socket.create_connection`，而是被替换为 `_SafeSyncBackend` / `_SafeAsyncBackend`，在每次建连时强制重新调用 `getaddrinfo` 校验所有解析结果，并直接使用已校验 IP 建连，原始 Host / TLS SNI / 证书主机名校验保持不变。重定向后每一跳都重新走同一校验路径，DNS 解析被移到工作线程避免阻塞事件循环，彻底消灭预检到建连之间的 TOCTOU 窗口。
 - **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
 - **MCP 进程监管与熔断保护**：`mcp_supervisor.py` 统一管理所有 stdio 子进程生命周期，自动回收孤儿进程并对故障服务器实施带冷却的熔断（Circuit Breaker），防止向失效端点风暴重试。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。

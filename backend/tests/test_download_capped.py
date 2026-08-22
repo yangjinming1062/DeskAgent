@@ -1,5 +1,7 @@
+import httpcore
 import httpx
 import pytest
+import socket
 from components import SETTINGS
 from components.network import download_capped, is_safe_outbound
 
@@ -67,11 +69,16 @@ async def test_download_capped_exceeds_limit(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_download_capped_ssrf_blocked(monkeypatch):
-    monkeypatch.setattr(
-        "components.network.is_safe_outbound",
-        lambda host: (False, "private IP blocked"),
-    )
-    with pytest.raises(httpx.ConnectError, match="SSRF check failed"):
+    """``download_capped`` 必须把 ``_SafeOutboundAsyncBackend`` 在 connect 时
+    抛出的 SSRF 拒绝透传给调用方，不再依赖请求前的 ``is_safe_outbound`` 钩子。"""
+    from httpcore import ConnectError as HttpcoreConnectError
+
+    def _explode(*_a, **_kw):
+        # 强制 DNS 解析返回私网 IP，触发新后端的 connect-time 校验
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.1", 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", _explode)
+    with pytest.raises((httpx.ConnectError, HttpcoreConnectError), match="10.0.0.1"):
         await download_capped("https://10.0.0.1/secret", max_bytes=100)
 
 

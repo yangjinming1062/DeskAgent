@@ -5,11 +5,15 @@ import logging
 import socket
 import threading
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse, urlsplit, urlunsplit
 
+import anyio
+import httpcore
 import httpx
 
 from .config import is_truthy_value, load_config
@@ -183,8 +187,183 @@ async def async_is_safe_url(url: str) -> bool:
     return await asyncio.to_thread(is_safe_url, url)
 
 
+def _resolve_and_validate(host: str, port: int, *, scheme: str) -> list[tuple]:
+    """同步执行 DNS 解析并校验所有解析结果；返回通过校验的 sockaddr 列表。
+
+    返回列表只含通过 ``verify_ip_not_blocked`` 的 IP；上层 ``socket.connect``
+    必须从该列表里取目标 IP，否则再次 DNS 解析会重新打开 rebinding 窗口。
+    """
+    try:
+        addr_info = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise httpcore.ConnectError(f"DNS resolution failed for {host}: {exc}") from exc
+    if not addr_info:
+        raise httpcore.ConnectError(f"No addresses returned for {host}")
+
+    validated: list[tuple] = []
+    for family, socktype, proto, canon, sockaddr in addr_info:
+        ip_str = sockaddr[0]
+        try:
+            verify_ip_not_blocked(ip_str, hostname=host, scheme=scheme)
+        except ValueError as exc:
+            logger.warning("%s: %s -> %s", exc, host, ip_str)
+            raise httpcore.ConnectError(f"SSRF guard: {exc}") from exc
+        validated.append((family, socktype, proto, canon, sockaddr))
+    return validated
+
+
+def _scheme_for_port(port: int) -> str:
+    return "https" if port == 443 else "http"
+
+
+def _connect_with_validated_ip(
+    addr_info: list[tuple],
+    *,
+    timeout: float | None,
+    local_address: str | None,
+    socket_options: Iterable[tuple] | None,
+) -> socket.socket:
+    """按顺序尝试用已校验 IP 直接 connect，保留原始 Host / TLS SNI / 证书主机名校验。"""
+    source_address = None if local_address is None else (local_address, 0)
+    socket_options = list(socket_options or [])
+    last_error: OSError | None = None
+    for family, socktype, proto, _canon, sockaddr in addr_info:
+        sock = socket.socket(family, socktype, proto)
+        try:
+            for option in socket_options:
+                sock.setsockopt(*option)
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            if timeout is not None:
+                sock.settimeout(timeout)
+            if source_address is not None:
+                sock.bind(source_address)
+            sock.connect(sockaddr[:2])
+            return sock
+        except OSError as exc:
+            last_error = exc
+            sock.close()
+            continue
+    if last_error is not None:
+        raise last_error
+    raise httpcore.ConnectError("No validated addresses available for connect")
+
+
+# ---------------------------------------------------------------------------
+# httpcore NetworkBackend 实现：在 socket.connect 之前再次解析并校验目标 IP，
+# 直接使用已校验 IP 建连，原始 Host / TLS SNI / 证书主机名校验保持不变。
+# ---------------------------------------------------------------------------
+
+
+class _SafeSyncBackend(httpcore._backends.sync.SyncBackend):
+    """同步 httpcore 后端：connect_tcp 阶段强制重新解析并校验每一个目标 IP。
+
+    父类 ``socket.create_connection`` 会再次调 getaddrinfo，从而引入 DNS
+    rebinding TOCTOU 窗口；此处改为我们显式解析 + 校验 + 直连 IP，
+    原始 hostname 仍由 httpcore 用于 HTTP Host、TLS SNI 与证书校验。
+    """
+
+    def connect_tcp(  # type: ignore[override]
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ):
+        from httpcore._backends.sync import SyncStream
+
+        # hostname 黑名单在 DNS 之前先拦截，省一次解析。
+        if _normalize_host(host) in _BLOCKED_HOSTNAMES:
+            raise httpcore.ConnectError(f"Blocked request to internal hostname: {host}")
+
+        addr_info = _resolve_and_validate(host, port, scheme=_scheme_for_port(port))
+        sock = _connect_with_validated_ip(
+            addr_info,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+        return SyncStream(sock)
+
+    # connect_unix_socket: 不参与 TCP 校验，保持父类语义不变。
+    def connect_unix_socket(  # type: ignore[override]
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ):
+        return super().connect_unix_socket(path, timeout=timeout, socket_options=socket_options)
+
+
+class _SafeAsyncBackend(httpcore._backends.auto.AutoBackend):
+    """异步 httpcore 后端：connect_tcp 阶段强制重新解析并校验每一个目标 IP。
+
+    解析与 socket.create_connection 在工作线程里执行以避免阻塞事件循环；
+    实际 connect 走 inner backend 的 anyio/trio connect_tcp，传入已校验 IP，
+    原始 hostname 仍由 httpcore 用于 HTTP Host、TLS SNI 与证书校验。
+    """
+
+    async def connect_tcp(  # type: ignore[override]
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ):
+        # hostname 黑名单在 DNS 之前先拦截，省一次解析也省一次工作线程。
+        if _normalize_host(host) in _BLOCKED_HOSTNAMES:
+            raise httpcore.ConnectError(f"Blocked request to internal hostname: {host}")
+
+        addr_info = await anyio.to_thread.run_sync(
+            partial(_resolve_and_validate, host, port, scheme=_scheme_for_port(port)),
+        )
+
+        await self._init_backend()
+        last_error: Exception | None = None
+        for _family, _socktype, _proto, _canon, sockaddr in addr_info:
+            try:
+                return await self._backend.connect_tcp(
+                    sockaddr[0],
+                    port,
+                    timeout=timeout,
+                    local_address=local_address,
+                    socket_options=socket_options,
+                )
+            except (OSError, TimeoutError, httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                last_error = exc
+                continue
+        if last_error is not None:
+            raise last_error
+        raise httpcore.ConnectError(f"No validated addresses available for connect to {host}")
+
+    async def connect_unix_socket(  # type: ignore[override]
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[tuple] | None = None,
+    ):
+        await self._init_backend()
+        return await self._backend.connect_unix_socket(path, timeout=timeout, socket_options=socket_options)
+
+
+def _swap_pool_backend(pool: Any, backend: Any) -> None:
+    """替换 httpcore ConnectionPool 的 NetworkBackend；保持现有连接池其余配置不变。"""
+    pool._network_backend = backend  # noqa: SLF001 - httpcore 没有公开的 setter
+
+
 class SafeHTTPTransport(httpx.HTTPTransport):
-    """在建连前与重定向请求时做 SSRF 与 DNS 预检/二次过滤的同步 HTTP 传输层。"""
+    """同步 HTTP 传输层：
+
+    * handle_request 在请求前对 URL 字符串做 SSRF 预检（快速失败）；
+    * 实际 socket.connect 由 ``_SafeSyncBackend`` 在建连时再次解析并校验
+      所有目标 IP，杜绝 DNS rebinding 窗口；
+    * 原始 Host / TLS SNI / 证书主机名校验保持 httpx 默认行为。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        _swap_pool_backend(self._pool, _SafeSyncBackend())
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)
@@ -194,7 +373,17 @@ class SafeHTTPTransport(httpx.HTTPTransport):
 
 
 class SafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
-    """在建连前与重定向请求时做 SSRF 与 DNS 预检/二次过滤的异步 HTTP 传输层。"""
+    """异步 HTTP 传输层：
+
+    * handle_async_request 在请求前对 URL 字符串做 SSRF 预检（快速失败）；
+    * 实际 socket.connect 由 ``_SafeAsyncBackend`` 在建连时再次解析并校验
+      所有目标 IP，并把 DNS 解析移出事件循环；
+    * 重定向由 httpx 自动处理，每一跳都会重新调用 ``_SafeAsyncBackend``。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        _swap_pool_backend(self._pool, _SafeAsyncBackend())
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url_str = str(request.url)
