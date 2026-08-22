@@ -9,6 +9,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from utils import reset_scratch_size_cache
+
 from ._env_singularity import get_singularity_scratch_dir
 from .state import active_environments, creation_locks, creation_locks_lock, env_lock, get_env_config, last_activity
 
@@ -131,6 +133,9 @@ def cleanup_all_environments() -> int:
             logger.info("Removed orphaned: %s", path)
         except OSError as e:
             logger.debug("Failed to remove orphaned path %s: %s", path, e)
+    # orphan sweep 之后必须失效 scratch_size 缓存 —— 不然 cache 仍显示旧大小,
+    # 下次 _check_disk_usage_warning 会读出错误的"刚清空但仍很大"的数字。
+    reset_scratch_size_cache()
     if cleaned > 0:
         logger.info("Cleaned %d environments", cleaned)
     return cleaned

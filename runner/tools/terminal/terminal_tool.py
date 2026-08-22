@@ -1,4 +1,3 @@
-import glob
 import json
 import logging
 import os
@@ -6,7 +5,6 @@ import re
 import threading
 import time
 import traceback
-from pathlib import Path
 from typing import Any
 
 from envs import (
@@ -16,13 +14,13 @@ from envs import (
     creation_locks_lock,
     env_lock,
     get_env_config,
-    get_singularity_scratch_dir,
     last_activity,
+    register_env_cleanup_hook,
     resolve_container_task_id,
     start_cleanup_thread,
     task_env_overrides,
 )
-from utils import cfg_get, clean_output, load_config
+from utils import cfg_get, clean_output, get_scratch_size_bytes, load_config, reset_scratch_size_cache
 
 from ..process import process_registry
 from ..registry import registry
@@ -44,23 +42,28 @@ DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_
 
 def _check_disk_usage_warning() -> bool:
     try:
-        scratch_dir = get_singularity_scratch_dir()
-        total_bytes = 0
-        for path in glob.glob(str(scratch_dir / "spiritagent-*")):
-            for f in Path(path).rglob("*"):
-                if f.is_file():
-                    try:
-                        total_bytes += f.stat().st_size
-                    except OSError as e:
-                        logger.debug("Could not stat file %s: %s", f, e)
-        total_gb = total_bytes / (1024**3)
+        # 委派 utils.scratch_size: scandir + DirEntry 单次 stat, 双 variant 缓存
+        # (默认 include_overlays=True 与原行为一致)。30s TTL 内不会重复扫描。
+        snap = get_scratch_size_bytes()
+        total_gb = snap.total_bytes / (1024**3)
         if total_gb > DISK_USAGE_WARNING_THRESHOLD_GB:
-            logger.warning("Disk usage (%.1fGB) exceeds threshold (%.0fGB). Consider running cleanup_all_environments().", total_gb, DISK_USAGE_WARNING_THRESHOLD_GB)
+            logger.warning(
+                "Disk usage (%.1fGB over %d files) exceeds threshold (%.0fGB). Consider running cleanup_all_environments().",
+                total_gb,
+                snap.file_count,
+                DISK_USAGE_WARNING_THRESHOLD_GB,
+            )
             return True
         return False
     except Exception as e:
         logger.debug("Disk usage warning check failed: %s", e, exc_info=True)
         return False
+
+
+# 环境清理后失效 scratch_size 缓存 —— 沿用 file_tools.clear_file_ops_cache 的注册范式。
+# reset_scratch_size_cache 签名接受 task_id 位置参数(为兼容 register_env_cleanup_hook),
+# 此处直接传函数引用即可, 不需要 lambda 包装。
+register_env_cleanup_hook(reset_scratch_size_cache)
 
 
 _WORKDIR_SAFE_RE = re.compile(r"^[A-Za-z0-9/\\:_\-.~ +@=,]+$")

@@ -18,7 +18,6 @@ from collections import deque
 from collections.abc import Callable
 from typing import Any
 
-import psutil
 from envs import (
     active_environments,
     create_environment,
@@ -31,7 +30,7 @@ from envs import (
     start_cleanup_thread,
     task_env_overrides,
 )
-from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, is_env_passthrough, is_interrupted, kill_tree, load_config
+from utils import CREATE_NO_WINDOW, IS_WINDOWS, cfg_get, clean_output, find_python, get_subprocess_home, is_env_passthrough, is_interrupted, load_config, terminate_tree
 
 from ..registry import registry, tool_error
 from ..thread_context import propagate_context_to_thread
@@ -917,55 +916,25 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
 
 
 def _kill_process_group(proc: subprocess.Popen, escalate: bool = False) -> None:
-    """杀掉沙箱子进程及其整个进程组; Windows 走 taskkill, POSIX 用 psutil 走整棵树, ``escalate=True`` 时再用 SIGKILL 二次升级。"""
-    if IS_WINDOWS:
-        if not kill_tree(proc.pid, force=True):
-            try:
-                proc.kill()
-            except Exception as e:
-                logger.debug("Could not kill parent after taskkill failure: %s", e, exc_info=True)
-        if escalate:
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                kill_tree(proc.pid, force=True, timeout=5)
-        return
+    """杀掉沙箱子进程及其整个进程组.
 
+    委派 ``utils.process_tree.terminate_tree``: POSIX 走 killpg(SIGTERM) → wait →
+    (escalate) killpg(SIGKILL) + psutil 兜底; Windows 走 taskkill /T → wait →
+    (escalate) taskkill /T /F。``escalate=False`` 走 interrupt 路径(只软杀, 不升级);
+    ``escalate=True`` 走 timeout 路径(TERM→KILL 升级)。
+    """
     try:
-        parent = psutil.Process(proc.pid)
-        children = parent.children(recursive=True)
-        for child in children:
-            with contextlib.suppress(psutil.NoSuchProcess):
-                child.terminate()
-        with contextlib.suppress(psutil.NoSuchProcess):
-            parent.terminate()
-    except psutil.NoSuchProcess:
-        pass
-    except (PermissionError, OSError) as e:
-        logger.debug("Could not terminate process tree: %s", e, exc_info=True)
-        try:
+        terminate_tree(
+            proc,
+            graceful_timeout=1.0,
+            # force_timeout 与原 ``proc.wait(timeout=5)`` 的 5s 等待对齐。
+            force_timeout=5.0,
+            escalate=escalate,
+        )
+    except Exception as e:
+        logger.debug("terminate_tree failed: %s", e, exc_info=True)
+        with contextlib.suppress(Exception):
             proc.kill()
-        except Exception as e2:
-            logger.debug("Could not kill process: %s", e2, exc_info=True)
-    if escalate:
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                parent = psutil.Process(proc.pid)
-                for child in parent.children(recursive=True):
-                    with contextlib.suppress(psutil.NoSuchProcess):
-                        child.kill()
-                with contextlib.suppress(psutil.NoSuchProcess):
-                    parent.kill()
-            except psutil.NoSuchProcess:
-                pass
-            except (PermissionError, OSError) as e:
-                logger.debug("Could not kill process tree: %s", e, exc_info=True)
-                try:
-                    proc.kill()
-                except Exception as e2:
-                    logger.debug("Could not kill process: %s", e2, exc_info=True)
 
 
 def _load_config() -> dict:

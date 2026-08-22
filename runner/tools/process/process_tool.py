@@ -12,7 +12,6 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-import psutil
 from envs import register_active_process_checker
 from utils import (
     CREATE_NO_WINDOW,
@@ -23,11 +22,11 @@ from utils import (
     find_bash,
     get_spiritagent_home,
     is_interrupted,
-    kill_tree,
     load_config,
     pid_exists,
     resolve_safe_cwd,
     sanitize_subprocess_env,
+    terminate_tree,
 )
 
 from ..registry import registry, tool_error
@@ -377,25 +376,17 @@ class ProcessRegistry:
 
     @staticmethod
     def _terminate_host_pid(pid: int) -> None:
-        """终止一个 host 可见 PID 及其所有后代进程。
+        """终止一个 host 可见 PID 及其所有后代进程.
 
-        POSIX 走 ``psutil`` 走整棵进程树(例如 ``agent-browser`` 守护派生的 Chromium renderer / GPU helper 不会被
-        reparent 到 init 之后逃过清理); Windows 委派 ``utils.pid.kill_tree``(``taskkill /T /F``)。
+        POSIX 走 ``utils.process_tree.terminate_tree`` (pgid 优先, psutil 兜底);
+        Windows 委派 ``utils.pid.kill_tree`` (``taskkill /T /F``)。
         """
-        if IS_WINDOWS:
-            if not kill_tree(pid, force=True):
-                with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
-                    os.kill(pid, signal.SIGTERM)
-            return
+        # host-PID 场景通常没有 stashed pgid, helper 内部通过 ``os.getpgid`` 探测;
+        # ``escalate=False`` 与旧实现保持一致 —— 软杀超时后 psutil 兜底 SIGKILL 残存 PID,
+        # 不再为本地活跃分支做额外的 SIGKILL 升级。
         try:
-            parent = psutil.Process(pid)
-            for child in parent.children(recursive=True):
-                with contextlib.suppress(psutil.NoSuchProcess):
-                    child.terminate()
-            parent.terminate()
-        except psutil.NoSuchProcess:
-            return
-        except (OSError, PermissionError):
+            terminate_tree(pid, graceful_timeout=0.5, force_timeout=1.0)
+        except (ProcessLookupError, PermissionError, OSError):
             with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGTERM)
 
@@ -478,17 +469,13 @@ class ProcessRegistry:
         except Exception:
             # Popen 之后启动失败 — 把孤儿子进程连同 setsid 派生的后代一起杀掉再上抛, 否则会留下不可见的野进程。
             try:
-                if not IS_WINDOWS:
-                    try:
-                        kill_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
-                        os.killpg(os.getpgid(proc.pid), kill_signal)  # windows-footgun: ok - 上面 IS_WINDOWS 已 guard
-                    except (ProcessLookupError, PermissionError, OSError):
-                        proc.kill()
-                else:
-                    if not kill_tree(proc.pid, force=True):
-                        proc.kill()
+                # 异常路径内的清理, 必须 try/except 包裹, 任何新抛错被外层 ``except: pass`` 吞掉。
+                # ``escalate=True`` 与原 inline SIGKILL-on-group 行为对齐 —— 既然进程已经"启动失败",
+                # 不需要给它留 graceful_timeout, 直接强杀整组 + psutil 兜底。
+                terminate_tree(proc, graceful_timeout=0.5, force_timeout=1.0, escalate=True)
             except Exception:
-                pass
+                with contextlib.suppress(Exception):
+                    proc.kill()
             with contextlib.suppress(Exception):
                 proc.wait(timeout=5)
             raise
@@ -852,26 +839,18 @@ class ProcessRegistry:
                 try:
                     session._pty.terminate(force=True)
                 except Exception:
+                    # PTY 自身 ``terminate(force=True)`` 抛异常时的降级路径:
+                    # 委派 helper, 走 pgid 优先 + psutil 兜底, Windows 走 taskkill。
                     if session.pid:
-                        if IS_WINDOWS:
-                            kill_tree(session.pid, force=True)
-                        else:
-                            os.kill(session.pid, signal.SIGTERM)
+                        try:
+                            terminate_tree(session.pid, graceful_timeout=0.5, force_timeout=1.0)
+                        except (ProcessLookupError, PermissionError, OSError):
+                            with contextlib.suppress(OSError, ProcessLookupError, PermissionError):
+                                os.kill(session.pid, signal.SIGTERM)
             elif session.process:
                 # 本地进程 — 连同进程树一起杀。
                 try:
-                    if IS_WINDOWS:
-                        if not kill_tree(session.process.pid, force=True):
-                            session.process.kill()
-                    else:
-                        try:
-                            parent = psutil.Process(session.process.pid)
-                            for child in parent.children(recursive=True):
-                                with contextlib.suppress(psutil.NoSuchProcess):
-                                    child.terminate()
-                            parent.terminate()
-                        except psutil.NoSuchProcess:
-                            pass
+                    terminate_tree(session.process, graceful_timeout=0.5, force_timeout=1.0)
                 except (ProcessLookupError, PermissionError):
                     session.process.kill()
             elif session.env_ref and session.pid:

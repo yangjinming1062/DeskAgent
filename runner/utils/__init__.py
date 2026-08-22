@@ -54,8 +54,10 @@ from .interrupt import _debug_interrupt_enabled, is_interrupted, set_global_inte
 from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
+from .process_tree import TerminationResult, terminate_tree
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
+from .scratch_size import ScratchSnapshot, get_scratch_size_bytes, reset_scratch_size_cache
 from .url_safety import (
     SafeAsyncHTTPTransport,
     SafeHTTPTransport,
@@ -82,9 +84,12 @@ __all__ = [
     "PIPE_TRANSPORT",
     "SafeAsyncHTTPTransport",
     "SafeHTTPTransport",
-    "UNIX_TRANSPORT",
+    "ScratchSnapshot",
     "SECRET_PREFIX_RE",
+    "TerminationResult",
+    "UNIX_TRANSPORT",
     "WebsitePolicyError",
+    "_debug_interrupt_enabled",
     "append_sane_path_entries",
     "async_is_safe_url",
     "atomic_replace",
@@ -113,17 +118,18 @@ __all__ = [
     "get_container_mirror_warning",
     "get_credential_file_mounts",
     "get_cross_profile_warning",
-    "get_spiritagent_dir",
-    "get_spiritagent_home",
-    "get_spiritagent_home_override",
     "get_disabled_config_names",
     "get_env_type",
     "get_external_skills_dirs",
     "get_read_block_error",
     "get_runner_job_handle",
     "get_sandbox_mirror_warning",
+    "get_scratch_size_bytes",
     "get_skills_dir",
     "get_skills_directory_mount",
+    "get_spiritagent_dir",
+    "get_spiritagent_home",
+    "get_spiritagent_home_override",
     "get_subprocess_home",
     "get_windows_sensitive_prefixes",
     "has_traversal_component",
@@ -153,6 +159,7 @@ __all__ = [
     "redact_sensitive_text",
     "register_credential_file",
     "register_env_passthrough",
+    "reset_scratch_size_cache",
     "resolve_safe_cwd",
     "safe_schedule_threadsafe",
     "sanitize_subprocess_env",
@@ -169,7 +176,7 @@ __all__ = [
     "strip_ansi",
     "strip_fence",
     "system_activity_available",
+    "terminate_tree",
     "validate_within_dir",
     "verify_ip_not_blocked",
-    "_debug_interrupt_enabled",
 ]

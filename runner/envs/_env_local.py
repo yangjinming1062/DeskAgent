@@ -1,10 +1,8 @@
 import contextlib
 import logging
 import os
-import signal
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 from utils import (
@@ -15,10 +13,10 @@ from utils import (
     get_spiritagent_home,
     get_subprocess_home,
     inject_context_spiritagent_home,
-    kill_tree,
     load_config,
     msys_to_windows_path,
     resolve_safe_cwd,
+    terminate_tree,
 )
 
 from ._env_base import BaseEnvironment, _pipe_stdin
@@ -121,53 +119,18 @@ class LocalEnvironment(BaseEnvironment):
         return proc
 
     def _kill_process(self, proc: subprocess.Popen) -> None:
-        def _group_alive(pgid: int) -> bool:
-            try:
-                os.killpg(pgid, 0)
-                return True
-            except (ProcessLookupError, PermissionError):
-                return False
-
-        def _wait_for_group_exit(pgid: int, timeout: float) -> bool:
-            deadline = time.monotonic() + timeout
-            while time.monotonic() < deadline:
-                with contextlib.suppress(Exception):
-                    proc.poll()
-                if not _group_alive(pgid):
-                    return True
-                time.sleep(0.05)
-            return not _group_alive(pgid)
-
+        # 委派 helper: POSIX 走 killpg(SIGTERM) → wait → killpg(SIGKILL) → psutil 兜底,
+        # Windows 走 taskkill /T → wait → taskkill /T /F。
+        # ``escalate=True`` 与原内联 SIGKILL 升级语义对齐 —— 进程忽略 SIGTERM 时必须升级,
+        # 否则丢失行为。``_spiritagent_pgid`` shim 仍作为 pgid 二级回退源。
         try:
-            if IS_WINDOWS:
-                # 对称 POSIX：soft-kill (taskkill /T) → 等待 → force-kill。
-                # kill_tree(force=False) 在 taskkill /T 退出 0 时返回 True，但那只代表信号已 *送达*，
-                # 不代表目标进程实际退出——能处理 CTRL_BREAK_EVENT 的进程会继续运行。
-                # 因此无论返回如何都等待，超时再升级。
-                kill_tree(proc.pid, force=False)
-                try:
-                    proc.wait(timeout=1.0)
-                except subprocess.TimeoutExpired:
-                    kill_tree(proc.pid, force=True)
-            else:
-                try:
-                    pgid = os.getpgid(proc.pid)
-                except ProcessLookupError:
-                    if (pgid := getattr(proc, "_spiritagent_pgid", None)) is None:
-                        raise
-                try:
-                    os.killpg(pgid, signal.SIGTERM)
-                except ProcessLookupError:
-                    return
-                if _wait_for_group_exit(pgid, 1.0):
-                    return
-                try:
-                    os.killpg(pgid, signal.SIGKILL)
-                except ProcessLookupError:
-                    return
-                _wait_for_group_exit(pgid, 2.0)
-                with contextlib.suppress(Exception):
-                    proc.wait(timeout=0.2)
+            terminate_tree(
+                proc,
+                graceful_timeout=1.0,
+                force_timeout=2.0,
+                escalate=True,
+                pgid=getattr(proc, "_spiritagent_pgid", None),
+            )
         except Exception:
             with contextlib.suppress(Exception):
                 proc.kill()
