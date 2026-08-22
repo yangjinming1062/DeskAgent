@@ -4,37 +4,19 @@ import type { SpriteEmotion, SpriteStateName } from '@/companion/companion-store
 import { log } from '@/shared/lib/log'
 
 import { type ClipMap, resolveClip } from './AnimationMap'
-import { hasGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
+import { disposeThreeResources, hasGltf, releaseGltf, stashGltf, takeGltfClone } from './gltf-instance-cache'
 import { createGLTFLoader } from './gltf-loader-factory'
 import { $availableClipNames } from './model-store'
 import { type LoadedModelInfo } from './types'
 
 interface ProcParts {
   body: THREE.Mesh
-  leftEye: THREE.Mesh
-  rightEye: THREE.Mesh
-  mouth: THREE.Mesh
-  cracks?: THREE.Line[]
   crackMats?: THREE.LineBasicMaterial[]
+  cracks?: THREE.Line[]
   group: THREE.Group
-}
-
-// 释放 Object3D 层级下的几何、材质与贴图。
-const disposeObjectTree = (root: THREE.Object3D): void => {
-  root.traverse(child => {
-    if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.LineSegments) {
-      child.geometry?.dispose()
-      const mats = Array.isArray(child.material) ? child.material : [child.material]
-
-      for (const mat of mats) {
-        if (!mat) {
-          continue
-        }
-
-        mat.dispose()
-      }
-    }
-  })
+  leftEye: THREE.Mesh
+  mouth: THREE.Mesh
+  rightEye: THREE.Mesh
 }
 
 /**
@@ -91,6 +73,7 @@ export class CharacterController {
   private rigType: string = 'biped'
   private headBone: THREE.Bone | null = null
   private neckBone: THREE.Bone | null = null
+  private activeContentHash: string | null = null
 
   get isBipedRig(): boolean {
     return this.rigType === 'biped'
@@ -145,9 +128,11 @@ export class CharacterController {
           if (cached) {
             rootScene = cached.scene
             gltfAnimations = cached.animations
+            this.activeContentHash = contentHash
           } else {
             rootScene = new THREE.Group()
             gltfAnimations = []
+            this.activeContentHash = null
           }
         } else {
           if (!bytes) {
@@ -157,12 +142,25 @@ export class CharacterController {
           const decompressedBytes = await decompressGlbIfNeeded(bytes)
           const loader = createGLTFLoader()
           const gltf = await loader.parseAsync(decompressedBytes, '')
-          rootScene = gltf.scene
-          gltfAnimations = gltf.animations
 
-          // 模板由缓存持有；后续取出时返回深克隆。
+          // 模板由缓存持有；后续取出深克隆并递增引用计数
           if (contentHash) {
             stashGltf(contentHash, gltf.scene, gltf.animations, bytes.byteLength)
+            const cloned = takeGltfClone(contentHash)
+
+            if (cloned) {
+              rootScene = cloned.scene
+              gltfAnimations = cloned.animations
+              this.activeContentHash = contentHash
+            } else {
+              rootScene = gltf.scene
+              gltfAnimations = gltf.animations
+              this.activeContentHash = null
+            }
+          } else {
+            rootScene = gltf.scene
+            gltfAnimations = gltf.animations
+            this.activeContentHash = null
           }
         }
 
@@ -214,8 +212,8 @@ export class CharacterController {
         this.applyState(this.currentState, null)
 
         return {
-          hasAnimations: this.clips.size > 0,
           clipNames: [...this.clips.keys()],
+          hasAnimations: this.clips.size > 0,
           procedural: false
         }
       } catch (err) {
@@ -225,7 +223,7 @@ export class CharacterController {
 
     this.createProcedural(scene)
 
-    return { hasAnimations: false, clipNames: [], procedural: true }
+    return { clipNames: [], hasAnimations: false, procedural: true }
   }
 
   private disposeRoot(scene: THREE.Scene | null): void {
@@ -253,7 +251,16 @@ export class CharacterController {
     this.isProcedural = false
     this.proc = null
     this.boneRestQuats.clear()
-    disposeObjectTree(this.root)
+
+    if (this.activeContentHash) {
+      // 活跃实例归还模板引用；共享 GPU 资源由模板 Cache 负责管理与释放
+      releaseGltf(this.activeContentHash)
+      this.activeContentHash = null
+    } else {
+      // 未被模板缓存管理的独占资源（如程序化形象或无 hash 临时模型）在此释放
+      disposeThreeResources(this.root)
+    }
+
     this.root = new THREE.Group()
   }
 

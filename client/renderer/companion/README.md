@@ -55,7 +55,7 @@
 
 两条防坑约束：**Ready 保护**——首个模型 `loadCharacter` 落定（`$modelLoadSettled`）前强制 active，避免孵化动画被误降频拉长；**隐藏窗口降级**——Chromium 对 hidden 窗口硬停 rAF（禁节流开关管不到合成层），active/idle 档在 `document.hidden` 时改由 16/37ms timer 驱动，`visibilitychange` 恢复 rAF。dormant 恒为 250ms timer（进程级禁 timer 节流，锁屏下稳定）；档位回升时 Engine 层把 delta 钳制到 50ms，防 mixer 在长暂停后跳变。
 
-**性能取舍**（与上述 3D 渲染叠加生效）：阴影默认关闭（300×360 精灵窗的 PBR 环境光足以体现深度，2048² PCFSoft 阴影是单项最大 GPU 成本），开启时强制 1024² PCF；MSAA 开启（4×——精灵悬浮在任意桌面内容之上，剪影锯齿是首要画质破绽，此尺寸下 resolve 成本可忽略）、贴图预乘 alpha 关闭、DPR 封顶 1.5——小透明窗口的其余 GUI 成本剔除。GLB 解析模板走 [gltf-instance-cache.ts](3d/gltf-instance-cache.ts)：按 `contentHash` 缓存解析后的 scene + animations，切换模型时深克隆避免重新解析；模板的 materials/textures 被多个克隆共享（read-only）。OPFS 字节缓存（[glb-opfs-cache.ts](3d/glb-opfs-cache.ts)）以 `contentHash` 为键（同源私有文件系统，而不是 `caches.open` 的 HTTP 缓存），第二次加载走 0 ms 落盘读。Renderer 错误隔离（`$engineError`）：Engine tick 抛错时停止 ticker 并上报，避免"每帧抛+日志洪水"循环。这些都是默认关闭或收紧后的基线，需要在 Settings 重新打开的功能必须经过实测。
+**性能取舍**（与上述 3D 渲染叠加生效）：阴影默认关闭（300×360 精灵窗的 PBR 环境光足以体现深度，2048² PCFSoft 阴影是单项最大 GPU 成本），开启时强制 1024² PCF；MSAA 开启（4×——精灵悬浮在任意桌面内容之上，剪影锯齿是首要画质破绽，此尺寸下 resolve 成本可忽略）、贴图预乘 alpha 关闭、DPR 封顶 1.5——小透明窗口的其余 GUI 成本剔除。GLB 解析模板走 [gltf-instance-cache.ts](3d/gltf-instance-cache.ts)：按 `contentHash` 缓存解析后的 scene + animations，切换模型时走 `SkeletonUtils.clone` 深克隆重建骨骼与蒙皮绑定并隔离 AnimationClip 状态；模板持有 GPU 资源并通过引用计数管理生命周期，实例卸载不释放共享资源；支持 LRU 淘汰并在登出时安全释放。OPFS 字节缓存（[glb-opfs-cache.ts](3d/glb-opfs-cache.ts)）以 `contentHash` 为键（同源私有文件系统，而不是 `caches.open` 的 HTTP 缓存），第二次加载走 0 ms 落盘读。Renderer 错误隔离（`$engineError`）：Engine tick 抛错时停止 ticker 并上报，避免"每帧抛+日志洪水"循环。这些都是默认关闭或收紧后的基线，需要在 Settings 重新打开的功能必须经过实测。
 
 ## 5. 屏锁与端忙
 

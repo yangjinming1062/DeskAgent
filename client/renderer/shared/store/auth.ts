@@ -1,11 +1,13 @@
 import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
+import { clearAllGltf } from '@/companion/3d/gltf-instance-cache'
+
 import { tearDownPrimaryGateway } from './gateway'
 
 export type AuthState =
   | { kind: 'pending' }
-  | { kind: 'unauthenticated'; error?: string }
+  | { error?: string; kind: 'unauthenticated' }
   | { kind: 'authenticated'; snapshot: DesktopAuthSnapshot }
 
 export const $auth = atom<AuthState>({ kind: 'pending' })
@@ -27,8 +29,8 @@ export async function hydrateAuth(): Promise<void> {
     }
   } catch (error) {
     $auth.set({
-      kind: 'unauthenticated',
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      kind: 'unauthenticated'
     })
   }
 }
@@ -42,6 +44,7 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   if (payload.authenticated && snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
     $auth.set({ kind: 'authenticated', snapshot })
   } else {
+    clearAllGltf()
     $auth.set({ kind: 'unauthenticated' })
   }
 }
@@ -52,8 +55,8 @@ export async function activate(payload: { code: string }): Promise<void> {
     $auth.set({ kind: 'authenticated', snapshot })
   } catch (error) {
     $auth.set({
-      kind: 'unauthenticated',
-      error: error instanceof Error ? error.message : String(error)
+      error: error instanceof Error ? error.message : String(error),
+      kind: 'unauthenticated'
     })
     throw error
   }
@@ -71,6 +74,7 @@ export async function logout(): Promise<void> {
     await window.spiritagent.logout()
   } finally {
     tearDownPrimaryGateway()
+    clearAllGltf()
     $auth.set({ kind: 'unauthenticated' })
   }
 }
