@@ -82,12 +82,12 @@ if (!fs.existsSync(distElectronDir)) {
 
 try {
   fs.watch(distElectronDir, (_eventType, filename) => {
-    if (filename && filename.includes('entry.js')) {
+    if (filename && (filename.includes('entry.js') || filename.includes('preload.cjs'))) {
       if (debounceTimer) clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
         if (child && !isRestarting) {
           isRestarting = true
-          console.log('[launch-dev-electron] main process changed, restarting...')
+          console.log('[launch-dev-electron] main bundle rebuilt, restarting...')
           if (process.platform === 'win32') {
             spawn('taskkill', ['/pid', child.pid.toString(), '/f', '/t'], { shell: true })
           } else {

@@ -1256,7 +1256,7 @@ function createToolWindow(): void {
       contextIsolation: true,
       devTools: !app.isPackaged,
       nodeIntegration: false,
-      preload: path.join(import.meta.dirname, 'preload.js'),
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: true
     },
     width: 1220
@@ -1317,7 +1317,7 @@ function createSpriteWindow(): void {
       contextIsolation: true,
       devTools: !app.isPackaged,
       nodeIntegration: false,
-      preload: path.join(import.meta.dirname, 'preload.js'),
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: true
     },
     width: 480
