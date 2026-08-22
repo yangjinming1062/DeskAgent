@@ -89,6 +89,25 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
       currentDone = null
     }
 
+    amplitudeActive = false
+
+    if (amplitudeRaf !== null) {
+      cancelAnimationFrame(amplitudeRaf)
+      amplitudeRaf = null
+    }
+
+    if (analyserSource) {
+      try {
+        analyserSource.disconnect()
+      } catch {
+        /* ignore */
+      }
+
+      analyserSource = null
+    }
+
+    amplitudeSink?.(0)
+
     resolvePlayback(ok)
 
     if (onDone) {
@@ -239,7 +258,10 @@ async function startAmplitudeLoop(audio: HTMLAudioElement, gen: number): Promise
   const buf = amplitudeBuffer as Uint8Array<ArrayBuffer>
 
   const tick = () => {
-    if (!amplitudeActive || !analyser || !isLatestGen(gen) || current !== audio) {
+    if (!amplitudeActive || !analyser || !isLatestGen(gen) || current !== audio || !amplitudeSink) {
+      amplitudeActive = false
+      amplitudeRaf = null
+
       return
     }
 

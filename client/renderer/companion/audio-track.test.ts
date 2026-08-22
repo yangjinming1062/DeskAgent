@@ -220,4 +220,24 @@ describe('playDataUrl', () => {
     FakeAudio.instances[0].emit('ended')
     await expect(playback).resolves.toBe(false)
   })
+
+  it('cancels amplitude rAF loop and clears analyser on natural playback ended', async () => {
+    const { playDataUrl, registerAmplitudeSink } = await import('./audio-track')
+
+    const amplitudes: number[] = []
+    const unregister = registerAmplitudeSink(amp => amplitudes.push(amp))
+
+    const playback = playDataUrl('data:audio/mpeg;base64,ended-test')
+    await vi.waitFor(() => expect(hoisted.events).toContain('source:data:audio/mpeg;base64,ended-test'))
+
+    expect(rafCallbacks.size).toBeGreaterThan(0)
+
+    FakeAudio.instances[0].emit('ended')
+    await expect(playback).resolves.toBe(true)
+
+    expect(rafCallbacks.size).toBe(0)
+    expect(amplitudes[amplitudes.length - 1]).toBe(0)
+
+    unregister()
+  })
 })
