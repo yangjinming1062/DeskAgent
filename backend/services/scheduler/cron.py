@@ -72,6 +72,9 @@ _LAST_NIGHTLY_SCAN: float = 0.0
 # 每个 tick 处理的到期 job 硬上限——限制批量 CAS 的语句大小和单 tick 工作量，避免长时间停摆后的回追（例如 60 分钟 ``* * * * *`` 调度，第一 tick 有 3600 个到期）。超出上限的 job 保留原 next_run_at，下一 tick 再触发。
 _MAX_DUE_PER_TICK = 200
 
+# 夜间扫描每批处理的用户上限，防止单条 SQL 的 IN 谓词过大。
+_NIGHTLY_USER_BATCH_SIZE = 500
+
 
 def _log_task_error(name: str, task: asyncio.Task) -> None:
     """旁路 task 的失败落日志而不冒泡：scheduler_loop 靠 _tick 的异常杀死 BackgroundTask 来曝光派发路径的持久 bug，而 kickoff / 扫描的失败不该连坐停掉定时派发。"""
@@ -288,7 +291,8 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
             )
         ).all()
 
-        eligible: list[tuple[int, datetime, str]] = []
+        # 按相同 (utc_start, utc_end) 聚合并行候选，消除每用户单次 SELECT COUNT(*) 往返。
+        candidates_by_window: dict[tuple[datetime, datetime], list[tuple[int, datetime, str]]] = {}
         for uid_raw, tz_content in rows:
             uid = int(uid_raw)
             tz_str = (tz_content or "").strip()
@@ -308,26 +312,37 @@ async def _maybe_run_autonomous_activity(now: datetime) -> None:
             if _LAST_NIGHTLY_RUN.get(uid) == target_date_str:
                 continue
 
-            msg_count = (
-                await db.execute(
-                    select(func.count())
-                    .select_from(Message)
-                    .join(Conversation, Message.conversation_id == Conversation.id)
-                    .where(
-                        Conversation.user_id == uid,
-                        Conversation.kind != CRON_KIND,
-                        Message.role == "user",
-                        # status_interaction 行 role 也是 "user"；戳一戳风暴不等于五条真消息的反思素材。
-                        Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
-                        Message.created_at >= utc_start,
-                        Message.created_at < utc_end,
-                    ),
-                )
-            ).scalar_one()
-            if msg_count < NIGHTLY_MIN_MESSAGES_TODAY:
-                continue
+            candidates_by_window.setdefault((utc_start, utc_end), []).append((uid, reference_utc, target_date_str))
 
-            eligible.append((uid, reference_utc, target_date_str))
+        eligible: list[tuple[int, datetime, str]] = []
+        for (utc_start, utc_end), candidates in candidates_by_window.items():
+            uids = [c[0] for c in candidates]
+            msg_counts: dict[int, int] = {}
+            for i in range(0, len(uids), _NIGHTLY_USER_BATCH_SIZE):
+                chunk = uids[i : i + _NIGHTLY_USER_BATCH_SIZE]
+                count_rows = (
+                    await db.execute(
+                        select(Conversation.user_id, func.count(Message.id))
+                        .select_from(Message)
+                        .join(Conversation, Message.conversation_id == Conversation.id)
+                        .where(
+                            Conversation.user_id.in_(chunk),
+                            Conversation.kind != CRON_KIND,
+                            Message.role == "user",
+                            # status_interaction 行 role 也是 "user"；戳一戳风暴不等于五条真消息的反思素材。
+                            Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
+                            Message.created_at >= utc_start,
+                            Message.created_at < utc_end,
+                        )
+                        .group_by(Conversation.user_id),
+                    )
+                ).all()
+                for uid, cnt in count_rows:
+                    msg_counts[int(uid)] = int(cnt)
+
+            for uid, reference_utc, target_date_str in candidates:
+                if msg_counts.get(uid, 0) >= NIGHTLY_MIN_MESSAGES_TODAY:
+                    eligible.append((uid, reference_utc, target_date_str))
 
     if not eligible:
         return
