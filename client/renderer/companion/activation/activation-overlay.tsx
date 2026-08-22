@@ -60,7 +60,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/75"
       onClick={e => {
         if (e.target === e.currentTarget && !busy) {
           onClose()

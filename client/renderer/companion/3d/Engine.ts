@@ -524,12 +524,13 @@ export class Engine {
 
     try {
       const budgetMs = 1000 / PROFILE_FPS[this.profile]
+      const threshold = this.profile === 'active' ? budgetMs * 0.75 : budgetMs * 0.85
 
-      // 帧预算允许 25% 的容差（如 60fps 下 ≥12.5ms），
-      // 让 60Hz 显示器不会因亚毫秒级的 rAF 抖动丢帧，
-      // 让 120Hz 显示器能在隔一拍的 VSync 上干净渲染。
-      if (now - this.lastFrameAt >= budgetMs * 0.75) {
-        const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / 60
+      // 帧预算允许容差（active 下 ≥12.5ms；idle 下 ≥28.3ms），
+      // 让 60Hz 显示器不会因亚毫秒级抖动丢帧，
+      // 让高刷显示器能精确控制在目标帧率。
+      if (now - this.lastFrameAt >= threshold) {
+        const elapsed = this.lastFrameAt > 0 ? (now - this.lastFrameAt) / 1000 : 1 / PROFILE_FPS[this.profile]
         this.lastFrameAt = now
         const delta = Math.min(Math.max(0.001, elapsed), MAX_FRAME_DELTA)
         this.character.update(delta)
@@ -574,6 +575,13 @@ export class Engine {
       this.timerId = setTimeout(this.tick, DORMANT_TICK_MS)
     } else if (document.visibilityState === 'hidden') {
       this.timerId = setTimeout(this.tick, this.profile === 'active' ? HIDDEN_ACTIVE_MS : HIDDEN_IDLE_MS)
+    } else if (this.profile === 'idle') {
+      // 待机 30fps：按剩余时间定时唤醒，避免在高刷屏上每帧被 rAF 唤醒空转，
+      // 让 CPU/GPU 能进入深度低功耗 C-states。
+      const budgetMs = 1000 / PROFILE_FPS.idle
+      const elapsed = performance.now() - this.lastFrameAt
+      const delay = Math.max(1, Math.round(budgetMs - elapsed))
+      this.timerId = setTimeout(this.tick, delay)
     } else {
       this.rafId = requestAnimationFrame(this.tick)
     }

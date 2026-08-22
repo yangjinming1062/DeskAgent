@@ -62,6 +62,11 @@ vi.mock('@/shared/lib/audio-context-ctor', () => ({
         this.state = 'running'
       }
 
+      async suspend(): Promise<void> {
+        hoisted.events.push('suspend')
+        this.state = 'suspended'
+      }
+
       createAnalyser() {
         return {
           fftSize: 0,

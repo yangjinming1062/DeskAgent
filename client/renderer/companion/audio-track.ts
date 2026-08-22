@@ -49,6 +49,10 @@ export function stopAudio(): void {
     amplitudeRaf = null
   }
 
+  if (audioCtx && audioCtx.state === 'running') {
+    audioCtx.suspend?.()?.catch?.(() => undefined)
+  }
+
   amplitudeSink?.(0)
 }
 
@@ -104,6 +108,10 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
       }
 
       analyserSource = null
+    }
+
+    if (audioCtx && audioCtx.state === 'running') {
+      audioCtx.suspend?.()?.catch?.(() => undefined)
     }
 
     amplitudeSink?.(0)

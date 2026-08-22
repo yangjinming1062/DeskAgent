@@ -5,6 +5,14 @@ const baseOptions = {
   bundle: true,
   dts: false,
   external: ['electron', 'electron-log', 'electron-log/main', 'electron-updater', 'ws', 'yaml'],
+  ignoreWatch: [
+    '**/dist/**',
+    '**/dist-electron/**',
+    '**/renderer/**',
+    '**/node_modules/**',
+    '**/.turbo/**',
+    '**/.git/**'
+  ],
   platform: 'node' as const,
   shims: false,
   sourcemap: true,
@@ -31,7 +39,7 @@ export default defineConfig([
     outDir: 'dist-electron',
     format: ['esm'],
     outExtension: () => ({ js: '.js' }),
-    clean: true
+    clean: false
   },
   {
     ...baseOptions,

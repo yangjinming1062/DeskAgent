@@ -1788,7 +1788,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }}
       >
         <div
-          className="w-full rounded-2xl border border-white/10 bg-black/45 p-5 text-white shadow-2xl backdrop-blur-md"
+          className="w-full rounded-2xl border border-white/10 bg-black/85 p-5 text-white shadow-2xl"
           style={{ pointerEvents: 'auto' }}
         >
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
