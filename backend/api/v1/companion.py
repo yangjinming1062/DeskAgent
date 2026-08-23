@@ -38,6 +38,7 @@ from services.companion import (
     ExpressionSeedMissingError,
     FrontSeedMissingError,
     FullbodyGenerationError,
+    Mesh2DAlreadyRunningError,
     ModelGenerationError,
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
@@ -55,7 +56,9 @@ from services.companion import (
     generate_fullbody_back,
     generate_fullbody_front,
     generate_fullbody_style_samples,
+    generate_mesh2d_model,
     get_active_avatar,
+    get_active_mesh2d_response,
     get_active_model,
     get_onboarding_state,
     get_or_create_persona,
@@ -72,12 +75,12 @@ from services.companion import (
     select_avatar,
     select_fullbody_style,
     serve_ranged_file,
+    set_render_mode,
     signed_expression_avatar_url,
     update_persona,
     verify_signed_asset_request,
     verify_signed_avatar_request,
 )
-from services.companion.mesh2d import Mesh2DAlreadyRunningError, generate_mesh2d_model, get_active_mesh2d_response, set_render_mode
 from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy import select

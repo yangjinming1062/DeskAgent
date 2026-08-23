@@ -145,6 +145,3 @@ def log_event(
 def new_call_id() -> str:
     # 12 位 hex：熵足以跨并发调用唯一且保持 grep 友好（uuid4 全 32 位太长）。
     return uuid.uuid4().hex[:12]
-
-
-__all__ = ["DEBUG_LOGGER_NAME", "is_enabled", "log_event", "new_call_id", "summarize_error", "summarize_llm_request", "summarize_llm_response", "truncate_for_log"]

@@ -1,3 +1,5 @@
+from components import SETTINGS, get_logger
+
 from .base import BaseProvider, ServiceType
 
 # (service_type, provider_name) → 具体类；供应商族通过 import 本模块并调用 register 完成自注册。
@@ -115,3 +117,20 @@ def providers_supporting(service_type: ServiceType | str) -> list[str]:
     """按注册顺序排列、已注册该能力类的供应商名列表，供回退链筛选可尝试的供应商。"""
     svc = ServiceType(service_type) if not isinstance(service_type, ServiceType) else service_type
     return list(dict.fromkeys(name for registered_svc, name in _REGISTRY if registered_svc == svc))
+
+
+def resolve_context_tokens(provider: str, service_type: str) -> int:
+    # 优先级：env 覆盖 → provider 类默认 → 全局兜底；拼错时打 warning，避免静默落到全局默认。
+    override = getattr(SETTINGS, f"{service_type}_context_tokens", None)
+    if override is not None:
+        return override
+    per_provider = default_context_tokens_for(provider, service_type)
+    if per_provider > 0:
+        return per_provider
+    get_logger(__name__).warning(
+        "resolve_context_tokens: no default published for (provider=%r, service=%r); falling through to global default %d",
+        provider,
+        service_type,
+        SETTINGS.default_llm_context_tokens,
+    )
+    return SETTINGS.default_llm_context_tokens

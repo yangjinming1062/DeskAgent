@@ -42,18 +42,6 @@ _BG_TASKS: set[asyncio.Task] = set()
 # 每个慢扫描的在飞 task：LLM 流水线可能比扫描间隔跑得更久，而 per-user 去重标记只在成功后才写——不挡住重入会让同一用户的流水线并行跑两遍。
 _SCANS: dict[str, asyncio.Task] = {}
 
-
-async def drain() -> None:
-    """取消并 await 所有后台 task，容忍 CancelledError；由 main.py lifespan 关停时调用，避免 SIGTERM 在 db.commit() 中途被 engine 释放。"""
-    if not _BG_TASKS:
-        return
-    pending = list(_BG_TASKS)
-    for t in pending:
-        if not t.done():
-            t.cancel()
-    await asyncio.gather(*pending, return_exceptions=True)
-
-
 SCHEDULER_INTERVAL_SECONDS = 60
 
 # per-user 最近一次 consolidator 运行时间戳：进程本地——匹配 ARCH §5 单实例语义（多 replica 会分裂状态）。
@@ -78,6 +66,19 @@ _MAX_DUE_PER_TICK = 200
 
 # 夜间扫描每批处理的用户上限，防止单条 SQL 的 IN 谓词过大。
 _NIGHTLY_USER_BATCH_SIZE = 500
+
+_SCHEDULER = BackgroundTask("scheduler.cron_loop")
+
+
+async def drain() -> None:
+    """取消并 await 所有后台 task，容忍 CancelledError；由 main.py lifespan 关停时调用，避免 SIGTERM 在 db.commit() 中途被 engine 释放。"""
+    if not _BG_TASKS:
+        return
+    pending = list(_BG_TASKS)
+    for t in pending:
+        if not t.done():
+            t.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
 
 
 def _log_task_error(name: str, task: asyncio.Task) -> None:
@@ -394,9 +395,6 @@ async def scheduler_loop() -> None:
         if next_at <= now:
             next_at = now + SCHEDULER_INTERVAL_SECONDS
         await asyncio.sleep(next_at - now)
-
-
-_SCHEDULER = BackgroundTask("scheduler.cron_loop")
 
 
 def start_scheduler() -> None:

@@ -2,7 +2,7 @@ from typing import Any
 
 from modules.memory import Memory
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 _USER_PROFILE_TAGS_JSON = '["onboarding", "user_profile"]'
@@ -56,7 +56,7 @@ async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str,
             continue
         ctx = _CONTEXT_LABELS.get(user_key, f"user_profile:{user_key.removeprefix('user_')}")
         statement = (
-            pg_insert(Memory)
+            insert(Memory)
             .values(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON)
             .on_conflict_do_update(
                 index_elements=["user_id", "context"],

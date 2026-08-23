@@ -26,12 +26,11 @@ from modules.auth import (
 from modules.companion import AvatarAsset, CompanionModel
 from modules.system import MessageResponse
 from services.companion.avatar_service import _delete_portrait_file
-from services.gateway.connection import cancel_user_cron_turns
-from services.gateway.handlers import _USER_SESSIONS, REGISTRY, discard_user
-from services.gateway.handlers import MANAGER as _MANAGER
+from services.gateway import MANAGER, cancel_user_cron_turns, discard_user
+from services.gateway.handlers import _USER_SESSIONS
 from services.llm import merge_provider_json
-from sqlalchemy import delete as sa_delete
-from sqlalchemy import select
+from services.tools import REGISTRY
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router()
@@ -90,13 +89,13 @@ async def update_user(user_id: int, payload: UserUpdate, _admin: str = Depends(g
 async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     await get_or_404(db, User, id=user_id, detail="用户不存在。")
     # 主动踢掉活动 WS，让被删除用户的 renderer 干净断开。
-    ws = _MANAGER.active_connections.get(user_id)
+    ws = MANAGER.active_connections.get(user_id)
     if ws is not None:
         with contextlib.suppress(Exception):
             await ws.close(code=1000)
-        _MANAGER.disconnect(ws, user_id)
+        MANAGER.disconnect(ws, user_id)
     cancel_user_cron_turns(user_id)
-    await _MANAGER.aunregister_dispatcher(user_id)
+    await MANAGER.aunregister_dispatcher(user_id)
     REGISTRY.clear_runner_tools(user_id)
     sess = _USER_SESSIONS.pop(user_id, None)
     if sess is not None:
@@ -113,8 +112,8 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
     for av in avatar_rows:
         _delete_portrait_file(av.asset_url)
 
-    await db.execute(sa_delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
-    await db.execute(sa_delete(CompanionModel).where(CompanionModel.user_id == user_id))
+    await db.execute(delete(AvatarAsset).where(AvatarAsset.user_id == user_id))
+    await db.execute(delete(CompanionModel).where(CompanionModel.user_id == user_id))
     await db.delete(await db.get(User, user_id))
     await db.commit()
 

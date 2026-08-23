@@ -2,7 +2,7 @@ from typing import Any
 
 from .auth import authenticate_ws_token
 from .buffer import ReplayBuffer
-from .connection import MANAGER, ConnectionManager, notify_ws_event_loop, start_ws_event_loop, stop_ws_event_loop
+from .connection import MANAGER, ConnectionManager, cancel_user_cron_turns, notify_ws_event_loop, start_ws_event_loop, stop_ws_event_loop
 from .emitter import JsonRpcEmitter
 from .ipc import await_future, discard_user, resolve_future
 from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError, redact_message
@@ -26,6 +26,7 @@ __all__ = [
     "ToolsSyncResult",
     "authenticate_ws_token",
     "await_future",
+    "cancel_user_cron_turns",
     "discard_user",
     "handle_chat_websocket",
     "new_runtime_session",

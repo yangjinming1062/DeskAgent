@@ -47,7 +47,7 @@ def _llm_error_user_message(exc: LLMRuntimeError) -> str:
 
 
 async def _emit_llm_error(emitter: Emitter, exc: LLMRuntimeError) -> None:
-    """输出定制化的 LLM 错误帧，确保聊天轮次总能以 ``error`` 事件收尾；启动期与流中途失败共用此路径。"""
+    """把 LLM 错误转为面向用户的 error 帧；启动期与流中途失败共用，保证本轮始终能收尾。"""
     await emitter.send_json({"type": "error", "message": _llm_error_user_message(exc)})
 
 

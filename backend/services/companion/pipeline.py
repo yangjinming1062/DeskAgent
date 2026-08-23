@@ -47,6 +47,9 @@ _PHASE_PROGRESS: dict[str, tuple[str, int, int]] = {
 # web 进程内 asyncio 任务句柄,``recover_stuck_model_generations`` + ``_resume_inflight_pipelines`` 启动时负责回收与重派。
 _inflight_tasks: dict[int, asyncio.Task] = {}
 
+# 防止两个并发请求同时通过检查(TOCTOU)而起两条流水线
+MODEL_JOB_LOCKS: dict[int, asyncio.Lock] = {}
+
 
 class ModelGenerationError(RuntimeError):
     pass
@@ -58,10 +61,6 @@ class ModelProviderNotConfiguredError(ModelGenerationError):
 
 class ModelGenerationInProgressError(ModelGenerationError):
     """该用户已有生成任务在跑；并发请求须在行级别拒绝。"""
-
-
-# 防止两个并发请求同时通过检查(TOCTOU)而起两条流水线
-MODEL_JOB_LOCKS: dict[int, asyncio.Lock] = {}
 
 
 def get_model_job_lock(user_id: int) -> asyncio.Lock:

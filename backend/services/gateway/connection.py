@@ -44,6 +44,8 @@ class _WakeupState:
 # 全局唤醒状态，用于即时冲刷（Instant Drain）与 NOTIFY 触发
 _WAKEUP_STATE: _WakeupState = _WakeupState()
 
+_WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
+
 
 def notify_ws_event_loop() -> None:
     """唤醒 WS Outbox 派发循环立即执行一轮事件捞取与冲刷。"""
@@ -387,9 +389,6 @@ async def _execute_cron_turn(user_id: int, payload: dict) -> None:
         logger.exception("cron: autonomous turn failed", extra={"user_id": user_id, "job_id": payload.get("job_id")})
         with contextlib.suppress(Exception):
             await dispatcher.push_error_event(str(e), session_id=session_id)
-
-
-_WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
 
 
 def start_ws_event_loop(dsn: str) -> None:
