@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react'
 
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/companion/3d/model-store'
 import { startActivityMonitor } from '@/companion/activity'
@@ -15,7 +15,6 @@ import {
 } from '@/companion/companion-store'
 import { useWindowMouseCapture } from '@/companion/interactive-regions'
 import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
-import { Mesh2DCanvas } from '@/companion/mesh2d/Mesh2DCanvas'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
@@ -25,7 +24,6 @@ import { notify } from '@/shared/store/notifications'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
 import { strings } from '@/shared/strings'
 
-import { Companion3D } from './3d/companion-3d'
 import { ActivationOverlay } from './activation/activation-overlay'
 import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
@@ -42,6 +40,13 @@ import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
+
+// 3D / 2D 渲染管线：把这两个组件连同其 three + draco wasm + GLTF loader 全家桶
+// 从启动关键路径挪走。Onboarding 期间 (showOnboarding 为 true) 本来就不挂载它们，
+// 让 Vite 把 three.module.js + draco_decoder.wasm 等 25MB 模块拆成单独 chunk，
+// 在 lifecycle=ready 后按需请求，避开启动尖峰把风扇拉满。
+const Companion3D = lazy(() => import('./3d/companion-3d').then(m => ({ default: m.Companion3D })))
+const Mesh2DCanvas = lazy(() => import('./mesh2d/Mesh2DCanvas').then(m => ({ default: m.Mesh2DCanvas })))
 
 // 把 gateway 启动挂在 mount effect 里——这样只在已鉴权时才会跑。
 // 当 $auth 切回未鉴权（登出 / 过期）时这里会卸载，useGatewayBoot 的 cleanup
@@ -320,14 +325,18 @@ export function CompanionRoot(): React.JSX.Element {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showOnboarding ? null : renderMode === '2d' ||
-          (renderMode === '3d' &&
-            (glbLoadFailed || modelInfo.status === 'failed') &&
-            mesh2d.status === 'succeeded' &&
-            Boolean(mesh2d.manifestUrl)) ? (
-          <Mesh2DCanvas />
-        ) : (
-          <Companion3D />
+        {showOnboarding ? null : (
+          <Suspense fallback={null}>
+            {renderMode === '2d' ||
+            (renderMode === '3d' &&
+              (glbLoadFailed || modelInfo.status === 'failed') &&
+              mesh2d.status === 'succeeded' &&
+              Boolean(mesh2d.manifestUrl)) ? (
+              <Mesh2DCanvas />
+            ) : (
+              <Companion3D />
+            )}
+          </Suspense>
         )}
       </SpriteStage>
       <SpriteContextMenu
