@@ -66,7 +66,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     deps.broadcastAuthChanged?.(session.getSession())
 
     if (result && result.baseUrl) {
-      writeStoredBackendUrl(deps.spiritagentHome, result.baseUrl)
+      await writeStoredBackendUrl(deps.spiritagentHome, result.baseUrl)
     }
 
     return result

@@ -91,7 +91,7 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     return { client, socket: mockSocket }
   }
 
-  it('updates lastReceivedSeq and drops duplicate frames', async () => {
+  it('updates lastReceivedSeq, drops duplicate frames, and schedules ACK on duplicate', async () => {
     const { client, socket: mockSocket } = await connectClient()
 
     const received: string[] = []
@@ -109,6 +109,12 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
 
+    // 推进定时器以 flush 第一次调度的 ACK
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockSocket.sent.some(msg => msg.includes('session.ack') && msg.includes('"seq":1'))).toBe(true)
+    mockSocket.sent.length = 0
+
+    // 重复 seq=1 帧
     mockSocket.emitMessage(
       JSON.stringify({
         jsonrpc: '2.0',
@@ -116,8 +122,13 @@ describe('JsonRpcGatewayClient Sequence Tracking & Deduplication', () => {
         params: { type: 'message.delta', seq: 1, payload: { text: 'chunk1' } }
       })
     )
+    // 不应重复派发
     expect(client.lastReceivedSeq).toBe(1)
     expect(received).toEqual(['chunk1'])
+
+    // 应仍为重复帧调度 ACK
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(mockSocket.sent.some(msg => msg.includes('session.ack') && msg.includes('"seq":1'))).toBe(true)
 
     mockSocket.emitMessage(
       JSON.stringify({

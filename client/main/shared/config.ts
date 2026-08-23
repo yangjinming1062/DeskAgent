@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { atomicWriteFile } from './utils'
+
 // $SPIRITAGENT_HOME/desktop-config.json 保存用户激活过的后端 URL
 //（与加密会话文件 `agent-session.json` 分离，便于在登出后仍然保留）。
 // 尽力处理：文件缺失或格式错乱时返回 null。
@@ -34,7 +36,10 @@ export function readStoredBackendUrl(spiritagentHome: string | null | undefined)
   return null
 }
 
-export function writeStoredBackendUrl(spiritagentHome: string | null | undefined, backendUrl: string): boolean {
+export async function writeStoredBackendUrl(
+  spiritagentHome: string | null | undefined,
+  backendUrl: string
+): Promise<boolean> {
   const target = configPath(spiritagentHome)
 
   if (!target || typeof backendUrl !== 'string' || !backendUrl.trim()) {
@@ -44,10 +49,11 @@ export function writeStoredBackendUrl(spiritagentHome: string | null | undefined
   let existing: Record<string, unknown> = {}
 
   try {
-    existing = JSON.parse(fs.readFileSync(target, 'utf8'))
+    const raw = await fs.promises.readFile(target, 'utf8')
+    const parsed = JSON.parse(raw)
 
-    if (!existing || typeof existing !== 'object') {
-      existing = {}
+    if (parsed && typeof parsed === 'object') {
+      existing = parsed as Record<string, unknown>
     }
   } catch {
     existing = {}
@@ -57,14 +63,11 @@ export function writeStoredBackendUrl(spiritagentHome: string | null | undefined
   existing.savedAt = Date.now()
 
   try {
-    fs.mkdirSync(path.dirname(target), { recursive: true })
-    const tmp = `${target}.${process.pid}.${Date.now()}.tmp`
-    fs.writeFileSync(tmp, JSON.stringify(existing, null, 2), 'utf8')
-    fs.renameSync(tmp, target)
+    await atomicWriteFile(target, JSON.stringify(existing, null, 2))
 
     if (process.platform !== 'win32') {
       try {
-        fs.chmodSync(target, 0o600)
+        await fs.promises.chmod(target, 0o600)
       } catch {
         // 尽力而为；某些文件系统不支持 chmod
       }

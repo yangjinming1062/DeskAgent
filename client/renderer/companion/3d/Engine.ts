@@ -36,6 +36,9 @@ const MAX_DPR = 1.5
 const HITMAP_SCALE = 4
 const HITMAP_TTL_MS = 250
 
+// 允许连续瞬态渲染错误的上限，超过后才彻底停转 ticker，避免偶发 WebGL 异常永久冻屏。
+const MAX_CONSECUTIVE_TICK_ERRORS = 5
+
 export interface SilhouetteHitmap {
   alpha: Uint8Array
   width: number
@@ -77,6 +80,7 @@ export class Engine {
   private timerId: ReturnType<typeof setTimeout> | null = null
   private disposed = false
   private running = false
+  private consecutiveErrors = 0
   private isTicking = false
   private profile: PowerProfile = 'active'
   private lastFrameAt = 0
@@ -476,6 +480,7 @@ export class Engine {
       return
     }
 
+    this.consecutiveErrors = 0
     this.running = true
     this.clock.getDelta()
     document.addEventListener('visibilitychange', this.onVisibilityChange)
@@ -484,6 +489,7 @@ export class Engine {
 
   stop(): void {
     this.running = false
+    this.consecutiveErrors = 0
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
     this.cancelPendingLoop()
   }
@@ -549,16 +555,23 @@ export class Engine {
           this.statsWindowStart = now
           reportFrameStats(this.profile, this.stats.fps)
         }
+
+        this.consecutiveErrors = 0
       }
     } catch (err) {
-      // 渲染守卫——首次错误即停止 ticker，避免下一帧重复同一异常；
+      // 渲染守卫——连续多次错误才停止 ticker，避免瞬态 WebGL 错误导致永久冻屏；
       // 通过 $engineError 暴露给开发者覆盖层。
-      this.running = false
+      this.consecutiveErrors++
       const message = err instanceof Error ? err.message : String(err)
-      reportEngineError(message)
-      log.error('engine', 'ticker stopped after error:', err)
+      log.error('engine', `ticker error (${this.consecutiveErrors}/${MAX_CONSECUTIVE_TICK_ERRORS}):`, err)
 
-      return
+      if (this.consecutiveErrors >= MAX_CONSECUTIVE_TICK_ERRORS) {
+        this.running = false
+        reportEngineError(message)
+        log.error('engine', 'ticker stopped after consecutive errors')
+
+        return
+      }
     } finally {
       this.isTicking = false
     }

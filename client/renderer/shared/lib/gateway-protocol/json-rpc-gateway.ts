@@ -468,7 +468,13 @@ export class JsonRpcGatewayClient {
     const seq = frame.params?.seq ?? frame.seq
 
     if (typeof seq === 'number') {
-      if (seq <= this._lastReceivedSeq) {
+      if (seq < this._lastReceivedSeq) {
+        return
+      }
+
+      if (seq === this._lastReceivedSeq) {
+        this.scheduleAck()
+
         return
       }
 

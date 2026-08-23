@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { SafeStorageApi } from '../security/hardening'
+import { atomicWriteFile } from '../shared/utils'
 
 import { type BackendClient, BackendRequestError, createBackendClient, type FetchFunction } from './client'
 
@@ -59,22 +60,8 @@ export interface TokenAuthResponse {
   user?: unknown
 }
 
-function atomicWriteJson(targetPath: string, payload: unknown): void {
-  const tmp = `${targetPath}.${process.pid}.${Date.now()}.tmp`
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-
-  try {
-    fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), 'utf8')
-    fs.renameSync(tmp, targetPath)
-  } catch (error) {
-    try {
-      fs.unlinkSync(tmp)
-    } catch {
-      /* best-effort cleanup */
-    }
-
-    throw error
-  }
+async function atomicWriteJson(targetPath: string, payload: unknown): Promise<void> {
+  await atomicWriteFile(targetPath, JSON.stringify(payload, null, 2))
 }
 
 function readJsonSafe(filePath: string): unknown {
@@ -188,7 +175,7 @@ export interface BackendSession {
   _sessionPath: string
   activate: (payload?: { clientContext?: unknown; code?: string }) => Promise<null | SessionSnapshot>
   authHeaders: () => Record<string, string>
-  clearSession: () => void
+  clearSession: () => Promise<void>
   getSession: () => null | SessionSnapshot
   getToken: () => null | string
   logout: () => Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }>
@@ -231,17 +218,21 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
   let activatePromise: null | Promise<null | SessionSnapshot> = null
   let refreshTimer: NodeJS.Timeout | null = null
 
-  function persistCurrent(): void {
+  async function persistCurrent(): Promise<void> {
     if (!cached) {
       return
     }
 
-    atomicWriteJson(sessionPath, {
-      activationCode: encryptToken(cached.activationCode, safeStorage),
-      baseUrl: cached.baseUrl,
-      schemaVersion: SESSION_SCHEMA_VERSION,
-      user: cached.user
-    })
+    try {
+      await atomicWriteJson(sessionPath, {
+        activationCode: encryptToken(cached.activationCode, safeStorage),
+        baseUrl: cached.baseUrl,
+        schemaVersion: SESSION_SCHEMA_VERSION,
+        user: cached.user
+      })
+    } catch (err) {
+      log(`[session] persistCurrent failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   function clearRefreshTimer(): void {
@@ -381,7 +372,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     })
   }
 
-  function applySession({
+  async function applySession({
     activationCode,
     baseUrl,
     source,
@@ -395,7 +386,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     token: string
     tokenExpiresAt: null | number
     user?: unknown
-  }): null | SessionSnapshot {
+  }): Promise<null | SessionSnapshot> {
     if (!token) {
       throw new SessionError({
         code: 'no-token',
@@ -425,7 +416,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     backendClient = null
     backendClientBaseUrl = null
 
-    persistCurrent()
+    await persistCurrent()
     scheduleRefresh()
 
     log(`[session] ${source} ok base=${resolvedBaseUrl} user=${resolvedUser?.username ?? '?'}`)
@@ -549,45 +540,43 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       .catch(translateBackendError)
   }
 
-  function logout(): Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }> {
+  async function logout(): Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }> {
     if (!cached?.token) {
-      clearSession()
+      await clearSession()
 
-      return Promise.resolve({ ok: true })
+      return { ok: true }
     }
 
     const backend = client()
 
-    return backend
-      .post('/api/user/logout', { token: cached.token })
-      .then(() => {
-        clearSession()
-        log('[session] logout ok')
+    try {
+      await backend.post('/api/user/logout', { token: cached.token })
+      await clearSession()
+      log('[session] logout ok')
 
-        return { ok: true }
-      })
-      .catch(error => {
-        const msg = error instanceof Error ? error.message : String(error)
-        log(`[session] logout backend call failed: ${msg}`)
-        clearSession()
+      return { ok: true }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      log(`[session] logout backend call failed: ${msg}`)
+      await clearSession()
 
-        return { backendUnreachable: true, error: msg, ok: true }
-      })
+      return { backendUnreachable: true, error: msg, ok: true }
+    }
   }
 
-  function clearSession(): void {
+  async function clearSession(): Promise<void> {
     clearRefreshTimer()
     cached = null
     backendClient = null
     backendClientBaseUrl = null
 
     try {
-      fs.unlinkSync(sessionPath)
+      await fs.promises.unlink(sessionPath)
     } catch (error: unknown) {
       const err = error as { code?: string; message?: string }
 
       if (err?.code !== 'ENOENT') {
-        log(`[session] clearSession unlink failed: ${err.message || String(error)}`)
+        log(`[session] clearSession unlink failed: ${err?.message || String(error)}`)
       }
     }
   }
@@ -611,7 +600,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       return await activate({ code: loaded.activationCode })
     } catch (err: unknown) {
       if (err instanceof SessionError && err.code === 'bad-credentials') {
-        clearSession()
+        await clearSession()
       }
 
       const msg = err instanceof Error ? err.message : String(err)

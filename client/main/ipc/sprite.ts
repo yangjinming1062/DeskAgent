@@ -4,6 +4,8 @@ import path from 'node:path'
 import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, Screen } from 'electron'
 
+import { atomicWriteFile } from '../shared/utils'
+
 export const POSITION_FILE = 'companion-position.json'
 
 export interface RestPosition {
@@ -101,8 +103,7 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
 
     try {
       const dir = getUserDataDir()
-      fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(path.join(dir, POSITION_FILE), JSON.stringify({ x: payload.x, y: payload.y, origin }))
+      await atomicWriteFile(path.join(dir, POSITION_FILE), JSON.stringify({ x: payload.x, y: payload.y, origin }))
     } catch {
       // 尽力而为
     }

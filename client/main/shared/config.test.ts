@@ -27,43 +27,43 @@ test('readStoredBackendUrl returns null when backendUrl absent', () => {
   assert.equal(readStoredBackendUrl(home), null)
 })
 
-test('writeStoredBackendUrl round-trips a URL', () => {
+test('writeStoredBackendUrl round-trips a URL', async () => {
   const home = tmpHome('roundtrip')
-  assert.equal(writeStoredBackendUrl(home, 'https://api.example.com'), true)
+  assert.equal(await writeStoredBackendUrl(home, 'https://api.example.com'), true)
   assert.equal(readStoredBackendUrl(home), 'https://api.example.com')
 })
 
-test('writeStoredBackendUrl preserves other keys', () => {
+test('writeStoredBackendUrl preserves other keys', async () => {
   const home = tmpHome('preserve')
   fs.writeFileSync(configPath(home)!, JSON.stringify({ existing: 'value' }), 'utf8')
-  writeStoredBackendUrl(home, 'https://api.example.com')
+  await writeStoredBackendUrl(home, 'https://api.example.com')
   const parsed = JSON.parse(fs.readFileSync(configPath(home)!, 'utf8'))
   assert.equal(parsed.backendUrl, 'https://api.example.com')
   assert.equal(parsed.existing, 'value')
   assert.ok(Number.isFinite(parsed.savedAt))
 })
 
-test('writeStoredBackendUrl trims whitespace', () => {
+test('writeStoredBackendUrl trims whitespace', async () => {
   const home = tmpHome('trim')
-  writeStoredBackendUrl(home, '  https://api.example.com  ')
+  await writeStoredBackendUrl(home, '  https://api.example.com  ')
   assert.equal(readStoredBackendUrl(home), 'https://api.example.com')
 })
 
-test('writeStoredBackendUrl rejects empty input', () => {
+test('writeStoredBackendUrl rejects empty input', async () => {
   const home = tmpHome('empty-input')
-  assert.equal(writeStoredBackendUrl(home, ''), false)
-  assert.equal(writeStoredBackendUrl(home, '   '), false)
-  assert.equal(writeStoredBackendUrl(home, null as unknown as string), false)
+  assert.equal(await writeStoredBackendUrl(home, ''), false)
+  assert.equal(await writeStoredBackendUrl(home, '   '), false)
+  assert.equal(await writeStoredBackendUrl(home, null as unknown as string), false)
 })
 
-test('writeStoredBackendUrl returns false without home', () => {
-  assert.equal(writeStoredBackendUrl(null, 'https://api.example.com'), false)
+test('writeStoredBackendUrl returns false without home', async () => {
+  assert.equal(await writeStoredBackendUrl(null, 'https://api.example.com'), false)
 })
 
-test('resolveNormalizedBackendUrl returns stored URL or null (trailing slash stripped)', () => {
+test('resolveNormalizedBackendUrl returns stored URL or null (trailing slash stripped)', async () => {
   const home = tmpHome('resolve')
   assert.equal(resolveNormalizedBackendUrl(home), null)
 
-  writeStoredBackendUrl(home, 'https://api.example.com/')
+  await writeStoredBackendUrl(home, 'https://api.example.com/')
   assert.equal(resolveNormalizedBackendUrl(home), 'https://api.example.com')
 })
