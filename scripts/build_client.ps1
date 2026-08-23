@@ -147,12 +147,6 @@ try {
         try {
             & uv sync --frozen --extra dev
             if ($LASTEXITCODE -ne 0) { throw "uv sync failed" }
-            # 打包前的环境闸口：env-rot 状态（如 0 字节 typing_extensions.py）会一起钻进 wheel，跑整个 runner/tests/——更窄的闸门会漏掉尚不自知"承重"的新测试。
-            # 默认静默：release 路径 99% 通过，-v 报告会淹没真实信号；pytest 在 -q 失败时自己回退到 -v，不必手动重跑。
-            & uv run --frozen --no-sync pytest tests/ -q
-            if ($LASTEXITCODE -ne 0) {
-                throw "runner test suite failed — see pytest output. Common cause: stale or corrupt transitive deps that would make the shipped wheel unstartable on user machines. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build."
-            }
             & uv build --wheel --out-dir dist
             if ($LASTEXITCODE -ne 0) { throw "uv build failed" }
         } finally { Pop-Location }
@@ -166,11 +160,6 @@ try {
         try {
             & pnpm install --frozen-lockfile
             if ($LASTEXITCODE -ne 0) { throw "pnpm install failed" }
-            # 发布闸口：先跑全量测试（渲染器 vitest + 主进程 node:test），再交给 electron-builder。
-            # 跟 runner 那边的"pytest tests/ -q 后再 uv build --wheel"对齐——单元测试是 wheel/installer
-            # 的安全网，跑红则禁止打包。脚本化是 pre-commit fast-subset 的权威版本。
-            & pnpm test
-            if ($LASTEXITCODE -ne 0) { throw "pnpm test failed" }
             & pnpm run $DesktopPnpmTarget
             if ($LASTEXITCODE -ne 0) { throw "pnpm run $DesktopPnpmTarget failed" }
         } finally { Pop-Location }

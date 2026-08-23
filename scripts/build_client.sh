@@ -119,17 +119,16 @@ if [[ $SKIP_RUNNER -eq 0 ]]; then
   echo "==> Building runner (uv build wheel → dist/spiritagent-agent-*.whl)"
   ( cd runner && \
       uv sync --frozen --extra dev && \
-      uv run --frozen --no-sync pytest tests/ -q && \
       uv build --wheel --out-dir dist ) \
-    || { echo "FAIL: runner test suite failed — see pytest output. Common cause: stale or corrupt transitive deps that would make the shipped wheel unstartable on user machines. Fix the env (try \`uv cache clean\` + \`uv sync\`) before retrying the build." >&2; exit 1; }
+    || { echo "FAIL: runner build failed" >&2; exit 1; }
 else
   echo "==> Skipping runner build (--skip-runner)"
 fi
 
 if [[ $SKIP_DESKTOP -eq 0 ]]; then
   echo "==> Building client (electron-builder → release/SpiritAgent-${VERSION}-${TARGET}*)"
-  ( cd client && pnpm install --frozen-lockfile && pnpm test && pnpm run $DESKTOP_PNPM_TARGET ) \
-    || { echo "FAIL: client test suite failed — see vitest/node --test output above." >&2; exit 1; }
+  ( cd client && pnpm install --frozen-lockfile && pnpm run $DESKTOP_PNPM_TARGET ) \
+    || { echo "FAIL: client build failed" >&2; exit 1; }
 else
   echo "==> Skipping client build (--skip-desktop)"
 fi

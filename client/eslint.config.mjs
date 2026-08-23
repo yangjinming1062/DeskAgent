@@ -175,12 +175,6 @@ export default [
     }
   },
   {
-    files: ['**/*.test.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/no-floating-promises': 'off'
-    }
-  },
-  {
     files: ['**/*.mjs', '**/vite.config.*', '**/vitest.config.*'],
     languageOptions: {
       ecmaVersion: 'latest',

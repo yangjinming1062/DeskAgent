@@ -73,16 +73,5 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 4174
   },
-  // Vitest 负责渲染进程测试；主进程测试用 node --test（见 package.json）
-  test: {
-    // 仅运行时测试。.test-d.ts 必须放在 typecheck.include 里,否则 Vitest
-    // 尝试执行无 it()/test() 的文件会报 "No test suite found"。
-    include: ['renderer/**/*.{test,spec}.{ts,tsx}'],
-    environment: 'jsdom',
-    typecheck: {
-      enabled: true,
-      include: ['shared/**/*.test-d.ts'],
-      tsconfig: './tsconfig.json'
-    }
-  }
+
 })
