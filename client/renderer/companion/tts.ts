@@ -1,6 +1,6 @@
 import { isLatestGen, nextGen, playDataUrl, stopAudio } from './audio-track'
 import { $companionVoiceId } from './prefs'
-import { $voicePreparing } from './voice-state'
+import { beginVoicePreparing, endVoicePreparing } from './voice-state'
 
 // 伙伴 TTS 经 `spiritagent:media:tts` REST IPC 调用。
 
@@ -16,7 +16,7 @@ async function synth(
   onDone?: () => void
 ): Promise<boolean> {
   const gen = nextGen()
-  $voicePreparing.set(true)
+  beginVoicePreparing()
 
   try {
     const res = await window.spiritagent.media.tts({
@@ -42,9 +42,7 @@ async function synth(
 
     return false
   } finally {
-    if (isLatestGen(gen)) {
-      $voicePreparing.set(false)
-    }
+    endVoicePreparing()
   }
 }
 

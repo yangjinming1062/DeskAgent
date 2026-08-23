@@ -1,7 +1,7 @@
 import { log } from '@/shared/lib/log'
 
 import { isLatestGen, nextGen, playDataUrl } from '../audio-track'
-import { $voicePreparing } from '../voice-state'
+import { beginVoicePreparing, endVoicePreparing } from '../voice-state'
 
 // 预渲染的云端 TTS 片段，用于 onboarding 流程。Tag 列表对应
 // installer/payload/onboarding-audio/manifest.json；每个 tag 在
@@ -18,7 +18,7 @@ export type OnboardingAudioTag =
 
 export async function playOnboardingAudio(tag: OnboardingAudioTag): Promise<boolean> {
   const gen = nextGen()
-  $voicePreparing.set(true)
+  beginVoicePreparing()
 
   try {
     const res = await window.spiritagent.media.onboardingAudio.read(tag)
@@ -35,8 +35,6 @@ export async function playOnboardingAudio(tag: OnboardingAudioTag): Promise<bool
 
     return false
   } finally {
-    if (isLatestGen(gen)) {
-      $voicePreparing.set(false)
-    }
+    endVoicePreparing()
   }
 }

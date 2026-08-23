@@ -1,5 +1,36 @@
 import { atom } from 'nanostores'
 
 // 跨 companion renderer 共享的语音准备状态。
+// 用引用计数持有：begin/end 成对调用，只有计数归零时才向订阅者发出 false。
+// 直接 .set(true) 会被订阅者误判为「永远在准备」——这是之前 onboarding-audio / tts 的 finally
+// 用 isLatestGen 判定被 playDataUrl 内部 bump 的 playGen 污染而失效的根因。
 
 export const $voicePreparing = atom<boolean>(false)
+
+let _activeCount = 0
+
+export function beginVoicePreparing(): void {
+  _activeCount++
+
+  if (_activeCount === 1) {
+    $voicePreparing.set(true)
+  }
+}
+
+export function endVoicePreparing(): void {
+  if (_activeCount === 0) {
+    return
+  }
+
+  _activeCount--
+
+  if (_activeCount === 0) {
+    $voicePreparing.set(false)
+  }
+}
+
+// 仅供测试使用：把计数器与 atom 一起归零。
+export function __resetVoicePreparingForTests(): void {
+  _activeCount = 0
+  $voicePreparing.set(false)
+}

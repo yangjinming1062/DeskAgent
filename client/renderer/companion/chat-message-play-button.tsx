@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 import type React from 'react'
 
 import { speakChatMessage, stopSpeaking } from './tts'
-import { $voicePreparing } from './voice-state'
+import { $voicePreparing, __resetVoicePreparingForTests } from './voice-state'
 
 /** TTS 播放按钮，跟随每一条已完成的精灵回复消息展示。点击切换「播放 / 停止」。
  *
@@ -112,5 +112,5 @@ export function ChatMessagePlayButton({
 // 仅供测试使用：每次测试 case 开始时重置模块级状态。
 export function __resetChatPlayButtonStateForTests(): void {
   $chatPlaybackId.set(null)
-  $voicePreparing.set(false)
+  __resetVoicePreparingForTests()
 }
