@@ -10,7 +10,16 @@ from .main_conversation import (
     get_or_create_cron_conversation,
     get_or_create_main_conversation,
 )
-from .proactive_state import ProactiveState, UserProactiveRecord, get_user_proactive_record, record_user_outreach, reset_user_outreach
+from .proactive_state import (
+    ProactiveState,
+    UserProactiveRecord,
+    get_personality_tags,
+    get_user_proactive_record,
+    get_user_quiet_duration,
+    record_user_outreach,
+    reset_user_outreach,
+    set_user_quiet_since,
+)
 
 __all__ = [
     "AFFECT_TRACE_SUBTYPE",
@@ -24,8 +33,11 @@ __all__ = [
     "get_main_conversation",
     "get_or_create_cron_conversation",
     "get_or_create_main_conversation",
+    "get_personality_tags",
     "get_user_proactive_record",
+    "get_user_quiet_duration",
     "load_recent_context_window",
     "record_user_outreach",
     "reset_user_outreach",
+    "set_user_quiet_since",
 ]
