@@ -43,12 +43,8 @@ def _avatar_view_filenames(avatar: AvatarAsset) -> dict[str, str]:
     if not front:
         raise ModelGenerationError("请先生成正面全身图再生成模型")
     out: dict[str, str] = {"front": front}
-    if avatar.seed_right_url and (right := _name(avatar.seed_right_url)):
-        out["right"] = right
     if avatar.seed_back_url and (back := _name(avatar.seed_back_url)):
         out["back"] = back
-    if avatar.seed_left_url and (left := _name(avatar.seed_left_url)):
-        out["left"] = left
     return out
 
 

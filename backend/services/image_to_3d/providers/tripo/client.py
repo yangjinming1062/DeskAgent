@@ -154,7 +154,7 @@ async def create_image_to_model(
         views = {"front": image_token, **auxiliary_tokens}
         if len(views) < 2:
             raise ValueError("multiview-to-model requires at least 2 views")
-        inputs = [{view: views[view]} for view in ("front", "right", "back", "left") if views.get(view)]
+        inputs = [{view: views[view]} for view in ("front", "back") if views.get(view)]
     else:
         texture_alignment = None
         orientation = None

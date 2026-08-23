@@ -57,7 +57,7 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定（草稿落 temp-media，路径随形象行持久化供断点恢复复用） | Backend 生成 + Client 风格选择卡片 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/select-style | 持久化用户选定的画风（不触发生成），重启恢复到正面预览而非重新出样图 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front | 按选定画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按选定画风、正面种子与微调反馈生成/重绘背面全身图（仅在多视角供应商下启用） | Backend 生成 + Client 背面预览与微调 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按选定画风、正面种子与微调反馈生成/重绘背面全身图（多视角供应商下与正面图一起按双视图提交） | Backend 生成 + Client 背面预览与微调 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面（及可选背面）全身图并解开音色/用户子阶段；后续种子图准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md) | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |

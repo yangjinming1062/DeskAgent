@@ -105,7 +105,6 @@ async def test_fullbody_select_style(SessionLocal):
                 },
             ),
             asset_url="companion-avatars/test.jpg",
-            seed_right_url="companion-avatars/old_right.jpg",
             seed_back_url="companion-avatars/old_back.jpg",
             active=True,
         )
@@ -119,7 +118,6 @@ async def test_fullbody_select_style(SessionLocal):
             style="anime_game_cg",
         )
         assert asset.seed_front_url == "/api/media/files/sample_cg"
-        assert "old_right.jpg" in asset.seed_right_url
         assert "old_back.jpg" in asset.seed_back_url
         assert json.loads(asset.prompt_json)["fullbody_aux_style"] == "cel_shading"
         res = avatar_response(asset)
@@ -183,9 +181,7 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
             confirmed = await confirm_fullbody_front(db, user_id, avatar_id=avatar.id)
 
         assert "promoted.png" in confirmed.seed_front_url
-        assert "aux_view.jpg" in confirmed.seed_right_url
         assert "aux_view.jpg" in confirmed.seed_back_url
-        assert "aux_view.jpg" in confirmed.seed_left_url
         payload = json.loads(confirmed.prompt_json)
         assert "fullbody_samples" not in payload
 
@@ -195,7 +191,6 @@ async def test_fullbody_confirm_promotes_temp_media_seeds(SessionLocal):
             .where(AvatarAsset.id == avatar.id)
             .values(
                 seed_front_url="temp-media/expired_front",
-                seed_right_url="",
                 seed_back_url="",
             ),
         )
@@ -286,9 +281,7 @@ async def test_fullbody_front_and_confirm(SessionLocal):
                 style="cel_shading",
             )
             assert confirmed_asset.seed_front_url is not None
-            assert confirmed_asset.seed_right_url is not None
             assert confirmed_asset.seed_back_url is not None
-            assert confirmed_asset.seed_left_url is not None
 
 
 @pytest.mark.asyncio
@@ -300,9 +293,7 @@ async def test_fullbody_confirm_keeps_front_only_without_multiview(SessionLocal)
             prompt_json='{"avatar_prompt": "少女", "fullbody_style": "cel_shading", "fullbody_aux_style": "cel_shading"}',
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/front.jpg",
-            seed_right_url="companion-avatars/right.jpg",
             seed_back_url="companion-avatars/back.jpg",
-            seed_left_url="companion-avatars/left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -322,9 +313,7 @@ async def test_fullbody_confirm_keeps_front_only_without_multiview(SessionLocal)
 
         assert mock_gen.await_count == 0
         assert "front.jpg" in confirmed.seed_front_url
-        assert confirmed.seed_right_url == ""
         assert confirmed.seed_back_url == ""
-        assert confirmed.seed_left_url == ""
         assert "fullbody_aux_style" not in json.loads(confirmed.prompt_json)
 
 
@@ -359,9 +348,7 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             prompt_json='{"avatar_prompt": "少女", "fullbody_style": "cel_shading", "fullbody_aux_style": "cel_shading"}',
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/old_front.jpg",
-            seed_right_url="companion-avatars/old_right.jpg",
             seed_back_url="companion-avatars/old_back.jpg",
-            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -379,9 +366,7 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             )
             assert mock_gen.await_count == 0
             assert "new_front.jpg" in confirmed.seed_front_url
-            assert "old_right.jpg" in confirmed.seed_right_url
             assert "old_back.jpg" in confirmed.seed_back_url
-            assert "old_left.jpg" in confirmed.seed_left_url
 
             mock_gen.return_value = (
                 "companion-avatars/refined_front.jpg",
@@ -398,13 +383,12 @@ async def test_fullbody_reuses_existing_auxiliary_seeds(SessionLocal):
             )
             assert mock_gen.await_count == 1
             assert "refined_front.jpg" in regenerated.seed_front_url
-            assert "old_right.jpg" in regenerated.seed_right_url
             assert "old_back.jpg" in regenerated.seed_back_url
-            assert "old_left.jpg" in regenerated.seed_left_url
 
 
 @pytest.mark.asyncio
 async def test_fullbody_confirm_generates_only_missing_auxiliary_seed(SessionLocal):
+    """仅补回缺失的背面。"""
     user_id = 410
     async with SessionLocal() as db:
         avatar = AvatarAsset(
@@ -412,8 +396,6 @@ async def test_fullbody_confirm_generates_only_missing_auxiliary_seed(SessionLoc
             prompt_json='{"avatar_prompt": "少女", "fullbody_style": "cel_shading", "fullbody_aux_style": "cel_shading"}',
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/front.jpg",
-            seed_right_url="companion-avatars/old_right.jpg",
-            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -435,9 +417,7 @@ async def test_fullbody_confirm_generates_only_missing_auxiliary_seed(SessionLoc
                 avatar_id=avatar.id,
             )
             assert mock_gen.await_count == 1
-            assert "old_right.jpg" in confirmed.seed_right_url
             assert "new_back.jpg" in confirmed.seed_back_url
-            assert "old_left.jpg" in confirmed.seed_left_url
 
 
 @pytest.mark.asyncio
@@ -449,9 +429,7 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
             prompt_json='{"avatar_prompt": "少女", "fullbody_style": "cel_shading", "fullbody_aux_style": "cel_shading"}',
             asset_url="companion-avatars/test.jpg",
             seed_front_url="companion-avatars/old_front.jpg",
-            seed_right_url="companion-avatars/old_right.jpg",
             seed_back_url="companion-avatars/old_back.jpg",
-            seed_left_url="companion-avatars/old_left.jpg",
             active=True,
         )
         db.add(avatar)
@@ -469,20 +447,8 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
                     "https://source.example/test.jpg",
                 ),
                 (
-                    "companion-avatars/new_right.jpg",
-                    "file2",
-                    "jpg",
-                    "https://source.example/test.jpg",
-                ),
-                (
                     "companion-avatars/new_back.jpg",
-                    "file3",
-                    "jpg",
-                    "https://source.example/test.jpg",
-                ),
-                (
-                    "companion-avatars/new_left.jpg",
-                    "file4",
+                    "file2",
                     "jpg",
                     "https://source.example/test.jpg",
                 ),
@@ -495,19 +461,15 @@ async def test_fullbody_style_change_regenerates_auxiliary_seeds(SessionLocal):
                 style="anime_game_cg",
             )
             assert mock_gen.await_count == 1
-            assert "old_right.jpg" in regenerated.seed_right_url
             assert "old_back.jpg" in regenerated.seed_back_url
-            assert "old_left.jpg" in regenerated.seed_left_url
 
             confirmed = await confirm_fullbody_front(
                 db,
                 user_id,
                 avatar_id=avatar.id,
             )
-            assert mock_gen.await_count == 4
-            assert "new_right.jpg" in confirmed.seed_right_url
+            assert mock_gen.await_count == 2
             assert "new_back.jpg" in confirmed.seed_back_url
-            assert "new_left.jpg" in confirmed.seed_left_url
             payload = json.loads(confirmed.prompt_json)
             assert payload["fullbody_aux_style"] == "anime_game_cg"
 
@@ -544,9 +506,7 @@ async def test_fullbody_direct_confirm_with_sample_url(SessionLocal):
                 front_url="/api/companion/avatar/file/sample_front.jpg?sig=abc",
             )
             assert "sample_front" in confirmed_asset.seed_front_url
-            assert "aux_view" in confirmed_asset.seed_right_url
             assert "aux_view" in confirmed_asset.seed_back_url
-            assert "aux_view" in confirmed_asset.seed_left_url
 
 
 @pytest.mark.asyncio
@@ -606,7 +566,7 @@ async def test_fullbody_samples_and_front_with_reference_image(SessionLocal):
 
 @pytest.mark.asyncio
 async def test_fullbody_back_and_confirm_with_back_url(SessionLocal):
-    """测试生成背面立绘，并在确认正面时复用传入的背面图，仅补齐侧面视图。"""
+    """测试生成背面立绘，并在确认正面时复用传入的背面图，无需补齐任何其他视图。"""
     user_id = 412
     async with SessionLocal() as db:
         avatar = AvatarAsset(
@@ -649,22 +609,8 @@ async def test_fullbody_back_and_confirm_with_back_url(SessionLocal):
             assert "back_draft.jpg" in res.seed_back_url
             assert res.supports_multiview is True
 
-            # 确认时显式传入已生成的 back_url，mock_gen 应只为缺失的 right 和 left 调用 2 次
+            # 确认时显式传入已生成的 back_url，back 由请求体复用，mock_gen 不应再调用
             mock_gen.reset_mock()
-            mock_gen.side_effect = [
-                (
-                    "companion-avatars/aux_right.jpg",
-                    "f_r",
-                    "jpg",
-                    "https://source.example/r.jpg",
-                ),
-                (
-                    "companion-avatars/aux_left.jpg",
-                    "f_l",
-                    "jpg",
-                    "https://source.example/l.jpg",
-                ),
-            ]
             with (
                 patch(
                     "services.companion.avatar_service._read_temp_media_bytes",
@@ -686,9 +632,7 @@ async def test_fullbody_back_and_confirm_with_back_url(SessionLocal):
                 )
 
             assert "promoted_back.jpg" in confirmed.seed_back_url
-            assert "aux_right.jpg" in confirmed.seed_right_url
-            assert "aux_left.jpg" in confirmed.seed_left_url
-            assert mock_gen.call_count == 2
+            assert mock_gen.call_count == 0
 
 
 @pytest.mark.asyncio

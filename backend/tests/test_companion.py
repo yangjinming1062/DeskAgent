@@ -2572,8 +2572,8 @@ async def test_recover_stuck_leaves_inflight_rows_for_resume(_patch_db, monkeypa
 
 
 @pytest.mark.asyncio
-async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeypatch, SessionLocal, tmp_path):
-    """多视图标签由供应商能力与可用视角共同决定；不支持时即使库里残留辅助图也按单图提交。"""
+async def test_chain_passes_multiview_by_capability_and_two_views(_patch_db, monkeypatch, SessionLocal, tmp_path):
+    """多视图标签由供应商能力与可用视角（≥ 2 张）共同决定；不支持时即使库里残留辅助图也按单图提交。"""
     from modules.auth import User
     from modules.companion import CompanionModel
 
@@ -2613,7 +2613,7 @@ async def test_chain_passes_multiview_by_capability_and_views(_patch_db, monkeyp
 
         return captured[0] if captured else None
 
-    multi_views = {"front": "seed.png", "right": "seed.png", "back": "seed.png", "left": "seed.png"}
+    multi_views = {"front": "seed.png", "back": "seed.png"}
     single = await _capture({"front": "seed.png"})
     multi = await _capture(multi_views)
     unsupported = await _capture(multi_views, supports_multiview=False)

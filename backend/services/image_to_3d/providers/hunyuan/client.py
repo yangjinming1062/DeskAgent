@@ -112,6 +112,8 @@ async def create_image_to_model(
     payload = _common_model_kwargs(model=model, enable_pbr=enable_pbr, result_format=result_format, generate_type=generate_type, face_count=face_count, prompt=prompt)
     payload["image_base64"] = image_base64
     auxiliary_images = {view: image for view, image in (multiview_images or {}).items() if view.lower() != "front" and image}
+    if multiview_images is not None and not auxiliary_images:
+        raise ValueError("hunyuan multiview submission requires at least one auxiliary view")
     if auxiliary_images:
         # ViewImage 字段名（view_type/view_image_base64）与主图的 image_base64 不对称。
         payload["multi_view_images"] = [{"view_type": view_name, "view_image_base64": image_data} for view_name, image_data in auxiliary_images.items()]

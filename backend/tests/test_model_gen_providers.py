@@ -101,18 +101,14 @@ class TestSubmit:
         assert "multi_view_images" not in body
 
     @pytest.mark.asyncio
-    async def test_create_multiview_posts_multi_view_images(
+    async def test_create_multiview_posts_two_view_image(
         self,
         png_seed,
         tmp_path,
         mock_http,
     ):
-        right_seed = tmp_path / "right.png"
-        right_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x11" * 16)
         back_seed = tmp_path / "back.png"
         back_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x22" * 16)
-        left_seed = tmp_path / "left.png"
-        left_seed.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x33" * 16)
         mock_http.responder = lambda _r: httpx.Response(
             200,
             json={"id": "job_mv", "status": "queued"},
@@ -124,16 +120,16 @@ class TestSubmit:
         )
         job = await provider.create_image_to_model(
             png_seed,
-            multiview_paths={"right": right_seed, "back": back_seed, "left": left_seed},
+            multiview_paths={"back": back_seed},
         )
         assert job.job_id == "job_mv"
         body = mock_http.calls[0][3]
         assert body["model"] == "hy-3d-3.1"
         assert body["result_format"] == "GLB"
-        assert len(body["multi_view_images"]) == 3
+        assert len(body["multi_view_images"]) == 1
         by_view = {item["view_type"]: item["view_image_base64"] for item in body["multi_view_images"]}
-        assert set(by_view) == {"right", "back", "left"}
-        assert by_view["right"] == base64.b64encode(right_seed.read_bytes()).decode(
+        assert set(by_view) == {"back"}
+        assert by_view["back"] == base64.b64encode(back_seed.read_bytes()).decode(
             "ascii",
         )
 
@@ -144,8 +140,8 @@ class TestSubmit:
         tmp_path,
         mock_http,
     ):
-        right_seed = tmp_path / "right.png"
-        right_seed.write_bytes(b"right")
+        back_seed = tmp_path / "back.png"
+        back_seed.write_bytes(b"back")
         mock_http.responder = lambda _r: httpx.Response(
             200,
             json={"id": "job_single", "status": "queued"},
@@ -158,7 +154,7 @@ class TestSubmit:
 
         job = await provider.create_image_to_model(
             png_seed,
-            multiview_paths={"front": png_seed, "right": right_seed},
+            multiview_paths={"front": png_seed, "back": back_seed},
         )
 
         assert job.job_id == "job_single"

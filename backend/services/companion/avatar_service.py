@@ -441,7 +441,7 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
         signed = _re_sign_bare_path(asset.asset_url)
         if signed:
             asset.asset_url = signed
-    for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
+    for attr in ("seed_front_url", "seed_back_url"):
         val = getattr(asset, attr, None)
         if val:
             signed = _re_sign_bare_path(val)
@@ -634,7 +634,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
         return None
 
     pending: list[tuple[str, bytes, str]] = []
-    for attr in ("asset_url", "seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
+    for attr in ("asset_url", "seed_front_url", "seed_back_url"):
         current = getattr(asset, attr, None)
         if current and current.startswith("temp-media/"):
             result = _read_temp_media_bytes(current)
@@ -786,7 +786,7 @@ async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | N
         payload = safe_json_loads(target.prompt_json, default={})
         if not isinstance(payload, dict):
             payload = {}
-        if (target.seed_right_url or target.seed_back_url or target.seed_left_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+        if target.seed_back_url and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
             payload["fullbody_aux_style"] = payload["fullbody_style"]
         payload["fullbody_style"] = style
         stored = payload.get("fullbody_samples")
@@ -869,7 +869,7 @@ async def generate_fullbody_front(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
-            if (target.seed_right_url or target.seed_back_url or target.seed_left_url) and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
+            if target.seed_back_url and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
                 payload["fullbody_aux_style"] = payload["fullbody_style"]
             payload["fullbody_style"] = style
             if effective_feedback is not None:
@@ -941,6 +941,7 @@ async def generate_fullbody_back(
     front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
     effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
     prompt = build_fullbody_prompt("back", template=template, style_id=effective_style, feedback=effective_feedback, appearance=appearance, personality=personality)
+    supports_multiview = image_to_3d.provider_supports_multiview()
 
     try:
         back_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
@@ -962,7 +963,8 @@ async def generate_fullbody_back(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
-            payload["fullbody_aux_style"] = effective_style
+            if supports_multiview:
+                payload["fullbody_aux_style"] = effective_style
             if effective_feedback is not None:
                 payload["fullbody_back_feedback"] = effective_feedback
             else:
@@ -990,7 +992,7 @@ async def confirm_fullbody_front(
     front_url: str | None = None,
     back_url: str | None = None,
 ) -> AvatarAsset:
-    """确认正面全身图，并只补生成缺失的侧面/背面视图。"""
+    """确认正面全身图，并补生成缺失的背面视图。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -1029,72 +1031,45 @@ async def confirm_fullbody_front(
 
     supports_multiview = image_to_3d.provider_supports_multiview()
     auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
-    generated = {
-        view: getattr(asset, f"seed_{view}_url")
-        for view in ("right", "back", "left")
-        if supports_multiview and getattr(asset, f"seed_{view}_url") and auxiliary_style == effective_style
-    }
+    existing_back = getattr(asset, "seed_back_url") or ""
+    generated: dict[str, str] = {"back": existing_back} if supports_multiview and existing_back and auxiliary_style == effective_style else {}
     if supports_multiview and back_url:
         normalized_back = _normalize_avatar_url_to_bare(back_url)
         if normalized_back:
             generated["back"] = normalized_back
 
-    missing_views = tuple(view for view in ("right", "back", "left") if view not in generated) if supports_multiview else ()
-    results = []
-
-    if missing_views:
+    if supports_multiview and "back" not in generated:
         # 已确认的正面图作为缺失视图的主体参考，保证多视图同一形象
         front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
-
-        prompts = {
-            view: build_fullbody_prompt(
-                view,
-                template=template,
-                style_id=effective_style,
-                feedback=prompt_payload.get("fullbody_feedback"),
-                appearance=appearance,
-                personality=personality,
-            )
-            for view in missing_views
-        }
-
-        results = await asyncio.gather(
-            *[
-                _generate_one_portrait_with_moderation_retry(
-                    prompts[view],
-                    user_id,
-                    reference_image=front_ref_uri,
-                    size=_FULLBODY_SIZE,
-                    persist=persona.is_portrait_confirmed,
-                    preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
-                )
-                for view in missing_views
-            ],
-            return_exceptions=True,
+        prompt = build_fullbody_prompt(
+            "back",
+            template=template,
+            style_id=effective_style,
+            feedback=prompt_payload.get("fullbody_feedback"),
+            appearance=appearance,
+            personality=personality,
         )
-
-    errors: list[BaseException] = []
-    for view, result in zip(missing_views, results):
-        if isinstance(result, BaseException):
-            errors.append(result)
-            logger.warning("auxiliary fullbody view failed", extra={"view": view, "error": getattr(result, "internal", str(result))})
-        else:
-            generated[view] = result[0]
-
-    if supports_multiview and len(generated) < 3:
-        first_err = errors[0] if errors else RuntimeError("all aux views failed")
-        raise FullbodyGenerationError("多视角种子图生成失败，请稍后重试", internal=getattr(first_err, "internal", str(first_err)))
+        try:
+            generated["back"], _, _, _ = await _generate_one_portrait_with_moderation_retry(
+                prompt,
+                user_id,
+                reference_image=front_ref_uri,
+                size=_FULLBODY_SIZE,
+                persist=persona.is_portrait_confirmed,
+                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+            )
+        except Exception as exc:
+            err_msg = getattr(exc, "internal", str(exc))
+            raise FullbodyGenerationError("背面种子图生成失败，请稍后重试", internal=err_msg) from exc
 
     async def _write(session: AsyncSession) -> AvatarAsset:
         target = await session.get(AvatarAsset, avatar_id)
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         target.seed_front_url = effective_front_url
-        target.seed_right_url = generated.get("right", "") if supports_multiview else ""
-        target.seed_back_url = generated.get("back", "") if supports_multiview else ""
-        target.seed_left_url = generated.get("left", "") if supports_multiview else ""
+        target.seed_back_url = generated["back"] if supports_multiview else ""
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
-        for attr in ("seed_front_url", "seed_right_url", "seed_back_url", "seed_left_url"):
+        for attr in ("seed_front_url", "seed_back_url"):
             current = getattr(target, attr)
             if current and current.startswith("temp-media/"):
                 moved = _read_temp_media_bytes(current)

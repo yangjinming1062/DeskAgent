@@ -443,7 +443,7 @@ async def run_capability_chain(
                 return resolved[0]
 
             supports_multiview = bool(getattr(provider, "SUPPORTS_MULTIVIEW", False))
-            multiview_paths = {key: _seed(key) for key in ("front", "right", "back", "left") if key in view_filenames} if supports_multiview else None
+            multiview_paths = {key: _seed(key) for key in ("front", "back") if key in view_filenames} if supports_multiview else None
             await _emit_progress(user_id, "generating", 10, provider=provider.provider_name)
             job = await provider.create_image_to_model(_seed("front"), multiview_paths=multiview_paths)
 

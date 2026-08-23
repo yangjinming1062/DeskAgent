@@ -100,23 +100,21 @@ async def test_create_image_to_model_selects_endpoint_by_auxiliary_views(mock_ht
 
 
 @pytest.mark.asyncio
-async def test_create_image_to_model_posts_multiview_inputs(mock_http):
+async def test_create_image_to_model_posts_two_view_inputs(mock_http):
     mock_http.responder = lambda _r: httpx.Response(
         200,
         json=_ok({"task_id": "task_mv"}),
     )
     await tripo_client.create_image_to_model(
         "file_f",
-        multiview_tokens={"right": "file_r", "back": "file_b", "left": "file_l"},
+        multiview_tokens={"back": "file_b"},
     )
     method, url, body = mock_http.calls[0]
     assert method == "POST"
     assert url.endswith("/generation/multiview-to-model")
     assert body["inputs"] == [
         {"front": "file_f"},
-        {"right": "file_r"},
         {"back": "file_b"},
-        {"left": "file_l"},
     ]
     assert body["texture_alignment"] == "original_image"
     assert body["orientation"] == "align_image"
