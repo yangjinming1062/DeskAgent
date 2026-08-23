@@ -119,7 +119,10 @@ def sanitize_keypoints(
 
         if neck_len > 0 and dist > 1.5 * neck_len:
             scale = 1.5 * neck_len / dist
-            out["head"] = (neck[0] + (head[0] - neck[0]) * scale, neck[1] + (head[1] - neck[1]) * scale)
+            out["head"] = (
+                neck[0] + (head[0] - neck[0]) * scale,
+                neck[1] + (head[1] - neck[1]) * scale,
+            )
 
     # 缺关键点回退到部件几何中心。
     if layer_centers:
@@ -145,7 +148,10 @@ async def estimate_pose(
     chain = await resolve_vision_chain(db, user_id)
 
     if not chain:
-        logger.warning("vision LLM chain is empty; pose estimation skipped", extra={"user_id": user_id})
+        logger.warning(
+            "vision LLM chain is empty; pose estimation skipped",
+            extra={"user_id": user_id},
+        )
         return {}
 
     system_prompt = POSE_ESTIMATION_SYSTEM_PROMPT
@@ -160,7 +166,10 @@ async def estimate_pose(
             user_id=user_id,
         )
     except Exception as exc:
-        logger.warning("vision LLM pose estimation failed", extra={"user_id": user_id, "error": str(exc)})
+        logger.warning(
+            "vision LLM pose estimation failed",
+            extra={"user_id": user_id, "error": str(exc)},
+        )
         return {}
 
     kp = parse_keypoints_payload(raw)
@@ -173,5 +182,8 @@ async def estimate_pose(
         return {}
 
     smoothed = sanitize_keypoints(kp, layer_centers=layer_centers)
-    logger.info("vision LLM estimated pose keypoints", extra={"user_id": user_id, "count": len(smoothed)})
+    logger.info(
+        "vision LLM estimated pose keypoints",
+        extra={"user_id": user_id, "count": len(smoothed)},
+    )
     return smoothed

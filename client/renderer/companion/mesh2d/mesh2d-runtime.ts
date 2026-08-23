@@ -1,4 +1,9 @@
-/** Mesh2D SkinnedMesh 渲染运行时 — 加载 manifest + 部件 PNG，构造 SkinnedMesh 场景。*/
+/** Mesh2D SkinnedMesh 渲染运行时 — 加载 manifest + 部件 PNG，构造 SkinnedMesh 场景。
+ *
+ * 设计要点（DESIGN.md §2.3 + mesh2d README）：
+ * - tickMesh2D 拆四层叠加：base pose（drivers 写入）→ 持续微动（breath/blink/sway）→ 视线跟随 → jiggle；
+ * - drivers 负责 action / locomotion / idle variant，本模块只关心持续微动 + 视线 + 嘴型 + jiggle 物理。
+ */
 
 import * as THREE from 'three'
 
@@ -32,6 +37,12 @@ export interface Manifest {
     blink: { min_period_ms: number; max_period_ms: number; duration_ms: number }
     idle_sway: { amplitude: number; min_period_ms: number; max_period_ms: number }
     jiggle: Record<string, JiggleConfig>
+    // 骨骼 transform 红线（来自 backend/services/companion/mesh2d/manifest_exporter.py::_BONE_RED_LINES）。
+    // 驱动层 clampBoneTransform 必须使用这里的数据，不硬编码。
+    red_lines?: Record<string, { rot_max: number; scale_y_max?: number }>
+    actions?: Record<string, unknown>
+    idle_variants?: string[]
+    locomotion?: Record<string, unknown>
   }
 }
 
@@ -254,33 +265,51 @@ export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
   const { breath, idle_sway, jiggle } = manifests.animations
   const dt = Math.min(inputs.dt, 1 / 30)
 
-  // breath：scale.y ∈ [1.0, 1.015]（严守红线），覆盖 body_main + head。
+  // 注意：本函数调用前 Mesh2DDriver.tick() 已写入 base pose（active action + locomotion）。
+  // 这里的微动层 / 视线跟随 / 嘴型 / jiggle 都在 base 之上叠加（不直接覆盖），
+  // 最后由 driver 的 clampBoneTransform 兜底（已写入到 base 阶段），这里再次 clamp 头/躯干红线。
+
+  // breath：scale.y ∈ [1.0, 1.015]（严守红线），与 base scale.y 相乘而非覆盖。
+  // base pose 通常让 scale.y = 1（除 shy/idle_sway_more 等少数动作），所以相乘是安全的。
   if (inputs.breathActive) {
     const wave = Math.sin((inputs.elapsed * Math.PI * 2) / breath.period_ms)
-    const scale = 1 + wave * breath.amplitude
+    const breathFactor = 1 + wave * breath.amplitude // ∈ [1.0, 1.015]
 
     for (const targetName of ['body_main', 'head']) {
       const bone = bones.get(targetName)
 
       if (bone) {
-        bone.scale.y = scale
+        // 先记 base，叠加 breath，再 clamp ≤ 1.015
+        const baseScaleY = bone.userData.baseScaleY ?? 1
+        bone.scale.y = baseScaleY * breathFactor
+
+        if (bone.scale.y > 1.015) {
+          bone.scale.y = 1.015
+        }
       }
     }
   }
 
-  // idle_sway：head.rotation.z ∈ ±0.04 rad（约 ±2.3°）。
-  // head_turn：head.rotation.y ∈ ±0.26 rad（±15°）。两者合写一份骨骼查找。
+  // idle_sway：head.rotation.z 在 base 之上叠加 ±0.04 rad（约 ±2.3°）。
+  // head_turn：head.rotation.{y,x} 在 base 之上叠加 lookX/Y 的视线跟随。
+  // 红线：head 任何一轴都不超 ±0.26 rad；最后 clamp 兜底。
   const head = bones.get('head')
 
   if (head) {
+    const baseRot = head.userData.baseRot ?? { x: 0, y: 0, z: 0 }
     const sway = Math.sin((inputs.elapsed * Math.PI * 2) / 6000) * idle_sway.amplitude
-    head.rotation.z = sway
-    // head_turn 受 setLookTarget 控制：lookX 驱动 Y 轴偏转 (Yaw)，lookY 驱动 X 轴俯仰 (Pitch)
-    head.rotation.y = inputs.lookX * 0.26
-    head.rotation.x = -inputs.lookY * 0.15
+    head.rotation.z = baseRot.z + sway
+    head.rotation.y = baseRot.y + inputs.lookX * 0.26
+    head.rotation.x = baseRot.x - inputs.lookY * 0.15
+
+    // 兜底 clamp（与 driver 的 BONE_RED_LINES 一致）
+    const HEAD_MAX = 0.26
+    head.rotation.x = Math.max(-HEAD_MAX, Math.min(HEAD_MAX, head.rotation.x))
+    head.rotation.y = Math.max(-HEAD_MAX, Math.min(HEAD_MAX, head.rotation.y))
+    head.rotation.z = Math.max(-HEAD_MAX, Math.min(HEAD_MAX, head.rotation.z))
   }
 
-  // blink：eye_L/R.scale.y = 1 → 0.05 → 1（120ms ease）。
+  // blink：eye_L/R.scale.y = 1 → 0.05 → 1（120ms ease）。不影响 action；action 不写 eye。
   if (inputs.blinkActive) {
     const blinkPeriod = manifests.animations.blink?.min_period_ms ?? 4000
     const blinkDuration = manifests.animations.blink?.duration_ms ?? 120
@@ -310,7 +339,7 @@ export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
     }
   }
 
-  // mouth_open：mouth.scale.y = 1 + amp·0.4；scale.x = 1 - amp·0.1。
+  // mouth_open：mouth.scale.y = 1 + amp·0.4；scale.x = 1 - amp·0.1。直接覆盖（mouth 不参与 action）。
   const mouth = bones.get('mouth')
 
   if (mouth) {
@@ -319,7 +348,7 @@ export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
     mouth.scale.x = 1 - amp * 0.1
   }
 
-  // jiggle 弹簧物理
+  // jiggle 弹簧物理（与 action 解耦——impulse 由 hitmap / 走路 / 物理驱动）
   for (const [name, cfg] of Object.entries(jiggle)) {
     const state = jiggleStates.get(name)
 

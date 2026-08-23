@@ -203,13 +203,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'companion.affect': {
       // 来自 LLM 或后端的 affect 与空间具身提示：
-      const payload = event.payload as { emotion?: string; locale?: string; target?: string } | undefined
+      // action 字段在云端独立 affect 推送时也携带；之前漏解构，2D driver 收不到。
+      const payload = event.payload as
+        | { emotion?: string; action?: string; locale?: string; target?: string }
+        | undefined
+
       const emotion = payload?.emotion
+      const action = payload?.action
       const locale = payload?.locale
       const target = payload?.target
 
       if (emotion && emotion !== 'neutral' && !$screenLocked.get()) {
-        setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
+        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action })
       }
 
       applySpatialCue(locale, target)

@@ -17,6 +17,17 @@ class InteractResult(BaseModel):
     reason: str = Field(default="", max_length=200)
 
 
+_REGION_NAMES_ZH: dict[str, str] = {
+    "head": "头部",
+    "face": "脸部",
+    "arm_L": "左手臂",
+    "arm_R": "右手臂",
+    "body": "身体",
+    "back_hair": "后发",
+    "front_hair": "前发刘海",
+    "skirt": "裙摆",
+}
+
 _MAX_RESPONSE_TOKENS = 120
 
 _INTERACT_PROMPT_TEMPLATE = (
@@ -26,7 +37,7 @@ _INTERACT_PROMPT_TEMPLATE = (
     "最近的对话：\n{recent_context}\n\n"
     "今日互动数据：\n{today_stats}\n\n"
     "当前情境：\n"
-    "- 用户刚才对你做了一个动作：戳了戳你（强度 bucket: {poke_count}）\n"
+    "- 用户刚才对你做了一个动作：{action_desc}（强度 bucket: {poke_count}）\n"
     "- 用户本地时间：{local_hour} 点\n"
     "- 用户此前已空闲 {idle_minutes} 分钟\n\n"
     "请结合你的角色语气和性格，给出一句简短的口头反应（长度严格 ≤40 字）。\n"
@@ -38,7 +49,15 @@ _INTERACT_PROMPT_TEMPLATE = (
 )
 
 
-async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float, local_hour: int, llm_config: UserLlmConfig | dict[str, Any]) -> InteractResult:
+async def interact(
+    user_id: int,
+    kind: str,
+    poke_count: int,
+    idle_seconds: float,
+    local_hour: int,
+    llm_config: UserLlmConfig | dict[str, Any],
+    region: str | None = None,
+) -> InteractResult:
     """针对用户互动（戳一戳）用 LLM 生成口头反应与表情。"""
     if kind != "poke":
         return InteractResult(text=None, reason="invalid_kind")
@@ -55,6 +74,8 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
 
     idle_minutes = round(coerce_non_negative_float(idle_seconds) / 60, 2)
     local_hour = coerce_hour_0_23(local_hour)
+    action_desc = f"戳了戳你的{_REGION_NAMES_ZH[region]}" if region in _REGION_NAMES_ZH else "戳了戳你"
+
     parsed, fail_reason = await run_prompt_json(
         user_id,
         llm_config,
@@ -65,6 +86,7 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
             "memories_block": ctx.memories_block,
             "recent_context": recent_context,
             "today_stats": today_stats,
+            "action_desc": action_desc,
             "poke_count": poke_count,
             "local_hour": local_hour if local_hour >= 0 else "未知",
             "idle_minutes": idle_minutes,
@@ -85,5 +107,8 @@ async def interact(user_id: int, kind: str, poke_count: int, idle_seconds: float
     raw_emotion = str(parsed.get("emotion") or "neutral").lower().strip()
     emotion = raw_emotion if raw_emotion in ctx.allowed_emotions and raw_emotion != "neutral" else None
 
-    logger.info("interact: generated interaction response", extra={"user_id": user_id, "kind": kind, "text": text, "emotion": emotion})
+    logger.info(
+        "interact: generated interaction response",
+        extra={"user_id": user_id, "kind": kind, "region": region, "text": text, "emotion": emotion},
+    )
     return InteractResult(text=text, emotion=emotion, reason="ok")

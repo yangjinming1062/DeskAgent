@@ -29,7 +29,12 @@ class DetectedLayer:
     occluded_by: tuple[str, ...]
 
     def to_dict(self) -> dict:
-        return {"name": self.name, "bbox": list(self.bbox), "z_order": self.z_order, "occluded_by": list(self.occluded_by)}
+        return {
+            "name": self.name,
+            "bbox": list(self.bbox),
+            "z_order": self.z_order,
+            "occluded_by": list(self.occluded_by),
+        }
 
 
 def _strip_fence(raw: str) -> str:
@@ -100,7 +105,9 @@ def parse_layers_payload(raw: str) -> list[DetectedLayer]:
 
         occluded = tuple(str(o) for o in occluded_raw if isinstance(o, str))
 
-        layers.append(DetectedLayer(name=name, bbox=bbox, z_order=z_order, occluded_by=occluded))
+        layers.append(
+            DetectedLayer(name=name, bbox=bbox, z_order=z_order, occluded_by=occluded),
+        )
 
     return layers
 
@@ -111,12 +118,19 @@ def has_minimum_layers(layers: list[DetectedLayer]) -> bool:
     return all(req in names for req in _REQUIRED_LAYER_NAMES)
 
 
-async def detect_regions(db: AsyncSession | None, user_id: int | None, data_uri: str) -> list[DetectedLayer]:
+async def detect_regions(
+    db: AsyncSession | None,
+    user_id: int | None,
+    data_uri: str,
+) -> list[DetectedLayer]:
     """调用视觉 LLM 识别 6 部件 bbox；视觉链为空时直接返回空列表。"""
     chain = await resolve_vision_chain(db, user_id)
 
     if not chain:
-        logger.warning("vision LLM chain is empty; region detection skipped", extra={"user_id": user_id})
+        logger.warning(
+            "vision LLM chain is empty; region detection skipped",
+            extra={"user_id": user_id},
+        )
         return []
 
     system_prompt = REGION_DETECTION_SYSTEM_PROMPT
@@ -131,7 +145,10 @@ async def detect_regions(db: AsyncSession | None, user_id: int | None, data_uri:
             user_id=user_id,
         )
     except Exception as exc:
-        logger.warning("vision LLM region detection failed", extra={"user_id": user_id, "error": str(exc)})
+        logger.warning(
+            "vision LLM region detection failed",
+            extra={"user_id": user_id, "error": str(exc)},
+        )
         return []
 
     layers = parse_layers_payload(raw)
@@ -143,5 +160,8 @@ async def detect_regions(db: AsyncSession | None, user_id: int | None, data_uri:
         )
         return []
 
-    logger.info("vision LLM detected regions", extra={"user_id": user_id, "count": len(layers)})
+    logger.info(
+        "vision LLM detected regions",
+        extra={"user_id": user_id, "count": len(layers)},
+    )
     return layers

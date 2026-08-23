@@ -196,6 +196,10 @@ async def _build_turn_inputs(
         clip_map = safe_json_loads(active_model.clip_map_json or "{}", default={})
         # 键即客户端能兑现的语义名；剔除状态与交互反馈，只留 LLM 可主动请求的动作 token。
         available_actions = sorted(set(clip_map) - NON_ACTION_CLIP_KEYS) if isinstance(clip_map, dict) else []
+    if not available_actions:
+        from services.companion.mesh2d.manifest_exporter import DEFAULT_ACTIONS
+
+        available_actions = sorted(DEFAULT_ACTIONS.keys())
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,

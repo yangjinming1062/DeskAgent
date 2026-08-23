@@ -99,11 +99,40 @@
 
 **动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），且只能来自后端注入的可请求动作清单；解析后随对话完成事件下发。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5](docs/PIPELINE.md)。
 
+**action 白名单（mesh2d 路径）**（权威源 [backend/services/companion/mesh2d/prompts.py:action_prompt_section()](backend/services/companion/mesh2d/prompts.py)）：
+
+| key | 描述 | 默认绑定 emotion |
+|---|---|---|
+| `wave_right` / `wave_left` | 单手举起挥手 | happy / excited / 告别 |
+| `present_right` / `present_left` | 单手抬起展示 / 指向 / 拿东西 | helpful（"帮我拿杯子"） |
+| `look_away_left` / `look_away_right` | 头脸避开视线 | shy / embarrassed / sad |
+| `turn_body_left` / `turn_body_right` | 整个上半身转向 | 切换朝向 / 仪式行走 |
+| `lean_forward` | 上半身微微前倾 | curious / thinking |
+| `shy` | 低头侧脸 + 前发微盖 | shy / embarrassed |
+| `idle_glance` | 短瞥一眼回中 | idle 变体 |
+
+> 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 骨骼 pose 表（程序化弧度 transform）。同一 action key 在两条路径上语义一致但兑现方式不同。
+>
+> 走路 / 跳跃（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」，**不会**出现腿部摆动——因为下半身在 body_main.png 内、无法独立旋转。如需移动角色，用 spatial cue / ritual walk 而非 action。
+
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 
 **连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。
+**2D 命中区域协议**（mesh2d 路径）：`companion.interact` RPC payload 的 `region` 字段允许传下列白名单之一（不传 = 整精灵矩形命中）：
+
+| region | 含义 |
+|---|---|
+| `head` | 头部（含 face） |
+| `face` | 脸部（head 子区域） |
+| `arm_L` / `arm_R` | 左 / 右手臂 |
+| `body` | 躯干 |
+| `back_hair` / `front_hair` | 后发 / 前发 |
+| `skirt` | 下装 / 裙子 |
+
+命中区域影响：（1）前端 impulse 触发——hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`region` 字段透传到 LLM，让回应可针对"摸头"vs"拍手"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
+
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 prompts.py 白名单 + manifest_exporter.py DEFAULT_ACTIONS + 客户端 mesh2d-drivers.ts 兑现代码 + 本文档**四处。
 
 ### 1.5 资产 URL 签名与传输缓存
 

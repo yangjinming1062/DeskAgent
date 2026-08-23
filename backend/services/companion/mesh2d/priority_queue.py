@@ -60,7 +60,12 @@ class PriorityTaskQueue:
 
             for _ in range(len(self._worker_tasks)):
                 await self._queue.put(
-                    _PrioritizedItem(priority=_SENTINEL_PRIORITY, seq=self._next_seq(), future=loop.create_future(), run=_noop),
+                    _PrioritizedItem(
+                        priority=_SENTINEL_PRIORITY,
+                        seq=self._next_seq(),
+                        future=loop.create_future(),
+                        run=_noop,
+                    ),
                 )
 
             for task in self._worker_tasks:
@@ -72,7 +77,13 @@ class PriorityTaskQueue:
         self._seq += 1
         return self._seq
 
-    async def submit(self, key: str, run: Callable[[], Awaitable[T]], *, priority: str) -> T:
+    async def submit(
+        self,
+        key: str,
+        run: Callable[[], Awaitable[T]],
+        *,
+        priority: str,
+    ) -> T:
         """提交任务；同一 key 的旧任务会被取消，新任务接力。"""
         prio = 0 if priority == "high" else 100
 

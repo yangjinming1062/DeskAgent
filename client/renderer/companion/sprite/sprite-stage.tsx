@@ -21,7 +21,7 @@ import {
 
 interface SpriteStageProps {
   children: ReactNode
-  onTap?: () => void
+  onTap?: (nx: number, ny: number) => void
   onDoubleTap?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
   hidden?: boolean
@@ -294,7 +294,11 @@ export function SpriteStage({
       onDoubleTap()
     } else {
       lastTapRef.current = now
-      onTap?.()
+      // 计算归一化坐标 (nx, ny) 透传给 onTap，供 mesh2d 子区域命中
+      const rect = mountRef.current?.getBoundingClientRect()
+      const nx = rect && rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5
+      const ny = rect && rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5
+      onTap?.(nx, ny)
     }
   }
 

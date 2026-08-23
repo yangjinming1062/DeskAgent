@@ -32,6 +32,7 @@ import { DeveloperOverlay } from './developer-overlay'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
 import { MemoryBrowser } from './memory-browser'
+import { $mesh2dHitmap } from './mesh2d/mesh2d-store'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
@@ -239,7 +240,7 @@ export function CompanionRoot(): React.JSX.Element {
     })
   }, [lifecycle, gatewayState, requestGateway])
 
-  const onTap = () => {
+  const onTap = (nx?: number, ny?: number) => {
     if (authed) {
       if (lifecycle === 'onboarding') {
         setOnboardingOpen(true)
@@ -247,7 +248,16 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      handlePokeInteraction()
+      // mesh2d 路径下尝试子区域命中；3D 路径忽略 nx/ny（silhouette hit 走自己的通道）
+      let region: string | undefined
+
+      if (nx !== undefined && ny !== undefined) {
+        const hit = $mesh2dHitmap.get()
+        const result = hit ? hit.hit(nx, ny) : null
+        region = result?.region
+      }
+
+      handlePokeInteraction(region)
 
       return
     }

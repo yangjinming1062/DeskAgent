@@ -709,10 +709,13 @@ def _register_session_handlers(
         poke_count = coerce_non_negative_int(params.get("poke_count"))
         idle_seconds = float(coerce_non_negative_float(params.get("idle_seconds")))
         local_hour = coerce_hour_0_23(params.get("local_hour"))
+        region = params.get("region")
+        if region is not None and not isinstance(region, str):
+            region = None
         cfg = user_session.llm_config if user_session else llm_config
 
         try:
-            res = await interact(user_id, kind, poke_count, idle_seconds, local_hour, cfg)
+            res = await interact(user_id, kind, poke_count, idle_seconds, local_hour, cfg, region=region)
         finally:
             _inflight_interact.discard(inflight_key)
 
@@ -720,7 +723,14 @@ def _register_session_handlers(
             return res.model_dump()
 
         # 只有用户实际看到的反应才值得写历史行——未应答的戳一戳否则会污染主会话。
-        await _record_main_conversation(user_id, "user", "（戳了戳精灵）", "status_interaction")
+        action_name = "（戳了戳精灵）"
+        if region:
+            from ..companion.interact import _REGION_NAMES_ZH
+
+            region_zh = _REGION_NAMES_ZH.get(region)
+            if region_zh:
+                action_name = f"（戳了戳精灵的{region_zh}）"
+        await _record_main_conversation(user_id, "user", action_name, "status_interaction")
         await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
         # 不论 DB 结果如何都消耗冷却：LLM 调用已经付过钱，持久化失败不该为第二次调用打开门。
         user_cooldowns[kind] = now

@@ -2,6 +2,15 @@ import { atom } from 'nanostores'
 
 import { log } from '@/shared/lib/log'
 
+// mesh2d 命中检测的引用句柄（懒加载；SpriteStage 在 pointermove / tap 时通过
+// 这里的 ref 调用 hitRegion，避免 React 重渲染）。
+// 注意：Mesh2DHitmap 内部只用归一化坐标，nx / ny 必须由调用方先换算。
+export const $mesh2dHitmap = atom<{ hit: (nx: number, ny: number) => { region: string } | null } | null>(null)
+
+export function setMesh2DHitmap(map: { hit: (nx: number, ny: number) => { region: string } | null } | null): void {
+  $mesh2dHitmap.set(map)
+}
+
 export type Mesh2DStatus = 'idle' | 'generating' | 'succeeded' | 'failed'
 export type RenderMode = '2d' | '3d'
 

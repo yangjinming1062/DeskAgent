@@ -25,7 +25,11 @@ class ExtractedLayer:
     pixel_bbox: tuple[int, int, int, int]
 
 
-def _bbox_to_pixels(bbox: tuple[float, float, float, float], width: int, height: int) -> tuple[int, int, int, int]:
+def _bbox_to_pixels(
+    bbox: tuple[float, float, float, float],
+    width: int,
+    height: int,
+) -> tuple[int, int, int, int]:
     x1, y1, x2, y2 = bbox
     px1 = max(0, min(width - 1, round(x1 * width)))
     py1 = max(0, min(height - 1, round(y1 * height)))
@@ -71,7 +75,10 @@ def _alpha_dominant_ratio(alpha: np.ndarray) -> float:
     return float(np.count_nonzero(alpha > 32) / max(alpha.size, 1))
 
 
-def extract_layers(fullbody_bytes: bytes, regions: list[DetectedLayer]) -> list[ExtractedLayer]:
+def extract_layers(
+    fullbody_bytes: bytes,
+    regions: list[DetectedLayer],
+) -> list[ExtractedLayer]:
     """按 bbox 从已抠透明背景的全图上裁切部件 PNG（带 alpha）。"""
     img = Image.open(io.BytesIO(fullbody_bytes)).convert("RGB")
     w, h = img.size
@@ -80,7 +87,10 @@ def extract_layers(fullbody_bytes: bytes, regions: list[DetectedLayer]) -> list[
     matted = _matte_fullbody(base_rgb)
     matte_ratio = _alpha_dominant_ratio(matted[:, :, 3]) if matted is not None else 0.0
     if matted is None or matte_ratio < 0.05:
-        logger.warning("fullbody matting produced empty alpha; falling back to bbox-local matting", extra={"alpha": matte_ratio})
+        logger.warning(
+            "fullbody matting produced empty alpha; falling back to bbox-local matting",
+            extra={"alpha": matte_ratio},
+        )
         matted = None
 
     extracted: list[ExtractedLayer] = []
@@ -97,12 +107,18 @@ def extract_layers(fullbody_bytes: bytes, regions: list[DetectedLayer]) -> list[
             region = matted[y1:y2, x1:x2].copy()
         else:
             crop_buf = io.BytesIO()
-            Image.fromarray(base_rgb[y1:y2, x1:x2], mode="RGB").save(crop_buf, format="PNG")
+            Image.fromarray(base_rgb[y1:y2, x1:x2], mode="RGB").save(
+                crop_buf,
+                format="PNG",
+            )
             try:
                 out = vectorized_matting(crop_buf.getvalue())
                 region = np.asarray(Image.open(io.BytesIO(out)).convert("RGBA")).copy()
             except Exception as exc:
-                logger.warning("bbox-local matting failed; skip layer", extra={"layer_name": layer.name, "error": str(exc)})
+                logger.warning(
+                    "bbox-local matting failed; skip layer",
+                    extra={"layer_name": layer.name, "error": str(exc)},
+                )
                 continue
 
             if region.shape[2] != 4:
@@ -112,7 +128,10 @@ def extract_layers(fullbody_bytes: bytes, regions: list[DetectedLayer]) -> list[
         alpha_ratio = _alpha_dominant_ratio(alpha)
 
         if alpha_ratio < 0.05:
-            logger.info("skip layer: alpha too sparse", extra={"layer_name": layer.name, "ratio": alpha_ratio})
+            logger.info(
+                "skip layer: alpha too sparse",
+                extra={"layer_name": layer.name, "ratio": alpha_ratio},
+            )
             continue
 
         # 形态学闭运算去毛糙（半径 1，约 1-2px），避免 Z 排序时边缘锯齿。
@@ -132,7 +151,14 @@ def extract_layers(fullbody_bytes: bytes, regions: list[DetectedLayer]) -> list[
             ),
         )
 
-    logger.info("extracted layers", extra={"count": len(extracted), "regions": len(regions), "used_global_matte": matted is not None})
+    logger.info(
+        "extracted layers",
+        extra={
+            "count": len(extracted),
+            "regions": len(regions),
+            "used_global_matte": matted is not None,
+        },
+    )
     return extracted
 
 

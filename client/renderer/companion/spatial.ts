@@ -45,7 +45,13 @@ export const MIN_SCALE = 0.5
 export const MAX_SCALE = 2
 
 export type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
-export type Locomotion = 'still' | 'walk' | 'fly' | 'drag'
+
+// Locomotion 枚举（mesh2d 与 spatial 共用）：
+// - 'still' / 'walk' / 'fly' / 'drag' 是原有 4 项；
+// - 'walk_fast' 是走路加速版（mesh2d 骨骼相位频率更高）；
+// - 'jump' 是单次脉冲，mesh2d 走 body_main squash + shoulder 上扬方案。
+// 扩展时务必同步更新 backend/services/companion/mesh2d/manifest_exporter.py::DEFAULT_LOCOMOTION。
+export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump'
 
 export const $spatialLocale = atom<SpatialLocale>('home')
 export const $spatialPos = atom<{ x: number; y: number }>(getHomePosition())

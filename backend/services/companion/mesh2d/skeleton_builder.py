@@ -86,6 +86,17 @@ _KP_TO_BONE: dict[str, str] = {
 }
 
 
+# 视觉 LLM 输出关键点带 left_/right_ 前缀，骨骼拓扑用 L/R 后缀；查表时用反向映射。
+_BONE_TO_KP: dict[str, str] = {bone: kp for kp, bone in _KP_TO_BONE.items()}
+
+
+# mesh 层名 → 主绑定骨骼：arm_L/R 部件里的几何没有同名 bone，必须路由到肩部。
+_MESH_BONE_OVERRIDE: dict[str, str] = {
+    "arm_L": "shoulder_L",
+    "arm_R": "shoulder_R",
+}
+
+
 @dataclass
 class BoneDef:
     name: str
@@ -137,9 +148,14 @@ def build_bones(
             pivot = (0.5, 50.0 / canvas_h)
         elif name == "skirt":
             pivot = pivot_for("left_hip", "body_main") if "left_hip" in kp else (kp.get("neck", (0.5, 0.5))[0], 0.78)
-            skirt_layer = layer_by_name.get("clothing") or layer_by_name.get("body_main")
+            skirt_layer = layer_by_name.get("clothing") or layer_by_name.get(
+                "body_main",
+            )
             if skirt_layer is not None:
-                pivot = ((pivot[0] + _layer_center(skirt_layer)[0]) / 2, max(pivot[1], _layer_center(skirt_layer)[1]))
+                pivot = (
+                    (pivot[0] + _layer_center(skirt_layer)[0]) / 2,
+                    max(pivot[1], _layer_center(skirt_layer)[1]),
+                )
         elif name == "bust":
             anchor = kp.get("neck") or pivot_for("left_shoulder", "body_main")
             anchor2 = kp.get("left_shoulder") or kp.get("right_shoulder") or anchor
@@ -148,8 +164,21 @@ def build_bones(
             anchor = kp.get("nose") or kp.get("head") or fallback_center
             pivot = (anchor[0], min(anchor[1] + 0.04, 0.95))
         else:
-            layer_name = None if name in {"shoulder_L", "shoulder_R", "elbow_L", "elbow_R", "wrist_L", "wrist_R"} else name
-            pivot = pivot_for(name, layer_name)
+            layer_name = (
+                None
+                if name
+                in {
+                    "shoulder_L",
+                    "shoulder_R",
+                    "elbow_L",
+                    "elbow_R",
+                    "wrist_L",
+                    "wrist_R",
+                }
+                else name
+            )
+            kp_name = _BONE_TO_KP.get(name, name)
+            pivot = pivot_for(kp_name, layer_name)
 
         bones.append(
             BoneDef(
@@ -178,14 +207,21 @@ def build_meshes(
             continue
 
         w, h = layer.pixel_size
-        bone = layer.name
+        bone = _MESH_BONE_OVERRIDE.get(layer.name, layer.name)
         influences = [{"bone": bone, "weight": 1.0}]
 
         if layer.name == "body_main":
-            influences = [{"bone": "body_main", "weight": 0.6}, {"bone": "neck", "weight": 0.2}, {"bone": "head", "weight": 0.2}]
+            influences = [
+                {"bone": "body_main", "weight": 0.6},
+                {"bone": "neck", "weight": 0.2},
+                {"bone": "head", "weight": 0.2},
+            ]
 
         if layer.name == "front_hair":
-            influences = [{"bone": "front_hair", "weight": 0.7}, {"bone": "head", "weight": 0.3}]
+            influences = [
+                {"bone": "front_hair", "weight": 0.7},
+                {"bone": "head", "weight": 0.3},
+            ]
 
         if layer.name == "back_hair":
             influences = [{"bone": "back_hair", "weight": 1.0}]
