@@ -1,4 +1,4 @@
-"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器；首次压缩版本。"""
+"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器、Mesh2D 模型管线与 persona.render_mode；首次压缩版本。"""
 
 from collections.abc import Sequence
 
@@ -149,6 +149,28 @@ def upgrade() -> None:
     op.create_index(op.f("ix_companion_models_rig_type"), "companion_models", ["rig_type"], unique=False)
     op.create_index(op.f("ix_companion_models_user_id"), "companion_models", ["user_id"], unique=False)
     op.create_table(
+        "mesh2d_models",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("avatar_id", sa.Integer(), nullable=True),
+        sa.Column("style", sa.String(length=32), server_default=sa.text("'cel_shading'"), nullable=False),
+        sa.Column("status", sa.String(length=16), server_default=sa.text("'generating'"), nullable=False),
+        sa.Column("manifest_json", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("manifest_path", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
+        sa.Column("layers_json", sa.Text(), server_default=sa.text("'[]'"), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), nullable=True),
+        sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("error", sa.Text(), nullable=True),
+        sa.Column("priority", sa.String(length=8), server_default=sa.text("'high'"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(op.f("ix_mesh2d_models_active"), "mesh2d_models", ["active"], unique=False)
+    op.create_index(op.f("ix_mesh2d_models_status"), "mesh2d_models", ["status"], unique=False)
+    op.create_index(op.f("ix_mesh2d_models_user_id"), "mesh2d_models", ["user_id"], unique=False)
+    op.create_table(
         "conversations",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=True),
@@ -227,6 +249,7 @@ def upgrade() -> None:
         sa.Column("is_complete", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("is_portrait_confirmed", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("portrait_confirmed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("render_mode", sa.String(length=8), server_default=sa.text("'2d'"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -235,6 +258,7 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_personas_is_complete"), "personas", ["is_complete"], unique=False)
     op.create_index(op.f("ix_personas_is_portrait_confirmed"), "personas", ["is_portrait_confirmed"], unique=False)
+    op.create_index(op.f("ix_personas_render_mode"), "personas", ["render_mode"], unique=False)
     op.create_index(op.f("ix_personas_user_id"), "personas", ["user_id"], unique=True)
     op.create_table(
         "user_model_configs",
@@ -416,6 +440,7 @@ def downgrade() -> None:
         "cron_jobs",
         "companion_expression_avatars",
         "companion_models",
+        "mesh2d_models",
         "companion_expressions",
         "avatar_assets",
         "companion_preferences",
