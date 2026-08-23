@@ -1,10 +1,10 @@
-# 3D 模型生成能力链
+# 模型生成能力链（3D 与 2D 分层动画）
 
-> 读者：后端 pipeline 维护者、新供应商接入方、客户端 3D 引擎维护者。
+> 读者：后端 pipeline 维护者、新供应商接入方、客户端 2D / 3D 渲染引擎维护者。
 >
-> 本文档是 3D 生成链路的唯一权威：种子图编排、供应商能力、链拓扑、失败语义、产物契约与客户端兑现策略只在这里展开。产品流程见 [DESIGN.md](../DESIGN.md)，跨模块接口见 [PROTOCOL.md](../PROTOCOL.md)，后端实现取舍见 [backend/README.md](../backend/README.md)。
+> 本文档是 3D 生成链路与 2D 分层动画（Mesh2D）生成链路的唯一权威：种子图编排、供应商能力、链拓扑、失败语义、产物契约与客户端兑现策略只在这里展开。产品流程见 [DESIGN.md](../DESIGN.md)，跨模块接口见 [PROTOCOL.md](../PROTOCOL.md)，后端实现取舍见 [backend/README.md](../backend/README.md)。
 
-## 1. 链拓扑
+## 1. 3D 链拓扑
 
 ```
 submit(seed) → poll → raw task
@@ -65,7 +65,7 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 本地异常退出不代表供应商任务失败：只有明确确认失败才允许重发；无法确认时保持现状供排查。
 
-## 4. 产物契约（Tripo3D `spec=tripo`）
+## 4. 3D 产物契约（Tripo3D `spec=tripo`）
 
 `spec=tripo` 是当前唯一可用的骨骼命名规范——`mixamo` 命名不被云端动画绑定端点接受（实测 `error_code 1004`）。
 
@@ -82,7 +82,7 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 | serpentine / aquatic | 该骨架唯一预设（`preset:<rig>:march`） |
 | avian | **空**——hop 整跳跳过 |
 
-## 5. 客户端消费
+## 5. 3D 客户端消费
 
 **语义键收敛**（LLM 不可请求 = 状态 / 交互反馈类，共 2 个）：`idle` / `emotional`。LLM 可请求的键 = biped 的 `walk` / `laugh` / `cry`（3 个，biped 独有；非 biped 的 LLM 清单为空）。后端组装提示词时只把 LLM 可请求的键注入清单——LLM 永远无法命名一个客户端无法兑现的动作。
 
@@ -95,25 +95,40 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 - 状态 / 交互反馈类键缺席 → 客户端回退 `idle`，符合"永不空白"
 - LLM 可请求类键缺席 → 客户端兑现落空停在绑定姿势；LLM 端因清单里没有该键而无法误请求
 
-## 6. 渲染与传输
+## 6. 2D 分层动画能力链（Mesh2D）
 
-客户端纯 GLB 播放渲染引擎——动画全部来自 `gltf.animations`，无程序化注入。
+**链拓扑**：
+```
+fullbody_url → Vision LLM (6 部件 BBox 检测) → CPU 抠图裁切 → 遮挡边缘补全
+             → Vision LLM (19 关键点估计) → 解剖学平滑 → 骨骼与 Mesh 装配 → manifest.json
+```
 
-- **风格分流**：类人面孔走二次元画风（避免恐怖谷），非人生物走写实路线；GLB 客户端统一以 PBR 渲染
-- **Gzip 透明解压**：供应商原始 GLB 经 Gzip 压缩（蒙皮权重等稀疏数据占大头，缩至 ~10%），客户端 `DecompressionStream` 自动识别魔数并透明还原
-- **整文件缓存**：下载到 OPFS 后按 `content_hash` 复用，重复加载瞬时完成
+**产物契约**（`manifest.json` 与部件切片 PNG）：
+- `canvas`: `{"w": 1024, "h": 1366}` 画布基准。
+- `skeleton.bones`: 19 骨骼层级拓扑（root → body_main → neck → head → ...）。
+- `meshes`: 各部件图层定义（包含 `texture`、`geometry_w`、`geometry_h`、`origin: [cx, cy]`、`z_order` 以及 `bones_influences` 权重）。
+- `animations`: 包含 `breath`（呼吸振幅与周期）、`blink`（眨眼周期与时长）、`idle_sway`（摇摆幅度）、`jiggle`（发丝/裙摆物理弹簧 $k$ 与阻尼 $c$）。
 
-## 7. 验证 checklist
+**客户端 2D 运行时兑现**（`client/renderer/companion/mesh2d/mesh2d-runtime.ts`）：
+- 采用 Three.js OrthographicCamera + SkinnedMesh，各部件 Mesh 经 `geometry.translate(origin.x, -origin.y)` 精准装配。
+- 骨骼层级计算局部相对偏移（`child.position = childAbsPos - parentAbsPos`）。
+- 运行时逐帧计算呼吸、视线跟随（Yaw / Pitch）、眨眼 Ease、TTS 口型振幅以及 Verlet/弹簧 Jiggle 物理。
+
+## 7. 渲染与传输
+
+- **3D 客户端**：纯 GLB 播放渲染引擎——动画全部来自 `gltf.animations`，无程序化注入；Gzip 透明解压与 OPFS 内容哈希缓存。
+- **2D 客户端**：Three.js SkinnedMesh 正交相机渲染，秒级就绪且零额外 GPU 负担。
+
+## 8. 验证 checklist
 
 - [ ] clip track 引用的 bone name 与 `spec=tripo` 对应 rig 的层级一致
 - [ ] biped 颈段取 `NeckTwist01` 兜底（`spec=tripo` 无 `Neck` 节点）
-- [ ] 没有 clip track 引用 `*Twist01` / `*Twist02` 等蒙皮辅助骨
+- [ ] 2D `manifest.json` 各 mesh 均包含正确的 `origin` 画布中心坐标
 - [ ] 客户端兑现按三级降级落空时回退到绑定姿势而非抛错
 
-## 8. 参考实现
+## 9. 参考实现
 
-- 能力链编排：`backend/services/companion/pipeline.py::run_capability_chain`
-- 能力声明基类：`backend/services/image_to_3d/base.py::ImageTo3DProvider`
-- Tripo 客户端（rig / retarget / preset 表）：`backend/services/image_to_3d/providers/tripo/client.py`
-- 客户端兑现：`client/renderer/companion/3d/AnimationMap.ts`
-- 状态机与头/颈注视叠加：`client/renderer/companion/3d/CharacterController.ts`
+- 3D 能力链编排：`backend/services/companion/pipeline.py::run_capability_chain`
+- 2D 切分编排：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
+- 3D 客户端兑现：`client/renderer/companion/3d/AnimationMap.ts`
+- 2D 客户端运行时：`client/renderer/companion/mesh2d/mesh2d-runtime.ts`

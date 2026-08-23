@@ -168,7 +168,7 @@ onboarding 产出的结构化角色定义持久化在 Backend 用户维度，作
 
 ### 6.2 形象资产（跨模块契约）
 
-伙伴的视觉表达由半身像、表情头像、3D 模型与静态精灵资产构成，均归属用户并在用户维度持久化。产品用途与降级体验见 [DESIGN.md §1](DESIGN.md)；资产签名与传输契约见 [PROTOCOL.md §1.5](PROTOCOL.md)；3D 输入、供应商能力链、产物与动画映射见 [docs/PIPELINE.md](docs/PIPELINE.md)。
+伙伴的视觉表达由半身像、表情头像、2D 分层骨骼资产（`manifest.json` 与部件切片）以及 3D 模型构成，均归属用户并在用户维度持久化。产品用途与降级体验见 [DESIGN.md §1](DESIGN.md)；资产签名与传输契约见 [PROTOCOL.md §1.5](PROTOCOL.md)；2D 分层骨骼与 3D 输入、供应商能力链、产物与动画映射见 [docs/PIPELINE.md](docs/PIPELINE.md)。
 
 架构约束只有三条：资产不得跨用户共享；模型与形象只在用户显式请求时再生；生成失败不得阻断客户端兜底渲染。
 

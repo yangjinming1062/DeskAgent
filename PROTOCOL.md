@@ -60,6 +60,8 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/back | 按选定画风、正面种子与微调反馈生成/重绘背面全身图（多视角供应商下与正面图一起按双视图提交） | Backend 生成 + Client 背面预览与微调 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面（及可选背面）全身图并解开音色/用户子阶段；后续种子图准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md) | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.6 |
+| GET/POST /api/companion/mesh2d | 查询 / 触发 2D 骨骼分层切分与装配流水线；生成规范与 manifest 契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 2D 运行时 |
+| POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
@@ -76,6 +78,8 @@
 | companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
+| companion.mesh2d.ready / .failed | 2D 骨骼分层切分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典 | Client 2D 运行时水合与渲染 |
+| companion.render_mode.changed | 用户在设置中或多端同步切换渲染模式（`2d` / `3d`） | Client 切换展示画布 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 
@@ -107,7 +111,7 @@
 |------|-----|
 | portrait 头像 | 5 分钟 |
 | 3D 模型 GLB | 5 分钟 |
-| 静态精灵相册 PNG | 5 分钟 |
+| 2D 部件 PNG / manifest.json | 5 分钟 |
 | 表情头像 PNG | 5 分钟 |
 
 **表情头像缓存键**为 (用户, 情绪 token, 头像)——头像重生后旧行成为陈旧身份、按未命中重新生成；行/文件丢失同样视为未命中（缓存允许丢失，丢失后重生成）。与相册相同的 match-or-generate 语义，但按 token 精确匹配（无 LLM 语义匹配调用）。

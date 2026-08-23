@@ -46,7 +46,7 @@
 
 ## 4. 3D 渲染资源降级与功耗调度
 
-渲染栈是 `three/webgpu` 的 **WebGPURenderer + 四层回退**：WebGPU 后端 → three 内置 WebGL2 后端（同 API 面，零代码）→ 经典 `WebGLRenderer`（仅当 `init()` 整体 reject；必须换新 canvas——webgpu 上下文成功过的 canvas 要不到 webgl2）→ `EngineInitError`（静态精灵层兜底）。`Engine.create()` 是异步工厂，canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load effects 一律 await 引擎就绪 Promise；实际后端写 dev log。
+渲染栈是 `three/webgpu` 的 **WebGPURenderer + 四层回退**：WebGPU 后端 → three 内置 WebGL2 后端（同 API 面，零代码）→ 经典 `WebGLRenderer`（仅当 `init()` 整体 reject；必须换新 canvas——webgpu 上下文成功过的 canvas 要不到 webgl2）→ `EngineInitError`（程序化蛋形兜底）。`Engine.create()` 是异步工厂，canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load effects 一律 await 引擎就绪 Promise；实际后端写 dev log。
 
 视觉兜底层级见 [DESIGN.md §1.2](../../../DESIGN.md)。本节只记录 3D 引擎加载行为：模型字节到达并完成解析后才视作可渲染（避免把"模型就绪事件早于字节落地"误当成可渲染状态）；GLB 解析失败回退到程序化蛋兜底，3D 引擎 init 失败亦同。
 
