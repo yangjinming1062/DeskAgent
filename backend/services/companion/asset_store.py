@@ -30,8 +30,7 @@ def _signing_key() -> bytes:
     if secret:
         return secret.encode("utf-8")
     raise RuntimeError(
-        "companion_asset_signing_key is empty — "
-        "lifespan startup should have failed before this point.",
+        "companion_asset_signing_key is empty — lifespan startup should have failed before this point.",
     )
 
 

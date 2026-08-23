@@ -55,9 +55,13 @@ async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str,
         if not val:
             continue
         ctx = _CONTEXT_LABELS.get(user_key, f"user_profile:{user_key.removeprefix('user_')}")
-        statement = pg_insert(Memory).values(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON).on_conflict_do_update(
-            index_elements=["user_id", "context"],
-            index_where=Memory.context.like("user_profile:%"),
-            set_={"content": val, "tags": _USER_PROFILE_TAGS_JSON, "updated_at": func.now()},
+        statement = (
+            pg_insert(Memory)
+            .values(user_id=user_id, content=val, context=ctx, tags=_USER_PROFILE_TAGS_JSON)
+            .on_conflict_do_update(
+                index_elements=["user_id", "context"],
+                index_where=Memory.context.like("user_profile:%"),
+                set_={"content": val, "tags": _USER_PROFILE_TAGS_JSON, "updated_at": func.now()},
+            )
         )
         await db.execute(statement)

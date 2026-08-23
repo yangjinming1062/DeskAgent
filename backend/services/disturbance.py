@@ -18,7 +18,11 @@ async def set_disturbance_tier(user_id: int, tier: str) -> str:
     """镜像客户端计算的有效档位：由 RPC 推送触发（手动变更 / 活动监视器覆盖 / WS 重连重报）。"""
     normalized = _normalize(tier)
     async with session_scope() as db:
-        stmt = pg_insert(CompanionPreference).values(user_id=user_id, disturbance_tier=normalized).on_conflict_do_update(index_elements=[CompanionPreference.user_id], set_={"disturbance_tier": normalized})
+        stmt = (
+            pg_insert(CompanionPreference)
+            .values(user_id=user_id, disturbance_tier=normalized)
+            .on_conflict_do_update(index_elements=[CompanionPreference.user_id], set_={"disturbance_tier": normalized})
+        )
         await db.execute(stmt)
         await db.commit()
     logger.info("disturbance tier set", extra={"user_id": user_id, "tier": normalized})

@@ -26,6 +26,7 @@ class ReplayBuffer:
         self.ttl_seconds = ttl_seconds
         self._buffer: dict[int, BufferedFrame] = {}
         self._current_seq: int = 0
+        self._max_sent_seq: int = 0
 
     @property
     def current_seq(self) -> int:
@@ -47,10 +48,16 @@ class ReplayBuffer:
         return [f for f in self._buffer.values() if not f.sent]
 
     def mark_sent_through(self, max_seq: int) -> None:
-        """将 seq <= max_seq 的所有缓冲帧标记为已发送（不删除，ack 是唯一的删除路径，让 30s 重放窗口内未确认帧可用于重连补帧；O(n)，n ≤ capacity 500）。"""
+        """将 seq <= max_seq 的所有缓冲帧标记为已发送（不删除，ack 是唯一的删除路径，让 30s 重放窗口内未确认帧可用于重连补帧；维护 max_sent_seq watermark 跳过已发帧，单调遍历首个超界即 break）。"""
+        target_seq = min(max_seq, self._current_seq)
+        if target_seq <= self._max_sent_seq:
+            return
         for f in self._buffer.values():
-            if f.seq <= max_seq:
+            if f.seq > target_seq:
+                break
+            if f.seq > self._max_sent_seq:
                 f.sent = True
+        self._max_sent_seq = target_seq
 
     def append(self, frame: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """为帧分配单调递增的 seq、打戳并写入缓冲区。"""
@@ -75,13 +82,15 @@ class ReplayBuffer:
         """裁剪 seq <= ack_seq 的所有帧，返回被裁剪的数量。"""
         if not self._buffer:
             return 0
-        oldest_seq = next(iter(self._buffer.values())).seq
-        if ack_seq < oldest_seq:
-            return 0
-        pruned_keys = [k for k in self._buffer if k <= ack_seq]
-        for k in pruned_keys:
-            del self._buffer[k]
-        return len(pruned_keys)
+        count = 0
+        while self._buffer:
+            oldest_key = next(iter(self._buffer))
+            if oldest_key <= ack_seq:
+                del self._buffer[oldest_key]
+                count += 1
+            else:
+                break
+        return count
 
     def can_replay(self, last_seq: int) -> bool:
         """检查 last_seq 之后的所有帧是否仍保留在缓冲区中。"""
@@ -127,12 +136,12 @@ class ReplayBuffer:
                 break
 
         # 容量：按插入顺序保留最新 capacity 个
-        if len(self._buffer) > self.capacity:
-            excess = len(self._buffer) - self.capacity
-            for k in list(self._buffer)[:excess]:
-                del self._buffer[k]
+        while len(self._buffer) > self.capacity:
+            oldest_key = next(iter(self._buffer))
+            del self._buffer[oldest_key]
 
     def clear(self) -> None:
         """重置缓冲区和 seq 计数器。"""
         self._buffer.clear()
         self._current_seq = 0
+        self._max_sent_seq = 0

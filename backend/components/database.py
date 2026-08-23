@@ -6,8 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from .config import SETTINGS
 
-
-ENGINE: AsyncEngine = create_async_engine(make_url(SETTINGS.database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False), pool_size=20, max_overflow=10, pool_recycle=3600, pool_pre_ping=True)
+ENGINE: AsyncEngine = create_async_engine(
+    make_url(SETTINGS.database_url).set(drivername="postgresql+asyncpg").render_as_string(hide_password=False),
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=3600,
+    pool_pre_ping=True,
+)
 
 SESSION_LOCAL = async_sessionmaker(ENGINE, autoflush=False, expire_on_commit=False)
 
