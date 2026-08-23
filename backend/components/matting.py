@@ -1,5 +1,8 @@
 import io
+import os
+import shutil
 import threading
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -14,8 +17,49 @@ logger = get_logger(__name__)
 
 _MIN_OPAQUE_FRAC = 0.15
 _MAX_SEMI_FRAC = 0.08
-_CORE_DIST = 25.0
-_SOFT_DIST = 110.0
+_CORE_DIST = 15.0
+_SOFT_DIST = 40.0
+
+
+def _configure_rembg_environment() -> Path:
+    """配置 rembg 本地模型检索目录，避免外部网络请求与多余的目录层级。"""
+    data_dir = Path(SETTINGS.data_dir).resolve()
+    os.environ["REMBG_HOME"] = str(data_dir)
+    # 清理可能干扰 rembg_home 解析的遗留 U2NET_HOME
+    if "U2NET_HOME" in os.environ and os.environ["U2NET_HOME"] != str(data_dir):
+        os.environ.pop("U2NET_HOME", None)
+    return data_dir
+
+
+def _normalize_local_model_path(model_name: str) -> Path | None:
+    """探测并自动归一化本地 ONNX 权重文件到 rembg 标准路径 models/<name>/<name>.onnx。"""
+    data_dir = _configure_rembg_environment()
+    target_dir = data_dir / "models" / model_name
+    target_file = target_dir / f"{model_name}.onnx"
+    if target_file.is_file():
+        return target_file
+
+    candidates = [
+        data_dir / "models" / f"{model_name}.onnx",
+        data_dir / "models" / "models" / model_name / f"{model_name}.onnx",
+        data_dir / f"{model_name}.onnx",
+    ]
+    for cand in candidates:
+        if cand.is_file():
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(cand), str(target_file))
+                logger.info("Normalized local matting model path", extra={"src": str(cand), "dst": str(target_file)})
+                # 清理多余空目录
+                parent = cand.parent
+                if parent != data_dir and parent != data_dir / "models" and not any(parent.iterdir()):
+                    parent.rmdir()
+                return target_file
+            except Exception as exc:
+                logger.warning("Failed to normalize local model path", extra={"src": str(cand), "error": str(exc)})
+                return cand
+
+    return None
 
 
 def has_real_transparency(data: bytes) -> bool:
@@ -38,36 +82,41 @@ def vectorized_matting(data: bytes) -> bytes:
     rgb = np.asarray(img, dtype=np.float32)
     h, w = rgb.shape[:2]
     pad = max(1, min(8, h // 2, w // 2))
-    ring = np.concatenate(
+    # 肖像场景背景主要从顶部及两侧上角采样，避免把触碰下边缘/侧边的人体皮肤算入背景
+    top_region = np.concatenate(
         [
             rgb[:pad].reshape(-1, 3),
-            rgb[h - pad :].reshape(-1, 3),
-            rgb[pad : h - pad, :pad].reshape(-1, 3),
-            rgb[pad : h - pad, w - pad :].reshape(-1, 3),
+            rgb[: pad * 4, : pad * 4].reshape(-1, 3),
+            rgb[: pad * 4, w - pad * 4 :].reshape(-1, 3),
         ],
     )
-    ring_means = ring.mean(axis=1)
-    thresh = np.percentile(ring_means, 70)
-    bg = np.median(ring[ring_means >= thresh], axis=0) if np.max(ring_means) >= 180 else np.median(ring, axis=0)
+    top_means = top_region.mean(axis=1)
+    thresh = np.percentile(top_means, 70)
+    bg = np.median(top_region[top_means >= thresh], axis=0) if np.max(top_means) >= 180 else np.median(top_region, axis=0)
 
     dist = np.linalg.norm(rgb - bg, axis=2)
     soft = dist <= _SOFT_DIST
     labeled, num_features = ndimage.label(soft)
     if num_features > 0:
-        border_labels = np.unique(
+        # 背景种子仅从顶部边缘及上方两角泛洪，禁止以身体接触的底部与两侧下边缘作为背景种子
+        top_labels = np.unique(
             np.concatenate(
                 [
                     labeled[0, :],
-                    labeled[-1, :],
-                    labeled[:, 0],
-                    labeled[:, -1],
+                    labeled[:pad, 0],
+                    labeled[:pad, -1],
                 ],
             ),
         )
-        border_labels = border_labels[border_labels > 0]
-        bg_connected = np.isin(labeled, border_labels)
+        top_labels = top_labels[top_labels > 0]
+        bg_connected = np.isin(labeled, top_labels)
     else:
         bg_connected = soft
+
+    # 前景孔洞闭合：人物躯干/手臂内部的高光即使色差小也被前景完全封闭，禁止挖空
+    fg_mask = ~bg_connected
+    fg_filled = ndimage.binary_fill_holes(fg_mask)
+    bg_connected = ~fg_filled
 
     t = np.clip((dist - _CORE_DIST) / (_SOFT_DIST - _CORE_DIST), 0.0, 1.0)
     alpha = np.where(bg_connected, np.round(255.0 * t * t), 255.0).astype(np.uint8)
@@ -92,7 +141,6 @@ class MattingEngine:
     def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or SETTINGS.matting_model
         self._session: Any = None
-        self._session_initialized = False
         self._init_lock = threading.Lock()
 
     @classmethod
@@ -104,22 +152,26 @@ class MattingEngine:
         return cls._instance
 
     def _ensure_session(self) -> Any:
-        if not self._session_initialized:
-            with self._init_lock:
-                if not self._session_initialized:
-                    try:
-                        self._session = rembg.new_session(self.model_name)
-                    except Exception as exc:
-                        logger.warning("Failed to initialize rembg session, using vectorized fallback", extra={"error": str(exc)})
-                        self._session = None
-                    self._session_initialized = True
+        if self._session is not None:
+            return self._session
+        with self._init_lock:
+            if self._session is not None:
+                return self._session
+            try:
+                _configure_rembg_environment()
+                _normalize_local_model_path(self.model_name)
+                self._session = rembg.new_session(self.model_name)
+                logger.info("Matting engine session initialized", extra={"model": self.model_name})
+            except Exception as exc:
+                logger.warning("Failed to initialize rembg session, using vectorized fallback", extra={"model": self.model_name, "error": str(exc)})
+                self._session = None
         return self._session
 
     def remove_background(self, data: bytes) -> bytes:
         session = self._ensure_session()
         if session is not None:
             try:
-                result = rembg.remove(data, session=session)
+                result = rembg.remove(data, session=session, post_process_mask=True)
                 if isinstance(result, bytes) and has_real_transparency(result):
                     return result
             except Exception as exc:
@@ -133,7 +185,7 @@ def remove_background(data: bytes) -> bytes:
 
 
 def warmup_matting_engine() -> bool:
-    """应用启动时预热并检查/下载 ONNX 抠图模型文件；失败时记录警告并平滑降级至向量化形态学。"""
+    """应用启动时预热并检查/加载 ONNX 抠图模型文件；失败时记录警告并平滑降级至向量化形态学。"""
     engine = MattingEngine.get_instance()
     session = engine._ensure_session()
     if session is not None:
