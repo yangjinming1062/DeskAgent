@@ -31,6 +31,7 @@ chat/
 - **Responses 边界**：持久化层保留按角色建模的消息行；仅在读历史、工具回灌与后台 LLM 调用时转换为指令区 + 输入项。同一工具回合内的推理输出项保留到函数调用与输出闭合，近期图片载荷按二进制附件预算处理，不参与长文本截断。
 - **影响 scrubber 在流式阶段就解析**：`AffectScrubber.feed` 在 chunk 层面拆 tag，orchestrator 拿到完整 emotion 在 turn 结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到 `message.complete` 时 affect 字段已就位，TTS/EMOTIONAL 切换一次到位。
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
+- **流式 chunk 批处理**：在 5–10 ms 批窗口内合并连续 chunk 事件为单个 chunk 载荷；break 与 message.start 立即发出。
 - **懒加载子模块动态解析**：`_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 由 `__init__.__getattr__` 按需动态解析，避免循环依赖与无谓的顶层 import 开销。
 
 ## 已知限制

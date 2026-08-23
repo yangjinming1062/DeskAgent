@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import random
 import time
 from collections.abc import Callable
@@ -17,6 +18,7 @@ logger = get_logger(__name__)
 # 连续助手气泡之间的视觉节奏（plan §2.4）。
 BUBBLE_BREAK_MIN_SECONDS = 0.5
 BUBBLE_BREAK_MAX_SECONDS = 1.5
+CHUNK_BATCH_WINDOW_SECONDS = 0.008
 
 
 @dataclass
@@ -127,9 +129,39 @@ async def _stream_llm_response(
     affect = AffectScrubber(allowed_emotions)
     bubbles = BubbleSplitter()
 
+    batch_buf: list[str] = []
+    flush_task: asyncio.Task | None = None
+
+    async def _flush_chunk_batch() -> None:
+        nonlocal flush_task
+        if flush_task is not None and flush_task is not asyncio.current_task():
+            flush_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await flush_task
+            flush_task = None
+        if not batch_buf:
+            return
+        text = "".join(batch_buf)
+        batch_buf.clear()
+        await emitter.send_json({"type": "chunk", "content": text})
+
+    async def _timed_flush() -> None:
+        try:
+            await asyncio.sleep(CHUNK_BATCH_WINDOW_SECONDS)
+            await _flush_chunk_batch()
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning("failed to flush batched chunk", extra={"error": str(e)})
+        finally:
+            nonlocal flush_task
+            if flush_task is asyncio.current_task():
+                flush_task = None
+
     async def _emit_bubble_events(events: list[BubbleEvent]) -> None:
         for event in events:
             if event.is_break:
+                await _flush_chunk_batch()
                 # --- 分隔符仅作传输用：发 break 帧给渲染端，但不要合并到 turn_content（持久化文本会被 TTS 朗读，不能漏出 ---）。
                 if bubble_parts:
                     turn_parts.append("".join(bubble_parts))
@@ -139,7 +171,10 @@ async def _stream_llm_response(
                 await asyncio.sleep(random.uniform(BUBBLE_BREAK_MIN_SECONDS, BUBBLE_BREAK_MAX_SECONDS))
             elif event.text:
                 bubble_parts.append(event.text)
-                await emitter.send_json({"type": "chunk", "content": event.text})
+                batch_buf.append(event.text)
+                nonlocal flush_task
+                if flush_task is None or flush_task.done():
+                    flush_task = asyncio.create_task(_timed_flush())
 
     async def _feed_clean(clean_text: str) -> None:
         if clean_text:
@@ -178,6 +213,7 @@ async def _stream_llm_response(
     finally:
         # 流中途死亡时也要 flush bubble splitter，使残余缓冲文本落地，尾部不完整分隔符会被丢弃。
         await _emit_bubble_events(bubbles.flush())
+        await _flush_chunk_batch()
 
     # 收尾最后气泡：若 break 后立即结束，bubble_parts 为空则不追加，turn_parts 已持有前面气泡。
     if bubble_parts:
