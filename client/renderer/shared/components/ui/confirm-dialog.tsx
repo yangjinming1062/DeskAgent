@@ -1,13 +1,11 @@
 'use client'
 
-import * as RadixUI from 'radix-ui'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useState } from 'react'
 
 import { strings } from '@/shared/strings'
 
 import { Button } from './button'
-
-const DialogPrimitive = RadixUI.Dialog
 
 interface ConfirmDialogProps {
   open: boolean

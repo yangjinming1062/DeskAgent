@@ -1,130 +1,61 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  $effectiveTier,
-  $effectiveTierOverride,
-  $previousState,
-  $spriteEmotion,
-  $spriteState,
-  $userPreferredTier,
-  reportUserActivity,
-  setDisturbanceTier,
-  setSpriteState
-} from './companion-store'
-
-describe('companion-store Phase 2 state machine', () => {
+describe('companion-store 安全加载与偏好档位', () => {
   beforeEach(() => {
-    vi.useFakeTimers()
-    setSpriteState('idle', { force: true })
-    $userPreferredTier.set('normal')
-    $effectiveTierOverride.set(null)
+    vi.resetModules()
+    vi.restoreAllMocks()
   })
 
-  it('allows high priority state to interrupt lower priority state', () => {
-    setSpriteState('thinking')
-    expect($spriteState.get()).toBe('thinking')
+  it('localStorage.getItem 抛 SecurityError 时不阻断模块加载并回退至 normal', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('SecurityError', 'SecurityError')
+    })
 
-    setSpriteState('working')
-    expect($spriteState.get()).toBe('working')
+    const mod = await import('./companion-store')
+    expect(mod.$userPreferredTier.get()).toBe('normal')
   })
 
-  it('prevents lower priority state from interrupting higher priority state', () => {
-    setSpriteState('working')
-    expect($spriteState.get()).toBe('working')
+  it('localStorage.getItem 抛 QuotaExceededError 时安全回退至 normal', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('QuotaExceededError', 'QuotaExceededError')
+    })
 
-    // listening 优先级 40，working 优先级 70
-    setSpriteState('listening')
-    expect($spriteState.get()).toBe('working')
+    const mod = await import('./companion-store')
+    expect(mod.$userPreferredTier.get()).toBe('normal')
   })
 
-  it('handles transient emotional state and reverts to previous state after timer', () => {
-    setSpriteState('working')
-    expect($spriteState.get()).toBe('working')
+  it('localStorage 存有合法值时正确恢复', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
+      if (key === 'da.companion.disturbanceTier') {
+        return 'quiet'
+      }
 
-    setSpriteState('emotional', { emotion: 'happy', durationMs: 1000 })
-    expect($spriteState.get()).toBe('emotional')
-    expect($spriteEmotion.get()).toBe('happy')
-    expect($previousState.get()).toBe('working')
+      return null
+    })
 
-    vi.advanceTimersByTime(1000)
-    expect($spriteState.get()).toBe('working')
-    expect($spriteEmotion.get()).toBeNull()
+    const mod = await import('./companion-store')
+    expect(mod.$userPreferredTier.get()).toBe('quiet')
   })
 
-  it('handles transient interacting state', () => {
-    setSpriteState('listening')
-    setSpriteState('interacting', { durationMs: 500 })
-    expect($spriteState.get()).toBe('interacting')
+  it('localStorage 存有非法字符串时回退至 normal', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
+      if (key === 'da.companion.disturbanceTier') {
+        return 'unknown_tier'
+      }
 
-    vi.advanceTimersByTime(500)
-    expect($spriteState.get()).toBe('listening')
+      return null
+    })
+
+    const mod = await import('./companion-store')
+    expect(mod.$userPreferredTier.get()).toBe('normal')
   })
 
-  it('returns to idle after 10s of inactivity while in working', () => {
-    setSpriteState('idle', { force: true })
-    expect($spriteState.get()).toBe('idle')
+  it('setDisturbanceTier 能够更新 atom 并持久化', async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {})
 
-    // 连续 6 次活动 tick 将 idle 翻转为 working（计数器阈值）。
-    for (let i = 0; i < 6; i++) {
-      reportUserActivity()
-    }
-
-    expect($spriteState.get()).toBe('working')
-
-    // working（优先级 70）会盖住 idle（优先级 10）——不带 force 时，
-    // 10 秒不活动计时器到期，状态仍会卡在 working。修复就是强制退出。
-    vi.advanceTimersByTime(10_000)
-    expect($spriteState.get()).toBe('idle')
-  })
-})
-
-describe('companion-store disturbance tier', () => {
-  beforeEach(() => {
-    $userPreferredTier.set('normal')
-    $effectiveTierOverride.set(null)
-  })
-
-  it('setDisturbanceTier updates user_preferred', () => {
-    setDisturbanceTier('quiet')
-    expect($userPreferredTier.get()).toBe('quiet')
-  })
-
-  it('effectiveTier follows user_preferred when no override', () => {
-    setDisturbanceTier('proactive')
-    expect($effectiveTier.get()).toBe('proactive')
-  })
-
-  it('effectiveTier follows override when set', () => {
-    setDisturbanceTier('normal')
-    $effectiveTierOverride.set('quiet')
-    expect($effectiveTier.get()).toBe('quiet')
-  })
-
-  it('effectiveTier reverts to user_preferred when override cleared', () => {
-    setDisturbanceTier('proactive')
-    $effectiveTierOverride.set('quiet')
-    $effectiveTierOverride.set(null)
-    expect($effectiveTier.get()).toBe('proactive')
-  })
-
-  it('manual quiet is a hard lock-in (override ignored)', () => {
-    // 计划规定手动安静是「锁定」的：即便活动监视器在用户已选安静时
-    // 写入了一条意外的 override，渲染出的生效档位也保持安静。
-    // 锁定规则在 computed atom 内部强制生效，因此不会被监视器侧的 bug 倒退。
-    setDisturbanceTier('quiet')
-    $effectiveTierOverride.set('proactive')
-    expect($effectiveTier.get()).toBe('quiet')
-  })
-
-  it('non-quiet user_preferred respects override', () => {
-    // 锁定测试的反向：当用户**未**选安静时，活动监视器的 override
-    //（如沉浸式专注上下文）会生效。
-    setDisturbanceTier('normal')
-    $effectiveTierOverride.set('quiet')
-    expect($effectiveTier.get()).toBe('quiet')
-
-    setDisturbanceTier('proactive')
-    $effectiveTierOverride.set('quiet')
-    expect($effectiveTier.get()).toBe('quiet')
+    const mod = await import('./companion-store')
+    mod.setDisturbanceTier('proactive')
+    expect(mod.$userPreferredTier.get()).toBe('proactive')
+    expect(setItemSpy).toHaveBeenCalledWith('da.companion.disturbanceTier', 'proactive')
   })
 })

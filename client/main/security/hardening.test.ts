@@ -137,11 +137,15 @@ test('DEFAULT_CSP_POLICY enforces strict directives and allows necessary protoco
   assert.ok(DEFAULT_CSP_POLICY.includes("form-action 'none'"))
 })
 
-test('index.html contains valid Content-Security-Policy meta tag', () => {
-  const indexPath = path.resolve(import.meta.dirname, '..', '..', 'index.html')
-  const html = fs.readFileSync(indexPath, 'utf8')
-  assert.ok(html.includes('http-equiv="Content-Security-Policy"'), 'index.html must have CSP meta tag')
-  assert.ok(html.includes("default-src 'self'"), 'CSP meta tag must define default-src')
-  assert.ok(html.includes("script-src 'self' 'wasm-unsafe-eval'"), 'CSP meta tag must harden script-src')
-  assert.ok(html.includes('spiritagent-media:'), 'CSP meta tag must allow spiritagent-media')
+test('HTML entries contain valid Content-Security-Policy meta tag', () => {
+  const htmlFiles = ['index.html', 'sprite.html', 'hub.html', 'clip-debugger.html']
+
+  for (const file of htmlFiles) {
+    const htmlPath = path.resolve(import.meta.dirname, '..', '..', file)
+    const html = fs.readFileSync(htmlPath, 'utf8')
+    assert.ok(html.includes('http-equiv="Content-Security-Policy"'), `${file} must have CSP meta tag`)
+    assert.ok(html.includes("default-src 'self'"), `${file} CSP meta tag must define default-src`)
+    assert.ok(html.includes("script-src 'self' 'wasm-unsafe-eval'"), `${file} CSP meta tag must harden script-src`)
+    assert.ok(html.includes('spiritagent-media:'), `${file} CSP meta tag must allow spiritagent-media`)
+  }
 })

@@ -1,5 +1,7 @@
 import { atom, computed } from 'nanostores'
 
+import { persistString, storedString } from '@/shared/lib/storage'
+
 // 伙伴生命周期决定精灵窗口渲染的内容。渲染层按
 // unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
@@ -70,11 +72,10 @@ export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 // 重置为更聒噪的默认档。后端有自己进程内的缓存
 // （services/companion/disturbance.py），但桌面端才是真源——
 // 每次变更及网关开启时都把档位回传给后端。
-const _storedTier = (typeof localStorage !== 'undefined' &&
-  localStorage.getItem('da.companion.disturbanceTier')) as DisturbanceTier | null
+const _rawTier = typeof window === 'undefined' ? null : storedString('da.companion.disturbanceTier')
 
 const _validStored: DisturbanceTier | null =
-  _storedTier === 'proactive' || _storedTier === 'normal' || _storedTier === 'quiet' ? _storedTier : null
+  _rawTier === 'proactive' || _rawTier === 'normal' || _rawTier === 'quiet' ? (_rawTier as DisturbanceTier) : null
 
 export const $userPreferredTier = atom<DisturbanceTier>(_validStored ?? 'normal')
 // ``null`` 表示「当前无覆盖；生效档位回退到 user_preferred」。
@@ -217,13 +218,5 @@ export function reportUserActivity(): void {
 
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $userPreferredTier.set(tier)
-
-  if (typeof localStorage !== 'undefined') {
-    try {
-      localStorage.setItem('da.companion.disturbanceTier', tier)
-    } catch {
-      // localStorage 可能被禁用（无痕模式）；其余代码只读取内存 atom，
-      // 所以这里静默继续。
-    }
-  }
+  persistString('da.companion.disturbanceTier', tier)
 }

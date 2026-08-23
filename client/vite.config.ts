@@ -15,7 +15,44 @@ export default defineConfig({
     postcss: { plugins: [] }
   },
   build: {
-    chunkSizeWarningLimit: 1000
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      input: {
+        index: path.resolve(__dirname, 'index.html'),
+        sprite: path.resolve(__dirname, 'sprite.html'),
+        hub: path.resolve(__dirname, 'hub.html'),
+        'clip-debugger': path.resolve(__dirname, 'clip-debugger.html')
+      },
+      output: {
+        manualChunks(id) {
+          if (id.includes('three/addons/') || id.includes('three/examples/')) {
+            return 'vendor-three-addons'
+          }
+          if (id.includes('node_modules/three/') || id.endsWith('/three')) {
+            return 'vendor-three-core'
+          }
+          if (id.includes('@radix-ui/')) {
+            return 'vendor-radix'
+          }
+          if (
+            id.includes('node_modules/react/') ||
+            id.includes('node_modules/react-dom/') ||
+            id.includes('node_modules/react-router/') ||
+            id.includes('node_modules/react-router-dom/')
+          ) {
+            return 'vendor-react'
+          }
+          if (
+            id.includes('node_modules/nanostores/') ||
+            id.includes('node_modules/@nanostores/') ||
+            id.includes('node_modules/cmdk/') ||
+            id.includes('node_modules/@tabler/icons-react/')
+          ) {
+            return 'vendor-utils'
+          }
+        }
+      }
+    }
   },
   resolve: {
     alias: {

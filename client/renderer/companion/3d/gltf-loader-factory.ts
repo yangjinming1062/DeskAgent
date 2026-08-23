@@ -1,52 +1,41 @@
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js'
-import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
+import type { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
-import dracoDecoderWasmUrl from '../../../assets/draco/draco_decoder.wasm?url'
-import dracoWasmWrapperUrl from '../../../assets/draco/draco_wasm_wrapper.js?url'
+import { getDracoLoader } from './draco-loader'
 
-let dracoLoaderInstance: DRACOLoader | null = null
+export { getDracoLoader } from './draco-loader'
 
-export function getDracoLoader(): DRACOLoader | null {
-  if (typeof window === 'undefined' || typeof Worker === 'undefined') {
-    return null
-  }
-
-  if (!dracoLoaderInstance) {
-    try {
-      dracoLoaderInstance = new DRACOLoader()
-      dracoLoaderInstance.setDecoderPath({
-        js: dracoWasmWrapperUrl,
-        wasm: dracoDecoderWasmUrl
-      })
-      dracoLoaderInstance.setDecoderConfig({ type: 'wasm' })
-      dracoLoaderInstance.preload()
-    } catch {
-      dracoLoaderInstance = null
-    }
-  }
-
-  return dracoLoaderInstance
-}
+let gltfLoaderInstance: GLTFLoader | null = null
 
 /**
- * Returns a new GLTFLoader configured with the singleton DRACOLoader and MeshoptDecoder.
+ * Returns a cached singleton GLTFLoader configured with MeshoptDecoder and DRACOLoader.
+ * If DRACOLoader was not ready on first call, subsequent calls check and attach it.
  */
 export function createGLTFLoader(): GLTFLoader {
-  const loader = new GLTFLoader()
+  if (!gltfLoaderInstance) {
+    const loader = new GLTFLoader()
+
+    if (typeof MeshoptDecoder !== 'undefined') {
+      try {
+        loader.setMeshoptDecoder(MeshoptDecoder)
+      } catch {
+        /* fallback if wasm initialization fails */
+      }
+    }
+
+    gltfLoaderInstance = loader
+  }
+
   const draco = getDracoLoader()
 
-  if (draco) {
-    loader.setDRACOLoader(draco)
+  if (draco && (gltfLoaderInstance as unknown as { dracoLoader: DRACOLoader | null }).dracoLoader !== draco) {
+    gltfLoaderInstance.setDRACOLoader(draco)
   }
 
-  if (typeof MeshoptDecoder !== 'undefined') {
-    try {
-      loader.setMeshoptDecoder(MeshoptDecoder)
-    } catch {
-      /* fallback if wasm initialization fails */
-    }
-  }
+  return gltfLoaderInstance
+}
 
-  return loader
+export function __resetGltfLoaderForTest(): void {
+  gltfLoaderInstance = null
 }

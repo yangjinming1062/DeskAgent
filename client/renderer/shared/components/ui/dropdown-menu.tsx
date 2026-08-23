@@ -1,11 +1,9 @@
-import * as RadixUI from 'radix-ui'
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
 import { Codicon } from './codicon'
-
-const DropdownMenuPrimitive = RadixUI.DropdownMenu
 
 // 边到边菜单的共享 class token（与 `p-0` 内容配合使用）：菜单行占满宽度、方形且紧凑，
 // 高亮区贯穿整块表面。复用这些 token，避免在每个菜单里重复推算，保证所有可搜索 /

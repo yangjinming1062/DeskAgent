@@ -18,9 +18,11 @@ export interface ConnectionIpcDeps {
   ) => Promise<unknown>
   getBootProgressState: () => DesktopBootProgress
   ipcMain: IpcMain
+  mintWsTicket?: (baseUrl: string, token: string | null) => Promise<string | null>
   modelDiskCache?: null | ModelDiskCache
   resolvePathTimeoutMs: (path?: string, method?: string, fallbackMs?: number) => number
   resolveTimeoutMs: (timeoutMs?: number | string | null, fallbackMs?: number) => number
+  setCachedWsUrl?: (wsUrl: string) => void
 }
 
 export function registerConnectionIpc({
@@ -30,13 +32,27 @@ export function registerConnectionIpc({
   fetchJson,
   getBootProgressState,
   ipcMain,
+  mintWsTicket,
   modelDiskCache,
   resolvePathTimeoutMs,
-  resolveTimeoutMs
+  resolveTimeoutMs,
+  setCachedWsUrl
 }: ConnectionIpcDeps): void {
   ipcMain.handle(IPC.invoke.connection, async () => ensureBackend())
   ipcMain.handle(IPC.invoke.gatewayWsUrl, async () => {
     const connection = await ensureBackend()
+
+    if (mintWsTicket && connection.token) {
+      const fresh = await mintWsTicket(connection.baseUrl, connection.token).catch(() => null)
+
+      if (fresh) {
+        const wsBase = connection.baseUrl.replace(/^http/, 'ws')
+        const freshWsUrl = `${wsBase}/api/chat/ws?ticket=${fresh}`
+        setCachedWsUrl?.(freshWsUrl)
+
+        return freshWsUrl
+      }
+    }
 
     return connection.wsUrl
   })

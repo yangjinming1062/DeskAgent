@@ -361,16 +361,41 @@ function resolveWebDist(): string {
   return fallback
 }
 
-function resolveRendererIndex(): string {
-  const candidates = [path.join(APP_ROOT, 'dist', 'index.html'), path.join(resolveWebDist(), 'index.html')]
+function htmlFileNameForRole(role?: string): string {
+  if (role === 'sprite') {
+    return 'sprite.html'
+  }
+
+  if (role === 'tool' || role === 'hub') {
+    return 'hub.html'
+  }
+
+  if (role === 'clip' || role === 'anim' || role === 'animation') {
+    return 'clip-debugger.html'
+  }
+
+  return 'index.html'
+}
+
+function resolveRendererHtml(htmlFileName = 'index.html'): string {
+  const candidates = [path.join(APP_ROOT, 'dist', htmlFileName), path.join(resolveWebDist(), htmlFileName)]
   const found = candidates.find(fileExists)
 
   if (found) {
     return found
   }
 
+  if (htmlFileName !== 'index.html') {
+    const fallbackCandidates = [path.join(APP_ROOT, 'dist', 'index.html'), path.join(resolveWebDist(), 'index.html')]
+    const fallbackFound = fallbackCandidates.find(fileExists)
+
+    if (fallbackFound) {
+      return fallbackFound
+    }
+  }
+
   rememberLog(
-    `[renderer] index.html not found — the desktop app was packaged without a ` +
+    `[renderer] ${htmlFileName} not found — the desktop app was packaged without a ` +
       'renderer bundle. Tried: ' +
       candidates.join(', ') +
       '. Rebuild via the Tauri SpiritAgent-Setup installer.'
@@ -1184,9 +1209,13 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
 }
 
 function rendererUrlFor(role: string): string {
-  const suffix = `?role=${role}`
+  const htmlFile = htmlFileNameForRole(role)
 
-  return DEV_SERVER ? DEV_SERVER + suffix : pathToFileURL(resolveRendererIndex()).toString() + suffix
+  if (DEV_SERVER) {
+    return `${DEV_SERVER}/${htmlFile}`
+  }
+
+  return pathToFileURL(resolveRendererHtml(htmlFile)).toString()
 }
 
 function installStandardWindowHandlers(win: BrowserWindow): void {
@@ -1473,9 +1502,15 @@ registerConnectionIpc({
   fetchJson,
   getBootProgressState: () => bootProgressState,
   ipcMain,
+  mintWsTicket,
   modelDiskCache,
   resolvePathTimeoutMs,
-  resolveTimeoutMs
+  resolveTimeoutMs,
+  setCachedWsUrl: (wsUrl: string) => {
+    if (cachedBackend) {
+      cachedBackend = { ...cachedBackend, wsUrl }
+    }
+  }
 })
 registerMediaIpc({
   spiritagentHome: SPIRITAGENT_HOME,

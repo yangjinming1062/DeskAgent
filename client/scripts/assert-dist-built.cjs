@@ -10,12 +10,15 @@ function checkDistBuilt(distDir) {
     return { ok: false, error: `no dist directory at ${distDir}` }
   }
 
-  const indexHtml = path.join(distDir, 'index.html')
-  if (!fs.existsSync(indexHtml) || !fs.statSync(indexHtml).isFile()) {
-    return { ok: false, error: `dist/index.html is missing at ${indexHtml}` }
-  }
-  if (fs.statSync(indexHtml).size === 0) {
-    return { ok: false, error: `dist/index.html is empty at ${indexHtml}` }
+  const requiredHtmlFiles = ['index.html', 'sprite.html', 'hub.html', 'clip-debugger.html']
+  for (const file of requiredHtmlFiles) {
+    const htmlPath = path.join(distDir, file)
+    if (!fs.existsSync(htmlPath) || !fs.statSync(htmlPath).isFile()) {
+      return { ok: false, error: `dist/${file} is missing at ${htmlPath}` }
+    }
+    if (fs.statSync(htmlPath).size === 0) {
+      return { ok: false, error: `dist/${file} is empty at ${htmlPath}` }
+    }
   }
 
   // index.html alone isn't enough — vite emits hashed JS into dist/assets.
@@ -47,7 +50,7 @@ function main() {
     process.exit(1)
   }
 
-  console.log('✓ assert-dist-built: dist/index.html + assets present')
+  console.log('✓ assert-dist-built: HTML entries (index, sprite, hub, clip-debugger) + assets present')
 }
 
 if (require.main === module) {

@@ -1,12 +1,10 @@
-import * as RadixUI from 'radix-ui'
+import * as SelectPrimitive from '@radix-ui/react-select'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
 import { Codicon } from './codicon'
 import { type ControlVariantProps, controlVariants } from './control'
-
-const SelectPrimitive = RadixUI.Select
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>): React.JSX.Element {
   return <SelectPrimitive.Root data-slot="select" {...props} />

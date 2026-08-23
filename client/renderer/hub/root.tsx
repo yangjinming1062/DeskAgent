@@ -1,4 +1,5 @@
 import { useStore } from '@nanostores/react'
+import * as React from 'react'
 import { lazy, Suspense, useEffect } from 'react'
 
 import { Loader2 } from '@/shared/lib/icons'

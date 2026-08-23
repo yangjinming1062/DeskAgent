@@ -1,9 +1,7 @@
-import * as RadixUI from 'radix-ui'
+import * as TooltipPrimitive from '@radix-ui/react-tooltip'
 import * as React from 'react'
 
 import { cn } from '@/shared/lib/utils'
-
-const TooltipPrimitive = RadixUI.Tooltip
 
 function TooltipProvider({
   delayDuration = 0,
