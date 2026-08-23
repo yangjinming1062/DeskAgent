@@ -912,7 +912,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setSupportsMultiview(isMultiview)
 
     await applyLocalPortrait(avatarRes)
-    setPhase('fullbody-3d')
 
     const rawSamples = avatarRes?.fullbody_samples ?? {}
     let resolvedSamples: Record<string, string> = {}
@@ -1117,6 +1116,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             }
           } else if (nextField === 'fullbody') {
             try {
+              // render-mode 已在 portrait 确认时持久化进 persona,resume 直接落到 fullbody-3d,跳过选择页。
+              setPhase('fullbody-3d')
               await hydratePortraitHistory()
               await hydrateFullbodyStageRef.current()
             } catch {
@@ -1624,8 +1625,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const confirmFullbodyFront = () => {
-    if (!activeAvatarId || !fullbodyStyle) {
+  const confirmFullbodyFront = async () => {
+    if (!activeAvatarId || !fullbodyStyle || fullbodyLoading) {
       return
     }
 
@@ -1634,17 +1635,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const frontUrl = fullbodyFrontRawUrl
     const backUrl = supportsMultiview ? fullbodyBackRawUrl : undefined
 
-    // 立刻推进到 voice 阶段，不等后台的多视图生成完成
-    setPhase('voice')
-    setVoiceStage('describe')
-    setQIndex(0)
-    setInput('')
-    setAnswerKind(null)
-    setHint(null)
+    setFullbodyLoading(true)
+    setFullbodyLoadingText('正在确认全身形象…')
+    setFullbodyHint(null)
 
-    // 异步触发确认 + 后台多视图派生
-    void window.spiritagent
-      .api<{
+    try {
+      const res = await window.spiritagent.api<{
         id?: number
         asset_url?: string
       }>({
@@ -1656,34 +1652,44 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           back_url: backUrl || undefined
         }
       })
-      .then(async res => {
-        await applyPortrait({
-          id: res?.id,
-          assetUrl: res?.asset_url
-        })
-        // 形象确认后立即锁死 onBack 路径(返回到 voice → q-character → portrait-avatar → fullbody-3d 会让
-        // 用户重新调整正面视图,与已启动的 3D 生成不一致)。
-        setImageSealed(true)
-        // 形象确认后立即异步启动生成,不等 onboarding 剩余步骤(语音/性格) 完成;
-        // 生成在 web 进程内 fire-and-forget,失败静默——用户在客户端随时可重试
-        const mode = $renderMode.get()
 
-        if (mode === '2d') {
-          void window.spiritagent
-            .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
-            .catch(() => undefined)
-        } else {
-          void window.spiritagent
-            .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
-            .catch(() => undefined)
-          void window.spiritagent
-            .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
-            .catch(() => undefined)
-        }
+      await applyPortrait({
+        id: res?.id,
+        assetUrl: res?.asset_url
       })
-      .catch(() => {
-        // 后台派生是异步的，对用户 onboarding 流程不构成阻塞
-      })
+      // 形象确认后立即锁死 onBack 路径(返回到 voice → q-character → portrait-avatar → fullbody-3d 会让
+      // 用户重新调整正面视图,与已启动的 3D 生成不一致)。
+      setImageSealed(true)
+      // 形象确认后立即异步启动生成,不等 onboarding 剩余步骤(语音/性格) 完成;
+      // 生成在 web 进程内 fire-and-forget,失败静默——用户在客户端随时可重试
+      const mode = $renderMode.get()
+
+      if (mode === '2d') {
+        void window.spiritagent
+          .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
+          .catch(() => undefined)
+      } else {
+        void window.spiritagent
+          .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
+          .catch(() => undefined)
+        void window.spiritagent
+          .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
+          .catch(() => undefined)
+      }
+
+      // 后端确认成功后才能推进——失败时停在 back view,保留按钮可重试。
+      setPhase('voice')
+      setVoiceStage('describe')
+      setQIndex(0)
+      setInput('')
+      setAnswerKind(null)
+      setHint(null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '确认失败，请稍后重试'
+      setFullbodyHint(msg)
+    } finally {
+      setFullbodyLoading(false)
+    }
   }
 
   const previewVoice = (id: string, context: string) =>
