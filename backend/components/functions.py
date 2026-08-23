@@ -62,7 +62,7 @@ def utc_now() -> datetime:
 
 
 def ensure_utc(dt: datetime) -> datetime:
-    """给 SQLite 读回的 naive datetime 补 UTC（PG 自带 tzinfo）。"""
+    """给失去 tzinfo 的 datetime 补 UTC（DB 约定 timestamptz，PG 自带 tzinfo；本函数是其他来源的兜底）。"""
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
 
 

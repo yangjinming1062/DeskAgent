@@ -172,55 +172,29 @@ async def _claim_pending_events(local_user_ids: list[int], limit: int = WS_EVENT
     now = utc_now()
     claimed: list[tuple[int, str, str, int, int]] = []
     async with session_scope() as db:
-        is_pg = db.bind is not None and db.bind.dialect.name == "postgresql"
-        if is_pg:
-            subq = (
-                select(WSEvent.id)
-                .where(
-                    WSEvent.user_id.in_(local_user_ids),
-                    WSEvent.status == "PENDING",
-                    WSEvent.next_retry_at <= now,
-                )
-                .order_by(WSEvent.created_at, WSEvent.id)
-                .limit(limit)
-                .with_for_update(skip_locked=True)
-                .scalar_subquery()
+        subq = (
+            select(WSEvent.id)
+            .where(
+                WSEvent.user_id.in_(local_user_ids),
+                WSEvent.status == "PENDING",
+                WSEvent.next_retry_at <= now,
             )
-            rows = (
-                await db.execute(
-                    update(WSEvent)
-                    .where(WSEvent.id.in_(subq))
-                    .values(status="PROCESSING", locked_by=WORKER_ID, locked_at=now)
-                    .returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at, WSEvent.retry_count),
-                )
-            ).all()
-            rows.sort(key=lambda r: (r[4], r[0]))
-            for r in rows:
-                claimed.append((r[0], r[1], r[2], r[3], r[5]))
-        else:
-            rows = (
-                (
-                    await db.execute(
-                        select(WSEvent)
-                        .where(
-                            WSEvent.user_id.in_(local_user_ids),
-                            WSEvent.status == "PENDING",
-                            WSEvent.next_retry_at <= now,
-                        )
-                        .order_by(WSEvent.created_at, WSEvent.id)
-                        .limit(limit),
-                    )
-                )
-                .scalars()
-                .all()
+            .order_by(WSEvent.created_at, WSEvent.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        rows = (
+            await db.execute(
+                update(WSEvent)
+                .where(WSEvent.id.in_(subq))
+                .values(status="PROCESSING", locked_by=WORKER_ID, locked_at=now)
+                .returning(WSEvent.id, WSEvent.event_type, WSEvent.payload, WSEvent.user_id, WSEvent.created_at, WSEvent.retry_count),
             )
-            if rows:
-                row_ids = [r.id for r in rows]
-                await db.execute(
-                    update(WSEvent).where(WSEvent.id.in_(row_ids)).values(status="PROCESSING", locked_by=WORKER_ID, locked_at=now),
-                )
-                for r in rows:
-                    claimed.append((r.id, r.event_type, r.payload, r.user_id, r.retry_count))
+        ).all()
+        rows.sort(key=lambda r: (r[4], r[0]))
+        for r in rows:
+            claimed.append((r[0], r[1], r[2], r[3], r[5]))
         await db.commit()
     return claimed
 
@@ -282,8 +256,8 @@ async def _periodic_flusher_loop():
         pass
 
 
-async def ws_event_loop(dsn: str | None = None):
-    """基于 PostgreSQL LISTEN/NOTIFY 的 WS outbox 派发：进程持有专用的 asyncpg 连接（被 LISTEN pin 住），出错后 5s 重连以避免 PG 重启/网络抖动让派发器永久失聪；dsn=None（非 PG 后端）跳过 LISTEN，回退到 60s 轮询。"""
+async def ws_event_loop(dsn: str):
+    """基于 PostgreSQL LISTEN/NOTIFY 的 WS outbox 派发：进程持有专用的 asyncpg 连接（被 LISTEN pin 住），出错后 5s 重连以避免 PG 重启/网络抖动让派发器永久失聪。"""
     logger.info("Starting background WS event loop with PG LISTEN/NOTIFY.")
     seen_version = -1  # 初始传递 -1，使启动时第一轮立即执行排空已提交事件
 
@@ -294,21 +268,17 @@ async def ws_event_loop(dsn: str | None = None):
     try:
         while True:
             try:
-                if dsn:
-                    conn = await asyncpg.connect(dsn)
+                conn = await asyncpg.connect(dsn)
+                try:
+                    await conn.add_listener("ws_events_channel", _listener)
                     try:
-                        await conn.add_listener("ws_events_channel", _listener)
-                        try:
-                            while True:
-                                seen_version = await _process_events(seen_version)
-                        finally:
-                            with contextlib.suppress(Exception):
-                                await conn.remove_listener("ws_events_channel", _listener)
+                        while True:
+                            seen_version = await _process_events(seen_version)
                     finally:
-                        await conn.close()
-                else:
-                    while True:
-                        seen_version = await _process_events(seen_version)
+                        with contextlib.suppress(Exception):
+                            await conn.remove_listener("ws_events_channel", _listener)
+                finally:
+                    await conn.close()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -422,7 +392,7 @@ async def _execute_cron_turn(user_id: int, payload: dict) -> None:
 _WS_EVENT_LOOP = BackgroundTask("gateway.ws_event_loop")
 
 
-def start_ws_event_loop(dsn: str | None = None) -> None:
+def start_ws_event_loop(dsn: str) -> None:
     _WS_EVENT_LOOP.start(ws_event_loop(dsn))
 
 

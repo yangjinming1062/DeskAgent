@@ -143,14 +143,14 @@ async def search_sessions(
     """按标题、会话 id 或会话内任意消息检索；每用户最多 20 条（按最近活跃排序），q 必填且限长。"""
     user, _ = current
 
-    # 限制搜索词长度——SQLite LIKE 对多 KB 字符串慢，无 UX 理由让用户搜 10k 字符。
+    # 限制搜索词长度——LIKE 对多 KB 字符串慢，无 UX 理由让用户搜 10k 字符。
     if len(q) > SEARCH_INPUT_MAX_LEN:
         q = q[:SEARCH_INPUT_MAX_LEN]
     # 转义 SQL LIKE 元字符，保证用户输入按字面量匹配。
     escaped = q.replace(SQL_LIKE_ESCAPE_CHAR, SQL_LIKE_ESCAPE_CHAR * 2).replace("%", f"{SQL_LIKE_ESCAPE_CHAR}%").replace("_", f"{SQL_LIKE_ESCAPE_CHAR}_")
     pattern = f"%{escaped}%"
 
-    # 拆两条查询：标题/id 匹配 vs 包含匹配消息的会话；Python 端合并避开部分方言（SQLite）对嵌套子查询的 UNION 处理不佳。
+    # 拆两条查询：标题/id 匹配 vs 包含匹配消息的会话；Python 端合并——内容扫描路径封顶独立会话 id，分两条读路径便于限流与可读性。
     title_match_ids = [
         row[0]
         for row in (

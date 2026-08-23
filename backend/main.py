@@ -67,16 +67,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     setup_logging()
     if not SETTINGS.companion_asset_signing_key:
         raise RuntimeError("COMPANION_ASSET_SIGNING_KEY must be set.")
-    is_pg = make_url(SETTINGS.database_url).get_backend_name() == "postgresql"
-    if is_pg:
-        await asyncio.to_thread(_run_migrations)
+    await asyncio.to_thread(_run_migrations)
 
     attachment_root(SETTINGS.data_dir).mkdir(parents=True, exist_ok=True)
     await asyncio.to_thread(warmup_matting_engine)
 
     start_scheduler()
-    # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连；非 PG 后端传 None 走纯轮询回退。
-    start_ws_event_loop(_raw_pg_dsn() if is_pg else None)
+    # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连。
+    start_ws_event_loop(_raw_pg_dsn())
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()
     # 3D 模型管道并入 web 后：从持久状态（companion_models.status IN FLIGHT）重启尚未完成的 task。

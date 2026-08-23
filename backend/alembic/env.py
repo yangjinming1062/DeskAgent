@@ -28,7 +28,7 @@ target_metadata = ModelBase.metadata
 
 
 def _include_object(obj, name, type_, reflected, compare_to):
-    # 迁移管理的索引（partial unique / hnsw / gin trgm）只存在于迁移文件，不在模型 metadata（声明进模型会让 SQLite create_all 丢 WHERE 语义）。跳过"仅存在于数据库"的索引，autogenerate 才会不提议删除它们。
+    # PG 特有的索引（partial unique / hnsw / gin trgm）只在迁移里声明——ModelBase.metadata 无法表达 partial WHERE / vector / trgm ops。autogenerate 默认会把"仅存在数据库"的对象视为"模型少了"，提议删除迁移里手工建的索引；这里跳过让 autogenerate 信任数据库现状。
     return not (type_ == "index" and reflected and compare_to is None)
 
 
