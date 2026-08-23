@@ -29,14 +29,24 @@ WORKER_ID = f"worker-{secrets.token_hex(4)}"
 # 按 user 持有强引用，避免 spawn 的 cron turn 在运行到一半时被 GC（CPython bpo-46662）。
 _cron_turn_tasks: dict[int, set[asyncio.Task]] = {}
 
-# 全局唤醒事件，用于即时冲刷（Instant Drain）与 NOTIFY 触发
-_WAKEUP_EVENT: asyncio.Event | None = None
+
+class _WakeupState:
+    def __init__(self) -> None:
+        self.version: int = 0
+        self.event: asyncio.Event = asyncio.Event()
+
+    def notify(self) -> None:
+        self.version += 1
+        self.event.set()
+
+
+# 全局唤醒状态，用于即时冲刷（Instant Drain）与 NOTIFY 触发
+_WAKEUP_STATE: _WakeupState = _WakeupState()
 
 
 def notify_ws_event_loop() -> None:
     """唤醒 WS Outbox 派发循环立即执行一轮事件捞取与冲刷。"""
-    if _WAKEUP_EVENT is not None:
-        _WAKEUP_EVENT.set()
+    _WAKEUP_STATE.notify()
 
 
 def _discard_cron_task(user_id: int, task: asyncio.Task) -> None:
@@ -94,12 +104,25 @@ class ConnectionManager:
 
     def register_dispatcher(self, user_id: int, dispatcher: JsonRpcDispatcher) -> None:
         self._dispatchers[user_id] = dispatcher
+        dispatcher.start_writer()
         logger.info("User dispatcher registered", extra={"user_id": user_id})
         notify_ws_event_loop()
 
     def unregister_dispatcher(self, user_id: int) -> None:
-        self._dispatchers.pop(user_id, None)
+        dispatcher = self._dispatchers.pop(user_id, None)
+        if dispatcher is not None and getattr(dispatcher, "_writer_task", None) and not dispatcher._writer_task.done():
+            dispatcher._writer_task.cancel()
         logger.info("User dispatcher unregistered", extra={"user_id": user_id})
+
+    async def aunregister_dispatcher(self, user_id: int) -> None:
+        dispatcher = self._dispatchers.pop(user_id, None)
+        if dispatcher is not None:
+            await dispatcher.stop_writer()
+            delivered = dispatcher.drain_delivered_ids()
+            if delivered:
+                with contextlib.suppress(Exception):
+                    await _mark_events_delivered(delivered)
+        logger.info("User dispatcher async unregistered", extra={"user_id": user_id})
 
     def get_dispatcher(self, user_id: int) -> JsonRpcDispatcher | None:
         return self._dispatchers.get(user_id)
@@ -234,64 +257,91 @@ async def _mark_event_failure(event_id: int, current_retries: int, error: str | 
         await db.commit()
 
 
+async def _flush_gateway_delivered() -> None:
+    """网关级统一将所有已由 writer 成功送达客户端的 Outbox 事件批量标记为 DELIVERED。"""
+    all_delivered: list[int] = []
+    for user_id in MANAGER.local_user_ids():
+        d = MANAGER.get_dispatcher(user_id)
+        if d is not None:
+            all_delivered.extend(d.drain_delivered_ids())
+    if all_delivered:
+        await _mark_events_delivered(all_delivered)
+
+
+async def _periodic_flusher_loop():
+    try:
+        while True:
+            await asyncio.sleep(1.0)
+            with contextlib.suppress(Exception):
+                await _flush_gateway_delivered()
+    except asyncio.CancelledError:
+        pass
+
+
 async def ws_event_loop(dsn: str | None = None):
     """基于 PostgreSQL LISTEN/NOTIFY 的 WS outbox 派发：进程持有专用的 asyncpg 连接（被 LISTEN pin 住），出错后 5s 重连以避免 PG 重启/网络抖动让派发器永久失聪；dsn=None（非 PG 后端）跳过 LISTEN，回退到 60s 轮询。"""
-    global _WAKEUP_EVENT
     logger.info("Starting background WS event loop with PG LISTEN/NOTIFY.")
-    _WAKEUP_EVENT = asyncio.Event()
-    _WAKEUP_EVENT.set()  # initial pass to drain anything committed before startup
+    seen_version = -1  # 初始传递 -1，使启动时第一轮立即执行排空已提交事件
 
     def _listener(_conn, _pid, _channel, _payload):
         notify_ws_event_loop()
 
-    while True:
-        try:
-            if dsn:
-                conn = await asyncpg.connect(dsn)
-                try:
-                    await conn.add_listener("ws_events_channel", _listener)
+    flusher_task = asyncio.create_task(_periodic_flusher_loop())
+    try:
+        while True:
+            try:
+                if dsn:
+                    conn = await asyncpg.connect(dsn)
                     try:
-                        while True:
-                            await _process_events(_WAKEUP_EVENT)
-                    finally:
+                        await conn.add_listener("ws_events_channel", _listener)
                         try:
-                            await conn.remove_listener("ws_events_channel", _listener)
-                        except asyncio.CancelledError:
-                            raise
-                        except Exception as e:
-                            logger.warning("remove_listener best-effort failed", extra={"error": str(e)})
-                finally:
-                    await conn.close()
-            else:
-                while True:
-                    await _process_events(_WAKEUP_EVENT)
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            logger.error("Error in WS event loop connection, reconnecting in 5s", extra={"error": str(e)})
-            await asyncio.sleep(5)
+                            while True:
+                                seen_version = await _process_events(seen_version)
+                        finally:
+                            with contextlib.suppress(Exception):
+                                await conn.remove_listener("ws_events_channel", _listener)
+                    finally:
+                        await conn.close()
+                else:
+                    while True:
+                        seen_version = await _process_events(seen_version)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error("Error in WS event loop connection, reconnecting in 5s", extra={"error": str(e)})
+                await asyncio.sleep(5)
+    finally:
+        flusher_task.cancel()
+        with contextlib.suppress(Exception):
+            await flusher_task
+        with contextlib.suppress(Exception):
+            await _flush_gateway_delivered()
 
 
-async def _process_events(wakeup: asyncio.Event):
+async def _process_events(seen: int = -1) -> int:
     try:
         begin_local_scope()
-        try:
-            await asyncio.wait_for(wakeup.wait(), timeout=60.0)
-            wakeup.clear()
-        except TimeoutError:
-            pass
+        if _WAKEUP_STATE.version <= seen:
+            _WAKEUP_STATE.event.clear()
+            if _WAKEUP_STATE.version <= seen:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(_WAKEUP_STATE.event.wait(), timeout=60.0)
+
+        # 关键：在从 DB 认领事件前快照当前版本号
+        current_version = _WAKEUP_STATE.version
 
         await _recover_stale_locks()
+        await _flush_gateway_delivered()
 
         local_user_ids = MANAGER.local_user_ids()
         if not local_user_ids:
-            return
+            return current_version
 
         claimed = await _claim_pending_events(local_user_ids)
         if not claimed:
-            return
+            return current_version
 
-        delivered_ids: list[int] = []
+        cron_delivered_ids: list[int] = []
         for event_id, event_type, payload_str, user_id, retry_count in claimed:
             payload = safe_json_loads(payload_str)
             if payload is None:
@@ -304,15 +354,16 @@ async def _process_events(wakeup: asyncio.Event):
                 user_tasks = _cron_turn_tasks.setdefault(user_id, set())
                 user_tasks.add(task)
                 task.add_done_callback(lambda t, uid=user_id: _discard_cron_task(uid, t))
-                delivered_ids.append(event_id)
+                cron_delivered_ids.append(event_id)
                 continue
 
             try:
                 dispatcher = MANAGER.get_dispatcher(user_id)
                 if dispatcher is None:
                     raise RuntimeError(f"User {user_id} dispatcher not available")
-                await dispatcher.push_event(event_type, payload)
-                delivered_ids.append(event_id)
+                enqueued = await dispatcher.enqueue_event(event_type, payload, event_id=event_id)
+                if not enqueued:
+                    await _mark_event_failure(event_id, retry_count, error="Outbox writer queue full")
             except Exception as e:
                 logger.error(
                     "Failed to dispatch event to user",
@@ -320,11 +371,15 @@ async def _process_events(wakeup: asyncio.Event):
                 )
                 await _mark_event_failure(event_id, retry_count, error=str(e))
 
-        if delivered_ids:
-            await _mark_events_delivered(delivered_ids)
+        if cron_delivered_ids:
+            await _mark_events_delivered(cron_delivered_ids)
+
+        await _flush_gateway_delivered()
+        return current_version
 
     except Exception as e:
         logger.error("Error processing events", extra={"error": str(e)})
+        return _WAKEUP_STATE.version
 
 
 async def _execute_cron_turn(user_id: int, payload: dict) -> None:

@@ -191,11 +191,70 @@ async def test_stream_deadline_fires_on_stalled_stream(monkeypatch):
     monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
 
     with pytest.raises(LLMRuntimeError) as excinfo:
-        stream = _stream_with_timeout(_stalled(), timeout=0.05, model="m")
+        stream = _stream_with_timeout(_stalled(), timeout=0.05, idle_timeout=0.05, model="m")
         async for _ in stream:
             pass
 
     assert excinfo.value.classified.reason is FailoverReason.timeout
+
+
+@pytest.mark.asyncio
+async def test_stream_idle_timeout_fires_on_stalled_chunks(monkeypatch):
+    import asyncio as _asyncio
+
+    async def _stalled_mid_stream():
+        yield SimpleNamespace(type="response.output_text.delta", delta="hello")
+        await _asyncio.sleep(10)
+        yield SimpleNamespace(type="response.output_text.delta", delta="world")
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+    with pytest.raises(LLMRuntimeError) as excinfo:
+        stream = _stream_with_timeout(_stalled_mid_stream(), timeout=10.0, idle_timeout=0.05, model="m")
+        results = []
+        async for chunk in stream:
+            results.append(chunk)
+
+    assert excinfo.value.classified.reason is FailoverReason.timeout
+
+
+@pytest.mark.asyncio
+async def test_stream_total_budget_caps_slow_stream(monkeypatch):
+    import asyncio as _asyncio
+
+    async def _slow_continuous_stream():
+        for i in range(100):
+            await _asyncio.sleep(0.02)
+            yield SimpleNamespace(type="response.output_text.delta", delta=str(i))
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+    # idle is generous (1.0s), but total budget is 0.05s
+    with pytest.raises(LLMRuntimeError) as excinfo:
+        stream = _stream_with_timeout(_slow_continuous_stream(), timeout=0.05, idle_timeout=1.0, model="m")
+        async for _ in stream:
+            pass
+
+    assert excinfo.value.classified.reason is FailoverReason.timeout
+
+
+@pytest.mark.asyncio
+async def test_stream_idle_resets_on_each_chunk(monkeypatch):
+    import asyncio as _asyncio
+
+    async def _healthy_stream():
+        for i in range(5):
+            await _asyncio.sleep(0.02)
+            yield SimpleNamespace(type="response.output_text.delta", delta=str(i))
+
+    monkeypatch.setattr("services.llm.llm_retry.log_event", lambda **_kwargs: None)
+
+    chunks = []
+    stream = _stream_with_timeout(_healthy_stream(), timeout=10.0, idle_timeout=0.05, model="m")
+    async for chunk in stream:
+        chunks.append(chunk.delta)
+
+    assert chunks == ["0", "1", "2", "3", "4"]
 
 
 @pytest.mark.asyncio

@@ -29,17 +29,30 @@ class LLMRuntimeError(Exception):
         super().__init__(classified.message or classified.reason.value)
 
 
-async def _stream_with_timeout(stream: Any, timeout: float, *, model: str) -> AsyncIterator:
-    """包装流式响应，使整个迭代受 deadline 约束（``timeout`` 是整个流的预算而非每 chunk）；finally 中始终 aclose() 流，避免 chat-loop 取消时 HTTP 连接泄漏到 SDK 池。"""
+async def _stream_with_timeout(
+    stream: Any,
+    timeout: float,
+    *,
+    model: str,
+    idle_timeout: float | None = None,
+) -> AsyncIterator:
+    """包装流式响应：每 chunk 间的静默期受 ``idle_timeout`` 约束（重置于每 chunk），
+    整个流同时受 ``timeout`` (``llm_request_timeout_seconds``) 总预算硬上界约束。
+    finally 中始终 aclose() 流，避免 chat-loop 取消时 HTTP 连接泄漏到 SDK 池。
+    """
     loop = asyncio.get_running_loop()
-    deadline = loop.time() + timeout
+    start = loop.time()
+    budget = max(timeout, LLM_RETRY_MIN_TIMEOUT)
+    idle = float(idle_timeout if idle_timeout is not None else SETTINGS.llm_stream_idle_timeout_seconds)
     try:
         while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise TimeoutError(f"LLM stream stalled (no chunk for {timeout}s)")
+            elapsed = loop.time() - start
+            remaining_total = budget - elapsed
+            if remaining_total <= 0:
+                raise TimeoutError(f"LLM stream total budget exceeded ({budget}s)")
+            chunk_wait = min(idle, remaining_total)
             try:
-                chunk = await asyncio.wait_for(stream.__anext__(), timeout=remaining)
+                chunk = await asyncio.wait_for(stream.__anext__(), timeout=chunk_wait)
             except StopAsyncIteration:
                 return
             yield chunk
@@ -143,7 +156,14 @@ async def _wrap_stream_for_debug(stream: AsyncIterator, *, call_id: str, provide
             )
 
 
-async def call_with_retry(client: Any, *, context_length: int = 200000, timeout: float | None = None, **create_kwargs: Any) -> Any:
+async def call_with_retry(
+    client: Any,
+    *,
+    context_length: int = 200000,
+    timeout: float | None = None,
+    idle_timeout: float | None = None,
+    **create_kwargs: Any,
+) -> Any:
     """为 ``client.responses.create(**kwargs)`` 编排 SDK 重试、流式 deadline 与分类。
 
     重试由构造时的 ``AsyncOpenAI(max_retries=...)`` 接管；SDK 自动遵循 ``Retry-After`` /
@@ -186,7 +206,7 @@ async def call_with_retry(client: Any, *, context_length: int = 200000, timeout:
     try:
         if is_stream:
             raw_stream = await client.responses.create(**create_kwargs, extra_headers=extra_headers)
-            deadline_stream = _stream_with_timeout(raw_stream, timeout, model=model)
+            deadline_stream = _stream_with_timeout(raw_stream, timeout, model=model, idle_timeout=idle_timeout)
             return _wrap_stream_for_debug(deadline_stream, call_id=call_id, provider=call_site, model=model, call_site=call_site, call_started=call_started)
 
         result = await client.responses.create(**create_kwargs, extra_headers=extra_headers)

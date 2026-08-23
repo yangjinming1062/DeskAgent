@@ -96,7 +96,7 @@ async def delete_user(user_id: int, _admin: str = Depends(get_current_admin_toke
             await ws.close(code=1000)
         _MANAGER.disconnect(ws, user_id)
     cancel_user_cron_turns(user_id)
-    _MANAGER.unregister_dispatcher(user_id)
+    await _MANAGER.aunregister_dispatcher(user_id)
     REGISTRY.clear_runner_tools(user_id)
     sess = _USER_SESSIONS.pop(user_id, None)
     if sess is not None:

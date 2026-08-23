@@ -120,6 +120,7 @@ class Settings(BaseSettings):
     llm_model_name: str
     llm_context_tokens: int | None = Field(default=None, gt=0)
     llm_request_timeout_seconds: float
+    llm_stream_idle_timeout_seconds: float = Field(default=60.0, validation_alias="LLM_STREAM_IDLE_TIMEOUT_SECONDS")
     llm_max_retry_attempts: int
     llm_base_retry_delay: float
     llm_max_retry_delay: float

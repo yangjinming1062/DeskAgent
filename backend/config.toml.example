@@ -121,8 +121,10 @@ llm_api_key = ""
 llm_model_name = ""
 # LLM 上下文 Token 限制（0 表示使用默认配置）
 llm_context_tokens = 0
-# LLM 请求超时时间（秒）
+# LLM 请求超时时间（秒，流式整个生命周期的硬上限）
 llm_request_timeout_seconds = 300.0
+# LLM 流式单 chunk 静默超时时间（秒，SDK 重试在 create() 返回前完成，不消耗此计时）
+llm_stream_idle_timeout_seconds = 60.0
 # LLM 请求失败最大重试次数
 llm_max_retry_attempts = 3
 # 重试初始退避延迟（秒）

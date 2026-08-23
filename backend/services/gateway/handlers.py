@@ -118,6 +118,10 @@ async def _noop_send(data: dict[str, Any]) -> None:
     pass
 
 
+async def _noop_send_strict(data: dict[str, Any]) -> bool:
+    return False
+
+
 # 进程级节流：buggy renderer 可能狂打 check_affect 烧 LLM 配额。
 CHECK_AFFECT_MIN_INTERVAL_SECONDS = 2.0
 _last_check_affect_ts: dict[int, float] = {}
@@ -153,17 +157,21 @@ class WSEmitter:
         self.websocket = websocket
 
     async def send_json(self, data: dict[str, Any]) -> None:
+        await self.send_json_strict(data)
+
+    async def send_json_strict(self, data: dict[str, Any]) -> bool:
         try:
             await self.websocket.send_json(data)
+            return True
         except WebSocketDisconnect:
-            return
+            return False
         except RuntimeError as e:
-            # starlette 关闭后抛 RuntimeError——与 WebSocketDisconnect 同族。
-            if "close message" in str(e):
-                return
-            logger.debug("WSEmitter.send_json RuntimeError", extra={"error": str(e)})
+            if "close message" not in str(e):
+                logger.debug("WSEmitter.send_json_strict RuntimeError", extra={"error": str(e)})
+            return False
         except Exception as e:
-            logger.debug("WSEmitter.send_json unexpected", extra={"error": str(e)}, exc_info=True)
+            logger.debug("WSEmitter.send_json_strict unexpected", extra={"error": str(e)}, exc_info=True)
+            return False
 
 
 _HANDSHAKE_LOCKS: dict[int, asyncio.Lock] = {}
@@ -207,7 +215,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                 existing_session.llm_config = llm_config
                 existing_session.user_settings = user_settings
                 existing_session.session_client_context = session_client_context
-                existing_session.dispatcher.set_sender(ws_emitter.send_json)
+                existing_session.dispatcher.set_sender(ws_emitter.send_json, send_strict=ws_emitter.send_json_strict)
                 existing_session.dispatcher.enable_hold()
                 user_session = existing_session
                 dispatcher = user_session.dispatcher
@@ -216,7 +224,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                 logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
             else:
                 replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
-                dispatcher = JsonRpcDispatcher(ws_emitter.send_json, replay_buffer=replay_buffer)
+                dispatcher = JsonRpcDispatcher(ws_emitter.send_json, replay_buffer=replay_buffer, send_strict=ws_emitter.send_json_strict)
                 dispatcher.enable_hold()
                 runtime_sessions: dict[str, RuntimeSession] = {}
                 background_tasks: set[asyncio.Task] = set()
@@ -258,7 +266,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             sess = _USER_SESSIONS.get(user_id)
             if sess is not None and sess.websocket is websocket:
                 sess.websocket = None
-                sess.dispatcher.set_sender(_noop_send)
+                sess.dispatcher.set_sender(_noop_send, send_strict=_noop_send_strict)
 
                 async def _grace_cleanup(uid: int):
                     try:
@@ -275,7 +283,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             from .connection import cancel_user_cron_turns
 
                             cancel_user_cron_turns(uid)
-                            MANAGER.unregister_dispatcher(uid)
+                            await MANAGER.aunregister_dispatcher(uid)
                             _HANDSHAKE_LOCKS.pop(uid, None)
                             discard_user(uid)
                             REGISTRY.clear_runner_tools(uid)
