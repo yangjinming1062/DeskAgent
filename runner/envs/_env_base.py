@@ -119,6 +119,7 @@ class BaseEnvironment(ABC):
         self._cwd_file = f"{temp_dir}/spiritagent-cwd-{self._session_id}.txt"
         self._cwd_marker = _cwd_marker(self._session_id)
         self._snapshot_ready = False
+        self._snapshot_created_at: float = 0.0
 
     def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120, stdin_data: str | None = None) -> ProcessHandle:
         raise NotImplementedError(f"{type(self).__name__} must implement _run_bash()")
@@ -141,11 +142,13 @@ class BaseEnvironment(ABC):
             proc = self._run_bash(bootstrap, login=True, timeout=self._snapshot_timeout)
             result = self._wait_for_process(proc, timeout=self._snapshot_timeout)
             self._snapshot_ready = True
+            self._snapshot_created_at = time.time()
             self._update_cwd(result)
             logger.info("Session snapshot created (session=%s, cwd=%s)", self._session_id, self.cwd)
         except Exception as exc:
             logger.warning("init_session failed (session=%s): %s — falling back to bash -l per command", self._session_id, exc)
             self._snapshot_ready = False
+            self._snapshot_created_at = 0.0
 
     @staticmethod
     def _quote_cwd_for_cd(cwd: str) -> str:
@@ -283,7 +286,13 @@ class BaseEnvironment(ABC):
             result["output"] = output[:line_start] + output[line_end:]
 
     def _before_execute(self) -> None:
-        pass
+        if self._snapshot_ready:
+            try:
+                max_age = int(cfg_get(load_config(), "terminal", "env_snapshot_max_age", default=86400))
+            except (ValueError, TypeError):
+                max_age = 86400
+            if not os.path.exists(self._snapshot_path) or (max_age > 0 and (time.time() - self._snapshot_created_at > max_age)):
+                self.init_session()
 
     def execute(self, command: str, cwd: str = "", *, timeout: int | None = None, stdin_data: str | None = None, rewrite_compound_background: bool = True) -> dict:
         self._before_execute()

@@ -139,3 +139,50 @@ class TestHandleProcessDispatch:
         result = json.loads(_handle_process({"action": "poll", "session_id": 12345}))
         assert result["status"] == "not_found"
         assert "12345" in result["error"]
+
+
+class TestProcessToolWriteStdin:
+    def test_write_stdin_chunks_large_data_pty(self, fresh_registry):
+        class _FakePty:
+            def __init__(self):
+                self.chunks = []
+
+            def write(self, data):
+                self.chunks.append(data)
+
+        fake_pty = _FakePty()
+        session = ProcessSession(
+            id="proc_pty",
+            command="cat",
+            pid=os.getpid(),
+            started_at=time.time(),
+            _pty=fake_pty,
+        )
+        fresh_registry._running["proc_pty"] = session
+
+        large_payload = "A" * 10000
+        res = fresh_registry.write_stdin("proc_pty", large_payload)
+        assert res["status"] == "ok"
+        assert res["bytes_written"] == 10000
+        assert len(fake_pty.chunks) == 3
+        assert len(fake_pty.chunks[0]) == 4096
+        assert len(fake_pty.chunks[1]) == 4096
+        assert len(fake_pty.chunks[2]) == 10000 - 8192
+
+    def test_write_stdin_backpressure_timeout(self, fresh_registry):
+        class _StuckPty:
+            def write(self, data):
+                raise OSError("Buffer full")
+
+        session = ProcessSession(
+            id="proc_stuck",
+            command="cat",
+            pid=os.getpid(),
+            started_at=time.time(),
+            _pty=_StuckPty(),
+        )
+        fresh_registry._running["proc_stuck"] = session
+
+        res = fresh_registry.write_stdin("proc_stuck", "hello")
+        assert res["status"] == "error"
+        assert "PTY buffer full" in res["error"] or "timed out" in res["error"]

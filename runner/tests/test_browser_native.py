@@ -286,7 +286,6 @@ def test_cleanup_all_browsers_stops_supervisor_and_native_process():
     fake_handle = MagicMock()
     fake_sup = MagicMock()
     fake_sup._active = True
-
     sess = get_or_create_session("t-clean")
     sess.launch_handle = fake_handle
     SUPERVISOR_REGISTRY._supervisors["t-clean"] = fake_sup
@@ -296,3 +295,31 @@ def test_cleanup_all_browsers_stops_supervisor_and_native_process():
     fake_sup.stop.assert_called()
     fake_handle.terminate.assert_called()
     assert SUPERVISOR_REGISTRY.get("t-clean") is None
+
+
+@pytest.mark.asyncio
+async def test_backoff_uses_full_jitter(monkeypatch):
+    from tools.browser.supervisor import CDPSupervisor
+
+    sup = CDPSupervisor(task_id="t-jitter", cdp_url="ws://127.0.0.1:9999")
+    sup._ready_event.set()  # avoid blocking on initial start error
+    sup._stop_requested = False
+
+    sleep_args = []
+
+    async def fake_sleep(d):
+        sleep_args.append(d)
+        if len(sleep_args) >= 5:
+            sup._stop_requested = True
+
+    async def fake_connect(*args, **kwargs):
+        raise ConnectionRefusedError("Connection refused")
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("websockets.connect", fake_connect)
+
+    await sup._run()
+    assert len(sleep_args) >= 5
+    # Full jitter: sleeps must vary and not be strictly exponential powers of 2
+    assert all(0.0 <= s <= 10.0 for s in sleep_args)
+    assert len(set(sleep_args)) > 1  # Verify randomness

@@ -1,6 +1,7 @@
 import contextlib
 import ctypes
 import os
+import threading
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,90 +35,103 @@ def _spiritagent_home_path() -> Path:
         return Path("~/.spiritagent").expanduser()
 
 
-_denied_paths_cache: tuple[str, set[str]] | None = None
-_denied_prefixes_cache: tuple[str, list[str]] | None = None
-_denied_prefixes_norm_cache: tuple[str, list[str]] | None = None
+_cache_lock = threading.Lock()
+_denied_paths_cache: tuple[str, frozenset[str]] | None = None
+_denied_prefixes_cache: tuple[str, tuple[str, ...]] | None = None
+_denied_prefixes_norm_cache: tuple[str, tuple[str, ...]] | None = None
 
 
-def build_write_denied_paths(home: str) -> set[str]:
+def build_write_denied_paths(home: str) -> frozenset[str]:
     global _denied_paths_cache
-    if _denied_paths_cache and _denied_paths_cache[0] == home:
-        return _denied_paths_cache[1]
-    spiritagent, p_home = _spiritagent_home_path(), Path(home)
-    result = {
-        str(Path(p).resolve())
-        for p in [
-            p_home / ".ssh/authorized_keys",
-            p_home / ".ssh/id_rsa",
-            p_home / ".ssh/id_ed25519",
-            p_home / ".ssh/config",
-            spiritagent / ".env",
-            spiritagent / "anthropic_oauth.json",
-            p_home / ".bashrc",
-            p_home / ".zshrc",
-            p_home / ".profile",
-            p_home / ".bash_profile",
-            p_home / ".zprofile",
-            p_home / ".netrc",
-            p_home / ".pgpass",
-            p_home / ".npmrc",
-            p_home / ".pypirc",
-            p_home / ".git-credentials",
-            "/etc/sudoers",
-            "/etc/passwd",
-            "/etc/shadow",
-        ]
-    }
-    _denied_paths_cache = (home, result)
-    return result
+    cached = _denied_paths_cache
+    if cached and cached[0] == home:
+        return cached[1]
+    with _cache_lock:
+        if _denied_paths_cache and _denied_paths_cache[0] == home:
+            return _denied_paths_cache[1]
+        spiritagent, p_home = _spiritagent_home_path(), Path(home)
+        result = frozenset(
+            str(Path(p).resolve())
+            for p in [
+                p_home / ".ssh/authorized_keys",
+                p_home / ".ssh/id_rsa",
+                p_home / ".ssh/id_ed25519",
+                p_home / ".ssh/config",
+                spiritagent / ".env",
+                spiritagent / "anthropic_oauth.json",
+                p_home / ".bashrc",
+                p_home / ".zshrc",
+                p_home / ".profile",
+                p_home / ".bash_profile",
+                p_home / ".zprofile",
+                p_home / ".netrc",
+                p_home / ".pgpass",
+                p_home / ".npmrc",
+                p_home / ".pypirc",
+                p_home / ".git-credentials",
+                "/etc/sudoers",
+                "/etc/passwd",
+                "/etc/shadow",
+            ]
+        )
+        _denied_paths_cache = (home, result)
+        return result
 
 
-def build_write_denied_prefixes(home: str) -> list[str]:
+def build_write_denied_prefixes(home: str) -> tuple[str, ...]:
     global _denied_prefixes_cache
-    if _denied_prefixes_cache and _denied_prefixes_cache[0] == home:
-        return _denied_prefixes_cache[1]
-    p_home = Path(home)
-    posix_prefixes = [
-        p_home / ".ssh",
-        p_home / ".aws",
-        p_home / ".gnupg",
-        p_home / ".kube",
-        "/etc/sudoers.d",
-        "/etc/systemd",
-        p_home / ".docker",
-        p_home / ".azure",
-        p_home / ".config/gh",
-        p_home / ".config/gcloud",
-    ]
-    windows_prefixes = [
-        Path("C:/Windows/System32"),
-        Path("C:/Windows/SysWOW64"),
-        Path("C:/Windows/WinSxS"),
-        Path("C:/Windows/Boot"),
-        Path("C:/Windows/Recovery"),
-        # WinSxS 体量巨大且结构敏感——禁止在线编辑；Boot/Recovery 存放引导/恢复二进制；System32/SysWOW64 是系统 DLL 主目录。
-        Path(os.environ.get("SYSTEMROOT", "C:/Windows")),
-        Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")),
-        Path(os.environ.get("PROGRAMFILES", "C:/Program Files")),
-        Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)")),
-        p_home / "AppData/Roaming/Microsoft",
-        p_home / "AppData/Local/Microsoft",
-    ]
-    sources = [*posix_prefixes, *windows_prefixes] if IS_WINDOWS else posix_prefixes
-    result = [str(Path(p).resolve()) + os.sep for p in sources if str(p)]
-    _denied_prefixes_cache = (home, result)
-    return result
+    cached = _denied_prefixes_cache
+    if cached and cached[0] == home:
+        return cached[1]
+    with _cache_lock:
+        if _denied_prefixes_cache and _denied_prefixes_cache[0] == home:
+            return _denied_prefixes_cache[1]
+        p_home = Path(home)
+        posix_prefixes = [
+            p_home / ".ssh",
+            p_home / ".aws",
+            p_home / ".gnupg",
+            p_home / ".kube",
+            "/etc/sudoers.d",
+            "/etc/systemd",
+            p_home / ".docker",
+            p_home / ".azure",
+            p_home / ".config/gh",
+            p_home / ".config/gcloud",
+        ]
+        windows_prefixes = [
+            Path("C:/Windows/System32"),
+            Path("C:/Windows/SysWOW64"),
+            Path("C:/Windows/WinSxS"),
+            Path("C:/Windows/Boot"),
+            Path("C:/Windows/Recovery"),
+            # WinSxS 体量巨大且结构敏感——禁止在线编辑；Boot/Recovery 存放引导/恢复二进制；System32/SysWOW64 是系统 DLL 主目录。
+            Path(os.environ.get("SYSTEMROOT", "C:/Windows")),
+            Path(os.environ.get("PROGRAMDATA", "C:/ProgramData")),
+            Path(os.environ.get("PROGRAMFILES", "C:/Program Files")),
+            Path(os.environ.get("PROGRAMFILES(X86)", "C:/Program Files (x86)")),
+            p_home / "AppData/Roaming/Microsoft",
+            p_home / "AppData/Local/Microsoft",
+        ]
+        sources = [*posix_prefixes, *windows_prefixes] if IS_WINDOWS else posix_prefixes
+        result = tuple(str(Path(p).resolve()) + os.sep for p in sources if str(p))
+        _denied_prefixes_cache = (home, result)
+        return result
 
 
-def _build_normalized_prefixes(home: str) -> list[str]:
+def _build_normalized_prefixes(home: str) -> tuple[str, ...]:
     """``build_write_denied_prefixes`` 的小写 + 正斜杠预归一版本，供 Windows 上的写检查避免热路径上反复 ``replace().lower()``。"""
     global _denied_prefixes_norm_cache
-    if _denied_prefixes_norm_cache and _denied_prefixes_norm_cache[0] == home:
-        return _denied_prefixes_norm_cache[1]
-    raw = build_write_denied_prefixes(home)
-    result = [p.replace("\\", "/").lower() for p in raw]
-    _denied_prefixes_norm_cache = (home, result)
-    return result
+    cached = _denied_prefixes_norm_cache
+    if cached and cached[0] == home:
+        return cached[1]
+    with _cache_lock:
+        if _denied_prefixes_norm_cache and _denied_prefixes_norm_cache[0] == home:
+            return _denied_prefixes_norm_cache[1]
+        raw = build_write_denied_prefixes(home)
+        result = tuple(p.replace("\\", "/").lower() for p in raw)
+        _denied_prefixes_norm_cache = (home, result)
+        return result
 
 
 def get_windows_sensitive_prefixes() -> tuple[str, ...]:

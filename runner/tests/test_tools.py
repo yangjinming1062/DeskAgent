@@ -24,6 +24,31 @@ class TestRegistry:
     def test_dispatch_nonexistent(self):
         assert "error" in json.loads(registry.dispatch("nonexistent_xyz", {}))
 
+    def test_import_failure_classification(self, monkeypatch):
+        import importlib
+
+        from tools import discover_builtin_tools_strict
+
+        orig_import = importlib.import_module
+
+        def _mock_import(name):
+            if name == "tools.broken_optional":
+                raise ModuleNotFoundError("No module named 'broken_optional'")
+            if name == "tools.broken_fatal":
+                raise RuntimeError("Syntax error in broken_fatal")
+            return orig_import(name)
+
+        monkeypatch.setattr(importlib, "import_module", _mock_import)
+        monkeypatch.setattr(
+            "pkgutil.walk_packages",
+            lambda _path=None, _prefix=None: [(None, "tools.broken_optional", False), (None, "tools.broken_fatal", False)],
+        )
+
+        imported, failures = discover_builtin_tools_strict()
+        assert "tools.broken_optional" not in failures
+        assert "tools.broken_fatal" in failures
+        assert "RuntimeError" in failures["tools.broken_fatal"]
+
 
 class TestTerminal:
     def test_echo(self):

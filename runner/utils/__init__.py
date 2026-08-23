@@ -61,7 +61,7 @@ from .interrupt import (
 )
 from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
-from .pid import kill_tree, pid_exists
+from .pid import PidState, kill_tree, pid_exists, pid_state
 from .process_tree import TerminationResult, terminate_tree
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
@@ -173,7 +173,9 @@ __all__ = [
     "msys_to_windows_path",
     "network_reachable",
     "normalize_url_for_request",
+    "PidState",
     "pid_exists",
+    "pid_state",
     "read_endpoint",
     "redact_sensitive_text",
     "register_credential_file",

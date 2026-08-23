@@ -405,3 +405,54 @@ class TestToolsets:
             assert "toolset_staging" in ids
         finally:
             monkeypatch.setattr(toolsets_helpers, "get_disabled_config_names", real)
+
+
+class TestEnvSnapshotTTL:
+    def test_env_snapshot_ttl_reinitializes_session(self, monkeypatch, tmp_path):
+        import time
+
+        from envs._env_base import BaseEnvironment
+
+        class _MockEnv(BaseEnvironment):
+            def __init__(self, cwd):
+                self.init_calls = 0
+                super().__init__(cwd=cwd, timeout=30)
+
+            def init_session(self):
+                self.init_calls += 1
+                self._snapshot_ready = True
+                self._snapshot_created_at = time.time()
+                from pathlib import Path
+
+                Path(self._snapshot_path).touch()
+
+            def cleanup(self):
+                pass
+
+        monkeypatch.setattr("envs._env_base.load_config", lambda: {"terminal": {"env_snapshot_max_age": 10}})
+        env = _MockEnv(cwd=str(tmp_path))
+        env.init_session()
+        assert env.init_calls == 1
+
+        # Not expired yet
+        env._before_execute()
+        assert env.init_calls == 1
+
+        # Expired
+        env._snapshot_created_at = time.time() - 20
+        env._before_execute()
+        assert env.init_calls == 2
+
+    def test_init_session_failure_falls_back_to_login(self, tmp_path):
+        from envs._env_base import BaseEnvironment
+
+        class _FailingEnv(BaseEnvironment):
+            def _run_bash(self, cmd_string, *, login=False, timeout=120, stdin_data=None):
+                raise RuntimeError("Bootstrap error")
+
+            def cleanup(self):
+                pass
+
+        env = _FailingEnv(cwd=str(tmp_path), timeout=30)
+        env.init_session()
+        assert env._snapshot_ready is False

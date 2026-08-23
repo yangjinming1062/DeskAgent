@@ -3,6 +3,7 @@ import base64
 import contextlib
 import json
 import logging
+import random
 import sys
 import tempfile
 import threading
@@ -18,6 +19,8 @@ from utils import safe_schedule_threadsafe
 from .engine import build_snapshot_text
 
 logger = logging.getLogger(__name__)
+
+_CDP_BACKOFF_MAX = 10.0
 
 DIALOG_POLICY_MUST_RESPOND = "must_respond"
 DIALOG_POLICY_AUTO_DISMISS = "auto_dismiss"
@@ -462,27 +465,31 @@ class CDPSupervisor:
                     raise NavigationError(f"{err_text}: {url}")
 
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(asyncio.shield(navigated_fut), timeout=min(timeout, 20.0))
+                    await asyncio.wait_for(navigated_fut, timeout=min(timeout, 20.0))
 
                 if wait_until == "networkIdle":
                     with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(asyncio.shield(idle_fut), timeout=min(timeout, 5.0))
+                        await asyncio.wait_for(idle_fut, timeout=min(timeout, 5.0))
 
-                title_resp = await self._cdp(
-                    "Runtime.evaluate",
-                    {"expression": "document.title", "returnByValue": True},
-                    session_id=sid,
-                    timeout=5.0,
-                )
-                title = title_resp.get("result", {}).get("result", {}).get("value", "")
+                title = ""
+                with contextlib.suppress(Exception):
+                    title_resp = await self._cdp(
+                        "Runtime.evaluate",
+                        {"expression": "document.title", "returnByValue": True},
+                        session_id=sid,
+                        timeout=5.0,
+                    )
+                    title = title_resp.get("result", {}).get("result", {}).get("value", "")
 
-                url_resp = await self._cdp(
-                    "Runtime.evaluate",
-                    {"expression": "window.location.href", "returnByValue": True},
-                    session_id=sid,
-                    timeout=5.0,
-                )
-                final_url = url_resp.get("result", {}).get("result", {}).get("value", url)
+                final_url = url
+                with contextlib.suppress(Exception):
+                    url_resp = await self._cdp(
+                        "Runtime.evaluate",
+                        {"expression": "window.location.href", "returnByValue": True},
+                        session_id=sid,
+                        timeout=5.0,
+                    )
+                    final_url = url_resp.get("result", {}).get("result", {}).get("value", url)
 
                 return {"ok": True, "frameId": target_frame_id, "url": final_url, "title": title}
             finally:
@@ -942,8 +949,9 @@ class CDPSupervisor:
                     self._ready_event.set()
                     return
                 logger.warning("CDP supervisor %s connect failed (attempt %s): %s", self.task_id, attempt, e)
-                await asyncio.sleep(min(backoff, 10.0))
-                backoff = min(backoff * 2, 10.0)
+                jitter = random.uniform(0.0, min(backoff, _CDP_BACKOFF_MAX))
+                await asyncio.sleep(jitter)
+                backoff = min(backoff * 2, _CDP_BACKOFF_MAX)
                 continue
 
             reader_task = asyncio.create_task(self._read_loop(), name="cdp-reader")
@@ -988,8 +996,9 @@ class CDPSupervisor:
             if self._stop_requested:
                 return
 
-            await asyncio.sleep(backoff)
-            backoff = min(backoff * 2, 10.0)
+            jitter = random.uniform(0.0, min(backoff, _CDP_BACKOFF_MAX))
+            await asyncio.sleep(jitter)
+            backoff = min(backoff * 2, _CDP_BACKOFF_MAX)
 
     async def _attach_initial_page(self) -> None:
         resp = await self._cdp("Target.getTargets")

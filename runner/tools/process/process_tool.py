@@ -139,6 +139,10 @@ class ProcessSession:
     _pty: Any = field(default=None, repr=False)  # ptyprocess 句柄(use_pty=True 时)
 
 
+class PTYBufferFull(OSError):
+    """PTY 或标准输入写入缓冲区已满且在背压超时内未能消费。"""
+
+
 class ProcessRegistry:
     """运行中 / 已结束后台进程的内存注册表 — 线程安全。
 
@@ -882,26 +886,64 @@ class ProcessRegistry:
             return {"status": "error", "error": str(e)}
 
     def write_stdin(self, session_id: str, data: str) -> dict:
-        """向运行中进程的 stdin 发送裸数据(不附加换行符)。"""
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         if session.exited:
             return {"status": "already_exited", "error": "Process has already finished"}
+        chunk_size = 4096
         if hasattr(session, "_pty") and session._pty:
             try:
-                # pywinpty 在 Windows 上要 str; ptyprocess 在 POSIX 上要 bytes。
-                pty_data = str(data) if IS_WINDOWS else data.encode("utf-8") if isinstance(data, str) else data
-                session._pty.write(pty_data)
+                pty_proc = session._pty
+                deadline = time.monotonic() + 5.0
+                if IS_WINDOWS:
+                    str_data = str(data)
+                    for i in range(0, len(str_data), chunk_size):
+                        chunk = str_data[i : i + chunk_size]
+                        retries = 2
+                        while retries > 0:
+                            if time.monotonic() > deadline:
+                                raise PTYBufferFull("PTY write timed out due to buffer backpressure")
+                            try:
+                                pty_proc.write(chunk)
+                                time.sleep(0.001)
+                                break
+                            except (OSError, ValueError) as exc:
+                                retries -= 1
+                                if retries == 0:
+                                    raise PTYBufferFull(f"PTY buffer full: {exc}") from exc
+                                time.sleep(0.01)
+                else:
+                    bytes_data = data.encode("utf-8") if isinstance(data, str) else bytes(data)
+                    for i in range(0, len(bytes_data), chunk_size):
+                        chunk = bytes_data[i : i + chunk_size]
+                        retries = 3
+                        while retries > 0:
+                            if time.monotonic() > deadline:
+                                raise PTYBufferFull("PTY write timed out due to buffer backpressure")
+                            try:
+                                pty_proc.write(chunk)
+                                time.sleep(0.001)
+                                break
+                            except (BlockingIOError, OSError) as exc:
+                                retries -= 1
+                                if retries == 0:
+                                    raise PTYBufferFull(f"PTY buffer full: {exc}") from exc
+                                time.sleep(0.01)
                 return {"status": "ok", "bytes_written": len(data)}
             except Exception as e:
                 return {"status": "error", "error": str(e)}
         if not session.process or not session.process.stdin:
             return {"status": "error", "error": "Process stdin not available (non-local backend or stdin closed)"}
         try:
-            session.process.stdin.write(data)
-            session.process.stdin.flush()
-            return {"status": "ok", "bytes_written": len(data)}
+            stdin = session.process.stdin
+            str_data = str(data)
+            for i in range(0, len(str_data), chunk_size):
+                chunk = str_data[i : i + chunk_size]
+                stdin.write(chunk)
+                stdin.flush()
+                time.sleep(0.001)
+            return {"status": "ok", "bytes_written": len(str_data)}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 

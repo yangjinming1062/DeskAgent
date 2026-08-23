@@ -13,7 +13,7 @@ import utils.credential_files
 import utils.env_passthrough
 import websockets
 from runner_version import __version__
-from tools import ToolError, discover_builtin_tools, registry
+from tools import ToolError, discover_builtin_tools_strict, registry
 from tools.files import reset_max_read_chars_cache
 from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
@@ -413,6 +413,12 @@ async def _build_info() -> dict[str, Any]:
     except Exception:
         health = {}
     try:
+        import_failures = registry.get_import_failures()
+        if import_failures:
+            health["failed_tools"] = import_failures
+    except Exception:
+        pass
+    try:
         tool_names = registry.get_all_tool_names()
     except Exception:
         tool_names = []
@@ -443,7 +449,9 @@ def main() -> None:
     transport = "pipe" if sys.platform == "win32" else "unix"
     endpoint = DesktopEndpoint(transport=transport, path=args.desktop_endpoint, token=args.desktop_auth)
 
-    discover_builtin_tools()
+    imported, import_errors = discover_builtin_tools_strict()
+    if import_errors:
+        logger.warning("Some builtin tool modules failed to load: %s", import_errors)
     set_handler(request_llm_from_desktop)
 
     try:

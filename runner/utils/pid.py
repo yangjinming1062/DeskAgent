@@ -1,3 +1,4 @@
+import enum
 import subprocess
 
 import psutil
@@ -5,16 +6,29 @@ import psutil
 from .constants import CREATE_NO_WINDOW, IS_WINDOWS
 
 
-def pid_exists(pid: int | None) -> bool:
-    """OS 是否识别该 PID；AccessDenied（进程存在但属于其他用户）按存在处理，其他瞬时错误按不存在处理。"""
-    if pid is None:
-        return False
+class PidState(enum.Enum):
+    EXISTS = "exists"
+    NOT_FOUND = "not_found"
+    TRANSIENT_UNKNOWN = "transient"
+
+
+def pid_state(pid: int | None) -> PidState:
+    """探测 PID 状态，区分存在、不存在与瞬时异常。"""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return PidState.NOT_FOUND
     try:
-        return bool(psutil.pid_exists(pid))
+        return PidState.EXISTS if psutil.pid_exists(pid) else PidState.NOT_FOUND
     except psutil.AccessDenied:
-        return True
-    except psutil.Error:
-        return False
+        return PidState.EXISTS
+    except psutil.NoSuchProcess:
+        return PidState.NOT_FOUND
+    except (psutil.TimeoutExpired, psutil.Error, OSError):
+        return PidState.TRANSIENT_UNKNOWN
+
+
+def pid_exists(pid: int | None) -> bool:
+    s = pid_state(pid)
+    return s is PidState.EXISTS or s is PidState.TRANSIENT_UNKNOWN
 
 
 def kill_tree(pid: int | None, *, force: bool = True, timeout: float = 10.0) -> bool:

@@ -34,7 +34,10 @@ from utils.constants import (
 )
 from utils.env_helpers import sanitize_subprocess_env
 from utils.file_safety import (
+    _build_normalized_prefixes,
     _strip_device_prefix,
+    build_write_denied_paths,
+    build_write_denied_prefixes,
     canonicalize_path,
     classify_container_mirror_target,
     classify_cross_profile_target,
@@ -212,6 +215,26 @@ class TestIsWriteDenied:
         # Uppercase filename inside SPIRITAGENT_HOME must be blocked
         assert is_write_denied(str(tmp_path / "AUTH.JSON")) is True
         assert is_write_denied(str(tmp_path / "PAIRING" / "DEVICE.JSON")) is True
+
+    def test_concurrent_build_write_denied_cache(self, tmp_path):
+        from concurrent.futures import ThreadPoolExecutor
+
+        home = str(tmp_path)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            paths_futures = [pool.submit(build_write_denied_paths, home) for _ in range(16)]
+            prefixes_futures = [pool.submit(build_write_denied_prefixes, home) for _ in range(16)]
+            norm_futures = [pool.submit(_build_normalized_prefixes, home) for _ in range(16)]
+
+            paths_results = [f.result() for f in paths_futures]
+            prefixes_results = [f.result() for f in prefixes_futures]
+            norm_results = [f.result() for f in norm_futures]
+
+        assert all(isinstance(r, frozenset) for r in paths_results)
+        assert len({id(r) for r in paths_results}) == 1
+        assert all(isinstance(r, tuple) for r in prefixes_results)
+        assert len({id(r) for r in prefixes_results}) == 1
+        assert all(isinstance(r, tuple) for r in norm_results)
+        assert len({id(r) for r in norm_results}) == 1
 
 
 class TestGetReadBlockError:

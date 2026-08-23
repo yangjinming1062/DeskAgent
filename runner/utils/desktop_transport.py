@@ -21,7 +21,7 @@ from websockets.protocol import SEND_EOF, State
 from websockets.uri import parse_uri
 
 from .constants import IS_WINDOWS, get_spiritagent_home
-from .pid import pid_exists
+from .pid import PidState, pid_state
 
 logger = logging.getLogger("spiritagent_runner.transport")
 
@@ -128,7 +128,10 @@ def read_endpoint() -> DesktopEndpoint | None:
         endpoint_path = get_spiritagent_home() / "desktop-endpoint.json"
         if not endpoint_path.exists():
             return None
-        data = json.loads(endpoint_path.read_text(encoding="utf-8"))
+        raw = endpoint_path.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return None
         expected = PIPE_TRANSPORT if IS_WINDOWS else UNIX_TRANSPORT
         transport = data.get("transport")
         path = data.get("path")
@@ -140,9 +143,7 @@ def read_endpoint() -> DesktopEndpoint | None:
             return None
         if not isinstance(token, str) or not token:
             return None
-        # 跳过 Desktop 崩溃留下的过期文件。用 pid_exists() 而不是 os.kill(pid, 0)，后者在 Windows 上不安全（bpo-14484）。
-        if isinstance(pid, int) and pid > 0 and not pid_exists(pid):
-            logger.debug("Desktop PID %s is gone, ignoring stale endpoint file", pid)
+        if isinstance(pid, int) and pid > 0 and pid_state(pid) is PidState.NOT_FOUND:
             return None
         return DesktopEndpoint(
             transport=transport,
@@ -150,7 +151,11 @@ def read_endpoint() -> DesktopEndpoint | None:
             token=token,
             pid=pid if isinstance(pid, int) else None,
         )
-    except Exception:
+    except (ValueError, OSError) as exc:
+        logger.warning("read_endpoint encountered %s: %s", type(exc).__name__, exc)
+        return None
+    except Exception as exc:
+        logger.warning("read_endpoint unexpected failure: %s", exc)
         return None
 
 
@@ -407,6 +412,7 @@ class DesktopConnection:
                 completed = self._consume_handshake_events(
                     self._protocol.events_received(),
                 )
+                await self._drain()
                 if not completed:
                     raise ConnectionError(
                         "Desktop closed the IPC stream during handshake",
@@ -419,6 +425,7 @@ class DesktopConnection:
             self._protocol.receive_data(chunk)
             await self._drain()
             completed = self._consume_handshake_events(self._protocol.events_received())
+            await self._drain()
             if completed:
                 self._recv_task = asyncio.create_task(
                     self._pump(),
@@ -460,6 +467,9 @@ class DesktopConnection:
                 for event in self._protocol.events_received():
                     if isinstance(event, Frame):
                         self._handle_frame(event)
+                await self._drain()
+                if self._protocol.state is State.CLOSED:
+                    break
         except (ConnectionError, OSError):
             pass
         except Exception as exc:
@@ -471,12 +481,22 @@ class DesktopConnection:
     def _handle_frame(self, event: Frame) -> None:
         opcode = event.opcode
         if opcode is OP_TEXT or opcode is OP_BINARY:
+            if self._message_opcode is not None:
+                if self._protocol.state is State.OPEN:
+                    self._protocol.send_close(code=1002, reason="protocol error: interleaved message during fragmentation")
+                self._fragments = []
+                self._message_opcode = None
+                return
             if event.fin:
                 self._emit(opcode, event.data)
             else:
                 self._fragments = [event.data]
                 self._message_opcode = opcode
-        elif opcode is OP_CONT and self._message_opcode is not None:
+        elif opcode is OP_CONT:
+            if self._message_opcode is None:
+                if self._protocol.state is State.OPEN:
+                    self._protocol.send_close(code=1002, reason="protocol error: unexpected continuation frame")
+                return
             self._fragments.append(event.data)
             if event.fin:
                 self._emit(self._message_opcode, b"".join(self._fragments))
@@ -522,10 +542,18 @@ class DesktopConnection:
 
     @property
     def close_code(self) -> int | None:
+        if self._protocol.close_rcvd is not None:
+            return self._protocol.close_rcvd.code
+        if self._protocol.close_sent is not None:
+            return self._protocol.close_sent.code
         return self._protocol.close_code
 
     @property
     def close_reason(self) -> str | None:
+        if self._protocol.close_rcvd is not None:
+            return self._protocol.close_rcvd.reason
+        if self._protocol.close_sent is not None:
+            return self._protocol.close_sent.reason
         return self._protocol.close_reason
 
     def __aiter__(self) -> "DesktopConnection":

@@ -55,7 +55,16 @@ class ToolRegistry:
         # 签名探测缓存: tool name -> 是否接受 cancel_token= 关键字参数。
         # 探测一次后缓存 — 工具函数签名在进程内不会变。
         self._supports_cancel_token: dict[str, bool] = {}
+        self._import_failures: dict[str, str] = {}
         self._lock = threading.RLock()
+
+    def record_import_failure(self, name: str, error: str) -> None:
+        with self._lock:
+            self._import_failures[name] = error
+
+    def get_import_failures(self) -> dict[str, str]:
+        with self._lock:
+            return dict(self._import_failures)
 
     def register_tool(self, name: str, toolset: str | None = None, schema: dict | None = None, check_fn: Callable[[], bool] | None = None, **kwargs: Any) -> Callable:
         """装饰器形式注册工具(``schema`` 必填, 表达 JSON Schema)。"""
@@ -280,19 +289,25 @@ class ToolRegistry:
             return raw
 
 
+registry = ToolRegistry()
+
+
 def discover_builtin_tools() -> list[str]:
-    """遍历 ``tools/`` 子包并 import, 作为注册副作用触发每个工具模块的 ``register_tool``。"""
     imported = []
-    # 跳过不含工具的 registry 模块。
     for _, name, _ in pkgutil.walk_packages(tools.__path__, tools.__name__ + "."):
-        if name.endswith("registry"):
+        if name == "tools.registry" or name.endswith(".registry"):
             continue
         try:
             importlib.import_module(name)
             imported.append(name)
-        except Exception:
-            logger.error("Could not import %s", name, exc_info=True)
+        except ImportError as exc:
+            logger.warning("Optional tool module %s not loaded: %s", name, exc)
+        except Exception as exc:
+            logger.error("Could not import tool module %s: %s", name, exc, exc_info=True)
+            registry.record_import_failure(name, f"{type(exc).__name__}: {exc}")
     return imported
 
 
-registry = ToolRegistry()
+def discover_builtin_tools_strict() -> tuple[list[str], dict[str, str]]:
+    imported = discover_builtin_tools()
+    return imported, registry.get_import_failures()

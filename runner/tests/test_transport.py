@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import ctypes
 import json
+import logging
 import os
 import tempfile
 import time
@@ -680,8 +681,9 @@ async def test_read_endpoint_corrupt_bodies(tmp_path, monkeypatch, body, expect_
 
 async def test_read_endpoint_stale_pid(tmp_path, monkeypatch):
     import utils.desktop_transport as transport_module
+    from utils.pid import PidState
 
-    monkeypatch.setattr(transport_module, "pid_exists", lambda _pid: False)
+    monkeypatch.setattr(transport_module, "pid_state", lambda _pid: PidState.NOT_FOUND)
     monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
     (tmp_path / "desktop-endpoint.json").write_text(
         json.dumps(
@@ -695,6 +697,52 @@ async def test_read_endpoint_stale_pid(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     assert read_endpoint() is None
+
+
+async def test_read_endpoint_transient_pid_retained(tmp_path, monkeypatch):
+    import utils.desktop_transport as transport_module
+    from utils.pid import PidState
+
+    monkeypatch.setattr(transport_module, "pid_state", lambda _pid: PidState.TRANSIENT_UNKNOWN)
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+    (tmp_path / "desktop-endpoint.json").write_text(
+        json.dumps(
+            {
+                "transport": EXPECTED_TRANSPORT,
+                "path": "p",
+                "token": "t",
+                "pid": 4194304,
+            },
+        ),
+        encoding="utf-8",
+    )
+    endpoint = read_endpoint()
+    assert endpoint is not None
+    assert endpoint.path == "p"
+
+
+async def test_read_endpoint_logs_warning_on_invalid_json(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+    (tmp_path / "desktop-endpoint.json").write_text("{broken json", encoding="utf-8")
+    with caplog.at_level(logging.WARNING):
+        endpoint = read_endpoint()
+    assert endpoint is None
+    assert any("read_endpoint encountered JSONDecodeError" in rec.message for rec in caplog.records)
+
+
+async def test_read_endpoint_non_dict_returns_none(tmp_path, monkeypatch):
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+    (tmp_path / "desktop-endpoint.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert read_endpoint() is None
+
+
+async def test_read_endpoint_logs_warning_on_invalid_utf8(tmp_path, monkeypatch, caplog):
+    monkeypatch.setenv("SPIRITAGENT_HOME", str(tmp_path))
+    (tmp_path / "desktop-endpoint.json").write_bytes(b"\xff\xfe\x00\x00")
+    with caplog.at_level(logging.WARNING):
+        endpoint = read_endpoint()
+    assert endpoint is None
+    assert any("read_endpoint encountered UnicodeDecodeError" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.skipif(
@@ -808,4 +856,38 @@ async def test_handshake_frame_pipelined_with_response_is_delivered():
     await connection._handshake()
     received = [msg async for msg in connection]
     assert received == [message]
+    await server_task
+
+
+async def test_ws_fragment_protocol_error_closes_connection():
+    """An isolated OP_CONT or interleaved message frame MUST trigger a protocol error (code 1002) and close."""
+    client_stream, server_stream = _MemStream.pair()
+
+    async def server_side() -> None:
+        server = ServerProtocol(max_size=16 * 1024 * 1024)
+        server.receive_data(await server_stream.read())
+        for event in server.events_received():
+            if not hasattr(event, "headers"):
+                continue
+            server.send_response(server.accept(event))
+            await server_stream.write(b"".join(d for d in server.data_to_send() if d))
+
+        # Send an isolated continuation frame (opcode 0) with fin=True
+        cont_frame = Frame(fin=True, opcode=OP_CONT, data=b"unexpected-cont")
+        server.send_frame(cont_frame)
+        await server_stream.write(b"".join(d for d in server.data_to_send() if d))
+
+        # Read the client's close frame response
+        chunk = await server_stream.read()
+        server.receive_data(chunk)
+        # Echo the close frame back to complete clean websocket close handshake
+        await server_stream.write(b"".join(d for d in server.data_to_send() if d))
+        await server_stream.close()
+
+    server_task = asyncio.create_task(server_side())
+    connection = DesktopConnection(client_stream, token="unused-in-this-test")
+    await connection._handshake()
+    received = [msg async for msg in connection]
+    assert received == []
+    assert connection.close_code == 1002
     await server_task

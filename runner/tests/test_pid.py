@@ -15,62 +15,55 @@ import sys
 import psutil
 import pytest
 from utils.constants import CREATE_NO_WINDOW
-from utils.pid import kill_tree, pid_exists
+from utils.pid import PidState, kill_tree, pid_exists, pid_state
 
 
-def test_pid_exists_returns_false_for_none():
-    assert pid_exists(None) is False
-
-
-def test_pid_exists_returns_true_for_current_process():
-    """``pid_exists(getpid())`` MUST return True — current process is always live."""
+def test_pid_state_boundaries():
     import os
 
-    assert pid_exists(os.getpid()) is True
+    assert pid_state(None) is PidState.NOT_FOUND
+    assert pid_state(0) is PidState.NOT_FOUND
+    assert pid_state(-1) is PidState.NOT_FOUND
+    assert pid_state(True) is PidState.NOT_FOUND
+    assert pid_state(os.getpid()) is PidState.EXISTS
+    assert pid_state(2**31 - 1) is PidState.NOT_FOUND
 
 
-def test_pid_exists_returns_false_for_impossible_pid():
-    """A clearly-impossible PID (``2**31 - 1``) MUST report not-exist without raising."""
-    assert pid_exists(2**31 - 1) is False
+def test_pid_state_no_such_process_returns_not_found(monkeypatch):
+    def _raise_nsp(pid):
+        raise psutil.NoSuchProcess(pid)
+
+    monkeypatch.setattr(psutil, "pid_exists", _raise_nsp)
+    assert pid_state(12345) is PidState.NOT_FOUND
+    assert pid_exists(12345) is False
 
 
-def test_pid_exists_treats_access_denied_as_exists():
-    """``psutil.AccessDenied`` means the process exists but we can't probe — report True.
+def test_pid_state_access_denied_returns_exists(monkeypatch):
+    def _raise_ad(pid):
+        raise psutil.AccessDenied(pid)
 
-    Without this, a brief permission flap on Windows would silently drop
-    a live PID and a process tree we'd intended to skip.
-    """
-
-    class _Boom:
-        def __call__(self, pid):
-            raise psutil.AccessDenied(pid)
-
-    real = psutil.pid_exists
-    psutil.pid_exists = _Boom()  # type: ignore[assignment]
-    try:
-        assert pid_exists(12345) is True
-    finally:
-        psutil.pid_exists = real  # type: ignore[assignment]
+    monkeypatch.setattr(psutil, "pid_exists", _raise_ad)
+    assert pid_state(12345) is PidState.EXISTS
+    assert pid_exists(12345) is True
 
 
-def test_pid_exists_treats_other_psutil_errors_as_not_exists():
-    """``psutil.Error`` (NoSuchProcess / TimeoutExpired / busy) MUST report not-exist.
+def test_pid_state_timeout_returns_transient(monkeypatch):
+    def _raise_timeout(pid):
+        raise psutil.TimeoutExpired(0.0)
 
-    Distinguishing AccessDenied (True) from generic Error (False) is
-    load-bearing: a transient probe failure should NOT be confused with a
-    confirmed-gone process.
-    """
+    monkeypatch.setattr(psutil, "pid_exists", _raise_timeout)
+    assert pid_state(12345) is PidState.TRANSIENT_UNKNOWN
+    # pid_exists is conservative and treats transient errors as True
+    assert pid_exists(12345) is True
 
-    class _Boom:
-        def __call__(self, pid):
-            raise psutil.TimeoutExpired(0.0)
 
-    real = psutil.pid_exists
-    psutil.pid_exists = _Boom()  # type: ignore[assignment]
-    try:
-        assert pid_exists(12345) is False
-    finally:
-        psutil.pid_exists = real  # type: ignore[assignment]
+def test_pid_state_oserror_returns_transient(monkeypatch):
+    def _raise_oserror(pid):
+        raise OSError("Permission denied or transient OS failure")
+
+    monkeypatch.setattr(psutil, "pid_exists", _raise_oserror)
+    assert pid_state(12345) is PidState.TRANSIENT_UNKNOWN
+    assert pid_exists(12345) is True
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only branch")
