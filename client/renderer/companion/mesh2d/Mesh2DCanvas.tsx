@@ -142,7 +142,8 @@ export function Mesh2DCanvas(): React.JSX.Element {
             lookY: lookRef.current.y,
             breathActive: true,
             blinkActive: true,
-            reducedMotion: prefersReducedMotion()
+            reducedMotion: prefersReducedMotion(),
+            eyeSquint: driver.getActiveActionName() === 'petting'
           })
 
           renderer.render(scene.group, camera)

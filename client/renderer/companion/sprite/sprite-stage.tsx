@@ -5,9 +5,18 @@ import { $chatOpen } from '@/companion/chat-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
-import { handleDragEndInteraction, handleHoverInteraction } from '../interaction'
+import {
+  handleDizzyInteraction,
+  handleDragEndInteraction,
+  handleHoverInteraction,
+  handlePetInteraction
+} from '../interaction'
+import { Mesh2DGestureTracker } from '../mesh2d/mesh2d-gestures'
+import { $mesh2dHitmap } from '../mesh2d/mesh2d-store'
+import { emitVfx, Mesh2DVfxOverlay } from '../mesh2d/mesh2d-vfx'
 import {
   $homePosition,
+  $isEdgeDocked,
   $spatialLocomotion,
   $spatialPos,
   $spatialScale,
@@ -16,6 +25,7 @@ import {
   getBaseSpriteHeight,
   getBaseSpriteWidth,
   startDrag,
+  undockFromEdge,
   updateDragPosition
 } from '../spatial'
 
@@ -177,6 +187,22 @@ export function SpriteStage({
       .catch(() => {})
   }, [])
 
+  const gestureTrackerRef = useRef<Mesh2DGestureTracker | null>(null)
+
+  if (!gestureTrackerRef.current) {
+    gestureTrackerRef.current = new Mesh2DGestureTracker({
+      onPetStart: (nx, ny) => {
+        handlePetInteraction(nx, ny)
+      },
+      onPetTick: (nx, ny) => {
+        emitVfx('heart', { nx, ny, count: 1 })
+      },
+      onShakeDizzy: () => {
+        handleDizzyInteraction()
+      }
+    })
+  }
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (hidden) {
       return
@@ -185,6 +211,10 @@ export function SpriteStage({
     // 只在按下左键时捕获
     if (e.button !== 0) {
       return
+    }
+
+    if ($isEdgeDocked.get()) {
+      undockFromEdge()
     }
 
     const now = performance.now()
@@ -206,10 +236,20 @@ export function SpriteStage({
       return
     }
 
+    const rect = mountRef.current?.getBoundingClientRect()
+    const nx = rect && rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5
+    const ny = rect && rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5
+    const region = $mesh2dHitmap.get()?.hit(nx, ny)?.region
+
     const d = dragRef.current
 
     if (!d) {
-      handleHoverInteraction()
+      if ($isEdgeDocked.get()) {
+        undockFromEdge()
+      }
+
+      gestureTrackerRef.current?.feedPointerMove(nx, ny, false, region)
+      handleHoverInteraction(region)
 
       return
     }
@@ -224,6 +264,8 @@ export function SpriteStage({
     }
 
     if (d.moved) {
+      gestureTrackerRef.current?.feedPointerMove(nx, ny, true, region)
+
       if (e.clientX < 0 || e.clientX > window.innerWidth || e.clientY < 0 || e.clientY > window.innerHeight) {
         probeDisplaySwitch()
       }
@@ -259,6 +301,7 @@ export function SpriteStage({
       return
     }
 
+    gestureTrackerRef.current?.feedPointerUp()
     ;(e.currentTarget as Element).releasePointerCapture?.(e.pointerId)
     const drag = dragRef.current
     dragRef.current = null
@@ -269,14 +312,16 @@ export function SpriteStage({
       dragRafRef.current = null
     }
 
+    const lastVel = pendingVelRef.current ?? undefined
+
     if (pendingPosRef.current) {
-      updateDragPosition(pendingPosRef.current, pendingVelRef.current ?? undefined)
+      updateDragPosition(pendingPosRef.current, lastVel)
       pendingPosRef.current = null
       pendingVelRef.current = null
     }
 
     if (drag?.moved) {
-      endDragAt($spatialPos.get())
+      endDragAt($spatialPos.get(), lastVel)
       handleDragEndInteraction()
 
       return
@@ -317,6 +362,13 @@ export function SpriteStage({
           e.preventDefault()
           onContextMenu?.(e)
         }}
+        onDragOver={e => {
+          e.preventDefault()
+        }}
+        onDrop={e => {
+          e.preventDefault()
+          emitVfx('heart', { nx: 0.5, ny: 0.25, count: 3 })
+        }}
         onPointerCancel={onPointerUp}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -337,6 +389,7 @@ export function SpriteStage({
         }}
       >
         {children}
+        <Mesh2DVfxOverlay />
       </div>
     </div>
   )

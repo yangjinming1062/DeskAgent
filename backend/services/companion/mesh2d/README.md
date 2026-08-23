@@ -21,7 +21,7 @@ AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_
 ## 数据契约
 
 - **`Mesh2DModel`** 表：`status`, `manifest_json`, `manifest_path`, `layers_json`, `content_hash`, `active`
-- **manifest schema**：`spiritagent.mesh2d/1` — `canvas` / `camera` / `skeleton.bones[]` / `meshes[]` / `animations.{breath,blink,idle_sway,jiggle}`
+- **manifest schema**：`spiritagent.mesh2d/1` — `canvas` / `camera` / `skeleton.bones[]` / `meshes[]` / `animations.{breath,blink,idle_sway,jiggle,red_lines,actions,idle_variants,locomotion}`
 - **WS 事件**：`companion.mesh2d.ready` / `companion.mesh2d.failed` / `companion.render_mode.changed`
 
 ## 关键约束

@@ -109,17 +109,24 @@
 | `turn_body_left` / `turn_body_right` | 整个上半身转向 | 切换朝向 / 仪式行走 |
 | `lean_forward` | 上半身微微前倾 | curious / thinking |
 | `shy` | 低头侧脸 + 前发微盖 | shy / embarrassed |
+| `petting` | 享受抚摸：微微歪头闭眼 + 舒服蹭蹭 | happy / grateful（摸头手势触发） |
+| `dizzy` | 眩晕：脑袋发懵轻晃 + 圈圈眼 | confused / tired（狂戳/狂甩触发） |
+| `fall` | 自由落体悬空下落姿态 | scared / surprised（空中释放触发） |
+| `land_squash` | 触地弹性挤压扁平瞬间变形 | neutral（落地瞬间触发） |
+| `peeking` | 贴边探头偷看姿态 | curious / playful（屏幕贴边吸附触发） |
 | `idle_glance` | 短瞥一眼回中 | idle 变体 |
 
 > 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 骨骼 pose 表（程序化弧度 transform）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >
-> 走路 / 跳跃（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」，**不会**出现腿部摆动——因为下半身在 body_main.png 内、无法独立旋转。如需移动角色，用 spatial cue / ritual walk 而非 action。
+> 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」，**不会**出现腿部摆动——因为下半身在 body_main.png 内、无法独立旋转。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 
 **连续气泡分隔**：LLM 需要在一回合内连发多条短回复时，用单独一行 `---` 分隔；Backend 流式解析为 `message.break` 事件（带 session_id），Client 收尾当前气泡、停顿 0.5–1.5s 后再渲染下一气泡。
 
-**2D 命中区域协议**（mesh2d 路径）：`companion.interact` RPC payload 的 `region` 字段允许传下列白名单之一（不传 = 整精灵矩形命中）：
+**2D 命中区域与手势交互协议**：
+- `companion.interact` RPC payload 的 `kind` 字段支持 `poke`（戳击）、`pet`（摸头抚摸）、`dizzy`（激怒/眩晕）。
+- `companion.interact` RPC payload 的 `region` 字段允许传下列白名单之一（不传 = 整精灵矩形命中）：
 
 | region | 含义 |
 |---|---|
@@ -130,7 +137,7 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域影响：（1）前端 impulse 触发——hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`region` 字段透传到 LLM，让回应可针对"摸头"vs"拍手"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
+命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
 
 **扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 prompts.py 白名单 + manifest_exporter.py DEFAULT_ACTIONS + 客户端 mesh2d-drivers.ts 兑现代码 + 本文档**四处。
 

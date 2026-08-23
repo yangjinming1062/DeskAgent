@@ -107,7 +107,7 @@ fullbody_url → Vision LLM (6 部件 BBox 检测) → CPU 抠图裁切 → 遮�
 - `canvas`: `{"w": 1024, "h": 1366}` 画布基准。
 - `skeleton.bones`: 19 骨骼层级拓扑（root → body_main → neck → head → ...）。
 - `meshes`: 各部件图层定义（包含 `texture`、`geometry_w`、`geometry_h`、`origin: [cx, cy]`、`z_order` 以及 `bones_influences` 权重）。
-- `animations`: 包含 `breath`（呼吸振幅与周期）、`blink`（眨眼周期与时长）、`idle_sway`（摇摆幅度）、`jiggle`（发丝/裙摆物理弹簧 $k$ 与阻尼 $c$）。
+- `animations`: 包含 `breath`（呼吸振幅与周期）、`blink`（眨眼周期与时长）、`idle_sway`（摇摆幅度）、`jiggle`（发丝/裙摆物理弹簧 k 与阻尼 c）。
 
 **客户端 2D 运行时兑现**（`client/renderer/companion/mesh2d/mesh2d-runtime.ts`）：
 - 采用 Three.js OrthographicCamera + SkinnedMesh，各部件 Mesh 经 `geometry.translate(origin.x, -origin.y)` 精准装配。

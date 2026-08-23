@@ -208,6 +208,10 @@ export class Mesh2DDriver {
     }
   }
 
+  public getActiveActionName(): string | null {
+    return this.activeAction?.name ?? null
+  }
+
   /** LLM 或交互触发的新 action（含 emotion → action 默认映射）。 */
   private handleActionChange(actionKey: string | null): void {
     if (!actionKey) {
@@ -235,14 +239,15 @@ export class Mesh2DDriver {
 
   private beginAction(name: string, def: ActionDef): void {
     const now = performance.now()
+    const totalMs = def.blend_in_ms + def.duration_ms + def.blend_out_ms
     this.activeAction = {
       name,
       def,
       startedAt: now,
-      finishedAt: now + def.duration_ms + def.blend_out_ms
+      finishedAt: now + totalMs
     }
-    // active action 期间暂停 idle 计时器
-    this.nextIdleSwapAt = now + def.duration_ms + def.blend_out_ms + 500
+    // active action 期间暂停 idle 计时器；等待完整生命周期（blend_in + duration + blend_out）+ 500ms buffer
+    this.nextIdleSwapAt = now + totalMs + 500
   }
 
   private tickAction(now: number): void {
@@ -320,7 +325,7 @@ export class Mesh2DDriver {
         name: this.currentIdleVariant,
         def,
         startedAt: now,
-        finishedAt: now + def.duration_ms + def.blend_out_ms
+        finishedAt: now + def.blend_in_ms + def.duration_ms + def.blend_out_ms
       }
     }
 

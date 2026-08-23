@@ -258,6 +258,7 @@ export interface FrameInputs {
   breathActive: boolean
   blinkActive: boolean
   reducedMotion: boolean
+  eyeSquint?: boolean
 }
 
 export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
@@ -309,8 +310,16 @@ export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
     head.rotation.z = Math.max(-HEAD_MAX, Math.min(HEAD_MAX, head.rotation.z))
   }
 
-  // blink：eye_L/R.scale.y = 1 → 0.05 → 1（120ms ease）。不影响 action；action 不写 eye。
-  if (inputs.blinkActive) {
+  // blink / eyeSquint：eye_L/R.scale.y = 1 → 0.05 → 1（120ms ease）；petting 时眯眼享受（scale.y = 0.15）
+  if (inputs.eyeSquint) {
+    for (const name of ['eye_L', 'eye_R']) {
+      const bone = bones.get(name)
+
+      if (bone) {
+        bone.scale.y = 0.15
+      }
+    }
+  } else if (inputs.blinkActive) {
     const blinkPeriod = manifests.animations.blink?.min_period_ms ?? 4000
     const blinkDuration = manifests.animations.blink?.duration_ms ?? 120
     const cycle = inputs.elapsed % blinkPeriod

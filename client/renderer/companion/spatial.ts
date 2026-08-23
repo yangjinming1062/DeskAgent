@@ -5,6 +5,7 @@ import { $chatOpen } from '@/companion/chat-store'
 import {
   $clipOverride,
   $effectiveTier,
+  $spriteAction,
   $spriteEmotion,
   $spriteState,
   setSpriteState
@@ -49,9 +50,12 @@ export type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 // Locomotion 枚举（mesh2d 与 spatial 共用）：
 // - 'still' / 'walk' / 'fly' / 'drag' 是原有 4 项；
 // - 'walk_fast' 是走路加速版（mesh2d 骨骼相位频率更高）；
-// - 'jump' 是单次脉冲，mesh2d 走 body_main squash + shoulder 上扬方案。
+// - 'jump' 是单次脉冲，mesh2d 走 body_main squash + shoulder 上扬方案；
+// - 'fall' 是自由落体姿态。
 // 扩展时务必同步更新 backend/services/companion/mesh2d/manifest_exporter.py::DEFAULT_LOCOMOTION。
-export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump'
+export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump' | 'fall'
+
+export type EdgeDockSide = 'none' | 'left' | 'right'
 
 export const $spatialLocale = atom<SpatialLocale>('home')
 export const $spatialPos = atom<{ x: number; y: number }>(getHomePosition())
@@ -60,6 +64,8 @@ export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
+export const $edgeDockSide = atom<EdgeDockSide>('none')
+export const $isEdgeDocked = atom<boolean>(false)
 
 // 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
 // 弹层（chat-dock、proactive 气泡）订阅这里而不是各自挂监听器。
@@ -213,12 +219,14 @@ export function cancelMovement(): void {
     rafId = null
   }
 
+  cancelPhysics()
+
   const cb = moveOnArrive
   moveStart = null
   moveTarget = null
   moveOnArrive = null
 
-  if ($spatialLocomotion.get() !== 'drag') {
+  if ($spatialLocomotion.get() !== 'drag' && $spatialLocomotion.get() !== 'fall') {
     $spatialLocomotion.set('still')
   }
 
@@ -483,10 +491,158 @@ export function reevaluateSpatialDecision(): void {
   updateSpatialDecision()
 }
 
+let fallRafId: number | null = null
+let fallLastTime = 0
+
+export function cancelPhysics(): void {
+  if (fallRafId !== null) {
+    cancelAnimationFrame(fallRafId)
+    fallRafId = null
+  }
+}
+
+export function dockToEdge(side: 'left' | 'right'): void {
+  cancelMovement()
+  cancelPhysics()
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const spriteW = getBaseSpriteWidth()
+  const spriteH = getBaseSpriteHeight()
+  const targetY = Math.max(REST_MARGIN, Math.min($spatialPos.get().y, vh - spriteH - REST_MARGIN))
+
+  // 身体约 65% 缩进屏幕边缘，只探出头部/耳朵往里看
+  const hiddenAmount = spriteW * 0.65
+  const targetX = side === 'left' ? -hiddenAmount : vw - spriteW + hiddenAmount
+
+  $isEdgeDocked.set(true)
+  $edgeDockSide.set(side)
+  $spatialLocomotion.set('still')
+  $clipOverride.set('peeking')
+  $spriteAction.set('peeking')
+
+  moveTo({ x: targetX, y: targetY }, 'walk', () => {
+    $spatialPos.set({ x: targetX, y: targetY })
+    $homePosition.set({ x: targetX, y: targetY })
+    void window.spiritagent.sprite.setPosition({ x: targetX, y: targetY })
+  })
+}
+
+export function undockFromEdge(): void {
+  if (!$isEdgeDocked.get()) {
+    return
+  }
+
+  cancelMovement()
+  const side = $edgeDockSide.get()
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
+  const spriteW = getBaseSpriteWidth()
+  const curPos = $spatialPos.get()
+
+  const targetX = side === 'left' ? REST_MARGIN : vw - spriteW - REST_MARGIN
+  $isEdgeDocked.set(false)
+  $edgeDockSide.set('none')
+  $clipOverride.set(null)
+
+  moveTo({ x: targetX, y: curPos.y }, 'walk', () => {
+    $spatialPos.set({ x: targetX, y: curPos.y })
+    $homePosition.set({ x: targetX, y: curPos.y })
+    void window.spiritagent.sprite.setPosition({ x: targetX, y: curPos.y })
+  })
+}
+
+export function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: number; vy: number }): void {
+  cancelMovement()
+  cancelPhysics()
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const spriteW = getBaseSpriteWidth()
+  const spriteH = getBaseSpriteHeight()
+  const groundY = Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN)
+  const minX = REST_MARGIN
+  const maxX = Math.max(REST_MARGIN, vw - spriteW - REST_MARGIN)
+
+  // 速度换算为 px/s（pointer velocity 在 px/ms）
+  let vx = (velocity.vx || 0) * 1000
+  let vy = (velocity.vy || 0) * 1000
+
+  vx = Math.max(-2500, Math.min(2500, vx))
+  vy = Math.max(-2500, Math.min(2500, vy))
+
+  let curX = initialPos.x
+  let curY = initialPos.y
+
+  if (curY >= groundY - 6 && Math.abs(vy) < 100) {
+    endDragAt({ x: Math.max(minX, Math.min(maxX, curX)), y: groundY })
+
+    return
+  }
+
+  $spatialLocomotion.set('fall')
+  $clipOverride.set('fall')
+  $spriteAction.set('fall')
+  setSpriteState('interacting')
+
+  const GRAVITY = 2600 // px/s^2 重力加速度
+  const DRAG_X = 0.985
+  const RESTITUTION = 0.35 // 触地反弹衰减系数
+  fallLastTime = performance.now()
+
+  function physicsStep(now: number) {
+    const dt = Math.min(0.04, Math.max(0.001, (now - fallLastTime) / 1000))
+    fallLastTime = now
+
+    vy += GRAVITY * dt
+    vx *= Math.pow(DRAG_X, dt * 60)
+
+    curX += vx * dt
+    curY += vy * dt
+
+    // 左右屏幕墙壁弹性碰撞
+    if (curX <= minX) {
+      curX = minX
+      vx = -vx * 0.4
+    } else if (curX >= maxX) {
+      curX = maxX
+      vx = -vx * 0.4
+    }
+
+    // 地面碰撞与挤压反弹
+    if (curY >= groundY) {
+      curY = groundY
+
+      if (Math.abs(vy) > 160) {
+        // 反弹 + 触地挤压
+        vy = -vy * RESTITUTION
+        $clipOverride.set('land_squash')
+        $spriteAction.set('land_squash')
+      } else {
+        // 稳定触地，物理结算完毕
+        cancelPhysics()
+        endDragAt({ x: Math.max(minX, Math.min(maxX, curX)), y: groundY })
+
+        return
+      }
+    }
+
+    $spatialPos.set({ x: curX, y: curY })
+    fallRafId = requestAnimationFrame(physicsStep)
+  }
+
+  fallRafId = requestAnimationFrame(physicsStep)
+}
+
 export function startDrag(): void {
   userInteracted = true
   stopRoam()
   cancelMovement()
+  cancelPhysics()
+
+  if ($isEdgeDocked.get()) {
+    $isEdgeDocked.set(false)
+    $edgeDockSide.set('none')
+  }
+
   $spatialLocomotion.set('drag')
   $clipOverride.set('drag')
   $spriteState.set('interacting')
@@ -500,7 +656,38 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
   }
 }
 
-export function endDragAt(pos: { x: number; y: number }): void {
+export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const spriteW = getBaseSpriteWidth()
+  const spriteH = getBaseSpriteHeight()
+  const dockMargin = 40
+
+  // 1. 优先判定屏幕左右边缘吸附
+  if (pos.x <= dockMargin) {
+    dockToEdge('left')
+
+    return
+  }
+
+  if (pos.x >= vw - spriteW - dockMargin) {
+    dockToEdge('right')
+
+    return
+  }
+
+  // 2. 判定空中自由落体与初速度抛掷
+  const groundY = Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN)
+
+  if (vel && (pos.y < groundY - 12 || Math.hypot(vel.vx, vel.vy) > 0.15)) {
+    startFreeFall(pos, vel)
+
+    return
+  }
+
+  cancelPhysics()
+  $isEdgeDocked.set(false)
+  $edgeDockSide.set('none')
   $spatialPos.set(pos)
   $homePosition.set(pos)
   $spatialLocomotion.set('still')

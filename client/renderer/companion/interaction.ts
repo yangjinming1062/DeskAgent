@@ -5,6 +5,7 @@ import { resolveClip } from './3d/AnimationMap'
 import { $availableClipNames, $clipMap } from './3d/model-store'
 import { $lastIdleSeconds, reportInteractionStat } from './activity'
 import { $clipOverride, $spriteAction, $spriteEmotion, setSpriteState } from './companion-store'
+import { emitVfx } from './mesh2d/mesh2d-vfx'
 import { $personalityTags } from './persona-store'
 import { $llmReactions } from './prefs'
 import { pickReaction, playReactionAudio } from './reactions/reaction-audio'
@@ -38,7 +39,7 @@ interface InteractRpcResponse {
 }
 
 interface InteractRpcRequest {
-  kind: 'poke'
+  kind: 'poke' | 'pet' | 'dizzy'
   poke_count: number
   idle_seconds: number
   local_hour: number
@@ -55,7 +56,12 @@ function playLocalReaction(bucket: ReactionBucket, tags: string[]): void {
   void playReactionAudio(entry)
 }
 
-async function triggerReaction(bucket: ReactionBucket, tags: string[], region?: string): Promise<void> {
+async function triggerReaction(
+  bucket: ReactionBucket,
+  tags: string[],
+  region?: string,
+  kind: 'poke' | 'pet' | 'dizzy' = 'poke'
+): Promise<void> {
   const now = Date.now()
   const useLlm = $llmReactions.get()
   const inLlmCooldown = now - lastLlmPokeAt < LLM_INTERACT_COOLDOWN_MS
@@ -81,7 +87,7 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[], region?: 
 
   try {
     const request: InteractRpcRequest = {
-      kind: 'poke',
+      kind,
       poke_count: pokeCount,
       idle_seconds: Math.max(0, $lastIdleSeconds.get()),
       local_hour: new Date().getHours()
@@ -113,7 +119,7 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[], region?: 
         $spriteAction.set(res.action)
       }
 
-      void playReactionAudio({ id: 'llm-poke', text: res.text, tags: [], bucket })
+      void playReactionAudio({ id: `llm-${kind}`, text: res.text, tags: [], bucket })
 
       return
     }
@@ -126,6 +132,32 @@ async function triggerReaction(bucket: ReactionBucket, tags: string[], region?: 
   }
 
   playLocalReaction(bucket, tags)
+}
+
+export function handlePetInteraction(nx = 0.5, ny = 0.25): void {
+  const tags = $personalityTags.get()
+
+  emitVfx('heart', { nx, ny, count: 2 })
+  $clipOverride.set('petting')
+  $spriteAction.set('petting')
+  $spriteEmotion.set('happy')
+  setSpriteState('interacting', { durationMs: 2500 })
+
+  void triggerReaction('poke-light', tags, 'head', 'pet')
+  reportInteractionStat('poke')
+}
+
+export function handleDizzyInteraction(): void {
+  const tags = $personalityTags.get()
+
+  emitVfx('dizzy_stars')
+  $clipOverride.set('dizzy')
+  $spriteAction.set('dizzy')
+  $spriteEmotion.set('confused')
+  setSpriteState('interacting', { durationMs: 3000 })
+
+  void triggerReaction('poke-heavy', tags, undefined, 'dizzy')
+  reportInteractionStat('poke')
 }
 
 export function handlePokeInteraction(region?: string): void {
@@ -147,6 +179,17 @@ export function handlePokeInteraction(region?: string): void {
     pokeCount = 0
   }, 4000)
 
+  // 连戳阈值分流
+  if (pokeCount >= 8) {
+    handleDizzyInteraction()
+
+    return
+  }
+
+  if (pokeCount >= 5) {
+    emitVfx('anger', { nx: 0.5, ny: 0.2 })
+  }
+
   const tags = $personalityTags.get()
   const bucket = bucketForPokeCount()
 
@@ -154,7 +197,7 @@ export function handlePokeInteraction(region?: string): void {
   $clipOverride.set(resolveClip('poke', $clipMap.get(), $availableClipNames.get()))
   setSpriteState('interacting', { durationMs: 2000 })
 
-  void triggerReaction(bucket, tags, region)
+  void triggerReaction(bucket, tags, region, 'poke')
   reportInteractionStat('poke')
 }
 

@@ -1,6 +1,11 @@
 from typing import Any
 
-from components import SESSION_LOCAL, coerce_hour_0_23, coerce_non_negative_float, get_logger
+from components import (
+    SESSION_LOCAL,
+    coerce_hour_0_23,
+    coerce_non_negative_float,
+    get_logger,
+)
 from pydantic import BaseModel, Field
 
 from ..conversation import load_recent_context_window
@@ -58,8 +63,8 @@ async def interact(
     llm_config: UserLlmConfig | dict[str, Any],
     region: str | None = None,
 ) -> InteractResult:
-    """针对用户互动（戳一戳）用 LLM 生成口头反应与表情。"""
-    if kind != "poke":
+    """针对用户互动（戳一戳、摸头抚摸、眩晕）用 LLM 生成口头反应与表情。"""
+    if kind not in ("poke", "pet", "dizzy"):
         return InteractResult(text=None, reason="invalid_kind")
 
     ctx = await load_companion_prompt_context(user_id)
@@ -74,7 +79,12 @@ async def interact(
 
     idle_minutes = round(coerce_non_negative_float(idle_seconds) / 60, 2)
     local_hour = coerce_hour_0_23(local_hour)
-    action_desc = f"戳了戳你的{_REGION_NAMES_ZH[region]}" if region in _REGION_NAMES_ZH else "戳了戳你"
+    if kind == "pet":
+        action_desc = "温柔地抚摸了你的头顶，揉了揉你"
+    elif kind == "dizzy":
+        action_desc = "连续快速戳你或者高速晃动你，让你有些头晕目眩"
+    else:
+        action_desc = f"戳了戳你的{_REGION_NAMES_ZH[region]}" if region in _REGION_NAMES_ZH else "戳了戳你"
 
     parsed, fail_reason = await run_prompt_json(
         user_id,
@@ -109,6 +119,12 @@ async def interact(
 
     logger.info(
         "interact: generated interaction response",
-        extra={"user_id": user_id, "kind": kind, "region": region, "text": text, "emotion": emotion},
+        extra={
+            "user_id": user_id,
+            "kind": kind,
+            "region": region,
+            "text": text,
+            "emotion": emotion,
+        },
     )
     return InteractResult(text=text, emotion=emotion, reason="ok")

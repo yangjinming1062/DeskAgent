@@ -201,6 +201,55 @@ DEFAULT_ACTIONS: dict[str, dict[str, Any]] = {
             "head": {"rotation_rad": {"y": -0.20}},
         },
     },
+    "petting": {
+        "duration_ms": 2000,
+        "blend_in_ms": 200,
+        "blend_out_ms": 400,
+        "loop": False,
+        "bones": {
+            "head": {"rotation_rad": {"z": 0.08, "x": -0.05}},
+            "front_hair": {"scale": {"y": 1.03}},
+        },
+    },
+    "dizzy": {
+        "duration_ms": 2500,
+        "blend_in_ms": 200,
+        "blend_out_ms": 400,
+        "loop": False,
+        "bones": {
+            "head": {"rotation_rad": {"z": -0.12, "x": 0.08}},
+            "body_main": {"rotation_rad": {"z": 0.06}},
+        },
+    },
+    "fall": {
+        "duration_ms": 1000,
+        "blend_in_ms": 150,
+        "blend_out_ms": 250,
+        "loop": True,
+        "bones": {
+            "head": {"rotation_rad": {"x": -0.15}},
+            "shoulder_L": {"rotation_rad": {"z": 0.40}},
+            "shoulder_R": {"rotation_rad": {"z": -0.40}},
+        },
+    },
+    "land_squash": {
+        "duration_ms": 400,
+        "blend_in_ms": 60,
+        "blend_out_ms": 200,
+        "loop": False,
+        "bones": {
+            "body_main": {"scale": {"y": 0.90, "x": 1.08}},
+        },
+    },
+    "peeking": {
+        "duration_ms": 2000,
+        "blend_in_ms": 300,
+        "blend_out_ms": 300,
+        "loop": True,
+        "bones": {
+            "head": {"rotation_rad": {"y": -0.22, "z": 0.05}},
+        },
+    },
 }
 
 

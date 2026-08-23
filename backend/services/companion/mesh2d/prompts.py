@@ -90,6 +90,8 @@ _ACTIONS_FOR_PROMPT: dict[str, str] = {
     "turn_body_right": "整个上半身转向右侧；镜像版",
     "lean_forward": "上半身微微前倾；用于好奇 / 凑近看 / 认真听",
     "shy": "害羞：低头侧脸 + 前发微盖；用于 emotion=shy / 脸红",
+    "petting": "享受抚摸：微微歪头闭眼 + 舒服蹭蹭；用于被摸头、安抚",
+    "dizzy": "眩晕：脑袋发懵轻晃；用于被狂戳、转圈、晕乎乎",
     "idle_glance": "短暂向一侧扫一眼然后回中；用于 idle 变体",
 }
 
