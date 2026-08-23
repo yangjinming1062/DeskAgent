@@ -24,7 +24,7 @@ from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from modules.scheduler import CronJob
 from modules.ws import CRON_TURN_EVENT, WSEvent
-from sqlalchemy import func, select, text
+from sqlalchemy import bindparam, delete, func, select, text, tuple_
 from sqlalchemy.engine import Row
 
 from services.conversation import CRON_KIND, UI_ONLY_SUBTYPES, ProactiveState, get_user_proactive_record, record_user_outreach
@@ -147,28 +147,37 @@ async def _bulk_cas_advance(due_jobs: list[Row], now: datetime) -> dict[int, dic
 
     async with session_scope() as db:
         if recurring:
-            # PG：CAST 让 asyncpg 拿到 CASE 分支里的参数类型（它无法从赋值目标推断），列类型是 timestamptz 所以 cast 必须匹配。SQLite：不写 CAST——其 CAST 会套 NUMERIC 亲和截断 ISO 串。
-            is_pg = db.bind is not None and db.bind.dialect.name == "postgresql"
-            then = "CAST(:next_{i} AS timestamptz)" if is_pg else ":next_{i}"
-            next_case = " ".join(f"WHEN :id_{i} THEN {then.format(i=i)}" for i in range(len(recurring)))
-            match = ", ".join(f"(:id_{i}, :old_{i}, :sched_{i})" for i in range(len(recurring)))
-            params: dict[str, Any] = {}
-            for i, job in enumerate(recurring):
-                params |= {f"id_{i}": job.id, f"next_{i}": new_runs[job.id], f"old_{i}": job.next_run_at, f"sched_{i}": job.schedule}
-            # is_paused 由同一 CASE 派生：croniter 耗尽（= None）是唯一会让 job 停摆的状态。
-            res = await db.execute(
-                text(
-                    f"UPDATE cron_jobs SET next_run_at = CASE id {next_case} END, is_paused = (CASE id {next_case} END) IS NULL "
-                    f"WHERE (id, next_run_at, schedule) IN ({match}) RETURNING id",
-                ),
-                params,
-            )
+            case_clauses = " ".join(f"WHEN :id_{i} THEN :next_{i}" for i in range(len(recurring)))
+            stmt = text(
+                f"UPDATE cron_jobs SET "
+                f"next_run_at = CASE id {case_clauses} END, "
+                f"is_paused = (CASE id {case_clauses} END) IS NULL "
+                f"WHERE (id, next_run_at, schedule) IN :match "
+                f"RETURNING id",
+            ).bindparams(bindparam("match", expanding=True))
+            params: dict[str, Any] = {
+                "match": [(j.id, j.next_run_at, j.schedule) for j in recurring],
+            }
+            for i, j in enumerate(recurring):
+                params[f"id_{i}"] = j.id
+                params[f"next_{i}"] = new_runs[j.id]
+            res = await db.execute(stmt, params)
             won.update(r[0] for r in res.all())
         if one_shots:
-            # 触发后删除一次性 job，避免堆积；next_run_at 上的 CAS 谓词防止双重触发。
-            match = ", ".join(f"(:oid_{i}, :oold_{i})" for i in range(len(one_shots)))
-            params = {f"oid_{i}": job.id for i, job in enumerate(one_shots)} | {f"oold_{i}": job.next_run_at for i, job in enumerate(one_shots)}
-            res = await db.execute(text(f"DELETE FROM cron_jobs WHERE (id, next_run_at) IN ({match}) RETURNING id"), params)
+            # 触发后删除一次性 job，通过 next_run_at 谓词防止并发双重触发
+            stmt = (
+                delete(CronJob)
+                .where(
+                    tuple_(CronJob.id, CronJob.next_run_at).in_(
+                        bindparam("match", expanding=True),
+                    ),
+                )
+                .returning(CronJob.id)
+            )
+            res = await db.execute(
+                stmt,
+                {"match": [(j.id, j.next_run_at) for j in one_shots]},
+            )
             won.update(r[0] for r in res.all())
         await db.commit()
 

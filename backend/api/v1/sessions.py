@@ -17,21 +17,30 @@ from services.chat import build_session_messages
 from services.conversation import CRON_KIND, MAIN_KIND
 from sqlalchemy import String, asc, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 router = get_router(dependencies=[Depends(get_current_session)])
 
 logger = get_logger(__name__)
 
 
-def _conversation_to_session_info(conv: Conversation, msg_count: int, input_tok: int, output_tok: int, tool_count: int) -> DesktopSessionInfo:
-    preview = None
-    # 调用方需用 selectinload 预加载 conv.messages，否则此处遍历会对列表/搜索每行触发 N+1 SELECT。
-    for msg in conv.messages:
-        if msg.role == "user" and msg.content:
-            preview = msg.content[:SESSION_PREVIEW_MAX_CHARS]
-            break
+# 列表/搜索预览关联子查询：取首条非空 user 消息并在 SQL 层截断，避免大文本/多模态造成整页 IO 放大
+_preview_subquery = (
+    select(func.substr(Message.content, 1, SESSION_PREVIEW_MAX_CHARS))
+    .where(
+        Message.conversation_id == Conversation.id,
+        Message.role == "user",
+        Message.content.isnot(None),
+        Message.content != "",
+    )
+    .order_by(Message.id)
+    .limit(1)
+    .correlate(Conversation)
+    .scalar_subquery()
+    .label("preview")
+)
 
+
+def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_tok: int, output_tok: int, tool_count: int, preview: str | None) -> DesktopSessionInfo:
     has_real_parent = conv.parent_id is not None and conv.parent_id != conv.id
 
     return DesktopSessionInfo(
@@ -71,8 +80,7 @@ async def list_sessions(
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionListResponse:
     user, _ = current
-    # selectinload 让 _conversation_to_session_info 遍历 conv.messages 取 preview 时避免每行 N+1 SELECT；排除内部 cron scratchpad 会话。
-    q = select(Conversation).options(selectinload(Conversation.messages)).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
+    q = select(Conversation, _preview_subquery).where(Conversation.user_id == user.id, Conversation.kind != CRON_KIND)
 
     msg_stats = (
         select(
@@ -90,7 +98,6 @@ async def list_sessions(
     q = q.outerjoin(msg_stats, Conversation.id == msg_stats.c.conversation_id)
     q = q.outerjoin(tool_stats, Conversation.id == tool_stats.c.conversation_id)
 
-    # 聚合列必须随 SELECT 返回；否则 .scalars() 会丢掉它们，所有计数读回 0。
     q = q.add_columns(msg_stats.c.msg_count, msg_stats.c.input_tok, msg_stats.c.output_tok, tool_stats.c.tool_count)
 
     if archived == "only":
@@ -112,8 +119,17 @@ async def list_sessions(
     rows = (await db.execute(q.offset(offset).limit(limit))).all()
 
     sessions = []
-    for conv, mc, it, ot, tc in rows:
-        sessions.append(_conversation_to_session_info(conv, int(mc or 0), int(it or 0), int(ot or 0), int(tc or 0)))
+    for conv, preview, mc, it, ot, tc in rows:
+        sessions.append(
+            _conversation_to_session_info(
+                conv,
+                msg_count=int(mc or 0),
+                input_tok=int(it or 0),
+                output_tok=int(ot or 0),
+                tool_count=int(tc or 0),
+                preview=preview,
+            ),
+        )
 
     return DesktopSessionListResponse(limit=limit, offset=offset, total=total_q, sessions=sessions)
 
@@ -168,8 +184,7 @@ async def search_sessions(
 
     rows = (
         await db.execute(
-            select(Conversation, func.count(Message.id).label("msg_count"))
-            .options(selectinload(Conversation.messages))
+            select(Conversation, _preview_subquery, func.count(Message.id).label("msg_count"))
             .outerjoin(Message, Message.conversation_id == Conversation.id)
             .where(Conversation.id.in_(merged_ids))
             .group_by(Conversation.id)
@@ -179,17 +194,32 @@ async def search_sessions(
     ).all()
 
     sessions = []
-    for conv, msg_count in rows:
-        sessions.append(_conversation_to_session_info(conv, int(msg_count or 0), 0, 0, 0))
+    for conv, preview, msg_count in rows:
+        sessions.append(
+            _conversation_to_session_info(
+                conv,
+                msg_count=int(msg_count or 0),
+                input_tok=0,
+                output_tok=0,
+                tool_count=0,
+                preview=preview,
+            ),
+        )
 
     return DesktopSessionSearchResponse(sessions=sessions)
 
 
 @router.get("/{session_id}/messages", response_model=DesktopSessionMessagesResponse)
-async def get_session_messages(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> DesktopSessionMessagesResponse:
+async def get_session_messages(
+    session_id: str,
+    before_id: int | None = Query(default=None, ge=0, description="取 id < before_id 的更早历史，配合 next_cursor 翻页"),
+    limit: int | None = Query(default=None, ge=1, le=1000, description="单次返回条数上限"),
+    current: tuple[User, object] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> DesktopSessionMessagesResponse:
     user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
-    result = await build_session_messages(conv.id, db)
+    result = await build_session_messages(conv.id, db, before_id=before_id, limit=limit)
     return DesktopSessionMessagesResponse(session_id=str(conv.id), messages=result)
 
 

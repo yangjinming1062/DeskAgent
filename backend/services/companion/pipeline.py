@@ -15,7 +15,7 @@ from enum import Enum
 from pathlib import Path
 
 import httpx
-from components import SESSION_LOCAL, SETTINGS, get_logger, log_paid_call
+from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, get_logger, log_paid_call
 from modules.companion import CompanionModel
 from modules.ws import WSEvent
 from sqlalchemy import select, update
@@ -343,7 +343,14 @@ async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user
         if emit_tasks:
             await asyncio.gather(*emit_tasks)
 
+    attempt = 0
+    last_status: str | None = None
+    last_progress: int = 0
     while True:
+        remaining = max(0.0, deadline - time.monotonic())
+        if remaining <= 0:
+            await _drain()
+            raise ModelGenerationError(f"3D 生成超时({SETTINGS.image_to_3d_max_poll_seconds:.0f}s)")
         result = await provider.poll(job)
         if result.status == "completed":
             _emit(end_pct)
@@ -352,12 +359,31 @@ async def _poll_with_progress(provider: ImageTo3DProvider, job: Model3DJob, user
         if result.status == "failed":
             await _drain()
             raise ModelGenerationError(f"3D 生成任务失败: {result.error or stage}")
+        progress_now = result.progress or 0
+        # 状态转换或进度增长时重置退避；同状态无进度时递增退避间隔
+        progress_grew = last_status is not None and progress_now > last_progress
+        status_changed = last_status is not None and result.status != last_status
+        if progress_grew or status_changed:
+            attempt = 0
+        elif last_status is not None:
+            attempt += 1
+        last_status = result.status
+        last_progress = progress_now
         raw = result.progress or min(100, int(100 * (time.monotonic() - started) / SETTINGS.image_to_3d_max_poll_seconds))
         _emit(start_pct + (end_pct - start_pct) * raw // 100)
         if time.monotonic() > deadline:
             await _drain()
             raise ModelGenerationError(f"3D 生成超时({SETTINGS.image_to_3d_max_poll_seconds:.0f}s)")
-        await asyncio.sleep(SETTINGS.image_to_3d_poll_interval_seconds)
+        sleep_for = backoff_for_poll(
+            attempt,
+            base_interval=SETTINGS.image_to_3d_poll_interval_seconds,
+            max_interval=SETTINGS.image_to_3d_poll_backoff_max_seconds,
+            remaining_seconds=remaining,
+        )
+        if sleep_for <= 0:
+            await _drain()
+            raise ModelGenerationError(f"3D 生成超时({SETTINGS.image_to_3d_max_poll_seconds:.0f}s)")
+        await asyncio.sleep(sleep_for)
 
 
 async def _download_one_step(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str, assets: tuple[Model3DAsset, ...]) -> bytes:

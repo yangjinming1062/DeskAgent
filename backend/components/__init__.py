@@ -1,6 +1,7 @@
 from .attachments import attachment_root, path_attach_ref
 from .attachments import gc_session as attachments_gc_session
 from .background import BackgroundTask
+from .backoff import backoff_for_poll
 from .config import SETTINGS
 from .constants import (
     ACTIVITY_DAY_BUCKETS,
@@ -46,6 +47,8 @@ from .constants import (
     NIGHTLY_WINDOW_END_HOUR,
     NIGHTLY_WINDOW_START_HOUR,
     SEARCH_INPUT_MAX_LEN,
+    SESSION_HISTORY_PRE_BUFFER,
+    SESSION_HISTORY_TRUNCATE_THRESHOLD,
     SESSION_PREVIEW_MAX_CHARS,
     SESSION_TO_GLOBAL_KEY_ALIASES,
     SQL_LIKE_ESCAPE_CHAR,
@@ -153,6 +156,8 @@ __all__ = [
     "SEARCH_INPUT_MAX_LEN",
     "SESSION_LOCAL",
     "SESSION_PREVIEW_MAX_CHARS",
+    "SESSION_HISTORY_PRE_BUFFER",
+    "SESSION_HISTORY_TRUNCATE_THRESHOLD",
     "SESSION_TO_GLOBAL_KEY_ALIASES",
     "SETTINGS",
     "SQL_LIKE_ESCAPE_CHAR",
@@ -176,6 +181,7 @@ __all__ = [
     "async_trace_span",
     "attachment_root",
     "attachments_gc_session",
+    "backoff_for_poll",
     "begin_local_scope",
     "cleanup_expired",
     "coerce_hour_0_23",

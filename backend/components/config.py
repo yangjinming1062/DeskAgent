@@ -81,6 +81,7 @@ class Settings(BaseSettings):
 
     image_to_3d_provider: str = Field(default="tripo", validation_alias="IMAGE_TO_3D_PROVIDER")
     image_to_3d_poll_interval_seconds: float = Field(default=5.0, validation_alias="IMAGE_TO_3D_POLL_INTERVAL_SECONDS")
+    image_to_3d_poll_backoff_max_seconds: float = Field(default=40.0, validation_alias="IMAGE_TO_3D_POLL_BACKOFF_MAX_SECONDS")
     image_to_3d_max_poll_seconds: float = Field(default=1800.0, validation_alias="IMAGE_TO_3D_MAX_POLL_SECONDS")
 
     tripo_api_key: str = Field(default="", validation_alias="TRIPO_API_KEY")
@@ -149,6 +150,7 @@ class Settings(BaseSettings):
     video_gen_model_name: str
     video_gen_context_tokens: int | None = Field(default=None, gt=0)
     video_gen_poll_interval_seconds: float
+    video_gen_poll_backoff_max_seconds: float = Field(default=40.0, validation_alias="VIDEO_GEN_POLL_BACKOFF_MAX_SECONDS")
     video_gen_max_poll_seconds: float
     video_gen_tool_wait_seconds: float
     video_gen_download_max_bytes: int

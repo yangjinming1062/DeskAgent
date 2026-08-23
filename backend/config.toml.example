@@ -51,6 +51,8 @@ matting_model = "u2netp"
 image_to_3d_provider = "tripo"
 # 轮询 3D 生成任务状态的间隔时间（秒）
 image_to_3d_poll_interval_seconds = 5.0
+# 3D 轮询退避上限（秒）；指数退避 base_interval*2**attempt 增长到此值后停止。40s 约为 5s→10s→20s→40s 三档。
+image_to_3d_poll_backoff_max_seconds = 40.0
 # 轮询 3D 生成任务的最大超时时间（秒）
 image_to_3d_max_poll_seconds = 1800.0
 
@@ -165,6 +167,8 @@ video_gen_model_name = ""
 video_gen_context_tokens = 0
 # 异步视频任务状态轮询间隔（秒）
 video_gen_poll_interval_seconds = 5.0
+# 视频轮询退避上限（秒）；与 3D 同样 5s 基线 + 三档倍增 = ~40s
+video_gen_poll_backoff_max_seconds = 40.0
 # 异步视频生成最大轮询超时时间（秒）
 video_gen_max_poll_seconds = 900.0
 # 工具调用等待视频生成的同步等待时间（秒）

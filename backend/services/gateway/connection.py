@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import random
 import secrets
 from datetime import timedelta
 
@@ -150,7 +151,10 @@ MANAGER = ConnectionManager()
 
 
 def compute_backoff(retry_count: int) -> timedelta:
-    return timedelta(seconds=min(60, 2**retry_count))
+    """指数退避叠加等比抖动（Equal Jitter），避免多副本同步唤醒重投导致尖峰。"""
+    base = min(60, 2**retry_count)
+    half = base / 2
+    return timedelta(seconds=random.uniform(half, base))
 
 
 async def _recover_stale_locks() -> None:

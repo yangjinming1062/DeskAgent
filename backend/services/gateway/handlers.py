@@ -14,6 +14,8 @@ from components import (
     MAX_ATTACHMENTS_PER_TURN,
     MAX_VOICE_DESIGN_PROMPT_CHARS,
     REQUEST_ID_HEADER,
+    SESSION_HISTORY_PRE_BUFFER,
+    SESSION_HISTORY_TRUNCATE_THRESHOLD,
     SESSION_LOCAL,
     adopt_inbound,
     coerce_hour_0_23,
@@ -26,7 +28,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatMessageRequest, ChatRequest
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
@@ -404,19 +406,35 @@ def _register_session_handlers(
 
     dispatcher.register("session.ping", session_ping)
 
+    async def _fetch_truncated_history(conv_id: int, db: AsyncSession) -> tuple[list[dict], bool, str | None]:
+        head = await build_session_messages(
+            conv_id,
+            db,
+            limit=SESSION_HISTORY_TRUNCATE_THRESHOLD + SESSION_HISTORY_PRE_BUFFER,
+            desc=True,
+            include_id=True,
+        )
+        head.reverse()
+        truncated = len(head) > SESSION_HISTORY_TRUNCATE_THRESHOLD
+        delivered = head[-SESSION_HISTORY_TRUNCATE_THRESHOLD:] if truncated else head
+        next_cursor = str(delivered[0]["id"]) if truncated and delivered else None
+        return delivered, truncated, next_cursor
+
     async def session_get_main(_params: dict) -> dict:
         async with SESSION_LOCAL() as db:
             conv = await get_or_create_main_conversation(db, user_id)
-            messages = await build_session_messages(conv.id, db)
+            delivered, truncated, next_cursor = await _fetch_truncated_history(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         cfg = user_session.llm_config if user_session else llm_config
         await dispatcher.flush_unsent()
         return SessionResumeResult(
             session_id=runtime.session_id,
-            message_count=len(messages),
-            messages=messages,
+            message_count=len(delivered),
+            messages=delivered,
             info=runtime_info_snapshot(cfg, runtime),
             current_seq=effective_buffer.max_seq,
+            truncated=truncated,
+            next_cursor=next_cursor,
         ).model_dump()
 
     dispatcher.register("session.get_main", session_get_main)
@@ -458,20 +476,22 @@ def _register_session_handlers(
                 current_seq=effective_buffer.max_seq,
             ).model_dump()
 
-        # 客户端给的 last_seq 已被覆盖 / 不可 replay——回落到完整 DB 历史重载。
+        # 客户端序列号失同步或超时，回退到 DB 历史防御性截断重水化
         async with SESSION_LOCAL() as db:
-            messages = await build_session_messages(conv.id, db)
+            delivered, truncated, next_cursor = await _fetch_truncated_history(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd, cancel_existing=True)
         await dispatcher.flush_unsent()
         logger.info("session.resume full reload", extra={"user_id": user_id, "session_id": runtime.session_id})
         return SessionResumeResult(
             session_id=runtime.session_id,
-            message_count=len(messages),
-            messages=messages,
+            message_count=len(delivered),
+            messages=delivered,
             info=runtime_info_snapshot(cfg, runtime),
             resumed=False,
             replayed_count=0,
             current_seq=effective_buffer.max_seq,
+            truncated=truncated,
+            next_cursor=next_cursor,
         ).model_dump()
 
     async def session_interrupt(params: dict) -> dict:
@@ -509,13 +529,33 @@ def _register_session_handlers(
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "truncate_before_user_ordinal must be a non-negative int")
         if truncate_ordinal is not None:
             async with SESSION_LOCAL() as db:
-                user_rows = (
-                    (await db.execute(select(Message).where(Message.conversation_id == runtime.conversation_id, Message.role == "user").order_by(Message.id))).scalars().all()
-                )
-                if truncate_ordinal < 0 or truncate_ordinal >= len(user_rows):
+                user_total = (
+                    await db.execute(
+                        select(func.count(Message.id)).where(
+                            Message.conversation_id == runtime.conversation_id,
+                            Message.role == "user",
+                        ),
+                    )
+                ).scalar_one()
+                if truncate_ordinal < 0 or truncate_ordinal >= user_total:
                     raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
-                drop_from_id = user_rows[truncate_ordinal].id
-                await db.execute(delete(Message).where(Message.conversation_id == runtime.conversation_id, Message.id >= drop_from_id))
+                nth_user_id = (
+                    select(Message.id)
+                    .where(
+                        Message.conversation_id == runtime.conversation_id,
+                        Message.role == "user",
+                    )
+                    .order_by(Message.id)
+                    .offset(truncate_ordinal)
+                    .limit(1)
+                    .scalar_subquery()
+                )
+                await db.execute(
+                    delete(Message).where(
+                        Message.conversation_id == runtime.conversation_id,
+                        Message.id >= nth_user_id,
+                    ),
+                )
                 db.expire_all()
                 await db.commit()
 

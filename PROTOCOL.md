@@ -21,7 +21,7 @@
 - 所有下发事件均附加递增序列号 `seq`（从 1 开始）；序列号与客户端 `lastReceivedSeq` 均为**连接级（Connection/User 级）**状态，跨 Session 共享。客户端维护 `lastReceivedSeq` 保证去重与有序消费。
 - 客户端定期向服务端发送 `session.ack(seq)` 确认消费进度（带 id 的标准 RPC 请求），服务端自重放缓冲中修剪已确认帧。
 - **心跳保活（session.ping）**：客户端在连接空闲 15s 时发送 `session.ping`（带 id 的标准 RPC 请求），服务端回 `{}`；若 30s 内无任何帧到达，客户端判定半开连接并主动 `close(4000, 'heartbeat')` 触发重连。该机制覆盖 NAT 超时、Wi-Fi 切换、VPN 抖动、笔记本合盖等场景，避免用户发消息后 120s 死寂。
-- **断线补偿与 30s 缓冲期（Grace Period）**：WS 断开后后端保留调度器、生成任务与未决 IPC future 30 秒；客户端在 30 秒内重连并发送 `session.resume(session_id, last_seq)`。若在缓冲期内且缓存未溢出，服务端无缝重放断线期间缺失帧（`resumed: true`），保持流式对话不中断；若超时、溢出或服务端重启导致序列号失同步，则返回 `resumed: false`、当前最大 `current_seq` 与完整 DB 历史进行全量重水化。重连且收到 `resumed: false`（或降级走 `session.get_main`）时，客户端**必须**重置 `lastReceivedSeq = current_seq` 以防旧水位导致事件黑洞；普通会话切换（活连接上）严禁重置水位。
+- **全量重水化的防御性截断**：当全量重水化返回的消息数达到防御上限时，响应携带截断标记与更早历史的分页游标；客户端可通过会话消息 REST 端点按游标向后翻页拉取更早历史。该截断仅作为超大历史的负载防御兜底，优先仍走重放缓冲的无缝恢复。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不继续尝试。
 
 ---

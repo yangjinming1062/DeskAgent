@@ -91,4 +91,3 @@ async def race_cancel(work: Awaitable, token: CancellationToken | None) -> Any:
     with contextlib.suppress(asyncio.CancelledError, Exception):
         await work_task
     raise asyncio.CancelledError()
-

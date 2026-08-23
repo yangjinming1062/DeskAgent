@@ -27,6 +27,8 @@ class SessionResumeResult(BaseModel):
     resumed: bool = False
     replayed_count: int = 0
     current_seq: int = 0
+    truncated: bool = False
+    next_cursor: str | None = None
 
 
 class ToolsSyncResult(BaseModel):

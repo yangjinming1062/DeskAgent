@@ -3,7 +3,7 @@ import json
 from dataclasses import replace
 from datetime import timedelta
 
-from components import SESSION_LOCAL, SETTINGS, download_capped, get_logger, save_file, utc_now
+from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, download_capped, get_logger, save_file, utc_now
 from modules.media import VideoGenJob
 from modules.ws import WSEvent
 from sqlalchemy import select, update
@@ -216,8 +216,15 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
         provider = resolve(ServiceType.video_gen, provider_cfg.provider_name)(provider_cfg)
 
         interval = SETTINGS.video_gen_poll_interval_seconds
+        backoff_max = SETTINGS.video_gen_poll_backoff_max_seconds
         deadline = utc_now() + timedelta(seconds=SETTINGS.video_gen_max_poll_seconds)
+        attempt = 0
+        last_status: str | None = None
         while True:
+            remaining = max(0.0, (deadline - utc_now()).total_seconds())
+            if remaining <= 0:
+                await _record_failure(job_id, reason="timeout", user_id=user_id)
+                return
             # 重新加载行以感知并发终态更新（如用户 DELETE 行、其他 worker 已终结）。provider_task_id 为空表示行被中途清空。
             async with SESSION_LOCAL() as db:
                 job = await db.get(VideoGenJob, job_id)
@@ -260,10 +267,22 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                 return
 
             await _update_job(job_id, status="processing")
-            if utc_now() >= deadline:
+            # 状态转换时重置退避；同状态持续时递增退避间隔
+            if last_status is not None and status.status != last_status:
+                attempt = 0
+            elif last_status is not None:
+                attempt += 1
+            last_status = status.status
+            sleep_for = backoff_for_poll(
+                attempt,
+                base_interval=interval,
+                max_interval=backoff_max,
+                remaining_seconds=remaining,
+            )
+            if sleep_for <= 0:  # 兜底:剩余时间用尽,提前退出
                 await _record_failure(job_id, reason="timeout", user_id=user_id)
                 return
-            await asyncio.sleep(interval)
+            await asyncio.sleep(sleep_for)
     except Exception:
         logger.exception("unhandled exception in video poll worker", extra={"job_id": job_id})
         await _record_failure(job_id, reason="worker_failed", user_id=user_id)

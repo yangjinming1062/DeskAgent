@@ -195,4 +195,3 @@ def test_set_local_interrupt_active_false_pops_entry():
     assert "req-y" in _local_interrupts
     set_local_interrupt("req-y", False)
     assert "req-y" not in _local_interrupts
-
