@@ -11,6 +11,10 @@ from .providers import BaseProvider, ProviderConfig, resolve
 
 logger = get_logger(__name__)
 
+# 瞬时故障：per-provider 重试层耗尽后允许在链间级联 —— 一次连接抖动不应让用户在引导样图阶段永久丢失一张卡。
+# server_error / unknown 不在内：前者通常是供应商特定行为，下家多半同样失败；后者无信号，避免噪声级联。
+_CASCADING_TRANSIENT_REASONS: frozenset[FailoverReason] = frozenset({FailoverReason.timeout, FailoverReason.overloaded})
+
 
 async def execute_with_fallback[T](
     db: AsyncSession | None,
@@ -21,7 +25,14 @@ async def execute_with_fallback[T](
     stream_started: Callable[[], bool] | None = None,
     _chain: list[ProviderConfig] | None = None,
 ) -> T:
-    """按 ``resolve_provider_chain`` 解析的供应商链依次调用 ``call_fn``；仅当 ``ClassifiedError.should_fallback=True``（鉴权 / 计费 / 模型缺失 / 内容策略）时切换到下一家，瞬时错误留在 per-provider 重试层内处理。链为空时抛 ``MissingLlmConfigError``。"""
+    """按 ``resolve_provider_chain`` 解析的供应商链依次调用 ``call_fn``。
+
+    回退触发条件：
+    - ``should_fallback=True``：鉴权 / 计费 / 模型缺失 / 内容策略等 *确定性* 失败，直接切下一家；
+    - 瞬时故障（``FailoverReason.timeout`` / ``overloaded``）：先由 per-provider 重试层（image_gen 走 [providers/http.py](services/llm/providers/http.py) 的 httpx transport 重试，chat 走 OpenAI SDK 的 max_retries）自行恢复；重试耗尽后再切下一家，避免一次抖动让用户在引导样图阶段永久丢失一张卡。
+
+    流已开始则不再切下一家（半流续不上）。链为空时抛 ``MissingLlmConfigError``。
+    """
     chain = _chain if _chain is not None else await resolve_provider_chain(db, user_id, service_type)
     if not chain:
         raise MissingLlmConfigError(f"no provider configured for service {service_type!r}")
@@ -75,8 +86,12 @@ async def execute_with_fallback[T](
             if classified.reason == FailoverReason.content_policy_blocked:
                 content_policy_error = exc
 
-            if classified.should_fallback and (stream_started is None or not stream_started()):
-                next_provider = chain[idx + 1].provider_name if idx + 1 < len(chain) else None
+            has_next = idx + 1 < chain_size
+            stream_alive = stream_started is not None and stream_started()
+            cascade = has_next and not stream_alive and (classified.should_fallback or classified.reason in _CASCADING_TRANSIENT_REASONS)
+
+            if cascade:
+                next_provider = chain[idx + 1].provider_name
                 logger.warning(
                     "provider failed; falling back",
                     extra={

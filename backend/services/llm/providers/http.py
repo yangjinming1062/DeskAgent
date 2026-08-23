@@ -57,7 +57,10 @@ def get_http(base_url: str, api_key: str, *, auth_header: dict[str, str] | None 
 
 
 class _RetryAsyncTransport(httpx.AsyncBaseTransport):
-    """透明包装 ``inner``，对瞬时传输错误按指数退避重试；与 ``execute_with_fallback`` 的分工是：本层解决 *per-provider* 抖动（连接超时、DNS 失败、连接重置），跨供应商回退（鉴权 / 计费 / 模型 / 内容策略）由 classifier 标 ``should_fallback=True`` 时处理。"""
+    """透明包装 ``inner``，对瞬时传输错误按指数退避重试。
+
+    与 ``execute_with_fallback`` 的分工：本层解决 *per-provider* 抖动（连接超时、DNS 失败、连接重置），耗尽后再由 chain 把 ``timeout`` / ``overloaded`` 级联到下一家供应商；``should_fallback=True`` 的确定性失败（鉴权 / 计费 / 模型 / 内容策略）跳过本层、直接切下一家。
+    """
 
     def __init__(self, inner: httpx.AsyncBaseTransport, *, max_retries: int, base_delay: float, max_delay: float) -> None:
         self._inner = inner
