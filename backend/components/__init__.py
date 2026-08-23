@@ -84,7 +84,7 @@ from .functions import (
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
 from .logger import get_logger, set_request_user_id, setup_logging
 from .matting import MattingEngine, has_real_transparency, remove_background, vectorized_matting, warmup_matting_engine
-from .network import download_capped, is_safe_outbound, safe_outbound_async_client
+from .network import download_capped, is_safe_outbound, safe_outbound_async_client, safe_outbound_async_transport
 from .observability import (
     HTTP_REQUEST_DURATION_SECONDS,
     HTTP_REQUESTS_TOTAL,
@@ -210,6 +210,7 @@ __all__ = [
     "render_metrics_response",
     "safe_json_loads",
     "safe_outbound_async_client",
+    "safe_outbound_async_transport",
     "save_file",
     "session_scope",
     "set_request_user_id",

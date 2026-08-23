@@ -190,9 +190,14 @@ def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
     后立即校验所有目标 IP；默认 ``follow_redirects=False`` 以便上游
     ``download_capped`` 自己做逐跳校验。
     """
-    transport = kwargs.pop("transport", None) or _SafeOutboundAsyncTransport()
+    transport = kwargs.pop("transport", None) or safe_outbound_async_transport()
     follow_redirects = kwargs.pop("follow_redirects", False)
     return httpx.AsyncClient(follow_redirects=follow_redirects, transport=transport, **kwargs)
+
+
+def safe_outbound_async_transport() -> httpx.AsyncBaseTransport:
+    """返回带 SSRF 守卫的 transport（不附带 client）——给需要在 transport 外面再包一层（如重试 / 自定义 pool）的调用方使用。"""
+    return _SafeOutboundAsyncTransport()
 
 
 async def download_capped(url: str, *, max_bytes: int, timeout: float = 60.0, max_redirects: int = 5) -> bytes:
