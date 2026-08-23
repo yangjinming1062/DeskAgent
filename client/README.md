@@ -91,6 +91,8 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
 - **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防本地 Whisper/云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
+- **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
+- **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：原先只能戳精灵实体触发 `setActivationOpen(true)`，但未鉴权时精灵实体不可见（无 3D 模型 + 程序化蛋形等 Three.js 上下文就绪），用户戳不到就是死锁。改为：(1) `auth.kind` 切到 `'unauthenticated'` 时（包括首次 hydrateAuth 完成、反激活后）自动开；(2) 托盘「激活...」入口镜像 `trayLogout` 加一条 `trayActivate` IPC 通知渲染器翻 state，否则 `showMainWindow()` 只拉窗口不翻 React state，关掉一次就再也唤不回来。
 
 ## 5. 与外部的契约
 

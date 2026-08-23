@@ -67,7 +67,13 @@ export function buildTrayMenu() {
     mainActionClick = () => showMainWindow()
   } else {
     mainActionLabel = '激活...'
-    mainActionClick = () => showMainWindow()
+
+    mainActionClick = () => {
+      showMainWindow()
+      // 仅拉窗口不够——激活浮层是 React state，关掉后只能再翻回 true；
+      // 通知渲染器把 activationOpen 翻回来。
+      sendToMainWindow(IPC.event.trayActivate)
+    }
   }
 
   const template: MenuItemConstructorOptions[] = [

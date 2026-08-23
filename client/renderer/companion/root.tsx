@@ -122,6 +122,23 @@ export function CompanionRoot(): React.JSX.Element {
     return () => off?.()
   }, [])
 
+  // 托盘「激活...」入口的对偶：主进程只调 showMainWindow() 不够——
+  // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
+  useEffect(() => {
+    const off = window.spiritagent.onTrayActivate?.(() => setActivationOpen(true))
+
+    return () => off?.()
+  }, [])
+
+  // 未鉴权时自动开激活浮层：首次 hydrateAuth 完成（pending → unauthenticated）、
+  // 以及反激活之后。原先只能戳精灵触发，但未鉴权时精灵实体本身不可见、戳不到，
+  // 这条链路在未激活用户那里是断的。
+  useEffect(() => {
+    if (auth.kind === 'unauthenticated') {
+      setActivationOpen(true)
+    }
+  }, [auth.kind])
+
   // 登出时清掉，保证下次登录从干净状态开始。
   useEffect(() => {
     if (auth.kind === 'unauthenticated') {

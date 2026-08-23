@@ -316,6 +316,7 @@ export interface IpcEventContract {
   'spiritagent:power-resume': []
   'spiritagent:runner-update-event': [payload: DesktopRunnerUpdateEvent]
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
+  'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
   'spiritagent:window-state-changed': [payload: SpiritAgentWindowState]
@@ -383,6 +384,7 @@ export const IPC = {
     powerResume: 'spiritagent:power-resume',
     runnerUpdateEvent: 'spiritagent:runner-update-event',
     runnerStatus: 'spiritagent:runner:status',
+    trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     updateEvent: 'spiritagent:update-event',
     windowStateChanged: 'spiritagent:window-state-changed'

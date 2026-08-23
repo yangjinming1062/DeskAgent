@@ -61,6 +61,7 @@ import {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_CSP_POLICY,
   DEFAULT_FETCH_TIMEOUT_MS,
+  DEV_CSP_POLICY,
   resolvePathTimeoutMs,
   resolveReadableFileForIpc,
   resolveTimeoutMs
@@ -996,11 +997,14 @@ function installMediaPermissions(): void {
 }
 
 function installContentSecurityPolicy(): void {
+  // dev 用放宽的 CSP（允许 inline + eval），让 Vite 的 React Fast Refresh
+  // preamble 与 HMR 跑得起来；生产仍锁 DEFAULT_CSP_POLICY。
+  const policy = IS_PACKAGED ? DEFAULT_CSP_POLICY : DEV_CSP_POLICY
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
-        'Content-Security-Policy': [DEFAULT_CSP_POLICY]
+        'Content-Security-Policy': [policy]
       }
     })
   })

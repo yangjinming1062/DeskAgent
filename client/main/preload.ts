@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('spiritagent', {
 
     return () => ipcRenderer.removeListener(IPC.event.authSessionExpired, listener)
   },
+  onTrayActivate: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on(IPC.event.trayActivate, listener)
+
+    return () => ipcRenderer.removeListener(IPC.event.trayActivate, listener)
+  },
   onTrayLogout: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on(IPC.event.trayLogout, listener)

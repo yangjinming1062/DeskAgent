@@ -110,6 +110,7 @@ declare global {
       onAuthChanged: EventSubscription<'spiritagent:auth:changed'>
       onRunnerStatus: EventSubscription<'spiritagent:runner:status'>
       onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
+      onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
       getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>
       update: {
         check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>

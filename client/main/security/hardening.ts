@@ -19,6 +19,25 @@ export const DEFAULT_CSP_POLICY = [
   "form-action 'none'"
 ].join('; ')
 
+// Dev-only：Vite 的 @vitejs/plugin-react 会把 React Fast Refresh preamble 作为
+// 内联脚本注入 HTML；DEFAULT_CSP_POLICY 不允许 inline，会被拦下导致
+// "can't detect preamble" 白屏（同时 HMR 反复重试烧 CPU）。HMR websocket
+// 走 127.0.0.1:5174，已被 connect-src 的 ws/http 通配覆盖，无需扩白名单。
+// 生产仍用 DEFAULT_CSP_POLICY 锁紧——dev 放开只影响受信任本地源。
+export const DEV_CSP_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: spiritagent-media: https:",
+  "media-src 'self' data: blob: spiritagent-media: https:",
+  "connect-src 'self' data: blob: ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https: wss: spiritagent-media:",
+  "font-src 'self' data:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'"
+].join('; ')
+
 // 头像 / 精灵 / 衣橱生成：供应商调用 + Pillow 重编码 + 关键帧写入通常要 15–25 秒，
 // 默认 15 秒会在后端返回 201 之前就超时，所以这里放宽。
 export const AVATAR_FETCH_TIMEOUT_MS = 120_000
