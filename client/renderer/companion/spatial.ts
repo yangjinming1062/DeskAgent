@@ -181,14 +181,6 @@ function tick(now: number): void {
 export function moveTo(target: { x: number; y: number }, locomotion: 'walk' | 'fly', onArrive?: () => void): void {
   cancelMovement()
 
-  if (locomotion === 'still') {
-    $spatialPos.set(target)
-    $spatialLocomotion.set('still')
-    onArrive?.()
-
-    return
-  }
-
   const current = $spatialPos.get()
   const dist = Math.hypot(target.x - current.x, target.y - current.y)
 
