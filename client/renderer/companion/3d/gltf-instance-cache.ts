@@ -8,11 +8,11 @@ import { log } from '@/shared/lib/log'
  * - 模板 Cache 拥有原始 GLB 的 geometry、material、texture 等 GPU 资源；
  * - 活跃实例通过 `takeGltfClone(key)` 取出深克隆对象（网格、骨骼与层级独立重建）与专属租约，并增加对应模板代际的引用计数；
  * - 活跃实例卸载时执行租约归还，不得影响同 key 后续模板代际的引用计数；
- * - 仅当模板引用计数降为 0 时，Cache 清理（`clearGltf` / `clearAllGltf` / LRU prune）才会真正执行 GPU 资源释放。
+ * - 仅当模板引用计数降为 0 时，Cache 清理（`clearAllGltf` / LRU prune）才会真正执行 GPU 资源释放。
  */
 
-export const DEFAULT_MAX_TEMPLATES = 3
-export const DEFAULT_MAX_CACHE_BYTES = 128 * 1024 * 1024 // 128 MB
+const DEFAULT_MAX_TEMPLATES = 3
+const DEFAULT_MAX_CACHE_BYTES = 128 * 1024 * 1024 // 128 MB
 
 const COMMON_TEXTURE_KEYS = [
   'map',
@@ -308,23 +308,6 @@ export function hasGltf(key: string): boolean {
   return Boolean(cached && !cached.pendingDispose)
 }
 
-/** 从缓存中移除单个模板。若仍有活跃引用则延迟释放。 */
-export function clearGltf(key: string, force = false): void {
-  const cached = _cache.get(key)
-
-  if (!cached) {
-    return
-  }
-
-  if (cached.refCount === 0 || force) {
-    disposeTemplate(cached)
-    _cache.delete(key)
-  } else {
-    addPendingTemplate(key, cached)
-    _cache.delete(key)
-  }
-}
-
 /** 清空所有缓存模板。用于用户登出或渲染器完全销毁。 */
 export function clearAllGltf(force = false): void {
   for (const [key, cached] of _cache.entries()) {
@@ -349,7 +332,7 @@ export function clearAllGltf(force = false): void {
 }
 
 /** 获取模板缓存状态快照。 */
-export function gltfCacheStats(): { activeRefs: number; keys: string[]; totalBytes: number; totalHits: number } {
+function _gltfCacheStats(): { activeRefs: number; keys: string[]; totalBytes: number; totalHits: number } {
   let totalBytes = 0
   let totalHits = 0
   let activeRefs = 0

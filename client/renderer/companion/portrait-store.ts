@@ -8,8 +8,6 @@ import { resolvePortraitUrl } from './avatar-image'
 // 伙伴 2D 头像的解析后 data URL。启动时从 GET /api/companion/avatar 水合，
 // 每次重生后刷新。3D 模型独立；这里管的是聊天头部和「形象」区的可见身份。
 export const $portraitUrl = atom<string | null>(null)
-export const $fullbodyStyle = atom<string>('cel_shading')
-export const $fullbodySamples = atom<Record<string, string>>({})
 export const $supportsMultiview = atom<boolean>(false)
 
 // 当前 avatar 行 id——由 hydrate 与每次创建新行的重生写入。
@@ -18,14 +16,6 @@ export const $activeAvatarId = atom<number | null>(null)
 
 export function setPortraitUrl(url: string | null): void {
   $portraitUrl.set(url)
-}
-
-export function setFullbodyStyle(style: string): void {
-  $fullbodyStyle.set(style)
-}
-
-export function setFullbodySamples(samples: Record<string, string>): void {
-  $fullbodySamples.set(samples)
 }
 
 export function setSupportsMultiview(supported: boolean): void {

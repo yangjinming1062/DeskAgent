@@ -60,13 +60,9 @@ window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   }
 })
 
-// 订阅 Runner 侧的更新事件。第 1 阶段（预下载）在收到 `update-downloaded` 后的
-// 旧版 Electron 中运行；第 2 阶段（安装）在新版 Electron 启动时运行。
-// 桌面状态栏通过 $updateStatus 原子（见上方 main.tsx）暴露这些事件——
+// 桌面状态栏通过 $updateStatus 原子（见上方 update.onEvent）暴露这些事件——
 // Runner 内部的阶段切换刻意不在渲染层面向用户展示。
-window.spiritagent?.update?.onRunnerEvent?.(() => {
-  // 刻意留作空操作：完整生命周期见 runner-updater.cjs。
-})
+window.spiritagent?.update?.onRunnerEvent?.(() => {})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

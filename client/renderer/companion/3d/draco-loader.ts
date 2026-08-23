@@ -26,7 +26,3 @@ export function getDracoLoader(): DRACOLoader | null {
 
   return dracoLoaderInstance
 }
-
-export function __resetDracoLoaderForTest(): void {
-  dracoLoaderInstance = null
-}

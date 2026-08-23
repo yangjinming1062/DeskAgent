@@ -146,9 +146,8 @@ function getTitleBarOverlayOptions() {
     }
   }
 
-  // 工具窗口始终渲染钉死的深色调色板（styles.css 中
-  // html[data-role='tool']）——覆盖条必须与系统外观无关地与深色标题栏一致，
-  // 否则浅色条会落在深色标题栏上。
+  // 工具窗口始终渲染钉死的深色调色板——覆盖条必须与系统外观无关地
+  // 与深色标题栏一致，否则浅色条会落在深色标题栏上。
   return {
     color: '#0d0d0d',
     height: TITLEBAR_HEIGHT,
@@ -1391,7 +1390,9 @@ function createSpriteWindow(): void {
   applySpriteBounds(readRestPosition(app.getPath('userData'))?.origin)
   mainWindow.setIgnoreMouseEvents(true, { forward: SPRITE_TRANSPARENT })
 
-  // macOS 使用 'screen-saver' z-band（位于 floating 窗口层之上，能压过使用 exclusive fullscreen 的游戏）；Win/Linux 回退到 'floating'。Windows 的 exclusive fullscreen 完全绕过 DWM——伙伴窗口无法覆盖在上面；这是已记录的限制。
+  // macOS 用 'screen-saver' z-band（位于 floating 之上，能压过 exclusive fullscreen 游戏）；
+  // Win/Linux 回退 'floating'。Windows 的 exclusive fullscreen 完全绕过 DWM，
+  // 伙伴窗口无法覆盖在上面（已记录的限制）。
   if (IS_MAC) {
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
   } else {

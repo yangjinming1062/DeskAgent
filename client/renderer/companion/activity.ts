@@ -6,12 +6,11 @@ import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $llmAffect } from './prefs'
 
-// 本地环境信号取自 Runner 的 system.* 工具（plan §8），
-// 绕过 LLM——伙伴层直接基于这些信号做推理。Runner 离线时 poll 是空操作，
-// atom 保持默认值。
+// 本地环境信号取自 Runner 的 system.* 工具——伙伴层直接基于这些信号做推理，
+// 绕过 LLM。Runner 离线时 poll 是空操作，atom 保持默认值。
 
 export const $screenLocked = atom<boolean>(false)
-// 最近一次有限空闲秒数；-1 表示无信号（Runner 离线或探测失败），调用方应按未知处理。
+// -1 表示本周期无信号（Runner 离线或探测失败），调用方按未知处理。
 export const $lastIdleSeconds = atom<number>(-1)
 
 export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'

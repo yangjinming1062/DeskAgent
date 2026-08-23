@@ -1,7 +1,4 @@
-// 异步头像（半身像）重新生成流程的迟到事件缓冲。伙伴路径纯走 REST
-//（POST /api/companion/avatar 与 POST /from-image）；
-// WS 的 `avatar.regenerate` RPC 结果会以 `avatar.regenerated` 事件
-// 到达本模块。
+// 异步头像（半身像）重新生成的迟到事件缓冲——结果以 WS 事件形式到达本模块。
 
 type Resolver<T> = (payload: T) => void
 

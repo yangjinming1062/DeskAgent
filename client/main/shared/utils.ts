@@ -21,9 +21,9 @@ export function directoryExists(filePath: string): boolean {
   }
 }
 
-// 守护 mainWindow.webContents.send(...)：若已销毁则跳过（关闭/重载期间的竞态）。
+// 守护 webContents.send：关闭/重载期间主窗口可能已销毁。
 // channel 收紧为 `IpcEventChannel`(`webContents.send` 是主→渲单向事件),
-// 不联合 `IpcSendChannel`(那是渲染→主的 `ipcRenderer.send` 方向,主进程不会走这里)。
+// 不联合 `IpcSendChannel`(那是渲染→主的 `ipcRenderer.send` 方向)。
 export function sendToMain<C extends IpcEventChannel>(
   mainWindow: BrowserWindow | null | undefined,
   channel: C,
@@ -42,8 +42,7 @@ export function sendToMain<C extends IpcEventChannel>(
   webContents.send(channel, ...payload)
 }
 
-// 先写再重命名，确保写入中途崩溃时旧文件保持完整。
-// 失败时删除 .tmp，避免因崩溃写入而堆积残留文件。
+// 先写 .tmp 再重命名，崩溃时旧文件保持完整；失败时清理残留 tmp。
 export async function atomicWriteFile(targetPath: string, content: Buffer | string | Uint8Array): Promise<void> {
   await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
   const tmpPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`
@@ -57,7 +56,6 @@ export async function atomicWriteFile(targetPath: string, content: Buffer | stri
   }
 }
 
-// 在 `ms` 毫秒后 resolve。
 export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }

@@ -35,7 +35,3 @@ export function createGLTFLoader(): GLTFLoader {
 
   return gltfLoaderInstance
 }
-
-export function __resetGltfLoaderForTest(): void {
-  gltfLoaderInstance = null
-}

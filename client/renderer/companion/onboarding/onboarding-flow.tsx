@@ -25,7 +25,6 @@ import {
   USER_GENDER_PRESETS,
   VOICE_PRESETS
 } from '@/companion/persona-presets'
-import { portraitIntroHint } from '@/companion/portrait-flow-copy'
 import {
   $activeAvatarId,
   $portraitHistory,
@@ -1942,7 +1941,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               avatarUrl={portraitUrl}
               hint={portraitPanelHint}
               history={currentHistoryItems}
-              introHint={phase === 'portrait-avatar' ? portraitIntroHint() : null}
+              introHint={
+                phase === 'portrait-avatar' ? '先确认半身头像——确认后形象即锁定，我会以它为蓝本长出 3D 的自己。' : null
+              }
               name={answers.name?.trim() || '伙伴'}
               onSelectEntry={onSelectHistoryEntry}
               selectedIdx={portraitSelectedIdx}

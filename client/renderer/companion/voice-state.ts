@@ -28,9 +28,3 @@ export function endVoicePreparing(): void {
     $voicePreparing.set(false)
   }
 }
-
-// 仅供测试使用：把计数器与 atom 一起归零。
-export function __resetVoicePreparingForTests(): void {
-  _activeCount = 0
-  $voicePreparing.set(false)
-}

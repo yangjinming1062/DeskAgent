@@ -72,8 +72,7 @@ async function triggerReaction(
     return
   }
 
-  // 乐观抢占——除非拿到 LLM 反应或服务端返回 rate_limited，否则下方会回退，
-  // 这样一次瞬时失败不会锁死 5 分钟。
+  // 乐观抢占：下方失败时退还配额，避免一次瞬时错误锁死 5 分钟。
   lastLlmPokeAt = now
 
   const gateway = $gateway.get()
@@ -97,10 +96,9 @@ async function triggerReaction(
       request.region = region
     }
 
-    // gateway.request 期望 Record<string, unknown>；展开成普通对象
     const res = await gateway.request<InteractRpcResponse>('companion.interact', { ...request })
 
-    // 服务端的成本窗口对 poke 仍生效——同步本地时钟并退回回本地反应池。
+    // 服务端成本窗口同步到本地时钟，避免立刻重新打满。
     if (res?.reason === 'rate_limited') {
       lastLlmPokeAt = Date.now()
       playLocalReaction(bucket, tags)
@@ -113,9 +111,8 @@ async function triggerReaction(
         $spriteEmotion.set(res.emotion)
       }
 
-      // LLM 可顺带返回 action（mesh2d 路径走 driver 兑现，3D 路径走 clip map）
+      // LLM 可顺带返回 action（mesh2d 走 driver，3D 走 clip map）。
       if (res.action) {
-        // 直接写入 $spriteAction 让 driver 看到（events.ts 通常也会写；这里 LLM RPC 是额外来源）
         $spriteAction.set(res.action)
       }
 
@@ -124,10 +121,8 @@ async function triggerReaction(
       return
     }
 
-    // llm_error / 无法解析 / inflight——退还本次抢占，让下次 poke 重试。
     lastLlmPokeAt = 0
   } catch {
-    // 网络 / 超时——退还本次抢占，让下次 poke 重试。
     lastLlmPokeAt = 0
   }
 

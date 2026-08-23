@@ -213,5 +213,3 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
     </OverlayView>
   )
 }
-
-export { SettingsView as SettingsPage }

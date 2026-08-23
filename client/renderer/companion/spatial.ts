@@ -317,24 +317,12 @@ export function setDefaultScale(scale: number): void {
   updateAdaptiveScale()
 }
 
-function localePosition(locale: SpatialLocale): { x: number; y: number } {
-  switch (locale) {
-    case 'home':
-      return $homePosition.get()
-
-    default:
-      return $homePosition.get()
-  }
+function localePosition(_locale: SpatialLocale): { x: number; y: number } {
+  return $homePosition.get()
 }
 
 function defaultLocomotion(locale: SpatialLocale): 'walk' | 'fly' | 'still' {
-  switch (locale) {
-    case 'target':
-      return 'fly'
-
-    default:
-      return 'walk'
-  }
+  return locale === 'target' ? 'fly' : 'walk'
 }
 
 export function setLocale(

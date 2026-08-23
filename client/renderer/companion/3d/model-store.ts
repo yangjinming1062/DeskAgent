@@ -120,27 +120,6 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
   $modelInfo.set({ ...$modelInfo.get(), ...next })
 }
 
-// 在 lifecycle=ready 时从后端拉取当前模型。后端每次调用都会重签 ``asset_url``（5 分钟 TTL），
-// 不做本地缓存。404（onboarding 期间还没有模型）静默吞掉，让初始原子值保持默认；
-// 5xx / 网络错误则打 warn，避免生产环境模型缺失悄无声息。
-export async function ensureModelGeneration(): Promise<void> {
-  try {
-    const res = await window.spiritagent.api<{ id?: number; status?: string }>({
-      path: '/api/companion/model',
-      method: 'POST',
-      body: {}
-    })
-
-    // 后端返回的是一行下载失败的记录（而非重新生成）—— 付费结果仍可恢复，
-    // 因此弹出重试动作，而不是让 failed 状态暗示"必须重新生成"。
-    if (res?.status === 'download_failed') {
-      setModelFailed('3D 模型下载失败，可重试下载', { retryDownload: true, modelId: res.id ?? null })
-    }
-  } catch (err) {
-    log.info('model-store', 'ensureModelGeneration requested:', err)
-  }
-}
-
 export async function hydrateModel(): Promise<void> {
   try {
     const res = await window.spiritagent.api<CompanionModelResponse>({
