@@ -13,6 +13,7 @@ import {
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { $renderMode, type RenderMode, setRenderMode, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import {
   APPEARANCE_PRESETS,
   CHARACTER_GENDER_PRESETS,
@@ -71,6 +72,7 @@ type Phase =
   | 'q-character'
   | 'hatching'
   | 'portrait-avatar'
+  | 'render-mode'
   | 'fullbody-3d'
   | 'q-user'
   | 'voice'
@@ -278,6 +280,7 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   voice: VOICE_QUESTIONS,
   hatching: [],
   'portrait-avatar': [],
+  'render-mode': [],
   'fullbody-3d': [],
   finishing: [],
   greeting: []
@@ -412,6 +415,7 @@ function SpinnerWithText({ text, size = 'h-5 w-5' }: { text: string; size?: stri
 export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.Element | null {
   const gatewayState = useStore($gatewayState)
   const voicePreparing = useStore($voicePreparing)
+  const renderMode = useStore($renderMode)
   const { requestGateway } = useGatewayRequest()
   const [phase, setPhase] = useState<Phase>('q-character')
   // confirm-front 成功后置 true:形象已锁死 + 3D 已启动,任何返回到 portrait-avatar / fullbody-3d 的路径都禁用
@@ -1281,8 +1285,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     clearPortraitHistory()
     setPresentationRef(null)
 
-    // 推进到 fullbody-3d
-    setPhase('fullbody-3d')
+    // 推进到 render-mode 让用户选择 2D / 3D 渲染模式，再进入 fullbody-3d 阶段。
+    setPhase('render-mode')
     setFullbodyStyleState(null)
     setSelectedStyleKey('')
     setFullbodyViewTab('front')
@@ -1661,11 +1665,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         // 形象确认后立即锁死 onBack 路径(返回到 voice → q-character → portrait-avatar → fullbody-3d 会让
         // 用户重新调整正面视图,与已启动的 3D 生成不一致)。
         setImageSealed(true)
-        // 形象确认后立即异步启动 3D 生成,不等 onboarding 剩余步骤(语音/性格) 完成;
+        // 形象确认后立即异步启动生成,不等 onboarding 剩余步骤(语音/性格) 完成;
         // 生成在 web 进程内 fire-and-forget,失败静默——用户在客户端随时可重试
-        void window.spiritagent
-          .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
-          .catch(() => undefined)
+        const mode = $renderMode.get()
+
+        if (mode === '2d') {
+          void window.spiritagent
+            .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
+            .catch(() => undefined)
+        } else {
+          void window.spiritagent
+            .api<{ id?: number; status?: string }>({ path: '/api/companion/model', method: 'POST', body: {} })
+            .catch(() => undefined)
+          void window.spiritagent
+            .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
+            .catch(() => undefined)
+        }
       })
       .catch(() => {
         // 后台派生是异步的，对用户 onboarding 流程不构成阻塞
@@ -2014,6 +2029,69 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 </>
               )}
               {portraitPanelHint && <p className="mt-2 text-xs text-rose-300/90">{portraitPanelHint}</p>}
+            </div>
+          )}
+
+          {phase === 'render-mode' && (
+            <div className="mt-2 rounded-xl border border-white/10 bg-black/30 p-4">
+              <h3 className="text-base font-medium text-white">你希望伙伴以怎样的方式陪伴你？</h3>
+              <p className="mt-1 text-xs text-white/60">随时可在「伙伴设置 → 渲染模式」里切换。</p>
+
+              <div className="mt-3 grid grid-cols-1 gap-2">
+                {[
+                  {
+                    mode: '2d' as RenderMode,
+                    title: '2D 动画版',
+                    tag: '推荐',
+                    desc: '立绘风格的 2D 动画，原画画风 100% 保留，鼠标跟随眼神，呼吸与发丝自然摆动。启动快 · 不依赖外部云端算力。'
+                  },
+                  {
+                    mode: '3d' as RenderMode,
+                    title: '3D 立体版',
+                    tag: '云端生成',
+                    desc: '云端生成的 3D 模型，立体空间感更强。若生成失败自动回退到 2D 动画版。生成需 1~3 分钟 · 受云端算力影响。'
+                  }
+                ].map(option => {
+                  const selected = renderMode === option.mode
+
+                  return (
+                    <button
+                      className={`w-full rounded-lg border p-3 text-left transition ${selected ? 'border-white/40 bg-white/10' : 'border-white/10 bg-white/5 hover:border-white/20'}`}
+                      key={option.mode}
+                      onClick={() => setRenderMode(option.mode)}
+                      type="button"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-white">{option.title}</span>
+                        <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-white/70">
+                          {option.tag}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-white/60">{option.desc}</p>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="mt-4 flex justify-between">
+                <button
+                  className="text-xs text-white/60 hover:text-white"
+                  onClick={() => setPhase('portrait-avatar')}
+                  type="button"
+                >
+                  上一步
+                </button>
+                <button
+                  className="rounded-md bg-white/90 px-4 py-1.5 text-sm font-medium text-black hover:bg-white"
+                  onClick={async () => {
+                    await switchRenderMode(renderMode)
+                    setPhase('fullbody-3d')
+                  }}
+                  type="button"
+                >
+                  下一步
+                </button>
+              </div>
             </div>
           )}
 

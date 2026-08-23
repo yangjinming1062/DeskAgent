@@ -7,6 +7,7 @@ import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/compan
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { $renderMode, type RenderMode, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona } from '@/companion/persona-store'
 import {
@@ -53,6 +54,7 @@ const TIERS = DISTURBANCE_TIERS
 export function CompanionSettings({ onClose }: SettingsOverlayProps): React.ReactElement {
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
+  const renderMode = useStore($renderMode)
   const llmReactions = useStore($llmReactions)
   const llmAffect = useStore($llmAffect)
   const llmAutonomy = useStore($llmAutonomy)
@@ -236,6 +238,25 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                   type="button"
                 >
                   {m === 'text' ? '默认文字' : '始终语音'}
+                </button>
+              ))}
+            </div>
+          </Section>
+
+          {/* Render mode */}
+          <Section
+            hint="切到 3D 会触发云端生成（1~3 分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。"
+            title="渲染模式"
+          >
+            <div className="flex gap-2">
+              {(['2d', '3d'] as RenderMode[]).map(m => (
+                <button
+                  className={`flex-1 rounded-lg border px-3 py-2 text-xs transition ${renderMode === m ? 'border-white/60 bg-white/15 font-medium' : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'}`}
+                  key={m}
+                  onClick={() => void switchRenderMode(m)}
+                  type="button"
+                >
+                  {m === '2d' ? '2D 动画版' : '3D 立体版'}
                 </button>
               ))}
             </div>

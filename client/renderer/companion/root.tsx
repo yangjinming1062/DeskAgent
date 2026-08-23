@@ -1,7 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { hydrateExpressions, hydrateModel } from '@/companion/3d/model-store'
+import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/companion/3d/model-store'
 import { startActivityMonitor } from '@/companion/activity'
 import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
@@ -14,6 +14,8 @@ import {
   setCompanionLifecycle
 } from '@/companion/companion-store'
 import { useWindowMouseCapture } from '@/companion/interactive-regions'
+import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
+import { Mesh2DCanvas } from '@/companion/mesh2d/Mesh2DCanvas'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { initSpatial } from '@/companion/spatial'
@@ -59,6 +61,10 @@ export function CompanionRoot(): React.JSX.Element {
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
+  const renderMode = useStore($renderMode)
+  const mesh2d = useStore($mesh2dInfo)
+  const modelInfo = useStore($modelInfo)
+  const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
   const [voiceCallOpen, setVoiceCallOpen] = useState(false)
@@ -202,7 +208,7 @@ export function CompanionRoot(): React.JSX.Element {
     window.addEventListener('keydown', onKey)
 
     const stopActivity = startActivityMonitor()
-    void Promise.all([hydratePersona(), hydrateModel(), hydrateExpressions()])
+    void Promise.all([hydratePersona(), hydrateModel(), hydrateExpressions(), hydrateMesh2D()])
 
     return () => {
       window.removeEventListener('keydown', onKey)
@@ -287,7 +293,15 @@ export function CompanionRoot(): React.JSX.Element {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showOnboarding ? null : <Companion3D />}
+        {showOnboarding ? null : renderMode === '2d' ||
+          (renderMode === '3d' &&
+            (glbLoadFailed || modelInfo.status === 'failed') &&
+            mesh2d.status === 'succeeded' &&
+            Boolean(mesh2d.manifestUrl)) ? (
+          <Mesh2DCanvas />
+        ) : (
+          <Companion3D />
+        )}
       </SpriteStage>
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}

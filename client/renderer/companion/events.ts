@@ -28,6 +28,7 @@ import {
 } from '@/companion/chat-store'
 import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
 import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
+import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
@@ -358,6 +359,44 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'companion.mesh2d.ready': {
+      // mesh2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示。
+      const p = event.payload as
+        | {
+            model_id?: number
+            manifest_url?: string | null
+            layers?: { name: string; url: string }[]
+          }
+        | undefined
+
+      if (p?.manifest_url) {
+        log.info('events', 'mesh2d ready:', p.model_id)
+      }
+
+      void hydrateMesh2D()
+
+      break
+    }
+
+    case 'companion.mesh2d.failed': {
+      // 切分失败：渲染层由 SpriteStage 兜底（程序化蛋 / 已就绪的 3D 模型）。
+      const p = event.payload as { reason?: string } | undefined
+      setMesh2DStatus('failed', p?.reason ?? '2D 切分失败')
+      log.warn('events', 'mesh2d failed:', p?.reason)
+
+      break
+    }
+
+    case 'companion.render_mode.changed': {
+      const p = event.payload as { new_mode?: '2d' | '3d' } | undefined
+
+      if (p?.new_mode === '2d' || p?.new_mode === '3d') {
+        void switchRenderMode(p.new_mode)
+      }
+
+      break
+    }
+
     case 'avatar.regenerated': {
       // 后台重新生成的结果——通过 job_id 解析等待者，
       // 让肖像能直接替换而不阻塞处理器。
@@ -376,6 +415,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       // 头像身份已变化——表情头像的锚点已过期（按 avatar_id 过滤行），清空本地缓存。
       resetExpressionAvatars()
+
+      // mesh2d 资产建立在旧 fullbody 立绘上——avatar 重生后必须 supersede，
+      // 让渲染回退到程序化蛋，再异步触发新一次切分。
+      resetMesh2D()
+      void hydrateMesh2D()
 
       break
     }
