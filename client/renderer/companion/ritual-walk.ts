@@ -2,7 +2,6 @@ import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { computePerchPosition, moveTo, reevaluateSpatialDecision } from '@/companion/spatial'
-import { $staticMode } from '@/companion/static-sprite/sprite-store'
 import { sleep } from '@/shared/lib/utils'
 
 const RETRY_MS = 300
@@ -44,7 +43,7 @@ export async function performRitualWalk<T>(
   findTarget: () => Promise<WindowGeom | null>,
   execute: () => Promise<T>
 ): Promise<T> {
-  if ($chatOpen.get() || $screenLocked.get() || $staticMode.get()) {
+  if ($chatOpen.get() || $screenLocked.get()) {
     return execute()
   }
 

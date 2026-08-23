@@ -1,4 +1,4 @@
-"""baseline：完整 schema，20 张表 + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器；首次压缩版本。"""
+"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器；首次压缩版本。"""
 
 from collections.abc import Sequence
 
@@ -79,9 +79,7 @@ def upgrade() -> None:
         sa.Column("asset_url", sa.String(length=2048), nullable=False),
         sa.Column("style", sa.String(length=64), nullable=False),
         sa.Column("seed_front_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
-        sa.Column("seed_right_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed_back_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
-        sa.Column("seed_left_url", sa.String(length=2048), server_default=sa.text("''"), nullable=False),
         sa.Column("seed", sa.Integer(), nullable=True),
         sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -150,23 +148,6 @@ def upgrade() -> None:
     op.create_index(op.f("ix_companion_models_active"), "companion_models", ["active"], unique=False)
     op.create_index(op.f("ix_companion_models_rig_type"), "companion_models", ["rig_type"], unique=False)
     op.create_index(op.f("ix_companion_models_user_id"), "companion_models", ["user_id"], unique=False)
-    op.create_table(
-        "companion_sprite_images",
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("avatar_id", sa.Integer(), nullable=True),
-        sa.Column("role", sa.String(length=32), nullable=True),
-        sa.Column("tag", sa.Text(), server_default=sa.text("''"), nullable=False),
-        sa.Column("prompt", sa.Text(), server_default=sa.text("''"), nullable=False),
-        sa.Column("request_text", sa.Text(), server_default=sa.text("''"), nullable=False),
-        sa.Column("asset_url", sa.String(length=2048), nullable=False),
-        sa.Column("content_hash", sa.String(length=64), server_default=sa.text("''"), nullable=True),
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index(op.f("ix_companion_sprite_images_user_id"), "companion_sprite_images", ["user_id"], unique=False)
     op.create_table(
         "conversations",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -389,7 +370,6 @@ def upgrade() -> None:
     # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
     op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
-    op.create_index("uq_companion_sprites_one_waiting", "companion_sprite_images", ["user_id"], unique=True, postgresql_where=sa.text("role = 'waiting'"))
     op.create_index("uq_companion_expressions_user_name", "companion_expressions", ["user_id", "name"], unique=True)
     op.create_index("uq_memories_user_context", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))
     # 每 (user, slot) 一行，让 memory_retain(kind='auto_inject') 原子 upsert。
@@ -434,7 +414,6 @@ def downgrade() -> None:
         "memories",
         "login_records",
         "cron_jobs",
-        "companion_sprite_images",
         "companion_expression_avatars",
         "companion_models",
         "companion_expressions",

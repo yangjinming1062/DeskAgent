@@ -37,8 +37,6 @@ import { CompanionSettings } from './settings-overlay'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
-import { type SpriteHit } from './static-sprite/sprite-hitmap'
-import { StaticSprite } from './static-sprite/StaticSprite'
 import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
 
@@ -69,7 +67,6 @@ export function CompanionRoot(): React.JSX.Element {
   }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [memoryOpen, setMemoryOpen] = useState(false)
-  const [spriteHit, setSpriteHit] = useState<SpriteHit | null>(null)
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
@@ -289,14 +286,8 @@ export function CompanionRoot(): React.JSX.Element {
         }}
         onDoubleTap={onDoubleTap}
         onTap={onTap}
-        spriteHit={spriteHit}
       >
-        {showOnboarding ? null : (
-          <>
-            <Companion3D />
-            <StaticSprite onHitmapReady={setSpriteHit} />
-          </>
-        )}
+        {showOnboarding ? null : <Companion3D />}
       </SpriteStage>
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}

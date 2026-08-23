@@ -42,6 +42,7 @@ from .avatar_service import (
     select_fullbody_style,
 )
 from .expression_avatar_service import (
+    ExpressionAvatarGenerationError,
     ExpressionCooldownError,
     ExpressionSeedMissingError,
     NeutralEmotionError,
@@ -86,7 +87,6 @@ from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response
 from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
-from .sprite_service import SpriteGenerationError, SpriteSeedMissingError, get_waiting_sprite, has_real_transparency, list_sprites, resolve_sprite, signed_sprite_url
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
 
 __all__ = [
@@ -102,6 +102,7 @@ __all__ = [
     "AvatarSourceUnreadableError",
     "ExpressionCooldownError",
     "ExpressionSeedMissingError",
+    "ExpressionAvatarGenerationError",
     "FrontSeedMissingError",
     "FullbodyGenerationError",
     "FullbodyStyle",
@@ -114,8 +115,6 @@ __all__ = [
     "PersonaValidationError",
     "SeedPromptMissingError",
     "ShouldActResult",
-    "SpriteGenerationError",
-    "SpriteSeedMissingError",
     "UnknownEmotionError",
     "UnknownFullbodyStyleError",
     "analyze_personality_tags",
@@ -155,13 +154,13 @@ __all__ = [
     "get_companion_model_sha256",
     "get_onboarding_state",
     "get_or_create_persona",
-    "get_waiting_sprite",
+    "get_companion_model_sha256",
+    "get_onboarding_state",
     "has_real_transparency",
     "interact",
     "kick_background_generation",
     "list_avatar_history",
     "list_memories",
-    "list_sprites",
     "list_tts_voices",
     "load_avatar_bytes_as_data_uri",
     "match_user_voice",
@@ -180,7 +179,6 @@ __all__ = [
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_expression_avatar",
-    "resolve_sprite",
     "resolve_uploaded_avatar_path",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
@@ -193,7 +191,6 @@ __all__ = [
     "should_act",
     "signed_expression_avatar_url",
     "signed_model_url",
-    "signed_sprite_url",
     "submit_onboarding_field",
     "update_memory",
     "update_persona",

@@ -30,7 +30,6 @@ import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } fr
 import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { $responseMode } from '@/companion/prefs'
 import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
-import { resetSpriteAlbum } from '@/companion/static-sprite/sprite-store'
 import { speak } from '@/companion/tts'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
@@ -375,9 +374,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
         resolveAvatarRegeneration(p)
       }
 
-      // 头像身份已变化——精灵相册的锚点已过期
-      // （服务端按 avatar_id 过滤行），同时清空本地缓存。
-      resetSpriteAlbum()
+      // 头像身份已变化——表情头像的锚点已过期（按 avatar_id 过滤行），清空本地缓存。
       resetExpressionAvatars()
 
       break

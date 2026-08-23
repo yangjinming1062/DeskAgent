@@ -1,17 +1,18 @@
 import asyncio
 import time
+from pathlib import Path
 
-from components import SESSION_LOCAL, get_logger, safe_json_loads
+from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, has_real_transparency, remove_background, safe_json_loads
 from modules.companion import CompanionExpression, CompanionExpressionAvatar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..llm import ServiceType, resolve, resolve_provider_chain
+from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import companion_asset_exists, compute_bytes_sha256, save_companion_asset, signed_companion_asset_url, unlink_companion_asset
 from .avatar_service import get_active_avatar, load_avatar_bytes_as_data_uri
 from .expression_semantics import EXPRESSION_SEMANTICS
 from .persona_service import get_or_create_persona
-from .pipeline import emit_companion_assets_updated
-from .sprite_service import generate_sprite_png
 
 logger = get_logger(__name__)
 
@@ -57,6 +58,10 @@ class ExpressionCooldownError(Exception):
     """该 (用户, 情绪) 刚生成失败，立即重试只会在每次情绪触发时重复计费。"""
 
 
+class ExpressionAvatarGenerationError(Exception):
+    """所有支持以图生图的供应商都没能产出可抠背景的聊天表情头像。"""
+
+
 # 进程内生成协调：in-flight 表让并发请求共享同一次生成，失败键进入冷却避免重试风暴
 _inflight: dict[tuple[int, str, int], asyncio.Task[CompanionExpressionAvatar]] = {}
 _failed_at: dict[tuple[int, str, int], float] = {}
@@ -65,6 +70,44 @@ _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
 
 def signed_expression_avatar_url(row: CompanionExpressionAvatar) -> str | None:
     return signed_companion_asset_url(row.asset_url)
+
+
+async def _fetch_image_bytes(url: str) -> bytes | None:
+    if "/api/media/files/" in url:
+        fid = url.rsplit("/", 1)[-1].split("?")[0]
+        res = get_file_path(fid)
+        if not res:
+            return None
+        return await asyncio.to_thread(Path(res[0]).read_bytes)
+
+    try:
+        return await download_capped(url, max_bytes=50 * 1024 * 1024, timeout=120.0)
+    except Exception:
+        return None
+
+
+async def _generate_expression_avatar_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, size: str) -> bytes:
+    """按供应商链依次尝试生成并抠图，返回带透明通道的 PNG。"""
+    chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
+    if not chain:
+        raise ExpressionAvatarGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
+    for cfg in chain:
+        result_json = await image_generation_tool(prompt, {}, size=size, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
+        url = first_image_url(result_json)
+        raw = await _fetch_image_bytes(url) if url else None
+        if raw is None:
+            err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
+            logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
+            continue
+        try:
+            png = await asyncio.to_thread(remove_background, raw)
+        except Exception:
+            logger.info("expression avatar matting failed", extra={"user_id": user_id, "provider": cfg.provider_name})
+            continue
+        if png is not None and has_real_transparency(png):
+            return png
+        logger.info("expression avatar background not mattable, trying next provider", extra={"user_id": user_id, "provider": cfg.provider_name})
+    raise ExpressionAvatarGenerationError("表情头像生成失败，请稍后再试")
 
 
 async def resolve_expression_avatar(*, user_id: int, name: str, force_new: bool = False) -> tuple[CompanionExpressionAvatar, bool]:
@@ -142,7 +185,7 @@ async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause
     key = (user_id, name, avatar_id)
     try:
         prompt = _EXPRESSION_PROMPT_TEMPLATE.format(clause=clause, setting_clause=setting_clause)
-        png = await generate_sprite_png(None, user_id, prompt, subject_ref, size=_AVATAR_SIZE)
+        png = await _generate_expression_avatar_png(None, user_id, prompt, subject_ref, size=_AVATAR_SIZE)
         path = save_companion_asset(png, user_id=user_id, label=f"expr_{name}", ext="png")
 
         async with SESSION_LOCAL() as db:
@@ -152,7 +195,6 @@ async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause
             await db.refresh(row)
 
         _failed_at.pop(key, None)
-        await emit_companion_assets_updated(user_id)
         return row
     except Exception:
         _failed_at[key] = time.monotonic()

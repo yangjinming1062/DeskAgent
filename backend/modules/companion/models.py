@@ -109,18 +109,3 @@ class AvatarAsset(ModelBase):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="avatar_assets")
-
-
-class CompanionSpriteImage(ModelBase, TimestampMixin):
-    """静态 2D 精灵相册条目，3D 模型尚未渲染时按需 lazy 生成。tag 为 LLM 自撰自由标签作相册匹配 key；role='waiting' 是每用户一张的等待/切换精灵（部分唯一索引在 alembic baseline）；avatar_id 与当前 active 不一致视为陈旧身份，排除在匹配之外。asset_url 是裸 companion-assets/<uid>/ 路径，读取时重新签名。"""
-
-    __tablename__ = "companion_sprite_images"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    role: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    tag: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
-    prompt: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
-    request_text: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
-    asset_url: Mapped[str] = mapped_column(String(2048))
-    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))

@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
+import { $glbLoadFailed } from '@/companion/3d/model-store'
 import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $chatOpen } from '@/companion/chat-store'
 import {
@@ -12,7 +13,6 @@ import {
   type SpriteStateName
 } from '@/companion/companion-store'
 import { probeInteractiveRegions, useInteractiveRegion } from '@/companion/interactive-regions'
-import { $activeSprite, $glbLoadFailed, $staticMode } from '@/companion/static-sprite/sprite-store'
 import { log } from '@/shared/lib/log'
 
 import { $dragVelocity, $spatialLocomotion, getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
@@ -283,9 +283,6 @@ export function Companion3D(): React.JSX.Element {
   const genError = useStore($modelGenError)
   const retryable = useStore($modelRetryable)
   const retryModelId = useStore($modelRetryModelId)
-  const staticMode = useStore($staticMode)
-  const activeSprite = useStore($activeSprite)
-  const isStaticCovered = Boolean(staticMode && activeSprite)
 
   // 失败面板承载重试按钮 —— 没有注册区域时，点击会从透明精灵窗口直接穿透到桌面
   // （interactive-regions.ts 负责捕获开关）。面板未挂载时矩形为 null，
@@ -296,11 +293,10 @@ export function Companion3D(): React.JSX.Element {
   return (
     <div
       className="companion-3d-wrapper"
-      data-static-covered={isStaticCovered ? 'true' : undefined}
       ref={containerRef}
       style={{ position: 'relative', width: '100%', height: '100%' }}
     >
-      {genState === 'generating' && (
+      {genState === 'failed' && (
         <div
           style={{
             position: 'absolute',
@@ -365,7 +361,7 @@ export function Companion3D(): React.JSX.Element {
           </div>
         </div>
       )}
-      {!isStaticCovered && genState === 'failed' && (
+      {genState === 'failed' && (
         <div
           style={{
             position: 'absolute',

@@ -61,6 +61,9 @@ export const $modelInfo = atom<ModelInfo>({
 // 用于门控渲染功率调度器：在它变 true 之前，孵化阶段全速运行，
 // 不受 idle/sleep 信号影响。
 export const $modelLoadSettled = atom<boolean>(false)
+// 引擎解析失败回退到程序化蛋（createProcedural）时置为 true；当前桌面只渲染 3D 路径，
+// 失败时不再叠加 2D 降级——用户看到程序化蛋直到下次模型生成就绪。
+export const $glbLoadFailed = atom<boolean>(false)
 export const $availableClipNames = atom<Set<string>>(new Set())
 // 供应商声明的「语义键 → GLB 内 clip 名」；空表即该产物不含动画。
 export const $clipMap = atom<Readonly<Record<string, string>>>({})

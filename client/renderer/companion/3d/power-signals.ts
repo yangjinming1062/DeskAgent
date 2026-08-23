@@ -1,6 +1,5 @@
 import { $focusContext, $screenLocked } from '@/companion/activity'
 import { $spriteState } from '@/companion/companion-store'
-import { $activeSprite, $staticMode } from '@/companion/static-sprite/sprite-store'
 
 import { $modelLoadSettled } from './model-store'
 import type { PowerProfile } from './PowerProfile'
@@ -16,7 +15,7 @@ function currentSignals(): PowerSignals {
     screenLocked: $screenLocked.get(),
     documentHidden: document.visibilityState !== 'visible',
     fullscreen: $focusContext.get()?.fullscreen ?? false,
-    staticCovered: $staticMode.get() && !!$activeSprite.get(),
+    staticCovered: false,
     modelSettled: $modelLoadSettled.get()
   }
 }
@@ -37,8 +36,6 @@ export function subscribePowerProfile(apply: (profile: PowerProfile) => void): (
     $spriteState.listen(push),
     $screenLocked.listen(push),
     $focusContext.listen(push),
-    $staticMode.listen(push),
-    $activeSprite.listen(push),
     $modelLoadSettled.listen(push)
   ]
 

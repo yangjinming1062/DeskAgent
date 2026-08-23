@@ -18,14 +18,12 @@ import {
   startDrag,
   updateDragPosition
 } from '../spatial'
-import { type SpriteHit, spriteHitTest } from '../static-sprite/sprite-hitmap'
 
 interface SpriteStageProps {
   children: ReactNode
   onTap?: () => void
   onDoubleTap?: () => void
   onContextMenu?: (e: React.MouseEvent) => void
-  spriteHit?: SpriteHit | null
   hidden?: boolean
 }
 
@@ -44,7 +42,6 @@ export function SpriteStage({
   onTap,
   onDoubleTap,
   onContextMenu,
-  spriteHit,
   hidden = false
 }: SpriteStageProps): React.JSX.Element {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -63,8 +60,7 @@ export function SpriteStage({
   const lastTapRef = useRef(0)
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
-  const hitRef = useRef<SpriteHit | null>(null)
-  // 实时 3D 轮廓探测，通过 ref 同步，理由同 hitRef 的闭包稳定性。
+  // 实时 3D 轮廓探测，通过 ref 同步以保证 region 的 hitTest 闭包稳定。
   const hit3DRef = useRef<((x: number, y: number) => boolean | null) | null>(null)
 
   useEffect(
@@ -80,12 +76,6 @@ export function SpriteStage({
   const dragRafRef = useRef<number | null>(null)
   const displayProbeAtRef = useRef(0)
   const lastDragPointRef = useRef<{ x: number; y: number } | null>(null)
-
-  // spriteHit 经 ref 传递，以保证 region 的 hitTest 闭包稳定——
-  // 否则每次图像切换都会重新注册/注销 region。
-  useEffect(() => {
-    hitRef.current = spriteHit ?? null
-  }, [spriteHit])
 
   const stageRect = useCallback(
     (el: HTMLElement): DOMRect | null => {
@@ -104,15 +94,9 @@ export function SpriteStage({
     [hidden]
   )
 
-  // 静态 hitmap 在图像展示时做精确命中；3D 模式下退化为实时轮廓探测
-  // （热备后严格 miss → false；启动/加载阶段返回 null 以保留矩形兜底）。
+  // 命中由 3D 实时轮廓探测决定：探测就绪后严格 miss → false；
+  // 启动/加载阶段返回 null 以保留矩形兜底。
   const stageHitTest = useCallback((x: number, y: number): boolean => {
-    const hit = hitRef.current
-
-    if (hit) {
-      return spriteHitTest(hit, x, y)
-    }
-
     return hit3DRef.current?.(x, y) ?? true
   }, [])
 

@@ -1016,57 +1016,11 @@ canvas {
   100% { outline-color: transparent; }
 }
 
-/* ── Static sprite: degraded renderer while no GLB is available ─────────────
-    Fills the same box as the 3D canvas (the stage inner div hugs the canvas),
-    pointer-transparent so the stage keeps owning drag/poke. The canvas (egg)
-    hides only while an image is actually showing — the egg is the never-blank
-    floor before the first sprite resolves (DESIGN.md §1.2). Breathing matches
-    the procedural egg's 3.4s cadence family so the degraded mode still reads
-    as alive. */
+/* ── 3D companion canvas ─────────────────────────────────────────────────────
+    Full-bleed canvas inside the sprite stage; companion-3d mounts the
+    WebGL/WebGPU context here. */
 .companion-3d-canvas {
   display: block;
   width: 100% !important;
   height: 100% !important;
-}
-
-.companion-3d-wrapper[data-static-covered='true'] .companion-3d-canvas {
-  visibility: hidden;
-}
-
-.static-sprite-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.static-sprite-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  animation: staticBreath 3.4s ease-in-out infinite;
-}
-
-.static-sprite-img--in {
-  animation:
-    staticFadeIn 250ms ease-out both,
-    staticBreath 3.4s ease-in-out infinite;
-}
-
-@keyframes staticFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes staticBreath {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .static-sprite-img,
-  .static-sprite-img--in {
-    animation: none;
-  }
 }

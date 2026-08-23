@@ -128,25 +128,16 @@ class ModelGenerateRequest(BaseModel):
     force: bool = False
 
 
-class SpriteResolveRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    request: str = Field(min_length=1, max_length=500)
-    # "waiting" = 最高优先级等待/切换精灵（每用户一张，跳过相册匹配）。
-    role: Literal["waiting"] | None = None
-    force_new: bool = False
-
-
-class SpriteImageResponse(BaseModel):
-    id: int
-    url: str
-    tag: str
-    content_hash: str | None = None
-    generated: bool
-
-
 class ExpressionAvatarRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=64)
     force_new: bool = False
+
+
+class ExpressionAvatarResponse(BaseModel):
+    id: int
+    url: str
+    tag: str
+    content_hash: str | None = None
+    generated: bool

@@ -48,9 +48,9 @@
 
 渲染栈是 `three/webgpu` 的 **WebGPURenderer + 四层回退**：WebGPU 后端 → three 内置 WebGL2 后端（同 API 面，零代码）→ 经典 `WebGLRenderer`（仅当 `init()` 整体 reject；必须换新 canvas——webgpu 上下文成功过的 canvas 要不到 webgl2）→ `EngineInitError`（静态精灵层兜底）。`Engine.create()` 是异步工厂，canvas 由 Engine 自建自管（React 只渲染容器），companion-3d 的 load effects 一律 await 引擎就绪 Promise；实际后端写 dev log。
 
-视觉兜底层级见 [DESIGN.md §1.2](../../../DESIGN.md)。本节只记录切换实现：静态精灵层叠在画布上，收到模型字节并完成解析后才淡出交还，避免把“模型就绪事件早于字节落地”误当成可渲染状态；相册请求去重、按内容哈希缓存、失败保持当前图，图间淡切并尊重减少动态偏好。
+视觉兜底层级见 [DESIGN.md §1.2](../../../DESIGN.md)。本节只记录 3D 引擎加载行为：模型字节到达并完成解析后才视作可渲染（避免把"模型就绪事件早于字节落地"误当成可渲染状态）；GLB 解析失败回退到程序化蛋兜底，3D 引擎 init 失败亦同。
 
-**渲染功耗三档**（[3d/PowerProfile.ts](3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`、static-sprite 完全覆盖）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
+**渲染功耗三档**（[3d/PowerProfile.ts](3d/PowerProfile.ts) 判定 + [3d/power-signals.ts](3d/power-signals.ts) 订阅，Engine 自门控循环执行）：主进程为后台流式聊天全局禁用了 Chromium 节流，浏览器不会替 7x24 常驻的精灵窗降频，所以循环在 Engine 内按信号自门控——active 60fps（speaking/thinking/listening/working/emotional/interacting）、idle 30fps（idle/disconnected）、dormant 4fps（`$screenLocked`、`document.hidden`、`$focusContext.fullscreen`）。信号全部来自既有渲染端 atom，功耗调度是纯 Client 内部决策（ARCH §7 语义/渲染解耦），无协议与主进程参与。
 
 两条防坑约束：**Ready 保护**——首个模型 `loadCharacter` 落定（`$modelLoadSettled`）前强制 active，避免孵化动画被误降频拉长；**隐藏窗口降级**——Chromium 对 hidden 窗口硬停 rAF（禁节流开关管不到合成层），active/idle 档在 `document.hidden` 时改由 16/37ms timer 驱动，`visibilitychange` 恢复 rAF。dormant 恒为 250ms timer（进程级禁 timer 节流，锁屏下稳定）；档位回升时 Engine 层把 delta 钳制到 50ms，防 mixer 在长暂停后跳变。
 
@@ -79,7 +79,7 @@
 
 ## 7. 用户直接交互
 
-- **命中模型**：精灵区域在矩形命中后做像素级精化——静态精灵模式按图片 alpha ≥ 32 判定（[sprite-hitmap.ts](static-sprite/sprite-hitmap.ts) 在图加载时构建 ≤256 等比降采样 hitmap，按 object-fit 映射实时跟随拖拽/缩放/呼吸动画）；3D 模式由 [3d/silhouette-hit.ts](3d/silhouette-hit.ts) 驱动引擎剪影探测——`Engine` 把场景渲进 1/4 分辨率离屏 RT（clear alpha 0，只有实际绘制的像素计入，天然含当前姿态）异步读回 alpha，window 级 mousemove（穿透态下 pointer 事件到不了 canvas）rAF 合并请求、250ms TTL 让并发请求共享一次刷新，答案落地后手动触发 capture probe 处理静止光标；首个读回落地前（boot/加载空挡/图未加载）回退精灵矩形，之后未命中点严格判否——扫过矩形空白区不捕获。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
+- **命中模型**：精灵区域在矩形命中后做像素级精化——3D 模式由 [3d/silhouette-hit.ts](3d/silhouette-hit.ts) 驱动引擎剪影探测——`Engine` 把场景渲进 1/4 分辨率离屏 RT（clear alpha 0，只有实际绘制的像素计入，天然含当前姿态）异步读回 alpha，window 级 mousemove（穿透态下 pointer 事件到不了 canvas）rAF 合并请求、250ms TTL 让并发请求共享一次刷新，答案落地后手动触发 capture probe 处理静止光标；首个读回落地前（boot/加载空挡）回退精灵矩形，之后未命中点严格判否——扫过矩形空白区不捕获。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
 - **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
@@ -121,9 +121,9 @@
 
 **单一权威源**：[spatial.ts](spatial.ts) 拥有所有空间状态——`$spatialPos`、`$spatialScale`、`$spatialLocale`、`$spatialLocomotion`。sprite-stage.tsx 是纯消费者（`useStore` + 事件转发到 spatial 函数），只消费位置状态。
 
-**移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s；2D 静态卡片模式下跳过中间平移过程直接瞬移至目标坐标。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
+**移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
 
-**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）、$staticMode（2D 模式取消正在进行的平移与漫游）。返回 cleanup 函数。
+**`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
 
 **决策树**（`updateSpatialDecision`）：drag > chat(listener) > quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 无 perch 目标 + 非 2D 模式 → roam > home。每次 tier / focus / state 变化触发重评估。
 

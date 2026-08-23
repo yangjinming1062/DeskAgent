@@ -10,7 +10,6 @@ import {
   setSpriteState
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
-import { $staticMode } from '@/companion/static-sprite/sprite-store'
 import { persistString, storedString } from '@/shared/lib/storage'
 
 export function getBaseSpriteHeight(): number {
@@ -182,7 +181,7 @@ function tick(now: number): void {
 export function moveTo(target: { x: number; y: number }, locomotion: 'walk' | 'fly', onArrive?: () => void): void {
   cancelMovement()
 
-  if ($staticMode.get()) {
+  if (locomotion === 'still') {
     $spatialPos.set(target)
     $spatialLocomotion.set('still')
     onArrive?.()
@@ -346,7 +345,7 @@ export function setLocale(
   const target = opts?.position ?? localePosition(locale)
   const locomotion = opts?.locomotion ?? defaultLocomotion(locale)
 
-  if (opts?.instant || $staticMode.get() || locomotion === 'still') {
+  if (opts?.instant || locomotion === 'still') {
     cancelMovement()
     $spatialPos.set(target)
     $spatialLocomotion.set('still')
@@ -410,7 +409,7 @@ function updateSpatialDecision(): void {
     return
   }
 
-  if (tier === 'proactive' && state === 'idle' && !$staticMode.get()) {
+  if (tier === 'proactive' && state === 'idle') {
     if ($spatialLocale.get() !== 'roam') {
       startRoam()
     }
@@ -443,7 +442,7 @@ function generateRoamWaypoint(): { x: number; y: number } {
 }
 
 export function startRoam(): void {
-  if (roaming || $staticMode.get()) {
+  if (roaming) {
     return
   }
 
@@ -560,14 +559,6 @@ export function initSpatial(): () => void {
 
   const unlistenFocus = $focusContext.listen(() => updateSpatialDecision())
 
-  const unlistenStatic = $staticMode.listen(isStatic => {
-    if (isStatic) {
-      stopRoam()
-      cancelMovement()
-      $spatialLocomotion.set('still')
-    }
-  })
-
   const onResize = () => {
     $viewport.set({ width: window.innerWidth, height: window.innerHeight })
 
@@ -603,7 +594,6 @@ export function initSpatial(): () => void {
     unlistenEmotion()
     unlistenTier()
     unlistenFocus()
-    unlistenStatic()
     window.removeEventListener('resize', onResize)
     stopRoam()
     cancelMovement()

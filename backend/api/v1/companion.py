@@ -12,6 +12,7 @@ from modules.companion import (
     CompanionExpression,
     CompanionModelResponse,
     ExpressionAvatarRequest,
+    ExpressionAvatarResponse,
     FullbodyBackGenerateRequest,
     FullbodyConfirmFrontRequest,
     FullbodyFrontGenerateRequest,
@@ -23,8 +24,6 @@ from modules.companion import (
     Persona,
     PersonaResponse,
     PersonaUpdate,
-    SpriteImageResponse,
-    SpriteResolveRequest,
 )
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
@@ -32,6 +31,7 @@ from services.companion import (
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
+    ExpressionAvatarGenerationError,
     ExpressionCooldownError,
     ExpressionSeedMissingError,
     FrontSeedMissingError,
@@ -42,8 +42,6 @@ from services.companion import (
     NeutralEmotionError,
     PersonaValidationError,
     SeedPromptMissingError,
-    SpriteGenerationError,
-    SpriteSeedMissingError,
     UnknownEmotionError,
     UnknownFullbodyStyleError,
     avatar_response,
@@ -67,14 +65,12 @@ from services.companion import (
     resolve_companion_asset_path,
     resolve_companion_model_path,
     resolve_expression_avatar,
-    resolve_sprite,
     resolve_uploaded_avatar_path,
     schedule_personality_tag_refresh,
     select_avatar,
     select_fullbody_style,
     serve_ranged_file,
     signed_expression_avatar_url,
-    signed_sprite_url,
     update_persona,
     verify_signed_asset_request,
     verify_signed_avatar_request,
@@ -441,36 +437,13 @@ async def post_model(
     return model_response(model)
 
 
-@router.post("/sprite", response_model=SpriteImageResponse)
-@limiter.limit(f"{SETTINGS.companion_sprite_generate_rate_limit_per_minute}/minute")
-async def post_sprite(
-    request: Request,  # required by @limiter.limit
-    body: SpriteResolveRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> SpriteImageResponse:
-    user, _ = auth
-    try:
-        row, generated = await resolve_sprite(user_id=user.id, request_text=body.request, role=body.role, force_new=body.force_new)
-    except SpriteSeedMissingError as exc:
-        logger.warning("post_sprite missing seed", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=404, detail={"error": str(exc)})
-    except SpriteGenerationError as exc:
-        logger.warning("post_sprite generation failed", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=502, detail={"error": str(exc)})
-    url = signed_sprite_url(row)
-    if url is None:
-        logger.warning("post_sprite invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
-        raise HTTPException(status_code=502, detail={"error": "精灵形象生成失败，请稍后重试"})
-    return SpriteImageResponse(id=row.id, url=url, tag=row.tag, content_hash=row.content_hash, generated=generated)
-
-
-@router.post("/expression-avatar", response_model=SpriteImageResponse)
+@router.post("/expression-avatar", response_model=ExpressionAvatarResponse)
 @limiter.limit(f"{SETTINGS.companion_expression_avatar_generate_rate_limit_per_minute}/minute")
 async def post_expression_avatar(
     request: Request,  # required by @limiter.limit
     body: ExpressionAvatarRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
-) -> SpriteImageResponse:
+) -> ExpressionAvatarResponse:
     user, _ = auth
     try:
         row, generated = await resolve_expression_avatar(user_id=user.id, name=body.name, force_new=body.force_new)
@@ -483,14 +456,14 @@ async def post_expression_avatar(
         raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "no_active_avatar"})
     except ExpressionCooldownError as exc:
         raise HTTPException(status_code=503, detail={"error": str(exc), "reason": "generation_cooldown"})
-    except SpriteGenerationError as exc:
+    except ExpressionAvatarGenerationError as exc:
         logger.warning("post_expression_avatar generation failed", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     url = signed_expression_avatar_url(row)
     if url is None:
         logger.warning("post_expression_avatar invalid asset_url", extra={"user_id": user.id, "row_id": row.id})
         raise HTTPException(status_code=502, detail={"error": "表情头像生成失败，请稍后重试"})
-    return SpriteImageResponse(id=row.id, url=url, tag=row.name, content_hash=row.content_hash, generated=generated)
+    return ExpressionAvatarResponse(id=row.id, url=url, tag=row.name, content_hash=row.content_hash, generated=generated)
 
 
 public_router = get_router()
