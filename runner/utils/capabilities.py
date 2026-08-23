@@ -218,12 +218,6 @@ _SNAPSHOT_TTL_S = 30.0
 _snapshot_cache: tuple[float, dict[str, Any], dict[str, Any]] | None = None
 
 
-def reset_snapshot_cache() -> None:
-    """清空能力快照的 TTL 缓存（测试用）。"""
-    global _snapshot_cache
-    _snapshot_cache = None
-
-
 def snapshot_with_health() -> tuple[dict[str, Any], dict[str, Any]]:
     """返回 (能力布隆, 健康详情) 双份字典，按 TTL 缓存。"""
     global _snapshot_cache

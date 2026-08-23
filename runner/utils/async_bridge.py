@@ -20,12 +20,3 @@ def safe_schedule_threadsafe(
         if logger is not None:
             logger.warning("%s: %s", log_message, exc)
         return None
-
-
-def in_async_loop() -> bool:
-    """当前线程是否正在运行 asyncio 事件循环。"""
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return False
-    return True

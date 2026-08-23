@@ -1,4 +1,4 @@
-from .async_bridge import in_async_loop, safe_schedule_threadsafe
+from .async_bridge import safe_schedule_threadsafe
 from .capabilities import (
     disk_free_bytes,
     local_stt_available,
@@ -8,7 +8,6 @@ from .capabilities import (
     screen_capture_available,
     snapshot,
     snapshot_health,
-    snapshot_with_health,
     system_activity_available,
 )
 from .clean import clean_output, strip_ansi, strip_fence
@@ -51,7 +50,6 @@ from .file_safety import (
     validate_within_dir,
 )
 from .interrupt import (
-    _debug_interrupt_enabled,
     is_interrupted,
     reset_current_request,
     set_current_request,
@@ -59,7 +57,7 @@ from .interrupt import (
     set_interrupt,
     set_local_interrupt,
 )
-from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
+from .job_object import init_runner_job_object
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import PidState, kill_tree, pid_exists, pid_state
 from .process_tree import TerminationResult, terminate_tree
@@ -75,7 +73,6 @@ from .tokens import (
 from .url_safety import (
     SafeAsyncHTTPTransport,
     SafeHTTPTransport,
-    WebsitePolicyError,
     async_is_safe_url,
     check_redirect_url_safety,
     check_website_access,
@@ -83,7 +80,6 @@ from .url_safety import (
     create_safe_client,
     is_always_blocked_url,
     is_safe_url,
-    load_website_blocklist,
     normalize_url_for_request,
     verify_ip_not_blocked,
 )
@@ -103,8 +99,6 @@ __all__ = [
     "SECRET_PREFIX_RE",
     "TerminationResult",
     "UNIX_TRANSPORT",
-    "WebsitePolicyError",
-    "_debug_interrupt_enabled",
     "append_sane_path_entries",
     "async_is_safe_url",
     "atomic_replace",
@@ -114,12 +108,12 @@ __all__ = [
     "call_llm_sync",
     "canonicalize_path",
     "cfg_bool",
-    "check_cancel",
     "cfg_float",
     "cfg_get",
     "cfg_int",
     "cfg_json",
     "cfg_str",
+    "check_cancel",
     "check_redirect_url_safety",
     "check_website_access",
     "clean_output",
@@ -138,7 +132,6 @@ __all__ = [
     "get_env_type",
     "get_external_skills_dirs",
     "get_read_block_error",
-    "get_runner_job_handle",
     "get_sandbox_mirror_warning",
     "get_scratch_size_bytes",
     "get_skills_dir",
@@ -149,13 +142,11 @@ __all__ = [
     "get_subprocess_home",
     "get_windows_sensitive_prefixes",
     "has_traversal_component",
-    "in_async_loop",
     "init_runner_job_object",
     "inject_context_spiritagent_home",
     "is_always_blocked_url",
     "is_env_passthrough",
     "is_interrupted",
-    "is_job_object_active",
     "is_safe_url",
     "is_truthy_value",
     "is_write_denied",
@@ -163,10 +154,6 @@ __all__ = [
     "iter_skills_files",
     "kill_tree",
     "load_config",
-    "race_cancel",
-    "raise_if_cancelled",
-    "reset_current_request",
-    "load_website_blocklist",
     "local_stt_available",
     "local_tts_available",
     "microphone_available",
@@ -176,10 +163,13 @@ __all__ = [
     "PidState",
     "pid_exists",
     "pid_state",
+    "race_cancel",
+    "raise_if_cancelled",
     "read_endpoint",
     "redact_sensitive_text",
     "register_credential_file",
     "register_env_passthrough",
+    "reset_current_request",
     "reset_scratch_size_cache",
     "resolve_safe_cwd",
     "safe_schedule_threadsafe",
@@ -189,13 +179,12 @@ __all__ = [
     "set_current_request",
     "set_global_interrupt",
     "set_handler",
-    "set_local_interrupt",
     "set_inmemory_config",
     "set_interrupt",
+    "set_local_interrupt",
     "set_main_loop",
     "snapshot",
     "snapshot_health",
-    "snapshot_with_health",
     "strip_ansi",
     "strip_fence",
     "system_activity_available",

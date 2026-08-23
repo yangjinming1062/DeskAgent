@@ -46,7 +46,6 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, Callable] = {}
         self._toolset: dict[str, str] = {}
-        self._toolset_aliases: dict[str, str] = {}
         self._schemas: dict[str, dict] = {}
         self._check_fns: dict[str, Callable[[], bool]] = {}
         self._check_fn_cache: dict[str, tuple[bool, float, float]] = {}
@@ -162,18 +161,6 @@ class ToolRegistry:
             # 不清掉的话重新注册会静默复用旧 check_fn 及其缓存结果。
             self._check_fns.pop(name, None)
             self._check_fn_cache.pop(name, None)
-
-    def register_toolset_alias(self, alias: str, target: str) -> None:
-        """注册工具集别名, 让 ``get_toolset_for_tool`` 能反查到工具所属集。"""
-        with self._lock:
-            self._toolset_aliases[alias] = target
-
-    def get_toolset_for_tool(self, name: str) -> str | None:
-        """返回工具所属的 toolset, 也支持别名反查。"""
-        with self._lock:
-            if toolset := self._toolset.get(name):
-                return toolset
-            return next((alias for alias, target in self._toolset_aliases.items() if target == name), None)
 
     def get_all_tool_names(self) -> list[str]:
         """返回已注册工具名的快照(用于 ``get_schemas_for_llm`` 等过滤流程)。"""

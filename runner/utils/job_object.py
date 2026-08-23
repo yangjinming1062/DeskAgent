@@ -103,16 +103,3 @@ def init_runner_job_object() -> bool:
         except Exception as exc:
             logger.warning("Failed to initialize Windows Job Object: %s", exc)
             return False
-
-
-def get_runner_job_handle() -> Any:
-    """返回 Windows Job Object 原始句柄（POSIX 上或未初始化时为 None）。"""
-    return _runner_job_handle
-
-
-def is_job_object_active() -> bool:
-    """当前 Runner 进程的 Windows Job Object 是否处于激活状态。"""
-    if not IS_WINDOWS:
-        return False
-    with _job_lock:
-        return _runner_job_handle is not None and _runner_job_handle != 0
