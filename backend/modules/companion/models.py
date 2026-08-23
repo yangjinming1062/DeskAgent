@@ -2,7 +2,17 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -61,6 +71,24 @@ class CompanionExpression(ModelBase, TimestampMixin):
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
 
 
+class Mesh2DModel(ModelBase, TimestampMixin):
+    """AI 自动切分生成的 2D SkinnedMesh 模型；manifest 描述骨骼 / mesh / 动画曲线，layers 指向每张部件 PNG 资产。"""
+
+    __tablename__ = "mesh2d_models"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    style: Mapped[str] = mapped_column(String(32), default="cel_shading", server_default=text("'cel_shading'"))
+    status: Mapped[str] = mapped_column(String(16), default="generating", server_default=text("'generating'"), index=True)
+    manifest_json: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
+    manifest_path: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
+    layers_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, default="", server_default=text("''"))
+    active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    priority: Mapped[str] = mapped_column(String(8), default="high", server_default=text("'high'"))
+
+
 class CompanionExpressionAvatar(ModelBase, TimestampMixin):
     """聊天窗口情绪头像图缓存，按情绪 token + 头像身份复合键。Lookup 为 (user_id, name, avatar_id) 完全匹配；头像重生成后旧行作废，按需 lazy 重建，丢失可容忍（多生成一次而已）。"""
 
@@ -88,6 +116,8 @@ class Persona(ModelBase, TimestampMixin):
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     is_portrait_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     portrait_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 渲染模式：2d（默认 SkinnedMesh 2D 动画版）或 3d（云端 GLB 模型）；3d 失败自动回退到 2d。
+    render_mode: Mapped[str] = mapped_column(String(8), default="2d", server_default=text("'2d'"), index=True)
 
     user: Mapped["User"] = relationship(back_populates="persona")
 

@@ -20,10 +20,12 @@ from modules.companion import (
     FullbodySamplesResponse,
     FullbodySelectStyleRequest,
     FullbodyStyleItem,
+    Mesh2DModelResponse,
     ModelGenerateRequest,
     Persona,
     PersonaResponse,
     PersonaUpdate,
+    RenderModeRequest,
 )
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
@@ -75,6 +77,7 @@ from services.companion import (
     verify_signed_asset_request,
     verify_signed_avatar_request,
 )
+from services.companion.mesh2d import Mesh2DAlreadyRunningError, generate_mesh2d_model, get_active_mesh2d_response, set_render_mode
 from services.llm import MissingLlmConfigError
 from services.rate_limit import limiter
 from sqlalchemy import select
@@ -105,7 +108,12 @@ async def get_persona(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
     user, _ = auth
     persona = await get_or_create_persona(db, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
-    return PersonaResponse(is_complete=persona.is_complete, definition_json=persona.definition_json, personality_tags=tags if isinstance(tags, list) else [])
+    return PersonaResponse(
+        is_complete=persona.is_complete,
+        definition_json=persona.definition_json,
+        personality_tags=tags if isinstance(tags, list) else [],
+        render_mode=persona.render_mode or "2d",
+    )
 
 
 @router.put("/persona", response_model=PersonaResponse)
@@ -119,7 +127,12 @@ async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depe
     # 延迟调度标签 LLM 抽取；同步执行会阻塞 PUT 超过 renderer 的 15s socket 超时，导致 onboarding 阶段后续 POST /avatar 无法触发。
     schedule_personality_tag_refresh(persona.id, user.id)
     tags = safe_json_loads(persona.personality_tags_json or "[]", default=[])
-    return PersonaResponse(is_complete=persona.is_complete, definition_json=persona.definition_json, personality_tags=tags if isinstance(tags, list) else [])
+    return PersonaResponse(
+        is_complete=persona.is_complete,
+        definition_json=persona.definition_json,
+        personality_tags=tags if isinstance(tags, list) else [],
+        render_mode=persona.render_mode or "2d",
+    )
 
 
 @router.post("/portrait/confirm")
@@ -435,6 +448,46 @@ async def post_model(
         logger.warning("post_model generation error", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": str(exc)})
     return model_response(model)
+
+
+@router.get("/mesh2d", response_model=Mesh2DModelResponse | None)
+async def get_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Mesh2DModelResponse | None:
+    user, _ = auth
+    return await get_active_mesh2d_response(db, user.id)
+
+
+@router.post("/mesh2d", response_model=Mesh2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
+async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Mesh2DModelResponse:
+    user, _ = auth
+    try:
+        persona = await get_or_create_persona(db, user.id)
+        priority = "low" if persona.render_mode == "3d" else "high"
+        model = await generate_mesh2d_model(db, user_id=user.id, priority=priority)
+    except Mesh2DAlreadyRunningError as exc:
+        logger.warning("mesh2d generation failed to start", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "startup_failed"})
+
+    response = await get_active_mesh2d_response(db, user.id)
+    return response or Mesh2DModelResponse(id=model.id, status=model.status)
+
+
+@router.post("/render-mode", response_model=PersonaResponse)
+async def post_render_mode(body: RenderModeRequest, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> PersonaResponse:
+    user, _ = auth
+    persona = await set_render_mode(db, user_id=user.id, render_mode=body.render_mode)
+
+    if body.render_mode == "3d":
+        try:
+            await generate_companion_model(db, user_id=user.id, force=False)
+        except ModelGenerationError as exc:
+            logger.info("render_mode 3D dispatch skipped", extra={"user_id": user.id, "error": str(exc)})
+
+    return PersonaResponse(
+        definition_json=persona.definition_json or "{}",
+        is_complete=persona.is_complete,
+        personality_tags=[],
+        render_mode=persona.render_mode or "2d",
+    )
 
 
 @router.post("/expression-avatar", response_model=ExpressionAvatarResponse)

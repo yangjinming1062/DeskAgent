@@ -16,6 +16,7 @@ class PersonaResponse(BaseModel):
     definition_json: str
     is_complete: bool
     personality_tags: list[str] = Field(default_factory=list)
+    render_mode: str = "2d"
 
 
 # 生成是同步的——所有持久化资产都是 succeeded；钉死字面量以便未来若改为异步时契约仍清楚。
@@ -141,3 +142,19 @@ class ExpressionAvatarResponse(BaseModel):
     tag: str
     content_hash: str | None = None
     generated: bool
+
+
+class Mesh2DModelResponse(BaseModel):
+    id: int
+    status: str = "generating"
+    style: str = "cel_shading"
+    manifest_url: str | None = None
+    layer_urls: dict[str, str] = Field(default_factory=dict)
+    content_hash: str | None = None
+    error: str | None = None
+
+
+class RenderModeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    render_mode: Literal["2d", "3d"]

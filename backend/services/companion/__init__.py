@@ -1,4 +1,4 @@
-from . import asset_store, memory_admin, voice_catalog
+from . import asset_store, memory_admin, mesh2d, voice_catalog
 from .affect_check import AffectCheckResult, check_affect
 from .asset_store import (
     build_data_uri,
@@ -60,6 +60,14 @@ from .memory_admin import delete_memory, list_memories, memory_counts, update_me
 from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
+from .mesh2d import (
+    Mesh2DAlreadyRunningError,
+    Mesh2DPipelineError,
+    generate_mesh2d_model,
+    get_active_mesh2d_response,
+    reset_mesh2d,
+    set_render_mode,
+)
 from .model_service import generate_companion_model, request_model_download_retry
 from .persona_background import schedule_personality_tag_refresh
 from .persona_service import (
@@ -100,14 +108,16 @@ __all__ = [
     "AvatarGenerationError",
     "AvatarNotFoundError",
     "AvatarSourceUnreadableError",
+    "ExpressionAvatarGenerationError",
     "ExpressionCooldownError",
     "ExpressionSeedMissingError",
-    "ExpressionAvatarGenerationError",
     "FrontSeedMissingError",
     "FullbodyGenerationError",
     "FullbodyStyle",
     "FullbodyStyleInfo",
     "InteractResult",
+    "Mesh2DAlreadyRunningError",
+    "Mesh2DPipelineError",
     "ModelGenerationError",
     "ModelGenerationInProgressError",
     "ModelProviderNotConfiguredError",
@@ -148,15 +158,14 @@ __all__ = [
     "generate_fullbody_back",
     "generate_fullbody_front",
     "generate_fullbody_style_samples",
+    "generate_mesh2d_model",
     "get_active_avatar",
+    "get_active_mesh2d_response",
     "get_active_model",
     "get_avatar_job_lock",
     "get_companion_model_sha256",
     "get_onboarding_state",
     "get_or_create_persona",
-    "get_companion_model_sha256",
-    "get_onboarding_state",
-    "has_real_transparency",
     "interact",
     "kick_background_generation",
     "list_avatar_history",
@@ -166,6 +175,7 @@ __all__ = [
     "match_user_voice",
     "memory_admin",
     "memory_counts",
+    "mesh2d",
     "model_response",
     "normalize_voice_language",
     "read_today_summary",
@@ -176,6 +186,7 @@ __all__ = [
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "request_model_download_retry",
+    "reset_mesh2d",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",
     "resolve_expression_avatar",
@@ -188,6 +199,7 @@ __all__ = [
     "select_fullbody_style",
     "select_rig_type",
     "serve_ranged_file",
+    "set_render_mode",
     "should_act",
     "signed_expression_avatar_url",
     "signed_model_url",

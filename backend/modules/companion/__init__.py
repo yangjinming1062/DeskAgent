@@ -1,4 +1,12 @@
-from .models import AvatarAsset, CompanionExpression, CompanionExpressionAvatar, CompanionModel, CompanionPreference, Persona
+from .models import (
+    AvatarAsset,
+    CompanionExpression,
+    CompanionExpressionAvatar,
+    CompanionModel,
+    CompanionPreference,
+    Mesh2DModel,
+    Persona,
+)
 from .schemas import (
     AvatarAssetResponse,
     AvatarFromImageRequest,
@@ -14,9 +22,11 @@ from .schemas import (
     FullbodySamplesResponse,
     FullbodySelectStyleRequest,
     FullbodyStyleItem,
+    Mesh2DModelResponse,
     ModelGenerateRequest,
     PersonaResponse,
     PersonaUpdate,
+    RenderModeRequest,
 )
 
 __all__ = [
@@ -39,8 +49,11 @@ __all__ = [
     "FullbodySamplesResponse",
     "FullbodySelectStyleRequest",
     "FullbodyStyleItem",
+    "Mesh2DModel",
+    "Mesh2DModelResponse",
     "ModelGenerateRequest",
     "Persona",
     "PersonaResponse",
     "PersonaUpdate",
+    "RenderModeRequest",
 ]
