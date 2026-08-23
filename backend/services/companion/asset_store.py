@@ -29,25 +29,10 @@ def _signing_key() -> bytes:
     secret = getattr(SETTINGS, "companion_asset_signing_key", None)
     if secret:
         return secret.encode("utf-8")
-    if not _TEST_MODE:
-        raise RuntimeError(
-            "companion_asset_signing_key is empty outside test mode — "
-            "lifespan startup should have failed before this point. "
-            "Refusing to sign URLs with the public test key in production.",
-        )
-    return _TEST_SIGNER_KEY
-
-
-# 由 pytest 的 sqlite_engine fixture 设置；生产路径下 lifespan 已先校验过签名密钥
-_TEST_MODE = False
-
-
-def _enable_test_signer_key() -> None:
-    global _TEST_MODE
-    _TEST_MODE = True
-
-
-_TEST_SIGNER_KEY = b"test-only-companion-asset-signer-key-do-not-use-in-prod"
+    raise RuntimeError(
+        "companion_asset_signing_key is empty — "
+        "lifespan startup should have failed before this point.",
+    )
 
 
 def _sign(user_id: int, filename: str, expires_at: int) -> str:

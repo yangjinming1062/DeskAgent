@@ -27,18 +27,3 @@ dependencies = [
     "rembg>=2.0.60",
     "onnxruntime>=1.19.0",
 ]
-
-[project.optional-dependencies]
-test = [
-    "aiosqlite>=0.22.1",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.24",
-]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "session"
-asyncio_default_test_loop_scope = "session"
-markers = [
-    "e2e: calls a real cost-incurring API; bare form requires MIMO_API_KEY, parametrized @pytest.mark.e2e(\"ENV_NAME\") requires the listed env vars",
-]

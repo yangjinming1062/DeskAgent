@@ -131,10 +131,6 @@ class JsonRpcDispatcher:
         self._delivered_ids.clear()
         return ids
 
-    async def drain_for_test(self, timeout: float = 5.0) -> None:
-        with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(self._outbox.join(), timeout=timeout)
-
     async def _writer_loop(self) -> None:
         try:
             while True:
