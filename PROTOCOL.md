@@ -134,18 +134,20 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 | 方法 | 方向 | 用途 | 改动需同步的模块 |
 |------|------|------|------------------|
-| runner_ready | Runner → Client | 启动握手，携带 version + capabilities | Runner 探测 + Client 功能门控 |
+| runner_ready | Runner → Client | 启动握手，携带 version + capabilities + capabilities_health + reconnect_streak | Runner 探测 + Client 功能门控 + 重连降级展示 |
 | tools_changed | Runner → Client | 工具 schema 变更通知，Client 重拉并同步到 Backend | Runner + Client + Backend 工具表 |
 | get_tools | Client → Runner | 获取工具 schema（已过滤禁用项） | Runner 过滤 + Client + Backend |
 | spiritagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
 | execute_tool | Client → Runner | 执行工具调用 | Backend 路由 + Client 中转 + Runner 执行 |
-| spiritagent.cancel | Client → Runner | 置全局中断标记（异步生效） | Client 中断 + Runner 轮询 |
+| spiritagent.cancel | Client → Runner | params.req_id 可选；指定则取消该 RPC，缺省取消当前进行中工具；并对目标 req_id 设置中断标记 | Client 中断 + Runner 任务取消 + 请求级隔离 |
 | spiritagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
 
 ### 2.3 runner_ready capabilities 与 health 状态
 
 capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探测设计见 [runner/README.md §2](runner/README.md)）：前者是向后兼容的布尔映射，后者按子能力给出可用性与失败原因。致命探测异常置 probe_failed；客户端按能力缺失做局部降级或给出可操作提示。
+
+`reconnect_streak` 是自上次成功握手以来的连续重连次数（握手成功后重置为 0）。客户端可据此感知连接状态但保持 Runner 存活。生命周期累计重连计数通过 `spiritagent.info.reconnect_count` 上报，不重置。
 
 ### 2.4 配置推送所有权
 

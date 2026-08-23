@@ -18,6 +18,7 @@ from tools.files import reset_max_read_chars_cache
 from tools.tool_output_limits import reset_cache
 from tools.toolsets import get_disabled_toolset_ids
 from utils import (
+    CancellationToken,
     DesktopEndpoint,
     connect_desktop,
     disk_free_bytes,
@@ -25,10 +26,12 @@ from utils import (
     init_runner_job_object,
     network_reachable,
     read_endpoint,
-    set_global_interrupt,
+    reset_current_request,
+    set_current_request,
     set_handler,
     set_inmemory_config,
     set_interrupt,
+    set_local_interrupt,
     set_main_loop,
     snapshot,
     snapshot_health,
@@ -49,14 +52,18 @@ _RUNNER_LOOP: asyncio.AbstractEventLoop | None = None
 _PENDING_RPC: dict[str, asyncio.Future] = {}
 _STARTED_AT = time.time()
 _RECONNECT_COUNT = 0
+_current_reconnect_streak = 0
 
-# 重连退避 + 端点文件轮询间隔。
-MAX_RECONNECT_ATTEMPTS = 15
+# 重连退避 + 端点文件轮询间隔。H6: 不再有硬上限; Runner 在 Desktop 进程级拆除前无限退避。
 BASE_BACKOFF_S = 2.0
 MAX_BACKOFF_S = 30.0
 _ENDPOINT_POLL_S = 1.0
 
 _BG_TASKS: set[asyncio.Task] = set()
+_INFLIGHT_BY_REQ_ID: dict[str, asyncio.Task] = {}
+_CURRENT_EXECUTE_TASK: asyncio.Task | None = None
+_CURRENT_EXECUTE_REQ_ID: str | None = None
+_ACTIVE_CANCELLATIONS: dict[str, CancellationToken] = {}
 
 # PROTOCOL §3 反向 RPC 速率守卫：单会话累计限额（200 帧 / 1MB 文本 / 10MB 视觉），防止工具失控刷爆 LLM。
 MAX_LLM_REQUESTS_PER_SESSION = 200
@@ -162,6 +169,7 @@ def _extract_llm_content(result: dict[str, Any]) -> str:
 
 
 async def process_request(ws: Any, req: dict[str, Any]) -> None:
+    global _CURRENT_EXECUTE_TASK, _CURRENT_EXECUTE_REQ_ID
     req_id = req.get("id")
     method = req.get("method")
     params = req.get("params", {})
@@ -171,16 +179,27 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
         return
 
     # 新请求到达时清理上一条请求残留的 per-thread interrupt, 防止当前请求的工具立刻被 bail。
-    # 对 cancel 请求置跨线程 ``_global_interrupt``, 让其他请求里正在执行的工具处理器在下一次
-    # ``is_interrupted()`` 检查时看到标志。只有下一次 execute_tool 才清除 — 诊断探针
-    # (spiritagent.info / get_tools) 不能误吃待发 cancel。
-    if method == "spiritagent.cancel":
-        set_global_interrupt(True)
-    elif method == "execute_tool":
-        set_global_interrupt(False)
     set_interrupt(False, thread_id=None)
     try:
         if method == "spiritagent.cancel":
+            target_req_id = params.get("req_id")
+            target_task: asyncio.Task | None = None
+            target_local: str | None = None
+            if target_req_id is not None:
+                target_task = _INFLIGHT_BY_REQ_ID.get(target_req_id)
+                target_local = target_req_id
+            elif _CURRENT_EXECUTE_TASK is not None and not _CURRENT_EXECUTE_TASK.done():
+                target_task = _CURRENT_EXECUTE_TASK
+                target_local = _CURRENT_EXECUTE_REQ_ID
+            if target_task is None:
+                await _send(ws, req_id, result={"ok": False, "error": "no_in_flight"})
+                return
+            target_task.cancel()
+            if target_local is not None:
+                set_local_interrupt(target_local, True)
+                token = _ACTIVE_CANCELLATIONS.get(target_local)
+                if token is not None:
+                    token.set()
             await _send(ws, req_id, result={"ok": True})
             return
 
@@ -209,15 +228,40 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             name = params.get("name")
             if not name:
                 raise ValueError("Missing 'name' in params")
+            req_id_str = str(req_id) if req_id is not None else f"_anon_{uuid.uuid4().hex[:8]}"
+            token = CancellationToken()
+            _ACTIVE_CANCELLATIONS[req_id_str] = token
+            ctx_reset = set_current_request(req_id_str)
+            cur_task = asyncio.current_task()
+            _INFLIGHT_BY_REQ_ID[req_id_str] = cur_task
+            _CURRENT_EXECUTE_TASK = cur_task
+            _CURRENT_EXECUTE_REQ_ID = req_id_str
             try:
-                result = await registry.async_dispatch(name, params.get("args", {}))
-            except ToolError as e:
-                await _send(ws, req_id, error={"code": -32000, "message": str(e)})
+                try:
+                    result = await registry.async_dispatch(name, params.get("args", {}), cancel_token=token)
+                except ToolError as e:
+                    await _send(ws, req_id, error={"code": -32000, "message": str(e)})
+                    return
+                await _send(ws, req_id, result=result)
                 return
-            await _send(ws, req_id, result=result)
-            return
+            finally:
+                if _CURRENT_EXECUTE_TASK is cur_task:
+                    _CURRENT_EXECUTE_TASK = None
+                    _CURRENT_EXECUTE_REQ_ID = None
+                _INFLIGHT_BY_REQ_ID.pop(req_id_str, None)
+                _ACTIVE_CANCELLATIONS.pop(req_id_str, None)
+                set_local_interrupt(req_id_str, False)
+                with contextlib.suppress(ValueError):
+                    reset_current_request(ctx_reset)
 
         await _send(ws, req_id, error={"code": -32601, "message": "Method not found"})
+    except asyncio.CancelledError:
+        cur_t = asyncio.current_task()
+        if cur_t is not None:
+            cur_t.uncancel()
+        with contextlib.suppress(Exception):
+            await _send(ws, req_id, error={"code": -32000, "message": "cancelled"})
+        raise
     except Exception as e:
         # 回复本身绝不能再抛: 中途断连的 handler 会让后台任务以未捕获异常死去。
         with contextlib.suppress(Exception):
@@ -238,7 +282,7 @@ def _fail_pending_rpcs(reason: str) -> None:
 
 async def runner_loop(endpoint: DesktopEndpoint) -> None:
     """与 Desktop IPC 的长连接主循环: 维护持久连接、处理重连退避、派发 RPC、Ready 时主动通知。"""
-    global _ACTIVE_WS, _RUNNER_LOOP, _RECONNECT_COUNT
+    global _ACTIVE_WS, _RUNNER_LOOP, _RECONNECT_COUNT, _current_reconnect_streak
 
     current_endpoint = endpoint
     attempt = 0
@@ -262,9 +306,11 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
                     _RUNNER_LOOP = asyncio.get_running_loop()
                     set_main_loop(_RUNNER_LOOP)
                     reset_llm_rate_limits()
-                    attempt = 0  # 连接成功后重置
+                    ready_payload = await _runner_ready_payload()
+                    await _send_notification(ws, "runner_ready", ready_payload)
+                    attempt = 0
+                    _current_reconnect_streak = 0
                     try:
-                        await _send_notification(ws, "runner_ready", await _runner_ready_payload())
                         async for message in ws:
                             try:
                                 data = json.loads(message)
@@ -321,13 +367,11 @@ async def runner_loop(endpoint: DesktopEndpoint) -> None:
             continue
 
         _RECONNECT_COUNT += 1
+        _current_reconnect_streak += 1
         attempt += 1
-        if attempt >= MAX_RECONNECT_ATTEMPTS:
-            logger.error(f"Failed to reconnect after {MAX_RECONNECT_ATTEMPTS} attempts. Exiting.")
-            sys.exit(1)
 
         backoff = min(BASE_BACKOFF_S * (2 ** min(attempt - 1, 4)), MAX_BACKOFF_S)
-        logger.info(f"Reconnecting in {backoff:.1f}s (attempt {attempt}/{MAX_RECONNECT_ATTEMPTS})")
+        logger.info(f"Reconnecting in {backoff:.1f}s (attempt {attempt})")
         await asyncio.sleep(backoff)
 
 
@@ -337,7 +381,7 @@ async def _runner_ready_payload() -> dict[str, Any]:
     探测失败时返回结构上独立于 ``capabilities={...all False}`` 的形态(``probe_failed=True``), 让 Desktop 能区分;
     Desktop 应当把任何 ``capabilities`` 里缺失的键视为"不启用", 不管 ``probe_failed`` 是什么。
     """
-    payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "capabilities_health": {}, "probe_failed": False}
+    payload: dict[str, Any] = {"version": __version__, "capabilities": {}, "capabilities_health": {}, "probe_failed": False, "reconnect_streak": _current_reconnect_streak}
     try:
         caps = await asyncio.to_thread(snapshot)
         if isinstance(caps, dict):

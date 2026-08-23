@@ -50,7 +50,15 @@ from .file_safety import (
     is_write_denied,
     validate_within_dir,
 )
-from .interrupt import _debug_interrupt_enabled, is_interrupted, set_global_interrupt, set_interrupt
+from .interrupt import (
+    _debug_interrupt_enabled,
+    is_interrupted,
+    reset_current_request,
+    set_current_request,
+    set_global_interrupt,
+    set_interrupt,
+    set_local_interrupt,
+)
 from .job_object import get_runner_job_handle, init_runner_job_object, is_job_object_active
 from .path_helpers import append_sane_path_entries, find_bash, find_python, msys_to_windows_path, resolve_safe_cwd
 from .pid import kill_tree, pid_exists
@@ -58,6 +66,12 @@ from .process_tree import TerminationResult, terminate_tree
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
 from .scratch_size import ScratchSnapshot, get_scratch_size_bytes, reset_scratch_size_cache
+from .tokens import (
+    CancellationToken,
+    check_cancel,
+    race_cancel,
+    raise_if_cancelled,
+)
 from .url_safety import (
     SafeAsyncHTTPTransport,
     SafeHTTPTransport,
@@ -76,6 +90,7 @@ from .url_safety import (
 
 __all__ = [
     "CREATE_NO_WINDOW",
+    "CancellationToken",
     "DesktopConnection",
     "DesktopEndpoint",
     "HANDSHAKE_AUTH_HEADER",
@@ -99,6 +114,7 @@ __all__ = [
     "call_llm_sync",
     "canonicalize_path",
     "cfg_bool",
+    "check_cancel",
     "cfg_float",
     "cfg_get",
     "cfg_int",
@@ -147,6 +163,9 @@ __all__ = [
     "iter_skills_files",
     "kill_tree",
     "load_config",
+    "race_cancel",
+    "raise_if_cancelled",
+    "reset_current_request",
     "load_website_blocklist",
     "local_stt_available",
     "local_tts_available",
@@ -165,8 +184,10 @@ __all__ = [
     "sanitize_subprocess_env",
     "screen_capture_available",
     "secure_parent_dir",
+    "set_current_request",
     "set_global_interrupt",
     "set_handler",
+    "set_local_interrupt",
     "set_inmemory_config",
     "set_interrupt",
     "set_main_loop",

@@ -52,6 +52,9 @@ class ToolRegistry:
         self._check_fn_cache: dict[str, tuple[bool, float, float]] = {}
         self._check_fn_ttl_seconds: float = 30.0
         self._check_fn_suppression_seconds: float = 60.0
+        # 签名探测缓存: tool name -> 是否接受 cancel_token= 关键字参数。
+        # 探测一次后缓存 — 工具函数签名在进程内不会变。
+        self._supports_cancel_token: dict[str, bool] = {}
         self._lock = threading.RLock()
 
     def register_tool(self, name: str, toolset: str | None = None, schema: dict | None = None, check_fn: Callable[[], bool] | None = None, **kwargs: Any) -> Callable:
@@ -224,12 +227,15 @@ class ToolRegistry:
 
         return result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
 
-    async def async_dispatch(self, name: str, args: dict, **kwargs) -> Any:
-        """异步入口, 供 WebSocket 服务器调用; 抛出 ``ToolError`` 让调用方映射 JSON-RPC 错误帧。"""
+    async def async_dispatch(self, name: str, args: dict, cancel_token: Any = None, **kwargs: Any) -> Any:
+        """异步入口，供 WebSocket 服务器调用；抛出 ``ToolError`` 让调用方映射 JSON-RPC 错误帧。"""
         with self._lock:
             func = self._tools.get(name)
         if not func:
             raise ToolError(f"Tool '{name}' not found locally.")
+
+        if self._signature_supports_token(name, func):
+            kwargs = {**kwargs, "cancel_token": cancel_token}
 
         try:
             if inspect.iscoroutinefunction(func):
@@ -248,6 +254,22 @@ class ToolRegistry:
             except json.JSONDecodeError:
                 return raw
         return raw
+
+    def _signature_supports_token(self, name: str, func: Callable) -> bool:
+        """探测工具函数是否接受 ``cancel_token`` 关键字参数；探测结果进程内缓存。"""
+        with self._lock:
+            cached = self._supports_cancel_token.get(name)
+        if cached is not None:
+            return cached
+        try:
+            params = inspect.signature(func).parameters
+        except (TypeError, ValueError):
+            result = False
+        else:
+            result = "cancel_token" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+        with self._lock:
+            self._supports_cancel_token[name] = result
+        return result
 
     @staticmethod
     def _sanitize_tool_error(raw: str) -> str:

@@ -23,6 +23,7 @@ import contextlib
 import json
 from collections.abc import Awaitable, Callable
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 import server
@@ -331,10 +332,13 @@ async def test_execute_tool_wraps_tool_error_as_jsonrpc_error():
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
-async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
-    from utils import is_interrupted, set_global_interrupt
+async def test_spiritagent_cancel_returns_no_in_flight_when_no_task():
+    """缺省 req_id 无 in-flight 任务时, cancel 应返 ``no_in_flight``, 不再盲目置全局标志位。"""
+    from utils import set_global_interrupt
 
     set_global_interrupt(False)
+    server._CURRENT_EXECUTE_TASK = None
+    server._CURRENT_EXECUTE_REQ_ID = None
     sent: list[dict[str, Any]] = []
 
     class _FakeWS:
@@ -345,19 +349,52 @@ async def test_spiritagent_cancel_returns_ok_and_sets_global_flag():
         _FakeWS(),
         {"id": "c1", "method": "spiritagent.cancel", "params": {}},
     )
-    assert sent[0]["result"] == {"ok": True}
-    assert is_interrupted() is True
-    set_global_interrupt(False)
+    assert sent[0]["result"] == {"ok": False, "error": "no_in_flight"}
 
 
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
-async def test_non_execute_tool_request_keeps_stale_interrupt():
-    """Diagnostic polls (spiritagent.info / get_tools) must NOT clear a pending
-    cancel — only a subsequent execute_tool does."""
-    from utils import is_interrupted, set_global_interrupt
+async def test_spiritagent_cancel_targets_inflight_task_by_default_slot():
+    """缺省 cancel 命中当前 in-flight 任务: 拿到 task 的同时拿到 req_id, 设 per-req 标志位。"""
+    from utils import is_interrupted, set_global_interrupt, set_local_interrupt
 
-    set_global_interrupt(True)  # simulate leftover from prior cancel
+    set_global_interrupt(False)
+    set_local_interrupt("req-1", False)
+    sent: list[dict[str, Any]] = []
+
+    class _FakeWS:
+        async def send(self, payload):
+            sent.append(json.loads(payload))
+
+    # 起一个独立后台任务模拟"in-flight 工具", 与 cancel RPC 任务分离。
+    inflight = asyncio.create_task(asyncio.sleep(60))
+    try:
+        server._CURRENT_EXECUTE_TASK = inflight
+        server._CURRENT_EXECUTE_REQ_ID = "req-1"
+
+        await server.process_request(
+            _FakeWS(),
+            {"id": "c2", "method": "spiritagent.cancel", "params": {}},
+        )
+        assert sent[0]["result"] == {"ok": True}
+        assert is_interrupted("req-1") is True
+    finally:
+        inflight.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await inflight
+        set_local_interrupt("req-1", False)
+        server._CURRENT_EXECUTE_TASK = None
+        server._CURRENT_EXECUTE_REQ_ID = None
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_non_execute_tool_request_does_not_touch_interrupt():
+    """Diagnostic polls 不读写中断状态 — 标志位保持不变。"""
+    from utils import is_interrupted, set_global_interrupt, set_local_interrupt
+
+    set_global_interrupt(False)
+    set_local_interrupt("req-2", True)
     sent: list[dict[str, Any]] = []
 
     class _FakeWS:
@@ -369,27 +406,35 @@ async def test_non_execute_tool_request_keeps_stale_interrupt():
         {"id": "g3", "method": "get_tools", "params": {}},
     )
     assert sent[0]["id"] == "g3"
-    # The diagnostic poll must leave the cancel flag in place.
-    assert is_interrupted() is True
+    assert is_interrupted("req-2") is True
+    set_local_interrupt("req-2", False)
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_execute_tool_clears_local_interrupt_on_completion():
+    """execute_tool 完成 / 异常 / 取消三个路径都应清掉对应 req_id 的 per-req interrupt 标志。"""
+    from utils import is_interrupted, set_global_interrupt, set_local_interrupt
+
     set_global_interrupt(False)
-
-
-async def test_execute_tool_clears_stale_interrupt():
-    from utils import is_interrupted, set_global_interrupt
-
-    set_global_interrupt(True)  # simulate leftover from prior cancel
     sent: list[dict[str, Any]] = []
 
     class _FakeWS:
         async def send(self, payload):
             sent.append(json.loads(payload))
 
+    server._INFLIGHT_BY_REQ_ID.clear()
+    # 关键: 用请求里的 JSON id (此处 "e3") 作 key, 与 process_request 内部创建的 req_id_str 对齐。
+    set_local_interrupt("e3", True)
+    assert is_interrupted("e3") is True
+
     await server.process_request(
         _FakeWS(),
-        {"id": "e1", "method": "execute_tool", "params": {"name": "nonexistent_tool", "arguments": {}}},
+        {"id": "e3", "method": "execute_tool", "params": {"name": "nonexistent_tool", "arguments": {}}},
     )
-    # execute_tool (even one that errors on an unknown tool) clears the flag
-    # before dispatch, and responds with a JSON-RPC error frame.
+    assert is_interrupted("e3") is False
+    assert "e3" not in server._INFLIGHT_BY_REQ_ID
+    set_local_interrupt("e3", False)
     assert is_interrupted() is False
     assert "error" in sent[0]
     set_global_interrupt(False)
@@ -398,12 +443,7 @@ async def test_execute_tool_clears_stale_interrupt():
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_pending_request_llm_future_drains_on_disconnect():
-    """When the WS drops mid-``request_llm``, the pending future MUST fail with ConnectionError.
-
-    Exercises the production drain helper ``runner_loop``'s ``finally``
-    block calls — that code is the safety net for callers whose desktop
-    has gone away mid-call.
-    """
+    """WS 断连时未决 future 抛出 ConnectionError。"""
     fut: asyncio.Future = asyncio.get_event_loop().create_future()
     server._PENDING_RPC["req_x"] = fut
 
@@ -452,9 +492,7 @@ async def test_build_info_handles_individual_subfailures(monkeypatch):
 @pytest.mark.timeout(15)
 @pytest.mark.asyncio
 async def test_runner_loop_waits_for_endpoint_without_burning_budget(monkeypatch):
-    """Waiting for the endpoint file is a normal Desktop-restart state and must
-    not consume the reconnect-attempt budget (it used to sys.exit(1) after
-    ~15 poll rounds even though nothing had failed)."""
+    """端点文件不存在时等待轮询，不消耗重连计数。"""
     reads = {"n": 0}
 
     def fake_read_endpoint():
@@ -465,13 +503,65 @@ async def test_runner_loop_waits_for_endpoint_without_burning_budget(monkeypatch
     monkeypatch.setattr(server, "_ENDPOINT_POLL_S", 0.01)
 
     task = asyncio.create_task(server.runner_loop(None))
-    for _ in range(200):  # far beyond MAX_RECONNECT_ATTEMPTS poll rounds
+    for _ in range(200):
         await asyncio.sleep(0.01)
     assert not task.done()
-    assert reads["n"] > server.MAX_RECONNECT_ATTEMPTS
+    assert reads["n"] > 100
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_runner_ready_payload_includes_reconnect_streak(monkeypatch):
+    """``_runner_ready_payload`` 包含 ``reconnect_streak`` 字段。"""
+    monkeypatch.setattr(server, "_current_reconnect_streak", 7)
+    payload = await server._runner_ready_payload()
+    assert payload["reconnect_streak"] == 7
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_runner_loop_does_not_exit_after_old_cap(monkeypatch):
+    """重连失败时 Runner 保持连接重试，任务不主动退出。"""
+
+    async def _always_fail(_endpoint):
+        raise websockets.exceptions.ConnectionClosed(None, None)
+
+    monkeypatch.setattr(server, "BASE_BACKOFF_S", 0.01)
+    monkeypatch.setattr(server, "MAX_BACKOFF_S", 0.01)
+    monkeypatch.setattr(server, "connect_desktop", _always_fail)
+
+    fake_endpoint = MagicMock()
+    fake_endpoint.path = "fake"
+    task = asyncio.create_task(server.runner_loop(fake_endpoint))
+    deadline = asyncio.get_event_loop().time() + 1.0
+    while asyncio.get_event_loop().time() < deadline:
+        await asyncio.sleep(0.05)
+        if server._current_reconnect_streak >= 5:
+            break
+    assert server._current_reconnect_streak >= 5, f"streak 计数异常: {server._current_reconnect_streak}"
+    assert not task.done(), "Runner 进程不应主动退出"
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.timeout(15)
+@pytest.mark.asyncio
+async def test_runner_reconnect_streak_reflects_current_state(monkeypatch):
+    """``_runner_ready_payload`` 必须反映当前 ``_current_reconnect_streak`` 值; 调用方在握手后清零。
+
+    直接验证 helper 的字段读取语义, 不污染 module-level mocks 以免破其他测试。
+    """
+    monkeypatch.setattr(server, "_current_reconnect_streak", 3)
+    payload = await server._runner_ready_payload()
+    assert payload["reconnect_streak"] == 3
+
+    monkeypatch.setattr(server, "_current_reconnect_streak", 0)
+    payload = await server._runner_ready_payload()
+    assert payload["reconnect_streak"] == 0
 
 
 @pytest.mark.timeout(15)

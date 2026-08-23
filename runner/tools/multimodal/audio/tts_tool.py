@@ -8,7 +8,7 @@ from pathlib import Path
 from shutil import copy2
 from typing import Any
 
-from utils import get_spiritagent_dir
+from utils import get_spiritagent_dir, raise_if_cancelled
 
 try:
     import pyttsx3
@@ -217,6 +217,7 @@ def _all_engines_failed(last_error: Exception | None) -> str:
 
 
 def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
+    cancel_token = kw.get("cancel_token")
     text = (args.get("text") or "").strip()
     if not text:
         return tool_error("text_to_speech requires 'text'")
@@ -286,6 +287,7 @@ def text_to_speech_tool(args: dict[str, Any], **kw: Any) -> str:
     last_error: Exception | None = None
     info: dict[str, Any] | None = None
     for eng_name, eng_voice in engine_chain:
+        raise_if_cancelled(cancel_token)
         try:
             # 链路中 pyttsx3 这一槽永远不携带 voice id — _synth_pyttsx3 在其 COM 作用域内对 CJK 文本自动挑中文 SAPI5 语音
             info = _synth_piper(normalized, eng_voice, speed, dst) if eng_name == "piper" else _synth_pyttsx3(normalized, None, speed, dst)

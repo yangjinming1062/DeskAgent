@@ -122,6 +122,7 @@ _CLOUD_FALLBACK_HINT = "Set stt.engine=cloud in Desktop settings to fall back to
 
 
 async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
+    cancel_token = kw.get("cancel_token")
     audio_path_arg = args.get("audio_path")
     audio_b64 = args.get("audio_base64")
     mime = args.get("mime_type") or "audio/wav"
@@ -173,6 +174,8 @@ async def speech_to_text_tool(args: dict[str, Any], **kw: Any) -> str:
         return tool_error("transcoded audio is empty", success=False)
 
     try:
+        if cancel_token is not None and cancel_token.is_set():
+            raise asyncio.CancelledError()
         result = _decode_and_transcribe(pcm_path, language=language, model_size=model_size, initial_prompt=initial_prompt)
     except FileNotFoundError as e:
         return tool_error(
