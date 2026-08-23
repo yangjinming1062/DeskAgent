@@ -169,9 +169,6 @@ class Settings(BaseSettings):
 
     default_llm_context_tokens: int = Field(gt=0)
 
-    enable_stt: bool
-    max_recording_seconds: int = Field(gt=0)
-
     rate_limit_enabled: bool
     login_rate_limit_per_minute: int
     llm_completion_rate_limit_per_minute: int
@@ -181,7 +178,6 @@ class Settings(BaseSettings):
     media_image_gen_rate_limit_per_minute: int
     media_video_gen_rate_limit_per_minute: int
     companion_avatar_generate_rate_limit_per_minute: int
-    companion_avatar_upload_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_expression_avatar_generate_rate_limit_per_minute: int
     rate_limit_storage_url: str = ""

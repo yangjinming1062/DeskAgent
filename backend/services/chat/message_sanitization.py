@@ -57,7 +57,7 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
         if reserialised != raw_stripped:
             logger.warning("Repaired unescaped control chars in tool_call arguments", extra={"tool_name": tool_name})
         return reserialised
-    except (json.JSONDecodeError, TypeError, ValueError):
+    except (TypeError, ValueError):
         pass
 
     fixed = re.sub(r",\s*([}\]])", r"\1", raw_stripped)
@@ -91,7 +91,7 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
             json.loads(escaped)
             logger.warning("Repaired control-char-laced tool_call arguments", extra={"tool_name": tool_name, "raw": raw_stripped[:80], "escaped": escaped[:80]})
             return escaped
-    except (json.JSONDecodeError, TypeError, ValueError):
+    except (TypeError, ValueError):
         pass
 
     logger.warning("Unrepairable tool_call arguments, replaced with empty object", extra={"tool_name": tool_name, "raw": raw_stripped[:80]})

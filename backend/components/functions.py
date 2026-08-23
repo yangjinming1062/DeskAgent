@@ -18,7 +18,7 @@ def apply_partial(obj: Any, payload: BaseModel, /, *, exclude: frozenset[str] = 
 def safe_json_loads(text: str, default: Any = None) -> Any:
     try:
         return json.loads(text)
-    except (json.JSONDecodeError, TypeError, ValueError):
+    except (TypeError, ValueError):
         return default
 
 

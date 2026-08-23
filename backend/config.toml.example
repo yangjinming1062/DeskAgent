@@ -192,12 +192,6 @@ ipc_future_timeout_seconds = 300.0
 # 伴侣活跃会话判定窗口时间（分钟）
 chat_active_window_minutes = 30
 
-[voice]
-# 是否启用语音识别输入功能
-enable_stt = true
-# 单次录音最大时长限制（秒）
-max_recording_seconds = 60
-
 [rate_limit]
 # 是否开启接口速率限制
 rate_limit_enabled = true
@@ -217,8 +211,6 @@ media_image_gen_rate_limit_per_minute = 10
 media_video_gen_rate_limit_per_minute = 3
 # 伴侣头像生成接口每分钟限制
 companion_avatar_generate_rate_limit_per_minute = 3
-# 伴侣头像上传接口每分钟限制
-companion_avatar_upload_rate_limit_per_minute = 5
 # 伴侣 3D 模型生成接口每分钟限制
 companion_model_generate_rate_limit_per_minute = 1
 # 伴侣表情头像生成接口每分钟限制

@@ -173,7 +173,7 @@ async def _persist_assistant_with_tool_calls_and_results(
     context: dict[str, Any],
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
-) -> list[dict]:
+) -> None:
     """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹。"""
     if turn_content:
         context["input"].append({"role": "assistant", "content": [{"type": "output_text", "text": turn_content}]})
@@ -229,5 +229,3 @@ async def _persist_assistant_with_tool_calls_and_results(
         for res in tool_results:
             db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
         await db.commit()
-
-    return None
