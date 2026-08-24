@@ -126,6 +126,12 @@ export async function hydrateMesh2D(): Promise<void> {
 export async function switchRenderMode(mode: RenderMode): Promise<void> {
   const previous = $renderMode.get()
 
+  // 幂等守卫：render_mode.changed 广播回流时会带着当前值再调一次，
+  // 无守卫会重复 POST 并再次触发后端广播形成回环。
+  if (mode === previous) {
+    return
+  }
+
   setRenderMode(mode)
 
   try {
