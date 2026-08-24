@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asset_store
 from ..persona_service import get_or_create_persona
-from .pipeline import run_mesh2d_pipeline
+from .pipeline import active_model_ids, run_mesh2d_pipeline
 
 logger = get_logger(__name__)
 
@@ -57,11 +57,17 @@ async def generate_mesh2d_model(
         ).scalar_one_or_none()
 
         if existing is not None:
-            logger.info(
-                "mesh2d generation already in flight",
-                extra={"user_id": user_id, "model_id": existing.id},
-            )
-            return existing
+            if existing.id in active_model_ids():
+                logger.info(
+                    "mesh2d generation already in flight",
+                    extra={"user_id": user_id, "model_id": existing.id},
+                )
+                return existing
+            # 进程重启遗留的僵尸 generating 行（无在飞任务认领）：置失败后走新切分，
+            # 否则用户会被一行死状态永久卡在 409-less 的"生成中"。
+            existing.status = "failed"
+            existing.error = "interrupted by restart"
+            await db.commit()
 
         active = (
             await db.execute(
@@ -100,8 +106,8 @@ async def generate_mesh2d_model(
     await db.commit()
     await db.refresh(model)
 
-    await run_mesh2d_pipeline(
-        db,
+    # 后台执行不阻塞请求；就绪经 companion.mesh2d.ready 事件下发（DESIGN §5.5 异步启动）
+    run_mesh2d_pipeline(
         user_id=user_id,
         model_id=model.id,
         fullbody_url=fullbody_url,

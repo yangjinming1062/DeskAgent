@@ -60,7 +60,7 @@ from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
 from .interaction_stats import read_today_summary, record_interaction
 from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
-from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile
+from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile, record_user_timezone, resolve_user_timezone
 from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
 from .mesh2d import (
@@ -187,6 +187,8 @@ __all__ = [
     "raise_if_image_sealed",
     "record_interaction",
     "record_user_profile",
+    "record_user_timezone",
+    "resolve_user_timezone",
     "recover_stuck_model_generations",
     "regenerate_avatar",
     "regenerate_avatar_from_image",

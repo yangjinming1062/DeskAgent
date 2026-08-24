@@ -53,6 +53,7 @@ from services.companion import (
     raise_if_image_sealed,
     read_user_profile,
     record_interaction,
+    record_user_timezone,
     regenerate_avatar,
     request_model_download_retry,
     should_act,
@@ -131,8 +132,12 @@ _last_check_affect_ts: dict[int, float] = {}
 
 INTERACT_MIN_INTERVAL_SECONDS = 1.5
 USER_TRIGGERED_LLM_COOLDOWN_SECONDS = 5 * 60
+# 失败短冷却：5 分钟成本窗口只在成功时全额消耗的话，供应商持续故障时连戳会把成本闸门
+# 打成筛子；60s 让故障模式也有封顶，又不把瞬时失败的用户锁满 5 分钟
+INTERACT_FAILURE_COOLDOWN_SECONDS = 60
 _last_interact_ts: dict[int, float] = {}
-_last_llm_respond_ts: dict[int, dict[str, float]] = {}
+# per-(user, kind) 存冷却到期时刻（monotonic），成功与失败分别写 5min / 60s
+_llm_cooldown_until: dict[int, dict[str, float]] = {}
 # per-(user, kind) 的 in-flight 守卫：慢的 LLM 反应还没回时，避免再触发第二次并发反应。
 _inflight_interact: set[tuple[int, str]] = set()
 
@@ -294,7 +299,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                             _inflight_prompt.discard(uid)
                             _inflight_interact.difference_update({(u, k) for u, k in _inflight_interact if u == uid})
                             _last_interact_ts.pop(uid, None)
-                            _last_llm_respond_ts.pop(uid, None)
+                            _llm_cooldown_until.pop(uid, None)
                             _last_check_affect_ts.pop(uid, None)
                             _last_should_act_ts.pop(uid, None)
                             AVATAR_JOB_LOCKS.pop(uid, None)
@@ -654,6 +659,21 @@ def _register_session_handlers(
 
     dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
 
+    async def companion_set_timezone(params: dict) -> dict:
+        # Desktop 每次连接上报本地 IANA 时区：夜间批处理与互动统计都按用户本地日聚合，
+        # 缺这一行时整个夜间流水线（画像/整理/规划/日记）会静默跳过。
+        tz = params.get("timezone")
+        if not isinstance(tz, str) or not tz.strip():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "timezone must be a non-empty string")
+        normalized = tz.strip()
+        async with SESSION_LOCAL() as db:
+            if not await record_user_timezone(db, user_id, normalized):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"unknown timezone: {normalized}")
+            await db.commit()
+        return {"timezone": normalized}
+
+    dispatcher.register("companion.set_timezone", companion_set_timezone)
+
     async def companion_check_affect(params: dict) -> dict:
         # desktop idle 监视器在阈值+冷却后调用；LLM 决策是否发出 companion.affect 切换到情境情绪（无气泡、无 TTS）。
         now = time.monotonic()
@@ -671,6 +691,7 @@ def _register_session_handlers(
 
     async def companion_record_interaction_stats(params: dict) -> dict:
         # poke / chat_turn 每事件统计供每日 Memory 汇总用，无 LLM 开销；desktop 侧合并到 STATS_THRESHOLD 后切分钟级节流。
+        # hour 是用户本地小时（客户端上报 getHours()），与本地日期键同口径，夜间反思按本地日读取。
         kind = params.get("kind")
         hour = params.get("hour")
         if not isinstance(hour, int) or not 0 <= hour <= 23:
@@ -695,9 +716,8 @@ def _register_session_handlers(
         if user_id in _inflight_prompt:
             return {"text": None, "emotion": None, "reason": "user_busy"}
 
-        user_cooldowns = _last_llm_respond_ts.setdefault(user_id, {})
-        last_llm = user_cooldowns.get(kind, 0.0)
-        if now - last_llm < USER_TRIGGERED_LLM_COOLDOWN_SECONDS:
+        user_cooldowns = _llm_cooldown_until.setdefault(user_id, {})
+        if now < user_cooldowns.get(kind, 0.0):
             return {"text": None, "emotion": None, "reason": "rate_limited"}
 
         # per-(user, kind) 去重 in-flight 调用：慢的 LLM 响应不该让第二个反应请求溜过去。
@@ -705,7 +725,7 @@ def _register_session_handlers(
         if inflight_key in _inflight_interact:
             return {"text": None, "emotion": None, "reason": "inflight"}
         _inflight_interact.add(inflight_key)
-        # anti-dup 节流总是消费；下面 5 分钟成本窗口只在成功时消费，避免瞬时失败把用户锁在外面。
+        # anti-dup 节流总是消费；成本窗口按结果分级——成功 5 分钟、失败 60 秒
         _last_interact_ts[user_id] = now
 
         poke_count = coerce_non_negative_int(params.get("poke_count"))
@@ -722,6 +742,8 @@ def _register_session_handlers(
             _inflight_interact.discard(inflight_key)
 
         if res.text is None:
+            # 失败也封 60s：LLM 调用已付过钱，故障模式下成本闸门同样要生效
+            user_cooldowns[kind] = now + INTERACT_FAILURE_COOLDOWN_SECONDS
             return res.model_dump()
 
         # 只有用户实际看到的反应才值得写历史行——未应答的戳一戳否则会污染主会话。
@@ -740,8 +762,8 @@ def _register_session_handlers(
                     action_name = f"（戳了戳精灵的{region_zh}）"
         await _record_main_conversation(user_id, "user", action_name, "status_interaction")
         await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
-        # 不论 DB 结果如何都消耗冷却：LLM 调用已经付过钱，持久化失败不该为第二次调用打开门。
-        user_cooldowns[kind] = now
+        # 不论 DB 结果如何都消耗完整冷却：LLM 调用已经付过钱，持久化失败不该为第二次调用打开门。
+        user_cooldowns[kind] = now + USER_TRIGGERED_LLM_COOLDOWN_SECONDS
         return res.model_dump()
 
     dispatcher.register("companion.interact", companion_interact)

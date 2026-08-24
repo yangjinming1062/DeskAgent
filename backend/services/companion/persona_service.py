@@ -94,10 +94,13 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
         # DESIGN §5.4 形象锁定：形象确认后物种/性别/基础外貌不可再改——
         # 定稿后的保存把三字段静默替换回既有值（客户端表单本就不展示），
         # 且绝不重置 is_portrait_confirmed（§8 微调向导"不重置完成状态"）。
+        # 草稿缺该键（历史上未填过）时同样丢弃新值：锁定字段的"既有值"不存在，不能凭 PUT 凭空立起来。
         if persona.is_portrait_confirmed:
             for locked in ("biological_type", "gender", "appearance"):
                 if locked in current_draft:
                     cleaned[locked] = current_draft[locked]
+                else:
+                    cleaned.pop(locked, None)
         persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
         persona.system_prompt_extras = render_extras(cleaned)
         persona.is_complete = True

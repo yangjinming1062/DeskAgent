@@ -261,6 +261,14 @@ def build_meshes(
         if layer.name == "back_hair":
             influences = [{"bone": "back_hair", "weight": 1.0}]
 
+        # clothing 是衣物/裙摆层：绑 body_main 跟随躯干，混入 skirt 骨承接裙摆物理
+        # 与步态摆动——骨骼表没有 clothing 骨，走单骨回退会把衣物层钉死在 root 上。
+        if layer.name == "clothing":
+            influences = [
+                {"bone": "body_main", "weight": 0.6},
+                {"bone": "skirt", "weight": 0.4},
+            ]
+
         if layer.name in _ARM_INFLUENCES:
             influences = _ARM_INFLUENCES[layer.name]
 

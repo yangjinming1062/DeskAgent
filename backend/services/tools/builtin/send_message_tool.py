@@ -35,7 +35,18 @@ async def _emit_companion_affect(user_id: int, emotion: str) -> None:
         await db.commit()
 
 
-async def send_message_tool(message: str, target_webhook: str | None = None, affect: str | None = None, follow_up_after_seconds: float | None = None, **kwargs) -> str:
+async def send_message_tool(
+    message: str,
+    target_webhook: str | None = None,
+    affect: str | None = None,
+    follow_up_after_seconds: float | None = None,
+    followup_timeout_seconds: float | None = None,
+    **kwargs,
+) -> str:
+    # followup_timeout_seconds 是 cron 跟进/小情绪提示词沿用的旧参数名，作为别名收下——
+    # 落进 **kwargs 会被静默丢弃，LLM 给出的跟进节奏就永远进不了状态机
+    if follow_up_after_seconds is None:
+        follow_up_after_seconds = followup_timeout_seconds
     # 伙伴原生主动路径：未传 webhook 时直接以 companion.message 形式投递给客户端（ARCHITECTURE.md §7.4 将本工具复用为伙伴主动触达通道）。
     # 客户端是打扰档位的单一事实源，但后端在源头也做一次防御性拦截：非官方客户端走 /api/chat/ws 会绕过客户端侧过滤器，故 quiet 时不写 WSEvent。
     if not target_webhook:

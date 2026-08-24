@@ -32,7 +32,9 @@ REGION_DETECTION_SYSTEM_PROMPT = (
 )
 
 
-REGION_DETECTION_USER_TEMPLATE = "请识别这张二次元立绘的核心物理层（含可选腿部）bounding box：\n\n{data_uri}"
+# 图片不嵌进文本（data URI 会把请求膨胀成 MB 级纯文本且多数供应商拒收）——
+# 由调用方以 input_image 内容部件单独挂载，模板只承担文字指令。
+REGION_DETECTION_USER_TEMPLATE = "请识别这张二次元立绘的核心物理层（含可选腿部）bounding box。"
 
 
 POSE_ESTIMATION_SYSTEM_PROMPT = (
@@ -68,4 +70,4 @@ POSE_ESTIMATION_SYSTEM_PROMPT = (
 )
 
 
-POSE_ESTIMATION_USER_TEMPLATE = "请估计这张二次元立绘的 22 个关键点坐标：\n\n{data_uri}"
+POSE_ESTIMATION_USER_TEMPLATE = "请估计这张二次元立绘的 22 个关键点坐标。"

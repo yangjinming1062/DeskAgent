@@ -45,6 +45,18 @@ function syncDisturbanceTier(gateway: SpiritAgentGateway): void {
   void gateway.request('companion.set_disturbance_tier', { tier }).catch(() => {})
 }
 
+// 每次连接上报本地 IANA 时区：后端的夜间批处理与互动统计都按用户本地日聚合，
+// 缺这一行时整个夜间流水线（画像/整理/规划/日记）会静默跳过。即发即忘。
+function syncTimezone(gateway: SpiritAgentGateway): void {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  if (!timezone) {
+    return
+  }
+
+  void gateway.request('companion.set_timezone', { timezone }).catch(() => {})
+}
+
 async function syncRunnerTools(gateway: SpiritAgentGateway): Promise<void> {
   const desktop = window.spiritagent
 
@@ -228,6 +240,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         // 重新上报打扰档位，让后端进程级字典在初次启动以及每次重连后
         // 都拿到用户持久化下来的选择（覆盖后端重启、OAuth 重新登录）。
         syncDisturbanceTier(gateway)
+        syncTimezone(gateway)
         startAutonomyProvision()
 
         // 断连阶段挂的 sleep_zzz 气泡需要主动清掉，否则即便精灵已经"醒来"

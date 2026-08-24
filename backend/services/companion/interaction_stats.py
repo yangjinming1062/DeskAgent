@@ -1,15 +1,23 @@
+import contextlib
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from components import SESSION_LOCAL, get_logger, utc_now
 from modules.memory import Memory
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .memory_bootstrap import resolve_user_timezone
+
 logger = get_logger(__name__)
 
 STATS_THRESHOLD = 10
 
 VALID_KINDS: frozenset[str] = frozenset({"poke", "chat_turn"})
+
+# 时区进程级缓存：统计是每事件一次的高频路径，逐次读 Memory 行纯属浪费；时区变更极罕见，进程生命周期内不失效
+_TZ_CACHE: dict[int, str | None] = {}
 
 
 @dataclass
@@ -25,17 +33,31 @@ class _DailyCounters:
 _counters: dict[int, _DailyCounters] = {}
 
 
-def _today_key() -> str:
-    return utc_now().strftime("%Y-%m-%d")
+async def _tz_for(user_id: int) -> str | None:
+    if user_id not in _TZ_CACHE:
+        async with SESSION_LOCAL() as db:
+            _TZ_CACHE[user_id] = await resolve_user_timezone(db, user_id)
+    return _TZ_CACHE[user_id]
 
 
-def _get_or_seed(user_id: int) -> _DailyCounters:
-    today = _today_key()
-    # 借本用户跨日的时机顺带清理其他用户的过期条目，使字典规模在进程生命周期内有界
+def _local_today(tz: str | None) -> str:
+    now = utc_now()
+    if tz:
+        with contextlib.suppress(ZoneInfoNotFoundError, ValueError, KeyError):
+            now = now.astimezone(ZoneInfo(tz))
+    return now.strftime("%Y-%m-%d")
+
+
+async def _get_or_seed(user_id: int, tz: str | None) -> _DailyCounters:
+    # 跨用户顺带清理过期条目使字典有界；合法本地日最多偏离 UTC 一天（时区偏移 ≤ ±14h），
+    # 不与调用方本地日比对——那会把地球另一端用户的当日条目误清
+    utc_today = date.fromisoformat(utc_now().strftime("%Y-%m-%d"))
+    valid_dates = {(utc_today + timedelta(days=d)).isoformat() for d in (-1, 0, 1)}
     for stale_uid, stale in list(_counters.items()):
-        if stale.date != today:
+        if stale.date not in valid_dates:
             _counters.pop(stale_uid, None)
     existing = _counters.get(user_id)
+    today = _local_today(tz)
     if existing is not None and existing.date == today:
         return existing
     seeded = _DailyCounters(date=today)
@@ -83,9 +105,9 @@ async def _upsert_memory(user_id: int, counters: _DailyCounters) -> None:
 
 
 async def read_today_summary(user_id: int, date_str: str | None = None) -> dict | None:
-    """读取指定日期（默认 UTC 今日）的 interaction_stats 记忆行。"""
+    """读取指定日期（默认用户本地今日）的 interaction_stats 记忆行。"""
     if date_str is None:
-        date_str = _today_key()
+        date_str = _local_today(await _tz_for(user_id))
     async with SESSION_LOCAL() as db:
         mem = await _stats_memory_for(db, user_id, date_str)
         if mem is None:
@@ -94,13 +116,16 @@ async def read_today_summary(user_id: int, date_str: str | None = None) -> dict 
 
 
 async def record_interaction(user_id: int, kind: str, hour: int) -> dict:
-    """累加当日 kind 计数并在越过阈值时写回 Memory；hour 必须是 UTC 小时，以与日期键保持一致。"""
+    """累加当日 kind 计数并在越过阈值时写回 Memory。
+
+    hour 是用户本地小时（客户端上报 getHours()），日期键同为用户本地日——
+    夜间反思按本地日读取，两侧口径一致；无时区行时退化为 UTC。"""
     if kind not in VALID_KINDS:
         raise ValueError(f"unknown interaction kind: {kind!r}")
     if not isinstance(hour, int) or not 0 <= hour <= 23:
         raise ValueError(f"hour must be int in [0, 23], got {hour!r}")
 
-    counters = _get_or_seed(user_id)
+    counters = await _get_or_seed(user_id, await _tz_for(user_id))
     counters.hour_buckets[hour] = counters.hour_buckets.get(hour, 0) + 1
     if kind == "poke":
         counters.poke += 1

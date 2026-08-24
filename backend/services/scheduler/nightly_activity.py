@@ -30,7 +30,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.companion import kick_background_generation, list_memories, read_today_summary, upsert_slotted_memory, validate_and_sanitize_expression
+from services.companion import kick_background_generation, list_memories, read_today_summary, resolve_user_timezone, upsert_slotted_memory, validate_and_sanitize_expression
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
@@ -187,12 +187,6 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
             if text_content:
                 clean.append({"role": "user", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
     return clean
-
-
-async def resolve_user_timezone(db: AsyncSession, user_id: int) -> str | None:
-    """只读查询用户的 onboarding 时区字符串。"""
-    val = (await db.execute(select(Memory.content).where(Memory.user_id == user_id, Memory.context == "user_profile:timezone"))).scalar()
-    return (val or "").strip() or None
 
 
 def get_local_day_utc_bounds(now_utc: datetime, tz_str: str) -> tuple[datetime, datetime, datetime, str]:

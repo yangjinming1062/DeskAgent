@@ -286,6 +286,8 @@ async def put_avatar_select(avatar_id: int, auth: tuple[User, LoginRecord] = Dep
         asset = await select_avatar(db, user.id, avatar_id)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     return avatar_response(asset)
 
 
@@ -317,7 +319,8 @@ async def post_fullbody_samples(
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("fullbody samples generation failed", extra={"user_id": user.id, "error": err_detail})
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": err_detail})
+        # reason 只放公开文案：供应商原始错误（err_detail）常含 URL / 部分 auth 头，不能随响应出网
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
     except MissingLlmConfigError as exc:
         logger.warning("post_fullbody_samples missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
@@ -373,7 +376,7 @@ async def post_fullbody_front(
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("fullbody front generation failed", extra={"user_id": user.id, "error": err_detail})
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": err_detail})
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
     except MissingLlmConfigError as exc:
         logger.warning("post_fullbody_front missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
@@ -401,7 +404,7 @@ async def post_fullbody_back(
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("fullbody back generation failed", extra={"user_id": user.id, "error": err_detail})
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": err_detail})
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
     except MissingLlmConfigError as exc:
         logger.warning("post_fullbody_back missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
@@ -431,7 +434,7 @@ async def post_fullbody_confirm_front(
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("fullbody multiview confirmation failed", extra={"user_id": user.id, "error": err_detail})
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": err_detail})
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
     except MissingLlmConfigError as exc:
         logger.warning("post_fullbody_confirm_front missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})

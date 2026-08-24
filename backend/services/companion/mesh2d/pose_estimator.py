@@ -1,20 +1,18 @@
 """视觉 LLM 关键点估计 — 输出 22 个姿态关键点，含解剖学约束平滑。"""
 
 from components import get_logger, safe_json_loads
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import execute_with_fallback, resolve_vision_chain
+from services.llm import ProviderConfig
 
 from .prompts import POSE_ESTIMATION_SYSTEM_PROMPT, POSE_ESTIMATION_USER_TEMPLATE
-from .region_detector import _strip_fence
+from .region_detector import _strip_fence, call_vision_llm
 
 logger = get_logger(__name__)
 
 
+# 躯干核心为硬门槛；面部点（鼻/眼）是视觉模型对小脸孔最常判 null 的部位，
+# 缺失时由 head 锚点按比例合成（见 sanitize_keypoints），不作为门槛。
 _REQUIRED_KEYPOINT_NAMES: tuple[str, ...] = (
-    "nose",
-    "left_eye",
-    "right_eye",
     "left_shoulder",
     "right_shoulder",
     "left_hip",
@@ -68,7 +66,7 @@ def parse_keypoints_payload(raw: str) -> dict[str, tuple[float, float]]:
 
 
 def has_minimum_keypoints(kp: dict[str, tuple[float, float]]) -> bool:
-    """至少有 8 个核心关键点（含眼 / 鼻 / 肩 / 髋 / 颈）才算可用。"""
+    """至少有 5 个躯干核心关键点（肩 / 髋 / 颈）才算可用。"""
     return all(name in kp for name in _REQUIRED_KEYPOINT_NAMES)
 
 
@@ -102,12 +100,35 @@ def sanitize_keypoints(
         out[pair[0]] = left
         out[pair[1]] = right
 
-    # 中线：head pivot X = 双眼 X 中点；Y = 双眼 Y 中点。
+    # 缺关键点回退到部件几何中心。
+    if layer_centers:
+        for fallback_name, layer_name in (
+            ("head_top", "front_hair"),
+            ("hair_back_root", "back_hair"),
+            ("neck", "body_main"),
+        ):
+            if fallback_name not in out and layer_name in layer_centers:
+                out[fallback_name] = layer_centers[layer_name]
+
+    # 中线：head 锚点优先双眼中点，其次头顶-颈中点，最后躯干中心。
     if get("left_eye") and get("right_eye"):
         l_eye, r_eye = get("left_eye"), get("right_eye")
         out["head"] = ((l_eye[0] + r_eye[0]) / 2, (l_eye[1] + r_eye[1]) / 2)
+    elif all(name in out for name in ("head_top", "neck")):
+        out["head"] = ((out["head_top"][0] + out["neck"][0]) / 2, (out["head_top"][1] + out["neck"][1]) / 2)
     elif layer_centers and "body_main" in layer_centers:
         out["head"] = layer_centers["body_main"]
+
+    # 面部点合成：视觉模型对小脸孔常把眼/鼻判 null，按典型面部比例从 head 锚点补齐
+    # （setdefault 不覆盖真实值）——否则骨骼层 eye/mouth pivot 落到画布中心兜底。
+    if "head" in out:
+        hx, hy = out["head"]
+        for name, xy in (
+            ("left_eye", (hx - 0.035, hy)),
+            ("right_eye", (hx + 0.035, hy)),
+            ("nose", (hx, hy + 0.035)),
+        ):
+            out.setdefault(name, xy)
 
     # 比例：head 与 neck 间距不应超过 neck 长度 1.5 倍；超过时 head 沿 neck→head_top 方向裁剪。
     if all(name in out for name in ("head", "neck", "head_top")):
@@ -124,16 +145,6 @@ def sanitize_keypoints(
                 neck[1] + (head[1] - neck[1]) * scale,
             )
 
-    # 缺关键点回退到部件几何中心。
-    if layer_centers:
-        for fallback_name, layer_name in (
-            ("head_top", "front_hair"),
-            ("hair_back_root", "back_hair"),
-            ("neck", "body_main"),
-        ):
-            if fallback_name not in out and layer_name in layer_centers:
-                out[fallback_name] = layer_centers[layer_name]
-
     # 手部无独立图层可回退：缺失时取手腕下方一掌距离（骨骼 hand pivot 兜底同此规则）。
     for hand, wrist in (("left_hand", "left_wrist"), ("right_hand", "right_wrist")):
         if hand not in out and wrist in out:
@@ -143,15 +154,13 @@ def sanitize_keypoints(
 
 
 async def estimate_pose(
-    db: AsyncSession | None,
+    chain: list[ProviderConfig],
     user_id: int | None,
     data_uri: str,
     *,
     layer_centers: dict[str, tuple[float, float]] | None = None,
 ) -> dict[str, tuple[float, float]]:
-    """调用视觉 LLM 输出 20 关键点；返回经解剖学约束平滑后的字典。"""
-    chain = await resolve_vision_chain(db, user_id)
-
+    """调用视觉 LLM 输出 22 关键点；返回经解剖学约束平滑后的字典。"""
     if not chain:
         logger.warning(
             "vision LLM chain is empty; pose estimation skipped",
@@ -159,17 +168,8 @@ async def estimate_pose(
         )
         return {}
 
-    system_prompt = POSE_ESTIMATION_SYSTEM_PROMPT
-    user_payload = POSE_ESTIMATION_USER_TEMPLATE.format(data_uri=data_uri)
-
     try:
-        raw = await execute_with_fallback(
-            chain,
-            system_prompt=system_prompt,
-            user_payload=user_payload,
-            db=db,
-            user_id=user_id,
-        )
+        raw = await call_vision_llm(chain, user_id, POSE_ESTIMATION_SYSTEM_PROMPT, POSE_ESTIMATION_USER_TEMPLATE, data_uri)
     except Exception as exc:
         logger.warning(
             "vision LLM pose estimation failed",

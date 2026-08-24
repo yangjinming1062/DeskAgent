@@ -1,4 +1,5 @@
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from modules.memory import Memory
 from sqlalchemy import func, select
@@ -14,6 +15,7 @@ _CONTEXT_LABELS: dict[str, str] = {
     "user_age_bucket": "user_profile:age_bucket",
     "user_hobbies": "user_profile:hobbies",
     "user_freeform": "user_profile:freeform",
+    "timezone": "user_profile:timezone",
 }
 
 _REVERSE_CONTEXT_LABELS: dict[str, str] = {v: k for k, v in _CONTEXT_LABELS.items()}
@@ -65,3 +67,19 @@ async def record_user_profile(db: AsyncSession, user_id: int, profile: dict[str,
             )
         )
         await db.execute(statement)
+
+
+async def resolve_user_timezone(db: AsyncSession, user_id: int) -> str | None:
+    """读用户 IANA 时区；夜间批处理与互动统计按它做本地日聚合。"""
+    val = (await db.execute(select(Memory.content).where(Memory.user_id == user_id, Memory.context == "user_profile:timezone"))).scalar()
+    return (val or "").strip() or None
+
+
+async def record_user_timezone(db: AsyncSession, user_id: int, tz: str) -> bool:
+    """校验并落盘时区；非法 IANA 名拒绝（返回 False），避免毒值让夜间窗口永远跳过。"""
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        return False
+    await record_user_profile(db, user_id, {"timezone": tz})
+    return True

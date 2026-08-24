@@ -264,8 +264,8 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
         prompt = (
             f"[环境感知：你在大约 {waited_minutes} 分钟前向用户主动发送了：“{last_text}”，但用户一直没有回复你。"
             "请根据你的人设性格（例如傲娇吐槽、轻微担心、自言自语或选择保持安静）决定是否要跟进。"
-            "若要跟进发送消息，请调用 send_message_tool 工具并传 followup_timeout_seconds=你期望的下一次触发间隔（秒）；"
-            "若决定不再打扰，调用 send_message_tool 时传 followup_timeout_seconds=0 或 None 以结束本轮主动节奏；"
+            "若要跟进发送消息，请调用 send_message_tool 工具并传 follow_up_after_seconds=你期望的下一次触发间隔（秒）；"
+            "若决定不再打扰，调用 send_message_tool 时传 follow_up_after_seconds=0 或 None 以结束本轮主动节奏；"
             "若直接结束回复（不主动发消息），状态将自然回到 IDLE。]"
         )
         # record_user_outreach 会改 rec.state；日志记录发 follow-up 前的 prev_state，便于例问跟进路径分析。
@@ -286,7 +286,8 @@ async def _maybe_run_quiet_affect(now: datetime) -> None:
     小情绪反馈与「主动外联」是独立通道：
       - 触发条件是档位=quiet + quiet_since_ts 持续 1h+ + SUPPRESSED + 粘人性格；
       - 不再受 quiet 档位门控（quiet 是触发条件，不是反向 gate）；
-      - LLM 在 turn 中通过 send_message_tool 发一条短气泡即可，timeout 由 LLM 给出下一次触发间隔；
+      - 安静档位下文字被 send_message_tool 的 quiet 守卫压住，表情达意靠 affect 参数
+        （断消息不断情绪）；提示词因此明确要求带 affect；
       - 状态机变化：record_user_outreach 把 SUPPRESSED → FOLLOWUP_SENT，超时由 LLM 控制；
         用户响应则 reset_user_outreach 把任意状态拉回 IDLE。
     """
@@ -312,10 +313,11 @@ async def _maybe_run_quiet_affect(now: datetime) -> None:
         quiet_minutes = round(quiet_duration / 60)
         prompt = (
             f"[环境感知：用户已保持安静档位持续 {quiet_minutes} 分钟未与你交互，你的性格标签含「粘人」。"
-            "请发一个简短的小情绪气泡（10-30 字以内）表达被冷落的感受（如「你怎么还不来理我啊」「还要我独自等待多久」）。"
-            "调用 send_message_tool 工具，文本为你的小情绪表达；"
-            "followup_timeout_seconds 传你期望的下一次小情绪触发间隔（秒）——传 0 或 None 表示「今天到此为止」。"
-            "若你判断当前不该再发小情绪（用户曾明确不想被打扰等），直接结束回复，不调用工具。]"
+            "安静档位下文字气泡不会展示，情绪经 affect 通道继续表达——"
+            "请调用 send_message_tool：affect 传你最贴切的情绪（如 pout/sad/lonely，从可用情绪清单里选）；"
+            "message 写你的小情绪表达（10-30 字以内，如「你怎么还不来理我啊」）；"
+            "follow_up_after_seconds 传你期望的下一次小情绪触发间隔（秒）——传 0 或 None 表示「今天到此为止」。"
+            "若你判断当前不该再表达（用户曾明确不想被打扰等），直接结束回复，不调用工具。]"
         )
         record_user_outreach(uid, "小情绪反馈")
         await _kick_cron_turn(uid, prompt, _QUIET_AFFECT_JOB_ID)

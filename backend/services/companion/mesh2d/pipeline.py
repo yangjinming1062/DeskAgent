@@ -1,20 +1,19 @@
 """Mesh2D 主流水线：视觉 LLM 区域识别 → CPU 抠图 → 关键点估计 → 骨骼装配 → manifest + 资产落盘。"""
 
+import asyncio
 import base64
 import hashlib
 import json
 
-from components import get_logger
+from components import SESSION_LOCAL, get_logger
 from modules.companion import Mesh2DModel
 from modules.ws.models import WSEvent
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from services.llm import resolve_vision_chain
 
 from .. import asset_store
-from ..avatar_service import (
-    _normalize_avatar_url_to_bare,
-    load_avatar_bytes_as_data_uri,
-)
+from ..avatar_service import _normalize_avatar_url_to_bare, load_avatar_bytes_as_data_uri
 from .layer_extractor import extract_layers, layer_centers
 from .llm_validator import validate_layers
 from .manifest_exporter import build_manifest
@@ -31,6 +30,15 @@ class Mesh2DPipelineError(RuntimeError):
     """mesh2d 流水线失败 — 调用方应继续走程序化蛋兜底。"""
 
 
+# 后台提交任务的强引用集合 + 在飞 model_id 集合（后者供 service 侧识别重启遗留的僵尸 generating 行）
+_PIPELINE_TASKS: set[asyncio.Task[None]] = set()
+_ACTIVE_MODEL_IDS: set[int] = set()
+
+
+def active_model_ids() -> frozenset[int]:
+    return frozenset(_ACTIVE_MODEL_IDS)
+
+
 def _safe_load_avatar_bytes(url: str) -> bytes:
     data_uri = load_avatar_bytes_as_data_uri(url)
 
@@ -42,7 +50,6 @@ def _safe_load_avatar_bytes(url: str) -> bytes:
 
 
 async def _run_pipeline_core(
-    db: AsyncSession | None,
     user_id: int,
     fullbody_url: str,
     *,
@@ -54,7 +61,11 @@ async def _run_pipeline_core(
         "ascii",
     )
 
-    layers = await detect_regions(db, user_id, data_uri)
+    # 视觉链在短会话内预解析，两段 LLM 调用期间不持有连接（ARCH §短会话纪律）
+    async with SESSION_LOCAL() as db:
+        chain = await resolve_vision_chain(db, user_id)
+
+    layers = await detect_regions(chain, user_id, data_uri)
 
     if not layers:
         raise Mesh2DPipelineError("vision LLM region detection returned empty result")
@@ -72,7 +83,7 @@ async def _run_pipeline_core(
 
     extracted = fill_occlusion(extracted)
 
-    kp_raw = await estimate_pose(db, user_id, data_uri, layer_centers=centers)
+    kp_raw = await estimate_pose(chain, user_id, data_uri, layer_centers=centers)
     kp = sanitize_keypoints(kp_raw, layer_centers=centers)
 
     bones = build_bones(kp, extracted, canvas_w=canvas[0], canvas_h=canvas[1])
@@ -95,19 +106,21 @@ async def _run_pipeline_core(
     return manifest_json, layer_entries
 
 
-async def run_mesh2d_pipeline(
-    db: AsyncSession,
+def run_mesh2d_pipeline(
     *,
     user_id: int,
     model_id: int,
     fullbody_url: str,
     priority: str = "high",
-) -> None:
-    """异步执行流水线；状态写入 Mesh2DModel 表，由 WS 事件驱动前端刷新。"""
+) -> asyncio.Task[None]:
+    """提交异步流水线并立即返回；状态写入 Mesh2DModel 表，由 WS 事件驱动前端刷新。
+
+    队列 worker 内各阶段自开短会话——请求路径毫秒级返回（202 语义），不与
+    视觉 LLM 往返共享请求会话。"""
     queue = get_default_queue()
 
-    async def _task() -> None:
-        model = (
+    async def _fetch_model(db) -> Mesh2DModel | None:
+        return (
             await db.execute(
                 select(Mesh2DModel).where(
                     Mesh2DModel.id == model_id,
@@ -116,21 +129,24 @@ async def run_mesh2d_pipeline(
             )
         ).scalar_one_or_none()
 
-        if model is None:
-            logger.warning(
-                "mesh2d model row vanished before pipeline run",
-                extra={"model_id": model_id, "user_id": user_id},
-            )
-            return
+    async def _task() -> None:
+        async with SESSION_LOCAL() as db:
+            model = await _fetch_model(db)
 
-        model.status = "generating"
-        model.error = None
-        await db.commit()
+            if model is None:
+                logger.warning(
+                    "mesh2d model row vanished before pipeline run",
+                    extra={"model_id": model_id, "user_id": user_id},
+                )
+                return
+
+            model.status = "generating"
+            model.error = None
+            await db.commit()
 
         try:
             normalized_url = _normalize_avatar_url_to_bare(fullbody_url) or fullbody_url
             manifest_json, layer_entries = await _run_pipeline_core(
-                db,
                 user_id,
                 normalized_url,
             )
@@ -139,53 +155,81 @@ async def run_mesh2d_pipeline(
                 "mesh2d pipeline failed",
                 extra={"user_id": user_id, "model_id": model_id, "error": str(exc)},
             )
-            await db.refresh(model)
-            model.status = "failed"
-            model.error = str(exc)
-            await db.commit()
-            await _emit_mesh2d_failed(db, user_id, model_id, reason=str(exc))
+            await _mark_failed(user_id=user_id, model_id=model_id, error=str(exc), reason=str(exc))
             return
         except Exception as exc:
             logger.exception(
                 "mesh2d pipeline crashed",
                 extra={"user_id": user_id, "model_id": model_id},
             )
-            await db.refresh(model)
-            model.status = "failed"
-            model.error = f"unexpected: {exc!s}"
-            await db.commit()
-            await _emit_mesh2d_failed(
-                db,
-                user_id,
-                model_id,
-                reason=model.error or "unknown",
-            )
+            error = f"unexpected: {exc!s}"
+            await _mark_failed(user_id=user_id, model_id=model_id, error=error, reason=error)
             return
 
-        await db.refresh(model)
-        model.status = "succeeded"
-        model.manifest_json = manifest_json
-        model.content_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
-        model.layers_json = json.dumps(layer_entries, ensure_ascii=False)
+        async with SESSION_LOCAL() as db:
+            model = await _fetch_model(db)
+            if model is None:
+                logger.warning("mesh2d model row vanished after pipeline run", extra={"model_id": model_id, "user_id": user_id})
+                return
+            model.status = "succeeded"
+            model.manifest_json = manifest_json
+            model.content_hash = hashlib.sha256(manifest_json.encode("utf-8")).hexdigest()
+            model.layers_json = json.dumps(layer_entries, ensure_ascii=False)
 
-        manifest_path = asset_store.save_companion_asset(
-            manifest_json.encode("utf-8"),
-            user_id=user_id,
-            label=f"mesh2d_manifest_{model_id}",
-            ext="json",
-        )
-        model.manifest_path = manifest_path
-        model.active = True
-        await db.commit()
+            manifest_path = asset_store.save_companion_asset(
+                manifest_json.encode("utf-8"),
+                user_id=user_id,
+                label=f"mesh2d_manifest_{model_id}",
+                ext="json",
+            )
+            model.manifest_path = manifest_path
+            model.active = True
+            await db.commit()
 
         manifest_url = asset_store.signed_companion_asset_url(manifest_path)
-        await _emit_mesh2d_ready(db, user_id, model_id, manifest_url, layer_entries)
+        await _emit_mesh2d_ready(user_id, model_id, manifest_url, layer_entries)
 
-    await queue.submit(f"mesh2d:{user_id}", _task, priority=priority)
+    async def _submit() -> None:
+        _ACTIVE_MODEL_IDS.add(model_id)
+        try:
+            await queue.submit(f"mesh2d:{user_id}", _task, priority=priority)
+        finally:
+            _ACTIVE_MODEL_IDS.discard(model_id)
+
+    wrapper = asyncio.create_task(_submit())
+
+    def _done(task: asyncio.Task[None]) -> None:
+        _PIPELINE_TASKS.discard(task)
+        if not task.cancelled() and task.exception() is not None:
+            logger.error("mesh2d pipeline submission failed", exc_info=task.exception())
+
+    _PIPELINE_TASKS.add(wrapper)
+    wrapper.add_done_callback(_done)
+    return wrapper
+
+
+async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) -> None:
+    """失败态落库 + 事件下发；自身异常只记日志（失败路径不能再抛）。"""
+    try:
+        async with SESSION_LOCAL() as db:
+            model = (
+                await db.execute(
+                    select(Mesh2DModel).where(
+                        Mesh2DModel.id == model_id,
+                        Mesh2DModel.user_id == user_id,
+                    ),
+                )
+            ).scalar_one_or_none()
+            if model is not None:
+                model.status = "failed"
+                model.error = error
+                await db.commit()
+        await _emit_mesh2d_failed(user_id, model_id, reason=reason)
+    except Exception:
+        logger.warning("mesh2d failed-state persistence error", exc_info=True)
 
 
 async def _emit_mesh2d_ready(
-    db: AsyncSession,
     user_id: int,
     model_id: int,
     manifest_url: str | None,
@@ -198,20 +242,20 @@ async def _emit_mesh2d_ready(
             "manifest_url": manifest_url,
             "layers": layer_entries,
         }
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="companion.mesh2d.ready",
-                payload=json.dumps(payload, ensure_ascii=False),
-            ),
-        )
-        await db.commit()
+        async with SESSION_LOCAL() as db:
+            db.add(
+                WSEvent(
+                    user_id=user_id,
+                    event_type="companion.mesh2d.ready",
+                    payload=json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.mesh2d.ready", exc_info=True)
 
 
 async def _emit_mesh2d_failed(
-    db: AsyncSession,
     user_id: int,
     model_id: int,
     *,
@@ -219,13 +263,14 @@ async def _emit_mesh2d_failed(
 ) -> None:
     try:
         payload = {"model_id": model_id, "reason": reason}
-        db.add(
-            WSEvent(
-                user_id=user_id,
-                event_type="companion.mesh2d.failed",
-                payload=json.dumps(payload, ensure_ascii=False),
-            ),
-        )
-        await db.commit()
+        async with SESSION_LOCAL() as db:
+            db.add(
+                WSEvent(
+                    user_id=user_id,
+                    event_type="companion.mesh2d.failed",
+                    payload=json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            await db.commit()
     except Exception:
         logger.warning("Failed to emit companion.mesh2d.failed", exc_info=True)

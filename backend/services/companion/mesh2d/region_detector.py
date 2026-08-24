@@ -3,9 +3,8 @@
 from dataclasses import dataclass
 
 from components import get_logger, safe_json_loads
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.llm import execute_with_fallback, resolve_vision_chain
+from services.llm import ProviderConfig, build_responses_kwargs, call_with_retry, execute_with_fallback
 
 from .prompts import REGION_DETECTION_SYSTEM_PROMPT, REGION_DETECTION_USER_TEMPLATE
 
@@ -118,14 +117,36 @@ def has_minimum_layers(layers: list[DetectedLayer]) -> bool:
     return all(req in names for req in _REQUIRED_LAYER_NAMES)
 
 
+async def call_vision_llm(
+    chain: list[ProviderConfig],
+    user_id: int | None,
+    system_prompt: str,
+    user_text: str,
+    data_uri: str,
+) -> str:
+    """沿视觉链做一次带图往返；db=None + 预解析链保证 LLM 调用期间不持有会话。"""
+
+    async def _call(provider):
+        client = provider.raw_client()
+        if client is None:
+            raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
+        request = build_responses_kwargs(
+            model=provider.config.model,
+            instructions=system_prompt,
+            input_items=[{"role": "user", "content": [{"type": "input_text", "text": user_text}, {"type": "input_image", "image_url": data_uri}]}],
+        )
+        response = await call_with_retry(client, **request)
+        return response.output_text
+
+    return await execute_with_fallback(None, user_id, "llm", _call)
+
+
 async def detect_regions(
-    db: AsyncSession | None,
+    chain: list[ProviderConfig],
     user_id: int | None,
     data_uri: str,
 ) -> list[DetectedLayer]:
     """调用视觉 LLM 识别 6 部件 bbox；视觉链为空时直接返回空列表。"""
-    chain = await resolve_vision_chain(db, user_id)
-
     if not chain:
         logger.warning(
             "vision LLM chain is empty; region detection skipped",
@@ -134,16 +155,9 @@ async def detect_regions(
         return []
 
     system_prompt = REGION_DETECTION_SYSTEM_PROMPT
-    user_payload = REGION_DETECTION_USER_TEMPLATE.format(data_uri=data_uri)
 
     try:
-        raw = await execute_with_fallback(
-            chain,
-            system_prompt=system_prompt,
-            user_payload=user_payload,
-            db=db,
-            user_id=user_id,
-        )
+        raw = await call_vision_llm(chain, user_id, system_prompt, REGION_DETECTION_USER_TEMPLATE, data_uri)
     except Exception as exc:
         logger.warning(
             "vision LLM region detection failed",
