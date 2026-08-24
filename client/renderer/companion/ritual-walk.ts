@@ -1,6 +1,6 @@
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { setSpriteState } from '@/companion/companion-store'
+import { $spriteAction, setSpriteState } from '@/companion/companion-store'
 import { computePerchPosition, moveTo, reevaluateSpatialDecision } from '@/companion/spatial'
 import { sleep } from '@/shared/lib/utils'
 
@@ -66,6 +66,9 @@ export async function performRitualWalk<T>(
 
   await new Promise<void>(resolve => moveTo(perch, 'fly', resolve))
 
+  // DESIGN §3.6：抵达后播放专属「点击/触碰」肢体动作，
+  // 与通用 interacting 状态区别开来——动作优先于状态动画。
+  $spriteAction.set('click')
   setSpriteState('interacting', { durationMs: 1500 })
 
   const targetCenterX = Math.round(geom.x + geom.w / 2)
@@ -78,6 +81,11 @@ export async function performRitualWalk<T>(
   await sleep(400)
 
   const result = await execute()
+
+  // 执行结束后清除 click action，让后续状态机正常推进
+  if ($spriteAction.get() === 'click') {
+    $spriteAction.set(null)
+  }
 
   await sleep(800)
   reevaluateSpatialDecision()

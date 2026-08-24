@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $glbLoadFailed, $modelInfo, hydrateExpressions, hydrateModel } from '@/companion/3d/model-store'
 import { startActivityMonitor } from '@/companion/activity'
@@ -17,6 +17,7 @@ import { useWindowMouseCapture } from '@/companion/interactive-regions'
 import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
+import { $preferredCallMode } from '@/companion/prefs'
 import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -27,6 +28,7 @@ import { strings } from '@/shared/strings'
 import { ActivationOverlay } from './activation/activation-overlay'
 import { ChatDock } from './chat-dock'
 import { DeveloperOverlay } from './developer-overlay'
+import { EggStage } from './egg-stage'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
 import { MemoryBrowser } from './memory-browser'
@@ -82,12 +84,22 @@ export function CompanionRoot(): React.JSX.Element {
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
-  const openDock = (kind: 'chat' | 'memory' | 'settings' | 'voice'): void => {
+  // 通过全局 window.__spiritagentOpenDock 暴露，sprite-stage 等深层组件也能复用同一不变量。
+  const openDock = useCallback((kind: 'chat' | 'memory' | 'settings' | 'voice'): void => {
     setChatOpen(kind === 'chat')
     setVoiceCallOpen(kind === 'voice')
     setSettingsOpen(kind === 'settings')
     setMemoryOpen(kind === 'memory')
-  }
+  }, [])
+
+  useEffect(() => {
+    const w = window as unknown as { __spiritagentOpenDock?: typeof openDock }
+    w.__spiritagentOpenDock = openDock
+
+    return () => {
+      delete (window as unknown as { __spiritagentOpenDock?: typeof openDock }).__spiritagentOpenDock
+    }
+  }, [openDock])
 
   const validityCheckedRef = useRef(false)
   // 标记一次点击精灵后触发了登录流程的「点击」——用于区分全新登录
@@ -176,7 +188,8 @@ export function CompanionRoot(): React.JSX.Element {
   // 2) 不可用时回退到 requestGateway('onboarding.get_state')。
   // 3) 仅在 state?.complete === true 时把 lifecycle 设为 'ready'。
   //    不要回退到 persona.is_complete（角色题保存后它会在 onboarding 中途变成 true）。
-  // 4) 若 state?.complete 不是 true，则 lifecycle='onboarding' 并 setOnboardingOpen(true)。
+  // 4) 若 state?.complete 不是 true，则 lifecycle='onboarding'，但 onboardingOpen 保持 false：
+  //    让桌面蛋先常驻（DESIGN §4「蛋破碎后开始对话」），由用户戳击蛋才进入向导。
   useEffect(() => {
     if (auth.kind !== 'authenticated') {
       setCompanionLifecycle('unauthed')
@@ -204,7 +217,9 @@ export function CompanionRoot(): React.JSX.Element {
 
       const onboardingDone = state?.complete === true
       setCompanionLifecycle(onboardingDone ? 'ready' : 'onboarding')
-      setOnboardingOpen(!onboardingDone)
+      // onboardingOpen 仅在用户主动戳击蛋 / 重新进入向导时才打开；
+      // 保持 false 让 eggVisible 走通桌面蛋分支。
+      setOnboardingOpen(false)
 
       if (onboardingDone) {
         void hydratePortrait()
@@ -221,6 +236,31 @@ export function CompanionRoot(): React.JSX.Element {
 
   const authed = auth.kind === 'authenticated'
   const showOnboarding = authed && lifecycle === 'onboarding' && onboardingOpen
+  const eggVisible = authed && lifecycle === 'onboarding' && !onboardingOpen
+
+  // 渲染级联编排器（DESIGN §1.2「永不空白」）——嵌在组件体内，因依赖多个组件内 useStore 变量；
+  // 抽到 useMemo 避免每次渲染重建闭包。
+  const renderLayer = useMemo<'mesh2d' | 'companion3d'>(() => {
+    const mesh2dReady = mesh2d.status === 'succeeded' && Boolean(mesh2d.manifestUrl)
+    const modelFailed = glbLoadFailed || modelInfo.status === 'failed'
+    const modelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
+
+    if (renderMode === '2d' && mesh2dReady) {
+      return 'mesh2d'
+    }
+
+    if (modelReady) {
+      return 'companion3d'
+    }
+
+    // 3D 偏好但失败 / 尚未就绪时，2D 已就绪就降级到 2D
+    if (mesh2dReady) {
+      return 'mesh2d'
+    }
+
+    // 双方都未就绪：选 3D 路径，CharacterController 内部会走程序化蛋兜底
+    return 'companion3d'
+  }, [renderMode, mesh2d.status, mesh2d.manifestUrl, glbLoadFailed, modelInfo.status])
 
   useEffect(() => {
     if (lifecycle !== 'ready') {
@@ -311,6 +351,11 @@ export function CompanionRoot(): React.JSX.Element {
   const onOnboardingComplete = () => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
+
+    // DESIGN §6.1：用户偏好主交互模式为语音通话时，进入桌面后自动打开通话面板。
+    if ($preferredCallMode.get() === 'voice') {
+      setVoiceCallOpen(true)
+    }
   }
 
   return (
@@ -325,18 +370,10 @@ export function CompanionRoot(): React.JSX.Element {
         onDoubleTap={onDoubleTap}
         onTap={onTap}
       >
-        {showOnboarding ? null : (
-          <Suspense fallback={null}>
-            {renderMode === '2d' ||
-            (renderMode === '3d' &&
-              (glbLoadFailed || modelInfo.status === 'failed') &&
-              mesh2d.status === 'succeeded' &&
-              Boolean(mesh2d.manifestUrl)) ? (
-              <Mesh2DCanvas />
-            ) : (
-              <Companion3D />
-            )}
-          </Suspense>
+        {eggVisible ? (
+          <EggStage onTap={() => setOnboardingOpen(true)} />
+        ) : showOnboarding ? null : (
+          <Suspense fallback={null}>{renderLayer === 'mesh2d' ? <Mesh2DCanvas /> : <Companion3D />}</Suspense>
         )}
       </SpriteStage>
       <SpriteContextMenu

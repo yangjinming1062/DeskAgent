@@ -564,11 +564,17 @@ export class CharacterController {
       }
     }
 
-    // 每帧重置变换矩阵
+    // 每帧重置变换矩阵——所有 case 共用的「基线」重置必须在 switch 之前，
+    // 防止 disconnected 写入的 body.rotation.x / mouth.scale.x 在切到 idle/speaking 时残留。
     this.proc.group.position.y = 0
     this.proc.body.scale.set(0.82, 1.08, 0.82)
+    this.proc.body.rotation.x = 0
     this.proc.body.rotation.z = 0
     this.proc.mouth.scale.y = 1
+    this.proc.mouth.scale.x = 1
+
+    // 复用同一个 baseY 写眼睛基线；具体状态再覆盖。
+    const baseEyeY = 1
 
     switch (this.currentState) {
       case 'speaking': {
@@ -597,16 +603,26 @@ export class CharacterController {
       }
 
       case 'disconnected': {
+        // DESIGN §6.5「云端（脑）断连」：打哈欠 + 歪头发呆 + 犯困眯眼。
         this.proc.body.rotation.z = -0.12
+        this.proc.body.rotation.x = Math.sin(t * 0.6) * 0.06
+        // 张嘴哈欠（5s 周期，前 1.5s 张开到最大，后 3.5s 缓慢闭合）
+        const yawnPhase = (t * 0.2) % 1
+        const yawnAmount = yawnPhase < 0.3 ? yawnPhase / 0.3 : Math.max(0, 1 - (yawnPhase - 0.3) / 0.7)
+        this.proc.mouth.scale.y = 1 + yawnAmount * 4
+        this.proc.mouth.scale.x = 1 + yawnAmount * 0.5
+        // 犯困：眼睛基线压到 0.4，叠加慢周期呼吸；return 跳过下面 blink 重写
+        this.proc.leftEye.scale.y = 0.4 + Math.sin(t * 0.3) * 0.1
+        this.proc.rightEye.scale.y = this.proc.leftEye.scale.y
 
-        break
+        return
       }
     }
 
-    // 程序化眨眼——某些 case 已提前返回
+    // 程序化眨眼——disconnected 已在 case 内 return 跳过本段。
     const blinkCycle = t % (3 + (this.currentState.charCodeAt(0) % 3))
     const blinkWindow = blinkCycle > 2.8 && blinkCycle < 2.95
-    const eyeScaleY = blinkWindow ? 0.1 : 1
+    const eyeScaleY = blinkWindow ? 0.1 : baseEyeY
     this.proc.leftEye.scale.y = eyeScaleY
     this.proc.rightEye.scale.y = eyeScaleY
   }

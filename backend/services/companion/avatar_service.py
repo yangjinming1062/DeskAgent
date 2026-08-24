@@ -409,6 +409,11 @@ async def select_avatar(db: AsyncSession, user_id: int, avatar_id: int) -> Avata
     await db.refresh(asset)
     db.expunge(asset)
     _re_sign_avatar_url(asset)
+    # DESIGN §1.1：头像确认后批量后台预热 21 个内置基础表情，
+    # 避免首次对话某情绪时还要等 10-20s 生成。已有缓存的会被内部命中跳过。
+    from .expression_avatar_service import prewarm_builtin_expressions
+
+    prewarm_builtin_expressions(user_id)
     return asset
 
 

@@ -65,9 +65,12 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
     fields: [{ key: 'name', label: '角色名', max: 64, placeholder: '给你起个名字' }]
   },
   {
-    title: '关系 与 性格',
+    title: '关系 / 角色定位',
+    fields: [{ key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS }]
+  },
+  {
+    title: '性格 与 说话风格',
     fields: [
-      { key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS },
       { key: 'personality', label: '性格', presets: PERSONALITY_PRESETS },
       {
         key: 'speakingStyle',
@@ -78,11 +81,16 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
     ]
   },
   {
-    title: '让伙伴更了解你',
+    title: '让伙伴更了解你：基础',
     fields: [
       { key: 'userCallName', label: '希望被怎么称呼' },
       { key: 'userGender', label: '你的性别' },
-      { key: 'userAgeBucket', label: '年龄段' },
+      { key: 'userAgeBucket', label: '年龄段' }
+    ]
+  },
+  {
+    title: '让伙伴更了解你：爱好 & 补充',
+    fields: [
       { key: 'userHobbies', label: '爱好' },
       { key: 'userFreeform', label: '还有什么想告诉我', multiline: true }
     ]

@@ -11,7 +11,9 @@ import {
   $chatStreamingTick,
   $chatTurnInFlight,
   $lastAssistantStreaming,
+  $pendingExternalAttachment,
   cancelPendingFlush,
+  clearExternalAttachment,
   clearPendingPrompts,
   finalizeAssistantMessage,
   pushPendingPrompt,
@@ -162,6 +164,39 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   useEffect(() => () => clearExpressionAvatar(), [])
 
+  // 监听从 SpriteStage 投喂的外部文件（DESIGN §6.3「文件投喂」）：
+  // 把首个图像路径塞进 pendingImage，其他路径暂存到 ref 留给 send() 一并提交。
+  // 注意：useStore 会立即同步当前值；mount 之后丢进 atom 的 payload 也会触发再次渲染，
+  // 所以不需要再单独读 .get() 兜底。
+  const externalPathsRef = useRef<string[]>([])
+  const pendingExternal = useStore($pendingExternalAttachment)
+
+  useEffect(() => {
+    if (!pendingExternal) {
+      return
+    }
+
+    // 同步支持 HEIC/HEIF（iPhone 截图）/TIFF/AVIF/JXL（next-gen）——单次 .test 而不是两遍 filter。
+    const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif|jxl)$/i
+    const imagePaths: string[] = []
+    const otherPaths: string[] = []
+
+    for (const p of pendingExternal.paths) {
+      ;(IMAGE_EXT.test(p) ? imagePaths : otherPaths).push(p)
+    }
+
+    if (imagePaths.length > 0) {
+      setPendingImage(imagePaths[0] ?? null)
+      externalPathsRef.current = [...imagePaths.slice(1), ...otherPaths]
+    } else {
+      const names = otherPaths.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
+      setText(t => (t ? `${t}\n${names}` : names))
+      externalPathsRef.current = []
+    }
+
+    clearExternalAttachment()
+  }, [pendingExternal])
+
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [list])
@@ -251,6 +286,16 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           attachments.push(pendingImage)
         }
       }
+
+      // 同时附上 SpriteStage 投喂的多余文件路径（非图像文件作为 reference，保留文本里说明）
+      const extra = externalPathsRef.current
+
+      if (extra.length > 0) {
+        const names = extra.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
+        fullText = fullText ? `${fullText}\n附件：${names}` : `附件：${names}`
+      }
+
+      externalPathsRef.current = []
 
       pushUserMessage(fullText || '（图片）', attachments.length ? attachments : undefined)
       setText('')

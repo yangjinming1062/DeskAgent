@@ -42,10 +42,28 @@ export const llmReactionsPref = makeBooleanPref('da.companion.llmReactions', tru
 export const llmAffectPref = makeBooleanPref('da.companion.llmAffect', true)
 export const llmAutonomyPref = makeBooleanPref('da.companion.llmAutonomy', true)
 
+// 语音通话模式下双向字幕显示开关（DESIGN §6.1「双向字幕可切换」）。
+export const subtitlesPref = makeBooleanPref('da.companion.subtitles', true)
+
+// 主陪伴交互模式（DESIGN §5 / §6.1 onboarding 持久偏好）。
+// 'im' = IM 气泡对话（默认）；'voice' = 进入即语音通话。
+export type PreferredCallMode = 'im' | 'voice'
+
+export const $preferredCallMode = atom<PreferredCallMode>(
+  (storedString('da.companion.preferredCallMode') as PreferredCallMode) ?? 'im'
+)
+
+export function setPreferredCallMode(mode: PreferredCallMode): void {
+  $preferredCallMode.set(mode)
+  persistString('da.companion.preferredCallMode', mode)
+}
+
 export const $llmReactions = llmReactionsPref.$atom
 export const $llmAffect = llmAffectPref.$atom
 export const $llmAutonomy = llmAutonomyPref.$atom
+export const $subtitles = subtitlesPref.$atom
 
 export const setLlmReactions = llmReactionsPref.set
 export const setLlmAffect = llmAffectPref.set
 export const setLlmAutonomy = llmAutonomyPref.set
+export const setSubtitles = subtitlesPref.set

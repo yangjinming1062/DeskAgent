@@ -35,6 +35,23 @@ export const $chatOpen = atom(false)
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
 export const $proactiveBubble = atom<string | null>(null)
 
+// 外部投喂（DESIGN §6.3「文件投喂」）——SpriteStage 拖拽文件到精灵本体时，
+// 把文件路径推到此处。ChatDock 订阅并把首个图像文件塞入附件占位。
+export interface PendingAttachment {
+  paths: string[]
+  nonce: number
+}
+
+export const $pendingExternalAttachment = atom<PendingAttachment | null>(null)
+
+export function pushExternalAttachment(paths: string[]): void {
+  $pendingExternalAttachment.set({ paths, nonce: Date.now() })
+}
+
+export function clearExternalAttachment(): void {
+  $pendingExternalAttachment.set(null)
+}
+
 let idCounter = 0
 const nextId = () => `m${++idCounter}`
 

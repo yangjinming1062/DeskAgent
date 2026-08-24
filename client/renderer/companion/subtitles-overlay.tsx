@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 
 import { $chatMessageBodies, $chatMessageList } from '@/companion/chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from '@/companion/chat-store'
+import { $subtitles } from '@/companion/prefs'
 
 interface SubtitlesOverlayProps {
   visible?: boolean
@@ -38,10 +39,12 @@ function SubtitlesOverlayInner({ lastItem }: { lastItem: ChatMessageListItem }):
 }
 
 export function SubtitlesOverlay({ visible = true }: SubtitlesOverlayProps): React.JSX.Element | null {
+  // DESIGN §6.1「双向字幕可切换」：尊重全局持久化偏好 $subtitles。
+  const userPref = useStore($subtitles)
   const list = useStore($chatMessageList)
   const lastItem = list[list.length - 1]
 
-  if (!visible || !lastItem) {
+  if (!visible || !userPref || !lastItem) {
     return null
   }
 

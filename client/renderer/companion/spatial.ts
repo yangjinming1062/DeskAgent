@@ -10,6 +10,7 @@ import {
   $spriteState,
   setSpriteState
 } from '@/companion/companion-store'
+import { $renderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
@@ -89,6 +90,29 @@ export function getHomePosition(): { x: number; y: number } {
   return {
     x: Math.max(REST_MARGIN, window.innerWidth - w - REST_MARGIN),
     y: Math.max(REST_MARGIN, window.innerHeight - h - REST_MARGIN)
+  }
+}
+
+// 不变量（DESIGN §3.7）：精灵面部始终在屏内。
+// 面部约占精灵上 30% 区域；强制约束 sprite 顶部 y ≥ 0 且 face 底 y ≤ vh，
+// 保证 face 整段都落在屏幕内——sprite 主体可以部分越过底部（向下延伸 h-faceH），
+// 顶/左/右仍受 REST_MARGIN 兜底。贴边吸附（peeking）仅水平方向处理。
+export const FACE_TOP_RATIO = 0.3
+
+export function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
+  if (typeof window === 'undefined') {
+    return pos
+  }
+
+  const w = getBaseSpriteWidth()
+  const h = getBaseSpriteHeight()
+  const faceH = h * FACE_TOP_RATIO
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+
+  return {
+    x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
+    y: Math.max(0, Math.min(vh - faceH, pos.y))
   }
 }
 
@@ -404,6 +428,11 @@ function updateSpatialDecision(): void {
   }
 
   if (tier === 'proactive' && state === 'idle') {
+    // 2D 静态模式不漫游（mesh2d 缺 3D 模型的连续转向与步态，漫游体验突兀）。
+    if ($renderMode.get() === '2d') {
+      return
+    }
+
     if ($spatialLocale.get() !== 'roam') {
       startRoam()
     }
@@ -637,7 +666,8 @@ export function startDrag(): void {
 }
 
 export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
-  $spatialPos.set(pos)
+  // DESIGN §3.7：face 始终在屏内。拖拽过程中也必须遵守，不能等 endDragAt 才修正。
+  $spatialPos.set(clampPosToViewport(pos))
 
   if (vel) {
     $dragVelocity.set(vel)
@@ -673,17 +703,20 @@ export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy:
     return
   }
 
+  // 3. 落地静止：把坐标收紧到 viewport 内，并强制 face 不被裁剪（DESIGN §3.7）
+  const safe = clampPosToViewport(pos)
+
   cancelPhysics()
   $isEdgeDocked.set(false)
   $edgeDockSide.set('none')
-  $spatialPos.set(pos)
-  $homePosition.set(pos)
+  $spatialPos.set(safe)
+  $homePosition.set(safe)
   $spatialLocomotion.set('still')
   $spatialLocale.set('home')
   $dragVelocity.set({ vx: 0, vy: 0 })
   $clipOverride.set('drag_end')
   setSpriteState('interacting', { durationMs: 500 })
-  void window.spiritagent.sprite.setPosition(pos)
+  void window.spiritagent.sprite.setPosition(safe)
 }
 
 export function initSpatial(): () => void {

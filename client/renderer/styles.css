@@ -1024,3 +1024,32 @@ canvas {
   width: 100% !important;
   height: 100% !important;
 }
+
+/* ── Companion-specific animations ───────────────────────────────────────────
+   EggStage / 2D 蛋兜底 / 语音波形 共用的关键帧。
+   安装器组件已经在自己的 tailwind 配置里有同名类（animate-egg-pulse 等），
+   桌面这些是独立实现的镜像，避免跨包共享。 */
+@keyframes egg-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
+@keyframes egg-breath {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.025) translateY(-2px); }
+}
+
+@keyframes crack-shimmer {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+}
+
+@keyframes waveform-bounce {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.4); }
+}
+
+.animate-egg-pulse { animation: egg-pulse 3.4s ease-in-out infinite; }
+.animate-egg-breath { animation: egg-breath 3.6s ease-in-out infinite; transform-origin: 160px 170px; }
+.animate-crack-shimmer { animation: crack-shimmer 4s ease-in-out infinite; }
+.animate-waveform-bounce { animation: waveform-bounce 0.9s ease-in-out infinite; transform-origin: center bottom; }

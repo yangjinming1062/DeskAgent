@@ -14,6 +14,7 @@ import {
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { $subtitles, setSubtitles } from '@/companion/prefs'
 import { speak, stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
@@ -28,6 +29,7 @@ interface VoiceCallDockProps {
 const SPEECH_THRESHOLD = 28
 const BARGEIN_THRESHOLD = 38
 const SILENCE_END_MS = 1300
+const WAVE_BARS = 24
 // 在没有任何 message.start 到达时释放 awaiting-reply 锁，使麦克风能再次开启。
 const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
@@ -83,9 +85,15 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const list = useStore($chatMessageList)
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
   const spriteState = useStore($spriteState)
+  const subtitlesVisible = useStore($subtitles)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(0)
+  const [waveform, setWaveform] = useState<number[]>(() => new Array(WAVE_BARS).fill(0))
+  // 在 30ms tick 内复用同一份数组，仅在差异较大或周期性节流时推一次 state，
+  // 避免 33Hz 全树重渲染（30ms cadence 是 VAD 需求，UI 不必同样密）。
+  const waveformRef = useRef<number[]>(new Array(WAVE_BARS).fill(0))
+  const tickCountRef = useRef(0)
   const streamRef = useRef<MediaStream | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const durationSecRef = useRef(0)
@@ -117,10 +125,17 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   useEffect(() => {
     void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
 
+    let unmounted = false
     let ctx: AudioContext | null = null
     navigator.mediaDevices
       ?.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
       .then(stream => {
+        if (unmounted) {
+          stream.getTracks().forEach(track => track.stop())
+
+          return
+        }
+
         streamRef.current = stream
         setMicActive(true)
         setSpriteState('listening')
@@ -219,8 +234,48 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               }
             }
 
+            // 波形采样：从频域分桶抽取 WAVE_BARS 个高度值供 UI 绘制
+            // （DESIGN §6.1「精灵带通话中光环与波形指示」）。
+            // 复用同一个 waveform 数组减少 GC 压力；只有数值变化时才触发 setState。
+            const sampleWaveform = () => {
+              const next = waveformRef.current
+              const step = Math.max(1, Math.floor(dataArray.length / WAVE_BARS))
+              let changed = false
+
+              for (let i = 0; i < WAVE_BARS; i++) {
+                const start = i * step
+                const end = Math.min(dataArray.length, start + step)
+                let sum = 0
+
+                for (let j = start; j < end; j++) {
+                  sum += dataArray[j] ?? 0
+                }
+
+                const v = sum / Math.max(1, end - start)
+
+                if (Math.abs((next[i] ?? 0) - v) > 0.5) {
+                  next[i] = v
+                  changed = true
+                } else if (next[i] === undefined) {
+                  next[i] = v
+                  changed = true
+                }
+              }
+
+              // 每 5 次采样（约 150ms）才推一次 React 状态——保证视觉刷新率足够，
+              // 但减少 33Hz 全树重渲染。
+              tickCountRef.current++
+
+              if (changed && tickCountRef.current % 5 === 0) {
+                setWaveform(next.slice())
+              }
+            }
+
             // 定时器驱动（30ms），避免窗口隐藏 / 遮挡时 requestAnimationFrame 被 Chromium 节流暂停导致语音识别失效。
-            vadIntervalRef.current = setInterval(checkVolume, 30)
+            vadIntervalRef.current = setInterval(() => {
+              checkVolume()
+              sampleWaveform()
+            }, 30)
           }
         } catch {
           /* AudioContext fallback — mic works, VAD disabled */
@@ -321,6 +376,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     }
 
     return () => {
+      unmounted = true
+
       if (vadIntervalRef.current) {
         clearInterval(vadIntervalRef.current)
         vadIntervalRef.current = null
@@ -439,6 +496,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           </div>
         </div>
 
+        <WaveformBars active={micActive} values={waveform} />
+
         {micError ? (
           <p className="text-center text-xs text-amber-300">{micError}</p>
         ) : (
@@ -462,6 +521,20 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         </button>
       </div>
       <SubtitlesOverlay />
+      <div
+        className="fixed bottom-6 right-6 flex items-center gap-2 text-xs text-white/60"
+        style={{ pointerEvents: 'auto' }}
+      >
+        <button
+          aria-label={subtitlesVisible ? '隐藏字幕' : '显示字幕'}
+          aria-pressed={subtitlesVisible}
+          className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white/80 hover:bg-black/60"
+          onClick={() => setSubtitles(!subtitlesVisible)}
+          type="button"
+        >
+          {subtitlesVisible ? '字幕 开' : '字幕 关'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -480,4 +553,37 @@ function spriteLabel(state: string): string {
   }
 
   return '语音通话中…'
+}
+
+// 通话中波形：把 analyser 频域分桶成 24 个高度，跟随实时音量跳动。
+// 即使没有说话时也保留基础呼吸动画（最小高度 4px），传达"在听"的状态。
+function WaveformBars({ values, active }: { values: number[]; active: boolean }): React.JSX.Element {
+  return (
+    <div
+      aria-hidden="true"
+      className="flex h-8 w-full items-center justify-center gap-[3px]"
+      style={{ pointerEvents: 'none' }}
+    >
+      {values.map((v, i) => {
+        const norm = active ? Math.min(1, v / 200) : 0
+        const height = active ? Math.max(4, norm * 32) : 4
+        const intensity = active ? Math.min(1, norm + 0.2) : 0.25
+        const delay = (i % 6) * 60
+
+        return (
+          <span
+            className={active ? 'animate-waveform-bounce' : ''}
+            key={i}
+            style={{
+              width: 3,
+              height,
+              borderRadius: 2,
+              background: `rgba(52, 211, 153, ${intensity})`,
+              animationDelay: `${delay}ms`
+            }}
+          />
+        )
+      })}
+    </div>
+  )
 }

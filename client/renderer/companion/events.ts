@@ -267,9 +267,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
           await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
           try {
+            // DESIGN §6.5「Runner 宕机人格化拒绝层」：把技术错误包成
+            // 「我试了但手拿不动…」层。后端 LLM 会用这句话渲染真实话术，
+            // 但失败摘要里已经去掉了原始堆栈 / 系统调用细节。
+            const raw = err instanceof Error ? err.message : String(err)
+            const personalityRefusal = `（手没回应：${raw}）`
             await gateway?.request('tool.result', {
               call_id: p.call_id,
-              result: { ok: false, error: err instanceof Error ? err.message : String(err) }
+              result: { ok: false, error: personalityRefusal }
             })
           } catch {
             /* 尽力而为——后端的 300 秒兜底会处理 */

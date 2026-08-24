@@ -1,7 +1,8 @@
 import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
-import { $chatOpen } from '@/companion/chat-store'
+import { $chatOpen, pushExternalAttachment } from '@/companion/chat-store'
+import { $spriteAction, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
@@ -40,6 +41,10 @@ interface SpriteStageProps {
 // 12px 是为了避免触控板微抖动被误判为拖拽、把双击吞掉。
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
+// 长按阈值（DESIGN §6.3）：按住未移动 ≥ 500ms 触发独立 long-press 事件，
+// 与拖拽分离。SpriteStage 内长按时由 VFX 层接住，目前只暴露 onLongPress
+// 回调供后续接角色动作（如抱头、撒娇）。
+const LONG_PRESS_MS = 500
 
 // 一旦光标跨到另一块显示器，pointer capture 会持续投递跨视口坐标；
 // 探测主进程的频率最多为此间隔。
@@ -65,7 +70,10 @@ export function SpriteStage({
     lastX: number
     lastY: number
     lastTime: number
+    pressedAt: number
   } | null>(null)
+
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const lastTapRef = useRef(0)
   const pos = useStore($spatialPos)
@@ -187,6 +195,67 @@ export function SpriteStage({
       .catch(() => {})
   }, [])
 
+  // 文件投喂（DESIGN §6.3）：解析真实文件路径并推到 chat-dock。
+  // 抽成独立 async 函数让 onDrop handler 保持同步。
+  const handleDrop = async (fileList: FileList | null | undefined): Promise<void> => {
+    const files = Array.from(fileList ?? [])
+
+    if (files.length === 0) {
+      return
+    }
+
+    // Electron 32+ 移除了 File.path——必须经 webUtils.getPathForFile 拿真实路径。
+    // 浏览器没有 webUtils 时回退到 dataURL（虽然下游路径基于 file://，浏览器几乎不会走到这里）。
+    const webUtils = (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } })
+      .spiritagentWebUtils
+
+    const paths: string[] = []
+
+    for (const f of files) {
+      if (webUtils) {
+        try {
+          const p = webUtils.getPathForFile(f)
+
+          if (p) {
+            paths.push(p)
+
+            continue
+          }
+        } catch {
+          /* 单个文件解析失败不影响其他文件 */
+        }
+      }
+
+      // 主进程未暴露 webUtils（开发态 / 浏览器预览）——读 dataURL 作为退化
+      if (f instanceof Blob) {
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(reader.result as string)
+            reader.onerror = () => reject(reader.error)
+            reader.readAsDataURL(f)
+          })
+
+          paths.push(dataUrl)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
+    if (paths.length === 0) {
+      return
+    }
+
+    emitVfx('heart', { nx: 0.5, ny: 0.25, count: 3 })
+    pushExternalAttachment(paths)
+    // 投喂文件时自动打开聊天面板，让用户看到附件被加入；
+    // 走根组件的 openDock 走 dock 互斥（不能直接 setChatOpen，否则会和
+    // voice 通话面板同时弹出）。
+    const openDock = (window as unknown as { __spiritagentOpenDock?: (k: 'chat') => void }).__spiritagentOpenDock
+    openDock?.('chat')
+  }
+
   const gestureTrackerRef = useRef<Mesh2DGestureTracker | null>(null)
 
   if (!gestureTrackerRef.current) {
@@ -226,9 +295,29 @@ export function SpriteStage({
       moved: false,
       lastX: e.clientX,
       lastY: e.clientY,
-      lastTime: now
+      lastTime: now,
+      pressedAt: now
     }
     cancelMovement()
+
+    // 启动独立 long-press 计时器：与 drag 完全解耦，drag 触发后会清掉。
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+    }
+
+    longPressTimerRef.current = setTimeout(() => {
+      longPressTimerRef.current = null
+      const d = dragRef.current
+
+      if (d && !d.moved) {
+        // 触发时附带 VFX + sprite action：与拖拽的 drag_end 区分。
+        // DESIGN §6.3 长按/拖拽与抛掷：「拖拽始终使用本地预制反馈」——长按是
+        // 用户主动且未移动，可触发专属 sprite action 让其他模块响应。
+        emitVfx('heart', { nx: 0.5, ny: 0.25, count: 2 })
+        $spriteAction.set('long_press')
+        setSpriteState('interacting', { durationMs: 800 })
+      }
+    }, LONG_PRESS_MS)
   }
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
@@ -261,6 +350,12 @@ export function SpriteStage({
       d.moved = true
       startDrag()
       e.currentTarget.setPointerCapture(e.pointerId)
+
+      // drag 一旦开始就放弃 long-press 等待：与拖拽是互斥的两条交互通道。
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current)
+        longPressTimerRef.current = null
+      }
     }
 
     if (d.moved) {
@@ -299,6 +394,11 @@ export function SpriteStage({
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
     if (hidden) {
       return
+    }
+
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current)
+      longPressTimerRef.current = null
     }
 
     gestureTrackerRef.current?.feedPointerUp()
@@ -367,7 +467,7 @@ export function SpriteStage({
         }}
         onDrop={e => {
           e.preventDefault()
-          emitVfx('heart', { nx: 0.5, ny: 0.25, count: 3 })
+          void handleDrop(e.dataTransfer?.files)
         }}
         onPointerCancel={onPointerUp}
         onPointerDown={onPointerDown}

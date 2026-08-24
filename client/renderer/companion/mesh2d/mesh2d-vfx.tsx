@@ -84,6 +84,22 @@ export function emitVfx(type: VfxType, opts: VfxEmitOptions = {}): void {
   wakeTick?.()
 }
 
+// 立刻清除指定类型的所有粒子（用于状态切换 / 重连时强制收回瞬时特效）。
+export function clearVfx(type: VfxType): void {
+  let removed = 0
+
+  for (let i = activeParticles.length - 1; i >= 0; i--) {
+    if (activeParticles[i]!.type === type) {
+      activeParticles.splice(i, 1)
+      removed++
+    }
+  }
+
+  if (removed > 0) {
+    $vfxActiveCount.set(activeParticles.length)
+  }
+}
+
 function renderParticleIcon(p: Particle, elapsed: number): React.JSX.Element {
   switch (p.type) {
     case 'heart':

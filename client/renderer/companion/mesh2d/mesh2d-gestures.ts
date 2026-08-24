@@ -64,7 +64,7 @@ export class Mesh2DGestureTracker {
       const currentDirX = dx > 0 ? 1 : -1
 
       if (this.lastPetDirX !== 0 && currentDirX !== this.lastPetDirX) {
-        if (now - this.lastReversalAt < 600) {
+        if (now - this.lastReversalAt < 500) {
           this.reversalCount++
         } else {
           this.reversalCount = 1

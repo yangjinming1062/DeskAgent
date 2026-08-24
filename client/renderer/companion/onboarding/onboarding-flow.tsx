@@ -58,7 +58,7 @@ import {
   MAX_USER_TEXT,
   type OnboardingAnswers
 } from '../persona'
-import { setCompanionVoiceId } from '../prefs'
+import { setCompanionVoiceId, setPreferredCallMode } from '../prefs'
 import { speakScripted, stopSpeaking } from '../tts'
 import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
@@ -265,6 +265,13 @@ const QUESTIONS: readonly Question[] = [
 // 这些字段的值会驱动 3D 模型，因此用户在确认头像后不能再改。
 // 题面旁边会渲染一个红色 `*`，向导顶部还有 banner 提示用户这一限制。
 const LOCKED_FIELD_KEYS: ReadonlySet<QKey> = new Set(['species', 'character_gender', 'appearance'])
+
+// 锁定字段 → 字段名（DESIGN §5.4 横幅按字段聚焦提示）。
+const LOCKED_FIELD_LABELS: Partial<Record<QKey, string>> = {
+  species: '物种',
+  character_gender: '性别',
+  appearance: '基础外貌'
+}
 
 // 分段边界由 ``voice`` 这道题的位置决定——之前全是角色子阶段，
 // 它本身是声音子阶段，之后都是用户子阶段。对应后端 ONBOARDING_FIELDS 的顺序。
@@ -848,7 +855,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     if (personaOk) {
       try {
-        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 2))
+        // DESIGN §5.3：avatar 生成最多 3 次（1 次初试 + 2 次重试），不暴露技术错误。
+        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 3))
         url = applied.avatar
 
         if (url) {
@@ -1727,6 +1735,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       void submitOnboardingAnswer('voice', vName)
     }
 
+    // DESIGN §6.1：选择语音即落盘主交互模式为 voice，进入桌面后默认打开语音通话面板。
+    setPreferredCallMode('voice')
+
     setPhase('q-user')
     setQIndex(0)
     setInput('')
@@ -1820,7 +1831,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
           {phase === 'q-character' && question && LOCKED_FIELD_KEYS.has(question.key) && (
             <p className="mb-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] leading-relaxed text-amber-200/85">
-              当前字段是形象确认后无法再次更改的重点内容。
+              「{LOCKED_FIELD_LABELS[question.key] ?? '当前字段'}」是形象确认后无法再次更改的重点内容，请仔细选择。
             </p>
           )}
           {(phase === 'q-character' || phase === 'q-user' || (phase === 'voice' && voiceStage === 'describe')) &&
@@ -2022,6 +2033,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         type="button"
                       >
                         重新生成
+                      </button>
+                      <button
+                        className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10"
+                        onClick={() => void pickReferenceImage()}
+                        type="button"
+                      >
+                        自己上传
                       </button>
                     </div>
                     <button

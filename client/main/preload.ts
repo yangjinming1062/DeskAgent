@@ -14,7 +14,13 @@ import {
   type SpiritAgentTitleBarTheme,
   type SpiritAgentWindowState
 } from '@ipc/contracts'
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from 'electron'
+
+// Electron 32+ 移除了 File.path——桌面文件拖拽的真实路径只能经 webUtils.getPathForFile 拿到。
+// 桥接到 window.spiritagentWebUtils 让渲染层在 drop handler 里使用。
+contextBridge.exposeInMainWorld('spiritagentWebUtils', {
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file)
+})
 
 contextBridge.exposeInMainWorld('spiritagent', {
   activate: (payload: DesktopActivatePayload) => ipcRenderer.invoke(IPC.invoke.authActivate, payload),

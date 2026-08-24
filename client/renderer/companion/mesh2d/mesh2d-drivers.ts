@@ -5,7 +5,12 @@
  * - 内部维护四层叠加：Active Action > Locomotion > Idle Variant > Base Micro-motion；
  * - 所有 bone.rotation 单位均为弧度（与 Three.js 一致），写入前由 clampBoneTransform 兜底；
  * - triggerImpulse() 调 createJiggleState 给 hair/skirt/bust 注入 spring-damper 抖动；
- * - 骨骼 transform 红线从 manifest.animations.red_lines 读取（Python 端权威），不硬编码。
+ * - 骨骼 transform 红线从 manifest.animations.red_lines 读取（Python 端权威），不硬编码；
+ * - 交叉淡化（DESIGN §2.2「约 250ms 量级」）：当前帧以 per-bone strength ramp
+ *   （blend_in / blend_out）写入，未采用 3D Mixer 那样的全局 Stage crossfade——
+ *   原因：3D 用 Animator 状态机切 clip；2D 的多 pose 同时叠加在同一个 Skeleton 上，
+ *   全局 crossfade 会把 idle 微动也一起淡掉。per-bone 强度既满足「无硬切」又不破坏
+ *   持续微动层。
  */
 
 import type * as THREE from 'three'
@@ -175,6 +180,15 @@ export class Mesh2DDriver {
     })
   }
 
+  /** 重新应用 idle 权重（persona-retune 等场景）；未命中的 variant 保持当前权重。 */
+  public setIdleWeights(weights: Record<string, number>): void {
+    this.idleWeights = { ...this.idleWeights, ...weights }
+  }
+
+  public getIdleVariants(): readonly string[] {
+    return this.idleVariants
+  }
+
   /** 每帧调用一次；由 Mesh2DCanvas 在 tickMesh2D 之前调。 */
   tick(now: number, dt: number, locomotion: Locomotion): void {
     this.tickAction(now)
@@ -248,6 +262,12 @@ export class Mesh2DDriver {
     }
     // active action 期间暂停 idle 计时器；等待完整生命周期（blend_in + duration + blend_out）+ 500ms buffer
     this.nextIdleSwapAt = now + totalMs + 500
+
+    // 触地挤压（DESIGN §3.3）→ 同步向 hair 与 skirt 注入冲击抖动
+    if (name === 'land_squash') {
+      this.triggerImpulse('skirt', 2.4)
+      this.triggerImpulse('back_hair', 1.8)
+    }
   }
 
   private tickAction(now: number): void {
@@ -388,6 +408,12 @@ export class Mesh2DDriver {
     const elapsedSec = (now - this.locomotionPhaseStart) / 1000
 
     for (const [boneName, formula] of Object.entries(def.bones)) {
+      // active action 期间（DESIGN §2.3）：暂停所有 *_impulse 与 __scale_y_bob 公式的相位叠加，
+      // 避免与动作姿态互相抢占产生抖动。周期骨骼摆动已通过 reserved 集合跳过。
+      if (inActiveAction && (boneName.endsWith('_impulse') || boneName.endsWith('__scale_y_bob'))) {
+        continue
+      }
+
       if (boneName.endsWith('_impulse')) {
         this.tickLocomotionImpulse(now, boneName, formula as LocomotionImpulsePulse)
 

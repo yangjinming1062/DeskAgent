@@ -10,6 +10,7 @@ import {
 } from '@/companion/boot-store'
 import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, setSpriteState } from '@/companion/companion-store'
+import { clearVfx, emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { openMainSession } from '@/companion/session-list-store'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
@@ -224,6 +225,10 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         syncDisturbanceTier(gateway)
         startAutonomyProvision()
 
+        // 断连阶段挂的 sleep_zzz 气泡需要主动清掉，否则即便精灵已经"醒来"
+        // 头顶的 z 字符仍会停留到自然 expiry。
+        clearVfx('sleep_zzz')
+
         // 正常的唤醒后重连不会再次调用 completeDesktopBoot()，
         // 所以这里在再次 open 后把启动进度浮层收掉——否则它会一直挂着。
         // 初次启动时是 no-op。
@@ -285,6 +290,9 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           graceTimer = setTimeout(() => {
             graceTimer = null
             setSpriteState('disconnected')
+            // DESIGN §6.5：犯困/走神 → 挂载 sleep_zzz 气泡；重连后由 onState='open'
+            // 分支的 clearGraceTimer 后面逻辑清理（先发个 wakeUp 再让 3D/2D 自然复位）。
+            emitVfx('sleep_zzz', { nx: 0.5, ny: 0.05 })
           }, graceMs)
         }
 
