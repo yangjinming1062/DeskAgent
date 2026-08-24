@@ -5,8 +5,8 @@
 # 需要时在函数体内 lazy import。
 
 REGION_DETECTION_SYSTEM_PROMPT = (
-    "你是二次元立绘图层识别助手。请分析这张全身立绘图片，识别 6 个核心物理层的精确 bounding box（归一化坐标 0..1，"
-    "x1 y1 为左上角，x2 y2 为右下角）。\n"
+    "你是二次元立绘图层识别助手。请分析这张全身立绘图片，识别 6 个核心物理层与 2 个可选腿部层的精确 bounding box"
+    "（归一化坐标 0..1，x1 y1 为左上角，x2 y2 为右下角）。\n"
     "\n"
     "需要识别的部件：\n"
     "1. back_hair - 后发层（在身体后面，做 parallax + jiggle 物理）\n"
@@ -15,13 +15,15 @@ REGION_DETECTION_SYSTEM_PROMPT = (
     "4. arm_L - 左臂（含手部）\n"
     "5. arm_R - 右臂（含手部）\n"
     "6. front_hair - 前发 / 刘海（在脸部前面，做 jiggle 物理）\n"
+    "7. leg_L - 左腿（可选：若双腿与躯干下摆/裙摆无法干净分离，或被长裙完全遮挡，则省略）\n"
+    "8. leg_R - 右腿（可选：同上）\n"
     "\n"
     "硬性约束：\n"
     "- 不要把 eye_L / eye_R / mouth / brow 拆成独立图层——这些部位留在 head 底图里，由运行时骨骼变形驱动\n"
     "- 不要把 face 单独抠出来——脸部是 head 底图的一部分，避免在 face bbox 内残留发丝或领口\n"
     "- 部件之间应保持自然边界（如 face 与 front_hair 之间），不要让一个 bbox 包含另一个部件的关键像素\n"
     "- bbox 坐标范围必须在 0..1 内，x1 < x2，y1 < y2\n"
-    "- z_order 数值：back_hair=0, body_main=2, clothing=3, arm_L/R=4, front_hair=5\n"
+    "- z_order 数值：back_hair=0, leg_L/R=1, body_main=2, clothing=3, arm_L/R=4, front_hair=5\n"
     "- occluded_by 列出遮挡此部件的其他部件名称；无遮挡则为空数组\n"
     "\n"
     "输出严格的 JSON 格式：\n"
@@ -30,11 +32,11 @@ REGION_DETECTION_SYSTEM_PROMPT = (
 )
 
 
-REGION_DETECTION_USER_TEMPLATE = "请识别这张二次元立绘的 6 个核心物理层 bounding box：\n\n{data_uri}"
+REGION_DETECTION_USER_TEMPLATE = "请识别这张二次元立绘的核心物理层（含可选腿部）bounding box：\n\n{data_uri}"
 
 
 POSE_ESTIMATION_SYSTEM_PROMPT = (
-    "你是二次元立绘姿态分析师。请在这张全身立绘上识别以下 20 个关键点的位置（归一化坐标 0..1）。\n"
+    "你是二次元立绘姿态分析师。请在这张全身立绘上识别以下 22 个关键点的位置（归一化坐标 0..1）。\n"
     "\n"
     "关键点列表（值为 [x, y]，缺失则输出 null）：\n"
     "- nose（鼻尖）\n"
@@ -48,6 +50,8 @@ POSE_ESTIMATION_SYSTEM_PROMPT = (
     "- right_elbow（右肘）\n"
     "- left_wrist（左手腕）\n"
     "- right_wrist（右手腕）\n"
+    "- left_hand（左手掌中心）\n"
+    "- right_hand（右手掌中心）\n"
     "- left_hip（左髋）\n"
     "- right_hip（右髋）\n"
     "- left_knee（左膝）\n"
@@ -64,4 +68,4 @@ POSE_ESTIMATION_SYSTEM_PROMPT = (
 )
 
 
-POSE_ESTIMATION_USER_TEMPLATE = "请估计这张二次元立绘的 20 个关键点坐标：\n\n{data_uri}"
+POSE_ESTIMATION_USER_TEMPLATE = "请估计这张二次元立绘的 22 个关键点坐标：\n\n{data_uri}"

@@ -121,7 +121,7 @@
 
 > 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >
-> 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」，**不会**出现腿部摆动——因为下半身在 body_main.png 内、无法独立旋转。如需移动角色，用 spatial cue / ritual walk 而非 action。
+> 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」；检测出 leg_L/R 腿层的模型额外叠加 hip/knee/ankle 腿部摆动相位（长裙遮挡切不出腿层或旧模型维持躯干复合步态）。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 

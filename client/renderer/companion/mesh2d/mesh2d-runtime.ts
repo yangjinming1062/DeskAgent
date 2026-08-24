@@ -150,24 +150,56 @@ function buildSkinnedMesh(
   const vertexCount = geometry.attributes.position.count
   const indices = new Uint16Array(vertexCount * 4)
   const weights = new Float32Array(vertexCount * 4)
+  const influences = meshDef.bones_influences
+  const boneIndexMap = new Map([...bones.keys()].map((name, i) => [name, i]))
+
+  // 多骨层（arm 跨肩-肘-腕-手、leg 跨髋-膝-踝、body_main 跨躯-颈-头）按顶点到各骨骼
+  // 静止 pivot 的距离平方倒数分配权重；单骨层保持刚性绑定，渲染与旧版逐位一致。
+  // 静止 pivot 沿 parent 链累加相对 position（构建期骨骼无旋转，和即绝对位）。
+  const restPivots = influences.map(inf => {
+    const rest = new THREE.Vector3()
+
+    for (let node: THREE.Object3D | null = bones.get(inf.bone) ?? null; node; node = node.parent) {
+      rest.add(node.position)
+    }
+
+    return { x: rest.x, y: rest.y }
+  })
+
+  const positions = geometry.attributes.position
 
   for (let v = 0; v < vertexCount; v++) {
-    const inf = meshDef.bones_influences[0]
-
-    if (!inf) {
-      indices[v * 4 + 0] = 0
+    if (influences.length <= 1) {
+      const boneIndex = influences[0] ? (boneIndexMap.get(influences[0].bone) ?? 0) : 0
+      indices[v * 4 + 0] = boneIndex
       weights[v * 4 + 0] = 1
 
       continue
     }
 
-    const boneIndex = [...bones.keys()].indexOf(inf.bone)
-    indices[v * 4 + 0] = Math.max(0, boneIndex)
-    weights[v * 4 + 0] = inf.weight
+    const x = positions.getX(v)
+    const y = positions.getY(v)
+    let total = 0
+    const raw: number[] = []
 
-    for (let k = 1; k < 4; k++) {
-      indices[v * 4 + k] = 0
-      weights[v * 4 + k] = 0
+    for (const rest of restPivots) {
+      const w = 1 / ((x - rest.x) ** 2 + (y - rest.y) ** 2 + 1e-6)
+      raw.push(w)
+      total += w
+    }
+
+    for (let k = 0; k < 4; k++) {
+      const inf = influences[k]
+
+      if (!inf) {
+        indices[v * 4 + k] = 0
+        weights[v * 4 + k] = 0
+
+        continue
+      }
+
+      indices[v * 4 + k] = boneIndexMap.get(inf.bone) ?? 0
+      weights[v * 4 + k] = (raw[k] ?? 0) / total
     }
   }
 

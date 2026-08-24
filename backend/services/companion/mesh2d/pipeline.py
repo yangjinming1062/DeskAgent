@@ -77,7 +77,8 @@ async def _run_pipeline_core(
 
     bones = build_bones(kp, extracted, canvas_w=canvas[0], canvas_h=canvas[1])
     meshes = build_meshes(extracted, canvas_w=canvas[0], canvas_h=canvas[1])
-    manifest = build_manifest(bones, meshes, canvas)
+    has_legs = any(layer.name in {"leg_L", "leg_R"} for layer in extracted)
+    manifest = build_manifest(bones, meshes, canvas, has_legs=has_legs)
     manifest_json = manifest.to_json()
 
     layer_entries: list[dict[str, str]] = []

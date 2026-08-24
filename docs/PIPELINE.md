@@ -99,14 +99,14 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 **链拓扑**：
 ```
-fullbody_url → Vision LLM (6 部件 BBox 检测) → CPU 抠图裁切 → 遮挡边缘补全
-             → Vision LLM (19 关键点估计) → 解剖学平滑 → 骨骼与 Mesh 装配 → manifest.json
+fullbody_url → Vision LLM (8 部件 BBox 检测：6 核心 + 2 可选腿) → CPU 抠图裁切 → 遮挡边缘补全
+             → Vision LLM (22 关键点估计) → 解剖学平滑 → 骨骼与 Mesh 装配 → manifest.json
 ```
 
 **产物契约**（`manifest.json` 与部件切片 PNG）：
 - `canvas`: `{"w": 1024, "h": 1366}` 画布基准。
-- `skeleton.bones`: 19 骨骼层级拓扑（root → body_main → neck → head → ...）。
-- `meshes`: 各部件图层定义（包含 `texture`、`geometry_w`、`geometry_h`、`origin: [cx, cy]`、`z_order` 以及 `bones_influences` 权重）。
+- `skeleton.bones`: 25 骨骼层级拓扑（root → body_main → neck → head；shoulder → elbow → wrist → hand 臂链；hip → knee → ankle 腿链）。
+- `meshes`: 各部件图层定义（包含 `texture`、`geometry_w`、`geometry_h`、`origin: [cx, cy]`、`z_order` 以及 `bones_influences` 影响骨集——多骨层由客户端按顶点到各骨骼 pivot 的距离分配权重，单骨层刚性绑定）。
 - `animations`: 包含 `breath`（呼吸振幅与周期）、`blink`（眨眼周期与时长）、`idle_sway`（摇摆幅度）、`jiggle`（发丝/裙摆物理弹簧 k 与阻尼 c）、`red_lines`（骨骼 transform 红线）、`actions`（关键帧 tracks 动作表）、`idle_variants`、`locomotion`。动作 track 形如 `{bone, channel: rotation|scale|position, axis, keys: [{t_ms, v, ease?}]}`；manifest `version` 为权威版本号（当前 3），`$schema` URI 尾号与其一致，客户端 loader 将 v2 静态 pose 表归一化为单关键帧 tracks。
 
 **客户端 2D 运行时兑现**（`client/renderer/companion/mesh2d/mesh2d-runtime.ts`）：

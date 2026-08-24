@@ -26,6 +26,8 @@ _BONE_TOPOLOGY: tuple[tuple[str, str | None], ...] = (
     ("elbow_R", "shoulder_R"),
     ("wrist_L", "elbow_L"),
     ("wrist_R", "elbow_R"),
+    ("hand_L", "wrist_L"),
+    ("hand_R", "wrist_R"),
     ("hip_L", "body_main"),
     ("hip_R", "body_main"),
     ("knee_L", "hip_L"),
@@ -53,12 +55,14 @@ _BONE_DEFAULT_Z: dict[str, int] = {
     "elbow_R": 4,
     "wrist_L": 4,
     "wrist_R": 4,
-    "hip_L": 2,
-    "hip_R": 2,
-    "knee_L": 2,
-    "knee_R": 2,
-    "ankle_L": 2,
-    "ankle_R": 2,
+    "hand_L": 4,
+    "hand_R": 4,
+    "hip_L": 1,
+    "hip_R": 1,
+    "knee_L": 1,
+    "knee_R": 1,
+    "ankle_L": 1,
+    "ankle_R": 1,
     "skirt": 3,
     "bust": 3,
     "root": 0,
@@ -74,6 +78,8 @@ _KP_TO_BONE: dict[str, str] = {
     "right_elbow": "elbow_R",
     "left_wrist": "wrist_L",
     "right_wrist": "wrist_R",
+    "left_hand": "hand_L",
+    "right_hand": "hand_R",
     "left_hip": "hip_L",
     "right_hip": "hip_R",
     "left_knee": "knee_L",
@@ -90,10 +96,35 @@ _KP_TO_BONE: dict[str, str] = {
 _BONE_TO_KP: dict[str, str] = {bone: kp for kp, bone in _KP_TO_BONE.items()}
 
 
-# mesh 层名 → 主绑定骨骼：arm_L/R 部件里的几何没有同名 bone，必须路由到肩部。
-_MESH_BONE_OVERRIDE: dict[str, str] = {
-    "arm_L": "shoulder_L",
-    "arm_R": "shoulder_R",
+# mesh 层名 → 主绑定骨骼：arm_L/R 部件跨肩-肘-腕-手四骨，声明多骨影响集，
+# 客户端按顶点到各骨骼 pivot 的距离分配权重（见 mesh2d-runtime buildSkinnedMesh）。
+_ARM_INFLUENCES: dict[str, list[dict]] = {
+    "arm_L": [
+        {"bone": "shoulder_L", "weight": 0.45},
+        {"bone": "elbow_L", "weight": 0.35},
+        {"bone": "wrist_L", "weight": 0.15},
+        {"bone": "hand_L", "weight": 0.05},
+    ],
+    "arm_R": [
+        {"bone": "shoulder_R", "weight": 0.45},
+        {"bone": "elbow_R", "weight": 0.35},
+        {"bone": "wrist_R", "weight": 0.15},
+        {"bone": "hand_R", "weight": 0.05},
+    ],
+}
+
+# 腿部件跨髋-膝-踝三骨；同上按距离分配。
+_LEG_INFLUENCES: dict[str, list[dict]] = {
+    "leg_L": [
+        {"bone": "hip_L", "weight": 0.4},
+        {"bone": "knee_L", "weight": 0.35},
+        {"bone": "ankle_L", "weight": 0.25},
+    ],
+    "leg_R": [
+        {"bone": "hip_R", "weight": 0.4},
+        {"bone": "knee_R", "weight": 0.35},
+        {"bone": "ankle_R", "weight": 0.25},
+    ],
 }
 
 
@@ -163,6 +194,11 @@ def build_bones(
         elif name == "mouth":
             anchor = kp.get("nose") or kp.get("head") or fallback_center
             pivot = (anchor[0], min(anchor[1] + 0.04, 0.95))
+        elif name in {"hand_L", "hand_R"}:
+            wrist_kp = kp.get("left_wrist" if name == "hand_L" else "right_wrist")
+            hand_kp = kp.get("left_hand" if name == "hand_L" else "right_hand")
+            anchor = hand_kp or wrist_kp or fallback_center
+            pivot = (anchor[0], min(anchor[1] + 0.05, 0.98)) if hand_kp is None else anchor
         else:
             layer_name = (
                 None
@@ -207,8 +243,7 @@ def build_meshes(
             continue
 
         w, h = layer.pixel_size
-        bone = _MESH_BONE_OVERRIDE.get(layer.name, layer.name)
-        influences = [{"bone": bone, "weight": 1.0}]
+        influences = [{"bone": layer.name, "weight": 1.0}]
 
         if layer.name == "body_main":
             influences = [
@@ -225,6 +260,12 @@ def build_meshes(
 
         if layer.name == "back_hair":
             influences = [{"bone": "back_hair", "weight": 1.0}]
+
+        if layer.name in _ARM_INFLUENCES:
+            influences = _ARM_INFLUENCES[layer.name]
+
+        if layer.name in _LEG_INFLUENCES:
+            influences = _LEG_INFLUENCES[layer.name]
 
         cx = (layer.bbox[0] + layer.bbox[2]) / 2 * canvas_w
         cy = (layer.bbox[1] + layer.bbox[3]) / 2 * canvas_h

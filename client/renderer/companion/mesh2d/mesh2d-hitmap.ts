@@ -89,8 +89,10 @@ function buildNormalizedBoxes(manifest: Manifest): NormalizedBBox[] {
     body_main_mesh: 'body',
     arm_L_mesh: 'arm_L',
     arm_R_mesh: 'arm_R',
-    front_hair_mesh: 'front_hair'
-    // 注：clothing mesh 暂不映射到独立 region，归并到 body
+    front_hair_mesh: 'front_hair',
+    leg_L_mesh: 'body',
+    leg_R_mesh: 'body'
+    // 注：clothing / leg mesh 暂不映射到独立 region，归并到 body
   }
 
   for (const mesh of manifest.meshes as MeshDef[]) {

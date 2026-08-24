@@ -1,4 +1,4 @@
-"""视觉 LLM 关键点估计 — 输出 20 个姿态关键点，含解剖学约束平滑。"""
+"""视觉 LLM 关键点估计 — 输出 22 个姿态关键点，含解剖学约束平滑。"""
 
 from components import get_logger, safe_json_loads
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,6 +133,11 @@ def sanitize_keypoints(
         ):
             if fallback_name not in out and layer_name in layer_centers:
                 out[fallback_name] = layer_centers[layer_name]
+
+    # 手部无独立图层可回退：缺失时取手腕下方一掌距离（骨骼 hand pivot 兜底同此规则）。
+    for hand, wrist in (("left_hand", "left_wrist"), ("right_hand", "right_wrist")):
+        if hand not in out and wrist in out:
+            out[hand] = (out[wrist][0], min(out[wrist][1] + 0.05, 0.98))
 
     return out
 

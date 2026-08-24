@@ -1,5 +1,6 @@
 """manifest.json 生成与序列化。"""
 
+import copy
 import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -69,8 +70,8 @@ def _mesh_to_dict(mesh: MeshDef) -> dict[str, Any]:
 #   scale 通道 v 为目标倍率（1 = 静止）；position 通道 v 为像素偏移。
 # - 红线：head.rotation.{x,y,z} ∈ ±0.26 rad (≈15°)，body_main ∈ ±0.30 rad (≈17°)，
 #   wrist/elbow/shoulder ∈ ±π/2 (≈90°)。bone.scale.y 累加 breathing 最大 ≤1.015。
-# - locomotion 不使用 hip/knee/ankle（腿在 body_main.png 内单独旋转无效），
-#   用复合躯干方案：body_main 左右倾斜 + 上下 bob + shoulder_L/R 反向摆动。
+# - locomotion 有两套：无腿层模型沿用复合躯干方案（body_main 左右倾斜 + 上下 bob +
+#   shoulder_L/R 反向摆动）；检测出 leg_L/R 层的模型叠加 hip/knee/ankle 腿部摆动相位。
 # - jump 用单次脉冲（preload_ms + hold_ms + recover_ms），不是周期公式。
 # ---------------------------------------------------------------------------
 
@@ -86,6 +87,15 @@ _BONE_RED_LINES: dict[str, dict[str, float]] = {
     "elbow_R": {"rot_max": 1.57},
     "wrist_L": {"rot_max": 1.57},
     "wrist_R": {"rot_max": 1.57},
+    "hand_L": {"rot_max": 0.35},
+    "hand_R": {"rot_max": 0.35},
+    # 腿部幅度小于手臂：平面蒙皮的均匀顶点分布下大幅摆动伪影明显。
+    "hip_L": {"rot_max": 0.6},
+    "hip_R": {"rot_max": 0.6},
+    "knee_L": {"rot_max": 0.9},
+    "knee_R": {"rot_max": 0.9},
+    "ankle_L": {"rot_max": 0.35},
+    "ankle_R": {"rot_max": 0.35},
 }
 
 
@@ -369,8 +379,8 @@ def _action_to_dict(action: ActionDef) -> dict[str, Any]:
 
 
 # locomotion：周期公式由 driver 按 sin(t) 求值；jump 是单次脉冲。
-# bone 列表只用 body_main / shoulder_L / shoulder_R / skirt / back_hair，
-# 因为 hip/knee/ankle 绑定的部件（body_main.png）旋转不会改变 mesh2d 画面。
+# 基础表只用 body_main / shoulder_L / shoulder_R / skirt / back_hair——无腿层模型的
+# hip/knee/ankle 无蒙皮影响，旋转不改变画面；有腿层时由 _locomotion_with_legs 叠加腿部相位。
 DEFAULT_LOCOMOTION: dict[str, dict[str, Any]] = {
     "still": {"bones": {}},  # 占位：不应用任何相位
     "walk": {
@@ -467,14 +477,37 @@ DEFAULT_ANIMATIONS: dict[str, Any] = {
 }
 
 
+def _locomotion_with_legs() -> dict[str, dict[str, Any]]:
+    """腿驱动步态：在基础 walk/walk_fast 上叠加 hip/knee/ankle 相位（左右反相、膝摆相错开）。"""
+    out = copy.deepcopy(DEFAULT_LOCOMOTION)
+
+    for key, period in (("walk", 800), ("walk_fast", 550)):
+        bones = out[key]["bones"]
+        bones["hip_L"] = {"amplitude_rad": 0.25, "period_ms": period, "phase_offset": 0.0, "axis": "z"}
+        bones["hip_R"] = {"amplitude_rad": 0.25, "period_ms": period, "phase_offset": 3.14159, "axis": "z"}
+        bones["knee_L"] = {"amplitude_rad": 0.35, "period_ms": period, "phase_offset": 1.2, "axis": "z"}
+        bones["knee_R"] = {"amplitude_rad": 0.35, "period_ms": period, "phase_offset": 1.2 + 3.14159, "axis": "z"}
+        bones["ankle_L"] = {"amplitude_rad": 0.15, "period_ms": period, "phase_offset": 0.6, "axis": "z"}
+        bones["ankle_R"] = {"amplitude_rad": 0.15, "period_ms": period, "phase_offset": 0.6 + 3.14159, "axis": "z"}
+
+    return out
+
+
 def build_manifest(
     bones: list[BoneDef],
     meshes: list[MeshDef],
     canvas: tuple[int, int],
+    *,
+    has_legs: bool = False,
 ) -> Manifest:
     manifest = Manifest()
     manifest.canvas = {"w": canvas[0], "h": canvas[1]}
     manifest.skeleton = {"bones": [_bone_to_dict(b) for b in bones]}
     manifest.meshes = [_mesh_to_dict(m) for m in meshes]
-    manifest.animations = DEFAULT_ANIMATIONS
+    animations = dict(DEFAULT_ANIMATIONS)
+
+    if has_legs:
+        animations["locomotion"] = _locomotion_with_legs()
+
+    manifest.animations = animations
     return manifest
