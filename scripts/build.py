@@ -51,12 +51,16 @@ def build_runner(repo_root: Path) -> None:
     print("==> Building runner (uv build wheel → dist/spiritagent-agent-*.whl)")
     runner_dir = repo_root / "runner"
     run_cmd(["uv", "sync", "--frozen", "--extra", "dev"], cwd=runner_dir)
-    try:
-        run_cmd(["uv", "run", "--frozen", "--no-sync", "pytest", "tests/", "-q"], cwd=runner_dir)
-    except RuntimeError as exc:
-        raise RuntimeError(
-            "runner test suite failed — see pytest output. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build.",
-        ) from exc
+    # 项目规范不提交测试代码（RULES.md §测试）；tests/ 仅在本地临时存在时才跑。
+    if (runner_dir / "tests").is_dir():
+        try:
+            run_cmd(["uv", "run", "--frozen", "--no-sync", "pytest", "tests/", "-q"], cwd=runner_dir)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                "runner test suite failed — see pytest output. Fix the env (try `uv cache clean` + `uv sync`) before retrying the build.",
+            ) from exc
+    else:
+        print("==> No runner tests/ directory — skipping pytest (project ships no test code)")
     run_cmd(["uv", "build", "--wheel", "--out-dir", "dist"], cwd=runner_dir)
 
 

@@ -11,17 +11,18 @@ import subprocess
 import sys
 import threading
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from utils import cfg_get, is_env_passthrough, load_config, safe_schedule_threadsafe
+from utils import cfg_get, get_spiritagent_home, is_env_passthrough, load_config, safe_schedule_threadsafe
 
 from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, ComputerUseBackend, UIElement
 
 logger = logging.getLogger(__name__)
 
-PINNED_CUA_DRIVER_VERSION = cfg_get(load_config(), "computer_use", "cua_driver_version", default="0.5.0")
+PINNED_CUA_DRIVER_VERSION = cfg_get(load_config(), "computer_use", "cua_driver_version", default="0.21.0")
 _CUA_DRIVER_CMD = cfg_get(load_config(), "computer_use", "cua_driver_cmd", default="cua-driver")
 _CUA_DRIVER_ARGS = ["mcp"]
 
@@ -117,19 +118,46 @@ def _is_macos() -> bool:
     return sys.platform == "darwin"
 
 
+def _cua_driver_command() -> str:
+    """解析 cua-driver 可执行命令：config 显式路径 > $SPIRITAGENT_HOME/bin > wheel 内置二进制 > PATH 裸名。
+
+    cua-driver 以 PyPI wheel（``cua-driver``，runner 的平台标记依赖）随 venv 安装，
+    二进制位于 ``site-packages/cua_driver/bin/``；``$SPIRITAGENT_HOME/bin/`` 是用户
+    手动安装的兜底位置。两者都返回绝对路径让 MCP stdio 子进程直接 spawn。
+    """
+    cmd = _CUA_DRIVER_CMD
+    if os.sep in cmd or (os.altsep and os.altsep in cmd):
+        return cmd
+    exe = f"{cmd}{'.exe' if sys.platform == 'win32' else ''}"
+    managed = get_spiritagent_home() / "bin" / exe
+    if managed.is_file():
+        return str(managed)
+    try:
+        import cua_driver
+
+        wheel_bin = Path(cua_driver.__file__).parent / "bin" / exe
+        if wheel_bin.is_file():
+            return str(wheel_bin)
+    except ImportError:
+        pass
+    return cmd
+
+
 @functools.lru_cache(maxsize=1)
 def cua_driver_binary_available() -> bool:
-    """当 PATH 上存在可用的 cua-driver 二进制且与宿主架构匹配时返回 True。
+    """当存在可用的 cua-driver 二进制且与宿主架构匹配时返回 True。
 
+    查找顺序见 ``_cua_driver_command``（config 路径 > $SPIRITAGENT_HOME/bin > PATH）。
     单纯的 shutil.which 会接受一份为不同 OS / arch 构建的副本（例如 macOS 二进制被 scp 到 Windows 主机），
-    仅在 exec 时以一个晦涩的加载器错误失败 — 一次 subprocess.run([_CUA_DRIVER_CMD, '--version']) 可尽早暴露这种错配。
+    仅在 exec 时以一个晦涩的加载器错误失败 — 一次 subprocess.run([cmd, '--version']) 可尽早暴露这种错配。
     结果在进程生命周期内缓存（cu-driver 安装状态在运行时是静态的）；每次 handle_computer_use 调用可避免最多 3 次子进程派生。
     """
-    path = shutil.which(_CUA_DRIVER_CMD)
+    command = _cua_driver_command()
+    path = shutil.which(command)
     if not path:
         return False
     try:
-        result = subprocess.run([_CUA_DRIVER_CMD, "--version"], capture_output=True, timeout=3, check=False)
+        result = subprocess.run([command, "--version"], capture_output=True, timeout=3, check=False)
     except (FileNotFoundError, PermissionError, OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
@@ -137,11 +165,10 @@ def cua_driver_binary_available() -> bool:
 
 def cua_driver_install_hint() -> str:
     return (
-        "cua-driver is not installed. Install with one of:\n"
-        "  spiritagent computer-use install\n"
-        "Or run the upstream installer directly:\n"
-        '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/trycua/cua/main/libs/cua-driver/scripts/install.sh)"\n'
-        "Or run `spiritagent tools` and enable the Computer Use toolset to install it automatically."
+        "cua-driver is not importable. It ships as the `cua-driver` PyPI dependency of the "
+        "runner wheel (platform marker win32/darwin) — a normal runner install already "
+        "bundles it. If you see this, the runner venv is broken: reinstall the runner. "
+        "Dev fallback: `uv pip install cua-driver==0.21.0` into the runner venv."
     )
 
 
@@ -310,7 +337,7 @@ class _CuaDriverSession:
     async def _aenter(self) -> None:
         if not cua_driver_binary_available():
             raise RuntimeError(cua_driver_install_hint())
-        params = StdioServerParameters(command=_CUA_DRIVER_CMD, args=_CUA_DRIVER_ARGS, env=_build_cua_driver_env())
+        params = StdioServerParameters(command=_cua_driver_command(), args=_CUA_DRIVER_ARGS, env=_build_cua_driver_env())
         stack = AsyncExitStack()
         read, write = await stack.enter_async_context(stdio_client(params))
         session = await stack.enter_async_context(ClientSession(read, write))

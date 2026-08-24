@@ -202,11 +202,14 @@ your conversation context.
 
 ## Failure modes
 
-- **"cua-driver not installed" (macOS)** — Run `spiritagent tools` and enable
-  Computer Use; the setup will install cua-driver via its upstream script.
-  Requires macOS + Accessibility + Screen Recording permissions.
-- **"computer_use backend unavailable" (Windows)** — Install the Python
-  packages: `pip install pywinauto mss pyautogui`.
+- **"cua-driver not installed" (macOS)** — cua-driver ships as the
+  `cua-driver` PyPI dependency of the runner wheel, so a normal install
+  already has it in the venv. If the message still appears, the venv is
+  broken — reinstall the runner. Requires macOS + Accessibility + Screen
+  Recording permissions (first `capture` triggers the TCC prompt).
+- **"computer_use backend unavailable" (Windows)** — Same story: the
+  default WinBackend uses pywinauto/mss/pyautogui, all runner wheel
+  platform deps. A broken venv is the only cause — reinstall.
 - **Element index stale** — SOM indices come from the last `capture`
   call. If the UI shifted (new tab opened, dialog appeared), re-capture
   before clicking.
