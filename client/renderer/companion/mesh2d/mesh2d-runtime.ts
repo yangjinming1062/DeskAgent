@@ -29,6 +29,7 @@ export interface ManifestMesh {
 }
 
 export interface Manifest {
+  version?: number
   canvas: { w: number; h: number }
   skeleton: { bones: ManifestBone[] }
   meshes: ManifestMesh[]
@@ -370,13 +371,12 @@ export function tickMesh2D(scene: Mesh2DScene, inputs: FrameInputs): void {
     jiggleStates.set(name, next)
 
     const bone = bones.get(JIGGLE_BONE_MAP[name] ?? name)
+    // basePos 由 driver.cacheBasePose 每帧在写完 base 后快照——position 动作通道上线后，
+    // 旧的惰性缓存（首帧 position）必然陈旧。
+    const basePos = bone?.userData.basePos as { x: number } | undefined
 
-    if (bone) {
-      if (bone.userData.baseX === undefined) {
-        bone.userData.baseX = bone.position.x
-      }
-
-      bone.position.x = bone.userData.baseX + next.offset
+    if (bone && basePos) {
+      bone.position.x = basePos.x + next.offset
     }
   }
 }

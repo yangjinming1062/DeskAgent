@@ -560,6 +560,11 @@ export function undockFromEdge(): void {
   $edgeDockSide.set('none')
   $clipOverride.set(null)
 
+  // peeking 是 loop 动作：脱离贴边后清掉，否则探头姿态挂在非贴边语境里
+  if ($spriteAction.get() === 'peeking') {
+    $spriteAction.set(null)
+  }
+
   moveTo({ x: targetX, y: curPos.y }, 'walk', () => {
     $spatialPos.set({ x: targetX, y: curPos.y })
     $homePosition.set({ x: targetX, y: curPos.y })

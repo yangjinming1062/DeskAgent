@@ -2,16 +2,18 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 from .skeleton_builder import BoneDef, MeshDef
 
-SCHEMA_VERSION = 2  # v2: 加入 actions / idle_variants / locomotion 字段
+SCHEMA_VERSION = 3  # v3: actions 由静态 pose 表升级为关键帧 tracks
 
 
 @dataclass
 class Manifest:
-    schema: str = "spiritagent.mesh2d/1"
+    schema: str = "spiritagent.mesh2d/3"
     version: int = SCHEMA_VERSION
     canvas: dict[str, int] = field(default_factory=lambda: {"w": 1024, "h": 1366})
     camera: dict[str, Any] = field(
@@ -61,7 +63,10 @@ def _mesh_to_dict(mesh: MeshDef) -> dict[str, Any]:
 # 默认动作 / locomotion / idle variants
 #
 # 设计要点（来自 docs/DESIGN.md §5 + mesh2d-drivers.ts）：
-# - rotation_rad 字段命名强约束"弧度"，消费端 Three.js 用 .rotation 直接赋值，不做 degToRad。
+# - action 是关键帧 tracks：每轨固定 bone + channel + axis，keys 为 (t_ms, v) 序列，
+#   t_ms 绝对毫秒、末键后保持；ease 仅 linear / ease_in_out 两档。
+# - rotation 通道 v 单位弧度（消费端直接赋 .rotation，不做 degToRad）；
+#   scale 通道 v 为目标倍率（1 = 静止）；position 通道 v 为像素偏移。
 # - 红线：head.rotation.{x,y,z} ∈ ±0.26 rad (≈15°)，body_main ∈ ±0.30 rad (≈17°)，
 #   wrist/elbow/shoulder ∈ ±π/2 (≈90°)。bone.scale.y 累加 breathing 最大 ≤1.015。
 # - locomotion 不使用 hip/knee/ankle（腿在 body_main.png 内单独旋转无效），
@@ -84,193 +89,193 @@ _BONE_RED_LINES: dict[str, dict[str, float]] = {
 }
 
 
-# 单次动作（LLM 触发或交互触发）。所有 rotation_rad 单位都是弧度。
-DEFAULT_ACTIONS: dict[str, dict[str, Any]] = {
-    "wave_right": {
-        "duration_ms": 1800,
-        "blend_in_ms": 250,
-        "blend_out_ms": 350,
-        "loop": False,
-        "bones": {
-            "shoulder_R": {"rotation_rad": {"z": -0.52}},
-            "elbow_R": {"rotation_rad": {"z": -0.78}},
-            "wrist_R": {"rotation_rad": {"z": -1.40}},
-            "head": {"rotation_rad": {"y": 0.18}},
-        },
-    },
-    "wave_left": {
-        "duration_ms": 1800,
-        "blend_in_ms": 250,
-        "blend_out_ms": 350,
-        "loop": False,
-        "bones": {
-            "shoulder_L": {"rotation_rad": {"z": 0.52}},
-            "elbow_L": {"rotation_rad": {"z": 0.78}},
-            "wrist_L": {"rotation_rad": {"z": 1.40}},
-            "head": {"rotation_rad": {"y": -0.18}},
-        },
-    },
-    "present_right": {
-        "duration_ms": 1200,
-        "blend_in_ms": 200,
-        "blend_out_ms": 300,
-        "loop": False,
-        "bones": {
-            "shoulder_R": {"rotation_rad": {"z": -0.26}},
-            "elbow_R": {"rotation_rad": {"z": -0.52}},
-            "wrist_R": {"rotation_rad": {"z": -0.79}},
-        },
-    },
-    "present_left": {
-        "duration_ms": 1200,
-        "blend_in_ms": 200,
-        "blend_out_ms": 300,
-        "loop": False,
-        "bones": {
-            "shoulder_L": {"rotation_rad": {"z": 0.26}},
-            "elbow_L": {"rotation_rad": {"z": 0.52}},
-            "wrist_L": {"rotation_rad": {"z": 0.79}},
-        },
-    },
-    "look_away_left": {
-        "duration_ms": 1200,
-        "blend_in_ms": 250,
-        "blend_out_ms": 350,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"y": -0.35}},
-            "body_main": {"rotation_rad": {"y": -0.08}},
-        },
-    },
-    "look_away_right": {
-        "duration_ms": 1200,
-        "blend_in_ms": 250,
-        "blend_out_ms": 350,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"y": 0.35}},
-            "body_main": {"rotation_rad": {"y": 0.08}},
-        },
-    },
-    "turn_body_left": {
-        "duration_ms": 2000,
-        "blend_in_ms": 300,
-        "blend_out_ms": 400,
-        "loop": False,
-        "bones": {
-            "body_main": {"rotation_rad": {"y": -0.18}},
-            "head": {"rotation_rad": {"y": -0.10}},
-        },
-    },
-    "turn_body_right": {
-        "duration_ms": 2000,
-        "blend_in_ms": 300,
-        "blend_out_ms": 400,
-        "loop": False,
-        "bones": {
-            "body_main": {"rotation_rad": {"y": 0.18}},
-            "head": {"rotation_rad": {"y": 0.10}},
-        },
-    },
-    "lean_forward": {
-        "duration_ms": 1500,
-        "blend_in_ms": 300,
-        "blend_out_ms": 400,
-        "loop": False,
-        "bones": {
-            "body_main": {"rotation_rad": {"x": -0.10}},
-            "neck": {"rotation_rad": {"x": 0.08}},
-        },
-    },
-    "shy": {
-        "duration_ms": 2000,
-        "blend_in_ms": 300,
-        "blend_out_ms": 500,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"y": 0.25, "x": -0.10}},
-            "front_hair": {"scale": {"y": 1.05}},
-        },
-    },
-    "idle_glance": {
-        "duration_ms": 800,
-        "blend_in_ms": 200,
-        "blend_out_ms": 200,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"y": -0.20}},
-        },
-    },
-    "petting": {
-        "duration_ms": 2000,
-        "blend_in_ms": 200,
-        "blend_out_ms": 400,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"z": 0.08, "x": -0.05}},
-            "front_hair": {"scale": {"y": 1.03}},
-        },
-    },
-    "dizzy": {
-        "duration_ms": 2500,
-        "blend_in_ms": 200,
-        "blend_out_ms": 400,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"z": -0.12, "x": 0.08}},
-            "body_main": {"rotation_rad": {"z": 0.06}},
-        },
-    },
-    "fall": {
-        "duration_ms": 1000,
-        "blend_in_ms": 150,
-        "blend_out_ms": 250,
-        "loop": True,
-        "bones": {
-            "head": {"rotation_rad": {"x": -0.15}},
-            "shoulder_L": {"rotation_rad": {"z": 0.40}},
-            "shoulder_R": {"rotation_rad": {"z": -0.40}},
-        },
-    },
-    "land_squash": {
-        "duration_ms": 400,
-        "blend_in_ms": 60,
-        "blend_out_ms": 200,
-        "loop": False,
-        "bones": {
-            "body_main": {"scale": {"y": 0.90, "x": 1.08}},
-        },
-    },
-    "peeking": {
-        "duration_ms": 2000,
-        "blend_in_ms": 300,
-        "blend_out_ms": 300,
-        "loop": True,
-        "bones": {
-            "head": {"rotation_rad": {"y": -0.22, "z": 0.05}},
-        },
-    },
-    "click": {
-        "duration_ms": 600,
-        "blend_in_ms": 80,
-        "blend_out_ms": 200,
-        "loop": False,
-        "bones": {
-            "shoulder_R": {"rotation_rad": {"z": -0.45}},
-            "elbow_R": {"rotation_rad": {"z": -0.55}},
-            "wrist_R": {"rotation_rad": {"z": -0.35}},
-            "head": {"rotation_rad": {"y": 0.08}},
-        },
-    },
-    "long_press": {
-        "duration_ms": 1200,
-        "blend_in_ms": 250,
-        "blend_out_ms": 350,
-        "loop": False,
-        "bones": {
-            "head": {"rotation_rad": {"z": 0.10, "x": -0.06}},
-        },
-    },
+Ease = Literal["linear", "ease_in_out"]
+
+
+class ActionKeyframe(BaseModel):
+    t_ms: int
+    v: float
+    ease: Ease = "linear"
+
+
+class ActionTrack(BaseModel):
+    bone: str
+    channel: Literal["rotation", "scale", "position"]
+    axis: Literal["x", "y", "z"]
+    keys: list[ActionKeyframe]
+
+
+class ActionDef(BaseModel):
+    duration_ms: int
+    blend_in_ms: int
+    blend_out_ms: int
+    loop: bool
+    tracks: list[ActionTrack]
+
+
+def _rot(bone: str, axis: str, keys: list[tuple[int, float]], ease: Ease = "linear") -> ActionTrack:
+    return ActionTrack(bone=bone, channel="rotation", axis=axis, keys=[ActionKeyframe(t_ms=t, v=v, ease=ease) for t, v in keys])
+
+
+def _scale(bone: str, axis: str, keys: list[tuple[int, float]]) -> ActionTrack:
+    return ActionTrack(bone=bone, channel="scale", axis=axis, keys=[ActionKeyframe(t_ms=t, v=v) for t, v in keys])
+
+
+def _act(duration_ms: int, blend_in_ms: int, blend_out_ms: int, loop: bool, *tracks: ActionTrack) -> ActionDef:
+    return ActionDef(duration_ms=duration_ms, blend_in_ms=blend_in_ms, blend_out_ms=blend_out_ms, loop=loop, tracks=list(tracks))
+
+
+# 单次动作（LLM 触发或交互触发）。keys 为 (t_ms, v)，rotation 单位弧度。
+DEFAULT_ACTIONS: dict[str, ActionDef] = {
+    "wave_right": _act(
+        1800,
+        250,
+        350,
+        False,
+        _rot("shoulder_R", "z", [(0, -0.30), (250, -0.52)]),
+        _rot("elbow_R", "z", [(0, -0.45), (250, -0.78)]),
+        _rot("wrist_R", "z", [(0, -0.90), (300, -1.40), (650, -0.60), (1000, -1.35), (1350, -0.70), (1800, -1.20)], "ease_in_out"),
+        _rot("head", "y", [(0, 0.10), (250, 0.18)]),
+    ),
+    "wave_left": _act(
+        1800,
+        250,
+        350,
+        False,
+        _rot("shoulder_L", "z", [(0, 0.30), (250, 0.52)]),
+        _rot("elbow_L", "z", [(0, 0.45), (250, 0.78)]),
+        _rot("wrist_L", "z", [(0, 0.90), (300, 1.40), (650, 0.60), (1000, 1.35), (1350, 0.70), (1800, 1.20)], "ease_in_out"),
+        _rot("head", "y", [(0, -0.10), (250, -0.18)]),
+    ),
+    "present_right": _act(
+        1200,
+        200,
+        300,
+        False,
+        _rot("shoulder_R", "z", [(0, -0.15), (200, -0.26)]),
+        _rot("elbow_R", "z", [(0, -0.30), (200, -0.52)]),
+        _rot("wrist_R", "z", [(0, -0.45), (200, -0.79)]),
+    ),
+    "present_left": _act(
+        1200,
+        200,
+        300,
+        False,
+        _rot("shoulder_L", "z", [(0, 0.15), (200, 0.26)]),
+        _rot("elbow_L", "z", [(0, 0.30), (200, 0.52)]),
+        _rot("wrist_L", "z", [(0, 0.45), (200, 0.79)]),
+    ),
+    "look_away_left": _act(
+        1200,
+        250,
+        350,
+        False,
+        _rot("head", "y", [(0, -0.12), (250, -0.35)]),
+        _rot("body_main", "y", [(0, -0.03), (250, -0.08)]),
+    ),
+    "look_away_right": _act(
+        1200,
+        250,
+        350,
+        False,
+        _rot("head", "y", [(0, 0.12), (250, 0.35)]),
+        _rot("body_main", "y", [(0, 0.03), (250, 0.08)]),
+    ),
+    "turn_body_left": _act(
+        2000,
+        300,
+        400,
+        False,
+        _rot("body_main", "y", [(0, -0.09), (300, -0.18)]),
+        _rot("head", "y", [(0, -0.05), (300, -0.10)]),
+    ),
+    "turn_body_right": _act(
+        2000,
+        300,
+        400,
+        False,
+        _rot("body_main", "y", [(0, 0.09), (300, 0.18)]),
+        _rot("head", "y", [(0, 0.05), (300, 0.10)]),
+    ),
+    "lean_forward": _act(
+        1500,
+        300,
+        400,
+        False,
+        _rot("body_main", "x", [(0, -0.05), (300, -0.10)]),
+        _rot("neck", "x", [(0, 0.04), (300, 0.08)]),
+    ),
+    "shy": _act(
+        2000,
+        300,
+        500,
+        False,
+        _rot("head", "y", [(0, 0.12), (300, 0.25)]),
+        _rot("head", "x", [(0, -0.05), (300, -0.10)]),
+        _scale("front_hair", "y", [(0, 1.02), (300, 1.05)]),
+    ),
+    "idle_glance": _act(800, 200, 200, False, _rot("head", "y", [(0, -0.20)])),
+    "petting": _act(
+        2000,
+        200,
+        400,
+        False,
+        _rot("head", "z", [(0, 0.08)]),
+        _rot("head", "x", [(0, -0.05)]),
+        _scale("front_hair", "y", [(0, 1.03)]),
+    ),
+    "dizzy": _act(
+        2500,
+        200,
+        400,
+        False,
+        _rot("head", "z", [(0, -0.12), (600, 0.10), (1200, -0.12), (1800, 0.08), (2500, -0.04)], "ease_in_out"),
+        _rot("head", "x", [(0, 0.08)]),
+        _rot("body_main", "z", [(0, 0.06)]),
+    ),
+    "fall": _act(
+        1000,
+        150,
+        250,
+        True,
+        _rot("head", "x", [(0, -0.15)]),
+        _rot("shoulder_L", "z", [(0, 0.40)]),
+        _rot("shoulder_R", "z", [(0, -0.40)]),
+    ),
+    "land_squash": _act(
+        400,
+        60,
+        200,
+        False,
+        _scale("body_main", "y", [(0, 0.90)]),
+        _scale("body_main", "x", [(0, 1.08)]),
+    ),
+    "peeking": _act(
+        2000,
+        300,
+        300,
+        True,
+        _rot("head", "y", [(0, -0.22)]),
+        _rot("head", "z", [(0, 0.05)]),
+    ),
+    "click": _act(
+        600,
+        80,
+        200,
+        False,
+        _rot("shoulder_R", "z", [(0, -0.45)]),
+        _rot("elbow_R", "z", [(0, -0.55)]),
+        _rot("wrist_R", "z", [(0, -0.50), (180, -0.30), (360, -0.44), (600, -0.32)], "ease_in_out"),
+        _rot("head", "y", [(0, 0.08)]),
+    ),
+    "long_press": _act(
+        1200,
+        250,
+        350,
+        False,
+        _rot("head", "z", [(0, 0.10)]),
+        _rot("head", "x", [(0, -0.06)]),
+    ),
 }
 
 
@@ -289,36 +294,29 @@ DEFAULT_IDLE_VARIANTS: list[str] = [
 ]
 
 # 复用 DEFAULT_ACTIONS 里的 idle_glance；剩余的 idle_* 在此就地声明（也只读不写入 bone）。
-DEFAULT_IDLE_VARIANT_BODIES: dict[str, dict[str, Any]] = {
-    "idle_breath": {
-        "duration_ms": 3000,
-        "blend_in_ms": 300,
-        "blend_out_ms": 400,
-        "loop": False,
-        # 仅驱动 front_hair 微缩放 + 不改 head，避免与 breath / sway 冲突
-        "bones": {"front_hair": {"scale": {"y": 1.02}}},
-    },
-    "idle_squint": {
-        "duration_ms": 600,
-        "blend_in_ms": 200,
-        "blend_out_ms": 250,
-        "loop": False,
-        # eye 骨骼通过 blink 通道已有 scale.y，这里仅点头下视
-        "bones": {"head": {"rotation_rad": {"x": -0.06}}},
-    },
-    "idle_sway_more": {
-        "duration_ms": 3500,
-        "blend_in_ms": 300,
-        "blend_out_ms": 300,
-        "loop": False,
-        "bones": {"body_main": {"rotation_rad": {"z": 0.05}}},
-    },
+DEFAULT_IDLE_VARIANT_BODIES: dict[str, ActionDef] = {
+    # 仅驱动 front_hair 微缩放 + 不改 head，避免与 breath / sway 冲突
+    "idle_breath": _act(3000, 300, 400, False, _scale("front_hair", "y", [(0, 1.02)])),
+    # eye 骨骼通过 blink 通道已有 scale.y，这里仅点头下视
+    "idle_squint": _act(600, 200, 250, False, _rot("head", "x", [(0, -0.06)])),
+    "idle_sway_more": _act(3500, 300, 300, False, _rot("body_main", "z", [(0, 0.05)])),
 }
 
 
-def get_default_action_table() -> dict[str, dict[str, Any]]:
+def get_default_action_table() -> dict[str, ActionDef]:
     """对外暴露合并后的动作表（DEFAULT_ACTIONS ∪ DEFAULT_IDLE_VARIANT_BODIES）。"""
     return {**DEFAULT_ACTIONS, **DEFAULT_IDLE_VARIANT_BODIES}
+
+
+def _action_to_dict(action: ActionDef) -> dict[str, Any]:
+    # exclude_defaults 丢弃 ease="linear"，保持 JSON 紧凑。
+    return {
+        "duration_ms": action.duration_ms,
+        "blend_in_ms": action.blend_in_ms,
+        "blend_out_ms": action.blend_out_ms,
+        "loop": action.loop,
+        "tracks": [track.model_dump(exclude_defaults=True) for track in action.tracks],
+    }
 
 
 # locomotion：周期公式由 driver 按 sin(t) 求值；jump 是单次脉冲。
@@ -414,7 +412,7 @@ DEFAULT_ANIMATIONS: dict[str, Any] = {
     },
     # 骨骼 transform 红线（驱动层兜底 clamp）。客户端应从 manifest 读取，不要硬编码。
     "red_lines": _BONE_RED_LINES,
-    "actions": {**DEFAULT_ACTIONS, **DEFAULT_IDLE_VARIANT_BODIES},
+    "actions": {name: _action_to_dict(action) for name, action in get_default_action_table().items()},
     "idle_variants": list(DEFAULT_IDLE_VARIANTS),
     "locomotion": DEFAULT_LOCOMOTION,
 }

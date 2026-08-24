@@ -36,13 +36,15 @@
 - `companion.render_mode.changed` → `$renderMode` 切换，重建 canvas
 - `companion.affect` / `message.complete` 的 `affect.action` → `mesh2d-drivers` 解析为骨骼 pose 切换
 
-## Manifest schema（v2）
+## Manifest schema（v3）
 
-`backend/services/companion/mesh2d/manifest_exporter.py` 输出的 `animations` 字段除原有 breath / blink / idle_sway / jiggle 外，包含：
+`backend/services/companion/mesh2d/manifest_exporter.py` 输出。版本规则：`version` int 为权威，`$schema` URI 尾号与之一致（当前 3）；loader 把 v2 静态 pose 表归一化为单关键帧 tracks（每 channel/axis 一轨、t=0 保持），对更高版本仅告警不拒绝。
 
-- `actions`: 程序化骨骼 pose 表（含 `wave_right/left`、`present_right/left`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking`、`click`、`long_press` 等）。权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`；其中 `fall/land_squash/peeking/click/long_press` 为客户端本地触发、不进 LLM 注入清单（`NON_LLM_ACTIONS`）。
+`animations` 字段除 breath / blink / idle_sway / jiggle / red_lines 外，包含：
+
+- `actions`: 关键帧 tracks 动作表（含 `wave_right/left`、`present_right/left`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking`、`click`、`long_press` 等）。每轨 `{bone, channel: rotation|scale|position, axis, keys: [{t_ms, v, ease?}]}`——t_ms 绝对毫秒、末键后保持、ease 仅 `linear`/`ease_in_out`；rotation v 为弧度、scale v 为目标倍率（1=静止）、position v 为像素偏移（driver 按 `restPos + v·strength` 应用）。`loop: true` 的动作无自然结束点，仅在 action 换值/清空时经 blend_out 退出。权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`；其中 `fall/land_squash/peeking/click/long_press` 为客户端本地触发、不进 LLM 注入清单（`NON_LLM_ACTIONS`）。
 - `idle_variants`: idle 时按权重随机切换的 pose key 列表。
-- `locomotion`: `still / walk / walk_fast / fly / drag / jump / fall` 的骨骼相位公式与 jump/fall 参数。
+- `locomotion`: `still / walk / walk_fast / fly / drag / jump` 的骨骼相位公式与 jump 脉冲参数。
 
 详见 [DESIGN.md §2.3](DESIGN.md) 的"四层叠加"。
 

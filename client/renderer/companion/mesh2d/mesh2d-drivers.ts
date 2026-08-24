@@ -26,10 +26,21 @@ import type { Mesh2DScene } from './mesh2d-runtime'
 // Manifest 子集类型（与 backend/services/companion/mesh2d/manifest_exporter.py 对齐）
 // ---------------------------------------------------------------------------
 
-export interface BoneTransform {
-  rotation_rad?: { x?: number; y?: number; z?: number }
-  scale?: { x?: number; y?: number; z?: number }
-  position_offset?: { x?: number; y?: number }
+export type TrackChannel = 'rotation' | 'scale' | 'position'
+export type TrackAxis = 'x' | 'y' | 'z'
+export type TrackEase = 'linear' | 'ease_in_out'
+
+export interface ActionKeyframe {
+  t_ms: number
+  v: number
+  ease?: TrackEase
+}
+
+export interface ActionTrack {
+  bone: string
+  channel: TrackChannel
+  axis: TrackAxis
+  keys: ActionKeyframe[]
 }
 
 export interface ActionDef {
@@ -37,7 +48,7 @@ export interface ActionDef {
   blend_in_ms: number
   blend_out_ms: number
   loop: boolean
-  bones: Record<string, BoneTransform>
+  tracks: ActionTrack[]
 }
 
 export interface LocomotionBonePhase {
@@ -108,6 +119,43 @@ function clampBoneTransform(bone: THREE.Bone, lines: Mesh2DAnimations['red_lines
   }
 }
 
+/** 关键帧采样：末键后保持；ease 取目标键（k1）的声明。 */
+function sampleTrack(track: ActionTrack, timeMs: number): number {
+  const keys = track.keys
+
+  if (keys.length === 0) {
+    return 0
+  }
+
+  if (timeMs <= keys[0].t_ms) {
+    return keys[0].v
+  }
+
+  const last = keys[keys.length - 1]
+
+  if (timeMs >= last.t_ms) {
+    return last.v
+  }
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k0 = keys[i]
+    const k1 = keys[i + 1]
+
+    if (timeMs >= k0.t_ms && timeMs <= k1.t_ms) {
+      const span = k1.t_ms - k0.t_ms
+      let t = span <= 0 ? 1 : (timeMs - k0.t_ms) / span
+
+      if ((k1.ease ?? 'linear') === 'ease_in_out') {
+        t = t * t * (3 - 2 * t)
+      }
+
+      return k0.v + (k1.v - k0.v) * t
+    }
+  }
+
+  return last.v
+}
+
 // ---------------------------------------------------------------------------
 // Mesh2DDriver
 // ---------------------------------------------------------------------------
@@ -155,6 +203,9 @@ export class Mesh2DDriver {
   // 关键：base pose 写入后再叠加 micro-motion（breath/blink/sway）；所以 base 留一份即可
   private jiggleStates: Map<string, JiggleState>
 
+  // position 通道的静止位（构造时快照一次；动作写 position = rest + offset）
+  private restPos: Map<string, { x: number; y: number }>
+
   // 订阅清理
   private unsubSpriteState: () => void
   private unsubEmotion: () => void
@@ -170,6 +221,9 @@ export class Mesh2DDriver {
     this.idleWeights = opts.idleWeights ?? {}
 
     this.jiggleStates = scene.jiggleStates
+    this.restPos = new Map(
+      Array.from(scene.bones, ([name, bone]) => [name, { x: bone.position.x, y: bone.position.y }])
+    )
 
     // sprite state 变化不在这里处理——frame loop 在 tickAction / tickIdleVariant 内按优先级
     // 体现；这里不强制中断 active action（DESIGN §2.3）。
@@ -219,6 +273,9 @@ export class Mesh2DDriver {
       if (bone.name === 'body_main' || bone.name === 'head') {
         bone.userData.baseScaleY = bone.scale.y
       }
+
+      // jiggle / position 通道的静止参照：每帧在 driver 写完 base 后快照
+      bone.userData.basePos = { x: bone.position.x, y: bone.position.y }
     }
   }
 
@@ -231,11 +288,17 @@ export class Mesh2DDriver {
     if (!actionKey) {
       this.lastActionKey = null
 
-      return
-    }
+      // loop 动作没有自然结束点：清空时把相位拨到 blend_out 起点，从当前姿态淡出
+      if (this.activeAction?.def.loop) {
+        const now = performance.now()
+        this.activeAction = {
+          ...this.activeAction,
+          startedAt: now - this.activeAction.def.blend_in_ms - this.activeAction.def.duration_ms,
+          finishedAt: now + this.activeAction.def.blend_out_ms
+        }
+      }
 
-    if (actionKey === this.lastActionKey) {
-      // 心跳式轮询：强制重新触发（仅对非 looping 动作有意义）
+      return
     }
 
     const def = this.actions[actionKey]
@@ -278,13 +341,20 @@ export class Mesh2DDriver {
     }
 
     const elapsed = now - a.startedAt
-    const { duration_ms, blend_in_ms, blend_out_ms, bones } = a.def
+    const { duration_ms, blend_in_ms, blend_out_ms, loop, tracks } = a.def
+
+    if (!Array.isArray(tracks)) {
+      // 未归一化的旧形状直接放弃播放（loader 正常不会放行到这里）
+      this.activeAction = null
+
+      return
+    }
 
     let strength: number
 
     if (elapsed < blend_in_ms) {
       strength = elapsed / Math.max(blend_in_ms, 1)
-    } else if (elapsed < blend_in_ms + duration_ms) {
+    } else if (loop || elapsed < blend_in_ms + duration_ms) {
       strength = 1
     } else if (elapsed < blend_in_ms + duration_ms + blend_out_ms) {
       const t = (elapsed - blend_in_ms - duration_ms) / Math.max(blend_out_ms, 1)
@@ -295,25 +365,28 @@ export class Mesh2DDriver {
       return
     }
 
-    // 注意：scale 由 base pose / breath / locomotion 复合，不在此写入。
-    for (const [boneName, tx] of Object.entries(bones)) {
-      const bone = this.scene.bones.get(boneName)
+    const trackTime = loop ? elapsed % Math.max(duration_ms, 1) : Math.min(elapsed, duration_ms)
+
+    // 三通道应用规则：rotation = v·strength（0 = 静止朝向）；
+    // scale = lerp(1, v, strength)（1 = 静止倍率）；position = restPos + v·strength。
+    for (const track of tracks) {
+      const bone = this.scene.bones.get(track.bone)
 
       if (!bone) {
         continue
       }
 
-      if (tx.rotation_rad) {
-        if (tx.rotation_rad.x !== undefined) {
-          bone.rotation.x = tx.rotation_rad.x * strength
-        }
+      const v = sampleTrack(track, trackTime)
 
-        if (tx.rotation_rad.y !== undefined) {
-          bone.rotation.y = tx.rotation_rad.y * strength
-        }
+      if (track.channel === 'rotation') {
+        bone.rotation[track.axis] = v * strength
+      } else if (track.channel === 'scale') {
+        bone.scale[track.axis] = 1 + (v - 1) * strength
+      } else {
+        const rest = this.restPos.get(track.bone)
 
-        if (tx.rotation_rad.z !== undefined) {
-          bone.rotation.z = tx.rotation_rad.z * strength
+        if (rest) {
+          bone.position[track.axis] = (track.axis === 'x' ? rest.x : rest.y) + v * strength
         }
       }
 
@@ -373,18 +446,19 @@ export class Mesh2DDriver {
   }
 
   private actionBoneNames(now: number): Set<string> {
-    if (!this.activeAction) {
+    const a = this.activeAction
+
+    if (!a || !Array.isArray(a.def.tracks)) {
       return new Set()
     }
 
-    const elapsed = now - this.activeAction.startedAt
-    const { blend_in_ms, duration_ms, blend_out_ms } = this.activeAction.def
+    const elapsed = now - a.startedAt
 
-    if (elapsed >= blend_in_ms + duration_ms + blend_out_ms) {
+    if (!a.def.loop && elapsed >= a.def.blend_in_ms + a.def.duration_ms + a.def.blend_out_ms) {
       return new Set()
     }
 
-    return new Set(Object.keys(this.activeAction.def.bones))
+    return new Set(a.def.tracks.map(track => track.bone))
   }
 
   private tickLocomotion(now: number, dt: number, locomotion: Locomotion, inActiveAction: boolean): void {

@@ -95,7 +95,7 @@ export function Mesh2DCanvas(): React.JSX.Element {
 
     void (async () => {
       try {
-        const manifest = await loadMesh2DManifest(mesh2d.manifestUrl!)
+        const manifest = await loadMesh2DManifest(mesh2d.manifestUrl!, mesh2d.contentHash ?? undefined)
 
         if (cancelled) {
           return

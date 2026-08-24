@@ -118,7 +118,7 @@
 | ★ `click` | 伸手触碰 / 点击姿态 | neutral（仪式行走飞抵目标触发） |
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
 
-> 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 骨骼 pose 表（程序化弧度 transform）。同一 action key 在两条路径上语义一致但兑现方式不同。
+> 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >
 > 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」，**不会**出现腿部摆动——因为下半身在 body_main.png 内、无法独立旋转。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
