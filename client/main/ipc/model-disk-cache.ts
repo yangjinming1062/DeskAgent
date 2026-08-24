@@ -6,11 +6,11 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
 
-export const MAX_CACHE_FILES = 20
-export const MAX_CACHE_BYTES = 1024 * 1024 * 1024 // 1 GB
-export const DEFAULT_INACTIVITY_TIMEOUT_MS = 30_000
+const MAX_CACHE_FILES = 20
+const MAX_CACHE_BYTES = 1024 * 1024 * 1024 // 1 GB
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 30_000
 
-export function computeFileSha256(filePath: string): Promise<string> {
+function computeFileSha256(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = crypto.createHash('sha256')
     const stream = fs.createReadStream(filePath)

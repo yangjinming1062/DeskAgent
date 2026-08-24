@@ -32,19 +32,6 @@ export type DesktopUpdateEvent =
   | { progress: DesktopUpdateProgress; type: 'progress' }
   | { type: 'checking' }
 
-export type DesktopRunnerUpdateEvent =
-  | { detail?: string; error: string; kind: 'runner-failed'; phase?: string; recoverable?: boolean; version?: string }
-  | { kind: 'runner-installed'; version?: string }
-  | { kind: 'runner-installing'; percent?: number; phase: 'pip' | 'starting'; version?: string }
-  | {
-      kind: 'runner-prefetching'
-      percent?: number
-      phase: 'manifest' | 'prefetch' | 'server' | 'wheel'
-      version?: string
-    }
-  | { kind: 'runner-ready'; version?: string }
-  | { kind: 'runner-recovered'; recoverable: boolean; version?: string }
-
 export interface CapabilityHealthItem {
   available: boolean
   reason?: string | null
@@ -96,13 +83,9 @@ export interface DesktopRunnerState {
 }
 
 export interface SpiritAgentConnection {
-  authMode?: string
   baseUrl: string
   isFullscreen: boolean
-  logs: string[]
-  mode?: 'local' | 'remote'
   nativeOverlayWidth: number
-  source?: 'env' | 'local' | 'settings'
   token: null | string
   windowButtonPosition: null | { x: number; y: number }
   wsUrl: string
@@ -113,15 +96,8 @@ export interface SpiritAgentTitleBarTheme {
   foreground: string
 }
 
-export interface SpiritAgentWindowState {
-  isFullscreen: boolean
-  nativeOverlayWidth: number
-  windowButtonPosition: null | { x: number; y: number }
-}
-
 export interface DesktopBootProgress {
   error: null | string
-  fakeMode: boolean
   message: string
   phase: string
   progress: number
@@ -129,27 +105,15 @@ export interface DesktopBootProgress {
   timestamp: number
 }
 
-export interface DesktopAuthUser {
-  id: number
-  username: string
-}
-
 export interface DesktopAuthSnapshot {
   baseUrl: null | string
   hasToken: boolean
   tokenExpiresAt: null | number
-  user: null | DesktopAuthUser
+  user: null | { username: string }
 }
 
 export interface DesktopActivatePayload {
-  clientContext?: unknown
   code: string
-}
-
-export interface DesktopLogoutResult {
-  backendUnreachable?: boolean
-  error?: string
-  ok: boolean
 }
 
 export interface DesktopAuthBroadcast {
@@ -216,8 +180,10 @@ export interface IpcInvokeContract {
 
   // 鉴权
   'spiritagent:auth:activate': (payload: DesktopActivatePayload) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
-  'spiritagent:auth:refresh': (payload?: Record<string, unknown>) => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
-  'spiritagent:auth:logout': () => DesktopLogoutResult | Promise<DesktopLogoutResult>
+  'spiritagent:auth:refresh': () => DesktopAuthSnapshot | Promise<DesktopAuthSnapshot>
+  'spiritagent:auth:logout': () =>
+    | { backendUnreachable?: boolean; error?: string; ok: boolean }
+    | Promise<{ backendUnreachable?: boolean; error?: string; ok: boolean }>
   'spiritagent:auth:get-session': () => DesktopAuthSnapshot | null | Promise<DesktopAuthSnapshot | null>
 
   // 窗口与界面
@@ -314,13 +280,11 @@ export interface IpcEventContract {
   'spiritagent:auth:session-expired': []
   'spiritagent:boot-progress': [payload: DesktopBootProgress]
   'spiritagent:power-resume': []
-  'spiritagent:runner-update-event': [payload: DesktopRunnerUpdateEvent]
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:tray:open-chat': []
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
-  'spiritagent:window-state-changed': [payload: SpiritAgentWindowState]
 }
 
 // 3. 渲染进程向主进程单向发送消息（通过 ipcRenderer.send / ipcMain.on）
@@ -383,13 +347,11 @@ export const IPC = {
     authSessionExpired: 'spiritagent:auth:session-expired',
     bootProgress: 'spiritagent:boot-progress',
     powerResume: 'spiritagent:power-resume',
-    runnerUpdateEvent: 'spiritagent:runner-update-event',
     runnerStatus: 'spiritagent:runner:status',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     trayOpenChat: 'spiritagent:tray:open-chat',
-    updateEvent: 'spiritagent:update-event',
-    windowStateChanged: 'spiritagent:window-state-changed'
+    updateEvent: 'spiritagent:update-event'
   } as const satisfies Record<string, IpcEventChannel>,
   send: {
     titleBarTheme: 'spiritagent:titlebar-theme'

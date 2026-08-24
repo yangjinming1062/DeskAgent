@@ -44,8 +44,7 @@ export default defineConfig([
   {
     ...baseOptions,
     entry: {
-      entry: 'main/entry.ts',
-      'security/paths': 'main/security/paths.ts'
+      entry: 'main/entry.ts'
     },
     outDir: 'dist-electron',
     format: ['esm'],

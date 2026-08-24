@@ -1,36 +1,7 @@
-export interface ActionStatusResponse {
-  exit_code: number | null
-  lines: string[]
-  name: string
-  pid: number | null
-  running: boolean
-}
-
-export interface ModelPricing {
-  input: string
-  output: string
-  cache: string | null
-  free: boolean
-}
-
-export interface PaginatedSessions {
-  limit: number
-  offset: number
-  sessions: SessionInfo[]
-  total: number
-}
-
 export interface RpcEvent<T = unknown> {
   payload?: T
   session_id?: string
   type: string
-}
-
-export interface SessionCreateResponse {
-  info?: SessionRuntimeInfo
-  message_count?: number
-  messages?: SessionMessage[]
-  session_id: string
 }
 
 export interface SessionInfo {
@@ -74,11 +45,6 @@ export interface SessionMessage {
   tool_name?: string
 }
 
-export interface SessionMessagesResponse {
-  messages: SessionMessage[]
-  session_id: string
-}
-
 export interface SessionResumeResponse {
   info?: SessionRuntimeInfo
   message_count: number
@@ -95,37 +61,6 @@ export interface SessionRuntimeInfo {
   model?: string
   provider?: string
   running?: boolean
-}
-
-export interface SessionSearchResult {
-  lineage_root?: string | null
-  model: string | null
-  role: string | null
-  session_id: string
-  session_started: number | null
-  snippet: string
-  source: string | null
-}
-
-export interface SessionSearchResponse {
-  results: SessionSearchResult[]
-}
-
-export interface StatusResponse {
-  login_count: number
-  chat_count: number
-  connection_state: 'connected' | 'disconnected'
-}
-
-export interface UsageStats {
-  calls: number
-  context_max?: number
-  context_percent?: number
-  context_used?: number
-  cost_usd?: number
-  input: number
-  output: number
-  total: number
 }
 
 /** STT/TTS 引擎路由偏好，由桌面端主进程解析。
@@ -205,62 +140,3 @@ export interface SpiritAgentConfigPutRequest {
 }
 
 export type SpiritAgentConfigRecord = Record<string, unknown>
-
-/** `GET /api/insights/overview?days=N` 的返回结构。
- *
- * 字段名与服务端 `insights.py` 响应保持一致——使用 snake_case，
- * 以匹配本模块其他端点采用的 JSON-RPC / REST 命名约定（见 `SessionInfo`、`UsageStats`）。
- */
-export interface InsightsTopTool {
-  count: number
-  tool: string
-}
-
-export interface InsightsModel {
-  base_url: string
-  is_active: boolean
-  model: string
-}
-
-export interface InsightsPlatform {
-  count: number
-  pct: number
-  platform: string
-}
-
-export interface InsightsSkillTag {
-  count: number
-  tag: string
-}
-
-export interface InsightsSkillSummary {
-  new_in_window: number
-  top_tags: InsightsSkillTag[]
-  total_memories: number
-}
-
-export interface InsightsDailyActivity {
-  date: string
-  messages: number
-}
-
-export interface InsightsOverviewMetrics {
-  avg_session_duration: number
-  total_hours: number
-  total_input_tokens: number
-  total_messages: number
-  total_output_tokens: number
-  total_sessions: number
-  total_tool_calls: number
-  total_tokens: number
-}
-
-export interface InsightsOverview {
-  activity: InsightsDailyActivity[]
-  days: number
-  models: InsightsModel[]
-  overview: InsightsOverviewMetrics
-  platforms: InsightsPlatform[]
-  skills: InsightsSkillSummary
-  top_tools: InsightsTopTool[]
-}

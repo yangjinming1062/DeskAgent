@@ -57,7 +57,7 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
 
     const enriched = {
       ...(payload || {}),
-      clientContext: (payload && payload.clientContext) || built.client_context || null
+      clientContext: built.client_context || null
     }
 
     const result = await session.activate(enriched)
@@ -72,14 +72,10 @@ export function registerAuthIpc({ deps, ipcMain }: { deps: AuthIpcDeps; ipcMain:
     return result
   })
 
-  ipcMain.handle(IPC.invoke.authRefresh, async (_event, payload?: { clientContext?: unknown }) => {
+  ipcMain.handle(IPC.invoke.authRefresh, async () => {
     const session = ensureBackendSession(deps)
     const built = deps.buildClientContext?.() ?? {}
-
-    const enriched = {
-      ...(payload || {}),
-      clientContext: (payload && payload.clientContext) || built.client_context || null
-    }
+    const enriched = { clientContext: built.client_context || null }
 
     const result = await session.refresh(enriched)
     deps.resetBackendCache?.()

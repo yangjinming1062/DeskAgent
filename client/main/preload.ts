@@ -3,7 +3,6 @@ import {
   type DesktopAuthBroadcast,
   type DesktopBootProgress,
   type DesktopRunnerStatusEvent,
-  type DesktopRunnerUpdateEvent,
   type DesktopUpdateEvent,
   IPC,
   type MediaSttPayload,
@@ -11,8 +10,7 @@ import {
   type RunnerConfigPatch,
   type SpiritAgentApiRequest,
   type SpiritAgentSelectPathsOptions,
-  type SpiritAgentTitleBarTheme,
-  type SpiritAgentWindowState
+  type SpiritAgentTitleBarTheme
 } from '@ipc/contracts'
 import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from 'electron'
 
@@ -93,14 +91,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
 
     return () => ipcRenderer.removeListener(IPC.event.trayOpenChat, listener)
   },
-  onWindowStateChanged: (callback: (payload: SpiritAgentWindowState) => void) => {
-    const listener = (_event: IpcRendererEvent, payload: SpiritAgentWindowState) => callback(payload)
-    ipcRenderer.on(IPC.event.windowStateChanged, listener)
-
-    return () => ipcRenderer.removeListener(IPC.event.windowStateChanged, listener)
-  },
   readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
-  refreshSession: (payload?: Record<string, unknown>) => ipcRenderer.invoke(IPC.invoke.authRefresh, payload),
+  refreshSession: () => ipcRenderer.invoke(IPC.invoke.authRefresh),
   runnerCancel: () => ipcRenderer.invoke(IPC.invoke.runnerCancel),
   runnerConfig: {
     patch: (patch: RunnerConfigPatch) => ipcRenderer.invoke(IPC.invoke.runnerConfigPatch, patch),
@@ -139,12 +131,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
       ipcRenderer.on(IPC.event.updateEvent, listener)
 
       return () => ipcRenderer.removeListener(IPC.event.updateEvent, listener)
-    },
-    onRunnerEvent: (callback: (payload: DesktopRunnerUpdateEvent) => void) => {
-      const listener = (_event: IpcRendererEvent, payload: DesktopRunnerUpdateEvent) => callback(payload)
-      ipcRenderer.on(IPC.event.runnerUpdateEvent, listener)
-
-      return () => ipcRenderer.removeListener(IPC.event.runnerUpdateEvent, listener)
     }
   },
   writeClipboard: (text: string) => ipcRenderer.invoke(IPC.invoke.writeClipboard, text)

@@ -223,7 +223,6 @@ const rememberLog = (chunk: unknown): void => desktopLogger.rememberLog(chunk)
 
 let bootProgressState: DesktopBootProgress = {
   error: null,
-  fakeMode: false,
   message: 'Waiting to start SpiritAgent backend',
   phase: 'idle',
   progress: 0,
@@ -628,20 +627,6 @@ function registerPowerResumeListeners(): void {
 
 function getAppIconPath(): null | string {
   return APP_ICON_PATHS.find(fileExists) || null
-}
-
-function sendWindowStateChanged(nextIsFullscreen?: boolean): void {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return
-  }
-
-  const state = getWindowState()
-
-  if (typeof nextIsFullscreen === 'boolean') {
-    state.isFullscreen = nextIsFullscreen
-  }
-
-  sendToMain(mainWindow, IPC.event.windowStateChanged, state)
 }
 
 function buildApplicationMenu(): Menu {
@@ -1192,11 +1177,7 @@ async function ensureBackend(): Promise<SpiritAgentConnection> {
       const wsBase = remote.baseUrl.replace(/^http/, 'ws')
       const wsTicket = await mintWsTicket(remote.baseUrl, token)
       cachedBackend = {
-        authMode: 'token',
         baseUrl: remote.baseUrl,
-        logs: desktopLogger.getLogs().slice(-80),
-        mode: 'remote',
-        source: 'env',
         token,
         wsUrl: wsTicket ? `${wsBase}/api/chat/ws?ticket=${wsTicket}` : `${wsBase}/api/chat/ws`,
         ...getWindowState()
@@ -1329,9 +1310,6 @@ function createToolWindow(): void {
   if (IS_MAC) {
     toolWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
   }
-
-  toolWindow.on('enter-full-screen', () => sendWindowStateChanged(true))
-  toolWindow.on('leave-full-screen', () => sendWindowStateChanged(false))
 
   installZoomShortcuts(toolWindow)
   installContextMenu(toolWindow)
@@ -1694,17 +1672,6 @@ setTimeout(() => {
     autoStartBridge(bridgeDeps)
   }
 }, 200).unref?.()
-
-try {
-  const legacyPath = path.join(app.getPath('userData'), 'connection.json')
-
-  if (fs.existsSync(legacyPath)) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-    fs.renameSync(legacyPath, legacyPath + '.bak-' + stamp)
-  }
-} catch {
-  /* 忽略 */
-}
 
 void app.whenReady().then(async () => {
   if (IS_MAC) {

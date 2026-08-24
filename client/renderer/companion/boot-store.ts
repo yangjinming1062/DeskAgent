@@ -9,7 +9,6 @@ export interface DesktopBootState extends DesktopBootProgress {
 
 const INITIAL_BOOT_STATE: DesktopBootState = {
   error: null,
-  fakeMode: false,
   message: strings.boot.steps.startingSpiritAgentDesktop,
   phase: 'renderer.init',
   progress: 2,
@@ -47,13 +46,10 @@ export function setDesktopBootStep(step: {
   message: string
   progress: number
   running?: boolean
-  fakeMode?: boolean
   error?: string | null
 }): void {
-  const current = $desktopBoot.get()
   applyDesktopBootProgress({
     error: step.error ?? null,
-    fakeMode: step.fakeMode ?? current.fakeMode,
     message: step.message,
     phase: step.phase,
     progress: step.progress,

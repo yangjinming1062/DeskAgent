@@ -4,6 +4,7 @@ import { type DesktopBootProgress, IPC, type SpiritAgentApiRequest, type SpiritA
 import type { IpcMain } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
+import { sendToSender } from '../shared/utils'
 
 import type { ModelDiskCache } from './model-disk-cache'
 
@@ -74,11 +75,7 @@ export function registerConnectionIpc({
       const err = error as { message?: string }
 
       if (err?.message?.startsWith('401 ') && connection.token) {
-        try {
-          _event.sender.send(IPC.event.authSessionExpired)
-        } catch {
-          /* window may have been destroyed */
-        }
+        sendToSender(_event.sender, IPC.event.authSessionExpired)
       }
 
       throw error
@@ -106,11 +103,7 @@ export function registerConnectionIpc({
 
     if (!res.ok) {
       if (res.status === 401 && connection.token) {
-        try {
-          _event.sender.send(IPC.event.authSessionExpired)
-        } catch {
-          /* window may have been destroyed */
-        }
+        sendToSender(_event.sender, IPC.event.authSessionExpired)
       }
 
       const text = await res.text().catch(() => '')
@@ -154,11 +147,7 @@ export function registerConnectionIpc({
         const message = error instanceof Error ? error.message : String(error)
 
         if (message.startsWith('401 ') && connection.token) {
-          try {
-            _event.sender.send(IPC.event.authSessionExpired)
-          } catch {
-            /* window may have been destroyed */
-          }
+          sendToSender(_event.sender, IPC.event.authSessionExpired)
         }
 
         throw error
@@ -202,11 +191,7 @@ export function registerConnectionIpc({
 
     if (!res.ok) {
       if (res.status === 401 && connection.token) {
-        try {
-          _event.sender.send(IPC.event.authSessionExpired)
-        } catch {
-          /* window may have been destroyed */
-        }
+        sendToSender(_event.sender, IPC.event.authSessionExpired)
       }
 
       const text = await res.text().catch(() => '')

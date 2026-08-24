@@ -5,8 +5,6 @@ overrides:
   app-builder-lib>@electron/get: 3.1.0
 onlyBuiltDependencies:
   - electron-winstaller
-  - node-pty
 allowBuilds:
   electron-winstaller: true
   esbuild: true
-  node-pty: true

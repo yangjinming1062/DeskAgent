@@ -4,8 +4,6 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 
 import { getDracoLoader } from './draco-loader'
 
-export { getDracoLoader } from './draco-loader'
-
 let gltfLoaderInstance: GLTFLoader | null = null
 
 /**

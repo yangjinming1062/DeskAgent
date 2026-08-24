@@ -9,13 +9,6 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: spiritagent-media: https:; media-src 'self' data: blob: spiritagent-media: https:; connect-src 'self' data: blob: ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:* https: wss: spiritagent-media:; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none';"
     />
-    <!-- Stamp <html data-role="sprite|tool"> synchronously before <body>
-         parses so the sprite window's "background: transparent" rule in
-         styles.css applies on the very first paint. Without this, the body
-         briefly fills white (browser default), defeating the point of the
-         transparent BrowserWindow. The renderer branch in app.tsx reads the
-         same value; this just runs earlier. -->
-    <script type="module" src="/renderer/init-role.ts"></script>
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="apple-touch-icon" href="/icon.png" />
     <link rel="shortcut icon" href="/icon.png" />

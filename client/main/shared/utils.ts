@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import type { IpcEventChannel, IpcEventContract } from '@ipc/contracts'
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, WebContents } from 'electron'
 
 export function fileExists(filePath: string): boolean {
   try {
@@ -40,6 +40,20 @@ export function sendToMain<C extends IpcEventChannel>(
   }
 
   webContents.send(channel, ...payload)
+}
+
+// IPC handler 上下文里拿到的 `event.sender` 直接是 WebContents；
+// 同样要避免销毁后 send 抛错。
+export function sendToSender<C extends IpcEventChannel>(
+  sender: WebContents | null | undefined,
+  channel: C,
+  ...payload: IpcEventContract[C]
+): void {
+  if (!sender || sender.isDestroyed()) {
+    return
+  }
+
+  sender.send(channel, ...payload)
 }
 
 // 先写 .tmp 再重命名，崩溃时旧文件保持完整；失败时清理残留 tmp。

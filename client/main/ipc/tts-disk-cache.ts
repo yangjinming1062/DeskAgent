@@ -4,10 +4,10 @@ import path from 'node:path'
 
 import { atomicWriteFile } from '../shared/utils'
 
-export const MAX_CACHE_FILES = 800
-export const MAX_ENTRY_BYTES = 1024 * 1024
+const MAX_CACHE_FILES = 800
+const MAX_ENTRY_BYTES = 1024 * 1024
 
-export function cacheKey(voice: string, text: string): string {
+function cacheKey(voice: string, text: string): string {
   return crypto.createHash('sha1').update(`${voice}\n${text}`).digest('hex')
 }
 

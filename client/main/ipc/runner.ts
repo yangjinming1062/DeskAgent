@@ -143,29 +143,6 @@ export function autoStopBridge(deps: RunnerIpcDeps): void {
   })
 }
 
-const _invokeBucket = { lastRefill: Date.now(), tokens: 60 }
-const _INVOKE_RATE = 60
-const _INVOKE_BURST = 60
-
-function _refillBucket(): void {
-  const now = Date.now()
-  const elapsed = (now - _invokeBucket.lastRefill) / 1000
-  _invokeBucket.tokens = Math.min(_INVOKE_BURST, _invokeBucket.tokens + elapsed * _INVOKE_RATE)
-  _invokeBucket.lastRefill = now
-}
-
-function _consumeToken(): boolean {
-  _refillBucket()
-
-  if (_invokeBucket.tokens < 1) {
-    return false
-  }
-
-  _invokeBucket.tokens -= 1
-
-  return true
-}
-
 export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcMain?: IpcMain }): void {
   if (!ipcMain) {
     return
@@ -174,10 +151,6 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
   ipcMain.handle(IPC.invoke.runnerInvoke, async (_event, name: string, args?: Record<string, unknown>) => {
     if (typeof name !== 'string' || !name) {
       throw new Error('runner:invoke requires a non-empty tool name')
-    }
-
-    if (!_consumeToken()) {
-      throw new Error('runner:invoke rate limit exceeded (token bucket empty)')
     }
 
     const bridge = ensureRunnerBridge(deps)

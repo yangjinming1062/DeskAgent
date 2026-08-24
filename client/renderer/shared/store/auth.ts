@@ -62,10 +62,10 @@ export async function activate(payload: { code: string }): Promise<void> {
   }
 }
 
-export async function refreshSession(payload?: Record<string, unknown>): Promise<void> {
+export async function refreshSession(): Promise<void> {
   // 刷新失败并不会自动登出（与 login() 不同）：旧 JWT 可能仍然有效，
   // 是否把错误抛出由调用方决定。
-  const snapshot = await window.spiritagent.refreshSession(payload)
+  const snapshot = await window.spiritagent.refreshSession()
   $auth.set({ kind: 'authenticated', snapshot })
 }
 

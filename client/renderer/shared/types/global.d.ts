@@ -16,7 +16,6 @@ import type {
   DesktopBootProgress,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
-  DesktopRunnerUpdateEvent,
   DesktopUpdateEvent,
   IpcEventContract,
   IpcInvokeContract,
@@ -27,8 +26,7 @@ import type {
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme,
-  SpiritAgentWindowState
+  SpiritAgentTitleBarTheme
 } from '@ipc/contracts'
 
 // 把契约里的 `(payload) => R | Promise<R>` 收窄为 `(...args) => Promise<R>`,
@@ -103,7 +101,6 @@ declare global {
         setPosition: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-position']>
         moveToCursorDisplay: AsyncIpc<IpcInvokeContract['spiritagent:sprite:move-to-cursor-display']>
       }
-      onWindowStateChanged: EventSubscription<'spiritagent:window-state-changed'>
       onPowerResume: EventSubscription<'spiritagent:power-resume'>
       onBootProgress: EventSubscription<'spiritagent:boot-progress'>
       onSessionExpired: EventSubscription<'spiritagent:auth:session-expired'>
@@ -116,7 +113,6 @@ declare global {
       update: {
         check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>
         onEvent: EventSubscription<'spiritagent:update-event'>
-        onRunnerEvent: EventSubscription<'spiritagent:runner-update-event'>
       }
     }
   }
@@ -131,7 +127,6 @@ export type {
   DesktopBootProgress,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
-  DesktopRunnerUpdateEvent,
   DesktopUpdateEvent,
   IpcEventContract,
   IpcInvokeContract,
@@ -142,6 +137,5 @@ export type {
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme,
-  SpiritAgentWindowState
+  SpiritAgentTitleBarTheme
 }

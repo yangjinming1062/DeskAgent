@@ -6,8 +6,6 @@ import { spiritagentHome as resolveSpiritAgentHome } from '../security/paths'
 import * as store from './lib/runner-config-store'
 import { buildSkillSummaries } from './lib/skill-index'
 
-const SCHEMA_VERSION = 1
-
 interface BuildClientContextOptions {
   arch?: string
   spiritagentHome?: null | string
@@ -27,7 +25,6 @@ interface ClientContextResult {
     skills: string[]
   }
   client_version: string
-  schemaVersion: number
 }
 
 export function buildClientContext(options: BuildClientContextOptions = {}): ClientContextResult {
@@ -63,7 +60,6 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
       platform_hints: userAgent || `SpiritAgentDesktop/${desktopVersion} (${platform}; ${arch})`,
       skills: enabledNames
     },
-    client_version: desktopVersion,
-    schemaVersion: SCHEMA_VERSION
+    client_version: desktopVersion
   }
 }

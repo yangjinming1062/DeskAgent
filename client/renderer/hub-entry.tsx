@@ -56,10 +56,6 @@ window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   }
 })
 
-window.spiritagent?.update?.onRunnerEvent?.(() => {
-  // 刻意留作空操作：完整生命周期见 runner-updater.cjs。
-})
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary label="hub-root">

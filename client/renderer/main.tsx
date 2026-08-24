@@ -60,10 +60,6 @@ window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   }
 })
 
-// 桌面状态栏通过 $updateStatus 原子（见上方 update.onEvent）暴露这些事件——
-// Runner 内部的阶段切换刻意不在渲染层面向用户展示。
-window.spiritagent?.update?.onRunnerEvent?.(() => {})
-
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary label="root">
