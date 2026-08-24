@@ -714,6 +714,7 @@ export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy:
   $spatialLocale.set('home')
   $dragVelocity.set({ vx: 0, vy: 0 })
   $clipOverride.set('drag_end')
+  $spriteAction.set('drag_end')
   setSpriteState('interacting', { durationMs: 500 })
   void window.spiritagent.sprite.setPosition(safe)
 }

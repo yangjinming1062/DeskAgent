@@ -193,6 +193,40 @@ DEFAULT_ACTIONS: dict[str, ActionDef] = {
         _rot("elbow_L", "z", [(0, 0.25), (300, 0.30)]),
         _rot("head", "y", [(0, -0.06), (300, -0.15)]),
     ),
+    "hands_on_hip": _act(
+        1500,
+        250,
+        350,
+        False,
+        _rot("shoulder_L", "z", [(0, 0.15), (250, 0.38)]),
+        _rot("shoulder_R", "z", [(0, -0.15), (250, -0.38)]),
+        _rot("elbow_L", "z", [(0, 0.45), (250, 0.95)]),
+        _rot("elbow_R", "z", [(0, -0.45), (250, -0.95)]),
+        _rot("wrist_L", "z", [(0, 0.30), (250, 0.62)]),
+        _rot("wrist_R", "z", [(0, -0.30), (250, -0.62)]),
+        _rot("head", "z", [(0, 0.03), (250, 0.07)]),
+    ),
+    "hair_touch": _act(
+        2000,
+        250,
+        400,
+        False,
+        _rot("shoulder_R", "z", [(0, -0.50), (300, -1.25), (1500, -1.15), (2000, -0.50)], "ease_in_out"),
+        _rot("elbow_R", "z", [(0, -0.35), (300, -0.95), (1500, -0.90), (2000, -0.35)], "ease_in_out"),
+        _rot("wrist_R", "z", [(0, -0.25), (300, -0.65), (900, -0.45), (1500, -0.62), (2000, -0.25)], "ease_in_out"),
+        _rot("head", "z", [(0, 0.02), (300, 0.09), (1500, 0.08), (2000, 0.02)], "ease_in_out"),
+    ),
+    "spread_arms": _act(
+        1600,
+        250,
+        350,
+        False,
+        _rot("shoulder_L", "z", [(0, 0.35), (280, 1.05), (1200, 1.00), (1600, 0.40)], "ease_in_out"),
+        _rot("shoulder_R", "z", [(0, -0.35), (280, -1.05), (1200, -1.00), (1600, -0.40)], "ease_in_out"),
+        _rot("elbow_L", "z", [(0, 0.15), (280, 0.45), (1200, 0.42), (1600, 0.18)]),
+        _rot("elbow_R", "z", [(0, -0.15), (280, -0.45), (1200, -0.42), (1600, -0.18)]),
+        _rot("head", "x", [(0, -0.02), (280, -0.06), (1200, -0.055), (1600, -0.02)]),
+    ),
     "look_away_left": _act(
         1200,
         250,
@@ -304,12 +338,21 @@ DEFAULT_ACTIONS: dict[str, ActionDef] = {
         _rot("head", "z", [(0, 0.10)]),
         _rot("head", "x", [(0, -0.06)]),
     ),
+    "drag_end": _act(
+        500,
+        60,
+        200,
+        False,
+        _rot("head", "x", [(0, -0.08)]),
+        _scale("body_main", "y", [(0, 0.94)]),
+        _scale("body_main", "x", [(0, 1.05)]),
+    ),
 }
 
 
 # 本地物理 / 交互触发动作：脱离触发上下文播放会是悬空姿态，注入 LLM 清单时排除。
 NON_LLM_ACTIONS: frozenset[str] = frozenset(
-    {"fall", "land_squash", "peeking", "click", "long_press"},
+    {"fall", "land_squash", "peeking", "click", "long_press", "drag_end"},
 )
 
 

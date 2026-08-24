@@ -42,7 +42,7 @@
 
 `animations` 字段除 breath / blink / idle_sway / jiggle / red_lines 外，包含：
 
-- `actions`: 关键帧 tracks 动作表（含 `wave_right/left`、`present_right/left`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking`、`click`、`long_press` 等）。每轨 `{bone, channel: rotation|scale|position, axis, keys: [{t_ms, v, ease?}]}`——t_ms 绝对毫秒、末键后保持、ease 仅 `linear`/`ease_in_out`；rotation v 为弧度、scale v 为目标倍率（1=静止）、position v 为像素偏移（driver 按 `restPos + v·strength` 应用）。`loop: true` 的动作无自然结束点，仅在 action 换值/清空时经 blend_out 退出。权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`；其中 `fall/land_squash/peeking/click/long_press` 为客户端本地触发、不进 LLM 注入清单（`NON_LLM_ACTIONS`）。
+- `actions`: 关键帧 tracks 动作表（含 `wave/present/point`、`hands_on_hip`、`hair_touch`、`spread_arms`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking`、`click`、`long_press`、`drag_end` 等）。每轨 `{bone, channel: rotation|scale|position, axis, keys: [{t_ms, v, ease?}]}`——t_ms 绝对毫秒、末键后保持、ease 仅 `linear`/`ease_in_out`；rotation v 为弧度、scale v 为目标倍率（1=静止）、position v 为像素偏移（driver 按 `restPos + v·strength` 应用）。`loop: true` 的动作无自然结束点，仅在 action 换值/清空时经 blend_out 退出。权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`；其中 `fall/land_squash/peeking/click/long_press/drag_end` 为客户端本地触发、不进 LLM 注入清单（`NON_LLM_ACTIONS`）。
 - `idle_variants`: idle 时按权重随机切换的 pose key 列表。
 - `locomotion`: `still / walk / walk_fast / fly / drag / jump` 的骨骼相位公式与 jump 脉冲参数。
 

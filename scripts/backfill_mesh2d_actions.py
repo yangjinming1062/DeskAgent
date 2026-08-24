@@ -21,12 +21,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
-from sqlalchemy import select  # noqa: E402
-
 from components import session_scope  # noqa: E402
 from modules.companion.models import Mesh2DModel  # noqa: E402
 from services.companion import asset_store  # noqa: E402
 from services.companion.mesh2d.manifest_exporter import DEFAULT_ANIMATIONS  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 
 async def backfill(dry_run: bool) -> int:

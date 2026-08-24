@@ -48,7 +48,7 @@ export async function findWindowByKeyword(keyword: string): Promise<WindowGeom |
 }
 
 /** 屏幕坐标 → 精灵窗口归一 [-1,1] 的视线目标。粗粒度方向感即可，clamp 到边界防越轴。 */
-function gazeTowardsPoint(point: { x: number; y: number }): { nx: number; ny: number } {
+export function gazeTowardsPoint(point: { x: number; y: number }): { nx: number; ny: number } {
   const pos = $spatialPos.get()
   const halfW = (getBaseSpriteWidth() * $spatialScale.get()) / 2
   const halfH = (getBaseSpriteHeight() * $spatialScale.get()) / 2

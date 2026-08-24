@@ -106,6 +106,9 @@
 | `wave_right` / `wave_left` | 单手举起挥手 | happy / excited / 告别 |
 | `present_right` / `present_left` | 单手抬起展示 / 指向 / 拿东西 | helpful（"帮我拿杯子"） |
 | `point_right` / `point_left` | 抬臂指向屏幕目标（仪式行走抵达后按方位播放） | helpful / curious（"看这个"） |
+| `hands_on_hip` | 双手叉腰 | smug / pout / proud |
+| `hair_touch` | 抬手整理头发（带轻挠关键帧） | shy / thinking（害羞拨发） |
+| `spread_arms` | 双臂展开做展示 | happy / excited / proud |
 | `look_away_left` / `look_away_right` | 头脸避开视线 | shy / embarrassed / sad |
 | `turn_body_left` / `turn_body_right` | 整个上半身转向 | 切换朝向 / 仪式行走 |
 | `lean_forward` | 上半身微微前倾 | curious / thinking |
@@ -118,6 +121,7 @@
 | `idle_glance` | 短瞥一眼回中 | idle 变体 |
 | ★ `click` | 伸手触碰 / 点击姿态 | neutral（仪式行走飞抵目标触发） |
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
+| ★ `drag_end` | 拖拽释放落地的站稳微沉 | neutral（拖拽放下触发） |
 
 > 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >

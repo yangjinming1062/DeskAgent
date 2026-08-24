@@ -72,8 +72,8 @@ SpiritAgent 中的图像生成服务于角色数字身份的确立、实时情�
 
 mesh2d 路径（[client/renderer/companion/mesh2d/](client/renderer/companion/mesh2d/)）运行时按四层叠加把动画状态机 + 自主行为 + 持续微动合成到同一帧的骨骼 transform 上：
 
-1. **base pose 层**：当前 active action（如 `wave_right`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking` 等）的 pose 写满骨骼；无 active action 时由 idle variant 顶替。
-2. **locomotion 覆盖层**：按 `$spatialLocomotion`（`still / walk / walk_fast / fly / drag / jump / fall`）的相位公式，对 body_main / shoulder_L/R / skirt / back_hair 应用周期摆动或下落重力姿态；walk/jump 用复合躯干方案（详见 [PROTOCOL.md §1.4 action 白名单](PROTOCOL.md) 的注释）。
+1. **base pose 层**：当前 active action 的**关键帧轨迹**写满骨骼——每轨固定 bone + 通道（rotation / scale / position）+ 轴，keys 为 `(t_ms, v)` 序列（末键后保持，linear / ease_in_out 缓动），动作因此是连续运动而非静态姿势（`wave` 挥手有手腕往复、`hair_touch` 整理头发有轻挠、`hands_on_hip` 叉腰、`spread_arms` 展臂、`point_*` 指向等）；单回合可依时序编排最多 3 个动作。无 active action 时由 idle variant 顶替。
+2. **locomotion 覆盖层**：按 `$spatialLocomotion`（`still / walk / walk_fast / fly / drag / jump / fall`）的相位公式，对 body_main / shoulder_L/R / skirt / back_hair 应用周期摆动或下落重力姿态；切分出腿层的模型叠加 hip/knee/ankle 腿部摆动相位，无腿层时用复合躯干方案（详见 [PROTOCOL.md §1.4 action 白名单](PROTOCOL.md) 的注释）。
 3. **持续微动层**：breath / blink / idle_sway / eyeSquint（与 base pose 的 scale.y 累加，不覆盖；抚摸时触发 eyeSquint 眯眼享受）。
 4. **jiggle 物理层**：spring-damper 解算 impulse 触发的骨骼 offset，clamp ±5px。
 
@@ -151,6 +151,8 @@ home 是唯一持久化的场所。其余场所从 home 与上下文派生，是
 4. 完成后回到原场所或 home。
 
 **不确定性兜底**：找不到目标/目标不可达（屏幕外/被遮挡）→ 精灵人格化表达（"找不到…"/"够不着…"），客户端直接以常规工具调用兜底，不阻塞功能。整个仪式行走通道失败时降级为精灵原地工作——仪式是增强层，不是必要层。
+
+**视线与指向的通用规则**：精灵"够向"屏幕内容（仪式行走的工具目标、云端 perch cue 的目标窗口——"看看那个视频"）时，飞行与栖息途中视线锁定目标中心（显式视线目标优先于指针跟随），抵达后按目标方位抬手指向——"看到并指向"先于"碰到"建立空间关系。
 
 ### 3.7 不变量与反模式
 
@@ -361,7 +363,7 @@ Onboarding 默认走 2D 路径：形象确认后立即触发 2D 骨骼分层切�
 
 | 通道 | 触发 | 表现 |
 |------|------|------|
-| **情绪** | LLM 声明情绪意图 | 3D 精灵播情绪肢体动画 + 聊天窗左栏精灵头像切换为对应表情头像（未就绪/失败回退形象头像）（无气泡、无语音） |
+| **情绪** | LLM 声明情绪意图 | 精灵播情绪肢体动画 + 聊天窗左栏精灵头像切换为对应表情头像（未就绪/失败回退形象头像）（无气泡、无语音） |
 | **动作** | LLM 声明动作意图 | 精灵播动作动画（可叠加在情绪上；单回合最多 3 个动作依时序播放，2D 依序、3D 取首个） |
 | **文字** | LLM 输出正文 | 气泡 +（语音模式下）TTS |
 | **空间** | LLM 声明场所意图 | 精灵落位/漫游/栖息 |

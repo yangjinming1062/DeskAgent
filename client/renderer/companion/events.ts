@@ -29,7 +29,9 @@ import {
 import {
   $effectiveTier,
   $voiceCallOpen,
+  clearGazeTarget,
   playSpriteActionSequence,
+  setGazeTarget,
   setSpriteState,
   type SpriteEmotion
 } from '@/companion/companion-store'
@@ -45,7 +47,7 @@ import type { RpcEvent } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
-import { findWindowByKeyword, performRitualWalk, type WindowGeom } from './ritual-walk'
+import { findWindowByKeyword, gazeTowardsPoint, performRitualWalk, type WindowGeom } from './ritual-walk'
 
 const PERCH_RETRY_MS = 300
 const PERCH_RETRY_COUNT = 5
@@ -90,6 +92,9 @@ function applySpatialCue(locale?: string, target?: string): void {
         return
       }
 
+      // 与仪式行走同规则：飞行与栖息途中视线锁定目标窗口，数秒后交还指针跟随
+      setGazeTarget(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
+      setTimeout(() => clearGazeTarget(), 6000)
       setLocale('perch', { position: perch, locomotion: 'fly' })
     } else if (locale === 'home' && !$chatOpen.get()) {
       setLocale('home', { locomotion: 'fly' })
