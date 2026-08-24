@@ -99,7 +99,11 @@ def build_affect_guidance(custom_expressions: list[Any] | None = None, available
 
     action_list = ""
     if available_actions:
-        action_list = "Available action animations — choose [action:...] from exactly these names: " + ", ".join(sorted(set(available_actions))) + ".\n"
+        action_list = (
+            "Available action animations — choose [action:...] from exactly these names: "
+            + ", ".join(sorted(set(available_actions)))
+            + ". You may stack up to 3 [action:...] lines in playback order right after the affect tag.\n"
+        )
 
     guidance = (
         "# Companion Affect & Embodied Movement\n"
@@ -142,21 +146,25 @@ def _is_potential_prefix(buf: str) -> bool:
 class AffectScrubber:
     """从 LLM 流中剥离开头的 ``[affect:...]``/``[spatial:...]`` 标记与星号动作旁白，并向外暴露解析值。"""
 
-    def __init__(self, allowed_emotions: frozenset[str] | None = None) -> None:
+    # 单回合动作序列上限：更多动作在 2.5s 级情绪瞬态内播不完，且 LLM 有堆叠倾向。
+    MAX_ACTIONS_PER_TURN: int = 3
+
+    def __init__(self, allowed_emotions: frozenset[str] | None = None, allowed_actions: frozenset[str] | None = None) -> None:
         self._buf: str = ""
         self._emotion: str | None = None
         self._spatial_locale: str | None = None
         self._spatial_target: str | None = None
-        self._action: str | None = None
+        self._actions: list[str] = []
         self._allowed: frozenset[str] = allowed_emotions if allowed_emotions is not None else BUILTIN_EMOTIONS
+        self._allowed_actions: frozenset[str] | None = allowed_actions
 
     @property
     def emotion(self) -> str | None:
         return self._emotion
 
     @property
-    def action(self) -> str | None:
-        return self._action
+    def actions(self) -> list[str]:
+        return list(self._actions)
 
     @property
     def spatial_locale(self) -> str | None:
@@ -243,7 +251,14 @@ class AffectScrubber:
     def _set_action(self, token: str | None) -> None:
         if token is None:
             return
-        self._action = token.lower()
+        normalized = token.lower()
+        # 白名单 + 序列上限：幻觉动作名与超额堆叠就地丢弃——客户端无可兑现的姿势。
+        if self._allowed_actions is not None and normalized not in self._allowed_actions:
+            logger.info("drop action tag outside whitelist: %s", normalized)
+            return
+        if len(self._actions) >= self.MAX_ACTIONS_PER_TURN or normalized in self._actions:
+            return
+        self._actions.append(normalized)
 
     def _consume(self, m: re.Match[str], *, strip_bracket: bool = False) -> None:
         """将 ``self._buf`` 推进到匹配之后；可选地吃掉部分正则残留的尾随 ``]``。"""

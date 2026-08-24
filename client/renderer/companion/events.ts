@@ -26,7 +26,13 @@ import {
   setTurnHadBubbleBreak,
   submitPendingBatch
 } from '@/companion/chat-store'
-import { $effectiveTier, $voiceCallOpen, setSpriteState, type SpriteEmotion } from '@/companion/companion-store'
+import {
+  $effectiveTier,
+  $voiceCallOpen,
+  playSpriteActionSequence,
+  setSpriteState,
+  type SpriteEmotion
+} from '@/companion/companion-store'
 import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $responseMode } from '@/companion/prefs'
@@ -142,12 +148,12 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'message.complete': {
       const payload = event.payload as
-        | { text?: string; affect?: { emotion?: string; action?: string; locale?: string; target?: string } }
+        | { text?: string; affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string } }
         | undefined
 
       const text = payload?.text ?? ''
       const emotion = payload?.affect?.emotion
-      const action = payload?.affect?.action
+      const actions = payload?.affect?.actions ?? []
       const locale = payload?.affect?.locale
       const target = payload?.affect?.target
 
@@ -163,7 +169,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
       if (hasEmotion && !screenLocked) {
-        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action })
+        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action: actions[0] })
+        playSpriteActionSequence(actions)
       } else {
         setSpriteState('idle', { force: true })
       }
@@ -202,19 +209,15 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.affect': {
-      // 来自 LLM 或后端的 affect 与空间具身提示：
-      // action 字段在云端独立 affect 推送时也携带；之前漏解构，2D driver 收不到。
-      const payload = event.payload as
-        | { emotion?: string; action?: string; locale?: string; target?: string }
-        | undefined
+      // 云端独立 affect 推送按 DESIGN §6.6 只承载情绪与空间；动作序列走 message.complete 的 affect.actions。
+      const payload = event.payload as { emotion?: string; locale?: string; target?: string } | undefined
 
       const emotion = payload?.emotion
-      const action = payload?.action
       const locale = payload?.locale
       const target = payload?.target
 
       if (emotion && emotion !== 'neutral' && !$screenLocked.get()) {
-        setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action })
+        setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
 
       applySpatialCue(locale, target)

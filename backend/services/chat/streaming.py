@@ -32,7 +32,7 @@ class _LLMTurnResult:
     final_usage_payload: dict | None
     turn_duration_ms: int
     emotion: str | None = None
-    action: str | None = None
+    actions: list[str] | None = None
     spatial_locale: str | None = None
     spatial_target: str | None = None
 
@@ -92,6 +92,7 @@ async def _stream_llm_response(
     on_first_chunk: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
     allowed_emotions: frozenset[str] | None = None,
+    allowed_actions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     client = provider.raw_client()
@@ -126,7 +127,7 @@ async def _stream_llm_response(
             message_start_sent = True
             await emitter.send_json({"type": "message.start"})
 
-    affect = AffectScrubber(allowed_emotions)
+    affect = AffectScrubber(allowed_emotions, allowed_actions)
     bubbles = BubbleSplitter()
 
     batch_buf: list[str] = []
@@ -231,7 +232,7 @@ async def _stream_llm_response(
         final_usage_payload=final_usage_payload,
         turn_duration_ms=turn_duration_ms,
         emotion=affect.emotion,
-        action=affect.action,
+        actions=affect.actions,
         spatial_locale=affect.spatial_locale,
         spatial_target=affect.spatial_target,
     )

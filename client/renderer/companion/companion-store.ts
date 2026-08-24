@@ -51,6 +51,8 @@ export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 // 可选的结构化动作提示（如 turn_away），用于细化情绪片段。
 export const $spriteAction = atom<string | null>(null)
+// 动作序列编排队列：$spriteAction 恒为当前/首个动作（3D 只消费单值），后续由 2D driver 逐个推进。
+export const $spriteActionQueue = atom<string[]>([])
 export const $previousState = atom<SpriteStateName>('idle')
 export const $clipOverride = atom<string | null>(null)
 
@@ -157,6 +159,7 @@ export function setSpriteState(
       transientTimer = null
       $spriteEmotion.set(null)
       $spriteAction.set(null)
+      $spriteActionQueue.set([])
       // 若瞬时过程中有更高优先级状态到达，优先取当前状态。
       const currentAfter = $spriteState.get()
       const storedPrev = $previousState.get()
@@ -181,7 +184,20 @@ export function setSpriteState(
 
   $spriteEmotion.set(options?.emotion ?? null)
   $spriteAction.set(options?.action ?? null)
+
+  if (!options?.action) {
+    $spriteActionQueue.set([])
+  }
+
   $spriteState.set(name)
+}
+
+/** 播放动作序列：首个动作即刻进入 $spriteAction（3D 消费），后续进队列由 2D driver 推进。 */
+export function playSpriteActionSequence(actions: readonly string[]): void {
+  const [first, ...rest] = actions
+
+  $spriteActionQueue.set(rest)
+  $spriteAction.set(first ?? null)
 }
 
 let activityCounter = 0

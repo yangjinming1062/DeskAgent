@@ -15,7 +15,7 @@
 
 import type * as THREE from 'three'
 
-import { $spriteAction, $spriteEmotion, $spriteState } from '@/companion/companion-store'
+import { $spriteAction, $spriteActionQueue, $spriteEmotion, $spriteState } from '@/companion/companion-store'
 import type { Locomotion } from '@/companion/spatial'
 
 import type { JiggleConfig, JiggleState } from './mesh2d-bones'
@@ -314,6 +314,24 @@ export class Mesh2DDriver {
     this.beginAction(actionKey, def)
   }
 
+  /** tickAction 自然结束时续播队列。不回写 $spriteAction——3D 的单值契约不跟 2D 的播放节奏。 */
+  private pullNextQueuedAction(): void {
+    const queue = $spriteActionQueue.get()
+
+    if (queue.length === 0) {
+      return
+    }
+
+    const [next, ...rest] = queue
+    $spriteActionQueue.set(rest)
+
+    const def = this.actions[next]
+
+    if (def) {
+      this.beginAction(next, def)
+    }
+  }
+
   private beginAction(name: string, def: ActionDef): void {
     const now = performance.now()
     const totalMs = def.blend_in_ms + def.duration_ms + def.blend_out_ms
@@ -361,6 +379,7 @@ export class Mesh2DDriver {
       strength = Math.max(0, 1 - t)
     } else {
       this.activeAction = null
+      this.pullNextQueuedAction()
 
       return
     }

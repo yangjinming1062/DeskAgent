@@ -76,12 +76,12 @@ async def _persist_user_message(db: AsyncSession, conv: Conversation, req: ChatR
     await db.commit()
 
 
-def _affect_trace_content(emotion: str | None, action: str | None) -> str:
+def _affect_trace_content(emotion: str | None, actions: list[str]) -> str:
     """纯肢体语言回复（无文本）的结构化标记：以 assistant 行持久化，确保下一轮 LLM 上下文仍能看到伙伴已做出反应。"""
     parts: list[str] = []
     if emotion and emotion != "neutral":
         parts.append(f"[affect:{emotion}]")
-    if action:
+    for action in actions:
         parts.append(f"[action:{action}]")
     return "\n".join(parts)
 
@@ -103,7 +103,7 @@ async def _persist_assistant_no_tool_turn(
     track_task: TrackTask | None = None,
     *,
     emotion: str | None = None,
-    action: str | None = None,
+    actions: list[str] | None = None,
     spatial_locale: str | None = None,
     spatial_target: str | None = None,
 ) -> None:
@@ -121,14 +121,14 @@ async def _persist_assistant_no_tool_turn(
                 ),
             )
             await db.commit()
-    elif (emotion and emotion != "neutral") or action:
+    elif (emotion and emotion != "neutral") or actions:
         # 仅情绪反应：无文本，持久化轻量 assistant 行作为下一轮 LLM 上下文的反应痕迹，避免嘟嘴/动作在历史中消失。
         async with session_scope() as db:
             db.add(
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content=_affect_trace_content(emotion, action),
+                    content=_affect_trace_content(emotion, actions or []),
                     subtype=AFFECT_TRACE_SUBTYPE,
                     prompt_tokens=final_prompt_tokens,
                     completion_tokens=final_completion_tokens,
@@ -152,8 +152,8 @@ async def _persist_assistant_no_tool_turn(
             track_task(review_task)
 
     affect_payload: dict[str, Any] = {"emotion": emotion}
-    if action:
-        affect_payload["action"] = action
+    if actions:
+        affect_payload["actions"] = actions
     if spatial_locale:
         affect_payload["locale"] = spatial_locale
     if spatial_target:

@@ -60,6 +60,7 @@ class _TurnInputs:
     first_user_msg_content: str | None
     llm_chain: list[ProviderConfig] | None
     allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
+    allowed_actions: frozenset[str] = frozenset()
     estimated_tokens: int = 0
 
 
@@ -251,6 +252,7 @@ async def _build_turn_inputs(
         first_user_msg_content=first_user_msg_content,
         llm_chain=llm_chain,
         allowed_emotions=allowed_emotions,
+        allowed_actions=frozenset(available_actions),
         estimated_tokens=estimated_tokens,
     )
 

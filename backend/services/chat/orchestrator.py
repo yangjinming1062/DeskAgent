@@ -119,6 +119,7 @@ async def run_chat_turn(
                     on_first_chunk=set_stream_emitted,
                     reasoning_effort=reasoning_effort,
                     allowed_emotions=inputs.allowed_emotions,
+                    allowed_actions=inputs.allowed_actions,
                 )
 
             def set_stream_emitted() -> None:
@@ -162,7 +163,7 @@ async def run_chat_turn(
                     current_context,
                     track_task,
                     emotion=llm_result.emotion,
-                    action=llm_result.action,
+                    actions=llm_result.actions,
                     spatial_locale=llm_result.spatial_locale,
                     spatial_target=llm_result.spatial_target,
                 )
