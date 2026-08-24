@@ -67,6 +67,3 @@ class MiniMaxImageGenProvider(ImageGenProvider):
             raise ProviderError(f"minimax image_gen returned no images: {raw_snippet}", body=body, provider="minimax", model=self.config.model)
 
         return ImageGenResult(images=assets, model=self.config.model, raw=body)
-
-    def raw_client(self) -> "object | None":
-        return None

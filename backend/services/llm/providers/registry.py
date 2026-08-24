@@ -20,7 +20,7 @@ _PROVIDER_VISION_MODELS: dict[str, str] = {}
 KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})
 
 # 提供 OpenAI 形态 /v1/embeddings 端点的供应商；原生端点（如 minimax /v1/embeddings 用 texts 而非 input）被排除，llm_client._resolve_embedding_provider 仅对集合内的供应商构造 OpenAI 兼容兜底。
-OPENAI_COMPATIBLE_PROVIDERS: frozenset[str] = frozenset({"openai", "mimo"})
+OPENAI_COMPATIBLE_PROVIDERS: frozenset[str] = frozenset({"mimo"})
 
 # SETTINGS.<svc>_provider 为空时的默认供应商；Chat/STT/TTS 默认 MiMo（OpenAI 兼容），image/video gen 默认 MiniMax。
 SERVICE_DEFAULT_PROVIDER: dict[str, str] = {"llm": "mimo", "stt": "mimo", "tts": "mimo", "image_gen": "minimax", "video_gen": "minimax", "embedding": "minimax"}

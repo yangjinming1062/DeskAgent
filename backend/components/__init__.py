@@ -35,7 +35,6 @@ from .constants import (
     MS_PER_HOUR,
     NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS,
     NIGHTLY_CONSOLIDATION_MAX_TOKENS,
-    NIGHTLY_CREATION_ENABLED,
     NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_TOKENS,
     NIGHTLY_DIARY_MAX_TOKENS,
@@ -100,7 +99,6 @@ from .observability import (
 from .paid_calls import log_paid_call
 from .redact import redact_sensitive_text
 from .temp_files import TempFileMarkerMismatch, cleanup_expired, get_file_path, save_file
-from .temp_files import delete_file as temp_file_delete
 from .temp_files import gc_session as temp_files_gc_session
 
 __all__ = [
@@ -139,7 +137,6 @@ __all__ = [
     "MattingEngine",
     "NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS",
     "NIGHTLY_CONSOLIDATION_MAX_TOKENS",
-    "NIGHTLY_CREATION_ENABLED",
     "NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT",
     "NIGHTLY_CREATION_MAX_TOKENS",
     "NIGHTLY_DIARY_MAX_TOKENS",
@@ -218,7 +215,6 @@ __all__ = [
     "sha256_hex",
     "sha512_b64",
     "sync_trace_span",
-    "temp_file_delete",
     "temp_files_gc_session",
     "tool_error",
     "unquote_user_setting",

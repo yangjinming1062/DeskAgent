@@ -1,7 +1,5 @@
 from typing import ClassVar
 
-from openai import AsyncOpenAI
-
 from ..base import ProviderConfig, VideoAsset, VideoGenProvider, VideoGenRequest, VideoJobStatus
 from ..http import get_http
 from ._errors import raise_for_grok_response
@@ -81,6 +79,3 @@ class GrokVideoGenProvider(VideoGenProvider):
     async def fetch(self, file_id: str) -> VideoAsset:
         # xAI 下载 URL 由 poll 内联返回；fetch 不可达，仅为满足 ABC 保留。
         raise RuntimeError("grok video returns the download URL via poll(); fetch() is not used")
-
-    def raw_client(self) -> "AsyncOpenAI | None":
-        return None

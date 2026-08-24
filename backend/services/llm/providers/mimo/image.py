@@ -7,7 +7,7 @@ from ..http import get_async_client
 
 
 class MiMoImageGenProvider(ImageGenProvider):
-    """通过 OpenAI Images API 生图（兼容任何暴露 client.images.generate() 的供应商，如 DALL·E、legacy MiMo image）；线缆形态由 OpenAI SDK 处理，provider_name "mimo" 为旧默认；走 MiniMax 原生端点的部署由 MiniMaxImageGenProvider 覆写。"""
+    """通过 OpenAI Images API 生图（兼容任何暴露 client.images.generate() 的供应商，如 DALL·E）；线缆形态由 OpenAI SDK 处理。"""
 
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"image_gen": "dall-e-3"}

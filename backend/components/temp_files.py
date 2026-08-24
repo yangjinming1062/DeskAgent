@@ -58,7 +58,7 @@ def _metadata_path(meta: dict) -> Path | None:
 
 
 def save_file(data: bytes, session_id: str, content_type: str, ext: str, *, meta_marker: str | None = None) -> tuple[str, str]:
-    """保存字节到 temp 存储，返回 (file_id, public_url)；meta_marker 是所有权/身份标签（如 ``"preview:{user_id}"``），写入 meta 后由 temp_file_delete 校验以拒绝跨 owner 删除；meta 写失败时 unlink 数据文件，避免无 TTL 跟踪的孤儿。"""
+    """保存字节到 temp 存储，返回 (file_id, public_url)；meta_marker 是所有权/身份标签（如 ``"preview:{user_id}"``），写入 meta 后由删除路径校验以拒绝跨 owner 删除；meta 写失败时 unlink 数据文件，避免无 TTL 跟踪的孤儿。"""
     file_id = secrets.token_urlsafe(16)
     filepath = _media_path(file_id, ext)
 

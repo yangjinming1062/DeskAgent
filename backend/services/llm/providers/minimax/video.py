@@ -148,6 +148,3 @@ class MiniMaxVideoGenProvider(VideoGenProvider):
         if not download_url:
             raise RuntimeError(f"MiniMax file retrieve returned no download_url: {body}")
         return VideoAsset(download_url=download_url, content_type=file_obj.get("content_type") or "video/mp4", size=file_obj.get("bytes"))
-
-    def raw_client(self) -> "object | None":
-        return None

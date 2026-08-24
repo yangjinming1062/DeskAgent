@@ -10,7 +10,6 @@ from components import (
     MAX_INFERRED_PROFILE_CONTENT_CHARS,
     NIGHTLY_CONSOLIDATE_MAX_RECALL_ROWS,
     NIGHTLY_CONSOLIDATION_MAX_TOKENS,
-    NIGHTLY_CREATION_ENABLED,
     NIGHTLY_CREATION_MAX_EXPRESSIONS_PER_NIGHT,
     NIGHTLY_CREATION_MAX_TOKENS,
     NIGHTLY_DIARY_MAX_TOKENS,
@@ -390,8 +389,6 @@ async def _stage_5_creation(
     tz_str: str | None = None,
 ) -> bool:
     """Stage 5：自主创作——伙伴生成新表情。"""
-    if not NIGHTLY_CREATION_ENABLED:
-        return False
 
     async with session_scope() as db:
         # 取 Stage 4 的日记
