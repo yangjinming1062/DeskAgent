@@ -309,6 +309,9 @@ DEFAULT_IDLE_VARIANTS: list[str] = [
     "idle_glance",
     "idle_squint",
     "idle_sway_more",
+    "idle_stretch",
+    "idle_hip_shift",
+    "idle_lean_back",
 ]
 
 # 复用 DEFAULT_ACTIONS 里的 idle_glance；剩余的 idle_* 在此就地声明（也只读不写入 bone）。
@@ -318,6 +321,34 @@ DEFAULT_IDLE_VARIANT_BODIES: dict[str, ActionDef] = {
     # eye 骨骼通过 blink 通道已有 scale.y，这里仅点头下视
     "idle_squint": _act(600, 200, 250, False, _rot("head", "x", [(0, -0.06)])),
     "idle_sway_more": _act(3500, 300, 300, False, _rot("body_main", "z", [(0, 0.05)])),
+    # 伸懒腰：双肩上提-保持-回落 + 头微仰
+    "idle_stretch": _act(
+        3600,
+        300,
+        500,
+        False,
+        _rot("shoulder_L", "z", [(0, 0.10), (400, 0.35), (2600, 0.33), (3600, 0.08)], "ease_in_out"),
+        _rot("shoulder_R", "z", [(0, -0.10), (400, -0.35), (2600, -0.33), (3600, -0.08)], "ease_in_out"),
+        _rot("head", "x", [(0, -0.02), (400, -0.08), (2600, -0.07), (3600, -0.02)], "ease_in_out"),
+    ),
+    # 换重心：躯干侧倾 + 头反向代偿
+    "idle_hip_shift": _act(
+        4000,
+        300,
+        400,
+        False,
+        _rot("body_main", "z", [(0, 0.015), (400, 0.045), (3400, 0.042), (4000, 0.012)], "ease_in_out"),
+        _rot("head", "y", [(0, -0.03), (400, -0.08), (3400, -0.075), (4000, -0.025)], "ease_in_out"),
+    ),
+    # 后仰放松：躯干后仰 + 头抬起 + 双肩微后收
+    "idle_lean_back": _act(
+        3200,
+        300,
+        450,
+        False,
+        _rot("body_main", "x", [(0, 0.02), (350, 0.07), (2700, 0.065), (3200, 0.018)], "ease_in_out"),
+        _rot("head", "x", [(0, 0.03), (350, 0.09), (2700, 0.085), (3200, 0.028)], "ease_in_out"),
+    ),
 }
 
 

@@ -79,7 +79,7 @@ mesh2d 路径（[client/renderer/companion/mesh2d/](client/renderer/companion/me
 
 **互斥规则**：driver 内部维护 `Active Action > Locomotion > Idle Variant > Base Micro-motion` 优先级；active action 在播（包括 `blend_out_ms` 收尾期间）期间**暂停** idle 变体计时器、**暂停** locomotion 公式的额外相位叠加，避免互相抢占造成的视觉抖动。
 
-**idle pose 变体**：当 spriteState 进入 idle 且无 active action 时，driver 每 4-8s 在 `idle_variants`（`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more`）列表里按权重（与 personaTags 联动）随机切换。变体本身也是骨骼 pose，但只持续几百 ms 到几 s，结束后自动回中。
+**idle pose 变体**：当 spriteState 进入 idle 且无 active action 时，driver 每 4-8s 在 `idle_variants`（`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more` / `idle_stretch` / `idle_hip_shift` / `idle_lean_back`）列表里按权重（与 personaTags 联动）随机切换。变体本身也是关键帧 pose，但只持续几百 ms 到几 s，结束后自动回中。
 
 ---
 
@@ -335,7 +335,7 @@ Onboarding 默认走 2D 路径：形象确认后立即触发 2D 骨骼分层切�
 空闲时形象不是静止贴图。两类自主行为，**都不触发语音、不弹气泡，纯视觉**：
 
 - **微动作**（随机间隔）：眨眼、换重心、看四周、伸懒腰等空闲变体随机切换。由 2D / 3D 骨骼动画引擎直接驱动，不走云端。
-  - 2D 路径下的空闲变体集（[mesh2d 驱动层注册表](backend/services/companion/mesh2d/manifest_exporter.py#L162-L185)）：`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more` 等加权随机切换（详见 §2.3）。
+  - 2D 路径下的空闲变体集（[mesh2d 驱动层注册表](backend/services/companion/mesh2d/manifest_exporter.py)）：`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more` / `idle_stretch` / `idle_hip_shift` / `idle_lean_back` 加权随机切换（详见 §2.3）。
 - **空间自主行为（智能驱动 vs 本地规则）**：智能驱动开关开启时，客户端周期性/事件驱动地向云端提交环境上下文（空闲时长、本地时间、焦点应用、锁屏状态、上次动作间隔），由云端决定是否触发漫游、栖息或静止；云端返回"不动"或异常时均保持静止、不做擅自决策。关时回退本地规则（专注窗口自动栖身）。
 
 ### 6.5 故障态与降级行为（伙伴永不"死"）

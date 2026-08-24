@@ -28,7 +28,10 @@ const IDLE_VARIANT_BOOST: ReadonlyArray<readonly [readonly string[], string]> = 
   [['活泼', '好动', '元气', '调皮', '俏皮', '热血', '搞怪', '狂野'], 'idle_sway_more'],
   [['好奇', '敏锐', '灵动', '聪明', '警觉锐利', '知性', '理性'], 'idle_glance'],
   [['害羞', '社恐', '内敛', '安静', '胆小', '温婉', '文静'], 'idle_squint'],
-  [['沉稳', '冷静', '懒散', '慵懒', '高冷', '清冷', '孤傲', '从容不迫'], 'idle_breath']
+  [['沉稳', '冷静', '懒散', '慵懒', '高冷', '清冷', '孤傲', '从容不迫'], 'idle_breath'],
+  [['元气', '开朗', '自来熟', '热情', '阳光'], 'idle_stretch'],
+  [['慵懒', '懒散', '随性', '悠闲', '佛系'], 'idle_hip_shift'],
+  [['优雅', '高冷', '清冷', '端庄', '成熟'], 'idle_lean_back']
 ]
 
 function buildIdleWeightsFromPersona(tags: readonly string[], variants: readonly string[]): Record<string, number> {
