@@ -6,6 +6,7 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $chatOpen } from '@/companion/chat-store'
 import {
   $clipOverride,
+  $gazeTarget,
   $spriteAction,
   $spriteEmotion,
   $spriteState,
@@ -128,8 +129,13 @@ export function Companion3D(): React.JSX.Element {
 
       window.addEventListener('resize', onResize)
 
-      // 视线跟随 —— 在伙伴上悬停时平滑跟随光标，避免触发 DOM 回流
+      // 视线跟随 —— 在伙伴上悬停时平滑跟随光标，避免触发 DOM 回流；
+      // 显式视线目标（ritual walk 途中锁定目标窗口）优先于指针。
       const onPointerMove = (e: PointerEvent) => {
+        if ($gazeTarget.get()) {
+          return
+        }
+
         if ($chatOpen.get() || $spatialLocomotion.get() === 'drag' || $contextMenuOpen.get()) {
           eng.character.setLookTarget(0, 0)
 
@@ -147,6 +153,15 @@ export function Companion3D(): React.JSX.Element {
 
       eng.canvas.addEventListener('pointermove', onPointerMove)
       eng.canvas.addEventListener('pointerleave', onPointerLeave)
+
+      // 程序化视线目标：设置即看向、清除即回中（指针下一次移动会重新接管）
+      const unsubGaze = $gazeTarget.listen(gaze => {
+        if (gaze) {
+          eng.character.setLookTarget(gaze.nx, gaze.ny)
+        } else {
+          eng.character.setLookTarget(0, 0)
+        }
+      })
 
       // 渲染功率档位 —— 启动时立即解析一次（在首个模型稳定前锁定 active），
       // 之后随信号变化更新。
@@ -169,6 +184,7 @@ export function Companion3D(): React.JSX.Element {
         detachLipSync()
         unsubPower()
         unsubDragVelocity()
+        unsubGaze()
         detachSilhouette()
         window.removeEventListener('resize', onResize)
         ro.disconnect()

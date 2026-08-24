@@ -105,6 +105,7 @@
 |---|---|---|
 | `wave_right` / `wave_left` | 单手举起挥手 | happy / excited / 告别 |
 | `present_right` / `present_left` | 单手抬起展示 / 指向 / 拿东西 | helpful（"帮我拿杯子"） |
+| `point_right` / `point_left` | 抬臂指向屏幕目标（仪式行走抵达后按方位播放） | helpful / curious（"看这个"） |
 | `look_away_left` / `look_away_right` | 头脸避开视线 | shy / embarrassed / sad |
 | `turn_body_left` / `turn_body_right` | 整个上半身转向 | 切换朝向 / 仪式行走 |
 | `lean_forward` | 上半身微微前倾 | curious / thinking |

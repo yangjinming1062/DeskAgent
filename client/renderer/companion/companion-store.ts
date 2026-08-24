@@ -200,6 +200,18 @@ export function playSpriteActionSequence(actions: readonly string[]): void {
   $spriteAction.set(first ?? null)
 }
 
+// 程序化视线目标（精灵窗口归一 [-1,1]，与指针跟随同空间）：显式目标优先于指针
+// （ritual walk 飞行途中锁定目标窗口中心）；null = 回到指针跟随。
+export const $gazeTarget = atom<{ nx: number; ny: number } | null>(null)
+
+export function setGazeTarget(target: { nx: number; ny: number }): void {
+  $gazeTarget.set(target)
+}
+
+export function clearGazeTarget(): void {
+  $gazeTarget.set(null)
+}
+
 let activityCounter = 0
 let activityResetTimer: ReturnType<typeof setTimeout> | null = null
 

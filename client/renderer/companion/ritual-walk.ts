@@ -1,7 +1,15 @@
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { $spriteAction, setSpriteState } from '@/companion/companion-store'
-import { computePerchPosition, moveTo, reevaluateSpatialDecision } from '@/companion/spatial'
+import { $spriteAction, clearGazeTarget, setGazeTarget, setSpriteState } from '@/companion/companion-store'
+import {
+  $spatialPos,
+  $spatialScale,
+  computePerchPosition,
+  getBaseSpriteHeight,
+  getBaseSpriteWidth,
+  moveTo,
+  reevaluateSpatialDecision
+} from '@/companion/spatial'
 import { sleep } from '@/shared/lib/utils'
 
 const RETRY_MS = 300
@@ -39,6 +47,20 @@ export async function findWindowByKeyword(keyword: string): Promise<WindowGeom |
   }
 }
 
+/** 屏幕坐标 → 精灵窗口归一 [-1,1] 的视线目标。粗粒度方向感即可，clamp 到边界防越轴。 */
+function gazeTowardsPoint(point: { x: number; y: number }): { nx: number; ny: number } {
+  const pos = $spatialPos.get()
+  const halfW = (getBaseSpriteWidth() * $spatialScale.get()) / 2
+  const halfH = (getBaseSpriteHeight() * $spatialScale.get()) / 2
+
+  const clamp = (v: number): number => Math.max(-1, Math.min(1, v))
+
+  return {
+    nx: clamp((point.x - (pos.x + halfW)) / Math.max(halfW, 1)),
+    ny: clamp((point.y - (pos.y + halfH)) / Math.max(halfH, 1))
+  }
+}
+
 export async function performRitualWalk<T>(
   findTarget: () => Promise<WindowGeom | null>,
   execute: () => Promise<T>
@@ -64,31 +86,42 @@ export async function performRitualWalk<T>(
     return execute()
   }
 
-  await new Promise<void>(resolve => moveTo(perch, 'fly', resolve))
+  // 飞行途中视线锁定目标窗口中心；抵达后按方位抬手指向，再接 click 触碰
+  const targetCenter = { x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }
+  setGazeTarget(gazeTowardsPoint(targetCenter))
 
-  // DESIGN §3.6：抵达后播放专属「点击/触碰」肢体动作，
-  // 与通用 interacting 状态区别开来——动作优先于状态动画。
-  $spriteAction.set('click')
-  setSpriteState('interacting', { durationMs: 1500 })
+  try {
+    await new Promise<void>(resolve => moveTo(perch, 'fly', resolve))
 
-  const targetCenterX = Math.round(geom.x + geom.w / 2)
-  const targetCenterY = Math.round(geom.y + geom.h / 2)
+    const dx = targetCenter.x - ($spatialPos.get().x + getBaseSpriteWidth() / 2)
+    $spriteAction.set(dx >= 0 ? 'point_right' : 'point_left')
+    await sleep(800)
 
-  if (window.spiritagent?.runnerInvoke) {
-    window.spiritagent.runnerInvoke('system.click_at', { x: targetCenterX, y: targetCenterY }).catch(() => {})
+    // DESIGN §3.6：抵达后播放专属「点击/触碰」肢体动作，
+    // 与通用 interacting 状态区别开来——动作优先于状态动画。
+    $spriteAction.set('click')
+    setSpriteState('interacting', { durationMs: 1500 })
+
+    if (window.spiritagent?.runnerInvoke) {
+      window.spiritagent
+        .runnerInvoke('system.click_at', { x: Math.round(targetCenter.x), y: Math.round(targetCenter.y) })
+        .catch(() => {})
+    }
+
+    await sleep(400)
+
+    const result = await execute()
+
+    // 执行结束后清除 click action，让后续状态机正常推进
+    if ($spriteAction.get() === 'click') {
+      $spriteAction.set(null)
+    }
+
+    return result
+  } finally {
+    // gaze 泄漏会让精灵永远盯着最后的目标；异常路径同样要解锁
+    clearGazeTarget()
+    await sleep(800)
+    reevaluateSpatialDecision()
   }
-
-  await sleep(400)
-
-  const result = await execute()
-
-  // 执行结束后清除 click action，让后续状态机正常推进
-  if ($spriteAction.get() === 'click') {
-    $spriteAction.set(null)
-  }
-
-  await sleep(800)
-  reevaluateSpatialDecision()
-
-  return result
 }

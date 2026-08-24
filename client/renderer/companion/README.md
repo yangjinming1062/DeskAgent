@@ -135,4 +135,4 @@
 
 **Backend 零感知**：所有空间决策在 Client 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
 
-**Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：`system.open_application` 工具调用经 events.ts 拦截——执行工具后等 1.5s 窗口出现 → `system.get_windows` 按名称匹配窗口 → fly 到目标 → INTERACTING 1.5s → 返回原 locale。任一步骤失败则静默跳过（仪式是增强层）。chat 开启或屏锁时直接执行不走路。
+**Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：`system.open_application` 工具调用经 events.ts 拦截——执行工具后等 1.5s 窗口出现 → `system.get_windows` 按名称匹配窗口 → 飞行途中视线锁定目标窗口中心（`$gazeTarget` 显式覆盖指针跟随，2D/3D 同规则）→ fly 到目标 → 抵达后按方位播 `point_left/right` 再接 `click` → INTERACTING 1.5s → 返回原 locale。任一步骤失败则静默跳过（仪式是增强层）；gaze 的清除走 try/finally，异常路径不泄漏。chat 开启或屏锁时直接执行不走路。

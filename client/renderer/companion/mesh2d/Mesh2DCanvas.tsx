@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
+import { $gazeTarget } from '@/companion/companion-store'
 import { $personalityTags } from '@/companion/persona-store'
 import { $spatialLocomotion, type Locomotion } from '@/companion/spatial'
 import { log } from '@/shared/lib/log'
@@ -174,8 +175,9 @@ export function Mesh2DCanvas(): React.JSX.Element {
             dt,
             elapsed: now - startedAtRef.current,
             audioAmp: audioAmpRef.current,
-            lookX: lookRef.current.x,
-            lookY: lookRef.current.y,
+            // 显式视线目标优先于指针跟随（ritual walk 途中锁定目标窗口）
+            lookX: $gazeTarget.get()?.nx ?? lookRef.current.x,
+            lookY: $gazeTarget.get()?.ny ?? lookRef.current.y,
             breathActive: true,
             blinkActive: true,
             reducedMotion: prefersReducedMotion(),
