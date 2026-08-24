@@ -156,16 +156,11 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   }, [catalog.voices])
 
   useEffect(() => {
-    void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
     void fetchVoiceCatalogRaw(requestGateway).then(r => {
       if (r.ok) {
         setCatalog(r.catalog)
       }
     })
-
-    return () => {
-      void window.spiritagent.sprite.setAlwaysOnTop({ on: true })
-    }
   }, [requestGateway])
 
   const runDesign = async () => {

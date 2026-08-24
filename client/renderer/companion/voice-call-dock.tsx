@@ -123,8 +123,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.voiceCallOffset', () => panelRef.current)
 
   useEffect(() => {
-    void window.spiritagent.sprite.setAlwaysOnTop({ on: false })
-
     let unmounted = false
     let ctx: AudioContext | null = null
     navigator.mediaDevices
@@ -407,7 +405,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       ctx?.close().catch(() => {})
       stopSpeaking()
       setSpriteState('idle')
-      void window.spiritagent.sprite.setAlwaysOnTop({ on: true })
     }
   }, [requestGateway, gatewayStateRef, onCloseRef])
 
@@ -468,7 +465,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-6" style={{ pointerEvents: 'none' }}>
+    // DESIGN §6.1：通话是 ambient 陪伴——精灵窗口保持置顶（§3.7 不变量），
+    // 面板默认停在屏幕左下：不压精灵默认 home（右下）也不压底部居中的字幕，
+    // 不挡用户切去干活的应用；拖拽偏移持久化，用户可自行锚定。
+    <div className="fixed inset-0 z-50 flex items-end justify-start p-10" style={{ pointerEvents: 'none' }}>
       <div
         className="flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
         ref={panelRef}

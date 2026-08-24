@@ -128,6 +128,16 @@ export function pushProactiveMessage(text: string): void {
   $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_proactive' }])
 }
 
+// DESIGN §6.6 场景 1：LLM 只声明情绪/动作、不输出正文的回合，在对话里留下
+// 一条「情绪痕迹」弱化提示行（渲染端按 subtype=status_affect 走 trace 样式）。
+// 后端对同一行为持久化 status_affect 行（chat/persistence.py），live 路径补齐
+// 同一行，保证实时视图与历史水合一致——否则当场无声无息、重开聊天却多出一行。
+export function pushAffectTraceMessage(): void {
+  const id = nextId()
+  $chatMessageBodies.setKey(id, { text: '', streaming: false, toolName: null })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_affect' }])
+}
+
 export function pushUserMessage(text: string, attachments?: string[]): string {
   const id = nextId()
   $chatMessageBodies.setKey(id, {

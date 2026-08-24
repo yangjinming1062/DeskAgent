@@ -37,7 +37,9 @@ interface WindowGeom {
 export type { WindowGeom }
 
 export async function findWindowByKeyword(keyword: string): Promise<WindowGeom | null> {
-  if (!window.spiritagent?.runnerInvoke) {
+  // 空关键词会让 `name.includes('')` 恒真——匹配到枚举出的第一个窗口，
+  // 精灵会对着一个无关窗口走过去并点它。关键词缺失 = 找不到目标。
+  if (!keyword.trim() || !window.spiritagent?.runnerInvoke) {
     return null
   }
 
@@ -75,7 +77,8 @@ export function gazeTowardsPoint(point: { x: number; y: number }): { nx: number;
 
 export async function performRitualWalk<T>(
   findTarget: () => Promise<WindowGeom | null>,
-  execute: () => Promise<T>
+  execute: () => Promise<T>,
+  opts?: { previewClick?: boolean }
 ): Promise<T> {
   if ($chatOpen.get() || $screenLocked.get()) {
     return execute()
@@ -119,7 +122,9 @@ export async function performRitualWalk<T>(
     $spriteAction.set('click')
     setSpriteState('interacting', { durationMs: 1500 })
 
-    if (window.spiritagent?.runnerInvoke) {
+    // 预点击只对「点击不是工具本体」的仪式有意义（open_application 聚焦已开窗口）。
+    // click_at 工具本身就是要执行的那次点击——再补一次就是双击。
+    if (opts?.previewClick !== false && window.spiritagent?.runnerInvoke) {
       window.spiritagent
         .runnerInvoke('system.click_at', { x: Math.round(targetCenter.x), y: Math.round(targetCenter.y) })
         .catch(() => {})

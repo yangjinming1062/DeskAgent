@@ -113,7 +113,7 @@
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。仅 `PersonaSection` 保存后会接入两步形象再生成（先头像 → 用户确认 → 全身）；`PersonaRetune` 是纯 persona 维度调整，不重跑形象流水线。Onboarding 自身始终走两步 UI。
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
-- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window），chat-dock 切换不影响 `setAlwaysOnTop`。
+- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 
 ## 10. 空间行为（位置 × 移动 × 缩放）
 
@@ -135,4 +135,4 @@
 
 **Backend 零感知**：所有空间决策在 Client 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
 
-**Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：`system.open_application` 工具调用经 events.ts 拦截——执行工具后等 1.5s 窗口出现 → `system.get_windows` 按名称匹配窗口 → 途中视线锁定目标窗口中心（`$gazeTarget` 显式覆盖指针跟随，2D/3D 同规则）→ 远距离（>400px）fly、近距离 walk 到目标 → 抵达后按方位播 `point_left/right` 再接 `click` → INTERACTING 1.5s → 返回原 locale。找不到目标窗口或无处栖身时以一句人格化台词表达（走 speakProactive 的档位门控）后静默走常规工具调用兜底；gaze 的清除走 try/finally，异常路径不泄漏。chat 开启或屏锁时直接执行不走路。
+**Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：交互类工具（`system.open_application` / `browser_*` / `system.click_at`）在 events.ts 的 tool.call 分发里拦截。目标解析按工具分派：`click_at` 的目标就是点击坐标本身（包成虚拟窗口几何，**execute 即那次点击，不再额外补一次 click**——否则双击）；其余工具从 args（name/url/keyword）提取关键词经 `system.get_windows` 匹配既有窗口，关键词为空不进入仪式（空串会让 `includes` 恒真、匹配到第一个无关窗口）。找到目标后：途中视线锁定目标中心（`$gazeTarget` 显式覆盖指针跟随，2D/3D 同规则）→ 远距离（>400px）fly、近距离 walk 到目标旁 → 抵达后按方位播 `point_left/right` 再接 `click`（open_application 等先在目标中心补一次聚焦点击，click_at 跳过）→ INTERACTING 1.5s → execute 原工具 → 返回原 locale。找不到目标窗口或无处栖身时以一句人格化台词表达（走 speakProactive 的档位门控）后静默走常规工具调用兜底；gaze 的清除走 try/finally，异常路径不泄漏。chat 开启或屏锁时直接执行不走路。

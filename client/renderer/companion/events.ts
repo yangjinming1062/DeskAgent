@@ -20,6 +20,7 @@ import {
   beginAssistantMessage,
   clearPendingPrompts,
   finalizeAssistantMessage,
+  pushAffectTraceMessage,
   pushProactiveMessage,
   setAssistantError,
   setAssistantTool,
@@ -52,6 +53,10 @@ import { findWindowByKeyword, gazeTowardsPoint, performRitualWalk, type WindowGe
 
 const PERCH_RETRY_MS = 300
 const PERCH_RETRY_COUNT = 5
+// click_at 虚拟目标几何的边长（px）：只为 perch 落位与指向方位提供参照，
+// 精灵会站到点击点旁而非覆盖它。
+const CLICK_GEOM_SIZE = 160
+const CLICK_GEOM_HALF = CLICK_GEOM_SIZE / 2
 
 // 高唤醒负面情绪冒冷汗（DESIGN §6.3 粒子清单 💦 的情绪侧触发点）
 const SWEAT_EMOTIONS: ReadonlySet<string> = new Set(['scared', 'embarrassed', 'concerned', 'apologetic'])
@@ -175,14 +180,20 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 锁屏状态下，抑制渲染层的提示。
       const screenLocked = $screenLocked.get()
 
+      // "neutral" 是 LLM 的无操作情绪；当作无 affect 处理，避免触发徽标闪烁。
+      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）；锁屏只静默语音与消息。
+      const hasEmotion = Boolean(emotion && emotion !== 'neutral')
+
       // 多气泡回合：每个气泡各自携带流式文本；
       // payload.text 是整轮（包含两个气泡）的全文，会覆盖最后一个气泡。
       // 这种情况下保留 last.text。
       finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text)
 
-      // "neutral" 是 LLM 的无操作情绪；当作无 affect 处理，避免触发徽标闪烁。
-      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）；锁屏只静默语音与消息。
-      const hasEmotion = Boolean(emotion && emotion !== 'neutral')
+      // DESIGN §6.6 场景 1：纯情绪/动作回合无正文，空气泡已被上面剪掉——
+      // 补一条情绪痕迹行，与后端持久化的 status_affect 行保持一致。
+      if (!text.trim() && (hasEmotion || actions.length > 0)) {
+        pushAffectTraceMessage()
+      }
 
       if (hasEmotion) {
         maybeEmotionVfx(emotion)
@@ -276,15 +287,42 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       void (async () => {
         try {
-          const isInteractiveTool =
-            name === 'system.open_application' || name.startsWith('browser_') || name === 'system.click_at'
+          const args = p.args ?? {}
 
-          const result = isInteractiveTool
-            ? await performRitualWalk(
-                () => findWindowByKeyword(String(p.args?.name ?? p.args?.url ?? p.args?.keyword ?? '')),
-                () => runnerInvoke(name, p.args ?? {})
-              )
-            : await runnerInvoke(name, p.args ?? {})
+          // 仪式行走的解析目标：
+          // - system.click_at 的目标就是点击坐标本身（包成虚拟窗口几何，走到旁边
+          //   后 execute 即那次点击，不再额外补一次 click → 双击）；
+          // - open_application / browser_* 按名称或 URL 匹配既有窗口；
+          //   关键词缺失时重试也不会有结果，直接走常规调用。
+          let findTarget: (() => Promise<WindowGeom | null>) | null = null
+          let previewClick = true
+
+          if (name === 'system.click_at') {
+            const cx = Number(args.x)
+            const cy = Number(args.y)
+
+            if (Number.isFinite(cx) && Number.isFinite(cy)) {
+              const geom: WindowGeom = {
+                x: cx - CLICK_GEOM_HALF,
+                y: cy - CLICK_GEOM_HALF,
+                w: CLICK_GEOM_SIZE,
+                h: CLICK_GEOM_SIZE
+              }
+
+              findTarget = () => Promise.resolve(geom)
+              previewClick = false
+            }
+          } else {
+            const keyword = String(args.name ?? args.url ?? args.keyword ?? '')
+
+            if (keyword.trim()) {
+              findTarget = () => findWindowByKeyword(keyword)
+            }
+          }
+
+          const result = findTarget
+            ? await performRitualWalk(findTarget, () => runnerInvoke(name, args), { previewClick })
+            : await runnerInvoke(name, args)
 
           await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
