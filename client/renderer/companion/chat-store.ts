@@ -92,8 +92,9 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
 }
 
 function extractText(m: SessionMessage): string {
-  // ``SessionMessage.content`` 类型未知——multimodal_v1 的用户消息
-  // 以 JSON parts 数组到达；只渲染用户可见文本，避免漏出 ``[{"type": "input_image", ...}]``。
+  // ``SessionMessage.content`` 类型未知——部分用户消息以 JSON parts 数组
+  // 到达（含 image_url 等多模态部分）；只渲染用户可见文本，避免漏出
+  // ``[{"type": "input_image", ...}]`` 之类的非文本部分。
   if (typeof m.content !== 'string') {
     return ''
   }

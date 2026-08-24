@@ -4,7 +4,7 @@ import { VOICEDESIGN_PREFIX } from '@/shared/voice-catalog'
 import { $companionVoiceId } from './prefs'
 import { fetchVoiceCatalogRaw } from './voice'
 
-export type VoiceValidityResult = { valid: true } | { valid: false; name: string; reason: 'catalog_miss' }
+type VoiceValidityResult = { valid: true } | { valid: false; name: string; reason: 'catalog_miss' }
 
 export async function checkCompanionVoiceValidity(requestGateway: RequestGateway): Promise<VoiceValidityResult> {
   const id = $companionVoiceId.get()

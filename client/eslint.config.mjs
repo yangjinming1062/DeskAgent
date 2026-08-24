@@ -111,8 +111,7 @@ export default [
     files: ['renderer/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
-        ...globals.browser,
-        ...globals.node
+        ...globals.browser
       }
     },
     plugins: {

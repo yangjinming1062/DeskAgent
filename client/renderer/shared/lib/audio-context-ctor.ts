@@ -3,10 +3,6 @@
 // 跳过音频分析 / 录音逻辑，而不是崩溃。
 
 export function getAudioContextCtor(): typeof AudioContext | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
   const Window = window as unknown as { webkitAudioContext?: typeof AudioContext }
 
   return window.AudioContext ?? Window.webkitAudioContext ?? null

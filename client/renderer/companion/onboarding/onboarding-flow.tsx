@@ -534,10 +534,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const width = 448
     const height = 600
 
-    if (typeof window === 'undefined') {
-      return { x: 0, y: 0 }
-    }
-
     return {
       x: Math.max(0, Math.round((window.innerWidth - width) / 2)),
       y: Math.max(0, Math.round((window.innerHeight - height) / 2))

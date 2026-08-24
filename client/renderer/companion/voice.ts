@@ -7,7 +7,7 @@ import type { RequestGateway, VoiceOption } from '@/shared/voice-catalog'
 export type { VoiceOption } from '@/shared/voice-catalog'
 export { GENDER_OPTIONS, LANGUAGE_LABELS } from '@/shared/voice-catalog'
 
-export interface VoiceMatch {
+interface VoiceMatch {
   voice: VoiceOption
   alternatives: VoiceOption[]
 }

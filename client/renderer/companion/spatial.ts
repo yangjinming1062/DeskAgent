@@ -14,10 +14,6 @@ import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
 export function getBaseSpriteHeight(): number {
-  if (typeof window === 'undefined') {
-    return 360
-  }
-
   // 默认高度为显示器高度的 1/3，限制在 [260, 960] 区间内
   return Math.round(Math.max(260, Math.min(window.innerHeight / 3, 960)))
 }
@@ -26,8 +22,8 @@ export function getBaseSpriteWidth(): number {
   return Math.round(getBaseSpriteHeight() * 0.85)
 }
 
-export const SPRITE_W = typeof window !== 'undefined' ? getBaseSpriteWidth() : 306
-export const SPRITE_H = typeof window !== 'undefined' ? getBaseSpriteHeight() : 360
+export const SPRITE_W = getBaseSpriteWidth()
+export const SPRITE_H = getBaseSpriteHeight()
 const REST_MARGIN = 24
 
 const WALK_SPEED = 80
@@ -77,15 +73,9 @@ export interface ViewportSize {
   height: number
 }
 
-export const $viewport = atom<ViewportSize>(
-  typeof window === 'undefined' ? { width: 0, height: 0 } : { width: window.innerWidth, height: window.innerHeight }
-)
+export const $viewport = atom<ViewportSize>({ width: window.innerWidth, height: window.innerHeight })
 
 export function getHomePosition(): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return { x: 0, y: 0 }
-  }
-
   const w = getBaseSpriteWidth()
   const h = getBaseSpriteHeight()
 
@@ -102,10 +92,6 @@ export function getHomePosition(): { x: number; y: number } {
 export const FACE_TOP_RATIO = 0.3
 
 export function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return pos
-  }
-
   const w = getBaseSpriteWidth()
   const h = getBaseSpriteHeight()
   const faceH = h * FACE_TOP_RATIO
@@ -129,10 +115,6 @@ export function computePerchPlacement(
   geom: { x: number; y: number; w: number; h: number },
   maxScale: number
 ): PerchPlacement | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
   const margin = 8
   const rightAvail = Math.max(0, window.innerWidth - REST_MARGIN - (geom.x + geom.w) - margin)
   const leftAvail = Math.max(0, geom.x - margin - REST_MARGIN)
@@ -487,10 +469,6 @@ let roamTimer: ReturnType<typeof setTimeout> | null = null
 let roaming = false
 
 function generateRoamWaypoint(): { x: number; y: number } {
-  if (typeof window === 'undefined') {
-    return { x: 0, y: 0 }
-  }
-
   const vw = window.innerWidth
   const vh = window.innerHeight
 
@@ -567,8 +545,8 @@ export function cancelPhysics(): void {
 export function dockToEdge(side: 'left' | 'right'): void {
   cancelMovement()
   cancelPhysics()
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const vw = window.innerWidth
+  const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
   const spriteH = getBaseSpriteHeight()
   const targetY = Math.max(REST_MARGIN, Math.min($spatialPos.get().y, vh - spriteH - REST_MARGIN))
@@ -597,7 +575,7 @@ export function undockFromEdge(): void {
 
   cancelMovement()
   const side = $edgeDockSide.get()
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
+  const vw = window.innerWidth
   const spriteW = getBaseSpriteWidth()
   const curPos = $spatialPos.get()
 
@@ -622,8 +600,8 @@ export function startFreeFall(initialPos: { x: number; y: number }, velocity: { 
   cancelMovement()
   cancelPhysics()
 
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const vw = window.innerWidth
+  const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
   const spriteH = getBaseSpriteHeight()
   const groundY = Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN)
@@ -726,8 +704,8 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
 }
 
 export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1920
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 1080
+  const vw = window.innerWidth
+  const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
   const spriteH = getBaseSpriteHeight()
   const dockMargin = 40
