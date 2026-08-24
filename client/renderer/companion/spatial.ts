@@ -10,7 +10,6 @@ import {
   $spriteState,
   setSpriteState
 } from '@/companion/companion-store'
-import { $renderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $llmAutonomy } from '@/companion/prefs'
 import { persistString, storedString } from '@/shared/lib/storage'
 
@@ -428,11 +427,6 @@ function updateSpatialDecision(): void {
   }
 
   if (tier === 'proactive' && state === 'idle') {
-    // 2D 静态模式不漫游（mesh2d 缺 3D 模型的连续转向与步态，漫游体验突兀）。
-    if ($renderMode.get() === '2d') {
-      return
-    }
-
     if ($spatialLocale.get() !== 'roam') {
       startRoam()
     }
