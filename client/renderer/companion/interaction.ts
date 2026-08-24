@@ -35,7 +35,6 @@ interface InteractRpcResponse {
   text?: string | null
   emotion?: string | null
   reason?: string
-  action?: string | null
 }
 
 interface InteractRpcRequest {
@@ -109,11 +108,6 @@ async function triggerReaction(
     if (res?.text) {
       if (res.emotion) {
         $spriteEmotion.set(res.emotion)
-      }
-
-      // LLM 可顺带返回 action（mesh2d 走 driver，3D 走 clip map）。
-      if (res.action) {
-        $spriteAction.set(res.action)
       }
 
       void playReactionAudio({ id: `llm-${kind}`, text: res.text, tags: [], bucket })

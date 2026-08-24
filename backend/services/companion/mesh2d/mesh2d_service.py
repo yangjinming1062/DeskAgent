@@ -5,6 +5,7 @@ import json
 from components import get_logger
 from modules.companion import AvatarAsset, Mesh2DModel, Persona
 from modules.companion.schemas import Mesh2DModelResponse
+from modules.ws.models import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,6 +168,14 @@ async def set_render_mode(
     """写入 render_mode；切到 3D 时由调用方触发 3D 流水线（model_service）。"""
     persona = await get_or_create_persona(db, user_id)
     persona.render_mode = render_mode
+    # 多端同步：本端切换也向所有在线端广播（含本端——switchRenderMode 幂等，重复应用无害）。
+    db.add(
+        WSEvent(
+            user_id=user_id,
+            event_type="companion.render_mode.changed",
+            payload=json.dumps({"new_mode": render_mode}),
+        ),
+    )
     await db.commit()
     await db.refresh(persona)
     logger.info(

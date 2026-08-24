@@ -300,7 +300,7 @@ export function CompanionRoot(): React.JSX.Element {
         action: { label: strings.notifications.voice.invalidAction, onClick: () => openDock('settings') }
       })
     })
-  }, [lifecycle, gatewayState, requestGateway])
+  }, [lifecycle, gatewayState, requestGateway, openDock])
 
   const onTap = (nx?: number, ny?: number) => {
     if (authed) {

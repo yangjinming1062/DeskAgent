@@ -30,25 +30,9 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 - runner 工具子包之间的 sibling 跨子包 eager import（终端 ↔ 文件、代码执行 → 线程上下文这类循环）
 - Facade 一致性：`from <local_pkg> import X` 走的 `<local_pkg>` 必须在其 `__init__.py` 里 re-export `X`，防止 facade 被过度精简
 
-## 3. 全身图供应商采样（调试）
+## 3. mesh2d 切分验证样本 — `_mesh2d_validation/`
 
-`sample_fullbody_providers.py` — 用生产提示词构造器与固定参考图（`backend/data/参考图.jpg`）按供应商采样全身种子图，供视觉评审决定供应商优先级调整。
-
-输出：`<repo>/backend/data/_fullbody_samples/<UTC-timestamp>/{grok,gemini,minimax}_{1,2}.png`。**不**写生产头像/资产目录、**不**改生产路径。
-
-```bash
-# 跑默认 3 供应商 × 2 张 = 6 张
-uv run scripts/sample_fullbody_providers.py
-
-# 只跑某个供应商
-uv run scripts/sample_fullbody_providers.py --providers gemini
-
-# 自定义输出目录
-uv run scripts/sample_fullbody_providers.py --output-dir backend/data/_fullbody_samples/2026-08-16-review/
-
-# 跑前先确认 backend/data/参考图.jpg 存在
-```
-
+按风格分组的立绘样图目录（`cel_shading/`、`anime_game_cg/`，各含 `layers/`），用于人工核对区域识别 / 抠图 / 骨骼装配质量——腿部切层等新能力上线前把样图放入后重跑切分管线抽检。当前为空脚手架。
 
 ## 4. 存量 mesh2d 动作表回填 — `backfill_mesh2d_actions.py`
 
