@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 import time
 from contextlib import ExitStack
@@ -300,7 +301,14 @@ def _is_blocked_device(filepath: str) -> bool:
 # 命中本意仅给 ``C:/Windows/System32`` 的前缀。Windows 条目源自
 # ``utils.file_safety.get_windows_sensitive_prefixes``，保证文件工具门禁与
 # 终端黑名单同步。
-_SENSITIVE_PATH_PREFIXES = ("/etc/", "/boot/", "/usr/lib/systemd/", "/private/etc/", "/private/var/", *get_windows_sensitive_prefixes())
+_SENSITIVE_PATH_PREFIXES = (
+    # Linux 系统与 systemd 状态
+    "/etc/", "/boot/", "/usr/lib/systemd/", "/var/lib/systemd/",
+    # macOS 系统只读与本地目录服务（DSLocal 含明文密码哈希、TCC 数据库含隐私授权）
+    "/private/etc/", "/private/var/", "/private/var/db/dslocal/",
+    "/system/", "/library/apple/usr/libexec/oah/",
+    *get_windows_sensitive_prefixes(),
+)
 # Per-user AppData / NTUSER.DAT——锚到当前登录用户的 home，避免恰好含
 # ``appdata/roaming/microsoft/`` 的工作区目录被误拒。无锚定的话，任何
 # ``C:\Users\me\Projects\myapp\appdata\...`` 形式的 Windows 工程都会被拒写。
@@ -324,6 +332,31 @@ if IS_WINDOWS:
     _user_home_prefixes = _get_user_home_prefixes()
     _SENSITIVE_USER_PREFIXES = tuple(h + sub for h in _user_home_prefixes for sub in ("appdata/roaming/microsoft/", "appdata/local/microsoft/"))
     _SENSITIVE_USER_EXACTS = tuple(h + name for h in _user_home_prefixes for name in ("ntuser.dat", "ntuser.dat.log", "ntuser.ini"))
+elif sys.platform == "darwin":
+    # macOS 用户钥匙串（登录密码、WiFi 凭据、证书、Secure Notes）与 TCC 数据库。
+    # 与 Windows 的 NTUSER.DAT 同级敏感度——一旦被 agent 读取可提取用户凭据。
+    import os
+
+    def _get_user_home_prefixes_macos() -> tuple[str, ...]:
+        homes: set[str] = set()
+        for var in ("HOME",):
+            val = os.environ.get(var)
+            if val:
+                norm = val.rstrip("/") + "/"
+                homes.add(norm.lower())
+        return tuple(homes)
+
+    _macos_homes = _get_user_home_prefixes_macos()
+    _SENSITIVE_USER_PREFIXES = tuple(
+        h + sub
+        for h in _macos_homes
+        for sub in (
+            "library/keychains/",  # 钥匙串数据库（明文 + 已登录凭据）
+            "library/application support/com.apple.tcc/",  # 隐私授权数据库
+            "library/cookies/",  # 浏览器与系统 cookie
+        )
+    )
+    _SENSITIVE_USER_EXACTS = tuple(h + name for h in _macos_homes for name in ("library/keychains/login.keychain-db",))
 _SENSITIVE_EXACT_PATHS = {"/var/run/docker.sock", "/run/docker.sock"}
 if IS_WINDOWS:
     _SENSITIVE_EXACT_PATHS |= {

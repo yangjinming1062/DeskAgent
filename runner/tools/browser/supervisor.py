@@ -714,17 +714,27 @@ class CDPSupervisor:
             return {"ok": False, "error": str(exc)}
 
         sid = self._active_session_id or self._page_session_id
-        self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": fx, "y": fy}, session_id=sid)
-        self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fx, "y": fy, "button": "left", "clickCount": 1}, session_id=sid)
+        # hold_key 按下顺序：keyDown → mouseDown → moves → mouseUp → keyUp。失败的 keyUp 也会走，
+        # 不让修饰键卡在按下状态（影响后续操作）。
+        # CDP 修饰键位掩码：1=Shift 2=Ctrl 4=Alt 8=Meta。
+        modifier_mask = {"shift": 1, "ctrl": 2, "alt": 4}.get((hold_key or "").lower(), 0)
+        if modifier_mask:
+            self.send_cdp("Input.dispatchKeyEvent", {"type": "keyDown", "modifiers": modifier_mask, "key": hold_key, "code": f"{hold_key.title()}Left", "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower())}, session_id=sid)
+        try:
+            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": fx, "y": fy}, session_id=sid)
+            self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fx, "y": fy, "button": "left", "clickCount": 1}, session_id=sid)
 
-        for i in range(1, steps + 1):
-            curr_x = fx + (tx - fx) * (i / steps)
-            curr_y = fy + (ty - fy) * (i / steps)
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": curr_x, "y": curr_y, "button": "left"}, session_id=sid)
-            time.sleep(0.02)
+            for i in range(1, steps + 1):
+                curr_x = fx + (tx - fx) * (i / steps)
+                curr_y = fy + (ty - fy) * (i / steps)
+                self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": curr_x, "y": curr_y, "button": "left"}, session_id=sid)
+                time.sleep(0.02)
 
-        self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": tx, "y": ty, "button": "left", "clickCount": 1}, session_id=sid)
-        return {"ok": True, "from": from_ref, "to": to_ref}
+            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": tx, "y": ty, "button": "left", "clickCount": 1}, session_id=sid)
+            return {"ok": True, "from": from_ref, "to": to_ref}
+        finally:
+            if modifier_mask:
+                self.send_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "modifiers": modifier_mask, "key": hold_key, "code": f"{hold_key.title()}Left", "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower())}, session_id=sid)
 
     def press_key(self, key: str, modifiers: int = 0) -> dict[str, Any]:
         sid = self._active_session_id or self._page_session_id
