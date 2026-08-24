@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import type React from 'react'
 
+import { setSpriteState } from './companion-store'
 import { speakChatMessage, stopSpeaking } from './tts'
 import { $voicePreparing } from './voice-state'
 
@@ -43,6 +44,7 @@ export function ChatMessagePlayButton({
     // onDone（如果该 onDone 仍然绑定到当前 messageId，会把 atom 清空）。
     if (currentPlayingId === messageId) {
       stopSpeaking()
+      setSpriteState('idle', { force: true })
 
       return
     }
@@ -54,11 +56,15 @@ export function ChatMessagePlayButton({
 
     $chatPlaybackId.set(messageId)
 
+    // 语音播放起止驱动说话状态（DESIGN §2.1 规则触发源）
+    setSpriteState('speaking', { force: true })
+
     // myDone 由 audio-track 在 ended / error / stopAudio 三种路径上同步触发。
     // 只在它仍指向当前 messageId 时清空 atom，防止"老 onDone 误杀新播放"。
     const myDone = () => {
       if ($chatPlaybackId.get() === messageId) {
         $chatPlaybackId.set(null)
+        setSpriteState('idle', { force: true })
       }
     }
 
@@ -68,6 +74,7 @@ export function ChatMessagePlayButton({
       // audio-track.stopAudio 已经在 synth() 的 catch 里调用；这里只兜底清状态。
       if ($chatPlaybackId.get() === messageId) {
         $chatPlaybackId.set(null)
+        setSpriteState('idle', { force: true })
       }
     }
   }

@@ -172,6 +172,7 @@ interface ActiveActionState {
   def: ActionDef
   startedAt: number // 触发时刻（performance.now()）
   finishedAt: number // blend_out 结束时刻
+  variant?: boolean // idle 变体占位：层级低于 locomotion，不压制其相位叠加
 }
 
 export class Mesh2DDriver {
@@ -247,9 +248,11 @@ export class Mesh2DDriver {
   tick(now: number, dt: number, locomotion: Locomotion): void {
     this.tickAction(now)
 
-    const inActiveAction = this.activeAction !== null
+    // DESIGN §2.3 互斥层级：只有真正的 active action 压制 locomotion 与 idle 变体调度；
+    // idle 变体本身低于 locomotion（漫游步态摆动不被变体暂停），重叠骨骼由后写的 locomotion 覆盖。
+    const inActiveAction = this.activeAction !== null && !this.activeAction.variant
 
-    if (!inActiveAction) {
+    if (!this.activeAction) {
       this.tickIdleVariant(now)
     }
 
@@ -283,7 +286,7 @@ export class Mesh2DDriver {
     return this.activeAction?.name ?? null
   }
 
-  /** LLM 或交互触发的新 action（含 emotion → action 默认映射）。 */
+  /** LLM 或交互触发的新 action。情绪的面部表达走聊天窗表情头像，2D 路径无 emotion → action 映射。 */
   private handleActionChange(actionKey: string | null): void {
     if (!actionKey) {
       this.lastActionKey = null
@@ -437,7 +440,8 @@ export class Mesh2DDriver {
         name: this.currentIdleVariant,
         def,
         startedAt: now,
-        finishedAt: now + def.blend_in_ms + def.duration_ms + def.blend_out_ms
+        finishedAt: now + def.blend_in_ms + def.duration_ms + def.blend_out_ms,
+        variant: true
       }
     }
 

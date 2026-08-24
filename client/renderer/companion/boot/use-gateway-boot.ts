@@ -12,6 +12,7 @@ import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion
 import { $effectiveTier, $spriteState, setSpriteState } from '@/companion/companion-store'
 import { clearVfx, emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { openMainSession } from '@/companion/session-list-store'
+import { speakScripted } from '@/companion/tts'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
@@ -25,6 +26,10 @@ import type { RpcEvent, SessionResumeResponse } from '@/shared/types/spiritagent
 // 后端对鉴权失败（token 过期 / 被吊销）使用 WS close 1008——
 // 此时触发登出，而不是用无效 token 不断重连。
 const WS_CLOSE_POLICY_VIOLATION = 1008
+
+// 重连"回神"台词（DESIGN §6.5）：仅在降级曾被表达过时补一句；speakScripted
+// 内容寻址落盘，同一 (音色, 台词) 只花一次云端额度。
+const RECONNECT_WAKE_LINE = '啊……我回来了，刚才走神了一下。'
 
 // 每次（重）开后重新上报档位：后端存在进程级字典里，后端重启会静默清空。
 // 推生效值（不只是 user_preferred），让沉浸式聚焦上下文能跨重连接存活——
@@ -240,6 +245,17 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
 
           if (cur === 'disconnected') {
             setSpriteState('idle', { force: true })
+
+            // 降级曾被表达过（DISCONNECTED 已示人）→ 补一句"回神"（DESIGN §6.5）；
+            // 静默降级则静默恢复。只在 idle 下开口，避免踩掉恢复间隙里新到的更高状态。
+            if ($spriteState.get() === 'idle') {
+              setSpriteState('speaking', { force: true })
+              void speakScripted(RECONNECT_WAKE_LINE).then(() => {
+                if ($spriteState.get() === 'speaking') {
+                  setSpriteState('idle', { force: true })
+                }
+              })
+            }
           }
 
           // 重新挂载已有会话，避免下一次 prompt.submit 触发"找不到 session"。
@@ -291,7 +307,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
             graceTimer = null
             setSpriteState('disconnected')
             // DESIGN §6.5：犯困/走神 → 挂载 sleep_zzz 气泡；重连后由 onState='open'
-            // 分支的 clearGraceTimer 后面逻辑清理（先发个 wakeUp 再让 3D/2D 自然复位）。
+            // 分支清掉气泡、回 idle 并（降级曾表达过时）补一句"回神"台词。
             emitVfx('sleep_zzz', { nx: 0.5, ny: 0.05 })
           }, graceMs)
         }

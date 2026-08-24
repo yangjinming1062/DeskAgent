@@ -318,6 +318,7 @@ export interface IpcEventContract {
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
+  'spiritagent:tray:open-chat': []
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
   'spiritagent:window-state-changed': [payload: SpiritAgentWindowState]
 }
@@ -386,6 +387,7 @@ export const IPC = {
     runnerStatus: 'spiritagent:runner:status',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
+    trayOpenChat: 'spiritagent:tray:open-chat',
     updateEvent: 'spiritagent:update-event',
     windowStateChanged: 'spiritagent:window-state-changed'
   } as const satisfies Record<string, IpcEventChannel>,

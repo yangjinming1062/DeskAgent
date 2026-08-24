@@ -14,8 +14,8 @@ export interface ExpressionAvatar {
 
 export const $expressionAvatar = atom<ExpressionAvatar | null>(null)
 
-// 按情绪 token 解析（请求 key 与服务端行一一对应，因此单一缓存即可——
-// 与精灵相册不同，相册的开放请求可能由 LLM 匹配到同一张图）。
+// 按情绪 token 解析（请求 key 与服务端缓存行 1:1、token 精确匹配，
+// 无 LLM 语义匹配，因此单一缓存即可）。
 // 小 PNG 走 apiAsset 的 data-URL 通道，与装扮贴图相同。
 const _resolvedCache = new Map<string, ExpressionAvatar>()
 const _inflight = new Map<string, Promise<void>>()

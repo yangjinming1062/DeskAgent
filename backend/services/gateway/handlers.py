@@ -50,6 +50,7 @@ from services.companion import (
     match_user_voice,
     memory_counts,
     normalize_voice_language,
+    raise_if_image_sealed,
     read_user_profile,
     record_interaction,
     regenerate_avatar,
@@ -681,9 +682,10 @@ def _register_session_handlers(
     dispatcher.register("companion.record_interaction_stats", companion_record_interaction_stats)
 
     async def companion_interact(params: dict) -> dict:
+        # PROTOCOL §1.4：kind 支持 poke/pet/dizzy 三类语义（摸头、眩晕与戳击同级走 LLM 反应）。
         kind = params.get("kind")
-        if kind != "poke":
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be poke, got {kind!r}")
+        if kind not in ("poke", "pet", "dizzy"):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/pet/dizzy, got {kind!r}")
 
         now = time.monotonic()
         if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
@@ -723,13 +725,19 @@ def _register_session_handlers(
             return res.model_dump()
 
         # 只有用户实际看到的反应才值得写历史行——未应答的戳一戳否则会污染主会话。
-        action_name = "（戳了戳精灵）"
-        if region:
-            from ..companion.interact import _REGION_NAMES_ZH
+        # 痕迹行按 kind 记不同的动作描述（poke 带区域细分）。
+        if kind == "pet":
+            action_name = "（摸了摸精灵的头）"
+        elif kind == "dizzy":
+            action_name = "（把精灵晃晕了）"
+        else:
+            action_name = "（戳了戳精灵）"
+            if region:
+                from ..companion.interact import _REGION_NAMES_ZH
 
-            region_zh = _REGION_NAMES_ZH.get(region)
-            if region_zh:
-                action_name = f"（戳了戳精灵的{region_zh}）"
+                region_zh = _REGION_NAMES_ZH.get(region)
+                if region_zh:
+                    action_name = f"（戳了戳精灵的{region_zh}）"
         await _record_main_conversation(user_id, "user", action_name, "status_interaction")
         await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
         # 不论 DB 结果如何都消耗冷却：LLM 调用已经付过钱，持久化失败不该为第二次调用打开门。
@@ -857,6 +865,8 @@ def _register_session_handlers(
             persona = await get_or_create_persona(db, user_id)
             if not persona.is_complete:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, "finish onboarding before regenerating avatar")
+            # DESIGN §5.4 形象锁定：确认后重生路径关闭——即时拒绝而非后台任务失败
+            await raise_if_image_sealed(db, user_id, persona)
         job_id = f"avatar_regen_{user_id}_{secrets.token_urlsafe(6)}"
         lock = get_avatar_job_lock(user_id)
         if lock.locked():

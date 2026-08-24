@@ -188,7 +188,11 @@ export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
   return isMac ? classifyMacos(info) : classifyWindows(info)
 }
 
-const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['ide', 'gaming', 'reader'])
+// 「沉浸式 → 安静」只覆盖真正浸没型上下文（游戏 / 全屏）——安静档的空间策略是仅 home
+// （DESIGN §3.5），若把 ide/reader 也算沉浸式，§3.2 的招牌场景「趴在 IDE 窗口边缘陪工作」
+// 在本地与云端两条路径上都被档位门拦死。IDE/阅读属于"沉浸工作"，正是 perch 要陪的场景；
+// 游戏即使窗口化也按沉浸处理。
+const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['gaming'])
 
 function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusContext | null): DisturbanceTier {
   // 手动 ``quiet`` 锁定：任何情况下都不被覆盖。

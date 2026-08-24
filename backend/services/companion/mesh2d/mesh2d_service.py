@@ -187,12 +187,3 @@ async def set_render_mode(
     )
 
     return persona
-
-
-async def reset_mesh2d(db: AsyncSession, user_id: int) -> None:
-    """avatar 重新生成时调用：supersede 旧 mesh2d 让客户端回退到程序化蛋。"""
-    await db.execute(
-        update(Mesh2DModel).where(Mesh2DModel.user_id == user_id, Mesh2DModel.active.is_(True)).values(active=False),
-    )
-    await db.commit()
-    logger.info("mesh2d models superseded for avatar regen", extra={"user_id": user_id})

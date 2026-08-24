@@ -37,8 +37,9 @@ import {
 } from '@/companion/companion-store'
 import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
+import { emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { $responseMode } from '@/companion/prefs'
-import { computePerchPosition, setLocale, startRoam } from '@/companion/spatial'
+import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
@@ -51,6 +52,15 @@ import { findWindowByKeyword, gazeTowardsPoint, performRitualWalk, type WindowGe
 
 const PERCH_RETRY_MS = 300
 const PERCH_RETRY_COUNT = 5
+
+// 高唤醒负面情绪冒冷汗（DESIGN §6.3 粒子清单 💦 的情绪侧触发点）
+const SWEAT_EMOTIONS: ReadonlySet<string> = new Set(['scared', 'embarrassed', 'concerned', 'apologetic'])
+
+function maybeEmotionVfx(emotion?: string): void {
+  if (emotion && SWEAT_EMOTIONS.has(emotion)) {
+    emitVfx('sweat', { nx: 0.5, ny: 0.2, count: 2 })
+  }
+}
 
 async function findWindowWithRetry(keyword: string): Promise<WindowGeom | null> {
   for (let attempt = 0; attempt <= PERCH_RETRY_COUNT; attempt++) {
@@ -86,7 +96,7 @@ function applySpatialCue(locale?: string, target?: string): void {
         return
       }
 
-      const perch = computePerchPosition(geom)
+      const perch = computePerchPlacement(geom, $defaultScale.get())
 
       if (!perch) {
         return
@@ -95,7 +105,7 @@ function applySpatialCue(locale?: string, target?: string): void {
       // 与仪式行走同规则：飞行与栖息途中视线锁定目标窗口，数秒后交还指针跟随
       setGazeTarget(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
       setTimeout(() => clearGazeTarget(), 6000)
-      setLocale('perch', { position: perch, locomotion: 'fly' })
+      setLocale('perch', { position: perch.pos, scaleLimit: perch.scale, locomotion: 'fly' })
     } else if (locale === 'home' && !$chatOpen.get()) {
       setLocale('home', { locomotion: 'fly' })
     } else if (locale === 'roam') {
@@ -171,9 +181,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
       finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text)
 
       // "neutral" 是 LLM 的无操作情绪；当作无 affect 处理，避免触发徽标闪烁。
+      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）；锁屏只静默语音与消息。
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
-      if (hasEmotion && !screenLocked) {
+      if (hasEmotion) {
+        maybeEmotionVfx(emotion)
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion, action: actions[0] })
         playSpriteActionSequence(actions)
       } else {
@@ -221,7 +233,9 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const locale = payload?.locale
       const target = payload?.target
 
-      if (emotion && emotion !== 'neutral' && !$screenLocked.get()) {
+      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）
+      if (emotion && emotion !== 'neutral') {
+        maybeEmotionVfx(emotion)
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
 
@@ -275,14 +289,13 @@ export function handleCompanionEvent(event: RpcEvent): void {
           await gateway?.request('tool.result', { call_id: p.call_id, result })
         } catch (err) {
           try {
-            // DESIGN §6.5「Runner 宕机人格化拒绝层」：把技术错误包成
-            // 「我试了但手拿不动…」层。后端 LLM 会用这句话渲染真实话术，
-            // 但失败摘要里已经去掉了原始堆栈 / 系统调用细节。
-            const raw = err instanceof Error ? err.message : String(err)
-            const personalityRefusal = `（手没回应：${raw}）`
+            // DESIGN §6.5「Runner 宕机人格化拒绝层」：原始错误不回传 LLM——
+            // message 可能含路径/系统调用细节，LLM 可能照念给用户。诚实（承认没做到）
+            // 但不暴露技术细节；原始错误只进本地日志留痕。
+            log.warn('events', `runner tool ${name} failed:`, err)
             await gateway?.request('tool.result', {
               call_id: p.call_id,
-              result: { ok: false, error: personalityRefusal }
+              result: { ok: false, error: '（手没回应：本机执行器没有完成这次操作）' }
             })
           } catch {
             /* 尽力而为——后端的 300 秒兜底会处理 */
@@ -434,8 +447,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 头像身份已变化——表情头像的锚点已过期（按 avatar_id 过滤行），清空本地缓存。
       resetExpressionAvatars()
 
-      // mesh2d 资产建立在旧 fullbody 立绘上——avatar 重生后必须 supersede，
-      // 让渲染回退到程序化蛋，再异步触发新一次切分。
+      // DESIGN §1.2 不变量：头像重生不使 2D/3D 模型失效——模型只随物种变更或用户
+      // 显式请求重生。这里只做幂等的本地状态刷新（hydrate 重新拉取既有资产行）。
       resetMesh2D()
       void hydrateMesh2D()
 

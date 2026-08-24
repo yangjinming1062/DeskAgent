@@ -147,6 +147,18 @@ export function CompanionRoot(): React.JSX.Element {
     return () => off?.()
   }, [])
 
+  // 托盘「打开对话」（DESIGN §6.1 对话模式触发源）：聊天面板同样要走
+  // openDock 的 dock 互斥，不能直接 setChatOpen。
+  useEffect(() => {
+    const off = window.spiritagent.onTrayOpenChat?.(() => {
+      if (auth.kind === 'authenticated') {
+        openDock('chat')
+      }
+    })
+
+    return () => off?.()
+  }, [auth.kind, openDock])
+
   // 未鉴权时自动开激活浮层：首次 hydrateAuth 完成（pending → unauthenticated）、
   // 以及反激活之后。原先只能戳精灵触发，但未鉴权时精灵实体本身不可见、戳不到，
   // 这条链路在未激活用户那里是断的。

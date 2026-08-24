@@ -3,7 +3,7 @@ import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
 import { $llmAutonomy } from './prefs'
-import { computePerchPosition, setLocale, startRoam } from './spatial'
+import { $defaultScale, computePerchPlacement, setLocale, startRoam } from './spatial'
 
 const CONSULT_MIN_INTERVAL_MS = 60_000
 const MIN_ACTION_QUIET_MS = 60_000
@@ -47,10 +47,10 @@ function executeAutonomousAction(action: string): void {
       const ctx = $focusContext.get()
 
       if (ctx?.windowGeom && ctx.category !== 'unknown' && !ctx.fullscreen) {
-        const perchPos = computePerchPosition(ctx.windowGeom)
+        const perch = computePerchPlacement(ctx.windowGeom, $defaultScale.get())
 
-        if (perchPos) {
-          setLocale('perch', { position: perchPos })
+        if (perch) {
+          setLocale('perch', { position: perch.pos, scaleLimit: perch.scale })
         }
       }
 

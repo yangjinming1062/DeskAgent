@@ -87,6 +87,12 @@ contextBridge.exposeInMainWorld('spiritagent', {
 
     return () => ipcRenderer.removeListener(IPC.event.trayLogout, listener)
   },
+  onTrayOpenChat: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on(IPC.event.trayOpenChat, listener)
+
+    return () => ipcRenderer.removeListener(IPC.event.trayOpenChat, listener)
+  },
   onWindowStateChanged: (callback: (payload: SpiritAgentWindowState) => void) => {
     const listener = (_event: IpcRendererEvent, payload: SpiritAgentWindowState) => callback(payload)
     ipcRenderer.on(IPC.event.windowStateChanged, listener)

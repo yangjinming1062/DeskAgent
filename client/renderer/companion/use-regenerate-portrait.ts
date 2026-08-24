@@ -56,8 +56,11 @@ export interface UseRegeneratePortraitResult {
    * 逐次反馈优先于 options.feedback 和共享的 $regenFeedback atom。
    * 会 trim；空串转为 undefined。无论反馈来自哪条路径，
    * 每次成功 regenerate 后都会清空 atom。
+   *
+   * overrideRef：逐次身份参考覆盖（DESIGN §5.4「自己上传」上传即重绘——
+   * 调用点刚写入新 refImage 时 hook 闭包还持有旧值，只能经参数传新图）。
    */
-  regenerate: (feedback?: string) => Promise<void>
+  regenerate: (feedback?: string, overrideRef?: PickedImage | null) => Promise<void>
   busy: boolean
   hint: string | null
   clearHint: () => void
@@ -85,11 +88,12 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
   } = options
 
   const regenerate = useCallback(
-    async (callFeedback?: string) => {
+    async (callFeedback?: string, overrideRef?: PickedImage | null) => {
       const fromCall = callFeedback?.trim() || undefined
       const fromOptions = optionFeedback?.trim() || undefined
       const fromAtom = $regenFeedback.get().trim() || undefined
       const feedback = fromCall ?? fromOptions ?? fromAtom
+      const effRefImage = overrideRef !== undefined ? overrideRef : refImage
 
       const resolvedSuccess = successHint ?? DEFAULT_SUCCESS_HINT
       const resolvedFailure = failureHint ?? DEFAULT_FAILURE_HINT
@@ -112,8 +116,8 @@ export function useRegeneratePortrait(options: UseRegeneratePortraitOptions = {}
       try {
         // Q4 图是身份锚；presentationRef 是风格/表现提示。
         // 没有 Q4 图时，presentation ref 变成唯一的参考图（主图）而非辅图。
-        const primaryRef = refImage ?? presentationRef
-        const secondaryRef = refImage ? presentationRef : null
+        const primaryRef = effRefImage ?? presentationRef
+        const secondaryRef = effRefImage ? presentationRef : null
 
         if (primaryRef) {
           const res = await window.spiritagent.api<{

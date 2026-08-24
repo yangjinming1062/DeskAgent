@@ -312,6 +312,26 @@ export class CharacterController {
     this.applyState(this.currentState, emotion)
   }
 
+  /** 空间移动肢体动画（DESIGN §3.3「移动本身是动画」）：walk/walk_fast 移动时
+   *  播放 walk clip（绝大多数 rig 的映射表都含 walk），still 恢复当前状态 clip。 */
+  playLocomotion(clipKey: string | null): void {
+    if (this.isProcedural) {
+      return
+    }
+
+    if (clipKey) {
+      const clip = resolveClip(clipKey, this.clipMap, this.actionNames)
+
+      if (clip) {
+        this.playClip(clip, 0.3)
+
+        return
+      }
+    }
+
+    this.applyState(this.currentState, null)
+  }
+
   /** 单次播放并在结束后由 mixer 的 finished 回调切回基础状态；返回是否真的播了。 */
   private playOnce(name: string, fade: number): boolean {
     const act = this.getAction(name)
@@ -446,10 +466,8 @@ export class CharacterController {
   }
 
   // ── Procedural fallback character ───────────────────────────
-  // 适用场景：半身像生成前的 onboarding 窗口（还没有形象图），
-  // 以及静态相册彻底无可用图时的最后兜底
-  // （后端宕机 / 所有生成都被拒）。半身像就绪后，
-  // 降级渲染层切到静态精灵——画面永不空白（不变量 #10）。
+  // 适用场景：onboarding 引导期（尚无形象资产），以及 2D/3D 资产生成中
+  // 或彻底不可用时的兜底——画面永不空白（不变量 #10）。
 
   private createProcedural(scene: THREE.Scene): void {
     this.isProcedural = true

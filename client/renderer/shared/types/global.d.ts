@@ -111,6 +111,7 @@ declare global {
       onRunnerStatus: EventSubscription<'spiritagent:runner:status'>
       onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
       onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
+      onTrayOpenChat: EventSubscription<'spiritagent:tray:open-chat'>
       getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>
       update: {
         check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>

@@ -7,7 +7,13 @@ import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/compan
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { $renderMode, type RenderMode, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
+import {
+  $mesh2dInfo,
+  $renderMode,
+  type RenderMode,
+  requestMesh2DGeneration,
+  switchRenderMode
+} from '@/companion/mesh2d/mesh2d-store'
 import { PersonaRetune } from '@/companion/persona-retune'
 import { $persona } from '@/companion/persona-store'
 import {
@@ -55,6 +61,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
   const renderMode = useStore($renderMode)
+  const mesh2dInfo = useStore($mesh2dInfo)
   const llmReactions = useStore($llmReactions)
   const llmAffect = useStore($llmAffect)
   const llmAutonomy = useStore($llmAutonomy)
@@ -260,6 +267,21 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                 </button>
               ))}
             </div>
+            {/* DESIGN §5.5：2D 切分失败（或尚无 2D 资产）时提供重试入口 */}
+            {renderMode === '2d' && mesh2dInfo.status !== 'succeeded' && mesh2dInfo.status !== 'generating' && (
+              <div className="mt-2 flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+                <span className="text-white/60">
+                  {mesh2dInfo.status === 'failed' ? '2D 动画资产生成失败' : '2D 动画资产尚未生成'}
+                </span>
+                <button
+                  className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10"
+                  onClick={() => void requestMesh2DGeneration()}
+                  type="button"
+                >
+                  重新切分
+                </button>
+              </div>
+            )}
           </Section>
 
           {/* Advanced Reaction Switches */}

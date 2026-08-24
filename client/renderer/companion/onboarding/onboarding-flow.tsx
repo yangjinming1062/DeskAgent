@@ -1221,7 +1221,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     [portraitHistory]
   )
 
-  const pickReferenceImage = async () => {
+  const pickReferenceImage = async (autoRedraw = false) => {
     const picked = await pickAvatarImage('选择一张参考图')
 
     if (!picked) {
@@ -1236,6 +1236,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     updateRefImage(picked.image)
     setHint(null)
+
+    // DESIGN §5.4「自己上传」：上传即以新身份锚重绘为符合契约的头像——
+    // portrait 面板的入口不再要求用户补点一次「重新生成」。
+    if (autoRedraw && !avatarBusy) {
+      void regenerateAvatarPortrait(undefined, picked.image)
+    }
   }
 
   const pickPresentationImage = async () => {
@@ -1760,7 +1766,16 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     updateRefImage(null)
     setPhase('greeting')
 
-    const ok = await playOnboardingAudio('onboarding.greeting')
+    // DESIGN §5.7：首句问候用确认后的音色说出——TTS（speakScripted 按
+    // (音色, 台词) 内容寻址缓存）优先，失败才回退预渲染音频片段。
+    const greetingName = ans.name?.trim() || ''
+    const greetingText = greetingName ? `你好呀！我是${greetingName}，以后就由我陪你啦。` : '你好呀！以后就由我陪你啦。'
+
+    let ok = await speakScripted(greetingText).catch(() => false)
+
+    if (!ok) {
+      ok = await playOnboardingAudio('onboarding.greeting')
+    }
 
     if (!ok) {
       setHint('（声音暂时不可用）')
@@ -2022,7 +2037,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                       <button
                         className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10"
-                        onClick={() => void pickReferenceImage()}
+                        onClick={() => void pickReferenceImage(true)}
                         type="button"
                       >
                         自己上传

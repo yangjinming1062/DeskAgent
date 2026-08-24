@@ -91,13 +91,16 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
         current_draft = _load_draft(persona)
         if current_draft.get("voice"):
             cleaned["voice"] = current_draft["voice"]
-        definition_changed = any(cleaned.get(k) != current_draft.get(k) for k in _KNOWN_FIELDS)
+        # DESIGN §5.4 形象锁定：形象确认后物种/性别/基础外貌不可再改——
+        # 定稿后的保存把三字段静默替换回既有值（客户端表单本就不展示），
+        # 且绝不重置 is_portrait_confirmed（§8 微调向导"不重置完成状态"）。
+        if persona.is_portrait_confirmed:
+            for locked in ("biological_type", "gender", "appearance"):
+                if locked in current_draft:
+                    cleaned[locked] = current_draft[locked]
         persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
         persona.system_prompt_extras = render_extras(cleaned)
         persona.is_complete = True
-        if definition_changed:
-            persona.is_portrait_confirmed = False
-            persona.portrait_confirmed_at = None
         return persona
 
     persona = await _dual_write()

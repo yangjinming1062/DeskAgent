@@ -14,13 +14,14 @@ import {
   $pendingExternalAttachment,
   cancelPendingFlush,
   clearExternalAttachment,
-  clearPendingPrompts,
   finalizeAssistantMessage,
+  pushExternalAttachment,
   pushPendingPrompt,
   pushUserMessage,
   schedulePendingFlush,
   setAssistantCancelled,
-  setAssistantError
+  setAssistantError,
+  submitPendingBatch
 } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
 import {
@@ -243,6 +244,38 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
+  // DESIGN §6.1「支持拖拽文件」：面板本体也是投喂入口——解析真实路径后走与
+  // 精灵投喂同一条附件管线（首图进 pendingImage、其余随 send() 提交）。
+  const onDrop = async (e: React.DragEvent) => {
+    const files = Array.from(e.dataTransfer?.files ?? [])
+
+    if (files.length === 0) {
+      return
+    }
+
+    const webUtils = (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } })
+      .spiritagentWebUtils
+
+    const paths: string[] = []
+
+    for (const f of files) {
+      try {
+        const p = webUtils?.getPathForFile(f)
+
+        if (p) {
+          paths.push(p)
+        }
+      } catch {
+        /* 单个文件解析失败不影响其他文件 */
+      }
+    }
+
+    if (paths.length > 0) {
+      e.preventDefault()
+      pushExternalAttachment(paths)
+    }
+  }
+
   const send = async () => {
     const trimmed = text.trim()
 
@@ -322,8 +355,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const isGenerating = gatewayState === 'open' && (showTyping || lastAssistantStreaming)
 
   const handleStop = async () => {
+    // 用户主动停止是合并窗口的收尾信号（DESIGN §6.6）——排队的连发消息立即提交，
+    // 不能丢弃；中断只针对当前生成回合。in-flight 标记先清，冲刷才会真正发出。
     cancelPendingFlush()
-    clearPendingPrompts()
     $chatTurnInFlight.set(false)
     const sid = $chatSessionId.get()
 
@@ -347,6 +381,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
 
     setSpriteState('idle', { force: true })
+    submitPendingBatch()
   }
 
   const currentW = size.width
@@ -388,6 +423,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
         className="relative flex flex-row overflow-hidden rounded-2xl border border-white/10 bg-[#18181b] text-white shadow-2xl"
+        onDragOver={e => e.preventDefault()}
+        onDrop={e => void onDrop(e)}
         ref={panelRef}
         style={{
           position: 'fixed',

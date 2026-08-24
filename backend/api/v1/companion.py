@@ -38,6 +38,7 @@ from services.companion import (
     ExpressionSeedMissingError,
     FrontSeedMissingError,
     FullbodyGenerationError,
+    ImageSealedError,
     Mesh2DAlreadyRunningError,
     ModelGenerationError,
     ModelGenerationInProgressError,
@@ -66,6 +67,7 @@ from services.companion import (
     list_tts_voices,
     model_response,
     normalize_voice_language,
+    prewarm_builtin_expressions,
     regenerate_avatar_from_image,
     resolve_companion_asset_path,
     resolve_companion_model_path,
@@ -147,6 +149,9 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # 仅在 finalize 成功后确认 portrait；避免 is_portrait_confirmed=True 但头像文件已丢失的污染状态。
     await confirm_portrait(db, user.id)
+    # DESIGN §1.1 表情预热：onboarding 主路径确认后即后台预热内置情绪头像，
+    # 首次对话不再逐个懒生成（画廊切换激活头像路径在 select_avatar 内另有同款调用）。
+    prewarm_builtin_expressions(user.id)
     return {"ok": True}
 
 
@@ -201,6 +206,8 @@ async def post_avatar(
             raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再生成形象", "reason": "persona is incomplete"})
     try:
         asset = await generate_avatar(user_id=user.id, persona=persona)
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except AvatarGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("post_avatar generation failed", extra={"user_id": user.id, "error": err_detail})
@@ -250,6 +257,8 @@ async def post_avatar_from_image(
             presentation_data=pres_raw,
             presentation_content_type=pres_content_type,
         )
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except AvatarGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
         logger.warning("post_avatar_from_image failed", extra={"user_id": user.id, "error": err_detail})
@@ -301,6 +310,8 @@ async def post_fullbody_samples(
         samples = await generate_fullbody_style_samples(db, user.id, avatar_id=avatar_id, reference_image=ref_b64, reference_content_type=content_type)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except SeedPromptMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "头像缺失提示词缓存，请重新生成头像", "reason": str(exc)})
     except FullbodyGenerationError as exc:
@@ -355,6 +366,8 @@ async def post_fullbody_front(
         )
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except SeedPromptMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "头像缺失提示词缓存，请重新生成头像", "reason": str(exc)})
     except FullbodyGenerationError as exc:
@@ -381,6 +394,8 @@ async def post_fullbody_back(
         asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, front_url=body.front_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except FrontSeedMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
     except FullbodyGenerationError as exc:
@@ -407,6 +422,8 @@ async def post_fullbody_confirm_front(
         asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url, back_url=body.back_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except FrontSeedMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
     except AvatarSourceUnreadableError as exc:

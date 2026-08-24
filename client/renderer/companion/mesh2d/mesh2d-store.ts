@@ -122,6 +122,19 @@ export async function hydrateMesh2D(): Promise<void> {
   }
 }
 
+/** 触发（或重试）2D 骨骼分层切分（DESIGN §5.5：失败后由用户在设置中重试）。
+ *  就绪结果经 companion.mesh2d.ready 事件回流，与 onboarding 确认路径同一条管线。 */
+export async function requestMesh2DGeneration(): Promise<void> {
+  setMesh2DStatus('generating')
+
+  try {
+    await window.spiritagent.api({ path: '/api/companion/mesh2d', method: 'POST' })
+  } catch (err) {
+    log.warn('mesh2d-store', 'requestMesh2DGeneration failed', err)
+    setMesh2DStatus('failed', '切分请求失败，请稍后再试')
+  }
+}
+
 /** 切换渲染模式：切到 3D 时由后端触发 3D 生成；切到 2D 立即生效。 */
 export async function switchRenderMode(mode: RenderMode): Promise<void> {
   const previous = $renderMode.get()

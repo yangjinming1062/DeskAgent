@@ -84,7 +84,19 @@ export function buildTrayMenu() {
   ]
 
   if (authed) {
-    template.push({ type: 'separator' }, { click: () => sendToMainWindow(IPC.event.trayLogout), label: '反激活' })
+    // DESIGN §6.1：对话模式触发源之一是托盘——聊天面板是渲染层 React state，
+    // 拉起窗口外还要通知渲染器开面板（与 trayActivate 同一模式）。
+    template.push(
+      { type: 'separator' },
+      {
+        label: '打开对话',
+        click: () => {
+          showMainWindow()
+          sendToMainWindow(IPC.event.trayOpenChat)
+        }
+      },
+      { click: () => sendToMainWindow(IPC.event.trayLogout), label: '反激活' }
+    )
   }
 
   template.push({ type: 'separator' }, { click: () => quitAppFully(), label: '退出客户端' })

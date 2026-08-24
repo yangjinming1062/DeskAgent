@@ -128,6 +128,32 @@ class AvatarSourceUnreadableError(AvatarGenerationError):
     """头像文件已无法从磁盘读取，需用户重新生成后再重试。"""
 
 
+class ImageSealedError(AvatarGenerationError):
+    """形象已确认锁定（DESIGN §5.4 形象锁定）：半身/全身重生路径对该用户关闭。"""
+
+
+async def raise_if_image_sealed(db: AsyncSession | None, user_id: int, persona: Persona) -> None:
+    """全身立绘确认时种子图会从 temp-media 草稿提升为正式资产——激活头像行持有
+    非草稿正面种子即视为形象已锁定。客户端隐藏重生入口只是 UX 层，协议直连
+    仍在此处被拒绝。"""
+    if not (persona.is_complete and persona.is_portrait_confirmed):
+        return
+
+    async def _sealed(session: AsyncSession) -> bool:
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
+        seed = getattr(asset, "seed_front_url", None) if asset is not None else None
+        return bool(seed and not seed.startswith("temp-media/"))
+
+    if db is not None:
+        sealed = await _sealed(db)
+    else:
+        async with SESSION_LOCAL() as probe_db:
+            sealed = await _sealed(probe_db)
+
+    if sealed:
+        raise ImageSealedError("形象已确认锁定，无法重新生成")
+
+
 def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
     """惰性创建并返回用户级锁；条目不回收（锁很小且 user_id 空间有限）。"""
     return AVATAR_JOB_LOCKS.setdefault(user_id, asyncio.Lock())
@@ -383,6 +409,7 @@ async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = 
                 persona = await get_or_create_persona(probe_db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    await raise_if_image_sealed(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
     except (ValidationError, RuntimeError) as exc:
@@ -472,6 +499,7 @@ async def regenerate_avatar(
                 persona = await get_or_create_persona(probe_db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    await raise_if_image_sealed(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
@@ -586,6 +614,7 @@ async def regenerate_avatar_from_image(
                 persona = await get_or_create_persona(probe_db, user_id)
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    await raise_if_image_sealed(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
@@ -703,6 +732,7 @@ async def generate_fullbody_style_samples(
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
+        await raise_if_image_sealed(session, user_id, persona)
         return asset, persona
 
     if db is None:
@@ -830,6 +860,7 @@ async def generate_fullbody_front(
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
+        await raise_if_image_sealed(session, user_id, persona)
         return asset, persona
 
     if db is None:
@@ -915,6 +946,7 @@ async def generate_fullbody_back(
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
+        await raise_if_image_sealed(session, user_id, persona)
         return asset, persona
 
     if db is None:
@@ -1006,6 +1038,7 @@ async def confirm_fullbody_front(
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
+        await raise_if_image_sealed(session, user_id, persona)
         return asset, persona
 
     if db is None:

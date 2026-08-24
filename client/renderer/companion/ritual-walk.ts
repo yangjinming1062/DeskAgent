@@ -14,6 +14,8 @@ import { sleep } from '@/shared/lib/utils'
 
 const RETRY_MS = 300
 const RETRY_COUNT = 5
+// DESIGN §3.6：远距离飞、近距离走。低于该距离的目标走过去更有"走过去动手"的仪式感。
+const WALK_RANGE_PX = 400
 
 interface WindowGeom {
   x: number
@@ -91,7 +93,8 @@ export async function performRitualWalk<T>(
   setGazeTarget(gazeTowardsPoint(targetCenter))
 
   try {
-    await new Promise<void>(resolve => moveTo(perch, 'fly', resolve))
+    const dist = Math.hypot(perch.x - $spatialPos.get().x, perch.y - $spatialPos.get().y)
+    await new Promise<void>(resolve => moveTo(perch, dist > WALK_RANGE_PX ? 'fly' : 'walk', resolve))
 
     const dx = targetCenter.x - ($spatialPos.get().x + getBaseSpriteWidth() / 2)
     $spriteAction.set(dx >= 0 ? 'point_right' : 'point_left')

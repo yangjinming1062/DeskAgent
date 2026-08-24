@@ -3,7 +3,8 @@
 export interface JiggleConfig {
   k: number
   c: number
-  impulseDecay: number
+  /** manifest 下发为 snake_case；旧 manifest 可能缺省，缺省时按中位默认值衰减。 */
+  impulse_decay?: number
 }
 
 export interface JiggleState {
@@ -18,12 +19,15 @@ export function createJiggleState(): JiggleState {
 
 /** F = -k * (offset - target) - c * velocity；dt = 秒。返回新 offset。*/
 export function stepJiggle(state: JiggleState, cfg: JiggleConfig, dt: number): JiggleState {
-  const displacement = state.offset - state.target
+  // 冲量把 target 顶到 magnitude 后按 impulse_decay（按 60fps 归一）指数衰减回 0，
+  // 弹簧随之回中——无衰减时 offset 会永久停在 target 上，头发/裙摆一次冲量后回不去。
+  const target = state.target * Math.pow(cfg.impulse_decay ?? 0.93, dt * 60)
+  const displacement = state.offset - target
   const force = -cfg.k * displacement - cfg.c * state.velocity
   const velocity = state.velocity + force * dt
   const offset = state.offset + velocity * dt
 
-  return { offset, velocity, target: state.target }
+  return { offset, velocity, target }
 }
 
 export function clampJiggleOffset(value: number, max: number = 5): number {

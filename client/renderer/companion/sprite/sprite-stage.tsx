@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef } from 'react'
 
 import { $chatOpen, pushExternalAttachment } from '@/companion/chat-store'
-import { $spriteAction, setSpriteState } from '@/companion/companion-store'
+import { $clipOverride, $spriteAction, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
@@ -247,7 +247,12 @@ export function SpriteStage({
       return
     }
 
+    // 接取动效（DESIGN §6.3「触发接取动效与爱心/音符反馈」）：抬手接住 + 爱心/音符粒子
     emitVfx('heart', { nx: 0.5, ny: 0.25, count: 3 })
+    emitVfx('music_notes', { nx: 0.35, ny: 0.15, count: 3 })
+    $clipOverride.set('present_right')
+    $spriteAction.set('present_right')
+    setSpriteState('interacting', { durationMs: 2000 })
     pushExternalAttachment(paths)
     // 投喂文件时自动打开聊天面板，让用户看到附件被加入；
     // 走根组件的 openDock 走 dock 互斥（不能直接 setChatOpen，否则会和
@@ -264,7 +269,8 @@ export function SpriteStage({
         handlePetInteraction(nx, ny)
       },
       onPetTick: (nx, ny) => {
-        emitVfx('heart', { nx, ny, count: 1 })
+        // 摸头粒子以爱心为主、花瓣偶尔混入（DESIGN §6.3 爱心 💖/🌸 同族）
+        emitVfx(Math.random() < 0.35 ? 'petal' : 'heart', { nx, ny, count: 1 })
       },
       onShakeDizzy: () => {
         handleDizzyInteraction()

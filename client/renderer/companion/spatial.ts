@@ -1,6 +1,6 @@
 import { atom } from 'nanostores'
 
-import { $focusContext } from '@/companion/activity'
+import { $focusContext, $lastIdleSeconds } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import {
   $clipOverride,
@@ -33,6 +33,9 @@ const REST_MARGIN = 24
 const WALK_SPEED = 80
 const FLY_SPEED = 400
 const SCALE_TRANSITION_MS = 300
+// roam 的桌面空闲门槛（DESIGN §3.2「桌面空闲 + 高活跃档位时随机游走」）；
+// $lastIdleSeconds 为 -1（Runner 离线/未知）时保守视为不空闲。
+const ROAM_IDLE_THRESHOLD_SECONDS = 90
 const SCALE_KEY = 'da.companion.defaultScale'
 
 // 高唤醒度内置情绪的瞬时缩放因子。
@@ -115,33 +118,58 @@ export function clampPosToViewport(pos: { x: number; y: number }): { x: number; 
   }
 }
 
+export interface PerchPlacement {
+  pos: { x: number; y: number }
+  scale: number
+}
+
+/** 栖息落位（DESIGN §3.3）：窗口右缘优先、左缘次之；两侧放不下全尺寸时等比例缩到
+ * 能舒适栖身（不低于 MIN_SCALE），连最小尺寸都容不下才放弃。 */
+export function computePerchPlacement(
+  geom: { x: number; y: number; w: number; h: number },
+  maxScale: number
+): PerchPlacement | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  const margin = 8
+  const rightAvail = Math.max(0, window.innerWidth - REST_MARGIN - (geom.x + geom.w) - margin)
+  const leftAvail = Math.max(0, geom.x - margin - REST_MARGIN)
+  const rightScale = Math.min(maxScale, rightAvail / SPRITE_W)
+  const leftScale = Math.min(maxScale, leftAvail / SPRITE_W)
+
+  let side: 'left' | 'right'
+  let scale: number
+
+  if (rightScale >= MIN_SCALE && rightScale >= leftScale) {
+    side = 'right'
+    scale = rightScale
+  } else if (leftScale >= MIN_SCALE) {
+    side = 'left'
+    scale = leftScale
+  } else {
+    return null
+  }
+
+  const spriteH = SPRITE_H * scale
+  const x = side === 'right' ? geom.x + geom.w + margin : geom.x - margin - SPRITE_W * scale
+
+  const y = Math.max(
+    REST_MARGIN,
+    Math.min(geom.y + geom.h - spriteH - margin, window.innerHeight - spriteH - REST_MARGIN)
+  )
+
+  return { pos: { x, y }, scale }
+}
+
 export function computePerchPosition(geom: {
   x: number
   y: number
   w: number
   h: number
 }): { x: number; y: number } | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-
-  const margin = 8
-  let x = geom.x + geom.w + margin
-
-  const y = Math.max(
-    REST_MARGIN,
-    Math.min(geom.y + geom.h - SPRITE_H - margin, window.innerHeight - SPRITE_H - REST_MARGIN)
-  )
-
-  if (x + SPRITE_W > window.innerWidth - REST_MARGIN) {
-    x = geom.x - SPRITE_W - margin
-  }
-
-  if (x < REST_MARGIN) {
-    return null
-  }
-
-  return { x, y }
+  return computePerchPlacement(geom, 1)?.pos ?? null
 }
 
 // 精灵旁边浮动的瞬时弹层（聊天面板、proactive 气泡）的锚点定位：默认放在精灵右侧，
@@ -261,6 +289,9 @@ let scaleStartVal = 1
 let scaleTargetVal = 1
 let scaleStartTime = 0
 
+// 栖息空间不足时的缩身上限（DESIGN §3.3）；仅 perch 场所生效，离开栖息即解除。
+let perchScaleLimit: number | null = null
+
 function tickScale(now: number): void {
   const t = Math.min(1, (now - scaleStartTime) / SCALE_TRANSITION_MS)
   const eased = easeInOut(t)
@@ -318,15 +349,18 @@ function computeTargetScale(): number {
     return base
   }
 
+  let target = base
   const emotion = $spriteEmotion.get()
 
   if ($spriteState.get() === 'emotional' && emotion) {
     const factor = EMOTION_SCALE_BOOST[emotion]
-
-    return factor ? Math.min(base * factor, MAX_SCALE) : base
+    target = factor ? Math.min(base * factor, MAX_SCALE) : base
   }
 
-  return base
+  // 栖息缩身上限压过情绪放大：空间不够时先保证舒适栖身
+  const cap = $spatialLocale.get() === 'perch' ? perchScaleLimit : null
+
+  return cap !== null ? Math.min(target, cap) : target
 }
 
 function updateAdaptiveScale(): void {
@@ -354,10 +388,18 @@ export function setLocale(
     position?: { x: number; y: number }
     locomotion?: 'walk' | 'fly'
     instant?: boolean
+    /** perch 专属：空间不足缩身后的缩放上限（DESIGN §3.3）；缺省 = 不限 */
+    scaleLimit?: number
     onArrive?: () => void
   }
 ): void {
+  const limitChanged = perchScaleLimit !== (locale === 'perch' ? (opts?.scaleLimit ?? null) : null)
+  perchScaleLimit = locale === 'perch' ? (opts?.scaleLimit ?? null) : null
   $spatialLocale.set(locale)
+
+  if (limitChanged) {
+    updateAdaptiveScale()
+  }
 
   const target = opts?.position ?? localePosition(locale)
   const locomotion = opts?.locomotion ?? defaultLocomotion(locale)
@@ -416,17 +458,17 @@ function updateSpatialDecision(): void {
     stopRoam()
 
     if ($spatialLocale.get() !== 'perch' && state === 'idle') {
-      const perch = computePerchPosition(ctx!.windowGeom!)
+      const perch = computePerchPlacement(ctx!.windowGeom!, $defaultScale.get())
 
       if (perch) {
-        setLocale('perch', { position: perch })
+        setLocale('perch', { position: perch.pos, scaleLimit: perch.scale })
       }
     }
 
     return
   }
 
-  if (tier === 'proactive' && state === 'idle') {
+  if (tier === 'proactive' && state === 'idle' && $lastIdleSeconds.get() >= ROAM_IDLE_THRESHOLD_SECONDS) {
     if ($spatialLocale.get() !== 'roam') {
       startRoam()
     }
@@ -478,9 +520,19 @@ function roamStep(): void {
       () => {
         roamTimer = null
 
-        if (roaming && $spriteState.get() === 'idle') {
-          roamStep()
+        if (!roaming) {
+          return
         }
+
+        // 桌面不再空闲（用户回来了）→ 结束漫游、走回 home（DESIGN §3.2 roam 仅桌面空闲时）
+        if ($spriteState.get() !== 'idle' || $lastIdleSeconds.get() < ROAM_IDLE_THRESHOLD_SECONDS) {
+          stopRoam()
+          setLocale('home')
+
+          return
+        }
+
+        roamStep()
       },
       5000 + Math.random() * 10000
     )

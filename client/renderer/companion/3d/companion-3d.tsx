@@ -172,6 +172,12 @@ export function Companion3D(): React.JSX.Element {
         eng.character.setDragVelocity(vel.vx, vel.vy)
       })
 
+      // 移动肢体动画（DESIGN §3.3）：2D 由 mesh2d locomotion 覆盖层驱动，3D 侧在
+      // walk/walk_fast 移动时播放 walk clip（fly 无专属 clip，维持状态 clip）。
+      const unsubLocomotion = $spatialLocomotion.listen(loco => {
+        eng.character.playLocomotion(loco === 'walk' || loco === 'walk_fast' ? 'walk' : null)
+      })
+
       // 3D 模式下像素级精确的鼠标穿透细化（静态图片用自己的命中图 —— 见 sprite-stage）。
       const detachSilhouette = attachSilhouetteHitProbe(eng)
 
@@ -184,6 +190,7 @@ export function Companion3D(): React.JSX.Element {
         detachLipSync()
         unsubPower()
         unsubDragVelocity()
+        unsubLocomotion()
         unsubGaze()
         detachSilhouette()
         window.removeEventListener('resize', onResize)
@@ -198,8 +205,9 @@ export function Companion3D(): React.JSX.Element {
     engineReadyRef.current = ready
 
     void ready.catch(err => {
-      // 整条降级链都失败了 —— 完全拿不到 GPU 上下文。静态精灵图层是永不空白的兜底；
-      // 这里置为 settled，调度器可以歇下来。
+      // 整条降级链都失败了 —— 完全拿不到 GPU 上下文。置为失败态交给 root
+      // 渲染级联（2D 就绪则改走 mesh2d，见 DESIGN §1.2 级联）；这里置为
+      // settled，调度器可以歇下来。
       if (!cancelled) {
         log.error('companion-3d', 'engine init failed:', err)
         $glbLoadFailed.set(true)

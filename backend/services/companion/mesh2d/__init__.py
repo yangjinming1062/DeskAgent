@@ -5,7 +5,6 @@ from .mesh2d_service import (
     Mesh2DAlreadyRunningError,
     generate_mesh2d_model,
     get_active_mesh2d_response,
-    reset_mesh2d,
     set_render_mode,
 )
 from .occlusion_resolver import fill_occlusion
@@ -41,7 +40,6 @@ __all__ = [
     "get_active_mesh2d_response",
     "get_default_queue",
     "layer_centers",
-    "reset_mesh2d",
     "run_mesh2d_pipeline",
     "sanitize_keypoints",
     "set_render_mode",

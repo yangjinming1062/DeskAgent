@@ -95,7 +95,7 @@ export class Engine {
   // （WebGPU 后端 → 自带的 WebGL2 重试）。只有 init 完全失败
   // 才会降级到经典 WebGLRenderer——前提是新 canvas，
   // 因为一旦承载过 webgpu 上下文的 canvas 不会再产出 webgl2 上下文。
-  // 进一步失败则向上抛给调用方（静态精灵层就是"永不空白"的底线）。
+  // 进一步失败则向上抛给调用方，由 root 渲染级联兜底（DESIGN §1.2）。
   static async create(container: HTMLElement, opts: EngineOptions = {}): Promise<Engine> {
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR)
     // 默认走 iGPU：精灵窗负载远低于 iGPU 满载门槛，避免在混合显卡本上唤醒 dGPU。
