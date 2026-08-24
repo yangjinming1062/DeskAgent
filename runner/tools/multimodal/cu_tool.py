@@ -8,8 +8,10 @@ from typing import Any
 
 from utils import cfg_get, clean_output, is_interrupted, load_config
 
+from ..registry import registry
 from .cu_backend import ActionResult, CaptureResult, ComputerUseBackend, UIElement
 from .cu_cua_backend import CuaDriverBackend, cua_driver_binary_available
+from .cu_schema import COMPUTER_USE_SCHEMA
 from .cu_win_backend import WinBackend
 from .helpers import _MAX_BASE64_BYTES
 
@@ -430,7 +432,25 @@ def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str
         out.append(f"  #{e.index} {e.role} {label!r} @ {e.bounds}{app_suffix}")
     if len(elements) > max_lines:
         out.append(f"  ... +{len(elements) - max_lines} more (call capture with app= to narrow)")
-    return out
+
+
+def _computer_use_available() -> bool:
+    """computer_use 工具在宿主上的可用性。
+
+    macOS：需 cua-driver 二进制在 PATH；Windows：需 pywinauto / mss / pyautogui。
+    """
+    if sys.platform == "darwin":
+        return cua_driver_binary_available()
+    if sys.platform == "win32":
+        return WinBackend().is_available()
+    return False
+
+
+registry.register_tool(
+    "computer_use",
+    schema=COMPUTER_USE_SCHEMA,
+    check_fn=_computer_use_available,
+)(lambda args, **kw: handle_computer_use(args, **kw))
 
 
 def _element_to_dict(e: UIElement) -> dict[str, Any]:
