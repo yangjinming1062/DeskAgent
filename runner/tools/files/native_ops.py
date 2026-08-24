@@ -150,6 +150,9 @@ class NativeFileOperations(FileOperations):
         p = self._expand_path(path)
         if is_write_denied(str(p)):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
+        # 拒绝目录 — 不然 Path.write_text 会抛 PermissionError 而非清晰报错。
+        if p.is_dir():
+            return WriteResult(error=f"Path is a directory: '{path}'. Use a file path, not a directory.")
 
         pre_content = None
         if p.exists():

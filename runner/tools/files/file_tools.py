@@ -1128,10 +1128,11 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
             file_ops = _get_file_ops(task_id)
             result = file_ops.write_file(_resolved, content)
             result_dict = result.to_dict()
-            # 软守卫 cross-profile 警告拼接到三个硬警告之首（最显眼位置）。
-            effective_warning = cross_profile_warning or sibling_warning or stale_warning or cwd_warning
-            if effective_warning:
-                result_dict["_warning"] = effective_warning
+            # 软守卫 cross-profile 警告拼接到最前；其余三个按触发顺序展示。
+            # 用 `|` 拼接而非 `or`：多个警告并存时模型能一次看到全部，而非只看首个。
+            all_warnings = [w for w in (cross_profile_warning, sibling_warning, stale_warning, cwd_warning) if w]
+            if all_warnings:
+                result_dict["_warning"] = " | ".join(all_warnings)
             # Always report the ABSOLUTE path actually written, so a wrong-cwd
 
             # the edit to the wrong checkout.

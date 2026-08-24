@@ -28,6 +28,27 @@ _BLOCKED_KEY_COMBOS = {
     frozenset({"ctrl", "option", "delete"}),
     frozenset({"win", "l"}),
     frozenset({"win", "d"}),
+    # 补——按关键词触发即可覆盖任意组合（带 cmd 的也算）：
+    # cmd+q (quit frontmost app)、cmd+w (close window)、cmd+m (minimize window)、
+    # cmd+option+esc (force-quit dialog)、cmd+shift+3/4/5 (截屏全屏/窗口/选区)
+    frozenset({"cmd", "q"}),
+    frozenset({"cmd", "w"}),
+    frozenset({"cmd", "m"}),
+    frozenset({"cmd", "option", "esc"}),
+    frozenset({"cmd", "shift", "3"}),
+    frozenset({"cmd", "shift", "4"}),
+    frozenset({"cmd", "shift", "5"}),
+    # ctrl+w (Windows close window)、alt+f4 (Windows quit via menu)、ctrl+alt+delete
+    frozenset({"ctrl", "w"}),
+    frozenset({"ctrl", "alt", "f4"}),
+    frozenset({"ctrl", "alt", "delete"}),
+    # win 系列：win+e (开资源管理器)、win+r (Run 对话框)、win+i (Settings)、win+l (锁屏)、
+    # win+d (显示桌面)、win+m (最小化全部)、win+x (高级菜单)
+    frozenset({"win", "e"}),
+    frozenset({"win", "r"}),
+    frozenset({"win", "i"}),
+    frozenset({"win", "m"}),
+    frozenset({"win", "x"}),
 }
 
 _KEY_ALIASES = {"command": "cmd", "control": "ctrl", "alt": "option", "windows": "win", "super": "win", "meta": "win", "⌘": "cmd", "⌥": "option"}
@@ -38,6 +59,15 @@ _BLOCKED_TYPE_PATTERNS = [
     re.compile(r"curl\s+.*?(?:\|\||&&|[|;])\s*sh\b", re.IGNORECASE | re.DOTALL),
     re.compile(r"wget\s+.*?(?:\|\||&&|[|;])\s*bash", re.IGNORECASE | re.DOTALL),
     re.compile(r"wget\s+.*?(?:\|\||&&|[|;])\s*sh\b", re.IGNORECASE | re.DOTALL),
+    # 补——之前漏的反向 shell 兜底：
+    # 反引号命令替换（`cmd`），$(...) 与 ${...} 参数展开。
+    re.compile(r"`[^`]*`", re.DOTALL),
+    re.compile(r"\$\([^)]*\)", re.DOTALL),
+    re.compile(r"\$\{[^}]*\}", re.DOTALL),
+    # 通用 shell 分隔符兜底：任意位置跟 ; bash / && bash / || bash / | bash / | sh
+    # （不含 curl/wget 前缀的纯命令 + 分隔符 + shell，例如 `echo evil; bash`）。
+    # 误报代价是 model 重试 type；漏报代价是执行 shell — 选更严的。
+    re.compile(r"(?:;|&&|\|\||\|)\s*(?:bash|sh|zsh|ksh)\b", re.IGNORECASE),
     re.compile(r"\bsudo\s+rm\s+-[rf]", re.IGNORECASE),
     re.compile(r"\brm\s+-rf\s+/\s*$", re.IGNORECASE),
     re.compile(r":\s*\(\)\s*\{\s*:\|:\s*&\s*\}", re.IGNORECASE),

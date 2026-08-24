@@ -135,9 +135,11 @@ class PendingDialog:
     cdp_session_id: str
     frame_id: str | None = None
     bridge_request_id: str | None = None
+    # must_respond 策略下超时截止时间（Unix 秒），None 表示无限或未启用看门狗。
+    deadline: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "id": self.id,
             "type": self.type,
             "message": self.message,
@@ -145,6 +147,9 @@ class PendingDialog:
             "opened_at": self.opened_at,
             "frame_id": self.frame_id,
         }
+        if self.deadline is not None:
+            out["deadline"] = self.deadline
+        return out
 
 
 @dataclass
@@ -1270,8 +1275,20 @@ class CDPSupervisor:
             self._bg_tasks.add(t)
             t.add_done_callback(self._bg_tasks.discard)
         else:
+            # must_respond：安排 dialog_timeout_s 后兜底自动 dismiss（防卡死），
+            # 模型在 dialog_deadline 字段里能看到截止时刻。
             with self._state_lock:
                 self._pending_dialogs[dialog.id] = dialog
+            if self.dialog_timeout_s > 0 and self._loop is not None:
+                try:
+                    handle = self._loop.call_later(
+                        self.dialog_timeout_s,
+                        lambda d=dialog: self._expire_dialog_watchdog(d),
+                    )
+                    self._dialog_watchdogs[dialog.id] = handle
+                except RuntimeError:
+                    pass
+            dialog.deadline = time.time() + self.dialog_timeout_s if self.dialog_timeout_s > 0 else None
 
     async def _auto_handle_dialog(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:
         params: dict[str, Any] = {"accept": accept}
@@ -1302,6 +1319,32 @@ class CDPSupervisor:
                 d = self._pending_dialogs.pop(did, None)
                 if d is not None:
                     self._archive_dialog_locked(d, "remote")
+                handle = self._dialog_watchdogs.pop(did, None)
+                if handle is not None:
+                    handle.cancel()
+
+    def _cancel_dialog_watchdog(self, dialog_id: str) -> None:
+        handle = self._dialog_watchdogs.pop(dialog_id, None)
+        if handle is not None:
+            handle.cancel()
+
+    def _expire_dialog_watchdog(self, dialog: PendingDialog) -> None:
+        """dialog_timeout_s 看门狗触发：自动 dismiss 并归档到 recent（不丢审计）。"""
+        with self._state_lock:
+            if dialog.id not in self._pending_dialogs:
+                return  # 已被主动响应
+            self._pending_dialogs.pop(dialog.id, None)
+            self._archive_dialog_locked(dialog, "timeout")
+        handle = self._dialog_watchdogs.pop(dialog.id, None)
+        if handle is not None:
+            handle.cancel()
+        # 异步发送 dismiss，不阻塞调用线程。
+        if self._loop is not None and self._loop.is_running():
+            t = asyncio.run_coroutine_threadsafe(
+                self._auto_handle_dialog(dialog, accept=False, prompt_text=""),
+                self._loop,
+            )
+            self._bg_tasks.add(asyncio.wrap_future(t))
 
     async def _on_fetch_paused(self, params: dict[str, Any], session_id: str | None) -> None:
         url = str(params.get("request", {}).get("url") or "")
@@ -1394,6 +1437,7 @@ class CDPSupervisor:
             fut = safe_schedule_threadsafe(_do_respond(), loop)
             if fut is not None:
                 fut.result(timeout=5.0)
+            self._cancel_dialog_watchdog(dialog.id)
             return {"ok": True, "dialog": dialog.to_dict()}
         except Exception as e:
             return {"ok": False, "error": str(e)}
