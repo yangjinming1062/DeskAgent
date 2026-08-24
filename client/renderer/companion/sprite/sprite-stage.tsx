@@ -112,10 +112,29 @@ export function SpriteStage({
     [hidden]
   )
 
-  // 命中由 3D 实时轮廓探测决定：探测就绪后严格 miss → false；
-  // 启动/加载阶段返回 null 以保留矩形兜底。
+  // 命中按渲染路径精化：3D 走实时轮廓探测（读回未落地返回 null 保留矩形兜底），
+  // 2D 走 mesh2d 部件 bbox（PROTOCOL §1.4 契约）；两者都缺席（桌面蛋 / 加载空挡）
+  // 才回退整矩形——否则 2D 模式下矩形空白区会挡住底下应用的点击。
   const stageHitTest = useCallback((x: number, y: number): boolean => {
-    return hit3DRef.current?.(x, y) ?? true
+    const probe3d = hit3DRef.current
+
+    if (probe3d) {
+      return probe3d(x, y) ?? true
+    }
+
+    const hitmap = $mesh2dHitmap.get()
+
+    if (!hitmap) {
+      return true
+    }
+
+    const rect = mountRef.current?.getBoundingClientRect()
+
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return false
+    }
+
+    return hitmap.hit((x - rect.left) / rect.width, (y - rect.top) / rect.height) !== null
   }, [])
 
   useInteractiveRegion(SPRITE_REGION_ID, mountRef, stageRect, stageHitTest)
@@ -339,7 +358,9 @@ export function SpriteStage({
     const d = dragRef.current
 
     if (!d) {
-      if ($isEdgeDocked.get()) {
+      // DESIGN §3.2：贴边滑出要求命中可见部分——穿透态 forward 转发的 mousemove
+      // 在矩形空白区也会到达这里，必须部件级命中判否，避免贴边时误触滑出。
+      if ($isEdgeDocked.get() && stageHitTest(e.clientX, e.clientY)) {
         undockFromEdge()
       }
 

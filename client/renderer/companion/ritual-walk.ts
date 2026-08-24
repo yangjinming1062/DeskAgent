@@ -1,6 +1,7 @@
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
 import { $spriteAction, clearGazeTarget, setGazeTarget, setSpriteState } from '@/companion/companion-store'
+import { speakProactive } from '@/companion/proactive/proactive'
 import {
   $spatialPos,
   $spatialScale,
@@ -16,6 +17,15 @@ const RETRY_MS = 300
 const RETRY_COUNT = 5
 // DESIGN §3.6：远距离飞、近距离走。低于该距离的目标走过去更有"走过去动手"的仪式感。
 const WALK_RANGE_PX = 400
+
+// 仪式行走兜底的人格化台词（DESIGN §3.6「找不到…」「够不着…」）——
+// 走 speakProactive 的档位门控：安静档静默、常规档仅气泡、积极主动档开口。
+const TARGET_LOST_LINES = ['咦…我没找到那个窗口，先直接试试吧。', '那个窗口在哪呀…我先直接试。']
+const PERCH_TIGHT_LINES = ['这边好挤，我够不着…先直接试试吧。']
+
+function pickLine(pool: readonly string[]): string {
+  return pool[Math.floor(Math.random() * pool.length)] ?? pool[0]!
+}
 
 interface WindowGeom {
   x: number
@@ -79,12 +89,16 @@ export async function performRitualWalk<T>(
   }
 
   if (!geom) {
+    void speakProactive(pickLine(TARGET_LOST_LINES))
+
     return execute()
   }
 
   const perch = computePerchPosition(geom)
 
   if (!perch) {
+    void speakProactive(pickLine(PERCH_TIGHT_LINES))
+
     return execute()
   }
 

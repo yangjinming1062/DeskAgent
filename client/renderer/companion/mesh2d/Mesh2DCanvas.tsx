@@ -4,6 +4,7 @@ import * as THREE from 'three'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget } from '@/companion/companion-store'
+import { probeInteractiveRegions } from '@/companion/interactive-regions'
 import { $personalityTags } from '@/companion/persona-store'
 import { $spatialLocomotion, type Locomotion } from '@/companion/spatial'
 import { log } from '@/shared/lib/log'
@@ -109,7 +110,9 @@ export function Mesh2DCanvas(): React.JSX.Element {
         sceneRef.current?.dispose()
         sceneRef.current = scene
 
-        // 构建 hitmap 并暴露给全局（SpriteStage 在 tap / pointermove 时调用）
+        // 构建 hitmap 并暴露给全局（SpriteStage 在 tap / pointermove 时调用）；
+        // 落地后立即重探交互区域——命中谓词从矩形兜底切到部件 bbox，
+        // 静止光标停在刚失效/生效的区域上时要当场翻转捕获态。
         const hitmap = new Mesh2DHitmap(manifest)
         setMesh2DHitmap({
           hit: (nx, ny) => {
@@ -118,6 +121,7 @@ export function Mesh2DCanvas(): React.JSX.Element {
             return r ? { region: r.region } : null
           }
         })
+        probeInteractiveRegions()
 
         const w = container.clientWidth || scene.width
         const h = container.clientHeight || scene.height
@@ -212,6 +216,7 @@ export function Mesh2DCanvas(): React.JSX.Element {
 
       if ($mesh2dHitmap.get()) {
         setMesh2DHitmap(null)
+        probeInteractiveRegions()
       }
 
       scene?.dispose()
