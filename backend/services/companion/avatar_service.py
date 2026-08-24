@@ -937,11 +937,13 @@ async def generate_fullbody_back(
     user_id: int | None = None,
     *,
     avatar_id: int,
-    style: str = "cel_shading",
+    style: str | None = None,
     feedback: str | None = None,
     front_url: str | None = None,
 ) -> AvatarAsset:
-    """按正面立绘作为参考图生成/重绘背面全身图。"""
+    """按正面立绘作为参考图生成/重绘背面全身图（3D 升级阶段的背面种子确认）。
+
+    形象锁定后仍可调用：参考图恒为已锁定的正面种子，是视角派生而非身份变更，不受 raise_if_image_sealed 约束。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -950,7 +952,6 @@ async def generate_fullbody_back(
         if asset is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
-        await raise_if_image_sealed(session, user_id, persona)
         return asset, persona
 
     if db is None:
@@ -990,7 +991,7 @@ async def generate_fullbody_back(
             user_id,
             reference_image=front_ref_uri,
             size=_FULLBODY_SIZE,
-            persist=False,
+            persist=persona.is_portrait_confirmed,
             preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
     except Exception as exc:
@@ -1031,9 +1032,8 @@ async def confirm_fullbody_front(
     avatar_id: int,
     style: str | None = None,
     front_url: str | None = None,
-    back_url: str | None = None,
 ) -> AvatarAsset:
-    """确认正面全身图，并补生成缺失的背面视图。"""
+    """确认正面全身图。背面种子图不在引导期生成——它是 3D 多视角输入的派生产物，由 3D 升级路径按需生成（generate_fullbody_back）。"""
     if user_id is None:
         raise ValueError("user_id is required")
 
@@ -1043,13 +1043,13 @@ async def confirm_fullbody_front(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         persona = await get_or_create_persona(session, user_id)
         await raise_if_image_sealed(session, user_id, persona)
-        return asset, persona
+        return asset
 
     if db is None:
         async with SESSION_LOCAL() as probe_db:
-            asset, persona = await _fetch(probe_db)
+            asset = await _fetch(probe_db)
     else:
-        asset, persona = await _fetch(db)
+        asset = await _fetch(db)
 
     effective_front_url = asset.seed_front_url
     if front_url:
@@ -1065,67 +1065,22 @@ async def confirm_fullbody_front(
         prompt_payload = {}
     effective_style = style or prompt_payload.get("fullbody_style") or "cel_shading"
 
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = (definition.get("biological_type") or "").strip()
-    appearance = str(definition.get("appearance") or "").strip()
-    personality = str(definition.get("personality") or "").strip()
-    template = resolve_fullbody_template(species, "biped", effective_style)
-
-    supports_multiview = image_to_3d.provider_supports_multiview()
-    auxiliary_style = prompt_payload.get("fullbody_aux_style") or prompt_payload.get("fullbody_style")
-    existing_back = getattr(asset, "seed_back_url") or ""
-    generated: dict[str, str] = {"back": existing_back} if supports_multiview and existing_back and auxiliary_style == effective_style else {}
-    if supports_multiview and back_url:
-        normalized_back = _normalize_avatar_url_to_bare(back_url)
-        if normalized_back:
-            generated["back"] = normalized_back
-
-    if supports_multiview and "back" not in generated:
-        # 已确认的正面图作为缺失视图的主体参考，保证多视图同一形象
-        front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
-        prompt = build_fullbody_prompt(
-            "back",
-            template=template,
-            style_id=effective_style,
-            feedback=prompt_payload.get("fullbody_feedback"),
-            appearance=appearance,
-            personality=personality,
-        )
-        try:
-            generated["back"], _, _, _ = await _generate_one_portrait_with_moderation_retry(
-                prompt,
-                user_id,
-                reference_image=front_ref_uri,
-                size=_FULLBODY_SIZE,
-                persist=persona.is_portrait_confirmed,
-                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
-            )
-        except Exception as exc:
-            err_msg = getattr(exc, "internal", str(exc))
-            raise FullbodyGenerationError("背面种子图生成失败，请稍后重试", internal=err_msg) from exc
-
     async def _write(session: AsyncSession) -> AvatarAsset:
         target = await session.get(AvatarAsset, avatar_id)
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         target.seed_front_url = effective_front_url
-        target.seed_back_url = generated["back"] if supports_multiview else ""
+        target.seed_back_url = ""
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
-        for attr in ("seed_front_url", "seed_back_url"):
-            current = getattr(target, attr)
-            if current and current.startswith("temp-media/"):
-                moved = _read_temp_media_bytes(current)
-                if moved is None:
-                    raise AvatarSourceUnreadableError(f"temp-media file expired for {attr}: {current} — please regenerate the fullbody front")
-                new_path, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
-                setattr(target, attr, new_path)
+        if target.seed_front_url.startswith("temp-media/"):
+            moved = _read_temp_media_bytes(target.seed_front_url)
+            if moved is None:
+                raise AvatarSourceUnreadableError(f"temp-media file expired for seed_front_url: {target.seed_front_url} — please regenerate the fullbody front")
+            target.seed_front_url, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
-            if supports_multiview:
-                payload["fullbody_aux_style"] = effective_style
-            else:
-                payload.pop("fullbody_aux_style", None)
+            payload.pop("fullbody_aux_style", None)
             payload.pop("fullbody_samples", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         await session.commit()

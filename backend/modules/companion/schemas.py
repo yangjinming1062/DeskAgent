@@ -65,7 +65,8 @@ class FullbodyFrontGenerateRequest(BaseModel):
 class FullbodyBackGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    style: str = Field(default="cel_shading", max_length=64)
+    # style 缺省时由服务端从头像行缓存的画风推导，避免 3D 升级向导带过期风格
+    style: str | None = Field(default=None, max_length=64)
     feedback: str | None = Field(default=None, max_length=500)
     front_url: str | None = Field(default=None, max_length=2048)
 
@@ -75,7 +76,6 @@ class FullbodyConfirmFrontRequest(BaseModel):
 
     style: str | None = Field(default=None, max_length=64)
     front_url: str | None = Field(default=None, max_length=2048)
-    back_url: str | None = Field(default=None, max_length=2048)
 
 
 class FullbodySelectStyleRequest(BaseModel):

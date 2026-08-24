@@ -58,8 +58,8 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/samples | 并发生成多画风正面全身样图供用户选择锁定（草稿落 temp-media，路径随形象行持久化供断点恢复复用） | Backend 生成 + Client 风格选择卡片 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/select-style | 持久化用户选定的画风（不触发生成），重启恢复到正面预览而非重新出样图 | Backend 状态 + Client 流程 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/front | 按选定画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按选定画风、正面种子与微调反馈生成/重绘背面全身图（多视角供应商下与正面图一起按双视图提交） | Backend 生成 + Client 背面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面（及可选背面）全身图并解开音色/用户子阶段；后续种子图准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md) | Backend 生成 + Client 流程 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按正面种子与微调反馈生成/重绘背面全身图（3D 升级阶段的背面种子确认向导调用；形象锁定后仍可用——视角派生而非身份变更；画风缺省从头像行推导） | Backend 生成 + Client 背面预览与微调 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图并解开音色/用户子阶段（引导期不生成背面种子图，背面准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md)） | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.5 |
 | GET/POST /api/companion/mesh2d | 查询 / 触发 2D 骨骼分层切分与装配流水线；生成规范与 manifest 契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 2D 运行时 |
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |

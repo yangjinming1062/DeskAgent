@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
+import { BackSeedWizard } from '@/companion/fullbody/back-seed-wizard'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import {
@@ -81,6 +82,8 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
   const [genderFilter, setGenderFilter] = useState('')
 
   const [retuneOpen, setRetuneOpen] = useState(false)
+
+  const [backSeedWizardAvatarId, setBackSeedWizardAvatarId] = useState<number | null>(null)
 
   const [retuneInitial, setRetuneInitial] = useState<{
     name: string
@@ -184,6 +187,30 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     }
   }
 
+  // 切 3D 前先补背面种子图：多视角建模需要它，且只在这一刻才值得付一次生图
+  // （onboarding 只确认正面）。非多视角供应商或已有背面时直接切换。
+  const onRenderModeClick = async (m: RenderMode): Promise<void> => {
+    if (m === '3d' && renderMode !== '3d') {
+      try {
+        const res = await window.spiritagent.api<{
+          id?: number
+          seed_back_url?: string | null
+          supports_multiview?: boolean
+        }>({ path: '/api/companion/avatar' })
+
+        if (res?.supports_multiview && !res?.seed_back_url && res.id != null) {
+          setBackSeedWizardAvatarId(res.id)
+
+          return
+        }
+      } catch {
+        // 头像行拉取失败时按直接切换处理；缺背面输入会在 3D 派发处以后端报错暴露，用户可重试。
+      }
+    }
+
+    void switchRenderMode(m)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center px-6 pb-10" style={{ pointerEvents: 'none' }}>
       <div
@@ -247,7 +274,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
           {/* Render mode */}
           <Section
-            hint="切到 3D 会触发云端生成（1~3 分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。"
+            hint="切到 3D 会先补一张背面立绘（多视角建模用），再触发云端生成（1~3 分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。"
             title="渲染模式"
           >
             <div className="flex gap-2">
@@ -255,7 +282,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
                 <button
                   className={`flex-1 rounded-lg border px-3 py-2 text-xs transition ${renderMode === m ? 'border-white/60 bg-white/15 font-medium' : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'}`}
                   key={m}
-                  onClick={() => void switchRenderMode(m)}
+                  onClick={() => void onRenderModeClick(m)}
                   type="button"
                 >
                   {m === '2d' ? '2D 动画版' : '3D 立体版'}
@@ -501,6 +528,17 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
       {retuneOpen && persona?.name && retuneInitial && (
         <PersonaRetune initial={retuneInitial} onClose={() => setRetuneOpen(false)} />
+      )}
+
+      {backSeedWizardAvatarId != null && (
+        <BackSeedWizard
+          avatarId={backSeedWizardAvatarId}
+          onCancel={() => setBackSeedWizardAvatarId(null)}
+          onConfirm={() => {
+            setBackSeedWizardAvatarId(null)
+            void switchRenderMode('3d')
+          }}
+        />
       )}
     </div>
   )

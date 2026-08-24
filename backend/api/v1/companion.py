@@ -397,8 +397,6 @@ async def post_fullbody_back(
         asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, front_url=body.front_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
-    except ImageSealedError as exc:
-        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     except FrontSeedMissingError as exc:
         raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
     except FullbodyGenerationError as exc:
@@ -422,7 +420,7 @@ async def post_fullbody_confirm_front(
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
-        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url, back_url=body.back_url)
+        asset = await confirm_fullbody_front(db, user.id, avatar_id=avatar_id, style=body.style, front_url=body.front_url)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except ImageSealedError as exc:
@@ -431,13 +429,6 @@ async def post_fullbody_confirm_front(
         raise HTTPException(status_code=400, detail={"error": "请先生成正面全身图", "reason": str(exc)})
     except AvatarSourceUnreadableError as exc:
         raise HTTPException(status_code=409, detail={"error": "全身立绘草稿已过期，请重新生成正面全身图", "reason": str(exc)})
-    except FullbodyGenerationError as exc:
-        err_detail = getattr(exc, "internal", str(exc))
-        logger.warning("fullbody multiview confirmation failed", extra={"user_id": user.id, "error": err_detail})
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
-    except MissingLlmConfigError as exc:
-        logger.warning("post_fullbody_confirm_front missing config", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
     return avatar_response(asset)
 
 
