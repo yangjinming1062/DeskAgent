@@ -40,7 +40,7 @@
 
 `backend/services/companion/mesh2d/manifest_exporter.py` 输出的 `animations` 字段除原有 breath / blink / idle_sway / jiggle 外，包含：
 
-- `actions`: 程序化骨骼 pose 表（含 `wave_right/left`、`present_right/left`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking` 等）。白名单见 [backend/services/companion/mesh2d/prompts.py:action_prompt_section()](backend/services/companion/mesh2d/prompts.py)。
+- `actions`: 程序化骨骼 pose 表（含 `wave_right/left`、`present_right/left`、`petting`、`dizzy`、`fall`、`land_squash`、`peeking`、`click`、`long_press` 等）。权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`；其中 `fall/land_squash/peeking/click/long_press` 为客户端本地触发、不进 LLM 注入清单（`NON_LLM_ACTIONS`）。
 - `idle_variants`: idle 时按权重随机切换的 pose key 列表。
 - `locomotion`: `still / walk / walk_fast / fly / drag / jump / fall` 的骨骼相位公式与 jump/fall 参数。
 

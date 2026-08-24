@@ -197,9 +197,10 @@ async def _build_turn_inputs(
         # 键即客户端能兑现的语义名；剔除状态与交互反馈，只留 LLM 可主动请求的动作 token。
         available_actions = sorted(set(clip_map) - NON_ACTION_CLIP_KEYS) if isinstance(clip_map, dict) else []
     if not available_actions:
-        from services.companion.mesh2d import DEFAULT_ACTIONS
+        # 本地物理/交互触发动作不进 LLM 清单：脱离触发上下文播放是悬空姿态。
+        from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
 
-        available_actions = sorted(DEFAULT_ACTIONS.keys())
+        available_actions = sorted(set(DEFAULT_ACTIONS) - NON_LLM_ACTIONS)
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,

@@ -250,7 +250,34 @@ DEFAULT_ACTIONS: dict[str, dict[str, Any]] = {
             "head": {"rotation_rad": {"y": -0.22, "z": 0.05}},
         },
     },
+    "click": {
+        "duration_ms": 600,
+        "blend_in_ms": 80,
+        "blend_out_ms": 200,
+        "loop": False,
+        "bones": {
+            "shoulder_R": {"rotation_rad": {"z": -0.45}},
+            "elbow_R": {"rotation_rad": {"z": -0.55}},
+            "wrist_R": {"rotation_rad": {"z": -0.35}},
+            "head": {"rotation_rad": {"y": 0.08}},
+        },
+    },
+    "long_press": {
+        "duration_ms": 1200,
+        "blend_in_ms": 250,
+        "blend_out_ms": 350,
+        "loop": False,
+        "bones": {
+            "head": {"rotation_rad": {"z": 0.10, "x": -0.06}},
+        },
+    },
 }
+
+
+# 本地物理 / 交互触发动作：脱离触发上下文播放会是悬空姿态，注入 LLM 清单时排除。
+NON_LLM_ACTIONS: frozenset[str] = frozenset(
+    {"fall", "land_squash", "peeking", "click", "long_press"},
+)
 
 
 # idle variants：每个本质是一个完整的 action 描述（可能被 action 表复用）。

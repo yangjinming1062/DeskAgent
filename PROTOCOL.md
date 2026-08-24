@@ -97,9 +97,9 @@
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（档位门控 + 对话开启抑制）。
 
-**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），且只能来自后端注入的可请求动作清单；解析后随对话完成事件下发。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5](docs/PIPELINE.md)。
+**动作 tag（[action:NAME]）**：LLM 可另附一个结构化动作名（snake_case），且只能来自后端注入的可请求动作清单；解析后随对话完成事件下发。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
-**action 白名单（mesh2d 路径）**（权威源 [backend/services/companion/mesh2d/prompts.py:action_prompt_section()](backend/services/companion/mesh2d/prompts.py)）：
+**action 白名单（mesh2d 路径）**（权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
 
 | key | 描述 | 默认绑定 emotion |
 |---|---|---|
@@ -111,10 +111,12 @@
 | `shy` | 低头侧脸 + 前发微盖 | shy / embarrassed |
 | `petting` | 享受抚摸：微微歪头闭眼 + 舒服蹭蹭 | happy / grateful（摸头手势触发） |
 | `dizzy` | 眩晕：脑袋发懵轻晃 + 圈圈眼 | confused / tired（狂戳/狂甩触发） |
-| `fall` | 自由落体悬空下落姿态 | scared / surprised（空中释放触发） |
-| `land_squash` | 触地弹性挤压扁平瞬间变形 | neutral（落地瞬间触发） |
-| `peeking` | 贴边探头偷看姿态 | curious / playful（屏幕贴边吸附触发） |
+| ★ `fall` | 自由落体悬空下落姿态 | scared / surprised（空中释放触发） |
+| ★ `land_squash` | 触地弹性挤压扁平瞬间变形 | neutral（落地瞬间触发） |
+| ★ `peeking` | 贴边探头偷看姿态 | curious / playful（屏幕贴边吸附触发） |
 | `idle_glance` | 短瞥一眼回中 | idle 变体 |
+| ★ `click` | 伸手触碰 / 点击姿态 | neutral（仪式行走飞抵目标触发） |
+| ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
 
 > 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 骨骼 pose 表（程序化弧度 transform）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >
@@ -139,7 +141,7 @@
 
 命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 prompts.py 白名单 + manifest_exporter.py DEFAULT_ACTIONS + 客户端 mesh2d-drivers.ts 兑现代码 + 本文档**四处。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 manifest_exporter.py（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 mesh2d-drivers.ts 兑现代码 + 本文档**三处。
 
 ### 1.5 资产 URL 签名与传输缓存
 

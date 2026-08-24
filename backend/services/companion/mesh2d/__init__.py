@@ -1,6 +1,6 @@
 from .layer_extractor import ExtractedLayer, extract_layers, layer_centers
 from .llm_validator import validate_layers
-from .manifest_exporter import DEFAULT_ACTIONS, DEFAULT_ANIMATIONS, Manifest, build_manifest
+from .manifest_exporter import DEFAULT_ACTIONS, DEFAULT_ANIMATIONS, NON_LLM_ACTIONS, Manifest, build_manifest
 from .mesh2d_service import (
     Mesh2DAlreadyRunningError,
     generate_mesh2d_model,
@@ -19,6 +19,7 @@ from .skeleton_builder import BoneDef, MeshDef, build_bones, build_meshes
 __all__ = [
     "DEFAULT_ACTIONS",
     "DEFAULT_ANIMATIONS",
+    "NON_LLM_ACTIONS",
     "POSE_ESTIMATION_SYSTEM_PROMPT",
     "REGION_DETECTION_SYSTEM_PROMPT",
     "BoneDef",
