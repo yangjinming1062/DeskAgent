@@ -440,9 +440,8 @@ SKILL_MANAGE_SCHEMA = {
                     "was merged into another (the target must already exist). "
                     "Pass an empty string when the skill is truly stale and "
                     "being pruned with no forwarding target. Omitting the arg "
-                    "on delete is supported for backward compatibility but "
-                    "downstream tooling (e.g. cron-job skill reference "
-                    "rewriting) will have to guess at intent."
+                    "is allowed, but downstream tooling (e.g. cron-job skill "
+                    "reference rewriting) will have to guess at intent."
                 ),
             },
         },

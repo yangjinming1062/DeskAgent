@@ -293,6 +293,7 @@ class WinBackend(ComputerUseBackend):
             app=self._active_app,
             window_title=window_title,
             png_bytes_len=png_bytes_len,
+            dpi_scale=self._dpi_scale,
         )
 
     @_serialized

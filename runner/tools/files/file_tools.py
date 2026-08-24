@@ -736,6 +736,8 @@ register_env_cleanup_hook(clear_file_ops_cache)
 
 def list_directory_tool(path: str, task_id: str = "default") -> str:
     """列出目录内容。"""
+    if not path:
+        return json.dumps({"error": "list_directory: missing 'path'."})
     try:
         if _is_blocked_device(path):
             return json.dumps({"error": f"Cannot read '{path}': device file blocked."})
@@ -764,6 +766,8 @@ def list_directory_tool(path: str, task_id: str = "default") -> str:
 
 def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default") -> str:
     """带分页与行号读取文件。"""
+    if not path:
+        return json.dumps({"error": "read_file: missing 'path'."})
     try:
         offset, limit = normalize_read_pagination(offset, limit)
 
@@ -800,13 +804,6 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         dedup_key = (resolved_str, offset, limit)
         with _read_tracker_lock:
             task_data = _read_tracker.setdefault(task_id, {"last_key": None, "consecutive": 0, "read_history": set(), "dedup": {}, "dedup_hits": {}, "read_timestamps": {}})
-            # Backward-compat for pre-existing tracker entries that predate
-            # dedup_hits/read_timestamps (long-lived task or crossed an
-            # upgrade boundary).
-            if "dedup_hits" not in task_data:
-                task_data["dedup_hits"] = {}
-            if "read_timestamps" not in task_data:
-                task_data["read_timestamps"] = {}
             cached_mtime = task_data.get("dedup", {}).get(dedup_key)
 
         if cached_mtime is not None:
@@ -893,12 +890,6 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         # ── Track for consecutive-loop detection ──────────────────────
         read_key = ("read", path, offset, limit)
         with _read_tracker_lock:
-            # Ensure "dedup" / "dedup_hits" keys exist (backward compat with
-            # old tracker state from pre-dedup-guard sessions).
-            if "dedup" not in task_data:
-                task_data["dedup"] = {}
-            if "dedup_hits" not in task_data:
-                task_data["dedup_hits"] = {}
             # Real read succeeded — this key is no longer in a stub-loop, so
             # reset its hit counter.  (File either changed or stat failed
             # earlier and we fell through.)
@@ -976,7 +967,7 @@ def _invalidate_dedup_for_path(filepath: str, task_id: str) -> None:
     调用方不得持有 ``_read_tracker_lock``（本函数内部自行加锁）。
     """
     try:
-        resolved = str(_resolve_path(filepath))
+        resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):
         return
     with _read_tracker_lock:
@@ -1061,23 +1052,7 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
     if _is_internal_file_status_text(content):
         return tool_error("Refusing to write internal read_file status text as file content. Re-read the file or reconstruct the intended file contents before writing.")
     try:
-        # Resolve once for the registry lock + stale check.  Failures here
-        # fall back to the legacy path — write proceeds, per-task staleness
-        # check below still runs.
-        try:
-            _resolved = str(_resolve_path_for_task(path, task_id))
-        except Exception:
-            _resolved = None
-
-        if _resolved is None:
-            stale_warning = _check_file_staleness(path, task_id)
-            file_ops = _get_file_ops(task_id)
-            result = file_ops.write_file(path, content)
-            result_dict = result.to_dict()
-            if stale_warning:
-                result_dict["_warning"] = stale_warning
-            _update_read_timestamp(path, task_id)
-            return json.dumps(result_dict, ensure_ascii=False)
+        _resolved = str(_resolve_path_for_task(path, task_id))
 
         # Serialize the read→modify→write region per-path so concurrent
         # subagents can't interleave on the same file.  Different paths
@@ -1301,7 +1276,7 @@ def search_tool(
         # results without tripping the repeated-search guard.
         search_key = ("search", pattern, target, str(path), file_glob or "", limit, offset)
         with _read_tracker_lock:
-            task_data = _read_tracker.setdefault(task_id, {"last_key": None, "consecutive": 0, "read_history": set()})
+            task_data = _read_tracker.setdefault(task_id, {"last_key": None, "consecutive": 0, "read_history": set(), "dedup": {}, "dedup_hits": {}, "read_timestamps": {}})
             if task_data["last_key"] == search_key:
                 task_data["consecutive"] += 1
             else:
@@ -1477,7 +1452,7 @@ def _handle_write_file(args: dict[str, Any], **kw: Any) -> str:
     if not isinstance(path := args.get("path"), str) or not path:
         return tool_error("write_file: missing 'path'.")
     if "content" not in args:
-        return tool_error("write_file: missing 'content'. Use execute_code with spiritagent_tools.write_file() for huge files.")
+        return tool_error("write_file: missing 'content'.")
     if not isinstance(content := args["content"], str):
         return tool_error(f"write_file: 'content' must be string, got {type(content).__name__}.")
     return write_file_tool(path, content, kw.get("task_id", "default"), bool(args.get("cross_profile")))

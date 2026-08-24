@@ -73,7 +73,7 @@ COMPUTER_USE_SCHEMA: dict[str, Any] = {
                 "minimum": 1,
                 "maximum": 1000,
             },
-            "element": {"type": "integer", "description": ("The 1-based SOM index returned by the last `capture(mode='som')` call. Strongly preferred over raw coordinates.")},
+            "element": {"type": "integer", "description": ("The 0-based SOM index returned by the last `capture(mode='som')` call. Strongly preferred over raw coordinates.")},
             "coordinate": {
                 "type": "array",
                 "items": {"type": "integer"},

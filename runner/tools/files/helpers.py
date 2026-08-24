@@ -447,12 +447,14 @@ class ShellFileOperations(FileOperations):
         parent = os.path.dirname(path) or "."
         q_parent = self._escape_shell_arg(parent)
         tmpl = self._escape_shell_arg(".spiritagent-tmp.XXXXXX")
+        # 第二/第三兜底必须把 $d 引起来（第一兜底已正确），不然 $d 含空格或 shell
+        # 元字符会断词。第三兜底用 $RANDOM 不用 $$，避免并发写同目录的 PID 冲突。
         script = (
             "set -e; "
             f"d={q_parent}; t={q_path}; "
             'tmp="$(mktemp -p "$d" ' + tmpl + " 2>/dev/null "
-            '|| mktemp "$d/.spiritagent-tmp.$$.XXXXXX" 2>/dev/null '
-            '|| { tmp="$d/.spiritagent-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
+            '|| mktemp "$d/.spiritagent-tmp.$RANDOM.XXXXXX" 2>/dev/null '
+            '|| { tmp="$d/.spiritagent-tmp.$RANDOM"; : > "$tmp" && echo "$tmp"; })"; '
             '[ -n "$tmp" ] || { echo "atomic write: could not create temp file" >&2; exit 1; }; '
             "trap 'rm -f \"$tmp\"' EXIT; "
             'if [ -e "$t" ]; then '
@@ -658,6 +660,9 @@ class ShellFileOperations(FileOperations):
         path = self._expand_path(path)
         if is_write_denied(path):
             return WriteResult(error=f"Write denied: '{path}' is a protected system/credential file.")
+        # 拒绝目录 — 不然 atomic_write 的 mv 会把临时文件搬进目录里、字节数为 0、模型以为写成功。
+        if self._exec(f"test -d {self._escape_shell_arg(path)}").exit_code == 0:
+            return WriteResult(error=f"Path is a directory: '{path}'. Use a file path, not a directory.")
         ext = os.path.splitext(path)[1].lower()
         pre_content: str | None = None
         want_pre = ext in LINTERS_INPROC
@@ -1007,7 +1012,7 @@ class ShellFileOperations(FileOperations):
 
 # ── File State ─────────────────────────────────────────────────────────────
 
-type ReadStamp = tuple[float, float, bool]
+ReadStamp = tuple[float, float, bool]  # (mtime, ts, partial)
 _MAX_PATHS_PER_AGENT = 4096
 _MAX_GLOBAL_WRITERS = 4096
 
@@ -1422,6 +1427,8 @@ _APPLY: dict[OperationType, Any] = {OperationType.ADD: _apply_add, OperationType
 
 def apply_v4a_operations(operations: list[PatchOperation], file_ops: Any) -> PatchResult:
     """两阶段：先校验再应用。"""
+    if not operations:
+        return PatchResult(success=False, error="Patch contained no operations (missing `*** Begin Patch` header or no file sections).")
     errors = _validate_operations(operations, file_ops)
     if errors:
         return PatchResult(success=False, error="Patch validation failed (no files were modified):\n" + "\n".join(f"  • {e}" for e in errors))

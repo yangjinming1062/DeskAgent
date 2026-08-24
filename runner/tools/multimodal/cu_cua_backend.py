@@ -609,7 +609,9 @@ class CuaDriverBackend(ComputerUseBackend):
         key_name, modifiers = _parse_key_combo(keys)
         if not key_name:
             return ActionResult(ok=False, action="key", message=f"Could not parse key from '{keys}'.")
-        return self._action("hotkey", {"pid": pid, "keys": [*modifiers, key_name]}) if modifiers else self._action("press_key", {"pid": pid, "key": key_name})
+        res = self._action("hotkey", {"pid": pid, "keys": [*modifiers, key_name]}) if modifiers else self._action("press_key", {"pid": pid, "key": key_name})
+        res.action = "key"
+        return res
 
     def set_value(self, value: str, element: int | None = None) -> ActionResult:
         pid, window_id = self._active_pid, self._active_window_id

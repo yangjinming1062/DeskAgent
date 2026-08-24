@@ -223,6 +223,25 @@ class NativeFileOperations(FileOperations):
         except Exception as e:
             return PatchResult(success=False, error=f"Error writing file: {e}")
 
+        # 写后再读一次确认内容真的落地（防 Windows 杀软拦截、磁盘满、半写）。比对前
+        # 统一换行符（不同 Python 版本在 read_text 上对 \r\n 处理有差异）。
+        try:
+            verified = p.read_text(encoding="utf-8")
+            _v = verified.replace("\r\n", "\n").replace("\r", "\n")
+            _w = content_after.replace("\r\n", "\n").replace("\r", "\n")
+            if _v != _w:
+                return PatchResult(
+                    success=False,
+                    error=(
+                        f"Post-write verification failed for {path}: on-disk content "
+                        f"differs from intended write (wrote {len(_w)} chars, read back "
+                        f"{len(_v)} chars after normalizing line endings). "
+                        "The patch did not persist. Re-read the file and try again."
+                    ),
+                )
+        except Exception as e:
+            return PatchResult(success=False, error=f"Post-write verification read failed for {path}: {e}")
+
         old_lines = content.splitlines(keepends=True)
         new_lines = content_after.splitlines(keepends=True)
         diff = "".join(difflib.unified_diff(old_lines, new_lines, fromfile=f"a/{path}", tofile=f"b/{path}"))

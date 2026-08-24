@@ -84,18 +84,6 @@ def skill_matches_platform(frontmatter: dict[str, Any]) -> bool:
     return sys.platform in allowed_os
 
 
-def _normalize_prerequisite_values(value: Any) -> list[str]:
-    return [str(item) for item in ([value] if isinstance(value, str) else value or []) if str(item).strip()]
-
-
-def _collect_prerequisite_values(frontmatter: dict[str, Any]) -> tuple[list[str], list[str]]:
-    return (
-        (_normalize_prerequisite_values(prereqs.get("env_vars")), _normalize_prerequisite_values(prereqs.get("commands")))
-        if isinstance(prereqs := frontmatter.get("prerequisites"), dict)
-        else ([], [])
-    )
-
-
 def _normalize_setup_metadata(frontmatter: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(setup := frontmatter.get("setup"), dict):
         return {"help": None, "collect_secrets": []}
@@ -115,7 +103,7 @@ def _normalize_setup_metadata(frontmatter: dict[str, Any]) -> dict[str, Any]:
     return {"help": str(help_text).strip() if isinstance(help_text, str) and help_text.strip() else None, "collect_secrets": collect_secrets}
 
 
-def _get_required_environment_variables(frontmatter: dict[str, Any], legacy_env_vars: list[str] | None = None) -> list[dict[str, Any]]:
+def _get_required_environment_variables(frontmatter: dict[str, Any]) -> list[dict[str, Any]]:
     setup = _normalize_setup_metadata(frontmatter)
     required_raw = frontmatter.get("required_environment_variables")
     items = [required_raw] if isinstance(required_raw, dict) else (required_raw if isinstance(required_raw, list) else [])
@@ -145,10 +133,6 @@ def _get_required_environment_variables(frontmatter: dict[str, Any], legacy_env_
 
     for item in setup["collect_secrets"]:
         _append_required({"name": item.get("env_var"), "prompt": item.get("prompt"), "help": item.get("provider_url") or setup.get("help")})
-
-    legacy = legacy_env_vars if legacy_env_vars is not None else _collect_prerequisite_values(frontmatter)[0]
-    for env_var in legacy:
-        _append_required({"name": env_var})
 
     return required
 
@@ -488,8 +472,7 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
             rel_path = str(skill_md.relative_to(skill_md.parent.parent)) if skill_md.parent.parent else skill_md.name
 
         skill_name = parsed_frontmatter.get("name", skill_md.parent.name)
-        legacy_env, _ = _collect_prerequisite_values(parsed_frontmatter)
-        req_envs = _get_required_environment_variables(parsed_frontmatter, legacy_env)
+        req_envs = _get_required_environment_variables(parsed_frontmatter)
         backend = get_env_type()
 
         overrides = _env_overrides()

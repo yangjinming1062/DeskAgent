@@ -212,7 +212,7 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
                 return json.dumps({"error": f"bad mode {mode!r}; use som|vision|ax"})
             return _capture_response(backend.capture(mode=mode, app=args.get("app")), _coerce_max_elements(args.get("max_elements")))
         case "wait":
-            return _text_response(_tag(backend.wait(float(args.get("seconds", 1.0)))))
+            return _maybe_follow_capture(backend, _tag(backend.wait(float(args.get("seconds", 1.0)))), capture_after)
         case "list_apps":
             apps = backend.list_apps()
             return json.dumps({"apps": apps, "count": len(apps)})
@@ -348,7 +348,8 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
             "total_elements": total,
             "summary": summary,
         }
-        | ({"truncated_elements": truncated} if truncated else {}),
+        | ({"truncated_elements": truncated} if truncated else {})
+        | ({"dpi_scale": cap.dpi_scale} if cap.dpi_scale != 1.0 else {}),
     )
 
 

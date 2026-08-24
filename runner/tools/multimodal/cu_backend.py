@@ -32,6 +32,9 @@ class CaptureResult:
     window_title: str = ""
     png_bytes_len: int = 0
     image_mime_type: str | None = None
+    # Windows 上是窗口 DPI / 96。元素 bounds 与截图尺寸按物理像素返回 — 若模型要在
+    # pyautogui 期望的逻辑坐标里点击，需自行除以此值。
+    dpi_scale: float = 1.0
 
 
 @dataclass
