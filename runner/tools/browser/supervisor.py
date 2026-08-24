@@ -1410,7 +1410,12 @@ class CDPSupervisor:
                 if not dialog:
                     return {"ok": False, "error": f"Dialog {dialog_id} not found."}
             else:
-                dialog = next(iter(self._pending_dialogs.values()))
+                # 多 dialog 同时挂起时优先取当前 active session 的 dialog，避免
+                # FIFO 误关。> 1 个 dialog 时仍可任选其一（兼容简单情况），但模型
+                # 应通过 browser_snapshot 看到 pending_dialogs 后用 dialog_id 显式指定。
+                active_sid = self._active_session_id or self._page_session_id
+                matched = [d for d in self._pending_dialogs.values() if d.cdp_session_id == active_sid] if active_sid else []
+                dialog = matched[0] if matched else next(iter(self._pending_dialogs.values()))
 
         accept = action == "accept"
         pt = prompt_text or ""

@@ -2,7 +2,7 @@ import json
 import logging
 
 from ...registry import registry
-from ..camofox import camofox_console, camofox_get_images, is_camofox_mode
+from ..camofox import camofox_get_images, is_camofox_mode
 from ..check import check_browser_native_requirements
 from ..schemas import BROWSER_CONSOLE_SCHEMA, BROWSER_GET_IMAGES_SCHEMA
 from ._common import browser_session, no_supervisor
@@ -12,7 +12,16 @@ logger = logging.getLogger(__name__)
 
 def browser_console(clear: bool = False, expression: str | None = None, task_id: str | None = None) -> str:
     if is_camofox_mode():
-        return camofox_console(clear=clear, task_id=task_id)
+        # Camofox 不支持 console 捕获（避免假成功让模型以为页面无错）。
+        # 显式 success=false + unsupported_by_backend 让模型立刻看到限制。
+        return json.dumps(
+            {
+                "success": False,
+                "unsupported_by_backend": "camofox",
+                "note": "Console log capture is not available with the Camofox backend. Use browser_cdp('Runtime.evaluate', ...) to inspect state, or switch to the CDP backend.",
+            },
+            ensure_ascii=False,
+        )
 
     with browser_session(task_id) as (supervisor, _):
         if supervisor is None:

@@ -328,7 +328,10 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     truncated = max(0, total - len(visible))
     element_index = _format_elements(visible)
     summary_lines = [
-        f"capture mode={cap.mode} {cap.width}x{cap.height}" + (f" app={cap.app}" if cap.app else "") + (f" window={cap.window_title!r}" if cap.window_title else ""),
+        f"capture mode={cap.mode} {cap.width}x{cap.height}"
+        + (f" app={cap.app}" if cap.app else "")
+        + (f" window={cap.window_title!r}" if cap.window_title else "")
+        + (f" dpi_scale={cap.dpi_scale:.2f}" if cap.dpi_scale != 1.0 else ""),
         f"{total} interactable element(s):",
     ]
     if element_index:

@@ -427,12 +427,18 @@ BROWSER_COOKIES_SET_SCHEMA: dict[str, Any] = {
 
 BROWSER_COOKIES_CLEAR_SCHEMA: dict[str, Any] = {
     "name": "browser_cookies_clear",
-    "description": "Clear browser cookies and/or storage for the current origin via CDP. By default clears both session cookies and storage data so subsequent navigation has no persisted state from earlier interactions.",
+    "description": (
+        "Clear browser cookies and/or storage via CDP. WARNING: scope is GLOBAL "
+        '(Network.clearBrowserCookies + Storage.clearDataForOrigin with origin="*"), '
+        "not the current origin — this affects every site the browser has visited. "
+        "By default clears both session cookies and all storage data. Pass session=False "
+        "and storage=False to no-op (useful for explicit intent signalling)."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
-            "session": {"type": "boolean", "default": True, "description": "If true (default), clear all session cookies."},
-            "storage": {"type": "boolean", "default": True, "description": "If true (default), clear localStorage / sessionStorage / indexedDB."},
+            "session": {"type": "boolean", "default": True, "description": "If true (default), clear all session cookies across all origins."},
+            "storage": {"type": "boolean", "default": True, "description": "If true (default), clear localStorage / sessionStorage / indexedDB across all origins."},
         },
         "required": [],
     },
