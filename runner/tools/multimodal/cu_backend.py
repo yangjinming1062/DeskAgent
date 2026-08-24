@@ -48,12 +48,10 @@ class ActionResult:
     #   verified   — capture 复核动作是否生效
     #   effect     — 简短人类可读标签，如 "opened file"、"no-op"
     #   escalation — "done" | "verify_fresh_state" | "escalate"
-    #   path       — 哪个回退分支产生了此结果
     #   code       — 数值状态码，与 typed_error code 对应
     verified: bool = False
     effect: str = ""
     escalation: str = "done"
-    path: str = ""
     code: int = 0
     # 后端实现标注动作走的是哪条投递通道，runner 调用方据此按通道应用不同的审批范围；默认 "background"
     delivery_mode: str = "background"

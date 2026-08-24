@@ -48,10 +48,35 @@ def browser_cookies_set(
             params["expires"] = expires
         if same_site is not None:
             params["sameSite"] = same_site
+
+        # 软守卫：domain 与当前页 hostname 不一致时，cookie 不会随当前请求发出。
+        # 仍按调用方请求设置（可能用于跨站测试），但 result 附 warning 让模型看见。
+        warning: str | None = None
+        frame_res = supervisor.send_cdp("Page.getFrameTree")
+        if frame_res.get("ok"):
+            frame = (frame_res.get("result") or {}).get("frameTree", {}).get("frame", {})
+            current_url = str(frame.get("url") or "")
+            if current_url:
+                from urllib.parse import urlparse
+
+                current_host = (urlparse(current_url).hostname or "").lower().lstrip(".")
+                requested_host = domain.lower().lstrip(".")
+                # 子域关系：requested=example.com 时 *.example.com 都算匹配
+                if current_host and requested_host and not (current_host == requested_host or current_host.endswith("." + requested_host)):
+                    warning = (
+                        f"Cookie domain {domain!r} does not match current page hostname "
+                        f"{current_host!r} — the cookie will not be sent with requests to "
+                        f"{current_host!r}. If you intended a different scope, retry with "
+                        f"domain matching the target site."
+                    )
+
         res = supervisor.send_cdp("Network.setCookie", params)
         if not res.get("ok"):
             return json.dumps({"success": False, "error": res.get("error", "unknown error")}, ensure_ascii=False)
-        return json.dumps({"success": True, "name": name, "domain": domain}, ensure_ascii=False)
+        payload: dict[str, Any] = {"success": True, "name": name, "domain": domain}
+        if warning:
+            payload["warning"] = warning
+        return json.dumps(payload, ensure_ascii=False)
 
 
 def browser_cookies_clear(session: bool = True, storage: bool = True, task_id: str | None = None) -> str:

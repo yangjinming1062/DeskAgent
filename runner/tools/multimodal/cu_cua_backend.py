@@ -75,11 +75,9 @@ _CUA_DRIVER_SAFE_ENV_PREFIXES = (
     "GTK_IM_MODULE",
     "XMODIFIERS",
 )
-_CUA_DRIVER_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "JWT", "WEBHOOK", "DSN", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "SECRET_KEY")
-# 看起来像密钥但常出现在非密钥变量中的子串（KEYBOARD_LAYOUT / XKB_KEYMAP / OAUTH_CLIENT_ID / AUTHORITY 等）。
-# 两遍匹配：若变量名包含上面任一强密钥子串则丢弃；否则弱子串 KEY / AUTH 只在词边界匹配
-# （KEYBOARD_LAYOUT 得以保留，但 STRIPE_KEY 仍被丢弃）。
-_CUA_DRIVER_SECRET_WORD_BOUNDARY = ("KEY", "AUTH")
+_CUA_DRIVER_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "JWT", "WEBHOOK", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "SECRET_KEY")
+# 弱密钥子串的判定已内联到 _is_cua_secret_var（仅 _KEY(?:_|$) 命中，去除原
+# (?:^|_)(?:KEY|AUTH)(?:_|$) 的误杀 OAUTH_CLIENT_ID / GIT_AUTHOR_NAME 等合法变量）。
 # 对已知公开标识符的显式非密钥覆盖，否则会被前缀白名单误杀。按变量名精确匹配
 _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset(
     {
@@ -96,6 +94,20 @@ _CUA_DRIVER_PUBLIC_OVERRIDES: frozenset[str] = frozenset(
 # 名字不包含上述子串但仍然敏感的变量精确丢弃列表（例如 SPIRITAGENT_JWT 包含 "JWT" 已能被捕获；
 # SPIRITAGENT_DESKTOP_TOKEN 包含 "TOKEN" 也能被捕获 — 此处保留作为双保险锚点）
 _CUA_DRIVER_DROP_EXACT: frozenset[str] = frozenset()
+
+
+def _is_cua_secret_var(name: str) -> bool:
+    """判定环境变量是否包含不应传给 cua-driver 子进程的凭据。
+
+    强子串优先（TOKEN / SECRET / PASSWORD 等）。弱匹配只在末尾带 _KEY 时
+    触发（STRIPE_KEY / OPENAI_API_KEY 等）。原 (?:^|_)(?:KEY|AUTH)(?:_|$)
+    会误杀 OAUTH_CLIENT_ID、GIT_AUTHOR_NAME、KEYBOARD_LAYOUT 等。
+    """
+    upper = name.upper()
+    if any(s in upper for s in _CUA_DRIVER_SECRET_SUBSTRINGS):
+        return True
+    return bool(re.search(r"_KEY(?:_|$)", upper))
+
 
 _WINDOW_LINE_RE = re.compile(r"^-\s+(.+?)\s+\(pid\s+(\d+)\)\s+.*\[window_id:\s+(\d+)\]", re.MULTILINE)
 _ELEMENT_LINE_RE = re.compile(r'^\s*(?:-\s+)?\[(\d+)\]\s+(\w+)(?:\s+"([^"]*)"|(?:\s+\(\d+\))?\s+id=([^\s\[\]]*))?', re.MULTILINE)
@@ -150,12 +162,7 @@ def _build_cua_driver_env() -> dict[str, str]:
     """
 
     def _is_secret_var(name: str) -> bool:
-        upper = name.upper()
-        if any(s in upper for s in _CUA_DRIVER_SECRET_SUBSTRINGS):
-            return True
-        # 模糊子串只在词边界匹配：KEY / AUTH 仅当被 _ 包围或位于变量名两端时算密钥。
-        # 这样 KEYBOARD_LAYOUT / OAUTH_CLIENT_ID 得以保留，同时 STRIPE_KEY / AUTH_HEADER 仍被丢弃。
-        return bool(re.search(r"(?:^|_)(?:KEY|AUTH)(?:_|$)", upper))
+        return _is_cua_secret_var(name)
 
     safe: dict[str, str] = {}
     for key, value in os.environ.items():

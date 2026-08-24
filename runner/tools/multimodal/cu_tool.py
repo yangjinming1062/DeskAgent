@@ -201,22 +201,6 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
         return json.dumps({"error": f"{action} failed: {e}"})
 
 
-def _summarize_action(action: str, args: dict[str, Any]) -> str:
-    if action in {"click", "double_click", "right_click", "middle_click"}:
-        return f"{action} element #{el}" if (el := args.get("element")) is not None else f"{action} at {tuple(coord)}" if (coord := args.get("coordinate")) else action
-    if action == "drag":
-        return f"drag {args.get('from_element') or args.get('from_coordinate')} → {args.get('to_element') or args.get('to_coordinate')}"
-    if action == "scroll":
-        return f"scroll {args.get('direction', '?')} x{args.get('amount', 3)}"
-    if action == "type":
-        return f"type {(text := args.get('text', ''))[:60]!r}" + ("..." if len(text) > 60 else "")
-    if action == "key":
-        return f"key {args.get('keys', '')!r}"
-    if action == "focus_app":
-        return f"focus {args.get('app', '')!r}" + (" (raise)" if args.get("raise_window") else "")
-    return action
-
-
 def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) -> Any:
     capture_after = bool(args.get("capture_after"))
     delivery_mode = str(args.get("delivery_mode") or "background").strip().lower()
@@ -242,7 +226,17 @@ def _dispatch(backend: ComputerUseBackend, action: str, args: dict[str, Any]) ->
                 return json.dumps({"error": f"bad mode {mode!r}; use som|vision|ax"})
             return _capture_response(backend.capture(mode=mode, app=args.get("app")), _coerce_max_elements(args.get("max_elements")))
         case "wait":
-            return _maybe_follow_capture(backend, _tag(backend.wait(float(args.get("seconds", 1.0)))), capture_after)
+            # 显式拒绝 > 30s：back-end 会静默 clamp 到 30s，模型却以为真等了 N 秒，
+            # 反复 set_value 后发现 UI 没准备好也不知道为什么。
+            try:
+                seconds = float(args.get("seconds", 1.0))
+            except (TypeError, ValueError):
+                return json.dumps({"error": "wait: 'seconds' must be a number"})
+            if seconds <= 0:
+                return json.dumps({"error": "wait: 'seconds' must be > 0"})
+            if seconds > 30:
+                return json.dumps({"error": f"wait: 'seconds' {seconds} > max 30; loop with a shorter wait if you need longer"})
+            return _maybe_follow_capture(backend, _tag(backend.wait(seconds)), capture_after)
         case "list_apps":
             apps = backend.list_apps()
             return json.dumps({"apps": apps, "count": len(apps)})
