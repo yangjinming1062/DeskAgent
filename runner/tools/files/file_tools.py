@@ -26,6 +26,7 @@ from envs import (
 )
 from utils import (
     IS_WINDOWS,
+    cfg_get,
     get_container_mirror_warning,
     get_cross_profile_warning,
     get_read_block_error,
@@ -303,10 +304,16 @@ def _is_blocked_device(filepath: str) -> bool:
 # 终端黑名单同步。
 _SENSITIVE_PATH_PREFIXES = (
     # Linux 系统与 systemd 状态
-    "/etc/", "/boot/", "/usr/lib/systemd/", "/var/lib/systemd/",
+    "/etc/",
+    "/boot/",
+    "/usr/lib/systemd/",
+    "/var/lib/systemd/",
     # macOS 系统只读与本地目录服务（DSLocal 含明文密码哈希、TCC 数据库含隐私授权）
-    "/private/etc/", "/private/var/", "/private/var/db/dslocal/",
-    "/system/", "/library/apple/usr/libexec/oah/",
+    "/private/etc/",
+    "/private/var/",
+    "/private/var/db/dslocal/",
+    "/system/",
+    "/library/apple/usr/libexec/oah/",
     *get_windows_sensitive_prefixes(),
 )
 # Per-user AppData / NTUSER.DAT——锚到当前登录用户的 home，避免恰好含
@@ -455,40 +462,56 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
 
 
 def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | None:
-    """``filepath`` 落到另一个 SpiritAgent profile 作用域、宿主侧 sandbox 镜像
-    或容器内 sandbox 镜像时给出软守卫警告。三类检测依次执行。
+    """软守卫：``filepath`` 落到另一个 SpiritAgent profile 作用域时返回警告字符串。
 
-    * cross-profile：命中其他 profile 的 skills/plugins/cron/memories 目录。
-      策略：仅软守卫。Agent 可在用户明确指示后通过写工具的
-      ``cross_profile=True`` 绕过，与另两类共用同一种逃逸口。默认不强制
-      阻断，因为终端工具无强约束（OS 用户本就到处可写），硬阻断会给人
-      虚假的安全感。
-    * sandbox-mirror (#32049)：命中非本地终端后端（Docker、Daytona 等）
-      产生的 ``…/sandboxes/<backend>/<task>/home/.spiritagent/…`` 镜像，
-      宿主 SpiritAgent 进程从不读该镜像，写入等于无效。
-    * container-mirror (#32049 后续)：Docker 容器内 bind-mount 的 home
-      剥掉了 ``sandboxes/`` 前缀，Agent 看到的是普通 ``/root/.spiritagent/…``。
-
-    写入在作用域内或不在 SpiritAgent 范围时返回 None。三类检测都是软守卫——
-    终端工具以同一 OS 用户运行，可以直接写这些路径，因此这只是纵深防御，
-    不是安全边界。检测规则见 ``agent/file_safety.classify_*``。
+    写入本身不阻断——调用方应把警告附在 result 而非拒绝执行。
+    实际硬阻断（sandbox-mirror / container-mirror）见 ``_check_hard_path_blocks``。
     """
-    # 通过任务 cwd 解析，使会话内 ``cd`` 到 ``~/.spiritagent/profiles/other/``
-    # 后的相对路径（如 ``skills/foo/SKILL.md``）能基于正确基准分类。
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):
         resolved = filepath
+    return get_cross_profile_warning(resolved)
 
-    warning = get_cross_profile_warning(resolved)
-    if warning is not None:
-        return warning
 
+def _check_hard_path_blocks(filepath: str, task_id: str = "default") -> str | None:
+    """硬阻断：sandbox-mirror / container-mirror 写入等于无效，必须拒。
+
+    这两类不是「纵深防御」而是真实错误（写入不会生效）。
+    """
+    try:
+        resolved = str(_resolve_path_for_task(filepath, task_id))
+    except (OSError, ValueError):
+        resolved = filepath
     warning = get_sandbox_mirror_warning(resolved)
     if warning is not None:
         return warning
-
     return get_container_mirror_warning(resolved, mirror_prefix=_get_container_mirror_prefix_for_task(task_id))
+
+
+_CROSS_PROFILE_AUDIT_LOG = get_spiritagent_home() / "cross-profile-audit.log"
+
+
+def _audit_cross_profile_bypass(task_id: str, path: str, op: str) -> None:
+    """记录跨 profile 绕过事件，便于审计与告警。"""
+    try:
+        _CROSS_PROFILE_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _CROSS_PROFILE_AUDIT_LOG.open("a", encoding="utf-8") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "task_id": task_id,
+                        "path": path,
+                        "op": op,
+                        "active_profile": cfg_get(load_config(), "spiritagent", "profile", default="default"),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+            )
+    except Exception as e:
+        logger.debug("cross-profile audit log failed: %s", e)
 
 
 def _is_expected_write_exception(exc: Exception) -> bool:
@@ -1078,10 +1101,14 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
         return tool_error(sensitive_err)
-    if not cross_profile:
-        cross_warning = _check_cross_profile_path(path, task_id)
-        if cross_warning:
-            return tool_error(cross_warning)
+    # sandbox-mirror / container-mirror 写入无效，必须硬阻断。
+    hard_block = _check_hard_path_blocks(path, task_id)
+    if hard_block:
+        return tool_error(hard_block)
+    cross_profile_warning = _check_cross_profile_path(path, task_id)
+    if cross_profile and cross_profile_warning:
+        # 用户显式 cross_profile=True：写成功 + 留审计记录。
+        _audit_cross_profile_bypass(task_id, path, "write_file")
     if _is_internal_file_status_text(content):
         return tool_error("Refusing to write internal read_file status text as file content. Re-read the file or reconstruct the intended file contents before writing.")
     try:
@@ -1093,7 +1120,7 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
         with lock_path(_resolved):
             # Cross-agent staleness wins over per-task warning when both
             # fire — its message names the sibling subagent.
-            cross_warning = check_stale(task_id, _resolved)
+            sibling_warning = check_stale(task_id, _resolved)
             stale_warning = _check_file_staleness(path, task_id)
             # Workspace-divergence warning: relative path resolving outside the
             # terminal's cwd (the worktree-cwd bug). Lowest priority of the three.
@@ -1101,7 +1128,8 @@ def write_file_tool(path: str, content: str, task_id: str = "default", cross_pro
             file_ops = _get_file_ops(task_id)
             result = file_ops.write_file(_resolved, content)
             result_dict = result.to_dict()
-            effective_warning = cross_warning or stale_warning or cwd_warning
+            # 软守卫 cross-profile 警告拼接到三个硬警告之首（最显眼位置）。
+            effective_warning = cross_profile_warning or sibling_warning or stale_warning or cwd_warning
             if effective_warning:
                 result_dict["_warning"] = effective_warning
             # Always report the ABSOLUTE path actually written, so a wrong-cwd
@@ -1161,14 +1189,19 @@ def patch_tool(
                     "path in '*** Update File:' / '*** Add File:' / '*** Delete File:' headers.",
                 )
             _paths_to_check.append(v4a_path)
+    cross_profile_warnings: list[str] = []
     for _p in _paths_to_check:
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
-        if not cross_profile:
-            cross_warning = _check_cross_profile_path(_p, task_id)
-            if cross_warning:
-                return tool_error(cross_warning)
+        hard_block = _check_hard_path_blocks(_p, task_id)
+        if hard_block:
+            return tool_error(hard_block)
+        cp_warn = _check_cross_profile_path(_p, task_id)
+        if cp_warn:
+            cross_profile_warnings.append(cp_warn)
+            if cross_profile:
+                _audit_cross_profile_bypass(task_id, _p, "patch")
     try:
         # Resolve paths for locking.  Ordered + deduplicated so concurrent
         # callers lock in the same order — prevents deadlock on overlapping
@@ -1232,8 +1265,10 @@ def patch_tool(
                 return tool_error(f"Unknown mode: {mode}")
 
             result_dict = result.to_dict()
-            if stale_warnings:
-                result_dict["_warning"] = stale_warnings[0] if len(stale_warnings) == 1 else " | ".join(stale_warnings)
+            # 软守卫 cross-profile 警告拼接到最前（让模型最先看见）。
+            all_warnings = cross_profile_warnings + stale_warnings
+            if all_warnings:
+                result_dict["_warning"] = all_warnings[0] if len(all_warnings) == 1 else " | ".join(all_warnings)
             # Report the ABSOLUTE path(s) actually patched so a wrong-cwd
             # mismatch (e.g. a worktree session editing the main checkout) is
             # visible in the response instead of silently landing elsewhere.

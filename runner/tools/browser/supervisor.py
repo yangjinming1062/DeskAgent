@@ -719,7 +719,17 @@ class CDPSupervisor:
         # CDP 修饰键位掩码：1=Shift 2=Ctrl 4=Alt 8=Meta。
         modifier_mask = {"shift": 1, "ctrl": 2, "alt": 4}.get((hold_key or "").lower(), 0)
         if modifier_mask:
-            self.send_cdp("Input.dispatchKeyEvent", {"type": "keyDown", "modifiers": modifier_mask, "key": hold_key, "code": f"{hold_key.title()}Left", "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower())}, session_id=sid)
+            self.send_cdp(
+                "Input.dispatchKeyEvent",
+                {
+                    "type": "keyDown",
+                    "modifiers": modifier_mask,
+                    "key": hold_key,
+                    "code": f"{hold_key.title()}Left",
+                    "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
+                },
+                session_id=sid,
+            )
         try:
             self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": fx, "y": fy}, session_id=sid)
             self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fx, "y": fy, "button": "left", "clickCount": 1}, session_id=sid)
@@ -734,7 +744,17 @@ class CDPSupervisor:
             return {"ok": True, "from": from_ref, "to": to_ref}
         finally:
             if modifier_mask:
-                self.send_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "modifiers": modifier_mask, "key": hold_key, "code": f"{hold_key.title()}Left", "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower())}, session_id=sid)
+                self.send_cdp(
+                    "Input.dispatchKeyEvent",
+                    {
+                        "type": "keyUp",
+                        "modifiers": modifier_mask,
+                        "key": hold_key,
+                        "code": f"{hold_key.title()}Left",
+                        "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
+                    },
+                    session_id=sid,
+                )
 
     def press_key(self, key: str, modifiers: int = 0) -> dict[str, Any]:
         sid = self._active_session_id or self._page_session_id
