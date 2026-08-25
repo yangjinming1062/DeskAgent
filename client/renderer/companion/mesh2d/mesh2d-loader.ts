@@ -81,15 +81,21 @@ export async function loadMesh2DManifest(url: string, contentHash?: string): Pro
     return cached
   }
 
-  const res = await fetch(url, { credentials: 'include' })
+  let manifest: Manifest
 
-  if (!res.ok) {
-    throw new Error(`manifest fetch failed: ${res.status}`)
+  if (typeof window !== 'undefined' && window.spiritagent?.api) {
+    manifest = await window.spiritagent.api<Manifest>({ path: url })
+  } else {
+    const res = await fetch(url, { credentials: 'include' })
+
+    if (!res.ok) {
+      throw new Error(`manifest fetch failed: ${res.status}`)
+    }
+
+    manifest = JSON.parse(await res.text()) as Manifest
   }
 
-  const manifest = JSON.parse(await res.text()) as Manifest
-
-  if (!manifest.skeleton?.bones?.length || !manifest.meshes?.length) {
+  if (!manifest?.skeleton?.bones?.length || !manifest?.meshes?.length) {
     throw new Error('manifest missing skeleton.bones or meshes')
   }
 

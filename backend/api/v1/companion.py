@@ -447,12 +447,12 @@ async def post_fullbody_confirm_front(
     return avatar_response(asset)
 
 
-@router.get("/model", response_model=CompanionModelResponse)
-async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> CompanionModelResponse:
+@router.get("/model", response_model=CompanionModelResponse | None)
+async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> CompanionModelResponse | None:
     user, _ = auth
     model = await get_active_model(db, user.id)
     if model is None:
-        raise HTTPException(status_code=404, detail="No companion model found")
+        return None
     return model_response(model)
 
 

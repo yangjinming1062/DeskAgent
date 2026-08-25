@@ -71,9 +71,14 @@ const JIGGLE_BONE_MAP: Record<string, string> = {
 }
 
 async function loadTexture(url: string): Promise<THREE.Texture> {
+  const resolvedUrl =
+    url.startsWith('data:') || url.startsWith('blob:')
+      ? url
+      : ((await window.spiritagent?.apiAsset?.({ url }).catch(() => url)) ?? url)
+
   return new Promise((resolve, reject) => {
     TEXTURE_LOADER.load(
-      url,
+      resolvedUrl,
       tex => {
         tex.premultiplyAlpha = false
         tex.minFilter = THREE.LinearFilter
