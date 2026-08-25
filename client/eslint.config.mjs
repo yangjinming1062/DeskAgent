@@ -17,6 +17,7 @@ export default [
       'assets/**',
       'public/**',
       'src/**/*.js',
+      'renderer/companion/puppet/vendor/**',
       '*.config.*'
     ]
   },
