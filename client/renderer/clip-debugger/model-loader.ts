@@ -238,7 +238,7 @@ export function decodeActivationCode(code: string): { baseUrl: string; token: st
 /**
  * 从后端服务 /api/companion/model 获取当前伴侣 GLB 模型
  */
-export async function fetchBackendCompanionModel(
+export async function fetchBackendCompanion3DModel(
   backendUrl = 'http://127.0.0.1:8000',
   token?: string
 ): Promise<{ buffer: ArrayBuffer; name: string; info: unknown }> {
@@ -272,7 +272,7 @@ export async function fetchBackendCompanionModel(
 /**
  * 使用激活码 (Activation Code) 自动兑换 Session JWT 并拉取后端伴侣 3D 模型
  */
-export async function fetchBackendCompanionModelWithActivationCode(
+export async function fetchBackendCompanion3DModelWithActivationCode(
   activationCode: string,
   overrideBackendUrl?: string
 ): Promise<{ buffer: ArrayBuffer; name: string; info: unknown }> {
@@ -315,7 +315,7 @@ export async function fetchBackendCompanionModelWithActivationCode(
   }
 
   // 2. 携带 token 获取当前伴侣 3D 模型
-  return await fetchBackendCompanionModel(base, accessToken)
+  return await fetchBackendCompanion3DModel(base, accessToken)
 }
 
 /**

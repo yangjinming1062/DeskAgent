@@ -28,10 +28,10 @@ class CompanionPreference(ModelBase, TimestampMixin):
     disturbance_tier: Mapped[str] = mapped_column(String(16), default="normal")
 
 
-class CompanionModel(ModelBase, TimestampMixin):
+class Companion3DModel(ModelBase, TimestampMixin):
     """供应商生成的 3D 模型；status 流转：generating → pending_download → downloading → succeeded | failed；下载阶段任意失败 → download_failed（可通过 ``companion.model.retryDownload`` 重试，付费结果保存在 provider_task_id + download_urls_json 中）。"""
 
-    __tablename__ = "companion_models"
+    __tablename__ = "companion_3d_models"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     asset_url: Mapped[str] = mapped_column(Text, default="")
@@ -93,10 +93,10 @@ class CompanionOutfit(ModelBase, TimestampMixin):
     pending_wear: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
 
 
-class Mesh2DModel(ModelBase, TimestampMixin):
+class Companion2DModel(ModelBase, TimestampMixin):
     """AI 自动切分生成的 2D SkinnedMesh 模型；manifest 描述骨骼 / mesh / 动画曲线，layers 指向每张部件 PNG 资产。"""
 
-    __tablename__ = "mesh2d_models"
+    __tablename__ = "companion_2d_models"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

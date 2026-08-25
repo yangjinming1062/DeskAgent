@@ -16,7 +16,7 @@ from pathlib import Path
 
 import httpx
 from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, get_logger, log_paid_call
-from modules.companion import CompanionModel
+from modules.companion import Companion3DModel
 from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,11 +165,13 @@ async def _finalize_generation(
 ) -> bool:
     """落库一次成功的生成；若已被更新的任务取代则返回 False。云端产物即终产物,后端不解析 GLB。"""
     async with SESSION_LOCAL() as db:
-        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
         if model is None:
             return False
         superseded = (
-            await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.id > model_id, CompanionModel.status.in_(IN_FLIGHT_STATUSES)).limit(1))
+            await db.execute(
+                select(Companion3DModel).where(Companion3DModel.user_id == user_id, Companion3DModel.id > model_id, Companion3DModel.status.in_(IN_FLIGHT_STATUSES)).limit(1),
+            )
         ).scalar_one_or_none() is not None
         model.asset_url = asset_url
         model.provider = provider
@@ -190,7 +192,9 @@ async def _finalize_generation(
         model.content_hash = computed_hash or ""
 
         if not superseded:
-            await db.execute(update(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.active.is_(True), CompanionModel.id != model_id).values(active=False))
+            await db.execute(
+                update(Companion3DModel).where(Companion3DModel.user_id == user_id, Companion3DModel.active.is_(True), Companion3DModel.id != model_id).values(active=False),
+            )
             model.active = True
         await db.commit()
     return not superseded
@@ -198,7 +202,7 @@ async def _finalize_generation(
 
 async def _mark_generation_failed(model_id: int, reason: str) -> None:
     async with SESSION_LOCAL() as db:
-        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
         if model is not None:
             model.status = "failed"
             model.error = reason[:500]
@@ -209,7 +213,7 @@ async def _mark_generation_failed(model_id: int, reason: str) -> None:
 async def _mark_download_failed(model_id: int, reason: str) -> None:
     """下载或链中失败：保留 task_id 与下载地址，状态区别于终态 failed，使客户端提供重试下载而非付费重生成。"""
     async with SESSION_LOCAL() as db:
-        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
         if model is not None:
             model.status = "download_failed"
             model.error = reason[:500]
@@ -229,7 +233,7 @@ async def _persist_download_source(
     """持久化当前阶段的任务恢复句柄，供重试下载与崩溃接续按阶段续跑。"""
     urls = [{"kind": a.kind, "url": a.url} for a in assets]
     async with SESSION_LOCAL() as db:
-        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
         if model is None:
             raise ModelGenerationError("companion model row vanished mid-generation")
         model.provider_task_id = task_id
@@ -254,7 +258,7 @@ async def _mark_inflight_submitted(
 ) -> None:
     """提交任务后立即落库 task_id，防止轮询期间服务崩溃导致已付费任务句柄丢失。"""
     async with SESSION_LOCAL() as db:
-        model = (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        model = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
         if model is None:
             raise ModelGenerationError("companion model row vanished mid-generation")
         model.provider_task_id = task_id
@@ -271,7 +275,7 @@ async def _mark_inflight_submitted(
 async def _persist_clip_map(model_id: int, clip_map: dict[str, str]) -> None:
     """映射描述的是 ``provider_task_id`` 所指的那个产物，与下载恢复句柄同期固化，重试下载才能拿回它。"""
     async with SESSION_LOCAL() as db:
-        await db.execute(update(CompanionModel).where(CompanionModel.id == model_id).values(clip_map_json=json.dumps(clip_map, ensure_ascii=False)))
+        await db.execute(update(Companion3DModel).where(Companion3DModel.id == model_id).values(clip_map_json=json.dumps(clip_map, ensure_ascii=False)))
         await db.commit()
 
 
@@ -282,7 +286,7 @@ async def _refresh_download_urls(provider: ImageTo3DProvider, *, user_id: int, m
         raise ModelGenerationError(f"刷新模型下载地址失败: provider 任务 {task_id} 状态 {result.status}")
     urls = [{"kind": a.kind, "url": a.url} for a in result.assets]
     async with SESSION_LOCAL() as db:
-        await db.execute(update(CompanionModel).where(CompanionModel.id == model_id).values(download_urls_json=json.dumps(urls, ensure_ascii=False)))
+        await db.execute(update(Companion3DModel).where(Companion3DModel.id == model_id).values(download_urls_json=json.dumps(urls, ensure_ascii=False)))
         await db.commit()
     log_paid_call(provider.provider_name, "image_to_3d_urls_refreshed", task_id=task_id, user_id=user_id, model_id=model_id)
     return list(result.assets)
@@ -291,14 +295,14 @@ async def _refresh_download_urls(provider: ImageTo3DProvider, *, user_id: int, m
 async def _cas_model_status(model_id: int, *, from_statuses: tuple[str, ...], to_status: str) -> bool:
     """条件状态跃迁:作为行级互斥量,防止流水线与重试下载同时认领同一模型。"""
     async with SESSION_LOCAL() as db:
-        result = await db.execute(update(CompanionModel).where(CompanionModel.id == model_id, CompanionModel.status.in_(from_statuses)).values(status=to_status))
+        result = await db.execute(update(Companion3DModel).where(Companion3DModel.id == model_id, Companion3DModel.status.in_(from_statuses)).values(status=to_status))
         await db.commit()
     return bool(result.rowcount)
 
 
-async def _load_model_record(model_id: int) -> CompanionModel | None:
+async def _load_model_record(model_id: int) -> Companion3DModel | None:
     async with SESSION_LOCAL() as db:
-        return (await db.execute(select(CompanionModel).where(CompanionModel.id == model_id))).scalar_one_or_none()
+        return (await db.execute(select(Companion3DModel).where(Companion3DModel.id == model_id))).scalar_one_or_none()
 
 
 async def _download_with_retry(provider: ImageTo3DProvider, *, user_id: int, model_id: int, task_id: str | None, assets: list[Model3DAsset], dest_dir: Path) -> Path:
@@ -610,7 +614,7 @@ async def recover_stuck_model_generations() -> None:
     """启动时把 generating 行判 failed（未完成 submit）；in-flight 行留给 _resume_inflight_pipelines 接续。"""
     async with SESSION_LOCAL() as db:
         await db.execute(
-            update(CompanionModel).where(CompanionModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
+            update(Companion3DModel).where(Companion3DModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
         )
         await db.commit()
 
@@ -618,7 +622,7 @@ async def recover_stuck_model_generations() -> None:
 async def _resume_inflight_pipelines() -> None:
     """web 进程启动时扫描仍处于 in-flight 状态的行，交给 run_capability_chain 自驱接续。"""
     async with SESSION_LOCAL() as db:
-        rows = (await db.execute(select(CompanionModel).where(CompanionModel.status.in_(IN_FLIGHT_STATUSES)))).scalars().all()
+        rows = (await db.execute(select(Companion3DModel).where(Companion3DModel.status.in_(IN_FLIGHT_STATUSES)))).scalars().all()
     for row in rows:
         if not row.provider_task_id:
             await _mark_generation_failed(row.id, "服务重启时未捕获到 task_id，请重新生成")
@@ -634,8 +638,8 @@ async def _resume_inflight_pipelines() -> None:
         )
 
 
-async def get_active_model(db: AsyncSession, user_id: int) -> CompanionModel | None:
-    return (await db.execute(select(CompanionModel).where(CompanionModel.user_id == user_id, CompanionModel.active.is_(True)))).scalar_one_or_none()
+async def get_active_model(db: AsyncSession, user_id: int) -> Companion3DModel | None:
+    return (await db.execute(select(Companion3DModel).where(Companion3DModel.user_id == user_id, Companion3DModel.active.is_(True)))).scalar_one_or_none()
 
 
 class _ResumeOutcome(Enum):
@@ -646,7 +650,7 @@ class _ResumeOutcome(Enum):
     UNKNOWN = "unknown"
 
 
-async def _probe_paid_failure(row: CompanionModel) -> _ResumeOutcome:
+async def _probe_paid_failure(row: Companion3DModel) -> _ResumeOutcome:
     """查询供应商真实任务状态，区分可接续、已失败与未知状态，防止重复计费。"""
     if not row.provider_task_id:
         return _ResumeOutcome.UNKNOWN
@@ -662,7 +666,7 @@ async def _probe_paid_failure(row: CompanionModel) -> _ResumeOutcome:
         return _ResumeOutcome.UNKNOWN
     if result.status == "completed":
         async with SESSION_LOCAL() as db:
-            target = (await db.execute(select(CompanionModel).where(CompanionModel.id == row.id))).scalar_one_or_none()
+            target = (await db.execute(select(Companion3DModel).where(Companion3DModel.id == row.id))).scalar_one_or_none()
             if target is None:
                 return _ResumeOutcome.UNKNOWN
             target.status = "pending_download"
@@ -686,7 +690,7 @@ async def _probe_paid_failure(row: CompanionModel) -> _ResumeOutcome:
     return _ResumeOutcome.UNKNOWN
 
 
-def signed_model_url(model: CompanionModel | None) -> str | None:
+def signed_model_url(model: Companion3DModel | None) -> str | None:
     """签发模型访问 URL；不写回行对象,否则会过期的 URL 会随下次 autoflush 落库。"""
     if model is None or not model.asset_url or not model.asset_url.startswith("companion-models/"):
         return None

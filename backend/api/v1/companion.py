@@ -15,8 +15,9 @@ from modules.companion import (
     AvatarGenerateRequest,
     AvatarHistoryResponse,
     AvatarUploadRequest,
+    Companion2DModelResponse,
+    Companion3DModelResponse,
     CompanionExpression,
-    CompanionModelResponse,
     ExpressionAvatarRequest,
     ExpressionAvatarResponse,
     FullbodyBackGenerateRequest,
@@ -25,7 +26,6 @@ from modules.companion import (
     FullbodySamplesRequest,
     FullbodySamplesResponse,
     FullbodyStyleItem,
-    Mesh2DModelResponse,
     ModelGenerateRequest,
     OutfitCreateRequest,
     OutfitListResponse,
@@ -474,8 +474,8 @@ async def post_fullbody_confirm_front(
     return avatar_response(asset)
 
 
-@router.get("/model", response_model=CompanionModelResponse | None)
-async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> CompanionModelResponse | None:
+@router.get("/model", response_model=Companion3DModelResponse | None)
+async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion3DModelResponse | None:
     user, _ = auth
     model = await get_active_model(db, user.id)
     if model is None:
@@ -483,14 +483,14 @@ async def get_model(auth: tuple[User, LoginRecord] = Depends(get_current_session
     return model_response(model)
 
 
-@router.post("/model", response_model=CompanionModelResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/model", response_model=Companion3DModelResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(f"{SETTINGS.companion_model_generate_rate_limit_per_minute}/minute")
 async def post_model(
     request: Request,  # required by @limiter.limit
     body: ModelGenerateRequest = Body(default_factory=ModelGenerateRequest),
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
-) -> CompanionModelResponse:
+) -> Companion3DModelResponse:
     user, _ = auth
     try:
         model = await generate_companion_model(db, user_id=user.id, species_override=body.species_override, provider_override=body.provider, force=body.force)
@@ -506,14 +506,14 @@ async def post_model(
     return model_response(model)
 
 
-@router.get("/mesh2d", response_model=Mesh2DModelResponse | None)
-async def get_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Mesh2DModelResponse | None:
+@router.get("/mesh2d", response_model=Companion2DModelResponse | None)
+async def get_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse | None:
     user, _ = auth
     return await get_active_mesh2d_response(db, user.id)
 
 
-@router.post("/mesh2d", response_model=Mesh2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
-async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Mesh2DModelResponse:
+@router.post("/mesh2d", response_model=Companion2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
+async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse:
     user, _ = auth
     try:
         persona = await get_or_create_persona(db, user.id)
@@ -524,7 +524,7 @@ async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
         raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "startup_failed"})
 
     response = await get_active_mesh2d_response(db, user.id)
-    return response or Mesh2DModelResponse(id=model.id, status=model.status)
+    return response or Companion2DModelResponse(id=model.id, status=model.status)
 
 
 @router.post("/render-mode", response_model=PersonaResponse)

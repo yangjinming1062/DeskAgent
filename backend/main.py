@@ -77,7 +77,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     start_ws_event_loop(_raw_pg_dsn())
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()
-    # 3D 模型管道并入 web 后：从持久状态（companion_models.status IN FLIGHT）重启尚未完成的 task。
+    # 3D 模型管道并入 web 后：从持久状态（companion_3d_models.status IN FLIGHT）重启尚未完成的 task。
     await _resume_inflight_pipelines()
 
     async def _cleanup_loop():

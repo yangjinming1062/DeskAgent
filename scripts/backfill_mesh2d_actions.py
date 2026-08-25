@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 from components import session_scope  # noqa: E402
-from modules.companion.models import Mesh2DModel  # noqa: E402
+from modules.companion.models import Companion2DModel  # noqa: E402
 from services.companion import asset_store  # noqa: E402
 from services.companion.mesh2d.manifest_exporter import DEFAULT_ANIMATIONS  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -32,7 +32,7 @@ async def backfill(dry_run: bool) -> int:
     updated = 0
 
     async with session_scope() as db:
-        rows = (await db.execute(select(Mesh2DModel).where(Mesh2DModel.active.is_(True)))).scalars().all()
+        rows = (await db.execute(select(Companion2DModel).where(Companion2DModel.active.is_(True)))).scalars().all()
 
         for model in rows:
             if not model.manifest_json:

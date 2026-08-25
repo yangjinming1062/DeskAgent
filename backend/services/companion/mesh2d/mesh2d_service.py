@@ -3,8 +3,8 @@
 import json
 
 from components import get_logger
-from modules.companion import AvatarAsset, Mesh2DModel, Persona
-from modules.companion.schemas import Mesh2DModelResponse
+from modules.companion import AvatarAsset, Companion2DModel, Persona
+from modules.companion.schemas import Companion2DModelResponse
 from modules.ws.models import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,7 @@ async def generate_mesh2d_model(
     user_id: int,
     priority: str = "high",
     force: bool = False,
-) -> Mesh2DModel:
+) -> Companion2DModel:
     """从已激活 avatar 启动 mesh2d 切分；avatar 不可用时抛错。"""
     avatar = await _resolve_active_avatar(db, user_id)
 
@@ -49,9 +49,9 @@ async def generate_mesh2d_model(
     if not force:
         existing = (
             await db.execute(
-                select(Mesh2DModel).where(
-                    Mesh2DModel.user_id == user_id,
-                    Mesh2DModel.status == "generating",
+                select(Companion2DModel).where(
+                    Companion2DModel.user_id == user_id,
+                    Companion2DModel.status == "generating",
                 ),
             )
         ).scalar_one_or_none()
@@ -71,10 +71,10 @@ async def generate_mesh2d_model(
 
         active = (
             await db.execute(
-                select(Mesh2DModel).where(
-                    Mesh2DModel.user_id == user_id,
-                    Mesh2DModel.active.is_(True),
-                    Mesh2DModel.status == "succeeded",
+                select(Companion2DModel).where(
+                    Companion2DModel.user_id == user_id,
+                    Companion2DModel.active.is_(True),
+                    Companion2DModel.status == "succeeded",
                 ),
             )
         ).scalar_one_or_none()
@@ -87,16 +87,16 @@ async def generate_mesh2d_model(
             return active
 
     await db.execute(
-        update(Mesh2DModel)
+        update(Companion2DModel)
         .where(
-            Mesh2DModel.user_id == user_id,
-            Mesh2DModel.active.is_(True),
-            Mesh2DModel.status.in_(("generating", "succeeded")),
+            Companion2DModel.user_id == user_id,
+            Companion2DModel.active.is_(True),
+            Companion2DModel.status.in_(("generating", "succeeded")),
         )
         .values(active=False),
     )
 
-    model = Mesh2DModel(
+    model = Companion2DModel(
         user_id=user_id,
         avatar_id=avatar.id,
         status="generating",
@@ -123,14 +123,14 @@ async def generate_mesh2d_model(
 async def get_active_mesh2d_response(
     db: AsyncSession,
     user_id: int,
-) -> Mesh2DModelResponse | None:
+) -> Companion2DModelResponse | None:
     """把活跃 mesh2d 模型转换为 API 响应；客户端拿到 manifest_url 后启动 SkinnedMesh 渲染。"""
     model = (
         await db.execute(
-            select(Mesh2DModel).where(
-                Mesh2DModel.user_id == user_id,
-                Mesh2DModel.active.is_(True),
-                Mesh2DModel.status == "succeeded",
+            select(Companion2DModel).where(
+                Companion2DModel.user_id == user_id,
+                Companion2DModel.active.is_(True),
+                Companion2DModel.status == "succeeded",
             ),
         )
     ).scalar_one_or_none()
@@ -154,7 +154,7 @@ async def get_active_mesh2d_response(
     except Exception as exc:
         logger.warning("failed to parse mesh2d layers_json", extra={"error": str(exc)})
 
-    return Mesh2DModelResponse(
+    return Companion2DModelResponse(
         id=model.id,
         status=model.status,
         style=model.style or "cel_shading",

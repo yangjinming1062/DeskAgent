@@ -16,7 +16,7 @@ import re
 from datetime import timedelta
 
 from components import SESSION_LOCAL, get_logger, safe_json_loads, utc_now
-from modules.companion import AvatarAsset, CompanionOutfit, Mesh2DModel
+from modules.companion import AvatarAsset, Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,13 +68,13 @@ async def _active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
     return (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
 
 
-async def _active_mesh2d(db: AsyncSession, user_id: int) -> Mesh2DModel | None:
+async def _active_mesh2d(db: AsyncSession, user_id: int) -> Companion2DModel | None:
     return (
         await db.execute(
-            select(Mesh2DModel).where(
-                Mesh2DModel.user_id == user_id,
-                Mesh2DModel.active.is_(True),
-                Mesh2DModel.status == "succeeded",
+            select(Companion2DModel).where(
+                Companion2DModel.user_id == user_id,
+                Companion2DModel.active.is_(True),
+                Companion2DModel.status == "succeeded",
             ),
         )
     ).scalar_one_or_none()
@@ -142,7 +142,7 @@ async def list_outfits(db: AsyncSession, user_id: int) -> list[CompanionOutfit]:
         return (await db.execute(select(CompanionOutfit).where(CompanionOutfit.user_id == user_id).order_by(CompanionOutfit.created_at.asc()))).scalars().all()
 
 
-async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[AvatarAsset, Mesh2DModel, str, str, str, str]:
+async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[AvatarAsset, Companion2DModel, str, str, str, str]:
     """返回 (激活头像, 激活 mesh2d, 物种, 外貌, 性格, 画风)；守卫失败抛 OutfitStateError。"""
     avatar = await _active_avatar(db, user_id)
     mesh2d = await _active_mesh2d(db, user_id)
@@ -331,7 +331,7 @@ async def confirm_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Comp
             outfit.fullbody_url, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
         outfit.status = "splitting"
         outfit.pending_wear = True
-        model = Mesh2DModel(
+        model = Companion2DModel(
             user_id=user_id,
             avatar_id=avatar.id,
             outfit_id=outfit.id,
@@ -360,7 +360,7 @@ async def activate_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Com
             raise OutfitStateError("外观尚未就绪，无法穿着")
         model = (
             await db.execute(
-                select(Mesh2DModel).where(Mesh2DModel.outfit_id == outfit.id, Mesh2DModel.status == "succeeded").order_by(Mesh2DModel.id.desc()).limit(1),
+                select(Companion2DModel).where(Companion2DModel.outfit_id == outfit.id, Companion2DModel.status == "succeeded").order_by(Companion2DModel.id.desc()).limit(1),
             )
         ).scalar_one_or_none()
         if model is None:
@@ -371,7 +371,7 @@ async def activate_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Com
             update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.pending_wear.is_(True)).values(pending_wear=False),
             synchronize_session=False,
         )
-        await db.execute(update(Mesh2DModel).where(Mesh2DModel.user_id == user_id, Mesh2DModel.active.is_(True)).values(active=False), synchronize_session=False)
+        await db.execute(update(Companion2DModel).where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True)).values(active=False), synchronize_session=False)
         await db.execute(update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True)).values(active=False), synchronize_session=False)
         model.active = True
         outfit.active = True
@@ -412,13 +412,13 @@ async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
 
         avatar = await _active_avatar(db, user_id)
         avatar_files = {avatar.seed_front_url, avatar.asset_url} if avatar is not None else set()
-        models = (await db.execute(select(Mesh2DModel).where(Mesh2DModel.outfit_id == outfit.id))).scalars().all()
+        models = (await db.execute(select(Companion2DModel).where(Companion2DModel.outfit_id == outfit.id))).scalars().all()
         for model in models:
             _unlink_companion_asset(user_id, model.manifest_path)
             for entry in safe_json_loads(model.layers_json or "[]", default=[]):
                 if isinstance(entry, dict) and entry.get("url"):
                     _unlink_companion_asset(user_id, str(entry["url"]))
-        await db.execute(delete(Mesh2DModel).where(Mesh2DModel.outfit_id == outfit.id))
+        await db.execute(delete(Companion2DModel).where(Companion2DModel.outfit_id == outfit.id))
         _delete_reference_file(outfit)
         if outfit.fullbody_url not in avatar_files:
             _delete_portrait_file(outfit.fullbody_url)

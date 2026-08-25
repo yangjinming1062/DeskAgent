@@ -6,7 +6,7 @@ import hashlib
 import json
 
 from components import SESSION_LOCAL, get_logger
-from modules.companion import CompanionOutfit, Mesh2DModel
+from modules.companion import Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
 from sqlalchemy import select, update
 
@@ -113,18 +113,18 @@ def run_mesh2d_pipeline(
     fullbody_url: str,
     priority: str = "high",
 ) -> asyncio.Task[None]:
-    """提交异步流水线并立即返回；状态写入 Mesh2DModel 表，由 WS 事件驱动前端刷新。
+    """提交异步流水线并立即返回；状态写入 Companion2DModel 表，由 WS 事件驱动前端刷新。
 
     队列 worker 内各阶段自开短会话——请求路径毫秒级返回（202 语义），不与
     视觉 LLM 往返共享请求会话。"""
     queue = get_default_queue()
 
-    async def _fetch_model(db) -> Mesh2DModel | None:
+    async def _fetch_model(db) -> Companion2DModel | None:
         return (
             await db.execute(
-                select(Mesh2DModel).where(
-                    Mesh2DModel.id == model_id,
-                    Mesh2DModel.user_id == user_id,
+                select(Companion2DModel).where(
+                    Companion2DModel.id == model_id,
+                    Companion2DModel.user_id == user_id,
                 ),
             )
         ).scalar_one_or_none()
@@ -206,7 +206,9 @@ def run_mesh2d_pipeline(
                         event_outfit_name = outfit.name
                         if outfit.pending_wear:
                             await db.execute(
-                                update(Mesh2DModel).where(Mesh2DModel.user_id == user_id, Mesh2DModel.active.is_(True), Mesh2DModel.id != model_id).values(active=False),
+                                update(Companion2DModel)
+                                .where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True), Companion2DModel.id != model_id)
+                                .values(active=False),
                                 synchronize_session=False,
                             )
                             await db.execute(
@@ -261,9 +263,9 @@ async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) 
         async with SESSION_LOCAL() as db:
             model = (
                 await db.execute(
-                    select(Mesh2DModel).where(
-                        Mesh2DModel.id == model_id,
-                        Mesh2DModel.user_id == user_id,
+                    select(Companion2DModel).where(
+                        Companion2DModel.id == model_id,
+                        Companion2DModel.user_id == user_id,
                     ),
                 )
             ).scalar_one_or_none()

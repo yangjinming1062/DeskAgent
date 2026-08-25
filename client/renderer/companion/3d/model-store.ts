@@ -31,7 +31,7 @@ export interface CompanionExpression {
   tags: string[]
 }
 
-interface CompanionModelResponse {
+interface Companion3DModelResponse {
   id: number
   asset_url: string | null
   provider: string
@@ -122,7 +122,7 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
 
 export async function hydrateModel(): Promise<void> {
   try {
-    const res = await window.spiritagent.api<CompanionModelResponse>({
+    const res = await window.spiritagent.api<Companion3DModelResponse>({
       path: '/api/companion/model'
     })
 

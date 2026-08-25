@@ -121,7 +121,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("user_id", "name", "avatar_id", name="uq_companion_expression_avatars_key"),
     )
     op.create_table(
-        "companion_models",
+        "companion_3d_models",
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("asset_url", sa.Text(), nullable=False),
         sa.Column("source_portrait_id", sa.Integer(), nullable=True),
@@ -145,9 +145,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_companion_models_active"), "companion_models", ["active"], unique=False)
-    op.create_index(op.f("ix_companion_models_rig_type"), "companion_models", ["rig_type"], unique=False)
-    op.create_index(op.f("ix_companion_models_user_id"), "companion_models", ["user_id"], unique=False)
+    op.create_index(op.f("ix_companion_3d_models_active"), "companion_3d_models", ["active"], unique=False)
+    op.create_index(op.f("ix_companion_3d_models_rig_type"), "companion_3d_models", ["rig_type"], unique=False)
+    op.create_index(op.f("ix_companion_3d_models_user_id"), "companion_3d_models", ["user_id"], unique=False)
     op.create_table(
         "companion_outfits",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -169,7 +169,7 @@ def upgrade() -> None:
     op.create_index(op.f("ix_companion_outfits_status"), "companion_outfits", ["status"], unique=False)
     op.create_index(op.f("ix_companion_outfits_active"), "companion_outfits", ["active"], unique=False)
     op.create_table(
-        "mesh2d_models",
+        "companion_2d_models",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -189,9 +189,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["outfit_id"], ["companion_outfits.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_mesh2d_models_active"), "mesh2d_models", ["active"], unique=False)
-    op.create_index(op.f("ix_mesh2d_models_status"), "mesh2d_models", ["status"], unique=False)
-    op.create_index(op.f("ix_mesh2d_models_user_id"), "mesh2d_models", ["user_id"], unique=False)
+    op.create_index(op.f("ix_companion_2d_models_active"), "companion_2d_models", ["active"], unique=False)
+    op.create_index(op.f("ix_companion_2d_models_status"), "companion_2d_models", ["status"], unique=False)
+    op.create_index(op.f("ix_companion_2d_models_user_id"), "companion_2d_models", ["user_id"], unique=False)
     op.create_table(
         "conversations",
         sa.Column("user_id", sa.Integer(), nullable=False),
@@ -412,7 +412,7 @@ def upgrade() -> None:
     # Partial unique 索引（声明式模型无法表达）。
     # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
-    op.create_index("uq_companion_models_one_active", "companion_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
+    op.create_index("uq_companion_3d_models_one_active", "companion_3d_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     # 每用户一个穿着中外观；一个切分中外观（并发 confirm 的硬保证，服务层另有用户级锁）
     op.create_index("uq_companion_outfits_one_active", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     op.create_index("uq_companion_outfits_one_splitting", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("status = 'splitting'"))
@@ -464,8 +464,8 @@ def downgrade() -> None:
         "login_records",
         "cron_jobs",
         "companion_expression_avatars",
-        "companion_models",
-        "mesh2d_models",
+        "companion_3d_models",
+        "companion_2d_models",
         "companion_outfits",
         "companion_expressions",
         "avatar_assets",

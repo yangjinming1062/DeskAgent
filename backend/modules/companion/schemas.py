@@ -106,7 +106,7 @@ class AvatarHistoryResponse(BaseModel):
     history: list[AvatarAssetResponse]
 
 
-class CompanionModelResponse(BaseModel):
+class Companion3DModelResponse(BaseModel):
     id: int
     asset_url: str | None = None
     provider: str
@@ -146,7 +146,7 @@ class ExpressionAvatarResponse(BaseModel):
     generated: bool
 
 
-class Mesh2DModelResponse(BaseModel):
+class Companion2DModelResponse(BaseModel):
     id: int
     status: str = "generating"
     style: str = "cel_shading"

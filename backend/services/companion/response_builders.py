@@ -1,7 +1,7 @@
 import contextlib
 
 from components import safe_json_loads
-from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, CompanionOutfit, OutfitResponse
+from modules.companion import AvatarAsset, AvatarAssetResponse, Companion3DModel, Companion3DModelResponse, CompanionOutfit, OutfitResponse
 
 from .. import image_to_3d
 from .asset_store import get_companion_model_sha256
@@ -39,7 +39,7 @@ def outfit_response(outfit: CompanionOutfit) -> OutfitResponse:
     )
 
 
-def model_response(model: CompanionModel) -> CompanionModelResponse:
+def model_response(model: Companion3DModel) -> Companion3DModelResponse:
     """把 3D 模型行转换为接口响应，补齐签名地址与内容哈希。"""
     content_hash = model.content_hash or None
     if not content_hash and model.asset_url:
@@ -48,7 +48,7 @@ def model_response(model: CompanionModel) -> CompanionModelResponse:
             with contextlib.suppress(Exception):
                 content_hash = get_companion_model_sha256(int(parts[1]), parts[2])
 
-    return CompanionModelResponse(
+    return Companion3DModelResponse(
         id=model.id,
         species=model.species,
         provider=model.provider,
