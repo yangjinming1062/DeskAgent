@@ -88,6 +88,11 @@ hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
 hunyuan_result_format = "GLB"
 
+# 2D 拆分是否优先走 see-through（免费 HF Space，每日额度有限、无 SLA；失败自动降级 CPU mesh2d 链）
+seethrough_enabled = true
+# Space 的 Gradio API 基址（自托管时替换）
+seethrough_space_base = "https://24yearsold-see-through-demo.hf.space/gradio_api"
+
 [providers]
 # 供应商优先回退链（按数组顺序匹配第一个可用的服务商）。支持：mimo, minimax, gemini, grok, zhipu
 providers = ["mimo", "minimax", "gemini", "grok", "zhipu"]

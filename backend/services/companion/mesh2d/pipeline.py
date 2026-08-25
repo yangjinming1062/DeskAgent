@@ -6,7 +6,7 @@ import hashlib
 import io
 import json
 
-from components import SESSION_LOCAL, get_logger
+from components import SESSION_LOCAL, SETTINGS, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
 from PIL import Image
@@ -16,6 +16,7 @@ from services.llm import resolve_vision_chain
 
 from .. import asset_store
 from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
+from ..seethrough import SeeThroughError, run_seethrough_split
 from .layer_extractor import extract_layers, layer_centers
 from .llm_validator import validate_layers
 from .manifest_exporter import build_manifest
@@ -51,12 +52,28 @@ def _safe_load_avatar_bytes(url: str) -> bytes:
     return base64.b64decode(b64)
 
 
+async def _generate(
+    user_id: int,
+    fullbody_bytes: bytes,
+) -> tuple[str, list[dict[str, str]]]:
+    """see-through 拆分优先（配置门控），失败降级 CPU mesh2d 切分链。"""
+    if SETTINGS.seethrough_enabled:
+        try:
+            return await run_seethrough_split(user_id, fullbody_bytes)
+        except SeeThroughError as exc:
+            logger.warning(
+                "see-through split failed; falling back to cpu mesh2d chain",
+                extra={"user_id": user_id, "error": str(exc)},
+            )
+
+    return await _run_pipeline_core(user_id, fullbody_bytes)
+
+
 async def _run_pipeline_core(
     user_id: int,
-    fullbody_url: str,
+    fullbody_bytes: bytes,
 ) -> tuple[str, list[dict[str, str]]]:
     """执行 4 阶段：识别 → 抠图 → 关键点 → manifest；返回 (manifest_json, [{name, url}, ...])。"""
-    fullbody_bytes = _safe_load_avatar_bytes(fullbody_url)
     data_uri = "data:image/png;base64," + base64.b64encode(fullbody_bytes).decode(
         "ascii",
     )
@@ -151,10 +168,8 @@ def run_mesh2d_pipeline(
 
         try:
             normalized_url = _normalize_avatar_url_to_bare(fullbody_url) or fullbody_url
-            manifest_json, layer_entries = await _run_pipeline_core(
-                user_id,
-                normalized_url,
-            )
+            fullbody_bytes = _safe_load_avatar_bytes(normalized_url)
+            manifest_json, layer_entries = await _generate(user_id, fullbody_bytes)
         except Mesh2DPipelineError as exc:
             logger.warning(
                 "2d pipeline failed",

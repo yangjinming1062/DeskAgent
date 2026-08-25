@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     hunyuan_enable_pbr: bool = Field(default=True, validation_alias="HUNYUAN_ENABLE_PBR")
     hunyuan_result_format: str = Field(default="GLB", validation_alias="HUNYUAN_RESULT_FORMAT")
 
+    seethrough_enabled: bool = Field(default=False, validation_alias="SEETHROUGH_ENABLED")
+    seethrough_space_base: str = Field(
+        default="https://24yearsold-see-through-demo.hf.space/gradio_api",
+        validation_alias="SEETHROUGH_SPACE_BASE",
+    )
+
     companion_asset_signing_key: str
     ssrf_allowed_cidrs: str = Field(default="", validation_alias="SSRF_ALLOWED_CIDRS")
 
