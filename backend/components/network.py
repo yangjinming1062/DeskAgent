@@ -25,7 +25,7 @@ def _ip_in_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 
 
 def _ssrf_allowed_networks() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """运维声明的 IP 段豁免保留段拒绝——给 fake-ip TUN 代理（Clash 等，把所有域名解析到 198.18.0.0/15）的逃生口；云元数据 / CGNAT 块与 hostname 黑名单始终无条件。"""
+    """运维声明的 IP 段豁免保留段拒绝——给 fake-ip TUN 代理（Clash 等，把所有域名解析到 198.18.0.0/15 或 IPv6 fdfe:dcba:9876::/64 等）的逃生口；云元数据 / CGNAT 块与 hostname 黑名单始终无条件。"""
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for part in (SETTINGS.ssrf_allowed_cidrs or "").split(","):
         part = part.strip()
@@ -45,14 +45,15 @@ def _evaluate_ip(ip_str: str) -> tuple[bool, str]:
     except ValueError:
         return False, f"unparseable address {ip_str!r}"
 
+    if _ip_in_blocked(ip):
+        return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
+
     allowed = _ssrf_allowed_networks()
     if any(ip in network for network in allowed):
         return True, ""
 
     if ip.is_loopback or ip.is_link_local or ip.is_private or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
         return (False, f"refusing to connect to {ip_str} (loopback/link-local/private/multicast)")
-    if _ip_in_blocked(ip):
-        return False, f"refusing to connect to {ip_str} (cloud-metadata / CGNAT)"
     return True, ""
 
 
