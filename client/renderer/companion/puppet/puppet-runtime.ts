@@ -1,12 +1,14 @@
 /** Puppet WebGL 运行时 — 自 Anime2.5DRig（MIT）index.html 核心移植：
- * 每层规则网格 mesh + deform() 顶点形变（头转/呼吸/眨眼差分/发束弹簧/胸物理）+ 模板眼裁切。
- * 形变数学与上游保持一致；GL 装配、rAF 生命周期与动画自动化层为本仓代码。
- * Phase 1 动画层：非对称呼吸+叹息、眨眼曲线（半眨/连眨）、视线跟随（眼先头后）、微扫视、音素嘴型。
- * Phase 2+ 按 PuppetLoom 机制规格逐步替换网格与绑定（alpha 轮廓 ArtMesh、语义控制笼）。
+ * 每层 ArtMesh（alpha 轮廓三角剖分）+ deform() 顶点形变（头转/呼吸/眨眼差分/发束弹簧/胸物理）
+ * + 模板眼裁切 + 头部三角控制笼重心绑定。形变数学与上游保持一致；GL 装配、rAF 生命周期、
+ * 动画自动化层（Phase 1）与网格/绑定（Phase 2）为本仓代码。
+ * Phase 3 按 PuppetLoom 机制在控制点位移上扩展深度曲线/远眼收窄等非线性项。
  */
 
 import { log } from '@/shared/lib/log'
 
+import { buildArtMesh } from './artmesh'
+import { buildHeadCage, cageBary, headBlendMu, type HeadCage } from './head-cage'
 import type { Rig, RigAnchors, RigEyeAnchor, RigImage, RigPart } from './puppet-types'
 import { ensureVendorLibs } from './vendor-loader'
 
@@ -147,6 +149,8 @@ interface GLPart {
   base: Float32Array
   cur: Float32Array
   nIdx: number
+  cb: Float32Array | null
+  dEff: Float32Array | null
   sw: Float32Array | null
   su: Float32Array | null
   bw: Float32Array | null
@@ -187,6 +191,11 @@ export class PuppetRuntime {
 
   private layers: GLPart[] = []
   private anchors: RigAnchors | null = null
+  private headCage: HeadCage | null = null
+  private meshVerts = 0
+  private meshTris = 0
+  private meshArtmesh = 0
+  private meshFallback = 0
   private cw = 768
   private ch = 768
   private fs = 1
@@ -333,6 +342,28 @@ export class PuppetRuntime {
     this.anchors = A
     this.fs = A.faceScale
 
+    // Phase 2: 头部双表面控制笼（dF=脸层深度，dS=头部层最大深度≈头骨）
+    let dF = 1
+    let dS = 2
+
+    for (const L of rig.layers) {
+      if (L.group !== 'head') {
+        continue
+      }
+
+      dS = Math.max(dS, L.depth)
+
+      if (window.Rigger?.baseName(L.name.replace(/_(l|r)$/, '')) === 'face') {
+        dF = L.depth
+      }
+    }
+
+    this.headCage = buildHeadCage(A, dF, dS)
+    this.meshVerts = 0
+    this.meshTris = 0
+    this.meshArtmesh = 0
+    this.meshFallback = 0
+
     for (const Lr of rig.layers) {
       const L = this.buildGlPart(Lr)
       this.layers.push(L)
@@ -347,33 +378,40 @@ export class PuppetRuntime {
     const gl = this.gl
     const A = this.anchors!
     const cell = (Lr.phys ? 30 : 42) * Math.max(0.6, this.cw / 768)
-    const nx = Math.max(2, Math.round(Lr.w / cell))
-    const ny = Math.max(2, Math.round(Lr.h / cell))
-    const nv = (nx + 1) * (ny + 1)
-    const base = new Float32Array(nv * 2)
-    const uv = new Float32Array(nv * 2)
-    let k = 0
 
-    for (let j = 0; j <= ny; j++) {
-      for (let i = 0; i <= nx; i++) {
-        base[k] = Lr.x + (Lr.w * i) / nx
-        base[k + 1] = Lr.y + (Lr.h * j) / ny
-        uv[k] = i / nx
-        uv[k + 1] = j / ny
-        k += 2
+    // Phase 2: alpha 轮廓 ArtMesh；退化/空层回退 2×2 quad
+    const am = buildArtMesh(Lr.img, cell)
+    let nv: number
+    let base: Float32Array
+    let uv: Float32Array
+    let idx: Uint16Array
+
+    if (am) {
+      nv = am.verts.length / 2
+      base = new Float32Array(nv * 2)
+      uv = new Float32Array(nv * 2)
+
+      for (let v = 0; v < nv; v++) {
+        const vx = am.verts[v * 2]!
+        const vy = am.verts[v * 2 + 1]!
+        base[v * 2] = Lr.x + vx
+        base[v * 2 + 1] = Lr.y + vy
+        uv[v * 2] = vx / Lr.w
+        uv[v * 2 + 1] = vy / Lr.h
       }
-    }
 
-    const idx: number[] = []
-
-    for (let j = 0; j < ny; j++) {
-      for (let i = 0; i < nx; i++) {
-        const a = j * (nx + 1) + i
-        const b = a + 1
-        const c = a + nx + 1
-        const d = c + 1
-        idx.push(a, b, c, b, d, c)
-      }
+      idx = am.tris
+      this.meshVerts += nv
+      this.meshTris += am.stats.tris
+      this.meshArtmesh++
+    } else {
+      nv = 4
+      base = new Float32Array([Lr.x, Lr.y, Lr.x + Lr.w, Lr.y, Lr.x, Lr.y + Lr.h, Lr.x + Lr.w, Lr.y + Lr.h])
+      uv = new Float32Array([0, 0, 1, 0, 0, 1, 1, 1])
+      idx = new Uint16Array([0, 1, 2, 1, 3, 2])
+      this.meshVerts += 4
+      this.meshTris += 2
+      this.meshFallback++
     }
 
     const bnRaw = Lr.name.replace(/_(l|r)$/, '')
@@ -457,13 +495,36 @@ export class PuppetRuntime {
       }
     }
 
+    // Phase 2: 控制笼绑定 — 重心坐标 + 脸面↔头骨混合 dEff（前发根随脸、梢随颅的连续深度过渡）
+    const cage = this.headCage
+    let cb: Float32Array | null = null
+    let dEff: Float32Array | null = null
+
+    if (cage) {
+      cb = new Float32Array(nv * 3)
+      dEff = new Float32Array(nv)
+      const muBase = headBlendMu(cage.dF, cage.dS, Lr.depth)
+
+      for (let v = 0; v < nv; v++) {
+        cageBary(cage, base[v * 2]!, base[v * 2 + 1]!, cb, v * 3)
+
+        let mu = muBase
+
+        if (bn === 'front hair' && su) {
+          mu = Math.min(1, Math.max(0, muBase + 0.15 - 0.3 * su[v]!))
+        }
+
+        dEff[v] = cage.dS + mu * (cage.dF - cage.dS)
+      }
+    }
+
     const vboPos = gl.createBuffer()!
     const vboUV = gl.createBuffer()!
     const ibo = gl.createBuffer()!
     gl.bindBuffer(gl.ARRAY_BUFFER, vboUV)
     gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW)
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo)
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW)
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW)
 
     const tex = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_2D, tex)
@@ -489,6 +550,8 @@ export class PuppetRuntime {
       base,
       cur: new Float32Array(base),
       nIdx: idx.length,
+      cb,
+      dEff,
       sw,
       su,
       bw,
@@ -544,6 +607,17 @@ export class PuppetRuntime {
     return { w: this.cw, h: this.ch }
   }
 
+  /** 网格统计（无头断言用）：ArtMesh 层数 / 回退层数 / 总顶点 / 总三角形。 */
+  meshStats(): { layers: number; verts: number; tris: number; artmesh: number; fallback: number } {
+    return {
+      layers: this.layers.length,
+      verts: this.meshVerts,
+      tris: this.meshTris,
+      artmesh: this.meshArtmesh,
+      fallback: this.meshFallback
+    }
+  }
+
   private fadeAlpha(L: GLPart, e: Evaluated): number {
     if (!L.fade) {
       return 1
@@ -592,6 +666,7 @@ export class PuppetRuntime {
     const NP = A.neckPivot
     const BP = A.bodyPivot
     const FC = { x: A.face.cx, y: A.face.cy }
+    const CAGE = this.headCage
     const bn = L.bn
     const eyeSide = L.side
     const EA: RigEyeAnchor | null = eyeSide === 'L' ? (A.eyeL ?? null) : eyeSide === 'R' ? (A.eyeR ?? null) : null
@@ -708,9 +783,34 @@ export class PuppetRuntime {
         const ry2 = rx * sz + ry * cz
         x += (rx2 - rx) * hw
         y += (ry2 - ry) * hw
-        const dd = L.depth
-        x += hw * this.fs * (e.angleX * (14 + 40 * (dd - 1)) + e.angleX * (NP.cy - y) * 0.028)
-        y += hw * this.fs * (-e.angleY * (9 + 30 * (dd - 1)) - e.angleY * (dd - 1) * (y - FC.y) * 0.05)
+
+        // Phase 2: 控制点位移 + 重心混合。当前位移场对固定深度是仿射的，
+        // 重心混合与原逐顶点公式精确一致；Phase 3 在此扩展深度曲线 / 远眼收窄等非线性项。
+        const dd = L.dEff ? L.dEff[vi]! : L.depth
+        const axF = e.angleX * this.fs
+        const ayF = e.angleY * this.fs
+        const kk = 14 + 40 * (dd - 1)
+        const kl = 9 + 30 * (dd - 1)
+        const ks = (dd - 1) * 0.05
+        let dx: number
+        let dy: number
+
+        if (L.cb && CAGE) {
+          const w0 = L.cb[vi * 3]!
+          const w1 = L.cb[vi * 3 + 1]!
+          const w2 = L.cb[vi * 3 + 2]!
+          const py0 = CAGE.py[0]!
+          const py1 = CAGE.py[1]!
+          const py2 = CAGE.py[2]!
+          dx = axF * (kk + 0.028 * (w0 * (NP.cy - py0) + w1 * (NP.cy - py1) + w2 * (NP.cy - py2)))
+          dy = -ayF * (kl + ks * (w0 * (py0 - FC.y) + w1 * (py1 - FC.y) + w2 * (py2 - FC.y)))
+        } else {
+          dx = axF * (kk + 0.028 * (NP.cy - y))
+          dy = -ayF * (kl + ks * (y - FC.y))
+        }
+
+        x += hw * dx
+        y += hw * dy
       }
 
       y -= (L.group === 'body' ? e.breath * 2.0 : e.breathHead * 1.6) * this.fs

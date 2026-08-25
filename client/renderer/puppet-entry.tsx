@@ -156,19 +156,64 @@ function PuppetDevApp() {
         const m = rt.snapshot()
         rt.target.mouthOpen = 0
 
+        const ms = rt.meshStats()
+
         const flags = [
           `blink=${eyeMin < 0.4 || blinkSeen ? 1 : 0}`,
           `mouth=${mouthMax > 0.2 || m.mouthOpen > 0.7 ? 1 : 0}`,
           `breath=${breathMax - breathMin > 0.4 ? 1 : 0}`,
           `idle=${angMax - angMin > 0.08 ? 1 : 0}`,
-          `gaze=${g.eyeX > 0.55 && g.angleX > 0.15 ? 1 : 0}`
+          `gaze=${g.eyeX > 0.55 && g.angleX > 0.15 ? 1 : 0}`,
+          `mesh=${ms.artmesh >= Math.max(1, ms.layers - 4) && ms.tris > 0 ? 1 : 0}`
         ].join(' ')
 
         setStatus(
-          `AUTOTEST_OK parts=${r.layers.length} warnings=${r.warnings.length} ${flags} talkmax=${mouthMax.toFixed(2)}`
+          `AUTOTEST_OK parts=${r.layers.length} warnings=${r.warnings.length} ${flags} meshstat=${ms.artmesh}/${ms.layers}am ${ms.verts}v${ms.tris}t talkmax=${mouthMax.toFixed(2)}`
         )
       } catch (err) {
         setStatus(`AUTOTEST_FAIL ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })()
+  }, [])
+
+  // ?pose=ax,ay,az：姿态定格（头转扫掠/Phase 5 姿态安全验证用）——关自动化、直写参数并推进到稳态
+  useEffect(() => {
+    const pose = new URLSearchParams(window.location.search).get('pose')
+
+    if (!pose) {
+      return
+    }
+
+    const [ax = 0, ay = 0, az = 0] = pose.split(',').map(Number)
+
+    void (async () => {
+      setStatus(`姿态定格 ax=${ax} ay=${ay} az=${az} …`)
+
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+
+        const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
+        const rt = handleRef.current?.runtime
+
+        if (!r || !rt) {
+          throw new Error('runtime 未就绪')
+        }
+
+        for (const key of Object.keys(rt.auto) as (keyof typeof rt.auto)[]) {
+          rt.auto[key] = false
+        }
+
+        rt.target.angleX = ax
+        rt.target.angleY = ay
+        rt.target.angleZ = az
+        rt.advanceSim(1)
+        setStatus(`POSE ax=${ax} ay=${ay} az=${az} parts=${r.layers.length}`)
+      } catch (err) {
+        setStatus(`POSE_FAIL ${err instanceof Error ? err.message : String(err)}`)
       }
     })()
   }, [])
