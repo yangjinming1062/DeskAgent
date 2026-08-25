@@ -15,6 +15,7 @@ import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $subtitles, setSubtitles } from '@/companion/prefs'
+import { $spatialPos, $spatialScale, $viewport, computeVoiceCallDockPosition } from '@/companion/spatial'
 import { speak, stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
@@ -86,6 +87,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
   const spriteState = useStore($spriteState)
   const subtitlesVisible = useStore($subtitles)
+  const pos = useStore($spatialPos)
+  const scale = useStore($spatialScale)
+  const viewport = useStore($viewport)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(0)
@@ -296,7 +300,15 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     }, 1000)
 
     async function transcribeAndSubmit(chunks: Blob[], mimeType?: string): Promise<void> {
-      if (!chunks.length) {
+      if (unmounted || !chunks.length) {
+        return
+      }
+
+      const totalBytes = chunks.reduce((acc, c) => acc + c.size, 0)
+
+      if (totalBytes === 0) {
+        setSpriteState('listening')
+
         return
       }
 
@@ -317,9 +329,16 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
         text = (res.text ?? '').trim()
       } catch (err: unknown) {
-        // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。
-        setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，请再说一次')
+        if (!unmounted) {
+          // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。
+          setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，请再说一次')
+        }
+
         text = ''
+      }
+
+      if (unmounted) {
+        return
       }
 
       if (!text || gatewayStateRef.current !== 'open') {
@@ -395,7 +414,13 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       }
 
       if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        recorderRef.current.stop()
+        recorderRef.current.onstop = null
+
+        try {
+          recorderRef.current.stop()
+        } catch {
+          /* ignore */
+        }
       }
 
       if (streamRef.current) {
@@ -464,17 +489,28 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
+  const dockPos = computeVoiceCallDockPosition({
+    dockH: 288,
+    dockW: 320,
+    pos,
+    scale,
+    vh: viewport.height,
+    vw: viewport.width
+  })
+
   return (
-    // DESIGN §6.1：通话是 ambient 陪伴——精灵窗口保持置顶（§3.7 不变量），
-    // 面板默认停在屏幕左下：不压精灵默认 home（右下）也不压底部居中的字幕，
-    // 不挡用户切去干活的应用；拖拽偏移持久化，用户可自行锚定。
-    <div className="fixed inset-0 z-50 flex items-end justify-start p-10" style={{ pointerEvents: 'none' }}>
+    // 通话是 ambient 陪伴——精灵窗口保持置顶（§3.7 不变量），
+    // 面板跟随精灵移动并锚定在精灵脚下，保持用户视觉焦点统一；拖拽偏移持久化，用户可自行微调。
+    <div className="fixed inset-0 z-50 pointer-events-none">
       <div
-        className="flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
+        className="fixed flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
         ref={panelRef}
         style={{
+          left: dockPos.left,
           pointerEvents: 'auto',
-          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+          top: dockPos.top,
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined,
+          willChange: 'left, top, transform'
         }}
       >
         <div
@@ -486,7 +522,22 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             语音通话中
           </span>
-          <span>{formatTime(durationSec)}</span>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={subtitlesVisible ? '隐藏字幕' : '显示字幕'}
+              aria-pressed={subtitlesVisible}
+              className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/80 transition hover:bg-white/20 hover:text-white"
+              onClick={e => {
+                e.stopPropagation()
+                setSubtitles(!subtitlesVisible)
+              }}
+              onPointerDown={e => e.stopPropagation()}
+              type="button"
+            >
+              {subtitlesVisible ? '字幕 开' : '字幕 关'}
+            </button>
+            <span>{formatTime(durationSec)}</span>
+          </div>
         </div>
 
         <div className="relative flex items-center justify-center my-2">
@@ -521,20 +572,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         </button>
       </div>
       <SubtitlesOverlay />
-      <div
-        className="fixed bottom-6 right-6 flex items-center gap-2 text-xs text-white/60"
-        style={{ pointerEvents: 'auto' }}
-      >
-        <button
-          aria-label={subtitlesVisible ? '隐藏字幕' : '显示字幕'}
-          aria-pressed={subtitlesVisible}
-          className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-white/80 hover:bg-black/60"
-          onClick={() => setSubtitles(!subtitlesVisible)}
-          type="button"
-        >
-          {subtitlesVisible ? '字幕 开' : '字幕 关'}
-        </button>
-      </div>
     </div>
   )
 }

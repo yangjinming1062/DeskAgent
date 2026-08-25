@@ -35,10 +35,16 @@ def _http_error(status: int, code: str, reason: str) -> HTTPException:
 
 
 def _resolve_mime_type(content_type: str | None) -> str:
-    """把 content_type 归一为 MiMo ASR 支持的 MIME 类型。"""
-    ct = content_type or ""
+    """把 content_type 归一为 ASR 支持的 MIME 类型。"""
+    ct = (content_type or "").split(";")[0].strip().lower()
     if ct in ("audio/mp3", "audio/mpeg"):
         return "audio/mpeg"
+    if ct in ("audio/webm", "video/webm"):
+        return "audio/webm"
+    if ct in ("audio/ogg", "audio/opus"):
+        return "audio/ogg"
+    if ct in ("audio/mp4", "audio/m4a", "video/mp4"):
+        return "audio/mp4"
     return "audio/wav"
 
 
@@ -78,12 +84,23 @@ async def serve_file(file_id: str) -> FileResponse:
 
 @router.post("/stt")
 @limiter.limit(f"{SETTINGS.media_stt_rate_limit_per_minute}/minute")
-async def speech_to_text(request: Request, audio_file: UploadFile = File(...), auth_data: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
+async def speech_to_text(
+    request: Request,
+    audio_file: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> dict[str, Any]:
     """走供应商链路的语音转写（仅 MiMo 注册了 STT）。"""
     user, _ = auth_data
+    target_file = audio_file or file
+    if target_file is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "Missing audio file", "reason": "missing_audio_file", "status": 422},
+        )
 
     # 客户端 multipart 头声明的 size 仅用于拦截明显超大的上传；下方流式 cap 才是真正限制——信任 header 会让攻击者把任意大小数据读进内存。
-    declared_size = _upload_size_or_none(audio_file)
+    declared_size = _upload_size_or_none(target_file)
     if declared_size is not None and declared_size > STT_MAX_AUDIO_BYTES:
         raise HTTPException(
             status_code=413,
@@ -91,7 +108,7 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
         )
 
     sink = bytearray()
-    while chunk := await audio_file.read(_UPLOAD_CHUNK_BYTES):
+    while chunk := await target_file.read(_UPLOAD_CHUNK_BYTES):
         sink.extend(chunk)
         if len(sink) > STT_MAX_AUDIO_BYTES:
             raise HTTPException(
@@ -100,7 +117,7 @@ async def speech_to_text(request: Request, audio_file: UploadFile = File(...), a
             )
     file_bytes = bytes(sink)
 
-    mime_type = _resolve_mime_type(audio_file.content_type)
+    mime_type = _resolve_mime_type(target_file.content_type)
 
     try:
         async with SESSION_LOCAL() as db:

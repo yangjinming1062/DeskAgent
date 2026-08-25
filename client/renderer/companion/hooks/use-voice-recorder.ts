@@ -74,6 +74,10 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
   }, [requestGateway])
 
   const transcribe = async (blob: Blob): Promise<string | null> => {
+    if (!blob || blob.size === 0) {
+      return null
+    }
+
     try {
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
@@ -115,17 +119,37 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     }
 
     const mimeType = recorder.mimeType || getSupportedOpusMimeType() || 'audio/webm'
-    const blob = new Blob(chunksRef.current, { type: mimeType })
 
-    chunksRef.current = []
+    const blob = await new Promise<Blob | null>(resolve => {
+      recorder.onstop = () => {
+        stopTracks(recorder)
+        streamRef.current = null
+        const chunks = chunksRef.current
+        chunksRef.current = []
 
-    recorder.onstop = () => {
-      stopTracks(recorder)
-      streamRef.current = null
-    }
+        if (chunks.length === 0) {
+          resolve(null)
 
-    recorder.stop()
+          return
+        }
+
+        resolve(new Blob(chunks, { type: mimeType }))
+      }
+
+      try {
+        recorder.stop()
+      } catch {
+        resolve(null)
+      }
+    })
+
     setRecording(false)
+
+    if (!blob || blob.size === 0) {
+      setSpriteState('idle')
+
+      return
+    }
 
     setSpriteState('thinking')
     const text = await transcribe(blob)
@@ -141,6 +165,8 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
         setSpriteState('idle')
         setAssistantError(err instanceof Error ? err.message : '发送失败')
       }
+    } else {
+      setSpriteState('idle')
     }
   }, [requestGateway, onTranscribed, ensureSession])
 
@@ -214,6 +240,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
       const recorder = recorderRef.current
 
       if (recorder && recorder.state !== 'inactive') {
+        recorder.onstop = null
         stopTracks(recorder)
 
         try {

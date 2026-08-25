@@ -75,16 +75,45 @@ export function dataUrlFromBuffer(buffer: Buffer | Uint8Array, mimeType: string)
   return `data:${mimeType};base64,${buf.toString('base64')}`
 }
 
-// 将 `data:<mime>[;base64],<payload>` 形式的 URL 解码回原始字节。
-export function dataUrlToBuffer(dataUrl: string): Buffer {
-  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
+export interface ParsedDataUrl {
+  data: Buffer
+  isBase64: boolean
+  mediaType: string
+  mime: string
+}
 
-  if (!match) {
+// 解析 RFC 2397 `data:[<mediatype>][;base64],<payload>` 形式的 URL。
+// 支持参数化媒体类型（如 audio/webm;codecs=opus）。
+export function parseDataUrl(dataUrl: string): ParsedDataUrl {
+  const raw = String(dataUrl || '').trim()
+  const commaIdx = raw.indexOf(',')
+
+  if (!raw.startsWith('data:') || commaIdx === -1) {
     throw new Error('Expected a base64 data URL')
   }
 
-  const isBase64 = Boolean(match[2])
-  const payload = match[3]
+  const meta = raw.slice(5, commaIdx)
+  const payload = raw.slice(commaIdx + 1)
 
-  return isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8')
+  const parts = meta
+    .split(';')
+    .map(p => p.trim())
+    .filter(Boolean)
+
+  const isBase64 = parts.length > 0 && parts[parts.length - 1].toLowerCase() === 'base64'
+
+  if (isBase64) {
+    parts.pop()
+  }
+
+  const mime = (parts[0] || 'application/octet-stream').toLowerCase()
+  const mediaType = parts.join(';') || mime
+  const data = isBase64 ? Buffer.from(payload, 'base64') : Buffer.from(decodeURIComponent(payload), 'utf8')
+
+  return { data, isBase64, mediaType, mime }
+}
+
+// 将 `data:<mime>[;base64],<payload>` 形式的 URL 解码回原始字节。
+export function dataUrlToBuffer(dataUrl: string): Buffer {
+  return parseDataUrl(dataUrl).data
 }

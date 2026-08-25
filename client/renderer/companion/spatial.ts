@@ -184,6 +184,56 @@ export function computeOverlayAnchorBesideSprite(opts: {
   return { left, top }
 }
 
+// 语音通话面板锚点定位：始终跟随精灵移动。
+// 默认位于精灵脚下（居中对齐）；若下方空间不足（如精灵贴底），则停在精灵脚部左/右侧与底边对齐。
+export function computeVoiceCallDockPosition(opts: {
+  dockH: number
+  dockW: number
+  gap?: number
+  margin?: number
+  pos: { x: number; y: number }
+  scale: number
+  vh: number
+  vw: number
+}): { left: number; top: number } {
+  const { pos, scale, dockW, dockH, vw, vh, gap = 12, margin = 16 } = opts
+  const spriteW = getBaseSpriteWidth() * scale
+  const spriteH = getBaseSpriteHeight() * scale
+
+  let left = pos.x + (spriteW - dockW) / 2
+  let top = pos.y + spriteH + gap
+
+  // 下方放得下：直接置于脚下居中
+  if (top + dockH <= vh - margin) {
+    left = Math.max(margin, Math.min(vw - dockW - margin, left))
+
+    return {
+      left: Math.round(left),
+      top: Math.round(top)
+    }
+  }
+
+  // 下方空间不足：优先放精灵左侧脚边，其次右侧脚边
+  const leftSpace = pos.x - gap - margin
+  const rightSpace = vw - (pos.x + spriteW + gap) - margin
+
+  if (leftSpace >= dockW) {
+    left = pos.x - gap - dockW
+    top = Math.max(margin, Math.min(vh - dockH - margin, pos.y + spriteH - dockH))
+  } else if (rightSpace >= dockW) {
+    left = pos.x + spriteW + gap
+    top = Math.max(margin, Math.min(vh - dockH - margin, pos.y + spriteH - dockH))
+  } else {
+    top = Math.max(margin, pos.y - gap - dockH)
+    left = Math.max(margin, Math.min(vw - dockW - margin, left))
+  }
+
+  return {
+    left: Math.round(Math.max(margin, Math.min(vw - dockW - margin, left))),
+    top: Math.round(Math.max(margin, Math.min(vh - dockH - margin, top)))
+  }
+}
+
 function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }

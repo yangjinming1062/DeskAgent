@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import { IPC, type MediaSttPayload, type MediaTtsPayload } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
-import { dataUrlFromBuffer, dataUrlToBuffer } from '../shared/mime'
+import { dataUrlFromBuffer, dataUrlToBuffer, parseDataUrl } from '../shared/mime'
 import { sleep } from '../shared/utils'
 
 import { createTtsDiskCache } from './tts-disk-cache'
@@ -161,15 +161,9 @@ class BoundedTtsQueue {
 }
 
 function decodeDataUrl(dataUrl?: string): { data: Buffer; mime: string } {
-  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(String(dataUrl || ''))
+  const parsed = parseDataUrl(dataUrl || '')
 
-  if (!match) {
-    throw new Error('Expected a base64 data URL')
-  }
-
-  const mime = match[1] || 'application/octet-stream'
-
-  return { data: dataUrlToBuffer(dataUrl || ''), mime }
+  return { data: parsed.data, mime: parsed.mime }
 }
 
 async function postMultipart({
@@ -350,7 +344,9 @@ async function sttViaBackend({
   const connection = await ensureBackend()
   const form = new FormData()
   const blob = new Blob([data], { type: mime })
-  form.append('file', blob, filename || (mime.includes('webm') ? 'audio.webm' : 'audio.wav'))
+  const actualFilename = filename || (mime.includes('webm') ? 'audio.webm' : 'audio.wav')
+  form.append('audio_file', blob, actualFilename)
+  form.append('file', blob, actualFilename)
 
   const qs = language ? `?language=${encodeURIComponent(language)}` : ''
   const url = `${connection.baseUrl}/api/media/stt${qs}`
