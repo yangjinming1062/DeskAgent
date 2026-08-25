@@ -802,14 +802,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       return
     }
 
-    // 只有同时有服务端行 AND 有效的头像图时才能跳过选择/生成直接进入确认。
-    if (activeAvatarId != null && $portraitUrl.get()) {
-      setPhase('portrait-avatar')
-      void playOnboardingAudio('onboarding.portrait.ok')
-
-      return
-    }
-
     const ans = currentAnswers ?? answers
     setHint(null)
 
@@ -1744,6 +1736,22 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     跳过 AI 生成，直接使用您本地准备好的图片作为伙伴头像。
                   </p>
                 </button>
+
+                {activeAvatarId != null && portraitUrl && (
+                  <button
+                    className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99]"
+                    onClick={() => setPhase('portrait-avatar')}
+                    type="button"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[14px] font-medium text-white/90">🖼️ 继续使用当前头像</span>
+                      <span className="text-xs text-white/40">已有草稿 →</span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                      保留之前生成或上传的头像草稿，直接进入确认与全身立绘阶段。
+                    </p>
+                  </button>
+                )}
               </div>
 
               {avatarUploading && (
