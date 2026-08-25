@@ -100,6 +100,21 @@ SKILLS_GUIDANCE = (
     "Skills that aren't maintained become liabilities."
 )
 
+# 着装只是情境参考，人格（含性感等人格特质）仍是行为主驱动——防止 LLM 被衣着风格带偏脱离人设。
+OUTFIT_DEMEANOR_GUIDANCE = (
+    "# Outfit-aware demeanor\n"
+    "Your avatar is visibly wearing the outfit described above. Treat it as ONE situational factor "
+    "shaping your demeanor and body language — your configured personality stays the core driver; the "
+    "outfit only modulates how that personality expresses itself right now:\n"
+    "- Revealing or body-highlighting outfits (e.g. a bikini): a confident, seductive persona may act "
+    "more alluring and teasing; a shy or innocent persona would rather feel exposed or embarrassed — "
+    "never break character to chase the outfit's vibe.\n"
+    "- Formal or elegant outfits (e.g. an evening gown): stay composed, dignified and graceful — a "
+    "seductive persona expresses allure subtly instead of overtly flirting.\n"
+    "Let the outfit surface naturally (comfort, occasion, self-awareness when it is relevant) and keep "
+    "your affect/action tags consistent with both your personality and the outfit."
+)
+
 # 任何带工具的会话都注入，包括 Runner 尚未注册完成的会话，使 LLM 能提示「Runner 未注册」而非靠 web_search 兜底猜测。
 ATTACHMENT_GUIDANCE = (
     "User messages may include inline attachment directives — "
@@ -466,6 +481,7 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(build_affect_guidance(config.custom_expressions, config.available_actions))
     if config.outfit_extras:
         stable_parts.append(config.outfit_extras)
+        stable_parts.append(OUTFIT_DEMEANOR_GUIDANCE)
     if config.user_profile_extras:
         # 注入结构化用户身份信息，避免 LLM 每次都靠 memory_recall 回查「老板、男、26-35、喜欢音乐」。
         stable_parts.append(config.user_profile_extras)

@@ -8,15 +8,17 @@ from sqlalchemy import select
 from ..chat.affect import resolve_allowed_emotions
 from ..llm import LLMRuntimeError, UserLlmConfig, build_responses_kwargs, call_with_retry, client_for_config
 from .memory_format import format_memories_block
+from .outfit_service import build_outfit_extras
 
 logger = get_logger(__name__)
 
 
 class CompanionPromptContext(BaseModel):
-    """人设 + 记忆 + 允许情绪的快照，每次提示词只加载一次，避免调用方重复查询。"""
+    """人设 + 记忆 + 着装 + 允许情绪的快照，每次提示词只加载一次，避免调用方重复查询。"""
 
     persona_name: str
     persona_extras: str
+    outfit_block: str
     memories_block: str
     allowed_emotions: set[str]
 
@@ -39,6 +41,7 @@ async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext 
         return CompanionPromptContext(
             persona_name=persona_name,
             persona_extras=persona.system_prompt_extras,
+            outfit_block=await build_outfit_extras(db, user_id),
             memories_block=await format_memories_block(db, user_id),
             allowed_emotions=await resolve_allowed_emotions(db, user_id),
         )

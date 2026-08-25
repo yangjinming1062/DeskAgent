@@ -38,6 +38,7 @@ _MAX_RESPONSE_TOKENS = 120
 _INTERACT_PROMPT_TEMPLATE = (
     "你是 {persona_name}。\n"
     "你的角色定义：\n{persona_extras}\n\n"
+    "{outfit_block}\n\n"
     "你对用户的长期记忆：\n{memories_block}\n\n"
     "最近的对话：\n{recent_context}\n\n"
     "今日互动数据：\n{today_stats}\n\n"
@@ -45,7 +46,8 @@ _INTERACT_PROMPT_TEMPLATE = (
     "- 用户刚才对你做了一个动作：{action_desc}（强度 bucket: {poke_count}）\n"
     "- 用户本地时间：{local_hour} 点\n"
     "- 用户此前已空闲 {idle_minutes} 分钟\n\n"
-    "请结合你的角色语气和性格，给出一句简短的口头反应（长度严格 ≤40 字）。\n"
+    "请结合你的角色语气与性格，并让当前着装参与塑造你的仪态（着装只是情境，性格仍是反应核心），"
+    "给出一句简短的口头反应（长度严格 ≤40 字）。\n"
     "同时，可选择是否带上一个符合此时心境的表情（emotion）。\n"
     "不要生成工具调用。只返回 JSON，不要有任何其他文字：\n"
     '{{"text": "回应文案", "emotion": "EMOTION"}}\n\n'
@@ -93,6 +95,7 @@ async def interact(
         {
             "persona_name": ctx.persona_name,
             "persona_extras": ctx.persona_extras,
+            "outfit_block": ctx.outfit_block or "当前着装：（默认形象，尚未换装）",
             "memories_block": ctx.memories_block,
             "recent_context": recent_context,
             "today_stats": today_stats,

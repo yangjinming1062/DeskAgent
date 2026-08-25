@@ -14,7 +14,7 @@ chat/
 ├── affect.py                # BUILTIN_EMOTIONS + AffectScrubber（流式剥离 `[affect:…]` tag）
 ├── persistence.py           # Message 行落库；触发 title 生成 / background review；emit message.complete
 ├── tool_dispatch.py         # 并行 dispatch + return_exceptions 容错；并行白名单见 services/tools/tool_dispatch_helpers
-├── system_prompt.py         # 全部 prompt 模板（identity / persona / user_profile / language / task / steer / 平台 / volatile）
+├── system_prompt.py         # 全部 prompt 模板（identity / persona / outfit / user_profile / language / task / steer / 平台 / volatile）
 ├── history.py               # 从 DB Message 重构会话历史 DTO
 ├── message_sanitization.py  # JSON 修复 + 截图归一化 + Responses 输入项窗口兜底
 ├── chat_emitter.py          # Emitter Protocol + HeadlessEmitter（子 agent）
