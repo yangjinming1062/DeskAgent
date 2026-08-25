@@ -61,18 +61,24 @@ export function AboutSettings(): React.JSX.Element {
           <BrandMark className="relative z-10 size-16" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">{a.heading}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <h2 className="text-lg font-semibold tracking-tight text-white">{a.heading}</h2>
+          <p className="mt-1 text-xs text-white/40">
             {version?.appVersion ? a.version(version.appVersion) : a.versionUnavailable}
           </p>
         </div>
       </div>
 
       <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-2 pt-4">
-        <p aria-live="polite" className="text-center text-xs text-muted-foreground">
+        <p aria-live="polite" className="text-center text-xs text-white/40">
           {statusLine}
         </p>
-        <Button disabled={isChecking} onClick={onCheckClick} size="sm" variant="outline">
+        <Button
+          className="border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white"
+          disabled={isChecking}
+          onClick={onCheckClick}
+          size="sm"
+          variant="outline"
+        >
           {isChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
           {a.checkForUpdates}
         </Button>

@@ -233,9 +233,7 @@ export const strings = {
           '0.8': '80%',
           '0.9': '90%'
         }
-      },
-      signOut: '退出登录',
-      signOutConfirm: '确定要退出登录吗？'
+      }
     }
   },
 

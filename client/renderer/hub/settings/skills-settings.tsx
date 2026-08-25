@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { SearchField, Switch, TextTab, TextTabMeta } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
-import { Sparkles } from '@/shared/lib/icons'
 import { refreshSession } from '@/shared/store/auth'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -177,7 +176,7 @@ export function SkillsSettings(): React.JSX.Element {
     const selectedSkills = groupedVisible.get(selectedCategory) ?? []
 
     body = (
-      <div className="divide-y divide-border/30 rounded-md border border-border/30 bg-card">
+      <div className="space-y-1.5">
         {selectedSkills.map(skill => (
           <ListRow
             action={<Switch checked={skill.enabled} onCheckedChange={value => void toggle(skill.name, value)} />}
@@ -200,13 +199,13 @@ export function SkillsSettings(): React.JSX.Element {
                   <h3
                     className={
                       isUserCategory(categoryKey)
-                        ? 'text-sm font-medium text-foreground capitalize'
-                        : 'text-sm font-medium text-foreground'
+                        ? 'text-xs font-medium text-white/80 capitalize'
+                        : 'text-xs font-medium text-white/80'
                     }
                   >
                     {categoryLabel(categoryKey, sk.other)}
                   </h3>
-                  <div className="divide-y divide-border/30 rounded-md border border-border/30 bg-card">
+                  <div className="space-y-1.5">
                     {items.map(skill => (
                       <ListRow
                         action={
@@ -228,7 +227,7 @@ export function SkillsSettings(): React.JSX.Element {
 
   return (
     <div>
-      <SettingsSubsection icon={Sparkles} intro={s.intro} title={s.title}>
+      <SettingsSubsection intro={s.intro} title={s.title}>
         {!noSkillsAtAll && (
           <>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

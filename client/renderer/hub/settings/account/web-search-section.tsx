@@ -1,6 +1,5 @@
 import { InlineNotice } from '@/shared/components/notifications'
 import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui'
-import { Globe } from '@/shared/lib/icons'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -68,7 +67,7 @@ export function WebSearchSection({
   update: (patch: Partial<WebFormState>) => void
 }): React.JSX.Element {
   return (
-    <SettingsSubsection icon={Globe} intro={t.intro} title={t.heading}>
+    <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
           <Select disabled={disabled} onValueChange={value => update({ backend: value })} value={state.backend}>

@@ -46,12 +46,12 @@ export function OverlayView({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-(--ui-chat-surface-background)">
+    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-black/60 text-white backdrop-blur-md">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
         {!HAS_NATIVE_WINDOW_CONTROLS && (
           <Button
             aria-label={closeLabel}
-            className="pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 text-(--ui-text-tertiary) hover:bg-(--chrome-action-hover) hover:text-foreground [-webkit-app-region:no-drag]"
+            className="pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 text-white/50 hover:bg-white/10 hover:text-white [-webkit-app-region:no-drag]"
             onClick={closeOverlay}
             size="icon-titlebar"
             variant="ghost"

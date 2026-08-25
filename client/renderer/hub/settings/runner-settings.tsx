@@ -11,7 +11,6 @@ import {
   Switch
 } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Settings } from '@/shared/lib/icons'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -176,12 +175,12 @@ export function RunnerSettings(): React.JSX.Element {
 
   return (
     <SettingsContent>
-      <SettingsSubsection icon={Settings} intro={r.intro} title={r.title}>
+      <SettingsSubsection intro={r.intro} title={r.title}>
         <div className="space-y-4">
           {rowGroups.map(group => (
-            <div key={group.heading}>
-              <SectionHeading icon={Settings} title={group.heading} />
-              <div className="divide-y divide-(--ui-stroke-tertiary)">
+            <div className="space-y-2" key={group.heading}>
+              <SectionHeading title={group.heading} />
+              <div className="space-y-1.5">
                 {group.rows.map(row => (
                   <ListRow
                     action={

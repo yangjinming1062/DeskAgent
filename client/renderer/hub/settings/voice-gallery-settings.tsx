@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
-import { AudioLines } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import { GENDER_OPTIONS, LANGUAGE_LABELS, type VoiceOption } from '@/shared/voice-catalog'
@@ -101,14 +100,14 @@ export function VoiceGallerySettings(): React.JSX.Element {
 
   return (
     <SettingsContent>
-      <SettingsSubsection icon={AudioLines} intro={t.intro} title={t.title}>
+      <SettingsSubsection intro={t.intro} title={t.title}>
         <div className="flex flex-wrap items-center gap-1.5">
           {langOptions.map(lang => (
             <FilterPill active={langFilter === lang} key={lang || 'all'} onClick={() => setLangFilter(lang)}>
               {lang ? (LANGUAGE_LABELS[lang] ?? lang) : t.all}
             </FilterPill>
           ))}
-          <span className="mx-1 text-(--ui-stroke-tertiary)">|</span>
+          <span className="mx-1 text-white/20">|</span>
           {GENDER_OPTIONS.map(g => (
             <FilterPill active={genderFilter === g.id} key={g.id} onClick={() => setGenderFilter(g.id)}>
               {g.label}
@@ -118,14 +117,20 @@ export function VoiceGallerySettings(): React.JSX.Element {
           {catalog.supports_voice_design && <Pill tone="primary">{t.designSupported}</Pill>}
         </div>
 
-        <div className="mt-4 divide-y divide-(--ui-stroke-tertiary)">
+        <div className="mt-4 space-y-1.5">
           {filteredVoices.length === 0 ? (
             <EmptyState description={t.empty} title={t.empty} />
           ) : (
             filteredVoices.map(v => (
               <ListRow
                 action={
-                  <Button disabled={previewingId !== null} onClick={() => void preview(v)} size="sm" variant="outline">
+                  <Button
+                    className="border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white"
+                    disabled={previewingId !== null}
+                    onClick={() => void preview(v)}
+                    size="sm"
+                    variant="outline"
+                  >
                     {previewingId === v.id ? t.playing : t.preview}
                   </Button>
                 }
@@ -140,7 +145,7 @@ export function VoiceGallerySettings(): React.JSX.Element {
                 title={
                   <span className="flex items-center gap-2">
                     {v.label}
-                    <span className="text-xs font-normal text-(--ui-text-tertiary)">
+                    <span className="text-[10px] font-normal text-white/40">
                       {LANGUAGE_LABELS[v.language] ?? v.language}
                     </span>
                   </span>

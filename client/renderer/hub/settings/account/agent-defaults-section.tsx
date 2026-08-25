@@ -1,5 +1,4 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from '@/shared/components/ui'
-import { SlidersHorizontal } from '@/shared/lib/icons'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -25,7 +24,7 @@ export function AgentDefaultsSection({
   update: (patch: Partial<AgentFormState>) => void
 }): React.JSX.Element {
   return (
-    <SettingsSubsection icon={SlidersHorizontal} intro={t.intro} title={t.heading}>
+    <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
           <Select

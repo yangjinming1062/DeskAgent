@@ -1,12 +1,10 @@
-import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
 import { Button, ConfirmDialog } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { KeyRound, Loader2, LogOut } from '@/shared/lib/icons'
+import { KeyRound, Loader2 } from '@/shared/lib/icons'
 import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
-import { $auth, logout } from '@/shared/store/auth'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
@@ -78,7 +76,6 @@ const readChatState = (config: SpiritAgentConfigResponse): ChatFormState => ({
 export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.account
-  const auth = useStore($auth)
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -90,7 +87,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
   const [clearingKey, setClearingKey] = useState<'brave_api_key' | 'tavily_api_key' | null>(null)
-  const [signOutOpen, setSignOutOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -236,7 +232,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         <ListRow
           description={loadError}
           title={
-            <div className="flex items-center gap-2 text-destructive">
+            <div className="flex items-center gap-2 text-rose-300/80">
               <KeyRound className="size-4" />
               <span>{a.heading}</span>
             </div>
@@ -248,7 +244,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
   return (
     <SettingsContent>
-      <SectionHeading icon={KeyRound} title={a.heading} />
+      <SectionHeading title={a.heading} />
 
       <WebSearchSection
         disabled={isSaving}
@@ -259,31 +255,13 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         update={updateWeb}
       />
 
-      <div className="my-4 h-px bg-border/30" />
+      <div className="my-4 h-px bg-white/10" />
 
       <AgentDefaultsSection disabled={isSaving} state={agent} t={a.agentDefaults} update={updateAgent} />
 
-      <div className="my-4 h-px bg-border/30" />
+      <div className="my-4 h-px bg-white/10" />
 
       <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
-
-      <div className="my-4 h-px bg-border/30" />
-
-      <ListRow
-        action={
-          <Button
-            className="text-destructive hover:text-destructive"
-            onClick={() => setSignOutOpen(true)}
-            size="sm"
-            variant="outline"
-          >
-            <LogOut className="size-3.5" />
-            {a.signOut}
-          </Button>
-        }
-        description={auth.kind === 'authenticated' ? (auth.snapshot.user?.username ?? '') : ''}
-        title={a.signOut}
-      />
 
       <div className="mt-8 flex justify-end">
         <Button disabled={isSaving || !isDirty} onClick={() => void handleSave()}>
@@ -311,18 +289,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         }}
         open={clearingKey !== null}
         title={a.webSearch.clearKey}
-        variant="destructive"
-      />
-      <ConfirmDialog
-        cancelLabel={t.common.cancel}
-        confirmLabel={a.signOut}
-        description={a.signOutConfirm}
-        onConfirm={() => {
-          void logout()
-        }}
-        onOpenChange={setSignOutOpen}
-        open={signOutOpen}
-        title={a.signOut}
         variant="destructive"
       />
     </SettingsContent>

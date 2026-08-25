@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { SearchField, Switch } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
-import { Wrench } from '@/shared/lib/icons'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -121,7 +120,7 @@ export function ToolsetsSettings(): React.JSX.Element {
 
   if (loadFailed && toolsets.length === 0) {
     return (
-      <SettingsSubsection icon={Wrench} title={sk.tabToolsets}>
+      <SettingsSubsection title={sk.tabToolsets}>
         <EmptyState description={sk.loadFailedDesc} title={sk.loadFailedTitle} />
       </SettingsSubsection>
     )
@@ -129,7 +128,7 @@ export function ToolsetsSettings(): React.JSX.Element {
 
   if (visibleEntries.length === 0) {
     return (
-      <SettingsSubsection icon={Wrench} title={sk.tabToolsets}>
+      <SettingsSubsection title={sk.tabToolsets}>
         <SearchField
           aria-label={sk.searchToolsets}
           onChange={setSearchTerm}
@@ -145,7 +144,7 @@ export function ToolsetsSettings(): React.JSX.Element {
 
   return (
     <div>
-      <SettingsSubsection icon={Wrench} title={sk.tabToolsets}>
+      <SettingsSubsection title={sk.tabToolsets}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <Pill tone="primary">{sk.toolsetsEnabled(enabledCount, toolsets.length)}</Pill>
         </div>
@@ -166,16 +165,12 @@ export function ToolsetsSettings(): React.JSX.Element {
           const toolNames = roster?.toolNames ?? []
 
           return (
-            <div className="rounded-md border border-border/30 bg-card p-4" key={catalog.id}>
+            <div className="rounded-lg border border-white/10 bg-black/30 p-4" key={catalog.id}>
               <div className="flex items-start gap-3">
-                <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                <Icon className="mt-0.5 size-5 shrink-0 text-white/50" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[length:var(--conversation-text-font-size)] font-medium text-foreground">
-                    {label || catalog.id}
-                  </div>
-                  <div className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                    {description}
-                  </div>
+                  <div className="text-xs font-medium text-white/90">{label || catalog.id}</div>
+                  <div className="mt-1 text-[10px] leading-relaxed text-white/40">{description}</div>
                 </div>
                 <Switch
                   checked={enabled}
@@ -186,7 +181,10 @@ export function ToolsetsSettings(): React.JSX.Element {
               {toolNames.length > 0 && (
                 <div className="mt-3 flex flex-wrap gap-1.5 pl-8">
                   {toolNames.map(name => (
-                    <span className="rounded-md bg-(--ui-bg-quinary) px-1.5 py-0.5 font-mono text-[0.65rem]" key={name}>
+                    <span
+                      className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[0.65rem] text-white/70"
+                      key={name}
+                    >
                       {name}
                     </span>
                   ))}

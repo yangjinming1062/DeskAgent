@@ -19,8 +19,7 @@ function OverlayActionButton({
     <button
       className={cn(
         'inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-45',
-        tone === 'subtle' &&
-          'h-7 border-transparent px-2 text-muted-foreground hover:border-[color-mix(in_srgb,var(--dt-border)_54%,transparent)] hover:bg-[color-mix(in_srgb,var(--dt-card)_72%,transparent)] hover:text-foreground',
+        tone === 'subtle' && 'h-7 border-transparent px-2 text-white/50 hover:bg-white/10 hover:text-white',
         className
       )}
       type={type}

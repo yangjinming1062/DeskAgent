@@ -69,22 +69,22 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
       ref={overlayRef}
     >
       <form
-        className="spiritagent-fade-in relative w-full max-w-lg rounded-2xl border border-border bg-card p-7 shadow-2xl"
+        className="spiritagent-fade-in relative w-full max-w-lg rounded-2xl border border-white/10 bg-black/60 p-7 text-white shadow-2xl backdrop-blur-md"
         onSubmit={onSubmit}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <div className="flex size-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white">
               <Sparkles className="size-5" />
             </div>
             <div>
               <h2 className="text-lg font-semibold tracking-tight">激活 SpiritAgent</h2>
-              <p className="text-sm text-muted-foreground">粘贴您收到的激活码以开始使用。</p>
+              <p className="text-sm text-white/40">粘贴您收到的激活码以开始使用。</p>
             </div>
           </div>
           <button
             aria-label="关闭"
-            className="flex size-7 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            className="flex size-7 items-center justify-center rounded-lg text-white/50 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-50"
             disabled={busy}
             onClick={onClose}
             type="button"
@@ -94,14 +94,14 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
         </div>
 
         {error && (
-          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="mb-4 rounded-md border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-300">
             {error}
           </div>
         )}
 
         <textarea
           autoFocus
-          className="h-24 w-full resize-none rounded-lg border border-input bg-background px-3 py-2 font-mono text-xs leading-relaxed shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-60"
+          className="h-24 w-full resize-none rounded-lg border border-white/10 bg-black/30 px-3 py-2 font-mono text-xs leading-relaxed text-white shadow-xs placeholder:text-white/30 focus-visible:border-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:opacity-60"
           disabled={busy}
           onChange={e => setCode(e.target.value)}
           placeholder="在此粘贴激活码…"
@@ -110,7 +110,13 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
         />
 
         <div className="mt-5 flex justify-end gap-2">
-          <Button disabled={busy} onClick={onClose} type="button" variant="outline">
+          <Button
+            className="border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white"
+            disabled={busy}
+            onClick={onClose}
+            type="button"
+            variant="outline"
+          >
             取消
           </Button>
           <Button className="inline-flex items-center gap-2" disabled={!trimmed || busy} type="submit">

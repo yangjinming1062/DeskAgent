@@ -65,15 +65,7 @@ import { computeBackTransition } from './back-transition'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import { Chip, HistoryGallery, type HistoryGalleryItem, PortraitLightbox, PortraitPanel } from './onboarding-components'
 
-type Phase =
-  | 'q-character'
-  | 'hatching'
-  | 'portrait-avatar'
-  | 'fullbody'
-  | 'q-user'
-  | 'voice'
-  | 'finishing'
-  | 'greeting'
+type Phase = 'q-character' | 'hatching' | 'portrait-avatar' | 'fullbody' | 'q-user' | 'voice' | 'finishing' | 'greeting'
 
 type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -900,6 +892,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setFullbodyStyleState(style)
       setFullbodyFrontRawUrl(seedFrontRaw)
       setFullbodyFrontUrl(resolved)
+
       if (resolved) {
         setFullbodyHistories({ [style]: [{ rawUrl: seedFrontRaw, previewUrl: resolved }] })
         setFullbodyHistoryIndices({ [style]: 0 })
@@ -1235,6 +1228,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       if (!sampleUrl) {
         setFullbodyStyleState(null)
         setFullbodyHint('风格样图生成未返回内容，请重试')
+
         return
       }
 
@@ -1243,6 +1237,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       if (!resolved) {
         setFullbodyStyleState(null)
         setFullbodyHint('风格样图加载失败，请重试')
+
         return
       }
 
@@ -1781,6 +1776,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   >
                     {styleCatalog.map(style => {
                       const isSelected = pendingStyleKey === style.id
+
                       return (
                         <button
                           aria-pressed={isSelected}
@@ -1821,7 +1817,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
                       disabled={!pendingStyleKey || fullbodyLoading || !activeAvatarId}
                       onClick={() => {
-                        if (!pendingStyleKey || !activeAvatarId) return
+                        if (!pendingStyleKey || !activeAvatarId) {
+                          return
+                        }
                         const label = styleCatalog.find(s => s.id === pendingStyleKey)?.label_zh ?? pendingStyleKey
                         void generateFullbodySample(activeAvatarId, pendingStyleKey, label)
                       }}

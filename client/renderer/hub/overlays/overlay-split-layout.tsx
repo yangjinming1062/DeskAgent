@@ -47,9 +47,8 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps): Re
   return (
     <aside
       className={cn(
-        // pt clears the floating titlebar/header; the bg itself fills from the
-        // card's top edge so there's no surface-colored gap above the sidebar.
-        'flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-white/[0.06] bg-(--ui-sidebar-surface-background) px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)]',
+        // 侧栏与主区共享深色玻璃背景，仅用右侧细线分隔。
+        'flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-white/10 bg-black/60 px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)] backdrop-blur-md',
         className
       )}
     >
@@ -83,13 +82,13 @@ export function OverlayNavItem({
   return (
     <button
       className={cn(
-        'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
+        'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-xs font-normal transition-colors',
         nested
           ? active
             ? 'border-transparent bg-white/10 font-medium text-white'
             : 'border-transparent bg-transparent text-white/50 hover:bg-white/5 hover:text-white'
           : active
-            ? 'border-white/10 bg-white/10 text-white'
+            ? 'border-white/15 bg-white/10 text-white'
             : 'border-transparent bg-transparent text-white/60 hover:bg-white/5 hover:text-white'
       )}
       onClick={onClick}

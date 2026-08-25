@@ -1,7 +1,6 @@
-import { IconVolume } from '@tabler/icons-react'
 import { useEffect, useState } from 'react'
 
-import { Button, SegmentedControl, type SegmentedControlOption, Switch } from '@/shared/components/ui'
+import { Button, Switch } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { triggerHaptic } from '@/shared/lib/haptics'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
@@ -146,13 +145,13 @@ export function SpeechSettings(): React.JSX.Element {
 
   // STT auto routes local-first (free), TTS auto routes cloud-first (better
   // voice quality) — the "auto" labels must state each engine's own priority.
-  const sttEngineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
+  const sttEngineOptions: readonly { id: SpeechEngine; label: string }[] = [
     { id: 'auto', label: s.sttEngineAuto },
     { id: 'local', label: s.engineLocal },
     { id: 'cloud', label: s.engineCloud }
   ]
 
-  const ttsEngineOptions: readonly SegmentedControlOption<SpeechEngine>[] = [
+  const ttsEngineOptions: readonly { id: SpeechEngine; label: string }[] = [
     { id: 'auto', label: s.ttsEngineAuto },
     { id: 'local', label: s.engineLocal },
     { id: 'cloud', label: s.engineCloud }
@@ -166,70 +165,89 @@ export function SpeechSettings(): React.JSX.Element {
   // 包含当前值，确保非标准值也能匹配 <option>
   const recordingOptions = Array.from(new Set([...RECORDING_OPTIONS, state.maxRecordingSeconds])).sort((a, b) => a - b)
 
+  const segmentClass = (active: boolean) =>
+    `flex-1 rounded-lg border px-3 py-1.5 text-xs transition ${
+      active
+        ? 'border-white/60 bg-white/15 font-medium text-white'
+        : 'border-white/15 bg-white/5 text-white/70 hover:bg-white/10'
+    }`
+
   return (
     <SettingsContent>
-      <SettingsSubsection icon={IconVolume} intro={s.intro} title={s.title}>
-        <div className="divide-y divide-(--ui-stroke-tertiary)">
-          <ListRow
-            action={<Switch checked={state.sttEnabled} onCheckedChange={v => update({ sttEnabled: v })} />}
-            description={s.sttEnabledDesc}
-            title={s.sttEnabledTitle}
-          />
-          <ListRow
-            action={
-              <div className="flex flex-col items-end gap-1.5">
-                <SegmentedControl
-                  onChange={v => update({ sttEngine: v })}
-                  options={sttEngineOptions}
-                  value={state.sttEngine}
-                />
-                {availBadge(localSttAvailable)}
-              </div>
-            }
-            description={s.sttEngineDesc}
-            title={s.sttEngineTitle}
-          />
-          {state.sttEngine === 'auto' && (
-            <ListRow
-              action={
-                <Switch checked={state.sttSilentFallback} onCheckedChange={v => update({ sttSilentFallback: v })} />
-              }
-              description={s.sttSilentFallbackDesc}
-              title={s.sttSilentFallbackTitle}
-            />
-          )}
-          <ListRow
-            action={
-              <div className="flex flex-col items-end gap-1.5">
-                <SegmentedControl
-                  onChange={v => update({ ttsEngine: v })}
-                  options={ttsEngineOptions}
-                  value={state.ttsEngine}
-                />
-                {availBadge(localTtsAvailable)}
-              </div>
-            }
-            description={s.ttsEngineDesc}
-            title={s.ttsEngineTitle}
-          />
-          <ListRow
-            action={
-              <select
-                className="rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-input) px-3 py-1.5 text-sm text-foreground outline-none"
-                onChange={e => update({ maxRecordingSeconds: Number(e.currentTarget.value) })}
-                value={state.maxRecordingSeconds}
-              >
-                {recordingOptions.map(s => (
-                  <option key={s} value={s}>
-                    {s}s
-                  </option>
+      <SettingsSubsection intro={s.intro} title={s.title}>
+        <ListRow
+          action={<Switch checked={state.sttEnabled} onCheckedChange={v => update({ sttEnabled: v })} />}
+          description={s.sttEnabledDesc}
+          title={s.sttEnabledTitle}
+        />
+        <ListRow
+          action={
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex w-44 gap-1.5">
+                {sttEngineOptions.map(opt => (
+                  <button
+                    className={segmentClass(state.sttEngine === opt.id)}
+                    key={opt.id}
+                    onClick={() => update({ sttEngine: opt.id })}
+                    type="button"
+                  >
+                    {opt.label}
+                  </button>
                 ))}
-              </select>
+              </div>
+              {availBadge(localSttAvailable)}
+            </div>
+          }
+          description={s.sttEngineDesc}
+          title={s.sttEngineTitle}
+        />
+        {state.sttEngine === 'auto' && (
+          <ListRow
+            action={
+              <Switch checked={state.sttSilentFallback} onCheckedChange={v => update({ sttSilentFallback: v })} />
             }
-            description={s.recordingDesc}
-            title={s.recordingTitle}
+            description={s.sttSilentFallbackDesc}
+            title={s.sttSilentFallbackTitle}
           />
-        </div>
+        )}
+        <ListRow
+          action={
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex w-44 gap-1.5">
+                {ttsEngineOptions.map(opt => (
+                  <button
+                    className={segmentClass(state.ttsEngine === opt.id)}
+                    key={opt.id}
+                    onClick={() => update({ ttsEngine: opt.id })}
+                    type="button"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {availBadge(localTtsAvailable)}
+            </div>
+          }
+          description={s.ttsEngineDesc}
+          title={s.ttsEngineTitle}
+        />
+        <ListRow
+          action={
+            <select
+              className="rounded-lg border border-white/15 bg-black/30 px-3 py-1.5 text-xs text-white outline-none"
+              onChange={e => update({ maxRecordingSeconds: Number(e.currentTarget.value) })}
+              value={state.maxRecordingSeconds}
+            >
+              {recordingOptions.map(s => (
+                <option key={s} value={s}>
+                  {s}s
+                </option>
+              ))}
+            </select>
+          }
+          description={s.recordingDesc}
+          title={s.recordingTitle}
+        />
 
         <div className="mt-8 flex justify-end">
           <Button disabled={isSaving || !isDirty} onClick={() => void save()}>

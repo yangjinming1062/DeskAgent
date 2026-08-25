@@ -47,8 +47,8 @@ export function ToolRoot(): React.JSX.Element {
   // 在认证前没有内容可显示。
   if (auth.kind !== 'authenticated') {
     return (
-      <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-(--ui-chat-surface-background)">
-        <Loader2 className="size-8 animate-spin text-muted-foreground" />
+      <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-white backdrop-blur-md">
+        <Loader2 className="size-8 animate-spin text-white/40" />
       </div>
     )
   }

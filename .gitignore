@@ -136,3 +136,4 @@ installer/payload/*
 
 # Backend runtime data (generated media/logs from tests + runs, never tracked)
 data/
+*.mp4

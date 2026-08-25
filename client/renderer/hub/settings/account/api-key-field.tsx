@@ -55,9 +55,7 @@ export function ApiKeyField({
       title={
         <div className="flex items-center gap-2">
           <span>{title}</span>
-          <span className="text-[length:var(--conversation-caption-font-size)] font-normal text-(--ui-text-tertiary)">
-            · {status}
-          </span>
+          <span className="text-[10px] font-normal text-white/40">· {status}</span>
         </div>
       }
     />

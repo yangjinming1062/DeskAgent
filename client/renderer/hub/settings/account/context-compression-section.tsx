@@ -1,5 +1,4 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from '@/shared/components/ui'
-import { Archive } from '@/shared/lib/icons'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -25,7 +24,7 @@ export function ContextCompressionSection({
   update: (patch: Partial<ChatFormState>) => void
 }): React.JSX.Element {
   return (
-    <SettingsSubsection icon={Archive} intro={t.intro} title={t.heading}>
+    <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
           <Switch

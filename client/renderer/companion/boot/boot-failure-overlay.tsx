@@ -35,11 +35,15 @@ export function BootFailureOverlay(): React.JSX.Element | null {
   return (
     <div
       aria-live="assertive"
-      className="fixed inset-0 z-[1500] grid place-items-center bg-(--ui-chat-surface-background) p-6"
+      className="fixed inset-0 z-[1500] grid place-items-center bg-black/60 p-6 text-white backdrop-blur-md"
       ref={overlayRef}
       role="alertdialog"
     >
-      <ErrorState className="w-full max-w-[28rem]" description={message} title={strings.boot.errors.desktopBootFailed}>
+      <ErrorState
+        className="w-full max-w-[28rem] [&_h2]:text-white [&_p]:text-white/60"
+        description={message}
+        title={strings.boot.errors.desktopBootFailed}
+      >
         <Button className="font-semibold" onClick={onRetry} size="lg">
           {strings.boot.failure.retry}
         </Button>
