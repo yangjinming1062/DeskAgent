@@ -244,7 +244,6 @@ export async function buildMesh2DScene(manifest: Manifest, layerUrls: Record<str
       const img = texture.image as HTMLImageElement | undefined
       const layerSize = { w: img?.width ?? meshDef.geometry_w, h: img?.height ?? meshDef.geometry_h }
       const skinned = buildSkinnedMesh(meshDef, bones, texture, layerSize)
-      skinned.add(root)
       skinned.bind(skeleton)
       group.add(skinned)
       meshes.push(skinned)

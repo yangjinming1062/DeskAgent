@@ -6,7 +6,7 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget } from '@/companion/companion-store'
 import { probeInteractiveRegions } from '@/companion/interactive-regions'
 import { $personalityTags } from '@/companion/persona-store'
-import { $spatialLocomotion, type Locomotion } from '@/companion/spatial'
+import { $spatialLocomotion, getBaseSpriteHeight, getBaseSpriteWidth, type Locomotion } from '@/companion/spatial'
 import { log } from '@/shared/lib/log'
 
 import { $contextMenuOpen } from '../sprite/context-menu-store'
@@ -123,13 +123,16 @@ export function Mesh2DCanvas(): React.JSX.Element {
         })
         probeInteractiveRegions()
 
-        const w = container.clientWidth || scene.width
-        const h = container.clientHeight || scene.height
+        const w = container.clientWidth || getBaseSpriteWidth() || scene.width
+        const h = container.clientHeight || getBaseSpriteHeight() || scene.height
 
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
         renderer.setPixelRatio(window.devicePixelRatio || 1)
         renderer.setSize(w, h)
         renderer.setClearColor(0x000000, 0)
+        renderer.domElement.style.position = 'absolute'
+        renderer.domElement.style.inset = '0'
+        renderer.domElement.style.pointerEvents = 'none'
         container.appendChild(renderer.domElement)
         rendererRef.current = renderer
 
@@ -137,9 +140,12 @@ export function Mesh2DCanvas(): React.JSX.Element {
         const halfH = h / 2
         camera = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, -1000, 1000)
         camera.position.z = 100
+        camera.lookAt(0, 0, 0)
         cameraRef.current = camera
 
-        scene.group.position.set(w / 2 - scene.width / 2, h / 2 - scene.height / 2, 0)
+        const scale = Math.min(w / scene.width, h / scene.height)
+        scene.group.scale.set(scale, scale, 1)
+        scene.group.position.set(-(scene.width / 2) * scale, (scene.height / 2) * scale, 0)
 
         lastTimeRef.current = performance.now()
         startedAtRef.current = lastTimeRef.current
