@@ -172,7 +172,7 @@ export function Companion3D(): React.JSX.Element {
         eng.character.setDragVelocity(vel.vx, vel.vy)
       })
 
-      // 移动肢体动画（DESIGN §3.3）：2D 由 mesh2d locomotion 覆盖层驱动，3D 侧在
+      // 移动肢体动画（DESIGN §3.3）：2D 由 2D 路径 locomotion 覆盖层驱动，3D 侧在
       // walk/walk_fast 移动时播放 walk clip（fly 无专属 clip，维持状态 clip）。
       const unsubLocomotion = $spatialLocomotion.listen(loco => {
         eng.character.playLocomotion(loco === 'walk' || loco === 'walk_fast' ? 'walk' : null)

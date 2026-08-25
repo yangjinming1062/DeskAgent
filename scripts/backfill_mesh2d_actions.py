@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""存量 mesh2d 模型的动作表回填（一次性运维）。
+"""存量 2D 模型的动作表回填（一次性运维）。
 
 动作系统升级（关键帧 tracks / click / point / idle 扩充）只影响新生成模型的 manifest；
 本脚本把最新 DEFAULT_ANIMATIONS 重新烘焙进所有 active 模型的 manifest_json 与资产文件，
@@ -39,7 +39,7 @@ async def backfill(dry_run: bool) -> int:
                 continue
 
             manifest = json.loads(model.manifest_json)
-            manifest["$schema"] = "spiritagent.mesh2d/3"
+            manifest["$schema"] = "spiritagent.2d/3"
             manifest["version"] = 3
             manifest["animations"] = DEFAULT_ANIMATIONS
             manifest_json = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
@@ -59,7 +59,7 @@ async def backfill(dry_run: bool) -> int:
             model.manifest_path = asset_store.save_companion_asset(
                 manifest_json.encode("utf-8"),
                 user_id=model.user_id,
-                label=f"mesh2d_manifest_{model.id}",
+                label=f"2d_manifest_{model.id}",
                 ext="json",
             )
 

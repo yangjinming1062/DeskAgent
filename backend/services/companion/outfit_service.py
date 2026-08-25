@@ -2,8 +2,8 @@
 
 服装 / 发型是可换元素而非身份变更（DESIGN §5.4 形象锁定的豁免，同背面种子先例）：
 身份锚点恒为激活头像行的正面种子，本服务不检查 raise_if_image_sealed。
-两段式激活不变量：切分完成前旧 mesh2d 行保持激活，翻转只发生在 mesh2d 管线的成功
-接缝（mesh2d/pipeline.py）；提前翻转会令 get_active_mesh2d_response 落空、精灵掉蛋。
+两段式激活不变量：切分完成前旧 2d 行保持激活，翻转只发生在 2d 管线的成功
+接缝（2d pipeline.py）；提前翻转会令 get_active_mesh2d_response 落空、精灵掉蛋。
 所有外观状态校验与翻转（含管线接缝）共用用户级锁——锁外校验会让并发双击确认
 插出两行切分任务、或令在途切分覆盖用户手选。
 """
@@ -111,7 +111,7 @@ def _delete_reference_file(outfit: CompanionOutfit) -> None:
 
 
 async def _ensure_initial_outfit(db: AsyncSession, user_id: int) -> None:
-    """衣柜为空时把当前形象合成第一套外观（回填 mesh2d.outfit_id，此后激活翻转路径统一）；
+    """衣柜为空时把当前形象合成第一套外观（回填 2d.outfit_id，此后激活翻转路径统一）；
     无就绪 2D 身体时保持空衣柜，由 UI 引导先生成形象。"""
     existing = (await db.execute(select(CompanionOutfit.id).where(CompanionOutfit.user_id == user_id).limit(1))).scalar_one_or_none()
     if existing is not None:
@@ -143,7 +143,7 @@ async def list_outfits(db: AsyncSession, user_id: int) -> list[CompanionOutfit]:
 
 
 async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[AvatarAsset, Companion2DModel, str, str, str, str]:
-    """返回 (激活头像, 激活 mesh2d, 物种, 外貌, 性格, 画风)；守卫失败抛 OutfitStateError。"""
+    """返回 (激活头像, 激活 2d, 物种, 外貌, 性格, 画风)；守卫失败抛 OutfitStateError。"""
     avatar = await _active_avatar(db, user_id)
     mesh2d = await _active_mesh2d(db, user_id)
     if avatar is None or mesh2d is None:
@@ -312,7 +312,7 @@ async def regenerate_outfit_draft(db: AsyncSession, user_id: int, outfit_id: int
 async def confirm_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> CompanionOutfit:
     """确认草稿（failed 状态可重试切分，立绘已转正不再走 temp-media）：先转正
     （temp-media → companion-avatars，管线读永久路径）再以不停用现有激活行的方式插入
-    mesh2d 行并启动切分；描述生成后台进行，不阻塞就绪。"""
+    2d 行并启动切分；描述生成后台进行，不阻塞就绪。"""
     async with get_avatar_job_lock(user_id):
         outfit = await _get_outfit(db, user_id, outfit_id)
         if outfit is None:
@@ -398,7 +398,7 @@ def _unlink_companion_asset(user_id: int, storage_path: str | None) -> None:
 
 
 async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
-    """删除非穿着、非切分中的外观（含初始形象）；mesh2d 行与产物文件 best-effort 清理。
+    """删除非穿着、非切分中的外观（含初始形象）；2d 行与产物文件 best-effort 清理。
     初始形象的立绘文件即头像行的正面种子，归头像所有——外观删除不得带走它，
     否则后续表情头像与换装生成都会因身份参考丢失而失败。"""
     async with get_avatar_job_lock(user_id):

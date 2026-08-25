@@ -322,7 +322,7 @@ export function CompanionRoot(): React.JSX.Element {
         return
       }
 
-      // mesh2d 路径下尝试子区域命中；3D 路径忽略 nx/ny（silhouette hit 走自己的通道）
+      // 2D 路径下尝试子区域命中；3D 路径忽略 nx/ny（silhouette hit 走自己的通道）
       let region: string | undefined
 
       if (nx !== undefined && ny !== undefined) {

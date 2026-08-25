@@ -1,4 +1,4 @@
-"""LLM API 任务优先级调度 — mesh2d 切分任务按用户 render_mode 分高低优先级队列。"""
+"""LLM API 任务优先级调度 — 2d 切分任务按用户 render_mode 分高低优先级队列。"""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -19,7 +19,7 @@ class _PrioritizedItem:
     seq: int
     future: asyncio.Future[None] = field(compare=False, repr=False)
     run: Callable[[], Awaitable[T]] = field(compare=False, repr=False)
-    # 任务唯一 key（一般为 "mesh2d:{user_id}"）；worker 用它清理 self._tasks。
+    # 任务唯一 key（一般为 "2d:{user_id}"）；worker 用它清理 self._tasks。
     key: str = field(compare=False, repr=False, default="")
 
 

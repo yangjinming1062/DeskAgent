@@ -1,4 +1,4 @@
-# Mesh2D 后端模块
+# 2D 后端模块
 
 AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_main / clothing / arm_L / arm_R / front_hair），输出 manifest + 部件 PNG，给客户端的 Three.js SkinnedMesh 用。
 
@@ -12,7 +12,7 @@ AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_
 | `layer_extractor.py` | 在 bbox 内做白底毫秒级形态学抠图 + 形态学闭运算去毛糙 |
 | `occlusion_resolver.py` | CPU 像素操作补全被遮挡区域（无 GPU Inpainting）|
 | `skeleton_builder.py` | 关键点 + 部件 → 骨骼拓扑（pivot + skin weights）|
-| `manifest_exporter.py` | manifest.json 序列化（schema `spiritagent.mesh2d/1`）|
+| `manifest_exporter.py` | manifest.json 序列化（schema `spiritagent.2d/1`）|
 | `llm_validator.py` | 部件合理性校验（数量、面积）|
 | `priority_queue.py` | LLM API 任务优先级调度（高 / 低）|
 | `prompts.py` | 视觉 LLM prompt 模板（区域识别 + 关键点估计）|
@@ -21,8 +21,8 @@ AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_
 ## 数据契约
 
 - **`Companion2DModel`** 表（`companion_2d_models`）：`status`, `manifest_json`, `manifest_path`, `layers_json`, `content_hash`, `active`
-- **manifest schema**：`spiritagent.mesh2d/1` — `canvas` / `camera` / `skeleton.bones[]` / `meshes[]` / `animations.{breath,blink,idle_sway,jiggle,red_lines,actions,idle_variants,locomotion}`
-- **WS 事件**：`companion.mesh2d.ready` / `companion.mesh2d.failed` / `companion.render_mode.changed`
+- **manifest schema**：`spiritagent.2d/1` — `canvas` / `camera` / `skeleton.bones[]` / `meshes[]` / `animations.{breath,blink,idle_sway,jiggle,red_lines,actions,idle_variants,locomotion}`
+- **WS 事件**：`companion.2d.ready` / `companion.2d.failed` / `companion.render_mode.changed`
 
 ## 关键约束
 

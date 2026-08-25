@@ -1432,7 +1432,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       // 渲染模式固定为 2D：onboarding 阶段不暴露模式选择,需要 3D 时可在「伙伴设置 → 渲染模式」切换
       // （切 3D 前会先补生成背面种子图）。
       void window.spiritagent
-        .api<{ id?: number; status?: string }>({ path: '/api/companion/mesh2d', method: 'POST', body: {} })
+        .api<{ id?: number; status?: string }>({ path: '/api/companion/2d', method: 'POST', body: {} })
         .catch(() => undefined)
 
       // 后端确认成功后才能推进——失败时停在当前步,保留按钮可重试。

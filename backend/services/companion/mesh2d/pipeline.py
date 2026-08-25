@@ -1,4 +1,4 @@
-"""Mesh2D 主流水线：视觉 LLM 区域识别 → CPU 抠图 → 关键点估计 → 骨骼装配 → manifest + 资产落盘。"""
+"""2D 主流水线：视觉 LLM 区域识别 → CPU 抠图 → 关键点估计 → 骨骼装配 → manifest + 资产落盘。"""
 
 import asyncio
 import base64
@@ -27,7 +27,7 @@ logger = get_logger(__name__)
 
 
 class Mesh2DPipelineError(RuntimeError):
-    """mesh2d 流水线失败 — 调用方应继续走程序化蛋兜底。"""
+    """2d 流水线失败 — 调用方应继续走程序化蛋兜底。"""
 
 
 # 后台提交任务的强引用集合 + 在飞 model_id 集合（后者供 service 侧识别重启遗留的僵尸 generating 行）
@@ -98,7 +98,7 @@ async def _run_pipeline_core(
         storage_path = asset_store.save_companion_asset(
             layer.png_bytes,
             user_id=user_id,
-            label=f"mesh2d_{layer.name}",
+            label=f"2d_{layer.name}",
             ext="png",
         )
         layer_entries.append({"name": layer.name, "url": storage_path})
@@ -135,7 +135,7 @@ def run_mesh2d_pipeline(
 
             if model is None:
                 logger.warning(
-                    "mesh2d model row vanished before pipeline run",
+                    "2d model row vanished before pipeline run",
                     extra={"model_id": model_id, "user_id": user_id},
                 )
                 return
@@ -152,14 +152,14 @@ def run_mesh2d_pipeline(
             )
         except Mesh2DPipelineError as exc:
             logger.warning(
-                "mesh2d pipeline failed",
+                "2d pipeline failed",
                 extra={"user_id": user_id, "model_id": model_id, "error": str(exc)},
             )
             await _mark_failed(user_id=user_id, model_id=model_id, error=str(exc), reason=str(exc))
             return
         except Exception as exc:
             logger.exception(
-                "mesh2d pipeline crashed",
+                "2d pipeline crashed",
                 extra={"user_id": user_id, "model_id": model_id},
             )
             error = f"unexpected: {exc!s}"
@@ -169,7 +169,7 @@ def run_mesh2d_pipeline(
         async with SESSION_LOCAL() as db:
             model = await _fetch_model(db)
             if model is None:
-                logger.warning("mesh2d model row vanished after pipeline run", extra={"model_id": model_id, "user_id": user_id})
+                logger.warning("2d model row vanished after pipeline run", extra={"model_id": model_id, "user_id": user_id})
                 return
             model.status = "succeeded"
             model.manifest_json = manifest_json
@@ -179,7 +179,7 @@ def run_mesh2d_pipeline(
             manifest_path = asset_store.save_companion_asset(
                 manifest_json.encode("utf-8"),
                 user_id=user_id,
-                label=f"mesh2d_manifest_{model_id}",
+                label=f"2d_manifest_{model_id}",
                 ext="json",
             )
             model.manifest_path = manifest_path
@@ -240,7 +240,7 @@ def run_mesh2d_pipeline(
     async def _submit() -> None:
         _ACTIVE_MODEL_IDS.add(model_id)
         try:
-            await queue.submit(f"mesh2d:{user_id}", _task, priority=priority)
+            await queue.submit(f"2d:{user_id}", _task, priority=priority)
         finally:
             _ACTIVE_MODEL_IDS.discard(model_id)
 
@@ -249,7 +249,7 @@ def run_mesh2d_pipeline(
     def _done(task: asyncio.Task[None]) -> None:
         _PIPELINE_TASKS.discard(task)
         if not task.cancelled() and task.exception() is not None:
-            logger.error("mesh2d pipeline submission failed", exc_info=task.exception())
+            logger.error("2d pipeline submission failed", exc_info=task.exception())
 
     _PIPELINE_TASKS.add(wrapper)
     wrapper.add_done_callback(_done)
@@ -290,7 +290,7 @@ async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) 
         if outfit_failed_id is not None:
             await _emit_outfit_event(user_id, "companion.outfit.failed", {"outfit_id": outfit_failed_id, "reason": reason})
     except Exception:
-        logger.warning("mesh2d failed-state persistence error", exc_info=True)
+        logger.warning("2d failed-state persistence error", exc_info=True)
 
 
 async def _emit_outfit_event(user_id: int, event_type: str, payload: dict) -> None:
@@ -325,13 +325,13 @@ async def _emit_mesh2d_ready(
             db.add(
                 WSEvent(
                     user_id=user_id,
-                    event_type="companion.mesh2d.ready",
+                    event_type="companion.2d.ready",
                     payload=json.dumps(payload, ensure_ascii=False),
                 ),
             )
             await db.commit()
     except Exception:
-        logger.warning("Failed to emit companion.mesh2d.ready", exc_info=True)
+        logger.warning("Failed to emit companion.2d.ready", exc_info=True)
 
 
 async def _emit_mesh2d_failed(
@@ -346,10 +346,10 @@ async def _emit_mesh2d_failed(
             db.add(
                 WSEvent(
                     user_id=user_id,
-                    event_type="companion.mesh2d.failed",
+                    event_type="companion.2d.failed",
                     payload=json.dumps(payload, ensure_ascii=False),
                 ),
             )
             await db.commit()
     except Exception:
-        logger.warning("Failed to emit companion.mesh2d.failed", exc_info=True)
+        logger.warning("Failed to emit companion.2d.failed", exc_info=True)

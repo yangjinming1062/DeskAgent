@@ -60,12 +60,12 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/back | 按正面种子与微调反馈生成/重绘背面全身图（3D 升级阶段的背面种子确认向导调用；形象锁定后仍可用——视角派生而非身份变更；画风缺省从头像行推导） | Backend 生成 + Client 背面预览与微调 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图并解开音色/用户子阶段（引导期不生成背面种子图，背面准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md)） | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.5 |
-| GET/POST /api/companion/mesh2d | 查询 / 触发 2D 骨骼分层切分与装配流水线；生成规范与 manifest 契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 2D 运行时 |
+| GET/POST /api/companion/2d | 查询 / 触发 2D 骨骼分层切分与装配流水线；生成规范与 manifest 契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 2D 运行时 |
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
-| GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 mesh2d 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控（默认 1 套/小时），不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
+| GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控（默认 1 套/小时），不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
 
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的已选画风与已生成的正面种子图随形象行持久化，断点恢复直接重放到正面预览；正面种子草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
@@ -79,10 +79,10 @@
 | companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
-| companion.mesh2d.ready / .failed | 2D 骨骼分层切分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典 | Client 2D 运行时水合与渲染 |
+| companion.2d.ready / .failed | 2D 骨骼分层切分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典 | Client 2D 运行时水合与渲染 |
 | companion.render_mode.changed | 用户在设置中或多端同步切换渲染模式（`2d` / `3d`） | Client 切换展示画布 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
-| companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 mesh2d（与 mesh2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
+| companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 2D 渲染层（与 2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
 | video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理。
@@ -101,7 +101,7 @@
 
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
-**action 白名单（mesh2d 路径）**（权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
+**action 白名单（2D 路径）**（权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
 
 | key | 描述 | 默认绑定 emotion |
 |---|---|---|
@@ -125,7 +125,7 @@
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
 | ★ `drag_end` | 拖拽释放落地的站稳微沉 | neutral（拖拽放下触发） |
 
-> 注：3D 路径走 GLB clip map；2D 路径走 mesh2d 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度）。同一 action key 在两条路径上语义一致但兑现方式不同。
+> 注：3D 路径走 GLB clip map；2D 路径走 manifest 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度）。同一 action key 在两条路径上语义一致但兑现方式不同。
 >
 > 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」；检测出 leg_L/R 腿层的模型额外叠加 hip/knee/ankle 腿部摆动相位（长裙遮挡切不出腿层或旧模型维持躯干复合步态）。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
@@ -146,9 +146,9 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
+命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测），2D 路径走 2D 渲染层 [hitmap 模块](client/renderer/companion/mesh2d/mesh2d-hitmap.ts) 部件 bbox 测试（CPU 轻量）。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 manifest_exporter.py（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 mesh2d-drivers.ts 兑现代码 + 本文档**三处。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 manifest_exporter.py（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 2D 渲染层 drivers 兑现代码 + 本文档**三处。
 
 ### 1.5 资产 URL 签名与传输缓存
 

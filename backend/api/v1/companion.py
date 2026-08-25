@@ -506,13 +506,13 @@ async def post_model(
     return model_response(model)
 
 
-@router.get("/mesh2d", response_model=Companion2DModelResponse | None)
+@router.get("/2d", response_model=Companion2DModelResponse | None)
 async def get_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse | None:
     user, _ = auth
     return await get_active_mesh2d_response(db, user.id)
 
 
-@router.post("/mesh2d", response_model=Companion2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/2d", response_model=Companion2DModelResponse, status_code=status.HTTP_202_ACCEPTED)
 async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> Companion2DModelResponse:
     user, _ = auth
     try:
@@ -520,7 +520,7 @@ async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
         priority = "low" if persona.render_mode == "3d" else "high"
         model = await generate_mesh2d_model(db, user_id=user.id, priority=priority)
     except Mesh2DAlreadyRunningError as exc:
-        logger.warning("mesh2d generation failed to start", extra={"user_id": user.id, "error": str(exc)})
+        logger.warning("2d generation failed to start", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "startup_failed"})
 
     response = await get_active_mesh2d_response(db, user.id)

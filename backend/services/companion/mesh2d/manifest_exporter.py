@@ -14,7 +14,7 @@ SCHEMA_VERSION = 3  # v3: actions 由静态 pose 表升级为关键帧 tracks
 
 @dataclass
 class Manifest:
-    schema: str = "spiritagent.mesh2d/3"
+    schema: str = "spiritagent.2d/3"
     version: int = SCHEMA_VERSION
     canvas: dict[str, int] = field(default_factory=lambda: {"w": 1024, "h": 1366})
     camera: dict[str, Any] = field(
@@ -63,7 +63,7 @@ def _mesh_to_dict(mesh: MeshDef) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # 默认动作 / locomotion / idle variants
 #
-# 设计要点（来自 docs/DESIGN.md §5 + mesh2d-drivers.ts）：
+# 设计要点（来自 docs/DESIGN.md §5 + 2d 客户端 drivers）：
 # - action 是关键帧 tracks：每轨固定 bone + channel + axis，keys 为 (t_ms, v) 序列，
 #   t_ms 绝对毫秒、末键后保持；ease 仅 linear / ease_in_out 两档。
 # - rotation 通道 v 单位弧度（消费端直接赋 .rotation，不做 degToRad）；

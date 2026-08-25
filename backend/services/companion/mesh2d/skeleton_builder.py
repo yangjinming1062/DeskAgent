@@ -97,7 +97,7 @@ _BONE_TO_KP: dict[str, str] = {bone: kp for kp, bone in _KP_TO_BONE.items()}
 
 
 # mesh 层名 → 主绑定骨骼：arm_L/R 部件跨肩-肘-腕-手四骨，声明多骨影响集，
-# 客户端按顶点到各骨骼 pivot 的距离分配权重（见 mesh2d-runtime buildSkinnedMesh）。
+# 客户端按顶点到各骨骼 pivot 的距离分配权重（见 2d 客户端 runtime buildSkinnedMesh）。
 _ARM_INFLUENCES: dict[str, list[dict]] = {
     "arm_L": [
         {"bone": "shoulder_L", "weight": 0.45},

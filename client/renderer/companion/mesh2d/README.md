@@ -31,8 +31,8 @@
 
 ## WS 事件
 
-- `companion.mesh2d.ready` → `$mesh2dInfo` 更新，canvas 自动重建场景
-- `companion.mesh2d.failed` → 回退到程序化蛋（avatar 已确认但 2D 失败时由 SpriteStage 显示蛋）
+- `companion.2d.ready` → `$mesh2dInfo` 更新，canvas 自动重建场景
+- `companion.2d.failed` → 回退到程序化蛋（avatar 已确认但 2D 失败时由 SpriteStage 显示蛋）
 - `companion.render_mode.changed` → `$renderMode` 切换，重建 canvas
 - `companion.affect` / `message.complete` 的 `affect.action` → `mesh2d-drivers` 解析为骨骼 pose 切换
 

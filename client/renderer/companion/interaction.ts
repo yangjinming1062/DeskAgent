@@ -42,8 +42,8 @@ interface InteractRpcRequest {
   poke_count: number
   idle_seconds: number
   local_hour: number
-  /** mesh2d 子区域命中（head/face/arm_L/arm_R/body/back_hair/front_hair/skirt）；
-   *  不传 = 整精灵矩形命中。3D 路径走 silhouette hit，2D 路径由 mesh2d-hitmap.ts 提供。 */
+  /** 2D 路径子区域命中（head/face/arm_L/arm_R/body/back_hair/front_hair/skirt）；
+   *  不传 = 整精灵矩形命中。3D 路径走 silhouette hit，2D 路径由 2D 渲染层 hitmap 提供。 */
   region?: string
 }
 

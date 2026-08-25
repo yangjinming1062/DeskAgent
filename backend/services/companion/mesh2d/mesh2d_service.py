@@ -1,4 +1,4 @@
-"""Mesh2D service — 业务逻辑层：在 finalize 后触发切分、查询活跃模型、切换渲染模式。"""
+"""2D service — 业务逻辑层：在 finalize 后触发切分、查询活跃模型、切换渲染模式。"""
 
 import json
 
@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 
 
 class Mesh2DAlreadyRunningError(RuntimeError):
-    """已有 mesh2d 切分任务在进行中，或 avatar 尚未就绪无法启动切分。"""
+    """已有 2d 切分任务在进行中，或 avatar 尚未就绪无法启动切分。"""
 
 
 async def _resolve_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
@@ -38,7 +38,7 @@ async def generate_mesh2d_model(
     priority: str = "high",
     force: bool = False,
 ) -> Companion2DModel:
-    """从已激活 avatar 启动 mesh2d 切分；avatar 不可用时抛错。"""
+    """从已激活 avatar 启动 2d 切分；avatar 不可用时抛错。"""
     avatar = await _resolve_active_avatar(db, user_id)
 
     if avatar is None or not (avatar.seed_front_url or avatar.asset_url):
@@ -59,7 +59,7 @@ async def generate_mesh2d_model(
         if existing is not None:
             if existing.id in active_model_ids():
                 logger.info(
-                    "mesh2d generation already in flight",
+                    "2d generation already in flight",
                     extra={"user_id": user_id, "model_id": existing.id},
                 )
                 return existing
@@ -81,7 +81,7 @@ async def generate_mesh2d_model(
 
         if active is not None:
             logger.info(
-                "active mesh2d already exists",
+                "active 2d already exists",
                 extra={"user_id": user_id, "model_id": active.id},
             )
             return active
@@ -106,7 +106,7 @@ async def generate_mesh2d_model(
     await db.commit()
     await db.refresh(model)
 
-    # 后台执行不阻塞请求；就绪经 companion.mesh2d.ready 事件下发（DESIGN §5.5 异步启动）
+    # 后台执行不阻塞请求；就绪经 companion.2d.ready 事件下发（DESIGN §5.5 异步启动）
     run_mesh2d_pipeline(
         user_id=user_id,
         model_id=model.id,
@@ -114,7 +114,7 @@ async def generate_mesh2d_model(
         priority=priority,
     )
     logger.info(
-        "mesh2d pipeline kicked off",
+        "2d pipeline kicked off",
         extra={"user_id": user_id, "model_id": model.id, "priority": priority},
     )
     return model
@@ -124,7 +124,7 @@ async def get_active_mesh2d_response(
     db: AsyncSession,
     user_id: int,
 ) -> Companion2DModelResponse | None:
-    """把活跃 mesh2d 模型转换为 API 响应；客户端拿到 manifest_url 后启动 SkinnedMesh 渲染。"""
+    """把活跃 2d 模型转换为 API 响应；客户端拿到 manifest_url 后启动 SkinnedMesh 渲染。"""
     model = (
         await db.execute(
             select(Companion2DModel).where(
@@ -152,7 +152,7 @@ async def get_active_mesh2d_response(
                     if signed:
                         layer_urls[entry["name"]] = signed
     except Exception as exc:
-        logger.warning("failed to parse mesh2d layers_json", extra={"error": str(exc)})
+        logger.warning("failed to parse 2d layers_json", extra={"error": str(exc)})
 
     return Companion2DModelResponse(
         id=model.id,

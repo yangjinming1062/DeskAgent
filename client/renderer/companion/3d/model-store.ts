@@ -62,7 +62,7 @@ export const $modelInfo = atom<ModelInfo>({
 // 不受 idle/sleep 信号影响。
 export const $modelLoadSettled = atom<boolean>(false)
 // 引擎解析失败回退到程序化蛋（createProcedural）时置为 true；root.tsx 的渲染级联会
-// 在 2D 资产已就绪时改走 mesh2d 降级，两级皆不可用才停在程序化蛋（DESIGN §1.2）。
+// 在 2D 资产已就绪时改走 2D 渲染层降级，两级皆不可用才停在程序化蛋（DESIGN §1.2）。
 export const $glbLoadFailed = atom<boolean>(false)
 export const $availableClipNames = atom<Set<string>>(new Set())
 // 供应商声明的「语义键 → GLB 内 clip 名」；空表即该产物不含动画。

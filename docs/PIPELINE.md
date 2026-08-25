@@ -2,7 +2,7 @@
 
 > 读者：后端 pipeline 维护者、新供应商接入方、客户端 2D / 3D 渲染引擎维护者。
 >
-> 本文档是 3D 生成链路与 2D 分层动画（Mesh2D）生成链路的唯一权威：种子图编排、供应商能力、链拓扑、失败语义、产物契约与客户端兑现策略只在这里展开。产品流程见 [DESIGN.md](../DESIGN.md)，跨模块接口见 [PROTOCOL.md](../PROTOCOL.md)，后端实现取舍见 [backend/README.md](../backend/README.md)。
+> 本文档是 3D 生成链路与 2D 分层动画生成链路的唯一权威：种子图编排、供应商能力、链拓扑、失败语义、产物契约与客户端兑现策略只在这里展开。产品流程见 [DESIGN.md](../DESIGN.md)，跨模块接口见 [PROTOCOL.md](../PROTOCOL.md)，后端实现取舍见 [backend/README.md](../backend/README.md)。
 
 ## 1. 3D 链拓扑
 
@@ -95,7 +95,7 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 - 状态 / 交互反馈类键缺席 → 客户端回退 `idle`，符合"永不空白"
 - LLM 可请求类键缺席 → 客户端兑现落空停在绑定姿势；LLM 端因清单里没有该键而无法误请求
 
-## 6. 2D 分层动画能力链（Mesh2D）
+## 6. 2D 分层动画能力链
 
 **链拓扑**：
 ```

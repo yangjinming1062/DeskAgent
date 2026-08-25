@@ -30,11 +30,11 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 - runner 工具子包之间的 sibling 跨子包 eager import（终端 ↔ 文件、代码执行 → 线程上下文这类循环）
 - Facade 一致性：`from <local_pkg> import X` 走的 `<local_pkg>` 必须在其 `__init__.py` 里 re-export `X`，防止 facade 被过度精简
 
-## 3. mesh2d 切分验证样本 — `_mesh2d_validation/`
+## 3. 2D 切分验证样本 — `_mesh2d_validation/`
 
 按风格分组的立绘样图目录（`cel_shading/`、`anime_game_cg/`，各含 `layers/`），用于人工核对区域识别 / 抠图 / 骨骼装配质量——腿部切层等新能力上线前把样图放入后重跑切分管线抽检。当前为空脚手架。
 
-## 4. 存量 mesh2d 动作表回填 — `backfill_mesh2d_actions.py`
+## 4. 存量 2D 动作表回填 — `backfill_mesh2d_actions.py`
 
 动作系统升级（manifest v3 关键帧 tracks / click / point / idle 扩充）后，把最新 `DEFAULT_ANIMATIONS` 重新烘焙进所有 active 模型的 manifest 与资产文件、更新 content_hash——骨架/图层不动，旧模型（无 leg 层）回填后 locomotion 仍走复合躯干方案。客户端下次 hydrate 时按新 content_hash 重新拉取生效。需要 backend 环境变量可用。
 

@@ -429,8 +429,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
-    case 'companion.mesh2d.ready': {
-      // mesh2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示。
+    case 'companion.2d.ready': {
+      // 2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示。
       const p = event.payload as
         | {
             model_id?: number
@@ -440,7 +440,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
         | undefined
 
       if (p?.manifest_url) {
-        log.info('events', 'mesh2d ready:', p.model_id)
+        log.info('events', '2d ready:', p.model_id)
       }
 
       void hydrateMesh2D()
@@ -448,18 +448,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
-    case 'companion.mesh2d.failed': {
+    case 'companion.2d.failed': {
       // 切分失败：渲染层由 SpriteStage 兜底（程序化蛋 / 已就绪的 3D 模型）。
       const p = event.payload as { reason?: string } | undefined
       setMesh2DStatus('failed', p?.reason ?? '2D 切分失败')
-      log.warn('events', 'mesh2d failed:', p?.reason)
+      log.warn('events', '2d failed:', p?.reason)
 
       break
     }
 
     case 'companion.outfit.updated': {
       // 衣柜状态变化（切分就绪/穿着翻转/删除）——重拉列表；列表端点是真相源，事件只当刷新触发。
-      // 仅穿着翻转时重水合 mesh2d（幂等，与 mesh2d.ready 双触发无妨）；入柜不换装与删除不动当前穿着。
+      // 仅穿着翻转时重水合 2d（幂等，与 2d.ready 双触发无妨）；入柜不换装与删除不动当前穿着。
       const p = event.payload as { worn?: boolean } | undefined
 
       void hydrateWardrobe()

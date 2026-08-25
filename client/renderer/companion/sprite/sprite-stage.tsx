@@ -113,7 +113,7 @@ export function SpriteStage({
   )
 
   // 命中按渲染路径精化：3D 走实时轮廓探测（读回未落地返回 null 保留矩形兜底），
-  // 2D 走 mesh2d 部件 bbox（PROTOCOL §1.4 契约）；两者都缺席（桌面蛋 / 加载空挡）
+  // 2D 走 2D 渲染层部件 bbox（PROTOCOL §1.4 契约）；两者都缺席（桌面蛋 / 加载空挡）
   // 才回退整矩形——否则 2D 模式下矩形空白区会挡住底下应用的点击。
   const stageHitTest = useCallback((x: number, y: number): boolean => {
     const probe3d = hit3DRef.current
@@ -466,7 +466,7 @@ export function SpriteStage({
       onDoubleTap()
     } else {
       lastTapRef.current = now
-      // 计算归一化坐标 (nx, ny) 透传给 onTap，供 mesh2d 子区域命中
+      // 计算归一化坐标 (nx, ny) 透传给 onTap，供 2D 路径子区域命中
       const rect = mountRef.current?.getBoundingClientRect()
       const nx = rect && rect.width > 0 ? (e.clientX - rect.left) / rect.width : 0.5
       const ny = rect && rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5

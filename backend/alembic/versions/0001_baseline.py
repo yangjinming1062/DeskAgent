@@ -1,4 +1,4 @@
-"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器、Mesh2D 模型管线与 persona.render_mode；首次压缩版本。"""
+"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器、2D 模型管线与 persona.render_mode；首次压缩版本。"""
 
 from collections.abc import Sequence
 

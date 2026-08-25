@@ -72,7 +72,7 @@ class CompanionExpression(ModelBase, TimestampMixin):
 
 
 class CompanionOutfit(ModelBase, TimestampMixin):
-    """2D 换装外观：一套全身立绘 + 对应 mesh2d 切分行 + LLM 着装描述。
+    """2D 换装外观：一套全身立绘 + 对应 2d 切分行 + LLM 着装描述。
     服装/发型属可换元素而非身份变更，不受形象锁定约束；激活装不可删 ⇒ 衣柜非空后永不回空。
     partial unique（每用户一个 active / 一个 splitting）只存在于 baseline 迁移，不进模型 metadata。"""
 

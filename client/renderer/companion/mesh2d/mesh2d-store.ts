@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 
 import { log } from '@/shared/lib/log'
 
-// mesh2d 命中检测的引用句柄（懒加载；SpriteStage 在 pointermove / tap 时通过
+// 2D 命中检测的引用句柄（懒加载；SpriteStage 在 pointermove / tap 时通过
 // 这里的 ref 调用 hitRegion，避免 React 重渲染）。
 // 注意：Mesh2DHitmap 内部只用归一化坐标，nx / ny 必须由调用方先换算。
 export const $mesh2dHitmap = atom<{ hit: (nx: number, ny: number) => { region: string } | null } | null>(null)
@@ -75,10 +75,10 @@ export function resetMesh2D(): void {
   $mesh2dReady.set(false)
 }
 
-/** 拉取当前激活 mesh2d 模型 + 用户 render_mode；lifecycle=ready 时调用一次。 */
+/** 拉取当前激活 2D 模型 + 用户 render_mode；lifecycle=ready 时调用一次。 */
 export async function hydrateMesh2D(): Promise<void> {
   try {
-    const mesh2d = await window.spiritagent.api<Mesh2DResponse>({ path: '/api/companion/mesh2d' })
+    const mesh2d = await window.spiritagent.api<Mesh2DResponse>({ path: '/api/companion/2d' })
 
     if (mesh2d && mesh2d.status === 'succeeded' && mesh2d.manifest_url) {
       $mesh2dInfo.set({
@@ -123,12 +123,12 @@ export async function hydrateMesh2D(): Promise<void> {
 }
 
 /** 触发（或重试）2D 骨骼分层切分（DESIGN §5.5：失败后由用户在设置中重试）。
- *  就绪结果经 companion.mesh2d.ready 事件回流，与 onboarding 确认路径同一条管线。 */
+ *  就绪结果经 companion.2d.ready 事件回流，与 onboarding 确认路径同一条管线。 */
 export async function requestMesh2DGeneration(): Promise<void> {
   setMesh2DStatus('generating')
 
   try {
-    await window.spiritagent.api({ path: '/api/companion/mesh2d', method: 'POST' })
+    await window.spiritagent.api({ path: '/api/companion/2d', method: 'POST' })
   } catch (err) {
     log.warn('mesh2d-store', 'requestMesh2DGeneration failed', err)
     setMesh2DStatus('failed', '切分请求失败，请稍后再试')
