@@ -158,3 +158,35 @@ class RenderModeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     render_mode: Literal["2d", "3d"]
+
+
+class OutfitCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str | None = Field(default=None, max_length=500)
+    # 服装参考图（可选）：与身份锚点（正面种子）构成双参考，仅多参考图供应商消费
+    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
+    content_type: str | None = Field(default=None, max_length=64)
+
+
+class OutfitRegenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feedback: str | None = Field(default=None, max_length=500)
+
+
+class OutfitResponse(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    fullbody_url: str = ""
+    style: str = "cel_shading"
+    # draft → splitting → ready | failed | expired
+    status: str = "draft"
+    active: bool = False
+    # 确认即穿着：切分完成后自动换上；期间手动穿着其他装会清掉该标记
+    pending_wear: bool = False
+
+
+class OutfitListResponse(BaseModel):
+    outfits: list[OutfitResponse]

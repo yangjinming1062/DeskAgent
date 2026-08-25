@@ -71,6 +71,28 @@ class CompanionExpression(ModelBase, TimestampMixin):
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
 
 
+class CompanionOutfit(ModelBase, TimestampMixin):
+    """2D 换装外观：一套全身立绘 + 对应 mesh2d 切分行 + LLM 着装描述。
+    服装/发型属可换元素而非身份变更，不受形象锁定约束；激活装不可删 ⇒ 衣柜非空后永不回空。
+    partial unique（每用户一个 active / 一个 splitting）只存在于 baseline 迁移，不进模型 metadata。"""
+
+    __tablename__ = "companion_outfits"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64), default="新外观")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 全身立绘裸路径（草稿期 temp-media/，确认后 companion-avatars/），读取时重签名
+    fullbody_url: Mapped[str] = mapped_column(String(2048), default="")
+    style: Mapped[str] = mapped_column(String(32), default="cel_shading", server_default=text("'cel_shading'"))
+    # draft → splitting → ready | failed | expired
+    status: Mapped[str] = mapped_column(String(16), default="draft", server_default=text("'draft'"), index=True)
+    # 审计：用户着装描述 / feedback / 参考图前缀标记，仿 AvatarAsset.prompt_json
+    source_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
+    active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
+    # 确认即穿着：切分成功后自动翻转激活；期间手动穿着其他装会清掉该标记，切分完成只入柜不换装
+    pending_wear: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
+
+
 class Mesh2DModel(ModelBase, TimestampMixin):
     """AI 自动切分生成的 2D SkinnedMesh 模型；manifest 描述骨骼 / mesh / 动画曲线，layers 指向每张部件 PNG 资产。"""
 
@@ -78,6 +100,7 @@ class Mesh2DModel(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     avatar_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    outfit_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     style: Mapped[str] = mapped_column(String(32), default="cel_shading", server_default=text("'cel_shading'"))
     status: Mapped[str] = mapped_column(String(16), default="generating", server_default=text("'generating'"), index=True)
     manifest_json: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))

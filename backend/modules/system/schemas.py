@@ -56,6 +56,8 @@ class AgentPromptConfig(BaseModel):
     prompt_family: str = "openai"
     persona_extras: str | None = None
     user_profile_extras: str | None = None
+    # 当前穿着的着装描述（2D 换装）；精灵自知穿着，为着装联动打底
+    outfit_extras: str = ""
     auto_inject_extras: str = ""
     inferred_profile_extras: str = ""
     proactive_memory_extras: str = ""

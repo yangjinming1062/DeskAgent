@@ -1,7 +1,7 @@
 import contextlib
 
 from components import safe_json_loads
-from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse
+from modules.companion import AvatarAsset, AvatarAssetResponse, CompanionModel, CompanionModelResponse, CompanionOutfit, OutfitResponse
 
 from .. import image_to_3d
 from .asset_store import get_companion_model_sha256
@@ -27,6 +27,20 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
         fullbody_samples=fullbody_samples,
         prompt=payload.get("prompt", ""),
         status="succeeded",
+    )
+
+
+def outfit_response(outfit: CompanionOutfit) -> OutfitResponse:
+    """外观行转接口响应；立绘路径重签名（temp-media 草稿转 /api/media/files 形式）。"""
+    return OutfitResponse(
+        id=outfit.id,
+        name=outfit.name,
+        description=outfit.description,
+        fullbody_url=_re_sign_bare_path(outfit.fullbody_url) or "",
+        style=outfit.style or "cel_shading",
+        status=outfit.status,
+        active=outfit.active,
+        pending_wear=outfit.pending_wear,
     )
 
 

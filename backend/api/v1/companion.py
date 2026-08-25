@@ -22,6 +22,10 @@ from modules.companion import (
     FullbodyStyleItem,
     Mesh2DModelResponse,
     ModelGenerateRequest,
+    OutfitCreateRequest,
+    OutfitListResponse,
+    OutfitRegenerateRequest,
+    OutfitResponse,
     Persona,
     PersonaResponse,
     PersonaUpdate,
@@ -44,13 +48,21 @@ from services.companion import (
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
     NeutralEmotionError,
+    OutfitDraftExpiredError,
+    OutfitError,
+    OutfitNotFoundError,
+    OutfitStateError,
     PersonaValidationError,
     SeedPromptMissingError,
     UnknownEmotionError,
     UnknownFullbodyStyleError,
+    activate_outfit,
     avatar_response,
     confirm_fullbody_front,
+    confirm_outfit,
     confirm_portrait,
+    create_outfit_draft,
+    delete_outfit,
     finalize_avatar,
     generate_avatar,
     generate_companion_model,
@@ -64,11 +76,14 @@ from services.companion import (
     get_onboarding_state,
     get_or_create_persona,
     list_avatar_history,
+    list_outfits,
     list_tts_voices,
     model_response,
     normalize_voice_language,
+    outfit_response,
     prewarm_builtin_expressions,
     regenerate_avatar_from_image,
+    regenerate_outfit_draft,
     resolve_companion_asset_path,
     resolve_companion_model_path,
     resolve_expression_avatar,
@@ -502,6 +517,106 @@ async def post_render_mode(body: RenderModeRequest, auth: tuple[User, LoginRecor
         personality_tags=[],
         render_mode=persona.render_mode or "2d",
     )
+
+
+def _outfit_http_error(exc: OutfitError) -> HTTPException:
+    if isinstance(exc, OutfitNotFoundError):
+        return HTTPException(status_code=404, detail={"error": "找不到对应的外观", "reason": str(exc)})
+    if isinstance(exc, OutfitDraftExpiredError):
+        return HTTPException(status_code=409, detail={"error": str(exc), "reason": "draft_expired"})
+    if isinstance(exc, OutfitStateError):
+        return HTTPException(status_code=409, detail={"error": str(exc), "reason": "invalid_state"})
+    return HTTPException(status_code=400, detail={"error": str(exc), "reason": "invalid_request"})
+
+
+@router.get("/outfits", response_model=OutfitListResponse)
+async def get_outfits(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> OutfitListResponse:
+    user, _ = auth
+    outfits = await list_outfits(db, user.id)
+    return OutfitListResponse(outfits=[outfit_response(o) for o in outfits])
+
+
+# 换装路由不检查形象锁定：服装/发型是可换元素而非身份变更（DESIGN §5.4 豁免，同背面种子先例）
+@router.post("/outfits", response_model=OutfitResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(f"{SETTINGS.companion_outfit_generate_rate_limit_per_hour}/hour")
+async def post_outfit(
+    request: Request,  # required by @limiter.limit
+    body: OutfitCreateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> OutfitResponse:
+    user, _ = auth
+    raw, content_type = _decode_upload_image(body.image, body.content_type)
+    try:
+        outfit = await create_outfit_draft(db, user.id, description=body.description, image=raw, content_type=content_type)
+    except OutfitError as exc:
+        raise _outfit_http_error(exc)
+    except AvatarGenerationError as exc:
+        logger.warning("outfit draft generation failed", extra={"user_id": user.id, "error": getattr(exc, "internal", str(exc))})
+        raise HTTPException(status_code=502, detail={"error": "外观生成失败，请稍后重试", "reason": "generation_failed"})
+    return outfit_response(outfit)
+
+
+@router.post("/outfits/{outfit_id}/regenerate", response_model=OutfitResponse)
+@limiter.limit(f"{SETTINGS.companion_outfit_generate_rate_limit_per_hour}/hour")
+async def post_outfit_regenerate(
+    request: Request,  # required by @limiter.limit
+    outfit_id: int,
+    body: OutfitRegenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> OutfitResponse:
+    user, _ = auth
+    try:
+        outfit = await regenerate_outfit_draft(db, user.id, outfit_id, feedback=body.feedback)
+    except OutfitError as exc:
+        raise _outfit_http_error(exc)
+    except AvatarGenerationError as exc:
+        logger.warning("outfit draft regenerate failed", extra={"user_id": user.id, "outfit_id": outfit_id, "error": getattr(exc, "internal", str(exc))})
+        raise HTTPException(status_code=502, detail={"error": "外观生成失败，请稍后重试", "reason": "generation_failed"})
+    return outfit_response(outfit)
+
+
+@router.post("/outfits/{outfit_id}/confirm", response_model=OutfitResponse)
+async def post_outfit_confirm(
+    outfit_id: int,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> OutfitResponse:
+    user, _ = auth
+    try:
+        outfit = await confirm_outfit(db, user.id, outfit_id)
+    except OutfitError as exc:
+        raise _outfit_http_error(exc)
+    return outfit_response(outfit)
+
+
+@router.put("/outfits/{outfit_id}/activate", response_model=OutfitResponse)
+async def put_outfit_activate(
+    outfit_id: int,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> OutfitResponse:
+    user, _ = auth
+    try:
+        outfit = await activate_outfit(db, user.id, outfit_id)
+    except OutfitError as exc:
+        raise _outfit_http_error(exc)
+    return outfit_response(outfit)
+
+
+@router.delete("/outfits/{outfit_id}")
+async def delete_outfit_route(
+    outfit_id: int,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    user, _ = auth
+    try:
+        await delete_outfit(db, user.id, outfit_id)
+    except OutfitError as exc:
+        raise _outfit_http_error(exc)
+    return {"ok": True}
 
 
 @router.post("/expression-avatar", response_model=ExpressionAvatarResponse)

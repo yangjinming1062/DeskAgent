@@ -42,6 +42,7 @@ import {
   type VoiceCatalog,
   type VoiceDesignPreview
 } from '@/companion/voice'
+import { WardrobeSection } from '@/companion/wardrobe/wardrobe-section'
 import { Codicon } from '@/shared/components/ui'
 import { SlidersHorizontal } from '@/shared/lib/icons'
 import { notifyError } from '@/shared/store/notifications'
@@ -305,6 +306,9 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
               </div>
             )}
           </Section>
+
+          {/* 换装仅 2D：渲染模式为 3d 时隐藏衣柜入口（3D 模型不随服装变） */}
+          {renderMode === '2d' && <WardrobeSection />}
 
           {/* Advanced Reaction Switches */}
           <Section hint="让伙伴具备更智能的思考与决策能力；关闭可降低 LLM 调用消耗" title="智能反应与自主行为">

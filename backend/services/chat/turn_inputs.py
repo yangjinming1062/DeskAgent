@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..companion import (
+    build_outfit_extras,
     build_system_prompt_extras,
     build_user_profile_extras,
     format_auto_inject_block,
@@ -184,6 +185,7 @@ async def _build_turn_inputs(
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     # 未完成 onboarding 的用户没有 user_profile 行，跳过 SELECT。
     user_profile_extras = await build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
+    outfit_extras = await build_outfit_extras(db, user_id) if persona is not None and persona.is_complete else ""
     # auto_inject 记忆与 persona 是否完成无关：未声明 persona 也能承载 LLM 维护的背景上下文。
     auto_inject_extras = await format_auto_inject_block(db, user_id)
     inferred_profile_extras = await format_inferred_profile_block(db, user_id)
@@ -211,6 +213,7 @@ async def _build_turn_inputs(
         prompt_family=provider.PROMPT_FAMILY,
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
+        outfit_extras=outfit_extras,
         auto_inject_extras=auto_inject_extras,
         inferred_profile_extras=inferred_profile_extras,
         proactive_memory_extras=proactive_memory_extras,

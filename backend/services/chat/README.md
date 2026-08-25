@@ -1,6 +1,6 @@
 # `services/chat/`
 
-Backend 单次对话回合的编排核心：把“系统指令 + 用户输入 + 历史 + 工具 schema”组装成 Responses 上下文喂给 LLM，对流式事件做脱敏与情绪采集，把工具调用下发给本地 Runner，等回灌后再次送入模型直到 budget 用尽或 LLM 自决终止，最后把 assistant 回复持久化并 emit `message.complete`。
+Backend 单次对话回合的编排核心：把“系统指令 + 用户输入 + 历史 + 工具 schema”组装成 Responses 上下文喂给 LLM，对流式事件做脱敏与情绪采集，把工具调用下发给本地 Runner，等回灌后再次送入模型直到 budget 用尽或 LLM 自决终止，最后把 assistant 回复持久化并下发对话完成事件。
 
 架构上下文与跨模块契约见 [ARCHITECTURE.md §4.2.I / §6.3 / §6.4](../../ARCHITECTURE.md)；本文件只记 chat 包内独有的设计决策与边界。
 
@@ -25,11 +25,11 @@ chat/
 
 ## 关键不变量（chat 包内独有）
 
-- **affect 双通道**：chat 回合只在 `message.complete` 内联 `affect: {emotion}`；独立的 `companion.affect` 事件归 `services/companion/affect_emit.py`，不在 chat 路径（详见 [ARCHITECTURE.md §4.2.IV](../../ARCHITECTURE.md)）。
+- **affect 双通道**：chat 回合只在对话完成事件内联情绪字段；独立的伙伴情绪事件归 `services/companion/affect_emit.py`，不在 chat 路径（事件契约见 [PROTOCOL.md](../../../PROTOCOL.md)，详见 [ARCHITECTURE.md §4.2.IV](../../ARCHITECTURE.md)）。
 - **iteration budget 双层**：`IterationBudget(max_total=AGENT_MAX_LOOP_TURNS=150)` 计数 + `ToolCallGuardrailController.halt_decision` 语义提前退出。任一触发即停。
 - **provider fallback 边界**：`execute_with_fallback` 的 `on_first_chunk` 哨兵防止 mid-stream 切换 provider——一旦已开始向 renderer 流式输出，下一 call 就锁死在当前 provider，避免同一回合混合两个模型的输出。
 - **Responses 边界**：持久化层保留按角色建模的消息行；仅在读历史、工具回灌与后台 LLM 调用时转换为指令区 + 输入项。同一工具回合内的推理输出项保留到函数调用与输出闭合，近期图片载荷按二进制附件预算处理，不参与长文本截断。
-- **影响 scrubber 在流式阶段就解析**：`AffectScrubber.feed` 在 chunk 层面拆 tag，orchestrator 拿到完整 emotion 在 turn 结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到 `message.complete` 时 affect 字段已就位，TTS/EMOTIONAL 切换一次到位。
+- **影响 scrubber 在流式阶段就解析**：scrubber 在 chunk 层面拆情绪标签，orchestrator 拿到完整情绪在回合结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到对话完成事件时情绪字段已就位，TTS/EMOTIONAL 切换一次到位。
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
 - **流式 chunk 批处理**：在 5–10 ms 批窗口内合并连续 chunk 事件为单个 chunk 载荷；break 与 message.start 立即发出。
 - **懒加载子模块动态解析**：`_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 由 `__init__.__getattr__` 按需动态解析，避免循环依赖与无谓的顶层 import 开销。

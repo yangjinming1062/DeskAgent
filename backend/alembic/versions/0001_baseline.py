@@ -149,12 +149,33 @@ def upgrade() -> None:
     op.create_index(op.f("ix_companion_models_rig_type"), "companion_models", ["rig_type"], unique=False)
     op.create_index(op.f("ix_companion_models_user_id"), "companion_models", ["user_id"], unique=False)
     op.create_table(
+        "companion_outfits",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=64), nullable=False),
+        sa.Column("description", sa.Text(), nullable=True),
+        sa.Column("fullbody_url", sa.String(length=2048), nullable=False),
+        sa.Column("style", sa.String(length=32), server_default=sa.text("'cel_shading'"), nullable=False),
+        sa.Column("status", sa.String(length=16), server_default=sa.text("'draft'"), nullable=False),
+        sa.Column("source_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column("active", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("pending_wear", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(op.f("ix_companion_outfits_user_id"), "companion_outfits", ["user_id"], unique=False)
+    op.create_index(op.f("ix_companion_outfits_status"), "companion_outfits", ["status"], unique=False)
+    op.create_index(op.f("ix_companion_outfits_active"), "companion_outfits", ["active"], unique=False)
+    op.create_table(
         "mesh2d_models",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("avatar_id", sa.Integer(), nullable=True),
+        sa.Column("outfit_id", sa.Integer(), nullable=True),
         sa.Column("style", sa.String(length=32), server_default=sa.text("'cel_shading'"), nullable=False),
         sa.Column("status", sa.String(length=16), server_default=sa.text("'generating'"), nullable=False),
         sa.Column("manifest_json", sa.Text(), server_default=sa.text("''"), nullable=False),
@@ -165,6 +186,7 @@ def upgrade() -> None:
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("priority", sa.String(length=8), server_default=sa.text("'high'"), nullable=False),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["outfit_id"], ["companion_outfits.id"]),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_mesh2d_models_active"), "mesh2d_models", ["active"], unique=False)
@@ -391,6 +413,9 @@ def upgrade() -> None:
     # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     op.create_index("uq_companion_models_one_active", "companion_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
+    # 每用户一个穿着中外观；一个切分中外观（并发 confirm 的硬保证，服务层另有用户级锁）
+    op.create_index("uq_companion_outfits_one_active", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("active"))
+    op.create_index("uq_companion_outfits_one_splitting", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("status = 'splitting'"))
     # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
     op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
@@ -441,6 +466,7 @@ def downgrade() -> None:
         "companion_expression_avatars",
         "companion_models",
         "mesh2d_models",
+        "companion_outfits",
         "companion_expressions",
         "avatar_assets",
         "companion_preferences",

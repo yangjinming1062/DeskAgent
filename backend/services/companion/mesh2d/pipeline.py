@@ -6,14 +6,14 @@ import hashlib
 import json
 
 from components import SESSION_LOCAL, get_logger
-from modules.companion import Mesh2DModel
+from modules.companion import CompanionOutfit, Mesh2DModel
 from modules.ws.models import WSEvent
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from services.llm import resolve_vision_chain
 
 from .. import asset_store
-from ..avatar_service import _normalize_avatar_url_to_bare, load_avatar_bytes_as_data_uri
+from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
 from .layer_extractor import extract_layers, layer_centers
 from .llm_validator import validate_layers
 from .manifest_exporter import build_manifest
@@ -183,11 +183,57 @@ def run_mesh2d_pipeline(
                 ext="json",
             )
             model.manifest_path = manifest_path
-            model.active = True
+            # outfit 成功接缝：置 ready；自动穿着标记仍真则原子翻转穿着（先停用后激活——
+            # 部分唯一索引不可延迟）。标记已被手动穿着清掉时只入柜不换装；
+            # 非 outfit 行维持原行为（service 插入前已停用旧行，直接激活）。
+            event_outfit_id = model.outfit_id
+            worn: bool | None = None
+            event_outfit_name = ""
+            if event_outfit_id is not None:
+                # 锁内读取标记并翻转——与手动穿着路径互斥，否则「读到标记为真 → 用户手选
+                # 提交 → 切分完成覆盖手选」的竞态会击穿两段式激活的用户选择保证
+                async with get_avatar_job_lock(user_id):
+                    outfit = (
+                        await db.execute(
+                            select(CompanionOutfit).where(
+                                CompanionOutfit.id == event_outfit_id,
+                                CompanionOutfit.user_id == user_id,
+                            ),
+                        )
+                    ).scalar_one_or_none()
+                    if outfit is not None:
+                        outfit.status = "ready"
+                        event_outfit_name = outfit.name
+                        if outfit.pending_wear:
+                            await db.execute(
+                                update(Mesh2DModel).where(Mesh2DModel.user_id == user_id, Mesh2DModel.active.is_(True), Mesh2DModel.id != model_id).values(active=False),
+                                synchronize_session=False,
+                            )
+                            await db.execute(
+                                update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True)).values(active=False),
+                                synchronize_session=False,
+                            )
+                            model.active = True
+                            outfit.active = True
+                            outfit.pending_wear = False
+                            worn = True
+                        else:
+                            model.active = False
+                            worn = False
+                    else:
+                        # outfit 行已被删除的防御分支：不可激活（现有穿着行仍激活），留孤儿行
+                        model.active = False
+            else:
+                model.active = True
             await db.commit()
 
         manifest_url = asset_store.signed_companion_asset_url(manifest_path)
         await _emit_mesh2d_ready(user_id, model_id, manifest_url, layer_entries)
+        if worn is not None:
+            payload: dict = {"outfit_id": event_outfit_id, "worn": worn}
+            if event_outfit_name:
+                payload["name"] = event_outfit_name
+            await _emit_outfit_event(user_id, "companion.outfit.updated", payload)
 
     async def _submit() -> None:
         _ACTIVE_MODEL_IDS.add(model_id)
@@ -211,6 +257,7 @@ def run_mesh2d_pipeline(
 async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) -> None:
     """失败态落库 + 事件下发；自身异常只记日志（失败路径不能再抛）。"""
     try:
+        outfit_failed_id: int | None = None
         async with SESSION_LOCAL() as db:
             model = (
                 await db.execute(
@@ -223,10 +270,40 @@ async def _mark_failed(*, user_id: int, model_id: int, error: str, reason: str) 
             if model is not None:
                 model.status = "failed"
                 model.error = error
+                if model.outfit_id is not None:
+                    outfit = (
+                        await db.execute(
+                            select(CompanionOutfit).where(
+                                CompanionOutfit.id == model.outfit_id,
+                                CompanionOutfit.user_id == user_id,
+                            ),
+                        )
+                    ).scalar_one_or_none()
+                    if outfit is not None and outfit.status == "splitting":
+                        outfit.status = "failed"
+                        outfit.pending_wear = False
+                        outfit_failed_id = outfit.id
                 await db.commit()
         await _emit_mesh2d_failed(user_id, model_id, reason=reason)
+        if outfit_failed_id is not None:
+            await _emit_outfit_event(user_id, "companion.outfit.failed", {"outfit_id": outfit_failed_id, "reason": reason})
     except Exception:
         logger.warning("mesh2d failed-state persistence error", exc_info=True)
+
+
+async def _emit_outfit_event(user_id: int, event_type: str, payload: dict) -> None:
+    try:
+        async with SESSION_LOCAL() as db:
+            db.add(
+                WSEvent(
+                    user_id=user_id,
+                    event_type=event_type,
+                    payload=json.dumps(payload, ensure_ascii=False),
+                ),
+            )
+            await db.commit()
+    except Exception:
+        logger.warning("Failed to emit %s", event_type, exc_info=True)
 
 
 async def _emit_mesh2d_ready(

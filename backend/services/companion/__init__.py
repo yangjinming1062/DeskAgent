@@ -71,6 +71,19 @@ from .mesh2d import (
     set_render_mode,
 )
 from .model_service import generate_companion_model, request_model_download_retry
+from .outfit_service import (
+    OutfitDraftExpiredError,
+    OutfitError,
+    OutfitNotFoundError,
+    OutfitStateError,
+    activate_outfit,
+    build_outfit_extras,
+    confirm_outfit,
+    create_outfit_draft,
+    delete_outfit,
+    list_outfits,
+    regenerate_outfit_draft,
+)
 from .persona_background import schedule_personality_tag_refresh
 from .persona_service import (
     ONBOARDING_FIELDS,
@@ -94,7 +107,7 @@ from .pipeline import (
     signed_model_url,
 )
 from .prompt_runtime import run_prompt_json
-from .response_builders import avatar_response, model_response
+from .response_builders import avatar_response, model_response, outfit_response
 from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
 from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
@@ -125,11 +138,16 @@ __all__ = [
     "ModelGenerationInProgressError",
     "ModelProviderNotConfiguredError",
     "NeutralEmotionError",
+    "OutfitDraftExpiredError",
+    "OutfitError",
+    "OutfitNotFoundError",
+    "OutfitStateError",
     "PersonaValidationError",
     "SeedPromptMissingError",
     "ShouldActResult",
     "UnknownEmotionError",
     "UnknownFullbodyStyleError",
+    "activate_outfit",
     "analyze_personality_tags",
     "asset_store",
     "avatar_response",
@@ -137,6 +155,7 @@ __all__ = [
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
+    "build_outfit_extras",
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
@@ -145,9 +164,12 @@ __all__ = [
     "compute_bytes_sha256",
     "compute_file_sha256",
     "confirm_fullbody_front",
+    "confirm_outfit",
     "confirm_portrait",
+    "create_outfit_draft",
     "decompress_glb_if_needed",
     "delete_memory",
+    "delete_outfit",
     "design_voice",
     "emit_companion_assets_updated",
     "extract_user_profile",
@@ -173,6 +195,7 @@ __all__ = [
     "kick_background_generation",
     "list_avatar_history",
     "list_memories",
+    "list_outfits",
     "list_tts_voices",
     "load_avatar_bytes_as_data_uri",
     "match_user_voice",
@@ -181,6 +204,7 @@ __all__ = [
     "mesh2d",
     "model_response",
     "normalize_voice_language",
+    "outfit_response",
     "prewarm_builtin_expressions",
     "read_today_summary",
     "read_user_profile",
@@ -192,6 +216,7 @@ __all__ = [
     "recover_stuck_model_generations",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
+    "regenerate_outfit_draft",
     "request_model_download_retry",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",

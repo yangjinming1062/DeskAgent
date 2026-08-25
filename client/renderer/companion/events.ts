@@ -42,6 +42,7 @@ import { emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { $responseMode } from '@/companion/prefs'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
+import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
@@ -452,6 +453,28 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const p = event.payload as { reason?: string } | undefined
       setMesh2DStatus('failed', p?.reason ?? '2D 切分失败')
       log.warn('events', 'mesh2d failed:', p?.reason)
+
+      break
+    }
+
+    case 'companion.outfit.updated': {
+      // 衣柜状态变化（切分就绪/穿着翻转/删除）——重拉列表；列表端点是真相源，事件只当刷新触发。
+      // 仅穿着翻转时重水合 mesh2d（幂等，与 mesh2d.ready 双触发无妨）；入柜不换装与删除不动当前穿着。
+      const p = event.payload as { worn?: boolean } | undefined
+
+      void hydrateWardrobe()
+
+      if (p?.worn) {
+        void hydrateMesh2D()
+      }
+
+      break
+    }
+
+    case 'companion.outfit.failed': {
+      const p = event.payload as { reason?: string } | undefined
+      void hydrateWardrobe()
+      log.warn('events', 'outfit failed:', p?.reason)
 
       break
     }

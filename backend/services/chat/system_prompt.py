@@ -464,6 +464,8 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(config.persona_extras)
         # 伙伴 persona 驱动可见头像：提示 LLM 输出内联 affect tag，让客户端动画状态机每条回复都有情绪线索。
         stable_parts.append(build_affect_guidance(config.custom_expressions, config.available_actions))
+    if config.outfit_extras:
+        stable_parts.append(config.outfit_extras)
     if config.user_profile_extras:
         # 注入结构化用户身份信息，避免 LLM 每次都靠 memory_recall 回查「老板、男、26-35、喜欢音乐」。
         stable_parts.append(config.user_profile_extras)

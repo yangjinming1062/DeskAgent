@@ -23,7 +23,7 @@
 
 ### 1.2 EMOTIONAL 帧时机（ARCH §6.3）
 
-`message.complete` 帧内联 `affect: {emotion}` 字段。当 emotion 存在且 ≠ `neutral`：
+对话完成帧内联情绪字段。当情绪存在且 ≠ `neutral`：
 
 1. 立即 `setSpriteState('emotional', { emotion })`
 2. 若 `responseMode === 'voice'`，**延迟 1.2s** 后再 `setSpriteState('speaking')` + `speak()` —— 让 EMOTIONAL 帧可见
@@ -37,7 +37,7 @@
 
 情绪的渲染分工（3D 面部不承载情绪表情——生成模型脸部在桌面尺寸下精细度不足）：
 
-- **表情头像**：情绪激活时 chat-dock 左栏头像换为对应表情图（`POST /api/companion/expression-avatar` 按情绪 token 后端 match-or-generate）。store 按情绪 token 缓存结果（token 与服务端缓存行 1:1，单缓存即可）、失败 60s backoff；**生成结果永不浪费**——只要情绪未变，无论多晚生成完就换入；即便错过本次（情绪已切换）也同时落库落缓存，下次同情绪即时命中；情绪结束 / 未就绪 / 失败显示一律回退 portrait。订阅挂在 ChatDock 组件内——聊天窗关闭即不请求，桌面-only 情绪不触发生成。avatar 重生（`avatar.regenerated`）清全部缓存（身份锚点变了）。
+- **表情头像**：情绪激活时 chat-dock 左栏头像换为对应表情图（`POST /api/companion/expression-avatar` 按情绪 token 后端 match-or-generate）。store 按情绪 token 缓存结果（token 与服务端缓存行 1:1，单缓存即可）、失败 60s backoff；**生成结果永不浪费**——只要情绪未变，无论多晚生成完就换入；即便错过本次（情绪已切换）也同时落库落缓存，下次同情绪即时命中；情绪结束 / 未就绪 / 失败显示一律回退 portrait。订阅挂在 ChatDock 组件内——聊天窗关闭即不请求，桌面-only 情绪不触发生成。avatar 重生事件清全部缓存（身份锚点变了）。
 - **肢体动画**：按模型映射解析当前状态可用动画；解析与兜底规则见 [docs/PIPELINE.md §5](../../../docs/PIPELINE.md)。自创情绪不携带专属肢体动画，复用现有动画。情绪胶囊显示内置情绪与注册表情绪的并集，未水合标记兜底渲染。
 
 ## 3. 三档打扰（Client 实现）
@@ -86,7 +86,7 @@
 - **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
 
-**每日互动统计**：poke / chat_turn 两类事件经 `companion.record_interaction_stats`（无 LLM）上报，Backend 按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）upsert `Memory(context="interaction_stats:<date>")`（含 hour_counts 快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
+**每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
 ## 8. cron 主动陪伴链路
 
@@ -94,7 +94,7 @@
 
 1. Cron CAS 赢得本 tick，直接启动自主回合 task（无 WSEvent 中转）
 2. 任务用用户最后 session + JsonRpcEmitter + 用户 dispatcher
-3. LLM 可调 `send_message_tool(affect=...)` 产出 `companion.message`
+3. LLM 可调主动消息工具（可携带情绪）产出伙伴消息事件
 4. Client 按 §3 三档规则消费
 
 用户离线（无 dispatcher）→ 任务静默跳过；`next_run_at` 已被 CAS 推进，下一个调度周期重新到期后再尝试。
@@ -112,6 +112,7 @@
   - 精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。仅 `PersonaSection` 保存后会接入两步形象再生成（先头像 → 用户确认 → 全身）；`PersonaRetune` 是纯 persona 维度调整，不重跑形象流水线。Onboarding 自身始终走两步 UI。
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
+- **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 mesh2d——Mesh2DCanvas 按 manifestUrl 重建，换装期间旧装不断档。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 

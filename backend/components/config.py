@@ -180,6 +180,7 @@ class Settings(BaseSettings):
     companion_avatar_generate_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_expression_avatar_generate_rate_limit_per_minute: int
+    companion_outfit_generate_rate_limit_per_hour: int
     rate_limit_storage_url: str = ""
 
     metrics_enabled: bool = True
