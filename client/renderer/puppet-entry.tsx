@@ -1,6 +1,7 @@
-/** Puppet 调试台入口 — Phase 0c 验证用：拖入/选择 PSD → 自动装配 → 待机动画。
+/** Puppet 调试台入口 — 拖入/选择 PSD → 自动装配 → 待机动画 + 鼠标视线跟随。
  *
  * 开发页不进生产窗口（sprite.html），Phase 6 集成时由 root.tsx 渲染分支承载。
+ * `?autotest=1`：无头验证 — 装配 + 动画探针（眨眼/说话/呼吸/待机/视线跟随）结果写进 header。
  */
 
 import './styles.css'
@@ -40,8 +41,17 @@ function Slider({
   )
 }
 
+const AUTO_LABEL: Record<string, string> = {
+  idle: '待机摇摆',
+  rand: '随机漫游',
+  blink: '眨眼',
+  talk: '自动说话',
+  gaze: '视线跟随'
+}
+
 function PuppetDevApp() {
   const handleRef = useRef<PuppetCanvasHandle>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState('拖入或选择 see-through 产出的 PSD')
   const [rig, setRig] = useState<Rig | null>(null)
   const [angleX, setAngleX] = useState(0)
@@ -49,13 +59,46 @@ function PuppetDevApp() {
   const [angleZ, setAngleZ] = useState(0)
   const [eyeOpen, setEyeOpen] = useState(1)
   const [mouthOpen, setMouthOpen] = useState(0)
+  const [autos, setAutos] = useState({ idle: true, rand: true, blink: true, talk: true, gaze: true })
   const fileRef = useRef<HTMLInputElement>(null)
 
   const onRig = useCallback((r: Rig) => {
     setRig(r)
   }, [])
 
-  // ?autotest=1：无头验证用——挂载后自动载入内置 PSD，把装配结果写进 header 供 --dump-dom 断言
+  const onStageMove = useCallback((ev: React.MouseEvent): void => {
+    const rt = handleRef.current?.runtime
+    const rect = stageRef.current?.getBoundingClientRect()
+
+    if (!rt || !rect) {
+      return
+    }
+
+    // 归一化到画布区 [-1,1]（y 向下）；纵向参考面部高度（上 35%）避免永远俯视
+    const nx = Math.max(-1, Math.min(1, (ev.clientX - rect.left - rect.width / 2) / (rect.width / 2)))
+    const ny = Math.max(-1, Math.min(1, (ev.clientY - rect.top - rect.height * 0.35) / (rect.height / 2)))
+    rt.setGaze(nx, ny)
+  }, [])
+
+  const clearGaze = useCallback((): void => {
+    handleRef.current?.runtime?.setGaze(null)
+  }, [])
+
+  const toggleAuto = useCallback(
+    (key: keyof typeof autos) =>
+      (ev: React.ChangeEvent<HTMLInputElement>): void => {
+        const v = ev.target.checked
+        setAutos(a => ({ ...a, [key]: v }))
+        const rt = handleRef.current?.runtime
+
+        if (rt) {
+          rt.auto[key] = v
+        }
+      },
+    []
+  )
+
+  // ?autotest=1：无头验证用——自动载入 PSD 后跑动画探针，把装配+动画结果写进 header 供 --dump-dom 断言
   useEffect(() => {
     if (!new URLSearchParams(window.location.search).get('autotest')) {
       return
@@ -71,7 +114,59 @@ function PuppetDevApp() {
         }
 
         const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
-        setStatus(`AUTOTEST_OK parts=${r?.layers.length ?? 0} warnings=${r?.warnings.length ?? 0}`)
+        const rt = handleRef.current?.runtime
+
+        if (!r || !rt) {
+          throw new Error('runtime 未就绪')
+        }
+
+        let eyeMin = 1
+        let blinkSeen = false
+        let mouthMax = 0
+        let breathMin = 1
+        let breathMax = 0
+        let angMin = 1
+        let angMax = -1
+
+        // advanceSim 确定性步进（固定 1/60），不依赖 rAF/虚拟时钟——无头下两者推进不同步
+        for (let i = 0; i < 27; i++) {
+          rt.advanceSim(0.3)
+
+          if (i === 10) {
+            rt.forceBlink()
+          }
+
+          const s = rt.snapshot()
+          eyeMin = Math.min(eyeMin, s.eyeOpenL, s.eyeOpenR)
+          blinkSeen = blinkSeen || s.blinkActive
+          mouthMax = Math.max(mouthMax, s.mouthOpen)
+          breathMin = Math.min(breathMin, s.breath)
+          breathMax = Math.max(breathMax, s.breath)
+          angMin = Math.min(angMin, s.angleX)
+          angMax = Math.max(angMax, s.angleX)
+        }
+
+        rt.setGaze(1, 0.35)
+        rt.advanceSim(1.2)
+        const g = rt.snapshot()
+        rt.setGaze(null)
+
+        rt.target.mouthOpen = 0.9
+        rt.advanceSim(0.4)
+        const m = rt.snapshot()
+        rt.target.mouthOpen = 0
+
+        const flags = [
+          `blink=${eyeMin < 0.4 || blinkSeen ? 1 : 0}`,
+          `mouth=${mouthMax > 0.2 || m.mouthOpen > 0.7 ? 1 : 0}`,
+          `breath=${breathMax - breathMin > 0.4 ? 1 : 0}`,
+          `idle=${angMax - angMin > 0.08 ? 1 : 0}`,
+          `gaze=${g.eyeX > 0.55 && g.angleX > 0.15 ? 1 : 0}`
+        ].join(' ')
+
+        setStatus(
+          `AUTOTEST_OK parts=${r.layers.length} warnings=${r.warnings.length} ${flags} talkmax=${mouthMax.toFixed(2)}`
+        )
       } catch (err) {
         setStatus(`AUTOTEST_FAIL ${err instanceof Error ? err.message : String(err)}`)
       }
@@ -133,7 +228,12 @@ function PuppetDevApp() {
         </span>
       </header>
       <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 items-center justify-center">
+        <div
+          className="flex min-w-0 flex-1 items-center justify-center"
+          onMouseLeave={clearGaze}
+          onMouseMove={onStageMove}
+          ref={stageRef}
+        >
           <PuppetCanvas onRig={onRig} ref={handleRef} />
         </div>
         <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-white/10 p-4">
@@ -143,6 +243,14 @@ function PuppetDevApp() {
           >
             选择 PSD 文件
           </button>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/60">
+            {(['idle', 'rand', 'blink', 'talk', 'gaze'] as const).map(key => (
+              <label className="flex items-center gap-1" key={key}>
+                <input checked={autos[key]} onChange={toggleAuto(key)} type="checkbox" />
+                {AUTO_LABEL[key]}
+              </label>
+            ))}
+          </div>
           <button
             className="rounded bg-neutral-700 px-3 py-1.5 text-xs text-white hover:bg-neutral-600"
             onClick={() => {
@@ -229,6 +337,9 @@ function PuppetDevApp() {
             }}
             value={mouthOpen}
           />
+          <p className="mt-auto text-[10px] leading-relaxed text-white/30">
+            在画布区移动鼠标：角色视线会跟随光标（眼先动、头跟随）。
+          </p>
         </aside>
       </div>
     </div>

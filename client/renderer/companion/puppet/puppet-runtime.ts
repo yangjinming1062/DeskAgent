@@ -1,7 +1,8 @@
 /** Puppet WebGL 运行时 — 自 Anime2.5DRig（MIT）index.html 核心移植：
  * 每层规则网格 mesh + deform() 顶点形变（头转/呼吸/眨眼差分/发束弹簧/胸物理）+ 模板眼裁切。
- * 形变数学与上游保持一致；外围（GL 装配、rAF 生命周期、参数注入）为本仓重写。
- * Phase 2+ 将按 PuppetLoom 机制规格逐步替换网格与绑定（alpha 轮廓 ArtMesh、语义控制笼）。
+ * 形变数学与上游保持一致；GL 装配、rAF 生命周期与动画自动化层为本仓代码。
+ * Phase 1 动画层：非对称呼吸+叹息、眨眼曲线（半眨/连眨）、视线跟随（眼先头后）、微扫视、音素嘴型。
+ * Phase 2+ 按 PuppetLoom 机制规格逐步替换网格与绑定（alpha 轮廓 ArtMesh、语义控制笼）。
  */
 
 import { log } from '@/shared/lib/log'
@@ -53,6 +54,23 @@ export interface PuppetAuto {
   rand: boolean
   talk: boolean
   phys: boolean
+  gaze: boolean
+}
+
+/** 调试/无头验证用：平滑后的活动参数只读快照 */
+export interface PuppetSnapshot {
+  eyeOpenL: number
+  eyeOpenR: number
+  eyeX: number
+  eyeY: number
+  angleX: number
+  angleY: number
+  angleZ: number
+  body: number
+  mouthOpen: number
+  mouthForm: number
+  breath: number
+  blinkActive: boolean
 }
 
 export function defaultPuppetParams(): PuppetParams {
@@ -93,6 +111,25 @@ export function defaultPuppetParams(): PuppetParams {
     eyeScaleR: 1,
     mouthScale: 1
   }
+}
+
+/** 分参数平滑速率（1/s）：目光快、头慢半拍、眨眼最急 */
+const PARAM_RATE: Partial<Record<keyof PuppetParams, number>> = {
+  eyeX: 20,
+  eyeY: 20,
+  eyeOpenL: 22,
+  eyeOpenR: 22,
+  angleX: 7,
+  angleY: 7,
+  angleZ: 7,
+  body: 5,
+  mouthOpen: 16,
+  mouthForm: 9
+}
+
+/** 吸气快、呼气慢的非对称呼吸曲线（p 为周期相位 [0,1)） */
+function breathCurve(p: number): number {
+  return p < 0.42 ? smooth(p / 0.42) : 1 - smooth((p - 0.42) / 0.58)
 }
 
 interface GLPart {
@@ -155,24 +192,74 @@ export class PuppetRuntime {
   private fs = 1
   private raf = 0
   private lastNow = 0
+  private simPaused = false
+  private simNow = 0
   private blinkT = -1
+  private blinkFloor = 0
   private nextBlink = performance.now() + 1800
+  private gaze: { x: number; y: number } | null = null
+  private gazeUntil = 0
+  private sac = { x: 0, y: 0 }
+  private nextSac = 0
   private rnd = { ax: 0, ay: 0, az: 0, bd: 0, ex: 0, ey: 0 }
   private nextRnd = 0
   private talkOn = false
   private talkV = 0
   private talkTgt = 0
+  private talkF = 0
+  private talkFTgt = 0
+  private talkAmp = 1
   private nextTalkState = 0
   private nextSyl = 0
+  private breathP = 0
+  private nextSigh = performance.now() + 9000
+  private sighUntil = 0
+  private lastE: Evaluated | null = null
   private readonly bounce = { x: 0, v: 0, dy: 0 }
   private readonly cur: PuppetParams
   private disposed = false
 
   /** 外部驱动的目标参数与自动化开关；调用方直接改字段即可。 */
   readonly target: PuppetParams = defaultPuppetParams()
-  readonly auto: PuppetAuto = { idle: true, blink: true, rand: true, talk: true, phys: true }
+  readonly auto: PuppetAuto = { idle: true, blink: true, rand: true, talk: true, phys: true, gaze: true }
 
   onRigApplied: ((rig: Rig) => void) | null = null
+
+  /** 视线焦点注入（归一化 [-1,1]，y 屏幕坐标向下）；传 null 回落到随机漫游。3s 无更新自动过期。 */
+  setGaze(x: number | null, y = 0): void {
+    this.gaze = x === null ? null : { x: clamp(x, -1.2, 1.2), y: clamp(y, -1, 1) }
+
+    if (this.gaze) {
+      this.gazeUntil = (this.simPaused ? this.simNow : performance.now()) + 3000
+    }
+  }
+
+  /** 立即触发一次眨眼（静息时）；验证与 Phase 6 情绪驱动的确定性钩子。 */
+  forceBlink(): void {
+    if (this.blinkT < 0) {
+      this.blinkT = 0
+      this.blinkFloor = 0
+    }
+  }
+
+  snapshot(): PuppetSnapshot {
+    const e = this.lastE
+
+    return {
+      eyeOpenL: this.cur.eyeOpenL,
+      eyeOpenR: this.cur.eyeOpenR,
+      eyeX: this.cur.eyeX,
+      eyeY: this.cur.eyeY,
+      angleX: this.cur.angleX,
+      angleY: this.cur.angleY,
+      angleZ: this.cur.angleZ,
+      body: this.cur.body,
+      mouthOpen: this.cur.mouthOpen,
+      mouthForm: this.cur.mouthForm,
+      breath: e?.breath ?? 0,
+      blinkActive: this.blinkT >= 0
+    }
+  }
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -426,7 +513,12 @@ export class PuppetRuntime {
       }
 
       this.raf = requestAnimationFrame(loop)
-      this.tick(now)
+
+      if (this.simPaused) {
+        this.render()
+      } else {
+        this.tickBody(now)
+      }
     }
 
     this.raf = requestAnimationFrame(loop)
@@ -695,15 +787,32 @@ export class PuppetRuntime {
     }
   }
 
-  private tick(now: number): void {
+  /** 确定性模拟步进（无头验证/回归基线用）：以固定 1/60 步进接管内部时钟，rAF 退化为纯渲染。
+   * Phase 5 十三姿态安全验证与动画回归都以此为准，摆脱 rAF/虚拟时钟的不确定性。 */
+  advanceSim(seconds: number): void {
+    if (!this.simPaused) {
+      this.simPaused = true
+      this.simNow = this.lastNow
+    }
+
+    let remaining = Math.max(0, seconds)
+
+    while (remaining > 1e-6) {
+      const dt = Math.min(1 / 60, remaining)
+      this.simNow += dt * 1000
+      this.tickBody(this.simNow, { dt, render: false })
+      remaining -= dt
+    }
+  }
+
+  private tickBody(now: number, opts: { dt?: number; render?: boolean } = {}): void {
     const A = this.anchors
 
     if (!this.layers.length || !A) {
       return
     }
 
-    const gl = this.gl
-    const dt = Math.min(0.05, (now - this.lastNow) / 1000)
+    const dt = opts.dt ?? Math.min(0.05, (now - this.lastNow) / 1000)
     this.lastNow = now
     const t = now / 1000
     const tgt: PuppetParams = { ...this.target }
@@ -715,7 +824,17 @@ export class PuppetRuntime {
       tgt.body += 0.1 * Math.sin(t * 0.19 + 2.1)
     }
 
-    if (this.auto.rand) {
+    // 视线优先于漫游：有焦点时眼先行（全幅、高速率），头与身体小幅滞后跟随
+    const gz = this.auto.gaze && this.gaze && now < this.gazeUntil ? this.gaze : null
+
+    if (gz) {
+      tgt.eyeX = clamp(tgt.eyeX * 0.3 + gz.x, -1, 1)
+      tgt.eyeY = clamp(tgt.eyeY * 0.3 + gz.y * 0.85, -1, 1)
+      tgt.angleX = clamp(tgt.angleX + gz.x * 0.42, -1, 1)
+      tgt.angleY = clamp(tgt.angleY - gz.y * 0.26, -1, 1)
+      tgt.angleZ = clamp(tgt.angleZ + gz.x * 0.06, -1, 1)
+      tgt.body = clamp(tgt.body + gz.x * 0.1, -1, 1)
+    } else if (this.auto.rand) {
       if (now > this.nextRnd) {
         this.nextRnd = now + 1400 + Math.random() * 2600
         this.rnd.ax = (Math.random() * 2 - 1) * 0.55
@@ -734,46 +853,71 @@ export class PuppetRuntime {
       tgt.eyeY = clamp(tgt.eyeY + this.rnd.ey, -1, 1)
     }
 
+    // 微扫视：注视/漫游之上叠加小幅快速眼动，指数衰减，避免目光发死
+    if (this.auto.rand) {
+      if (now > this.nextSac) {
+        this.nextSac = now + 250 + Math.random() * 1100
+        this.sac.x = (Math.random() * 2 - 1) * 0.09
+        this.sac.y = (Math.random() * 2 - 1) * 0.05
+      }
+
+      const decay = Math.exp(-dt * 1.8)
+      this.sac.x *= decay
+      this.sac.y *= decay
+      tgt.eyeX = clamp(tgt.eyeX + this.sac.x, -1, 1)
+      tgt.eyeY = clamp(tgt.eyeY + this.sac.y, -1, 1)
+    }
+
     if (this.auto.talk) {
       if (now > this.nextTalkState) {
         this.talkOn = !this.talkOn
         this.nextTalkState = now + (this.talkOn ? 1200 + Math.random() * 2200 : 600 + Math.random() * 1800)
+
+        if (this.talkOn) {
+          this.talkAmp = 0.55 + Math.random() * 0.45
+        }
       }
 
       if (this.talkOn && now > this.nextSyl) {
         this.nextSyl = now + 70 + Math.random() * 110
-        this.talkTgt = Math.random() < 0.25 ? 0.04 : 0.25 + Math.random() * 0.75
+        this.talkTgt = (Math.random() < 0.25 ? 0.04 : 0.25 + Math.random() * 0.75) * this.talkAmp
+        this.talkFTgt = (Math.random() * 2 - 1) * 0.6
       }
 
       if (!this.talkOn) {
         this.talkTgt = 0
+        this.talkFTgt = 0
       }
 
       this.talkV += (this.talkTgt - this.talkV) * Math.min(1, dt * 22)
+      this.talkF += (this.talkFTgt - this.talkF) * Math.min(1, dt * 10)
       tgt.mouthOpen = Math.max(tgt.mouthOpen, this.talkV)
+      tgt.mouthForm = clamp(tgt.mouthForm + this.talkF, -1, 1)
     }
 
     if (this.auto.blink) {
       if (this.blinkT < 0 && now > this.nextBlink) {
         this.blinkT = 0
-        this.nextBlink = now + 1600 + Math.random() * 3800
+        this.blinkFloor = Math.random() < 0.2 ? 0.25 + Math.random() * 0.25 : 0
+        this.nextBlink = now + 2000 + Math.random() * 5000
 
-        if (Math.random() < 0.18) {
-          this.nextBlink = now + 280
+        if (Math.random() < 0.16) {
+          this.nextBlink = now + 260
         }
       }
 
       if (this.blinkT >= 0) {
         this.blinkT += dt
         const d = this.blinkT
+        const fl = this.blinkFloor
         let v: number
 
         if (d < 0.08) {
-          v = 1 - d / 0.08
-        } else if (d < 0.42) {
-          v = 0
-        } else if (d < 0.58) {
-          v = (d - 0.42) / 0.16
+          v = 1 - (1 - fl) * (d / 0.08)
+        } else if (d < 0.22) {
+          v = fl
+        } else if (d < 0.34) {
+          v = fl + (1 - fl) * ((d - 0.22) / 0.12)
         } else {
           v = 1
           this.blinkT = -1
@@ -785,12 +929,24 @@ export class PuppetRuntime {
     }
 
     for (const key of Object.keys(this.cur) as (keyof PuppetParams)[]) {
-      this.cur[key] += (tgt[key] - this.cur[key]) * Math.min(1, dt * 14)
+      this.cur[key] += (tgt[key] - this.cur[key]) * Math.min(1, dt * (PARAM_RATE[key] ?? 14))
     }
 
     const e: Evaluated = { ...this.cur, breath: 0, breathHead: 0 }
-    e.breath = 0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / 3.4)
-    e.breathHead = 0.5 + 0.5 * Math.sin((t * 2 * Math.PI) / 3.4 - 0.6)
+
+    // 非对称呼吸（3.4s 周期，吸气快呼气慢）+ 每 18~38s 一次深呼吸；头部相位略滞后
+    this.breathP += dt / 3.4
+
+    if (now > this.nextSigh) {
+      this.nextSigh = now + 18000 + Math.random() * 20000
+      this.sighUntil = now + 3400
+    }
+
+    const bAmp = now < this.sighUntil ? 1.5 : 1
+    const bp = this.breathP % 1
+    e.breath = clamp(breathCurve(bp) * bAmp, 0, 1.5)
+    e.breathHead = breathCurve((bp + 0.94) % 1) * bAmp
+    this.lastE = e
 
     const headDX = (e.angleX * 14 + e.angleZ * 0.07 * (A.neckPivot.cy - A.face.cy)) * this.fs
 
@@ -825,6 +981,19 @@ export class PuppetRuntime {
       this.bounce.v += aa * dt
       this.bounce.x += this.bounce.v * dt
       this.bounce.dy = -(this.bounce.x - bustTgt) * 3.0
+    }
+
+    if (opts.render !== false) {
+      this.render()
+    }
+  }
+
+  private render(): void {
+    const gl = this.gl
+    const e = this.lastE
+
+    if (!e || !this.layers.length) {
+      return
     }
 
     gl.viewport(0, 0, this.cw, this.ch)
