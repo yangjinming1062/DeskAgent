@@ -83,6 +83,13 @@ class AvatarGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AvatarUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image: str = Field(min_length=1, max_length=8 * 1024 * 1024)
+    content_type: str | None = Field(default=None, max_length=64)
+
+
 class AvatarFromImageRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

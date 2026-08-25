@@ -65,7 +65,16 @@ import { computeBackTransition } from './back-transition'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
 import { Chip, HistoryGallery, type HistoryGalleryItem, PortraitLightbox, PortraitPanel } from './onboarding-components'
 
-type Phase = 'q-character' | 'hatching' | 'portrait-avatar' | 'fullbody' | 'q-user' | 'voice' | 'finishing' | 'greeting'
+type Phase =
+  | 'q-character'
+  | 'portrait-choose'
+  | 'hatching'
+  | 'portrait-avatar'
+  | 'fullbody'
+  | 'q-user'
+  | 'voice'
+  | 'finishing'
+  | 'greeting'
 
 type VoiceStage = 'describe' | 'catalog'
 type VoiceLanguageFilter = '' | 'zh' | 'en'
@@ -273,6 +282,7 @@ const PHASE_QUESTIONS: Record<Phase, readonly Question[]> = {
   'q-character': CHARACTER_QUESTIONS,
   'q-user': USER_QUESTIONS,
   voice: VOICE_QUESTIONS,
+  'portrait-choose': [],
   hatching: [],
   'portrait-avatar': [],
   fullbody: [],
@@ -458,6 +468,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const [voiceLangFilter, setVoiceLangFilter] = useState<VoiceLanguageFilter>('zh')
   // 失败提示挂在头像面板上——表单区被它压在下面。
   const [portraitPanelHint, setPortraitPanelHint] = useState<string | null>(null)
+  const [avatarUploading, setAvatarUploading] = useState(false)
 
   const [styleCatalog, setStyleCatalog] = useState<FullbodyStyleOption[]>([])
   const [fullbodyLoading, setFullbodyLoading] = useState(false)
@@ -706,7 +717,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     if (phase === 'q-character') {
-      void enterHatching(currentAnswers)
+      void enterPortraitStage(currentAnswers)
     } else if (phase === 'q-user') {
       setPhase('finishing')
       void finish(currentAnswers)
@@ -785,14 +796,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const enterHatching = async (currentAnswers?: OnboardingAnswers, imageOverride?: PickedImage | null) => {
+  const enterPortraitStage = async (currentAnswers?: OnboardingAnswers) => {
     // 形象已锁死时不应再进入头像/全身图阶段。深度防御:onBack 守卫 + 此处显式短路,即使上游误调也无效。
     if (imageSealed) {
       return
     }
 
-    // 只有同时有服务端行 AND 有效的头像图时才能跳过生成。
-    // TTL 到期后续传时，$activeAvatarId 还在但 $portraitUrl 已经为 null——这种情况必须重新生成。
+    // 只有同时有服务端行 AND 有效的头像图时才能跳过选择/生成直接进入确认。
     if (activeAvatarId != null && $portraitUrl.get()) {
       setPhase('portrait-avatar')
       void playOnboardingAudio('onboarding.portrait.ok')
@@ -801,13 +811,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
 
     const ans = currentAnswers ?? answers
-    const img = imageOverride !== undefined ? imageOverride : refImage
-    setPhase('hatching')
     setHint(null)
-    void playOnboardingAudio('onboarding.hatching')
 
-    // 先固化 persona 再做头像——avatar 生成需要 is_complete=true；user_* 之后由 submit_onboarding_field 路由到 Memory。
-    // savePersona 把 4xx 重新抛出；退回表单让用户修改该字段。
+    // 先固化 persona 再进入头像阶段——让用户自主选择「AI 生成」或「直接上传」。
     let personaOk = false
     await onboardingSubmissionsRef.current
 
@@ -821,40 +827,53 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       return
     }
 
+    if (!personaOk) {
+      setHint('记忆还没存好，稍后再试试形象吧…')
+
+      return
+    }
+
+    setPhase('portrait-choose')
+  }
+
+  const startAiHatching = async (imageOverride?: PickedImage | null) => {
+    if (imageSealed) {
+      return
+    }
+
+    const img = imageOverride !== undefined ? imageOverride : refImage
+    setPhase('hatching')
+    setHint(null)
+    void playOnboardingAudio('onboarding.hatching')
+
     let url: string | null = null
 
-    if (personaOk) {
-      try {
-        // DESIGN §5.3：avatar 生成最多 3 次（1 次初试 + 2 次重试），不暴露技术错误。
-        const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 3))
-        url = applied.avatar
+    try {
+      // DESIGN §5.3：avatar 生成最多 3 次（1 次初试 + 2 次重试），不暴露技术错误。
+      const applied = await applyLocalPortrait(await retryTransient(() => generatePortrait(img), 1500, 3))
+      url = applied.avatar
 
-        if (url) {
-          pushPortraitEntry({
-            portraitUrl: url,
-            avatarId: applied.id ?? activeAvatarId
-          })
-        }
-      } catch {
-        // 确定性的 4xx（参考图不可用、persona 不完整）不能让流程卡在 'hatching'——
-        // 直接落到 portrait 阶段，那里仍然支持带反馈或不带反馈的重生。
-        url = null
+      if (url) {
+        pushPortraitEntry({
+          avatarId: applied.id ?? activeAvatarId,
+          portraitUrl: url
+        })
       }
+    } catch {
+      // 确定性的 4xx（参考图不可用、persona 不完整）不能让流程卡在 'hatching'——
+      // 直接落到 portrait 阶段，那里仍然支持带反馈或不带反馈的重生。
+      url = null
+    }
 
-      if (!url) {
-        // 接下来渲染的是 portrait 面板；`hint` 只在表单里能看到。
-        setPortraitPanelHint(img ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
-      }
-    } else {
-      setHint('记忆还没存好，稍后再试试形象吧…')
+    if (!url) {
+      // 接下来渲染的是 portrait 面板；`hint` 只在表单里能看到。
+      setPortraitPanelHint(img ? '这张参考图我没能用上…待会儿再换一张吧' : '我还没想好…')
     }
 
     // avatar 阶段：用户审视头像并确认——确认即锁定形象，并解锁 voice 子阶段。
     setPhase('portrait-avatar')
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
-
-  const enterHatchingRef = useLatestRef(enterHatching)
 
   // 从 avatar 行复水 fullbody 阶段——持久化的风格样图、已选风格和正面种子——
   // 让重启能从上次中断处继续，且绝不重新触发付费样图生成。
@@ -959,7 +978,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
           // 把服务端草稿与当前会话里已经输入的答案合并；
           // 本地非空的编辑优先，保证用户最近的意图不会丢失。
           const a = state.answers
-          let merged: OnboardingAnswers = {}
           setAnswers(prev => {
             const next: OnboardingAnswers = { ...prev }
 
@@ -968,8 +986,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 next[k] = a[k] as never
               }
             }
-
-            merged = next
 
             return next
           })
@@ -1001,10 +1017,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
                 setPhase('portrait-avatar')
               } else {
-                void enterHatchingRef.current(merged, cachedRef)
+                setPhase('portrait-choose')
               }
             } catch {
-              void enterHatchingRef.current(merged, cachedRef)
+              setPhase('portrait-choose')
             }
           } else if (nextField === 'fullbody') {
             try {
@@ -1053,7 +1069,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         })
         .catch(() => undefined)
     })()
-  }, [gatewayState, requestGateway, onCompleted, enterHatchingRef, hydrateFullbodyStageRef])
+  }, [gatewayState, requestGateway, onCompleted, hydrateFullbodyStageRef])
 
   useEffect(() => {
     if (gatewayState !== 'open' || voiceCatalog.length > 0) {
@@ -1109,7 +1125,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     [portraitHistory]
   )
 
-  const pickReferenceImage = async (autoRedraw = false) => {
+  const pickReferenceImage = async () => {
     const picked = await pickAvatarImage('选择一张参考图')
 
     if (!picked) {
@@ -1124,11 +1140,52 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     updateRefImage(picked.image)
     setHint(null)
+  }
 
-    // DESIGN §5.4「自己上传」：上传即以新身份锚重绘为符合契约的头像——
-    // portrait 面板的入口不再要求用户补点一次「重新生成」。
-    if (autoRedraw && !avatarBusy) {
-      void regenerateAvatarPortrait(undefined, picked.image)
+  const uploadCustomAvatar = async () => {
+    const picked = await pickAvatarImage('选择一张头像图片')
+
+    if (!picked) {
+      return
+    }
+
+    if ('error' in picked) {
+      setPortraitPanelHint(picked.error)
+
+      return
+    }
+
+    setAvatarUploading(true)
+    setPortraitPanelHint(null)
+
+    try {
+      const res = await window.spiritagent.api<{
+        asset_url?: string
+        id?: number
+      }>({
+        body: {
+          content_type: picked.image.contentType,
+          image: picked.image.base64
+        },
+        method: 'POST',
+        path: '/api/companion/avatar/upload'
+      })
+
+      const applied = await applyLocalPortrait(res)
+
+      if (applied.avatar) {
+        pushPortraitEntry({
+          avatarId: applied.id ?? activeAvatarId,
+          portraitUrl: applied.avatar
+        })
+        clearRegenFeedback()
+        setPhase('portrait-avatar')
+        void playOnboardingAudio('onboarding.portrait.ok')
+      }
+    } catch (err) {
+      setPortraitPanelHint(err instanceof Error ? err.message : '上传头像失败，请稍后重试')
+    } finally {
+      setAvatarUploading(false)
     }
   }
 
@@ -1651,6 +1708,60 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               </>
             )}
 
+          {phase === 'portrait-choose' && (
+            <div>
+              <p className="text-[15px] font-medium text-white/90">选择头像获取方式</p>
+              <p className="mt-1 text-xs text-white/60">
+                形象设定已保存！您可以让 AI 根据设定构思形象，或直接上传现有的头像图片。
+              </p>
+
+              <div className="mt-4 flex flex-col gap-3">
+                <button
+                  className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99]"
+                  onClick={() => void startAiHatching()}
+                  type="button"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[14px] font-medium text-white/90">✨ 让 AI 为我生成头像</span>
+                    <span className="text-xs text-white/40">AI 绘制 →</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                    基于您刚才填写的形象描述与参考图，自动构思并生成半身头像（生成后可微调或重新生成）。
+                  </p>
+                </button>
+
+                <button
+                  className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99] disabled:opacity-40"
+                  disabled={avatarUploading}
+                  onClick={() => void uploadCustomAvatar()}
+                  type="button"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[14px] font-medium text-white/90">📁 直接上传已有头像</span>
+                    <span className="text-xs text-white/40">本地上传 →</span>
+                  </div>
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                    跳过 AI 生成，直接使用您本地准备好的图片作为伙伴头像。
+                  </p>
+                </button>
+              </div>
+
+              {avatarUploading && (
+                <div className="mt-3">
+                  <SpinnerWithText size="h-5 w-5" text="正在上传头像…" />
+                </div>
+              )}
+
+              {portraitPanelHint && <p className="mt-3 text-xs text-rose-300/90">{portraitPanelHint}</p>}
+
+              <div className="mt-4 flex items-center justify-between text-xs">
+                <button className="text-white/60 transition hover:text-white" onClick={onBack} type="button">
+                  上一步
+                </button>
+              </div>
+            </div>
+          )}
+
           {phase === 'hatching' && <SpinnerWithText size="h-6 w-6" text={hint || '让我想想我该是什么样子…'} />}
 
           {(phase === 'portrait-avatar' || phase === 'greeting') && (
@@ -1671,6 +1782,8 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             <div className="mt-4">
               {avatarBusy ? (
                 <SpinnerWithText text="正在重新生成头像…" />
+              ) : avatarUploading ? (
+                <SpinnerWithText text="正在上传头像…" />
               ) : (
                 <>
                   <RegenFeedbackInput />
@@ -1719,24 +1832,23 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     <div className="flex gap-3">
                       <button
                         className="text-white/60 transition hover:text-white disabled:opacity-40"
-                        onClick={() => {
-                          setPhase('q-character')
-                          setQIndex(CHARACTER_QUESTIONS.length - 1)
-                        }}
+                        onClick={onBack}
                         type="button"
                       >
                         上一步
                       </button>
                       <button
                         className="text-white/70 transition hover:text-white disabled:opacity-40"
+                        disabled={avatarBusy || avatarUploading}
                         onClick={() => void regenerateAvatarPortrait()}
                         type="button"
                       >
                         重新生成
                       </button>
                       <button
-                        className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10"
-                        onClick={() => void pickReferenceImage(true)}
+                        className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10 disabled:opacity-40"
+                        disabled={avatarBusy || avatarUploading}
+                        onClick={() => void uploadCustomAvatar()}
                         type="button"
                       >
                         自己上传
@@ -1820,6 +1932,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         if (!pendingStyleKey || !activeAvatarId) {
                           return
                         }
+
                         const label = styleCatalog.find(s => s.id === pendingStyleKey)?.label_zh ?? pendingStyleKey
                         void generateFullbodySample(activeAvatarId, pendingStyleKey, label)
                       }}

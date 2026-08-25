@@ -5,14 +5,28 @@ import json
 import secrets
 from pathlib import Path
 
-from components import SESSION_LOCAL, SETTINGS, download_capped, get_file_path, get_logger, safe_json_loads
+from components import (
+    SESSION_LOCAL,
+    SETTINGS,
+    download_capped,
+    get_file_path,
+    get_logger,
+    safe_json_loads,
+    save_file,
+)
 from modules.companion import AvatarAsset, Persona
 from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import image_to_3d
-from ..llm import build_fullbody_prompt, chat, enhance_avatar_prompt, is_content_policy_error_message, resolve_fullbody_template
+from ..llm import (
+    build_fullbody_prompt,
+    chat,
+    enhance_avatar_prompt,
+    is_content_policy_error_message,
+    resolve_fullbody_template,
+)
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
 from .fullbody_style_catalog import STYLE_CATALOG
@@ -636,6 +650,65 @@ async def regenerate_avatar_from_image(
         persist=persona.is_portrait_confirmed,
     )
     return asset
+
+
+async def upload_avatar(
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    persona: Persona | None = None,
+    data: bytes = b"",
+    content_type: str = "image/png",
+) -> AvatarAsset:
+    """直接使用用户上传的图片作为头像，跳过 AI 生成。"""
+    if user_id is None:
+        raise ValueError("user_id is required")
+    if not data:
+        raise ValueError("image data is required")
+    if persona is None:
+        if db is not None:
+            persona = await get_or_create_persona(db, user_id)
+        else:
+            async with SESSION_LOCAL() as probe_db:
+                persona = await get_or_create_persona(probe_db, user_id)
+    if not persona.is_complete:
+        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
+    await raise_if_image_sealed(db, user_id, persona)
+
+    persist = persona.is_portrait_confirmed
+    src_content_type = content_type.split(";")[0].strip().lower()
+    final_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
+
+    if persist:
+        asset_url, file_id, final_ext = await _persist_portrait_bytes(data, content_type)
+        avatar_source_url = asset_url
+    else:
+        file_id, public_url = save_file(
+            data,
+            f"user:{user_id}",
+            src_content_type,
+            final_ext,
+            meta_marker=f"preview:{user_id}",
+        )
+        asset_url = f"temp-media/{file_id}"
+        avatar_source_url = public_url
+
+    async def _write(session: AsyncSession) -> AvatarAsset:
+        return await _write_avatar_step(
+            session,
+            user_id,
+            asset_url=asset_url,
+            file_id=file_id,
+            final_ext=final_ext,
+            avatar_source_url=avatar_source_url,
+            avatar_prompt="用户上传头像",
+            style="custom",
+            persist=persist,
+        )
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write(write_db)
+    return await _write(db)
 
 
 def resolve_uploaded_avatar_path(filename: str) -> tuple[Path, str] | None:

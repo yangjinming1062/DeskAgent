@@ -41,6 +41,7 @@ from .avatar_service import (
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
     select_avatar,
+    upload_avatar,
 )
 from .expression_avatar_service import (
     ExpressionAvatarGenerationError,
@@ -58,9 +59,27 @@ from .fullbody_style_catalog import STYLE_CATALOG, FullbodyStyle, FullbodyStyleI
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
 from .interaction_stats import read_today_summary, record_interaction
-from .memory_admin import delete_memory, list_memories, memory_counts, update_memory, upsert_slotted_memory
-from .memory_bootstrap import build_user_profile_extras, extract_user_profile, read_user_profile, record_user_profile, record_user_timezone, resolve_user_timezone
-from .memory_format import format_auto_inject_block, format_inferred_profile_block, format_memories_block, format_proactive_memory_block
+from .memory_admin import (
+    delete_memory,
+    list_memories,
+    memory_counts,
+    update_memory,
+    upsert_slotted_memory,
+)
+from .memory_bootstrap import (
+    build_user_profile_extras,
+    extract_user_profile,
+    read_user_profile,
+    record_user_profile,
+    record_user_timezone,
+    resolve_user_timezone,
+)
+from .memory_format import (
+    format_auto_inject_block,
+    format_inferred_profile_block,
+    format_memories_block,
+    format_proactive_memory_block,
+)
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
 from .mesh2d import (
     Mesh2DAlreadyRunningError,
@@ -109,7 +128,12 @@ from .prompt_runtime import run_prompt_json
 from .response_builders import avatar_response, model_response, outfit_response
 from .rig_type_selector import classify_species, select_rig_type
 from .should_act import ALLOWED_ACTIONS, ShouldActResult, should_act
-from .voice_catalog import design_voice, list_tts_voices, match_user_voice, normalize_voice_language
+from .voice_catalog import (
+    design_voice,
+    list_tts_voices,
+    match_user_voice,
+    normalize_voice_language,
+)
 
 __all__ = [
     "ALLOWED_ACTIONS",
@@ -151,10 +175,10 @@ __all__ = [
     "asset_store",
     "avatar_response",
     "build_data_uri",
+    "build_outfit_extras",
     "build_signed_asset_url",
     "build_signed_avatar_url",
     "build_signed_model_url",
-    "build_outfit_extras",
     "build_system_prompt_extras",
     "build_user_profile_extras",
     "check_affect",
@@ -205,13 +229,12 @@ __all__ = [
     "normalize_voice_language",
     "outfit_response",
     "prewarm_builtin_expressions",
+    "raise_if_image_sealed",
     "read_today_summary",
     "read_user_profile",
-    "raise_if_image_sealed",
     "record_interaction",
     "record_user_profile",
     "record_user_timezone",
-    "resolve_user_timezone",
     "recover_stuck_model_generations",
     "regenerate_avatar",
     "regenerate_avatar_from_image",
@@ -221,6 +244,7 @@ __all__ = [
     "resolve_companion_model_path",
     "resolve_expression_avatar",
     "resolve_uploaded_avatar_path",
+    "resolve_user_timezone",
     "retrieve_hybrid_memories",
     "retrieve_proactive_memories",
     "run_prompt_json",
@@ -235,6 +259,7 @@ __all__ = [
     "submit_onboarding_field",
     "update_memory",
     "update_persona",
+    "upload_avatar",
     "upsert_slotted_memory",
     "validate_and_sanitize_expression",
     "verify_signed_asset_request",

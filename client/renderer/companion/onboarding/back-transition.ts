@@ -6,6 +6,7 @@ export type BackPhase =
   | 'q-user'
   | 'voice'
   | 'fullbody'
+  | 'portrait-choose'
   | 'portrait-avatar'
   | 'hatching'
   | 'finishing'
@@ -33,6 +34,14 @@ export function computeBackTransition(state: BackState, characterQuestionsCount:
 
   if (state.phase === 'q-character') {
     return state.qIndex > 0 ? { phase: 'q-character', qIndex: state.qIndex - 1 } : null
+  }
+
+  if (state.phase === 'portrait-choose') {
+    return { phase: 'q-character', qIndex: characterQuestionsCount - 1 }
+  }
+
+  if (state.phase === 'portrait-avatar') {
+    return { phase: 'portrait-choose' }
   }
 
   if (state.phase === 'voice') {

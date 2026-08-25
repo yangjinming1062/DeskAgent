@@ -3,12 +3,18 @@ import base64
 from common import get_router
 from components import SESSION_LOCAL, SETTINGS, get_db, get_logger, safe_json_loads
 from fastapi import Body, Depends, HTTPException, Request, Response, status
-from modules.auth import LoginRecord, User, get_current_session, get_optional_current_session
+from modules.auth import (
+    LoginRecord,
+    User,
+    get_current_session,
+    get_optional_current_session,
+)
 from modules.companion import (
     AvatarAssetResponse,
     AvatarFromImageRequest,
     AvatarGenerateRequest,
     AvatarHistoryResponse,
+    AvatarUploadRequest,
     CompanionExpression,
     CompanionModelResponse,
     ExpressionAvatarRequest,
@@ -93,6 +99,7 @@ from services.companion import (
     set_render_mode,
     signed_expression_avatar_url,
     update_persona,
+    upload_avatar,
     verify_signed_asset_request,
     verify_signed_avatar_request,
 )
@@ -281,6 +288,37 @@ async def post_avatar_from_image(
     except MissingLlmConfigError as exc:
         logger.warning("post_avatar_from_image missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
+
+    return avatar_response(asset)
+
+
+@router.post("/avatar/upload", response_model=AvatarAssetResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
+async def post_avatar_upload(
+    request: Request,  # required by @limiter.limit
+    body: AvatarUploadRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> AvatarAssetResponse:
+    user, _ = auth
+    raw, content_type = _decode_upload_image(body.image, body.content_type)
+    if not raw:
+        raise HTTPException(status_code=400, detail="Invalid image data")
+    async with SESSION_LOCAL() as pre_db:
+        persona = await get_or_create_persona(pre_db, user.id)
+        if not persona.is_complete:
+            raise HTTPException(status_code=409, detail={"error": "请先完成 onboarding 再上传形象", "reason": "persona is incomplete"})
+    try:
+        asset = await upload_avatar(
+            user_id=user.id,
+            persona=persona,
+            data=raw,
+            content_type=content_type or "image/png",
+        )
+    except ImageSealedError as exc:
+        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
+    except Exception as exc:
+        logger.warning("post_avatar_upload failed", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=500, detail={"error": "上传头像失败，请稍后重试", "reason": str(exc)})
 
     return avatar_response(asset)
 

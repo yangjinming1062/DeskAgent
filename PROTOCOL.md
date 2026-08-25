@@ -64,7 +64,7 @@
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
-| POST /api/companion/avatar（含 /from-image）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘）/ 历史形象切换激活 / 历史查询 | Backend 生成 + Client 头像确认与历史画廊 + DESIGN §5.4 |
+| POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 mesh2d 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控（默认 1 套/小时），不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
 
 **关键约束**（跨模块语义，非实现细节）：
