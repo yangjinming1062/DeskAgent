@@ -3,11 +3,13 @@
 import asyncio
 import base64
 import hashlib
+import io
 import json
 
 from components import SESSION_LOCAL, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
+from PIL import Image
 from sqlalchemy import select, update
 
 from services.llm import resolve_vision_chain
@@ -52,14 +54,16 @@ def _safe_load_avatar_bytes(url: str) -> bytes:
 async def _run_pipeline_core(
     user_id: int,
     fullbody_url: str,
-    *,
-    canvas: tuple[int, int] = (1024, 1366),
 ) -> tuple[str, list[dict[str, str]]]:
     """执行 4 阶段：识别 → 抠图 → 关键点 → manifest；返回 (manifest_json, [{name, url}, ...])。"""
     fullbody_bytes = _safe_load_avatar_bytes(fullbody_url)
     data_uri = "data:image/png;base64," + base64.b64encode(fullbody_bytes).decode(
         "ascii",
     )
+
+    # canvas 必须等于源图尺寸：部件 origin 是归一化 bbox × canvas 而 plane 尺寸是源图像素，
+    # 两套尺度不一致会把部件中心拉开、拼装出横向缝隙
+    canvas = Image.open(io.BytesIO(fullbody_bytes)).size
 
     # 视觉链在短会话内预解析，两段 LLM 调用期间不持有连接（ARCH §短会话纪律）
     async with SESSION_LOCAL() as db:
@@ -70,7 +74,8 @@ async def _run_pipeline_core(
     if not layers:
         raise Mesh2DPipelineError("vision LLM region detection returned empty result")
 
-    extracted = extract_layers(fullbody_bytes, layers)
+    # rembg ONNX 是秒级 CPU 推理，放线程池避免占住队列 worker 的事件循环
+    extracted = await asyncio.to_thread(extract_layers, fullbody_bytes, layers)
 
     if not extracted:
         raise Mesh2DPipelineError("CPU matting extracted zero usable layers")

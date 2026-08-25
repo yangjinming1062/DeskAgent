@@ -1,17 +1,21 @@
-"""CPU 抠图部件提取 — 两段式：先抠全图白底得到透明人物，再按 bbox 裁切部件。"""
+"""CPU 抠图部件提取 — 两段式：先抠全图得到透明人物，再按 bbox 裁切部件。"""
 
 import io
 from dataclasses import dataclass
 
 import numpy as np
-from components import get_logger
-from components.matting import vectorized_matting
+from components import get_logger, remove_background
 from PIL import Image
 from scipy import ndimage
 
 from .region_detector import DetectedLayer
 
 logger = get_logger(__name__)
+
+# alpha 岛小于 64px 或不足最大岛 1% 判为抠图碎片丢弃；收紧内容框时四周留 4px 余量。
+_MIN_ISLAND_PX = 64
+_ISLAND_RATIO = 0.01
+_TIGHTEN_PAD_PX = 4
 
 
 @dataclass(frozen=True)
@@ -45,15 +49,15 @@ def _rgba_to_bytes(arr: np.ndarray) -> bytes:
 
 
 def _matte_fullbody(img_rgb: np.ndarray) -> np.ndarray | None:
-    """对整图做一次白底毫秒级抠图，返回 (H, W, 4) RGBA 或 None（失败时）。"""
+    """对整图做一次抠图（rembg ONNX，权重缺失或推理异常时内部降级白底形态学），返回 (H, W, 4) RGBA 或 None。"""
     h, w = img_rgb.shape[:2]
     rgb_buf = io.BytesIO()
     Image.fromarray(img_rgb, mode="RGB").save(rgb_buf, format="PNG")
 
     try:
-        out = vectorized_matting(rgb_buf.getvalue())
+        out = remove_background(rgb_buf.getvalue())
     except Exception as exc:
-        logger.warning("fullbody vectorized matting failed", extra={"error": str(exc)})
+        logger.warning("fullbody matting failed", extra={"error": str(exc)})
         return None
 
     try:
@@ -75,11 +79,24 @@ def _alpha_dominant_ratio(alpha: np.ndarray) -> float:
     return float(np.count_nonzero(alpha > 32) / max(alpha.size, 1))
 
 
+def _clean_alpha(alpha: np.ndarray) -> np.ndarray:
+    """抠图后处理：丢小碎片岛、填内部孔洞、边缘 1px 羽化——破碎观感主要来自前两者。"""
+    solid = alpha > 32
+    labeled, n = ndimage.label(solid)
+    if n > 1:
+        sizes = ndimage.sum(solid, labeled, range(1, n + 1))
+        keep = np.flatnonzero(sizes >= max(sizes.max() * _ISLAND_RATIO, _MIN_ISLAND_PX)) + 1
+        solid &= np.isin(labeled, keep)
+    solid = ndimage.binary_fill_holes(solid)
+    soft = ndimage.gaussian_filter(solid.astype(np.float32), 1.0)
+    return np.maximum(alpha * solid, soft * 255).astype(np.uint8)
+
+
 def extract_layers(
     fullbody_bytes: bytes,
     regions: list[DetectedLayer],
 ) -> list[ExtractedLayer]:
-    """按 bbox 从已抠透明背景的全图上裁切部件 PNG（带 alpha）。"""
+    """按 bbox 从已抠透明背景的全图上裁切部件 PNG（带 alpha），清理噪声后收紧到内容框。"""
     img = Image.open(io.BytesIO(fullbody_bytes)).convert("RGB")
     w, h = img.size
     base_rgb = np.asarray(img, dtype=np.uint8)
@@ -112,7 +129,7 @@ def extract_layers(
                 format="PNG",
             )
             try:
-                out = vectorized_matting(crop_buf.getvalue())
+                out = remove_background(crop_buf.getvalue())
                 region = np.asarray(Image.open(io.BytesIO(out)).convert("RGBA")).copy()
             except Exception as exc:
                 logger.warning(
@@ -124,30 +141,36 @@ def extract_layers(
             if region.shape[2] != 4:
                 continue
 
-        alpha = region[:, :, 3]
-        alpha_ratio = _alpha_dominant_ratio(alpha)
+        alpha = _clean_alpha(region[:, :, 3])
 
-        if alpha_ratio < 0.05:
+        if _alpha_dominant_ratio(alpha) < 0.05:
             logger.info(
                 "skip layer: alpha too sparse",
-                extra={"layer_name": layer.name, "ratio": alpha_ratio},
+                extra={"layer_name": layer.name},
             )
             continue
 
-        # 形态学闭运算去毛糙（半径 1，约 1-2px），避免 Z 排序时边缘锯齿。
-        closed = ndimage.binary_closing(alpha > 32, iterations=1)
-        new_alpha = np.where(closed, np.maximum(alpha, 64), alpha).astype(np.uint8)
-        region[:, :, 3] = new_alpha
+        # VLM bbox 常带大片空白：plane 尺寸虚大会让蒙皮权重的距离计算错位，收紧到实际内容。
+        ys, xs = np.where(alpha > 32)
+        tx1 = max(0, int(xs.min()) - _TIGHTEN_PAD_PX)
+        ty1 = max(0, int(ys.min()) - _TIGHTEN_PAD_PX)
+        tx2 = min(region.shape[1], int(xs.max()) + 1 + _TIGHTEN_PAD_PX)
+        ty2 = min(region.shape[0], int(ys.max()) + 1 + _TIGHTEN_PAD_PX)
+        region[:, :, 3] = alpha
+        region = region[ty1:ty2, tx1:tx2]
+
+        px1, py1 = x1 + tx1, y1 + ty1
+        tight_bbox_px = (px1, py1, px1 + region.shape[1], py1 + region.shape[0])
 
         extracted.append(
             ExtractedLayer(
                 name=layer.name,
                 z_order=layer.z_order,
                 occluded_by=layer.occluded_by,
-                bbox=layer.bbox,
+                bbox=(px1 / w, py1 / h, tight_bbox_px[2] / w, tight_bbox_px[3] / h),
                 png_bytes=_rgba_to_bytes(region),
-                pixel_size=(x2 - x1, y2 - y1),
-                pixel_bbox=bbox_px,
+                pixel_size=(region.shape[1], region.shape[0]),
+                pixel_bbox=tight_bbox_px,
             ),
         )
 
