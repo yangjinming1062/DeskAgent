@@ -227,6 +227,7 @@ function PuppetDevApp() {
           rt.auto[key] = false
         }
 
+        rt.frozen = true
         rt.target.angleX = ax
         rt.target.angleY = ay
         rt.target.angleZ = az
@@ -235,6 +236,108 @@ function PuppetDevApp() {
         setStatus(`POSE ax=${ax} ay=${ay} az=${az} parts=${r.layers.length} body=${s.body.toFixed(2)}`)
       } catch (err) {
         setStatus(`POSE_FAIL ${err instanceof Error ? err.message : String(err)}`)
+      }
+    })()
+  }, [])
+
+  // ?poses=1：13 姿态安全验证（Phase 5）——冻结动画、关自动化，逐姿态定格并评估
+  // 网格翻转/最大边拉伸，档位与最差值写进 header 供无头 --dump-dom 断言
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).get('poses')) {
+      return
+    }
+    void (async () => {
+      setStatus('13 姿态安全验证 …')
+
+      try {
+        const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`)
+        }
+
+        const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
+        const rt = handleRef.current?.runtime
+
+        if (!r || !rt) {
+          throw new Error('runtime 未就绪')
+        }
+
+        const POSES: [number, number, number][] = [
+          [0, 0, 0],
+          [1, 0, 0],
+          [-1, 0, 0],
+          [0, 1, 0],
+          [0, -1, 0],
+          [0, 0, 1],
+          [0, 0, -1],
+          [1, 1, 0],
+          [-1, -1, 0],
+          [1, -1, 0],
+          [1, 1, 1],
+          [-1, -1, -1],
+          [0.55, 0, 0]
+        ]
+
+        for (const key of Object.keys(rt.auto) as (keyof typeof rt.auto)[]) {
+          rt.auto[key] = false
+        }
+
+        rt.frozen = true
+        // 动作缩放阶梯（PuppetLoom 规范）：1 → 0.85 → … → 0.25，取首个全姿态无翻转的档
+        const LADDER = [1, 0.85, 0.7, 0.55, 0.4, 0.25]
+        let scale = 0
+        let flips = 0
+        let stretch = 1
+        let parts: string[] = []
+        let worst = ''
+        let minA = Infinity
+        let first = ''
+
+        for (const sc of LADDER) {
+          flips = 0
+          stretch = 1
+          minA = Infinity
+          parts = []
+          const allBy: Record<string, number> = {}
+
+          for (const [ax, ay, az] of POSES) {
+            rt.target.angleX = ax * sc
+            rt.target.angleY = ay * sc
+            rt.target.angleZ = az * sc
+            rt.advanceSim(1.5)
+            const s = rt.poseSafety()
+            flips = Math.max(flips, s.flips)
+            stretch = Math.max(stretch, s.maxStretch)
+            minA = Math.min(minA, s.flipMinA)
+            parts.push(`${s.flips}f/${s.maxStretch.toFixed(2)}x`)
+
+            for (const [k, v] of Object.entries(s.byLayer)) {
+              allBy[k] = (allBy[k] ?? 0) + v
+            }
+          }
+
+          worst = Object.entries(allBy)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 4)
+            .map(([k, v]) => `${k}:${v}`)
+            .join('|')
+          scale = sc
+
+          if (sc === LADDER[0]) {
+            first = `first=[flips=${flips} minA=${minA === Infinity ? '-' : minA.toFixed(2)} ${worst}]`
+          }
+
+          if (flips === 0) {
+            break
+          }
+        }
+
+        setStatus(
+          `POSES_OK n=13 tier=${rt.rigTier()} scale=${scale} flips=${flips} stretch=${stretch.toFixed(2)} ${first} ${parts.join(' ')}`
+        )
+      } catch (err) {
+        setStatus(`POSES_FAIL ${err instanceof Error ? err.message : String(err)}`)
       }
     })()
   }, [])

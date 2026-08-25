@@ -152,6 +152,12 @@ const HAIR_CHAIN = 4
 const SKIRT_W1 = 0.9
 const SKIRT_W2 = 2.35
 
+/** Phase 5 翻转防护：可见度轮廓的缘部保底（T 在 |hx|=1 处保留 40% 位移）。
+ * 纯圆根 sqrt(1-hx²) 缘处斜率无界，与压缩项叠加会使局部映射非单调（网格折叠）——
+ * T = sqrt(1-(1-m²)hx²) 斜率上界 (1-m²)/m，保证 m=0.4 时全姿态单调。 */
+const RIM_KEEP = 0.4
+const RIM_SLOPE = 1 - RIM_KEEP * RIM_KEEP
+
 interface GLPart {
   name: string
   bn: string
@@ -167,6 +173,7 @@ interface GLPart {
   base: Float32Array
   cur: Float32Array
   nIdx: number
+  idx: Uint16Array
   cb: Float32Array | null
   dEff: Float32Array | null
   mu: Float32Array | null
@@ -216,6 +223,7 @@ export class PuppetRuntime {
   private layers: GLPart[] = []
   private anchors: RigAnchors | null = null
   private headCage: HeadCage | null = null
+  private tier: 'semantic' | 'grouped' | 'minimal' = 'grouped'
   private meshVerts = 0
   private meshTris = 0
   private meshArtmesh = 0
@@ -266,6 +274,9 @@ export class PuppetRuntime {
   readonly auto: PuppetAuto = { idle: true, blink: true, rand: true, talk: true, phys: true, gaze: true }
   /** 自主段落/耳/呆毛事件的种子（同种子同时间序列 → 相同动作）；改后调 reseed 生效 */
   autoSeed = 20260826
+
+  /** 冻结连续动画（呼吸相位/深呼吸调度）——姿态定格与 13 姿态验证用，保证逐位可复现。 */
+  frozen = false
 
   onRigApplied: ((rig: Rig) => void) | null = null
 
@@ -452,6 +463,94 @@ export class PuppetRuntime {
     return n ? s / n : 0
   }
 
+  /** 装配档位（Phase 5 三级降级）：semantic 全语义机制 / grouped 整体运动+缩幅 / minimal 仅整体呼吸与倾斜。 */
+  rigTier(): 'semantic' | 'grouped' | 'minimal' {
+    return this.tier
+  }
+
+  /** 姿态安全评估（Phase 5）：先按当前参数重算 deform，再检查全部三角形——
+   * 有向面积符号翻转（网格翻转）与最大边拉伸比（相对基准网格）；byLayer 供归因、
+   * flipMinA 为翻转三角形的最小基准面积（区分真实折叠与边界退化细条）。 */
+  poseSafety(): { flips: number; maxStretch: number; byLayer: Record<string, number>; flipMinA: number } {
+    const e = this.lastE
+
+    if (!e) {
+      return { flips: 0, maxStretch: 1, byLayer: {}, flipMinA: Infinity }
+    }
+
+    for (const L of this.layers) {
+      this.deform(L, e)
+    }
+
+    let flips = 0
+    let maxStretch = 1
+    let flipMinA = Infinity
+    const byLayer: Record<string, number> = {}
+
+    for (const L of this.layers) {
+      const b = L.base
+      const c = L.cur
+      const idx = L.idx
+      let lf = 0
+
+      for (let t = 0; t < idx.length; t += 3) {
+        const a = idx[t]! * 2
+        const m = idx[t + 1]! * 2
+        const q = idx[t + 2]! * 2
+        const s0 = (b[m]! - b[a]!) * (b[q + 1]! - b[a + 1]!) - (b[q]! - b[a]!) * (b[m + 1]! - b[a + 1]!)
+        const s1 = (c[m]! - c[a]!) * (c[q + 1]! - c[a + 1]!) - (c[q]! - c[a]!) * (c[m + 1]! - c[a + 1]!)
+
+        // 基准面积 < 6px² 的边界退化细条（stride 采样近乎共线）不计：亚像素翻转不可见
+        if (Math.abs(s0) > 12 && Math.abs(s1) > 0.01 && s0 > 0 !== s1 > 0) {
+          flips++
+          lf++
+          flipMinA = Math.min(flipMinA, Math.abs(s0) / 2)
+        }
+
+        for (const [p, r] of [
+          [a, m],
+          [m, q],
+          [q, a]
+        ] as const) {
+          const ex = c[r]! - c[p]!
+          const ey = c[r + 1]! - c[p + 1]!
+          const bx = b[r]! - b[p]!
+          const by = b[r + 1]! - b[p + 1]!
+
+          if (bx * bx + by * by > 0.25) {
+            maxStretch = Math.max(maxStretch, Math.hypot(ex, ey) / Math.hypot(bx, by))
+          }
+        }
+      }
+
+      if (lf) {
+        byLayer[L.name] = lf
+      }
+    }
+
+    return { flips, maxStretch, byLayer, flipMinA }
+  }
+
+  /** PSD 语义完整度分级：缺脸/眼锚点或层数过少 → minimal；语义层与发束链齐全 → semantic。 */
+  private assessTier(rig: Rig, A: RigAnchors): 'semantic' | 'grouped' | 'minimal' {
+    const bns = new Set(
+      rig.layers.map(l => {
+        const n = l.name.toLowerCase().replace(/[-_](l|r)$/, '')
+
+        return window.Rigger?.baseName(n) ?? n
+      })
+    )
+
+    if (!bns.has('face') || rig.layers.length < 6 || (!A.eyeL && !A.eyeR)) {
+      return 'minimal'
+    }
+
+    const hairStrands = rig.layers.some(l => /hair/.test(l.name) && (l.strands?.length ?? 0) > 0)
+    const need = ['neck', 'front hair', 'back hair', 'topwear', 'mouth_open', 'mouth_close']
+
+    return need.every(n => bns.has(n)) && A.eyeL && A.eyeR && A.mouth && hairStrands ? 'semantic' : 'grouped'
+  }
+
   /** see-through 产出 `-l/-r` 后缀层名，绕过 vendor SLOTS 匹配（side/fade/眼锚点缺失，
    * 虹膜/眉毛/远眼收窄/耳淡出全部失效）——在装配边界补齐眼锚点，side/fade 在 buildGlPart 补。 */
   private patchSideParts(rig: Rig, A: RigAnchors): void {
@@ -588,6 +687,8 @@ export class PuppetRuntime {
 
     const rs = rsMax > rsMin ? Math.max(Math.abs(rsMin - A.face.cx), Math.abs(rsMax - A.face.cx)) : 0
     this.headCage = buildHeadCage(A, dF, dS, rs)
+    // Phase 5: PSD 语义完整度分级（semantic→grouped→minimal），门控机制与动作幅度
+    this.tier = this.assessTier(rig, A)
     this.meshVerts = 0
     this.meshTris = 0
     this.meshArtmesh = 0
@@ -841,6 +942,7 @@ export class PuppetRuntime {
       base,
       cur: new Float32Array(base),
       nIdx: idx.length,
+      idx,
       cb,
       dEff,
       mu,
@@ -971,7 +1073,10 @@ export class PuppetRuntime {
     const bcy = L.y + L.h / 2
     const isFH = bn === 'front hair'
     const isEyePart = bn === 'eyewhite' || bn === 'irides' || bn === 'eyelash' || bn === 'eye_close'
-    const farEye = EA ? Math.max(0, e.angleX * (eyeSide === 'L' ? 1 : -1)) : 0
+    const farEye = this.tier === 'semantic' && EA ? Math.max(0, e.angleX * (eyeSide === 'L' ? 1 : -1)) : 0
+
+    // Phase 5 档位门控：grouped 档整体缩幅（动作缩放阶梯的安全侧近似），minimal 见循环内早退
+    const turnScale = this.tier === 'grouped' ? 0.75 : 1
 
     // Phase 3 转角几何（每层一次）：参数即归一化正弦 → θ = asin(a·sinθmax)；
     // cX = 远/近缘压缩像素系数（满角 = (1-cosθmax)·COMP_GAIN），cY = 俯仰纵向轮廓增益 [0,1]
@@ -982,6 +1087,16 @@ export class PuppetRuntime {
       let x = b[k]!
       let y = b[k + 1]!
       const vi = k >> 1
+
+      // minimal 档（Phase 5）：不做脸/肢体局部变形，只保留整体呼吸、重心横移与轻微倾斜
+      if (this.tier === 'minimal') {
+        y -= e.breath * 2.2 * this.fs
+        x += e.body * 5 * this.fs
+        o[k] = x
+        o[k + 1] = y
+
+        continue
+      }
 
       // 远眼收窄（Phase 3）：转向时对侧眼向眼心水平压缩 — 纯几何透视，不动透明度
       if (farEye > 0 && isEyePart) {
@@ -1099,8 +1214,8 @@ export class PuppetRuntime {
         const dd0 = L.dEff ? L.dEff[vi]! : L.depth
         const muV = L.mu ? L.mu[vi]! : 0
         const dd = dd0 + (CAGE ? muV * curveDepth(CAGE, y) : 0)
-        const axF = e.angleX * this.fs
-        const ayF = e.angleY * this.fs
+        const axF = e.angleX * this.fs * turnScale
+        const ayF = e.angleY * this.fs * turnScale
         const kk = 14 + 40 * (dd - 1)
         const kl = 9 + 30 * (dd - 1)
         const ks = (dd - 1) * 0.05
@@ -1119,8 +1234,9 @@ export class PuppetRuntime {
 
           if (L.invHR && (isHead || bn === 'neck')) {
             const hx = (x - FC.x) * L.invHR[vi]!
-            const t = Math.sqrt(Math.max(0, 1 - hx * hx))
-            const tp = Math.sqrt(Math.max(0, 1 - ((y - FC.y) / CAGE.rv) ** 2))
+            const t = Math.sqrt(Math.max(RIM_KEEP * RIM_KEEP, 1 - RIM_SLOPE * hx * hx))
+            const hy = (y - FC.y) / CAGE.rv
+            const tp = Math.sqrt(Math.max(RIM_KEEP * RIM_KEEP, 1 - RIM_SLOPE * hy * hy))
             dx = axF * (kk * TURN_BOOST * t + 0.028 * pb) - cX * (x - FC.x)
             dy = -ayF * (kl * tp + (ks + PITCH_PROF * cY) * qb)
           } else {
@@ -1377,17 +1493,23 @@ export class PuppetRuntime {
 
     const e: Evaluated = { ...this.cur, breath: 0, breathHead: 0, simT: t, earLift: 0, ahogeDy: 0 }
 
-    // 非对称呼吸（3.4s 周期，吸气快呼气慢）+ 每 18~38s 一次深呼吸；头部相位略滞后
-    this.breathP += dt / 3.4
+    // 非对称呼吸（3.4s 周期，吸气快呼气慢）+ 每 18~38s 一次深呼吸；头部相位略滞后。
+    // frozen（Phase 5）冻结相位与调度，姿态定格逐位可复现
+    if (this.frozen) {
+      this.breathP = 0
+      this.sighUntil = 0
+    } else {
+      this.breathP += dt / 3.4
 
-    if (now > this.nextSigh) {
-      this.nextSigh = now + 18000 + Math.random() * 20000
-      this.sighUntil = now + 3400
+      if (now > this.nextSigh) {
+        this.nextSigh = now + 18000 + Math.random() * 20000
+        this.sighUntil = now + 3400
+      }
     }
 
-    const bAmp = now < this.sighUntil ? 1.5 : 1
+    const bAmp = this.frozen ? 0 : now < this.sighUntil ? 1.5 : 1
     const bp = this.breathP % 1
-    e.breath = clamp(breathCurve(bp) * bAmp, 0, 1.5)
+    e.breath = this.frozen ? 0 : clamp(breathCurve(bp) * bAmp, 0, 1.5)
     e.breathHead = breathCurve((bp + 0.94) % 1) * bAmp
 
     // 耳事件（Phase 4，种子化调度）：偶发连续快速抬落约 4 次，随后严格回中立；
