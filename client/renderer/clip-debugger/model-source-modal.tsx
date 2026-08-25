@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 import {
   decodeActivationCode,
-  fetchBackendCompanionModelWithActivationCode,
+  fetchBackendCompanion3DModelWithActivationCode,
   fetchGlbFromUrl,
   readGlbFile
 } from './model-loader'
@@ -68,7 +68,7 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
         localStorage.setItem('spiritagent_clip_override_host', overrideHost.trim())
       }
 
-      const res = await fetchBackendCompanionModelWithActivationCode(trimmedCode, overrideHost.trim() || undefined)
+      const res = await fetchBackendCompanion3DModelWithActivationCode(trimmedCode, overrideHost.trim() || undefined)
 
       $customGlbBuffer.set({ buffer: res.buffer, name: res.name })
 
