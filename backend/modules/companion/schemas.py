@@ -35,25 +35,6 @@ class AvatarAssetResponse(BaseModel):
     status: SucceededStatus = "succeeded"
 
 
-class FullbodyStyleItem(BaseModel):
-    id: str
-    label_zh: str
-    description_zh: str = ""
-
-
-class FullbodySamplesRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    style: str = Field(min_length=1, max_length=64)
-    image: str | None = Field(default=None, max_length=8 * 1024 * 1024)
-    content_type: str | None = Field(default=None, max_length=64)
-
-
-class FullbodySamplesResponse(BaseModel):
-    style: str
-    sample: str
-
-
 class FullbodyFrontGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

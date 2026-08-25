@@ -191,21 +191,27 @@ async def enhance_avatar_prompt(
     return _strip_markdown_fence(raw)
 
 
-FullbodyStyle = Literal["anime", "realistic"]
+FullbodyStyle = Literal["cel_shading", "anime_game_cg", "realistic"]
 
 # 预设物种直接带风格；自定义物种由 LLM 人脸判定路由（见 ``rig_type_selector.classify_species``）
-_SPECIES_STYLE: dict[str, FullbodyStyle] = {"人类": "anime", "精灵": "anime", "机甲": "realistic", "灵兽": "realistic", "幻形": "realistic"}
+_SPECIES_STYLE: dict[str, FullbodyStyle] = {
+    "人类": "anime_game_cg",
+    "精灵": "anime_game_cg",
+    "机甲": "realistic",
+    "灵兽": "realistic",
+    "幻形": "realistic",
+}
 
 # 骨骼预设物种：固定体型，无需 LLM 骨骼分类
 _PRESET_SPECIES: frozenset[str] = frozenset({"人类", "精灵", "机甲"})
 
 
 def resolve_fullbody_style(species: str, has_humanoid_face: bool | None = None) -> FullbodyStyle:
-    """根据物种解析 3D 风格路由。"""
+    """根据物种解析 3D 风格路由：类人物种走 CG 风格（anime_game_cg），非人物种走写实风格（realistic）。"""
     preset = _SPECIES_STYLE.get(species.strip())
     if preset is not None:
         return preset
-    return "realistic" if has_humanoid_face is False else "anime"
+    return "realistic" if has_humanoid_face is False else "anime_game_cg"
 
 
 def is_preset_species(species: str) -> bool:
@@ -216,6 +222,7 @@ def is_preset_species(species: str) -> bool:
 _FULLBODY_STYLE_WORDING: dict[str, str] = {
     "cel_shading": "日系赛璐珞动漫角色立绘风格（cel-shading anime character art），清晰利落的线条勾勒与分明纯净的阴影色块，明亮通透的色彩，自然流畅的人体线条与平滑细腻的皮肤，纯净清爽的面部与发丝结构。",
     "anime_game_cg": "次世代二次元游戏CG风格（anime game 3D CGI），原神与崩铁级现代3D二次元角色建模质感，全景全身立绘，精致立体的角色形体与层次分明的发束，柔和通透的次表面散射与自然肤质，微立体阴影与平滑材质，8K超清。",
+    "realistic": "写实摄影质感与细腻真实的材质光影风格（photorealistic, hyperrealistic），真实自然的生物肌理、毛发与材质纹理，高精度棚拍光影与层次，8K超清。",
 }
 
 

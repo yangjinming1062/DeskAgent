@@ -23,9 +23,6 @@ from modules.companion import (
     FullbodyBackGenerateRequest,
     FullbodyConfirmFrontRequest,
     FullbodyFrontGenerateRequest,
-    FullbodySamplesRequest,
-    FullbodySamplesResponse,
-    FullbodyStyleItem,
     ModelGenerateRequest,
     OutfitCreateRequest,
     OutfitListResponse,
@@ -38,7 +35,6 @@ from modules.companion import (
 )
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
-    STYLE_CATALOG,
     AvatarGenerationError,
     AvatarNotFoundError,
     AvatarSourceUnreadableError,
@@ -60,7 +56,6 @@ from services.companion import (
     PersonaValidationError,
     SeedPromptMissingError,
     UnknownEmotionError,
-    UnknownFullbodyStyleError,
     activate_outfit,
     avatar_response,
     confirm_fullbody_front,
@@ -73,7 +68,6 @@ from services.companion import (
     generate_companion_model,
     generate_fullbody_back,
     generate_fullbody_front,
-    generate_fullbody_sample,
     generate_mesh2d_model,
     get_active_avatar,
     get_active_mesh2d_response,
@@ -340,51 +334,6 @@ async def put_avatar_select(avatar_id: int, auth: tuple[User, LoginRecord] = Dep
     except ImageSealedError as exc:
         raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
     return avatar_response(asset)
-
-
-@router.get("/avatar/fullbody/styles", response_model=list[FullbodyStyleItem])
-async def get_fullbody_styles() -> list[FullbodyStyleItem]:
-    return [FullbodyStyleItem(id=item.id, label_zh=item.label_zh, description_zh=item.description_zh) for item in STYLE_CATALOG]
-
-
-@router.post("/avatar/{avatar_id}/fullbody/samples", response_model=FullbodySamplesResponse)
-@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
-async def post_fullbody_samples(
-    request: Request,
-    avatar_id: int,
-    body: FullbodySamplesRequest = Body(default_factory=FullbodySamplesRequest),
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
-) -> FullbodySamplesResponse:
-    user, _ = auth
-    raw, content_type = _decode_upload_image(body.image, body.content_type)
-    ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
-    try:
-        result = await generate_fullbody_sample(
-            db,
-            user.id,
-            avatar_id=avatar_id,
-            style=body.style,
-            reference_image=ref_b64,
-            reference_content_type=content_type,
-        )
-    except AvatarNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
-    except ImageSealedError as exc:
-        raise HTTPException(status_code=409, detail={"error": "形象已确认锁定，无法重新生成", "reason": str(exc)})
-    except SeedPromptMissingError as exc:
-        raise HTTPException(status_code=400, detail={"error": "头像缺失提示词缓存，请重新生成头像", "reason": str(exc)})
-    except UnknownFullbodyStyleError as exc:
-        raise HTTPException(status_code=400, detail={"error": "未知画风", "reason": str(exc)})
-    except FullbodyGenerationError as exc:
-        err_detail = getattr(exc, "internal", str(exc))
-        logger.warning("fullbody sample generation failed", extra={"user_id": user.id, "error": err_detail})
-        # reason 只放公开文案：供应商原始错误（err_detail）常含 URL / 部分 auth 头，不能随响应出网
-        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
-    except MissingLlmConfigError as exc:
-        logger.warning("post_fullbody_samples missing config", extra={"user_id": user.id, "error": str(exc)})
-        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
-    return FullbodySamplesResponse(style=result["style"], sample=result["sample"])
 
 
 @router.post("/avatar/{avatar_id}/fullbody/front", response_model=AvatarAssetResponse)

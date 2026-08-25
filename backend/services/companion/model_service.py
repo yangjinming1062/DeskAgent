@@ -37,7 +37,7 @@ def _avatar_view_filenames(avatar: AvatarAsset) -> dict[str, str]:
     """把 avatar 上的种子图 URL 解析成 view_filenames，供 pipeline 读盘用。"""
 
     def _name(url: str) -> str:
-        return url.split("/")[-1].split("?")[0]
+        return url.rsplit("/", maxsplit=1)[-1].split("?", maxsplit=1)[0]
 
     front = _name(avatar.seed_front_url or avatar.asset_url)
     if not front:
@@ -49,10 +49,7 @@ def _avatar_view_filenames(avatar: AvatarAsset) -> dict[str, str]:
 
 
 async def _avatar_style(db: AsyncSession, avatar: AvatarAsset, species: str) -> str:
-    """avatar 的 prompt_json.fullbody_style 优先；缺则按物种 + 类人脸标志推导。"""
-    prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
-    if isinstance(prompt_payload, dict) and (style := prompt_payload.get("fullbody_style")):
-        return style
+    """3D 模型风格路由：类人物种走 CG 风格（anime_game_cg），非人物种走写实风格（realistic）。"""
     has_humanoid_face = None
     if not is_preset_species(species):
         from services.llm import chat

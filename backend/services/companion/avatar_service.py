@@ -25,12 +25,14 @@ from ..llm import (
     chat,
     enhance_avatar_prompt,
     is_content_policy_error_message,
+    is_preset_species,
+    resolve_fullbody_style,
     resolve_fullbody_template,
 )
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
-from .fullbody_style_catalog import STYLE_CATALOG
 from .persona_service import get_or_create_persona
+from .rig_type_selector import classify_species
 
 logger = get_logger(__name__)
 
@@ -39,7 +41,6 @@ _AVATAR_SIZE: str = "1024x1024"
 _FULLBODY_SIZE: str = "1024x1792"
 _AVATAR_QUALITY: str = "standard"
 _FULLBODY_PREFERRED_PROVIDERS = ("gemini", "grok")
-_STYLE_IDS: frozenset[str] = frozenset(info.id for info in STYLE_CATALOG)
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
 ALLOWED_AVATAR_UPLOAD_MIME_TYPES: frozenset[str] = frozenset(_UPLOAD_EXTS)
 _EXT_TO_MIME: dict[str, str] = {ext: mime for mime, ext in _UPLOAD_EXTS.items()}
@@ -130,10 +131,6 @@ class FrontSeedMissingError(FullbodyGenerationError):
     """未确认正面种子图就尝试生成多视图。"""
 
 
-class UnknownFullbodyStyleError(AvatarGenerationError):
-    """全身图风格 id 不在 STYLE_CATALOG 中。"""
-
-
 class SeedPromptMissingError(FullbodyGenerationError):
     """头像行缺少可用于全身图生成的缓存提示词。"""
 
@@ -175,7 +172,7 @@ def get_avatar_job_lock(user_id: int) -> asyncio.Lock:
 
 async def _persist_portrait_bytes(data: bytes, content_type: str) -> tuple[str, str, str]:
     """把立绘字节原样写入 companion-avatars/ 并返回 (裸存储路径, file_id, ext)。"""
-    src_content_type = content_type.split(";")[0].strip().lower()
+    src_content_type = content_type.split(";", maxsplit=1)[0].strip().lower()
     final_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
     file_id = secrets.token_urlsafe(16)
     avatars_dir = Path(SETTINGS.data_dir) / "companion-avatars"
@@ -205,7 +202,7 @@ def _temp_media_public_url(bare_path: str) -> str:
 async def _download_to_bytes(url: str) -> tuple[bytes, str] | None:
     """把生成结果 URL 解析为 (bytes, content_type)，不可达时返回 None；远端请求禁用重定向并走出网安全校验。"""
     if "/api/media/files/" in url:
-        fid = url.rsplit("/", 1)[-1].split("?")[0]
+        fid = url.rsplit("/", 1)[-1].split("?", maxsplit=1)[0]
         res = get_file_path(fid)
         if res:
             path, content_type = res
@@ -227,7 +224,7 @@ def _extract_temp_file_id(source_url: str) -> str | None:
     idx = source_url.find(marker)
     if idx < 0:
         return None
-    return source_url[idx + len(marker) :].split("?")[0].split("/")[0] or None
+    return source_url[idx + len(marker) :].split("?", maxsplit=1)[0].split("/", maxsplit=1)[0] or None
 
 
 async def _generate_one_portrait(
@@ -675,7 +672,7 @@ async def upload_avatar(
     await raise_if_image_sealed(db, user_id, persona)
 
     persist = persona.is_portrait_confirmed
-    src_content_type = content_type.split(";")[0].strip().lower()
+    src_content_type = content_type.split(";", maxsplit=1)[0].strip().lower()
     final_ext = _UPLOAD_EXTS.get(src_content_type, "jpg")
 
     if persist:
@@ -790,69 +787,6 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
         mime = (reference_content_type or "image/png").split(";")[0].strip().lower() or "image/png"
         return f"data:{mime};base64,{reference_image}"
     return load_avatar_bytes_as_data_uri(asset.asset_url)
-
-
-async def generate_fullbody_sample(
-    db: AsyncSession | None = None,
-    user_id: int | None = None,
-    *,
-    avatar_id: int,
-    style: str,
-    reference_image: str | None = None,
-    reference_content_type: str | None = None,
-) -> dict[str, str]:
-    """按选定画风生成一张正面全身样图。客户端在用户点确认画风后才发起，节省未选中风格的供应商调用。"""
-    if user_id is None:
-        raise ValueError("user_id is required")
-    if style not in _STYLE_IDS:
-        raise UnknownFullbodyStyleError(f"unknown fullbody style: {style}")
-
-    async def _fetch_context(session: AsyncSession):
-        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if asset is None:
-            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        persona = await get_or_create_persona(session, user_id)
-        await raise_if_image_sealed(session, user_id, persona)
-        return asset, persona
-
-    if db is None:
-        async with SESSION_LOCAL() as probe_db:
-            asset, persona = await _fetch_context(probe_db)
-    else:
-        asset, persona = await _fetch_context(db)
-
-    prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    if not isinstance(prompt_payload, dict):
-        prompt_payload = {}
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt")
-    if not cached_avatar_prompt:
-        raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt")
-
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = (definition.get("biological_type") or "").strip()
-    appearance = str(definition.get("appearance") or "").strip()
-    personality = str(definition.get("personality") or "").strip()
-    template = resolve_fullbody_template(species, "biped", style)
-    ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
-    prompt = build_fullbody_prompt("front", template=template, style_id=style, feedback=None, appearance=appearance, personality=personality)
-
-    try:
-        front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
-            prompt,
-            user_id,
-            reference_image=ref_uri,
-            size=_FULLBODY_SIZE,
-            persist=False,
-            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
-        )
-    except AvatarGenerationError:
-        raise
-    except Exception as err:
-        logger.warning("fullbody single-sample generation failed", extra={"style": style, "error": str(err)})
-        raise FullbodyGenerationError("该画风样图生成失败，请稍后重试", internal=str(err)) from err
-
-    signed = _re_sign_bare_path(front_url) or front_url
-    return {"style": style, "sample": signed}
 
 
 async def generate_fullbody_front(
@@ -979,15 +913,19 @@ async def generate_fullbody_back(
     if not effective_front_url:
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
-    prompt_payload = safe_json_loads(asset.prompt_json, default={})
-    if not isinstance(prompt_payload, dict):
-        prompt_payload = {}
-    effective_style = style or prompt_payload.get("fullbody_style") or "cel_shading"
-
     definition = safe_json_loads(persona.definition_json or "{}", default={})
     species = (definition.get("biological_type") or "").strip()
     appearance = str(definition.get("appearance") or "").strip()
     personality = str(definition.get("personality") or "").strip()
+
+    if style:
+        effective_style = style
+    else:
+        has_humanoid_face = None
+        if not is_preset_species(species):
+            has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
+        effective_style = resolve_fullbody_style(species, has_humanoid_face)
+
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)

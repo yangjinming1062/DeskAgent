@@ -74,7 +74,7 @@ def signed_expression_avatar_url(row: CompanionExpressionAvatar) -> str | None:
 
 async def _fetch_image_bytes(url: str) -> bytes | None:
     if "/api/media/files/" in url:
-        fid = url.rsplit("/", 1)[-1].split("?")[0]
+        fid = url.rsplit("/", 1)[-1].split("?", maxsplit=1)[0]
         res = get_file_path(fid)
         if not res:
             return None

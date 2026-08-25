@@ -25,13 +25,11 @@ from .avatar_service import (
     FullbodyGenerationError,
     ImageSealedError,
     SeedPromptMissingError,
-    UnknownFullbodyStyleError,
     confirm_fullbody_front,
     finalize_avatar,
     generate_avatar,
     generate_fullbody_back,
     generate_fullbody_front,
-    generate_fullbody_sample,
     get_active_avatar,
     get_avatar_job_lock,
     list_avatar_history,
@@ -55,7 +53,6 @@ from .expression_avatar_service import (
     signed_expression_avatar_url,
 )
 from .expression_validator import validate_and_sanitize_expression
-from .fullbody_style_catalog import STYLE_CATALOG, FullbodyStyle, FullbodyStyleInfo
 from .http_range import serve_ranged_file
 from .interact import InteractResult, interact
 from .interaction_stats import read_today_summary, record_interaction
@@ -169,7 +166,6 @@ __all__ = [
     "SeedPromptMissingError",
     "ShouldActResult",
     "UnknownEmotionError",
-    "UnknownFullbodyStyleError",
     "activate_outfit",
     "analyze_personality_tags",
     "asset_store",
@@ -205,7 +201,6 @@ __all__ = [
     "generate_companion_model",
     "generate_fullbody_back",
     "generate_fullbody_front",
-    "generate_fullbody_sample",
     "generate_mesh2d_model",
     "get_active_avatar",
     "get_active_mesh2d_response",

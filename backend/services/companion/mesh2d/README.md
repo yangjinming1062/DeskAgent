@@ -37,5 +37,4 @@ AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_
 - `vectorized_matting` (`backend/components/matting.py:131`)
 - `save_companion_asset` / `signed_companion_asset_url` (`backend/services/companion/asset_store.py:80,119`)
 - `load_avatar_bytes_as_data_uri` (`backend/services/companion/avatar_service.py`)
-- `STYLE_CATALOG` (`backend/services/companion/fullbody_style_catalog.py:14`)
 - `execute_with_fallback` + `resolve_vision_chain` (`backend/services/llm/`)
