@@ -211,7 +211,8 @@ function PuppetDevApp() {
         rt.target.angleY = ay
         rt.target.angleZ = az
         rt.advanceSim(1)
-        setStatus(`POSE ax=${ax} ay=${ay} az=${az} parts=${r.layers.length}`)
+        const s = rt.snapshot()
+        setStatus(`POSE ax=${ax} ay=${ay} az=${az} parts=${r.layers.length} body=${s.body.toFixed(2)}`)
       } catch (err) {
         setStatus(`POSE_FAIL ${err instanceof Error ? err.message : String(err)}`)
       }

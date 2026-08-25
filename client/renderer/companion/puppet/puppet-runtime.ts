@@ -1,14 +1,14 @@
 /** Puppet WebGL 运行时 — 自 Anime2.5DRig（MIT）index.html 核心移植：
  * 每层 ArtMesh（alpha 轮廓三角剖分）+ deform() 顶点形变（头转/呼吸/眨眼差分/发束弹簧/胸物理）
  * + 模板眼裁切 + 头部三角控制笼重心绑定。形变数学与上游保持一致；GL 装配、rAF 生命周期、
- * 动画自动化层（Phase 1）与网格/绑定（Phase 2）为本仓代码。
- * Phase 3 按 PuppetLoom 机制在控制点位移上扩展深度曲线/远眼收窄等非线性项。
+ * 动画自动化层（Phase 1）、网格/绑定（Phase 2）与伪 3D 转头（Phase 3：圆投影深度曲线/
+ * 远眼收窄/周边可见度/颈双隶属/上身同源跟随，机制取自 PuppetLoom）为本仓代码。
  */
 
 import { log } from '@/shared/lib/log'
 
 import { buildArtMesh } from './artmesh'
-import { buildHeadCage, cageBary, headBlendMu, type HeadCage } from './head-cage'
+import { buildHeadCage, cageBary, curveDepth, headBlendMu, type HeadCage } from './head-cage'
 import type { Rig, RigAnchors, RigEyeAnchor, RigImage, RigPart } from './puppet-types'
 import { ensureVendorLibs } from './vendor-loader'
 
@@ -134,6 +134,18 @@ function breathCurve(p: number): number {
   return p < 0.42 ? smooth(p / 0.42) : 1 - smooth((p - 0.42) / 0.58)
 }
 
+/** Phase 3 转头圆投影常量。角度参数 = 归一化正弦（θ = asin(a·sinθmax)）：
+ * 中心位移对参数保持线性（与 Phase 2 同幅，可乘 TURN_BOOST 微增），
+ * 远/近缘压缩按真实余弦（小角度趋零、满角最强），中立姿态严格保持原图。 */
+const TURN_MAX = 0.55
+const TURN_SIN = Math.sin(TURN_MAX)
+const TURN_COMP = 1 - Math.cos(TURN_MAX)
+const TURN_BOOST = 1.15
+const COMP_GAIN = 0.85
+const PITCH_PROF = 0.085
+const FAR_EYE_NARROW = 0.16
+const FAR_FADE = 0.55
+
 interface GLPart {
   name: string
   bn: string
@@ -151,6 +163,8 @@ interface GLPart {
   nIdx: number
   cb: Float32Array | null
   dEff: Float32Array | null
+  mu: Float32Array | null
+  invHR: Float32Array | null
   sw: Float32Array | null
   su: Float32Array | null
   bw: Float32Array | null
@@ -342,9 +356,12 @@ export class PuppetRuntime {
     this.anchors = A
     this.fs = A.faceScale
 
-    // Phase 2: 头部双表面控制笼（dF=脸层深度，dS=头部层最大深度≈头骨）
+    // Phase 2: 头部双表面控制笼（dF=脸层深度，dS=头部层最大深度≈头骨）；
+    // Phase 3: 头骨横向半径按头部组层外包矩形实测（毛发/耳一般比脸缘宽）
     let dF = 1
     let dS = 2
+    let rsMin = Infinity
+    let rsMax = -Infinity
 
     for (const L of rig.layers) {
       if (L.group !== 'head') {
@@ -352,13 +369,16 @@ export class PuppetRuntime {
       }
 
       dS = Math.max(dS, L.depth)
+      rsMin = Math.min(rsMin, L.x)
+      rsMax = Math.max(rsMax, L.x + L.w)
 
       if (window.Rigger?.baseName(L.name.replace(/_(l|r)$/, '')) === 'face') {
         dF = L.depth
       }
     }
 
-    this.headCage = buildHeadCage(A, dF, dS)
+    const rs = rsMax > rsMin ? Math.max(Math.abs(rsMin - A.face.cx), Math.abs(rsMax - A.face.cx)) : 0
+    this.headCage = buildHeadCage(A, dF, dS, rs)
     this.meshVerts = 0
     this.meshTris = 0
     this.meshArtmesh = 0
@@ -495,26 +515,34 @@ export class PuppetRuntime {
       }
     }
 
-    // Phase 2: 控制笼绑定 — 重心坐标 + 脸面↔头骨混合 dEff（前发根随脸、梢随颅的连续深度过渡）
+    // Phase 2: 控制笼绑定 — 重心坐标 + 脸面↔头骨混合 dEff（前发根随脸、梢随颅的连续深度过渡）；
+    // Phase 3: 逐顶点 μ 与混合表面横向半径（μ=1 脸面 Rf → μ=0 头骨 Rs）供圆投影用
     const cage = this.headCage
     let cb: Float32Array | null = null
     let dEff: Float32Array | null = null
+    let mu: Float32Array | null = null
+    let invHR: Float32Array | null = null
 
     if (cage) {
       cb = new Float32Array(nv * 3)
       dEff = new Float32Array(nv)
+      mu = new Float32Array(nv)
+      invHR = new Float32Array(nv)
       const muBase = headBlendMu(cage.dF, cage.dS, Lr.depth)
+      const dr = cage.rs - cage.rf
 
       for (let v = 0; v < nv; v++) {
         cageBary(cage, base[v * 2]!, base[v * 2 + 1]!, cb, v * 3)
 
-        let mu = muBase
+        let m = muBase
 
         if (bn === 'front hair' && su) {
-          mu = Math.min(1, Math.max(0, muBase + 0.15 - 0.3 * su[v]!))
+          m = Math.min(1, Math.max(0, muBase + 0.15 - 0.3 * su[v]!))
         }
 
-        dEff[v] = cage.dS + mu * (cage.dF - cage.dS)
+        mu[v] = m
+        dEff[v] = cage.dS + m * (cage.dF - cage.dS)
+        invHR[v] = 1 / Math.max(1, cage.rf + (1 - m) * dr)
       }
     }
 
@@ -552,6 +580,8 @@ export class PuppetRuntime {
       nIdx: idx.length,
       cb,
       dEff,
+      mu,
+      invHR,
       sw,
       su,
       bw,
@@ -619,31 +649,30 @@ export class PuppetRuntime {
   }
 
   private fadeAlpha(L: GLPart, e: Evaluated): number {
-    if (!L.fade) {
-      return 1
-    }
+    let a = 1
 
     if (L.fade === 'eyeOpen') {
       const v = L.side === 'L' ? e.eyeOpenL : e.eyeOpenR
-
-      return smooth((v - (0.1 + e.eyeEase * 0.45)) / 0.15)
-    }
-
-    if (L.fade === 'eyeClose') {
+      a = smooth((v - (0.1 + e.eyeEase * 0.45)) / 0.15)
+    } else if (L.fade === 'eyeClose') {
       const v = L.side === 'L' ? e.eyeOpenL : e.eyeOpenR
-
-      return 1 - smooth((v - (0.1 + e.eyeEase * 0.45)) / 0.15)
+      a = 1 - smooth((v - (0.1 + e.eyeEase * 0.45)) / 0.15)
+    } else if (L.fade === 'mouthOpen') {
+      a = smooth((e.mouthOpen - (0.05 + e.mouthEase * 0.35)) / 0.12)
+    } else if (L.fade === 'mouthClose') {
+      a = 1 - smooth((e.mouthOpen - (0.05 + e.mouthEase * 0.35)) / 0.12)
     }
 
-    if (L.fade === 'mouthOpen') {
-      return smooth((e.mouthOpen - (0.05 + e.mouthEase * 0.35)) / 0.12)
+    // 周边可见度（Phase 3）：远端侧挂件（耳等；眼/眉只做几何透视，不淡化）随转角淡出
+    if (L.side && !L.fade && L.bn !== 'eyebrow') {
+      const far = e.angleX * (L.side === 'L' ? 1 : -1)
+
+      if (far > 0) {
+        a *= 1 - FAR_FADE * Math.min(1, far)
+      }
     }
 
-    if (L.fade === 'mouthClose') {
-      return 1 - smooth((e.mouthOpen - (0.05 + e.mouthEase * 0.35)) / 0.12)
-    }
-
-    return 1
+    return a
   }
 
   private deform(L: GLPart, e: Evaluated): void {
@@ -677,11 +706,24 @@ export class PuppetRuntime {
     const bcx = L.x + L.w / 2
     const bcy = L.y + L.h / 2
     const isFH = bn === 'front hair'
+    const isEyePart = bn === 'eyewhite' || bn === 'irides' || bn === 'eyelash' || bn === 'eye_close'
+    const farEye = EA ? Math.max(0, e.angleX * (eyeSide === 'L' ? 1 : -1)) : 0
+
+    // Phase 3 转角几何（每层一次）：参数即归一化正弦 → θ = asin(a·sinθmax)；
+    // cX = 远/近缘压缩像素系数（满角 = (1-cosθmax)·COMP_GAIN），cY = 俯仰纵向轮廓增益 [0,1]
+    const cX = (1 - Math.cos(Math.asin(clamp(e.angleX, -1, 1) * TURN_SIN))) * COMP_GAIN
+    const cY = (1 - Math.cos(Math.asin(clamp(e.angleY, -1, 1) * TURN_SIN))) / TURN_COMP
 
     for (let k = 0; k < n; k += 2) {
       let x = b[k]!
       let y = b[k + 1]!
       const vi = k >> 1
+
+      // 远眼收窄（Phase 3）：转向时对侧眼向眼心水平压缩 — 纯几何透视，不动透明度
+      if (farEye > 0 && isEyePart) {
+        const cxE = (EA!.x0 + EA!.x1) / 2
+        x = cxE + (x - cxE) * (1 - FAR_EYE_NARROW * farEye)
+      }
 
       if (EA && bn === 'eye_close') {
         const sE = eyeSide === 'L' ? e.eyeScaleL : e.eyeScaleR
@@ -772,8 +814,9 @@ export class PuppetRuntime {
 
       let hw = isHead ? 1 : L.group === 'body' ? 0.16 : 0
 
+      // 颈双隶属（Phase 3）：上端完整跟头，下端跟衣领（纵向上相反变化的两组权重）
       if (bn === 'neck') {
-        hw = 0.55 * smooth((A.neckBottom - y) / Math.max(1, A.neckBottom - A.neckTop))
+        hw = 0.12 + 0.73 * smooth((A.neckBottom - y) / Math.max(1, A.neckBottom - A.neckTop))
       }
 
       if (hw > 0) {
@@ -784,9 +827,14 @@ export class PuppetRuntime {
         x += (rx2 - rx) * hw
         y += (ry2 - ry) * hw
 
-        // Phase 2: 控制点位移 + 重心混合。当前位移场对固定深度是仿射的，
-        // 重心混合与原逐顶点公式精确一致；Phase 3 在此扩展深度曲线 / 远眼收窄等非线性项。
-        const dd = L.dEff ? L.dEff[vi]! : L.depth
+        // Phase 2 控制点位移 + 重心混合；Phase 3 圆投影深度曲线（仅头/颈走曲线分支，
+        // 身体组保持 Phase 2 线性场）：dd 叠加六点脸面曲线（鼻/口等靠前点移动更多，
+        // 按 μ 只作用于脸面表面）；横向位移乘可见度轮廓 T=sqrt(1-hx²)——脸缘趋零、
+        // 发层因表面半径更大而在同位置保有位移，天然滑过脸缘（侧发贴脸缘）；
+        // 压缩项把远/近缘拉向轴心（远缘盖向脸、近缘转回身后）。中立姿态所有新项为零。
+        const dd0 = L.dEff ? L.dEff[vi]! : L.depth
+        const muV = L.mu ? L.mu[vi]! : 0
+        const dd = dd0 + (CAGE ? muV * curveDepth(CAGE, y) : 0)
         const axF = e.angleX * this.fs
         const ayF = e.angleY * this.fs
         const kk = 14 + 40 * (dd - 1)
@@ -802,8 +850,19 @@ export class PuppetRuntime {
           const py0 = CAGE.py[0]!
           const py1 = CAGE.py[1]!
           const py2 = CAGE.py[2]!
-          dx = axF * (kk + 0.028 * (w0 * (NP.cy - py0) + w1 * (NP.cy - py1) + w2 * (NP.cy - py2)))
-          dy = -ayF * (kl + ks * (w0 * (py0 - FC.y) + w1 * (py1 - FC.y) + w2 * (py2 - FC.y)))
+          const pb = w0 * (NP.cy - py0) + w1 * (NP.cy - py1) + w2 * (NP.cy - py2)
+          const qb = w0 * (py0 - FC.y) + w1 * (py1 - FC.y) + w2 * (py2 - FC.y)
+
+          if (L.invHR && (isHead || bn === 'neck')) {
+            const hx = (x - FC.x) * L.invHR[vi]!
+            const t = Math.sqrt(Math.max(0, 1 - hx * hx))
+            const tp = Math.sqrt(Math.max(0, 1 - ((y - FC.y) / CAGE.rv) ** 2))
+            dx = axF * (kk * TURN_BOOST * t + 0.028 * pb) - cX * (x - FC.x)
+            dy = -ayF * (kl * tp + (ks + PITCH_PROF * cY) * qb)
+          } else {
+            dx = axF * (kk + 0.028 * pb)
+            dy = -ayF * (kl + ks * qb)
+          }
         } else {
           dx = axF * (kk + 0.028 * (NP.cy - y))
           dy = -ayF * (kl + ks * (y - FC.y))
@@ -1027,6 +1086,10 @@ export class PuppetRuntime {
         tgt.eyeOpenR = Math.min(tgt.eyeOpenR, v)
       }
     }
+
+    // 上身同源跟随（Phase 3）：直接读平滑后的头部偏航、小比例同刻转向 —
+    // 不经过第二套慢响应器，头/颈/肩不会因时间差断开
+    tgt.body = clamp(tgt.body + this.cur.angleX * 0.24, -1, 1)
 
     for (const key of Object.keys(this.cur) as (keyof PuppetParams)[]) {
       this.cur[key] += (tgt[key] - this.cur[key]) * Math.min(1, dt * (PARAM_RATE[key] ?? 14))
