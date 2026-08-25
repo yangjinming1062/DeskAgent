@@ -1,8 +1,9 @@
 /** Puppet WebGL 运行时 — 自 Anime2.5DRig（MIT）index.html 核心移植：
  * 每层 ArtMesh（alpha 轮廓三角剖分）+ deform() 顶点形变（头转/呼吸/眨眼差分/发束弹簧/胸物理）
  * + 模板眼裁切 + 头部三角控制笼重心绑定。形变数学与上游保持一致；GL 装配、rAF 生命周期、
- * 动画自动化层（Phase 1）、网格/绑定（Phase 2）与伪 3D 转头（Phase 3：圆投影深度曲线/
- * 远眼收窄/周边可见度/颈双隶属/上身同源跟随，机制取自 PuppetLoom）为本仓代码。
+ * 动画自动化层（Phase 1）、网格/绑定（Phase 2）、伪 3D 转头（Phase 3：圆投影深度曲线/
+ * 远眼收窄/周边可见度/颈双隶属/上身同源跟随）与次级运动（Phase 4：发束多段弹簧链/裙双频/
+ * 耳事件/呆毛/种子化自主段落，机制取自 PuppetLoom）为本仓代码。
  */
 
 import { log } from '@/shared/lib/log'
@@ -146,6 +147,11 @@ const PITCH_PROF = 0.085
 const FAR_EYE_NARROW = 0.16
 const FAR_FADE = 0.55
 
+/** Phase 4 次级运动常量：发束弹簧链节数（PuppetLoom 为 3-5）；裙双频；耳/呆毛事件节奏 */
+const HAIR_CHAIN = 4
+const SKIRT_W1 = 0.9
+const SKIRT_W2 = 2.35
+
 interface GLPart {
   name: string
   bn: string
@@ -168,20 +174,24 @@ interface GLPart {
   sw: Float32Array | null
   su: Float32Array | null
   bw: Float32Array | null
-  spr: { stiff: Spring; soft: Spring; phase: number }[] | null
+  spr: { nodes: { x: number; v: number }[]; phase: number }[] | null
+  ahoge: { y0: number; y1: number } | null
   tex: WebGLTexture
   vboPos: WebGLBuffer
   vboUV: WebGLBuffer
   ibo: WebGLBuffer
 }
 
-interface Spring {
-  x: number
-  v: number
-  dx: number
+type Evaluated = PuppetParams & {
+  breath: number
+  breathHead: number
+  simT: number
+  earLift: number
+  ahogeDy: number
 }
 
-type Evaluated = PuppetParams & { breath: number; breathHead: number }
+/** 种子化自主段落的动作环：左右观察→抬头→低头，每步之间回正 */
+const SEG_CYCLE = ['r', 'n', 'l', 'n', 'u', 'n', 'd', 'n'] as const
 
 function clamp(v: number, a: number, b: number): number {
   return v < a ? a : v > b ? b : v
@@ -224,8 +234,17 @@ export class PuppetRuntime {
   private gazeUntil = 0
   private sac = { x: 0, y: 0 }
   private nextSac = 0
-  private rnd = { ax: 0, ay: 0, az: 0, bd: 0, ex: 0, ey: 0 }
-  private nextRnd = 0
+  private segAt = 0
+  private segDur = 0
+  private segStep = -1
+  private segFrom = { ax: 0, ay: 0 }
+  private segTo = { ax: 0, ay: 0 }
+  private rngState = 0
+  private earNext = 0
+  private earEvT0 = -1
+  private ahogeNext = 0
+  private ahogeEvT0 = -1
+  private readonly ahogeS = { x: 0, v: 0 }
   private talkOn = false
   private talkV = 0
   private talkTgt = 0
@@ -245,6 +264,8 @@ export class PuppetRuntime {
   /** 外部驱动的目标参数与自动化开关；调用方直接改字段即可。 */
   readonly target: PuppetParams = defaultPuppetParams()
   readonly auto: PuppetAuto = { idle: true, blink: true, rand: true, talk: true, phys: true, gaze: true }
+  /** 自主段落/耳/呆毛事件的种子（同种子同时间序列 → 相同动作）；改后调 reseed 生效 */
+  autoSeed = 20260826
 
   onRigApplied: ((rig: Rig) => void) | null = null
 
@@ -337,6 +358,193 @@ export class PuppetRuntime {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
     this.cur = defaultPuppetParams()
+    this.reseed()
+    this.earNext = performance.now() + 6000
+    this.ahogeNext = performance.now() + 4000
+  }
+
+  /** 重播种子：自主段落与事件调度回到该种子的确定序列。 */
+  reseed(): void {
+    this.rngState = this.autoSeed | 0
+    this.segStep = -1
+    this.segAt = 0
+    this.segDur = 0
+    this.segTo = { ax: 0, ay: 0 }
+    this.segFrom = { ax: 0, ay: 0 }
+  }
+
+  /** mulberry32 — 事件调度专用的种子化 PRNG（无每帧无关随机数，序列可复现）。 */
+  private rng(): number {
+    this.rngState = (this.rngState + 0x6d2b79f5) | 0
+    let t = this.rngState
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+
+  /** 推进种子化观察段落一步：按环取目标（回正步在两个动作之间），幅度/时长带种子抖动。 */
+  private advanceSeg(now: number): void {
+    this.segFrom = { ...this.segTo }
+    this.segStep = this.segStep < 0 ? 0 : (this.segStep + 1) % SEG_CYCLE.length
+    const k = SEG_CYCLE[this.segStep]!
+    let dur: number
+
+    if (k === 'n') {
+      this.segTo = { ax: 0, ay: 0 }
+      dur = 0.9 + this.rng() * 0.6
+    } else {
+      const j = () => this.rng()
+
+      if (k === 'r') {
+        this.segTo = { ax: 0.45 + j() * 0.25, ay: (j() * 2 - 1) * 0.08 }
+      } else if (k === 'l') {
+        this.segTo = { ax: -(0.45 + j() * 0.25), ay: (j() * 2 - 1) * 0.08 }
+      } else if (k === 'u') {
+        this.segTo = { ax: (j() * 2 - 1) * 0.12, ay: 0.35 + j() * 0.2 }
+      } else {
+        this.segTo = { ax: (j() * 2 - 1) * 0.12, ay: -(0.3 + j() * 0.2) }
+      }
+
+      dur = 1.2 + this.rng() * 0.4
+    }
+
+    this.segAt = now
+    this.segDur = dur * 1000
+  }
+
+  /** 调试/验证用：指定部件当前顶点相对基准的平均水平位移（px），供次级运动断言。 */
+  layerShift(bn: string): number {
+    let s = 0
+    let n = 0
+
+    for (const L of this.layers) {
+      if (L.bn !== bn) {
+        continue
+      }
+
+      for (let k = 0; k < L.base.length; k += 2) {
+        s += Math.abs(L.cur[k]! - L.base[k]!)
+        n++
+      }
+    }
+
+    return n ? s / n : 0
+  }
+
+  /** 调试/验证用：发束链梢-根位移差的均值（px），直接反映次级弹簧链输出。 */
+  chainSwing(bn: string): number {
+    let s = 0
+    let n = 0
+
+    for (const L of this.layers) {
+      if (L.bn !== bn || !L.spr) {
+        continue
+      }
+
+      for (const sp of L.spr) {
+        const nds = sp.nodes
+        s += Math.abs(nds[nds.length - 1]!.x - nds[0]!.x)
+        n++
+      }
+    }
+
+    return n ? s / n : 0
+  }
+
+  /** see-through 产出 `-l/-r` 后缀层名，绕过 vendor SLOTS 匹配（side/fade/眼锚点缺失，
+   * 虹膜/眉毛/远眼收窄/耳淡出全部失效）——在装配边界补齐眼锚点，side/fade 在 buildGlPart 补。 */
+  private patchSideParts(rig: Rig, A: RigAnchors): void {
+    const find = (bn: string, side: string): RigPart | undefined =>
+      rig.layers.find(l => {
+        const n = l.name.toLowerCase()
+
+        return n === `${bn}_${side}` || n === `${bn}-${side}`
+      })
+
+    const bbox = (p: RigPart): { x0: number; y0: number; x1: number; y1: number } | null => {
+      const { width: w, height: h, data } = p.img
+      let x0 = w
+      let y0 = h
+      let x1 = -1
+      let y1 = -1
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3]! > 8) {
+            if (x < x0) {
+              x0 = x
+            }
+
+            if (x > x1) {
+              x1 = x
+            }
+
+            if (y < y0) {
+              y0 = y
+            }
+
+            if (y > y1) {
+              y1 = y
+            }
+          }
+        }
+      }
+
+      return x1 < 0 ? null : { x0: p.x + x0, y0: p.y + y0, x1: p.x + x1, y1: p.y + y1 }
+    }
+
+    const centroid = (p: RigPart): { x: number; y: number } | null => {
+      const { width: w, height: h, data } = p.img
+      let sx = 0
+      let sy = 0
+      let n = 0
+
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3]! > 8) {
+            sx += x
+            sy += y
+            n++
+          }
+        }
+      }
+
+      return n ? { x: p.x + sx / n, y: p.y + sy / n } : null
+    }
+
+    for (const side of ['l', 'r'] as const) {
+      const key = side === 'l' ? 'eyeL' : 'eyeR'
+
+      if (A[key]) {
+        continue
+      }
+
+      const ew = find('eyewhite', side)
+
+      if (!ew) {
+        continue
+      }
+
+      const b = bbox(ew)
+
+      if (!b) {
+        continue
+      }
+
+      const ic = centroid(find('irides', side) ?? ew)!
+      const ecc = find('eye_close', side)
+      const cc = ecc ? centroid(ecc) : null // 合成闭眼层质心即睑线近似
+      A[key] = {
+        x0: b.x0,
+        x1: b.x1,
+        y0: b.y0,
+        y1: b.y1,
+        icx: ic.x,
+        icy: ic.y,
+        closeY: cc ? cc.y : b.y0 + (b.y1 - b.y0) * 0.62
+      }
+    }
   }
 
   applyRig(rig: Rig): void {
@@ -355,6 +563,7 @@ export class PuppetRuntime {
     const A = rig.anchors
     this.anchors = A
     this.fs = A.faceScale
+    this.patchSideParts(rig, A)
 
     // Phase 2: 头部双表面控制笼（dF=脸层深度，dS=头部层最大深度≈头骨）；
     // Phase 3: 头骨横向半径按头部组层外包矩形实测（毛发/耳一般比脸缘宽）
@@ -434,8 +643,20 @@ export class PuppetRuntime {
       this.meshFallback++
     }
 
-    const bnRaw = Lr.name.replace(/_(l|r)$/, '')
+    // see-through 的 `-l/-r` 后缀绕过 vendor SLOTS：规范 bn/side，并给开眼层补 fade
+    const bnRaw = Lr.name.replace(/[-_](l|r)$/, '')
     const bn = window.Rigger?.baseName(bnRaw) ?? bnRaw
+    const mSide = /[-_](l|r)$/.exec(Lr.name)
+    const side = Lr.side ?? (mSide ? mSide[1]!.toUpperCase() : null)
+    let fade = Lr.fade
+
+    if (!fade) {
+      if (bn === 'eyewhite' || bn === 'irides' || bn === 'eyelash') {
+        fade = 'eyeOpen'
+      } else if (bn === 'eye_close') {
+        fade = 'eyeClose'
+      }
+    }
 
     let sw: Float32Array | null = null
     let su: Float32Array | null = null
@@ -462,8 +683,7 @@ export class PuppetRuntime {
       sw = new Float32Array(nv * nS)
       su = new Float32Array(nv)
       spr = S.map((s, i) => ({
-        stiff: { x: 0, v: 0, dx: 0 },
-        soft: { x: 0, v: 0, dx: 0 },
+        nodes: Array.from({ length: HAIR_CHAIN }, () => ({ x: 0, v: 0 })),
         phase: i * 1.37 + Lr.z
       }))
 
@@ -546,6 +766,49 @@ export class PuppetRuntime {
       }
     }
 
+    // 呆毛检测（Phase 4）：前发顶部窄于主发宽 35% 的连续突出段为呆毛，梢部挂纵向弹动
+    let ahoge: { y0: number; y1: number } | null = null
+
+    if (bn === 'front hair') {
+      const iw = Lr.img.width
+      const ih = Lr.img.height
+      const dta = Lr.img.data
+
+      const rowW = (y: number): number => {
+        let c = 0
+
+        for (let x = 0; x < iw; x++) {
+          if (dta[(y * iw + x) * 4 + 3]! > 12) {
+            c++
+          }
+        }
+
+        return c
+      }
+
+      const ref = rowW(Math.round(ih * 0.3))
+      let top = -1
+      let bot = -1
+
+      for (let y = 1; y < ih * 0.3; y += 2) {
+        const rw = rowW(y)
+
+        if (rw > 2 && rw < ref * 0.35) {
+          if (top < 0) {
+            top = y
+          }
+
+          bot = y
+        } else if (top >= 0) {
+          break
+        }
+      }
+
+      if (top >= 0 && bot - top >= 5) {
+        ahoge = { y0: Lr.y + top, y1: Lr.y + bot }
+      }
+    }
+
     const vboPos = gl.createBuffer()!
     const vboUV = gl.createBuffer()!
     const ibo = gl.createBuffer()!
@@ -566,8 +829,8 @@ export class PuppetRuntime {
     return {
       name: Lr.name,
       bn,
-      side: Lr.side,
-      fade: Lr.fade,
+      side,
+      fade,
       group: Lr.group,
       phys: Lr.phys,
       depth: Lr.depth,
@@ -586,6 +849,7 @@ export class PuppetRuntime {
       su,
       bw,
       spr,
+      ahoge,
       tex,
       vboPos,
       vboUV,
@@ -894,6 +1158,22 @@ export class PuppetRuntime {
         x += e.armY * 6 * this.fs * w * (x < NP.cx ? 1 : -1)
       }
 
+      // 裙双频（Phase 4）：腰线固定，双频时间线持续左右摆（受待机开关门控，保证姿态定格确定性）
+      if (bn === 'bottomwear') {
+        const ww = smooth((y - (L.y + L.h * 0.12)) / Math.max(1, L.h * 0.88))
+        x += (Math.sin(e.simT * SKIRT_W1 + 1.3) * 2.6 + Math.sin(e.simT * SKIRT_W2 + 4.1) * 1.4) * this.fs * ww
+      }
+
+      // 耳事件抬落：根在下（贴头侧）、梢在上，按纵向权重施加深移
+      if ((bn === 'ears' || bn === 'earwear') && e.earLift > 0) {
+        y -= e.earLift * smooth((L.y + L.h - y) / Math.max(1, L.h))
+      }
+
+      // 呆毛纵向弹动：梢（上端）全幅、根（下端）锁定
+      if (L.ahoge && e.ahogeDy !== 0) {
+        y += e.ahogeDy * smooth((L.ahoge.y1 - y) / Math.max(1, L.ahoge.y1 - L.ahoge.y0)) * 1.4
+      }
+
       if (L.bw && L.su) {
         const m = L.su[vi]! ** 1.4 * 22 * this.fs
         x += (e.bangL * L.bw[vi * 3]! + e.bangC * L.bw[vi * 3 + 1]! + e.bangR * L.bw[vi * 3 + 2]!) * m
@@ -902,7 +1182,6 @@ export class PuppetRuntime {
       if (nS && this.auto.phys && L.spr && L.sw && L.su) {
         const u = isFH ? Math.min(1, L.su[vi]! * 1.6) : L.su[vi]!
         const amp = u ** (isFH ? 1.8 : 2.1) * (isFH ? e.fhAmp : e.physAmp)
-        const softMix = u ** 1.2 * (isFH ? e.fhSoft : e.soft)
         let dx = 0
 
         for (let s = 0; s < nS; s++) {
@@ -912,8 +1191,12 @@ export class PuppetRuntime {
             continue
           }
 
-          const sp = L.spr[s]!
-          dx += w * (sp.stiff.dx * (1 - softMix) + sp.soft.dx * softMix)
+          // 发束链按进度取样，相对根节点的偏差即次级运动（根刚随头皮、自由端带惯性）
+          const nds = L.spr[s]!.nodes
+          const cu = u * (nds.length - 1)
+          const i0 = Math.min(nds.length - 2, Math.floor(cu))
+          const fr = cu - i0
+          dx += w * ((nds[i0]!.x - nds[0]!.x) * (1 - fr) + (nds[i0 + 1]!.x - nds[0]!.x) * fr) * 2.2
         }
 
         x += dx * amp
@@ -994,22 +1277,19 @@ export class PuppetRuntime {
       tgt.angleZ = clamp(tgt.angleZ + gz.x * 0.06, -1, 1)
       tgt.body = clamp(tgt.body + gz.x * 0.1, -1, 1)
     } else if (this.auto.rand) {
-      if (now > this.nextRnd) {
-        this.nextRnd = now + 1400 + Math.random() * 2600
-        this.rnd.ax = (Math.random() * 2 - 1) * 0.55
-        this.rnd.ay = (Math.random() * 2 - 1) * 0.4
-        this.rnd.az = (Math.random() * 2 - 1) * 0.35
-        this.rnd.bd = (Math.random() * 2 - 1) * 0.3
-        this.rnd.ex = (Math.random() * 2 - 1) * 0.6
-        this.rnd.ey = (Math.random() * 2 - 1) * 0.35
+      // 种子化自主观察段落（Phase 4）：~15s 环内依次左右观察、抬头、低头，动作间回正；
+      // 同种子同时间序列 → 相同动作（无每帧随机），眼先于头指向目标
+      if (this.segStep < 0 || now >= this.segAt + this.segDur) {
+        this.advanceSeg(now)
       }
 
-      tgt.angleX = clamp(tgt.angleX + this.rnd.ax, -1, 1)
-      tgt.angleY = clamp(tgt.angleY + this.rnd.ay, -1, 1)
-      tgt.angleZ = clamp(tgt.angleZ + this.rnd.az, -1, 1)
-      tgt.body = clamp(tgt.body + this.rnd.bd, -1, 1)
-      tgt.eyeX = clamp(tgt.eyeX + this.rnd.ex, -1, 1)
-      tgt.eyeY = clamp(tgt.eyeY + this.rnd.ey, -1, 1)
+      const p = smooth(clamp((now - this.segAt) / this.segDur, 0, 1))
+      const ax = this.segFrom.ax + (this.segTo.ax - this.segFrom.ax) * p
+      const ay = this.segFrom.ay + (this.segTo.ay - this.segFrom.ay) * p
+      tgt.angleX = clamp(tgt.angleX + ax, -1, 1)
+      tgt.angleY = clamp(tgt.angleY + ay, -1, 1)
+      tgt.eyeX = clamp(tgt.eyeX + ax * 0.8, -1, 1)
+      tgt.eyeY = clamp(tgt.eyeY - ay * 0.4, -1, 1)
     }
 
     // 微扫视：注视/漫游之上叠加小幅快速眼动，指数衰减，避免目光发死
@@ -1095,7 +1375,7 @@ export class PuppetRuntime {
       this.cur[key] += (tgt[key] - this.cur[key]) * Math.min(1, dt * (PARAM_RATE[key] ?? 14))
     }
 
-    const e: Evaluated = { ...this.cur, breath: 0, breathHead: 0 }
+    const e: Evaluated = { ...this.cur, breath: 0, breathHead: 0, simT: t, earLift: 0, ahogeDy: 0 }
 
     // 非对称呼吸（3.4s 周期，吸气快呼气慢）+ 每 18~38s 一次深呼吸；头部相位略滞后
     this.breathP += dt / 3.4
@@ -1109,30 +1389,81 @@ export class PuppetRuntime {
     const bp = this.breathP % 1
     e.breath = clamp(breathCurve(bp) * bAmp, 0, 1.5)
     e.breathHead = breathCurve((bp + 0.94) % 1) * bAmp
+
+    // 耳事件（Phase 4，种子化调度）：偶发连续快速抬落约 4 次，随后严格回中立；
+    // 与自主段落同门控（auto.rand），姿态定格/验证时保持确定性
+    if (this.auto.rand) {
+      if (this.earEvT0 < 0 && now > this.earNext) {
+        this.earEvT0 = now
+        this.earNext = now + 14000 + this.rng() * 16000
+      }
+    } else {
+      this.earEvT0 = -1
+    }
+
+    if (this.earEvT0 >= 0) {
+      const d = (now - this.earEvT0) / 1000
+
+      if (d > 1.3) {
+        this.earEvT0 = -1
+      } else {
+        e.earLift = Math.abs(Math.sin(d * 9)) * (1 - d / 1.3) * 4.5 * this.fs
+      }
+    }
+
+    // 呆毛（Phase 4）：平时随发横摆（发束链自动），明显纵向弹动由种子化偶发事件激发；
+    // 与耳事件同受 auto.rand 门控，保证姿态定格确定性
+    if (this.auto.rand) {
+      if (this.ahogeEvT0 < 0 && now > this.ahogeNext) {
+        this.ahogeEvT0 = now
+        this.ahogeNext = now + 9000 + this.rng() * 12000
+        this.ahogeS.v += (this.rng() < 0.5 ? -1 : 1) * 60
+      }
+
+      if (this.ahogeEvT0 >= 0 && (now - this.ahogeEvT0) / 1000 > 1.6) {
+        this.ahogeEvT0 = -1
+      }
+    }
+
+    {
+      const at = -this.cur.angleY * 10 * this.fs
+      const kk = 120
+      const cc = 3.5
+      const aa = -kk * (this.ahogeS.x - at) - cc * this.ahogeS.v
+      this.ahogeS.v += aa * dt
+      this.ahogeS.x += this.ahogeS.v * dt
+      e.ahogeDy = this.ahogeS.x
+    }
+
     this.lastE = e
 
+    // 发束链驱动（Phase 4）：头/身位移 60/40 混合 + 风动；根节点硬跟随、
+    // 下游节点逐节追踪父节点（自由端逐步获得惯性），刚度/阻尼沿链递减
     const headDX = (e.angleX * 14 + e.angleZ * 0.07 * (A.neckPivot.cy - A.face.cy)) * this.fs
+    const bodyDX = e.body * 8 * this.fs
 
     for (const L of this.layers) {
       if (!L.spr) {
         continue
       }
 
+      const isFH = L.bn === 'front hair'
+      const softK = 1 + 0.5 * ((isFH ? e.fhSoft : e.soft) / 3)
+
       for (const sp of L.spr) {
         const wind = this.auto.idle ? 1.8 * Math.sin(t * 0.8 + sp.phase) + 1.0 * Math.sin(t * 1.9 + sp.phase * 2.3) : 0
-        const txv = headDX + wind * this.fs
-        let kk = 70
-        let cc = 9
-        let axv = -kk * (sp.stiff.x - txv) - cc * sp.stiff.v
-        sp.stiff.v += axv * dt
-        sp.stiff.x += sp.stiff.v * dt
-        sp.stiff.dx = -(sp.stiff.x - txv) * 2.2
-        kk = 16
-        cc = 1.3
-        axv = -kk * (sp.soft.x - txv) - cc * sp.soft.v
-        sp.soft.v += axv * dt
-        sp.soft.x += sp.soft.v * dt
-        sp.soft.dx = -(sp.soft.x - txv) * 3.0
+        const txv = headDX + bodyDX * 0.66 + wind * this.fs
+        let prev = txv
+
+        for (let i = 0; i < sp.nodes.length; i++) {
+          const nd = sp.nodes[i]!
+          const kk = 80 - i * 14
+          const cc = (8 - i * 1.6) * softK
+          const axv = -kk * (nd.x - prev) - cc * nd.v
+          nd.v += axv * dt
+          nd.x += nd.v * dt
+          prev = nd.x
+        }
       }
     }
 

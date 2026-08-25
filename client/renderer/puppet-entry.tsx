@@ -127,6 +127,8 @@ function PuppetDevApp() {
         let breathMax = 0
         let angMin = 1
         let angMax = -1
+        let skirtA = 0
+        let skirtB = 0
 
         // advanceSim 确定性步进（固定 1/60），不依赖 rAF/虚拟时钟——无头下两者推进不同步
         for (let i = 0; i < 27; i++) {
@@ -134,6 +136,15 @@ function PuppetDevApp() {
 
           if (i === 10) {
             rt.forceBlink()
+          }
+
+          // 裙双频：不同相位两次采样 bottomwear 位移应有变化
+          if (i === 3) {
+            skirtA = rt.layerShift('bottomwear')
+          }
+
+          if (i === 22) {
+            skirtB = rt.layerShift('bottomwear')
           }
 
           const s = rt.snapshot()
@@ -146,8 +157,15 @@ function PuppetDevApp() {
           angMax = Math.max(angMax, s.angleX)
         }
 
+        // 头部运动中段采样：关风噪后量发束链梢-根偏差，直接断言次级弹簧链输出
+        rt.auto.idle = false
+        rt.auto.rand = false
         rt.setGaze(1, 0.35)
-        rt.advanceSim(1.2)
+        rt.advanceSim(0.25)
+        const chainS = rt.chainSwing('front hair')
+        rt.auto.idle = true
+        rt.auto.rand = true
+        rt.advanceSim(0.95)
         const g = rt.snapshot()
         rt.setGaze(null)
 
@@ -164,11 +182,13 @@ function PuppetDevApp() {
           `breath=${breathMax - breathMin > 0.4 ? 1 : 0}`,
           `idle=${angMax - angMin > 0.08 ? 1 : 0}`,
           `gaze=${g.eyeX > 0.55 && g.angleX > 0.15 ? 1 : 0}`,
-          `mesh=${ms.artmesh >= Math.max(1, ms.layers - 4) && ms.tris > 0 ? 1 : 0}`
+          `mesh=${ms.artmesh >= Math.max(1, ms.layers - 4) && ms.tris > 0 ? 1 : 0}`,
+          `chain=${chainS > 0.12 ? 1 : 0}`,
+          `skirt=${Math.abs(skirtB - skirtA) > 0.05 || (skirtA === 0 && skirtB === 0) ? 1 : 0}`
         ].join(' ')
 
         setStatus(
-          `AUTOTEST_OK parts=${r.layers.length} warnings=${r.warnings.length} ${flags} meshstat=${ms.artmesh}/${ms.layers}am ${ms.verts}v${ms.tris}t talkmax=${mouthMax.toFixed(2)}`
+          `AUTOTEST_OK parts=${r.layers.length} warnings=${r.warnings.length} ${flags} meshstat=${ms.artmesh}/${ms.layers}am ${ms.verts}v${ms.tris}t talkmax=${mouthMax.toFixed(2)} bns=${[...new Set(r.layers.map(l => l.name))].join(',')}`
         )
       } catch (err) {
         setStatus(`AUTOTEST_FAIL ${err instanceof Error ? err.message : String(err)}`)
