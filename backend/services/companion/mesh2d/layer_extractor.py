@@ -1,7 +1,7 @@
 """CPU 抠图部件提取 — 两段式：先抠全图得到透明人物，再按 bbox 裁切部件。"""
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 from components import get_logger, remove_background
@@ -16,6 +16,8 @@ logger = get_logger(__name__)
 _MIN_ISLAND_PX = 64
 _ISLAND_RATIO = 0.01
 _TIGHTEN_PAD_PX = 4
+# 归属让位时下层在上层边缘下保留的 underlap 宽度，静止叠放不露缝。
+_UNDERLAP_PX = 2
 
 
 @dataclass(frozen=True)
@@ -174,6 +176,8 @@ def extract_layers(
             ),
         )
 
+    extracted = _assign_ownership(extracted, w, h)
+
     logger.info(
         "extracted layers",
         extra={
@@ -183,6 +187,39 @@ def extract_layers(
         },
     )
     return extracted
+
+
+def _assign_ownership(
+    extracted: list[ExtractedLayer],
+    w: int,
+    h: int,
+) -> list[ExtractedLayer]:
+    """按 z 序做像素归属：重叠区的不透明像素归最高 z 层，下层让位（留 2px underlap）。
+
+    bbox 裁切的各层在躯干/头部互相覆盖，双绘像素在上层移动时会撕扯下层。"""
+    claimed = np.zeros((h, w), bool)
+    out: list[ExtractedLayer] = []
+
+    for layer in sorted(extracted, key=lambda x: (-x.z_order, x.name)):
+        arr = np.asarray(Image.open(io.BytesIO(layer.png_bytes)).convert("RGBA")).copy()
+        x1, y1, x2, y2 = layer.pixel_bbox
+        claim_view = claimed[y1:y2, x1:x2]
+
+        if claim_view.any():
+            keep = ~ndimage.binary_erosion(claim_view, iterations=_UNDERLAP_PX)
+            arr[:, :, 3] = arr[:, :, 3] * keep
+
+        if _alpha_dominant_ratio(arr[:, :, 3]) < 0.05:
+            logger.info(
+                "drop layer: fully claimed by higher z layers",
+                extra={"layer_name": layer.name},
+            )
+            continue
+
+        claimed[y1:y2, x1:x2] |= arr[:, :, 3] > 32
+        out.append(replace(layer, png_bytes=_rgba_to_bytes(arr)))
+
+    return out
 
 
 def layer_centers(extracted: list[ExtractedLayer]) -> dict[str, tuple[float, float]]:

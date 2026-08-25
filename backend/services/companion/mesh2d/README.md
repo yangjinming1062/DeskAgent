@@ -9,7 +9,7 @@ AI 自动切分流水线把立绘切成 6 个核心物理层（back_hair / body_
 | `pipeline.py` | 主流水线：调视觉 LLM 区域识别 → CPU 抠图 → 关键点 → 骨骼装配 → manifest 落盘 + WS 事件 |
 | `region_detector.py` | 视觉 LLM 输出 6 部件 bbox；解析 + 校验（最少 5 层）|
 | `pose_estimator.py` | 视觉 LLM 输出 20 关键点；含 `sanitize_keypoints()` 解剖学约束（对称性 + 中线 + 比例 + 缺关键点回退）|
-| `layer_extractor.py` | 全图 rembg ONNX 抠图（异常降级白底形态学）→ bbox 裁切 → alpha 碎块过滤 / 孔洞填充 / 边缘羽化 → 收紧到内容框 |
+| `layer_extractor.py` | 全图 rembg ONNX 抠图（异常降级白底形态学）→ bbox 裁切 → alpha 碎块过滤 / 孔洞填充 / 边缘羽化 → 收紧到内容框 → 按 z 序做像素归属（重叠区归最高 z 层，下层留 2px underlap） |
 | `occlusion_resolver.py` | CPU 像素操作补全被遮挡区域（无 GPU Inpainting）|
 | `skeleton_builder.py` | 关键点 + 部件 → 骨骼拓扑（pivot + skin weights）|
 | `manifest_exporter.py` | manifest.json 序列化（schema `spiritagent.2d/1`）|
