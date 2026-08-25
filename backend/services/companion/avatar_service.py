@@ -719,17 +719,20 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
     return load_avatar_bytes_as_data_uri(asset.asset_url)
 
 
-async def generate_fullbody_style_samples(
+async def generate_fullbody_sample(
     db: AsyncSession | None = None,
     user_id: int | None = None,
     *,
     avatar_id: int,
+    style: str,
     reference_image: str | None = None,
     reference_content_type: str | None = None,
 ) -> dict[str, str]:
-    """并发为 STYLE_CATALOG 中每种风格各生成一张正面样图。"""
+    """按选定画风生成一张正面全身样图。客户端在用户点确认画风后才发起，节省未选中风格的供应商调用。"""
     if user_id is None:
         raise ValueError("user_id is required")
+    if style not in _STYLE_IDS:
+        raise UnknownFullbodyStyleError(f"unknown fullbody style: {style}")
 
     async def _fetch_context(session: AsyncSession):
         asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
@@ -756,93 +759,27 @@ async def generate_fullbody_style_samples(
     species = (definition.get("biological_type") or "").strip()
     appearance = str(definition.get("appearance") or "").strip()
     personality = str(definition.get("personality") or "").strip()
-    template = resolve_fullbody_template(species, "biped", "cel_shading")
+    template = resolve_fullbody_template(species, "biped", style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
+    prompt = build_fullbody_prompt("front", template=template, style_id=style, feedback=None, appearance=appearance, personality=personality)
 
-    tasks = []
-    for style_info in STYLE_CATALOG:
-        prompt = build_fullbody_prompt("front", template=template, style_id=style_info.id, feedback=None, appearance=appearance, personality=personality)
-        tasks.append(
-            _generate_one_portrait_with_moderation_retry(
-                prompt,
-                user_id,
-                reference_image=ref_uri,
-                size=_FULLBODY_SIZE,
-                persist=False,
-                preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
-            ),
+    try:
+        front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
+            prompt,
+            user_id,
+            reference_image=ref_uri,
+            size=_FULLBODY_SIZE,
+            persist=False,
+            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
+    except AvatarGenerationError:
+        raise
+    except Exception as err:
+        logger.warning("fullbody single-sample generation failed", extra={"style": style, "error": str(err)})
+        raise FullbodyGenerationError("该画风样图生成失败，请稍后重试", internal=str(err)) from err
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
-    samples: dict[str, str] = {}
-    stored: dict[str, str] = {}
-    errors: list[BaseException] = []
-    for style_info, result in zip(STYLE_CATALOG, results):
-        if isinstance(result, BaseException):
-            errors.append(result)
-            logger.warning("fullbody style sample generation failed", extra={"style": style_info.id, "error": getattr(result, "internal", str(result))})
-        else:
-            samples[style_info.id] = _re_sign_bare_path(result[0]) or result[0]
-            stored[style_info.id] = result[0]
-
-    if not samples:
-        first_err = errors[0] if errors else RuntimeError("all styles failed")
-        err_msg = getattr(first_err, "internal", str(first_err))
-        raise FullbodyGenerationError("所有风格样图生成失败，请稍后重试", internal=err_msg)
-
-    # 样图路径写回头像行，客户端重启可直接复原风格选择器而不必重新付费生成
-    async def _persist_samples(session: AsyncSession) -> None:
-        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if target is None:
-            return
-        payload = safe_json_loads(target.prompt_json, default={})
-        if not isinstance(payload, dict):
-            payload = {}
-        payload["fullbody_samples"] = stored
-        target.prompt_json = json.dumps(payload, ensure_ascii=False)
-        await session.commit()
-
-    if db is None:
-        async with SESSION_LOCAL() as write_db:
-            await _persist_samples(write_db)
-    else:
-        await _persist_samples(db)
-
-    return samples
-
-
-async def select_fullbody_style(db: AsyncSession | None = None, user_id: int | None = None, *, avatar_id: int, style: str) -> AvatarAsset:
-    """持久化选中的全身风格，并把该风格样图作为正面种子候选，使重启后可从正面预览续接。"""
-    if user_id is None:
-        raise ValueError("user_id is required")
-    if style not in _STYLE_IDS:
-        raise UnknownFullbodyStyleError(f"unknown fullbody style: {style}")
-
-    async def _write(session: AsyncSession) -> AvatarAsset:
-        target = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if target is None:
-            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        payload = safe_json_loads(target.prompt_json, default={})
-        if not isinstance(payload, dict):
-            payload = {}
-        if target.seed_back_url and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
-            payload["fullbody_aux_style"] = payload["fullbody_style"]
-        payload["fullbody_style"] = style
-        stored = payload.get("fullbody_samples")
-        sample = stored.get(style) if isinstance(stored, dict) else None
-        if isinstance(sample, str) and sample.startswith(("companion-avatars/", "temp-media/")):
-            target.seed_front_url = sample
-        target.prompt_json = json.dumps(payload, ensure_ascii=False)
-        await session.commit()
-        await session.refresh(target)
-        session.expunge(target)
-        _re_sign_avatar_url(target)
-        return target
-
-    if db is None:
-        async with SESSION_LOCAL() as write_db:
-            return await _write(write_db)
-    return await _write(db)
+    signed = _re_sign_bare_path(front_url) or front_url
+    return {"style": style, "sample": signed}
 
 
 async def generate_fullbody_front(

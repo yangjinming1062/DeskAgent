@@ -5,7 +5,7 @@ export type BackPhase =
   | 'q-character'
   | 'q-user'
   | 'voice'
-  | 'fullbody-3d'
+  | 'fullbody'
   | 'portrait-avatar'
   | 'hatching'
   | 'finishing'

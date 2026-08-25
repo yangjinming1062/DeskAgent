@@ -10,13 +10,9 @@ from .pipeline import signed_model_url
 
 
 def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
-    """把头像行转换为接口响应，并对全身样图路径重新签名。"""
+    """把头像行转换为接口响应。"""
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     payload = prompt_payload if isinstance(prompt_payload, dict) else {}
-    raw_samples = payload.get("fullbody_samples")
-    fullbody_samples = {
-        style_id: signed for style_id, bare in (raw_samples.items() if isinstance(raw_samples, dict) else []) if isinstance(bare, str) and (signed := _re_sign_bare_path(bare))
-    }
     return AvatarAssetResponse(
         id=asset.id,
         asset_url=asset.asset_url,
@@ -24,7 +20,6 @@ def avatar_response(asset: AvatarAsset) -> AvatarAssetResponse:
         seed_back_url=getattr(asset, "seed_back_url", None) or "",
         supports_multiview=image_to_3d.provider_supports_multiview(),
         fullbody_style=str(payload.get("fullbody_style") or ""),
-        fullbody_samples=fullbody_samples,
         prompt=payload.get("prompt", ""),
         status="succeeded",
     )

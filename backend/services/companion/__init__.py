@@ -31,7 +31,7 @@ from .avatar_service import (
     generate_avatar,
     generate_fullbody_back,
     generate_fullbody_front,
-    generate_fullbody_style_samples,
+    generate_fullbody_sample,
     get_active_avatar,
     get_avatar_job_lock,
     list_avatar_history,
@@ -41,7 +41,6 @@ from .avatar_service import (
     regenerate_avatar_from_image,
     resolve_uploaded_avatar_path,
     select_avatar,
-    select_fullbody_style,
 )
 from .expression_avatar_service import (
     ExpressionAvatarGenerationError,
@@ -182,7 +181,7 @@ __all__ = [
     "generate_companion_model",
     "generate_fullbody_back",
     "generate_fullbody_front",
-    "generate_fullbody_style_samples",
+    "generate_fullbody_sample",
     "generate_mesh2d_model",
     "get_active_avatar",
     "get_active_mesh2d_response",
@@ -227,7 +226,6 @@ __all__ = [
     "run_prompt_json",
     "schedule_personality_tag_refresh",
     "select_avatar",
-    "select_fullbody_style",
     "select_rig_type",
     "serve_ranged_file",
     "set_render_mode",
