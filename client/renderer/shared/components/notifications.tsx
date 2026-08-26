@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, type Ref, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
@@ -28,7 +28,9 @@ const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string; v
 const STACK_SURFACE =
   'pointer-events-auto border border-(--stroke-spiritagent) bg-popover/95 shadow-spiritagent backdrop-blur-md'
 
-export function NotificationStack(): React.JSX.Element | null {
+// regionRef 把 portal 容器的 DOM 引用交给调用方——精灵透明窗口需要借此把
+// toast 矩形注册进交互区域登记处（shared 不得反向依赖 companion，所以经 props 透传）。
+export function NotificationStack({ regionRef }: { regionRef?: Ref<HTMLDivElement> }): React.JSX.Element | null {
   const notifications = useStore($notifications)
   const t = strings
   const lastNotificationIdRef = useRef<string | null>(null)
@@ -75,6 +77,7 @@ export function NotificationStack(): React.JSX.Element | null {
     <div
       aria-label={copy.region}
       className="pointer-events-none fixed left-1/2 top-[calc(var(--titlebar-height,34px)+0.75rem)] z-[200] flex w-[min(32rem,calc(100%-2rem))] -translate-x-1/2 flex-col gap-2"
+      ref={regionRef}
       role="region"
     >
       <NotificationItem notification={latest} />

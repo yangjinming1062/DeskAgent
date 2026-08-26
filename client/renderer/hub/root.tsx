@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import * as React from 'react'
 import { lazy, Suspense, useEffect } from 'react'
 
+import { NotificationStack } from '@/shared'
 import { Loader2 } from '@/shared/lib/icons'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { hydrateRunnerStatus } from '@/shared/store/runner-status'
@@ -55,8 +56,11 @@ export function ToolRoot(): React.JSX.Element {
 
   // window.close() 走拦截器隐藏窗口而非销毁——设置面板是按需打开的
   return (
-    <Suspense fallback={null}>
-      <SettingsView onClose={() => window.close()} />
-    </Suspense>
+    <>
+      <Suspense fallback={null}>
+        <SettingsView onClose={() => window.close()} />
+      </Suspense>
+      <NotificationStack />
+    </>
   )
 }

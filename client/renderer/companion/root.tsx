@@ -13,13 +13,14 @@ import {
   reportUserActivity,
   setCompanionLifecycle
 } from '@/companion/companion-store'
-import { useWindowMouseCapture } from '@/companion/interactive-regions'
+import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { $preferredCallMode } from '@/companion/prefs'
 import { $puppetInfo, hydratePuppet } from '@/companion/puppet/puppet-store'
 import { initSpatial } from '@/companion/spatial'
+import { NotificationStack } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
@@ -69,6 +70,9 @@ function GatewayBooter(): null {
 
 export function CompanionRoot(): React.JSX.Element {
   useWindowMouseCapture()
+  // toast 的关闭/展开按钮需要真实可点——透明窗口把它的矩形注册进交互区域。
+  const notificationStackRef = useRef<HTMLDivElement>(null)
+  useInteractiveRegion('notification-stack', notificationStackRef)
   const auth = useStore($auth)
   const gatewayState = useStore($gatewayState)
   const lifecycle = useStore($companionLifecycle)
@@ -423,6 +427,7 @@ export function CompanionRoot(): React.JSX.Element {
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {authed && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
       {authed && <ProactiveBubble />}
+      <NotificationStack regionRef={notificationStackRef} />
       <BootFailureOverlay />
       <DeveloperOverlay />
       {authed && <GatewayBooter />}
