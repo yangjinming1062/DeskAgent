@@ -468,6 +468,21 @@ export class PuppetRuntime {
     return this.tier
   }
 
+  /** 外部交互冲量（戳/摸头发等）：给全部发束链节点注入水平初速度，衰减摆动数拍。 */
+  hairImpulse(mag: number): void {
+    for (const L of this.layers) {
+      if (!L.spr) {
+        continue
+      }
+
+      for (const sp of L.spr) {
+        for (let i = 0; i < sp.nodes.length; i++) {
+          sp.nodes[i]!.v += mag * (0.7 + 0.3 * i)
+        }
+      }
+    }
+  }
+
   /** 姿态安全评估（Phase 5）：先按当前参数重算 deform，再检查全部三角形——
    * 有向面积符号翻转（网格翻转）与最大边拉伸比（相对基准网格）；byLayer 供归因、
    * flipMinA 为翻转三角形的最小基准面积（区分真实折叠与边界退化细条）。 */

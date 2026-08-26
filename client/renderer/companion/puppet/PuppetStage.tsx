@@ -1,0 +1,639 @@
+/** PuppetStage — puppet 的生产挂载与驱动层（Phase 6）。
+ *
+ * 数据源 $puppetInfo（kind=psd manifest 分流）。装配后五路驱动，全部走 PuppetRuntime
+ * 的 target/auto 注入面（mesh2d 驱动层同构契约）：
+ * - hitmap：rig 锚点/层矩形 → $mesh2dHitmap —— SpriteStage 的 tap/hover/手势
+ *   管线与 interaction.ts 区域语义原样复用；
+ * - 视线：窗口 pointermove → setGaze（$gazeTarget 显式目标优先，周期重注入续 TTL）；
+ * - 说话：TTS 振幅接管 mouthOpen，静默后交还合成说话；
+ * - 情绪：$spriteEmotion → 眉/嘴型/眼参数映射（mesh2d 无面部通道，puppet 独有）；
+ * - 动作/交互：$spriteAction 通用语义子集 → 定时包络；hover 发区 → hairImpulse。
+ * 装配失败调 setPuppetError 熄灭 $puppetReady，root 渲染级联落 mesh2d / 3D / 蛋。
+ */
+
+import { useStore } from '@nanostores/react'
+import { useEffect, useRef } from 'react'
+
+import { registerAmplitudeSink } from '@/companion/audio-track'
+import { $gazeTarget, $spriteAction, $spriteActionQueue, $spriteEmotion } from '@/companion/companion-store'
+import { probeInteractiveRegions } from '@/companion/interactive-regions'
+import { setMesh2DHitmap } from '@/companion/mesh2d/mesh2d-store'
+import { $contextMenuOpen } from '@/companion/sprite/context-menu-store'
+import { log } from '@/shared/lib/log'
+
+import type { PuppetRuntime } from './puppet-runtime'
+import { $puppetInfo, setPuppetError } from './puppet-store'
+import type { Rig } from './puppet-types'
+import { PuppetCanvas, type PuppetCanvasHandle } from './PuppetCanvas'
+
+const REDUCED_MOTION_QUERY =
+  typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
+
+// ---------------------------------------------------------------------------
+// hitmap：rig 层矩形 → mesh2d 同名交互区域（优先级与 mesh2d-hitmap 对齐）
+// ---------------------------------------------------------------------------
+
+interface HitBox {
+  region: string
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+  priority: number
+}
+
+const REGION_PRIORITY: Record<string, number> = {
+  head: 100,
+  face: 95,
+  front_hair: 80,
+  back_hair: 75,
+  body: 40,
+  skirt: 30
+}
+
+function buildPuppetHitmap(rig: Rig): (nx: number, ny: number) => { region: string } | null {
+  const W = rig.canvas.w
+  const H = rig.canvas.h
+  const boxes: HitBox[] = []
+
+  const push = (region: string, x0: number, y0: number, x1: number, y1: number, pad = 0): void => {
+    boxes.push({
+      region,
+      minX: Math.max(0, (x0 - pad) / W),
+      minY: Math.max(0, (y0 - pad) / H),
+      maxX: Math.min(1, (x1 + pad) / W),
+      maxY: Math.min(1, (y1 + pad) / H),
+      priority: REGION_PRIORITY[region] ?? 0
+    })
+  }
+
+  const layerRect = (want: string): { x: number; y: number; w: number; h: number } | null => {
+    const l = rig.layers.find(p => p.name.toLowerCase().replace(/[-_](l|r)$/, '') === want)
+
+    return l ? { x: l.x, y: l.y, w: l.w, h: l.h } : null
+  }
+
+  const { face } = rig.anchors
+  // head 覆盖发际/额头（脸上缘上移），face 独占下三分之二——poke 下巴/脸颊判 face、
+  // 戳额头/发根判 head（区域语义与 mesh2d-hitmap 对齐）
+  const faceW = face.x1 - face.x0
+  const faceH = face.y1 - face.y0
+  push('head', face.x0 - faceW * 0.2, face.y0 - faceH * 0.55, face.x1 + faceW * 0.2, face.y0 + faceH * 0.45)
+  push('face', face.x0, face.y0 + faceH * 0.4, face.x1, face.y1)
+
+  const fh = layerRect('front hair')
+
+  if (fh) {
+    push('front_hair', fh.x, fh.y, fh.x + fh.w, fh.y + fh.h)
+  }
+
+  const bh = layerRect('back hair')
+
+  if (bh) {
+    push('back_hair', bh.x, bh.y, bh.x + bh.w, bh.y + bh.h)
+  }
+
+  const top = layerRect('topwear')
+
+  if (top) {
+    push('body', top.x, top.y, top.x + top.w, top.y + top.h)
+  }
+
+  const bottom = layerRect('bottomwear')
+
+  if (bottom) {
+    push('skirt', bottom.x, bottom.y, bottom.x + bottom.w, bottom.y + bottom.h)
+  }
+
+  boxes.sort((a, b) => b.priority - a.priority)
+
+  return (nx, ny) => {
+    for (const b of boxes) {
+      if (nx >= b.minX && nx <= b.maxX && ny >= b.minY && ny <= b.maxY) {
+        return { region: b.region }
+      }
+    }
+
+    return null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 情绪 → 面部参数（只写 target 通道；眨眼自动化用 min 合成不会顶掉 squint）
+// ---------------------------------------------------------------------------
+
+type FaceParams = Partial<
+  Pick<
+    PuppetRuntime['target'],
+    | 'mouthForm'
+    | 'mouthOpen'
+    | 'brow'
+    | 'browAngSym'
+    | 'eyeCY'
+    | 'eyeScaleL'
+    | 'eyeScaleR'
+    | 'irisScale'
+    | 'eyeOpenL'
+    | 'eyeOpenR'
+  >
+>
+
+const EMOTION_DEFAULTS: Required<FaceParams> = {
+  mouthForm: 0,
+  mouthOpen: 0,
+  brow: 0,
+  browAngSym: 0,
+  eyeCY: 0,
+  eyeScaleL: 1,
+  eyeScaleR: 1,
+  irisScale: 1,
+  eyeOpenL: 1,
+  eyeOpenR: 1
+}
+
+// 情绪词表与后端 BUILTIN_EMOTIONS（backend/services/chat/affect.py）对齐 + 少量别名
+const EMOTION_PARAMS: Record<string, FaceParams> = {
+  happy: { mouthForm: 0.8, brow: 0.25, eyeCY: 0.12 },
+  joy: { mouthForm: 0.8, brow: 0.25, eyeCY: 0.12 },
+  cheerful: { mouthForm: 0.7, brow: 0.2 },
+  sad: { mouthForm: -0.6, brow: -0.35, browAngSym: 0.28 },
+  surprised: { eyeScaleL: 1.12, eyeScaleR: 1.12, irisScale: 1.1, brow: 0.5, mouthOpen: 0.22 },
+  excited: { mouthForm: 0.9, brow: 0.35, eyeCY: 0.15, eyeScaleL: 1.06, eyeScaleR: 1.06 },
+  confused: { browAngSym: 0.35, eyeCY: 0.08, mouthForm: -0.2 },
+  concerned: { brow: -0.25, browAngSym: 0.3, mouthForm: -0.35 },
+  shy: { eyeOpenL: 0.72, eyeOpenR: 0.72, mouthForm: 0.35, eyeCY: 0.1 },
+  proud: { browAngSym: -0.25, eyeCY: 0.06, mouthForm: 0.2 },
+  grateful: { mouthForm: 0.6, brow: 0.2, eyeOpenL: 0.85, eyeOpenR: 0.85 },
+  playful: { mouthForm: 0.7, browAngSym: -0.3, eyeCY: 0.1 },
+  bored: { eyeOpenL: 0.55, eyeOpenR: 0.55, brow: -0.15, mouthForm: -0.15 },
+  lonely: { mouthForm: -0.4, brow: -0.2, eyeCY: -0.08 },
+  sleepy: { eyeOpenL: 0.45, eyeOpenR: 0.45, brow: -0.1, mouthOpen: 0.14 },
+  curious: { brow: 0.3, irisScale: 1.05, browAngSym: 0.15 },
+  embarrassed: { eyeOpenL: 0.7, eyeOpenR: 0.7, browAngSym: 0.4, mouthForm: 0.15 },
+  apologetic: { brow: -0.3, browAngSym: 0.3, mouthForm: -0.3, eyeOpenL: 0.85, eyeOpenR: 0.85 },
+  pout: { mouthForm: -0.5, browAngSym: 0.45, brow: -0.2, mouthOpen: 0.12 },
+  angry: { brow: -0.6, browAngSym: 0.5, mouthForm: -0.3 },
+  smug: { browAngSym: -0.35, eyeOpenL: 0.8, eyeOpenR: 0.8, mouthForm: 0.4 },
+  scared: { eyeScaleL: 1.15, eyeScaleR: 1.15, irisScale: 1.08, brow: 0.4, mouthOpen: 0.18 },
+  relieved: { eyeOpenL: 0.75, eyeOpenR: 0.75, brow: 0.15, mouthForm: 0.3 },
+  neutral: {}
+}
+
+function applyEmotion(rt: PuppetRuntime, emotion: string | null): void {
+  const params = emotion ? (EMOTION_PARAMS[emotion] ?? null) : EMOTION_PARAMS['neutral']!
+
+  if (!params) {
+    return // 未知情绪键不动面部（与 mesh2d 忽略未注册 action 同一策略）
+  }
+
+  for (const key of Object.keys(EMOTION_DEFAULTS) as (keyof typeof EMOTION_DEFAULTS)[]) {
+    rt.target[key] = (params[key] ?? EMOTION_DEFAULTS[key]) as never
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 动作 → 定时包络（通用语义子集；未注册键忽略）
+// ---------------------------------------------------------------------------
+
+interface ActionEnvelope {
+  durMs: number
+  /** 触发首帧一次性执行（冲量等） */
+  onStart?: (rt: PuppetRuntime) => void
+  /** k ∈ [0,1]；结束帧 k=1 后 touched 通道写回 ACTION_DEFAULTS */
+  apply: (k: number, rt: PuppetRuntime) => void
+}
+
+const ACTION_DEFAULTS: Partial<Record<keyof PuppetRuntime['target'], number>> = {
+  angleX: 0,
+  angleY: 0,
+  angleZ: 0,
+  body: 0,
+  eyeX: 0,
+  eyeCY: 0,
+  armY: 0,
+  armPos: 0,
+  eyeOpenL: 1,
+  eyeOpenR: 1
+}
+
+// 键集与后端 manifest_exporter DEFAULT_ACTIONS 白名单对齐（PROTOCOL.md §3）；
+// 未列出的白名单键按忽略处理（与 mesh2d 忽略未注册 action 同策略）。
+const ACTIONS: Record<string, ActionEnvelope> = {
+  wave_right: {
+    durMs: 1300,
+    apply: (k, rt) => {
+      rt.target.armY = -Math.abs(Math.sin(k * Math.PI * 3)) * 0.85
+      rt.target.angleZ = Math.sin(k * Math.PI) * 0.1
+    }
+  },
+  wave_left: {
+    durMs: 1300,
+    apply: (k, rt) => {
+      rt.target.armY = -Math.abs(Math.sin(k * Math.PI * 3)) * 0.85
+      rt.target.angleZ = -Math.sin(k * Math.PI) * 0.1
+    }
+  },
+  present_right: {
+    durMs: 1600,
+    apply: (k, rt) => {
+      rt.target.armPos = Math.sin(Math.min(1, k * 1.4) * Math.PI) * 0.7
+      rt.target.eyeX = 0.4 * Math.sin(k * Math.PI)
+    }
+  },
+  present_left: {
+    durMs: 1600,
+    apply: (k, rt) => {
+      rt.target.armPos = Math.sin(Math.min(1, k * 1.4) * Math.PI) * 0.7
+      rt.target.eyeX = -0.4 * Math.sin(k * Math.PI)
+    }
+  },
+  point_right: {
+    durMs: 1400,
+    apply: (k, rt) => {
+      rt.target.armY = -Math.sin(Math.min(1, k * 1.5) * Math.PI) * 0.6
+      rt.target.eyeX = 0.7 * Math.sin(k * Math.PI)
+      rt.target.angleX = 0.3 * Math.sin(k * Math.PI)
+    }
+  },
+  point_left: {
+    durMs: 1400,
+    apply: (k, rt) => {
+      rt.target.armY = -Math.sin(Math.min(1, k * 1.5) * Math.PI) * 0.6
+      rt.target.eyeX = -0.7 * Math.sin(k * Math.PI)
+      rt.target.angleX = -0.3 * Math.sin(k * Math.PI)
+    }
+  },
+  hands_on_hip: {
+    durMs: 1800,
+    apply: (k, rt) => {
+      rt.target.armY = -0.5 * Math.sin(k * Math.PI)
+      rt.target.body = 0.15 * Math.sin(k * Math.PI)
+    }
+  },
+  hair_touch: {
+    durMs: 1500,
+    apply: (k, rt) => {
+      const s = Math.sin(k * Math.PI)
+      rt.target.armY = -0.6 * s
+      rt.target.angleZ = 0.2 * s
+      rt.target.eyeOpenL = 1 - 0.3 * s
+      rt.target.eyeOpenR = 1 - 0.3 * s
+    }
+  },
+  spread_arms: {
+    durMs: 1500,
+    apply: (k, rt) => {
+      rt.target.armPos = -Math.sin(Math.min(1, k * 1.2) * Math.PI) * 0.8
+    }
+  },
+  look_away_left: {
+    durMs: 1600,
+    apply: (k, rt) => {
+      rt.target.eyeX = -0.85 * Math.sin(Math.min(1, k * 1.3) * Math.PI)
+      rt.target.angleX = -0.35 * Math.sin(k * Math.PI)
+    }
+  },
+  look_away_right: {
+    durMs: 1600,
+    apply: (k, rt) => {
+      rt.target.eyeX = 0.85 * Math.sin(Math.min(1, k * 1.3) * Math.PI)
+      rt.target.angleX = 0.35 * Math.sin(k * Math.PI)
+    }
+  },
+  turn_body_left: {
+    durMs: 1300,
+    apply: (k, rt) => {
+      rt.target.body = -Math.sin(k * Math.PI) * 0.5
+      rt.target.angleX = -0.3 * Math.sin(k * Math.PI)
+    }
+  },
+  turn_body_right: {
+    durMs: 1300,
+    apply: (k, rt) => {
+      rt.target.body = Math.sin(k * Math.PI) * 0.5
+      rt.target.angleX = 0.3 * Math.sin(k * Math.PI)
+    }
+  },
+  lean_forward: {
+    durMs: 1400,
+    apply: (k, rt) => {
+      rt.target.angleY = -Math.sin(k * Math.PI) * 0.4
+      rt.target.body = Math.sin(k * Math.PI) * 0.2
+    }
+  },
+  shy: {
+    durMs: 2000,
+    apply: (k, rt) => {
+      const s = Math.sin(k * Math.PI)
+      rt.target.eyeOpenL = 1 - 0.35 * s
+      rt.target.eyeOpenR = 1 - 0.35 * s
+      rt.target.angleZ = 0.25 * s
+      rt.target.eyeCY = 0.1 * s
+    }
+  },
+  idle_glance: {
+    durMs: 1200,
+    apply: (k, rt) => {
+      rt.target.eyeX = Math.sin(k * Math.PI * 2) * 0.6
+    }
+  },
+  petting: {
+    durMs: 1600,
+    apply: (k, rt) => {
+      const s = Math.sin(k * Math.PI)
+      rt.target.eyeOpenL = 1 - 0.55 * s
+      rt.target.eyeOpenR = 1 - 0.55 * s
+      rt.target.angleZ = 0.18 * s
+    }
+  },
+  dizzy: {
+    durMs: 2400,
+    apply: (k, rt) => {
+      rt.target.angleZ = Math.sin(k * Math.PI * 6) * 0.35 * (1 - k)
+    }
+  },
+  fall: {
+    durMs: 800,
+    apply: (k, rt) => {
+      rt.target.angleY = -Math.sin(k * Math.PI) * 0.35
+      rt.target.body = 0.4 * Math.sin(k * Math.PI)
+    }
+  },
+  land_squash: {
+    durMs: 700,
+    onStart: rt => rt.hairImpulse(2.4),
+    apply: (k, rt) => {
+      rt.target.body = -Math.sin(Math.min(1, k * 1.5) * Math.PI) * 0.55
+    }
+  },
+  peeking: {
+    durMs: 1400,
+    apply: (k, rt) => {
+      const s = Math.sin(k * Math.PI)
+      rt.target.eyeCY = 0.3 * s
+      rt.target.eyeOpenL = 1 - 0.45 * s
+      rt.target.eyeOpenR = 1 - 0.45 * s
+      rt.target.angleY = 0.2 * s
+    }
+  },
+  click: {
+    durMs: 800,
+    apply: (k, rt) => {
+      rt.target.angleY = Math.sin(k * Math.PI * 2) * 0.3
+    }
+  },
+  long_press: {
+    durMs: 1200,
+    apply: (k, rt) => {
+      rt.target.eyeCY = Math.sin(k * Math.PI) * 0.25
+    }
+  },
+  drag_end: {
+    durMs: 900,
+    apply: (k, rt) => {
+      rt.target.angleZ = Math.sin(k * Math.PI * 3) * 0.25 * (1 - k)
+    }
+  }
+}
+
+export function PuppetStage(): React.JSX.Element {
+  const handleRef = useRef<PuppetCanvasHandle>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  // 驱动层共享的运行态（rAF 循环每帧读取）
+  const hitmapRef = useRef<((nx: number, ny: number) => { region: string } | null) | null>(null)
+  const ampRef = useRef(0)
+  const lastTalkAtRef = useRef(0)
+  const wasTalkingRef = useRef(false)
+  const gazeTargetRef = useRef<{ nx: number; ny: number } | null>(null)
+  const lastGazeInjectRef = useRef(0)
+  const lastHairImpulseAtRef = useRef(0)
+  const actionRef = useRef<{ env: ActionEnvelope; t0: number } | null>(null)
+
+  const puppet = useStore($puppetInfo)
+
+  // PSD 装配 + hitmap 上线
+  useEffect(() => {
+    if (!puppet.psdUrl) {
+      return
+    }
+
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const res = await fetch(puppet.psdUrl!)
+
+        if (!res.ok) {
+          throw new Error(`psd fetch failed: ${res.status}`)
+        }
+
+        const rig = await handleRef.current?.loadPsd(await res.arrayBuffer())
+
+        if (!rig || cancelled) {
+          return
+        }
+
+        const hit = buildPuppetHitmap(rig)
+        hitmapRef.current = hit
+        setMesh2DHitmap({ hit: (nx: number, ny: number) => hit(nx, ny) })
+        probeInteractiveRegions()
+
+        const rt = handleRef.current?.runtime
+
+        if (rt) {
+          if (REDUCED_MOTION_QUERY?.matches === true) {
+            rt.auto.idle = false
+            rt.auto.rand = false
+          }
+
+          log.info('puppet-stage', `psd rigged: ${rig.layers.length} parts, tier=${rt.rigTier()}`)
+        }
+      } catch (err) {
+        log.warn('puppet-stage', 'psd load failed; cascade to mesh2d', err)
+        setPuppetError(err instanceof Error ? err.message : String(err))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      hitmapRef.current = null
+      setMesh2DHitmap(null)
+      probeInteractiveRegions()
+    }
+  }, [puppet.psdUrl])
+
+  // 驱动层：视线 / TTS / 情绪 / 动作 / hover 冲量 / 动作包络推进
+  useEffect(() => {
+    let raf = 0
+
+    const rt = (): PuppetRuntime | null => handleRef.current?.runtime ?? null
+
+    const onMove = (e: PointerEvent): void => {
+      const r = rt()
+
+      if (!r) {
+        return
+      }
+
+      if ($contextMenuOpen.get()) {
+        r.setGaze(null)
+
+        return
+      }
+
+      const rect = containerRef.current?.getBoundingClientRect()
+
+      if (!rect) {
+        return
+      }
+
+      const lx = (e.clientX - rect.left) / rect.width
+      const ly = (e.clientY - rect.top) / rect.height
+      const nx = Math.max(-1, Math.min(1, lx * 2 - 1))
+      // 纵向参考面部高度（画布上 35%），避免视线永远俯视
+      const ny = Math.max(-1, Math.min(1, (ly - 0.35) * 2))
+      r.setGaze(nx * 0.9, ny)
+
+      // hover 发区 → 发束链冲量（200ms 节流）
+      const hit = hitmapRef.current?.(lx, ly)
+      const region = hit?.region
+
+      if (
+        (region === 'front_hair' || region === 'back_hair') &&
+        performance.now() - lastHairImpulseAtRef.current > 200
+      ) {
+        lastHairImpulseAtRef.current = performance.now()
+        r.hairImpulse((region === 'front_hair' ? 1.6 : 1.1) * (lx < 0.5 ? 1 : -1))
+      }
+    }
+
+    const onLeave = (): void => {
+      rt()?.setGaze(null)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerleave', onLeave)
+
+    const stopAmp = registerAmplitudeSink(amp => {
+      ampRef.current = amp
+    })
+
+    const unsubEmotion = $spriteEmotion.listen(emotion => {
+      const r = rt()
+
+      if (r) {
+        applyEmotion(r, emotion)
+      }
+    })
+
+    const unsubAction = $spriteAction.listen(action => {
+      const r = rt()
+
+      if (!r) {
+        return
+      }
+
+      const env = action ? ACTIONS[action] : undefined
+
+      if (env) {
+        env.onStart?.(r)
+        actionRef.current = { env, t0: performance.now() }
+      }
+    })
+
+    const unsubGazeTarget = $gazeTarget.listen(target => {
+      gazeTargetRef.current = target
+
+      if (target) {
+        rt()?.setGaze(target.nx, target.ny)
+      }
+    })
+
+    const tick = (now: number): void => {
+      const r = rt()
+
+      if (r) {
+        // TTS 振幅接管嘴型；静默 600ms 后交还合成说话
+        if (ampRef.current > 0.04) {
+          lastTalkAtRef.current = now
+
+          if (!wasTalkingRef.current) {
+            wasTalkingRef.current = true
+            r.auto.talk = false
+          }
+
+          r.target.mouthOpen = Math.min(1, 0.18 + ampRef.current * 0.9)
+        } else if (wasTalkingRef.current && now - lastTalkAtRef.current > 600) {
+          wasTalkingRef.current = false
+          r.auto.talk = true
+          r.target.mouthOpen = 0
+        }
+
+        // 显式视线目标周期重注入（setGaze 3s TTL；ritual walk 途中持续锁定）
+        const gt = gazeTargetRef.current
+
+        if (gt && now - lastGazeInjectRef.current > 800) {
+          lastGazeInjectRef.current = now
+          r.setGaze(gt.nx, gt.ny)
+        }
+
+        // 动作包络推进；结束帧把触及通道写回默认值并续播队列（mesh2d driver 同构）
+        const a = actionRef.current
+
+        if (a) {
+          const k = (now - a.t0) / a.env.durMs
+
+          if (k >= 1) {
+            a.env.apply(1, r)
+
+            for (const [key, v] of Object.entries(ACTION_DEFAULTS) as [keyof PuppetRuntime['target'], number][]) {
+              r.target[key] = v as never
+            }
+
+            actionRef.current = null
+
+            const queue = $spriteActionQueue.get()
+
+            if (queue.length > 0) {
+              const [next, ...rest] = queue
+              $spriteActionQueue.set(rest)
+
+              const env = next ? ACTIONS[next] : undefined
+
+              if (env) {
+                env.onStart?.(r)
+                actionRef.current = { env, t0: now }
+              }
+            }
+          } else {
+            a.env.apply(k, r)
+          }
+        }
+      }
+
+      raf = requestAnimationFrame(tick)
+    }
+
+    raf = requestAnimationFrame(tick)
+
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerleave', onLeave)
+      stopAmp()
+      unsubEmotion()
+      unsubAction()
+      unsubGazeTarget()
+    }
+  }, [])
+
+  return (
+    <div
+      className="flex h-full w-full items-center justify-center"
+      ref={containerRef}
+      style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+    >
+      <PuppetCanvas ref={handleRef} />
+    </div>
+  )
+}

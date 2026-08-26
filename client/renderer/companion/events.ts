@@ -40,6 +40,7 @@ import { resetExpressionAvatars } from '@/companion/expression-avatar/expression
 import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { $responseMode } from '@/companion/prefs'
+import { hydratePuppet, resetPuppet } from '@/companion/puppet/puppet-store'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
@@ -430,7 +431,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.2d.ready': {
-      // 2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示。
+      // 2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示；
+      // manifest 可能是 see-through 的 kind=psd 描述符，串一次 puppet 分流判定。
       const p = event.payload as
         | {
             model_id?: number
@@ -443,7 +445,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
         log.info('events', '2d ready:', p.model_id)
       }
 
-      void hydrateMesh2D()
+      void hydrateMesh2D().then(() => hydratePuppet())
 
       break
     }
@@ -465,7 +467,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       void hydrateWardrobe()
 
       if (p?.worn) {
-        void hydrateMesh2D()
+        void hydrateMesh2D().then(() => hydratePuppet())
       }
 
       break
@@ -511,7 +513,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // DESIGN §1.2 不变量：头像重生不使 2D/3D 模型失效——模型只随物种变更或用户
       // 显式请求重生。这里只做幂等的本地状态刷新（hydrate 重新拉取既有资产行）。
       resetMesh2D()
-      void hydrateMesh2D()
+      resetPuppet()
+      void hydrateMesh2D().then(() => hydratePuppet())
 
       break
     }

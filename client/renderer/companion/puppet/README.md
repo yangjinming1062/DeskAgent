@@ -13,6 +13,8 @@
 | `head-cage.ts` | 脸面/头骨双表面三角控制笼：左右颊+颅顶语义控制点、重心坐标、深度混合 μ（Phase 2）；双表面半径 Rf/Rs/rv + 六点脸面深度曲线（Phase 3） |
 | `puppet-runtime.ts` | WebGL 运行时：每层 ArtMesh + deform 顶点形变（头转控制笼/呼吸/眨眼差分/发束弹簧/胸物理）+ 模板眼裁切；参数经 `target`/`auto` 字段注入 |
 | `PuppetCanvas.tsx` | React 挂载壳，imperative handle 暴露 `loadPsd(buffer)` |
+| `puppet-store.ts` | 生产数据源（Phase 6）：拉 mesh2d 行 manifest 判 `kind=psd` → 暴露签名 PSD URL；非 psd/失败保持未就绪让级联落 mesh2d |
+| `PuppetStage.tsx` | 生产挂载与驱动层（Phase 6）：hitmap（复用 `$mesh2dHitmap`，SpriteStage tap/hover/手势管线原样接管）、视线（pointermove + `$gazeTarget` 显式目标）、TTS 振幅接管嘴型、情绪（`$spriteEmotion` 22 词表 → 面部参数）、动作（`$spriteAction` 白名单键 → 定时包络 + 队列续播）、hover 发区冲量 |
 
 ## 关键契约与设计
 
@@ -27,15 +29,16 @@
 - **动画自动化层（Phase 1）**：非对称呼吸（3.4s 周期，每 18~38s 一次深呼吸）、眨眼曲线（0.34s 全程、20% 半眨、16% 连眨）、视线跟随（`setGaze`，眼先动头跟随、3s 无更新过期回落漫游）、微扫视（指数衰减的小幅快速眼动）、说话合成（每句独立振幅 + 音素级 mouthForm 目标）。参数平滑按语义分速率（`PARAM_RATE`：眼 20~22 / 头 7 / 身 5）。
 - **模拟/渲染解耦**：`advanceSim(seconds)` 以固定 1/60 步进接管内部时钟（rAF 退化为纯渲染），供无头验证与回归做确定性断言——Phase 5 十三姿态安全验证以此为地基；`snapshot()` 暴露平滑后参数只读快照，`forceBlink()` 为确定性眨眼钩子。
 - **差分合成**：PSD 缺 eye_close / mouth_close 时用内置 genericparts 自动合成并染色适配（上游行为，保留）。
-- **数据来源**：Phase 6 将从 `companion.2d.ready` 事件的 `kind=psd` manifest 分流到此模块（PSD 经签名 URL 拉取）；当前经 `puppet.html` 调试台手工驱动。
+- **数据来源与渲染级联（Phase 6）**：see-through 产出 `spiritagent.2d.psd/1` 描述符（`kind=psd`）复用 mesh2d 行与 WS 事件路径；`companion.2d.ready` / outfit 穿着 / 头像重生事件后 `hydratePuppet` 判 kind。root.tsx 渲染级联：**puppet（PSD）→ mesh2d（骨骼分层）→ 3D → 程序化蛋**——puppet 装配失败写 error 熄灭 `$puppetReady` 自动落级，永不空白（DESIGN §1.2）。
+- **驱动层映射（Phase 6）**：视线 = pointermove 归一化注入 + `$gazeTarget` 显式目标周期续注（ritual walk / perch 锁定）；说话 = TTS 振幅接管 `mouthOpen` 并暂停合成说话、静默 600ms 交还；情绪 = 后端 `BUILTIN_EMOTIONS` 22 词表全对齐 → 眉/嘴型/眼缩放参数（mesh2d 无面部通道，puppet 独有）；动作 = manifest_exporter `DEFAULT_ACTIONS` 白名单键 → 定时包络（armY/armPos/body/角度/eyeX 兑现）+ `$spriteActionQueue` 续播 + `land_squash` 触发发束冲量；hover 发区 → `hairImpulse`（200ms 节流，方向随戳侧）。
 
 ## 调试台
 
-`client/puppet.html`（vite 入口 `puppet`）：拖入/选择 PSD 或"载入内置测试 PSD"（`client/assets/seethrough_output.psd`，本地文件、不入库）→ 自动装配 → 待机动画；画布区移动鼠标可体验视线跟随（虹膜+头部+上身），右侧滑杆直写 runtime 参数、复选框切换自动化开关（待机/漫游/眨眼/说话/视线）。`?autotest=1` 挂载后自动装载并经 `advanceSim` 跑确定性动画探针，结果写进 header（`AUTOTEST_OK parts=N warnings=M blink/mouth/breath/idle/gaze/mesh/chain/skirt=1 meshstat=A/Lam Vv Tt bns=<层名表>`），供无头浏览器 `--dump-dom` 断言（驱动：`client/.claude/skills/run-puppet-debug/`，本地不入库）。`?pose=ax,ay,az` 姿态定格（关自动化+冻结呼吸，直写角度并推进到稳态，header 附 `body=` 同源跟随值）；`?poses=1` 13 姿态安全验证（缩放阶梯+逐层归因，见上）。供头转扫掠与 Phase 5 姿态安全验证截图。
+`client/puppet.html`（vite 入口 `puppet`）：拖入/选择 PSD 或"载入内置测试 PSD"（`client/assets/seethrough_output.psd`，本地文件、不入库）→ 自动装配 → 待机动画；画布区移动鼠标可体验视线跟随（虹膜+头部+上身），右侧滑杆直写 runtime 参数、复选框切换自动化开关（待机/漫游/眨眼/说话/视线）。`?autotest=1` 挂载后自动装载并经 `advanceSim` 跑确定性动画探针，结果写进 header（`AUTOTEST_OK parts=N warnings=M blink/mouth/breath/idle/gaze/mesh/chain/skirt=1 meshstat=A/Lam Vv Tt bns=<层名表>`），供无头浏览器 `--dump-dom` 断言（驱动：`client/.claude/skills/run-puppet-debug/`，本地不入库）。`?pose=ax,ay,az` 姿态定格（关自动化+冻结呼吸，直写角度并推进到稳态，header 附 `body=` 同源跟随值）；`?poses=1` 13 姿态安全验证（缩放阶梯+逐层归因，见上）。`?stage=1` 无头验证 Phase 6 生产挂载（真实 PuppetStage + 驱动层，注入内置 PSD 当签名 URL，header 写 `STAGE_OK regions=…`）。
 
 ## 已知限制（按 Phase 计划消化）
 
-- 与 SpriteStage / drivers / hitmap / 手势 / VFX 的集成在 Phase 6
-- 说话动画目前是纯合成节奏（Phase 6 接 TTS/驱动层后按实际音素驱动）
 - 尾巴/头饰圆弧摆动机制待有对应部件的模型接入（当前测试 PSD 无 tail/headwear 弹性层）
-- 13 姿态在 scale=1 满幅仍有 back hair 一处 18px² 三角形翻转（0.85 首个全绿档）；运行时自主/视线驱动幅度上限 0.7 在安全包络内，Phase 6 drivers 接入时按 scale 报告约束幅度
+- 13 姿态在 scale=1 满幅仍有 back hair 一处 18px² 三角形翻转（0.85 首个全绿档）；驱动层动作包络幅度按 0.7 安全包络设计，Phase 5 的 scale 报告尚未自动约束 LLM 动作幅度
+- 说话嘴型按 TTS 振幅包络驱动（非音素级）；音素驱动留待 TTS 层暴露音素流
+- 拖拽/抛掷 locomotion 的物理反馈（空中姿态/重力落体）尚未接 puppet（mesh2d 路径已有）

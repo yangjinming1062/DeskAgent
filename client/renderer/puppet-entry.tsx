@@ -1,7 +1,9 @@
 /** Puppet 调试台入口 — 拖入/选择 PSD → 自动装配 → 待机动画 + 鼠标视线跟随。
  *
- * 开发页不进生产窗口（sprite.html），Phase 6 集成时由 root.tsx 渲染分支承载。
+ * 开发页不进生产窗口（sprite.html），Phase 6 集成由 root.tsx 渲染分支承载。
  * `?autotest=1`：无头验证 — 装配 + 动画探针（眨眼/说话/呼吸/待机/视线跟随）结果写进 header。
+ * `?stage=1`：无头验证 Phase 6 生产挂载 — 真实 PuppetStage + 驱动层（hitmap/情绪/
+ * 显式视线），绕过后端直接注入内置 PSD 当签名 URL。
  */
 
 import './styles.css'
@@ -9,8 +11,72 @@ import './styles.css'
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
+import { $spriteEmotion, setGazeTarget } from '@/companion/companion-store'
+import { $mesh2dHitmap } from '@/companion/mesh2d/mesh2d-store'
+import { $puppetInfo, $puppetReady } from '@/companion/puppet/puppet-store'
 import type { Rig } from '@/companion/puppet/puppet-types'
 import { PuppetCanvas, type PuppetCanvasHandle } from '@/companion/puppet/PuppetCanvas'
+import { PuppetStage } from '@/companion/puppet/PuppetStage'
+
+/** ?stage=1 — 挂真实 PuppetStage 并注入内置 PSD；断言 hitmap 区域 + 情绪/视线驱动可视。 */
+function PuppetStageApp() {
+  const [status, setStatus] = useState('stage 模式：注入内置 PSD …')
+
+  useEffect(() => {
+    void (async () => {
+      $puppetInfo.set({
+        psdUrl: `${import.meta.env.BASE_URL}assets/seethrough_output.psd`,
+        contentHash: 'stage-test',
+        error: null
+      })
+      $puppetReady.set(true)
+
+      let hit: ((nx: number, ny: number) => { region: string } | null) | null = null
+
+      for (let i = 0; i < 100; i++) {
+        const cur = $mesh2dHitmap.get()
+
+        if (cur) {
+          hit = cur.hit
+
+          break
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      if (!hit) {
+        setStatus('STAGE_FAIL hitmap 未上线（装配失败？）')
+
+        return
+      }
+
+      const regions = new Set<string>()
+
+      for (let gy = 0.05; gy <= 0.95; gy += 0.04) {
+        for (let gx = 0.05; gx <= 0.95; gx += 0.04) {
+          const r = hit(gx, gy)
+
+          if (r) {
+            regions.add(r.region)
+          }
+        }
+      }
+
+      // 情绪 + 显式视线注入（$gazeTarget 走生产驱动路径）
+      $spriteEmotion.set('happy')
+      setGazeTarget({ nx: 0.9, ny: 0.1 })
+      setStatus(`STAGE_OK regions=${[...regions].join('|')}`)
+    })()
+  }, [])
+
+  return (
+    <div className="relative h-screen w-screen bg-neutral-950">
+      <PuppetStage />
+      <span className="absolute top-2 left-4 z-10 text-xs text-white/70">{status}</span>
+    </div>
+  )
+}
 
 function Slider({
   label,
@@ -517,6 +583,6 @@ function PuppetDevApp() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <PuppetDevApp />
+    {new URLSearchParams(window.location.search).get('stage') ? <PuppetStageApp /> : <PuppetDevApp />}
   </StrictMode>
 )

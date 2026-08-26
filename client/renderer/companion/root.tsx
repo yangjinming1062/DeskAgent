@@ -18,6 +18,7 @@ import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { $preferredCallMode } from '@/companion/prefs'
+import { $puppetInfo, hydratePuppet } from '@/companion/puppet/puppet-store'
 import { initSpatial } from '@/companion/spatial'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -49,6 +50,9 @@ import { checkCompanionVoiceValidity } from './voice-validity'
 // 在 lifecycle=ready 后按需请求，避开启动尖峰把风扇拉满。
 const Companion3D = lazy(() => import('./3d/companion-3d').then(m => ({ default: m.Companion3D })))
 const Mesh2DCanvas = lazy(() => import('./mesh2d/Mesh2DCanvas').then(m => ({ default: m.Mesh2DCanvas })))
+// puppet（PSD 链）与 Mesh2DCanvas 共用 WebGL/vite 懒加载策略：PSD 装配 + vendor
+// rigger/ag-psd 都不在启动关键路径上（Phase 6）。
+const PuppetStage = lazy(() => import('./puppet/PuppetStage').then(m => ({ default: m.PuppetStage })))
 
 // 把 gateway 启动挂在 mount effect 里——这样只在已鉴权时才会跑。
 // 当 $auth 切回未鉴权（登出 / 过期）时这里会卸载，useGatewayBoot 的 cleanup
@@ -71,6 +75,7 @@ export function CompanionRoot(): React.JSX.Element {
   const chatOpen = useStore($chatOpen)
   const renderMode = useStore($renderMode)
   const mesh2d = useStore($mesh2dInfo)
+  const puppet = useStore($puppetInfo)
   const modelInfo = useStore($modelInfo)
   const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
@@ -251,11 +256,17 @@ export function CompanionRoot(): React.JSX.Element {
   const eggVisible = authed && lifecycle === 'onboarding' && !onboardingOpen
 
   // 渲染级联编排器（DESIGN §1.2「永不空白」）——嵌在组件体内，因依赖多个组件内 useStore 变量；
-  // 抽到 useMemo 避免每次渲染重建闭包。
-  const renderLayer = useMemo<'mesh2d' | 'companion3d'>(() => {
+  // 抽到 useMemo 避免每次渲染重建闭包。2D 内部再分两级：PSD 链（puppet，Phase 6）
+  // → 骨骼分层链（mesh2d）；puppet 装配失败写 error 熄灭 $puppetReady 后自动落 mesh2d。
+  const renderLayer = useMemo<'puppet' | 'mesh2d' | 'companion3d'>(() => {
     const mesh2dReady = mesh2d.status === 'succeeded' && Boolean(mesh2d.manifestUrl)
+    const puppetReady = Boolean(puppet.psdUrl) && !puppet.error
     const modelFailed = glbLoadFailed || modelInfo.status === 'failed'
     const modelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
+
+    if (renderMode === '2d' && puppetReady) {
+      return 'puppet'
+    }
 
     if (renderMode === '2d' && mesh2dReady) {
       return 'mesh2d'
@@ -266,13 +277,17 @@ export function CompanionRoot(): React.JSX.Element {
     }
 
     // 3D 偏好但失败 / 尚未就绪时，2D 已就绪就降级到 2D
+    if (puppetReady) {
+      return 'puppet'
+    }
+
     if (mesh2dReady) {
       return 'mesh2d'
     }
 
     // 双方都未就绪：选 3D 路径，CharacterController 内部会走程序化蛋兜底
     return 'companion3d'
-  }, [renderMode, mesh2d.status, mesh2d.manifestUrl, glbLoadFailed, modelInfo.status])
+  }, [renderMode, mesh2d.status, mesh2d.manifestUrl, puppet.psdUrl, puppet.error, glbLoadFailed, modelInfo.status])
 
   useEffect(() => {
     if (lifecycle !== 'ready') {
@@ -283,7 +298,13 @@ export function CompanionRoot(): React.JSX.Element {
     window.addEventListener('keydown', onKey)
 
     const stopActivity = startActivityMonitor()
-    void Promise.all([hydratePersona(), hydrateModel(), hydrateExpressions(), hydrateMesh2D()])
+    void Promise.all([
+      hydratePersona(),
+      hydrateModel(),
+      hydrateExpressions(),
+      // puppet 分流依赖 mesh2d 行的 manifest 内容，串在其后
+      hydrateMesh2D().then(() => hydratePuppet())
+    ])
 
     return () => {
       window.removeEventListener('keydown', onKey)
@@ -385,7 +406,9 @@ export function CompanionRoot(): React.JSX.Element {
         {eggVisible ? (
           <EggStage onTap={() => setOnboardingOpen(true)} />
         ) : showOnboarding ? null : (
-          <Suspense fallback={null}>{renderLayer === 'mesh2d' ? <Mesh2DCanvas /> : <Companion3D />}</Suspense>
+          <Suspense fallback={null}>
+            {renderLayer === 'puppet' ? <PuppetStage /> : renderLayer === 'mesh2d' ? <Mesh2DCanvas /> : <Companion3D />}
+          </Suspense>
         )}
       </SpriteStage>
       <SpriteContextMenu
