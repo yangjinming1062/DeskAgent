@@ -421,13 +421,25 @@ export function PuppetStage(): React.JSX.Element {
 
     void (async () => {
       try {
-        const res = await fetch(puppet.psdUrl!)
+        // psdUrl 是相对后端的签名 URL——渲染进程 origin（dev 的 vite / 打包后的 file://）
+        // 解析不了（vite 会回退 index.html，ag-psd 报 Invalid signature），须走主进程桥
+        // 按 baseUrl 重写并带鉴权取字节；无桥环境（puppet 调试台 ?stage=1）注入的是
+        // 同源资产 URL，直连 fetch 即可。
+        let buffer: ArrayBuffer
 
-        if (!res.ok) {
-          throw new Error(`psd fetch failed: ${res.status}`)
+        if (typeof window.spiritagent?.apiAssetBuffer === 'function') {
+          buffer = (await window.spiritagent.apiAssetBuffer({ url: puppet.psdUrl! })).slice().buffer
+        } else {
+          const res = await fetch(puppet.psdUrl!)
+
+          if (!res.ok) {
+            throw new Error(`psd fetch failed: ${res.status}`)
+          }
+
+          buffer = await res.arrayBuffer()
         }
 
-        const rig = await handleRef.current?.loadPsd(await res.arrayBuffer())
+        const rig = await handleRef.current?.loadPsd(buffer)
 
         if (!rig || cancelled) {
           return
