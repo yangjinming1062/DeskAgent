@@ -1,6 +1,6 @@
 # Mesh2D 渲染模块
 
-桌面伙伴的 2D SkinnedMesh 渲染路径：服务端 `mesh2d_pipeline` 把立绘切成 6 个核心物理层（back_hair / body_main / front_hair / arm_L / arm_R / 可选 clothing）与可选腿层 leg_L/R（检测成功时 z=1、蒙皮绑 hip/knee/ankle，走路叠加腿部摆动），本模块加载 manifest + 部件 PNG，构造带骨骼的 SkinnedMesh，跑呼吸 / 眨眼 / 嘴型 / 头部跟随 / jiggle 弹簧 / LLM 驱动 action / locomotion / 子区域命中 impulse 等动画。
+桌面伙伴 2D 渲染的骨骼链路径（[puppet](../puppet/) 分层 PSD 链的降级备胎）：服务端 `mesh2d_pipeline` 把立绘切成 6 个核心物理层（back_hair / body_main / front_hair / arm_L / arm_R / 可选 clothing）与可选腿层 leg_L/R（检测成功时 z=1、蒙皮绑 hip/knee/ankle，走路叠加腿部摆动），本模块加载 manifest + 部件 PNG，构造带骨骼的 SkinnedMesh，跑呼吸 / 眨眼 / 嘴型 / 头部跟随 / jiggle 弹簧 / LLM 驱动 action / locomotion / 子区域命中 impulse 等动画。
 
 ## 模块结构
 
@@ -23,15 +23,15 @@
 - **单位硬约束**：manifest 的 `rotation_rad` 字段命名强约束"弧度"，消费端 Three.js 用 `.rotation` 直接赋值，**不**调用 `degToRad`。pose 表里的所有数值已校验为弧度。
 - **完全骨骼变形驱动五官**：眨眼 = eye_bone.scale.y 1→0.05→1；嘴型 = mouth_bone.scale.{x,y}；摸头 = eyeSquint (scale.y = 0.15)。零贴图切换，100% 保留原画画风。
 - **走路 / 跳跃 / 物理落体**：无腿层模型 walk/walk_fast 用 `body_main` 左右倾斜 + 上下 bob + `shoulder_L/R` 反向摆动 + `skirt/back_hair` 持续 impulse；检测出 leg_L/R 层的模型叠加 hip/knee/ankle 腿部摆动相位（manifest 烘焙时按 has_legs 决定，红线 hip ±0.6 / knee ±0.9 / ankle ±0.35）；jump 用 body_main 短暂 squash + shoulder 上扬脉冲；空中释放走自由落体加速度并在触地时触发 `land_squash` 弹性反弹。
-- **降级链路**：avatar 未确认 → 程序化蛋（`3d/CharacterController.createProcedural`）。avatar 已确认但 2D 不可用 → 程序化蛋。
+- **降级链路**：2D 模式下分层 PSD 装配失败或缺失 → 本链；本链亦失败 → 程序化蛋（`3d/CharacterController.createProcedural`）。avatar 未确认 → 程序化蛋。
 
 ## 与 SpriteStage 集成
 
-`client/renderer/companion/root.tsx` 根据 `$renderMode` 挂 `<Mesh2DCanvas>` 或 `<Companion3D>`，二者互斥不共存。SpriteStage 的拖拽 / 物理抛掷 / 贴边吸附 / 摸头手势 / 戳 / 双击 / 鼠标穿透逻辑同时生效。子区域命中由 `mesh2d-hitmap.ts` 提供，手势由 `mesh2d-gestures.ts` 识别，粒子层由 `mesh2d-vfx.tsx` 挂载展示。
+`client/renderer/companion/root.tsx` 按 2D 模式下的渲染级联挂载：分层 PSD 装配成功走 PuppetStage，失败或缺失落 `<Mesh2DCanvas>`；3D 模式挂 `<Companion3D>`。2D 与 3D 画布互斥不共存。SpriteStage 的拖拽 / 物理抛掷 / 贴边吸附 / 摸头手势 / 戳 / 双击 / 鼠标穿透逻辑同时生效。子区域命中由 `mesh2d-hitmap.ts` 提供，手势由 `mesh2d-gestures.ts` 识别，粒子层由 `mesh2d-vfx.tsx` 挂载展示。
 
 ## WS 事件
 
-- `companion.2d.ready` → `$mesh2dInfo` 更新，canvas 自动重建场景
+- `companion.2d.ready` → `$mesh2dInfo` 更新；manifest 为分层 PSD 描述符时由 puppet 层消费（本链不挂载），否则 canvas 自动重建场景
 - `companion.2d.failed` → 回退到程序化蛋（avatar 已确认但 2D 失败时由 SpriteStage 显示蛋）
 - `companion.render_mode.changed` → `$renderMode` 切换，重建 canvas
 - `companion.affect` / `message.complete` 的 `affect.action` → `mesh2d-drivers` 解析为骨骼 pose 切换

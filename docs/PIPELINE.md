@@ -113,7 +113,7 @@ fullbody_url → see-through（HF Space Gradio：upload → call/inference → S
 - PSD → vendor rigger（Anime2.5DRig，MIT）语义装配；see-through 的 `-l/-r` 侧名在装配边界补齐 side / fade / 眼锚点。
 - 每层 alpha 轮廓 ArtMesh（增量 Delaunay）+ 脸面/头骨双表面控制笼 → 圆投影伪 3D 转头（六点深度曲线 / 远眼收窄 / 周边可见度）+ 次级运动（发束 4 节点弹簧链 / 裙双频 / 耳事件 / 呆毛 / 种子化自主观察段落）。
 - 13 姿态安全验证（三角形翻转 / 边拉伸）按动作缩放阶梯（1→0.25）取首个全绿档；PSD 语义完整度三级分档 semantic / grouped / minimal 门控机制与幅度。
-- 驱动层：情绪（PROTOCOL §3 22 词表）→ 面部参数、动作白名单 → 定时包络、TTS 振幅 → 嘴型、六区 hitmap 复用 `$mesh2dHitmap` 交互总线。
+- 驱动层：情绪（[PROTOCOL.md §1.4](../PROTOCOL.md) 22 词表）→ 面部参数、动作白名单 → 定时包络、TTS 振幅 → 嘴型、六区命中区域复用与骨骼链相同的交互总线。
 
 ### 6.2 骨骼链（CPU 切分，降级）
 

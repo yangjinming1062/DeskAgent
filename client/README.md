@@ -5,7 +5,7 @@
 ## 1. 职责与边界
 
 **职责**：
-- 桌面精灵 3D 实时渲染（Three.js + 透明置顶窗口）+ 陪伴式交互 UI（chat / voice call / onboarding / settings）
+- 桌面精灵 2D / 3D 实时渲染（透明置顶窗口；2D 分层 PSD 木偶与骨骼链、3D Three.js 引擎）+ 陪伴式交互 UI（chat / voice call / onboarding / settings）
 - 登录鉴权与用户凭证加密落盘（safeStorage）
 - 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转
@@ -23,7 +23,7 @@
 ## 2. 设计意图
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
-- **3D 实时渲染与产品兜底**：客户端负责加载模型、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略；3D 产物与动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+- **2D / 3D 双渲染与产品兜底**：客户端负责加载形象资产、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略（渲染级联：2D 分层木偶 → 2D 骨骼链 → 3D → 程序化蛋，任一级装配失败自动落级）；3D 与 2D 产物及动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 - **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位并单向推后端；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
 - **本地时区随连接上报**：每次网关连接即发即忘上报 IANA 时区——后端夜间批处理与互动统计按用户本地日聚合，缺行时夜间流水线整段跳过；契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
 - **透明置顶精灵窗口作为唯一常驻主窗口**：登录态由托盘管理，应用设置等按需工具窗口由精灵右键菜单唤起，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
@@ -46,8 +46,9 @@ client/
 │   └── ipc/               # 强类型 IPC 通道、载荷与运行时常量
 ├── renderer/              # ESM *.{ts,tsx} — Vite 编译
 │   ├── shared/            # 跨窗口共享层
-│   ├── companion/         # 伙伴层（精灵窗口 + 3D + onboarding + chat UI）
-│   │   └── 3d/            # Three.js 引擎 + 供应商烘焙 clip 的兑现逻辑
+│   ├── companion/         # 伙伴层（精灵窗口 + 2D/3D 渲染 + onboarding + chat UI）
+│   │   ├── 3d/            # Three.js 引擎 + 供应商烘焙 clip 的兑现逻辑
+│   │   └── mesh2d/ puppet/    # 2D 双渲染链（骨骼链 / 分层 PSD 木偶）
 │   ├── hub/               # 枢纽层（托盘唤起的工具窗口）
 │   ├── clip-debugger/     # 独立动画调试套件（pnpm clip 启动，跳过 LLM 链路直连 3D 动作检视）
 │   ├── app.tsx            # 角色分发点
@@ -58,7 +59,7 @@ client/
 
 **TypeScript 全栈类型安全**：主进程采用 `main/*.ts`（`tsup` 编译至 `dist-electron/`；preload 单独走 CJS 的理由见 §4），渲染进程采用 `renderer/**/*.{ts,tsx}`（Vite 编译）。通过 `shared/ipc/contracts.ts` 统一声明的强类型 IPC 契约与运行时常量，在主进程与渲染进程之间实现编译期通道和载荷同步校验。
 
-**renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——它们的代码历史上不该相互依赖：
+**renderer 内部跨模块边界**：`companion` ↔ `hub` 是**两个窗口**而非一个工程的两个层——两个窗口的代码不得相互依赖：
 
 | 起点 → 终点 | 许可 |
 |---|---|
@@ -93,14 +94,14 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
 - **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防本地 Whisper/云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 - **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
-- **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：原先只能戳精灵实体触发 `setActivationOpen(true)`，但未鉴权时精灵实体不可见（无 3D 模型 + 程序化蛋形等 Three.js 上下文就绪），用户戳不到就是死锁。改为：(1) `auth.kind` 切到 `'unauthenticated'` 时（包括首次 hydrateAuth 完成、反激活后）自动开；(2) 托盘「激活...」入口镜像 `trayLogout` 加一条 `trayActivate` IPC 通知渲染器翻 state，否则 `showMainWindow()` 只拉窗口不翻 React state，关掉一次就再也唤不回来。
+- **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：未鉴权时精灵实体不可见（无模型可渲染，程序化蛋等渲染上下文尚未就绪），用户无从戳起——鉴权状态切到未认证（含首次水化、反激活后）即自动弹出激活浮层。托盘「激活...」入口经 IPC 通知渲染器翻 React 状态：主进程只拉窗口不翻渲染状态，不通知则浮层关掉一次就再也唤不回来。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
 | 伙伴生命周期、事件、Affect、资产、错误与凭据契约 | 对后端 / Runner | [PROTOCOL.md](../PROTOCOL.md) |
-| 3D 产物与动画映射 | 对后端 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
+| 3D 与 2D 产物契约、动画映射 | 对后端 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
 | 打扰档位权威边界 | 对后端 | [ARCHITECTURE.md §5.1](../ARCHITECTURE.md) |
 | 渲染状态机与空间行为 | Renderer 内部 | [client/renderer/companion/README.md](renderer/companion/README.md) |
 | IPC 命名空间与 Skills 平台过滤 | 本模块独有 | 本 README §3 / §4 |

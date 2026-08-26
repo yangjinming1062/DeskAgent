@@ -110,9 +110,9 @@
   - `da.companion.voiceId` / `da.companion.responseMode` / `da.companion.disturbanceTier` / `da.companion.chatDockOffset` / `da.companion.defaultScale`
   - 仅 `disturbanceTier` + `chatDockOffset` + `defaultScale` 跨重启保留；`voiceId` 在 onMount 由 `voice-validity.ts` 校验 provider 目录变化。
   - 精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
-- **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`、不重置 `is_complete`、修复前者静默 `deriveSpeakingStyle` 覆盖 `speaking_style` 的坑。仅 `PersonaSection` 保存后会接入两步形象再生成（先头像 → 用户确认 → 全身）；`PersonaRetune` 是纯 persona 维度调整，不重跑形象流水线。Onboarding 自身始终走两步 UI。
+- **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`，且不改写说话风格（说话风格在孵化时定稿，后续修改走设置里的角色管理）。仅 `PersonaSection` 保存后会接入两步形象再生成（先头像 → 用户确认 → 全身）；`PersonaRetune` 是纯 persona 维度调整，不重跑形象流水线。Onboarding 自身始终走两步 UI。
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
-- **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层——Mesh2DCanvas 按 manifestUrl 重建，换装期间旧装不断档。
+- **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（manifest 为分层 PSD 时重建 puppet，否则 Mesh2DCanvas 按 manifestUrl 重建），换装期间旧装不断档。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 
