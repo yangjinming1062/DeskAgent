@@ -228,7 +228,8 @@ export function computeVoiceCallDockPosition(
   return { left: Math.round(left), top: Math.round(top) }
 }
 
-// 通话开启时脚下放不下面板则平滑上提让位，挂断后回落原位；
+// 通话开启时脚下放不下面板则上提让位，挂断后回落原位。上提/回落是瞬时跳变——
+// 面板的出现与消失本身没有移动过程，刚体一体不允许二者错拍（精灵还在飞、面板已就位）。
 // 用户在通话中拖动（精灵或面板）即视为接管位置，回落取消。
 let voiceLiftReturn: { x: number; y: number } | null = null
 
@@ -250,7 +251,7 @@ export function ensureVoiceDockRoom(): void {
 
   voiceLiftReturn = pos
 
-  // x 钳制吸收贴边回屏动画尚未走完的越界横坐标（undock 的动画被下面 moveTo 取代）。
+  // x 钳制吸收贴边回屏尚未走完的越界横坐标。
   const vw = window.innerWidth
   const w = getBaseSpriteWidth()
 
@@ -259,10 +260,11 @@ export function ensureVoiceDockRoom(): void {
     y: maxY
   }
 
-  moveTo(lifted, 'fly', () => {
-    $homePosition.set(lifted)
-    void window.spiritagent.sprite.setPosition(lifted)
-  })
+  cancelMovement()
+  $spatialPos.set(lifted)
+  $spatialLocomotion.set('still')
+  $homePosition.set(lifted)
+  void window.spiritagent.sprite.setPosition(lifted)
 }
 
 export function releaseVoiceDockRoom(): void {
@@ -277,10 +279,11 @@ export function releaseVoiceDockRoom(): void {
   // 显式按无通话约束钳制，否则回落目标会被脚下钳制按住不放。
   const safe = clampPosToViewport(back, false)
 
-  moveTo(safe, 'fly', () => {
-    $homePosition.set(safe)
-    void window.spiritagent.sprite.setPosition(safe)
-  })
+  cancelMovement()
+  $spatialPos.set(safe)
+  $spatialLocomotion.set('still')
+  $homePosition.set(safe)
+  void window.spiritagent.sprite.setPosition(safe)
 }
 
 function easeInOut(t: number): number {
