@@ -13,7 +13,8 @@ async function synth(
   voice: string | undefined,
   context: string | undefined,
   persist: boolean,
-  onDone?: () => void
+  onDone?: () => void,
+  throwOnError = false
 ): Promise<boolean> {
   const gen = nextGen()
   beginVoicePreparing()
@@ -37,8 +38,15 @@ async function synth(
         onDone()
       }
     })
-  } catch {
+  } catch (err) {
     stopAudio()
+
+    if (throwOnError) {
+      throw err
+    }
+
+    // 环境路径按 DESIGN §7 静默降级为纯文字，但留诊断日志定位供应商故障。
+    console.warn('[tts] synthesis failed', err)
 
     return false
   } finally {
@@ -59,7 +67,7 @@ export async function speakScripted(text: string, voice?: string, context?: stri
 
 /** 聊天窗口里用户主动点击消息气泡下方的「播放」按钮时的入口。语义与
  *  {@link speak} 一致——动态、单次、命中即停——但永远走磁盘缓存，保证同一段
- *  (voice, text) 跨会话只会消耗一次云端额度。 */
+ *  (voice, text) 跨会话只会消耗一次云端额度。失败向上抛：显式操作必须可见。 */
 export async function speakChatMessage(text: string, voice?: string, onDone?: () => void): Promise<boolean> {
-  return await synth(text, voice, 'chat.replay', true, onDone)
+  return await synth(text, voice, 'chat.replay', true, onDone, true)
 }

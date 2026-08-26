@@ -17,7 +17,6 @@ import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interac
 import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
-import { $preferredCallMode } from '@/companion/prefs'
 import { $puppetInfo, hydratePuppet } from '@/companion/puppet/puppet-store'
 import { initSpatial } from '@/companion/spatial'
 import { NotificationStack } from '@/shared'
@@ -391,11 +390,6 @@ export function CompanionRoot(): React.JSX.Element {
   const onOnboardingComplete = () => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
-
-    // DESIGN §6.1：用户偏好主交互模式为语音通话时，进入桌面后自动打开通话面板。
-    if ($preferredCallMode.get() === 'voice') {
-      setVoiceCallOpen(true)
-    }
   }
 
   return (

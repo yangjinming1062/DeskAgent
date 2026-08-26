@@ -56,7 +56,7 @@ import {
   MAX_USER_TEXT,
   type OnboardingAnswers
 } from '../persona'
-import { setCompanionVoiceId, setPreferredCallMode } from '../prefs'
+import { setCompanionVoiceId } from '../prefs'
 import { speakScripted, stopSpeaking } from '../tts'
 import { fetchVoiceCatalogRaw, matchVoicePreference, nextVoice, sampleLine, type VoiceOption } from '../voice'
 import { $voicePreparing } from '../voice-state'
@@ -1453,9 +1453,6 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       setAnswers(prev => ({ ...prev, voice: vName }))
       void submitOnboardingAnswer('voice', vName)
     }
-
-    // DESIGN §6.1：选择语音即落盘主交互模式为 voice，进入桌面后默认打开语音通话面板。
-    setPreferredCallMode('voice')
 
     setPhase('q-user')
     setQIndex(0)

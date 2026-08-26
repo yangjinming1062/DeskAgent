@@ -413,7 +413,8 @@ async function ttsViaBackend({
 
   const mime = res.headers.get('content-type') || 'audio/mpeg'
   const buf = Buffer.from(await res.arrayBuffer())
-  const voiceOut = res.headers.get('x-spiritagent-voice') || undefined
+  // 后端实际返回的头名是 X-Voice-Used（api/v1/media.py TTS 端点）。
+  const voiceOut = res.headers.get('x-voice-used') || undefined
 
   return { dataUrl: dataUrlFromBuffer(buf, mime), mimeType: mime, voiceOut }
 }

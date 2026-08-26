@@ -2,6 +2,8 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import type React from 'react'
 
+import { notifyError } from '@/shared/store/notifications'
+
 import { setSpriteState } from './companion-store'
 import { speakChatMessage, stopSpeaking } from './tts'
 import { $voicePreparing } from './voice-state'
@@ -70,11 +72,13 @@ export function ChatMessagePlayButton({
 
     try {
       await speakChatMessage(text, undefined, myDone)
-    } catch {
-      // audio-track.stopAudio 已经在 synth() 的 catch 里调用；这里只兜底清状态。
+    } catch (err) {
+      // audio-track.stopAudio 已经在 synth() 的 catch 里调用；这里清状态并让用户看见失败——
+      // 显式点了播放却无声回到 idle，用户无从得知语音服务已故障。
       if ($chatPlaybackId.get() === messageId) {
         $chatPlaybackId.set(null)
         setSpriteState('idle', { force: true })
+        notifyError(err, '语音朗读失败')
       }
     }
   }
