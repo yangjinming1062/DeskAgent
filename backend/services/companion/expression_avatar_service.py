@@ -2,7 +2,7 @@ import asyncio
 import time
 from pathlib import Path
 
-from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, has_real_transparency, remove_background, safe_json_loads
+from components import SESSION_LOCAL, download_capped, get_file_path, get_logger, safe_json_loads
 from modules.companion import CompanionExpression, CompanionExpressionAvatar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +20,7 @@ _AVATAR_SIZE = "1:1"
 _ALBUM_CAP = 300
 _GENERATION_COOLDOWN_S = 300
 
-# 固定模板、不走 LLM 二次撰写：情绪语义本身已是权威来源，剩下的只是通用表述与抠图依赖的纯白背景约定
+# 固定模板、不走 LLM 二次撰写：情绪语义本身已是权威来源，剩下的只是通用表述与头像背景干净约定
 _EXPRESSION_PROMPT_TEMPLATE = (
     "角色头部特写，取参考图角色最具辨识度的头部区域，居中朝向观众、占据画面主要位置。"
     "物种与外貌严格以参考图为准，不改变任何外形特征。"
@@ -59,7 +59,7 @@ class ExpressionCooldownError(Exception):
 
 
 class ExpressionAvatarGenerationError(Exception):
-    """所有支持以图生图的供应商都没能产出可抠背景的聊天表情头像。"""
+    """所有支持以图生图的供应商都没能产出聊天表情头像。"""
 
 
 # 进程内生成协调：in-flight 表让并发请求共享同一次生成，失败键进入冷却避免重试风暴
@@ -87,7 +87,7 @@ async def _fetch_image_bytes(url: str) -> bytes | None:
 
 
 async def _generate_expression_avatar_png(db: AsyncSession | None, user_id: int, prompt: str, subject_ref: str, size: str) -> bytes:
-    """按供应商链依次尝试生成并抠图，返回带透明通道的 PNG。"""
+    """按供应商链依次尝试生成，返回供应商原图 PNG。"""
     chain = [c for c in await resolve_provider_chain(db, user_id, "image_gen") if resolve(ServiceType.image_gen, c.provider_name).supports_reference_image]
     if not chain:
         raise ExpressionAvatarGenerationError("当前图片生成供应商均不支持以图生图，请启用 minimax / gemini / grok 其中之一")
@@ -95,18 +95,10 @@ async def _generate_expression_avatar_png(db: AsyncSession | None, user_id: int,
         result_json = await image_generation_tool(prompt, {}, size=size, n=1, user_id=user_id, reference_image=subject_ref, preferred_provider=cfg.provider_name)
         url = first_image_url(result_json)
         raw = await _fetch_image_bytes(url) if url else None
-        if raw is None:
-            err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
-            logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
-            continue
-        try:
-            png = await asyncio.to_thread(remove_background, raw)
-        except Exception:
-            logger.info("expression avatar matting failed", extra={"user_id": user_id, "provider": cfg.provider_name})
-            continue
-        if png is not None and has_real_transparency(png):
-            return png
-        logger.info("expression avatar background not mattable, trying next provider", extra={"user_id": user_id, "provider": cfg.provider_name})
+        if raw is not None:
+            return raw
+        err = (safe_json_loads(result_json, default={}) or {}).get("error") if isinstance(safe_json_loads(result_json, default={}), dict) else None
+        logger.warning("expression avatar image gen failed for provider", extra={"user_id": user_id, "provider": cfg.provider_name, "error": err})
     raise ExpressionAvatarGenerationError("表情头像生成失败，请稍后再试")
 
 

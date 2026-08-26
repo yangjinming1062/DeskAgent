@@ -20,7 +20,6 @@ from components import (
     get_logger,
     render_metrics_response,
     setup_logging,
-    warmup_matting_engine,
 )
 from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,7 +69,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await asyncio.to_thread(_run_migrations)
 
     attachment_root(SETTINGS.data_dir).mkdir(parents=True, exist_ok=True)
-    await asyncio.to_thread(warmup_matting_engine)
 
     start_scheduler()
     # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连。

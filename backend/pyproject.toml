@@ -24,6 +24,4 @@ dependencies = [
     "alembic>=1.19.1",
     "prometheus-client>=0.20.0",
     "numpy>=2.0",
-    "rembg>=2.0.60",
-    "onnxruntime>=1.19.0",
 ]
