@@ -56,8 +56,8 @@ async def stash_user_id_middleware(request: Request, call_next: Callable[[Reques
             request.state.user_id = uid
             # 同步到 logger 的 ContextVar, 后续本 task log 自动带 user_id 字段
             set_request_user_id(uid)
-    except jwt.PyJWTError:
-        logger.debug("rate_limit: JWT decode failed in stash middleware", exc_info=True)
+    except jwt.PyJWTError as exc:
+        logger.debug("rate_limit: JWT decode failed in stash middleware: %s", exc)
     return await call_next(request)
 
 
