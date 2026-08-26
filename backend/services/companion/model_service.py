@@ -28,7 +28,7 @@ logger = get_logger(__name__)
 
 async def _resolve_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset:
     avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-    if avatar is None or not (avatar.seed_front_url or avatar.asset_url):
+    if avatar is None or not (avatar.seed_front_2d_url or avatar.asset_url):
         raise ModelGenerationError("没有找到形象头像，请先完成引导流程中的形象生成")
     return avatar
 
@@ -39,7 +39,7 @@ def _avatar_view_filenames(avatar: AvatarAsset) -> dict[str, str]:
     def _name(url: str) -> str:
         return url.rsplit("/", maxsplit=1)[-1].split("?", maxsplit=1)[0]
 
-    front = _name(avatar.seed_front_url or avatar.asset_url)
+    front = _name(avatar.seed_front_3d_url or avatar.seed_front_2d_url or avatar.asset_url)
     if not front:
         raise ModelGenerationError("请先生成正面全身图再生成模型")
     out: dict[str, str] = {"front": front}

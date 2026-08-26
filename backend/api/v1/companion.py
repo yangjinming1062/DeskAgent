@@ -20,9 +20,9 @@ from modules.companion import (
     CompanionExpression,
     ExpressionAvatarRequest,
     ExpressionAvatarResponse,
-    FullbodyBackGenerateRequest,
+    Fullbody2dFrontGenerateRequest,
+    Fullbody3dSeedGenerateRequest,
     FullbodyConfirmFrontRequest,
-    FullbodyFrontGenerateRequest,
     ModelGenerateRequest,
     OutfitCreateRequest,
     OutfitListResponse,
@@ -67,7 +67,8 @@ from services.companion import (
     generate_avatar,
     generate_companion_model,
     generate_fullbody_back,
-    generate_fullbody_front,
+    generate_fullbody_front_2d,
+    generate_fullbody_front_3d,
     generate_mesh2d_model,
     get_active_avatar,
     get_active_mesh2d_response,
@@ -336,12 +337,12 @@ async def put_avatar_select(avatar_id: int, auth: tuple[User, LoginRecord] = Dep
     return avatar_response(asset)
 
 
-@router.post("/avatar/{avatar_id}/fullbody/front", response_model=AvatarAssetResponse)
+@router.post("/avatar/{avatar_id}/fullbody/front-2d", response_model=AvatarAssetResponse)
 @limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
-async def post_fullbody_front(
+async def post_fullbody_front_2d(
     request: Request,
     avatar_id: int,
-    body: FullbodyFrontGenerateRequest,
+    body: Fullbody2dFrontGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
@@ -349,7 +350,7 @@ async def post_fullbody_front(
     raw, content_type = _decode_upload_image(body.image, body.content_type)
     ref_b64 = base64.b64encode(raw).decode("utf-8") if raw else None
     try:
-        asset = await generate_fullbody_front(
+        asset = await generate_fullbody_front_2d(
             db,
             user.id,
             avatar_id=avatar_id,
@@ -366,10 +367,36 @@ async def post_fullbody_front(
         raise HTTPException(status_code=400, detail={"error": "头像缺失提示词缓存，请重新生成头像", "reason": str(exc)})
     except FullbodyGenerationError as exc:
         err_detail = getattr(exc, "internal", str(exc))
-        logger.warning("fullbody front generation failed", extra={"user_id": user.id, "error": err_detail})
+        logger.warning("fullbody front-2d generation failed", extra={"user_id": user.id, "error": err_detail})
         raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
     except MissingLlmConfigError as exc:
-        logger.warning("post_fullbody_front missing config", extra={"user_id": user.id, "error": str(exc)})
+        logger.warning("post_fullbody_front_2d missing config", extra={"user_id": user.id, "error": str(exc)})
+        raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
+    return avatar_response(asset)
+
+
+@router.post("/avatar/{avatar_id}/fullbody/front-3d", response_model=AvatarAssetResponse)
+@limiter.limit(f"{SETTINGS.companion_avatar_generate_rate_limit_per_minute}/minute")
+async def post_fullbody_front_3d(
+    request: Request,
+    avatar_id: int,
+    body: Fullbody3dSeedGenerateRequest,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> AvatarAssetResponse:
+    user, _ = auth
+    try:
+        asset = await generate_fullbody_front_3d(db, user.id, avatar_id=avatar_id, feedback=body.feedback)
+    except AvatarNotFoundError as exc:
+        raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
+    except FrontSeedMissingError as exc:
+        raise HTTPException(status_code=400, detail={"error": "请先确认 2D 正面全身图", "reason": str(exc)})
+    except FullbodyGenerationError as exc:
+        err_detail = getattr(exc, "internal", str(exc))
+        logger.warning("fullbody front-3d generation failed", extra={"user_id": user.id, "error": err_detail})
+        raise HTTPException(status_code=502, detail={"error": str(exc), "reason": str(exc)})
+    except MissingLlmConfigError as exc:
+        logger.warning("post_fullbody_front_3d missing config", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=502, detail={"error": "LLM provider 未配置，请先在设置中配置 chat provider", "reason": str(exc)})
     return avatar_response(asset)
 
@@ -379,13 +406,13 @@ async def post_fullbody_front(
 async def post_fullbody_back(
     request: Request,
     avatar_id: int,
-    body: FullbodyBackGenerateRequest,
+    body: Fullbody3dSeedGenerateRequest,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> AvatarAssetResponse:
     user, _ = auth
     try:
-        asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, style=body.style, feedback=body.feedback, front_url=body.front_url)
+        asset = await generate_fullbody_back(db, user.id, avatar_id=avatar_id, feedback=body.feedback)
     except AvatarNotFoundError as exc:
         raise HTTPException(status_code=404, detail={"error": "找不到对应的形象", "reason": str(exc)})
     except FrontSeedMissingError as exc:

@@ -54,9 +54,10 @@
 | companion.set_timezone | Client 每次连接上报本地 IANA 时区——夜间批处理与互动统计按用户本地日聚合的唯一时区来源；缺行时夜间流水线整段跳过 | Backend 持久化 + Client boot 上报 + DESIGN §6.2 |
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳·摸头·眩晕反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认半身形象（幂等），解开正面全身立绘生成子阶段 | Backend 状态 + Client 流程 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/front | 按默认赛璐珞画风与微调反馈生成/重绘正面全身图 | Backend 生成 + Client 正面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按正面种子与微调反馈生成/重绘背面全身图（3D 升级阶段的背面种子确认向导调用；形象锁定后仍可用——视角派生而非身份变更；风格由系统按类人 CG / 非人写实自动推导） | Backend 生成 + Client 背面预览与微调 |
-| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图并解开音色/用户子阶段（引导期不生成背面种子图，背面准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md)） | Backend 生成 + Client 流程 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/front-2d | 按默认赛璐珞画风（自然站姿）与微调反馈生成/重绘 2D 正面全身图 | Backend 生成 + Client 正面预览与微调 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/front-3d | 以半身头像种子（形象身份基准，同 2D 正面生成）为参考生成/重绘 A-pose、3D 画风的 3D 正面种子（3D 升级向导调用；形象锁定后仍可用——姿态/画风派生而非身份变更；不覆盖 2D 正面种子，重绘会使已派生背面种子失效） | Backend 生成 + Client 3D 正面预览与微调 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/back | 按 3D 正面种子（缺省回退 2D 正面种子）与微调反馈生成/重绘背面全身图（3D 升级向导调用；形象锁定后仍可用——视角派生而非身份变更；画风与 3D 正面种子成对，由系统按类人 CG / 非人写实自动推导） | Backend 生成 + Client 背面预览与微调 |
+| POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认 2D 正面全身图并解开音色/用户子阶段（引导期不生成 3D 种子图——正面与背面均为 3D 建模派生输入，准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md)） | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.5 |
 | GET/POST /api/companion/2d | 查询 / 触发 2D 形象生成流水线（see-through 双 provider 拆分，产物恒为分层 PSD）；产物契约见 [docs/PIPELINE.md §6](docs/PIPELINE.md) | Backend 生成管线 + Client puppet 渲染链 |
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |

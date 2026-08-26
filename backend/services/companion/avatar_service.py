@@ -19,7 +19,6 @@ from pydantic import ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .. import image_to_3d
 from ..llm import (
     build_fullbody_prompt,
     chat,
@@ -152,7 +151,7 @@ async def raise_if_image_sealed(db: AsyncSession | None, user_id: int, persona: 
 
     async def _sealed(session: AsyncSession) -> bool:
         asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        seed = getattr(asset, "seed_front_url", None) if asset is not None else None
+        seed = getattr(asset, "seed_front_2d_url", None) if asset is not None else None
         return bool(seed and not seed.startswith("temp-media/"))
 
     if db is not None:
@@ -488,7 +487,7 @@ def _re_sign_avatar_url(asset: AvatarAsset) -> None:
         signed = _re_sign_bare_path(asset.asset_url)
         if signed:
             asset.asset_url = signed
-    for attr in ("seed_front_url", "seed_back_url"):
+    for attr in ("seed_front_2d_url", "seed_front_3d_url", "seed_back_url"):
         val = getattr(asset, attr, None)
         if val:
             signed = _re_sign_bare_path(val)
@@ -742,7 +741,7 @@ async def finalize_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
         return None
 
     pending: list[tuple[str, bytes, str]] = []
-    for attr in ("asset_url", "seed_front_url", "seed_back_url"):
+    for attr in ("asset_url", "seed_front_2d_url", "seed_front_3d_url", "seed_back_url"):
         current = getattr(asset, attr, None)
         if current and current.startswith("temp-media/"):
             result = _read_temp_media_bytes(current)
@@ -789,7 +788,49 @@ def _subject_reference_for_avatar(asset: AvatarAsset, reference_image: str | Non
     return load_avatar_bytes_as_data_uri(asset.asset_url)
 
 
-async def generate_fullbody_front(
+async def _fetch_fullbody_target(
+    db: AsyncSession | None,
+    user_id: int,
+    avatar_id: int,
+    *,
+    check_sealed: bool = False,
+) -> tuple[AvatarAsset, Persona]:
+    """按 id 取回属于该用户的头像行与 persona；check_sealed=True 时先过形象锁定检查（2D 身份重生路径）。"""
+
+    async def _fetch(session: AsyncSession) -> tuple[AvatarAsset, Persona]:
+        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
+        if asset is None:
+            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        persona = await get_or_create_persona(session, user_id)
+        if check_sealed:
+            await raise_if_image_sealed(session, user_id, persona)
+        return asset, persona
+
+    if db is None:
+        async with SESSION_LOCAL() as probe_db:
+            return await _fetch(probe_db)
+    return await _fetch(db)
+
+
+def _fullbody_identity_fields(persona: Persona) -> tuple[str, str, str]:
+    """全身提示词身份三元组，按（物种、外貌、性格）排序。"""
+    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    return (
+        (definition.get("biological_type") or "").strip(),
+        str(definition.get("appearance") or "").strip(),
+        str(definition.get("personality") or "").strip(),
+    )
+
+
+async def _commit_asset(session: AsyncSession, asset: AvatarAsset) -> AvatarAsset:
+    await session.commit()
+    await session.refresh(asset)
+    session.expunge(asset)
+    _re_sign_avatar_url(asset)
+    return asset
+
+
+async def generate_fullbody_front_2d(
     db: AsyncSession | None = None,
     user_id: int | None = None,
     *,
@@ -799,35 +840,18 @@ async def generate_fullbody_front(
     reference_image: str | None = None,
     reference_content_type: str | None = None,
 ) -> AvatarAsset:
-    """按选定画风与用户微调要求生成/重绘正面全身图。主体参考始终使用原参考图/半身像，避免多轮迭代细节丢失。"""
+    """按选定画风与用户微调要求生成/重绘 2D 正面种子图。主体参考始终使用原参考图/半身像，避免多轮迭代细节丢失。"""
     if user_id is None:
         raise ValueError("user_id is required")
-
-    async def _fetch(session: AsyncSession):
-        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if asset is None:
-            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        persona = await get_or_create_persona(session, user_id)
-        await raise_if_image_sealed(session, user_id, persona)
-        return asset, persona
-
-    if db is None:
-        async with SESSION_LOCAL() as probe_db:
-            asset, persona = await _fetch(probe_db)
-    else:
-        asset, persona = await _fetch(db)
+    asset, persona = await _fetch_fullbody_target(db, user_id, avatar_id, check_sealed=True)
 
     prompt_payload = safe_json_loads(asset.prompt_json, default={})
     if not isinstance(prompt_payload, dict):
         prompt_payload = {}
-    cached_avatar_prompt = prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt")
-    if not cached_avatar_prompt:
+    if not (prompt_payload.get("avatar_prompt") or prompt_payload.get("prompt")):
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt")
 
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = (definition.get("biological_type") or "").strip()
-    appearance = str(definition.get("appearance") or "").strip()
-    personality = str(definition.get("personality") or "").strip()
+    species, appearance, personality = _fullbody_identity_fields(persona)
     template = resolve_fullbody_template(species, "biped", style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
@@ -853,22 +877,89 @@ async def generate_fullbody_front(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
-            if target.seed_back_url and "fullbody_aux_style" not in payload and payload.get("fullbody_style"):
-                payload["fullbody_aux_style"] = payload["fullbody_style"]
             payload["fullbody_style"] = style
             if effective_feedback is not None:
                 payload["fullbody_feedback"] = effective_feedback
             else:
                 payload.pop("fullbody_feedback", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
-        target.seed_front_url = front_url
+        target.seed_front_2d_url = front_url
         await session.execute(update(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)).values(active=False))
         target.active = True
-        await session.commit()
-        await session.refresh(target)
-        session.expunge(target)
-        _re_sign_avatar_url(target)
-        return target
+        return await _commit_asset(session, target)
+
+    if db is None:
+        async with SESSION_LOCAL() as write_db:
+            return await _write(write_db)
+    return await _write(db)
+
+
+async def _resolve_fullbody_3d_style(db: AsyncSession | None, user_id: int, avatar: AvatarAsset, species: str) -> str:
+    """3D 种子画风：优先沿用头像行已记的 3D 种子画风（正背成对一致），缺省按物种路由。"""
+    payload = safe_json_loads(avatar.prompt_json, default={})
+    cached = payload.get("fullbody_3d_style") if isinstance(payload, dict) else None
+    if cached:
+        return str(cached)
+    has_humanoid_face = None
+    if not is_preset_species(species):
+        has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
+    return resolve_fullbody_style(species, has_humanoid_face)
+
+
+async def generate_fullbody_front_3d(
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
+    *,
+    avatar_id: int,
+    feedback: str | None = None,
+) -> AvatarAsset:
+    """生成/重绘 3D 建模专用正面种子（A-pose、3D 画风）。
+
+    身份参考与 2D 正面生成同源——恒用半身头像种子（所有派生图的身份基准），不引用
+    已生成的全身图以免迭代失真；仅姿态与画风切换为 3D 建模所需，属派生而非身份变更：
+    不受形象锁定约束，也不覆盖 2D 正面种子（衣柜与 2D 拆分的身份锚）。重绘后旧背面种子随之失效。"""
+    if user_id is None:
+        raise ValueError("user_id is required")
+    asset, persona = await _fetch_fullbody_target(db, user_id, avatar_id)
+
+    if not asset.seed_front_2d_url:
+        raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; confirm the 2D front seed first")
+
+    species, appearance, personality = _fullbody_identity_fields(persona)
+    effective_style = await _resolve_fullbody_3d_style(db, user_id, asset, species)
+    template = resolve_fullbody_template(species, "biped", effective_style)
+    ref_uri = _subject_reference_for_avatar(asset)
+    effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
+    prompt = build_fullbody_prompt("front", template=template, style_id=effective_style, feedback=effective_feedback, appearance=appearance, personality=personality)
+
+    try:
+        front_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
+            prompt,
+            user_id,
+            reference_image=ref_uri,
+            size=_FULLBODY_SIZE,
+            persist=persona.is_portrait_confirmed,
+            preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
+        )
+    except Exception as exc:
+        err_msg = getattr(exc, "internal", str(exc))
+        raise FullbodyGenerationError("3D 正面立绘生成失败，请稍后重试", internal=err_msg) from exc
+
+    async def _write(session: AsyncSession) -> AvatarAsset:
+        target = await session.get(AvatarAsset, avatar_id)
+        if target is None:
+            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
+        payload = safe_json_loads(target.prompt_json, default={})
+        if isinstance(payload, dict):
+            payload["fullbody_3d_style"] = effective_style
+            if effective_feedback is not None:
+                payload["fullbody_3d_feedback"] = effective_feedback
+            else:
+                payload.pop("fullbody_3d_feedback", None)
+            target.prompt_json = json.dumps(payload, ensure_ascii=False)
+        target.seed_front_3d_url = front_url
+        target.seed_back_url = ""
+        return await _commit_asset(session, target)
 
     if db is None:
         async with SESSION_LOCAL() as write_db:
@@ -881,57 +972,27 @@ async def generate_fullbody_back(
     user_id: int | None = None,
     *,
     avatar_id: int,
-    style: str | None = None,
     feedback: str | None = None,
-    front_url: str | None = None,
 ) -> AvatarAsset:
-    """按正面立绘作为参考图生成/重绘背面全身图（3D 升级阶段的背面种子确认）。
+    """按 3D 正面种子为参考图生成/重绘背面全身图（3D 升级阶段的背面种子确认；无 3D 正面种子时回退 2D 正面种子）。
 
-    形象锁定后仍可调用：参考图恒为已锁定的正面种子，是视角派生而非身份变更，不受 raise_if_image_sealed 约束。"""
+    形象锁定后仍可调用：参考图恒为已确认的正面种子，是视角派生而非身份变更，不受 raise_if_image_sealed 约束。"""
     if user_id is None:
         raise ValueError("user_id is required")
+    asset, persona = await _fetch_fullbody_target(db, user_id, avatar_id)
 
-    async def _fetch(session: AsyncSession):
-        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if asset is None:
-            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        persona = await get_or_create_persona(session, user_id)
-        return asset, persona
-
-    if db is None:
-        async with SESSION_LOCAL() as probe_db:
-            asset, persona = await _fetch(probe_db)
-    else:
-        asset, persona = await _fetch(db)
-
-    effective_front_url = asset.seed_front_url
-    if front_url:
-        normalized_front = _normalize_avatar_url_to_bare(front_url)
-        if normalized_front:
-            effective_front_url = normalized_front
-
+    effective_front_url = asset.seed_front_3d_url or asset.seed_front_2d_url
     if not effective_front_url:
         raise FrontSeedMissingError(f"avatar {avatar_id} has no front seed; generate front fullbody first")
 
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = (definition.get("biological_type") or "").strip()
-    appearance = str(definition.get("appearance") or "").strip()
-    personality = str(definition.get("personality") or "").strip()
+    species, appearance, personality = _fullbody_identity_fields(persona)
 
-    if style:
-        effective_style = style
-    else:
-        has_humanoid_face = None
-        if not is_preset_species(species):
-            has_humanoid_face = (await classify_species(chat, species, db=db, user_id=user_id))[1]
-        effective_style = resolve_fullbody_style(species, has_humanoid_face)
-
+    effective_style = await _resolve_fullbody_3d_style(db, user_id, asset, species)
     template = resolve_fullbody_template(species, "biped", effective_style)
 
     front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
     effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
     prompt = build_fullbody_prompt("back", template=template, style_id=effective_style, feedback=effective_feedback, appearance=appearance, personality=personality)
-    supports_multiview = image_to_3d.provider_supports_multiview()
 
     try:
         back_url, _, _, _ = await _generate_one_portrait_with_moderation_retry(
@@ -952,20 +1013,14 @@ async def generate_fullbody_back(
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
-            payload["fullbody_style"] = effective_style
-            if supports_multiview:
-                payload["fullbody_aux_style"] = effective_style
+            payload["fullbody_3d_style"] = effective_style
             if effective_feedback is not None:
                 payload["fullbody_back_feedback"] = effective_feedback
             else:
                 payload.pop("fullbody_back_feedback", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
         target.seed_back_url = back_url
-        await session.commit()
-        await session.refresh(target)
-        session.expunge(target)
-        _re_sign_avatar_url(target)
-        return target
+        return await _commit_asset(session, target)
 
     if db is None:
         async with SESSION_LOCAL() as write_db:
@@ -981,25 +1036,12 @@ async def confirm_fullbody_front(
     style: str | None = None,
     front_url: str | None = None,
 ) -> AvatarAsset:
-    """确认正面全身图。背面种子图不在引导期生成——它是 3D 多视角输入的派生产物，由 3D 升级路径按需生成（generate_fullbody_back）。"""
+    """确认正面全身图。3D 正面与背面种子图不在引导期生成——它们是 3D 建模输入的派生产物，由 3D 升级路径按需生成（generate_fullbody_front_3d / generate_fullbody_back）。"""
     if user_id is None:
         raise ValueError("user_id is required")
+    asset, _persona = await _fetch_fullbody_target(db, user_id, avatar_id, check_sealed=True)
 
-    async def _fetch(session: AsyncSession):
-        asset = (await session.execute(select(AvatarAsset).where(AvatarAsset.id == avatar_id, AvatarAsset.user_id == user_id))).scalar_one_or_none()
-        if asset is None:
-            raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        persona = await get_or_create_persona(session, user_id)
-        await raise_if_image_sealed(session, user_id, persona)
-        return asset
-
-    if db is None:
-        async with SESSION_LOCAL() as probe_db:
-            asset = await _fetch(probe_db)
-    else:
-        asset = await _fetch(db)
-
-    effective_front_url = asset.seed_front_url
+    effective_front_url = asset.seed_front_2d_url
     if front_url:
         normalized_front = _normalize_avatar_url_to_bare(front_url)
         if normalized_front:
@@ -1017,25 +1059,24 @@ async def confirm_fullbody_front(
         target = await session.get(AvatarAsset, avatar_id)
         if target is None:
             raise AvatarNotFoundError(f"avatar {avatar_id} not found")
-        target.seed_front_url = effective_front_url
+        target.seed_front_2d_url = effective_front_url
+        target.seed_front_3d_url = ""
         target.seed_back_url = ""
         # 确认动作把 temp-media 草稿种子图提升到 companion-avatars；草稿过期则抛可重试错误而非留下死链
-        if target.seed_front_url.startswith("temp-media/"):
-            moved = _read_temp_media_bytes(target.seed_front_url)
+        if target.seed_front_2d_url.startswith("temp-media/"):
+            moved = _read_temp_media_bytes(target.seed_front_2d_url)
             if moved is None:
-                raise AvatarSourceUnreadableError(f"temp-media file expired for seed_front_url: {target.seed_front_url} — please regenerate the fullbody front")
-            target.seed_front_url, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
+                raise AvatarSourceUnreadableError(f"temp-media file expired for seed_front_2d_url: {target.seed_front_2d_url} — please regenerate the fullbody front")
+            target.seed_front_2d_url, _, _ = await _persist_portrait_bytes(moved[0], moved[1])
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = effective_style
-            payload.pop("fullbody_aux_style", None)
+            payload.pop("fullbody_3d_style", None)
+            payload.pop("fullbody_3d_feedback", None)
+            payload.pop("fullbody_back_feedback", None)
             payload.pop("fullbody_samples", None)
             target.prompt_json = json.dumps(payload, ensure_ascii=False)
-        await session.commit()
-        await session.refresh(target)
-        session.expunge(target)
-        _re_sign_avatar_url(target)
-        return target
+        return await _commit_asset(session, target)
 
     if db is None:
         async with SESSION_LOCAL() as write_db:

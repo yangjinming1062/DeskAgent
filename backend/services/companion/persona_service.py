@@ -162,7 +162,7 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
         if not persona.is_portrait_confirmed:
             return _state(merged, "portrait", False)
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
-        if avatar is None or not getattr(avatar, "seed_front_url", None):
+        if avatar is None or not getattr(avatar, "seed_front_2d_url", None):
             return _state(merged, "fullbody", False)
         missing_users = [k for k in _POST_CHARACTER_FIELDS if not user_profile.get(k)]
         voice_missing = not draft.get("voice")

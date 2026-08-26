@@ -48,7 +48,9 @@ build_fullbody_prompt()   [确定性]   视角(front/right/back/left) + 物种�
 
   [1. 视角主谓前缀]       _VIEW_PREFIX[view]：正面 / 右侧面 / 背面 / 左侧面全身角色立绘。
   ＋
-  [2. 姿态与体态模板]     template.pose：根据物种与骨骼类型（双足人形 A-pose、四足、有翼等）决定的标准站姿。
+  [2. 姿态与体态模板]     template.pose：按物种与骨骼类型取自然站姿模板；双足姿态随画风路由——
+                          2D 立绘画风（cel_shading）自然站姿（see-through 拆分不要求 A-pose），
+                          3D 画风（anime_game_cg / realistic）A-pose（绑骨识别与多视角一致性）。
   ＋
   [3. 视角专项特征]       template.{view}_features：
                           - 正面：身体朝向正前方，正面视点。
@@ -237,6 +239,7 @@ class FullbodyTemplate:
 
 
 _BIPED_A_POSE = "标准A-pose站姿，身体直立，双臂自然向身体两侧微张45度，手臂与躯干自然分开，手肘微屈，手指自然舒展，双腿直立，双脚分开与肩同宽。"
+_BIPED_NATURAL_POSE = "自然站姿，身体放松直立，双臂自然垂于身体两侧并微微离开躯干，手指自然舒展，双腿直立，双脚自然分开与肩同宽。"
 
 _BIPED_HUMANOID_TEMPLATE = FullbodyTemplate(
     front_features="身体朝向正前方，正面视点。",
@@ -303,7 +306,8 @@ _RIG_TYPE_TEMPLATES: dict[str, FullbodyTemplate] = {
 
 
 def resolve_fullbody_template(species: str, rig_type: str = "biped", style: str = "cel_shading") -> FullbodyTemplate:
-    """解析完整的全身图模板。"""
+    """解析完整的全身图模板。双足姿态随画风路由：2D 立绘画风（cel_shading）走自然站姿——
+    see-through 拆分不要求 A-pose；3D 画风（anime_game_cg / realistic）保持 A-pose 供绑骨识别与多视角一致性。"""
     if species in _SPECIES_TEMPLATES:
         template = _SPECIES_TEMPLATES[species]
     else:
@@ -311,6 +315,8 @@ def resolve_fullbody_template(species: str, rig_type: str = "biped", style: str 
         template = _RIG_TYPE_TEMPLATES.get(rig_type, _RIG_TYPE_TEMPLATES["biped"])
         if flavor:
             template = replace(template, flavor=flavor)
+    if template.rig_type == "biped":
+        template = replace(template, pose=_BIPED_NATURAL_POSE if style == "cel_shading" else _BIPED_A_POSE)
     return template if template.style == style else replace(template, style=style)
 
 

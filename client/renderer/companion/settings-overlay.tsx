@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $effectiveTier, $userPreferredTier, setDisturbanceTier } from '@/companion/companion-store'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
-import { BackSeedWizard } from '@/companion/fullbody/back-seed-wizard'
+import { Seed3dWizard } from '@/companion/fullbody/seed3d-wizard'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import {
@@ -84,7 +84,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
   const [retuneOpen, setRetuneOpen] = useState(false)
 
-  const [backSeedWizardAvatarId, setBackSeedWizardAvatarId] = useState<number | null>(null)
+  const [seed3dWizard, setSeed3dWizard] = useState<{ avatarId: number; supportsMultiview: boolean } | null>(null)
 
   const [retuneInitial, setRetuneInitial] = useState<{
     name: string
@@ -188,24 +188,26 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     }
   }
 
-  // 切 3D 前先补背面种子图：多视角建模需要它，且只在这一刻才值得付一次生图
-  // （onboarding 只确认正面）。非多视角供应商或已有背面时直接切换。
+  // 切 3D 前先补 3D 种子图：2D 正面种子的站姿与画风都不满足 3D 建模（A-pose、3D 画风），
+  // 且只在这一刻才值得付生图（onboarding 只确认 2D 正面）。3D 正面缺或（多视角时）背面缺则出向导；
+  // 非多视角供应商已有 3D 正面时直接切换。
   const onRenderModeClick = async (m: RenderMode): Promise<void> => {
     if (m === '3d' && renderMode !== '3d') {
       try {
         const res = await window.spiritagent.api<{
           id?: number
+          seed_front_3d_url?: string | null
           seed_back_url?: string | null
           supports_multiview?: boolean
         }>({ path: '/api/companion/avatar' })
 
-        if (res?.supports_multiview && !res?.seed_back_url && res.id != null) {
-          setBackSeedWizardAvatarId(res.id)
+        if (res.id != null && (!res?.seed_front_3d_url || (res?.supports_multiview && !res?.seed_back_url))) {
+          setSeed3dWizard({ avatarId: res.id, supportsMultiview: res.supports_multiview === true })
 
           return
         }
       } catch {
-        // 头像行拉取失败时按直接切换处理；缺背面输入会在 3D 派发处以后端报错暴露，用户可重试。
+        // 头像行拉取失败时按直接切换处理；缺 3D 种子输入会在 3D 派发处以后端报错暴露，用户可重试。
       }
     }
 
@@ -275,7 +277,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
 
           {/* Render mode */}
           <Section
-            hint="切到 3D 会先补一张背面立绘（多视角建模用），再触发云端生成（1~3 分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。"
+            hint="切到 3D 会先确认 A-pose 的 3D 正面立绘（多视角供应商再补一张背面立绘），再触发云端生成（1~3 分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。"
             title="渲染模式"
           >
             <div className="flex gap-2">
@@ -534,14 +536,15 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         <PersonaRetune initial={retuneInitial} onClose={() => setRetuneOpen(false)} />
       )}
 
-      {backSeedWizardAvatarId != null && (
-        <BackSeedWizard
-          avatarId={backSeedWizardAvatarId}
-          onCancel={() => setBackSeedWizardAvatarId(null)}
+      {seed3dWizard != null && (
+        <Seed3dWizard
+          avatarId={seed3dWizard.avatarId}
+          onCancel={() => setSeed3dWizard(null)}
           onConfirm={() => {
-            setBackSeedWizardAvatarId(null)
+            setSeed3dWizard(null)
             void switchRenderMode('3d')
           }}
+          supportsMultiview={seed3dWizard.supportsMultiview}
         />
       )}
     </div>

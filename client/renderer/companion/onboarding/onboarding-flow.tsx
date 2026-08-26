@@ -871,9 +871,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       const res = await window.spiritagent.api<{
         id?: number
         asset_url?: string
-        seed_front_url?: string
+        seed_front_2d_url?: string
       }>({
-        path: `/api/companion/avatar/${avatarId}/fullbody/front`,
+        path: `/api/companion/avatar/${avatarId}/fullbody/front-2d`,
         method: 'POST',
         body: {
           style: styleId,
@@ -885,10 +885,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       const applied = await applyPortrait({
         id: res?.id,
         assetUrl: res?.asset_url,
-        seedFrontUrl: res?.seed_front_url
+        seedFrontUrl: res?.seed_front_2d_url
       })
 
-      const rawFront = res?.seed_front_url || null
+      const rawFront = res?.seed_front_2d_url || null
       let resolvedUrl: string | null = null
 
       if (applied.seedFront) {
@@ -918,7 +918,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   const hydrateFullbodyStage = async (): Promise<void> => {
     const avatarRes = await window.spiritagent.api<{
       asset_url?: string | null
-      seed_front_url?: string | null
+      seed_front_2d_url?: string | null
       id?: number
       fullbody_style?: string | null
     }>({
@@ -929,7 +929,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     await applyLocalPortrait(avatarRes)
 
     const style = 'cel_shading'
-    const seedFrontRaw = avatarRes?.seed_front_url || null
+    const seedFrontRaw = avatarRes?.seed_front_2d_url || null
 
     if (seedFrontRaw) {
       const resolved = await resolvePortraitUrl(seedFrontRaw)
@@ -1304,9 +1304,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       const res = await window.spiritagent.api<{
         id?: number
         asset_url?: string
-        seed_front_url?: string
+        seed_front_2d_url?: string
       }>({
-        path: `/api/companion/avatar/${activeAvatarId}/fullbody/front`,
+        path: `/api/companion/avatar/${activeAvatarId}/fullbody/front-2d`,
         method: 'POST',
         body: {
           style: fullbodyStyle,
@@ -1319,10 +1319,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
       const applied = await applyPortrait({
         id: res?.id,
         assetUrl: res?.asset_url,
-        seedFrontUrl: res?.seed_front_url
+        seedFrontUrl: res?.seed_front_2d_url
       })
 
-      const rawFront = res?.seed_front_url || null
+      const rawFront = res?.seed_front_2d_url || null
       let resolvedUrl: string | null = null
 
       if (applied.seedFront) {

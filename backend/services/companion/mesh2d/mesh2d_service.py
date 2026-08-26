@@ -41,10 +41,10 @@ async def generate_mesh2d_model(
     """从已激活 avatar 启动 2d 切分；avatar 不可用时抛错。"""
     avatar = await _resolve_active_avatar(db, user_id)
 
-    if avatar is None or not (avatar.seed_front_url or avatar.asset_url):
+    if avatar is None or not (avatar.seed_front_2d_url or avatar.asset_url):
         raise Mesh2DAlreadyRunningError("请先完成形象生成后再启动 2D 切分")
 
-    fullbody_url = avatar.seed_front_url or avatar.asset_url
+    fullbody_url = avatar.seed_front_2d_url or avatar.asset_url
 
     if not force:
         existing = (

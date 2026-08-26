@@ -123,7 +123,7 @@ async def _ensure_initial_outfit(db: AsyncSession, user_id: int) -> None:
     outfit = CompanionOutfit(
         user_id=user_id,
         name="初始形象",
-        fullbody_url=avatar.seed_front_url or avatar.asset_url,
+        fullbody_url=avatar.seed_front_2d_url or avatar.asset_url,
         style=mesh2d.style or "cel_shading",
         status="ready",
         active=True,
@@ -222,7 +222,7 @@ async def create_outfit_draft(
         raise OutfitError("请先描述想要的着装，或上传一张参考图")
 
     avatar, _, species, appearance, personality, style = await _outfit_generation_context(db, user_id)
-    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_url or avatar.asset_url)
+    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
     if identity_uri is None:
         raise OutfitError("身份种子图读取失败，请稍后重试")
     # 结束读事务：生图往返期间不占连接（短会话纪律）
@@ -272,7 +272,7 @@ async def regenerate_outfit_draft(db: AsyncSession, user_id: int, outfit_id: int
         raise OutfitStateError("仅草稿状态可以微调重绘")
 
     avatar, _, species, appearance, personality, style = await _outfit_generation_context(db, user_id)
-    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_url or avatar.asset_url)
+    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
     if identity_uri is None:
         raise OutfitError("身份种子图读取失败，请稍后重试")
     await db.commit()
@@ -411,7 +411,7 @@ async def delete_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> None:
             raise OutfitStateError("正在生成中的外观不能删除")
 
         avatar = await _active_avatar(db, user_id)
-        avatar_files = {avatar.seed_front_url, avatar.asset_url} if avatar is not None else set()
+        avatar_files = {avatar.seed_front_2d_url, avatar.asset_url} if avatar is not None else set()
         models = (await db.execute(select(Companion2DModel).where(Companion2DModel.outfit_id == outfit.id))).scalars().all()
         for model in models:
             _unlink_companion_asset(user_id, model.manifest_path)

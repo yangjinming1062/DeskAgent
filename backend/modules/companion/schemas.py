@@ -26,16 +26,17 @@ SucceededStatus = Literal["succeeded"]
 class AvatarAssetResponse(BaseModel):
     id: int
     asset_url: str
-    seed_front_url: str = ""
+    seed_front_2d_url: str = ""
+    seed_front_3d_url: str = ""
     seed_back_url: str = ""
     supports_multiview: bool = False
-    # 已选 fullbody 风格；与 AvatarAsset.seed_front_url 组合作为全身确认阶段的 resume 入口。
+    # 已选 fullbody 风格；与 AvatarAsset.seed_front_2d_url 组合作为全身确认阶段的 resume 入口。
     fullbody_style: str = ""
     prompt: str = ""
     status: SucceededStatus = "succeeded"
 
 
-class FullbodyFrontGenerateRequest(BaseModel):
+class Fullbody2dFrontGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     style: str = Field(default="cel_shading", max_length=64)
@@ -44,13 +45,11 @@ class FullbodyFrontGenerateRequest(BaseModel):
     content_type: str | None = Field(default=None, max_length=64)
 
 
-class FullbodyBackGenerateRequest(BaseModel):
+# 3D 种子（A-pose 正面 / 背面）生成共用请求体；画风由服务端按物种路由并随行持久化，正背恒成对一致
+class Fullbody3dSeedGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # style 缺省时由服务端从头像行缓存的画风推导，避免 3D 升级向导带过期风格
-    style: str | None = Field(default=None, max_length=64)
     feedback: str | None = Field(default=None, max_length=500)
-    front_url: str | None = Field(default=None, max_length=2048)
 
 
 class FullbodyConfirmFrontRequest(BaseModel):

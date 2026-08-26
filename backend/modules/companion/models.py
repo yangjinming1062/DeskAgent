@@ -155,7 +155,9 @@ class AvatarAsset(ModelBase):
     prompt_json: Mapped[str] = mapped_column(Text)
     asset_url: Mapped[str] = mapped_column(String(2048))
     style: Mapped[str] = mapped_column(String(64), default="")
-    seed_front_url: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
+    seed_front_2d_url: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
+    # 3D 建模专用正面种子（A-pose、3D 画风），切 3D 时以 2D 正面种子派生；不覆盖 2D 正面种子（衣柜与 2D 拆分的身份锚）
+    seed_front_3d_url: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
     seed_back_url: Mapped[str] = mapped_column(String(2048), default="", server_default=text("''"))
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
