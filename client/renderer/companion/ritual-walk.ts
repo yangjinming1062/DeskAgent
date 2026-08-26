@@ -3,13 +3,14 @@ import { $chatOpen } from '@/companion/chat-store'
 import { $spriteAction, clearGazeTarget, setGazeTarget, setSpriteState } from '@/companion/companion-store'
 import { speakProactive } from '@/companion/proactive/proactive'
 import {
+  $defaultScale,
   $spatialPos,
   $spatialScale,
-  computePerchPosition,
+  computePerchPlacement,
   getBaseSpriteHeight,
   getBaseSpriteWidth,
   moveTo,
-  reevaluateSpatialDecision
+  updateSpatialDecision
 } from '@/companion/spatial'
 import { sleep } from '@/shared/lib/utils'
 
@@ -97,7 +98,8 @@ export async function performRitualWalk<T>(
     return execute()
   }
 
-  const perch = computePerchPosition(geom)
+  // 栖身落位与 events / autonomy 同规则：以用户默认比例为缩身上限。
+  const perch = computePerchPlacement(geom, $defaultScale.get())?.pos ?? null
 
   if (!perch) {
     void speakProactive(pickLine(PERCH_TIGHT_LINES))
@@ -144,6 +146,6 @@ export async function performRitualWalk<T>(
     // gaze 泄漏会让精灵永远盯着最后的目标；异常路径同样要解锁
     clearGazeTarget()
     await sleep(800)
-    reevaluateSpatialDecision()
+    updateSpatialDecision()
   }
 }

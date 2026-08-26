@@ -146,6 +146,19 @@ export function CompanionRoot(): React.JSX.Element {
     return () => off?.()
   }, [])
 
+  // 登出 / 反激活时释放 3D 模板缓存的 GPU 资源。GLB 缓存归伙伴层自管
+  // （shared → companion 是禁用方向，auth store 不反向依赖渲染层）；动态导入
+  // 避免把 three 拉进启动 chunk，且只在确有模型资产时才值得加载该模块。
+  useEffect(
+    () =>
+      $auth.listen(state => {
+        if (state.kind === 'unauthenticated' && $modelInfo.get().asset_url) {
+          void import('./3d/gltf-instance-cache').then(m => m.clearAllGltf())
+        }
+      }),
+    []
+  )
+
   // 托盘「激活...」入口的对偶：主进程只调 showMainWindow() 不够——
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
   useEffect(() => {

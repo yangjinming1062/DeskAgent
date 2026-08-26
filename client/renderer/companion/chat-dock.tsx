@@ -48,6 +48,9 @@ const DOCK_MIN_HEIGHT = 420
 const DOCK_MAX_WIDTH = 1400
 const DOCK_MAX_HEIGHT = 900
 
+// DESIGN §2.1「用户输入起止」→ listening；停止输入该窗口后回落。
+const TYPING_IDLE_MS = 2500
+
 const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
   happy: { label: '开心愉悦', icon: '😊' },
   excited: { label: '兴奋雀跃', icon: '✨' },
@@ -153,6 +156,35 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // 文字输入走 listening（DESIGN §2.1 触发源 1）。优先级门控保证不打断
+  // thinking / working / speaking 等更高状态；停止输入 TYPING_IDLE_MS 后回落。
+  const typingIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const onTyping = (): void => {
+    setSpriteState('listening')
+
+    if (typingIdleTimerRef.current) {
+      clearTimeout(typingIdleTimerRef.current)
+    }
+
+    typingIdleTimerRef.current = setTimeout(() => {
+      typingIdleTimerRef.current = null
+
+      if ($spriteState.get() === 'listening') {
+        setSpriteState('idle', { force: true })
+      }
+    }, TYPING_IDLE_MS)
+  }
+
+  useEffect(
+    () => () => {
+      if (typingIdleTimerRef.current) {
+        clearTimeout(typingIdleTimerRef.current)
+      }
+    },
+    []
+  )
 
   // 情绪激活时替换左栏头像，回退到半身像。
   useEffect(() => {
@@ -561,7 +593,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             <div className="flex items-end gap-2">
               <textarea
                 className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/40 focus:border-white/40"
-                onChange={e => setText(e.target.value)}
+                onChange={e => {
+                  setText(e.target.value)
+                  onTyping()
+                }}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()

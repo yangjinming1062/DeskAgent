@@ -145,15 +145,6 @@ export function computePerchPlacement(
   return { pos: { x, y }, scale }
 }
 
-export function computePerchPosition(geom: {
-  x: number
-  y: number
-  w: number
-  h: number
-}): { x: number; y: number } | null {
-  return computePerchPlacement(geom, 1)?.pos ?? null
-}
-
 // 精灵旁边浮动的瞬时弹层（聊天面板、proactive 气泡）的锚点定位：默认放在精灵右侧，
 // 放不下则翻转到左侧。`gap` 是精灵与弹层之间的间距；`overlayMaxW` 是弹层最大可能宽度
 // （仅用于翻转判定）。`top` 锚定到精灵头部区域（top + verticalRatio * 缩放后高度），
@@ -406,14 +397,6 @@ export function setDefaultScale(scale: number): void {
   updateAdaptiveScale()
 }
 
-function localePosition(_locale: SpatialLocale): { x: number; y: number } {
-  return $homePosition.get()
-}
-
-function defaultLocomotion(locale: SpatialLocale): 'walk' | 'fly' | 'still' {
-  return locale === 'target' ? 'fly' : 'walk'
-}
-
 export function setLocale(
   locale: SpatialLocale,
   opts?: {
@@ -433,10 +416,10 @@ export function setLocale(
     updateAdaptiveScale()
   }
 
-  const target = opts?.position ?? localePosition(locale)
-  const locomotion = opts?.locomotion ?? defaultLocomotion(locale)
+  const target = opts?.position ?? $homePosition.get()
+  const locomotion = opts?.locomotion ?? (locale === 'target' ? 'fly' : 'walk')
 
-  if (opts?.instant || locomotion === 'still') {
+  if (opts?.instant) {
     cancelMovement()
     $spatialPos.set(target)
     $spatialLocomotion.set('still')
@@ -448,31 +431,15 @@ export function setLocale(
 
 let userInteracted = false
 
-function updateSpatialDecision(): void {
+export function updateSpatialDecision(): void {
   if ($spatialLocomotion.get() === 'drag' || $chatOpen.get()) {
     return
   }
 
   const state = $spriteState.get()
-
-  // LLM 自主模式负责 perch/roam/home 的切换；这里只保留「安静」档位的硬约束
-  // （这是用户偏好，LLM 没有上下文可以参考）。
-  if ($llmAutonomy.get()) {
-    if ($effectiveTier.get() === 'quiet') {
-      stopRoam()
-
-      if ($spatialLocale.get() !== 'home') {
-        setLocale('home')
-      }
-
-      return
-    }
-
-    return
-  }
-
   const tier = $effectiveTier.get()
 
+  // 安静档的硬约束优先于一切——这是用户偏好，LLM 自主模式也没有上下文可以参考。
   if (tier === 'quiet') {
     stopRoam()
 
@@ -480,6 +447,11 @@ function updateSpatialDecision(): void {
       setLocale('home')
     }
 
+    return
+  }
+
+  // 其余场景下 LLM 自主模式负责 perch/roam/home 的切换；本地规则不再决策。
+  if ($llmAutonomy.get()) {
     return
   }
 
@@ -576,10 +548,6 @@ function stopRoam(): void {
   }
 
   cancelMovement()
-}
-
-export function reevaluateSpatialDecision(): void {
-  updateSpatialDecision()
 }
 
 let fallRafId: number | null = null

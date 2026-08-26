@@ -254,8 +254,9 @@ export function submitPendingBatch(): void {
         return submitWithRetry(attempt + 1)
       }
 
+      // thinking（50）> idle（10）：不带 force 会被优先级门控吞掉，精灵卡在思考态。
       setAssistantError(err instanceof Error ? err.message : '发送失败')
-      setSpriteState('idle')
+      setSpriteState('idle', { force: true })
       $chatTurnInFlight.set(false)
     }
   }

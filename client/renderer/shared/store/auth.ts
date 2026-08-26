@@ -1,8 +1,6 @@
 import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
-import { clearAllGltf } from '@/companion/3d/gltf-instance-cache'
-
 import { tearDownPrimaryGateway } from './gateway'
 
 type AuthState =
@@ -44,7 +42,6 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   if (payload.authenticated && snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
     $auth.set({ kind: 'authenticated', snapshot })
   } else {
-    clearAllGltf()
     $auth.set({ kind: 'unauthenticated' })
   }
 }
@@ -74,7 +71,6 @@ export async function logout(): Promise<void> {
     await window.spiritagent.logout()
   } finally {
     tearDownPrimaryGateway()
-    clearAllGltf()
     $auth.set({ kind: 'unauthenticated' })
   }
 }
