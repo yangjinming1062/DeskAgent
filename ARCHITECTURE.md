@@ -12,6 +12,10 @@ SpiritAgent 是一个**根据用户描述定制的、具有专属形象的陪伴
 - 本文聚焦**系统物理架构**——模块边界、为什么必须这样分离、通信链路的形态与权衡、跨模块不变量。
 - 模块实现细节、文件树、配置项见各模块 [README.md](README.md)（backend / client / runner / installer）。
 
+**平台支持策略**：
+- **Backend**：通过 Docker 部署，仅在 Docker (Linux 基础镜像) 内运行，**无需维护 Windows / macOS 兼容性**。
+- **Runner / Desktop / Installer**：仅在 **Windows** 与 **macOS** 上原生运行。
+
 ---
 
 ## 1. 三模块物理解耦
