@@ -152,12 +152,14 @@ def run_mesh2d_pipeline(
                             await db.execute(
                                 update(Companion2DModel)
                                 .where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True), Companion2DModel.id != model_id)
-                                .values(active=False),
-                                synchronize_session=False,
+                                .values(active=False)
+                                .execution_options(synchronize_session=False),
                             )
                             await db.execute(
-                                update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True)).values(active=False),
-                                synchronize_session=False,
+                                update(CompanionOutfit)
+                                .where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True))
+                                .values(active=False)
+                                .execution_options(synchronize_session=False),
                             )
                             model.active = True
                             outfit.active = True
@@ -173,8 +175,10 @@ def run_mesh2d_pipeline(
                 # service 插入时的停用与切分完成之间隔着最长 29 分钟窗口，期间 outfit 可能
                 # 已穿着——先停用其余激活行再激活，否则两条 active 并存令激活查询抛错
                 await db.execute(
-                    update(Companion2DModel).where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True), Companion2DModel.id != model_id).values(active=False),
-                    synchronize_session=False,
+                    update(Companion2DModel)
+                    .where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True), Companion2DModel.id != model_id)
+                    .values(active=False)
+                    .execution_options(synchronize_session=False),
                 )
                 model.active = True
             await db.commit()

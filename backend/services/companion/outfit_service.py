@@ -368,11 +368,20 @@ async def activate_outfit(db: AsyncSession, user_id: int, outfit_id: int) -> Com
 
         # 先停用后激活：部分唯一索引不可延迟，顺序颠倒会在中间态撞唯一约束
         await db.execute(
-            update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.pending_wear.is_(True)).values(pending_wear=False),
-            synchronize_session=False,
+            update(CompanionOutfit)
+            .where(CompanionOutfit.user_id == user_id, CompanionOutfit.pending_wear.is_(True))
+            .values(pending_wear=False)
+            .execution_options(synchronize_session=False),
         )
-        await db.execute(update(Companion2DModel).where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True)).values(active=False), synchronize_session=False)
-        await db.execute(update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True)).values(active=False), synchronize_session=False)
+        await db.execute(
+            update(Companion2DModel)
+            .where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True))
+            .values(active=False)
+            .execution_options(synchronize_session=False),
+        )
+        await db.execute(
+            update(CompanionOutfit).where(CompanionOutfit.user_id == user_id, CompanionOutfit.active.is_(True)).values(active=False).execution_options(synchronize_session=False),
+        )
         model.active = True
         outfit.active = True
         db.add(
