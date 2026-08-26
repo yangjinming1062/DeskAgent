@@ -417,6 +417,8 @@ def upgrade() -> None:
     # 每用户一个穿着中外观；一个切分中外观（并发 confirm 的硬保证，服务层另有用户级锁）
     op.create_index("uq_companion_outfits_one_active", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     op.create_index("uq_companion_outfits_one_splitting", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("status = 'splitting'"))
+    # 每用户一条激活 2d 行：非 outfit 成功接缝与穿着翻转共用先停用后激活顺序，切分窗口内的并发激活由此兜底
+    op.create_index("uq_companion_2d_models_one_active", "companion_2d_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
     op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。

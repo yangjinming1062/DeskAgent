@@ -40,7 +40,7 @@ class Companion3DModel(ModelBase, TimestampMixin):
     species: Mapped[str] = mapped_column(String(64), default="人类", server_default=text("'人类'"))
     rig_type: Mapped[str] = mapped_column(String(32), default="biped", server_default=text("'biped'"), index=True)
     rig_naming: Mapped[str] = mapped_column(String(16), default="tripo", server_default=text("'tripo'"))
-    # 模型生成所用的 seed 图风格（anime | realistic）—— 路由客户端渲染风格；旧行默认 realistic 以保留 PBR 外观。
+    # 模型生成所用的 seed 图风格（anime_game_cg | realistic）—— 路由客户端 NPR/PBR 渲染风格；旧行默认 realistic 以保留 PBR 外观。
     style: Mapped[str] = mapped_column(String(16), default="realistic", server_default=text("'realistic'"))
     status: Mapped[str] = mapped_column(String(32), default="pending")
     has_rig: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"))
@@ -94,7 +94,8 @@ class CompanionOutfit(ModelBase, TimestampMixin):
 
 
 class Companion2DModel(ModelBase, TimestampMixin):
-    """AI 自动切分生成的 2D SkinnedMesh 模型；manifest 描述骨骼 / mesh / 动画曲线，layers 指向每张部件 PNG 资产。"""
+    """see-through 拆分产物：manifest 为 PSD 木偶描述符（spiritagent.2d.psd/1），layers 指向分层 PSD 资产；客户端 puppet 渲染层消费。
+    partial unique（每用户一条 active）只存在于 baseline 迁移，不进模型 metadata。"""
 
     __tablename__ = "companion_2d_models"
 
@@ -139,7 +140,7 @@ class Persona(ModelBase, TimestampMixin):
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     is_portrait_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     portrait_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # 渲染模式：2d（默认 SkinnedMesh 2D 动画版）或 3d（云端 GLB 模型）；3d 失败自动回退到 2d。
+    # 渲染模式：2d（默认 PSD 木偶动画版）或 3d（云端 GLB 模型）；3d 失败自动回退到 2d。
     render_mode: Mapped[str] = mapped_column(String(8), default="2d", server_default=text("'2d'"), index=True)
 
     user: Mapped["User"] = relationship(back_populates="persona")

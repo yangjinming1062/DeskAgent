@@ -244,7 +244,7 @@ async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause
         raise
 
 
-async def _upsert_row(db, *, user_id: int, name: str, avatar_id: int, prompt: str, path: str, png: bytes) -> CompanionExpressionAvatar:
+async def _upsert_row(db: AsyncSession, *, user_id: int, name: str, avatar_id: int, prompt: str, path: str, png: bytes) -> CompanionExpressionAvatar:
     # force_new / 文件失效的替换也走这里：每个键只保留一行，旧文件同步删除
     if (
         old := (
@@ -265,7 +265,7 @@ async def _upsert_row(db, *, user_id: int, name: str, avatar_id: int, prompt: st
     return row
 
 
-async def _prune(db, user_id: int) -> None:
+async def _prune(db: AsyncSession, user_id: int) -> None:
     rows = (
         (await db.execute(select(CompanionExpressionAvatar).where(CompanionExpressionAvatar.user_id == user_id).order_by(CompanionExpressionAvatar.created_at.desc())))
         .scalars()

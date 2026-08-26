@@ -99,7 +99,7 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 ## 6. 2D 分层动画能力链
 
-2D 拆分只走 see-through 一条产物链：主用 HF Space、备用魔搭 ModelScope（主用任何失败自动切换），行状态机 / WS 事件 / 衣柜接缝复用；渲染级联为 puppet（PSD）→ 3D → 程序化蛋。
+2D 拆分只走 see-through 一条产物链：主用 HF Space、备用魔搭 ModelScope（主用任何失败自动切换），行状态机 / WS 事件 / 衣柜接缝复用；渲染级联为 puppet（PSD）→ 3D → 程序化蛋。每用户一条激活 2d 行由部分唯一索引硬保证，所有激活翻转（穿着、非 outfit 成功接缝）共用先停用后激活顺序。
 
 ### 6.1 PSD 链（see-through 双 provider）
 

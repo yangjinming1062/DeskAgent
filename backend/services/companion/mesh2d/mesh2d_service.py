@@ -16,8 +16,8 @@ from .pipeline import active_model_ids, run_mesh2d_pipeline
 logger = get_logger(__name__)
 
 
-class Mesh2DAlreadyRunningError(RuntimeError):
-    """已有 2d 切分任务在进行中，或 avatar 尚未就绪无法启动切分。"""
+class Mesh2DNotReadyError(RuntimeError):
+    """avatar 尚未就绪（无激活行或缺少正面种子图），无法启动 2D 切分。"""
 
 
 async def _resolve_active_avatar(db: AsyncSession, user_id: int) -> AvatarAsset | None:
@@ -42,7 +42,7 @@ async def generate_mesh2d_model(
     avatar = await _resolve_active_avatar(db, user_id)
 
     if avatar is None or not (avatar.seed_front_2d_url or avatar.asset_url):
-        raise Mesh2DAlreadyRunningError("请先完成形象生成后再启动 2D 切分")
+        raise Mesh2DNotReadyError("请先完成形象生成后再启动 2D 切分")
 
     fullbody_url = avatar.seed_front_2d_url or avatar.asset_url
 
@@ -86,12 +86,13 @@ async def generate_mesh2d_model(
             )
             return active
 
+    # 停用一切激活行（不限状态）：激活唯一性由部分唯一索引硬保证，遗留的 failed-active
+    # 异常行若不在停用面内会让新行成功接缝撞唯一约束
     await db.execute(
         update(Companion2DModel)
         .where(
             Companion2DModel.user_id == user_id,
             Companion2DModel.active.is_(True),
-            Companion2DModel.status.in_(("generating", "succeeded")),
         )
         .values(active=False),
     )
@@ -124,7 +125,7 @@ async def get_active_mesh2d_response(
     db: AsyncSession,
     user_id: int,
 ) -> Companion2DModelResponse | None:
-    """把活跃 2d 模型转换为 API 响应；客户端拿到 manifest_url 后启动 SkinnedMesh 渲染。"""
+    """把活跃 2d 模型转换为 API 响应；客户端拿到 manifest_url 后交给 puppet 渲染层装配 PSD。"""
     model = (
         await db.execute(
             select(Companion2DModel).where(

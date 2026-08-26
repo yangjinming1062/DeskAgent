@@ -80,7 +80,7 @@ from .memory_format import (
 )
 from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
 from .mesh2d import (
-    Mesh2DAlreadyRunningError,
+    Mesh2DNotReadyError,
     Mesh2DPipelineError,
     generate_mesh2d_model,
     get_active_mesh2d_response,
@@ -150,7 +150,7 @@ __all__ = [
     "FullbodyGenerationError",
     "ImageSealedError",
     "InteractResult",
-    "Mesh2DAlreadyRunningError",
+    "Mesh2DNotReadyError",
     "Mesh2DPipelineError",
     "ModelGenerationError",
     "ModelGenerationInProgressError",

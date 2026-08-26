@@ -8,7 +8,8 @@ from sqlalchemy.dialects.postgresql import insert
 from services.conversation import ProactiveState, get_user_proactive_record, set_user_quiet_since
 
 # 打扰档位由客户端主导（本地 localStorage + 活动监视器分类），每次变化经 RPC 推送到后端持久化，供重启后服务端门控继续生效。
-ALLOWED_TIERS = frozenset({"normal", "quiet"})
+# 三档与 DESIGN §6.2 对齐；服务端门控只按 quiet 分流，proactive 与 normal 的差异由客户端语音/气泡策略兑现。
+ALLOWED_TIERS = frozenset({"proactive", "normal", "quiet"})
 DEFAULT_TIER = "normal"
 
 logger = get_logger(__name__)

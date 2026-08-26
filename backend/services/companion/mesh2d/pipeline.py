@@ -9,6 +9,7 @@ from components import SESSION_LOCAL, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import asset_store
 from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
@@ -65,7 +66,7 @@ def run_mesh2d_pipeline(
     视觉 LLM 往返共享请求会话。"""
     queue = get_default_queue()
 
-    async def _fetch_model(db) -> Companion2DModel | None:
+    async def _fetch_model(db: AsyncSession) -> Companion2DModel | None:
         return (
             await db.execute(
                 select(Companion2DModel).where(
@@ -128,8 +129,7 @@ def run_mesh2d_pipeline(
             )
             model.manifest_path = manifest_path
             # outfit 成功接缝：置 ready；自动穿着标记仍真则原子翻转穿着（先停用后激活——
-            # 部分唯一索引不可延迟）。标记已被手动穿着清掉时只入柜不换装；
-            # 非 outfit 行维持原行为（service 插入前已停用旧行，直接激活）。
+            # 部分唯一索引不可延迟）。标记已被手动穿着清掉时只入柜不换装。
             event_outfit_id = model.outfit_id
             worn: bool | None = None
             event_outfit_name = ""
@@ -170,6 +170,12 @@ def run_mesh2d_pipeline(
                         # outfit 行已被删除的防御分支：不可激活（现有穿着行仍激活），留孤儿行
                         model.active = False
             else:
+                # service 插入时的停用与切分完成之间隔着最长 29 分钟窗口，期间 outfit 可能
+                # 已穿着——先停用其余激活行再激活，否则两条 active 并存令激活查询抛错
+                await db.execute(
+                    update(Companion2DModel).where(Companion2DModel.user_id == user_id, Companion2DModel.active.is_(True), Companion2DModel.id != model_id).values(active=False),
+                    synchronize_session=False,
+                )
                 model.active = True
             await db.commit()
 

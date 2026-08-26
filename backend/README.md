@@ -4,7 +4,7 @@
 
 ## 1. 职责与边界
 
-**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型与 2D 分层形象生成在 web 进程内编排能力链（2D 含分层 PSD 首选链与 CPU 骨骼降级链）；链路与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
+**职责**：伙伴角色定义与形象资产生成与下发、LLM 流式对话编排、系统提示词装配、云端工具执行、Cron 调度、跨模块事件下发(WS outbox)、REST + WebSocket 端点暴露。3D 模型与 2D 分层形象生成在 web 进程内编排能力链（2D 走 see-through 双 provider 单链，无本地降级链）；链路与失败语义见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
 
 **不**做:
 - **不接触用户本机操作系统**——所有本机操作经 IPC 委托给 Runner;图像/视频/语音等资产仅在云端生成、客户端拉取后渲染。

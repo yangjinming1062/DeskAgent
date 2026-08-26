@@ -1,8 +1,7 @@
 """see-through 拆分编排 — HF Space → PSD 资产落盘 → puppet 描述符 manifest。
 
-复用 mesh2d 的行状态机 / outfit 接缝 / WS 事件路径：本模块只产出与
-`_run_pipeline_core` 同构的 (manifest_json, layer_entries)，落库由 mesh2d
-pipeline 的调用方统一执行；SeeThroughError 时调用方降级 CPU mesh2d 链。"""
+本模块只产出 (manifest_json, layer_entries)；行状态机 / outfit 接缝 / WS 事件
+路径由调用方（mesh2d pipeline）统一执行，SeeThroughError 落失败态交客户端级联兜底。"""
 
 import json
 

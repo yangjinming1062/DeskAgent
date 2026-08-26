@@ -44,7 +44,7 @@ from services.companion import (
     FrontSeedMissingError,
     FullbodyGenerationError,
     ImageSealedError,
-    Mesh2DAlreadyRunningError,
+    Mesh2DNotReadyError,
     ModelGenerationError,
     ModelGenerationInProgressError,
     ModelProviderNotConfiguredError,
@@ -495,7 +495,7 @@ async def post_mesh2d(auth: tuple[User, LoginRecord] = Depends(get_current_sessi
         persona = await get_or_create_persona(db, user.id)
         priority = "low" if persona.render_mode == "3d" else "high"
         model = await generate_mesh2d_model(db, user_id=user.id, priority=priority)
-    except Mesh2DAlreadyRunningError as exc:
+    except Mesh2DNotReadyError as exc:
         logger.warning("2d generation failed to start", extra={"user_id": user.id, "error": str(exc)})
         raise HTTPException(status_code=409, detail={"error": str(exc), "reason": "startup_failed"})
 
