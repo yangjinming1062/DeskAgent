@@ -23,8 +23,6 @@ export function getBaseSpriteWidth(): number {
   return Math.round(getBaseSpriteHeight() * 0.85)
 }
 
-const SPRITE_W = getBaseSpriteWidth()
-const SPRITE_H = getBaseSpriteHeight()
 const REST_MARGIN = 24
 
 const WALK_SPEED = 80
@@ -61,9 +59,15 @@ export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump
 type EdgeDockSide = 'none' | 'left' | 'right'
 
 const $spatialLocale = atom<SpatialLocale>('home')
+
+// 可见内容包围盒（归一化到舞台盒）：角色实际可见像素的范围，由渲染层上报——
+// puppet 用 rig 层矩形并集，3D 用轮廓 alpha 外接矩形；蛋等未上报路径按整盒兜底。
+// 必须先于下方位置原子声明：home 初值求值期就经 contentBox 读它，晚声明会 TDZ 崩页。
+export const $spriteContentRect = atom<{ left: number; top: number; right: number; bottom: number } | null>(null)
+
+export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialPos = atom<{ x: number; y: number }>(getHomePosition())
 export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
-export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
@@ -80,20 +84,32 @@ interface ViewportSize {
 export const $viewport = atom<ViewportSize>({ width: window.innerWidth, height: window.innerHeight })
 
 function getHomePosition(): { x: number; y: number } {
-  const w = getBaseSpriteWidth()
-  const h = getBaseSpriteHeight()
+  // home 是休息落点，scale 恒为用户默认比例（瞬时放大只在互动中发生）；
+  // 脚底贴视口底（站在任务栏上沿），右侧留呼吸间距。
+  const c = contentBox($defaultScale.get())
 
   return {
-    x: Math.max(REST_MARGIN, window.innerWidth - w - REST_MARGIN),
-    y: Math.max(REST_MARGIN, window.innerHeight - h - REST_MARGIN)
+    x: Math.max(REST_MARGIN, window.innerWidth - c.right - REST_MARGIN),
+    y: Math.max(-c.top, window.innerHeight - c.bottom)
   }
 }
 
-// 不变量（DESIGN §3.7）：精灵面部始终在屏内。
-// 面部约占精灵上 30% 区域；强制约束 sprite 顶部 y ≥ 0 且 face 底 y ≤ vh，
-// 保证 face 整段都落在屏幕内——sprite 主体可以部分越过底部（向下延伸 h-faceH），
-// 顶/左/右仍受 REST_MARGIN 兜底。贴边吸附（peeking）仅水平方向处理。
-const FACE_TOP_RATIO = 0.3
+// 不变量（DESIGN §3.7）：精灵全身始终完整在屏内——垂直方向任何时候不裁切身体；
+// 唯一的局部隐藏是左右贴边探头（§3.2，仅水平方向缩进屏外）。
+// 「全身」按可见像素计：贴边是角色贴边，不是渲染画布贴边——舞台盒四周的透明
+// 留白可以越出屏幕。钳制与落位一律用缩放后的可见内容包围盒（见 contentBox）。
+
+// 舞台盒内的可见内容包围盒（缩放后像素）。未上报时按整盒兜底（保守：贴不到边缘）。
+function contentBox(scale = $spatialScale.get()): { left: number; top: number; right: number; bottom: number } {
+  const r = $spriteContentRect.get()
+
+  return {
+    left: (r?.left ?? 0) * getBaseSpriteWidth() * scale,
+    top: (r?.top ?? 0) * getBaseSpriteHeight() * scale,
+    right: (r?.right ?? 1) * getBaseSpriteWidth() * scale,
+    bottom: (r?.bottom ?? 1) * getBaseSpriteHeight() * scale
+  }
+}
 
 // 通话中精灵位置的 y 上限：精灵脚下（含间距与面板高）必须完整落在屏内，
 // 面板才有落脚处——面板恒锚在脚下，与精灵刚体一体。
@@ -110,16 +126,14 @@ function clampPosToViewport(
   x: number
   y: number
 } {
-  const w = getBaseSpriteWidth()
-  const h = getBaseSpriteHeight()
-  const faceH = h * FACE_TOP_RATIO
+  const c = contentBox()
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const maxY = voiceConstraint ? Math.min(vh - faceH, voiceMaxSpriteY()) : vh - faceH
+  const maxY = voiceConstraint ? Math.min(vh - c.bottom, voiceMaxSpriteY()) : vh - c.bottom
 
   return {
-    x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
-    y: Math.max(0, Math.min(maxY, pos.y))
+    x: Math.max(-c.left, Math.min(vw - c.right, pos.x)),
+    y: Math.max(-c.top, Math.min(maxY, pos.y))
   }
 }
 
@@ -135,10 +149,12 @@ export function computePerchPlacement(
   maxScale: number
 ): PerchPlacement | null {
   const margin = 8
+  const spriteW = getBaseSpriteWidth()
+  const spriteH0 = getBaseSpriteHeight()
   const rightAvail = Math.max(0, window.innerWidth - REST_MARGIN - (geom.x + geom.w) - margin)
   const leftAvail = Math.max(0, geom.x - margin - REST_MARGIN)
-  const rightScale = Math.min(maxScale, rightAvail / SPRITE_W)
-  const leftScale = Math.min(maxScale, leftAvail / SPRITE_W)
+  const rightScale = Math.min(maxScale, rightAvail / spriteW)
+  const leftScale = Math.min(maxScale, leftAvail / spriteW)
 
   let side: 'left' | 'right'
   let scale: number
@@ -153,8 +169,8 @@ export function computePerchPlacement(
     return null
   }
 
-  const spriteH = SPRITE_H * scale
-  const x = side === 'right' ? geom.x + geom.w + margin : geom.x - margin - SPRITE_W * scale
+  const spriteH = spriteH0 * scale
+  const x = side === 'right' ? geom.x + geom.w + margin : geom.x - margin - spriteW * scale
 
   const y = Math.max(
     REST_MARGIN,
@@ -179,8 +195,8 @@ export function computeOverlayAnchorBesideSprite(opts: {
   verticalRatio?: number
 }): { left: number; top: number } {
   const { pos, scale, gap, overlayMaxW, overlayH = 0, vw, vh, verticalRatio = 0 } = opts
-  const spriteW = SPRITE_W * scale
-  const spriteH = SPRITE_H * scale
+  const spriteW = getBaseSpriteWidth() * scale
+  const spriteH = getBaseSpriteHeight() * scale
   const spriteRight = pos.x + spriteW
   const fitsRight = spriteRight + gap + overlayMaxW <= vw
 
@@ -244,7 +260,7 @@ export function ensureVoiceDockRoom(): void {
 
   // x 钳制吸收贴边回屏尚未走完的越界横坐标。
   const vw = window.innerWidth
-  const w = getBaseSpriteWidth()
+  const w = getBaseSpriteWidth() * $spatialScale.get()
 
   const lifted = {
     x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
@@ -466,7 +482,9 @@ export function setLocale(
     updateAdaptiveScale()
   }
 
-  const target = opts?.position ?? $homePosition.get()
+  // home 落点可能记录于更低 scale 的时期；按当前 scale 重钳，情绪放大期间回 home 不裁脚。
+  const rawTarget = opts?.position ?? $homePosition.get()
+  const target = locale === 'home' ? clampPosToViewport(rawTarget) : rawTarget
   const locomotion = opts?.locomotion ?? (locale === 'target' ? 'fly' : 'walk')
 
   if (opts?.instant) {
@@ -551,10 +569,12 @@ let roaming = false
 function generateRoamWaypoint(): { x: number; y: number } {
   const vw = window.innerWidth
   const vh = window.innerHeight
+  const w = getBaseSpriteWidth() * $spatialScale.get()
+  const h = getBaseSpriteHeight() * $spatialScale.get()
 
   return {
-    x: REST_MARGIN + Math.random() * Math.max(0, vw - SPRITE_W - 2 * REST_MARGIN),
-    y: Math.max(REST_MARGIN, vh * 0.5 + Math.random() * Math.max(0, vh * 0.4 - SPRITE_H))
+    x: REST_MARGIN + Math.random() * Math.max(0, vw - w - 2 * REST_MARGIN),
+    y: Math.max(REST_MARGIN, vh * 0.5 + Math.random() * Math.max(0, vh * 0.4 - h))
   }
 }
 
@@ -611,10 +631,9 @@ function stopRoam(): void {
 function dockToEdge(side: 'left' | 'right'): void {
   cancelMovement()
   const vw = window.innerWidth
-  const vh = window.innerHeight
-  const spriteW = getBaseSpriteWidth()
-  const spriteH = getBaseSpriteHeight()
-  const targetY = Math.max(REST_MARGIN, Math.min($spatialPos.get().y, vh - spriteH - REST_MARGIN))
+  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
+  const c = contentBox()
+  const targetY = Math.max(-c.top, Math.min($spatialPos.get().y, window.innerHeight - c.bottom))
 
   // 身体约 65% 缩进屏幕边缘，只探出头部/耳朵往里看
   const hiddenAmount = spriteW * 0.65
@@ -641,7 +660,7 @@ export function undockFromEdge(): void {
   cancelMovement()
   const side = $edgeDockSide.get()
   const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth()
+  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
   const curPos = $spatialPos.get()
 
   const targetX = side === 'left' ? REST_MARGIN : vw - spriteW - REST_MARGIN
@@ -679,7 +698,7 @@ export function startDrag(): void {
 }
 
 export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
-  // DESIGN §3.7：face 始终在屏内。拖拽过程中也必须遵守，不能等 endDragAt 才修正。
+  // DESIGN §3.7：全身始终在屏内。拖拽过程中逐帧钳制，不能等 endDragAt 才修正。
   $spatialPos.set(clampPosToViewport(pos))
 
   if (vel) {
@@ -689,7 +708,7 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
 
 export function endDragAt(pos: { x: number; y: number }): void {
   const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth()
+  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
   const dockMargin = 40
 
   // 1. 优先判定屏幕左右边缘吸附（通话中面板锚定脚下，禁止贴边探头把面板甩到脚边）
@@ -707,7 +726,7 @@ export function endDragAt(pos: { x: number; y: number }): void {
     }
   }
 
-  // 2. 松手定居：把坐标收紧到 viewport 内，并强制 face 不被裁剪（DESIGN §3.7）
+  // 2. 松手定居：把坐标收紧到 viewport 内，全身完整入屏（DESIGN §3.7）
   const safe = clampPosToViewport(pos)
 
   $isEdgeDocked.set(false)
@@ -731,13 +750,7 @@ export function initSpatial(): () => void {
         return
       }
 
-      const w = getBaseSpriteWidth()
-      const h = getBaseSpriteHeight()
-
-      const next = {
-        x: Math.max(REST_MARGIN, Math.min(saved.x, window.innerWidth - w - REST_MARGIN)),
-        y: Math.max(REST_MARGIN, Math.min(saved.y, window.innerHeight - h - REST_MARGIN))
-      }
+      const next = clampPosToViewport(saved, false)
 
       $homePosition.set(next)
 
@@ -769,6 +782,37 @@ export function initSpatial(): () => void {
 
   const unlistenFocus = $focusContext.listen(() => updateSpatialDecision())
 
+  // 情绪瞬时放大等 scale 变化不得让已落位的精灵溢出视口（DESIGN §3.7 全身在屏）。
+  // 拖拽中由逐帧钳制兜底；移动动画中的插值点恒在两端点之间，端点已界内，无需钳。
+  const unlistenScale = $spatialScale.listen(() => {
+    if ($spatialLocomotion.get() === 'drag' || rafId !== null) {
+      return
+    }
+
+    const cur = $spatialPos.get()
+    const next = clampPosToViewport(cur)
+
+    // 贴边探头的 x 是故意越界的，只收紧 y。
+    $spatialPos.set($isEdgeDocked.get() ? { ...cur, y: next.y } : next)
+  })
+
+  // 渲染层装配/模型加载完成后才上报内容包围盒——启动期按新盒重贴 home 与当前位
+  // （脚从画布底落到角色脚底）。用户已拖拽过则位置属用户意志，不自动迁移。
+  const unlistenContent = $spriteContentRect.listen(() => {
+    if (userInteracted) {
+      return
+    }
+
+    const next = clampPosToViewport($homePosition.get())
+
+    $homePosition.set(next)
+
+    if ($spatialLocale.get() === 'home' && $spatialLocomotion.get() !== 'drag') {
+      cancelMovement()
+      $spatialPos.set(next)
+    }
+  })
+
   const onResize = () => {
     $viewport.set({ width: window.innerWidth, height: window.innerHeight })
 
@@ -779,12 +823,11 @@ export function initSpatial(): () => void {
     }
 
     const home = $homePosition.get()
-    const w = getBaseSpriteWidth()
-    const h = getBaseSpriteHeight()
+    const c = contentBox()
 
     const clamped = {
-      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - w - REST_MARGIN)),
-      y: Math.max(REST_MARGIN, Math.min(home.y, window.innerHeight - h - REST_MARGIN))
+      x: Math.max(REST_MARGIN, Math.min(home.x, window.innerWidth - c.right - REST_MARGIN)),
+      y: Math.max(-c.top, Math.min(home.y, window.innerHeight - c.bottom))
     }
 
     $homePosition.set(clamped)
@@ -812,6 +855,8 @@ export function initSpatial(): () => void {
     unlistenEmotion()
     unlistenTier()
     unlistenFocus()
+    unlistenScale()
+    unlistenContent()
     window.removeEventListener('resize', onResize)
     stopRoam()
     cancelMovement()

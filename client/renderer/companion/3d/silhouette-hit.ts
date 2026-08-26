@@ -10,6 +10,43 @@ export const $sprite3DHitTest = atom<((x: number, y: number) => boolean | null) 
 
 const HIT_ALPHA_MIN = 16
 
+/** alpha 命中图 → 可见内容归一化包围盒（canvas 铺满舞台盒，坐标直接归一）。
+ * 取采样时刻待机姿态的外接矩形——发束/动作瞬态的越界量级远小于画布留白，可接受。 */
+export function alphaMapContentRect(
+  map: SilhouetteHitmap
+): { left: number; top: number; right: number; bottom: number } | null {
+  let minX = map.width
+  let minY = map.height
+  let maxX = -1
+  let maxY = -1
+
+  for (let py = 0; py < map.height; py++) {
+    const row = py * map.width
+
+    for (let px = 0; px < map.width; px++) {
+      if (map.alpha[row + px] < HIT_ALPHA_MIN) {
+        continue
+      }
+
+      minX = Math.min(minX, px)
+      minY = Math.min(minY, py)
+      maxX = Math.max(maxX, px)
+      maxY = Math.max(maxY, py)
+    }
+  }
+
+  if (maxX < 0) {
+    return null
+  }
+
+  return {
+    left: minX / map.width,
+    top: minY / map.height,
+    right: (maxX + 1) / map.width,
+    bottom: (maxY + 1) / map.height
+  }
+}
+
 export function attachSilhouetteHitProbe(
   engine: Pick<Engine, 'canvas' | 'silhouetteHitmap'> & { getSilhouetteHitmap?: () => SilhouetteHitmap | null }
 ): () => void {

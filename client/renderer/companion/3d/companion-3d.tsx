@@ -16,7 +16,13 @@ import {
 import { probeInteractiveRegions, useInteractiveRegion } from '@/companion/interactive-regions'
 import { log } from '@/shared/lib/log'
 
-import { $dragVelocity, $spatialLocomotion, getBaseSpriteHeight, getBaseSpriteWidth } from '../spatial'
+import {
+  $dragVelocity,
+  $spatialLocomotion,
+  $spriteContentRect,
+  getBaseSpriteHeight,
+  getBaseSpriteWidth
+} from '../spatial'
 import { $contextMenuOpen } from '../sprite/context-menu-store'
 
 import { Engine } from './Engine'
@@ -33,7 +39,7 @@ import {
   retryModelDownload
 } from './model-store'
 import { subscribePowerProfile } from './power-signals'
-import { attachSilhouetteHitProbe } from './silhouette-hit'
+import { alphaMapContentRect, attachSilhouetteHitProbe } from './silhouette-hit'
 
 // 把 Three.js 引擎挂载到精灵舞台画布上。精灵舞台负责拖拽 / 鼠标穿透 / 区域跟踪；
 // 本组件只负责渲染。
@@ -274,9 +280,10 @@ export function Companion3D(): React.JSX.Element {
         $glbLoadFailed.set(info.procedural)
         $modelLoadSettled.set(true)
 
-        // 用刚加载的角色立刻预热实时轮廓命中图。
+        // 用刚加载的角色立刻预热实时轮廓命中图，并顺手发布可见内容包围盒。
         void engine.silhouetteHitmap().then(map => {
-          if (map && !cancelled) {
+          if (!cancelled && map) {
+            $spriteContentRect.set(alphaMapContentRect(map))
             probeInteractiveRegions()
           }
         })
@@ -299,6 +306,7 @@ export function Companion3D(): React.JSX.Element {
 
     return () => {
       cancelled = true
+      $spriteContentRect.set(null)
     }
   }, [modelInfo.asset_url, modelInfo.content_hash, modelInfo.id, modelInfo.rig_type])
 

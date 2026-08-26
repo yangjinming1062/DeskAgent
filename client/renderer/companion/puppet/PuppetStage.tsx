@@ -18,6 +18,7 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget, $spriteAction, $spriteActionQueue, $spriteEmotion } from '@/companion/companion-store'
 import { probeInteractiveRegions } from '@/companion/interactive-regions'
 import { setMesh2DHitmap } from '@/companion/mesh2d/mesh2d-store'
+import { $spriteContentRect } from '@/companion/spatial'
 import { $contextMenuOpen } from '@/companion/sprite/context-menu-store'
 import { log } from '@/shared/lib/log'
 
@@ -382,6 +383,40 @@ const ACTIONS: Record<string, ActionEnvelope> = {
   }
 }
 
+// 可见内容包围盒上报：rig 层矩形并集（rig 坐标）→ 归一化舞台盒。canvas 经
+// max-w/h-full 在舞台盒内 contain-fit 居中，rig 坐标按同一几何映射。
+function publishPuppetContentRect(rig: Rig, container: HTMLElement | null): void {
+  const boxW = container?.clientWidth || 0
+  const boxH = container?.clientHeight || 0
+
+  if (boxW <= 0 || boxH <= 0 || rig.layers.length === 0) {
+    return
+  }
+
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+
+  for (const L of rig.layers) {
+    x0 = Math.min(x0, L.x)
+    y0 = Math.min(y0, L.y)
+    x1 = Math.max(x1, L.x + L.w)
+    y1 = Math.max(y1, L.y + L.h)
+  }
+
+  const fit = Math.min(boxW / rig.canvas.w, boxH / rig.canvas.h)
+  const offX = (boxW - rig.canvas.w * fit) / 2
+  const offY = (boxH - rig.canvas.h * fit) / 2
+
+  $spriteContentRect.set({
+    left: (offX + x0 * fit) / boxW,
+    top: (offY + y0 * fit) / boxH,
+    right: (offX + x1 * fit) / boxW,
+    bottom: (offY + y1 * fit) / boxH
+  })
+}
+
 export function PuppetStage(): React.JSX.Element {
   const handleRef = useRef<PuppetCanvasHandle>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -436,6 +471,7 @@ export function PuppetStage(): React.JSX.Element {
         const hit = buildPuppetHitmap(rig)
         hitmapRef.current = hit
         setMesh2DHitmap({ hit: (nx: number, ny: number) => hit(nx, ny) })
+        publishPuppetContentRect(rig, containerRef.current)
         probeInteractiveRegions()
 
         const rt = handleRef.current?.runtime
@@ -458,6 +494,7 @@ export function PuppetStage(): React.JSX.Element {
       cancelled = true
       hitmapRef.current = null
       setMesh2DHitmap(null)
+      $spriteContentRect.set(null)
       probeInteractiveRegions()
     }
   }, [puppet.psdUrl])
