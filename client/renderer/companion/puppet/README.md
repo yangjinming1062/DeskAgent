@@ -13,7 +13,7 @@
 | `head-cage.ts` | 脸面/头骨双表面三角控制笼：语义控制点、重心坐标、深度混合与六点脸面深度曲线 |
 | `puppet-runtime.ts` | WebGL 运行时：每层 ArtMesh + 顶点形变（伪 3D 转头 / 呼吸 / 眨眼 / 次级物理）+ 模板眼裁切；参数经 `target`/`auto` 字段注入 |
 | `PuppetCanvas.tsx` | React 挂载壳，imperative handle 暴露 `loadPsd(buffer)` |
-| `puppet-store.ts` | 生产数据源：拉 mesh2d 行 manifest 判 `kind=psd` → 暴露签名 PSD URL；非 psd/失败保持未就绪让级联落 mesh2d |
+| `puppet-store.ts` | 生产数据源：拉 mesh2d 行 manifest 判 `kind=psd` → 暴露签名 PSD URL；非 psd（防御分支）/失败保持未就绪让级联落 3D/蛋 |
 | `PuppetStage.tsx` | 生产挂载与驱动层：命中区域、视线、TTS 嘴型、情绪、动作包络、hover 发区冲量（见下） |
 
 ## 关键契约与设计
@@ -28,8 +28,8 @@
 - **动画自动化层**：非对称呼吸（含偶发深呼吸）、眨眼曲线（全眨/半眨/连眨）、视线跟随（眼先动头跟随，无更新过期回落漫游）、微扫视（指数衰减的小幅快速眼动）、说话合成（每句独立振幅 + 音素级嘴型目标）。参数平滑按语义分速率（眼快、头身慢）。
 - **模拟/渲染解耦**：`advanceSim(seconds)` 以固定步进接管内部时钟（rAF 退化为纯渲染），供无头验证与回归做确定性断言——姿态安全验证以此为地基；`snapshot()` 暴露平滑后参数只读快照，`forceBlink()` 为确定性眨眼钩子。
 - **差分合成**：PSD 缺 eye_close / mouth_close 时用内置 genericparts 自动合成并染色适配（上游行为，保留）。
-- **数据来源与渲染级联**：see-through 产出 `spiritagent.2d.psd/1` 描述符（`kind=psd`）复用 mesh2d 行与 WS 事件路径；`companion.2d.ready` / outfit 穿着 / 头像重生事件后 `hydratePuppet` 判 kind。root.tsx 渲染级联：**puppet（PSD）→ mesh2d（骨骼分层）→ 3D → 程序化蛋**——puppet 装配失败写 error 熄灭 `$puppetReady` 自动落级，永不空白（DESIGN §1.2）。
-- **驱动层映射**：视线 = 指针归一化注入 + `$gazeTarget` 显式目标周期续注（ritual walk / perch 锁定）；说话 = TTS 振幅接管嘴型并暂停合成说话、静默后交还；情绪 = 后端情绪词表全对齐 → 眉/嘴型/眼缩放参数（mesh2d 无面部通道，puppet 独有）；动作 = 动作白名单键 → 定时包络 + 队列续播 + 落地挤压触发发束冲量；hover 发区 → 发束冲量（节流，方向随戳侧）。
+- **数据来源与渲染级联**：see-through 产出 `spiritagent.2d.psd/1` 描述符（`kind=psd`）复用 mesh2d 行与 WS 事件路径；`companion.2d.ready` / outfit 穿着 / 头像重生事件后 `hydratePuppet` 判 kind。root.tsx 渲染级联：**puppet（PSD）→ 3D → 程序化蛋**——puppet 装配失败写 error 熄灭 `$puppetReady` 自动落级，永不空白（DESIGN §1.2）。
+- **驱动层映射**：视线 = 指针归一化注入 + `$gazeTarget` 显式目标周期续注（ritual walk / perch 锁定）；说话 = TTS 振幅接管嘴型并暂停合成说话、静默后交还；情绪 = 后端情绪词表全对齐 → 眉/嘴型/眼缩放参数（puppet 独有面部通道）；动作 = 动作白名单键 → 定时包络 + 队列续播 + 落地挤压触发发束冲量；hover 发区 → 发束冲量（节流，方向随戳侧）。
 
 ## 调试台
 
@@ -40,4 +40,4 @@
 - 尾巴/头饰圆弧摆动机制待有对应部件的模型接入（当前测试 PSD 无 tail/headwear 弹性层）
 - 13 姿态在满幅缩放仍有 back hair 一处小面积三角形翻转（降一档即全绿）；驱动层动作包络幅度按安全包络设计，姿态安全缩放报告尚未自动约束 LLM 动作幅度
 - 说话嘴型按 TTS 振幅包络驱动（非音素级）；音素驱动留待 TTS 层暴露音素流
-- 拖拽/抛掷 locomotion 的物理反馈（空中姿态/重力落体）尚未接 puppet（mesh2d 路径已有）
+- 拖拽/抛掷 locomotion 的物理反馈（空中姿态/重力落体）尚未接 puppet

@@ -79,11 +79,11 @@
 
 ## 7. 用户直接交互
 
-- **命中模型**：精灵区域在矩形命中后做像素级精化——3D 模式由 [3d/silhouette-hit.ts](3d/silhouette-hit.ts) 驱动引擎剪影探测——`Engine` 把场景渲进 1/4 分辨率离屏 RT（clear alpha 0，只有实际绘制的像素计入，天然含当前姿态）异步读回 alpha，window 级 mousemove（穿透态下 pointer 事件到不了 canvas）rAF 合并请求、250ms TTL 让并发请求共享一次刷新，答案落地后手动触发 capture probe 处理静止光标；2D 模式由部件 bbox 判定（CPU 轻量，PROTOCOL §1.4）——骨骼链 [mesh2d-hitmap](mesh2d/mesh2d-hitmap.ts)、puppet 链 [PuppetStage 六区](puppet/PuppetStage.tsx)（区域语义一致，共用 `$mesh2dHitmap` 总线），hitmap 落地/清空时同样触发 capture probe。两条路径的就绪信号落地前（boot/加载空挡）回退精灵矩形，之后未命中点严格判否——扫过矩形空白区不捕获。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
-- **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；云端推理接受 `poke` / `pet` / `dizzy` 三类语义 kind（PROTOCOL §1.4），摸头与眩晕与戳同走该通道；
+- **命中模型**：精灵区域在矩形命中后做像素级精化——3D 模式由 [3d/silhouette-hit.ts](3d/silhouette-hit.ts) 驱动引擎剪影探测——`Engine` 把场景渲进 1/4 分辨率离屏 RT（clear alpha 0，只有实际绘制的像素计入，天然含当前姿态）异步读回 alpha，window 级 mousemove（穿透态下 pointer 事件到不了 canvas）rAF 合并请求、250ms TTL 让并发请求共享一次刷新，答案落地后手动触发 capture probe 处理静止光标；2D 模式由 puppet 链判定（CPU 轻量，PROTOCOL §1.4）——[PuppetStage 六区](puppet/PuppetStage.tsx)（rig 锚点/层矩形 → `$mesh2dHitmap` 总线），hitmap 落地/清空时同样触发 capture probe。两条路径的就绪信号落地前（boot/加载空挡）回退精灵矩形，之后未命中点严格判否——扫过矩形空白区不捕获。精灵矩形不外扩 padding——CSS 光晕是装饰而非命中可供性，点击可见光晕不触发交互。capture 必须在 mousemove 阶段判定成功：`setIgnoreMouseEvents({ forward: true })` 不转发 mousedown，窗口必须在 mousedown 到达前 un-ignore。
+- **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；云端推理接受 `poke` / `pet` / `dizzy` 三类语义 kind（PROTOCOL §1.4），摸头与眩晕与戳同走该通道（手势识别器 [sprite/gesture-tracker.ts](sprite/gesture-tracker.ts)：head/face 横向往复 = 摸头、狂甩 = 眩晕）；
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
-- **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。
+- **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
 
 **每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
@@ -112,7 +112,7 @@
   - 精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
 - **角色编辑双路径**：`PersonaSection`（表单式直接改 6 个字段）+ `PersonaRetune`（[persona-retune.tsx](persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`，且不改写说话风格（说话风格在孵化时定稿，后续修改走设置里的角色管理）。仅 `PersonaSection` 保存后会接入两步形象再生成（先头像 → 用户确认 → 全身）；`PersonaRetune` 是纯 persona 维度调整，不重跑形象流水线。Onboarding 自身始终走两步 UI。
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
-- **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（manifest 为分层 PSD 时重建 puppet，否则 Mesh2DCanvas 按 manifestUrl 重建），换装期间旧装不断档。
+- **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（按新 PSD 重建 puppet），换装期间旧装不断档。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 

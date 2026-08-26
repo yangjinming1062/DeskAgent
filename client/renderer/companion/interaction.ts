@@ -5,10 +5,10 @@ import { resolveClip } from './3d/AnimationMap'
 import { $availableClipNames, $clipMap } from './3d/model-store'
 import { $lastIdleSeconds, reportInteractionStat } from './activity'
 import { $clipOverride, $spriteAction, $spriteEmotion, setSpriteState } from './companion-store'
-import { emitVfx } from './mesh2d/mesh2d-vfx'
 import { $personalityTags } from './persona-store'
 import { $llmReactions } from './prefs'
 import { pickReaction, playReactionAudio } from './reactions/reaction-audio'
+import { emitVfx } from './vfx'
 
 let lastPokeTime = 0
 let pokeCount = 0
@@ -184,35 +184,6 @@ export function handlePokeInteraction(region?: string): void {
 
   void triggerReaction(bucket, tags, region, 'poke')
   reportInteractionStat('poke')
-}
-
-export function handleHoverInteraction(
-  region?: string,
-  impulseMagnet?: (boneName: string, magnitude: number) => void
-): void {
-  // 命中 hair / skirt 等区域时给 driver 触发 impulse（头发 / 裙子物理抖动）
-  // magnet 是 Mesh2DCanvas 注入的回调，避免 interaction.ts 直接依赖 driver
-  if (!region || !impulseMagnet) {
-    return
-  }
-
-  switch (region) {
-    case 'back_hair':
-
-    case 'front_hair':
-      impulseMagnet(region, 2.5)
-
-      break
-
-    case 'skirt':
-      impulseMagnet('skirt', 3.0)
-
-      break
-
-    default:
-      // 其他区域（head / face / arm / body）暂无 impulse 反馈
-      break
-  }
 }
 
 export function handleDragEndInteraction(): void {

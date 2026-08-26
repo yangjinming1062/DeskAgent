@@ -38,11 +38,11 @@ import {
 } from '@/companion/companion-store'
 import { resetExpressionAvatars } from '@/companion/expression-avatar/expression-avatar-store'
 import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
-import { emitVfx } from '@/companion/mesh2d/mesh2d-vfx'
 import { $responseMode } from '@/companion/prefs'
 import { hydratePuppet, resetPuppet } from '@/companion/puppet/puppet-store'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
+import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
@@ -431,8 +431,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'companion.2d.ready': {
-      // 2d 切分完成——重新水合让 Mesh2DCanvas 立即接管显示；
-      // manifest 可能是 see-through 的 kind=psd 描述符，串一次 puppet 分流判定。
+      // 2d 拆分完成——重新水合 2d 行并串一次 puppet 分流判定（manifest 恒为 kind=psd 描述符）。
       const p = event.payload as
         | {
             model_id?: number

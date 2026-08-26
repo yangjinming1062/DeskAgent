@@ -14,7 +14,7 @@ import {
   setCompanionLifecycle
 } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
-import { $mesh2dInfo, $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
+import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { $preferredCallMode } from '@/companion/prefs'
@@ -50,8 +50,7 @@ import { checkCompanionVoiceValidity } from './voice-validity'
 // 让 Vite 把 three.module.js + draco_decoder.wasm 等 25MB 模块拆成单独 chunk，
 // 在 lifecycle=ready 后按需请求，避开启动尖峰把风扇拉满。
 const Companion3D = lazy(() => import('./3d/companion-3d').then(m => ({ default: m.Companion3D })))
-const Mesh2DCanvas = lazy(() => import('./mesh2d/Mesh2DCanvas').then(m => ({ default: m.Mesh2DCanvas })))
-// puppet（PSD 链）与 Mesh2DCanvas 共用 WebGL/vite 懒加载策略：PSD 装配 + vendor
+// puppet（PSD 链）沿用 WebGL/vite 懒加载策略：PSD 装配 + vendor
 // rigger/ag-psd 都不在启动关键路径上（Phase 6）。
 const PuppetStage = lazy(() => import('./puppet/PuppetStage').then(m => ({ default: m.PuppetStage })))
 
@@ -78,7 +77,6 @@ export function CompanionRoot(): React.JSX.Element {
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
   const renderMode = useStore($renderMode)
-  const mesh2d = useStore($mesh2dInfo)
   const puppet = useStore($puppetInfo)
   const modelInfo = useStore($modelInfo)
   const glbLoadFailed = useStore($glbLoadFailed)
@@ -260,20 +258,15 @@ export function CompanionRoot(): React.JSX.Element {
   const eggVisible = authed && lifecycle === 'onboarding' && !onboardingOpen
 
   // 渲染级联编排器（DESIGN §1.2「永不空白」）——嵌在组件体内，因依赖多个组件内 useStore 变量；
-  // 抽到 useMemo 避免每次渲染重建闭包。2D 内部再分两级：PSD 链（puppet，Phase 6）
-  // → 骨骼分层链（mesh2d）；puppet 装配失败写 error 熄灭 $puppetReady 后自动落 mesh2d。
-  const renderLayer = useMemo<'puppet' | 'mesh2d' | 'companion3d'>(() => {
-    const mesh2dReady = mesh2d.status === 'succeeded' && Boolean(mesh2d.manifestUrl)
+  // 抽到 useMemo 避免每次渲染重建闭包。2D = PSD 链（puppet，Phase 6）；puppet 装配失败
+  // 写 error 熄灭 $puppetReady 后落 3D（CharacterController 内部有程序化蛋兜底）。
+  const renderLayer = useMemo<'puppet' | 'companion3d'>(() => {
     const puppetReady = Boolean(puppet.psdUrl) && !puppet.error
     const modelFailed = glbLoadFailed || modelInfo.status === 'failed'
     const modelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
 
     if (renderMode === '2d' && puppetReady) {
       return 'puppet'
-    }
-
-    if (renderMode === '2d' && mesh2dReady) {
-      return 'mesh2d'
     }
 
     if (modelReady) {
@@ -285,13 +278,9 @@ export function CompanionRoot(): React.JSX.Element {
       return 'puppet'
     }
 
-    if (mesh2dReady) {
-      return 'mesh2d'
-    }
-
     // 双方都未就绪：选 3D 路径，CharacterController 内部会走程序化蛋兜底
     return 'companion3d'
-  }, [renderMode, mesh2d.status, mesh2d.manifestUrl, puppet.psdUrl, puppet.error, glbLoadFailed, modelInfo.status])
+  }, [renderMode, puppet.psdUrl, puppet.error, glbLoadFailed, modelInfo.status])
 
   useEffect(() => {
     if (lifecycle !== 'ready') {
@@ -410,9 +399,7 @@ export function CompanionRoot(): React.JSX.Element {
         {eggVisible ? (
           <EggStage onTap={() => setOnboardingOpen(true)} />
         ) : showOnboarding ? null : (
-          <Suspense fallback={null}>
-            {renderLayer === 'puppet' ? <PuppetStage /> : renderLayer === 'mesh2d' ? <Mesh2DCanvas /> : <Companion3D />}
-          </Suspense>
+          <Suspense fallback={null}>{renderLayer === 'puppet' ? <PuppetStage /> : <Companion3D />}</Suspense>
         )}
       </SpriteStage>
       <SpriteContextMenu

@@ -44,9 +44,6 @@ export const $mesh2dInfo = atom<Mesh2DInfo>({
   error: null
 })
 
-// manifest 与 layers 已就位。Mesh2DCanvas 在它变 true 后才进入构建循环。
-export const $mesh2dReady = atom<boolean>(false)
-
 // 用户在 onboarding / 设置里选的渲染模式。默认 '2d'。
 export const $renderMode = atom<RenderMode>('2d')
 
@@ -72,7 +69,6 @@ export function resetMesh2D(): void {
     contentHash: null,
     error: null
   })
-  $mesh2dReady.set(false)
 }
 
 /** 拉取当前激活 2D 模型 + 用户 render_mode；lifecycle=ready 时调用一次。 */
@@ -90,7 +86,6 @@ export async function hydrateMesh2D(): Promise<void> {
         contentHash: mesh2d.content_hash ?? null,
         error: null
       })
-      $mesh2dReady.set(true)
 
       return
     }
@@ -105,7 +100,6 @@ export async function hydrateMesh2D(): Promise<void> {
         contentHash: null,
         error: null
       })
-      $mesh2dReady.set(false)
     }
   } catch (err) {
     log.info('mesh2d-store', 'hydrateMesh2D failed', err)
@@ -122,7 +116,7 @@ export async function hydrateMesh2D(): Promise<void> {
   }
 }
 
-/** 触发（或重试）2D 骨骼分层切分（DESIGN §5.5：失败后由用户在设置中重试）。
+/** 触发（或重试）2D 拆分（DESIGN §5.5：失败后由用户在设置中重试）。
  *  就绪结果经 companion.2d.ready 事件回流，与 onboarding 确认路径同一条管线。 */
 export async function requestMesh2DGeneration(): Promise<void> {
   setMesh2DStatus('generating')
@@ -155,7 +149,6 @@ export async function switchRenderMode(mode: RenderMode): Promise<void> {
     })
 
     if (mode === '2d') {
-      $mesh2dReady.set(false)
       await hydrateMesh2D()
     }
   } catch (err) {

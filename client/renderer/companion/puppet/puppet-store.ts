@@ -2,7 +2,8 @@
  *
  * 后端 see-through 产出 `spiritagent.2d.psd/1` 描述符（kind=psd）复用 mesh2d 行 /
  * 事件管线；本 store 只做一件事：拉 manifest 判 kind——psd 则暴露签名 PSD URL
- * 供 PuppetStage 装配，否则保持未就绪让渲染级联落到 Mesh2DCanvas（DESIGN §1.2）。
+ * 供 PuppetStage 装配，否则保持未就绪让渲染级联落到 3D/蛋兜底（DESIGN §1.2）。
+ * 后端只产 psd 一种 manifest，非 psd 分支仅作防御性清空。
  */
 
 import { atom } from 'nanostores'

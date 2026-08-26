@@ -60,7 +60,7 @@ export async function hydrateWardrobe(): Promise<void> {
   }
 }
 
-/** 穿着就绪外观；成功后整包替换 2D 资产（Mesh2DCanvas 按 manifestUrl 重建，期间旧装不断档）。 */
+/** 穿着就绪外观；成功后整包替换 2D 资产（PuppetStage 按 PSD 重建，期间旧装不断档）。 */
 export async function activateOutfit(outfitId: number): Promise<boolean> {
   try {
     await window.spiritagent.api({ path: `/api/companion/outfits/${outfitId}/activate`, method: 'PUT' })

@@ -6,15 +6,8 @@ import { $clipOverride, $spriteAction, setSpriteState } from '@/companion/compan
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 
 import { $sprite3DHitTest } from '../3d/silhouette-hit'
-import {
-  handleDizzyInteraction,
-  handleDragEndInteraction,
-  handleHoverInteraction,
-  handlePetInteraction
-} from '../interaction'
-import { Mesh2DGestureTracker } from '../mesh2d/mesh2d-gestures'
+import { handleDizzyInteraction, handleDragEndInteraction, handlePetInteraction } from '../interaction'
 import { $mesh2dHitmap } from '../mesh2d/mesh2d-store'
-import { emitVfx, Mesh2DVfxOverlay } from '../mesh2d/mesh2d-vfx'
 import {
   $homePosition,
   $isEdgeDocked,
@@ -29,6 +22,9 @@ import {
   undockFromEdge,
   updateDragPosition
 } from '../spatial'
+import { emitVfx, Mesh2DVfxOverlay } from '../vfx'
+
+import { Mesh2DGestureTracker } from './gesture-tracker'
 
 interface SpriteStageProps {
   children: ReactNode
@@ -365,7 +361,6 @@ export function SpriteStage({
       }
 
       gestureTrackerRef.current?.feedPointerMove(nx, ny, false, region)
-      handleHoverInteraction(region)
 
       return
     }
