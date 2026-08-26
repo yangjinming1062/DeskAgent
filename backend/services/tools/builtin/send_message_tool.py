@@ -6,7 +6,7 @@ from modules.conversation import Message
 from modules.ws import WSEvent
 
 from services.conversation import get_or_create_main_conversation, record_user_outreach
-from services.disturbance import is_quiet
+from services.disturbance import is_still
 from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
@@ -29,12 +29,6 @@ async def _emit_companion_message(user_id: int, text: str, affect: str | None = 
         await db.commit()
 
 
-async def _emit_companion_affect(user_id: int, emotion: str) -> None:
-    async with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type="companion.affect", payload=json.dumps({"emotion": emotion}, ensure_ascii=False)))
-        await db.commit()
-
-
 async def send_message_tool(
     message: str,
     target_webhook: str | None = None,
@@ -43,23 +37,21 @@ async def send_message_tool(
     followup_timeout_seconds: float | None = None,
     **kwargs,
 ) -> str:
-    # followup_timeout_seconds 是 cron 跟进/小情绪提示词沿用的旧参数名，作为别名收下——
+    # followup_timeout_seconds 是 cron 跟进提示词沿用的旧参数名，作为别名收下——
     # 落进 **kwargs 会被静默丢弃，LLM 给出的跟进节奏就永远进不了状态机
     if follow_up_after_seconds is None:
         follow_up_after_seconds = followup_timeout_seconds
     # 伙伴原生主动路径：未传 webhook 时直接以 companion.message 形式投递给客户端（ARCHITECTURE.md §7.4 将本工具复用为伙伴主动触达通道）。
-    # 客户端是打扰档位的单一事实源，但后端在源头也做一次防御性拦截：非官方客户端走 /api/chat/ws 会绕过客户端侧过滤器，故 quiet 时不写 WSEvent。
+    # 客户端是打扰档位的单一事实源，但后端在源头也做一次防御性拦截：非官方客户端走 /api/chat/ws 会绕过客户端侧过滤器，
+    # 故静止档不写 WSEvent——静止档不做任何主动表达，文字与 affect 一并压住。
     if not target_webhook:
         user_id = kwargs.get("user_id")
-        quiet = False
+        still = False
         if isinstance(user_id, int):
-            # Quiet 档位：文字消息被压住，但 LLM 推理出的 affect 仍下发以保留情绪可视化（ARCHITECTURE.md §6 断消息不断 affect）。
-            quiet = await is_quiet(user_id)
-            if quiet:
-                await _emit_companion_affect(user_id, affect or "neutral")
-            else:
+            still = await is_still(user_id)
+            if not still:
                 await _emit_companion_message(user_id, message, affect=affect, followup_timeout_seconds=follow_up_after_seconds)
-        return json.dumps({"success": True, "channel": "companion", "quiet_suppressed": quiet}, ensure_ascii=False)
+        return json.dumps({"success": True, "channel": "companion", "still_suppressed": still}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
     if parsed.scheme not in ("http", "https"):
@@ -97,7 +89,7 @@ SEND_MESSAGE_SCHEMA = {
             "target_webhook": {"type": "string", "description": "Optional webhook URL to POST to (external bot). Omit to deliver to the user's desktop companion."},
             "affect": {
                 "type": "string",
-                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (see system prompt Affect guidance for available emotions). The desktop still applies the disturbance tier gate — quiet suppresses text but keeps the affect cue.",
+                "description": "Optional emotion token to attach to the proactive message so the desktop can drive the EMOTIONAL state (see system prompt Affect guidance for available emotions). The disturbance tier gate still applies — the still tier suppresses the whole proactive delivery (text and affect).",
             },
             "follow_up_after_seconds": {
                 "type": "number",

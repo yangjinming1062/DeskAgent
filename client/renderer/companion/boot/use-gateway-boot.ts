@@ -33,7 +33,7 @@ const RECONNECT_WAKE_LINE = '啊……我回来了，刚才走神了一下。'
 
 // 每次（重）开后重新上报档位：后端存在进程级字典里，后端重启会静默清空。
 // 推生效值（不只是 user_preferred），让沉浸式聚焦上下文能跨重连接存活——
-// 否则新的 WS 握手会让后端短暂解静音，而用户其实还在 IDE / 全屏窗口里。
+// 否则新的 WS 握手会让后端短暂解除档位压制，而用户其实还在 IDE / 全屏窗口里。
 // 即发即忘。
 function syncDisturbanceTier(gateway: SpiritAgentGateway): void {
   const tier = $effectiveTier.get()

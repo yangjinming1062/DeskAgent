@@ -1,18 +1,31 @@
-import time
-
 from components import get_logger, session_scope
 from modules.companion import CompanionPreference
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from services.conversation import ProactiveState, get_user_proactive_record, set_user_quiet_since
+from services.conversation import reset_user_outreach
 
 # 打扰档位由客户端主导（本地 localStorage + 活动监视器分类），每次变化经 RPC 推送到后端持久化，供重启后服务端门控继续生效。
-# 三档与 DESIGN §6.2 对齐；服务端门控只按 quiet 分流，proactive 与 normal 的差异由客户端语音/气泡策略兑现。
-ALLOWED_TIERS = frozenset({"proactive", "normal", "quiet"})
+# 三档与 DESIGN §6.2 对齐：静止（still）在服务端硬切断一切主动外联与主动情绪推理；
+# 常规（normal）与自主（autonomous）的差异由客户端兑现（语音 / 空间移动门控）。
+ALLOWED_TIERS = frozenset({"autonomous", "normal", "still"})
 DEFAULT_TIER = "normal"
 
 logger = get_logger(__name__)
+
+# 进程内档位镜像：tier RPC 与 WS 连接落在同一副本，写入路径同步刷新，故本副本在线用户
+# 的周期扫描（cron 被冷落反应）读它即可免去 per-user per-tick 的 DB roundtrip。
+# 跨副本路径（cron 自主回合派发等）仍走 DB 读（is_still），不吃这份缓存。
+_TIER_MEM: dict[int, str] = {}
+
+
+async def get_local_tier(user_id: int) -> str:
+    """本副本内存档位（懒加载 DB 首读）；仅供遍历 MANAGER.local_user_ids() 的扫描使用。"""
+    tier = _TIER_MEM.get(user_id)
+    if tier is None:
+        tier = await get_disturbance_tier(user_id)
+        _TIER_MEM[user_id] = tier
+    return tier
 
 
 def _normalize(tier: str) -> str:
@@ -30,17 +43,11 @@ async def set_disturbance_tier(user_id: int, tier: str) -> str:
         )
         await db.execute(stmt)
         await db.commit()
-    # 档位独立持久化层 + 进程内 quiet_since 状态机钩子；cron 的小情绪反馈通道据此
-    # 识别「保持安静档位持续时长」，与 SUPPRESSED 状态正交（state 描述主动外联抑制，
-    # quiet_since_ts 描述档位停留时长，两者可能同时存在也可能各自独立）。
-    set_user_quiet_since(user_id, time.monotonic() if normalized == "quiet" else 0.0)
-    # 进入保持安静档位：把进行中的 OUTREACHED/FOLLOWUP_SENT 推到 SUPPRESSED，让 _maybe_run_quiet_affect
-    # 能从 SUPPRESSED + 持续安静 1h 触发小情绪反馈；否则会卡在 OUTREACHED/FOLLOWUP_SETN，
-    # 跟进的 is_quiet 检查又持续跳过，新通道永远无法入场。
-    if normalized == "quiet":
-        rec = get_user_proactive_record(user_id)
-        if rec.state in (ProactiveState.OUTREACHED, ProactiveState.FOLLOWUP_SENT):
-            rec.state = ProactiveState.SUPPRESSED
+    _TIER_MEM[user_id] = normalized
+    # 进入静止档：直接终结进行中的主动外联节奏（等价用户响应），跟进扫描自然跳过；
+    # 在飞的 turn 若已发起，send_message_tool 的静止守卫在出口兜底。
+    if normalized == "still":
+        reset_user_outreach(user_id)
     logger.info("disturbance tier set", extra={"user_id": user_id, "tier": normalized})
     return normalized
 
@@ -51,5 +58,5 @@ async def get_disturbance_tier(user_id: int) -> str:
         return pref.disturbance_tier if pref else DEFAULT_TIER
 
 
-async def is_quiet(user_id: int) -> bool:
-    return await get_disturbance_tier(user_id) == "quiet"
+async def is_still(user_id: int) -> bool:
+    return await get_disturbance_tier(user_id) == "still"

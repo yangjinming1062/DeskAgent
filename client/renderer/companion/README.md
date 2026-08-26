@@ -59,7 +59,7 @@
 ## 5. 屏锁与端忙
 
 - `companion/activity.ts` 每 30s 调 `system.is_screen_locked`（`runnerInvoke`）。结果写入 `$screenLocked` atom。
-- `$screenLocked.get() === true` 视同 quiet：抑制主动消息文本与语音；情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」），affect 照常切 EMOTIONAL。
+- `$screenLocked.get() === true` 抑制主动消息文本与语音；情绪通道不受锁屏拦截（DESIGN §6.2），affect 照常切 EMOTIONAL。静止档不在此列——主动情绪在源头已断流，客户端对 affect 事件做防御性跳过。
 - 屏锁恢复后静默恢复；断连降级（disconnected）曾被表达过时，重连后由 boot 层用确认音色补一句"回神"台词（内容寻址缓存，同 (音色, 台词) 只花一次额度）。
 
 ## 6. 自主行为（IDLE 时）
@@ -123,13 +123,13 @@
 
 **`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
 
-**决策树**（`updateSpatialDecision`）：drag > chat(listener) > quiet → home > 有焦点窗口几何 + tier ≠ quiet + category ∉ {unknown, gaming} + !fullscreen → perch > proactive + idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 安静」的档位覆盖只把 gaming / 全屏算作沉浸上下文——ide/reader 是 perch 的招牌陪工场景，归为安静会让 §3.2 与 §3.5 直接矛盾。
+**决策树**（`updateSpatialDecision`）：drag > chat(listener) > still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 
-**roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。proactive + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走躯干复合步态，见 2D 渲染层 README）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
+**roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走躯干复合步态，见 2D 渲染层 README）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 
-**缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，quiet 档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
+**缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，静止档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
 
 **Backend 零感知**：所有空间决策在 Client 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
 

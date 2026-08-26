@@ -75,7 +75,7 @@
 
 | 事件 type | 触发时机 | 消费者 |
 |-----------|----------|--------|
-| companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
+| companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（静止档不透传——主动情绪推理在源头已停） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
 | companion.2d.ready / .failed | 2D 拆分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典。manifest 恒为分层 PSD 描述符（`kind=psd`，产物契约见 docs/PIPELINE.md §6.1） | Client 水合 puppet 渲染路径 |
@@ -96,7 +96,7 @@
 
 **spatial target**（可选，仅 perch 时有意义）：窗口/进程名关键字。客户端经窗口枚举解析为窗口几何后计算 perch 点。注意：此处的 target 是空间 cue 的**窗口关键字**，与 Client 内部的场所 target（仪式行走目的地）是**两个不同概念**——后者由工具调用本地触发、不在本协议枚举内（见 [DESIGN.md §3.2](DESIGN.md)）。
 
-**inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（档位门控 + 对话开启抑制）。
+**inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（仅自主档兑现 + 对话开启抑制）。
 
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 

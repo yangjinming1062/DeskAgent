@@ -346,7 +346,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
               <label className="flex cursor-pointer items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2 transition hover:bg-white/10">
                 <div>
                   <p className="font-medium text-white/90">自主空间决策</p>
-                  <p className="text-[10px] text-white/40">由 LLM 决定什么时候睡觉/漫游/栖身（关闭按本地规则）</p>
+                  <p className="text-[10px] text-white/40">自主档下由 LLM 决定漫游/栖身（关闭按本地规则）</p>
                 </div>
                 <input
                   checked={llmAutonomy}

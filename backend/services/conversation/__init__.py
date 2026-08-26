@@ -15,10 +15,9 @@ from .proactive_state import (
     UserProactiveRecord,
     get_personality_tags,
     get_user_proactive_record,
-    get_user_quiet_duration,
+    note_user_contact,
     record_user_outreach,
     reset_user_outreach,
-    set_user_quiet_since,
 )
 
 __all__ = [
@@ -35,9 +34,8 @@ __all__ = [
     "get_or_create_main_conversation",
     "get_personality_tags",
     "get_user_proactive_record",
-    "get_user_quiet_duration",
     "load_recent_context_window",
+    "note_user_contact",
     "record_user_outreach",
     "reset_user_outreach",
-    "set_user_quiet_since",
 ]

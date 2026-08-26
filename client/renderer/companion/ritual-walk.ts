@@ -20,7 +20,7 @@ const RETRY_COUNT = 5
 const WALK_RANGE_PX = 400
 
 // 仪式行走兜底的人格化台词（DESIGN §3.6「找不到…」「够不着…」）——
-// 走 speakProactive 的档位门控：安静档静默、常规档仅气泡、积极主动档开口。
+// 走 speakProactive 的档位门控：静止档静默、常规档仅气泡、自主档开口。
 const TARGET_LOST_LINES = ['咦…我没找到那个窗口，先直接试试吧。', '那个窗口在哪呀…我先直接试。']
 const PERCH_TIGHT_LINES = ['这边好挤，我够不着…先直接试试吧。']
 

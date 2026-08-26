@@ -8,11 +8,11 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
     return
   }
 
-  // 安静档位会压掉主动外联，但用户主动触发的反应（戳 / 拖拽）始终出声（plan §4.2）。
+  // 静止档位会压掉主动外联，但用户主动触发的反应（戳 / 拖拽）始终出声。
   // Affect 永远不受门控——调用方自己设情绪状态。
   const tier = $effectiveTier.get()
 
-  if (!opts?.userInitiated && tier === 'quiet') {
+  if (!opts?.userInitiated && tier === 'still') {
     return
   }
 
@@ -20,7 +20,7 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
     setProactiveBubble(text.trim())
   }
 
-  if (tier === 'proactive' || opts?.userInitiated) {
+  if (tier === 'autonomous' || opts?.userInitiated) {
     // 强制切到 speaking 状态——优先级 60 会被 'working'（pri 70）默默门控，
     // 不强制切的话主动/触发的语音就不会体现出来。
     setSpriteState('speaking', { force: true })

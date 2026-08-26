@@ -86,7 +86,8 @@ async function findWindowWithRetry(keyword: string): Promise<WindowGeom | null> 
 }
 
 function applySpatialCue(locale?: string, target?: string): void {
-  if (!locale || $screenLocked.get() || $effectiveTier.get() === 'quiet') {
+  // 空间 cue 是云端语义的移动指令，只有自主档兑现（DESIGN §3.5）——常规不移动，静止不做任何主动表达。
+  if (!locale || $screenLocked.get() || $effectiveTier.get() !== 'autonomous') {
     return
   }
 
@@ -183,7 +184,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const screenLocked = $screenLocked.get()
 
       // "neutral" 是 LLM 的无操作情绪；当作无 affect 处理，避免触发徽标闪烁。
-      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）；锁屏只静默语音与消息。
+      // 情绪通道不受锁屏拦截（DESIGN §6.2）；锁屏只静默语音与消息。
       const hasEmotion = Boolean(emotion && emotion !== 'neutral')
 
       // 多气泡回合：每个气泡各自携带流式文本；
@@ -246,8 +247,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const locale = payload?.locale
       const target = payload?.target
 
-      // 情绪通道不受锁屏拦截（DESIGN §6.2「断消息不断情绪」）
-      if (emotion && emotion !== 'neutral') {
+      // 情绪通道不受锁屏拦截（DESIGN §6.2）；静止档经防御性跳过——后端源头已断流，此处兜底。
+      if (emotion && emotion !== 'neutral' && $effectiveTier.get() !== 'still') {
         maybeEmotionVfx(emotion)
         setSpriteState('emotional', { emotion: emotion as SpriteEmotion })
       }
@@ -536,13 +537,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const currentTier = $effectiveTier.get()
       const affectEmotion = payload?.affect?.emotion
 
-      // Affect 在文本之前流动，这样即便文本被抑制，反应仍能显示。
-      if (affectEmotion && affectEmotion !== 'neutral') {
+      // Affect 在文本之前流动，这样即便文本被抑制，反应仍能显示；静止档连主动情绪一并停
+      // （后端源头已拦，此处兜底非官方链路）。
+      if (affectEmotion && affectEmotion !== 'neutral' && currentTier !== 'still') {
         setSpriteState('emotional', { emotion: affectEmotion as SpriteEmotion })
       }
 
-      // 安静档位与锁屏会抑制气泡；上方的 affect 仍正常流动。
-      const textSuppressed = currentTier === 'quiet' || $screenLocked.get()
+      // 静止档与锁屏会抑制气泡。
+      const textSuppressed = currentTier === 'still' || $screenLocked.get()
 
       if (text && !textSuppressed) {
         void speakProactive(text, { affect: affectEmotion })

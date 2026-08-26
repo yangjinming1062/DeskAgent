@@ -2,6 +2,7 @@ import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
+import { $effectiveTier } from './companion-store'
 import { $llmAutonomy } from './prefs'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from './spatial'
 
@@ -63,7 +64,9 @@ function executeAutonomousAction(action: string): void {
 }
 
 async function consultAutonomyLLM(force = false): Promise<void> {
-  if (!$llmAutonomy.get()) {
+  // 空间智能决策只在自主档咨询——常规档不移动，静止档连主动推理都不发起
+  // （DESIGN §6.2；后端 should_act 另有静止防御闸兜底非官方链路）。
+  if (!$llmAutonomy.get() || $effectiveTier.get() !== 'autonomous') {
     return
   }
 

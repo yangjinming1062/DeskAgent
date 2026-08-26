@@ -7,7 +7,7 @@ interface DisturbanceTierOption {
 }
 
 export const DISTURBANCE_TIERS: readonly DisturbanceTierOption[] = [
-  { id: 'proactive', label: '积极主动', hint: '语音、气泡、主动消息全开放' },
-  { id: 'normal', label: '常规', hint: '仅轻量文字消息' },
-  { id: 'quiet', label: '保持安静', hint: '不发消息，但情绪仍流动' }
+  { id: 'still', label: '静止', hint: '不发起任何主动行为，只回应你' },
+  { id: 'normal', label: '常规', hint: '气泡与表情等原地轻互动' },
+  { id: 'autonomous', label: '自主', hint: '自由移动与语音，全能力开放' }
 ] as const

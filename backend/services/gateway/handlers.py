@@ -60,8 +60,8 @@ from services.companion import (
     submit_onboarding_field,
     update_memory,
 )
-from services.conversation import get_main_conversation, get_or_create_main_conversation, reset_user_outreach
-from services.disturbance import set_disturbance_tier
+from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
+from services.disturbance import is_still, set_disturbance_tier
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
 from services.tools import REGISTRY
 
@@ -589,6 +589,7 @@ def _register_session_handlers(
             attachments = _validate_attachments(params)
 
         reset_user_outreach(user_id)
+        note_user_contact(user_id)
 
         req = ChatRequest(session_id=runtime.session_id, message=ChatMessageRequest(role="user", content=text, attachments=attachments))
 
@@ -676,6 +677,9 @@ def _register_session_handlers(
 
     async def companion_check_affect(params: dict) -> dict:
         # desktop idle 监视器在阈值+冷却后调用；LLM 决策是否发出 companion.affect 切换到情境情绪（无气泡、无 TTS）。
+        # 静止档防御闸：客户端在该档不发起探测，这里拦截非官方客户端的直连调用（静止档不做任何主动 LLM 推理）。
+        if await is_still(user_id):
+            return {"emotion": None, "reason": "still tier"}
         now = time.monotonic()
         if _user_throttled(_last_check_affect_ts, user_id, CHECK_AFFECT_MIN_INTERVAL_SECONDS, now):
             logger.debug("check_affect: throttled", extra={"user_id": user_id, "since_sec": round(now - _last_check_affect_ts.get(user_id, 0.0), 3)})
@@ -707,6 +711,9 @@ def _register_session_handlers(
         kind = params.get("kind")
         if kind not in ("poke", "pet", "dizzy"):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"kind must be one of poke/pet/dizzy, got {kind!r}")
+
+        # 戳摸即「理了伙伴」——被节流拦掉的也算接触，刷新常规档被冷落反应的计时起点。
+        note_user_contact(user_id)
 
         now = time.monotonic()
         if _user_throttled(_last_interact_ts, user_id, INTERACT_MIN_INTERVAL_SECONDS, now):
@@ -772,6 +779,10 @@ def _register_session_handlers(
         kind = params.get("kind", "periodic_provision")
         if kind not in ("periodic_provision",):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"invalid kind {kind!r}")
+
+        # 静止档防御闸：客户端在该档不咨询空间决策，这里拦截非官方客户端的直连调用。
+        if await is_still(user_id):
+            return {"should_act": False, "action": "stay", "reason": "still tier"}
 
         now = time.monotonic()
         if _user_throttled(_last_should_act_ts, user_id, SHOULD_ACT_ANTIDUP_SECONDS, now):

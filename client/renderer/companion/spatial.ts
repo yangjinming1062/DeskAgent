@@ -368,7 +368,7 @@ function readDefaultScale(): number {
 function computeTargetScale(): number {
   const base = $defaultScale.get()
 
-  if ($effectiveTier.get() === 'quiet') {
+  if ($effectiveTier.get() === 'still') {
     return base
   }
 
@@ -439,8 +439,8 @@ export function updateSpatialDecision(): void {
   const state = $spriteState.get()
   const tier = $effectiveTier.get()
 
-  // 安静档的硬约束优先于一切——这是用户偏好，LLM 自主模式也没有上下文可以参考。
-  if (tier === 'quiet') {
+  // 静止档的硬约束优先于一切——这是用户偏好，LLM 自主模式也没有上下文可以参考。
+  if (tier === 'still') {
     stopRoam()
 
     if ($spatialLocale.get() !== 'home') {
@@ -450,7 +450,14 @@ export function updateSpatialDecision(): void {
     return
   }
 
-  // 其余场景下 LLM 自主模式负责 perch/roam/home 的切换；本地规则不再决策。
+  // 常规档不发起任何自动移动——停在原地，只停掉进行中的漫游（DESIGN §3.5）。
+  if (tier !== 'autonomous') {
+    stopRoam()
+
+    return
+  }
+
+  // 自主档下 LLM 自主模式负责 perch/roam/home 的切换；本地规则不再决策。
   if ($llmAutonomy.get()) {
     return
   }
@@ -472,7 +479,7 @@ export function updateSpatialDecision(): void {
     return
   }
 
-  if (tier === 'proactive' && state === 'idle' && $lastIdleSeconds.get() >= ROAM_IDLE_THRESHOLD_SECONDS) {
+  if (state === 'idle' && $lastIdleSeconds.get() >= ROAM_IDLE_THRESHOLD_SECONDS) {
     if ($spatialLocale.get() !== 'roam') {
       startRoam()
     }

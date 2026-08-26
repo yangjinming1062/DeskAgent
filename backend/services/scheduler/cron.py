@@ -33,10 +33,9 @@ from services.conversation import (
     ProactiveState,
     get_personality_tags,
     get_user_proactive_record,
-    get_user_quiet_duration,
     record_user_outreach,
 )
-from services.disturbance import is_quiet
+from services.disturbance import get_local_tier, is_still
 from services.gateway.connection import MANAGER
 
 from .cron_jobs import _compute_next_run_at
@@ -224,9 +223,9 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
     if not prompt:
         return
 
-    if await is_quiet(user_id):
-        # 静默模式抑制自主触达；先 gate 再写行。
-        logger.debug("cron: user is quiet, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
+    if await is_still(user_id):
+        # 静止档抑制自主触达；先 gate 再写行。
+        logger.debug("cron: user is still, skipping autonomous turn", extra={"user_id": user_id, "job_id": job_id})
         return
 
     await _kick_cron_turn(user_id, prompt, job_id)
@@ -236,14 +235,15 @@ async def _kick_autonomous_turn(job_id: int, meta: dict[str, Any]) -> None:
 async def _maybe_run_proactive_followups(now: datetime) -> None:
     """扫描 OUTREACHED / FOLLOWUP_SENT 状态的用户，触发新一轮跟进 turn。
 
-    两种状态共用同一触发条件：timeout 到期 + 用户仍在线 + 当前档位非保持安静。
+    两种状态共用同一触发条件：timeout 到期 + 用户仍在线。
     区别仅在 prompt 措辞与状态推进：
       - OUTREACHED → FOLLOWUP_SENT（第一次跟进）；
       - FOLLOWUP_SENT → FOLLOWUP_SENT（连续主动节奏内，LLM 在上一轮 turn 中又主动发言过）。
 
-    LLM 在跟进 turn 里可以再次 send_message_tool(timeout=Y) 继续保持 FOLLOWUP_SENT，
-    也可以传 timeout=None/0 结束节奏进入 SUPPRESSED。进程不限制连续次数——节奏完全由 LLM
-    自身把控（用户提到过 100 之类的安全网也可加，不在本次范围）。
+    用户切入静止档时 set_disturbance_tier 会把外联记录重置回 IDLE，跟进扫描自然跳过，
+    无需在此再做档位检查。LLM 在跟进 turn 里可以再次 send_message_tool(timeout=Y) 继续保持
+    FOLLOWUP_SENT，也可以传 timeout=None/0 结束节奏回到 IDLE。进程不限制连续次数——节奏
+    完全由 LLM 自身把控（用户提到过 100 之类的安全网也可加，不在本次范围）。
     """
     cur_time = time.monotonic()
     online_uids = MANAGER.local_user_ids()
@@ -254,9 +254,6 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
         if rec.followup_timeout_seconds <= 0:
             continue
         if (cur_time - rec.last_outreach_ts) < rec.followup_timeout_seconds:
-            continue
-        # quiet_since_ts > 0 与 DB disturbance_tier==quiet 同步（set_disturbance_tier 钩子维持）；用内存判断替代 is_quiet(uid) 的 DB roundtrip，减少 per-user per-tick IO。
-        if rec.quiet_since_ts > 0:
             continue
 
         last_text = rec.last_proactive_text or "问候"
@@ -276,52 +273,53 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
 
 
 _PROACTIVE_FOLLOWUP_JOB_ID = -1  # proactive followup 跟进 turn 的 job_id（跟 _kick_autonomous_turn 中的 cron job 星块 id 不同兮）
-_QUIET_AFFECT_JOB_ID = -2  # 小情绪反馈 turn 的 job_id
-_QUIET_AFFECT_INITIAL_DELAY_SECONDS = 3600  # 持续安静 1 小时后才有资格触发首次小情绪
+_IGNORED_AFFECT_JOB_ID = -2  # 被冷落情绪反应 turn 的 job_id
+_IGNORED_AFFECT_MIN_IGNORED_SECONDS = 3600  # 用户持续不理伙伴 1 小时后才有资格触发
+_IGNORED_AFFECT_MIN_SPACING_SECONDS = 3600  # 两次触发之间的最小间距——LLM 传 0 结束节奏后的再触发安全网
 
 
-async def _maybe_run_quiet_affect(now: datetime) -> None:
-    """对处于 SUPPRESSED 状态且持续保持安静 1 小时以上 + 粘人性格的用户，注入小情绪反馈 turn。
+async def _maybe_run_ignored_affect(now: datetime) -> None:
+    """常规档下用户持续不与伙伴互动（≥1h）且无进行中外联节奏时，为粘人性格注入被冷落情绪反应 turn。
 
-    小情绪反馈与「主动外联」是独立通道：
-      - 触发条件是档位=quiet + quiet_since_ts 持续 1h+ + SUPPRESSED + 粘人性格；
-      - 不再受 quiet 档位门控（quiet 是触发条件，不是反向 gate）；
-      - 安静档位下文字被 send_message_tool 的 quiet 守卫压住，表情达意靠 affect 参数
-        （断消息不断情绪）；提示词因此明确要求带 affect；
-      - 状态机变化：record_user_outreach 把 SUPPRESSED → FOLLOWUP_SENT，超时由 LLM 控制；
-        用户响应则 reset_user_outreach 把任意状态拉回 IDLE。
+    与主动外联状态机互斥：只在 IDLE 触发；发完经 record_user_outreach 进入常规外联节奏，
+    后续跟进间隔由 LLM 的 follow_up_after_seconds 把控。固定 1h 间距是「LLM 传 0 结束」后
+    的再触发安全网（否则每 tick 都满足触发条件）。静止档不触发（一切主动推理断源），
+    自主档不需要（完整主动能力已开放，cron job 与跟进节奏都在跑）。
     """
     cur_time = time.monotonic()
     online_uids = MANAGER.local_user_ids()
     for uid in online_uids:
+        if await get_local_tier(uid) != "normal":
+            continue
         rec = get_user_proactive_record(uid)
-        if rec.state != ProactiveState.SUPPRESSED:
+        if rec.state != ProactiveState.IDLE:
             continue
-        # 持续安静时长门槛
-        quiet_duration = get_user_quiet_duration(uid, cur_time)
-        if quiet_duration < _QUIET_AFFECT_INITIAL_DELAY_SECONDS:
+        # 0 = 进程启动以来用户还没互动过——没有「被冷落」的基准，跳过。
+        if rec.last_user_contact_ts == 0.0:
             continue
-        # 距上次小情绪的时间间隔（由 LLM 给出，可能为 0 表示"我不再发小情绪了"——但此时我们已在 SUPPRESSED，下一次 send_message_tool 才会离开）
-        if rec.followup_timeout_seconds > 0 and (cur_time - rec.last_outreach_ts) < rec.followup_timeout_seconds:
+        ignored = cur_time - rec.last_user_contact_ts
+        if ignored < _IGNORED_AFFECT_MIN_IGNORED_SECONDS:
             continue
-        # 性格标签查询
+        if cur_time - rec.last_outreach_ts < _IGNORED_AFFECT_MIN_SPACING_SECONDS:
+            continue
+        # 性格标签查询放在所有廉价条件之后——这是本扫描唯一的 DB roundtrip。
         async with session_scope() as db:
             tags = await get_personality_tags(db, uid)
         if "粘人" not in tags:
             continue
 
-        quiet_minutes = round(quiet_duration / 60)
+        ignored_minutes = round(ignored / 60)
         prompt = (
-            f"[环境感知：用户已保持安静档位持续 {quiet_minutes} 分钟未与你交互，你的性格标签含「粘人」。"
-            "安静档位下文字气泡不会展示，情绪经 affect 通道继续表达——"
-            "请调用 send_message_tool：affect 传你最贴切的情绪（如 pout/sad/lonely，从可用情绪清单里选）；"
-            "message 写你的小情绪表达（10-30 字以内，如「你怎么还不来理我啊」）；"
-            "follow_up_after_seconds 传你期望的下一次小情绪触发间隔（秒）——传 0 或 None 表示「今天到此为止」。"
-            "若你判断当前不该再表达（用户曾明确不想被打扰等），直接结束回复，不调用工具。]"
+            f"[环境感知：当前为常规打扰档位，用户已经 {ignored_minutes} 分钟没有理你了，你的性格标签含「粘人」。"
+            "请考虑是否表达被冷落的小情绪：若要表达，调用 send_message_tool——"
+            "affect 传你最贴切的情绪（如 pout/sad/lonely，从可用情绪清单里选），"
+            "message 写一句 10-30 字以内的轻量表达（如「你怎么还不来理我啊」），"
+            "follow_up_after_seconds 传你期望的下一次触发间隔（秒），传 0 或 None 表示不再为此表达；"
+            "若你判断当前不该表达（用户曾明确不想被打扰等），直接结束回复，不调用工具。]"
         )
-        record_user_outreach(uid, "小情绪反馈")
-        await _kick_cron_turn(uid, prompt, _QUIET_AFFECT_JOB_ID)
-        logger.info("cron: quiet-tier affect turn requested", extra={"user_id": uid, "quiet_minutes": quiet_minutes})
+        record_user_outreach(uid, "被冷落情绪反应")
+        await _kick_cron_turn(uid, prompt, _IGNORED_AFFECT_JOB_ID)
+        logger.info("cron: ignored-affect turn requested", extra={"user_id": uid, "ignored_minutes": ignored_minutes})
 
 
 async def _tick() -> None:
@@ -331,7 +329,7 @@ async def _tick() -> None:
     _spawn_scan("memory_consolidator", lambda: _maybe_run_memory_consolidator(now))
     _spawn_scan("nightly_activity", lambda: _maybe_run_autonomous_activity(now))
     _spawn_scan("outbox_gc", lambda: _maybe_run_outbox_gc(now))
-    _spawn_scan("quiet_affect", lambda: _maybe_run_quiet_affect(now))
+    _spawn_scan("ignored_affect", lambda: _maybe_run_ignored_affect(now))
     await _maybe_run_proactive_followups(now)
     due_jobs = await _select_due_jobs()
     if len(due_jobs) > _MAX_DUE_PER_TICK:

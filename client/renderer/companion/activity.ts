@@ -1,6 +1,11 @@
 import { atom } from 'nanostores'
 
-import { $effectiveTierOverride, $userPreferredTier, type DisturbanceTier } from '@/companion/companion-store'
+import {
+  $effectiveTier,
+  $effectiveTierOverride,
+  $userPreferredTier,
+  type DisturbanceTier
+} from '@/companion/companion-store'
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
@@ -48,7 +53,8 @@ let runnerReady = false
 let offPhaseSub: (() => void) | null = null
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
-  if (!$llmAffect.get() || locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
+  // 静止档不发起任何主动 LLM 推理——情境化情绪探测一并停（DESIGN §6.2）。
+  if (!$llmAffect.get() || $effectiveTier.get() === 'still' || locked || idleSeconds < IDLE_THRESHOLD_SECONDS) {
     return
   }
 
@@ -188,16 +194,15 @@ function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
   return isMac ? classifyMacos(info) : classifyWindows(info)
 }
 
-// 「沉浸式 → 安静」只覆盖真正浸没型上下文（游戏 / 全屏）——安静档的空间策略是仅 home
-// （DESIGN §3.5），若把 ide/reader 也算沉浸式，§3.2 的招牌场景「趴在 IDE 窗口边缘陪工作」
-// 在本地与云端两条路径上都被档位门拦死。IDE/阅读属于"沉浸工作"，正是 perch 要陪的场景；
-// 游戏即使窗口化也按沉浸处理。
+// 「沉浸式 → 静止」只覆盖真正浸没型上下文（游戏 / 全屏）：静止档切断一切主动表达与推理，
+// 适合不可打断的场景。IDE/阅读等专注工作不压档——专注≠不可打扰，用户自选档位继续生效
+// （常规下仍可气泡轻表达，自主下仍可 perch 陪工）。游戏即使窗口化也按沉浸处理。
 const IMMERSIVE_CATEGORIES: ReadonlySet<FocusCategory> = new Set(['gaming'])
 
 function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusContext | null): DisturbanceTier {
-  // 手动 ``quiet`` 锁定：任何情况下都不被覆盖。
-  if (userPreferred === 'quiet') {
-    return 'quiet'
+  // 手动 ``still`` 锁定：任何情况下都不被覆盖。
+  if (userPreferred === 'still') {
+    return 'still'
   }
 
   if (!ctx) {
@@ -205,7 +210,7 @@ function computeLocalEffectiveTier(userPreferred: DisturbanceTier, ctx: FocusCon
   }
 
   if (ctx.fullscreen || IMMERSIVE_CATEGORIES.has(ctx.category)) {
-    return 'quiet'
+    return 'still'
   }
 
   return userPreferred

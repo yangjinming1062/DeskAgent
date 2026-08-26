@@ -56,9 +56,10 @@ export const $spriteActionQueue = atom<string[]>([])
 const $previousState = atom<SpriteStateName>('idle')
 export const $clipOverride = atom<string | null>(null)
 
-// 打扰档位门控伙伴的主动行为（ARCHITECTURE.md §6 / plan.md §4.2）。
-// 用户主动行为永不被门控——只门控主动外发（companion.message）。
-// `quiet` 屏蔽主动消息，但保持 affect 通道开启（第二阶段）。
+// 打扰档位门控伙伴的主动行为（DESIGN §6.2）。
+// 三档：still（静止，停止一切主动 LLM 调用与分析，仅响应交互）、
+// normal（常规，仅气泡/表情等原地轻互动）、autonomous（自主，全能力开放）。
+// 用户主动行为永不被门控——只门控主动外发（companion.message）与主动推理发起。
 //
 // 双 atom 模型：
 // - ``$userPreferredTier`` ——用户在设置界面手动选择的档位，
@@ -68,7 +69,7 @@ export const $clipOverride = atom<string | null>(null)
 // - ``$effectiveTier`` ——由以上两个推导而来。渲染层其余部分读取它来
 //   决定是否门控主动通道；settings-overlay / chat-dock 上的标签仍展示
 //   user_preferred，反映用户实际选择而非瞬时覆盖。
-export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
+export type DisturbanceTier = 'still' | 'normal' | 'autonomous'
 
 // 将所选档位持久化到 localStorage，避免 Desktop 重启时悄悄把用户
 // 重置为更聒噪的默认档。后端有自己进程内的缓存
@@ -77,18 +78,18 @@ export type DisturbanceTier = 'proactive' | 'normal' | 'quiet'
 const _rawTier = typeof window === 'undefined' ? null : storedString('da.companion.disturbanceTier')
 
 const _validStored: DisturbanceTier | null =
-  _rawTier === 'proactive' || _rawTier === 'normal' || _rawTier === 'quiet' ? (_rawTier as DisturbanceTier) : null
+  _rawTier === 'still' || _rawTier === 'normal' || _rawTier === 'autonomous' ? (_rawTier as DisturbanceTier) : null
 
 export const $userPreferredTier = atom<DisturbanceTier>(_validStored ?? 'normal')
 // ``null`` 表示「当前无覆盖；生效档位回退到 user_preferred」。
 // 只有活动监视器（activity.ts）会写它。
 export const $effectiveTierOverride = atom<DisturbanceTier | null>(null)
 
-// 手动安静是硬锁定：即便活动监视器在用户已选安静时写入 override，
-// 渲染出的生效档位也保持安静。其他覆盖（proactive / normal）
-// 仅在用户未选安静时生效。
+// 手动静止是硬锁定：即便活动监视器在用户已选静止时写入 override，
+// 渲染出的生效档位也保持静止。其他覆盖（normal / autonomous）
+// 仅在用户未选静止时生效。
 export const $effectiveTier = computed([$userPreferredTier, $effectiveTierOverride], (preferred, override) =>
-  preferred === 'quiet' ? 'quiet' : (override ?? preferred)
+  preferred === 'still' ? 'still' : (override ?? preferred)
 )
 
 const STATE_PRIORITY: Record<SpriteStateName, number> = {
