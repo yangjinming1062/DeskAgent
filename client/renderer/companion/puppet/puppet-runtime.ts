@@ -13,7 +13,7 @@ import { buildHeadCage, cageBary, curveDepth, headBlendMu, type HeadCage } from 
 import type { Rig, RigAnchors, RigEyeAnchor, RigImage, RigPart } from './puppet-types'
 import { ensureVendorLibs } from './vendor-loader'
 
-export interface PuppetParams {
+interface PuppetParams {
   angleX: number
   angleY: number
   angleZ: number
@@ -51,7 +51,7 @@ export interface PuppetParams {
   mouthScale: number
 }
 
-export interface PuppetAuto {
+interface PuppetAuto {
   idle: boolean
   blink: boolean
   rand: boolean
@@ -61,7 +61,7 @@ export interface PuppetAuto {
 }
 
 /** 调试/无头验证用：平滑后的活动参数只读快照 */
-export interface PuppetSnapshot {
+interface PuppetSnapshot {
   eyeOpenL: number
   eyeOpenR: number
   eyeX: number
@@ -76,7 +76,7 @@ export interface PuppetSnapshot {
   blinkActive: boolean
 }
 
-export function defaultPuppetParams(): PuppetParams {
+function defaultPuppetParams(): PuppetParams {
   return {
     angleX: 0,
     angleY: 0,

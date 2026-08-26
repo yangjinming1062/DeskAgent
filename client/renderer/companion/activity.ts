@@ -13,9 +13,9 @@ export const $screenLocked = atom<boolean>(false)
 // -1 表示本周期无信号（Runner 离线或探测失败），调用方按未知处理。
 export const $lastIdleSeconds = atom<number>(-1)
 
-export type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'
+type FocusCategory = 'ide' | 'music' | 'reader' | 'gaming' | 'browsing' | 'other' | 'unknown'
 
-export interface FocusContext {
+interface FocusContext {
   category: FocusCategory
   fullscreen: boolean
   windowGeom?: { x: number; y: number; w: number; h: number }
@@ -178,7 +178,7 @@ function classifyMacos(info: FocusedAppInfo): FocusCategory {
   return 'unknown'
 }
 
-export function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
+function classifyFocusedApp(info: FocusedAppInfo): FocusCategory {
   if (!info || Object.keys(info).length === 0) {
     return 'unknown'
   }
@@ -379,7 +379,7 @@ export function startActivityMonitor(): () => void {
   return stopActivityMonitor
 }
 
-export function stopActivityMonitor(): void {
+function stopActivityMonitor(): void {
   if (timer) {
     clearInterval(timer)
     timer = null

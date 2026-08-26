@@ -6,19 +6,19 @@ import { atomicWriteFile } from '../shared/utils'
 
 import { type BackendClient, BackendRequestError, createBackendClient, type FetchFunction } from './client'
 
-export const SESSION_FILENAME = 'agent-session.json'
-export const SESSION_SCHEMA_VERSION = 2
-export const KNOWN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000
-export const REFRESH_LEAD_MS = 5 * 60 * 1000
+const SESSION_FILENAME = 'agent-session.json'
+const SESSION_SCHEMA_VERSION = 2
+const KNOWN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000
+const REFRESH_LEAD_MS = 5 * 60 * 1000
 
-export interface SessionErrorOptions {
+interface SessionErrorOptions {
   cause?: unknown
   code: string
   message: string
   status?: number
 }
 
-export class SessionError extends Error {
+class SessionError extends Error {
   code: string
   status?: number
 
@@ -37,24 +37,24 @@ export class SessionError extends Error {
   }
 }
 
-export interface SessionUser {
+interface SessionUser {
   id: null | number
   username: null | string
 }
 
-export interface EncryptedToken {
+interface EncryptedToken {
   encoding: 'safeStorage'
   value: string
 }
 
-export interface StoredSessionPayload {
+interface StoredSessionPayload {
   activationCode: EncryptedToken | null
   baseUrl: null | string
   schemaVersion: number
   user: null | SessionUser
 }
 
-export interface TokenAuthResponse {
+interface TokenAuthResponse {
   access_token?: string
   expires_in?: number
   user?: unknown
@@ -72,10 +72,7 @@ function readJsonSafe(filePath: string): unknown {
   }
 }
 
-export function encryptToken(
-  raw: null | string | undefined,
-  safeStorage?: null | SafeStorageApi
-): EncryptedToken | null {
+function encryptToken(raw: null | string | undefined, safeStorage?: null | SafeStorageApi): EncryptedToken | null {
   const value = String(raw || '')
 
   if (!value) {
@@ -97,7 +94,7 @@ export function encryptToken(
   }
 }
 
-export function decryptToken(blob: unknown, safeStorage?: null | SafeStorageApi): null | string {
+function decryptToken(blob: unknown, safeStorage?: null | SafeStorageApi): null | string {
   if (!blob || typeof blob !== 'object') {
     return null
   }
@@ -172,7 +169,6 @@ export interface SessionSnapshot {
 }
 
 export interface BackendSession {
-  _sessionPath: string
   activate: (payload?: { clientContext?: unknown; code?: string }) => Promise<null | SessionSnapshot>
   authHeaders: () => Record<string, string>
   clearSession: () => Promise<void>
@@ -627,7 +623,6 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
   }
 
   return {
-    _sessionPath: sessionPath,
     activate,
     authHeaders,
     clearSession,

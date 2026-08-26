@@ -14,7 +14,7 @@ import type { ReverseRpcOptions } from '../runner/reverse-rpc'
 import type { CreateRunnerWsServerOptions, RunnerWsServer } from '../runner/rpc-ws'
 import * as store from '../shared/lib/runner-config-store'
 
-export interface RunnerIpcDeps {
+interface RunnerIpcDeps {
   createReverseRpc: (options: ReverseRpcOptions) => (method: string, params?: unknown) => Promise<unknown>
   createRunnerBridge: (options: RunnerBridgeOptions) => RunnerBridge
   createRunnerProcess: (options: CreateRunnerProcessOptions) => RunnerProcess
@@ -28,7 +28,7 @@ export interface RunnerIpcDeps {
   taggedLogger: (tag: string) => (msg: string) => void
 }
 
-export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
+function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
   if (deps.runnerBridge) {
     return deps.runnerBridge
   }
@@ -82,7 +82,7 @@ export function ensureRunnerBridge(deps: RunnerIpcDeps): RunnerBridge {
   return deps.runnerBridge
 }
 
-export async function startRunnerBridgeForCurrentSession(
+async function startRunnerBridgeForCurrentSession(
   deps: RunnerIpcDeps
 ): Promise<{ error?: string; noop?: boolean; ok: boolean; reason?: string; status?: RunnerBridgeStatus }> {
   const session = deps.ensureBackendSession().getSession()
@@ -112,7 +112,7 @@ export async function startRunnerBridgeForCurrentSession(
   }
 }
 
-export async function stopRunnerBridgeForCurrentSession(
+async function stopRunnerBridgeForCurrentSession(
   deps: RunnerIpcDeps,
   { reason }: { reason?: string } = {}
 ): Promise<{ errors?: string[]; noop?: boolean; ok: boolean }> {

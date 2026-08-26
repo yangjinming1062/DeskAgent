@@ -418,7 +418,7 @@ async function ttsViaBackend({
   return { dataUrl: dataUrlFromBuffer(buf, mime), mimeType: mime, voiceOut }
 }
 
-export type EngineMode = 'auto' | 'cloud' | 'local'
+type EngineMode = 'auto' | 'cloud' | 'local'
 
 export interface EnginePrefs {
   expiresAt: number
@@ -483,10 +483,10 @@ export function createEnginePrefsCache({
   }
 }
 
-export const TTS_CACHE_MAX_ENTRIES = 100
-export const TTS_CACHE_TTL_MS = 10 * 60 * 1000
+const TTS_CACHE_MAX_ENTRIES = 100
+const TTS_CACHE_TTL_MS = 10 * 60 * 1000
 
-export const ttsAudioCache: Map<string, { dataUrl: string; expiresAt: number; mimeType: string }> = new Map()
+const ttsAudioCache: Map<string, { dataUrl: string; expiresAt: number; mimeType: string }> = new Map()
 const inflightTts = new Map<string, Promise<{ dataUrl: string; mimeType: string }>>()
 
 function getCachedTts(key: string): null | { dataUrl: string; expiresAt: number; mimeType: string } {
@@ -520,7 +520,7 @@ function setCachedTts(key: string, value: { dataUrl: string; mimeType: string })
   ttsAudioCache.set(key, { ...value, expiresAt: Date.now() + TTS_CACHE_TTL_MS })
 }
 
-export interface MediaIpcDeps {
+interface MediaIpcDeps {
   spiritagentHome?: null | string
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
   fetchImpl?: typeof globalThis.fetch

@@ -1,11 +1,11 @@
 import { IPC } from '@ipc/contracts'
 import type { BrowserWindow, IpcMain, TitleBarOverlayOptions } from 'electron'
 
-export function isHexColor(value: unknown): value is string {
+function isHexColor(value: unknown): value is string {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value)
 }
 
-export interface TitlebarIpcDeps {
+interface TitlebarIpcDeps {
   getTitleBarOverlayOptions: () => TitleBarOverlayOptions
   getToolWindow: () => BrowserWindow | null | undefined
   ipcMain: IpcMain

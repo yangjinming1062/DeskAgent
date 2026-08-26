@@ -5,7 +5,7 @@ import { clearAllGltf } from '@/companion/3d/gltf-instance-cache'
 
 import { tearDownPrimaryGateway } from './gateway'
 
-export type AuthState =
+type AuthState =
   | { kind: 'pending' }
   | { error?: string; kind: 'unauthenticated' }
   | { kind: 'authenticated'; snapshot: DesktopAuthSnapshot }

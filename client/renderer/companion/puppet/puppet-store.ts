@@ -10,7 +10,7 @@ import { atom } from 'nanostores'
 import { $mesh2dInfo } from '@/companion/mesh2d/mesh2d-store'
 import { log } from '@/shared/lib/log'
 
-export interface PuppetInfo {
+interface PuppetInfo {
   psdUrl: string | null
   contentHash: string | null
   error: string | null

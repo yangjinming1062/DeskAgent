@@ -3,7 +3,7 @@ import type { App, BrowserWindow, Menu, MenuItemConstructorOptions, nativeImage,
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
 
-export interface TrayDeps {
+interface TrayDeps {
   Menu: typeof Menu
   Tray: typeof Tray
   app: App
@@ -30,7 +30,7 @@ function isAuthenticated(): boolean {
   return session?.getSession?.()?.hasToken === true
 }
 
-export function isSpriteVisible(): boolean {
+function isSpriteVisible(): boolean {
   const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
   if (!win || win.isDestroyed()) {
@@ -136,7 +136,7 @@ export function installCloseInterceptor(win: BrowserWindow): void {
   win.on('restore', () => rebuildTrayMenu())
 }
 
-export function hideMainWindow(): void {
+function hideMainWindow(): void {
   const win = trayDeps?.bridgeDeps?.getMainWindow?.()
 
   if (win && !win.isDestroyed()) {
@@ -176,7 +176,7 @@ export function showMainWindow(): void {
   rebuildTrayMenu()
 }
 
-export function toggleMainWindow(): void {
+function toggleMainWindow(): void {
   if (isSpriteVisible()) {
     hideMainWindow()
   } else {
@@ -184,7 +184,7 @@ export function toggleMainWindow(): void {
   }
 }
 
-export function quitAppFully(): void {
+function quitAppFully(): void {
   trayDeps?.app.quit()
 }
 

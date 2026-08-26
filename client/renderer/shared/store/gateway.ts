@@ -14,7 +14,7 @@ export const $gateway = atom<SpiritAgentGateway | null>(null)
 // 与任何对话无关。
 export const $gatewayState = atom<ConnectionState>('idle')
 
-export function setGatewayState(next: ConnectionState): void {
+function setGatewayState(next: ConnectionState): void {
   $gatewayState.set(next)
 }
 

@@ -1,9 +1,9 @@
 import type { BackendClient } from '../backend/client'
 
-export const DEFAULT_TIMEOUT_MS = 120_000
+const DEFAULT_TIMEOUT_MS = 120_000
 
 // JSON-RPC 2.0 §5.1 — "Method not found".
-export const METHOD_NOT_FOUND_CODE = -32601
+const METHOD_NOT_FOUND_CODE = -32601
 
 export interface BackendSessionLike {
   client?: () => BackendClient
@@ -17,21 +17,21 @@ export interface ReverseRpcOptions {
   log?: (chunk: string) => void
 }
 
-export interface LlmMessageContentPart {
+interface LlmMessageContentPart {
   image?: unknown
   image_url?: unknown
   text?: string
   type?: string
 }
 
-export interface LlmMessage {
+interface LlmMessage {
   content?: string | LlmMessageContentPart[]
   role?: string
   tool_call_id?: string
   tool_calls?: Array<Record<string, unknown>>
 }
 
-export interface LlmResponseInputItem {
+interface LlmResponseInputItem {
   arguments?: string
   call_id?: string
   content?: Array<Record<string, unknown>>
@@ -41,7 +41,7 @@ export interface LlmResponseInputItem {
   type?: string
 }
 
-export interface LlmCompletionParams {
+interface LlmCompletionParams {
   max_tokens?: number
   input?: unknown
   instructions?: string
@@ -220,11 +220,10 @@ export function createReverseRpc(
     const isVision =
       Array.isArray(responsesPayload.input) && responsesPayload.input.some(item => hasVisionContent(item.content))
 
-    const maxRequestBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
-    const maxSessionBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
+    const maxBytes = isVision ? MAX_VISION_BYTES_PER_SESSION : MAX_TEXT_BYTES_PER_SESSION
 
-    if (payloadBytes > maxRequestBytes) {
-      throw new Error(`request_llm rejected: messages payload too large (${payloadBytes} bytes > ${maxRequestBytes}).`)
+    if (payloadBytes > maxBytes) {
+      throw new Error(`request_llm rejected: messages payload too large (${payloadBytes} bytes > ${maxBytes}).`)
     }
 
     sessionMessagesSent += messageCount || (Array.isArray(responsesPayload.input) ? responsesPayload.input.length : 1)
@@ -237,8 +236,8 @@ export function createReverseRpc(
 
     sessionBytesSent += payloadBytes
 
-    if (sessionBytesSent > maxSessionBytes) {
-      throw new Error(`request_llm rejected: session exceeded ${maxSessionBytes} bytes (sent ${sessionBytesSent}).`)
+    if (sessionBytesSent > maxBytes) {
+      throw new Error(`request_llm rejected: session exceeded ${maxBytes} bytes (sent ${sessionBytesSent}).`)
     }
 
     const itemCount = Array.isArray(responsesPayload.input) ? responsesPayload.input.length : 1

@@ -5,9 +5,9 @@ import path from 'node:path'
 
 import { resolveVenvPython } from './venv'
 
-export const DEFAULT_GRACE_MS = 4_000
-export const DEFAULT_STOP_TIMEOUT_MS = 8_000
-export const DEFAULT_HEALTH_TIMEOUT_MS = 8_000
+const DEFAULT_GRACE_MS = 4_000
+const DEFAULT_STOP_TIMEOUT_MS = 8_000
+const DEFAULT_HEALTH_TIMEOUT_MS = 8_000
 
 export interface RunnerProcessState {
   args: null | string[]
@@ -21,7 +21,7 @@ export interface RunnerProcessState {
   startedAt: null | number
 }
 
-export type RunnerProcessEvent =
+type RunnerProcessEvent =
   | { args: string[]; command: string; pid: null | number | undefined; type: 'start' }
   | { data: string; type: 'stderr' | 'stdout' }
   | { code: null | number; signal: null | string; type: 'exit' }

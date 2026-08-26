@@ -8,13 +8,12 @@ import { promisify } from 'node:util'
 import YAML from 'yaml'
 
 import { sleep } from '../shared/utils'
-import type { sendToMain as sendToMainFn } from '../shared/utils'
 
 import { venvPythonFor } from './venv'
 
 const execFileP = promisify(execFile)
 
-export interface RunnerUpdateManifest {
+interface RunnerUpdateManifest {
   path: string
   runner: { server_py_sha256: string }
   sha512: string
@@ -22,7 +21,7 @@ export interface RunnerUpdateManifest {
   size?: number
 }
 
-export interface PendingRunnerSentinel {
+interface PendingRunnerSentinel {
   attempt_count: number
   last_error?: string
   max_attempts: number
@@ -32,48 +31,29 @@ export interface PendingRunnerSentinel {
   wheel_path: string
 }
 
-export type RunnerUpdateEvent =
-  | { detail?: string; error: string; kind: 'runner-failed'; phase?: string; recoverable?: boolean; version?: string }
-  | { kind: 'runner-installed'; version?: string }
-  | { kind: 'runner-installing'; percent?: number; phase: 'pip' | 'starting'; version?: string }
-  | {
-      kind: 'runner-prefetching'
-      percent?: number
-      phase: 'manifest' | 'prefetch' | 'server' | 'wheel'
-      version?: string
-    }
-  | { kind: 'runner-ready'; version?: string }
-  | { kind: 'runner-recovered'; recoverable: boolean; version?: string }
-
 interface MinimalRunnerBridge {
   start: (options: { backendSession?: unknown; readyTimeoutMs?: number }) => Promise<unknown>
   stop: (options: { reason: string }) => Promise<unknown>
 }
 
-export interface RunnerUpdaterDeps {
+interface RunnerUpdaterDeps {
   bridgeDeps: {
     spiritagentHome: string
     ensureBackendSession?: () => unknown
     runnerBridge?: null | MinimalRunnerBridge
   }
   fetchImpl?: typeof globalThis.fetch
-  getMainWindow: () => Parameters<typeof sendToMainFn>[0]
   log?: (level: string, message: string, ...args: unknown[]) => void
-  sendToMain: typeof sendToMainFn
 }
 
 export class RunnerUpdater {
   bridgeDeps: RunnerUpdaterDeps['bridgeDeps']
   fetchImpl: typeof globalThis.fetch
-  getMainWindow: RunnerUpdaterDeps['getMainWindow']
   log?: RunnerUpdaterDeps['log']
-  sendToMain: RunnerUpdaterDeps['sendToMain']
 
-  constructor({ bridgeDeps, fetchImpl = globalThis.fetch, getMainWindow, log, sendToMain }: RunnerUpdaterDeps) {
+  constructor({ bridgeDeps, fetchImpl = globalThis.fetch, log }: RunnerUpdaterDeps) {
     this.bridgeDeps = bridgeDeps
     this.fetchImpl = fetchImpl
-    this.getMainWindow = getMainWindow
-    this.sendToMain = sendToMain
     this.log = log
   }
 
@@ -92,8 +72,6 @@ export class RunnerUpdater {
 
     await fsp.rm(stagingDir, { force: true, recursive: true })
     await fsp.mkdir(stagingDir, { recursive: true })
-
-    this._emit({ kind: 'runner-prefetching', phase: 'manifest', version })
 
     const MANIFEST_FETCH_ATTEMPTS = 3
     const MANIFEST_FETCH_BACKOFF_MS = 1500
@@ -117,29 +95,10 @@ export class RunnerUpdater {
     }
 
     if (!manifest) {
-      const detail =
-        primaryErr === null || primaryErr === undefined
-          ? 'unknown error'
-          : primaryErr instanceof Error
-            ? primaryErr.message
-            : String(primaryErr)
-
-      this._emit({
-        error: `manifest fetch failed after ${MANIFEST_FETCH_ATTEMPTS} attempts: ${detail}`,
-        kind: 'runner-failed',
-        phase: 'prefetch',
-        version
-      })
-      throw primaryErr
+      throw primaryErr ?? new Error('manifest fetch failed after retries')
     }
 
     if (!manifest.path || !manifest.signature || !manifest.runner) {
-      this._emit({
-        error: 'manifest missing required fields (path/signature/runner)',
-        kind: 'runner-failed',
-        phase: 'prefetch',
-        version
-      })
       throw new Error('manifest missing required fields')
     }
 
@@ -150,12 +109,6 @@ export class RunnerUpdater {
     })
 
     if (!manifestSignatureOk) {
-      this._emit({
-        error: 'manifest signature verification failed',
-        kind: 'runner-failed',
-        phase: 'prefetch',
-        version
-      })
       throw new Error('manifest signature verification failed')
     }
 
@@ -164,27 +117,15 @@ export class RunnerUpdater {
     const serverPyUrlFinal = `${updateBaseUrl}/api/update/runner/server.py`
     const serverPyStagingPath = path.join(stagingDir, 'server.py')
 
-    this._emit({ kind: 'runner-prefetching', percent: 0, phase: 'wheel', version })
-    this._emit({ kind: 'runner-prefetching', percent: 0, phase: 'server', version })
     await Promise.all([
-      this._fetchToFile(wheelUrl, wheelStagingPath, manifest.size ?? null, pct => {
-        this._emit({ kind: 'runner-prefetching', percent: pct, phase: 'wheel', version })
-      }),
-      this._fetchToFile(serverPyUrlFinal, serverPyStagingPath, null, pct => {
-        this._emit({ kind: 'runner-prefetching', percent: pct, phase: 'server', version })
-      })
+      this._fetchToFile(wheelUrl, wheelStagingPath),
+      this._fetchToFile(serverPyUrlFinal, serverPyStagingPath)
     ])
 
     const wheelHash = (await hashOfFile(wheelStagingPath, 'sha512')).toUpperCase()
 
     if (wheelHash !== manifest.sha512) {
       await fsp.rm(stagingDir, { force: true, recursive: true })
-      this._emit({
-        error: `wheel sha512 mismatch (expected ${manifest.sha512}, got ${wheelHash})`,
-        kind: 'runner-failed',
-        phase: 'prefetch',
-        version
-      })
       throw new Error('wheel sha512 mismatch')
     }
 
@@ -192,12 +133,6 @@ export class RunnerUpdater {
 
     if (serverPyHash !== manifest.runner.server_py_sha256) {
       await fsp.rm(stagingDir, { force: true, recursive: true })
-      this._emit({
-        error: 'server.py sha256 mismatch',
-        kind: 'runner-failed',
-        phase: 'prefetch',
-        version
-      })
       throw new Error('server.py sha256 mismatch')
     }
 
@@ -212,8 +147,6 @@ export class RunnerUpdater {
 
     const sentinelPath = path.join(home, '.pending-runner-update.json')
     await fsp.writeFile(sentinelPath, JSON.stringify(sentinel, null, 2), 'utf8')
-
-    this._emit({ kind: 'runner-ready', version })
   }
 
   // 阶段 2：在新版 Electron 进程内完成安装。
@@ -231,23 +164,14 @@ export class RunnerUpdater {
       sentinel = JSON.parse(await fsp.readFile(sentinelPath, 'utf8')) as PendingRunnerSentinel
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
-      this._emit({
-        error: `sentinel unreadable: ${msg}`,
-        kind: 'runner-failed',
-        recoverable: false
-      })
+      this.log?.('error', '[updater] sentinel unreadable', msg)
 
       return { error: 'sentinel unreadable', ok: false }
     }
 
     if (sentinel.attempt_count >= sentinel.max_attempts) {
       await fsp.rm(sentinelPath, { force: true })
-      this._emit({
-        error: 'max-attempts-exceeded',
-        kind: 'runner-failed',
-        recoverable: false,
-        version: sentinel.version
-      })
+      this.log?.('error', `[updater] max attempts exceeded for ${sentinel.version}`)
 
       return { error: 'max-attempts-exceeded', ok: false }
     }
@@ -257,18 +181,9 @@ export class RunnerUpdater {
     let stopResult: unknown
     let startedNew = false
 
-    const fail = async (reason: string, recoverable: boolean, error?: unknown) => {
+    const fail = async (reason: string, error?: unknown) => {
       await this._bumpAttempt(sentinel, sentinelPath, reason)
-
-      const detail =
-        error === undefined ? reason : `${reason}: ${error instanceof Error ? error.message : String(error)}`
-
-      this._emit({
-        error: detail,
-        kind: 'runner-failed',
-        recoverable,
-        version: sentinel.version
-      })
+      this.log?.('error', `[updater] install failed: ${reason}`, error)
 
       return { error: reason, ok: false }
     }
@@ -282,7 +197,7 @@ export class RunnerUpdater {
       if (!fs.existsSync(venvPython)) {
         await stopIfBridged()
 
-        return await fail('venv-missing', false)
+        return await fail('venv-missing')
       }
 
       const [stopRes, venvOk] = await Promise.all([stopIfBridged(), this._probeVenvIntegrity(venvPython)])
@@ -291,15 +206,12 @@ export class RunnerUpdater {
       if (!venvOk) {
         return await fail(
           'venv-integrity-precheck-failed',
-          false,
           new Error(
             'Runner venv imports are broken — the desktop auto-update cannot repair this. ' +
               'Re-run the installer (its `uv venv --clear` rebuilds the venv) and retry.'
           )
         )
       }
-
-      this._emit({ kind: 'runner-installing', percent: 0, phase: 'pip', version: sentinel.version })
 
       let rollbackMarker: string | null = null
 
@@ -335,7 +247,7 @@ export class RunnerUpdater {
           }
         }
 
-        return await fail('pip-failed', true, err)
+        return await fail('pip-failed', err)
       }
 
       const serverPyDest = path.join(home, 'runner', 'server.py')
@@ -360,10 +272,8 @@ export class RunnerUpdater {
           }
         }
 
-        return await fail('smoke-test-failed', true, err)
+        return await fail('smoke-test-failed', err)
       }
-
-      this._emit({ kind: 'runner-installing', percent: 80, phase: 'starting', version: sentinel.version })
 
       if (this.bridgeDeps?.runnerBridge) {
         try {
@@ -385,17 +295,16 @@ export class RunnerUpdater {
             }
           }
 
-          return await fail('start-timeout', true, err)
+          return await fail('start-timeout', err)
         }
       }
 
       await fsp.rm(sentinelPath, { force: true })
       await fsp.rm(path.join(home, 'runner.staging'), { force: true, recursive: true })
-      this._emit({ kind: 'runner-installed', version: sentinel.version })
 
       return { ok: true }
     } catch (err) {
-      return await fail('unknown', true, err)
+      return await fail('unknown', err)
     } finally {
       if (stopResult && !startedNew && this.bridgeDeps?.runnerBridge) {
         try {
@@ -403,15 +312,7 @@ export class RunnerUpdater {
             backendSession: this.bridgeDeps.ensureBackendSession?.(),
             readyTimeoutMs: 8_000
           })
-          this._emit({ kind: 'runner-recovered', recoverable: true, version: sentinel.version })
         } catch (err: unknown) {
-          const detail = err instanceof Error ? err.message : String(err)
-          this._emit({
-            detail,
-            error: 'restart-failed-after-update',
-            kind: 'runner-failed',
-            recoverable: true
-          })
           this.log?.('error', '[updater] post-update restart failed', err)
         }
       }
@@ -444,11 +345,6 @@ export class RunnerUpdater {
     } catch {
       // 尽力而为
     }
-  }
-
-  _emit(_payload: RunnerUpdateEvent): void {
-    // 历史 IPC 通道 `spiritagent:runner-update-event` 已被移除（renderer 仅注册空订阅）；
-    // 保留钩子便于未来重新暴露。
   }
 
   _verifySignature({
@@ -486,20 +382,13 @@ export class RunnerUpdater {
     return res.text()
   }
 
-  async _fetchToFile(
-    url: string,
-    dest: string,
-    expectedSize: null | number,
-    onProgress?: (pct: number) => void
-  ): Promise<void> {
+  async _fetchToFile(url: string, dest: string): Promise<void> {
     const res = await this.fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
 
     if (!res.ok) {
       throw new Error(`${res.status} ${res.statusText}`)
     }
 
-    const total = expectedSize ?? Number(res.headers.get('content-length') ?? 0)
-    let received = 0
     const file = fs.createWriteStream(dest)
 
     try {
@@ -514,12 +403,6 @@ export class RunnerUpdater {
 
         if (!ok) {
           await new Promise<void>(r => file.once('drain', () => r()))
-        }
-
-        received += chunk.length
-
-        if (total > 0 && typeof onProgress === 'function') {
-          onProgress(Math.min(100, Math.round((received / total) * 100)))
         }
       }
     } finally {

@@ -6,7 +6,7 @@ export function venvPythonFor(spiritagentHome: string, platform: NodeJS.Platform
     : path.join(spiritagentHome, 'runner', '.venv', 'bin', 'python')
 }
 
-export interface ResolveVenvPythonOptions {
+interface ResolveVenvPythonOptions {
   spiritagentHome?: null | string
   fileExists?: (p: string) => boolean
   platform?: NodeJS.Platform

@@ -1,7 +1,7 @@
 // 把 ``onBack`` 的转移决策抽成纯函数,便于测试且隔离状态机逻辑。
 // 输入是当前阶段 + qIndex + voiceStage + imageSealed,输出是下一个状态意图或 null(表示"无变化")。
 
-export type BackPhase =
+type BackPhase =
   | 'q-character'
   | 'q-user'
   | 'voice'
@@ -11,16 +11,16 @@ export type BackPhase =
   | 'hatching'
   | 'finishing'
   | 'greeting'
-export type BackVoiceStage = 'describe' | 'catalog'
+type BackVoiceStage = 'describe' | 'catalog'
 
-export interface BackState {
+interface BackState {
   phase: BackPhase
   qIndex: number
   voiceStage: BackVoiceStage
   imageSealed: boolean
 }
 
-export interface BackIntent {
+interface BackIntent {
   phase: BackPhase
   qIndex?: number
   voiceStage?: BackVoiceStage

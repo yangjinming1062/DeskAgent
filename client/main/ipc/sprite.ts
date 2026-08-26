@@ -6,7 +6,7 @@ import type { BrowserWindow, IpcMain, Screen } from 'electron'
 
 import { atomicWriteFile } from '../shared/utils'
 
-export const POSITION_FILE = 'companion-position.json'
+const POSITION_FILE = 'companion-position.json'
 
 export interface RestPosition {
   x: number
@@ -42,7 +42,7 @@ export function readRestPosition(userDataDir?: string): null | RestPosition {
   return null
 }
 
-export interface SpriteIpcDeps {
+interface SpriteIpcDeps {
   getSpriteWindow: () => BrowserWindow | null | undefined
   getUserDataDir: () => string
   screen: Screen
@@ -76,11 +76,6 @@ export function registerSpriteIpc({ deps, ipcMain }: { deps: SpriteIpcDeps; ipcM
       withWindow(win => win.setIgnoreMouseEvents(ignore, { forward: ignore && payload?.forward !== false }))
     }
   )
-
-  ipcMain.handle(IPC.invoke.spriteSetAlwaysOnTop, async (_event, payload?: { on: boolean }) => {
-    const on = Boolean(payload?.on)
-    withWindow(win => win.setAlwaysOnTop(on, on ? 'floating' : undefined))
-  })
 
   ipcMain.handle(IPC.invoke.spriteGetPosition, async () => {
     const dir = getUserDataDir()

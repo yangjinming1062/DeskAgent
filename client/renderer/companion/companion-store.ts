@@ -53,7 +53,7 @@ export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 export const $spriteAction = atom<string | null>(null)
 // 动作序列编排队列：$spriteAction 恒为当前/首个动作（3D 只消费单值），后续由 2D driver 逐个推进。
 export const $spriteActionQueue = atom<string[]>([])
-export const $previousState = atom<SpriteStateName>('idle')
+const $previousState = atom<SpriteStateName>('idle')
 export const $clipOverride = atom<string | null>(null)
 
 // 打扰档位门控伙伴的主动行为（ARCHITECTURE.md §6 / plan.md §4.2）。
@@ -129,13 +129,6 @@ export function setSpriteState(
     // 低优先级状态无法打断高优先级状态——瞬时状态除外，
     // 它们会通过下方计时器自动恢复。
     return
-  }
-
-  if (options?.force) {
-    if (transientTimer) {
-      clearTimeout(transientTimer)
-      transientTimer = null
-    }
   }
 
   if (TRANSIENT_STATES.has(name)) {

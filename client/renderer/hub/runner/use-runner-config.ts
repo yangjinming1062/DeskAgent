@@ -40,7 +40,7 @@ export function setIn(obj: Config, path: readonly (string | number)[], value: un
   return clone as Config
 }
 
-export interface UseRunnerConfigResult {
+interface UseRunnerConfigResult {
   config: Config | null
   setConfig: React.Dispatch<React.SetStateAction<Config | null>>
   isLoading: boolean

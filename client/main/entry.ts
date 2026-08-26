@@ -1005,9 +1005,7 @@ function getRunnerUpdater(): RunnerUpdater {
 
   runnerUpdaterSingleton = new RunnerUpdater({
     bridgeDeps,
-    fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch,
-    getMainWindow: () => mainWindow,
-    sendToMain
+    fetchImpl: electronNet.fetch as unknown as typeof globalThis.fetch
   })
 
   return runnerUpdaterSingleton

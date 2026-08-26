@@ -21,7 +21,7 @@ export interface ModelInfo {
   content_hash: string | null
 }
 
-export interface CompanionExpression {
+interface CompanionExpression {
   id: number
   name: string
   label: string
@@ -74,7 +74,7 @@ export const $clipMap = atom<Readonly<Record<string, string>>>({})
 // model.failed       → $modelGenState='failed' + $modelGenError
 // model.failed 且带 retry_download → 付费结果仍留在后端，只是下载失败；
 // $modelRetryable 门控"重试下载"动作（companion.model.retryDownload —— 绝不重新计费生成）。
-export type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
+type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
 export const $modelGenState = atom<ModelGenState>('idle')
 export const $modelGenProgress = atom<{ stage: string; progress: number } | null>(null)
 export const $modelGenError = atom<string | null>(null)

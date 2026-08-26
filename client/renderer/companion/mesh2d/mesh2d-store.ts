@@ -14,7 +14,7 @@ export function setMesh2DHitmap(map: { hit: (nx: number, ny: number) => { region
 export type Mesh2DStatus = 'idle' | 'generating' | 'succeeded' | 'failed'
 export type RenderMode = '2d' | '3d'
 
-export interface Mesh2DInfo {
+interface Mesh2DInfo {
   id: number | null
   status: Mesh2DStatus
   style: string
@@ -50,11 +50,11 @@ export const $mesh2dReady = atom<boolean>(false)
 // 用户在 onboarding / 设置里选的渲染模式。默认 '2d'。
 export const $renderMode = atom<RenderMode>('2d')
 
-export function setRenderMode(mode: RenderMode): void {
+function setRenderMode(mode: RenderMode): void {
   $renderMode.set(mode)
 }
 
-export function setMesh2DInfo(next: Partial<Mesh2DInfo>): void {
+function setMesh2DInfo(next: Partial<Mesh2DInfo>): void {
   $mesh2dInfo.set({ ...$mesh2dInfo.get(), ...next })
 }
 

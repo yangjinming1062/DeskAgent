@@ -14,7 +14,7 @@ type CopyButtonAppearance = 'button' | 'icon' | 'inline' | 'menu-item' | 'tool-r
 type CopyStatus = 'copied' | 'error' | 'idle'
 const COPIED_RESET_MS = 1_500
 
-export async function writeClipboardText(text: string): Promise<void> {
+async function writeClipboardText(text: string): Promise<void> {
   if (!text) {
     return
   }
@@ -34,7 +34,7 @@ export async function writeClipboardText(text: string): Promise<void> {
   throw new Error('Clipboard API is unavailable')
 }
 
-export interface CopyButtonProps {
+interface CopyButtonProps {
   appearance?: CopyButtonAppearance
   buttonSize?: React.ComponentProps<typeof Button>['size']
   buttonVariant?: React.ComponentProps<typeof Button>['variant']

@@ -3,7 +3,7 @@ import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
 
-export type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
+type ContextCompressionCopy = (typeof strings)['settings']['account']['contextCompression']
 
 export interface ChatFormState {
   enable_context_compression: boolean

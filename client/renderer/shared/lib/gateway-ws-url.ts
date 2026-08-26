@@ -1,6 +1,6 @@
 import type { SpiritAgentConnection } from '@ipc/contracts'
 
-export interface ResolveGatewayWsUrlDeps {
+interface ResolveGatewayWsUrlDeps {
   getGatewayWsUrl?: () => Promise<string>
 }
 

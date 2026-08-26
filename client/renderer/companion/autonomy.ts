@@ -62,7 +62,7 @@ function executeAutonomousAction(action: string): void {
   }
 }
 
-export async function consultAutonomyLLM(force = false): Promise<void> {
+async function consultAutonomyLLM(force = false): Promise<void> {
   if (!$llmAutonomy.get()) {
     return
   }

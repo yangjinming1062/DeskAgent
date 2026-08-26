@@ -1,7 +1,7 @@
 import { IPC } from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
-export function formatRendererLog(payload?: { args?: unknown[]; level?: string; scope?: string }): string {
+function formatRendererLog(payload?: { args?: unknown[]; level?: string; scope?: string }): string {
   const { args, scope = 'general' } = payload ?? {}
 
   const parts = (Array.isArray(args) ? args : [args]).map(a => {

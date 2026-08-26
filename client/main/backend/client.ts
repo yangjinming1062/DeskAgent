@@ -1,6 +1,6 @@
 export const DEFAULT_TIMEOUT_MS = 15_000
 
-export interface BackendRequestErrorOptions {
+interface BackendRequestErrorOptions {
   body?: unknown
   cause?: unknown
   code?: null | string
@@ -109,7 +109,7 @@ function encodeBody(body: unknown): { body: string | Buffer | Uint8Array | undef
   return { body: JSON.stringify(body), contentType: 'application/json' }
 }
 
-export interface MinimalFetchResponse {
+interface MinimalFetchResponse {
   headers: { get: (name: string) => null | string }
   ok: boolean
   status: number
@@ -139,14 +139,14 @@ async function decodeResponseBody(res: MinimalFetchResponse): Promise<unknown> {
 
 export type FetchFunction = (url: string, init?: RequestInit) => Promise<MinimalFetchResponse | Response>
 
-export interface BackendClientOptions {
+interface BackendClientOptions {
   baseUrl?: string
   fetch?: FetchFunction
   timeoutMs?: number
   userAgent?: string
 }
 
-export interface BackendRequestOptions {
+interface BackendRequestOptions {
   body?: unknown
   headers?: Record<string, string>
   query?: Record<string, unknown>

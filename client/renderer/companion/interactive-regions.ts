@@ -41,7 +41,7 @@ function _bucket(windowId: number): Map<string, InteractiveRegion> {
   return m
 }
 
-export function registerInteractiveRegion(
+function registerInteractiveRegion(
   id: string,
   getRect: () => DOMRect | null,
   windowId: number = 0,
@@ -52,7 +52,7 @@ export function registerInteractiveRegion(
   state.probesByWindow.get(windowId)?.()
 }
 
-export function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
+function unregisterInteractiveRegion(id: string, windowId: number = 0): void {
   const m = _bucket(windowId)
 
   if (!m.delete(id)) {
@@ -62,7 +62,7 @@ export function unregisterInteractiveRegion(id: string, windowId: number = 0): v
   state.probesByWindow.get(windowId)?.()
 }
 
-export function setCaptureProbe(fn: (() => void) | null, windowId: number = 0): void {
+function setCaptureProbe(fn: (() => void) | null, windowId: number = 0): void {
   if (fn === null) {
     state.probesByWindow.delete(windowId)
   } else {
@@ -76,7 +76,7 @@ export function probeInteractiveRegions(windowId: number = 0): void {
   state.probesByWindow.get(windowId)?.()
 }
 
-export function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
+function isPointInteractive(x: number, y: number, windowId: number = 0): boolean {
   const regions = _bucket(windowId)
 
   for (const region of regions.values()) {

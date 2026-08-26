@@ -2,7 +2,7 @@ import { SecretInputField } from '@/shared/components/ui'
 
 import { ListRow } from '../primitives'
 
-export type ApiKeyCopy = {
+type ApiKeyCopy = {
   set: string
   notSet: string
   fingerprint: (hash: string) => string

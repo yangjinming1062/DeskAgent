@@ -8,7 +8,7 @@ import { atomicWriteFile } from './utils'
 // 尽力处理：文件缺失或格式错乱时返回 null。
 export const FILENAME = 'desktop-config.json'
 
-export function configPath(spiritagentHome: string | null | undefined): string | null {
+function configPath(spiritagentHome: string | null | undefined): string | null {
   if (!spiritagentHome) {
     return null
   }

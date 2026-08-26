@@ -5,9 +5,9 @@ import { hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 
-export type OutfitStatus = 'draft' | 'splitting' | 'ready' | 'failed' | 'expired'
+type OutfitStatus = 'draft' | 'splitting' | 'ready' | 'failed' | 'expired'
 
-export interface WardrobeOutfit {
+interface WardrobeOutfit {
   id: number
   name: string
   description: string | null

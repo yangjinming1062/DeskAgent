@@ -2,8 +2,8 @@ import type { PersonaPayload } from './persona'
 import type { PersonaDefinition } from './persona-store'
 
 // PersonaDefinition（camelCase）是渲染端的 $persona 形状；
-// PersonaPayload（snake_case）是后端 PUT 所读字段。
-// 新增字段只改这两个 mapper 之一，再加对应 source-of-truth 类型即可。
+// PersonaPayload（snake_case）是后端响应字段。保存路径的 PUT 载荷由
+// persona-retune 按表单局部状态内联构造，不走本 mapper。
 
 export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
   return {
@@ -14,17 +14,5 @@ export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
     ...(payload.biological_type !== undefined && { biological_type: payload.biological_type }),
     ...(payload.gender !== undefined && { gender: payload.gender }),
     ...(payload.appearance !== undefined && { appearance: payload.appearance })
-  }
-}
-
-export function personaToWire(def: PersonaDefinition): PersonaPayload {
-  return {
-    name: def.name,
-    personality: def.personality,
-    speaking_style: def.speakingStyle ?? '',
-    ...(def.background !== undefined && { background: def.background }),
-    ...(def.biological_type !== undefined && { biological_type: def.biological_type }),
-    ...(def.gender !== undefined && { gender: def.gender }),
-    ...(def.appearance !== undefined && { appearance: def.appearance })
   }
 }

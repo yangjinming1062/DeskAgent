@@ -96,7 +96,6 @@ declare global {
       sprite: {
         hide: AsyncIpc<IpcInvokeContract['spiritagent:sprite:hide']>
         setIgnoreMouseEvents: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-ignore-mouse-events']>
-        setAlwaysOnTop: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-always-on-top']>
         getPosition: AsyncIpc<IpcInvokeContract['spiritagent:sprite:get-position']>
         setPosition: AsyncIpc<IpcInvokeContract['spiritagent:sprite:set-position']>
         moveToCursorDisplay: AsyncIpc<IpcInvokeContract['spiritagent:sprite:move-to-cursor-display']>

@@ -5,7 +5,7 @@ import { strings } from '@/shared/strings'
 
 import { Button, ErrorState } from './ui'
 
-export interface ErrorBoundaryFallbackProps {
+interface ErrorBoundaryFallbackProps {
   error: Error
   reset: () => void
 }

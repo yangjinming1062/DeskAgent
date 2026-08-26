@@ -11,9 +11,9 @@
 import { atom } from 'nanostores'
 import { useEffect, useRef, useState } from 'react'
 
-export type VfxType = 'heart' | 'petal' | 'anger' | 'sweat' | 'dizzy_stars' | 'music_notes' | 'sleep_zzz'
+type VfxType = 'heart' | 'petal' | 'anger' | 'sweat' | 'dizzy_stars' | 'music_notes' | 'sleep_zzz'
 
-export interface VfxEmitOptions {
+interface VfxEmitOptions {
   count?: number
   /** 归一化 [0, 1] 相对精灵锚点 x（缺省 0.5） */
   nx?: number
@@ -38,13 +38,13 @@ interface Particle {
 
 let nextParticleId = 1
 const activeParticles: Particle[] = []
-export const $vfxActiveCount = atom<number>(0)
+const $vfxActiveCount = atom<number>(0)
 
 // 唤醒回调：Mesh2DVfxOverlay 在 mount 时注册，emitVfx 在粒子清空后
 // 再次添加时调用——用于把已停止的 RAF 循环重新拉起。
 let wakeTick: (() => void) | null = null
 
-export function registerVfxWake(fn: (() => void) | null): void {
+function registerVfxWake(fn: (() => void) | null): void {
   wakeTick = fn
 }
 

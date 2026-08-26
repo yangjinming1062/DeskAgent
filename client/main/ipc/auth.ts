@@ -6,7 +6,7 @@ import type { BackendSession, BackendSessionOptions, SessionSnapshot } from '../
 import type { SafeStorageApi } from '../security/hardening'
 import { readStoredBackendUrl, writeStoredBackendUrl } from '../shared/config'
 
-export interface AuthIpcDeps {
+interface AuthIpcDeps {
   app: { getPath: (name: string) => string }
   backendSession?: null | BackendSession
   broadcastAuthChanged?: (session: null | SessionSnapshot) => void

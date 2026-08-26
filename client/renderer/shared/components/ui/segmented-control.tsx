@@ -1,7 +1,7 @@
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
-export interface SegmentedControlOption<T extends string> {
+interface SegmentedControlOption<T extends string> {
   id: T
   label: string
   icon?: IconComponent

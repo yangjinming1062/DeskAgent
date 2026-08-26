@@ -2,14 +2,14 @@ import { log } from '@/shared/lib/log'
 
 // OPFS 是面向二进制 blob 的真实文件系统；Cache Storage 留给 HTTP 响应，不复用。
 
-export const OPFS_DIR = 'glb-cache'
+const OPFS_DIR = 'glb-cache'
 export const SCHEMA_VERSION = 1
-export const MAX_CACHED_FILES = 5
-export const MAX_CACHED_BYTES = 512 * 1024 * 1024
-export const META_SUFFIX = '.meta.json'
-export const BLOB_SUFFIX = '.glb'
+const MAX_CACHED_FILES = 5
+const MAX_CACHED_BYTES = 512 * 1024 * 1024
+const META_SUFFIX = '.meta.json'
+const BLOB_SUFFIX = '.glb'
 
-export interface MetaFile {
+interface MetaFile {
   version: number
   contentHash: string
   writtenAt: number
@@ -20,15 +20,15 @@ export function metaKey(contentHash: string): string {
   return `${contentHash}${META_SUFFIX}`
 }
 
-export function blobKey(contentHash: string): string {
+function blobKey(contentHash: string): string {
   return `${contentHash}${BLOB_SUFFIX}`
 }
 
-export function isMetaFile(name: string): boolean {
+function isMetaFile(name: string): boolean {
   return name.endsWith(META_SUFFIX)
 }
 
-export function hashFromMetaFile(name: string): string | null {
+function hashFromMetaFile(name: string): string | null {
   if (!name.endsWith(META_SUFFIX)) {
     return null
   }
@@ -36,11 +36,11 @@ export function hashFromMetaFile(name: string): string | null {
   return name.slice(0, -META_SUFFIX.length)
 }
 
-export function isBlobFile(name: string): boolean {
+function isBlobFile(name: string): boolean {
   return name.endsWith(BLOB_SUFFIX)
 }
 
-export function hashFromBlobFile(name: string): string | null {
+function hashFromBlobFile(name: string): string | null {
   if (!name.endsWith(BLOB_SUFFIX)) {
     return null
   }
@@ -63,13 +63,13 @@ function defaultRootDir(): Promise<FileSystemDirectoryHandle | null> {
     })
 }
 
-export interface GlbOpfsCacheOptions {
+interface GlbOpfsCacheOptions {
   getDirectory?: () => Promise<FileSystemDirectoryHandle | null>
   maxFiles?: number
   maxBytes?: number
 }
 
-export class GlbOpfsCache {
+class GlbOpfsCache {
   private readonly getDir: () => Promise<FileSystemDirectoryHandle | null>
   private readonly maxFiles: number
   private readonly maxBytes: number
@@ -344,7 +344,7 @@ export class GlbOpfsCache {
   }
 }
 
-export const defaultGlbOpfsCache = new GlbOpfsCache()
+const defaultGlbOpfsCache = new GlbOpfsCache()
 
 // 键是 contentHash 而非 URL —— 后端的签名 URL 查询串会轮换。
 export async function fetchGlbWithCache(

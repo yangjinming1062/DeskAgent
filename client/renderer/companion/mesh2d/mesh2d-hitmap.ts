@@ -13,9 +13,9 @@
 
 import type { Manifest } from './mesh2d-runtime'
 
-export type HitRegionName = 'head' | 'face' | 'arm_L' | 'arm_R' | 'body' | 'back_hair' | 'front_hair' | 'skirt'
+type HitRegionName = 'head' | 'face' | 'arm_L' | 'arm_R' | 'body' | 'back_hair' | 'front_hair' | 'skirt'
 
-export interface HitRegion {
+interface HitRegion {
   region: HitRegionName
   /** z 深度（同区域多点命中时取最近） */
   depth: number

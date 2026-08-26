@@ -21,12 +21,12 @@ export function setResponseMode(mode: ResponseMode): void {
 
 // 由 localStorage 支撑的布尔开关——供伙伴设置里的 LLM 驱动反应开关使用。
 // 每个开关的持久化都由工厂函数原子创建，以后新增只需一行。
-export interface BooleanPref {
+interface BooleanPref {
   $atom: WritableAtom<boolean>
   set: (value: boolean) => void
 }
 
-export function makeBooleanPref(key: string, fallback: boolean): BooleanPref {
+function makeBooleanPref(key: string, fallback: boolean): BooleanPref {
   const $atom = atom<boolean>(storedBoolean(key, fallback))
 
   return {
@@ -38,12 +38,12 @@ export function makeBooleanPref(key: string, fallback: boolean): BooleanPref {
   }
 }
 
-export const llmReactionsPref = makeBooleanPref('da.companion.llmReactions', true)
-export const llmAffectPref = makeBooleanPref('da.companion.llmAffect', true)
-export const llmAutonomyPref = makeBooleanPref('da.companion.llmAutonomy', true)
+const llmReactionsPref = makeBooleanPref('da.companion.llmReactions', true)
+const llmAffectPref = makeBooleanPref('da.companion.llmAffect', true)
+const llmAutonomyPref = makeBooleanPref('da.companion.llmAutonomy', true)
 
 // 语音通话模式下双向字幕显示开关（DESIGN §6.1「双向字幕可切换」）。
-export const subtitlesPref = makeBooleanPref('da.companion.subtitles', true)
+const subtitlesPref = makeBooleanPref('da.companion.subtitles', true)
 
 // 主陪伴交互模式（DESIGN §5 / §6.1 onboarding 持久偏好）。
 // 'im' = IM 气泡对话（默认）；'voice' = 进入即语音通话。

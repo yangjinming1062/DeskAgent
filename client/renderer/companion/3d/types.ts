@@ -1,5 +1,5 @@
 /** GPU 功耗偏好——`'low-power'` 走 iGPU 兜底，`'high-performance'` 显式唤醒 dGPU；故意排除 `'default'`。 */
-export type EnginePowerPreference = 'high-performance' | 'low-power'
+type EnginePowerPreference = 'high-performance' | 'low-power'
 
 export interface EngineOptions {
   container?: HTMLElement

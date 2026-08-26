@@ -42,7 +42,7 @@ export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   sampleRate: 16000
 }
 
-export const PREFERRED_OPUS_MIME_TYPES = [
+const PREFERRED_OPUS_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',
   'audio/ogg;codecs=opus',

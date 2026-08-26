@@ -8,7 +8,7 @@ import { $engineFps, $powerProfile, $rendererBackend } from './3d/engine-diagnos
 import { $spriteEmotion, $spriteState } from './companion-store'
 
 export const $devMode = atom<boolean>(false)
-export const $devLogs = atom<{ time: string; type: string; details: string }[]>([])
+const $devLogs = atom<{ time: string; type: string; details: string }[]>([])
 
 export function pushDevLog(type: string, details: string): void {
   const time = new Date().toLocaleTimeString()

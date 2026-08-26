@@ -4,11 +4,11 @@ import { cn } from '@/shared/lib/utils'
 
 import { Codicon } from './codicon'
 
-export function ErrorIcon({ className, size = '1.75rem' }: { className?: string; size?: string }): React.JSX.Element {
+function ErrorIcon({ className, size = '1.75rem' }: { className?: string; size?: string }): React.JSX.Element {
   return <Codicon className={cn('text-destructive', className)} name="error" size={size} />
 }
 
-export interface ErrorStateProps {
+interface ErrorStateProps {
   /** Optional actions row/stack rendered below the copy. */
   children?: ReactNode
   className?: string

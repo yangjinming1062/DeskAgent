@@ -15,10 +15,6 @@ let pokeCount = 0
 let resetTimer: ReturnType<typeof setTimeout> | null = null
 let lastLlmPokeAt = 0
 
-export function resetPokeLlmCooldown(): void {
-  lastLlmPokeAt = 0
-}
-
 function bucketForPokeCount(): ReactionBucket {
   if (pokeCount >= 5) {
     return 'poke-heavy'

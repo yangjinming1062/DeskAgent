@@ -1,6 +1,6 @@
 /** Puppet 模块类型 — vendor UMD（window.Rigger / agPsd / GenericParts）的边界契约。 */
 
-export interface RigStrand {
+interface RigStrand {
   x: number
   tipY: number
   rootY: number

@@ -4,7 +4,7 @@ import type { RigType } from '@/companion/3d/rig'
 
 export type { RigType }
 
-export type ClipCategory = 'preset' | 'embedded'
+type ClipCategory = 'preset' | 'embedded'
 
 export interface ClipItem {
   id: string

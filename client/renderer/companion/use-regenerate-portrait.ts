@@ -17,7 +17,7 @@ import { playOnboardingAudio } from './onboarding/onboarding-audio'
 const DEFAULT_SUCCESS_HINT = '换好啦，新形象已生成～'
 const DEFAULT_FAILURE_HINT = '暂时换不出来，稍后再试吧'
 
-export interface UseRegeneratePortraitOptions {
+interface UseRegeneratePortraitOptions {
   /**
    * 走 refImage 分支（POST /avatar/from-image），而不是 avatar.regenerate RPC。
    * 空字符串会清除之前的参考图。
@@ -51,7 +51,7 @@ export interface UseRegeneratePortraitOptions {
   onRegenerated?: (urls: { avatar: string | null; id: number | null }) => void
 }
 
-export interface UseRegeneratePortraitResult {
+interface UseRegeneratePortraitResult {
   /**
    * 逐次反馈优先于 options.feedback 和共享的 $regenFeedback atom。
    * 会 trim；空串转为 undefined。无论反馈来自哪条路径，

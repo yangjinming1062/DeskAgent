@@ -1,6 +1,6 @@
 import { atom, computed } from 'nanostores'
 
-export interface ContextMenuPos {
+interface ContextMenuPos {
   x: number
   y: number
 }

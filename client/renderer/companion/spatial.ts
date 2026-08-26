@@ -22,8 +22,8 @@ export function getBaseSpriteWidth(): number {
   return Math.round(getBaseSpriteHeight() * 0.85)
 }
 
-export const SPRITE_W = getBaseSpriteWidth()
-export const SPRITE_H = getBaseSpriteHeight()
+const SPRITE_W = getBaseSpriteWidth()
+const SPRITE_H = getBaseSpriteHeight()
 const REST_MARGIN = 24
 
 const WALK_SPEED = 80
@@ -41,10 +41,10 @@ const EMOTION_SCALE_BOOST: Record<string, number> = {
   surprised: 1.6
 }
 
-export const MIN_SCALE = 0.5
-export const MAX_SCALE = 2
+const MIN_SCALE = 0.5
+const MAX_SCALE = 2
 
-export type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
+type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 
 // Locomotion 枚举（mesh2d 与 spatial 共用）：
 // - 'still' / 'walk' / 'fly' / 'drag' 是原有 4 项；
@@ -54,28 +54,28 @@ export type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 // 扩展时务必同步更新 backend/services/companion/mesh2d/manifest_exporter.py::DEFAULT_LOCOMOTION。
 export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump' | 'fall'
 
-export type EdgeDockSide = 'none' | 'left' | 'right'
+type EdgeDockSide = 'none' | 'left' | 'right'
 
-export const $spatialLocale = atom<SpatialLocale>('home')
+const $spatialLocale = atom<SpatialLocale>('home')
 export const $spatialPos = atom<{ x: number; y: number }>(getHomePosition())
 export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
 export const $defaultScale = atom<number>(readDefaultScale())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
-export const $edgeDockSide = atom<EdgeDockSide>('none')
+const $edgeDockSide = atom<EdgeDockSide>('none')
 export const $isEdgeDocked = atom<boolean>(false)
 
 // 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
 // 弹层（chat-dock、proactive 气泡）订阅这里而不是各自挂监听器。
-export interface ViewportSize {
+interface ViewportSize {
   width: number
   height: number
 }
 
 export const $viewport = atom<ViewportSize>({ width: window.innerWidth, height: window.innerHeight })
 
-export function getHomePosition(): { x: number; y: number } {
+function getHomePosition(): { x: number; y: number } {
   const w = getBaseSpriteWidth()
   const h = getBaseSpriteHeight()
 
@@ -89,9 +89,9 @@ export function getHomePosition(): { x: number; y: number } {
 // 面部约占精灵上 30% 区域；强制约束 sprite 顶部 y ≥ 0 且 face 底 y ≤ vh，
 // 保证 face 整段都落在屏幕内——sprite 主体可以部分越过底部（向下延伸 h-faceH），
 // 顶/左/右仍受 REST_MARGIN 兜底。贴边吸附（peeking）仅水平方向处理。
-export const FACE_TOP_RATIO = 0.3
+const FACE_TOP_RATIO = 0.3
 
-export function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
+function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
   const w = getBaseSpriteWidth()
   const h = getBaseSpriteHeight()
   const faceH = h * FACE_TOP_RATIO
@@ -337,7 +337,7 @@ function tickScale(now: number): void {
   }
 }
 
-export function setScaleTarget(scale: number, instant = false): void {
+function setScaleTarget(scale: number, instant = false): void {
   const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale))
 
   if (instant || Math.abs(clamped - $spatialScale.get()) < 0.01) {
@@ -585,14 +585,14 @@ export function reevaluateSpatialDecision(): void {
 let fallRafId: number | null = null
 let fallLastTime = 0
 
-export function cancelPhysics(): void {
+function cancelPhysics(): void {
   if (fallRafId !== null) {
     cancelAnimationFrame(fallRafId)
     fallRafId = null
   }
 }
 
-export function dockToEdge(side: 'left' | 'right'): void {
+function dockToEdge(side: 'left' | 'right'): void {
   cancelMovement()
   cancelPhysics()
   const vw = window.innerWidth
@@ -646,7 +646,7 @@ export function undockFromEdge(): void {
   })
 }
 
-export function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: number; vy: number }): void {
+function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: number; vy: number }): void {
   cancelMovement()
   cancelPhysics()
 

@@ -20,7 +20,7 @@ export function setSessionListOpen(open: boolean): void {
   }
 }
 
-export async function fetchSessions(): Promise<void> {
+async function fetchSessions(): Promise<void> {
   const token = ++fetchToken
   $sessionsLoading.set(true)
 

@@ -55,7 +55,7 @@ export interface SessionResumeResponse {
   current_seq?: number
 }
 
-export interface SessionRuntimeInfo {
+interface SessionRuntimeInfo {
   branch?: string
   cwd?: string
   model?: string

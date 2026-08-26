@@ -7,7 +7,7 @@ import {
 } from '@ipc/contracts'
 import type { App, BrowserWindow, IpcMain } from 'electron'
 
-export interface UpdateIpcDeps {
+interface UpdateIpcDeps {
   electron: { app: App }
   getMainWindow: () => BrowserWindow | null | undefined
   ipcMain: IpcMain

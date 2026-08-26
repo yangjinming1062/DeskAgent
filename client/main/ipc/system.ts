@@ -1,7 +1,7 @@
 import { IPC } from '@ipc/contracts'
 import type { App, IpcMain } from 'electron'
 
-export interface SystemIpcDeps {
+interface SystemIpcDeps {
   electron: { app: App }
   ipcMain: IpcMain
 }

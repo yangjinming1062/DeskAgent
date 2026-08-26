@@ -6,10 +6,10 @@ import type { App, IpcMain } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
 
-export const TAG_RE = /^onboarding\.[a-z0-9.]+$/
+const TAG_RE = /^onboarding\.[a-z0-9.]+$/
 export const MAX_BYTES = 256 * 1024
 
-export interface OnboardingAudioIpcDeps {
+interface OnboardingAudioIpcDeps {
   app?: null | Partial<App>
   appRoot?: string
   spiritagentHome?: null | string

@@ -20,13 +20,13 @@ function computeFileSha256(filePath: string): Promise<string> {
   })
 }
 
-export interface ModelDiskCacheOptions {
+interface ModelDiskCacheOptions {
   defaultFetchFn?: typeof globalThis.fetch
   inactivityTimeoutMs?: number
   spiritagentHome?: null | string
 }
 
-export interface EnsureCachedOptions {
+interface EnsureCachedOptions {
   baseUrl?: string
   contentHash?: string
   fetchFn?: typeof globalThis.fetch

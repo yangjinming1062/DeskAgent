@@ -1,6 +1,6 @@
 import { type PointerEvent as ReactPointerEvent, useMemo, useRef } from 'react'
 
-export interface PanelDragBind {
+interface PanelDragBind {
   onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void
   onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
   onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void

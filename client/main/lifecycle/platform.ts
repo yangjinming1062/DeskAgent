@@ -1,7 +1,7 @@
-export const GPU_OVERRIDE_ON: Set<string> = new Set(['1', 'true', 'yes', 'on'])
-export const GPU_OVERRIDE_OFF: Set<string> = new Set(['0', 'false', 'no', 'off'])
+const GPU_OVERRIDE_ON: Set<string> = new Set(['1', 'true', 'yes', 'on'])
+const GPU_OVERRIDE_OFF: Set<string> = new Set(['0', 'false', 'no', 'off'])
 
-export interface DetectRemoteDisplayOptions {
+interface DetectRemoteDisplayOptions {
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>
   platform?: string
 }

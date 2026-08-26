@@ -5,7 +5,7 @@ import type { RigType } from '@/companion/3d/rig'
 
 import type { ClipItem, ModelStats, MorphTargetInfo } from './types'
 
-export interface ParsedCharacter {
+interface ParsedCharacter {
   root: THREE.Group
   bones: THREE.Bone[]
   boneRestQuats: Map<string, THREE.Quaternion>
@@ -17,7 +17,7 @@ export interface ParsedCharacter {
 /**
  * 规范化骨骼名称（移除 mixamorig 前缀等）
  */
-export function normalizeBoneName(name: string): string {
+function normalizeBoneName(name: string): string {
   if (name.startsWith('mixamorig:')) {
     return name.slice(10)
   }
@@ -36,7 +36,7 @@ export function normalizeBoneName(name: string): string {
 /**
  * 收集场景中的统计信息、骨骼、表情 Morph
  */
-export function inspectScene(
+function inspectScene(
   root: THREE.Group,
   sourceType: ModelStats['sourceType'],
   name: string,

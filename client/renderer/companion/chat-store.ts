@@ -37,7 +37,7 @@ export const $proactiveBubble = atom<string | null>(null)
 
 // 外部投喂（DESIGN §6.3「文件投喂」）——SpriteStage 拖拽文件到精灵本体时，
 // 把文件路径推到此处。ChatDock 订阅并把首个图像文件塞入附件占位。
-export interface PendingAttachment {
+interface PendingAttachment {
   paths: string[]
   nonce: number
 }
@@ -151,18 +151,18 @@ export function pushUserMessage(text: string, attachments?: string[]): string {
   return id
 }
 
-export interface PendingPromptItem {
+interface PendingPromptItem {
   text: string
   attachments?: string[]
 }
 
-export const $pendingPromptBatch = atom<PendingPromptItem[]>([])
+const $pendingPromptBatch = atom<PendingPromptItem[]>([])
 
 export function pushPendingPrompt(item: PendingPromptItem): void {
   $pendingPromptBatch.set([...$pendingPromptBatch.get(), item])
 }
 
-export function drainPendingPrompts(): PendingPromptItem[] {
+function drainPendingPrompts(): PendingPromptItem[] {
   const items = $pendingPromptBatch.get()
   $pendingPromptBatch.set([])
 
@@ -297,7 +297,7 @@ export function beginAssistantMessage(): void {
   $lastAssistantStreaming.set(true)
 }
 
-export function ensureAssistantMessage(): void {
+function ensureAssistantMessage(): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
@@ -438,18 +438,6 @@ export function setAssistantCancelled(): void {
   })
   $chatMessageList.set([...list, { id, role: 'assistant' }])
   $lastAssistantStreaming.set(false)
-}
-
-export function clearChat(): void {
-  clearPendingPrompts()
-  cancelPendingFlush()
-  $chatMessageList.set([])
-  $chatMessageBodies.set({})
-  $chatSessionId.set(null)
-  $lastAssistantStreaming.set(false)
-  $chatStreamingTick.set(0)
-  $chatTurnInFlight.set(false)
-  $turnHadBubbleBreak.set(false)
 }
 
 // 重置消息列表与 bodies，不触碰 $chatSessionId 与 pending batch。

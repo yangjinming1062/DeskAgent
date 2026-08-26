@@ -1,7 +1,7 @@
 import { IPC } from '@ipc/contracts'
 import type { Clipboard, IpcMain } from 'electron'
 
-export interface ClipboardIpcDeps {
+interface ClipboardIpcDeps {
   electron: { clipboard: Clipboard }
   ipcMain: IpcMain
   writeComposerImage: (buffer: Buffer, ext: string) => Promise<string>

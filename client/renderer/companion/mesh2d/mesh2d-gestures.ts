@@ -6,7 +6,7 @@
  * 3. poke_streak（连戳激怒）：由 interaction.ts 结合连戳频次调度。
  */
 
-export interface GestureCallbacks {
+interface GestureCallbacks {
   onPetStart?: (nx: number, ny: number) => void
   onPetTick?: (nx: number, ny: number) => void
   onPetEnd?: () => void

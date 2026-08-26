@@ -6,7 +6,7 @@ import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import type { SpiritAgentGateway } from '@/shared/spiritagent'
 import { $gateway, $gatewayState } from '@/shared/store/gateway'
 
-export interface UseGatewayRequestResult {
+interface UseGatewayRequestResult {
   gatewayRef: React.RefObject<SpiritAgentGateway | null>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }

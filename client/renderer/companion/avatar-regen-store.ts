@@ -83,7 +83,7 @@ function _makeResolver<T>(store: PendingMap<T>): (payload: T & { job_id?: string
 }
 
 // 由 `avatar.regenerated` 事件承载的头像（半身像）重新生成载荷。
-export interface AvatarRegeneratedPayload {
+interface AvatarRegeneratedPayload {
   job_id?: string
   asset_url?: string | null
   id?: number

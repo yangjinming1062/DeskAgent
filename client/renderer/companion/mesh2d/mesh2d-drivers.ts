@@ -26,11 +26,11 @@ import type { Mesh2DScene } from './mesh2d-runtime'
 // Manifest 子集类型（与 backend/services/companion/mesh2d/manifest_exporter.py 对齐）
 // ---------------------------------------------------------------------------
 
-export type TrackChannel = 'rotation' | 'scale' | 'position'
-export type TrackAxis = 'x' | 'y' | 'z'
-export type TrackEase = 'linear' | 'ease_in_out'
+type TrackChannel = 'rotation' | 'scale' | 'position'
+type TrackAxis = 'x' | 'y' | 'z'
+type TrackEase = 'linear' | 'ease_in_out'
 
-export interface ActionKeyframe {
+interface ActionKeyframe {
   t_ms: number
   v: number
   ease?: TrackEase
@@ -51,25 +51,25 @@ export interface ActionDef {
   tracks: ActionTrack[]
 }
 
-export interface LocomotionBonePhase {
+interface LocomotionBonePhase {
   amplitude_rad: number
   period_ms: number
   phase_offset: number
   axis: 'x' | 'y' | 'z'
 }
 
-export interface LocomotionScaleBob {
+interface LocomotionScaleBob {
   amplitude_scale: number
   period_ms: number
   phase_offset: number
 }
 
-export interface LocomotionImpulsePulse {
+interface LocomotionImpulsePulse {
   magnitude: number
   period_ms: number
 }
 
-export interface LocomotionJumpPulse {
+interface LocomotionJumpPulse {
   bone: string
   preload_ms: number
   hold_ms: number
@@ -78,12 +78,12 @@ export interface LocomotionJumpPulse {
   shoulder_lift_rad: number
 }
 
-export interface LocomotionDef {
+interface LocomotionDef {
   bones: Record<string, LocomotionBonePhase | LocomotionScaleBob | LocomotionImpulsePulse>
   pulse?: LocomotionJumpPulse
 }
 
-export type LocomotionTable = Record<Locomotion | 'still', LocomotionDef>
+type LocomotionTable = Record<Locomotion | 'still', LocomotionDef>
 
 export interface Mesh2DAnimations {
   breath: { amplitude: number; period_ms: number }
@@ -160,7 +160,7 @@ function sampleTrack(track: ActionTrack, timeMs: number): number {
 // Mesh2DDriver
 // ---------------------------------------------------------------------------
 
-export interface Mesh2DDriverOptions {
+interface Mesh2DDriverOptions {
   /** idle 变体切换间隔下限（ms）；上限是 2x 下限 */
   idleMinIntervalMs?: number
   /** idle variant 加权采样表（key → weight）；缺省时各 variant 等权重 */

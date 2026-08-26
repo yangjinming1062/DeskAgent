@@ -3,7 +3,7 @@ import type { DesktopTheme, DesktopThemeTypography } from './types'
 // 兜底追加到每个字体栈末尾的彩色 emoji 字体。所有 UI 正文 / 等宽字体
 // 都不携带 emoji 字形，没有这一段，在默认文本字体不含 emoji 的平台上
 // 会渲染为豆腐块。覆盖 macOS、Windows，并附带 `emoji` 泛型以应对其他平台。
-export const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
+const EMOJI_FALLBACK = '"Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", emoji'
 
 const SYSTEM_SANS =
   '"Segoe WPC", "Segoe UI", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif, ' +

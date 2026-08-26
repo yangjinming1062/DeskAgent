@@ -21,7 +21,7 @@ export function setActiveAvatarId(id: number | null): void {
   $activeAvatarId.set(id)
 }
 
-export interface PortraitUrls {
+interface PortraitUrls {
   assetUrl?: string | null
   seedFrontUrl?: string | null
   seedBackUrl?: string | null

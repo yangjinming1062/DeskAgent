@@ -32,7 +32,7 @@ export type DesktopUpdateEvent =
   | { progress: DesktopUpdateProgress; type: 'progress' }
   | { type: 'checking' }
 
-export interface CapabilityHealthItem {
+interface CapabilityHealthItem {
   available: boolean
   reason?: string | null
 }
@@ -253,13 +253,14 @@ export interface IpcInvokeContract {
     | { bytes: number; dataUrl: string; mimeType: string; tag: string }
     | Promise<{ bytes: number; dataUrl: string; mimeType: string; tag: string }>
 
+  'spiritagent:update:check': () => Promise<void> | void
+
   // 精灵窗口
   'spiritagent:sprite:hide': () => Promise<void> | void
   'spiritagent:sprite:set-ignore-mouse-events': (payload: {
     forward?: boolean
     ignore: boolean
   }) => Promise<void> | void
-  'spiritagent:sprite:set-always-on-top': (payload: { on: boolean }) => Promise<void> | void
   'spiritagent:sprite:get-position': () =>
     | null
     | { origin?: { x: number; y: number }; x: number; y: number }
@@ -271,7 +272,6 @@ export interface IpcInvokeContract {
     | Promise<null | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }>
 
   // 更新
-  'spiritagent:update:check': () => Promise<void> | void
 }
 
 // 2. 主进程向渲染进程推送事件（通过 webContents.send / ipcRenderer.on）
@@ -292,7 +292,7 @@ export interface IpcSendContract {
   'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
 }
 
-export type IpcChannel = keyof IpcInvokeContract
+type IpcChannel = keyof IpcInvokeContract
 export type IpcEventChannel = keyof IpcEventContract
 export type IpcSendChannel = keyof IpcSendContract
 
@@ -336,7 +336,6 @@ export const IPC = {
     onboardingAudioRead: 'spiritagent:onboardingAudio:read',
     spriteHide: 'spiritagent:sprite:hide',
     spriteSetIgnoreMouseEvents: 'spiritagent:sprite:set-ignore-mouse-events',
-    spriteSetAlwaysOnTop: 'spiritagent:sprite:set-always-on-top',
     spriteGetPosition: 'spiritagent:sprite:get-position',
     spriteSetPosition: 'spiritagent:sprite:set-position',
     spriteMoveToCursorDisplay: 'spiritagent:sprite:move-to-cursor-display',

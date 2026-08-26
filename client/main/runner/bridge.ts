@@ -63,7 +63,7 @@ export interface RunnerBridgeOptions {
   wsServerFactory?: null | ((options: CreateRunnerWsServerOptions) => RunnerWsServer)
 }
 
-export interface RunnerBridgeState {
+interface RunnerBridgeState {
   capabilities: null | RunnerCapabilities
   capabilitiesHealth: null | RunnerCapabilitiesHealth
   lastError: null | string

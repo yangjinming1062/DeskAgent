@@ -11,14 +11,14 @@ import { log } from '@/shared/lib/log'
 
 import { clampJiggleOffset, createJiggleState, type JiggleConfig, type JiggleState, stepJiggle } from './mesh2d-bones'
 
-export interface ManifestBone {
+interface ManifestBone {
   name: string
   pivot: [number, number]
   parent: string | null
   z_order: number
 }
 
-export interface ManifestMesh {
+interface ManifestMesh {
   name: string
   texture: string
   geometry_w: number
@@ -286,7 +286,7 @@ export async function buildMesh2DScene(manifest: Manifest, layerUrls: Record<str
   }
 }
 
-export interface FrameInputs {
+interface FrameInputs {
   dt: number
   elapsed: number
   audioAmp: number

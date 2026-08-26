@@ -2,7 +2,7 @@ import type { HapticInput, TriggerOptions } from 'web-haptics'
 
 import { $hapticsMuted } from '@/shared/store/haptics'
 
-export type HapticIntent =
+type HapticIntent =
   | 'cancel'
   | 'close'
   | 'crisp'

@@ -5,12 +5,6 @@ import { cn } from '@/shared/lib/utils'
 
 import { Codicon } from './codicon'
 
-// 边到边菜单的共享 class token（与 `p-0` 内容配合使用）：菜单行占满宽度、方形且紧凑，
-// 高亮区贯穿整块表面。复用这些 token，避免在每个菜单里重复推算，保证所有可搜索 /
-// 紧凑菜单视觉一致。
-export const dropdownMenuRow = 'gap-2 rounded-none px-2.5 py-1 text-xs'
-export const dropdownMenuSectionLabel = 'px-2.5 pt-1 pb-0.5 text-[0.625rem] font-medium uppercase tracking-wide'
-
 // 必须交给 Radix 菜单处理器处理的按键（导航 / 关闭）。其余按键视为过滤输入，
 // 会 stopPropagation，避免菜单自带的 typeahead 抢键。
 const DROPDOWN_NAV_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'])

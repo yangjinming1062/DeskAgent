@@ -28,10 +28,4 @@ export const USER_GENDER_PRESETS = ['女', '男', '其他', '不愿说'] as cons
 
 export type RolePreset = (typeof ROLE_PRESETS)[number]
 export type PersonalityPreset = (typeof PERSONALITY_PRESETS)[number]
-export type SpeciesPreset = (typeof SPECIES_PRESETS)[number]
-export type CharacterGenderPreset = (typeof CHARACTER_GENDER_PRESETS)[number]
-export type AppearancePreset = (typeof APPEARANCE_PRESETS)[number]
 export type SpeakingStylePreset = (typeof SPEAKING_STYLE_PRESETS)[number]
-export type VoicePreset = (typeof VOICE_PRESETS)[number]
-export type UserAgeBucketPreset = (typeof USER_AGE_BUCKET_PRESETS)[number]
-export type UserGenderPreset = (typeof USER_GENDER_PRESETS)[number]

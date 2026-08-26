@@ -3,7 +3,7 @@ import { atom } from 'nanostores'
 
 import { strings } from '@/shared/strings'
 
-export interface DesktopBootState extends DesktopBootProgress {
+interface DesktopBootState extends DesktopBootProgress {
   visible: boolean
 }
 

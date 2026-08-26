@@ -5,7 +5,7 @@ import { strings } from '@/shared/strings'
 
 export type NotificationKind = 'error' | 'warning' | 'info' | 'success'
 
-export interface NotificationAction {
+interface NotificationAction {
   label: string
   onClick: () => void
 }

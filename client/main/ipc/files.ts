@@ -6,7 +6,7 @@ import type { BrowserWindow, Dialog, IpcMain } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
 
-export interface FilesIpcDeps {
+interface FilesIpcDeps {
   electron: {
     dialog: Dialog
     getMainWindow: () => BrowserWindow | null | undefined

@@ -1,6 +1,6 @@
 import type { DisturbanceTier } from './companion-store'
 
-export interface DisturbanceTierOption {
+interface DisturbanceTierOption {
   hint: string
   id: DisturbanceTier
   label: string

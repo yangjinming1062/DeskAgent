@@ -5,6 +5,14 @@ let currentDone: (() => void) | null = null
 let currentListeners: [string, EventListener][] = []
 let playGen = 0
 
+let audioCtx: AudioContext | null = null
+let analyser: AnalyserNode | null = null
+let analyserSource: MediaElementAudioSourceNode | null = null
+let amplitudeSink: ((amp: number) => void) | null = null
+let amplitudeBuffer: Uint8Array | null = null
+let amplitudeRaf: number | null = null
+let amplitudeActive = false
+
 function detachListeners(audio: HTMLAudioElement): void {
   for (const [type, fn] of currentListeners) {
     audio.removeEventListener(type, fn)
@@ -180,14 +188,6 @@ export async function playDataUrl(dataUrl: string, onDone?: () => void): Promise
 }
 
 // ── Analyser-driven amplitude for 3D lip sync ─────────────────────────────
-
-let audioCtx: AudioContext | null = null
-let analyser: AnalyserNode | null = null
-let analyserSource: MediaElementAudioSourceNode | null = null
-let amplitudeSink: ((amp: number) => void) | null = null
-let amplitudeBuffer: Uint8Array | null = null
-let amplitudeRaf: number | null = null
-let amplitudeActive = false
 
 /** Subscribe to the live audio amplitude [0..1]. Returns a cleanup fn. */
 export function registerAmplitudeSink(fn: ((amp: number) => void) | null): () => void {

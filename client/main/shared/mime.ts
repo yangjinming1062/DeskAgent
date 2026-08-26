@@ -1,6 +1,6 @@
 import path from 'node:path'
 
-export const MEDIA_MIME_TYPES: Record<string, string> = {
+const MEDIA_MIME_TYPES: Record<string, string> = {
   '.avi': 'video/x-msvideo',
   '.bmp': 'image/bmp',
   '.flac': 'audio/flac',
@@ -75,7 +75,7 @@ export function dataUrlFromBuffer(buffer: Buffer | Uint8Array, mimeType: string)
   return `data:${mimeType};base64,${buf.toString('base64')}`
 }
 
-export interface ParsedDataUrl {
+interface ParsedDataUrl {
   data: Buffer
   isBase64: boolean
   mediaType: string

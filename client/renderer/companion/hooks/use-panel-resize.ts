@@ -2,7 +2,7 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, use
 
 export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
-export interface PanelSize {
+interface PanelSize {
   width: number
   height: number
 }

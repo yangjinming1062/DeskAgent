@@ -25,7 +25,7 @@ export interface VoiceDesignPreview {
   trialAudioDataUrl: string
 }
 
-export const DEFAULT_VOICE: VoiceOption = {
+const DEFAULT_VOICE: VoiceOption = {
   id: '',
   label: '默认音色',
   gender: 'neutral',
@@ -57,7 +57,7 @@ interface DesignResponse {
   trial_audio_mime: string
 }
 
-export type FetchResult = { ok: true; catalog: VoiceCatalog } | { ok: false; reason: 'fetch_failed' | 'empty_catalog' }
+type FetchResult = { ok: true; catalog: VoiceCatalog } | { ok: false; reason: 'fetch_failed' | 'empty_catalog' }
 
 export async function fetchVoiceCatalogRaw(
   requestGateway: RequestGateway,

@@ -40,10 +40,10 @@ export const DEV_CSP_POLICY = [
 
 // 头像 / 精灵 / 衣橱生成：供应商调用 + Pillow 重编码 + 关键帧写入通常要 15–25 秒，
 // 默认 15 秒会在后端返回 201 之前就超时，所以这里放宽。
-export const AVATAR_FETCH_TIMEOUT_MS = 120_000
+const AVATAR_FETCH_TIMEOUT_MS = 120_000
 
-export const SAFE_ENV_SUFFIXES: Set<string> = new Set(['dist', 'example', 'sample', 'template'])
-export const SENSITIVE_EXTENSIONS: Set<string> = new Set(['.kdbx', '.p12', '.pem', '.pfx'])
+const SAFE_ENV_SUFFIXES: Set<string> = new Set(['dist', 'example', 'sample', 'template'])
+const SENSITIVE_EXTENSIONS: Set<string> = new Set(['.kdbx', '.p12', '.pem', '.pfx'])
 
 export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs = DEFAULT_FETCH_TIMEOUT_MS): number {
   if (timeoutMs !== undefined && timeoutMs !== null) {
@@ -59,7 +59,7 @@ export function resolveTimeoutMs(timeoutMs?: null | number | string, fallbackMs 
   return Number.isFinite(fallbackNum) && fallbackNum > 0 ? Math.round(fallbackNum) : DEFAULT_FETCH_TIMEOUT_MS
 }
 
-export const AVATAR_SLOW_PATH_PATTERN =
+const AVATAR_SLOW_PATH_PATTERN =
   /^\/api\/(?:companion\/(?:avatar(?:\/from-image|\/\d+\/fullbody\/(?:samples|front|back|confirm-front))?|sprite)|media\/(?:image_gen|video_gen))$/i
 
 // 仅 POST 路径——读路径只是数据库查询，不涉及供应商调用。
@@ -82,7 +82,7 @@ export interface SafeStorageApi {
   isEncryptionAvailable: () => boolean
 }
 
-export function sensitiveFileBlockReason(filePath: string): null | string {
+function sensitiveFileBlockReason(filePath: string): null | string {
   const normalized = String(filePath || '')
     .replace(/\\/g, '/')
     .toLowerCase()
@@ -133,7 +133,7 @@ export function sensitiveFileBlockReason(filePath: string): null | string {
   return null
 }
 
-export function resolveRequestedFilePath(filePath: string, baseDir = process.cwd(), purpose = 'File read'): string {
+function resolveRequestedFilePath(filePath: string, baseDir = process.cwd(), purpose = 'File read'): string {
   const raw = String(filePath || '').trim()
 
   if (!raw) {
@@ -157,7 +157,7 @@ export function resolveRequestedFilePath(filePath: string, baseDir = process.cwd
   return path.resolve(resolvedBase, raw)
 }
 
-export interface ResolveReadableFileOptions {
+interface ResolveReadableFileOptions {
   baseDir?: string
   blockSensitive?: boolean
   maxBytes?: null | number

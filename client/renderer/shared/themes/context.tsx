@@ -1,8 +1,6 @@
 import { DEFAULT_TYPOGRAPHY, spiritagentTheme } from './presets'
 import type { DesktopTheme, DesktopThemeColors } from './types'
 
-export type ThemeMode = 'light' | 'dark' | 'system'
-
 // ─── 颜色计算（用于合成浅色变体） ────────────────────────
 
 function hexToRgb(hex: string): [number, number, number] | null {

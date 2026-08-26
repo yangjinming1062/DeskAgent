@@ -1,15 +1,12 @@
 import type { DesktopRunnerPhase, DesktopRunnerStatusEvent } from '@ipc/contracts'
-import { atom, computed } from 'nanostores'
+import { atom } from 'nanostores'
 
 // 「Runner 网桥是否在线」的唯一真源。沿用 hydrateAuth + applyAuthBroadcast 的模式：
 // 一个 IPC 同步 getter 覆盖「我们订阅前网桥就已经跑起来」的情况
 //（Electron IPC 没有事件重放），一份订阅把后续转换写入 atom。
-// 消费方读 $runnerReady 拿布尔门控，订阅 $runnerPhase 监听转换——
-// 无需每个消费方各自跳一次同步 getter。见 companion/activity.ts
-// 和 hub/settings/speech-settings.tsx。
+// 消费方订阅 $runnerPhase 监听转换——无需每个消费方各自跳一次同步 getter。
+// 见 companion/activity.ts 和 hub/settings/speech-settings.tsx。
 export const $runnerPhase = atom<DesktopRunnerPhase>('idle')
-
-export const $runnerReady = computed($runnerPhase, phase => phase === 'running')
 
 let offRunnerStatus: (() => void) | null = null
 

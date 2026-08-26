@@ -66,7 +66,6 @@ export function Viewport3D(): React.JSX.Element {
   const boneRestQuatsRef = useRef<Map<string, THREE.Quaternion>>(new Map())
   const loadedCharacterMeshesRef = useRef<THREE.Mesh[]>([])
 
-  // 初始化 Three.js 场景
   useEffect(() => {
     const container = containerRef.current
 
@@ -95,7 +94,6 @@ export function Viewport3D(): React.JSX.Element {
 
     container.appendChild(renderer.domElement)
 
-    // 轨道控制器 OrbitControls
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
     controls.dampingFactor = 0.08
@@ -105,7 +103,6 @@ export function Viewport3D(): React.JSX.Element {
     controls.maxDistance = 25
     controlsRef.current = controls
 
-    // TransformControls 3D 拖拽轴系统
     const transformControls = new TransformControls(camera, renderer.domElement)
     transformControls.size = 0.75
 
@@ -136,7 +133,6 @@ export function Viewport3D(): React.JSX.Element {
     scene.add(helper)
     transformControlsRef.current = transformControls
 
-    // 灯光系统
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.6)
     scene.add(ambientLight)
 
@@ -453,7 +449,6 @@ export function Viewport3D(): React.JSX.Element {
     setTimeout(() => triggerAutoGround(), 50)
   }, [rotatePresetSig])
 
-  // 加载并装配角色模型（人偶或自定义 GLB）
   useEffect(() => {
     const scene = sceneRef.current
     const controls = controlsRef.current
@@ -655,7 +650,6 @@ export function Viewport3D(): React.JSX.Element {
     $playbackState.setKey('duration', animClip.duration)
   }
 
-  // 监听选中的 Clip 变化
   const activeClip = useStore($activeClip)
   useEffect(() => {
     if (!activeClip || !mixerRef.current) {
@@ -665,7 +659,6 @@ export function Viewport3D(): React.JSX.Element {
     playTargetClip(activeClip, mixerRef.current, $playbackState.get().crossFadeDuration)
   }, [activeClip])
 
-  // 监听 Scrubbing 时间轴拖拽
   const scrubTime = useStore($scrubTime)
   useEffect(() => {
     if (scrubTime === null || !currentActionRef.current || !mixerRef.current) {
@@ -677,7 +670,6 @@ export function Viewport3D(): React.JSX.Element {
     mixerRef.current.update(0)
   }, [scrubTime])
 
-  // 监听单帧步进
   const stepDelta = useStore($stepFrameDelta)
   useEffect(() => {
     if (stepDelta === null || !currentActionRef.current || !mixerRef.current) {
@@ -692,7 +684,6 @@ export function Viewport3D(): React.JSX.Element {
     $playbackState.setKey('currentTime', nextT)
   }, [stepDelta])
 
-  // 监听 Morph 表情变化
   const morphWeights = useStore($morphWeights)
   const lipSyncAmp = useStore($lipSyncAmp)
   useEffect(() => {

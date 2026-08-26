@@ -8,7 +8,7 @@ import { sendToSender } from '../shared/utils'
 
 import type { ModelDiskCache } from './model-disk-cache'
 
-export interface ConnectionIpcDeps {
+interface ConnectionIpcDeps {
   defaultFetchTimeoutMs?: number
   ensureBackend: () => Promise<SpiritAgentConnection>
   fetchImpl?: typeof globalThis.fetch

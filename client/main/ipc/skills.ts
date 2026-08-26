@@ -7,7 +7,7 @@ import * as store from '../shared/lib/runner-config-store'
 import { buildSkillSummaries } from '../shared/lib/skill-index'
 import { buildToolsetRoster } from '../shared/lib/toolset-index'
 
-export interface SkillsIpcDeps {
+interface SkillsIpcDeps {
   spiritagentHome?: null | string
   getRunnerBridge?: () => { getTools?: () => Record<string, unknown>[] } | null | undefined
   ipcMain: IpcMain

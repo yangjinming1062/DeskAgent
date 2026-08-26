@@ -2,31 +2,28 @@ import { type ComponentProps, useEffect, useRef } from 'react'
 
 import { cn } from '@/shared/lib/utils'
 
-export const LOADER_TYPES = [
-  'original-thinking',
-  'thinking-five',
-  'thinking-nine',
-  'rose-orbit',
-  'rose-curve',
-  'rose-two',
-  'rose-three',
-  'rose-four',
-  'lissajous-drift',
-  'lemniscate-bloom',
-  'hypotrochoid-loop',
-  'three-petal-spiral',
-  'four-petal-spiral',
-  'five-petal-spiral',
-  'six-petal-spiral',
-  'butterfly-phase',
-  'cardioid-glow',
-  'cardioid-heart',
-  'heart-wave',
-  'spiral-search',
-  'fourier-flow'
-] as const
-
-export type LoaderType = (typeof LOADER_TYPES)[number]
+type LoaderType =
+  | 'original-thinking'
+  | 'thinking-five'
+  | 'thinking-nine'
+  | 'rose-orbit'
+  | 'rose-curve'
+  | 'rose-two'
+  | 'rose-three'
+  | 'rose-four'
+  | 'lissajous-drift'
+  | 'lemniscate-bloom'
+  | 'hypotrochoid-loop'
+  | 'three-petal-spiral'
+  | 'four-petal-spiral'
+  | 'five-petal-spiral'
+  | 'six-petal-spiral'
+  | 'butterfly-phase'
+  | 'cardioid-glow'
+  | 'cardioid-heart'
+  | 'heart-wave'
+  | 'spiral-search'
+  | 'fourier-flow'
 
 interface Point {
   x: number

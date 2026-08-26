@@ -127,7 +127,7 @@ export function disposeThreeResources(root: THREE.Object3D): void {
   }
 }
 
-export interface CachedTemplate {
+interface CachedTemplate {
   animations: THREE.AnimationClip[]
   bytes: number
   hits: number
@@ -203,7 +203,7 @@ export function stashGltf(
 /**
  * 淘汰超出容量限制的未引用模板（`refCount === 0` 且最近最少使用优先）。
  */
-export function pruneTemplates(maxTemplates = DEFAULT_MAX_TEMPLATES, maxBytes = DEFAULT_MAX_CACHE_BYTES): void {
+function pruneTemplates(maxTemplates = DEFAULT_MAX_TEMPLATES, maxBytes = DEFAULT_MAX_CACHE_BYTES): void {
   let totalBytes = 0
 
   for (const item of _cache.values()) {

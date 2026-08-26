@@ -134,7 +134,7 @@ type WebSocketLike = WebSocket
 
 // JSON-RPC 2.0 标准错误码——与后端 jsonrpc_dispatcher.py 保持同步，
 // 消费方可按 err.code 分支而无需解析 err.message
-export enum SpiritAgentRpcErrorCode {
+enum SpiritAgentRpcErrorCode {
   ParseError = -32700,
   InvalidRequest = -32600,
   MethodNotFound = -32601,
@@ -142,7 +142,7 @@ export enum SpiritAgentRpcErrorCode {
   InternalError = -32603
 }
 
-export class SpiritAgentRpcError extends Error {
+class SpiritAgentRpcError extends Error {
   readonly code: number
   readonly data?: unknown
 
@@ -353,12 +353,8 @@ export class JsonRpcGatewayClient {
     return () => handlers?.delete(handler as (event: GatewayEvent) => void)
   }
 
-  onAny(handler: (event: GatewayEvent) => void): () => void {
-    return this.on(ANY as GatewayEventName, handler)
-  }
-
   onEvent(handler: (event: GatewayEvent) => void): () => void {
-    return this.onAny(handler)
+    return this.on(ANY as GatewayEventName, handler)
   }
 
   onState(handler: (state: ConnectionState) => void): () => void {
