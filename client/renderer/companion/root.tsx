@@ -33,6 +33,7 @@ import { DeveloperOverlay } from './developer-overlay'
 import { EggStage } from './egg-stage'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
+import { MediaViewerOverlay } from './media-viewer-overlay'
 import { MemoryBrowser } from './memory-browser'
 import { $mesh2dHitmap } from './mesh2d/mesh2d-store'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
@@ -427,6 +428,7 @@ export function CompanionRoot(): React.JSX.Element {
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {authed && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
       {authed && <ProactiveBubble />}
+      {authed && <MediaViewerOverlay />}
       <NotificationStack regionRef={notificationStackRef} />
       <BootFailureOverlay />
       <DeveloperOverlay />

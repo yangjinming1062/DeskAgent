@@ -3,7 +3,7 @@ import { atom, map } from 'nanostores'
 import { setSpriteState } from '@/companion/companion-store'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { SessionMessage } from '@/shared/types/spiritagent'
+import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
 
 // 消息身份与稳定元数据，挂载于 $chatMessageList。
 export interface ChatMessageListItem {
@@ -20,6 +20,7 @@ export interface ChatMessageBody {
   error?: string
   cancelled?: boolean
   attachments?: string[]
+  media?: ChatMediaItem[]
 }
 
 export interface ChatMessage extends ChatMessageListItem, ChatMessageBody {}
@@ -33,7 +34,13 @@ export const $chatStreamingTick = atom<number>(0)
 export const $chatSessionId = atom<string | null>(null)
 export const $chatOpen = atom(false)
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
-export const $proactiveBubble = atom<string | null>(null)
+// sessionId 存在时点击气泡会切到该会话（媒体送达提示跳转用）。
+export interface ProactiveBubbleState {
+  text: string
+  sessionId?: string
+}
+
+export const $proactiveBubble = atom<ProactiveBubbleState | null>(null)
 
 // 外部投喂（DESIGN §6.3「文件投喂」）——SpriteStage 拖拽文件到精灵本体时，
 // 把文件路径推到此处。ChatDock 订阅并把首个图像文件塞入附件占位。
@@ -82,7 +89,8 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
     bodies[id] = {
       text: extractText(m),
       toolName: m.tool_name ?? null,
-      streaming: false
+      streaming: false,
+      ...(m.media?.length ? { media: m.media } : {})
     }
   }
 
@@ -118,14 +126,38 @@ function extractText(m: SessionMessage): string {
     .join('\n')
 }
 
-export function setProactiveBubble(text: string | null): void {
-  $proactiveBubble.set(text)
+export function setProactiveBubble(state: ProactiveBubbleState | null): void {
+  $proactiveBubble.set(state)
+}
+
+// 媒体送达的轻提示气泡：聊天窗关闭时提示点击查看，8 秒未点击自动消失。
+let mediaHintTimer: ReturnType<typeof setTimeout> | null = null
+
+export function showMediaHint(text: string, sessionId?: string): void {
+  if (mediaHintTimer) {
+    clearTimeout(mediaHintTimer)
+  }
+
+  $proactiveBubble.set(sessionId ? { text, sessionId } : { text })
+  mediaHintTimer = setTimeout(() => {
+    $proactiveBubble.set(null)
+    mediaHintTimer = null
+  }, 8000)
 }
 
 export function pushProactiveMessage(text: string): void {
   const id = nextId()
   $chatMessageBodies.setKey(id, { text, streaming: false, toolName: null })
   $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_proactive' }])
+}
+
+// 后台视频完成等异步送达的媒体行；与历史水合的 status_media 行同形状。
+export function pushMediaMessage(media: ChatMediaItem[]): string {
+  const id = nextId()
+  $chatMessageBodies.setKey(id, { text: '', media, streaming: false, toolName: null })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_media' }])
+
+  return id
 }
 
 // DESIGN §6.6 场景 1：LLM 只声明情绪/动作、不输出正文的回合，在对话里留下
@@ -348,7 +380,7 @@ export function setAssistantTool(name: string | null): void {
   $chatMessageBodies.setKey(lastItem.id, { ...body, toolName: name })
 }
 
-export function finalizeAssistantMessage(text?: string): void {
+export function finalizeAssistantMessage(text?: string, media?: ChatMediaItem[]): void {
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
 
@@ -363,9 +395,16 @@ export function finalizeAssistantMessage(text?: string): void {
   }
 
   const finalStr = typeof text === 'string' ? text : body.text
+  const finalMedia = media ?? body.media
 
-  // 助手消息为空且无工具/错误/取消时剪掉，避免空白气泡。
-  const isEmpty = !finalStr.trim() && !body.toolName && !body.error && !body.cancelled && !body.attachments?.length
+  // 助手消息为空且无工具/错误/取消/媒体时剪掉，避免空白气泡。
+  const isEmpty =
+    !finalStr.trim() &&
+    !body.toolName &&
+    !body.error &&
+    !body.cancelled &&
+    !body.attachments?.length &&
+    !finalMedia?.length
 
   if (isEmpty) {
     $chatMessageList.set(list.slice(0, -1))
@@ -378,6 +417,7 @@ export function finalizeAssistantMessage(text?: string): void {
   $chatMessageBodies.setKey(lastItem.id, {
     ...body,
     text: finalStr,
+    media: finalMedia,
     streaming: false,
     toolName: null
   })

@@ -606,6 +606,18 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
     return None
 
 
+async def resolve_self_reference_data_uri(user_id: int) -> str:
+    """聊天工具画/拍伙伴自己时的身份参考：激活形象行的半身头像 → data URI。
+    刻意不用 2D/3D 正面种子图——它们带生成画风，作参考会让身份失真；聊天内所有自我生成的图像参考统一用头像图。
+    自建 DB 会话，供工具层在无调用方会话的上下文中直接使用。"""
+    async with SESSION_LOCAL() as db:
+        asset = await get_active_avatar(db, user_id)
+    data_uri = load_avatar_bytes_as_data_uri(asset.asset_url) if asset is not None else None
+    if not data_uri:
+        raise AvatarGenerationError("伙伴头像尚未生成，请先完成形象确认")
+    return data_uri
+
+
 async def regenerate_avatar_from_image(
     db: AsyncSession | None = None,
     user_id: int | None = None,

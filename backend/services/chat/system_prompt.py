@@ -91,6 +91,19 @@ SESSION_SEARCH_GUIDANCE = (
     "asking them to repeat themselves."
 )
 
+MEDIA_DELIVERY_GUIDANCE = (
+    "# Media generation & delivery\n"
+    "Images and videos you generate are delivered to the user automatically as preview "
+    "cards attached to your reply — do NOT paste raw media URLs or markdown image "
+    "syntax into your text; describe the result briefly instead.\n"
+    "When generating an image or video of YOURSELF (the companion), pass "
+    "subject='self': the platform injects your canonical seed image as the identity "
+    "reference (image) or the first frame (video). Do not describe your own appearance "
+    "from memory — focus the prompt on scene, pose, and action.\n"
+    "To animate an image you just generated, call video_generate with "
+    "first_frame_image set to that image's URL and NO subject parameter."
+)
+
 SKILLS_GUIDANCE = (
     "After completing a complex task (5+ tool calls), fixing a tricky error, "
     "or discovering a non-trivial workflow, save the approach as a "
@@ -499,6 +512,8 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         tool_guidance = [g for name, g in (("memory", MEMORY_GUIDANCE), ("session_search", SESSION_SEARCH_GUIDANCE), ("skill_manage", SKILLS_GUIDANCE)) if name in valid_tools]
         # 一旦会话有工具就强制附加内联附件提示；提示中「无工具」兜底条款使 LLM 在 Runner 未注册时直接报错而非猜测文件内容。
         tool_guidance.append(ATTACHMENT_GUIDANCE)
+        if "image_generate" in valid_tools or "video_generate" in valid_tools:
+            tool_guidance.append(MEDIA_DELIVERY_GUIDANCE)
         if tool_guidance:
             stable_parts.append(" ".join(tool_guidance))
         stable_parts.append(STEER_CHANNEL_NOTE)

@@ -49,9 +49,20 @@ async def image_generation_tool(
     reference_image: str | None = None,
     secondary_reference_image: str | None = None,
     preferred_provider: str | list[str] | None = None,
+    subject: str | None = None,
     **kwargs,
 ) -> str:
     """通过 image_gen 供应商链生成图片，base64 结果会落地为本服务的 /api/media/files/<id> 链接。"""
+    if subject == "self":
+        if user_id is None:
+            return tool_error("生成自己的形象需要用户上下文")
+        # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
+        from services.companion import AvatarGenerationError, resolve_self_reference_data_uri
+
+        try:
+            reference_image = await resolve_self_reference_data_uri(user_id)
+        except AvatarGenerationError as e:
+            return tool_error(str(e))
     req = ImageGenRequest(prompt=prompt, size=size, n=n, reference_image=reference_image, secondary_reference_image=secondary_reference_image)
     try:
         if user_id is not None:
@@ -120,6 +131,11 @@ IMAGE_GENERATION_SCHEMA = {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "A detailed, descriptive prompt for the image to generate."},
+            "subject": {
+                "type": "string",
+                "enum": ["self"],
+                "description": "Set to 'self' when the image depicts YOU (the companion). The platform injects your canonical seed image as the identity reference automatically — do NOT describe your own appearance from memory; focus the prompt on scene, pose, and action.",
+            },
             "size": {
                 "type": "string",
                 "enum": IMAGE_GENERATION_SIZES,

@@ -18,10 +18,21 @@ async def video_generation_tool(
     first_frame_image: str | None = None,
     aspect_ratio: str | None = None,
     user_id: int | None = None,
-    session_id: str | None = None,
+    parent_session_id: str | None = None,
+    subject: str | None = None,
     **_,
 ) -> str:
     """通过 MiniMax 异步生成视频；本工具等待 video_gen_tool_wait_seconds（默认 180s）后返回链接或待查询的 task_id。"""
+    if subject == "self" and not first_frame_image:
+        if user_id is None:
+            return tool_error("生成自己的形象需要用户上下文")
+        # 延迟导入以打破 services.tools.builtin ↔ services.companion 循环依赖（services.companion.avatar_service 反向引用 tools.builtin）。
+        from services.companion import AvatarGenerationError, resolve_self_reference_data_uri
+
+        try:
+            first_frame_image = await resolve_self_reference_data_uri(user_id)
+        except AvatarGenerationError as e:
+            return tool_error(str(e))
     if not isinstance(duration, int) or not 4 <= duration <= 15:
         return tool_error("duration must be an integer between 4 and 15 seconds")
     if resolution not in ("512P", "768P", "1080P", "2K"):
@@ -33,7 +44,7 @@ async def video_generation_tool(
                 job = await enqueue_video_job(
                     db,
                     user_id=user_id,
-                    session_id=session_id,
+                    session_id=parent_session_id,
                     prompt=prompt,
                     duration=duration,
                     resolution=resolution,
@@ -96,6 +107,11 @@ VIDEO_GENERATION_SCHEMA = {
         "type": "object",
         "properties": {
             "prompt": {"type": "string", "description": "Describe the video content."},
+            "subject": {
+                "type": "string",
+                "enum": ["self"],
+                "description": "Set to 'self' when the video depicts YOU (the companion). The platform injects your canonical seed image as the first frame automatically; do NOT describe your own appearance from memory. Ignored when first_frame_image is set explicitly.",
+            },
             "duration": {
                 "type": "integer",
                 "minimum": 4,

@@ -31,6 +31,7 @@ chat/
 - **Responses 边界**：持久化层保留按角色建模的消息行；仅在读历史、工具回灌与后台 LLM 调用时转换为指令区 + 输入项。同一工具回合内的推理输出项保留到函数调用与输出闭合，近期图片载荷按二进制附件预算处理，不参与长文本截断。
 - **影响 scrubber 在流式阶段就解析**：scrubber 在 chunk 层面拆情绪标签，orchestrator 拿到完整情绪在回合结束；这与 ARCH §6.3 "情绪基调先于语音"一致——desktop 收到对话完成事件时情绪字段已就位，TTS/EMOTIONAL 切换一次到位。
 - **image part 单一来源**：`message_sanitization._IMAGE_PART_TYPES = {"input_image"}` 是 Responses API 输入图片 part 唯一类型；`persistence._build_persisted_content_from_parts` 写入与 `_input_part` 读取两侧一致。
+- **生成媒体在回合收口提取、随终端助手行落库**：`persistence.extract_turn_media` 只认图像/视频生成工具的成功结果（pending 与失败跳过），媒体列与正文正交且不进 LLM 上下文（URL 已在工具结果/摘要行内）；多气泡回合媒体挂最后一格。为什么不信任正文贴 URL：模型会漏贴或夹带 markdown，结构化提取是渲染端唯一可靠通道。跨模块契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
 - **流式 chunk 批处理**：在 5–10 ms 批窗口内合并连续 chunk 事件为单个 chunk 载荷；break 与 message.start 立即发出。
 - **懒加载子模块动态解析**：`_LAZY_SUBMODULES = ("orchestrator", "turn_inputs", "agent_delegate")` 由 `__init__.__getattr__` 按需动态解析，避免循环依赖与无谓的顶层 import 开销。
 

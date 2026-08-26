@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import { memo } from 'react'
 
+import { ChatMediaCard } from './chat-media-card'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { $chatMessageBodies } from './chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from './chat-store'
@@ -11,6 +12,8 @@ const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'tool_summary', 'daily_summary', '
 const STATUS_TRACE_SUBTYPES = new Set(['status_interaction', 'status_reaction'])
 // 仅肢体语言回复（无文字）：渲染为低权重 trace 提示。
 const AFFECT_TRACE_SUBTYPE = 'status_affect'
+// 后台视频完成的送达行：正文是给 LLM 的摘要，渲染端只显示媒体卡。
+const MEDIA_STATUS_SUBTYPE = 'status_media'
 
 function MessageBubbleInner({ message }: { message: ChatMessageListItem }): React.JSX.Element {
   const subtype = message.subtype || ''
@@ -50,6 +53,18 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
     )
   }
 
+  if (subtype === MEDIA_STATUS_SUBTYPE) {
+    return (
+      <div className="my-1 flex justify-start px-2">
+        <div className="flex max-w-[80%] flex-col gap-1">
+          {body.media?.map(m => (
+            <ChatMediaCard item={m} key={m.url} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // 仅在已完成、非错误、非取消且有文本的助手消息上显示播放按钮。
   const showPlayButton =
     !isUser && !body.streaming && Boolean(body.text) && !body.error && !body.cancelled && !body.toolName
@@ -76,6 +91,13 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
             '…'
           )}
         </div>
+        {body.media?.length ? (
+          <div className="mt-1 flex flex-col gap-1">
+            {body.media.map(m => (
+              <ChatMediaCard item={m} key={m.url} />
+            ))}
+          </div>
+        ) : null}
         {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={body.text} />}
       </div>
     </div>

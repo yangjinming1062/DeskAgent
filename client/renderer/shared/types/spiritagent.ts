@@ -28,10 +28,17 @@ export interface SessionInfo {
   handoff_error?: null | string
 }
 
+/** 助手消息附带的生成媒体；与正文正交，仅渲染端消费。 */
+export interface ChatMediaItem {
+  type: 'image' | 'video'
+  url: string
+}
+
 export interface SessionMessage {
   codex_reasoning_items?: unknown
   content: unknown
   context?: unknown
+  media?: ChatMediaItem[]
   name?: string
   reasoning?: null | string
   reasoning_content?: null | string

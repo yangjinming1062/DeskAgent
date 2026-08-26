@@ -46,9 +46,8 @@ export const PuppetCanvas = forwardRef<PuppetCanvasHandle, Props>(function Puppe
       runtime?.dispose()
       runtimeRef.current = null
     }
-    // onRig/onCanvas 由调用方保持稳定引用（挂载期一次性接线）
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // 调用方以 useCallback 保持稳定引用（挂载期一次性接线）；引用变化时重建运行时
+  }, [onCanvas, onRig])
 
   useImperativeHandle(
     ref,

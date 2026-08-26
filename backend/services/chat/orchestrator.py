@@ -80,6 +80,8 @@ async def run_chat_turn(
     schemas_by_name: dict[str, dict] = {schema_name(s): s for s in inputs.all_schemas}
     # 本轮实际调用过的工具名；tool_summary 行据此直接构建而非重新查询，避免与相邻轮次错位。
     invoked_tool_names: set[str] = set()
+    # 本轮所有工具批次产出的生成媒体，随终端 assistant 行落库并在 message.complete 下发。
+    turn_media: list[dict[str, str]] = []
 
     dispatch_ctx = _ToolDispatchContext(
         user_id=user_id,
@@ -166,6 +168,7 @@ async def run_chat_turn(
                     actions=llm_result.actions,
                     spatial_locale=llm_result.spatial_locale,
                     spatial_target=llm_result.spatial_target,
+                    media=turn_media,
                 )
                 break
 
@@ -176,17 +179,19 @@ async def run_chat_turn(
                     invoked_tool_names.add(name)
             _ensure_tool_call_ids(llm_result.tool_calls_list)
 
-            await _persist_assistant_with_tool_calls_and_results(
-                conv,
-                llm_result.tool_calls_list,
-                llm_result.turn_content,
-                llm_result.final_prompt_tokens,
-                llm_result.final_completion_tokens,
-                llm_result.turn_duration_ms,
-                dispatch_ctx,
-                current_context,
-                active_tool_names,
-                schemas_by_name,
+            turn_media.extend(
+                await _persist_assistant_with_tool_calls_and_results(
+                    conv,
+                    llm_result.tool_calls_list,
+                    llm_result.turn_content,
+                    llm_result.final_prompt_tokens,
+                    llm_result.final_completion_tokens,
+                    llm_result.turn_duration_ms,
+                    dispatch_ctx,
+                    current_context,
+                    active_tool_names,
+                    schemas_by_name,
+                ),
             )
 
             if guardrails.halt_decision:

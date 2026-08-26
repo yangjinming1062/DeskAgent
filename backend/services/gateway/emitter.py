@@ -53,6 +53,7 @@ class JsonRpcEmitter:
             return {
                 "text": data.get("text", ""),
                 **({"affect": data["affect"]} if isinstance(data.get("affect"), dict) else {}),
+                **({"media": data["media"]} if isinstance(data.get("media"), list) else {}),
                 **({"usage": usage} if isinstance(usage, dict) else {}),
             }
         if raw_type == "message.start":

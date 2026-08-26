@@ -21,10 +21,13 @@ import {
   clearPendingPrompts,
   finalizeAssistantMessage,
   pushAffectTraceMessage,
+  pushMediaMessage,
   pushProactiveMessage,
   setAssistantError,
   setAssistantTool,
+  setChatOpen,
   setTurnHadBubbleBreak,
+  showMediaHint,
   submitPendingBatch
 } from '@/companion/chat-store'
 import {
@@ -40,6 +43,7 @@ import { resetExpressionAvatars } from '@/companion/expression-avatar/expression
 import { hydrateMesh2D, resetMesh2D, setMesh2DStatus, switchRenderMode } from '@/companion/mesh2d/mesh2d-store'
 import { $responseMode } from '@/companion/prefs'
 import { hydratePuppet, resetPuppet } from '@/companion/puppet/puppet-store'
+import { switchSession } from '@/companion/session-list-store'
 import { $defaultScale, computePerchPlacement, setLocale, startRoam } from '@/companion/spatial'
 import { speak } from '@/companion/tts'
 import { emitVfx } from '@/companion/vfx'
@@ -47,7 +51,8 @@ import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { RpcEvent } from '@/shared/types/spiritagent'
+import { notify } from '@/shared/store/notifications'
+import type { ChatMediaItem, RpcEvent } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
@@ -171,7 +176,11 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'message.complete': {
       const payload = event.payload as
-        | { text?: string; affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string } }
+        | {
+            text?: string
+            media?: ChatMediaItem[]
+            affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string }
+          }
         | undefined
 
       const text = payload?.text ?? ''
@@ -189,8 +198,17 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       // 多气泡回合：每个气泡各自携带流式文本；
       // payload.text 是整轮（包含两个气泡）的全文，会覆盖最后一个气泡。
-      // 这种情况下保留 last.text。
-      finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text)
+      // 这种情况下保留 last.text。媒体与正文正交，始终挂到最后一格。
+      finalizeAssistantMessage($turnHadBubbleBreak.get() ? undefined : payload?.text, payload?.media)
+
+      // 媒体已送达但聊天窗收起：气泡只做轻量提示，点击打开聊天窗查看（富媒体统一在对话窗展示）。
+      if (payload?.media?.length && !$chatOpen.get() && !screenLocked) {
+        showMediaHint(
+          payload.media.some(m => m.type === 'video')
+            ? '🎬 我生成了一段视频，点这里查看'
+            : '🖼️ 我生成了一张图片，点这里查看'
+        )
+      }
 
       // DESIGN §6.6 场景 1：纯情绪/动作回合无正文，空气泡已被上面剪掉——
       // 补一条情绪痕迹行，与后端持久化的 status_affect 行保持一致。
@@ -552,6 +570,53 @@ export function handleCompanionEvent(event: RpcEvent): void {
         if ($chatOpen.get()) {
           pushProactiveMessage(text)
         }
+      }
+
+      break
+    }
+
+    case 'video_gen.completed': {
+      // 后台视频任务完成（WSEvent outbox 路径，信封不带 session_id，载荷自带）。
+      const p = event.payload as
+        | { task_id?: string; url?: string; session_id?: string; media?: ChatMediaItem[] }
+        | undefined
+
+      const sessionId = p?.session_id
+      const media: ChatMediaItem[] = p?.media?.length ? p.media : p?.url ? [{ type: 'video', url: p.url }] : []
+
+      if (!media.length) {
+        break
+      }
+
+      if (sessionId && sessionId === $chatSessionId.get()) {
+        pushMediaMessage(media)
+      } else if (!$screenLocked.get()) {
+        // 正在看别的会话时用通知承载跳转；聊天窗收起时用精灵气泡提示。
+        if ($chatOpen.get() && sessionId) {
+          notify({
+            kind: 'success',
+            message: '视频生成好了',
+            action: {
+              label: '查看',
+              onClick: () => {
+                setChatOpen(true)
+                void switchSession(sessionId)
+              }
+            }
+          })
+        } else {
+          showMediaHint('🎬 视频生成好了，点这里查看', sessionId)
+        }
+      }
+
+      break
+    }
+
+    case 'video_gen.failed': {
+      const p = event.payload as { error?: string } | undefined
+
+      if (p?.error && !$screenLocked.get()) {
+        notify({ kind: 'warning', message: p.error })
       }
 
       break

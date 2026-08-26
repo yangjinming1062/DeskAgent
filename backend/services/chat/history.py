@@ -44,6 +44,10 @@ async def build_session_messages(
         item: dict = {"role": msg.role, "content": msg.content}
         if msg.subtype:
             item["subtype"] = msg.subtype
+        if msg.media_json:
+            media = safe_json_loads(msg.media_json, default=None)
+            if isinstance(media, list) and media:
+                item["media"] = media
         if include_id:
             item["id"] = msg.id
 

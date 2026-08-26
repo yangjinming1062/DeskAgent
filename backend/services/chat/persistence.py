@@ -37,6 +37,27 @@ def _coerce_tool_result_content(content: Any) -> str:
         return str(content)
 
 
+_MEDIA_TOOL_NAMES = frozenset({"image_generate", "video_generate"})
+
+
+def extract_turn_media(tool_results: list[dict]) -> list[dict[str, str]]:
+    """从工具结果中提取可送达渲染端的生成媒体；pending 与失败结果跳过。"""
+    media: list[dict[str, str]] = []
+    for res in tool_results:
+        if res.get("name") not in _MEDIA_TOOL_NAMES:
+            continue
+        parsed = safe_json_loads(res.get("content", ""), default=None)
+        if not isinstance(parsed, dict) or not parsed.get("success"):
+            continue
+        if res.get("name") == "image_generate":
+            urls = parsed.get("urls")
+            if isinstance(urls, list):
+                media.extend({"type": "image", "url": u} for u in urls if isinstance(u, str) and u)
+        elif isinstance(parsed.get("url"), str) and parsed["url"]:
+            media.append({"type": "video", "url": parsed["url"]})
+    return media
+
+
 def _build_persisted_content_from_parts(text: str, attachments: list[dict] | None) -> tuple[str, str]:
     if not attachments:
         return text or "", "text"
@@ -106,15 +127,17 @@ async def _persist_assistant_no_tool_turn(
     actions: list[str] | None = None,
     spatial_locale: str | None = None,
     spatial_target: str | None = None,
+    media: list[dict[str, str]] | None = None,
 ) -> None:
-    """终端路径：助手只产出文本；持久化 Message、触发可选的标题生成与后台 review、发出 ``message.complete``。"""
-    if turn_content:
+    """终端路径：助手只产出文本（可附生成媒体）；持久化 Message、触发可选的标题生成与后台 review、发出 ``message.complete``。"""
+    if turn_content or media:
         async with session_scope() as db:
             db.add(
                 Message(
                     conversation_id=conv.id,
                     role="assistant",
-                    content=turn_content,
+                    content=turn_content or None,
+                    media_json=json.dumps(media, ensure_ascii=False) if media else None,
                     prompt_tokens=final_prompt_tokens,
                     completion_tokens=final_completion_tokens,
                     turn_duration_ms=turn_duration_ms,
@@ -159,7 +182,15 @@ async def _persist_assistant_no_tool_turn(
     if spatial_target:
         affect_payload["target"] = spatial_target
 
-    await emitter.send_json({"type": "message.complete", "text": turn_content, "affect": affect_payload, **({"usage": final_usage_payload} if final_usage_payload else {})})
+    await emitter.send_json(
+        {
+            "type": "message.complete",
+            "text": turn_content,
+            "affect": affect_payload,
+            **({"media": media} if media else {}),
+            **({"usage": final_usage_payload} if final_usage_payload else {}),
+        },
+    )
 
 
 async def _persist_assistant_with_tool_calls_and_results(
@@ -173,8 +204,8 @@ async def _persist_assistant_with_tool_calls_and_results(
     context: dict[str, Any],
     active_tool_names: set[str],
     schemas_by_name: dict[str, dict],
-) -> None:
-    """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹。"""
+) -> list[dict[str, str]]:
+    """持久化含 tool_calls 的 assistant Message、跑工具批处理，并同步更新 Responses 输入轨迹；返回本轮生成的可送达媒体。"""
     if turn_content:
         context["input"].append({"role": "assistant", "content": [{"type": "output_text", "text": turn_content}]})
     context["input"].extend(tool_calls_list)
@@ -229,3 +260,4 @@ async def _persist_assistant_with_tool_calls_and_results(
         for res in tool_results:
             db.add(Message(conversation_id=conv.id, role="tool", tool_call_id=res["tool_call_id"], content=_coerce_tool_result_content(res.get("content", ""))))
         await db.commit()
+    return extract_turn_media(tool_results)

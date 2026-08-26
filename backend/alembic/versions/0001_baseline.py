@@ -389,6 +389,7 @@ def upgrade() -> None:
         sa.Column("completion_tokens", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("turn_duration_ms", sa.Integer(), server_default=sa.text("0"), nullable=False),
         sa.Column("content_type", sa.String(length=32), server_default=sa.text("'text'"), nullable=False),
+        sa.Column("media_json", sa.Text(), nullable=True),
         sa.Column("summary_date", sa.String(length=10), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),

@@ -83,9 +83,14 @@
 | companion.render_mode.changed | 用户在设置中或多端同步切换渲染模式（`2d` / `3d`） | Client 切换展示画布 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 2D 渲染层（与 2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
-| video_gen.completed / .failed | 视频生成结果 | 媒体展示 |
+| video_gen.completed / .failed | 视频生成结果；completed 载荷含 task_id / url / session_id / media，兼作后台视频的异步送达通道（见下方「对话内生成媒体」） | Client 对话窗媒体卡与提示跳转 |
 
-**事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理。
+**事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
+
+**对话内生成媒体**（改此处需同步：backend 工具与聊天持久化、backend/README.md、client 渲染层与 client/renderer/companion/README.md、DESIGN §6）：
+- 聊天回合经图像/视频生成工具产出的媒体，随对话完成事件以 media 数组（元素为 image / video 类型 + 本服务媒体 URL）下发，并持久化在对应助手消息行；后台完成的视频另以 status_media 送达行落库，实时事件与历史水合看到同一形状。
+- 渲染端在**对话窗**以媒体卡内联预览、点击放大播放；精灵气泡只承载轻量文本，收到媒体时仅提示「点击查看」并支持点击打开对话窗（必要时切到目标会话）——富媒体统一在对话窗展示，不进气泡。
+- 精灵画/拍自己（生成工具 subject='self'）：身份参考由后端自动注入**半身头像**——2D/3D 正面种子图带生成画风，作参考会让身份失真，聊天内自我生成的图像参考一律不用种子图。
 
 ### 1.4 Affect 与空间契约
 

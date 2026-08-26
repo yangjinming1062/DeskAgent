@@ -4,11 +4,13 @@ from dataclasses import replace
 from datetime import timedelta
 
 from components import SESSION_LOCAL, SETTINGS, backoff_for_poll, download_capped, get_logger, save_file, utc_now
+from modules.conversation import Message
 from modules.media import VideoGenJob
 from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.conversation import MEDIA_STATUS_SUBTYPE
 from services.llm import MissingLlmConfigError, ServiceType, VideoGenProvider, VideoGenRequest, execute_with_fallback, resolve, resolve_provider_chain
 
 logger = get_logger(__name__)
@@ -47,6 +49,20 @@ async def _emit_ws_event(user_id: int, event_type: str, payload: dict) -> None:
     async with SESSION_LOCAL() as db:
         db.add(WSEvent(user_id=user_id, event_type=event_type, payload=payload_json))
         await db.commit()
+
+
+async def _persist_media_status_message(session_id: str, content: str, media_json: str) -> None:
+    """把后台完成的视频写为发起会话的送达行，使实时事件与历史水合看到同一形状；会话已删除时仅告警。"""
+    try:
+        conv_id = int(session_id)
+    except (TypeError, ValueError):
+        return
+    try:
+        async with SESSION_LOCAL() as db:
+            db.add(Message(conversation_id=conv_id, role="system", subtype=MEDIA_STATUS_SUBTYPE, content=content, media_json=media_json))
+            await db.commit()
+    except Exception:
+        logger.warning("failed to persist video status_media row", extra={"session_id": session_id}, exc_info=True)
 
 
 async def get_job(db: AsyncSession, job_id: int, user_id: int) -> VideoGenJob | None:
@@ -157,12 +173,13 @@ async def _record_failure(job_id: int, *, reason: str, exc: BaseException | None
     sniff_exc: BaseException | None = exc if exc is not None else (RuntimeError(exc_text) if exc_text else None)
     user_msg = _failure_user_message(reason, sniff_exc)
     await _update_job(job_id, status="failed", error_reason=reason, error_message=user_msg)
+    async with SESSION_LOCAL() as db:
+        row = await db.get(VideoGenJob, job_id)
     if user_id is None:
-        async with SESSION_LOCAL() as db:
-            row = await db.get(VideoGenJob, job_id)
-            user_id = row.user_id if row else 0
+        user_id = row.user_id if row else 0
+    session_id = row.session_id if row is not None else None
     if user_id:
-        await _emit_ws_event(user_id, "video_gen.failed", {"task_id": str(job_id), "error": user_msg})
+        await _emit_ws_event(user_id, "video_gen.failed", {"task_id": str(job_id), "error": user_msg, **({"session_id": session_id} if session_id else {})})
 
 
 # In-flight 集合：进程中途重启时，多个协程可能竞争 finalize 同一任务。第一个进入的注册，后续提前退出，避免重复下载或重复 WSEvent；集合驻留在进程内存（重启即丢失——重启后由 resume_pending_video_jobs 走 DB 重建）。
@@ -259,7 +276,11 @@ async def _poll_and_finalize_locked(job_id: int) -> None:
                     await _record_failure(job_id, reason="download_failed", user_id=user_id)
                     return
                 await _update_job(job_id, status="succeeded", file_id=file_id, video_url=public_url)
-                await _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url})
+                session_id = getattr(job, "session_id", None)
+                media = [{"type": "video", "url": public_url}]
+                if session_id:
+                    await _persist_media_status_message(session_id, f"[视频已生成 task {job_id}] {public_url}", json.dumps(media, ensure_ascii=False))
+                await _evt("video_gen.completed", {"task_id": str(job_id), "url": public_url, **({"session_id": session_id} if session_id else {}), "media": media})
                 logger.info("video job succeeded", extra={"job_id": job_id, "file_id": file_id})
                 return
             if status.status == "failed":

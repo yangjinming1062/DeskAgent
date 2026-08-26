@@ -54,6 +54,8 @@ class Message(ModelBase):
     turn_duration_ms: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
     # 标记 `content` 是纯文本（"text"）还是 JSON 编码的多模态 parts 数组（"multimodal_v1"）；取代旧 startswith("[") + 子串嗅探，后者会把合法用户输入误判。
     content_type: Mapped[str] = mapped_column(String(32), default="text", server_default=text("'text'"))
+    # 助手消息附带的生成媒体（JSON 数组，元素为 {"type": "image"|"video", "url": ...}）；与 content 正交，读路径只送渲染端，不进 LLM 上下文。
+    media_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 在 subtype="daily_summary" 的 system 消息上设置，让每日 checkpoint 不用解析 content 文本就能读到截止日期；content 仍是人类可读版本，本列才是结构化源。
     summary_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

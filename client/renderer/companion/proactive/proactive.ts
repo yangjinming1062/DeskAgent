@@ -17,7 +17,7 @@ export async function speakProactive(text: string, opts?: { userInitiated?: bool
   }
 
   if (!$chatOpen.get()) {
-    setProactiveBubble(text.trim())
+    setProactiveBubble({ text: text.trim() })
   }
 
   if (tier === 'autonomous' || opts?.userInitiated) {

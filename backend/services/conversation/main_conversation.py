@@ -13,6 +13,9 @@ UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "sta
 # 仅肢体语言回复（无文本、只有 [affect:...]/[action:...] tag）：以 assistant 行持久化，让下一轮 LLM 上下文仍记得伙伴已做出反应；渲染端显示为淡化痕迹而非气泡。故意不在 UI_ONLY_SUBTYPES，必须送入 LLM。
 AFFECT_TRACE_SUBTYPE: str = "status_affect"
 
+# 后台视频任务完成后的送达行：媒体列携带可播放 URL，渲染端显示为媒体卡。故意不在 UI_ONLY_SUBTYPES——主会话工具帧被摘要行替代后，这行是 LLM 回答「视频好了吗」的结果来源。
+MEDIA_STATUS_SUBTYPE: str = "status_media"
+
 HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
 
 
