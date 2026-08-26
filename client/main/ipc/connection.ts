@@ -57,6 +57,22 @@ export function registerConnectionIpc({
 
     return connection.wsUrl
   })
+  // 语音会话 WS 独立通道：每次连接前现铸 ticket（60s TTL），不回退缓存 URL——
+  // 缓存的 wsUrl 指向聊天网关路径，与语音端点不同。
+  ipcMain.handle(IPC.invoke.voiceWsUrl, async () => {
+    const connection = await ensureBackend()
+    const wsBase = connection.baseUrl.replace(/^http/, 'ws')
+
+    if (mintWsTicket && connection.token) {
+      const fresh = await mintWsTicket(connection.baseUrl, connection.token).catch(() => null)
+
+      if (fresh) {
+        return `${wsBase}/api/voice/ws?ticket=${fresh}`
+      }
+    }
+
+    throw new Error('voice session requires an authenticated backend connection')
+  })
   ipcMain.handle(IPC.invoke.bootProgressGet, async () => getBootProgressState())
 
   ipcMain.handle(IPC.invoke.api, async (_event, request: SpiritAgentApiRequest) => {

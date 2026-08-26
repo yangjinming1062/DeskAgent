@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
   getBootProgress: () => ipcRenderer.invoke(IPC.invoke.bootProgressGet),
   getConnection: () => ipcRenderer.invoke(IPC.invoke.connection),
   getGatewayWsUrl: () => ipcRenderer.invoke(IPC.invoke.gatewayWsUrl),
+  getVoiceWsUrl: () => ipcRenderer.invoke(IPC.invoke.voiceWsUrl),
   getSession: () => ipcRenderer.invoke(IPC.invoke.authGetSession),
   getVersion: () => ipcRenderer.invoke(IPC.invoke.version),
   log: (payload: { args: unknown[]; level: 'error' | 'info' | 'warn'; scope: string }) =>

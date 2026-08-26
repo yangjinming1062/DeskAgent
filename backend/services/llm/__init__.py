@@ -63,6 +63,8 @@ from .providers import (
     try_resolve,
 )
 from .responses import approx_responses_tokens, build_responses_kwargs, copy_responses_context, message_to_response_items, tool_schema_for_responses
+from .stt_service import transcribe_audio
+from .tts_service import synthesize_speech
 from .user_config import UserLlmConfig, merge_provider_json, resolve_user_llm_config
 from .voice_catalog import VoiceEntry, pick_voice_id, voices_for_provider
 
@@ -139,5 +141,7 @@ __all__ = [
     "resolve_user_llm_config",
     "resolve_vision_chain",
     "try_resolve",
+    "transcribe_audio",
+    "synthesize_speech",
     "voices_for_provider",
 ]

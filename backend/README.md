@@ -38,6 +38,7 @@ backend/
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
+│   ├── voice/                # 实时语音会话（独立 WS 状态机 + 按句切分 + TTS 分段下发）
 │   ├── update/               # 桌面客户端版本更新清单构建
 │   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
@@ -78,12 +79,14 @@ backend/
 - **内容风控快速失败**：供应商内容风控拒绝映射为不可重试错误，避免无意义重试白烧配额。
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 - **Outbox 状态机可靠投递与独立周期性回收**：待派发事件入库默认待投递状态；派发循环按在线连接原子加锁认领并下发，成功后置为已投递，异常则递增重试次数并计算指数退避，超限后隔离入失败死信状态并记录错误原因；物理清理完全移出推送主循环，由调度器周期性批量回收过期投递行、死信与孤儿内部事件。
+- **实时语音会话独立于聊天网关，"流式"靠分段编排**（契约见 [PROTOCOL.md §1.7](../PROTOCOL.md)）：音频不可重放，语音 WS 不复用网关的 replay buffer / outbox；回合编排复用 run_chat_turn（自建 sink 喂按句切分器），历史照常落库、回合事件只走语音 WS——不这样会把语音事件经 outbox 二次投递进聊天通道造成双端重复消费。上游语音供应商全是整段请求-响应，"实时感"来自：客户端 VAD 断句后攒整段转写、LLM 流式输出按句切分（句末标点 + 超长强切 + Markdown 清洗）、TTS 逐句合成（预取窗口并行、按序门控发送）合成一段下发一段。打断复用既有任务级取消，收尾只把已完成整句落库（与已下发音频对齐）。本地 Runner 语音栈不参与本通道——服务端编排无法把通话音频送回本地引擎；未配置云端 STT/TTS 供应商时建会直接拒绝；语音会话 STT/TTS 限流独立于 media REST 桶（通话断句节奏会饿死共享桶，详见 config.toml.example [voice] 段）。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
 | 伙伴生命周期、事件、枚举、资产与错误契约 | 对客户端 / 管理端 | [PROTOCOL.md §1 / §5](../PROTOCOL.md) |
+| 实时语音会话（op 信封、音频帧、顺序不变量） | 对客户端 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
 | 3D 与 2D 生成输入、能力链与产物契约 | 对客户端 + 供应商 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
 | Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |

@@ -2,13 +2,47 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
-import {
-  getAudioExtensionForMime,
-  getSupportedOpusMimeType,
-  isMediaBusyError,
-  VOICE_CALL_AUDIO_CONSTRAINTS
-} from '@/companion/voice-call-dock'
+import { VOICE_CALL_AUDIO_CONSTRAINTS } from '@/companion/voice-call-dock'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
+
+// IM 语音条仍走 MediaRecorder（webm/opus 整段 → REST 转写），与通话面板的 PCM 流式上行无关。
+const PREFERRED_OPUS_MIME_TYPES = [
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+  'audio/mp4;codecs=opus',
+  'audio/mp4'
+] as const
+
+function getSupportedOpusMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
+    return undefined
+  }
+
+  return PREFERRED_OPUS_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type))
+}
+
+function getAudioExtensionForMime(mime: string): string {
+  if (mime.includes('ogg')) {
+    return 'ogg'
+  }
+
+  if (mime.includes('mp4')) {
+    return 'mp4'
+  }
+
+  return 'webm'
+}
+
+// 嗅探后端/Runner 抛出的"忙/背压/限流"消息，用于给用户区别提示。
+const BUSY_ERROR_PATTERN = /busy|backpressure|rate limit/i
+
+function isMediaBusyError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err)
+
+  return BUSY_ERROR_PATTERN.test(msg)
+}
 
 type Options = {
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>

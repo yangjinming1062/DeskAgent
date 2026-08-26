@@ -9,7 +9,7 @@ from components import SESSION_LOCAL, SETTINGS, STT_MAX_AUDIO_BYTES, TTS_MAX_TEX
 from fastapi import Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
-from services.llm import ImageGenRequest, MissingLlmConfigError, classify_api_error, execute_with_fallback, pick_voice_id, resolve_provider_chain
+from services.llm import ImageGenRequest, MissingLlmConfigError, classify_api_error, execute_with_fallback, resolve_provider_chain, synthesize_speech, transcribe_audio
 from services.media import enqueue_video_job, get_job
 from services.rate_limit import limiter
 
@@ -120,18 +120,8 @@ async def speech_to_text(
     mime_type = _resolve_mime_type(target_file.content_type)
 
     try:
-        async with SESSION_LOCAL() as db:
-            chain = await resolve_provider_chain(db, user.id, "stt")
-        if not chain:
-            raise missing_config_http("STT")
-        result = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="stt",
-            call_fn=lambda p: p.transcribe(file_bytes, mime_type=mime_type, language="auto"),
-            _chain=chain,
-        )
-        return {"success": True, "text": result.text}
+        text = await transcribe_audio(user.id, file_bytes, mime_type)
+        return {"success": True, "text": text}
     except HTTPException:
         raise
     except MissingLlmConfigError:
@@ -169,17 +159,7 @@ async def text_to_speech(request: Request, auth_data: tuple[User, LoginRecord] =
         raise HTTPException(status_code=413, detail={"error": f"text exceeds {TTS_MAX_TEXT_CHARS} chars", "reason": "payload_too_large", "status": 413})
 
     try:
-        async with SESSION_LOCAL() as db:
-            chain = await resolve_provider_chain(db, user.id, "tts")
-        if not chain:
-            raise missing_config_http("TTS")
-        result = await execute_with_fallback(
-            db=None,
-            user_id=user.id,
-            service_type="tts",
-            call_fn=lambda p: p.synthesize(text, voice=pick_voice_id(voice, p.provider_name)),
-            _chain=chain,
-        )
+        result = await synthesize_speech(user.id, text, voice)
     except HTTPException:
         raise
     except MissingLlmConfigError:

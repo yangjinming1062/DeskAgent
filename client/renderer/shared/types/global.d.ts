@@ -48,6 +48,7 @@ declare global {
     spiritagent: {
       getConnection: AsyncIpc<IpcInvokeContract['spiritagent:connection']>
       getGatewayWsUrl: AsyncIpc<IpcInvokeContract['spiritagent:gateway:ws-url']>
+      getVoiceWsUrl: AsyncIpc<IpcInvokeContract['spiritagent:voice-ws-url']>
       getBootProgress: AsyncIpc<IpcInvokeContract['spiritagent:boot-progress:get']>
       activate: AsyncIpc<IpcInvokeContract['spiritagent:auth:activate']>
       refreshSession: AsyncIpc<IpcInvokeContract['spiritagent:auth:refresh']>

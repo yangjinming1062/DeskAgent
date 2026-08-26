@@ -10,6 +10,7 @@
 | 链路 | 方向 | 传输 | 鉴权 | 见 |
 |------|------|------|------|----|
 | Backend ↔ Client | 双向 | WebSocket 长连接（/api/chat/ws） | 用户 JWT | §1 |
+| Backend ↔ Client（语音会话） | 双向 | WebSocket（/api/voice/ws）：文本控制帧 + 二进制音频帧 | 用户 JWT（ws-ticket 同款） | §1.7 |
 | Client ↔ Runner | 双向 | 本地 OS IPC（Windows 命名管道 / macOS UDS）承载 WebSocket 帧 | 每次启动握手 token（失败 401） | §2 |
 | Runner → Client → Backend（反向 RPC） | Runner → Client → Backend | 嵌套在 §2 上，经 Client 转发到 /api/llm/completion | Client JWT | §3 |
 
@@ -173,6 +174,23 @@
 ### 1.6 错误信封
 
 REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式 chat 一旦首 chunk 已发，任何供应商失败都不切换 fallback。
+
+### 1.7 实时语音会话通道（/api/voice/ws）
+
+语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。上行二进制帧为裸 PCM（s16le / 单声道 / 16kHz，仅在 utterance 窗口内发送）；下行二进制帧为单个 TTS 段的完整音频，帧头 16 字节小端（magic "SAA1" / flags 保留 0 / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度），编码取供应商原生容器（wav/mp3/ogg/aac）直通。会话参数（采样率、断句长度、预取窗口、超时与限流）的配置键与默认值见 backend 的 `config.toml.example` [voice] 段。本节锁定契约意图与顺序不变量：
+
+| op | 方向 | 用途 | 改动需同步的模块 |
+|----|------|------|------------------|
+| session.start / session.ready / session.closed / session.error | C→S / S→C | 会话建立（绑定聊天会话 id 与音色）、就绪、正常与异常关闭（重复连接顶号、空闲/硬超时） | Backend 语音会话 + Client voice-session |
+| utterance.start / utterance.end | C→S | 客户端 VAD 判定的说话起止；end 后服务端开始转写 | Client pcm-capture/VAD + Backend 回合编排 |
+| interrupt / session.interrupted | C→S / S→C | 打断：停 TTS 下发 + 取消 LLM；回合中 utterance.end 未先 interrupt 视为隐式打断 | Client 打断 + Backend 取消收尾（部分整句落库） |
+| asr.final / asr.skipped | S→C | 用户话语转写结果（用户侧字幕）/ 过短或空转写丢弃 | Backend STT + Client 字幕 |
+| llm.start | S→C | 思考开始 | Client 状态机 |
+| tts.segment + 二进制音频帧 | S→C | 句级字幕文本，紧跟该句完整音频帧；按句流式、不等整条回复 | Backend 按句切分 + Client 分段播放 |
+| turn.end | S→C | 回合收尾（对齐 message.complete 载荷：文本、情绪、媒体、usage；打断时带 interrupted 与已完成整句文本） | Backend + Client 聊天 store 镜像 |
+| turn.error | S→C | 回合内环节失败（stage = asr / llm / tts / protocol）；**必须在通话面板可见**，会话存活 | Backend + Client 错误条 |
+
+**顺序不变量**：单条 WS 上全序——tts.segment 文本帧先于其音频帧；turn.end 晚于该回合全部音频帧；音频段序号单调递增。**通道边界**（语音双路径契约，见 [ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：会话内实时语音走本通道由服务端编排推送；会话外一次性语音（IM 语音条转写、气泡朗读、音色试听）仍走 REST 拉取（§1.1）。本地 Runner 语音栈不参与本通道——语音会话纯云端，未配置云端 STT/TTS 供应商时 session.error 直接拒绝建会。
 
 ---
 

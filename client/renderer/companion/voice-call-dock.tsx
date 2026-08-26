@@ -1,27 +1,34 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { reportInteractionStat } from '@/companion/activity'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
-  $chatMessageBodies,
-  $chatMessageList,
+  $chatOpen,
   $chatSessionId,
-  $lastAssistantStreaming,
+  appendAssistantDelta,
+  beginAssistantMessage,
+  finalizeAssistantMessage,
+  pushAffectTraceMessage,
+  pushUserMessage,
   setAssistantError,
   setChatOpen,
-  setChatSession
+  setChatSession,
+  showMediaHint
 } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { $subtitles, setSubtitles } from '@/companion/prefs'
+import { $companionVoiceId, $subtitles, setSubtitles } from '@/companion/prefs'
 import { $spatialPos, $spatialScale, $viewport, computeVoiceCallDockPosition } from '@/companion/spatial'
-import { speak, stopSpeaking } from '@/companion/tts'
+import { stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
-import { $gatewayState } from '@/shared/store/gateway'
 
+import { createPcmCapture, type PcmCapture } from './pcm-capture'
+import { VoiceSegmentPlayer } from './segment-player'
 import { SubtitlesOverlay } from './subtitles-overlay'
+import { VoiceSessionClient, type VoiceSessionStatus, type VoiceTurnEndPayload } from './voice-session'
 
 interface VoiceCallDockProps {
   onClose: () => void
@@ -31,8 +38,6 @@ const SPEECH_THRESHOLD = 28
 const BARGEIN_THRESHOLD = 38
 const SILENCE_END_MS = 1300
 const WAVE_BARS = 24
-// 在没有任何 message.start 到达时释放 awaiting-reply 锁，使麦克风能再次开启。
-const AWAITING_REPLY_TIMEOUT_MS = 60_000
 
 export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   autoGainControl: true,
@@ -42,49 +47,12 @@ export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   sampleRate: 16000
 }
 
-const PREFERRED_OPUS_MIME_TYPES = [
-  'audio/webm;codecs=opus',
-  'audio/webm',
-  'audio/ogg;codecs=opus',
-  'audio/ogg',
-  'audio/mp4;codecs=opus',
-  'audio/mp4'
-] as const
-
-export function getSupportedOpusMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
-    return undefined
-  }
-
-  return PREFERRED_OPUS_MIME_TYPES.find(type => MediaRecorder.isTypeSupported(type))
-}
-
-export function getAudioExtensionForMime(mime: string): string {
-  if (mime.includes('ogg')) {
-    return 'ogg'
-  }
-
-  if (mime.includes('mp4')) {
-    return 'mp4'
-  }
-
-  return 'webm'
-}
-
-// 嗅探后端/Runner 抛出的"忙/背压/限流"消息，用于给用户区别提示。
-const BUSY_ERROR_PATTERN = /busy|backpressure|rate limit/i
-
-export function isMediaBusyError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err)
-
-  return BUSY_ERROR_PATTERN.test(msg)
-}
-
-// 实时半双工语音通话：麦克风持续录制，静音检测切片转写后提交 prompt，支持插话打断。
+// 实时半双工语音通话：麦克风持续收音，本地 VAD 判定说话起止与插话打断；
+// 回复由服务端实时语音会话编排（ASR → LLM 按句流式 → TTS 分段推送，PROTOCOL §1.7），
+// 客户端只负责采集上行 PCM、顺序播放下行分段与字幕/状态呈现。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
-  const gatewayState = useStore($gatewayState)
-  const list = useStore($chatMessageList)
-  const lastAssistantStreaming = useStore($lastAssistantStreaming)
+  const { requestGateway } = useGatewayRequest()
+  const chatSessionId = useStore($chatSessionId)
   const spriteState = useStore($spriteState)
   const subtitlesVisible = useStore($subtitles)
   const pos = useStore($spatialPos)
@@ -92,6 +60,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const viewport = useStore($viewport)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
+  const [connStatus, setConnStatus] = useState<VoiceSessionStatus>('connecting')
+  const [panelError, setPanelError] = useState<string | null>(null)
   const [durationSec, setDurationSec] = useState(0)
   const [waveform, setWaveform] = useState<number[]>(() => new Array(WAVE_BARS).fill(0))
   // 在 30ms tick 内复用同一份数组，仅在差异较大或周期性节流时推一次 state，
@@ -102,36 +72,60 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const durationSecRef = useRef(0)
   const vadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
   const lastActivityTimeRef = useRef<number>(Date.now())
   const analyserRef = useRef<AnalyserNode | null>(null)
   const userSpeakingRef = useRef(false)
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const awaitingReplyRef = useRef(false)
-  const awaitingReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const assistantSpeakingRef = useRef(false)
-  const lastSpokenIdRef = useRef<string | null>(null)
-  // 新会话时重置 lastSpokenId 去重状态，避免首条回复被当作重复而跳过。
-  const chatSessionId = useStore($chatSessionId)
-  useEffect(() => {
-    lastSpokenIdRef.current = null
-  }, [chatSessionId])
-  // 过期 speak() promise 不能在新一轮语音开始后把精灵拉回 idle。
-  const speakGenRef = useRef(0)
-  const gatewayStateRef = useLatestRef(gatewayState)
-  const { requestGateway } = useGatewayRequest()
+  // 回合进行中（转写/思考/分段下发）或下行音频还在播——期间禁止开新 utterance，
+  // 用户开口超更高阈值走打断。
+  const turnActiveRef = useRef(false)
+  const sessionRef = useRef<VoiceSessionClient | null>(null)
+  const playerRef = useRef<VoiceSegmentPlayer | null>(null)
+  const captureRef = useRef<PcmCapture | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useLatestRef(onClose)
 
   useInteractiveRegion('voice-call-dock', panelRef)
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.voiceCallOffset', () => panelRef.current)
 
+  const isBusy = (): boolean => turnActiveRef.current || Boolean(playerRef.current?.playing)
+
   useEffect(() => {
     let unmounted = false
     let ctx: AudioContext | null = null
+    let session: VoiceSessionClient | null = null
+    let capture: PcmCapture | null = null
+    const player = new VoiceSegmentPlayer()
+    playerRef.current = player
+
+    player.onAllPlayed = () => {
+      if (!turnActiveRef.current) {
+        setSpriteState('listening')
+      }
+    }
+
+    const noteActivity = (): void => {
+      lastActivityTimeRef.current = Date.now()
+    }
+
+    const startUtterance = (): void => {
+      userSpeakingRef.current = true
+      setSpriteState('listening')
+      captureRef.current?.start()
+      sessionRef.current?.sendUtteranceStart()
+      clearTimeout(silenceTimerRef.current ?? undefined)
+      silenceTimerRef.current = null
+    }
+
+    const finishUtterance = (): void => {
+      captureRef.current?.stop()
+      sessionRef.current?.sendUtteranceEnd(false)
+      userSpeakingRef.current = false
+    }
+
     navigator.mediaDevices
       ?.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
-      .then(stream => {
+      .then(async stream => {
         if (unmounted) {
           stream.getTracks().forEach(track => track.stop())
 
@@ -142,145 +136,203 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         setMicActive(true)
         setSpriteState('listening')
 
-        try {
-          const AudioContextClass = getAudioContextCtor()
+        capture = await createPcmCapture(stream, chunk => sessionRef.current?.sendPcmChunk(chunk))
+        captureRef.current = capture
 
-          if (AudioContextClass) {
-            ctx = new AudioContextClass()
-            const source = ctx.createMediaStreamSource(stream)
-            const analyser = ctx.createAnalyser()
-            analyser.fftSize = 256
-            source.connect(analyser)
-            analyserRef.current = analyser
-            const dataArray = new Uint8Array(analyser.frequencyBinCount)
+        const AudioContextClass = getAudioContextCtor()
 
-            const startRecorder = () => {
-              if (recorderRef.current?.state === 'recording') {
-                return
-              }
+        if (!AudioContextClass) {
+          return
+        }
 
-              try {
-                const mimeType = getSupportedOpusMimeType()
-                const rec = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-                const utteranceChunks: Blob[] = []
+        ctx = new AudioContextClass()
+        const source = ctx.createMediaStreamSource(stream)
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 256
+        source.connect(analyser)
+        analyserRef.current = analyser
+        const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
-                rec.ondataavailable = e => {
-                  if (e.data.size > 0) {
-                    utteranceChunks.push(e.data)
+        const checkVolume = () => {
+          analyser.getByteFrequencyData(dataArray)
+          const avg = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length
+
+          if (avg > SPEECH_THRESHOLD || isBusy()) {
+            noteActivity()
+          }
+
+          // 打断：用户趁伙伴说话时开口——本地即刻停播并通知服务端取消回合。
+          if (avg > BARGEIN_THRESHOLD && isBusy()) {
+            player.stopAll()
+            sessionRef.current?.sendInterrupt()
+            turnActiveRef.current = false
+            setSpriteState('listening')
+          }
+
+          if (!isBusy()) {
+            if (!userSpeakingRef.current && avg > SPEECH_THRESHOLD) {
+              startUtterance()
+            } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
+              if (!silenceTimerRef.current) {
+                silenceTimerRef.current = setTimeout(() => {
+                  silenceTimerRef.current = null
+
+                  if (userSpeakingRef.current) {
+                    finishUtterance()
                   }
-                }
-
-                rec.onstop = () => {
-                  void transcribeAndSubmit(utteranceChunks, rec.mimeType || mimeType)
-                }
-
-                rec.start()
-                recorderRef.current = rec
-              } catch {
-                /* recorder unavailable — skip this utterance */
+                }, SILENCE_END_MS)
               }
+            } else if (userSpeakingRef.current && avg >= SPEECH_THRESHOLD && silenceTimerRef.current) {
+              clearTimeout(silenceTimerRef.current)
+              silenceTimerRef.current = null
+            }
+          }
+        }
+
+        // 波形采样：从频域分桶抽取 WAVE_BARS 个高度值供 UI 绘制
+        // （DESIGN §6.1「精灵带通话中光环与波形指示」）。
+        // 复用同一个 waveform 数组减少 GC 压力；只有数值变化时才触发 setState。
+        const sampleWaveform = () => {
+          const next = waveformRef.current
+          const step = Math.max(1, Math.floor(dataArray.length / WAVE_BARS))
+          let changed = false
+
+          for (let i = 0; i < WAVE_BARS; i++) {
+            const start = i * step
+            const end = Math.min(dataArray.length, start + step)
+            let sum = 0
+
+            for (let j = start; j < end; j++) {
+              sum += dataArray[j] ?? 0
             }
 
-            const finishUtterance = () => {
-              const rec = recorderRef.current
-              recorderRef.current = null
+            const v = sum / Math.max(1, end - start)
 
-              if (!rec || rec.state !== 'recording') {
-                userSpeakingRef.current = false
+            if (Math.abs((next[i] ?? 0) - v) > 0.5) {
+              next[i] = v
+              changed = true
+            } else if (next[i] === undefined) {
+              next[i] = v
+              changed = true
+            }
+          }
 
+          // 每 5 次采样（约 150ms）才推一次 React 状态——保证视觉刷新率足够，
+          // 但减少 33Hz 全树重渲染。
+          tickCountRef.current++
+
+          if (changed && tickCountRef.current % 5 === 0) {
+            setWaveform(next.slice())
+          }
+        }
+
+        // 定时器驱动（30ms），避免窗口隐藏 / 遮挡时 requestAnimationFrame 被 Chromium 节流暂停导致语音识别失效。
+        vadIntervalRef.current = setInterval(() => {
+          checkVolume()
+          sampleWaveform()
+        }, 30)
+
+        // VAD 就绪后再建语音会话：绑定当前聊天会话（无则经网关新建），
+        // 建立失败（网关不可用 / 未配置云端语音供应商）进面板错误条，不阻断本地收音显示。
+        try {
+          const existing = $chatSessionId.get()
+          const sessionId = existing ?? (await requestGateway<{ session_id: string }>('session.create', {})).session_id
+
+          if (!existing) {
+            setChatSession(sessionId)
+          }
+
+          session = await VoiceSessionClient.open(sessionId, $companionVoiceId.get(), {
+            onStatus: (status, message) => {
+              if (unmounted) {
                 return
               }
 
-              rec.stop()
-              userSpeakingRef.current = false
-            }
+              setConnStatus(status)
 
-            const checkVolume = () => {
-              analyser.getByteFrequencyData(dataArray)
-              const avg = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length
-
-              if (avg > SPEECH_THRESHOLD || assistantSpeakingRef.current) {
-                lastActivityTimeRef.current = Date.now()
+              if (status === 'closed' && message) {
+                setPanelError(message)
+              }
+            },
+            onAsrFinal: text => {
+              if (unmounted) {
+                return
               }
 
-              // 打断：用户趁伙伴说话时开口。
-              if (avg > BARGEIN_THRESHOLD && assistantSpeakingRef.current) {
-                stopSpeaking()
-                assistantSpeakingRef.current = false
+              setPanelError(null)
+              noteActivity()
+
+              if (text) {
+                pushUserMessage(text)
+              }
+
+              turnActiveRef.current = true
+              setSpriteState('thinking')
+            },
+            onLlmStart: () => {
+              if (unmounted) {
+                return
+              }
+
+              beginAssistantMessage()
+              setSpriteState('thinking')
+            },
+            onTtsSegment: (_segIndex, text, segment) => {
+              if (unmounted) {
+                return
+              }
+
+              noteActivity()
+
+              if (text) {
+                appendAssistantDelta(text)
+              }
+
+              setSpriteState('speaking')
+              player.enqueue(segment)
+            },
+            onTurnEnd: payload => {
+              if (unmounted) {
+                return
+              }
+
+              noteActivity()
+              turnActiveRef.current = false
+              finalizeAssistantMessage(payload.text, payload.media?.length ? payload.media : undefined)
+              applyTurnEndExtras(payload)
+
+              if (!player.playing) {
                 setSpriteState('listening')
               }
-
-              const canListen = !awaitingReplyRef.current && !assistantSpeakingRef.current
-
-              if (canListen) {
-                if (!userSpeakingRef.current && avg > SPEECH_THRESHOLD) {
-                  userSpeakingRef.current = true
-                  setSpriteState('listening')
-                  startRecorder()
-                  clearTimeout(silenceTimerRef.current ?? undefined)
-                  silenceTimerRef.current = null
-                } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
-                  if (!silenceTimerRef.current) {
-                    silenceTimerRef.current = setTimeout(() => {
-                      silenceTimerRef.current = null
-
-                      if (userSpeakingRef.current) {
-                        finishUtterance()
-                      }
-                    }, SILENCE_END_MS)
-                  }
-                } else if (userSpeakingRef.current && avg >= SPEECH_THRESHOLD && silenceTimerRef.current) {
-                  clearTimeout(silenceTimerRef.current)
-                  silenceTimerRef.current = null
-                }
+            },
+            onTurnError: (stage, _code, message) => {
+              if (unmounted) {
+                return
               }
+
+              noteActivity()
+              setPanelError(stage === 'asr' ? message : `${stageLabel(stage)}：${message}`)
+
+              // LLM 失败时聊天侧的流式气泡需要收尾成错误态；TTS 段失败只上面板（文字不丢）。
+              if (stage === 'llm') {
+                setAssistantError(message)
+              }
+            },
+            onInterrupted: () => {
+              if (unmounted) {
+                return
+              }
+
+              noteActivity()
+              turnActiveRef.current = false
+              setSpriteState('listening')
             }
-
-            // 波形采样：从频域分桶抽取 WAVE_BARS 个高度值供 UI 绘制
-            // （DESIGN §6.1「精灵带通话中光环与波形指示」）。
-            // 复用同一个 waveform 数组减少 GC 压力；只有数值变化时才触发 setState。
-            const sampleWaveform = () => {
-              const next = waveformRef.current
-              const step = Math.max(1, Math.floor(dataArray.length / WAVE_BARS))
-              let changed = false
-
-              for (let i = 0; i < WAVE_BARS; i++) {
-                const start = i * step
-                const end = Math.min(dataArray.length, start + step)
-                let sum = 0
-
-                for (let j = start; j < end; j++) {
-                  sum += dataArray[j] ?? 0
-                }
-
-                const v = sum / Math.max(1, end - start)
-
-                if (Math.abs((next[i] ?? 0) - v) > 0.5) {
-                  next[i] = v
-                  changed = true
-                } else if (next[i] === undefined) {
-                  next[i] = v
-                  changed = true
-                }
-              }
-
-              // 每 5 次采样（约 150ms）才推一次 React 状态——保证视觉刷新率足够，
-              // 但减少 33Hz 全树重渲染。
-              tickCountRef.current++
-
-              if (changed && tickCountRef.current % 5 === 0) {
-                setWaveform(next.slice())
-              }
-            }
-
-            // 定时器驱动（30ms），避免窗口隐藏 / 遮挡时 requestAnimationFrame 被 Chromium 节流暂停导致语音识别失效。
-            vadIntervalRef.current = setInterval(() => {
-              checkVolume()
-              sampleWaveform()
-            }, 30)
+          })
+          sessionRef.current = session
+        } catch (err: unknown) {
+          if (!unmounted) {
+            setPanelError(err instanceof Error ? err.message : '语音会话建立失败')
           }
-        } catch {
-          /* AudioContext fallback — mic works, VAD disabled */
         }
       })
       .catch(() => {
@@ -299,99 +351,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       }
     }, 1000)
 
-    async function transcribeAndSubmit(chunks: Blob[], mimeType?: string): Promise<void> {
-      if (unmounted || !chunks.length) {
-        return
-      }
-
-      const totalBytes = chunks.reduce((acc, c) => acc + c.size, 0)
-
-      if (totalBytes === 0) {
-        setSpriteState('listening')
-
-        return
-      }
-
-      const selectedMime = mimeType || 'audio/webm'
-      const blob = new Blob(chunks, { type: selectedMime })
-      let text = ''
-
-      try {
-        const reader = new FileReader()
-
-        const dataUrl: string = await new Promise((resolve, reject) => {
-          reader.onload = () => resolve(reader.result as string)
-          reader.onerror = () => reject(new Error('read failed'))
-          reader.readAsDataURL(blob)
-        })
-
-        const ext = getAudioExtensionForMime(selectedMime)
-        const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
-        text = (res.text ?? '').trim()
-      } catch (err: unknown) {
-        if (!unmounted) {
-          // 把 STT 失败暴露给用户，而不是悄悄回到倾听状态。
-          setAssistantError(isMediaBusyError(err) ? '语音服务正忙，请稍候再试' : '没听清，请再说一次')
-        }
-
-        text = ''
-      }
-
-      if (unmounted) {
-        return
-      }
-
-      if (!text || gatewayStateRef.current !== 'open') {
-        setSpriteState('listening')
-
-        return
-      }
-
-      awaitingReplyRef.current = true
-      setSpriteState('thinking')
-
-      // WS 在任何 message.start 到达前断开时恢复；正常完成时清除。
-      if (awaitingReplyTimerRef.current) {
-        clearTimeout(awaitingReplyTimerRef.current)
-      }
-
-      awaitingReplyTimerRef.current = setTimeout(() => {
-        awaitingReplyTimerRef.current = null
-
-        if (awaitingReplyRef.current) {
-          awaitingReplyRef.current = false
-          setSpriteState('listening')
-        }
-      }, AWAITING_REPLY_TIMEOUT_MS)
-
-      try {
-        const id = await ensureSession()
-        await requestGateway('prompt.submit', { session_id: id, text })
-      } catch {
-        awaitingReplyRef.current = false
-
-        if (awaitingReplyTimerRef.current) {
-          clearTimeout(awaitingReplyTimerRef.current)
-          awaitingReplyTimerRef.current = null
-        }
-
-        setSpriteState('listening')
-      }
-    }
-
-    async function ensureSession(): Promise<string> {
-      const existing = $chatSessionId.get()
-
-      if (existing) {
-        return existing
-      }
-
-      const res = await requestGateway<{ session_id: string }>('session.create', {})
-      setChatSession(res.session_id)
-
-      return res.session_id
-    }
-
     return () => {
       unmounted = true
 
@@ -408,20 +367,12 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         clearTimeout(silenceTimerRef.current)
       }
 
-      if (awaitingReplyTimerRef.current) {
-        clearTimeout(awaitingReplyTimerRef.current)
-        awaitingReplyTimerRef.current = null
-      }
-
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        recorderRef.current.onstop = null
-
-        try {
-          recorderRef.current.stop()
-        } catch {
-          /* ignore */
-        }
-      }
+      sessionRef.current?.close()
+      sessionRef.current = null
+      captureRef.current?.close()
+      captureRef.current = null
+      playerRef.current?.close()
+      playerRef.current = null
 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
@@ -431,56 +382,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       stopSpeaking()
       setSpriteState('idle')
     }
-  }, [requestGateway, gatewayStateRef, onCloseRef])
-
-  // 朗读已完成的回复。本组件不订阅 $chatMessageBodies，仅在 list 与流式状态切换时同步读取最新文本。
-  useEffect(() => {
-    if (!micActive) {
-      return
-    }
-
-    const lastItem = list[list.length - 1]
-
-    if (!lastItem || lastItem.role !== 'assistant' || lastAssistantStreaming) {
-      return
-    }
-
-    const body = $chatMessageBodies.get()[lastItem.id]
-
-    if (!body || body.streaming || body.error || body.cancelled) {
-      return
-    }
-
-    if (lastItem.id === lastSpokenIdRef.current) {
-      return
-    }
-
-    lastSpokenIdRef.current = lastItem.id
-    awaitingReplyRef.current = false
-
-    if (awaitingReplyTimerRef.current) {
-      clearTimeout(awaitingReplyTimerRef.current)
-      awaitingReplyTimerRef.current = null
-    }
-
-    if (!body.text.trim()) {
-      setSpriteState('listening')
-
-      return
-    }
-
-    assistantSpeakingRef.current = true
-    setSpriteState('speaking')
-    const gen = ++speakGenRef.current
-    void speak(body.text).then(() => {
-      if (gen !== speakGenRef.current) {
-        return
-      }
-
-      assistantSpeakingRef.current = false
-      setSpriteState('listening')
-    })
-  }, [list, lastAssistantStreaming, micActive])
+  }, [requestGateway, chatSessionId, onCloseRef])
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60)
@@ -519,8 +421,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           title="拖动以移动面板"
         >
           <span className="flex items-center gap-1.5 font-medium text-emerald-400">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            语音通话中
+            <span
+              className={`h-2 w-2 rounded-full ${connStatus === 'ready' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-pulse'}`}
+            />
+            {connStatus === 'ready' ? '语音通话中' : connStatus === 'reconnecting' ? '重连中…' : '连接中…'}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -541,7 +445,9 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         </div>
 
         <div className="relative flex items-center justify-center my-2">
-          {micActive && <div className="absolute h-24 w-24 rounded-full bg-emerald-500/20 animate-ping" />}
+          {micActive && connStatus === 'ready' && (
+            <div className="absolute h-24 w-24 rounded-full bg-emerald-500/20 animate-ping" />
+          )}
           <div className="grid h-20 w-20 place-items-center rounded-full bg-white/10 text-3xl shadow-inner border border-white/20">
             🎙️
           </div>
@@ -551,6 +457,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
         {micError ? (
           <p className="text-center text-xs text-amber-300">{micError}</p>
+        ) : panelError ? (
+          <p className="text-center text-xs text-amber-300" title={panelError}>
+            {panelError}
+          </p>
         ) : (
           <div className="flex items-center gap-1 text-xs text-white/70">
             <span className="h-1.5 w-1.5 rounded-full bg-white/60 animate-bounce" />
@@ -574,6 +484,46 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       <SubtitlesOverlay />
     </div>
   )
+}
+
+// turn.end 的非正文外溢效果与 events.ts 的 message.complete 处理保持同构：
+// 纯情绪回合补情绪痕迹行、媒体送达轻提示、互动统计。
+function applyTurnEndExtras(payload: VoiceTurnEndPayload): void {
+  const text = payload.text ?? ''
+  const emotion = payload.affect?.emotion
+  const actions = payload.affect?.actions ?? []
+
+  if (!text.trim() && ((emotion && emotion !== 'neutral') || actions.length > 0)) {
+    pushAffectTraceMessage()
+  }
+
+  if (payload.media?.length && !$chatOpen.get()) {
+    showMediaHint(
+      payload.media.some(m => m.type === 'video')
+        ? '🎬 我生成了一段视频，点这里查看'
+        : '🖼️ 我生成了一张图片，点这里查看'
+    )
+  }
+
+  if (text.trim()) {
+    reportInteractionStat('chat_turn')
+  }
+}
+
+function stageLabel(stage: string): string {
+  if (stage === 'asr') {
+    return '语音识别'
+  }
+
+  if (stage === 'tts') {
+    return '语音合成'
+  }
+
+  if (stage === 'llm') {
+    return '回复生成'
+  }
+
+  return '语音会话'
 }
 
 function spriteLabel(state: string): string {

@@ -222,6 +222,24 @@ companion_outfit_generate_rate_limit_per_hour = 1
 # 限流存储后端 URL（留空使用内存存储，分布式环境可配置 Redis 例如 "redis://localhost:6379/0"）
 rate_limit_storage_url = ""
 
+[voice]
+# 实时语音会话（/api/voice/ws）上行 PCM 采样率，s16le 单声道
+voice_uplink_sample_rate = 16000
+# 单句上行音频硬上限（秒），超限丢弃溢出并标记 truncated
+voice_max_utterance_seconds = 60
+# TTS 按句切分的最大字符数，超出在软分隔符处强切
+voice_segment_max_chars = 120
+# TTS 段合成预取窗口（并行合成、按序发送）
+voice_tts_prefetch = 2
+# 会话空闲自动挂断（秒），与客户端通话面板的自动退出对齐
+voice_session_idle_timeout_seconds = 180
+# 会话硬上限（秒）
+voice_session_hard_timeout_seconds = 1800
+# 语音会话 STT 每分钟限额（独立于 media_stt REST 桶，避免通话饿死语音条转写）
+voice_stt_rate_limit_per_minute = 60
+# 语音会话 TTS 每分钟限额（每回合按句多次调用）
+voice_tts_rate_limit_per_minute = 120
+
 [observability]
 # 是否启用 Prometheus 指标监控端点
 metrics_enabled = true
