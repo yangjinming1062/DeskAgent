@@ -97,61 +97,45 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 ## 6. 2D 分层动画能力链
 
-2D 形象有两条产物链，**同一行状态机 / WS 事件 / 衣柜接缝复用**，客户端按 manifest 描述符分流；渲染级联为 puppet（PSD）→ mesh2d → 3D → 程序化蛋。
+2D 拆分只走 see-through 一条产物链：主用 HF Space、备用魔搭 ModelScope（主用任何失败自动切换），行状态机 / WS 事件 / 衣柜接缝复用；渲染级联为 puppet（PSD）→ 3D → 程序化蛋。
 
-### 6.1 PSD 链（see-through，首选）
+### 6.1 PSD 链（see-through 双 provider）
 
 **链拓扑**：
 ```
-fullbody_url → see-through（HF Space Gradio：upload → call/inference → SSE 轮询，日免费额度）
+fullbody_url → see-through 主用 HF（Gradio：upload → call/inference → SSE 轮询，日免费额度）
+             → 失败（限额 / 休眠 / 超时，任意原因）自动切备用魔搭 API-Inference（SDK Token 鉴权）
              → 分层 PSD → 资产库落盘 → manifest 描述符 spiritagent.2d.psd/1
 ```
 
-**产物契约**：manifest 恒为 `{"schema": "spiritagent.2d.psd/1", "kind": "psd", "psd": <资产路径>}`；`layer_entries` 恒为 `[{"name": "psd", "url": <签名 URL>}]`。PSD 内为 22 语义层（face / eyewhite / irides / eyelash / eyebrow / mouth / nose / neck / ears / front hair / back hair / topwear / bottomwear / handwear 等，含遮挡补全），层名可带 `-l/-r` 侧后缀。后端 `seethrough_enabled` 门控默认关；SeeThroughError 时调用方降级 §6.2 骨骼链。
+**Provider 策略**（实现与配置面见 [backend/services/companion/seethrough/](../backend/services/companion/seethrough/)）：
+- 主用失败切备用各试一次、单 provider 不重试（烧额度）；主用确认每日限额（错误文案 / HTTP 429 / 402）后进程内冷却 6 小时直连备用。
+- 双 provider 共享 1740s 墙钟预算，兜在 outfit 拆分 30 分钟清扫窗口内；魔搭 complete 载荷的文件 URL 落在 ms.show 运行域（拒 Bearer 头），客户端统一改写回 provider 域下载。
+
+**产物契约**：manifest 恒为 `{"schema": "spiritagent.2d.psd/1", "kind": "psd", "psd": <资产路径>}`；`layer_entries` 恒为 `[{"name": "psd", "url": <签名 URL>}]`。PSD 内为 22 语义层（face / eyewhite / irides / eyelash / eyebrow / mouth / nose / neck / ears / front hair / back hair / topwear / bottomwear / handwear 等，含遮挡补全），层名可带 `-l/-r` 侧后缀。
 
 **客户端兑现**（[client/renderer/companion/puppet/](../client/renderer/companion/puppet/)，机制细节见模块 README）：
 - PSD → vendor rigger（Anime2.5DRig，MIT）语义装配；see-through 的 `-l/-r` 侧名在装配边界补齐 side / fade / 眼锚点。
 - 每层 alpha 轮廓 ArtMesh（增量 Delaunay）+ 脸面/头骨双表面控制笼 → 圆投影伪 3D 转头（六点深度曲线 / 远眼收窄 / 周边可见度）+ 次级运动（发束 4 节点弹簧链 / 裙双频 / 耳事件 / 呆毛 / 种子化自主观察段落）。
 - 13 姿态安全验证（三角形翻转 / 边拉伸）按动作缩放阶梯（1→0.25）取首个全绿档；PSD 语义完整度三级分档 semantic / grouped / minimal 门控机制与幅度。
-- 驱动层：情绪（[PROTOCOL.md §1.4](../PROTOCOL.md) 22 词表）→ 面部参数、动作白名单 → 定时包络、TTS 振幅 → 嘴型、六区命中区域复用与骨骼链相同的交互总线。
-
-### 6.2 骨骼链（CPU 切分，降级）
-
-**链拓扑**：
-```
-fullbody_url → Vision LLM (8 部件 BBox 检测：6 核心 + 2 可选腿) → CPU 抠图裁切 → 遮挡边缘补全
-             → Vision LLM (22 关键点估计) → 解剖学平滑 → 骨骼与 Mesh 装配 → manifest.json
-```
-
-**产物契约**（`manifest.json` 与部件切片 PNG）：
-- `canvas`: `{"w": 1024, "h": 1366}` 画布基准。
-- `skeleton.bones`: 25 骨骼层级拓扑（root → body_main → neck → head；shoulder → elbow → wrist → hand 臂链；hip → knee → ankle 腿链）。
-- `meshes`: 各部件图层定义（包含 `texture`、`geometry_w`、`geometry_h`、`origin: [cx, cy]`、`z_order` 以及 `bones_influences` 影响骨集——多骨层由客户端按顶点到各骨骼 pivot 的距离分配权重，单骨层刚性绑定）。
-- `animations`: 包含 `breath`（呼吸振幅与周期）、`blink`（眨眼周期与时长）、`idle_sway`（摇摆幅度）、`jiggle`（发丝/裙摆物理弹簧 k 与阻尼 c）、`red_lines`（骨骼 transform 红线）、`actions`（关键帧 tracks 动作表）、`idle_variants`、`locomotion`。动作 track 形如 `{bone, channel: rotation|scale|position, axis, keys: [{t_ms, v, ease?}]}`；manifest `version` 为权威版本号（当前 3），`$schema` URI 尾号与其一致，客户端 loader 将 v2 静态 pose 表归一化为单关键帧 tracks。
-
-**客户端 2D 运行时兑现**（`client/renderer/companion/mesh2d/mesh2d-runtime.ts`）：
-- 采用 Three.js OrthographicCamera + SkinnedMesh，各部件 Mesh 经 `geometry.translate(origin.x, -origin.y)` 精准装配。
-- 骨骼层级计算局部相对偏移（`child.position = childAbsPos - parentAbsPos`）。
-- 运行时逐帧计算呼吸、视线跟随（Yaw / Pitch）、眨眼 Ease、TTS 口型振幅以及 Verlet/弹簧 Jiggle 物理。
+- 驱动层：情绪（[PROTOCOL.md §1.4](../PROTOCOL.md) 22 词表）→ 面部参数、动作白名单 → 定时包络、TTS 振幅 → 嘴型、六区命中区域走 `$mesh2dHitmap` 交互总线。
 
 ## 7. 渲染与传输
 
 - **3D 客户端**：纯 GLB 播放渲染引擎——动画全部来自 `gltf.animations`，无程序化注入；Gzip 透明解压与 OPFS 内容哈希缓存。
-- **2D 客户端**：PSD 链走 puppet（WebGL 原生，Alpha 轮廓网格 + 逐顶点形变）；骨骼链走 Three.js SkinnedMesh 正交相机渲染。两者秒级就绪且零额外 GPU 负担。
+- **2D 客户端**：puppet（WebGL 原生，Alpha 轮廓网格 + 逐顶点形变）；秒级就绪且零额外 GPU 负担。
 
 ## 8. 验证 checklist
 
 - [ ] clip track 引用的 bone name 与 `spec=tripo` 对应 rig 的层级一致
 - [ ] biped 颈段取 `NeckTwist01` 兜底（`spec=tripo` 无 `Neck` 节点）
-- [ ] 2D `manifest.json` 各 mesh 均包含正确的 `origin` 画布中心坐标
 - [ ] 客户端兑现按三级降级落空时回退到绑定姿势而非抛错
 - [ ] puppet 链无头断言：`puppet.html?autotest=1`（装配 + 动画八标志）与 `?poses=1`（13 姿态安全 + 缩放阶梯）全绿
 
 ## 9. 参考实现
 
 - 3D 能力链编排：`backend/services/companion/pipeline.py::run_capability_chain`
-- 2D see-through 切分编排：`backend/services/companion/seethrough/pipeline.py::run_seethrough_split`
-- 2D 骨骼切分编排：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
+- 2D see-through 拆分：`backend/services/companion/seethrough/`（client.py 双 provider 传输 / pipeline.py 产物落盘）
+- 2D 行编排（状态机 / 落库 / WS 事件）：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
 - 3D 客户端兑现：`client/renderer/companion/3d/AnimationMap.ts`
-- 2D 骨骼链客户端运行时：`client/renderer/companion/mesh2d/mesh2d-runtime.ts`
 - 2D puppet 链客户端：`client/renderer/companion/puppet/PuppetStage.tsx`（模块 README 含机制与验证入口）

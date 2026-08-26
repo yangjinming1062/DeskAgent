@@ -58,7 +58,7 @@
 | POST /api/companion/avatar/{avatar_id}/fullbody/back | 按正面种子与微调反馈生成/重绘背面全身图（3D 升级阶段的背面种子确认向导调用；形象锁定后仍可用——视角派生而非身份变更；风格由系统按类人 CG / 非人写实自动推导） | Backend 生成 + Client 背面预览与微调 |
 | POST /api/companion/avatar/{avatar_id}/fullbody/confirm-front | 确认正面全身图并解开音色/用户子阶段（引导期不生成背面种子图，背面准备见 [docs/PIPELINE.md §1](docs/PIPELINE.md)） | Backend 生成 + Client 流程 |
 | GET/POST /api/companion/model | 查询 / 触发 3D 模型异步生成；输入、产物与动画映射契约见 [docs/PIPELINE.md](docs/PIPELINE.md) | Backend 生成管线 + Client 加载 + DESIGN §5.5 |
-| GET/POST /api/companion/2d | 查询 / 触发 2D 形象生成流水线（分层 PSD 切分首选，失败降级骨骼链）；产物契约见 [docs/PIPELINE.md §6](docs/PIPELINE.md) | Backend 生成管线 + Client 2D 双渲染链 |
+| GET/POST /api/companion/2d | 查询 / 触发 2D 形象生成流水线（see-through 双 provider 拆分，产物恒为分层 PSD）；产物契约见 [docs/PIPELINE.md §6](docs/PIPELINE.md) | Backend 生成管线 + Client puppet 渲染链 |
 | POST /api/companion/render-mode | 切换并持久化伙伴渲染模式（`2d` / `3d`） | Backend 持久化 + Client 实时切换 |
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
@@ -77,7 +77,7 @@
 | companion.affect | 非言语的情境化情绪反应 | Client 切 EMOTIONAL（安静档也透传） |
 | avatar.regenerated | 头像重生最终结果 | Client 替换头像或展示失败 |
 | model.ready / model.gen.progress / model.failed | 3D 模型就绪 / 进度 / 失败；载荷契约与产物映射见 [docs/PIPELINE.md](docs/PIPELINE.md) | Client 加载与状态展示 |
-| companion.2d.ready / .failed | 2D 切分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典。manifest 二选一：骨骼链 JSON（见 docs/PIPELINE.md §6.2）或分层 PSD 描述符（`kind=psd`，产物契约见 docs/PIPELINE.md §6.1） | Client 按 kind 分流 puppet / mesh2d 渲染路径并水合 |
+| companion.2d.ready / .failed | 2D 拆分就绪 / 失败；载荷包含 manifest_url 与图层签名 URL 字典。manifest 恒为分层 PSD 描述符（`kind=psd`，产物契约见 docs/PIPELINE.md §6.1） | Client 水合 puppet 渲染路径 |
 | companion.render_mode.changed | 用户在设置中或多端同步切换渲染模式（`2d` / `3d`） | Client 切换展示画布 |
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 2D 渲染层（与 2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
@@ -99,7 +99,7 @@
 
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
-**action 白名单（2D 路径）**（权威源 [backend/services/companion/mesh2d/manifest_exporter.py](backend/services/companion/mesh2d/manifest_exporter.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
+**action 白名单（2D 路径）**（权威源 [backend/services/companion/mesh2d/actions.py](backend/services/companion/mesh2d/actions.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
 
 | key | 描述 | 默认绑定 emotion |
 |---|---|---|
@@ -123,9 +123,9 @@
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
 | ★ `drag_end` | 拖拽释放落地的站稳微沉 | neutral（拖拽放下触发） |
 
-> 注：3D 路径走 GLB clip map；2D 路径按渲染链双兑现——骨骼链（mesh2d）走 manifest 关键帧 tracks（rotation/scale/position 三通道，rotation 单位弧度），puppet（PSD 链）走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx) 定时包络（白名单键同源，通道由包络内部定义）。同一 action key 在各路径上语义一致但兑现方式不同。
+> 注：3D 路径走 GLB clip map；2D 路径走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx) 定时包络（白名单键同源，通道由包络内部定义）。同一 action key 在各路径上语义一致但兑现方式不同。
 >
-> 走路 / 跳跃 / 下落（locomotion）：2D 路径下表现为「躯干左右倾斜 + 手臂反向摆动 + 头发/裙子物理抖动」；检测出 leg_L/R 腿层的模型额外叠加 hip/knee/ankle 腿部摆动相位（长裙遮挡切不出腿层或旧模型维持躯干复合步态）。如需移动角色，用 spatial cue / ritual walk 而非 action。
+> 走路 / 跳跃 / 下落（locomotion）：2D 路径下由空间层驱动位置移动、发束/裙摆次级物理自然反馈；抛掷 / 重力落体的姿态反馈尚未接入 puppet。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 
@@ -144,9 +144,9 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测）；2D 路径走部件 bbox 测试（CPU 轻量）——骨骼链 [mesh2d-hitmap.ts](client/renderer/companion/mesh2d/mesh2d-hitmap.ts)、puppet 链 [PuppetStage 六区](client/renderer/companion/puppet/PuppetStage.tsx)（区域名与优先级语义一致，共用同一条命中区域总线）。
+命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测）；2D 路径走 [PuppetStage 六区](client/renderer/companion/puppet/PuppetStage.tsx)（rig 锚点 / 层矩形 bbox 测试，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
 
-**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步——骨骼链无面部通道，仅 puppet 兑现）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 manifest_exporter.py（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 2D 双渲染链兑现（mesh2d 驱动层 + [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx)）+ 本文档**三处。
+**扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
 
 ### 1.5 资产 URL 签名与传输缓存
 
