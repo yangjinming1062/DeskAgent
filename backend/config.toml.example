@@ -88,10 +88,12 @@ hunyuan_enable_pbr = true
 # 产物模型格式（默认 glb）
 hunyuan_result_format = "GLB"
 
-# 2D 拆分是否优先走 see-through（免费 HF Space，每日额度有限、无 SLA；失败自动降级 CPU mesh2d 链）
-seethrough_enabled = true
-# Space 的 Gradio API 基址（自托管时替换）
+# 主用 Space 的 Gradio API 基址（免费 HF ZeroGPU，每日额度有限、无 SLA；自托管时替换）
 seethrough_space_base = "https://24yearsold-see-through-demo.hf.space/gradio_api"
+# 备用 Space 的 Gradio API 基址（魔搭社区 API 专用域名；主用任何失败自动切换，空串禁用备用）
+seethrough_fallback_base = "https://studio-ljsabc-see-through.api-inference.modelscope.net/gradio_api"
+# 魔搭 API-Inference 的 SDK Token（modelscope.cn 账号设置页创建；备用调用以 Bearer 头携带）
+seethrough_fallback_token = ""
 
 [providers]
 # 供应商优先回退链（按数组顺序匹配第一个可用的服务商）。支持：mimo, minimax, gemini, grok, zhipu

@@ -1,30 +1,19 @@
-"""2D 主流水线：视觉 LLM 区域识别 → CPU 抠图 → 关键点估计 → 骨骼装配 → manifest + 资产落盘。"""
+"""2D 拆分编排器：see-through 双 provider（HF 主用/魔搭备用）拆分 + 行状态机 + 落库 + WS 事件。"""
 
 import asyncio
 import base64
 import hashlib
-import io
 import json
 
-from components import SESSION_LOCAL, SETTINGS, get_logger
+from components import SESSION_LOCAL, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
 from modules.ws.models import WSEvent
-from PIL import Image
 from sqlalchemy import select, update
-
-from services.llm import resolve_vision_chain
 
 from .. import asset_store
 from ..avatar_service import _normalize_avatar_url_to_bare, get_avatar_job_lock, load_avatar_bytes_as_data_uri
 from ..seethrough import SeeThroughError, run_seethrough_split
-from .layer_extractor import extract_layers, layer_centers
-from .llm_validator import validate_layers
-from .manifest_exporter import build_manifest
-from .occlusion_resolver import fill_occlusion
-from .pose_estimator import estimate_pose, sanitize_keypoints
 from .priority_queue import get_default_queue
-from .region_detector import detect_regions
-from .skeleton_builder import build_bones, build_meshes
 
 logger = get_logger(__name__)
 
@@ -56,76 +45,11 @@ async def _generate(
     user_id: int,
     fullbody_bytes: bytes,
 ) -> tuple[str, list[dict[str, str]]]:
-    """see-through 拆分优先（配置门控），失败降级 CPU mesh2d 切分链。"""
-    if SETTINGS.seethrough_enabled:
-        try:
-            return await run_seethrough_split(user_id, fullbody_bytes)
-        except SeeThroughError as exc:
-            logger.warning(
-                "see-through split failed; falling back to cpu mesh2d chain",
-                extra={"user_id": user_id, "error": str(exc)},
-            )
-
-    return await _run_pipeline_core(user_id, fullbody_bytes)
-
-
-async def _run_pipeline_core(
-    user_id: int,
-    fullbody_bytes: bytes,
-) -> tuple[str, list[dict[str, str]]]:
-    """执行 4 阶段：识别 → 抠图 → 关键点 → manifest；返回 (manifest_json, [{name, url}, ...])。"""
-    data_uri = "data:image/png;base64," + base64.b64encode(fullbody_bytes).decode(
-        "ascii",
-    )
-
-    # canvas 必须等于源图尺寸：部件 origin 是归一化 bbox × canvas 而 plane 尺寸是源图像素，
-    # 两套尺度不一致会把部件中心拉开、拼装出横向缝隙
-    canvas = Image.open(io.BytesIO(fullbody_bytes)).size
-
-    # 视觉链在短会话内预解析，两段 LLM 调用期间不持有连接（ARCH §短会话纪律）
-    async with SESSION_LOCAL() as db:
-        chain = await resolve_vision_chain(db, user_id)
-
-    layers = await detect_regions(chain, user_id, data_uri)
-
-    if not layers:
-        raise Mesh2DPipelineError("vision LLM region detection returned empty result")
-
-    # rembg ONNX 是秒级 CPU 推理，放线程池避免占住队列 worker 的事件循环
-    extracted = await asyncio.to_thread(extract_layers, fullbody_bytes, layers)
-
-    if not extracted:
-        raise Mesh2DPipelineError("CPU matting extracted zero usable layers")
-
-    centers = layer_centers(extracted)
-    ok, reason = validate_layers(extracted)
-
-    if not ok:
-        raise Mesh2DPipelineError(f"layer validation failed: {reason}")
-
-    extracted = fill_occlusion(extracted)
-
-    kp_raw = await estimate_pose(chain, user_id, data_uri, layer_centers=centers)
-    kp = sanitize_keypoints(kp_raw, layer_centers=centers)
-
-    bones = build_bones(kp, extracted, canvas_w=canvas[0], canvas_h=canvas[1])
-    meshes = build_meshes(extracted, canvas_w=canvas[0], canvas_h=canvas[1])
-    has_legs = any(layer.name in {"leg_L", "leg_R"} for layer in extracted)
-    manifest = build_manifest(bones, meshes, canvas, has_legs=has_legs)
-    manifest_json = manifest.to_json()
-
-    layer_entries: list[dict[str, str]] = []
-
-    for layer in extracted:
-        storage_path = asset_store.save_companion_asset(
-            layer.png_bytes,
-            user_id=user_id,
-            label=f"2d_{layer.name}",
-            ext="png",
-        )
-        layer_entries.append({"name": layer.name, "url": storage_path})
-
-    return manifest_json, layer_entries
+    """see-through 唯一拆分路径；失败直接报错落失败态，无 CPU 兜底链。"""
+    try:
+        return await run_seethrough_split(user_id, fullbody_bytes)
+    except SeeThroughError as exc:
+        raise Mesh2DPipelineError(f"see-through split failed: {exc}") from exc
 
 
 def run_mesh2d_pipeline(

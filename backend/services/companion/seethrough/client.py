@@ -1,9 +1,13 @@
-"""see-through HF Space 客户端 — 单图拆分为分层 PSD（Gradio 协议：upload → call → SSE 轮询）。
+"""see-through 拆分客户端 — HF Space 主用、魔搭 ModelScope 备用，单图拆分为分层 PSD。
 
-免费 Space 无 SLA 且有每日额度，失败/超时统一抛 SeeThroughError，由调用方降级 CPU mesh2d 链。"""
+双 provider 同构 Gradio 协议（upload → call → SSE 轮询）。主用任何失败自动切备用
+（免费资源，多试一次成本为零）；主用确认每日限额后进程内冷却 6 小时直接走备用。
+两路都失败抛 SeeThroughError，由调用方落失败态（无 CPU 兜底链）。"""
 
 import json
+import time
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from components import SETTINGS, get_logger
@@ -12,10 +16,37 @@ logger = get_logger(__name__)
 
 _TOTAL_TIMEOUT_SECONDS = 900.0
 _MIN_PSD_BYTES = 10240
+# 双 provider 最坏 900s+900s 会撞 outfit 拆分 30 分钟清扫窗口；共享预算留余量
+_TOTAL_BUDGET_SECONDS = 1740.0
+_QUOTA_COOLDOWN_SECONDS = 6 * 3600.0
+_QUOTA_SIGNALS = ("quota", "exceeded", "rate limit", "too many", "sign in", "daily")
+
+_primary_quota_until = 0.0
 
 
 class SeeThroughError(RuntimeError):
-    """HF Space 拆分失败 — 调用方应降级 CPU mesh2d 链。"""
+    """拆分失败。kind：quota（每日限额）/ transport（网络）/ space（其余 Space 侧错误）。"""
+
+    def __init__(self, message: str, *, kind: str = "space") -> None:
+        super().__init__(message)
+        self.kind = kind
+
+
+def _classify_error_text(text: str) -> str:
+    lowered = text.lower()
+    return "quota" if any(signal in lowered for signal in _QUOTA_SIGNALS) else "space"
+
+
+def _provider_file_url(base: str, url: str) -> str:
+    """魔搭 complete 载荷的文件 URL 落在 ms.show 运行域（带 Bearer 反而 403）；
+    统一改写到 provider base 域——api-inference 代理 /gradio_api/file= 且接受同一 token。"""
+    base_parts = urlparse(base)
+    url_parts = urlparse(url)
+
+    if url_parts.netloc == base_parts.netloc:
+        return url
+
+    return url_parts._replace(scheme=base_parts.scheme, netloc=base_parts.netloc).geturl()
 
 
 async def split_to_psd(
@@ -26,22 +57,99 @@ async def split_to_psd(
     seed: int = 0,
     tblr_split: bool = True,
 ) -> bytes:
-    """提交拆分并阻塞至完成；返回 PSD 字节。"""
+    """主用 HF、备用魔搭各试一次（单 provider 均不重试，额度保护）；返回 PSD 字节。"""
+    global _primary_quota_until
+    deadline = time.monotonic() + _TOTAL_BUDGET_SECONDS
+    fallback_base = SETTINGS.seethrough_fallback_base or None
+    fallback_headers: dict[str, str] = {}
+    if SETTINGS.seethrough_fallback_token:
+        fallback_headers["Authorization"] = f"Bearer {SETTINGS.seethrough_fallback_token}"
+    primary_reason = "skipped: quota cooldown"
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(_TOTAL_TIMEOUT_SECONDS, connect=30.0)) as client:
+        if time.monotonic() >= _primary_quota_until:
+            try:
+                psd = await _attempt_split(
+                    client,
+                    SETTINGS.seethrough_space_base,
+                    image_bytes,
+                    mime,
+                    resolution,
+                    seed,
+                    tblr_split,
+                )
+                logger.info("2d split provider succeeded: hf")
+                return psd
+            except SeeThroughError as exc:
+                primary_reason = str(exc)
+                if exc.kind == "quota":
+                    _primary_quota_until = time.monotonic() + _QUOTA_COOLDOWN_SECONDS
+                logger.warning("2d split provider failed: hf", extra={"error": primary_reason, "kind": exc.kind})
+        else:
+            logger.info("hf quota cooldown active; going straight to fallback")
+
+        if not fallback_base:
+            raise SeeThroughError(f"2d split failed (hf: {primary_reason}; fallback disabled)")
+
+        if deadline - time.monotonic() < 60.0:
+            raise SeeThroughError(
+                f"2d split failed on all providers (hf: {primary_reason}; modelscope: skipped, budget exhausted)",
+            )
+
+        try:
+            psd = await _attempt_split(
+                client,
+                fallback_base,
+                image_bytes,
+                mime,
+                resolution,
+                seed,
+                tblr_split,
+                headers=fallback_headers,
+            )
+            logger.info("2d split provider succeeded: modelscope")
+            return psd
+        except SeeThroughError as exc:
+            raise SeeThroughError(f"2d split failed on all providers (hf: {primary_reason}; modelscope: {exc})") from exc
+
+
+async def _attempt_split(
+    client: httpx.AsyncClient,
+    base: str,
+    image_bytes: bytes,
+    mime: str,
+    resolution: int,
+    seed: int,
+    tblr_split: bool,
+    *,
+    headers: dict[str, str] | None = None,
+) -> bytes:
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(_TOTAL_TIMEOUT_SECONDS, connect=30.0)) as client:
-            file_data = await _upload(client, image_bytes, mime)
-            event_id = await _submit(client, file_data, resolution, seed, tblr_split)
-            psd_url = await _wait_complete(client, event_id)
-            return await _download(client, psd_url)
+        file_data = await _upload(client, base, image_bytes, mime, headers)
+        event_id = await _submit(client, base, file_data, resolution, seed, tblr_split, headers)
+        psd_url = _provider_file_url(base, await _wait_complete(client, base, event_id, headers))
+        return await _download(client, psd_url, headers)
     except SeeThroughError:
         raise
+    except httpx.TransportError as exc:
+        raise SeeThroughError(f"see-through transport failed: {exc}", kind="transport") from exc
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        kind = "quota" if status in (429, 402) else "space"
+        raise SeeThroughError(f"see-through http {status}: {exc}", kind=kind) from exc
     except Exception as exc:
         raise SeeThroughError(f"see-through transport failed: {exc}") from exc
 
 
-async def _upload(client: httpx.AsyncClient, image_bytes: bytes, mime: str) -> dict[str, Any]:
+async def _upload(
+    client: httpx.AsyncClient,
+    base: str,
+    image_bytes: bytes,
+    mime: str,
+    headers: dict[str, str] | None,
+) -> dict[str, Any]:
     ext = "png" if "png" in mime else "jpg"
-    resp = await client.post(f"{SETTINGS.seethrough_space_base}/upload", files={"files": (f"seed.{ext}", image_bytes, mime)})
+    resp = await client.post(f"{base}/upload", files={"files": (f"seed.{ext}", image_bytes, mime)}, headers=headers)
 
     resp.raise_for_status()
     paths = resp.json()
@@ -55,14 +163,17 @@ async def _upload(client: httpx.AsyncClient, image_bytes: bytes, mime: str) -> d
 
 async def _submit(
     client: httpx.AsyncClient,
+    base: str,
     file_data: dict[str, Any],
     resolution: int,
     seed: int,
     tblr_split: bool,
+    headers: dict[str, str] | None,
 ) -> str:
     resp = await client.post(
-        f"{SETTINGS.seethrough_space_base}/call/inference",
+        f"{base}/call/inference",
         json={"data": [file_data, resolution, seed, tblr_split]},
+        headers=headers,
     )
     resp.raise_for_status()
     event_id = resp.json().get("event_id")
@@ -73,11 +184,16 @@ async def _submit(
     return event_id
 
 
-async def _wait_complete(client: httpx.AsyncClient, event_id: str) -> str:
+async def _wait_complete(
+    client: httpx.AsyncClient,
+    base: str,
+    event_id: str,
+    headers: dict[str, str] | None,
+) -> str:
     """SSE 轮询直到 complete 事件；error 事件与流中断都转 SeeThroughError。"""
     event = ""
 
-    async with client.stream("GET", f"{SETTINGS.seethrough_space_base}/call/inference/{event_id}") as stream:
+    async with client.stream("GET", f"{base}/call/inference/{event_id}", headers=headers) as stream:
         async for line in stream.aiter_lines():
             if line.startswith("event:"):
                 event = line[6:].strip()
@@ -85,7 +201,10 @@ async def _wait_complete(client: httpx.AsyncClient, event_id: str) -> str:
                 data = line[5:].strip()
 
                 if event == "error":
-                    raise SeeThroughError(f"space reported error: {data[:200]}")
+                    raise SeeThroughError(
+                        f"space reported error: {data[:200]}",
+                        kind=_classify_error_text(data),
+                    )
 
                 if event == "complete":
                     return _extract_psd_url(data)
@@ -104,8 +223,8 @@ def _extract_psd_url(data: str) -> str:
     return url
 
 
-async def _download(client: httpx.AsyncClient, url: str) -> bytes:
-    resp = await client.get(url, follow_redirects=True)
+async def _download(client: httpx.AsyncClient, url: str, headers: dict[str, str] | None) -> bytes:
+    resp = await client.get(url, follow_redirects=True, headers=headers)
     resp.raise_for_status()
 
     if len(resp.content) < _MIN_PSD_BYTES:
