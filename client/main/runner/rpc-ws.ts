@@ -7,10 +7,10 @@ import type { RunnerCapabilities, RunnerCapabilitiesHealth } from '@ipc/contract
 import type WebSocket from 'ws'
 import { WebSocketServer } from 'ws'
 
-export const DEFAULT_TIMEOUT_MS = 120_000
-export const JSON_RPC_VERSION = '2.0'
-export const HEARTBEAT_INTERVAL_MS = 10_000
-export const HEARTBEAT_DEADLINE_MS = 120_000
+const DEFAULT_TIMEOUT_MS = 120_000
+const JSON_RPC_VERSION = '2.0'
+const HEARTBEAT_INTERVAL_MS = 10_000
+const HEARTBEAT_DEADLINE_MS = 120_000
 
 export interface CreateRunnerWsServerOptions {
   authToken?: string
@@ -391,13 +391,16 @@ export function createRunnerWsServer(options: CreateRunnerWsServerOptions = {}):
           handleRunnerMessage(data)
         })
 
+        // 被新连接替换的旧 socket 关闭时不能清场——pending 调用与
+        // connected 状态属于新连接，误发 disconnected 会让 bridge 误判宕机。
         ws.on('close', code => {
           log(`[runner-ws] runner disconnected code=${code}`)
 
-          if (activeWs === ws) {
-            activeWs = null
+          if (activeWs !== ws) {
+            return
           }
 
+          activeWs = null
           rejectAllPending(new Error('Runner disconnected.'))
           emit({ code, type: 'disconnected' })
         })
