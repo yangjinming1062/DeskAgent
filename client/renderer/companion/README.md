@@ -121,13 +121,13 @@
 
 **单一权威源**：[spatial.ts](spatial.ts) 拥有所有空间状态——`$spatialPos`、`$spatialScale`、`$spatialLocale`、`$spatialLocomotion`。sprite-stage.tsx 是纯消费者（`useStore` + 事件转发到 spatial 函数），只消费位置状态。
 
-**移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。
+**移动引擎**：3D 模式下采用 rAF 插值（非 CSS transition），walk ≈ 80 px/s、fly ≈ 400 px/s。用户拖拽瞬时覆盖一切其他移动。任何新 `moveTo` 或 drag 自动取消正在进行的动画。拖拽松手一律就地定居为新 home 并持久化（DESIGN §3.3）。
 
 **`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
 
 **决策树**（`updateSpatialDecision`）：drag > chat / voice call（冻结空间决策，精灵留原位）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
 
-**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的落点结算：抛掷自由落体会落在面板上，因为通话中"地面"抬高到面板上沿），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则瞬时上提精灵让位（与面板的出现/消失同步跳变，不做移动动画），挂断后瞬时回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边探头吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
+**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的松手定居结算），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则瞬时上提精灵让位（与面板的出现/消失同步跳变，不做移动动画），挂断后瞬时回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边探头吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 

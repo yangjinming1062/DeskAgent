@@ -20,8 +20,6 @@ DEFAULT_ACTIONS: frozenset[str] = frozenset(
         "idle_glance",
         "petting",
         "dizzy",
-        "fall",
-        "land_squash",
         "peeking",
         "click",
         "long_press",
@@ -31,5 +29,5 @@ DEFAULT_ACTIONS: frozenset[str] = frozenset(
 
 # 本地物理 / 交互触发动作：脱离触发上下文播放会是悬空姿态，注入 LLM 清单时排除。
 NON_LLM_ACTIONS: frozenset[str] = frozenset(
-    {"fall", "land_squash", "peeking", "click", "long_press", "drag_end"},
+    {"peeking", "click", "long_press", "drag_end"},
 )

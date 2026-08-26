@@ -123,17 +123,15 @@
 | `shy` | 低头侧脸 + 前发微盖 | shy / embarrassed |
 | `petting` | 享受抚摸：微微歪头闭眼 + 舒服蹭蹭 | happy / grateful（摸头手势触发） |
 | `dizzy` | 眩晕：脑袋发懵轻晃 + 圈圈眼 | confused / tired（狂戳/狂甩触发） |
-| ★ `fall` | 自由落体悬空下落姿态 | scared / surprised（空中释放触发） |
-| ★ `land_squash` | 触地弹性挤压扁平瞬间变形 | neutral（落地瞬间触发） |
 | ★ `peeking` | 贴边探头偷看姿态 | curious / playful（屏幕贴边吸附触发） |
 | `idle_glance` | 短瞥一眼回中 | idle 变体 |
 | ★ `click` | 伸手触碰 / 点击姿态 | neutral（仪式行走飞抵目标触发） |
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
-| ★ `drag_end` | 拖拽释放落地的站稳微沉 | neutral（拖拽放下触发） |
+| ★ `drag_end` | 拖拽松手就地的站稳微沉 | neutral（拖拽释放定居触发） |
 
 > 注：3D 路径走 GLB clip map；2D 路径走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx) 定时包络（白名单键同源，通道由包络内部定义）。同一 action key 在各路径上语义一致但兑现方式不同。
 >
-> 走路 / 跳跃 / 下落（locomotion）：2D 路径下由空间层驱动位置移动、发束/裙摆次级物理自然反馈；抛掷 / 重力落体的姿态反馈尚未接入 puppet。如需移动角色，用 spatial cue / ritual walk 而非 action。
+> 走路 / 跳跃（locomotion）：2D 路径下由空间层驱动位置移动、发束/裙摆次级物理自然反馈。如需移动角色，用 spatial cue / ritual walk 而非 action。
 
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 
@@ -152,7 +150,7 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；空中释放触发重力落体与落地挤压反弹（`land_squash`）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测）；2D 路径走 [PuppetStage 六区](client/renderer/companion/puppet/PuppetStage.tsx)（rig 锚点 / 层矩形 bbox 测试，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
+命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测）；2D 路径走 [PuppetStage 六区](client/renderer/companion/puppet/PuppetStage.tsx)（rig 锚点 / 层矩形 bbox 测试，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
 
 **扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
 

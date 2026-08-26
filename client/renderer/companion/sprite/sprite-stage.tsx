@@ -443,7 +443,7 @@ export function SpriteStage({
     }
 
     if (drag?.moved) {
-      endDragAt($spatialPos.get(), lastVel)
+      endDragAt($spatialPos.get())
       handleDragEndInteraction()
 
       return

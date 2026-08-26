@@ -352,20 +352,6 @@ const ACTIONS: Record<string, ActionEnvelope> = {
       rt.target.angleZ = Math.sin(k * Math.PI * 6) * 0.35 * (1 - k)
     }
   },
-  fall: {
-    durMs: 800,
-    apply: (k, rt) => {
-      rt.target.angleY = -Math.sin(k * Math.PI) * 0.35
-      rt.target.body = 0.4 * Math.sin(k * Math.PI)
-    }
-  },
-  land_squash: {
-    durMs: 700,
-    onStart: rt => rt.hairImpulse(2.4),
-    apply: (k, rt) => {
-      rt.target.body = -Math.sin(Math.min(1, k * 1.5) * Math.PI) * 0.55
-    }
-  },
   peeking: {
     durMs: 1400,
     apply: (k, rt) => {

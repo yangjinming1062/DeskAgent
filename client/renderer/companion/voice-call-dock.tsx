@@ -171,7 +171,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
     dockDragRef.current = null
     e.currentTarget.releasePointerCapture(e.pointerId)
-    endDragAt($spatialPos.get(), dockVelRef.current)
+    endDragAt($spatialPos.get())
   }
 
   const isBusy = (): boolean => turnActiveRef.current || Boolean(playerRef.current?.playing)

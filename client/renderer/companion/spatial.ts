@@ -55,10 +55,8 @@ type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 // Locomotion 枚举（mesh2d 与 spatial 共用）：
 // - 'still' / 'walk' / 'fly' / 'drag' 是原有 4 项；
 // - 'walk_fast' 是走路加速版（mesh2d 骨骼相位频率更高）；
-// - 'jump' 是单次脉冲，mesh2d 走 body_main squash + shoulder 上扬方案；
-// - 'fall' 是自由落体姿态。
-// 扩展时务必同步更新 backend/services/companion/mesh2d/manifest_exporter.py::DEFAULT_LOCOMOTION。
-export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump' | 'fall'
+// - 'jump' 是单次脉冲，mesh2d 走 body_main squash + shoulder 上扬方案。
+export type Locomotion = 'still' | 'walk' | 'walk_fast' | 'fly' | 'drag' | 'jump'
 
 type EdgeDockSide = 'none' | 'left' | 'right'
 
@@ -123,13 +121,6 @@ function clampPosToViewport(
     x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
     y: Math.max(0, Math.min(maxY, pos.y))
   }
-}
-
-// 精灵落地的 y 坐标：通话中面板垫在脚下，"地面"抬高到面板上沿——抛掷后落回面板顶。
-function groundSpriteY(): number {
-  const base = Math.max(REST_MARGIN, window.innerHeight - getBaseSpriteHeight() - REST_MARGIN)
-
-  return $voiceCallOpen.get() ? Math.min(base, voiceMaxSpriteY()) : base
 }
 
 export interface PerchPlacement {
@@ -354,14 +345,12 @@ export function cancelMovement(): void {
     rafId = null
   }
 
-  cancelPhysics()
-
   const cb = moveOnArrive
   moveStart = null
   moveTarget = null
   moveOnArrive = null
 
-  if ($spatialLocomotion.get() !== 'drag' && $spatialLocomotion.get() !== 'fall') {
+  if ($spatialLocomotion.get() !== 'drag') {
     $spatialLocomotion.set('still')
   }
 
@@ -619,19 +608,8 @@ function stopRoam(): void {
   cancelMovement()
 }
 
-let fallRafId: number | null = null
-let fallLastTime = 0
-
-function cancelPhysics(): void {
-  if (fallRafId !== null) {
-    cancelAnimationFrame(fallRafId)
-    fallRafId = null
-  }
-}
-
 function dockToEdge(side: 'left' | 'right'): void {
   cancelMovement()
-  cancelPhysics()
   const vw = window.innerWidth
   const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
@@ -683,93 +661,12 @@ export function undockFromEdge(): void {
   })
 }
 
-function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: number; vy: number }): void {
-  cancelMovement()
-  cancelPhysics()
-
-  const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth()
-  const groundY = groundSpriteY()
-  const minX = REST_MARGIN
-  const maxX = Math.max(REST_MARGIN, vw - spriteW - REST_MARGIN)
-
-  // 速度换算为 px/s（pointer velocity 在 px/ms）
-  let vx = (velocity.vx || 0) * 1000
-  let vy = (velocity.vy || 0) * 1000
-
-  vx = Math.max(-2500, Math.min(2500, vx))
-  vy = Math.max(-2500, Math.min(2500, vy))
-
-  let curX = initialPos.x
-  let curY = initialPos.y
-
-  if (curY >= groundY - 6 && Math.abs(vy) < 100) {
-    endDragAt({ x: Math.max(minX, Math.min(maxX, curX)), y: groundY })
-
-    return
-  }
-
-  $spatialLocomotion.set('fall')
-  $clipOverride.set('fall')
-  $spriteAction.set('fall')
-  setSpriteState('interacting')
-
-  const GRAVITY = 2600 // px/s^2 重力加速度
-  const DRAG_X = 0.985
-  const RESTITUTION = 0.35 // 触地反弹衰减系数
-  fallLastTime = performance.now()
-
-  function physicsStep(now: number) {
-    const dt = Math.min(0.04, Math.max(0.001, (now - fallLastTime) / 1000))
-    fallLastTime = now
-
-    vy += GRAVITY * dt
-    vx *= Math.pow(DRAG_X, dt * 60)
-
-    curX += vx * dt
-    curY += vy * dt
-
-    // 左右屏幕墙壁弹性碰撞
-    if (curX <= minX) {
-      curX = minX
-      vx = -vx * 0.4
-    } else if (curX >= maxX) {
-      curX = maxX
-      vx = -vx * 0.4
-    }
-
-    // 地面碰撞与挤压反弹
-    if (curY >= groundY) {
-      curY = groundY
-
-      if (Math.abs(vy) > 160) {
-        // 反弹 + 触地挤压
-        vy = -vy * RESTITUTION
-        $clipOverride.set('land_squash')
-        $spriteAction.set('land_squash')
-      } else {
-        // 稳定触地，物理结算完毕
-        cancelPhysics()
-        endDragAt({ x: Math.max(minX, Math.min(maxX, curX)), y: groundY })
-
-        return
-      }
-    }
-
-    $spatialPos.set({ x: curX, y: curY })
-    fallRafId = requestAnimationFrame(physicsStep)
-  }
-
-  fallRafId = requestAnimationFrame(physicsStep)
-}
-
 export function startDrag(): void {
   userInteracted = true
   // 用户拖动即接管位置：挂断后的自动回落作废。
   voiceLiftReturn = null
   stopRoam()
   cancelMovement()
-  cancelPhysics()
 
   if ($isEdgeDocked.get()) {
     $isEdgeDocked.set(false)
@@ -790,7 +687,7 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
   }
 }
 
-export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
+export function endDragAt(pos: { x: number; y: number }): void {
   const vw = window.innerWidth
   const spriteW = getBaseSpriteWidth()
   const dockMargin = 40
@@ -810,19 +707,9 @@ export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy:
     }
   }
 
-  // 2. 判定空中自由落体与初速度抛掷
-  const groundY = groundSpriteY()
-
-  if (vel && (pos.y < groundY - 12 || Math.hypot(vel.vx, vel.vy) > 0.15)) {
-    startFreeFall(pos, vel)
-
-    return
-  }
-
-  // 3. 落地静止：把坐标收紧到 viewport 内，并强制 face 不被裁剪（DESIGN §3.7）
+  // 2. 松手定居：把坐标收紧到 viewport 内，并强制 face 不被裁剪（DESIGN §3.7）
   const safe = clampPosToViewport(pos)
 
-  cancelPhysics()
   $isEdgeDocked.set(false)
   $edgeDockSide.set('none')
   $spatialPos.set(safe)

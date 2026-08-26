@@ -29,7 +29,7 @@
 - **模拟/渲染解耦**：`advanceSim(seconds)` 以固定步进接管内部时钟（rAF 退化为纯渲染），供无头验证与回归做确定性断言——姿态安全验证以此为地基；`snapshot()` 暴露平滑后参数只读快照，`forceBlink()` 为确定性眨眼钩子。
 - **差分合成**：PSD 缺 eye_close / mouth_close 时用内置 genericparts 自动合成并染色适配（上游行为，保留）。
 - **数据来源与渲染级联**：see-through 产出 `spiritagent.2d.psd/1` 描述符（`kind=psd`）复用 mesh2d 行与 WS 事件路径；`companion.2d.ready` / outfit 穿着 / 头像重生事件后 `hydratePuppet` 判 kind。root.tsx 渲染级联：**puppet（PSD）→ 3D → 程序化蛋**——puppet 装配失败写 error 熄灭 `$puppetReady` 自动落级，永不空白（DESIGN §1.2）。
-- **驱动层映射**：视线 = 指针归一化注入 + `$gazeTarget` 显式目标周期续注（ritual walk / perch 锁定）；说话 = TTS 振幅接管嘴型并暂停合成说话、静默后交还；情绪 = 后端情绪词表全对齐 → 眉/嘴型/眼缩放参数（puppet 独有面部通道）；动作 = 动作白名单键 → 定时包络 + 队列续播 + 落地挤压触发发束冲量；hover 发区 → 发束冲量（节流，方向随戳侧）。
+- **驱动层映射**：视线 = 指针归一化注入 + `$gazeTarget` 显式目标周期续注（ritual walk / perch 锁定）；说话 = TTS 振幅接管嘴型并暂停合成说话、静默后交还；情绪 = 后端情绪词表全对齐 → 眉/嘴型/眼缩放参数（puppet 独有面部通道）；动作 = 动作白名单键 → 定时包络 + 队列续播；hover 发区 → 发束冲量（节流，方向随戳侧）。
 
 ## 调试台
 
@@ -40,4 +40,4 @@
 - 尾巴/头饰圆弧摆动机制待有对应部件的模型接入（当前测试 PSD 无 tail/headwear 弹性层）
 - 13 姿态在满幅缩放仍有 back hair 一处小面积三角形翻转（降一档即全绿）；驱动层动作包络幅度按安全包络设计，姿态安全缩放报告尚未自动约束 LLM 动作幅度
 - 说话嘴型按 TTS 振幅包络驱动（非音素级）；音素驱动留待 TTS 层暴露音素流
-- 拖拽/抛掷 locomotion 的物理反馈（空中姿态/重力落体）尚未接 puppet
+- 拖拽 locomotion 的姿态反馈（被拎起的空中姿态）尚未接 puppet
