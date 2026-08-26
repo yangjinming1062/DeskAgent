@@ -1,4 +1,4 @@
-export const ROLE_PRESETS = ['亲密的爱人', '灵魂伴侣', '赛博管家', '知己好友', '宠物', '伙伴'] as const
+export const RELATIONSHIP_PRESETS = ['亲密的爱人', '灵魂伴侣', '赛博管家', '知己好友', '宠物', '伙伴'] as const
 export const PERSONALITY_PRESETS = [
   '温柔体贴',
   '活泼好动',
@@ -26,6 +26,6 @@ export const VOICE_PRESETS = [
 export const USER_AGE_BUCKET_PRESETS = ['18 以下', '18-25', '26-35', '36-50', '50+'] as const
 export const USER_GENDER_PRESETS = ['女', '男', '其他', '不愿说'] as const
 
-export type RolePreset = (typeof ROLE_PRESETS)[number]
+export type RelationshipPreset = (typeof RELATIONSHIP_PRESETS)[number]
 export type PersonalityPreset = (typeof PERSONALITY_PRESETS)[number]
 export type SpeakingStylePreset = (typeof SPEAKING_STYLE_PRESETS)[number]

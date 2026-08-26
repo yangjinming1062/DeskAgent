@@ -17,7 +17,7 @@ import {
   APPEARANCE_PRESETS,
   CHARACTER_GENDER_PRESETS,
   PERSONALITY_PRESETS,
-  ROLE_PRESETS,
+  RELATIONSHIP_PRESETS,
   SPEAKING_STYLE_PRESETS,
   SPECIES_PRESETS,
   USER_AGE_BUCKET_PRESETS,
@@ -166,13 +166,13 @@ const QUESTIONS: readonly Question[] = [
     allowImage: true
   },
   {
-    key: 'role',
+    key: 'relationship',
     text: '好的，那您希望我是什么样的身份？',
     placeholder: '或者自由描述…',
     required: false,
     multiline: false,
     audioTag: 'onboarding.q4',
-    presets: ROLE_PRESETS
+    presets: RELATIONSHIP_PRESETS
   },
   {
     key: 'personality',
@@ -325,7 +325,7 @@ const ONBOARDING_FIELD_KEYS: ReadonlySet<QKey> = new Set<QKey>([
   'species',
   'character_gender',
   'appearance',
-  'role',
+  'relationship',
   'personality',
   'speaking_style',
   'user_call_name',

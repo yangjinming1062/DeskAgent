@@ -90,7 +90,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
     name: string
     personality: string
     speaking_style: string
-    background: string
+    relationship: string
     user_call_name: string
     user_gender: string
     user_age_bucket: string
@@ -117,7 +117,7 @@ export function CompanionSettings({ onClose }: SettingsOverlayProps): React.Reac
         name: persona?.name ?? '',
         personality: persona?.personality ?? '',
         speaking_style: persona?.speakingStyle ?? '',
-        background: persona?.background ?? '',
+        relationship: persona?.relationship ?? '',
         user_call_name: profile.user_call_name ?? '',
         user_gender: profile.user_gender ?? '',
         user_age_bucket: profile.user_age_bucket ?? '',

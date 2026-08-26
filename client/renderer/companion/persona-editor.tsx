@@ -3,26 +3,26 @@ import { useState } from 'react'
 
 import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
 import { assemblePersona } from '@/companion/persona'
-import { PERSONALITY_PRESETS, ROLE_PRESETS } from '@/companion/persona-presets'
+import { PERSONALITY_PRESETS, RELATIONSHIP_PRESETS } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
 
 const inputClass = PERSONA_INPUT_CLASS
 const presetClass = PERSONA_PRESET_CLASS
 
-// 可编辑的 persona 字段：name / role / personality。
+// 可编辑的 persona 字段：name / relationship / personality。
 // 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 DESIGN.md §5.4。
 export function PersonaSection(): React.JSX.Element {
   const persona = useStore($persona)
   const [editing, setEditing] = useState(false)
   const [name, setName] = useState(persona?.name ?? '')
-  const [role, setRole] = useState(persona?.background ?? '')
+  const [relationship, setRelationship] = useState(persona?.relationship ?? '')
   const [personality, setPersonality] = useState(persona?.personality ?? '')
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
 
   const startEdit = () => {
     setName(persona?.name ?? '')
-    setRole(persona?.background ?? '')
+    setRelationship(persona?.relationship ?? '')
     setPersonality(persona?.personality ?? '')
     setHint(null)
     setEditing(true)
@@ -53,7 +53,7 @@ export function PersonaSection(): React.JSX.Element {
               {
                 name: trimmed,
                 personality,
-                role
+                relationship
               },
               persona ?? undefined
             )
@@ -85,7 +85,7 @@ export function PersonaSection(): React.JSX.Element {
   }
 
   if (!editing) {
-    const tags = [persona?.background, persona?.personality].filter(Boolean)
+    const tags = [persona?.relationship, persona?.personality].filter(Boolean)
 
     return (
       <div>
@@ -124,13 +124,13 @@ export function PersonaSection(): React.JSX.Element {
           <span className="mb-1 block text-[11px] text-white/50">角色定位</span>
           <input
             className={inputClass}
-            onChange={e => setRole(e.target.value)}
+            onChange={e => setRelationship(e.target.value)}
             placeholder="或者自由描述…"
-            value={role}
+            value={relationship}
           />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {ROLE_PRESETS.map(p => (
-              <button className={presetClass} key={p} onClick={() => setRole(p)} type="button">
+            {RELATIONSHIP_PRESETS.map(p => (
+              <button className={presetClass} key={p} onClick={() => setRelationship(p)} type="button">
                 {p}
               </button>
             ))}

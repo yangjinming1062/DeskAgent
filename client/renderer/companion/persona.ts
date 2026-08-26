@@ -5,7 +5,9 @@ export interface OnboardingAnswers {
   // appearance：外貌特征（脸 / 体型 / 标志性细节）。驱动 3D 模型生成与提示词；
   // 锁定之后的编辑里会被保留。
   appearance?: string
-  role?: string
+  // relationship：用户与精灵的关系（知己好友 / 赛博管家等）。只进入对话系统提示词，
+  // 不参与性格标签分析与形象生成——关系是两者之间的，不是精灵自身的属性。
+  relationship?: string
   personality?: string
   speaking_style?: string
   user_call_name?: string
@@ -20,7 +22,7 @@ export interface PersonaPayload {
   name: string
   personality: string
   speaking_style: string
-  background?: string
+  relationship?: string
   biological_type?: string
   gender?: string
   appearance?: string
@@ -35,7 +37,7 @@ const DEFAULT_PERSONALITY = '温柔体贴'
 export const MAX_APPEARANCE = 500
 export const MAX_USER_TEXT = 2000
 const MAX_SPECIES_GENDER = 64
-const MAX_BACKGROUND = 500
+const MAX_RELATIONSHIP = 500
 
 function truncate(value: string | undefined, max: number): string | undefined {
   if (!value) {
@@ -73,7 +75,7 @@ export function assemblePersona(answers: OnboardingAnswers, previous?: Partial<P
     ['biological_type', answers.species ?? prev.biological_type, MAX_SPECIES_GENDER],
     ['gender', answers.character_gender ?? prev.gender, MAX_SPECIES_GENDER],
     ['appearance', answers.appearance ?? prev.appearance, MAX_APPEARANCE],
-    ['background', answers.role ?? prev.background, MAX_BACKGROUND],
+    ['relationship', answers.relationship ?? prev.relationship, MAX_RELATIONSHIP],
     ['user_call_name', answers.user_call_name ?? prev.user_call_name, MAX_USER_TEXT],
     ['user_gender', answers.user_gender ?? prev.user_gender, MAX_USER_TEXT],
     ['user_age_bucket', answers.user_age_bucket ?? prev.user_age_bucket, MAX_USER_TEXT],

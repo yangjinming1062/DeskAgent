@@ -11,7 +11,7 @@ from .memory_bootstrap import extract_user_profile, read_user_profile, record_us
 
 # 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
 _REQUIRED_FIELDS: tuple[str, ...] = ("name", "personality", "speaking_style")
-_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "background", "biological_type", "gender")
+_OPTIONAL_FIELDS: tuple[str, ...] = ("appearance", "relationship", "biological_type", "gender")
 _KNOWN_FIELDS: frozenset[str] = frozenset(_REQUIRED_FIELDS + _OPTIONAL_FIELDS)
 _MAX_FIELD_LEN: int = 500
 
@@ -21,7 +21,7 @@ ONBOARDING_FIELDS: tuple[str, ...] = (
     "species",
     "character_gender",
     "appearance",
-    "role",
+    "relationship",
     "personality",
     "speaking_style",
     "voice",

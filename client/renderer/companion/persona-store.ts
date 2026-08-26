@@ -8,7 +8,7 @@ export interface PersonaDefinition {
   name: string
   personality: string
   speakingStyle: string
-  background?: string
+  relationship?: string
   biological_type?: string
   gender?: string
   // appearance：外貌特征（脸 / 体型 / 标志性细节）。
@@ -44,7 +44,7 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
         name: parsed.name ?? '伙伴',
         personality: parsed.personality ?? '',
         speaking_style: parsed.speaking_style,
-        background: parsed.background,
+        relationship: parsed.relationship,
         biological_type: parsed.biological_type,
         gender: parsed.gender,
         appearance: parsed.appearance

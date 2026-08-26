@@ -8,8 +8,8 @@ import { assemblePersona } from '@/companion/persona'
 import {
   PERSONALITY_PRESETS,
   type PersonalityPreset,
-  ROLE_PRESETS,
-  type RolePreset,
+  RELATIONSHIP_PRESETS,
+  type RelationshipPreset,
   SPEAKING_STYLE_PRESETS,
   type SpeakingStylePreset
 } from '@/companion/persona-presets'
@@ -20,7 +20,7 @@ interface PersonaRetuneProps {
     name: string
     personality: string
     speaking_style: string
-    background: string
+    relationship: string
     user_call_name: string
     user_gender: string
     user_age_bucket: string
@@ -37,10 +37,10 @@ const presetClass = PERSONA_PRESET_CLASS
 // （speakingStyle 用的「自动派生」标记）。这样 STEPS 里写成「喜爱」这种拼写错误会编译失败，
 // 而不是默默渲染出一个空 chip。
 // species / character_gender / appearance 在这里不可编辑。
-type PresetValue = PersonalityPreset | RolePreset | SpeakingStylePreset | ''
+type PresetValue = PersonalityPreset | RelationshipPreset | SpeakingStylePreset | ''
 
 type PersonaFieldKey =
-  | 'background'
+  | 'relationship'
   | 'name'
   | 'personality'
   | 'speakingStyle'
@@ -66,7 +66,7 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
   },
   {
     title: '关系 / 角色定位',
-    fields: [{ key: 'background', label: '关系 / 角色定位', presets: ROLE_PRESETS }]
+    fields: [{ key: 'relationship', label: '关系 / 角色定位', presets: RELATIONSHIP_PRESETS }]
   },
   {
     title: '性格 与 说话风格',
@@ -102,7 +102,7 @@ const STEPS: { title: string; fields: FieldSchema[] }[] = [
 // 可以在设置里的角色区查看。
 const REVIEW_ROWS: { fallback?: string; key: PersonaFieldKey; label: string }[] = [
   { key: 'name', label: '名字' },
-  { key: 'background', label: '关系' },
+  { key: 'relationship', label: '关系' },
   { key: 'personality', label: '性格' },
   { fallback: '自动派生', key: 'speakingStyle', label: '说话风格' },
   { key: 'userCallName', label: '称呼' },
@@ -131,7 +131,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   )
 
   const [name, setName] = useState(initial.name)
-  const [background, setBackground] = useState(initial.background)
+  const [relationship, setRelationship] = useState(initial.relationship)
   const [personality, setPersonality] = useState(initial.personality)
   const [speakingStyle, setSpeakingStyle] = useState(initial.speaking_style)
   const [userCallName, setUserCallName] = useState(initial.user_call_name)
@@ -142,7 +142,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
 
   // 以字段 ``key`` 为键的 setter 映射。避免每一步写 switch/case。
   const setters: Record<PersonaFieldKey, (v: string) => void> = {
-    background: setBackground,
+    relationship: setRelationship,
     name: setName,
     personality: setPersonality,
     speakingStyle: setSpeakingStyle,
@@ -154,7 +154,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   }
 
   const values: Record<PersonaFieldKey, string> = {
-    background,
+    relationship,
     name,
     personality,
     speakingStyle,
@@ -199,7 +199,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
                 name: trimmed,
                 personality,
                 speaking_style: speakingStyle,
-                role: background,
+                relationship,
                 user_call_name: userCallName,
                 user_gender: userGender,
                 user_age_bucket: userAgeBucket,

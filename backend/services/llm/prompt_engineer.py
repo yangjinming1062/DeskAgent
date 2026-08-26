@@ -110,7 +110,6 @@ def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str,
         "biological_type": definition.get("biological_type") or "",
         "gender": definition.get("gender") or "",
         "appearance": definition.get("appearance") or "",
-        "background": definition.get("background") or "",
         "personality": definition.get("personality") or "",
         "feedback": (feedback or "").strip(),
     }
@@ -158,7 +157,6 @@ _AVATAR_SYSTEM_PROMPT = (
     "  - biological_type：物种；\n"
     "  - gender：性别；\n"
     "  - appearance：基础形象（脸型、体型、标志性细节等）；\n"
-    "  - background：角色定位；\n"
     "  - personality：性格；\n"
     "  - feedback：用户最近的反馈（可为空）。\n"
     "\n"

@@ -10,7 +10,7 @@ export function personaFromWire(payload: PersonaPayload): PersonaDefinition {
     name: payload.name,
     personality: payload.personality,
     speakingStyle: payload.speaking_style ?? '',
-    ...(payload.background !== undefined && { background: payload.background }),
+    ...(payload.relationship !== undefined && { relationship: payload.relationship }),
     ...(payload.biological_type !== undefined && { biological_type: payload.biological_type }),
     ...(payload.gender !== undefined && { gender: payload.gender }),
     ...(payload.appearance !== undefined && { appearance: payload.appearance })

@@ -77,7 +77,7 @@ _TAG_SEEDS_BY_RIG: dict[str, list[str]] = {
 }
 
 _SYSTEM_PROMPT = (
-    "你是一个角色性格与行为标签分析专家。根据用户给出的伙伴设定（名称、性格描述、生物物种、身份背景等），"
+    "你是一个角色性格与行为标签分析专家。根据用户给出的伙伴设定（名称、性格描述、说话风格、生物物种等），"
     "提炼并输出 3 到 10 个最能概括其性格特征、处事态度或生物形态行为的简短中文标签（每个标签 2-4 字）。\n"
     "要求：\n"
     "1. 优先参考给出的候选种子词汇；\n"
@@ -118,8 +118,7 @@ async def analyze_personality_tags(
             f"- 名字: {data.get('name', '伙伴')}\n"
             f"- 物种: {char_species} (骨骼类型: {char_rig})\n"
             f"- 性格描述: {data.get('personality', '温柔体贴')}\n"
-            f"- 说话风格: {data.get('speaking_style', '')}\n"
-            f"- 身份背景: {data.get('background', '')}\n\n"
+            f"- 说话风格: {data.get('speaking_style', '')}\n\n"
             f"候选种子词参考：{', '.join(candidate_seeds[:40])}\n"
             f"请输出 3-10 个标签 JSON 数组："
         )
