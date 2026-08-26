@@ -13,34 +13,69 @@
   // ---------- layer naming ----------
   function normName(n) {
     n = (n || '').normalize('NFKC').trim().replace(/ のコピー\s*\d*$/,'').toLowerCase();
-    if (n === 'eyelash_c') n = 'eye_close';       // legacy aliases
-    if (n === 'mouth_c') n = 'mouth_close';
+    if (n === 'eyelash_c' || n === 'eyelash-c') n = 'eye_close';       // legacy aliases
+    if (n === 'mouth_c' || n === 'mouth-c') n = 'mouth_close';
     if (n === 'mouth' || /^mouth[ _-]?\d+$/.test(n)) n = 'mouth_open';   // see-through raw output
     if (n === 'レイヤー 1') n = 'facedetail';
+    if (n === 'fronthair' || n === 'front_hair') n = 'front hair';
+    if (n === 'backhair' || n === 'back_hair') n = 'back hair';
+    if (n === 'bottom_wear' || n === 'bottom wear') n = 'bottomwear';
+    if (n === 'top_wear' || n === 'top wear') n = 'topwear';
+    if (n === 'hand_wear' || n === 'hand wear') n = 'handwear';
+    if (n === 'foot_wear' || n === 'foot wear' || n === 'shoes' || n === 'boots') n = 'footwear';
+    if (n === 'ear_wear' || n === 'ear wear') n = 'earwear';
+    if (n === 'head_wear' || n === 'head wear') n = 'headwear';
+    if (n === 'face_detail' || n === 'face detail') n = 'facedetail';
     return n;
   }
-  function baseName(n) { return n.replace(/_\d+$/, ''); }
+  function baseName(n) {
+    var raw = (n || '').toLowerCase();
+    var prev = '';
+    while (raw !== prev) {
+      prev = raw;
+      raw = raw.replace(/[-_](l|r)$/i, '').replace(/_\d+$/, '').replace(/[-_](l|r)$/i, '');
+    }
+    raw = raw.trim();
+    if (raw === 'fronthair' || raw === 'front_hair') return 'front hair';
+    if (raw === 'backhair' || raw === 'back_hair') return 'back hair';
+    if (raw === 'bottom_wear' || raw === 'bottom wear') return 'bottomwear';
+    if (raw === 'top_wear' || raw === 'top wear') return 'topwear';
+    if (raw === 'hand_wear' || raw === 'hand wear') return 'handwear';
+    if (raw === 'foot_wear' || raw === 'foot wear' || raw === 'shoes' || raw === 'boots') return 'footwear';
+    if (raw === 'ear_wear' || raw === 'ear wear') return 'earwear';
+    if (raw === 'head_wear' || raw === 'head wear') return 'headwear';
+    if (raw === 'face_detail' || raw === 'face detail') return 'facedetail';
+    return raw;
+  }
 
   var SLOTS = {
-    'back hair':   { depth: 0.55, group: 'head', phys: 'hair' },
-    'bottomwear':  { depth: 0.88, group: 'body' },
-    'neck':        { depth: 0.95, group: 'body' },
-    'topwear':     { depth: 0.90, group: 'body' },
-    'handwear':    { depth: 0.86, group: 'body' },
-    'earwear':     { depth: 0.97, group: 'head' },
-    'ears':        { depth: 0.96, group: 'head' },
-    'face':        { depth: 1.00, group: 'head' },
-    'facedetail':  { depth: 1.02, group: 'head' },
-    'headwear':    { depth: 1.20, group: 'head' },
-    'mouth_close': { depth: 1.08, group: 'head', fade: 'mouthClose' },
-    'mouth_open':  { depth: 1.08, group: 'head', fade: 'mouthOpen' },
-    'nose':        { depth: 1.15, group: 'head' },
-    'eyewhite':    { depth: 1.06, group: 'head', split: true, fade: 'eyeOpen' },
-    'eyebrow':     { depth: 1.14, group: 'head', split: true },
-    'irides':      { depth: 1.08, group: 'head', split: true, fade: 'eyeOpen' },
-    'eyelash':     { depth: 1.12, group: 'head', split: true, fade: 'eyeOpen' },
-    'eye_close':   { depth: 1.12, group: 'head', split: true, fade: 'eyeClose' },
-    'front hair':  { depth: 1.28, group: 'head', phys: 'hair' }
+    'back hair':   { depth: 0.55, group: 'head', phys: 'hair', order: 10 },
+    'body':        { depth: 0.88, group: 'body', order: 20 },
+    'skin':        { depth: 0.88, group: 'body', order: 20 },
+    'legs':        { depth: 0.88, group: 'body', order: 20 },
+    'leg':         { depth: 0.88, group: 'body', order: 20 },
+    'arms':        { depth: 0.88, group: 'body', order: 20 },
+    'arm':         { depth: 0.88, group: 'body', order: 20 },
+    'torso':       { depth: 0.88, group: 'body', order: 20 },
+    'neck':        { depth: 0.95, group: 'body', order: 25 },
+    'bottomwear':  { depth: 0.88, group: 'body', order: 40 },
+    'footwear':    { depth: 0.86, group: 'body', order: 45 },
+    'topwear':     { depth: 0.90, group: 'body', order: 50 },
+    'handwear':    { depth: 0.86, group: 'body', order: 60 },
+    'ears':        { depth: 0.96, group: 'head', order: 70 },
+    'earwear':     { depth: 0.97, group: 'head', order: 75 },
+    'face':        { depth: 1.00, group: 'head', order: 80 },
+    'facedetail':  { depth: 1.02, group: 'head', order: 90 },
+    'mouth_close': { depth: 1.08, group: 'head', fade: 'mouthClose', order: 100 },
+    'mouth_open':  { depth: 1.08, group: 'head', fade: 'mouthOpen', order: 100 },
+    'eyewhite':    { depth: 1.06, group: 'head', split: true, fade: 'eyeOpen', order: 110 },
+    'irides':      { depth: 1.08, group: 'head', split: true, fade: 'eyeOpen', order: 120 },
+    'eyelash':     { depth: 1.12, group: 'head', split: true, fade: 'eyeOpen', order: 130 },
+    'eye_close':   { depth: 1.12, group: 'head', split: true, fade: 'eyeClose', order: 130 },
+    'nose':        { depth: 1.15, group: 'head', order: 140 },
+    'eyebrow':     { depth: 1.14, group: 'head', split: true, order: 150 },
+    'front hair':  { depth: 1.28, group: 'head', phys: 'hair', order: 160 },
+    'headwear':    { depth: 1.20, group: 'head', order: 170 }
   };
 
   // ---------- image ops (full-canvas alpha as Uint8Array) ----------
@@ -201,6 +236,7 @@
     return { name: name, x: Math.round(cx - tw / 2), y: Math.round(anchorY - vAlign * th),
              w: tw, h: th, z: 0, depth: slot.depth, group: 'head', phys: null,
              fade: slot.fade || null, side: side || null, strands: null, synthetic: true,
+             order: typeof slot.order === 'number' ? slot.order : 100,
              img: { width: tw, height: th, data: data } };
   }
   function lastIndexWhere(arr, pred) {
@@ -366,6 +402,7 @@
       name: name, x: x0, y: y0, w: w, h: h, z: z,
       depth: slot.depth, group: slot.group, phys: slot.phys || null,
       fade: slot.fade || null, side: side || null, strands: strands || null,
+      order: typeof slot.order === 'number' ? slot.order : (slot.group === 'body' ? 20 : 85),
       img: { width: w, height: h, data: data }
     };
   }
@@ -411,20 +448,30 @@
         warnings.push('未知のレイヤー名 "' + e.name + '" — ' + slot.group + ' として扱います');
       }
       if (slot.split) {
-        var masks = splitSides(e.alpha, W, H, FACE.cx);
-        var got = false;
-        ['l', 'r'].forEach(function (s) {
-          if (!masks[s]) return;
-          var rec = makePart(e.name + '_' + s, e.layer, e.alpha, masks[s], W, H, slot, z, s.toUpperCase(), null);
+        var sideMatch = e.name.match(/[-_](l|r)$/i);
+        if (sideMatch) {
+          var s = sideMatch[1].toLowerCase();
+          var rec = makePart(e.name, e.layer, e.alpha, null, W, H, slot, z, s.toUpperCase(), null);
           if (rec) {
             parts.push(rec); z++;
-            var ma = new Uint8Array(W * H);
-            for (var q = 0; q < W * H; q++) ma[q] = masks[s][q] ? e.alpha[q] : 0;
-            sided[e.name + '|' + s] = ma;
-            got = true;
+            sided[bn + '|' + s] = e.alpha;
           }
-        });
-        if (!got) warnings.push('"' + e.name + '" の左右分離に失敗（空レイヤー？）');
+        } else {
+          var masks = splitSides(e.alpha, W, H, FACE.cx);
+          var got = false;
+          ['l', 'r'].forEach(function (s) {
+            if (!masks[s]) return;
+            var rec = makePart(e.name + '_' + s, e.layer, e.alpha, masks[s], W, H, slot, z, s.toUpperCase(), null);
+            if (rec) {
+              parts.push(rec); z++;
+              var ma = new Uint8Array(W * H);
+              for (var q = 0; q < W * H; q++) ma[q] = masks[s][q] ? e.alpha[q] : 0;
+              sided[bn + '|' + s] = ma;
+              got = true;
+            }
+          });
+          if (!got) warnings.push('"' + e.name + '" の左右分離に失敗（空レイヤー？）');
+        }
       } else if (slot.phys === 'hair') {
         var isPart = /_\d+$/.test(e.name);
         var bb2 = bboxOf(e.alpha, W, H, 16);
@@ -517,6 +564,46 @@
         warnings.push('mouth_close が無いため汎用閉じ口を自動配置しました（「口」のバーで調整可）');
       }
     }
+    // Reorder only the head facial feature layers among their own slots so that
+    // eyes/eyebrows/mouth/face are naturally layered under front hair (bangs),
+    // while all body, clothing, limb, and accessory layers retain their exact original PSD order.
+    var HEAD_FEATURE_ORDER = {
+      'face': 1,
+      'facedetail': 2,
+      'mouth_open': 3,
+      'mouth_close': 3,
+      'eyewhite': 4,
+      'irides': 5,
+      'eyelash': 6,
+      'eye_close': 6,
+      'nose': 7,
+      'eyebrow': 8,
+      'front hair': 9
+    };
+
+    var headIndices = [];
+    var headParts = [];
+    for (var pi = 0; pi < parts.length; pi++) {
+      var bn = baseName(parts[pi].name);
+      if (HEAD_FEATURE_ORDER.hasOwnProperty(bn)) {
+        headIndices.push(pi);
+        headParts.push(parts[pi]);
+      }
+    }
+
+    if (headParts.length > 1) {
+      headParts.sort(function (a, b) {
+        var oa = HEAD_FEATURE_ORDER[baseName(a.name)];
+        var ob = HEAD_FEATURE_ORDER[baseName(b.name)];
+        if (oa !== ob) return oa - ob;
+        return a.z - b.z;
+      });
+
+      for (var hi = 0; hi < headIndices.length; hi++) {
+        parts[headIndices[hi]] = headParts[hi];
+      }
+    }
+
     for (var zi = 0; zi < parts.length; zi++) parts[zi].z = zi;
 
     return { canvas: { w: W, h: H }, layers: parts, anchors: anchors, warnings: warnings, synth: synth };

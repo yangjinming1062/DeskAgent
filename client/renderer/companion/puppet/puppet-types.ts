@@ -26,6 +26,7 @@ export interface RigPart {
   side: string | null
   strands: RigStrand[] | null
   synthetic?: boolean
+  order?: number
   img: RigImage
 }
 
