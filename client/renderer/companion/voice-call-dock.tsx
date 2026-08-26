@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef, useState } from 'react'
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react'
 
 import { reportInteractionStat } from '@/companion/activity'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
@@ -17,10 +17,20 @@ import {
   showMediaHint
 } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
-import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $companionVoiceId, $subtitles, setSubtitles } from '@/companion/prefs'
-import { $spatialPos, $spatialScale, $viewport, computeVoiceCallDockPosition } from '@/companion/spatial'
+import {
+  $spatialPos,
+  $spatialScale,
+  computeVoiceCallDockPosition,
+  endDragAt,
+  ensureVoiceDockRoom,
+  releaseVoiceDockRoom,
+  startDrag,
+  updateDragPosition,
+  VOICE_DOCK_H,
+  VOICE_DOCK_W
+} from '@/companion/spatial'
 import { stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
@@ -50,6 +60,7 @@ export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
 // 实时半双工语音通话：麦克风持续收音，本地 VAD 判定说话起止与插话打断；
 // 回复由服务端实时语音会话编排（ASR → LLM 按句流式 → TTS 分段推送，PROTOCOL §1.7），
 // 客户端只负责采集上行 PCM、顺序播放下行分段与字幕/状态呈现。
+// 面板与精灵刚体一体：恒锚在精灵脚下，拖动面板即拖动精灵（位移直写精灵位置）。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const { requestGateway } = useGatewayRequest()
   const chatSessionId = useStore($chatSessionId)
@@ -57,7 +68,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const subtitlesVisible = useStore($subtitles)
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
-  const viewport = useStore($viewport)
   const [micActive, setMicActive] = useState(false)
   const [micError, setMicError] = useState<string | null>(null)
   const [connStatus, setConnStatus] = useState<VoiceSessionStatus>('connecting')
@@ -86,7 +96,83 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const onCloseRef = useLatestRef(onClose)
 
   useInteractiveRegion('voice-call-dock', panelRef)
-  const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.voiceCallOffset', () => panelRef.current)
+
+  // 面板与精灵刚体一体（DESIGN §6.1）：开启时脚下空间不足则上提精灵让位，
+  // 挂断后回落原位；用户在通话中拖动即接管位置，回落取消。
+  useEffect(() => {
+    ensureVoiceDockRoom()
+
+    return () => releaseVoiceDockRoom()
+  }, [])
+
+  // 拖动面板 = 拖动精灵：位移直写精灵位置（面板位置由精灵位置派生），
+  // 释放走与精灵本体一致的落点结算（抛掷自由落体落在面板上、落地钳制）。
+  const dockDragRef = useRef<{
+    startX: number
+    startY: number
+    origin: { x: number; y: number }
+    lastX: number
+    lastY: number
+    lastTime: number
+  } | null>(null)
+
+  const dockVelRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
+
+  const onDockPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    // 仅响应左键拖拽；忽略中键/右键点击以及带修饰键的拖拽。
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
+      return
+    }
+
+    // 点中拖拽柄里的控件（字幕开关等）时不开启拖拽。
+    if ((e.target as HTMLElement).closest('button, input, textarea, select, a, [role="button"]')) {
+      return
+    }
+
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dockDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      origin: $spatialPos.get(),
+      lastX: e.clientX,
+      lastY: e.clientY,
+      lastTime: performance.now()
+    }
+    dockVelRef.current = { vx: 0, vy: 0 }
+    startDrag()
+  }
+
+  const onDockPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const d = dockDragRef.current
+
+    if (!d) {
+      return
+    }
+
+    const now = performance.now()
+    const dt = Math.max(1, now - d.lastTime)
+    dockVelRef.current = { vx: (e.clientX - d.lastX) / dt, vy: (e.clientY - d.lastY) / dt }
+    d.lastX = e.clientX
+    d.lastY = e.clientY
+    d.lastTime = now
+
+    updateDragPosition(
+      { x: d.origin.x + (e.clientX - d.startX), y: d.origin.y + (e.clientY - d.startY) },
+      dockVelRef.current
+    )
+  }
+
+  const onDockPointerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const d = dockDragRef.current
+
+    if (!d) {
+      return
+    }
+
+    dockDragRef.current = null
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    endDragAt($spatialPos.get(), dockVelRef.current)
+  }
 
   const isBusy = (): boolean => turnActiveRef.current || Boolean(playerRef.current?.playing)
 
@@ -391,34 +477,31 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
-  const dockPos = computeVoiceCallDockPosition({
-    dockH: 288,
-    dockW: 320,
-    pos,
-    scale,
-    vh: viewport.height,
-    vw: viewport.width
-  })
+  const dockPos = computeVoiceCallDockPosition(pos, scale)
 
   return (
     // 通话是 ambient 陪伴——精灵窗口保持置顶（§3.7 不变量），
-    // 面板跟随精灵移动并锚定在精灵脚下，保持用户视觉焦点统一；拖拽偏移持久化，用户可自行微调。
+    // 面板与精灵刚体一体：锚定在精灵脚下并跟随移动，拖动面板即拖动精灵，视觉焦点不分散。
     <div className="fixed inset-0 z-50 pointer-events-none">
       <div
-        className="fixed flex h-72 w-80 flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
+        className="fixed flex flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
         ref={panelRef}
         style={{
+          height: VOICE_DOCK_H,
           left: dockPos.left,
           pointerEvents: 'auto',
           top: dockPos.top,
-          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined,
-          willChange: 'left, top, transform'
+          width: VOICE_DOCK_W,
+          willChange: 'left, top'
         }}
       >
         <div
           className="flex w-full cursor-grab items-center justify-between text-xs text-white/60 active:cursor-grabbing"
-          {...dragBind}
-          title="拖动以移动面板"
+          onPointerCancel={onDockPointerUp}
+          onPointerDown={onDockPointerDown}
+          onPointerMove={onDockPointerMove}
+          onPointerUp={onDockPointerUp}
+          title="拖动面板（精灵跟随移动）"
         >
           <span className="flex items-center gap-1.5 font-medium text-emerald-400">
             <span
@@ -455,6 +538,11 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
         <WaveformBars active={micActive} values={waveform} />
 
+        {/* 字幕内嵌面板（DESIGN §6.1）：占满中部弹性区，流式内容自动滚到最新一句 */}
+        <div className="flex min-h-0 w-full flex-1">
+          <SubtitlesOverlay />
+        </div>
+
         {micError ? (
           <p className="text-center text-xs text-amber-300">{micError}</p>
         ) : panelError ? (
@@ -481,7 +569,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           结束通话
         </button>
       </div>
-      <SubtitlesOverlay />
     </div>
   )
 }

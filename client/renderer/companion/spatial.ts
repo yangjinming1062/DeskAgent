@@ -8,6 +8,7 @@ import {
   $spriteAction,
   $spriteEmotion,
   $spriteState,
+  $voiceCallOpen,
   setSpriteState
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
@@ -28,6 +29,11 @@ const REST_MARGIN = 24
 
 const WALK_SPEED = 80
 const FLY_SPEED = 400
+// 语音通话面板与精灵刚体一体的锚定几何（与 voice-call-dock 面板实际尺寸保持一致）。
+export const VOICE_DOCK_W = 320
+export const VOICE_DOCK_H = 348
+const VOICE_DOCK_GAP = 12
+const VOICE_DOCK_BOTTOM_MARGIN = 16
 const SCALE_TRANSITION_MS = 300
 // roam 的桌面空闲门槛（DESIGN §3.2「桌面空闲 + 高活跃档位时随机游走」）；
 // $lastIdleSeconds 为 -1（Runner 离线/未知）时保守视为不空闲。
@@ -91,17 +97,39 @@ function getHomePosition(): { x: number; y: number } {
 // 顶/左/右仍受 REST_MARGIN 兜底。贴边吸附（peeking）仅水平方向处理。
 const FACE_TOP_RATIO = 0.3
 
-function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
+// 通话中精灵位置的 y 上限：精灵脚下（含间距与面板高）必须完整落在屏内，
+// 面板才有落脚处——面板恒锚在脚下，与精灵刚体一体。
+function voiceMaxSpriteY(): number {
+  const spriteH = getBaseSpriteHeight() * $spatialScale.get()
+
+  return window.innerHeight - VOICE_DOCK_BOTTOM_MARGIN - VOICE_DOCK_GAP - VOICE_DOCK_H - spriteH
+}
+
+function clampPosToViewport(
+  pos: { x: number; y: number },
+  voiceConstraint = $voiceCallOpen.get()
+): {
+  x: number
+  y: number
+} {
   const w = getBaseSpriteWidth()
   const h = getBaseSpriteHeight()
   const faceH = h * FACE_TOP_RATIO
   const vw = window.innerWidth
   const vh = window.innerHeight
+  const maxY = voiceConstraint ? Math.min(vh - faceH, voiceMaxSpriteY()) : vh - faceH
 
   return {
     x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
-    y: Math.max(0, Math.min(vh - faceH, pos.y))
+    y: Math.max(0, Math.min(maxY, pos.y))
   }
+}
+
+// 精灵落地的 y 坐标：通话中面板垫在脚下，"地面"抬高到面板上沿——抛掷后落回面板顶。
+function groundSpriteY(): number {
+  const base = Math.max(REST_MARGIN, window.innerHeight - getBaseSpriteHeight() - REST_MARGIN)
+
+  return $voiceCallOpen.get() ? Math.min(base, voiceMaxSpriteY()) : base
 }
 
 export interface PerchPlacement {
@@ -175,54 +203,84 @@ export function computeOverlayAnchorBesideSprite(opts: {
   return { left, top }
 }
 
-// 语音通话面板锚点定位：始终跟随精灵移动。
-// 默认位于精灵脚下（居中对齐）；若下方空间不足（如精灵贴底），则停在精灵脚部左/右侧与底边对齐。
-export function computeVoiceCallDockPosition(opts: {
-  dockH: number
-  dockW: number
-  gap?: number
-  margin?: number
-  pos: { x: number; y: number }
+// 语音通话面板锚点：恒定在精灵脚下水平居中——面板与精灵刚体一体，拖动任一者整体平移。
+// 脚下空间由开启通话时的上提（ensureVoiceDockRoom）与拖拽钳制保证；
+// 窗口 resize、情绪放大等瞬时可越界，这里保留视口钳制兜底（宁可叠上精灵也不能沉出屏外）。
+export function computeVoiceCallDockPosition(
+  pos: { x: number; y: number },
   scale: number
-  vh: number
-  vw: number
-}): { left: number; top: number } {
-  const { pos, scale, dockW, dockH, vw, vh, gap = 12, margin = 16 } = opts
+): {
+  left: number
+  top: number
+} {
   const spriteW = getBaseSpriteWidth() * scale
   const spriteH = getBaseSpriteHeight() * scale
+  const vw = window.innerWidth
+  const vh = window.innerHeight
 
-  let left = pos.x + (spriteW - dockW) / 2
-  let top = pos.y + spriteH + gap
+  const left = Math.max(
+    VOICE_DOCK_BOTTOM_MARGIN,
+    Math.min(vw - VOICE_DOCK_W - VOICE_DOCK_BOTTOM_MARGIN, pos.x + (spriteW - VOICE_DOCK_W) / 2)
+  )
 
-  // 下方放得下：直接置于脚下居中
-  if (top + dockH <= vh - margin) {
-    left = Math.max(margin, Math.min(vw - dockW - margin, left))
+  const top = Math.min(vh - VOICE_DOCK_H - VOICE_DOCK_BOTTOM_MARGIN, pos.y + spriteH + VOICE_DOCK_GAP)
 
-    return {
-      left: Math.round(left),
-      top: Math.round(top)
-    }
+  return { left: Math.round(left), top: Math.round(top) }
+}
+
+// 通话开启时脚下放不下面板则平滑上提让位，挂断后回落原位；
+// 用户在通话中拖动（精灵或面板）即视为接管位置，回落取消。
+let voiceLiftReturn: { x: number; y: number } | null = null
+
+export function ensureVoiceDockRoom(): void {
+  stopRoam()
+
+  // 贴边探头（身体缩进屏外）与脚下锚定的通话面板互斥——先全身回屏。
+  if ($isEdgeDocked.get()) {
+    undockFromEdge()
   }
 
-  // 下方空间不足：优先放精灵左侧脚边，其次右侧脚边
-  const leftSpace = pos.x - gap - margin
-  const rightSpace = vw - (pos.x + spriteW + gap) - margin
+  const pos = $spatialPos.get()
+  // 极矮视口下 maxY 可为负——钳到 0（面部贴屏顶），面板交给锚点函数的兜底钳制。
+  const maxY = Math.max(0, voiceMaxSpriteY())
 
-  if (leftSpace >= dockW) {
-    left = pos.x - gap - dockW
-    top = Math.max(margin, Math.min(vh - dockH - margin, pos.y + spriteH - dockH))
-  } else if (rightSpace >= dockW) {
-    left = pos.x + spriteW + gap
-    top = Math.max(margin, Math.min(vh - dockH - margin, pos.y + spriteH - dockH))
-  } else {
-    top = Math.max(margin, pos.y - gap - dockH)
-    left = Math.max(margin, Math.min(vw - dockW - margin, left))
+  if (pos.y <= maxY) {
+    return
   }
 
-  return {
-    left: Math.round(Math.max(margin, Math.min(vw - dockW - margin, left))),
-    top: Math.round(Math.max(margin, Math.min(vh - dockH - margin, top)))
+  voiceLiftReturn = pos
+
+  // x 钳制吸收贴边回屏动画尚未走完的越界横坐标（undock 的动画被下面 moveTo 取代）。
+  const vw = window.innerWidth
+  const w = getBaseSpriteWidth()
+
+  const lifted = {
+    x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
+    y: maxY
   }
+
+  moveTo(lifted, 'fly', () => {
+    $homePosition.set(lifted)
+    void window.spiritagent.sprite.setPosition(lifted)
+  })
+}
+
+export function releaseVoiceDockRoom(): void {
+  const back = voiceLiftReturn
+  voiceLiftReturn = null
+
+  if (!back) {
+    return
+  }
+
+  // 挂断时 $voiceCallOpen 尚未翻回 false（子组件 cleanup 先于父级 effect），
+  // 显式按无通话约束钳制，否则回落目标会被脚下钳制按住不放。
+  const safe = clampPosToViewport(back, false)
+
+  moveTo(safe, 'fly', () => {
+    $homePosition.set(safe)
+    void window.spiritagent.sprite.setPosition(safe)
+  })
 }
 
 function easeInOut(t: number): number {
@@ -432,7 +490,8 @@ export function setLocale(
 let userInteracted = false
 
 export function updateSpatialDecision(): void {
-  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get()) {
+  // 通话中面板锚定精灵脚下，精灵必须留原位（DESIGN §6.1）——与 chat 同样冻结空间决策。
+  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $voiceCallOpen.get()) {
     return
   }
 
@@ -626,10 +685,8 @@ function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: num
   cancelPhysics()
 
   const vw = window.innerWidth
-  const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
-  const spriteH = getBaseSpriteHeight()
-  const groundY = Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN)
+  const groundY = groundSpriteY()
   const minX = REST_MARGIN
   const maxX = Math.max(REST_MARGIN, vw - spriteW - REST_MARGIN)
 
@@ -705,6 +762,8 @@ function startFreeFall(initialPos: { x: number; y: number }, velocity: { vx: num
 
 export function startDrag(): void {
   userInteracted = true
+  // 用户拖动即接管位置：挂断后的自动回落作废。
+  voiceLiftReturn = null
   stopRoam()
   cancelMovement()
   cancelPhysics()
@@ -730,26 +789,26 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
 
 export function endDragAt(pos: { x: number; y: number }, vel?: { vx: number; vy: number }): void {
   const vw = window.innerWidth
-  const vh = window.innerHeight
   const spriteW = getBaseSpriteWidth()
-  const spriteH = getBaseSpriteHeight()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附
-  if (pos.x <= dockMargin) {
-    dockToEdge('left')
+  // 1. 优先判定屏幕左右边缘吸附（通话中面板锚定脚下，禁止贴边探头把面板甩到脚边）
+  if (!$voiceCallOpen.get()) {
+    if (pos.x <= dockMargin) {
+      dockToEdge('left')
 
-    return
-  }
+      return
+    }
 
-  if (pos.x >= vw - spriteW - dockMargin) {
-    dockToEdge('right')
+    if (pos.x >= vw - spriteW - dockMargin) {
+      dockToEdge('right')
 
-    return
+      return
+    }
   }
 
   // 2. 判定空中自由落体与初速度抛掷
-  const groundY = Math.max(REST_MARGIN, vh - spriteH - REST_MARGIN)
+  const groundY = groundSpriteY()
 
   if (vel && (pos.y < groundY - 12 || Math.hypot(vel.vx, vel.vy) > 0.15)) {
     startFreeFall(pos, vel)
@@ -839,6 +898,14 @@ export function initSpatial(): () => void {
     }
 
     $homePosition.set(clamped)
+
+    // 通话中面板锚在脚下：只把当前位置收紧进新视口（脚下约束随新视口重算），
+    // 不做 home 重贴——避免把上提中的精灵拉回底部 home。
+    if ($voiceCallOpen.get()) {
+      $spatialPos.set(clampPosToViewport($spatialPos.get()))
+
+      return
+    }
 
     const locale = $spatialLocale.get()
 

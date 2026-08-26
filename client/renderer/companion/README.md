@@ -85,7 +85,7 @@
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
 - **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
 - **右键**：托盘菜单入口（声音切换、伙伴设置、登出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
-- **语音通话（服务端实时会话）**：客户端不再本地编排转写与朗读——本地只保留 VAD（能量阈值起说 / 静默 1.3s 断句 / 更高阈值打断）驱动 utterance 起止与插话。上行 PCM 经专用 16kHz AudioContext 采集（[pcm-capture.ts](pcm-capture.ts)：AudioWorklet 优先、300ms 预滚保住发音起始瞬态，加载失败降级 ScriptProcessorNode）直发语音 WS；下行音频段由 [segment-player.ts](segment-player.ts) 按到达顺序解码、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧。语音回合事件**不经聊天 WS**（[events.ts](events.ts) 不消费语音事件），但用户话语与精灵回复镜像进聊天 store，保持对话窗实时同步与历史水合一致；任一环节失败直接上通话面板错误条，不依赖字幕开关。协议与顺序不变量见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
+- **语音通话（服务端实时会话）**：客户端不再本地编排转写与朗读——本地只保留 VAD（能量阈值起说 / 静默 1.3s 断句 / 更高阈值打断）驱动 utterance 起止与插话。上行 PCM 经专用 16kHz AudioContext 采集（[pcm-capture.ts](pcm-capture.ts)：AudioWorklet 优先、300ms 预滚保住发音起始瞬态，加载失败降级 ScriptProcessorNode）直发语音 WS；下行音频段由 [segment-player.ts](segment-player.ts) 按到达顺序解码、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧。语音回合事件**不经聊天 WS**（[events.ts](events.ts) 不消费语音事件），但用户话语与精灵回复镜像进聊天 store，保持对话窗实时同步与历史水合一致；字幕内嵌通话面板（[subtitles-overlay.tsx](subtitles-overlay.tsx)，流式文本自动滚到最新一句，关闭或无消息时以占位条保持面板高度稳定）；任一环节失败直接上通话面板错误条，不依赖字幕开关。协议与顺序不变量见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
 
 **每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
@@ -125,7 +125,9 @@
 
 **`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
 
-**决策树**（`updateSpatialDecision`）：drag > chat(listener) > still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
+**决策树**（`updateSpatialDecision`）：drag > chat / voice call（冻结空间决策，精灵留原位）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
+
+**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的落点结算：抛掷自由落体会落在面板上，因为通话中"地面"抬高到面板上沿），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则平滑上提精灵让位，挂断后回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边探头吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 

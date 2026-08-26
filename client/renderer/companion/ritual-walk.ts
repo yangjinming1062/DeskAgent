@@ -1,5 +1,6 @@
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
+import { $voiceCallOpen } from '@/companion/companion-store'
 import { $spriteAction, clearGazeTarget, setGazeTarget, setSpriteState } from '@/companion/companion-store'
 import { speakProactive } from '@/companion/proactive/proactive'
 import {
@@ -81,7 +82,7 @@ export async function performRitualWalk<T>(
   execute: () => Promise<T>,
   opts?: { previewClick?: boolean }
 ): Promise<T> {
-  if ($chatOpen.get() || $screenLocked.get()) {
+  if ($chatOpen.get() || $screenLocked.get() || $voiceCallOpen.get()) {
     return execute()
   }
 
