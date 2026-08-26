@@ -93,6 +93,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **独立 3D 模型调试套件（`pnpm clip`）**：为解决 3D 产物、面部变形目标与 GLB 质量验证严重依赖完整 LLM 对话链路、反馈慢的问题，提供全屏热更的独立调试器：激活码自动鉴权一键从后端下载模型并流式 Gzip 解压；按 GLB 内嵌 clip 即点即播、交叉淡入淡出与逐帧步进；包围盒接地、水平居中与 Z-up 平躺模型自动立起；位移/旋转/缩放交互手柄；面部变形目标实时调校与 TTS 嘴型振幅模拟。
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
+- **生产渲染面禁止裸 fetch（ESLint 强制）**：后端签名 URL 恒为相对路径，渲染进程 origin（dev 的 Vite、打包后的 file://）解析不到——直连只会打到 Vite 拿回 SPA 回退页，在下游解析器里炸出费解的报错。后端数据与资产字节一律经主进程 IPC 桥转发；纯浏览器跑的独立调试页（puppet 调试台 / clip-debugger）不受此约束，豁免处逐行 lint 注释写明 URL 来源。
 - **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防本地 Whisper/云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 - **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
 - **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：未鉴权时精灵实体不可见（无模型可渲染，程序化蛋等渲染上下文尚未就绪），用户无从戳起——鉴权状态切到未认证（含首次水化、反激活后）即自动弹出激活浮层。托盘「激活...」入口经 IPC 通知渲染器翻 React 状态：主进程只拉窗口不翻渲染状态，不通知则浮层关掉一次就再也唤不回来。

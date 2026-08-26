@@ -63,6 +63,8 @@ export async function hydratePuppet(): Promise<void> {
     if (typeof window !== 'undefined' && window.spiritagent?.api) {
       manifest = await window.spiritagent.api<{ schema?: string; kind?: string }>({ path: info.manifestUrl })
     } else {
+      // Electron 生产路径恒走上方 window.spiritagent.api；本分支仅防御 preload 桥缺席的场景。
+      // eslint-disable-next-line no-restricted-syntax -- 无桥防御分支：桥在时永不执行，避免为死分支引第二条依赖
       const res = await fetch(info.manifestUrl, { credentials: 'include' })
 
       if (!res.ok) {

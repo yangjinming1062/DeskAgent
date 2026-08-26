@@ -430,6 +430,8 @@ export function PuppetStage(): React.JSX.Element {
         if (typeof window.spiritagent?.apiAssetBuffer === 'function') {
           buffer = (await window.spiritagent.apiAssetBuffer({ url: puppet.psdUrl! })).slice().buffer
         } else {
+          // 无桥分支（puppet 调试台 ?stage=1 的纯浏览器上下文）：注入的是同源 vite 资产 URL。
+          // eslint-disable-next-line no-restricted-syntax -- 非 Electron 调试上下文，URL 是同源资产而非后端相对路径
           const res = await fetch(puppet.psdUrl!)
 
           if (!res.ok) {

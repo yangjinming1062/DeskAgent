@@ -369,6 +369,7 @@ export async function fetchGlbWithCache(
         contentHash: contentHash || undefined
       })
 
+      // eslint-disable-next-line no-restricted-syntax -- URL 是主进程铸造的 spiritagent-media:// 自定义协议，非后端相对路径
       const res = await fetch(mediaUrl)
 
       if (!res.ok) {

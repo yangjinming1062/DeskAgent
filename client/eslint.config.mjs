@@ -177,10 +177,36 @@ export default [
         {
           patterns: [
             {
-              group: ['@/companion', '@/companion/*', '../companion', '../companion/*', '../../companion', '../../companion/*'],
+              group: [
+                '@/companion',
+                '@/companion/*',
+                '../companion',
+                '../companion/*',
+                '../../companion',
+                '../../companion/*'
+              ],
               message: 'hub must not import companion — review design before coupling the two windows.'
             }
           ]
+        }
+      ]
+    }
+  },
+  {
+    // 生产渲染面（精灵窗 / 工具窗 / 共享层）禁止裸 fetch：后端签名 URL 是相对路径，
+    // 渲染进程 origin（dev 的 vite / 打包后的 file://）解析不到，请求会打到 vite 拿回
+    // SPA 回退的 index.html。后端数据与字节一律走主进程桥（api / apiAsset /
+    // apiAssetBuffer / apiAssetModelUrl）。独立调试页（puppet-entry / clip-debugger，
+    // 部分在纯浏览器跑）不在此列；确需直连处逐行 eslint-disable 写明 URL 来源。
+    files: ['renderer/companion/**/*.{ts,tsx}', 'renderer/hub/**/*.{ts,tsx}', 'renderer/shared/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.name='fetch'], CallExpression[callee.type='MemberExpression'][callee.property.name='fetch']",
+          message:
+            '生产渲染面禁裸 fetch——后端相对 URL 在渲染进程 origin 上解析不到。走 window.spiritagent 的 api / apiAsset / apiAssetBuffer / apiAssetModelUrl 桥；例外逐行 eslint-disable 注明 URL 来源。'
         }
       ]
     }
