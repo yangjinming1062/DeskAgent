@@ -19,7 +19,7 @@
     if (n === 'レイヤー 1') n = 'facedetail';
     if (n === 'fronthair' || n === 'front_hair') n = 'front hair';
     if (n === 'backhair' || n === 'back_hair') n = 'back hair';
-    if (n === 'bottom_wear' || n === 'bottom wear') n = 'bottomwear';
+    if (n === 'bottom_wear' || n === 'bottom wear' || n === 'leg_wear' || n === 'leg wear' || n === 'legwear') n = 'bottomwear';
     if (n === 'top_wear' || n === 'top wear') n = 'topwear';
     if (n === 'hand_wear' || n === 'hand wear') n = 'handwear';
     if (n === 'foot_wear' || n === 'foot wear' || n === 'shoes' || n === 'boots') n = 'footwear';
@@ -38,7 +38,7 @@
     raw = raw.trim();
     if (raw === 'fronthair' || raw === 'front_hair') return 'front hair';
     if (raw === 'backhair' || raw === 'back_hair') return 'back hair';
-    if (raw === 'bottom_wear' || raw === 'bottom wear') return 'bottomwear';
+    if (raw === 'bottom_wear' || raw === 'bottom wear' || raw === 'leg_wear' || raw === 'leg wear' || raw === 'legwear') return 'bottomwear';
     if (raw === 'top_wear' || raw === 'top wear') return 'topwear';
     if (raw === 'hand_wear' || raw === 'hand wear') return 'handwear';
     if (raw === 'foot_wear' || raw === 'foot wear' || raw === 'shoes' || raw === 'boots') return 'footwear';
@@ -59,6 +59,7 @@
     'torso':       { depth: 0.88, group: 'body', order: 20 },
     'neck':        { depth: 0.95, group: 'body', order: 25 },
     'bottomwear':  { depth: 0.88, group: 'body', order: 40 },
+    'legwear':     { depth: 0.88, group: 'body', order: 40 },
     'footwear':    { depth: 0.86, group: 'body', order: 45 },
     'topwear':     { depth: 0.90, group: 'body', order: 50 },
     'handwear':    { depth: 0.86, group: 'body', order: 60 },
@@ -535,7 +536,10 @@
       if (G.eyeL && G.eyeR && !findPart('eye_close').length && anchors.eyeL && anchors.eyeR) {
         var slotEC = SLOTS['eye_close'];
         var mk = function (S, gimg, side) {
-          var lash = findPart('eyelash_' + side.toLowerCase())[0] || findPart('eyebrow_' + side.toLowerCase())[0];
+          var lash = parts.filter(function (p) {
+            var b = baseName(p.name);
+            return (b === 'eyelash' || b === 'eyebrow') && (p.side === side.toUpperCase() || p.name.indexOf('_' + side.toLowerCase()) >= 0 || p.name.indexOf('-' + side.toLowerCase()) >= 0);
+          })[0];
           var tint = lash ? meanColorOfImg(lash.img || { data: new Uint8ClampedArray(0) }, false) : null;
           return synthPart('eye_close_' + side.toLowerCase(), gimg,
             (S.x1 - S.x0) * 1.1, (S.x0 + S.x1) / 2, S.closeY, 0.55, tint, slotEC, side);
@@ -547,7 +551,6 @@
         if (idxE < 0) idxE = lastIndexWhere(parts, function (p) { return p.name === 'face'; });
         parts.splice(idxE + 1, 0, eL, eR);
         synth.eye = true;
-        warnings.push('eye_close が無いため汎用閉じ目を自動配置しました（「目」の差分バーで調整可）');
       }
       // mouth
       if (G.mouth && !findPart('mouth_close').length && byName['mouth_open']) {
@@ -561,7 +564,6 @@
         if (idxM < 0) idxM = lastIndexWhere(parts, function (p) { return p.name === 'face'; });
         parts.splice(idxM + 1, 0, mc);
         synth.mouth = true;
-        warnings.push('mouth_close が無いため汎用閉じ口を自動配置しました（「口」のバーで調整可）');
       }
     }
     // Reorder only the head facial feature layers among their own slots so that

@@ -18,7 +18,7 @@
 
 ## 关键契约与设计
 
-- **PSD 层命名**是装配的输入契约（face / eyewhite / irides / eyelash / eye_close / eyebrow / mouth_open / mouth_close / nose / ears / neck / topwear / bottomwear / handwear / front hair_N / back hair），上游 see-through 的产出逐字吻合；`rigger.normName` 内置少量别名归一（`mouth`→`mouth_open` 等）。**侧名补丁**：see-through 产出 `-l/-r` 后缀层名（eyewhite-l 等），绕过 vendor SLOTS 匹配导致侧别/淡出/眼锚点缺失（虹膜移动/眉毛/远眼收窄/耳淡出全部失效）——装配边界统一补齐眼锚点并规范层名、侧别与开眼层淡出标记。
+- **PSD 层命名**是装配的输入契约（face / eyewhite / irides / eyelash / eye_close / eyebrow / mouth_open / mouth_close / nose / ears / neck / topwear / bottomwear / legwear / handwear / front hair_N / back hair），上游 see-through 的产出逐字吻合；`rigger.normName` 内置少量别名归一（`mouth`→`mouth_open`、`leg_wear`→`bottomwear` 等）。**侧名补丁**：see-through 产出 `-l/-r` 后缀层名（eyewhite-l 等），绕过 vendor SLOTS 匹配导致侧别/淡出/眼锚点缺失（虹膜移动/眉毛/远眼收窄/耳淡出全部失效）——装配边界统一补齐眼锚点并规范层名、侧别与开眼层淡出标记。
 - **头部五官权威图层层序排序（Head Canonical Z-Order）**：装配阶段仅针对头部五官与前发槽位（face < facedetail < mouth < eyewhite < irides < eyelash/eye_close < nose < eyebrow < front hair）在其占用的槽位间进行解剖学稳定重排，确保任意刘海/碎发自然覆盖眼眉并彻底解决「眼睛悬浮在头发上」问题；**身体、躯干、四肢、服装与配饰图层 100% 保留上游 PSD 的原始层级顺序**，杜绝手臂与裙服层级穿模。
 - **形变数学与上游逐字一致**（depth 视差、发束权重、弹簧参数）；外围（GL 装配、rAF 生命周期、参数注入、TS 类型）与本仓动画自动化层为本仓代码。升级机制时以"同种子同参数输出可复现"为回归基线，中立姿态几何严格恒等。
 - **ArtMesh**：每层按 alpha 轮廓采样三角剖分，顶点密度贴形（发梢/睫毛/下巴缘），退化层回退 quad；域外三角形靠 alpha discard 遮蔽，无需完整 CDT 的约束恢复。
