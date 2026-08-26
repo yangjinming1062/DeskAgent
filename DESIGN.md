@@ -71,7 +71,9 @@ SpiritAgent 中的图像生成服务于角色数字身份的确立、实时情�
 
 ### 2.3 2D 路径下的多层骨骼叠加
 
-2D 路径（[client/renderer/companion/mesh2d/](client/renderer/companion/mesh2d/)）运行时按四层叠加把动画状态机 + 自主行为 + 持续微动合成到同一帧的骨骼 transform 上：
+2D 呈现按产物质量分两级：see-through 分层 PSD 走 [puppet](client/renderer/companion/puppet/) 高保真路径——圆投影伪 3D 转头、面部情绪通道（22 词表→眉/嘴/眼参数，骨骼链没有的能力）、发束/裙摆次级物理、种子化观察段落；无 PSD（切分降级 / 历史资产）时回落本节的骨骼分层链。两级共享动作白名单、情绪词表与交互区域总线，并共同遵守「puppet → mesh2d → 3D → 蛋」的永不空白级联（§1.2）。
+
+骨骼分层链（[client/renderer/companion/mesh2d/](client/renderer/companion/mesh2d/)）运行时按四层叠加把动画状态机 + 自主行为 + 持续微动合成到同一帧的骨骼 transform 上：
 
 1. **base pose 层**：当前 active action 的**关键帧轨迹**写满骨骼——每轨固定 bone + 通道（rotation / scale / position）+ 轴，keys 为 `(t_ms, v)` 序列（末键后保持，linear / ease_in_out 缓动），动作因此是连续运动而非静态姿势（`wave` 挥手有手腕往复、`hair_touch` 整理头发有轻挠、`hands_on_hip` 叉腰、`spread_arms` 展臂、`point_*` 指向等）；单回合可依时序编排最多 3 个动作。无 active action 时由 idle variant 顶替。
 2. **locomotion 覆盖层**：按 `$spatialLocomotion`（`still / walk / walk_fast / fly / drag / jump / fall`）的相位公式，对 body_main / shoulder_L/R / skirt / back_hair 应用周期摆动或下落重力姿态；切分出腿层的模型叠加 hip/knee/ankle 腿部摆动相位，无腿层时用复合躯干方案（详见 [PROTOCOL.md §1.4 action 白名单](PROTOCOL.md) 的注释）。
@@ -339,7 +341,8 @@ Onboarding 默认走 2D 路径：形象确认后立即触发 2D 骨骼分层切�
 空闲时形象不是静止贴图。两类自主行为，**都不触发语音、不弹气泡，纯视觉**：
 
 - **微动作**（随机间隔）：眨眼、换重心、看四周、伸懒腰等空闲变体随机切换。由 2D / 3D 骨骼动画引擎直接驱动，不走云端。
-  - 2D 路径下的空闲变体集（[2D 驱动层注册表](backend/services/companion/mesh2d/manifest_exporter.py)）：`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more` / `idle_stretch` / `idle_hip_shift` / `idle_lean_back` 加权随机切换（详见 §2.3）。
+  - 2D 骨骼链的空闲变体集（[2D 驱动层注册表](backend/services/companion/mesh2d/manifest_exporter.py)）：`idle_breath` / `idle_glance` / `idle_squint` / `idle_sway_more` / `idle_stretch` / `idle_hip_shift` / `idle_lean_back` 加权随机切换（详见 §2.3）。
+  - 2D puppet（PSD）链的空闲自主行为为**种子化观察段落**：~15s 环内依次左右观察、抬头、低头、动作间回正，叠加呼吸、深呼吸、微扫视与发束/耳/呆毛事件；同种子可复现（无每帧随机数）。
 - **空间自主行为（智能驱动 vs 本地规则）**：智能驱动开关开启时，客户端周期性/事件驱动地向云端提交环境上下文（空闲时长、本地时间、焦点应用、锁屏状态、上次动作间隔），由云端决定是否触发漫游、栖息或静止；云端返回"不动"或异常时均保持静止、不做擅自决策。关时回退本地规则（专注窗口自动栖身）。
 
 ### 6.5 故障态与降级行为（伙伴永不"死"）

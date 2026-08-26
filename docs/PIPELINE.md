@@ -97,6 +97,26 @@ chain-end task → download → final GLB → companion-models/<uid>/<sha>.glb
 
 ## 6. 2D 分层动画能力链
 
+2D 形象有两条产物链，**同一行状态机 / WS 事件 / 衣柜接缝复用**，客户端按 manifest 描述符分流；渲染级联为 puppet（PSD）→ mesh2d → 3D → 程序化蛋。
+
+### 6.1 PSD 链（see-through，首选）
+
+**链拓扑**：
+```
+fullbody_url → see-through（HF Space Gradio：upload → call/inference → SSE 轮询，日免费额度）
+             → 分层 PSD → 资产库落盘 → manifest 描述符 spiritagent.2d.psd/1
+```
+
+**产物契约**：manifest 恒为 `{"schema": "spiritagent.2d.psd/1", "kind": "psd", "psd": <资产路径>}`；`layer_entries` 恒为 `[{"name": "psd", "url": <签名 URL>}]`。PSD 内为 22 语义层（face / eyewhite / irides / eyelash / eyebrow / mouth / nose / neck / ears / front hair / back hair / topwear / bottomwear / handwear 等，含遮挡补全），层名可带 `-l/-r` 侧后缀。后端 `seethrough_enabled` 门控默认关；SeeThroughError 时调用方降级 §6.2 骨骼链。
+
+**客户端兑现**（[client/renderer/companion/puppet/](../client/renderer/companion/puppet/)，机制细节见模块 README）：
+- PSD → vendor rigger（Anime2.5DRig，MIT）语义装配；see-through 的 `-l/-r` 侧名在装配边界补齐 side / fade / 眼锚点。
+- 每层 alpha 轮廓 ArtMesh（增量 Delaunay）+ 脸面/头骨双表面控制笼 → 圆投影伪 3D 转头（六点深度曲线 / 远眼收窄 / 周边可见度）+ 次级运动（发束 4 节点弹簧链 / 裙双频 / 耳事件 / 呆毛 / 种子化自主观察段落）。
+- 13 姿态安全验证（三角形翻转 / 边拉伸）按动作缩放阶梯（1→0.25）取首个全绿档；PSD 语义完整度三级分档 semantic / grouped / minimal 门控机制与幅度。
+- 驱动层：情绪（PROTOCOL §3 22 词表）→ 面部参数、动作白名单 → 定时包络、TTS 振幅 → 嘴型、六区 hitmap 复用 `$mesh2dHitmap` 交互总线。
+
+### 6.2 骨骼链（CPU 切分，降级）
+
 **链拓扑**：
 ```
 fullbody_url → Vision LLM (8 部件 BBox 检测：6 核心 + 2 可选腿) → CPU 抠图裁切 → 遮挡边缘补全
@@ -117,7 +137,7 @@ fullbody_url → Vision LLM (8 部件 BBox 检测：6 核心 + 2 可选腿) → 
 ## 7. 渲染与传输
 
 - **3D 客户端**：纯 GLB 播放渲染引擎——动画全部来自 `gltf.animations`，无程序化注入；Gzip 透明解压与 OPFS 内容哈希缓存。
-- **2D 客户端**：Three.js SkinnedMesh 正交相机渲染，秒级就绪且零额外 GPU 负担。
+- **2D 客户端**：PSD 链走 puppet（WebGL 原生，Alpha 轮廓网格 + 逐顶点形变）；骨骼链走 Three.js SkinnedMesh 正交相机渲染。两者秒级就绪且零额外 GPU 负担。
 
 ## 8. 验证 checklist
 
@@ -125,10 +145,13 @@ fullbody_url → Vision LLM (8 部件 BBox 检测：6 核心 + 2 可选腿) → 
 - [ ] biped 颈段取 `NeckTwist01` 兜底（`spec=tripo` 无 `Neck` 节点）
 - [ ] 2D `manifest.json` 各 mesh 均包含正确的 `origin` 画布中心坐标
 - [ ] 客户端兑现按三级降级落空时回退到绑定姿势而非抛错
+- [ ] puppet 链无头断言：`puppet.html?autotest=1`（装配 + 动画八标志）与 `?poses=1`（13 姿态安全 + 缩放阶梯）全绿
 
 ## 9. 参考实现
 
 - 3D 能力链编排：`backend/services/companion/pipeline.py::run_capability_chain`
-- 2D 切分编排：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
+- 2D see-through 切分编排：`backend/services/companion/seethrough/pipeline.py::run_seethrough_split`
+- 2D 骨骼切分编排：`backend/services/companion/mesh2d/pipeline.py::run_mesh2d_pipeline`
 - 3D 客户端兑现：`client/renderer/companion/3d/AnimationMap.ts`
-- 2D 客户端运行时：`client/renderer/companion/mesh2d/mesh2d-runtime.ts`
+- 2D 骨骼链客户端运行时：`client/renderer/companion/mesh2d/mesh2d-runtime.ts`
+- 2D puppet 链客户端：`client/renderer/companion/puppet/PuppetStage.tsx`（模块 README 含机制与验证入口）
