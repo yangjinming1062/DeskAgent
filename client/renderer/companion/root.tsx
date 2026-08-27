@@ -371,7 +371,7 @@ export function CompanionRoot(): React.JSX.Element {
     setActivationOpen(true)
   }
 
-  // Plan §4.3：双击 ready 状态的伙伴打开 Chat。
+  // DESIGN §6.1：双击 ready 状态的伙伴打开 Chat。
   const onDoubleTap = () => {
     if (authed) {
       if (lifecycle === 'onboarding') {

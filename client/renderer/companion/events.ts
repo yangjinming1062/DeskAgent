@@ -226,7 +226,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       applySpatialCue(locale, target)
 
-      // 在「始终语音」模式下朗读聊天回复（plan §4.1）；
+      // 在「始终语音」模式下朗读聊天回复（DESIGN §6.1 响应模式）；
       // 通话进行中或锁屏时跳过。延后一帧让 EMOTIONAL 先可观察，
       // 再被 SPEAKING 覆盖（ARCH §7.5）。
       if ($responseMode.get() === 'voice' && text.trim() && !$voiceCallOpen.get() && !screenLocked) {

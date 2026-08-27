@@ -253,7 +253,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         if (bootCompleted) {
           dismissOverlayOnce()
           // 重连后"打起精神"：如果之前表达过 disconnected 降级，就回到 idle
-          // （plan §4.5）。若从未显示过降级，则静默恢复。
+          // （DESIGN §6.5）。若从未显示过降级，则静默恢复。
           const cur = $spriteState.get()
 
           if (cur === 'disconnected') {

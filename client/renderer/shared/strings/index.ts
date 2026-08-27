@@ -9,7 +9,6 @@ export const strings = {
     choose: '选择',
     clear: '清除',
     close: '关闭',
-    collapse: '收起',
     confirm: '确认',
     connect: '连接',
     connecting: '连接中',
@@ -18,7 +17,6 @@ export const strings = {
     copy: '复制',
     copyFailed: '复制失败',
     delete: '删除',
-    docs: '文档',
     done: '完成',
     error: '错误',
     failed: '失败',
@@ -43,27 +41,16 @@ export const strings = {
     desktopBootFailedWithMessage: (message: string) => `桌面启动失败：${message}`,
     steps: {
       connectingGateway: '正在连接桌面网关',
-      loadingSettings: '正在加载 SpiritAgent 设置',
-      loadingSessions: '正在加载最近会话',
       startingDesktopConnection: '正在启动桌面连接',
       startingSpiritAgentDesktop: '正在启动 SpiritAgent 桌面版…'
     },
     errors: {
-      backgroundExited: 'SpiritAgent 后台进程已退出。',
-      backgroundExitedDuringStartup: 'SpiritAgent 后台进程在启动期间退出。',
-      backendStopped: '后端已停止',
-      desktopBootFailed: '桌面启动失败',
-      gatewaySignInRequired: '需要登录网关',
-      ipcBridgeUnavailable: '桌面 IPC 桥不可用。'
+      desktopBootFailed: '桌面启动失败'
     },
     failure: {
       title: 'SpiritAgent 无法启动',
       description: '后台网关没有启动。请尝试下面的恢复步骤；这里不会删除你的对话或设置。',
-      retry: '重试',
-      openLogs: '打开日志',
-      retryHint: '重新加载会重连到云端 Backend。打开日志可查看失败原因。',
-      hideRecentLogs: '隐藏最近日志',
-      showRecentLogs: '显示最近日志'
+      retry: '重试'
     }
   },
 
@@ -76,7 +63,6 @@ export const strings = {
     dismiss: '关闭通知',
     details: '详情',
     copyDetail: '复制详情',
-    copyDetailFailed: '无法复制通知详情',
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT 需要 ELEVENLABS_API_KEY。',
       elevenLabsRejectedKey: 'ElevenLabs 拒绝了该 API key (401)。',
@@ -306,11 +292,9 @@ export const strings = {
   },
 
   errors: {
-    genericFailure: '发生错误',
     boundaryTitle: '界面出错了',
     boundaryDesc: '此视图遇到意外错误。你的对话和设置是安全的。',
-    reloadWindow: '重新加载窗口',
-    openLogs: '打开日志'
+    reloadWindow: '重新加载窗口'
   },
 
   ui: {
@@ -319,5 +303,3 @@ export const strings = {
     }
   }
 }
-
-export type Translations = typeof strings

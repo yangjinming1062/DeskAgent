@@ -2,7 +2,7 @@ import { atom, type WritableAtom } from 'nanostores'
 
 import { persistBoolean, persistString, storedBoolean, storedString } from '@/shared/lib/storage'
 
-// 响应模式控制伙伴在 Chat 模式下如何回复（plan §4.1）。
+// 响应模式控制伙伴在 Chat 模式下如何回复（DESIGN §6.1 响应模式）。
 // 语音通话模式始终是语音，与此设置无关。
 export type ResponseMode = 'text' | 'voice'
 

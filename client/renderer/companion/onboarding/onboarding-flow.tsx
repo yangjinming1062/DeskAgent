@@ -637,7 +637,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // 题面文本，显示在输入框下方。
   const spokenText = question?.text ?? ''
 
-  // 每道题出现时朗读（默认中性声；plan §3.2）。
+  // 每道题出现时朗读（DESIGN §5.2 预制语音）。
   useEffect(() => {
     if (phase !== 'q-character' && phase !== 'q-user' && phase !== 'voice') {
       return
@@ -695,7 +695,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     const nextAnswers: OnboardingAnswers = { ...answers, [q.key]: cleaned }
     setAnswers(nextAnswers)
 
-    // 逐字段增量持久化（design §7.5）；fire-and-forget——绝不阻塞 UI 等草稿保存。
+    // 逐字段增量持久化（DESIGN §5.2 断点恢复）；fire-and-forget——绝不阻塞 UI 等草稿保存。
     // 网关未打开前是空操作。
     if (gatewayState === 'open' && ONBOARDING_FIELD_KEYS.has(q.key)) {
       void submitOnboardingAnswer(q.key, cleaned ?? null)
@@ -966,7 +966,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
   const hydrateFullbodyStageRef = useLatestRef(hydrateFullbodyStage)
 
-  // 断点恢复（plan §3 / design §7.5）：网关一旦连通，
+  // 断点恢复（DESIGN §5.2）：网关一旦连通，
   // 就把还没答完的草稿拉回来，让 onboarding 中途崩溃/退出后能从下一道未答的题继续。
   // 只跑一次，绝不重复 resume。
   useEffect(() => {

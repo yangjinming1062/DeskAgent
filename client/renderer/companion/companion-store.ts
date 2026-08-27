@@ -6,7 +6,7 @@ import { persistString, storedString } from '@/shared/lib/storage'
 // unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
 export type CompanionLifecycle = 'unauthed' | 'onboarding' | 'ready'
 
-// 第二阶段状态机（plan.md §2）：
+// 第二阶段状态机（DESIGN §2）：
 // IDLE / LISTENING / THINKING / SPEAKING / WORKING / EMOTIONAL / INTERACTING / DISCONNECTED
 export type SpriteStateName =
   | 'idle'

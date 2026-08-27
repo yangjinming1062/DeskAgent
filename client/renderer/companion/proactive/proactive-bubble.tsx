@@ -6,7 +6,7 @@ import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { switchSession } from '@/companion/session-list-store'
 import { $spatialPos, $spatialScale, $viewport, computeOverlayAnchorBesideSprite } from '@/companion/spatial'
 
-// 伙伴主动消息的临时气泡：聊天面板关闭时显示在伙伴身边（plan.md §4.2）。
+// 伙伴主动消息的临时气泡：聊天面板关闭时显示在伙伴身边（DESIGN §6.2）。
 // 聊天面板打开时，消息已经在对话流里出现，这里不再重复显示。
 // 富媒体不进气泡——媒体送达提示也只以文本出现，点击打开聊天窗（必要时切到目标会话）。
 //

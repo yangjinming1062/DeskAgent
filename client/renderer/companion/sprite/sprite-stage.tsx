@@ -37,9 +37,8 @@ interface SpriteStageProps {
 // 12px 是为了避免触控板微抖动被误判为拖拽、把双击吞掉。
 const DRAG_THRESHOLD = 12
 const DOUBLE_TAP_MS = 320
-// 长按阈值（DESIGN §6.3）：按住未移动 ≥ 500ms 触发独立 long-press 事件，
-// 与拖拽分离。SpriteStage 内长按时由 VFX 层接住，目前只暴露 onLongPress
-// 回调供后续接角色动作（如抱头、撒娇）。
+// 长按阈值（DESIGN §6.3）：按住未移动 ≥ 500ms 触发 long_press 精灵动作与粒子；
+// 拖拽一旦启动即取消等待，两条交互通道互斥。
 const LONG_PRESS_MS = 500
 
 // 一旦光标跨到另一块显示器，pointer capture 会持续投递跨视口坐标；
