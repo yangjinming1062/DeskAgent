@@ -5,6 +5,7 @@ from .backoff import backoff_for_poll
 from .config import SETTINGS
 from .constants import (
     AGENT_MAX_LOOP_TURNS,
+    ATTACHMENT_DATA_URL_MAX_CHARS,
     ATTACHMENT_TYPE_IMAGE,
     BACKGROUND_REVIEW_DEFAULT,
     CHARS_PER_TOKEN,
@@ -99,6 +100,7 @@ from .temp_files import gc_session as temp_files_gc_session
 
 __all__ = [
     "AGENT_MAX_LOOP_TURNS",
+    "ATTACHMENT_DATA_URL_MAX_CHARS",
     "ATTACHMENT_TYPE_IMAGE",
     "BACKGROUND_REVIEW_DEFAULT",
     "CHARS_PER_TOKEN",

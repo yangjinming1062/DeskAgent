@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from components import (
+    ATTACHMENT_DATA_URL_MAX_CHARS,
     ATTACHMENT_TYPE_IMAGE,
     JSONRPC_INVALID_PARAMS,
     JSONRPC_METHOD_NOT_FOUND,
@@ -331,7 +332,7 @@ def _is_nonneg_int(v: Any) -> bool:
 
 
 def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """校验并规范化 attachments 负载：返回清洗后的列表（每项重塑为 {type, file_url}），调用方未传时返回 None；主要格式是 file_url（HTTP URL）。"""
+    """校验并规范化 attachments 负载：返回清洗后的列表（每项重塑为 {type, file_url}），调用方未传时返回 None。file_url 接受 HTTP(S) URL 与桌面端本地图片直发的 ``data:image/*;base64,`` data URL。"""
     raw = params.get("attachments")
     if raw is None:
         return None
@@ -345,10 +346,20 @@ def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must be an object")
         att_type = att.get("type", ATTACHMENT_TYPE_IMAGE)
 
-        # file_url（HTTP/HTTPS）
         file_url = att.get("file_url")
-        if file_url and isinstance(file_url, str) and file_url.startswith("http"):
+        if not (file_url and isinstance(file_url, str)):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must have file_url")
+
+        # HTTP/HTTPS URL（长度与 URL 语义一致，维持紧上限）
+        if file_url.startswith("http"):
             if len(file_url) > 2048:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}].file_url too long")
+            cleaned.append({"type": att_type, "file_url": file_url})
+            continue
+
+        # 桌面端本地图片 data URL：字节在负载内，不落盘；字符上限覆盖 base64 膨胀。
+        if file_url.startswith("data:image/"):
+            if len(file_url) > ATTACHMENT_DATA_URL_MAX_CHARS:
                 raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}].file_url too long")
             cleaned.append({"type": att_type, "file_url": file_url})
             continue

@@ -34,16 +34,18 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
-import { FileImage, Mic, PanelLeft, Phone, Sparkles, X } from '@/shared/lib/icons'
+import { Mic, PanelLeft, Phone, Sparkles, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { MessageBubble } from './chat-dock-message-bubble'
+import { useResolvedMediaSrc } from './chat-media-src'
 import { SessionDrawer } from './chat/session-drawer'
 import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
+import { openMediaViewer } from './media-viewer-overlay'
 import { $sessionListOpen, openMainSession, setSessionListOpen } from './session-list-store'
 
 const DOCK_DEFAULT_WIDTH = 760
@@ -100,6 +102,25 @@ function ChatScrollAutoFollow({ scrollRef }: { scrollRef: React.RefObject<HTMLDi
   }, [tick, scrollRef])
 
   return null
+}
+
+// 附加态缩略图（DESIGN §6.1 粘贴/拖入图片）：本地路径走媒体源解析通道取图，点击进全屏查看器。
+function PendingImageThumb({ path }: { path: string }): React.JSX.Element {
+  const src = useResolvedMediaSrc({ type: 'image', url: path })
+
+  return (
+    <button
+      className="block h-16 w-16 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-white/12 bg-black/30 p-0 transition hover:border-white/30"
+      onClick={() => openMediaViewer({ type: 'image', url: path })}
+      type="button"
+    >
+      {src ? (
+        <img alt="待发送图片" className="block h-full w-full object-cover" src={src} />
+      ) : (
+        <span className="flex h-full w-full items-center justify-center text-[10px] text-white/40">加载中…</span>
+      )}
+    </button>
+  )
 }
 
 export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.ReactElement {
@@ -334,31 +355,38 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     try {
       const id = await ensureSession()
       let fullText = trimmed
+      // 发送附件（仅 data URL，进 prompt.submit 的多模态 parts）与展示附件
+      // （data URL 或本地路径，供气泡图片卡取图）分开收集：本地路径过不了
+      // 后端附件校验，只允许作渲染源。
       const attachments: string[] = []
+      const displayAttachments: string[] = []
 
       if (pendingImage) {
-        let attachmentUrl = pendingImage
+        // 本地图片优先以 data URL 附件直发多模态（后端转 input_image parts，视觉链路接手）；
+        // 读取失败（不可读/超体量）才降级路径模式：@file: 指令进正文，LLM 走文件工具读取。
+        let dataUrl: string | null = pendingImage.startsWith('data:') ? pendingImage : null
 
-        try {
-          if (!pendingImage.startsWith('data:')) {
-            const dataUrl = await window.spiritagent.readFileDataUrl(pendingImage)
-
-            if (dataUrl) {
-              attachmentUrl = dataUrl
-            }
+        if (!dataUrl) {
+          try {
+            dataUrl = await window.spiritagent.readImageForAttach(pendingImage)
+          } catch {
+            /* 降级路径模式 */
           }
-        } catch {
-          /* 保留本地路径 */
         }
 
-        const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
-          session_id: id,
-          path: attachmentUrl
-        })
+        if (dataUrl) {
+          attachments.push(dataUrl)
+          displayAttachments.push(dataUrl)
+        } else {
+          const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
+            session_id: id,
+            path: pendingImage
+          })
 
-        if (ref.ref_text) {
-          fullText = `${fullText}\n${ref.ref_text}`.trim()
-          attachments.push(pendingImage)
+          if (ref.ref_text) {
+            fullText = `${fullText}\n${ref.ref_text}`.trim()
+            displayAttachments.push(pendingImage)
+          }
         }
       }
 
@@ -372,7 +400,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
       externalPathsRef.current = []
 
-      pushUserMessage(fullText || '（图片）', attachments.length ? attachments : undefined)
+      // 展示层：图片卡即内容，纯图片消息不留占位文案；仅图片与正文全空时兜底。
+      pushUserMessage(
+        fullText || (displayAttachments.length ? '' : '（图片）'),
+        displayAttachments.length ? displayAttachments : undefined
+      )
       setText('')
       setPendingImage(null)
       setSpriteState('thinking')
@@ -610,9 +642,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           </div>
 
           {pendingImage && (
-            <div className="flex items-center gap-1.5 border-t border-white/10 px-4 py-2 text-xs text-white/60">
-              <FileImage className="size-3.5 text-white/40" />
-              已附加图片 {sending ? '（发送中…）' : ''}
+            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
+              <PendingImageThumb path={pendingImage} />
+              <span>{sending ? '图片发送中…' : '已附加图片，点击可查看'}</span>
+              {!sending && (
+                <button
+                  aria-label="移除附加图片"
+                  className="rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setPendingImage(null)}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
             </div>
           )}
 

@@ -88,6 +88,7 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
       text: extractText(m),
       toolName: m.tool_name ?? null,
       streaming: false,
+      ...(m.role === 'user' ? omitUndefined(extractUserAttachments(m)) : {}),
       ...(m.media?.length ? { media: m.media } : {})
     }
   }
@@ -122,6 +123,40 @@ function extractText(m: SessionMessage): string {
     .filter(p => p.type === 'input_text' && typeof p.text === 'string')
     .map(p => p.text as string)
     .join('\n')
+}
+
+// 多模态用户行里的 input_image parts 还原为附件列表（data URL 或图片 URL），
+// 供气泡渲染图片卡；纯文本行与无图行返回 undefined。
+function extractUserAttachments(m: SessionMessage): string[] | undefined {
+  if (typeof m.content !== 'string') {
+    return undefined
+  }
+
+  let parsed: unknown
+
+  try {
+    parsed = JSON.parse(m.content)
+  } catch {
+    return undefined
+  }
+
+  if (!Array.isArray(parsed)) {
+    return undefined
+  }
+
+  const urls = parsed
+    .filter(
+      (p): p is { image_url?: unknown } =>
+        typeof p === 'object' && p !== null && (p as { type?: unknown }).type === 'input_image'
+    )
+    .map(p => p.image_url)
+    .filter((u): u is string => typeof u === 'string' && u.length > 0)
+
+  return urls.length ? urls : undefined
+}
+
+function omitUndefined(attachments: string[] | undefined): { attachments?: string[] } {
+  return attachments ? { attachments } : {}
 }
 
 export function setProactiveBubble(state: ProactiveBubbleState | null): void {

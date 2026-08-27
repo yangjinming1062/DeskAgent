@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 import { IPC, type SpiritAgentSelectPathsOptions } from '@ipc/contracts'
+import { nativeImage } from 'electron'
 import type { BrowserWindow, Dialog, IpcMain } from 'electron'
 
 import { dataUrlFromBuffer } from '../shared/mime'
@@ -22,6 +23,12 @@ interface FilesIpcDeps {
   mimeTypeForPath: (filePath: string) => string
 }
 
+// 聊天图片附件的体量护栏：data URL 附件要走 WS 单帧 + 视觉模型请求体，
+// 超过边长/字节任一上限时降采样并重编码 JPEG，保证发送不被体量截断。
+const IMAGE_ATTACH_MAX_EDGE = 2048
+const IMAGE_ATTACH_TARGET_BYTES = 6 * 1024 * 1024
+const IMAGE_ATTACH_JPEG_QUALITY = 0.85
+
 export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath }: FilesIpcDeps): void {
   const { dialog, getMainWindow } = electron
 
@@ -34,6 +41,39 @@ export function registerFilesIpc({ electron, hardening, ipcMain, mimeTypeForPath
     const data = await fs.promises.readFile(resolvedPath)
 
     return dataUrlFromBuffer(data, mimeTypeForPath(resolvedPath))
+  })
+
+  ipcMain.handle(IPC.invoke.readImageForAttach, async (_event, filePath: string) => {
+    const { resolvedPath } = await hardening.resolveReadableFileForIpc(filePath, {
+      maxBytes: hardening.DATA_URL_READ_MAX_BYTES,
+      purpose: 'Image attach'
+    })
+
+    const data = await fs.promises.readFile(resolvedPath)
+    let buffer: Buffer = data
+    let mime = mimeTypeForPath(resolvedPath)
+
+    // 解码失败（HEIC 等原生不支持的格式）时尺寸为 0，原样透传字节，交由供应商侧判定。
+    const decoded = nativeImage.createFromBuffer(data)
+    const { width, height } = decoded.getSize()
+
+    if (width > 0 && height > 0) {
+      const scale = Math.min(1, IMAGE_ATTACH_MAX_EDGE / Math.max(width, height))
+      const oversized = scale < 1 || data.length > IMAGE_ATTACH_TARGET_BYTES
+
+      if (oversized) {
+        const resized = scale < 1 ? decoded.resize({ width: Math.round(width * scale) }) : decoded
+        const jpeg = resized.toJPEG(IMAGE_ATTACH_JPEG_QUALITY)
+
+        // 仅在重编码确实变小时替换，避免把紧凑原图越压越大。
+        if (jpeg.length < data.length) {
+          buffer = jpeg
+          mime = 'image/jpeg'
+        }
+      }
+    }
+
+    return dataUrlFromBuffer(buffer, mime)
   })
 
   ipcMain.handle(IPC.invoke.selectPaths, async (_event, options: SpiritAgentSelectPathsOptions = {}) => {

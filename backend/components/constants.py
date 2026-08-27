@@ -116,6 +116,10 @@ MAX_VOICE_DESIGN_PROMPT_CHARS: int = 200
 # 协议层附件类型判别；当前聊天管道仅接受 image（视觉模型以 image_url 消费）。
 ATTACHMENT_TYPE_IMAGE: str = "image"
 
+# 附件 data URL（``data:image/...;base64,``）的字符上限。桌面端本地图片以 data URL 直发多模态，
+# 不走后端落盘；上限需覆盖 base64 膨胀（4/3），同时守住 WS 单帧与数据库 TEXT 行的体量。
+ATTACHMENT_DATA_URL_MAX_CHARS: int = 12 * 1024 * 1024
+
 # 默认用户面向语言为中文（让新装环境开口即中文），可通过 ``language`` UserSetting / 会话覆盖切到英文。
 DEFAULT_LANGUAGE: str = "zh"
 
