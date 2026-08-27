@@ -76,7 +76,7 @@ export function AppearancePage(): React.ReactElement {
 
           {/* DESIGN §5.5：2D 切分失败（或尚无 2D 资产）时提供重试入口 */}
           {renderMode === '2d' && mesh2dRetryable && (
-            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-white/8 bg-[#1c1c21] px-3.5 py-2.5">
+            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-white/8 bg-surface-card px-3.5 py-2.5">
               <span className="text-xs text-white/60">
                 {mesh2dInfo.status === 'failed' ? '2D 动画资产生成失败' : '2D 动画资产尚未生成'}
               </span>

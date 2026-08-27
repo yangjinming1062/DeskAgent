@@ -96,6 +96,15 @@ export interface SpiritAgentTitleBarTheme {
   foreground: string
 }
 
+export type SpiritAgentUiTheme = 'classic' | 'cyber-glass' | 'holo'
+
+// 主进程侧校验白名单——契约是跨进程唯一真理源，渲染层 registry 只扩展元数据。
+export const SPIRITAGENT_UI_THEMES = ['classic', 'cyber-glass', 'holo'] as const satisfies readonly SpiritAgentUiTheme[]
+
+export interface DesktopUiThemeBroadcast {
+  theme: SpiritAgentUiTheme
+}
+
 export interface DesktopBootProgress {
   error: null | string
   message: string
@@ -285,12 +294,14 @@ export interface IpcEventContract {
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:tray:open-chat': []
+  'spiritagent:ui-theme-changed': [payload: DesktopUiThemeBroadcast]
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
 }
 
 // 3. 渲染进程向主进程单向发送消息（通过 ipcRenderer.send / ipcMain.on）
 export interface IpcSendContract {
   'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
+  'spiritagent:ui-theme': [payload: SpiritAgentUiTheme]
 }
 
 type IpcChannel = keyof IpcInvokeContract
@@ -352,9 +363,11 @@ export const IPC = {
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     trayOpenChat: 'spiritagent:tray:open-chat',
+    uiThemeChanged: 'spiritagent:ui-theme-changed',
     updateEvent: 'spiritagent:update-event'
   } as const satisfies Record<string, IpcEventChannel>,
   send: {
-    titleBarTheme: 'spiritagent:titlebar-theme'
+    titleBarTheme: 'spiritagent:titlebar-theme',
+    uiTheme: 'spiritagent:ui-theme'
   } as const satisfies Record<string, IpcSendChannel>
 } as const

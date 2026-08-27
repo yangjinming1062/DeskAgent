@@ -76,7 +76,7 @@ export function SettingsPage({
 // 卡片行容器：多行 SettingRow 之间用 hairline 分隔。
 export function SettingCard({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <div className="divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-[#1c1c21]">
+    <div className="divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
       {children}
     </div>
   )
@@ -127,7 +127,7 @@ export function Toggle({
       aria-label={ariaLabel}
       className={cn(
         'relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:pointer-events-none disabled:opacity-40',
-        checked ? 'border-transparent bg-[#6c8aff]' : 'border-white/15 bg-white/10'
+        checked ? 'border-transparent bg-accent' : 'border-white/15 bg-white/10'
       )}
       disabled={disabled}
       onClick={() => onChange(!checked)}
@@ -329,13 +329,13 @@ export function PanelSelect<T extends string>({
         <ChevronDown className={cn('size-3.5 shrink-0 text-white/40 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-1 min-w-full overflow-hidden rounded-xl border border-white/12 bg-[#141416] p-1 shadow-2xl">
+        <div className="absolute right-0 z-50 mt-1 min-w-full overflow-hidden rounded-xl border border-white/12 bg-surface-panel p-1 shadow-2xl">
           {options.map(o => (
             <button
               aria-selected={o.value === value}
               className={cn(
                 'flex h-7 w-full items-center rounded-lg px-2.5 text-left text-xs transition',
-                o.value === value ? 'bg-[#6c8aff]/15 font-medium text-white' : 'text-white/70 hover:bg-white/5'
+                o.value === value ? 'bg-accent-soft font-medium text-white' : 'text-white/70 hover:bg-white/5'
               )}
               key={o.value}
               onClick={() => {
@@ -506,7 +506,7 @@ export function ConfirmDialog({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-white/12 bg-[#141416] p-5 text-white shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-white/12 bg-surface-panel p-5 text-white shadow-2xl">
         <h3 className="text-sm font-semibold">{title}</h3>
         {description && <p className="mt-2 text-xs leading-relaxed text-white/60">{description}</p>}
         <div className="mt-5 flex justify-end gap-2">

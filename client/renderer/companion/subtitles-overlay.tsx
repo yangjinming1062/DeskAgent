@@ -31,7 +31,7 @@ function SubtitlesOverlayInner({ lastItem }: { lastItem: ChatMessageListItem }):
         : body.text || '…'
 
   return (
-    <div className="flex h-full w-full select-none items-start gap-2 rounded-xl border border-white/8 bg-[#1c1c21] px-3 py-2 text-xs">
+    <div className="flex h-full w-full select-none items-start gap-2 rounded-xl border border-white/8 bg-surface-card px-3 py-2 text-xs">
       <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${isUser ? 'bg-emerald-400' : 'bg-blue-400'}`} />
       <span className="mt-0.5 shrink-0 font-medium text-white/50">{isUser ? '用户:' : '伙伴:'}</span>
       <div

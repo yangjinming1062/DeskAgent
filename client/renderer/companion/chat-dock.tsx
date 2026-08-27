@@ -466,7 +466,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/12 bg-[#141416] text-white shadow-2xl"
+        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/12 bg-surface-panel text-white shadow-2xl"
         onDragOver={e => e.preventDefault()}
         onDrop={e => void onDrop(e)}
         ref={panelRef}
@@ -489,7 +489,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
         {/* Left Column: Visual Anchor & Character Emotion Status (Draggable) */}
         <div
-          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-[#0f0f11] p-4 select-none active:cursor-grabbing"
+          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-surface-chrome p-4 select-none active:cursor-grabbing"
           {...dragBind}
           title="拖动以移动对话框"
         >
@@ -511,7 +511,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 )}
               </div>
               {/* Status Badge floating at bottom of avatar */}
-              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/12 bg-[#141416] px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/12 bg-surface-panel px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
                     spriteState === 'thinking'
@@ -552,7 +552,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         </div>
 
         {/* Right Column: Chat Stream & Input */}
-        <div className="flex flex-1 flex-col min-w-0 bg-[#141416]">
+        <div className="flex flex-1 flex-col min-w-0 bg-surface-panel">
           {/* Header Bar */}
           <div
             className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
@@ -599,7 +599,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             ))}
             {showTyping && (
               <div className="flex justify-start">
-                <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-white/8 bg-[#1c1c21] px-3.5 py-2.5">
+                <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-white/8 bg-surface-card px-3.5 py-2.5">
                   <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:0ms]" />
                   <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:150ms]" />
                   <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:300ms]" />
@@ -621,7 +621,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
             <div className="flex items-end gap-2">
               <textarea
-                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-[#6c8aff]/70"
+                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70"
                 onChange={e => {
                   setText(e.target.value)
                   onTyping()

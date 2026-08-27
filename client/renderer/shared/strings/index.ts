@@ -107,8 +107,13 @@ export const strings = {
     nav: {
       account: '账户',
       about: '关于',
+      appearance: '外观',
       runner: '本机执行器',
       skills: '技能与工具'
+    },
+    appearance: {
+      heading: '外观',
+      hint: '主题同时应用到聊天与设置两个窗口，伙伴形象不受影响。'
     },
     about: {
       heading: 'SpiritAgent Desktop',

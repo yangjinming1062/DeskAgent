@@ -55,7 +55,7 @@ function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps): React.
   const t = strings
 
   return (
-    <div className="fixed inset-0 z-[1500] grid place-items-center bg-[#0f0f11] p-6 text-white">
+    <div className="fixed inset-0 z-[1500] grid place-items-center bg-surface-chrome p-6 text-white">
       <div className="w-full max-w-md">
         <EmptyState
           action={

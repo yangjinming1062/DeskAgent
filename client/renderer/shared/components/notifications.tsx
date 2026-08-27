@@ -14,8 +14,7 @@ import {
 } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-// toast 属于瞬时浮层——两个窗口共用同一套显式深色玻璃样式（不依赖 --dt token，
-// 精灵窗的浅色种子不会把 toast 染白）。
+// toast 属于瞬时浮层——两个窗口共用同一套玻璃样式（--ui-* token，随主题换肤）。
 const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string }> = {
   error: { icon: AlertCircle, iconClass: 'text-rose-400' },
   warning: { icon: AlertTriangle, iconClass: 'text-amber-300' },
@@ -24,7 +23,7 @@ const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string }>
 }
 
 const STACK_SURFACE =
-  'pointer-events-auto rounded-xl border border-white/12 bg-black/65 text-white shadow-xl backdrop-blur-lg'
+  'pointer-events-auto rounded-xl border border-white/12 bg-glass text-white shadow-xl backdrop-blur-glass'
 
 // regionRef 把 portal 容器的 DOM 引用交给调用方——精灵透明窗口需要借此把
 // toast 矩形注册进交互区域登记处（shared 不得反向依赖 companion，所以经 props 透传）。
@@ -129,7 +128,7 @@ function NotificationItem({ notification }: { notification: AppNotification }): 
           {hasDetail && <NotificationDetail detail={notification.detail || ''} />}
           {notification.action && (
             <button
-              className="mt-0.5 rounded-md px-1.5 py-0.5 font-medium text-[#6c8aff] transition hover:bg-[#6c8aff]/15"
+              className="mt-0.5 rounded-md px-1.5 py-0.5 font-medium text-accent transition hover:bg-accent-soft"
               onClick={() => {
                 notification.action?.onClick()
                 dismissNotification(notification.id)

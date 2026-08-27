@@ -186,7 +186,7 @@ export function MemorySection(): React.ReactElement {
               const saving = !!savingById[r.id]
 
               return (
-                <div className="rounded-xl border border-white/8 bg-[#1c1c21] p-3" key={r.id}>
+                <div className="rounded-xl border border-white/8 bg-surface-card p-3" key={r.id}>
                   <textarea
                     className={cn(INPUT_CLASS, 'resize-none')}
                     disabled={saving}
@@ -236,7 +236,7 @@ export function MemorySection(): React.ReactElement {
             const saving = !!row && !!savingById[row.id]
 
             return (
-              <div className="rounded-xl border border-white/8 bg-[#1c1c21] p-3" key={slot.context}>
+              <div className="rounded-xl border border-white/8 bg-surface-card p-3" key={slot.context}>
                 <p className="text-[11px] font-medium text-white/80">{slot.label}</p>
                 <p className="mb-1.5 mt-0.5 text-[10px] text-white/40">{slot.hint}</p>
                 {row ? (

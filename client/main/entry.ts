@@ -40,6 +40,7 @@ import { registerSkillsIpc } from './ipc/skills'
 import { readRestPosition, registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
 import { registerTitlebarIpc } from './ipc/titlebar'
+import { registerUiThemeIpc } from './ipc/ui-theme'
 import { registerUpdateIpc } from './ipc/update'
 import { createDesktopLogger } from './lifecycle/desktop-log'
 import { detectRemoteDisplay } from './lifecycle/platform'
@@ -1448,6 +1449,11 @@ registerTitlebarIpc({
   setRendererTitleBarTheme: theme => {
     rendererTitleBarTheme = theme
   }
+})
+registerUiThemeIpc({
+  getMainWindow: () => mainWindow,
+  getToolWindow: () => toolWindow,
+  ipcMain
 })
 registerClipboardIpc({
   electron: { clipboard },

@@ -487,7 +487,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     // 面板与精灵刚体一体：锚定在精灵脚下并跟随移动，拖动面板即拖动精灵，视觉焦点不分散。
     <div className="fixed inset-0 z-50 pointer-events-none">
       <div
-        className="fixed flex flex-col items-center justify-between rounded-2xl border border-white/12 bg-[#141416] p-5 text-white shadow-2xl"
+        className="fixed flex flex-col items-center justify-between rounded-2xl border border-white/12 bg-surface-panel p-5 text-white shadow-2xl"
         ref={panelRef}
         style={{
           height: VOICE_DOCK_H,
@@ -653,7 +653,7 @@ function WaveformBars({ values, active }: { values: number[]; active: boolean })
               width: 3,
               height,
               borderRadius: 2,
-              background: `rgba(52, 211, 153, ${intensity})`,
+              background: `color-mix(in srgb, var(--ui-success) ${(intensity * 100).toFixed(1)}%, transparent)`,
               animationDelay: `${delay}ms`
             }}
           />

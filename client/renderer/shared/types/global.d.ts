@@ -16,6 +16,7 @@ import type {
   DesktopBootProgress,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
+  DesktopUiThemeBroadcast,
   DesktopUpdateEvent,
   IpcEventContract,
   IpcInvokeContract,
@@ -26,7 +27,8 @@ import type {
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme
+  SpiritAgentTitleBarTheme,
+  SpiritAgentUiTheme
 } from '@ipc/contracts'
 
 // 把契约里的 `(payload) => R | Promise<R>` 收窄为 `(...args) => Promise<R>`,
@@ -74,6 +76,7 @@ declare global {
       runnerGetState: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-state']>
       runnerGetTools: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-tools']>
       setTitleBarTheme: (payload: IpcSendContract['spiritagent:titlebar-theme'][0]) => void
+      setUiTheme: (payload: IpcSendContract['spiritagent:ui-theme'][0]) => void
       runnerConfig: {
         read: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:read']>
         write: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:write']>
@@ -109,6 +112,7 @@ declare global {
       onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
       onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
       onTrayOpenChat: EventSubscription<'spiritagent:tray:open-chat'>
+      onUiThemeChanged: EventSubscription<'spiritagent:ui-theme-changed'>
       getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>
       update: {
         check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>
@@ -127,6 +131,7 @@ export type {
   DesktopBootProgress,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
+  DesktopUiThemeBroadcast,
   DesktopUpdateEvent,
   IpcEventContract,
   IpcInvokeContract,
@@ -137,5 +142,6 @@ export type {
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme
+  SpiritAgentTitleBarTheme,
+  SpiritAgentUiTheme
 }

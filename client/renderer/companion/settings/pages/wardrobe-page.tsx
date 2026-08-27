@@ -109,8 +109,8 @@ export function WardrobePage(): React.JSX.Element {
                 <div
                   className={`group relative cursor-pointer overflow-hidden rounded-xl border text-left transition ${
                     isActiveCard
-                      ? 'border-[#6c8aff]/60 bg-[#6c8aff]/10'
-                      : 'border-white/8 bg-[#1c1c21] hover:border-white/16'
+                      ? 'border-accent-line bg-accent-soft'
+                      : 'border-white/8 bg-surface-card hover:border-white/16'
                   }`}
                   key={outfit.id}
                   onClick={() => {
@@ -278,7 +278,7 @@ export function WardrobePage(): React.JSX.Element {
                 {session.messages.map(m =>
                   m.role === 'user' ? (
                     <div className="flex justify-end" key={m.id}>
-                      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-[#6c8aff]/25 px-3 py-1.5 text-white/90">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent/25 px-3 py-1.5 text-white/90">
                         {m.imageUrl && (
                           <img
                             alt="参考图"

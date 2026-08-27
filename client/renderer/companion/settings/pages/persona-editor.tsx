@@ -96,7 +96,7 @@ export function PersonaSection(): React.JSX.Element {
     return (
       <section>
         <p className={cn(SECTION_TITLE, 'mb-1.5')}>角色</p>
-        <div className="space-y-1 rounded-xl border border-white/8 bg-[#1c1c21] px-3.5 py-3 text-xs">
+        <div className="space-y-1 rounded-xl border border-white/8 bg-surface-card px-3.5 py-3 text-xs">
           <p className="font-medium text-white">{persona?.name ?? '伙伴'}</p>
           <p className="text-white/50">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
           {persona?.appearance && <p className="text-white/40">{persona.appearance}</p>}

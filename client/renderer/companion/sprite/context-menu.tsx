@@ -125,7 +125,7 @@ export function SpriteContextMenu({
       }}
     >
       <div
-        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-white/12 bg-black/65 p-1.5 text-xs text-white shadow-2xl backdrop-blur-lg select-none transition-[opacity,transform] duration-150 ease-out"
+        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-white/12 bg-glass p-1.5 text-xs text-white shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
         onPointerDown={e => {
           e.stopPropagation()
         }}

@@ -280,7 +280,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
       ) : (
         <div className="space-y-2">
           <p className="text-[11px] text-white/60">第 {step + 1} 步 · 回顾</p>
-          <dl className="space-y-1 rounded-xl border border-white/8 bg-[#1c1c21] p-3 text-[11px]">
+          <dl className="space-y-1 rounded-xl border border-white/8 bg-surface-card p-3 text-[11px]">
             {REVIEW_ROWS.map(row => (
               <Row key={row.key} label={row.label} value={values[row.key] || row.fallback || ''} />
             ))}

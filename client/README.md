@@ -78,8 +78,10 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 ## 4. 关键设计决策
 
 - **preload 必须保持 CJS（即便主进程已迁 ESM）**：沙盒 preload 由运行时虚拟机执行脚本，不按 ESM 解析——输出含 import 语句即抛语法错，渲染桥的全局对象变 `undefined`，根组件的兜底页把整棵子树（含激活码录入页）一起埋掉。打包分两条流水线：主进程入口走 ESM，preload 走 CJS、扩展名 `.cjs`。**不要**把 preload 重新合成 ESM——沙盒层限制绕不过模块解析。
-- **窗口视觉只有一个来源 `shared/panel`**：全部窗口共用显式深色类词汇表（石墨表面阶梯 #0f0f11→#141416→#1c1c21、hairline 描边、白底主按钮、品牌蓝 #6c8aff 选中态；大面板实体、瞬时浮层轻玻璃）。刻意不接 `--dt-*` 主题 token——精灵窗会被 themes/context 的启动块刷浅色种子，接了 token 的组件在两个窗口会渲染成两套颜色。旧 shadcn/Radix 组件目录已整体删除，新增控件进 panel kit，不复活旧件。
-- **工具窗的 `data-role` 必须是 `tool`**：hub.html 打的属性同时决定三件事——styles.css 的深色调色板钉死块是否生效、themes/context 的浅色 applyTheme 是否跳过、titlebar IPC 是否会把原生 WindowControlsOverlay 刷成浅色。写成别的值（如 `hub`）会在深色 UI 上顶一道白色原生按钮条，且 body 背景在 lazy 加载空档闪浅色。
+- **窗口视觉只有一个来源 `shared/panel`，底座是 `--ui-*` 语义 token**：全部窗口共用一套类常量词汇表（表面阶梯 chrome→panel→card、瞬时浮层轻玻璃、hairline 描边、白底主按钮、强调色选中态），常量只消费 styles.css 经 `@theme inline` 映射出的语义工具类（`bg-surface-panel` 等）。主题 = `html[data-theme]` 上的变量覆写块，换肤只改一个 dataset 属性，零 JS 涂色、零组件重渲染；色值权威全在 CSS，TS 侧注册表（`shared/theme/registry.ts`）只存 CSS 存不了的展示名、预览色板与标题栏色对。新增控件进 panel kit，不新增硬编码色值。
+- **主题切换入口仅 Hub，持久化与同步走本地**：用户在工具窗设置「外观」页切换（经典暗色 / 赛博玻璃 / 全息 HUD）；选中值写 localStorage（`da.ui.theme`），经 send 通道到主进程校验后广播事件到两个窗口实时生效——不上后端（主题是设备级窗口装饰）。两个 entry 在模块加载期（首帧前）应用已存主题，避免闪烁。主题不覆盖伙伴形象本体（蛋 / 2D puppet / 3D / VFX）与 dev 调试页（clip-debugger / puppet，自带配色）。
+- **主题特效挂在表面工具类上，用 background-image 分层实现**：噪点、渐变洗色、扫描线、角括弧、扫掠光带、呼吸发光由 `[data-theme]` 门控规则作用在 `bg-surface-*` 工具类上，特异性压过单类工具类。特效不用伪元素、不改 `position`——表面元素中 fixed（Hub 根）、absolute（浮层）、static（聊天窗体列）混布，注入定位会破坏后两者的布局；代价是主题规则会整体替换这些元素的 shadow-* 工具类（各主题 box-shadow 已含等价投影）。holo 的动画特效尊重 `prefers-reduced-motion`。
+- **工具窗的 `data-role` 必须是 `tool`**：hub.html 打的属性同时决定两件事——titlebar IPC 的 sender 守卫只认工具窗（含主题切换时同步原生 WindowControlsOverlay 颜色），以及精灵窗的透明规则（`data-role='sprite'`）不误伤工具窗。写成别的值（如 `hub`）会在深色 UI 上顶一道白色原生按钮条。
 - **精灵窗口透明需要双重保证**：窗口级透明标志**加**渲染层 body 透明（由内嵌脚本在 head 解析时同步设置角色属性）。两者缺一，body 背景色会在桌面剩余区域盖满屏幕——违背"伙伴应不干扰用户正常工作"的契约。
 - **交互范围仅限可见矩形（透明窗口交互陷阱）**：Electron 的鼠标穿透是窗口级二元开关——要么全捕获要么全穿透。要在屏幕尺寸的透明窗口里只让"看得见"的区域捕获，所有弹层与精灵实体把自身矩形注册到统一的交互区域登记处，由顶层常驻的鼠标捕获机制统一做命中测试与穿透切换。任何弹层都不能自行一刀切捕获整个窗口——那会立刻把桌面的其他应用"锁死"。
 - **弹层交互契约**：面板头部统一接同一拖拽钩子（位移本地持久化、命中区域自动跟随）、打开入口统一经互斥收口——同一时刻最多一个面板在屏，避免弹层堆叠。唯一例外是语音通话面板：它刚体绑定精灵脚下（锚定几何与上提让位见 [renderer/companion/README.md §10](renderer/companion/README.md)），面板位置完全由精灵位置派生，拖面板即拖精灵。
@@ -117,3 +119,5 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 限制                                  | 说明                                                                               |
 | ------------------------------------- | ---------------------------------------------------------------------------------- |
 | **WebGPU 透明合成依赖 premultiplied** | 透明画布按预乘 alpha 配置；透明精灵窗下若出现黑晕/黑底即走回退链（决策写 dev log） |
+| **非默认主题冷启动一帧石墨色**        | 主进程建窗先于渲染层跑，BrowserWindow 背景色固定 #0d0d0d，而主题持久化在渲染层 localStorage，主进程读不到。要消除需把主题 id 落 userData（readRestPosition 先例），暂未做 |
+| **赛博玻璃的 backdrop-blur 成本**     | 透明置顶精灵窗内 blur 采样桌面合成，成本随面板面积与拖拽上升；blur 只下放在 surface-panel/chrome 两级。集成显卡明显掉帧时按 `html[data-role='sprite'][data-theme='cyber-glass']` 覆写提高表面 alpha 并去 blur |

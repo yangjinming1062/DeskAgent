@@ -1,4 +1,4 @@
-import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
+import { IconDownload, IconPalette, IconRefresh, IconUpload } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
 
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
@@ -15,12 +15,20 @@ import { OverlayView } from '../overlays/overlay-view'
 
 import { AboutSettings } from './about-settings'
 import { AccountSettings } from './account-settings'
+import { AppearanceSettings } from './appearance-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
-const SETTINGS_VIEWS = ['account', 'speech', 'runner', 'skills', 'about'] as const satisfies readonly SettingsViewId[]
+const SETTINGS_VIEWS = [
+  'account',
+  'speech',
+  'appearance',
+  'runner',
+  'skills',
+  'about'
+] as const satisfies readonly SettingsViewId[]
 
 export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings
@@ -104,6 +112,12 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             onClick={() => setActiveView('speech')}
           />
           <OverlayNavItem
+            active={activeView === 'appearance'}
+            icon={IconPalette}
+            label={t.settings.nav.appearance}
+            onClick={() => setActiveView('appearance')}
+          />
+          <OverlayNavItem
             active={activeView === 'runner'}
             icon={Cpu}
             label={t.settings.nav.runner}
@@ -164,6 +178,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
             <SpeechSettings />
+          ) : activeView === 'appearance' ? (
+            <AppearanceSettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

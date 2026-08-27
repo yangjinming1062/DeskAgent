@@ -36,7 +36,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
   }
 
   return (
-    <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-white/10 bg-[#0f0f11]">
+    <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-white/10 bg-surface-chrome">
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
         <h3 className="text-xs font-semibold text-white/80">对话</h3>
         <button
@@ -63,7 +63,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
               <div
                 className={`group flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
                   isActive
-                    ? 'border-[#6c8aff]/50 bg-[#6c8aff]/10'
+                    ? 'border-accent-line bg-accent-soft'
                     : 'border-transparent hover:border-white/10 hover:bg-white/5'
                 }`}
                 key={s.id}

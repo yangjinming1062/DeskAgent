@@ -61,7 +61,7 @@ function ProactiveBubbleView({ text, sessionId }: { text: string; sessionId?: st
       style={{ left, top }}
     >
       <style>{`@keyframes proactiveIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}.proactive-bubble>span{animation:proactiveIn .25s ease-out}`}</style>
-      <span className="block rounded-2xl rounded-br-sm border border-white/12 bg-black/65 px-3.5 py-2 text-sm leading-relaxed text-white/90 shadow-xl backdrop-blur-lg transition hover:bg-black/80 hover:text-white">
+      <span className="block rounded-2xl rounded-br-sm border border-white/12 bg-glass px-3.5 py-2 text-sm leading-relaxed text-white/90 shadow-xl backdrop-blur-glass transition hover:bg-black/80 hover:text-white">
         {text}
       </span>
     </div>

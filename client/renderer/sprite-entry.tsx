@@ -8,8 +8,10 @@ import { CompanionRoot } from '@/companion'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
+import { initUiThemeSync } from '@/shared/store/theme'
 
 installClipboardShim()
+initUiThemeSync()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

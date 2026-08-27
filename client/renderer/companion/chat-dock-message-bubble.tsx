@@ -30,7 +30,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
     return (
       <div className="my-1.5 flex justify-center px-2">
-        <div className="max-w-[90%] rounded-full border border-white/10 bg-black/45 px-3 py-1 text-center text-xs leading-relaxed text-white/50 backdrop-blur-lg">
+        <div className="max-w-[90%] rounded-full border border-white/10 bg-glass px-3 py-1 text-center text-xs leading-relaxed text-white/50 backdrop-blur-glass">
           {body.text}
         </div>
       </div>
@@ -75,8 +75,8 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
         <div
           className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
             isUser
-              ? 'rounded-br-sm bg-[#6c8aff] text-white'
-              : 'rounded-bl-sm border border-white/8 bg-[#1c1c21] text-white/90'
+              ? 'rounded-br-sm bg-accent text-white'
+              : 'rounded-bl-sm border border-white/8 bg-surface-card text-white/90'
           }`}
         >
           {body.error ? (

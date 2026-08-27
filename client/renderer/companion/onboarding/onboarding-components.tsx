@@ -84,7 +84,7 @@ export function HistoryGallery({
         return (
           <button
             className={`overflow-hidden rounded-md border transition ${
-              idx === selectedIdx ? 'border-[#6c8aff]' : 'border-white/15 opacity-60 hover:opacity-90'
+              idx === selectedIdx ? 'border-accent' : 'border-white/15 opacity-60 hover:opacity-90'
             }`}
             key={idx}
             onClick={() => onSelect(idx)}

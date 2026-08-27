@@ -129,7 +129,7 @@ export function VoicePage(): React.ReactElement {
         ))}
       </div>
 
-      <div className="mt-3 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-[#1c1c21]">
+      <div className="mt-3 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
         {filteredVoices.map(v => {
           const inUse = currentVoice === v.id
 
@@ -172,7 +172,7 @@ export function VoicePage(): React.ReactElement {
       {catalog.supportsVoiceDesign && (
         <section className="mt-5">
           <p className={cn(SECTION_TITLE, 'mb-2')}>设计专属音色</p>
-          <div className="rounded-xl border border-white/8 bg-[#1c1c21] p-3.5">
+          <div className="rounded-xl border border-white/8 bg-surface-card p-3.5">
             {catalog.voiceDesignGuide && (
               <p className={cn(HINT_TEXT, 'whitespace-pre-line')}>{catalog.voiceDesignGuide}</p>
             )}

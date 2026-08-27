@@ -348,7 +348,7 @@ export function Seed3dWizard({
       {hint && <p className="mt-2 text-xs text-rose-300/90">{hint}</p>}
 
       {current.failed && !current.previewUrl && (
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-white/8 bg-[#1c1c21] px-3 py-2">
+        <div className="mt-3 flex items-center justify-between rounded-xl border border-white/8 bg-surface-card px-3 py-2">
           <span className="text-white/60">{stage === 'front' ? '3D 正面立绘生成失败' : '背面立绘生成失败'}</span>
           <div className="flex gap-2">
             <button

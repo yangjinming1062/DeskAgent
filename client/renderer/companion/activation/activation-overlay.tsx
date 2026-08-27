@@ -69,7 +69,7 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
       ref={overlayRef}
     >
       <form
-        className="spiritagent-fade-in relative w-full max-w-lg rounded-2xl border border-white/12 bg-[#141416] p-7 text-white shadow-2xl"
+        className="relative w-full max-w-lg rounded-2xl border border-white/12 bg-surface-panel p-7 text-white shadow-2xl"
         onSubmit={onSubmit}
       >
         <div className="mb-5 flex items-start justify-between gap-3">

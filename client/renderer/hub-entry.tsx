@@ -10,8 +10,10 @@ import { setUpdateStatus } from '@/hub/settings-store'
 import { ErrorBoundary } from '@/shared/components/error-boundary'
 import { HapticsProvider } from '@/shared/components/haptics-provider'
 import { installClipboardShim } from '@/shared/lib/clipboard'
+import { initUiThemeSync } from '@/shared/store/theme'
 
 installClipboardShim()
+initUiThemeSync()
 
 window.spiritagent?.update?.onEvent?.((payload: DesktopUpdateEvent) => {
   switch (payload.type) {

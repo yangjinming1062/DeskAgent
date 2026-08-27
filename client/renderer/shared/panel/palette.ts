@@ -1,26 +1,23 @@
 // 面板设计语言的类常量词汇表——两个窗口（精灵窗浮层 / 工具窗）共用的唯一视觉来源。
-// 分层混合：大面板石墨实体（表面阶梯 chrome→panel→card），瞬时浮层轻玻璃。
-// 自包含深色样式，不接 --dt-* 主题 token（精灵窗会被 applyTheme 刷浅色种子）。
+// 全部消费 styles.css 的语义 token（--ui-*），主题在 html[data-theme] 上换肤。
+// 分层：大面板实体表面（阶梯 chrome→panel→card），瞬时浮层轻玻璃。
 
-// 品牌蓝的暗面变体——选中态 / 焦点 / 激活指示专用；主操作按钮仍是白底黑字。
-export const ACCENT = '#6c8aff'
-
-// 表面阶梯（石墨实体档）
-export const SURFACE_CHROME = 'bg-[#0f0f11]'
-export const SURFACE_PANEL = 'bg-[#141416]'
-export const SURFACE_CARD = 'bg-[#1c1c21]'
+// 表面阶梯（实体档）
+export const SURFACE_CHROME = 'bg-surface-chrome'
+export const SURFACE_PANEL = 'bg-surface-panel'
+export const SURFACE_CARD = 'bg-surface-card'
 // 瞬时浮层（菜单 / 气泡 / 字幕 / toast）的轻玻璃档
-export const SURFACE_GLASS = 'bg-black/65 backdrop-blur-lg'
+export const SURFACE_GLASS = 'bg-glass backdrop-blur-glass'
 
-export const BORDER_HAIRLINE = 'border-white/8'
-export const BORDER_STANDARD = 'border-white/12'
-export const BORDER_STRONG = 'border-white/20'
+export const BORDER_HAIRLINE = 'border-line-hairline'
+export const BORDER_STANDARD = 'border-line-standard'
+export const BORDER_STRONG = 'border-line-strong'
 
 // 按钮
 export const BTN_PRIMARY =
   'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 text-xs font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40'
 export const BTN_SUBTLE =
-  'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-white/12 bg-white/5 px-3.5 text-xs font-medium text-white/80 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40'
+  'inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-line-standard bg-fill-faint px-3.5 text-xs font-medium text-white/80 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40'
 export const BTN_GHOST =
   'inline-flex h-7 items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-white/60 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40'
 export const BTN_DANGER =
@@ -30,21 +27,21 @@ export const BTN_ICON =
 
 // 输入与选择
 export const INPUT_CLASS =
-  'w-full rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-xs text-white outline-none placeholder:text-white/30 focus:border-[#6c8aff]/70'
-export const CHIP = 'rounded-full border border-white/12 bg-white/5 px-2.5 py-0.5 text-[11px] text-white/60'
+  'w-full rounded-lg border border-line-standard bg-fill-faint px-3 py-2 text-xs text-white outline-none placeholder:text-white/30 focus:border-focus-line'
+export const CHIP = 'rounded-full border border-line-standard bg-fill-faint px-2.5 py-0.5 text-[11px] text-white/60'
 export const CHIP_ACTIVE =
-  'rounded-full border border-[#6c8aff]/50 bg-[#6c8aff]/15 px-2.5 py-0.5 text-[11px] font-medium text-white'
+  'rounded-full border border-accent-line bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-white'
 export const CHIP_FILTER =
-  'rounded-full px-2.5 py-0.5 text-[11px] transition bg-white/5 text-white/50 hover:bg-white/10'
+  'rounded-full px-2.5 py-0.5 text-[11px] transition bg-fill-faint text-white/50 hover:bg-white/10'
 export const CHIP_FILTER_ACTIVE = 'rounded-full px-2.5 py-0.5 text-[11px] transition bg-white/15 font-medium text-white'
 
 // 设置侧栏导航
 export const NAV_ITEM =
   'flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-white/55 transition hover:bg-white/5 hover:text-white'
 export const NAV_ITEM_ACTIVE =
-  'flex h-8 w-full items-center gap-2 rounded-lg bg-[#6c8aff]/15 px-2.5 text-left text-xs font-medium text-white'
+  'flex h-8 w-full items-center gap-2 rounded-lg bg-accent-soft px-2.5 text-left text-xs font-medium text-white'
 
 // 文本层级
-export const SECTION_TITLE = 'text-xs font-medium text-white/80'
-export const FIELD_LABEL = 'mb-1 block text-[11px] text-white/50'
-export const HINT_TEXT = 'text-[10px] leading-relaxed text-white/35'
+export const SECTION_TITLE = 'text-xs font-medium text-body'
+export const FIELD_LABEL = 'mb-1 block text-[11px] text-muted'
+export const HINT_TEXT = 'text-[10px] leading-relaxed text-faint'
