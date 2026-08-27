@@ -14,6 +14,7 @@ export interface VoiceTurnEndPayload {
 
 export interface VoiceSessionCallbacks {
   onStatus(status: VoiceSessionStatus, message?: string): void
+  onReady?(caps: { ttsStream: boolean }): void
   onAsrFinal(text: string): void
   onLlmStart(): void
   onTtsSegment(segIndex: number, text: string, segment: VoiceAudioSegment): void
@@ -60,6 +61,7 @@ export class VoiceSessionClient {
       ws.send(
         JSON.stringify({
           op: VOICE_OPS.sessionStart,
+          duplex: true,
           sample_rate: VOICE_SAMPLE_RATE,
           session_id: this.sessionId,
           ...(this.voice ? { voice: this.voice } : {})
@@ -117,13 +119,17 @@ export class VoiceSessionClient {
     const op = typeof msg.op === 'string' ? msg.op : ''
 
     switch (op) {
-      case VOICE_OPS.sessionReady:
+      case VOICE_OPS.sessionReady: {
         this.reconnectAttempts = 0
         this.cb.onStatus('ready')
+        const capsRaw = msg.caps as Record<string, unknown> | undefined
+        this.cb.onReady?.({ ttsStream: capsRaw?.tts_stream === true })
         this.readyResolve?.()
         this.readyResolve = null
 
         break
+      }
+
       case VOICE_OPS.sessionError: {
         const message = typeof msg.message === 'string' ? msg.message : '语音会话建立失败'
         this.manualClose = true
@@ -203,14 +209,6 @@ export class VoiceSessionClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ op, ...extra }))
     }
-  }
-
-  sendUtteranceStart(): void {
-    this.sendControl(VOICE_OPS.utteranceStart)
-  }
-
-  sendUtteranceEnd(truncated: boolean): void {
-    this.sendControl(VOICE_OPS.utteranceEnd, { truncated })
   }
 
   sendInterrupt(): void {

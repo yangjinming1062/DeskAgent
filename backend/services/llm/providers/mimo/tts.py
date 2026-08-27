@@ -1,17 +1,21 @@
 import base64
 import logging
+from collections.abc import AsyncIterator
 from typing import ClassVar
 
 from components import MAX_VOICE_DESIGN_PROMPT_CHARS
 from openai import AsyncOpenAI
 
-from ..base import ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult, pick_catalog_voice
+from ..base import AudioChunk, ProviderConfig, TTSProvider, TTSResult, VoiceDesignResult, pick_catalog_voice
 from ..http import get_async_client
 
 logger = logging.getLogger(__name__)
 
 _VOICEDESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
 _VOICEDESIGN_PREFIX = "mimo_voicedesign:"
+
+# 官方文档：流式调用（stream=True）要求 format=pcm16，输出为 24kHz PCM16LE mono。
+_STREAM_SAMPLE_RATE = 24_000
 
 
 class MiMoTTSProvider(TTSProvider):
@@ -20,6 +24,7 @@ class MiMoTTSProvider(TTSProvider):
     provider_name = "mimo"
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"tts": "mimo-v2.5-tts"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"tts": 8_000}
+    SUPPORTS_SYNTH_STREAM = True
     VOICE_DESIGN_GUIDE = """\
 关键维度（不需要面面俱到）：
 • 性别与年龄：如"二十多岁的年轻女性"、"五十岁的中年男性"
@@ -61,31 +66,43 @@ class MiMoTTSProvider(TTSProvider):
     def raw_client(self) -> AsyncOpenAI | None:
         return self._client
 
-    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
-        if voice and voice.startswith(_VOICEDESIGN_PREFIX):
+    def _request_parts(self, text: str, voice: str, *, fmt: str) -> tuple[str, list[dict], dict, str]:
+        if voice.startswith(_VOICEDESIGN_PREFIX):
             design_prompt = voice[len(_VOICEDESIGN_PREFIX) :]
             if not design_prompt.strip():
                 raise ValueError("voice design prompt is empty")
             # 与 JSON-RPC design 路径同长上限；REST /api/media/tts 的 voice 表单字段本无界，否则 voicedesign 模型会照单计费。
             if len(design_prompt) > MAX_VOICE_DESIGN_PROMPT_CHARS:
                 raise ValueError(f"prompt exceeds {MAX_VOICE_DESIGN_PROMPT_CHARS} chars")
-            audio_kwargs: dict = {"format": fmt, "optimize_text_preview": True}
             messages = [{"role": "user", "content": design_prompt}, {"role": "assistant", "content": text}]
-            model = _VOICEDESIGN_MODEL
-            chosen_voice = ""
-        else:
-            chosen_voice = pick_catalog_voice(voice, self.VOICE_CATALOG)
-            if voice != chosen_voice:
-                logger.info("mimo tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
-            audio_kwargs = {"format": fmt, "voice": chosen_voice}
-            messages = [{"role": "user", "content": ""}, {"role": "assistant", "content": text}]
-            model = self.config.model
+            return _VOICEDESIGN_MODEL, messages, {"format": fmt, "optimize_text_preview": True}, ""
+        chosen_voice = pick_catalog_voice(voice, self.VOICE_CATALOG)
+        if voice != chosen_voice:
+            logger.info("mimo tts: substituted voice", extra={"requested": voice, "used": chosen_voice})
+        messages = [{"role": "user", "content": ""}, {"role": "assistant", "content": text}]
+        return self.config.model, messages, {"format": fmt, "voice": chosen_voice}, chosen_voice
+
+    async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult:
+        model, messages, audio_kwargs, chosen_voice = self._request_parts(text, voice, fmt=fmt)
         response = await self._client.chat.completions.create(model=model, messages=messages, audio=audio_kwargs)
         choice = response.choices[0] if response.choices else None
         if not choice or not getattr(choice.message, "audio", None):
             raise RuntimeError("MiMo TTS returned no audio")
         mime = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
         return TTSResult(audio=base64.b64decode(choice.message.audio.data), mime=mime, voice=chosen_voice)
+
+    async def synthesize_stream(self, text: str, *, voice: str = "", speed: float | None = None) -> AsyncIterator[AudioChunk]:
+        # voicedesign 的流式官方降级为兼容模式（全部推理完成后一次性返回），仍走同一形态。
+        model, messages, audio_kwargs, _ = self._request_parts(text, voice, fmt="pcm16")
+        stream = await self._client.chat.completions.create(model=model, messages=messages, audio=audio_kwargs, stream=True)
+        async for event in stream:
+            if not event.choices:
+                continue
+            audio = getattr(event.choices[0].delta, "audio", None)
+            data = audio.get("data") if isinstance(audio, dict) else getattr(audio, "data", None)
+            if not data:
+                continue
+            yield AudioChunk(base64.b64decode(data), "audio/pcm", sample_rate=_STREAM_SAMPLE_RATE)
 
     async def design_voice(self, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
         response = await self._client.chat.completions.create(

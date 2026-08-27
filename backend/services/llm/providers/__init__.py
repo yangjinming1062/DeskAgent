@@ -6,6 +6,7 @@ from . import (
     zhipu,  # noqa: F401 — 副作用：注册 zhipu 供应商
 )
 from .base import (
+    AudioChunk,
     BaseProvider,
     ChatProvider,
     EmbeddingProvider,
@@ -50,6 +51,7 @@ __all__ = [
     "OPENAI_COMPATIBLE_PROVIDERS",
     "PROVIDER_DEFAULT_URLS",
     "SERVICE_DEFAULT_PROVIDER",
+    "AudioChunk",
     "BaseProvider",
     "ChatProvider",
     "EmbeddingProvider",

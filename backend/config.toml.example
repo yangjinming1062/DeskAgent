@@ -223,18 +223,38 @@ rate_limit_storage_url = ""
 voice_uplink_sample_rate = 16000
 # 单句上行音频硬上限（秒），超限丢弃溢出并标记 truncated
 voice_max_utterance_seconds = 60
-# TTS 按句切分的最大字符数，超出在软分隔符处强切
+# 服务端 VAD 起说确认时长（毫秒）
+voice_speech_onset_ms = 200
+# 服务端断句尾静音（毫秒）——用户停止说话到开始转写的等待
+voice_endpoint_silence_ms = 480
+# 话语起说预滚（毫秒）——起说确认前的音频回环，保证话语开头瞬态不丢
+voice_vad_preroll_ms = 240
+# 语音判定门限 = 噪声底 × 该倍率（能量法）
+voice_vad_floor_ratio = 2.2
+# 插话判定确认时长（毫秒）
+voice_bargein_onset_ms = 200
+# 下行恢复后的致盲窗（毫秒）——该窗口内上行能量只用于估计回声底，不判插话
+voice_bargein_deafen_ms = 250
+# 插话门限额外需越过回声底 × 该倍率
+voice_bargein_energy_ratio = 2.5
+# 子句切分最短字符（软分隔符累计越过后成段，0 = 保持句级切分）
+voice_clause_min_chars = 8
+# TTS 段强切上限字符数
 voice_segment_max_chars = 120
-# TTS 段合成预取窗口（并行合成、按序发送）
+# TTS 段流合成预取窗口（并行开流、按序发送）
 voice_tts_prefetch = 2
-# 会话空闲自动挂断（秒），与客户端通话面板的自动退出对齐
+# 裸 PCM 下行攒块时长（毫秒），段末块不受此限立即冲发
+voice_downlink_chunk_ms = 100
+# 流式管线总开关（false 时每段整块合成下发，仍享受子句切分与服务端断句）
+voice_streaming_enabled = true
+# 会话空闲自动挂断（秒），与客户端通话面板的自动退出对齐；"空闲"按语音活动计（持续上行不算活动）
 voice_session_idle_timeout_seconds = 180
 # 会话硬上限（秒）
 voice_session_hard_timeout_seconds = 1800
-# 语音会话 STT 每分钟限额（独立于 media_stt REST 桶，避免通话饿死语音条转写）
+# 语音会话 STT 每分钟限额（按话语计，独立于 media_stt REST 桶）
 voice_stt_rate_limit_per_minute = 60
-# 语音会话 TTS 每分钟限额（每回合按句多次调用）
-voice_tts_rate_limit_per_minute = 120
+# 语音会话 TTS 每分钟限额（按段流开启计，子句粒度调用密度高于句级）
+voice_tts_rate_limit_per_minute = 240
 
 [observability]
 # 是否启用 Prometheus 指标监控端点

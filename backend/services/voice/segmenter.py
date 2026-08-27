@@ -25,10 +25,12 @@ def speakable(text: str) -> str:
 
 
 class SentenceSegmenter:
-    """增量消费 LLM delta，吐出适合逐段合成的完整句子；bubble.break 由调用方触发 flush。"""
+    """增量消费 LLM delta，吐出适合逐段合成的段落；min_clause>0 时软分隔符（逗号顿号等）在累计
+    长度越过后也成段（子句级，降低首响），0 保持句级；bubble.break 由调用方触发 flush。"""
 
-    def __init__(self, max_chars: int) -> None:
+    def __init__(self, max_chars: int, min_clause: int = 0) -> None:
         self._max = max(8, max_chars)
+        self._min_clause = max(0, min_clause)
         self._buf = ""
 
     def feed(self, text: str) -> list[str]:
@@ -50,6 +52,9 @@ class SentenceSegmenter:
                 break
             segments.append(self._buf[:cut])
             self._buf = self._buf[cut:].lstrip(_SOFT_BREAKS)
+        while (cut := self._clause_cut()) > 0:
+            segments.append(self._buf[:cut])
+            self._buf = self._buf[cut:].lstrip(_SOFT_BREAKS)
         # 无标点长串：超限即在窗口内最靠后的软分隔符处强切，否则硬切。
         while len(self._buf) > self._max:
             window = self._buf[: self._max]
@@ -69,5 +74,14 @@ class SentenceSegmenter:
                     return -1
                 if nxt is not None and nxt.isalnum():
                     continue
+                return i + 1
+        return -1
+
+    def _clause_cut(self) -> int:
+        """首个累计长度 ≥ min_clause 的软分隔符位置；短于 min_clause 的子句向后并入。"""
+        if self._min_clause == 0:
+            return -1
+        for i, ch in enumerate(self._buf):
+            if ch in _SOFT_BREAKS and i >= self._min_clause:
                 return i + 1
         return -1

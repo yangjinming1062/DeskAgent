@@ -47,9 +47,7 @@ interface VoiceCallDockProps {
   onClose: () => void
 }
 
-const SPEECH_THRESHOLD = 28
 const BARGEIN_THRESHOLD = 38
-const SILENCE_END_MS = 1300
 const WAVE_BARS = 24
 
 export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
@@ -60,9 +58,9 @@ export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   sampleRate: 16000
 }
 
-// 实时半双工语音通话：麦克风持续收音，本地 VAD 判定说话起止与插话打断；
-// 回复由服务端实时语音会话编排（ASR → LLM 按句流式 → TTS 分段推送，PROTOCOL §1.7），
-// 客户端只负责采集上行 PCM、顺序播放下行分段与字幕/状态呈现。
+// 实时全双工语音通话：麦克风持续收音、上行 PCM 常开，话语起止/断句/插话均由服务端 VAD 判定；
+// 回复由服务端实时语音会话编排（ASR → LLM 子句级流式 → TTS 流式分块推送，PROTOCOL §1.7）。
+// 本地只保留乐观打断（音量超阈值立即停播 + 通知服务端）作为服务端权威判定的即时兜底。
 // 面板与精灵刚体一体：恒锚在精灵脚下，拖动面板即拖动精灵（位移直写精灵位置）。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const { requestGateway } = useGatewayRequest()
@@ -87,10 +85,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const vadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const lastActivityTimeRef = useRef<number>(Date.now())
   const analyserRef = useRef<AnalyserNode | null>(null)
-  const userSpeakingRef = useRef(false)
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // 回合进行中（转写/思考/分段下发）或下行音频还在播——期间禁止开新 utterance，
-  // 用户开口超更高阈值走打断。
+  // 回合进行中（转写/思考/分段下发）——打断后晚到的下行块据此丢弃。
   const turnActiveRef = useRef(false)
   const sessionRef = useRef<VoiceSessionClient | null>(null)
   const playerRef = useRef<VoiceSegmentPlayer | null>(null)
@@ -197,21 +192,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       lastActivityTimeRef.current = Date.now()
     }
 
-    const startUtterance = (): void => {
-      userSpeakingRef.current = true
-      setSpriteState('listening')
-      captureRef.current?.start()
-      sessionRef.current?.sendUtteranceStart()
-      clearTimeout(silenceTimerRef.current ?? undefined)
-      silenceTimerRef.current = null
-    }
-
-    const finishUtterance = (): void => {
-      captureRef.current?.stop()
-      sessionRef.current?.sendUtteranceEnd(false)
-      userSpeakingRef.current = false
-    }
-
     navigator.mediaDevices
       ?.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
       .then(async stream => {
@@ -246,35 +226,14 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           analyser.getByteFrequencyData(dataArray)
           const avg = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length
 
-          if (avg > SPEECH_THRESHOLD || isBusy()) {
-            noteActivity()
-          }
-
-          // 打断：用户趁伙伴说话时开口——本地即刻停播并通知服务端取消回合。
+          // 乐观打断：用户趁伙伴说话时开口——本地即刻停播并通知服务端取消回合，
+          // 服务端插话判别作为权威兜底（覆盖本地阈值漏判）。
           if (avg > BARGEIN_THRESHOLD && isBusy()) {
+            noteActivity()
             player.stopAll()
             sessionRef.current?.sendInterrupt()
             turnActiveRef.current = false
             setSpriteState('listening')
-          }
-
-          if (!isBusy()) {
-            if (!userSpeakingRef.current && avg > SPEECH_THRESHOLD) {
-              startUtterance()
-            } else if (userSpeakingRef.current && avg < SPEECH_THRESHOLD) {
-              if (!silenceTimerRef.current) {
-                silenceTimerRef.current = setTimeout(() => {
-                  silenceTimerRef.current = null
-
-                  if (userSpeakingRef.current) {
-                    finishUtterance()
-                  }
-                }, SILENCE_END_MS)
-              }
-            } else if (userSpeakingRef.current && avg >= SPEECH_THRESHOLD && silenceTimerRef.current) {
-              clearTimeout(silenceTimerRef.current)
-              silenceTimerRef.current = null
-            }
           }
         }
 
@@ -371,6 +330,11 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                 return
               }
 
+              // 打断后晚到的下行块直接丢弃，防止 stopAll 之后被重新调度播放。
+              if (!turnActiveRef.current) {
+                return
+              }
+
               noteActivity()
 
               if (text) {
@@ -450,10 +414,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
       if (timerRef.current) {
         clearInterval(timerRef.current)
-      }
-
-      if (silenceTimerRef.current) {
-        clearTimeout(silenceTimerRef.current)
       }
 
       sessionRef.current?.close()

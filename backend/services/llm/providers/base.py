@@ -1,5 +1,6 @@
 import enum
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
@@ -158,6 +159,16 @@ class TTSResult:
 
 
 @dataclass(frozen=True)
+class AudioChunk:
+    """流式合成产出的单个音频块；mime 为 "audio/pcm" 时 sample_rate 必填（裸 s16le），容器 mime 由客户端自解码。
+    段完成以生成器耗尽为准——供应商无统一的显式结束标志，末块标志由语音通道发送侧落线级帧头。"""
+
+    audio: bytes
+    mime: str
+    sample_rate: int = 0
+
+
+@dataclass(frozen=True)
 class VoiceDesignResult:
     voice_id: str
     trial_audio: bytes
@@ -172,8 +183,15 @@ class TTSProvider(BaseProvider):
     # None 表示不支持声纹设计；非空字符串表示支持并作为面向用户的撰写指引。
     VOICE_DESIGN_GUIDE: ClassVar[str | None] = None
 
+    # True = synthesize_stream 为原生增量（首块显著早于整段完成）；False = 默认实现整段一块降级。
+    SUPPORTS_SYNTH_STREAM: ClassVar[bool] = False
+
     @abstractmethod
     async def synthesize(self, text: str, *, voice: str = "", fmt: str = "mp3", speed: float | None = None) -> TTSResult: ...
+
+    async def synthesize_stream(self, text: str, *, voice: str = "", speed: float | None = None) -> AsyncIterator[AudioChunk]:
+        result = await self.synthesize(text, voice=voice, speed=speed)
+        yield AudioChunk(result.audio, result.mime)
 
     async def design_voice(self, prompt: str, *, preview_text: str = "") -> VoiceDesignResult:
         raise NotImplementedError(f"{self.provider_name} does not support voice design")

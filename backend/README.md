@@ -38,7 +38,7 @@ backend/
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
-│   ├── voice/                # 实时语音会话（独立 WS 状态机 + 按句切分 + TTS 分段下发）
+│   ├── voice/                # 实时语音会话（独立 WS 全双工状态机 + 服务端 VAD 断句/插话判别 + 子句级流式 TTS 分块下发）
 │   ├── update/               # 桌面客户端版本更新清单构建
 │   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配

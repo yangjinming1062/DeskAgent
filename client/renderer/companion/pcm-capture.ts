@@ -3,18 +3,14 @@ import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
 import { VOICE_SAMPLE_RATE } from './voice-protocol'
 
 export interface PcmCapture {
-  /** VAD 判定说话开始：吐预滚缓冲并开始上行实时块。 */
-  start(): void
-  /** VAD 静默断句：冲掉不满一块的尾部（服务端拿到完整收音）。 */
-  stop(): void
   close(): void
 }
 
 const CHUNK_FRAMES = 1600 // 100ms @ 16kHz
 
-// 上行 PCM 采集：专用 16kHz AudioContext（设备原生率由 Chromium 重采样），
-// AudioWorklet 优先（渲染线程转换 + 300ms 预滚）；加载失败降级 ScriptProcessorNode
-// （主线程转换、无预滚，功能等价仅瞬态稍差）。
+// 上行 PCM 采集（常开，全双工）：专用 16kHz AudioContext（设备原生率由 Chromium 重采样），
+// AudioWorklet 优先（渲染线程转换）；加载失败降级 ScriptProcessorNode（主线程转换，功能等价）。
+// 话语起止与断句由服务端 VAD 判定，采集侧无起停门。
 export async function createPcmCapture(stream: MediaStream, onChunk: (pcm: Int16Array) => void): Promise<PcmCapture> {
   const Ctor = getAudioContextCtor()
 
@@ -43,8 +39,6 @@ export async function createPcmCapture(stream: MediaStream, onChunk: (pcm: Int16
     mute.connect(ctx.destination)
 
     return {
-      start: () => node.port.postMessage('start'),
-      stop: () => node.port.postMessage('stop'),
       close: () => {
         try {
           source.disconnect()
@@ -59,14 +53,9 @@ export async function createPcmCapture(stream: MediaStream, onChunk: (pcm: Int16
     }
   } catch {
     const processor = ctx.createScriptProcessor(2048, 1, 1)
-    let active = false
     let pending: number[] = []
 
     processor.onaudioprocess = e => {
-      if (!active) {
-        return
-      }
-
       const channel = e.inputBuffer.getChannelData(0)
 
       for (let i = 0; i < channel.length; i++) {
@@ -87,17 +76,6 @@ export async function createPcmCapture(stream: MediaStream, onChunk: (pcm: Int16
     mute.connect(ctx.destination)
 
     return {
-      start: () => {
-        active = true
-      },
-      stop: () => {
-        active = false
-
-        if (pending.length > 0) {
-          onChunk(Int16Array.from(pending))
-          pending = []
-        }
-      },
       close: () => {
         processor.onaudioprocess = null
 

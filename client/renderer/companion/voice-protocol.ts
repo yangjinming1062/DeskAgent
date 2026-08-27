@@ -10,8 +10,6 @@ export const VOICE_OPS = {
   sessionEnd: 'session.end',
   sessionClosed: 'session.closed',
   sessionError: 'session.error',
-  utteranceStart: 'utterance.start',
-  utteranceEnd: 'utterance.end',
   interrupt: 'interrupt',
   sessionInterrupted: 'session.interrupted',
   asrFinal: 'asr.final',
@@ -22,6 +20,9 @@ export const VOICE_OPS = {
   turnError: 'turn.error'
 } as const
 
+// 段末块标志：同一 seg_index 的多个块共享序号，末块置位；打断中途停止的段没有末块。
+export const VOICE_FLAG_SEG_FINAL = 0x01
+
 // 编码值与 backend services/voice/audio.py 对齐；仅 PCM 依赖帧头的 sample_rate，
 // 容器编码（wav/mp3/ogg/aac）由 decodeAudioData 自容器读取。
 export const VOICE_ENCODING_PCM = 0
@@ -30,6 +31,7 @@ const AUDIO_HEADER_BYTES = 16
 
 export interface VoiceAudioSegment {
   encoding: number
+  flags: number
   sampleRate: number
   segIndex: number
   payload: ArrayBuffer
@@ -46,6 +48,7 @@ export function decodeVoiceAudioFrame(data: ArrayBuffer): VoiceAudioSegment | nu
     return null
   }
 
+  const flags = view.getUint8(4)
   const encoding = view.getUint8(5)
   const segIndex = view.getUint16(6, true)
   const sampleRate = view.getUint32(8, true)
@@ -57,5 +60,5 @@ export function decodeVoiceAudioFrame(data: ArrayBuffer): VoiceAudioSegment | nu
     return null
   }
 
-  return { encoding, sampleRate, segIndex, payload }
+  return { encoding, flags, sampleRate, segIndex, payload }
 }
