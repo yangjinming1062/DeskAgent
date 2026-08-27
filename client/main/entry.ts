@@ -46,7 +46,6 @@ import { registerRunnerConfigIpc } from './ipc/runner-config'
 import { registerSkillsIpc } from './ipc/skills'
 import { readRestPosition, registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
-import { registerTitlebarIpc } from './ipc/titlebar'
 import { registerUiThemeIpc } from './ipc/ui-theme'
 import { registerUpdateIpc } from './ipc/update'
 import { createDesktopLogger } from './lifecycle/desktop-log'
@@ -164,30 +163,6 @@ const APP_ICON_PATHS = [
   path.join(process.resourcesPath, 'icon.ico'),
   path.join(unpackedPathFor(APP_ROOT), 'icon.ico')
 ]
-
-let rendererTitleBarTheme: null | { background: string; foreground: string } = null
-
-function getTitleBarOverlayOptions() {
-  if (IS_MAC) {
-    return { height: TITLEBAR_HEIGHT }
-  }
-
-  if (rendererTitleBarTheme) {
-    return {
-      color: rendererTitleBarTheme.background,
-      height: TITLEBAR_HEIGHT,
-      symbolColor: rendererTitleBarTheme.foreground
-    }
-  }
-
-  // 工具窗口始终渲染钉死的深色调色板——覆盖条必须与系统外观无关地
-  // 与深色标题栏一致，否则浅色条会落在深色标题栏上。
-  return {
-    color: '#0d0d0d',
-    height: TITLEBAR_HEIGHT,
-    symbolColor: '#f2f2f2'
-  }
-}
 
 app.setName(APP_NAME)
 
@@ -1319,14 +1294,12 @@ function createToolWindow(): void {
   const icon = getAppIconPath() || undefined
   toolWindow = new BrowserWindow({
     backgroundColor: '#0d0d0d',
-    height: 800,
+    height: 640,
     icon,
-    minHeight: 620,
-    minWidth: 400,
-    title: 'SpiritAgent',
-    titleBarOverlay: getTitleBarOverlayOptions(),
+    minHeight: 540,
+    minWidth: 720,
+    title: '应用设置',
     titleBarStyle: 'hidden',
-    trafficLightPosition: IS_MAC ? WINDOW_BUTTON_POSITION : undefined,
     vibrancy: IS_MAC ? 'sidebar' : undefined,
     webPreferences: {
       backgroundThrottling: false,
@@ -1336,11 +1309,16 @@ function createToolWindow(): void {
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       sandbox: true
     },
-    width: 1220
+    width: 960
   })
 
+  // 与伙伴设置一致的面板形态：不用系统原生窗口控件（Win/Linux 无 WCO，
+  // mac 隐藏红绿灯），关闭只走应用侧面板头；常驻置顶，失焦不被其它应用盖住。
+  // 精灵窗在 mac 上位于更高的 screen-saver 层，保持压在设置面板上。
+  toolWindow.setAlwaysOnTop(true, 'floating')
+
   if (IS_MAC) {
-    toolWindow.setWindowButtonPosition?.(WINDOW_BUTTON_POSITION)
+    toolWindow.setWindowButtonVisibility(false)
   }
 
   installZoomShortcuts(toolWindow)
@@ -1477,14 +1455,6 @@ function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
 registerSystemIpc({
   electron: { app },
   ipcMain
-})
-registerTitlebarIpc({
-  getTitleBarOverlayOptions,
-  getToolWindow: () => toolWindow,
-  ipcMain,
-  setRendererTitleBarTheme: theme => {
-    rendererTitleBarTheme = theme
-  }
 })
 registerUiThemeIpc({
   getMainWindow: () => mainWindow,

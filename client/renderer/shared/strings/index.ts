@@ -82,6 +82,7 @@ export const strings = {
   },
 
   settings: {
+    title: '应用设置',
     closeSettings: '关闭设置',
     nav: {
       account: '账户',

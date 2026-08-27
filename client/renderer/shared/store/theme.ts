@@ -2,7 +2,7 @@ import type { SpiritAgentUiTheme } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
 import { persistString, storedString } from '@/shared/lib/storage'
-import { normalizeThemeId, THEMES } from '@/shared/theme/registry'
+import { normalizeThemeId } from '@/shared/theme/registry'
 
 const THEME_STORAGE_KEY = 'da.ui.theme'
 
@@ -10,14 +10,6 @@ export const $theme = atom<SpiritAgentUiTheme>(normalizeThemeId(storedString(THE
 
 function applyThemeToDocument(theme: SpiritAgentUiTheme): void {
   document.documentElement.dataset.theme = theme
-
-  // 带框的工具窗还要同步原生 WindowControlsOverlay——titlebar IPC 的 sender
-  // 守卫只认工具窗，精灵窗不发。
-  if (document.documentElement.dataset.role === 'tool') {
-    const def = THEMES.find(t => t.id === theme) ?? THEMES[0]
-
-    window.spiritagent?.setTitleBarTheme?.(def.titleBar)
-  }
 }
 
 // 模块加载即应用：两个 entry 都先 import styles.css 再 import 本模块，

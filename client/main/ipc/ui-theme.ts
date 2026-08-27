@@ -9,7 +9,7 @@ interface UiThemeIpcDeps {
   ipcMain: IpcMain
 }
 
-// 主题切换入口只存在于工具窗（Hub 设置面板）——sender 守卫与 titlebar.ts 同理。
+// 主题切换入口只存在于工具窗（Hub 设置面板）——sender 守卫只认工具窗。
 // 主进程不持有主题状态：校验 id 合法后原样广播给两个窗口；ui.theme 节漏斗进配置镜像，
 // 随云端同步管道上云（渲染层 localStorage 仍是各窗口的即时缓存）。
 export function registerUiThemeIpc({ getMainWindow, getToolWindow, ipcMain }: UiThemeIpcDeps): void {

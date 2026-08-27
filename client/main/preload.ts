@@ -13,7 +13,6 @@ import {
   type SpiritAgentApiRequest,
   type SpiritAgentPrefsSet,
   type SpiritAgentSelectPathsOptions,
-  type SpiritAgentTitleBarTheme,
   type SpiritAgentUiTheme
 } from '@ipc/contracts'
 import { contextBridge, ipcRenderer, type IpcRendererEvent, webUtils } from 'electron'
@@ -109,6 +108,7 @@ contextBridge.exposeInMainWorld('spiritagent', {
     return () => ipcRenderer.removeListener(IPC.event.uiThemeChanged, listener)
   },
   readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
+  readImageForAttach: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readImageForAttach, filePath),
   refreshSession: () => ipcRenderer.invoke(IPC.invoke.authRefresh),
   runnerCancel: () => ipcRenderer.invoke(IPC.invoke.runnerCancel),
   runnerConfig: {
@@ -125,7 +125,6 @@ contextBridge.exposeInMainWorld('spiritagent', {
   prefs: {
     set: (payload: SpiritAgentPrefsSet) => ipcRenderer.send(IPC.send.prefsSet, payload)
   },
-  setTitleBarTheme: (payload: SpiritAgentTitleBarTheme) => ipcRenderer.send(IPC.send.titleBarTheme, payload),
   setUiTheme: (payload: SpiritAgentUiTheme) => ipcRenderer.send(IPC.send.uiTheme, payload),
   showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),
   skills: {

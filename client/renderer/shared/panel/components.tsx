@@ -213,6 +213,7 @@ export function PanelHeader({
   icon: Icon,
   onClose,
   dragBind,
+  dragRegion = false,
   closeLabel = '关闭'
 }: {
   title: ReactNode
@@ -220,13 +221,16 @@ export function PanelHeader({
   onClose: () => void
   // 伙伴窗浮层把拖拽柄事件铺在头部；工具窗不传。
   dragBind?: DragBindProps
+  // OS 窗口壳（工具窗）没有指针拖拽柄，头部整体标记为系统拖拽区。
+  dragRegion?: boolean
   closeLabel?: string
 }): React.JSX.Element {
   return (
     <div
       className={cn(
         'flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5',
-        dragBind && 'cursor-grab active:cursor-grabbing'
+        dragBind && 'cursor-grab active:cursor-grabbing',
+        dragRegion && '[-webkit-app-region:drag]'
       )}
       title={dragBind ? '拖动以移动面板' : undefined}
       {...dragBind}
@@ -235,7 +239,12 @@ export function PanelHeader({
         {Icon && <Icon className="size-4 text-white/50" />}
         <h2 className="text-sm font-semibold text-white">{title}</h2>
       </div>
-      <button aria-label={closeLabel} className={BTN_ICON} onClick={onClose} type="button">
+      <button
+        aria-label={closeLabel}
+        className={cn(BTN_ICON, dragRegion && '[-webkit-app-region:no-drag]')}
+        onClick={onClose}
+        type="button"
+      >
         <X />
       </button>
     </div>

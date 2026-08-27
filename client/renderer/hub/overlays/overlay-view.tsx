@@ -1,24 +1,23 @@
 import { type ReactNode, useEffect } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { X } from '@/shared/lib/icons'
-import { cn } from '@/shared/lib/utils'
-import { BTN_ICON } from '@/shared/panel'
+import type { IconComponent } from '@/shared/lib/icons'
+import { PanelHeader } from '@/shared/panel'
 import { strings } from '@/shared/strings'
 
-// Win / Linux 把原生 WindowControlsOverlay 画在右上角；那里的应用内
-// 关闭按钮会被盖在下面。macOS 的红绿灯在左上角，
-// 因此应用内关闭按钮可以保留。
-const HAS_NATIVE_WINDOW_CONTROLS = !navigator.userAgent.includes('Mac')
-
 interface OverlayViewProps {
+  title: string
+  icon?: IconComponent
   children: ReactNode
   onClose: () => void
   closeLabel?: string
 }
 
-// 工具窗口的全出血页面外壳：原生窗口控件下方的拖拽带 + Esc 关闭。
+// 工具窗页面外壳：与伙伴窗 FloatingPanel 同一款面板头（图标 + 标题 + 关闭钮，
+// 头部即窗口拖拽区）+ Esc 关闭。
 export function OverlayView({
+  title,
+  icon,
   children,
   onClose,
   closeLabel = strings.common.close
@@ -49,24 +48,7 @@ export function OverlayView({
 
   return (
     <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-white">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
-        {!HAS_NATIVE_WINDOW_CONTROLS && (
-          <button
-            aria-label={closeLabel}
-            className={cn(
-              BTN_ICON,
-              'pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 [-webkit-app-region:no-drag]'
-            )}
-            onClick={closeOverlay}
-            type="button"
-          >
-            <X />
-          </button>
-        )}
-      </div>
-
-      {/* No top padding here: the split-layout columns own their own
-          titlebar clearance so their backgrounds run flush to the page top. */}
+      <PanelHeader closeLabel={closeLabel} dragRegion icon={icon} onClose={closeOverlay} title={title} />
       <div className="min-h-0 flex flex-1 flex-col">{children}</div>
     </div>
   )

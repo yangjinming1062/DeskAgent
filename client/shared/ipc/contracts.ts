@@ -91,11 +91,6 @@ export interface SpiritAgentConnection {
   wsUrl: string
 }
 
-export interface SpiritAgentTitleBarTheme {
-  background: string
-  foreground: string
-}
-
 export type SpiritAgentUiTheme = 'classic' | 'cyber-glass' | 'holo'
 
 // 主进程侧校验白名单——契约是跨进程唯一真理源，渲染层 registry 只扩展元数据。
@@ -219,6 +214,7 @@ export interface IpcInvokeContract {
 
   // 文件 / 剪贴板 / 日志
   'spiritagent:readFileDataUrl': (filePath: string) => Promise<string> | string
+  'spiritagent:readImageForAttach': (filePath: string) => Promise<string> | string
   'spiritagent:selectPaths': (options?: SpiritAgentSelectPathsOptions) => Promise<string[]> | string[]
   'spiritagent:writeClipboard': (text: string) => boolean | Promise<boolean>
   'spiritagent:saveClipboardImage': () => Promise<string> | string
@@ -314,7 +310,6 @@ export interface IpcEventContract {
 // 3. 渲染进程向主进程单向发送消息（通过 ipcRenderer.send / ipcMain.on）
 export interface IpcSendContract {
   'spiritagent:prefs:set': [payload: SpiritAgentPrefsSet]
-  'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
   'spiritagent:ui-theme': [payload: SpiritAgentUiTheme]
 }
 
@@ -342,6 +337,7 @@ export const IPC = {
     apiAssetModelUrl: 'spiritagent:api:asset-model-url',
     windowShowTool: 'spiritagent:window:show-tool',
     readFileDataUrl: 'spiritagent:readFileDataUrl',
+    readImageForAttach: 'spiritagent:readImageForAttach',
     selectPaths: 'spiritagent:selectPaths',
     writeClipboard: 'spiritagent:writeClipboard',
     saveClipboardImage: 'spiritagent:saveClipboardImage',
@@ -383,7 +379,6 @@ export const IPC = {
   } as const satisfies Record<string, IpcEventChannel>,
   send: {
     prefsSet: 'spiritagent:prefs:set',
-    titleBarTheme: 'spiritagent:titlebar-theme',
     uiTheme: 'spiritagent:ui-theme'
   } as const satisfies Record<string, IpcSendChannel>
 } as const

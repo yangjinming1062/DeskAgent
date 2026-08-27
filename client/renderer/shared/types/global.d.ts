@@ -27,7 +27,6 @@ import type {
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme,
   SpiritAgentUiTheme
 } from '@ipc/contracts'
 
@@ -67,6 +66,8 @@ declare global {
        * 供前端零拷贝流式加载。 */
       apiAssetModelUrl: AsyncIpc<IpcInvokeContract['spiritagent:api:asset-model-url']>
       readFileDataUrl: AsyncIpc<IpcInvokeContract['spiritagent:readFileDataUrl']>
+      /** 聊天图片附件读取：超限降采样重编码，产出可直接发送的 data URL。 */
+      readImageForAttach: AsyncIpc<IpcInvokeContract['spiritagent:readImageForAttach']>
       selectPaths: AsyncIpc<IpcInvokeContract['spiritagent:selectPaths']>
       writeClipboard: AsyncIpc<IpcInvokeContract['spiritagent:writeClipboard']>
       saveClipboardImage: AsyncIpc<IpcInvokeContract['spiritagent:saveClipboardImage']>
@@ -75,7 +76,6 @@ declare global {
       runnerCancel: AsyncIpc<IpcInvokeContract['spiritagent:runner:cancel']>
       runnerGetState: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-state']>
       runnerGetTools: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-tools']>
-      setTitleBarTheme: (payload: IpcSendContract['spiritagent:titlebar-theme'][0]) => void
       setUiTheme: (payload: IpcSendContract['spiritagent:ui-theme'][0]) => void
       prefs: {
         set: (payload: IpcSendContract['spiritagent:prefs:set'][0]) => void
@@ -148,6 +148,5 @@ export type {
   SpiritAgentConnection,
   SpiritAgentPrefsSet,
   SpiritAgentSelectPathsOptions,
-  SpiritAgentTitleBarTheme,
   SpiritAgentUiTheme
 }

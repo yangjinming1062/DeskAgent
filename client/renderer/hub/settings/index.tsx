@@ -1,10 +1,11 @@
 import { IconPalette } from '@tabler/icons-react'
 
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
-import { AudioLines, Cpu, Info, KeyRound, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Cpu, Info, KeyRound, Settings, Sparkles } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
+import { type NavItemDescriptor, SettingsNav, SURFACE_CHROME } from '@/shared/panel'
 import { strings } from '@/shared/strings'
 
-import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'
 
 import { AboutSettings } from './about-settings'
@@ -30,50 +31,22 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
   const t = strings
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
 
-  return (
-    <OverlayView closeLabel={t.settings.closeSettings} onClose={onClose}>
-      <OverlaySplitLayout>
-        <OverlaySidebar>
-          <OverlayNavItem
-            active={activeView === 'account'}
-            icon={KeyRound}
-            label={t.settings.nav.account}
-            onClick={() => setActiveView('account')}
-          />
-          <OverlayNavItem
-            active={activeView === 'speech'}
-            icon={AudioLines}
-            label={t.speech.title}
-            onClick={() => setActiveView('speech')}
-          />
-          <OverlayNavItem
-            active={activeView === 'appearance'}
-            icon={IconPalette}
-            label={t.settings.nav.appearance}
-            onClick={() => setActiveView('appearance')}
-          />
-          <OverlayNavItem
-            active={activeView === 'runner'}
-            icon={Cpu}
-            label={t.settings.nav.runner}
-            onClick={() => setActiveView('runner')}
-          />
-          <OverlayNavItem
-            active={activeView === 'skills'}
-            icon={Sparkles}
-            label={t.settings.nav.skills}
-            onClick={() => setActiveView('skills')}
-          />
-          <div className="my-2 h-px bg-white/8" />
-          <OverlayNavItem
-            active={activeView === 'about'}
-            icon={Info}
-            label={t.settings.nav.about}
-            onClick={() => setActiveView('about')}
-          />
-        </OverlaySidebar>
+  const navItems: NavItemDescriptor[] = [
+    { id: 'account', label: t.settings.nav.account, icon: KeyRound },
+    { id: 'speech', label: t.speech.title, icon: AudioLines },
+    { id: 'appearance', label: t.settings.nav.appearance, icon: IconPalette },
+    { id: 'runner', label: t.settings.nav.runner, icon: Cpu },
+    { id: 'skills', label: t.settings.nav.skills, icon: Sparkles },
+    { id: 'about', label: t.settings.nav.about, icon: Info }
+  ]
 
-        <OverlayMain className="px-0 pb-0 pt-[calc(var(--titlebar-height)+1rem)]">
+  return (
+    <OverlayView closeLabel={t.settings.closeSettings} icon={Settings} onClose={onClose} title={t.settings.title}>
+      <div className="flex min-h-0 flex-1">
+        <aside className={cn(SURFACE_CHROME, 'flex w-52 shrink-0 flex-col border-r border-white/10 p-2.5')}>
+          <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsViewId)} />
+        </aside>
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {activeView === 'account' ? (
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
@@ -87,8 +60,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
           ) : (
             <AboutSettings />
           )}
-        </OverlayMain>
-      </OverlaySplitLayout>
+        </main>
+      </div>
     </OverlayView>
   )
 }

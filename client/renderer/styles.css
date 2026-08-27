@@ -80,10 +80,13 @@
       'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
 
     --radius-scalar: 0.6;
-    /* 必须与 main/entry.ts 中的 TITLEBAR_HEIGHT 保持一致（也是 Win / Linux 上
-       WindowControlsOverlay 的高度）——布局据此让出空间，
-       让内容和拖拽带不会滑到原生窗口按钮下。 */
+    /* 顶部浮层（通知栈）的让位基准；工具窗按 data-role 覆写为面板头高度。 */
     --titlebar-height: 34px;
+  }
+
+  /* 工具窗面板头（图标 + 标题 + 关闭钮）的高度——通知栈据此让位，不压在头部上。 */
+  html[data-role='tool'] {
+    --titlebar-height: 3rem;
   }
 
   /* 赛博玻璃：玻璃拟态半透 + 低饱和蓝紫渐变 + 像素噪点 + 发光描边。
