@@ -10,6 +10,10 @@
 app_name = "SpiritAgent Backend"
 # 统一 API 路由前缀
 api_prefix = "/api"
+# 后端可被公网访问的基础地址（如 https://example.com）。非空时聊天视频附件以绝对 URL 直发供应商
+# （供应商自行拉取，单文件上限=会话配额 512MB）；留空走 base64 内联（单文件上限 50MB）。
+# 注意：该地址必须真的能被供应商服务器访问到（反代 / 端口映射就绪），否则供应商拉取会失败。
+public_base_url = ""
 
 [database]
 # 数据库连接 URL（SQLAlchemy 格式）。在 Docker Compose 环境中服务名为 postgres（端口 5432）
@@ -207,6 +211,8 @@ llm_completion_rate_limit_per_ip_per_minute = 200
 media_stt_rate_limit_per_minute = 20
 # 语音合成接口每分钟限制
 media_tts_rate_limit_per_minute = 30
+# 聊天视频附件上传接口每分钟限制
+media_video_rate_limit_per_minute = 10
 # 伴侣头像生成接口每分钟限制
 companion_avatar_generate_rate_limit_per_minute = 3
 # 伴侣 3D 模型生成接口每分钟限制

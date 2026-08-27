@@ -6,7 +6,11 @@ from .config import SETTINGS
 from .constants import (
     AGENT_MAX_LOOP_TURNS,
     ATTACHMENT_DATA_URL_MAX_CHARS,
+    ATTACHMENT_SESSION_QUOTA_BYTES,
     ATTACHMENT_TYPE_IMAGE,
+    ATTACHMENT_TYPE_VIDEO,
+    ATTACHMENT_VIDEO_EXTENSIONS,
+    ATTACHMENT_VIDEO_MAX_BYTES,
     BACKGROUND_REVIEW_DEFAULT,
     CHARS_PER_TOKEN,
     CHAT_TEMPERATURE_DEFAULT,
@@ -62,6 +66,7 @@ from .constants import (
     TOOL_CALL_ID_HEX_PREFIX_LEN,
     TOOL_ENFORCE_OFF_VALUES,
     TTS_MAX_TEXT_CHARS,
+    VIDEO_INLINE_MAX_PER_REQUEST,
 )
 from .correlation import REQUEST_ID_HEADER, adopt_inbound, begin_local_scope, correlated_exception_response, correlation_id_middleware, new_request_id
 from .database import ENGINE, SESSION_LOCAL, get_db, session_scope
@@ -105,7 +110,11 @@ from .temp_files import gc_session as temp_files_gc_session
 __all__ = [
     "AGENT_MAX_LOOP_TURNS",
     "ATTACHMENT_DATA_URL_MAX_CHARS",
+    "ATTACHMENT_SESSION_QUOTA_BYTES",
     "ATTACHMENT_TYPE_IMAGE",
+    "ATTACHMENT_TYPE_VIDEO",
+    "ATTACHMENT_VIDEO_EXTENSIONS",
+    "ATTACHMENT_VIDEO_MAX_BYTES",
     "BACKGROUND_REVIEW_DEFAULT",
     "CHARS_PER_TOKEN",
     "CHAT_TEMPERATURE_DEFAULT",
@@ -169,6 +178,7 @@ __all__ = [
     "TOOL_CALL_ID_HEX_PREFIX_LEN",
     "TOOL_ENFORCE_OFF_VALUES",
     "TTS_MAX_TEXT_CHARS",
+    "VIDEO_INLINE_MAX_PER_REQUEST",
     "WS_CONNECTIONS_ACTIVE",
     "BackgroundTask",
     "TempFileMarkerMismatch",

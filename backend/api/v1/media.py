@@ -1,13 +1,33 @@
+import asyncio
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from common import get_router
-from components import SETTINGS, STT_MAX_AUDIO_BYTES, TTS_MAX_TEXT_CHARS, get_file_path, get_logger
-from fastapi import Depends, File, HTTPException, Request, UploadFile
+from components import (
+    ATTACHMENT_SESSION_QUOTA_BYTES,
+    ATTACHMENT_VIDEO_EXTENSIONS,
+    ATTACHMENT_VIDEO_MAX_BYTES,
+    SETTINGS,
+    STT_MAX_AUDIO_BYTES,
+    TTS_MAX_TEXT_CHARS,
+    get_db,
+    get_file_path,
+    get_logger,
+)
+from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
 from services.llm import MissingLlmConfigError, classify_api_error, synthesize_speech, transcribe_audio
+from services.media.chat_videos import (
+    attachment_video_url,
+    enforce_session_quota,
+    resolve_video_file,
+    save_video_attachment,
+    video_mime_for_ext,
+)
 from services.rate_limit import limiter
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ._http_errors import classified_http_exception, missing_config_http
 
@@ -72,6 +92,66 @@ async def serve_file(file_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="File not found or expired")
     path, content_type = result
     return FileResponse(path, media_type=content_type)
+
+
+@router.get("/videos/{session_id}/{file_id}")
+async def serve_session_video(session_id: str, file_id: str) -> FileResponse:
+    """提供会话视频附件。公开（不鉴权）：file_id 为不可猜测 token，且公网模式下供应商需直接拉取。"""
+    path = resolve_video_file(session_id, file_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail={"error": "Video not found", "reason": "not_found", "status_code": 404})
+    return FileResponse(path, media_type=video_mime_for_ext(path.suffix))
+
+
+@router.post("/videos")
+@limiter.limit(f"{SETTINGS.media_video_rate_limit_per_minute}/minute")
+async def upload_chat_video(
+    request: Request,
+    file: UploadFile | None = File(None),
+    session_id: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    auth_data: tuple[User, LoginRecord] = Depends(get_current_session),
+) -> dict[str, Any]:
+    """聊天视频附件上传：落会话目录（滚动配额）并返回附件 URL（本地相对 / 公网绝对）。"""
+    if file is None:
+        raise HTTPException(status_code=422, detail={"error": "Missing video file", "reason": "missing_video_file", "status_code": 422})
+    if not session_id.strip().isdigit():
+        raise HTTPException(status_code=422, detail={"error": "Invalid session_id", "reason": "invalid_session_id", "status_code": 422})
+
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in ATTACHMENT_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail={"error": f"Unsupported video format (allowed: {', '.join(sorted(ATTACHMENT_VIDEO_EXTENSIONS))})", "reason": "unsupported_video_format", "status_code": 415},
+        )
+
+    # 本地模式 50MB；公网模式（public_base_url）供应商直接拉 URL，上限放宽到会话配额。
+    max_bytes = ATTACHMENT_SESSION_QUOTA_BYTES if SETTINGS.public_base_url.strip() else ATTACHMENT_VIDEO_MAX_BYTES
+
+    def _too_large() -> HTTPException:
+        hint = "" if max_bytes == ATTACHMENT_SESSION_QUOTA_BYTES else "；配置 server.public_base_url 后可经公网 URL 发送更大文件"
+        return HTTPException(
+            status_code=413,
+            detail={"error": f"Video too large (max {max_bytes // (1024 * 1024)} MB){hint}", "reason": "payload_too_large", "status_code": 413},
+        )
+
+    # 声明大小只拦明显超大上传；流式 cap 才是真限制（与 /stt 同构）。
+    declared_size = _upload_size_or_none(file)
+    if declared_size is not None and declared_size > max_bytes:
+        raise _too_large()
+
+    sink = bytearray()
+    while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+        sink.extend(chunk)
+        if len(sink) > max_bytes:
+            raise _too_large()
+    data = bytes(sink)
+
+    # 配额滚动剔除发生在写盘前：保证新文件落得下，且引用行同步改写不产生死链。
+    await enforce_session_quota(db, session_id, len(data))
+    file_id, size = await asyncio.to_thread(save_video_attachment, session_id, data, ext)
+    logger.info("chat video uploaded", extra={"session_id": session_id, "file_id": file_id, "size": size})
+    return {"success": True, "file_id": file_id, "url": attachment_video_url(session_id, file_id), "mime": video_mime_for_ext(ext), "size": size}
 
 
 @router.post("/stt")

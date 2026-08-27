@@ -71,6 +71,9 @@ class TomlConfigSource(PydanticBaseSettingsSource):
 class Settings(BaseSettings):
     app_name: str
     api_prefix: str
+    # 后端可被供应商公网访问的基础地址（如 https://example.com）；非空时聊天视频附件以绝对 URL
+    # 直发供应商（供应商自行拉取，单文件上限=会话配额），留空走 base64 内联（单文件 50MB 上限）。
+    public_base_url: str = Field(default="", validation_alias="PUBLIC_BASE_URL")
 
     database_url: str
 
@@ -184,6 +187,7 @@ class Settings(BaseSettings):
     llm_completion_rate_limit_per_ip_per_minute: int
     media_stt_rate_limit_per_minute: int
     media_tts_rate_limit_per_minute: int
+    media_video_rate_limit_per_minute: int = Field(default=10)
     companion_avatar_generate_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_expression_avatar_generate_rate_limit_per_minute: int

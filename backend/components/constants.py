@@ -117,12 +117,26 @@ TOOL_ENFORCE_OFF_VALUES: frozenset[str] = frozenset({"false", "never", "no", "of
 MAX_VOICE_DESIGN_PROMPT_CHARS: int = 200
 
 
-# 协议层附件类型判别；当前聊天管道仅接受 image（视觉模型以 image_url 消费）。
+# 协议层附件类型判别；聊天管道接受 image（视觉模型以 image_url 消费）与 video（上传后以 input_video 消费）。
 ATTACHMENT_TYPE_IMAGE: str = "image"
+ATTACHMENT_TYPE_VIDEO: str = "video"
 
 # 附件 data URL（``data:image/...;base64,``）的字符上限。桌面端本地图片以 data URL 直发多模态，
 # 不走后端落盘；上限需覆盖 base64 膨胀（4/3），同时守住 WS 单帧与数据库 TEXT 行的体量。
 ATTACHMENT_DATA_URL_MAX_CHARS: int = 12 * 1024 * 1024
+
+# 视频附件容器白名单：供应商侧实测仅接受 mp4 / mov（webm 返回 video format not allowed）。
+ATTACHMENT_VIDEO_EXTENSIONS: frozenset[str] = frozenset({".mp4", ".mov"})
+
+# 本地模式（未配置 ``public_base_url``）视频附件单文件上限；供应商以 base64 data URL 内联消费。
+ATTACHMENT_VIDEO_MAX_BYTES: int = 50 * 1024 * 1024
+
+# 会话附件目录滚动配额：写盘前超出则从最旧开始剔除历史视频（改写为 [视频已清理]），不拒绝用户。
+# 公网模式（配置了 ``public_base_url``）单文件上限即此值——供应商拉取 URL，不内联，体量由磁盘兜底。
+ATTACHMENT_SESSION_QUOTA_BYTES: int = 512 * 1024 * 1024
+
+# 单次供应商请求最多内联的视频个数；更早回合的视频降级为 [video] 文本占位（与旧图 [screenshot] 同构）。
+VIDEO_INLINE_MAX_PER_REQUEST: int = 2
 
 # 默认用户面向语言为中文（让新装环境开口即中文），可通过 ``language`` UserSetting / 会话覆盖切到英文。
 DEFAULT_LANGUAGE: str = "zh"
