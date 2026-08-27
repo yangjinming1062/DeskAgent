@@ -83,13 +83,6 @@ export const strings = {
 
   settings: {
     closeSettings: '关闭设置',
-    exportConfig: '导出配置',
-    importConfig: '导入配置',
-    resetToDefaults: '恢复默认',
-    resetConfirm: '将所有设置恢复为 SpiritAgent 默认值？',
-    exportFailed: '导出失败',
-    importFailed: '导入失败',
-    resetFailed: '重置失败',
     nav: {
       account: '账户',
       about: '关于',

@@ -40,6 +40,7 @@ import { registerLogIpc } from './ipc/log'
 import { createEnginePrefsCache, registerMediaIpc } from './ipc/media'
 import { createModelDiskCache } from './ipc/model-disk-cache'
 import { registerOnboardingAudioIpc } from './ipc/onboarding-audio'
+import { registerPrefsIpc } from './ipc/prefs'
 import { autoStartBridge, autoStopBridge, registerRunnerIpc } from './ipc/runner'
 import { registerRunnerConfigIpc } from './ipc/runner-config'
 import { registerSkillsIpc } from './ipc/skills'
@@ -1490,6 +1491,7 @@ registerUiThemeIpc({
   getToolWindow: () => toolWindow,
   ipcMain
 })
+registerPrefsIpc({ ipcMain })
 registerClipboardIpc({
   electron: { clipboard },
   ipcMain,

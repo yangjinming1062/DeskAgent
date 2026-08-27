@@ -241,4 +241,7 @@ export function reportUserActivity(): void {
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $userPreferredTier.set(tier)
   persistString('da.companion.disturbanceTier', tier)
+  // user_settings 侧副本仅作跨端同步载体；cron/语音消费的仍是 backend 的
+  // CompanionPreference.disturbance_tier（companion.set_disturbance_tier 上报），两者并存。
+  window.spiritagent?.prefs?.set({ key: 'companion.disturbance_tier', value: tier })
 }

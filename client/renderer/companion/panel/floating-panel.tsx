@@ -67,6 +67,29 @@ export function FloatingPanel({
 
   const { bind: dragBind, storedOffset } = usePanelDrag(`${storagePrefix}Offset`, () => panelRef.current)
 
+  // 面板几何上云（companion.settings_panel）：拖拽/缩放停稳后防抖上报，
+  // 跳过挂载首跑——未交互过不上报，避免本机默认值覆写另一端的已存几何。
+  const dxRaw = storedOffset?.dx ?? 0
+  const dyRaw = storedOffset?.dy ?? 0
+  const geometryReported = useRef(false)
+
+  useEffect(() => {
+    if (!geometryReported.current) {
+      geometryReported.current = true
+
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      window.spiritagent?.prefs?.set({
+        key: 'companion.settings_panel',
+        value: { height: size.height, offsetX: dxRaw, offsetY: dyRaw, width: size.width }
+      })
+    }, 600)
+
+    return () => window.clearTimeout(timer)
+  }, [size, dxRaw, dyRaw])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape' || e.defaultPrevented) {

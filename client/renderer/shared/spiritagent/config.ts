@@ -1,18 +1,8 @@
-import type {
-  SpiritAgentConfigPutRequest,
-  SpiritAgentConfigRecord,
-  SpiritAgentConfigResponse
-} from '@/shared/types/spiritagent'
+import type { SpiritAgentConfigPutRequest, SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
 export function getSpiritAgentConfig(): Promise<SpiritAgentConfigResponse> {
   return window.spiritagent.api<SpiritAgentConfigResponse>({
     path: '/api/config'
-  })
-}
-
-export function getSpiritAgentConfigDefaults(): Promise<SpiritAgentConfigRecord> {
-  return window.spiritagent.api<SpiritAgentConfigRecord>({
-    path: '/api/config/defaults'
   })
 }
 

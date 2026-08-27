@@ -145,5 +145,3 @@ export interface SpiritAgentConfigPutRequest {
     tavily_base_url?: string
   }
 }
-
-export type SpiritAgentConfigRecord = Record<string, unknown>
