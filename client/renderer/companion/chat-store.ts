@@ -1,6 +1,7 @@
 import { atom, map } from 'nanostores'
 
 import { setSpriteState } from '@/companion/companion-store'
+import { persistString, storedString } from '@/shared/lib/storage'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
@@ -29,7 +30,9 @@ export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
 export const $lastAssistantStreaming = atom<boolean>(false)
 // 流式增量递增计数器，供 ChatScrollAutoFollow 独立订阅触发滚动，不重渲染 ChatDock 容器。
 export const $chatStreamingTick = atom<number>(0)
-export const $chatSessionId = atom<string | null>(null)
+// 持久化上次活跃会话 id：重启后启动流程直接 resume 回原会话（已被删除时由
+// resume 失败回退主会话），而不是每次都回到空白的主会话。
+export const $chatSessionId = atom<string | null>(storedString('da.companion.chatSessionId'))
 export const $chatOpen = atom(false)
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
 // sessionId 存在时点击气泡会切到该会话（媒体送达提示跳转用）。
@@ -70,6 +73,7 @@ export function setChatSession(id: string | null): void {
   $chatTurnInFlight.set(false)
   $turnHadBubbleBreak.set(false)
   $chatSessionId.set(id)
+  persistString('da.companion.chatSessionId', id)
 }
 
 // 用从后端加载的会话替换面板的聊天记录。

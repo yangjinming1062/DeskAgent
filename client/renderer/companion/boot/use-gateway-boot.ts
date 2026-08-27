@@ -267,40 +267,42 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
               })
             }
           }
+        }
 
-          // 重新挂载已有会话，避免下一次 prompt.submit 触发"找不到 session"。
-          // 后端每次 WS 断开都会清空内存里的 runtime_sessions；
-          // session.resume 从持久化的 DB 会话记录里把运行时重新派生出来。
-          const sid = $chatSessionId.get()
+        // 重新挂载会话，避免下一次 prompt.submit 触发"找不到 session"。
+        // 初次启动时 $chatSessionId 从 localStorage 恢复为上次活跃会话；重连时
+        // 则是内存里的现行会话。后端每次 WS 断开都会清空内存里的 runtime_sessions，
+        // session.resume 从持久化的 DB 会话记录里把运行时重新派生出来。恢复的
+        // 会话已被删除（或换了账号）时 resume 报错，清掉持久化 id 并回退主会话。
+        const sid = $chatSessionId.get()
 
-          const syncMountSeq = (res: SessionResumeResponse) => {
-            if (typeof res.current_seq === 'number') {
-              gateway.resetSeq(res.current_seq)
-            }
+        const syncMountSeq = (res: SessionResumeResponse) => {
+          if (typeof res.current_seq === 'number') {
+            gateway.resetSeq(res.current_seq)
           }
+        }
 
-          if (sid) {
-            void gateway
-              .request<SessionResumeResponse>('session.resume', {
-                session_id: sid,
-                last_seq: gateway.lastReceivedSeq
-              })
-              .then(res => {
-                if (!res.resumed) {
-                  syncMountSeq(res)
+        if (sid) {
+          void gateway
+            .request<SessionResumeResponse>('session.resume', {
+              session_id: sid,
+              last_seq: gateway.lastReceivedSeq
+            })
+            .then(res => {
+              if (!res.resumed) {
+                syncMountSeq(res)
 
-                  if (Array.isArray(res.messages)) {
-                    hydrateChatMessages(res.messages)
-                  }
+                if (Array.isArray(res.messages)) {
+                  hydrateChatMessages(res.messages)
                 }
-              })
-              .catch(() => {
-                setChatSession(null)
-                void openMainSession(syncMountSeq)
-              })
-          } else {
-            void openMainSession(syncMountSeq)
-          }
+              }
+            })
+            .catch(() => {
+              setChatSession(null)
+              void openMainSession(syncMountSeq)
+            })
+        } else {
+          void openMainSession(syncMountSeq)
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
         if (st === 'closed' && gateway.lastCloseCode === WS_CLOSE_POLICY_VIOLATION) {
