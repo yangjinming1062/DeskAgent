@@ -75,7 +75,11 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
 
     async with session_scope() as wdb:
         checkpoint = Message(
-            conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str
+            conversation_id=conv_id,
+            role="system",
+            content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}",
+            subtype="daily_summary",
+            summary_date=local_date_str,
         )
         wdb.add(checkpoint)
         await wdb.commit()
