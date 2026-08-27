@@ -35,10 +35,11 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
-import { Mic, PanelLeft, Phone, Sparkles, X } from '@/shared/lib/icons'
+import { Mic, PanelLeft, Paperclip, Phone, Sparkles, Video, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
+import type { ChatAttachment } from '@/shared/types/spiritagent'
 
 import { MessageBubble } from './chat-dock-message-bubble'
 import { useResolvedMediaSrc } from './chat-media-src'
@@ -58,6 +59,68 @@ const DOCK_MAX_HEIGHT = 900
 
 // DESIGN §2.1「用户输入起止」→ listening；停止输入该窗口后回落。
 const TYPING_IDLE_MS = 2500
+
+// 附件扩展名分拣：视频容器与后端白名单一致（mp4/mov，供应商实测 webm 被拒）；
+// 图片同步支持 HEIC/HEIF（iPhone 截图）/TIFF/AVIF/JXL（next-gen）。
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif|jxl)$/i
+const VIDEO_EXT = /\.(mp4|mov)$/i
+
+// Electron 32+ 移除了 File.path——剪贴板/拖拽文件的真实路径只能经 webUtils 桥接。
+const webUtilsBridge = (): { getPathForFile: (f: File) => string } | undefined =>
+  (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } }).spiritagentWebUtils
+
+// 待发送附件：图片占本地路径或 data URL；视频附加即上传换取会话级 URL，就绪后才能发送。
+type PendingAttachment =
+  | { type: 'image'; value: string }
+  | {
+      type: 'video'
+      fileName: string
+      path: string
+      status: 'error' | 'ready' | 'uploading'
+      url?: string
+      error?: string
+    }
+
+async function ensureChatSession(): Promise<string> {
+  const existing = $chatSessionId.get()
+
+  if (existing) {
+    return existing
+  }
+
+  const sessionId = await openMainSession()
+
+  if (!sessionId) {
+    throw new Error('无法打开日常对话')
+  }
+
+  return sessionId
+}
+
+// 视频附加即上传（本地后端 <1s）：本地模式下超 50MB 会被后端 413 拒绝并在 error 里给出指引。
+async function attachVideoFile(
+  path: string,
+  setPending: React.Dispatch<React.SetStateAction<PendingAttachment | null>>
+): Promise<void> {
+  const fileName = path.split(/[\\/]/).pop() ?? path
+
+  setPending({ type: 'video', fileName, path, status: 'uploading' })
+
+  try {
+    const sessionId = await ensureChatSession()
+    const result = await window.spiritagent.uploadVideoForAttach({ path, sessionId })
+
+    setPending({ type: 'video', fileName, path, status: 'ready', url: result.url })
+  } catch (err) {
+    setPending({
+      type: 'video',
+      fileName,
+      path,
+      status: 'error',
+      error: err instanceof Error ? err.message : String(err)
+    })
+  }
+}
 
 const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
   happy: { label: '开心愉悦', icon: '😊' },
@@ -138,7 +201,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
-  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const [pending, setPending] = useState<PendingAttachment | null>(null)
   const [sending, setSending] = useState(false)
 
   const {
@@ -230,7 +293,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }, [sessionListOpen])
 
   // 监听从 SpriteStage 投喂的外部文件（DESIGN §6.3「文件投喂」）：
-  // 把首个图像路径塞进 pendingImage，其他路径暂存到 ref 留给 send() 一并提交。
+  // 把首个媒体文件（图进缩略图槽、视频走上传）装进附件槽，其他路径暂存到 ref 留给 send() 一并提交。
   // 注意：useStore 会立即同步当前值；mount 之后丢进 atom 的 payload 也会触发再次渲染，
   // 所以不需要再单独读 .get() 兜底。
   const externalPathsRef = useRef<string[]>([])
@@ -241,18 +304,23 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       return
     }
 
-    // 同步支持 HEIC/HEIF（iPhone 截图）/TIFF/AVIF/JXL（next-gen）——单次 .test 而不是两遍 filter。
-    const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif|jxl)$/i
-    const imagePaths: string[] = []
+    const mediaPaths: string[] = []
     const otherPaths: string[] = []
 
     for (const p of pendingExternal.paths) {
-      ;(IMAGE_EXT.test(p) ? imagePaths : otherPaths).push(p)
+      ;(IMAGE_EXT.test(p) || VIDEO_EXT.test(p) ? mediaPaths : otherPaths).push(p)
     }
 
-    if (imagePaths.length > 0) {
-      setPendingImage(imagePaths[0] ?? null)
-      externalPathsRef.current = [...imagePaths.slice(1), ...otherPaths]
+    if (mediaPaths.length > 0) {
+      const first = mediaPaths[0]
+
+      if (first && VIDEO_EXT.test(first)) {
+        void attachVideoFile(first, setPending)
+      } else if (first) {
+        setPending({ type: 'image', value: first })
+      }
+
+      externalPathsRef.current = [...mediaPaths.slice(1), ...otherPaths]
     } else {
       const names = otherPaths.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
       setText(t => (t ? `${t}\n${names}` : names))
@@ -266,22 +334,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [list])
 
-  const ensureSession = async (): Promise<string> => {
-    const existing = $chatSessionId.get()
-
-    if (existing) {
-      return existing
-    }
-
-    const sessionId = await openMainSession()
-
-    if (!sessionId) {
-      throw new Error('无法打开日常对话')
-    }
-
-    return sessionId
-  }
-
   const onPaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
 
@@ -290,6 +342,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
 
     for (const item of items) {
+      // 从资源管理器复制的视频文件：取真实路径走上传（图片位图粘贴走 saveClipboardImage 分支）。
+      if (item.kind === 'file' && item.type.startsWith('video/')) {
+        const file = item.getAsFile()
+        const path = file ? webUtilsBridge()?.getPathForFile(file) : undefined
+
+        if (path) {
+          e.preventDefault()
+          void attachVideoFile(path, setPending)
+
+          return
+        }
+      }
+
       if (item.type.startsWith('image/')) {
         e.preventDefault()
 
@@ -297,7 +362,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           const path = await window.spiritagent.saveClipboardImage()
 
           if (path) {
-            setPendingImage(path)
+            setPending({ type: 'image', value: path })
           }
         } catch {
           /* 忽略剪贴板读取失败 */
@@ -309,7 +374,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }
 
   // DESIGN §6.1「支持拖拽文件」：面板本体也是投喂入口——解析真实路径后走与
-  // 精灵投喂同一条附件管线（首图进 pendingImage、其余随 send() 提交）。
+  // 精灵投喂同一条附件管线（首个媒体进附件槽、其余随 send() 提交）。
   const onDrop = async (e: React.DragEvent) => {
     const files = Array.from(e.dataTransfer?.files ?? [])
 
@@ -317,14 +382,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       return
     }
 
-    const webUtils = (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } })
-      .spiritagentWebUtils
-
     const paths: string[] = []
 
     for (const f of files) {
       try {
-        const p = webUtils?.getPathForFile(f)
+        const p = webUtilsBridge()?.getPathForFile(f)
 
         if (p) {
           paths.push(p)
@@ -340,10 +402,53 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
+  // 附件按钮：图片进缩略图槽、视频走上传、其余类型以文件名入正文说明。
+  const pickAttachment = async (): Promise<void> => {
+    const [path] = await window.spiritagent.selectPaths({
+      filters: [
+        {
+          extensions: [
+            'png',
+            'jpg',
+            'jpeg',
+            'gif',
+            'webp',
+            'bmp',
+            'heic',
+            'heif',
+            'tiff',
+            'tif',
+            'avif',
+            'jxl',
+            'mp4',
+            'mov'
+          ],
+          name: '图片与视频'
+        }
+      ],
+      multiple: false,
+      title: '添加附件'
+    })
+
+    if (!path) {
+      return
+    }
+
+    if (VIDEO_EXT.test(path)) {
+      await attachVideoFile(path, setPending)
+    } else if (IMAGE_EXT.test(path)) {
+      setPending({ type: 'image', value: path })
+    } else {
+      const name = path.split(/[\\/]/).pop() ?? path
+
+      setText(t => (t ? `${t}\n附件：${name}` : `附件：${name}`))
+    }
+  }
+
   const send = async () => {
     const trimmed = text.trim()
 
-    if ((!trimmed && !pendingImage) || sending) {
+    if ((!trimmed && !pending) || sending || (pending?.type === 'video' && pending.status !== 'ready')) {
       return
     }
 
@@ -354,44 +459,47 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     setSending(true)
 
     try {
-      const id = await ensureSession()
+      const id = await ensureChatSession()
       let fullText = trimmed
-      // 发送附件（仅 data URL，进 prompt.submit 的多模态 parts）与展示附件
-      // （data URL 或本地路径，供气泡图片卡取图）分开收集：本地路径过不了
-      // 后端附件校验，只允许作渲染源。
-      const attachments: string[] = []
-      const displayAttachments: string[] = []
+      // 发送附件（进 prompt.submit 的多模态 parts：图片 data URL / 视频上传 URL）与
+      // 展示附件（data URL 或可渲染 URL，供气泡媒体卡取图）分开收集：图片本地路径
+      // 过不了后端附件校验，只允许作渲染源。
+      const attachments: ChatAttachment[] = []
+      const displayAttachments: ChatAttachment[] = []
 
-      if (pendingImage) {
+      if (pending?.type === 'image') {
         // 本地图片优先以 data URL 附件直发多模态（后端转 input_image parts，视觉链路接手）；
         // 读取失败（不可读/超体量）才降级路径模式：@file: 指令进正文，LLM 走文件工具读取。
-        let dataUrl: string | null = pendingImage.startsWith('data:') ? pendingImage : null
+        let dataUrl: string | null = pending.value.startsWith('data:') ? pending.value : null
 
         if (!dataUrl) {
           try {
-            dataUrl = await window.spiritagent.readImageForAttach(pendingImage)
+            dataUrl = await window.spiritagent.readImageForAttach(pending.value)
           } catch {
             /* 降级路径模式 */
           }
         }
 
         if (dataUrl) {
-          attachments.push(dataUrl)
-          displayAttachments.push(dataUrl)
+          attachments.push({ type: 'image', url: dataUrl })
+          displayAttachments.push({ type: 'image', url: dataUrl })
         } else {
           const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
             session_id: id,
-            path: pendingImage
+            path: pending.value
           })
 
           if (ref.ref_text) {
             fullText = `${fullText}\n${ref.ref_text}`.trim()
-            displayAttachments.push(pendingImage)
+            displayAttachments.push({ type: 'image', url: pending.value })
           }
         }
+      } else if (pending?.type === 'video' && pending.url) {
+        attachments.push({ type: 'video', url: pending.url })
+        displayAttachments.push({ type: 'video', url: pending.url })
       }
 
-      // 同时附上 SpriteStage 投喂的多余文件路径（非图像文件作为 reference，保留文本里说明）
+      // 同时附上 SpriteStage 投喂的多余文件路径（非媒体文件作为 reference，保留文本里说明）
       const extra = externalPathsRef.current
 
       if (extra.length > 0) {
@@ -401,24 +509,24 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
       externalPathsRef.current = []
 
-      // 展示层：图片卡即内容，纯图片消息不留占位文案；仅图片与正文全空时兜底。
+      // 展示层：媒体卡即内容，纯附件消息不留占位文案；仅附件与正文全空时兜底。
       pushUserMessage(
-        fullText || (displayAttachments.length ? '' : '（图片）'),
+        fullText || (displayAttachments.length ? '' : pending?.type === 'video' ? '（视频）' : '（图片）'),
         displayAttachments.length ? displayAttachments : undefined
       )
       setText('')
-      setPendingImage(null)
+      setPending(null)
       setSpriteState('thinking')
 
       pushPendingPrompt({
-        text: fullText || '请看这张图',
+        text: fullText || (pending?.type === 'video' ? '请看这段视频' : '请看这张图'),
         attachments: attachments.length ? attachments : undefined
       })
       schedulePendingFlush()
     } catch (err) {
       setAssistantError(err instanceof Error ? err.message : '发送失败')
       setSpriteState('idle')
-      setPendingImage(null)
+      setPending(null)
     } finally {
       setSending(false)
     }
@@ -626,7 +734,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {/* Messages Area */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
             {list.length === 0 && !sending && (
-              <p className="mt-8 text-center text-sm text-white/40">说点什么，或粘贴一张图给我看看～</p>
+              <p className="mt-8 text-center text-sm text-white/40">说点什么，或粘贴图片/视频给我看看～</p>
             )}
             {list.map(item => (
               <MessageBubble key={item.id} message={item} />
@@ -643,15 +751,47 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             <ChatScrollAutoFollow scrollRef={scrollRef} />
           </div>
 
-          {pendingImage && (
+          {pending?.type === 'image' && (
             <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
-              <PendingImageThumb path={pendingImage} />
+              <PendingImageThumb path={pending.value} />
               <span>{sending ? '图片发送中…' : '已附加图片，点击可查看'}</span>
               {!sending && (
                 <button
                   aria-label="移除附加图片"
                   className="rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setPendingImage(null)}
+                  onClick={() => setPending(null)}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+          {pending?.type === 'video' && (
+            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
+              <Video className="size-4 shrink-0 text-white/50" />
+              <span className="max-w-40 shrink truncate">{pending.fileName}</span>
+              {pending.status === 'uploading' && <span className="text-white/40">上传中…</span>}
+              {pending.status === 'ready' && <span>已就绪</span>}
+              {pending.status === 'error' && (
+                <>
+                  <span className="min-w-0 flex-1 truncate text-amber-300/80" title={pending.error}>
+                    {pending.error}
+                  </span>
+                  <button
+                    className="shrink-0 rounded-md px-1.5 py-0.5 text-white/50 transition hover:bg-white/10 hover:text-white"
+                    onClick={() => void attachVideoFile(pending.path, setPending)}
+                    type="button"
+                  >
+                    重试
+                  </button>
+                </>
+              )}
+              {!sending && (
+                <button
+                  aria-label="移除附加视频"
+                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setPending(null)}
                   type="button"
                 >
                   <X className="size-3.5" />
@@ -683,6 +823,15 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 value={text}
               />
               <button
+                aria-label="添加附件"
+                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                onClick={() => void pickAttachment()}
+                title="附加图片或视频（mp4/mov）"
+                type="button"
+              >
+                <Paperclip className="size-4" />
+              </button>
+              <button
                 className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${
                   recording
                     ? 'border-rose-400/70 bg-rose-500/25 text-white animate-pulse'
@@ -710,7 +859,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               </button>
               <button
                 className={cn(BTN_PRIMARY, 'h-[38px] px-4 text-sm')}
-                disabled={!isGenerating && (sending || gatewayState !== 'open' || (!text.trim() && !pendingImage))}
+                disabled={
+                  !isGenerating &&
+                  (sending ||
+                    gatewayState !== 'open' ||
+                    (!text.trim() && !pending) ||
+                    (pending?.type === 'video' && pending.status !== 'ready'))
+                }
                 onClick={() => void (isGenerating ? handleStop() : send())}
                 type="button"
               >

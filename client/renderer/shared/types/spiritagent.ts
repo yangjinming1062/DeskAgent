@@ -34,6 +34,12 @@ export interface ChatMediaItem {
   url: string
 }
 
+/** 用户侧聊天附件：图片为 data URL，视频为后端上传返回的会话级 URL；水合与发送共用同一形状。 */
+export interface ChatAttachment {
+  type: 'image' | 'video'
+  url: string
+}
+
 export interface SessionMessage {
   codex_reasoning_items?: unknown
   content: unknown

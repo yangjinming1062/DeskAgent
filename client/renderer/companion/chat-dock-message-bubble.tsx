@@ -88,8 +88,8 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {body.attachments?.length ? (
           <div className="flex flex-col gap-1">
-            {body.attachments.map(url => (
-              <ChatMediaCard item={{ type: 'image', url }} key={url} />
+            {body.attachments.map(a => (
+              <ChatMediaCard item={{ type: a.type, url: a.url }} key={a.url} />
             ))}
           </div>
         ) : null}

@@ -9,6 +9,9 @@ const imageSrcCache = new Map<string, string>()
 // 需要主进程直接读盘。后端媒体是 HTTP(S) URL 或相对路径，落不进这三个形态。
 const LOCAL_PATH_RE = /^(?:[a-zA-Z]:[\\/]|\\\\|\/(?!\/))/
 
+// apiAssetBuffer 只回字节不回 Content-Type，视频 blob 的 mime 由 URL 扩展名推导。
+const VIDEO_MIME_BY_EXT: Record<string, string> = { '.mp4': 'video/mp4', '.mov': 'video/quicktime' }
+
 /** 把媒体 URL 解析为渲染端可用 src：data URL 零开销直用；本地路径读盘；其余走后端资产通道。 */
 function resolveImageSrc(url: string): string | Promise<string | null> {
   if (url.startsWith('data:')) {
@@ -50,8 +53,11 @@ export function useResolvedMediaSrc(item: ChatMediaItem): string | null {
           const buf = await window.spiritagent.apiAssetBuffer({ url: item.url })
 
           if (buf && !cancelled) {
+            const ext = item.url.split(/[?#]/)[0].slice(item.url.lastIndexOf('.')).toLowerCase()
             // 拷贝进全新 ArrayBuffer——IPC 返回的 Uint8Array 类型上可能是 SharedArrayBuffer 视图，不满足 BlobPart。
-            objectUrl = URL.createObjectURL(new Blob([new Uint8Array(buf)], { type: 'video/mp4' }))
+            objectUrl = URL.createObjectURL(
+              new Blob([new Uint8Array(buf)], { type: VIDEO_MIME_BY_EXT[ext] || 'video/mp4' })
+            )
             setSrc(objectUrl)
           }
         }

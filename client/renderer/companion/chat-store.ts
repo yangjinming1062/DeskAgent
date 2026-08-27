@@ -4,7 +4,7 @@ import { setSpriteState } from '@/companion/companion-store'
 import { persistString, storedString } from '@/shared/lib/storage'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
+import type { ChatAttachment, ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
 
 // 消息身份与稳定元数据，挂载于 $chatMessageList。
 export interface ChatMessageListItem {
@@ -20,7 +20,7 @@ export interface ChatMessageBody {
   toolName?: string | null
   error?: string
   cancelled?: boolean
-  attachments?: string[]
+  attachments?: ChatAttachment[]
   media?: ChatMediaItem[]
 }
 
@@ -129,9 +129,10 @@ function extractText(m: SessionMessage): string {
     .join('\n')
 }
 
-// 多模态用户行里的 input_image parts 还原为附件列表（data URL 或图片 URL），
-// 供气泡渲染图片卡；纯文本行与无图行返回 undefined。
-function extractUserAttachments(m: SessionMessage): string[] | undefined {
+// 多模态用户行里的 input_image/input_video parts 还原为类型化附件列表，
+// 供气泡渲染媒体卡；纯文本行与无附件行返回 undefined。被清理的视频行只剩
+// [视频已清理] 文本 part，天然落不进附件列表。
+function extractUserAttachments(m: SessionMessage): ChatAttachment[] | undefined {
   if (typeof m.content !== 'string') {
     return undefined
   }
@@ -148,18 +149,24 @@ function extractUserAttachments(m: SessionMessage): string[] | undefined {
     return undefined
   }
 
-  const urls = parsed
+  const attachments = parsed
     .filter(
-      (p): p is { image_url?: unknown } =>
-        typeof p === 'object' && p !== null && (p as { type?: unknown }).type === 'input_image'
+      (p): p is { type?: string; image_url?: unknown; video_url?: unknown } =>
+        typeof p === 'object' &&
+        p !== null &&
+        ((p as { type?: unknown }).type === 'input_image' || (p as { type?: unknown }).type === 'input_video')
     )
-    .map(p => p.image_url)
-    .filter((u): u is string => typeof u === 'string' && u.length > 0)
+    .map(p =>
+      p.type === 'input_video'
+        ? { type: 'video' as const, url: typeof p.video_url === 'string' ? p.video_url : '' }
+        : { type: 'image' as const, url: typeof p.image_url === 'string' ? p.image_url : '' }
+    )
+    .filter(a => a.url.length > 0)
 
-  return urls.length ? urls : undefined
+  return attachments.length ? attachments : undefined
 }
 
-function omitUndefined(attachments: string[] | undefined): { attachments?: string[] } {
+function omitUndefined(attachments: ChatAttachment[] | undefined): { attachments?: ChatAttachment[] } {
   return attachments ? { attachments } : {}
 }
 
@@ -207,7 +214,7 @@ export function pushAffectTraceMessage(): void {
   $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype: 'status_affect' }])
 }
 
-export function pushUserMessage(text: string, attachments?: string[]): string {
+export function pushUserMessage(text: string, attachments?: ChatAttachment[]): string {
   const id = nextId()
   $chatMessageBodies.setKey(id, {
     text,
@@ -222,7 +229,7 @@ export function pushUserMessage(text: string, attachments?: string[]): string {
 
 interface PendingPromptItem {
   text: string
-  attachments?: string[]
+  attachments?: ChatAttachment[]
 }
 
 const $pendingPromptBatch = atom<PendingPromptItem[]>([])
@@ -298,7 +305,7 @@ export function submitPendingBatch(): void {
     session_id: sessionId,
     batch: pendingBatch.map(p => ({
       text: p.text,
-      ...(p.attachments?.length ? { attachments: p.attachments.map(file_url => ({ file_url, type: 'image' })) } : {})
+      ...(p.attachments?.length ? { attachments: p.attachments.map(a => ({ file_url: a.url, type: a.type })) } : {})
     }))
   }
 
