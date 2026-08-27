@@ -1,17 +1,9 @@
-import logging
 import os
 import threading
 import time
 from typing import Any
 
-from utils import cfg_bool, cfg_float, cfg_get, cfg_int, cfg_json, cfg_str, load_config
-
-
-def _terminal_config_value(key: str, default: Any) -> Any:
-    return cfg_get(load_config(), "terminal", key, default=default)
-
-
-DOCKER_ORPHAN_LIFETIME_SECONDS = max(60, int(_terminal_config_value("lifetime_seconds", 300)))
+from utils import cfg_bool, cfg_int, cfg_str, load_config
 
 active_environments: dict[str, Any] = {}
 last_activity: dict[str, float] = {}
@@ -39,64 +31,28 @@ def resolve_container_task_id(task_id: str | None) -> str:
 
 
 def get_env_config() -> dict[str, Any]:
-    """加载并规范化 `terminal.*` 配置（env_type、镜像、cwd、超时、SSH 字段等）。"""
-    default_image = "nikolaik/python-nodejs:python3.11-nodejs20"
+    """加载并规范化 `terminal.*` 配置（env_type、cwd、超时、SSH 字段等）。"""
     cfg = load_config() or {}
     t = cfg.get("terminal") if isinstance(cfg, dict) else {}
     t = t if isinstance(t, dict) else {}
 
     env_type = cfg_str(t, "env_type", "local")
-    mount_docker_cwd = cfg_bool(t, "docker_mount_cwd_to_workspace", False)
-    if env_type == "local":
-        default_cwd = _safe_getcwd()
-    elif env_type == "ssh":
-        default_cwd = "~"
-    else:
-        default_cwd = "/root"
-    cwd = cfg_str(t, "cwd", default_cwd)
+    cwd = cfg_str(t, "cwd", _safe_getcwd() if env_type == "local" else "~")
     if cwd:
         cwd = os.path.expanduser(cwd)
-    host_cwd = None
-    host_prefixes = ("/Users/", "/home/", "C:\\", "C:/")
-    if env_type == "docker" and mount_docker_cwd:
-        docker_cwd_source = cwd or _safe_getcwd()
-        candidate = os.path.abspath(os.path.expanduser(docker_cwd_source))
-        if any(candidate.startswith(p) for p in host_prefixes) or (os.path.isabs(candidate) and os.path.isdir(candidate) and not candidate.startswith(("/workspace", "/root"))):
-            host_cwd = candidate
-            cwd = "/workspace"
-    elif env_type in {"docker", "singularity"} and cwd:
-        is_host_path = any(cwd.startswith(p) for p in host_prefixes)
-        is_relative = not os.path.isabs(cwd)
-        if (is_host_path or is_relative) and cwd != default_cwd:
-            logging.getLogger(__name__).info("Ignoring cwd=%r for %s backend (host/relative path won't work in sandbox). Using %r instead.", cwd, env_type, default_cwd)
-            cwd = default_cwd
     ssh_cfg = t.get("ssh") if isinstance(t.get("ssh"), dict) else {}
     return {
         "env_type": env_type,
-        "docker_image": cfg_str(t, "docker_image", default_image),
-        "docker_forward_env": cfg_json(t, "docker_forward_env", []),
-        "singularity_image": cfg_str(t, "singularity_image", f"docker://{default_image}"),
         "cwd": cwd,
-        "host_cwd": host_cwd,
-        "docker_mount_cwd_to_workspace": mount_docker_cwd,
         "timeout": cfg_int(t, "timeout", 180),
         "lifetime_seconds": cfg_int(t, "lifetime_seconds", 300),
         "ssh_host": str(ssh_cfg.get("host", "")),
         "ssh_user": str(ssh_cfg.get("user", "")),
         "ssh_port": int(ssh_cfg.get("port", 22)),
         "ssh_key": str(ssh_cfg.get("key", "")),
+        "ssh_password": str(ssh_cfg.get("password", "")),
         "ssh_persistent": cfg_bool(t, "ssh_persistent", cfg_bool(ssh_cfg, "persistent", True)),
         "local_persistent": cfg_bool(t, "local_persistent", False),
-        "container_cpu": cfg_float(t, "container_cpu", 1.0),
-        "container_memory": cfg_int(t, "container_memory", 5120),
-        "container_disk": cfg_int(t, "container_disk", 51200),
-        "container_persistent": cfg_bool(t, "container_persistent", True),
-        "docker_volumes": cfg_json(t, "docker_volumes", []),
-        "docker_env": cfg_json(t, "docker_env", {}),
-        "docker_run_as_host_user": cfg_bool(t, "docker_run_as_host_user", False),
-        "docker_extra_args": cfg_json(t, "docker_extra_args", []),
-        "docker_persist_across_processes": cfg_bool(t, "docker_persist_across_processes", True),
-        "docker_orphan_reaper": cfg_bool(t, "docker_orphan_reaper", True),
     }
 
 

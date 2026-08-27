@@ -17,12 +17,11 @@ from envs import (
     env_lock,
     get_env_config,
     last_activity,
-    register_env_cleanup_hook,
     resolve_container_task_id,
     start_cleanup_thread,
     task_env_overrides,
 )
-from utils import cfg_get, clean_output, get_scratch_size_bytes, load_config, reset_scratch_size_cache
+from utils import cfg_get, clean_output, load_config
 
 from ..process import process_registry
 from ..registry import registry
@@ -30,7 +29,6 @@ from ..registry import registry
 logger = logging.getLogger(__name__)
 
 DEFAULT_FOREGROUND_MAX_TIMEOUT = 600
-DEFAULT_DISK_USAGE_WARNING_GB = 500.0
 
 _EXIT_CODE_SPLIT_RE = re.compile(r"\s*(?:\|\||&&|[|;])\s*")
 _SINGLE_QUOTE_RE = re.compile(r"'[^']*'")
@@ -39,33 +37,6 @@ _BACKTICK_RE = re.compile(r"`[^`]*`")
 
 _cfg = load_config()
 FOREGROUND_MAX_TIMEOUT = cfg_get(_cfg, "terminal", "max_foreground_timeout", default=DEFAULT_FOREGROUND_MAX_TIMEOUT)
-DISK_USAGE_WARNING_THRESHOLD_GB = float(cfg_get(_cfg, "terminal", "disk_warning_gb", default=DEFAULT_DISK_USAGE_WARNING_GB))
-
-
-def _check_disk_usage_warning() -> bool:
-    try:
-        # 委派 utils.scratch_size: scandir + DirEntry 单次 stat, 双 variant 缓存
-        # (默认 include_overlays=True 与原行为一致)。30s TTL 内不会重复扫描。
-        snap = get_scratch_size_bytes()
-        total_gb = snap.total_bytes / (1024**3)
-        if total_gb > DISK_USAGE_WARNING_THRESHOLD_GB:
-            logger.warning(
-                "Disk usage (%.1fGB over %d files) exceeds threshold (%.0fGB). Consider running cleanup_all_environments().",
-                total_gb,
-                snap.file_count,
-                DISK_USAGE_WARNING_THRESHOLD_GB,
-            )
-            return True
-        return False
-    except Exception as e:
-        logger.debug("Disk usage warning check failed: %s", e, exc_info=True)
-        return False
-
-
-# 环境清理后失效 scratch_size 缓存 —— 沿用 file_tools.clear_file_ops_cache 的注册范式。
-# reset_scratch_size_cache 签名接受 task_id 位置参数(为兼容 register_env_cleanup_hook),
-# 此处直接传函数引用即可, 不需要 lambda 包装。
-register_env_cleanup_hook(reset_scratch_size_cache)
 
 
 _WORKDIR_SAFE_RE = re.compile(r"^[A-Za-z0-9/\\:_\-.~ +@=,]+$")
@@ -106,9 +77,6 @@ macOS provides BSD command-line tools and native utilities such as open, pbcopy,
 Use brew, pip, npm, or cargo for packages. Do not use apt, apt-get, yum, dnf, pacman, or systemctl.
 The non-interactive shell cannot answer sudo password prompts; avoid sudo."""
 
-CONTAINER_TOOL_DESCRIPTION = """Execute shell commands in the configured Linux container through Bash.
-The filesystem and tools depend on the container configuration."""
-
 REMOTE_TOOL_DESCRIPTION = """Execute shell commands on the configured remote host through its Bash-compatible shell.
 The remote platform, tools, package manager, and filesystem depend on that host."""
 
@@ -143,9 +111,7 @@ def _normalize_terminal_platform(platform_name: str | None = None) -> str:
 
 
 def build_terminal_tool_description(platform_name: str | None = None, env_type: str = "local") -> str:
-    if env_type in {"docker", "singularity"}:
-        backend_description = CONTAINER_TOOL_DESCRIPTION
-    elif env_type == "ssh":
+    if env_type == "ssh":
         backend_description = REMOTE_TOOL_DESCRIPTION
     else:
         platform = _normalize_terminal_platform(platform_name)
@@ -318,12 +284,6 @@ def terminal_tool(
             return json.dumps({"output": "", "exit_code": -1, "error": blocked_host_error, "status": "blocked"}, ensure_ascii=False)
         effective_task_id = resolve_container_task_id(task_id)
         overrides = (task_env_overrides.get(task_id) if task_id else None) or task_env_overrides.get(effective_task_id, {})
-        if env_type == "docker":
-            image = overrides.get("docker_image") or config["docker_image"]
-        elif env_type == "singularity":
-            image = overrides.get("singularity_image") or config["singularity_image"]
-        else:
-            image = ""
         cwd = overrides.get("cwd") or config["cwd"]
         default_timeout = config["timeout"]
         effective_timeout = timeout if timeout is not None else default_timeout
@@ -364,8 +324,6 @@ def terminal_tool(
                         env = active_environments[_existing_key]
                         needs_creation = False
                 if needs_creation:
-                    if env_type == "singularity":
-                        _check_disk_usage_warning()
                     logger.info("Creating new %s environment for task %s...", env_type, effective_task_id[:8])
                     try:
                         ssh_config = None
@@ -375,37 +333,19 @@ def terminal_tool(
                                 "user": config.get("ssh_user", ""),
                                 "port": config.get("ssh_port", 22),
                                 "key": config.get("ssh_key", ""),
+                                "password": config.get("ssh_password", ""),
                                 "persistent": config.get("ssh_persistent", False),
-                            }
-                        container_config = None
-                        if env_type in {"docker", "singularity"}:
-                            container_config = {
-                                "container_cpu": config.get("container_cpu", 1),
-                                "container_memory": config.get("container_memory", 5120),
-                                "container_disk": config.get("container_disk", 51200),
-                                "container_persistent": config.get("container_persistent", True),
-                                "docker_volumes": config.get("docker_volumes", []),
-                                "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
-                                "docker_forward_env": config.get("docker_forward_env", []),
-                                "docker_env": config.get("docker_env", {}),
-                                "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
-                                "docker_extra_args": config.get("docker_extra_args", []),
-                                "docker_persist_across_processes": config.get("docker_persist_across_processes", True),
-                                "docker_orphan_reaper": config.get("docker_orphan_reaper", True),
                             }
                         local_config = None
                         if env_type == "local":
                             local_config = {"persistent": config.get("local_persistent", False)}
                         new_env = create_environment(
                             env_type=env_type,
-                            image=image,
                             cwd=cwd,
                             timeout=effective_timeout,
                             ssh_config=ssh_config,
-                            container_config=container_config,
                             local_config=local_config,
                             task_id=effective_task_id,
-                            host_cwd=config.get("host_cwd"),
                         )
                     except ImportError as e:
                         return json.dumps(
@@ -648,9 +588,7 @@ _TERMINAL_SCHEMA_TEMPLATE = {
 
 
 def build_terminal_schema(platform_name: str | None = None, env_type: str = "local") -> dict[str, Any]:
-    if env_type in {"docker", "singularity"}:
-        command_description = "The shell command to execute in the configured Linux container."
-    elif env_type == "ssh":
+    if env_type == "ssh":
         command_description = "The shell command to execute on the configured remote host."
     else:
         platform = _normalize_terminal_platform(platform_name)

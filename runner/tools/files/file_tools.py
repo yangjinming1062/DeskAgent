@@ -27,7 +27,6 @@ from envs import (
 from utils import (
     IS_WINDOWS,
     cfg_get,
-    get_container_mirror_warning,
     get_cross_profile_warning,
     get_read_block_error,
     get_sandbox_mirror_warning,
@@ -436,31 +435,6 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
     return None
 
 
-def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
-    """返回 Docker 文件工具对应的容器内 SpiritAgent 镜像前缀。"""
-    try:
-        container_key = resolve_container_task_id(task_id)
-    except Exception:
-        return None
-
-    try:
-        with env_lock:
-            env = active_environments.get(container_key) or active_environments.get(task_id)
-
-        if env is not None:
-            if env.__class__.__name__ == "DockerEnvironment" and bool(getattr(env, "_persistent", False)):
-                return "/root/.spiritagent"
-            return None
-
-        config = get_env_config()
-    except Exception:
-        return None
-
-    if config.get("env_type") == "docker" and config.get("container_persistent", True):
-        return "/root/.spiritagent"
-    return None
-
-
 def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | None:
     """软守卫：``filepath`` 落到另一个 SpiritAgent profile 作用域时返回警告字符串。
 
@@ -475,18 +449,15 @@ def _check_cross_profile_path(filepath: str, task_id: str = "default") -> str | 
 
 
 def _check_hard_path_blocks(filepath: str, task_id: str = "default") -> str | None:
-    """硬阻断：sandbox-mirror / container-mirror 写入等于无效，必须拒。
+    """硬阻断：sandbox-mirror 写入等于无效，必须拒。
 
-    这两类不是「纵深防御」而是真实错误（写入不会生效）。
+    这不是「纵深防御」而是真实错误（写入不会生效）。
     """
     try:
         resolved = str(_resolve_path_for_task(filepath, task_id))
     except (OSError, ValueError):
         resolved = filepath
-    warning = get_sandbox_mirror_warning(resolved)
-    if warning is not None:
-        return warning
-    return get_container_mirror_warning(resolved, mirror_prefix=_get_container_mirror_prefix_for_task(task_id))
+    return get_sandbox_mirror_warning(resolved)
 
 
 _CROSS_PROFILE_AUDIT_LOG = get_spiritagent_home() / "cross-profile-audit.log"
@@ -662,8 +633,8 @@ def _is_internal_file_status_text(content: str) -> bool:
 def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileOperations:
     """获取或创建任务对应的文件操作实例。
 
-    遵守 ``TERMINAL_ENV`` 配置：若任务尚未有环境，按配置后端（local、docker、
-    modal 等）新建，而非默认 local。
+    遵守 ``TERMINAL_ENV`` 配置：若任务尚未有环境，按配置后端（local、ssh 等）新建，
+    而非默认 local。
 
     线程安全：复用 terminal_tool 的 per-task 创建锁，防止并发调用重复创建沙箱。
 
@@ -708,28 +679,8 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
             env_type = config["env_type"]
             overrides = task_env_overrides.get(task_id, {})
 
-            if env_type == "docker":
-                image = overrides.get("docker_image") or config["docker_image"]
-            elif env_type == "singularity":
-                image = overrides.get("singularity_image") or config["singularity_image"]
-            else:
-                image = ""
-
             cwd = overrides.get("cwd") or config["cwd"]
             logger.info("Creating new %s environment for task %s...", env_type, task_id[:8])
-
-            container_config = None
-            if env_type in {"docker", "singularity"}:
-                container_config = {
-                    "container_cpu": config.get("container_cpu", 1),
-                    "container_memory": config.get("container_memory", 5120),
-                    "container_disk": config.get("container_disk", 51200),
-                    "container_persistent": config.get("container_persistent", True),
-                    "docker_volumes": config.get("docker_volumes", []),
-                    "docker_mount_cwd_to_workspace": config.get("docker_mount_cwd_to_workspace", False),
-                    "docker_forward_env": config.get("docker_forward_env", []),
-                    "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
-                }
 
             ssh_config = None
             if env_type == "ssh":
@@ -738,6 +689,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
                     "user": config.get("ssh_user", ""),
                     "port": config.get("ssh_port", 22),
                     "key": config.get("ssh_key", ""),
+                    "password": config.get("ssh_password", ""),
                     "persistent": config.get("ssh_persistent", False),
                 }
 
@@ -747,14 +699,11 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
 
             terminal_env = create_environment(
                 env_type=env_type,
-                image=image,
                 cwd=cwd,
                 timeout=config["timeout"],
                 ssh_config=ssh_config,
-                container_config=container_config,
                 local_config=local_config,
                 task_id=task_id,
-                host_cwd=config.get("host_cwd"),
             )
 
             with env_lock:
@@ -764,10 +713,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations | NativeFileO
             start_cleanup_thread()
             logger.info("%s environment ready for task %s", env_type, task_id[:8])
 
-    if getattr(terminal_env, "env_type", None) == "local":
-        file_ops = NativeFileOperations(cwd=getattr(terminal_env, "cwd", None) or getattr(terminal_env, "host_cwd", None))
-    else:
-        file_ops = ShellFileOperations(terminal_env)
+    file_ops = NativeFileOperations(cwd=getattr(terminal_env, "cwd", None)) if getattr(terminal_env, "env_type", None) == "local" else ShellFileOperations(terminal_env)
 
     with _file_ops_lock:
         _file_ops_cache[task_id] = file_ops

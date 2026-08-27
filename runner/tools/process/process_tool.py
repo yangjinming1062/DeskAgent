@@ -486,7 +486,7 @@ class ProcessRegistry:
         return session
 
     def spawn_via_env(self, env: Any, command: str, cwd: str | None = None, task_id: str = "", session_key: str = "", timeout: int = 10) -> ProcessSession:
-        """通过非本地 Environment 后端派生后台进程(Docker / Singularity / SSH)。
+        """通过 SSH Environment 后端派生后台进程。
 
         把命令包成 nohup, 把 in-sandbox PID 和输出重定向到沙箱内的 log 文件, 随后通过后续 ``execute()`` 轮询状态。
         不支持实时 stdout pipe 和 stdin 输入 — 但能保证命令跑在正确的 sandbox 上下文里。

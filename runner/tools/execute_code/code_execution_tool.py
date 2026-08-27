@@ -465,23 +465,7 @@ def _get_or_create_env(task_id: str) -> tuple[Any, str]:
         config = get_env_config()
         env_type = config["env_type"]
         overrides = task_env_overrides.get(effective_task_id, {})
-        if env_type == "docker":
-            image = overrides.get("docker_image") or config["docker_image"]
-        elif env_type == "singularity":
-            image = overrides.get("singularity_image") or config["singularity_image"]
-        else:
-            image = ""
         cwd = overrides.get("cwd") or config["cwd"]
-        container_config = None
-        if env_type in {"docker", "singularity"}:
-            container_config = {
-                "container_cpu": config.get("container_cpu", 1),
-                "container_memory": config.get("container_memory", 5120),
-                "container_disk": config.get("container_disk", 51200),
-                "container_persistent": config.get("container_persistent", True),
-                "docker_volumes": config.get("docker_volumes", []),
-                "docker_run_as_host_user": config.get("docker_run_as_host_user", False),
-            }
         ssh_config = None
         if env_type == "ssh":
             ssh_config = {
@@ -489,6 +473,7 @@ def _get_or_create_env(task_id: str) -> tuple[Any, str]:
                 "user": config.get("ssh_user", ""),
                 "port": config.get("ssh_port", 22),
                 "key": config.get("ssh_key", ""),
+                "password": config.get("ssh_password", ""),
                 "persistent": config.get("ssh_persistent", False),
             }
         local_config = None
@@ -497,14 +482,11 @@ def _get_or_create_env(task_id: str) -> tuple[Any, str]:
         logger.info("Creating new %s environment for execute_code task %s...", env_type, effective_task_id[:8])
         env = create_environment(
             env_type=env_type,
-            image=image,
             cwd=cwd,
             timeout=config["timeout"],
             ssh_config=ssh_config,
-            container_config=container_config,
             local_config=local_config,
             task_id=effective_task_id,
-            host_cwd=config.get("host_cwd"),
         )
         with env_lock:
             active_environments[effective_task_id] = env
@@ -617,7 +599,7 @@ def _rpc_poll_loop(
 
 
 def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | None) -> str:
-    """在非本地(Docker/Singularity/SSH)沙箱后端里执行 ``code``; 通过文件 RPC 转发工具调用。"""
+    """在 SSH 沙箱后端里执行 ``code``; 通过文件 RPC 转发工具调用。"""
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
@@ -711,7 +693,7 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
 
 
 def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str] | None = None) -> str:
-    """执行 sandbox 子进程: 本机用 UDS/TCP RPC, 远程(Docker/Singularity/SSH)委派 ``_execute_remote``。"""
+    """执行 sandbox 子进程: 本机用 UDS/TCP RPC, SSH 后端委派 ``_execute_remote``。"""
     if not code or not code.strip():
         return tool_error("No code provided.")
     env_type = get_env_config()["env_type"]

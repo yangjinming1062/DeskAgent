@@ -26,7 +26,7 @@ type SwitchRow = {
 
 type InputRow = {
   kind: 'input'
-  type?: 'text' | 'number'
+  type?: 'text' | 'number' | 'password'
   path: readonly string[]
   title: string
   default: string | number
@@ -36,15 +36,7 @@ type Row = SelectRow | SwitchRow | InputRow
 
 const BACKEND_OPTIONS = [
   { value: 'local', label: 'Local' },
-  { value: 'docker', label: 'Docker' },
-  { value: 'ssh', label: 'SSH' },
-  { value: 'singularity', label: 'Singularity' }
-]
-
-const BROWSER_ENGINE_OPTIONS = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'lightpanda', label: 'Lightpanda' },
-  { value: 'chrome', label: 'Chrome' }
+  { value: 'ssh', label: 'SSH' }
 ]
 
 export function RunnerSettings(): React.JSX.Element {
@@ -89,7 +81,17 @@ export function RunnerSettings(): React.JSX.Element {
     setIsDirty(true)
   }
 
-  // 行配置是稳定的模块级结构，无需 useMemo
+  const envType = ((getIn(config, ['terminal', 'env_type']) as string) || 'local').toLowerCase()
+
+  const sshRows: readonly Row[] = [
+    { kind: 'input', path: ['terminal', 'ssh', 'host'], title: r.sshHost, default: '' },
+    { kind: 'input', type: 'number', path: ['terminal', 'ssh', 'port'], title: r.sshPort, default: 22 },
+    { kind: 'input', path: ['terminal', 'ssh', 'user'], title: r.sshUser, default: '' },
+    { kind: 'input', type: 'password', path: ['terminal', 'ssh', 'password'], title: r.sshPassword, default: '' },
+    { kind: 'input', path: ['terminal', 'ssh', 'key'], title: r.sshKey, default: '' }
+  ]
+
+  // SSH 连接参数只在环境类型选了 SSH 时出现，其余分组行是稳定的模块级结构
   const rowGroups: readonly { heading: string; rows: readonly Row[] }[] = [
     {
       heading: r.terminal,
@@ -103,19 +105,10 @@ export function RunnerSettings(): React.JSX.Element {
         }
       ]
     },
+    ...(envType === 'ssh' ? [{ heading: r.ssh, rows: sshRows }] : []),
     {
       heading: r.browser,
-      rows: [
-        {
-          kind: 'select',
-          path: ['browser', 'engine'],
-          title: r.browserEngine,
-          options: BROWSER_ENGINE_OPTIONS,
-          default: 'auto'
-        },
-        { kind: 'switch', path: ['browser', 'allow_private_urls'], title: r.browserAllowPrivateUrls },
-        { kind: 'switch', path: ['browser', 'record_sessions'], title: r.browserRecordSessions }
-      ]
+      rows: [{ kind: 'switch', path: ['browser', 'allow_private_urls'], title: r.browserAllowPrivateUrls }]
     },
     {
       heading: r.security,

@@ -11,7 +11,7 @@ from .capabilities import (
     system_activity_available,
 )
 from .clean import clean_output, strip_ansi, strip_fence
-from .config import cfg_bool, cfg_float, cfg_get, cfg_int, cfg_json, cfg_str, get_disabled_config_names, get_env_type, is_truthy_value, load_config, set_inmemory_config
+from .config import cfg_bool, cfg_get, cfg_int, cfg_str, get_disabled_config_names, get_env_type, is_truthy_value, load_config, set_inmemory_config
 from .constants import (
     CREATE_NO_WINDOW,
     IS_MACOS,
@@ -40,7 +40,6 @@ from .file_safety import (
     build_write_denied_paths,
     build_write_denied_prefixes,
     canonicalize_path,
-    get_container_mirror_warning,
     get_cross_profile_warning,
     get_read_block_error,
     get_sandbox_mirror_warning,
@@ -63,7 +62,6 @@ from .pid import PidState, kill_tree, pid_exists, pid_state
 from .process_tree import TerminationResult, terminate_tree
 from .redact import SECRET_PREFIX_RE, redact_sensitive_text
 from .reverse_rpc import call_llm, call_llm_sync, set_handler, set_main_loop
-from .scratch_size import ScratchSnapshot, get_scratch_size_bytes, reset_scratch_size_cache
 from .tokens import (
     CancellationToken,
     check_cancel,
@@ -95,7 +93,6 @@ __all__ = [
     "PIPE_TRANSPORT",
     "SafeAsyncHTTPTransport",
     "SafeHTTPTransport",
-    "ScratchSnapshot",
     "SECRET_PREFIX_RE",
     "TerminationResult",
     "UNIX_TRANSPORT",
@@ -108,10 +105,8 @@ __all__ = [
     "call_llm_sync",
     "canonicalize_path",
     "cfg_bool",
-    "cfg_float",
     "cfg_get",
     "cfg_int",
-    "cfg_json",
     "cfg_str",
     "check_cancel",
     "check_redirect_url_safety",
@@ -125,7 +120,6 @@ __all__ = [
     "find_python",
     "get_all_passthrough",
     "get_cache_directory_mounts",
-    "get_container_mirror_warning",
     "get_credential_file_mounts",
     "get_cross_profile_warning",
     "get_disabled_config_names",
@@ -133,7 +127,6 @@ __all__ = [
     "get_external_skills_dirs",
     "get_read_block_error",
     "get_sandbox_mirror_warning",
-    "get_scratch_size_bytes",
     "get_skills_dir",
     "get_skills_directory_mount",
     "get_spiritagent_dir",
@@ -170,7 +163,6 @@ __all__ = [
     "register_credential_file",
     "register_env_passthrough",
     "reset_current_request",
-    "reset_scratch_size_cache",
     "resolve_safe_cwd",
     "safe_schedule_threadsafe",
     "sanitize_subprocess_env",

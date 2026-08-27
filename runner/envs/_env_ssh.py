@@ -13,7 +13,7 @@ from utils import CREATE_NO_WINDOW, IS_WINDOWS
 from ._env_base import BaseEnvironment, _popen_bash
 from ._env_file_sync import FileSyncManager, iter_sync_files, quoted_mkdir_command, quoted_rm_command, unique_parent_dirs
 
-# Windows：抑制 runner 每次派生 docker/ssh/singularity 子进程时闪现的控制台窗口。
+# Windows：抑制 runner 每次派生 ssh 子进程时闪现的控制台窗口。
 _NO_WINDOW = {"creationflags": CREATE_NO_WINDOW} if IS_WINDOWS else {}
 
 logger = logging.getLogger(__name__)
@@ -27,16 +27,18 @@ def _ensure_ssh_available() -> None:
 class SSHEnvironment(BaseEnvironment):
     """基于 SSH ControlMaster 的远端终端：复用持久连接减少认证开销，文件通过 SCP 增量同步。"""
 
-    def __init__(self, host: str, user: str, cwd: str = "~", timeout: int = 60, port: int = 22, key_path: str = "") -> None:
+    def __init__(self, host: str, user: str, cwd: str = "~", timeout: int = 60, port: int = 22, key_path: str = "", password: str = "") -> None:
         super().__init__(cwd=cwd, timeout=timeout)
         self.host = host
         self.user = user
         self.port = port
         self.key_path = key_path
+        self.password = password
         self.control_dir = Path(tempfile.gettempdir()) / "spiritagent-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
         _socket_id = hashlib.sha256(f"{user}@{host}:{port}".encode()).hexdigest()[:16]
         self.control_socket = self.control_dir / f"{_socket_id}.sock"
+        self._askpass = self._create_askpass()
         _ensure_ssh_available()
         self._establish_connection()
         self._remote_home = self._detect_remote_home()
@@ -51,6 +53,26 @@ class SSHEnvironment(BaseEnvironment):
         self._sync_manager.sync(force=True)
         self.init_session()
 
+    def _create_askpass(self) -> Path | None:
+        """密码模式生成一次性 askpass 脚本；密钥认证（优先）或无密码时返回 None。"""
+        if self.key_path or not self.password:
+            return None
+        path = self.control_dir / ("askpass.bat" if IS_WINDOWS else "askpass.sh")
+        if IS_WINDOWS:
+            escaped = self.password.translate(str.maketrans({"%": "%%", "^": "^^", "&": "^&", "|": "^|", "<": "^<", ">": "^>", "(": "^(", ")": "^)"}))
+            path.write_text(f"@echo off\r\necho {escaped}\r\n", encoding="utf-8")
+        else:
+            escaped = self.password.replace("'", "'\\''")
+            path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{escaped}'\n", encoding="utf-8")
+            path.chmod(0o700)
+        return path
+
+    def _ssh_env(self) -> dict[str, str]:
+        """子进程环境：密码模式注入 SSH_ASKPASS（force 使无 TTY 也走 askpass，OpenSSH >= 8.4）。"""
+        if self._askpass is None:
+            return dict(os.environ)
+        return {**os.environ, "SSH_ASKPASS": str(self._askpass), "SSH_ASKPASS_REQUIRE": "force", "DISPLAY": "localhost:0"}
+
     def _build_ssh_command(self, extra_args: list | None = None) -> list:
         cmd = [
             "ssh",
@@ -60,13 +82,11 @@ class SSHEnvironment(BaseEnvironment):
             "ControlMaster=auto",
             "-o",
             "ControlPersist=300",
-            "-o",
-            "BatchMode=yes",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            "-o",
-            "ConnectTimeout=10",
         ]
+        # BatchMode 禁掉一切交互提示——密码模式必须放开才能触发 askpass。
+        if self._askpass is None:
+            cmd.extend(["-o", "BatchMode=yes"])
+        cmd.extend(["-o", "StrictHostKeyChecking=accept-new", "-o", "ConnectTimeout=10"])
         if self.port != 22:
             cmd.extend(["-p", str(self.port)])
         if self.key_path:
@@ -80,7 +100,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd = self._build_ssh_command()
         cmd.append("echo 'SSH connection established'")
         try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW)
             if res.returncode != 0:
                 raise RuntimeError(res.stderr.strip() or res.stdout.strip())
         except subprocess.TimeoutExpired:
@@ -90,7 +110,7 @@ class SSHEnvironment(BaseEnvironment):
         try:
             cmd = self._build_ssh_command()
             cmd.append("echo $HOME")
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW)
             if (home := result.stdout.strip()) and result.returncode == 0:
                 return home
         except Exception:
@@ -101,19 +121,19 @@ class SSHEnvironment(BaseEnvironment):
         base = f"{self._remote_home}/.spiritagent"
         cmd = self._build_ssh_command()
         cmd.append(quoted_mkdir_command([base, f"{base}/skills", f"{base}/credentials", f"{base}/cache"]))
-        subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+        subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW)
 
     def _scp_upload(self, host_path: str, remote_path: str) -> None:
         mkdir_cmd = self._build_ssh_command()
         mkdir_cmd.append(f"mkdir -p {shlex.quote(str(Path(remote_path).parent))}")
-        subprocess.run(mkdir_cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW)
+        subprocess.run(mkdir_cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW)
         scp_cmd = ["scp", "-o", f"ControlPath={self.control_socket}"]
         if self.port != 22:
             scp_cmd.extend(["-P", str(self.port)])
         if self.key_path:
             scp_cmd.extend(["-i", self.key_path])
         scp_cmd.extend([host_path, f"{self.user}@{self.host}:{remote_path}"])
-        if subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
+        if subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW).returncode != 0:
             raise RuntimeError(f"scp failed for {remote_path}")
 
     def _ssh_bulk_upload(self, files: list[tuple[str, str]]) -> None:
@@ -123,7 +143,7 @@ class SSHEnvironment(BaseEnvironment):
         if parents := unique_parent_dirs(files):
             cmd = self._build_ssh_command()
             cmd.append(quoted_mkdir_command(parents))
-            if subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
+            if subprocess.run(cmd, capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW).returncode != 0:
                 raise RuntimeError("remote mkdir failed")
         with tempfile.TemporaryDirectory(prefix="spiritagent-ssh-bulk-") as staging:
             for host_path, remote_path in files:
@@ -147,7 +167,7 @@ class SSHEnvironment(BaseEnvironment):
             ssh_cmd.append(f"tar xf - --no-overwrite-dir -C {shlex.quote(base)}")
             tar_proc = subprocess.Popen(tar_cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_NO_WINDOW)
             try:
-                ssh_proc = subprocess.Popen(ssh_cmd, stdin=tar_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **_NO_WINDOW)
+                ssh_proc = subprocess.Popen(ssh_cmd, stdin=tar_proc.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=self._ssh_env(), **_NO_WINDOW)
             except Exception:
                 tar_proc.kill()
                 tar_proc.wait()
@@ -170,13 +190,13 @@ class SSHEnvironment(BaseEnvironment):
         ssh_cmd = self._build_ssh_command()
         ssh_cmd.append(f"tar cf - -C / {shlex.quote(f'{self._remote_home}/.spiritagent'.lstrip('/'))}")
         with open(dest, "wb") as f:
-            if subprocess.run(ssh_cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.PIPE, timeout=120, **_NO_WINDOW).returncode != 0:
+            if subprocess.run(ssh_cmd, stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.PIPE, timeout=120, env=self._ssh_env(), **_NO_WINDOW).returncode != 0:
                 raise RuntimeError("SSH bulk download failed")
 
     def _ssh_delete(self, remote_paths: list[str]) -> None:
         cmd = self._build_ssh_command()
         cmd.append(quoted_rm_command(remote_paths))
-        if subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, **_NO_WINDOW).returncode != 0:
+        if subprocess.run(cmd, capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL, env=self._ssh_env(), **_NO_WINDOW).returncode != 0:
             raise RuntimeError("remote rm failed")
 
     def _before_execute(self) -> None:
@@ -185,7 +205,7 @@ class SSHEnvironment(BaseEnvironment):
     def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120, stdin_data: str | None = None) -> subprocess.Popen:
         cmd = self._build_ssh_command()
         cmd.extend(["bash", "-l", "-c", shlex.quote(cmd_string)] if login else ["bash", "-c", shlex.quote(cmd_string)])
-        return _popen_bash(cmd, stdin_data)
+        return _popen_bash(cmd, stdin_data, env=self._ssh_env())
 
     def cleanup(self) -> None:
         if self._sync_manager:
@@ -194,6 +214,9 @@ class SSHEnvironment(BaseEnvironment):
                 self._sync_manager.sync_back()
             except Exception as e:
                 logger.warning("SSH: sync_back failed: %s", e)
+        if self._askpass is not None:
+            with contextlib.suppress(OSError):
+                self._askpass.unlink()
         if self.control_socket.exists():
             with contextlib.suppress(Exception):
                 subprocess.run(

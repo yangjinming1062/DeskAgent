@@ -496,20 +496,3 @@ def get_sandbox_mirror_warning(path: str) -> str | None:
     if info := classify_sandbox_mirror_target(path):
         return f"Sandbox-mirror write blocked: {info.target_path} sits under {info.mirror_root!r}. Authoritative file is likely {info.inner_path!r}. Confirm with user, and retry with cross_profile=True."
     return None
-
-
-def classify_container_mirror_target(path: str, mirror_prefix: str | None = None) -> MirrorTarget | None:
-    if not mirror_prefix:
-        return None
-    try:
-        target, prefix_real = (Path(str(path)).expanduser().resolve(), Path(str(mirror_prefix)).expanduser().resolve())
-        rel = target.relative_to(prefix_real)
-        return MirrorTarget(target_path=str(target), mirror_root=str(prefix_real), inner_path=str(Path(*rel.parts)) if rel.parts else "")
-    except (OSError, RuntimeError, ValueError):
-        return None
-
-
-def get_container_mirror_warning(path: str, mirror_prefix: str | None = None) -> str | None:
-    if info := classify_container_mirror_target(path, mirror_prefix):
-        return f"Container-mirror write blocked: {info.target_path} sits under {info.mirror_root!r}. Authoritative file is likely {info.inner_path!r}. Confirm with user, and retry with cross_profile=True."
-    return None

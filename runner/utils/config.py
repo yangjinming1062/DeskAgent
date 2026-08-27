@@ -1,4 +1,3 @@
-import json
 from typing import Any
 
 _TRUTHY_STRINGS = frozenset({"1", "true", "yes", "on"})
@@ -62,27 +61,6 @@ def cfg_int(section: dict[str, Any], key: str, default: int = 0) -> int:
     try:
         return int(section.get(key, default))
     except (TypeError, ValueError):
-        return default
-
-
-def cfg_float(section: dict[str, Any], key: str, default: float = 0.0) -> float:
-    """把配置值转为 float；失败回落到 *default*。"""
-    try:
-        return float(section.get(key, default))
-    except (TypeError, ValueError):
-        return default
-
-
-def cfg_json(section: dict[str, Any], key: str, default: Any = None) -> Any:
-    """把配置值解码为 JSON 列表/字典；失败回落到 *default*。"""
-    v = section.get(key)
-    if v is None:
-        return default
-    if isinstance(v, list | dict):
-        return v
-    try:
-        return json.loads(str(v))
-    except (ValueError, json.JSONDecodeError):
         return default
 
 

@@ -1,17 +1,12 @@
 import atexit
 import contextlib
-import glob
 import inspect
 import logging
-import shutil
 import threading
 import time
 from collections.abc import Callable
 from typing import Any
 
-from utils import reset_scratch_size_cache
-
-from ._env_singularity import get_singularity_scratch_dir
 from .state import active_environments, creation_locks, creation_locks_lock, env_lock, get_env_config, last_activity
 
 logger = logging.getLogger(__name__)
@@ -114,7 +109,7 @@ def stop_cleanup_thread() -> None:
 
 
 def cleanup_all_environments() -> int:
-    """批量清理所有活跃终端环境并回收孤儿 scratch 目录；返回已清理任务数。"""
+    """批量清理所有活跃终端环境；返回已清理任务数。"""
     task_ids = list(active_environments.keys())
     cleaned = 0
     for task_id in task_ids:
@@ -123,19 +118,6 @@ def cleanup_all_environments() -> int:
             cleaned += 1
         except Exception as e:
             logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
-    scratch_dir = get_singularity_scratch_dir()
-    # 跳过 `spiritagent-overlays/`（Singularity 持久化 overlay 位于其下，绑定活的 task_id）——清理时一并删除会静默摧毁持久化会话仍在使用的 overlay。
-    for path in glob.glob(str(scratch_dir / "spiritagent-*")):
-        if path.endswith("spiritagent-overlays"):
-            continue
-        try:
-            shutil.rmtree(path, ignore_errors=True)
-            logger.info("Removed orphaned: %s", path)
-        except OSError as e:
-            logger.debug("Failed to remove orphaned path %s: %s", path, e)
-    # orphan sweep 之后必须失效 scratch_size 缓存 —— 不然 cache 仍显示旧大小,
-    # 下次 _check_disk_usage_warning 会读出错误的"刚清空但仍很大"的数字。
-    reset_scratch_size_cache()
     if cleaned > 0:
         logger.info("Cleaned %d environments", cleaned)
     return cleaned
