@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 EXECUTION_MODES = ("project", "strict")
 DEFAULT_EXECUTION_MODE = "project"
 
-SANDBOX_ALLOWED_TOOLS = frozenset(["web_search", "web_extract", "read_file", "write_file", "search_files", "patch", "terminal"])
+SANDBOX_ALLOWED_TOOLS = frozenset(["read_file", "write_file", "search_files", "patch", "terminal"])
 
 DEFAULT_TIMEOUT = 300
 
@@ -121,13 +121,6 @@ def _scrub_child_env(source_env: dict[str, str], is_passthrough: Callable[[str],
 
 
 _TOOL_STUBS = {
-    "web_search": (
-        "web_search",
-        "query: str, limit: int = 5",
-        '"""Search the web. Returns dict with data.web list of {url, title, description}."""',
-        '{"query": query, "limit": limit}',
-    ),
-    "web_extract": ("web_extract", "urls: list", '"""Extract content from URLs. Returns dict with results list of {url, title, content, error}."""', '{"urls": urls}'),
     "read_file": (
         "read_file",
         "path: str, offset: int = 1, limit: int = 500",
@@ -161,9 +154,9 @@ _TOOL_STUBS = {
 }
 
 
-def generate_spiritagent_tools_module(enabled_tools: list[str], transport: str = "uds") -> str:
-    """为 sandbox 子进程生成 ``spiritagent_tools`` 桩模块(根据 enabled_tools 过滤, 选 UDS / file 传输头)。"""
-    tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS & set(enabled_tools))
+def generate_spiritagent_tools_module(transport: str = "uds") -> str:
+    """为 sandbox 子进程生成 ``spiritagent_tools`` 桩模块(选 UDS / file 传输头)。"""
+    tools_to_generate = sorted(SANDBOX_ALLOWED_TOOLS)
     stub_functions = []
     export_names = []
     for tool_name in tools_to_generate:
@@ -191,7 +184,7 @@ _RPC_TOKEN = os.environ.get("SPIRITAGENT_RPC_TOKEN", "")
 def json_parse(text: str):
     """Parse JSON tolerant of control characters (strict=False).
     Use this instead of json.loads() when parsing output from terminal()
-    or web_extract() that may contain raw tabs/newlines in strings."""
+    that may contain raw tabs/newlines in strings."""
     return json.loads(text, strict=False)
 
 def shell_quote(s: str) -> str:
@@ -598,16 +591,12 @@ def _rpc_poll_loop(
             stop_event.wait(poll_interval)
 
 
-def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | None) -> str:
+def _execute_remote(code: str) -> str:
     """在 SSH 沙箱后端里执行 ``code``; 通过文件 RPC 转发工具调用。"""
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
-    session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
-    effective_task_id = task_id or "default"
+    effective_task_id = "default"
     env, env_type = _get_or_create_env(effective_task_id)
     rpc_token = secrets.token_hex(16)
     sandbox_id = uuid.uuid4().hex[:12]
@@ -632,12 +621,12 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
                 },
             )
         env.execute(f"mkdir -p {quoted_rpc_dir}", cwd="/", timeout=10)
-        tools_src = generate_spiritagent_tools_module(list(sandbox_tools), transport="file")
+        tools_src = generate_spiritagent_tools_module(transport="file")
         _ship_file_to_remote(env, f"{sandbox_dir}/spiritagent_tools.py", tools_src)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_poll_loop),
-            args=(env, f"{sandbox_dir}/rpc", effective_task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, stop_event, rpc_token),
+            args=(env, f"{sandbox_dir}/rpc", effective_task_id, tool_call_log, tool_call_counter, max_tool_calls, SANDBOX_ALLOWED_TOOLS, stop_event, rpc_token),
             daemon=True,
         )
         rpc_thread.start()
@@ -692,20 +681,16 @@ def _execute_remote(code: str, task_id: str | None, enabled_tools: list[str] | N
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str] | None = None) -> str:
+def execute_code(code: str) -> str:
     """执行 sandbox 子进程: 本机用 UDS/TCP RPC, SSH 后端委派 ``_execute_remote``。"""
     if not code or not code.strip():
         return tool_error("No code provided.")
     env_type = get_env_config()["env_type"]
     if env_type != "local":
-        return _execute_remote(code, task_id, enabled_tools)
+        return _execute_remote(code)
     _cfg = _load_config()
     timeout = _cfg.get("timeout", DEFAULT_TIMEOUT)
     max_tool_calls = _cfg.get("max_tool_calls", DEFAULT_MAX_TOOL_CALLS)
-    session_tools = set(enabled_tools) if enabled_tools else set()
-    sandbox_tools = frozenset(SANDBOX_ALLOWED_TOOLS & session_tools)
-    if not sandbox_tools:
-        sandbox_tools = SANDBOX_ALLOWED_TOOLS
     tmpdir = tempfile.mkdtemp(prefix="spiritagent_sandbox_")
     _sock_tmpdir = "/tmp" if sys.platform == "darwin" else tempfile.gettempdir()
     _use_tcp_rpc = IS_WINDOWS
@@ -721,7 +706,7 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
     server_sock = None
     rpc_token = secrets.token_hex(16)
     try:
-        tools_src = generate_spiritagent_tools_module(list(sandbox_tools))
+        tools_src = generate_spiritagent_tools_module()
         with open(os.path.join(tmpdir, "spiritagent_tools.py"), "w", encoding="utf-8") as f:
             f.write(tools_src)
         with open(os.path.join(tmpdir, "script.py"), "w", encoding="utf-8") as f:
@@ -738,7 +723,7 @@ def execute_code(code: str, task_id: str | None = None, enabled_tools: list[str]
         server_sock.listen(1)
         rpc_thread = threading.Thread(
             target=propagate_context_to_thread(_rpc_server_loop),
-            args=(server_sock, task_id, tool_call_log, tool_call_counter, max_tool_calls, sandbox_tools, rpc_token),
+            args=(server_sock, "default", tool_call_log, tool_call_counter, max_tool_calls, SANDBOX_ALLOWED_TOOLS, rpc_token),
             daemon=True,
         )
         rpc_thread.start()
@@ -1002,13 +987,13 @@ def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
 
 EXECUTE_CODE_SCHEMA = {
     "name": "execute_code",
-    "description": 'Run a Python script that can call SpiritAgent tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (if X then Y else Z), or need to loop (fetch N pages, process N files, retry on failure).\n\nUse normal tool calls instead when: single tool call with no processing, you need to see the full result and apply complex reasoning, or the task requires interactive user input.\n\nAvailable via `from spiritagent_tools import ...`:\n\n  web_search(query: str, limit: int = 5) -> dict\n    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}\n  web_extract(urls: list[str]) -> dict\n    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown\n  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}\n  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file.\n  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}\n  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file.\n  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}\n\nLimits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. terminal() is foreground-only (no background or pty).\n\nScripts run in the session\'s working directory with the active venv\'s python, so project deps (pandas, etc.) and relative paths work like in terminal().\n\nPrint your final result to stdout. Use Python stdlib (json, re, math, csv, datetime, collections, etc.) for processing between tool calls.\n\nAlso available (no import needed — built into spiritagent_tools):\n  json_parse(text: str) — json.loads with strict=False; use for terminal() output with control chars\n  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures',
+    "description": 'Run a Python script that can call SpiritAgent tools programmatically. Use this when you need 3+ tool calls with processing logic between them, need to filter/reduce large tool outputs before they enter your context, need conditional branching (if X then Y else Z), or need to loop (fetch N pages, process N files, retry on failure).\n\nUse normal tool calls instead when: single tool call with no processing, you need to see the full result and apply complex reasoning, or the task requires interactive user input.\n\nAvailable via `from spiritagent_tools import ...`:\n\n  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}\n  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file.\n  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}\n  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file.\n  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}\n\nLimits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. terminal() is foreground-only (no background or pty).\n\nScripts run in the session\'s working directory with the active venv\'s python, so project deps (pandas, etc.) and relative paths work like in terminal().\n\nPrint your final result to stdout. Use Python stdlib (json, re, math, csv, datetime, collections, etc.) for processing between tool calls.\n\nAlso available (no import needed — built into spiritagent_tools):\n  json_parse(text: str) — json.loads with strict=False; use for terminal() output with control chars\n  shell_quote(s: str) — shlex.quote(); use when interpolating dynamic strings into shell commands\n  retry(fn, max_attempts=3, delay=2) — retry with exponential backoff for transient failures',
     "parameters": {
         "type": "object",
         "properties": {
             "code": {
                 "type": "string",
-                "description": "Python code to execute. Import tools with `from spiritagent_tools import web_search, terminal, ...` and print your final result to stdout.",
+                "description": "Python code to execute. Import tools with `from spiritagent_tools import read_file, terminal, ...` and print your final result to stdout.",
             },
         },
         "required": ["code"],
@@ -1017,5 +1002,5 @@ EXECUTE_CODE_SCHEMA = {
 
 
 registry.register_tool("execute_code", schema=EXECUTE_CODE_SCHEMA)(
-    lambda args, **kw: execute_code(code=args.get("code", ""), task_id=kw.get("task_id"), enabled_tools=kw.get("enabled_tools")),
+    lambda args, **_kw: execute_code(code=args.get("code", "")),
 )

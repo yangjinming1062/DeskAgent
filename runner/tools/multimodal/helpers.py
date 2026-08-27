@@ -7,22 +7,14 @@ from urllib.parse import urlparse
 
 import httpx
 from PIL import Image
-from utils import async_is_safe_url, cfg_get, check_website_access, create_safe_async_client, load_config
+from utils import async_is_safe_url, check_website_access, create_safe_async_client
 
 logger = logging.getLogger(__name__)
 
 _VISION_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
 _MAX_BASE64_BYTES = 20 * 1024 * 1024
 RESIZE_TARGET_BYTES = 5 * 1024 * 1024
-
-
-def _resolve_download_timeout() -> float:
-    try:
-        if (v := cfg_get(load_config(), "auxiliary", "vision", "download_timeout")) is not None:
-            return float(v)
-    except Exception:
-        pass
-    return 30.0
+_VISION_DOWNLOAD_TIMEOUT_S = 30.0
 
 
 def capped_image_data_url(image_path: Path, mime_type: str | None = None, max_base64_bytes: int = _MAX_BASE64_BYTES) -> str:
@@ -117,7 +109,7 @@ async def _download_image(image_url: str, destination: Path, max_retries: int = 
         destination,
         accept="image/*,*/*;q=0.8",
         max_bytes=_VISION_MAX_DOWNLOAD_BYTES,
-        timeout=_resolve_download_timeout(),
+        timeout=_VISION_DOWNLOAD_TIMEOUT_S,
         media_label="image",
         max_retries=max_retries,
     )

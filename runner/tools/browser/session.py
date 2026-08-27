@@ -182,8 +182,8 @@ def _last_session_key(task_id: str) -> str:
     return _last_active_session_key.get(task_id, task_id)
 
 
-def _reset_session_caches() -> None:
-    """重置 ``_allow_private_urls`` 与浏览器探测缓存。"""
+def reset_session_caches() -> None:
+    """清掉 ``_allow_private_urls`` 的 lru 缓存 — config.update 后由 server 调用, 让设置即时生效。"""
     _allow_private_urls.cache_clear()
 
 

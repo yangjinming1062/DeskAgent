@@ -14,13 +14,7 @@ const TOOLSET_DEFS: ToolsetDef[] = [
   { extraTools: ['execute_code'], id: 'code_execution' },
   { extraTools: ['process'], id: 'process_management' },
   { extraTools: ['skills_list', 'skill_view', 'skill_manage'], id: 'skills_system' },
-  { extraTools: ['memory_retain', 'memory_recall', 'memory_forget'], id: 'memory' },
-  { extraTools: ['web_search', 'web_extract', 'search_tools'], id: 'web_tools' },
-  { extraTools: ['image_generate'], id: 'image_generation' },
-  { extraTools: ['text_to_speech_tool'], id: 'text_to_speech' },
-  { extraTools: ['send_message_tool'], id: 'messaging' },
-  { extraTools: ['cronjob'], id: 'scheduled_tasks' },
-  { extraTools: ['agent_delegate_tool'], id: 'agent_delegation' },
+  { extraTools: ['text_to_speech', 'list_tts_voices'], id: 'text_to_speech' },
   { extraTools: ['computer_use'], id: 'computer_use' },
   { extraTools: ['vision_analyze'], id: 'media_analysis' }
 ]

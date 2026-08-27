@@ -21,6 +21,7 @@ from tools import (
     reset_cache,
     reset_max_read_chars_cache,
 )
+from tools.browser import reset_session_caches
 from utils import (
     CancellationToken,
     DesktopEndpoint,
@@ -225,6 +226,7 @@ async def process_request(ws: Any, req: dict[str, Any]) -> None:
             reset_max_read_chars_cache()
             utils.env_passthrough.reset_cache()
             utils.credential_files.reset_cache()
+            reset_session_caches()
             await _send(ws, req_id, result={"ok": True})
             return
 

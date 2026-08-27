@@ -21,8 +21,7 @@ from utils import (
 )
 
 from ..registry import registry, tool_error
-from .helpers import get_disabled_skill_names, get_spiritagent_metadata, iter_skill_index_files, parse_frontmatter
-from .skill_usage import bump_use, bump_view, is_excluded_skill_path
+from .helpers import get_disabled_skill_names, get_spiritagent_metadata, is_excluded_skill_path, iter_skill_index_files, parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -567,20 +566,12 @@ SKILL_VIEW_SCHEMA = {
 registry.register_tool("skills_list", schema=SKILLS_LIST_SCHEMA)(lambda args, **kw: skills_list(category=args.get("category"), task_id=kw.get("task_id")))
 
 
-def _skill_view_with_bump(args: dict[str, Any], **kw: Any) -> str:
-    # 廉价的 interrupt 提前返回：skill_view 从磁盘与 hub index-cache 读取。
+def _skill_view_handler(args: dict[str, Any], **kw: Any) -> str:
+    # 廉价的 interrupt 提前返回：skill_view 从磁盘读取。
     # 没有这个兜底，过期 "please list skills" 调用会在用户已转移注意力后继续运行。
     if is_interrupted():
         return json.dumps({"error": "Interrupted", "interrupted": True})
-    name = args.get("name", "")
-    result = skill_view(name, file_path=args.get("file_path"), task_id=kw.get("task_id"))
-    try:
-        if isinstance(parsed := json.loads(result), dict) and parsed.get("success") and (resolved := parsed.get("name") or name):
-            bump_view(str(resolved))
-            bump_use(str(resolved))
-    except Exception:
-        pass
-    return result
+    return skill_view(name=args.get("name", ""), file_path=args.get("file_path"), task_id=kw.get("task_id"))
 
 
-registry.register_tool("skill_view", schema=SKILL_VIEW_SCHEMA)(_skill_view_with_bump)
+registry.register_tool("skill_view", schema=SKILL_VIEW_SCHEMA)(_skill_view_handler)

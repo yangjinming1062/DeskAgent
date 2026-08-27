@@ -11,8 +11,7 @@ from utils import atomic_replace, cfg_get, get_external_skills_dirs, get_skills_
 
 from ..files import format_no_match_hint, fuzzy_find_and_replace
 from ..registry import registry, tool_error
-from .skill_provenance import is_background_review
-from .skill_usage import bump_patch, forget, get_record, is_excluded_skill_path, mark_agent_created
+from .helpers import is_excluded_skill_path
 from .skills_guard import format_scan_report, scan_skill, should_allow_install
 
 logger = logging.getLogger(__name__)
@@ -60,15 +59,6 @@ def _containing_skills_root(skill_path: Path) -> Path:
         except (ValueError, OSError):
             continue
     return SKILLS_DIR
-
-
-def _pinned_guard(name: str) -> str | None:
-    try:
-        if get_record(name).get("pinned"):
-            return f"Skill '{name}' is pinned and cannot be deleted by skill_manage. Ask the user to run `spiritagent curator unpin {name}` if they want to delete it. Patches and edits are allowed on pinned skills; only deletion is blocked."
-    except Exception:
-        pass
-    return None
 
 
 MAX_SKILL_CONTENT_CHARS = 100_000
@@ -242,8 +232,6 @@ def _patch_skill(name: str, old_string: str, new_string: str, file_path: str | N
 def _delete_skill(name: str, absorbed_into: str | None = None) -> dict[str, Any]:
     if not (existing := _find_skill(name)):
         return {"success": False, "error": _skill_not_found_error(name)}
-    if pinned_err := _pinned_guard(name):
-        return {"success": False, "error": pinned_err}
     if absorbed_into and absorbed_into.strip():
         t_name = absorbed_into.strip()
         if t_name == name:
@@ -345,16 +333,6 @@ def skill_manage(
     else:
         result = {"success": False, "error": f"Unknown action '{action}'."}
 
-    if result.get("success"):
-        try:
-            if action == "create" and is_background_review():
-                mark_agent_created(name)
-            elif action in {"patch", "edit", "write_file", "remove_file"}:
-                bump_patch(name)
-            elif action == "delete":
-                forget(name)
-        except Exception:
-            pass
     return json.dumps(result, ensure_ascii=False)
 
 
@@ -371,11 +349,9 @@ SKILL_MANAGE_SCHEMA = {
         "delete, write_file, remove_file.\n\n"
         "On delete, pass `absorbed_into=<umbrella>` when you're merging this "
         "skill's content into another one, or `absorbed_into=\"\"` when you're "
-        "pruning it with no forwarding target. This lets the curator tell "
-        "consolidation from pruning without guessing, so downstream consumers "
-        "(cron jobs that reference the old skill name, etc.) get updated "
-        "correctly. The target you name in `absorbed_into` must already "
-        "exist — create/patch the umbrella first, then delete.\n\n"
+        "pruning it with no forwarding target. The target you name in "
+        "`absorbed_into` must already exist — create/patch the umbrella first, "
+        "then delete.\n\n"
         "Create when: complex task succeeded (5+ calls), errors overcome, "
         "user-corrected approach worked, non-trivial workflow discovered, "
         "or user asks you to remember a procedure.\n"
@@ -385,11 +361,7 @@ SKILL_MANAGE_SCHEMA = {
         "After difficult/iterative tasks, offer to save as a skill. "
         "Skip for simple one-offs. Confirm with user before creating/deleting.\n\n"
         "Good skills: trigger conditions, numbered steps with exact commands, "
-        "pitfalls section, verification steps. Use skill_view() to see format examples.\n\n"
-        "Pinned skills are protected from deletion only — skill_manage(action='delete') "
-        "will refuse with a message pointing the user to `spiritagent curator unpin <name>`. "
-        "Patches and edits go through on pinned skills so you can still improve them as "
-        "pitfalls come up; pin only guards against irrecoverable loss."
+        "pitfalls section, verification steps. Use skill_view() to see format examples."
     ),
     "parameters": {
         "type": "object",
@@ -434,14 +406,11 @@ SKILL_MANAGE_SCHEMA = {
             "absorbed_into": {
                 "type": "string",
                 "description": (
-                    "For 'delete' only — declares intent so the curator can "
-                    "tell consolidation from pruning without guessing. "
+                    "For 'delete' only — declares merge intent. "
                     "Pass the umbrella skill name when this skill's content "
                     "was merged into another (the target must already exist). "
                     "Pass an empty string when the skill is truly stale and "
-                    "being pruned with no forwarding target. Omitting the arg "
-                    "is allowed, but downstream tooling (e.g. cron-job skill "
-                    "reference rewriting) will have to guess at intent."
+                    "being pruned with no forwarding target."
                 ),
             },
         },

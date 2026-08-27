@@ -2,7 +2,6 @@ from typing import Any
 
 from utils import load_config
 
-DEFAULT_MAX_BYTES = 50_000
 DEFAULT_MAX_LINES = 2000
 DEFAULT_MAX_LINE_LENGTH = 2000
 
@@ -29,7 +28,6 @@ def get_tool_output_limits() -> dict[str, int]:
         section = {}
 
     _cached_limits = {
-        "max_bytes": _coerce_positive_int(section.get("max_bytes"), DEFAULT_MAX_BYTES),
         "max_lines": _coerce_positive_int(section.get("max_lines"), DEFAULT_MAX_LINES),
         "max_line_length": _coerce_positive_int(section.get("max_line_length"), DEFAULT_MAX_LINE_LENGTH),
     }
