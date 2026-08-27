@@ -8,7 +8,7 @@ import { $outfits, activateOutfit, deleteOutfit, hydrateWardrobe } from '@/compa
 import { Check, FileImage, Pencil, Plus, Send, Trash2 } from '@/shared/lib/icons'
 import { log } from '@/shared/lib/log'
 import { cn } from '@/shared/lib/utils'
-import { BTN_GHOST, BTN_ICON, BTN_PRIMARY, CHIP, HINT_TEXT, INPUT_CLASS, Spinner } from '@/shared/panel'
+import { BTN_GHOST, BTN_ICON, BTN_PRIMARY, HINT_TEXT, INPUT_CLASS, Spinner } from '@/shared/panel'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: '草稿',
@@ -17,7 +17,11 @@ const STATUS_LABELS: Record<string, string> = {
   expired: '已过期'
 }
 
-// 衣柜三栏页（DESIGN §8）：左侧外观列表，右上大图预览，右下类聊天的设计区。
+// 列表卡 hover 操作钮：浮在立绘上，深色半透明底保证任何画面下可读。
+const CARD_ACTION_CLASS =
+  'inline-flex h-6 items-center justify-center rounded-lg bg-black/60 px-1.5 text-white/70 backdrop-blur-sm transition hover:bg-black/80 hover:text-white disabled:pointer-events-none disabled:opacity-40'
+
+// 衣柜三栏页（DESIGN §8）：左侧外观列表（竖版大图卡），右上大图预览，右下类聊天的设计区。
 // 设计流程不再弹窗——描述 / 参考图 / 微调反馈 / 确认入柜都在右半侧完成。
 export function WardrobePage(): React.JSX.Element {
   const outfits = useStore($outfits)
@@ -87,7 +91,7 @@ export function WardrobePage(): React.JSX.Element {
 
   return (
     <div className="flex min-h-0 flex-1">
-      {/* 左：外观列表 */}
+      {/* 左：外观列表（方形大图卡——统一方形取景框，任意比例立绘 contain 完整呈现，文字收缩到图下方两行） */}
       <div className="flex w-60 shrink-0 flex-col border-r border-white/10">
         <div className="flex items-center justify-between gap-2 px-3 pt-3.5 pb-2">
           <h2 className="text-sm font-semibold text-white">衣柜</h2>
@@ -96,7 +100,7 @@ export function WardrobePage(): React.JSX.Element {
             设计新外观
           </button>
         </div>
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2.5 pb-3">
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pb-3">
           {outfits.length === 0 ? (
             <p className="px-1 pt-2 text-xs text-white/40">还没有就绪的 2D 形象，生成 2D 动画资产后即可换装。</p>
           ) : (
@@ -107,10 +111,10 @@ export function WardrobePage(): React.JSX.Element {
 
               return (
                 <div
-                  className={`group relative flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-2 text-xs transition ${
+                  className={`group relative cursor-pointer overflow-hidden rounded-xl border text-left transition ${
                     isActiveCard
-                      ? 'border-[#6c8aff]/50 bg-[#6c8aff]/10'
-                      : 'border-transparent hover:border-white/10 hover:bg-white/5'
+                      ? 'border-[#6c8aff]/60 bg-[#6c8aff]/10'
+                      : 'border-white/8 bg-[#1c1c21] hover:border-white/16'
                   }`}
                   key={outfit.id}
                   onClick={() => {
@@ -118,89 +122,101 @@ export function WardrobePage(): React.JSX.Element {
                     setSelectedId(outfit.id)
                   }}
                 >
-                  {outfit.fullbodyUrl ? (
-                    <img
-                      alt={outfit.name}
-                      className="size-10 shrink-0 rounded-lg border border-white/10 object-cover"
-                      src={outfit.fullbodyUrl}
-                    />
-                  ) : (
-                    <div className="size-10 shrink-0 rounded-lg border border-white/10 bg-white/5" />
-                  )}
+                  <div className="relative aspect-square w-full bg-black/35">
+                    {outfit.fullbodyUrl && (
+                      <img
+                        alt={outfit.name}
+                        className="absolute inset-0 h-full w-full object-contain"
+                        loading="lazy"
+                        src={outfit.fullbodyUrl}
+                      />
+                    )}
 
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-1 truncate font-medium text-white/90">
-                      {outfit.name}
-                      {outfit.active && <Check className="size-3.5 shrink-0 text-emerald-400" />}
-                      {statusLabel && (
-                        <span className={cn(CHIP, 'shrink-0 px-1.5 py-0 text-[9px]')}>{statusLabel}</span>
+                    {outfit.active && (
+                      <span className="absolute left-1.5 top-1.5 rounded-md bg-emerald-500/85 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                        穿着中
+                      </span>
+                    )}
+                    {statusLabel && (
+                      <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-white/75">
+                        {statusLabel}
+                      </span>
+                    )}
+
+                    <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition group-hover:opacity-100">
+                      {outfit.status === 'draft' && (
+                        <button
+                          aria-label="继续设计"
+                          className={CARD_ACTION_CLASS}
+                          onClick={e => {
+                            e.stopPropagation()
+                            session.adoptDraft(outfit.id, outfit.fullbodyUrl ?? '')
+                            setDesigning(true)
+                            setSelectedId(null)
+                          }}
+                          title="继续设计这套草稿"
+                          type="button"
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
                       )}
-                    </p>
+                      {outfit.status === 'ready' && !outfit.active && (
+                        <button
+                          aria-label="穿着"
+                          className={CARD_ACTION_CLASS}
+                          disabled={busyId === outfit.id}
+                          onClick={e => {
+                            e.stopPropagation()
+                            withBusy(outfit.id, () => activateOutfit(outfit.id))
+                          }}
+                          title="穿上这套外观"
+                          type="button"
+                        >
+                          <Check className="size-3.5" />
+                        </button>
+                      )}
+                      {outfit.status === 'failed' && (
+                        <button
+                          className={CARD_ACTION_CLASS}
+                          disabled={busyId === outfit.id}
+                          onClick={e => {
+                            e.stopPropagation()
+                            withBusy(outfit.id, () => retrySplit(outfit.id))
+                          }}
+                          type="button"
+                        >
+                          重试
+                        </button>
+                      )}
+                      {deletable && (
+                        <button
+                          aria-label="删除"
+                          className={cn(CARD_ACTION_CLASS, 'hover:text-rose-300')}
+                          disabled={busyId === outfit.id}
+                          onClick={e => {
+                            e.stopPropagation()
+                            withBusy(outfit.id, () => deleteOutfit(outfit.id))
+                          }}
+                          title="删除这套外观"
+                          type="button"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
+
+                    {outfit.status === 'splitting' && (
+                      <div className="absolute inset-0 grid place-items-center bg-black/45">
+                        <Spinner />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-2.5 py-2">
+                    <p className="truncate text-[11px] font-medium text-white/90">{outfit.name}</p>
                     <p className="mt-0.5 truncate text-[10px] text-white/40">
                       {outfit.status === 'splitting' && outfit.pendingWear ? '切分完成后自动穿上' : outfit.description}
                     </p>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100">
-                    {outfit.status === 'draft' && (
-                      <button
-                        aria-label="继续设计"
-                        className={cn(BTN_ICON, 'size-6')}
-                        onClick={e => {
-                          e.stopPropagation()
-                          session.adoptDraft(outfit.id, outfit.fullbodyUrl ?? '')
-                          setDesigning(true)
-                          setSelectedId(null)
-                        }}
-                        title="继续设计这套草稿"
-                        type="button"
-                      >
-                        <Pencil className="size-3.5" />
-                      </button>
-                    )}
-                    {outfit.status === 'ready' && !outfit.active && (
-                      <button
-                        aria-label="穿着"
-                        className={cn(BTN_ICON, 'size-6')}
-                        disabled={busyId === outfit.id}
-                        onClick={e => {
-                          e.stopPropagation()
-                          withBusy(outfit.id, () => activateOutfit(outfit.id))
-                        }}
-                        title="穿上这套外观"
-                        type="button"
-                      >
-                        <Check className="size-3.5" />
-                      </button>
-                    )}
-                    {outfit.status === 'failed' && (
-                      <button
-                        className={cn(BTN_GHOST, 'h-6 px-1.5')}
-                        disabled={busyId === outfit.id}
-                        onClick={e => {
-                          e.stopPropagation()
-                          withBusy(outfit.id, () => retrySplit(outfit.id))
-                        }}
-                        type="button"
-                      >
-                        重试
-                      </button>
-                    )}
-                    {deletable && (
-                      <button
-                        aria-label="删除"
-                        className={cn(BTN_ICON, 'size-6 hover:text-rose-300')}
-                        disabled={busyId === outfit.id}
-                        onClick={e => {
-                          e.stopPropagation()
-                          withBusy(outfit.id, () => deleteOutfit(outfit.id))
-                        }}
-                        title="删除这套外观"
-                        type="button"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    )}
                   </div>
                 </div>
               )
@@ -211,17 +227,23 @@ export function WardrobePage(): React.JSX.Element {
 
       {/* 右：上预览 / 下设计区 */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+        {/* 固定方形取景框：全身图比例随物种而异，不假设方形——contain 完整
+            呈现，长方图两侧留空。外层 inset 定位拿到确定的高宽（auto 高容器里
+            百分比 max 解析不到，图会按内容自然高溢出可视区），内层 h-full +
+            aspect-square 取可用区内最大正方形。 */}
+        <div className="relative min-h-0 flex-1">
           {previewUrl ? (
-            <button
-              className="relative block max-h-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/10 bg-black/30"
-              onClick={() => setZoomUrl(previewUrl)}
-              type="button"
-            >
-              <img alt="外观立绘" className="max-h-full max-w-full object-contain" src={previewUrl} />
-            </button>
+            <div className="absolute inset-4 grid place-items-center">
+              <button
+                className="block aspect-square h-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                onClick={() => setZoomUrl(previewUrl)}
+                type="button"
+              >
+                <img alt="外观立绘" className="absolute inset-0 h-full w-full object-contain" src={previewUrl} />
+              </button>
+            </div>
           ) : (
-            <div className="grid place-items-center text-center">
+            <div className="absolute inset-4 grid place-items-center text-center">
               <div>
                 <div className="text-xs text-white/50">
                   {designing ? '描述想要的着装，生成后在这里预览' : '选择左侧外观查看大图，或开始设计新外观'}
@@ -232,7 +254,7 @@ export function WardrobePage(): React.JSX.Element {
           )}
 
           {designing && session.busy && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40">
+            <div className="absolute inset-4 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/40">
               <Spinner className="size-5" />
               <span className="text-xs text-white/60">生成中…</span>
             </div>
