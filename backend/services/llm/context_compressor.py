@@ -77,6 +77,7 @@ async def _summarize_block(
     client: Any,
     model: str,
     target_tokens: int,
+    temperature: float | None = None,
     language: str = DEFAULT_LANGUAGE,
 ) -> tuple[str, bool, int, int]:
     """通过 Responses API 对输入项生成摘要；输出截断时保留原上下文。"""
@@ -94,7 +95,7 @@ async def _summarize_block(
                 ],
             },
         ],
-        temperature=0.0,
+        temperature=temperature if temperature is not None else 0.0,
         max_output_tokens=target_tokens * CONTEXT_SUMMARY_HEADROOM_FACTOR,
     )
     response = await call_with_retry(client, **request)
@@ -115,6 +116,7 @@ async def compress_history_if_needed(
     threshold_ratio: float | None = None,
     target_tokens: int | None = None,
     max_input_messages: int | None = None,
+    temperature: float | None = None,
     language: str = DEFAULT_LANGUAGE,
     current_tokens: int | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -142,6 +144,7 @@ async def compress_history_if_needed(
             client=client,
             model=model,
             target_tokens=target,
+            temperature=temperature,
             language=language,
         )
     except Exception as exc:

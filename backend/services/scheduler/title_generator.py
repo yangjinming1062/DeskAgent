@@ -13,7 +13,7 @@ from components import (
 from modules.conversation import Conversation
 from sqlalchemy import select
 
-from ..llm import LLMRuntimeError, build_responses_kwargs, call_with_retry, client_for_config
+from ..llm import LLMRuntimeError, build_responses_kwargs, call_with_retry, client_for_config, scale_temperature
 
 logger = get_logger(__name__)
 
@@ -42,7 +42,15 @@ def _clean_title(raw: str) -> str:
     return title[: TITLE_MAX_CHARS - 3] + "..." if len(title) > TITLE_MAX_CHARS else title
 
 
-async def auto_generate_title(conversation_id: int, user_message: str, assistant_response: str, llm_config: dict[str, str], language: str = DEFAULT_LANGUAGE) -> None:
+async def auto_generate_title(
+    conversation_id: int,
+    user_message: str,
+    assistant_response: str,
+    llm_config: dict[str, str],
+    language: str = DEFAULT_LANGUAGE,
+    temperature: float | None = None,
+    provider_name: str | None = None,
+) -> None:
     """用 LLM 生成会话标题并持久化（仅在仍是默认标题时覆盖）。"""
     try:
         client = client_for_config(llm_config)
@@ -60,7 +68,12 @@ async def auto_generate_title(conversation_id: int, user_message: str, assistant
                     ],
                 },
             ],
-            temperature=TITLE_GENERATION_TEMPERATURE,
+            # 供应商身份优先取 llm_config 自带的链头 provider_name（正是本次实际调用的 client）；
+            # 入参 provider_name 仅在 llm_config 无身份字段时兜底，避免图片回合视觉链头 ≠ 聊天链头时按错误比例换算。
+            temperature=scale_temperature(
+                llm_config.get("provider_name") or provider_name,
+                temperature if temperature is not None else TITLE_GENERATION_TEMPERATURE,
+            ),
             max_output_tokens=TITLE_GENERATION_MAX_TOKENS,
         )
         response = await call_with_retry(client, **request)

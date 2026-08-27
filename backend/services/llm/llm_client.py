@@ -24,8 +24,10 @@ from .providers import (
     providers_supporting,
     resolve,
     supports_vision,
+    try_resolve,
 )
 from .providers.http import get_async_client
+from .providers.openai_responses import OpenAIResponsesChatProvider
 
 logger = get_logger(__name__)
 
@@ -49,6 +51,15 @@ def _log_embedding(*, call_id: str, phase: str, provider: str, model: str, user_
 def client_for_config(llm_config: dict) -> AsyncOpenAI:
     """从已解析的 ``llm_config`` 字典构建 ``AsyncOpenAI``；缺键时抛 ``KeyError``（可能拿到不完整字典的调用方如后台队列需自行预校验）。"""
     return get_async_client(llm_config["api_key"], llm_config["base_url"])
+
+
+def scale_temperature(provider_name: str | None, normalized: float) -> float:
+    """把 [0, 1] 归一化温度按供应商换算为其原生刻度；未知名或未传供应商时回退到基类默认区间。"""
+    if provider_name:
+        cls = try_resolve(ServiceType.llm, provider_name)
+        if cls is not None and hasattr(cls, "scale_temperature"):
+            return cls.scale_temperature(normalized)
+    return OpenAIResponsesChatProvider.scale_temperature(normalized)
 
 
 class MissingLlmConfigError(Exception):

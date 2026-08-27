@@ -1,19 +1,36 @@
 import asyncio
 
-from components import AGENT_MAX_LOOP_TURNS, DEFAULT_LANGUAGE, SETTINGS, get_logger, safe_json_loads, session_scope
+from components import (
+    AGENT_MAX_LOOP_TURNS,
+    CHAT_TEMPERATURE_DEFAULT,
+    CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT,
+    DEFAULT_LANGUAGE,
+    SETTINGS,
+    get_logger,
+    safe_json_loads,
+    session_scope,
+)
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 
 from ..gateway import RuntimeSession
-from ..llm import LLMRuntimeError, MissingLlmConfigError, ServiceType, compress_history_if_needed, execute_with_fallback, resolve_context_tokens
+from ..llm import (
+    LLMRuntimeError,
+    MissingLlmConfigError,
+    ServiceType,
+    compress_history_if_needed,
+    execute_with_fallback,
+    resolve_context_tokens,
+    scale_temperature,
+)
 from ..tools import ToolCallGuardrailController, schema_name
 from .chat_emitter import Emitter
 from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
-from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, load_user_settings
+from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, _parse_temperature, load_user_settings
 from .types import IterationBudget, TrackTask
 
 logger = get_logger(__name__)
@@ -47,7 +64,9 @@ async def run_chat_turn(
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
+    compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
+    temperature = _parse_temperature(effective_settings.get("agent.temperature"), CHAT_TEMPERATURE_DEFAULT)
     compressed_context, compress_info = await compress_history_if_needed(
         inputs.context,
         client=inputs.client,
@@ -55,6 +74,7 @@ async def run_chat_turn(
         context_length=inputs.ctx_length,
         enabled=compression_enabled,
         threshold_ratio=compression_threshold,
+        temperature=scale_temperature(inputs.provider_name, compression_u),
         language=effective_settings.get("language", DEFAULT_LANGUAGE),
         current_tokens=inputs.estimated_tokens,
     )
@@ -121,6 +141,7 @@ async def run_chat_turn(
                     provider,
                     on_first_chunk=set_stream_emitted,
                     reasoning_effort=reasoning_effort,
+                    temperature=temperature,
                     allowed_emotions=inputs.allowed_emotions,
                     allowed_actions=inputs.allowed_actions,
                 )
@@ -165,6 +186,7 @@ async def run_chat_turn(
                     inputs.first_user_msg_content,
                     current_context,
                     track_task,
+                    provider_name=inputs.provider_name,
                     emotion=llm_result.emotion,
                     actions=llm_result.actions,
                     spatial_locale=llm_result.spatial_locale,

@@ -91,13 +91,23 @@ async def _stream_llm_response(
     *,
     on_first_chunk: Callable[[], None] | None = None,
     reasoning_effort: str | None = None,
+    temperature: float | None = None,
     allowed_emotions: frozenset[str] | None = None,
     allowed_actions: frozenset[str] | None = None,
 ) -> _LLMTurnResult:
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     client = provider.raw_client()
     reasoning = {"effort": reasoning_effort} if reasoning_effort and reasoning_effort in getattr(provider, "REASONING_EFFORTS", frozenset()) else None
-    kwargs = build_responses_kwargs(model=model_name, instructions=context["instructions"], input_items=context["input"], tools=active_schemas, stream=True, reasoning=reasoning)
+    scaled_temperature = provider.scale_temperature(temperature) if temperature is not None else None
+    kwargs = build_responses_kwargs(
+        model=model_name,
+        instructions=context["instructions"],
+        input_items=context["input"],
+        tools=active_schemas,
+        stream=True,
+        reasoning=reasoning,
+        temperature=scaled_temperature,
+    )
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。
     image_items = [

@@ -11,6 +11,7 @@ import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
 import { AgentDefaultsSection, type AgentFormState } from './account/agent-defaults-section'
 import { type ChatFormState, ContextCompressionSection } from './account/context-compression-section'
+import { type TemperatureFormState, TemperatureSection } from './account/temperature-section'
 import { type WebFormState, WebSearchSection } from './account/web-search-section'
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
@@ -38,6 +39,12 @@ const EMPTY_AGENT: AgentFormState = {
 const EMPTY_CHAT: ChatFormState = {
   enable_context_compression: true,
   context_compression_threshold: 0.7
+}
+
+const EMPTY_TEMPERATURE: TemperatureFormState = {
+  chat_temperature: 0.7,
+  title_generation_temperature: 0.3,
+  compression_temperature: 0.0
 }
 
 const readWebState = (config: SpiritAgentConfigResponse): WebFormState => {
@@ -73,6 +80,13 @@ const readChatState = (config: SpiritAgentConfigResponse): ChatFormState => ({
   context_compression_threshold: config.chat?.context_compression_threshold ?? EMPTY_CHAT.context_compression_threshold
 })
 
+const readTemperatureState = (config: SpiritAgentConfigResponse): TemperatureFormState => ({
+  chat_temperature: config.agent?.temperature ?? EMPTY_TEMPERATURE.chat_temperature,
+  title_generation_temperature:
+    config.chat?.title_generation_temperature ?? EMPTY_TEMPERATURE.title_generation_temperature,
+  compression_temperature: config.chat?.compression_temperature ?? EMPTY_TEMPERATURE.compression_temperature
+})
+
 export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
   const t = strings
   const a = t.settings.account
@@ -83,9 +97,11 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   const [originalWeb, setOriginalWeb] = useState<WebFormState>(EMPTY_WEB)
   const [originalAgent, setOriginalAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [originalChat, setOriginalChat] = useState<ChatFormState>(EMPTY_CHAT)
+  const [originalTemperature, setOriginalTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
   const [web, setWeb] = useState<WebFormState>(EMPTY_WEB)
   const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
+  const [temperature, setTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
   const [clearingKey, setClearingKey] = useState<'brave_api_key' | 'tavily_api_key' | null>(null)
 
   useEffect(() => {
@@ -102,12 +118,15 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
         const nextWeb = readWebState(config)
         const nextAgent = readAgentState(config)
         const nextChat = readChatState(config)
+        const nextTemperature = readTemperatureState(config)
         setOriginalWeb(nextWeb)
         setOriginalAgent(nextAgent)
         setOriginalChat(nextChat)
+        setOriginalTemperature(nextTemperature)
         setWeb(nextWeb)
         setAgent(nextAgent)
         setChat(nextChat)
+        setTemperature(nextTemperature)
         setLoadError(null)
       } catch (err) {
         if (!cancelled) {
@@ -142,7 +161,12 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     chat.enable_context_compression !== originalChat.enable_context_compression ||
     chat.context_compression_threshold !== originalChat.context_compression_threshold
 
-  const isDirty = isWebDirty || isAgentDirty || isChatDirty
+  const isTemperatureDirty =
+    temperature.chat_temperature !== originalTemperature.chat_temperature ||
+    temperature.title_generation_temperature !== originalTemperature.title_generation_temperature ||
+    temperature.compression_temperature !== originalTemperature.compression_temperature
+
+  const isDirty = isWebDirty || isAgentDirty || isChatDirty || isTemperatureDirty
 
   const updateWeb = (patch: Partial<WebFormState>) => {
     setWeb(prev => ({ ...prev, ...patch }))
@@ -154,6 +178,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
 
   const updateChat = (patch: Partial<ChatFormState>) => {
     setChat(prev => ({ ...prev, ...patch }))
+  }
+
+  const updateTemperature = (patch: Partial<TemperatureFormState>) => {
+    setTemperature(prev => ({ ...prev, ...patch }))
   }
 
   const onApiKeyChange = (key: 'brave_api_key' | 'tavily_api_key', value: string) => {
@@ -190,11 +218,14 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       const { config } = await saveSpiritAgentConfig({
         agent: {
           enable_background_review: agent.enable_background_review,
-          reasoning_effort: agent.reasoning_effort
+          reasoning_effort: agent.reasoning_effort,
+          temperature: temperature.chat_temperature
         },
         chat: {
           enable_context_compression: chat.enable_context_compression,
-          context_compression_threshold: chat.context_compression_threshold
+          context_compression_threshold: chat.context_compression_threshold,
+          title_generation_temperature: temperature.title_generation_temperature,
+          compression_temperature: temperature.compression_temperature
         },
         web: bodyWeb
       })
@@ -202,12 +233,15 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       const nextWeb = readWebState(config)
       const nextAgent = readAgentState(config)
       const nextChat = readChatState(config)
+      const nextTemperature = readTemperatureState(config)
       setOriginalWeb(nextWeb)
       setOriginalAgent(nextAgent)
       setOriginalChat(nextChat)
+      setOriginalTemperature(nextTemperature)
       setWeb(nextWeb)
       setAgent(nextAgent)
       setChat(nextChat)
+      setTemperature(nextTemperature)
       triggerHaptic('success')
       notify({ kind: 'success', title: a.heading, message: a.saved })
       onConfigSaved?.()
@@ -262,6 +296,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       <div className="my-4 h-px bg-white/10" />
 
       <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
+
+      <div className="my-4 h-px bg-white/10" />
+
+      <TemperatureSection disabled={isSaving} state={temperature} t={a.temperature} update={updateTemperature} />
 
       <div className="mt-8 flex justify-end">
         <button className={BTN_PRIMARY} disabled={isSaving || !isDirty} onClick={() => void handleSave()} type="button">

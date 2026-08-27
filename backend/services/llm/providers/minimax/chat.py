@@ -15,3 +15,6 @@ class MiniMaxChatProvider(OpenAIResponsesChatProvider):
     # 文本与视觉共用 M3。
     DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {"llm": "MiniMax-M3"}
     REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "low", "medium", "high"})
+    # MiniMax /v1/responses 文档支持区间 (0, 1.0]，下限垫 0.01
+    TEMPERATURE_MIN: ClassVar[float] = 0.01
+    TEMPERATURE_MAX: ClassVar[float] = 1.0

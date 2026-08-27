@@ -12,3 +12,5 @@ class GrokChatProvider(OpenAIResponsesChatProvider):
     DEFAULT_MODELS: ClassVar[dict[str, str]] = {"llm": "grok-4.5"}
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {"llm": 500_000}
     REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "low", "medium", "high"})
+    # 按 OpenAI 兼容默认 [0.0, 2.0]
+    TEMPERATURE_MAX: ClassVar[float] = 2.0

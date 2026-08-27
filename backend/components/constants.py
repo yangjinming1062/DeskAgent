@@ -21,8 +21,12 @@ TITLE_MAX_CHARS: int = 80
 # LLM 标题生成失败或跳过时的回退标题。
 DEFAULT_SESSION_TITLE: str = "New Conversation"
 
-# 标题生成温度，偏低以更确定性。
+# 归一化 [0,1] 刻度下的温度校验边界与各链路默认值。
+TEMPERATURE_MIN: float = 0.0
+TEMPERATURE_MAX: float = 1.0
+CHAT_TEMPERATURE_DEFAULT: float = 0.7
 TITLE_GENERATION_TEMPERATURE: float = 0.3
+CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT: float = 0.0
 
 TITLE_GENERATION_MAX_TOKENS: int = 500
 

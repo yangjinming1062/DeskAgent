@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any
 
-from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, get_logger, safe_json_loads, session_scope
+from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
 from .chat_emitter import Emitter
 from .tool_dispatch import _run_tool_batch, _ToolDispatchContext
+from .turn_inputs import _parse_temperature
 from .types import TrackTask
 
 logger = get_logger(__name__)
@@ -123,6 +124,7 @@ async def _persist_assistant_no_tool_turn(
     context: dict[str, Any],
     track_task: TrackTask | None = None,
     *,
+    provider_name: str = "",
     emotion: str | None = None,
     actions: list[str] | None = None,
     spatial_locale: str | None = None,
@@ -161,8 +163,17 @@ async def _persist_assistant_no_tool_turn(
             await db.commit()
 
     if conv.title == "New Conversation" and first_user_msg_content and turn_content:
+        title_temp = _parse_temperature(effective_settings.get("chat.title_generation_temperature"), TITLE_GENERATION_TEMPERATURE)
         title_task = asyncio.create_task(
-            auto_generate_title(conv.id, first_user_msg_content, turn_content, llm_config, language=effective_settings.get("language", DEFAULT_LANGUAGE)),
+            auto_generate_title(
+                conv.id,
+                first_user_msg_content,
+                turn_content,
+                llm_config,
+                language=effective_settings.get("language", DEFAULT_LANGUAGE),
+                temperature=title_temp,
+                provider_name=provider_name or None,
+            ),
         )
         if track_task:
             track_task(title_task)

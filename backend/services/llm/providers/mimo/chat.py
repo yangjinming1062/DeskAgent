@@ -13,3 +13,5 @@ class MiMoChatProvider(OpenAIResponsesChatProvider):
     # 视觉用 mimo-v2.5（而非文生 mimo-v2.5-pro），共用同一 base_url；token-plan key 限定在 token-plan-cn 主机，该主机提供 mimo-v2.5。
     DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {"llm": "mimo-v2.5"}
     REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "low", "medium", "high"})
+    # MiMo 文档支持温度区间 [0.0, 1.5]
+    TEMPERATURE_MAX: ClassVar[float] = 1.5

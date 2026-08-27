@@ -12,6 +12,7 @@ from .llm_client import (
     resolve_provider_config,
     resolve_service_row,
     resolve_vision_chain,
+    scale_temperature,
 )
 from .llm_fallback import execute_with_fallback
 from .llm_retry import LLMRuntimeError, call_with_retry
@@ -140,6 +141,7 @@ __all__ = [
     "tool_schema_for_responses",
     "resolve_user_llm_config",
     "resolve_vision_chain",
+    "scale_temperature",
     "try_resolve",
     "transcribe_audio",
     "synthesize_speech",

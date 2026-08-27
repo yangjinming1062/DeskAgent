@@ -81,10 +81,13 @@ export interface SpiritAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
     enable_background_review?: boolean
+    temperature?: number
   }
   chat?: {
     enable_context_compression?: boolean
     context_compression_threshold?: number
+    title_generation_temperature?: number
+    compression_temperature?: number
   }
   stt?: {
     /** 总开关——为 false 时，spiritagent:media:stt 直接拒绝，
@@ -119,10 +122,13 @@ export interface SpiritAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
     enable_background_review?: boolean
+    temperature?: number
   }
   chat?: {
     enable_context_compression?: boolean
     context_compression_threshold?: number
+    title_generation_temperature?: number
+    compression_temperature?: number
   }
   stt?: {
     enabled?: boolean

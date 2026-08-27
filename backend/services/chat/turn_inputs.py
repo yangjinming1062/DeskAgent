@@ -1,7 +1,14 @@
 from dataclasses import dataclass
 from typing import Any
 
-from components import DEFAULT_LANGUAGE, SESSION_TO_GLOBAL_KEY_ALIASES, get_logger, safe_json_loads
+from components import (
+    DEFAULT_LANGUAGE,
+    SESSION_TO_GLOBAL_KEY_ALIASES,
+    TEMPERATURE_MAX,
+    TEMPERATURE_MIN,
+    get_logger,
+    safe_json_loads,
+)
 from modules.auth import ChatRequestClientContext
 from modules.companion import Persona
 from modules.conversation import Conversation, Message
@@ -60,6 +67,7 @@ class _TurnInputs:
     all_schemas: list[dict]
     first_user_msg_content: str | None
     llm_chain: list[ProviderConfig] | None
+    provider_name: str = ""
     allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
     allowed_actions: frozenset[str] = frozenset()
     estimated_tokens: int = 0
@@ -254,6 +262,7 @@ async def _build_turn_inputs(
         all_schemas=all_schemas,
         first_user_msg_content=first_user_msg_content,
         llm_chain=llm_chain,
+        provider_name=provider.provider_name,
         allowed_emotions=allowed_emotions,
         allowed_actions=frozenset(available_actions),
         estimated_tokens=estimated_tokens,
@@ -266,3 +275,14 @@ def _parse_reasoning_effort(raw: str | None) -> str | None:
         return None
     raw = raw.strip().lower()
     return raw if raw in ALLOWED_REASONING_EFFORTS else None
+
+
+def _parse_temperature(raw: Any, default: float) -> float:
+    """解析并校验归一化温度；空、非数值或越界 [0, 1] 回退到 default。"""
+    if raw is None:
+        return default
+    try:
+        val = float(raw)
+        return val if TEMPERATURE_MIN <= val <= TEMPERATURE_MAX else default
+    except (ValueError, TypeError):
+        return default

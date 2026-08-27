@@ -217,6 +217,17 @@ export const strings = {
           '0.8': '80%',
           '0.9': '90%'
         }
+      },
+      temperature: {
+        heading: '模型温度',
+        intro:
+          '控制不同场景下的模型输出随机性与创造力。界面统一使用 0–1 刻度，发起请求时会自动映射到当前供应商的实际范围。',
+        chatTemperature: '主对话温度',
+        chatTemperatureDesc: '日常聊天的生成温度。较低的值更严谨稳定，较高的值更发散有创意。',
+        titleTemperature: '标题生成温度',
+        titleTemperatureDesc: '根据首轮对话自动生成会话标题的温度。建议保持较低以保证概括准确性。',
+        compressionTemperature: '上下文压缩温度',
+        compressionTemperatureDesc: '对话历史超长时生成记忆摘要的温度。建议保持 0 以保证事实忠实度。'
       }
     }
   },
