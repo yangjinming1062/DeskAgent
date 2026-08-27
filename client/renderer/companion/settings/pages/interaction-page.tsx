@@ -1,14 +1,13 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
 
-import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $effectiveTier,
   $userPreferredTier,
   type DisturbanceTier,
+  pushEffectiveDisturbanceTier,
   setDisturbanceTier
 } from '@/companion/companion-store'
-import { pushDevLog } from '@/companion/developer-overlay'
 import { DISTURBANCE_TIERS } from '@/companion/disturbance-tiers'
 import {
   $llmAffect,
@@ -29,7 +28,6 @@ import { HINT_TEXT, Segmented, SettingRow, SettingsPage, Toggle } from '@/shared
 
 // 交互页：伙伴怎么回应（回应方式 / 打扰档位 / 智能反应与自主行为 / 通话字幕）。
 export function InteractionPage(): React.ReactElement {
-  const { requestGateway } = useGatewayRequest()
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
   const llmReactions = useStore($llmReactions)
@@ -38,19 +36,10 @@ export function InteractionPage(): React.ReactElement {
   const subtitles = useStore($subtitles)
 
   const selectTier = (id: DisturbanceTier): void => {
-    const previous = $userPreferredTier.get()
     setDisturbanceTier(id)
     // 推送 EFFECTIVE 档位（含活动覆盖）以保证后端闸门与渲染层一致。
     // 否则在手动点击后，沉浸式焦点上下文会让后端在整个轮询周期内都保持 un-mute。
-    const effectiveNow = $effectiveTier.get()
-    // 后端拒绝时本地回滚档位。
-    requestGateway('companion.set_disturbance_tier', { tier: effectiveNow }).catch(err => {
-      setDisturbanceTier(previous)
-      pushDevLog(
-        'disturbance_tier_rejected',
-        JSON.stringify({ requested: id, previous, error: String(err?.message || err) })
-      )
-    })
+    pushEffectiveDisturbanceTier($effectiveTier.get())
   }
 
   return (

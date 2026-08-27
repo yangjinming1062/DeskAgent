@@ -399,18 +399,6 @@ def upgrade() -> None:
     op.create_index(op.f("ix_messages_conversation_id"), "messages", ["conversation_id"], unique=False)
     op.create_index(op.f("ix_messages_subtype"), "messages", ["subtype"], unique=False)
     op.create_index(op.f("ix_messages_summary_date"), "messages", ["summary_date"], unique=False)
-    op.create_table(
-        "companion_preferences",
-        sa.Column("user_id", sa.Integer(), nullable=False),
-        sa.Column("disturbance_tier", sa.String(length=16), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("user_id", name="uq_companion_preferences_user_id"),
-    )
-
     # Partial unique 索引（声明式模型无法表达）。
     # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
@@ -473,7 +461,6 @@ def downgrade() -> None:
         "companion_outfits",
         "companion_expressions",
         "avatar_assets",
-        "companion_preferences",
         "conversations",
         "users",
         "update_versions",

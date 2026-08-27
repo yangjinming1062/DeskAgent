@@ -4,7 +4,8 @@ import {
   $effectiveTier,
   $effectiveTierOverride,
   $userPreferredTier,
-  type DisturbanceTier
+  type DisturbanceTier,
+  pushEffectiveDisturbanceTier
 } from '@/companion/companion-store'
 import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
@@ -42,7 +43,7 @@ const CHECK_COOLDOWN_MS = 60 * 60 * 1000
 // 所以单凭值去重就够了。
 let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
-let lastTierPushed: { value: DisturbanceTier; at: number } | null = null
+let lastTierPushed: DisturbanceTier | null = null
 
 // Runner 网关状态。轮询只在 bridge 达到 `running` 后才发起 `runnerInvoke`；
 // 否则每个周期 `pollOnce` 都会在主进程里记四次 "Runner is not connected"
@@ -230,16 +231,12 @@ function maybePushTierOverride(): void {
   }
 
   // 仅按值去重：只有生效值变化时才推送。
-  if (lastTierPushed && lastTierPushed.value === desired) {
+  if (lastTierPushed === desired) {
     return
   }
 
-  lastTierPushed = { value: desired, at: Date.now() }
-
-  const gateway = $gateway.get()
-  void gateway?.request('companion.set_disturbance_tier', { tier: desired }).catch(() => {
-    /* 后端离线——下次轮询周期会重试推送 */
-  })
+  lastTierPushed = desired
+  pushEffectiveDisturbanceTier(desired)
 }
 
 // Runner 的活动快照聚合。单个 ``system.snapshot`` 往返替代四次

@@ -63,7 +63,7 @@ from services.companion import (
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
-from services.disturbance import is_still, set_disturbance_tier
+from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
 from services.tools import REGISTRY
 
@@ -653,14 +653,6 @@ def _register_session_handlers(
     dispatcher.register("session.resume", session_resume)
     dispatcher.register("session.interrupt", session_interrupt)
     dispatcher.register("image.attach", image_attach)
-
-    async def companion_set_disturbance_tier(params: dict) -> dict:
-        # Desktop 报告当前生效的打扰档位；companion 的主动外联（send_message → companion.message）受其控制。桌面端也在客户端拦播放，是纵深防御。
-        tier_param = params.get("tier")
-        normalized = await set_disturbance_tier(user_id, tier_param if isinstance(tier_param, str) else "normal")
-        return {"tier": normalized}
-
-    dispatcher.register("companion.set_disturbance_tier", companion_set_disturbance_tier)
 
     async def companion_set_timezone(params: dict) -> dict:
         # Desktop 每次连接上报本地 IANA 时区：夜间批处理与互动统计都按用户本地日聚合，

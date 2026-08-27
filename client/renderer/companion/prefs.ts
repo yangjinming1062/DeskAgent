@@ -95,8 +95,9 @@ export function initCompanionPrefsSync(): () => void {
       setSubtitles(companion.subtitles)
     }
 
-    // 打扰档位：云端值只是跨端载体；本地仍是档位真源（companion-store 语义不变）。
-    const tier = companion.disturbance_tier
+    // 打扰档位：只回写用户偏好（跨端恢复）；生效档位（companion.disturbance_tier）是设备
+    // 派生值，供后端闸门消费，不回写本地——活动循环本地重算。
+    const tier = companion.disturbance_preference
 
     if (tier === 'still' || tier === 'normal' || tier === 'autonomous') {
       setDisturbanceTier(tier)

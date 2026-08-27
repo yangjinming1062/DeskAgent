@@ -241,7 +241,11 @@ export function reportUserActivity(): void {
 export function setDisturbanceTier(tier: DisturbanceTier): void {
   $userPreferredTier.set(tier)
   persistString('da.companion.disturbanceTier', tier)
-  // user_settings 侧副本仅作跨端同步载体；cron/语音消费的仍是 backend 的
-  // CompanionPreference.disturbance_tier（companion.set_disturbance_tier 上报），两者并存。
+  window.spiritagent?.prefs?.set({ key: 'companion.disturbance_preference', value: tier })
+}
+
+// 生效档位（含活动覆盖）经配置管道上云，是后端闸门（主动消息 / cron / 情绪与空间推理）
+// 的唯一档位来源；与用户偏好分键——生效值是设备派生的，不回写本地偏好。
+export function pushEffectiveDisturbanceTier(tier: DisturbanceTier): void {
   window.spiritagent?.prefs?.set({ key: 'companion.disturbance_tier', value: tier })
 }

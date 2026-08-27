@@ -19,15 +19,6 @@ if TYPE_CHECKING:
     from modules.auth import User
 
 
-class CompanionPreference(ModelBase, TimestampMixin):
-    """每用户服务端伴侣门控；desktop 仍是打扰档位的真源并在每次变更/WS 重连时重报，持久化行保证服务端门控（proactive send_message_tool、cron kicks）在后端重启后仍生效。"""
-
-    __tablename__ = "companion_preferences"
-
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True)
-    disturbance_tier: Mapped[str] = mapped_column(String(16), default="normal")
-
-
 class Companion3DModel(ModelBase, TimestampMixin):
     """供应商生成的 3D 模型；status 流转：generating → pending_download → downloading → succeeded | failed；下载阶段任意失败 → download_failed（可通过 ``companion.model.retryDownload`` 重试，付费结果保存在 provider_task_id + download_urls_json 中）。"""
 

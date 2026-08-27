@@ -34,8 +34,9 @@ from services.conversation import (
     get_personality_tags,
     get_user_proactive_record,
     record_user_outreach,
+    reset_user_outreach,
 )
-from services.disturbance import get_local_tier, is_still
+from services.disturbance import get_disturbance_tier, is_still
 from services.gateway.connection import MANAGER
 
 from .cron_jobs import _compute_next_run_at
@@ -246,8 +247,8 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
       - OUTREACHED → FOLLOWUP_SENT（第一次跟进）；
       - FOLLOWUP_SENT → FOLLOWUP_SENT（连续主动节奏内，LLM 在上一轮 turn 中又主动发言过）。
 
-    用户切入静止档时 set_disturbance_tier 会把外联记录重置回 IDLE，跟进扫描自然跳过，
-    无需在此再做档位检查。LLM 在跟进 turn 里可以再次 send_message_tool(timeout=Y) 继续保持
+    静止档用户在扫描处直接重置外联记录回 IDLE 并跳过（等价用户响应）；在飞 turn 由
+    send_message_tool 的出口静止守卫兜底。LLM 在跟进 turn 里可以再次 send_message_tool(timeout=Y) 继续保持
     FOLLOWUP_SENT，也可以传 timeout=None/0 结束节奏回到 IDLE。进程不限制连续次数——节奏
     完全由 LLM 自身把控（用户提到过 100 之类的安全网也可加，不在本次范围）。
     """
@@ -256,6 +257,9 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
     for uid in online_uids:
         rec = get_user_proactive_record(uid)
         if rec.state not in (ProactiveState.OUTREACHED, ProactiveState.FOLLOWUP_SENT):
+            continue
+        if await is_still(uid):
+            reset_user_outreach(uid)
             continue
         if rec.followup_timeout_seconds <= 0:
             continue
@@ -289,7 +293,7 @@ async def _maybe_run_ignored_affect(now: datetime) -> None:
     cur_time = time.monotonic()
     online_uids = MANAGER.local_user_ids()
     for uid in online_uids:
-        if await get_local_tier(uid) != "normal":
+        if await get_disturbance_tier(uid) != "normal":
             continue
         rec = get_user_proactive_record(uid)
         if rec.state != ProactiveState.IDLE:

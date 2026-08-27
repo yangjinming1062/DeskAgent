@@ -5,7 +5,6 @@ from .models import (
     CompanionExpression,
     CompanionExpressionAvatar,
     CompanionOutfit,
-    CompanionPreference,
     Persona,
 )
 from .schemas import (
@@ -45,7 +44,6 @@ __all__ = [
     "CompanionExpression",
     "CompanionExpressionAvatar",
     "CompanionOutfit",
-    "CompanionPreference",
     "ExpressionAvatarRequest",
     "ExpressionAvatarResponse",
     "Fullbody3dSeedGenerateRequest",

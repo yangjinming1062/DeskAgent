@@ -9,7 +9,7 @@ import {
   setDesktopBootStep
 } from '@/companion/boot-store'
 import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
-import { $effectiveTier, $spriteState, setSpriteState } from '@/companion/companion-store'
+import { $effectiveTier, $spriteState, pushEffectiveDisturbanceTier, setSpriteState } from '@/companion/companion-store'
 import { openMainSession } from '@/companion/session-list-store'
 import { speakScripted } from '@/companion/tts'
 import { clearVfx, emitVfx } from '@/companion/vfx'
@@ -31,18 +31,16 @@ const WS_CLOSE_POLICY_VIOLATION = 1008
 // 内容寻址落盘，同一 (音色, 台词) 只花一次云端额度。
 const RECONNECT_WAKE_LINE = '啊……我回来了，刚才走神了一下。'
 
-// 每次（重）开后重新上报档位：后端存在进程级字典里，后端重启会静默清空。
-// 推生效值（不只是 user_preferred），让沉浸式聚焦上下文能跨重连接存活——
-// 否则新的 WS 握手会让后端短暂解除档位压制，而用户其实还在 IDE / 全屏窗口里。
-// 即发即忘。
-function syncDisturbanceTier(gateway: SpiritAgentGateway): void {
+// 每次（重）开后重推一次生效档位（含活动覆盖）：离线期间的档位变化可能尚未
+// 上云，重推保证后端闸门尽快收敛到最新生效值。即发即忘。
+function syncDisturbanceTier(): void {
   const tier = $effectiveTier.get()
 
   if (!tier) {
     return
   }
 
-  void gateway.request('companion.set_disturbance_tier', { tier }).catch(() => {})
+  pushEffectiveDisturbanceTier(tier)
 }
 
 // 每次连接上报本地 IANA 时区：后端的夜间批处理与互动统计都按用户本地日聚合，
@@ -237,9 +235,8 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         reconnectAttempt = 0
         clearReconnectTimer()
         clearGraceTimer()
-        // 重新上报打扰档位，让后端进程级字典在初次启动以及每次重连后
-        // 都拿到用户持久化下来的选择（覆盖后端重启、OAuth 重新登录）。
-        syncDisturbanceTier(gateway)
+        // 重推打扰档位与本地时区，覆盖离线期间尚未上云的变化。
+        syncDisturbanceTier()
         syncTimezone(gateway)
         startAutonomyProvision()
 
