@@ -20,6 +20,7 @@ from components import (
     SESSION_HISTORY_PRE_BUFFER,
     SESSION_HISTORY_TRUNCATE_THRESHOLD,
     SESSION_LOCAL,
+    SETTINGS,
     adopt_inbound,
     coerce_hour_0_23,
     coerce_non_negative_float,
@@ -335,9 +336,14 @@ def _is_nonneg_int(v: Any) -> bool:
 
 
 def _is_session_video_url(file_url: str, session_id: str) -> bool:
-    """视频附件只认本会话的后端上传 URL（相对或 ``public_base_url`` 绝对形态），防跨会话引用。"""
+    """视频附件只认本会话的后端上传 URL：相对路径（本地模式请求时内联）或 ``public_base_url`` 前缀的
+    绝对形态（公网模式供应商自拉）。任意第三方绝对 URL 会让供应商替我们发任意请求，必须绑死前缀。"""
     if len(file_url) > 2048:
         return False
+    if file_url.startswith(("http://", "https://")):
+        base = SETTINGS.public_base_url.strip().rstrip("/")
+        if not base or not file_url.startswith(f"{base}/"):
+            return False
     marker = f"/api/media/videos/{session_id}/"
     pos = file_url.find(marker)
     if pos == -1:

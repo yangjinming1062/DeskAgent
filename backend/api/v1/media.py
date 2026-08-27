@@ -115,8 +115,10 @@ async def upload_chat_video(
     """聊天视频附件上传：落会话目录（滚动配额）并返回附件 URL（本地相对 / 公网绝对）。"""
     if file is None:
         raise HTTPException(status_code=422, detail={"error": "Missing video file", "reason": "missing_video_file", "status_code": 422})
+    # 归一到无前导零形式：目录、附件 URL 与 conversation_id 三者必须同形，"007" 会造成磁盘/校验分裂。
     if not session_id.strip().isdigit():
         raise HTTPException(status_code=422, detail={"error": "Invalid session_id", "reason": "invalid_session_id", "status_code": 422})
+    session_id = str(int(session_id.strip()))
 
     ext = Path(file.filename or "").suffix.lower()
     if ext not in ATTACHMENT_VIDEO_EXTENSIONS:

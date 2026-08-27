@@ -94,7 +94,7 @@
 - 精灵画/拍自己（生成工具 subject='self'）：身份参考由后端自动注入**半身头像**——2D/3D 正面种子图带生成画风，作参考会让身份失真，聊天内自我生成的图像参考一律不用种子图。
 
 **用户侧聊天附件**（改此处需同步：backend 网关校验与附件生命周期模块、backend/README.md、client 附件 UX 与 client/renderer/companion/README.md、DESIGN §6.1）：
-- 图片附件以 `data:image/*` data URL 随 `prompt.submit` 的 attachments 直发（不落盘）；视频附件因 base64 远超 WS 单帧上限，客户端必须先经 `POST /api/media/videos`（multipart：file + session_id，容器白名单 mp4/mov）换取附件 URL，再以 `{"type": "video", "file_url": ...}` 提交——附件 URL 只认本会话，跨会话引用直接拒绝。
+- 图片附件以 `data:image/*` data URL 随 `prompt.submit` 的 attachments 直发（不落盘）；视频附件因 base64 远超 WS 单帧上限，客户端必须先经 `POST /api/media/videos`（multipart：file + session_id，容器白名单 mp4/mov）换取附件 URL，再以 `{"type": "video", "file_url": ...}` 提交——附件 URL 只认本会话（跨会话引用直接拒绝），绝对形态仅认 `public_base_url` 前缀（第三方绝对 URL 会被拒绝，防止借供应商发任意请求）。
 - 服务端点 `GET /api/media/videos/{session_id}/{file_id}` 公开（file_id 为不可猜测 token；公网模式下供应商需直接拉取）。
 - 供应商消费分双模式，由后端 `public_base_url` 配置决定：留空时构造请求前把最近 2 个内联为 data URL（单文件 50MB 上限）；配置可公网访问地址后以绝对 URL 直发供应商自拉（单文件上限=会话配额 512MB，且该地址必须真能被供应商服务器访问）。
 - 附件文件按 512MB/会话滚动配额：超限从最旧剔除；压缩/夜间摘要检查点之前与历史截断删除之前的视频确定性清理。两类清理都把所属消息行的 `input_video` part 改写为 `[视频已清理]`，渲染与 LLM 上下文不残留死链。

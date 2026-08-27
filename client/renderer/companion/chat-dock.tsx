@@ -333,6 +333,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     clearExternalAttachment()
   }, [pendingExternal])
 
+  // 切换会话即丢弃未发送附件：视频 URL 绑定上传时的会话，带到别的会话只会被跨会话校验拒绝。
+  // 首次解析会话 id（attach/send 触发 ensureChatSession）不算切换，不清。
+  const chatSessionId = useStore($chatSessionId)
+  const prevSessionRef = useRef(chatSessionId)
+
+  useEffect(() => {
+    if (prevSessionRef.current !== chatSessionId) {
+      prevSessionRef.current = chatSessionId
+      setPending(null)
+      externalPathsRef.current = []
+    }
+  }, [chatSessionId])
+
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [list])

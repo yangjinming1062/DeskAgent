@@ -53,7 +53,8 @@ export function useResolvedMediaSrc(item: ChatMediaItem): string | null {
           const buf = await window.spiritagent.apiAssetBuffer({ url: item.url })
 
           if (buf && !cancelled) {
-            const ext = item.url.split(/[?#]/)[0].slice(item.url.lastIndexOf('.')).toLowerCase()
+            const clean = item.url.split(/[?#]/)[0]
+            const ext = clean.slice(clean.lastIndexOf('.')).toLowerCase()
             // 拷贝进全新 ArrayBuffer——IPC 返回的 Uint8Array 类型上可能是 SharedArrayBuffer 视图，不满足 BlobPart。
             objectUrl = URL.createObjectURL(
               new Blob([new Uint8Array(buf)], { type: VIDEO_MIME_BY_EXT[ext] || 'video/mp4' })

@@ -111,7 +111,7 @@
 - **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 - **主题（UI 皮肤）**：主题状态在 shared 侧（[shared/store/theme.ts](../shared/store/theme.ts)）——切换入口仅 Hub 设置「外观」页，本窗经主进程广播实时换肤、启动时从 localStorage 恢复，自身不提供切换入口。主题只作用于 UI 铬面（面板 / 气泡 / 菜单 / toast），不覆盖伙伴形象本体（蛋 / 2D puppet / 3D / VFX）。
 - **对话内媒体展示（气泡轻量化原则）**：精灵气泡只承载轻量文本；伙伴生成的图片/视频统一在对话窗以媒体卡内联预览、点击放大播放（图片与视频同一交互，[chat-media-card](chat-media-card.tsx) + [media-viewer-overlay](media-viewer-overlay.tsx)）。媒体经主进程 IPC 取回（图片 data URL 走 `apiAsset`、视频字节转 blob URL 卸载回收），不直连后端 URL。聊天窗收起时收到媒体，精灵气泡只提示「点击查看」，点击打开对话窗（媒体属于其他会话时先切过去）；正看其他会话时由通知 toast 承载跳转。后台视频完成的送达行与历史水合同形状（协议见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)）。
-- **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；**视频附加即经主进程 IPC 上传后端换取会话级 URL**（容器 mp4/mov，WS 单帧装不下 base64，见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)），上传完成前发送按钮禁用，失败态可重试可移除。附件状态在 [chat-dock.tsx](chat-dock.tsx) 内类型化（image 本地路径/data URL、video 上传状态机）；chat-store 侧附件为类型化 `{type, url}` 形状，历史水合从 `input_image`/`input_video` parts 还原，被后端清理的视频行只剩 `[视频已清理]` 文本、天然无死链卡。
+- **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；视频附加即经主进程 IPC 上传后端换取会话级 URL，上传完成前发送按钮禁用，失败态可重试可移除。附件只属于上传时的会话，切换会话即丢弃。上传限额、双模式消费与清理降级契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
 
 ## 10. 空间行为（位置 × 移动 × 缩放）
 
