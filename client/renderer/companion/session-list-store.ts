@@ -25,7 +25,7 @@ async function fetchSessions(): Promise<void> {
   $sessionsLoading.set(true)
 
   try {
-    const res = await window.spiritagent.api<{ sessions: SessionInfo[] }>({ path: '/api/v1/sessions' })
+    const res = await window.spiritagent.api<{ sessions: SessionInfo[] }>({ path: '/api/sessions' })
 
     if (token === fetchToken) {
       $sessions.set(res.sessions || [])
@@ -101,7 +101,7 @@ export async function openMainSession(onMounted?: (res: SessionResumeResponse) =
 
 export async function deleteSession(sessionId: string): Promise<void> {
   try {
-    await window.spiritagent.api({ method: 'DELETE', path: `/api/v1/sessions/${sessionId}` })
+    await window.spiritagent.api({ method: 'DELETE', path: `/api/sessions/${sessionId}` })
   } catch (err) {
     log.error('session-list', 'Failed to delete session:', err)
 
