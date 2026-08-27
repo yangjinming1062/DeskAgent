@@ -33,7 +33,7 @@ import {
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
-import { $sessions } from '@/companion/session-list-store'
+import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
 import { Mic, PanelLeft, Paperclip, Phone, Sparkles, Video, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
@@ -48,7 +48,7 @@ import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
 import { openMediaViewer } from './media-viewer-overlay'
-import { $sessionListOpen, openMainSession, setSessionListOpen } from './session-list-store'
+import { $sessionListOpen, findSessionInfo, openMainSession, setSessionListOpen } from './session-list-store'
 
 const DOCK_DEFAULT_WIDTH = 760
 const DOCK_DEFAULT_HEIGHT = 540
@@ -197,7 +197,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const expressionAvatar = useStore($expressionAvatar)
   const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
-  const sessions = useStore($sessions)
+  // 三个列表 atom 的订阅只为标题兜底链的响应性（findSessionInfo 会读它们）。
+  useStore($sessions)
+  useStore($archivedSessions)
+  useStore($searchResults)
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
@@ -603,7 +606,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [spriteEmotion, spriteState, customExpressions])
 
-  const currentSessionTitle = sessions.find(s => s.id === $chatSessionId.get())?.title || '日常对话'
+  const currentSessionTitle = findSessionInfo($chatSessionId.get() ?? '')?.title || '日常对话'
 
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">

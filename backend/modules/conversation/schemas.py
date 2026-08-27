@@ -16,6 +16,7 @@ class DesktopSessionInfo(BaseModel):
     model: str | None = None
     source: str | None = None
     preview: str | None = None
+    pinned: bool = False
     archived: bool = False
     is_active: bool = True
     cwd: str | None = None
@@ -44,4 +45,5 @@ class DesktopSessionMessagesResponse(BaseModel):
 
 class DesktopSessionPatchRequest(BaseModel):
     title: str | None = None
+    pinned: bool | None = None
     archived: bool | None = None

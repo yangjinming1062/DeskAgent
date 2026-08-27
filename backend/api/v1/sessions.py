@@ -41,8 +41,6 @@ _preview_subquery = (
 
 
 def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_tok: int, output_tok: int, tool_count: int, preview: str | None) -> DesktopSessionInfo:
-    has_real_parent = conv.parent_id is not None and conv.parent_id != conv.id
-
     return DesktopSessionInfo(
         id=str(conv.id),
         kind=conv.kind,
@@ -55,8 +53,9 @@ def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_t
         tool_call_count=tool_count,
         preview=preview,
         cwd=conv.cwd,
-        archived=conv.parent_id == conv.id,
-        lineage_root_id=str(conv.parent_id) if has_real_parent else None,
+        pinned=conv.pinned_at is not None,
+        archived=conv.archived_at is not None,
+        lineage_root_id=str(conv.parent_id) if conv.parent_id is not None else None,
     )
 
 
@@ -74,7 +73,7 @@ async def list_sessions(
     offset: int = 0,
     min_messages: int = 0,
     archived: Literal["only", "exclude", "include"] = "exclude",
-    order: Literal["recent", "oldest"] = "recent",
+    order: Literal["recent", "created", "messages"] = "recent",
     include_subagents: bool = False,
     current: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
@@ -101,11 +100,12 @@ async def list_sessions(
     q = q.add_columns(msg_stats.c.msg_count, msg_stats.c.input_tok, msg_stats.c.output_tok, tool_stats.c.tool_count)
 
     if archived == "only":
-        # 自指 parent_id 标记归档；parent_id 指向其他会话的是子代理，仍可见。
-        q = q.where(Conversation.parent_id == Conversation.id)
+        q = q.where(Conversation.archived_at.isnot(None))
     elif archived == "exclude":
-        # 默认（include_subagents=False）仅 parent_id IS NULL 的顶层会话；自指归档行也被 is_(None) 排除。开启 include_subagents=True 显示主+子代理，但仍隐藏自指归档行。
-        q = q.where(Conversation.parent_id.is_(None) | (Conversation.parent_id != Conversation.id)) if include_subagents else q.where(Conversation.parent_id.is_(None))
+        # 默认（include_subagents=False）仅 parent_id IS NULL 的顶层会话；开启后显示主+子代理，但两者都排除已归档行。
+        q = q.where(Conversation.archived_at.is_(None))
+        if not include_subagents:
+            q = q.where(Conversation.parent_id.is_(None))
     # 其他 archived 取值由 Literal 在 HTTP 边界 422 拦截，此处 fallthrough 实际不可达，保留 no-op 供未来扩展。
     # include_subagents 仅作用于 archived="exclude"；"only"/"include" 路径忽略它（子代理导航走搜索端点与直链，不在 archived 切换 UI 内）。
 
@@ -114,7 +114,23 @@ async def list_sessions(
 
     total_q = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
 
-    q = q.order_by(desc(Conversation.updated_at)) if order == "recent" else q.order_by(asc(Conversation.created_at))
+    if archived == "only":
+        # 归档视图按归档时间倒序，方便刚归档的先出现；order 参数对归档列表无意义。
+        q = q.order_by(desc(Conversation.archived_at))
+    else:
+        # 排序链：主对话恒第一，手动置顶次之（pinned_at 新的在前），再按所选 order。置顶集占结果前缀，limit 分页不会截断它。
+        order_col = {
+            "recent": desc(Conversation.updated_at),
+            "created": desc(Conversation.created_at),
+            "messages": desc(func.coalesce(msg_stats.c.msg_count, 0)),
+        }[order]
+        q = q.order_by(
+            desc(Conversation.kind == MAIN_KIND),
+            asc(Conversation.pinned_at.is_(None)),
+            desc(Conversation.pinned_at),
+            order_col,
+            Conversation.id,
+        )
 
     rows = (await db.execute(q.offset(offset).limit(limit))).all()
 
@@ -137,6 +153,7 @@ async def list_sessions(
 @router.get("/search", response_model=DesktopSessionSearchResponse)
 async def search_sessions(
     q: str = Query(..., min_length=1, description="Substring to match against title, message content, and id"),
+    archived: Literal["only", "exclude", "include"] = "exclude",
     current: tuple[User, object] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> DesktopSessionSearchResponse:
@@ -182,16 +199,24 @@ async def search_sessions(
     if not merged_ids:
         return DesktopSessionSearchResponse(sessions=[])
 
-    rows = (
-        await db.execute(
-            select(Conversation, _preview_subquery, func.count(Message.id).label("msg_count"))
-            .outerjoin(Message, Message.conversation_id == Conversation.id)
-            .where(Conversation.id.in_(merged_ids))
-            .group_by(Conversation.id)
-            .order_by(desc(Conversation.updated_at))
-            .limit(20),
-        )
-    ).all()
+    archived_filter = {
+        "only": Conversation.archived_at.isnot(None),
+        "exclude": Conversation.archived_at.is_(None),
+        "include": None,
+    }[archived]
+
+    rows_query = (
+        select(Conversation, _preview_subquery, func.count(Message.id).label("msg_count"))
+        .outerjoin(Message, Message.conversation_id == Conversation.id)
+        .where(Conversation.id.in_(merged_ids))
+        .group_by(Conversation.id)
+        .order_by(desc(Conversation.updated_at))
+        .limit(20)
+    )
+    if archived_filter is not None:
+        rows_query = rows_query.where(archived_filter)
+
+    rows = (await db.execute(rows_query)).all()
 
     sessions = []
     for conv, preview, msg_count in rows:
@@ -231,8 +256,16 @@ async def patch_session(session_id: str, body: DesktopSessionPatchRequest, curre
         raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
     if body.title is not None:
         conv.title = body.title
+    if body.pinned is not None:
+        if body.pinned and conv.archived_at is not None:
+            raise HTTPException(status_code=400, detail="Archived session cannot be pinned")
+        conv.pinned_at = func.now() if body.pinned else None
     if body.archived is not None:
-        conv.parent_id = conv.id if body.archived else None
+        if body.archived:
+            conv.pinned_at = None
+            conv.archived_at = func.now()
+        else:
+            conv.archived_at = None
     await db.commit()
     return {"ok": True}
 

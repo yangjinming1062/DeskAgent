@@ -6,6 +6,7 @@ export interface RpcEvent<T = unknown> {
 
 export interface SessionInfo {
   archived?: boolean
+  pinned?: boolean
   /** 服务端是自由字符串；目前只有 'main' 和 'standard' 是一级值。 */
   kind?: string
   cwd?: null | string

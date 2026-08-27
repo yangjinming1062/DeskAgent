@@ -199,6 +199,8 @@ def upgrade() -> None:
         sa.Column("parent_id", sa.Integer(), nullable=True),
         sa.Column("kind", sa.String(length=32), server_default=sa.text("'standard'"), nullable=False),
         sa.Column("title", sa.Text(), nullable=False),
+        sa.Column("pinned_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cwd", sa.String(length=1024), nullable=True),
         sa.Column("settings_json", sa.Text(), nullable=True),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),

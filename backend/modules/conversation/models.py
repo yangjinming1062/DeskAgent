@@ -17,6 +17,8 @@ class Conversation(ModelBase, TimestampMixin):
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(32), default="standard", server_default=text("'standard'"))
     title: Mapped[str] = mapped_column(Text, default="New Conversation")
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cwd: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # 每会话 key-value 覆盖（reasoning/language）；会话挂载时从该列填入，会话删除时随 conversation 级联清除；跨 WS 重连存活（不像内存中的 RuntimeSession.settings）。
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
