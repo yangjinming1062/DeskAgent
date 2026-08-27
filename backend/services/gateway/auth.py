@@ -17,7 +17,7 @@ async def authenticate_ws_token(token: str | None) -> tuple[User | None, dict | 
         return None, None
 
     if payload.get("purpose") != "ws":
-        logger.info("WS token missing purpose=ws claim; renderer must use /api/chat/ws-ticket")
+        logger.info("WS token missing purpose=ws claim; renderer must use /api/user/ws-ticket")
         return None, None
 
     user_id = payload.get("sub")
