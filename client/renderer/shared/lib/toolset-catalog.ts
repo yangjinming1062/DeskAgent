@@ -24,8 +24,6 @@ export interface ToolsetCatalogEntry {
   icon: IconComponent
 }
 
-export type ToolsetId = (typeof TOOLSET_CATALOG)[number]['id']
-
 export const TOOLSET_CATALOG: readonly ToolsetCatalogEntry[] = [
   { id: 'browser_automation', icon: Globe },
   { id: 'file_operations', icon: FileText },

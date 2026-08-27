@@ -27,22 +27,6 @@ export function Pill({
   return <span className={tone === 'primary' ? CHIP_ACTIVE : CHIP}>{children}</span>
 }
 
-export function FilterPill({
-  active,
-  children,
-  onClick
-}: {
-  active: boolean
-  children: ReactNode
-  onClick: () => void
-}): React.JSX.Element {
-  return (
-    <button className={active ? CHIP_ACTIVE : CHIP} onClick={onClick} type="button">
-      {children}
-    </button>
-  )
-}
-
 export function SectionHeading({ title, meta }: { title: string; meta?: string }): React.JSX.Element {
   return (
     <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-white/80">

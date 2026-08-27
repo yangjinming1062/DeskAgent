@@ -76,11 +76,6 @@ async def list_memories(
     return [_row_to_dict(r) for r in rows]
 
 
-async def get_memory(db: AsyncSession, user_id: int, memory_id: int) -> dict[str, Any] | None:
-    row = await _owned(db, user_id, memory_id)
-    return _row_to_dict(row) if row else None
-
-
 async def update_memory(db: AsyncSession, user_id: int, memory_id: int, *, content: str) -> dict[str, Any] | None:
     """只更新 content；长度上限随 context 而定（auto_inject 槽位必须短，唯一索引与后续整合逻辑依赖这一点）。"""
     content = (content or "").strip()

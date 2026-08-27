@@ -207,10 +207,6 @@ llm_completion_rate_limit_per_ip_per_minute = 200
 media_stt_rate_limit_per_minute = 20
 # 语音合成接口每分钟限制
 media_tts_rate_limit_per_minute = 30
-# 图像生成接口每分钟限制
-media_image_gen_rate_limit_per_minute = 10
-# 视频生成接口每分钟限制
-media_video_gen_rate_limit_per_minute = 3
 # 伴侣头像生成接口每分钟限制
 companion_avatar_generate_rate_limit_per_minute = 3
 # 伴侣 3D 模型生成接口每分钟限制

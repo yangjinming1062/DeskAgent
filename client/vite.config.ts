@@ -32,9 +32,6 @@ export default defineConfig({
           if (id.includes('node_modules/three/') || id.endsWith('/three')) {
             return 'vendor-three-core'
           }
-          if (id.includes('@radix-ui/')) {
-            return 'vendor-radix'
-          }
           if (
             id.includes('node_modules/react/') ||
             id.includes('node_modules/react-dom/') ||
@@ -46,7 +43,6 @@ export default defineConfig({
           if (
             id.includes('node_modules/nanostores/') ||
             id.includes('node_modules/@nanostores/') ||
-            id.includes('node_modules/cmdk/') ||
             id.includes('node_modules/@tabler/icons-react/')
           ) {
             return 'vendor-utils'

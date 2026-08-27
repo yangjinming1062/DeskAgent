@@ -23,8 +23,6 @@ export interface ChatMessageBody {
   media?: ChatMediaItem[]
 }
 
-export interface ChatMessage extends ChatMessageListItem, ChatMessageBody {}
-
 export const $chatMessageList = atom<ChatMessageListItem[]>([])
 export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
 // 尾部助手消息是否处于流式中。ChatDock 借此感知生成状态，无需全量订阅 bodies。

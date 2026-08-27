@@ -4,14 +4,6 @@
 
 // 表面阶梯（实体档）
 export const SURFACE_CHROME = 'bg-surface-chrome'
-export const SURFACE_PANEL = 'bg-surface-panel'
-export const SURFACE_CARD = 'bg-surface-card'
-// 瞬时浮层（菜单 / 气泡 / 字幕 / toast）的轻玻璃档
-export const SURFACE_GLASS = 'bg-glass backdrop-blur-glass'
-
-export const BORDER_HAIRLINE = 'border-line-hairline'
-export const BORDER_STANDARD = 'border-line-standard'
-export const BORDER_STRONG = 'border-line-strong'
 
 // 按钮
 export const BTN_PRIMARY =

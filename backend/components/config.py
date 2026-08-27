@@ -184,8 +184,6 @@ class Settings(BaseSettings):
     llm_completion_rate_limit_per_ip_per_minute: int
     media_stt_rate_limit_per_minute: int
     media_tts_rate_limit_per_minute: int
-    media_image_gen_rate_limit_per_minute: int
-    media_video_gen_rate_limit_per_minute: int
     companion_avatar_generate_rate_limit_per_minute: int
     companion_model_generate_rate_limit_per_minute: int
     companion_expression_avatar_generate_rate_limit_per_minute: int

@@ -27,7 +27,6 @@ from modules.conversation import Conversation, Message
 from modules.memory import Memory
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.companion import (
     backfill_memory_embeddings,
@@ -220,15 +219,6 @@ def _local_9am_cron(tz_str: str | None) -> str:
         return f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
     except (ZoneInfoNotFoundError, ValueError):
         return "0 1 * * *"
-
-
-async def _nightly_resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[str, str]:
-    """读取 persona 定义草稿（短读，在短 session 内调用）。"""
-    persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    if persona is None:
-        return {}
-    draft = safe_json_loads(persona.definition_json or "{}", default={})
-    return draft if isinstance(draft, dict) else {}
 
 
 async def _stage_1_daily_reflection(

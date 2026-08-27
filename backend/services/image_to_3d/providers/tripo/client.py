@@ -1,6 +1,5 @@
 import asyncio
 import time
-from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -188,29 +187,6 @@ async def get_task(task_id: str) -> dict[str, Any]:
     if data.get("status") == "success":
         log_paid_call("tripo", "image_to_3d_result", task_id=task_id, urls=[(data.get("output") or {}).get("model_url")], level="debug")
     return data
-
-
-async def poll_task(task_id: str, *, interval: float = 5.0, timeout: float = 1800.0, on_progress: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
-    """轮询直至终态，返回最终的 ``data`` 负载（成功时含 ``output.model_url``）。"""
-    deadline = time.monotonic() + timeout
-    while True:
-        data = await get_task(task_id)
-        status = data.get("status")
-        if on_progress is not None:
-            on_progress(data)
-        if status == "success":
-            return data
-        if status in ("failed", "cancelled", "banned"):
-            raise TripoTaskFailed(f"task {task_id} reached status={status}: {data.get('message') or data}")
-        if time.monotonic() > deadline:
-            raise TripoTaskFailed(f"task {task_id} did not finish within {timeout}s")
-        await asyncio.sleep(interval)
-
-
-async def account_balance() -> dict[str, float]:
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(f"{_base_url()}/account/balance", headers=_auth_headers())
-    return _envelope(resp.json())
 
 
 async def rig_check(task_id: str) -> str:
