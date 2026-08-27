@@ -1,8 +1,16 @@
 import fs from 'node:fs'
+import path from 'node:path'
 
-import { IPC, type MediaSttPayload, type MediaTtsPayload } from '@ipc/contracts'
+import {
+  type AttachmentVideoUploadPayload,
+  type AttachmentVideoUploadResult,
+  IPC,
+  type MediaSttPayload,
+  type MediaTtsPayload
+} from '@ipc/contracts'
 import type { IpcMain } from 'electron'
 
+import { resolveReadableFileForIpc } from '../security/hardening'
 import { dataUrlFromBuffer, dataUrlToBuffer, parseDataUrl } from '../shared/mime'
 import { sleep } from '../shared/utils'
 
@@ -12,6 +20,9 @@ const STT_TIMEOUT_MS = 60_000
 const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
 const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
+// 与后端会话配额对齐；本地模式（未配 public_base_url）的 50MB 单文件上限由后端 413 文案告知。
+const ATTACH_VIDEO_MAX_BYTES = 512 * 1024 * 1024
+const ATTACH_VIDEO_TIMEOUT_MS = 120_000
 const CONFIG_CACHE_TTL_MS = 10_000
 const DEFAULT_TTS_LANGUAGE = 'zh'
 const DEFAULT_STT_LANGUAGE = 'zh'
@@ -752,6 +763,50 @@ export function registerMediaIpc({
       inflightTts.delete(cacheKey)
     }
   })
+
+  ipcMain.handle(
+    IPC.invoke.mediaVideoUpload,
+    async (_event, payload: AttachmentVideoUploadPayload): Promise<AttachmentVideoUploadResult> => {
+      const { resolvedPath } = await resolveReadableFileForIpc(payload.path, {
+        maxBytes: ATTACH_VIDEO_MAX_BYTES,
+        purpose: 'Video attach'
+      })
+
+      const data = await fs.promises.readFile(resolvedPath)
+      const connection = await ensureBackend()
+      const form = new FormData()
+      const blob = new Blob([data], { type: 'application/octet-stream' })
+
+      form.append('file', blob, path.basename(resolvedPath))
+      form.append('session_id', payload.sessionId)
+
+      const { body } = await postMultipart({
+        fetchImpl,
+        form,
+        timeoutMs: ATTACH_VIDEO_TIMEOUT_MS,
+        token: connection.token || undefined,
+        url: `${connection.baseUrl}/api/media/videos`
+      })
+
+      const parsed = JSON.parse(body.toString('utf8')) as {
+        file_id?: string
+        mime?: string
+        size?: number
+        url?: string
+      }
+
+      if (typeof parsed?.url !== 'string' || !parsed.url) {
+        throw new Error('Backend video upload returned no url')
+      }
+
+      return {
+        fileId: parsed.file_id || '',
+        mime: parsed.mime || 'video/mp4',
+        size: parsed.size ?? data.length,
+        url: parsed.url
+      }
+    }
+  )
 
   async function synthesizeTts({
     cacheKey,

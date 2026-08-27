@@ -1,4 +1,5 @@
 import {
+  type AttachmentVideoUploadPayload,
   type DesktopActivatePayload,
   type DesktopAuthBroadcast,
   type DesktopBootProgress,
@@ -109,6 +110,8 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   readFileDataUrl: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readFileDataUrl, filePath),
   readImageForAttach: (filePath: string) => ipcRenderer.invoke(IPC.invoke.readImageForAttach, filePath),
+  uploadVideoForAttach: (payload: AttachmentVideoUploadPayload) =>
+    ipcRenderer.invoke(IPC.invoke.mediaVideoUpload, payload),
   refreshSession: () => ipcRenderer.invoke(IPC.invoke.authRefresh),
   runnerCancel: () => ipcRenderer.invoke(IPC.invoke.runnerCancel),
   runnerConfig: {

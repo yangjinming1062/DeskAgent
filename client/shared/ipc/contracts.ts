@@ -187,6 +187,18 @@ export interface MediaTtsPayload {
   voice?: string
 }
 
+export interface AttachmentVideoUploadPayload {
+  path: string
+  sessionId: string
+}
+
+export interface AttachmentVideoUploadResult {
+  fileId: string
+  mime: string
+  size: number
+  url: string
+}
+
 // 1. 请求-响应（渲染进程 -> 主进程，通过 ipcRenderer.invoke / ipcMain.handle）
 export interface IpcInvokeContract {
   // 连接与启动
@@ -265,6 +277,9 @@ export interface IpcInvokeContract {
   'spiritagent:media:tts': (
     payload: MediaTtsPayload
   ) => { dataUrl: string; mimeType: string } | Promise<{ dataUrl: string; mimeType: string }>
+  'spiritagent:media:video-upload': (
+    payload: AttachmentVideoUploadPayload
+  ) => AttachmentVideoUploadResult | Promise<AttachmentVideoUploadResult>
   'spiritagent:onboardingAudio:read': (
     tag: string
   ) =>
@@ -356,6 +371,7 @@ export const IPC = {
     toolsetSetEnabled: 'spiritagent:toolset:set-enabled',
     mediaStt: 'spiritagent:media:stt',
     mediaTts: 'spiritagent:media:tts',
+    mediaVideoUpload: 'spiritagent:media:video-upload',
     onboardingAudioRead: 'spiritagent:onboardingAudio:read',
     spriteHide: 'spiritagent:sprite:hide',
     spriteSetIgnoreMouseEvents: 'spiritagent:sprite:set-ignore-mouse-events',

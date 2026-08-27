@@ -68,6 +68,8 @@ declare global {
       readFileDataUrl: AsyncIpc<IpcInvokeContract['spiritagent:readFileDataUrl']>
       /** 聊天图片附件读取：超限降采样重编码，产出可直接发送的 data URL。 */
       readImageForAttach: AsyncIpc<IpcInvokeContract['spiritagent:readImageForAttach']>
+      /** 聊天视频附件上传：主进程读文件经后端 /api/media/videos 换取会话级附件 URL。 */
+      uploadVideoForAttach: AsyncIpc<IpcInvokeContract['spiritagent:media:video-upload']>
       selectPaths: AsyncIpc<IpcInvokeContract['spiritagent:selectPaths']>
       writeClipboard: AsyncIpc<IpcInvokeContract['spiritagent:writeClipboard']>
       saveClipboardImage: AsyncIpc<IpcInvokeContract['spiritagent:saveClipboardImage']>
