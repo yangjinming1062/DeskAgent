@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -141,31 +142,18 @@ def unquote_user_setting(val: str | None) -> str | None:
     return s or None
 
 
+# CJK 表意文字、兼容表意、扩展 B、全角形式与 CJK 标点/部首——与西文分别计价。
+_CJK_CHARS = re.compile(
+    "[⸀-⹿⺀-⻿　-〿㇀-㇯㈀-㏿㐀-䶿一-鿿豈-﫿＀-￯ -⁯𠀀-𲎯]",
+)
+
+
 def approx_text_tokens(text: str) -> int:
     """CJK 字符约 1.3 token/字、西文约 4 字符/token；空串返 0。"""
     if not text:
         return 0
-    cjk_count = 0
-    other_count = 0
-    for char in text:
-        cp = ord(char)
-        if (
-            0x4E00 <= cp <= 0x9FFF
-            or 0x3400 <= cp <= 0x4DBF
-            or 0x20000 <= cp <= 0x323AF
-            or 0xF900 <= cp <= 0xFAFF
-            or 0x2E80 <= cp <= 0x2EFF
-            or 0x3000 <= cp <= 0x303F
-            or 0xFF00 <= cp <= 0xFFEF
-            or 0x2000 <= cp <= 0x206F
-            or 0x2E00 <= cp <= 0x2E7F
-            or 0x31C0 <= cp <= 0x31EF
-            or 0x3200 <= cp <= 0x32FF
-            or 0x3300 <= cp <= 0x33FF
-        ):
-            cjk_count += 1
-        else:
-            other_count += 1
+    cjk_count = len(_CJK_CHARS.findall(text))
+    other_count = len(text) - cjk_count
     return max(1, int(cjk_count * 1.3 + (other_count + 3) // 4))
 
 

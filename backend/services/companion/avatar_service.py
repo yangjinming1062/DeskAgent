@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import contextlib
 import json
 import secrets
@@ -418,10 +417,8 @@ def _delete_portrait_file(asset_url: str | None) -> None:
         (Path(SETTINGS.data_dir) / "companion-avatars" / name).unlink(missing_ok=True)
 
 
-async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None) -> AvatarAsset:
-    """引导流程完成后生成首张立绘。"""
-    if user_id is None:
-        raise ValueError("user_id is required")
+async def _verified_persona(db: AsyncSession | None, user_id: int, persona: Persona | None) -> Persona:
+    """所有生成入口共用的前置校验：persona 存在（缺则取/建）、onboarding 完成且形象未锁定。"""
     if persona is None:
         if db is not None:
             persona = await get_or_create_persona(db, user_id)
@@ -431,6 +428,14 @@ async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = 
     if not persona.is_complete:
         raise AvatarGenerationError("persona is incomplete; finish onboarding first")
     await raise_if_image_sealed(db, user_id, persona)
+    return persona
+
+
+async def generate_avatar(db: AsyncSession | None = None, user_id: int | None = None, persona: Persona | None = None) -> AvatarAsset:
+    """引导流程完成后生成首张立绘。"""
+    if user_id is None:
+        raise ValueError("user_id is required")
+    persona = await _verified_persona(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona)
     except (ValidationError, RuntimeError) as exc:
@@ -516,21 +521,22 @@ async def regenerate_avatar(
     """重新生成立绘；可选的 feedback 会并入提示词。"""
     if user_id is None:
         raise ValueError("user_id is required")
-    if persona is None:
-        if db is not None:
-            persona = await get_or_create_persona(db, user_id)
-        else:
-            async with SESSION_LOCAL() as probe_db:
-                persona = await get_or_create_persona(probe_db, user_id)
-    if not persona.is_complete:
-        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    await raise_if_image_sealed(db, user_id, persona)
+    persona = await _verified_persona(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=feedback)
     except (ValidationError, RuntimeError) as exc:
         raise AvatarGenerationError("prompt enhancement failed", internal=str(exc)) from exc
     asset = await _generate_avatar_step(db, user_id, avatar_prompt=avatar_prompt, style=style, persona=persona, feedback=feedback, persist=persona.is_portrait_confirmed)
     return asset
+
+
+def _read_as_data_uri(resolved: tuple[Path, str]) -> str | None:
+    """把 (磁盘路径, mime) 读为 data URI；文件缺失/不可读返回 None。"""
+    path, mime = resolved
+    try:
+        return build_data_uri(path.read_bytes(), mime)
+    except OSError:
+        return None
 
 
 def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
@@ -552,14 +558,8 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
 
     if temp_file_id:
         raw_id = temp_file_id.rsplit(".", 1)[0] if "." in temp_file_id else temp_file_id
-        res = get_file_path(raw_id) or get_file_path(temp_file_id)
-        if res is not None:
-            path, mime = res
-            try:
-                data = path.read_bytes()
-                return build_data_uri(data, mime)
-            except OSError:
-                pass
+        if (res := get_file_path(raw_id) or get_file_path(temp_file_id)) is not None and (uri := _read_as_data_uri(res)):
+            return uri
 
     # 2. 从裸路径或签名 URL 中提取文件名
     filename: str | None = None
@@ -575,24 +575,12 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
         filename = Path(clean_path.split("?")[0]).name
 
     if filename:
-        resolved = resolve_uploaded_avatar_path(filename)
-        if resolved is not None:
-            path, mime = resolved
-            try:
-                data = path.read_bytes()
-                return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
-            except OSError:
-                pass
+        if (resolved := resolve_uploaded_avatar_path(filename)) is not None and (uri := _read_as_data_uri(resolved)):
+            return uri
         if "." not in filename:
             for ext in ("jpg", "png", "jpeg", "webp"):
-                resolved = resolve_uploaded_avatar_path(f"{filename}.{ext}")
-                if resolved is not None:
-                    path, mime = resolved
-                    try:
-                        data = path.read_bytes()
-                        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
-                    except OSError:
-                        pass
+                if (resolved := resolve_uploaded_avatar_path(f"{filename}.{ext}")) is not None and (uri := _read_as_data_uri(resolved)):
+                    return uri
 
     # 3. 兜底：按 companion-assets 资产路径解析
     if "companion-assets/" in clean_path or "/api/companion/asset/" in clean_path:
@@ -600,17 +588,10 @@ def load_avatar_bytes_as_data_uri(asset_url_or_path: str | None) -> str | None:
         if len(parts) >= 2:
             try:
                 uid = int(parts[-2])
-                asset_filename = parts[-1]
                 from .asset_store import resolve_companion_asset_path
 
-                resolved = resolve_companion_asset_path(uid, asset_filename)
-                if resolved is not None:
-                    path, mime = resolved
-                    try:
-                        data = path.read_bytes()
-                        return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
-                    except OSError:
-                        pass
+                if (resolved := resolve_companion_asset_path(uid, parts[-1])) is not None and (uri := _read_as_data_uri(resolved)):
+                    return uri
             except Exception:
                 pass
 
@@ -643,15 +624,7 @@ async def regenerate_avatar_from_image(
     """以用户上传图作为主体参考重新生成立绘；可选的 presentation_data 作为风格参考，仅多参考图供应商会消费。"""
     if user_id is None:
         raise ValueError("user_id is required")
-    if persona is None:
-        if db is not None:
-            persona = await get_or_create_persona(db, user_id)
-        else:
-            async with SESSION_LOCAL() as probe_db:
-                persona = await get_or_create_persona(probe_db, user_id)
-    if not persona.is_complete:
-        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    await raise_if_image_sealed(db, user_id, persona)
+    persona = await _verified_persona(db, user_id, persona)
     try:
         avatar_prompt = await enhance_avatar_prompt(db, user_id, persona, feedback=description)
     except (ValidationError, RuntimeError) as exc:
@@ -683,15 +656,7 @@ async def upload_avatar(
         raise ValueError("user_id is required")
     if not data:
         raise ValueError("image data is required")
-    if persona is None:
-        if db is not None:
-            persona = await get_or_create_persona(db, user_id)
-        else:
-            async with SESSION_LOCAL() as probe_db:
-                persona = await get_or_create_persona(probe_db, user_id)
-    if not persona.is_complete:
-        raise AvatarGenerationError("persona is incomplete; finish onboarding first")
-    await raise_if_image_sealed(db, user_id, persona)
+    persona = await _verified_persona(db, user_id, persona)
 
     persist = persona.is_portrait_confirmed
     src_content_type = content_type.split(";", maxsplit=1)[0].strip().lower()

@@ -17,7 +17,7 @@ from datetime import timedelta
 
 from components import SESSION_LOCAL, get_logger, safe_json_loads, utc_now
 from modules.companion import AvatarAsset, Companion2DModel, CompanionOutfit
-from modules.ws.models import WSEvent
+from modules.ws import WSEvent
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 

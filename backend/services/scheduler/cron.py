@@ -68,6 +68,12 @@ _LAST_NIGHTLY_SCAN: float = 0.0
 _LAST_OUTBOX_GC_SCAN: float = 0.0
 _OUTBOX_GC_INTERVAL_SECONDS: int = 900
 
+# 主动跟进 / 被冷落情绪反应 turn 的合成 job_id——不是 CronJob 行的 id，仅用于日志与 WS 事件溯源。
+_PROACTIVE_FOLLOWUP_JOB_ID = -1
+_IGNORED_AFFECT_JOB_ID = -2
+_IGNORED_AFFECT_MIN_IGNORED_SECONDS = 3600  # 用户持续不理伙伴 1 小时后才有资格触发
+_IGNORED_AFFECT_MIN_SPACING_SECONDS = 3600  # 两次触发之间的最小间距——LLM 传 0 结束节奏后的再触发安全网
+
 # 每个 tick 处理的到期 job 硬上限——限制批量 CAS 的语句大小和单 tick 工作量，避免长时间停摆后的回追（例如 60 分钟 ``* * * * *`` 调度，第一 tick 有 3600 个到期）。超出上限的 job 保留原 next_run_at，下一 tick 再触发。
 _MAX_DUE_PER_TICK = 200
 
@@ -270,12 +276,6 @@ async def _maybe_run_proactive_followups(now: datetime) -> None:
         record_user_outreach(uid, last_text)
         await _kick_cron_turn(uid, prompt, _PROACTIVE_FOLLOWUP_JOB_ID)
         logger.info("cron: proactive follow-up turn requested", extra={"user_id": uid, "prev_state": prev_state.value, "last_outreach_text": last_text})
-
-
-_PROACTIVE_FOLLOWUP_JOB_ID = -1  # proactive followup 跟进 turn 的 job_id（跟 _kick_autonomous_turn 中的 cron job 星块 id 不同兮）
-_IGNORED_AFFECT_JOB_ID = -2  # 被冷落情绪反应 turn 的 job_id
-_IGNORED_AFFECT_MIN_IGNORED_SECONDS = 3600  # 用户持续不理伙伴 1 小时后才有资格触发
-_IGNORED_AFFECT_MIN_SPACING_SECONDS = 3600  # 两次触发之间的最小间距——LLM 传 0 结束节奏后的再触发安全网
 
 
 async def _maybe_run_ignored_affect(now: datetime) -> None:

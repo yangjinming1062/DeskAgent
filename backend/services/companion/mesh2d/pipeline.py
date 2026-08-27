@@ -7,7 +7,7 @@ import json
 
 from components import SESSION_LOCAL, get_logger
 from modules.companion import Companion2DModel, CompanionOutfit
-from modules.ws.models import WSEvent
+from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 

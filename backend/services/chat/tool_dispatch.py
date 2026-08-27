@@ -137,10 +137,21 @@ async def _run_tool_batch(tool_calls_list: list[dict], ctx: _ToolDispatchContext
         out: list[dict] = []
         for tc, r in zip(tool_calls_list, results):
             if isinstance(r, BaseException):
-                # 为失败工具合成 tool_result_message，使 LLM 看到单工具失败的同时，其余成功兄弟仍能交付。
-                name = tc.get("name", "<unknown>")
-                out.append(make_tool_result_message(name, tool_error(f"Tool crashed: {r!r}"), tc["call_id"]))
+                out.append(_crash_result(tc, r))
             else:
                 out.append(r)
         return out
-    return [await coro for coro in coros]
+    out = []
+    for tc, coro in zip(tool_calls_list, coros):
+        try:
+            out.append(await coro)
+        except asyncio.CancelledError:
+            raise
+        except Exception as r:
+            out.append(_crash_result(tc, r))
+    return out
+
+
+def _crash_result(tc: dict, exc: BaseException) -> dict:
+    """为崩溃工具合成 tool_result：assistant 行已带 tool_calls 落库，缺对应结果行会让下一轮上下文出现孤立 function_call 而被供应商整体拒绝。"""
+    return make_tool_result_message(tc.get("name", "<unknown>"), tool_error(f"Tool crashed: {exc!r}"), tc["call_id"])

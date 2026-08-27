@@ -2,11 +2,12 @@ import math
 import re
 from typing import Any
 
-from components import utc_now
+from components import SESSION_LOCAL, utc_now
 from modules.memory import Memory
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.llm import generate_embedding, generate_embeddings
 from services.tools import RESERVED_FROM_RECALL, context_not_in
 
 # RRF 平滑常数（TREC/IR 标准取值）
@@ -18,6 +19,9 @@ TIME_DECAY_FLOOR: float = 0.30
 
 # 单查询可下推到 LIKE 的最大关键词数；选 16 而非示例值 8，保留 2/3-gram 共存窗口，4-gram 由 PG pg_trgm 索引接手。
 SPARSE_QUERY_TERM_MAX: int = 16
+
+# memories.embedding 列宽（pgvector Vector(1536)）；维度不符的供应商向量直接丢弃而非落库报错。
+MEMORY_EMBEDDING_DIM = 1536
 
 _CJK_PATTERN = re.compile(r"[一-鿿㐀-䶿]")
 _CJK_RUN_PATTERN = re.compile(r"[一-鿿㐀-䶿]+")
@@ -111,6 +115,34 @@ async def _sparse_search(
     return [r for _, r in scored[:limit]]
 
 
+async def embed_memory_text(user_id: int, text: str) -> list[float] | None:
+    """记忆链路的向量生成入口：独立短会话解析用户级 embedding 供应商（含 OpenAI 兼容回退），
+    维度校验列宽；未配置、调用失败或维度不符时返回 None，检索降级为纯关键词路径。"""
+    if not (text := (text or "").strip()):
+        return None
+    async with SESSION_LOCAL() as db:
+        vec = await generate_embedding(text, user_id, db)
+    return vec if vec and len(vec) == MEMORY_EMBEDDING_DIM else None
+
+
+async def backfill_memory_embeddings(user_id: int, rows: list[tuple[int, str]]) -> None:
+    """写路径收尾：为已提交的记忆行批量补向量（consolidator 摘要、retain 新行、手工编辑共用）。
+    best-effort——失败留空列，稀疏检索仍覆盖该行，下次内容变更时重新嵌入。"""
+    if not rows:
+        return
+    async with SESSION_LOCAL() as db:
+        vectors = await generate_embeddings([content for _, content in rows], user_id, db)
+    if not vectors:
+        return
+    updates = [(mid, vec) for (mid, _), vec in zip(rows, vectors, strict=True) if vec and len(vec) == MEMORY_EMBEDDING_DIM]
+    if not updates:
+        return
+    async with SESSION_LOCAL() as db:
+        for mid, vec in updates:
+            await db.execute(update(Memory).where(Memory.id == mid, Memory.user_id == user_id).values(embedding=vec))
+        await db.commit()
+
+
 async def retrieve_hybrid_memories(
     db: AsyncSession,
     user_id: int,
@@ -120,10 +152,14 @@ async def retrieve_hybrid_memories(
     limit: int = 10,
     excluded_namespaces: frozenset[str] = RESERVED_FROM_RECALL,
 ) -> list[dict[str, Any]]:
-    """稠密与稀疏检索的混合搜索，用 RRF 融合排名并叠加艾宾浩斯时间衰减。"""
+    """稠密与稀疏检索的混合搜索，用 RRF 融合排名并叠加艾宾浩斯时间衰减。
+    未显式传入查询向量时在此嵌入（经 embed_memory_text，无 embedding 供应商则跳过稠密路）。"""
     q_str = (query or "").strip()
     if not q_str and not query_embedding:
         return []
+
+    if query_embedding is None and q_str:
+        query_embedding = await embed_memory_text(user_id, q_str)
 
     keywords = _extract_search_terms(q_str)
 

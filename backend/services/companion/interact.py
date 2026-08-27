@@ -22,7 +22,7 @@ class InteractResult(BaseModel):
     reason: str = Field(default="", max_length=200)
 
 
-_REGION_NAMES_ZH: dict[str, str] = {
+REGION_NAMES_ZH: dict[str, str] = {
     "head": "头部",
     "face": "脸部",
     "arm_L": "左手臂",
@@ -86,7 +86,7 @@ async def interact(
     elif kind == "dizzy":
         action_desc = "连续快速戳你或者高速晃动你，让你有些头晕目眩"
     else:
-        action_desc = f"戳了戳你的{_REGION_NAMES_ZH[region]}" if region in _REGION_NAMES_ZH else "戳了戳你"
+        action_desc = f"戳了戳你的{REGION_NAMES_ZH[region]}" if region in REGION_NAMES_ZH else "戳了戳你"
 
     parsed, fail_reason = await run_prompt_json(
         user_id,

@@ -92,6 +92,11 @@ def context_not_in(prefix: str) -> ColumnElement[bool]:
     return or_(Memory.context.is_(None), ~Memory.context.like(f"{prefix}%"))
 
 
+def participates_in_recall(context: str | None) -> bool:
+    """Python 侧判定 context 是否参与 recall 检索（与检索 SQL 的 context_not_in 谓词同口径）；不参与的命名空间写库时跳过向量生成。"""
+    return context is None or not any(context.startswith(prefix) for prefix in RESERVED_FROM_RECALL)
+
+
 def normalize_recall_context(raw: str | None, *, default: str = "general") -> str:
     """裁剪、缺省、补齐 recall 行的 context 前缀；LLM 写入与 consolidator 共用，确保 ``recall:`` 命名空间在两端被强制一致。"""
     label = (raw or "").strip() or default
@@ -245,7 +250,12 @@ class NativeMemory:
             mem = Memory(user_id=self.user_id, content=content[:MAX_RECALL_CONTENT_CHARS], context=ctx, tags=json.dumps(tags), importance=imp)
             db.add(mem)
             await db.commit()
-            return json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
+            result = json.dumps({"result": "Recall memory stored.", "memory_id": mem.id, "context": ctx})
+        # 局部导入断 services.tools ↔ companion 环；会话已提交后再嵌入，连接不跨供应商调用。
+        from services.companion.memory_retrieval import backfill_memory_embeddings
+
+        await backfill_memory_embeddings(self.user_id, [(mem.id, mem.content)])
+        return result
 
     async def _recall(self, args: dict) -> str:
         query = args.get("query", "")

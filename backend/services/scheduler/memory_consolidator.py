@@ -15,6 +15,7 @@ from sqlalchemy import delete
 from services.tools import RECALL_TAGS, normalize_recall_context, normalize_recall_tags
 
 from ..companion import memory_admin
+from ..companion.memory_retrieval import backfill_memory_embeddings
 from ..llm import call_llm_once, resolve_user_llm_config
 
 logger = get_logger(__name__)
@@ -43,7 +44,7 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
     async with session_scope() as db:
         source_ids = [r["id"] for r in source_rows]
         await db.execute(delete(Memory).where(Memory.id.in_(source_ids), Memory.user_id == user_id))
-        written = 0
+        new_rows: list[Memory] = []
         for s in summaries:
             if not isinstance(s, dict):
                 continue
@@ -51,22 +52,23 @@ async def replace_recall_pool(user_id: int, source_rows: list[dict], summaries: 
             if not content_str:
                 continue
             imp = max(0.1, min(5.0, float(s.get("importance", 1.0) or 1.0)))
-            db.add(
-                Memory(
-                    user_id=user_id,
-                    content=content_str,
-                    context=normalize_recall_context(s.get("context"), default="consolidated"),
-                    tags=json.dumps(normalize_recall_tags(s.get("tags"))),
-                    importance=imp,
-                ),
+            row = Memory(
+                user_id=user_id,
+                content=content_str,
+                context=normalize_recall_context(s.get("context"), default="consolidated"),
+                tags=json.dumps(normalize_recall_tags(s.get("tags"))),
+                importance=imp,
             )
-            written += 1
+            db.add(row)
+            new_rows.append(row)
         # 至少写一条 summary 才允许删除源行——LLM 返回全空（或仅空白）payload 时否则会清空用户 recall pool。
-        if written == 0:
+        if not new_rows:
             await db.rollback()
             return -1
         await db.commit()
-    return written
+    # 摘要行落库后批量补向量，保证合并后的 recall pool 仍是稠密可检索的。
+    await backfill_memory_embeddings(user_id, [(m.id, m.content) for m in new_rows])
+    return len(new_rows)
 
 
 async def maybe_consolidate_one_user(user_id: int) -> bool:

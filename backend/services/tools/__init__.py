@@ -17,6 +17,7 @@ from .memory import (
     context_not_in,
     normalize_recall_context,
     normalize_recall_tags,
+    participates_in_recall,
 )
 from .model_tools import coerce_tool_args
 from .registry import ALWAYS_AVAILABLE, REGISTRY, RESERVED_KEYS, WEB_EXTRACT_AVAILABILITY, ToolsRegistry, schema_name
@@ -58,6 +59,7 @@ __all__ = [
     "RECALL_TAGS",
     "RETAIN_SCHEMA",
     "context_not_in",
+    "participates_in_recall",
     "RESERVED_FROM_RECALL",
     "normalize_recall_context",
     "normalize_recall_tags",

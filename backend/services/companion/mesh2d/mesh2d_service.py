@@ -3,9 +3,8 @@
 import json
 
 from components import get_logger
-from modules.companion import AvatarAsset, Companion2DModel, Persona
-from modules.companion.schemas import Companion2DModelResponse
-from modules.ws.models import WSEvent
+from modules.companion import AvatarAsset, Companion2DModel, Companion2DModelResponse, Persona
+from modules.ws import WSEvent
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 

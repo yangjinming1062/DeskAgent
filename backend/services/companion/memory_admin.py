@@ -6,7 +6,9 @@ from modules.memory import Memory
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
+from services.tools import AUTO_INJECT_SLOTS, KIND_TO_PREFIX, RECALL_TAGS, participates_in_recall
+
+from .memory_retrieval import backfill_memory_embeddings
 
 # 界限：列表分页上限与编辑时的长度上限
 _LIST_DEFAULT_LIMIT = 100
@@ -19,14 +21,16 @@ async def _owned(db: AsyncSession, user_id: int, memory_id: int) -> Memory | Non
     return (await db.execute(select(Memory).where(Memory.id == memory_id, Memory.user_id == user_id))).scalar_one_or_none()
 
 
-async def upsert_slotted_memory(db: AsyncSession, user_id: int, context: str, content: str, tags: str) -> None:
-    """按 context 插入或更新槽位记忆；内容长度限制与标签格式由调用方负责。"""
+async def upsert_slotted_memory(db: AsyncSession, user_id: int, context: str, content: str, tags: str) -> Memory:
+    """按 context 插入或更新槽位记忆并返回行（commit 由调用方负责）；内容长度限制与标签格式由调用方负责。"""
     existing = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context == context))).scalar_one_or_none()
     if existing is not None:
         existing.content = content
         existing.tags = tags
-    else:
-        db.add(Memory(user_id=user_id, content=content, context=context, tags=tags))
+        return existing
+    row = Memory(user_id=user_id, content=content, context=context, tags=tags)
+    db.add(row)
+    return row
 
 
 def _row_to_dict(row: Memory) -> dict[str, Any]:
@@ -91,6 +95,8 @@ async def update_memory(db: AsyncSession, user_id: int, memory_id: int, *, conte
     row.content = content
     await db.commit()
     await db.refresh(row)
+    if participates_in_recall(row.context):
+        await backfill_memory_embeddings(user_id, [(row.id, row.content)])
     return _row_to_dict(row)
 
 

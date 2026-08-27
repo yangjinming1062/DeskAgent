@@ -1,9 +1,9 @@
 import re
-from typing import Any
 
 from components import get_logger
 from modules.companion import CompanionExpression
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # 内置基础情绪；未识别的 LLM token 兜底为 neutral，避免脏数据污染渲染端状态。
 BUILTIN_EMOTIONS: frozenset[str] = frozenset(
@@ -57,7 +57,7 @@ _MAX_TAG_LEN: int = 256
 logger = get_logger(__name__)
 
 
-async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> frozenset[str]:
+async def resolve_allowed_emotions(db: AsyncSession | None, user_id: int | None = None) -> frozenset[str]:
     """返回 BUILTIN_EMOTIONS 与用户自定义 CompanionExpression 名称的并集。"""
     if user_id is None or db is None:
         return BUILTIN_EMOTIONS
@@ -71,7 +71,7 @@ async def resolve_allowed_emotions(db: Any, user_id: int | None = None) -> froze
         return BUILTIN_EMOTIONS
 
 
-async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> list[Any]:
+async def resolve_custom_expressions(db: AsyncSession | None, user_id: int | None = None) -> list[CompanionExpression]:
     """resolve_allowed_emotions 与 prompt builder 共用的 CompanionExpression 查询。"""
     if user_id is None or db is None:
         return []
@@ -82,7 +82,7 @@ async def resolve_custom_expressions(db: Any, user_id: int | None = None) -> lis
         return []
 
 
-def build_affect_guidance(custom_expressions: list[Any] | None = None, available_actions: list[str] | None = None) -> str:
+def build_affect_guidance(custom_expressions: list[CompanionExpression] | None = None, available_actions: list[str] | None = None) -> str:
     """构建 affect 引导 prompt：内置情绪 + 用户自定义情绪 + 可用动作动画。"""
     emotions_set = set(BUILTIN_EMOTIONS)
     custom_desc_lines: list[str] = []

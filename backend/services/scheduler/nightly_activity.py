@@ -29,7 +29,15 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from services.companion import kick_background_generation, list_memories, read_today_summary, resolve_user_timezone, upsert_slotted_memory, validate_and_sanitize_expression
+from services.companion import (
+    backfill_memory_embeddings,
+    kick_background_generation,
+    list_memories,
+    read_today_summary,
+    resolve_user_timezone,
+    upsert_slotted_memory,
+    validate_and_sanitize_expression,
+)
 from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
@@ -219,11 +227,8 @@ async def _nightly_resolve_persona_definition(db: AsyncSession, user_id: int) ->
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
         return {}
-    from services.companion.persona_service import (
-        _load_draft,  # late import to avoid cycles
-    )
-
-    return _load_draft(persona)
+    draft = safe_json_loads(persona.definition_json or "{}", default={})
+    return draft if isinstance(draft, dict) else {}
 
 
 async def _stage_1_daily_reflection(
@@ -372,8 +377,10 @@ async def _stage_4_self_diary(
 
     diary_context = f"diary:{local_date_str}"
     async with session_scope() as db:
-        await upsert_slotted_memory(db, user_id, diary_context, content, json.dumps(["diary", "self_reflection"]))
+        row = await upsert_slotted_memory(db, user_id, diary_context, content, json.dumps(["diary", "self_reflection"]))
         await db.commit()
+    # diary 命名空间参与 recall 检索，落库后补向量（best-effort，不阻塞夜间流水线）。
+    await backfill_memory_embeddings(user_id, [(row.id, row.content)])
 
     logger.info("nightly_activity: stage 4 completed", extra={"user_id": user_id, "diary": diary_context})
     return True

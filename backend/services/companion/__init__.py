@@ -79,7 +79,7 @@ from .memory_format import (
     format_memories_block,
     format_proactive_memory_block,
 )
-from .memory_retrieval import retrieve_hybrid_memories, retrieve_proactive_memories
+from .memory_retrieval import backfill_memory_embeddings, embed_memory_text, retrieve_hybrid_memories, retrieve_proactive_memories
 from .mesh2d import (
     Mesh2DNotReadyError,
     Mesh2DPipelineError,
@@ -169,6 +169,7 @@ __all__ = [
     "analyze_personality_tags",
     "asset_store",
     "avatar_response",
+    "backfill_memory_embeddings",
     "build_data_uri",
     "build_outfit_extras",
     "build_signed_asset_url",
@@ -189,6 +190,7 @@ __all__ = [
     "delete_memory",
     "delete_outfit",
     "design_voice",
+    "embed_memory_text",
     "emit_companion_assets_updated",
     "extract_user_profile",
     "finalize_avatar",

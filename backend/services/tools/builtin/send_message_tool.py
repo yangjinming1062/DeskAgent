@@ -34,7 +34,10 @@ async def send_message_tool(
             still = await is_still(user_id)
             if not still:
                 await emit_companion_message(
-                    user_id, message, affect=affect, followup_timeout_seconds=follow_up_after_seconds
+                    user_id,
+                    message,
+                    affect=affect,
+                    followup_timeout_seconds=follow_up_after_seconds,
                 )
         return json.dumps({"success": True, "channel": "companion", "still_suppressed": still}, ensure_ascii=False)
 

@@ -360,7 +360,7 @@ async def _process_events(seen: int = -1) -> int:
 
 async def _execute_cron_turn(user_id: int, payload: dict) -> None:
     """执行 scheduler.cron 请求的自主 chat turn；只能由 outbox claim 胜出的 replica 执行——turn 的 emitter、tool future、runtime session 都是进程本地的。"""
-    dispatcher = MANAGER._dispatchers.get(user_id)
+    dispatcher = MANAGER.get_dispatcher(user_id)
     if dispatcher is None:
         logger.debug("cron turn claimed but user disconnected", extra={"user_id": user_id})
         return

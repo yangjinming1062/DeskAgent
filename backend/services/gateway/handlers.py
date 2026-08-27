@@ -61,6 +61,7 @@ from services.companion import (
     update_memory,
 )
 from services.companion.affect_emit import emit_companion_message
+from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still, set_disturbance_tier
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
@@ -762,12 +763,8 @@ def _register_session_handlers(
             action_name = "（把精灵晃晕了）"
         else:
             action_name = "（戳了戳精灵）"
-            if region:
-                from ..companion.interact import _REGION_NAMES_ZH
-
-                region_zh = _REGION_NAMES_ZH.get(region)
-                if region_zh:
-                    action_name = f"（戳了戳精灵的{region_zh}）"
+            if region and (region_zh := REGION_NAMES_ZH.get(region)):
+                action_name = f"（戳了戳精灵的{region_zh}）"
         await _record_main_conversation(user_id, "user", action_name, "status_interaction")
         await _record_main_conversation(user_id, "assistant", res.text, "status_reaction")
         # 不论 DB 结果如何都消耗完整冷却：LLM 调用已经付过钱，持久化失败不该为第二次调用打开门。
@@ -816,7 +813,9 @@ def _register_session_handlers(
         # 这里对空文本做防御性跳过（should_act 对无文本的 approach 已降级 stay）。
         if res.action == "approach" and isinstance(res.params, dict) and str(res.params.get("text") or "").strip():
             await emit_companion_message(
-                user_id, str(res.params["text"]).strip(), affect=res.params.get("emotion")
+                user_id,
+                str(res.params["text"]).strip(),
+                affect=res.params.get("emotion"),
             )
         return res.model_dump()
 

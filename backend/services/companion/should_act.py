@@ -45,7 +45,7 @@ _SHOULD_ACT_PROMPT_TEMPLATE = (
     "- 用户焦点在 IDE/阅读/游戏等专注应用：可以考虑栖身在窗口旁 (perch)\n"
     "- 空闲时间较长且屏幕解锁：可以轻度漫游 (roam)\n"
     "- 想主动找用户说话（长时间没互动、性格外向粘人、特别的时刻）：可以走过去搭话 (approach)，"
-    "在 params 里给 {{\"text\": \"10–30 字的开场白\", \"emotion\": \"可选，常见情绪词如 happy/curious/excited\"}}；"
+    '在 params 里给 {{"text": "10–30 字的开场白", "emotion": "可选，常见情绪词如 happy/curious/excited"}}；'
     "这是低频行为，距上次自主动作不久时请改用 stay\n"
     "- 其他大部分时候：保持静止 (stay)，不轻易打扰用户\n\n"
     "结合角色性格与情境，自行决定此刻是否要采取主动行为。\n"
@@ -129,7 +129,8 @@ async def should_act(
         last = _last_approach_at.get(user_id)
         if last is not None and now - last < APPROACH_COOLDOWN_SECONDS:
             logger.info(
-                "should_act: approach throttled", extra={"user_id": user_id, "since_sec": round(now - last, 1)}
+                "should_act: approach throttled",
+                extra={"user_id": user_id, "since_sec": round(now - last, 1)},
             )
             return ShouldActResult(should_act=False, action="stay", reason="approach_cooldown")
         normalized = _normalize_approach_params(params)

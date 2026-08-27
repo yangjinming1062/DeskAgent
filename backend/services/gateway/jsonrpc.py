@@ -311,30 +311,36 @@ class JsonRpcDispatcher:
                 return None
 
             replayed_frames = self._replay_buffer.replay_since(last_seq) or []
+            last_sent_seq: int | None = None
             for frame in replayed_frames:
-                success = await self._send_strict(frame)
-                if success:
-                    seq_num = frame.get("params", {}).get("seq") if isinstance(frame.get("params"), dict) else frame.get("seq")
-                    if seq_num is not None:
-                        outbox_event_id = self._pending_outbox_events.pop(seq_num, None)
-                        if outbox_event_id is not None:
-                            self._delivered_ids.append(outbox_event_id)
-
-            if replayed_frames:
-                max_replayed = max(f.get("params", {}).get("seq", f.get("seq", 0)) for f in replayed_frames)
-                self._replay_buffer.mark_sent_through(max_replayed)
+                if not await self._send_strict(frame):
+                    # 客户端在 replay 中途断开：剩余帧留给下次 resume，未发帧不得标记 sent——
+                    # sent=True 会被 writer 的已发分支误记 delivered，令 outbox 事件失去重投。
+                    break
+                seq_num = frame.get("params", {}).get("seq") if isinstance(frame.get("params"), dict) else frame.get("seq")
+                if seq_num is not None:
+                    last_sent_seq = seq_num
+                    outbox_event_id = self._pending_outbox_events.pop(seq_num, None)
+                    if outbox_event_id is not None:
+                        self._delivered_ids.append(outbox_event_id)
+            if last_sent_seq is not None:
+                self._replay_buffer.mark_sent_through(last_sent_seq)
 
             while True:
                 unsent = [f for f in self._replay_buffer.get_unsent() if f.seq > last_seq]
                 if not unsent:
                     break
+                failed = False
                 for f in unsent:
-                    success = await self._send_strict(f.frame)
+                    if not await self._send_strict(f.frame):
+                        failed = True
+                        break
                     f.sent = True
-                    if success:
-                        outbox_event_id = self._pending_outbox_events.pop(f.seq, None)
-                        if outbox_event_id is not None:
-                            self._delivered_ids.append(outbox_event_id)
+                    outbox_event_id = self._pending_outbox_events.pop(f.seq, None)
+                    if outbox_event_id is not None:
+                        self._delivered_ids.append(outbox_event_id)
+                if failed:
+                    break
 
             self._hold_events = False
             return replayed_frames
@@ -354,13 +360,19 @@ class JsonRpcDispatcher:
                 unsent = self._replay_buffer.get_unsent()
                 if not unsent:
                     break
+                failed = False
                 for f in unsent:
-                    success = await self._send_strict(f.frame)
+                    if not await self._send_strict(f.frame):
+                        # 发送失败不标记 sent（同 writer 失败路径的约定）：帧留给重连后的 replay/flush，
+                        # DB 事件由僵尸锁恢复重投；标记 sent 会让 writer 误记 delivered 且 pending 记账永不回收。
+                        failed = True
+                        break
                     f.sent = True
-                    if success:
-                        outbox_event_id = self._pending_outbox_events.pop(f.seq, None)
-                        if outbox_event_id is not None:
-                            self._delivered_ids.append(outbox_event_id)
+                    outbox_event_id = self._pending_outbox_events.pop(f.seq, None)
+                    if outbox_event_id is not None:
+                        self._delivered_ids.append(outbox_event_id)
+                if failed:
+                    break
             self._hold_events = False
 
     async def _reply_result(self, msg_id: Any, result: Any) -> None:
