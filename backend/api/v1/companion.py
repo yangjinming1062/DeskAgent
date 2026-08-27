@@ -81,7 +81,6 @@ from services.companion import (
     model_response,
     normalize_voice_language,
     outfit_response,
-    prewarm_builtin_expressions,
     regenerate_avatar_from_image,
     regenerate_outfit_draft,
     resolve_companion_asset_path,
@@ -164,9 +163,6 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # 仅在 finalize 成功后确认 portrait；避免 is_portrait_confirmed=True 但头像文件已丢失的污染状态。
     await confirm_portrait(db, user.id)
-    # DESIGN §1.1 表情预热：onboarding 主路径确认后即后台预热内置情绪头像，
-    # 首次对话不再逐个懒生成（画廊切换激活头像路径在 select_avatar 内另有同款调用）。
-    prewarm_builtin_expressions(user.id)
     return {"ok": True}
 
 

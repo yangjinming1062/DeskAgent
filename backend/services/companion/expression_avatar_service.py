@@ -173,49 +173,6 @@ def kick_background_generation(user_id: int, name: str) -> None:
     task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
-# 21 个内置基础情绪（DESIGN §1.1 表情预热）——头像确认后逐个 background 预热，
-# 避免首次对话某情绪时还要等 10-20s 生成。
-BUILTIN_EMOTIONS_FOR_PREWARM: tuple[str, ...] = (
-    "happy",
-    "sad",
-    "surprised",
-    "excited",
-    "confused",
-    "concerned",
-    "shy",
-    "proud",
-    "grateful",
-    "playful",
-    "bored",
-    "lonely",
-    "sleepy",
-    "curious",
-    "embarrassed",
-    "apologetic",
-    "pout",
-    "angry",
-    "smug",
-    "scared",
-    "relieved",
-)
-
-
-def prewarm_builtin_expressions(user_id: int) -> None:
-    """头像确认后调用：后台对所有内置基础情绪顺序预热。
-    单个失败不影响其他情绪；已有缓存的会被 ``resolve_expression_avatar`` 内部走命中分支跳过。"""
-
-    async def _run() -> None:
-        for name in BUILTIN_EMOTIONS_FOR_PREWARM:
-            try:
-                await resolve_expression_avatar(user_id=user_id, name=name)
-            except Exception:
-                logger.info("background expression avatar prewarm failed", extra={"user_id": user_id, "name": name})
-
-    task = asyncio.create_task(_run())
-    _BACKGROUND_TASKS.add(task)
-    task.add_done_callback(_BACKGROUND_TASKS.discard)
-
-
 async def _generate_and_store(*, user_id: int, name: str, avatar_id: int, clause: str, setting_clause: str, subject_ref: str) -> CompanionExpressionAvatar:
     key = (user_id, name, avatar_id)
     try:

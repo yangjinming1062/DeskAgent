@@ -50,7 +50,6 @@ from .expression_avatar_service import (
     NeutralEmotionError,
     UnknownEmotionError,
     kick_background_generation,
-    prewarm_builtin_expressions,
     resolve_expression_avatar,
     signed_expression_avatar_url,
 )
@@ -225,7 +224,6 @@ __all__ = [
     "model_response",
     "normalize_voice_language",
     "outfit_response",
-    "prewarm_builtin_expressions",
     "raise_if_image_sealed",
     "read_today_summary",
     "read_user_profile",
