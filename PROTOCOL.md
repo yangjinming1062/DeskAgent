@@ -85,6 +85,8 @@
 | companion.assets.updated | 伙伴实时创建了新表情（注册自创情绪并后台生成头像图） | Client 重拉 /expressions（自创情绪注册表：白名单、表情胶囊） |
 | companion.outfit.updated / .failed | 换装外观状态变化（切分就绪 / 穿着翻转 / 删除，载荷含 outfit_id 与 worn 标记）/ 切分失败（含原因） | Client 重拉衣柜列表；worn 变化时重水合 2D 渲染层（与 2d.ready 双触发幂等，事件只当刷新触发、列表端点是真相源） |
 | video_gen.completed / .failed | 视频生成结果；completed 载荷含 task_id / url / session_id / media，兼作后台视频的异步送达通道（见下方「对话内生成媒体」） | Client 对话窗媒体卡与提示跳转 |
+| channel.status | IM 通道绑定状态变化（connected / login_required / error 等，载荷 {channel, status, account_name?, error?}） | Client 通知/toast；Hub 状态以 REST 读为准（Hub 窗口无 WS） |
+| channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
 
@@ -200,6 +202,30 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 **顺序不变量**：单条 WS 上全序——tts.segment 文本帧先于该段全部音频块；同段块连续且共享段序号、跨段严格递增，段末块带 final 标志（中断的段可能没有）；turn.end 晚于该回合全部音频帧。**通道边界**（语音双路径契约，见 [ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：会话内实时语音走本通道由服务端编排推送；会话外一次性语音（IM 语音条转写、气泡朗读、音色试听）仍走 REST 拉取（§1.1）。本地 Runner 语音栈不参与本通道——语音会话纯云端，未配置云端 STT/TTS 供应商时 session.error 直接拒绝建会。
 
+### 1.8 IM 通道桥接（/api/channels）
+
+外部 IM（微信 iLink / QQ OneBot / 回环测试）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
+
+**会话契约**：所有渠道共用 `im` 这一种 conversation kind；**每用户每渠道一条专属 im 会话**，由 `channel_bindings.conversation_id` 唯一外键锚定（渠道间不混流）。im 会话对桌面端**只读**：出现在会话列表与历史中，但 `prompt.submit` 拒写（后端守卫 + 客户端输入禁用）；人设/长期记忆/情感与桌面回合共享（按 user 加载，无需任何同步动作）。
+
+**REST**（Bearer JWT，前缀 `/api/channels`）：
+
+| 端点 | 用途 |
+|------|------|
+| `GET /api/channels` | 渠道注册表能力位 + 当前用户绑定状态（凭据字段永不出现） |
+| `PUT /api/channels/{channel}` | 创建/更新绑定（config 落 config_json）并重启适配器 |
+| `DELETE /api/channels/{channel}` | 停用并删除绑定（peers 级联；im 会话行沉淀为历史） |
+| `GET /api/channels/{channel}/peers` | 对端白名单/待审批列表 |
+| `POST /api/channels/{channel}/peers/{peer_id}` | 对端审批（approve / block / delete） |
+| `POST /api/channels/loopback/inbound` | 回环测试驱动：{peer_id, peer_name?, text} → {reply, queued}（回合超时未完则 queued=true，结果稍后落 im 会话） |
+| `POST /api/channels/weixin/login` + `GET /api/channels/weixin/login` | 微信 QR 登录启动/轮询（P1 落地：{state: wait\|scaned\|confirmed\|expired\|error, qr_image_b64?}） |
+
+**访问控制**：默认拒绝——未知对端首条消息收到一次性固定配对回复并落 pending 行（`channel.peer_request` 事件），仅主人审批放行；blocked 静默丢弃；每 peer 进程内限速（`channels_inbound_rate_per_minute`）。
+
+**渠道能力差异**（产品语义级）：微信 iLink 为 reply-only（伙伴**不能**主动发起微信消息，回复须回显入站 context_token，过期后等用户下一条消息刷新）；QQ OneBot 可主动发起（P3 与 `send_message_tool` 联动时另议档位门控）。
+
+**改此处需同步**：backend services/channels 与 modules/channels、backend/README.md、client 通道设置页与只读守卫（client/renderer/companion/README.md）、DESIGN.md、ARCHITECTURE.md §5.4。
+
 ---
 
 ## 2. Client ↔ Runner 契约
@@ -283,7 +309,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 
 ### 5.3 凭据落盘
 
-激活码（base64 编码的 {baseUrl, token}）经 Electron safeStorage 加密落盘：Windows DPAPI / macOS Keychain（Linux 仅原理说明，Runner/Desktop 不支持）。session JWT **仅内存持有**——每次启动用激活码换新 session JWT；激活码是持久凭证，session JWT 用于日常 API 调用与 ws-ticket 签发。渲染与预加载进程不可访问 safeStorage 接口，阻断 XSS 窃取凭证。
+激活码（base64 编码的 {baseUrl, token}）经 Electron safeStorage 加密落盘：Windows DPAPI / macOS Keychain（Linux 仅原理说明，Runner/Desktop 不支持）。session JWT **仅内存持有**——每次启动用激活码换新 session JWT；激活码是持久凭证，session JWT 用于日常 API 调用与 ws-ticket 签发。渲染与预加载进程不可访问 safeStorage 接口，阻断 XSS 窃取凭证。**IM 通道凭据**（微信 bot_token / NapCat access_token 等）沿 `user_model_configs` 同一后端明文先例落 `channel_bindings.credentials`，REST 永不回显原始值。
 
 **设置同步红线**（§2.4）：本机明文机密（`terminal.sudo_password`、`terminal.ssh.password`、`terminal.credential_files` 等 terminal/spiritagent 节内容）永不进入 user_settings / 云端；客户端按同步节白名单上云，白名单外与节内本机键只留本机文件。
 
@@ -312,7 +338,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 | call_id | 字符串 | 单次 RPC 调用 | 整张表唯一（用作 Future Key） |
 | task_id（视频生成） | 字符串 | 异步任务周期 | 单 (user_id, provider) 内唯一 |
 
-**职责分立**：session_id 就是 conversation_id 的字符串形式——客户端侧始终用字符串、后端侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。
+**职责分立**：session_id 就是 conversation_id 的字符串形式——客户端侧始终用字符串、后端侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。**conversation kind 枚举**：`main`（日常对话）/ `standard`（用户自开任务会话）/ `cron`（自主回合 scratchpad，不出会话列表）/ `im`（IM 通道桥会话，只读，见 §1.8）；每用户每渠道至多一条 im 会话，锚点在 `channel_bindings.conversation_id`。
 
 ---
 

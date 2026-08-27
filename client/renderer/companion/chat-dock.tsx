@@ -346,6 +346,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [chatSessionId])
 
+  // IM 桥接会话（kind='im'，微信/QQ/回环）在桌面端只读查看：伙伴经 IM 桥回复，
+  // 用户不能在此输入或发起语音。send() 里再兜底拦一道，防未来新增入口漏禁。
+  const isImSession = findSessionInfo(chatSessionId ?? '')?.kind === 'im'
+
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [list])
@@ -462,6 +466,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }
 
   const send = async () => {
+    if (isImSession) {
+      return
+    }
+
     const trimmed = text.trim()
 
     if ((!trimmed && !pending) || sending || (pending?.type === 'video' && pending.status !== 'ready')) {
@@ -734,6 +742,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 <button
                   aria-label="语音通话"
                   className={BTN_ICON}
+                  disabled={isImSession}
                   onClick={onOpenVoiceCall}
                   title="开启实时语音通话模式"
                   type="button"
@@ -819,9 +828,11 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {/* Input Area */}
           <div className="border-t border-white/10 p-3">
             {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
+            {isImSession && <p className="mb-2 text-center text-xs text-white/40">IM 对话 · 只读</p>}
             <div className="flex items-end gap-2">
               <textarea
-                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70"
+                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"
+                disabled={isImSession}
                 onChange={e => {
                   setText(e.target.value)
                   onTyping()
@@ -840,7 +851,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               />
               <button
                 aria-label="添加附件"
-                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white"
+                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                disabled={isImSession}
                 onClick={() => void pickAttachment()}
                 title="附加图片或视频（mp4/mov）"
                 type="button"
@@ -848,11 +860,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 <Paperclip className="size-4" />
               </button>
               <button
-                className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${
+                className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition disabled:pointer-events-none disabled:opacity-40 ${
                   recording
                     ? 'border-rose-400/70 bg-rose-500/25 text-white animate-pulse'
                     : 'border-white/12 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
+                disabled={isImSession}
                 onMouseDown={() => void startRecording()}
                 onMouseLeave={() => {
                   if (recording) {
@@ -876,11 +889,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               <button
                 className={cn(BTN_PRIMARY, 'h-[38px] px-4 text-sm')}
                 disabled={
-                  !isGenerating &&
-                  (sending ||
-                    gatewayState !== 'open' ||
-                    (!text.trim() && !pending) ||
-                    (pending?.type === 'video' && pending.status !== 'ready'))
+                  isImSession ||
+                  (!isGenerating &&
+                    (sending ||
+                      gatewayState !== 'open' ||
+                      (!text.trim() && !pending) ||
+                      (pending?.type === 'video' && pending.status !== 'ready')))
                 }
                 onClick={() => void (isGenerating ? handleStop() : send())}
                 type="button"

@@ -42,6 +42,8 @@ class RuntimeSession:
     cwd: str | None = None
     # 会话级覆盖（reasoning/fast/language）：mount 时镜像 Conversation.settings_json；set_setting 修改时也会写回 DB，重连后会读回相同值。
     settings: dict = field(default_factory=dict)
+    # 会话种类镜像（main/standard/cron/im…）：prompt_submit 据此拒绝 im 渠道会话（由通道桥独占写入）。
+    kind: str = "standard"
 
     @property
     def session_id(self) -> str:
@@ -49,11 +51,11 @@ class RuntimeSession:
         return str(self.conversation_id)
 
 
-def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: str | None = None) -> RuntimeSession:
+def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: str | None = None, kind: str = "standard") -> RuntimeSession:
     """为已存在的 DB 会话创建 runtime wrapper；settings_json 是 Conversation.settings_json 的原始 JSON 字符串，解码到 settings 让 per-turn 逻辑不必每次回查 DB。"""
     decoded = safe_json_loads(settings_json)
     settings = decoded if isinstance(decoded, dict) else {}
-    return RuntimeSession(conversation_id=conversation_id, cwd=cwd, settings=settings)
+    return RuntimeSession(conversation_id=conversation_id, cwd=cwd, settings=settings, kind=kind)
 
 
 def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession) -> dict:

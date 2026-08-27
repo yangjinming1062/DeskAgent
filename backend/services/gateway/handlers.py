@@ -66,7 +66,7 @@ from services.companion import (
 )
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
-from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
+from services.conversation import IM_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
 from services.media import prune_videos_in_range
@@ -442,7 +442,7 @@ def _register_session_handlers(
                 if not cancel_existing:
                     return existing
                 runtime_sessions.pop(existing.session_id, None)
-        runtime = new_runtime_session(conversation_id=conv.id, cwd=cwd, settings_json=conv.settings_json)
+        runtime = new_runtime_session(conversation_id=conv.id, cwd=cwd, settings_json=conv.settings_json, kind=conv.kind)
         runtime_sessions[runtime.session_id] = runtime
         return runtime
 
@@ -564,6 +564,9 @@ def _register_session_handlers(
     async def prompt_submit(params: dict) -> dict:
         sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
         runtime = _get_runtime(sess_runtime, params)
+        # im 会话由通道桥独占写入（外部 IM 消息驱动回合），桌面端只读旁观历史。
+        if runtime.kind == IM_KIND:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "IM 会话由通道桥接维护，仅只读")
         if runtime.chat_task and not runtime.chat_task.done():
             try:
                 await asyncio.wait_for(asyncio.shield(runtime.chat_task), timeout=0.3)

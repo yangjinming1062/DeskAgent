@@ -32,6 +32,7 @@ backend/
 ├── modules/                  # 按 domain 分包的 ORM 模型 + Pydantic 契约
 ├── services/                 # 业务/编排层，无 facade，按子包直接 import
 │   ├── auth/                 # 身份凭据能力集与配置响应构建
+│   ├── channels/             # 外部 IM 通道桥（适配器注册表 + 无头回合桥接 + 绑定管理；回环/微信 iLink/QQ OneBot）
 │   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog（含 mesh2d / seethrough 2D 切分子包）
 │   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）
@@ -81,6 +82,7 @@ backend/
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 - **Outbox 状态机可靠投递与独立周期性回收**：待派发事件入库默认待投递状态；派发循环按在线连接原子加锁认领并下发，成功后置为已投递，异常则递增重试次数并计算指数退避，超限后隔离入失败死信状态并记录错误原因；物理清理完全移出推送主循环，由调度器周期性批量回收过期投递行、死信与孤儿内部事件。
 - **工具集开关在注册表读取口生效、回合起点重读设置**：`toolsets.disabled`（UserSettings 点键，id 权威枚举见 [PROTOCOL.md §2.2](../PROTOCOL.md)）在 `get_all_schemas` 单一 chokepoint 过滤 backend/memory 桶（畸形值 fail-open——清空过滤而非清空工具表）；runner 桶在客户端 `get_tools` 源头已过滤、后端不重复过滤。回合起点重读 user_settings，`PUT /api/config` 后下一回合即生效、无需重连 WS，入口侧连接时缓存的快照因此不再是新鲜度瓶颈。
+- **IM 通道桥：进程内适配器 + 无头回合，不依赖用户 WS**（契约 [PROTOCOL.md §1.8](../PROTOCOL.md)，架构 [ARCHITECTURE.md §5.4](../ARCHITECTURE.md)）：外部 IM 渠道（回环/微信 iLink/QQ OneBot）经 `services/channels/` 的适配器注册表接入（镜像供应商自注册模式）；入站消息以无头 emitter 直调 `run_chat_turn`（对比 cron 回合经 outbox 路由到持连副本——桌面离线即死，IM 桥不受此限）；回复去 markdown、按 `weixin_reply_max_chars` 分片后从原渠道送出，渠道能力差异（微信 reply-only / QQ 可主动）落在适配器能力位上。**每渠道一条专属 im 会话**（`im` kind 统一枚举，`channel_bindings.conversation_id` 唯一外键锚定——binding 的 (user, channel) 唯一性传递为渠道不混流），`prompt.submit` 拒写、桌面只读；人设/长期记忆/情感按 user 加载与桌面回合共享，无需同步动作。对端访问默认拒绝：未知发送者收一次性配对回复 + pending 行（`channel.peer_request` 事件），主人审批放行。绑定任务由守卫循环自愈（非致命错误退避重建），无周期对账——单 web 进程语义下不需要 omp-wechat 的端口单例锁/failover。
 
 ## 5. 与外部的契约
 
@@ -93,6 +95,7 @@ backend/
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
 | 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../PROTOCOL.md) |
+| IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
 
 ## 6. 已知限制
 
@@ -102,7 +105,8 @@ backend/
 | **异步会话关系懒加载不可用** | 关系属性在查询后访问必须显式预加载（selectinload/joinedload），否则运行时抛错；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | 新版轮询直接返回下载 URL，旧版（Hailuo）还有取文件第二跳；两者 URL 都是短时效的，必须**立即下载落临时媒体目录**，不能直接返给前端。 |
 | **Cron 回合派发守卫** | 写行前做静止档守卫（档位已落库）；自主回合行只被持有该用户 WS 的副本认领执行，全副本离线时由 GC 兜底清行——该次触发丢弃（下次调度时间已前移，等下次触发）。 |
-| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（防抖窗口，[DESIGN.md §6.6](../DESIGN.md)）再一次性批量提交——前驱消息先落库、末条作为当轮 user 消息；上一轮生成期间连发的消息在上一轮落库后作为新 turn 批量写入。因此客户端刷新（水合）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。 |
+| **连发排队消息的持久化时序** | 用户快速连发时，客户端先本地合并（防抖窗口，[DESIGN.md §6.6](../DESIGN.md)）再一次性批量提交——前驱消息先落库、末条作为当轮 user 消息；上一轮生成期间连发的消息在上一轮落库后作为新 turn 批量写入。因此客户端刷新（水合）后，排队消息顺序位于前一轮 assistant 回复之后，与问答逻辑一致。IM 桥同一语义：回合中到达的入站消息排队合并为下一轮前导批（上限 `channels_turn_queue_max`，超出丢最旧）。 |
+| **IM 通道桥当前边界** | 微信 iLink 为 reply-only（不能主动发起、回复须回显入站 context_token，过期等用户下一条消息刷新）且不支持群聊；媒体收发 P3（当前纯文本，非文本段渲染占位）；im 会话不进夜间日总结（运行时压缩检查点仍生效，全部对话类型统一读路径）；桌面离线时 IM 回合没有 runner 工具（tools_sync 随 WS 同步，属自愈限制——桌面上线即恢复）。 |
 
 ## 7. 部署与监控
 

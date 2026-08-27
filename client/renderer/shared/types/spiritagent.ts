@@ -7,7 +7,7 @@ export interface RpcEvent<T = unknown> {
 export interface SessionInfo {
   archived?: boolean
   pinned?: boolean
-  /** 服务端是自由字符串；目前只有 'main' 和 'standard' 是一级值。 */
+  /** 服务端是自由字符串；一级值有 'main'、'standard' 与 'im'（IM 桥接会话，桌面端只读）。 */
   kind?: string
   cwd?: null | string
   ended_at: null | number

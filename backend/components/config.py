@@ -217,6 +217,11 @@ class Settings(BaseSettings):
     metrics_path: str = "/metrics"
     metrics_auth_token: str = ""
 
+    channels_turn_queue_max: int = Field(default=20, validation_alias="CHANNELS_TURN_QUEUE_MAX")
+    channels_inbound_rate_per_minute: int = Field(default=20, validation_alias="CHANNELS_INBOUND_RATE_PER_MINUTE")
+    channels_restart_backoff_seconds: float = Field(default=10.0, validation_alias="CHANNELS_RESTART_BACKOFF_SECONDS")
+    weixin_reply_max_chars: int = Field(default=2000, validation_alias="WEIXIN_REPLY_MAX_CHARS")
+
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]
     llm_debug_logging: bool = Field(default=False, validation_alias="LLM_DEBUG_LOGGING")

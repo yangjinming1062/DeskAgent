@@ -6,6 +6,9 @@ import { EyeOff, KeyRound, MessageSquareText, Phone, Settings, SlidersHorizontal
 import type { IconComponent } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
+import { $chatSessionId } from '../chat-store'
+import { $sessions, findSessionInfo } from '../session-list-store'
+
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 
 interface ContextMenuProps {
@@ -59,6 +62,10 @@ export function SpriteContextMenu({
   const pos = useStore($contextMenuPos)
   const visible = pos !== null
   const authed = auth.kind === 'authenticated'
+  // im 渠道会话由通道桥独占写入，语音通话会向当前会话推 prompt——im 会话时隐藏通话入口（与 chat-dock 同判据）。
+  const chatSessionId = useStore($chatSessionId)
+  useStore($sessions)
+  const isImSession = findSessionInfo(chatSessionId ?? '')?.kind === 'im'
   const backdropRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -141,7 +148,7 @@ export function SpriteContextMenu({
         {authed ? (
           <>
             <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
-            <MenuItem icon={Phone} label="语音通话" onClick={onOpenVoiceCall} />
+            {!isImSession && <MenuItem icon={Phone} label="语音通话" onClick={onOpenVoiceCall} />}
             <MenuDivider />
             <MenuItem icon={SlidersHorizontal} label="伙伴设置" onClick={onOpenSettings} />
             <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />
