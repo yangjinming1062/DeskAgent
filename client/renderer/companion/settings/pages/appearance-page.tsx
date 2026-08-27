@@ -12,7 +12,7 @@ import {
 } from '@/companion/mesh2d/mesh2d-store'
 import { $defaultScale, setDefaultScale } from '@/companion/spatial'
 import { cn } from '@/shared/lib/utils'
-import { BTN_SUBTLE, HINT_TEXT, Segmented, SettingsPage } from '@/shared/panel'
+import { BTN_SUBTLE, HINT_TEXT, Segmented, SettingsPage, Slider } from '@/shared/panel'
 
 interface Seed3dWizardState {
   avatarId: number
@@ -94,13 +94,20 @@ export function AppearancePage(): React.ReactElement {
         <section className="mt-6">
           <h3 className="text-xs font-medium text-white/80">形象大小</h3>
           <p className={cn(HINT_TEXT, 'mt-1')}>精灵在桌面上的默认显示比例。</p>
-          <div className="mt-2.5 max-w-sm">
-            <Segmented<string>
-              onChange={v => setDefaultScale(Number(v))}
-              options={[0.5, 0.75, 1, 1.5, 2].map(s => ({ value: String(s), label: s === 1 ? '默认' : `${s}×` }))}
-              value={String(defaultScale)}
+          <div className="mt-3 flex max-w-sm items-center gap-3">
+            <Slider
+              ariaLabel="形象大小"
+              max={3}
+              min={0.3}
+              onChange={setDefaultScale}
+              step={0.05}
+              value={defaultScale}
             />
+            <span className="w-11 shrink-0 text-right text-xs tabular-nums text-white/70">
+              {String(Number(defaultScale.toFixed(2)))}×
+            </span>
           </div>
+          <p className={cn(HINT_TEXT, 'mt-1.5')}>0.3×–3× 连续可调，1× 为默认。</p>
         </section>
       </SettingsPage>
 

@@ -1104,3 +1104,64 @@ canvas {
 .sa-drawer-in {
   animation: sa-drawer-in 0.18s ease-out;
 }
+
+/* panel kit 数值滑杆（shared/panel Slider）：细轨道 + 品牌蓝填充段 + 白色圆钮。 */
+.sa-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.25rem;
+  background: transparent;
+  cursor: pointer;
+}
+.sa-slider:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.sa-slider::-webkit-slider-runnable-track {
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    #6c8aff 0,
+    #6c8aff var(--sa-slider-fill, 0%),
+    rgb(255 255 255 / 0.1) var(--sa-slider-fill, 0%),
+    rgb(255 255 255 / 0.1) 100%
+  );
+}
+.sa-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: -0.3125rem;
+  border: none;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+  transition: transform 0.1s ease;
+}
+.sa-slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.sa-slider:active::-webkit-slider-thumb {
+  transform: scale(1.25);
+}
+.sa-slider::-moz-range-track {
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.1);
+}
+.sa-slider::-moz-range-progress {
+  height: 0.25rem;
+  border-radius: 9999px;
+  background: #6c8aff;
+}
+.sa-slider::-moz-range-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  border: none;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}

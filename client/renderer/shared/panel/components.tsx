@@ -172,6 +172,42 @@ export function Segmented<T extends string>({
   )
 }
 
+// 数值滑杆：品牌蓝已填充段（--sa-slider-fill 由内联注入）+ 白色圆钮，皮肤在 styles.css 的 .sa-slider。
+export function Slider({
+  value,
+  min,
+  max,
+  step = 0.05,
+  disabled = false,
+  ariaLabel,
+  onChange
+}: {
+  value: number
+  min: number
+  max: number
+  step?: number
+  disabled?: boolean
+  ariaLabel?: string
+  onChange: (next: number) => void
+}): React.JSX.Element {
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
+
+  return (
+    <input
+      aria-label={ariaLabel}
+      className="sa-slider w-full"
+      disabled={disabled}
+      max={max}
+      min={min}
+      onChange={e => onChange(Number(e.currentTarget.value))}
+      step={step}
+      style={{ '--sa-slider-fill': `${pct}%` } as React.CSSProperties}
+      type="range"
+      value={value}
+    />
+  )
+}
+
 export function PanelHeader({
   title,
   icon: Icon,

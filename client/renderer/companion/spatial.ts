@@ -45,8 +45,8 @@ const EMOTION_SCALE_BOOST: Record<string, number> = {
   surprised: 1.6
 }
 
-const MIN_SCALE = 0.5
-const MAX_SCALE = 2
+const MIN_SCALE = 0.3
+const MAX_SCALE = 3
 
 type SpatialLocale = 'home' | 'perch' | 'target' | 'roam'
 
