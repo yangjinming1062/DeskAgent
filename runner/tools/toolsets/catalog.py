@@ -8,6 +8,7 @@ class ToolsetDef:
     extra_tools: tuple[str, ...] = ()
 
 
+# 工具集 id 的权威枚举见 PROTOCOL.md §2.2；本目录只做 id → runner 侧工具名/前缀的映射。
 TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
     ToolsetDef(id="browser_automation", prefixes=("browser_",)),
     ToolsetDef(id="file_operations", extra_tools=("read_file", "write_file", "patch", "list_directory", "search_files")),

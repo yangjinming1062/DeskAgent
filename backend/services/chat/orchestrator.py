@@ -13,7 +13,7 @@ from .message_sanitization import truncate_responses_context
 from .persistence import _persist_assistant_no_tool_turn, _persist_assistant_with_tool_calls_and_results, _persist_user_message, persist_tool_summary
 from .streaming import _emit_llm_error, _ensure_tool_call_ids, _stream_llm_response
 from .tool_dispatch import _ToolDispatchContext
-from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort
+from .turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_reasoning_effort, load_user_settings
 from .types import IterationBudget, TrackTask
 
 logger = get_logger(__name__)
@@ -40,8 +40,9 @@ async def run_chat_turn(
 
         await _persist_user_message(db, conv, req)
 
-        # 会话级覆写与全局 UserSettings 合并，仅构建一次并被注册表门控和工具派发共用，保证 schema 可见性与运行时一致。
-        effective_settings = _merge_session_settings(user_settings, runtime)
+        # 回合起点重读 user_settings：PUT /api/config（工具集开关、语言等）后无需重连 WS 下一回合即生效；
+        # 入口侧传入的快照仅作签名兼容保留。会话级覆写再覆盖其上，仍仅构建一次并被注册表门控和工具派发共用。
+        effective_settings = _merge_session_settings(await load_user_settings(db, user_id), runtime)
         inputs = await _build_turn_inputs(db, conv, user_id, req, session_client_context, effective_settings)
 
     compression_enabled = safe_json_loads(effective_settings.get("chat.enable_context_compression", ""), default=SETTINGS.enable_context_compression)

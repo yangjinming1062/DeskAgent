@@ -35,6 +35,7 @@ from .tool_guardrails import (
     toolguard_synthetic_result,
 )
 from .tool_result_classification import file_mutation_result_landed
+from .toolsets import TOOLSET_CATALOG, ToolsetDef, disabled_backend_tool_names
 from .web_providers import aclose
 
 __all__ = [
@@ -81,4 +82,7 @@ __all__ = [
     "classify_tool_failure",
     "append_toolguard_guidance",
     "toolguard_synthetic_result",
+    "TOOLSET_CATALOG",
+    "ToolsetDef",
+    "disabled_backend_tool_names",
 ]

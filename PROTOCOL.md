@@ -209,12 +209,17 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 |------|------|------|------------------|
 | runner_ready | Runner → Client | 启动握手，携带 version + capabilities + capabilities_health + reconnect_streak | Runner 探测 + Client 功能门控 + 重连降级展示 |
 | tools_changed | Runner → Client | 工具 schema 变更通知，Client 重拉并同步到 Backend | Runner + Client + Backend 工具表 |
-| get_tools | Client → Runner | 获取工具 schema（已过滤禁用项） | Runner 过滤 + Client + Backend |
+| get_tools | Client → Runner | 获取工具 schema（已过滤禁用项） | Runner 过滤 + Backend 过滤 + Client |
 | spiritagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
 | execute_tool | Client → Runner | 执行工具调用 | Backend 路由 + Client 中转 + Runner 执行 |
 | spiritagent.cancel | Client → Runner | params.req_id 可选；指定则取消该 RPC，缺省取消当前进行中工具；并对目标 req_id 设置中断标记 | Client 中断 + Runner 任务取消 + 请求级隔离 |
 | spiritagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
+
+**工具集 id 权威枚举**（跨模块公共事实，本表为唯一 owner；各模块目录只做 id → 自有工具名的映射，不复述清单）：
+`browser_automation`、`file_operations`、`terminal`、`code_execution`、`process_management`、`skills_system`、`memory`、`web_tools`、`image_generation`、`text_to_speech`、`messaging`、`scheduled_tasks`、`agent_delegation`、`computer_use`、`media_analysis`。
+
+禁用语义：UserSettings 点键 `toolsets.disabled` 持有被禁用的 id 集合。Runner 侧在 `get_tools` 源头过滤自有工具；Backend 侧在工具注册表读取时过滤 backend/memory 桶（各自的 id → 工具名映射见模块代码）。无工具集归属的工具（如 `search_tools`、`create_expression`、`video_generate`）不受开关影响。
 
 ### 2.3 runner_ready capabilities 与 health 状态
 

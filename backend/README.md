@@ -79,7 +79,7 @@ backend/
 - **内容风控快速失败**：供应商内容风控拒绝映射为不可重试错误，避免无意义重试白烧配额。
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 - **Outbox 状态机可靠投递与独立周期性回收**：待派发事件入库默认待投递状态；派发循环按在线连接原子加锁认领并下发，成功后置为已投递，异常则递增重试次数并计算指数退避，超限后隔离入失败死信状态并记录错误原因；物理清理完全移出推送主循环，由调度器周期性批量回收过期投递行、死信与孤儿内部事件。
-- **实时语音会话独立于聊天网关，"流式"靠分段编排**（契约见 [PROTOCOL.md §1.7](../PROTOCOL.md)）：音频不可重放，语音 WS 不复用网关的 replay buffer / outbox；回合编排复用 run_chat_turn（自建 sink 喂按句切分器），历史照常落库、回合事件只走语音 WS——不这样会把语音事件经 outbox 二次投递进聊天通道造成双端重复消费。上游语音供应商全是整段请求-响应，"实时感"来自：客户端 VAD 断句后攒整段转写、LLM 流式输出按句切分（句末标点 + 超长强切 + Markdown 清洗）、TTS 逐句合成（预取窗口并行、按序门控发送）合成一段下发一段。打断复用既有任务级取消，收尾只把已完成整句落库（与已下发音频对齐）。本地 Runner 语音栈不参与本通道——服务端编排无法把通话音频送回本地引擎；未配置云端 STT/TTS 供应商时建会直接拒绝；语音会话 STT/TTS 限流独立于 media REST 桶（通话断句节奏会饿死共享桶，详见 config.toml.example [voice] 段）。
+- **工具集开关在注册表读取口生效、回合起点重读设置**：`toolsets.disabled`（UserSettings 点键，id 权威枚举见 [PROTOCOL.md §2.2](../PROTOCOL.md)）在 `get_all_schemas` 单一 chokepoint 过滤 backend/memory 桶（畸形值 fail-open——清空过滤而非清空工具表）；runner 桶在客户端 `get_tools` 源头已过滤、后端不重复过滤。回合起点重读 user_settings，`PUT /api/config` 后下一回合即生效、无需重连 WS，入口侧连接时缓存的快照因此不再是新鲜度瓶颈。
 
 ## 5. 与外部的契约
 
@@ -91,6 +91,7 @@ backend/
 | Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
+| 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../PROTOCOL.md) |
 
 ## 6. 已知限制
 

@@ -17,7 +17,7 @@ import {
   Volume2
 } from './icons'
 
-// 渲染层使用的工具集目录。
+// 渲染层使用的工具集目录。id 权威枚举见 PROTOCOL.md §2.2，此处只挂图标。
 
 export interface ToolsetCatalogEntry {
   id: string

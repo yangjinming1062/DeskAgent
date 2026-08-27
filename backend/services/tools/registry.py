@@ -6,6 +6,7 @@ from typing import Any
 from components import get_logger, tool_error
 
 from .extract_provider import resolve_extract_provider
+from .toolsets import disabled_backend_tool_names
 
 logger = get_logger(__name__)
 
@@ -74,18 +75,21 @@ class ToolsRegistry:
         return bool(self._runner_tools.get(user_id))
 
     def get_all_schemas(self, user_id: int, user_settings: dict[str, str] | None = None) -> list[dict[str, Any]]:
-        # ``user_settings=None`` 保留「无条件包含全部」的旧行为，给子代理和 pre-DB 调用方使用；传入 settings 时由各工具的 availability_check 决定可见性，谓词抛错则隐藏该工具（fail-closed），避免一个 bug 把整次调用拖到 500。
+        # ``user_settings=None`` 保留「无条件包含全部」的旧行为，给子代理和 pre-DB 调用方使用；传入 settings 时由各工具的 availability_check 决定可见性，谓词抛错则隐藏该工具（fail-closed），避免一个 bug 把整次调用拖到 500。toolsets.disabled 对 backend/memory 桶生效；runner 桶在客户端 get_tools 源头已按同一键过滤。
+        excluded = set() if user_settings is None else disabled_backend_tool_names(user_settings)
         schemas: list[dict[str, Any]] = []
         if user_settings is None:
             schemas.extend(e["schema"] for e in self._backend_tools.values())
         else:
             for entry in self._backend_tools.values():
+                if schema_name(entry["schema"]) in excluded:
+                    continue
                 try:
                     if entry["availability_check"](user_settings):
                         schemas.append(entry["schema"])
                 except Exception as e:
                     logger.warning("availability_check raised; hiding tool", extra={"tool_name": entry["schema"].get("name", ""), "error_msg": str(e)})
-        schemas.extend(self._memory_tools.values())
+        schemas.extend(s for s in self._memory_tools.values() if schema_name(s) not in excluded)
         schemas.extend(self._runner_tools.get(user_id, {}).values())
         return schemas
 

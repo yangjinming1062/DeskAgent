@@ -6,7 +6,8 @@ interface ToolsetDef {
   prefixes?: string[]
 }
 
-// 过滤侧的权威目录。id 与 toolset-catalog.ts 中的 ToolsetCatalogEntry.id 对应。
+// 过滤侧的权威目录。id 与 toolset-catalog.ts 中的 ToolsetCatalogEntry.id 对应；
+// id 权威枚举见 PROTOCOL.md §2.2，本目录只做 id → runner 侧工具名/前缀的映射。
 const TOOLSET_DEFS: ToolsetDef[] = [
   { id: 'browser_automation', prefixes: ['browser_'] },
   { extraTools: ['read_file', 'write_file', 'patch', 'list_directory', 'search_files'], id: 'file_operations' },
