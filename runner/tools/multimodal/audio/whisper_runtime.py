@@ -56,8 +56,3 @@ _runtime = WhisperRuntime()
 
 def get_whisper(size: str = _DEFAULT_SIZE, compute_type: str = _DEFAULT_COMPUTE_TYPE, device: str = "cpu") -> Any:
     return _runtime.get_model(size=size, compute_type=compute_type, device=device)
-
-
-def reset_runtime() -> None:
-    with _runtime._lock:
-        _runtime._models.clear()

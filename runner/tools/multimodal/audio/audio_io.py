@@ -5,15 +5,9 @@ import shutil
 import struct
 import subprocess
 import time
-import uuid
 from pathlib import Path
 
-from utils import get_spiritagent_dir, get_spiritagent_home
-
-try:
-    import sounddevice  # type: ignore[import-not-found]
-except (ImportError, OSError):
-    sounddevice = None  # type: ignore[assignment]
+from utils import get_spiritagent_home
 
 logger = logging.getLogger(__name__)
 
@@ -211,23 +205,3 @@ def cleanup_audio_cache_dir(cache_dir: Path, max_age_hours: float = 72.0) -> Non
             with contextlib.suppress(OSError):
                 if f.is_file() and f.stat().st_mtime < cutoff:
                     f.unlink()
-
-
-def cache_audio_bytes(raw: bytes, suffix: str = ".wav") -> str:
-    cache_dir = get_spiritagent_dir("cache/audio", "audio_cache")
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cleanup_audio_cache_dir(cache_dir)
-    path = cache_dir / f"inbound_{uuid.uuid4().hex[:12]}{suffix}"
-    with open(path, "wb") as f:
-        f.write(raw)
-    return str(path)
-
-
-def read_audio_bytes(path: str | Path) -> bytes:
-    with open(path, "rb") as f:
-        return f.read()
-
-
-def is_pa_loaded() -> bool:
-    """PortAudio 共享库不可用时返回 False — Desktop 应回退到 Electron 侧麦克风采集，而不是卡住用户。"""
-    return sounddevice is not None

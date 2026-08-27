@@ -182,11 +182,6 @@ def _last_session_key(task_id: str) -> str:
     return _last_active_session_key.get(task_id, task_id)
 
 
-def is_local_sidecar_key(session_key: str) -> bool:
-    """session_key 命中 ``::local`` 后缀时返回 True。"""
-    return session_key.endswith(_LOCAL_SUFFIX)
-
-
 def _reset_session_caches() -> None:
     """重置 ``_allow_private_urls`` 与浏览器探测缓存。"""
     _allow_private_urls.cache_clear()

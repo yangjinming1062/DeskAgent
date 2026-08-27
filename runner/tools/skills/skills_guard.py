@@ -1,5 +1,4 @@
 import fnmatch
-import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -456,29 +455,6 @@ def format_scan_report(result: ScanResult) -> str:
     lines.append(f"Decision: {status} — {reason}")
 
     return "\n".join(lines)
-
-
-def content_hash(skill_path: Path) -> str:
-    """计算 skill 目录下所有文件的 SHA-256 摘要，用于完整性追踪。
-
-    文件路径（相对于 skill_path）会与文件内容一起混入摘要，因此交换 skill 内两个文件的内容会改变摘要。
-    必须与 tools.skills_hub.bundle_content_hash 保持对称 — 两个函数对同一 skill 必须产出相同摘要（一个操作磁盘，一个操作内存 bundle），
-    所以对摘要形状的任何修改都必须同时落到两处。
-    """
-    h = hashlib.sha256()
-    if skill_path.is_dir():
-        for f in sorted(skill_path.rglob("*")):
-            if f.is_file():
-                try:
-                    rel = f.relative_to(skill_path).as_posix()
-                    h.update(rel.encode("utf-8"))
-                    h.update(b"\x00")
-                    h.update(f.read_bytes())
-                except OSError:
-                    continue
-    elif skill_path.is_file():
-        h.update(skill_path.read_bytes())
-    return f"sha256:{h.hexdigest()[:16]}"
 
 
 def _check_structure(skill_dir: Path, ignore: Callable[[str], bool] | None = None) -> list[Finding]:

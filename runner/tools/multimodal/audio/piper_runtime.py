@@ -110,15 +110,6 @@ def list_installed_voices() -> list[str]:
     return sorted(onnx.stem for onnx in voices_dir.glob("*.onnx") if onnx.with_suffix(".onnx.json").is_file())
 
 
-def get_piper_voice(voice_id: str = _DEFAULT_VOICE) -> Any:
-    return _runtime.get_voice(voice_id=voice_id)
-
-
-def reset_runtime() -> None:
-    with _runtime._lock:
-        _runtime._voices.clear()
-
-
 def piper_voice_dir() -> Path:
     return Path(get_spiritagent_home()) / "models" / "piper"
 

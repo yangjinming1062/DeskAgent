@@ -1,5 +1,4 @@
 import logging
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -32,16 +31,6 @@ def _safe_save_name(save_as: str | None, default: str) -> str:
     """仅保留 save_as 的 basename，防 LLM 用绝对路径或 ``..`` 越界写入缓存目录外。"""
     name = Path(save_as or "").name
     return name or default
-
-
-def _unlink_files_older_than(paths: Iterable[Path] | Any, cutoff_s: float) -> None:
-    # 退出时尽力清理，忽略单文件清理异常
-    for p in paths:
-        try:
-            if p.is_file() and p.stat().st_mtime < cutoff_s:
-                p.unlink()
-        except Exception as e:
-            logger.debug("Failed to clean old file %s: %s", p, e)
 
 
 def _get_downloads_dir() -> Path:

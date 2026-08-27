@@ -1,12 +1,10 @@
 import codecs
 import contextlib
-import json
 import logging
 import os
 import select
 import shlex
 import subprocess
-import tempfile
 import threading
 import time
 import uuid
@@ -28,28 +26,6 @@ if os.name == "nt":
     _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _kernel32.PeekNamedPipe.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.c_void_p, ctypes.POINTER(wintypes.DWORD), ctypes.c_void_p]
     _kernel32.PeekNamedPipe.restype = wintypes.BOOL
-
-
-def _load_json_store(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
-        return {}
-
-
-def _save_json_store(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except Exception:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
 
 
 def _file_mtime_key(host_path: str) -> tuple[float, int] | None:

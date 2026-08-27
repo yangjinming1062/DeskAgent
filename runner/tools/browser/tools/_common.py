@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 from ...registry import tool_error
 from ..session import _last_session_key, touch_session
-from ..supervisor import SUPERVISOR_REGISTRY, CDPSupervisor
+from ..supervisor import SUPERVISOR_REGISTRY
 
 NO_SUPERVISOR_MSG = "No browser session active. Call browser_navigate first."
 
@@ -27,8 +27,3 @@ def browser_session(task_id: str | None):
     if supervisor is not None:
         touch_session(key)
     yield supervisor, key
-
-
-def supervisor_or_error(supervisor: CDPSupervisor | None) -> str | None:
-    """若 supervisor 为空，返回统一错误 JSON；否则返回 None。"""
-    return None if supervisor is not None else no_supervisor()

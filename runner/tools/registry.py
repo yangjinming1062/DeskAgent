@@ -17,8 +17,7 @@ from .toolsets import excluded_tool_names
 
 logger = logging.getLogger(__name__)
 
-# 工具结果大小的唯一真源; ``budget_config.py`` 把它下发给每个有显式上限的工具。
-# ``get_max_result_size`` 是唯一的公共读取入口。
+# 工具结果大小的唯一真源; ``get_max_result_size`` 是唯一的公共读取入口。
 DEFAULT_MAX_RESULT_SIZE_CHARS: int = 100_000
 
 

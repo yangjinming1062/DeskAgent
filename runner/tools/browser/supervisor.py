@@ -31,9 +31,6 @@ _VALID_POLICIES = frozenset({DIALOG_POLICY_MUST_RESPOND, DIALOG_POLICY_AUTO_DISM
 DEFAULT_DIALOG_POLICY = DIALOG_POLICY_MUST_RESPOND
 DEFAULT_DIALOG_TIMEOUT_S = 300.0
 
-FRAME_TREE_MAX_ENTRIES = 30
-FRAME_TREE_MAX_OOPIF_DEPTH = 2
-
 CONSOLE_HISTORY_MAX = 50
 RECENT_DIALOGS_MAX = 20
 
@@ -119,10 +116,6 @@ KEY_CODE_MAP: dict[str, int] = {
 
 class NavigationError(Exception):
     """CDP 导航返回错误。"""
-
-
-class NavigationTimeout(Exception):
-    """CDP 导航等待超时。"""
 
 
 @dataclass

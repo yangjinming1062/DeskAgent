@@ -22,7 +22,6 @@ from .cu_backend import DESKTOP_SENTINELS, ActionResult, CaptureResult, Computer
 
 logger = logging.getLogger(__name__)
 
-PINNED_CUA_DRIVER_VERSION = cfg_get(load_config(), "computer_use", "cua_driver_version", default="0.21.0")
 _CUA_DRIVER_CMD = cfg_get(load_config(), "computer_use", "cua_driver_cmd", default="cua-driver")
 _CUA_DRIVER_ARGS = ["mcp"]
 
@@ -112,10 +111,6 @@ def _is_cua_secret_var(name: str) -> bool:
 
 _WINDOW_LINE_RE = re.compile(r"^-\s+(.+?)\s+\(pid\s+(\d+)\)\s+.*\[window_id:\s+(\d+)\]", re.MULTILINE)
 _ELEMENT_LINE_RE = re.compile(r'^\s*(?:-\s+)?\[(\d+)\]\s+(\w+)(?:\s+"([^"]*)"|(?:\s+\(\d+\))?\s+id=([^\s\[\]]*))?', re.MULTILINE)
-
-
-def _is_macos() -> bool:
-    return sys.platform == "darwin"
 
 
 def _cua_driver_command() -> str:

@@ -15,19 +15,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from utils import build_write_denied_paths, build_write_denied_prefixes, cfg_get, is_write_denied, load_config, strip_ansi
+from utils import cfg_get, is_write_denied, load_config, strip_ansi
 
 from ..tool_output_limits import get_max_line_length, get_max_lines
 from .binary_extensions import BINARY_EXTENSIONS
 from .fuzzy_match import format_no_match_hint, fuzzy_find_and_replace
 
 # ── File State ─────────────────────────────────────────────────────────────
-
-_HOME = str(Path.home())
-
-WRITE_DENIED_PATHS = build_write_denied_paths(_HOME)
-
-WRITE_DENIED_PREFIXES = build_write_denied_prefixes(_HOME)
 
 _OSC_SEQUENCE_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _FENCE_MARKER_RE = re.compile(r"'?\x07?SPIRITAGENT_FENCE_[A-Za-z0-9]+__\x07?'?")
@@ -330,7 +324,6 @@ def _lint_python_inproc(content: str) -> tuple[bool, str]:
 LINTERS_INPROC = {".py": _lint_python_inproc, ".json": _lint_json_inproc, ".yaml": _lint_yaml_inproc, ".yml": _lint_yaml_inproc, ".toml": _lint_toml_inproc}
 
 MAX_LINES = 2000
-MAX_LINE_LENGTH = 2000
 MAX_FILE_SIZE = 50 * 1024
 DEFAULT_READ_OFFSET = 1
 DEFAULT_READ_LIMIT = 500

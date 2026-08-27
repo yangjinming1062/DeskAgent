@@ -955,11 +955,6 @@ def _is_usable_python(python_path: str, venv: str, conda: str) -> bool:
         return False
 
 
-def _invalidate_python_probe_cache() -> None:
-    """清空 ``_is_usable_python`` 缓存(测试 / 热重载用, 运行时 venv 切换已经靠 cache key 自失效)。"""
-    _is_usable_python.cache_clear()
-
-
 def _resolve_child_python(mode: str) -> str:
     """解析沙箱子进程用的 Python 解释器(优先 installer 装的 uv-managed venv, 再看 VIRTUAL_ENV/CONDA_PREFIX)。"""
     if mode != "project":
@@ -1004,20 +999,6 @@ def _resolve_child_cwd(mode: str, staging_dir: str) -> str:
         return here
     return staging_dir
 
-
-_TOOL_DOC_LINES = [
-    ("web_search", '  web_search(query: str, limit: int = 5) -> dict\n    Returns {"data": {"web": [{"url", "title", "description"}, ...]}}'),
-    ("web_extract", '  web_extract(urls: list[str]) -> dict\n    Returns {"results": [{"url", "title", "content", "error"}, ...]} where content is markdown'),
-    ("read_file", '  read_file(path: str, offset: int = 1, limit: int = 500) -> dict\n    Lines are 1-indexed. Returns {"content": "...", "total_lines": N}'),
-    ("write_file", "  write_file(path: str, content: str) -> dict\n    Always overwrites the entire file."),
-    (
-        "search_files",
-        '  search_files(pattern: str, target="content", path=".", file_glob=None, limit=50) -> dict\n'
-        '    target: "content" (search inside files) or "files" (find files by name). Returns {"matches": [...]}',
-    ),
-    ("patch", "  patch(path: str, old_string: str, new_string: str, replace_all: bool = False) -> dict\n    Replaces old_string with new_string in the file."),
-    ("terminal", '  terminal(command: str, timeout=None, workdir=None) -> dict\n    Foreground only (no background/pty). Returns {"output": "...", "exit_code": N}'),
-]
 
 EXECUTE_CODE_SCHEMA = {
     "name": "execute_code",

@@ -193,22 +193,6 @@ def _ensure_tab(task_id: str | None, url: str = "about:blank") -> dict[str, Any]
     return session
 
 
-def _drop_session(task_id: str | None) -> dict[str, Any] | None:
-    task_id = task_id or "default"
-    with _SESSIONS_LOCK:
-        return _sessions.pop(task_id, None)
-
-
-def camofox_soft_cleanup(task_id: str | None = None) -> bool:
-    """受管持久化场景下丢弃本地会话记录（远端会话仍在 Camofox 保留）。"""
-    camofox_cfg = _get_camofox_config()
-    if bool(camofox_cfg.get("managed_persistence")) or _camofox_identity_override(task_id, camofox_cfg):
-        _drop_session(task_id)
-        logger.debug("Camofox soft cleanup for task %s (managed persistence)", task_id)
-        return True
-    return False
-
-
 def _post(path: str, body: dict, timeout: int = _DEFAULT_TIMEOUT) -> dict:
     resp = httpx.post(f"{get_camofox_url()}{path}", json=body, timeout=timeout)
     resp.raise_for_status()
@@ -225,12 +209,6 @@ def _get_raw(path: str, params: dict | None = None, timeout: int = _DEFAULT_TIME
     resp = httpx.get(f"{get_camofox_url()}{path}", params=params, timeout=timeout)
     resp.raise_for_status()
     return resp
-
-
-def _delete(path: str, body: dict | None = None, timeout: int = _DEFAULT_TIMEOUT) -> dict:
-    resp = httpx.request("DELETE", f"{get_camofox_url()}{path}", json=body, timeout=timeout)
-    resp.raise_for_status()
-    return resp.json()
 
 
 def camofox_navigate(url: str, task_id: str | None = None) -> str:
@@ -349,16 +327,6 @@ def camofox_press(key: str, task_id: str | None = None) -> str:
         return tool_error(str(e), success=False)
 
 
-def camofox_close(task_id: str | None = None) -> str:
-    """关闭 task 对应的 Camofox 会话。"""
-    try:
-        if session := _drop_session(task_id):
-            _delete(f"/sessions/{session['user_id']}")
-        return json.dumps({"success": True, "closed": True})
-    except Exception as e:
-        return json.dumps({"success": True, "closed": True, "warning": str(e)})
-
-
 def camofox_get_images(task_id: str | None = None) -> str:
     """从 Camofox 页面快照中解析出所有图片的 src 与 alt。"""
     try:
@@ -403,17 +371,3 @@ def camofox_vision(annotate: bool = False, task_id: str | None = None) -> dict[s
         return screenshot_multimodal_result(screenshot_path, annotation_context)
     except Exception as e:
         return tool_error(str(e), success=False)
-
-
-def camofox_console(clear: bool = False, task_id: str | None = None) -> str:
-    """Camofox 不支持 console 捕获。"""
-    return json.dumps(
-        {
-            "success": True,
-            "console_messages": [],
-            "js_errors": [],
-            "total_messages": 0,
-            "total_errors": 0,
-            "note": "Console log capture is not available with the Camofox backend. Use browser_snapshot or browser_vision.",
-        },
-    )

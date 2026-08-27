@@ -36,10 +36,6 @@ def get_tool_output_limits() -> dict[str, int]:
     return _cached_limits
 
 
-def get_max_bytes() -> int:
-    return get_tool_output_limits()["max_bytes"]
-
-
 def get_max_lines() -> int:
     return get_tool_output_limits()["max_lines"]
 

@@ -1,4 +1,3 @@
-import contextlib
 import json
 import logging
 import re
@@ -112,15 +111,6 @@ def _get_backend() -> ComputerUseBackend:
                 raise RuntimeError(f"Unknown computer_use backend={name!r}")
             _backend.start()
         return _backend
-
-
-def reset_backend_for_tests() -> None:
-    global _backend
-    with _backend_lock:
-        if _backend is not None:
-            with contextlib.suppress(Exception):
-                _backend.stop()
-        _backend = None
 
 
 class _NoopBackend(ComputerUseBackend):

@@ -104,11 +104,6 @@ _BLOCKED_DEVICE_PATHS = frozenset(
 )
 
 
-def _resolve_path(filepath: str, task_id: str = "default") -> Path:
-    """把路径解析到 TERMINAL_CWD（worktree 基目录）而非主仓库根。"""
-    return _resolve_path_for_task(filepath, task_id)
-
-
 # 哨兵 ``TERMINAL_CWD`` 值代表「未配置」，不是字面目录基准。过期配置 / .env
 # 常留下字面 ``"."``；``auto``/``cwd`` 是设置向导的占位。若把任一当作真实
 # 相对基准，会静默把编辑锚到 Agent 进程 cwd（如 worktree 会话却写到主仓库），

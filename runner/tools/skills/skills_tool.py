@@ -147,11 +147,6 @@ def _env_overrides() -> dict[str, str]:
     return overrides if isinstance(overrides, dict) else {}
 
 
-def _missing_env_names(required_env_vars: list[dict[str, Any]]) -> list[str]:
-    overrides = _env_overrides()
-    return [e["name"] for e in required_env_vars if not e.get("optional") and not overrides.get(e["name"])]
-
-
 def _build_setup_note(readiness_status: SkillReadinessStatus, missing: list[str], setup_help: str | None = None) -> str | None:
     if readiness_status == SkillReadinessStatus.SETUP_NEEDED:
         note = f"Setup needed before using this skill: missing {', '.join(missing) if missing else 'required prerequisites'}."
