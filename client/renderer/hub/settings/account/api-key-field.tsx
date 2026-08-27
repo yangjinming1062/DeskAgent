@@ -1,4 +1,4 @@
-import { SecretInputField } from '@/shared/components/ui'
+import { SecretInput } from '@/shared/panel'
 
 import { ListRow } from '../primitives'
 
@@ -39,14 +39,15 @@ export function ApiKeyField({
   return (
     <ListRow
       action={
-        <SecretInputField
-          copy={copy}
+        <SecretInput
+          clearLabel={copy.clearKey}
           disabled={disabled}
-          fingerprint={fingerprint}
+          hideLabel={copy.hide}
           isSet={isSet}
           onChange={onChange}
           onClear={onClear}
           placeholder={placeholder}
+          revealLabel={copy.reveal}
           value={value}
         />
       }

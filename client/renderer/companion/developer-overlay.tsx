@@ -3,6 +3,7 @@ import { atom } from 'nanostores'
 import { useEffect, useRef, useState } from 'react'
 
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { X } from '@/shared/lib/icons'
 
 import { $engineFps, $powerProfile, $rendererBackend } from './3d/engine-diagnostics'
 import { $spriteEmotion, $spriteState } from './companion-store'
@@ -52,13 +53,18 @@ export function DeveloperOverlay(): React.JSX.Element | null {
       ref={overlayRef}
     >
       <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-950/40 px-3 py-1.5">
-        <span className="font-semibold text-emerald-300">🛠️ Developer Debug Mode</span>
+        <span className="font-semibold text-emerald-300">Developer Debug Mode</span>
         <div className="flex items-center gap-2">
           <button className="text-emerald-400 hover:text-white" onClick={() => setMinimized(!minimized)} type="button">
             {minimized ? '展开' : '折叠'}
           </button>
-          <button className="text-emerald-400 hover:text-white" onClick={() => $devMode.set(false)} type="button">
-            ✕
+          <button
+            aria-label="关闭调试面板"
+            className="text-emerald-400 hover:text-white"
+            onClick={() => $devMode.set(false)}
+            type="button"
+          >
+            <X className="size-3.5" />
           </button>
         </div>
       </div>

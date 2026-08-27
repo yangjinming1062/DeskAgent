@@ -10,7 +10,7 @@ export function ChatMediaCard({ item }: { item: ChatMediaItem }): React.JSX.Elem
   if (!src) {
     return (
       <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/40">
-        {item.type === 'image' ? '🖼️ 加载中…' : '🎬 加载中…'}
+        {item.type === 'image' ? '图片加载中…' : '视频加载中…'}
       </div>
     )
   }

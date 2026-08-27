@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { SearchField, Switch, TextTab, TextTabMeta } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
+import { CHIP_FILTER, CHIP_FILTER_ACTIVE, SearchField, Toggle } from '@/shared/panel'
 import { refreshSession } from '@/shared/store/auth'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -179,7 +179,7 @@ export function SkillsSettings(): React.JSX.Element {
       <div className="space-y-1.5">
         {selectedSkills.map(skill => (
           <ListRow
-            action={<Switch checked={skill.enabled} onCheckedChange={value => void toggle(skill.name, value)} />}
+            action={<Toggle checked={skill.enabled} onChange={value => void toggle(skill.name, value)} />}
             description={skill.description || sk.noDescription}
             key={skill.name}
             title={skill.name}
@@ -208,9 +208,7 @@ export function SkillsSettings(): React.JSX.Element {
                   <div className="space-y-1.5">
                     {items.map(skill => (
                       <ListRow
-                        action={
-                          <Switch checked={skill.enabled} onCheckedChange={value => void toggle(skill.name, value)} />
-                        }
+                        action={<Toggle checked={skill.enabled} onChange={value => void toggle(skill.name, value)} />}
                         description={skill.description || sk.noDescription}
                         key={skill.name}
                         title={skill.name}
@@ -230,22 +228,26 @@ export function SkillsSettings(): React.JSX.Element {
       <SettingsSubsection intro={s.intro} title={s.title}>
         {!noSkillsAtAll && (
           <>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <TextTab active={selectedCategory === null} onClick={() => setSelectedCategory(null)}>
-                {sk.all}
-                <TextTabMeta>{visibleCount}</TextTabMeta>
-              </TextTab>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                className={selectedCategory === null ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+                onClick={() => setSelectedCategory(null)}
+                type="button"
+              >
+                {sk.all} · {visibleCount}
+              </button>
               {orderedCategories.map(categoryKey => (
-                <TextTab
-                  active={selectedCategory === categoryKey}
+                <button
+                  className={selectedCategory === categoryKey ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
                   key={categoryKey}
                   onClick={() => setSelectedCategory(categoryKey)}
+                  type="button"
                 >
                   <span className={isUserCategory(categoryKey) ? 'capitalize' : undefined}>
                     {categoryLabel(categoryKey, sk.other)}
-                  </span>
-                  <TextTabMeta>{counts.get(categoryKey) ?? 0}</TextTabMeta>
-                </TextTab>
+                  </span>{' '}
+                  · {counts.get(categoryKey) ?? 0}
+                </button>
               ))}
             </div>
             <div className="mt-3">

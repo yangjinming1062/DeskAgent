@@ -1,7 +1,9 @@
 import { type ReactNode, useEffect } from 'react'
 
-import { Button, Codicon } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
+import { X } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
+import { BTN_ICON } from '@/shared/panel'
 import { strings } from '@/shared/strings'
 
 // Win / Linux 把原生 WindowControlsOverlay 画在右上角；那里的应用内
@@ -49,15 +51,17 @@ export function OverlayView({
     <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-[#141416] text-white">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
         {!HAS_NATIVE_WINDOW_CONTROLS && (
-          <Button
+          <button
             aria-label={closeLabel}
-            className="pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 text-white/50 hover:bg-white/10 hover:text-white [-webkit-app-region:no-drag]"
+            className={cn(
+              BTN_ICON,
+              'pointer-events-auto absolute right-3 top-[calc(0.1875rem+var(--titlebar-height)/2)] -translate-y-1/2 [-webkit-app-region:no-drag]'
+            )}
             onClick={closeOverlay}
-            size="icon-titlebar"
-            variant="ghost"
+            type="button"
           >
-            <Codicon name="close" size="1rem" />
-          </Button>
+            <X />
+          </button>
         )}
       </div>
 

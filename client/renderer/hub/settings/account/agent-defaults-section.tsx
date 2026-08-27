@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from '@/shared/components/ui'
+import { PanelSelect, Toggle } from '@/shared/panel'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -27,22 +27,12 @@ export function AgentDefaultsSection({
     <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
-          <Select
+          <PanelSelect
             disabled={disabled}
-            onValueChange={value => update({ reasoning_effort: value })}
+            onChange={value => update({ reasoning_effort: value })}
+            options={REASONING_OPTIONS.map(opt => ({ value: opt, label: t.reasoningOptions[opt] }))}
             value={state.reasoning_effort}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {REASONING_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.reasoningOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         }
         description={t.reasoningEffortDesc}
         title={t.reasoningEffort}
@@ -50,10 +40,10 @@ export function AgentDefaultsSection({
 
       <ListRow
         action={
-          <Switch
+          <Toggle
             checked={state.enable_background_review}
             disabled={disabled}
-            onCheckedChange={value => update({ enable_background_review: value })}
+            onChange={value => update({ enable_background_review: value })}
           />
         }
         description={t.backgroundReviewDesc}

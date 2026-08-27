@@ -1,7 +1,6 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/typography';
 @import 'tw-shimmer';
-@import '@vscode/codicons/dist/codicon.css';
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -247,10 +246,12 @@
     --dt-user-bubble: var(--ui-chat-bubble-background);
     --dt-user-bubble-border: var(--ui-stroke-tertiary);
 
-    --dt-font-sans: 'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
+    --dt-font-sans:
+      'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
       'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
-    --dt-font-mono: 'Cascadia Code', 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace,
-      'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
+    --dt-font-mono:
+      'Cascadia Code', 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace, 'Apple Color Emoji',
+      'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
     --dt-base-size: 1rem;
     --dt-line-height: 1.5;
     --dt-letter-spacing: 0;
@@ -360,10 +361,12 @@
     --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
   }
 
-  /* 工具窗口（?role=tool）：把语义 token 钉死在与伙伴弹层共用的深色调色板
-     （近黑底色、白色/xx 描边与文字）。无皮肤 / 模式系统——单一硬编码外观。
-     没有这个钉死，token 会回到 :root 的浅色值，带框的设置窗口就会渲染成白底。
-     通过属性选择器压过 :root；index.html 在首帧前就打上 data-role。 */
+  /* 工具窗口（hub.html，data-role="tool"）：把语义 token 钉死在与伙伴弹层
+     共用的深色调色板（近黑底色、白色/xx 描边与文字）。无皮肤 / 模式系统——
+     单一硬编码外观。没有这个钉死，token 会回到 :root 的浅色值，带框的设置
+     窗口就会渲染成白底，且 themes/context 的启动块会跑浅色 applyTheme，
+     经 titlebar IPC 把原生 WindowControlsOverlay 刷成浅色。
+     通过属性选择器压过 :root；hub.html 在首帧前就打上 data-role。 */
   html[data-role='tool'] {
     color-scheme: dark;
 
@@ -1011,9 +1014,15 @@ canvas {
 }
 
 @keyframes setting-field-highlight-pulse {
-  0% { outline-color: transparent; }
-  20% { outline-color: var(--theme-primary, currentColor); }
-  100% { outline-color: transparent; }
+  0% {
+    outline-color: transparent;
+  }
+  20% {
+    outline-color: var(--theme-primary, currentColor);
+  }
+  100% {
+    outline-color: transparent;
+  }
 }
 
 /* ── 3D companion canvas ─────────────────────────────────────────────────────
@@ -1030,29 +1039,59 @@ canvas {
    安装器组件已经在自己的 tailwind 配置里有同名类（animate-egg-pulse 等），
    桌面这些是独立实现的镜像，避免跨包共享。 */
 @keyframes egg-pulse {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 0.95; }
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
 }
 
 @keyframes egg-breath {
-  0%, 100% { transform: scale(1) translateY(0); }
-  50% { transform: scale(1.025) translateY(-2px); }
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.025) translateY(-2px);
+  }
 }
 
 @keyframes crack-shimmer {
-  0%, 100% { opacity: 0.35; }
-  50% { opacity: 0.75; }
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.75;
+  }
 }
 
 @keyframes waveform-bounce {
-  0%, 100% { transform: scaleY(1); }
-  50% { transform: scaleY(1.4); }
+  0%,
+  100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(1.4);
+  }
 }
 
-.animate-egg-pulse { animation: egg-pulse 3.4s ease-in-out infinite; }
-.animate-egg-breath { animation: egg-breath 3.6s ease-in-out infinite; transform-origin: 160px 170px; }
-.animate-crack-shimmer { animation: crack-shimmer 4s ease-in-out infinite; }
-.animate-waveform-bounce { animation: waveform-bounce 0.9s ease-in-out infinite; transform-origin: center bottom; }
+.animate-egg-pulse {
+  animation: egg-pulse 3.4s ease-in-out infinite;
+}
+.animate-egg-breath {
+  animation: egg-breath 3.6s ease-in-out infinite;
+  transform-origin: 160px 170px;
+}
+.animate-crack-shimmer {
+  animation: crack-shimmer 4s ease-in-out infinite;
+}
+.animate-waveform-bounce {
+  animation: waveform-bounce 0.9s ease-in-out infinite;
+  transform-origin: center bottom;
+}
 
 /* 聊天窗会话抽屉的滑入动画（宽度推移式抽屉，进场做轻量位移淡入）。 */
 @keyframes sa-drawer-in {

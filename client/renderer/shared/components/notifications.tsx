@@ -3,7 +3,7 @@ import { type ReactNode, type Ref, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info, X } from '@/shared/lib/icons'
+import { AlertCircle, AlertTriangle, Check, CheckCircle2, Copy, type IconComponent, Info, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import {
   $notifications,
@@ -13,8 +13,6 @@ import {
   type NotificationKind
 } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
-
-import { CopyButton } from './ui'
 
 // toast 属于瞬时浮层——两个窗口共用同一套显式深色玻璃样式（不依赖 --dt token，
 // 精灵窗的浅色种子不会把 toast 染白）。
@@ -166,18 +164,46 @@ function NotificationDetail({ detail }: { detail: string }): React.JSX.Element {
         <pre className="max-h-32 whitespace-pre-wrap wrap-break-word font-mono text-[0.6875rem] leading-relaxed text-white/70">
           {detail}
         </pre>
-        <CopyButton
-          appearance="inline"
-          className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-white/60 hover:bg-white/10 hover:text-white"
-          errorMessage={copy.copyDetailFailed}
-          iconClassName="size-3"
-          label={copy.copyDetail}
-          text={detail}
-        >
-          {copy.copyDetail}
-        </CopyButton>
+        <CopyDetailButton label={copy.copyDetail} text={detail} />
       </div>
     </details>
+  )
+}
+
+const COPIED_RESET_MS = 1500
+
+function CopyDetailButton({ label, text }: { label: string; text: string }): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+  const [failed, setFailed] = useState(false)
+
+  const onClick = () => {
+    void (async () => {
+      try {
+        if (window.spiritagent?.writeClipboard) {
+          await window.spiritagent.writeClipboard(text)
+        } else {
+          await navigator.clipboard.writeText(text)
+        }
+
+        triggerHaptic('selection')
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), COPIED_RESET_MS)
+      } catch {
+        setFailed(true)
+        window.setTimeout(() => setFailed(false), COPIED_RESET_MS)
+      }
+    })()
+  }
+
+  return (
+    <button
+      className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-white/60 transition hover:bg-white/10 hover:text-white"
+      onClick={onClick}
+      type="button"
+    >
+      {copied ? <Check className="size-3" /> : failed ? <X className="size-3" /> : <Copy className="size-3" />}
+      {copied ? strings.common.copied : failed ? strings.common.copyFailed : label}
+    </button>
   )
 }
 

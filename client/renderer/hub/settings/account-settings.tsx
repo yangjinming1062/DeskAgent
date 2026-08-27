@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 
-import { Button, ConfirmDialog } from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { KeyRound, Loader2 } from '@/shared/lib/icons'
+import { KeyRound } from '@/shared/lib/icons'
 import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
+import { BTN_PRIMARY, ConfirmDialog, Spinner } from '@/shared/panel'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -264,10 +264,10 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
       <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
 
       <div className="mt-8 flex justify-end">
-        <Button disabled={isSaving || !isDirty} onClick={() => void handleSave()}>
-          {isSaving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        <button className={BTN_PRIMARY} disabled={isSaving || !isDirty} onClick={() => void handleSave()} type="button">
+          {isSaving && <Spinner className="size-3.5" />}
           {isSaving ? t.common.saving : t.common.save}
-        </Button>
+        </button>
       </div>
 
       <ConfirmDialog

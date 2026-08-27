@@ -1716,7 +1716,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     type="button"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[14px] font-medium text-white/90">🖼️ 继续使用当前头像</span>
+                      <span className="text-[14px] font-medium text-white/90">继续使用当前头像</span>
                       <span className="text-xs text-white/40">已有草稿 →</span>
                     </div>
                     <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">

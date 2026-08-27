@@ -589,9 +589,7 @@ function applyTurnEndExtras(payload: VoiceTurnEndPayload): void {
 
   if (payload.media?.length && !$chatOpen.get()) {
     showMediaHint(
-      payload.media.some(m => m.type === 'video')
-        ? '🎬 我生成了一段视频，点这里查看'
-        : '🖼️ 我生成了一张图片，点这里查看'
+      payload.media.some(m => m.type === 'video') ? '我生成了一段视频，点这里查看' : '我生成了一张图片，点这里查看'
     )
   }
 

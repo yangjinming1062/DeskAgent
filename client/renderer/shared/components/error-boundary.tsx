@@ -1,9 +1,8 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 
 import { log } from '@/shared/lib/log'
+import { BTN_PRIMARY, BTN_SUBTLE, EmptyState } from '@/shared/panel'
 import { strings } from '@/shared/strings'
-
-import { Button, ErrorState } from './ui'
 
 interface ErrorBoundaryFallbackProps {
   error: Error
@@ -56,19 +55,23 @@ function RootErrorFallback({ error, reset }: ErrorBoundaryFallbackProps): React.
   const t = strings
 
   return (
-    <div className="fixed inset-0 z-[1500] grid place-items-center bg-(--ui-chat-surface-background) p-6">
-      <ErrorState
-        className="w-full max-w-[28rem]"
-        description={error.message || t.errors.boundaryDesc}
-        title={t.errors.boundaryTitle}
-      >
-        <Button className="font-semibold" onClick={reset} size="lg">
-          {t.common.retry}
-        </Button>
-        <Button onClick={() => window.location.reload()} variant="text">
-          {t.errors.reloadWindow}
-        </Button>
-      </ErrorState>
+    <div className="fixed inset-0 z-[1500] grid place-items-center bg-[#0f0f11] p-6 text-white">
+      <div className="w-full max-w-md">
+        <EmptyState
+          action={
+            <div className="flex gap-2">
+              <button className={BTN_PRIMARY} onClick={reset} type="button">
+                {t.common.retry}
+              </button>
+              <button className={BTN_SUBTLE} onClick={() => window.location.reload()} type="button">
+                {t.errors.reloadWindow}
+              </button>
+            </div>
+          }
+          description={error.message || t.errors.boundaryDesc}
+          title={t.errors.boundaryTitle}
+        />
+      </div>
     </div>
   )
 }

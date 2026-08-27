@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { SearchField, Switch } from '@/shared/components/ui'
 import { useAsyncLoader } from '@/shared/hooks/use-async-loader'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { TOOLSET_CATALOG, type ToolsetCatalogEntry } from '@/shared/lib/toolset-catalog'
+import { SearchField, Toggle } from '@/shared/panel'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -165,17 +165,17 @@ export function ToolsetsSettings(): React.JSX.Element {
           const toolNames = roster?.toolNames ?? []
 
           return (
-            <div className="rounded-lg border border-white/10 bg-black/30 p-4" key={catalog.id}>
+            <div className="rounded-xl border border-white/8 bg-[#1c1c21] p-4" key={catalog.id}>
               <div className="flex items-start gap-3">
                 <Icon className="mt-0.5 size-5 shrink-0 text-white/50" />
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium text-white/90">{label || catalog.id}</div>
                   <div className="mt-1 text-[10px] leading-relaxed text-white/40">{description}</div>
                 </div>
-                <Switch
+                <Toggle
                   checked={enabled}
                   disabled={savingId === catalog.id}
-                  onCheckedChange={value => void toggle(catalog.id, value)}
+                  onChange={value => void toggle(catalog.id, value)}
                 />
               </div>
               {toolNames.length > 0 && (

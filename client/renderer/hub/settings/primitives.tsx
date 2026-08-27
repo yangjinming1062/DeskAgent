@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react'
 
 import { PAGE_INSET_X } from '@/shared'
-import { PageLoader } from '@/shared/components/page-loader'
 import { cn } from '@/shared/lib/utils'
-import { CHIP, CHIP_ACTIVE } from '@/shared/panel'
+import { CHIP, CHIP_ACTIVE, LoadingBlock } from '@/shared/panel'
 
 // 应用设置页基元——视觉词汇与 shared/panel 同源（石墨表面阶梯 + hairline）。
 // 容器背景由 hub/overlays 提供，此处只约束正文宽度并提供滚动 + 内边距。
@@ -105,7 +104,7 @@ export function ListRow({
 }
 
 export function LoadingState({ label }: { label: string }): React.JSX.Element {
-  return <PageLoader label={label} />
+  return <LoadingBlock label={label} />
 }
 
 export function EmptyState({ title, description }: { title: string; description: string }): React.JSX.Element {

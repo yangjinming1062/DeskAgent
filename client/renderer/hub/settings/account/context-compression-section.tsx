@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Switch } from '@/shared/components/ui'
+import { PanelSelect, Toggle } from '@/shared/panel'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -27,10 +27,10 @@ export function ContextCompressionSection({
     <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
-          <Switch
+          <Toggle
             checked={state.enable_context_compression}
             disabled={disabled}
-            onCheckedChange={value => update({ enable_context_compression: value })}
+            onChange={value => update({ enable_context_compression: value })}
           />
         }
         description={t.enableCompressionDesc}
@@ -38,22 +38,12 @@ export function ContextCompressionSection({
       />
       <ListRow
         action={
-          <Select
+          <PanelSelect
             disabled={disabled}
-            onValueChange={value => update({ context_compression_threshold: Number(value) })}
+            onChange={value => update({ context_compression_threshold: Number(value) })}
+            options={THRESHOLD_OPTIONS.map(opt => ({ value: opt, label: t.thresholdOptions[opt] }))}
             value={String(state.context_compression_threshold)}
-          >
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {THRESHOLD_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.thresholdOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         }
         description={t.thresholdDesc}
         title={t.threshold}

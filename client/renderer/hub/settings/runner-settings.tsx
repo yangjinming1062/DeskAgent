@@ -1,16 +1,8 @@
 import { useState } from 'react'
 
-import {
-  Button,
-  Input,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  Switch
-} from '@/shared/components/ui'
 import { triggerHaptic } from '@/shared/lib/haptics'
+import { cn } from '@/shared/lib/utils'
+import { BTN_PRIMARY, INPUT_CLASS, PanelSelect, Toggle } from '@/shared/panel'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
@@ -185,24 +177,14 @@ export function RunnerSettings(): React.JSX.Element {
                   <ListRow
                     action={
                       row.kind === 'select' ? (
-                        <Select
-                          onValueChange={v => updateField(row.path, v)}
+                        <PanelSelect
+                          onChange={v => updateField(row.path, v)}
+                          options={row.options}
                           value={(getIn(config, row.path) as string) || row.default}
-                        >
-                          <SelectTrigger className="w-36">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {row.options.map(opt => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        />
                       ) : row.kind === 'input' ? (
-                        <Input
-                          className="w-36"
+                        <input
+                          className={cn(INPUT_CLASS, 'w-36')}
                           onChange={e => {
                             const val = e.target.value
 
@@ -220,7 +202,7 @@ export function RunnerSettings(): React.JSX.Element {
                           value={(getIn(config, row.path) as string | number) ?? row.default}
                         />
                       ) : (
-                        <Switch checked={!!getIn(config, row.path)} onCheckedChange={v => updateField(row.path, v)} />
+                        <Toggle checked={!!getIn(config, row.path)} onChange={v => updateField(row.path, v)} />
                       )
                     }
                     key={row.title}
@@ -233,9 +215,14 @@ export function RunnerSettings(): React.JSX.Element {
         </div>
 
         <div className="mt-8 flex justify-end">
-          <Button disabled={isSaving || !isDirty} onClick={() => void handleSave()}>
+          <button
+            className={BTN_PRIMARY}
+            disabled={isSaving || !isDirty}
+            onClick={() => void handleSave()}
+            type="button"
+          >
             {isSaving ? t.common.saving : r.save}
-          </Button>
+          </button>
         </div>
       </SettingsSubsection>
     </SettingsContent>

@@ -3,8 +3,8 @@ import { useCallback, useEffect } from 'react'
 
 import { $updateStatus, selectTargetVersion } from '@/hub/settings-store'
 import { BrandMark } from '@/shared/components/brand-mark'
-import { Button } from '@/shared/components/ui'
-import { Loader2, RefreshCw } from '@/shared/lib/icons'
+import { RefreshCw } from '@/shared/lib/icons'
+import { BTN_SUBTLE, Spinner } from '@/shared/panel'
 import { $desktopVersion, refreshDesktopVersion } from '@/shared/store/version'
 import { strings } from '@/shared/strings'
 
@@ -72,16 +72,10 @@ export function AboutSettings(): React.JSX.Element {
         <p aria-live="polite" className="text-center text-xs text-white/40">
           {statusLine}
         </p>
-        <Button
-          className="border-white/15 bg-white/5 text-white/80 hover:bg-white/15 hover:text-white"
-          disabled={isChecking}
-          onClick={onCheckClick}
-          size="sm"
-          variant="outline"
-        >
-          {isChecking ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+        <button className={BTN_SUBTLE} disabled={isChecking} onClick={onCheckClick} type="button">
+          {isChecking ? <Spinner className="size-3.5" /> : <RefreshCw className="size-3.5" />}
           {a.checkForUpdates}
-        </Button>
+        </button>
       </div>
     </SettingsContent>
   )

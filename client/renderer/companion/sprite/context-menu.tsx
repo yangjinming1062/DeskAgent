@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 
 import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
 import { Brain, EyeOff, KeyRound, MessageSquareText, Phone, Settings, SlidersHorizontal } from '@/shared/lib/icons'
+import type { IconComponent } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
 import { $contextMenuPos, closeContextMenu } from './context-menu-store'
@@ -15,6 +16,39 @@ interface ContextMenuProps {
   onOpenMemory: () => void
 }
 
+const MENU_ITEM_CLASS =
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-medium text-white/85 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none'
+
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick
+}: {
+  icon: IconComponent
+  label: string
+  onClick: () => void
+}): React.JSX.Element {
+  return (
+    <button
+      className={MENU_ITEM_CLASS}
+      onClick={() => {
+        onClick()
+        closeContextMenu()
+      }}
+      type="button"
+    >
+      <Icon className="size-4 shrink-0 text-white/45" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+function MenuDivider(): React.JSX.Element {
+  return <div className="-mx-1.5 my-1 h-px bg-white/8" />
+}
+
+// 精灵右键菜单（瞬时浮层·轻玻璃档）：始终挂载、visibility 切换（避免 mount/unmount DOM），
+// 状态走 $contextMenuPos 原子，宿主 CompanionRoot 不参与。
 export function SpriteContextMenu({
   onOpenActivation,
   onOpenChat,
@@ -60,8 +94,8 @@ export function SpriteContextMenu({
     }
   }, [visible])
 
-  const left = visible && pos ? Math.min(pos.x, window.innerWidth - 180) : 0
-  const top = visible && pos ? Math.min(pos.y, window.innerHeight - 240) : 0
+  const left = visible && pos ? Math.min(pos.x, window.innerWidth - 200) : 0
+  const top = visible && pos ? Math.min(pos.y, window.innerHeight - 280) : 0
 
   return (
     <div
@@ -92,7 +126,7 @@ export function SpriteContextMenu({
       }}
     >
       <div
-        className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-white/12 bg-black/65 p-1 text-xs text-white shadow-2xl backdrop-blur-lg select-none"
+        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-white/12 bg-black/65 p-1.5 text-xs text-white shadow-2xl backdrop-blur-lg select-none transition-[opacity,transform] duration-150 ease-out"
         onPointerDown={e => {
           e.stopPropagation()
         }}
@@ -100,115 +134,28 @@ export function SpriteContextMenu({
         style={{
           left,
           top,
-          pointerEvents: visible ? 'auto' : 'none'
+          opacity: visible ? 1 : 0,
+          pointerEvents: visible ? 'auto' : 'none',
+          transform: visible ? 'scale(1)' : 'scale(0.96)'
         }}
       >
-        {!authed ? (
+        {authed ? (
           <>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                onOpenActivation?.()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <KeyRound className="size-3.5 text-white/50 shrink-0" />
-              <span>激活 / 登录</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                void window.spiritagent.showToolWindow()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <Settings className="size-3.5 text-white/50 shrink-0" />
-              <span>应用设置</span>
-            </button>
-            <div className="-mx-1 my-1 h-px bg-white/10" />
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                void window.spiritagent.sprite.hide()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <EyeOff className="size-3.5 text-white/50 shrink-0" />
-              <span>隐藏</span>
-            </button>
+            <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
+            <MenuItem icon={Phone} label="语音通话" onClick={onOpenVoiceCall} />
+            <MenuDivider />
+            <MenuItem icon={SlidersHorizontal} label="伙伴设置" onClick={onOpenSettings} />
+            <MenuItem icon={Brain} label="长期记忆" onClick={onOpenMemory} />
+            <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />
+            <MenuDivider />
+            <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
           </>
         ) : (
           <>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                onOpenChat()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <MessageSquareText className="size-3.5 text-white/50 shrink-0" />
-              <span>对话</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                onOpenVoiceCall()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <Phone className="size-3.5 text-white/50 shrink-0" />
-              <span>语音通话</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                onOpenSettings()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <SlidersHorizontal className="size-3.5 text-white/50 shrink-0" />
-              <span>伙伴设置</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                onOpenMemory()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <Brain className="size-3.5 text-white/50 shrink-0" />
-              <span>长期记忆</span>
-            </button>
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                void window.spiritagent.showToolWindow()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <Settings className="size-3.5 text-white/50 shrink-0" />
-              <span>应用设置</span>
-            </button>
-            <div className="-mx-1 my-1 h-px bg-white/10" />
-            <button
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
-              onClick={() => {
-                void window.spiritagent.sprite.hide()
-                closeContextMenu()
-              }}
-              type="button"
-            >
-              <EyeOff className="size-3.5 text-white/50 shrink-0" />
-              <span>隐藏</span>
-            </button>
+            <MenuItem icon={KeyRound} label="激活 / 登录" onClick={() => onOpenActivation?.()} />
+            <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />
+            <MenuDivider />
+            <MenuItem icon={EyeOff} label="隐藏" onClick={() => void window.spiritagent.sprite.hide()} />
           </>
         )}
       </div>

@@ -54,10 +54,17 @@ export function ToolRoot(): React.JSX.Element {
     )
   }
 
-  // window.close() 走拦截器隐藏窗口而非销毁——设置面板是按需打开的
+  // window.close() 走拦截器隐藏窗口而非销毁——设置面板是按需打开的。
+  // lazy 加载空档用同款深色背板兜住，避免 body 闪一帧浅色。
   return (
     <>
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={
+          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-white backdrop-blur-md">
+            <Loader2 className="size-8 animate-spin text-white/40" />
+          </div>
+        }
+      >
         <SettingsView onClose={() => window.close()} />
       </Suspense>
       <NotificationStack />

@@ -4,7 +4,7 @@ import { useRef } from 'react'
 
 import { $desktopBoot } from '@/companion/boot-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { Button, ErrorState } from '@/shared/components/ui'
+import { BTN_PRIMARY, EmptyState } from '@/shared/panel'
 import { setPrimaryGateway } from '@/shared/store/gateway'
 import { strings } from '@/shared/strings'
 
@@ -35,19 +35,21 @@ export function BootFailureOverlay(): React.JSX.Element | null {
   return (
     <div
       aria-live="assertive"
-      className="fixed inset-0 z-[1500] grid place-items-center bg-black/60 p-6 text-white backdrop-blur-md"
+      className="fixed inset-0 z-[1500] grid place-items-center bg-black/65 p-6 text-white backdrop-blur-lg"
       ref={overlayRef}
       role="alertdialog"
     >
-      <ErrorState
-        className="w-full max-w-[28rem] [&_h2]:text-white [&_p]:text-white/60"
-        description={message}
-        title={strings.boot.errors.desktopBootFailed}
-      >
-        <Button className="font-semibold" onClick={onRetry} size="lg">
-          {strings.boot.failure.retry}
-        </Button>
-      </ErrorState>
+      <div className="w-full max-w-md">
+        <EmptyState
+          action={
+            <button className={BTN_PRIMARY} onClick={onRetry} type="button">
+              {strings.boot.failure.retry}
+            </button>
+          }
+          description={message}
+          title={strings.boot.errors.desktopBootFailed}
+        />
+      </div>
     </div>
   )
 }

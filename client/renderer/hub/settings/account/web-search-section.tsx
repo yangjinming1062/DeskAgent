@@ -1,5 +1,6 @@
 import { InlineNotice } from '@/shared/components/notifications'
-import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui'
+import { cn } from '@/shared/lib/utils'
+import { INPUT_CLASS, PanelSelect } from '@/shared/panel'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -70,18 +71,13 @@ export function WebSearchSection({
     <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
         action={
-          <Select disabled={disabled} onValueChange={value => update({ backend: value })} value={state.backend}>
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {WEB_BACKEND_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.backendOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PanelSelect
+            disabled={disabled}
+            onChange={value => update({ backend: value })}
+            options={WEB_BACKEND_OPTIONS.map(opt => ({ value: opt, label: t.backendOptions[opt] }))}
+            value={state.backend}
+            widthClass="w-44"
+          />
         }
         description={t.backendDesc}
         title={t.backend}
@@ -89,22 +85,13 @@ export function WebSearchSection({
 
       <ListRow
         action={
-          <Select
+          <PanelSelect
             disabled={disabled}
-            onValueChange={value => update({ extract_backend: value })}
+            onChange={value => update({ extract_backend: value })}
+            options={EXTRACT_BACKEND_OPTIONS.map(opt => ({ value: opt, label: t.extractBackendOptions[opt] }))}
             value={state.extract_backend}
-          >
-            <SelectTrigger className="w-44">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {EXTRACT_BACKEND_OPTIONS.map(opt => (
-                <SelectItem key={opt} value={opt}>
-                  {t.extractBackendOptions[opt]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            widthClass="w-44"
+          />
         }
         description={t.extractBackendDesc}
         title={t.extractBackend}
@@ -144,8 +131,8 @@ export function WebSearchSection({
 
       <ListRow
         action={
-          <Input
-            className="max-w-sm"
+          <input
+            className={cn(INPUT_CLASS, 'max-w-sm')}
             disabled={disabled}
             onChange={event => update({ tavily_base_url: event.currentTarget.value })}
             placeholder={t.tavilyBaseUrlPlaceholder}

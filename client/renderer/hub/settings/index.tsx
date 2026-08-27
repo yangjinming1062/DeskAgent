@@ -1,15 +1,15 @@
-import { IconDownload, IconRefresh, IconUpload, IconVolume } from '@tabler/icons-react'
+import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
 import { useRef, useState } from 'react'
 
-import { ConfirmDialog, Tip } from '@/shared/components/ui'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { Cpu, Info, KeyRound, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Cpu, Info, KeyRound, Sparkles } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
+import { BTN_ICON, ConfirmDialog } from '@/shared/panel'
 import { getSpiritAgentConfig, getSpiritAgentConfigDefaults, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'
 
@@ -99,7 +99,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
           />
           <OverlayNavItem
             active={activeView === 'speech'}
-            icon={IconVolume}
+            icon={AudioLines}
             label={t.speech.title}
             onClick={() => setActiveView('speech')}
           />
@@ -122,33 +122,40 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             label={t.settings.nav.about}
             onClick={() => setActiveView('about')}
           />
-          <div className="mt-auto flex items-center gap-1 pt-2">
-            <Tip label={t.settings.exportConfig}>
-              <OverlayIconButton onClick={() => void exportConfig()}>
-                <IconDownload className="size-3.5" />
-              </OverlayIconButton>
-            </Tip>
-            <Tip label={t.settings.importConfig}>
-              <OverlayIconButton
-                onClick={() => {
-                  triggerHaptic('open')
-                  importInputRef.current?.click()
-                }}
-              >
-                <IconUpload className="size-3.5" />
-              </OverlayIconButton>
-            </Tip>
-            <Tip label={t.settings.resetToDefaults}>
-              <OverlayIconButton
-                className="hover:text-destructive"
-                onClick={() => {
-                  triggerHaptic('warning')
-                  setResetOpen(true)
-                }}
-              >
-                <IconRefresh className="size-3.5" />
-              </OverlayIconButton>
-            </Tip>
+          <div className="mt-auto flex items-center gap-0.5 pt-2">
+            <button
+              aria-label={t.settings.exportConfig}
+              className={BTN_ICON}
+              onClick={() => void exportConfig()}
+              title={t.settings.exportConfig}
+              type="button"
+            >
+              <IconDownload className="size-3.5" />
+            </button>
+            <button
+              aria-label={t.settings.importConfig}
+              className={BTN_ICON}
+              onClick={() => {
+                triggerHaptic('open')
+                importInputRef.current?.click()
+              }}
+              title={t.settings.importConfig}
+              type="button"
+            >
+              <IconUpload className="size-3.5" />
+            </button>
+            <button
+              aria-label={t.settings.resetToDefaults}
+              className={cn(BTN_ICON, 'hover:text-rose-300')}
+              onClick={() => {
+                triggerHaptic('warning')
+                setResetOpen(true)
+              }}
+              title={t.settings.resetToDefaults}
+              type="button"
+            >
+              <IconRefresh className="size-3.5" />
+            </button>
           </div>
         </OverlaySidebar>
 
