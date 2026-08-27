@@ -2,7 +2,7 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { resolvePortraitUrl } from '@/companion/avatar-image'
-import { HistoryGallery, PortraitLightbox } from '@/companion/onboarding/onboarding-components'
+import { HistoryGallery, PortraitLightbox, useNaturalAspectRatio } from '@/companion/onboarding/onboarding-components'
 import { WizardModal } from '@/companion/panel/wizard-modal'
 import { MAX_APPEARANCE } from '@/companion/persona'
 import { cn } from '@/shared/lib/utils'
@@ -283,6 +283,8 @@ export function Seed3dWizard({
 
   const current = stages[stage]
   const meta = STAGE_META[stage]
+  // 全身画幅随物种骨骼分桶（竖/方/横并存）：取景框比例跟随当前立绘图片本身
+  const frameRatio = useNaturalAspectRatio(current.previewUrl)
 
   return (
     <WizardModal
@@ -303,7 +305,10 @@ export function Seed3dWizard({
     >
       <p className="text-[11px] leading-relaxed text-white/55">{meta.hint}</p>
 
-      <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/12 bg-black/40 group">
+      <div
+        className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/12 bg-black/40 group"
+        style={frameRatio ? { aspectRatio: frameRatio } : undefined}
+      >
         {current.previewUrl ? (
           <button
             aria-label="放大查看"
@@ -311,7 +316,7 @@ export function Seed3dWizard({
             onClick={() => setZoomUrl(current.previewUrl)}
             type="button"
           >
-            <img alt={meta.alt} className="h-full w-full object-cover" src={current.previewUrl ?? undefined} />
+            <img alt={meta.alt} className="h-full w-full object-contain" src={current.previewUrl ?? undefined} />
           </button>
         ) : (
           <div className="text-xs text-white/40">{current.loading ? meta.loadFail : '暂无立绘'}</div>

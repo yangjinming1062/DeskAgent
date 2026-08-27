@@ -25,11 +25,12 @@ from ..llm import build_outfit_prompt, chat, resolve_fullbody_template
 from .asset_store import build_data_uri, resolve_companion_asset_path
 from .avatar_service import (
     _FULLBODY_PREFERRED_PROVIDERS,
-    _FULLBODY_SIZE,
     _delete_portrait_file,
+    _fullbody_size_for,
     _generate_one_portrait_with_moderation_retry,
     _persist_portrait_bytes,
     _read_temp_media_bytes,
+    _resolve_fullbody_rig_type,
     get_avatar_job_lock,
     load_avatar_bytes_as_data_uri,
     resolve_uploaded_avatar_path,
@@ -142,8 +143,8 @@ async def list_outfits(db: AsyncSession, user_id: int) -> list[CompanionOutfit]:
         return (await db.execute(select(CompanionOutfit).where(CompanionOutfit.user_id == user_id).order_by(CompanionOutfit.created_at.asc()))).scalars().all()
 
 
-async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[AvatarAsset, Companion2DModel, str, str, str, str]:
-    """返回 (激活头像, 激活 2d, 物种, 外貌, 性格, 画风)；守卫失败抛 OutfitStateError。"""
+async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[AvatarAsset, Companion2DModel, str, str, str, str, str]:
+    """返回 (激活头像, 激活 2d, 物种, 外貌, 性格, 画风, 骨骼类型)；守卫失败抛 OutfitStateError。"""
     avatar = await _active_avatar(db, user_id)
     mesh2d = await _active_mesh2d(db, user_id)
     if avatar is None or mesh2d is None:
@@ -159,7 +160,9 @@ async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[Av
     prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
     style = (prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None) or mesh2d.style or "cel_shading"
     species = str(definition.get("biological_type") or "").strip()
-    return avatar, mesh2d, species, str(definition.get("appearance") or "").strip(), str(definition.get("personality") or "").strip(), style
+    # 与正面种子同桶取 rig（缓存命中则零 LLM 调用）——换装立绘画幅/姿态与确认形象一致，衣柜内不漂移
+    rig_type = await _resolve_fullbody_rig_type(db, user_id, avatar, species)
+    return avatar, mesh2d, species, str(definition.get("appearance") or "").strip(), str(definition.get("personality") or "").strip(), style, rig_type
 
 
 def _reference_data_uri(source: dict) -> str | None:
@@ -181,6 +184,7 @@ async def _generate_outfit_fullbody(
     user_id: int,
     *,
     species: str,
+    rig_type: str,
     style: str,
     appearance: str,
     personality: str,
@@ -188,9 +192,9 @@ async def _generate_outfit_fullbody(
     identity_uri: str,
     secondary_uri: str | None,
 ) -> str:
-    """生成换装全身立绘草稿（persist=False 落 temp-media）；返回裸路径。"""
+    """生成换装全身立绘草稿（persist=False 落 temp-media）；返回裸路径。画幅与姿态模板随 rig_type 分桶。"""
     prompt = build_outfit_prompt(
-        template=resolve_fullbody_template(species, "biped", style),
+        template=resolve_fullbody_template(species, rig_type, style),
         style_id=style,
         feedback=feedback,
         appearance=appearance,
@@ -201,7 +205,7 @@ async def _generate_outfit_fullbody(
         user_id,
         reference_image=identity_uri,
         secondary_reference_image=secondary_uri,
-        size=_FULLBODY_SIZE,
+        size=_fullbody_size_for(rig_type),
         persist=False,
         preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
     )
@@ -221,7 +225,7 @@ async def create_outfit_draft(
     if not effective_description and image is None:
         raise OutfitError("请先描述想要的着装，或上传一张参考图")
 
-    avatar, _, species, appearance, personality, style = await _outfit_generation_context(db, user_id)
+    avatar, _, species, appearance, personality, style, rig_type = await _outfit_generation_context(db, user_id)
     identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
     if identity_uri is None:
         raise OutfitError("身份种子图读取失败，请稍后重试")
@@ -240,6 +244,7 @@ async def create_outfit_draft(
     draft_url = await _generate_outfit_fullbody(
         user_id,
         species=species,
+        rig_type=rig_type,
         style=style,
         appearance=appearance,
         personality=personality,
@@ -271,7 +276,7 @@ async def regenerate_outfit_draft(db: AsyncSession, user_id: int, outfit_id: int
     if outfit.status != "draft":
         raise OutfitStateError("仅草稿状态可以微调重绘")
 
-    avatar, _, species, appearance, personality, style = await _outfit_generation_context(db, user_id)
+    avatar, _, species, appearance, personality, style, rig_type = await _outfit_generation_context(db, user_id)
     identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
     if identity_uri is None:
         raise OutfitError("身份种子图读取失败，请稍后重试")
@@ -287,6 +292,7 @@ async def regenerate_outfit_draft(db: AsyncSession, user_id: int, outfit_id: int
     draft_url = await _generate_outfit_fullbody(
         user_id,
         species=species,
+        rig_type=rig_type,
         style=style,
         appearance=appearance,
         personality=personality,

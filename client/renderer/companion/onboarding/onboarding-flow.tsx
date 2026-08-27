@@ -65,7 +65,14 @@ import { $voicePreparing } from '../voice-state'
 
 import { computeBackTransition } from './back-transition'
 import { type OnboardingAudioTag, playOnboardingAudio } from './onboarding-audio'
-import { Chip, HistoryGallery, type HistoryGalleryItem, PortraitLightbox, PortraitPanel } from './onboarding-components'
+import {
+  Chip,
+  HistoryGallery,
+  type HistoryGalleryItem,
+  PortraitLightbox,
+  PortraitPanel,
+  useNaturalAspectRatio
+} from './onboarding-components'
 
 type Phase =
   | 'q-character'
@@ -480,6 +487,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   >({})
 
   const [fullbodyHistoryIndices, setFullbodyHistoryIndices] = useState<Record<string, number>>({})
+
+  // 全身画幅随物种骨骼分桶（竖/方/横并存）：确认卡取景框比例跟随当前立绘图片本身
+  const fullbodyRatio = useNaturalAspectRatio(fullbodyFrontUrl)
 
   // 在「形象描述」题目提交上来的参考图。本地用 IndexedDB 草稿缓存持久化，
   // 这样半身生成前崩溃后重启也能带回来。
@@ -1864,7 +1874,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     </div>
                   </div>
 
-                  <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
+                  <div
+                    className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group"
+                    style={fullbodyRatio ? { aspectRatio: fullbodyRatio } : undefined}
+                  >
                     {fullbodyFrontUrl ? (
                       <button
                         aria-label="放大查看"
@@ -1872,7 +1885,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         onClick={() => setFullbodyZoomUrl(fullbodyFrontUrl)}
                         type="button"
                       >
-                        <img alt="正面全身立绘" className="h-full w-full object-cover" src={fullbodyFrontUrl} />
+                        <img alt="正面全身立绘" className="h-full w-full object-contain" src={fullbodyFrontUrl} />
                         <div className="absolute top-2 right-2 rounded-full bg-black/60 p-1.5 text-white/80 opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-black/80 hover:text-white">
                           <svg
                             className="h-3.5 w-3.5"

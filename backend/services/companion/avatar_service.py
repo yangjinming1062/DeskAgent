@@ -31,13 +31,24 @@ from ..llm import (
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
 from .persona_service import get_or_create_persona
-from .rig_type_selector import classify_species
+from .rig_type_selector import classify_species, select_rig_type
 
 logger = get_logger(__name__)
 
 _DEFAULT_STYLE: str = "portrait"
 _AVATAR_SIZE: str = "1024x1024"
-_FULLBODY_SIZE: str = "1024x1792"
+# 全身种子画幅随骨骼类型分桶（DESIGN §5.4 任意物种）：双足维持既有竖版（主路径零扰动），
+# 方/横桶分辨率不低于竖版以保住主体像素密度（种子图是 2D 拆分的直接输入）；
+# 像素串经 SIZE_TO_ASPECT 翻译成宽高比供各图生供应商消费。键集须覆盖 rig_type_selector._RIG_TYPES。
+_RIG_FULLBODY_SIZES: dict[str, str] = {
+    "biped": "1024x1792",  # 9:16
+    "quadruped": "1536x1536",  # 1:1
+    "avian": "1536x1536",  # 1:1
+    "hexapod": "1536x1536",  # 1:1
+    "serpentine": "1792x1344",  # 4:3
+    "aquatic": "1792x1344",  # 4:3
+    "octopod": "1792x1024",  # 16:9
+}
 _AVATAR_QUALITY: str = "standard"
 _FULLBODY_PREFERRED_PROVIDERS = ("gemini", "grok")
 _UPLOAD_EXTS: dict[str, str] = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif"}
@@ -864,7 +875,8 @@ async def generate_fullbody_front_2d(
         raise SeedPromptMissingError(f"avatar {avatar_id} has no cached avatar_prompt")
 
     species, appearance, personality = _fullbody_identity_fields(persona)
-    template = resolve_fullbody_template(species, "biped", style)
+    rig_type = await _resolve_fullbody_rig_type(db, user_id, asset, species)
+    template = resolve_fullbody_template(species, rig_type, style)
     ref_uri = _subject_reference_for_avatar(asset, reference_image, reference_content_type)
 
     effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
@@ -875,7 +887,7 @@ async def generate_fullbody_front_2d(
             prompt,
             user_id,
             reference_image=ref_uri,
-            size=_FULLBODY_SIZE,
+            size=_fullbody_size_for(rig_type),
             persist=False,
             preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
@@ -890,6 +902,7 @@ async def generate_fullbody_front_2d(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_style"] = style
+            payload["fullbody_rig_type"] = rig_type
             if effective_feedback is not None:
                 payload["fullbody_feedback"] = effective_feedback
             else:
@@ -904,6 +917,23 @@ async def generate_fullbody_front_2d(
         async with SESSION_LOCAL() as write_db:
             return await _write(write_db)
     return await _write(db)
+
+
+def _fullbody_size_for(rig_type: str) -> str:
+    """全身画幅按骨骼类型取桶；未知类型回落双足竖版（与分类失败默认 biped 一致）。"""
+    return _RIG_FULLBODY_SIZES.get(rig_type, _RIG_FULLBODY_SIZES["biped"])
+
+
+async def _resolve_fullbody_rig_type(db: AsyncSession | None, user_id: int, avatar: AvatarAsset, species: str) -> str:
+    """全身种子骨骼类型：优先沿用头像行已记的 rig（重绘与换装间画幅/姿态稳定，不随分类抖动漂移），
+    缺省按物种分类一次——avatar_service 各全身生成流随后随 prompt_json 持久化；预设物种恒 biped 免 LLM 调用。"""
+    payload = safe_json_loads(avatar.prompt_json, default={})
+    cached = payload.get("fullbody_rig_type") if isinstance(payload, dict) else None
+    if isinstance(cached, str) and cached in _RIG_FULLBODY_SIZES:
+        return cached
+    if is_preset_species(species):
+        return "biped"
+    return await select_rig_type(chat, species, db=db, user_id=user_id)
 
 
 async def _resolve_fullbody_3d_style(db: AsyncSession | None, user_id: int, avatar: AvatarAsset, species: str) -> str:
@@ -939,7 +969,8 @@ async def generate_fullbody_front_3d(
 
     species, appearance, personality = _fullbody_identity_fields(persona)
     effective_style = await _resolve_fullbody_3d_style(db, user_id, asset, species)
-    template = resolve_fullbody_template(species, "biped", effective_style)
+    rig_type = await _resolve_fullbody_rig_type(db, user_id, asset, species)
+    template = resolve_fullbody_template(species, rig_type, effective_style)
     ref_uri = _subject_reference_for_avatar(asset)
     effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
     prompt = build_fullbody_prompt("front", template=template, style_id=effective_style, feedback=effective_feedback, appearance=appearance, personality=personality)
@@ -949,7 +980,7 @@ async def generate_fullbody_front_3d(
             prompt,
             user_id,
             reference_image=ref_uri,
-            size=_FULLBODY_SIZE,
+            size=_fullbody_size_for(rig_type),
             persist=persona.is_portrait_confirmed,
             preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
@@ -964,6 +995,7 @@ async def generate_fullbody_front_3d(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_3d_style"] = effective_style
+            payload["fullbody_rig_type"] = rig_type
             if effective_feedback is not None:
                 payload["fullbody_3d_feedback"] = effective_feedback
             else:
@@ -1000,7 +1032,8 @@ async def generate_fullbody_back(
     species, appearance, personality = _fullbody_identity_fields(persona)
 
     effective_style = await _resolve_fullbody_3d_style(db, user_id, asset, species)
-    template = resolve_fullbody_template(species, "biped", effective_style)
+    rig_type = await _resolve_fullbody_rig_type(db, user_id, asset, species)
+    template = resolve_fullbody_template(species, rig_type, effective_style)
 
     front_ref_uri = load_avatar_bytes_as_data_uri(effective_front_url) or _subject_reference_for_avatar(asset)
     effective_feedback = feedback.strip() if (feedback and feedback.strip()) else None
@@ -1011,7 +1044,7 @@ async def generate_fullbody_back(
             prompt,
             user_id,
             reference_image=front_ref_uri,
-            size=_FULLBODY_SIZE,
+            size=_fullbody_size_for(rig_type),
             persist=persona.is_portrait_confirmed,
             preferred_provider=list(_FULLBODY_PREFERRED_PROVIDERS),
         )
@@ -1026,6 +1059,7 @@ async def generate_fullbody_back(
         payload = safe_json_loads(target.prompt_json, default={})
         if isinstance(payload, dict):
             payload["fullbody_3d_style"] = effective_style
+            payload["fullbody_rig_type"] = rig_type
             if effective_feedback is not None:
                 payload["fullbody_back_feedback"] = effective_feedback
             else:
