@@ -2,6 +2,7 @@ import {
   type DesktopActivatePayload,
   type DesktopAuthBroadcast,
   type DesktopBootProgress,
+  type DesktopPrefsHydrated,
   type DesktopRunnerStatusEvent,
   type DesktopUiThemeBroadcast,
   type DesktopUpdateEvent,
@@ -10,6 +11,7 @@ import {
   type MediaTtsPayload,
   type RunnerConfigPatch,
   type SpiritAgentApiRequest,
+  type SpiritAgentPrefsSet,
   type SpiritAgentSelectPathsOptions,
   type SpiritAgentTitleBarTheme,
   type SpiritAgentUiTheme
@@ -94,6 +96,12 @@ contextBridge.exposeInMainWorld('spiritagent', {
 
     return () => ipcRenderer.removeListener(IPC.event.trayOpenChat, listener)
   },
+  onPrefsHydrated: (callback: (payload: DesktopPrefsHydrated) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: DesktopPrefsHydrated) => callback(payload)
+    ipcRenderer.on(IPC.event.prefsHydrated, listener)
+
+    return () => ipcRenderer.removeListener(IPC.event.prefsHydrated, listener)
+  },
   onUiThemeChanged: (callback: (payload: DesktopUiThemeBroadcast) => void) => {
     const listener = (_event: IpcRendererEvent, payload: DesktopUiThemeBroadcast) => callback(payload)
     ipcRenderer.on(IPC.event.uiThemeChanged, listener)
@@ -114,6 +122,9 @@ contextBridge.exposeInMainWorld('spiritagent', {
     ipcRenderer.invoke(IPC.invoke.runnerInvoke, name, args),
   saveClipboardImage: () => ipcRenderer.invoke(IPC.invoke.saveClipboardImage),
   selectPaths: (options?: SpiritAgentSelectPathsOptions) => ipcRenderer.invoke(IPC.invoke.selectPaths, options),
+  prefs: {
+    set: (payload: SpiritAgentPrefsSet) => ipcRenderer.send(IPC.send.prefsSet, payload)
+  },
   setTitleBarTheme: (payload: SpiritAgentTitleBarTheme) => ipcRenderer.send(IPC.send.titleBarTheme, payload),
   setUiTheme: (payload: SpiritAgentUiTheme) => ipcRenderer.send(IPC.send.uiTheme, payload),
   showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),

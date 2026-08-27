@@ -77,6 +77,9 @@ declare global {
       runnerGetTools: AsyncIpc<IpcInvokeContract['spiritagent:runner:get-tools']>
       setTitleBarTheme: (payload: IpcSendContract['spiritagent:titlebar-theme'][0]) => void
       setUiTheme: (payload: IpcSendContract['spiritagent:ui-theme'][0]) => void
+      prefs: {
+        set: (payload: IpcSendContract['spiritagent:prefs:set'][0]) => void
+      }
       runnerConfig: {
         read: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:read']>
         write: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:write']>
@@ -113,6 +116,7 @@ declare global {
       onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
       onTrayOpenChat: EventSubscription<'spiritagent:tray:open-chat'>
       onUiThemeChanged: EventSubscription<'spiritagent:ui-theme-changed'>
+      onPrefsHydrated: EventSubscription<'spiritagent:prefs-hydrated'>
       getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>
       update: {
         check: AsyncIpc<IpcInvokeContract['spiritagent:update:check']>
@@ -129,6 +133,7 @@ export type {
   DesktopAuthBroadcast,
   DesktopAuthSnapshot,
   DesktopBootProgress,
+  DesktopPrefsHydrated,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
   DesktopUiThemeBroadcast,
@@ -141,6 +146,7 @@ export type {
   RunnerConfigPatch,
   SpiritAgentApiRequest,
   SpiritAgentConnection,
+  SpiritAgentPrefsSet,
   SpiritAgentSelectPathsOptions,
   SpiritAgentTitleBarTheme,
   SpiritAgentUiTheme

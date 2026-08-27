@@ -11,6 +11,9 @@ let _loaded = false
 let _writeLock: null | Promise<unknown> = null
 // 由 bridge 设置；登录前为 null。吞掉的错误表示 Runner 尚未连接。
 let _pushTarget: null | ((config: Record<string, unknown>) => Promise<unknown> | void) = null
+// 云同步协调器（config-sync.ts）设置的本地变更委托；applyCloudMirror 期间置抑制标志防回环。
+let _cloudSync: null | { onLocalChange: (config: Record<string, unknown>) => void } = null
+let _suppressCloudSync = false
 
 export function init({ spiritagentHome }: { spiritagentHome: null | string }): void {
   _storePath = spiritagentHome ? path.join(spiritagentHome, FILENAME) : null
@@ -52,6 +55,10 @@ export function setPushTarget(fn: null | ((config: Record<string, unknown>) => P
   _pushTarget = typeof fn === 'function' ? fn : null
 }
 
+export function setCloudSync(delegate: null | { onLocalChange: (config: Record<string, unknown>) => void }): void {
+  _cloudSync = delegate
+}
+
 async function _runLocked<T>(task: () => Promise<T>): Promise<T> {
   while (_writeLock) {
     await _writeLock.catch(() => {})
@@ -81,6 +88,37 @@ async function _persistAndPush(): Promise<void> {
       /* runner 未连接——待下次 runner-ready 时再推送配置 */
     }
   }
+
+  // 本地写入后通知云同步（水合写入经 _suppressCloudSync 抑制，防止回环）。
+  if (_cloudSync && !_suppressCloudSync) {
+    _cloudSync.onLocalChange(_config)
+  }
+}
+
+/**
+ * 云端水合入口：sections 是已按同步节白名单合并且剔除本机键的结果，
+ * 整节替换进镜像（其余节与本机机密原样保留），落盘并推 runner，
+ * 不触发云同步委托。sections 为空时是 no-op。
+ */
+export async function applyCloudMirror(sections: Record<string, unknown>): Promise<void> {
+  if (!sections || typeof sections !== 'object') {
+    return
+  }
+
+  await _runLocked(async () => {
+    _load()
+    _suppressCloudSync = true
+
+    try {
+      for (const [section, value] of Object.entries(sections)) {
+        _config[section] = value
+      }
+
+      await _persistAndPush()
+    } finally {
+      _suppressCloudSync = false
+    }
+  })
 }
 
 export async function write(obj: unknown): Promise<{ error?: string; ok: boolean }> {

@@ -3,7 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { type DesktopBootProgress, IPC, type SpiritAgentConnection } from '@ipc/contracts'
+import {
+  type DesktopBootProgress,
+  type DesktopPrefsHydrated,
+  IPC,
+  SPIRITAGENT_UI_THEMES,
+  type SpiritAgentConnection
+} from '@ipc/contracts'
 import {
   app,
   BrowserWindow,
@@ -70,6 +76,7 @@ import {
 import { spiritagentHome } from './security/paths'
 import { buildClientContext } from './shared/client-context'
 import { readStoredBackendUrl, resolveNormalizedBackendUrl } from './shared/config'
+import { createConfigSync } from './shared/lib/config-sync'
 import * as runnerConfigStore from './shared/lib/runner-config-store'
 import { extensionForMimeType, mimeTypeForPath, STREAMABLE_MEDIA_EXTS } from './shared/mime'
 import { atomicWriteFile, directoryExists, fileExists, sendToMain, sleep } from './shared/utils'
@@ -114,6 +121,31 @@ fs.mkdirSync(SPIRITAGENT_HOME, { recursive: true })
 app.setPath('userData', SPIRITAGENT_HOME)
 
 runnerConfigStore.init({ spiritagentHome: SPIRITAGENT_HOME })
+
+// 云端配置同步协调器：backend user_settings 为真源，desktop-settings.json 是镜像
+// （terminal/spiritagent 等机密与设备相关节仅本机，见 shared/lib/config-sync.ts）。
+const configSync = createConfigSync({
+  ensureBackend: () => ensureBackend(),
+  fetchImpl: (url, init) => electronNet.fetch(url, init),
+  log: chunk => rememberLog(chunk),
+  onHydrated: ({ companion, ui }) => {
+    const themeValue = ui.theme
+    const theme = SPIRITAGENT_UI_THEMES.find(candidate => candidate === themeValue)
+    const payload: DesktopPrefsHydrated = { companion, ui: theme ? { theme } : {} }
+
+    for (const win of [mainWindow, toolWindow]) {
+      if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+        win.webContents.send(IPC.event.prefsHydrated, payload)
+
+        if (theme) {
+          win.webContents.send(IPC.event.uiThemeChanged, { theme })
+        }
+      }
+    }
+  }
+})
+
+runnerConfigStore.setCloudSync(configSync)
 
 const APP_NAME = 'SpiritAgent'
 const TITLEBAR_HEIGHT = 34
@@ -1431,6 +1463,9 @@ function broadcastAuthChanged(snapshot: null | SessionSnapshot): void {
   const authenticated = Boolean(snapshot?.hasToken)
   const payload = { authenticated, snapshot: authenticated ? snapshot : null }
 
+  // 用户身份变化触发配置水合（登录/换号；登出只停摆待写）。
+  configSync.handleAuthUserChanged(authenticated ? (snapshot?.user?.id ?? null) : null)
+
   for (const win of [mainWindow, toolWindow]) {
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC.event.authChanged, payload)
@@ -1754,6 +1789,9 @@ function configureSpellChecker(): void {
 app.on('before-quit', () => {
   bridgeDeps.isQuitting = true
   destroyTray()
+
+  // 尽力而为的收尾上云；进程先退也不丢——下次启动水合的键级播种会把遗留编辑补传。
+  void configSync.flush()
 
   if (bridgeDeps.runnerBridge) {
     try {

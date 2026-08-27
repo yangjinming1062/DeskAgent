@@ -213,7 +213,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 | spiritagent.info | Client → Runner | 完整运行快照 | Runner 上报 + Client 诊断 |
 | execute_tool | Client → Runner | 执行工具调用 | Backend 路由 + Client 中转 + Runner 执行 |
 | spiritagent.cancel | Client → Runner | params.req_id 可选；指定则取消该 RPC，缺省取消当前进行中工具；并对目标 req_id 设置中断标记 | Client 中断 + Runner 任务取消 + 请求级隔离 |
-| spiritagent.config.update | Client → Runner | 推送完整配置（Client 是唯一拥有者） | Client 设置 + Runner 内存配置 |
+| spiritagent.config.update | Client → Runner | 推送完整配置（云端为真源，Client 是镜像持有者与唯一推送方，见 §2.4） | Client 设置 + Runner 内存配置 |
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
 
 **工具集 id 权威枚举**（跨模块公共事实，本表为唯一 owner；各模块目录只做 id → 自有工具名的映射，不复述清单）：
@@ -227,9 +227,13 @@ capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探�
 
 `reconnect_streak` 是自上次成功握手以来的连续重连次数（握手成功后重置为 0）。客户端可据此感知连接状态但保持 Runner 存活。生命周期累计重连计数通过 `spiritagent.info.reconnect_count` 上报，不重置。
 
-### 2.4 配置推送所有权
+### 2.4 配置所有权与云端同步
 
-**客户端是配置的唯一拥有者**，经 spiritagent.config.update 把完整配置 dict 推送给 Runner。Runner 仅在内存持有配置、每次工具调用读取，不读写磁盘配置文件。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置页保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。客户端把配置以 JSON 存储在用户主目录（非用户面向）。**config schema 的键明细见 runner 代码（utils/config.py），本文只锁定所有权与推送时序契约。**
+**Backend 的 user_settings 是用户配置真源**（REST 为 `GET/PUT /api/config`，按点键 upsert、永不删除键）；Client 是同步代理与 Runner 的唯一推送方。本地 `desktop-settings.json` 是云端镜像（本地/离线使用 + 供 Runner 推送），内容 = **同步节白名单**（toolsets / skills / browser / security / debug / tool_output / computer_use / file_state / audio / companion / ui，节内本机键如 `browser.profile_dir` 不上云）+ **仅本机节**（terminal、spiritagent 等机密与设备相关节及未知节——**永不离开本机**，红线见 §5.3）。镜像带归属戳（sync.user_id），换号残留按不信任处理：水合前清空同步节、不上传。
+
+同步语义：设置变更 → 镜像原子写 → spiritagent.config.update 推 Runner → 防抖后 PUT 云端；启动恢复会话、登录、换号时 GET 水合（云端值逐键覆盖镜像同名键；本地有而云端无的键回传上云，覆盖首跑播种与离线补传）。离线时镜像照常读写，恢复后自动补传；多端为按保存 last-write-wins、无合并，另一端的改动在下次水合时收敛。
+
+Runner 侧不变：仅内存持有配置、每次工具调用读取，不读写磁盘配置文件。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。**config 键明细见 runner 代码（utils/config.py）与 client（shared/lib/config-sync.ts 的白名单），本文只锁定所有权与同步契约。**
 
 ---
 
@@ -270,6 +274,8 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 ### 5.3 凭据落盘
 
 激活码（base64 编码的 {baseUrl, token}）经 Electron safeStorage 加密落盘：Windows DPAPI / macOS Keychain（Linux 仅原理说明，Runner/Desktop 不支持）。session JWT **仅内存持有**——每次启动用激活码换新 session JWT；激活码是持久凭证，session JWT 用于日常 API 调用与 ws-ticket 签发。渲染与预加载进程不可访问 safeStorage 接口，阻断 XSS 窃取凭证。
+
+**设置同步红线**（§2.4）：本机明文机密（`terminal.sudo_password`、`terminal.ssh.password`、`terminal.credential_files` 等 terminal/spiritagent 节内容）永不进入 user_settings / 云端；客户端按同步节白名单上云，白名单外与节内本机键只留本机文件。
 
 ### 5.4 API Key Fingerprinting
 
@@ -314,4 +320,5 @@ LLM 在生成 affect / spatial 时按以下规则：
 - 本文档是**跨模块公共契约**——任何改动必须同时通知所有受影响的模块所有者。
 - 任何扩展 emotion / locale / 事件 type，必须在 **本文档 + 后端白名单 + 客户端消费代码**三处同步。
 - 任何 Reserved Key 新增，必须在 **本文档 + 工具入口** 同步。
+- 任何 user_settings 新键，必须在 **后端消费代码 + client 同步节白名单（shared/lib/config-sync.ts）** 同步；跨模块语义（如工具集禁用）另在本文档登记。
 - 子模块 README 不重复本文档内容，只在需要时链接。

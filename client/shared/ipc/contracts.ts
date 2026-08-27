@@ -105,6 +105,18 @@ export interface DesktopUiThemeBroadcast {
   theme: SpiritAgentUiTheme
 }
 
+// 渲染层偏好写穿透：key 为点键（companion.voice_id / ui.theme 等），value 原样入云同步管道。
+export interface SpiritAgentPrefsSet {
+  key: string
+  value: unknown
+}
+
+// 云端配置水合广播：主进程把 GET /api/config 水合进本地镜像后，携带镜像中的偏好节通知双窗口刷新缓存。
+export interface DesktopPrefsHydrated {
+  companion: Record<string, unknown>
+  ui: { theme?: SpiritAgentUiTheme }
+}
+
 export interface DesktopBootProgress {
   error: null | string
   message: string
@@ -290,6 +302,7 @@ export interface IpcEventContract {
   'spiritagent:auth:session-expired': []
   'spiritagent:boot-progress': [payload: DesktopBootProgress]
   'spiritagent:power-resume': []
+  'spiritagent:prefs-hydrated': [payload: DesktopPrefsHydrated]
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
@@ -300,6 +313,7 @@ export interface IpcEventContract {
 
 // 3. 渲染进程向主进程单向发送消息（通过 ipcRenderer.send / ipcMain.on）
 export interface IpcSendContract {
+  'spiritagent:prefs:set': [payload: SpiritAgentPrefsSet]
   'spiritagent:titlebar-theme': [payload: SpiritAgentTitleBarTheme]
   'spiritagent:ui-theme': [payload: SpiritAgentUiTheme]
 }
@@ -359,6 +373,7 @@ export const IPC = {
     authSessionExpired: 'spiritagent:auth:session-expired',
     bootProgress: 'spiritagent:boot-progress',
     powerResume: 'spiritagent:power-resume',
+    prefsHydrated: 'spiritagent:prefs-hydrated',
     runnerStatus: 'spiritagent:runner:status',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
@@ -367,6 +382,7 @@ export const IPC = {
     updateEvent: 'spiritagent:update-event'
   } as const satisfies Record<string, IpcEventChannel>,
   send: {
+    prefsSet: 'spiritagent:prefs:set',
     titleBarTheme: 'spiritagent:titlebar-theme',
     uiTheme: 'spiritagent:ui-theme'
   } as const satisfies Record<string, IpcSendChannel>
