@@ -2,9 +2,20 @@ import { $gateway } from '@/shared/store/gateway'
 import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
-import { $effectiveTier } from './companion-store'
+import { $chatOpen } from './chat-store'
+import { $effectiveTier, $voiceCallOpen, clearGazeTarget, setGazeTarget } from './companion-store'
 import { $llmAutonomy } from './prefs'
-import { $defaultScale, computePerchPlacement, setLocale, startRoam } from './spatial'
+import { gazeTowardsPoint } from './ritual-walk'
+import {
+  $defaultScale,
+  $spatialPos,
+  computePerchPlacement,
+  getBaseSpriteHeight,
+  getBaseSpriteWidth,
+  moveTo,
+  setLocale,
+  startRoam
+} from './spatial'
 
 const CONSULT_MIN_INTERVAL_MS = 60_000
 const MIN_ACTION_QUIET_MS = 60_000
@@ -38,6 +49,61 @@ function stateChanged(oldSnap: Snapshot, newSnap: Snapshot): boolean {
   )
 }
 
+// 走过去搭话的远近距离分界（DESIGN §3.6 同款语义：远飞近走）。
+const APPROACH_WALK_RANGE_PX = 400
+
+function approachLocomotion(target: { x: number; y: number }): 'walk' | 'fly' {
+  const cur = $spatialPos.get()
+
+  return Math.hypot(target.x - cur.x, target.y - cur.y) > APPROACH_WALK_RANGE_PX ? 'fly' : 'walk'
+}
+
+// 走过去搭话（DESIGN §3.5/§6.4）：开场白由后端经 companion.message 通道投递（边走边说），
+// 客户端只负责走位——有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工）；
+// 用户在桌面（无窗口）时走到屏幕中下部站定，不动 locale，后续空间决策自然接管。
+// 途中视线锁定目标中心，数秒后交还指针跟随（镜像 events.ts 的 perch cue 模式）。
+function executeApproach(): void {
+  // 锁屏不搭话；聊天开着时空间决策本就冻结；通话中面板锚定脚下，不许走。
+  if ($screenLocked.get() || $chatOpen.get() || $voiceCallOpen.get()) {
+    return
+  }
+
+  const ctx = $focusContext.get()
+  const geom = ctx?.windowGeom
+  const hasWindow = Boolean(geom && ctx!.category !== 'unknown' && !ctx!.fullscreen)
+
+  if (hasWindow && geom) {
+    const perch = computePerchPlacement(geom, $defaultScale.get())
+
+    if (perch) {
+      setGazeTarget(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
+      setTimeout(() => clearGazeTarget(), 6000)
+      setLocale('perch', {
+        position: perch.pos,
+        scaleLimit: perch.scale,
+        locomotion: approachLocomotion(perch.pos)
+      })
+    }
+
+    return
+  }
+
+  // 屏幕中下部居中站定（落在 roam waypoint 的下半屏带内，避免挡住用户正在用的 UI）。
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const w = getBaseSpriteWidth()
+  const h = getBaseSpriteHeight()
+
+  const point = {
+    x: Math.max(24, (vw - w) / 2),
+    y: Math.max(24, Math.min(vh - h - 24, vh * 0.6))
+  }
+
+  setGazeTarget(gazeTowardsPoint(point))
+  setTimeout(() => clearGazeTarget(), 6000)
+  moveTo(point, approachLocomotion(point))
+}
+
 function executeAutonomousAction(action: string): void {
   switch (action) {
     case 'roam':
@@ -57,6 +123,11 @@ function executeAutonomousAction(action: string): void {
 
       break
     }
+
+    case 'approach':
+      executeApproach()
+
+      break
 
     default:
       break
