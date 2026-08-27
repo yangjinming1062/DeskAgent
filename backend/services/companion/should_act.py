@@ -1,3 +1,4 @@
+import time
 from typing import Any
 
 from components import coerce_hour_0_23, coerce_non_negative_float, get_logger
@@ -8,7 +9,16 @@ from .prompt_runtime import load_companion_prompt_context, run_prompt_json
 
 logger = get_logger(__name__)
 
-ALLOWED_ACTIONS: frozenset[str] = frozenset({"roam", "perch", "stay"})
+ALLOWED_ACTIONS: frozenset[str] = frozenset({"roam", "perch", "approach", "stay"})
+
+# approach（走过去搭话）专属低频闸：一次搭话 = 一次走位 + 一条主动消息 + 一次 TTS，
+# 频繁搭话会把"主动陪伴"变成骚扰。冷却内的 approach 决策整体降级为 stay——
+# 不发消息也不返回 approach，避免"说了话却没走过来"的割裂（客户端只认 action 走位）。
+APPROACH_COOLDOWN_SECONDS = 1800.0
+_last_approach_at: dict[int, float] = {}
+
+# approach 开场白的硬上限：prompt 要 10–30 字，这里兜住 LLM 超发的长文（按字符截断）。
+_MAX_APPROACH_TEXT_CHARS = 80
 
 
 class ShouldActResult(BaseModel):
@@ -18,7 +28,7 @@ class ShouldActResult(BaseModel):
     reason: str = Field(default="", max_length=200)
 
 
-_MAX_RESPONSE_TOKENS = 120
+_MAX_RESPONSE_TOKENS = 260
 
 _SHOULD_ACT_PROMPT_TEMPLATE = (
     "你是 {persona_name} 的自主行为推理引擎。\n"
@@ -34,13 +44,32 @@ _SHOULD_ACT_PROMPT_TEMPLATE = (
     "下面是系统建议（供你参考，不强制执行）：\n"
     "- 用户焦点在 IDE/阅读/游戏等专注应用：可以考虑栖身在窗口旁 (perch)\n"
     "- 空闲时间较长且屏幕解锁：可以轻度漫游 (roam)\n"
+    "- 想主动找用户说话（长时间没互动、性格外向粘人、特别的时刻）：可以走过去搭话 (approach)，"
+    "在 params 里给 {{\"text\": \"10–30 字的开场白\", \"emotion\": \"可选，常见情绪词如 happy/curious/excited\"}}；"
+    "这是低频行为，距上次自主动作不久时请改用 stay\n"
     "- 其他大部分时候：保持静止 (stay)，不轻易打扰用户\n\n"
     "结合角色性格与情境，自行决定此刻是否要采取主动行为。\n"
     "只返回 JSON，不要有任何其他文字：\n"
     '{{"should_act": true/false, "action": "ACTION", "params": {{}}, "reason": "简短说明"}}\n\n'
     "action 必须是以下之一（若 should_act=false，填 stay）：\n"
-    " roam, perch, stay"
+    " roam, perch, approach, stay"
 )
+
+
+def _normalize_approach_params(params: dict[str, Any] | None) -> dict[str, str] | None:
+    """approach 的 params 收敛为 {text, emotion}：text 必填（strip + 截断），emotion 可选。
+
+    返回 None = 没有可用的开场白，调用方降级 stay——没有话可说的搭话只剩走位，失去意义。
+    """
+    raw_text = params.get("text") if isinstance(params, dict) else None
+    text = str(raw_text).strip()[:_MAX_APPROACH_TEXT_CHARS] if isinstance(raw_text, str) else ""
+    if not text:
+        return None
+    emotion = params.get("emotion") if isinstance(params, dict) else None
+    normalized: dict[str, str] = {"text": text}
+    if isinstance(emotion, str) and emotion.strip():
+        normalized["emotion"] = emotion.strip()
+    return normalized
 
 
 async def should_act(
@@ -94,6 +123,21 @@ async def should_act(
     if not should_act_bool or action not in ALLOWED_ACTIONS or action == "stay":
         logger.info("should_act: decided not to act", extra={"user_id": user_id, "reason": reason})
         return ShouldActResult(should_act=False, action="stay", reason=reason)
+
+    if action == "approach":
+        now = time.monotonic()
+        last = _last_approach_at.get(user_id)
+        if last is not None and now - last < APPROACH_COOLDOWN_SECONDS:
+            logger.info(
+                "should_act: approach throttled", extra={"user_id": user_id, "since_sec": round(now - last, 1)}
+            )
+            return ShouldActResult(should_act=False, action="stay", reason="approach_cooldown")
+        normalized = _normalize_approach_params(params)
+        if normalized is None:
+            logger.info("should_act: approach downgraded (no text)", extra={"user_id": user_id, "reason": reason})
+            return ShouldActResult(should_act=False, action="stay", reason=(f"approach_no_text: {reason}")[:200])
+        _last_approach_at[user_id] = now
+        params = normalized
 
     logger.info("should_act: decided to act", extra={"user_id": user_id, "action": action, "reason": reason})
     return ShouldActResult(should_act=True, action=action, params=params, reason=reason)

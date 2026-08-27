@@ -60,6 +60,7 @@ from services.companion import (
     submit_onboarding_field,
     update_memory,
 )
+from services.companion.affect_emit import emit_companion_message
 from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still, set_disturbance_tier
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
@@ -810,6 +811,13 @@ def _register_session_handlers(
             seconds_since_last_action=seconds_since_last_action,
             llm_config=cfg,
         )
+        # 走过去搭话（DESIGN §3.5/§6.4）：开场白经 companion.message 通道独立投递，
+        # 客户端边走边说；RPC 响应只承载走位动作。text 的规范化已在 should_act 内完成，
+        # 这里对空文本做防御性跳过（should_act 对无文本的 approach 已降级 stay）。
+        if res.action == "approach" and isinstance(res.params, dict) and str(res.params.get("text") or "").strip():
+            await emit_companion_message(
+                user_id, str(res.params["text"]).strip(), affect=res.params.get("emotion")
+            )
         return res.model_dump()
 
     dispatcher.register("companion.should_act", companion_should_act)

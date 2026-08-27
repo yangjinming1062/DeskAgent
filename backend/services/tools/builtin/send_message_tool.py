@@ -1,32 +1,15 @@
 import json
 from urllib.parse import urlparse
 
-from components import SESSION_LOCAL, get_logger, is_safe_outbound, safe_outbound_async_client, tool_error
-from modules.conversation import Message
-from modules.ws import WSEvent
+from components import get_logger, is_safe_outbound, safe_outbound_async_client, tool_error
 
-from services.conversation import get_or_create_main_conversation, record_user_outreach
+from services.companion.affect_emit import emit_companion_message
 from services.disturbance import is_still
 from services.tools import ALWAYS_AVAILABLE, REGISTRY
 
 logger = get_logger(__name__)
 
 WEBHOOK_TIMEOUT = 10.0
-
-
-async def _emit_companion_message(user_id: int, text: str, affect: str | None = None, followup_timeout_seconds: float | None = None) -> None:
-    """通过 WS outbox 主动把伙伴消息推送到客户端（ARCHITECTURE.md §5.1.A / §6），是否展示由客户端打扰档位决定。"""
-    payload: dict = {"text": text}
-    if affect:
-        payload["affect"] = {"emotion": affect}
-    async with SESSION_LOCAL() as db:
-        db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
-        # status_proactive 留在 LLM 上下文中（用户可回复），空消息不应在那里累积出一段空白对话回合。
-        if text.strip():
-            main_conv = await get_or_create_main_conversation(db, user_id)
-            db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
-            record_user_outreach(user_id, text.strip(), followup_timeout_seconds)
-        await db.commit()
 
 
 async def send_message_tool(
@@ -50,7 +33,9 @@ async def send_message_tool(
         if isinstance(user_id, int):
             still = await is_still(user_id)
             if not still:
-                await _emit_companion_message(user_id, message, affect=affect, followup_timeout_seconds=follow_up_after_seconds)
+                await emit_companion_message(
+                    user_id, message, affect=affect, followup_timeout_seconds=follow_up_after_seconds
+                )
         return json.dumps({"success": True, "channel": "companion", "still_suppressed": still}, ensure_ascii=False)
 
     parsed = urlparse(target_webhook)
