@@ -416,7 +416,7 @@ export function CompanionRoot(): React.JSX.Element {
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
         onOpenChat={() => openDock('chat')}
-        onOpenSettingsPage={page => openDock('settings', page)}
+        onOpenSettings={() => openDock('settings')}
         onOpenVoiceCall={() => openDock('voice')}
       />
       {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} onOpenVoiceCall={() => openDock('voice')} />}
