@@ -9,6 +9,7 @@ import { $sprite3DHitTest } from '../3d/silhouette-hit'
 import { handleDizzyInteraction, handleDragEndInteraction, handlePetInteraction } from '../interaction'
 import { $mesh2dHitmap } from '../mesh2d/mesh2d-store'
 import {
+  $edgeDockSide,
   $homePosition,
   $isEdgeDocked,
   $spatialLocomotion,
@@ -40,6 +41,11 @@ const DOUBLE_TAP_MS = 320
 // 长按阈值（DESIGN §6.3）：按住未移动 ≥ 500ms 触发 long_press 精灵动作与粒子；
 // 拖拽一旦启动即取消等待，两条交互通道互斥。
 const LONG_PRESS_MS = 500
+
+// 调这里：贴边趴姿的整体倾角（度）。人站在屏外（EDGE_DOCK_HIDDEN_FRACTION），
+// 绕贴边侧脚底向屏内倾——上半身斜插进屏幕，配合 gait 的扒边姿态构成「趴屏」。
+// 左贴边用 +（顺时针向屏内倒），右贴边用 −。
+const EDGE_DOCK_LEAN_DEG = 14
 
 // 一旦光标跨到另一块显示器，pointer capture 会持续投递跨视口坐标；
 // 探测主进程的频率最多为此间隔。
@@ -353,12 +359,6 @@ export function SpriteStage({
     const d = dragRef.current
 
     if (!d) {
-      // DESIGN §3.2：贴边滑出要求命中可见部分——穿透态 forward 转发的 mousemove
-      // 在矩形空白区也会到达这里，必须部件级命中判否，避免贴边时误触滑出。
-      if ($isEdgeDocked.get() && stageHitTest(e.clientX, e.clientY)) {
-        undockFromEdge()
-      }
-
       gestureTrackerRef.current?.feedPointerMove(nx, ny, false, region)
 
       return
@@ -471,6 +471,14 @@ export function SpriteStage({
   const spriteW = getBaseSpriteWidth()
   const spriteH = getBaseSpriteHeight()
 
+  // 贴边倾角只挂在内层 wrapper 上（外层每帧更新 translate3d/scale，CSS 过渡会打架）：
+  // 绕贴边侧的脚底为轴把整个人向屏内倾，松开/拖走时 420ms 缓动回正。
+  const edgeDockSide = useStore($edgeDockSide)
+
+  const leanDeg = edgeDockSide === 'left' ? EDGE_DOCK_LEAN_DEG : edgeDockSide === 'right' ? -EDGE_DOCK_LEAN_DEG : 0
+
+  const leanOrigin = edgeDockSide === 'left' ? '0% 100%' : edgeDockSide === 'right' ? '100% 100%' : '50% 50%'
+
   return (
     <div className="fixed inset-0" style={{ pointerEvents: 'none' }}>
       <div
@@ -509,8 +517,18 @@ export function SpriteStage({
           willChange: 'transform, opacity'
         }}
       >
-        {children}
-        <Mesh2DVfxOverlay />
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            transform: `rotate(${leanDeg}deg)`,
+            transformOrigin: leanOrigin,
+            transition: 'transform 420ms cubic-bezier(0.33, 1, 0.68, 1)'
+          }}
+        >
+          {children}
+          <Mesh2DVfxOverlay />
+        </div>
       </div>
     </div>
   )

@@ -25,6 +25,10 @@ export function getBaseSpriteWidth(): number {
 
 const REST_MARGIN = 24
 
+/** 调这里：贴边时藏进屏外的可见宽度比例。人「站在屏幕外」，屏内的存在感靠舞台层
+ * 整体倾角（sprite-stage 的 EDGE_DOCK_LEAN_DEG）把上半身探进来，因此要比直立时藏得更深。 */
+const EDGE_DOCK_HIDDEN_FRACTION = 0.65
+
 const WALK_SPEED = 80
 const FLY_SPEED = 400
 // 语音通话面板与精灵刚体一体的锚定几何（与 voice-call-dock 面板实际尺寸保持一致）。
@@ -71,7 +75,7 @@ export const $homePosition = atom<{ x: number; y: number }>(getHomePosition())
 export const $spatialScale = atom<number>($defaultScale.get())
 export const $spatialLocomotion = atom<Locomotion>('still')
 export const $dragVelocity = atom<{ vx: number; vy: number }>({ vx: 0, vy: 0 })
-const $edgeDockSide = atom<EdgeDockSide>('none')
+export const $edgeDockSide = atom<EdgeDockSide>('none')
 export const $isEdgeDocked = atom<boolean>(false)
 
 // 窗口视口尺寸——单一真实源，由 initSpatial 已有的 resize 监听器更新。
@@ -500,8 +504,8 @@ export function setLocale(
 let userInteracted = false
 
 export function updateSpatialDecision(): void {
-  // 通话中面板锚定精灵脚下，精灵必须留原位（DESIGN §6.1）——与 chat 同样冻结空间决策。
-  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $voiceCallOpen.get()) {
+  // 通话中面板锚定精灵脚下、贴边趴姿锁定、拖拽中均冻结空间决策
+  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $voiceCallOpen.get() || $isEdgeDocked.get()) {
     return
   }
 
@@ -579,7 +583,7 @@ function generateRoamWaypoint(): { x: number; y: number } {
 }
 
 export function startRoam(): void {
-  if (roaming) {
+  if (roaming || $isEdgeDocked.get()) {
     return
   }
 
@@ -628,22 +632,30 @@ function stopRoam(): void {
   cancelMovement()
 }
 
+export function clearDockState(): void {
+  if ($isEdgeDocked.get()) {
+    $isEdgeDocked.set(false)
+  }
+
+  if ($edgeDockSide.get() !== 'none') {
+    $edgeDockSide.set('none')
+  }
+}
+
 function dockToEdge(side: 'left' | 'right'): void {
   cancelMovement()
   const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
   const c = contentBox()
+  const charW = Math.max(1, c.right - c.left)
   const targetY = Math.max(-c.top, Math.min($spatialPos.get().y, window.innerHeight - c.bottom))
 
-  // 身体约 65% 缩进屏幕边缘，只探出头部/耳朵往里看
-  const hiddenAmount = spriteW * 0.65
-  const targetX = side === 'left' ? -hiddenAmount : vw - spriteW + hiddenAmount
+  const targetX =
+    side === 'left'
+      ? -c.left - EDGE_DOCK_HIDDEN_FRACTION * charW
+      : vw - c.left - (1 - EDGE_DOCK_HIDDEN_FRACTION) * charW
 
   $isEdgeDocked.set(true)
   $edgeDockSide.set(side)
-  $spatialLocomotion.set('still')
-  $clipOverride.set('peeking')
-  $spriteAction.set('peeking')
 
   moveTo({ x: targetX, y: targetY }, 'walk', () => {
     $spatialPos.set({ x: targetX, y: targetY })
@@ -660,18 +672,11 @@ export function undockFromEdge(): void {
   cancelMovement()
   const side = $edgeDockSide.get()
   const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
+  const c = contentBox()
   const curPos = $spatialPos.get()
 
-  const targetX = side === 'left' ? REST_MARGIN : vw - spriteW - REST_MARGIN
-  $isEdgeDocked.set(false)
-  $edgeDockSide.set('none')
-  $clipOverride.set(null)
-
-  // peeking 是 loop 动作：脱离贴边后清掉，否则探头姿态挂在非贴边语境里
-  if ($spriteAction.get() === 'peeking') {
-    $spriteAction.set(null)
-  }
+  const targetX = side === 'left' ? -c.left + REST_MARGIN : vw - c.right - REST_MARGIN
+  clearDockState()
 
   moveTo({ x: targetX, y: curPos.y }, 'walk', () => {
     $spatialPos.set({ x: targetX, y: curPos.y })
@@ -686,11 +691,7 @@ export function startDrag(): void {
   voiceLiftReturn = null
   stopRoam()
   cancelMovement()
-
-  if ($isEdgeDocked.get()) {
-    $isEdgeDocked.set(false)
-    $edgeDockSide.set('none')
-  }
+  clearDockState()
 
   $spatialLocomotion.set('drag')
   $clipOverride.set('drag')
@@ -708,18 +709,21 @@ export function updateDragPosition(pos: { x: number; y: number }, vel?: { vx: nu
 
 export function endDragAt(pos: { x: number; y: number }): void {
   const vw = window.innerWidth
-  const spriteW = getBaseSpriteWidth() * $spatialScale.get()
+  const c = contentBox()
   const dockMargin = 40
 
-  // 1. 优先判定屏幕左右边缘吸附（通话中面板锚定脚下，禁止贴边探头把面板甩到脚边）
+  // 1. 优先判定屏幕左右边缘吸附（角色可见边缘距屏边缘 <= 40px）
   if (!$voiceCallOpen.get()) {
-    if (pos.x <= dockMargin) {
+    const leftDist = pos.x + c.left
+    const rightDist = vw - (pos.x + c.right)
+
+    if (leftDist <= dockMargin) {
       dockToEdge('left')
 
       return
     }
 
-    if (pos.x >= vw - spriteW - dockMargin) {
+    if (rightDist <= dockMargin) {
       dockToEdge('right')
 
       return
@@ -729,8 +733,7 @@ export function endDragAt(pos: { x: number; y: number }): void {
   // 2. 松手定居：把坐标收紧到 viewport 内，全身完整入屏（DESIGN §3.7）
   const safe = clampPosToViewport(pos)
 
-  $isEdgeDocked.set(false)
-  $edgeDockSide.set('none')
+  clearDockState()
   $spatialPos.set(safe)
   $homePosition.set(safe)
   $spatialLocomotion.set('still')
@@ -743,6 +746,69 @@ export function endDragAt(pos: { x: number; y: number }): void {
 }
 
 export function initSpatial(): () => void {
+  // 启动恢复的出屏判定依赖内容包围盒（整盒兜底会把透明留白算进身体，出屏量与
+  // dock 落点都会算偏）。getPosition 的 IPC 往返几乎总是快于 PSD 装配上报——
+  // rect 未上报时等首次上报再恢复；3s 兜底防 3D/蛋等不上报的渲染路径丢失恢复。
+  const restoreSavedPosition = (saved: { x: number; y: number }): void => {
+    if (userInteracted) {
+      return
+    }
+
+    const vw = window.innerWidth
+    const c = contentBox()
+    const charW = Math.max(1, c.right - c.left)
+
+    // 贴边残留判定看「已出屏多少」而不是「离边缘多近」：正常 home 距右缘
+    // REST_MARGIN，永远不该命中；至少缩进隐藏比例的一半才算贴边残留。
+    const minOutPx = EDGE_DOCK_HIDDEN_FRACTION * charW * 0.5
+    const leftOutPx = -(saved.x + c.left)
+    const rightOutPx = saved.x + c.right - vw
+
+    const side: 'left' | 'right' | null = leftOutPx >= minOutPx ? 'left' : rightOutPx >= minOutPx ? 'right' : null
+
+    if (side) {
+      // 与 dockToEdge 同一公式吸附回精确贴边位，直接以趴姿出现（不重播移动）。
+      const targetX =
+        side === 'left'
+          ? -c.left - EDGE_DOCK_HIDDEN_FRACTION * charW
+          : vw - c.left - (1 - EDGE_DOCK_HIDDEN_FRACTION) * charW
+
+      const targetY = Math.max(-c.top, Math.min(saved.y, window.innerHeight - c.bottom))
+      const dockPos = { x: targetX, y: targetY }
+
+      $isEdgeDocked.set(true)
+      $edgeDockSide.set(side)
+      $homePosition.set(dockPos)
+
+      if ($spatialLocale.get() === 'home') {
+        $spatialPos.set(dockPos)
+      }
+    } else {
+      clearDockState()
+      const next = clampPosToViewport(saved, false)
+      $homePosition.set(next)
+
+      if ($spatialLocale.get() === 'home') {
+        $spatialPos.set(next)
+      }
+    }
+  }
+
+  let unlistenSavedRect: (() => void) | null = null
+  let savedRectTimer: ReturnType<typeof setTimeout> | null = null
+
+  const settleSavedRectWait = (): void => {
+    if (unlistenSavedRect) {
+      unlistenSavedRect()
+      unlistenSavedRect = null
+    }
+
+    if (savedRectTimer) {
+      clearTimeout(savedRectTimer)
+      savedRectTimer = null
+    }
+  }
+
   void window.spiritagent.sprite
     .getPosition()
     .then(saved => {
@@ -750,15 +816,37 @@ export function initSpatial(): () => void {
         return
       }
 
-      const next = clampPosToViewport(saved, false)
+      if ($spriteContentRect.get()) {
+        restoreSavedPosition(saved)
 
-      $homePosition.set(next)
-
-      if ($spatialLocale.get() === 'home') {
-        $spatialPos.set(next)
+        return
       }
+
+      unlistenSavedRect = $spriteContentRect.listen(() => {
+        if (!$spriteContentRect.get()) {
+          return
+        }
+
+        settleSavedRectWait()
+
+        if (!userInteracted) {
+          restoreSavedPosition(saved)
+        }
+      })
+
+      savedRectTimer = setTimeout(() => {
+        savedRectTimer = null
+        settleSavedRectWait()
+
+        if (!userInteracted) {
+          restoreSavedPosition(saved)
+        }
+      }, 3000)
     })
-    .catch(() => {})
+    .catch(() => {
+      settleSavedRectWait()
+      clearDockState()
+    })
 
   const unlistenChat = $chatOpen.listen(open => {
     if (open) {
@@ -803,7 +891,9 @@ export function initSpatial(): () => void {
       return
     }
 
-    const next = clampPosToViewport($homePosition.get())
+    // 贴边残留的 x 是故意越界的，只收紧 y（与下方 scale 监听同一例外）。
+    const clamped = clampPosToViewport($homePosition.get())
+    const next = $isEdgeDocked.get() ? { ...$homePosition.get(), y: clamped.y } : clamped
 
     $homePosition.set(next)
 
@@ -850,6 +940,7 @@ export function initSpatial(): () => void {
   window.addEventListener('resize', onResize)
 
   return () => {
+    settleSavedRectWait()
     unlistenChat()
     unlistenState()
     unlistenEmotion()

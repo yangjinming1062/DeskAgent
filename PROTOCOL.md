@@ -125,7 +125,7 @@
 | `shy` | 低头侧脸 + 前发微盖 | shy / embarrassed |
 | `petting` | 享受抚摸：微微歪头闭眼 + 舒服蹭蹭 | happy / grateful（摸头手势触发） |
 | `dizzy` | 眩晕：脑袋发懵轻晃 + 圈圈眼 | confused / tired（狂戳/狂甩触发） |
-| ★ `peeking` | 贴边探头偷看姿态 | curious / playful（屏幕贴边吸附触发） |
+| ★ `edge_cling` | 贴边趴姿（双手扒边、上半身探入） | curious / playful（屏幕贴边吸附触发） |
 | `idle_glance` | 短瞥一眼回中 | idle 变体 |
 | ★ `click` | 伸手触碰 / 点击姿态 | neutral（仪式行走飞抵目标触发） |
 | ★ `long_press` | 长按凝视姿态 | neutral（用户长按精灵触发） |
@@ -133,7 +133,7 @@
 
 > 注：3D 路径走 GLB clip map；2D 路径走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx) 定时包络（白名单键同源，通道由包络内部定义）。同一 action key 在各路径上语义一致但兑现方式不同。
 >
-> 走路 / 跳跃（locomotion）：2D 路径下由空间层驱动位置移动、发束/裙摆次级物理自然反馈。如需移动角色，用 spatial cue / ritual walk 而非 action。
+> 走路 / 跳跃（locomotion）：2D 路径有程序化复合步态（基于逐帧位移积分相位驱动躯干起伏、侧倾摆动与朝向微倾，叠加发束与全身次级物理），飞行维持滑行语义。如需移动角色，用空间目标或仪式行走而非动作。
 
 **表情契约**：自创情绪经工具注册后并入白名单，并按后台生成语义预热头像图；渲染分工见 [DESIGN.md §1.1](DESIGN.md)。
 

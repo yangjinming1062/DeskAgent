@@ -85,7 +85,7 @@
 - **戳**（`onTap`）：走 LLM 推理（受设置开关与 5 分钟频控门限控制）或从 [reactions/manifest.json](reactions/manifest.json) 预制台词池中按 (bucket, tone) 挑选；云端推理接受 `poke` / `pet` / `dizzy` 三类语义 kind（PROTOCOL §1.4），摸头与眩晕与戳同走该通道（手势识别器 [sprite/gesture-tracker.ts](sprite/gesture-tracker.ts)：head/face 横向往复 = 摸头、狂甩 = 眩晕）；
 - **拖拽**（`onDragEnd`）：纯本地预制反馈（零 RPC），从 `manifest.json` 的 drag 桶（性格 + 通用分组）随机挑选。
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
-- **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
+- **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态不因悬停解除，仅点击/拖拽主动解除。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
 - **右键**：托盘菜单入口（打开对话、反激活、退出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
 - **语音通话（服务端实时会话）**：本地只保留 VAD（能量阈值起说 / 静默 1.3s 断句 / 更高阈值打断）驱动 utterance 起止与插话。上行 PCM 经专用 16kHz AudioContext 采集（[pcm-capture.ts](pcm-capture.ts)：AudioWorklet 优先、300ms 预滚保住发音起始瞬态，加载失败降级 ScriptProcessorNode）直发语音 WS；下行音频段由 [segment-player.ts](segment-player.ts) 按到达顺序解码、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧。语音回合事件**不经聊天 WS**（[events.ts](events.ts) 不消费语音事件），但用户话语与精灵回复镜像进聊天 store，保持对话窗实时同步与历史水合一致；字幕内嵌通话面板（[subtitles-overlay.tsx](subtitles-overlay.tsx)，流式文本自动滚到最新一句，关闭或无消息时以占位条保持面板高度稳定）；任一环节失败直接上通话面板错误条，不依赖字幕开关。协议与顺序不变量见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
 
@@ -124,11 +124,11 @@
 
 **决策树**（`updateSpatialDecision`）：drag > chat / voice call（冻结空间决策，精灵留原位）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
 
-**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的松手定居结算），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则瞬时上提精灵让位（与面板的出现/消失同步跳变，不做移动动画），挂断后瞬时回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边探头吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
+**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的松手定居结算），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则瞬时上提精灵让位（与面板的出现/消失同步跳变，不做移动动画），挂断后瞬时回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 
-**roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走躯干复合步态，见 2D 渲染层 README）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
+**roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走位移积分复合步态）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 
 **approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启 / 通话中不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../PROTOCOL.md)。
 

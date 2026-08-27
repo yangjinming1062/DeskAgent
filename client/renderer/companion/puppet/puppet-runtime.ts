@@ -293,6 +293,9 @@ export class PuppetRuntime {
   /** 自主段落/耳/呆毛事件的种子（同种子同时间序列 → 相同动作）；改后调 reseed 生效 */
   autoSeed = 20260826
 
+  /** 待机呼吸幅度缩放系数（走路 0.7，趴姿 0.4；默认 1.0） */
+  idleScale = 1
+
   /** 冻结连续动画（呼吸相位/深呼吸调度）——姿态定格与 13 姿态验证用，保证逐位可复现。 */
   frozen = false
 
@@ -1334,7 +1337,7 @@ export class PuppetRuntime {
         y += this.bounce.dy * e.bust * Math.exp(-gx * gx - gy * gy)
       }
 
-      if (bn === 'handwear') {
+      if (bn === 'handwear' || bn === 'arm' || bn === 'arms') {
         const w = smooth(((y - L.y) / L.h) * 1.15)
         y -= e.armY * 30 * this.fs * w
         y += e.armPos * 40 * this.fs
@@ -1443,10 +1446,11 @@ export class PuppetRuntime {
     const tgt: PuppetParams = { ...this.target }
 
     if (this.auto.idle) {
-      tgt.angleX += 0.13 * Math.sin(t * 0.42) + 0.05 * Math.sin(t * 1.13)
-      tgt.angleY += 0.08 * Math.sin(t * 0.31 + 1.7)
-      tgt.angleZ += 0.07 * Math.sin(t * 0.23 + 0.5)
-      tgt.body += 0.1 * Math.sin(t * 0.19 + 2.1)
+      const is = this.idleScale
+      tgt.angleX += (0.13 * Math.sin(t * 0.42) + 0.05 * Math.sin(t * 1.13)) * is
+      tgt.angleY += 0.08 * Math.sin(t * 0.31 + 1.7) * is
+      tgt.angleZ += 0.07 * Math.sin(t * 0.23 + 0.5) * is
+      tgt.body += 0.1 * Math.sin(t * 0.19 + 2.1) * is
     }
 
     // 视线优先于漫游：有焦点时眼先行（全幅、高速率），头与身体小幅滞后跟随

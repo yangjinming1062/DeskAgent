@@ -18,10 +18,18 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget, $spriteAction, $spriteActionQueue, $spriteEmotion } from '@/companion/companion-store'
 import { probeInteractiveRegions } from '@/companion/interactive-regions'
 import { setMesh2DHitmap } from '@/companion/mesh2d/mesh2d-store'
-import { $spriteContentRect } from '@/companion/spatial'
+import {
+  $edgeDockSide,
+  $isEdgeDocked,
+  $spatialLocomotion,
+  $spatialPos,
+  $spriteContentRect,
+  type Locomotion
+} from '@/companion/spatial'
 import { $contextMenuOpen } from '@/companion/sprite/context-menu-store'
 import { log } from '@/shared/lib/log'
 
+import { GaitDriver } from './gait'
 import type { PuppetRuntime } from './puppet-runtime'
 import { $puppetInfo, setPuppetError } from './puppet-store'
 import type { Rig } from './puppet-types'
@@ -301,16 +309,6 @@ const ACTIONS: Record<string, ActionEnvelope> = {
       rt.target.angleZ = Math.sin(k * Math.PI * 6) * 0.35 * (1 - k)
     }
   },
-  peeking: {
-    durMs: 1400,
-    apply: (k, rt) => {
-      const s = Math.sin(k * Math.PI)
-      rt.target.eyeCY = 0.3 * s
-      rt.target.eyeOpenL = 1 - 0.45 * s
-      rt.target.eyeOpenR = 1 - 0.45 * s
-      rt.target.angleY = 0.2 * s
-    }
-  },
   click: {
     durMs: 800,
     apply: (k, rt) => {
@@ -384,6 +382,13 @@ export function PuppetStage(): React.JSX.Element {
   const lastGazeInjectRef = useRef(0)
   const lastHairImpulseAtRef = useRef(0)
   const actionRef = useRef<{ env: ActionEnvelope; t0: number } | null>(null)
+  const gaitDriverRef = useRef<GaitDriver>(new GaitDriver())
+  const spatialLocomotionRef = useRef<Locomotion>($spatialLocomotion.get())
+  const isEdgeDockedRef = useRef<boolean>($isEdgeDocked.get())
+  const edgeDockSideRef = useRef<'none' | 'left' | 'right'>($edgeDockSide.get())
+  const spatialPosRef = useRef<{ x: number; y: number }>($spatialPos.get())
+  const lastPosRef = useRef<{ x: number; y: number }>($spatialPos.get())
+  const lastTickTimeRef = useRef<number>(performance.now())
 
   const puppet = useStore($puppetInfo)
 
@@ -571,11 +576,98 @@ export function PuppetStage(): React.JSX.Element {
       }
     })
 
+    const unsubLocomotion = $spatialLocomotion.listen(loco => {
+      spatialLocomotionRef.current = loco
+    })
+
+    const unsubDocked = $isEdgeDocked.listen(docked => {
+      isEdgeDockedRef.current = docked
+    })
+
+    const unsubDockSide = $edgeDockSide.listen(side => {
+      edgeDockSideRef.current = side
+    })
+
+    const unsubPos = $spatialPos.listen(pos => {
+      spatialPosRef.current = pos
+    })
+
     const tick = (now: number): void => {
       const r = rt()
 
       if (r) {
-        // TTS 振幅接管嘴型；静默 600ms 后交还合成说话
+        const dt = Math.min(0.05, (now - lastTickTimeRef.current) / 1000)
+        lastTickTimeRef.current = now
+
+        const curPos = spatialPosRef.current
+        let dx = curPos.x - lastPosRef.current.x
+        let dy = curPos.y - lastPosRef.current.y
+
+        if (Math.hypot(dx, dy) > 100) {
+          dx = 0
+          dy = 0
+        }
+
+        lastPosRef.current = curPos
+
+        // 1. 步态驱动与趴姿计算
+        const gaitOut = gaitDriverRef.current.update(
+          dt,
+          dx,
+          dy,
+          spatialLocomotionRef.current,
+          isEdgeDockedRef.current,
+          edgeDockSideRef.current,
+          r.rigTier()
+        )
+
+        // 2. 基线 + 步态 overlay + 趴姿 overlay。常驻写入：动作包络在 tick 末段才 apply，
+        //    其触及的通道会压过这里的持续姿态（瞬时手势 > 持续状态），结束后自然回落——
+        //    贴边趴姿不能因 drag_end / 情绪等一次性动作整帧消失。
+        const w = gaitOut.clingWeight
+        const gOff = gaitOut.gaitOffsets
+
+        // 步态 overlay（加法）；步态不写 angleY（俯仰通道），仅趴姿经 lerp 注入
+        let body = gOff.body
+        let angleZ = gOff.angleZ
+        let angleY = 0
+        let angleX = gOff.angleX
+        let armY = 0
+        let armPos = 0
+        let fhAmp = 2 + gOff.fhAmp
+        let physAmp = 2 + gOff.physAmp
+
+        // 趴姿 overlay（lerp 权重混合，盖过残余步态）
+        if (gaitOut.clingPose && w > 0) {
+          const cp = gaitOut.clingPose
+          armY = cp.armY * w
+          armPos = cp.armPos * w
+          body = body * (1 - w) + cp.body * w
+          angleY = angleY * (1 - w) + cp.angleY * w
+          angleZ = angleZ * (1 - w) + cp.angleZ * w
+          angleX = angleX * (1 - w) + cp.angleX * w
+          fhAmp += cp.fhAmp * w
+          physAmp += cp.physAmp * w
+
+          const baseEyeCY = EMOTION_PARAMS[$spriteEmotion.get() ?? 'neutral']?.eyeCY ?? 0
+          r.target.eyeCY = baseEyeCY * (1 - w) + (baseEyeCY + cp.eyeCY) * w
+        } else {
+          r.target.eyeCY = EMOTION_PARAMS[$spriteEmotion.get() ?? 'neutral']?.eyeCY ?? 0
+        }
+
+        r.target.body = body
+        r.target.angleZ = angleZ
+        r.target.angleY = angleY
+        r.target.angleX = angleX
+        r.target.armY = armY
+        r.target.armPos = armPos
+        r.target.fhAmp = fhAmp
+        r.target.physAmp = physAmp
+
+        // 3. auto.idle 待机呼吸幅度衰减（走路 0.7，趴姿 0.4）
+        r.idleScale = gaitOut.idleScale
+
+        // 4. TTS 振幅接管嘴型；静默 600ms 后交还合成说话
         if (ampRef.current > 0.04) {
           lastTalkAtRef.current = now
 
@@ -591,7 +683,7 @@ export function PuppetStage(): React.JSX.Element {
           r.target.mouthOpen = 0
         }
 
-        // 显式视线目标周期重注入（setGaze 3s TTL；ritual walk 途中持续锁定）
+        // 5. 显式视线目标周期重注入（setGaze 3s TTL；ritual walk 途中持续锁定）
         const gt = gazeTargetRef.current
 
         if (gt && now - lastGazeInjectRef.current > 800) {
@@ -599,7 +691,7 @@ export function PuppetStage(): React.JSX.Element {
           r.setGaze(gt.nx, gt.ny)
         }
 
-        // 动作包络推进；结束帧把触及通道写回默认值并续播队列（mesh2d driver 同构）
+        // 6. 动作包络推进；结束帧把触及通道写回默认值并续播队列（mesh2d driver 同构）
         const a = actionRef.current
 
         if (a) {
@@ -646,6 +738,10 @@ export function PuppetStage(): React.JSX.Element {
       unsubEmotion()
       unsubAction()
       unsubGazeTarget()
+      unsubLocomotion()
+      unsubDocked()
+      unsubDockSide()
+      unsubPos()
     }
   }, [])
 
