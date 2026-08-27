@@ -134,8 +134,10 @@
 
 **roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走躯干复合步态，见 2D 渲染层 README）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 
+**approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启 / 通话中不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../PROTOCOL.md)。
+
 **缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，静止档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
 
-**Backend 零感知**：所有空间决策在 Client 本地完成，无 WS 事件或 RPC 新增。Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
+**Backend 零感知**：空间状态单一权威在 Client——后端只下发语义决策（should_act 动作 / locale cue），从不产出像素坐标；Runner 提供感知能力（`system.get_windows` 窗口枚举、`system.get_focused_app` 焦点窗口几何）但 Runner 也不知道空间行为存在。
 
 **Ritual walk**（[ritual-walk.ts](ritual-walk.ts)）：交互类工具（`system.open_application` / `browser_*` / `system.click_at`）在 events.ts 的 tool.call 分发里拦截。目标解析按工具分派：`click_at` 的目标就是点击坐标本身（包成虚拟窗口几何，**execute 即那次点击，不再额外补一次 click**——否则双击）；其余工具从 args（name/url/keyword）提取关键词经 `system.get_windows` 匹配既有窗口，关键词为空不进入仪式（空串会让 `includes` 恒真、匹配到第一个无关窗口）。找到目标后：途中视线锁定目标中心（`$gazeTarget` 显式覆盖指针跟随，2D/3D 同规则）→ 远距离（>400px）fly、近距离 walk 到目标旁 → 抵达后按方位播 `point_left/right` 再接 `click`（open_application 等先在目标中心补一次聚焦点击，click_at 跳过）→ INTERACTING 1.5s → execute 原工具 → 返回原 locale。找不到目标窗口或无处栖身时以一句人格化台词表达（走 speakProactive 的档位门控）后静默走常规工具调用兜底；gaze 的清除走 try/finally，异常路径不泄漏。chat 开启或屏锁时直接执行不走路。

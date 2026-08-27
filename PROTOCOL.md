@@ -105,6 +105,8 @@
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（仅自主档兑现 + 对话开启抑制）。
 
+**`companion.should_act` 动作枚举**（自主空间决策 RPC，权威源在后端 `ALLOWED_ACTIONS`，与上述 locale 枚举是两套词表）：roam / perch / approach / stay。`approach`（走过去搭话，仅自主档 + 智能驱动开）附带 `params.text`（10–30 字开场白，后端截断至 80 字并设小时级冷却，冷却内或无有效文本整体降级 stay）与可选 `params.emotion`；开场白由后端经 `companion.message` 通道投递（含 status_proactive 持久化与主动外联状态机），RPC 响应只承载走位动作——客户端不消费 params，走位规则见 [client/renderer/companion/README.md §10](client/renderer/companion/README.md)。
+
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
 **action 白名单（2D 路径）**（权威源 [backend/services/companion/mesh2d/actions.py](backend/services/companion/mesh2d/actions.py) 的 `DEFAULT_ACTIONS`，LLM 注入清单为 `DEFAULT_ACTIONS − NON_LLM_ACTIONS`；下表标 ★ 的键为客户端本地触发、LLM 不可请求）：
