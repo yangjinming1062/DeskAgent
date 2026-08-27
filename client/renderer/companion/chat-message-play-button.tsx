@@ -4,7 +4,6 @@ import type React from 'react'
 
 import { notifyError } from '@/shared/store/notifications'
 
-import { setSpriteState } from './companion-store'
 import { speakChatMessage, stopSpeaking } from './tts'
 import { $voicePreparing } from './voice-state'
 
@@ -42,11 +41,11 @@ export function ChatMessagePlayButton({
 
   const onClick = async (): Promise<void> => {
     // 场景 A：当前按钮就是正在播放/准备中的那一条 → 停止（toggle-stop）。
-    // stopSpeaking → audio-track.stopAudio → 触发我们之前传给 playDataUrl 的
-    // onDone（如果该 onDone 仍然绑定到当前 messageId，会把 atom 清空）。
+    // stopSpeaking → audio-track.stopAudio → 同步触发旧 onDone 清 atom；但若
+    // TTS 合成仍在 IPC 途中（还没有 onDone 可触发），必须在这里直接清。
     if (currentPlayingId === messageId) {
       stopSpeaking()
-      setSpriteState('idle', { force: true })
+      $chatPlaybackId.set(null)
 
       return
     }
@@ -58,15 +57,13 @@ export function ChatMessagePlayButton({
 
     $chatPlaybackId.set(messageId)
 
-    // 语音播放起止驱动说话状态（DESIGN §2.1 规则触发源）
-    setSpriteState('speaking', { force: true })
-
+    // 点播历史消息不驱动说话状态——徽标只反映伙伴正在回复（流式 / 自动语音）；
+    // 口型同步由 audio-track 的音频振幅直驱，与精灵状态无关。
     // myDone 由 audio-track 在 ended / error / stopAudio 三种路径上同步触发。
     // 只在它仍指向当前 messageId 时清空 atom，防止"老 onDone 误杀新播放"。
     const myDone = () => {
       if ($chatPlaybackId.get() === messageId) {
         $chatPlaybackId.set(null)
-        setSpriteState('idle', { force: true })
       }
     }
 
@@ -77,7 +74,6 @@ export function ChatMessagePlayButton({
       // 显式点了播放却无声回到 idle，用户无从得知语音服务已故障。
       if ($chatPlaybackId.get() === messageId) {
         $chatPlaybackId.set(null)
-        setSpriteState('idle', { force: true })
         notifyError(err, '语音朗读失败')
       }
     }

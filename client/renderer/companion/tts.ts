@@ -31,13 +31,10 @@ async function synth(
       return false
     }
 
-    return await playDataUrl(res.dataUrl, () => {
-      // 只有最新一代的生命周期信号有意义——过期 resolve 仍持有闭包，
-      // 但触发的也只是一个无害的 no-op。
-      if (isLatestGen(gen) && onDone) {
-        onDone()
-      }
-    })
+    // 生命周期回调全权交给 playDataUrl 结算：至多触发一次、只属于当前音频
+    // （抢占时由 stopAudio 同步结算旧的）。这里若再比对 synth 自己的 gen，
+    // 会被 playDataUrl 内部的两次计数递增甩开，恒为假、回调永远不触发。
+    return await playDataUrl(res.dataUrl, onDone)
   } catch (err) {
     stopAudio()
 

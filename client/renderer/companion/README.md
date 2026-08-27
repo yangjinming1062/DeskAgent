@@ -9,7 +9,7 @@
 | `disconnected` | 100 | Backend WS 断连 | 持续；恢复需 WS 重连 |
 | `interacting` | 80 | 用户戳 / 拖 / 悬停 | 瞬态 0.5–3.0s（按交互类型定长），回到 `previousState` |
 | `working` | 70 | 用户活动 ≥ 6 次/10s | 持续；10s 无活动 `force: true` 回 `idle` |
-| `speaking` | 60 | TTS 播放 | 与 TTS 音频等长 |
+| `speaking` | 60 | 伙伴发起的 TTS 播放（响应朗读、主动消息、重连台词）；用户点播历史消息不进入此状态，口型由音频振幅直驱 | 与 TTS 音频等长 |
 | `thinking` | 50 | LLM 流式响应开始 | 持续至 `message.complete` |
 | `listening` | 40 | 用户开始输入 | 持续至用户停止输入或后端响应 |
 | `emotional` | 35 | `affect` cue 到达 | 瞬态 2.5s，回到 `previousState`（**叠加非抢占**） |
