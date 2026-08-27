@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { PortraitLightbox } from '@/companion/onboarding/onboarding-components'
 import { useOutfitDesignSession } from '@/companion/wardrobe/design-session'
 import { $outfits, activateOutfit, deleteOutfit, hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
-import { Check, FileImage, Pencil, Plus, Send, Trash2 } from '@/shared/lib/icons'
+import { Check, FileImage, Pencil, Send, Trash2 } from '@/shared/lib/icons'
 import { log } from '@/shared/lib/log'
 import { cn } from '@/shared/lib/utils'
 import { BTN_GHOST, BTN_ICON, BTN_PRIMARY, HINT_TEXT, INPUT_CLASS, Spinner } from '@/shared/panel'
@@ -93,12 +93,8 @@ export function WardrobePage(): React.JSX.Element {
     <div className="flex min-h-0 flex-1">
       {/* 左：外观列表（方形大图卡——统一方形取景框，任意比例立绘 contain 完整呈现，文字收缩到图下方两行） */}
       <div className="flex w-60 shrink-0 flex-col border-r border-white/10">
-        <div className="flex items-center justify-between gap-2 px-3 pt-3.5 pb-2">
+        <div className="px-3 pt-3.5 pb-2">
           <h2 className="text-sm font-semibold text-white">衣柜</h2>
-          <button className={cn(BTN_PRIMARY, 'h-7 px-2.5')} onClick={startDesign} type="button">
-            <Plus className="size-3.5" />
-            设计新外观
-          </button>
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pb-3">
           {outfits.length === 0 ? (
