@@ -42,7 +42,7 @@
 
 ## 3. 三档打扰（Client 实现）
 
-档位产品规则与生效条件见 [DESIGN.md §6.2](../../../DESIGN.md)。Renderer 只消费生效档位：用户偏好保存在伴生设置，活动感知器写入覆盖值，空间策略、主动消息呈现与 TTS 门控读取同一生效值；后端拒绝写入时回滚本地偏好并记录开发日志。
+档位产品规则与生效条件见 [DESIGN.md §6.2](../../../DESIGN.md)。Renderer 只消费生效档位：用户偏好保存在伴生设置，活动感知器写入覆盖值，空间策略、主动消息呈现与 TTS 门控读取同一生效值；生效档位经配置管道上云（[PROTOCOL.md §2.4](../../../PROTOCOL.md)），是后端主动闸门的唯一档位来源。
 
 ## 4. 3D 渲染资源降级与功耗调度
 
@@ -85,20 +85,13 @@
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑；只有云端结果落盘，Piper 兜底产物不写，否则它会冒充用户选定的云端音色。音色试听句走同一条路径。
 - **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态下悬停滑出要求部件级命中——穿透转发的 mousemove 在矩形空白区不触发。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
 - **右键**：托盘菜单入口（打开对话、反激活、退出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
-- **语音通话（服务端实时会话）**：客户端不再本地编排转写与朗读——本地只保留 VAD（能量阈值起说 / 静默 1.3s 断句 / 更高阈值打断）驱动 utterance 起止与插话。上行 PCM 经专用 16kHz AudioContext 采集（[pcm-capture.ts](pcm-capture.ts)：AudioWorklet 优先、300ms 预滚保住发音起始瞬态，加载失败降级 ScriptProcessorNode）直发语音 WS；下行音频段由 [segment-player.ts](segment-player.ts) 按到达顺序解码、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧。语音回合事件**不经聊天 WS**（[events.ts](events.ts) 不消费语音事件），但用户话语与精灵回复镜像进聊天 store，保持对话窗实时同步与历史水合一致；字幕内嵌通话面板（[subtitles-overlay.tsx](subtitles-overlay.tsx)，流式文本自动滚到最新一句，关闭或无消息时以占位条保持面板高度稳定）；任一环节失败直接上通话面板错误条，不依赖字幕开关。协议与顺序不变量见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
+- **语音通话（服务端实时会话）**：本地只保留 VAD（能量阈值起说 / 静默 1.3s 断句 / 更高阈值打断）驱动 utterance 起止与插话。上行 PCM 经专用 16kHz AudioContext 采集（[pcm-capture.ts](pcm-capture.ts)：AudioWorklet 优先、300ms 预滚保住发音起始瞬态，加载失败降级 ScriptProcessorNode）直发语音 WS；下行音频段由 [segment-player.ts](segment-player.ts) 按到达顺序解码、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧。语音回合事件**不经聊天 WS**（[events.ts](events.ts) 不消费语音事件），但用户话语与精灵回复镜像进聊天 store，保持对话窗实时同步与历史水合一致；字幕内嵌通话面板（[subtitles-overlay.tsx](subtitles-overlay.tsx)，流式文本自动滚到最新一句，关闭或无消息时以占位条保持面板高度稳定）；任一环节失败直接上通话面板错误条，不依赖字幕开关。协议与顺序不变量见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
 
-**每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按 UTC 自然日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
+**每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按用户本地日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
 ## 8. cron 主动陪伴链路
 
-后端自主 turn 入口（`services/scheduler/cron.py::_kick_autonomous_turn`）实现完整链路：
-
-1. Cron CAS 赢得本 tick，直接启动自主回合 task（无 WSEvent 中转）
-2. 任务用用户最后 session + JsonRpcEmitter + 用户 dispatcher
-3. LLM 可调主动消息工具（可携带情绪）产出伙伴消息事件
-4. Client 按 §3 三档规则消费
-
-用户离线（无 dispatcher）→ 任务静默跳过；`next_run_at` 已被 CAS 推进，下一个调度周期重新到期后再尝试。
+调度 tick 不直接执行自主回合：tick 副本只写一行内部事件，经 outbox 认领路由到持有该用户 WS 的副本执行（静止档在写行前拦截）。机制与派发守卫见 [ARCHITECTURE.md §5](../../../ARCHITECTURE.md) 与 [backend/README.md §6](../../../backend/README.md)；客户端只按 §3 三档规则消费主动消息事件。
 
 ## 9. 不能从代码结构直接读出的边界
 
@@ -108,8 +101,8 @@
   - `runner:invoke` 60 次/秒 token bucket
 - **Stop 按钮双通道**：`session.interrupt`（停 LLM 流）+ `runnerCancel`（置 Runner 全局中断标记，让在跑的本地工具尽早退出）；两者均为 best-effort，本地 finalize 兜底 UX
 - **持久化键**：伙伴偏好（音色 / 响应模式 / 打扰档位 / 智能反应三开关 / 字幕 / 默认缩放）与各面板位置尺寸均经 localStorage 跨重启保留；`voiceId` 在 ready 后由 [voice-validity.ts](voice-validity.ts) 对云端目录校验（供应商裁剪 / 换源时提示重选，不硬性拒绝）。精灵位置持久化在 `companion-position.json`（Electron userData 目录，非 localStorage）。
-- **偏好上云（localStorage 只是窗口缓存）**：偏好 setter 在写 localStorage 的同时经 `prefs:set` 通道上报主进程（点键 `companion.voice_id / response_mode / llm_reactions / llm_affect / llm_autonomy / subtitles / disturbance_tier / settings_panel`），由主进程合入配置镜像随云端管道上云（[PROTOCOL.md §2.4](../../../PROTOCOL.md)）；水合广播（`prefs-hydrated`，[prefs.ts](prefs.ts) 的 `initCompanionPrefsSync` 订阅）用云端值回写 localStorage 与 atom，跨端收敛、清缓存重装也能恢复。高频源（面板拖拽/缩放）先在渲染侧防抖再上报，且未交互过的挂载首跑不上报（避免本机默认值覆写另一端几何）；面板几何水合只在下次开面板时生效，渲染期仍做视口钳制。打扰档位的云端副本只是跨端载体，cron/语音消费的仍是 backend 的 CompanionPreference（`companion.set_disturbance_tier` 上报），两者并存。
-- **角色编辑双路径**：`PersonaSection`（表单式直接改 3 个可编辑字段：名字 / 关系定位 / 性格；锁定的视觉锚点字段原样带回，[DESIGN.md §5.4](../../../DESIGN.md)）+ `PersonaRetune`（[settings/persona-retune.tsx](settings/persona-retune.tsx) 5–6 步对话式 wizard 含 user_*），后者单 PUT 收尾、保留 `is_complete=True`，且不改写说话风格（说话风格在孵化时定稿，后续修改走设置里的角色管理）。两条路径都是纯 persona 维度调整，不重跑形象流水线——形象确认后头像与模型的重生路径已关闭，两步形象确认 UI 只存在于 onboarding。
+- **偏好上云（localStorage 只是窗口缓存）**：偏好 setter 在写 localStorage 的同时经 `prefs:set` 通道上报主进程（点键 `companion.voice_id / response_mode / llm_reactions / llm_affect / llm_autonomy / subtitles / disturbance_preference / settings_panel`），由主进程合入配置镜像随云端管道上云（[PROTOCOL.md §2.4](../../../PROTOCOL.md)）；水合广播（`prefs-hydrated`，[prefs.ts](prefs.ts) 的 `initCompanionPrefsSync` 订阅）用云端值回写 localStorage 与 atom，跨端收敛、清缓存重装也能恢复。高频源（面板拖拽/缩放）先在渲染侧防抖再上报，且未交互过的挂载首跑不上报（避免本机默认值覆写另一端几何）；面板几何水合只在下次开面板时生效，渲染期仍做视口钳制。打扰档位分两键：生效值（`companion.disturbance_tier`，设备派生）供后端闸门消费；用户偏好（`companion.disturbance_preference`）跨端恢复。水合只回写偏好，不回写生效值。
+- **角色编辑双路径**：`PersonaSection`（表单式直接改 3 个可编辑字段：名字 / 关系定位 / 性格；锁定的视觉锚点字段原样带回，[DESIGN.md §5.4](../../../DESIGN.md)）+ `PersonaRetune`（[settings/persona-retune.tsx](settings/persona-retune.tsx) 5 步对话式 wizard＋收尾确认，含说话风格与 user_* 字段），后者单 PUT 收尾、保留 `is_complete=True`。两条路径都是纯 persona 维度调整，不重跑形象流水线——形象确认后头像与模型的重生路径已关闭，两步形象确认 UI 只存在于 onboarding。
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
 - **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（按新 PSD 重建 puppet），换装期间旧装不断档。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。

@@ -72,7 +72,7 @@ installer/
 |------|------|---------|
 | 安装协议、stages 与进度语义 | Tauri ↔ 安装脚本 | 本 README §4 |
 | Payload 嵌入清单与安装根路径 | Tauri ↔ 安装脚本 → 客户端 / Runner | 本 README §3 / §4 |
-| Runner venv 布局与启动命令 | Installer → 客户端 | [runner/README.md](../runner/README.md) |
+| Runner venv 布局与启动命令 | Installer → 客户端 | 本 README §2 / §3（Runner 入口见 [runner/README.md §3](../runner/README.md)） |
 | Piper voices 打包 | Installer → Runner | 本 README §4 |
 | Skills 平台过滤 | Installer → 客户端 + Runner | 本 README §2 |
 

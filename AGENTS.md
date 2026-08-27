@@ -24,12 +24,12 @@ The repo already maintains thorough, authoritative docs in Chinese. Read **[RULE
 
 - **Layout**: four modules — `backend/` (FastAPI, Docker/Linux), `client/` (Electron + React, Windows/macOS), `runner/` (Python 3.13 uv wheel, Windows/macOS), `installer/` (Tauri 2). Details and dependency directions are in each module's README.
 - **Doc layers**: `ARCHITECTURE.md` = physical topology, module boundaries, cross-module invariants (no implementation details). `DESIGN.md` = product design intent for the companion layer (no code-path level details). `PROTOCOL.md` = cross-module contracts (JSON-RPC methods, enums, events, security, credentials) shared by Backend/Client/Runner. Module `README.md` files own implementation, file trees, config knobs, error codes.
-- **Conventions**: commit format is defined by the [`.gitmessage`](.gitmessage) template — `git config commit.template .gitmessage` loads it into `git commit`. Python uses black + ruff (config in `.pre-commit-config.yaml`); Desktop uses ESLint + Prettier (`pnpm fix`). All rules live in [RULES.md](RULES.md), not duplicated here.
+- **Conventions**: commit format is defined by the [`.gitmessage`](.gitmessage) template — `git config commit.template .gitmessage` loads it into `git commit`. Python uses ruff for lint + format (config in `.pre-commit-config.yaml`); Desktop uses ESLint + Prettier (`pnpm fix`). All rules live in [RULES.md](RULES.md), not duplicated here.
 - **Doc language**: docs are in Chinese and describe the *current* state only — never "X was Y, now Z". Keep them in sync with code in the same commit.
 
 ## Before You Submit
 
 1. Read [RULES.md](RULES.md) and the relevant module `README.md`.
-2. Run the local gates for what you touched (`uvx pre-commit run -a`, `pnpm fix`, module tests).
+2. Run the local gates for what you touched (`uvx pre-commit run -a`, `pnpm fix`).
 3. For a release, run the full chain: `pwsh scripts/build_client.ps1` (see [scripts/README.md](scripts/README.md)).
 4. Sync any affected `README.md` in the same commit.

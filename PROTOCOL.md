@@ -9,8 +9,8 @@
 
 | 链路 | 方向 | 传输 | 鉴权 | 见 |
 |------|------|------|------|----|
-| Backend ↔ Client | 双向 | WebSocket 长连接（/api/chat/ws） | 用户 JWT | §1 |
-| Backend ↔ Client（语音会话） | 双向 | WebSocket（/api/voice/ws）：文本控制帧 + 二进制音频帧 | 用户 JWT（ws-ticket 同款） | §1.7 |
+| Backend ↔ Client | 双向 | WebSocket 长连接（/api/chat/ws） | 短时 ws-ticket（60s TTL，purpose=ws） | §1 |
+| Backend ↔ Client（语音会话） | 双向 | WebSocket（/api/voice/ws）：文本控制帧 + 二进制音频帧 | 短时 ws-ticket（同 chat 通道） | §1.7 |
 | Client ↔ Runner | 双向 | 本地 OS IPC（Windows 命名管道 / macOS UDS）承载 WebSocket 帧 | 每次启动握手 token（失败 401） | §2 |
 | Runner → Client → Backend（反向 RPC） | Runner → Client → Backend | 嵌套在 §2 上，经 Client 转发到 /api/llm/completion | Client JWT | §3 |
 
@@ -24,6 +24,7 @@
 - **心跳保活（session.ping）**：客户端在连接空闲 15s 时发送 `session.ping`（带 id 的标准 RPC 请求），服务端回 `{}`；若 30s 内无任何帧到达，客户端判定半开连接并主动 `close(4000, 'heartbeat')` 触发重连。该机制覆盖 NAT 超时、Wi-Fi 切换、VPN 抖动、笔记本合盖等场景，避免用户发消息后 120s 死寂。
 - **全量重水化的防御性截断**：当全量重水化返回的消息数达到防御上限时，响应携带截断标记与更早历史的分页游标；客户端可通过会话消息 REST 端点按游标向后翻页拉取更早历史。该截断仅作为超大历史的负载防御兜底，优先仍走重放缓冲的无缝恢复。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不继续尝试。
+- **WS 鉴权用短时 ticket**：客户端连接前持 Bearer JWT 调 POST /api/user/ws-ticket 现铸 60s TTL 的专用 token（purpose=ws），经查询串携带；长效 JWT 不进 URL（避免落入代理/访问日志）。chat 与 voice 两条 WS 同款；`?token=` 直传 JWT 仅限后端内部调用。
 
 ---
 
@@ -44,14 +45,13 @@
 
 ### 1.2 伙伴生命周期方法（方法级契约）
 
-普通 chat / tool 类方法见 [backend/README.md](backend/README.md)。以下是**伙伴生命周期**专用方法，客户端必须实现消费状态机（详见 [DESIGN.md §5–§6](DESIGN.md)）。**逐参数签名见 backend 代码，本文只锁定契约意图与「改这里要同步哪里」：**
+普通 chat / tool 类方法清单见 backend 代码（[services/gateway/handlers.py](backend/services/gateway/handlers.py) 的注册表）。以下是**伙伴生命周期**专用方法，客户端必须实现消费状态机（详见 [DESIGN.md §5–§6](DESIGN.md)）。**逐参数签名见 backend 代码，本文只锁定契约意图与「改这里要同步哪里」：**
 
 | 方法 | 用途 | 改动需同步的模块 |
 |------|------|------------------|
 | onboarding.get_state / onboarding.submit 与 GET /api/companion/onboarding/state | 查询/增量提交 onboarding 答案（断点恢复，支持 WS RPC 与 REST） | Backend 状态机 + Client 消费状态机 + DESIGN §5 流程 |
 | avatar.regenerate | 重生头像（不使模型失效） | Backend + Client 头像展示 |
 | tts.match_voice / tts.design_voice / tts.list_voices | 音色描述匹配 / 专属音色生成 / 目录枚举 | Backend TTS + Client 音色页 + 工具窗口 REST 镜像 |
-| companion.set_disturbance_tier | Client 上报生效打扰档位（Client 是唯一权威） | Backend 持久化 + Client 活动感知 + DESIGN §6.2 |
 | companion.set_timezone | Client 每次连接上报本地 IANA 时区——夜间批处理与互动统计按用户本地日聚合的唯一时区来源；缺行时夜间流水线整段跳过 | Backend 持久化 + Client boot 上报 + DESIGN §6.2 |
 | companion.check_affect / companion.interact / companion.should_act / companion.record_interaction_stats / companion.get_user_profile | 情境化情绪 / 戳·摸头·眩晕反应 / 自主空间决策 / 互动统计 / 画像召回 | Backend 推理 + Client 触发与消费 + DESIGN §6.3/§6.4 |
 | POST /api/companion/portrait/confirm | 确认半身形象（幂等），解开正面全身立绘生成子阶段 | Backend 状态 + Client 流程 |
@@ -65,7 +65,7 @@
 | companion.model.retryDownload | 仅重试下载已付费的 3D 生成结果，不重新提交生成 | Backend 生成管线 + Client 失败态入口 |
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
-| GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控（默认 1 套/小时），不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
+| GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控，不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
 
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的已生成正面种子图随形象行持久化，断点恢复直接重放到正面预览；正面种子草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
@@ -105,7 +105,7 @@
 
 **inline 空间 cue 规则**：LLM 在回复前自填空间 cue，由解析器解析后附加到 message.complete 的场所/目标字段。后端解析后下发，客户端决定是否落位（仅自主档兑现 + 对话开启抑制）。
 
-**`companion.should_act` 动作枚举**（自主空间决策 RPC，权威源在后端 `ALLOWED_ACTIONS`，与上述 locale 枚举是两套词表）：roam / perch / approach / stay。`approach`（走过去搭话，仅自主档 + 智能驱动开）附带 `params.text`（10–30 字开场白，后端截断至 80 字并设小时级冷却，冷却内或无有效文本整体降级 stay）与可选 `params.emotion`；开场白由后端经 `companion.message` 通道投递（含 status_proactive 持久化与主动外联状态机），RPC 响应只承载走位动作——客户端不消费 params，走位规则见 [client/renderer/companion/README.md §10](client/renderer/companion/README.md)。
+**`companion.should_act` 动作枚举**（自主空间决策 RPC，权威源在后端 `ALLOWED_ACTIONS`，与上述 locale 枚举是两套词表）：roam / perch / approach / stay。`approach`（走过去搭话，仅自主档 + 智能驱动开）附带 `params.text`（10–30 字开场白，后端截断至 80 字并设 30 分钟冷却，冷却内或无有效文本整体降级 stay）与可选 `params.emotion`；开场白由后端经 `companion.message` 通道投递（含 status_proactive 持久化与主动外联状态机），RPC 响应只承载走位动作——客户端不消费 params，走位规则见 [client/renderer/companion/README.md §10](client/renderer/companion/README.md)。
 
 **动作 tag（[action:NAME]）**：LLM 可另附最多 3 个结构化动作名（snake_case，各占一行、按播放顺序排列），且只能来自后端注入的可请求动作清单——白名单外与超额的 tag 在后端流式解析时丢弃；解析后以 `affect.actions` 数组随对话完成事件下发（2D 依序播放，3D 取首个）。清单来源与客户端兑现规则见 [docs/PIPELINE.md §5–§6](docs/PIPELINE.md)。
 
@@ -152,7 +152,7 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。两条渲染路径都做可见像素级命中——3D 走 silhouette hit（离屏 alpha 回读）；2D 走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx)（当前帧部件网格精确点测，区域 = 最上层命中部件的映射，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
+命中区域与手势影响：（1）前端手势/物理反馈——摸头享受、怒气、眩晕与发区抖动的触发阈值与粒子反馈见 [DESIGN.md §6.3](DESIGN.md)；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。两条渲染路径都做可见像素级命中——3D 走 silhouette hit（离屏 alpha 回读）；2D 走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx)（当前帧部件网格精确点测，区域 = 最上层命中部件的映射，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
 
 **扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
 
@@ -233,6 +233,8 @@ capabilities 与 capabilities_health 来源于 Runner 的运行时探测（探�
 
 同步语义：设置变更 → 镜像原子写 → spiritagent.config.update 推 Runner → 防抖后 PUT 云端；启动恢复会话、登录、换号时 GET 水合（云端值逐键覆盖镜像同名键；本地有而云端无的键回传上云，覆盖首跑播种与离线补传）。离线时镜像照常读写，恢复后自动补传；多端为按保存 last-write-wins、无合并，另一端的改动在下次水合时收敛。
 
+生效打扰档位落 `companion.disturbance_tier` 点键经本管道上云，是后端主动闸门（主动消息、cron 自主回合、情绪/空间推理入口）的唯一档位来源（权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)）；用户偏好另存 `companion.disturbance_preference` 供跨端恢复，水合只回写偏好、不回写生效值（生效值是设备派生的）。
+
 Runner 侧不变：仅内存持有配置、每次工具调用读取，不读写磁盘配置文件。时序：Runner 就绪握手后、首个 execute_tool 前推一次 full config；此后每次设置保存再推一次；Runner 重启后内存配置清空，客户端在下次 runner_ready 时重新推送。**config 键明细见 runner 代码（utils/config.py）与 client（shared/lib/config-sync.ts 的白名单），本文只锁定所有权与同步契约。**
 
 ---
@@ -286,7 +288,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 | 通道 | 校验 |
 |------|------|
 | Electron 二进制自更新 | electron-updater RSA |
-| Runner wheel 自更新 | SHA-512 + 公钥 RSA 双重校验（签名不匹配在 Staging 阶段直接拦截） |
+| Runner wheel 自更新 | SHA-512 + 公钥签名（ECDSA P-256）双重校验（签名不匹配在 Staging 阶段直接拦截） |
 | Skills | 由 installer 首装 seed，client 自更新不下载 |
 
 **两阶段更新契约**（避免升级中途断网/崩溃变砖）：Stage 1 预取（下载新版 Electron + Runner wheel 到 staging，强校验签名 + SHA-512，写 Sentinel）；Stage 2 安装（用户点 Restart & Install 后原地覆盖、导入冒烟测试、失败回滚旧版）。**核心约束**：Runner venv 目录**永不**重命名或移动，确保任意升级阶段崩溃时旧版 Runner 依赖树仍完全可用。

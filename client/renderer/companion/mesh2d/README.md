@@ -1,6 +1,6 @@
 # 2D 行水合 Store
 
-`/api/companion/2d` 行的客户端镜像。渲染链已收口为 puppet（PSD）单链——本目录曾承载的骨骼渲染链（Mesh2DCanvas 及 runtime / bones / drivers / hitmap / loader）已删除；多手势识别移至 [sprite/gesture-tracker.ts](../sprite/gesture-tracker.ts)，粒子特效移至 [vfx.tsx](../vfx.tsx)。
+`/api/companion/2d` 行的客户端镜像。渲染链为 puppet（PSD）单链（[puppet/](../puppet/)）；多手势识别在 [sprite/gesture-tracker.ts](../sprite/gesture-tracker.ts)，粒子特效在 [vfx.tsx](../vfx.tsx)。
 
 ## 文件
 

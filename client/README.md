@@ -26,7 +26,7 @@
 
 - **伙伴层与枢纽层共享主进程，职责严格分离**：底层处理协议与安全（凭证、中转、Runner 编排、自更新——这部分是后端/Runner 复用所依赖的不变契约），上层处理形象渲染与用户体验。伙伴层不直接接触凭证或 Runner 句柄——一切经枢纽层 IPC。
 - **2D / 3D 双渲染与产品兜底**：客户端负责加载形象资产、渲染动画并执行 [DESIGN.md §1.2](../DESIGN.md) 的视觉兜底策略（渲染级联：2D 分层木偶 → 3D → 程序化蛋，任一级装配失败自动落级）；3D 与 2D 产物及动画映射契约见 [docs/PIPELINE.md](../docs/PIPELINE.md)。
-- **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位并单向推后端；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
+- **打扰档位本地计算**：客户端综合用户偏好与活动上下文计算生效档位，经配置同步管道单向推后端（后端闸门的唯一档位来源）；权威边界见 [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)，产品规则见 [DESIGN.md §6.2](../DESIGN.md)。
 - **本地时区随连接上报**：每次网关连接即发即忘上报 IANA 时区——后端夜间批处理与互动统计按用户本地日聚合，缺行时夜间流水线整段跳过；契约见 [PROTOCOL.md §1.2](../PROTOCOL.md)。
 - **透明置顶精灵窗口作为唯一常驻主窗口**：登录态由托盘管理，应用设置等按需工具窗口由精灵右键菜单唤起，不常驻——"对话发生在角色身边"。Windows close = 隐藏到托盘；macOS close = 隐藏窗口但保留 Dock 图标。
 - **网关连续性与去重重放**：客户端记录连接级单调序列号并对网络重叠帧幂等去重，定期批量向服务端确认消费进度；断线重连携带水位触发增量重放，网络抖动下流式对话和工具调用无感续接；服务端重启或序列号失同步时自动重置水位防新事件黑洞（普通活连接会话切换不重置）。契约见 [PROTOCOL.md §0](../PROTOCOL.md)。
@@ -113,7 +113,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 | 3D 与 2D 产物契约、动画映射                      | 对后端          | [docs/PIPELINE.md](../docs/PIPELINE.md)                             |
 | 打扰档位权威边界                                 | 对后端          | [ARCHITECTURE.md §5.1](../ARCHITECTURE.md)                          |
 | 渲染状态机与空间行为                             | Renderer 内部   | [client/renderer/companion/README.md](renderer/companion/README.md) |
-| IPC 命名空间与 Skills 平台过滤                   | 本模块独有      | 本 README §3 / §4                                                   |
+| IPC 命名空间与 Skills 平台过滤                   | 本模块独有      | IPC 见本 README §3；Skills 双端翻译表对齐见 [installer/README.md §2](../installer/README.md)                                                   |
 
 ## 6. 已知限制
 

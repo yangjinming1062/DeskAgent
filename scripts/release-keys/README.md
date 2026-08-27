@@ -14,12 +14,6 @@ The matching private key is sourced from `$env:SPIRITAGENT_UPDATE_SIGNING_KEY`
 default `$HOME/.spiritagent/update.key`. The release pipeline refuses to build
 without one.
 
-## Why this directory exists
-
-The original layout — `scripts/secrets/update.{key,pub}` — checked the
-**private** half into git starting at `14ecaf0`. Anyone with repo read access
-could have signed arbitrary release manifests, which would have been accepted
-by every shipping client. That keypair was rotated; the original private key
-was scrubbed from git history on the `security/rotate-update-signing-key`
-branch and is now treated as permanently untrusted. See
-[SECURITY.md](../../SECURITY.md) for the disclosure and upgrade guidance.
+For why the private key lives off-repo, and the current trust model, see
+[SECURITY.md](../../SECURITY.md) (includes the 2026-08-21 signing-key incident
+and rotation history).

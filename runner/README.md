@@ -70,7 +70,7 @@ runner/
 | 就绪握手、能力上报与 RPC 方法 | 对客户端 | [PROTOCOL.md §2](../PROTOCOL.md) |
 | 反向 RPC 与速率守卫 | 经客户端到后端 | [PROTOCOL.md §3](../PROTOCOL.md) |
 | 本地执行安全防线 | 对本地工具执行 | [ARCHITECTURE.md §7](../ARCHITECTURE.md) |
-| Skills 平台过滤 | 本模块独有 | 本 README §4 |
+| Skills 平台过滤 | 本模块独有 | 过滤在 tools/skills；双端翻译表对齐见 [installer/README.md §2](../installer/README.md) |
 | 音频运行时依赖打包 | 与 Installer 协作 | [installer/README.md](../installer/README.md) |
 
 ## 6. 已知限制
