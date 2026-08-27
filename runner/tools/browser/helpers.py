@@ -5,9 +5,27 @@ from typing import Any
 
 from utils import call_llm_sync, get_spiritagent_dir, redact_sensitive_text
 
+from ..multimodal import capped_image_data_url
+
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_SUMMARIZE_THRESHOLD = 8000
+
+
+def screenshot_multimodal_result(screenshot_path: str, annotation_context: str = "") -> dict[str, Any]:
+    """截图文件 → 直注主对话的 _multimodal 信封；text 部分携带 MEDIA: 引用与脱敏后的 annotate 上下文。"""
+    size = Path(screenshot_path).stat().st_size
+    text = f"Browser screenshot attached ({size:,} bytes). Share it with the user by including MEDIA:{screenshot_path} in your response." + redact_sensitive_text(
+        annotation_context,
+    )
+    return {
+        "_multimodal": True,
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "image_url", "image_url": {"url": capped_image_data_url(Path(screenshot_path), "image/png")}},
+        ],
+        "meta": {"screenshot_path": screenshot_path, "image_size_bytes": size},
+    }
 
 
 def _safe_save_name(save_as: str | None, default: str) -> str:

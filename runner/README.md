@@ -54,6 +54,7 @@ runner/
 - **统一 HTTP 客户端栈**：移除 `requests` 与 `aiohttp` 重复依赖，所有同步/异步 HTTP 请求统一收敛到 `httpx[socks]`，减小 wheel 体积与审计面。
 - **SSRF 建连前 + 建连时双重校验**：`SafeHTTPTransport` / `SafeAsyncHTTPTransport` 在 `handle_request` 之前对 URL 字符串做白名单与（hostname + IP 字面量）预检；最终 socket.connect 不再走 httpcore 默认的 `socket.create_connection`，而是被替换为 `_SafeSyncBackend` / `_SafeAsyncBackend`，在每次建连时强制重新调用 `getaddrinfo` 校验所有解析结果，并直接使用已校验 IP 建连，原始 Host / TLS SNI / 证书主机名校验保持不变。重定向后每一跳都重新走同一校验路径，DNS 解析被移到工作线程避免阻塞事件循环，彻底消灭预检到建连之间的 TOCTOU 窗口。
 - **反向 RPC 由客户端守门**：Runner 只发起请求，不在本地维护云端凭证或自行限流；`call_llm_sync` 在工作线程安全等待主循环 Future，超时自动取消；契约见 [PROTOCOL.md §3](../PROTOCOL.md)。
+- **视觉工具图片直注主对话**：`vision_analyze` 与浏览器截图把图片以多模态工具结果信封（computer_use 桌面截图同款）直接附进上下文，由主对话模型亲自看图，超尺寸自动缩图。被否定的替代方案是"经反向 RPC 借 LLM 先把图转成文字分析再塞回"——主模型本身多模态，那样多一次往返、模型只见转述不见原图；反向 RPC 通道仅保留给纯文本工具（如浏览器快照压缩）。
 - **Windows Job Object 内核级进程树生命周期绑定**：Runner 启动阶段显式将自身加入"关闭即杀全树"的 Job Object，派生的所有子进程/孙进程/PTY 终端自动继承；模块导入无隐式副作用，Runner 异常崩溃或被杀时由 Windows 内核原子强杀全进程树，杜绝孤儿进程悬挂。
 - **Win32 原生路径规范化**：经 `GetFinalPathNameByHandleW` 回溯解析真实路径，覆盖 8.3 短文件名、符号链接、目录联接点与深层未创建子路径；统一大小写不敏感比对、剥离 NT/UNC 设备前缀并拦截 NTFS 备用数据流。
 - **本地终端提示与宿主平台对齐**：本地终端按 Windows（Git Bash）或 macOS（Darwin/BSD）宿主环境动态装配提示词并在执行前拦截 Linux 发行版包管理器与服务命令；防止模型将用户桌面误判为 Linux 虚拟机导致执行中断；为什么不写成通用跨平台描述：模糊描述会导致模型反复试探无效 Linux 指令；为什么 SSH 终端不套用拦截：远端可能本身就是真实 Linux 环境。

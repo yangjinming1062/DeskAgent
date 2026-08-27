@@ -1,4 +1,3 @@
-import base64
 import ipaddress
 import json
 import logging
@@ -10,20 +9,18 @@ from urllib.parse import SplitResult, urlparse, urlsplit, urlunsplit
 
 import httpx
 from utils import (
-    call_llm_sync,
     cfg_get,
     get_spiritagent_home,
     load_config,
-    redact_sensitive_text,
 )
 
-from ..multimodal import resolve_vision_params
 from ..registry import tool_error
 from .camofox_state import get_camofox_identity
 from .helpers import (
     SNAPSHOT_SUMMARIZE_THRESHOLD,
     _extract_relevant_content,
     _truncate_snapshot,
+    screenshot_multimodal_result,
 )
 
 logger = logging.getLogger(__name__)
@@ -382,8 +379,8 @@ def camofox_get_images(task_id: str | None = None) -> str:
         return tool_error(str(e), success=False)
 
 
-def camofox_vision(question: str, annotate: bool = False, task_id: str | None = None) -> str:
-    """截图 Camofox 当前 tab 并请视觉模型回答 question。"""
+def camofox_vision(annotate: bool = False, task_id: str | None = None) -> dict[str, Any] | str:
+    """截图 Camofox 当前 tab 并把截图直接附到主对话上下文。"""
     try:
         session = _get_session(task_id)
         if not session["tab_id"]:
@@ -403,30 +400,7 @@ def camofox_vision(question: str, annotate: bool = False, task_id: str | None = 
             except Exception:
                 pass
 
-        annotation_context = redact_sensitive_text(annotation_context)
-        vision_prompt = f"Analyze this browser screenshot and answer: {question}{annotation_context}"
-
-        try:
-            _vision_timeout, _vision_temperature = resolve_vision_params()
-        except Exception:
-            _vision_timeout, _vision_temperature = 120.0, 0.1
-
-        response = call_llm_sync(
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": vision_prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64.b64encode(resp.content).decode('utf-8')}"}},
-                    ],
-                },
-            ],
-            task="vision",
-            temperature=_vision_temperature,
-            timeout=_vision_timeout,
-        )
-        analysis = redact_sensitive_text((response or "").strip())
-        return json.dumps({"success": True, "analysis": analysis, "screenshot_path": screenshot_path})
+        return screenshot_multimodal_result(screenshot_path, annotation_context)
     except Exception as e:
         return tool_error(str(e), success=False)
 

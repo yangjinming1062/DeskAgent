@@ -25,17 +25,12 @@ def _resolve_download_timeout() -> float:
     return 30.0
 
 
-def resolve_vision_params(default_timeout: float = 120.0, default_temperature: float = 0.1) -> tuple[float, float]:
-    """读取 auxiliary.vision.timeout 与 auxiliary.vision.temperature。
-
-    任何错误或键缺失时回退到 (default_timeout, default_temperature)。
-    需要更高下限的调用方（例如本地模型）应在调用后将 timeout 夹到自己的最小值。
-    """
-    try:
-        vc = cfg_get(load_config(), "auxiliary", "vision", default={})
-        return float(vc.get("timeout", default_timeout)), float(vc.get("temperature", default_temperature))
-    except Exception:
-        return default_timeout, default_temperature
+def capped_image_data_url(image_path: Path, mime_type: str | None = None, max_base64_bytes: int = _MAX_BASE64_BYTES) -> str:
+    """文件 → data URL；超过 max_base64_bytes 时缩放到 RESIZE_TARGET_BYTES（远低于上限，一次缩放到位）。"""
+    if image_path.stat().st_size > max_base64_bytes * 3 // 4:
+        return resize_image_for_vision(image_path, mime_type=mime_type)
+    data_url = _image_to_base64_data_url(image_path, mime_type=mime_type)
+    return data_url if len(data_url) <= max_base64_bytes else resize_image_for_vision(image_path, mime_type=mime_type)
 
 
 async def _validate_image_url_async(url: str) -> bool:
@@ -56,24 +51,6 @@ def _detect_image_mime_type(image_path: Path) -> str | None:
     if len(h) >= 12 and h.startswith(b"RIFF") and h[8:12] == b"WEBP":
         return "image/webp"
     return "image/svg+xml" if image_path.suffix.lower() == ".svg" and "<svg" in image_path.read_text(encoding="utf-8", errors="ignore")[:4096].lower() else None
-
-
-_PAYMENT_HINTS = ("402", "insufficient", "payment required", "credits", "billing")
-_SIZE_HINTS = ("too large", "payload", "413", "content_too_large", "request_too_large", "exceeds", "size limit")
-_UNSUPPORT_HINTS = ("does not support", "not support image", "content_policy", "multimodal", "unrecognized request argument", "image input")
-
-
-def _classify_api_error(error: Exception, media_label: str) -> str:
-    err_str = str(error).lower()
-    if any(h in err_str for h in _PAYMENT_HINTS):
-        return f"Insufficient credits or payment required. Please top up your API provider account and try again. Error: {error}"
-    if any(h in err_str for h in _UNSUPPORT_HINTS):
-        return f"The model does not support {media_label} analysis or the request was rejected. Error: {error}"
-    if any(h in err_str for h in _SIZE_HINTS):
-        return f"The {media_label} is too large for the API. Error: {error}"
-    if "invalid_request" in err_str or "image_url" in err_str:
-        return f"The vision API rejected the image. Try a smaller JPEG/PNG and retry. Error: {error}"
-    return f"There was a problem with the request and the {media_label} could not be analyzed. Error: {error}"
 
 
 def _is_retryable_download_error(error: Exception) -> bool:
@@ -160,11 +137,6 @@ def _file_to_base64_data_url(file_path: Path, mime_type: str | None = None, defa
 
 def _image_to_base64_data_url(image_path: Path, mime_type: str | None = None) -> str:
     return _file_to_base64_data_url(image_path, mime_type=mime_type or _guess_mime_from_extension(image_path))
-
-
-def is_image_size_error(error: Exception) -> bool:
-    err_str = str(error).lower()
-    return any(h in err_str for h in _SIZE_HINTS) or "image_url" in err_str or "invalid_request" in err_str
 
 
 def resize_image_for_vision(image_path: Path, mime_type: str | None = None, max_base64_bytes: int = RESIZE_TARGET_BYTES, max_dimension: int | None = None) -> str:

@@ -349,24 +349,22 @@ BROWSER_GET_IMAGES_SCHEMA: dict[str, Any] = {
 BROWSER_VISION_SCHEMA: dict[str, Any] = {
     "name": "browser_vision",
     "description": (
-        "Take a screenshot of the current page so you can inspect it visually. Use this when you need to understand what the page "
-        "looks like - especially for CAPTCHAs, visual verification challenges, complex layouts, or cases where the text snapshot misses "
-        "important visual information. When your active model has native vision, the screenshot is attached to your context directly "
-        "and you inspect it on the next turn; otherwise SpiritAgent falls back to an auxiliary vision model and returns a text analysis. "
+        "Take a screenshot of the current page and attach it to your context so you can inspect it visually on your next turn. "
+        "Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, "
+        "complex layouts, or cases where the text snapshot misses important visual information. "
         "Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. "
         "Requires browser_navigate to be called first."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "question": {"type": "string", "description": "What you want to know about the page visually. Be specific about what you're looking for."},
             "annotate": {
                 "type": "boolean",
                 "default": False,
                 "description": "If true, overlay numbered [N] labels on interactive elements. Each [N] maps to ref @eN for subsequent browser commands. Useful for QA and spatial reasoning about page layout.",
             },
         },
-        "required": ["question"],
+        "required": [],
     },
 }
 

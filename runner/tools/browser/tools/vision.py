@@ -1,25 +1,24 @@
-import base64
 import json
 import logging
 import uuid
-from pathlib import Path
+from typing import Any
 
-from utils import call_llm_sync, get_spiritagent_home, redact_sensitive_text
+from utils import get_spiritagent_home
 
-from ...multimodal import resolve_vision_params
 from ...registry import registry
 from ..camofox import camofox_vision, is_camofox_mode
 from ..check import check_browser_native_requirements
+from ..helpers import screenshot_multimodal_result
 from ..schemas import BROWSER_VISION_SCHEMA
 from ._common import browser_session, no_supervisor
 
 logger = logging.getLogger(__name__)
 
 
-def browser_vision(question: str, annotate: bool = False, task_id: str | None = None) -> str:
-    """截图当前页面并通过多模态 LLM 进行分析。"""
+def browser_vision(annotate: bool = False, task_id: str | None = None) -> dict[str, Any] | str:
+    """截图当前页面并把截图直接附到主对话上下文。"""
     if is_camofox_mode():
-        return camofox_vision(question, annotate=annotate, task_id=task_id)
+        return camofox_vision(annotate=annotate, task_id=task_id)
 
     with browser_session(task_id) as (supervisor, _):
         if supervisor is None:
@@ -42,37 +41,9 @@ def browser_vision(question: str, annotate: bool = False, task_id: str | None = 
             except Exception as exc:
                 logger.debug("Failed to obtain snapshot for vision annotation: %s", exc)
 
-        annotation_context = redact_sensitive_text(annotation_context)
-        vision_prompt = f"Analyze this browser screenshot and answer: {question}{annotation_context}"
-
-        try:
-            vision_timeout, vision_temperature = resolve_vision_params()
-        except Exception:
-            vision_timeout, vision_temperature = 120.0, 0.1
-
-        try:
-            raw_bytes = Path(screenshot_path).read_bytes()
-            img_b64 = base64.b64encode(raw_bytes).decode("utf-8")
-            response = call_llm_sync(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": vision_prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
-                        ],
-                    },
-                ],
-                task="vision",
-                temperature=vision_temperature,
-                timeout=vision_timeout,
-            )
-            analysis = redact_sensitive_text((response or "").strip())
-            return json.dumps({"success": True, "analysis": analysis, "screenshot_path": screenshot_path}, ensure_ascii=False)
-        except Exception as exc:
-            return json.dumps({"success": False, "error": str(exc), "screenshot_path": screenshot_path}, ensure_ascii=False)
+        return screenshot_multimodal_result(screenshot_path, annotation_context)
 
 
 registry.register_tool("browser_vision", check_fn=check_browser_native_requirements, schema=BROWSER_VISION_SCHEMA)(
-    lambda args, **kw: browser_vision(question=args.get("question", ""), annotate=args.get("annotate", False), task_id=kw.get("task_id")),
+    lambda args, **kw: browser_vision(annotate=args.get("annotate", False), task_id=kw.get("task_id")),
 )

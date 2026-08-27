@@ -115,30 +115,8 @@ export function RunnerSettings(): React.JSX.Element {
       rows: [{ kind: 'switch', path: ['security', 'redact_secrets'], title: r.securityRedactSecrets }]
     },
     {
-      heading: r.auxiliary,
-      rows: [
-        {
-          kind: 'input',
-          type: 'number',
-          path: ['auxiliary', 'vision', 'timeout'],
-          title: r.auxiliaryVisionTimeout,
-          default: 120
-        },
-        {
-          kind: 'input',
-          type: 'number',
-          path: ['auxiliary', 'vision', 'temperature'],
-          title: r.auxiliaryVisionTemperature,
-          default: 0.1
-        }
-      ]
-    },
-    {
       heading: r.debug,
-      rows: [
-        { kind: 'switch', path: ['debug', 'interrupt'], title: r.debugInterrupt },
-        { kind: 'switch', path: ['debug', 'vision_tools'], title: r.debugVisionTools }
-      ]
+      rows: [{ kind: 'switch', path: ['debug', 'interrupt'], title: r.debugInterrupt }]
     }
   ]
 

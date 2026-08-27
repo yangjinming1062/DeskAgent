@@ -148,11 +148,7 @@ export const strings = {
       browser: '浏览器设置',
       browserAllowPrivateUrls: '允许内网访问',
       debug: '调试开关',
-      debugInterrupt: '中断模式',
-      debugVisionTools: '调试视觉工具',
-      auxiliary: '辅助工具',
-      auxiliaryVisionTimeout: '视觉模型超时时间 (秒)',
-      auxiliaryVisionTemperature: '视觉模型温度'
+      debugInterrupt: '中断模式'
     },
     skills: {
       title: '技能',
