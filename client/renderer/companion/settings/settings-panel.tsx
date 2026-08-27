@@ -42,7 +42,7 @@ export function CompanionSettings({ onClose }: { onClose: () => void }): React.J
       minSize={{ width: 720, height: 540 }}
       onClose={onClose}
       regionId="companion-settings"
-      storagePrefix="da.companion.settings"
+      storagePrefix="da.companion.settingsPanel"
       title="伙伴设置"
     >
       <div className="flex min-h-0 flex-1">

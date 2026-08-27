@@ -43,9 +43,14 @@ export function usePanelResize({
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PanelSize>
 
+        // Math.min/max 对 NaN 直接透传——非数值的持久化尺寸回退默认，避免
+        // width: NaN 让内联尺寸失效、面板塌成左上角的零定长块。
+        const clamp = (value: unknown, fallback: number): number =>
+          typeof value === 'number' && Number.isFinite(value) ? value : fallback
+
         return {
-          width: Math.min(maxSize.width, Math.max(minSize.width, parsed.width ?? defaultSize.width)),
-          height: Math.min(maxSize.height, Math.max(minSize.height, parsed.height ?? defaultSize.height))
+          width: Math.min(maxSize.width, Math.max(minSize.width, clamp(parsed.width, defaultSize.width))),
+          height: Math.min(maxSize.height, Math.max(minSize.height, clamp(parsed.height, defaultSize.height)))
         }
       }
     } catch {

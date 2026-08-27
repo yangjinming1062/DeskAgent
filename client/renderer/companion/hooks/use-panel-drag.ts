@@ -27,7 +27,14 @@ export function usePanelDrag(
     try {
       const raw = localStorage.getItem(storageKey)
 
-      return raw ? (JSON.parse(raw) as { dx: number; dy: number }) : null
+      if (!raw) {
+        return null
+      }
+
+      const parsed = JSON.parse(raw) as { dx?: unknown; dy?: unknown }
+
+      // 损坏 / 非数值的持久化偏移按无偏移处理——NaN 会经 transform 把面板推出视口。
+      return typeof parsed.dx === 'number' && typeof parsed.dy === 'number' ? { dx: parsed.dx, dy: parsed.dy } : null
     } catch {
       return null
     }

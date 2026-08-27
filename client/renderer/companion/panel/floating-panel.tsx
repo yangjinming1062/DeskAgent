@@ -96,6 +96,13 @@ export function FloatingPanel({
   const left = Math.max(16, Math.round((viewport.width - Math.min(viewport.width - 32, size.width)) / 2))
   const top = Math.max(16, Math.round((viewport.height - Math.min(viewport.height - 32, size.height)) / 2))
 
+  // 历史拖拽偏移可能把居中面板整个推出视口（只余一角）——渲染期钳制，
+  // 保证面板在屏幕内至少保留 160px 宽 / 64px 高的可见条带。
+  const dx = storedOffset?.dx ?? 0
+  const dy = storedOffset?.dy ?? 0
+  const visibleDx = Math.min(Math.max(left + dx, 176 - size.width), viewport.width - 160) - left
+  const visibleDy = Math.min(Math.max(top + dy, 80 - size.height), viewport.height - 64) - top
+
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
       <div
@@ -108,7 +115,7 @@ export function FloatingPanel({
           width: `min(calc(100vw - 2rem), ${size.width}px)`,
           height: `min(calc(100vh - 2rem), ${size.height}px)`,
           pointerEvents: 'auto',
-          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+          transform: `translate3d(${visibleDx}px, ${visibleDy}px, 0)`
         }}
       >
         {RESIZE_HANDLES.map(h => (
