@@ -2,10 +2,11 @@ import type React from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { resolvePortraitUrl } from '@/companion/avatar-image'
-import { INPUT_CLASS } from '@/companion/input-class'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { HistoryGallery, PortraitLightbox } from '@/companion/onboarding/onboarding-components'
+import { WizardModal } from '@/companion/panel/wizard-modal'
 import { MAX_APPEARANCE } from '@/companion/persona'
+import { cn } from '@/shared/lib/utils'
+import { BTN_PRIMARY, BTN_SUBTLE, INPUT_CLASS } from '@/shared/panel'
 
 const HISTORY_CAP = 5
 
@@ -85,11 +86,8 @@ export function Seed3dWizard({
   const [feedback, setFeedback] = useState<Record<Stage, string>>({ front: '', back: '' })
   const [hint, setHint] = useState<string | null>(null)
   const [zoomUrl, setZoomUrl] = useState<string | null>(null)
-  const overlayRef = useRef<HTMLDivElement>(null)
   const mountedRef = useRef(true)
   const generatingRef = useRef(false)
-
-  useInteractiveRegion('seed3d-wizard', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   useEffect(() => {
     // StrictMode 开发态会卸载重挂一次，cleanup 已把标记置 false——重挂时必须复位，
@@ -256,16 +254,19 @@ export function Seed3dWizard({
   }, [stage, stages.back.previewUrl, stages.back.loading, stages.back.failed, generate])
 
   // Esc 关闭向导；灯箱打开时让灯箱自己的 Esc 生效，不连带关掉整个向导。
+  // 捕获阶段拦截并阻断冒泡，外层设置面板的 Esc 不连坐。
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' && !zoomUrl) {
+        e.preventDefault()
+        e.stopPropagation()
         onCancel()
       }
     }
 
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
 
-    return () => window.removeEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onCancel, zoomUrl])
 
   const onSelectHistoryEntry = (key: Stage, idx: number): void => {
@@ -284,141 +285,125 @@ export function Seed3dWizard({
   const meta = STAGE_META[stage]
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
-      ref={overlayRef}
-      style={{ pointerEvents: 'auto' }}
+    <WizardModal
+      escClose={false}
+      onClose={onCancel}
+      regionId="seed3d-wizard"
+      title={
+        <>
+          {meta.title}
+          {supportsMultiview && (
+            <span className="ml-1.5 text-[11px] font-normal text-white/40">
+              {stage === 'front' ? '1 / 2' : '2 / 2'}
+            </span>
+          )}
+        </>
+      }
+      widthClass="max-w-sm"
     >
-      <div className="flex max-h-[85vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/80 text-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h2 className="text-sm font-semibold">
-            {meta.title}
-            {supportsMultiview && (
-              <span className="ml-1.5 text-[11px] font-normal text-white/40">
-                {stage === 'front' ? '1 / 2' : '2 / 2'}
-              </span>
-            )}
-          </h2>
+      <p className="text-[11px] leading-relaxed text-white/55">{meta.hint}</p>
+
+      <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/12 bg-black/40 group">
+        {current.previewUrl ? (
           <button
-            aria-label="关闭"
-            className="text-white/50 transition hover:text-white"
-            onClick={onCancel}
+            aria-label="放大查看"
+            className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
+            onClick={() => setZoomUrl(current.previewUrl)}
             type="button"
           >
-            ✕
+            <img alt={meta.alt} className="h-full w-full object-cover" src={current.previewUrl ?? undefined} />
           </button>
+        ) : (
+          <div className="text-xs text-white/40">{current.loading ? meta.loadFail : '暂无立绘'}</div>
+        )}
+      </div>
+
+      {current.entries.length > 1 && (
+        <div className="mt-2">
+          <HistoryGallery
+            entries={current.entries.map(entry => ({ url: entry.previewUrl }))}
+            onSelect={idx => onSelectHistoryEntry(stage, idx)}
+            selectedIdx={current.idx}
+          />
         </div>
+      )}
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 text-xs">
-          <p className="text-[11px] leading-relaxed text-white/55">{meta.hint}</p>
+      <div className="mt-3">
+        <textarea
+          className={cn(INPUT_CLASS, 'resize-none')}
+          disabled={current.loading}
+          maxLength={MAX_APPEARANCE}
+          onChange={e => setFeedback(prev => ({ ...prev, [stage]: e.target.value }))}
+          placeholder={meta.placeholder}
+          rows={2}
+          value={feedback[stage]}
+        />
+      </div>
 
-          <div className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group">
-            {current.previewUrl ? (
-              <button
-                aria-label="放大查看"
-                className="relative block h-full w-full cursor-zoom-in overflow-hidden border-0 bg-transparent p-0"
-                onClick={() => setZoomUrl(current.previewUrl)}
-                type="button"
-              >
-                <img alt={meta.alt} className="h-full w-full object-cover" src={current.previewUrl ?? undefined} />
-              </button>
-            ) : (
-              <div className="text-xs text-white/40">{current.loading ? meta.loadFail : '暂无立绘'}</div>
-            )}
-          </div>
+      {hint && <p className="mt-2 text-xs text-rose-300/90">{hint}</p>}
 
-          {current.entries.length > 1 && (
-            <div className="mt-2">
-              <HistoryGallery
-                entries={current.entries.map(entry => ({ url: entry.previewUrl }))}
-                onSelect={idx => onSelectHistoryEntry(stage, idx)}
-                selectedIdx={current.idx}
-              />
-            </div>
-          )}
-
-          <div className="mt-3">
-            <textarea
-              className={`${INPUT_CLASS} text-xs`}
-              disabled={current.loading}
-              maxLength={MAX_APPEARANCE}
-              onChange={e => setFeedback(prev => ({ ...prev, [stage]: e.target.value }))}
-              placeholder={meta.placeholder}
-              rows={2}
-              value={feedback[stage]}
-            />
-          </div>
-
-          {hint && <p className="mt-2 text-xs text-rose-300/90">{hint}</p>}
-
-          {current.failed && !current.previewUrl && (
-            <div className="mt-3 flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-              <span className="text-white/60">{stage === 'front' ? '3D 正面立绘生成失败' : '背面立绘生成失败'}</span>
-              <div className="flex gap-2">
-                <button
-                  className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10 disabled:opacity-40"
-                  disabled={current.loading}
-                  onClick={() => regenerate(stage)}
-                  type="button"
-                >
-                  重试
-                </button>
-                {stage === 'back' && (
-                  <button
-                    className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10"
-                    onClick={onConfirm}
-                    type="button"
-                  >
-                    仅用正面图生成 3D
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4 flex items-center justify-between">
+      {current.failed && !current.previewUrl && (
+        <div className="mt-3 flex items-center justify-between rounded-xl border border-white/8 bg-[#1c1c21] px-3 py-2">
+          <span className="text-white/60">{stage === 'front' ? '3D 正面立绘生成失败' : '背面立绘生成失败'}</span>
+          <div className="flex gap-2">
             <button
-              className="text-white/60 transition hover:text-white disabled:opacity-40"
+              className={cn(BTN_SUBTLE, 'h-7 px-3')}
               disabled={current.loading}
-              onClick={stage === 'back' ? () => setStage('front') : onCancel}
+              onClick={() => regenerate(stage)}
               type="button"
             >
-              {stage === 'back' ? '返回正面' : '取消'}
+              重试
             </button>
-            <div className="flex items-center gap-3">
-              <button
-                className="text-white/70 transition hover:text-white disabled:opacity-40"
-                disabled={current.loading || !current.previewUrl}
-                onClick={() => regenerate(stage)}
-                type="button"
-              >
-                微调重绘
+            {stage === 'back' && (
+              <button className={cn(BTN_SUBTLE, 'h-7 px-3')} onClick={onConfirm} type="button">
+                仅用正面图生成 3D
               </button>
-              {stage === 'front' && supportsMultiview ? (
-                <button
-                  className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
-                  disabled={current.loading || !current.previewUrl}
-                  onClick={() => setStage('back')}
-                  type="button"
-                >
-                  下一步：背面立绘
-                </button>
-              ) : (
-                <button
-                  className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
-                  disabled={current.loading || !current.previewUrl}
-                  onClick={onConfirm}
-                  type="button"
-                >
-                  确认，切换到 3D
-                </button>
-              )}
-            </div>
+            )}
           </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex items-center justify-between">
+        <button
+          className="rounded-lg px-2 py-1 text-xs text-white/60 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+          disabled={current.loading}
+          onClick={stage === 'back' ? () => setStage('front') : onCancel}
+          type="button"
+        >
+          {stage === 'back' ? '返回正面' : '取消'}
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            className="rounded-lg px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            disabled={current.loading || !current.previewUrl}
+            onClick={() => regenerate(stage)}
+            type="button"
+          >
+            微调重绘
+          </button>
+          {stage === 'front' && supportsMultiview ? (
+            <button
+              className={BTN_PRIMARY}
+              disabled={current.loading || !current.previewUrl}
+              onClick={() => setStage('back')}
+              type="button"
+            >
+              下一步：背面立绘
+            </button>
+          ) : (
+            <button
+              className={BTN_PRIMARY}
+              disabled={current.loading || !current.previewUrl}
+              onClick={onConfirm}
+              type="button"
+            >
+              确认，切换到 3D
+            </button>
+          )}
         </div>
       </div>
 
       {zoomUrl && <PortraitLightbox name={meta.alt} onClose={() => setZoomUrl(null)} url={zoomUrl} />}
-    </div>
+    </WizardModal>
   )
 }

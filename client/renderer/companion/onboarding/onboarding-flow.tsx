@@ -11,7 +11,6 @@ import {
   saveDraftRefImage
 } from '@/companion/avatar-image'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import { INPUT_CLASS } from '@/companion/input-class'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import {
   APPEARANCE_PRESETS,
@@ -43,9 +42,12 @@ import {
 } from '@/companion/portrait-store'
 import { useRegeneratePortrait } from '@/companion/use-regenerate-portrait'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
+import { FolderOpen, Sparkles } from '@/shared/lib/icons'
 import { isClientErrorIpc, unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { safeJsonParse } from '@/shared/lib/safe-json'
+import { cn } from '@/shared/lib/utils'
 import { sleep } from '@/shared/lib/utils'
+import { INPUT_CLASS } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { warmAudioContext } from '../audio-track'
@@ -1540,10 +1542,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }}
       >
         <div
-          className="w-full rounded-2xl border border-white/10 bg-black/85 p-5 text-white shadow-2xl"
+          className="w-full rounded-2xl border border-white/12 bg-[#141416] p-5 text-white shadow-2xl"
           style={{ pointerEvents: 'auto' }}
         >
-          {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">🔊 正在准备声音…</p>}
+          {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">正在准备声音…</p>}
           {phase === 'q-character' && question && LOCKED_FIELD_KEYS.has(question.key) && (
             <p className="mb-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] leading-relaxed text-amber-200/85">
               「{LOCKED_FIELD_LABELS[question.key] ?? '当前字段'}」是形象确认后无法再次更改的重点内容，请仔细选择。
@@ -1599,7 +1601,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   />
                 ) : (
                   <input
-                    className="mt-3 w-full rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm outline-none placeholder:text-white/40 focus:border-white/40"
+                    className={cn(INPUT_CLASS, 'mt-3 text-sm')}
                     onChange={e => setInput(e.target.value)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' && !question.multiline) {
@@ -1651,7 +1653,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                     )}
                     <button
-                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-white px-4 text-xs font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
                       onClick={onSend}
                       type="button"
                     >
@@ -1680,7 +1682,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   type="button"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[14px] font-medium text-white/90">✨ 让 AI 为我生成头像</span>
+                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-white/90">
+                      <Sparkles className="size-4 text-white/60" /> 让 AI 为我生成头像
+                    </span>
                     <span className="text-xs text-white/40">AI 绘制 →</span>
                   </div>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
@@ -1695,7 +1699,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   type="button"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[14px] font-medium text-white/90">📁 直接上传已有头像</span>
+                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-white/90">
+                      <FolderOpen className="size-4 text-white/60" /> 直接上传已有头像
+                    </span>
                     <span className="text-xs text-white/40">本地上传 →</span>
                   </div>
                   <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
@@ -1829,7 +1835,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                     </div>
                     <button
-                      className="rounded-full bg-white/90 px-4 py-1 font-medium text-black transition hover:bg-white"
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-white px-4 text-xs font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
                       disabled={activeAvatarId == null}
                       onClick={() => void confirmPortrait()}
                       type="button"
@@ -1940,7 +1946,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         微调重绘
                       </button>
                       <button
-                        className="rounded-full bg-white/90 px-4 py-1.5 font-medium text-black transition hover:bg-white disabled:opacity-40"
+                        className="inline-flex h-9 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
                         disabled={fullbodyLoading || !fullbodyFrontUrl}
                         onClick={() => void confirmFullbodyFront()}
                         type="button"
@@ -2044,7 +2050,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   上一步
                 </button>
                 <button
-                  className="flex-1 rounded-full bg-white/90 py-1.5 text-sm font-medium text-black transition hover:bg-white"
+                  className="h-9 flex-1 rounded-lg bg-white text-sm font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
                   onClick={confirmVoice}
                   type="button"
                 >

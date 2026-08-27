@@ -46,7 +46,7 @@ export function OverlayView({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-black/60 text-white backdrop-blur-md">
+    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-[#141416] text-white">
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[calc(var(--titlebar-height)+0.1875rem)] [-webkit-app-region:drag]">
         {!HAS_NATIVE_WINDOW_CONTROLS && (
           <Button

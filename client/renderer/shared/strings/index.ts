@@ -107,9 +107,8 @@ export const strings = {
     nav: {
       account: '账户',
       about: '关于',
-      runner: '执行器',
-      skills: '技能与工具',
-      voices: '音色目录'
+      runner: '本机执行器',
+      skills: '技能与工具'
     },
     about: {
       heading: 'SpiritAgent Desktop',
@@ -238,8 +237,8 @@ export const strings = {
   },
 
   speech: {
-    title: '语音',
-    intro: '语音输入与录音设置',
+    title: '语音输入',
+    intro: '语音输入、识别引擎与录音设置',
     loading: '加载中…',
     sttEnabledTitle: '语音转文字总开关',
     sttEnabledDesc: '关闭后语音条与通话模式均不可用。',
@@ -261,19 +260,6 @@ export const strings = {
     saving: '保存中…',
     saved: '已保存',
     saveFailed: '保存失败'
-  },
-
-  voiceGallery: {
-    title: '音色目录',
-    intro: '浏览当前云端 TTS 服务提供的所有音色，点击试听。更换伙伴音色请在精灵窗口的「伙伴设置」中进行。',
-    loading: '正在加载音色目录…',
-    empty: '当前没有可用音色。',
-    error: '音色目录加载失败，请稍后重试。',
-    provider: '服务商',
-    preview: '试听',
-    playing: '播放中…',
-    all: '全部',
-    designSupported: '支持音色设计'
   },
 
   skills: {

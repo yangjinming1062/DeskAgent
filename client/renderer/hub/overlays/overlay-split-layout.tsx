@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { PAGE_INSET_X } from '@/shared'
 import type { IconComponent } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { NAV_ITEM_ACTIVE, SURFACE_CHROME } from '@/shared/panel'
 
 interface OverlaySplitLayoutProps {
   children: ReactNode
@@ -47,8 +48,9 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps): Re
   return (
     <aside
       className={cn(
-        // 侧栏与主区共享深色玻璃背景，仅用右侧细线分隔。
-        'flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-white/10 bg-black/60 px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)] backdrop-blur-md',
+        // 侧栏石墨实体（与伙伴设置同一表面阶梯），仅用右侧细线分隔。
+        SURFACE_CHROME,
+        'flex min-h-0 flex-col gap-0.5 overflow-y-auto border-r border-white/10 px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)]',
         className
       )}
     >
@@ -88,7 +90,7 @@ export function OverlayNavItem({
             ? 'border-transparent bg-white/10 font-medium text-white'
             : 'border-transparent bg-transparent text-white/50 hover:bg-white/5 hover:text-white'
           : active
-            ? 'border-white/15 bg-white/10 text-white'
+            ? NAV_ITEM_ACTIVE
             : 'border-transparent bg-transparent text-white/60 hover:bg-white/5 hover:text-white'
       )}
       onClick={onClick}

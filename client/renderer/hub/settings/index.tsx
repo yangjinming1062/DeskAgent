@@ -4,7 +4,7 @@ import { useRef, useState } from 'react'
 import { ConfirmDialog, Tip } from '@/shared/components/ui'
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { AudioLines, Info, KeyRound, Settings, Sparkles } from '@/shared/lib/icons'
+import { Cpu, Info, KeyRound, Sparkles } from '@/shared/lib/icons'
 import { getSpiritAgentConfig, getSpiritAgentConfigDefaults, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
@@ -19,16 +19,8 @@ import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
-import { VoiceGallerySettings } from './voice-gallery-settings'
 
-const SETTINGS_VIEWS = [
-  'account',
-  'speech',
-  'voices',
-  'runner',
-  'skills',
-  'about'
-] as const satisfies readonly SettingsViewId[]
+const SETTINGS_VIEWS = ['account', 'speech', 'runner', 'skills', 'about'] as const satisfies readonly SettingsViewId[]
 
 export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings
@@ -112,14 +104,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             onClick={() => setActiveView('speech')}
           />
           <OverlayNavItem
-            active={activeView === 'voices'}
-            icon={AudioLines}
-            label={t.settings.nav.voices}
-            onClick={() => setActiveView('voices')}
-          />
-          <OverlayNavItem
             active={activeView === 'runner'}
-            icon={Settings}
+            icon={Cpu}
             label={t.settings.nav.runner}
             onClick={() => setActiveView('runner')}
           />
@@ -129,7 +115,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             label={t.settings.nav.skills}
             onClick={() => setActiveView('skills')}
           />
-          <div className="my-2 h-px bg-white/10" />
+          <div className="my-2 h-px bg-white/8" />
           <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
@@ -171,8 +157,6 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
             <SpeechSettings />
-          ) : activeView === 'voices' ? (
-            <VoiceGallerySettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

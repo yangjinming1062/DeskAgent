@@ -1053,3 +1053,15 @@ canvas {
 .animate-egg-breath { animation: egg-breath 3.6s ease-in-out infinite; transform-origin: 160px 170px; }
 .animate-crack-shimmer { animation: crack-shimmer 4s ease-in-out infinite; }
 .animate-waveform-bounce { animation: waveform-bounce 0.9s ease-in-out infinite; transform-origin: center bottom; }
+
+/* 聊天窗会话抽屉的滑入动画（宽度推移式抽屉，进场做轻量位移淡入）。 */
+@keyframes sa-drawer-in {
+  from {
+    transform: translateX(-0.75rem);
+    opacity: 0;
+  }
+}
+
+.sa-drawer-in {
+  animation: sa-drawer-in 0.18s ease-out;
+}

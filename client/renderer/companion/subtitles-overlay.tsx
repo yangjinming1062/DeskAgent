@@ -23,15 +23,15 @@ function SubtitlesOverlayInner({ lastItem }: { lastItem: ChatMessageListItem }):
   const isUser = lastItem.role === 'user'
 
   const displayText = body.error
-    ? `😬 ${body.error}`
+    ? body.error
     : body.cancelled
       ? '已停止'
       : body.toolName
-        ? `🔧 正在使用 ${body.toolName}…`
+        ? `正在使用 ${body.toolName}…`
         : body.text || '…'
 
   return (
-    <div className="flex h-full w-full select-none items-start gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs">
+    <div className="flex h-full w-full select-none items-start gap-2 rounded-xl border border-white/8 bg-[#1c1c21] px-3 py-2 text-xs">
       <span className={`mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full ${isUser ? 'bg-emerald-400' : 'bg-blue-400'}`} />
       <span className="mt-0.5 shrink-0 font-medium text-white/50">{isUser ? '用户:' : '伙伴:'}</span>
       <div
@@ -53,7 +53,7 @@ export function SubtitlesOverlay(): React.JSX.Element {
 
   if (!userPref || !lastItem) {
     return (
-      <div className="flex h-full w-full select-none items-center justify-center rounded-2xl border border-dashed border-white/10 text-xs text-white/25">
+      <div className="flex h-full w-full select-none items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/25">
         {!userPref ? '字幕已关闭' : '等待对话…'}
       </div>
     )

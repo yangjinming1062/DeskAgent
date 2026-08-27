@@ -1,13 +1,19 @@
 import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
-import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
 import { assemblePersona } from '@/companion/persona'
 import { PERSONALITY_PRESETS, RELATIONSHIP_PRESETS } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
-
-const inputClass = PERSONA_INPUT_CLASS
-const presetClass = PERSONA_PRESET_CLASS
+import { cn } from '@/shared/lib/utils'
+import {
+  BTN_PRIMARY,
+  BTN_SUBTLE,
+  CHIP_FILTER,
+  CHIP_FILTER_ACTIVE,
+  FIELD_LABEL,
+  INPUT_CLASS,
+  SECTION_TITLE
+} from '@/shared/panel'
 
 // 可编辑的 persona 字段：name / relationship / personality。
 // 锁定的视觉锚点字段（species / gender / appearance）刻意不可编辑——见 DESIGN.md §5.4。
@@ -88,90 +94,90 @@ export function PersonaSection(): React.JSX.Element {
     const tags = [persona?.relationship, persona?.personality].filter(Boolean)
 
     return (
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-white/80">角色</p>
-        <div className="space-y-0.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs">
+      <section>
+        <p className={cn(SECTION_TITLE, 'mb-1.5')}>角色</p>
+        <div className="space-y-1 rounded-xl border border-white/8 bg-[#1c1c21] px-3.5 py-3 text-xs">
           <p className="font-medium text-white">{persona?.name ?? '伙伴'}</p>
           <p className="text-white/50">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
           {persona?.appearance && <p className="text-white/40">{persona.appearance}</p>}
         </div>
-        <button
-          className="mt-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/15"
-          onClick={startEdit}
-          type="button"
-        >
+        <button className={cn(BTN_SUBTLE, 'mt-2')} onClick={startEdit} type="button">
           编辑角色
         </button>
-        <p className="mt-1.5 text-[10px] text-white/30">修改我的名字、定位与性格</p>
-      </div>
+      </section>
     )
   }
 
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-medium text-white/80">编辑角色</p>
-      <div className="space-y-2.5">
+    <section>
+      <p className={cn(SECTION_TITLE, 'mb-1.5')}>编辑角色</p>
+      <div className="space-y-3">
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/50">名字</span>
+          <span className={FIELD_LABEL}>名字</span>
           <input
-            className={inputClass}
+            className={INPUT_CLASS}
             onChange={e => setName(e.target.value)}
             placeholder="给我起个名字"
             value={name}
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/50">角色定位</span>
+          <span className={FIELD_LABEL}>角色定位</span>
           <input
-            className={inputClass}
+            className={INPUT_CLASS}
             onChange={e => setRelationship(e.target.value)}
             placeholder="或者自由描述…"
             value={relationship}
           />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {RELATIONSHIP_PRESETS.map(p => (
-              <button className={presetClass} key={p} onClick={() => setRelationship(p)} type="button">
+              <button
+                className={relationship === p ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+                key={p}
+                onClick={() => setRelationship(p)}
+                type="button"
+              >
                 {p}
               </button>
             ))}
           </div>
         </label>
         <label className="block">
-          <span className="mb-1 block text-[11px] text-white/50">性格</span>
+          <span className={FIELD_LABEL}>性格</span>
           <input
-            className={inputClass}
+            className={INPUT_CLASS}
             onChange={e => setPersonality(e.target.value)}
             placeholder="自由描述…"
             value={personality}
           />
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {PERSONALITY_PRESETS.map(p => (
-              <button className={presetClass} key={p} onClick={() => setPersonality(p)} type="button">
+              <button
+                className={personality === p ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
+                key={p}
+                onClick={() => setPersonality(p)}
+                type="button"
+              >
                 {p}
               </button>
             ))}
           </div>
         </label>
-        {hint && <p className="text-[11px] text-amber-300/80">{hint}</p>}
-        <div className="flex gap-2 pt-1">
+        {hint && <p className="text-[11px] text-amber-300/90">{hint}</p>}
+        <div className="flex gap-2">
           <button
-            className="flex-1 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs text-white/70 transition hover:bg-white/15"
+            className={cn(BTN_SUBTLE, 'flex-1')}
             disabled={saving}
             onClick={() => setEditing(false)}
             type="button"
           >
             取消
           </button>
-          <button
-            className="flex-1 rounded-lg border border-white/40 bg-white/15 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-            disabled={saving}
-            onClick={() => void save()}
-            type="button"
-          >
+          <button className={cn(BTN_PRIMARY, 'flex-1')} disabled={saving} onClick={() => void save()} type="button">
             {saving ? '保存中…' : '保存'}
           </button>
         </div>
       </div>
-    </div>
+    </section>
   )
 }

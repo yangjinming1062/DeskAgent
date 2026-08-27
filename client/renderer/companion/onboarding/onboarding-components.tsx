@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
+import { CHIP_FILTER, CHIP_FILTER_ACTIVE } from '@/shared/panel'
 
 // 从 onboarding-flow.tsx 中抽离出的四个小 JSX 组件。
 // 所有输入都通过 props 传入——不依赖模块级共享状态——便于单独隔离测试。
@@ -17,11 +18,7 @@ export function Chip({
   active?: boolean
 }): React.JSX.Element {
   return (
-    <button
-      className={`rounded-full border px-3 py-1 text-xs transition ${active ? 'border-white/60 bg-white/25' : 'border-white/20 bg-white/5 hover:bg-white/15'}`}
-      onClick={onClick}
-      type="button"
-    >
+    <button className={active ? CHIP_FILTER_ACTIVE : CHIP_FILTER} onClick={onClick} type="button">
       {label}
     </button>
   )
@@ -87,7 +84,7 @@ export function HistoryGallery({
         return (
           <button
             className={`overflow-hidden rounded-md border transition ${
-              idx === selectedIdx ? 'border-white/80' : 'border-white/15 opacity-60 hover:opacity-90'
+              idx === selectedIdx ? 'border-[#6c8aff]' : 'border-white/15 opacity-60 hover:opacity-90'
             }`}
             key={idx}
             onClick={() => onSelect(idx)}

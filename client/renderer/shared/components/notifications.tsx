@@ -3,7 +3,7 @@ import { type ReactNode, type Ref, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info } from '@/shared/lib/icons'
+import { AlertCircle, AlertTriangle, CheckCircle2, type IconComponent, Info, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import {
   $notifications,
@@ -14,19 +14,19 @@ import {
 } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 
-import { Alert, AlertDescription, AlertTitle, Button, Codicon, CopyButton } from './ui'
+import { CopyButton } from './ui'
 
-type ToneVariant = 'default' | 'destructive' | 'warning' | 'success'
-
-const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string; variant: ToneVariant }> = {
-  error: { icon: AlertCircle, iconClass: 'text-destructive', variant: 'destructive' },
-  warning: { icon: AlertTriangle, iconClass: 'text-primary', variant: 'warning' },
-  info: { icon: Info, iconClass: 'text-muted-foreground', variant: 'default' },
-  success: { icon: CheckCircle2, iconClass: 'text-primary', variant: 'success' }
+// toast 属于瞬时浮层——两个窗口共用同一套显式深色玻璃样式（不依赖 --dt token，
+// 精灵窗的浅色种子不会把 toast 染白）。
+const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string }> = {
+  error: { icon: AlertCircle, iconClass: 'text-rose-400' },
+  warning: { icon: AlertTriangle, iconClass: 'text-amber-300' },
+  info: { icon: Info, iconClass: 'text-white/50' },
+  success: { icon: CheckCircle2, iconClass: 'text-emerald-400' }
 }
 
 const STACK_SURFACE =
-  'pointer-events-auto border border-(--stroke-spiritagent) bg-popover/95 shadow-spiritagent backdrop-blur-md'
+  'pointer-events-auto rounded-xl border border-white/12 bg-black/65 text-white shadow-xl backdrop-blur-lg'
 
 // regionRef 把 portal 容器的 DOM 引用交给调用方——精灵透明窗口需要借此把
 // toast 矩形注册进交互区域登记处（shared 不得反向依赖 companion，所以经 props 透传）。
@@ -83,19 +83,21 @@ export function NotificationStack({ regionRef }: { regionRef?: Ref<HTMLDivElemen
       <NotificationItem notification={latest} />
       {expanded && olderNotifications.map(n => <NotificationItem key={n.id} notification={n} />)}
       {overflowCount > 0 && (
-        <div className={cn(STACK_SURFACE, 'flex min-h-8 items-center justify-between rounded-lg px-3 text-xs')}>
-          <Button
-            className="-ml-2 font-medium"
+        <div className={cn(STACK_SURFACE, 'flex min-h-8 items-center justify-between px-3 text-xs')}>
+          <button
+            className="-ml-1.5 rounded-md px-1.5 py-0.5 font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
             onClick={() => setExpanded(v => !v)}
-            size="xs"
             type="button"
-            variant="text"
           >
             {expanded ? copy.hide : copy.show} {copy.more(overflowCount)}
-          </Button>
-          <Button className="-mr-2" onClick={clearNotifications} size="xs" type="button" variant="text">
+          </button>
+          <button
+            className="-mr-1.5 rounded-md px-1.5 py-0.5 text-white/60 transition hover:bg-white/10 hover:text-white"
+            onClick={clearNotifications}
+            type="button"
+          >
             {copy.clearAll}
-          </Button>
+          </button>
         </div>
       )}
     </div>,
@@ -111,45 +113,45 @@ function NotificationItem({ notification }: { notification: AppNotification }): 
   const copy = t.notifications
 
   return (
-    <Alert
+    <div
       aria-live={notification.kind === 'error' ? 'assertive' : 'polite'}
-      className={cn(STACK_SURFACE, 'grid-cols-[auto_minmax(0,1fr)_auto] pr-2.5')}
+      className={cn(
+        STACK_SURFACE,
+        'grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 px-3.5 py-2.5'
+      )}
       role={notification.kind === 'error' ? 'alert' : 'status'}
-      variant="default"
     >
-      <Icon className={styles.iconClass} />
+      <Icon className={cn('mt-0.5 size-4 shrink-0', styles.iconClass)} />
       <div className="col-start-2 min-w-0">
-        {notification.title && <AlertTitle className="col-start-auto">{notification.title}</AlertTitle>}
-        <AlertDescription className="col-start-auto">
+        {notification.title && (
+          <div className="text-xs font-medium tracking-tight text-white">{notification.title}</div>
+        )}
+        <div className="grid justify-items-start gap-1 text-[11px] leading-relaxed text-white/70">
           <p className="m-0">{notification.message}</p>
           {hasDetail && <NotificationDetail detail={notification.detail || ''} />}
           {notification.action && (
-            <Button
-              className="mt-1.5 bg-primary/15 font-medium text-primary hover:bg-primary/25 hover:text-primary"
+            <button
+              className="mt-0.5 rounded-md px-1.5 py-0.5 font-medium text-[#6c8aff] transition hover:bg-[#6c8aff]/15"
               onClick={() => {
                 notification.action?.onClick()
                 dismissNotification(notification.id)
               }}
-              size="xs"
               type="button"
-              variant="ghost"
             >
               {notification.action.label}
-            </Button>
+            </button>
           )}
-        </AlertDescription>
+        </div>
       </div>
-      <Button
+      <button
         aria-label={copy.dismiss}
-        className="col-start-3 -mr-1 text-muted-foreground"
+        className="col-start-3 mt-0.5 inline-flex size-6 items-center justify-center rounded-md text-white/40 transition hover:bg-white/10 hover:text-white"
         onClick={() => dismissNotification(notification.id)}
-        size="icon-xs"
         type="button"
-        variant="ghost"
       >
-        <Codicon name="close" size="0.875rem" />
-      </Button>
-    </Alert>
+        <X className="size-3.5" />
+      </button>
+    </div>
   )
 }
 
@@ -158,15 +160,15 @@ function NotificationDetail({ detail }: { detail: string }): React.JSX.Element {
   const copy = t.notifications
 
   return (
-    <details className="mt-2 text-xs text-muted-foreground">
-      <summary className="select-none font-medium text-muted-foreground hover:text-foreground">{copy.details}</summary>
-      <div className="mt-1 rounded-md bg-background/65 p-2">
-        <pre className="max-h-32 whitespace-pre-wrap wrap-break-word font-mono text-[0.6875rem] leading-relaxed">
+    <details className="text-xs text-white/60">
+      <summary className="select-none font-medium text-white/60 hover:text-white">{copy.details}</summary>
+      <div className="mt-1 rounded-md bg-white/5 p-2">
+        <pre className="max-h-32 whitespace-pre-wrap wrap-break-word font-mono text-[0.6875rem] leading-relaxed text-white/70">
           {detail}
         </pre>
         <CopyButton
           appearance="inline"
-          className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-white/60 hover:bg-white/10 hover:text-white"
           errorMessage={copy.copyDetailFailed}
           iconClassName="size-3"
           label={copy.copyDetail}
@@ -194,10 +196,19 @@ export function InlineNotice({
   const Icon = styles.icon
 
   return (
-    <Alert className={cn('min-w-0', className)} role={kind === 'error' ? 'alert' : 'status'} variant={styles.variant}>
-      <Icon />
-      {title && <AlertTitle>{title}</AlertTitle>}
-      <AlertDescription className={cn(!title && 'row-start-1')}>{children}</AlertDescription>
-    </Alert>
+    <div
+      className={cn(
+        STACK_SURFACE,
+        'grid w-full grid-cols-[auto_minmax(0,1fr)] items-start gap-x-2.5 px-3.5 py-2.5 text-xs',
+        className
+      )}
+      role={kind === 'error' ? 'alert' : 'status'}
+    >
+      <Icon className={cn('mt-0.5 size-4 shrink-0', styles.iconClass)} />
+      <div className="col-start-2 min-w-0">
+        {title && <div className="font-medium tracking-tight text-white">{title}</div>}
+        <div className={cn('text-[11px] leading-relaxed text-white/70', !title && 'row-start-1')}>{children}</div>
+      </div>
+    </div>
   )
 }

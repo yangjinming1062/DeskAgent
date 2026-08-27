@@ -92,7 +92,7 @@ export function SpriteContextMenu({
       }}
     >
       <div
-        className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-white/10 bg-black/60 p-1 text-xs text-white shadow-2xl backdrop-blur-md select-none"
+        className="fixed z-50 min-w-44 overflow-hidden rounded-xl border border-white/12 bg-black/65 p-1 text-xs text-white shadow-2xl backdrop-blur-lg select-none"
         onPointerDown={e => {
           e.stopPropagation()
         }}
@@ -114,7 +114,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <KeyRound className="size-3.5 text-white/50 shrink-0" />
-              <span>激活 / 登录 (Login)</span>
+              <span>激活 / 登录</span>
             </button>
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
@@ -125,7 +125,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <Settings className="size-3.5 text-white/50 shrink-0" />
-              <span>应用设置 (Settings)</span>
+              <span>应用设置</span>
             </button>
             <div className="-mx-1 my-1 h-px bg-white/10" />
             <button
@@ -137,7 +137,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <EyeOff className="size-3.5 text-white/50 shrink-0" />
-              <span>隐藏 (Hide)</span>
+              <span>隐藏</span>
             </button>
           </>
         ) : (
@@ -151,7 +151,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <MessageSquareText className="size-3.5 text-white/50 shrink-0" />
-              <span>对话 (Talk)</span>
+              <span>对话</span>
             </button>
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
@@ -162,7 +162,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <Phone className="size-3.5 text-white/50 shrink-0" />
-              <span>语音通话 (Voice)</span>
+              <span>语音通话</span>
             </button>
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
@@ -173,7 +173,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <SlidersHorizontal className="size-3.5 text-white/50 shrink-0" />
-              <span>伙伴设置 (Companion)</span>
+              <span>伙伴设置</span>
             </button>
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
@@ -184,7 +184,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <Brain className="size-3.5 text-white/50 shrink-0" />
-              <span>长期记忆 (Memory)</span>
+              <span>长期记忆</span>
             </button>
             <button
               className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-white/90 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none"
@@ -195,7 +195,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <Settings className="size-3.5 text-white/50 shrink-0" />
-              <span>应用设置 (Settings)</span>
+              <span>应用设置</span>
             </button>
             <div className="-mx-1 my-1 h-px bg-white/10" />
             <button
@@ -207,7 +207,7 @@ export function SpriteContextMenu({
               type="button"
             >
               <EyeOff className="size-3.5 text-white/50 shrink-0" />
-              <span>隐藏 (Hide)</span>
+              <span>隐藏</span>
             </button>
           </>
         )}

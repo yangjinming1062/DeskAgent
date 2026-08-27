@@ -30,15 +30,20 @@ import {
   requestExpressionAvatar
 } from '@/companion/expression-avatar/expression-avatar-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
+import { $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
+import { FileImage, Mic, PanelLeft, Phone, Sparkles, X } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
+import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 
 import { MessageBubble } from './chat-dock-message-bubble'
+import { SessionDrawer } from './chat/session-drawer'
 import { usePanelDrag } from './hooks/use-panel-drag'
-import { type ResizeDirection, usePanelResize } from './hooks/use-panel-resize'
+import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
-import { SessionListPanel } from './session-list'
 import { $sessionListOpen, openMainSession, setSessionListOpen } from './session-list-store'
 
 const DOCK_DEFAULT_WIDTH = 760
@@ -75,20 +80,6 @@ const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
   scared: { label: '受到惊吓', icon: '😨' }
 }
 
-const RESIZE_HANDLES: Array<{
-  dir: ResizeDirection
-  className: string
-}> = [
-  { dir: 'n', className: 'absolute -top-1 left-3 right-3 h-2.5 cursor-ns-resize z-20 touch-none' },
-  { dir: 's', className: 'absolute -bottom-1 left-3 right-3 h-2.5 cursor-ns-resize z-20 touch-none' },
-  { dir: 'w', className: 'absolute -left-1 top-3 bottom-3 w-2.5 cursor-ew-resize z-20 touch-none' },
-  { dir: 'e', className: 'absolute -right-1 top-3 bottom-3 w-2.5 cursor-ew-resize z-20 touch-none' },
-  { dir: 'nw', className: 'absolute -top-1.5 -left-1.5 h-4 w-4 cursor-nwse-resize z-30 touch-none' },
-  { dir: 'ne', className: 'absolute -top-1.5 -right-1.5 h-4 w-4 cursor-nesw-resize z-30 touch-none' },
-  { dir: 'sw', className: 'absolute -bottom-1.5 -left-1.5 h-4 w-4 cursor-nesw-resize z-30 touch-none' },
-  { dir: 'se', className: 'absolute -bottom-1.5 -right-1.5 h-4 w-4 cursor-nwse-resize z-30 touch-none' }
-]
-
 interface ChatDockProps {
   onClose: () => void
   onOpenVoiceCall?: () => void
@@ -121,6 +112,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const expressionAvatar = useStore($expressionAvatar)
   const customExpressions = useStore($expressions)
   const sessionListOpen = useStore($sessionListOpen)
+  const sessions = useStore($sessions)
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
   const [text, setText] = useState('')
@@ -196,6 +188,24 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }, [spriteEmotion])
 
   useEffect(() => () => clearExpressionAvatar(), [])
+
+  // Esc 优先收起会话抽屉，不打断正在输入的正文。
+  useEffect(() => {
+    if (!sessionListOpen) {
+      return
+    }
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        setSessionListOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', onKey)
+
+    return () => window.removeEventListener('keydown', onKey)
+  }, [sessionListOpen])
 
   // 监听从 SpriteStage 投喂的外部文件（DESIGN §6.3「文件投喂」）：
   // 把首个图像路径塞进 pendingImage，其他路径暂存到 ref 留给 send() 一并提交。
@@ -451,10 +461,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [spriteEmotion, spriteState, customExpressions])
 
+  const currentSessionTitle = sessions.find(s => s.id === $chatSessionId.get())?.title || '日常对话'
+
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/10 bg-[#18181b] text-white shadow-2xl"
+        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/12 bg-[#141416] text-white shadow-2xl"
         onDragOver={e => e.preventDefault()}
         onDrop={e => void onDrop(e)}
         ref={panelRef}
@@ -473,16 +485,18 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
         ))}
 
+        {sessionListOpen && <SessionDrawer onClose={() => setSessionListOpen(false)} />}
+
         {/* Left Column: Visual Anchor & Character Emotion Status (Draggable) */}
         <div
-          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-[#131316] p-4 select-none active:cursor-grabbing"
+          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-[#0f0f11] p-4 select-none active:cursor-grabbing"
           {...dragBind}
           title="拖动以移动对话框"
         >
           <div className="flex flex-col items-center w-full">
             {/* Character Avatar with subtle glow and framing */}
             <div className="relative group mt-1">
-              <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/15 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/30">
+              <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/12 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/25">
                 {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
                   <img
                     alt="角色形象"
@@ -491,13 +505,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-white/10 to-white/5 p-4 text-center">
-                    <span className="text-3xl animate-pulse">✨</span>
+                    <Sparkles className="size-7 animate-pulse text-white/30" />
                     <span className="mt-2 text-[11px] text-white/40">伙伴形象</span>
                   </div>
                 )}
               </div>
               {/* Status Badge floating at bottom of avatar */}
-              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/15 bg-[#18181b] px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/12 bg-[#141416] px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
                     spriteState === 'thinking'
@@ -523,7 +537,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
             {/* Current Emotion Status Display */}
             <div className="mt-6 flex flex-col items-center text-center w-full px-2">
-              <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs text-white/90 shadow-sm">
+              <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs text-white/90 shadow-sm">
                 <span className="text-sm">{currentMood.icon}</span>
                 <span className="font-medium tracking-wide">{currentMood.label}</span>
               </div>
@@ -538,31 +552,41 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
         </div>
 
         {/* Right Column: Chat Stream & Input */}
-        <div className="flex flex-1 flex-col min-w-0 bg-[#18181b]">
+        <div className="flex flex-1 flex-col min-w-0 bg-[#141416]">
           {/* Header Bar */}
           <div
-            className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3.5 py-2.5 active:cursor-grabbing"
+            className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
             {...dragBind}
             title="拖动以移动对话框"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-1.5">
               <button
-                className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] text-white/80 transition hover:bg-white/20 hover:text-white"
-                onClick={() => setSessionListOpen(true)}
+                aria-label="切换对话"
+                className={cn(BTN_ICON, sessionListOpen && 'bg-white/10 text-white')}
+                onClick={() => setSessionListOpen(!sessionListOpen)}
                 title="切换历史对话"
                 type="button"
               >
-                💬 切换对话
+                <PanelLeft />
+              </button>
+              <span className="truncate text-sm font-medium text-white/90">{currentSessionTitle}</span>
+            </div>
+            <div className="flex items-center gap-0.5">
+              {onOpenVoiceCall && (
+                <button
+                  aria-label="语音通话"
+                  className={BTN_ICON}
+                  onClick={onOpenVoiceCall}
+                  title="开启实时语音通话模式"
+                  type="button"
+                >
+                  <Phone />
+                </button>
+              )}
+              <button aria-label="关闭对话" className={BTN_ICON} onClick={onClose} type="button">
+                <X />
               </button>
             </div>
-            <button
-              aria-label="关闭对话"
-              className="text-white/50 transition hover:text-white px-1.5 py-0.5 rounded-md hover:bg-white/10"
-              onClick={onClose}
-              type="button"
-            >
-              ✕
-            </button>
           </div>
 
           {/* Messages Area */}
@@ -575,24 +599,29 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             ))}
             {showTyping && (
               <div className="flex justify-start">
-                <span className="rounded-2xl rounded-bl-sm bg-white/10 px-3 py-2 text-sm text-white/60">…</span>
+                <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-white/8 bg-[#1c1c21] px-3.5 py-2.5">
+                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:0ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:150ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:300ms]" />
+                </span>
               </div>
             )}
             <ChatScrollAutoFollow scrollRef={scrollRef} />
           </div>
 
           {pendingImage && (
-            <div className="border-t border-white/10 px-4 py-2 text-xs text-white/60">
-              📎 已附加图片 {sending ? '（发送中…）' : ''}
+            <div className="flex items-center gap-1.5 border-t border-white/10 px-4 py-2 text-xs text-white/60">
+              <FileImage className="size-3.5 text-white/40" />
+              已附加图片 {sending ? '（发送中…）' : ''}
             </div>
           )}
 
           {/* Input Area */}
-          <div className="border-t border-white/10 p-3 bg-[#18181b]">
+          <div className="border-t border-white/10 p-3">
             {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
             <div className="flex items-end gap-2">
               <textarea
-                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/40 focus:border-white/40"
+                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-[#6c8aff]/70"
                 onChange={e => {
                   setText(e.target.value)
                   onTyping()
@@ -610,10 +639,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 value={text}
               />
               <button
-                className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition ${
                   recording
-                    ? 'border-red-400/80 bg-red-500/30 text-white animate-pulse'
-                    : 'border-white/20 bg-white/5 text-white/70 hover:bg-white/15 hover:text-white'
+                    ? 'border-rose-400/70 bg-rose-500/25 text-white animate-pulse'
+                    : 'border-white/12 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
                 onMouseDown={() => void startRecording()}
                 onMouseLeave={() => {
@@ -633,20 +662,10 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 title="按住录制语音消息"
                 type="button"
               >
-                {recording ? '松开发送' : '🎤 语音'}
+                {recording ? '松开发送' : <Mic className="size-4" />}
               </button>
-              {onOpenVoiceCall && (
-                <button
-                  className="shrink-0 whitespace-nowrap rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-xs font-medium text-white/75 transition hover:bg-white/15 hover:text-white"
-                  onClick={onOpenVoiceCall}
-                  title="开启实时语音通话模式"
-                  type="button"
-                >
-                  📞 通话
-                </button>
-              )}
               <button
-                className="shrink-0 whitespace-nowrap rounded-lg bg-white/90 px-4 py-2 text-sm font-medium text-black transition hover:bg-white disabled:opacity-40"
+                className={cn(BTN_PRIMARY, 'h-[38px] px-4 text-sm')}
                 disabled={!isGenerating && (sending || gatewayState !== 'open' || (!text.trim() && !pendingImage))}
                 onClick={() => void (isGenerating ? handleStop() : send())}
                 type="button"
@@ -657,7 +676,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           </div>
         </div>
       </div>
-      {sessionListOpen && <SessionListPanel onClose={() => setSessionListOpen(false)} />}
     </div>
   )
 }

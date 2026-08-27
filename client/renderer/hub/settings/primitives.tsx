@@ -3,10 +3,10 @@ import type { ReactNode } from 'react'
 import { PAGE_INSET_X } from '@/shared'
 import { PageLoader } from '@/shared/components/page-loader'
 import { cn } from '@/shared/lib/utils'
+import { CHIP, CHIP_ACTIVE } from '@/shared/panel'
 
-// 应用设置深色玻璃风面板——对齐伙伴设置 (companion/settings-overlay.tsx) 的色板。
-// 容器由 hub/overlays 提供 bg-black/60 backdrop-blur-md，
-// 此处只约束正文宽度并提供滚动 + 内边距。
+// 应用设置页基元——视觉词汇与 shared/panel 同源（石墨表面阶梯 + hairline）。
+// 容器背景由 hub/overlays 提供，此处只约束正文宽度并提供滚动 + 内边距。
 
 export function SettingsContent({ children }: { children: ReactNode }): React.JSX.Element {
   return (
@@ -25,16 +25,7 @@ export function Pill({
   tone?: 'muted' | 'primary'
   children: ReactNode
 }): React.JSX.Element {
-  return (
-    <span
-      className={cn(
-        'rounded-full border px-2 py-0.5 text-[10px]',
-        tone === 'primary' ? 'border-white/25 bg-white/15 text-white' : 'border-white/15 bg-white/10 text-white/70'
-      )}
-    >
-      {children}
-    </span>
-  )
+  return <span className={tone === 'primary' ? CHIP_ACTIVE : CHIP}>{children}</span>
 }
 
 export function FilterPill({
@@ -47,14 +38,7 @@ export function FilterPill({
   onClick: () => void
 }): React.JSX.Element {
   return (
-    <button
-      className={cn(
-        'rounded-full px-2.5 py-0.5 text-[10px] transition',
-        active ? 'bg-white/20 font-medium text-white' : 'bg-white/5 text-white/50 hover:bg-white/10'
-      )}
-      onClick={onClick}
-      type="button"
-    >
+    <button className={active ? CHIP_ACTIVE : CHIP} onClick={onClick} type="button">
       {children}
     </button>
   )

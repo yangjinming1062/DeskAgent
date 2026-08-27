@@ -33,12 +33,12 @@ import { EggStage } from './egg-stage'
 import { handleCompanionEvent } from './events'
 import { handlePokeInteraction } from './interaction'
 import { MediaViewerOverlay } from './media-viewer-overlay'
-import { MemoryBrowser } from './memory-browser'
 import { $mesh2dHitmap } from './mesh2d/mesh2d-store'
 import { OnboardingFlow } from './onboarding/onboarding-flow'
 import { speakProactive } from './proactive/proactive'
 import { ProactiveBubble } from './proactive/proactive-bubble'
-import { CompanionSettings } from './settings-overlay'
+import { CompanionSettings } from './settings/settings-panel'
+import { setSettingsView, type SettingsView } from './settings/settings-view'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
@@ -87,16 +87,19 @@ export function CompanionRoot(): React.JSX.Element {
     $voiceCallOpen.set(voiceCallOpen)
   }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [memoryOpen, setMemoryOpen] = useState(false)
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
   // 通过全局 window.__spiritagentOpenDock 暴露，sprite-stage 等深层组件也能复用同一不变量。
-  const openDock = useCallback((kind: 'chat' | 'memory' | 'settings' | 'voice'): void => {
+  // settings 可携带目标页直达（记忆 → 角色与记忆、音色失效提醒 → 音色）。
+  const openDock = useCallback((kind: 'chat' | 'settings' | 'voice', settingsView?: SettingsView): void => {
+    if (kind === 'settings' && settingsView) {
+      setSettingsView(settingsView)
+    }
+
     setChatOpen(kind === 'chat')
     setVoiceCallOpen(kind === 'voice')
     setSettingsOpen(kind === 'settings')
-    setMemoryOpen(kind === 'memory')
   }, [])
 
   useEffect(() => {
@@ -336,7 +339,7 @@ export function CompanionRoot(): React.JSX.Element {
         kind: 'warning',
         title: strings.notifications.voice.invalidTitle,
         message: strings.notifications.voice.invalidMessage(result.name),
-        action: { label: strings.notifications.voice.invalidAction, onClick: () => openDock('settings') }
+        action: { label: strings.notifications.voice.invalidAction, onClick: () => openDock('settings', 'voice') }
       })
     })
   }, [lifecycle, gatewayState, requestGateway, openDock])
@@ -413,14 +416,13 @@ export function CompanionRoot(): React.JSX.Element {
       <SpriteContextMenu
         onOpenActivation={() => setActivationOpen(true)}
         onOpenChat={() => openDock('chat')}
-        onOpenMemory={() => openDock('memory')}
+        onOpenMemory={() => openDock('settings', 'persona')}
         onOpenSettings={() => openDock('settings')}
         onOpenVoiceCall={() => openDock('voice')}
       />
       {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} onOpenVoiceCall={() => openDock('voice')} />}
       {authed && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
-      {authed && memoryOpen && <MemoryBrowser onClose={() => setMemoryOpen(false)} />}
       {authed && <ProactiveBubble />}
       {authed && <MediaViewerOverlay />}
       <NotificationStack regionRef={notificationStackRef} />

@@ -2,8 +2,7 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { PERSONA_INPUT_CLASS, PERSONA_PRESET_CLASS } from '@/companion/input-class'
-import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { WizardModal } from '@/companion/panel/wizard-modal'
 import { assemblePersona } from '@/companion/persona'
 import {
   PERSONALITY_PRESETS,
@@ -14,6 +13,8 @@ import {
   type SpeakingStylePreset
 } from '@/companion/persona-presets'
 import { $persona, hydratePersona } from '@/companion/persona-store'
+import { cn } from '@/shared/lib/utils'
+import { BTN_GHOST, BTN_PRIMARY, CHIP_FILTER, CHIP_FILTER_ACTIVE, INPUT_CLASS } from '@/shared/panel'
 
 interface PersonaRetuneProps {
   initial: {
@@ -29,9 +30,6 @@ interface PersonaRetuneProps {
   }
   onClose: () => void
 }
-
-const inputClass = PERSONA_INPUT_CLASS
-const presetClass = PERSONA_PRESET_CLASS
 
 // 字段 schema：每一步持有一组字段。``presets`` 的类型是全部已知 preset token 的联合再加 ''
 // （speakingStyle 用的「自动派生」标记）。这样 STEPS 里写成「喜爱」这种拼写错误会编译失败，
@@ -112,14 +110,12 @@ const REVIEW_ROWS: { fallback?: string; key: PersonaFieldKey; label: string }[] 
   { key: 'userFreeform', label: '补充' }
 ]
 
+// 以对话方式分步调整性格（含 user_*），单次 PUT 收尾、保留既有长期记忆。
 export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.ReactElement {
   const persona = useStore($persona)
   const [step, setStep] = useState<number>(0)
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<null | string>(null)
-  const overlayRef = useRef<HTMLDivElement>(null)
-
-  useInteractiveRegion('persona-retune', overlayRef, () => new DOMRect(0, 0, window.innerWidth, window.innerHeight))
 
   // 跟踪向导是否还挂载。保存中途关闭模态框会卸载组件；进行中的 ``save()`` 仍会跑完。
   const mountedRef = useRef(true)
@@ -246,84 +242,52 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-6 py-6 backdrop-blur-sm"
-      ref={overlayRef}
-      style={{ pointerEvents: 'auto' }}
-    >
-      <div className="flex max-h-[80vh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-white/15 bg-black/80 text-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-          <h2 className="text-sm font-semibold">重新对话微调性格</h2>
-          <button
-            aria-label="关闭"
-            className="text-white/50 transition hover:text-white"
-            onClick={onClose}
-            type="button"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-4 py-4 text-xs">
-          {hint && <p className="mb-2 text-amber-300/80">{hint}</p>}
-
-          {!isReview && (
-            <div className="space-y-2.5">
-              <p className="text-[11px] text-white/60">
-                第 {step + 1} 步 · {STEPS[step].title}
-              </p>
-              {STEPS[step].fields.map(field => (
-                <Field field={field} key={field.key} onChange={setters[field.key]} value={values[field.key]} />
-              ))}
-            </div>
-          )}
-
-          {isReview && (
-            <div className="space-y-2">
-              <p className="text-[11px] text-white/60">第 {step + 1} 步 · 回顾</p>
-              <dl className="space-y-1 rounded-lg border border-white/10 bg-white/5 p-3 text-[11px]">
-                {REVIEW_ROWS.map(row => (
-                  <Row key={row.key} label={row.label} value={values[row.key] || row.fallback || ''} />
-                ))}
-              </dl>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2 border-t border-white/10 px-4 py-3">
-          <button
-            className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-white/70 transition hover:bg-white/15 disabled:opacity-40"
-            disabled={step === 0 || saving}
-            onClick={prev}
-            type="button"
-          >
+    <WizardModal
+      footer={
+        <>
+          <button className={BTN_GHOST} disabled={step === 0 || saving} onClick={prev} type="button">
             上一步
           </button>
           <span className="ml-auto text-[10px] text-white/40">
             {step + 1} / {totalSteps}
           </span>
           {!isReview ? (
-            <button
-              className="rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-              disabled={saving}
-              onClick={next}
-              type="button"
-            >
+            <button className={BTN_PRIMARY} disabled={saving} onClick={next} type="button">
               下一步
             </button>
           ) : (
-            <button
-              className="rounded-lg border border-white/40 bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-white/25 disabled:opacity-40"
-              disabled={saving}
-              onClick={() => void save()}
-              type="button"
-            >
+            <button className={BTN_PRIMARY} disabled={saving} onClick={() => void save()} type="button">
               {saving ? '保存中…' : '保存'}
             </button>
           )}
+        </>
+      }
+      onClose={onClose}
+      regionId="persona-retune"
+      title="重新对话微调性格"
+    >
+      {hint && <p className="mb-2 text-xs text-amber-300/90">{hint}</p>}
+
+      {!isReview ? (
+        <div className="space-y-2.5">
+          <p className="text-[11px] text-white/60">
+            第 {step + 1} 步 · {STEPS[step].title}
+          </p>
+          {STEPS[step].fields.map(field => (
+            <Field field={field} key={field.key} onChange={setters[field.key]} value={values[field.key]} />
+          ))}
         </div>
-      </div>
-    </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[11px] text-white/60">第 {step + 1} 步 · 回顾</p>
+          <dl className="space-y-1 rounded-xl border border-white/8 bg-[#1c1c21] p-3 text-[11px]">
+            {REVIEW_ROWS.map(row => (
+              <Row key={row.key} label={row.label} value={values[row.key] || row.fallback || ''} />
+            ))}
+          </dl>
+        </div>
+      )}
+    </WizardModal>
   )
 }
 
@@ -345,7 +309,7 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
       <span className="mb-1 block text-[11px] text-white/50">{field.label}</span>
       {field.multiline ? (
         <textarea
-          className={`${inputClass} resize-none`}
+          className={cn(INPUT_CLASS, 'resize-none')}
           onChange={e => handleChange(e.target.value)}
           placeholder={field.placeholder}
           rows={2}
@@ -353,7 +317,7 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
         />
       ) : (
         <input
-          className={inputClass}
+          className={INPUT_CLASS}
           onChange={e => handleChange(e.target.value)}
           placeholder={field.placeholder}
           value={value}
@@ -364,16 +328,15 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
           {field.presets.map(p => {
             const isClear = p === '' && isClearPreset
             const active = isClear ? value === '' : value === p
-            const labelText = isClear ? '自动派生' : p
 
             return (
               <button
-                className={`${presetClass} ${active ? 'border-white/40 bg-white/20 text-white' : ''}`}
+                className={active ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
                 key={p || 'clear'}
                 onClick={() => handleChange(p)}
                 type="button"
               >
-                {labelText}
+                {isClear ? '自动派生' : p}
               </button>
             )
           })}

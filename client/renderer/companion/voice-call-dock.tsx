@@ -34,6 +34,9 @@ import {
 import { stopSpeaking } from '@/companion/tts'
 import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
+import { Mic } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
+import { BTN_DANGER, CHIP, CHIP_ACTIVE } from '@/shared/panel'
 
 import { createPcmCapture, type PcmCapture } from './pcm-capture'
 import { VoiceSegmentPlayer } from './segment-player'
@@ -484,7 +487,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
     // 面板与精灵刚体一体：锚定在精灵脚下并跟随移动，拖动面板即拖动精灵，视觉焦点不分散。
     <div className="fixed inset-0 z-50 pointer-events-none">
       <div
-        className="fixed flex flex-col items-center justify-between rounded-3xl border border-white/15 bg-black/75 p-6 text-white shadow-2xl backdrop-blur-xl"
+        className="fixed flex flex-col items-center justify-between rounded-2xl border border-white/12 bg-[#141416] p-5 text-white shadow-2xl"
         ref={panelRef}
         style={{
           height: VOICE_DOCK_H,
@@ -513,7 +516,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
             <button
               aria-label={subtitlesVisible ? '隐藏字幕' : '显示字幕'}
               aria-pressed={subtitlesVisible}
-              className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[10px] text-white/80 transition hover:bg-white/20 hover:text-white"
+              className={subtitlesVisible ? CHIP_ACTIVE : CHIP}
               onClick={e => {
                 e.stopPropagation()
                 setSubtitles(!subtitlesVisible)
@@ -531,8 +534,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           {micActive && connStatus === 'ready' && (
             <div className="absolute h-24 w-24 rounded-full bg-emerald-500/20 animate-ping" />
           )}
-          <div className="grid h-20 w-20 place-items-center rounded-full bg-white/10 text-3xl shadow-inner border border-white/20">
-            🎙️
+          <div className="grid h-20 w-20 place-items-center rounded-full border border-white/20 bg-white/10 shadow-inner">
+            <Mic className="size-8 text-white/85" />
           </div>
         </div>
 
@@ -559,7 +562,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         )}
 
         <button
-          className="mt-2 w-full rounded-xl bg-red-500/80 py-2 text-xs font-medium text-white transition hover:bg-red-600 active:scale-95"
+          className={cn(BTN_DANGER, 'mt-2 w-full py-2')}
           onClick={() => {
             setChatOpen(false)
             onClose()

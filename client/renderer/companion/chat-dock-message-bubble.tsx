@@ -30,7 +30,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
     return (
       <div className="my-1.5 flex justify-center px-2">
-        <div className="max-w-[90%] rounded-full border border-white/10 bg-white/5 px-3 py-1 text-center text-xs leading-relaxed text-white/50">
+        <div className="max-w-[90%] rounded-full border border-white/10 bg-black/45 px-3 py-1 text-center text-xs leading-relaxed text-white/50 backdrop-blur-lg">
           {body.text}
         </div>
       </div>
@@ -48,7 +48,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (subtype === AFFECT_TRACE_SUBTYPE) {
     return (
       <div className="my-0.5 flex justify-start px-2">
-        <div className="max-w-[80%] text-[11px] italic text-white/40">😶 用表情/动作回应了</div>
+        <div className="max-w-[80%] text-[11px] italic text-white/40">用表情/动作回应了</div>
       </div>
     )
   }
@@ -75,16 +75,16 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
         <div
           className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
             isUser
-              ? 'rounded-br-sm bg-(--theme-primary, #6c8aff) text-white'
-              : 'rounded-bl-sm bg-white/10 text-white/90'
+              ? 'rounded-br-sm bg-[#6c8aff] text-white'
+              : 'rounded-bl-sm border border-white/8 bg-[#1c1c21] text-white/90'
           }`}
         >
           {body.error ? (
-            <span className="text-amber-300/90">😬 {body.error}</span>
+            <span className="text-amber-300/90">{body.error}</span>
           ) : body.cancelled ? (
             <span className="text-white/50">已停止</span>
           ) : body.toolName ? (
-            <span className="text-white/60">🔧 正在使用 {body.toolName}…</span>
+            <span className="text-white/60">正在使用 {body.toolName}…</span>
           ) : body.text ? (
             body.text
           ) : (
