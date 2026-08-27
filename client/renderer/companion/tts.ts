@@ -8,6 +8,22 @@ export function stopSpeaking(): void {
   stopAudio()
 }
 
+async function requestSynth(
+  text: string,
+  voice: string | undefined,
+  context: string | undefined,
+  persist: boolean
+): Promise<string> {
+  const res = await window.spiritagent.media.tts({
+    text,
+    voice: voice ?? $companionVoiceId.get(),
+    context: context ?? null,
+    persist
+  })
+
+  return res.dataUrl
+}
+
 async function synth(
   text: string,
   voice: string | undefined,
@@ -20,12 +36,7 @@ async function synth(
   beginVoicePreparing()
 
   try {
-    const res = await window.spiritagent.media.tts({
-      text,
-      voice: voice ?? $companionVoiceId.get(),
-      context: context ?? null,
-      persist
-    })
+    const dataUrl = await requestSynth(text, voice, context, persist)
 
     if (!isLatestGen(gen)) {
       return false
@@ -34,7 +45,7 @@ async function synth(
     // 生命周期回调全权交给 playDataUrl 结算：至多触发一次、只属于当前音频
     // （抢占时由 stopAudio 同步结算旧的）。这里若再比对 synth 自己的 gen，
     // 会被 playDataUrl 内部的两次计数递增甩开，恒为假、回调永远不触发。
-    return await playDataUrl(res.dataUrl, onDone)
+    return await playDataUrl(dataUrl, onDone)
   } catch (err) {
     stopAudio()
 
@@ -49,6 +60,14 @@ async function synth(
   } finally {
     endVoicePreparing()
   }
+}
+
+/**
+ * 纯合成不播放（流式自动语音队列使用）。只走内存缓存，不落盘。
+ * 失败向上抛出；不触碰代次与 $voicePreparing（由调用方管理）。
+ */
+export async function synthAudio(text: string, voice?: string, context?: string): Promise<string> {
+  return await requestSynth(text, voice, context, false)
 }
 
 /** 动态台词（聊天回复 / 主动消息 / 语音通话）。只走内存缓存，不落盘。 */

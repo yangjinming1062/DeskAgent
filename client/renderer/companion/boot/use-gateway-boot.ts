@@ -1,6 +1,7 @@
 import type { SpiritAgentConnection } from '@ipc/contracts'
 import { useEffect, useRef } from 'react'
 
+import { cancelAutoVoice } from '@/companion/auto-voice-stream'
 import { startAutonomyProvision, stopAutonomyProvision } from '@/companion/autonomy'
 import {
   applyDesktopBootProgress,
@@ -305,6 +306,10 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           void openMainSession(syncMountSeq)
         }
       } else if (bootCompleted && (st === 'closed' || st === 'error')) {
+        // 断连的回合不会再收到 complete/error——流式语音队列若不在此中止，
+        // 会永远挂在 idle 等待：徽标卡「回复中」、语音准备引用不释放。
+        cancelAutoVoice()
+
         if (st === 'closed' && gateway.lastCloseCode === WS_CLOSE_POLICY_VIOLATION) {
           void logout()
 

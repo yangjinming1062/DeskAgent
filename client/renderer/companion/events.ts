@@ -10,6 +10,14 @@ import {
 } from '@/companion/3d/model-store'
 import { $screenLocked } from '@/companion/activity'
 import { reportInteractionStat } from '@/companion/activity'
+import {
+  beginAutoVoiceTurn,
+  cancelAutoVoice,
+  endAutoVoiceTurn,
+  feedAutoVoiceDelta,
+  flushAutoVoiceSegments,
+  isAutoVoiceActive
+} from '@/companion/auto-voice-stream'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
   $chatOpen,
@@ -32,6 +40,7 @@ import {
 } from '@/companion/chat-store'
 import {
   $effectiveTier,
+  $spriteState,
   $voiceCallOpen,
   clearGazeTarget,
   playSpriteActionSequence,
@@ -154,12 +163,20 @@ export function handleCompanionEvent(event: RpcEvent): void {
       setTurnHadBubbleBreak(false)
       setSpriteState('thinking')
 
+      if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !$screenLocked.get()) {
+        beginAutoVoiceTurn()
+      }
+
       break
     case 'message.delta': {
       const text = (event.payload as { text?: string } | undefined)?.text ?? ''
 
       if (text) {
         appendAssistantDelta(text)
+
+        if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !$screenLocked.get()) {
+          feedAutoVoiceDelta(text)
+        }
       }
 
       break
@@ -170,6 +187,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 下一条 message.delta 会开一个新气泡（后端已在它们之间插入 0.5–1.5 秒停顿）。
       setTurnHadBubbleBreak(true)
       finalizeAssistantMessage()
+      flushAutoVoiceSegments()
 
       break
     }
@@ -226,21 +244,21 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       applySpatialCue(locale, target)
 
-      // 在「始终语音」模式下朗读聊天回复（DESIGN §6.1 响应模式）；
-      // 通话进行中或锁屏时跳过。延后一帧让 EMOTIONAL 先可观察，
-      // 再被 SPEAKING 覆盖（ARCH §7.5）。
-      if ($responseMode.get() === 'voice' && text.trim() && !$voiceCallOpen.get() && !screenLocked) {
-        const say = () => void speak(text).then(() => setSpriteState('idle', { force: true }))
-
-        if (hasEmotion) {
-          setTimeout(() => {
-            setSpriteState('speaking')
-            say()
-          }, 1200)
-        } else {
+      // 在「始终语音」模式下，流式语音队列在 message.complete 时收尾并排干残句；
+      // 若中途切为语音模式或队列未启动且有文本，走 speak() 兜底。非语音模式或锁屏/通话中时中止。
+      if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !screenLocked) {
+        if (isAutoVoiceActive()) {
+          endAutoVoiceTurn()
+        } else if (text.trim()) {
           setSpriteState('speaking')
-          say()
+          void speak(text).then(() => {
+            if ($spriteState.get() === 'speaking') {
+              setSpriteState('idle', { force: true })
+            }
+          })
         }
+      } else {
+        cancelAutoVoice()
       }
 
       // 每日互动统计——chat_turn 仅在确有文本可统计时计数
@@ -538,6 +556,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'error': {
+      cancelAutoVoice()
       $chatTurnInFlight.set(false)
       clearPendingPrompts()
       // 强制重置为 idle——精灵在 'thinking' / 'working' 时，

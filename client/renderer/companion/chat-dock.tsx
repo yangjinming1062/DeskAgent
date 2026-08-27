@@ -3,6 +3,7 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $expressions } from '@/companion/3d/model-store'
+import { cancelAutoVoice } from '@/companion/auto-voice-stream'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $chatMessageBodies,
@@ -429,6 +430,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const isGenerating = gatewayState === 'open' && (showTyping || lastAssistantStreaming)
 
   const handleStop = async () => {
+    cancelAutoVoice()
     // 用户主动停止是合并窗口的收尾信号（DESIGN §6.6）——排队的连发消息立即提交，
     // 不能丢弃；中断只针对当前生成回合。in-flight 标记先清，冲刷才会真正发出。
     cancelPendingFlush()
