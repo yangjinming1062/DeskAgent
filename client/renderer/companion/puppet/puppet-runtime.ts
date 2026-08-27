@@ -204,6 +204,24 @@ function clamp(v: number, a: number, b: number): number {
   return v < a ? a : v > b ? b : v
 }
 
+/** 点在三角形内（含边界，符号法）——hitPart 命中检测用。 */
+function triContains(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number
+): boolean {
+  const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by)
+  const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy)
+  const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay)
+
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0))
+}
+
 function smooth(t: number): number {
   t = clamp(t, 0, 1)
 
@@ -461,6 +479,40 @@ export class PuppetRuntime {
     }
 
     return n ? s / n : 0
+  }
+
+  /** 命中检测：rig 画布像素坐标 → 最上层可见部件的规范层名（bn），未命中返回 null。
+   * 走当前帧形变后的顶点（cur/idx），与屏幕所见一致——层序即绘制序（后画在上），
+   * 自尾向头首个命中的层即视觉最上层；fade 低于渲染阈值的层与渲染同步跳过。 */
+  hitPart(x: number, y: number): string | null {
+    const e = this.lastE
+
+    if (!e) {
+      return null
+    }
+
+    for (let i = this.layers.length - 1; i >= 0; i--) {
+      const L = this.layers[i]!
+
+      if (this.fadeAlpha(L, e) < 0.004) {
+        continue
+      }
+
+      const cur = L.cur
+      const idx = L.idx
+
+      for (let t = 0; t < idx.length; t += 3) {
+        const a = idx[t]! * 2
+        const b = idx[t + 1]! * 2
+        const c = idx[t + 2]! * 2
+
+        if (triContains(x, y, cur[a]!, cur[a + 1]!, cur[b]!, cur[b + 1]!, cur[c]!, cur[c + 1]!)) {
+          return L.bn
+        }
+      }
+    }
+
+    return null
   }
 
   /** 装配档位（Phase 5 三级降级）：semantic 全语义机制 / grouped 整体运动+缩幅 / minimal 仅整体呼吸与倾斜。 */

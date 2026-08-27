@@ -2,8 +2,8 @@
  *
  * 数据源 $puppetInfo（kind=psd manifest 分流）。装配后五路驱动，全部走 PuppetRuntime
  * 的 target/auto 注入面（mesh2d 驱动层同构契约）：
- * - hitmap：rig 锚点/层矩形 → $mesh2dHitmap —— SpriteStage 的 tap/hover/手势
- *   管线与 interaction.ts 区域语义原样复用；
+ * - hitmap：当前帧部件网格精确命中 → $mesh2dHitmap —— SpriteStage 的 tap/hover/手势
+ *   管线与 interaction.ts 区域语义原样复用（区域=最上层命中部件的映射）；
  * - 视线：窗口 pointermove → setGaze（$gazeTarget 显式目标优先，周期重注入续 TTL）；
  * - 说话：TTS 振幅接管 mouthOpen，静默后交还合成说话；
  * - 情绪：$spriteEmotion → 眉/嘴型/眼参数映射（mesh2d 无面部通道，puppet 独有）；
@@ -12,7 +12,7 @@
  */
 
 import { useStore } from '@nanostores/react'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget, $spriteAction, $spriteActionQueue, $spriteEmotion } from '@/companion/companion-store'
@@ -31,92 +31,40 @@ const REDUCED_MOTION_QUERY =
   typeof window !== 'undefined' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null
 
 // ---------------------------------------------------------------------------
-// hitmap：rig 层矩形 → mesh2d 同名交互区域（优先级与 mesh2d-hitmap 对齐）
+// hitmap：当前帧部件网格精确命中 → mesh2d 交互区域
 // ---------------------------------------------------------------------------
 
-interface HitBox {
-  region: string
-  minX: number
-  minY: number
-  maxX: number
-  maxY: number
-  priority: number
-}
-
-const REGION_PRIORITY: Record<string, number> = {
-  head: 100,
-  face: 95,
-  front_hair: 80,
-  back_hair: 75,
-  body: 40,
-  skirt: 30
-}
-
-function buildPuppetHitmap(rig: Rig): (nx: number, ny: number) => { region: string } | null {
-  const W = rig.canvas.w
-  const H = rig.canvas.h
-  const boxes: HitBox[] = []
-
-  const push = (region: string, x0: number, y0: number, x1: number, y1: number, pad = 0): void => {
-    boxes.push({
-      region,
-      minX: Math.max(0, (x0 - pad) / W),
-      minY: Math.max(0, (y0 - pad) / H),
-      maxX: Math.min(1, (x1 + pad) / W),
-      maxY: Math.min(1, (y1 + pad) / H),
-      priority: REGION_PRIORITY[region] ?? 0
-    })
-  }
-
-  const layerRect = (want: string): { x: number; y: number; w: number; h: number } | null => {
-    const l = rig.layers.find(p => p.name.toLowerCase().replace(/[-_](l|r)$/, '') === want)
-
-    return l ? { x: l.x, y: l.y, w: l.w, h: l.h } : null
-  }
-
-  const { face } = rig.anchors
-  // head 覆盖发际/额头（脸上缘上移），face 独占下三分之二——poke 下巴/脸颊判 face、
-  // 戳额头/发根判 head（区域语义与 mesh2d-hitmap 对齐）
-  const faceW = face.x1 - face.x0
-  const faceH = face.y1 - face.y0
-  push('head', face.x0 - faceW * 0.2, face.y0 - faceH * 0.55, face.x1 + faceW * 0.2, face.y0 + faceH * 0.45)
-  push('face', face.x0, face.y0 + faceH * 0.4, face.x1, face.y1)
-
-  const fh = layerRect('front hair')
-
-  if (fh) {
-    push('front_hair', fh.x, fh.y, fh.x + fh.w, fh.y + fh.h)
-  }
-
-  const bh = layerRect('back hair')
-
-  if (bh) {
-    push('back_hair', bh.x, bh.y, bh.x + bh.w, bh.y + bh.h)
-  }
-
-  const top = layerRect('topwear')
-
-  if (top) {
-    push('body', top.x, top.y, top.x + top.w, top.y + top.h)
-  }
-
-  const bottom = layerRect('bottomwear')
-
-  if (bottom) {
-    push('skirt', bottom.x, bottom.y, bottom.x + bottom.w, bottom.y + bottom.h)
-  }
-
-  boxes.sort((a, b) => b.priority - a.priority)
-
-  return (nx, ny) => {
-    for (const b of boxes) {
-      if (nx >= b.minX && nx <= b.maxX && ny >= b.minY && ny <= b.maxY) {
-        return { region: b.region }
-      }
-    }
-
-    return null
-  }
+// 部件规范层名（bn，vendor SLOTS 全集）→ 交互区域（区域白名单见 PROTOCOL §1.4；
+// gesture-tracker 与 interaction.ts 消费同名区域）。未列出的部件按 body。
+const PART_REGION: Record<string, string> = {
+  face: 'face',
+  eyewhite: 'face',
+  irides: 'face',
+  eyelash: 'face',
+  eye_close: 'face',
+  eyebrow: 'face',
+  nose: 'face',
+  mouth_open: 'face',
+  mouth_close: 'face',
+  facedetail: 'face',
+  ears: 'head',
+  earwear: 'head',
+  headwear: 'head',
+  'front hair': 'front_hair',
+  'back hair': 'back_hair',
+  neck: 'body',
+  body: 'body',
+  skin: 'body',
+  torso: 'body',
+  arm: 'body',
+  arms: 'body',
+  leg: 'body',
+  legs: 'body',
+  topwear: 'body',
+  handwear: 'body',
+  footwear: 'body',
+  bottomwear: 'skirt',
+  legwear: 'skirt'
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +368,13 @@ function publishPuppetContentRect(rig: Rig, container: HTMLElement | null): void
 export function PuppetStage(): React.JSX.Element {
   const handleRef = useRef<PuppetCanvasHandle>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // 命中换算需要画布的 contain-fit 矩形；挂载期一次性接线（稳定引用，避免触发运行时重建）
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  const onCanvas = useCallback((canvas: HTMLCanvasElement): void => {
+    canvasRef.current = canvas
+  }, [])
+
   // 驱动层共享的运行态（rAF 循环每帧读取）
   const hitmapRef = useRef<((nx: number, ny: number) => { region: string } | null) | null>(null)
   const ampRef = useRef(0)
@@ -468,9 +423,39 @@ export function PuppetStage(): React.JSX.Element {
           return
         }
 
-        const hit = buildPuppetHitmap(rig)
+        // 命中 = 当前帧可见像素：舞台归一化坐标先经 contain-fit 画布矩形换算成 rig
+        // 画布像素，再由 runtime 自顶向下逐层网格点测（层矩形 bbox 会把部件四周的
+        // 透明留白也算命中——透明窗口下即"看不见也能点"，见 companion README §7）。
+        const hit = (nx: number, ny: number): { region: string } | null => {
+          const rt = handleRef.current?.runtime
+          const canvas = canvasRef.current
+          const box = containerRef.current
+
+          if (!rt || !canvas || !box) {
+            return null
+          }
+
+          const br = box.getBoundingClientRect()
+          const cr = canvas.getBoundingClientRect()
+
+          if (cr.width <= 0 || cr.height <= 0) {
+            return null
+          }
+
+          const cx = (nx * br.width + br.left - cr.left) / cr.width
+          const cy = (ny * br.height + br.top - cr.top) / cr.height
+
+          if (cx < 0 || cx > 1 || cy < 0 || cy > 1) {
+            return null
+          }
+
+          const bn = rt.hitPart(cx * canvas.width, cy * canvas.height)
+
+          return bn ? { region: PART_REGION[bn] ?? 'body' } : null
+        }
+
         hitmapRef.current = hit
-        setMesh2DHitmap({ hit: (nx: number, ny: number) => hit(nx, ny) })
+        setMesh2DHitmap({ hit })
         publishPuppetContentRect(rig, containerRef.current)
         probeInteractiveRegions()
 
@@ -670,7 +655,7 @@ export function PuppetStage(): React.JSX.Element {
       ref={containerRef}
       style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
     >
-      <PuppetCanvas ref={handleRef} />
+      <PuppetCanvas onCanvas={onCanvas} ref={handleRef} />
     </div>
   )
 }

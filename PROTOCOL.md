@@ -150,7 +150,7 @@
 | `back_hair` / `front_hair` | 后发 / 前发 |
 | `skirt` | 下装 / 裙子 |
 
-命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。3D 路径走 silhouette hit（pixel-perfect alpha 检测）；2D 路径走 [PuppetStage 六区](client/renderer/companion/puppet/PuppetStage.tsx)（rig 锚点 / 层矩形 bbox 测试，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
+命中区域与手势影响：（1）前端手势/物理反馈——head/face 往复滑动触发摸头享受姿态（`petting` 眯眼）与爱心粒子（💖）；连戳 ≥ 5 次冒怒气（💢），≥ 8 次或剧烈狂甩触发眩晕（`dizzy` 星环 💫）；hover 头发区域触发前/后发 jiggle 抖动；（2）LLM 反应上下文——`kind` 与 `region` 字段透传到 LLM，让回应可针对"摸头" vs "戳脸" vs "拍手" vs "摇晃眩晕"做不同文案。两条渲染路径都做可见像素级命中——3D 走 silhouette hit（离屏 alpha 回读）；2D 走 [PuppetStage](client/renderer/companion/puppet/PuppetStage.tsx)（当前帧部件网格精确点测，区域 = 最上层命中部件的映射，CPU 轻量，经命中区域总线 `$mesh2dHitmap` 下发）。
 
 **扩展协议**：每次扩展 emotion / locale 须同步更新 **后端白名单 + 客户端表情/场所映射 + 本文档**三处；未覆盖项一律按 neutral / home 处理（2D puppet 链的情绪→面部参数映射随词表同步）。情绪枚举 22 项（含 neutral），可生成表情头像 21 项（neutral 即形象头像本身，永不生成）。action 扩展须同步更新 **后端 [actions.py](backend/services/companion/mesh2d/actions.py)（DEFAULT_ACTIONS / NON_LLM_ACTIONS）+ 客户端 [PuppetStage 包络表](client/renderer/companion/puppet/PuppetStage.tsx) + 本文档**三处。
 
