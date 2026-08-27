@@ -15,6 +15,10 @@ _PROVIDER_DEFAULT_CONTEXT_TOKENS: dict[str, dict[str, int]] = {}
 _PROVIDER_SUPPORTS_VISION: set[str] = set()
 # provider_name → 视觉 MODEL_NAME（空表示沿用文本默认）。
 _PROVIDER_VISION_MODELS: dict[str, str] = {}
+# 接受 Responses 形状 input_video 的 chat 供应商集合；resolve_video_chain 跳过其余。
+_PROVIDER_SUPPORTS_VIDEO: set[str] = set()
+# provider_name → 视频理解 MODEL_NAME（空表示沿用文本/视觉默认）。
+_PROVIDER_VIDEO_MODELS: dict[str, str] = {}
 
 # SpiritAgent 内置供应商族；*_PROVIDER env 只能取其中之一，新增族需同时注册类与扩充下表。
 KNOWN_PROVIDERS: frozenset[str] = frozenset({"mimo", "minimax", "gemini", "grok", "zhipu"})
@@ -76,6 +80,12 @@ def register(service_type: ServiceType, provider_name: str, cls: type[BaseProvid
         vm = getattr(cls, "DEFAULT_VISION_MODELS", {}).get("llm", "")
         if vm:
             _PROVIDER_VISION_MODELS[provider_name] = vm
+    # 镜像视频理解能力与覆写，供 resolve_video_chain 使用。
+    if getattr(cls, "supports_video", False):
+        _PROVIDER_SUPPORTS_VIDEO.add(provider_name)
+        dm = getattr(cls, "DEFAULT_VIDEO_MODELS", {}).get("llm", "")
+        if dm:
+            _PROVIDER_VIDEO_MODELS[provider_name] = dm
 
 
 def resolve(service_type: ServiceType, provider_name: str) -> type[BaseProvider]:
@@ -111,6 +121,16 @@ def supports_vision(provider_name: str) -> bool:
 def default_vision_model_for(provider_name: str) -> str:
     """视觉 MODEL_NAME；空字符串表示沿用普通 llm 模型（视觉与文本共用一个）。"""
     return _PROVIDER_VISION_MODELS.get(provider_name, "")
+
+
+def supports_video(provider_name: str) -> bool:
+    """是否注册了接受 Responses 形状 input_video 的 chat 类。"""
+    return provider_name in _PROVIDER_SUPPORTS_VIDEO
+
+
+def default_video_model_for(provider_name: str) -> str:
+    """视频理解 MODEL_NAME；空字符串表示沿用普通 llm 模型（视频与文本共用一个）。"""
+    return _PROVIDER_VIDEO_MODELS.get(provider_name, "")
 
 
 def providers_supporting(service_type: ServiceType | str) -> list[str]:

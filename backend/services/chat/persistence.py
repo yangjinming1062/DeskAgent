@@ -2,7 +2,7 @@ import asyncio
 import json
 from typing import Any
 
-from components import BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, get_logger, safe_json_loads, session_scope
+from components import ATTACHMENT_TYPE_VIDEO, BACKGROUND_REVIEW_DEFAULT, DEFAULT_LANGUAGE, TITLE_GENERATION_TEMPERATURE, get_logger, safe_json_loads, session_scope
 from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,16 +66,20 @@ def _build_persisted_content_from_parts(text: str, attachments: list[dict] | Non
     media_uris: list[str] = []
     for att in attachments:
         url = att.get("file_url")
-        if url:
+        if not url:
+            continue
+        if att.get("type") == ATTACHMENT_TYPE_VIDEO:
+            parts.append({"type": "input_video", "video_url": url})
+        else:
             parts.append({"type": "input_image", "image_url": url})
-            media_uris.append(url)
+        media_uris.append(url)
     if media_uris:
         logger.info("multimodal parts sent to LLM", extra={"media_count": len(media_uris), "media_uris": media_uris})
     return _coerce_tool_result_content(parts), "multimodal_v1"
 
 
 def _build_persisted_content(req: "ChatRequest") -> tuple[str, str]:
-    """把 req.message + 附件转换为 ``(content, content_type)``：纯文本返回 ``(str, "text")``；多模态返回带 ``multimodal_v1`` 标签的 JSON parts 数组，附件以 ``input_image`` 发出（扁平 URL，与 Responses API 形状一致）。"""
+    """把 req.message + 附件转换为 ``(content, content_type)``：纯文本返回 ``(str, "text")``；多模态返回带 ``multimodal_v1`` 标签的 JSON parts 数组，附件以扁平 URL 的 ``input_image``/``input_video`` 发出（与 Responses API 形状一致）。"""
     text = req.message.content or ""
     attachments = getattr(req.message, "attachments", None) or []
     return _build_persisted_content_from_parts(text, attachments)

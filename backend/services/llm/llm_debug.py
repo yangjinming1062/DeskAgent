@@ -40,6 +40,9 @@ def _summarize_content_part(part: Any) -> Any:
         # 省略 URL：图像内容可能带 base64 与供应商签名的过期 URL
         url = part.get("image_url", "")
         return {"type": ptype, "image_url": "<elided>" if url else None}
+    if ptype in {"video_url", "input_video"}:
+        url = part.get("video_url", "")
+        return {"type": ptype, "video_url": "<elided>" if url else None}
     return {"type": ptype or "unknown", "keys": sorted(part.keys())}
 
 

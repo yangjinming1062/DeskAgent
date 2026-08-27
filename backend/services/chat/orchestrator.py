@@ -24,6 +24,7 @@ from ..llm import (
     resolve_context_tokens,
     scale_temperature,
 )
+from ..media import inline_video_parts, prune_videos_in_range
 from ..tools import ToolCallGuardrailController, schema_name
 from .chat_emitter import Emitter
 from .message_sanitization import truncate_responses_context
@@ -81,18 +82,21 @@ async def run_chat_turn(
     # 持久化压缩检查点，使下一轮历史重建从此开始读取；被压缩的消息仍留在 DB，但不再进入 LLM 读路径。对所有会话类型均生效。
     if compress_info is not None:
         async with session_scope() as db:
-            db.add(
-                Message(
-                    conversation_id=conv.id,
-                    role="system",
-                    content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
-                    subtype="compress_summary",
-                    prompt_tokens=compress_info.get("prompt_tokens", 0),
-                    completion_tokens=compress_info.get("completion_tokens", 0),
-                ),
+            checkpoint = Message(
+                conversation_id=conv.id,
+                role="system",
+                content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
+                subtype="compress_summary",
+                prompt_tokens=compress_info.get("prompt_tokens", 0),
+                completion_tokens=compress_info.get("completion_tokens", 0),
             )
+            db.add(checkpoint)
             await db.commit()
+            # 检查点之前的视频不会再进读路径，磁盘是死重量；清理并改写历史行 part。
+            await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
     current_context = truncate_responses_context(compressed_context)
+    # 视频内联在截断之后：窗口外的老视频已被占位替换，内联只处理幸存者（每请求上限 2 个）。
+    current_context["input"] = await inline_video_parts(current_context["input"])
 
     guardrails = ToolCallGuardrailController()
     budget = IterationBudget(max_total=AGENT_MAX_LOOP_TURNS)

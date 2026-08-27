@@ -5,6 +5,9 @@ from components import approx_text_tokens
 # Responses API: DB↔input-item conversion, token estimation, kwargs assembly.
 
 INPUT_IMAGE_TOKEN_ESTIMATE: int = 800
+# 持久层只存 URL 无时长，只能平坦估算；实测视频理解 ~350 token/秒（MiniMax M3），欠估由
+# 1M 上下文与每请求 2 个内联上限（VIDEO_INLINE_MAX_PER_REQUEST）兜底，不会撑爆窗口。
+INPUT_VIDEO_TOKEN_ESTIMATE: int = 2000
 
 
 def copy_responses_context(ctx: dict[str, Any]) -> dict[str, Any]:
@@ -20,6 +23,8 @@ def _value_tokens(value: Any) -> int:
     if isinstance(value, dict):
         if value.get("type") == "input_image":
             return INPUT_IMAGE_TOKEN_ESTIMATE
+        if value.get("type") == "input_video":
+            return INPUT_VIDEO_TOKEN_ESTIMATE
         return sum(_value_tokens(item) for item in value.values())
     if isinstance(value, str):
         return approx_text_tokens(value)
@@ -42,6 +47,9 @@ def _input_part(part: Any) -> dict[str, Any] | None:
     if part.get("type") == "input_image":
         image = part.get("image_url")
         return {"type": "input_image", "image_url": str(image)} if image else None
+    if part.get("type") == "input_video":
+        video = part.get("video_url")
+        return {"type": "input_video", "video_url": str(video)} if video else None
     return part
 
 

@@ -93,6 +93,13 @@
 - 渲染端在**对话窗**以媒体卡内联预览、点击放大播放；精灵气泡只承载轻量文本，收到媒体时仅提示「点击查看」并支持点击打开对话窗（必要时切到目标会话）——富媒体统一在对话窗展示，不进气泡。
 - 精灵画/拍自己（生成工具 subject='self'）：身份参考由后端自动注入**半身头像**——2D/3D 正面种子图带生成画风，作参考会让身份失真，聊天内自我生成的图像参考一律不用种子图。
 
+**用户侧聊天附件**（改此处需同步：backend 网关校验与附件生命周期模块、backend/README.md、client 附件 UX 与 client/renderer/companion/README.md、DESIGN §6.1）：
+- 图片附件以 `data:image/*` data URL 随 `prompt.submit` 的 attachments 直发（不落盘）；视频附件因 base64 远超 WS 单帧上限，客户端必须先经 `POST /api/media/videos`（multipart：file + session_id，容器白名单 mp4/mov）换取附件 URL，再以 `{"type": "video", "file_url": ...}` 提交——附件 URL 只认本会话，跨会话引用直接拒绝。
+- 服务端点 `GET /api/media/videos/{session_id}/{file_id}` 公开（file_id 为不可猜测 token；公网模式下供应商需直接拉取）。
+- 供应商消费分双模式，由后端 `public_base_url` 配置决定：留空时构造请求前把最近 2 个内联为 data URL（单文件 50MB 上限）；配置可公网访问地址后以绝对 URL 直发供应商自拉（单文件上限=会话配额 512MB，且该地址必须真能被供应商服务器访问）。
+- 附件文件按 512MB/会话滚动配额：超限从最旧剔除；压缩/夜间摘要检查点之前与历史截断删除之前的视频确定性清理。两类清理都把所属消息行的 `input_video` part 改写为 `[视频已清理]`，渲染与 LLM 上下文不残留死链。
+- 持久化 part 形状为 `input_video`（扁平 `video_url`，与 `input_image` 同构）；每请求内联超限或文件缺失时降级 `[video]` 文本占位（与旧图 `[screenshot]` 同构）；视频回合的链筛选由供应商能力位（`supports_video`）决定——Responses 网关不支持 `input_video` 的供应商（mimo）不参与视频回退链。
+
 ### 1.4 Affect 与空间契约
 
 **语义/渲染解耦**——Backend 只产出情绪 + 可选场所语义，绝不指定渲染方式或像素坐标。

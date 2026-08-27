@@ -2,6 +2,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import re
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -10,6 +11,7 @@ from typing import Any
 from components import (
     ATTACHMENT_DATA_URL_MAX_CHARS,
     ATTACHMENT_TYPE_IMAGE,
+    ATTACHMENT_TYPE_VIDEO,
     JSONRPC_INVALID_PARAMS,
     JSONRPC_METHOD_NOT_FOUND,
     MAX_ATTACHMENTS_PER_TURN,
@@ -66,6 +68,7 @@ from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, resolve_user_llm_config
+from services.media import prune_videos_in_range
 from services.tools import REGISTRY
 
 from . import (
@@ -331,8 +334,24 @@ def _is_nonneg_int(v: Any) -> bool:
     return type(v) is int and v >= 0
 
 
-def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None:
-    """校验并规范化 attachments 负载：返回清洗后的列表（每项重塑为 {type, file_url}），调用方未传时返回 None。file_url 接受 HTTP(S) URL 与桌面端本地图片直发的 ``data:image/*;base64,`` data URL。"""
+def _is_session_video_url(file_url: str, session_id: str) -> bool:
+    """视频附件只认本会话的后端上传 URL（相对或 ``public_base_url`` 绝对形态），防跨会话引用。"""
+    if len(file_url) > 2048:
+        return False
+    marker = f"/api/media/videos/{session_id}/"
+    pos = file_url.find(marker)
+    if pos == -1:
+        return False
+    file_id = file_url[pos + len(marker) :]
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{10,64}\.(mp4|mov)", file_id))
+
+
+def _validate_attachments(params: dict[str, Any], session_id: str) -> list[dict[str, Any]] | None:
+    """校验并规范化 attachments 负载：返回清洗后的列表（每项重塑为 {type, file_url}），调用方未传时返回 None。
+
+    image 的 file_url 接受 HTTP(S) URL 与桌面端本地图片直发的 ``data:image/*;base64,`` data URL；
+    video 只接受本会话的后端上传 URL——base64 视频远超 WS 单帧上限，客户端须先经 ``POST /api/media/videos`` 换取 URL。
+    """
     raw = params.get("attachments")
     if raw is None:
         return None
@@ -345,10 +364,20 @@ def _validate_attachments(params: dict[str, Any]) -> list[dict[str, Any]] | None
         if not isinstance(att, dict):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must be an object")
         att_type = att.get("type", ATTACHMENT_TYPE_IMAGE)
+        if att_type not in (ATTACHMENT_TYPE_IMAGE, ATTACHMENT_TYPE_VIDEO):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}].type must be image or video")
 
         file_url = att.get("file_url")
         if not (file_url and isinstance(file_url, str)):
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] must have file_url")
+
+        if att_type == ATTACHMENT_TYPE_VIDEO:
+            if file_url.startswith("data:"):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}] video must reference an uploaded URL, not a data URL")
+            if not _is_session_video_url(file_url, session_id):
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"attachments[{idx}].file_url must be a video URL uploaded to this session (/api/media/videos/{session_id}/...)")
+            cleaned.append({"type": att_type, "file_url": file_url})
+            continue
 
         # HTTP/HTTPS URL（长度与 URL 语义一致，维持紧上限）
         if file_url.startswith("http"):
@@ -558,21 +587,24 @@ def _register_session_handlers(
                 ).scalar_one()
                 if truncate_ordinal < 0 or truncate_ordinal >= user_total:
                     raise JsonRpcError(JSONRPC_INVALID_PARAMS, f"truncate_before_user_ordinal {truncate_ordinal} no longer in session history")
-                nth_user_id = (
-                    select(Message.id)
-                    .where(
-                        Message.conversation_id == runtime.conversation_id,
-                        Message.role == "user",
+                nth = (
+                    await db.execute(
+                        select(Message.id)
+                        .where(
+                            Message.conversation_id == runtime.conversation_id,
+                            Message.role == "user",
+                        )
+                        .order_by(Message.id)
+                        .offset(truncate_ordinal)
+                        .limit(1),
                     )
-                    .order_by(Message.id)
-                    .offset(truncate_ordinal)
-                    .limit(1)
-                    .scalar_subquery()
-                )
+                ).scalar_one()
+                # 即将删除的行所引用的视频是死重量：删行前先清文件（行本身随之删除，无需改写占位）。
+                await prune_videos_in_range(db, runtime.conversation_id, lo=nth)
                 await db.execute(
                     delete(Message).where(
                         Message.conversation_id == runtime.conversation_id,
-                        Message.id >= nth_user_id,
+                        Message.id >= nth,
                     ),
                 )
                 db.expire_all()
@@ -587,7 +619,7 @@ def _register_session_handlers(
                 if not isinstance(item, dict):
                     raise JsonRpcError(JSONRPC_INVALID_PARAMS, "each item in batch must be an object")
                 t = _require_str(item, "text")
-                att = _validate_attachments(item)
+                att = _validate_attachments(item, runtime.session_id)
                 validated_batch.append({"text": t, "attachments": att})
 
             last_item = validated_batch[-1]
@@ -599,7 +631,7 @@ def _register_session_handlers(
                     await persist_extra_user_messages(db, runtime.conversation_id, precursor_items)
         else:
             text = _require_str(params, "text")
-            attachments = _validate_attachments(params)
+            attachments = _validate_attachments(params, runtime.session_id)
 
         reset_user_outreach(user_id)
         note_user_contact(user_id)

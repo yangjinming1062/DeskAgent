@@ -7,8 +7,8 @@ from components import get_logger
 logger = get_logger(__name__)
 
 
-# Responses API 输入图片 part 类型，``truncate_responses_context`` 老轮次图片占位符替换使用。
-_IMAGE_PART_TYPES = frozenset({"input_image"})
+# Responses API 输入媒体 part 类型 → 老轮次占位文本；``truncate_responses_context`` 窗口外替换使用。
+_MEDIA_PART_PLACEHOLDERS = {"input_image": "[screenshot]", "input_video": "[video]"}
 
 
 def _escape_invalid_chars_in_json_strings(raw: str) -> str:
@@ -104,7 +104,7 @@ def _truncate_response_text(value: Any, max_chars: int) -> Any:
     if isinstance(value, list):
         return [_truncate_response_text(item, max_chars) for item in value]
     if isinstance(value, dict):
-        return {key: item if key == "image_url" else _truncate_response_text(item, max_chars) for key, item in value.items()}
+        return {key: item if key in ("image_url", "video_url") else _truncate_response_text(item, max_chars) for key, item in value.items()}
     return value
 
 
@@ -112,7 +112,8 @@ def _normalize_older_response_item(item: dict, *, replace_images: bool, max_char
     normalized = dict(item)
     if replace_images and isinstance(normalized.get("content"), list):
         normalized["content"] = [
-            {"type": "input_text", "text": "[screenshot]"} if isinstance(part, dict) and part.get("type") in _IMAGE_PART_TYPES else part for part in normalized["content"]
+            {"type": "input_text", "text": _MEDIA_PART_PLACEHOLDERS[part["type"]]} if isinstance(part, dict) and part.get("type") in _MEDIA_PART_PLACEHOLDERS else part
+            for part in normalized["content"]
         ]
     return _truncate_response_text(normalized, max_chars)
 

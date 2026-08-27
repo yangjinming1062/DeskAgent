@@ -11,6 +11,7 @@ from .llm_client import (
     resolve_provider_chain,
     resolve_provider_config,
     resolve_service_row,
+    resolve_video_chain,
     resolve_vision_chain,
     scale_temperature,
 )
@@ -143,6 +144,7 @@ __all__ = [
     "message_to_response_items",
     "tool_schema_for_responses",
     "resolve_user_llm_config",
+    "resolve_video_chain",
     "resolve_vision_chain",
     "scale_temperature",
     "try_resolve",

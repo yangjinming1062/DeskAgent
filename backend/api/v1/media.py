@@ -19,7 +19,7 @@ from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
 from services.llm import MissingLlmConfigError, classify_api_error, synthesize_speech, transcribe_audio
-from services.media.chat_videos import (
+from services.media import (
     attachment_video_url,
     enforce_session_quota,
     resolve_video_file,

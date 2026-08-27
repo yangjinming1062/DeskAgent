@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.companion import run_prompt_json
 from services.conversation import UI_ONLY_SUBTYPES, format_messages_compact, get_main_conversation
 from services.llm import UserLlmConfig
+from services.media import prune_videos_in_range
 
 logger = get_logger(__name__)
 
@@ -73,10 +74,13 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
         return
 
     async with session_scope() as wdb:
-        wdb.add(
-            Message(conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str),
+        checkpoint = Message(
+            conversation_id=conv_id, role="system", content=f"[📝 截至 {local_date_str} 的对话摘要]\n{summary_text}", subtype="daily_summary", summary_date=local_date_str
         )
+        wdb.add(checkpoint)
         await wdb.commit()
+        # 检查点之前的视频不会再进读路径，清盘并改写历史行 part（与压缩检查点同一钩子）。
+        await prune_videos_in_range(wdb, conv_id, hi=checkpoint.id)
     logger.info("daily_checkpoint: created summary", extra={"user_id": user_id, "date": local_date_str})
 
 

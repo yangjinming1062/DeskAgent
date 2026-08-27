@@ -20,9 +20,11 @@ from .providers import (
     ServiceType,
     default_base_url,
     default_model_for,
+    default_video_model_for,
     default_vision_model_for,
     providers_supporting,
     resolve,
+    supports_video,
     supports_vision,
     try_resolve,
 )
@@ -185,6 +187,15 @@ async def resolve_vision_chain(db: AsyncSession | None, user_id: int | None, *, 
         replace(cfg, model=default_vision_model_for(cfg.provider_name) or cfg.model)
         for cfg in await resolve_provider_chain(db, user_id, service_type)
         if supports_vision(cfg.provider_name)
+    ]
+
+
+async def resolve_video_chain(db: AsyncSession | None, user_id: int | None, *, service_type: str = "llm") -> list[ProviderConfig]:
+    """``service_type`` 链中所有接受 Responses 形状 input_video 的供应商，model 已替换为视频模型。"""
+    return [
+        replace(cfg, model=default_video_model_for(cfg.provider_name) or cfg.model)
+        for cfg in await resolve_provider_chain(db, user_id, service_type)
+        if supports_video(cfg.provider_name)
     ]
 
 

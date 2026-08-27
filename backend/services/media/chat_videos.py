@@ -16,9 +16,6 @@ import secrets
 from pathlib import Path
 from urllib.parse import quote
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from components import (
     ATTACHMENT_SESSION_QUOTA_BYTES,
     ATTACHMENT_VIDEO_EXTENSIONS,
@@ -29,6 +26,8 @@ from components import (
 )
 from components.attachments import session_dir
 from modules.conversation.models import Message
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = get_logger(__name__)
 
@@ -124,7 +123,7 @@ async def _rewrite_rows_referencing(db: AsyncSession, session_id: str, file_ids:
                 Message.role == "user",
                 Message.content_type == "multimodal_v1",
                 Message.content.like('%"input_video"%'),
-            )
+            ),
         )
     ).all()
     rewritten = 0
@@ -136,15 +135,11 @@ async def _rewrite_rows_referencing(db: AsyncSession, session_id: str, file_ids:
         if changed:
             message = await db.get(Message, message_id)
             if message is not None:
-                message.content = _dumps_parts(new_parts)
+                message.content = json.dumps(new_parts, ensure_ascii=False)
                 rewritten += 1
     if rewritten:
         await db.commit()
     return rewritten
-
-
-def _dumps_parts(parts: list) -> str:
-    return json.dumps(parts, ensure_ascii=False)
 
 
 async def enforce_session_quota(db: AsyncSession, session_id: str, incoming_bytes: int) -> None:
@@ -182,22 +177,23 @@ async def enforce_session_quota(db: AsyncSession, session_id: str, incoming_byte
     )
 
 
-async def prune_videos_before(db: AsyncSession, conversation_id: int, before_message_id: int) -> None:
-    """检查点（compress/daily summary）后与历史截断前调用：清掉 ``id < before_message_id`` 用户行引用的视频。
+async def prune_videos_in_range(db: AsyncSession, conversation_id: int, *, lo: int = 0, hi: int | None = None) -> None:
+    """清理 ``[lo, hi)`` 区间用户行引用的视频文件并改写 part。
 
-    这些行已被摘要覆盖或即将删除，视频不会再进上下文；删文件并改写 part 保持显示一致。
+    调用时机：压缩/夜间摘要检查点落库后（``hi``=检查点 id，区间行已被摘要覆盖）与
+    历史截断删除前（``lo``=截断起点）。这些行不会再进上下文读路径，视频是死重量；
+    改写占位而非只删文件，保证水合渲染与 LLM 上下文都不残留死链 URL。
     """
-    rows = (
-        await db.execute(
-            select(Message.id, Message.content).where(
-                Message.conversation_id == conversation_id,
-                Message.id < before_message_id,
-                Message.role == "user",
-                Message.content_type == "multimodal_v1",
-                Message.content.like('%"input_video"%'),
-            )
-        )
-    ).all()
+    conditions = [
+        Message.conversation_id == conversation_id,
+        Message.id >= lo,
+        Message.role == "user",
+        Message.content_type == "multimodal_v1",
+        Message.content.like('%"input_video"%'),
+    ]
+    if hi is not None:
+        conditions.append(Message.id < hi)
+    rows = (await db.execute(select(Message.id, Message.content).where(*conditions))).all()
     if not rows:
         return
     file_ids: set[str] = set()
@@ -222,8 +218,8 @@ async def prune_videos_before(db: AsyncSession, conversation_id: int, before_mes
                 removed += 1
     rewritten = await _rewrite_rows_referencing(db, str(conversation_id), file_ids)
     logger.info(
-        "checkpoint video prune",
-        extra={"conversation_id": conversation_id, "before_message_id": before_message_id, "removed_files": removed, "rewritten_rows": rewritten},
+        "session video prune",
+        extra={"conversation_id": conversation_id, "lo": lo, "hi": hi, "removed_files": removed, "rewritten_rows": rewritten},
     )
 
 

@@ -109,7 +109,7 @@ _IMAGE_TOO_LARGE_PATTERNS = (
 _EMPTY_IMAGE_RESULT_PATTERNS = ("returned no images",)
 
 
-# 模型存在但拒绝图像输入 —— 走 model_not_found 的回退路径。
+# 模型存在但拒绝图像/视频输入 —— 走 model_not_found 的回退路径。
 _VISION_UNSUPPORTED_PATTERNS = (
     "no endpoints found that support image input",  # mimo token-plan verbatim
     "does not support image input",
@@ -117,6 +117,9 @@ _VISION_UNSUPPORTED_PATTERNS = (
     "does not support vision",
     "multimodal input not supported",
     "does not support multimodal",
+    "input_video",  # Responses 网关拒收视频项（mimo verbatim: "input item type 'input_video' is not supported"）
+    "video input not supported",
+    "does not support video",
 )
 
 # 上下文溢出模式（BadRequestError 内 sub-bucket —— SDK 不区分 sub-class，跨供应商只能靠消息消歧）

@@ -38,6 +38,8 @@ class BaseProvider(ABC):
     DEFAULT_CONTEXT_TOKENS: ClassVar[dict[str, int]] = {}
     # 与 DEFAULT_MODELS["llm"] 不同时的视觉模型（如 mimo 用 mimo-v2.5、文生用 mimo-v2.5-pro）。
     DEFAULT_VISION_MODELS: ClassVar[dict[str, str]] = {}
+    # 与 DEFAULT_MODELS["llm"] 不同时的视频理解模型；空表示沿用文本/视觉默认。
+    DEFAULT_VIDEO_MODELS: ClassVar[dict[str, str]] = {}
 
     def __init__(self, config: ProviderConfig) -> None:
         self.config = config
@@ -63,6 +65,8 @@ class ChatProvider(BaseProvider):
 
     # True 表示接受 image_url 内容部件；文本模型仅文本时需配合视觉变体（见 DEFAULT_VISION_MODELS）。
     supports_vision: ClassVar[bool] = False
+    # True 表示接受 Responses 形状的 input_video 内容部件；仅 chat.completions 支持视频的供应商（如 mimo）不能声明。
+    supports_video: ClassVar[bool] = False
 
     @abstractmethod
     def raw_client(self) -> AsyncOpenAI | None:

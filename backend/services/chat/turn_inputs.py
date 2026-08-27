@@ -38,6 +38,7 @@ from ..llm import (
     provider_for_service,
     provider_from_config,
     resolve_context_tokens,
+    resolve_video_chain,
     resolve_vision_chain,
 )
 from ..tools import REGISTRY, NativeMemory, schema_name
@@ -122,6 +123,14 @@ def db_message_to_response_items(msg: Message, *, drop_tool_intermediates: bool 
     return items
 
 
+def _user_row_has_video_part(msg: Message) -> bool:
+    """多模态用户行是否含 ``input_video`` part；链选择据此优先走视频能力供应商。"""
+    if msg.role != "user" or getattr(msg, "content_type", "text") != "multimodal_v1":
+        return False
+    parsed = safe_json_loads(msg.content if isinstance(msg.content, str) else "", default=[])
+    return isinstance(parsed, list) and any(isinstance(p, dict) and p.get("type") == "input_video" for p in parsed)
+
+
 def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> dict[str, Any]:
     """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
     context: dict[str, Any] = {"instructions": system_prompt, "input": []}
@@ -164,11 +173,20 @@ async def _build_turn_inputs(
     first_user_msg = next((m for m in history if m.role == "user"), None)
     first_user_msg_content = first_user_msg.content if first_user_msg else None
 
-    # 历史含图片时把 LLM 链筛选到具备视觉能力的供应商模型，确保压缩客户端与流式调用（接收同一 _chain）都使用能处理 image_url 的模型。
+    # 历史含媒体时把 LLM 链筛选到对应能力供应商，确保压缩客户端与流式调用（接收同一 _chain）都能消费媒体 part。
+    # 视频判定优先于图片（视频链通常也具备视觉，反之不然）；链为空时显式报错而非回落文本链——
+    # 回落只会换来供应商网关拒收 input_video 的不可读 400。
+    turn_has_video = any(_user_row_has_video_part(m) for m in history)
     turn_has_images = any(getattr(m, "content_type", "text") == "multimodal_v1" for m in history if m.role == "user")
     llm_chain = None
     provider = None
-    if turn_has_images:
+    if turn_has_video:
+        video_chain = await resolve_video_chain(db, user_id)
+        if not video_chain:
+            raise MissingLlmConfigError("当前供应商链中没有支持视频理解的模型，无法继续包含视频附件的对话")
+        llm_chain = video_chain
+        provider = provider_from_config(video_chain[0])
+    elif turn_has_images:
         vision_chain = await resolve_vision_chain(db, user_id)
         if vision_chain:
             llm_chain = vision_chain
