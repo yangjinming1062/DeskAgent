@@ -18,7 +18,7 @@ import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
 import { $puppetInfo, hydratePuppet } from '@/companion/puppet/puppet-store'
-import { initSpatial } from '@/companion/spatial'
+import { initSpatial, resetToHomePosition } from '@/companion/spatial'
 import { NotificationStack } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -181,6 +181,15 @@ export function CompanionRoot(): React.JSX.Element {
 
     return () => off?.()
   }, [auth.kind, openDock])
+
+  // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
+  useEffect(() => {
+    const off = window.spiritagent.onTrayResetPosition?.(() => {
+      resetToHomePosition()
+    })
+
+    return () => off?.()
+  }, [])
 
   // 未鉴权时自动开激活浮层：首次 hydrateAuth 完成（pending → unauthenticated）、
   // 以及反激活之后。原先只能戳精灵触发，但未鉴权时精灵实体本身不可见、戳不到，

@@ -117,6 +117,7 @@ declare global {
       onTrayLogout: EventSubscription<'spiritagent:tray:logout'>
       onTrayActivate: EventSubscription<'spiritagent:tray:activate'>
       onTrayOpenChat: EventSubscription<'spiritagent:tray:open-chat'>
+      onTrayResetPosition: EventSubscription<'spiritagent:tray:reset-position'>
       onUiThemeChanged: EventSubscription<'spiritagent:ui-theme-changed'>
       onPrefsHydrated: EventSubscription<'spiritagent:prefs-hydrated'>
       getVersion: AsyncIpc<IpcInvokeContract['spiritagent:version']>

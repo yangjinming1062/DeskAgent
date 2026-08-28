@@ -1,5 +1,13 @@
 import { IPC, type IpcEventChannel, type IpcEventContract } from '@ipc/contracts'
-import type { App, BrowserWindow, Menu, MenuItemConstructorOptions, nativeImage, Tray } from 'electron'
+import {
+  type App,
+  type BrowserWindow,
+  type Menu,
+  type MenuItemConstructorOptions,
+  type nativeImage,
+  screen,
+  type Tray
+} from 'electron'
 
 import type { BackendSessionLike } from '../runner/reverse-rpc'
 
@@ -80,6 +88,10 @@ export function buildTrayMenu() {
     {
       label: mainActionLabel,
       click: mainActionClick
+    },
+    {
+      label: '一键归位',
+      click: () => resetMainWindowPosition()
     }
   ]
 
@@ -176,6 +188,49 @@ export function showMainWindow(): void {
   }
 
   win.focus()
+  rebuildTrayMenu()
+}
+
+export function resetMainWindowPosition(): void {
+  const win = trayDeps?.bridgeDeps?.getMainWindow?.()
+
+  if (!win || win.isDestroyed()) {
+    trayDeps?.createWindow()
+    rebuildTrayMenu()
+
+    return
+  }
+
+  if (win.isMinimized()) {
+    win.restore()
+  }
+
+  try {
+    const primaryDisplay = screen.getPrimaryDisplay()
+    win.setBounds(primaryDisplay.workArea)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    trayDeps?.rememberLog(`[tray] reset bounds failed: ${message}`)
+  }
+
+  if (process.platform === 'win32') {
+    win.setSkipTaskbar(true)
+  }
+
+  if (process.platform === 'darwin') {
+    win.setAlwaysOnTop(true, 'screen-saver', 1)
+  } else {
+    win.setAlwaysOnTop(true, 'floating')
+  }
+
+  if (!win.isVisible()) {
+    win.show()
+  }
+
+  win.focus()
+  win.moveTop()
+
+  sendToMainWindow(IPC.event.trayResetPosition)
   rebuildTrayMenu()
 }
 

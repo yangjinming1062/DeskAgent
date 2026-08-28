@@ -745,6 +745,27 @@ export function endDragAt(pos: { x: number; y: number }): void {
   void window.spiritagent.sprite.setPosition(safe)
 }
 
+export function resetToHomePosition(): void {
+  userInteracted = false
+  voiceLiftReturn = null
+  stopRoam()
+  cancelMovement()
+  clearDockState()
+
+  const home = getHomePosition()
+  $homePosition.set(home)
+  $spatialLocale.set('home')
+  $spatialLocomotion.set('still')
+  $dragVelocity.set({ vx: 0, vy: 0 })
+
+  if ($voiceCallOpen.get()) {
+    ensureVoiceDockRoom()
+  } else {
+    $spatialPos.set(home)
+    void window.spiritagent.sprite.setPosition(home)
+  }
+}
+
 export function initSpatial(): () => void {
   // 启动恢复的出屏判定依赖内容包围盒（整盒兜底会把透明留白算进身体，出屏量与
   // dock 落点都会算偏）。getPosition 的 IPC 往返几乎总是快于 PSD 装配上报——

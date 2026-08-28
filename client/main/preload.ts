@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld('spiritagent', {
 
     return () => ipcRenderer.removeListener(IPC.event.trayOpenChat, listener)
   },
+  onTrayResetPosition: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on(IPC.event.trayResetPosition, listener)
+
+    return () => ipcRenderer.removeListener(IPC.event.trayResetPosition, listener)
+  },
   onPrefsHydrated: (callback: (payload: DesktopPrefsHydrated) => void) => {
     const listener = (_event: IpcRendererEvent, payload: DesktopPrefsHydrated) => callback(payload)
     ipcRenderer.on(IPC.event.prefsHydrated, listener)

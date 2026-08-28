@@ -316,6 +316,7 @@ export interface IpcEventContract {
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:tray:open-chat': []
+  'spiritagent:tray:reset-position': []
   'spiritagent:ui-theme-changed': [payload: DesktopUiThemeBroadcast]
   'spiritagent:update-event': [payload: DesktopUpdateEvent]
 }
@@ -388,6 +389,7 @@ export const IPC = {
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     trayOpenChat: 'spiritagent:tray:open-chat',
+    trayResetPosition: 'spiritagent:tray:reset-position',
     uiThemeChanged: 'spiritagent:ui-theme-changed',
     updateEvent: 'spiritagent:update-event'
   } as const satisfies Record<string, IpcEventChannel>,
