@@ -252,7 +252,14 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
         emitter.bind_typing(_typing_on)
 
     client_context = ChatRequestClientContext(platform_hints=adapter.platform_hint()) if adapter.platform_hint() else None
-    attachments = [{"type": a.type, "file_url": a.url, **({"name": a.name} if a.name else {})} for a in last.attachments]
+    base = SETTINGS.public_base_url.strip().rstrip("/")
+    attachments = []
+    for a in last.attachments:
+        url = a.url
+        # temp-media 路径拼绝对 URL：与 video 上传接口同款（attachment_video_url），LLM 供应商按 image_url 字段拉取。
+        if url.startswith("/api/media/files/") and base:
+            url = f"{base}{url}"
+        attachments.append({"type": a.type, "file_url": url, **({"name": a.name} if a.name else {})})
     req = ChatRequest(
         session_id=session_id,
         message=ChatMessageRequest(role="user", content=last.text, attachments=attachments or None),
