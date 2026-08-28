@@ -240,9 +240,11 @@ async function sttViaBackend({
   const connection = await ensureBackend()
   const form = new FormData()
   const blob = new Blob([data], { type: mime })
-  const actualFilename = filename || (mime.includes('webm') ? 'audio.webm' : 'audio.wav')
+
+  const actualFilename =
+    filename || (mime.includes('wav') ? 'audio.wav' : mime.includes('webm') ? 'audio.webm' : 'audio.wav')
+
   form.append('audio_file', blob, actualFilename)
-  form.append('file', blob, actualFilename)
 
   const qs = language ? `?language=${encodeURIComponent(language)}` : ''
   const url = `${connection.baseUrl}/api/media/stt${qs}`

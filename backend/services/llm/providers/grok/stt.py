@@ -29,8 +29,10 @@ class GrokSTTProvider(STTProvider):
             ext = "flac"
         elif "m4a" in mime_type or "mp4" in mime_type:
             ext = "m4a"
+        elif "webm" in mime_type:
+            ext = "webm"
         else:
-            ext = "bin"
+            ext = "wav"
 
         files = {"file": (f"audio.{ext}", audio, mime_type)}
 

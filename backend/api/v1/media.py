@@ -18,7 +18,12 @@ from components import (
 from fastapi import Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from modules.auth import LoginRecord, User, get_current_session
-from services.llm import MissingLlmConfigError, classify_api_error, synthesize_speech, transcribe_audio
+from services.llm import (
+    MissingLlmConfigError,
+    classify_api_error,
+    synthesize_speech,
+    transcribe_audio,
+)
 from services.media import (
     attachment_video_url,
     enforce_session_quota,
@@ -192,9 +197,10 @@ async def speech_to_text(
     file_bytes = bytes(sink)
 
     mime_type = _resolve_mime_type(target_file.content_type)
+    language = (request.query_params.get("language") or "").strip() or "auto"
 
     try:
-        text = await transcribe_audio(user.id, file_bytes, mime_type)
+        text = await transcribe_audio(user.id, file_bytes, mime_type, language=language)
         return {"success": True, "text": text}
     except HTTPException:
         raise

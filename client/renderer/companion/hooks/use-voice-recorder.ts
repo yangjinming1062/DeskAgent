@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
+import { convertBlobToWav } from '@/companion/audio-wav'
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
-// IM 语音条仍走 MediaRecorder（webm/opus 整段 → REST 转写）。
+// IM 语音条仍走 MediaRecorder（webm/opus 整段录制 → 客户端转 16kHz WAV → REST 转写）。
 const PREFERRED_OPUS_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',
@@ -24,6 +25,14 @@ function getSupportedOpusMimeType(): string | undefined {
 }
 
 function getAudioExtensionForMime(mime: string): string {
+  if (mime.includes('wav')) {
+    return 'wav'
+  }
+
+  if (mime.includes('mp3') || mime.includes('mpeg')) {
+    return 'mp3'
+  }
+
   if (mime.includes('ogg')) {
     return 'ogg'
   }
@@ -113,16 +122,24 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     }
 
     try {
+      let finalBlob = blob
+
+      try {
+        finalBlob = await convertBlobToWav(blob, 16000)
+      } catch (convErr) {
+        console.warn('[voice-recorder] Failed to convert audio to wav, fallback to raw blob:', convErr)
+      }
+
       const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
 
         reader.onload = () => resolve(reader.result as string)
         reader.onerror = () => reject(new Error('read failed'))
-        reader.readAsDataURL(blob)
+        reader.readAsDataURL(finalBlob)
       })
 
-      const ext = getAudioExtensionForMime(blob.type)
-      const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}` })
+      const ext = getAudioExtensionForMime(finalBlob.type)
+      const res = await window.spiritagent.media.stt({ dataUrl, filename: `voice.${ext}`, language: 'zh' })
       const text = (res.text ?? '').trim()
 
       return text || null
@@ -156,8 +173,6 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
 
     const blob = await new Promise<Blob | null>(resolve => {
       recorder.onstop = () => {
-        stopTracks(recorder)
-        streamRef.current = null
         const chunks = chunksRef.current
         chunksRef.current = []
 
@@ -176,6 +191,9 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
         resolve(null)
       }
     })
+
+    stopTracks(recorder)
+    streamRef.current = null
 
     setRecording(false)
 
