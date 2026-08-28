@@ -13,8 +13,7 @@ import {
   Send,
   Sparkles,
   Terminal,
-  Users,
-  Volume2
+  Users
 } from './icons'
 
 // 渲染层使用的工具集目录。id 权威枚举见 PROTOCOL.md §2.2，此处只挂图标。

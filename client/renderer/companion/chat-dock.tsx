@@ -62,7 +62,13 @@ import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
 import { openMediaViewer } from './media-viewer-overlay'
-import { $sessionListOpen, findSessionInfo, openMainSession, setSessionListOpen } from './session-list-store'
+import {
+  $sessionListOpen,
+  findSessionInfo,
+  openMainSession,
+  setSessionListOpen,
+  switchSession
+} from './session-list-store'
 
 const DOCK_DEFAULT_WIDTH = 760
 const DOCK_DEFAULT_HEIGHT = 540
@@ -376,6 +382,27 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       externalPathsRef.current = []
     }
   }, [chatSessionId])
+
+  // 面板挂载或网关就绪时，若当前消息列表为空，确保当前活跃会话（或主会话）的消息历史已加载
+  const hydratedSessionRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (gatewayState !== 'open') {
+      return
+    }
+
+    const currentKey = chatSessionId ?? '__main__'
+
+    if (list.length === 0 && hydratedSessionRef.current !== currentKey) {
+      hydratedSessionRef.current = currentKey
+
+      if (chatSessionId) {
+        void switchSession(chatSessionId)
+      } else {
+        void openMainSession()
+      }
+    }
+  }, [gatewayState, chatSessionId, list.length])
 
   // IM 桥接会话（kind='im'）在桌面端只读查看：伙伴经 IM 桥回复，
   // 用户不能在此输入或发起语音。send() 里再兜底拦一道，防未来新增入口漏禁。

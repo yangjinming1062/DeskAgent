@@ -84,8 +84,6 @@ def screen_capture_available() -> bool:
     return False
 
 
-
-
 def probe_system_activity() -> tuple[bool, str | None]:
     """探测系统活动检测能力，返回 (是否可用, 失败原因)。"""
     if IS_WINDOWS:

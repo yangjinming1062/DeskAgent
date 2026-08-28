@@ -9,7 +9,7 @@ import {
   failDesktopBoot,
   setDesktopBootStep
 } from '@/companion/boot-store'
-import { $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
+import { $chatMessageList, $chatSessionId, hydrateChatMessages, setChatSession } from '@/companion/chat-store'
 import { $effectiveTier, $spriteState, pushEffectiveDisturbanceTier, setSpriteState } from '@/companion/companion-store'
 import { openMainSession } from '@/companion/session-list-store'
 import { speakScripted } from '@/companion/tts'
@@ -287,18 +287,21 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
           }
         }
 
+        const hasMessages = $chatMessageList.get().length > 0
+        const lastSeq = hasMessages && gateway.lastReceivedSeq > 0 ? gateway.lastReceivedSeq : undefined
+
         if (sid) {
           void gateway
             .request<SessionResumeResponse>('session.resume', {
               session_id: sid,
-              last_seq: gateway.lastReceivedSeq
+              ...(lastSeq !== undefined ? { last_seq: lastSeq } : {})
             })
             .then(res => {
-              if (!res.resumed) {
-                syncMountSeq(res)
+              syncMountSeq(res)
 
+              if (!res.resumed || !hasMessages) {
                 if (Array.isArray(res.messages)) {
-                  hydrateChatMessages(res.messages)
+                  hydrateChatMessages(res.messages, res.info)
                 }
               }
             })

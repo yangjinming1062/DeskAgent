@@ -395,6 +395,7 @@ export function registerMediaIpc({
 
     try {
       const startedAt = Date.now()
+
       const sttLog = makeLog(log, '[stt]', {
         bytes: data.length,
         ctx: payload?.context || 'default',
@@ -418,6 +419,7 @@ export function registerMediaIpc({
         language: payload?.language || DEFAULT_STT_LANGUAGE,
         mime
       })
+
       sttLog('done', {
         chars: text.length,
         ms: Date.now() - startedAt,
@@ -512,6 +514,7 @@ export function registerMediaIpc({
 
       return value
     })
+
     inflightTts.set(cacheKey, task)
 
     try {

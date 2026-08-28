@@ -519,7 +519,7 @@ def _register_session_handlers(
 
         cfg = user_session.llm_config if user_session else llm_config
 
-        if isinstance(last_seq, int) and effective_buffer.can_replay(last_seq):
+        if isinstance(last_seq, int) and last_seq > 0 and effective_buffer.can_replay(last_seq):
             runtime = _mount_runtime(conv, conv.cwd, cancel_existing=False)
             replayed_frames = await dispatcher.replay(last_seq) or []
             logger.info("session.resume replayed frames", extra={"user_id": user_id, "session_id": runtime.session_id, "replayed": len(replayed_frames), "last_seq": last_seq})

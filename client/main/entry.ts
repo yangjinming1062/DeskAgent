@@ -1510,7 +1510,7 @@ registerMediaIpc({
   spiritagentHome: SPIRITAGENT_HOME,
   ensureBackend,
   fetchImpl: electronFetch,
-  isSttEnabled: () => store.read().stt?.enabled !== false,
+  isSttEnabled: () => (runnerConfigStore.read().stt as { enabled?: boolean } | undefined)?.enabled !== false,
   ipcMain,
   log: chunk => rememberLog(chunk)
 })

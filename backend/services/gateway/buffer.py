@@ -94,14 +94,14 @@ class ReplayBuffer:
 
     def can_replay(self, last_seq: int) -> bool:
         """检查 last_seq 之后的所有帧是否仍保留在缓冲区中。"""
-        if last_seq < 0:
+        if last_seq <= 0:
             return False
 
         # 客户端 seq 超过服务端（服务端重启/seq 重置）→ 不同步，强制完整重载
         if last_seq > self._current_seq:
             return False
 
-        # 客户端已与服务端对齐（含新缓冲区双方都是 0）→ 合法，无须重放
+        # 客户端已与服务端对齐（双方均大于 0 且相等）→ 合法，无须重放
         if last_seq == self._current_seq:
             return True
 
