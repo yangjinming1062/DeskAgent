@@ -829,13 +829,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               </div>
             </div>
 
-            {/* Session Parameters Configuration Panel */}
-            <ChatParamsPanel />
           </div>
 
-          {/* Quick status summary / hint at bottom */}
-          <div className="w-full pt-2 text-center border-t border-white/5 shrink-0">
-            <p className="text-[10px] text-white/35">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
+          {/* Bottom Section: Session Parameters & Status Hint */}
+          <div className="w-full flex flex-col items-center gap-2 pt-2 border-t border-white/5 shrink-0">
+            <ChatParamsPanel />
+            <p className="text-[10px] text-white/35 pt-0.5">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
           </div>
         </div>
 

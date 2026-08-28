@@ -89,7 +89,7 @@ export function ChatParamsPanel(): React.JSX.Element {
   const thresholdPct = Math.round(threshold * 100)
 
   return (
-    <div className="w-full mt-3 flex flex-col gap-2.5 rounded-xl border border-white/8 bg-white/[0.03] p-3 text-left shadow-inner">
+    <div className="w-full flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 text-left shadow-inner">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-white/70">
           <SlidersHorizontal className="size-3.5 text-accent" />
