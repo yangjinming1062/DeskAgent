@@ -141,17 +141,6 @@ export default [
     }
   },
   {
-    // AudioWorklet 处理器运行在独立音频渲染线程，只能用平铺 JS（vite 按资产原样拷贝）。
-    files: ['renderer/companion/worklets/*.js'],
-    languageOptions: {
-      globals: {
-        AudioWorkletProcessor: 'readonly',
-        registerProcessor: 'readonly',
-        sampleRate: 'readonly'
-      }
-    }
-  },
-  {
     files: ['renderer/companion/**/*.{ts,tsx}'],
     ignores: ['**/node_modules/**'],
     rules: {

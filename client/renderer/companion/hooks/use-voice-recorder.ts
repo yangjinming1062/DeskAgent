@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { VOICE_CALL_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
+import { IM_VOICE_BAR_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
@@ -210,7 +210,7 @@ export function useVoiceRecorder({ requestGateway, onTranscribed }: Options): {
     let pending: Promise<void> | null = null
     pending = (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: VOICE_CALL_AUDIO_CONSTRAINTS })
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: IM_VOICE_BAR_AUDIO_CONSTRAINTS })
         const mimeType = getSupportedOpusMimeType()
         const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
 

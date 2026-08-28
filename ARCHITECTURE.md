@@ -164,7 +164,7 @@ Runner 不持有云端凭证；需要模型能力的本地工具经 Client 代�
 - **cron 回合依赖用户 WS**：调度 tick 只写 outbox 行，由持有该用户 WS 的副本认领执行（emitter 复用 WS 派发器），桌面离线即无处执行。
 - **IM 回合不依赖用户 WS**：入站消息由进程内适配器接收，直接以无头 emitter 跑完整 chat 回合（桌面离线也能回），回复格式化后从原渠道送出；桌面端只读旁观 im 会话历史。面向桌面的副作用（情绪镜像、配对审批、状态变化）才走 outbox 事件。
 
-每渠道一条专属 im 会话（渠道间不混流，kind 枚举与唯一外键锚定见 [PROTOCOL.md §1.8](PROTOCOL.md)）；人设/长期记忆/情感按 user 加载，与桌面回合天然共享。产品语义见 [DESIGN.md](DESIGN.md)。
+每渠道一条专属 im 会话（渠道间不混流，kind 枚举与唯一外键锚定见 [PROTOCOL.md §1.7](PROTOCOL.md)）；人设/长期记忆/情感按 user 加载，与桌面回合天然共享。产品语义见 [DESIGN.md](DESIGN.md)。
 
 ---
 

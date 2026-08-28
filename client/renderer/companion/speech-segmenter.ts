@@ -1,6 +1,5 @@
 /**
  * 流式文本 → TTS 句子切分器：句末标点成段，超长强切，成句时清洗 Markdown。
- * 移植自 backend/services/voice/segmenter.py。
  */
 
 export const DEFAULT_MAX_SEGMENT_CHARS = 120

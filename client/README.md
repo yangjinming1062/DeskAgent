@@ -6,7 +6,7 @@
 
 **职责**：
 
-- 桌面精灵 2D / 3D 实时渲染（透明置顶窗口；2D 分层 PSD 木偶与骨骼链、3D Three.js 引擎）+ 陪伴式交互 UI（chat / voice call / onboarding / settings）
+- 桌面精灵 2D / 3D 实时渲染（透明置顶窗口；2D 分层 PSD 木偶与骨骼链、3D Three.js 引擎）+ 陪伴式交互 UI（chat / onboarding / settings）
 - 登录鉴权与用户凭证加密落盘（safeStorage）
 - 本地 OS IPC 服务端（命名管道 / UDS）与 Runner 进程生命周期管理
 - 双向工具调用路由与反向 RPC 代理中转

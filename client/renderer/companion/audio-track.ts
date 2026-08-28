@@ -200,11 +200,6 @@ export function registerAmplitudeSink(fn: ((amp: number) => void) | null): () =>
   }
 }
 
-/** 外部播放源上报实时振幅——与 audio-track 共用同一拨口型订阅者。 */
-export function emitExternalAmplitude(amp: number): void {
-  amplitudeSink?.(amp)
-}
-
 function ensureAnalyser(): void {
   if (analyser && audioCtx) {
     return

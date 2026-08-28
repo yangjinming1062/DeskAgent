@@ -392,7 +392,7 @@ Onboarding 默认走 2D 路径：形象确认后立即触发 2D 分层动画流�
 - **配对与白名单**：默认拒绝陌生对端——陌生人首次来信收到一次固定配对回复，主人批准后才能与伙伴对话；被拉黑者静默。绑定与审批在通道设置页管理（微信扫码登录也在此）。
 - **回合节奏差异**：IM 上没有气泡与动画，回复是纯文本（自动去除 markdown、超长自动分片）；回合中的情绪意图不上 IM，而是镜像到桌面精灵表现。
 
-跨模块契约见 [PROTOCOL.md §1.8](PROTOCOL.md)，桥接架构见 [ARCHITECTURE.md §5.4](ARCHITECTURE.md)。
+跨模块契约见 [PROTOCOL.md §1.7](PROTOCOL.md)，桥接架构见 [ARCHITECTURE.md §5.4](ARCHITECTURE.md)。
 
 ---
 

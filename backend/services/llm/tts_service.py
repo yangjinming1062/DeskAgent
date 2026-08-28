@@ -1,4 +1,4 @@
-"""TTS 供应商链调用：REST 合成端点与语音会话共用的服务层。"""
+"""TTS 供应商链调用：REST 合成端点共用的服务层。"""
 
 from collections.abc import AsyncIterator
 

@@ -92,7 +92,7 @@ backend/
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
 | 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../PROTOCOL.md) |
-| IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
+| IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
 
 ## 6. 已知限制
 
