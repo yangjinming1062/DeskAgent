@@ -82,7 +82,13 @@ MEMORY_GUIDANCE = (
     "'Project uses pytest with xdist' ✓ — 'Run tests with pytest -n 4' ✗. "
     "Imperative phrasing gets re-read as a directive in later sessions and can "
     "cause repeated work or override the user's current request. Procedures and "
-    "workflows belong in skills, not memory."
+    "workflows belong in skills, not memory.\n\n"
+    "## Anti-Patterns: Never duplicate system prompt or pre-configured context\n"
+    "Do NOT extract or save facts already covered by other sections of your system prompt:\n"
+    "  1. Global language & system directives: never save 'User speaks Chinese / prefers Chinese' — default language is already handled by system directives.\n"
+    "  2. Companion's own persona: never save your own name, appearance, personality, or species — persona belongs to the companion definition, not user memory.\n"
+    "  3. Structured user profile: never duplicate onboarding facts from the '# User profile' section (e.g. preferred name, gender, age bucket, listed hobbies).\n"
+    "  4. Runtime environment & session state: never save live OS platform, current time, session IDs, PR/commit hashes, or facts stale within 7 days."
 )
 
 SESSION_SEARCH_GUIDANCE = (
@@ -509,7 +515,13 @@ def build_system_prompt_parts(config: AgentPromptConfig, system_message: str | N
         stable_parts.append(TASK_COMPLETION_GUIDANCE)
 
     if valid_tools:
-        tool_guidance = [g for name, g in (("memory", MEMORY_GUIDANCE), ("session_search", SESSION_SEARCH_GUIDANCE), ("skill_manage", SKILLS_GUIDANCE)) if name in valid_tools]
+        tool_guidance = []
+        if any(t in valid_tools for t in ("memory", "memory_retain", "memory_recall")):
+            tool_guidance.append(MEMORY_GUIDANCE)
+        if "session_search" in valid_tools:
+            tool_guidance.append(SESSION_SEARCH_GUIDANCE)
+        if "skill_manage" in valid_tools:
+            tool_guidance.append(SKILLS_GUIDANCE)
         # 一旦会话有工具就强制附加内联附件提示；提示中「无工具」兜底条款使 LLM 在 Runner 未注册时直接报错而非猜测文件内容。
         tool_guidance.append(ATTACHMENT_GUIDANCE)
         if "image_generate" in valid_tools or "video_generate" in valid_tools:

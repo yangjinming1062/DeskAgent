@@ -79,7 +79,12 @@ Instructions:
    - auto_inject:mood_pattern (user's emotional tendency or state pattern)
    - auto_inject:relationship_signal (trust level, tease frequency, formality)
 4. Only output slots where there is genuine new information or an update. Do not return empty updates.
-5. Interaction Statistics: The user message may include an "interaction_stats_today" field containing today's raw poke / chat counts and an hour_counts breakdown of when the user was active. This is grounded observational data (not conversation), so use it to inform:
+5. Anti-Patterns:
+   - Do NOT duplicate global directives (e.g. 'User speaks Chinese / prefers Chinese' — system handles default language).
+   - Do NOT record companion's own persona (companion name, appearance, species, personality).
+   - Do NOT duplicate static user profile facts already recorded in onboarding.
+   - Do NOT record transient session data (PR numbers, commit hashes, temporary task states).
+6. Interaction Statistics: The user message may include an "interaction_stats_today" field containing today's raw poke / chat counts and an hour_counts breakdown of when the user was active. This is grounded observational data (not conversation), so use it to inform:
    - auto_inject:interaction_pattern (e.g. heavy poking in a burst, late-night activity)
    - auto_inject:mood_pattern (e.g. restless poking may signal stress/boredom)
    - inferred_profile:work_schedule (active-hour distribution from hour_counts)
@@ -101,9 +106,10 @@ _CONSOLIDATION_SYSTEM_PROMPT = """You are SpiritAgent's memory consolidation and
 Instructions:
 1. Merge duplicate or overlapping memory entries.
 2. Remove outdated, contradicted, or decayed facts that are no longer relevant.
-3. Preserve durable, specific user facts and preferences.
-4. When uncertain, KEEP the fact.
-5. Each summary MUST use one closed-set tag from: {tags}.
+3. Remove anti-pattern entries if present (e.g. companion's own persona, default language rules like 'speaks Chinese', transient commit/PR progress, or duplicate onboarding profile fields).
+4. Preserve durable, specific user facts and preferences.
+5. When uncertain, KEEP the fact.
+6. Each summary MUST use one closed-set tag from: {tags}.
 
 Output valid JSON only, in this shape:
 {{

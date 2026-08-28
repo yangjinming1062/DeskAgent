@@ -36,7 +36,7 @@ const AUTO_INJECT_SLOTS: ReadonlyArray<{ context: string; label: string; hint: s
   {
     context: 'auto_inject:communication_style',
     label: 'communication style',
-    hint: '回答怎么框定（语言、风格、是否 bullet）'
+    hint: '回答怎么框定（详略程度、口吻风格、是否使用列表等）'
   },
   { context: 'auto_inject:rapport_state', label: 'rapport state', hint: '当前关系/熟悉度阶段' },
   {

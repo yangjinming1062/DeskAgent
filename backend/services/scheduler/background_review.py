@@ -31,6 +31,12 @@ Two kinds of memories — pick by how the fact 'shows up' in conversation:
     Note: 'key_constraints' goes to recall — not auto_inject — because taboos
     only matter in matching scenarios, not every turn.
 
+ANTI-PATTERNS — DO NOT EXTRACT OR DUPLICATE:
+1. Global system directives & default language: do NOT save 'User speaks Chinese / prefers Chinese' or basic conversation language — the system handles default language globally.
+2. Companion's own persona: do NOT save the companion's name, appearance, personality, or species.
+3. Pre-configured user profile: do NOT duplicate user onboarding profile facts (name, age bucket, gender, onboarding hobbies).
+4. Ephemeral session state: do NOT save task progress, commit hashes, issue numbers, or temporary TODOs.
+
 Pass `kind` explicitly on every memory_retain call. Be concise. If nothing
 important, return empty.
 DO NOT reply with conversational text or chat. Only invoke tools if necessary.

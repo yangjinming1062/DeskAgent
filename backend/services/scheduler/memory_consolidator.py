@@ -35,7 +35,8 @@ Output JSON only, in this shape:
 }}
 
 If a fact is genuinely stale (contradicted by other rows, or so trivial it adds nothing),
-omit it — but only when omitting is clearly safe. When uncertain, keep the fact.
+or if it matches an anti-pattern (such as default language rules like 'speaks Chinese', the companion's
+own persona, transient task progress, or duplicate onboarding profile fields), omit it. When uncertain, keep the fact.
 """.format(window=MEMORY_CONSOLIDATE_WINDOW_ROWS, target=MEMORY_CONSOLIDATE_TARGET_ROWS, tags=", ".join(sorted(RECALL_TAGS)))
 
 
