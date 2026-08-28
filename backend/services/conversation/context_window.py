@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .formatting import format_messages_compact
-from .main_conversation import UI_ONLY_SUBTYPES, get_main_conversation
+from .main_conversation import UI_ONLY_SUBTYPES, get_special_conversation
 
 RECENT_CONTEXT_CHAR_CAP = 200
 
@@ -13,7 +13,7 @@ async def load_recent_context_window(db: AsyncSession, user_id: int, max_message
 
     ``status_proactive`` 保留（那是用户可以回应的真实轮次），只剔除 ``UI_ONLY_SUBTYPES``。
     """
-    main_conv = await get_main_conversation(db, user_id)
+    main_conv = await get_special_conversation(db, user_id, "companion")
     if main_conv is None:
         return ""
     msgs = (

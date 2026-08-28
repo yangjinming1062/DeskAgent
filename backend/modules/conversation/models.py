@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from common import ModelBase, TimestampMixin
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,13 +15,18 @@ class Conversation(ModelBase, TimestampMixin):
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True)
+    # 值集合 {special, standard, im, cron}：special = 系统预设对话（由 system_preset_id 区分具体预设），standard = 用户创建的普通对话，im = 外部 IM 对话，cron = 定时任务独立会话；不再有 main。
     kind: Mapped[str] = mapped_column(String(32), default="standard", server_default=text("'standard'"))
+    # 系统预设 ID；None=普通对话，非空∈{companion,developer,product_manager,copywriter,language_teacher}。
+    system_preset_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     title: Mapped[str] = mapped_column(Text, default="New Conversation")
     pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cwd: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     # 每会话 key-value 覆盖（reasoning/language）；会话挂载时从该列填入，会话删除时随 conversation 级联清除；跨 WS 重连存活（不像内存中的 RuntimeSession.settings）。
     settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_deletable: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), nullable=False)
+    is_renamable: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("TRUE"), nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="conversations")
     # 自引用 parent↔children；早期 ``remote_side=[id]`` 把 Python 内置 ``id`` 函数传了过去——SQLAlchemy 静默经 Mapper 协议强转，mapper 配置在首次实例化任何 User 时崩溃（User.conversations 穿过 Conversation.parent → Conversation mapper 配置 → 把 ``id`` 当非 Column 读）。改成前向字符串引用本类的列对象，SQLAlchemy 在 mapper 配置阶段解析。

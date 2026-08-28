@@ -37,7 +37,7 @@ from services.companion import (
     upsert_slotted_memory,
     validate_and_sanitize_expression,
 )
-from services.conversation import CRON_KIND, MAIN_KIND, UI_ONLY_SUBTYPES
+from services.conversation import CRON_KIND, SPECIAL_KIND, UI_ONLY_SUBTYPES
 from services.llm import call_llm_once, resolve_user_llm_config
 from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PREFIX, RECALL_TAGS
 
@@ -491,7 +491,7 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         # Stage 0：收集上下文
         all_today_tuples = (
             await db.execute(
-                select(Message, Conversation.kind)
+                select(Message, Conversation.system_preset_id)
                 .join(Conversation, Message.conversation_id == Conversation.id)
                 .where(
                     Conversation.user_id == user_id,
@@ -504,8 +504,8 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                 .order_by(Message.id.asc()),
             )
         ).all()
-        main_msgs = [m for m, k in all_today_tuples if k == MAIN_KIND]
-        work_msgs = [m for m, k in all_today_tuples if k != MAIN_KIND]
+        main_msgs = [m for m, p in all_today_tuples if p == "companion"]
+        work_msgs = [m for m, p in all_today_tuples if p != "companion"]
 
         clean_main_messages = _preprocess_conversation_for_nightly(main_msgs)
         clean_work_messages = _preprocess_conversation_for_nightly(work_msgs)
@@ -552,7 +552,8 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
                 .join(Conversation, Message.conversation_id == Conversation.id)
                 .where(
                     Conversation.user_id == user_id,
-                    Conversation.kind == MAIN_KIND,
+                    Conversation.kind == SPECIAL_KIND,
+                    Conversation.system_preset_id == "companion",
                     Message.role == "user",
                     Message.subtype.is_(None) | Message.subtype.notin_(tuple(UI_ONLY_SUBTYPES)),
                     Message.created_at >= seven_days_ago_utc,

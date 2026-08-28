@@ -1,3 +1,23 @@
-from .schemas import AgentPromptConfig, ChatMessageRequest, ChatRequest, DesktopConfigPutRequest, DesktopConfigResponse, MessageResponse, StatusResponse
+from .schemas import (
+    AgentPromptConfig,
+    ChatMessageRequest,
+    ChatRequest,
+    DesktopConfigPutRequest,
+    DesktopConfigResponse,
+    MessageResponse,
+    PromptPreset,
+    PromptPresetBlock,
+    StatusResponse,
+)
 
-__all__ = ["AgentPromptConfig", "ChatMessageRequest", "ChatRequest", "DesktopConfigPutRequest", "DesktopConfigResponse", "MessageResponse", "StatusResponse"]
+__all__ = [
+    "AgentPromptConfig",
+    "ChatMessageRequest",
+    "ChatRequest",
+    "DesktopConfigPutRequest",
+    "DesktopConfigResponse",
+    "MessageResponse",
+    "PromptPreset",
+    "PromptPresetBlock",
+    "StatusResponse",
+]

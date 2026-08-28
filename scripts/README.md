@@ -24,8 +24,9 @@ pwsh scripts/build_client.ps1 -Version 0.16.0
 
 ## 2. Import 检查 — `check_imports.py`
 
-backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yaml` 注册为本地 hook 并以 `--strict-imports` 启动），防 c66ab1a 一类回归。覆盖 3 类违规：
+backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yaml` 注册为本地 hook 并以 `--strict-imports` 启动），防 c66ab1a 一类回归。覆盖 4 类违规：
 
+- 禁止 future annotations：Python 3.13 原生支持 PEP 585/604，禁止 `from __future__ import annotations`
 - `TYPE_CHECKING` 名字泄漏：仅在 `if TYPE_CHECKING:` 内 import、却被类体注解等运行时求值路径引用的名字
 - runner 工具子包之间的 sibling 跨子包 eager import（终端 ↔ 文件、代码执行 → 线程上下文这类循环）
 - Facade 一致性：`from <local_pkg> import X` 走的 `<local_pkg>` 必须在其 `__init__.py` 里 re-export `X`，防止 facade 被过度精简

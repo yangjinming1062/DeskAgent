@@ -1,4 +1,5 @@
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -11,6 +12,64 @@ def _parse(path: Path) -> ast.Module | None:
         return ast.parse(path.read_text(encoding="utf-8"))
     except (OSError, SyntaxError):
         return None
+
+
+# A. 禁止 future annotations (Python 3.13 原生支持 PEP 585/604)
+
+
+def check_future_annotations(path: Path) -> list[str]:
+    tree = _parse(path)
+    if tree is None:
+        return []
+    errors: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module == "__future__" and any(alias.name == "annotations" for alias in node.names):
+            errors.append(
+                f"{path}:{node.lineno}: forbidden 'from __future__ import annotations' (Python 3.13+ does not need future annotations; run check_imports.py --fix to clean)",
+            )
+    return errors
+
+
+def clean_future_annotations(path: Path) -> bool:
+    """清理文件中的 ``from __future__ import annotations``。"""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+    try:
+        tree = ast.parse(content)
+    except SyntaxError:
+        return False
+
+    targets = [node for node in tree.body if isinstance(node, ast.ImportFrom) and node.module == "__future__" and any(alias.name == "annotations" for alias in node.names)]
+    if not targets:
+        return False
+
+    lines = content.splitlines(keepends=True)
+    for node in sorted(targets, key=lambda n: n.lineno, reverse=True):
+        start_idx = node.lineno - 1
+        end_idx = node.end_lineno if node.end_lineno is not None else node.lineno
+        if len(node.names) == 1 and node.names[0].name == "annotations":
+            prev_blank = start_idx > 0 and lines[start_idx - 1].strip() == ""
+            next_blank = end_idx < len(lines) and lines[end_idx].strip() == ""
+            if (prev_blank and next_blank) or (start_idx == 0 and next_blank):
+                del lines[start_idx : end_idx + 1]
+            else:
+                del lines[start_idx:end_idx]
+        else:
+            stmt_lines = lines[start_idx:end_idx]
+            stmt_text = "".join(stmt_lines)
+            stmt_text = re.sub(r"\bannotations\s*,\s*", "", stmt_text)
+            stmt_text = re.sub(r",\s*\bannotations\b", "", stmt_text)
+            stmt_text = re.sub(r"\bannotations\b", "", stmt_text)
+            lines[start_idx:end_idx] = [stmt_text]
+
+    new_content = "".join(lines)
+    if new_content != content:
+        path.write_text(new_content, encoding="utf-8")
+        return True
+    return False
 
 
 def _tc_ranges(tree: ast.Module) -> list[tuple[int, int]]:
@@ -185,10 +244,13 @@ def check_facade_consistency(path: Path) -> list[str]:
 
 def main(argv: list[str]) -> int:
     strict = False
+    fix = False
     args: list[str] = []
     for a in argv:
         if a == "--strict-imports":
             strict = True
+        elif a in ("--fix", "--clean"):
+            fix = True
         else:
             args.append(a)
 
@@ -201,10 +263,22 @@ def main(argv: list[str]) -> int:
                 continue
             targets.extend(p for p in root.rglob("*.py") if ".venv" not in p.parts and "__pycache__" not in p.parts)
 
+    if fix:
+        fixed_count = 0
+        for path in targets:
+            if not path.is_file():
+                continue
+            if clean_future_annotations(path):
+                print(f"Fixed: removed 'from __future__ import annotations' from {path}")
+                fixed_count += 1
+        if fixed_count:
+            print(f"\nCleaned {fixed_count} file(s).")
+
     diagnostics: list[str] = []
     for path in targets:
         if not path.is_file():
             continue
+        diagnostics.extend(check_future_annotations(path))
         diagnostics.extend(check_type_checking_leak(path))
         diagnostics.extend(check_facade_consistency(path))
 

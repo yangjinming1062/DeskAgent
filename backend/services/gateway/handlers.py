@@ -69,7 +69,7 @@ from services.companion import (
 )
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
-from services.conversation import IM_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
+from services.conversation import IM_KIND, get_or_create_special_conversation, get_special_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
@@ -215,7 +215,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
             async with SESSION_LOCAL() as boot_db:
                 llm_config = await resolve_user_llm_config(boot_db, user_id)
                 user_settings = await load_user_settings(boot_db, user_id)
-                await get_or_create_main_conversation(boot_db, user_id)
+                await get_or_create_special_conversation(boot_db, user_id, "companion")
 
             session_client_context: ChatRequestClientContext | None = None
             if payload and "ctx" in payload:
@@ -419,7 +419,7 @@ async def _record_main_conversation(user_id: int, role: str, content: str, subty
     """向主会话追加一条 status 行：best-effort，丢失历史行不能让用户等的 RPC 失败。"""
     try:
         async with SESSION_LOCAL() as db:
-            if main_conv := await get_main_conversation(db, user_id):
+            if main_conv := await get_special_conversation(db, user_id, "companion"):
                 db.add(Message(conversation_id=main_conv.id, role=role, content=content, subtype=subtype))
                 await db.commit()
     except Exception:
@@ -479,7 +479,7 @@ def _register_session_handlers(
 
     async def session_get_main(_params: dict) -> dict:
         async with SESSION_LOCAL() as db:
-            conv = await get_or_create_main_conversation(db, user_id)
+            conv = await get_or_create_special_conversation(db, user_id, "companion")
             delivered, truncated, next_cursor = await _fetch_truncated_history(conv.id, db)
         runtime = _mount_runtime(conv, conv.cwd)
         cfg = user_session.llm_config if user_session else llm_config

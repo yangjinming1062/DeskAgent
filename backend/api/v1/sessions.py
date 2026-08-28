@@ -14,8 +14,8 @@ from modules.conversation import (
     Message,
 )
 from services.chat import build_session_messages
-from services.conversation import CRON_KIND, MAIN_KIND
-from sqlalchemy import String, asc, cast, desc, func, or_, select
+from services.conversation import CRON_KIND, SPECIAL_KIND
+from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router(dependencies=[Depends(get_current_session)])
@@ -118,14 +118,24 @@ async def list_sessions(
         # 归档视图按归档时间倒序，方便刚归档的先出现；order 参数对归档列表无意义。
         q = q.order_by(desc(Conversation.archived_at))
     else:
-        # 排序链：主对话恒第一，手动置顶次之（pinned_at 新的在前），再按所选 order。置顶集占结果前缀，limit 分页不会截断它。
+        # 排序链：特殊对话恒第一（companion/developer/product_manager/copywriter/language_teacher 等系统预设对话，按系统预设 ID 排序对齐），手动置顶次之（pinned_at 新的在前），再按所选 order。置顶集占结果前缀，limit 分页不会截断它。
         order_col = {
             "recent": desc(Conversation.updated_at),
             "created": desc(Conversation.created_at),
             "messages": desc(func.coalesce(msg_stats.c.msg_count, 0)),
         }[order]
+        # 5 套系统预设排序槽
+        preset_rank = case(
+            (Conversation.system_preset_id == "companion", 0),
+            (Conversation.system_preset_id == "developer", 1),
+            (Conversation.system_preset_id == "product_manager", 2),
+            (Conversation.system_preset_id == "copywriter", 3),
+            (Conversation.system_preset_id == "language_teacher", 4),
+            else_=99,
+        )
         q = q.order_by(
-            desc(Conversation.kind == MAIN_KIND),
+            desc(Conversation.kind == SPECIAL_KIND),
+            preset_rank,
             asc(Conversation.pinned_at.is_(None)),
             desc(Conversation.pinned_at),
             order_col,
@@ -252,8 +262,8 @@ async def get_session_messages(
 async def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
-    if conv.kind == MAIN_KIND:
-        raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
+    if conv.kind == SPECIAL_KIND or not conv.is_renamable:
+        raise HTTPException(status_code=403, detail="System preset conversations cannot be modified or deleted")
     if body.title is not None:
         conv.title = body.title
     if body.pinned is not None:
@@ -274,8 +284,8 @@ async def patch_session(session_id: str, body: DesktopSessionPatchRequest, curre
 async def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
     user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
-    if conv.kind == MAIN_KIND:
-        raise HTTPException(status_code=403, detail="Main conversation cannot be modified or deleted")
+    if conv.kind == SPECIAL_KIND or not conv.is_deletable:
+        raise HTTPException(status_code=403, detail="System preset conversations cannot be modified or deleted")
     deleted_id = conv.id
     await db.delete(conv)
     await db.commit()

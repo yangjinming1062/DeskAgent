@@ -7,7 +7,7 @@ from modules.conversation import Conversation, Message
 from modules.system import ChatRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..conversation import AFFECT_TRACE_SUBTYPE, MAIN_KIND
+from ..conversation import AFFECT_TRACE_SUBTYPE, SPECIAL_KIND
 from ..llm import copy_responses_context, message_to_response_items
 from ..scheduler import auto_generate_title, run_background_memory_review
 from ..tools import REGISTRY
@@ -21,7 +21,7 @@ logger = get_logger(__name__)
 
 async def persist_tool_summary(conv: Conversation, tool_names: set[str]) -> None:
     """主会话轮次从 LLM 上下文中丢弃原始 tool 帧，此行作为替代，故无论轮次如何结束都必须写入。"""
-    if conv.kind != MAIN_KIND or not tool_names:
+    if conv.kind != SPECIAL_KIND or not tool_names:
         return
     async with session_scope() as db:
         db.add(Message(conversation_id=conv.id, role="system", content=f"[执行了工具调用：{', '.join(sorted(tool_names))}]", subtype="tool_summary"))

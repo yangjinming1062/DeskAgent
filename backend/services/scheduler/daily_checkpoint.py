@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.companion import run_prompt_json
-from services.conversation import UI_ONLY_SUBTYPES, format_messages_compact, get_main_conversation
+from services.conversation import UI_ONLY_SUBTYPES, format_messages_compact, get_special_conversation
 from services.llm import UserLlmConfig
 from services.media import prune_videos_in_range
 
@@ -89,7 +89,7 @@ async def run_daily_checkpoint(llm_cfg: UserLlmConfig | dict[str, Any], user_id:
 
 
 async def _collect_inputs(db: AsyncSession, user_id: int, utc_start: datetime, utc_end: datetime, local_date_str: str) -> tuple[int, str, str, str] | None:
-    main_conv = await get_main_conversation(db, user_id)
+    main_conv = await get_special_conversation(db, user_id, "companion")
     if main_conv is None:
         return
 

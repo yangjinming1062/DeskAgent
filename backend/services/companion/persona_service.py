@@ -7,6 +7,8 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from services.conversation import ensure_system_conversations_for_user
+
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
 
 # 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
@@ -114,6 +116,8 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
         persona = await _dual_write()
         await db.commit()
     await db.refresh(persona)
+    # onboarding 首次完成时一次性建出 5 套系统预设对话（companion/developer/pm/copywriter/language_teacher）；幂等。
+    await ensure_system_conversations_for_user(db, persona.user_id)
     return persona
 
 

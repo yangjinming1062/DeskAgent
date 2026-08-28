@@ -4,7 +4,7 @@ from components import SESSION_LOCAL
 from modules.conversation import Message
 from modules.ws import WSEvent
 
-from services.conversation import get_or_create_main_conversation, record_user_outreach
+from services.conversation import get_or_create_special_conversation, record_user_outreach
 
 
 async def emit_companion_affect(user_id: int, emotion: str) -> None:
@@ -32,7 +32,7 @@ async def emit_companion_message(
         db.add(WSEvent(user_id=user_id, event_type="companion.message", payload=json.dumps(payload, ensure_ascii=False)))
         # status_proactive 留在 LLM 上下文中（用户可回复），空消息不应在那里累积出一段空白对话回合。
         if text.strip():
-            main_conv = await get_or_create_main_conversation(db, user_id)
+            main_conv = await get_or_create_special_conversation(db, user_id, "companion")
             db.add(Message(conversation_id=main_conv.id, role="assistant", content=text, subtype="status_proactive"))
             record_user_outreach(user_id, text.strip(), followup_timeout_seconds)
         await db.commit()

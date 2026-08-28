@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any, Literal
 
 from components import DEFAULT_LANGUAGE
@@ -60,3 +61,38 @@ class AgentPromptConfig(BaseModel):
     custom_expressions: list[Any] | None = None
     available_actions: list[str] = Field(default_factory=list)
     language: str = DEFAULT_LANGUAGE
+
+
+class PromptPresetBlock(str, Enum):
+    """内置系统提示词模板支持引用的块；与 ``prompt_blocks.BLOCK_RENDERERS`` 一一对应。新增条目必须同步：``prompt_blocks.py`` 注册 renderer,``prompt_presets.py`` 任意 body 必须能用该块。"""
+
+    LANGUAGE_DIRECTIVE = "LANGUAGE_DIRECTIVE"
+    HELP_GUIDANCE = "HELP_GUIDANCE"
+    COMPANION_PERSONA = "COMPANION_PERSONA"
+    OUTFIT = "OUTFIT"
+    USER_PROFILE = "USER_PROFILE"
+    AUTO_INJECT = "AUTO_INJECT"
+    INFERRED_PROFILE = "INFERRED_PROFILE"
+    PROACTIVE_MEMORY = "PROACTIVE_MEMORY"
+    MEMORY_TOOL_GUIDANCE = "MEMORY_TOOL_GUIDANCE"
+    SESSION_SEARCH_GUIDANCE = "SESSION_SEARCH_GUIDANCE"
+    SKILLS_GUIDANCE = "SKILLS_GUIDANCE"
+    MEDIA_GUIDANCE = "MEDIA_GUIDANCE"
+    ATTACHMENT_GUIDANCE = "ATTACHMENT_GUIDANCE"
+    TOOL_USE_ENFORCEMENT = "TOOL_USE_ENFORCEMENT"
+    STEER_CHANNEL_NOTE = "STEER_CHANNEL_NOTE"
+    SKILLS_LIST = "SKILLS_LIST"
+    ENVIRONMENT_HINTS = "ENVIRONMENT_HINTS"
+    PLATFORM_HINTS = "PLATFORM_HINTS"
+    USER_IDENTITY_OVERRIDE = "USER_IDENTITY_OVERRIDE"
+    VOLATILE_HEADER = "VOLATILE_HEADER"
+
+
+class PromptPreset(BaseModel):
+    """内置系统提示词预设（不可变，目前为代码常量）。预设体含 ``{{BLOCK}}`` 占位符，运行期由 ``prompt_blocks`` 的 renderer 注册表解析；strict 解析，未识别占位符记录 warning 并保留原文。"""
+
+    id: str
+    name: str
+    description: str = ""
+    icon_key: str
+    body: str = Field(min_length=1, max_length=8192)

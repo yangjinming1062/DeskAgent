@@ -33,9 +33,9 @@ backend/
 ├── services/                 # 业务/编排层，无 facade，按子包直接 import
 │   ├── auth/                 # 身份凭据能力集与配置响应构建
 │   ├── channels/             # 外部 IM 通道桥（适配器注册表 + 无头回合桥接 + 绑定管理；微信 iLink）
-│   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）
+│   ├── chat/                 # 对话编排（含 chat_emitter 收敛 ↔gateway import 环）；chat/prompt_blocks 与 prompt_presets 单源管理 5 套系统预设对话的提示词装配
 │   ├── companion/            # 角色定义、形象资产、affect、voice catalog（含 mesh2d / seethrough 2D 切分子包）
-│   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）
+│   ├── conversation/         # 主对话与 subtype 语义的唯一定义处（叶子包，只依赖 modules）；bootstrap.ensure_system_conversations_for_user 在 onboarding 完成时刻建 5 套预设对话
 │   ├── gateway/              # JSON-RPC + WS 入口 + IPC future
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
@@ -92,12 +92,14 @@ backend/
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |
 | 工具三层分类（backend / memory / runner） | 本模块独有 | 本 README §1 |
 | 工具集 id 枚举与禁用语义 | 对客户端 / Runner | [PROTOCOL.md §2.2](../PROTOCOL.md) |
+| 系统预设对话（5 套并列、`system_preset_id` 字段、`is_deletable`/`is_renamable` 守卫） | 对客户端 | [PROTOCOL.md §1.8](../PROTOCOL.md) |
 | IM 通道桥（REST、im 会话只读、配对审批、reply-only 语义） | 对客户端 / 外部 IM 渠道 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
 
 ## 6. 已知限制
 
 | 限制 | 说明 |
 |------|------|
+| **每用户固定 5 套系统预设对话不可删改** | 当前未提供 hide/disable 系统预设对话的开关；非 oversea 流量用户也必须看到全部 5 条会话作为入口。想减少入口只能改预设的可见性（待做）。 |
 | **web 单副本语义（chat 亲和）** | 运行时 chat 会话（流式 / 后台回合）与 IPC future 在进程内存，多 web 副本需粘性 WS 且不解决迁移互斥（lifespan 自动迁移无并发锁）；限流也是进程内的。打扰档位与 Cron 回合派发已跨副本安全。3D 模型生成已并入 web,共享 web 单副本语义——并发长任务数受事件循环调度带宽限制，需要水平扩展时再单独评估。 |
 | **异步会话关系懒加载不可用** | 关系属性在查询后访问必须显式预加载（selectinload/joinedload），否则运行时抛错；新增跨表访问时需同步补加载选项。 |
 | **MiniMax 视频 URL 短时效** | 新版轮询直接返回下载 URL，旧版（Hailuo）还有取文件第二跳；两者 URL 都是短时效的，必须**立即下载落临时媒体目录**，不能直接返给前端。 |

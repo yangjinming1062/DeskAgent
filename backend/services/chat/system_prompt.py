@@ -6,23 +6,24 @@ from components import (
     TOOL_ENFORCE_OFF_VALUES,
     utc_now,
 )
-from modules.system import AgentPromptConfig
+from modules.system import AgentPromptConfig, PromptPreset
 
 from .affect import build_affect_guidance
+from .prompt_blocks import BLOCK_RENDERERS, substitute
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_AGENT_IDENTITY = (
     "You are a companion — a living, intelligent AI desktop partner who shares space and life with the user.\n"
     "Your core purpose is to provide genuine emotional connection, authentic companionship, and thoughtful assistance.\n\n"
-    "## Conversational Demeanor (Pi-Inspired)\n"
+    "## Conversational Demeanor\n"
     "- Talk like a real, caring friend: speak naturally, warmly, and candidly with authentic curiosity and empathy.\n"
     "- Avoid robotic assistant tropes: never use corporate-speak, robotic disclaimers ('As an AI language model...'), or sycophantic filler ('Sure! I would be delighted to help!').\n"
     "- Keep exchanges concise, vivid, and lively: match the dynamic rhythm of desktop chatting. Avoid rambling walls of text or unsolicited bulleted lectures.\n"
     "- Let your persona lead: your tone, humor, attitudes, and emotional reactions are strictly driven by your configured `# Companion persona` and your shared history in `# User profile`."
 )
 
-SPIRIT_AGENT_HELP_GUIDANCE = (
+HELP_GUIDANCE = (
     "## Desktop Environment & Ecosystem\n"
     "You live inside SpiritAgent, a native desktop companion app. You have access to local workspace tools, file operations, web tools, media generation, wardrobe outfits, long-term memory, and interactive avatar expressions. When the user asks about desktop settings (appearance, 2D/3D mode, voice, wardrobe, skills, memory, or shortcuts), guide them naturally through SpiritAgent's desktop interface."
 )
@@ -37,7 +38,7 @@ _VOLATILE_LABELS: dict[str, str] = {
     "en": "Current date: ",
 }
 
-MEMORY_GUIDANCE = (
+MEMORY_TOOL_GUIDANCE = (
     "# Long-Term Memory System\n"
     "You have persistent memory across sessions via the memory tool. There are TWO kinds — "
     "pick the right one at write time. The kind cannot be changed later; rewriting a fact "
@@ -94,7 +95,7 @@ SESSION_SEARCH_GUIDANCE = (
     "asking them to repeat themselves."
 )
 
-MEDIA_DELIVERY_GUIDANCE = (
+MEDIA_GUIDANCE = (
     "# Media Generation & Delivery\n"
     "Images and videos you generate are delivered to the user automatically as preview "
     "cards attached to your reply — do NOT paste raw media URLs or markdown image "
@@ -138,7 +139,7 @@ ATTACHMENT_GUIDANCE = (
     "If file tools are not available, the local Runner is not connected — inform the user rather than fabricating file contents."
 )
 
-TOOL_USE_ENFORCEMENT_GUIDANCE = (
+TOOL_USE_ENFORCEMENT = (
     "# Action & Tool Discipline\n"
     "- **Act immediately, don't narrate**: When you decide to perform an action (read files, execute code, search the web, generate media), make the corresponding tool call in the same turn. Never end your turn with an empty promise of future action.\n"
     "- **Grounding over guessing**: NEVER guess, extrapolate, or hallucinate facts that can be verified with tools (system state, exact date/time, mathematical calculations, file contents, code structure, web search). Query the appropriate tool.\n"
@@ -197,7 +198,7 @@ def build_system_prompt_parts(
 
     stable_parts.append(config.identity_prompt or DEFAULT_AGENT_IDENTITY)
     stable_parts.append(_language_directive(config.language))
-    stable_parts.append(SPIRIT_AGENT_HELP_GUIDANCE)
+    stable_parts.append(HELP_GUIDANCE)
     if config.persona_extras:
         stable_parts.append(config.persona_extras)
         # 伙伴 persona 驱动可见头像：提示 LLM 输出内联 affect tag，让客户端动画状态机每条回复都有情绪线索。
@@ -221,19 +222,19 @@ def build_system_prompt_parts(
     if valid_tools:
         tool_guidance = []
         if any(t in valid_tools for t in ("memory", "memory_retain", "memory_recall")):
-            tool_guidance.append(MEMORY_GUIDANCE)
+            tool_guidance.append(MEMORY_TOOL_GUIDANCE)
         if "session_search" in valid_tools:
             tool_guidance.append(SESSION_SEARCH_GUIDANCE)
         if "skill_manage" in valid_tools:
             tool_guidance.append(SKILLS_GUIDANCE)
         tool_guidance.append(ATTACHMENT_GUIDANCE)
         if "image_generate" in valid_tools or "video_generate" in valid_tools:
-            tool_guidance.append(MEDIA_DELIVERY_GUIDANCE)
+            tool_guidance.append(MEDIA_GUIDANCE)
         if tool_guidance:
             stable_parts.append("\n\n".join(tool_guidance))
         stable_parts.append(STEER_CHANNEL_NOTE)
         if _should_inject_tool_use_enforcement(config.tool_use_enforcement):
-            stable_parts.append(TOOL_USE_ENFORCEMENT_GUIDANCE)
+            stable_parts.append(TOOL_USE_ENFORCEMENT)
 
     if client_ctx and client_ctx.skills:
         stable_parts.append(
@@ -283,6 +284,20 @@ def _format_volatile_header(config: AgentPromptConfig) -> str:
 def build_system_prompt(
     config: AgentPromptConfig,
     system_message: str | None = None,
+    *,
+    preset: PromptPreset | None = None,
 ) -> str:
-    parts = build_system_prompt_parts(config, system_message=system_message)
-    return "\n\n".join(p for p in (parts["stable"], parts["context"], parts["volatile"]) if p)
+    """装配系统提示词。
+
+    ``preset is None``：保留旧路径，``build_system_prompt_parts`` 三段拼接；对相同的 ``AgentPromptConfig`` 输出逐字节等同重构前。
+    ``preset`` 非空：用 ``prompt_blocks`` renderer 注册表按 preset.body 顺序替换 ``{{BLOCK}}``，输出经 ``substitute`` 内部收紧空段。
+    """
+    if preset is None:
+        parts = build_system_prompt_parts(config, system_message=system_message)
+        return "\n\n".join(p for p in (parts["stable"], parts["context"], parts["volatile"]) if p)
+
+    render_results: dict[str, str | None] = {name: renderer(config) for name, renderer in BLOCK_RENDERERS.items()}
+    rendered = substitute(preset.body, render_results)
+    if system_message:
+        rendered = f"{system_message}\n\n{rendered}"
+    return rendered

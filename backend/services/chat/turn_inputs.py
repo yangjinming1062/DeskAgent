@@ -27,7 +27,7 @@ from ..companion import (
     get_active_model,
     retrieve_proactive_memories,
 )
-from ..conversation import MAIN_KIND, UI_ONLY_SUBTYPES
+from ..conversation import SPECIAL_KIND, UI_ONLY_SUBTYPES
 from ..gateway import RuntimeSession
 from ..llm import (
     MissingLlmConfigError,
@@ -43,6 +43,7 @@ from ..llm import (
 )
 from ..tools import REGISTRY, NativeMemory, schema_name
 from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
+from .prompt_presets import resolve_preset
 from .system_prompt import build_system_prompt
 
 logger = get_logger(__name__)
@@ -262,8 +263,8 @@ async def _build_turn_inputs(
     )
     context = _history_to_responses_context(
         history,
-        build_system_prompt(agent_config),
-        drop_tool_intermediates=conv.kind == MAIN_KIND,
+        build_system_prompt(agent_config, preset=resolve_preset(conv.system_preset_id)),
+        drop_tool_intermediates=conv.kind == SPECIAL_KIND,
     )
 
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
@@ -273,9 +274,9 @@ async def _build_turn_inputs(
 
     # 计算上下文 Token 估算值：结合 Responses 权威基线与 CJK 全量/增量估算
     full_context_tokens = approx_responses_tokens(context["instructions"], context["input"])
-    baseline, subsequent_msgs = _find_authoritative_token_baseline(history, is_main_conversation=(conv.kind == MAIN_KIND))
+    baseline, subsequent_msgs = _find_authoritative_token_baseline(history, is_main_conversation=(conv.kind == SPECIAL_KIND))
     if baseline is not None:
-        drop_tools = conv.kind == MAIN_KIND
+        drop_tools = conv.kind == SPECIAL_KIND
         delta_items = [
             item
             for m in subsequent_msgs

@@ -114,10 +114,12 @@ def assemble_debug_prompt(
     outfit_text: str = "",
     auto_inject_text: str = "",
     db_data: dict[str, Any] | None = None,
+    preset_id: str = "companion",
 ) -> dict[str, Any]:
     from modules.auth import ChatRequestClientContext
     from modules.system import AgentPromptConfig
     from services.chat.affect import BUILTIN_EMOTIONS
+    from services.chat.prompt_presets import BUILTIN_PRESETS, resolve_preset
     from services.chat.system_prompt import build_system_prompt
     from services.companion import render_extras
     from services.llm import approx_responses_tokens, message_to_response_items
@@ -172,7 +174,7 @@ def assemble_debug_prompt(
         platform=platform,
     )
 
-    instructions = build_system_prompt(agent_config)
+    instructions = build_system_prompt(agent_config, preset=resolve_preset(preset_id))
 
     input_items = message_to_response_items(
         {
@@ -196,6 +198,8 @@ def assemble_debug_prompt(
             "allowed_actions": sorted(actions),
             "active_tool_names": valid_tool_names,
             "persona_name": persona_dict.get("name", ""),
+            "preset_id": preset_id,
+            "preset_name": BUILTIN_PRESETS[resolve_preset(preset_id).id].name,
         },
     }
 
@@ -213,6 +217,7 @@ def format_human_readable(result: dict[str, Any]) -> str:
     lines.append(separator)
     lines.append(f"• 语言环境 (Language): {meta['language']}")
     lines.append(f"• 运行平台 (Platform): {meta['platform']}")
+    lines.append(f"• 系统预设 (Preset): {meta['preset_id']} ({meta['preset_name']})")
     lines.append(f"• Token 估算 (Estimated Tokens): ~{meta['estimated_tokens']}")
     lines.append(f"• 活跃工具数 (Active Tools): {len(meta['active_tool_names'])} 个")
     lines.append(f"• 可用动作 (Available Actions): {', '.join(meta['allowed_actions']) or 'None'}")
@@ -257,6 +262,12 @@ def main() -> int:
         help="模拟用户发出的消息内容",
     )
     parser.add_argument("--model", default="default", help="大模型槽位名称")
+    parser.add_argument(
+        "--preset",
+        default="companion",
+        choices=["companion", "developer", "product_manager", "copywriter", "language_teacher"],
+        help="系统提示词预设 id；默认 companion(完整伴侣语气)，其余工作面预设抑制伴侣 persona 与着装联动",
+    )
     parser.add_argument("--language", choices=["zh", "en"], default="zh", help="回复语言")
     parser.add_argument(
         "--platform",
@@ -383,6 +394,7 @@ def main() -> int:
         platform=args.platform,
         enable_tools=not args.without_tools,
         db_data=db_data,
+        preset_id=args.preset,
     )
 
     if args.raw_json:

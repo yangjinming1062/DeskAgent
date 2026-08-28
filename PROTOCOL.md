@@ -207,6 +207,27 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 **改此处需同步**：backend services/channels 与 modules/channels、backend/README.md、client 通道设置页与只读守卫（client/renderer/companion/README.md）、DESIGN.md、ARCHITECTURE.md §5.4。
 
+### 1.8 系统预设对话（5 套并列的特殊会话）
+
+每位用户 onboarding 完成时刻一次性创建 5 条 `kind='special'` 的系统预设对话（companion / developer / product_manager / copywriter / language_teacher），由 `Conversation.system_preset_id` 标识；产品意图见 [DESIGN.md §9](DESIGN.md)，装配规则见 [ARCHITECTURE.md §6.1](ARCHITECTURE.md)。**会话数据契约**（DB 列 + 列表展示语义，非实现细节）：
+
+| 字段 | 契约 |
+|------|------|
+| `Conversation.system_preset_id` | 5 个预设 id 或 NULL；NULL = 用户自建普通对话。**非 NULL 时** 5 套会话与预设一一对应，每用户每预设至多一条（部分唯一索引 `uq_conversations_user_preset`） |
+| `Conversation.kind` | 值集合 `{special, standard, im, cron}`；`special` 严格对应 `system_preset_id IS NOT NULL`，im 渠道为 `im`，cron 独占会话为 `cron`，用户自建普通对话为 `standard` |
+| `Conversation.is_deletable` / `is_renamable` | 系统预设对话一律 False；用户对话默认 True |
+| 系统预设对话的标题 | 由代码预设常量名（陪伴 / 工程师 / 产品经理 / 文案秘书 / 语言老师）固定，客户端应忽略 PATCH /title |
+| 列表排序 | 系统预设对话恒在所有用户对话与手动置顶之前；预设间按 companion→developer→product_manager→copywriter→language_teacher 顺序对齐 |
+
+**对话级 REST**（现有 `/api/sessions` 端点的隐式约束）：
+
+- `PATCH /api/sessions/{id}`：当 `kind='special'` 或 `is_renamable=False` 时返回 403（系统预设对话不可改名与变更）。
+- `DELETE /api/sessions/{id}`：当 `kind='special'` 或 `is_deletable=False` 时返回 403（系统预设对话不可被删除）。
+- `session.get_main`（WS RPC）：现存的方法指代「**用户的主对话**」，返回 `system_preset_id='companion'` 的特殊对话。
+- 既有 `session.create` 等方法对系统预设对话同样适用（用户能在 5 套预设之上再 clone 一个变体；但 5 套预设本身不可被 PATCH/DELETE）。
+
+**改此处需同步**：backend services/conversation/bootstrap.py 与 services/chat/prompt_presets.py、api/v1/sessions.py 与 services/gateway/handlers.py 路由守卫、backend/README.md、client 对话列表页（隐藏删除/改名入口、对系统预设用预设 icon + 预设名），DESIGN.md §9。
+
 ---
 
 ## 2. Client ↔ Runner 契约

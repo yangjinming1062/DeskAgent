@@ -198,11 +198,14 @@ def upgrade() -> None:
         sa.Column("user_id", sa.Integer(), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=True),
         sa.Column("kind", sa.String(length=32), server_default=sa.text("'standard'"), nullable=False),
+        sa.Column("system_preset_id", sa.String(length=32), nullable=True),
         sa.Column("title", sa.Text(), nullable=False),
         sa.Column("pinned_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cwd", sa.String(length=1024), nullable=True),
         sa.Column("settings_json", sa.Text(), nullable=True),
+        sa.Column("is_deletable", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
+        sa.Column("is_renamable", sa.Boolean(), server_default=sa.text("TRUE"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
@@ -211,6 +214,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_conversations_parent_id"), "conversations", ["parent_id"], unique=False)
+    op.create_index(op.f("ix_conversations_system_preset_id"), "conversations", ["system_preset_id"], unique=False)
     op.create_index(op.f("ix_conversations_user_id"), "conversations", ["user_id"], unique=False)
     op.create_table(
         "cron_jobs",
@@ -410,8 +414,8 @@ def upgrade() -> None:
     op.create_index("uq_companion_outfits_one_splitting", "companion_outfits", ["user_id"], unique=True, postgresql_where=sa.text("status = 'splitting'"))
     # 每用户一条激活 2d 行：非 outfit 成功接缝与穿着翻转共用先停用后激活顺序，切分窗口内的并发激活由此兜底
     op.create_index("uq_companion_2d_models_one_active", "companion_2d_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
-    # 每用户一条 main 会话；全 (user_id, kind) 唯一会禁止多条 "standard" 会话。防御并发 boot / cron kick / prompt.submit 的 get_or_create 竞态。
-    op.create_index("uq_conversations_user_main", "conversations", ["user_id"], unique=True, postgresql_where=sa.text("kind = 'main'"))
+    # 每用户每预设最多一条系统预设对话：防止 ensure_system_conversations_for_user 重复插入或并发跑出多行。
+    op.create_index("uq_conversations_user_preset", "conversations", ["user_id", "system_preset_id"], unique=True, postgresql_where=sa.text("system_preset_id IS NOT NULL"))
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
     op.create_index("uq_companion_expressions_user_name", "companion_expressions", ["user_id", "name"], unique=True)
     op.create_index("uq_memories_user_context", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))

@@ -1,3 +1,4 @@
+from .bootstrap import ensure_system_conversations_for_user
 from .context_window import load_recent_context_window
 from .formatting import format_messages_compact
 from .main_conversation import (
@@ -5,13 +6,13 @@ from .main_conversation import (
     CRON_KIND,
     HINT_TEXT,
     IM_KIND,
-    MAIN_KIND,
     MEDIA_STATUS_SUBTYPE,
+    SPECIAL_KIND,
     STANDARD_KIND,
     UI_ONLY_SUBTYPES,
-    get_main_conversation,
     get_or_create_cron_conversation,
-    get_or_create_main_conversation,
+    get_or_create_special_conversation,
+    get_special_conversation,
 )
 from .proactive_state import (
     ProactiveState,
@@ -28,17 +29,18 @@ __all__ = [
     "CRON_KIND",
     "HINT_TEXT",
     "IM_KIND",
-    "MAIN_KIND",
     "MEDIA_STATUS_SUBTYPE",
     "ProactiveState",
+    "SPECIAL_KIND",
     "STANDARD_KIND",
     "UI_ONLY_SUBTYPES",
     "UserProactiveRecord",
+    "ensure_system_conversations_for_user",
     "format_messages_compact",
-    "get_main_conversation",
     "get_or_create_cron_conversation",
-    "get_or_create_main_conversation",
+    "get_or_create_special_conversation",
     "get_personality_tags",
+    "get_special_conversation",
     "get_user_proactive_record",
     "load_recent_context_window",
     "note_user_contact",

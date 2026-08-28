@@ -3,7 +3,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-MAIN_KIND = "main"
+# ``SPECIAL_KIND`` 对应系统预设对话：每用户固定 5 条（companion/developer/product_manager/copywriter/language_teacher），system_preset_id 标注具体预设。原来的 ``MAIN_KIND = 'main'`` 单条主会话已合并入 ``special + system_preset_id='companion'``。
+SPECIAL_KIND = "special"
 # 自发的 cron 轮次独占独立会话：渲染端的 ``session.get_main`` 无法通过 conversation_id 匹配去取消进行中的 cron chat_task，cron 写入也不会与主会话 prompt.submit 交错；该会话仅 WS 派发器挂载。
 CRON_KIND = "cron"
 # 外部 IM 渠道桥接的会话：统一一种 kind，每渠道一条专属对话由 channel_bindings.conversation_id 唯一外键锚定（services/channels/conversation.py 工厂）；prompt.submit 拒写，桌面端只读旁观。
@@ -11,7 +12,7 @@ IM_KIND = "im"
 # ``kind`` 列的 SQL server_default 值。
 STANDARD_KIND = "standard"
 
-# UI-only 子类型：渲染端展示但排除出 LLM 上下文；与 MAIN_KIND 同处一处保证所有会话读取者一致。status_proactive 故意不在此集合——它是用户可回应的真实轮次。
+# UI-only 子类型：渲染端展示但排除出 LLM 上下文；与 SPECIAL_KIND 同处一处保证所有会话读取者一致。status_proactive 故意不在此集合——它是用户可回应的真实轮次。
 UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "status_reaction"})
 
 # 仅肢体语言回复（无文本、只有 [affect:...]/[action:...] tag）：以 assistant 行持久化，让下一轮 LLM 上下文仍记得伙伴已做出反应；渲染端显示为淡化痕迹而非气泡。故意不在 UI_ONLY_SUBTYPES，必须送入 LLM。
@@ -23,26 +24,46 @@ MEDIA_STATUS_SUBTYPE: str = "status_media"
 HINT_TEXT = "在这里和精灵聊日常吧～需要干活时可以新开一个独立对话，避免上下文互相干扰。"
 
 
-async def get_main_conversation(db: AsyncSession, user_id: int) -> Conversation | None:
-    return (await db.execute(select(Conversation).where(Conversation.user_id == user_id, Conversation.kind == MAIN_KIND))).scalar_one_or_none()
+async def get_special_conversation(db: AsyncSession, user_id: int, preset_id: str) -> Conversation | None:
+    """获取用户某一系统预设的特殊对话；preset_id ∈ {companion, developer, product_manager, copywriter, language_teacher}。"""
+    return (
+        await db.execute(
+            select(Conversation).where(
+                Conversation.user_id == user_id,
+                Conversation.kind == SPECIAL_KIND,
+                Conversation.system_preset_id == preset_id,
+            ),
+        )
+    ).scalar_one_or_none()
 
 
-async def get_or_create_main_conversation(db: AsyncSession, user_id: int) -> Conversation:
-    """获取用户主会话，首次访问时创建：并发调用方各自打开 SESSION_LOCAL，读-插非原子；唯一局部索引 ``uq_conversations_user_main`` 使重复插入失败，回滚重读使败者收敛到胜者行。"""
-    conv = await get_main_conversation(db, user_id)
+async def get_or_create_special_conversation(db: AsyncSession, user_id: int, preset_id: str) -> Conversation:
+    """获取系统预设对话，首次访问时创建；并发竞态由 ``uq_conversations_user_preset`` 部分唯一索引兜底，败者回滚重读到胜者行。"""
+    conv = await get_special_conversation(db, user_id, preset_id)
     if conv is not None:
         return conv
-    conv = Conversation(user_id=user_id, kind=MAIN_KIND, title="日常对话")
-    db.add(conv)
+    from services.chat.prompt_presets import resolve_preset
+
+    preset = resolve_preset(preset_id)
+    conv = Conversation(
+        user_id=user_id,
+        kind=SPECIAL_KIND,
+        system_preset_id=preset_id,
+        title=preset.name,
+        is_deletable=False,
+        is_renamable=False,
+    )
     try:
-        await db.flush()
+        async with db.begin_nested():
+            db.add(conv)
+            await db.flush()
+            if preset_id == "companion":
+                db.add(Message(conversation_id=conv.id, role="system", content=HINT_TEXT, subtype="hint"))
     except IntegrityError:
-        await db.rollback()
-        existing = await get_main_conversation(db, user_id)
+        existing = await get_special_conversation(db, user_id, preset_id)
         if existing is not None:
             return existing
         raise
-    db.add(Message(conversation_id=conv.id, role="system", content=HINT_TEXT, subtype="hint"))
     await db.commit()
     await db.refresh(conv)
     return conv
