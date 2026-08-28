@@ -33,3 +33,18 @@ backend + runner 的 static import-shape 检查器（被 `.pre-commit-config.yam
 ## 3. Onboarding 引导词音频生成与校验 — `onboarding-audio/`
 
 包含预渲染引导词音频元信息 `manifest.json` 与合成/校验脚本 `generate_onboarding_audio.py`。详见 [scripts/onboarding-audio/README.md](onboarding-audio/README.md)。
+
+## 4. 提示词调试与检查 — `debug_prompt.py`
+
+用于呈现与调试伙伴完成 onboarding 引导流程以及用户发出消息时实际装配的完整提示词（系统提示词、3D 动作引导、用户画像、工具集与请求负载）。
+
+```bash
+# 查看默认完成 onboarding 后的完整提示词与请求分段
+uv run --project backend python scripts/debug_prompt.py
+
+# 自定义角色、用户与消息，并以原始 JSON 输出
+uv run --project backend python scripts/debug_prompt.py -m "你好呀！" --persona-name "星奈" --json
+
+# 连接数据库读取真实用户的人设与记忆状态
+uv run --project backend python scripts/debug_prompt.py --db --user-id 1
+```
