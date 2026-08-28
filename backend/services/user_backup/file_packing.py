@@ -50,6 +50,21 @@ def restore_files(extract_root: Path, source_uid: int, target_uid: int, *, mode:
     mapping: dict[str, str] = {}
     files_root = extract_root / "files"
     if not files_root.exists():
+        # 防御：overwrite 模式意味着磁盘刚被 rmtree，若此处恢复不出任何文件会留下空目录；
+        # 必须抛错让 import_user_backup 回滚 DB，避免又一次静默数据丢失。
+        if mode == "overwrite":
+            logger.error(
+                "backup restore_files: extract_root has no files/ subdir in overwrite mode",
+                extra={"extract_root": str(extract_root), "source_uid": source_uid, "target_uid": target_uid},
+            )
+            raise RuntimeError(
+                f"Imported archive has no files/ payload but overwrite mode requires restoring user assets "
+                f"(extract_root={extract_root})."
+            )
+        logger.warning(
+            "backup restore_files: extract_root has no files/ subdir",
+            extra={"extract_root": str(extract_root), "mode": mode},
+        )
         return UrlRewriter(mapping)
 
     for sub in ("companion-assets", "companion-models"):

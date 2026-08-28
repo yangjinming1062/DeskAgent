@@ -323,26 +323,27 @@ async def import_user_backup(
         source_uid = int(manifest["source_user_id"])
         rows = deserialize_rows(extract_root)
 
-    # 阶段 2：DB 操作；任一异常回滚
-    if mode == "overwrite":
-        await clear_user_scoped_rows(db, user_id)
-        for sub in ("companion-assets", "companion-models"):
-            d = Path(SETTINGS.data_dir) / sub / str(user_id)
-            if d.exists():
-                with contextlib.suppress(Exception):
-                    shutil.rmtree(d, ignore_errors=True)
+        # 阶段 2：DB + 磁盘恢复必须在 with 块内完成 ——
+        # extract_root 随 TemporaryDirectory 退出而清空，restore_files 必须赶在退出前读它。
+        if mode == "overwrite":
+            await clear_user_scoped_rows(db, user_id)
+            for sub in ("companion-assets", "companion-models"):
+                d = Path(SETTINGS.data_dir) / sub / str(user_id)
+                if d.exists():
+                    with contextlib.suppress(Exception):
+                        shutil.rmtree(d, ignore_errors=True)
 
-    rewriter = restore_files(extract_root, source_uid, user_id, mode=mode)
+        rewriter = restore_files(extract_root, source_uid, user_id, mode=mode)
 
-    try:
-        id_map: dict[str, dict[int, int]] = {}
-        for tbl in INSERT_ORDER:
-            new_map = await insert_rows(db, tbl, rows.get(tbl, []), user_id, rewriter, id_map, mode=mode)
-            id_map[tbl] = new_map
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
+        try:
+            id_map: dict[str, dict[int, int]] = {}
+            for tbl in INSERT_ORDER:
+                new_map = await insert_rows(db, tbl, rows.get(tbl, []), user_id, rewriter, id_map, mode=mode)
+                id_map[tbl] = new_map
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
 
     return {
         "mode": mode,
