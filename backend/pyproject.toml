@@ -24,4 +24,5 @@ dependencies = [
     "alembic>=1.19.1",
     "prometheus-client>=0.20.0",
     "numpy>=2.0",
+    "pycryptodome>=3.20.0",
 ]

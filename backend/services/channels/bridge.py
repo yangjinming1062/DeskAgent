@@ -166,6 +166,7 @@ class ChannelTurnEmitter:
         self.reply_text: str | None = None
         self.affect_emotion: str | None = None
         self.error: str | None = None
+        self.media: list[dict] = []
         self._on_start: Callable[[], Awaitable[None]] | None = None
 
     def bind_typing(self, on_start: Callable[[], Awaitable[None]]) -> None:
@@ -179,6 +180,9 @@ class ChannelTurnEmitter:
         elif frame_type == "message.complete":
             self.reply_text = data.get("text")
             self.affect_emotion = (data.get("affect") or {}).get("emotion")
+            new_media = data.get("media")
+            if isinstance(new_media, list):
+                self.media.extend(m for m in new_media if isinstance(m, dict))
         elif frame_type == "error":
             self.error = data.get("message")
 
@@ -248,7 +252,12 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
         emitter.bind_typing(_typing_on)
 
     client_context = ChatRequestClientContext(platform_hints=adapter.platform_hint()) if adapter.platform_hint() else None
-    req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=last.text), client_context=client_context)
+    attachments = [{"type": a.type, "file_url": a.url, **({"name": a.name} if a.name else {})} for a in last.attachments]
+    req = ChatRequest(
+        session_id=session_id,
+        message=ChatMessageRequest(role="user", content=last.text, attachments=attachments or None),
+        client_context=client_context,
+    )
     try:
         await run_chat_turn(req, llm_config, user_settings, snapshot.user_id, emitter)
     except Exception:
@@ -271,12 +280,35 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
 
     plain = strip_markdown(emitter.reply_text)
     delivered = False
-    for chunk in chunk_text(plain, SETTINGS.weixin_reply_max_chars):
+    chunks = chunk_text(plain, SETTINGS.weixin_reply_max_chars)
+    media = emitter.media
+    if media:
+        # 媒体合并到第一条 chunk（同一条 iLink sendmessage）；若失败则后续 chunk 降级为纯文本。
+        head = chunks[0] if chunks else None
         try:
-            await adapter.send_text(last.peer_id, chunk, last.context_token)
+            await adapter.send_media(last.peer_id, head, media, last.context_token)
             delivered = True
+            for chunk in chunks[1:]:
+                try:
+                    await adapter.send_text(last.peer_id, chunk, last.context_token)
+                    delivered = True
+                except Exception:
+                    logger.exception("reply chunk delivery failed", extra={"binding": snapshot.id, "channel": snapshot.channel})
         except Exception:
-            logger.exception("reply delivery failed", extra={"binding": snapshot.id, "channel": snapshot.channel})
+            logger.exception("media reply delivery failed; falling back to text", extra={"binding": snapshot.id, "channel": snapshot.channel})
+            for chunk in chunks:
+                try:
+                    await adapter.send_text(last.peer_id, chunk, last.context_token)
+                    delivered = True
+                except Exception:
+                    logger.exception("reply delivery failed", extra={"binding": snapshot.id, "channel": snapshot.channel})
+    else:
+        for chunk in chunks:
+            try:
+                await adapter.send_text(last.peer_id, chunk, last.context_token)
+                delivered = True
+            except Exception:
+                logger.exception("reply delivery failed", extra={"binding": snapshot.id, "channel": snapshot.channel})
     if not delivered:
         try:
             await adapter.send_text(last.peer_id, _DELIVERY_FAILED_FALLBACK, last.context_token)

@@ -6,6 +6,16 @@ from components import safe_json_loads
 
 
 @dataclass(frozen=True)
+class InboundAttachment:
+    """入站附件（图片/语音/文件）：url 是后端 temp-media 公网地址（`/api/media/files/...`），type 与现有
+    ChatRequest 附件约定一致（image / video）；LLM 看到的就是 input_image/input_video。"""
+
+    type: str  # "image" | "file" | "voice"  (LLM 侧按 image 消费 voice)
+    url: str
+    name: str = ""
+
+
+@dataclass(frozen=True)
 class InboundMessage:
     """适配器归一化后的入站消息：channel 是注册表键，peer_id 是渠道侧对端标识（如微信 wxid）。"""
 
@@ -16,6 +26,7 @@ class InboundMessage:
     # 微信 iLink 的回复凭据（reply-only：send 必须回显入站消息携带的 token）；其它渠道为 None。
     context_token: str | None = None
     is_group: bool = False
+    attachments: tuple[InboundAttachment, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,6 +83,11 @@ class ChannelAdapter:
 
     async def send_text(self, peer_id: str, text: str, context_token: str | None = None) -> None:
         raise NotImplementedError
+
+    async def send_media(self, peer_id: str, text: str | None, media: list[dict], context_token: str | None = None) -> None:
+        """出站媒体（与回复文本合并成一条消息）；默认回退到仅文本，媒体被丢弃。"""
+        if text:
+            await self.send_text(peer_id, text, context_token=context_token)
 
     async def send_typing(self, peer_id: str, context_token: str | None = None, status: int = 1) -> None:
         """默认 no-op：不支持 typing 的渠道静默跳过。"""
