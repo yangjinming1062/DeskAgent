@@ -1,7 +1,7 @@
 """Outfit service —— 2D 换装外观生命周期：草稿生成 → 确认转正切分 → 穿着 / 删除。
 
 服装 / 发型是可换元素而非身份变更（DESIGN §5.4 形象锁定的豁免，同背面种子先例）：
-身份锚点恒为激活头像行的正面种子，本服务不检查 raise_if_image_sealed。
+身份锚点恒为激活头像行的头像种子图（避免派生图迭代失真），本服务不检查 raise_if_image_sealed。
 两段式激活不变量：切分完成前旧 2d 行保持激活，翻转只发生在 2d 管线的成功
 接缝（2d pipeline.py）；提前翻转会令 get_active_mesh2d_response 落空、精灵掉蛋。
 所有外观状态校验与翻转（含管线接缝）共用用户级锁——锁外校验会让并发双击确认
@@ -226,9 +226,9 @@ async def create_outfit_draft(
         raise OutfitError("请先描述想要的着装，或上传一张参考图")
 
     avatar, _, species, appearance, personality, style, rig_type = await _outfit_generation_context(db, user_id)
-    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
+    identity_uri = load_avatar_bytes_as_data_uri(avatar.asset_url)
     if identity_uri is None:
-        raise OutfitError("身份种子图读取失败，请稍后重试")
+        raise OutfitError("头像种子图读取失败，请稍后重试")
     # 结束读事务：生图往返期间不占连接（短会话纪律）
     await db.commit()
 
@@ -277,9 +277,9 @@ async def regenerate_outfit_draft(db: AsyncSession, user_id: int, outfit_id: int
         raise OutfitStateError("仅草稿状态可以微调重绘")
 
     avatar, _, species, appearance, personality, style, rig_type = await _outfit_generation_context(db, user_id)
-    identity_uri = load_avatar_bytes_as_data_uri(avatar.seed_front_2d_url or avatar.asset_url)
+    identity_uri = load_avatar_bytes_as_data_uri(avatar.asset_url)
     if identity_uri is None:
-        raise OutfitError("身份种子图读取失败，请稍后重试")
+        raise OutfitError("头像种子图读取失败，请稍后重试")
     await db.commit()
 
     source = safe_json_loads(outfit.source_json or "{}", default={})

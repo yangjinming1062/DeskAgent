@@ -37,7 +37,7 @@ function outfitErrMsg(err: unknown, fallback: string): string {
 }
 
 // 衣柜页的设计会话：着装描述 + 可选参考图 → 草稿 → 反馈微调重绘 → 确认入柜并自动穿着。
-// 服装/发型可换、五官锁定——身份由后端用正面种子锚定，这里只收集着装意图。
+// 服装/发型可换、五官锁定——身份由后端用头像种子锚定，这里只收集着装意图。
 export function useOutfitDesignSession(onConfirmed: () => void): {
   messages: DesignMessage[]
   draft: DesignDraft | null

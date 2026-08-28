@@ -93,7 +93,7 @@
 **对话内生成媒体**（改此处需同步：backend 工具与聊天持久化、backend/README.md、client 渲染层与 client/renderer/companion/README.md、DESIGN §6）：
 - 聊天回合经图像/视频生成工具产出的媒体，随对话完成事件以 media 数组（元素为 image / video 类型 + 本服务媒体 URL）下发，并持久化在对应助手消息行；后台完成的视频另以 status_media 送达行落库，实时事件与历史水合看到同一形状。
 - 渲染端在**对话窗**以媒体卡内联预览、点击放大播放；精灵气泡只承载轻量文本，收到媒体时仅提示「点击查看」并支持点击打开对话窗（必要时切到目标会话）——富媒体统一在对话窗展示，不进气泡。
-- 精灵画/拍自己（生成工具 subject='self'）：身份参考由后端自动注入**半身头像**——2D/3D 正面种子图带生成画风，作参考会让身份失真，聊天内自我生成的图像参考一律不用种子图。
+- 精灵画/拍自己（生成工具 subject='self'）：身份参考由后端自动注入**半身头像**（种子图编排与参照基准见 [docs/PIPELINE.md §1](docs/PIPELINE.md)）。
 
 **用户侧聊天附件**（改此处需同步：backend 网关校验与附件生命周期模块、backend/README.md、client 附件 UX 与 client/renderer/companion/README.md、DESIGN §6.1）：
 - 图片附件以 `data:image/*` data URL 随 `prompt.submit` 的 attachments 直发（不落盘）；视频附件因 base64 远超 WS 单帧上限，客户端必须先经 `POST /api/media/videos`（multipart：file + session_id，容器白名单 mp4/mov）换取附件 URL，再以 `{"type": "video", "file_url": ...}` 提交——附件 URL 只认本会话（跨会话引用直接拒绝），绝对形态仅认 `public_base_url` 前缀（第三方绝对 URL 会被拒绝，防止借供应商发任意请求）。

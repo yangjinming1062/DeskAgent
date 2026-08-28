@@ -361,7 +361,9 @@ def build_fullbody_prompt(
 
 
 # 换装约束：五官/物种/性别锁定，服装/发型/配饰可换（DESIGN §5.4 锁定豁免——可换元素而非身份变更）
-_OUTFIT_CHANGE_CLAUSE = "换装要求：与第一张参考图中的角色保持完全相同的身份——五官、脸型、体型、物种与性别严格一致，不得改变；仅重新设计服装、发型与配饰，按下方着装要求呈现。"
+_OUTFIT_CHANGE_CLAUSE = (
+    "换装要求：与第一张参考图（头像）中的角色保持完全相同的身份——五官、脸型、体型、物种与性别严格一致，不得改变；仅重新设计服装、发型与配饰，按下方着装要求呈现。"
+)
 
 
 def build_outfit_prompt(
@@ -372,6 +374,6 @@ def build_outfit_prompt(
     appearance: str = "",
     personality: str = "",
 ) -> str:
-    """换装立绘 prompt：在正面全身 prompt 之上叠加「锁身份、换穿着」约束；身份由主参考图（正面种子）锚定，着装要求进 feedback 槽。"""
+    """换装立绘 prompt：在正面全身 prompt 之上叠加「锁身份、换穿着」约束；身份由主参考图（头像种子图）锚定，着装要求进 feedback 槽。"""
     base = build_fullbody_prompt("front", template=template, style_id=style_id, appearance=appearance, personality=personality)
     return f"{base}{_OUTFIT_CHANGE_CLAUSE}（着装要求：{feedback.strip()}）"
