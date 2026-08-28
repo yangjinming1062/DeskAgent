@@ -11,6 +11,7 @@ from modules.conversation import Message
 from modules.system import ChatMessageRequest, ChatRequest
 
 from ..chat import load_user_settings, run_chat_turn
+from ..gateway import RuntimeSession
 from ..llm import (
     AudioChunk,
     MissingLlmConfigError,
@@ -110,8 +111,14 @@ class VoiceTurn:
                 llm_config = await resolve_user_llm_config(db, s.user.id)
                 user_settings = await load_user_settings(db, s.user.id)
 
+            runtime = RuntimeSession(
+                conversation_id=s.conversation_id,
+                settings={"agent.reasoning_effort": "none", "reasoning": "none"},
+                kind="voice",
+            )
+
             try:
-                await run_chat_turn(req, llm_config, user_settings, s.user.id, emitter)
+                await run_chat_turn(req, llm_config, user_settings, s.user.id, emitter, runtime=runtime)
             except asyncio.CancelledError:
                 speaker.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):

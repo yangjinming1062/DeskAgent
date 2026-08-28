@@ -9,7 +9,7 @@ from .http import get_async_client
 class OpenAIResponsesChatProvider(ChatProvider):
     """Base provider for vendors exposing the OpenAI Responses protocol."""
 
-    REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset()
+    REASONING_EFFORTS: ClassVar[frozenset[str]] = frozenset({"none", "low", "medium", "high"})
     SERVICE_TIERS: ClassVar[frozenset[str]] = frozenset()
     TEMPERATURE_MIN: ClassVar[float] = 0.0
     TEMPERATURE_MAX: ClassVar[float] = 2.0

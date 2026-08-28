@@ -186,7 +186,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.7 实时语音会话通道（/api/voice/ws）
 
-语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。**会话隔离**：每次语音通话通过 `session.create_voice` 独立新建一条 `kind="voice"` 会话，挂断后作为只读历史保留在 chat-dock 列表中；与当前 chat 会话（含 IM）解耦，跨会话信息靠长期记忆共享。服务端在 `session.start` 落地时校验 `kind ∈ {main, standard, voice}`；其他会话（cron 等）一律走 `session.error code="conversation_kind_not_allowed"` 关闭。
+语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。**会话隔离**：每次语音通话通过 `session.create_voice` 独立新建一条 `kind="voice"` 会话，挂断后作为只读历史保留在 chat-dock 列表中；与当前 chat 会话（含 IM）解耦，跨会话信息靠长期记忆共享。服务端在 `session.start` 落地时校验 `kind ∈ {main, standard, voice}`；其他会话（cron 等）一律走 `session.error code="conversation_kind_not_allowed"` 关闭。**低延迟响应**：语音通话场景下 LLM 调用的思考模式被强制关闭（`reasoning_effort="none"`），保证模型以最低延迟流式输出首字文本，即时启动分句 TTS 合成与音频下发。
 
 **全双工链路**：上行二进制帧为裸 PCM（s16le / 单声道 / 16kHz，100ms/块），自 session.ready 起**持续发送、无起停窗口**——话语起止与断句由服务端 VAD 判定（尾静音断句，断句即整段转写），回放下行期间由服务端插话判别（判真即取消回合）。session.start 携带 `duplex: true`（线路模式声明，服务端记录）。下行二进制帧为 TTS 音频**块**：同一音频段的多个块共享段序号，末块 flags bit0 置位（段中断时可能没有末块）；帧头 16 字节小端（magic "SAA1" / flags / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度）。流式供应商走裸 PCM 块（优先，客户端零解码直排）；无流式能力的供应商按段整块下发（供应商原生容器直通）。会话参数（采样率、断句/起说/预滚时长、插话判定阈值、子句切分长度、预取窗口、攒块时长、流式开关、超时与限流）的配置键与默认值见 backend 的 `config.toml.example` [voice] 段。本节锁定契约意图与顺序不变量：
 
