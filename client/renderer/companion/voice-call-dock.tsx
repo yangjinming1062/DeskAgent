@@ -3,19 +3,7 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } f
 
 import { reportInteractionStat } from '@/companion/activity'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
-import {
-  $chatOpen,
-  $chatSessionId,
-  appendAssistantDelta,
-  beginAssistantMessage,
-  finalizeAssistantMessage,
-  pushAffectTraceMessage,
-  pushUserMessage,
-  setAssistantError,
-  setChatOpen,
-  setChatSession,
-  showMediaHint
-} from '@/companion/chat-store'
+import { $chatOpen, pushAffectTraceMessage, setChatOpen, showMediaHint } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $companionVoiceId, $subtitles, setSubtitles } from '@/companion/prefs'
@@ -41,6 +29,14 @@ import { BTN_DANGER, CHIP, CHIP_ACTIVE } from '@/shared/panel'
 import { createPcmCapture, type PcmCapture } from './pcm-capture'
 import { VoiceSegmentPlayer } from './segment-player'
 import { SubtitlesOverlay } from './subtitles-overlay'
+import {
+  appendVoiceAssistantDelta,
+  beginVoiceAssistantMessage,
+  finalizeVoiceAssistantMessage,
+  pushVoiceUserMessage,
+  resetVoiceMessages,
+  setVoiceAssistantError
+} from './voice-store'
 import { VoiceSessionClient, type VoiceSessionStatus, type VoiceTurnEndPayload } from './voice-session'
 
 interface VoiceCallDockProps {
@@ -64,7 +60,7 @@ export const VOICE_CALL_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
 // 面板与精灵刚体一体：恒锚在精灵脚下，拖动面板即拖动精灵（位移直写精灵位置）。
 export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Element {
   const { requestGateway } = useGatewayRequest()
-  const chatSessionId = useStore($chatSessionId)
+  // 不订阅 $chatSessionId / $chatSessionKind：setChatSession 或 hydrate 触发的 effect 重跑会 getUserMedia 重弹权限 + WS 重连。
   const spriteState = useStore($spriteState)
   const subtitlesVisible = useStore($subtitles)
   const pos = useStore($spatialPos)
@@ -280,15 +276,10 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
           sampleWaveform()
         }, 30)
 
-        // VAD 就绪后再建语音会话：绑定当前聊天会话（无则经网关新建），
-        // 建立失败（网关不可用 / 未配置云端语音供应商）进面板错误条，不阻断本地收音显示。
         try {
-          const existing = $chatSessionId.get()
-          const sessionId = existing ?? (await requestGateway<{ session_id: string }>('session.create', {})).session_id
-
-          if (!existing) {
-            setChatSession(sessionId)
-          }
+          // 每次通话独立新 voice 会话；与当前 chat session 解耦，跨通话信息靠长期记忆共享。
+          resetVoiceMessages()
+          const { session_id: sessionId } = await requestGateway<{ session_id: string }>('session.create_voice', {})
 
           session = await VoiceSessionClient.open(sessionId, $companionVoiceId.get(), {
             onStatus: (status, message) => {
@@ -311,7 +302,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               noteActivity()
 
               if (text) {
-                pushUserMessage(text)
+                pushVoiceUserMessage(text)
               }
 
               turnActiveRef.current = true
@@ -322,7 +313,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                 return
               }
 
-              beginAssistantMessage()
+              beginVoiceAssistantMessage()
               setSpriteState('thinking')
             },
             onTtsSegment: (_segIndex, text, segment) => {
@@ -338,7 +329,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               noteActivity()
 
               if (text) {
-                appendAssistantDelta(text)
+                appendVoiceAssistantDelta(text)
               }
 
               setSpriteState('speaking')
@@ -351,7 +342,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
               noteActivity()
               turnActiveRef.current = false
-              finalizeAssistantMessage(payload.text, payload.media?.length ? payload.media : undefined)
+              finalizeVoiceAssistantMessage(payload.text, payload.media?.length ? payload.media : undefined)
               applyTurnEndExtras(payload)
 
               if (!player.playing) {
@@ -366,9 +357,8 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               noteActivity()
               setPanelError(stage === 'asr' ? message : `${stageLabel(stage)}：${message}`)
 
-              // LLM 失败时聊天侧的流式气泡需要收尾成错误态；TTS 段失败只上面板（文字不丢）。
               if (stage === 'llm') {
-                setAssistantError(message)
+                setVoiceAssistantError(message)
               }
             },
             onInterrupted: () => {
@@ -431,7 +421,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       stopSpeaking()
       setSpriteState('idle')
     }
-  }, [requestGateway, chatSessionId, onCloseRef])
+  }, [requestGateway, onCloseRef])
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60)

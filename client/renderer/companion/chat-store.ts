@@ -34,6 +34,8 @@ export const $chatStreamingTick = atom<number>(0)
 // resume 失败回退主会话），而不是每次都回到空白的主会话。
 export const $chatSessionId = atom<string | null>(storedString('da.companion.chatSessionId'))
 export const $chatOpen = atom(false)
+// IM 守卫与语音入口的权威 kind 源：写值由 hydrate 把服务端 info.kind 注入。
+export const $chatSessionKind = atom<string>('standard')
 
 // 当前会话独立参数配置（温度、压缩阈值、思考程度等）
 export interface SessionSettings {
@@ -165,6 +167,8 @@ export function setChatSession(id: string | null): void {
   $turnHadBubbleBreak.set(false)
   $chatSessionId.set(id)
   persistString('da.companion.chatSessionId', id)
+  // setChatSession 是无 info 的重置路径；后续 hydrate 会以服务端权威 kind 覆盖此值。
+  $chatSessionKind.set('standard')
 }
 
 // 用从后端加载的会话替换面板的聊天记录。
@@ -200,6 +204,9 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
   if (info?.settings) {
     $sessionSettings.set(info.settings as SessionSettings)
   }
+
+  // 缺字段回落 standard，与 setChatSession 兜底一致——避免 IM 守卫在 hydrate 完成前的瞬间误判。
+  $chatSessionKind.set(info?.kind ?? 'standard')
 
   // 估算 Token 占用（无精确 usage 时的兜底估算：~3 字符/Token）
   const approxTokens = Math.round(totalChars / 3)

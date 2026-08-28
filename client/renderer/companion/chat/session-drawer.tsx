@@ -3,6 +3,7 @@ import type React from 'react'
 import { useEffect } from 'react'
 
 import { $chatSessionId } from '@/companion/chat-store'
+import { $voiceCallOpen } from '@/companion/companion-store'
 import {
   $archivedLoading,
   $archivedSessions,
@@ -83,6 +84,11 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
   }
 
   const handleSwitch = async (id: string): Promise<void> => {
+    // 语音通话挂载期间禁止切换：WS 仍绑旧会话而 $chatSessionId 已切走会写错会话行。
+    if ($voiceCallOpen.get()) {
+      return
+    }
+
     await switchSession(id)
     onClose()
   }

@@ -186,13 +186,14 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.7 实时语音会话通道（/api/voice/ws）
 
-语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。
+语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。**会话隔离**：每次语音通话通过 `session.create_voice` 独立新建一条 `kind="voice"` 会话，挂断后作为只读历史保留在 chat-dock 列表中；与当前 chat 会话（含 IM）解耦，跨会话信息靠长期记忆共享。服务端在 `session.start` 落地时校验 `kind ∈ {main, standard, voice}`；其他会话（cron 等）一律走 `session.error code="conversation_kind_not_allowed"` 关闭。
 
 **全双工链路**：上行二进制帧为裸 PCM（s16le / 单声道 / 16kHz，100ms/块），自 session.ready 起**持续发送、无起停窗口**——话语起止与断句由服务端 VAD 判定（尾静音断句，断句即整段转写），回放下行期间由服务端插话判别（判真即取消回合）。session.start 携带 `duplex: true`（线路模式声明，服务端记录）。下行二进制帧为 TTS 音频**块**：同一音频段的多个块共享段序号，末块 flags bit0 置位（段中断时可能没有末块）；帧头 16 字节小端（magic "SAA1" / flags / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度）。流式供应商走裸 PCM 块（优先，客户端零解码直排）；无流式能力的供应商按段整块下发（供应商原生容器直通）。会话参数（采样率、断句/起说/预滚时长、插话判定阈值、子句切分长度、预取窗口、攒块时长、流式开关、超时与限流）的配置键与默认值见 backend 的 `config.toml.example` [voice] 段。本节锁定契约意图与顺序不变量：
 
 | op | 方向 | 用途 | 改动需同步的模块 |
 |----|------|------|------------------|
-| session.start / session.ready / session.closed / session.error | C→S / S→C | 会话建立（绑定聊天会话 id 与音色、duplex 声明）、就绪（携带 caps：TTS 链是否具备流式能力）、正常与异常关闭（重复连接顶号、空闲/硬超时） | Backend 语音会话 + Client voice-session |
+| session.start / session.ready / session.closed / session.error | C→S / S→C | 会话建立（绑定聊天会话 id 与音色、duplex 声明）、就绪（携带 caps：TTS 链是否具备流式能力）、正常与异常关闭（重复连接顶号、空闲/硬超时）| Backend 语音会话 + Client voice-session |
+| session.error code="conversation_kind_not_allowed" | S→C | voice WS 拒绝非语音白名单会话（IM / cron / 其他）—— 携带 `session_kind` 字段告知当前会话 kind，客户端按需提示或自动重定向到主会话 | Backend voice + Client voice-call-dock 的 `resolveVoiceSessionId` |
 | interrupt / session.interrupted | C→S / S→C | 打断双层：客户端乐观打断（本地即刻停播 + 通知服务端取消回合）+ 服务端插话判别权威判定；回合进行中收到成段话语转写（如思考期开口）视为隐式打断 | Client 乐观打断 + Backend 插话判别与取消收尾（已成段子句落库） |
 | asr.final / asr.skipped | S→C | 用户话语转写结果（用户侧字幕；服务端断句即发）/ 过短或空转写丢弃 | Backend STT + Client 字幕 |
 | llm.start | S→C | 思考开始 | Client 状态机 |

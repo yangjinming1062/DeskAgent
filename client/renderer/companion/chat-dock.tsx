@@ -9,6 +9,7 @@ import {
   $chatMessageBodies,
   $chatMessageList,
   $chatSessionId,
+  $chatSessionKind,
   $chatStreamingTick,
   $chatTurnInFlight,
   $lastAssistantStreaming,
@@ -404,9 +405,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [gatewayState, chatSessionId, list.length])
 
-  // IM 桥接会话（kind='im'）在桌面端只读查看：伙伴经 IM 桥回复，
-  // 用户不能在此输入或发起语音。send() 里再兜底拦一道，防未来新增入口漏禁。
-  const isImSession = findSessionInfo(chatSessionId ?? '')?.kind === 'im'
+  // IM 桥接与挂断后的语音通话两种会话在桌面端只读查看。
+  // 优先 $chatSessionKind（服务端权威）；重启后列表尚未加载的瞬间窗口退到 findSessionInfo。
+  const chatSessionKind = useStore($chatSessionKind)
+
+  const sessionKind = chatSessionKind || findSessionInfo(chatSessionId ?? '')?.kind || ''
+  const isReadOnlySession = sessionKind === 'im' || sessionKind === 'voice'
 
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -579,7 +583,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   }
 
   const send = async () => {
-    if (isImSession) {
+    if (isReadOnlySession) {
       return
     }
 
@@ -889,7 +893,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 <button
                   aria-label="语音通话"
                   className={BTN_ICON}
-                  disabled={isImSession}
+                  disabled={isReadOnlySession}
                   onClick={onOpenVoiceCall}
                   title="开启实时语音通话模式"
                   type="button"
@@ -1023,11 +1027,15 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {/* Input Area */}
           <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
-            {isImSession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
+            {isReadOnlySession && (
+              <p className="mb-1 text-center text-xs text-white/40">
+                {sessionKind === 'voice' ? '语音通话记录 · 只读' : 'IM 对话 · 只读'}
+              </p>
+            )}
             <div className="flex items-end gap-2">
               <textarea
                 className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"
-                disabled={isImSession}
+                disabled={isReadOnlySession}
                 onChange={e => {
                   setText(e.target.value)
                   onTyping()
@@ -1053,7 +1061,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                     'inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
                     attachMenuOpen && 'bg-white/15 text-white border-white/30'
                   )}
-                  disabled={isImSession}
+                  disabled={isReadOnlySession}
                   onClick={() => setAttachMenuOpen(!attachMenuOpen)}
                   title="添加附件（文件、文件夹、图片、视频）"
                   type="button"
@@ -1105,7 +1113,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                     ? 'border-rose-400/70 bg-rose-500/25 text-white animate-pulse'
                     : 'border-white/12 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
                 }`}
-                disabled={isImSession}
+                disabled={isReadOnlySession}
                 onMouseDown={() => void startRecording()}
                 onMouseLeave={() => {
                   if (recording) {
@@ -1129,7 +1137,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               <button
                 className={cn(BTN_PRIMARY, 'h-[38px] px-4 text-sm')}
                 disabled={
-                  isImSession ||
+                  isReadOnlySession ||
                   (!isGenerating &&
                     (sending ||
                       gatewayState !== 'open' ||

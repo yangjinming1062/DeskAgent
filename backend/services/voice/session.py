@@ -13,6 +13,7 @@ from fastapi import WebSocket
 from modules.auth import User
 from modules.conversation import Conversation
 
+from ..conversation import VOICE_ELIGIBLE_KINDS
 from ..llm import MissingLlmConfigError, resolve, resolve_provider_chain, transcribe_audio
 from .audio import pcm_to_wav
 from .turn import VoiceTurn
@@ -180,6 +181,15 @@ class VoiceSession:
             tts_chain = await resolve_provider_chain(db, self.user.id, "tts")
         if conv is None:
             await self.send_json("session.error", code="protocol", message=f"session not found: {session_id!r}")
+            return
+        # 语音 WS 只接受白名单 kind：IM/cron 由它们各自的回路独占，不能让语音写穿。
+        if conv.kind not in VOICE_ELIGIBLE_KINDS:
+            await self.send_json(
+                "session.error",
+                code="conversation_kind_not_allowed",
+                message="该会话不支持语音通话",
+            )
+            await self.shutdown("conversation_kind_not_allowed")
             return
         if not stt_ready:
             await self.send_json("session.error", code="no_stt_provider", message="未配置云端语音识别供应商，无法语音通话")

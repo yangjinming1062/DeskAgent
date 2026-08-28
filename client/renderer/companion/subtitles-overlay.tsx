@@ -3,12 +3,23 @@ import { useEffect, useRef } from 'react'
 
 import { $chatMessageBodies, $chatMessageList } from '@/companion/chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from '@/companion/chat-store'
+import { $voiceCallOpen } from '@/companion/companion-store'
 import { $subtitles } from '@/companion/prefs'
+import { $voiceMessageBodies, $voiceMessageList } from '@/companion/voice-store'
+import type { VoiceMessageBody, VoiceMessageListItem } from '@/companion/voice-store'
 
-// 仅订阅最后一条消息的 body。条件渲染确保不会以空 keys 数组调用，避免 nanostores 回退为全量订阅。
-function SubtitlesOverlayInner({ lastItem }: { lastItem: ChatMessageListItem }): React.JSX.Element | null {
-  const bodies = useStore($chatMessageBodies, { keys: [lastItem.id], deps: [lastItem.id] })
-  const body: ChatMessageBody | undefined = bodies[lastItem.id]
+// 通话挂载时读 voice-store，否则回退到 chat-store；voice 会话独立缓冲因此不会回放其它会话历史。
+function SubtitlesOverlayInner({
+  lastItem,
+  source
+}: {
+  lastItem: ChatMessageListItem | VoiceMessageListItem
+  source: 'chat' | 'voice'
+}): React.JSX.Element | null {
+  const chatBodies = useStore($chatMessageBodies, { keys: [lastItem.id], deps: [lastItem.id] })
+  const voiceBodies = useStore($voiceMessageBodies, { keys: [lastItem.id], deps: [lastItem.id] })
+  const body: ChatMessageBody | VoiceMessageBody | undefined =
+    source === 'chat' ? chatBodies[lastItem.id] : voiceBodies[lastItem.id]
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -48,10 +59,24 @@ function SubtitlesOverlayInner({ lastItem }: { lastItem: ChatMessageListItem }):
 // 关闭或尚无消息时占位，保持面板高度稳定。
 export function SubtitlesOverlay(): React.JSX.Element {
   const userPref = useStore($subtitles)
-  const list = useStore($chatMessageList)
-  const lastItem = list[list.length - 1]
+  const voiceOpen = useStore($voiceCallOpen)
+  const voiceList = useStore($voiceMessageList)
+  const chatList = useStore($chatMessageList)
 
-  if (!userPref || !lastItem) {
+  if (voiceOpen) {
+    const last = voiceList[voiceList.length - 1]
+    if (!last) {
+      return (
+        <div className="flex h-full w-full select-none items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/25">
+          {!userPref ? '字幕已关闭' : '等待对话…'}
+        </div>
+      )
+    }
+    return <SubtitlesOverlayInner lastItem={last} source="voice" />
+  }
+
+  const last = chatList[chatList.length - 1]
+  if (!userPref || !last) {
     return (
       <div className="flex h-full w-full select-none items-center justify-center rounded-xl border border-dashed border-white/10 text-xs text-white/25">
         {!userPref ? '字幕已关闭' : '等待对话…'}
@@ -59,5 +84,5 @@ export function SubtitlesOverlay(): React.JSX.Element {
     )
   }
 
-  return <SubtitlesOverlayInner lastItem={lastItem} />
+  return <SubtitlesOverlayInner lastItem={last} source="chat" />
 }

@@ -69,7 +69,7 @@ from services.companion import (
 )
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
-from services.conversation import IM_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
+from services.conversation import IM_KIND, VOICE_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
@@ -508,6 +508,22 @@ def _register_session_handlers(
         cfg = user_session.llm_config if user_session else llm_config
         await dispatcher.flush_unsent()
         return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
+
+    dispatcher.register("session.create", session_create)
+
+    async def session_create_voice(params: dict) -> dict:
+        # 每次语音通话独立一条 voice 会话；不绑定当前 chat 会话，跨通话靠长期记忆共享。
+        from services.conversation import create_voice_conversation
+
+        async with SESSION_LOCAL() as db:
+            conv = await create_voice_conversation(db, user_id)
+        runtime = _mount_runtime(conv, cwd=None)
+        logger.info("session.create_voice", extra={"user_id": user_id, "session_id": runtime.session_id})
+        cfg = user_session.llm_config if user_session else llm_config
+        await dispatcher.flush_unsent()
+        return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
+
+    dispatcher.register("session.create_voice", session_create_voice)
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
