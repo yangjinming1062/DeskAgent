@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# ruff: noqa: E402
 import argparse
 import asyncio
 import json
@@ -16,29 +15,6 @@ if sys.platform == "win32" and sys.stdout and hasattr(sys.stdout, "reconfigure")
     sys.stdout.reconfigure(encoding="utf-8")
 if sys.platform == "win32" and sys.stderr and hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
-
-from modules.auth import ChatRequestClientContext
-from modules.companion import Persona
-from modules.system import AgentPromptConfig
-from services.chat.affect import (
-    BUILTIN_EMOTIONS,
-    resolve_allowed_emotions,
-    resolve_custom_expressions,
-)
-from services.chat.system_prompt import build_system_prompt
-from services.chat.turn_inputs import NON_ACTION_CLIP_KEYS
-from services.companion import (
-    build_outfit_extras,
-    build_system_prompt_extras,
-    build_user_profile_extras,
-    format_auto_inject_block,
-    format_inferred_profile_block,
-    format_proactive_memory_block,
-    get_active_model,
-    render_extras,
-)
-from services.llm import approx_responses_tokens, message_to_response_items
-from services.tools import REGISTRY, schema_name
 
 DEFAULT_MOCK_PERSONA: dict[str, str] = {
     "name": "露娜 (Luna)",
@@ -73,6 +49,19 @@ def _build_mock_user_profile_extras(profile: dict[str, str]) -> str:
 
 async def _load_from_db(user_id: int) -> dict[str, Any]:
     from components import SESSION_LOCAL, safe_json_loads
+    from modules.companion import Persona
+    from services.chat.affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
+    from services.chat.turn_inputs import NON_ACTION_CLIP_KEYS
+    from services.companion import (
+        build_outfit_extras,
+        build_system_prompt_extras,
+        build_user_profile_extras,
+        format_auto_inject_block,
+        format_inferred_profile_block,
+        format_proactive_memory_block,
+        get_active_model,
+    )
+    from services.tools import REGISTRY
     from sqlalchemy import select
 
     async with SESSION_LOCAL() as db:
@@ -119,7 +108,6 @@ def assemble_debug_prompt(
     available_actions: list[str],
     skills: list[str],
     model: str,
-    prompt_family: str,
     language: str,
     platform: str,
     enable_tools: bool,
@@ -127,6 +115,14 @@ def assemble_debug_prompt(
     auto_inject_text: str = "",
     db_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from modules.auth import ChatRequestClientContext
+    from modules.system import AgentPromptConfig
+    from services.chat.affect import BUILTIN_EMOTIONS
+    from services.chat.system_prompt import build_system_prompt
+    from services.companion import render_extras
+    from services.llm import approx_responses_tokens, message_to_response_items
+    from services.tools import REGISTRY, schema_name
+
     if db_data is not None:
         persona_extras = db_data["persona_extras"]
         user_profile_extras = db_data["user_profile_extras"]
@@ -164,7 +160,6 @@ def assemble_debug_prompt(
         tools=tools,
         client_context=client_ctx,
         identity_prompt=None,
-        prompt_family=prompt_family,
         persona_extras=persona_extras,
         user_profile_extras=user_profile_extras,
         outfit_extras=outfit_extras,
@@ -175,8 +170,6 @@ def assemble_debug_prompt(
         available_actions=actions,
         language=language,
         platform=platform,
-        pass_session_id=True,
-        session_id="debug_onboarding_session_001",
     )
 
     instructions = build_system_prompt(agent_config)
@@ -199,7 +192,6 @@ def assemble_debug_prompt(
             "estimated_tokens": estimated_tokens,
             "language": language,
             "platform": platform,
-            "prompt_family": prompt_family,
             "allowed_emotions": sorted(allowed_emotions),
             "allowed_actions": sorted(actions),
             "active_tool_names": valid_tool_names,
@@ -209,6 +201,8 @@ def assemble_debug_prompt(
 
 
 def format_human_readable(result: dict[str, Any]) -> str:
+    from services.tools import schema_name
+
     meta = result["metadata"]
     lines: list[str] = []
     separator = "=" * 80
@@ -217,16 +211,11 @@ def format_human_readable(result: dict[str, Any]) -> str:
     lines.append(separator)
     lines.append("SpiritAgent 提示词调试输出 (Prompt Debug Inspection)")
     lines.append(separator)
-    lines.append(
-        f"• 目标模型 (Model): {result['model']} (family: {meta['prompt_family']})",
-    )
     lines.append(f"• 语言环境 (Language): {meta['language']}")
     lines.append(f"• 运行平台 (Platform): {meta['platform']}")
     lines.append(f"• Token 估算 (Estimated Tokens): ~{meta['estimated_tokens']}")
     lines.append(f"• 活跃工具数 (Active Tools): {len(meta['active_tool_names'])} 个")
-    lines.append(
-        f"• 可用动作 (Available Actions): {', '.join(meta['allowed_actions']) or 'None'}",
-    )
+    lines.append(f"• 可用动作 (Available Actions): {', '.join(meta['allowed_actions']) or 'None'}")
     lines.append("")
 
     lines.append(separator)
@@ -267,47 +256,25 @@ def main() -> int:
         default="你好！我刚完成了初始设定，以后请多关照啦～",
         help="模拟用户发出的消息内容",
     )
-    parser.add_argument("--model", default="gpt-4o", help="目标大模型名称")
-    parser.add_argument(
-        "--prompt-family",
-        choices=["openai", "google"],
-        default="openai",
-        help="提示词模型族系",
-    )
-    parser.add_argument(
-        "--language",
-        choices=["zh", "en"],
-        default="zh",
-        help="回复语言",
-    )
+    parser.add_argument("--model", default="default", help="大模型槽位名称")
+    parser.add_argument("--language", choices=["zh", "en"], default="zh", help="回复语言")
     parser.add_argument(
         "--platform",
-        default="webui",
-        help="交互平台标识 (如 webui, cli, telegram 等)",
+        choices=["desktop", "wechat"],
+        default="desktop",
+        help="交互平台标识 (desktop, wechat)",
     )
     parser.add_argument("--without-tools", action="store_true", help="禁用工具注入")
 
     # Onboarding 角色相关参数
-    parser.add_argument(
-        "--persona-name",
-        default=DEFAULT_MOCK_PERSONA["name"],
-        help="角色姓名",
-    )
-    parser.add_argument(
-        "--personality",
-        default=DEFAULT_MOCK_PERSONA["personality"],
-        help="角色性格",
-    )
+    parser.add_argument("--persona-name", default=DEFAULT_MOCK_PERSONA["name"], help="角色姓名")
+    parser.add_argument("--personality", default=DEFAULT_MOCK_PERSONA["personality"], help="角色性格")
     parser.add_argument(
         "--speaking-style",
         default=DEFAULT_MOCK_PERSONA["speaking_style"],
         help="说话风格",
     )
-    parser.add_argument(
-        "--appearance",
-        default=DEFAULT_MOCK_PERSONA["appearance"],
-        help="外貌描述",
-    )
+    parser.add_argument("--appearance", default=DEFAULT_MOCK_PERSONA["appearance"], help="外貌描述")
     parser.add_argument(
         "--relationship",
         default=DEFAULT_MOCK_PERSONA["relationship"],
@@ -318,11 +285,7 @@ def main() -> int:
         default=DEFAULT_MOCK_PERSONA["biological_type"],
         help="物种/生物类型",
     )
-    parser.add_argument(
-        "--gender",
-        default=DEFAULT_MOCK_PERSONA["gender"],
-        help="角色性别",
-    )
+    parser.add_argument("--gender", default=DEFAULT_MOCK_PERSONA["gender"], help="角色性别")
 
     # Onboarding 用户资料相关参数
     parser.add_argument(
@@ -330,11 +293,7 @@ def main() -> int:
         default=DEFAULT_MOCK_USER_PROFILE["preferred_name"],
         help="用户称呼",
     )
-    parser.add_argument(
-        "--user-gender",
-        default=DEFAULT_MOCK_USER_PROFILE["gender"],
-        help="用户性别",
-    )
+    parser.add_argument("--user-gender", default=DEFAULT_MOCK_USER_PROFILE["gender"], help="用户性别")
     parser.add_argument(
         "--user-age",
         default=DEFAULT_MOCK_USER_PROFILE["age_bucket"],
@@ -364,17 +323,8 @@ def main() -> int:
     )
 
     # 数据库模式
-    parser.add_argument(
-        "--db",
-        action="store_true",
-        help="连接 PostgreSQL 数据库读取真实用户数据",
-    )
-    parser.add_argument(
-        "--user-id",
-        type=int,
-        default=1,
-        help="数据库查询对应的 user_id",
-    )
+    parser.add_argument("--db", action="store_true", help="连接 PostgreSQL 数据库读取真实用户数据")
+    parser.add_argument("--user-id", type=int, default=1, help="数据库查询对应的 user_id")
 
     # 输出模式
     parser.add_argument(
@@ -429,7 +379,6 @@ def main() -> int:
         available_actions=actions,
         skills=skills,
         model=args.model,
-        prompt_family=args.prompt_family,
         language=args.language,
         platform=args.platform,
         enable_tools=not args.without_tools,

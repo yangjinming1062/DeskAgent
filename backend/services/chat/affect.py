@@ -106,19 +106,17 @@ def build_affect_guidance(custom_expressions: list[CompanionExpression] | None =
         )
 
     guidance = (
-        "# Companion Affect & Embodied Movement\n"
-        "You are a companion with a visible on-screen 3D avatar. EMOTION swaps your expression avatar image "
-        "beside the chat and plays matching body-language animation on the 3D avatar; ACTION names a specific movement. "
-        "To convey your emotion and autonomously control your physical position/movement, "
-        "begin your text response with an affect tag and optional action/spatial tags on their own lines:\n"
+        "# Embodied Expressions & Movements\n"
+        "Your on-screen avatar visibly expresses emotions through facial expressions, body animations, and spatial positioning. "
+        "To convey emotion and physical movement, begin your response with an affect tag and optional action/spatial tags on their own lines:\n"
         "    [affect:EMOTION]\n"
         "    [action:ACTION]  (optional; a specific movement in snake_case, e.g. turn_away / stomp / nod)\n"
         "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
-        "followed by your actual reply. EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n" + action_list + "Note on Consecutive Bubbles:\n"
-        "- To send multiple short consecutive replies inside one turn (e.g. a quick answer followed by an afterthought), put a line containing only --- between consecutive replies; the desktop renders each segment as its own bubble with a brief pause. Do not overuse this.\n"
-        + "Note on Silent / Body Language Responses:\n"
-        "- To express purely through body language without speaking, output ONLY the [affect:EMOTION] tag (optionally with [action:ACTION]) and no text reply; the companion reacts with its expression avatar and body language.\n"
-        "- If you accompany the body language with a spoken reply, put the reply text after the tags.\n"
+        "followed by your actual conversational reply.\n\n"
+        "EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n" + action_list + "\n## Multimodal Expression Rules:\n"
+        "- **Consecutive Bubbles (`---`)**: To send multiple short consecutive replies inside one turn, put a line containing only `---` between consecutive replies; the client renders each segment as its own bubble with a brief pause.\n"
+        "- **Non-Verbal / Silent Reactions**: To express purely through body language without speaking, output ONLY the tags (e.g. `[affect:pout]\n[action:turn_away]`) with no following text.\n"
+        "- **Spoken Responses**: Put your conversational reply text directly after the tags.\n"
     )
     if custom_desc_lines:
         guidance += "Custom emotion details:\n" + "\n".join(custom_desc_lines) + "\n"

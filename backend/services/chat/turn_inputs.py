@@ -164,7 +164,14 @@ async def _build_turn_inputs(
 ) -> _TurnInputs:
     """解析身份 prompt、schemas、agent_config、历史与 LLM client；native_memory 补充内容在此注入系统消息，使 orchestrator 保持线性。"""
     # LLM 上下文从最新检查点开始（夜间 daily_summary 或进行中 compress_summary），其前消息已被摘要覆盖；原行留在 DB，仅缩窄本次读取范围。
-    checkpoint_id = (await db.execute(select(func.max(Message.id)).where(Message.conversation_id == conv.id, Message.subtype.in_(("daily_summary", "compress_summary"))))).scalar()
+    checkpoint_id = (
+        await db.execute(
+            select(func.max(Message.id)).where(
+                Message.conversation_id == conv.id,
+                Message.subtype.in_(("daily_summary", "compress_summary")),
+            ),
+        )
+    ).scalar()
 
     stmt = select(Message).where(Message.conversation_id == conv.id)
     if checkpoint_id:
@@ -205,7 +212,14 @@ async def _build_turn_inputs(
             logger.warning("request model override without context_tokens", extra={"provider": provider.provider_name, "request_model": req.model})
         ctx_length = resolve_context_tokens(provider.provider_name, ServiceType.llm)
 
-    identity_prompt = (await db.execute(select(UserSetting.setting_value).where(UserSetting.user_id == user_id, UserSetting.setting_key == "identity_prompt"))).scalar()
+    identity_prompt = (
+        await db.execute(
+            select(UserSetting.setting_value).where(
+                UserSetting.user_id == user_id,
+                UserSetting.setting_key == "identity_prompt",
+            ),
+        )
+    ).scalar()
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
@@ -236,7 +250,6 @@ async def _build_turn_inputs(
         tools=all_schemas,
         client_context=_merge_client_context(session_client_context, req.client_context),
         identity_prompt=identity_prompt,
-        prompt_family=provider.PROMPT_FAMILY,
         persona_extras=build_system_prompt_extras(persona),
         user_profile_extras=user_profile_extras,
         outfit_extras=outfit_extras,
@@ -247,7 +260,11 @@ async def _build_turn_inputs(
         available_actions=available_actions,
         language=user_settings.get("language", DEFAULT_LANGUAGE),
     )
-    context = _history_to_responses_context(history, build_system_prompt(agent_config), drop_tool_intermediates=conv.kind == MAIN_KIND)
+    context = _history_to_responses_context(
+        history,
+        build_system_prompt(agent_config),
+        drop_tool_intermediates=conv.kind == MAIN_KIND,
+    )
 
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
     native_memory = NativeMemory(None, user_id)
@@ -259,7 +276,14 @@ async def _build_turn_inputs(
     baseline, subsequent_msgs = _find_authoritative_token_baseline(history, is_main_conversation=(conv.kind == MAIN_KIND))
     if baseline is not None:
         drop_tools = conv.kind == MAIN_KIND
-        delta_items = [item for m in subsequent_msgs for item in db_message_to_response_items(m, drop_tool_intermediates=drop_tools)]
+        delta_items = [
+            item
+            for m in subsequent_msgs
+            for item in db_message_to_response_items(
+                m,
+                drop_tool_intermediates=drop_tools,
+            )
+        ]
         delta_tokens = approx_responses_tokens("", delta_items)
         baseline_tokens = baseline + delta_tokens
         # 提示词与 Schema 漂移保护：若基线估算与当前全量装配的上下文差异过大（>20% 且 >200 tokens），采用全量估算

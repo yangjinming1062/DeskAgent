@@ -48,12 +48,8 @@ class AgentPromptConfig(BaseModel):
     tools: list[dict] | None = None
     client_context: ChatRequestClientContext | None = None
     identity_prompt: str | None = None
-    platform: str = "webui"
-    pass_session_id: bool = False
-    session_id: str | None = None
-    task_completion_guidance: bool = True
+    platform: str = "desktop"
     tool_use_enforcement: str = "auto"
-    prompt_family: str = "openai"
     persona_extras: str | None = None
     user_profile_extras: str | None = None
     # 当前穿着的着装描述（2D 换装）；精灵自知穿着，为着装联动打底
