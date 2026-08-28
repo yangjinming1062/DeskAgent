@@ -5,7 +5,6 @@ from typing import Any
 
 from components import get_logger, tool_error
 
-from .extract_provider import resolve_extract_provider
 from .toolsets import disabled_backend_tool_names
 
 logger = get_logger(__name__)
@@ -18,30 +17,8 @@ def schema_name(schema: dict[str, Any]) -> str:
 # 工具的 ``user_id`` / ``llm_config`` / ``user_settings`` 是正常 kwargs，被注入时从 LLM 提供的 args 中静默剔除，避免受 LLM 注入。
 RESERVED_KEYS = frozenset({"user_id", "llm_config", "user_settings"})
 
-AvailabilityCheck = Callable[[dict[str, str]], bool]
-
-
-def _always_available(_user_settings: dict[str, str]) -> bool:
-    return True
-
-
-def _web_extract_available(user_settings: dict[str, str]) -> bool:
-    """与 ``web_extract_tool`` 运行时检查互为镜像，让无法服务 extract 的供应商不暴露对应 schema。"""
-    try:
-        provider = resolve_extract_provider(user_settings)
-        return provider.is_available() and provider.supports_extract()
-    except Exception as e:
-        logger.warning("web_extract availability check failed", extra={"error_msg": str(e)})
-        return False
-
-
-def _build_backend_entry(func: Callable, availability_check: AvailabilityCheck) -> dict[str, Any]:
-    return {"func": func, "is_coro": inspect.iscoroutinefunction(func), "availability_check": availability_check}
-
-
-# 知名可用性谓词，工具模块注册时可引用。
-ALWAYS_AVAILABLE: AvailabilityCheck = _always_available
-WEB_EXTRACT_AVAILABILITY: AvailabilityCheck = _web_extract_available
+# 判定只读进程级配置，与调用用户无关。
+AvailabilityCheck = Callable[[], bool]
 
 
 class ToolsRegistry:
@@ -52,11 +29,9 @@ class ToolsRegistry:
         self._memory_tools: dict[str, dict[str, Any]] = {}
         self._runner_tools: dict[int, dict[str, dict[str, Any]]] = {}
 
-    def register(self, name: str, schema: dict, func: Callable, availability_check: AvailabilityCheck = _always_available) -> None:
+    def register(self, name: str, schema: dict, func: Callable, availability_check: AvailabilityCheck | None = None) -> None:
         """添加（或替换）一个 backend 工具；导入时幂等，重复 ``import`` 不会报错。"""
-        entry = _build_backend_entry(func, availability_check)
-        entry["schema"] = schema
-        self._backend_tools[name] = entry
+        self._backend_tools[name] = {"schema": schema, "func": func, "is_coro": inspect.iscoroutinefunction(func), "availability_check": availability_check}
 
     def register_memory(self, name: str, schema: dict) -> None:
         """添加 memory 工具（无函数——由 ``NativeMemory`` 派发），以扁平 ``{name: schema}`` 存储。"""
@@ -74,27 +49,21 @@ class ToolsRegistry:
     def has_runner_tools(self, user_id: int) -> bool:
         return bool(self._runner_tools.get(user_id))
 
-    def get_all_schemas(self, user_id: int, user_settings: dict[str, str] | None = None) -> list[dict[str, Any]]:
-        # ``user_settings=None`` 保留「无条件包含全部」的旧行为，给子代理和 pre-DB 调用方使用；传入 settings 时由各工具的 availability_check 决定可见性，谓词抛错则隐藏该工具（fail-closed），避免一个 bug 把整次调用拖到 500。toolsets.disabled 对 backend/memory 桶生效；runner 桶在客户端 get_tools 源头已按同一键过滤。
-        excluded = set() if user_settings is None else disabled_backend_tool_names(user_settings)
+    def get_all_schemas(self, user_id: int, user_settings: dict[str, str]) -> list[dict[str, Any]]:
+        # 谓词抛错则隐藏该工具（fail-closed），避免一个 bug 把整次调用拖到 500。toolsets.disabled 对 backend/memory 桶生效；runner 桶在客户端 get_tools 源头已按同一键过滤。
+        excluded = disabled_backend_tool_names(user_settings)
         schemas: list[dict[str, Any]] = []
-        if user_settings is None:
-            schemas.extend(e["schema"] for e in self._backend_tools.values())
-        else:
-            for entry in self._backend_tools.values():
-                if schema_name(entry["schema"]) in excluded:
-                    continue
-                try:
-                    if entry["availability_check"](user_settings):
-                        schemas.append(entry["schema"])
-                except Exception as e:
-                    logger.warning("availability_check raised; hiding tool", extra={"tool_name": entry["schema"].get("name", ""), "error_msg": str(e)})
+        for entry in self._backend_tools.values():
+            if schema_name(entry["schema"]) in excluded:
+                continue
+            try:
+                if (check := entry["availability_check"]) is None or check():
+                    schemas.append(entry["schema"])
+            except Exception as e:
+                logger.warning("availability_check raised; hiding tool", extra={"tool_name": schema_name(entry["schema"]), "error_msg": str(e)})
         schemas.extend(s for s in self._memory_tools.values() if schema_name(s) not in excluded)
         schemas.extend(self._runner_tools.get(user_id, {}).values())
         return schemas
-
-    def get_all_tool_names(self, user_id: int, user_settings: dict[str, str] | None = None) -> list[str]:
-        return [schema_name(s) for s in self.get_all_schemas(user_id, user_settings=user_settings)]
 
     def _lookup(self, user_id: int, tool_name: str) -> tuple[str, dict[str, Any]] | None:
         if (entry := self._backend_tools.get(tool_name)) is not None:

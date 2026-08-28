@@ -130,18 +130,6 @@ def coerce_hour_0_23(value: Any) -> int:
     return value
 
 
-def unquote_user_setting(val: str | None) -> str | None:
-    """撤销 ``put_config._flatten`` 对字符串型 setting 的 ``json.dumps`` 转义。"""
-    if val is None:
-        return None
-    s = str(val).strip()
-    if len(s) >= 2 and s[0] == '"' and s[-1] == '"':
-        inner = safe_json_loads(s, default=s)
-        if isinstance(inner, str):
-            return inner or None
-    return s or None
-
-
 # CJK 表意文字、兼容表意、扩展 B、全角形式与 CJK 标点/部首——与西文分别计价。
 _CJK_CHARS = re.compile(
     "[⸀-⹿⺀-⻿　-〿㇀-㇯㈀-㏿㐀-䶿一-鿿豈-﫿＀-￯ -⁯𠀀-𲎯]",

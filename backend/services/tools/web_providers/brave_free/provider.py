@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 import httpx
@@ -18,9 +17,8 @@ async def aclose_brave() -> None:
 
 
 class BraveFreeWebSearchProvider(WebSearchProvider):
-    def __init__(self, *, api_key: str | None = None) -> None:
-        # 来自 dispatcher（从 ``user_settings`` 加载）的用户级 key 优先，回退到部署级 ``BRAVE_SEARCH_API_KEY`` 给运维共享密钥的场景。
-        self._api_key = (api_key or os.getenv("BRAVE_SEARCH_API_KEY", "")).strip()
+    def __init__(self, *, api_key: str = "") -> None:
+        self._api_key = api_key.strip()
 
     @property
     def name(self) -> str:

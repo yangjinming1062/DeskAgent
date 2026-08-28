@@ -5,7 +5,7 @@ from components import coerce_int, get_logger, tool_error
 from openai import AsyncOpenAI
 
 from services.llm import build_responses_kwargs, call_with_retry, client_for_config
-from services.tools import ALWAYS_AVAILABLE, REGISTRY, WEB_EXTRACT_AVAILABILITY, resolve_extract_provider, resolve_search_provider
+from services.tools import REGISTRY, resolve_extract_provider, resolve_search_provider
 
 logger = get_logger(__name__)
 
@@ -44,10 +44,8 @@ async def _summarize_documents(documents: list[dict], llm_config: dict) -> None:
     await asyncio.gather(*(_guarded(d) for d in documents))
 
 
-async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None = None, **_) -> str:
-    user_settings = user_settings or {}
-
-    provider = resolve_search_provider(user_settings)
+async def web_search_tool(query: str, limit: int = 5, **_) -> str:
+    provider = resolve_search_provider()
     if not provider.is_available():
         return tool_error(f"{provider.display_name} is not configured or unavailable.")
     if not provider.supports_search():
@@ -63,11 +61,10 @@ async def web_search_tool(query: str, limit: int = 5, user_settings: dict | None
     return json.dumps(result, ensure_ascii=False)
 
 
-async def web_extract_tool(urls: list[str] | str, llm_config: dict, use_llm_processing: bool = True, user_settings: dict | None = None, **_) -> str:
-    user_settings = user_settings or {}
+async def web_extract_tool(urls: list[str] | str, llm_config: dict, use_llm_processing: bool = True, **_) -> str:
     if isinstance(urls, str):
         urls = [urls]
-    provider = resolve_extract_provider(user_settings)
+    provider = resolve_extract_provider()
     if not provider.is_available():
         msg = provider.missing_credential_message() or (f"{provider.display_name} is not configured or unavailable.")
         return tool_error(msg)
@@ -122,5 +119,11 @@ WEB_EXTRACT_SCHEMA = {
 }
 
 
-REGISTRY.register("web_search", WEB_SEARCH_SCHEMA, web_search_tool, ALWAYS_AVAILABLE)
-REGISTRY.register("web_extract", WEB_EXTRACT_SCHEMA, web_extract_tool, WEB_EXTRACT_AVAILABILITY)
+def _web_extract_available() -> bool:
+    """与 ``web_extract_tool`` 运行时检查互为镜像，让无法服务 extract 的供应商不暴露对应 schema。"""
+    provider = resolve_extract_provider()
+    return provider.is_available() and provider.supports_extract()
+
+
+REGISTRY.register("web_search", WEB_SEARCH_SCHEMA, web_search_tool)
+REGISTRY.register("web_extract", WEB_EXTRACT_SCHEMA, web_extract_tool, _web_extract_available)

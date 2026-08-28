@@ -6,7 +6,7 @@ from components import SESSION_LOCAL, SETTINGS, get_logger, tool_error, utc_now
 
 from services.llm import MissingLlmConfigError
 from services.media import enqueue_video_job, get_job
-from services.tools import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import REGISTRY
 
 logger = get_logger(__name__)
 
@@ -143,5 +143,5 @@ VIDEO_STATUS_SCHEMA = {
     "parameters": {"type": "object", "properties": {"task_id": {"type": "integer", "description": "The task_id returned by video_generate."}}, "required": ["task_id"]},
 }
 
-REGISTRY.register("video_generate", VIDEO_GENERATION_SCHEMA, video_generation_tool, ALWAYS_AVAILABLE)
-REGISTRY.register("video_generate_status", VIDEO_STATUS_SCHEMA, video_generate_status_tool, ALWAYS_AVAILABLE)
+REGISTRY.register("video_generate", VIDEO_GENERATION_SCHEMA, video_generation_tool)
+REGISTRY.register("video_generate_status", VIDEO_STATUS_SCHEMA, video_generate_status_tool)

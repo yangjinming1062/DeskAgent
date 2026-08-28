@@ -84,7 +84,6 @@ from .functions import (
     positive_int,
     safe_json_loads,
     tool_error,
-    unquote_user_setting,
     utc_now,
 )
 from .hashing import normalize_sha512, sha256_hex, sha512_b64
@@ -227,6 +226,5 @@ __all__ = [
     "sync_trace_span",
     "temp_files_gc_session",
     "tool_error",
-    "unquote_user_setting",
     "utc_now",
 ]

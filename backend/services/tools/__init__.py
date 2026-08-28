@@ -20,7 +20,7 @@ from .memory import (
     participates_in_recall,
 )
 from .model_tools import coerce_tool_args
-from .registry import ALWAYS_AVAILABLE, REGISTRY, RESERVED_KEYS, WEB_EXTRACT_AVAILABILITY, ToolsRegistry, schema_name
+from .registry import REGISTRY, RESERVED_KEYS, ToolsRegistry, schema_name
 from .search_tools_tool import SEARCH_TOOLS_SCHEMA, search_tools_tool
 from .tool_dispatch_helpers import is_multimodal_tool_result, make_tool_result_message, should_parallelize_tool_batch
 from .tool_guardrails import (
@@ -44,8 +44,6 @@ __all__ = [
     "RESERVED_KEYS",
     "ToolsRegistry",
     "schema_name",
-    "ALWAYS_AVAILABLE",
-    "WEB_EXTRACT_AVAILABILITY",
     "is_write_denied",
     "get_read_block_error",
     "AUTO_INJECT_SLOTS",

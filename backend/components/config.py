@@ -172,6 +172,12 @@ class Settings(BaseSettings):
     video_gen_tool_wait_seconds: float
     video_gen_download_max_bytes: int
 
+    web_search_backend: str = Field(default="ddgs", validation_alias="WEB_SEARCH_BACKEND")
+    web_extract_backend: str = Field(default="tavily", validation_alias="WEB_EXTRACT_BACKEND")
+    brave_search_api_key: str = Field(default="", validation_alias="BRAVE_SEARCH_API_KEY")
+    tavily_api_key: str = Field(default="", validation_alias="TAVILY_API_KEY")
+    tavily_base_url: str = Field(default="", validation_alias="TAVILY_BASE_URL")
+
     context_compression_threshold: float
     context_summary_target_tokens: int
     context_summary_max_input_messages: int

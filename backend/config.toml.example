@@ -297,3 +297,15 @@ weixin_reply_max_chars = 2000
 weixin_ilink_base_url = "https://ilinkai.weixin.qq.com/"
 # getupdates 长轮询客户端超时（秒）——服务端 hold ~35s，客户端略放宽
 weixin_ilink_poll_timeout_seconds = 40.0
+
+[web_search]
+# web_search 使用的搜索后端：ddgs（免密钥）/ brave-free / tavily。所选后端缺密钥时自动回退到 ddgs。
+web_search_backend = "ddgs"
+# web_extract 使用的抓取后端。目前仅 tavily 支持抓取；留空则沿用 web_search_backend。
+web_extract_backend = "tavily"
+# Brave 搜索 API Key（搜索后端 = brave-free 时必填，免费档 2k 次/月：https://brave.com/search/api/）
+brave_search_api_key = ""
+# Tavily API Key（抓取后端 = tavily 时必填：https://app.tavily.com/home）
+tavily_api_key = ""
+# Tavily 接口地址（留空使用官方默认地址 https://api.tavily.com）
+tavily_base_url = ""

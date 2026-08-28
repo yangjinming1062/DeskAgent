@@ -3,7 +3,7 @@ from typing import Any
 
 from components import coerce_int, get_logger, tool_error
 
-from ..tools import ALWAYS_AVAILABLE, REGISTRY
+from ..tools import REGISTRY
 from .cron_jobs import create_job, get_job, list_jobs, pause_job, remove_job, resume_job, update_job
 
 logger = get_logger(__name__)
@@ -115,4 +115,4 @@ CRONJOB_SCHEMA = {
     },
 }
 
-REGISTRY.register("cronjob", CRONJOB_SCHEMA, cronjob, ALWAYS_AVAILABLE)
+REGISTRY.register("cronjob", CRONJOB_SCHEMA, cronjob)

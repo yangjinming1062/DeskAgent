@@ -1,4 +1,3 @@
-import os
 from typing import Any
 
 from components import get_logger, safe_outbound_async_client
@@ -8,6 +7,7 @@ from .. import WebSearchProvider
 logger = get_logger(__name__)
 
 TAVILY_TIMEOUT = 60
+TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
 # 模块级客户端保持连接池预热——每次新建都要重新走 TLS 握手。
 _HTTP_CLIENT = safe_outbound_async_client(timeout=TAVILY_TIMEOUT)
 
@@ -16,20 +16,18 @@ async def aclose_tavily() -> None:
     await _HTTP_CLIENT.aclose()
 
 
-def _build_tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str | None = None, base_url: str | None = None) -> tuple[str, dict[str, Any]]:
-    """校验 API key 并构造 Tavily API 调用的 URL 与 body；注入的 ``api_key`` / ``base_url`` 优先于部署级 ``TAVILY_API_KEY`` / ``TAVILY_BASE_URL`` 环境变量。"""
-    key = (api_key or os.getenv("TAVILY_API_KEY") or "").strip()
+def _build_tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str, base_url: str) -> tuple[str, dict[str, Any]]:
+    key = api_key.strip()
     if not key:
-        raise ValueError("TAVILY_API_KEY not configured. Get your API key at https://app.tavily.com/home")
-    base = (base_url or os.getenv("TAVILY_BASE_URL") or "https://api.tavily.com").strip()
+        raise ValueError("tavily_api_key not configured. Get your API key at https://app.tavily.com/home")
+    base = base_url.strip() or TAVILY_DEFAULT_BASE_URL
     body = dict(payload)
     body["api_key"] = key
     url = f"{base}/{endpoint.lstrip('/')}"
     return url, body
 
 
-async def _tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str | None = None, base_url: str | None = None) -> dict[str, Any]:
-    """异步 POST 到 Tavily API。"""
+async def _tavily_request(endpoint: str, payload: dict[str, Any], *, api_key: str, base_url: str) -> dict[str, Any]:
     url, body = _build_tavily_request(endpoint, payload, api_key=api_key, base_url=base_url)
     logger.info("Tavily request", extra={"endpoint": endpoint, "url": url})
 
@@ -67,10 +65,9 @@ def _normalize_tavily_documents(response: dict[str, Any], fallback_url: str = ""
 
 
 class TavilyWebSearchProvider(WebSearchProvider):
-    def __init__(self, *, api_key: str | None = None, base_url: str | None = None) -> None:
-        # 来自 dispatcher（从 ``user_settings`` 加载）的用户级 key 优先，回退到部署级 ``TAVILY_API_KEY`` / ``TAVILY_BASE_URL`` 给运维共享默认值的场景。
-        self._api_key = (api_key or os.getenv("TAVILY_API_KEY") or "").strip()
-        self._base_url = (base_url or os.getenv("TAVILY_BASE_URL") or "https://api.tavily.com").strip()
+    def __init__(self, *, api_key: str = "", base_url: str = "") -> None:
+        self._api_key = api_key.strip()
+        self._base_url = base_url.strip() or TAVILY_DEFAULT_BASE_URL
 
     @property
     def name(self) -> str:
@@ -90,8 +87,8 @@ class TavilyWebSearchProvider(WebSearchProvider):
         return True
 
     def missing_credential_message(self) -> str:
-        # Tavily 是目前唯一支持 extract 的供应商，``web_extract`` 因缺凭据失败时展示的就是这条文案——直接指向设置 UI 而非用户无法触及的 env 变量。
-        return "Tavily API key is not configured. Add it under Settings → Web Search to enable web_extract."
+        # Tavily 是目前唯一支持 extract 的供应商，``web_extract`` 因缺凭据失败时展示的就是这条文案。
+        return "Tavily API key is not configured. Set tavily_api_key in the backend config (or the TAVILY_API_KEY env var) to enable web_extract."
 
     async def search(self, query: str, limit: int = 5) -> dict[str, Any]:
         try:

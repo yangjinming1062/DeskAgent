@@ -5,7 +5,7 @@ from components import SESSION_LOCAL, get_logger, safe_json_loads, save_file, to
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ImageGenRequest, MissingLlmConfigError, ProviderConfig, ServiceType, execute_with_fallback, resolve, resolve_provider_chain
-from services.tools import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import REGISTRY
 
 logger = get_logger(__name__)
 
@@ -147,4 +147,4 @@ IMAGE_GENERATION_SCHEMA = {
     },
 }
 
-REGISTRY.register("image_generate", IMAGE_GENERATION_SCHEMA, image_generation_tool, ALWAYS_AVAILABLE)
+REGISTRY.register("image_generate", IMAGE_GENERATION_SCHEMA, image_generation_tool)

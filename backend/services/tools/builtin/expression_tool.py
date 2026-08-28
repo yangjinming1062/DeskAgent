@@ -4,7 +4,7 @@ from components import SESSION_LOCAL, get_logger
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 
-from services.tools import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import REGISTRY
 
 logger = get_logger(__name__)
 
@@ -78,4 +78,4 @@ CREATE_EXPRESSION_SCHEMA = {
     },
 }
 
-REGISTRY.register("create_expression", CREATE_EXPRESSION_SCHEMA, create_expression_tool, ALWAYS_AVAILABLE)
+REGISTRY.register("create_expression", CREATE_EXPRESSION_SCHEMA, create_expression_tool)

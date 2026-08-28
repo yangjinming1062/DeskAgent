@@ -5,7 +5,7 @@ from components import get_logger, is_safe_outbound, safe_outbound_async_client,
 
 from services.companion.affect_emit import emit_companion_message
 from services.disturbance import is_still
-from services.tools import ALWAYS_AVAILABLE, REGISTRY
+from services.tools import REGISTRY
 
 logger = get_logger(__name__)
 
@@ -88,4 +88,4 @@ SEND_MESSAGE_SCHEMA = {
     },
 }
 
-REGISTRY.register("send_message_tool", SEND_MESSAGE_SCHEMA, send_message_tool, ALWAYS_AVAILABLE)
+REGISTRY.register("send_message_tool", SEND_MESSAGE_SCHEMA, send_message_tool)
