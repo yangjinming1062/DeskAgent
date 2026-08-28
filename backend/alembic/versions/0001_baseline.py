@@ -1,4 +1,4 @@
-"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器、2D 模型管线与 persona.render_mode；首次压缩版本。"""
+"""baseline：完整 schema + pgvector/pg_trgm 扩展、partial unique 与 HNSW/GIN 索引、ws_events NOTIFY 触发器、2D 模型管线与 persona.render_mode、IM 通道桥两表与 messages.draft_anchor；未部署阶段的压缩版本。"""
 
 from collections.abc import Sequence
 
@@ -397,6 +397,7 @@ def upgrade() -> None:
         sa.Column("content_type", sa.String(length=32), server_default=sa.text("'text'"), nullable=False),
         sa.Column("media_json", sa.Text(), nullable=True),
         sa.Column("summary_date", sa.String(length=10), nullable=True),
+        sa.Column("draft_anchor", sa.Boolean(), server_default=sa.text("FALSE"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="CASCADE"),
@@ -405,6 +406,46 @@ def upgrade() -> None:
     op.create_index(op.f("ix_messages_conversation_id"), "messages", ["conversation_id"], unique=False)
     op.create_index(op.f("ix_messages_subtype"), "messages", ["subtype"], unique=False)
     op.create_index(op.f("ix_messages_summary_date"), "messages", ["summary_date"], unique=False)
+    # IM 通道桥。conversation_id 唯一外键是「每用户每渠道一条专属 im 会话」的 DB 级锚点：
+    # binding 的 (user_id, channel) 唯一性传递为渠道间不混流，UNIQUE 又阻止两条绑定共享同一会话。
+    op.create_table(
+        "channel_bindings",
+        sa.Column("user_id", sa.Integer(), nullable=False),
+        sa.Column("channel", sa.String(length=32), nullable=False),
+        sa.Column("status", sa.String(length=16), server_default=sa.text("'disabled'"), nullable=False),
+        sa.Column("conversation_id", sa.Integer(), nullable=True),
+        sa.Column("config_json", sa.Text(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column("credentials", sa.Text(), server_default=sa.text("''"), nullable=False),
+        sa.Column("account_ref", sa.String(length=128), server_default=sa.text("''"), nullable=False),
+        sa.Column("account_name", sa.String(length=128), server_default=sa.text("''"), nullable=False),
+        sa.Column("last_error", sa.Text(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["conversation_id"], ["conversations.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("user_id", "channel", name="uq_channel_bindings_user_channel"),
+        sa.UniqueConstraint("conversation_id", name="uq_channel_bindings_conversation_id"),
+    )
+    op.create_index(op.f("ix_channel_bindings_user_id"), "channel_bindings", ["user_id"], unique=False)
+    op.create_index(op.f("ix_channel_bindings_status"), "channel_bindings", ["status"], unique=False)
+    op.create_table(
+        "channel_peers",
+        sa.Column("binding_id", sa.Integer(), nullable=False),
+        sa.Column("peer_id", sa.String(length=128), nullable=False),
+        sa.Column("peer_name", sa.String(length=128), server_default=sa.text("''"), nullable=False),
+        sa.Column("status", sa.String(length=16), server_default=sa.text("'pending'"), nullable=False),
+        sa.Column("last_message_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.ForeignKeyConstraint(["binding_id"], ["channel_bindings.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("binding_id", "peer_id", name="uq_channel_peers_binding_peer"),
+    )
+    op.create_index(op.f("ix_channel_peers_binding_id"), "channel_peers", ["binding_id"], unique=False)
+    op.create_index(op.f("ix_channel_peers_status"), "channel_peers", ["status"], unique=False)
     # Partial unique 索引（声明式模型无法表达）。
     # 并发 POST /model 否则会留下两条 active 行。
     op.create_index("uq_avatar_assets_one_active", "avatar_assets", ["user_id"], unique=True, postgresql_where=sa.text("active"))
@@ -453,6 +494,8 @@ def downgrade() -> None:
     # 先子表再父表（messages → conversations → users）。
     for table in (
         "messages",
+        "channel_peers",
+        "channel_bindings",
         "ws_events",
         "video_gen_jobs",
         "user_settings",
