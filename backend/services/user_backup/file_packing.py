@@ -58,8 +58,7 @@ def restore_files(extract_root: Path, source_uid: int, target_uid: int, *, mode:
                 extra={"extract_root": str(extract_root), "source_uid": source_uid, "target_uid": target_uid},
             )
             raise RuntimeError(
-                f"Imported archive has no files/ payload but overwrite mode requires restoring user assets "
-                f"(extract_root={extract_root})."
+                f"Imported archive has no files/ payload but overwrite mode requires restoring user assets (extract_root={extract_root}).",
             )
         logger.warning(
             "backup restore_files: extract_root has no files/ subdir",

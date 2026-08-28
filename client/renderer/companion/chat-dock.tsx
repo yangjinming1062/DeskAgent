@@ -828,7 +828,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 <span className="font-medium tracking-wide text-[11px]">{currentMood.label}</span>
               </div>
             </div>
-
           </div>
 
           {/* Bottom Section: Session Parameters & Status Hint */}

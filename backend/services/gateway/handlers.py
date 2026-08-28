@@ -12,6 +12,8 @@ from components import (
     ATTACHMENT_DATA_URL_MAX_CHARS,
     ATTACHMENT_TYPE_IMAGE,
     ATTACHMENT_TYPE_VIDEO,
+    CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT,
+    DEFAULT_LANGUAGE,
     JSONRPC_INVALID_PARAMS,
     JSONRPC_METHOD_NOT_FOUND,
     MAX_ATTACHMENTS_PER_TURN,
@@ -36,6 +38,7 @@ from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
+from services.chat.turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_temperature
 from services.companion import (
     AVATAR_JOB_LOCKS,
     MODEL_JOB_LOCKS,
@@ -68,7 +71,7 @@ from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import IM_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
-from services.llm import MissingLlmConfigError, resolve_user_llm_config
+from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
 from services.tools import REGISTRY
 
@@ -571,6 +574,76 @@ def _register_session_handlers(
         return {"session_id": runtime.session_id, "settings": dict(runtime.settings)}
 
     dispatcher.register("session.set_settings", session_set_settings)
+
+    async def session_compress_context(params: dict) -> dict:
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        if runtime.chat_task and not runtime.chat_task.done():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
+
+        async with SESSION_LOCAL() as db:
+            conv = await _find_owned_conv(db, user_id, runtime.session_id)
+            if conv is None:
+                raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {runtime.session_id!r}")
+            user_settings = await load_user_settings(db, user_id)
+            effective_settings = _merge_session_settings(user_settings, runtime)
+            req = ChatRequest(session_id=str(conv.id), message=ChatMessageRequest(role="user", content=""))
+            inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+
+            compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
+            compressed_context, compress_info = await compress_history_if_needed(
+                inputs.context,
+                client=inputs.client,
+                model=inputs.model_name,
+                context_length=inputs.ctx_length,
+                enabled=True,
+                threshold_ratio=0.0,
+                temperature=scale_temperature(inputs.provider_name, compression_u),
+                language=effective_settings.get("language", DEFAULT_LANGUAGE),
+                current_tokens=inputs.estimated_tokens,
+                force=True,
+            )
+
+            if compress_info is None:
+                return {
+                    "session_id": runtime.session_id,
+                    "compressed": False,
+                    "reason": "历史消息较少，无需压缩（至少需要保留最近对话）",
+                    "usage": {
+                        "total_tokens": inputs.estimated_tokens,
+                        "context_window": inputs.ctx_length,
+                    },
+                }
+
+            checkpoint = Message(
+                conversation_id=conv.id,
+                role="system",
+                content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
+                subtype="compress_summary",
+                prompt_tokens=compress_info.get("prompt_tokens", 0),
+                completion_tokens=compress_info.get("completion_tokens", 0),
+            )
+            db.add(checkpoint)
+            await db.commit()
+            await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
+
+            new_inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+            delivered, truncated, next_cursor = await build_session_messages(db, conv)
+
+            return {
+                "session_id": runtime.session_id,
+                "compressed": True,
+                "replaced_count": compress_info["replaced_count"],
+                "summary": compress_info["summary"],
+                "messages": delivered,
+                "usage": {
+                    "total_tokens": new_inputs.estimated_tokens,
+                    "context_window": new_inputs.ctx_length,
+                },
+            }
+
+    dispatcher.register("session.compress_context", session_compress_context)
+    dispatcher.register("session.compress", session_compress_context)
 
     def _track(task: asyncio.Task) -> None:
         if user_session is not None:

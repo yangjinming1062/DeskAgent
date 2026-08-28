@@ -2,16 +2,42 @@ import { useStore } from '@nanostores/react'
 import type React from 'react'
 import { useState } from 'react'
 
-import { $sessionContextUsage, $sessionSettings } from '@/companion/chat-store'
+import {
+  $chatSessionId,
+  $sessionContextUsage,
+  $sessionSettings,
+  hydrateChatMessages,
+  setSessionContextUsage
+} from '@/companion/chat-store'
+import { Loader2, Sparkles } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
+import { $gateway } from '@/shared/store/gateway'
+import { notify, notifyError } from '@/shared/store/notifications'
+import type { SessionMessage } from '@/shared/types/spiritagent'
 
 const DEFAULT_THRESHOLD = 0.8
 const DEFAULT_LIMIT = 1_000_000
 
+interface CompressContextResponse {
+  compressed: boolean
+  messages?: SessionMessage[]
+  reason?: string
+  replaced_count?: number
+  session_id?: string
+  summary?: string
+  usage?: {
+    context_window?: number
+    total_tokens?: number
+  }
+}
+
 export function ContextProgressBar(): React.JSX.Element {
+  const sessionId = useStore($chatSessionId)
   const usage = useStore($sessionContextUsage)
   const settings = useStore($sessionSettings)
+  const gateway = useStore($gateway)
   const [hovered, setHovered] = useState(false)
+  const [compressing, setCompressing] = useState(false)
 
   const threshold =
     typeof settings.context_compression_threshold === 'number'
@@ -41,6 +67,51 @@ export function ContextProgressBar(): React.JSX.Element {
         ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.35)]'
         : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.45)]'
 
+  const handleManualCompress = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+
+    if (compressing || !sessionId || !gateway || gateway.connectionState !== 'open') {
+      return
+    }
+
+    setCompressing(true)
+
+    try {
+      const res = await gateway.request<CompressContextResponse>('session.compress_context', {
+        session_id: sessionId
+      })
+
+      if (res.compressed) {
+        if (Array.isArray(res.messages)) {
+          hydrateChatMessages(res.messages)
+        }
+
+        if (res.usage?.total_tokens !== undefined) {
+          setSessionContextUsage({
+            contextLimit: res.usage.context_window,
+            totalTokens: res.usage.total_tokens
+          })
+        }
+
+        notify({
+          durationMs: 4000,
+          kind: 'success',
+          message: `已成功压缩 ${res.replaced_count ?? 0} 条早期对话历史`
+        })
+      } else {
+        notify({
+          durationMs: 3500,
+          kind: 'info',
+          message: res.reason || '当前历史消息较少，无需压缩'
+        })
+      }
+    } catch (err) {
+      notifyError(err, '手动压缩上下文失败')
+    } finally {
+      setCompressing(false)
+    }
+  }
+
   return (
     <div
       className="relative w-full pt-1.5 pb-0.5"
@@ -49,18 +120,43 @@ export function ContextProgressBar(): React.JSX.Element {
     >
       {/* 悬停浮层提示信息 */}
       {hovered && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-md border border-white/12 bg-neutral-900/95 px-2 py-0.5 text-[10px] text-white/90 shadow-lg backdrop-blur-sm whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150">
-          <span>
-            上下文：<strong className="font-mono text-white">{totalTokens.toLocaleString()}</strong> /{' '}
-            <span className="font-mono text-white/60">{contextLimit.toLocaleString()}</span> Tokens ({pct.toFixed(1)}%)
-          </span>
-          <span className="text-white/30">·</span>
-          <span className="text-accent font-medium">压缩节点: {Math.round(thresholdPct)}%</span>
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-md border border-white/12 bg-neutral-900/95 px-2.5 py-1 text-[10px] text-white/90 shadow-lg backdrop-blur-sm whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+          {compressing ? (
+            <div className="flex items-center gap-1.5 text-accent">
+              <Loader2 className="size-3 animate-spin" />
+              <span>正在压缩当前会话上下文…</span>
+            </div>
+          ) : (
+            <>
+              <span>
+                上下文：<strong className="font-mono text-white">{totalTokens.toLocaleString()}</strong> /{' '}
+                <span className="font-mono text-white/60">{contextLimit.toLocaleString()}</span> Tokens (
+                {pct.toFixed(1)}%)
+              </span>
+              <span className="text-white/30">·</span>
+              <span className="text-accent font-medium">压缩节点: {Math.round(thresholdPct)}%</span>
+              <span className="text-white/30">·</span>
+              <span className="text-white/60 font-sans flex items-center gap-0.5">
+                <Sparkles className="size-2.5 text-amber-300" />
+                点击立即压缩
+              </span>
+            </>
+          )}
         </div>
       )}
 
-      {/* 进度条轨道 */}
-      <div className="relative h-1 w-full overflow-visible rounded-full bg-white/10 cursor-help transition group">
+      {/* 进度条轨道（可点击触发压缩） */}
+      <button
+        aria-label="手动压缩上下文"
+        className={cn(
+          'relative h-1.5 w-full overflow-visible rounded-full bg-white/10 transition group cursor-pointer block border-0 p-0',
+          compressing && 'cursor-wait animate-pulse'
+        )}
+        disabled={compressing}
+        onClick={handleManualCompress}
+        title="点击手动压缩当前会话上下文"
+        type="button"
+      >
         {/* 填充条 */}
         <div
           className={cn('h-full rounded-full transition-all duration-300 ease-out', barColor)}
@@ -69,13 +165,13 @@ export function ContextProgressBar(): React.JSX.Element {
 
         {/* 压缩阈值节点标识 (Node Marker) */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-[2px] rounded-full bg-white/70 shadow-xs transition hover:bg-white hover:h-3.5"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-[2px] rounded-full bg-white/70 shadow-xs transition group-hover:bg-white group-hover:h-3.5"
           style={{ left: `${thresholdPct}%` }}
           title={`压缩阈值节点 (${Math.round(thresholdPct)}%)`}
         >
           <div className="absolute -top-1 left-1/2 -translate-x-1/2 size-1 rounded-full bg-white/80" />
         </div>
-      </div>
+      </button>
     </div>
   )
 }

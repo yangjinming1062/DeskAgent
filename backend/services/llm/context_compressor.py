@@ -119,20 +119,22 @@ async def compress_history_if_needed(
     temperature: float | None = None,
     language: str = DEFAULT_LANGUAGE,
     current_tokens: int | None = None,
+    force: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    """按需压缩历史；成功返回压缩后的 Responses 上下文，失败或无需压缩返回原上下文。"""
-    if enabled is None:
-        enabled = SETTINGS.enable_context_compression
-    if not enabled:
-        return context, None
+    """按需或强制压缩历史；成功返回压缩后的 Responses 上下文，失败或无需压缩返回原上下文。"""
+    if not force:
+        if enabled is None:
+            enabled = SETTINGS.enable_context_compression
+        if not enabled:
+            return context, None
 
-    threshold = threshold_ratio if threshold_ratio is not None else SETTINGS.context_compression_threshold
+        threshold = threshold_ratio if threshold_ratio is not None else SETTINGS.context_compression_threshold
+        tokens_to_check = current_tokens if current_tokens is not None else approx_responses_tokens(context["instructions"], context["input"])
+        if context_length <= 0 or tokens_to_check < context_length * threshold:
+            return context, None
+
     target = target_tokens if target_tokens is not None else SETTINGS.context_summary_target_tokens
     cap = max_input_messages if max_input_messages is not None else SETTINGS.context_summary_max_input_messages
-
-    tokens_to_check = current_tokens if current_tokens is not None else approx_responses_tokens(context["instructions"], context["input"])
-    if context_length <= 0 or tokens_to_check < context_length * threshold:
-        return context, None
 
     block, keep = _pick_compressible_block(context["input"], max_input_messages=cap)
     if not block:
