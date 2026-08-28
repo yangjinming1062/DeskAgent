@@ -15,7 +15,6 @@ const TOOLSET_DEFS: ToolsetDef[] = [
   { extraTools: ['execute_code'], id: 'code_execution' },
   { extraTools: ['process'], id: 'process_management' },
   { extraTools: ['skills_list', 'skill_view', 'skill_manage'], id: 'skills_system' },
-  { extraTools: ['text_to_speech', 'list_tts_voices'], id: 'text_to_speech' },
   { extraTools: ['computer_use'], id: 'computer_use' },
   { extraTools: ['vision_analyze'], id: 'media_analysis' }
 ]

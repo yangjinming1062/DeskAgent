@@ -20,10 +20,8 @@ const STT_TIMEOUT_MS = 60_000
 const TTS_TIMEOUT_MS = 60_000
 const TTS_MAX_TEXT_CHARS = 4000
 const STT_MAX_AUDIO_BYTES = 24 * 1024 * 1024
-// 与后端会话配额对齐；本地模式（未配 public_base_url）的 50MB 单文件上限由后端 413 文案告知。
 const ATTACH_VIDEO_MAX_BYTES = 512 * 1024 * 1024
 const ATTACH_VIDEO_TIMEOUT_MS = 120_000
-const CONFIG_CACHE_TTL_MS = 10_000
 const DEFAULT_TTS_LANGUAGE = 'zh'
 const DEFAULT_STT_LANGUAGE = 'zh'
 const MIN_TTS_INTERVAL_MS = 750
@@ -91,10 +89,6 @@ class SttLimiter {
       }
     }
   }
-
-  getActiveCount(): number {
-    return this.activeCount
-  }
 }
 
 class BoundedTtsQueue {
@@ -113,10 +107,6 @@ class BoundedTtsQueue {
   } = {}) {
     this.maxQueueSize = maxQueueSize
     this.minCloudIntervalMs = minCloudIntervalMs
-  }
-
-  get pendingCount(): number {
-    return this.queue.length
   }
 
   enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -209,29 +199,6 @@ async function postMultipart({
   return { body: buf, contentType: res.headers.get('content-type') || '', headers: res.headers }
 }
 
-interface RunnerBridgeLike {
-  getTools?: () => Record<string, unknown>[]
-  invoke?: <T = unknown>(name: string, args?: Record<string, unknown>) => Promise<T>
-}
-
-function localToolAvailable(bridge: RunnerBridgeLike | null | undefined, toolName: string): boolean {
-  if (!bridge) {
-    return false
-  }
-
-  const tools = bridge.getTools?.()
-
-  if (!Array.isArray(tools)) {
-    return false
-  }
-
-  return tools.some(t => {
-    const func = t?.function as { name?: string } | undefined
-
-    return func?.name === toolName || t?.name === toolName
-  })
-}
-
 function formatKv(
   prefix: string,
   event: string,
@@ -253,88 +220,6 @@ function makeLog(
   base: Record<string, unknown>
 ): (event: string, extra?: Record<string, unknown>) => void {
   return (event, extra = {}) => log(formatKv(prefix, event, base, extra))
-}
-
-interface LocalSttResult {
-  error?: string
-  success?: boolean
-  text?: string
-}
-
-async function tryLocalStt({
-  bridge,
-  data,
-  language,
-  mime
-}: {
-  bridge: RunnerBridgeLike | null | undefined
-  data: Buffer
-  language?: string
-  mime: string
-}): Promise<{ error?: Error; ok: boolean; value?: { text: string } }> {
-  try {
-    if (!bridge?.invoke) {
-      return { error: new Error('Runner bridge invoke is unavailable'), ok: false }
-    }
-
-    const result = await bridge.invoke<LocalSttResult>('speech_to_text', {
-      audio_base64: data.toString('base64'),
-      mime_type: mime,
-      ...(language ? { language } : {})
-    })
-
-    if (result && result.success === true && typeof result.text === 'string') {
-      return { ok: true, value: { text: result.text } }
-    }
-
-    const msg = result?.error ? String(result.error) : 'local STT returned no text'
-
-    return { error: new Error(msg), ok: false }
-  } catch (e: unknown) {
-    return { error: e instanceof Error ? e : new Error(String(e)), ok: false }
-  }
-}
-
-interface LocalTtsResult {
-  engine?: string
-  error?: string
-  path?: string
-  success?: boolean
-  voice?: string
-}
-
-async function tryLocalTts({ bridge, text }: { bridge: RunnerBridgeLike | null | undefined; text: string }): Promise<{
-  error?: Error
-  ok: boolean
-  value?: { dataUrl: string; engine: string; mimeType: string; voice: string }
-}> {
-  try {
-    if (!bridge?.invoke) {
-      return { error: new Error('Runner bridge invoke is unavailable'), ok: false }
-    }
-
-    const result = await bridge.invoke<LocalTtsResult>('text_to_speech', { text })
-
-    if (result && result.success === true && result.path) {
-      const buf = fs.readFileSync(result.path)
-
-      return {
-        ok: true,
-        value: {
-          dataUrl: `data:audio/wav;base64,${buf.toString('base64')}`,
-          engine: result.engine || 'unknown',
-          mimeType: 'audio/wav',
-          voice: result.voice || '(default)'
-        }
-      }
-    }
-
-    const msg = result?.error ? String(result.error) : 'local TTS returned no audio'
-
-    return { error: new Error(msg), ok: false }
-  } catch (e: unknown) {
-    return { error: e instanceof Error ? e : new Error(String(e)), ok: false }
-  }
 }
 
 async function sttViaBackend({
@@ -430,71 +315,6 @@ async function ttsViaBackend({
   return { dataUrl: dataUrlFromBuffer(buf, mime), mimeType: mime, voiceOut }
 }
 
-type EngineMode = 'auto' | 'cloud' | 'local'
-
-export interface EnginePrefs {
-  expiresAt: number
-  stt: EngineMode
-  sttEnabled: boolean
-  sttSilentFallback: boolean
-  tts: EngineMode
-}
-
-export function createEnginePrefsCache({
-  ensureBackend,
-  fetchImpl,
-  ttlMs = CONFIG_CACHE_TTL_MS
-}: {
-  ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
-  fetchImpl?: typeof globalThis.fetch
-  ttlMs?: number
-}): () => Promise<EnginePrefs> {
-  let cached: null | EnginePrefs = null
-
-  return async function getEnginePrefs(): Promise<EnginePrefs> {
-    const now = Date.now()
-
-    if (cached && cached.expiresAt > now) {
-      return cached
-    }
-
-    try {
-      const connection = await ensureBackend()
-
-      const caller = fetchImpl || globalThis.fetch
-
-      const res = await caller(`${connection.baseUrl}/api/config`, {
-        headers: { ...(connection.token ? { Authorization: `Bearer ${connection.token}` } : {}) },
-        signal: AbortSignal.timeout(10_000)
-      })
-
-      if (!res.ok) {
-        throw new Error(`${res.status} /api/config`)
-      }
-
-      const body = (await res.json()) as {
-        config?: {
-          stt?: { enabled?: boolean; engine?: EngineMode; silent_fallback?: boolean }
-          tts?: { engine?: EngineMode }
-        }
-      }
-
-      const config = body?.config || {}
-      cached = {
-        expiresAt: now + ttlMs,
-        stt: config.stt?.engine || 'auto',
-        sttEnabled: config.stt?.enabled !== false,
-        sttSilentFallback: config.stt?.silent_fallback !== false,
-        tts: config.tts?.engine || 'auto'
-      }
-    } catch {
-      cached = { expiresAt: now + ttlMs, stt: 'auto', sttEnabled: true, sttSilentFallback: true, tts: 'auto' }
-    }
-
-    return cached
-  }
-}
-
 const TTS_CACHE_MAX_ENTRIES = 100
 const TTS_CACHE_TTL_MS = 10 * 60 * 1000
 
@@ -536,8 +356,7 @@ interface MediaIpcDeps {
   spiritagentHome?: null | string
   ensureBackend: () => Promise<{ baseUrl: string; token?: null | string }>
   fetchImpl?: typeof globalThis.fetch
-  getEnginePrefs?: () => Promise<EnginePrefs>
-  getRunnerBridge?: () => RunnerBridgeLike | null | undefined
+  isSttEnabled: () => boolean
   ipcMain: IpcMain
   log?: (msg: string) => void
   minTtsIntervalMs?: number
@@ -551,8 +370,7 @@ export function registerMediaIpc({
   spiritagentHome,
   ensureBackend,
   fetchImpl,
-  getEnginePrefs,
-  getRunnerBridge,
+  isSttEnabled,
   ipcMain,
   log = () => {},
   minTtsIntervalMs,
@@ -561,10 +379,6 @@ export function registerMediaIpc({
   sttRefillRate,
   ttsMaxQueueSize
 }: MediaIpcDeps): void {
-  const resolvePrefs =
-    typeof getEnginePrefs === 'function' ? getEnginePrefs : createEnginePrefsCache({ ensureBackend, fetchImpl })
-
-  const bridge = () => (typeof getRunnerBridge === 'function' ? getRunnerBridge() : null)
   const diskCache = createTtsDiskCache({ spiritagentHome })
   const sttLimiter = new SttLimiter({ burst: sttBurst, maxConcurrency: sttMaxConcurrency, refillRate: sttRefillRate })
   const ttsQueue = new BoundedTtsQueue({ maxQueueSize: ttsMaxQueueSize, minCloudIntervalMs: minTtsIntervalMs })
@@ -580,100 +394,37 @@ export function registerMediaIpc({
     const release = sttLimiter.acquire()
 
     try {
-      const language = payload?.language || DEFAULT_STT_LANGUAGE
-      const filename = payload?.filename
-      const context = payload?.context || 'default'
       const startedAt = Date.now()
-
       const sttLog = makeLog(log, '[stt]', {
         bytes: data.length,
-        ctx: context,
+        ctx: payload?.context || 'default',
         id: sttId,
-        lang: language,
+        lang: payload?.language || DEFAULT_STT_LANGUAGE,
         mime
       })
 
       sttLog('start')
 
-      const prefs = await resolvePrefs()
-
-      if (!prefs.sttEnabled) {
+      if (!isSttEnabled()) {
         sttLog('done', { disabled: true, ms: Date.now() - startedAt })
         throw new Error('STT is disabled in configuration')
       }
 
-      const engine = prefs.stt
-      let fellBackToLocal = false
+      const text = await sttViaBackend({
+        data,
+        ensureBackend,
+        fetchImpl,
+        filename: payload?.filename,
+        language: payload?.language || DEFAULT_STT_LANGUAGE,
+        mime
+      })
+      sttLog('done', {
+        chars: text.length,
+        ms: Date.now() - startedAt,
+        route: 'cloud'
+      })
 
-      if (engine === 'auto') {
-        if (localToolAvailable(bridge(), 'speech_to_text')) {
-          const res = await tryLocalStt({ bridge: bridge(), data, language, mime })
-
-          if (res.ok && res.value) {
-            sttLog('done', {
-              chars: res.value.text.length,
-              ms: Date.now() - startedAt,
-              route: 'local'
-            })
-
-            return { text: res.value.text }
-          }
-
-          if (!prefs.sttSilentFallback) {
-            sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
-            throw res.error
-          }
-
-          fellBackToLocal = true
-          sttLog('fallback', { from: 'local', reason: res.error?.message, to: 'cloud' })
-        }
-
-        try {
-          const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
-          sttLog('done', {
-            chars: text.length,
-            ms: Date.now() - startedAt,
-            route: 'cloud',
-            ...(fellBackToLocal ? { silent_fallback_used: true } : {})
-          })
-
-          return { text }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err)
-          sttLog('done', { error: msg, ms: Date.now() - startedAt, route: 'cloud' })
-          throw err
-        }
-      } else if (engine === 'cloud') {
-        const text = await sttViaBackend({ data, ensureBackend, fetchImpl, filename, language, mime })
-        sttLog('done', { chars: text.length, ms: Date.now() - startedAt, route: 'cloud' })
-
-        return { text }
-      }
-
-      if (localToolAvailable(bridge(), 'speech_to_text')) {
-        const res = await tryLocalStt({ bridge: bridge(), data, language, mime })
-
-        if (res.ok && res.value) {
-          sttLog('done', {
-            chars: res.value.text.length,
-            ms: Date.now() - startedAt,
-            route: 'local'
-          })
-
-          return { text: res.value.text }
-        }
-
-        sttLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
-        throw res.error
-      }
-
-      sttLog('done', { error: 'Local STT unavailable', ms: Date.now() - startedAt, route: 'local' })
-
-      if (engine === 'local') {
-        throw new Error('Local STT unavailable: runner not connected or speech_to_text tool missing')
-      }
-
-      throw new Error('STT failed: cloud unreachable and local STT unavailable')
+      return { text }
     } finally {
       release()
     }
@@ -691,16 +442,14 @@ export function registerMediaIpc({
       throw new Error(`Text too long (${text.length} chars; max ${TTS_MAX_TEXT_CHARS})`)
     }
 
-    const isDesigned = (payload?.voice || '').startsWith('designed:')
     const voice = payload?.voice || ''
     const language = DEFAULT_TTS_LANGUAGE
     const persist = payload?.persist === true
-    const context = payload?.context || 'default'
     const startedAt = Date.now()
 
     const ttsLog = makeLog(log, '[tts]', {
       chars: text.length,
-      ctx: context,
+      ctx: payload?.context || 'default',
       id: ttsId,
       lang: language,
       persisted: persist,
@@ -726,7 +475,7 @@ export function registerMediaIpc({
       return await pending
     }
 
-    const runSynthesis = async (): Promise<{ dataUrl: string; mimeType: string }> => {
+    const task = ttsQueue.enqueue(async () => {
       if (persist) {
         const hit = await diskCache.read({ language, text, voice })
 
@@ -739,22 +488,30 @@ export function registerMediaIpc({
         }
       }
 
-      return await ttsQueue.enqueue(() =>
-        synthesizeTts({
-          cacheKey,
-          isDesigned,
+      const result = await ttsViaBackend({ ensureBackend, fetchImpl, language, text, voice })
+      const value = { dataUrl: result.dataUrl, mimeType: result.mimeType }
+      setCachedTts(cacheKey, value)
+
+      if (persist) {
+        await diskCache.write({
+          buffer: dataUrlToBuffer(result.dataUrl),
           language,
-          persist,
-          startedAt,
+          mimeType: result.mimeType,
           text,
-          ttsLog,
-          ttsQueue,
           voice
         })
-      )
-    }
+      }
 
-    const task = runSynthesis()
+      ttsLog('done', {
+        mime: result.mimeType,
+        ms: Date.now() - startedAt,
+        persisted: persist,
+        route: 'cloud',
+        voice_out: result.voiceOut || null
+      })
+
+      return value
+    })
     inflightTts.set(cacheKey, task)
 
     try {
@@ -807,104 +564,4 @@ export function registerMediaIpc({
       }
     }
   )
-
-  async function synthesizeTts({
-    cacheKey,
-    isDesigned,
-    language,
-    persist,
-    startedAt,
-    text,
-    ttsLog,
-    ttsQueue: queue,
-    voice
-  }: {
-    cacheKey: string
-    isDesigned: boolean
-    language: string
-    persist: boolean
-    startedAt: number
-    text: string
-    ttsLog: (event: string, extra?: Record<string, unknown>) => void
-    ttsQueue: BoundedTtsQueue
-    voice: string
-  }): Promise<{ dataUrl: string; mimeType: string }> {
-    const prefs = await resolvePrefs()
-    const engine = isDesigned ? 'cloud' : prefs.tts
-
-    let fellBackToLocal = false
-
-    const callBackendThrottled = async () => {
-      await queue.throttleCloud()
-
-      return await ttsViaBackend({ ensureBackend, fetchImpl, language, text, voice })
-    }
-
-    const finishCloud = async (result: { dataUrl: string; mimeType: string; voiceOut?: string }) => {
-      const value = { dataUrl: result.dataUrl, mimeType: result.mimeType }
-      setCachedTts(cacheKey, value)
-
-      if (persist) {
-        await diskCache.write({
-          buffer: dataUrlToBuffer(result.dataUrl),
-          language,
-          mimeType: result.mimeType,
-          text,
-          voice
-        })
-      }
-
-      ttsLog('done', {
-        mime: result.mimeType,
-        ms: Date.now() - startedAt,
-        persisted: persist,
-        route: 'cloud',
-        voice_out: result.voiceOut || null
-      })
-
-      return value
-    }
-
-    if (engine === 'auto') {
-      try {
-        return await finishCloud(await callBackendThrottled())
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
-        fellBackToLocal = true
-        ttsLog('fallback', { from: 'cloud', reason: msg, to: 'local' })
-      }
-    } else if (engine === 'cloud') {
-      return await finishCloud(await callBackendThrottled())
-    }
-
-    if (localToolAvailable(bridge(), 'text_to_speech')) {
-      const res = await tryLocalTts({ bridge: bridge(), text })
-
-      if (res.ok && res.value) {
-        setCachedTts(cacheKey, { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType })
-        ttsLog('done', {
-          engine: res.value.engine,
-          mime: res.value.mimeType,
-          ms: Date.now() - startedAt,
-          route: 'local',
-          voice: res.value.voice,
-          voice_requested: voice || null,
-          ...(fellBackToLocal ? { silent_fallback_used: true } : {})
-        })
-
-        return { dataUrl: res.value.dataUrl, mimeType: res.value.mimeType }
-      }
-
-      ttsLog('done', { error: res.error?.message, ms: Date.now() - startedAt, route: 'local' })
-      throw res.error
-    }
-
-    ttsLog('done', { error: 'Local TTS unavailable', ms: Date.now() - startedAt, route: 'local' })
-
-    if (engine === 'local') {
-      throw new Error('Local TTS unavailable: runner not connected or text_to_speech tool missing')
-    }
-
-    throw new Error('TTS failed: cloud unreachable and local TTS unavailable')
-  }
 }

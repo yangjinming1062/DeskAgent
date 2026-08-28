@@ -54,7 +54,6 @@ import {
   IconTrash as Trash2,
   IconUsers as Users,
   IconVideo as Video,
-  IconVolume2 as Volume2,
   IconX as X,
   IconBolt as Zap,
   IconBoltFilled as ZapFilled
@@ -116,7 +115,6 @@ export {
   Trash2,
   Users,
   Video,
-  Volume2,
   X,
   Zap,
   ZapFilled

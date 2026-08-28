@@ -28,7 +28,6 @@ SPIRITAGENT_HOME_ARG=""
 BUNDLED_RUNNER_DIR_ARG=""
 BUNDLED_DESKTOP_DIR_ARG=""
 BUNDLED_SKILLS_DIR_ARG=""
-BUNDLED_VOICES_DIR_ARG=""
 BUNDLED_ONBOARDING_AUDIO_DIR_ARG=""
 
 MODE="stage"
@@ -47,7 +46,6 @@ Usage:
       [--bundled-runner-dir PATH] \\
       [--bundled-desktop-dir PATH] \\
       [--bundled-skills-dir PATH] \\
-      [--bundled-voices-dir PATH] \
       [--bundled-onboarding-audio-dir PATH]
 
 Stages: welcome, install-python, unpack-runner, unpack-desktop, install-skills, finalize.
@@ -64,7 +62,6 @@ while [[ $# -gt 0 ]]; do
     --bundled-runner-dir)         BUNDLED_RUNNER_DIR_ARG="$2"; shift 2 ;;
     --bundled-desktop-dir)        BUNDLED_DESKTOP_DIR_ARG="$2"; shift 2 ;;
     --bundled-skills-dir)         BUNDLED_SKILLS_DIR_ARG="$2"; shift 2 ;;
-    --bundled-voices-dir)         BUNDLED_VOICES_DIR_ARG="$2"; shift 2 ;;
     --bundled-onboarding-audio-dir) BUNDLED_ONBOARDING_AUDIO_DIR_ARG="$2"; shift 2 ;;
     -h|--help)                    usage; exit 0 ;;
     *)                            echo "unknown arg: $1" >&2; exit 2 ;;
@@ -83,7 +80,6 @@ fi
 BUNDLED_RUNNER_DIR="${SPIRITAGENT_BUNDLED_RUNNER_DIR:-$BUNDLED_RUNNER_DIR_ARG}"
 BUNDLED_DESKTOP_DIR="${SPIRITAGENT_BUNDLED_DESKTOP_DIR:-$BUNDLED_DESKTOP_DIR_ARG}"
 BUNDLED_SKILLS_DIR="${SPIRITAGENT_BUNDLED_SKILLS_DIR:-$BUNDLED_SKILLS_DIR_ARG}"
-BUNDLED_VOICES_DIR="${SPIRITAGENT_BUNDLED_VOICES_DIR:-$BUNDLED_VOICES_DIR_ARG}"
 BUNDLED_ONBOARDING_AUDIO_DIR="${SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR:-$BUNDLED_ONBOARDING_AUDIO_DIR_ARG}"
 DESKTOP_FORMAT="${SPIRITAGENT_INSTALLER_FORMAT:-$DEFAULT_DESKTOP_FORMAT}"
 
@@ -249,35 +245,6 @@ stage_unpack_runner() {
   # 清理旧的 PyInstaller 二进制
   rm -f "$SPIRITAGENT_HOME_RESOLVED/bin/spiritagent-runner"
 
-  # 拷贝 bundled Piper voices（installer/payload/voices/）至 models 目录，确保首日离线 TTS 可用。
-  # 每个语音由 onnx + json 组成，缺一不可。按内容拷贝——只拷同时包含两半的语音，未来添加语音只需投放 payload，无须改安装脚本。
-  # 变量 ``name`` 已以 .onnx 结尾，再用 ``${name}.onnx.json`` 会拼出重复后缀，因此对 .onnx 走 ``${name}.json`` 拼接。
-  local voice_count=0
-  if [[ -n "$BUNDLED_VOICES_DIR" && -d "$BUNDLED_VOICES_DIR" ]]; then
-    local voices_target="$SPIRITAGENT_HOME_RESOLVED/models/piper"
-    mkdir -p "$voices_target"
-    shopt -s nullglob
-    local voice_files=("$BUNDLED_VOICES_DIR"/*)
-    if [[ ${#voice_files[@]} -gt 0 ]]; then
-      for f in "${voice_files[@]}"; do
-        local name
-        name=$(basename "$f")
-        if [[ "$name" == *.onnx.json ]]; then
-          local stem="${name%.onnx.json}"
-          if [[ -f "$BUNDLED_VOICES_DIR/${stem}.onnx" ]]; then
-            cp -f "$f" "$voices_target/$name"
-          fi
-        elif [[ "$name" == *.onnx ]]; then
-          if [[ -f "$BUNDLED_VOICES_DIR/${name}.json" ]]; then
-            cp -f "$f" "$voices_target/$name"
-          fi
-        fi
-      done
-      voice_count=$(find "$voices_target" -maxdepth 1 -name '*.onnx' -type f | wc -l | tr -d ' ')
-    fi
-    shopt -u nullglob
-  fi
-
   # 拷贝 onboarding 引导音频：语言子目录（zh/、en/、…）1:1 映射至 $SPIRITAGENT_HOME/audio/onboarding/<lang>/。
   local audio_count=0
   if [[ -n "$BUNDLED_ONBOARDING_AUDIO_DIR" && -d "$BUNDLED_ONBOARDING_AUDIO_DIR" ]]; then
@@ -294,8 +261,8 @@ stage_unpack_runner() {
 
   local size
   size=$(stat -c%s "$wheel" 2>/dev/null || stat -f%z "$wheel" 2>/dev/null || echo 0)
-  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "voices_copied": %s, "onboarding_audio_copied": %s}}\n' \
-    "$SPIRITAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$voice_count" "$audio_count"
+  printf '__SPIRITAGENT_STAGE_RESULT__:{"ok": true, "stage": "unpack-runner", "data": {"venv": "%s/runner/.venv", "wheel": "%s", "size_bytes": %s, "onboarding_audio_copied": %s}}\n' \
+    "$SPIRITAGENT_HOME_RESOLVED" "$(basename "$wheel")" "$size" "$audio_count"
 }
 
 # 阶段 4：解包桌面端

@@ -40,8 +40,6 @@ interface CapabilityHealthItem {
 export type RunnerCapabilitiesHealth = Record<string, CapabilityHealthItem>
 
 export interface RunnerCapabilities {
-  local_stt?: boolean
-  local_tts?: boolean
   microphone?: boolean
   platform?: string
   python?: string

@@ -1,6 +1,6 @@
 # Installer
 
-SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放的安装 payload（skills 与 voices）、以及 Tauri 进程启动的安装协议脚本。首装完成释放客户端后，客户端以"蛋"形态首次启动，进入 [DESIGN.md §5](../DESIGN.md) 的伙伴生命周期 onboarding；构建入口与产物见 [scripts/README.md](../scripts/README.md)。
+SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放的安装 payload（skills）、以及 Tauri 进程启动的安装协议脚本。首装完成释放客户端后，客户端以"蛋"形态首次启动，进入 [DESIGN.md §5](../DESIGN.md) 的伙伴生命周期 onboarding；构建入口与产物见 [scripts/README.md](../scripts/README.md)。
 
 ## 1. 职责与边界
 
@@ -26,7 +26,6 @@ SpiritAgent 安装器产品。本目录容纳 Tauri 2 桌面程序、待释放�
 - **Install 脚本在 `installer/` 而非 `scripts/`**：安装协议与 Tauri 程序 1:1 耦合，必须随安装器版本一起演进；仓库级构建编排归 [scripts/README.md](../scripts/README.md)。
 - **uv-managed venv，不依赖 system Python**：通过 [uv](https://docs.astral.sh/uv/) 安装 Python 到 uv 托管位置（无需管理员权限），venv 创建在 `$SPIRITAGENT_HOME/runner/.venv`。为什么不依赖 system Python：不同 OS 自带 Python 版本差异大，依赖系统 Python 会让 install 兼容性变成无尽测试矩阵。
 - **auth bootstrap one-shot**（与客户端协作）：登录成功后写一次性 bootstrap 文件（POSIX 0600；Windows 由父目录 ACL 控制）；客户端启动时消费、消费后原子重命名标记并到后端校验 token，任何失败静默删文件回退未登录态。为什么不直接写客户端的会话文件：installer 是临时进程，不能保证 safeStorage 跨平台一致；让客户端启动时统一走 safeStorage 落盘更安全。
-- **Piper voice 三份打包**：`zh_CN-huayan-medium` / `zh_CN-chaowen-medium` / `en_US-amy-medium` 嵌入 payload，按内容判定后拷贝到本地模型目录。为什么必须打包：onboarding 期间本地 TTS 优先时立刻能听到中文女声，而不是系统默认男声——避免首装断网时连 onboarding 都做不了。
 - **Skills frontmatter 安装器透明**：不解析 frontmatter，按文件整体 seed 到本地 Skills 目录；过滤 / 翻译由客户端与 Runner 各自做（两套翻译表语义对齐，新增平台时需同步更新两边）。
 
 ## 3. 架构地图
@@ -48,7 +47,6 @@ installer/
 ├── payload/               # build 期 symlink 到 skills/ + build 产物
 │   ├── runner/            # Runner wheel + server.py
 │   ├── client/            # Client build 产物
-│   ├── voices/            # Piper offline voices
 │   └── install.{sh,ps1,cmd}
 ```
 
@@ -61,7 +59,6 @@ installer/
 - **macOS 自拷贝签名显式判定防静默降级**：自拷贝到 `$SPIRITAGENT_HOME` 后通过 `codesign -d` 区分未签名（补 ad-hoc 签名以支持 Apple Silicon 运行）、损坏 ad-hoc 签名（重新签）与权威证书签名（严格校验，严禁静默降级覆盖为 ad-hoc 签名）。
 - **uv pip install 失败后自动用镜像重试**：`SPIRITAGENT_PYPI_INDEX_URL` / `PIP_INDEX_URL` 环境变量优先，缺省阿里云镜像。为什么不内置 pip mirror 配置：用户自托管 / 企业代理场景可能需要私有 index；env var 优先 + 兜底镜像覆盖大多数情况。
 - **macOS fast path 完整性自检与自愈**：让 `/Applications/SpiritAgent.app` 兼任"首次启动走安装、之后是 launcher"——减少启动时的 UI 闪烁。已安装判定不止看 marker，还深度校验 Runner venv 核心依赖可导入，检测到损坏自动回退完整安装/修复流程；`--reinstall` / `--repair` 显式跳过 fast path。
-- **Piper voice 按内容判定拷贝**：只有当目标目录同时缺 onnx 模型与配套 json 时才拷贝，避免每次启动都重写大文件。为什么不是每次覆盖：60MB × 3 个 voice × 每次 reinstall 都是几百 MB IO；按内容判定让 reinstall 几乎零 IO。
 - **卸载由安装器而非客户端触发**：所有平台变更职责集中在 Installer；客户端启动时只连云端后端，不调卸载流程。为什么不让客户端自卸载：卸载是 OS 级变更（移除安装目录 / 应用目录 / 注册表 / 计划任务），客户端无足够权限（macOS 需要 sudo）。
 - **ZIP 格式解压路径自适应回退**：`SPIRITAGENT_INSTALLER_FORMAT=zip` 解压到 `$SPIRITAGENT_HOME` 时客户端不在 canonical 路径，额外回退 `$SPIRITAGENT_HOME/apps/SpiritAgent/SpiritAgent.exe`。
 - **`install.cmd` 开发期辅助脚本**：Windows cmd.exe 仅供本地开发调试兜底，生产环境 `bundle.resources` 不嵌入。
@@ -73,7 +70,6 @@ installer/
 | 安装协议、stages 与进度语义 | Tauri ↔ 安装脚本 | 本 README §4 |
 | Payload 嵌入清单与安装根路径 | Tauri ↔ 安装脚本 → 客户端 / Runner | 本 README §3 / §4 |
 | Runner venv 布局与启动命令 | Installer → 客户端 | 本 README §2 / §3（Runner 入口见 [runner/README.md §3](../runner/README.md)） |
-| Piper voices 打包 | Installer → Runner | 本 README §4 |
 | Skills 平台过滤 | Installer → 客户端 + Runner | 本 README §2 |
 
 ## 6. 已知限制

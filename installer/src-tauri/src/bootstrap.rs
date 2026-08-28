@@ -735,7 +735,6 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
         bundled_runner_dir: payload.as_ref().map(|d| d.join("runner")),
         bundled_desktop_dir: payload.as_ref().map(|d| d.join("desktop")),
         bundled_skills_dir: payload.as_ref().map(|d| d.join("skills")),
-        bundled_voices_dir: payload.as_ref().map(|d| d.join("voices")),
         bundled_onboarding_audio_dir: payload.as_ref().map(|d| d.join("onboarding-audio")),
         installer_format: Some(installer_format),
     }

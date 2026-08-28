@@ -1,8 +1,6 @@
 from .async_bridge import safe_schedule_threadsafe
 from .capabilities import (
     disk_free_bytes,
-    local_stt_available,
-    local_tts_available,
     microphone_available,
     network_reachable,
     screen_capture_available,
@@ -147,8 +145,6 @@ __all__ = [
     "iter_skills_files",
     "kill_tree",
     "load_config",
-    "local_stt_available",
-    "local_tts_available",
     "microphone_available",
     "msys_to_windows_path",
     "network_reachable",

@@ -7,40 +7,14 @@ const electronPath = require('electron')
 
 delete process.env.ELECTRON_RUN_AS_NODE
 
-// Auto-wire the local Runner so dev mode gets local STT/TTS/tools without
-// manually setting SPIRITAGENT_DESKTOP_PYTHON every session.
+// Auto-wire the local Runner so dev mode gets local tools without manually
+// setting SPIRITAGENT_DESKTOP_PYTHON every session.
 const repoRoot = path.resolve(__dirname, '..', '..')
 const venvRoot = path.join(repoRoot, 'runner', '.venv')
 const venvPython =
   process.platform === 'win32' ? path.join(venvRoot, 'Scripts', 'python.exe') : path.join(venvRoot, 'bin', 'python')
 
-function findSitePackages(venvRoot) {
-  if (process.platform === 'win32') {
-    return path.join(venvRoot, 'Lib', 'site-packages')
-  }
-  try {
-    const entries = fs.readdirSync(path.join(venvRoot, 'lib'))
-    const pyDir = entries.find(e => /^python3\.\d+$/.test(e))
-    return pyDir ? path.join(venvRoot, 'lib', pyDir, 'site-packages') : ''
-  } catch {
-    return ''
-  }
-}
-
-function venvHasAudioStack() {
-  const sitePackages = findSitePackages(venvRoot)
-  if (!sitePackages) {
-    return false
-  }
-  for (const pkg of ['faster_whisper', 'piper', 'pyttsx3']) {
-    if (!fs.existsSync(path.join(sitePackages, pkg, '__init__.py'))) {
-      return false
-    }
-  }
-  return true
-}
-
-if (!process.env.SPIRITAGENT_DESKTOP_PYTHON && fs.existsSync(venvPython) && venvHasAudioStack()) {
+if (!process.env.SPIRITAGENT_DESKTOP_PYTHON && fs.existsSync(venvPython)) {
   process.env.SPIRITAGENT_DESKTOP_PYTHON = venvPython
 }
 if (!process.env.SPIRITAGENT_DESKTOP_RUNNER_REPO_ROOT && fs.existsSync(path.join(repoRoot, 'runner', 'server.py'))) {

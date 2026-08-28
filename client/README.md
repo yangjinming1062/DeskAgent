@@ -89,8 +89,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **激活码持久 + 会话 JWT 仅内存**：磁盘只持久化加密激活码 + 服务地址 + 用户；每次启动用激活码换取新的会话 JWT（含主动刷新机制）。为什么不持久会话 JWT：一旦持久就要承担泄露 + 过期管理成本；激活码 + 每次启动重新激活的模式更安全。
 - **用户配置云端真源 + 本地镜像（config-sync 协调器）**：backend `user_settings` 为真源，`desktop-settings.json` 是镜像；`shared/lib/config-sync.ts` 挂在 runner-config-store 的写路径上（`setCloudSync` 委托），每次变更走 镜像原子写 → 推 Runner → 防抖 PUT `/api/config`。为什么按节白名单而不是整文件上云：本地文件含明文机密（terminal 节）与设备路径，白名单 + 节内本机键剔除（browser.profile_dir）把机密钉死在本机（PROTOCOL §5.3）；镜像带 sync.user_id 归属戳，换号残留按不信任处理（清空同步节、不上传），防止把 A 的编辑泄给 B。离线编辑照常写镜像，恢复后由水合的键级播种（本地有而云端无的键回传）自愈补传——多端为按保存 LWW、无合并，另一端的改动下次水合收敛。账户/语音键（language/web.*/agent.* 等）无本地消费者，不入镜像、由设置页直连云端读写，与镜像键集天然不相交（PUT 只 upsert 传入键，见 PROTOCOL §2.4）。
 - **自更新两阶段而非单阶段**：单阶段"下载后直接覆盖"在网络断/进程被杀时变砖；两阶段拆分让第一阶段（旧进程跑）只做下载 + 强校验，第二阶段（新进程跑）才做文件操作，失败回滚旧版。为什么不直接原子重命名：原子重命名之前同样需要先完整下载到 staging，与两阶段本质等价，但分阶段语义上更易追踪哨兵标记与降级。契约见 [PROTOCOL.md §5.5](../PROTOCOL.md)。
-- **STT 默认本地优先 / TTS 默认云端优先**（见 [DESIGN.md §7](../DESIGN.md)）：本地零成本，云端音色音质优；引擎路由在 IPC 边界读短 TTL 缓存决策（自动 / 本地 / 云端三档），不暴露在设置面板——运维/部署侧决策。
-- **音色 id 不跨引擎**：云端音色 id 与本地音色 id 属于不同命名空间；路由到本地时不传调用方的音色。用户在伙伴设置中选的音色仅在云端路径生效。
+- **STT/TTS 一律云端**（见 [DESIGN.md §7](../DESIGN.md)）：客户端 IPC 边界直连后端 `POST /api/media/{stt,tts}`，无本地引擎路由；用户在伙伴设置中选的音色仅在云端路径生效。
 - **3D 渲染栈 WebGPU + 四层回退**：引擎异步工厂按 WebGPU → 内置 WebGL2 节点后端（同一 API 面/场景图，零代码）→ 经典 WebGLRenderer → 初始化失败（2D 动画版 / 程序化蛋形兜底，永不空白）逐级降级。**经典回退必须换新 canvas**——曾成功获取过 WebGPU 上下文的 canvas 再也要不到 WebGL2 上下文，所以 canvas 由引擎自建自管（React 只渲染容器），模型加载一律等待引擎就绪而非早退，避免首模型在异步启动窗口被静默丢弃。环境贴图生成按渲染器类型分支——经典版深度依赖 WebGLRenderer 内部结构。
 - **GPU 功耗偏好默认 `low-power`**：`WebGPURenderer` 与经典 `WebGLRenderer` 统一把 `powerPreference` 透传到上下文创建，默认为 `'low-power'`——300×360 精灵窗的渲染负载远低于 iGPU 满载门槛，`high-performance` 会在混合显卡笔记本（Windows Optimus / Apple Silicon 独显机型）持续唤醒 dGPU，平白耗电与发热。调试工具（如 `clip-debugger`）或对帧率有特殊要求的场景经 `EngineOptions.powerPreference` 显式覆盖到 `'high-performance'`。
 - **3D 材质安全回退与拖拽动力学**：加载 GLB 时记录模型内嵌原生基础贴图，自定义 PBR 贴图 404 或网络故障时自动回退原生材质，杜绝模型白板。拖拽时捕获即时速度向量注入物理惯性倾角（横滚/俯仰），结合"悬空摆动"与松手"站稳微沉"动作呈现被"拎起"的交互质感；精灵基准尺寸随屏幕高度自适应，兼容高分辨率屏。
@@ -101,7 +100,7 @@ ESLint `no-restricted-imports` 在 `renderer/companion/**` 与 `renderer/hub/**`
 - **Windows 单实例锁 dev 退出**：设 `SPIRITAGENT_DESKTOP_DISABLE_SINGLE_INSTANCE_LOCK=1` 强制多实例运行，便于并行调试窗口。
 - **连发消息合并窗口**：聊天层按 [DESIGN.md §6.6](../DESIGN.md) 的节奏合并用户连发消息，并在回合完成、错误或用户停止时立即冲刷。
 - **生产渲染面禁止裸 fetch（ESLint 强制）**：后端签名 URL 恒为相对路径，渲染进程 origin（dev 的 Vite、打包后的 file://）解析不到——直连只会打到 Vite 拿回 SPA 回退页，在下游解析器里炸出费解的报错。后端数据与资产字节一律经主进程 IPC 桥转发；纯浏览器跑的独立调试页（puppet 调试台 / clip-debugger）不受此约束，豁免处逐行 lint 注释写明 URL 来源。
-- **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防本地 Whisper/云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
+- **媒体 IPC 有界背压与双端流控**：STT 与 TTS 均在主进程 IPC 边界实施有界背压防护。STT 实施并发上限（2）与令牌桶速率限制，超额快速失败报错以防云端 STT 过载；TTS 统一维护有界等待队列、in-flight 请求合并与云端最小调用间隔，队列满时立即拒绝，内存/磁盘缓存命中零等待且不占用限流额度。
 - **dev 放宽 CSP（`unsafe-inline` + `unsafe-eval`），生产仍用严格 CSP**：Vite 的 React Fast Refresh preamble 是内联脚本，严格 CSP 会拦截并触发 `@vitejs/plugin-react can't detect preamble`——白屏 + HMR 重试烧 CPU。`installContentSecurityPolicy` 按 `app.isPackaged` 在 `DEFAULT_CSP_POLICY`（`script-src 'self'`）与 `DEV_CSP_POLICY` 之间切档。dev 只接本地 127.0.0.1:5174 与 OS 协议，无外部 XSS 攻击面需要这层防御；生产不能放松——脚本面收紧是产品级契约的一部分。
 - **未鉴权时激活浮层自动开 + 托盘「激活...」走 IPC**：未鉴权时精灵实体不可见（无模型可渲染，程序化蛋等渲染上下文尚未就绪），用户无从戳起——鉴权状态切到未认证（含首次水化、反激活后）即自动弹出激活浮层。托盘「激活...」入口经 IPC 通知渲染器翻 React 状态：主进程只拉窗口不翻渲染状态，不通知则浮层关掉一次就再也唤不回来。
 

@@ -84,58 +84,6 @@ def screen_capture_available() -> bool:
     return False
 
 
-def probe_local_stt() -> tuple[bool, str | None]:
-    """探测本地 STT 能力，返回 (是否可用, 失败原因)。"""
-    try:
-        import faster_whisper  # noqa: F401 — capability check
-
-        return True, None
-    except ImportError as e:
-        return False, f"faster_whisper not importable: {e}"
-
-
-def local_stt_available() -> bool:
-    """内置 STT 栈在本机是否可运行。"""
-    try:
-        import faster_whisper  # noqa: F401 — capability check
-
-        return True
-    except ImportError:
-        return False
-
-
-def probe_local_tts() -> tuple[bool, str | None]:
-    """探测本地 TTS 能力，返回 (是否可用, 失败原因)。"""
-    errors: list[str] = []
-    try:
-        import piper  # noqa: F401 — capability check
-
-        return True, None
-    except ImportError as e:
-        errors.append(f"piper: {e}")
-    try:
-        import pyttsx3  # noqa: F401 — capability check
-
-        return True, None
-    except ImportError as e:
-        errors.append(f"pyttsx3: {e}")
-    return False, "; ".join(errors) if errors else "No TTS engine available"
-
-
-def local_tts_available() -> bool:
-    """至少有一个本地 TTS 引擎可成功导入。"""
-    try:
-        import piper  # noqa: F401 — capability check
-
-        return True
-    except ImportError:
-        pass
-    try:
-        import pyttsx3  # noqa: F401 — capability check
-
-        return True
-    except ImportError:
-        return False
 
 
 def probe_system_activity() -> tuple[bool, str | None]:
@@ -227,21 +175,15 @@ def snapshot_with_health() -> tuple[dict[str, Any], dict[str, Any]]:
 
     mic_ok = microphone_available()
     screen_ok = screen_capture_available()
-    stt_ok = local_stt_available()
-    tts_ok = local_tts_available()
     sys_ok = system_activity_available()
 
     _, mic_reason = (True, None) if mic_ok else probe_microphone()
     _, screen_reason = (True, None) if screen_ok else probe_screen_capture()
-    _, stt_reason = (True, None) if stt_ok else probe_local_stt()
-    _, tts_reason = (True, None) if tts_ok else probe_local_tts()
     _, sys_reason = (True, None) if sys_ok else probe_system_activity()
 
     caps = {
         "microphone": mic_ok,
         "screen_capture": screen_ok,
-        "local_stt": stt_ok,
-        "local_tts": tts_ok,
         "system_activity": sys_ok,
         "platform": sys.platform,
         "python": sys.version.split()[0],
@@ -250,8 +192,6 @@ def snapshot_with_health() -> tuple[dict[str, Any], dict[str, Any]]:
     health = {
         "microphone": {"available": mic_ok, "reason": mic_reason},
         "screen_capture": {"available": screen_ok, "reason": screen_reason},
-        "local_stt": {"available": stt_ok, "reason": stt_reason},
-        "local_tts": {"available": tts_ok, "reason": tts_reason},
         "system_activity": {"available": sys_ok, "reason": sys_reason},
     }
 

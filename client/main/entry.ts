@@ -37,7 +37,7 @@ import { registerClipboardIpc } from './ipc/clipboard'
 import { registerConnectionIpc } from './ipc/connection'
 import { registerFilesIpc } from './ipc/files'
 import { registerLogIpc } from './ipc/log'
-import { createEnginePrefsCache, registerMediaIpc } from './ipc/media'
+import { registerMediaIpc } from './ipc/media'
 import { createModelDiskCache } from './ipc/model-disk-cache'
 import { registerOnboardingAudioIpc } from './ipc/onboarding-audio'
 import { registerPrefsIpc } from './ipc/prefs'
@@ -1510,11 +1510,7 @@ registerMediaIpc({
   spiritagentHome: SPIRITAGENT_HOME,
   ensureBackend,
   fetchImpl: electronFetch,
-  getEnginePrefs: createEnginePrefsCache({
-    ensureBackend,
-    fetchImpl: electronFetch
-  }),
-  getRunnerBridge: () => bridgeDeps.runnerBridge,
+  isSttEnabled: () => store.read().stt?.enabled !== false,
   ipcMain,
   log: chunk => rememberLog(chunk)
 })

@@ -37,8 +37,6 @@ pub struct BundleContext {
     pub bundled_desktop_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/skills/`，Stage-InstallSkills 数据来源。
     pub bundled_skills_dir: Option<std::path::PathBuf>,
-    /// `<bundle>/payload/voices/`，Piper 语音 onnx+json；脚本拷至 `$SPIRITAGENT_HOME/models/piper/` 以便离线 TTS。
-    pub bundled_voices_dir: Option<std::path::PathBuf>,
     /// `<bundle>/payload/onboarding-audio/<lang>/`，按语言组织的云端 TTS 引导音频。
     pub bundled_onboarding_audio_dir: Option<std::path::PathBuf>,
     /// `dmg` | `nsis`，unpack-desktop 阶段据此选择 hdiutil attach 或 NSIS /S。
@@ -79,9 +77,6 @@ pub async fn run_script(
     }
     if let Some(p) = &bundle.bundled_skills_dir {
         cmd.env("SPIRITAGENT_BUNDLED_SKILLS_DIR", p);
-    }
-    if let Some(p) = &bundle.bundled_voices_dir {
-        cmd.env("SPIRITAGENT_BUNDLED_VOICES_DIR", p);
     }
     if let Some(p) = &bundle.bundled_onboarding_audio_dir {
         cmd.env("SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR", p);

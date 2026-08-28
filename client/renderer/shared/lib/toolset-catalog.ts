@@ -34,7 +34,6 @@ export const TOOLSET_CATALOG: readonly ToolsetCatalogEntry[] = [
   { id: 'memory', icon: Brain },
   { id: 'web_tools', icon: Search },
   { id: 'image_generation', icon: ImageIcon },
-  { id: 'text_to_speech', icon: Volume2 },
   { id: 'messaging', icon: Send },
   { id: 'scheduled_tasks', icon: Clock },
   { id: 'agent_delegation', icon: Users },

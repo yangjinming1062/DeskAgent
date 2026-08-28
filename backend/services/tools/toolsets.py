@@ -16,7 +16,6 @@ TOOLSET_CATALOG: dict[str, ToolsetDef] = {
     "memory": ToolsetDef(names=("memory_retain", "memory_recall", "memory_forget")),
     "web_tools": ToolsetDef(names=("web_search", "web_extract")),
     "image_generation": ToolsetDef(names=("image_generate",)),
-    "text_to_speech": ToolsetDef(names=("text_to_speech_tool",)),
     "messaging": ToolsetDef(names=("send_message_tool",)),
     "scheduled_tasks": ToolsetDef(names=("cronjob",)),
     "agent_delegation": ToolsetDef(names=("agent_delegate_tool",)),

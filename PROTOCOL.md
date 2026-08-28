@@ -251,7 +251,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 | request_llm | Runner → Client | 反向 RPC 借大脑 | §3 |
 
 **工具集 id 权威枚举**（跨模块公共事实，本表为唯一 owner；各模块目录只做 id → 自有工具名的映射，不复述清单）：
-`browser_automation`、`file_operations`、`terminal`、`code_execution`、`process_management`、`skills_system`、`memory`、`web_tools`、`image_generation`、`text_to_speech`、`messaging`、`scheduled_tasks`、`agent_delegation`、`computer_use`、`media_analysis`。
+`browser_automation`、`file_operations`、`terminal`、`code_execution`、`process_management`、`skills_system`、`memory`、`web_tools`、`image_generation`、`messaging`、`scheduled_tasks`、`agent_delegation`、`computer_use`、`media_analysis`。
 
 禁用语义：UserSettings 点键 `toolsets.disabled` 持有被禁用的 id 集合。Runner 侧在 `get_tools` 源头过滤自有工具；Backend 侧在工具注册表读取时过滤 backend/memory 桶（各自的 id → 工具名映射见模块代码）。无工具集归属的工具（如 `search_tools`、`create_expression`、`video_generate`）不受开关影响。
 

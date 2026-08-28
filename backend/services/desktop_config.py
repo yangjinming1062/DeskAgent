@@ -8,8 +8,7 @@ from modules.settings import UserSetting
 DEFAULT_CONFIG = {
     "agent": {"reasoning_effort": "low", "temperature": 0.7},
     "chat": {"enable_context_compression": True, "context_compression_threshold": 0.70, "title_generation_temperature": 0.3, "compression_temperature": 0.0},
-    "stt": {"enabled": True, "engine": "auto", "silent_fallback": True},
-    "tts": {"engine": "auto"},
+    "stt": {"enabled": True},
     "voice": {"max_recording_seconds": 60},
 }
 

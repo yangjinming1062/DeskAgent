@@ -2,7 +2,6 @@ from ..search_tools_tool import SEARCH_TOOLS_SCHEMA, search_tools_tool
 from .expression_tool import CREATE_EXPRESSION_SCHEMA, create_expression_tool
 from .image_generation_tool import IMAGE_GENERATION_SCHEMA, first_image_url, image_generation_tool
 from .send_message_tool import SEND_MESSAGE_SCHEMA, send_message_tool
-from .tts_tool import TTS_SCHEMA, text_to_speech_tool
 from .video_generation_tool import VIDEO_GENERATION_SCHEMA, VIDEO_STATUS_SCHEMA, video_generate_status_tool, video_generation_tool
 from .web_tools import WEB_EXTRACT_SCHEMA, WEB_SEARCH_SCHEMA, web_extract_tool, web_search_tool
 
@@ -11,7 +10,6 @@ __all__ = [
     "IMAGE_GENERATION_SCHEMA",
     "SEARCH_TOOLS_SCHEMA",
     "SEND_MESSAGE_SCHEMA",
-    "TTS_SCHEMA",
     "VIDEO_GENERATION_SCHEMA",
     "VIDEO_STATUS_SCHEMA",
     "WEB_EXTRACT_SCHEMA",
@@ -21,7 +19,6 @@ __all__ = [
     "image_generation_tool",
     "search_tools_tool",
     "send_message_tool",
-    "text_to_speech_tool",
     "video_generate_status_tool",
     "video_generation_tool",
     "web_extract_tool",

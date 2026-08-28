@@ -15,7 +15,6 @@ param(
     [string]$BundledRunnerDir,
     [string]$BundledDesktopDir,
     [string]$BundledSkillsDir,
-    [string]$BundledVoicesDir,
     [string]$BundledOnboardingAudioDir,
     [string]$InstallerFormat
 )
@@ -40,7 +39,6 @@ if (-not $SpiritAgentHome) {
 if (-not $BundledRunnerDir -and $env:SPIRITAGENT_BUNDLED_RUNNER_DIR) { $BundledRunnerDir = $env:SPIRITAGENT_BUNDLED_RUNNER_DIR }
 if (-not $BundledDesktopDir -and $env:SPIRITAGENT_BUNDLED_DESKTOP_DIR) { $BundledDesktopDir = $env:SPIRITAGENT_BUNDLED_DESKTOP_DIR }
 if (-not $BundledSkillsDir -and $env:SPIRITAGENT_BUNDLED_SKILLS_DIR) { $BundledSkillsDir = $env:SPIRITAGENT_BUNDLED_SKILLS_DIR }
-if (-not $BundledVoicesDir -and $env:SPIRITAGENT_BUNDLED_VOICES_DIR) { $BundledVoicesDir = $env:SPIRITAGENT_BUNDLED_VOICES_DIR }
 if (-not $BundledOnboardingAudioDir -and $env:SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR) { $BundledOnboardingAudioDir = $env:SPIRITAGENT_BUNDLED_ONBOARDING_AUDIO_DIR }
 if (-not $InstallerFormat) {
     if ($env:SPIRITAGENT_INSTALLER_FORMAT) { $InstallerFormat = $env:SPIRITAGENT_INSTALLER_FORMAT }
@@ -241,24 +239,6 @@ function Stage-UnpackRunner {
     $oldBin = Join-Path (Join-Path $SpiritAgentHome "bin") "spiritagent-runner.exe"
     if (Test-Path $oldBin) { Remove-Item -Force $oldBin }
 
-    # 拷贝 bundled Piper voices（installer/payload/voices/）至 models 目录，确保首日离线 TTS 可用。
-    # 每个语音需同时具备 ``.onnx`` 与 ``.onnx.json``，缺一不可；按内容拷贝——未来添加语音只需投放 payload，无须改安装脚本。
-    $voiceCount = 0
-    if ($BundledVoicesDir -and (Test-Path $BundledVoicesDir -PathType Container)) {
-        $voicesTarget = Join-Path $SpiritAgentHome "models\piper"
-        if (-not (Test-Path $voicesTarget)) { New-Item -ItemType Directory -Force -Path $voicesTarget | Out-Null }
-
-        $onnxFiles = Get-ChildItem -Path $BundledVoicesDir -Filter "*.onnx" -File -ErrorAction SilentlyContinue
-        foreach ($onnx in $onnxFiles) {
-            $jsonPath = Join-Path $BundledVoicesDir ($onnx.Name + ".json")
-            if (Test-Path $jsonPath) {
-                Copy-Item -Force $onnx.FullName (Join-Path $voicesTarget $onnx.Name)
-                Copy-Item -Force $jsonPath (Join-Path $voicesTarget $jsonPath.Name)
-            }
-        }
-        $voiceCount = (Get-ChildItem -Path $voicesTarget -Filter "*.onnx" -File -ErrorAction SilentlyContinue).Count
-    }
-
     # 拷贝 onboarding 引导音频：语言子目录（zh\、en\、…）1:1 映射至 $SpiritAgentHome\audio\onboarding\<lang>\。
     $audioCount = 0
     if ($BundledOnboardingAudioDir -and (Test-Path $BundledOnboardingAudioDir -PathType Container)) {
@@ -274,7 +254,7 @@ function Stage-UnpackRunner {
     $size = $wheel.Length
     $escVenv = Escape-JsonString $venvDir
     $escWheel = Escape-JsonString $wheel.Name
-    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"voices_copied`": $voiceCount, `"onboarding_audio_copied`": $audioCount}}"
+    Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"unpack-runner`", `"data`": {`"venv`": `"$escVenv`", `"wheel`": `"$escWheel`", `"size_bytes`": $size, `"onboarding_audio_copied`": $audioCount}}"
     return 0
 }
 

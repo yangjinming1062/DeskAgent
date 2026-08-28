@@ -79,11 +79,6 @@ export interface SessionRuntimeInfo {
   context_window?: number
 }
 
-/** STT/TTS 引擎路由偏好，由桌面端主进程解析。
- * `auto` = 优先本地 Runner 引擎，云端兜底；`local` = 仅本地（无云端兜底）；
- * `cloud` = 始终走后端。见 client/main/ipc/media.cjs。 */
-export type SpeechEngine = 'auto' | 'local' | 'cloud'
-
 /** `GET /api/config` 的返回结构。后端剥离原始凭据后注入 `*_set` / `*_fingerprint`
  * 等计算字段。 */
 export interface SpiritAgentConfigResponse {
@@ -100,15 +95,8 @@ export interface SpiritAgentConfigResponse {
   }
   stt?: {
     /** 总开关——为 false 时，spiritagent:media:stt 直接拒绝，
-     * 不进行任何本地 / 云端工作。见 media.cjs。 */
+     * 不进行任何云端 STT 工作。见 media.cjs。 */
     enabled?: boolean
-    engine?: SpeechEngine
-    /** 为 false 时，低置信度的本地 STT 结果直接展示给用户，
-     * 而非悄悄用云端重试。默认 true。见 media.cjs。 */
-    silent_fallback?: boolean
-  }
-  tts?: {
-    engine?: SpeechEngine
   }
   voice?: {
     /** 单次语音录制的最长时长（秒）。聊天面板在该上限处自动停止 MediaRecorder。 */
@@ -141,11 +129,6 @@ export interface SpiritAgentConfigPutRequest {
   }
   stt?: {
     enabled?: boolean
-    engine?: SpeechEngine
-    silent_fallback?: boolean
-  }
-  tts?: {
-    engine?: SpeechEngine
   }
   voice?: {
     max_recording_seconds?: number

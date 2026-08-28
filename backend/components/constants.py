@@ -88,7 +88,7 @@ JSONRPC_INTERNAL_ERROR: int = -32603
 # OpenAI TTS 硬限 4096，留 4000 给安全余量。
 TTS_MAX_TEXT_CHARS: int = 4_000
 
-# Whisper 接受 25 MB；卡到 24 MB 避开边界 413。
+# 云端 STT 上限 25 MB；客户端卡到 24 MB 避开边界 413。
 STT_MAX_AUDIO_BYTES: int = 24 * 1024 * 1024
 
 

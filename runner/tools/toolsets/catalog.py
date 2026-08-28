@@ -16,7 +16,6 @@ TOOLSET_CATALOG: tuple[ToolsetDef, ...] = (
     ToolsetDef(id="code_execution", extra_tools=("execute_code",)),
     ToolsetDef(id="process_management", extra_tools=("process",)),
     ToolsetDef(id="skills_system", extra_tools=("skills_list", "skill_view", "skill_manage")),
-    ToolsetDef(id="text_to_speech", extra_tools=("text_to_speech", "list_tts_voices")),
     ToolsetDef(id="computer_use", extra_tools=("computer_use",)),
     ToolsetDef(id="media_analysis", extra_tools=("vision_analyze",)),
 )
