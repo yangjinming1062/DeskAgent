@@ -346,7 +346,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [chatSessionId])
 
-  // IM 桥接会话（kind='im'，微信/QQ/回环）在桌面端只读查看：伙伴经 IM 桥回复，
+  // IM 桥接会话（kind='im'）在桌面端只读查看：伙伴经 IM 桥回复，
   // 用户不能在此输入或发起语音。send() 里再兜底拦一道，防未来新增入口漏禁。
   const isImSession = findSessionInfo(chatSessionId ?? '')?.kind === 'im'
 

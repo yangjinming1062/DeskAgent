@@ -644,7 +644,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
     case 'channel.status': {
       // IM 通道绑定状态变化（outbox；Hub 设置页以 REST 为真相源，这里只做桌面提醒）。
       const p = event.payload as { channel?: string; status?: string; error?: string } | undefined
-      const label = p?.channel === 'weixin_ilink' ? '微信' : p?.channel === 'loopback' ? '回环通道' : 'IM 通道'
+      const label = p?.channel === 'weixin_ilink' ? '微信' : 'IM 通道'
 
       const text =
         p?.status === 'connected'

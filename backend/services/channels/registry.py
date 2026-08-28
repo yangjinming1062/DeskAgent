@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 _REGISTRY: dict[str, type[ChannelAdapter]] = {}
 
 # SpiritAgent 内置渠道；PUT /api/channels/{channel} 只接受其中之一，新增渠道需注册类并扩充下表。
-KNOWN_CHANNELS: frozenset[str] = frozenset({"loopback", "weixin_ilink"})
+KNOWN_CHANNELS: frozenset[str] = frozenset({"weixin_ilink"})
 
 
 def register(name: str, cls: type[ChannelAdapter]) -> None:

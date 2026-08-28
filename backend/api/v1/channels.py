@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 from common import get_or_404, get_router
@@ -14,22 +13,17 @@ from modules.channels import (
     ChannelListResponse,
     ChannelLoginStateResponse,
     ChannelPeer,
-    LoopbackInboundRequest,
-    LoopbackInboundResponse,
     PeerActionRequest,
     PeerInfo,
     PeerListResponse,
 )
-from services.channels import MANAGER, InboundMessage, channels_info, try_resolve, update_binding_status
+from services.channels import MANAGER, channels_info, try_resolve, update_binding_status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = get_router(dependencies=[Depends(get_current_session)])
 
 logger = get_logger(__name__)
-
-# 回环入站 REST 等待回合完成的窗口：覆盖一次常规 LLM 回合；超时后回合仍在跑（结果稍后落 im 会话历史）。
-LOOPBACK_REPLY_WAIT_SECONDS = 120.0
 
 
 async def _get_binding(db: AsyncSession, user: User, channel: str) -> ChannelBinding | None:
@@ -78,7 +72,7 @@ async def put_binding(
         db.add(binding)
     else:
         binding.config_json = json.dumps(body.config, ensure_ascii=False)
-    # 回环无登录态直连 connected；有登录流的渠道等扫码完成后由适配器转 connected。
+    # 无登录态的渠道直连 connected；需要登录的渠道等扫码完成后由适配器转 connected。
     binding.status = "login_pending" if cls.requires_login else "connected"
     await db.commit()
     await db.refresh(binding)
@@ -190,37 +184,3 @@ async def logout_channel(
     elif binding.status != "disabled":
         await update_binding_status(binding.id, "login_required")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.post("/loopback/inbound", response_model=LoopbackInboundResponse)
-async def loopback_inbound(
-    body: LoopbackInboundRequest,
-    auth: tuple[User, LoginRecord] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
-) -> LoopbackInboundResponse:
-    """回环测试驱动：模拟一条入站 IM 消息走完整桥接链路，返回伙伴回复（等待上限 LOOPBACK_REPLY_WAIT_SECONDS）。"""
-    user, _ = auth
-    channel = "loopback"
-    if try_resolve(channel) is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="loopback channel not registered")
-    binding = await _get_binding(db, user, channel)
-    if binding is None:
-        # 测试通道免 PUT：首次入站自动建绑定并拉起适配器。
-        binding = ChannelBinding(user_id=user.id, channel=channel, status="connected", config_json="{}")
-        db.add(binding)
-        await db.commit()
-        await db.refresh(binding)
-    adapter = await MANAGER.wait_adapter(user.id, channel)
-    if adapter is None:
-        await MANAGER.restart_binding(user.id, channel)
-        adapter = await MANAGER.wait_adapter(user.id, channel)
-    if adapter is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="loopback adapter not running")
-    future = await adapter.deliver(
-        InboundMessage(channel=channel, peer_id=body.peer_id, peer_name=body.peer_name or body.peer_id, text=body.text),
-    )
-    try:
-        reply = await asyncio.wait_for(future, timeout=LOOPBACK_REPLY_WAIT_SECONDS)
-    except TimeoutError:
-        return LoopbackInboundResponse(reply=None, queued=True)
-    return LoopbackInboundResponse(reply=reply, queued=False)

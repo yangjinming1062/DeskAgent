@@ -74,7 +74,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     start_scheduler()
     # LISTEN 专线：ws_event_loop 内部直连 + 断线 5s 重连。
     start_ws_event_loop(_raw_pg_dsn())
-    # IM 通道桥：拉起各用户已启用的渠道绑定（回环/微信/QQ），回合不依赖用户 WS。
+    # IM 通道桥：拉起各用户已启用的渠道绑定，回合不依赖用户 WS。
     await start_channel_manager()
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()

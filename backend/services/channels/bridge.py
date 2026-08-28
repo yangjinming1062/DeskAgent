@@ -91,7 +91,7 @@ async def _emit_peer_request(user_id: int, channel: str, msg: InboundMessage) ->
 async def handle_inbound(adapter: ChannelAdapter, msg: InboundMessage) -> asyncio.Future[str | None]:
     """入站闸门：白名单检查 → 主动状态联动 → 单飞行入队；返回 per-message future（回合完成时以回复 resolve）。
 
-    future 由调用方决定等待方式：回环 REST await 到拿回复，轮询型适配器（P1 微信）fire-and-forget。
+    future 由调用方决定等待方式：REST 端点（用于无外部 IM 接入时的链路验证）await 到拿回复；轮询型适配器（微信 iLink）fire-and-forget。
     """
     snapshot = adapter.snapshot
     async with session_scope() as db:

@@ -284,7 +284,7 @@ llm_debug_logging = false
 llm_debug_max_chars = 4000
 
 [channels]
-# 外部 IM 通道桥（services/channels）：P0 回环测试通道已内置；微信 iLink（P1）与 QQ OneBot（P2）按阶段接入。
+# 外部 IM 通道桥（services/channels）：微信 iLink 适配器已实现，更多渠道按需接入。
 # 单 (用户, 渠道) 绑定在途回合期间排队的入站消息上限，超出丢弃最旧排队消息
 channels_turn_queue_max = 20
 # 每对端（peer）入站限速：进程内滑动窗，渠道侧无频控时的成本护栏

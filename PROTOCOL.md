@@ -204,7 +204,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 
 ### 1.8 IM 通道桥接（/api/channels）
 
-外部 IM（微信 iLink / QQ OneBot / 回环测试）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
+外部 IM（微信 iLink）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
 
 **会话契约**：所有渠道共用 `im` 这一种 conversation kind；**每用户每渠道一条专属 im 会话**，由 `channel_bindings.conversation_id` 唯一外键锚定（渠道间不混流）。im 会话对桌面端**只读**：出现在会话列表与历史中，但 `prompt.submit` 拒写（后端守卫 + 客户端输入禁用）；人设/长期记忆/情感与桌面回合共享（按 user 加载，无需任何同步动作）。
 
@@ -217,13 +217,12 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 | `DELETE /api/channels/{channel}` | 停用并删除绑定（peers 级联；im 会话行沉淀为历史） |
 | `GET /api/channels/{channel}/peers` | 对端白名单/待审批列表 |
 | `POST /api/channels/{channel}/peers/{peer_id}` | 对端审批（approve / block / delete） |
-| `POST /api/channels/loopback/inbound` | 回环测试驱动：{peer_id, peer_name?, text} → {reply, queued}（回合超时未完则 queued=true，结果稍后落 im 会话） |
 | `POST /api/channels/weixin/login` + `GET /api/channels/weixin/login` | 微信 QR 登录启动/轮询：state ∈ wait\|scaned\|confirmed\|expired\|error\|login_required，wait 帧附 qr_image（二维码图片内容，直渲染或链接兜底）；适配器未运行时按绑定态回放 login_required |
 | `POST /api/channels/{channel}/logout` | 渠道登出：清凭据转 login_required，绑定与 im 会话保留 |
 
 **访问控制**：默认拒绝——未知对端首条消息收到一次性固定配对回复并落 pending 行（`channel.peer_request` 事件），仅主人审批放行；blocked 静默丢弃；每 peer 进程内限速（`channels_inbound_rate_per_minute`）。
 
-**渠道能力差异**（产品语义级）：微信 iLink 为 reply-only（伙伴**不能**主动发起微信消息，回复须回显入站 context_token，过期后等用户下一条消息刷新）；QQ OneBot 可主动发起（P3 与 `send_message_tool` 联动时另议档位门控）。
+**渠道能力差异**（产品语义级）：微信 iLink 为 reply-only（伙伴**不能**主动发起微信消息，回复须回显入站 context_token，过期后等用户下一条消息刷新）。
 
 **改此处需同步**：backend services/channels 与 modules/channels、backend/README.md、client 通道设置页与只读守卫（client/renderer/companion/README.md）、DESIGN.md、ARCHITECTURE.md §5.4。
 
@@ -310,7 +309,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 
 ### 5.3 凭据落盘
 
-激活码（base64 编码的 {baseUrl, token}）经 Electron safeStorage 加密落盘：Windows DPAPI / macOS Keychain（Linux 仅原理说明，Runner/Desktop 不支持）。session JWT **仅内存持有**——每次启动用激活码换新 session JWT；激活码是持久凭证，session JWT 用于日常 API 调用与 ws-ticket 签发。渲染与预加载进程不可访问 safeStorage 接口，阻断 XSS 窃取凭证。**IM 通道凭据**（微信 bot_token / NapCat access_token 等）沿 `user_model_configs` 同一后端明文先例落 `channel_bindings.credentials`，REST 永不回显原始值。
+激活码（base64 编码的 {baseUrl, token}）经 Electron safeStorage 加密落盘：Windows DPAPI / macOS Keychain（Linux 仅原理说明，Runner/Desktop 不支持）。session JWT **仅内存持有**——每次启动用激活码换新 session JWT；激活码是持久凭证，session JWT 用于日常 API 调用与 ws-ticket 签发。渲染与预加载进程不可访问 safeStorage 接口，阻断 XSS 窃取凭证。**IM 通道凭据**（微信 bot_token 等）沿 `user_model_configs` 同一后端明文先例落 `channel_bindings.credentials`，REST 永不回显原始值。
 
 **设置同步红线**（§2.4）：本机明文机密（`terminal.sudo_password`、`terminal.ssh.password`、`terminal.credential_files` 等 terminal/spiritagent 节内容）永不进入 user_settings / 云端；客户端按同步节白名单上云，白名单外与节内本机键只留本机文件。
 

@@ -120,11 +120,6 @@ export const strings = {
         expiredPrompt: '二维码已过期，请重新获取',
         connectedAs: (name: string) => `已连接${name ? `：${name}` : ''}`
       },
-      loopback: {
-        title: '回环测试',
-        intro: '开发用测试通道：经 REST 模拟入站 IM 消息，验证桥接链路。',
-        active: '已启用'
-      },
       peers: {
         title: '对端审批',
         intro: '陌生对端首次来信会收到配对提示，批准后才能与伙伴对话；被拉黑者静默。',

@@ -5,7 +5,7 @@ from sqlalchemy import DateTime, ForeignKey, String, Text, UniqueConstraint, tex
 from sqlalchemy.orm import Mapped, mapped_column
 
 # 绑定生命周期状态机：disabled（用户删除/停用）→ login_pending（等待扫码/配置）→ connected（适配器在跑）；
-# login_required（凭据过期需重新登录，P1 微信 -14）、error（致命错误，守卫循环停止）。P0 只有 loopback 直连 connected。
+# login_required（凭据过期需重新登录，微信 -14）、error（致命错误，守卫循环停止）。
 BINDING_STATUSES = ("disabled", "login_pending", "connected", "login_required", "error")
 
 # 对端访问控制三态：pending（已发过消息、等待主人审批，首条触发配对回复）、allowed、blocked（静默丢弃）。
@@ -28,7 +28,7 @@ class ChannelBinding(ModelBase, TimestampMixin):
     status: Mapped[str] = mapped_column(String(16), default="disabled", server_default=text("'disabled'"), index=True)
     # 渠道专属 im 会话锚点；会话被删除时置 NULL（绑定存活，下次消息重新开会话）。
     conversation_id: Mapped[int | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, unique=True)
-    # 渠道侧配置（QQ: ws_url/access_token）；适配器解析，schema 无约束以便加渠道不动迁移。
+    # 渠道侧配置；适配器解析，schema 无约束以便加渠道不动迁移。
     config_json: Mapped[str] = mapped_column(Text, default="{}", server_default=text("'{}'"))
     # 渠道凭据（微信: bot_token/baseurl/context_tokens/typing_ticket）；REST 永不回显。
     credentials: Mapped[str] = mapped_column(Text, default="", server_default=text("''"))
@@ -38,7 +38,7 @@ class ChannelBinding(ModelBase, TimestampMixin):
 
 
 class ChannelPeer(ModelBase, TimestampMixin):
-    """绑定下的对端（微信 wxid / QQ 号 / 回环测试标签）：默认拒绝 + 配对审批的访问控制载体。"""
+    """绑定下的对端（如微信 wxid）：默认拒绝 + 配对审批的访问控制载体。"""
 
     __tablename__ = "channel_peers"
     __table_args__ = (UniqueConstraint("binding_id", "peer_id", name="uq_channel_peers_binding_peer"),)

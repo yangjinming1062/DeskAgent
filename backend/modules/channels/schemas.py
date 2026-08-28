@@ -62,21 +62,6 @@ class PeerActionRequest(BaseModel):
     action: Literal["approve", "block", "delete"]
 
 
-class LoopbackInboundRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    peer_id: str = Field(min_length=1, max_length=128)
-    peer_name: str = Field(default="", max_length=128)
-    text: str = Field(min_length=1, max_length=8000)
-
-
-class LoopbackInboundResponse(BaseModel):
-    """reply 为 None 且 queued 为 True 表示回合仍在进行（REST 等待超时让位），结果稍后落进 im 会话历史。"""
-
-    reply: str | None = None
-    queued: bool = False
-
-
 class ChannelLoginStateResponse(BaseModel):
     """扫码登录轮询视图：state ∈ idle|wait|scaned|confirmed|expired|error|login_required|connected；
     qr_image 为渠道下发的二维码图内容（图片 URL 或 data URL），confirmed 后不再返回。

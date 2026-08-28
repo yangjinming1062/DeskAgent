@@ -5,7 +5,6 @@ from components import SETTINGS, get_logger, session_scope
 from modules.channels import ChannelBinding
 from sqlalchemy import select
 
-from .adapters.loopback import LoopbackAdapter  # noqa: F401 — 注册副作用：loopback 自注册进注册表
 from .adapters.weixin_ilink import WeixinIlinkAdapter  # noqa: F401 — 注册副作用：微信 iLink 自注册进注册表
 from .base import ChannelAdapter, ChannelBindingSnapshot, ChannelError, InboundMessage, OnInbound
 from .bridge import handle_inbound

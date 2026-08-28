@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 MAIN_KIND = "main"
 # 自发的 cron 轮次独占独立会话：渲染端的 ``session.get_main`` 无法通过 conversation_id 匹配去取消进行中的 cron chat_task，cron 写入也不会与主会话 prompt.submit 交错；该会话仅 WS 派发器挂载。
 CRON_KIND = "cron"
-# 外部 IM 渠道（微信/QQ/回环）桥接的会话：统一一种 kind，每渠道一条专属对话由 channel_bindings.conversation_id 唯一外键锚定（services/channels/conversation.py 工厂）；prompt.submit 拒写，桌面端只读旁观。
+# 外部 IM 渠道桥接的会话：统一一种 kind，每渠道一条专属对话由 channel_bindings.conversation_id 唯一外键锚定（services/channels/conversation.py 工厂）；prompt.submit 拒写，桌面端只读旁观。
 IM_KIND = "im"
 
 # UI-only 子类型：渲染端展示但排除出 LLM 上下文；与 MAIN_KIND 同处一处保证所有会话读取者一致。status_proactive 故意不在此集合——它是用户可回应的真实轮次。

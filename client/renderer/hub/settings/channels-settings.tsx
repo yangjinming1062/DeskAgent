@@ -62,7 +62,6 @@ export function ChannelsSettings(): React.JSX.Element {
 
   const [isLoading, setIsLoading] = useState(true)
   const [weixinBinding, setWeixinBinding] = useState<ChannelBindingInfo | null>(null)
-  const [loopbackBinding, setLoopbackBinding] = useState<ChannelBindingInfo | null>(null)
   const [login, setLogin] = useState<ChannelLoginState | null>(null)
   const [loginPolling, setLoginPolling] = useState(false)
   const [loginBusy, setLoginBusy] = useState(false)
@@ -73,9 +72,7 @@ export function ChannelsSettings(): React.JSX.Element {
   const reload = useCallback(async () => {
     const channels = await listChannels()
     const weixin = channels.items.find(item => item.channel === WEIXIN_CHANNEL)?.binding ?? null
-    const loopback = channels.items.find(item => item.channel === 'loopback')?.binding ?? null
     setWeixinBinding(weixin)
-    setLoopbackBinding(loopback)
 
     if (weixin) {
       try {
@@ -307,17 +304,6 @@ export function ChannelsSettings(): React.JSX.Element {
           ) : (
             <EmptyState description={t.peers.intro} title={t.peers.empty} />
           )}
-        </SettingsSubsection>
-
-        <SettingsSubsection intro={t.loopback.intro} title={t.loopback.title}>
-          <ListRow
-            action={
-              <Pill tone={loopbackBinding ? 'primary' : 'muted'}>
-                {loopbackBinding ? t.loopback.active : t.statusLabels.disabled}
-              </Pill>
-            }
-            title={t.loopback.title}
-          />
         </SettingsSubsection>
       </div>
 

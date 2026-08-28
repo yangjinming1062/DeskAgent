@@ -7,13 +7,13 @@ from components import safe_json_loads
 
 @dataclass(frozen=True)
 class InboundMessage:
-    """适配器归一化后的入站消息：channel 是注册表键，peer_id 是渠道侧对端标识（wxid/QQ 号/回环标签）。"""
+    """适配器归一化后的入站消息：channel 是注册表键，peer_id 是渠道侧对端标识（如微信 wxid）。"""
 
     channel: str
     peer_id: str
     peer_name: str
     text: str
-    # 微信 iLink 的回复凭据（reply-only：send 必须回显入站消息携带的 token）；QQ/回环为 None。
+    # 微信 iLink 的回复凭据（reply-only：send 必须回显入站消息携带的 token）；其它渠道为 None。
     context_token: str | None = None
     is_group: bool = False
 
@@ -50,11 +50,11 @@ class ChannelAdapter:
     """
 
     channel_name: str = ""
-    # 桌面端 im 会话标题（"微信对话"/"QQ 对话"/"回环对话"）。
+    # 桌面端 im 会话标题（如 "微信对话"）。
     conversation_title: str = ""
     supports_typing: bool = False
     supports_media: bool = False
-    # 能否在无入站消息时主动发起（微信 iLink reply-only → False；QQ OneBot → True）。
+    # 能否在无入站消息时主动发起（微信 iLink reply-only → False；其它可主动的通道 → True）。
     can_initiate: bool = False
     requires_login: bool = False
 
@@ -67,7 +67,7 @@ class ChannelAdapter:
         self._on_inbound = on_inbound
 
     async def run(self) -> None:
-        """默认空转：无网络事件的渠道（回环）由 REST 驱动，只等取消。"""
+        """默认空转：只等取消。"""
         await asyncio.Event().wait()
 
     async def send_text(self, peer_id: str, text: str, context_token: str | None = None) -> None:
@@ -77,7 +77,7 @@ class ChannelAdapter:
         """默认 no-op：不支持 typing 的渠道静默跳过。"""
 
     async def start_login(self) -> None:
-        """默认 no-op：无需扫码登录的渠道（回环/QQ）没有登录态。"""
+        """默认 no-op：无需扫码登录的渠道没有登录态。"""
 
     async def login_state(self) -> dict:
         """默认无登录流：REST 轮询登录状态时返回 {"state": "unsupported"}。"""
