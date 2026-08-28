@@ -60,7 +60,8 @@ export function AppearancePage(): React.ReactElement {
         <section>
           <h3 className="text-xs font-medium text-white/80">渲染模式</h3>
           <p className={cn(HINT_TEXT, 'mt-1')}>
-            切到 3D 会先确认 A-pose 的 3D 正面立绘（多视角供应商再补一张背面立绘），再触发云端生成（1~3
+            切到 3D 会先在向导内逐张生成 3D
+            正面立绘（多视角供应商再补一张背面立绘），每张均需手动点按触发；全部确认后触发云端 3D 模型生成（1~3
             分钟），生成期间显示 2D 动画版（或程序化蛋过渡）；生成失败永久保持 2D 动画版；切回 2D 立即生效。
           </p>
           <div className="mt-2.5">

@@ -79,7 +79,7 @@ export function Seed3dWizard({
   const [stage, setStage] = useState<Stage>('front')
 
   const [stages, setStages] = useState<Record<Stage, StageState>>({
-    front: { ...EMPTY_STAGE, loading: true },
+    front: EMPTY_STAGE,
     back: EMPTY_STAGE
   })
 
@@ -151,7 +151,7 @@ export function Seed3dWizard({
           }
         })
 
-        // 正面重绘会使后端已派生的背面种子失效，本地同步作废（进入背面阶段时自动重生成）
+        // 正面重绘会使后端已派生的背面种子失效，本地同步作废（由用户在背面阶段重新点按生成）
         if (key === 'front') {
           setStages(prev => ({ ...prev, back: EMPTY_STAGE }))
         }
@@ -173,7 +173,7 @@ export function Seed3dWizard({
     [avatarId, patchStage]
   )
 
-  // 打开时水合已有 3D 种子（存量用户直接复用）；没有则立即生成——切到 3D 的意图已经明确。
+  // 打开时水合已有 3D 种子（存量用户直接复用）；没有则停在空态，由用户点按显式触发——避免误触 3D 切换即消耗生图费用。
   useEffect(() => {
     const boot = async (): Promise<void> => {
       let existingFront: string | null = null
@@ -187,7 +187,7 @@ export function Seed3dWizard({
         existingFront = res?.seed_front_3d_url || null
         existingBack = res?.seed_back_url || null
       } catch {
-        // 拉取失败不阻塞向导：当作没有 3D 种子，直接走生成路径。
+        // 拉取失败不阻塞向导：当作没有 3D 种子，由用户点按显式触发。
       }
 
       if (!mountedRef.current) {
@@ -239,19 +239,10 @@ export function Seed3dWizard({
           return
         }
       }
-
-      await generate('front', '')
     }
 
     void boot()
   }, [generate, supportsMultiview])
-
-  // 进入背面阶段时若无背面种子（首次进入或正面重绘作废）则立即生成；失败后由用户手动重试，不自动循环
-  useEffect(() => {
-    if (stage === 'back' && !stages.back.previewUrl && !stages.back.loading && !stages.back.failed) {
-      void generate('back', '')
-    }
-  }, [stage, stages.back.previewUrl, stages.back.loading, stages.back.failed, generate])
 
   // Esc 关闭向导；灯箱打开时让灯箱自己的 Esc 生效，不连带关掉整个向导。
   // 捕获阶段拦截并阻断冒泡，外层设置面板的 Esc 不连坐。
@@ -318,8 +309,19 @@ export function Seed3dWizard({
           >
             <img alt={meta.alt} className="h-full w-full object-contain" src={current.previewUrl ?? undefined} />
           </button>
+        ) : current.loading ? (
+          <div className="text-xs text-white/40">{meta.loadFail}</div>
+        ) : current.failed ? (
+          <div className="text-xs text-white/40">暂无立绘</div>
         ) : (
-          <div className="text-xs text-white/40">{current.loading ? meta.loadFail : '暂无立绘'}</div>
+          <div className="flex flex-col items-center gap-3 px-4">
+            <div className="text-xs text-white/45">
+              {stage === 'front' ? '尚未生成 3D 正面立绘' : '尚未生成背面立绘'}
+            </div>
+            <button className={BTN_PRIMARY} onClick={() => generate(stage, '')} type="button">
+              {stage === 'front' ? '生成 3D 正面立绘' : '生成背面立绘'}
+            </button>
+          </div>
         )}
       </div>
 
