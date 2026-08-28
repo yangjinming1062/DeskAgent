@@ -202,7 +202,6 @@ export interface IpcInvokeContract {
   // 连接与启动
   'spiritagent:connection': () => SpiritAgentConnection | Promise<SpiritAgentConnection>
   'spiritagent:gateway:ws-url': () => Promise<string> | string
-  'spiritagent:voice-ws-url': () => Promise<string> | string
   'spiritagent:boot-progress:get': () => DesktopBootProgress | Promise<DesktopBootProgress>
 
   // 鉴权
@@ -343,7 +342,6 @@ export const IPC = {
     authGetSession: 'spiritagent:auth:get-session',
     connection: 'spiritagent:connection',
     gatewayWsUrl: 'spiritagent:gateway:ws-url',
-    voiceWsUrl: 'spiritagent:voice-ws-url',
     bootProgressGet: 'spiritagent:boot-progress:get',
     api: 'spiritagent:api',
     apiAsset: 'spiritagent:api:asset',

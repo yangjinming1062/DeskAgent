@@ -43,7 +43,6 @@ export function InteractionPage(): React.ReactElement {
     <SettingsPage hint="伙伴怎么回应你、什么时候可以打扰你。" title="交互">
       <section>
         <h3 className="text-xs font-medium text-white/80">对话回应方式</h3>
-        <p className={cn(HINT_TEXT, 'mt-1')}>语音通话模式始终语音，不受此设置影响。</p>
         <div className="mt-2.5 max-w-xs">
           <Segmented<ResponseMode>
             onChange={setResponseMode}

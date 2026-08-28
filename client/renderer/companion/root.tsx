@@ -7,12 +7,7 @@ import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
-import {
-  $companionLifecycle,
-  $voiceCallOpen,
-  reportUserActivity,
-  setCompanionLifecycle
-} from '@/companion/companion-store'
+import { $companionLifecycle, reportUserActivity, setCompanionLifecycle } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
 import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
@@ -42,7 +37,6 @@ import { setSettingsView, type SettingsView } from './settings/settings-view'
 import { SpriteContextMenu } from './sprite/context-menu'
 import { $contextMenuPos } from './sprite/context-menu-store'
 import { SpriteStage } from './sprite/sprite-stage'
-import { VoiceCallDock } from './voice-call-dock'
 import { checkCompanionVoiceValidity } from './voice-validity'
 
 // 3D / 2D 渲染管线：把这两个组件连同其 three + draco wasm + GLTF loader 全家桶
@@ -82,23 +76,18 @@ export function CompanionRoot(): React.JSX.Element {
   const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
-  const [voiceCallOpen, setVoiceCallOpen] = useState(false)
-  useEffect(() => {
-    $voiceCallOpen.set(voiceCallOpen)
-  }, [voiceCallOpen])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
   // 通过全局 window.__spiritagentOpenDock 暴露，sprite-stage 等深层组件也能复用同一不变量。
   // settings 可携带目标页直达（记忆 → 角色与记忆、音色失效提醒 → 音色）。
-  const openDock = useCallback((kind: 'chat' | 'settings' | 'voice', settingsView?: SettingsView): void => {
+  const openDock = useCallback((kind: 'chat' | 'settings', settingsView?: SettingsView): void => {
     if (kind === 'settings' && settingsView) {
       setSettingsView(settingsView)
     }
 
     setChatOpen(kind === 'chat')
-    setVoiceCallOpen(kind === 'voice')
     setSettingsOpen(kind === 'settings')
   }, [])
 
@@ -426,10 +415,8 @@ export function CompanionRoot(): React.JSX.Element {
         onOpenActivation={() => setActivationOpen(true)}
         onOpenChat={() => openDock('chat')}
         onOpenSettings={() => openDock('settings')}
-        onOpenVoiceCall={() => openDock('voice')}
       />
-      {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} onOpenVoiceCall={() => openDock('voice')} />}
-      {authed && voiceCallOpen && <VoiceCallDock onClose={() => setVoiceCallOpen(false)} />}
+      {authed && chatOpen && <ChatDock onClose={() => setChatOpen(false)} />}
       {authed && settingsOpen && <CompanionSettings onClose={() => setSettingsOpen(false)} />}
       {authed && <ProactiveBubble />}
       {authed && <MediaViewerOverlay />}

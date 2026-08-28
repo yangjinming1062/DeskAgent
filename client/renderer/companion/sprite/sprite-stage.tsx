@@ -275,8 +275,7 @@ export function SpriteStage({
     setSpriteState('interacting', { durationMs: 2000 })
     pushExternalAttachment(paths)
     // 投喂文件时自动打开聊天面板，让用户看到附件被加入；
-    // 走根组件的 openDock 走 dock 互斥（不能直接 setChatOpen，否则会和
-    // voice 通话面板同时弹出）。
+    // 走根组件的 openDock 走 dock 互斥（不能直接 setChatOpen）。
     const openDock = (window as unknown as { __spiritagentOpenDock?: (k: 'chat') => void }).__spiritagentOpenDock
     openDock?.('chat')
   }

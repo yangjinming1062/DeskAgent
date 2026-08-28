@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useCallback, useEffect, useRef } from 'react'
 
 import { isRegionHit, useInteractiveRegion } from '@/companion/interactive-regions'
-import { EyeOff, KeyRound, MessageSquareText, Phone, Settings, SlidersHorizontal } from '@/shared/lib/icons'
+import { EyeOff, KeyRound, MessageSquareText, Settings, SlidersHorizontal } from '@/shared/lib/icons'
 import type { IconComponent } from '@/shared/lib/icons'
 import { $auth } from '@/shared/store/auth'
 
@@ -11,7 +11,6 @@ import { $contextMenuPos, closeContextMenu } from './context-menu-store'
 interface ContextMenuProps {
   onOpenActivation?: () => void
   onOpenChat: () => void
-  onOpenVoiceCall: () => void
   onOpenSettings: () => void
 }
 
@@ -52,14 +51,12 @@ function MenuDivider(): React.JSX.Element {
 export function SpriteContextMenu({
   onOpenActivation,
   onOpenChat,
-  onOpenVoiceCall,
   onOpenSettings
 }: ContextMenuProps): React.JSX.Element {
   const auth = useStore($auth)
   const pos = useStore($contextMenuPos)
   const visible = pos !== null
   const authed = auth.kind === 'authenticated'
-  // 语音通话始终可见：每次通话新建独立 voice 会话，不受当前 chat 会话（含 IM）影响。
 
   const backdropRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -143,7 +140,6 @@ export function SpriteContextMenu({
         {authed ? (
           <>
             <MenuItem icon={MessageSquareText} label="对话" onClick={onOpenChat} />
-            <MenuItem icon={Phone} label="语音通话" onClick={onOpenVoiceCall} />
             <MenuDivider />
             <MenuItem icon={SlidersHorizontal} label="伙伴设置" onClick={onOpenSettings} />
             <MenuItem icon={Settings} label="应用设置" onClick={() => void window.spiritagent.showToolWindow()} />

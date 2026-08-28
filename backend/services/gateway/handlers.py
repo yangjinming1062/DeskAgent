@@ -511,20 +511,6 @@ def _register_session_handlers(
 
     dispatcher.register("session.create", session_create)
 
-    async def session_create_voice(params: dict) -> dict:
-        # 每次语音通话独立一条 voice 会话；不绑定当前 chat 会话，跨通话靠长期记忆共享。
-        from services.conversation import create_voice_conversation
-
-        async with SESSION_LOCAL() as db:
-            conv = await create_voice_conversation(db, user_id)
-        runtime = _mount_runtime(conv, cwd=None)
-        logger.info("session.create_voice", extra={"user_id": user_id, "session_id": runtime.session_id})
-        cfg = user_session.llm_config if user_session else llm_config
-        await dispatcher.flush_unsent()
-        return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
-
-    dispatcher.register("session.create_voice", session_create_voice)
-
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")
         last_seq = params.get("last_seq")

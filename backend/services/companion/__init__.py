@@ -78,7 +78,12 @@ from .memory_format import (
     format_memories_block,
     format_proactive_memory_block,
 )
-from .memory_retrieval import backfill_memory_embeddings, embed_memory_text, retrieve_hybrid_memories, retrieve_proactive_memories
+from .memory_retrieval import (
+    backfill_memory_embeddings,
+    embed_memory_text,
+    retrieve_hybrid_memories,
+    retrieve_proactive_memories,
+)
 from .mesh2d import (
     Mesh2DNotReadyError,
     Mesh2DPipelineError,
@@ -108,6 +113,7 @@ from .persona_service import (
     confirm_portrait,
     get_onboarding_state,
     get_or_create_persona,
+    render_extras,
     submit_onboarding_field,
     update_persona,
 )
@@ -234,6 +240,7 @@ __all__ = [
     "regenerate_avatar",
     "regenerate_avatar_from_image",
     "regenerate_outfit_draft",
+    "render_extras",
     "request_model_download_retry",
     "resolve_companion_asset_path",
     "resolve_companion_model_path",

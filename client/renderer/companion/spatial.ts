@@ -8,7 +8,6 @@ import {
   $spriteAction,
   $spriteEmotion,
   $spriteState,
-  $voiceCallOpen,
   setSpriteState
 } from '@/companion/companion-store'
 import { $llmAutonomy } from '@/companion/prefs'
@@ -31,11 +30,6 @@ const EDGE_DOCK_HIDDEN_FRACTION = 0.65
 
 const WALK_SPEED = 80
 const FLY_SPEED = 400
-// 语音通话面板与精灵刚体一体的锚定几何（与 voice-call-dock 面板实际尺寸保持一致）。
-export const VOICE_DOCK_W = 320
-export const VOICE_DOCK_H = 348
-const VOICE_DOCK_GAP = 12
-const VOICE_DOCK_BOTTOM_MARGIN = 16
 const SCALE_TRANSITION_MS = 300
 // roam 的桌面空闲门槛（DESIGN §3.2「桌面空闲 + 高活跃档位时随机游走」）；
 // $lastIdleSeconds 为 -1（Runner 离线/未知）时保守视为不空闲。
@@ -115,25 +109,11 @@ function contentBox(scale = $spatialScale.get()): { left: number; top: number; r
   }
 }
 
-// 通话中精灵位置的 y 上限：精灵脚下（含间距与面板高）必须完整落在屏内，
-// 面板才有落脚处——面板恒锚在脚下，与精灵刚体一体。
-function voiceMaxSpriteY(): number {
-  const spriteH = getBaseSpriteHeight() * $spatialScale.get()
-
-  return window.innerHeight - VOICE_DOCK_BOTTOM_MARGIN - VOICE_DOCK_GAP - VOICE_DOCK_H - spriteH
-}
-
-function clampPosToViewport(
-  pos: { x: number; y: number },
-  voiceConstraint = $voiceCallOpen.get()
-): {
-  x: number
-  y: number
-} {
+function clampPosToViewport(pos: { x: number; y: number }): { x: number; y: number } {
   const c = contentBox()
   const vw = window.innerWidth
   const vh = window.innerHeight
-  const maxY = voiceConstraint ? Math.min(vh - c.bottom, voiceMaxSpriteY()) : vh - c.bottom
+  const maxY = vh - c.bottom
 
   return {
     x: Math.max(-c.left, Math.min(vw - c.right, pos.x)),
@@ -212,89 +192,6 @@ export function computeOverlayAnchorBesideSprite(opts: {
   )
 
   return { left, top }
-}
-
-// 语音通话面板锚点：恒定在精灵脚下水平居中——面板与精灵刚体一体，拖动任一者整体平移。
-// 脚下空间由开启通话时的上提（ensureVoiceDockRoom）与拖拽钳制保证；
-// 窗口 resize、情绪放大等瞬时可越界，这里保留视口钳制兜底（宁可叠上精灵也不能沉出屏外）。
-export function computeVoiceCallDockPosition(
-  pos: { x: number; y: number },
-  scale: number
-): {
-  left: number
-  top: number
-} {
-  const spriteW = getBaseSpriteWidth() * scale
-  const spriteH = getBaseSpriteHeight() * scale
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-
-  const left = Math.max(
-    VOICE_DOCK_BOTTOM_MARGIN,
-    Math.min(vw - VOICE_DOCK_W - VOICE_DOCK_BOTTOM_MARGIN, pos.x + (spriteW - VOICE_DOCK_W) / 2)
-  )
-
-  const top = Math.min(vh - VOICE_DOCK_H - VOICE_DOCK_BOTTOM_MARGIN, pos.y + spriteH + VOICE_DOCK_GAP)
-
-  return { left: Math.round(left), top: Math.round(top) }
-}
-
-// 通话开启时脚下放不下面板则上提让位，挂断后回落原位。上提/回落是瞬时跳变——
-// 面板的出现与消失本身没有移动过程，刚体一体不允许二者错拍（精灵还在飞、面板已就位）。
-// 用户在通话中拖动（精灵或面板）即视为接管位置，回落取消。
-let voiceLiftReturn: { x: number; y: number } | null = null
-
-export function ensureVoiceDockRoom(): void {
-  stopRoam()
-
-  // 贴边探头（身体缩进屏外）与脚下锚定的通话面板互斥——先全身回屏。
-  if ($isEdgeDocked.get()) {
-    undockFromEdge()
-  }
-
-  const pos = $spatialPos.get()
-  // 极矮视口下 maxY 可为负——钳到 0（面部贴屏顶），面板交给锚点函数的兜底钳制。
-  const maxY = Math.max(0, voiceMaxSpriteY())
-
-  if (pos.y <= maxY) {
-    return
-  }
-
-  voiceLiftReturn = pos
-
-  // x 钳制吸收贴边回屏尚未走完的越界横坐标。
-  const vw = window.innerWidth
-  const w = getBaseSpriteWidth() * $spatialScale.get()
-
-  const lifted = {
-    x: Math.max(REST_MARGIN, Math.min(vw - w - REST_MARGIN, pos.x)),
-    y: maxY
-  }
-
-  cancelMovement()
-  $spatialPos.set(lifted)
-  $spatialLocomotion.set('still')
-  $homePosition.set(lifted)
-  void window.spiritagent.sprite.setPosition(lifted)
-}
-
-export function releaseVoiceDockRoom(): void {
-  const back = voiceLiftReturn
-  voiceLiftReturn = null
-
-  if (!back) {
-    return
-  }
-
-  // 挂断时 $voiceCallOpen 尚未翻回 false（子组件 cleanup 先于父级 effect），
-  // 显式按无通话约束钳制，否则回落目标会被脚下钳制按住不放。
-  const safe = clampPosToViewport(back, false)
-
-  cancelMovement()
-  $spatialPos.set(safe)
-  $spatialLocomotion.set('still')
-  $homePosition.set(safe)
-  void window.spiritagent.sprite.setPosition(safe)
 }
 
 function easeInOut(t: number): number {
@@ -504,8 +401,8 @@ export function setLocale(
 let userInteracted = false
 
 export function updateSpatialDecision(): void {
-  // 通话中面板锚定精灵脚下、贴边趴姿锁定、拖拽中均冻结空间决策
-  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $voiceCallOpen.get() || $isEdgeDocked.get()) {
+  // 贴边趴姿锁定、拖拽中均冻结空间决策
+  if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $isEdgeDocked.get()) {
     return
   }
 
@@ -687,8 +584,6 @@ export function undockFromEdge(): void {
 
 export function startDrag(): void {
   userInteracted = true
-  // 用户拖动即接管位置：挂断后的自动回落作废。
-  voiceLiftReturn = null
   stopRoam()
   cancelMovement()
   clearDockState()
@@ -713,21 +608,19 @@ export function endDragAt(pos: { x: number; y: number }): void {
   const dockMargin = 40
 
   // 1. 优先判定屏幕左右边缘吸附（角色可见边缘距屏边缘 <= 40px）
-  if (!$voiceCallOpen.get()) {
-    const leftDist = pos.x + c.left
-    const rightDist = vw - (pos.x + c.right)
+  const leftDist = pos.x + c.left
+  const rightDist = vw - (pos.x + c.right)
 
-    if (leftDist <= dockMargin) {
-      dockToEdge('left')
+  if (leftDist <= dockMargin) {
+    dockToEdge('left')
 
-      return
-    }
+    return
+  }
 
-    if (rightDist <= dockMargin) {
-      dockToEdge('right')
+  if (rightDist <= dockMargin) {
+    dockToEdge('right')
 
-      return
-    }
+    return
   }
 
   // 2. 松手定居：把坐标收紧到 viewport 内，全身完整入屏（DESIGN §3.7）
@@ -747,7 +640,6 @@ export function endDragAt(pos: { x: number; y: number }): void {
 
 export function resetToHomePosition(): void {
   userInteracted = false
-  voiceLiftReturn = null
   stopRoam()
   cancelMovement()
   clearDockState()
@@ -758,12 +650,8 @@ export function resetToHomePosition(): void {
   $spatialLocomotion.set('still')
   $dragVelocity.set({ vx: 0, vy: 0 })
 
-  if ($voiceCallOpen.get()) {
-    ensureVoiceDockRoom()
-  } else {
-    $spatialPos.set(home)
-    void window.spiritagent.sprite.setPosition(home)
-  }
+  $spatialPos.set(home)
+  void window.spiritagent.sprite.setPosition(home)
 }
 
 export function initSpatial(): () => void {
@@ -806,7 +694,7 @@ export function initSpatial(): () => void {
       }
     } else {
       clearDockState()
-      const next = clampPosToViewport(saved, false)
+      const next = clampPosToViewport(saved)
       $homePosition.set(next)
 
       if ($spatialLocale.get() === 'home') {
@@ -942,14 +830,6 @@ export function initSpatial(): () => void {
     }
 
     $homePosition.set(clamped)
-
-    // 通话中面板锚在脚下：只把当前位置收紧进新视口（脚下约束随新视口重算），
-    // 不做 home 重贴——避免把上提中的精灵拉回底部 home。
-    if ($voiceCallOpen.get()) {
-      $spatialPos.set(clampPosToViewport($spatialPos.get()))
-
-      return
-    }
 
     const locale = $spatialLocale.get()
 

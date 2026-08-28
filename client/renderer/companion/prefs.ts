@@ -4,7 +4,6 @@ import { setDisturbanceTier } from '@/companion/companion-store'
 import { persistBoolean, persistString, storedBoolean, storedString } from '@/shared/lib/storage'
 
 // 响应模式控制伙伴在 Chat 模式下如何回复（DESIGN §6.1 响应模式）。
-// 语音通话模式始终是语音，与此设置无关。
 export type ResponseMode = 'text' | 'voice'
 
 // localStorage 仍是各窗口的即时缓存（同步读、离线可用）；每次写入额外经

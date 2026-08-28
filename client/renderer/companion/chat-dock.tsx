@@ -37,18 +37,7 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
-import {
-  FileText,
-  FolderOpen,
-  ImageIcon,
-  Mic,
-  PanelLeft,
-  Paperclip,
-  Phone,
-  Sparkles,
-  Video,
-  X
-} from '@/shared/lib/icons'
+import { FileText, FolderOpen, ImageIcon, Mic, PanelLeft, Paperclip, Sparkles, Video, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -157,7 +146,6 @@ const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
 
 interface ChatDockProps {
   onClose: () => void
-  onOpenVoiceCall?: () => void
 }
 
 // 独立订阅 $chatStreamingTick：流式输出期间触发滚动跟随，避免 ChatDock 容器重渲染。
@@ -196,7 +184,7 @@ function PendingImageThumb({ path }: { path: string }): React.JSX.Element {
   )
 }
 
-export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.ReactElement {
+export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const list = useStore($chatMessageList)
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
   const gatewayState = useStore($gatewayState)
@@ -405,12 +393,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }, [gatewayState, chatSessionId, list.length])
 
-  // IM 桥接与挂断后的语音通话两种会话在桌面端只读查看。
+  // IM 桥接会话在桌面端只读查看。
   // 优先 $chatSessionKind（服务端权威）；重启后列表尚未加载的瞬间窗口退到 findSessionInfo。
   const chatSessionKind = useStore($chatSessionKind)
 
   const sessionKind = chatSessionKind || findSessionInfo(chatSessionId ?? '')?.kind || ''
-  const isReadOnlySession = sessionKind === 'im' || sessionKind === 'voice'
+  const isReadOnlySession = sessionKind === 'im'
 
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -889,18 +877,6 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               <span className="truncate text-sm font-medium text-white/90">{currentSessionTitle}</span>
             </div>
             <div className="flex items-center gap-0.5">
-              {onOpenVoiceCall && (
-                <button
-                  aria-label="语音通话"
-                  className={BTN_ICON}
-                  disabled={isReadOnlySession}
-                  onClick={onOpenVoiceCall}
-                  title="开启实时语音通话模式"
-                  type="button"
-                >
-                  <Phone />
-                </button>
-              )}
               <button aria-label="关闭对话" className={BTN_ICON} onClick={onClose} type="button">
                 <X />
               </button>
@@ -1027,11 +1003,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {/* Input Area */}
           <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
-            {isReadOnlySession && (
-              <p className="mb-1 text-center text-xs text-white/40">
-                {sessionKind === 'voice' ? '语音通话记录 · 只读' : 'IM 对话 · 只读'}
-              </p>
-            )}
+            {isReadOnlySession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
             <div className="flex items-end gap-2">
               <textarea
                 className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"

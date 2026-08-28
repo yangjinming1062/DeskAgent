@@ -42,7 +42,6 @@ import {
 import {
   $effectiveTier,
   $spriteState,
-  $voiceCallOpen,
   clearGazeTarget,
   playSpriteActionSequence,
   setGazeTarget,
@@ -164,7 +163,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       setTurnHadBubbleBreak(false)
       setSpriteState('thinking')
 
-      if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !$screenLocked.get()) {
+      if ($responseMode.get() === 'voice' && !$screenLocked.get()) {
         beginAutoVoiceTurn()
       }
 
@@ -175,7 +174,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       if (text) {
         appendAssistantDelta(text)
 
-        if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !$screenLocked.get()) {
+        if ($responseMode.get() === 'voice' && !$screenLocked.get()) {
           feedAutoVoiceDelta(text)
         }
       }
@@ -259,8 +258,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
       applySpatialCue(locale, target)
 
       // 在「始终语音」模式下，流式语音队列在 message.complete 时收尾并排干残句；
-      // 若中途切为语音模式或队列未启动且有文本，走 speak() 兜底。非语音模式或锁屏/通话中时中止。
-      if ($responseMode.get() === 'voice' && !$voiceCallOpen.get() && !screenLocked) {
+      // 若中途切为语音模式或队列未启动且有文本，走 speak() 兜底。非语音模式或锁屏时中止。
+      if ($responseMode.get() === 'voice' && !screenLocked) {
         if (isAutoVoiceActive()) {
           endAutoVoiceTurn()
         } else if (text.trim()) {

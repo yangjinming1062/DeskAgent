@@ -87,9 +87,6 @@
 - **预制反馈 TTS 缓存**：预制台词由 `speakScripted`（[tts.ts](tts.ts)）→ `spiritagent:media:tts { persist: true }` 合成并按 `sha1(音色 + 台词)` 内容寻址缓存在 `$SPIRITAGENT_HOME/audio/tts-cache/<lang>/`：首次播放合成一次并落盘，之后都是本地读盘，同一组 (音色, 台词) 一辈子只花一次云端额度。换音色或改台词会让缓存键变化从而自然失效，没有需要维护的失效逻辑。音色试听句走同一条路径。
 - **悬停**：视线跟随光标（2D/3D 同规则）；2D 模式命中头发/裙摆区域额外触发 jiggle 物理抖动（200ms 节流）。贴边吸附态不因悬停解除，仅点击/拖拽主动解除。情绪 / 交互粒子反馈（爱心、怒气、冷汗、眩晕星环、音符、睡眠气泡）由 [vfx.tsx](vfx.tsx) 挂载在 SpriteStage 上层。
 - **右键**：托盘菜单入口（隐藏/显示、一键归位、打开对话、反激活、退出）。精灵窗口内右键开自定义 in-sprite 菜单（[sprite/context-menu.tsx](sprite/context-menu.tsx)）——始终挂载、通过 `visibility: hidden` 切换，避免 mount/unmount DOM；状态走 `$contextMenuPos` 原子（[sprite/context-menu-store.ts](sprite/context-menu-store.ts)），菜单自身订阅，宿主 `CompanionRoot` 不参与。菜单可见时注册全屏交互区域与透明 backdrop，点击外部区域、窗口失焦或按下 Escape 键时自动关闭菜单并拦截事件，避免误触精灵拖拽或戳动；若在菜单开启时右键精灵身体部位则直接重定位菜单。
-- **语音通话（服务端实时会话，全双工）**：上行 PCM 常开直发语音 WS——采集无起停门（[pcm-capture.ts](pcm-capture.ts)：专用 16kHz AudioContext，AudioWorklet 优先、加载失败降级 ScriptProcessorNode），话语起止/断句/插话判别全部在服务端（PROTOCOL §1.7）；本地仅保留**乐观打断**（[voice-call-dock.tsx](voice-call-dock.tsx) 30ms 能量循检测，伙伴说话时音量超更高阈值即本地停播 + 通知服务端取消回合）作为服务端权威判定的零延迟兜底。下行音频块由 [segment-player.ts](segment-player.ts) 按到达顺序解码（裸 PCM 走零解码快路径）、AudioBufferSourceNode 前瞻调度无缝衔接播放，输出经分析节点驱动与聊天朗读共用的口型振幅汇（两条播放路径互斥）；打断后晚到的下行块按回合活跃标记丢弃。[voice-session.ts](voice-session.ts) 管连接（现铸 ticket）、掉线重连与控制帧（session.start 携带 duplex 声明；session.ready 的 caps 标记 TTS 链流式能力）。
-  - **每次通话独立新会话**：挂断入口的「语音通话」永远可见，不与当前 chat 会话（含 IM）耦合。点开调用 `session.create_voice` 新建一条 `kind="voice"` 会话，会话列表里以时间戳命名（例「语音通话 8/28 14:30」），挂断后作为只读历史保留；跨通话上下文靠长期记忆共享，不靠会话历史。通话面板仅承载通话状态与失败条，纯语音链路——服务端只下发二进制音频帧（[PROTOCOL.md §1.7](../../../PROTOCOL.md)）。
-  - **通话期禁止切换会话**：语音面板挂载期间不允许在 chat-dock 的会话列表里切会话；否则 WS 仍绑旧会话、当前会话标识已切走，后续回合会写错会话行。
 
 **每日互动统计**：戳击 / 对话轮次两类互动经互动统计上报接口（无 LLM）上报，后端按用户本地日聚合 + OR 门限（任一类 ≥ 10）按日 upsert 一条统计记忆（含小时分布快照），喂给后续 LLM "用户当日活跃度 + 高峰时段" 信号。
 
@@ -110,11 +107,11 @@
 - **形象生成入口分工**：头像重生与全身生成分别走协议定义的独立入口；Renderer 只消费引导状态与生成事件，不组装供应商请求。接口契约见 [PROTOCOL.md §1.2](../../../PROTOCOL.md)，用户流程见 [DESIGN.md §5](../../../DESIGN.md)。引导模式未知时显示加载占位，避免先以错误文案渲染再闪烁。
 - **换装（衣柜）**：外观生成 / 穿着 / 删除走 REST（[wardrobe-store](wardrobe/wardrobe-store.ts)）；衣柜入口只在 2D 渲染模式下渲染（3D 模型不随服装变）；换装状态事件触发衣柜重拉，穿着翻转时重水合 2D 渲染层（按新 PSD 重建 puppet），换装期间旧装不断档。
 - **签名资产消费**：签名、时效与校验规则见 [PROTOCOL.md §1.5](../../../PROTOCOL.md)；Renderer 只按返回 URL 拉取并缓存。
-- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 语音通话 / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，通话/设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
+- **CORS / 跨窗口**：精灵窗口与对话面板共享同一 Electron 渲染进程（panel 是 React child of sprite window）。任何弹层（chat / 设置）都**不**开关窗口置顶——z-order 恒置顶是 DESIGN §3.7 不变量，设置期间关掉置顶会让精灵连同面板一起沉到别的窗口底下（恢复时还用 `floating` 档，macOS 的 `screen-saver` 档会被降级）。
 - **主题（UI 皮肤）**：主题状态在 shared 侧（[shared/store/theme.ts](../shared/store/theme.ts)）——切换入口仅 Hub 设置「外观」页，本窗经主进程广播实时换肤、启动时从 localStorage 恢复，自身不提供切换入口。主题只作用于 UI 铬面（面板 / 气泡 / 菜单 / toast），不覆盖伙伴形象本体（蛋 / 2D puppet / 3D / VFX）。
 - **对话内媒体展示（气泡轻量化原则）**：精灵气泡只承载轻量文本；伙伴生成的图片/视频统一在对话窗以媒体卡内联预览、点击放大播放（图片与视频同一交互，[chat-media-card](chat-media-card.tsx) + [media-viewer-overlay](media-viewer-overlay.tsx)）。媒体经主进程 IPC 取回（图片 data URL 走 `apiAsset`、视频字节转 blob URL 卸载回收），不直连后端 URL。聊天窗收起时收到媒体，精灵气泡只提示「点击查看」，点击打开对话窗（媒体属于其他会话时先切过去）；正看其他会话时由通知 toast 承载跳转。后台视频完成的送达行与历史水合同形状（协议见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)）。
 - **IM 通道事件 toast**：`channel.status`（连接/登录过期/异常）与 `channel.peer_request`（陌生对端配对请求）在精灵窗以通知提醒，屏锁静默；通道绑定与审批的真相源在 Hub「聊天通道」设置页（REST），toast 只是提醒入口。
-- **im 会话只读**：外接 IM（微信）桥接的会话（conversation kind `im`）在会话列表与历史中正常可见可读，但输入区整体禁用并显示「IM 对话 · 只读」角标——im 回合由后端通道桥独占写入（外部 IM 消息驱动），桌面不能代伙伴在渠道会话里发言，语音通话入口同样对 im 会话关闭（voice-call 会向当前会话推 prompt）。服务端 `prompt.submit` 侧另有守卫双保险。协议见 [PROTOCOL.md §1.8](../../../PROTOCOL.md)。
+- **im 会话只读**：外接 IM（微信）桥接的会话（conversation kind `im`）在会话列表与历史中正常可见可读，但输入区整体禁用并显示「IM 对话 · 只读」角标——im 回合由后端通道桥独占写入（外部 IM 消息驱动），桌面不能代伙伴在渠道会话里发言。服务端 `prompt.submit` 侧另有守卫双保险。协议见 [PROTOCOL.md §1.7](../../../PROTOCOL.md)。
 - **用户侧聊天附件**：入口四条——粘贴（图片位图存盘、视频文件取真实路径）、拖拽到面板/精灵、附件按钮选择器、精灵投喂共用拖拽管线。图片以 data URL 直发多模态；视频附加即经主进程 IPC 上传后端换取会话级 URL，上传完成前发送按钮禁用，失败态可重试可移除。附件只属于上传时的会话，切换会话即丢弃。上传限额、双模式消费与清理降级契约见 [PROTOCOL.md §1.3](../../../PROTOCOL.md)。
 
 ## 10. 空间行为（位置 × 移动 × 缩放）
@@ -127,15 +124,13 @@
 
 **`initSpatial()`**：在 root.tsx mount 时调用一次，注册所有空间反应——$chatOpen（打开对话时终止移动保持就地、精灵自动隐藏，关闭时在原位恢复）、$spriteState（自适应缩放）、$effectiveTier（空间策略 + 缩放）、$focusContext（perch 决策）。返回 cleanup 函数。
 
-**决策树**（`updateSpatialDecision`）：drag > chat / voice call（冻结空间决策，精灵留原位）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
-
-**语音通话面板刚体绑定**：通话面板的位置完全由精灵位置派生——恒锚在精灵脚下水平居中，用户拖面板时位移直接写进精灵位置（释放复用精灵本体的松手定居结算），因此面板与精灵永远保持相对位置不变。**跨文件不变量**：面板尺寸常量（[spatial.ts](spatial.ts)）必须与面板实际渲染尺寸（[voice-call-dock.tsx](voice-call-dock.tsx)）一致——锚定、上提量与拖拽钳制都按它计算，改尺寸必须两处同步。开启通话时脚下放不下面板则瞬时上提精灵让位（与面板的出现/消失同步跳变，不做移动动画），挂断后瞬时回落原位；用户在通话中拖动过精灵或面板即接管位置，回落作废。通话中精灵 y 上限收紧到"脚下放得下面板"，贴边吸附与仪式行走（Ritual walk）被抑制，窗口 resize 只按新视口收紧当前位置、不重贴 home。
+**决策树**（`updateSpatialDecision`）：drag > chat（冻结空间决策，精灵留原位）> still → home > 非 autonomous（常规）→ 停留原地，仅停掉进行中的漫游 > 智能驱动开 → LLM 决策（autonomy.ts 仅在自主档咨询云端）> 焦点窗口几何可用 + category ∉ {unknown, gaming} + !fullscreen → perch > idle + 桌面空闲 + 无 perch 目标 → roam > home。每次 tier / focus / state 变化触发重评估。「沉浸式 → 静止」的档位覆盖只把 gaming / 全屏算作沉浸上下文——专注工作不压档（DESIGN §6.2）。
 
 **perch 位置**：从焦点窗口几何（`$focusContext.windowGeom`）计算——优先窗口右下角外侧，右溢出则尝试左侧；两侧放不下全尺寸时等比例缩到能舒适栖身（不低于 0.5×，缩放上限随 perch 场所生效、离开即解除，压过情绪放大）。连最小尺寸都容不下才放弃。perch 仅在 idle 时发起；进入 perch 后 work/think/speak 状态不踢出（"陪"语义）。
 
 **roam**：自补充式 waypoint 循环（每个点停 5–15s），waypoint 在屏幕下半部随机生成。自主档 + idle + 桌面空闲（Runner 上报的空闲秒数 ≥ 90s，未知信号保守不漫游）+ 无 perch 目标时触发（2D/3D 均漫游；2D 走位移积分复合步态）。任何 drag / chat / focus / tier 变化或用户回到桌面通过 `stopRoam` 终止。
 
-**approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启 / 通话中不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../PROTOCOL.md)。
+**approach（走过去搭话）**：`companion.should_act` 的第三类动作（[autonomy.ts](autonomy.ts) `executeApproach`），仅智能驱动开 + 自主档——本地规则路径不搭话（说什么需要人格）。开场白由后端在同一决策中产出并经 `companion.message` 通道投递（边走边说，气泡随精灵移动），客户端只走位：有焦点窗口落在窗口旁（复用 perch 落位与缩身，搭话后就地陪工），用户在桌面时走到屏幕中下部站定（不动 locale，后续空间决策接管）；途中视线锁定目标中心 6s。锁屏 / 聊天开启时不执行（消息侧由各自的既有门控决定）。低频闸在后端（30 分钟冷却，冷却内连同开场白一起降级 stay，不出现"说了话没走过来"）；协议契约见 [PROTOCOL.md §1.4](../../../PROTOCOL.md)。
 
 **缩放**：`$defaultScale`（用户设置，localStorage）是基准。EMOTIONAL 状态的 excited/surprised/playful 触发 1.3–1.6× 临时放大，静止档不放大。缩放也是 rAF 动画（~300ms），通过容器 `transform: scale()` 实现——与 sprite 内部的程序化动画（呼吸/浮动）在不同 DOM 层，不冲突。
 

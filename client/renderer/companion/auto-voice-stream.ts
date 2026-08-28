@@ -1,5 +1,5 @@
 import { $screenLocked } from '@/companion/activity'
-import { $spriteState, $voiceCallOpen, setSpriteState } from '@/companion/companion-store'
+import { $spriteState, setSpriteState } from '@/companion/companion-store'
 
 import { playDataUrl, stopAudio } from './audio-track'
 import { SentenceSegmenter } from './speech-segmenter'
@@ -187,8 +187,8 @@ export function endAutoVoiceTurn(): void {
 
 async function pump(run: AutoVoiceRun): Promise<void> {
   while (currentRun === run) {
-    // 门控检查：通话中或锁屏状态中止后续播放
-    if ($voiceCallOpen.get() || $screenLocked.get()) {
+    // 门控检查：锁屏状态中止后续播放
+    if ($screenLocked.get()) {
       break
     }
 

@@ -40,7 +40,6 @@ backend/
 │   ├── llm/providers/        # Chat/ImageGen/VideoGen/TTS/STT/ModelGen 六类供应商抽象
 │   ├── scheduler/            # Cron + 主动消息调度 + 夜间自主活动批处理
 │   ├── tools/                # 工具层（backend / memory / runner 三类）
-│   ├── voice/                # 实时语音会话（独立 WS 全双工状态机 + 服务端 VAD 断句/插话判别 + 子句级流式 TTS 分块下发）
 │   ├── update/               # 桌面客户端版本更新清单构建
 │   └── desktop_config.py     # 桌面配置默认值与铺平转换
 └── api/v1/ + main.py         # 薄 HTTP/WS 端点（pkgutil 自动发现）+ lifespan + 路由装配
@@ -81,14 +80,13 @@ backend/
 - **LLM 调用 debug 面包屑集中埋在三个 chokepoint**：聊天包装、回落链调度、embedding 入口；不分散到每个供应商方法——与重试/回落叠加容易漏，集中成本更低、一次抓全。
 - **Outbox 状态机可靠投递与独立周期性回收**：待派发事件入库默认待投递状态；派发循环按在线连接原子加锁认领并下发，成功后置为已投递，异常则递增重试次数并计算指数退避，超限后隔离入失败死信状态并记录错误原因；物理清理完全移出推送主循环，由调度器周期性批量回收过期投递行、死信与孤儿内部事件。
 - **工具集开关在注册表读取口生效、回合起点重读设置**：`toolsets.disabled`（UserSettings 点键，id 权威枚举见 [PROTOCOL.md §2.2](../PROTOCOL.md)）在 `get_all_schemas` 单一 chokepoint 过滤 backend/memory 桶（畸形值 fail-open——清空过滤而非清空工具表）；runner 桶在客户端 `get_tools` 源头已过滤、后端不重复过滤。回合起点重读 user_settings，`PUT /api/config` 后下一回合即生效、无需重连 WS，入口侧连接时缓存的快照因此不再是新鲜度瓶颈。
-- **IM 通道桥：进程内适配器 + 无头回合，不依赖用户 WS**（契约 [PROTOCOL.md §1.8](../PROTOCOL.md)，架构 [ARCHITECTURE.md §5.4](../ARCHITECTURE.md)）：外部 IM 渠道经 `services/channels/` 的适配器注册表接入（镜像供应商自注册模式）；入站消息以无头 emitter 直调 `run_chat_turn`（对比 cron 回合经 outbox 路由到持连副本——桌面离线即死，IM 桥不受此限）；回复去 markdown、按 `weixin_reply_max_chars` 分片后从原渠道送出，渠道能力差异（微信 reply-only）落在适配器能力位上。**每渠道一条专属 im 会话**（`im` kind 统一枚举，`channel_bindings.conversation_id` 唯一外键锚定——binding 的 (user, channel) 唯一性传递为渠道不混流），`prompt.submit` 拒写、桌面只读；人设/长期记忆/情感按 user 加载与桌面回合共享，无需同步动作。对端访问默认拒绝：未知发送者收一次性配对回复 + pending 行（`channel.peer_request` 事件），主人审批放行。绑定任务由守卫循环自愈（非致命错误退避重建），无周期对账——单 web 进程语义下不需要 omp-wechat 的端口单例锁/failover。**绑定状态与对外通知共用单一入口**（`update_binding_status`）：落库 + 状态实际变化时写 `channel.status` outbox 事件，避免事件漏发。微信 iLink reply-only 且需要登录：登录流程由适配器自管 QR 状态机（`get_bot_qrcode` → 3s 轮询 `get_qrcode_status` wait→scaned→confirmed|expired），confirmed 时凭据与游标全量重建（owner 自动加入白名单），Hub 走 REST 轮询展示二维码。**媒体收发走 iLink CDN + AES-128-ECB**（PyCryptodome 依赖 `pycryptodome`）：入站 `image_item`/`voice_item`/`file_item`/`video_item` 三元编码的 aes_key 解密后下载 → 落 `temp-media` 公网 URL → 作为 `ChatRequest` attachment 喂给 LLM（与桌面聊天视频上传复用同一 temp-media 通路）；回合产出 media 列经 `getuploadurl` + AES 加密 + `image_item`/`file_item` 段回送，回合内 attachment 与文字合并为单条消息。
+- **IM 通道桥：进程内适配器 + 无头回合，不依赖用户 WS**（契约 [PROTOCOL.md §1.7](../PROTOCOL.md)，架构 [ARCHITECTURE.md §5.4](../ARCHITECTURE.md)）：外部 IM 渠道经 `services/channels/` 的适配器注册表接入（镜像供应商自注册模式）；入站消息以无头 emitter 直调 `run_chat_turn`（对比 cron 回合经 outbox 路由到持连副本——桌面离线即死，IM 桥不受此限）；回复去 markdown、按 `weixin_reply_max_chars` 分片后从原渠道送出，渠道能力差异（微信 reply-only）落在适配器能力位上。**每渠道一条专属 im 会话**（`im` kind 统一枚举，`channel_bindings.conversation_id` 唯一外键锚定——binding 的 (user, channel) 唯一性传递为渠道不混流），`prompt.submit` 拒写、桌面只读；人设/长期记忆/情感按 user 加载与桌面回合共享，无需同步动作。对端访问默认拒绝：未知发送者收一次性配对回复 + pending 行（`channel.peer_request` 事件），主人审批放行。绑定任务由守卫循环自愈（非致命错误退避重建），无周期对账——单 web 进程语义下不需要 omp-wechat 的端口单例锁/failover。**绑定状态与对外通知共用单一入口**（`update_binding_status`）：落库 + 状态实际变化时写 `channel.status` outbox 事件，避免事件漏发。微信 iLink reply-only 且需要登录：登录流程由适配器自管 QR 状态机（`get_bot_qrcode` → 3s 轮询 `get_qrcode_status` wait→scaned→confirmed|expired），confirmed 时凭据与游标全量重建（owner 自动加入白名单），Hub 走 REST 轮询展示二维码。**媒体收发走 iLink CDN + AES-128-ECB**（PyCryptodome 依赖 `pycryptodome`）：入站 `image_item`/`voice_item`/`file_item`/`video_item` 三元编码的 aes_key 解密后下载 → 落 `temp-media` 公网 URL → 作为 `ChatRequest` attachment 喂给 LLM（与桌面聊天视频上传复用同一 temp-media 通路）；回合产出 media 列经 `getuploadurl` + AES 加密 + `image_item`/`file_item` 段回送，回合内 attachment 与文字合并为单条消息。
 
 ## 5. 与外部的契约
 
 | 契约 | 方向 | 在哪定义 |
 |------|------|---------|
 | 伙伴生命周期、事件、枚举、资产与错误契约 | 对客户端 / 管理端 | [PROTOCOL.md §1 / §5](../PROTOCOL.md) |
-| 实时语音会话（op 信封、音频帧、顺序不变量） | 对客户端 | [PROTOCOL.md §1.7](../PROTOCOL.md) |
 | 3D 与 2D 生成输入、能力链与产物契约 | 对客户端 + 供应商 | [docs/PIPELINE.md](../docs/PIPELINE.md) |
 | Outbox、副本边界与主动事件路由 | 内部 | [ARCHITECTURE.md §5](../ARCHITECTURE.md) |
 | 供应商注册、回落与三层入口 | 本模块独有 | 本 README §4 |

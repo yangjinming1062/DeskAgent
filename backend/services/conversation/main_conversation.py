@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from modules.conversation import Conversation, Message
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,12 +8,8 @@ MAIN_KIND = "main"
 CRON_KIND = "cron"
 # 外部 IM 渠道桥接的会话：统一一种 kind，每渠道一条专属对话由 channel_bindings.conversation_id 唯一外键锚定（services/channels/conversation.py 工厂）；prompt.submit 拒写，桌面端只读旁观。
 IM_KIND = "im"
-# ``kind`` 列的 SQL server_default 值；常量化供 voice WS 等显式判别。
+# ``kind`` 列的 SQL server_default 值。
 STANDARD_KIND = "standard"
-# 每次语音通话独立一条会话，挂断后作为只读历史保留；跨会话信息靠长期记忆共享，不依赖会话历史。
-VOICE_KIND = "voice"
-# 语音通话允许绑定的会话 kind 白名单。详见 client/companion/README.md §7。
-VOICE_ELIGIBLE_KINDS: frozenset[str] = frozenset({MAIN_KIND, STANDARD_KIND, VOICE_KIND})
 
 # UI-only 子类型：渲染端展示但排除出 LLM 上下文；与 MAIN_KIND 同处一处保证所有会话读取者一致。status_proactive 故意不在此集合——它是用户可回应的真实轮次。
 UI_ONLY_SUBTYPES: frozenset[str] = frozenset({"hint", "status_interaction", "status_reaction"})
@@ -69,20 +63,6 @@ async def get_or_create_cron_conversation(db: AsyncSession, user_id: int) -> Con
         if existing is not None:
             return existing
         raise
-    await db.commit()
-    await db.refresh(conv)
-    return conv
-
-
-async def create_voice_conversation(db: AsyncSession, user_id: int) -> Conversation:
-    """每次语音通话新建一条 voice 会话，挂断后作为只读历史保留。
-
-    不复用同一行：跨通话靠长期记忆共享，不靠 session 历史。
-    标题带时间戳方便用户在会话列表里识别。
-    """
-    title = f"语音通话 {datetime.now().strftime('%m/%d %H:%M')}"
-    conv = Conversation(user_id=user_id, kind=VOICE_KIND, title=title)
-    db.add(conv)
     await db.commit()
     await db.refresh(conv)
     return conv

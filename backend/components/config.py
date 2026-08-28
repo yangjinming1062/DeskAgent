@@ -200,25 +200,6 @@ class Settings(BaseSettings):
     companion_outfit_generate_rate_limit_per_hour: int
     rate_limit_storage_url: str = ""
 
-    voice_uplink_sample_rate: int = Field(default=16000)
-    voice_max_utterance_seconds: int = Field(default=60)
-    voice_speech_onset_ms: int = Field(default=200)
-    voice_endpoint_silence_ms: int = Field(default=480)
-    voice_vad_preroll_ms: int = Field(default=240)
-    voice_vad_floor_ratio: float = Field(default=2.2)
-    voice_bargein_onset_ms: int = Field(default=200)
-    voice_bargein_deafen_ms: int = Field(default=250)
-    voice_bargein_energy_ratio: float = Field(default=2.5)
-    voice_clause_min_chars: int = Field(default=8)
-    voice_segment_max_chars: int = Field(default=120)
-    voice_tts_prefetch: int = Field(default=2)
-    voice_downlink_chunk_ms: int = Field(default=100)
-    voice_streaming_enabled: bool = Field(default=True)
-    voice_session_idle_timeout_seconds: int = Field(default=180)
-    voice_session_hard_timeout_seconds: int = Field(default=1800)
-    voice_stt_rate_limit_per_minute: int = Field(default=60)
-    voice_tts_rate_limit_per_minute: int = Field(default=240)
-
     metrics_enabled: bool = True
     metrics_path: str = "/metrics"
     metrics_auth_token: str = ""

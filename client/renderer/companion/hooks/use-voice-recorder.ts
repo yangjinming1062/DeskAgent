@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { VOICE_CALL_AUDIO_CONSTRAINTS } from '@/companion/audio-constraints'
 import { $chatSessionId, $chatTurnInFlight, setAssistantError, setChatSession } from '@/companion/chat-store'
 import { setSpriteState } from '@/companion/companion-store'
-import { VOICE_CALL_AUDIO_CONSTRAINTS } from '@/companion/voice-call-dock'
 import { getSpiritAgentConfig } from '@/shared/spiritagent'
 
-// IM 语音条仍走 MediaRecorder（webm/opus 整段 → REST 转写），与通话面板的 PCM 流式上行无关。
+// IM 语音条仍走 MediaRecorder（webm/opus 整段 → REST 转写）。
 const PREFERRED_OPUS_MIME_TYPES = [
   'audio/webm;codecs=opus',
   'audio/webm',

@@ -10,7 +10,6 @@
 | 链路 | 方向 | 传输 | 鉴权 | 见 |
 |------|------|------|------|----|
 | Backend ↔ Client | 双向 | WebSocket 长连接（/api/chat/ws） | 短时 ws-ticket（60s TTL，purpose=ws） | §1 |
-| Backend ↔ Client（语音会话） | 双向 | WebSocket（/api/voice/ws）：文本控制帧 + 二进制音频帧 | 短时 ws-ticket（同 chat 通道） | §1.7 |
 | Client ↔ Runner | 双向 | 本地 OS IPC（Windows 命名管道 / macOS UDS）承载 WebSocket 帧 | 每次启动握手 token（失败 401） | §2 |
 | Runner → Client → Backend（反向 RPC） | Runner → Client → Backend | 嵌套在 §2 上，经 Client 转发到 /api/llm/completion | Client JWT | §3 |
 
@@ -24,7 +23,7 @@
 - **心跳保活（session.ping）**：客户端在连接空闲 15s 时发送 `session.ping`（带 id 的标准 RPC 请求），服务端回 `{}`；若 30s 内无任何帧到达，客户端判定半开连接并主动 `close(4000, 'heartbeat')` 触发重连。该机制覆盖 NAT 超时、Wi-Fi 切换、VPN 抖动、笔记本合盖等场景，避免用户发消息后 120s 死寂。
 - **全量重水化的防御性截断**：当全量重水化返回的消息数达到防御上限时，响应携带截断标记与更早历史的分页游标；客户端可通过会话消息 REST 端点按游标向后翻页拉取更早历史。该截断仅作为超大历史的负载防御兜底，优先仍走重放缓冲的无缝恢复。
 - WS 关闭码 1008（鉴权失效）= 立即退出重连流程，不继续尝试。
-- **WS 鉴权用短时 ticket**：客户端连接前持 Bearer JWT 调 POST /api/user/ws-ticket 现铸 60s TTL 的专用 token（purpose=ws），经查询串携带；长效 JWT 不进 URL（避免落入代理/访问日志）。chat 与 voice 两条 WS 同款；`?token=` 直传 JWT 仅限后端内部调用。
+- **WS 鉴权用短时 ticket**：客户端连接前持 Bearer JWT 调 POST /api/user/ws-ticket 现铸 60s TTL 的专用 token（purpose=ws），经查询串携带；长效 JWT 不进 URL（避免落入代理/访问日志）。`?token=` 直传 JWT 仅限后端内部调用。
 
 ---
 
@@ -182,27 +181,9 @@
 
 ### 1.6 错误信封
 
-REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式调用（chat 与语音 TTS 流）一旦首 chunk 已发，任何供应商失败都不切换 fallback。
+REST 端点异常路径返回统一结构：error（短码）+ reason（分类，可空）+ status（HTTP 状态）。WS JSON-RPC 错误使用标准错误码（-32700 到 -32603）。**关键契约**：内部错误抛至前端前必须脱敏，严禁包含数据库账号、服务器本地路径等栈帧细节；统一错误分类决定恢复策略，见 [backend/README.md](backend/README.md)；流式调用（chat TTS 流）一旦首 chunk 已发，任何供应商失败都不切换 fallback。
 
-### 1.7 实时语音会话通道（/api/voice/ws）
-
-语音通话走**独立于聊天网关的第二条 WS**：文本帧承载控制信令（op 信封，非 JSON-RPC），二进制帧承载音频。它不复用聊天网关的 replay buffer / outbox——音频不可重放，语音回合事件**只走本通道**，但对话历史照常落库（与文字聊天同一会话行，重开水话窗可见）。**会话隔离**：每次语音通话通过 `session.create_voice` 独立新建一条 `kind="voice"` 会话，挂断后作为只读历史保留在 chat-dock 列表中；与当前 chat 会话（含 IM）解耦，跨会话信息靠长期记忆共享。服务端在 `session.start` 落地时校验 `kind ∈ {main, standard, voice}`；其他会话（cron 等）一律走 `session.error code="conversation_kind_not_allowed"` 关闭。**低延迟响应**：语音通话场景下 LLM 调用的思考模式被强制关闭（`reasoning_effort="none"`），保证模型以最低延迟流式输出首字文本，即时启动分句 TTS 合成与音频下发。
-
-**全双工链路**：上行二进制帧为裸 PCM（s16le / 单声道 / 16kHz，100ms/块），自 session.ready 起**持续发送、无起停窗口**——话语起止与断句由服务端 VAD 判定（尾静音断句，断句即整段转写），回放下行期间由服务端插话判别（判真即取消回合）。session.start 携带 `duplex: true`（线路模式声明，服务端记录）。下行二进制帧为 TTS 音频**块**：同一音频段的多个块共享段序号，末块 flags bit0 置位（段中断时可能没有末块）；帧头 16 字节小端（magic "SAA1" / flags / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度）。流式供应商走裸 PCM 块（优先，客户端零解码直排）；无流式能力的供应商按段整块下发（供应商原生容器直通）。会话参数（采样率、断句/起说/预滚时长、插话判定阈值、子句切分长度、预取窗口、攒块时长、流式开关、超时与限流）的配置键与默认值见 backend 的 `config.toml.example` [voice] 段。本节锁定契约意图与顺序不变量：
-
-| op | 方向 | 用途 | 改动需同步的模块 |
-|----|------|------|------------------|
-| session.start / session.ready / session.closed / session.error | C→S / S→C | 会话建立（绑定聊天会话 id 与音色、duplex 声明）、就绪（携带 caps：TTS 链是否具备流式能力）、正常与异常关闭（重复连接顶号、空闲/硬超时）| Backend 语音会话 + Client voice-session |
-| session.error code="conversation_kind_not_allowed" | S→C | voice WS 拒绝非语音白名单会话（IM / cron / 其他）—— 携带 `session_kind` 字段告知当前会话 kind，客户端按需提示或自动重定向到主会话 | Backend voice + Client voice-call-dock 的 `resolveVoiceSessionId` |
-| interrupt / session.interrupted | C→S / S→C | 打断双层：客户端乐观打断（本地即刻停播 + 通知服务端取消回合）+ 服务端插话判别权威判定；回合进行中收到成段话语（如思考期开口）视为隐式打断 | Client 乐观打断 + Backend 插话判别与取消收尾（已成段子句落库） |
-| llm.start | S→C | 思考开始 | Client 状态机 |
-| 二进制音频帧 | S→C | 段内裸 PCM / 容器音频分块；帧头 16 字节小端（magic "SAA1" / flags / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度），段序号在帧头供客户端按序播放；首块到达才开始播放（流式供应商裸 PCM 优先客户端零解码快路径；无流式能力的供应商按段整块下发，供应商原生容器直通） | Backend 流式合成 + Client 分块播放 |
-| turn.end | S→C | 回合收尾（对齐 message.complete 载荷：文本、情绪、媒体、usage；打断时带 interrupted 与已下发段文本） | Backend + Client 聊天 store 镜像 |
-| turn.error | S→C | 回合内环节失败（stage = asr / llm / tts / protocol）；**必须在通话面板可见**，会话存活 | Backend + Client 错误条 |
-
-**顺序不变量**：单条 WS 上全序——同段块连续且共享段序号、跨段严格递增，段末块带 final 标志（中断的段可能没有）；turn.end 晚于该回合全部音频帧。**通道边界**（语音双路径契约，见 [ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：会话内实时语音走本通道由服务端编排推送；会话外一次性语音（IM 语音条转写、气泡朗读、音色试听）仍走 REST 拉取（§1.1）。本地 Runner 语音栈不参与本通道——语音会话纯云端，未配置云端 STT/TTS 供应商时 session.error 直接拒绝建会。
-
-### 1.8 IM 通道桥接（/api/channels）
+### 1.7 IM 通道桥接（/api/channels）
 
 外部 IM（微信 iLink）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
 
@@ -338,7 +319,7 @@ LLM 工具入参**禁止**覆盖保留键：user_id / llm_config / user_settings
 | call_id | 字符串 | 单次 RPC 调用 | 整张表唯一（用作 Future Key） |
 | task_id（视频生成） | 字符串 | 异步任务周期 | 单 (user_id, provider) 内唯一 |
 
-**职责分立**：session_id 就是 conversation_id 的字符串形式——客户端侧始终用字符串、后端侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。**conversation kind 枚举**：`main`（日常对话）/ `standard`（用户自开任务会话）/ `cron`（自主回合 scratchpad，不出会话列表）/ `im`（IM 通道桥会话，只读，见 §1.8）；每用户每渠道至多一条 im 会话，锚点在 `channel_bindings.conversation_id`。
+**职责分立**：session_id 就是 conversation_id 的字符串形式——客户端侧始终用字符串、后端侧持久化为整型，通信边界完成两者转换；call_id 作为唯一 Future Key 标识生命周期（见 §4）。**conversation kind 枚举**：`main`（日常对话）/ `standard`（用户自开任务会话）/ `cron`（自主回合 scratchpad，不出会话列表）/ `im`（IM 通道桥会话，只读，见 §1.7）；每用户每渠道至多一条 im 会话，锚点在 `channel_bindings.conversation_id`。
 
 ---
 

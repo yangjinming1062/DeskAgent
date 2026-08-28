@@ -67,8 +67,6 @@ async def run_chat_turn(
     compression_threshold = safe_json_loads(effective_settings.get("chat.context_compression_threshold", ""), default=SETTINGS.context_compression_threshold)
     compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
     reasoning_effort = _parse_reasoning_effort(effective_settings.get("agent.reasoning_effort") or effective_settings.get("reasoning_effort"))
-    if conv.kind == "voice" or (runtime is not None and runtime.kind == "voice"):
-        reasoning_effort = "none"
     temperature = _parse_temperature(effective_settings.get("agent.temperature"), CHAT_TEMPERATURE_DEFAULT)
     compressed_context, compress_info = await compress_history_if_needed(
         inputs.context,

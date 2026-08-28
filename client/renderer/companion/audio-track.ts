@@ -200,8 +200,7 @@ export function registerAmplitudeSink(fn: ((amp: number) => void) | null): () =>
   }
 }
 
-/** 外部播放源（语音通话分段播放器）上报实时振幅——与 audio-track 共用同一拨口型订阅者。
- *  两条播放路径互斥（通话面板打开时聊天朗读不发声），不会交叉写入。 */
+/** 外部播放源上报实时振幅——与 audio-track 共用同一拨口型订阅者。 */
 export function emitExternalAmplitude(amp: number): void {
   amplitudeSink?.(amp)
 }

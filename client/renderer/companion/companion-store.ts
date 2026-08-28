@@ -46,8 +46,6 @@ export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
 
 export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
 export const $spriteState = atom<SpriteStateName>('idle')
-// 通话进行中。
-export const $voiceCallOpen = atom<boolean>(false)
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 // 可选的结构化动作提示（如 turn_away），用于细化情绪片段。
 export const $spriteAction = atom<string | null>(null)

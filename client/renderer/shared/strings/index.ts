@@ -240,7 +240,7 @@ export const strings = {
     intro: '语音输入与录音设置',
     loading: '加载中…',
     sttEnabledTitle: '语音转文字总开关',
-    sttEnabledDesc: '关闭后语音条与通话模式均不可用。',
+    sttEnabledDesc: '关闭后语音条不可用。',
     recordingTitle: '录音时长上限',
     recordingDesc: '单条语音录音的最大时长（秒）',
     save: '保存',

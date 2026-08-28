@@ -3,7 +3,7 @@ import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
 import { $chatOpen } from './chat-store'
-import { $effectiveTier, $voiceCallOpen, clearGazeTarget, setGazeTarget } from './companion-store'
+import { $effectiveTier, clearGazeTarget, setGazeTarget } from './companion-store'
 import { $llmAutonomy } from './prefs'
 import { gazeTowardsPoint } from './ritual-walk'
 import {
@@ -63,8 +63,8 @@ function approachLocomotion(target: { x: number; y: number }): 'walk' | 'fly' {
 // 用户在桌面（无窗口）时走到屏幕中下部站定，不动 locale，后续空间决策自然接管。
 // 途中视线锁定目标中心，数秒后交还指针跟随（镜像 events.ts 的 perch cue 模式）。
 function executeApproach(): void {
-  // 锁屏不搭话；聊天开着时空间决策本就冻结；通话中面板锚定脚下，不许走。
-  if ($screenLocked.get() || $chatOpen.get() || $voiceCallOpen.get()) {
+  // 锁屏不搭话；聊天开着时空间决策本就冻结。
+  if ($screenLocked.get() || $chatOpen.get()) {
     return
   }
 

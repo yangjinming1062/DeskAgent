@@ -70,7 +70,7 @@ export async function synthAudio(text: string, voice?: string, context?: string)
   return await requestSynth(text, voice, context, false)
 }
 
-/** 动态台词（聊天回复 / 主动消息 / 语音通话）。只走内存缓存，不落盘。 */
+/** 动态台词（聊天回复 / 主动消息）。只走内存缓存，不落盘。 */
 export async function speak(text: string, voice?: string, context?: string): Promise<boolean> {
   return await synth(text, voice, context, false)
 }
