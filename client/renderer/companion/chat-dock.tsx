@@ -571,6 +571,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     try {
       const id = await ensureChatSession()
       let fullText = trimmed
+      let promptText = trimmed
       // 发送附件（进 prompt.submit 的多模态 parts：图片 data URL / 视频上传 URL）与
       // 展示附件（data URL 或可渲染 URL，供气泡媒体卡取图）分开收集：图片本地路径
       // 过不了后端附件校验，只允许作渲染源。
@@ -601,6 +602,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
           if (ref.ref_text) {
             fullText = `${fullText}\n${ref.ref_text}`.trim()
+            promptText = `${promptText}\n${ref.ref_text}`.trim()
             displayAttachments.push({ type: 'image', url: pending.value })
           }
         }
@@ -610,9 +612,13 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       } else if (pending?.type === 'file') {
         const fileRef = `[文件: ${pending.fileName}] ${pending.path}`
         fullText = fullText ? `${fullText}\n${fileRef}` : fileRef
+        const fileDirective = `@file:${pending.path}`
+        promptText = promptText ? `${promptText}\n${fileDirective}` : fileDirective
       } else if (pending?.type === 'folder') {
         const folderRef = `[文件夹: ${pending.folderName}] ${pending.path}`
         fullText = fullText ? `${fullText}\n${folderRef}` : folderRef
+        const folderDirective = `@folder:${pending.path}`
+        promptText = promptText ? `${promptText}\n${folderDirective}` : folderDirective
       }
 
       // 同时附上 SpriteStage 投喂的多余文件路径（非媒体文件作为 reference，保留文本里说明）
@@ -621,6 +627,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       if (extra.length > 0) {
         const names = extra.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
         fullText = fullText ? `${fullText}\n附件：${names}` : `附件：${names}`
+        const extraDirectives = extra.map(p => `@file:${p}`).join('\n')
+        promptText = promptText ? `${promptText}\n${extraDirectives}` : extraDirectives
       }
 
       externalPathsRef.current = []
@@ -644,9 +652,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           : pending?.type === 'image'
             ? '请看这张图'
             : pending?.type === 'file'
-              ? `请读取并分析这个文件：${pending.path}`
+              ? `@file:${pending.path}`
               : pending?.type === 'folder'
-                ? `请读取并分析这个文件夹：${pending.path}`
+                ? `@folder:${pending.path}`
                 : ''
 
       pushUserMessage(fullText || displayPlaceholder, displayAttachments.length ? displayAttachments : undefined)
@@ -655,7 +663,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       setSpriteState('thinking')
 
       pushPendingPrompt({
-        text: fullText || promptFallback,
+        text: promptText || promptFallback,
         attachments: attachments.length ? attachments : undefined
       })
       schedulePendingFlush()

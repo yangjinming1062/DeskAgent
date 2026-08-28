@@ -1663,17 +1663,29 @@ ipcMain.handle(IPC.invoke.windowShowTool, async () => {
 })
 
 ipcMain.handle(IPC.invoke.runnerGetTools, async () => {
-  const deadline = Date.now() + 5000
+  const deadline = Date.now() + 6000
 
-  while (!bridgeDeps.runnerBridge && Date.now() < deadline) {
+  while (Date.now() < deadline) {
+    const bridge = bridgeDeps.runnerBridge
+
+    if (bridge) {
+      const tools = bridge.getTools()
+
+      if (tools.length > 0) {
+        return tools
+      }
+
+      const status = bridge.getStatus()
+
+      if (status.phase === 'error' || status.phase === 'stopped') {
+        return []
+      }
+    }
+
     await sleep(100)
   }
 
-  if (!bridgeDeps.runnerBridge) {
-    return []
-  }
-
-  return bridgeDeps.runnerBridge.getTools()
+  return bridgeDeps.runnerBridge?.getTools() || []
 })
 
 bridgeDeps.rewireAuthToken()
