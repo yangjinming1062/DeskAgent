@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { memo } from 'react'
 
 import { ChatMediaCard } from './chat-media-card'
+import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
 import { $chatMessageBodies } from './chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from './chat-store'
@@ -78,6 +79,10 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   const showPlayButton =
     !isUser && !body.streaming && Boolean(body.text) && !body.error && !body.cancelled && !body.toolName
 
+  // 派生按钮：必须有后端 Message.id 才能回传给 session.fork；流式中/出错/已取消/正在调用工具时禁用避免歧义。
+  const canFork =
+    Boolean(message.backendMessageId) && !body.streaming && !body.error && !body.cancelled && !body.toolName
+
   // 用户附件渲染为可点击图片卡（data URL 或本地路径，媒体源通道负责取图）；
   // 正文剔除 @file: 指令行，纯图片消息不渲染空气泡。
   const visibleText = isUser ? stripAttachmentDirectives(body.text) : body.text
@@ -121,7 +126,15 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
             ))}
           </div>
         ) : null}
+        {body.draft && (
+          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] text-amber-200/90">
+            未发送
+          </span>
+        )}
         {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={body.text} />}
+        {canFork && (
+          <ChatMessageForkButton className="mt-1" messageId={message.id} sourceMessageId={message.backendMessageId!} />
+        )}
       </div>
     </div>
   )

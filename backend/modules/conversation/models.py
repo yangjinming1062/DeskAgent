@@ -65,6 +65,8 @@ class Message(ModelBase):
     media_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 在 subtype="daily_summary" 的 system 消息上设置，让每日 checkpoint 不用解析 content 文本就能读到截止日期；content 仍是人类可读版本，本列才是结构化源。
     summary_date: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    # session.fork 派生新会话时，第 N 条复制行打 True——客户端据此渲染「未发送」徽标；用户发出首条新消息后徽标清除，但本列保留以供重启后再次显示。
+    draft_anchor: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

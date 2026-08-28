@@ -50,6 +50,9 @@ async def build_session_messages(
                 item["media"] = media
         if include_id:
             item["id"] = msg.id
+        # 始终输出 draft_anchor：fork 派生会话的末条复制行携带 True，客户端据此渲染「未发送」徽标；与 include_id 解耦便于 REST 历史端点也吃到该字段。
+        if msg.draft_anchor:
+            item["draft_anchor"] = True
 
         if msg.tool_calls:
             calls = safe_json_loads(msg.tool_calls, default=None)

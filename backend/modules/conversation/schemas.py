@@ -47,3 +47,9 @@ class DesktopSessionPatchRequest(BaseModel):
     title: str | None = None
     pinned: bool | None = None
     archived: bool | None = None
+
+
+class DesktopSessionForkRequest(BaseModel):
+    """`POST /api/sessions/{id}/fork` 的请求体：指定源消息 id，从该消息（含）之前派生新会话。"""
+
+    source_message_id: int = Field(ge=0)

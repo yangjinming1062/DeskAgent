@@ -203,6 +203,41 @@ export async function createNewSession(): Promise<string | null> {
   }
 }
 
+/** 从源会话的某条消息派生新会话：调用 session.fork RPC，命中后立即自动挂载新会话并 hydrate 历史（末条带 draft 锚点 → 显示「未发送」徽标）。
+ * 失败返回 null，错误已记录日志。 */
+export async function forkConversation(sourceSessionId: string, sourceMessageId: number): Promise<string | null> {
+  const gw = $gateway.get()
+
+  if (!gw) {
+    return null
+  }
+
+  try {
+    const res = await gw.request<SessionResumeResponse>('session.fork', {
+      source_session_id: sourceSessionId,
+      source_message_id: sourceMessageId
+    })
+
+    // 与 switchSession 同一形态：先 setChatSession 清残留状态 + 持久化新 id，再 hydrate 灌消息流
+    setChatSession(res.session_id)
+    hydrateChatMessages(res.messages || [], res.info)
+
+    if (res.info?.settings) {
+      $sessionSettings.set(res.info.settings as Parameters<typeof $sessionSettings.set>[0])
+    }
+
+    resetSessionContextUsage(res.info?.context_window)
+    // 刷新抽屉让新会话出现在列表（默认按 parent_id 隐藏，开 include_subagents 才能看到）
+    void fetchSessions()
+
+    return res.session_id
+  } catch (err) {
+    log.error('session-list', 'Failed to fork session:', err)
+
+    return null
+  }
+}
+
 export async function switchSession(sessionId: string): Promise<void> {
   const gw = $gateway.get()
 

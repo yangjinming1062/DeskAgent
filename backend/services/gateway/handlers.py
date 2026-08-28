@@ -70,6 +70,7 @@ from services.companion import (
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import IM_KIND, get_or_create_special_conversation, get_special_conversation, note_user_contact, reset_user_outreach
+from services.conversation.fork import ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
@@ -510,6 +511,55 @@ def _register_session_handlers(
         return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
 
     dispatcher.register("session.create", session_create)
+
+    async def session_fork(params: dict) -> dict:
+        """从用户拥有的源会话的某条消息派生新会话：复制 1..source_message_id 共 N 条消息到新会话，末条打 draft_anchor。
+        源会话必须是 kind='standard'；新会话挂载 runtime 并返回 SessionResumeResult，客户端可直接 hydrate 并自动挂载。"""
+        source_session_id = _require_str(params, "source_session_id")
+        raw_id = params.get("source_message_id")
+        if not _is_nonneg_int(raw_id):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "source_message_id must be a non-negative int")
+
+        async with SESSION_LOCAL() as db:
+            try:
+                result = await fork_conversation_from_message(db, user_id, source_session_id, int(raw_id))
+            except ForkNotAllowedError as e:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(e))
+            except SourceNotFoundError as e:
+                raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, str(e))
+
+        # 服务函数只负责 DB 落库；runtime 挂载与 info 在这里补，与 session.resume 路径一致
+        conv_id = int(result["session_id"])
+        async with SESSION_LOCAL() as db:
+            conv = await _find_owned_conv(db, user_id, str(conv_id))
+            if conv is None:
+                raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"forked session not found: {conv_id!r}")
+        runtime = _mount_runtime(conv, conv.cwd)
+        cfg = user_session.llm_config if user_session else llm_config
+        await dispatcher.flush_unsent()
+        logger.info(
+            "session.fork",
+            extra={
+                "user_id": user_id,
+                "source_session_id": source_session_id,
+                "source_message_id": int(raw_id),
+                "new_session_id": runtime.session_id,
+                "message_count": result["message_count"],
+            },
+        )
+        return SessionResumeResult(
+            session_id=runtime.session_id,
+            message_count=result["message_count"],
+            messages=result["messages"],
+            info=runtime_info_snapshot(cfg, runtime),
+            resumed=False,
+            replayed_count=0,
+            current_seq=effective_buffer.max_seq,
+            truncated=False,
+            next_cursor=None,
+        ).model_dump()
+
+    dispatcher.register("session.fork", session_fork)
 
     async def session_resume(params: dict) -> dict:
         stored_id = _require_str(params, "session_id")

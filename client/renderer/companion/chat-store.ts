@@ -11,6 +11,8 @@ export interface ChatMessageListItem {
   id: string
   role: 'user' | 'assistant'
   subtype?: string
+  /** 后端 Message.id——fork 按钮回传给后端的 source_message_id；仅 hydrate 的历史消息有值，活路径 push 出的消息为 undefined。 */
+  backendMessageId?: number
 }
 
 // 消息可变主体，按 id 键入 $chatMessageBodies。
@@ -22,6 +24,8 @@ export interface ChatMessageBody {
   cancelled?: boolean
   attachments?: ChatAttachment[]
   media?: ChatMediaItem[]
+  /** session.fork 派生会话的末条消息携带 True——气泡渲染「未发送」徽标；用户在 fork 会话内发出首条新消息后由 pushUserMessage 清除。 */
+  draft?: boolean
 }
 
 export const $chatMessageList = atom<ChatMessageListItem[]>([])
@@ -186,12 +190,14 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
     items.push({
       id,
       role: m.role === 'user' ? 'user' : 'assistant',
-      subtype: m.subtype
+      subtype: m.subtype,
+      backendMessageId: typeof m.id === 'number' ? m.id : undefined
     })
     bodies[id] = {
       text: textContent,
       toolName: m.tool_name ?? null,
       streaming: false,
+      draft: Boolean(m.draft_anchor),
       ...(m.role === 'user' ? omitUndefined(extractUserAttachments(m)) : {}),
       ...(m.media?.length ? { media: m.media } : {})
     }
@@ -329,6 +335,8 @@ export function pushAffectTraceMessage(): void {
 }
 
 export function pushUserMessage(text: string, attachments?: ChatAttachment[]): string {
+  clearDraftAnchor()
+
   const id = nextId()
   $chatMessageBodies.setKey(id, {
     text,
@@ -339,6 +347,22 @@ export function pushUserMessage(text: string, attachments?: ChatAttachment[]): s
   $chatMessageList.set([...$chatMessageList.get(), { id, role: 'user' }])
 
   return id
+}
+
+/** 清除列表末尾的 draft 锚点徽标——fork 出的会话只要有任何新消息（用户/助手/系统），草稿即被取代。 */
+function clearDraftAnchor(): void {
+  const list = $chatMessageList.get()
+  const last = list[list.length - 1]
+
+  if (!last) {
+    return
+  }
+
+  const lastBody = $chatMessageBodies.get()[last.id]
+
+  if (lastBody?.draft) {
+    $chatMessageBodies.setKey(last.id, { ...lastBody, draft: false })
+  }
 }
 
 interface PendingPromptItem {
@@ -456,6 +480,7 @@ export function submitPendingBatch(): void {
 
 // 确保存在活跃的流式助手气泡。
 export function beginAssistantMessage(): void {
+  clearDraftAnchor()
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined

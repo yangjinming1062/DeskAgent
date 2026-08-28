@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, Query
 from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import (
     Conversation,
+    DesktopSessionForkRequest,
     DesktopSessionInfo,
     DesktopSessionListResponse,
     DesktopSessionMessagesResponse,
@@ -14,7 +15,7 @@ from modules.conversation import (
     Message,
 )
 from services.chat import build_session_messages
-from services.conversation import CRON_KIND, SPECIAL_KIND
+from services.conversation import CRON_KIND, SPECIAL_KIND, ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -278,6 +279,24 @@ async def patch_session(session_id: str, body: DesktopSessionPatchRequest, curre
             conv.archived_at = None
     await db.commit()
     return {"ok": True}
+
+
+@router.post("/{session_id}/fork")
+async def fork_session(
+    session_id: str,
+    body: DesktopSessionForkRequest,
+    current: tuple[User, object] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """从源会话派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话，末条打 draft_anchor；返回 SessionResumeResult 形态（session_id/messages/message_count）。"""
+    user, _ = current
+    try:
+        result = await fork_conversation_from_message(db, user.id, session_id, body.source_message_id)
+    except ForkNotAllowedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except SourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 
 @router.delete("/{session_id}")

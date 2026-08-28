@@ -45,6 +45,10 @@ export interface SessionMessage {
   codex_reasoning_items?: unknown
   content: unknown
   context?: unknown
+  /** session.fork 派生新会话时，第 N 条复制行携带 True——前端据此渲染「未发送」徽标；用户发出首条新消息后徽标清除。 */
+  draft_anchor?: boolean
+  /** 后端 DB row id（build_session_messages(include_id=True) 下发）；用于 fork 按钮回传给后端的 source_message_id。 */
+  id?: number
   media?: ChatMediaItem[]
   name?: string
   reasoning?: null | string

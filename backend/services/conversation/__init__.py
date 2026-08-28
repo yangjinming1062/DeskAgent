@@ -1,5 +1,6 @@
 from .bootstrap import ensure_system_conversations_for_user
 from .context_window import load_recent_context_window
+from .fork import ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
 from .formatting import format_messages_compact
 from .main_conversation import (
     AFFECT_TRACE_SUBTYPE,
@@ -27,15 +28,18 @@ from .proactive_state import (
 __all__ = [
     "AFFECT_TRACE_SUBTYPE",
     "CRON_KIND",
+    "ForkNotAllowedError",
     "HINT_TEXT",
     "IM_KIND",
     "MEDIA_STATUS_SUBTYPE",
     "ProactiveState",
+    "SourceNotFoundError",
     "SPECIAL_KIND",
     "STANDARD_KIND",
     "UI_ONLY_SUBTYPES",
     "UserProactiveRecord",
     "ensure_system_conversations_for_user",
+    "fork_conversation_from_message",
     "format_messages_compact",
     "get_or_create_cron_conversation",
     "get_or_create_special_conversation",

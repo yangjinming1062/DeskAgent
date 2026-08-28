@@ -226,6 +226,8 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 - `session.get_main`（WS RPC）：现存的方法指代「**用户的主对话**」，返回 `system_preset_id='companion'` 的特殊对话。
 - 既有 `session.create` 等方法对系统预设对话同样适用（用户能在 5 套预设之上再 clone 一个变体；但 5 套预设本身不可被 PATCH/DELETE）。
 
+**派生会话（forked）**：`session.fork`（WS RPC）与 `POST /api/sessions/{id}/fork`（REST 镜像）由用户在 `kind='standard'` 源会话的某条历史消息节点上派生新会话；末条复制消息携带 `Message.draft_anchor=True`，客户端据此渲染「未发送」徽标并在首条新消息发出后自动清除；新会话 `parent_id` 指向源、`is_deletable`/`is_renamable` 默认 True、标题追加「 — 副本」。源 `kind ∈ {special, im, cron}` 时返回 INVALID_PARAMS / 403（系统预设、IM 桥接、cron scratchpad 不可派生）。**改此处需同步**：backend services/conversation/fork.py、services/chat/history.py、services/gateway/handlers.py、api/v1/sessions.py、modules/conversation/models.py（`Message.draft_anchor`）、alembic 0003；client session-list-store.ts、chat-store.ts、chat-dock-message-bubble.tsx、chat-message-fork-button.tsx。
+
 **改此处需同步**：backend services/conversation/bootstrap.py 与 services/chat/prompt_presets.py、api/v1/sessions.py 与 services/gateway/handlers.py 路由守卫、backend/README.md、client 对话列表页（隐藏删除/改名入口、对系统预设用预设 icon + 预设名），DESIGN.md §9。
 
 ---
