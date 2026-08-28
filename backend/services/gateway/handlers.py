@@ -556,6 +556,22 @@ def _register_session_handlers(
 
     dispatcher.register("session.interrupt", session_interrupt)
 
+    async def session_set_settings(params: dict) -> dict:
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        settings_patch = params.get("settings")
+        if not isinstance(settings_patch, dict):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "settings must be a dict")
+        runtime.settings.update(settings_patch)
+        async with SESSION_LOCAL() as db:
+            conv = await _find_owned_conv(db, user_id, runtime.session_id)
+            if conv is not None:
+                conv.settings_json = json.dumps(runtime.settings, ensure_ascii=False)
+                await db.commit()
+        return {"session_id": runtime.session_id, "settings": dict(runtime.settings)}
+
+    dispatcher.register("session.set_settings", session_set_settings)
+
     def _track(task: asyncio.Task) -> None:
         if user_session is not None:
             user_session.background_tasks.add(task)

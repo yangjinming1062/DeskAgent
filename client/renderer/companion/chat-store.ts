@@ -4,7 +4,7 @@ import { setSpriteState } from '@/companion/companion-store'
 import { persistString, storedString } from '@/shared/lib/storage'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
-import type { ChatAttachment, ChatMediaItem, SessionMessage } from '@/shared/types/spiritagent'
+import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
 
 // 消息身份与稳定元数据，挂载于 $chatMessageList。
 export interface ChatMessageListItem {
@@ -34,6 +34,97 @@ export const $chatStreamingTick = atom<number>(0)
 // resume 失败回退主会话），而不是每次都回到空白的主会话。
 export const $chatSessionId = atom<string | null>(storedString('da.companion.chatSessionId'))
 export const $chatOpen = atom(false)
+
+// 当前会话独立参数配置（温度、压缩阈值、思考程度等）
+export interface SessionSettings {
+  temperature?: number
+  context_compression_threshold?: number
+  enable_context_compression?: boolean
+  reasoning_effort?: string
+}
+
+export const $sessionSettings = atom<SessionSettings>({})
+
+export function setSessionSettings(settings: SessionSettings): void {
+  $sessionSettings.set(settings)
+}
+
+export function updateSessionSetting<K extends keyof SessionSettings>(key: K, value: SessionSettings[K]): void {
+  $sessionSettings.set({
+    ...$sessionSettings.get(),
+    [key]: value
+  })
+}
+
+// 上下文使用量状态跟踪（已用 token、总容量、压缩阈值节点等）
+export interface SessionContextUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  contextLimit: number
+}
+
+const DEFAULT_CONTEXT_LIMIT = 1_000_000
+
+export const $sessionContextUsage = atom<SessionContextUsage>({
+  promptTokens: 0,
+  completionTokens: 0,
+  totalTokens: 0,
+  contextLimit: DEFAULT_CONTEXT_LIMIT
+})
+
+export function setSessionContextUsage(usage: Partial<SessionContextUsage>): void {
+  const current = $sessionContextUsage.get()
+  const promptTokens = usage.promptTokens ?? current.promptTokens
+  const completionTokens = usage.completionTokens ?? current.completionTokens
+
+  const totalTokens =
+    usage.totalTokens ??
+    (usage.promptTokens !== undefined || usage.completionTokens !== undefined
+      ? promptTokens + completionTokens
+      : current.totalTokens)
+
+  const contextLimit = usage.contextLimit ?? current.contextLimit
+
+  $sessionContextUsage.set({
+    promptTokens,
+    completionTokens,
+    totalTokens,
+    contextLimit
+  })
+}
+
+export function resetSessionContextUsage(contextLimit?: number): void {
+  $sessionContextUsage.set({
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    contextLimit: contextLimit ?? DEFAULT_CONTEXT_LIMIT
+  })
+}
+
+// 待发送附件：支持图片、视频、普通文件、文件夹 4 种类型
+export type PendingAttachment =
+  | { type: 'image'; value: string; fileName?: string }
+  | {
+      type: 'video'
+      fileName: string
+      path: string
+      status: 'error' | 'ready' | 'uploading'
+      url?: string
+      error?: string
+    }
+  | {
+      type: 'file'
+      fileName: string
+      path: string
+    }
+  | {
+      type: 'folder'
+      folderName: string
+      path: string
+    }
+
 // 伙伴主动说出的瞬时消息，在聊天面板收起时以气泡形式浮出。说完后清空。
 // sessionId 存在时点击气泡会切到该会话（媒体送达提示跳转用）。
 export interface ProactiveBubbleState {
@@ -45,12 +136,12 @@ export const $proactiveBubble = atom<ProactiveBubbleState | null>(null)
 
 // 外部投喂（DESIGN §6.3「文件投喂」）——SpriteStage 拖拽文件到精灵本体时，
 // 把文件路径推到此处。ChatDock 订阅并把首个图像文件塞入附件占位。
-interface PendingAttachment {
+interface PendingExternalAttachment {
   paths: string[]
   nonce: number
 }
 
-export const $pendingExternalAttachment = atom<PendingAttachment | null>(null)
+export const $pendingExternalAttachment = atom<PendingExternalAttachment | null>(null)
 
 export function pushExternalAttachment(paths: string[]): void {
   $pendingExternalAttachment.set({ paths, nonce: Date.now() })
@@ -77,19 +168,24 @@ export function setChatSession(id: string | null): void {
 }
 
 // 用从后端加载的会话替换面板的聊天记录。
-export function hydrateChatMessages(messages: SessionMessage[]): void {
+export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRuntimeInfo): void {
   const items: ChatMessageListItem[] = []
   const bodies: Record<string, ChatMessageBody> = {}
 
+  let totalChars = 0
+
   for (const m of messages) {
     const id = nextId()
+    const textContent = extractText(m)
+    totalChars += textContent.length
+
     items.push({
       id,
       role: m.role === 'user' ? 'user' : 'assistant',
       subtype: m.subtype
     })
     bodies[id] = {
-      text: extractText(m),
+      text: textContent,
       toolName: m.tool_name ?? null,
       streaming: false,
       ...(m.role === 'user' ? omitUndefined(extractUserAttachments(m)) : {}),
@@ -100,6 +196,17 @@ export function hydrateChatMessages(messages: SessionMessage[]): void {
   $chatMessageBodies.set(bodies)
   $chatMessageList.set(items)
   $lastAssistantStreaming.set(false)
+
+  if (info?.settings) {
+    $sessionSettings.set(info.settings as SessionSettings)
+  }
+
+  // 估算 Token 占用（无精确 usage 时的兜底估算：~3 字符/Token）
+  const approxTokens = Math.round(totalChars / 3)
+  setSessionContextUsage({
+    totalTokens: approxTokens,
+    contextLimit: info?.context_window || DEFAULT_CONTEXT_LIMIT
+  })
 }
 
 function extractText(m: SessionMessage): string {

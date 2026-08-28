@@ -69,12 +69,14 @@ export interface SessionResumeResponse {
   current_seq?: number
 }
 
-interface SessionRuntimeInfo {
+export interface SessionRuntimeInfo {
   branch?: string
   cwd?: string
   model?: string
   provider?: string
   running?: boolean
+  settings?: Record<string, unknown>
+  context_window?: number
 }
 
 /** STT/TTS 引擎路由偏好，由桌面端主进程解析。

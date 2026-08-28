@@ -1,6 +1,13 @@
 import { atom } from 'nanostores'
 
-import { $chatSessionId, hydrateChatMessages, resetChatMessages, setChatSession } from '@/companion/chat-store'
+import {
+  $chatSessionId,
+  $sessionSettings,
+  hydrateChatMessages,
+  resetChatMessages,
+  resetSessionContextUsage,
+  setChatSession
+} from '@/companion/chat-store'
 import { log } from '@/shared/lib/log'
 import { persistString, storedString } from '@/shared/lib/storage'
 import { $gateway } from '@/shared/store/gateway'
@@ -177,9 +184,15 @@ export async function createNewSession(): Promise<string | null> {
   }
 
   try {
-    const res = await gw.request<{ session_id: string }>('session.create', {})
+    const res = await gw.request<{ session_id: string; info?: SessionResumeResponse['info'] }>('session.create', {})
     setChatSession(res.session_id)
     resetChatMessages()
+
+    if (res.info?.settings) {
+      $sessionSettings.set(res.info.settings)
+    }
+
+    resetSessionContextUsage(res.info?.context_window)
     void fetchSessions()
 
     return res.session_id
@@ -201,7 +214,7 @@ export async function switchSession(sessionId: string): Promise<void> {
     const res = await gw.request<SessionResumeResponse>('session.resume', { session_id: sessionId })
 
     setChatSession(sessionId)
-    hydrateChatMessages(res.messages || [])
+    hydrateChatMessages(res.messages || [], res.info)
   } catch (err) {
     log.error('session-list', 'Failed to switch session:', err)
   }
@@ -218,7 +231,7 @@ export async function openMainSession(onMounted?: (res: SessionResumeResponse) =
   try {
     const res = await gw.request<SessionResumeResponse>('session.get_main')
     setChatSession(res.session_id)
-    hydrateChatMessages(res.messages || [])
+    hydrateChatMessages(res.messages || [], res.info)
     onMounted?.(res)
 
     return res.session_id

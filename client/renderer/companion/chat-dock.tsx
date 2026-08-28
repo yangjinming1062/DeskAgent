@@ -16,6 +16,7 @@ import {
   cancelPendingFlush,
   clearExternalAttachment,
   finalizeAssistantMessage,
+  type PendingAttachment,
   pushExternalAttachment,
   pushPendingPrompt,
   pushUserMessage,
@@ -35,7 +36,18 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
-import { Mic, PanelLeft, Paperclip, Phone, Sparkles, Video, X } from '@/shared/lib/icons'
+import {
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  Mic,
+  PanelLeft,
+  Paperclip,
+  Phone,
+  Sparkles,
+  Video,
+  X
+} from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
@@ -43,6 +55,8 @@ import type { ChatAttachment } from '@/shared/types/spiritagent'
 
 import { MessageBubble } from './chat-dock-message-bubble'
 import { useResolvedMediaSrc } from './chat-media-src'
+import { ChatParamsPanel } from './chat/chat-params-panel'
+import { ContextProgressBar } from './chat/context-progress-bar'
 import { SessionDrawer } from './chat/session-drawer'
 import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
@@ -68,18 +82,6 @@ const VIDEO_EXT = /\.(mp4|mov)$/i
 // Electron 32+ 移除了 File.path——剪贴板/拖拽文件的真实路径只能经 webUtils 桥接。
 const webUtilsBridge = (): { getPathForFile: (f: File) => string } | undefined =>
   (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } }).spiritagentWebUtils
-
-// 待发送附件：图片占本地路径或 data URL；视频附加即上传换取会话级 URL，就绪后才能发送。
-type PendingAttachment =
-  | { type: 'image'; value: string }
-  | {
-      type: 'video'
-      fileName: string
-      path: string
-      status: 'error' | 'ready' | 'uploading'
-      url?: string
-      error?: string
-    }
 
 async function ensureChatSession(): Promise<string> {
   const existing = $chatSessionId.get()
@@ -206,6 +208,8 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   const [text, setText] = useState('')
   const [pending, setPending] = useState<PendingAttachment | null>(null)
   const [sending, setSending] = useState(false)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const attachMenuRef = useRef<HTMLDivElement>(null)
 
   const {
     recording,
@@ -236,6 +240,23 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
+
+  // 点击外部收起附件菜单
+  useEffect(() => {
+    if (!attachMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
+        setAttachMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown)
+
+    return () => window.removeEventListener('pointerdown', handlePointerDown)
+  }, [attachMenuOpen])
 
   // 文字输入走 listening（DESIGN §2.1 触发源 1）。优先级门控保证不打断
   // thinking / working / speaking 等更高状态；停止输入 TYPING_IDLE_MS 后回落。
@@ -277,23 +298,28 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
   useEffect(() => () => clearExpressionAvatar(), [])
 
-  // Esc 优先收起会话抽屉，不打断正在输入的正文。
+  // Esc 优先收起会话抽屉或附件菜单，不打断正在输入的正文。
   useEffect(() => {
-    if (!sessionListOpen) {
-      return
-    }
-
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape' && !e.defaultPrevented) {
-        e.preventDefault()
-        setSessionListOpen(false)
+        if (attachMenuOpen) {
+          e.preventDefault()
+          setAttachMenuOpen(false)
+
+          return
+        }
+
+        if (sessionListOpen) {
+          e.preventDefault()
+          setSessionListOpen(false)
+        }
       }
     }
 
     window.addEventListener('keydown', onKey)
 
     return () => window.removeEventListener('keydown', onKey)
-  }, [sessionListOpen])
+  }, [sessionListOpen, attachMenuOpen])
 
   // 监听从 SpriteStage 投喂的外部文件（DESIGN §6.3「文件投喂」）：
   // 把首个媒体文件（图进缩略图槽、视频走上传）装进附件槽，其他路径暂存到 ref 留给 send() 一并提交。
@@ -320,10 +346,15 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       if (first && VIDEO_EXT.test(first)) {
         void attachVideoFile(first, setPending)
       } else if (first) {
-        setPending({ type: 'image', value: first })
+        setPending({ type: 'image', value: first, fileName: first.split(/[\\/]/).pop() ?? first })
       }
 
       externalPathsRef.current = [...mediaPaths.slice(1), ...otherPaths]
+    } else if (otherPaths.length === 1) {
+      const first = otherPaths[0]
+      const fileName = first.split(/[\\/]/).pop() ?? first
+      setPending({ type: 'file', fileName, path: first })
+      externalPathsRef.current = []
     } else {
       const names = otherPaths.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
       setText(t => (t ? `${t}\n${names}` : names))
@@ -382,7 +413,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           const path = await window.spiritagent.saveClipboardImage()
 
           if (path) {
-            setPending({ type: 'image', value: path })
+            setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
           }
         } catch {
           /* 忽略剪贴板读取失败 */
@@ -422,46 +453,101 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
     }
   }
 
-  // 附件按钮：图片进缩略图槽、视频走上传、其余类型以文件名入正文说明。
-  const pickAttachment = async (): Promise<void> => {
-    const [path] = await window.spiritagent.selectPaths({
-      filters: [
-        {
-          extensions: [
-            'png',
-            'jpg',
-            'jpeg',
-            'gif',
-            'webp',
-            'bmp',
-            'heic',
-            'heif',
-            'tiff',
-            'tif',
-            'avif',
-            'jxl',
-            'mp4',
-            'mov'
-          ],
-          name: '图片与视频'
-        }
-      ],
-      multiple: false,
-      title: '添加附件'
-    })
+  // 附件选择：支持文件、文件夹、图片、视频 4 种类型
+  const pickFile = async (): Promise<void> => {
+    setAttachMenuOpen(false)
 
-    if (!path) {
-      return
+    try {
+      const [path] = await window.spiritagent.selectPaths({
+        multiple: false,
+        title: '选择文件'
+      })
+
+      if (!path) {
+        return
+      }
+
+      if (VIDEO_EXT.test(path)) {
+        await attachVideoFile(path, setPending)
+      } else if (IMAGE_EXT.test(path)) {
+        setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
+      } else {
+        const fileName = path.split(/[\\/]/).pop() ?? path
+        setPending({ type: 'file', fileName, path })
+      }
+    } catch {
+      /* 用户取消或读取失败 */
     }
+  }
 
-    if (VIDEO_EXT.test(path)) {
+  const pickFolder = async (): Promise<void> => {
+    setAttachMenuOpen(false)
+
+    try {
+      const [path] = await window.spiritagent.selectPaths({
+        directories: true,
+        multiple: false,
+        title: '选择文件夹'
+      })
+
+      if (!path) {
+        return
+      }
+
+      const folderName = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+      setPending({ type: 'folder', folderName, path })
+    } catch {
+      /* 用户取消或读取失败 */
+    }
+  }
+
+  const pickImage = async (): Promise<void> => {
+    setAttachMenuOpen(false)
+
+    try {
+      const [path] = await window.spiritagent.selectPaths({
+        filters: [
+          {
+            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic', 'heif', 'tiff', 'tif', 'avif', 'jxl'],
+            name: '图片文件'
+          }
+        ],
+        multiple: false,
+        title: '选择图片'
+      })
+
+      if (!path) {
+        return
+      }
+
+      setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
+    } catch {
+      /* 用户取消或读取失败 */
+    }
+  }
+
+  const pickVideo = async (): Promise<void> => {
+    setAttachMenuOpen(false)
+
+    try {
+      const [path] = await window.spiritagent.selectPaths({
+        filters: [
+          {
+            extensions: ['mp4', 'mov'],
+            name: '视频文件'
+          }
+        ],
+        multiple: false,
+        title: '选择视频'
+      })
+
+      if (!path) {
+        return
+      }
+
       await attachVideoFile(path, setPending)
-    } else if (IMAGE_EXT.test(path)) {
-      setPending({ type: 'image', value: path })
-    } else {
-      const name = path.split(/[\\/]/).pop() ?? path
-
-      setText(t => (t ? `${t}\n附件：${name}` : `附件：${name}`))
+    } catch {
+      /* 用户取消或读取失败 */
     }
   }
 
@@ -521,6 +607,12 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       } else if (pending?.type === 'video' && pending.url) {
         attachments.push({ type: 'video', url: pending.url })
         displayAttachments.push({ type: 'video', url: pending.url })
+      } else if (pending?.type === 'file') {
+        const fileRef = `[文件: ${pending.fileName}] ${pending.path}`
+        fullText = fullText ? `${fullText}\n${fileRef}` : fileRef
+      } else if (pending?.type === 'folder') {
+        const folderRef = `[文件夹: ${pending.folderName}] ${pending.path}`
+        fullText = fullText ? `${fullText}\n${folderRef}` : folderRef
       }
 
       // 同时附上 SpriteStage 投喂的多余文件路径（非媒体文件作为 reference，保留文本里说明）
@@ -534,16 +626,36 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
       externalPathsRef.current = []
 
       // 展示层：媒体卡即内容，纯附件消息不留占位文案；仅附件与正文全空时兜底。
-      pushUserMessage(
-        fullText || (displayAttachments.length ? '' : pending?.type === 'video' ? '（视频）' : '（图片）'),
-        displayAttachments.length ? displayAttachments : undefined
-      )
+      const displayPlaceholder = displayAttachments.length
+        ? ''
+        : pending?.type === 'video'
+          ? '（视频）'
+          : pending?.type === 'image'
+            ? '（图片）'
+            : pending?.type === 'file'
+              ? `[文件] ${pending.fileName}`
+              : pending?.type === 'folder'
+                ? `[文件夹] ${pending.folderName}`
+                : ''
+
+      const promptFallback =
+        pending?.type === 'video'
+          ? '请看这段视频'
+          : pending?.type === 'image'
+            ? '请看这张图'
+            : pending?.type === 'file'
+              ? `请读取并分析这个文件：${pending.path}`
+              : pending?.type === 'folder'
+                ? `请读取并分析这个文件夹：${pending.path}`
+                : ''
+
+      pushUserMessage(fullText || displayPlaceholder, displayAttachments.length ? displayAttachments : undefined)
       setText('')
       setPending(null)
       setSpriteState('thinking')
 
       pushPendingPrompt({
-        text: fullText || (pending?.type === 'video' ? '请看这段视频' : '请看这张图'),
+        text: fullText || promptFallback,
         attachments: attachments.length ? attachments : undefined
       })
       schedulePendingFlush()
@@ -653,16 +765,16 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
 
         {sessionListOpen && <SessionDrawer onClose={() => setSessionListOpen(false)} />}
 
-        {/* Left Column: Visual Anchor & Character Emotion Status (Draggable) */}
+        {/* Left Column: Visual Anchor, Character Emotion & Session Parameters (Draggable) */}
         <div
-          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-surface-chrome p-4 select-none active:cursor-grabbing"
+          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-surface-chrome p-3 select-none active:cursor-grabbing"
           {...dragBind}
           title="拖动以移动对话框"
         >
-          <div className="flex flex-col items-center w-full">
+          <div className="flex flex-col items-center w-full min-h-0 overflow-y-auto no-scrollbar">
             {/* Character Avatar with subtle glow and framing */}
-            <div className="relative group mt-1">
-              <div className="relative h-36 w-36 overflow-hidden rounded-2xl border border-white/12 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/25">
+            <div className="relative group mt-0.5">
+              <div className="relative h-28 w-28 overflow-hidden rounded-2xl border border-white/12 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/25">
                 {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
                   <img
                     alt="角色形象"
@@ -702,17 +814,19 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
             </div>
 
             {/* Current Emotion Status Display */}
-            <div className="mt-6 flex flex-col items-center text-center w-full px-2">
-              <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-3 py-1 text-xs text-white/90 shadow-sm">
+            <div className="mt-4 flex flex-col items-center text-center w-full px-1">
+              <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-2.5 py-0.5 text-xs text-white/90 shadow-sm">
                 <span className="text-sm">{currentMood.icon}</span>
-                <span className="font-medium tracking-wide">{currentMood.label}</span>
+                <span className="font-medium tracking-wide text-[11px]">{currentMood.label}</span>
               </div>
-              <span className="mt-2 text-[10px] text-white/40 tracking-wider">当前情绪状态</span>
             </div>
+
+            {/* Session Parameters Configuration Panel */}
+            <ChatParamsPanel />
           </div>
 
           {/* Quick status summary / hint at bottom */}
-          <div className="w-full pt-3 text-center border-t border-white/5">
+          <div className="w-full pt-2 text-center border-t border-white/5 shrink-0">
             <p className="text-[10px] text-white/35">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
           </div>
         </div>
@@ -759,7 +873,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {/* Messages Area */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
             {list.length === 0 && !sending && (
-              <p className="mt-8 text-center text-sm text-white/40">说点什么，或粘贴图片/视频给我看看～</p>
+              <p className="mt-8 text-center text-sm text-white/40">说点什么，或发送文件/图片/视频给我看看～</p>
             )}
             {list.map(item => (
               <MessageBubble key={item.id} message={item} />
@@ -779,7 +893,7 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
           {pending?.type === 'image' && (
             <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
               <PendingImageThumb path={pending.value} />
-              <span>{sending ? '图片发送中…' : '已附加图片，点击可查看'}</span>
+              <span className="truncate">{sending ? '图片发送中…' : pending.fileName || '已附加图片，点击可查看'}</span>
               {!sending && (
                 <button
                   aria-label="移除附加图片"
@@ -824,11 +938,59 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
               )}
             </div>
           )}
+          {pending?.type === 'file' && (
+            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/70">
+              <FileText className="size-4 shrink-0 text-accent" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-medium text-white/90" title={pending.path}>
+                  {pending.fileName}
+                </span>
+                <span className="truncate text-[10px] text-white/40" title={pending.path}>
+                  {pending.path}
+                </span>
+              </div>
+              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">文件</span>
+              {!sending && (
+                <button
+                  aria-label="移除附加文件"
+                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setPending(null)}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+          {pending?.type === 'folder' && (
+            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/70">
+              <FolderOpen className="size-4 shrink-0 text-amber-400" />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate font-medium text-white/90" title={pending.path}>
+                  {pending.folderName}
+                </span>
+                <span className="truncate text-[10px] text-white/40" title={pending.path}>
+                  {pending.path}
+                </span>
+              </div>
+              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">文件夹</span>
+              {!sending && (
+                <button
+                  aria-label="移除附加文件夹"
+                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setPending(null)}
+                  type="button"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Input Area */}
-          <div className="border-t border-white/10 p-3">
-            {gatewayState !== 'open' && <p className="mb-2 text-center text-xs text-amber-300/70">正在连接…</p>}
-            {isImSession && <p className="mb-2 text-center text-xs text-white/40">IM 对话 · 只读</p>}
+          <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
+            {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
+            {isImSession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
             <div className="flex items-end gap-2">
               <textarea
                 className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"
@@ -849,16 +1011,61 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 rows={1}
                 value={text}
               />
-              <button
-                aria-label="添加附件"
-                className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
-                disabled={isImSession}
-                onClick={() => void pickAttachment()}
-                title="附加图片或视频（mp4/mov）"
-                type="button"
-              >
-                <Paperclip className="size-4" />
-              </button>
+
+              {/* 附件弹出菜单入口 */}
+              <div className="relative" ref={attachMenuRef}>
+                <button
+                  aria-label="添加附件"
+                  className={cn(
+                    'inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
+                    attachMenuOpen && 'bg-white/15 text-white border-white/30'
+                  )}
+                  disabled={isImSession}
+                  onClick={() => setAttachMenuOpen(!attachMenuOpen)}
+                  title="添加附件（文件、文件夹、图片、视频）"
+                  type="button"
+                >
+                  <Paperclip className="size-4" />
+                </button>
+
+                {attachMenuOpen && (
+                  <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-white/12 bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+                    <button
+                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                      onClick={() => void pickFile()}
+                      type="button"
+                    >
+                      <FileText className="size-3.5 text-accent" />
+                      <span>添加文件</span>
+                    </button>
+                    <button
+                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                      onClick={() => void pickFolder()}
+                      type="button"
+                    >
+                      <FolderOpen className="size-3.5 text-amber-400" />
+                      <span>添加文件夹</span>
+                    </button>
+                    <button
+                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                      onClick={() => void pickImage()}
+                      type="button"
+                    >
+                      <ImageIcon className="size-3.5 text-emerald-400" />
+                      <span>添加图片</span>
+                    </button>
+                    <button
+                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                      onClick={() => void pickVideo()}
+                      type="button"
+                    >
+                      <Video className="size-3.5 text-rose-400" />
+                      <span>添加视频</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
               <button
                 className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition disabled:pointer-events-none disabled:opacity-40 ${
                   recording
@@ -902,6 +1109,9 @@ export function ChatDock({ onClose, onOpenVoiceCall }: ChatDockProps): React.Rea
                 {isGenerating ? '停止' : '发送'}
               </button>
             </div>
+
+            {/* 上下文使用量进度条 */}
+            <ContextProgressBar />
           </div>
         </div>
       </div>

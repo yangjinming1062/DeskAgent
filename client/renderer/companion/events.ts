@@ -34,6 +34,7 @@ import {
   setAssistantError,
   setAssistantTool,
   setChatOpen,
+  setSessionContextUsage,
   setTurnHadBubbleBreak,
   showMediaHint,
   submitPendingBatch
@@ -198,6 +199,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
             text?: string
             media?: ChatMediaItem[]
             affect?: { emotion?: string; actions?: string[]; locale?: string; target?: string }
+            usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
           }
         | undefined
 
@@ -206,6 +208,18 @@ export function handleCompanionEvent(event: RpcEvent): void {
       const actions = payload?.affect?.actions ?? []
       const locale = payload?.affect?.locale
       const target = payload?.affect?.target
+
+      if (payload?.usage) {
+        setSessionContextUsage({
+          promptTokens: payload.usage.prompt_tokens,
+          completionTokens: payload.usage.completion_tokens,
+          totalTokens:
+            payload.usage.total_tokens ??
+            (payload.usage.prompt_tokens && payload.usage.completion_tokens
+              ? payload.usage.prompt_tokens + payload.usage.completion_tokens
+              : undefined)
+        })
+      }
 
       // 锁屏状态下，抑制渲染层的提示。
       const screenLocked = $screenLocked.get()

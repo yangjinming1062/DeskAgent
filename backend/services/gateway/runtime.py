@@ -12,6 +12,7 @@ class SessionRuntimeInfo(BaseModel):
     provider: str
     running: bool
     settings: dict = Field(default_factory=dict)
+    context_window: int | None = None
 
 
 class SessionCreateResult(BaseModel):
@@ -59,12 +60,18 @@ def new_runtime_session(conversation_id: int, cwd: str | None, settings_json: st
 
 
 def runtime_info_snapshot(llm_config: dict, runtime: RuntimeSession) -> dict:
-    """发给 renderer 的 SessionRuntimeInfo 负载：{cwd, branch, model, provider, running, settings}；renderer 容忍缺失字段，未读的 settings 键（personality、version 等）暂不输出，不在契约内。"""
+    """发给 renderer 的 SessionRuntimeInfo 负载：{cwd, branch, model, provider, running, settings, context_window}；renderer 容忍缺失字段，未读的 settings 键（personality、version 等）暂不输出，不在契约内。"""
+    from services.llm import ServiceType, resolve_context_tokens
+
+    provider = llm_config.get("provider") or llm_config.get("provider_name") or "openai"
+    context_window = resolve_context_tokens(provider, ServiceType.llm)
+
     return {
         "cwd": runtime.cwd,
         "branch": None,
         "model": llm_config.get("model_name"),
-        "provider": "openai",
+        "provider": provider,
         "running": bool(runtime.chat_task and not runtime.chat_task.done()),
         "settings": dict(runtime.settings),
+        "context_window": context_window,
     }
