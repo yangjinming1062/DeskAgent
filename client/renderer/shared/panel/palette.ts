@@ -20,12 +20,14 @@ export const BTN_ICON =
 // 输入与选择
 export const INPUT_CLASS =
   'w-full rounded-lg border border-line-standard bg-fill-faint px-3 py-2 text-xs text-white outline-none placeholder:text-white/30 focus:border-focus-line'
-export const CHIP = 'rounded-full border border-line-standard bg-fill-faint px-2.5 py-0.5 text-[11px] text-white/60'
+export const CHIP =
+  'inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-line-standard bg-fill-faint px-2.5 py-0.5 text-[11px] text-white/60'
 export const CHIP_ACTIVE =
-  'rounded-full border border-accent-line bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-white'
+  'inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-accent-line bg-accent-soft px-2.5 py-0.5 text-[11px] font-medium text-white'
 export const CHIP_FILTER =
-  'rounded-full px-2.5 py-0.5 text-[11px] transition bg-fill-faint text-white/50 hover:bg-white/10'
-export const CHIP_FILTER_ACTIVE = 'rounded-full px-2.5 py-0.5 text-[11px] transition bg-white/15 font-medium text-white'
+  'inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] transition bg-fill-faint text-white/50 hover:bg-white/10'
+export const CHIP_FILTER_ACTIVE =
+  'inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] transition bg-white/15 font-medium text-white'
 
 // 设置侧栏导航
 export const NAV_ITEM =

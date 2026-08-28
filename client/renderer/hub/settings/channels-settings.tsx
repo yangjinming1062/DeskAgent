@@ -285,11 +285,11 @@ export function ChannelsSettings(): React.JSX.Element {
                     </button>
                   </div>
                 }
-                description={peer.peer_id}
+                description={peer.peer_name && peer.peer_name !== peer.peer_id ? peer.peer_id : undefined}
                 key={peer.peer_id}
                 title={
-                  <span className="flex items-center gap-2">
-                    {peer.peer_name || peer.peer_id}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{peer.peer_name || peer.peer_id}</span>
                     <Pill tone={peer.status === 'allowed' ? 'primary' : 'muted'}>
                       {peer.status === 'pending'
                         ? t.peers.pendingLabel
