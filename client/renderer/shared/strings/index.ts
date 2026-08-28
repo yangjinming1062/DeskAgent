@@ -88,8 +88,56 @@ export const strings = {
       account: '账户',
       about: '关于',
       appearance: '外观',
+      channels: '聊天通道',
       runner: '本机执行器',
       skills: '技能与工具'
+    },
+    channels: {
+      heading: '聊天通道',
+      intro: '让同一个伙伴在微信等 IM 上陪聊——人设与记忆和桌面共享，桌面端可回看但不可代答。',
+      loadFailed: '通道状态加载失败',
+      statusLabels: {
+        connected: '已连接',
+        login_pending: '等待扫码',
+        login_required: '需重新登录',
+        error: '异常',
+        disabled: '未启用'
+      } as Record<string, string>,
+      weixin: {
+        title: '微信',
+        intro: '扫码登录你的微信个人号（官方 ClawBot 通道）。伙伴只能回复消息，不能主动发起。',
+        loginAction: '扫码登录',
+        retryAction: '重新获取二维码',
+        logoutAction: '退出登录',
+        logoutConfirmTitle: '退出微信登录？',
+        logoutConfirmDescription: '退出后伙伴将不再回复微信消息，重新登录需要再次扫码。',
+        loginStartFailed: '登录启动失败',
+        loginSuccess: '微信已连接',
+        logoutSuccess: '已退出微信登录',
+        logoutFailed: '退出失败',
+        qrPrompt: '打开微信扫一扫',
+        scanedPrompt: '已扫码，请在手机上确认',
+        expiredPrompt: '二维码已过期，请重新获取',
+        connectedAs: (name: string) => `已连接${name ? `：${name}` : ''}`
+      },
+      loopback: {
+        title: '回环测试',
+        intro: '开发用测试通道：经 REST 模拟入站 IM 消息，验证桥接链路。',
+        active: '已启用'
+      },
+      peers: {
+        title: '对端审批',
+        intro: '陌生对端首次来信会收到配对提示，批准后才能与伙伴对话；被拉黑者静默。',
+        empty: '暂无对端记录',
+        approve: '批准',
+        block: '拉黑',
+        remove: '删除',
+        pendingLabel: '待审批',
+        allowedLabel: '已批准',
+        blockedLabel: '已拉黑',
+        actionFailed: '操作失败',
+        requestToast: (channel: string, peer: string) => `${channel}上有人想和伙伴聊天：${peer}`
+      }
     },
     appearance: {
       heading: '外观',

@@ -226,7 +226,9 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
         binding = await db.get(ChannelBinding, snapshot.id)
         if binding is None:
             return None
-        conv = await get_or_create_channel_conversation(db, binding)
+        from .registry import resolve as _resolve_channel
+
+        conv = await get_or_create_channel_conversation(db, binding, title_override=_resolve_channel(binding.channel).conversation_title)
         llm_config = await resolve_user_llm_config(db, snapshot.user_id)
         user_settings = await load_user_settings(db, snapshot.user_id)
         session_id = str(conv.id)
@@ -245,7 +247,7 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
 
         emitter.bind_typing(_typing_on)
 
-    client_context = ChatRequestClientContext(platform_hints=hint) if (hint := adapter.platform_hint()) else None
+    client_context = ChatRequestClientContext(platform_hints=adapter.platform_hint()) if adapter.platform_hint() else None
     req = ChatRequest(session_id=session_id, message=ChatMessageRequest(role="user", content=last.text), client_context=client_context)
     try:
         await run_chat_turn(req, llm_config, user_settings, snapshot.user_id, emitter)

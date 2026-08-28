@@ -158,3 +158,51 @@ export interface SpiritAgentConfigPutRequest {
     tavily_base_url?: string
   }
 }
+
+/** IM 通道桥（/api/channels）——绑定状态视图；凭据字段服务端永不回显。 */
+export interface ChannelCapabilities {
+  supports_typing: boolean
+  supports_media: boolean
+  can_initiate: boolean
+  requires_login: boolean
+}
+
+export interface ChannelBindingInfo {
+  status: string
+  account_ref: string
+  account_name: string
+  conversation_id: number | null
+  last_error: string | null
+  updated_at: string | null
+}
+
+export interface ChannelInfo {
+  channel: string
+  title: string
+  capabilities: ChannelCapabilities
+  binding: ChannelBindingInfo | null
+}
+
+export interface ChannelListResponse {
+  items: ChannelInfo[]
+}
+
+/** 扫码登录轮询：state ∈ idle|wait|scaned|confirmed|expired|error|login_required|connected。 */
+export interface ChannelLoginState {
+  state: string
+  qr_image?: string | null
+  error?: string | null
+}
+
+export interface ChannelPeerInfo {
+  peer_id: string
+  peer_name: string
+  status: 'allowed' | 'blocked' | 'pending'
+  last_message_at: string | null
+}
+
+export interface ChannelPeersResponse {
+  items: ChannelPeerInfo[]
+}
+
+export type ChannelPeerAction = 'approve' | 'block' | 'delete'

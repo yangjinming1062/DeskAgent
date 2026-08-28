@@ -58,6 +58,10 @@ class ChannelAdapter:
     can_initiate: bool = False
     requires_login: bool = False
 
+    def has_credentials(self) -> bool:
+        """requires_login 渠道据此区分启动即连与等待登录；无需登录的渠道恒 True。"""
+        return True
+
     def __init__(self, snapshot: ChannelBindingSnapshot, on_inbound: OnInbound) -> None:
         self.snapshot = snapshot
         self._on_inbound = on_inbound

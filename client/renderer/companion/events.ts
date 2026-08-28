@@ -641,6 +641,47 @@ export function handleCompanionEvent(event: RpcEvent): void {
       break
     }
 
+    case 'channel.status': {
+      // IM 通道绑定状态变化（outbox；Hub 设置页以 REST 为真相源，这里只做桌面提醒）。
+      const p = event.payload as { channel?: string; status?: string; error?: string } | undefined
+      const label = p?.channel === 'weixin_ilink' ? '微信' : p?.channel === 'loopback' ? '回环通道' : 'IM 通道'
+
+      const text =
+        p?.status === 'connected'
+          ? `${label}已连接`
+          : p?.status === 'login_required'
+            ? `${label}登录已过期，请到设置重新扫码`
+            : p?.status === 'error'
+              ? `${label}通道异常${p?.error ? `：${p.error}` : ''}`
+              : null
+
+      if (text && !$screenLocked.get()) {
+        notify({ kind: p?.status === 'error' ? 'error' : 'info', message: text })
+      }
+
+      break
+    }
+
+    case 'channel.peer_request': {
+      // 陌生对端首次来信（outbox）：提示主人到设置「聊天通道」审批。
+      const p = event.payload as
+        | { channel?: string; peer_id?: string; peer_name?: string; preview?: string }
+        | undefined
+
+      const label = p?.channel === 'weixin_ilink' ? '微信' : 'IM'
+      const name = p?.peer_name || p?.peer_id || ''
+
+      if (!$screenLocked.get()) {
+        notify({
+          kind: 'info',
+          message: `${label}上有人想和伙伴聊天${name ? `：${name}` : ''}`,
+          detail: p?.preview
+        })
+      }
+
+      break
+    }
+
     default:
       break
   }

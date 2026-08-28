@@ -1,16 +1,16 @@
 import asyncio
 import contextlib
-import json
 
 from components import SETTINGS, get_logger, session_scope
 from modules.channels import ChannelBinding
-from modules.ws import WSEvent
 from sqlalchemy import select
 
 from .adapters.loopback import LoopbackAdapter  # noqa: F401 — 注册副作用：loopback 自注册进注册表
+from .adapters.weixin_ilink import WeixinIlinkAdapter  # noqa: F401 — 注册副作用：微信 iLink 自注册进注册表
 from .base import ChannelAdapter, ChannelBindingSnapshot, ChannelError, InboundMessage, OnInbound
 from .bridge import handle_inbound
 from .registry import resolve
+from .state import update_binding_status
 
 logger = get_logger(__name__)
 
@@ -104,30 +104,7 @@ class ChannelManager:
             )
 
     async def _set_status(self, snapshot: ChannelBindingSnapshot, status: str, *, error: str | None = None) -> None:
-        async with session_scope() as db:
-            row = await db.get(ChannelBinding, snapshot.id)
-            if row is None:
-                return
-            changed = row.status != status
-            row.status = status
-            row.last_error = error if status == "error" else None
-            if changed:
-                db.add(
-                    WSEvent(
-                        user_id=snapshot.user_id,
-                        event_type="channel.status",
-                        payload=json.dumps(
-                            {
-                                "channel": snapshot.channel,
-                                "status": status,
-                                **({"account_name": row.account_name} if row.account_name else {}),
-                                **({"error": error} if error else {}),
-                            },
-                            ensure_ascii=False,
-                        ),
-                    ),
-                )
-            await db.commit()
+        await update_binding_status(snapshot.id, status, error=error)
 
     async def _run_guarded(self, snapshot: ChannelBindingSnapshot) -> None:
         """守卫循环：fatal ChannelError → 标 error 停止；其他异常/意外返回 → 退避后重建适配器重试。"""
@@ -136,7 +113,11 @@ class ChannelManager:
             try:
                 adapter = resolve(snapshot.channel)(snapshot, self._make_on_inbound(snapshot))
                 self._adapters[key] = adapter
-                await self._set_status(snapshot, "connected")
+                # 需要登录且尚无凭据的渠道停在 login_pending 等扫码；connected 由登录完成路径迁移。
+                if adapter.requires_login and not adapter.has_credentials():
+                    await self._set_status(snapshot, "login_pending")
+                else:
+                    await self._set_status(snapshot, "connected")
                 await adapter.run()
                 logger.warning("channel adapter run() returned unexpectedly; restarting", extra={"key": key})
             except asyncio.CancelledError:

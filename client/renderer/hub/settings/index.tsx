@@ -1,4 +1,5 @@
 import { IconPalette } from '@tabler/icons-react'
+import { IconBrandWechat } from '@tabler/icons-react'
 
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
 import { AudioLines, Cpu, Info, KeyRound, Settings, Sparkles } from '@/shared/lib/icons'
@@ -11,6 +12,7 @@ import { OverlayView } from '../overlays/overlay-view'
 import { AboutSettings } from './about-settings'
 import { AccountSettings } from './account-settings'
 import { AppearanceSettings } from './appearance-settings'
+import { ChannelsSettings } from './channels-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
@@ -19,6 +21,7 @@ import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 const SETTINGS_VIEWS = [
   'account',
   'speech',
+  'channels',
   'appearance',
   'runner',
   'skills',
@@ -34,6 +37,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
   const navItems: NavItemDescriptor[] = [
     { id: 'account', label: t.settings.nav.account, icon: KeyRound },
     { id: 'speech', label: t.speech.title, icon: AudioLines },
+    { id: 'channels', label: t.settings.nav.channels, icon: IconBrandWechat },
     { id: 'appearance', label: t.settings.nav.appearance, icon: IconPalette },
     { id: 'runner', label: t.settings.nav.runner, icon: Cpu },
     { id: 'skills', label: t.settings.nav.skills, icon: Sparkles },
@@ -51,6 +55,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             <AccountSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
             <SpeechSettings />
+          ) : activeView === 'channels' ? (
+            <ChannelsSettings />
           ) : activeView === 'appearance' ? (
             <AppearanceSettings />
           ) : activeView === 'runner' ? (

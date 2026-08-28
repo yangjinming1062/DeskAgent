@@ -218,7 +218,8 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 | `GET /api/channels/{channel}/peers` | 对端白名单/待审批列表 |
 | `POST /api/channels/{channel}/peers/{peer_id}` | 对端审批（approve / block / delete） |
 | `POST /api/channels/loopback/inbound` | 回环测试驱动：{peer_id, peer_name?, text} → {reply, queued}（回合超时未完则 queued=true，结果稍后落 im 会话） |
-| `POST /api/channels/weixin/login` + `GET /api/channels/weixin/login` | 微信 QR 登录启动/轮询（P1 落地：{state: wait\|scaned\|confirmed\|expired\|error, qr_image_b64?}） |
+| `POST /api/channels/weixin/login` + `GET /api/channels/weixin/login` | 微信 QR 登录启动/轮询：state ∈ wait\|scaned\|confirmed\|expired\|error\|login_required，wait 帧附 qr_image（二维码图片内容，直渲染或链接兜底）；适配器未运行时按绑定态回放 login_required |
+| `POST /api/channels/{channel}/logout` | 渠道登出：清凭据转 login_required，绑定与 im 会话保留 |
 
 **访问控制**：默认拒绝——未知对端首条消息收到一次性固定配对回复并落 pending 行（`channel.peer_request` 事件），仅主人审批放行；blocked 静默丢弃；每 peer 进程内限速（`channels_inbound_rate_per_minute`）。
 

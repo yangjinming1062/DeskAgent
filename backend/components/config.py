@@ -221,6 +221,8 @@ class Settings(BaseSettings):
     channels_inbound_rate_per_minute: int = Field(default=20, validation_alias="CHANNELS_INBOUND_RATE_PER_MINUTE")
     channels_restart_backoff_seconds: float = Field(default=10.0, validation_alias="CHANNELS_RESTART_BACKOFF_SECONDS")
     weixin_reply_max_chars: int = Field(default=2000, validation_alias="WEIXIN_REPLY_MAX_CHARS")
+    weixin_ilink_base_url: str = Field(default="https://ilinkai.weixin.qq.com/", validation_alias="WEIXIN_ILINK_BASE_URL")
+    weixin_ilink_poll_timeout_seconds: float = Field(default=40.0, validation_alias="WEIXIN_ILINK_POLL_TIMEOUT_SECONDS")
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
     log_format: Literal["json", "text"]
