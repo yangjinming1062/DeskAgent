@@ -199,11 +199,10 @@ class VoiceTurn:
         return _SegmentPump(self._segment_stream(text), text)
 
     async def _drain_pump(self, pump: _SegmentPump) -> None:
-        """按序消费单段：首块到达才发 tts.segment（首块前失败该段静默跳过）；裸 PCM 攒块下发，
-        段结束残余冲发并标段末；首块后失败冲发已缓冲部分、字幕保留。"""
+        """按序消费单段：首块前失败该段静默跳过；裸 PCM 攒块下发，段结束残余冲发并标段末；
+        首块后失败冲发已缓冲部分（段序号已固定）。"""
         s = self.session
         seg_index = self.segments_sent
-        text_sent = False
         saw_error = False
         buf = bytearray()
         buf_mime = ""
@@ -217,9 +216,6 @@ class VoiceTurn:
                 saw_error = True
                 await self._note_segment_failure(item)
                 break
-            if not text_sent:
-                await s.send_json("tts.segment", turn_id=self.turn_id, seg_index=seg_index, text=pump.text)
-                text_sent = True
             if item.mime != buf_mime or item.sample_rate != buf_rate:
                 if buf:
                     await self._send_audio(bytes(buf), buf_mime, seg_index, buf_rate, final=False)
@@ -230,7 +226,8 @@ class VoiceTurn:
             if target and len(buf) >= target:
                 await self._send_audio(bytes(buf), buf_mime, seg_index, buf_rate, final=False)
                 buf.clear()
-        if text_sent:
+        # 以 buf_mime 已被赋值作为「至少收到一块音频」的标志；空 mime 时该段被静默跳过
+        if buf_mime:
             # 尾残余冲发并标段末；尾恰好为空（末块刚好填满攒块尺寸）也发空载荷末块，
             # 保持「每段以末块收尾」无条件成立（打断中的段除外）。
             await self._send_audio(bytes(buf), buf_mime, seg_index, buf_rate, final=True)

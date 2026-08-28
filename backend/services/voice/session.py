@@ -222,10 +222,10 @@ class VoiceSession:
                 self.utterance.extend(data[:room])
             for event in self.vad.feed(data):
                 if event is VadEvent.SPEECH_END:
-                    await self._finish_utterance(truncated=False)
+                    await self._finish_utterance()
                     return
                 if event is VadEvent.OVERFLOW:
-                    await self._finish_utterance(truncated=True)
+                    await self._finish_utterance()
                     return
             return
         # 非说话态：先进预滚环（插话语与起说瞬态的回看缓冲）。
@@ -250,7 +250,7 @@ class VoiceSession:
         # 插话路径下 VAD 未被喂过（处于 idle 态），外部直接置入说话态；常规路径重复置入无害。
         self.vad.force_speaking()
 
-    async def _finish_utterance(self, truncated: bool) -> None:
+    async def _finish_utterance(self) -> None:
         self.speaking = False
         pcm = bytes(self.utterance)
         self.utterance = bytearray()
@@ -264,7 +264,7 @@ class VoiceSession:
             await self.send_json("turn.error", stage="asr", code="rate_limited", message="语音识别限流，请稍候再试")
             return
         self.turn_seq += 1
-        self.turn_task = asyncio.create_task(self._run_turn(str(self.turn_seq), pcm, truncated))
+        self.turn_task = asyncio.create_task(self._run_turn(str(self.turn_seq), pcm))
 
     async def _interrupt(self) -> None:
         task = self.turn_task
@@ -287,8 +287,7 @@ class VoiceSession:
         self.bargein.reset()
         self.last_activity = time.monotonic()
 
-    async def _run_turn(self, turn_id: str, pcm: bytes, truncated: bool) -> None:
-        duration_ms = len(pcm) // 2 * 1000 // max(1, self.sample_rate)
+    async def _run_turn(self, turn_id: str, pcm: bytes) -> None:
         try:
             wav = pcm_to_wav(pcm, self.sample_rate)
             try:
@@ -301,9 +300,7 @@ class VoiceSession:
                 await self.send_json("turn.error", stage="asr", code="all_providers_failed", message="没听清，请再说一次")
                 return
             if not text:
-                await self.send_json("asr.skipped", reason="empty_transcript")
                 return
-            await self.send_json("asr.final", turn_id=turn_id, text=text, duration_ms=duration_ms, truncated=truncated)
             await VoiceTurn(self, turn_id, text).run()
         except asyncio.CancelledError:
             raise

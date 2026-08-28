@@ -227,7 +227,7 @@ rate_limit_storage_url = ""
 [voice]
 # 实时语音会话（/api/voice/ws）上行 PCM 采样率，s16le 单声道
 voice_uplink_sample_rate = 16000
-# 单句上行音频硬上限（秒），超限丢弃溢出并标记 truncated
+# 单句上行音频硬上限（秒），超限触发 OVERFLOW 事件并丢弃尾部溢出 PCM
 voice_max_utterance_seconds = 60
 # 服务端 VAD 起说确认时长（毫秒）
 voice_speech_onset_ms = 200

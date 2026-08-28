@@ -15,9 +15,8 @@ export interface VoiceTurnEndPayload {
 export interface VoiceSessionCallbacks {
   onStatus(status: VoiceSessionStatus, message?: string): void
   onReady?(caps: { ttsStream: boolean }): void
-  onAsrFinal(text: string): void
   onLlmStart(): void
-  onTtsSegment(segIndex: number, text: string, segment: VoiceAudioSegment): void
+  onTtsSegment(segment: VoiceAudioSegment): void
   onTurnEnd(payload: VoiceTurnEndPayload): void
   onTurnError(stage: string, code: string, message: string): void
   onInterrupted(): void
@@ -34,7 +33,6 @@ export class VoiceSessionClient {
   private manualClose = false
   private reconnectAttempts = 0
   private readyResolve: ((value: void) => void) | null = null
-  private pendingSegmentText: string | null = null
 
   private constructor(
     private readonly sessionId: string,
@@ -146,19 +144,8 @@ export class VoiceSessionClient {
 
         break
 
-      case VOICE_OPS.asrFinal:
-        this.cb.onAsrFinal(typeof msg.text === 'string' ? msg.text : '')
-
-        break
-
       case VOICE_OPS.llmStart:
         this.cb.onLlmStart()
-
-        break
-
-      case VOICE_OPS.ttsSegment:
-        // 协议保证文本帧先于其音频帧到达；暂存文本随下一帧音频一并送出。
-        this.pendingSegmentText = typeof msg.text === 'string' ? msg.text : ''
 
         break
 
@@ -196,13 +183,10 @@ export class VoiceSessionClient {
     const segment = decodeVoiceAudioFrame(data)
 
     if (!segment) {
-      this.pendingSegmentText = null
-
       return
     }
 
-    this.cb.onTtsSegment(segment.segIndex, this.pendingSegmentText ?? '', segment)
-    this.pendingSegmentText = null
+    this.cb.onTtsSegment(segment)
   }
 
   private sendControl(op: string, extra: Record<string, unknown> = {}): void {

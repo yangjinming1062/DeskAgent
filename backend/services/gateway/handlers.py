@@ -69,7 +69,7 @@ from services.companion import (
 )
 from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
-from services.conversation import IM_KIND, VOICE_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
+from services.conversation import IM_KIND, get_main_conversation, get_or_create_main_conversation, note_user_contact, reset_user_outreach
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range

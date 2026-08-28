@@ -6,7 +6,7 @@ import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import { $chatOpen, pushAffectTraceMessage, setChatOpen, showMediaHint } from '@/companion/chat-store'
 import { $spriteState, setSpriteState } from '@/companion/companion-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
-import { $companionVoiceId, $subtitles, setSubtitles } from '@/companion/prefs'
+import { $companionVoiceId } from '@/companion/prefs'
 import {
   $spatialPos,
   $spatialScale,
@@ -24,19 +24,10 @@ import { useLatestRef } from '@/shared/hooks/use-latest-ref'
 import { getAudioContextCtor } from '@/shared/lib/audio-context-ctor'
 import { Mic } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { BTN_DANGER, CHIP, CHIP_ACTIVE } from '@/shared/panel'
+import { BTN_DANGER } from '@/shared/panel'
 
 import { createPcmCapture, type PcmCapture } from './pcm-capture'
 import { VoiceSegmentPlayer } from './segment-player'
-import { SubtitlesOverlay } from './subtitles-overlay'
-import {
-  appendVoiceAssistantDelta,
-  beginVoiceAssistantMessage,
-  finalizeVoiceAssistantMessage,
-  pushVoiceUserMessage,
-  resetVoiceMessages,
-  setVoiceAssistantError
-} from './voice-store'
 import { VoiceSessionClient, type VoiceSessionStatus, type VoiceTurnEndPayload } from './voice-session'
 
 interface VoiceCallDockProps {
@@ -62,7 +53,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
   const { requestGateway } = useGatewayRequest()
   // 不订阅 $chatSessionId / $chatSessionKind：setChatSession 或 hydrate 触发的 effect 重跑会 getUserMedia 重弹权限 + WS 重连。
   const spriteState = useStore($spriteState)
-  const subtitlesVisible = useStore($subtitles)
   const pos = useStore($spatialPos)
   const scale = useStore($spatialScale)
   const [micActive, setMicActive] = useState(false)
@@ -118,7 +108,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
       return
     }
 
-    // 点中拖拽柄里的控件（字幕开关等）时不开启拖拽。
+    // 点中拖拽柄里的控件时不开启拖拽。
     if ((e.target as HTMLElement).closest('button, input, textarea, select, a, [role="button"]')) {
       return
     }
@@ -278,7 +268,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
         try {
           // 每次通话独立新 voice 会话；与当前 chat session 解耦，跨通话信息靠长期记忆共享。
-          resetVoiceMessages()
           const { session_id: sessionId } = await requestGateway<{ session_id: string }>('session.create_voice', {})
 
           session = await VoiceSessionClient.open(sessionId, $companionVoiceId.get(), {
@@ -293,30 +282,17 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
                 setPanelError(message)
               }
             },
-            onAsrFinal: text => {
+            onLlmStart: () => {
               if (unmounted) {
                 return
               }
 
               setPanelError(null)
               noteActivity()
-
-              if (text) {
-                pushVoiceUserMessage(text)
-              }
-
               turnActiveRef.current = true
               setSpriteState('thinking')
             },
-            onLlmStart: () => {
-              if (unmounted) {
-                return
-              }
-
-              beginVoiceAssistantMessage()
-              setSpriteState('thinking')
-            },
-            onTtsSegment: (_segIndex, text, segment) => {
+            onTtsSegment: segment => {
               if (unmounted) {
                 return
               }
@@ -327,11 +303,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
               }
 
               noteActivity()
-
-              if (text) {
-                appendVoiceAssistantDelta(text)
-              }
-
               setSpriteState('speaking')
               player.enqueue(segment)
             },
@@ -342,7 +313,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
               noteActivity()
               turnActiveRef.current = false
-              finalizeVoiceAssistantMessage(payload.text, payload.media?.length ? payload.media : undefined)
               applyTurnEndExtras(payload)
 
               if (!player.playing) {
@@ -356,10 +326,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
 
               noteActivity()
               setPanelError(stage === 'asr' ? message : `${stageLabel(stage)}：${message}`)
-
-              if (stage === 'llm') {
-                setVoiceAssistantError(message)
-              }
             },
             onInterrupted: () => {
               if (unmounted) {
@@ -462,22 +428,7 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
             />
             {connStatus === 'ready' ? '语音通话中' : connStatus === 'reconnecting' ? '重连中…' : '连接中…'}
           </span>
-          <div className="flex items-center gap-2">
-            <button
-              aria-label={subtitlesVisible ? '隐藏字幕' : '显示字幕'}
-              aria-pressed={subtitlesVisible}
-              className={subtitlesVisible ? CHIP_ACTIVE : CHIP}
-              onClick={e => {
-                e.stopPropagation()
-                setSubtitles(!subtitlesVisible)
-              }}
-              onPointerDown={e => e.stopPropagation()}
-              type="button"
-            >
-              {subtitlesVisible ? '字幕 开' : '字幕 关'}
-            </button>
-            <span>{formatTime(durationSec)}</span>
-          </div>
+          <span>{formatTime(durationSec)}</span>
         </div>
 
         <div className="relative flex items-center justify-center my-2">
@@ -490,11 +441,6 @@ export function VoiceCallDock({ onClose }: VoiceCallDockProps): React.JSX.Elemen
         </div>
 
         <WaveformBars active={micActive} values={waveform} />
-
-        {/* 字幕内嵌面板（DESIGN §6.1）：占满中部弹性区，流式内容自动滚到最新一句 */}
-        <div className="flex min-h-0 w-full flex-1">
-          <SubtitlesOverlay />
-        </div>
 
         {micError ? (
           <p className="text-center text-xs text-amber-300">{micError}</p>

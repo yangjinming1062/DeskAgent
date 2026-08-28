@@ -14,26 +14,23 @@ import {
   $llmAutonomy,
   $llmReactions,
   $responseMode,
-  $subtitles,
   type ResponseMode,
   setLlmAffect,
   setLlmAutonomy,
   setLlmReactions,
-  setResponseMode,
-  setSubtitles
+  setResponseMode
 } from '@/companion/prefs'
 import { Check } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { HINT_TEXT, Segmented, SettingRow, SettingsPage, Toggle } from '@/shared/panel'
 
-// 交互页：伙伴怎么回应（回应方式 / 打扰档位 / 智能反应与自主行为 / 通话字幕）。
+// 交互页：伙伴怎么回应（回应方式 / 打扰档位 / 智能反应与自主行为）。
 export function InteractionPage(): React.ReactElement {
   const tier = useStore($userPreferredTier)
   const responseMode = useStore($responseMode)
   const llmReactions = useStore($llmReactions)
   const llmAffect = useStore($llmAffect)
   const llmAutonomy = useStore($llmAutonomy)
-  const subtitles = useStore($subtitles)
 
   const selectTier = (id: DisturbanceTier): void => {
     setDisturbanceTier(id)
@@ -98,15 +95,6 @@ export function InteractionPage(): React.ReactElement {
           </SettingRow>
           <SettingRow description="自主档下由 LLM 决定漫游/栖身（关闭按本地规则）" label="自主空间决策">
             <Toggle ariaLabel="自主空间决策" checked={llmAutonomy} onChange={setLlmAutonomy} />
-          </SettingRow>
-        </div>
-      </section>
-
-      <section className="mt-6">
-        <h3 className="text-xs font-medium text-white/80">通话字幕</h3>
-        <div className="mt-2.5 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
-          <SettingRow description="语音通话模式下显示双向字幕（通话面板内也有快捷开关）" label="显示通话字幕">
-            <Toggle ariaLabel="显示通话字幕" checked={subtitles} onChange={setSubtitles} />
           </SettingRow>
         </div>
       </section>

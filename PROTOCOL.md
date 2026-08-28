@@ -194,14 +194,13 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 |----|------|------|------------------|
 | session.start / session.ready / session.closed / session.error | C→S / S→C | 会话建立（绑定聊天会话 id 与音色、duplex 声明）、就绪（携带 caps：TTS 链是否具备流式能力）、正常与异常关闭（重复连接顶号、空闲/硬超时）| Backend 语音会话 + Client voice-session |
 | session.error code="conversation_kind_not_allowed" | S→C | voice WS 拒绝非语音白名单会话（IM / cron / 其他）—— 携带 `session_kind` 字段告知当前会话 kind，客户端按需提示或自动重定向到主会话 | Backend voice + Client voice-call-dock 的 `resolveVoiceSessionId` |
-| interrupt / session.interrupted | C→S / S→C | 打断双层：客户端乐观打断（本地即刻停播 + 通知服务端取消回合）+ 服务端插话判别权威判定；回合进行中收到成段话语转写（如思考期开口）视为隐式打断 | Client 乐观打断 + Backend 插话判别与取消收尾（已成段子句落库） |
-| asr.final / asr.skipped | S→C | 用户话语转写结果（用户侧字幕；服务端断句即发）/ 过短或空转写丢弃 | Backend STT + Client 字幕 |
+| interrupt / session.interrupted | C→S / S→C | 打断双层：客户端乐观打断（本地即刻停播 + 通知服务端取消回合）+ 服务端插话判别权威判定；回合进行中收到成段话语（如思考期开口）视为隐式打断 | Client 乐观打断 + Backend 插话判别与取消收尾（已成段子句落库） |
 | llm.start | S→C | 思考开始 | Client 状态机 |
-| tts.segment + 二进制音频帧 | S→C | 段级字幕文本，**先于该段首个音频块**发送（段流首块到达才发——首块前失败该段静默跳过）；子句/句成段、段内分块流式下发，不等整条回复 | Backend 子句切分 + 流式合成 + Client 分块播放 |
+| 二进制音频帧 | S→C | 段内裸 PCM / 容器音频分块；帧头 16 字节小端（magic "SAA1" / flags / encoding / 段序号 / 采样率（仅裸 PCM 有意义，容器编码自容器读取）/ 载荷长度），段序号在帧头供客户端按序播放；首块到达才开始播放（流式供应商裸 PCM 优先客户端零解码快路径；无流式能力的供应商按段整块下发，供应商原生容器直通） | Backend 流式合成 + Client 分块播放 |
 | turn.end | S→C | 回合收尾（对齐 message.complete 载荷：文本、情绪、媒体、usage；打断时带 interrupted 与已下发段文本） | Backend + Client 聊天 store 镜像 |
 | turn.error | S→C | 回合内环节失败（stage = asr / llm / tts / protocol）；**必须在通话面板可见**，会话存活 | Backend + Client 错误条 |
 
-**顺序不变量**：单条 WS 上全序——tts.segment 文本帧先于该段全部音频块；同段块连续且共享段序号、跨段严格递增，段末块带 final 标志（中断的段可能没有）；turn.end 晚于该回合全部音频帧。**通道边界**（语音双路径契约，见 [ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：会话内实时语音走本通道由服务端编排推送；会话外一次性语音（IM 语音条转写、气泡朗读、音色试听）仍走 REST 拉取（§1.1）。本地 Runner 语音栈不参与本通道——语音会话纯云端，未配置云端 STT/TTS 供应商时 session.error 直接拒绝建会。
+**顺序不变量**：单条 WS 上全序——同段块连续且共享段序号、跨段严格递增，段末块带 final 标志（中断的段可能没有）；turn.end 晚于该回合全部音频帧。**通道边界**（语音双路径契约，见 [ARCHITECTURE.md §6.3](ARCHITECTURE.md)）：会话内实时语音走本通道由服务端编排推送；会话外一次性语音（IM 语音条转写、气泡朗读、音色试听）仍走 REST 拉取（§1.1）。本地 Runner 语音栈不参与本通道——语音会话纯云端，未配置云端 STT/TTS 供应商时 session.error 直接拒绝建会。
 
 ### 1.8 IM 通道桥接（/api/channels）
 

@@ -53,18 +53,13 @@ const llmReactionsPref = makeBooleanPref('da.companion.llmReactions', true, 'com
 const llmAffectPref = makeBooleanPref('da.companion.llmAffect', true, 'companion.llm_affect')
 const llmAutonomyPref = makeBooleanPref('da.companion.llmAutonomy', true, 'companion.llm_autonomy')
 
-// 语音通话模式下双向字幕显示开关（DESIGN §6.1「双向字幕可切换」）。
-const subtitlesPref = makeBooleanPref('da.companion.subtitles', true, 'companion.subtitles')
-
 export const $llmReactions = llmReactionsPref.$atom
 export const $llmAffect = llmAffectPref.$atom
 export const $llmAutonomy = llmAutonomyPref.$atom
-export const $subtitles = subtitlesPref.$atom
 
 export const setLlmReactions = llmReactionsPref.set
 export const setLlmAffect = llmAffectPref.set
 export const setLlmAutonomy = llmAutonomyPref.set
-export const setSubtitles = subtitlesPref.set
 
 // 云端水合应用：只接受类型匹配的键，坏值静默跳过（fail-open）。
 // 借道既有 setter 落 localStorage + atom；回写的 prefs:set 上报在主进程侧
@@ -89,10 +84,6 @@ export function initCompanionPrefsSync(): () => void {
 
     if (typeof companion.llm_autonomy === 'boolean') {
       setLlmAutonomy(companion.llm_autonomy)
-    }
-
-    if (typeof companion.subtitles === 'boolean') {
-      setSubtitles(companion.subtitles)
     }
 
     // 打扰档位：只回写用户偏好（跨端恢复）；生效档位（companion.disturbance_tier）是设备

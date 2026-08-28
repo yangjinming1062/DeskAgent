@@ -12,10 +12,7 @@ export const VOICE_OPS = {
   sessionError: 'session.error',
   interrupt: 'interrupt',
   sessionInterrupted: 'session.interrupted',
-  asrFinal: 'asr.final',
-  asrSkipped: 'asr.skipped',
   llmStart: 'llm.start',
-  ttsSegment: 'tts.segment',
   turnEnd: 'turn.end',
   turnError: 'turn.error'
 } as const
