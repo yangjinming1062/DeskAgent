@@ -587,6 +587,40 @@ input[type="file"] { font-size: 0.78rem; }
     </div>
 </div>
 
+<!-- ── User backup modal ─────────────────────────────────── -->
+<div id="userBackupModal" class="modal" onclick="if(event.target===this)closeModal('userBackupModal')">
+    <div class="modal-card">
+        <div class="modal-head">
+            <h2>导入用户备份</h2>
+            <button class="modal-close" onclick="closeModal('userBackupModal')" aria-label="关闭">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p style="margin:0 0 0.6rem; color:var(--text-2); font-size:0.82rem;">
+                导入目标用户 #<span id="backupUserId"></span>。对话与聊天上下文不在备份范围内，仅恢复角色资产（avatar、persona、自定义表情、CronJob、settings、API 凭据、记忆）。
+            </p>
+            <div class="field">
+                <label>导入模式</label>
+                <div style="display:flex; gap:0.75rem; margin-top:0.3rem; flex-wrap:wrap;">
+                    <label class="checkbox-row"><input type="radio" name="bk_mode" value="overwrite" checked> 覆盖（先清空现有数据再导入）</label>
+                    <label class="checkbox-row"><input type="radio" name="bk_mode" value="merge"> 合并（并存；跳过该用户独有的 API 凭据与 persona）</label>
+                </div>
+            </div>
+            <div class="field">
+                <label for="backupFile">备份文件 (.zip)</label>
+                <input type="file" id="backupFile" accept=".zip">
+                <div class="hint">由本后台导出的 spiritagent-user-backup-v1.zip。</div>
+            </div>
+            <div id="backupStatus" style="margin-top:0.5rem; font-size:0.78rem; color:var(--text-3);"></div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn--ghost" onclick="closeModal('userBackupModal')">取消</button>
+            <button type="button" class="btn btn--primary" id="backupSubmitBtn" onclick="submitUserBackup()">开始导入</button>
+        </div>
+    </div>
+</div>
+
 <!-- ── Activation code modal ─────────────────────────────── -->
 <div id="activationModal" class="modal" onclick="if(event.target===this)closeModal('activationModal')">
     <div class="modal-card">
@@ -918,6 +952,8 @@ function renderUsers(data) {
                 <button class="btn btn--ghost btn--sm" onclick="manageActivation(${u.id})">激活码</button>
                 <button class="btn btn--ghost btn--sm" onclick="editUser(${u.id})">编辑</button>
                 <button class="btn btn--ghost btn--sm" onclick="toggleUser(${u.id})">${u.is_active ? '停用' : '启用'}</button>
+                <button class="btn btn--ghost btn--sm" onclick="exportUser(${u.id})">导出</button>
+                <button class="btn btn--ghost btn--sm" onclick="importUserPrompt(${u.id})">导入</button>
                 <button class="btn btn--danger btn--sm" onclick="deleteUser(${u.id})">删除</button>
             </td>
         </tr>`;
@@ -1105,6 +1141,67 @@ async function deleteUser(id) {
     if (!confirm('确定彻底删除此用户及其所有关联数据？此操作不可撤销。')) return;
     try { await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' }); toast('用户已删除'); loadUsers(); }
     catch (e) { toast(e.message, 'err'); }
+}
+
+// ── User backup ─────────────────────────────────────────
+async function exportUser(id) {
+    const user = (tabCache.users?.items ?? []).find(u => u.id === id);
+    const label = user ? user.username : `#${id}`;
+    try {
+        const resp = await apiFetch(`/api/admin/users/${id}/export`);
+        if (!resp.ok) {
+            const txt = await resp.text();
+            throw new Error(txt || `HTTP ${resp.status}`);
+        }
+        const blob = await resp.blob();
+        let filename = `spiritagent-user-${id}-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.zip`;
+        const cd = resp.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="?([^"]+)"?/);
+        if (m) filename = m[1];
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; document.body.appendChild(a);
+        a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast(`已导出用户 ${label}`);
+    } catch (e) { toast(`导出失败：${e.message || e}`, 'err'); }
+}
+
+function importUserPrompt(id) {
+    const user = (tabCache.users?.items ?? []).find(u => u.id === id);
+    $('#backupUserId').textContent = `${id}${user ? ' (' + user.username + ')' : ''}`;
+    $('#backupFile').value = '';
+    $('#backupStatus').textContent = '';
+    $('#backupSubmitBtn').disabled = false;
+    openModal('userBackupModal');
+}
+
+async function submitUserBackup() {
+    const idText = $('#backupUserId').textContent.split(' ')[0].replace(/[()#]/g, '');
+    const file = $('#backupFile').files[0];
+    const mode = ($$('input[name="bk_mode"]').find(r => r.checked) || {}).value || 'overwrite';
+    const status = $('#backupStatus');
+    const btn = $('#backupSubmitBtn');
+    if (!file) { status.textContent = '请选择 .zip 文件'; status.style.color = 'var(--red)'; return; }
+    btn.disabled = true;
+    status.textContent = `上传并导入中（模式：${mode}），请稍候…`;
+    status.style.color = 'var(--primary)';
+    try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const resp = await apiFetch(`/api/admin/users/${idText}/import?mode=${encodeURIComponent(mode)}`, {
+            method: 'POST', body: fd, headers: {},
+        });
+        const data = await resp.json();
+        const total = Object.values(data.imported || {}).reduce((a, b) => a + b, 0);
+        status.textContent = `导入完成（${data.mode}），共 ${total} 行`; status.style.color = 'var(--green)';
+        toast(`已导入用户 #${idText} · ${data.mode}`);
+        setTimeout(() => { closeModal('userBackupModal'); loadUsers(); }, 600);
+    } catch (err) {
+        status.textContent = '导入失败：' + (err.message || err); status.style.color = 'var(--red)';
+    } finally {
+        btn.disabled = false;
+    }
 }
 
 // ── Model configs ────────────────────────────────────────

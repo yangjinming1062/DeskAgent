@@ -1,10 +1,16 @@
 import contextlib
+import json
+import os
 import shutil
+import tempfile
+import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from common import get_or_404, get_router, list_response
 from components import SETTINGS, apply_partial, get_db
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from modules.auth import (
     User,
     UserCreate,
@@ -30,10 +36,42 @@ from services.gateway import MANAGER, cancel_user_cron_turns, discard_user
 from services.gateway.handlers import _USER_SESSIONS
 from services.llm import merge_provider_json
 from services.tools import REGISTRY
+from services.user_backup import (
+    TABLES,
+    build_manifest,
+    clear_user_scoped_rows,
+    collect_files_for_export,
+    deserialize_rows,
+    insert_rows,
+    load_manifest,
+    restore_files,
+    serialize_rows,
+)
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 router = get_router()
+
+# 用户备份 zip 大小上限 500 MB；上传也按此截断以免 OOM。
+ARCHIVE_MAX_BYTES = 500 * 1024 * 1024
+# 1 MB 分块上传，匹配 update.py 的 CHUNK_SIZE 数量级。
+ARCHIVE_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+# 插入顺序：avatar / outfit 先于依赖它们的 2D / expression_avatars。
+INSERT_ORDER = (
+    "user_model_configs",
+    "personas",
+    "avatar_assets",
+    "companion_outfits",
+    "companion_3d_models",
+    "companion_2d_models",
+    "companion_expressions",
+    "companion_expression_avatars",
+    "user_settings",
+    "cron_jobs",
+    "memories",
+)
 
 
 @router.get("/users", response_model=UserListResponse)
@@ -193,3 +231,120 @@ async def delete_model_config(user_id: int, _admin: str = Depends(get_current_ad
     await db.delete(await get_or_404(db, UserModelConfig, user_id=user_id, detail="模型配置不存在。"))
     await db.commit()
     return {"message": "模型配置已删除。"}
+
+
+# ── 用户数据导出 / 导入 ────────────────────────────────────────
+# conversations / messages / channel_bindings / login_records / admin_sessions 故意排除；
+# activation_code / activation_token_hash 也不复制（绑定原部署 base_url）。
+
+
+@router.get("/users/{user_id}/export")
+async def export_user_backup(
+    user_id: int,
+    _admin: str = Depends(get_current_admin_token),
+    db: AsyncSession = Depends(get_db),
+) -> FileResponse:
+    user = await get_or_404(db, User, id=user_id, detail="用户不存在。")
+    rows_by_table = {tbl: await serialize_rows(db, tbl, user_id) for tbl in TABLES}
+    files = await collect_files_for_export(user_id, db)
+
+    fd, tmp = tempfile.mkstemp(prefix="spiritagent-export-", suffix=".zip")
+    os.close(fd)
+    try:
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", json.dumps(build_manifest(user, rows_by_table, _admin), ensure_ascii=False))
+            for tbl, rs in rows_by_table.items():
+                zf.writestr(f"db/{tbl}.json", json.dumps({"table": tbl, "rows": rs}, ensure_ascii=False))
+            for src in files:
+                arc = "files/" + src.relative_to(Path(SETTINGS.data_dir)).as_posix()
+                zf.write(src, arcname=arc, compresslevel=6)
+        filename = f"spiritagent-user-{user_id}-{datetime.utcnow():%Y%m%d%H%M%S}.zip"
+        return FileResponse(
+            path=tmp,
+            media_type="application/zip",
+            filename=filename,
+            background=BackgroundTask(lambda p=tmp: Path(p).unlink(missing_ok=True)),
+        )
+    except Exception:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+@router.post("/users/{user_id}/import")
+async def import_user_backup(
+    user_id: int,
+    file: UploadFile = File(...),
+    mode: str = "overwrite",
+    _admin: str = Depends(get_current_admin_token),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """从 zip 恢复用户的角色资产到目标用户。mode=overwrite 先清空；mode=merge 跳过唯一 per-user 表。"""
+    if mode not in ("overwrite", "merge"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="mode 必须是 overwrite 或 merge。")
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="上传文件必须是 .zip。")
+    await get_or_404(db, User, id=user_id, detail="用户不存在。")
+
+    with tempfile.TemporaryDirectory(prefix="spiritagent-import-") as tmp_dir:
+        zip_path = Path(tmp_dir) / "upload.zip"
+        extract_root = Path(tmp_dir) / "extract"
+        extract_root.mkdir(parents=True, exist_ok=True)
+
+        # 分块 spool：边读边写边累加，超 500 MB 直接拒
+        total = 0
+        with open(zip_path, "wb") as out:
+            while chunk := await file.read(ARCHIVE_UPLOAD_CHUNK_BYTES):
+                total += len(chunk)
+                if total > ARCHIVE_MAX_BYTES:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=f"Archive exceeds {ARCHIVE_MAX_BYTES} bytes",
+                    )
+                out.write(chunk)
+
+        try:
+            zf = zipfile.ZipFile(zip_path, "r")
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效 zip 文件。") from None
+
+        try:
+            extract_resolved = extract_root.resolve()
+            for name in zf.namelist():
+                target_path = (extract_root / name).resolve()
+                if not target_path.is_relative_to(extract_resolved):
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"非法归档条目：{name}")
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(name) as src, open(target_path, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+        finally:
+            zf.close()
+
+        manifest = load_manifest(extract_root)
+        source_uid = int(manifest["source_user_id"])
+        rows = deserialize_rows(extract_root)
+
+    # 阶段 2：DB 操作；任一异常回滚
+    if mode == "overwrite":
+        await clear_user_scoped_rows(db, user_id)
+        for sub in ("companion-assets", "companion-models"):
+            d = Path(SETTINGS.data_dir) / sub / str(user_id)
+            if d.exists():
+                with contextlib.suppress(Exception):
+                    shutil.rmtree(d, ignore_errors=True)
+
+    rewriter = restore_files(extract_root, source_uid, user_id, mode=mode)
+
+    try:
+        id_map: dict[str, dict[int, int]] = {}
+        for tbl in INSERT_ORDER:
+            new_map = await insert_rows(db, tbl, rows.get(tbl, []), user_id, rewriter, id_map, mode=mode)
+            id_map[tbl] = new_map
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return {
+        "mode": mode,
+        "imported": {tbl: len(rows.get(tbl, [])) for tbl in TABLES},
+    }
