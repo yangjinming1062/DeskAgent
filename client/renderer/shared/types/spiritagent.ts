@@ -79,8 +79,7 @@ export interface SessionRuntimeInfo {
   context_window?: number
 }
 
-/** `GET /api/config` 的返回结构。后端剥离原始凭据后注入 `*_set` / `*_fingerprint`
- * 等计算字段。 */
+/** `GET /api/config` 的返回结构。*/
 export interface SpiritAgentConfigResponse {
   agent?: {
     reasoning_effort?: string
@@ -102,19 +101,9 @@ export interface SpiritAgentConfigResponse {
     /** 单次语音录制的最长时长（秒）。聊天面板在该上限处自动停止 MediaRecorder。 */
     max_recording_seconds?: number
   }
-  web?: {
-    backend?: string
-    extract_backend?: string
-    brave_api_key_set?: boolean
-    brave_api_key_fingerprint?: string
-    tavily_api_key_set?: boolean
-    tavily_api_key_fingerprint?: string
-    tavily_base_url?: string
-  }
 }
 
-/** `PUT /api/config` 接受的请求体。原始凭据可写入；响应结构里的
- * `*_set` / `*_fingerprint` 计算字段不可写入。 */
+/** `PUT /api/config` 接受的请求体。 */
 export interface SpiritAgentConfigPutRequest {
   agent?: {
     reasoning_effort?: string
@@ -132,15 +121,6 @@ export interface SpiritAgentConfigPutRequest {
   }
   voice?: {
     max_recording_seconds?: number
-  }
-  web?: {
-    backend?: string
-    extract_backend?: string
-    /** 空字符串清空该 key；省略字段则保持原值不变。 */
-    brave_api_key?: string
-    /** 空字符串清空该 key；省略字段则保持原值不变。 */
-    tavily_api_key?: string
-    tavily_base_url?: string
   }
 }
 

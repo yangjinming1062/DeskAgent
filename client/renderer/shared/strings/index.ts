@@ -85,7 +85,7 @@ export const strings = {
     title: '应用设置',
     closeSettings: '关闭设置',
     nav: {
-      account: '账户',
+      inference: '推理与对话',
       about: '关于',
       appearance: '外观',
       channels: '聊天通道',
@@ -187,51 +187,11 @@ export const strings = {
       hiddenByPlatformDesc:
         '本版本 SpiritAgent 内置的技能面向其他操作系统。请在支持的操作系统上重新安装 SpiritAgent 后再启用。'
     },
-    account: {
-      heading: '账户',
+    inference: {
+      heading: '推理与对话',
       loading: '加载中…',
-      saveFailed: '无法保存账户设置。',
-      saved: '账户设置已保存。',
-      webSearch: {
-        heading: '网页搜索',
-        intro: '配置 web 工具所使用的搜索与抓取服务。后端选择按用户保存,密钥仅保存在服务端。',
-        backend: '搜索后端',
-        backendDesc: 'web_search 使用的服务。若所选后端不可用则自动回退到 ddgs。',
-        extractBackend: '抓取后端',
-        extractBackendDesc: 'web_extract 使用的服务。未配置密钥时会显式报错。',
-        braveApiKey: 'Brave 搜索 API 密钥',
-        braveApiKeyPlaceholder: '已设置 · 留空保留当前密钥',
-        braveApiKeyDesc: '搜索后端 = brave-free 时必填。',
-        tavilyApiKey: 'Tavily API 密钥',
-        tavilyApiKeyPlaceholder: '已设置 · 留空保留当前密钥',
-        tavilyApiKeyDesc: '抓取后端 = tavily 时必填。',
-        tavilyBaseUrl: 'Tavily 接口地址',
-        tavilyBaseUrlPlaceholder: 'https://api.tavily.com',
-        set: '已配置',
-        notSet: '未配置',
-        fingerprint: (fp: string) => `指纹:${fp}`,
-        reveal: '显示',
-        hide: '隐藏',
-        clearKey: '清除密钥',
-        clearKeyConfirm: '确定要清除该 API 密钥吗?',
-        backendOptions: {
-          ddgs: 'DuckDuckGo (无需密钥)',
-          'brave-free': 'Brave 搜索',
-          tavily: 'Tavily'
-        },
-        extractBackendOptions: {
-          tavily: 'Tavily',
-          'brave-free': 'Brave 搜索',
-          ddgs: 'DuckDuckGo'
-        },
-        unavailable: {
-          extractTavilyNoKey: '添加 Tavily API 密钥之前 web_extract 不可用。',
-          extractNonTavilyNoKey: 'web_extract 仅在 Tavily 后端可用。选择 Tavily 并添加密钥,或改用 web_search。',
-          extractNonTavilyWithKey: 'web_extract 仅在 Tavily 后端可用。将"抽取后端"切换为 Tavily 即可启用。',
-          searchKeyFallback: (selectedBackend: string) =>
-            `添加 ${selectedBackend} API 密钥之前 web_search 会回退到 DuckDuckGo。`
-        }
-      },
+      saveFailed: '无法保存推理与对话设置。',
+      saved: '推理与对话设置已保存。',
       agentDefaults: {
         heading: '智能体默认',
         intro: '新会话的用户级默认设置,不影响已存在的会话。',

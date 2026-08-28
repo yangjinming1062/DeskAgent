@@ -57,14 +57,12 @@ export function SettingsSubsection({
 export function ListRow({
   title,
   description,
-  hint,
   action,
   below,
   wide = false
 }: {
   title: ReactNode
   description?: ReactNode
-  hint?: ReactNode
   action?: ReactNode
   below?: ReactNode
   wide?: boolean
@@ -79,7 +77,6 @@ export function ListRow({
       <div className="min-w-0">
         <div className="text-xs font-medium text-white/90">{title}</div>
         {description && <div className="mt-1 text-[10px] leading-relaxed text-white/40">{description}</div>}
-        {hint && <div className="mt-1 block font-mono text-[0.68rem] text-white/30">{hint}</div>}
         {below}
       </div>
       {action && <div className={cn('min-w-0', !wide && 'sm:justify-self-end')}>{action}</div>}

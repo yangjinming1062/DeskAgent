@@ -3,7 +3,7 @@ import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
 
-type AgentDefaultsCopy = (typeof strings)['settings']['account']['agentDefaults']
+type AgentDefaultsCopy = (typeof strings)['settings']['inference']['agentDefaults']
 
 export interface AgentFormState {
   reasoning_effort: string

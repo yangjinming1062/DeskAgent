@@ -1,35 +1,19 @@
 import { useEffect, useState } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
-import { KeyRound } from '@/shared/lib/icons'
-import { buildSecretFieldBody } from '@/shared/lib/secret-field-body'
-import { BTN_PRIMARY, ConfirmDialog, Spinner } from '@/shared/panel'
+import { Brain } from '@/shared/lib/icons'
+import { BTN_PRIMARY, Spinner } from '@/shared/panel'
 import { getSpiritAgentConfig, saveSpiritAgentConfig } from '@/shared/spiritagent'
 import { notify, notifyError } from '@/shared/store/notifications'
 import { strings } from '@/shared/strings'
 import type { SpiritAgentConfigResponse } from '@/shared/types/spiritagent'
 
-import { AgentDefaultsSection, type AgentFormState } from './account/agent-defaults-section'
-import { type ChatFormState, ContextCompressionSection } from './account/context-compression-section'
-import { type TemperatureFormState, TemperatureSection } from './account/temperature-section'
-import { type WebFormState, WebSearchSection } from './account/web-search-section'
+import { AgentDefaultsSection, type AgentFormState } from './inference/agent-defaults-section'
+import { type ChatFormState, ContextCompressionSection } from './inference/context-compression-section'
+import { type TemperatureFormState, TemperatureSection } from './inference/temperature-section'
 import { ListRow, LoadingState, SectionHeading, SettingsContent } from './primitives'
 
 const REASONING_OPTIONS = ['none', 'low', 'medium', 'high'] as const
-
-const EMPTY_WEB: WebFormState = {
-  backend: 'ddgs',
-  extract_backend: 'tavily',
-  brave_api_key: '',
-  brave_api_key_set: false,
-  brave_api_key_fingerprint: '<empty>',
-  cleared_brave: false,
-  tavily_api_key: '',
-  tavily_api_key_set: false,
-  tavily_api_key_fingerprint: '<empty>',
-  cleared_tavily: false,
-  tavily_base_url: ''
-}
 
 const EMPTY_AGENT: AgentFormState = {
   reasoning_effort: 'low',
@@ -45,24 +29,6 @@ const EMPTY_TEMPERATURE: TemperatureFormState = {
   chat_temperature: 0.7,
   title_generation_temperature: 0.3,
   compression_temperature: 0.0
-}
-
-const readWebState = (config: SpiritAgentConfigResponse): WebFormState => {
-  const web = config.web
-
-  return {
-    backend: web?.backend ?? EMPTY_WEB.backend,
-    extract_backend: web?.extract_backend ?? EMPTY_WEB.extract_backend,
-    brave_api_key: '',
-    brave_api_key_set: web?.brave_api_key_set === true,
-    brave_api_key_fingerprint: web?.brave_api_key_fingerprint ?? EMPTY_WEB.brave_api_key_fingerprint,
-    cleared_brave: false,
-    tavily_api_key: '',
-    tavily_api_key_set: web?.tavily_api_key_set === true,
-    tavily_api_key_fingerprint: web?.tavily_api_key_fingerprint ?? EMPTY_WEB.tavily_api_key_fingerprint,
-    cleared_tavily: false,
-    tavily_base_url: web?.tavily_base_url ?? EMPTY_WEB.tavily_base_url
-  }
 }
 
 const readAgentState = (config: SpiritAgentConfigResponse): AgentFormState => {
@@ -87,22 +53,19 @@ const readTemperatureState = (config: SpiritAgentConfigResponse): TemperatureFor
   compression_temperature: config.chat?.compression_temperature ?? EMPTY_TEMPERATURE.compression_temperature
 })
 
-export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
+export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => void } = {}): React.JSX.Element {
   const t = strings
-  const a = t.settings.account
+  const a = t.settings.inference
 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [originalWeb, setOriginalWeb] = useState<WebFormState>(EMPTY_WEB)
   const [originalAgent, setOriginalAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [originalChat, setOriginalChat] = useState<ChatFormState>(EMPTY_CHAT)
   const [originalTemperature, setOriginalTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
-  const [web, setWeb] = useState<WebFormState>(EMPTY_WEB)
   const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
   const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
   const [temperature, setTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
-  const [clearingKey, setClearingKey] = useState<'brave_api_key' | 'tavily_api_key' | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -115,15 +78,12 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           return
         }
 
-        const nextWeb = readWebState(config)
         const nextAgent = readAgentState(config)
         const nextChat = readChatState(config)
         const nextTemperature = readTemperatureState(config)
-        setOriginalWeb(nextWeb)
         setOriginalAgent(nextAgent)
         setOriginalChat(nextChat)
         setOriginalTemperature(nextTemperature)
-        setWeb(nextWeb)
         setAgent(nextAgent)
         setChat(nextChat)
         setTemperature(nextTemperature)
@@ -144,15 +104,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     }
   }, [])
 
-  const isWebDirty =
-    web.cleared_brave ||
-    web.cleared_tavily ||
-    web.brave_api_key !== '' ||
-    web.tavily_api_key !== '' ||
-    web.backend !== originalWeb.backend ||
-    web.extract_backend !== originalWeb.extract_backend ||
-    web.tavily_base_url !== originalWeb.tavily_base_url
-
   const isAgentDirty =
     agent.reasoning_effort !== originalAgent.reasoning_effort ||
     agent.enable_background_review !== originalAgent.enable_background_review
@@ -166,11 +117,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     temperature.title_generation_temperature !== originalTemperature.title_generation_temperature ||
     temperature.compression_temperature !== originalTemperature.compression_temperature
 
-  const isDirty = isWebDirty || isAgentDirty || isChatDirty || isTemperatureDirty
-
-  const updateWeb = (patch: Partial<WebFormState>) => {
-    setWeb(prev => ({ ...prev, ...patch }))
-  }
+  const isDirty = isAgentDirty || isChatDirty || isTemperatureDirty
 
   const updateAgent = (patch: Partial<AgentFormState>) => {
     setAgent(prev => ({ ...prev, ...patch }))
@@ -184,36 +131,9 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
     setTemperature(prev => ({ ...prev, ...patch }))
   }
 
-  const onApiKeyChange = (key: 'brave_api_key' | 'tavily_api_key', value: string) => {
-    const clearedField = key === 'brave_api_key' ? 'cleared_brave' : 'cleared_tavily'
-    setWeb(prev => ({ ...prev, [key]: value, [clearedField]: value === '' ? prev[clearedField] : false }))
-  }
-
-  const onClearApiKey = (key: 'brave_api_key' | 'tavily_api_key') => {
-    setClearingKey(key)
-  }
-
   const handleSave = async () => {
     try {
       setIsSaving(true)
-
-      // 敏感字段三态逻辑：有值→写入，已清空→写 ''，未动→忽略
-      const bodyWeb: Record<string, unknown> = {}
-      bodyWeb.backend = web.backend
-      bodyWeb.extract_backend = web.extract_backend
-      bodyWeb.tavily_base_url = web.tavily_base_url
-
-      const brave = buildSecretFieldBody(web.brave_api_key, web.cleared_brave, '')
-
-      if (!brave.omit) {
-        bodyWeb.brave_api_key = brave.value
-      }
-
-      const tavily = buildSecretFieldBody(web.tavily_api_key, web.cleared_tavily, '')
-
-      if (!tavily.omit) {
-        bodyWeb.tavily_api_key = tavily.value
-      }
 
       const { config } = await saveSpiritAgentConfig({
         agent: {
@@ -226,19 +146,15 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           context_compression_threshold: chat.context_compression_threshold,
           title_generation_temperature: temperature.title_generation_temperature,
           compression_temperature: temperature.compression_temperature
-        },
-        web: bodyWeb
+        }
       })
 
-      const nextWeb = readWebState(config)
       const nextAgent = readAgentState(config)
       const nextChat = readChatState(config)
       const nextTemperature = readTemperatureState(config)
-      setOriginalWeb(nextWeb)
       setOriginalAgent(nextAgent)
       setOriginalChat(nextChat)
       setOriginalTemperature(nextTemperature)
-      setWeb(nextWeb)
       setAgent(nextAgent)
       setChat(nextChat)
       setTemperature(nextTemperature)
@@ -267,7 +183,7 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           description={loadError}
           title={
             <div className="flex items-center gap-2 text-rose-300/80">
-              <KeyRound className="size-4" />
+              <Brain className="size-4" />
               <span>{a.heading}</span>
             </div>
           }
@@ -279,17 +195,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
   return (
     <SettingsContent>
       <SectionHeading title={a.heading} />
-
-      <WebSearchSection
-        disabled={isSaving}
-        onApiKeyChange={onApiKeyChange}
-        onClearApiKey={onClearApiKey}
-        state={web}
-        t={a.webSearch}
-        update={updateWeb}
-      />
-
-      <div className="my-4 h-px bg-white/10" />
 
       <AgentDefaultsSection disabled={isSaving} state={agent} t={a.agentDefaults} update={updateAgent} />
 
@@ -307,28 +212,6 @@ export function AccountSettings({ onConfigSaved }: { onConfigSaved?: () => void 
           {isSaving ? t.common.saving : t.common.save}
         </button>
       </div>
-
-      <ConfirmDialog
-        cancelLabel={t.common.cancel}
-        confirmLabel={a.webSearch.clearKey}
-        description={a.webSearch.clearKeyConfirm}
-        onConfirm={() => {
-          if (!clearingKey) {
-            return
-          }
-
-          const clearedField = clearingKey === 'brave_api_key' ? 'cleared_brave' : 'cleared_tavily'
-          setWeb(prev => ({ ...prev, [clearingKey]: '', [clearedField]: true }))
-        }}
-        onOpenChange={(open: boolean) => {
-          if (!open) {
-            setClearingKey(null)
-          }
-        }}
-        open={clearingKey !== null}
-        title={a.webSearch.clearKey}
-        variant="destructive"
-      />
     </SettingsContent>
   )
 }

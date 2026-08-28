@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import type { IconComponent } from '@/shared/lib/icons'
-import { ChevronDown, Eye, EyeOff, Loader2, Search, X } from '@/shared/lib/icons'
+import { ChevronDown, Loader2, Search, X } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 
 import {
@@ -358,58 +358,6 @@ export function PanelSelect<T extends string>({
             </button>
           ))}
         </div>
-      )}
-    </div>
-  )
-}
-
-// 密钥输入三件套：密码输入 + 显隐切换 + 清除（已存档时）。
-export function SecretInput({
-  value,
-  onChange,
-  isSet,
-  onClear,
-  placeholder,
-  disabled = false,
-  revealLabel = '显示密钥',
-  hideLabel = '隐藏密钥',
-  clearLabel = '清除密钥'
-}: {
-  value: string
-  onChange: (next: string) => void
-  isSet: boolean
-  onClear?: () => void
-  placeholder?: string
-  disabled?: boolean
-  revealLabel?: string
-  hideLabel?: string
-  clearLabel?: string
-}): React.JSX.Element {
-  const [revealed, setRevealed] = useState(false)
-
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        className={cn(INPUT_CLASS, 'max-w-xs')}
-        disabled={disabled}
-        onChange={e => onChange(e.currentTarget.value)}
-        placeholder={placeholder}
-        type={revealed ? 'text' : 'password'}
-        value={value}
-      />
-      <button
-        aria-label={revealed ? hideLabel : revealLabel}
-        className={BTN_ICON}
-        disabled={disabled}
-        onClick={() => setRevealed(prev => !prev)}
-        type="button"
-      >
-        {revealed ? <EyeOff /> : <Eye />}
-      </button>
-      {isSet && onClear && (
-        <button aria-label={clearLabel} className={BTN_ICON} disabled={disabled} onClick={onClear} type="button">
-          <X />
-        </button>
       )}
     </div>
   )

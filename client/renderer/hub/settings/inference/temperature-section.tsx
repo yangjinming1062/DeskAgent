@@ -3,7 +3,7 @@ import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
 
-type TemperatureCopy = (typeof strings)['settings']['account']['temperature']
+type TemperatureCopy = (typeof strings)['settings']['inference']['temperature']
 
 export interface TemperatureFormState {
   chat_temperature: number

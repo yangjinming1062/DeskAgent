@@ -2,7 +2,7 @@ import { IconPalette } from '@tabler/icons-react'
 import { IconBrandWechat } from '@tabler/icons-react'
 
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
-import { AudioLines, Cpu, Info, KeyRound, Settings, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Brain, Cpu, Info, Settings, Sparkles } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { type NavItemDescriptor, SettingsNav, SURFACE_CHROME } from '@/shared/panel'
 import { strings } from '@/shared/strings'
@@ -10,16 +10,16 @@ import { strings } from '@/shared/strings'
 import { OverlayView } from '../overlays/overlay-view'
 
 import { AboutSettings } from './about-settings'
-import { AccountSettings } from './account-settings'
 import { AppearanceSettings } from './appearance-settings'
 import { ChannelsSettings } from './channels-settings'
+import { InferenceSettings } from './inference-settings'
 import { RunnerSettings } from './runner-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS = [
-  'account',
+  'inference',
   'speech',
   'channels',
   'appearance',
@@ -32,10 +32,10 @@ const SETTINGS_VIEWS = [
 // 修改即时上云、跨端经水合收敛，文件搬运与本地重置入口不再需要。
 export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): React.JSX.Element {
   const t = strings
-  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'account')
+  const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'inference')
 
   const navItems: NavItemDescriptor[] = [
-    { id: 'account', label: t.settings.nav.account, icon: KeyRound },
+    { id: 'inference', label: t.settings.nav.inference, icon: Brain },
     { id: 'speech', label: t.speech.title, icon: AudioLines },
     { id: 'channels', label: t.settings.nav.channels, icon: IconBrandWechat },
     { id: 'appearance', label: t.settings.nav.appearance, icon: IconPalette },
@@ -51,8 +51,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
           <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsViewId)} />
         </aside>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {activeView === 'account' ? (
-            <AccountSettings onConfigSaved={onConfigSaved} />
+          {activeView === 'inference' ? (
+            <InferenceSettings onConfigSaved={onConfigSaved} />
           ) : activeView === 'speech' ? (
             <SpeechSettings />
           ) : activeView === 'channels' ? (
