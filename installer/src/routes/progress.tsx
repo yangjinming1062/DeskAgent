@@ -55,24 +55,9 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
       {/* 背景氛围光 */}
       <span aria-hidden="true" className="spiritagent-glow" />
 
-      {/* 区域 A：顶部步骤头 */}
-      <div className="flex shrink-0 items-center justify-between border-b border-line-hairline px-8 py-3 backdrop-blur-xs">
-        <div className="flex items-center gap-2">
-          <span className="font-['Collapse'] text-lg font-bold tracking-[0.08em] text-accent">
-            SPIRITAGENT
-          </span>
-          <span className="text-xs text-text-faint">|</span>
-          <span className="text-xs font-medium text-text-body">
-            {bootstrap.status === 'completed'
-              ? '完成'
-              : bootstrap.status === 'failed'
-                ? '失败'
-                : '安装中'}
-          </span>
-        </div>
-        <div className="text-xs font-medium text-text-muted">
-          第 {progress.done} 步 · 共 {progress.total} 步
-        </div>
+      {/* 进度细条：与顶部 Titlebar 区分，仅显示步骤进度计数；状态文案由下方 captionText 承担 */}
+      <div className="flex shrink-0 items-center justify-end border-b border-line-hairline px-6 py-1.5 text-[11px] font-medium text-text-muted backdrop-blur-xs">
+        第 {progress.done} 步 · 共 {progress.total} 步
       </div>
 
       {/* 区域 B：主视觉蛋与光环 */}
