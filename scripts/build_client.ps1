@@ -1,4 +1,4 @@
-# 打包 SpiritAgent 客户端安装器（Windows）。Backend 由 Docker 单独构建，不在此入口内。
+﻿# 打包 SpiritAgent 客户端安装器（Windows）。Backend 由 Docker 单独构建，不在此入口内。
 # 编排顺序：构建 runner wheel → electron-builder 桌面端 → 暂存 payload → 临时改 tauri.conf.json → Tauri 构建 → 还原配置 → 拷贝最终安装器。
 # 用法：powershell -File scripts\build_client.ps1 -Version 0.16.0 [-SkipRunner] [-SkipDesktop] [-SignTool PATH] [-CertThumbprint TH] [-OutputDir DIR]
 

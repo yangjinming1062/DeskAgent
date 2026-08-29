@@ -1,4 +1,4 @@
-# scripts/lib/UpdateManifest.ps1 —— SpiritAgent 自更新管线的共享签名与 manifest 助手；由 scripts/build_client.ps1 的 Build-UpdateZip 引入。
+﻿# scripts/lib/UpdateManifest.ps1 —— SpiritAgent 自更新管线的共享签名与 manifest 助手；由 scripts/build_client.ps1 的 Build-UpdateZip 引入。
 # 仅做纯文件操作，没有模块级可变状态。
 
 # 定位 openssl.exe：Git for Windows 把 openssl 放在 mingw64/bin 下，非 git 环境下不在 PATH 中，故多走几步常见安装位置查找。
