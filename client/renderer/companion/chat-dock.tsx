@@ -40,10 +40,23 @@ import { $portraitUrl } from '@/companion/portrait-store'
 import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
 import { SpiritAgentRpcError, SpiritAgentRpcErrorCode } from '@/shared/lib/gateway-protocol/json-rpc-gateway'
-import { FileText, FolderOpen, ImageIcon, Mic, PanelLeft, Paperclip, Sparkles, Video, X } from '@/shared/lib/icons'
+import {
+  ArrowRight,
+  FileText,
+  FolderOpen,
+  ImageIcon,
+  Mic,
+  PanelLeft,
+  Plus,
+  Slash,
+  Sparkles,
+  SquareFilled,
+  Video,
+  X
+} from '@/shared/lib/icons'
 import { fuzzyFilterCommands, parseSlashInput, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
-import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
+import { BTN_ICON } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 import type { ChatAttachment, SessionMessage } from '@/shared/types/spiritagent'
 
@@ -1091,321 +1104,361 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             <ChatScrollAutoFollow scrollRef={scrollRef} />
           </div>
 
-          {pending?.type === 'image' && (
-            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
-              <PendingImageThumb path={pending.value} />
-              <span className="truncate">{sending ? '图片发送中…' : pending.fileName || '已附加图片，点击可查看'}</span>
-              {!sending && (
-                <button
-                  aria-label="移除附加图片"
-                  className="rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setPending(null)}
-                  type="button"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-          {pending?.type === 'video' && (
-            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/60">
-              <Video className="size-4 shrink-0 text-white/50" />
-              <span className="max-w-40 shrink truncate">{pending.fileName}</span>
-              {pending.status === 'uploading' && <span className="text-white/40">上传中…</span>}
-              {pending.status === 'ready' && <span>已就绪</span>}
-              {pending.status === 'error' && (
-                <>
-                  <span className="min-w-0 flex-1 truncate text-amber-300/80" title={pending.error}>
-                    {pending.error}
-                  </span>
-                  <button
-                    className="shrink-0 rounded-md px-1.5 py-0.5 text-white/50 transition hover:bg-white/10 hover:text-white"
-                    onClick={() => void attachVideoFile(pending.path, setPending)}
-                    type="button"
-                  >
-                    重试
-                  </button>
-                </>
-              )}
-              {!sending && (
-                <button
-                  aria-label="移除附加视频"
-                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setPending(null)}
-                  type="button"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-          {pending?.type === 'file' && (
-            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/70">
-              <FileText className="size-4 shrink-0 text-accent" />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-medium text-white/90" title={pending.path}>
-                  {pending.fileName}
-                </span>
-                <span className="truncate text-[10px] text-white/40" title={pending.path}>
-                  {pending.path}
-                </span>
-              </div>
-              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">文件</span>
-              {!sending && (
-                <button
-                  aria-label="移除附加文件"
-                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setPending(null)}
-                  type="button"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-          {pending?.type === 'folder' && (
-            <div className="flex items-center gap-2 border-t border-white/10 px-4 py-2 text-xs text-white/70">
-              <FolderOpen className="size-4 shrink-0 text-amber-400" />
-              <div className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate font-medium text-white/90" title={pending.path}>
-                  {pending.folderName}
-                </span>
-                <span className="truncate text-[10px] text-white/40" title={pending.path}>
-                  {pending.path}
-                </span>
-              </div>
-              <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-white/40">文件夹</span>
-              {!sending && (
-                <button
-                  aria-label="移除附加文件夹"
-                  className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setPending(null)}
-                  type="button"
-                >
-                  <X className="size-3.5" />
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Input Area */}
+          {/* Input Area: Two-row Card Layout */}
           <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
             {isReadOnlySession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
-            <div className="relative flex items-end gap-2">
-              <textarea
-                className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"
-                disabled={isReadOnlySession}
-                onChange={e => {
-                  setText(e.target.value)
-                  onTyping()
-                }}
-                onKeyDown={e => {
-                  // Slash 命令弹层：方向键改高亮、Tab/Enter 选中、Esc 关闭。
-                  if (slashPopoverOpen && slashItems.length > 0) {
-                    if (e.key === 'ArrowDown') {
-                      e.preventDefault()
-                      setSlashHighlightIndex(i => (i + 1) % slashItems.length)
 
-                      return
-                    }
+            <div className="relative flex flex-col gap-2 rounded-xl border border-white/12 bg-white/[0.04] p-2.5 transition focus-within:border-accent/60 focus-within:bg-white/[0.06] shadow-sm">
+              {/* Row 1: Multiline Textarea & Slash Popover */}
+              <div className="relative w-full">
+                <textarea
+                  className="max-h-32 min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/30 disabled:pointer-events-none disabled:opacity-40"
+                  disabled={isReadOnlySession}
+                  onChange={e => {
+                    setText(e.target.value)
+                    onTyping()
+                  }}
+                  onKeyDown={e => {
+                    // Slash 命令弹层：方向键改高亮、Tab/Enter 选中、Esc 关闭。
+                    if (slashPopoverOpen && slashItems.length > 0) {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault()
+                        setSlashHighlightIndex(i => (i + 1) % slashItems.length)
 
-                    if (e.key === 'ArrowUp') {
-                      e.preventDefault()
-                      setSlashHighlightIndex(i => (i - 1 + slashItems.length) % slashItems.length)
-
-                      return
-                    }
-
-                    if (e.key === 'Tab') {
-                      e.preventDefault()
-                      const item = slashItems[slashHighlightIndex]
-
-                      if (item) {
-                        setText(`/${item.cmd.name} `)
+                        return
                       }
 
-                      return
+                      if (e.key === 'ArrowUp') {
+                        e.preventDefault()
+                        setSlashHighlightIndex(i => (i - 1 + slashItems.length) % slashItems.length)
+
+                        return
+                      }
+
+                      if (e.key === 'Tab') {
+                        e.preventDefault()
+                        const item = slashItems[slashHighlightIndex]
+
+                        if (item) {
+                          setText(`/${item.cmd.name} `)
+                        }
+
+                        return
+                      }
+
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        const item = slashItems[slashHighlightIndex]
+
+                        if (item) {
+                          const parsed = parseSlashInput(text.trim())
+                          const args = parsed?.args ?? []
+
+                          const preCheck = slashPreCheck(pending, sending)
+
+                          if (preCheck) {
+                            setAssistantError(preCheck)
+
+                            return
+                          }
+
+                          void executeSlashCommand(item.cmd, args, {
+                            requestGateway,
+                            onStart: () => {
+                              setSending(true)
+                              setText('')
+                            },
+                            onFinish: () => setSending(false)
+                          })
+                        }
+
+                        return
+                      }
+
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        // 仅关闭弹层，保留用户输入文本——Esc 不应该丢弃未发送的草稿。
+                        setSlashDismissed(true)
+
+                        return
+                      }
                     }
 
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault()
-                      const item = slashItems[slashHighlightIndex]
+                      void send()
+                    }
+                  }}
+                  onPaste={onPaste}
+                  placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 / 触发命令"
+                  ref={inputRef}
+                  rows={1}
+                  value={text}
+                />
 
-                      if (item) {
-                        const parsed = parseSlashInput(text.trim())
-                        const args = parsed?.args ?? []
+                {slashPopoverOpen && slashItems.length > 0 && (
+                  <SlashCommandPopover
+                    highlightedIndex={slashHighlightIndex}
+                    onHighlight={setSlashHighlightIndex}
+                    onSelect={cmd => {
+                      const parsed = parseSlashInput(text.trim())
+                      const args = parsed?.args ?? []
+                      const preCheck = slashPreCheck(pending, sending)
 
-                        const preCheck = slashPreCheck(pending, sending)
+                      if (preCheck) {
+                        setAssistantError(preCheck)
 
-                        if (preCheck) {
-                          setAssistantError(preCheck)
-
-                          return
-                        }
-
-                        void executeSlashCommand(item.cmd, args, {
-                          requestGateway,
-                          onStart: () => {
-                            setSending(true)
-                            setText('')
-                          },
-                          onFinish: () => setSending(false)
-                        })
+                        return
                       }
 
-                      return
-                    }
-
-                    if (e.key === 'Escape') {
-                      e.preventDefault()
-                      // 仅关闭弹层，保留用户输入文本——Esc 不应该丢弃未发送的草稿。
-                      setSlashDismissed(true)
-
-                      return
-                    }
-                  }
-
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void send()
-                  }
-                }}
-                onPaste={onPaste}
-                placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 / 触发命令"
-                ref={inputRef}
-                rows={1}
-                value={text}
-              />
-
-              {slashPopoverOpen && slashItems.length > 0 && (
-                <SlashCommandPopover
-                  highlightedIndex={slashHighlightIndex}
-                  onHighlight={setSlashHighlightIndex}
-                  onSelect={cmd => {
-                    const parsed = parseSlashInput(text.trim())
-                    const args = parsed?.args ?? []
-                    const preCheck = slashPreCheck(pending, sending)
-
-                    if (preCheck) {
-                      setAssistantError(preCheck)
-
-                      return
-                    }
-
-                    void executeSlashCommand(cmd, args, {
-                      requestGateway,
-                      onStart: () => {
-                        setSending(true)
-                        setText('')
-                      },
-                      onFinish: () => setSending(false)
-                    })
-                  }}
-                  query={slashQuery}
-                />
-              )}
-
-              {/* 附件弹出菜单入口 */}
-              <div className="relative" ref={attachMenuRef}>
-                <button
-                  aria-label="添加附件"
-                  className={cn(
-                    'inline-flex h-[38px] shrink-0 items-center justify-center rounded-lg border border-white/12 bg-white/5 text-white/70 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
-                    attachMenuOpen && 'bg-white/15 text-white border-white/30'
-                  )}
-                  disabled={isReadOnlySession}
-                  onClick={() => setAttachMenuOpen(!attachMenuOpen)}
-                  title="添加附件（文件、文件夹、图片、视频）"
-                  type="button"
-                >
-                  <Paperclip className="size-4" />
-                </button>
-
-                {attachMenuOpen && (
-                  <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-white/12 bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
-                    <button
-                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
-                      onClick={() => void pickFile()}
-                      type="button"
-                    >
-                      <FileText className="size-3.5 text-accent" />
-                      <span>添加文件</span>
-                    </button>
-                    <button
-                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
-                      onClick={() => void pickFolder()}
-                      type="button"
-                    >
-                      <FolderOpen className="size-3.5 text-amber-400" />
-                      <span>添加文件夹</span>
-                    </button>
-                    <button
-                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
-                      onClick={() => void pickImage()}
-                      type="button"
-                    >
-                      <ImageIcon className="size-3.5 text-emerald-400" />
-                      <span>添加图片</span>
-                    </button>
-                    <button
-                      className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
-                      onClick={() => void pickVideo()}
-                      type="button"
-                    >
-                      <Video className="size-3.5 text-rose-400" />
-                      <span>添加视频</span>
-                    </button>
-                  </div>
+                      void executeSlashCommand(cmd, args, {
+                        requestGateway,
+                        onStart: () => {
+                          setSending(true)
+                          setText('')
+                        },
+                        onFinish: () => setSending(false)
+                      })
+                    }}
+                    query={slashQuery}
+                  />
                 )}
               </div>
 
-              <button
-                className={`inline-flex h-[38px] shrink-0 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-medium transition disabled:pointer-events-none disabled:opacity-40 ${
-                  recording
-                    ? 'border-rose-400/70 bg-rose-500/25 text-white animate-pulse'
-                    : 'border-white/12 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white'
-                }`}
-                disabled={isReadOnlySession}
-                onMouseDown={() => void startRecording()}
-                onMouseLeave={() => {
-                  if (recording) {
-                    void stopRecording()
-                  }
-                }}
-                onMouseUp={() => void stopRecording()}
-                onPointerCancel={() => void stopRecording()}
-                onPointerLeave={() => {
-                  if (recording) {
-                    void stopRecording()
-                  }
-                }}
-                onTouchEnd={() => void stopRecording()}
-                onTouchStart={() => void startRecording()}
-                title="按住录制语音消息"
-                type="button"
-              >
-                {recording ? '松开发送' : <Mic className="size-4" />}
-              </button>
-              <button
-                className={cn(BTN_PRIMARY, 'h-[38px] px-4 text-sm')}
-                disabled={
-                  isReadOnlySession ||
-                  (!isGenerating &&
-                    (sending ||
-                      gatewayState !== 'open' ||
-                      (!text.trim() && !pending) ||
-                      (pending?.type === 'video' && pending.status !== 'ready')))
-                }
-                onClick={() => void (isGenerating ? handleStop() : send())}
-                type="button"
-              >
-                {isGenerating ? '停止' : '发送'}
-              </button>
-            </div>
+              {/* Pending Attachments inside card */}
+              {pending?.type === 'image' && (
+                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                  <PendingImageThumb path={pending.value} />
+                  <span className="truncate flex-1 text-[11px] text-white/80">
+                    {sending ? '图片发送中…' : pending.fileName || '已附加图片'}
+                  </span>
+                  {!sending && (
+                    <button
+                      aria-label="移除附加图片"
+                      className="rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setPending(null)}
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {pending?.type === 'video' && (
+                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                  <Video className="size-3.5 shrink-0 text-rose-400" />
+                  <span className="max-w-40 shrink truncate text-[11px] text-white/80">{pending.fileName}</span>
+                  {pending.status === 'uploading' && <span className="text-[10px] text-white/40">上传中…</span>}
+                  {pending.status === 'ready' && <span className="text-[10px] text-emerald-400">已就绪</span>}
+                  {pending.status === 'error' && (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-[10px] text-amber-300/80" title={pending.error}>
+                        {pending.error}
+                      </span>
+                      <button
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-white/50 transition hover:bg-white/10 hover:text-white"
+                        onClick={() => void attachVideoFile(pending.path, setPending)}
+                        type="button"
+                      >
+                        重试
+                      </button>
+                    </>
+                  )}
+                  {!sending && (
+                    <button
+                      aria-label="移除附加视频"
+                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setPending(null)}
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {pending?.type === 'file' && (
+                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                  <FileText className="size-3.5 shrink-0 text-accent" />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[11px] font-medium text-white/90" title={pending.path}>
+                      {pending.fileName}
+                    </span>
+                  </div>
+                  <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] text-white/40">文件</span>
+                  {!sending && (
+                    <button
+                      aria-label="移除附加文件"
+                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setPending(null)}
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {pending?.type === 'folder' && (
+                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                  <FolderOpen className="size-3.5 shrink-0 text-amber-400" />
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-[11px] font-medium text-white/90" title={pending.path}>
+                      {pending.folderName}
+                    </span>
+                  </div>
+                  <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] text-white/40">文件夹</span>
+                  {!sending && (
+                    <button
+                      aria-label="移除附加文件夹"
+                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => setPending(null)}
+                      type="button"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  )}
+                </div>
+              )}
 
-            {/* 上下文使用量进度条 */}
-            <ContextProgressBar />
+              {/* Row 2: Bottom Toolbar */}
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+                {/* Left corner: Attachment & Slash command */}
+                <div className="flex items-center gap-1 shrink-0">
+                  {/* Attachment menu trigger */}
+                  <div className="relative" ref={attachMenuRef}>
+                    <button
+                      aria-label="添加附件"
+                      className={cn(
+                        'inline-flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
+                        attachMenuOpen && 'bg-white/15 text-white'
+                      )}
+                      disabled={isReadOnlySession}
+                      onClick={() => setAttachMenuOpen(!attachMenuOpen)}
+                      title="添加附件（文件、文件夹、图片、视频）"
+                      type="button"
+                    >
+                      <Plus className="size-4" />
+                    </button>
+
+                    {attachMenuOpen && (
+                      <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-white/12 bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          onClick={() => void pickFile()}
+                          type="button"
+                        >
+                          <FileText className="size-3.5 text-accent" />
+                          <span>添加文件</span>
+                        </button>
+                        <button
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          onClick={() => void pickFolder()}
+                          type="button"
+                        >
+                          <FolderOpen className="size-3.5 text-amber-400" />
+                          <span>添加文件夹</span>
+                        </button>
+                        <button
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          onClick={() => void pickImage()}
+                          type="button"
+                        >
+                          <ImageIcon className="size-3.5 text-emerald-400" />
+                          <span>添加图片</span>
+                        </button>
+                        <button
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          onClick={() => void pickVideo()}
+                          type="button"
+                        >
+                          <Video className="size-3.5 text-rose-400" />
+                          <span>添加视频</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Slash command button */}
+                  <button
+                    aria-label="快捷命令"
+                    className="inline-flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                    disabled={isReadOnlySession}
+                    onClick={() => {
+                      if (!text.startsWith('/')) {
+                        setText(t => (t ? `/${t}` : '/'))
+                      }
+
+                      setSlashDismissed(false)
+                      inputRef.current?.focus()
+                    }}
+                    title="快捷命令 (/)"
+                    type="button"
+                  >
+                    <Slash className="size-3.5" />
+                  </button>
+                </div>
+
+                {/* Center: Context usage progress bar */}
+                <div className="flex-1 min-w-0 px-2 flex items-center">
+                  <ContextProgressBar />
+                </div>
+
+                {/* Right corner: Voice record & Send/Stop */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    className={cn(
+                      'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-40',
+                      recording
+                        ? 'border border-rose-400/70 bg-rose-500/25 text-rose-200 animate-pulse'
+                        : 'text-white/60 hover:bg-white/10 hover:text-white'
+                    )}
+                    disabled={isReadOnlySession}
+                    onMouseDown={() => void startRecording()}
+                    onMouseLeave={() => {
+                      if (recording) {
+                        void stopRecording()
+                      }
+                    }}
+                    onMouseUp={() => void stopRecording()}
+                    onPointerCancel={() => void stopRecording()}
+                    onPointerLeave={() => {
+                      if (recording) {
+                        void stopRecording()
+                      }
+                    }}
+                    onTouchEnd={() => void stopRecording()}
+                    onTouchStart={() => void startRecording()}
+                    title={recording ? '松开发送语音' : '按住录制语音消息'}
+                    type="button"
+                  >
+                    <Mic className="size-3.5" />
+                  </button>
+
+                  <button
+                    aria-label={isGenerating ? '停止生成' : '发送消息'}
+                    className={cn(
+                      'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-30',
+                      isGenerating
+                        ? 'bg-rose-500/90 hover:bg-rose-600 text-white shadow-xs'
+                        : 'bg-accent hover:bg-accent/85 text-white shadow-xs'
+                    )}
+                    disabled={
+                      isReadOnlySession ||
+                      (!isGenerating &&
+                        (sending ||
+                          gatewayState !== 'open' ||
+                          (!text.trim() && !pending) ||
+                          (pending?.type === 'video' && pending.status !== 'ready')))
+                    }
+                    onClick={() => void (isGenerating ? handleStop() : send())}
+                    title={isGenerating ? '停止生成' : '发送消息 (Enter)'}
+                    type="button"
+                  >
+                    {isGenerating ? <SquareFilled className="size-3" /> : <ArrowRight className="size-3.5" />}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

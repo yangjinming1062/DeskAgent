@@ -4,17 +4,26 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId, $sessionSettings, updateSessionSetting } from '@/companion/chat-store'
 import { SlidersHorizontal } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 
 const DEFAULT_TEMPERATURE = 0.7
 const DEFAULT_THRESHOLD = 0.8
+const DEFAULT_REASONING = 'none'
+
+const REASONING_OPTIONS = [
+  { label: '关闭', value: 'none' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' }
+] as const
 
 export function ChatParamsPanel(): React.JSX.Element {
   const sessionId = useStore($chatSessionId)
   const settings = useStore($sessionSettings)
   const gateway = useStore($gateway)
 
-  // 读取当前会话的温度与压缩阈值（若无会话级覆盖则回退到默认值）
+  // 读取当前会话的温度、压缩阈值与推理等级（若无会话级覆盖则回退到默认值）
   const tempValue = typeof settings.temperature === 'number' ? settings.temperature : DEFAULT_TEMPERATURE
 
   const thresholdValue =
@@ -22,10 +31,13 @@ export function ChatParamsPanel(): React.JSX.Element {
       ? settings.context_compression_threshold
       : DEFAULT_THRESHOLD
 
+  const reasoningValue = typeof settings.reasoning_effort === 'string' ? settings.reasoning_effort : DEFAULT_REASONING
+
   const [temp, setTemp] = useState(tempValue)
   const [threshold, setThreshold] = useState(thresholdValue)
+  const [reasoning, setReasoning] = useState(reasoningValue)
 
-  // 当会话切换或 settings 更新时同步本地滑块状态
+  // 当会话切换或 settings 更新时同步本地状态
   useEffect(() => {
     setTemp(tempValue)
   }, [tempValue])
@@ -34,11 +46,15 @@ export function ChatParamsPanel(): React.JSX.Element {
     setThreshold(thresholdValue)
   }, [thresholdValue])
 
+  useEffect(() => {
+    setReasoning(reasoningValue)
+  }, [reasoningValue])
+
   // 防抖持久化到后端 session.set_settings
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const syncSettingsToGateway = useCallback(
-    (patch: { temperature?: number; context_compression_threshold?: number }) => {
+    (patch: { context_compression_threshold?: number; reasoning_effort?: string; temperature?: number }) => {
       if (!sessionId || !gateway || gateway.connectionState !== 'open') {
         return
       }
@@ -75,14 +91,24 @@ export function ChatParamsPanel(): React.JSX.Element {
     const rounded = Math.round(val * 100) / 100
     setTemp(rounded)
     updateSessionSetting('temperature', rounded)
-    syncSettingsToGateway({ temperature: rounded, context_compression_threshold: threshold })
+    syncSettingsToGateway({
+      context_compression_threshold: threshold,
+      reasoning_effort: reasoning,
+      temperature: rounded
+    })
   }
 
   const handleThresholdChange = (val: number) => {
     const rounded = Math.round(val * 100) / 100
     setThreshold(rounded)
     updateSessionSetting('context_compression_threshold', rounded)
-    syncSettingsToGateway({ temperature: temp, context_compression_threshold: rounded })
+    syncSettingsToGateway({ context_compression_threshold: rounded, reasoning_effort: reasoning, temperature: temp })
+  }
+
+  const handleReasoningChange = (val: string) => {
+    setReasoning(val)
+    updateSessionSetting('reasoning_effort', val)
+    syncSettingsToGateway({ context_compression_threshold: threshold, reasoning_effort: val, temperature: temp })
   }
 
   const tempPct = Math.round(temp * 100)
@@ -141,6 +167,37 @@ export function ChatParamsPanel(): React.JSX.Element {
             type="range"
             value={threshold}
           />
+        </div>
+      </div>
+
+      {/* 推理等级调节 */}
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="text-white/60" title="模型思考链推理强度。none 关闭，low/medium/high 逐级加深">
+            推理等级
+          </span>
+          <span className="text-white/90 font-medium text-[10px]">
+            {REASONING_OPTIONS.find(o => o.value === reasoning)?.label ?? '关闭'}
+          </span>
+        </div>
+        <div className="grid grid-cols-4 gap-0.5 rounded-lg border border-white/10 bg-white/5 p-0.5">
+          {REASONING_OPTIONS.map(opt => {
+            const active = reasoning === opt.value
+
+            return (
+              <button
+                className={cn(
+                  'rounded-md py-0.5 text-[10px] font-medium transition cursor-pointer text-center',
+                  active ? 'bg-accent text-white shadow-xs' : 'text-white/50 hover:bg-white/10 hover:text-white/90'
+                )}
+                key={opt.value}
+                onClick={() => handleReasoningChange(opt.value)}
+                type="button"
+              >
+                {opt.label}
+              </button>
+            )
+          })}
         </div>
       </div>
     </div>
