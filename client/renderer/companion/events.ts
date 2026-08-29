@@ -78,6 +78,43 @@ const CLICK_GEOM_HALF = CLICK_GEOM_SIZE / 2
 // 高唤醒负面情绪冒冷汗（DESIGN §6.3 粒子清单 💦 的情绪侧触发点）
 const SWEAT_EMOTIONS: ReadonlySet<string> = new Set(['scared', 'embarrassed', 'concerned', 'apologetic'])
 
+// 遥控回合可并发多个工具，一个先返回不能把仍在跑的复位掉。
+let remoteToolDepth = 0
+
+// 已受理过的设备指令 call_id。tool.call 进重放缓冲，WS 断开重连时会被重发——没有这道去重，
+// 一条「删文件」会在本机执行第二次（后端的 resolve_future 只是丢弃迟到结果，拦不住已发生的副作用）。
+const seenToolCalls = new Set<string>()
+const SEEN_TOOL_CALL_CAP = 500
+
+function markToolCallSeen(callId: string): boolean {
+  if (seenToolCalls.has(callId)) {
+    return false
+  }
+
+  // 上限对齐服务端重放缓冲容量；超出后按插入序淘汰最旧的，重放窗口内的 id 不会被提前丢掉。
+  if (seenToolCalls.size >= SEEN_TOOL_CALL_CAP) {
+    seenToolCalls.delete(seenToolCalls.values().next().value as string)
+  }
+
+  seenToolCalls.add(callId)
+
+  return true
+}
+
+function releaseRemoteTool(): void {
+  remoteToolDepth = Math.max(0, remoteToolDepth - 1)
+
+  // force：IDLE（10）< WORKING（70），没有 force 会被优先级门控静默拒绝，精灵永久卡在工作姿态。
+  // 仅在状态仍是工作态（或仪式行走留下的 interacting 瞬态）且没有桌面回合接管时复位。
+  if (remoteToolDepth === 0) {
+    const current = $spriteState.get()
+
+    if (current === 'working' || current === 'interacting') {
+      setSpriteState('idle', { force: true })
+    }
+  }
+}
+
 function maybeEmotionVfx(emotion?: string): void {
   if (emotion && SWEAT_EMOTIONS.has(emotion)) {
     emitVfx('sweat', { nx: 0.5, ny: 0.2, count: 2 })
@@ -321,10 +358,13 @@ export function handleCompanionEvent(event: RpcEvent): void {
     }
 
     case 'tool.call': {
-      // 仅 Runner 分发——WORKING 已由 tool.start 设置。
-      // tool.call 携带 Runner IPC 所需的参数；缺少 bridge 或 call_id
-      // 时后端的 await_future 会在 300 秒后超时并上报错误。
-      const p = (event.payload as { name?: string; args?: Record<string, unknown>; call_id?: string } | undefined) ?? {}
+      // 仅 Runner 分发——桌面回合的 WORKING 由 tool.start 设置。
+      // tool.call 是用户级设备指令（不带 session_id、按 call_id 关联），因此不经上方会话闸门；
+      // 缺少 bridge 或 call_id 时后端的等待会在 300 秒后超时并上报错误。
+      const p =
+        (event.payload as
+          | { name?: string; args?: Record<string, unknown>; call_id?: string; session_id?: string }
+          | undefined) ?? {}
 
       const runnerInvoke = window.spiritagent?.runnerInvoke
 
@@ -332,10 +372,29 @@ export function handleCompanionEvent(event: RpcEvent): void {
         break
       }
 
+      // 重放的重复指令直接丢弃：本机副作用不可撤销，宁可让后端等到超时也不能执行第二次。
+      if (!markToolCallSeen(p.call_id)) {
+        log.warn('events', `duplicate tool.call ${p.call_id} ignored (replayed frame)`)
+
+        break
+      }
+
       const name = p.name ?? ''
 
+      // 该回合的帧是否落在用户正看着的会话里。不是则 tool.start / message.complete 都被上方
+      // 会话闸门拦下，没有任何帧能驱动或复位精灵，只能由本分支自持工作态，让「伙伴在帮忙」的
+      // 叙事在桌面成立（ARCHITECTURE §8 不变量 9）。
+      // 用 session_id 比对而非枚举回合类型：遥控、自主、子 agent 乃至以后新增的回合种类都自动落对，
+      // 枚举法漏一种就是「机器在动、精灵发呆」，且不会有任何报错。
+      const selfDriven = !p.session_id || p.session_id !== $chatSessionId.get()
+
+      if (selfDriven) {
+        remoteToolDepth += 1
+        setSpriteState('working', { force: true })
+      }
+
       // fire-and-forget 调用 Runner 并把结果回传，让后端的
-      // await_future 解析完成；工具错误不得冒泡到本处理器。
+      // 等待解析完成；工具错误不得冒泡到本处理器。
       const gateway = $gateway.get()
 
       void (async () => {
@@ -390,6 +449,10 @@ export function handleCompanionEvent(event: RpcEvent): void {
             })
           } catch {
             /* 尽力而为——后端的 300 秒兜底会处理 */
+          }
+        } finally {
+          if (selfDriven) {
+            releaseRemoteTool()
           }
         }
       })()

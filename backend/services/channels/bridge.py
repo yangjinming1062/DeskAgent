@@ -5,7 +5,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from components import SETTINGS, get_logger, session_scope
+from components import SETTINGS, get_logger, resolve_prompt_text, session_scope
 from modules.channels import ChannelBinding, ChannelPeer
 from modules.ws import WSEvent
 from sqlalchemy import select
@@ -24,6 +24,24 @@ PAIRING_NOTICE = "我还不认识你哦～已经请伙伴的主人确认了，�
 # 回合已产出但渠道投递全失败时的兜底提示：不静默，让对端知道伙伴方才说话了。
 _DELIVERY_FAILED_FALLBACK = "（伙伴刚想说话，但消息没能送达到这个渠道，请稍后再试）"
 
+# 中止指令白名单。必须**全等**比较而非包含匹配——「请不要停下来」「去停车场」都含「停」，
+# 模糊匹配会把正常发言吞成中断。已审批对端等同本人、可驱动本机终端，中止是唯一的刹车。
+_STOP_COMMANDS = frozenset({"停", "停止", "停下", "stop", "/stop"})
+
+_STOP_ACK = "好，我停下了。"
+
+# 桌面在线与否作为环境事实注入 IM 回合的系统提示词。桌面离线时 runner 工具会被整体清出注册表，
+# LLM 连工具都看不见，若不明说就只会含糊拒绝——用户要的是「你电脑没开机」这句实话。
+_DESKTOP_ONLINE_TEXTS = {
+    "zh": "【环境】主人的电脑当前在线，你可以使用本机工具（读写文件、终端、浏览器等）帮他做事。",
+    "en": "[Environment] The user's desktop is online; you can use the local tools (files, terminal, browser, etc.) to act on it.",
+}
+
+_DESKTOP_OFFLINE_TEXTS = {
+    "zh": "【环境】主人的电脑当前不在线，本机工具全部不可用。遇到需要操作电脑的请求，如实告诉他电脑没开机或没连上，等开机后再帮他做，不要假装做过或含糊搪塞。",
+    "en": "[Environment] The user's desktop is offline, so no local tools are available. If asked to do something on the computer, say plainly that it is not connected and offer to do it once it is back — never pretend it was done.",
+}
+
 # 入站闸门串行化：state 读写与单飞行转移必须原子。
 _STATE_LOCK = asyncio.Lock()
 
@@ -36,12 +54,19 @@ class _QueuedMessage:
 
 @dataclass
 class _ChannelState:
-    """每绑定一个桥接状态：单飞行锁 + 排队队列（回合进行中到达的消息合并进后续回合的前导批）。"""
+    """每绑定一个桥接状态：单飞行锁 + 排队队列（回合进行中到达的消息合并进后续回合的前导批）。
 
-    in_flight: bool = False
+    单飞行由 ``task is not None`` 单独表达——另设一个 in_flight 布尔会与它成为同一事实的两份副本，
+    任何一处漏改都会让绑定永久卡住（排队但无人消费）或让中止落空。
+    """
+
     queue: deque[_QueuedMessage] = field(default_factory=deque)
     # peer_id → 时间戳 deque：进程内每分钟滑动窗，渠道侧无频控前的成本护栏。
     rate_window: dict[str, deque[float]] = field(default_factory=dict)
+    # 进行中回合的 task 句柄，供中止指令取消；非 None 即代表单飞行占用中。
+    task: asyncio.Task | None = None
+    # 发起当前回合的对端——只有它能中止该回合。
+    owner_peer_id: str | None = None
 
 
 _STATES: dict[int, _ChannelState] = {}
@@ -66,6 +91,18 @@ def _resolved(value: str | None) -> asyncio.Future[str | None]:
     fut: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
     fut.set_result(value)
     return fut
+
+
+def _drain_queue(state: _ChannelState) -> None:
+    """清空排队并 resolve 各 future——中止时必须做两件事，缺一不可。
+
+    只取消当前 task 而不清队列，_run_turn 的 finally 会立刻起下一批，与中断意图相反；
+    不 resolve future 则 handle_inbound 的 await 方（REST 调试通道）会永久挂起。
+    """
+    while state.queue:
+        queued = state.queue.popleft()
+        if not queued.future.done():
+            queued.future.set_result(None)
 
 
 async def _get_peer(db: AsyncSession, binding_id: int, peer_id: str) -> ChannelPeer | None:
@@ -135,13 +172,36 @@ async def handle_inbound(adapter: ChannelAdapter, msg: InboundMessage) -> asynci
     note_user_contact(snapshot.user_id)
 
     state = _state_for(snapshot.id)
+
+    # 中止判定必须在频控之前：用户眼看伙伴在电脑上做错事时往往连发几条，正好把窗口打满，
+    # 此时若先频控就把唯一的刹车一起丢掉了。中止不消耗窗口配额。
+    if msg.text.strip().lower() in _STOP_COMMANDS:
+        stopped = False
+        async with _STATE_LOCK:
+            # 只有发起该回合的对端能中止它——多对端绑定下，别人的回合不该被旁人叫停。
+            # 空闲态不误触：没有进行中的回合时「停」就是一句普通话，照常走回合。
+            if (task := state.task) is not None and state.owner_peer_id == msg.peer_id:
+                _drain_queue(state)
+                # 立即置空，避免连发两条「停」时第二条重复走一遍并回两次确认。
+                state.task = None
+                task.cancel()
+                stopped = True
+        # 确认在锁外发：cancel 只是排程，被取消回合的 finally 还要抢同一把锁，
+        # 在锁内 await 网络投递会把它一直挡住。
+        if stopped:
+            try:
+                await adapter.send_text(msg.peer_id, _STOP_ACK, msg.context_token)
+            except Exception:
+                logger.exception("stop ack delivery failed", extra={"binding": snapshot.id})
+            return _resolved(_STOP_ACK)
+
     if _rate_exceeded(state, msg.peer_id):
         logger.warning("inbound rate limit exceeded, dropping", extra={"binding": snapshot.id, "peer": msg.peer_id})
         return _resolved(None)
 
     item = _QueuedMessage(msg=msg, future=asyncio.get_running_loop().create_future())
     async with _STATE_LOCK:
-        if state.in_flight:
+        if state.task is not None:
             if len(state.queue) >= SETTINGS.channels_turn_queue_max:
                 dropped = state.queue.popleft()
                 if not dropped.future.done():
@@ -149,16 +209,21 @@ async def handle_inbound(adapter: ChannelAdapter, msg: InboundMessage) -> asynci
                 logger.warning("turn queue full, dropped oldest", extra={"binding": snapshot.id})
             state.queue.append(item)
         else:
-            state.in_flight = True
-            asyncio.create_task(_run_turn(adapter, state, [item]))
+            state.owner_peer_id = msg.peer_id
+            state.task = asyncio.create_task(_run_turn(adapter, state, [item]))
     return item.future
 
 
 class ChannelTurnEmitter:
-    """无头回合发射器：捕获终端帧（message.complete 的文本 + affect），typing 时机转发给适配器。
+    """无头回合发射器：捕获终端帧（message.complete 的文本 + affect），typing 与中间进度转发给适配器。
 
     实现 services/chat 的 Emitter 协议（send_json）；帧全部留存便于调试，不做 WS 翻译——
     桌面端不实时旁观 IM 回合（P3 再议），历史经 im 会话 REST 读取。
+
+    中间进度：编排器只在终局那一轮发 message.complete，带工具调用的中间迭代只发 chunk，
+    LLM 那句「好的我去看看」原本永远送不出去。这里在每个工具批次开始时把攒下的中间话术投出去，
+    让长任务在微信侧边做边有反馈。终局文本与中间话术天然不相交（message.complete 的 text 是
+    最后一轮迭代的输出，不含此前各轮），无需去重。
     """
 
     def __init__(self) -> None:
@@ -168,16 +233,37 @@ class ChannelTurnEmitter:
         self.error: str | None = None
         self.media: list[dict] = []
         self._on_start: Callable[[], Awaitable[None]] | None = None
+        self._on_progress: Callable[[str], Awaitable[None]] | None = None
+        self._progress_buffer: list[str] = []
 
     def bind_typing(self, on_start: Callable[[], Awaitable[None]]) -> None:
         self._on_start = on_start
+
+    def bind_progress(self, on_progress: Callable[[str], Awaitable[None]]) -> None:
+        self._on_progress = on_progress
+
+    def _take_progress(self) -> str:
+        """同步取出并清空缓冲——必须在 await 投递之前完成。
+
+        可并行的工具批次走 asyncio.gather，多个 _execute_single_tool 几乎同时发 tool_start；
+        若先 await 再清空，两个协程都会看到同一段非空缓冲并各投一次，微信侧出现重复。
+        """
+        text = "".join(self._progress_buffer).strip()
+        self._progress_buffer.clear()
+        return text
 
     async def send_json(self, data: dict) -> None:
         self.frames.append(data)
         frame_type = data.get("type")
         if frame_type == "message.start" and self._on_start is not None:
             asyncio.create_task(self._on_start())
+        elif frame_type == "chunk":
+            self._progress_buffer.append(data.get("content", ""))
+        elif frame_type == "tool_start" and self._on_progress is not None:
+            if pending := self._take_progress():
+                await self._on_progress(pending)
         elif frame_type == "message.complete":
+            self._progress_buffer.clear()
             self.reply_text = data.get("text")
             self.affect_emotion = (data.get("affect") or {}).get("emotion")
             new_media = data.get("media")
@@ -195,19 +281,34 @@ async def _run_turn(adapter: ChannelAdapter, state: _ChannelState, batch: list[_
         for item in batch:
             if not item.future.done():
                 item.future.set_result(reply)
+    except asyncio.CancelledError:
+        # 用户主动中止：确认已由 handle_inbound 发出，这里只负责让 batch 的 future 落地，
+        # 再按协作取消惯例重新抛出。（桌面掉线不再走这条路——那条已在 ipc.discard_user 以错误 resolve。）
+        for item in batch:
+            if not item.future.done():
+                item.future.set_result(None)
+        raise
     except Exception:
         logger.exception("channel turn failed", extra={"binding": snapshot.id, "channel": snapshot.channel})
         for item in batch:
             if not item.future.done():
                 item.future.set_result(None)
     finally:
-        async with _STATE_LOCK:
-            if state.queue:
-                next_batch = list(state.queue)
-                state.queue.clear()
-                asyncio.create_task(_run_turn(adapter, state, next_batch))
-            else:
-                state.in_flight = False
+        # shield：本函数常在被取消的路径上收尾，而 Lock.acquire 是取消点——不屏蔽的话
+        # CancelledError 会在这里二次抛出、跳过整个清理，绑定永久停在「有回合在跑」的假象里。
+        await asyncio.shield(_finish_turn(adapter, state))
+
+
+async def _finish_turn(adapter: ChannelAdapter, state: _ChannelState) -> None:
+    """接管排队消息（整批合并为下一轮前导）或释放单飞行占用。"""
+    async with _STATE_LOCK:
+        state.task = None
+        state.owner_peer_id = None
+        if state.queue:
+            next_batch = list(state.queue)
+            state.queue.clear()
+            state.owner_peer_id = next_batch[0].msg.peer_id
+            state.task = asyncio.create_task(_run_turn(adapter, state, next_batch))
 
 
 async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage]) -> str | None:
@@ -222,7 +323,9 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
 
     from services.chat import load_user_settings, persist_extra_user_messages, run_chat_turn
     from services.companion.affect_emit import emit_companion_affect
+    from services.gateway import MANAGER
     from services.llm import resolve_user_llm_config
+    from services.tools import REGISTRY
 
     snapshot = adapter.snapshot
     last = batch[-1]
@@ -251,7 +354,23 @@ async def _execute_im_turn(adapter: ChannelAdapter, batch: list[InboundMessage])
 
         emitter.bind_typing(_typing_on)
 
-    client_context = ChatRequestClientContext(platform_hints=adapter.platform_hint()) if adapter.platform_hint() else None
+    async def _progress(text: str) -> None:
+        # 严格 best-effort：tool_start 的发射点在 _execute_single_tool 的 try 之外，异常会沿 send_json
+        # 冒泡把工具记成崩溃结果——微信偶发超时/频控/token 瞬时失效绝不能拖垮本机任务。
+        try:
+            if clean := strip_markdown(text):
+                for chunk in chunk_text(clean, SETTINGS.weixin_reply_max_chars):
+                    await adapter.send_text(last.peer_id, chunk, last.context_token)
+        except Exception:
+            logger.debug("progress relay failed", extra={"binding": snapshot.id})
+
+    emitter.bind_progress(_progress)
+
+    # 两个条件都要满足：WS 在线但 tools.sync 未完成（刚连上）或 Runner 崩溃时，注册表里没有 runner schema，
+    # 只看 is_available 会让提示词声称「工具可用」而上下文里根本没有对应工具，诱发幻觉。
+    desktop_ready = MANAGER.is_available(snapshot.user_id) and REGISTRY.has_runner_tools(snapshot.user_id)
+    environment_hints = resolve_prompt_text(_DESKTOP_ONLINE_TEXTS if desktop_ready else _DESKTOP_OFFLINE_TEXTS, user_settings.get("language"))
+    client_context = ChatRequestClientContext(platform_hints=adapter.platform_hint() or None, environment_hints=environment_hints)
     base = SETTINGS.public_base_url.strip().rstrip("/")
     attachments = []
     for a in last.attachments:

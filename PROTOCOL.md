@@ -91,7 +91,11 @@
 | channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |
 | `command.result` | Slash 命令执行结果（载荷 `{command, result:{status, message, payload?, hydrate?}}`）；必带 `session_id`（从 command.dispatch 调用中隐式继承）。客户端用 `hydrate=true` 替换本地消息列表（payload.messages），用 `hydrate=false` 仅插一条 status pill。**幂等**：同一调用会同时下发 RPC result + 此事件，前端接住任意一路即可触发渲染 | Client 聊天窗：hydrate 替换消息列表、push status pill（`status_cleared` / `compress_summary` 等） |
 
-**事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
+**事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.start / tool.complete / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
+
+**`tool.call` 是用户级设备指令，不是会话事件**（改此处需同步：backend services/chat/tool_dispatch.py 与 services/gateway/emitter.py、client companion/events.ts、本文档）：它不渲染进任何气泡、不参与会话状态机，只按 `call_id`（§6 定义的唯一 Future Key）与 `tool.result` 配对，因此**不带信封级 session_id**、由后端直接推给该用户的 desktop 派发器。这条豁免是必需的而非优化——IM 遥控回合、cron 自主回合与子 agent 回合的会话用户都不可能正在查看，带上信封 session_id 就会被渲染端的会话闸门丢弃，后端白等到 IPC 超时。载荷含 `{name, args, call_id, session_id}`，其中 `session_id` 是**信息字段而非路由闸门**：客户端拿它与当前查看的会话比对，判断该回合的 `tool.start` / `message.complete` 是否会被闸门拦下，从而决定精灵工作态是否需要由该分支自持。用比对而非枚举回合类型，是因为枚举漏一种就表现为「机器在动、精灵发呆」且无任何报错。
+
+**设备指令的重复投递**：`tool.call` 与其它事件一样进重放缓冲，WS 断连重连会重发。本机副作用不可撤销（删文件、跑命令），因此**客户端必须按 `call_id` 去重**，重复帧直接丢弃——后端的 `resolve_future` 只会丢弃迟到的结果，拦不住已经发生的副作用。
 
 **对话内生成媒体**（改此处需同步：backend 工具与聊天持久化、backend/README.md、client 渲染层与 client/renderer/companion/README.md、DESIGN §6）：
 - 聊天回合经图像/视频生成工具产出的媒体，随对话完成事件以 media 数组（元素为 image / video 类型 + 本服务媒体 URL）下发，并持久化在对应助手消息行；后台完成的视频另以 status_media 送达行落库，实时事件与历史水合看到同一形状。
@@ -192,6 +196,14 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 外部 IM（微信 iLink）经后端进程内的通道桥与同一伙伴对话：入站消息驱动**无头 chat 回合**（不依赖用户 WS——桌面离线也能回），回复经格式化（去 markdown、按 `weixin_reply_max_chars` 分片）从原渠道送出。产品语义与渠道路线见 [DESIGN.md](DESIGN.md)；实现与已知限制见 [backend/README.md](backend/README.md)。
 
 **会话契约**：所有渠道共用 `im` 这一种 conversation kind；**每用户每渠道一条专属 im 会话**，由 `channel_bindings.conversation_id` 唯一外键锚定（渠道间不混流）。im 会话对桌面端**只读**：出现在会话列表与历史中，但 `prompt.submit` 拒写（后端守卫 + 客户端输入禁用）；人设/长期记忆/情感与桌面回合共享（按 user 加载，无需任何同步动作）。
+
+**遥控契约（IM 驱动本机工具）**：IM 回合与桌面回合共用同一编排器与同一工具注册表，因此桌面在线时伙伴在 IM 上**能调用本机 runner 工具**——手机是遥控器，能力叠加在陪伴之上而非替代它。三条边界：
+
+- **本机工具依赖桌面 WS，回合本身不依赖**：回合无头执行（桌面离线也能回），但其中的 runner 工具经上述 `tool.call` 设备指令通道兑现，桌面不在线即整体不可用。
+- **在线与否作为环境事实进系统提示词**：判定同时要求「WS 可用」与「注册表已有该用户的 runner 工具」——只看前者会在 tools.sync 未完成或 Runner 崩溃时让伙伴声称工具可用却无 schema 可调。离线时伙伴须如实说明电脑未连接，不得含糊搪塞或假装做过。
+- **授权边界就是对端白名单**：已审批对端等同本人，无额外的逐次授权层。审批一个对端 = 允许它操作本机，通道设置页的审批文案须体现这一分量。
+
+**回合节奏**：单飞行锁保证每绑定同时只有一轮；进行中回合到达的消息合并进下一轮前导批。带工具调用的中间迭代产出的话术在每个工具批次开始时先行送出（best-effort，投递失败不得打断工具派发），终局文本另行送出——两者内容天然不相交，无需去重。发起回合的对端可用停止指令（全词白名单、非包含匹配，判定先于入站频控——用户连发几条后正好把窗口打满时，刹车不能跟着一起丢）中止该回合；中止须同时清空排队并 resolve 其 future。**中止只终止后端等待，不撤销已下发到本机的工具**——已经在跑的命令会执行完，其结果落到无人认领的 call_id。
 
 **REST**（Bearer JWT，前缀 `/api/channels`）：
 

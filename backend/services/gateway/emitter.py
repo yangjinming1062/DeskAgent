@@ -11,7 +11,6 @@ _TRANSLATED: dict[str, str] = {
     "message.complete": "message.complete",
     "tool_start": "tool.start",
     "tool_end": "tool.complete",
-    "tool_call": "tool.call",
     "error": "error",
 }
 
@@ -56,9 +55,5 @@ class JsonRpcEmitter:
                 **({"media": data["media"]} if isinstance(data.get("media"), list) else {}),
                 **({"usage": usage} if isinstance(usage, dict) else {}),
             }
-        if raw_type == "message.start":
-            return {}
-        if raw_type == "bubble.break":
-            return {}
-        # 兜底：tool_call
-        return {"name": data.get("name"), "args": data.get("args"), "call_id": data.get("call_id")}
+        # 兜底：message.start / bubble.break 均为空载荷。
+        return {}

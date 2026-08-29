@@ -4,7 +4,7 @@ from .auth import authenticate_ws_token
 from .buffer import ReplayBuffer
 from .connection import MANAGER, ConnectionManager, cancel_user_cron_turns, notify_ws_event_loop, start_ws_event_loop, stop_ws_event_loop
 from .emitter import JsonRpcEmitter
-from .ipc import await_future, discard_user, resolve_future
+from .ipc import create_future, discard_call, discard_user, resolve_future, wait_future
 from .jsonrpc import Handler, JsonRpcDispatcher, JsonRpcError, redact_message
 from .runtime import RuntimeSession, SessionCreateResult, SessionResumeResult, SessionRuntimeInfo, ToolsSyncResult, new_runtime_session, runtime_info_snapshot
 
@@ -25,8 +25,9 @@ __all__ = [
     "SessionRuntimeInfo",
     "ToolsSyncResult",
     "authenticate_ws_token",
-    "await_future",
     "cancel_user_cron_turns",
+    "create_future",
+    "discard_call",
     "discard_user",
     "handle_chat_websocket",
     "new_runtime_session",
@@ -36,6 +37,7 @@ __all__ = [
     "runtime_info_snapshot",
     "start_ws_event_loop",
     "stop_ws_event_loop",
+    "wait_future",
 ]
 
 

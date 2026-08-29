@@ -2,9 +2,8 @@ import asyncio
 from dataclasses import dataclass
 
 from components import async_trace_span, get_logger, redact_sensitive_text, safe_json_loads, tool_error
-from fastapi import WebSocketDisconnect
 
-from services.gateway import MANAGER, await_future
+from services.gateway import MANAGER, create_future, discard_call, wait_future
 from services.tools import (
     REGISTRY,
     RESERVED_KEYS,
@@ -51,22 +50,37 @@ def _redact_tool_payload(result_str: str) -> str | list:
     return redact_sensitive_text(result_str)
 
 
-async def _dispatch_runner_tool(user_id: int, name: str, args: dict, call_id: str, emitter: Emitter) -> str:
-    """通过用户 WS 派发 runner 工具调用并等待其 ipc future。"""
+async def _dispatch_runner_tool(user_id: int, name: str, args: dict, call_id: str, session_id: str) -> str:
+    """把 runner 工具调用作为用户级设备指令推给桌面 WS，并等待其 ipc future。
+
+    不经回合 emitter：设备派发不是聊天帧，它靠 call_id 关联、与用户在看哪个会话无关。经 emitter 走会让
+    IM / cron / 子 agent 这类「会话不是用户正在查看的那个」的回合把指令灌进无头缓冲或被客户端会话闸门
+    丢掉，双双白挂到 IPC 超时。载荷里的 session_id 仅供客户端判断该回合是否可见（决定自持精灵状态），
+    不参与路由——带上它做闸门就等于回到上述失败。
+    """
     # 客户端离线（未连接也无 grace session）或 Runner 未同步工具时快速失败；否则 IPC future 会挂 ipc_future_timeout_seconds（默认 300s）才返回合成超时错误。
     if not MANAGER.is_available(user_id):
         return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
     if not REGISTRY.has_runner_tools(user_id):
         return tool_error("Runner is not available. No runner tools registered for this session.")
+    dispatcher = MANAGER.get_dispatcher(user_id)
+    if dispatcher is None:
+        return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
 
-    # 睡眠/唤醒竞态：MANAGER 内检查与实际 send 之间 WS 可能已断开；WSEmitter.send_json 会吞掉 WebSocketDisconnect 与关闭后的 starlette RuntimeError，此处捕获后重新检查用户在网关中的活动/grace 会话。
+    # 注册必须先于派发：轻量工具的 tool.result 可能早于派发返回就抵达，晚注册会被 resolve_future 当作未知 call_id 丢弃。
+    fut = create_future(user_id, call_id)
     try:
-        await emitter.send_json({"type": "tool_call", "name": name, "args": args, "call_id": call_id})
-    except (WebSocketDisconnect, RuntimeError) as e:
-        logger.warning("WS dropped during tool_call dispatch", extra={"error": str(e)})
-        if not MANAGER.is_available(user_id):
-            return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
-    return await await_future(user_id, call_id)
+        # enqueue_event 而非 push_event：前者返回投递结果。派发在 writer 任务里异步完成、
+        # 底层吞掉所有发送异常，所以「WS 掉线」只体现为返回 False——不看返回值就会白等满 IPC 超时。
+        delivered = await dispatcher.enqueue_event("tool.call", {"name": name, "args": args, "call_id": call_id, "session_id": session_id})
+    except BaseException:
+        # 注册已完成而派发未走到等待（含回合被取消）：不清理就会在 _PENDING 里留下永久句柄。
+        discard_call(user_id, call_id)
+        raise
+    if not delivered:
+        discard_call(user_id, call_id)
+        return tool_error("Desktop is offline. Tool calls require an active desktop connection.")
+    return await wait_future(user_id, call_id, fut)
 
 
 async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
@@ -113,7 +127,7 @@ async def _execute_single_tool(tc: dict, ctx: _ToolDispatchContext) -> dict:
                 case "memory":
                     result_str = await ctx.native_memory.execute_tool(name, args)
                 case "runner":
-                    result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["call_id"], ctx.emitter)
+                    result_str = await _dispatch_runner_tool(ctx.user_id, name, args, tc["call_id"], ctx.session_id)
                 case _:
                     result_str = tool_error(f"Unknown tool location for {name}")
 
