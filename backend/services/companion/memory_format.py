@@ -1,3 +1,4 @@
+from components import DEFAULT_LANGUAGE, resolve_prompt_text
 from modules.memory import Memory
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,6 +7,25 @@ from services.tools import AUTO_INJECT_SLOTS, INFERRED_PROFILE_SLOTS, KIND_TO_PR
 
 MAX_MEMORIES = 10
 MAX_MEMORY_SNIPPET_LEN = 200
+
+# 双语提示词块标签：auto_inject / inferred_profile / proactive_memory 三段开头的标题。
+# zh 为直译占位，en 保留重构前英文原值便于回滚 1:1 对照。
+# 槽位 display (slot_name = context.split(":",1)[1].replace("_"," ").capitalize()) 是协议级展示，保持英文不译。
+
+_AUTO_INJECT_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 自动注入记忆（始终生效）",
+    "en": "# Active auto-inject memories (always in effect)",
+}
+
+_INFERRED_PROFILE_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 推断出的用户资料（背景知识）",
+    "en": "# Inferred user profile (background knowledge)",
+}
+
+_PROACTIVE_MEMORY_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 相关的长期记忆（主动检索到、用于当前上下文）",
+    "en": "# Relevant long-term memories (proactively retrieved for current context)",
+}
 
 
 async def format_memories_block(db: AsyncSession, user_id: int) -> str:
@@ -29,23 +49,20 @@ async def format_memories_block(db: AsyncSession, user_id: int) -> str:
     return "\n".join(lines)
 
 
-async def format_auto_inject_block(db: AsyncSession, user_id: int) -> str:
-    """把 auto_inject 槽位渲染成提示词块；槽位顺序固定以保证每轮提示词形状一致，无记录时返回空串。"""
-    # SQL 不做排序：下面在 Python 侧按规范槽位顺序重排；部分唯一索引把行数限制在 5 以内，排序开销可忽略
+async def format_auto_inject_block(db: AsyncSession, user_id: int, *, language: str = DEFAULT_LANGUAGE) -> str:
     rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["auto_inject"] + "%")))).scalars().all()
     if not rows:
         return ""
     by_slot = {r.context: r for r in rows}
     ordered = [by_slot[s] for s in AUTO_INJECT_SLOTS if s in by_slot]
-    lines = ["# Active auto-inject memories (always in effect)"]
+    lines = [resolve_prompt_text(_AUTO_INJECT_LABELS_TEXTS, language)]
     for r in ordered:
         slot_name = r.context.split(":", 1)[1].replace("_", " ")
         lines.append(f"- **{slot_name}**: {r.content}")
     return "\n".join(lines)
 
 
-async def format_inferred_profile_block(db: AsyncSession, user_id: int) -> str:
-    """把 inferred_profile 槽位渲染成提示词块；槽位顺序固定，无记录时返回空串。"""
+async def format_inferred_profile_block(db: AsyncSession, user_id: int, *, language: str = DEFAULT_LANGUAGE) -> str:
     rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like(KIND_TO_PREFIX["inferred_profile"] + "%")))).scalars().all()
     if not rows:
         return ""
@@ -53,18 +70,17 @@ async def format_inferred_profile_block(db: AsyncSession, user_id: int) -> str:
     ordered = [by_slot[s] for s in INFERRED_PROFILE_SLOTS if s in by_slot]
     if not ordered:
         return ""
-    lines = ["# Inferred user profile (background knowledge)"]
+    lines = [resolve_prompt_text(_INFERRED_PROFILE_LABELS_TEXTS, language)]
     for r in ordered:
         slot_name = r.context.split(":", 1)[1].replace("_", " ")
         lines.append(f"- **{slot_name}**: {r.content}")
     return "\n".join(lines)
 
 
-def format_proactive_memory_block(memories: list[dict]) -> str:
-    """把主动检索到的长期记忆渲染成提示词块。"""
+def format_proactive_memory_block(memories: list[dict], *, language: str = DEFAULT_LANGUAGE) -> str:
     if not memories:
         return ""
-    lines = ["# Relevant long-term memories (proactively retrieved for current context)"]
+    lines = [resolve_prompt_text(_PROACTIVE_MEMORY_LABELS_TEXTS, language)]
     for m in memories:
         ctx = f" [{m['context']}]" if m.get("context") else ""
         content = (m.get("content") or "").strip()

@@ -95,7 +95,7 @@ async def interact(
         {
             "persona_name": ctx.persona_name,
             "persona_extras": ctx.persona_extras,
-            "outfit_block": ctx.outfit_block or "当前着装：（默认形象，尚未换装）",
+            "outfit_block": ctx.outfit_block,
             "memories_block": ctx.memories_block,
             "recent_context": recent_context,
             "today_stats": today_stats,

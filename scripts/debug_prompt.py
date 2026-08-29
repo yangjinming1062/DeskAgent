@@ -37,9 +37,17 @@ DEFAULT_MOCK_USER_PROFILE: dict[str, str] = {
 DEFAULT_MOCK_ACTIONS: list[str] = ["cheer", "dance", "nod", "wave"]
 DEFAULT_MOCK_SKILLS: list[str] = ["browser", "coding", "search"]
 
+# 双语 mock 用户资料块标题（仅 debug 脚本内使用）。
+_MOCK_USER_PROFILE_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 用户资料",
+    "en": "# User profile",
+}
 
-def _build_mock_user_profile_extras(profile: dict[str, str]) -> str:
-    lines = ["# User profile"]
+
+def _build_mock_user_profile_extras(profile: dict[str, str], *, language: str = "zh") -> str:
+    from components import resolve_prompt_text
+
+    lines = [resolve_prompt_text(_MOCK_USER_PROFILE_LABELS_TEXTS, language)]
     for key, val in profile.items():
         if val:
             display = key.replace("_", " ").capitalize()
@@ -47,7 +55,7 @@ def _build_mock_user_profile_extras(profile: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-async def _load_from_db(user_id: int) -> dict[str, Any]:
+async def _load_from_db(user_id: int, *, language: str = "zh") -> dict[str, Any]:
     from components import SESSION_LOCAL, safe_json_loads
     from modules.companion import Persona
     from services.chat.affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
@@ -66,13 +74,13 @@ async def _load_from_db(user_id: int) -> dict[str, Any]:
 
     async with SESSION_LOCAL() as db:
         persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-        persona_extras = build_system_prompt_extras(persona) if persona else ""
+        persona_extras = build_system_prompt_extras(persona, language=language) if persona else ""
 
-        user_profile_extras = await build_user_profile_extras(db, user_id) if persona and persona.is_complete else ""
-        outfit_extras = await build_outfit_extras(db, user_id) if persona and persona.is_complete else ""
-        auto_inject_extras = await format_auto_inject_block(db, user_id)
-        inferred_profile_extras = await format_inferred_profile_block(db, user_id)
-        proactive_memory_extras = format_proactive_memory_block([])
+        user_profile_extras = await build_user_profile_extras(db, user_id, language=language) if persona and persona.is_complete else ""
+        outfit_extras = await build_outfit_extras(db, user_id, language=language) if persona and persona.is_complete else ""
+        auto_inject_extras = await format_auto_inject_block(db, user_id, language=language)
+        inferred_profile_extras = await format_inferred_profile_block(db, user_id, language=language)
+        proactive_memory_extras = format_proactive_memory_block([], language=language)
 
         custom_expressions = await resolve_custom_expressions(db, user_id) if persona else []
         allowed_emotions = await resolve_allowed_emotions(db, user_id) if persona else BUILTIN_EMOTIONS
@@ -144,8 +152,8 @@ def assemble_debug_prompt(
         allowed_emotions = db_data["allowed_emotions"]
         tools = db_data["tools"] if enable_tools else []
     else:
-        persona_extras = render_extras(persona_dict)
-        user_profile_extras = _build_mock_user_profile_extras(user_profile_dict)
+        persona_extras = render_extras(persona_dict, language=language)
+        user_profile_extras = _build_mock_user_profile_extras(user_profile_dict, language=language)
         outfit_extras = outfit_text
         auto_inject_extras = auto_inject_text
         inferred_profile_extras = ""
@@ -397,7 +405,7 @@ def main() -> int:
     db_data = None
     if args.db:
         try:
-            db_data = asyncio.run(_load_from_db(args.user_id))
+            db_data = asyncio.run(_load_from_db(args.user_id, language=args.language))
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"Error loading from database: {exc}", file=sys.stderr)
             return 1

@@ -1,6 +1,6 @@
 import re
 
-from components import get_logger
+from components import DEFAULT_LANGUAGE, get_logger, resolve_prompt_text
 from modules.companion import CompanionExpression
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,8 +82,78 @@ async def resolve_custom_expressions(db: AsyncSession | None, user_id: int | Non
         return []
 
 
-def build_affect_guidance(custom_expressions: list[CompanionExpression] | None = None, available_actions: list[str] | None = None) -> str:
-    """构建 affect 引导 prompt：内置情绪 + 用户自定义情绪 + 可用动作动画。"""
+# 双语 affect 引导模板：占位符 {emotions} / {actions} / {custom} / {locales} 由 build_affect_guidance 动态填充。
+# emotion token (happy/sad/...) 与 spatial locale (home/perch/roam) 属协议层，不参与语言切换。
+
+_AFFECT_GUIDANCE_TEXTS: dict[str, str] = {
+    "zh": (
+        "# 具身表情与动作\n"
+        "你的屏幕头像通过面部表情、身体动画与空间定位来可见地表达情绪。"
+        "若要表达情绪与肢体动作，请在回复开头独占一行写 affect tag 与可选的 action/spatial tag：\n"
+        "    [affect:EMOTION]\n"
+        "    [action:ACTION]  （可选；snake_case 具体动作，如 turn_away / stomp / nod）\n"
+        "    [spatial:LOCALE,target:KEYWORD]  （可选）\n"
+        "其后跟随你的实际对话回复。\n\n"
+        "EMOTION must be one of: {emotions}.\n"
+        "{actions}"
+        "\n## 多模态表达规则：\n"
+        "- **连续气泡（`---`）**：若要在同一回合内连续发多条短回复，在相邻回复之间放一行仅含 `---` 的内容；客户端会把它渲染成独立气泡并加短暂停顿。\n"
+        "- **非语言 / 静默反应**：若只想用肢体表达而不说话，仅输出 tag（例如 `[affect:pout]\n[action:turn_away]`），不要附带任何文本。\n"
+        "- **口语回复**：把对话内容直接接在 tag 后面。\n"
+        "{custom}"
+        "LOCALE must be one of: {locales}. KEYWORD is an active window or app name.\n"
+        "示例：\n"
+        "    [affect:happy]\n"
+        "    见到你真开心！今天咱们一起做点什么？\n"
+        "    [affect:curious]\n"
+        "    [spatial:perch,target:bilibili]\n"
+        "    那个视频看起来有意思！我陪你一起看。\n"
+        "tag 会在用户看到前被剥掉，不要解释它们。"
+    ),
+    "en": (
+        "# Embodied Expressions & Movements\n"
+        "Your on-screen avatar visibly expresses emotions through facial expressions, body animations, and spatial positioning. "
+        "To convey emotion and physical movement, begin your response with an affect tag and optional action/spatial tags on their own lines:\n"
+        "    [affect:EMOTION]\n"
+        "    [action:ACTION]  (optional; a specific movement in snake_case, e.g. turn_away / stomp / nod)\n"
+        "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
+        "followed by your actual conversational reply.\n\n"
+        "EMOTION must be one of: {emotions}.\n"
+        "{actions}"
+        "\n## Multimodal Expression Rules:\n"
+        "- **Consecutive Bubbles (`---`)**: To send multiple short consecutive replies inside one turn, put a line containing only `---` between consecutive replies; the client renders each segment as its own bubble with a brief pause.\n"
+        "- **Non-Verbal / Silent Reactions**: To express purely through body language without speaking, output ONLY the tags (e.g. `[affect:pout]\n[action:turn_away]`) with no following text.\n"
+        "- **Spoken Responses**: Put your conversational reply text directly after the tags.\n"
+        "{custom}"
+        "LOCALE must be one of: {locales}. KEYWORD is an active window or app name.\n"
+        "Examples:\n"
+        "    [affect:happy]\n"
+        "    I'm glad to see you! What are we working on today?\n"
+        "    [affect:curious]\n"
+        "    [spatial:perch,target:bilibili]\n"
+        "    That video looks interesting! I'll watch it together with you.\n"
+        "The tags are stripped before the user sees your message, so never explain them."
+    ),
+}
+
+_AFFECT_ACTIONS_TEXTS: dict[str, str] = {
+    "zh": "Available action animations — 请从以下名字中精确选择 [action:...]：{names}。可在 affect tag 之后按播放顺序堆叠最多 3 个 [action:...] 行。\n",
+    "en": "Available action animations — choose [action:...] from exactly these names: {names}. You may stack up to 3 [action:...] lines in playback order right after the affect tag.\n",
+}
+
+_AFFECT_CUSTOM_TEXTS: dict[str, str] = {
+    "zh": "Custom emotion details（自定义情绪说明）：\n",
+    "en": "Custom emotion details:\n",
+}
+
+
+def build_affect_guidance(
+    custom_expressions: list[CompanionExpression] | None = None,
+    available_actions: list[str] | None = None,
+    *,
+    language: str = DEFAULT_LANGUAGE,
+) -> str:
+    template = resolve_prompt_text(_AFFECT_GUIDANCE_TEXTS, language)
     emotions_set = set(BUILTIN_EMOTIONS)
     custom_desc_lines: list[str] = []
     if custom_expressions:
@@ -97,40 +167,18 @@ def build_affect_guidance(custom_expressions: list[CompanionExpression] | None =
                     desc_str = f" ({label}: {desc})" if desc else f" ({label})"
                     custom_desc_lines.append(f"- {name}{desc_str}")
 
-    action_list = ""
-    if available_actions:
-        action_list = (
-            "Available action animations — choose [action:...] from exactly these names: "
-            + ", ".join(sorted(set(available_actions)))
-            + ". You may stack up to 3 [action:...] lines in playback order right after the affect tag.\n"
-        )
+    actions_clause = resolve_prompt_text(_AFFECT_ACTIONS_TEXTS, language).replace("{names}", ", ".join(sorted(set(available_actions)))) if available_actions else ""
+    custom_clause = resolve_prompt_text(_AFFECT_CUSTOM_TEXTS, language) + "\n".join(custom_desc_lines) + "\n" if custom_desc_lines else ""
 
-    guidance = (
-        "# Embodied Expressions & Movements\n"
-        "Your on-screen avatar visibly expresses emotions through facial expressions, body animations, and spatial positioning. "
-        "To convey emotion and physical movement, begin your response with an affect tag and optional action/spatial tags on their own lines:\n"
-        "    [affect:EMOTION]\n"
-        "    [action:ACTION]  (optional; a specific movement in snake_case, e.g. turn_away / stomp / nod)\n"
-        "    [spatial:LOCALE,target:KEYWORD]  (optional)\n"
-        "followed by your actual conversational reply.\n\n"
-        "EMOTION must be one of: " + ", ".join(sorted(emotions_set)) + ".\n" + action_list + "\n## Multimodal Expression Rules:\n"
-        "- **Consecutive Bubbles (`---`)**: To send multiple short consecutive replies inside one turn, put a line containing only `---` between consecutive replies; the client renders each segment as its own bubble with a brief pause.\n"
-        "- **Non-Verbal / Silent Reactions**: To express purely through body language without speaking, output ONLY the tags (e.g. `[affect:pout]\n[action:turn_away]`) with no following text.\n"
-        "- **Spoken Responses**: Put your conversational reply text directly after the tags.\n"
+    # 使用 .replace() 而非 .format()：模板里的 {emotions}/{actions}/{custom}/{locales} 都是字面占位符，
+    # 但 substituted values（来自 user-controlled clip_map keys / CompanionExpression.description）
+    # 含 '{' / '}' 时 str.format() 会抛 KeyError；replace() 是字面替换，对花括号安全。
+    return (
+        template.replace("{emotions}", ", ".join(sorted(emotions_set)))
+        .replace("{actions}", actions_clause)
+        .replace("{custom}", custom_clause)
+        .replace("{locales}", ", ".join(sorted(ALLOWED_LOCALES)))
     )
-    if custom_desc_lines:
-        guidance += "Custom emotion details:\n" + "\n".join(custom_desc_lines) + "\n"
-    guidance += (
-        "LOCALE must be one of: " + ", ".join(sorted(ALLOWED_LOCALES)) + ". KEYWORD is an active window or app name.\n"
-        "Examples:\n"
-        "    [affect:happy]\n"
-        "    I'm glad to see you! What are we working on today?\n"
-        "    [affect:curious]\n"
-        "    [spatial:perch,target:bilibili]\n"
-        "    That video looks interesting! I'll watch it together with you.\n"
-        "The tags are stripped before the user sees your message, so never explain them."
-    )
-    return guidance
 
 
 def _is_potential_prefix(buf: str) -> bool:

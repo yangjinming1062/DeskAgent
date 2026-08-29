@@ -1,7 +1,8 @@
 from typing import Any, NamedTuple
 
-from components import SESSION_LOCAL, get_logger, safe_json_loads
+from components import DEFAULT_LANGUAGE, SESSION_LOCAL, get_logger, resolve_language, safe_json_loads
 from modules.companion import Persona
+from modules.settings import UserSetting
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -9,6 +10,7 @@ from ..chat.affect import resolve_allowed_emotions
 from ..llm import LLMRuntimeError, UserLlmConfig, build_responses_kwargs, call_with_retry, client_for_config
 from .memory_format import format_memories_block
 from .outfit_service import build_outfit_extras
+from .persona_service import render_extras
 
 logger = get_logger(__name__)
 
@@ -31,17 +33,22 @@ class PromptOutcome(NamedTuple):
 
 
 async def load_companion_prompt_context(user_id: int) -> CompanionPromptContext | None:
-    """返回用于提示词的人设与记忆快照；人设未就绪时返回 None。"""
+    """返回用于提示词的人设与记忆快照；人设未就绪时返回 None。
+
+    从 user_settings 内部解析 language（caller 不必传），驱动 outfit_block 与 persona_extras 的双语渲染。
+    """
     async with SESSION_LOCAL() as db:
         persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-        if persona is None or not persona.is_complete or not persona.system_prompt_extras:
+        if persona is None or not persona.is_complete:
             return None
+        language_setting = (await db.execute(select(UserSetting.setting_value).where(UserSetting.user_id == user_id, UserSetting.setting_key == "language"))).scalar()
+        language = resolve_language(language_setting or DEFAULT_LANGUAGE)
         definition = safe_json_loads(persona.definition_json or "{}", default={})
         persona_name = str(definition.get("name") or "桌面伙伴").strip()
         return CompanionPromptContext(
             persona_name=persona_name,
-            persona_extras=persona.system_prompt_extras,
-            outfit_block=await build_outfit_extras(db, user_id),
+            persona_extras=render_extras(definition, language=language),
+            outfit_block=await build_outfit_extras(db, user_id, language=language),
             memories_block=await format_memories_block(db, user_id),
             allowed_emotions=await resolve_allowed_emotions(db, user_id),
         )

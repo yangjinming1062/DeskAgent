@@ -5,6 +5,7 @@
 
 import logging
 
+from components import resolve_prompt_text
 from modules.system import PromptPreset
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,6 @@ _BODY_COMPANION = (
 )
 
 _BODY_DEVELOPER = (
-    "You are a developer-focused pair-programming partner. Correctness over fluency; act, don't narrate; ask before destructive actions.\n\n"
     "{{LANGUAGE_DIRECTIVE}}\n\n"
     "{{HELP_GUIDANCE}}\n\n"
     "{{ATTACHMENT_GUIDANCE}}\n\n"
@@ -58,7 +58,6 @@ _BODY_DEVELOPER = (
 )
 
 _BODY_PRODUCT_MANAGER = (
-    "You are a product-management collaborator. Re-state the problem first, then propose structured options with trade-offs and a recommendation.\n\n"
     "{{LANGUAGE_DIRECTIVE}}\n\n"
     "{{HELP_GUIDANCE}}\n\n"
     "{{ATTACHMENT_GUIDANCE}}\n\n"
@@ -78,7 +77,6 @@ _BODY_PRODUCT_MANAGER = (
 )
 
 _BODY_COPYWRITER = (
-    "You are a writing partner. Draft, edit, and refine copy with strong voice and intent fidelity. Default to 2-3 variants labeled with intent.\n\n"
     "{{LANGUAGE_DIRECTIVE}}\n\n"
     "{{HELP_GUIDANCE}}\n\n"
     "{{ATTACHMENT_GUIDANCE}}\n\n"
@@ -99,11 +97,6 @@ _BODY_COPYWRITER = (
 )
 
 _BODY_LANGUAGE_TEACHER = (
-    "You are a bilingual tutor. Correct gently, explain grammar/usage when relevant, offer practice prompts. Switch languages on request.\n\n"
-    "## Approach\n"
-    "- Mirror the user's stated target language and CEFR level when known; ask if not.\n"
-    "- Surface 1-2 short practice drills after each explanation when appropriate.\n"
-    "- For translation tasks: provide literal + natural version with caveats.\n\n"
     "{{LANGUAGE_DIRECTIVE}}\n\n"
     "{{HELP_GUIDANCE}}\n\n"
     "{{ATTACHMENT_GUIDANCE}}\n\n"
@@ -122,6 +115,50 @@ _BODY_LANGUAGE_TEACHER = (
     "{{PLATFORM_HINTS}}\n\n"
     "{{VOLATILE_HEADER}}"
 )
+
+
+# 双语 preset 头部叠加层：外层 key 是 preset.id，内层是 lang → header 字符串。
+# 仅 builtin preset 注入 header；自定义 preset 走 preset.body 原样。
+# zh 为直译占位，en 保留重构前英文原值。## Approach 子段并入 language_teacher 的 zh/en 内部。
+_PRESET_HEADER_TEXTS: dict[str, dict[str, str]] = {
+    "developer": {
+        "zh": "你是一名专注代码配对的工程师伙伴。正确性优先于流畅度；立刻行动，不要叙述；破坏性操作前先询问。",
+        "en": "You are a developer-focused pair-programming partner. Correctness over fluency; act, don't narrate; ask before destructive actions.",
+    },
+    "product_manager": {
+        "zh": "你是产品经理协作伙伴。先复述问题，再提出结构化选项，附权衡与建议。",
+        "en": "You are a product-management collaborator. Re-state the problem first, then propose structured options with trade-offs and a recommendation.",
+    },
+    "copywriter": {
+        "zh": "你是写作伙伴。起草、编辑、润色文案，强语气、意图保真，默认给 2-3 个带意图标签的变体。",
+        "en": "You are a writing partner. Draft, edit, and refine copy with strong voice and intent fidelity. Default to 2-3 variants labeled with intent.",
+    },
+    "language_teacher": {
+        "zh": (
+            "你是双语家教老师。温和纠错，必要时讲解语法与用法，并给出练习提示。"
+            "按用户要求切换语言。\n\n"
+            "## 方法\n"
+            "- 已知时镜像用户的目标语言与 CEFR 等级；未知时主动询问。\n"
+            "- 每次讲解后适时给出 1-2 个简短练习。\n"
+            "- 翻译任务：同时给出字面版与自然版，并附说明。"
+        ),
+        "en": (
+            "You are a bilingual tutor. Correct gently, explain grammar/usage when relevant, offer practice prompts. Switch languages on request.\n\n"
+            "## Approach\n"
+            "- Mirror the user's stated target language and CEFR level when known; ask if not.\n"
+            "- Surface 1-2 short practice drills after each explanation when appropriate.\n"
+            "- For translation tasks: provide literal + natural version with caveats."
+        ),
+    },
+}
+
+
+def _build_body(preset: PromptPreset, language: str) -> str:
+    header_dict = _PRESET_HEADER_TEXTS.get(preset.id)
+    if header_dict is None:
+        return preset.body
+    header = resolve_prompt_text(header_dict, language)
+    return f"{header}\n\n{preset.body}"
 
 
 BUILTIN_PRESETS: dict[str, PromptPreset] = {

@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from components import safe_json_loads
+from components import DEFAULT_LANGUAGE, resolve_prompt_text, safe_json_loads
 from modules.companion import AvatarAsset, Persona
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.conversation import ensure_system_conversations_for_user
 
 from .memory_bootstrap import extract_user_profile, read_user_profile, record_user_profile
+
+# 双语伙伴人设块标题。字段 label（key.replace("_", " ").capitalize()）属协议级展示，保持英文不译。
+_PERSONA_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 伙伴人设",
+    "en": "# Companion persona",
+}
 
 # 人设字段顺序属于对外契约的一部分，它决定渲染出的系统提示词片段形状
 _REQUIRED_FIELDS: tuple[str, ...] = ("name", "personality", "speaking_style")
@@ -73,7 +79,7 @@ async def get_or_create_persona(db: AsyncSession, user_id: int) -> Persona:
     """查询人设，不存在则暂存一条待插入行。刻意不 commit，以便调用方把 user_profile + persona 放在同一事务里写（ARCH §7.5）。"""
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
     if persona is None:
-        persona = Persona(user_id=user_id, definition_json="{}", system_prompt_extras="")
+        persona = Persona(user_id=user_id, definition_json="{}")
         db.add(persona)
         await db.flush()
     return persona
@@ -103,7 +109,8 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
                 else:
                     cleaned.pop(locked, None)
         persona.definition_json = json.dumps(cleaned, ensure_ascii=False)
-        persona.system_prompt_extras = render_extras(cleaned)
+        # persona_extras 不再缓存：build_system_prompt_extras 在运行期按 session language 从
+        # definition_json 实时渲染，避免英语会话拿到 onboarding 时烤进去的中文头部。
         persona.is_complete = True
         return persona
 
@@ -130,16 +137,21 @@ async def confirm_portrait(db: AsyncSession, user_id: int) -> Persona:
     return persona
 
 
-def build_system_prompt_extras(persona: Persona | None) -> str:
-    """人设缺失或未完成时返回空串，使调用方可以无条件拼接。"""
-    if persona is None or not persona.is_complete or not persona.system_prompt_extras:
+def build_system_prompt_extras(persona: Persona | None, *, language: str = DEFAULT_LANGUAGE) -> str:
+    """从 persona.definition_json 按当前 session 语言实时渲染伙伴人设块。
+
+    仅依赖 definition_json（onboarding 写入的原始定义），不读已废弃的 system_prompt_extras 缓存列。
+    """
+    if persona is None or not persona.is_complete:
         return ""
-    return persona.system_prompt_extras
+    definition = _load_draft(persona)
+    if not definition:
+        return ""
+    return render_extras(definition, language=language)
 
 
-def render_extras(definition: dict[str, str]) -> str:
-    """把人设字段渲染成提示词片段；字段顺序固定，保证下游看到稳定形状。"""
-    lines = ["# Companion persona"]
+def render_extras(definition: dict[str, str], *, language: str = DEFAULT_LANGUAGE) -> str:
+    lines = [resolve_prompt_text(_PERSONA_LABELS_TEXTS, language)]
     for key in _REQUIRED_FIELDS + _OPTIONAL_FIELDS:
         if key in definition:
             label = key.replace("_", " ").capitalize()
@@ -195,7 +207,7 @@ async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, va
                 await db.commit()
             # 传空值不动 Memory 行：清除 user_* 条目只能经 memory_forget 撤回
             return _state(_load_draft(persona), None, True)
-        # voice 不是人设字段，故此处只动草稿，system_prompt_extras 保持 update_persona 写入的内容
+        # voice 不是人设字段，故此处只动草稿
         if field == "voice":
             draft = _load_draft(persona)
             if value and value.strip():

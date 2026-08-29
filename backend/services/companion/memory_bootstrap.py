@@ -1,6 +1,7 @@
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from components import DEFAULT_LANGUAGE, resolve_prompt_text
 from modules.memory import Memory
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -16,6 +17,12 @@ _CONTEXT_LABELS: dict[str, str] = {
     "user_hobbies": "user_profile:hobbies",
     "user_freeform": "user_profile:freeform",
     "timezone": "user_profile:timezone",
+}
+
+# 双语用户资料块标题；display 字段（context.split(":",1)[1].replace("_"," ").capitalize()）属协议级展示，保持英文不译。
+_USER_PROFILE_LABELS_TEXTS: dict[str, str] = {
+    "zh": "# 用户资料",
+    "en": "# User profile",
 }
 
 _REVERSE_CONTEXT_LABELS: dict[str, str] = {v: k for k, v in _CONTEXT_LABELS.items()}
@@ -36,7 +43,7 @@ async def read_user_profile(db: AsyncSession, user_id: int) -> dict[str, str]:
     return out
 
 
-async def build_user_profile_extras(db: AsyncSession, user_id: int) -> str:
+async def build_user_profile_extras(db: AsyncSession, user_id: int, *, language: str = DEFAULT_LANGUAGE) -> str:
     rows = (await db.execute(select(Memory).where(Memory.user_id == user_id, Memory.context.like("user_profile:%")))).scalars().all()
     if not rows:
         return ""
@@ -44,7 +51,7 @@ async def build_user_profile_extras(db: AsyncSession, user_id: int) -> str:
     by_ctx = {row.context: row for row in rows}
     known_ctxs = list(_CONTEXT_LABELS.values())
     ordered = [by_ctx[c] for c in known_ctxs if c in by_ctx] + [by_ctx[c] for c in sorted(by_ctx) if c not in known_ctxs]
-    lines = ["# User profile"]
+    lines = [resolve_prompt_text(_USER_PROFILE_LABELS_TEXTS, language)]
     for row in ordered:
         display = row.context.split(":", 1)[1].replace("_", " ").capitalize()
         lines.append(f"- **{display}**: {row.content}")

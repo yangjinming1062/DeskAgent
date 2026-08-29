@@ -10,6 +10,7 @@ from components import (
     format_local_date_str,
     format_message_timestamp,
     get_logger,
+    resolve_language,
     safe_json_loads,
 )
 from modules.auth import ChatRequestClientContext
@@ -48,7 +49,7 @@ from ..llm import (
 from ..tools import REGISTRY, NativeMemory, schema_name
 from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
 from .prompt_presets import DEFAULT_PRESET_ID, resolve_preset
-from .system_prompt import _resolve_language, build_system_prompt
+from .system_prompt import build_system_prompt
 
 logger = get_logger(__name__)
 
@@ -302,16 +303,19 @@ async def _build_turn_inputs(
 
     all_schemas = REGISTRY.get_all_schemas(user_id, user_settings=user_settings)
     persona = (await db.execute(select(Persona).where(Persona.user_id == user_id))).scalar_one_or_none()
-    # 未完成 onboarding 的用户没有 user_profile 行，跳过 SELECT。
-    user_profile_extras = await build_user_profile_extras(db, user_id) if persona is not None and persona.is_complete else ""
-    outfit_extras = await build_outfit_extras(db, user_id) if persona is not None and persona.is_complete else ""
+    # 入口处一次性 normalize 语言：避免 lang="fr" 等未支持值在 volatile header 与 day marker 处分别走不同分支；
+    # 上移至此是为了让下方 auto_inject_extras / inferred_profile_extras / proactive_memory_extras /
+    # user_profile_extras / outfit_extras 都能拿到正确的 language，而非默认值 zh。
+    session_lang = resolve_language(user_settings.get("language", DEFAULT_LANGUAGE))
+    user_profile_extras = await build_user_profile_extras(db, user_id, language=session_lang) if persona is not None and persona.is_complete else ""
+    outfit_extras = await build_outfit_extras(db, user_id, language=session_lang) if persona is not None and persona.is_complete else ""
     # auto_inject 记忆与 persona 是否完成无关：未声明 persona 也能承载 LLM 维护的背景上下文。
-    auto_inject_extras = await format_auto_inject_block(db, user_id)
-    inferred_profile_extras = await format_inferred_profile_block(db, user_id)
+    auto_inject_extras = await format_auto_inject_block(db, user_id, language=session_lang)
+    inferred_profile_extras = await format_inferred_profile_block(db, user_id, language=session_lang)
     user_local_tz = await resolve_user_timezone(db, user_id)
     query_text = (req.message.content if req.message.role == "user" else (first_user_msg_content or "")) or ""
     proactive_rows = await retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
-    proactive_memory_extras = format_proactive_memory_block(proactive_rows)
+    proactive_memory_extras = format_proactive_memory_block(proactive_rows, language=session_lang)
     custom_expressions = await resolve_custom_expressions(db, user_id) if persona is not None else []
     available_actions: list[str] = []
     active_model = await get_active_model(db, user_id)
@@ -324,8 +328,6 @@ async def _build_turn_inputs(
         from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
 
         available_actions = sorted(set(DEFAULT_ACTIONS) - NON_LLM_ACTIONS)
-    # 入口处一次性 normalize 语言：避免 lang="fr" 等未支持值在 volatile header 与 day marker 处分别走不同分支。
-    session_lang = _resolve_language(user_settings.get("language", DEFAULT_LANGUAGE))
     resolved_preset = resolve_preset(conv.system_preset_id)
     # 仅 companion 预设（含 cron 主动消息）注入 per-message [HH:MM] 前缀与跨天分界；
     # 工作预设只让 volatile header 的日期保持准确即可。
@@ -336,7 +338,7 @@ async def _build_turn_inputs(
         tools=all_schemas,
         client_context=_merge_client_context(session_client_context, req.client_context),
         identity_prompt=identity_prompt,
-        persona_extras=build_system_prompt_extras(persona),
+        persona_extras=build_system_prompt_extras(persona, language=session_lang),
         user_profile_extras=user_profile_extras,
         outfit_extras=outfit_extras,
         auto_inject_extras=auto_inject_extras,

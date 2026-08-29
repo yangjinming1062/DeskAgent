@@ -1,10 +1,15 @@
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
+
+from .constants import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES
+
+logger = logging.getLogger(__name__)
 
 TRUTHY_STRINGS: frozenset[str] = frozenset({"1", "true", "yes", "on", "enabled"})
 FALSY_STRINGS: frozenset[str] = frozenset({"0", "false", "no", "off", "disabled"})
@@ -103,6 +108,21 @@ def format_day_marker(dt: datetime | None, tz_str: str | None, lang: str = "zh")
         wd = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][localized.weekday()]
         return f"--- {localized.year}年{localized.month}月{localized.day}日 {wd} ---"
     return f"--- {localized.strftime('%A, %B %d, %Y')} ---"
+
+
+def resolve_language(language: str | None) -> str:
+    """规范化到受支持的语言代码；不支持时回退到默认。"""
+    lang = (language or "").strip().lower()
+    return lang if lang in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
+
+
+def resolve_prompt_text(texts: dict[str, str], language: str | None) -> str:
+    """按语言从双语 dict 取文本；未知 lang 走 resolve_language 回退到 DEFAULT_LANGUAGE；dict 缺失则二次回退。"""
+    lang = resolve_language(language)
+    if lang not in texts:
+        logger.warning("prompt block missing %r translation; falling back to %s", lang, DEFAULT_LANGUAGE)
+        return texts.get(DEFAULT_LANGUAGE, "")
+    return texts[lang]
 
 
 def as_bool(value: Any, default: bool) -> bool:

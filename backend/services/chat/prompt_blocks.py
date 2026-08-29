@@ -8,6 +8,7 @@ import logging
 import re
 from collections.abc import Callable
 
+from components import resolve_language, resolve_prompt_text
 from modules.system import AgentPromptConfig
 
 from .affect import build_affect_guidance
@@ -23,25 +24,29 @@ def _language_directive_block(config: AgentPromptConfig) -> str:
     return _language_directive(config.language)
 
 
-def _help_guidance_block(_: AgentPromptConfig) -> str:
-    from .system_prompt import HELP_GUIDANCE
+def _help_guidance_block(config: AgentPromptConfig) -> str:
+    from .system_prompt import _HELP_GUIDANCES
 
-    return HELP_GUIDANCE
+    return resolve_prompt_text(_HELP_GUIDANCES, config.language)
 
 
 def _persona_block(config: AgentPromptConfig) -> str | None:
     if not config.persona_extras:
         return None
-    affect = build_affect_guidance(config.custom_expressions, config.available_actions)
+    affect = build_affect_guidance(
+        config.custom_expressions,
+        config.available_actions,
+        language=config.language,
+    )
     return f"{config.persona_extras}\n\n{affect}" if affect else config.persona_extras
 
 
 def _outfit_block(config: AgentPromptConfig) -> str | None:
     if not config.outfit_extras:
         return None
-    from .system_prompt import OUTFIT_DEMEANOR_GUIDANCE
+    from .system_prompt import _OUTFIT_DEMEANOR_GUIDANCES
 
-    return f"{config.outfit_extras}\n\n{OUTFIT_DEMEANOR_GUIDANCE}"
+    return f"{config.outfit_extras}\n\n{resolve_prompt_text(_OUTFIT_DEMEANOR_GUIDANCES, config.language)}"
 
 
 def _config_attr_block(attr: str) -> Callable[[AgentPromptConfig], str | None]:
@@ -59,52 +64,55 @@ def _has_any_tool(config: AgentPromptConfig, names: tuple[str, ...]) -> bool:
 
 
 def _memory_tool_guidance_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import MEMORY_TOOL_GUIDANCE
+    from .system_prompt import _MEMORY_TOOL_GUIDANCES
 
-    return MEMORY_TOOL_GUIDANCE if _has_any_tool(config, ("memory", "memory_retain", "memory_recall")) else None
+    return resolve_prompt_text(_MEMORY_TOOL_GUIDANCES, config.language) if _has_any_tool(config, ("memory", "memory_retain", "memory_recall")) else None
 
 
 def _session_search_guidance_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import SESSION_SEARCH_GUIDANCE
+    from .system_prompt import _SESSION_SEARCH_GUIDANCES
 
-    return SESSION_SEARCH_GUIDANCE if "session_search" in config.valid_tool_names else None
+    return resolve_prompt_text(_SESSION_SEARCH_GUIDANCES, config.language) if "session_search" in config.valid_tool_names else None
 
 
 def _skills_guidance_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import SKILLS_GUIDANCE
+    from .system_prompt import _SKILLS_GUIDANCES
 
-    return SKILLS_GUIDANCE if "skill_manage" in config.valid_tool_names else None
+    return resolve_prompt_text(_SKILLS_GUIDANCES, config.language) if "skill_manage" in config.valid_tool_names else None
 
 
 def _media_guidance_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import MEDIA_GUIDANCE
+    from .system_prompt import _MEDIA_GUIDANCES
 
-    return MEDIA_GUIDANCE if _has_any_tool(config, ("image_generate", "video_generate")) else None
+    return resolve_prompt_text(_MEDIA_GUIDANCES, config.language) if _has_any_tool(config, ("image_generate", "video_generate")) else None
 
 
 def _attachment_guidance_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import ATTACHMENT_GUIDANCE
+    from .system_prompt import _ATTACHMENT_GUIDANCES
 
-    return ATTACHMENT_GUIDANCE if config.valid_tool_names else None
+    return resolve_prompt_text(_ATTACHMENT_GUIDANCES, config.language) if config.valid_tool_names else None
 
 
 def _tool_use_enforcement_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import TOOL_USE_ENFORCEMENT, _should_inject_tool_use_enforcement
+    from .system_prompt import _TOOL_USE_ENFORCEMENTS, _should_inject_tool_use_enforcement
 
-    return TOOL_USE_ENFORCEMENT if config.valid_tool_names and _should_inject_tool_use_enforcement(config.tool_use_enforcement) else None
+    return resolve_prompt_text(_TOOL_USE_ENFORCEMENTS, config.language) if config.valid_tool_names and _should_inject_tool_use_enforcement(config.tool_use_enforcement) else None
 
 
 def _steer_channel_note_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import STEER_CHANNEL_NOTE
+    from .system_prompt import _STEER_CHANNEL_NOTES
 
-    return STEER_CHANNEL_NOTE if config.valid_tool_names else None
+    return resolve_prompt_text(_STEER_CHANNEL_NOTES, config.language) if config.valid_tool_names else None
 
 
 def _skills_list_block(config: AgentPromptConfig) -> str | None:
+    from .system_prompt import _SKILLS_LIST_TEXTS
+
     ctx = config.client_context
     if not ctx or not ctx.skills:
         return None
-    return f"Enabled local skills (from $SPIRITAGENT_HOME/skills): {', '.join(ctx.skills)}."
+    skills = ", ".join(ctx.skills)
+    return resolve_prompt_text(_SKILLS_LIST_TEXTS, config.language).format(skills=skills)
 
 
 def _environment_hints_block(config: AgentPromptConfig) -> str | None:
@@ -113,7 +121,7 @@ def _environment_hints_block(config: AgentPromptConfig) -> str | None:
 
 
 def _platform_hints_block(config: AgentPromptConfig) -> str | None:
-    from .system_prompt import PLATFORM_HINTS
+    from .system_prompt import _PLATFORM_HINTS_TEXTS
 
     ctx = config.client_context
     if ctx and ctx.platform_hints:
@@ -121,13 +129,18 @@ def _platform_hints_block(config: AgentPromptConfig) -> str | None:
     platform_key = (config.platform or "").lower().strip()
     if platform_key in ("weixin", "weixin_ilink"):
         platform_key = "wechat"
-    return PLATFORM_HINTS.get(platform_key)
+    platform_dict = _PLATFORM_HINTS_TEXTS.get(platform_key)
+    if platform_dict is None:
+        return None
+    return resolve_prompt_text(platform_dict, config.language)
 
 
 def _user_identity_override_block(config: AgentPromptConfig) -> str:
-    from .system_prompt import DEFAULT_AGENT_IDENTITY
+    from .system_prompt import _AGENT_IDENTITIES
 
-    return config.identity_prompt or DEFAULT_AGENT_IDENTITY
+    if config.identity_prompt:
+        return config.identity_prompt
+    return resolve_prompt_text(_AGENT_IDENTITIES, config.language)
 
 
 def _volatile_header_block(config: AgentPromptConfig) -> str:
@@ -138,9 +151,7 @@ def _volatile_header_block(config: AgentPromptConfig) -> str:
 
 def _message_timestamps_block(config: AgentPromptConfig) -> str:
     """每条 user/assistant 消息的 ``[HH:MM]`` 前缀与跨天分界线说明，含负向约束防止 LLM 自我模仿。"""
-    from .system_prompt import _resolve_language
-
-    lang = _resolve_language(config.language)
+    lang = resolve_language(config.language)
     if lang == "zh":
         tz_note = f"（用户本地时区：{config.user_local_tz}）" if config.user_local_tz else "（用户未设置本地时区，当前时间戳为服务端 UTC 时间）"
         return (

@@ -195,7 +195,7 @@ def _model_for_table(table: str) -> tuple[type, list[str], Any]:
     elif table == "personas":
         from modules.companion import Persona
 
-        cols = ["id", "definition_json", "personality_tags_json", "system_prompt_extras", "is_complete", "is_portrait_confirmed", "portrait_confirmed_at", "render_mode"]
+        cols = ["id", "definition_json", "personality_tags_json", "is_complete", "is_portrait_confirmed", "portrait_confirmed_at", "render_mode"]
         model = Persona
     elif table == "avatar_assets":
         from modules.companion import AvatarAsset

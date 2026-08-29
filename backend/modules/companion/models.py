@@ -120,14 +120,13 @@ class CompanionExpressionAvatar(ModelBase, TimestampMixin):
 
 
 class Persona(ModelBase, TimestampMixin):
-    """system_prompt_extras 单列，使 persona 改动只重渲一行而不是所有历史消息。"""
+    """伙伴人设主表：definition_json 存原始字段定义，运行期按 session language 实时渲染。"""
 
     __tablename__ = "personas"
 
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
     definition_json: Mapped[str] = mapped_column(Text, default="{}")
     personality_tags_json: Mapped[str] = mapped_column(Text, default="[]", server_default=text("'[]'"))
-    system_prompt_extras: Mapped[str] = mapped_column(Text, default="")
     is_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     is_portrait_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("FALSE"), index=True)
     portrait_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
