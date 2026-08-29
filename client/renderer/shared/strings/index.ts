@@ -296,5 +296,16 @@ export const strings = {
     search: {
       clear: '清除搜索'
     }
+  },
+
+  chat: {
+    presetPicker: {
+      title: '选择新对话的预设',
+      intro: '这条对话的系统提示词将从这里固定；选定后仍可改名、归档或删除。',
+      confirm: '创建',
+      cancel: '取消',
+      fetchFailed: '加载预设失败，请稍后再试',
+      pickOne: '请先选择一个预设'
+    }
   }
 }

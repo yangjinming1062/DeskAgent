@@ -33,11 +33,12 @@ from components import (
 from fastapi import WebSocket, WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
-from modules.system import ChatMessageRequest, ChatRequest
+from modules.system import ChatMessageRequest, ChatRequest, PromptPresetListResponse, PromptPresetSummary
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
+from services.chat.prompt_presets import BUILTIN_PRESETS
 from services.chat.turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_temperature
 from services.companion import (
     AVATAR_JOB_LOCKS,
@@ -499,18 +500,38 @@ def _register_session_handlers(
 
     async def session_create(params: dict) -> dict:
         cwd = params.get("cwd") or None
+        raw_preset = params.get("system_preset_id")
+        preset_id: str | None = None
+        if raw_preset is not None and raw_preset != "":
+            if not isinstance(raw_preset, str) or raw_preset not in BUILTIN_PRESETS:
+                raise JsonRpcError(
+                    JSONRPC_INVALID_PARAMS,
+                    f"system_preset_id must be one of {sorted(BUILTIN_PRESETS)} or omitted",
+                )
+            preset_id = raw_preset
         async with SESSION_LOCAL() as db:
-            conv = Conversation(user_id=user_id, cwd=cwd)
+            conv = Conversation(user_id=user_id, cwd=cwd, system_preset_id=preset_id)
             db.add(conv)
             await db.commit()
             await db.refresh(conv)
         runtime = _mount_runtime(conv, cwd)
-        logger.info("session.create", extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd})
+        logger.info(
+            "session.create",
+            extra={"user_id": user_id, "session_id": runtime.session_id, "cwd": cwd, "system_preset_id": preset_id},
+        )
         cfg = user_session.llm_config if user_session else llm_config
         await dispatcher.flush_unsent()
         return SessionCreateResult(session_id=runtime.session_id, info=runtime_info_snapshot(cfg, runtime)).model_dump()
 
     dispatcher.register("session.create", session_create)
+
+    async def system_list_presets(_params: dict) -> dict:
+        """返回内置系统预设的元数据清单（不含 body）。body 永远不下发到客户端。"""
+        return PromptPresetListResponse(
+            presets=[PromptPresetSummary(id=p.id, name=p.name, description=p.description, icon_key=p.icon_key) for p in BUILTIN_PRESETS.values()],
+        ).model_dump()
+
+    dispatcher.register("system.list_presets", system_list_presets)
 
     async def session_fork(params: dict) -> dict:
         """从用户拥有的源会话的某条消息派生新会话：复制 1..source_message_id 共 N 条消息到新会话，末条打 draft_anchor。

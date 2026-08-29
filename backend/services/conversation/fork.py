@@ -1,9 +1,10 @@
 """会话派生服务。`special` / `im` / `cron` 语义上都不可分叉，仅 `kind='standard'` 可派生——这是协议约束故抛业务异常，不走 HTTP 边界。"""
 
 from modules.conversation import Conversation, Message
-from services.chat import build_session_messages
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from services.chat import build_session_messages
 
 # 从子模块直接导入避开 services.conversation 包级 __init__ 的循环依赖（__init__ 已 import fork）。
 from .main_conversation import CRON_KIND, IM_KIND, SPECIAL_KIND, STANDARD_KIND
@@ -40,31 +41,35 @@ async def fork_conversation_from_message(
             select(Message.id, Message.subtype).where(
                 Message.id == source_message_id,
                 Message.conversation_id == src.id,
-            )
+            ),
         )
     ).first()
     if src_msg is None:
         raise SourceNotFoundError(
-            f"源消息不在会话内: message_id={source_message_id} session_id={source_session_id!r}"
+            f"源消息不在会话内: message_id={source_message_id} session_id={source_session_id!r}",
         )
 
     # 排除 status_* 行（UI 痕迹，不入 LLM 上下文）；保留 hint / compress_summary / daily_summary / tool_summary
     rows = (
-        await db.execute(
-            select(Message)
-            .where(
-                Message.conversation_id == src.id,
-                Message.id <= source_message_id,
-                ~Message.subtype.like("status_%"),
+        (
+            await db.execute(
+                select(Message)
+                .where(
+                    Message.conversation_id == src.id,
+                    Message.id <= source_message_id,
+                    ~Message.subtype.like("status_%"),
+                )
+                .order_by(Message.id),
             )
-            .order_by(Message.id)
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not rows:
         # 源消息自身就是 status_* 时防御性兜底，正常路径不会到这里
         raise SourceNotFoundError(
-            f"无可派生的消息：会话 {source_session_id!r} 在 message_id={source_message_id} 之前没有可复制行"
+            f"无可派生的消息：会话 {source_session_id!r} 在 message_id={source_message_id} 之前没有可复制行",
         )
 
     # 继承 cwd / settings_json 让 runtime 启动即处于暖态；parent_id 串血缘供 REST lineage_root_id 暴露
@@ -75,6 +80,7 @@ async def fork_conversation_from_message(
         title=f"{(src.title or '新对话')} — 副本",
         cwd=src.cwd,
         settings_json=src.settings_json,
+        system_preset_id=src.system_preset_id,
         is_deletable=True,
         is_renamable=True,
     )
@@ -99,7 +105,7 @@ async def fork_conversation_from_message(
                 media_json=row.media_json,
                 summary_date=row.summary_date,
                 draft_anchor=(row.id == anchor_id),
-            )
+            ),
         )
 
     await db.commit()

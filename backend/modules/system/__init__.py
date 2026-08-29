@@ -7,6 +7,8 @@ from .schemas import (
     MessageResponse,
     PromptPreset,
     PromptPresetBlock,
+    PromptPresetListResponse,
+    PromptPresetSummary,
     StatusResponse,
 )
 
@@ -19,5 +21,7 @@ __all__ = [
     "MessageResponse",
     "PromptPreset",
     "PromptPresetBlock",
+    "PromptPresetListResponse",
+    "PromptPresetSummary",
     "StatusResponse",
 ]

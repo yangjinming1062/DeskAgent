@@ -25,6 +25,10 @@ class DesktopSessionInfo(BaseModel):
     handoff_platform: str | None = None
     handoff_state: str | None = None
     handoff_error: str | None = None
+    # NULL = 用户普通对话，chat 时按 resolve_preset 降级到 companion。
+    system_preset_id: str | None = None
+    # 已对 NULL 降级为 companion.icon_key，避免客户端再解析一次。枚举变更需同步 BUILTIN_PRESETS。
+    system_preset_icon_key: str | None = None
 
 
 class DesktopSessionListResponse(BaseModel):

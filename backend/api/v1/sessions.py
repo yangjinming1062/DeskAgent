@@ -15,6 +15,7 @@ from modules.conversation import (
     Message,
 )
 from services.chat import build_session_messages
+from services.chat.prompt_presets import resolve_preset
 from services.conversation import CRON_KIND, SPECIAL_KIND, ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +43,7 @@ _preview_subquery = (
 
 
 def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_tok: int, output_tok: int, tool_count: int, preview: str | None) -> DesktopSessionInfo:
+    preset = resolve_preset(conv.system_preset_id)
     return DesktopSessionInfo(
         id=str(conv.id),
         kind=conv.kind,
@@ -57,6 +59,8 @@ def _conversation_to_session_info(conv: Conversation, *, msg_count: int, input_t
         pinned=conv.pinned_at is not None,
         archived=conv.archived_at is not None,
         lineage_root_id=str(conv.parent_id) if conv.parent_id is not None else None,
+        system_preset_id=conv.system_preset_id,
+        system_preset_icon_key=preset.icon_key,
     )
 
 
@@ -125,13 +129,19 @@ async def list_sessions(
             "created": desc(Conversation.created_at),
             "messages": desc(func.coalesce(msg_stats.c.msg_count, 0)),
         }[order]
-        # 5 套系统预设排序槽
+        # 5 套系统预设排序槽（仅作用于系统预设对话，普通对话不按预设重排）
         preset_rank = case(
-            (Conversation.system_preset_id == "companion", 0),
-            (Conversation.system_preset_id == "developer", 1),
-            (Conversation.system_preset_id == "product_manager", 2),
-            (Conversation.system_preset_id == "copywriter", 3),
-            (Conversation.system_preset_id == "language_teacher", 4),
+            (
+                Conversation.kind == SPECIAL_KIND,
+                case(
+                    (Conversation.system_preset_id == "companion", 0),
+                    (Conversation.system_preset_id == "developer", 1),
+                    (Conversation.system_preset_id == "product_manager", 2),
+                    (Conversation.system_preset_id == "copywriter", 3),
+                    (Conversation.system_preset_id == "language_teacher", 4),
+                    else_=99,
+                ),
+            ),
             else_=99,
         )
         q = q.order_by(

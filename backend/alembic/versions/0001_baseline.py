@@ -456,7 +456,13 @@ def upgrade() -> None:
     # 每用户一条激活 2d 行：非 outfit 成功接缝与穿着翻转共用先停用后激活顺序，切分窗口内的并发激活由此兜底
     op.create_index("uq_companion_2d_models_one_active", "companion_2d_models", ["user_id"], unique=True, postgresql_where=sa.text("active"))
     # 每用户每预设最多一条系统预设对话：防止 ensure_system_conversations_for_user 重复插入或并发跑出多行。
-    op.create_index("uq_conversations_user_preset", "conversations", ["user_id", "system_preset_id"], unique=True, postgresql_where=sa.text("system_preset_id IS NOT NULL"))
+    op.create_index(
+        "uq_conversations_user_preset",
+        "conversations",
+        ["user_id", "system_preset_id"],
+        unique=True,
+        postgresql_where=sa.text("kind = 'special' AND system_preset_id IS NOT NULL"),
+    )
     # 每用户一个 waiting/switch 精灵；resolve_sprite 在插入前删旧行，因此也覆盖并发请求。
     op.create_index("uq_companion_expressions_user_name", "companion_expressions", ["user_id", "name"], unique=True)
     op.create_index("uq_memories_user_context", "memories", ["user_id", "context"], unique=True, postgresql_where=sa.text("context LIKE 'user_profile:%'"))

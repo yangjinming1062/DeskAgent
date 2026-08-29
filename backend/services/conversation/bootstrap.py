@@ -19,6 +19,7 @@ async def ensure_system_conversations_for_user(db: AsyncSession, user_id: int) -
             await db.execute(
                 select(Conversation.system_preset_id).where(
                     Conversation.user_id == user_id,
+                    Conversation.kind == SPECIAL_KIND,
                     Conversation.system_preset_id.is_not(None),
                 ),
             )

@@ -11,7 +11,12 @@ import {
 import { log } from '@/shared/lib/log'
 import { persistString, storedString } from '@/shared/lib/storage'
 import { $gateway } from '@/shared/store/gateway'
-import type { SessionInfo, SessionResumeResponse } from '@/shared/types/spiritagent'
+import type {
+  SessionInfo,
+  SessionResumeResponse,
+  SystemPresetListResponse,
+  SystemPresetSummary
+} from '@/shared/types/spiritagent'
 
 export type SessionSort = 'created' | 'messages' | 'recent'
 
@@ -29,10 +34,16 @@ export const $archivedSessions = atom<SessionInfo[]>([])
 export const $archivedLoading = atom(false)
 export const $archiveOpen = atom(false)
 
+// 系统预设元数据（不含 body，body 永远不下发到客户端）。预设体变更需后端重启，所以进程内缓存足够。
+export const $systemPresets = atom<SystemPresetSummary[]>([])
+export const $systemPresetsLoading = atom(false)
+export const $systemPresetsFetched = atom(false)
+
 // 每个 fetch 系列各自自增，避免慢响应覆盖更新的结果。
 let sessionsToken = 0
 let archivedToken = 0
 let searchToken = 0
+let presetsToken = 0
 
 function parseSessionSort(raw: null | string): SessionSort {
   return SESSION_SORTS.includes(raw as SessionSort) ? (raw as SessionSort) : 'recent'
@@ -176,7 +187,7 @@ export async function archiveSession(sessionId: string, archived: boolean): Prom
   void fetchArchived()
 }
 
-export async function createNewSession(): Promise<string | null> {
+export async function createNewSession(systemPresetId?: string | null): Promise<string | null> {
   const gw = $gateway.get()
 
   if (!gw) {
@@ -184,7 +195,13 @@ export async function createNewSession(): Promise<string | null> {
   }
 
   try {
-    const res = await gw.request<{ session_id: string; info?: SessionResumeResponse['info'] }>('session.create', {})
+    const params: Record<string, unknown> = {}
+
+    if (systemPresetId) {
+      params.system_preset_id = systemPresetId
+    }
+
+    const res = await gw.request<{ session_id: string; info?: SessionResumeResponse['info'] }>('session.create', params)
     setChatSession(res.session_id)
     resetChatMessages()
 
@@ -200,6 +217,37 @@ export async function createNewSession(): Promise<string | null> {
     log.error('session-list', 'Failed to create session:', err)
 
     return null
+  }
+}
+
+/** 拉取系统预设元数据；force=true 用于预设变更（需后端重启）后的强制重拉。 */
+export async function fetchSystemPresets(force = false): Promise<void> {
+  const gw = $gateway.get()
+
+  if (!gw) {
+    return
+  }
+
+  if (!force && $systemPresetsFetched.get()) {
+    return
+  }
+
+  const token = ++presetsToken
+  $systemPresetsLoading.set(true)
+
+  try {
+    const res = await gw.request<SystemPresetListResponse>('system.list_presets', {})
+
+    if (token === presetsToken) {
+      $systemPresets.set(res.presets || [])
+      $systemPresetsFetched.set(true)
+    }
+  } catch (err) {
+    log.error('session-list', 'Failed to fetch system presets:', err)
+  } finally {
+    if (token === presetsToken) {
+      $systemPresetsLoading.set(false)
+    }
   }
 }
 

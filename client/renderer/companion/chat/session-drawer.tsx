@@ -1,8 +1,9 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 import { $chatSessionId } from '@/companion/chat-store'
+import { PresetIconBadge, PresetPickerModal } from '@/companion/chat/preset-picker-modal'
 import {
   $archivedLoading,
   $archivedSessions,
@@ -13,9 +14,13 @@ import {
   $sessionSearch,
   $sessionsLoading,
   $sessionSort,
+  $systemPresets,
+  $systemPresetsFetched,
+  $systemPresetsLoading,
   archiveSession,
   createNewSession,
   deleteSession,
+  fetchSystemPresets,
   pinSession,
   runSessionSearch,
   type SessionSort,
@@ -28,7 +33,6 @@ import {
   CalendarPlus,
   ChevronDown,
   Clock,
-  Home,
   type IconComponent,
   MessageCircle,
   Messages,
@@ -60,6 +64,10 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
   const archivedLoading = useStore($archivedLoading)
   const archiveOpen = useStore($archiveOpen)
   const activeSessionId = useStore($chatSessionId)
+  const presets = useStore($systemPresets)
+  const presetsLoading = useStore($systemPresetsLoading)
+  const presetsFetched = useStore($systemPresetsFetched)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const searchActive = search.trim().length > 0
 
@@ -77,8 +85,19 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
     return () => clearTimeout(timer)
   }, [search])
 
-  const handleCreate = async (): Promise<void> => {
-    await createNewSession()
+  useEffect(() => {
+    if (!presetsFetched) {
+      void fetchSystemPresets()
+    }
+  }, [presetsFetched])
+
+  const handleCreate = (): void => {
+    setPickerOpen(true)
+  }
+
+  const handlePickerConfirm = async (presetId: string): Promise<void> => {
+    setPickerOpen(false)
+    await createNewSession(presetId)
     onClose()
   }
 
@@ -87,9 +106,11 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
     onClose()
   }
 
-  // 服务端排序保证 main + 手动置顶项是结果前缀，这里按谓词分组即可，不重排。
-  const pinnedSessions = sessions.filter(s => s.kind === 'main' || s.pinned)
-  const regularSessions = sessions.filter(s => s.kind !== 'main' && !s.pinned)
+  const isSpecialSession = (s: SessionInfo): boolean => s.kind === 'special' || s.kind === 'main'
+
+  // 服务端排序保证系统预设 + 手动置顶项是结果前缀，这里按谓词分组即可，不重排。
+  const pinnedSessions = sessions.filter(s => isSpecialSession(s) || s.pinned)
+  const regularSessions = sessions.filter(s => !isSpecialSession(s) && !s.pinned)
 
   return (
     <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-white/10 bg-surface-chrome">
@@ -152,7 +173,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
             {pinnedSessions.map(s => (
               <SessionRow
                 actions={
-                  s.kind === 'main' ? undefined : (
+                  isSpecialSession(s) ? undefined : (
                     <>
                       <RowAction
                         icon={PinOff}
@@ -254,6 +275,14 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
           </div>
         )}
       </div>
+      {pickerOpen && (
+        <PresetPickerModal
+          loading={presetsLoading}
+          onClose={() => setPickerOpen(false)}
+          onConfirm={handlePickerConfirm}
+          presets={presets}
+        />
+      )}
     </aside>
   )
 }
@@ -271,7 +300,10 @@ function SessionRow({
   badge?: string
   onSwitch: (id: string) => Promise<void> | void
 }): React.JSX.Element {
-  const isMain = session.kind === 'main'
+  const isSpecial = session.kind === 'special' || session.kind === 'main'
+  const presets = useStore($systemPresets)
+
+  const presetName = session.system_preset_id ? presets.find(p => p.id === session.system_preset_id)?.name : undefined
 
   return (
     <div
@@ -280,18 +312,25 @@ function SessionRow({
       }`}
       onClick={() => void onSwitch(session.id)}
     >
-      {isMain ? (
-        <Home className="size-3.5 shrink-0 text-amber-300/80" />
+      {isSpecial ? (
+        <span className="shrink-0" title={presetName ?? ''}>
+          <PresetIconBadge iconKey={session.system_preset_icon_key} />
+        </span>
       ) : (
         <MessageCircle className="size-3.5 shrink-0 text-white/35" />
       )}
       <div className="min-w-0 flex-1">
         <p className={cn('truncate text-xs', isActive ? 'font-medium text-white' : 'text-white/85')}>
-          {session.title || (isMain ? '日常对话' : '新建对话')}
+          {session.title || (isSpecial ? (presetName ?? '系统对话') : '新建对话')}
           {session.pinned && <Pin className="ml-1 inline size-3 text-white/30" />}
         </p>
         {session.preview && <p className="mt-0.5 truncate text-[10px] text-white/35">{session.preview}</p>}
       </div>
+      {!isSpecial && session.system_preset_icon_key && (
+        <span className="shrink-0" title={presetName ?? ''}>
+          <PresetIconBadge iconKey={session.system_preset_icon_key} />
+        </span>
+      )}
       {badge && <span className="shrink-0 rounded bg-white/10 px-1 py-0.5 text-[9px] text-white/50">{badge}</span>}
       <div className="flex shrink-0 items-center">{actions}</div>
     </div>

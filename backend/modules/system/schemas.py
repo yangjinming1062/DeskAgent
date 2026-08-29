@@ -96,3 +96,16 @@ class PromptPreset(BaseModel):
     description: str = ""
     icon_key: str
     body: str = Field(min_length=1, max_length=8192)
+
+
+class PromptPresetSummary(BaseModel):
+    """``system.list_presets`` RPC 返回的精简元数据：不含 body（预设体永不下发到客户端）。"""
+
+    id: str
+    name: str
+    description: str = ""
+    icon_key: str
+
+
+class PromptPresetListResponse(BaseModel):
+    presets: list[PromptPresetSummary]
