@@ -32,6 +32,7 @@ _BODY_COMPANION = (
     "{{SKILLS_LIST}}\n\n"
     "{{ENVIRONMENT_HINTS}}\n\n"
     "{{PLATFORM_HINTS}}\n\n"
+    "{{MESSAGE_TIMESTAMPS}}\n\n"
     "{{VOLATILE_HEADER}}"
 )
 

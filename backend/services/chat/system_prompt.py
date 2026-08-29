@@ -1,9 +1,11 @@
 import logging
+import re
 
 from components import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
     TOOL_ENFORCE_OFF_VALUES,
+    format_local_date_str,
     utc_now,
 )
 from modules.system import AgentPromptConfig, PromptPreset
@@ -12,6 +14,9 @@ from .affect import build_affect_guidance
 from .prompt_blocks import BLOCK_RENDERERS, substitute
 
 logger = logging.getLogger(__name__)
+
+# volatile header 行的发送前正则：保留 label 只换日期，避免 raw lang='fr' 解析后把英文 label 替换成中文。
+_VOLATILE_HEADER_RE = re.compile(r"(?m)^(?P<label>当前日期：|Current date: )(?P<date>.*)$")
 
 DEFAULT_AGENT_IDENTITY = (
     "You are a companion — a living, intelligent AI desktop partner who shares space and life with the user.\n"
@@ -268,7 +273,6 @@ def _should_inject_tool_use_enforcement(setting: str) -> bool:
 
 
 def _format_volatile_header(config: AgentPromptConfig) -> str:
-    now = utc_now()
     lang = _resolve_language(config.language)
     if lang not in _VOLATILE_LABELS:
         logger.warning(
@@ -277,8 +281,9 @@ def _format_volatile_header(config: AgentPromptConfig) -> str:
             DEFAULT_LANGUAGE,
         )
     label = _VOLATILE_LABELS.get(lang, _VOLATILE_LABELS[DEFAULT_LANGUAGE])
-    date_str = f"{now.year}年{now.month}月{now.day}日" if lang == "zh" else now.strftime("%A, %B %d, %Y")
-    return f"{label}{date_str}"
+    # 日期走用户本地时区（与 per-message [HH:MM] 前缀保持一致），tz 缺失/非法时回落 UTC。
+    date_str = format_local_date_str(utc_now(), config.user_local_tz, lang)
+    return f"{label}{date_str or ''}"
 
 
 def build_system_prompt(
@@ -301,3 +306,25 @@ def build_system_prompt(
     if system_message:
         rendered = f"{system_message}\n\n{rendered}"
     return rendered
+
+
+def refresh_volatile_header_in_prompt(
+    instructions: str,
+    *,
+    user_local_tz: str | None,
+    lang: str,
+) -> str:
+    """发送前最后一刻刷新 volatile header 行的日期部分，保留原 label。
+
+    设计取舍：只刷日期这一行；persona / outfit / native_memory 等由 per-turn
+    重建覆盖，build→send 排队窗口内被改的概率可忽略——全量重渲染会破坏
+    native_memory 注入且需多查 5 次库。保留 label 是为了防止 raw ``lang='fr'``
+    解析后被错换成中文/英文标签。
+    """
+    match = _VOLATILE_HEADER_RE.search(instructions)
+    if match is None:
+        return instructions
+    resolved_lang = _resolve_language(lang)
+    date_str = format_local_date_str(utc_now(), user_local_tz, resolved_lang)
+    fresh = f"{match.group('label')}{date_str or ''}"
+    return _VOLATILE_HEADER_RE.sub(fresh, instructions, count=1)

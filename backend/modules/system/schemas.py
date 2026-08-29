@@ -61,6 +61,9 @@ class AgentPromptConfig(BaseModel):
     custom_expressions: list[Any] | None = None
     available_actions: list[str] = Field(default_factory=list)
     language: str = DEFAULT_LANGUAGE
+    # 用户本地 IANA tz（如 "Asia/Shanghai"）；用于 volatile header 日期和 per-message [HH:MM] 前缀走本地时区。
+    # None 表示用户未设置，回落到服务端 UTC。
+    user_local_tz: str | None = None
 
 
 class PromptPresetBlock(str, Enum):
@@ -86,6 +89,7 @@ class PromptPresetBlock(str, Enum):
     PLATFORM_HINTS = "PLATFORM_HINTS"
     USER_IDENTITY_OVERRIDE = "USER_IDENTITY_OVERRIDE"
     VOLATILE_HEADER = "VOLATILE_HEADER"
+    MESSAGE_TIMESTAMPS = "MESSAGE_TIMESTAMPS"
 
 
 class PromptPreset(BaseModel):

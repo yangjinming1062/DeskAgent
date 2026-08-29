@@ -115,14 +115,21 @@ def assemble_debug_prompt(
     auto_inject_text: str = "",
     db_data: dict[str, Any] | None = None,
     preset_id: str = "companion",
+    user_local_tz: str | None = None,
+    message_sent_at: Any | None = None,
 ) -> dict[str, Any]:
+    from datetime import datetime
+    from types import SimpleNamespace
+
+    from components import ensure_utc, utc_now
     from modules.auth import ChatRequestClientContext
     from modules.system import AgentPromptConfig
     from services.chat.affect import BUILTIN_EMOTIONS
     from services.chat.prompt_presets import BUILTIN_PRESETS, resolve_preset
     from services.chat.system_prompt import build_system_prompt
+    from services.chat.turn_inputs import db_message_to_response_items
     from services.companion import render_extras
-    from services.llm import approx_responses_tokens, message_to_response_items
+    from services.llm import approx_responses_tokens
     from services.tools import REGISTRY, schema_name
 
     if db_data is not None:
@@ -172,16 +179,35 @@ def assemble_debug_prompt(
         available_actions=actions,
         language=language,
         platform=platform,
+        user_local_tz=user_local_tz,
     )
 
     instructions = build_system_prompt(agent_config, preset=resolve_preset(preset_id))
 
-    input_items = message_to_response_items(
-        {
-            "role": "user",
-            "content": [{"type": "input_text", "text": message_text}],
-        },
+    # 走生产路径 db_message_to_response_items：构造 ORM-like mock Message 让用户输入也带 [HH:MM] 前缀。
+    if message_sent_at is not None:
+        parsed = datetime.fromisoformat(message_sent_at) if isinstance(message_sent_at, str) else message_sent_at
+        sent_at = ensure_utc(parsed)
+    else:
+        sent_at = ensure_utc(utc_now())
+    mock_msg = SimpleNamespace(
+        subtype=None,
+        role="user",
+        content=message_text,
+        content_type="text",
+        created_at=sent_at,
+        tool_calls=None,
+        tool_call_id=None,
     )
+    input_items: list[dict[str, Any]] = []
+    resolved = resolve_preset(preset_id)
+    inject_message_timestamps = resolved.id == "companion"
+    for item in db_message_to_response_items(
+        mock_msg,
+        user_local_tz=user_local_tz,
+        inject_message_timestamps=inject_message_timestamps,
+    ):
+        input_items.extend(item if isinstance(item, list) else [item])
 
     estimated_tokens = approx_responses_tokens(instructions, input_items)
 
@@ -200,6 +226,8 @@ def assemble_debug_prompt(
             "persona_name": persona_dict.get("name", ""),
             "preset_id": preset_id,
             "preset_name": BUILTIN_PRESETS[resolve_preset(preset_id).id].name,
+            "user_local_tz": user_local_tz or "",
+            "message_sent_at": sent_at.isoformat() if sent_at else "",
         },
     }
 
@@ -276,6 +304,18 @@ def main() -> int:
         help="交互平台标识 (desktop, wechat)",
     )
     parser.add_argument("--without-tools", action="store_true", help="禁用工具注入")
+
+    # 时间感知（与生产路径一致）
+    parser.add_argument(
+        "--user-tz",
+        default=None,
+        help="用户本地 IANA 时区（如 Asia/Shanghai）；让 volatile header 与 [HH:MM] 前缀走本地时区",
+    )
+    parser.add_argument(
+        "--message-sent-at",
+        default=None,
+        help="模拟用户消息的发送时刻（ISO 8601，如 2026-08-29T02:30:00+08:00）；影响 [HH:MM] 前缀",
+    )
 
     # Onboarding 角色相关参数
     parser.add_argument("--persona-name", default=DEFAULT_MOCK_PERSONA["name"], help="角色姓名")
@@ -395,6 +435,8 @@ def main() -> int:
         enable_tools=not args.without_tools,
         db_data=db_data,
         preset_id=args.preset,
+        user_local_tz=args.user_tz,
+        message_sent_at=args.message_sent_at,
     )
 
     if args.raw_json:

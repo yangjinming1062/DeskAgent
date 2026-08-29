@@ -6,6 +6,9 @@ from components import (
     SESSION_TO_GLOBAL_KEY_ALIASES,
     TEMPERATURE_MAX,
     TEMPERATURE_MIN,
+    format_day_marker,
+    format_local_date_str,
+    format_message_timestamp,
     get_logger,
     safe_json_loads,
 )
@@ -27,6 +30,7 @@ from ..companion import (
     get_active_model,
     retrieve_proactive_memories,
 )
+from ..companion.memory_bootstrap import resolve_user_timezone
 from ..conversation import SPECIAL_KIND, UI_ONLY_SUBTYPES
 from ..gateway import RuntimeSession
 from ..llm import (
@@ -43,8 +47,8 @@ from ..llm import (
 )
 from ..tools import REGISTRY, NativeMemory, schema_name
 from .affect import BUILTIN_EMOTIONS, resolve_allowed_emotions, resolve_custom_expressions
-from .prompt_presets import resolve_preset
-from .system_prompt import build_system_prompt
+from .prompt_presets import DEFAULT_PRESET_ID, resolve_preset
+from .system_prompt import _resolve_language, build_system_prompt
 
 logger = get_logger(__name__)
 
@@ -73,6 +77,8 @@ class _TurnInputs:
     allowed_emotions: frozenset[str] = BUILTIN_EMOTIONS
     allowed_actions: frozenset[str] = frozenset()
     estimated_tokens: int = 0
+    user_local_tz: str | None = None
+    language: str = DEFAULT_LANGUAGE
 
 
 async def load_user_settings(db: AsyncSession, user_id: int) -> dict[str, str]:
@@ -98,24 +104,62 @@ def _merge_client_context(session_ctx: ChatRequestClientContext | None, request_
     return ChatRequestClientContext.model_validate(merged) if merged else None
 
 
-def db_message_to_response_items(msg: Message, *, drop_tool_intermediates: bool = False) -> list[dict[str, Any]]:
-    """将一条 DB Message 行转换为 Responses API input items；统一处理多模态 JSON、UI 过滤与工具帧。"""
+def db_message_to_response_items(
+    msg: Message,
+    *,
+    drop_tool_intermediates: bool = False,
+    user_local_tz: str | None = None,
+    inject_message_timestamps: bool = True,
+) -> list[dict[str, Any]]:
+    """DB Message → Responses API input items。多模态 JSON、UI 过滤、工具帧与消息时间戳统一处理。
+
+    时间戳前缀仅 user / assistant 注入：tool 是 JSON 负载不能前缀；system 已自带日期；
+    空 assistant + 无 tool_calls 直接跳过避免幽灵 ``[HH:MM]`` 文本输出。
+    ``inject_message_timestamps=False`` 时所有 role 都不加前缀（工作预设不需要 per-message 时间戳）。
+    """
     if msg.subtype in UI_ONLY_SUBTYPES:
         return []
     if drop_tool_intermediates and (msg.role == "tool" or (msg.role == "assistant" and msg.tool_calls)):
         return []
 
     content_val: str | list = msg.content or ""
-    if getattr(msg, "content_type", "text") == "multimodal_v1":
+    is_multimodal = getattr(msg, "content_type", "text") == "multimodal_v1"
+    if is_multimodal:
         parsed = safe_json_loads(content_val if isinstance(content_val, str) else "")
         content_val = parsed if isinstance(parsed, list) else content_val
+
+    if msg.role == "system":
+        return [{"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]}]
+
+    ts_prefix = format_message_timestamp(msg.created_at, user_local_tz) if inject_message_timestamps and msg.role in ("user", "assistant") else None
+
+    if ts_prefix is not None:
+        if is_multimodal:
+            parts = [dict(p) if isinstance(p, dict) else p for p in (content_val or [])]
+            inserted = False
+            for part in parts:
+                if isinstance(part, dict) and part.get("type") in ("input_text", "text"):
+                    existing = part.get("text") or ""
+                    part["text"] = f"{ts_prefix} {existing}".rstrip()
+                    inserted = True
+                    break
+            if not inserted:
+                parts = [{"type": "input_text", "text": ts_prefix}] + parts
+            content_val = parts
+        elif stripped := (content_val or "").strip():
+            content_val = f"{ts_prefix} {stripped}"
+        else:
+            ts_prefix = None
+
+    # 空 assistant + 无 tool_calls：跳过整条（防幽灵 [HH:MM] 文本输出）
+    if ts_prefix is None and msg.role == "assistant":
+        has_tool_calls = bool((msg.tool_calls or "").strip())
+        if not has_tool_calls and not is_multimodal and not (content_val or "").strip():
+            return []
 
     item: dict = {"role": msg.role, "content": content_val}
     if msg.tool_call_id:
         item["tool_call_id"] = msg.tool_call_id
-    if msg.role == "system":
-        return [{"role": "user", "content": [{"type": "input_text", "text": content_val or ""}]}]
-
     items: list[dict[str, Any]] = message_to_response_items(item)
     if msg.role == "assistant" and msg.tool_calls and (calls := safe_json_loads(msg.tool_calls)) is not None:
         for call in calls:
@@ -132,11 +176,45 @@ def _user_row_has_video_part(msg: Message) -> bool:
     return isinstance(parsed, list) and any(isinstance(p, dict) and p.get("type") == "input_video" for p in parsed)
 
 
-def _history_to_responses_context(db_msgs: list[Message], system_prompt: str, *, drop_tool_intermediates: bool) -> dict[str, Any]:
-    """``drop_tool_intermediates`` 仅对主会话开启：每轮工具调用由 ``tool_summary`` 行替代；普通会话保留原始 call/result 对，丢掉会失去工作上下文。"""
+def _history_to_responses_context(
+    db_msgs: list[Message],
+    system_prompt: str,
+    *,
+    drop_tool_intermediates: bool,
+    user_local_tz: str | None = None,
+    lang: str = DEFAULT_LANGUAGE,
+    inject_message_timestamps: bool = True,
+) -> dict[str, Any]:
+    """``drop_tool_intermediates`` 仅对主会话开启（用 ``tool_summary`` 行替代）；普通会话保留原始 call/result 对。
+
+    跨天时插一条 ``role=user`` 的日期标记，让 LLM 能区分 ``[23:50] → [08:00]`` 是「昨夜到今晨」还是「倒流」。
+    ``inject_message_timestamps=False`` 时跳过跨天分界（工作预设不需要）。
+    """
     context: dict[str, Any] = {"instructions": system_prompt, "input": []}
+    prev_date_key: str | None = None
     for msg in db_msgs:
-        context["input"].extend(db_message_to_response_items(msg, drop_tool_intermediates=drop_tool_intermediates))
+        if msg.subtype in UI_ONLY_SUBTYPES:
+            continue
+        if inject_message_timestamps and msg.created_at is not None and msg.role in ("user", "assistant"):
+            cur_date_key = format_local_date_str(msg.created_at, user_local_tz, lang)
+            if cur_date_key and prev_date_key is not None and cur_date_key != prev_date_key and msg.role == "user":
+                marker_text = format_day_marker(msg.created_at, user_local_tz, lang)
+                if marker_text:
+                    context["input"].append(
+                        {
+                            "role": "user",
+                            "content": [{"type": "input_text", "text": marker_text}],
+                        },
+                    )
+            prev_date_key = cur_date_key or prev_date_key
+        context["input"].extend(
+            db_message_to_response_items(
+                msg,
+                drop_tool_intermediates=drop_tool_intermediates,
+                user_local_tz=user_local_tz,
+                inject_message_timestamps=inject_message_timestamps,
+            ),
+        )
     return context
 
 
@@ -230,6 +308,7 @@ async def _build_turn_inputs(
     # auto_inject 记忆与 persona 是否完成无关：未声明 persona 也能承载 LLM 维护的背景上下文。
     auto_inject_extras = await format_auto_inject_block(db, user_id)
     inferred_profile_extras = await format_inferred_profile_block(db, user_id)
+    user_local_tz = await resolve_user_timezone(db, user_id)
     query_text = (req.message.content if req.message.role == "user" else (first_user_msg_content or "")) or ""
     proactive_rows = await retrieve_proactive_memories(db, user_id, query_text, limit=3) if query_text else []
     proactive_memory_extras = format_proactive_memory_block(proactive_rows)
@@ -245,6 +324,12 @@ async def _build_turn_inputs(
         from services.companion.mesh2d import DEFAULT_ACTIONS, NON_LLM_ACTIONS
 
         available_actions = sorted(set(DEFAULT_ACTIONS) - NON_LLM_ACTIONS)
+    # 入口处一次性 normalize 语言：避免 lang="fr" 等未支持值在 volatile header 与 day marker 处分别走不同分支。
+    session_lang = _resolve_language(user_settings.get("language", DEFAULT_LANGUAGE))
+    resolved_preset = resolve_preset(conv.system_preset_id)
+    # 仅 companion 预设（含 cron 主动消息）注入 per-message [HH:MM] 前缀与跨天分界；
+    # 工作预设只让 volatile header 的日期保持准确即可。
+    inject_message_timestamps = resolved_preset.id == DEFAULT_PRESET_ID
     agent_config = AgentPromptConfig(
         valid_tool_names=[schema_name(s) for s in all_schemas],
         model=model_name,
@@ -259,12 +344,16 @@ async def _build_turn_inputs(
         proactive_memory_extras=proactive_memory_extras,
         custom_expressions=custom_expressions,
         available_actions=available_actions,
-        language=user_settings.get("language", DEFAULT_LANGUAGE),
+        language=session_lang,
+        user_local_tz=user_local_tz,
     )
     context = _history_to_responses_context(
         history,
-        build_system_prompt(agent_config, preset=resolve_preset(conv.system_preset_id)),
+        build_system_prompt(agent_config, preset=resolved_preset),
         drop_tool_intermediates=conv.kind == SPECIAL_KIND,
+        user_local_tz=user_local_tz,
+        lang=session_lang,
+        inject_message_timestamps=inject_message_timestamps,
     )
 
     # 不绑定 session：每次 memory 工具调用各自开 session，连接不跨 LLM 循环持续占用。
@@ -283,6 +372,8 @@ async def _build_turn_inputs(
             for item in db_message_to_response_items(
                 m,
                 drop_tool_intermediates=drop_tools,
+                user_local_tz=user_local_tz,
+                inject_message_timestamps=inject_message_timestamps,
             )
         ]
         delta_tokens = approx_responses_tokens("", delta_items)
@@ -309,6 +400,8 @@ async def _build_turn_inputs(
         allowed_emotions=allowed_emotions,
         allowed_actions=frozenset(available_actions),
         estimated_tokens=estimated_tokens,
+        user_local_tz=user_local_tz,
+        language=session_lang,
     )
 
 

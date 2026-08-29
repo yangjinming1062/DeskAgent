@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from components import TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
+from components import DEFAULT_LANGUAGE, TOOL_CALL_ID_HEX_PREFIX_LEN, get_logger, new_request_id
 
 from ..llm import FailoverReason, LLMRuntimeError, build_responses_kwargs, call_with_retry
 from .affect import AffectScrubber
@@ -94,6 +94,8 @@ async def _stream_llm_response(
     temperature: float | None = None,
     allowed_emotions: frozenset[str] | None = None,
     allowed_actions: frozenset[str] | None = None,
+    user_local_tz: str | None = None,
+    lang: str = DEFAULT_LANGUAGE,
 ) -> _LLMTurnResult:
     """单次 LLM 调用：流式输出文本、累积 tool 调用、采集 usage；``on_first_chunk`` 仅触发一次，供回退派发器判断能否回退。"""
     client = provider.raw_client()
@@ -107,6 +109,8 @@ async def _stream_llm_response(
         stream=True,
         reasoning=reasoning,
         temperature=scaled_temperature,
+        user_local_tz=user_local_tz,
+        lang=lang,
     )
 
     # 仅记录送往 LLM 的多模态 part 形状：Vertex beta API 400 ``INVALID_ARGUMENT`` 多为代理未能转译 ``inline_data``，通过日志中的实际 part 列表可定位问题而无需抓包。

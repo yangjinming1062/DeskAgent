@@ -16,6 +16,7 @@ from components import (
     NIGHTLY_MESSAGE_TRUNCATE_CHARS,
     NIGHTLY_PLANNING_MAX_TOKENS,
     NIGHTLY_REFLECTION_MAX_TOKENS,
+    format_message_timestamp,
     get_logger,
     parse_llm_json,
     safe_json_loads,
@@ -58,6 +59,12 @@ _REFLECTION_SYSTEM_PROMPT = """You are SpiritAgent's nightly reflection engine. 
 Today's conversations are split into two keys:
 - "today_companion_conversations": Everyday companion conversation with the user — your main source for understanding user emotions, relationships, and preferences.
 - "today_work_conversations": Work/task conversations — extract user technical interests, work habits, and schedule, but do NOT infer relationship/emotional state from work tasks.
+
+Each turn in both keys is prefixed with `[HH:MM]` (user-local time). Use the timestamps to:
+- Distinguish late-night vs daytime emotional context (e.g., user vents at 02:30 vs asks light questions at 14:00).
+- Detect patterns like "user usually vents after midnight" or "user responds most actively in the evening".
+- Correlate interaction intensity with time-of-day when updating `auto_inject:interaction_pattern` and `inferred_profile:work_schedule`.
+Do NOT mistake a timestamp for the speaker — the `role` field tells you who spoke.
 
 Instructions:
 1. ONLY extract facts that are grounded in today's conversations or today's interaction statistics. Do NOT invent or assume facts.
@@ -181,15 +188,21 @@ Output valid JSON only:
 """
 
 
-def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[str, str]]:
-    """清洗会话流：去掉工具调用、系统 prompt 和纯工具执行。"""
+def _preprocess_conversation_for_nightly(
+    messages: list[Message],
+    *,
+    user_tz: str | None = None,
+) -> list[dict[str, str]]:
+    """清洗会话流：去掉工具调用、系统 prompt 与纯工具执行；user/assistant turn 在 content 前 prepend ``[HH:MM]``（用户本地时区）。"""
     clean: list[dict[str, str]] = []
     for msg in messages:
         if msg.role in ("system", "tool"):
             continue
+        ts_prefix = format_message_timestamp(msg.created_at, user_tz) or ""
         if msg.role == "assistant":
             if text_content := (msg.content or "").strip():
-                clean.append({"role": "assistant", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
+                content = f"{ts_prefix} {text_content}".rstrip() if ts_prefix else text_content
+                clean.append({"role": "assistant", "content": content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
         elif msg.role == "user":
             text_content = (msg.content or "").strip()
             if getattr(msg, "content_type", "text") == "multimodal_v1":
@@ -197,7 +210,8 @@ def _preprocess_conversation_for_nightly(messages: list[Message]) -> list[dict[s
                 if isinstance(parsed, list):
                     text_content = "\n".join(t for p in parsed if isinstance(p, dict) and p.get("type") in {"input_text", "text"} and (t := (p.get("text") or "").strip()))
             if text_content:
-                clean.append({"role": "user", "content": text_content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
+                content = f"{ts_prefix} {text_content}".rstrip() if ts_prefix else text_content
+                clean.append({"role": "user", "content": content[:NIGHTLY_MESSAGE_TRUNCATE_CHARS]})
     return clean
 
 
@@ -507,10 +521,10 @@ async def run_nightly_pipeline(user_id: int, reference_utc: datetime | None = No
         main_msgs = [m for m, p in all_today_tuples if p == "companion"]
         work_msgs = [m for m, p in all_today_tuples if p != "companion"]
 
-        clean_main_messages = _preprocess_conversation_for_nightly(main_msgs)
-        clean_work_messages = _preprocess_conversation_for_nightly(work_msgs)
+        clean_main_messages = _preprocess_conversation_for_nightly(main_msgs, user_tz=tz_str)
+        clean_work_messages = _preprocess_conversation_for_nightly(work_msgs, user_tz=tz_str)
         # 跨两类按时间顺序——日记和创作 prompt 把这一天的对话视为整体，简单拼接会凭空造出从未发生的顺序。
-        clean_messages = _preprocess_conversation_for_nightly([m for m, _ in all_today_tuples])
+        clean_messages = _preprocess_conversation_for_nightly([m for m, _ in all_today_tuples], user_tz=tz_str)
         if not any(m["role"] == "user" for m in clean_messages):
             logger.info("nightly_activity: no clean user messages today", extra={"user_id": user_id})
             return False

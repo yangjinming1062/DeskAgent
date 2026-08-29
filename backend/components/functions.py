@@ -2,6 +2,7 @@ import json
 import re
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel
 
@@ -65,6 +66,43 @@ def utc_now() -> datetime:
 def ensure_utc(dt: datetime) -> datetime:
     """给失去 tzinfo 的 datetime 补 UTC（DB 约定 timestamptz，PG 自带 tzinfo；本函数是其他来源的兜底）。"""
     return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+# ---------- 时间格式化（陪伴对话消息时间戳感知）----------
+
+
+def _safe_localize(dt: datetime | None, tz_str: str | None) -> datetime | None:
+    if dt is None:
+        return None
+    dt = ensure_utc(dt)
+    try:
+        zone = ZoneInfo(tz_str) if tz_str else ZoneInfo("UTC")
+    except (OSError, ValueError, TypeError):
+        zone = ZoneInfo("UTC")
+    return dt.astimezone(zone)
+
+
+def format_message_timestamp(dt: datetime | None, tz_str: str | None) -> str | None:
+    localized = _safe_localize(dt, tz_str)
+    return f"[{localized.hour:02d}:{localized.minute:02d}]" if localized is not None else None
+
+
+def format_local_date_str(dt: datetime | None, tz_str: str | None, lang: str = "zh") -> str | None:
+    localized = _safe_localize(dt, tz_str)
+    if localized is None:
+        return None
+    is_zh = (lang or "").strip().lower() == "zh"
+    return f"{localized.year}年{localized.month}月{localized.day}日" if is_zh else localized.strftime("%A, %B %d, %Y")
+
+
+def format_day_marker(dt: datetime | None, tz_str: str | None, lang: str = "zh") -> str | None:
+    localized = _safe_localize(dt, tz_str)
+    if localized is None:
+        return None
+    if (lang or "").strip().lower() == "zh":
+        wd = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"][localized.weekday()]
+        return f"--- {localized.year}年{localized.month}月{localized.day}日 {wd} ---"
+    return f"--- {localized.strftime('%A, %B %d, %Y')} ---"
 
 
 def as_bool(value: Any, default: bool) -> bool:

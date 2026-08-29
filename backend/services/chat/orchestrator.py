@@ -148,6 +148,8 @@ async def run_chat_turn(
                     temperature=temperature,
                     allowed_emotions=inputs.allowed_emotions,
                     allowed_actions=inputs.allowed_actions,
+                    user_local_tz=inputs.user_local_tz,
+                    lang=inputs.language,
                 )
 
             def set_stream_emitted() -> None:

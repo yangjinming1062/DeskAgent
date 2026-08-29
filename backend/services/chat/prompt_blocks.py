@@ -136,6 +136,49 @@ def _volatile_header_block(config: AgentPromptConfig) -> str:
     return _format_volatile_header(config)
 
 
+def _message_timestamps_block(config: AgentPromptConfig) -> str:
+    """每条 user/assistant 消息的 ``[HH:MM]`` 前缀与跨天分界线说明，含负向约束防止 LLM 自我模仿。"""
+    from .system_prompt import _resolve_language
+
+    lang = _resolve_language(config.language)
+    if lang == "zh":
+        tz_note = f"（用户本地时区：{config.user_local_tz}）" if config.user_local_tz else "（用户未设置本地时区，当前时间戳为服务端 UTC 时间）"
+        return (
+            "## 消息时间戳说明\n"
+            "本会话中每条 user / assistant 消息前面带 `[HH:MM]` 前缀，"
+            "表示该消息在用户本地时区下的发送时刻。"
+            f"{tz_note}\n"
+            "当消息跨越不同的本地日期时，系统会在两条消息之间插入形如 `--- 2026年8月29日 周六 ---` 的分界线。\n"
+            "- 用时间戳感知**时刻**：区分凌晨深夜、白天日常、清晨问候等不同时段应有的回应方式。\n"
+            "- 用时间戳推断**回复节奏**：从相邻 user/assistant 的时间戳差能看出用户通常多久回复，"
+            "主动消息触发或跟进时按此设置期望响应时限，而不是套用固定秒数。\n"
+            "- 用时间戳判断**情绪时段**：连读多条凌晨消息与连读多条午后消息，对话基调和回应方式应不同。\n"
+            "- `[HH:MM]` 不是发言人名，是发送时刻；阅读时按 `角色` 字段判断说话方。\n"
+            "\n"
+            "## 负向约束（重要）\n"
+            "**你自己的回复内容中严禁自行添加 `[HH:MM]` 前缀**，时间戳由系统后台统一管理。"
+            "如果你在回复文本里写出了 `[HH:MM]`，那会被后端在下一轮又拼一个前缀，造成重复。\n"
+            "同时严禁写 `--- YYYY年M月D日 周X ---` 这类日期分界线，分界线也由系统注入。"
+        )
+    tz_note = f" (user local timezone: {config.user_local_tz})" if config.user_local_tz else " (user local timezone not set, timestamps are in server UTC)"
+    return (
+        "## Message Timestamps Guidance\n"
+        "Each user/assistant message in this conversation is prefixed with `[HH:MM]`, "
+        "indicating its transmission time in the user's local timezone."
+        f"{tz_note}\n"
+        "When messages cross different local calendar days, the system inserts a divider like `--- Saturday, August 29, 2026 ---` between messages.\n"
+        "- Use timestamps to perceive **time of day**: differentiate late-night, daytime routine, morning greetings, etc.\n"
+        "- Use timestamps to infer **response cadence**: estimate user turnaround time from adjacent timestamps instead of using arbitrary fixed timeouts.\n"
+        "- Use timestamps to discern **emotional context**: late-night messages carry different context than afternoon chats.\n"
+        "- `[HH:MM]` is a transmission timestamp, not a speaker name; identify the speaker by the role field.\n"
+        "\n"
+        "## Negative Constraints (Crucial)\n"
+        "**NEVER prefix your own output responses with `[HH:MM]` timestamps**; timestamps are managed solely by the system backend. "
+        "Adding timestamps to your output will result in duplicate prefixes in subsequent turns.\n"
+        "Likewise, NEVER generate date divider lines like `--- Saturday, August 29, 2026 ---`; dividers are injected by the system."
+    )
+
+
 BLOCK_RENDERERS: dict[str, Callable[[AgentPromptConfig], str | None]] = {
     "LANGUAGE_DIRECTIVE": _language_directive_block,
     "HELP_GUIDANCE": _help_guidance_block,
@@ -157,6 +200,7 @@ BLOCK_RENDERERS: dict[str, Callable[[AgentPromptConfig], str | None]] = {
     "PLATFORM_HINTS": _platform_hints_block,
     "USER_IDENTITY_OVERRIDE": _user_identity_override_block,
     "VOLATILE_HEADER": _volatile_header_block,
+    "MESSAGE_TIMESTAMPS": _message_timestamps_block,
 }
 
 
