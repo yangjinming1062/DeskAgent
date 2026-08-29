@@ -6,7 +6,7 @@ import {
   type IpcEventContract
 } from '@ipc/contracts'
 import type { App, BrowserWindow, IpcMain } from 'electron'
-
+import log from 'electron-log/main'
 // 顶层静态 import：client/package.json 是 ESM (`"type": "module"`)，asar 模式下 dynamic require
 // （`require('electron-log/main')` / `require('electron-updater')`）会被 Node 拒绝并抛
 // "Dynamic require of 'electron-log/main' is not supported"。把这两条搬上来既消除错误，
@@ -14,7 +14,6 @@ import type { App, BrowserWindow, IpcMain } from 'electron'
 // 注意：electron-updater 是 CJS 模块没有 named export `autoUpdater`，必须 default import + 解构，
 // 顶层 named import 在 dev/prod 都会被 Node ESM loader 拒绝。
 import electronUpdaterPkg from 'electron-updater'
-import log from 'electron-log/main'
 
 interface UpdateIpcDeps {
   electron: { app: App }
@@ -65,10 +64,10 @@ export function registerUpdateIpc({ electron, getMainWindow, ipcMain, sendToMain
   })
 
   autoUpdater.on('checking-for-update', () => broadcast({ type: 'checking' }))
-  autoUpdater.on('update-available', (info) => broadcast({ info: toDesktopUpdateInfo(info), type: 'available' }))
-  autoUpdater.on('update-not-available', (info) => broadcast({ info: toDesktopUpdateInfo(info), type: 'none' }))
+  autoUpdater.on('update-available', info => broadcast({ info: toDesktopUpdateInfo(info), type: 'available' }))
+  autoUpdater.on('update-not-available', info => broadcast({ info: toDesktopUpdateInfo(info), type: 'none' }))
   autoUpdater.on('download-progress', (progress: DesktopUpdateProgress) => broadcast({ progress, type: 'progress' }))
-  autoUpdater.on('update-downloaded', (info) => broadcast({ info: toDesktopUpdateInfo(info), type: 'downloaded' }))
+  autoUpdater.on('update-downloaded', info => broadcast({ info: toDesktopUpdateInfo(info), type: 'downloaded' }))
   autoUpdater.on('error', (err: unknown) => {
     const message = err instanceof Error ? err.message : String(err)
 
