@@ -15,6 +15,7 @@ const SYNCED_SECTIONS = [
   'file_state',
   'audio',
   'companion',
+  'shortcuts',
   'ui'
 ] as const
 
@@ -42,7 +43,11 @@ export interface ConfigSyncDeps {
   ensureBackend: () => Promise<ConfigSyncConnection>
   fetchImpl: FetchFunction
   log: (chunk: string) => void
-  onHydrated: (payload: { companion: Record<string, unknown>; ui: Record<string, unknown> }) => void
+  onHydrated: (payload: {
+    companion: Record<string, unknown>
+    shortcuts?: Record<string, unknown>
+    ui: Record<string, unknown>
+  }) => void
 }
 
 export interface ConfigSync {
@@ -286,6 +291,7 @@ export function createConfigSync(deps: ConfigSyncDeps): ConfigSync {
       const after = store.read()
       deps.onHydrated({
         companion: objectSection(after, 'companion'),
+        shortcuts: objectSection(after, 'shortcuts'),
         ui: objectSection(after, 'ui')
       })
 

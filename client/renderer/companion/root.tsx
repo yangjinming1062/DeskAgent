@@ -171,6 +171,21 @@ export function CompanionRoot(): React.JSX.Element {
     return () => off?.()
   }, [auth.kind, openDock])
 
+  // 全局快捷键「打开/关闭对话」：已打开时收起；未打开时已登录开对话、未登录开激活。
+  useEffect(() => {
+    const off = window.spiritagent.shortcuts?.onToggleChat?.(() => {
+      if (chatOpen) {
+        setChatOpen(false)
+      } else if (auth.kind === 'authenticated') {
+        openDock('chat')
+      } else {
+        setActivationOpen(true)
+      }
+    })
+
+    return () => off?.()
+  }, [auth.kind, chatOpen, openDock])
+
   // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
   useEffect(() => {
     const off = window.spiritagent.onTrayResetPosition?.(() => {

@@ -90,7 +90,22 @@ export const strings = {
       appearance: '外观',
       channels: '聊天通道',
       runner: '本机执行器',
+      shortcuts: '快捷键',
       skills: '技能与工具'
+    },
+    shortcuts: {
+      heading: '全局快捷键',
+      intro: '在系统任意界面通过全局快捷键唤起或隐藏伴侣。点击按键框即可录制新组合。',
+      toggleVisibility: '隐藏 / 显示伴侣',
+      toggleVisibilityDesc: '快速在桌面显示或隐藏伙伴窗口。',
+      toggleChat: '打开 / 关闭对话窗',
+      toggleChatDesc: '快速展开或收起对话输入面板。',
+      pressKeysPrompt: '请按下组合键…',
+      pressKeysHint: '按 Esc 取消录制，按 Backspace 或 Delete 清空',
+      resetAll: '恢复全部默认',
+      resetAllSuccess: '已恢复默认快捷键',
+      conflictError: '快捷键已被系统或其他应用占用',
+      empty: '未设置'
     },
     channels: {
       heading: '聊天通道',

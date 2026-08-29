@@ -5,6 +5,8 @@ import {
   type DesktopBootProgress,
   type DesktopPrefsHydrated,
   type DesktopRunnerStatusEvent,
+  type DesktopShortcutsSetPayload,
+  type DesktopShortcutsState,
   type DesktopUiThemeBroadcast,
   type DesktopUpdateEvent,
   IPC,
@@ -135,6 +137,23 @@ contextBridge.exposeInMainWorld('spiritagent', {
   },
   setUiTheme: (payload: SpiritAgentUiTheme) => ipcRenderer.send(IPC.send.uiTheme, payload),
   showToolWindow: () => ipcRenderer.invoke(IPC.invoke.windowShowTool),
+  shortcuts: {
+    get: () => ipcRenderer.invoke(IPC.invoke.shortcutsGet),
+    onChanged: (callback: (payload: DesktopShortcutsState) => void) => {
+      const listener = (_event: IpcRendererEvent, payload: DesktopShortcutsState) => callback(payload)
+      ipcRenderer.on(IPC.event.shortcutsChanged, listener)
+
+      return () => ipcRenderer.removeListener(IPC.event.shortcutsChanged, listener)
+    },
+    onToggleChat: (callback: () => void) => {
+      const listener = () => callback()
+      ipcRenderer.on(IPC.event.shortcutToggleChat, listener)
+
+      return () => ipcRenderer.removeListener(IPC.event.shortcutToggleChat, listener)
+    },
+    reset: () => ipcRenderer.invoke(IPC.invoke.shortcutsReset),
+    set: (payload: DesktopShortcutsSetPayload) => ipcRenderer.invoke(IPC.invoke.shortcutsSet, payload)
+  },
   skills: {
     list: () => ipcRenderer.invoke(IPC.invoke.skillsList),
     setEnabled: (payload: { enabled: boolean; name: string }) => ipcRenderer.invoke(IPC.invoke.skillSetEnabled, payload)

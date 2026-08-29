@@ -105,8 +105,33 @@ export interface SpiritAgentPrefsSet {
 }
 
 // 云端配置水合广播：主进程把 GET /api/config 水合进本地镜像后，携带镜像中的偏好节通知双窗口刷新缓存。
+export interface DesktopShortcutsConfig {
+  toggleChat: string
+  toggleVisibility: string
+}
+
+export const DEFAULT_SHORTCUTS: Readonly<DesktopShortcutsConfig> = {
+  toggleChat: 'Alt+Shift+C',
+  toggleVisibility: 'Alt+Shift+H'
+} as const
+
+export interface ShortcutRegistrationStatus {
+  error?: string
+  registered: boolean
+}
+
+export interface DesktopShortcutsState {
+  config: DesktopShortcutsConfig
+  status: Record<keyof DesktopShortcutsConfig, ShortcutRegistrationStatus>
+}
+
+export interface DesktopShortcutsSetPayload {
+  shortcuts: Partial<DesktopShortcutsConfig>
+}
+
 export interface DesktopPrefsHydrated {
   companion: Record<string, unknown>
+  shortcuts?: DesktopShortcutsConfig
   ui: { theme?: SpiritAgentUiTheme }
 }
 
@@ -283,6 +308,14 @@ export interface IpcInvokeContract {
     | { bytes: number; dataUrl: string; mimeType: string; tag: string }
     | Promise<{ bytes: number; dataUrl: string; mimeType: string; tag: string }>
 
+  // 快捷键
+  'spiritagent:shortcuts:get': () => DesktopShortcutsState | Promise<DesktopShortcutsState>
+  'spiritagent:shortcuts:set': (
+    payload: DesktopShortcutsSetPayload
+  ) => DesktopShortcutsState | Promise<DesktopShortcutsState>
+  'spiritagent:shortcuts:reset': () => DesktopShortcutsState | Promise<DesktopShortcutsState>
+
+  // 更新
   'spiritagent:update:check': () => Promise<void> | void
 
   // 精灵窗口
@@ -300,8 +333,6 @@ export interface IpcInvokeContract {
     | null
     | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }
     | Promise<null | { cursor: { x: number; y: number }; from: { x: number; y: number }; to: { x: number; y: number } }>
-
-  // 更新
 }
 
 // 2. 主进程向渲染进程推送事件（通过 webContents.send / ipcRenderer.on）
@@ -312,6 +343,8 @@ export interface IpcEventContract {
   'spiritagent:power-resume': []
   'spiritagent:prefs-hydrated': [payload: DesktopPrefsHydrated]
   'spiritagent:runner:status': [payload: DesktopRunnerStatusEvent]
+  'spiritagent:shortcut:toggle-chat': []
+  'spiritagent:shortcuts:changed': [payload: DesktopShortcutsState]
   'spiritagent:tray:activate': []
   'spiritagent:tray:logout': []
   'spiritagent:tray:open-chat': []
@@ -362,6 +395,9 @@ export const IPC = {
     runnerConfigRead: 'spiritagent:runner-config:read',
     runnerConfigWrite: 'spiritagent:runner-config:write',
     runnerConfigPatch: 'spiritagent:runner-config:patch',
+    shortcutsGet: 'spiritagent:shortcuts:get',
+    shortcutsSet: 'spiritagent:shortcuts:set',
+    shortcutsReset: 'spiritagent:shortcuts:reset',
     skillsList: 'spiritagent:skills:list',
     skillSetEnabled: 'spiritagent:skill:set-enabled',
     toolsetsList: 'spiritagent:toolsets:list',
@@ -384,6 +420,8 @@ export const IPC = {
     powerResume: 'spiritagent:power-resume',
     prefsHydrated: 'spiritagent:prefs-hydrated',
     runnerStatus: 'spiritagent:runner:status',
+    shortcutToggleChat: 'spiritagent:shortcut:toggle-chat',
+    shortcutsChanged: 'spiritagent:shortcuts:changed',
     trayActivate: 'spiritagent:tray:activate',
     trayLogout: 'spiritagent:tray:logout',
     trayOpenChat: 'spiritagent:tray:open-chat',

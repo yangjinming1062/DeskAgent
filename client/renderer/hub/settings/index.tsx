@@ -2,7 +2,7 @@ import { IconPalette } from '@tabler/icons-react'
 import { IconBrandWechat } from '@tabler/icons-react'
 
 import { useRouteEnumParam } from '@/shared/hooks/use-route-enum-param'
-import { AudioLines, Brain, Cpu, Info, Settings, Sparkles } from '@/shared/lib/icons'
+import { AudioLines, Brain, Cpu, Info, Keyboard, Settings, Sparkles } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
 import { type NavItemDescriptor, SettingsNav, SURFACE_CHROME } from '@/shared/panel'
 import { strings } from '@/shared/strings'
@@ -14,6 +14,7 @@ import { AppearanceSettings } from './appearance-settings'
 import { ChannelsSettings } from './channels-settings'
 import { InferenceSettings } from './inference-settings'
 import { RunnerSettings } from './runner-settings'
+import { ShortcutsSettings } from './shortcuts-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
@@ -23,6 +24,7 @@ const SETTINGS_VIEWS = [
   'speech',
   'channels',
   'appearance',
+  'shortcuts',
   'runner',
   'skills',
   'about'
@@ -39,6 +41,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
     { id: 'speech', label: t.speech.title, icon: AudioLines },
     { id: 'channels', label: t.settings.nav.channels, icon: IconBrandWechat },
     { id: 'appearance', label: t.settings.nav.appearance, icon: IconPalette },
+    { id: 'shortcuts', label: t.settings.nav.shortcuts, icon: Keyboard },
     { id: 'runner', label: t.settings.nav.runner, icon: Cpu },
     { id: 'skills', label: t.settings.nav.skills, icon: Sparkles },
     { id: 'about', label: t.settings.nav.about, icon: Info }
@@ -59,6 +62,8 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
             <ChannelsSettings />
           ) : activeView === 'appearance' ? (
             <AppearanceSettings />
+          ) : activeView === 'shortcuts' ? (
+            <ShortcutsSettings />
           ) : activeView === 'runner' ? (
             <RunnerSettings />
           ) : activeView === 'skills' ? (

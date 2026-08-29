@@ -11,7 +11,7 @@ interface PrefsIpcDeps {
 // （镜像原子写 + runner 推送 + 云端防抖上云，见 shared/lib/config-sync.ts）。
 // 拖拽类高频源由渲染侧防抖（floating-panel 600ms），此处立即合入。
 // 只放行偏好节前缀——terminal 等本机节不允许经此通道写入。
-const ALLOWED_KEY_PREFIXES = ['companion.', 'ui.'] as const
+const ALLOWED_KEY_PREFIXES = ['companion.', 'shortcuts.', 'ui.'] as const
 
 export function registerPrefsIpc({ ipcMain }: PrefsIpcDeps): void {
   ipcMain.on(IPC.send.prefsSet, (_event, payload: unknown) => {

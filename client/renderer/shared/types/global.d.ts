@@ -14,8 +14,12 @@ import type {
   DesktopAuthBroadcast,
   DesktopAuthSnapshot,
   DesktopBootProgress,
+  DesktopPrefsHydrated,
   DesktopRunnerState,
   DesktopRunnerStatusEvent,
+  DesktopShortcutsConfig,
+  DesktopShortcutsSetPayload,
+  DesktopShortcutsState,
   DesktopUiThemeBroadcast,
   DesktopUpdateEvent,
   IpcEventContract,
@@ -24,6 +28,7 @@ import type {
   MediaSttPayload,
   MediaTtsPayload,
   RunnerConfigPatch,
+  ShortcutRegistrationStatus,
   SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentSelectPathsOptions,
@@ -81,6 +86,13 @@ declare global {
       prefs: {
         set: (payload: IpcSendContract['spiritagent:prefs:set'][0]) => void
       }
+      shortcuts: {
+        get: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:get']>
+        onChanged: EventSubscription<'spiritagent:shortcuts:changed'>
+        onToggleChat: EventSubscription<'spiritagent:shortcut:toggle-chat'>
+        reset: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:reset']>
+        set: AsyncIpc<IpcInvokeContract['spiritagent:shortcuts:set']>
+      }
       runnerConfig: {
         read: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:read']>
         write: AsyncIpc<IpcInvokeContract['spiritagent:runner-config:write']>
@@ -135,18 +147,22 @@ export type {
   DesktopAuthBroadcast,
   DesktopAuthSnapshot,
   DesktopBootProgress,
-  DesktopPrefsHydrated,
-  DesktopRunnerState,
-  DesktopRunnerStatusEvent,
-  DesktopUiThemeBroadcast,
-  DesktopUpdateEvent,
-  IpcEventContract,
-  IpcInvokeContract,
-  IpcSendContract,
-  MediaSttPayload,
-  MediaTtsPayload,
-  RunnerConfigPatch,
-  SpiritAgentApiRequest,
+  type DesktopPrefsHydrated,
+  type DesktopRunnerState,
+  type DesktopRunnerStatusEvent,
+  type DesktopShortcutsConfig,
+  type DesktopShortcutsSetPayload,
+  type DesktopShortcutsState,
+  type DesktopUiThemeBroadcast,
+  type DesktopUpdateEvent,
+  type IpcEventContract,
+  type IpcInvokeContract,
+  type IpcSendContract,
+  type MediaSttPayload,
+  type MediaTtsPayload,
+  type RunnerConfigPatch,
+  type ShortcutRegistrationStatus,
+  type SpiritAgentApiRequest,
   SpiritAgentConnection,
   SpiritAgentPrefsSet,
   SpiritAgentSelectPathsOptions,

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   type DesktopBootProgress,
   type DesktopPrefsHydrated,
+  type DesktopShortcutsConfig,
   IPC,
   SPIRITAGENT_UI_THEMES,
   type SpiritAgentConnection
@@ -43,6 +44,7 @@ import { registerOnboardingAudioIpc } from './ipc/onboarding-audio'
 import { registerPrefsIpc } from './ipc/prefs'
 import { autoStartBridge, autoStopBridge, registerRunnerIpc } from './ipc/runner'
 import { registerRunnerConfigIpc } from './ipc/runner-config'
+import { cleanupShortcuts, registerShortcutsIpc, syncShortcutsFromConfig } from './ipc/shortcuts'
 import { registerSkillsIpc } from './ipc/skills'
 import { readRestPosition, registerSpriteIpc } from './ipc/sprite'
 import { registerSystemIpc } from './ipc/system'
@@ -128,10 +130,17 @@ const configSync = createConfigSync({
   ensureBackend: () => ensureBackend(),
   fetchImpl: (url, init) => electronNet.fetch(url, init),
   log: chunk => rememberLog(chunk),
-  onHydrated: ({ companion, ui }) => {
+  onHydrated: ({ companion, shortcuts, ui }) => {
     const themeValue = ui.theme
     const theme = SPIRITAGENT_UI_THEMES.find(candidate => candidate === themeValue)
-    const payload: DesktopPrefsHydrated = { companion, ui: theme ? { theme } : {} }
+
+    const payload: DesktopPrefsHydrated = {
+      companion,
+      shortcuts: shortcuts as DesktopShortcutsConfig | undefined,
+      ui: theme ? { theme } : {}
+    }
+
+    syncShortcutsFromConfig()
 
     for (const win of [mainWindow, toolWindow]) {
       if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
@@ -1462,6 +1471,24 @@ registerUiThemeIpc({
   ipcMain
 })
 registerPrefsIpc({ ipcMain })
+registerShortcutsIpc({
+  getMainWindow: () => mainWindow,
+  getToolWindow: () => toolWindow,
+  hideMainWindow: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.hide()
+
+      if (process.platform === 'win32') {
+        mainWindow.setSkipTaskbar(true)
+      }
+
+      rebuildTrayMenu()
+    }
+  },
+  ipcMain,
+  rememberLog: chunk => rememberLog(chunk),
+  showMainWindow: () => showMainWindow()
+})
 registerClipboardIpc({
   electron: { clipboard },
   ipcMain,
@@ -1769,6 +1796,7 @@ function configureSpellChecker(): void {
 app.on('before-quit', () => {
   bridgeDeps.isQuitting = true
   destroyTray()
+  cleanupShortcuts()
 
   // 尽力而为的收尾上云；进程先退也不丢——下次启动水合的键级播种会把遗留编辑补传。
   void configSync.flush()
