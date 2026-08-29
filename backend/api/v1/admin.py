@@ -207,6 +207,12 @@ async def list_model_configs(_admin: str = Depends(get_current_admin_token), db:
     return UserModelConfigListResponse(items=[_config_list_item(r) for r in (await db.execute(select(UserModelConfig))).scalars().all()])
 
 
+@router.get("/runtime-info")
+async def runtime_info(_admin: str = Depends(get_current_admin_token)) -> dict:
+    """把 ``public_base_url`` 暴露给 admin 页：创建账号时自动填进激活码的 ``baseUrl``，留空时前端再降级到 ``http://localhost:10620``。"""
+    return {"public_base_url": SETTINGS.public_base_url or ""}
+
+
 @router.put("/{user_id}/model-config")
 async def upsert_model_config(user_id: int, payload: UserModelConfigRequest, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     # 管理员写入必须三字段齐全；行内字段不全会静默打断用户聊天链路（PROTOCOL §5.4）。

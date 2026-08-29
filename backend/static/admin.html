@@ -960,11 +960,42 @@ function renderUsers(data) {
     }).join('');
 }
 
-function showCreateUser() {
+// ── baseUrl 默认值：现有激活码里的 b > 后端 public_base_url > localhost:10620 ──
+let runtimeInfoCache = null;
+
+async function fetchRuntimeInfo() {
+    if (runtimeInfoCache !== null) {
+        return runtimeInfoCache;
+    }
+    try {
+        const data = await (await apiFetch('/api/admin/runtime-info')).json();
+        runtimeInfoCache = typeof data?.public_base_url === 'string' ? data.public_base_url : '';
+    } catch {
+        runtimeInfoCache = '';
+    }
+    return runtimeInfoCache;
+}
+
+function decodeActivationBaseUrl(code) {
+    if (!code) return null;
+    try {
+        const raw = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
+        const data = JSON.parse(raw);
+        return data?.b || null;
+    } catch {
+        return null;
+    }
+}
+
+async function resolveDefaultBaseUrl(existingCode) {
+    return decodeActivationBaseUrl(existingCode) || (await fetchRuntimeInfo()) || 'http://localhost:10620';
+}
+
+async function showCreateUser() {
     $('#userModalTitle').textContent = '创建用户';
     $('#editUserId').value = '';
     $('#username').value = ''; $('#username').disabled = false;
-    $('#baseUrl').value = 'http://localhost:10620';
+    $('#baseUrl').value = await resolveDefaultBaseUrl(null);
     $('#baseUrl').disabled = false;
     $('#nightlyEnabled').checked = true;
     $('#regenField').style.display = 'none';
@@ -978,7 +1009,7 @@ async function editUser(id) {
         $('#userModalTitle').textContent = '编辑用户';
         $('#editUserId').value = u.id;
         $('#username').value = u.username; $('#username').disabled = true;
-        $('#baseUrl').value = 'http://localhost:10620';
+        $('#baseUrl').value = await resolveDefaultBaseUrl(u.activation_code);
         $('#baseUrl').disabled = false;
         $('#nightlyEnabled').checked = u.nightly_activity_enabled;
         $('#regenField').style.display = '';
@@ -1040,7 +1071,7 @@ async function copyActivationCode() {
     }
 }
 
-function manageActivation(id) {
+async function manageActivation(id) {
     const user = (tabCache.users?.items ?? []).find(u => u.id === id);
     $('#activationManageUserId').value = id;
     $('#activationManageTitle').textContent = '激活码管理' + (user ? ' · ' + user.username : '');
@@ -1050,20 +1081,12 @@ function manageActivation(id) {
         $('#activationManageResult').style.display = '';
         $('#activationManageCopyBtn').style.display = '';
         $('#activationManageUpdateUrlBtn').style.display = '';
-        try {
-            const raw = atob(code.replace(/-/g, '+').replace(/_/g, '/'));
-            const data = JSON.parse(raw);
-            if (data.b) $('#activationManageBaseUrl').value = data.b;
-            else $('#activationManageBaseUrl').value = 'http://localhost:10620';
-        } catch (e) {
-            $('#activationManageBaseUrl').value = 'http://localhost:10620';
-        }
     } else {
         $('#activationManageResult').style.display = 'none';
         $('#activationManageCopyBtn').style.display = 'none';
         $('#activationManageUpdateUrlBtn').style.display = 'none';
-        $('#activationManageBaseUrl').value = 'http://localhost:10620';
     }
+    $('#activationManageBaseUrl').value = await resolveDefaultBaseUrl(code);
     openModal('activationManageModal');
 }
 
