@@ -93,6 +93,33 @@ function Install-Uv {
     }
 }
 
+function Install-OfficeCli {
+    $existing = Get-Command "officecli" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $managedOfficeCli = Join-Path $SpiritAgentHome "bin\officecli.exe"
+    if ($existing -or (Test-Path $managedOfficeCli)) {
+        return $true
+    }
+
+    try {
+        $psHostExe = Get-PowerShellHostExe
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & $psHostExe -ExecutionPolicy ByPass -c "irm https://d.officecli.ai/install.ps1 | iex" 2>&1 | Out-Null
+        $ErrorActionPreference = $prevEAP
+
+        $defaultInstallExe = Join-Path $env:LOCALAPPDATA "OfficeCLI\officecli.exe"
+        if (Test-Path $defaultInstallExe) {
+            $binDir = Join-Path $SpiritAgentHome "bin"
+            if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Force -Path $binDir | Out-Null }
+            Copy-Item -Force $defaultInstallExe (Join-Path $binDir "officecli.exe")
+            return $true
+        }
+        return (Test-Path $managedOfficeCli)
+    } catch {
+        return $false
+    }
+}
+
 function Get-PowerShellHostExe {
     try {
         $hostExe = (Get-Process -Id $PID).Path
@@ -360,6 +387,9 @@ function Stage-InstallSkills {
         Emit-StageErr "install-skills" "robocopy skills failed: exit $LASTEXITCODE"
         return 1
     }
+
+    # 动态安装 OfficeCLI（若网络可用）
+    Install-OfficeCli | Out-Null
 
     $bundledCount = (Get-ChildItem -Path $skillsDir -Directory -ErrorAction SilentlyContinue | Measure-Object).Count
     Write-Output "__SPIRITAGENT_STAGE_RESULT__:{`"ok`": true, `"stage`": `"install-skills`", `"data`": {`"bundled_count`": $bundledCount}}"

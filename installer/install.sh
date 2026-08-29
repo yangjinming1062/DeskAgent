@@ -132,6 +132,30 @@ install_uv() {
   return 1
 }
 
+install_officecli() {
+  if command -v officecli >/dev/null 2>&1; then
+    return 0
+  fi
+  local managed_officecli="$SPIRITAGENT_HOME_RESOLVED/bin/officecli"
+  if [[ -f "$managed_officecli" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$SPIRITAGENT_HOME_RESOLVED/bin"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://d.officecli.ai/install.sh | bash 2>/dev/null || true
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://d.officecli.ai/install.sh | bash 2>/dev/null || true
+  fi
+
+  if [[ -f "$HOME/.local/bin/officecli" && ! -f "$managed_officecli" ]]; then
+    cp "$HOME/.local/bin/officecli" "$managed_officecli" 2>/dev/null || true
+  fi
+
+  return 0
+}
+
 test_python() {
   if [[ -z "${UV_CMD:-}" ]]; then
     if ! install_uv; then
@@ -355,6 +379,9 @@ stage_install_skills() {
   else
     cp -R "$BUNDLED_SKILLS_DIR/." "$SPIRITAGENT_HOME_RESOLVED/skills/"
   fi
+
+  # 动态安装 OfficeCLI（若网络可用）
+  install_officecli || true
 
   local bundled_count
   bundled_count=$(find "$SPIRITAGENT_HOME_RESOLVED/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
