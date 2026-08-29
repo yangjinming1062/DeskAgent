@@ -398,6 +398,7 @@ async fn run_bootstrap(
     let source_note = match &script.source {
         ScriptSource::DevCheckout => "dev checkout",
         ScriptSource::Bundled => "bundled",
+        ScriptSource::Embedded => "embedded",
     };
     emit_log(&format!(
         "[bootstrap] script {} via {}",
@@ -719,9 +720,17 @@ async fn run_install_script(
 }
 
 /// 由当前安装器的 Tauri 资源目录构建 `BundleContext`；路径以 `<bundle.resources>/payload/` 为锚点（见 `tauri.conf.json#bundle.resources`）。
+/// 单 exe 自包含场景下 Tauri `resource_dir` 不带 payload/，回退到 `embedded_payload` 解压目录。
 fn build_bundle_context(app: &AppHandle) -> BundleContext {
     let bundle_dir = app.path().resource_dir().ok();
-    let payload = bundle_dir.as_ref().map(|d| d.join("payload"));
+    let mut payload = bundle_dir.as_ref().map(|d| d.join("payload"));
+
+    if !payload.as_ref().map(|p| p.is_dir()).unwrap_or(false) {
+        // 单 exe 分发：resource_dir/payload 不存在时退回嵌入 zip 解压目录。
+        if let Ok(embedded) = crate::embedded_payload::payload_dir() {
+            payload = Some(embedded);
+        }
+    }
 
     let installer_format = if cfg!(target_os = "macos") {
         "dmg"
@@ -730,10 +739,15 @@ fn build_bundle_context(app: &AppHandle) -> BundleContext {
     }
     .to_string();
 
+    let bundle_dir_final = payload
+        .as_ref()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .or(bundle_dir);
+
     BundleContext {
-        bundle_dir,
+        bundle_dir: bundle_dir_final,
         bundled_runner_dir: payload.as_ref().map(|d| d.join("runner")),
-        bundled_desktop_dir: payload.as_ref().map(|d| d.join("desktop")),
+        bundled_desktop_dir: payload.as_ref().map(|d| d.join("client")),
         bundled_skills_dir: payload.as_ref().map(|d| d.join("skills")),
         bundled_onboarding_audio_dir: payload.as_ref().map(|d| d.join("onboarding-audio")),
         installer_format: Some(installer_format),

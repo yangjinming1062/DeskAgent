@@ -2,6 +2,7 @@
 //! Windows 子系统剥离（windows_subsystem）位于二进制 crate 的 main.rs，而不在此处——lib 上的属性不会下传到链接期。
 
 mod bootstrap;
+mod embedded_payload;
 mod events;
 mod install_script;
 mod powershell;

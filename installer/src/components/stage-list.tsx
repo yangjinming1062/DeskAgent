@@ -18,7 +18,7 @@ export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
   }, [bootstrap.logs.length])
 
   return (
-    <div className="flex h-full overflow-hidden rounded-lg border border-border bg-card/60 shadow-sm backdrop-blur-xs">
+    <div className="flex h-full overflow-hidden rounded-lg border border-line-strong bg-glass shadow-md backdrop-blur-xs">
       <div className="flex-1 overflow-y-auto px-4 py-3">
         <ol className="space-y-1">
           {bootstrap.stageOrder.map((name) => {
@@ -29,17 +29,17 @@ export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
                 key={name}
                 className={clsx(
                   'flex items-center gap-3 rounded-md px-3 py-1.5 text-xs transition-colors',
-                  rec.state === 'running' && 'bg-accent/40 font-medium text-foreground',
-                  rec.state === 'succeeded' && 'text-foreground/80',
-                  rec.state === 'skipped' && 'text-muted-foreground',
-                  rec.state === 'failed' && 'bg-destructive/10 text-destructive',
-                  !rec.state && 'text-muted-foreground/60'
+                  rec.state === 'running' && 'bg-accent-soft font-medium text-text-strong',
+                  rec.state === 'succeeded' && 'text-text-strong',
+                  rec.state === 'skipped' && 'text-text-muted',
+                  rec.state === 'failed' && 'bg-destructive/15 text-destructive',
+                  !rec.state && 'text-text-faint'
                 )}
               >
                 <StateIcon state={rec.state ?? null} />
                 <span className="flex-1 truncate">{rec.info.title}</span>
                 {rec.durationMs != null && (
-                  <span className="text-[11px] font-mono text-muted-foreground">
+                  <span className="text-[11px] font-mono text-text-muted">
                     {formatDuration(rec.durationMs)}
                   </span>
                 )}
@@ -49,10 +49,10 @@ export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
         </ol>
       </div>
 
-      <div className="flex w-1/2 flex-col border-l border-border bg-card/80">
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-1.5">
-          <div className="text-[11px] font-medium text-foreground/80">实时输出</div>
-          <div className="text-[11px] text-muted-foreground">{bootstrap.logs.length} 行</div>
+      <div className="flex w-1/2 flex-col border-l border-line-standard bg-surface-card/80 backdrop-blur-xs">
+        <div className="flex shrink-0 items-center justify-between border-b border-line-standard px-3 py-1.5">
+          <div className="text-[11px] font-medium text-text-body">实时输出</div>
+          <div className="text-[11px] text-text-muted">{bootstrap.logs.length} 行</div>
         </div>
         <div className="flex-1 overflow-y-auto px-3 py-2 font-mono text-[10px] leading-relaxed">
           {bootstrap.logs.map((entry, idx) => (
@@ -60,7 +60,7 @@ export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
               key={idx}
               className={clsx(
                 'whitespace-pre-wrap',
-                entry.stream === 'stderr' ? 'text-destructive/80' : 'text-foreground/70'
+                entry.stream === 'stderr' ? 'text-destructive/80' : 'text-text-body'
               )}
             >
               {entry.line}
@@ -75,20 +75,20 @@ export function StageList({ bootstrap }: StageListProps): React.JSX.Element {
 
 function StateIcon({ state }: { state: StageState | null }) {
   if (state === 'running') {
-    return <Loader2 size={13} className="animate-spin text-primary" />
+    return <Loader2 size={13} className="animate-spin text-accent" />
   }
   if (state === 'succeeded') {
-    return <Check size={13} className="text-emerald-500" />
+    return <Check size={13} className="text-success" />
   }
   if (state === 'skipped') {
-    return <ChevronRight size={13} className="text-muted-foreground/70" />
+    return <ChevronRight size={13} className="text-text-muted" />
   }
   if (state === 'failed') {
     return <X size={13} className="text-destructive" />
   }
   return (
     <div
-      className="h-[5px] w-[5px] rounded-full bg-muted-foreground/40"
+      className="h-[5px] w-[5px] rounded-full bg-text-faint"
       aria-hidden
     />
   )

@@ -209,8 +209,13 @@ try {
     if (-not (Test-Path $OutputDir)) { New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null }
     $finalName = "SpiritAgent-Setup-${Version}.exe"
     Copy-Item -Force $final.FullName (Join-Path $OutputDir $finalName)
+
+    # SpiritAgent-Setup.exe 已是自包含：build.rs 把 installer/payload/ 整个打成 zip 嵌入二进制，
+    # 运行时由 embedded_payload::ensure_extracted() 解压到 SPIRITAGENT_HOME/bootstrap-payload/payload/。
+    # 分发只需单个 exe，无需 release/payload/ 旁路目录。
+
     Write-Output ""
-    Write-Output "==> Final installer: $(Join-Path $OutputDir $finalName)"
+    Write-Output "==> Final installer: $(Join-Path $OutputDir $finalName) (single-file self-contained)"
 
     # 同一构建再产一个自更新 zip：已安装客户端从后端拉它自更桌面端 + runner，无需重跑 Tauri 安装器。
     $wheel = Get-ChildItem (Join-Path $RepoRoot 'installer\payload\runner') -Filter '*.whl' | Select-Object -First 1

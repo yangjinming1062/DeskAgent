@@ -19,7 +19,7 @@ else
   DEFAULT_SPIRITAGENT_HOME_UNIX="$HOME/.spiritagent"
 fi
 
-RUNNER_WHEEL_GLOB="spirit-agent-*.whl"
+RUNNER_WHEEL_GLOB="spirit_agent-*.whl"
 
 # 桌面端格式默认 dmg，可由 $SPIRITAGENT_INSTALLER_FORMAT 覆盖。
 DEFAULT_DESKTOP_FORMAT="dmg"

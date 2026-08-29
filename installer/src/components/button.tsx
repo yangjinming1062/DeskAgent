@@ -4,21 +4,25 @@ import * as React from 'react'
 
 import { cn } from '../lib/utils'
 
+// 安装器 Button：色值切到 cyber-glass 主题（var(--ui-accent) #7d9bff），保留 glass 玻璃质感。
+// 主按钮用 glass + accent 边框 + accent 文字（与桌面端 hub 的"亮蓝描边玻璃钮"视觉对齐）；
+// destructive / outline / ghost 与桌面端一致使用 ui-* token。
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[0.1875rem] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[0.1875rem] focus-visible:ring-focus-line disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        default:
+          'bg-accent/90 text-white hover:bg-accent shadow-md backdrop-blur-xs border border-accent-line/60',
         destructive:
-          'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40',
+          'bg-destructive/90 text-white hover:bg-destructive border border-destructive/60',
         outline:
-          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50',
+          'border border-line-strong bg-glass text-text-strong hover:bg-accent-soft hover:text-accent backdrop-blur-xs',
         secondary:
-          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+          'bg-fill-faint text-text-strong hover:bg-line-standard/30 border border-line-standard',
         ghost:
-          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
-        link: 'text-primary underline-offset-4 decoration-current/20 hover:underline'
+          'text-text-body hover:bg-accent-soft hover:text-accent',
+        link: 'text-accent underline-offset-4 decoration-accent/40 hover:underline'
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',

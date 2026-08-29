@@ -142,7 +142,7 @@ async def create_version(
     mac_file = _pick_asset(versions_dir, "*.zip", "*.dmg")
 
     # Runner 侧：wheel + server.py 由 _extract_archive_entries 解压到 runner/，latest-runner.yml 位于根。
-    wheel_file = _pick_asset(versions_dir, "runner/spirit-agent-*.whl")
+    wheel_file = _pick_asset(versions_dir, "runner/spirit_agent-*.whl")
 
     record = UpdateVersion(
         version=version,

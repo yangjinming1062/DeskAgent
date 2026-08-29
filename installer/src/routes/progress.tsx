@@ -51,18 +51,18 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
           : '准备中…'
 
   return (
-    <div className="spiritagent-fade-in relative isolate flex h-full flex-col overflow-hidden bg-background">
+    <div className="spiritagent-fade-in relative isolate flex h-full flex-col overflow-hidden">
       {/* 背景氛围光 */}
       <span aria-hidden="true" className="spiritagent-glow" />
 
       {/* 区域 A：顶部步骤头 */}
-      <div className="flex shrink-0 items-center justify-between px-8 pt-6 pb-2">
+      <div className="flex shrink-0 items-center justify-between border-b border-line-hairline px-8 py-3 backdrop-blur-xs">
         <div className="flex items-center gap-2">
-          <span className="font-['Collapse'] text-lg font-bold tracking-[0.08em] text-primary">
+          <span className="font-['Collapse'] text-lg font-bold tracking-[0.08em] text-accent">
             SPIRITAGENT
           </span>
-          <span className="text-xs text-muted-foreground/60">|</span>
-          <span className="text-xs font-medium text-foreground/80">
+          <span className="text-xs text-text-faint">|</span>
+          <span className="text-xs font-medium text-text-body">
             {bootstrap.status === 'completed'
               ? '完成'
               : bootstrap.status === 'failed'
@@ -70,14 +70,15 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
                 : '安装中'}
           </span>
         </div>
-        <div className="text-xs font-medium text-muted-foreground">
+        <div className="text-xs font-medium text-text-muted">
           第 {progress.done} 步 · 共 {progress.total} 步
         </div>
       </div>
 
       {/* 区域 B：主视觉蛋与光环 */}
       <div className="relative flex flex-1 flex-col items-center justify-center min-h-0 px-6 py-2">
-        <div className="relative flex items-center justify-center">
+        {/* 父容器锁定为光环尺寸（300），让 Halo 用 absolute inset-0 全铺，Egg 居中——否则 Halo absolute 后脱离 flex 流，flex 容器按 Egg 240 收缩，Halo 左上对齐导致光环偏到蛋的左侧。 */}
+        <div className="relative flex h-[300px] w-[300px] items-center justify-center">
           {/* 外层分段光环 */}
           <Halo
             total={progress.total || 6}
@@ -85,7 +86,7 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
             runningIdx={bootstrap.status === 'running' && currentStageIdx >= 0 ? currentStageIdx : null}
             failedAt={failedAt}
             size={300}
-            className="absolute"
+            className="absolute inset-0"
           />
 
           {/* 中央蛋 */}
@@ -100,9 +101,9 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
         </div>
 
         {/* 主视觉下方的动态文案 */}
-        <div className="mt-4 flex items-center gap-2 text-center text-sm font-medium text-foreground/90">
+        <div className="mt-4 flex items-center gap-2 text-center text-sm font-medium text-text-body">
           {bootstrap.status === 'running' && (
-            <Loader2 size={14} className="animate-spin text-primary shrink-0" />
+            <Loader2 size={14} className="animate-spin text-accent shrink-0" />
           )}
           <span className="tracking-tight">{captionText}</span>
         </div>
@@ -116,11 +117,11 @@ export default function ProgressScreen({ bootstrap }: ProgressProps): React.JSX.
       )}
 
       {/* 区域 C：底部工具栏 */}
-      <div className="flex shrink-0 items-center justify-between border-t border-border px-8 py-3 bg-card/40 backdrop-blur-xs">
+      <div className="flex shrink-0 items-center justify-between border-t border-line-hairline px-8 py-3 backdrop-blur-xs">
         <button
           type="button"
           onClick={() => setShowDetails((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors hover:text-text-strong"
         >
           <FileText size={14} />
           {showDetails ? '隐藏详情' : '显示详情'}

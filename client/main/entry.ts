@@ -29,6 +29,10 @@ import {
   Tray
 } from 'electron'
 import log from 'electron-log/main'
+// electron-updater 是 CJS 模块，没有 `autoUpdater` 这个 named export；用 default import 解构
+// 才能在 ESM 入口下加载（`import { autoUpdater }` 会让 Node ESM loader 抛
+// "Named export 'autoUpdater' not found"）。改回 default import + 解构。
+import electronUpdaterPkg from 'electron-updater'
 import type { UpdateInfo } from 'electron-updater'
 
 import type { BackendSession, SessionSnapshot } from './backend/session'
@@ -1034,7 +1038,8 @@ function setupAutoUpdater(): void {
     return
   }
 
-  const { autoUpdater } = require('electron-updater')
+  // 从 default import 解构；不要用顶层 named import（见 electronUpdaterPkg 注释）。
+  const { autoUpdater } = electronUpdaterPkg
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false

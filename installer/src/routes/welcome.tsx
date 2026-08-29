@@ -8,9 +8,10 @@ export default function Welcome(): React.JSX.Element {
   return (
     <div className="spiritagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-10 px-12 py-10">
       <span aria-hidden="true" className="spiritagent-glow" />
+
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
-          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
+          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-accent"
           style={
             {
               '--fit-text-line-height': '0.9',
@@ -20,13 +21,13 @@ export default function Welcome(): React.JSX.Element {
           }
         >
           <span>
-            <span>SpiritAgent</span>
+            <span>欢迎使用 SpiritAgent</span>
           </span>
-          <span aria-hidden="true">SpiritAgent</span>
+          <span aria-hidden="true">欢迎使用 SpiritAgent</span>
         </p>
 
-        <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
-          您的智能助手。我们将在后台完成设置 &mdash; 需要几分钟时间。
+        <p className="m-0 text-center text-base leading-normal tracking-tight text-text-body">
+          您的智能助手。我们将在后台完成设置，请稍候几分钟。
         </p>
       </div>
 

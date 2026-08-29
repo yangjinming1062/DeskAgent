@@ -22,7 +22,7 @@ export default function Failure({ bootstrap }: FailureProps): React.JSX.Element 
     <div className="spiritagent-fade-in flex h-full flex-col items-center justify-center gap-6 px-12 py-10">
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
-          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-destructive mix-blend-plus-lighter dark:text-destructive/90"
+          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-destructive"
           style={
             {
               '--fit-text-line-height': '0.9',
@@ -37,7 +37,7 @@ export default function Failure({ bootstrap }: FailureProps): React.JSX.Element 
           <span aria-hidden="true">安装未完成</span>
         </p>
 
-        <p className="m-0 mx-auto max-w-xl text-center text-sm leading-normal tracking-tight text-muted-foreground">
+        <p className="m-0 mx-auto max-w-xl text-center text-sm leading-normal tracking-tight text-text-body">
           {bootstrap.error ?? '安装过程中出现了问题。'}
         </p>
       </div>
@@ -63,8 +63,8 @@ export default function Failure({ bootstrap }: FailureProps): React.JSX.Element 
       </div>
 
       {logPath && (
-        <p className="max-w-lg text-center text-xs text-muted-foreground/70">
-          日志： <code className="font-mono">{logPath}</code>
+        <p className="max-w-lg text-center text-xs text-text-muted">
+          日志： <code className="font-mono text-text-body">{logPath}</code>
         </p>
       )}
     </div>

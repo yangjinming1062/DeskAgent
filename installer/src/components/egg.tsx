@@ -69,19 +69,19 @@ export function Egg({
         aria-label="SpiritAgent Egg"
       >
         <defs>
-          {/* 环境氛围光 */}
+          {/* 环境氛围光：cyber-glass 蓝紫（--ui-accent #7d9bff）；蛋本身保留琥珀色，与冷调玻璃底色形成温暖锚点。 */}
           <radialGradient id="egg-ambient-glow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd166" stopOpacity="0.45" />
-            <stop offset="60%" stopColor="#ffd166" stopOpacity="0.15" />
-            <stop offset="100%" stopColor="#ffd166" stopOpacity="0" />
+            <stop offset="0%" stopColor="#7d9bff" stopOpacity="0.42" />
+            <stop offset="60%" stopColor="#7d9bff" stopOpacity="0.14" />
+            <stop offset="100%" stopColor="#7d9bff" stopOpacity="0" />
           </radialGradient>
 
-          {/* 破壳时的核心暖光 */}
+          {/* 破壳时的核心暖光：蛋的"温暖"签名色——玻璃冷调外的情感锚点。 */}
           <radialGradient id="egg-core-light" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor="#ffffff" stopOpacity="1" />
             <stop offset="35%" stopColor="#fff4d6" stopOpacity="0.95" />
             <stop offset="70%" stopColor="#ffd166" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#0053fd" stopOpacity="0" />
+            <stop offset="100%" stopColor="#7d9bff" stopOpacity="0" />
           </radialGradient>
 
           {/* 裂纹辉光滤镜 */}

@@ -26,9 +26,10 @@ export default function Success(): React.JSX.Element {
   return (
     <div className="spiritagent-fade-in relative isolate flex h-full flex-col items-center justify-center gap-8 px-12 py-10">
       <span aria-hidden="true" className="spiritagent-glow" />
+
       <div className="w-full max-w-2xl min-w-0 text-center">
         <p
-          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
+          className="fit-text mx-auto mb-4 w-full font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-accent"
           style={
             {
               '--fit-text-line-height': '0.9',
@@ -43,12 +44,8 @@ export default function Success(): React.JSX.Element {
           <span aria-hidden="true">SpiritAgent 已准备就绪</span>
         </p>
 
-        <p className="m-0 text-center text-base leading-normal tracking-tight text-muted-foreground">
-          您可以从这里启动，也可以随时在终端中使用{' '}
-          <code className="rounded bg-muted/60 px-1 py-0.5 font-mono text-sm">
-            spiritagent desktop
-          </code>
-          命令启动。
+        <p className="m-0 text-center text-base leading-normal tracking-tight text-text-body">
+          点击下方按钮启动 SpiritAgent 桌面应用。安装后您也可以随时从开始菜单或系统托盘找到它。
         </p>
       </div>
 
@@ -65,12 +62,12 @@ export default function Success(): React.JSX.Element {
       {error && (
         <div
           role="alert"
-          className="flex max-w-2xl items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          className="flex max-w-2xl items-start gap-2 rounded-md border border-destructive/40 bg-destructive/15 px-4 py-3 text-sm text-destructive backdrop-blur-xs"
         >
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
           <div className="min-w-0">
             <div className="font-medium">无法启动桌面应用</div>
-            <div className="mt-1 text-destructive/80">{error}</div>
+            <div className="mt-1 text-destructive/85">{error}</div>
           </div>
         </div>
       )}

@@ -49,6 +49,8 @@ function describeArc(
   ].join(' ')
 }
 
+// Halo 走 cyber-glass 主题：默认段 --ui-accent (#7d9bff 蓝紫)，运行中段加重发光滤镜。
+// 失败段换 destructive 红；未完成段用 ui-line-standard 蓝紫低饱和（之前是白底浅蓝，对玻璃暗底来说会糊掉）。
 export function Halo({
   total = 6,
   done,
@@ -59,11 +61,14 @@ export function Halo({
 }: HaloProps): React.JSX.Element {
   const segments = Array.from({ length: total }, (_, i) => i)
   const segmentAngle = 360 / total
-  const gapAngle = 4 // 段间留 4° 间隔
+  const gapAngle = 4
 
   return (
     <div
-      className={clsx('relative flex items-center justify-center select-none', className)}
+      // 注意：根 div 不写 `position`——让外部传入的 className（`absolute inset-0` 或其它）独占控制定位。
+      // Tailwind v4 utility 按字母序输出 CSS，`relative` 会后于 `absolute` 定义并覆盖，导致 absolute 失效、容器左对齐。
+      // SVG 自身 width/height = size 已填满根 div，所以也不需要 `flex items-center justify-center`。
+      className={clsx('select-none', className)}
       style={{ width: size, height: size }}
     >
       <svg
@@ -74,6 +79,7 @@ export function Halo({
         aria-label="Installer Stage Halo"
       >
         <defs>
+          {/* 段落发光滤镜：halo-glow-filter 给完成段蓝色发光，halo-fail-fliter 给失败段红色发光 */}
           <filter id="halo-glow-filter" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="3" result="blur" />
             <feMerge>
@@ -92,17 +98,17 @@ export function Halo({
           const isRunning = idx === runningIdx
           const isFailed = failedAt === idx
 
-          let strokeColor = 'var(--color-primary-soft, rgba(0, 83, 253, 0.22))'
+          let strokeColor = 'var(--ui-line-standard)'
           let filter: string | undefined
 
           if (isFailed) {
             strokeColor = 'var(--color-destructive, #cf2d56)'
             filter = 'url(#halo-glow-filter)'
           } else if (isCompleted) {
-            strokeColor = 'var(--color-primary, #0053fd)'
+            strokeColor = 'var(--ui-accent, #7d9bff)'
             filter = 'url(#halo-glow-filter)'
           } else if (isRunning) {
-            strokeColor = 'var(--color-primary, #0053fd)'
+            strokeColor = 'var(--ui-accent, #7d9bff)'
           }
 
           return (
@@ -117,7 +123,7 @@ export function Halo({
               className={clsx(
                 'transition-all duration-500 ease-out',
                 isRunning && 'animate-pulse opacity-90',
-                !isCompleted && !isRunning && 'opacity-60'
+                !isCompleted && !isRunning && 'opacity-40'
               )}
             />
           )
