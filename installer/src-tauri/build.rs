@@ -23,8 +23,9 @@ fn main() {
         println!("cargo:rustc-env=BUILD_PIN_BRANCH={b}");
         match &commit {
             Some(_) => println!("cargo:warning=spiritagent-bootstrap: pinning to branch {b}"),
+            // 分支跟随是文档化的默认行为（顶部注释），不视为问题；只在 stdout 留痕，避免污染 warnings。
             None => println!(
-                "cargo:warning=spiritagent-bootstrap: following branch {b} HEAD (no commit pin; \
+                "spiritagent-bootstrap: following branch {b} HEAD (no commit pin; \
                  set SPIRITAGENT_BUILD_PIN_COMMIT for an immutable pin)"
             ),
         }

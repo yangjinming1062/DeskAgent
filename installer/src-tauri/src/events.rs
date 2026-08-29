@@ -91,7 +91,3 @@ pub enum BootstrapEvent {
         error: String,
     },
 }
-
-impl BootstrapEvent {
-    pub const CHANNEL: &'static str = "bootstrap";
-}
