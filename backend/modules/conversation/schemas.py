@@ -1,3 +1,4 @@
+from components import TITLE_MAX_CHARS
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -48,7 +49,7 @@ class DesktopSessionMessagesResponse(BaseModel):
 
 
 class DesktopSessionPatchRequest(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=TITLE_MAX_CHARS)
     pinned: bool | None = None
     archived: bool | None = None
 

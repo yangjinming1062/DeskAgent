@@ -8,9 +8,12 @@ import {
   resetSessionContextUsage,
   setChatSession
 } from '@/companion/chat-store'
+import { unwrapIpcErrorMessage } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
 import { persistString, storedString } from '@/shared/lib/storage'
 import { $gateway } from '@/shared/store/gateway'
+import { notify } from '@/shared/store/notifications'
+import { strings } from '@/shared/strings'
 import type {
   SessionInfo,
   SessionResumeResponse,
@@ -22,6 +25,7 @@ export type SessionSort = 'created' | 'messages' | 'recent'
 
 const SESSION_SORTS: readonly SessionSort[] = ['recent', 'created', 'messages']
 const SESSION_SORT_KEY = 'da.companion.sessionSort'
+export const TITLE_MAX_CHARS = 80
 
 export const $sessions = atom<SessionInfo[]>([])
 export const $sessionsLoading = atom(false)
@@ -153,15 +157,62 @@ export async function runSessionSearch(query: string): Promise<void> {
   }
 }
 
-async function patchSession(sessionId: string, body: { archived?: boolean; pinned?: boolean }): Promise<boolean> {
+type SessionPatchBody = { archived?: boolean; pinned?: boolean; title?: string }
+
+async function patchSessionOrThrow(sessionId: string, body: SessionPatchBody): Promise<void> {
+  await window.spiritagent.api({ body, method: 'PATCH', path: `/api/sessions/${sessionId}` })
+}
+
+async function patchSession(sessionId: string, body: SessionPatchBody): Promise<boolean> {
   try {
-    await window.spiritagent.api({ body, method: 'PATCH', path: `/api/sessions/${sessionId}` })
+    await patchSessionOrThrow(sessionId, body)
 
     return true
   } catch (err) {
     log.error('session-list', 'Failed to patch session:', err)
 
     return false
+  }
+}
+
+function applyLocalTitle(sessionId: string, title: null | string): void {
+  const patch = (list: SessionInfo[]): SessionInfo[] =>
+    list.some(s => s.id === sessionId) ? list.map(s => (s.id === sessionId ? { ...s, title } : s)) : list
+
+  $sessions.set(patch($sessions.get()))
+  $archivedSessions.set(patch($archivedSessions.get()))
+  $searchResults.set(patch($searchResults.get()))
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<void> {
+  const next = title.trim().slice(0, TITLE_MAX_CHARS)
+  const previous = findSessionInfo(sessionId)?.title ?? null
+
+  if (!next || next === previous) {
+    return
+  }
+
+  applyLocalTitle(sessionId, next)
+
+  try {
+    await patchSessionOrThrow(sessionId, { title: next })
+  } catch (err) {
+    applyLocalTitle(sessionId, previous)
+    log.error('session-list', 'Failed to rename session:', err)
+    notify({
+      kind: 'error',
+      message: unwrapIpcErrorMessage(err).startsWith('403 ')
+        ? strings.chat.sessionRename.forbidden
+        : strings.chat.sessionRename.failed
+    })
+
+    return
+  }
+
+  void fetchSessions()
+
+  if ($archivedSessions.get().some(s => s.id === sessionId)) {
+    void fetchArchived()
   }
 }
 

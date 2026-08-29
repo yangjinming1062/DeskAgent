@@ -226,6 +226,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 **对话级 REST**（现有 `/api/sessions` 端点的隐式约束）：
 
 - `PATCH /api/sessions/{id}`：当 `kind='special'` 或 `is_renamable=False` 时返回 403（系统预设对话不可改名与变更）。
+- 用户改名走同一 PATCH 端点的 `title` 字段；标题一旦非默认值，自动标题生成不再覆盖（`auto_generate_title` 仅在 `title == 'New Conversation'` 时写入）。**改此处需同步**：client `companion/chat/session-drawer.tsx`、`companion/session-list-store.ts`、`shared/strings/index.ts`。
 - `DELETE /api/sessions/{id}`：当 `kind='special'` 或 `is_deletable=False` 时返回 403（系统预设对话不可被删除）。
 - `session.get_main`（WS RPC）：现存的方法指代「**用户的主对话**」，返回 `system_preset_id='companion'` 的特殊对话。
 - 既有 `session.create` 等方法对系统预设对话同样适用（用户能在 5 套预设之上再 clone 一个变体；但 5 套预设本身不可被 PATCH/DELETE）。

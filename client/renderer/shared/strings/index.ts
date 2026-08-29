@@ -306,6 +306,15 @@ export const strings = {
       cancel: '取消',
       fetchFailed: '加载预设失败，请稍后再试',
       pickOne: '请先选择一个预设'
+    },
+
+    sessionRename: {
+      action: '重命名',
+      inputLabel: '对话名称',
+      placeholder: '输入对话名称',
+      hint: 'Enter 保存 · Esc 取消',
+      forbidden: '系统预设对话不能改名',
+      failed: '改名失败，已恢复原名称'
     }
   }
 }

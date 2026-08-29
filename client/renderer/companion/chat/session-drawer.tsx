@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type React from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { $chatSessionId } from '@/companion/chat-store'
 import { PresetIconBadge, PresetPickerModal } from '@/companion/chat/preset-picker-modal'
@@ -22,10 +22,12 @@ import {
   deleteSession,
   fetchSystemPresets,
   pinSession,
+  renameSession,
   runSessionSearch,
   type SessionSort,
   setSessionSort,
-  switchSession
+  switchSession,
+  TITLE_MAX_CHARS
 } from '@/companion/session-list-store'
 import {
   Archive,
@@ -36,13 +38,15 @@ import {
   type IconComponent,
   MessageCircle,
   Messages,
+  Pencil,
   Pin,
   PinOff,
   Plus,
   Trash2
 } from '@/shared/lib/icons'
 import { cn } from '@/shared/lib/utils'
-import { BTN_PRIMARY, SearchField } from '@/shared/panel'
+import { BTN_PRIMARY, INPUT_CLASS, SearchField } from '@/shared/panel'
+import { strings } from '@/shared/strings'
 import type { SessionInfo } from '@/shared/types/spiritagent'
 
 const SORT_OPTIONS: { icon: IconComponent; label: string; value: SessionSort }[] = [
@@ -301,6 +305,8 @@ function SessionRow({
   onSwitch: (id: string) => Promise<void> | void
 }): React.JSX.Element {
   const isSpecial = session.kind === 'special' || session.kind === 'main'
+  const canRename = !isSpecial && session.kind !== 'im'
+  const [editing, setEditing] = useState(false)
   const presets = useStore($systemPresets)
 
   const presetName = session.system_preset_id ? presets.find(p => p.id === session.system_preset_id)?.name : undefined
@@ -310,7 +316,11 @@ function SessionRow({
       className={`group flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
         isActive ? 'border-accent-line bg-accent-soft' : 'border-transparent hover:border-white/10 hover:bg-white/5'
       }`}
-      onClick={() => void onSwitch(session.id)}
+      onClick={() => {
+        if (!editing) {
+          void onSwitch(session.id)
+        }
+      }}
     >
       {isSpecial ? (
         <span className="shrink-0" title={presetName ?? ''}>
@@ -320,10 +330,21 @@ function SessionRow({
         <MessageCircle className="size-3.5 shrink-0 text-white/35" />
       )}
       <div className="min-w-0 flex-1">
-        <p className={cn('truncate text-xs', isActive ? 'font-medium text-white' : 'text-white/85')}>
-          {session.title || (isSpecial ? (presetName ?? '系统对话') : '新建对话')}
-          {session.pinned && <Pin className="ml-1 inline size-3 text-white/30" />}
-        </p>
+        {editing ? (
+          <SessionTitleInput
+            initialTitle={session.title ?? ''}
+            onCancel={() => setEditing(false)}
+            onCommit={title => {
+              setEditing(false)
+              void renameSession(session.id, title)
+            }}
+          />
+        ) : (
+          <p className={cn('truncate text-xs', isActive ? 'font-medium text-white' : 'text-white/85')}>
+            {session.title || (isSpecial ? (presetName ?? '系统对话') : '新建对话')}
+            {session.pinned && <Pin className="ml-1 inline size-3 text-white/30" />}
+          </p>
+        )}
         {session.preview && <p className="mt-0.5 truncate text-[10px] text-white/35">{session.preview}</p>}
       </div>
       {!isSpecial && session.system_preset_icon_key && (
@@ -332,8 +353,67 @@ function SessionRow({
         </span>
       )}
       {badge && <span className="shrink-0 rounded bg-white/10 px-1 py-0.5 text-[9px] text-white/50">{badge}</span>}
-      <div className="flex shrink-0 items-center">{actions}</div>
+      <div className="flex shrink-0 items-center">
+        {canRename && !editing && (
+          <RowAction
+            icon={Pencil}
+            label={strings.chat.sessionRename.action}
+            onClick={e => stopThen(e, () => setEditing(true))}
+          />
+        )}
+        {actions}
+      </div>
     </div>
+  )
+}
+
+function SessionTitleInput({
+  initialTitle,
+  onCommit,
+  onCancel
+}: {
+  initialTitle: string
+  onCommit: (title: string) => void
+  onCancel: () => void
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(initialTitle)
+  const doneRef = useRef(false)
+
+  const finish = (commit: boolean): void => {
+    if (doneRef.current) {
+      return
+    }
+
+    doneRef.current = true
+
+    if (commit) {
+      onCommit(draft)
+    } else {
+      onCancel()
+    }
+  }
+
+  return (
+    <input
+      aria-label={strings.chat.sessionRename.inputLabel}
+      autoFocus
+      className={cn(INPUT_CLASS, 'h-6 px-1.5 py-0 text-xs')}
+      maxLength={TITLE_MAX_CHARS}
+      onBlur={() => finish(true)}
+      onChange={e => setDraft(e.target.value)}
+      onClick={e => e.stopPropagation()}
+      onFocus={e => e.currentTarget.select()}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          e.preventDefault()
+          e.stopPropagation()
+          finish(e.key === 'Enter')
+        }
+      }}
+      placeholder={strings.chat.sessionRename.placeholder}
+      title={strings.chat.sessionRename.hint}
+      value={draft}
+    />
   )
 }
 
