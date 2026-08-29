@@ -14,6 +14,7 @@ import {
   $chatTurnInFlight,
   $lastAssistantStreaming,
   $pendingExternalAttachment,
+  $pendingPromptBatch,
   cancelPendingFlush,
   clearExternalAttachment,
   finalizeAssistantMessage,
@@ -320,6 +321,8 @@ function PendingImageThumb({ path }: { path: string }): React.JSX.Element {
 export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const list = useStore($chatMessageList)
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
+  const chatTurnInFlight = useStore($chatTurnInFlight)
+  const pendingPromptBatch = useStore($pendingPromptBatch)
   const gatewayState = useStore($gatewayState)
   const portraitUrl = useStore($portraitUrl)
   const spriteEmotion = useStore($spriteEmotion)
@@ -896,10 +899,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     }
   }
 
-  const lastIsUser = list[list.length - 1]?.role === 'user'
-  const showTyping = lastIsUser && gatewayState === 'open'
+  const isTurnPendingOrInFlight = pendingPromptBatch.length > 0 || chatTurnInFlight
+  const showTyping = isTurnPendingOrInFlight && !lastAssistantStreaming && gatewayState === 'open'
 
-  const isGenerating = gatewayState === 'open' && (showTyping || lastAssistantStreaming)
+  const isGenerating = gatewayState === 'open' && (isTurnPendingOrInFlight || lastAssistantStreaming)
 
   const handleStop = async () => {
     cancelAutoVoice()

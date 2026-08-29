@@ -383,12 +383,12 @@ function clearDraftAnchor(): void {
   }
 }
 
-interface PendingPromptItem {
+export interface PendingPromptItem {
   text: string
   attachments?: ChatAttachment[]
 }
 
-const $pendingPromptBatch = atom<PendingPromptItem[]>([])
+export const $pendingPromptBatch = atom<PendingPromptItem[]>([])
 
 export function pushPendingPrompt(item: PendingPromptItem): void {
   $pendingPromptBatch.set([...$pendingPromptBatch.get(), item])

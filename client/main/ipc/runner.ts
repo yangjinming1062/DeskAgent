@@ -180,8 +180,22 @@ export function registerRunnerIpc({ deps, ipcMain }: { deps: RunnerIpcDeps; ipcM
   })
 
   ipcMain.handle(IPC.invoke.runnerCancel, async () => {
-    const bridge = ensureRunnerBridge(deps)
+    const bridge = deps.runnerBridge
 
-    return bridge.dispatch('spiritagent.cancel', {})
+    if (!bridge) {
+      return { noop: true, ok: true }
+    }
+
+    const status = bridge.getStatus()
+
+    if (status.phase !== 'running' || !status.wsServer?.connected) {
+      return { noop: true, ok: true }
+    }
+
+    try {
+      return await bridge.dispatch('spiritagent.cancel', {})
+    } catch {
+      return { noop: true, ok: false }
+    }
   })
 }
