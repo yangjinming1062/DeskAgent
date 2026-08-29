@@ -65,6 +65,9 @@
 | POST /api/companion/expression-avatar | 表情头像解析（按情绪 token 精确匹配 / 未命中懒生成，身份锚定 active avatar） | Backend 生成 + Client 聊天窗表情头像 + DESIGN §1.1 |
 | POST /api/companion/avatar（含 /from-image、/upload）、/avatar/{id}/select 与 GET /avatar/history | 半身头像生成（含上传参考图重绘、直接上传头像）/ 历史形象切换激活 / 历史查询 | Backend 生成与上传 + Client 头像确认与历史画廊 + DESIGN §5.4 |
 | GET/POST /api/companion/outfits 与 POST /{id}/regenerate、/{id}/confirm、PUT /{id}/activate、DELETE /{id} | 2D 换装衣柜：外观列表（首次访问懒合成初始形象）/ 草稿生成（着装描述 + 可选服装参考图，身份恒为正面种子主参考）/ 微调重绘 / 确认转正并触发 2D 切分（failed 可重试切分）/ 即时穿着 / 删除（穿着中与切分中拒绝）。生成走独立小时级频控，不设数量上限 | Backend 生成管线 + Client 衣柜 + DESIGN §1.1 / §8 |
+| `command.dispatch` | Slash 命令分发：客户端在输入框敲 `/xxx` 时拦截，改走本 RPC 而非 `prompt.submit`。命令注册表权威源在 [backend/services/chat/slash_commands.py](backend/services/chat/slash_commands.py)；返回 `{command, result:{status, message, payload?, hydrate?}}`，同步广播 `command.result` 事件给同 session 订阅者（多窗口同步渲染）。详见 §6 |  |
+| `command.list` | 列出可用 Slash 命令元数据（`{name, aliases, description, requires_confirmation}`，**不含 handler**），供客户端 `/帮助` 与调试面板消费 |  |
+| `session.clear_messages` | 清空当前会话消息（保留会话行 + 写一条 `subtype='status_cleared'` 的 system marker）；强制要求 `confirmed=true`，否则 `-32001`。与 `/清理` Slash 命令共用底层实现 |  |
 
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的已生成正面种子图随形象行持久化，断点恢复直接重放到正面预览；正面种子草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
@@ -86,6 +89,7 @@
 | video_gen.completed / .failed | 视频生成结果；completed 载荷含 task_id / url / session_id / media，兼作后台视频的异步送达通道（见下方「对话内生成媒体」） | Client 对话窗媒体卡与提示跳转 |
 | channel.status | IM 通道绑定状态变化（connected / login_required / error 等，载荷 {channel, status, account_name?, error?}） | Client 通知/toast；Hub 状态以 REST 读为准（Hub 窗口无 WS） |
 | channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |
+| `command.result` | Slash 命令执行结果（载荷 `{command, result:{status, message, payload?, hydrate?}}`）；必带 `session_id`（从 command.dispatch 调用中隐式继承）。客户端用 `hydrate=true` 替换本地消息列表（payload.messages），用 `hydrate=false` 仅插一条 status pill。**幂等**：同一调用会同时下发 RPC result + 此事件，前端接住任意一路即可触发渲染 | Client 聊天窗：hydrate 替换消息列表、push status pill（`status_cleared` / `compress_summary` 等） |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.* / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
 
@@ -229,6 +233,38 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 **派生会话（forked）**：`session.fork`（WS RPC）与 `POST /api/sessions/{id}/fork`（REST 镜像）由用户在 `kind='standard'` 源会话的某条历史消息节点上派生新会话；末条复制消息携带 `Message.draft_anchor=True`，客户端据此渲染「未发送」徽标并在首条新消息发出后自动清除；新会话 `parent_id` 指向源、`is_deletable`/`is_renamable` 默认 True、标题追加「 — 副本」。源 `kind ∈ {special, im, cron}` 时返回 INVALID_PARAMS / 403（系统预设、IM 桥接、cron scratchpad 不可派生）。**改此处需同步**：backend services/conversation/fork.py、services/chat/history.py、services/gateway/handlers.py、api/v1/sessions.py、modules/conversation/models.py（`Message.draft_anchor`）、alembic baseline；client session-list-store.ts、chat-store.ts、chat-dock-message-bubble.tsx、chat-message-fork-button.tsx。
 
 **新建对话预设选择**：客户端在用户点 「新建」 时弹出选择器，用户必须从 5 套内置预设中选 1（无默认，确认按钮必选中才启用）。新增 WS RPC `system.list_presets`，返回 5 个预设的元数据（`id` / `name` / `description` / `icon_key`，**不含 body**；body 永远不下发到客户端）；`session.create` 新增可选入参 `system_preset_id`（必须 ∈ `BUILTIN_PRESETS` 键集合；非法值抛 INVALID_PARAMS；省略/空串 = 未传，行为同旧版 `kind='standard'`，`system_preset_id=NULL`，chat 时按 `resolve_preset` 降级到 `companion`）。新建的会话始终是 `kind='standard'`，可改名/删除/派生，系统提示词由 `system_preset_id` 在 chat 时间锁定。`DesktopSessionInfo.system_preset_id` 与 `system_preset_icon_key` 暴露给客户端用于侧边栏徽标（NULL 时 `system_preset_icon_key` 已降级为 `companion.icon_key`）。**改此处需同步**：backend services/gateway/handlers.py（`system.list_presets` handler + `session.create` 校验）、modules/system/schemas.py（`PromptPresetSummary` / `PromptPresetListResponse`）、modules/conversation/schemas.py（`DesktopSessionInfo` 新字段）、api/v1/sessions.py（`_conversation_to_session_info` 填充）；client companion/chat/preset-picker-modal.tsx（新建）、companion/chat/session-drawer.tsx（picker 挂载 + `SessionRow` 徽标）、companion/session-list-store.ts（`createNewSession(systemPresetId?)` + `fetchSystemPresets` + 3 个 atom）、shared/types/spiritagent.ts（`SessionInfo` 字段 + `SystemPresetSummary` / `SystemPresetListResponse`）、shared/strings/index.ts（`chat.presetPicker.*`）；本文档。
+
+### 1.9 Slash 命令（对话内元动作）
+
+对话输入框以 `/` 开头的文本触发会话级元动作（清空、压缩等），不经 `prompt.submit` 而经独立的 WS RPC 派发。命令语义与 system prompt 模板（preset）、LLM 工具调用都正交——`/压缩` 不是「让 LLM 帮我压缩」，而是「我现在就要压缩」。这避免了把回合外副作用塞进 prompt 路径产生的 in-flight / 审计 / 跨窗口同步问题。
+
+**首期命令**：
+
+| 命令 | 别名 | 影响历史 | 需确认 | 备注 |
+|---|---|---|---|---|
+| `clear` | 清空 / reset | 是 | 是 | 清空消息保留会话行，写 `status_cleared` marker；system_preset 也允许执行 |
+| `compress` | 压缩 / ctx | 是 | 否 | 复用 `session.compress_context` 强制压缩路径 |
+
+**拦截与歧义处理**（契约级）：
+- `//xxx` 视为普通文本（注释 / 路径引用场景）
+- `/X` 中 X 非 ASCII 字母或 CJK → 普通文本
+- 未识别命令不退回 `prompt.submit`，toast 提示"未知命令"（避免 `/foo` 被 LLM 误当真发出去消耗 token）
+- 需确认的命令前端必须弹 confirm，后端再次校验 `confirmed=true` 才会执行——客户端本地元数据仅用于 UI 优化，**不是安全边界**
+
+**错误码**（与 JSON-RPC 标准错误码分离）：
+- `-32001` 命令要求 confirm 但客户端未传 `confirmed=true`；`data.requires_confirmation=true`
+- `-32002` 命令影响历史但当前回合仍在生成中
+- `-32003` 命令 handler 内部异常兜底
+
+未识别命令回 `-32602`，`data.suggestions` 给最相近的主名列表。
+
+**事件 `command.result`**（必带 `session_id`）：payload 含 `{command, result:{status, message, payload?, hydrate?}}`。`hydrate=true` 时用 `payload.messages` 替换本地消息列表；否则 push 一条 status pill（与 `daily_summary` / `compress_summary` / `status_cleared` 同渲染集合）。同一调用同时下发 RPC 响应与事件——前端接住任一路即可，幂等处理。
+
+**改一处需同步**：
+- 命令注册表 / 元数据 → [backend/services/chat/slash_commands.py](backend/services/chat/slash_commands.py) + [client/renderer/shared/lib/slash-commands.ts](client/renderer/shared/lib/slash-commands.ts) 镜像
+- 拦截逻辑 / 弹层 → [client/renderer/companion/chat-dock.tsx](client/renderer/companion/chat-dock.tsx) + [client/renderer/companion/chat/slash-command-popover.tsx](client/renderer/companion/chat/slash-command-popover.tsx)
+- 错误码 → [backend/components/constants.py](backend/components/constants.py) + [backend/components/__init__.py](backend/components/__init__.py) + 客户端 `slashErrorToMessage`（chat-dock.tsx）
+- 状态 pill 渲染 → `status_command_result` 加入 `chat-dock-message-bubble.tsx` 的 status 渲染分支
 
 ---
 

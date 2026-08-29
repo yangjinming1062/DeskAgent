@@ -17,9 +17,11 @@ import {
   cancelPendingFlush,
   clearExternalAttachment,
   finalizeAssistantMessage,
+  hydrateChatMessages,
   type PendingAttachment,
   pushExternalAttachment,
   pushPendingPrompt,
+  pushStatusPill,
   pushUserMessage,
   schedulePendingFlush,
   setAssistantCancelled,
@@ -37,17 +39,20 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
+import { SpiritAgentRpcError, SpiritAgentRpcErrorCode } from '@/shared/lib/gateway-protocol/json-rpc-gateway'
 import { FileText, FolderOpen, ImageIcon, Mic, PanelLeft, Paperclip, Sparkles, Video, X } from '@/shared/lib/icons'
+import { fuzzyFilterCommands, parseSlashInput, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { BTN_ICON, BTN_PRIMARY } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
-import type { ChatAttachment } from '@/shared/types/spiritagent'
+import type { ChatAttachment, SessionMessage } from '@/shared/types/spiritagent'
 
 import { MessageBubble } from './chat-dock-message-bubble'
 import { useResolvedMediaSrc } from './chat-media-src'
 import { ChatParamsPanel } from './chat/chat-params-panel'
 import { ContextProgressBar } from './chat/context-progress-bar'
 import { SessionDrawer } from './chat/session-drawer'
+import { SlashCommandPopover } from './chat/slash-command-popover'
 import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
@@ -93,6 +98,121 @@ async function ensureChatSession(): Promise<string> {
   }
 
   return sessionId
+}
+
+interface SlashCommandRpcResult {
+  command: string
+  result: {
+    status: 'ok' | 'error'
+    message: string
+    payload?: Record<string, unknown> | null
+    hydrate?: boolean
+  }
+}
+
+function slashErrorToMessage(err: unknown): string {
+  if (err instanceof SpiritAgentRpcError) {
+    if (err.code === SpiritAgentRpcErrorCode.SlashConfirmRequired) {
+      return '该命令需要二次确认'
+    }
+
+    if (err.code === SpiritAgentRpcErrorCode.SlashBusy) {
+      return '请先停止当前生成'
+    }
+
+    if (err.code === SpiritAgentRpcErrorCode.SlashGeneric) {
+      return '命令执行失败'
+    }
+
+    if (err.code === SpiritAgentRpcErrorCode.InvalidParams) {
+      const suggestions = (err.data as { suggestions?: string[] } | undefined)?.suggestions
+
+      if (suggestions?.length) {
+        return `未知命令。可选: ${suggestions.map(s => `/${s}`).join(', ')}`
+      }
+
+      return '未知命令'
+    }
+  }
+
+  const msg = err instanceof Error ? err.message : String(err)
+
+  return msg || '命令执行失败'
+}
+
+/**
+ * 弹层是否应该拦截当前文本：避免「边发图片边清空」歧义。
+ * 与 send() 的拦截分支共用同一道闸，保证弹层与兜底路径行为一致。
+ */
+function slashPreCheck(pending: PendingAttachment | null, sending: boolean): string | null {
+  if (sending) {
+    return '上一条命令还在执行中'
+  }
+
+  if (pending) {
+    return '请先发送或取消附件再执行命令'
+  }
+
+  return null
+}
+
+/**
+ * 单条 slash 命令的执行入口：confirm → RPC → hydrate/pill → 错误映射。所有三处调用方
+ * （send() 兜底路径、textarea onKeyDown 选中、SlashCommandPopover 点击）都走这里。
+ *
+ * 需确认的命令每次调用都会弹 window.confirm——PROTOCOL §1.9 明确要求前端必须弹，
+ * 即便弹层/Enter 路径已经把意图表达得很清楚。
+ */
+async function executeSlashCommand(
+  cmd: SlashCommandMeta,
+  args: string[],
+  opts: {
+    requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+    onStart?: () => void
+    onFinish?: () => void
+  }
+): Promise<void> {
+  const { requestGateway, onStart, onFinish } = opts
+
+  if (cmd.requiresConfirmation && !window.confirm(`执行 /${cmd.name}？该操作会影响历史消息。`)) {
+    return
+  }
+
+  try {
+    onStart?.()
+
+    const sid = await ensureChatSession()
+
+    const result = await requestGateway<SlashCommandRpcResult>('command.dispatch', {
+      session_id: sid,
+      command: cmd.name,
+      args,
+      confirmed: true
+    })
+
+    const r = result.result
+
+    if (r.status === 'ok') {
+      // hydrate=true 时，payload.messages 已包含服务端写入的 status_cleared / compress_summary
+      // marker 行——前端 hydrateChatMessages 后再 pushStatusPill 会产生重复 pill，
+      // 所以 hydrate 路径只更新消息列表，不再追加 status_command_result。
+      if (r.hydrate && r.payload) {
+        const raw = (r.payload as { messages?: unknown }).messages
+
+        if (Array.isArray(raw)) {
+          hydrateChatMessages(raw as SessionMessage[])
+        }
+      } else {
+        pushStatusPill('status_command_result', r.message)
+      }
+    } else {
+      setAssistantError(r.message)
+    }
+  } catch (err) {
+    setAssistantError(slashErrorToMessage(err))
+  } finally {
+    onFinish?.()
+  }
 }
 
 // 视频附加即上传（本地后端 <1s）：本地模式下超 50MB 会被后端 413 拒绝并在 error 里给出指引。
@@ -205,6 +325,35 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const [sending, setSending] = useState(false)
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const attachMenuRef = useRef<HTMLDivElement>(null)
+
+  // Slash 命令自动补全弹层状态。
+  // ``slashPopoverOpen`` 由 text 是否以 `/` 开头决定；``slashDismissed`` 标记用户按 Esc
+  // 主动关闭——关闭后保留输入文本，再次输入自动重开。
+  const [slashHighlightIndex, setSlashHighlightIndex] = useState(0)
+  const [slashDismissed, setSlashDismissed] = useState(false)
+  const slashTextMatches = text.trim().startsWith('/')
+  const slashPopoverOpen = slashTextMatches && !slashDismissed
+
+  const slashQuery = (() => {
+    const trimmed = text.trim()
+
+    if (!trimmed.startsWith('/')) {
+      return ''
+    }
+
+    const body = trimmed.slice(1)
+    const spaceIdx = body.search(/\s/)
+
+    return spaceIdx === -1 ? body : body.slice(0, spaceIdx)
+  })()
+
+  const slashItems = slashPopoverOpen ? fuzzyFilterCommands(slashQuery, 8) : []
+
+  // 当用户改动文本时重置 dismissed 与高亮项。
+  useEffect(() => {
+    setSlashDismissed(false)
+    setSlashHighlightIndex(0)
+  }, [text])
 
   const {
     recording,
@@ -583,6 +732,45 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
     if (gatewayState !== 'open') {
       return
+    }
+
+    // Slash 命令拦截：文本以 `/` 开头 + 后跟 ASCII 字母或中文 → 改走 command.dispatch。
+    // 注：弹层在 textarea 上方的浮层，本函数 send() 仅做"无弹层时按 Enter 也直接发"的兜底；
+    // 当 slashPopoverOpen 为 true 时，textarea 的 onKeyDown 已经吃掉 Enter/Tab 走选中路径，
+    // 不会落进 send()。这里只是防御性兜底：万一 future change 漏处理也能正确路由。
+    if (slashPopoverOpen) {
+      const preCheck = slashPreCheck(pending, sending)
+
+      if (preCheck) {
+        setAssistantError(preCheck)
+
+        return
+      }
+
+      const parsed = parseSlashInput(trimmed)
+
+      if (parsed && parsed.command) {
+        const cmd = parsed.command
+
+        await executeSlashCommand(cmd, parsed.args, {
+          requestGateway,
+          onStart: () => {
+            setSending(true)
+            setText('')
+          },
+          onFinish: () => setSending(false)
+        })
+
+        return
+      }
+
+      // 命中 `/foo` 但未识别本地命令：toast 提示，**保留** 输入文本让用户修改。
+      // 不退回 prompt.submit，避免 `/foo` 被 LLM 当真发出去消耗 token。
+      if (parsed && !parsed.command) {
+        setAssistantError(`未知命令: /${parsed.name}。试试 /help 查看可用命令。`)
+
+        return
+      }
     }
 
     setSending(true)
@@ -1004,7 +1192,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
             {isReadOnlySession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
-            <div className="flex items-end gap-2">
+            <div className="relative flex items-end gap-2">
               <textarea
                 className="max-h-32 min-h-[38px] flex-1 resize-none rounded-lg border border-white/12 bg-white/5 px-3 py-2 text-sm leading-normal text-white outline-none placeholder:text-white/30 focus:border-accent/70 disabled:pointer-events-none disabled:opacity-40"
                 disabled={isReadOnlySession}
@@ -1013,17 +1201,110 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   onTyping()
                 }}
                 onKeyDown={e => {
+                  // Slash 命令弹层：方向键改高亮、Tab/Enter 选中、Esc 关闭。
+                  if (slashPopoverOpen && slashItems.length > 0) {
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault()
+                      setSlashHighlightIndex(i => (i + 1) % slashItems.length)
+
+                      return
+                    }
+
+                    if (e.key === 'ArrowUp') {
+                      e.preventDefault()
+                      setSlashHighlightIndex(i => (i - 1 + slashItems.length) % slashItems.length)
+
+                      return
+                    }
+
+                    if (e.key === 'Tab') {
+                      e.preventDefault()
+                      const item = slashItems[slashHighlightIndex]
+
+                      if (item) {
+                        setText(`/${item.cmd.name} `)
+                      }
+
+                      return
+                    }
+
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      const item = slashItems[slashHighlightIndex]
+
+                      if (item) {
+                        const parsed = parseSlashInput(text.trim())
+                        const args = parsed?.args ?? []
+
+                        const preCheck = slashPreCheck(pending, sending)
+
+                        if (preCheck) {
+                          setAssistantError(preCheck)
+
+                          return
+                        }
+
+                        void executeSlashCommand(item.cmd, args, {
+                          requestGateway,
+                          onStart: () => {
+                            setSending(true)
+                            setText('')
+                          },
+                          onFinish: () => setSending(false)
+                        })
+                      }
+
+                      return
+                    }
+
+                    if (e.key === 'Escape') {
+                      e.preventDefault()
+                      // 仅关闭弹层，保留用户输入文本——Esc 不应该丢弃未发送的草稿。
+                      setSlashDismissed(true)
+
+                      return
+                    }
+                  }
+
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
                     void send()
                   }
                 }}
                 onPaste={onPaste}
-                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 / 触发命令"
                 ref={inputRef}
                 rows={1}
                 value={text}
               />
+
+              {slashPopoverOpen && slashItems.length > 0 && (
+                <SlashCommandPopover
+                  highlightedIndex={slashHighlightIndex}
+                  onHighlight={setSlashHighlightIndex}
+                  onSelect={cmd => {
+                    const parsed = parseSlashInput(text.trim())
+                    const args = parsed?.args ?? []
+                    const preCheck = slashPreCheck(pending, sending)
+
+                    if (preCheck) {
+                      setAssistantError(preCheck)
+
+                      return
+                    }
+
+                    void executeSlashCommand(cmd, args, {
+                      requestGateway,
+                      onStart: () => {
+                        setSending(true)
+                        setText('')
+                      },
+                      onFinish: () => setSending(false)
+                    })
+                  }}
+                  query={slashQuery}
+                />
+              )}
 
               {/* 附件弹出菜单入口 */}
               <div className="relative" ref={attachMenuRef}>

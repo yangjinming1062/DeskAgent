@@ -84,6 +84,14 @@ JSONRPC_METHOD_NOT_FOUND: int = -32601
 JSONRPC_INVALID_PARAMS: int = -32602
 JSONRPC_INTERNAL_ERROR: int = -32603
 
+# SpiritAgent 扩展错误码（-32000..-32099 区间留给应用层）。
+# Slash 命令通道专用：命令要求 confirm 但客户端未传 confirmed=true / 失败时携带 data 让前端弹 confirm。
+JSONRPC_SLASH_CONFIRM_REQUIRED: int = -32001
+# 回合仍在生成中；命令拒绝执行。
+JSONRPC_SLASH_BUSY: int = -32002
+# Slash 命令兜底错误码（handler 内部异常未映射时使用）。
+JSONRPC_SLASH_GENERIC: int = -32003
+
 
 # OpenAI TTS 硬限 4096，留 4000 给安全余量。
 TTS_MAX_TEXT_CHARS: int = 4_000

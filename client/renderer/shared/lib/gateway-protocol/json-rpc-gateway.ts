@@ -1,4 +1,5 @@
 type GatewayEventName =
+  | 'command.result'
   | 'error'
   | 'message.complete'
   | 'message.delta'
@@ -7,6 +8,20 @@ type GatewayEventName =
   | 'tool.complete'
   | 'tool.start'
   | (string & {})
+
+/** Slash 命令结果 payload：与 PROTOCOL.md §1.3 `command.result` 事件载荷一致。 */
+export interface SlashCommandResultPayload {
+  /** 实际执行的主名（不带 /）。 */
+  command: string
+  /** 命令执行结果。 */
+  result: {
+    status: 'ok' | 'error'
+    message: string
+    payload?: Record<string, unknown> | null
+    /** 为 true 时客户端用 payload.messages 替换本地消息列表。 */
+    hydrate?: boolean
+  }
+}
 
 export interface GatewayEvent<P = unknown> {
   payload?: P
@@ -132,17 +147,21 @@ function parseJsonRpcFrame(raw: string): JsonRpcFrame | null {
 
 type WebSocketLike = WebSocket
 
-// JSON-RPC 2.0 标准错误码——与后端 jsonrpc_dispatcher.py 保持同步，
-// 消费方可按 err.code 分支而无需解析 err.message
-enum SpiritAgentRpcErrorCode {
+// JSON-RPC 2.0 标准错误码 + SpiritAgent 扩展码——与后端 jsonrpc_dispatcher.py / components/constants.py
+// 保持同步，消费方可按 err.code 分支而无需解析 err.message
+export enum SpiritAgentRpcErrorCode {
   ParseError = -32700,
   InvalidRequest = -32600,
   MethodNotFound = -32601,
   InvalidParams = -32602,
-  InternalError = -32603
+  InternalError = -32603,
+  // Slash 命令扩展错误码：与 backend/components/constants.py JSONRPC_SLASH_* 对齐。
+  SlashConfirmRequired = -32001,
+  SlashBusy = -32002,
+  SlashGeneric = -32003
 }
 
-class SpiritAgentRpcError extends Error {
+export class SpiritAgentRpcError extends Error {
   readonly code: number
   readonly data?: unknown
 

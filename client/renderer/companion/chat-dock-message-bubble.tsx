@@ -7,8 +7,16 @@ import { ChatMessagePlayButton } from './chat-message-play-button'
 import { $chatMessageBodies } from './chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from './chat-store'
 
-// 居中的元信息行，而非聊天气泡。
-const SYSTEM_PILL_SUBTYPES = new Set(['hint', 'tool_summary', 'daily_summary', 'compress_summary'])
+// 居中的元信息行，而非聊天气泡。Slash 命令结果与历史清空标记（详见 PROTOCOL §1.9）走同一形态。
+const SYSTEM_PILL_SUBTYPES = new Set([
+  'hint',
+  'tool_summary',
+  'daily_summary',
+  'compress_summary',
+  'status_cleared',
+  'status_command_result'
+])
+
 // 戳 / 拖拽追踪：侧对齐但视觉上弱化。
 const STATUS_TRACE_SUBTYPES = new Set(['status_interaction', 'status_reaction'])
 // 仅肢体语言回复（无文字）：渲染为低权重 trace 提示。

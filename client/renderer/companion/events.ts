@@ -28,6 +28,7 @@ import {
   beginAssistantMessage,
   clearPendingPrompts,
   finalizeAssistantMessage,
+  hydrateChatMessages,
   pushAffectTraceMessage,
   pushMediaMessage,
   pushProactiveMessage,
@@ -61,7 +62,7 @@ import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
-import type { ChatMediaItem, RpcEvent } from '@/shared/types/spiritagent'
+import type { ChatMediaItem, RpcEvent, SessionMessage } from '@/shared/types/spiritagent'
 
 import { $devMode, pushDevLog } from './developer-overlay'
 import { speakProactive } from './proactive/proactive'
@@ -690,6 +691,36 @@ export function handleCompanionEvent(event: RpcEvent): void {
           message: `${label}上有人想和伙伴聊天${name ? `：${name}` : ''}`,
           detail: p?.preview
         })
+      }
+
+      break
+    }
+
+    case 'command.result': {
+      // 服务端在 command.dispatch RPC response 之外另行广播此事件（PROTOCOL §1.3）；
+      // 触发它的窗口已通过 RPC 路径自己渲染过 pill，本路径只服务其他窗口的同步渲染。
+      // RPC 路径的 pushStatusPill 已在 chat-dock 的 executeSlashCommand 中幂等执行。
+      const payload = event.payload as
+        | {
+            command?: string
+            result?: { status: 'ok' | 'error'; message: string; payload?: unknown; hydrate?: boolean }
+          }
+        | undefined
+
+      const r = payload?.result
+
+      if (!r) {
+        break
+      }
+
+      // 仅同步 status_cleared / compress_summary 等历史变化（hydrate=true）：
+      // 其他窗口需要本地 hydrateChatMessages，否则会显示陈旧消息列表。
+      if (r.status === 'ok' && r.hydrate) {
+        const messages = (r.payload as { messages?: unknown } | undefined)?.messages
+
+        if (Array.isArray(messages)) {
+          hydrateChatMessages(messages as SessionMessage[])
+        }
       }
 
       break

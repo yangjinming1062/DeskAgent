@@ -16,6 +16,9 @@ from components import (
     DEFAULT_LANGUAGE,
     JSONRPC_INVALID_PARAMS,
     JSONRPC_METHOD_NOT_FOUND,
+    JSONRPC_SLASH_BUSY,
+    JSONRPC_SLASH_CONFIRM_REQUIRED,
+    JSONRPC_SLASH_GENERIC,
     MAX_ATTACHMENTS_PER_TURN,
     MAX_VOICE_DESIGN_PROMPT_CHARS,
     REQUEST_ID_HEADER,
@@ -39,6 +42,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.chat import build_session_messages, load_user_settings, persist_extra_user_messages, run_chat_turn
 from services.chat.prompt_presets import BUILTIN_PRESETS
+from services.chat.slash_commands import (
+    SlashCommandContext,
+    SlashCommandResult,
+    list_commands_for_user,
+    suggest_commands,
+)
+from services.chat.slash_commands import (
+    register as register_slash_command,
+)
+from services.chat.slash_commands import (
+    resolve as resolve_slash_command,
+)
 from services.chat.turn_inputs import _build_turn_inputs, _merge_session_settings, _parse_temperature
 from services.companion import (
     AVATAR_JOB_LOCKS,
@@ -165,6 +180,10 @@ _avatar_regen_tasks: set[asyncio.Task] = set()
 
 # avatar regen 的 advisory lock：防止并发 regen 互相覆盖；xact 版本在 commit/rollback 时自动释放，无需显式解锁；与 user_id 组合后每个用户独占一个槽。
 _AVATAR_REGEN_ADVISORY_NAMESPACE = 0x4156_4156
+
+# Slash 命令 per-conversation 锁：防止 /清理 + /压缩 双击 / 多窗口并发触发导致重复 marker。
+# 串行化副作用：DB 事务已是原子的，但 marker 是 INSERT，可能产生重复 status_cleared 行。
+_conversation_locks: dict[int, asyncio.Lock] = {}
 
 
 def _user_throttled(state: dict[int, float], user_id: int, min_interval: float, now: float) -> bool:
@@ -428,6 +447,170 @@ async def _record_main_conversation(user_id: int, role: str, content: str, subty
         logger.exception("failed to persist main-conversation status row", extra={"user_id": user_id, "subtype": subtype})
 
 
+# 新消息类型注册常量（与 status_* 平级；不读 status_pill 路径，要走专门 subtype 渲染分支）。
+MESSAGE_SUBTYPE_STATUS_CLEARED: str = "status_cleared"
+
+
+async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: int, runtime) -> dict:
+    """session.compress_context 与 /压缩 命令的共用实现。
+
+    调用前必须已校验 in-flight 守卫（chat_task.done）。返回 dict 形态与 session.compress_context 一致：
+    compressed=False 时不含 messages / summary；True 时含 delivered messages 给前端 hydrate。
+    """
+    user_settings = await load_user_settings(db, user_id)
+    effective_settings = _merge_session_settings(user_settings, runtime)
+    req = ChatRequest(session_id=str(conv.id), message=ChatMessageRequest(role="user", content=""))
+    inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+
+    compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
+    compressed_context, compress_info = await compress_history_if_needed(
+        inputs.context,
+        client=inputs.client,
+        model=inputs.model_name,
+        context_length=inputs.ctx_length,
+        enabled=True,
+        threshold_ratio=0.0,
+        temperature=scale_temperature(inputs.provider_name, compression_u),
+        language=effective_settings.get("language", DEFAULT_LANGUAGE),
+        current_tokens=inputs.estimated_tokens,
+        force=True,
+    )
+
+    if compress_info is None:
+        return {
+            "session_id": runtime.session_id,
+            "compressed": False,
+            "reason": "历史消息较少，无需压缩（至少需要保留最近对话）",
+            "usage": {
+                "total_tokens": inputs.estimated_tokens,
+                "context_window": inputs.ctx_length,
+            },
+        }
+
+    checkpoint = Message(
+        conversation_id=conv.id,
+        role="system",
+        content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
+        subtype="compress_summary",
+        prompt_tokens=compress_info.get("prompt_tokens", 0),
+        completion_tokens=compress_info.get("completion_tokens", 0),
+    )
+    db.add(checkpoint)
+    await db.commit()
+    await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
+
+    new_inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
+    delivered, truncated, next_cursor = await build_session_messages(db, conv)
+
+    return {
+        "session_id": runtime.session_id,
+        "compressed": True,
+        "replaced_count": compress_info["replaced_count"],
+        "summary": compress_info["summary"],
+        "messages": delivered,
+        "usage": {
+            "total_tokens": new_inputs.estimated_tokens,
+            "context_window": new_inputs.ctx_length,
+        },
+    }
+
+
+async def _do_clear_history(db: AsyncSession, conv: Conversation, runtime) -> dict:
+    """清空会话所有消息（含 user / assistant / system / tool 各 role，保留会话行 + 写一条 status_cleared 标记）。
+
+    返回 {"session_id", "cleared_count", "messages": [...]}。``cleared_count`` 是真正删除的行数。
+    """
+    total = (
+        await db.execute(
+            select(func.count(Message.id)).where(Message.conversation_id == conv.id),
+        )
+    ).scalar_one()
+
+    # 全量清掉本会话所有消息 + 视频附件；DELPHI 会话 onboarding 时写入的 hint 行也跟着删，
+    # 让 cleared 之后客户端只看到 status_cleared marker 一条历史行。
+    await prune_videos_in_range(db, conv.id)
+    await db.execute(delete(Message).where(Message.conversation_id == conv.id))
+
+    marker = Message(
+        conversation_id=conv.id,
+        role="system",
+        content=f"[🧹 会话已清空 — {total} 条消息]",
+        subtype=MESSAGE_SUBTYPE_STATUS_CLEARED,
+    )
+    db.add(marker)
+    await db.commit()
+
+    delivered, _, _ = await build_session_messages(db, conv)
+    return {
+        "session_id": runtime.session_id,
+        "cleared_count": total,
+        "messages": delivered,
+    }
+
+
+@register_slash_command(
+    name="clear",
+    aliases=("清空", "清理", "reset"),
+    description="清空当前会话消息（保留会话行）",
+    requires_confirmation=True,
+)
+async def _slash_clear(ctx: SlashCommandContext) -> SlashCommandResult:
+    """``/清理`` 命令 handler。``confirmed`` 由 ``command.dispatch`` 在调用前把关，未传则抛 SLASH_CONFIRM_REQUIRED。"""
+    if ctx.runtime.chat_task and not ctx.runtime.chat_task.done():
+        raise JsonRpcError(JSONRPC_SLASH_BUSY, "请先停止当前生成再清理会话")
+    lock = _conversation_locks.setdefault(ctx.runtime.conversation_id, asyncio.Lock())
+    async with lock, SESSION_LOCAL() as db:
+        conv = await _find_owned_conv(db, ctx.user_id, ctx.session_id)
+        if conv is None:
+            raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {ctx.session_id!r}")
+        result = await _do_clear_history(db, conv, ctx.runtime)
+    cleared = result["cleared_count"]
+    if cleared == 0:
+        return SlashCommandResult(
+            status="ok",
+            message="当前会话无消息可清空",
+            hydrate=True,
+            payload=result,
+        )
+    return SlashCommandResult(
+        status="ok",
+        message=f"已清空 {cleared} 条消息",
+        hydrate=True,
+        payload=result,
+    )
+
+
+@register_slash_command(
+    name="compress",
+    aliases=("压缩", "ctx"),
+    description="压缩当前会话上下文",
+    requires_confirmation=False,
+)
+async def _slash_compress(ctx: SlashCommandContext) -> SlashCommandResult:
+    """``/压缩`` 命令 handler：复用 session.compress_context 的核心实现。"""
+    if ctx.runtime.chat_task and not ctx.runtime.chat_task.done():
+        raise JsonRpcError(JSONRPC_SLASH_BUSY, "请先停止当前生成再压缩会话")
+    lock = _conversation_locks.setdefault(ctx.runtime.conversation_id, asyncio.Lock())
+    async with lock, SESSION_LOCAL() as db:
+        conv = await _find_owned_conv(db, ctx.user_id, ctx.session_id)
+        if conv is None:
+            raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {ctx.session_id!r}")
+        result = await _do_compress_history(db, conv, ctx.user_id, ctx.runtime)
+    if not result["compressed"]:
+        return SlashCommandResult(
+            status="ok",
+            message="历史消息较少，无需压缩",
+            hydrate=False,
+            payload=result,
+        )
+    return SlashCommandResult(
+        status="ok",
+        message=f"已压缩 {result['replaced_count']} 条早期消息",
+        hydrate=True,
+        payload=result,
+    )
+
+
 def _register_session_handlers(
     dispatcher: JsonRpcDispatcher,
     runtime_sessions: dict[str, RuntimeSession],
@@ -658,65 +841,117 @@ def _register_session_handlers(
             conv = await _find_owned_conv(db, user_id, runtime.session_id)
             if conv is None:
                 raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {runtime.session_id!r}")
-            user_settings = await load_user_settings(db, user_id)
-            effective_settings = _merge_session_settings(user_settings, runtime)
-            req = ChatRequest(session_id=str(conv.id), message=ChatMessageRequest(role="user", content=""))
-            inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
-
-            compression_u = _parse_temperature(effective_settings.get("chat.compression_temperature"), CONTEXT_COMPRESSION_TEMPERATURE_DEFAULT)
-            compressed_context, compress_info = await compress_history_if_needed(
-                inputs.context,
-                client=inputs.client,
-                model=inputs.model_name,
-                context_length=inputs.ctx_length,
-                enabled=True,
-                threshold_ratio=0.0,
-                temperature=scale_temperature(inputs.provider_name, compression_u),
-                language=effective_settings.get("language", DEFAULT_LANGUAGE),
-                current_tokens=inputs.estimated_tokens,
-                force=True,
-            )
-
-            if compress_info is None:
-                return {
-                    "session_id": runtime.session_id,
-                    "compressed": False,
-                    "reason": "历史消息较少，无需压缩（至少需要保留最近对话）",
-                    "usage": {
-                        "total_tokens": inputs.estimated_tokens,
-                        "context_window": inputs.ctx_length,
-                    },
-                }
-
-            checkpoint = Message(
-                conversation_id=conv.id,
-                role="system",
-                content=f"[🗜️ 对话压缩 — {compress_info['replaced_count']} 条早期消息已压缩]\n{compress_info['summary']}",
-                subtype="compress_summary",
-                prompt_tokens=compress_info.get("prompt_tokens", 0),
-                completion_tokens=compress_info.get("completion_tokens", 0),
-            )
-            db.add(checkpoint)
-            await db.commit()
-            await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
-
-            new_inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
-            delivered, truncated, next_cursor = await build_session_messages(db, conv)
-
-            return {
-                "session_id": runtime.session_id,
-                "compressed": True,
-                "replaced_count": compress_info["replaced_count"],
-                "summary": compress_info["summary"],
-                "messages": delivered,
-                "usage": {
-                    "total_tokens": new_inputs.estimated_tokens,
-                    "context_window": new_inputs.ctx_length,
-                },
-            }
+            return await _do_compress_history(db, conv, user_id, runtime)
 
     dispatcher.register("session.compress_context", session_compress_context)
     dispatcher.register("session.compress", session_compress_context)
+
+    async def session_clear_messages(params: dict) -> dict:
+        """直接 RPC：清空当前会话的所有消息（保留会话行），写一条 status_cleared marker。
+
+        是 ``/清理`` slash 命令的底层副作用 RPC；提供 REST 镜像与未来自动化测试入口。
+        需要 ``confirmed=true``（仅在与命令层联动时约定；这里强制所有调用都传 confirmed）。
+        """
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        if runtime.chat_task and not runtime.chat_task.done():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
+        if not bool(params.get("confirmed")):
+            raise JsonRpcError(
+                JSONRPC_SLASH_CONFIRM_REQUIRED,
+                "session.clear_messages requires confirmed=true",
+                data={"requires_confirmation": True},
+            )
+        async with SESSION_LOCAL() as db:
+            conv = await _find_owned_conv(db, user_id, runtime.session_id)
+            if conv is None:
+                raise JsonRpcError(JSONRPC_METHOD_NOT_FOUND, f"session not found: {runtime.session_id!r}")
+            result = await _do_clear_history(db, conv, runtime)
+        logger.info(
+            "session.clear_messages",
+            extra={"user_id": user_id, "session_id": runtime.session_id, "cleared_count": result["cleared_count"]},
+        )
+        return result
+
+    dispatcher.register("session.clear_messages", session_clear_messages)
+
+    async def command_dispatch(params: dict) -> dict:
+        """Slash 命令分发入口：按 ``command`` 字段查 SLASH_COMMANDS 注册表并执行对应 handler。
+
+        返回 ``{command, result: SlashCommandResult.model_dump()}`` 形态；同步广播
+        ``command.result`` 事件给所有订阅同 session 的窗口，便于多窗口场景同步渲染 pill。
+        """
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        raw_command = params.get("command")
+        if not isinstance(raw_command, str) or not raw_command.strip():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "command must be a non-empty string")
+
+        name = raw_command.strip().lstrip("/").lower()
+        if not name:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "command name is empty")
+
+        cmd = resolve_slash_command(name)
+        if cmd is None or cmd.handler is None:
+            suggestions = suggest_commands(name)
+            raise JsonRpcError(
+                JSONRPC_INVALID_PARAMS,
+                f"unknown command: /{name}",
+                data={"suggestions": suggestions},
+            )
+
+        confirmed = bool(params.get("confirmed"))
+        if cmd.requires_confirmation and not confirmed:
+            raise JsonRpcError(
+                JSONRPC_SLASH_CONFIRM_REQUIRED,
+                f"command /{name} requires explicit confirmation",
+                data={"requires_confirmation": True, "command": cmd.name},
+            )
+
+        args_raw = params.get("args")
+        args_list: list[str] = []
+        if isinstance(args_raw, list):
+            args_list = [str(a) for a in args_raw if isinstance(a, str | int | float)]
+        elif isinstance(args_raw, str):
+            args_list = args_raw.split()
+
+        ctx = SlashCommandContext(
+            session_id=runtime.session_id,
+            user_id=user_id,
+            runtime=runtime,
+            dispatcher=dispatcher,
+            args=args_list,
+            raw=raw_command,
+            confirmed=confirmed,
+        )
+
+        try:
+            result = await cmd.handler(ctx)
+        except JsonRpcError:
+            raise
+        except Exception:
+            logger.exception("slash command handler failed", extra={"command": cmd.name, "user_id": user_id})
+            raise JsonRpcError(JSONRPC_SLASH_GENERIC, f"command /{name} failed unexpectedly") from None
+
+        result_payload = {
+            "command": cmd.name,
+            "result": {
+                "status": result.status,
+                "message": result.message,
+                "payload": result.payload,
+                "hydrate": result.hydrate,
+            },
+        }
+        await dispatcher.push_event("command.result", result_payload, session_id=runtime.session_id)
+        return result_payload
+
+    dispatcher.register("command.dispatch", command_dispatch)
+
+    async def command_list(_params: dict) -> dict:
+        """列出可用 slash 命令元数据；供客户端 ``/帮助`` 或调试面板使用。"""
+        return {"commands": list_commands_for_user()}
+
+    dispatcher.register("command.list", command_list)
 
     def _track(task: asyncio.Task) -> None:
         if user_session is not None:

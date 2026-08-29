@@ -349,6 +349,24 @@ export function pushUserMessage(text: string, attachments?: ChatAttachment[]): s
   return id
 }
 
+/**
+ * 把一行 status pill（如 `status_cleared` / `compress_summary` / 自定义 command_result）插入消息列表。
+ *
+ * Pill 在渲染层走 `status_*` / `compress_summary` 通用路径（与每日摘要、压缩摘要同形态）。
+ * 文本为空时返回的 id 是新插入消息的本地 id（便于滚动定位等场景）。
+ */
+export function pushStatusPill(subtype: string, text: string): string {
+  const id = nextId()
+  $chatMessageBodies.setKey(id, {
+    text,
+    streaming: false,
+    toolName: null
+  })
+  $chatMessageList.set([...$chatMessageList.get(), { id, role: 'assistant', subtype }])
+
+  return id
+}
+
 /** 清除列表末尾的 draft 锚点徽标——fork 出的会话只要有任何新消息（用户/助手/系统），草稿即被取代。 */
 function clearDraftAnchor(): void {
   const list = $chatMessageList.get()

@@ -17,6 +17,7 @@ import { clearVfx, emitVfx } from '@/companion/vfx'
 import { resolveGatewayWsUrl } from '@/shared/lib/gateway-ws-url'
 import { log } from '@/shared/lib/log'
 import { reconnectBackoffMs } from '@/shared/lib/reconnect'
+import { fetchSlashCommandMeta } from '@/shared/lib/slash-commands'
 import { SpiritAgentGateway } from '@/shared/spiritagent'
 import { logout } from '@/shared/store/auth'
 import { reportPrimaryGatewayState, setPrimaryGateway, tearDownPrimaryGateway } from '@/shared/store/gateway'
@@ -179,6 +180,7 @@ export function useGatewayBoot({ handleGatewayEvent, onConnectionReady, onGatewa
         }
 
         void syncRunnerTools(gateway)
+        void fetchSlashCommandMeta(method => gateway.request(method))
         reconnectAttempt = 0
       } catch {
         // 传输失败——交给 finally 块里的退避逻辑处理。
