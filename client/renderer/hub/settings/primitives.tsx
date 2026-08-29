@@ -29,7 +29,8 @@ export function Pill({
 
 export function SectionHeading({ title, meta }: { title: string; meta?: string }): React.JSX.Element {
   return (
-    <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-white/80">
+    <div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-white/90">
+      <span className="size-1.5 rounded-full bg-accent shadow-[0_0_4px_var(--ui-accent)]" />
       <span>{title}</span>
       {meta && <Pill>{meta}</Pill>}
     </div>
@@ -47,7 +48,9 @@ export function SettingsSubsection({
 }): React.JSX.Element {
   return (
     <div className="space-y-2.5">
-      <div className="text-xs font-medium text-white/80">{title}</div>
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-white/85">
+        <span>{title}</span>
+      </div>
       {intro ? <p className="text-[10px] text-white/40">{intro}</p> : null}
       <div className="space-y-2">{children}</div>
     </div>
@@ -70,13 +73,13 @@ export function ListRow({
   return (
     <div
       className={cn(
-        'grid gap-3 rounded-lg px-3 py-2 transition hover:bg-white/5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center',
+        'group relative grid gap-3 rounded-xl border border-white/6 bg-white/[0.02] p-3 transition-all duration-150 hover:border-white/12 hover:bg-white/[0.04] sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center',
         wide && 'sm:grid-cols-1 sm:items-start'
       )}
     >
       <div className="min-w-0">
         <div className="text-xs font-medium text-white/90">{title}</div>
-        {description && <div className="mt-1 text-[10px] leading-relaxed text-white/40">{description}</div>}
+        {description && <div className="mt-1 text-[11px] leading-relaxed text-white/45">{description}</div>}
         {below}
       </div>
       {action && <div className={cn('min-w-0', !wide && 'sm:justify-self-end')}>{action}</div>}

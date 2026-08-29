@@ -108,10 +108,10 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
         ) : null}
         {!hideTextBubble && (
           <div
-            className={`whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+            className={`relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
               isUser
-                ? 'rounded-br-sm bg-accent text-white'
-                : 'rounded-bl-sm border border-white/8 bg-surface-card text-white/90'
+                ? 'rounded-br-sm bg-accent text-white shadow-md shadow-accent/15 border border-white/10'
+                : 'rounded-bl-sm border border-white/10 bg-surface-card text-white/90 shadow-sm'
             }`}
           >
             {body.error ? (
@@ -119,11 +119,17 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
             ) : body.cancelled ? (
               <span className="text-white/50">已停止</span>
             ) : body.toolName ? (
-              <span className="text-white/60">正在使用 {body.toolName}…</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent">
+                <span className="size-1.5 animate-ping rounded-full bg-accent" />
+                <span>[EXEC: {body.toolName}]</span>
+              </span>
             ) : visibleText ? (
-              visibleText
+              <>
+                {visibleText}
+                {body.streaming && <span className="animate-caret-pulse" />}
+              </>
             ) : (
-              '…'
+              <span className="animate-pulse text-white/40">…</span>
             )}
           </div>
         )}
@@ -135,8 +141,8 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
           </div>
         ) : null}
         {body.draft && (
-          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] text-amber-200/90">
-            未发送
+          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] text-amber-200/90 font-mono">
+            [DRAFT: 未发送]
           </span>
         )}
         {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={body.text} />}

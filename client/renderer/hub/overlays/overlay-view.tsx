@@ -2,7 +2,7 @@ import { type ReactNode, useEffect } from 'react'
 
 import { triggerHaptic } from '@/shared/lib/haptics'
 import type { IconComponent } from '@/shared/lib/icons'
-import { PanelHeader } from '@/shared/panel'
+import { HudCorners, PanelHeader } from '@/shared/panel'
 import { strings } from '@/shared/strings'
 
 interface OverlayViewProps {
@@ -47,7 +47,8 @@ export function OverlayView({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-white">
+    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-white tech-grid">
+      <HudCorners size={8} />
       <PanelHeader closeLabel={closeLabel} dragRegion icon={icon} onClose={closeOverlay} title={title} />
       <div className="min-h-0 flex flex-1 flex-col">{children}</div>
     </div>

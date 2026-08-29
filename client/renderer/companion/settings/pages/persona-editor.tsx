@@ -12,7 +12,8 @@ import {
   CHIP_FILTER_ACTIVE,
   FIELD_LABEL,
   INPUT_CLASS,
-  SECTION_TITLE
+  SECTION_TITLE,
+  TechCard
 } from '@/shared/panel'
 
 // 可编辑的 persona 字段：name / relationship / personality。
@@ -58,8 +59,8 @@ export function PersonaSection(): React.JSX.Element {
             assemblePersona(
               {
                 name: trimmed,
-                personality,
-                relationship
+                personality: personality.trim(),
+                relationship: relationship.trim()
               },
               persona ?? undefined
             )
@@ -70,7 +71,7 @@ export function PersonaSection(): React.JSX.Element {
       })
       putOk = true
     } catch {
-      setHint('保存失败了，稍后再试')
+      setHint('保存失败，稍后再试')
       setSaving(false)
 
       return
@@ -96,12 +97,22 @@ export function PersonaSection(): React.JSX.Element {
     return (
       <section>
         <p className={cn(SECTION_TITLE, 'mb-1.5')}>角色</p>
-        <div className="space-y-1 rounded-xl border border-white/8 bg-surface-card px-3.5 py-3 text-xs">
-          <p className="font-medium text-white">{persona?.name ?? '伙伴'}</p>
-          <p className="text-white/50">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
-          {persona?.appearance && <p className="text-white/40">{persona.appearance}</p>}
-        </div>
-        <button className={cn(BTN_SUBTLE, 'mt-2')} onClick={startEdit} type="button">
+        <TechCard className="p-4 space-y-2 border-white/12" tilt>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="size-2 rounded-full bg-accent animate-pulse shadow-[0_0_6px_var(--ui-accent)]" />
+              <p className="font-semibold text-sm text-white">{persona?.name ?? '伙伴'}</p>
+            </div>
+            <span className="font-mono text-[9px] text-white/30 tracking-widest">[PERSONA.CORE]</span>
+          </div>
+          <p className="text-xs text-white/70">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
+          {persona?.appearance && (
+            <p className="text-[11px] text-white/45 bg-white/[0.03] p-2 rounded-lg border border-white/5 font-mono">
+              {persona.appearance}
+            </p>
+          )}
+        </TechCard>
+        <button className={cn(BTN_SUBTLE, 'mt-2.5')} onClick={startEdit} type="button">
           编辑角色
         </button>
       </section>

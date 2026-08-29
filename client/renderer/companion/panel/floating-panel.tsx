@@ -7,7 +7,7 @@ import { type ResizeDirection, usePanelResize } from '@/companion/hooks/use-pane
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { $viewport } from '@/companion/spatial'
 import type { IconComponent } from '@/shared/lib/icons'
-import { PanelHeader } from '@/shared/panel'
+import { BorderBeam, HudCorners, PanelHeader } from '@/shared/panel'
 
 interface PanelSize {
   width: number
@@ -98,12 +98,12 @@ export function FloatingPanel({
 
       // 正在输入框里按 Esc（清空 / 取消编辑的惯例）不连带关掉整个面板——
       // 衣柜设计会话等组件内状态会随之丢失。
-      const target = e.target
+      const target = e.target as HTMLElement | null
 
-      if (
-        target instanceof HTMLElement &&
-        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-      ) {
+      const isTyping =
+        target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+
+      if (isTyping) {
         return
       }
 
@@ -129,7 +129,7 @@ export function FloatingPanel({
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
       <div
-        className="relative flex flex-col overflow-hidden rounded-2xl border border-white/12 bg-surface-panel text-white shadow-2xl"
+        className="relative flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-surface-panel text-white shadow-2xl border-beam-container"
         ref={panelRef}
         style={{
           position: 'fixed',
@@ -141,6 +141,8 @@ export function FloatingPanel({
           transform: `translate3d(${visibleDx}px, ${visibleDy}px, 0)`
         }}
       >
+        <BorderBeam />
+        <HudCorners size={8} />
         {RESIZE_HANDLES.map(h => (
           <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
         ))}

@@ -57,7 +57,7 @@ import {
 } from '@/shared/lib/icons'
 import { fuzzyFilterCommands, parseSlashInput, type SlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
-import { BTN_ICON } from '@/shared/panel'
+import { BorderBeam, BTN_ICON, HudCorners } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
 import type { ChatAttachment, SessionMessage } from '@/shared/types/spiritagent'
 
@@ -975,7 +975,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/12 bg-surface-panel text-white shadow-2xl"
+        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/15 bg-surface-panel text-white shadow-2xl border-beam-container"
         onDragOver={e => e.preventDefault()}
         onDrop={e => void onDrop(e)}
         ref={panelRef}
@@ -989,6 +989,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
         }}
       >
+        <BorderBeam fast={spriteState === 'thinking' || spriteState === 'speaking'} />
+        <HudCorners size={8} />
+
         {/* Resize Handles (8 Directions) */}
         {RESIZE_HANDLES.map(h => (
           <div aria-hidden="true" className={h.className} key={h.dir} {...getResizeHandleProps(h.dir)} />
@@ -1079,9 +1082,17 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 <PanelLeft />
               </button>
               <span className="truncate text-sm font-medium text-white/90">{currentSessionTitle}</span>
+              <span className="hidden font-mono text-[9px] text-white/30 uppercase tracking-widest sm:inline-block">
+                [CONSOLE: ONLINE]
+              </span>
             </div>
             <div className="flex items-center gap-0.5">
-              <button aria-label="关闭对话" className={BTN_ICON} onClick={onClose} type="button">
+              <button
+                aria-label="关闭对话"
+                className={cn(BTN_ICON, 'hover:border hover:border-white/15 hover:bg-rose-500/15 hover:text-rose-300')}
+                onClick={onClose}
+                type="button"
+              >
                 <X />
               </button>
             </div>

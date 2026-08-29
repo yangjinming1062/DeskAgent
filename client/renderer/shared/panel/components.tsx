@@ -13,7 +13,8 @@ import {
   HINT_TEXT,
   INPUT_CLASS,
   NAV_ITEM,
-  NAV_ITEM_ACTIVE
+  NAV_ITEM_ACTIVE,
+  TECH_CARD
 } from './palette'
 
 // 拖拽柄事件组的透传形状（usePanelDrag 的 bind）——shared 侧不依赖 companion hooks，
@@ -26,6 +27,89 @@ export interface NavItemDescriptor {
   icon: IconComponent
 }
 
+export function BorderBeam({ className, fast = false }: { className?: string; fast?: boolean }): React.JSX.Element {
+  return <span aria-hidden="true" className={cn('border-beam', fast && 'border-beam-fast', className)} />
+}
+
+export function HudCorners({ className, size = 6 }: { className?: string; size?: number }): React.JSX.Element {
+  const s = `${size}px`
+
+  return (
+    <div aria-hidden="true" className={cn('pointer-events-none absolute inset-0 z-10', className)}>
+      <span className="absolute left-0 top-0 border-l border-t border-accent/60" style={{ width: s, height: s }} />
+      <span className="absolute right-0 top-0 border-r border-t border-accent/60" style={{ width: s, height: s }} />
+      <span className="absolute bottom-0 left-0 border-b border-l border-accent/60" style={{ width: s, height: s }} />
+      <span className="absolute bottom-0 right-0 border-b border-r border-accent/60" style={{ width: s, height: s }} />
+    </div>
+  )
+}
+
+export function TechCard({
+  children,
+  className,
+  glow = true,
+  tilt = false
+}: {
+  children: ReactNode
+  className?: string
+  glow?: boolean
+  tilt?: boolean
+}): React.JSX.Element {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const shineRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!tilt || !cardRef.current) {
+      return
+    }
+
+    const rect = cardRef.current.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const dx = (x - rect.width / 2) / (rect.width / 2)
+    const dy = (y - rect.height / 2) / (rect.height / 2)
+
+    cardRef.current.style.transform = `perspective(800px) rotateX(${-dy * 4}deg) rotateY(${dx * 4}deg)`
+
+    if (shineRef.current) {
+      shineRef.current.style.background = `radial-gradient(280px circle at ${x}px ${y}px, rgba(255,255,255,0.12), transparent 80%)`
+      shineRef.current.style.opacity = '1'
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (!tilt || !cardRef.current) {
+      return
+    }
+
+    cardRef.current.style.transform = ''
+
+    if (shineRef.current) {
+      shineRef.current.style.opacity = '0'
+    }
+  }
+
+  return (
+    <div
+      className={cn(TECH_CARD, 'group transition-transform duration-150 ease-out', className)}
+      onMouseLeave={handleMouseLeave}
+      onMouseMove={handleMouseMove}
+      ref={cardRef}
+    >
+      {glow && (
+        <div className="pointer-events-none absolute -inset-px rounded-xl bg-gradient-to-br from-accent/15 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+      )}
+      {tilt && (
+        <div
+          className="pointer-events-none absolute inset-0 rounded-xl opacity-0 transition-opacity duration-200"
+          ref={shineRef}
+        />
+      )}
+      <div className="relative z-10">{children}</div>
+    </div>
+  )
+}
+
 export function SettingsNav({
   items,
   activeId,
@@ -36,18 +120,30 @@ export function SettingsNav({
   onSelect: (id: string) => void
 }): React.JSX.Element {
   return (
-    <nav className="flex flex-col gap-0.5">
-      {items.map(item => (
-        <button
-          className={cn(activeId === item.id ? NAV_ITEM_ACTIVE : NAV_ITEM)}
-          key={item.id}
-          onClick={() => onSelect(item.id)}
-          type="button"
-        >
-          <item.icon className="shrink-0 size-4 text-white/40" />
-          <span className="min-w-0 flex-1 truncate">{item.label}</span>
-        </button>
-      ))}
+    <nav className="flex flex-col gap-1">
+      {items.map(item => {
+        const isActive = activeId === item.id
+
+        return (
+          <button
+            className={cn(isActive ? NAV_ITEM_ACTIVE : NAV_ITEM)}
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+            type="button"
+          >
+            <item.icon
+              className={cn(
+                'shrink-0 size-4 transition-colors',
+                isActive
+                  ? 'text-accent drop-shadow-[0_0_6px_var(--ui-accent)]'
+                  : 'text-white/40 group-hover:text-white/70'
+              )}
+            />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {isActive && <span className="size-1 rounded-full bg-accent drop-shadow-[0_0_4px_var(--ui-accent)]" />}
+          </button>
+        )
+      })}
     </nav>
   )
 }
@@ -228,20 +324,33 @@ export function PanelHeader({
   return (
     <div
       className={cn(
-        'flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5',
+        'relative flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5 bg-white/[0.02]',
         dragBind && 'cursor-grab active:cursor-grabbing',
         dragRegion && '[-webkit-app-region:drag]'
       )}
       title={dragBind ? '拖动以移动面板' : undefined}
       {...dragBind}
     >
-      <div className="flex items-center gap-2">
-        {Icon && <Icon className="size-4 text-white/50" />}
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
+      <div className="flex items-center gap-2.5">
+        {Icon && (
+          <div className="flex size-6 items-center justify-center rounded-md border border-white/10 bg-white/5 shadow-[inset_0_0_8px_rgba(255,255,255,0.05)]">
+            <Icon className="size-3.5 text-accent drop-shadow-[0_0_6px_var(--ui-accent)]" />
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold tracking-wide text-white">{title}</h2>
+          <span className="hidden font-mono text-[9px] text-white/25 uppercase tracking-widest sm:inline-block">
+            [SYS.PANEL]
+          </span>
+        </div>
       </div>
       <button
         aria-label={closeLabel}
-        className={cn(BTN_ICON, dragRegion && '[-webkit-app-region:no-drag]')}
+        className={cn(
+          BTN_ICON,
+          'hover:border hover:border-white/15 hover:bg-rose-500/15 hover:text-rose-300',
+          dragRegion && '[-webkit-app-region:no-drag]'
+        )}
         onClick={onClose}
         type="button"
       >

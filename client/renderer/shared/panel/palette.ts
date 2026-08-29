@@ -31,11 +31,15 @@ export const CHIP_FILTER_ACTIVE =
 
 // 设置侧栏导航
 export const NAV_ITEM =
-  'flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-white/55 transition hover:bg-white/5 hover:text-white'
+  'group relative flex h-8 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-white/55 transition-all duration-150 hover:bg-white/6 hover:text-white'
 export const NAV_ITEM_ACTIVE =
-  'flex h-8 w-full items-center gap-2 rounded-lg bg-accent-soft px-2.5 text-left text-xs font-medium text-white'
+  'group relative flex h-8 w-full items-center gap-2 rounded-lg bg-accent-soft px-2.5 text-left text-xs font-medium text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-0.5 before:rounded-full before:bg-accent'
 
 // 文本层级
-export const SECTION_TITLE = 'text-xs font-medium text-body'
-export const FIELD_LABEL = 'mb-1 block text-[11px] text-muted'
+export const SECTION_TITLE = 'text-xs font-medium text-body tracking-wide'
+export const FIELD_LABEL = 'mb-1 block text-[11px] text-muted font-medium'
 export const HINT_TEXT = 'text-[10px] leading-relaxed text-faint'
+
+// 科技面板与卡片类
+export const TECH_CARD =
+  'relative overflow-hidden rounded-xl border border-white/10 bg-surface-card transition-all duration-200 hover:border-white/20'
