@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 
 from .emitter import JsonRpcEmitter
 from .jsonrpc import JsonRpcDispatcher
+from .runtime import RuntimeSession
 
 logger = get_logger(__name__)
 
@@ -89,6 +90,8 @@ class ConnectionManager:
     def __init__(self):
         self.active_connections: dict[int, WebSocket] = {}
         self._dispatchers: dict[int, JsonRpcDispatcher] = {}
+        # 同会话 per-runtime map（同 _dispatchers 一并注册；存引用，runtime 挂载/卸载由 handlers.py 直接 mutate 同一 dict）。
+        self._runtime_sessions: dict[int, dict[str, RuntimeSession]] = {}
 
     async def connect(self, websocket: WebSocket, user_id: int) -> None:
         """accept 并注册；同一用户已存在的 socket 也在此处关闭，把单设备登录不变量集中在一处，不与调用方分散。"""
@@ -111,10 +114,18 @@ class ConnectionManager:
         logger.info("User dispatcher registered", extra={"user_id": user_id})
         notify_ws_event_loop()
 
+    def register_runtime_sessions(self, user_id: int, runtime_sessions: dict[str, RuntimeSession]) -> None:
+        """注册同用户 runtime_sessions dict 引用——handlers.py 持续 mutate 此 dict，MANAGER 仅持有引用以供 REST 等非 WS 路径按 user_id 查表。"""
+        self._runtime_sessions[user_id] = runtime_sessions
+
+    def get_runtime_sessions(self, user_id: int) -> dict[str, RuntimeSession] | None:
+        return self._runtime_sessions.get(user_id)
+
     def unregister_dispatcher(self, user_id: int) -> None:
         dispatcher = self._dispatchers.pop(user_id, None)
         if dispatcher is not None and getattr(dispatcher, "_writer_task", None) and not dispatcher._writer_task.done():
             dispatcher._writer_task.cancel()
+        self._runtime_sessions.pop(user_id, None)
         logger.info("User dispatcher unregistered", extra={"user_id": user_id})
 
     async def aunregister_dispatcher(self, user_id: int) -> None:

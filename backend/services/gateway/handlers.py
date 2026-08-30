@@ -264,6 +264,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                 dispatcher = user_session.dispatcher
                 runtime_sessions = user_session.runtime_sessions
                 MANAGER.register_dispatcher(user_id, dispatcher)
+                MANAGER.register_runtime_sessions(user_id, runtime_sessions)
                 logger.info("Resumed active user gateway session across reconnect", extra={"user_id": user_id})
             else:
                 replay_buffer = ReplayBuffer(capacity=DEFAULT_REPLAY_BUFFER_CAPACITY, ttl_seconds=DEFAULT_REPLAY_BUFFER_TTL_SECONDS)
@@ -284,6 +285,7 @@ async def handle_chat_websocket(websocket: WebSocket, token: str):
                 )
                 _USER_SESSIONS[user_id] = user_session
                 MANAGER.register_dispatcher(user_id, dispatcher)
+                MANAGER.register_runtime_sessions(user_id, runtime_sessions)
 
                 _register_session_handlers(dispatcher, runtime_sessions, llm_config, user_id, replay_buffer=replay_buffer, user_session=user_session)
         except Exception:
@@ -550,6 +552,60 @@ async def _do_clear_history(db: AsyncSession, conv: Conversation, runtime) -> di
         "cleared_count": total,
         "messages": delivered,
     }
+
+
+async def do_session_undo(
+    user_id: int,
+    session_id: str,
+    source_message_id: int,
+    *,
+    runtime_sessions: dict[str, RuntimeSession] | None = None,
+    dispatcher: Any | None = None,
+) -> dict:
+    """session.undo_to_message 的共享实现：业务校验 + per-conversation lock + in-flight guard + 服务调用 + 多窗口广播。
+
+    透传 runtime_sessions / dispatcher 是为了 REST 与 WS 共用同一份安全网——REST 从 MANAGER 查表后传入，
+    即可复用锁、in-flight 守卫与广播；不传时退化为「无 in-flight / 无广播」基础版（仅服务调用 + 锁）。
+    """
+    runtime = runtime_sessions.get(session_id) if runtime_sessions else None
+    if runtime is not None and runtime.chat_task and not runtime.chat_task.done():
+        raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
+
+    # 按 session_id 串行化——避免 REST 与 WS 路径并发同会话的破坏性操作竞态。字符串键避免提前 int 解析失败阻塞锁获取。
+    lock = _conversation_locks.setdefault(session_id, asyncio.Lock())
+    async with lock, SESSION_LOCAL() as db:
+        try:
+            result = await undo_conversation_to_message(
+                db,
+                user_id=user_id,
+                session_id=session_id,
+                source_message_id=source_message_id,
+            )
+        except (UndoNotAllowedError, SourceNotFoundError) as e:
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(e))
+
+    if dispatcher is not None:
+        await dispatcher.push_event(
+            "message.deleted",
+            {
+                "session_id": session_id,
+                "deleted_count": result["deleted_count"],
+                "anchor": result["anchor"],
+                "messages": result["messages"],
+            },
+            session_id=session_id,
+        )
+
+    logger.info(
+        "session.undo_to_message",
+        extra={
+            "user_id": user_id,
+            "session_id": session_id,
+            "source_message_id": source_message_id,
+            "deleted_count": result["deleted_count"],
+        },
+    )
+    return result
 
 
 @register_slash_command(
@@ -906,42 +962,13 @@ def _register_session_handlers(
             raise JsonRpcError(JSONRPC_INVALID_PARAMS, "source_message_id must be a non-negative int")
 
         sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
-        runtime = _get_runtime(sess_runtime, params)
-        if runtime.chat_task and not runtime.chat_task.done():
-            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
-
-        lock = _conversation_locks.setdefault(runtime.conversation_id, asyncio.Lock())
-        async with lock, SESSION_LOCAL() as db:
-            try:
-                result = await undo_conversation_to_message(
-                    db,
-                    user_id=user_id,
-                    session_id=session_id,
-                    source_message_id=int(raw_id),
-                )
-            except (UndoNotAllowedError, SourceNotFoundError) as e:
-                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(e))
-
-        await dispatcher.push_event(
-            "message.deleted",
-            {
-                "session_id": session_id,
-                "deleted_count": result["deleted_count"],
-                "anchor": result["anchor"],
-                "messages": result["messages"],
-            },
-            session_id=session_id,
+        return await do_session_undo(
+            user_id,
+            session_id,
+            int(raw_id),
+            runtime_sessions=sess_runtime,
+            dispatcher=dispatcher,
         )
-        logger.info(
-            "session.undo_to_message",
-            extra={
-                "user_id": user_id,
-                "session_id": session_id,
-                "source_message_id": int(raw_id),
-                "deleted_count": result["deleted_count"],
-            },
-        )
-        return result
 
     dispatcher.register("session.undo_to_message", session_undo_to_message)
 

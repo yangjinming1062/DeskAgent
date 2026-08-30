@@ -1,7 +1,17 @@
 from typing import Literal
 
 from common import get_router
-from components import SEARCH_INPUT_MAX_LEN, SESSION_PREVIEW_MAX_CHARS, SETTINGS, SQL_LIKE_ESCAPE_CHAR, attachments_gc_session, get_db, get_logger, temp_files_gc_session
+from components import (
+    JSONRPC_INVALID_PARAMS,
+    SEARCH_INPUT_MAX_LEN,
+    SESSION_PREVIEW_MAX_CHARS,
+    SETTINGS,
+    SQL_LIKE_ESCAPE_CHAR,
+    attachments_gc_session,
+    get_db,
+    get_logger,
+    temp_files_gc_session,
+)
 from fastapi import Depends, HTTPException, Query
 from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import (
@@ -22,10 +32,11 @@ from services.conversation import (
     SPECIAL_KIND,
     ForkNotAllowedError,
     SourceNotFoundError,
-    UndoNotAllowedError,
     fork_conversation_from_message,
-    undo_conversation_to_message,
 )
+from services.gateway.connection import MANAGER
+from services.gateway.handlers import do_session_undo
+from services.gateway.jsonrpc import JsonRpcError
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -323,27 +334,27 @@ async def undo_to_message(
     session_id: str,
     body: DesktopSessionUndoRequest,
     current: tuple[User, object] = Depends(get_current_session),
-    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """就地截断会话：硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身），并把锚点载荷以 ``anchor`` 字段返回，供客户端落回输入框作为草稿。
 
     需要 ``confirmed=true``（与 ``session.clear_messages`` 同源约定）。返回 ``{session_id, deleted_count, anchor, messages}``，与 WS RPC 形态一致。
+    共用 ``do_session_undo`` 共享实现——in-flight 守卫、per-conversation 锁与 ``message.deleted`` 多窗口广播与 WS 路径一致。
     """
     user, _ = current
     if not body.confirmed:
         raise HTTPException(status_code=400, detail="confirmed=true required")
     try:
-        result = await undo_conversation_to_message(
-            db,
+        return await do_session_undo(
             user.id,
             session_id,
             body.source_message_id,
+            runtime_sessions=MANAGER.get_runtime_sessions(user.id),
+            dispatcher=MANAGER.get_dispatcher(user.id),
         )
-    except UndoNotAllowedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except SourceNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return result
+    except JsonRpcError as e:
+        if e.code == JSONRPC_INVALID_PARAMS:
+            raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/{session_id}")
