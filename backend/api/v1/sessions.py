@@ -12,11 +12,20 @@ from modules.conversation import (
     DesktopSessionMessagesResponse,
     DesktopSessionPatchRequest,
     DesktopSessionSearchResponse,
+    DesktopSessionUndoRequest,
     Message,
 )
 from services.chat import build_session_messages
 from services.chat.prompt_presets import resolve_preset
-from services.conversation import CRON_KIND, SPECIAL_KIND, ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
+from services.conversation import (
+    CRON_KIND,
+    SPECIAL_KIND,
+    ForkNotAllowedError,
+    SourceNotFoundError,
+    UndoNotAllowedError,
+    fork_conversation_from_message,
+    undo_conversation_to_message,
+)
 from sqlalchemy import String, asc, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -298,11 +307,39 @@ async def fork_session(
     current: tuple[User, object] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
-    """从源会话派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话，末条打 draft_anchor；返回 SessionResumeResult 形态（session_id/messages/message_count）。"""
+    """从源会话派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话（复制行按已发送历史对待）；返回 SessionResumeResult 形态（session_id/messages/message_count）。"""
     user, _ = current
     try:
         result = await fork_conversation_from_message(db, user.id, session_id, body.source_message_id)
     except ForkNotAllowedError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except SourceNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
+
+
+@router.post("/{session_id}/undo-to-message")
+async def undo_to_message(
+    session_id: str,
+    body: DesktopSessionUndoRequest,
+    current: tuple[User, object] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """就地截断会话：硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身），并把锚点载荷以 ``anchor`` 字段返回，供客户端落回输入框作为草稿。
+
+    需要 ``confirmed=true``（与 ``session.clear_messages`` 同源约定）。返回 ``{session_id, deleted_count, anchor, messages}``，与 WS RPC 形态一致。
+    """
+    user, _ = current
+    if not body.confirmed:
+        raise HTTPException(status_code=400, detail="confirmed=true required")
+    try:
+        result = await undo_conversation_to_message(
+            db,
+            user.id,
+            session_id,
+            body.source_message_id,
+        )
+    except UndoNotAllowedError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except SourceNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

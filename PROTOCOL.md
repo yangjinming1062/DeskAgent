@@ -68,6 +68,7 @@
 | `command.dispatch` | Slash 命令分发：客户端在输入框敲 `/xxx` 时拦截，改走本 RPC 而非 `prompt.submit`。命令注册表权威源在 [backend/services/chat/slash_commands.py](backend/services/chat/slash_commands.py)；返回 `{command, result:{status, message, payload?, hydrate?}}`，同步广播 `command.result` 事件给同 session 订阅者（多窗口同步渲染）。详见 §6 |  |
 | `command.list` | 列出可用 Slash 命令元数据（`{name, aliases, description, requires_confirmation}`，**不含 handler**），供客户端 `/帮助` 与调试面板消费 |  |
 | `session.clear_messages` | 清空当前会话消息（保留会话行 + 写一条 `subtype='status_cleared'` 的 system marker）；强制要求 `confirmed=true`，否则 `-32001`。与 `/清理` Slash 命令共用底层实现 |  |
+| `session.undo_to_message` | 就地截断：硬删除 `Message.id >= source_message_id` 的全部行（含锚点本身），同时把锚点行载荷以 `anchor` 字段返回（`text / content_type / media_json`），客户端把它落回输入框作为草稿；要求 `confirmed=true`，否则 `-32001`；in-flight 时拒绝；仅 `kind='standard'` 允许（`special` / `im` / `cron` 拒绝）。返回 `{session_id, deleted_count, anchor, messages}`，并广播 `message.deleted` 事件做多窗口同步。镜像 REST：`POST /api/sessions/{id}/undo-to-message` 接受 `DesktopSessionUndoRequest{source_message_id, confirmed}` | Backend handlers / client chat-dock-message-bubble / events.ts / session-list-store / PROTOCOL.md |
 
 **关键约束**（跨模块语义，非实现细节）：
 - **断点恢复**：角色子阶段答完即标记角色已定稿；onboarding 整体只在全身形象确认且音色 + 用户信息齐后才算完成；未确认形象时按半身头像 → 全身立绘逐步恢复，确认后按音色先于用户信息路由。全身立绘子阶段的已生成正面种子图随形象行持久化，断点恢复直接重放到正面预览；正面种子草稿确认前停留 temp-media，确认时才转存正式存储，草稿过期按未生成处理由客户端重新生成。
@@ -91,6 +92,7 @@
 | channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |
 | `command.result` | Slash 命令执行结果（载荷 `{command, result:{status, message, payload?, hydrate?}}`）；必带 `session_id`（从 command.dispatch 调用中隐式继承）。客户端用 `hydrate=true` 替换本地消息列表（payload.messages），用 `hydrate=false` 仅插一条 status pill。**幂等**：同一调用会同时下发 RPC result + 此事件，前端接住任意一路即可触发渲染 | Client 聊天窗：hydrate 替换消息列表、push status pill（`status_cleared` / `compress_summary` 等） |
 | `compress.completed` | 自动上下文压缩（orchestrator 命中阈值）完成后下发；载荷 `{subtype:'compress_summary', text, message_id}`，`text` 与持久化 `Message.content` 同源；必带 `session_id`。手动 `/压缩` 仍走 `command.result`+`hydrate=true` 替换整列，二者语义互补（自动 = 单行插入不打断流；手动 = 替换列表强一致） | Client 聊天窗：`pushStatusPill('compress_summary', text)` 单行插入，渲染端走 `compress_summary` 分界线式可折叠卡片分支（详见 `chat-dock-message-bubble.tsx` 的 `COMPRESS_CARD_SUBTYPES`） |
+| `message.deleted` | `session.undo_to_message` 的多窗口广播：载荷 `{session_id, deleted_count, messages}`，`messages` 是截断后的完整消息列表；发起窗口已通过 RPC 路径 hydrate，其它窗口经此事件用 `payload.messages` 替换本地列表；必带 `session_id`，由 `events.ts` 在会话闸门内消费 | Client 聊天窗：`hydrateChatMessages(messages)` 替换本地消息列表 |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.start / tool.complete / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
 
@@ -244,7 +246,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 - `session.get_main`（WS RPC）：现存的方法指代「**用户的主对话**」，返回 `system_preset_id='companion'` 的特殊对话。
 - 既有 `session.create` 等方法对系统预设对话同样适用（用户能在 5 套预设之上再 clone 一个变体；但 5 套预设本身不可被 PATCH/DELETE）。
 
-**派生会话（forked）**：`session.fork`（WS RPC）与 `POST /api/sessions/{id}/fork`（REST 镜像）由用户在 `kind='standard'` 源会话的某条历史消息节点上派生新会话；末条复制消息携带 `Message.draft_anchor=True`，客户端据此渲染「未发送」徽标并在首条新消息发出后自动清除；新会话 `parent_id` 指向源、`is_deletable`/`is_renamable` 默认 True、标题追加「 — 副本」。源 `kind ∈ {special, im, cron}` 时返回 INVALID_PARAMS / 403（系统预设、IM 桥接、cron scratchpad 不可派生）。**改此处需同步**：backend services/conversation/fork.py、services/chat/history.py、services/gateway/handlers.py、api/v1/sessions.py、modules/conversation/models.py（`Message.draft_anchor`）、alembic baseline；client session-list-store.ts、chat-store.ts、chat-dock-message-bubble.tsx、chat-message-fork-button.tsx。
+**派生会话（forked）**：`session.fork`（WS RPC）与 `POST /api/sessions/{id}/fork`（REST 镜像）由用户在 `kind='standard'` 源会话的某条历史消息节点上派生新会话；复制行不再打 `Message.draft_anchor`（消息要么在历史要么在输入框，不允许两者并存），新会话的所有复制行按已发送历史对待；新会话 `parent_id` 指向源、`is_deletable`/`is_renamable` 默认 True、标题追加「 — 副本」。源 `kind ∈ {special, im, cron}` 时返回 INVALID_PARAMS / 403（系统预设、IM 桥接、cron scratchpad 不可派生）。**改此处需同步**：backend services/conversation/fork.py、services/chat/history.py、services/gateway/handlers.py、api/v1/sessions.py、modules/conversation/models.py（`Message.draft_anchor` 列保留仅作向后兼容）、alembic baseline；client session-list-store.ts、chat-store.ts、chat-dock-message-bubble.tsx、chat-message-fork-button.tsx。
 
 **新建对话预设选择**：客户端在用户点 「新建」 时弹出选择器，用户必须从 5 套内置预设中选 1（无默认，确认按钮必选中才启用）。新增 WS RPC `system.list_presets`，返回 5 个预设的元数据（`id` / `name` / `description` / `icon_key`，**不含 body**；body 永远不下发到客户端）；`session.create` 新增可选入参 `system_preset_id`（必须 ∈ `BUILTIN_PRESETS` 键集合；非法值抛 INVALID_PARAMS；省略/空串 = 未传，行为同旧版 `kind='standard'`，`system_preset_id=NULL`，chat 时按 `resolve_preset` 降级到 `companion`）。新建的会话始终是 `kind='standard'`，可改名/删除/派生，系统提示词由 `system_preset_id` 在 chat 时间锁定。`DesktopSessionInfo.system_preset_id` 与 `system_preset_icon_key` 暴露给客户端用于侧边栏徽标（NULL 时 `system_preset_icon_key` 已降级为 `companion.icon_key`）。**改此处需同步**：backend services/gateway/handlers.py（`system.list_presets` handler + `session.create` 校验）、modules/system/schemas.py（`PromptPresetSummary` / `PromptPresetListResponse`）、modules/conversation/schemas.py（`DesktopSessionInfo` 新字段）、api/v1/sessions.py（`_conversation_to_session_info` 填充）；client companion/chat/preset-picker-modal.tsx（新建）、companion/chat/session-drawer.tsx（picker 挂载 + `SessionRow` 徽标）、companion/session-list-store.ts（`createNewSession(systemPresetId?)` + `fetchSystemPresets` + 3 个 atom）、shared/types/spiritagent.ts（`SessionInfo` 字段 + `SystemPresetSummary` / `SystemPresetListResponse`）、shared/strings/index.ts（`chat.presetPicker.*`）；本文档。
 
@@ -281,6 +283,8 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 - 错误码 → [backend/components/constants.py](backend/components/constants.py) + [backend/components/__init__.py](backend/components/__init__.py) + 客户端 `slashErrorToMessage`（chat-dock.tsx）
 - 状态 pill 渲染 → `status_command_result` 加入 `chat-dock-message-bubble.tsx` 的 status 渲染分支
 - 自动压缩事件 → [backend/services/chat/orchestrator.py](backend/services/chat/orchestrator.py)（orchestrator 命中阈值后 push）+ [backend/services/gateway/emitter.py](backend/services/gateway/emitter.py)（`_TRANSLATED` 表 + `_translate`）+ [client/renderer/companion/events.ts](client/renderer/companion/events.ts)（`compress.completed` switch）+ `chat-dock-message-bubble.tsx` 的 `COMPRESS_CARD_SUBTYPES` 折叠卡片分支 + 本文档 §1.3
+
+**手动撤回不走 slash 命令**：消息级粒度的「撤回」由用户在历史气泡上点击 hover 浮现的撤回图标触发，直接走 `session.undo_to_message` RPC（slash 命令无法承载消息级粒度 + 需要服务端精确路由到具体 source_message_id）。详见 §1.2 与 §1.3 的 `message.deleted` 事件。
 
 ---
 

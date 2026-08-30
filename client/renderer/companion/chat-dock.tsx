@@ -6,6 +6,7 @@ import { $expressions } from '@/companion/3d/model-store'
 import { cancelAutoVoice } from '@/companion/auto-voice-stream'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
+  $chatDraftFromUndo,
   $chatMessageBodies,
   $chatMessageList,
   $chatSessionId,
@@ -399,6 +400,30 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   useEffect(() => {
     inputRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    const unsubscribe = $chatDraftFromUndo.listen(value => {
+      if (!value) {
+        return
+      }
+
+      // 会话不匹配时清空总线而非保留——切到别会话再切回来时不会复活不属于本会话的 phantom 草稿。
+      if (value.session_id !== $chatSessionId.get()) {
+        $chatDraftFromUndo.set(null)
+
+        return
+      }
+
+      setText(value.text)
+      setPending(null)
+      inputRef.current?.focus()
+      $chatDraftFromUndo.set(null)
+    })
+
+    return () => {
+      unsubscribe()
+    }
   }, [])
 
   // 点击外部收起附件菜单

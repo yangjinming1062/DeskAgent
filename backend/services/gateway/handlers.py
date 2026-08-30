@@ -90,6 +90,7 @@ from services.companion.affect_emit import emit_companion_message
 from services.companion.interact import REGION_NAMES_ZH
 from services.conversation import IM_KIND, get_or_create_special_conversation, get_special_conversation, note_user_contact, reset_user_outreach
 from services.conversation.fork import ForkNotAllowedError, SourceNotFoundError, fork_conversation_from_message
+from services.conversation.undo import UndoNotAllowedError, undo_conversation_to_message
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
@@ -503,7 +504,7 @@ async def _do_compress_history(db: AsyncSession, conv: Conversation, user_id: in
     await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
 
     new_inputs = await _build_turn_inputs(db, conv, user_id, req, runtime.session_client_context, effective_settings)
-    delivered, truncated, next_cursor = await build_session_messages(db, conv)
+    delivered = await build_session_messages(conv.id, db)
 
     return {
         "session_id": runtime.session_id,
@@ -543,7 +544,7 @@ async def _do_clear_history(db: AsyncSession, conv: Conversation, runtime) -> di
     db.add(marker)
     await db.commit()
 
-    delivered, _, _ = await build_session_messages(db, conv)
+    delivered = await build_session_messages(conv.id, db)
     return {
         "session_id": runtime.session_id,
         "cleared_count": total,
@@ -763,8 +764,7 @@ def _register_session_handlers(
     dispatcher.register("system.list_presets", system_list_presets)
 
     async def session_fork(params: dict) -> dict:
-        """从用户拥有的源会话的某条消息派生新会话：复制 1..source_message_id 共 N 条消息到新会话，末条打 draft_anchor。
-        源会话必须是 kind='standard'；新会话挂载 runtime 并返回 SessionResumeResult，客户端可直接 hydrate 并自动挂载。"""
+        """从用户拥有的源会话的某条消息派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话；新会话挂载 runtime 并返回 SessionResumeResult，客户端可直接 hydrate 并自动挂载。"""
         source_session_id = _require_str(params, "source_session_id")
         raw_id = params.get("source_message_id")
         if not _is_nonneg_int(raw_id):
@@ -891,6 +891,59 @@ def _register_session_handlers(
 
     dispatcher.register("session.compress_context", session_compress_context)
     dispatcher.register("session.compress", session_compress_context)
+
+    async def session_undo_to_message(params: dict) -> dict:
+        """就地截断会话并把锚点载荷以 anchor 字段返回，供客户端落回输入框作为草稿。需要 ``confirmed=true``；in-flight 拒绝；仅 ``kind='standard'`` 允许。广播 ``message.deleted`` 事件给同 user 其他窗口。"""
+        session_id = _require_str(params, "session_id")
+        if not bool(params.get("confirmed")):
+            raise JsonRpcError(
+                JSONRPC_SLASH_CONFIRM_REQUIRED,
+                "session.undo_to_message requires confirmed=true",
+                data={"requires_confirmation": True},
+            )
+        raw_id = params.get("source_message_id")
+        if not _is_nonneg_int(raw_id):
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "source_message_id must be a non-negative int")
+
+        sess_runtime = user_session.runtime_sessions if user_session else runtime_sessions
+        runtime = _get_runtime(sess_runtime, params)
+        if runtime.chat_task and not runtime.chat_task.done():
+            raise JsonRpcError(JSONRPC_INVALID_PARAMS, "当前会话有正在生成的回复，请稍后再试")
+
+        lock = _conversation_locks.setdefault(runtime.conversation_id, asyncio.Lock())
+        async with lock, SESSION_LOCAL() as db:
+            try:
+                result = await undo_conversation_to_message(
+                    db,
+                    user_id=user_id,
+                    session_id=session_id,
+                    source_message_id=int(raw_id),
+                )
+            except (UndoNotAllowedError, SourceNotFoundError) as e:
+                raise JsonRpcError(JSONRPC_INVALID_PARAMS, str(e))
+
+        await dispatcher.push_event(
+            "message.deleted",
+            {
+                "session_id": session_id,
+                "deleted_count": result["deleted_count"],
+                "anchor": result["anchor"],
+                "messages": result["messages"],
+            },
+            session_id=session_id,
+        )
+        logger.info(
+            "session.undo_to_message",
+            extra={
+                "user_id": user_id,
+                "session_id": session_id,
+                "source_message_id": int(raw_id),
+                "deleted_count": result["deleted_count"],
+            },
+        )
+        return result
+
+    dispatcher.register("session.undo_to_message", session_undo_to_message)
 
     async def session_clear_messages(params: dict) -> dict:
         """直接 RPC：清空当前会话的所有消息（保留会话行），写一条 status_cleared marker。

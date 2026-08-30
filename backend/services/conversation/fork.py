@@ -24,10 +24,7 @@ async def fork_conversation_from_message(
     source_session_id: str,
     source_message_id: int,
 ) -> dict:
-    """派生新会话：复制源会话中 ``id <= source_message_id`` 且非 ``status_*`` 的全部消息，末条打 ``draft_anchor=True``。
-
-    返回精简版 ``SessionResumeResult``（不含 info）；runtime 挂载与 info 由 handler 补。
-    """
+    """派生新会话：复制源会话中 ``id <= source_message_id`` 且非 ``status_*`` 的全部消息，复制行按已发送历史对待。返回精简版 ``SessionResumeResult``（不含 info）；runtime 挂载与 info 由 handler 补。"""
     src = await Conversation.by_session_id(db, source_session_id, user_id=user_id)
     if src is None:
         raise SourceNotFoundError(f"源会话不存在或不属于当前用户: {source_session_id!r}")
@@ -87,8 +84,7 @@ async def fork_conversation_from_message(
     db.add(new_conv)
     await db.flush()
 
-    # 统计列清零；tool_calls / media_json / content_type 原样复制以保证工具调用链自洽
-    anchor_id = source_message_id
+    # 统计列清零；tool_calls / media_json / content_type 原样复制以保证工具调用链自洽。
     for row in rows:
         db.add(
             Message(
@@ -104,7 +100,6 @@ async def fork_conversation_from_message(
                 content_type=row.content_type,
                 media_json=row.media_json,
                 summary_date=row.summary_date,
-                draft_anchor=(row.id == anchor_id),
             ),
         )
 

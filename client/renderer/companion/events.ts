@@ -20,6 +20,7 @@ import {
 } from '@/companion/auto-voice-stream'
 import { resolveAvatarRegeneration } from '@/companion/avatar-regen-store'
 import {
+  $chatDraftFromUndo,
   $chatOpen,
   $chatSessionId,
   $chatTurnInFlight,
@@ -796,6 +797,35 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (p?.subtype === 'compress_summary' && typeof p.text === 'string') {
         pushStatusPill('compress_summary', p.text)
+      }
+
+      break
+    }
+
+    case 'message.deleted': {
+      // 多窗口同步：session.undo_to_message RPC 之外，服务端另发此事件给同 user 的其他窗口。
+      // 发起窗口已通过 RPC 路径 hydrate，其它窗口借本事件追上。session-id 过滤已在上面统一完成。
+      const p = event.payload as
+        | {
+            session_id?: string
+            deleted_count?: number
+            anchor?: { text?: string; content_type?: string; media_json?: string | null }
+            messages?: unknown[]
+          }
+        | undefined
+
+      if (Array.isArray(p?.messages)) {
+        hydrateChatMessages(p.messages as SessionMessage[])
+      }
+
+      // 跟随窗口从事件 payload 取 anchor 推到草稿总线——chat-dock 用 session_id 过滤应用。
+      if (p?.session_id && p.anchor) {
+        $chatDraftFromUndo.set({
+          session_id: p.session_id,
+          text: p.anchor.text ?? '',
+          content_type: p.anchor.content_type ?? 'text',
+          media_json: p.anchor.media_json ?? null
+        })
       }
 
       break

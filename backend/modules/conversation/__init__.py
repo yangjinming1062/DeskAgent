@@ -6,6 +6,7 @@ from .schemas import (
     DesktopSessionMessagesResponse,
     DesktopSessionPatchRequest,
     DesktopSessionSearchResponse,
+    DesktopSessionUndoRequest,
 )
 
 __all__ = [
@@ -16,5 +17,6 @@ __all__ = [
     "DesktopSessionMessagesResponse",
     "DesktopSessionPatchRequest",
     "DesktopSessionSearchResponse",
+    "DesktopSessionUndoRequest",
     "Message",
 ]

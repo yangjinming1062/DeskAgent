@@ -61,9 +61,7 @@ export interface SessionMessage {
   codex_reasoning_items?: unknown
   content: unknown
   context?: unknown
-  /** session.fork 派生新会话时，第 N 条复制行携带 True——前端据此渲染「未发送」徽标；用户发出首条新消息后徽标清除。 */
-  draft_anchor?: boolean
-  /** 后端 DB row id（build_session_messages(include_id=True) 下发）；用于 fork 按钮回传给后端的 source_message_id。 */
+  /** 后端 DB row id（build_session_messages(include_id=True) 下发）；用于 fork / undo 按钮回传给后端的 source_message_id。 */
   id?: number
   media?: ChatMediaItem[]
   name?: string
@@ -77,6 +75,25 @@ export interface SessionMessage {
   tool_call_id?: null | string
   tool_calls?: unknown
   tool_name?: string
+}
+
+/** `session.undo_to_message` RPC 的 anchor 子类型：撤回后服务端把锚点行的载荷推回客户端落输入框。 */
+export interface UndoAnchor {
+  /** 锚点行 content（多模态形态以 JSON parts 字符串承载；纯文本则直接是文本）。 */
+  text: string
+  /** 与 Message.content_type 对齐：text 或 multimodal_v1。 */
+  content_type?: string
+  /** 与 Message.media_json 对齐：助手媒体时存在；用户行通常为 null。 */
+  media_json?: string | null
+}
+
+/** `session.undo_to_message` RPC 与对应 REST 端点的返回形态。 */
+export interface UndoResponse {
+  session_id: string
+  deleted_count: number
+  anchor: UndoAnchor
+  /** 截断后的完整消息列表，供前端 hydrate 替换本地状态。 */
+  messages: SessionMessage[]
 }
 
 export interface SessionResumeResponse {

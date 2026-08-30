@@ -1,6 +1,7 @@
 import { atom } from 'nanostores'
 
 import {
+  $chatDraftFromUndo,
   $chatSessionId,
   $sessionSettings,
   hydrateChatMessages,
@@ -18,7 +19,8 @@ import type {
   SessionInfo,
   SessionResumeResponse,
   SystemPresetListResponse,
-  SystemPresetSummary
+  SystemPresetSummary,
+  UndoResponse
 } from '@/shared/types/spiritagent'
 
 export type SessionSort = 'created' | 'messages' | 'recent'
@@ -302,8 +304,7 @@ export async function fetchSystemPresets(force = false): Promise<void> {
   }
 }
 
-/** 从源会话的某条消息派生新会话：调用 session.fork RPC，命中后立即自动挂载新会话并 hydrate 历史（末条带 draft 锚点 → 显示「未发送」徽标）。
- * 失败返回 null，错误已记录日志。 */
+/** 从源会话的某条消息派生新会话：调用 session.fork RPC，命中后立即自动挂载新会话并 hydrate 历史。失败返回 null。 */
 export async function forkConversation(sourceSessionId: string, sourceMessageId: number): Promise<string | null> {
   const gw = $gateway.get()
 
@@ -332,6 +333,42 @@ export async function forkConversation(sourceSessionId: string, sourceMessageId:
     return res.session_id
   } catch (err) {
     log.error('session-list', 'Failed to fork session:', err)
+
+    return null
+  }
+}
+
+/** 撤回消息：在同一会话内硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身），并把锚点载荷落回输入框作为草稿。失败返回 null，错误已记录日志。 */
+export async function undoToMessage(sessionId: string, sourceMessageId: number): Promise<UndoResponse | null> {
+  const gw = $gateway.get()
+
+  if (!gw) {
+    return null
+  }
+
+  try {
+    const res = await gw.request<UndoResponse>('session.undo_to_message', {
+      session_id: sessionId,
+      source_message_id: sourceMessageId,
+      confirmed: true
+    })
+
+    if (res.anchor) {
+      $chatDraftFromUndo.set({
+        session_id: res.session_id,
+        text: res.anchor.text ?? '',
+        content_type: res.anchor.content_type ?? 'text',
+        media_json: res.anchor.media_json ?? null
+      })
+    }
+
+    if (Array.isArray(res.messages)) {
+      hydrateChatMessages(res.messages)
+    }
+
+    return res
+  } catch (err) {
+    log.error('session-list', 'undoToMessage failed:', err)
 
     return null
   }

@@ -58,3 +58,10 @@ class DesktopSessionForkRequest(BaseModel):
     """`POST /api/sessions/{id}/fork` 的请求体：指定源消息 id，从该消息（含）之前派生新会话。"""
 
     source_message_id: int = Field(ge=0)
+
+
+class DesktopSessionUndoRequest(BaseModel):
+    """`POST /api/sessions/{id}/undo-to-message` 的请求体：指定锚点消息 id，硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身）。需要 ``confirmed=true``。"""
+
+    source_message_id: int = Field(ge=0)
+    confirmed: bool = False

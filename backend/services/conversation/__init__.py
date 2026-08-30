@@ -24,6 +24,7 @@ from .proactive_state import (
     record_user_outreach,
     reset_user_outreach,
 )
+from .undo import UndoNotAllowedError, undo_conversation_to_message
 
 __all__ = [
     "AFFECT_TRACE_SUBTYPE",
@@ -37,6 +38,7 @@ __all__ = [
     "SPECIAL_KIND",
     "STANDARD_KIND",
     "UI_ONLY_SUBTYPES",
+    "UndoNotAllowedError",
     "UserProactiveRecord",
     "ensure_system_conversations_for_user",
     "fork_conversation_from_message",
@@ -50,4 +52,5 @@ __all__ = [
     "note_user_contact",
     "record_user_outreach",
     "reset_user_outreach",
+    "undo_conversation_to_message",
 ]

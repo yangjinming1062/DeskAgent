@@ -24,8 +24,6 @@ export interface ChatMessageBody {
   cancelled?: boolean
   attachments?: ChatAttachment[]
   media?: ChatMediaItem[]
-  /** session.fork 派生会话的末条消息携带 True——气泡渲染「未发送」徽标；用户在 fork 会话内发出首条新消息后由 pushUserMessage 清除。 */
-  draft?: boolean
 }
 
 export const $chatMessageList = atom<ChatMessageListItem[]>([])
@@ -197,7 +195,6 @@ export function hydrateChatMessages(messages: SessionMessage[], info?: SessionRu
       text: textContent,
       toolName: m.tool_name ?? null,
       streaming: false,
-      draft: Boolean(m.draft_anchor),
       ...(m.role === 'user' ? omitUndefined(extractUserAttachments(m)) : {}),
       ...(m.media?.length ? { media: m.media } : {})
     }
@@ -335,8 +332,6 @@ export function pushAffectTraceMessage(): void {
 }
 
 export function pushUserMessage(text: string, attachments?: ChatAttachment[]): string {
-  clearDraftAnchor()
-
   const id = nextId()
   $chatMessageBodies.setKey(id, {
     text,
@@ -367,22 +362,6 @@ export function pushStatusPill(subtype: string, text: string): string {
   return id
 }
 
-/** 清除列表末尾的 draft 锚点徽标——fork 出的会话只要有任何新消息（用户/助手/系统），草稿即被取代。 */
-function clearDraftAnchor(): void {
-  const list = $chatMessageList.get()
-  const last = list[list.length - 1]
-
-  if (!last) {
-    return
-  }
-
-  const lastBody = $chatMessageBodies.get()[last.id]
-
-  if (lastBody?.draft) {
-    $chatMessageBodies.setKey(last.id, { ...lastBody, draft: false })
-  }
-}
-
 export interface PendingPromptItem {
   text: string
   attachments?: ChatAttachment[]
@@ -409,6 +388,16 @@ export const $chatTurnInFlight = atom<boolean>(false)
 
 // 当后端在 in-flight 回合期间发出 bubble.break 时置位，防止 message.complete 全文覆盖末尾气泡。
 export const $turnHadBubbleBreak = atom<boolean>(false)
+
+export interface ChatUndoDraft {
+  session_id: string
+  text: string
+  content_type?: string
+  media_json?: string | null
+}
+
+// 撤回落草稿总线：undo 成功后由 session-list-store 写入；多窗口订阅需按 session_id 过滤，避免 A 撤回落到 B 的输入框。
+export const $chatDraftFromUndo = atom<ChatUndoDraft | null>(null)
 
 export function setTurnHadBubbleBreak(v: boolean): void {
   $turnHadBubbleBreak.set(v)
@@ -498,7 +487,6 @@ export function submitPendingBatch(): void {
 
 // 确保存在活跃的流式助手气泡。
 export function beginAssistantMessage(): void {
-  clearDraftAnchor()
   const list = $chatMessageList.get()
   const lastItem = list[list.length - 1]
   const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined

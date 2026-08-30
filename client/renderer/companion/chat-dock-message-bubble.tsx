@@ -7,6 +7,7 @@ import { cn } from '@/shared/lib/utils'
 import { ChatMediaCard } from './chat-media-card'
 import { ChatMessageForkButton } from './chat-message-fork-button'
 import { ChatMessagePlayButton } from './chat-message-play-button'
+import { ChatMessageUndoButton } from './chat-message-undo-button'
 import { $chatMessageBodies } from './chat-store'
 import type { ChatMessageBody, ChatMessageListItem } from './chat-store'
 
@@ -140,13 +141,17 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   const canFork =
     Boolean(message.backendMessageId) && !body.streaming && !body.error && !body.cancelled && !body.toolName
 
+  // 撤回按钮：限定 user-role，避免误点 assistant 行造成「撤回伙伴上一句回答」的歧义；
+  // 同 canFork 的禁用条件。Fork 与 Undo 共同进 hover-revealed 操作区，视觉一致。
+  const canUndo = canFork && isUser
+
   // 用户附件渲染为可点击图片卡（data URL 或本地路径，媒体源通道负责取图）；
   // 正文剔除 @file: 指令行，纯图片消息不渲染空气泡。
   const visibleText = isUser ? stripAttachmentDirectives(body.text) : body.text
   const hideTextBubble = isUser && !visibleText.trim() && Boolean(body.attachments?.length)
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`group/message relative flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div className={`flex max-w-[80%] flex-col ${isUser ? 'items-end' : 'items-start'}`}>
         {body.attachments?.length ? (
           <div className="flex flex-col gap-1">
@@ -189,16 +194,22 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
             ))}
           </div>
         ) : null}
-        {body.draft && (
-          <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[11px] text-amber-200/90 font-mono">
-            [DRAFT: 未发送]
-          </span>
-        )}
         {showPlayButton && <ChatMessagePlayButton className="mt-1" messageId={message.id} text={body.text} />}
-        {canFork && (
-          <ChatMessageForkButton className="mt-1" messageId={message.id} sourceMessageId={message.backendMessageId!} />
-        )}
       </div>
+
+      {/* hover 区承载 Fork / Undo；Play 属内容播放范畴，保持在气泡下方常驻。pointer-events-auto 防止父级 pointer-events-none 把按钮吃掉。 */}
+      {(canFork || canUndo) && (
+        <div
+          className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
+                     rounded-md border border-white/10 bg-black/55 px-1.5 py-1
+                     backdrop-blur-sm opacity-0 shadow-md shadow-black/30
+                     transition-opacity duration-150
+                     group-hover/message:opacity-100"
+        >
+          {canFork && <ChatMessageForkButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
+          {canUndo && <ChatMessageUndoButton messageId={message.id} sourceMessageId={message.backendMessageId!} />}
+        </div>
+      )}
     </div>
   )
 }
