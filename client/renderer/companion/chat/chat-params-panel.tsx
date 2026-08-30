@@ -99,7 +99,7 @@ export function ChatParamsPanel(): React.JSX.Element {
   }
 
   const handleThresholdChange = (val: number) => {
-    const rounded = Math.round(val * 100) / 100
+    const rounded = Math.min(1.0, Math.max(0.3, Math.round(val * 100) / 100))
     setThreshold(rounded)
     updateSessionSetting('context_compression_threshold', rounded)
     syncSettingsToGateway({ context_compression_threshold: rounded, reasoning_effort: reasoning, temperature: temp })
@@ -159,11 +159,11 @@ export function ChatParamsPanel(): React.JSX.Element {
           <input
             aria-label="压缩阈值"
             className="sa-slider h-1 w-full cursor-pointer accent-accent"
-            max={0.95}
-            min={0.5}
+            max={1.0}
+            min={0.3}
             onChange={e => handleThresholdChange(Number(e.target.value))}
             step={0.05}
-            style={{ '--sa-slider-fill': `${((threshold - 0.5) / 0.45) * 100}%` } as React.CSSProperties}
+            style={{ '--sa-slider-fill': `${((threshold - 0.3) / 0.7) * 100}%` } as React.CSSProperties}
             type="range"
             value={threshold}
           />

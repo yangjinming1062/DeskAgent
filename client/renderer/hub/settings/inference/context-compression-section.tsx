@@ -1,4 +1,4 @@
-import { PanelSelect, Toggle } from '@/shared/panel'
+import { Slider, Toggle } from '@/shared/panel'
 import type { strings } from '@/shared/strings'
 
 import { ListRow, SettingsSubsection } from '../primitives'
@@ -10,7 +10,9 @@ export interface ChatFormState {
   context_compression_threshold: number
 }
 
-const THRESHOLD_OPTIONS = ['0.5', '0.6', '0.7', '0.8', '0.9'] as const
+const THRESHOLD_MIN = 0.3
+const THRESHOLD_MAX = 1.0
+const THRESHOLD_STEP = 0.05
 
 export function ContextCompressionSection({
   disabled,
@@ -23,6 +25,8 @@ export function ContextCompressionSection({
   t: ContextCompressionCopy
   update: (patch: Partial<ChatFormState>) => void
 }): React.JSX.Element {
+  const thresholdPct = Math.round(state.context_compression_threshold * 100)
+
   return (
     <SettingsSubsection intro={t.intro} title={t.heading}>
       <ListRow
@@ -38,12 +42,25 @@ export function ContextCompressionSection({
       />
       <ListRow
         action={
-          <PanelSelect
-            disabled={disabled}
-            onChange={value => update({ context_compression_threshold: Number(value) })}
-            options={THRESHOLD_OPTIONS.map(opt => ({ value: opt, label: t.thresholdOptions[opt] }))}
-            value={String(state.context_compression_threshold)}
-          />
+          <div className="flex w-full items-center gap-3">
+            <Slider
+              ariaLabel={t.threshold}
+              disabled={disabled}
+              max={THRESHOLD_MAX}
+              min={THRESHOLD_MIN}
+              onChange={value =>
+                update({
+                  context_compression_threshold: Math.min(
+                    THRESHOLD_MAX,
+                    Math.max(THRESHOLD_MIN, Math.round(value * 100) / 100)
+                  )
+                })
+              }
+              step={THRESHOLD_STEP}
+              value={state.context_compression_threshold}
+            />
+            <span className="w-12 shrink-0 text-right font-mono text-xs text-white/70">{thresholdPct}%</span>
+          </div>
         }
         description={t.thresholdDesc}
         title={t.threshold}

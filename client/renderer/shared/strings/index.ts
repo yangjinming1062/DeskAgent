@@ -227,14 +227,7 @@ export const strings = {
         enableCompression: '启用上下文压缩',
         enableCompressionDesc: '关闭后仅保留最近 40 条消息(确定性截断),不做语义摘要。',
         threshold: '压缩阈值',
-        thresholdDesc: '上下文占用达到窗口的该比例时触发压缩。',
-        thresholdOptions: {
-          '0.5': '50%',
-          '0.6': '60%',
-          '0.7': '70%',
-          '0.8': '80%',
-          '0.9': '90%'
-        }
+        thresholdDesc: '上下文占用达到窗口的该比例时触发压缩（30%–100%）。'
       },
       temperature: {
         heading: '模型温度',
