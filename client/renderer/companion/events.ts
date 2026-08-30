@@ -180,11 +180,14 @@ function applySpatialCue(locale?: string, target?: string): void {
 }
 
 export function handleCompanionEvent(event: RpcEvent): void {
-  // 仅在明确登出态丢弃事件：'pending'（冷启动 hydrateAuth 未完成 / token 刷新中）继续处理，
-  // 否则登出 race 时到达的 message.complete / model.ready / companion.2d.ready 会被静默吞掉——
-  // 流式 chat 卡 thinking，model.ready 漏掉让用户重登后看到旧 model。
-  if ($auth.get().kind === 'unauthenticated') {
-    log.warn('events', 'Discarded event during unauthenticated state:', event.type)
+  // 仅在冷启动 hydrateAuth 尚未完成时（'pending'）丢弃 WSEvent：无用户态，事件无主。
+  // 'unauthenticated' 不丢弃：登出 race 里到达的 message.complete / model.ready /
+  // companion.2d.ready 还要落地——否则流式 chat 卡 thinking、模型 ready 漏掉让用户
+  // 看到旧 model。跨会话污染由事件本身的 session_id 闸门（下方 session_id 过滤段）兜底。
+  // 写持久化原子的副作用分支（model.ready / companion.2d.ready）在自己内部用 $auth.kind
+  // 二次防御，避免 OPFS / localStorage 串味。
+  if ($auth.get().kind === 'pending') {
+    log.warn('events', 'Discarded event during pending auth:', event.type)
 
     return
   }
@@ -485,6 +488,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 后端在 /api/companion/model 生成结束后推送此事件。
       // 只要 $modelInfo.asset_url 变化，3D 引擎就会重新加载（见 companion-3d.tsx）。
       // error 字段用于展示生成失败；目前 UI 只是记录日志，恢复流程在后续切片。
+      //
+      // 二次 auth 防御：上方顶层 guard 只挡 'pending'，'unauthenticated' 的事件正常落地
+      // 是为了 message.complete 不卡 thinking。但 model.ready 写持久化 atom（isPersistable
+      // 通过 → localStorage），登出 race 里到达会污染下一位用户的冷启动读数。这里显式再挡一次。
+      if ($auth.get().kind !== 'authenticated') {
+        break
+      }
+
       const p = event.payload as
         | {
             model_id?: number
@@ -558,6 +569,13 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
     case 'companion.2d.ready': {
       // 2d 拆分完成——重新水合 2d 行并串一次 puppet 分流判定（manifest 恒为 kind=psd 描述符）。
+      //
+      // 二次 auth 防御：与 model.ready 同理，hydrateMesh2D 走 authedApi + 写持久化 atom，
+      // 登出 race 里到达会把旧 session 的 manifest 写进 localStorage。这里早返回避免污染。
+      if ($auth.get().kind !== 'authenticated') {
+        break
+      }
+
       const p = event.payload as
         | {
             model_id?: number
@@ -630,6 +648,14 @@ export function handleCompanionEvent(event: RpcEvent): void {
 
       if (p?.job_id) {
         resolveAvatarRegeneration(p)
+      }
+
+      // 与 model.ready / companion.2d.ready 同理：下方 resetMesh2D/resetPuppet 走
+      // 定义了 Persisted atom 的 clear handler，登出 race 里触发会把刚清空的 localStorage
+      // 又把 in-memory atom 写回 fallback（语义无害但与 clearCompanionStorage 重叠），
+      // 之后的 hydrateMesh2D 在已登出窗口写持久化。这里同样加显式 auth 二次防御。
+      if ($auth.get().kind !== 'authenticated') {
+        break
       }
 
       // 头像身份已变化——表情头像的锚点已过期（按 avatar_id 过滤行），清空本地缓存。

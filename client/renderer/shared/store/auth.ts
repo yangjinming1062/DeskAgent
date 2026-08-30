@@ -40,7 +40,13 @@ export async function hydrateAuth(): Promise<void> {
 // 应用主进程 → 渲染层的鉴权广播（登录 / 登出 / 刷新）。精灵窗口不会运行登录表单，
 // 因此依赖此广播来感知新会话。登出时的网关拆除由 GatewayBooter 卸载时处理
 //（按 $auth 做条件渲染），这里只翻转鉴权状态。
-export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
+//
+// 函数声明 async 让 applyAuthBroadcast 路径里 clearCompanionStorage 与 $auth.set 严格
+// 串行：之前 fire-and-forget 会让 $auth 立即翻为 unauthenticated，而 OPFS / 本地
+// localStorage 还在清。新用户的 hydrate 在清完之前读 localStorage / OPFS 会拿到旧用户
+// 残留（renderMode / 模型缓存），产生跨会话串味。代价是广播回调延迟 ~5–30ms（一次
+// localStorage.removeItem + OPFS 目录枚举 + removeEntry），仍在合理范围。
+export async function applyAuthBroadcast(payload: DesktopAuthBroadcast): Promise<void> {
   const { snapshot } = payload
 
   if (payload.authenticated && snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
@@ -50,9 +56,7 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
     // 不该抹除已登录用户留下的窗口/面板偏好；clearCompanionStorage 是登出副作用，不是
     // 鉴权初始化的副作用。
     if ($auth.get().kind === 'authenticated') {
-      // fire-and-forget：clearCompanionStorage 是异步的（OPFS I/O），不能让广播同步路径卡住。
-      // 当前登录态立即翻为 unauthenticated 让 UI 反应；storage 清理在后台落地。
-      void clearCompanionStorage()
+      await clearCompanionStorage()
     }
 
     $auth.set({ kind: 'unauthenticated' })

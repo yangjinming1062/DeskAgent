@@ -140,7 +140,14 @@ export function setModelInfo(next: Partial<ModelInfo>): void {
   // 内存更新不受 auth 守卫：events.ts 的 model.ready 是后端 WS 推送，可能在登出
   // 广播到达后 1–2 帧才到；丢掉它意味着用户重登后看到旧 model。持久化侧由
   // definePersistedAtom 的 isPersistable 校验守门——非 succeeded 不会落盘。
-  modelInfoPersisted.set(next)
+  if (next.status !== undefined && next.status !== 'succeeded') {
+    // 状态翻成非 succeeded（'failed' / 'generating' 等）：显式清空 asset_url/content_hash，
+    // 否则 Partial 合并会让上一帧的 succeeded 字节残留在 atom 里，3D 渲染器会拿旧 asset_url
+    // 继续加载、与当前 generation 状态机内部不一致。
+    modelInfoPersisted.set({ asset_url: null, content_hash: null, ...next })
+  } else {
+    modelInfoPersisted.set(next)
+  }
 }
 
 export function resetModel(): void {

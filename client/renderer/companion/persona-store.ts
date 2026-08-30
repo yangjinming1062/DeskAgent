@@ -63,17 +63,7 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
     return { ok: false }
   }
 
-  // 必须在所有持久化写入之前做第二次 auth 检查：登出 race 里 response 已经返回，
-  // auth 守卫只写在 setRenderMode 之后会把 stale 值写进刚 clearCompanionStorage 清空的
-  // localStorage——下一位用户读到错误的 renderMode。
-  if ($auth.get().kind !== 'authenticated') {
-    return { ok: false }
-  }
-
-  if ((p.render_mode === '3d' || p.render_mode === '2d') && p.render_mode !== $renderMode.get()) {
-    setRenderMode(p.render_mode)
-  }
-
+  // 早返回：先看一眼 p.is_complete，避开未设置 persona 的合法空态。
   if (!p.is_complete) {
     // 「还没设置 persona」是合法状态，不是错误：保持 $persona 不动（不要置空），
     // 这样「保存刚刚成功，hydrate 落地却读到陈旧 is_complete」的竞态，
@@ -83,8 +73,16 @@ export async function hydratePersona(opts: { silent?: boolean } = {}): Promise<{
 
   const parsed = safeJsonParse<Record<string, string>>(p.definition_json, {})
 
+  // 必须在所有持久化写入之前做第二次 auth 检查：登出 race 里 response 已经返回，
+  // setRenderMode 把 stale 值写进刚 clearCompanionStorage 清空的 localStorage——
+  // 下一位用户读到错误的 renderMode。第二道闸门同时守护 setRenderMode / $persona.set /
+  // $personalityTags.set 三处写入（中间无 await，原子性由 JS 单线程保证）。
   if ($auth.get().kind !== 'authenticated') {
     return { ok: false }
+  }
+
+  if ((p.render_mode === '3d' || p.render_mode === '2d') && p.render_mode !== $renderMode.get()) {
+    setRenderMode(p.render_mode)
   }
 
   $persona.set(
