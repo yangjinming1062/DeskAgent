@@ -1,7 +1,9 @@
 import { atom } from 'nanostores'
 
+import { authedApi } from '@/shared/lib/authed-api'
 import { isClientErrorIpc } from '@/shared/lib/ipc-error'
 import { log } from '@/shared/lib/log'
+import { definePersistedAtom, registerStorageClearHandler } from '@/shared/lib/storage'
 import { $gateway } from '@/shared/store/gateway'
 
 // 3D 伙伴的模型与资产目录。
@@ -44,18 +46,36 @@ interface Companion3DModelResponse {
   clip_map?: Readonly<Record<string, string>>
 }
 
-export const $modelInfo = atom<ModelInfo>({
-  id: null,
+const DEFAULT_MODEL_INFO: ModelInfo = {
   asset_url: null,
-  species: null,
-  provider: null,
+  content_hash: null,
   has_rig: false,
-  status: 'pending',
-  rig_type: 'biped',
+  id: null,
+  provider: null,
   rig_naming: 'tripo',
-  style: 'realistic',
-  content_hash: null
+  rig_type: 'biped',
+  species: null,
+  status: 'pending',
+  style: 'realistic'
+}
+
+function isPersistableModel(val: unknown): val is ModelInfo {
+  if (typeof val !== 'object' || val === null) {
+    return false
+  }
+
+  const v = val as Partial<ModelInfo>
+
+  return v.status === 'succeeded' && typeof v.asset_url === 'string' && Boolean(v.asset_url)
+}
+
+const modelInfoPersisted = definePersistedAtom<ModelInfo>({
+  fallback: DEFAULT_MODEL_INFO,
+  isPersistable: isPersistableModel,
+  key: 'da.companion.model'
 })
+
+export const $modelInfo = modelInfoPersisted.$atom
 
 // 首次 loadCharacter() 完成（GLB 解析成功或回退到程序化模型）后置为 true。
 // 用于门控渲染功率调度器：在它变 true 之前，孵化阶段全速运行，
@@ -76,12 +96,12 @@ export const $clipMap = atom<Readonly<Record<string, string>>>({})
 // $modelRetryable 门控"重试下载"动作（companion.model.retryDownload —— 绝不重新计费生成）。
 type ModelGenState = 'idle' | 'generating' | 'succeeded' | 'failed'
 export const $modelGenState = atom<ModelGenState>('idle')
-export const $modelGenProgress = atom<{ stage: string; progress: number } | null>(null)
+export const $modelGenProgress = atom<{ progress: number; stage: string } | null>(null)
 export const $modelGenError = atom<string | null>(null)
 export const $modelRetryable = atom<boolean>(false)
 export const $modelRetryModelId = atom<number | null>(null)
 
-export function setModelFailed(reason: string, opts: { retryDownload?: boolean; modelId?: number | null } = {}): void {
+export function setModelFailed(reason: string, opts: { modelId?: number | null; retryDownload?: boolean } = {}): void {
   $modelGenState.set('failed')
   $modelGenError.set(reason)
   $modelGenProgress.set(null)
@@ -108,7 +128,7 @@ export async function retryModelDownload(modelId: number): Promise<void> {
   try {
     await gateway.request('companion.model.retryDownload', { model_id: modelId })
     $modelGenState.set('generating')
-    $modelGenProgress.set({ stage: 'downloading', progress: 88 })
+    $modelGenProgress.set({ progress: 88, stage: 'downloading' })
     $modelGenError.set(null)
     clearModelRetry()
   } catch (err) {
@@ -117,38 +137,58 @@ export async function retryModelDownload(modelId: number): Promise<void> {
 }
 
 export function setModelInfo(next: Partial<ModelInfo>): void {
-  $modelInfo.set({ ...$modelInfo.get(), ...next })
+  // 内存更新不受 auth 守卫：events.ts 的 model.ready 是后端 WS 推送，可能在登出
+  // 广播到达后 1–2 帧才到；丢掉它意味着用户重登后看到旧 model。持久化侧由
+  // definePersistedAtom 的 isPersistable 校验守门——非 succeeded 不会落盘。
+  modelInfoPersisted.set(next)
 }
 
+export function resetModel(): void {
+  modelInfoPersisted.reset()
+  $modelLoadSettled.set(false)
+  $glbLoadFailed.set(false)
+  $availableClipNames.set(new Set())
+  $clipMap.set({})
+  $modelGenState.set('idle')
+  $modelGenProgress.set(null)
+  $modelGenError.set(null)
+  $modelRetryable.set(false)
+  $modelRetryModelId.set(null)
+  $expressions.set([])
+}
+
+registerStorageClearHandler(resetModel)
+
 export async function hydrateModel(): Promise<void> {
-  try {
-    const res = await window.spiritagent.api<Companion3DModelResponse>({
-      path: '/api/companion/model'
-    })
+  const result = await authedApi<Companion3DModelResponse | null>({
+    path: '/api/companion/model'
+  })
 
-    if (res && res.asset_url && res.status === 'succeeded') {
-      setModelInfo({
-        id: res.id,
-        asset_url: res.asset_url,
-        species: res.species,
-        provider: res.provider,
-        has_rig: res.has_rig,
-        status: res.status,
-        rig_type: res.rig_type ?? 'biped',
-        rig_naming: res.rig_naming ?? 'tripo',
-        content_hash: res.content_hash ?? null
-      })
-      $clipMap.set(res.clip_map ?? {})
+  if (!result.ok) {
+    if (result.reason === 'err' && !isClientErrorIpc(result.error)) {
+      log.warn('model-store', 'hydrateModel failed', result.error)
+    }
 
-      return
-    }
-  } catch (error) {
-    if (!isClientErrorIpc(error)) {
-      log.warn('model-store', 'hydrateModel failed', error)
-    }
+    // hydrateModel 只读不写：3D 生成由 confirm-front 成功后显式触发，避免 onboarding 中段误启动
+    return
   }
 
-  // hydrateModel 只读不写：3D 生成由 confirm-front 成功后显式触发，避免 onboarding 中段误启动
+  const res = result.value
+
+  if (res && res.asset_url && res.status === 'succeeded') {
+    setModelInfo({
+      asset_url: res.asset_url,
+      content_hash: res.content_hash ?? null,
+      has_rig: res.has_rig,
+      id: res.id,
+      provider: res.provider,
+      rig_naming: res.rig_naming ?? 'tripo',
+      rig_type: res.rig_type ?? 'biped',
+      species: res.species,
+      status: res.status
+    })
+    $clipMap.set(res.clip_map ?? {})
+  }
 }
 
 export const $expressions = atom<CompanionExpression[]>([])
@@ -157,21 +197,24 @@ export const $expressions = atom<CompanionExpression[]>([])
  * 5xx / 网络错误则打 warn，避免生产环境资产缺失悄无声息。 */
 async function hydrateArray<T>(
   path: string,
-  atom: { set(value: T[]): void },
+  atomInstance: { set(value: T[]): void },
   arrayKey: string,
   label: string
 ): Promise<void> {
-  try {
-    const res = await window.spiritagent.api<Record<string, unknown>>({ path })
-    const arr = res?.[arrayKey]
+  const result = await authedApi<Record<string, unknown>>({ path })
 
-    if (Array.isArray(arr)) {
-      atom.set(arr as T[])
+  if (!result.ok) {
+    if (result.reason === 'err' && !isClientErrorIpc(result.error)) {
+      log.warn('model-store', `${label} failed`, result.error)
     }
-  } catch (error) {
-    if (!isClientErrorIpc(error)) {
-      log.warn('model-store', `${label} failed`, error)
-    }
+
+    return
+  }
+
+  const arr = result.value?.[arrayKey]
+
+  if (Array.isArray(arr)) {
+    atomInstance.set(arr as T[])
   }
 }
 

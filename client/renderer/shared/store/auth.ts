@@ -1,6 +1,8 @@
 import type { DesktopAuthBroadcast, DesktopAuthSnapshot } from '@ipc/contracts'
 import { atom } from 'nanostores'
 
+import { clearCompanionStorage } from '@/shared/lib/storage'
+
 import { tearDownPrimaryGateway } from './gateway'
 
 type AuthState =
@@ -23,9 +25,11 @@ export async function hydrateAuth(): Promise<void> {
     if (snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
       $auth.set({ kind: 'authenticated', snapshot })
     } else {
+      await clearCompanionStorage()
       $auth.set({ kind: 'unauthenticated' })
     }
   } catch (error) {
+    await clearCompanionStorage()
     $auth.set({
       error: error instanceof Error ? error.message : String(error),
       kind: 'unauthenticated'
@@ -42,6 +46,15 @@ export function applyAuthBroadcast(payload: DesktopAuthBroadcast): void {
   if (payload.authenticated && snapshot && snapshot.hasToken && !isExpiredSnapshot(snapshot)) {
     $auth.set({ kind: 'authenticated', snapshot })
   } else {
+    // 仅在「从 authenticated → unauthenticated」时清存储：token 过期首启动（pending → unauthenticated）
+    // 不该抹除已登录用户留下的窗口/面板偏好；clearCompanionStorage 是登出副作用，不是
+    // 鉴权初始化的副作用。
+    if ($auth.get().kind === 'authenticated') {
+      // fire-and-forget：clearCompanionStorage 是异步的（OPFS I/O），不能让广播同步路径卡住。
+      // 当前登录态立即翻为 unauthenticated 让 UI 反应；storage 清理在后台落地。
+      void clearCompanionStorage()
+    }
+
     $auth.set({ kind: 'unauthenticated' })
   }
 }
@@ -71,6 +84,9 @@ export async function logout(): Promise<void> {
     await window.spiritagent.logout()
   } finally {
     tearDownPrimaryGateway()
+    // 不在这里调 clearCompanionStorage：IPC logout 返回后主进程会广播
+    // authenticated:false，applyAuthBroadcast 那条路径才是清空的唯一入口。
+    // 重复调用会被 idempotent handler 吞掉，但避免双触发 React 重渲染。
     $auth.set({ kind: 'unauthenticated' })
   }
 }

@@ -54,7 +54,7 @@ export function PortraitPanel({
 
   return (
     <div className="flex flex-col items-center gap-2">
-      {introHint && <p className="text-center text-[10px] leading-relaxed text-white/45">{introHint}</p>}
+      {introHint && <p className="text-center text-[10px] leading-relaxed text-muted">{introHint}</p>}
       <PortraitThumb
         label="头像"
         name={name}
@@ -84,7 +84,7 @@ export function HistoryGallery({
         return (
           <button
             className={`overflow-hidden rounded-md border transition ${
-              idx === selectedIdx ? 'border-accent' : 'border-white/15 opacity-60 hover:opacity-90'
+              idx === selectedIdx ? 'border-accent' : 'border-line-hairline opacity-60 hover:opacity-90'
             }`}
             key={idx}
             onClick={() => onSelect(idx)}
@@ -93,7 +93,7 @@ export function HistoryGallery({
             {entry.url ? (
               <img alt="" className="h-10 w-10 object-cover" src={entry.url} />
             ) : (
-              <div className="grid h-10 w-10 place-items-center text-[10px] text-white/30">—</div>
+              <div className="grid h-10 w-10 place-items-center text-[10px] text-faint">—</div>
             )}
           </button>
         )
@@ -163,12 +163,12 @@ function PortraitThumb({
         </div>
       ) : (
         <div
-          className={`grid ${sizeClass} place-items-center rounded-xl bg-white/5 text-center text-[10px] text-white/30`}
+          className={`grid ${sizeClass} place-items-center rounded-xl bg-fill-faint text-center text-[10px] text-faint`}
         >
           —
         </div>
       )}
-      <span className="text-[10px] text-white/40">{label}</span>
+      <span className="text-[10px] text-muted">{label}</span>
     </div>
   )
 }

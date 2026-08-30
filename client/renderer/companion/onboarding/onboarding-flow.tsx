@@ -413,8 +413,8 @@ function RegenFeedbackInput(): React.JSX.Element {
 function SpinnerWithText({ text, size = 'h-5 w-5' }: { text: string; size?: string }): React.JSX.Element {
   return (
     <div className="flex flex-col items-center gap-2 py-4">
-      <div className={`${size} animate-spin rounded-full border-2 border-white/30 border-t-white/80`} />
-      <p className="text-sm text-white/70">{text}</p>
+      <div className={`${size} animate-spin rounded-full border-2 border-line-strong border-t-accent`} />
+      <p className="text-sm text-body">{text}</p>
     </div>
   )
 }
@@ -1552,10 +1552,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
         }}
       >
         <div
-          className="w-full rounded-2xl border border-white/12 bg-surface-panel p-5 text-white shadow-2xl"
+          className="w-full rounded-2xl border border-line-standard bg-surface-panel p-5 text-strong shadow-2xl"
           style={{ pointerEvents: 'auto' }}
         >
-          {voicePreparing && <p className="mb-2 text-center text-[10px] text-white/40">正在准备声音…</p>}
+          {voicePreparing && <p className="mb-2 text-center text-[10px] text-muted">正在准备声音…</p>}
           {phase === 'q-character' && question && LOCKED_FIELD_KEYS.has(question.key) && (
             <p className="mb-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1 text-[10px] leading-relaxed text-amber-200/85">
               「{LOCKED_FIELD_LABELS[question.key] ?? '当前字段'}」是形象确认后无法再次更改的重点内容，请仔细选择。
@@ -1590,7 +1590,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 )}
                 {answerKind && (
                   <>
-                    <p className="mt-3 text-xs text-white/55">{answerKind.label}</p>
+                    <p className="mt-3 text-xs text-body">{answerKind.label}</p>
                     {answerKind.values && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {answerKind.values.map(v => (
@@ -1626,7 +1626,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 {question.allowImage && (
                   <div className="mt-3 flex items-center gap-2 text-xs">
                     <button
-                      className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
+                      className="rounded-full border border-dashed border-line-standard px-3 py-1 text-body transition hover:bg-fill-hover"
                       onClick={() => void pickReferenceImage()}
                       type="button"
                     >
@@ -1635,9 +1635,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     {refImage && (
                       <>
                         <img alt="参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
-                        <span className="text-[10px] text-white/35">我会照着它画自己</span>
+                        <span className="text-[10px] text-faint">我会照着它画自己</span>
                         <button
-                          className="ml-auto text-white/40 transition hover:text-white"
+                          className="ml-auto text-muted transition hover:text-strong"
                           onClick={() => updateRefImage(null)}
                           type="button"
                         >
@@ -1649,7 +1649,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 )}
                 <div className="mt-4 flex items-center justify-between text-xs">
                   <button
-                    className="text-white/60 transition hover:text-white disabled:opacity-30"
+                    className="text-body transition hover:text-strong disabled:opacity-30"
                     disabled={imageSealed || (phase === 'q-character' && qIndex === 0)}
                     onClick={onBack}
                     type="button"
@@ -1658,12 +1658,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   </button>
                   <div className="flex gap-3">
                     {!question.required && (
-                      <button className="text-white/60 transition hover:text-white" onClick={onSkip} type="button">
+                      <button className="text-body transition hover:text-strong" onClick={onSkip} type="button">
                         跳过
                       </button>
                     )}
                     <button
-                      className="inline-flex h-8 items-center justify-center rounded-lg bg-white px-4 text-xs font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-4 text-xs font-medium text-on-accent transition hover:bg-accent/85 disabled:pointer-events-none disabled:opacity-40"
                       onClick={onSend}
                       type="button"
                     >
@@ -1672,7 +1672,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   </div>
                 </div>
                 {hint && <p className="mt-2 text-xs text-amber-300/80">{hint}</p>}
-                <p className="mt-2 text-right text-[10px] text-white/30">
+                <p className="mt-2 text-right text-[10px] text-faint">
                   {qIndex + 1} / {currentList.length}
                 </p>
               </>
@@ -1680,56 +1680,56 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
           {phase === 'portrait-choose' && (
             <div>
-              <p className="text-[15px] font-medium text-white/90">选择头像获取方式</p>
-              <p className="mt-1 text-xs text-white/60">
+              <p className="text-[15px] font-medium text-strong">选择头像获取方式</p>
+              <p className="mt-1 text-xs text-body">
                 形象设定已保存！您可以让 AI 根据设定构思形象，或直接上传现有的头像图片。
               </p>
 
               <div className="mt-4 flex flex-col gap-3">
                 <button
-                  className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99]"
+                  className="rounded-xl border border-line-hairline bg-surface-card p-4 text-left transition hover:border-line-strong hover:bg-fill-hover active:scale-[0.99]"
                   onClick={() => void startAiHatching()}
                   type="button"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-white/90">
-                      <Sparkles className="size-4 text-white/60" /> 让 AI 为我生成头像
+                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-strong">
+                      <Sparkles className="size-4 text-muted" /> 让 AI 为我生成头像
                     </span>
-                    <span className="text-xs text-white/40">AI 绘制 →</span>
+                    <span className="text-xs text-muted">AI 绘制 →</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-body">
                     基于您刚才填写的形象描述与参考图，自动构思并生成半身头像（生成后可微调或重新生成）。
                   </p>
                 </button>
 
                 <button
-                  className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99] disabled:opacity-40"
+                  className="rounded-xl border border-line-hairline bg-surface-card p-4 text-left transition hover:border-line-strong hover:bg-fill-hover active:scale-[0.99] disabled:opacity-40"
                   disabled={avatarUploading}
                   onClick={() => void uploadCustomAvatar()}
                   type="button"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-white/90">
-                      <FolderOpen className="size-4 text-white/60" /> 直接上传已有头像
+                    <span className="flex items-center gap-1.5 text-[14px] font-medium text-strong">
+                      <FolderOpen className="size-4 text-muted" /> 直接上传已有头像
                     </span>
-                    <span className="text-xs text-white/40">本地上传 →</span>
+                    <span className="text-xs text-muted">本地上传 →</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-body">
                     跳过 AI 生成，直接使用您本地准备好的图片作为伙伴头像。
                   </p>
                 </button>
 
                 {activeAvatarId != null && portraitUrl && (
                   <button
-                    className="rounded-xl border border-white/15 bg-white/5 p-4 text-left transition hover:border-white/40 hover:bg-white/10 active:scale-[0.99]"
+                    className="rounded-xl border border-line-hairline bg-surface-card p-4 text-left transition hover:border-line-strong hover:bg-fill-hover active:scale-[0.99]"
                     onClick={() => setPhase('portrait-avatar')}
                     type="button"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[14px] font-medium text-white/90">继续使用当前头像</span>
-                      <span className="text-xs text-white/40">已有草稿 →</span>
+                      <span className="text-[14px] font-medium text-strong">继续使用当前头像</span>
+                      <span className="text-xs text-muted">已有草稿 →</span>
                     </div>
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-white/55">
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-body">
                       保留之前生成或上传的头像草稿，直接进入确认与全身立绘阶段。
                     </p>
                   </button>
@@ -1745,7 +1745,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
               {portraitPanelHint && <p className="mt-3 text-xs text-rose-300/90">{portraitPanelHint}</p>}
 
               <div className="mt-4 flex items-center justify-between text-xs">
-                <button className="text-white/60 transition hover:text-white" onClick={onBack} type="button">
+                <button className="text-body transition hover:text-strong" onClick={onBack} type="button">
                   上一步
                 </button>
               </div>
@@ -1781,9 +1781,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     {refImage && (
                       <div className="flex items-center gap-2">
                         <img alt="形象参考图" className="h-9 w-9 rounded-md object-cover" src={refImage.previewUrl} />
-                        <span className="text-[10px] text-white/35">形象参考图（每次重生都会携带）</span>
+                        <span className="text-[10px] text-faint">形象参考图（每次重生都会携带）</span>
                         <button
-                          className="ml-auto text-white/40 transition hover:text-white"
+                          className="ml-auto text-muted transition hover:text-strong"
                           onClick={() => updateRefImage(null)}
                           type="button"
                         >
@@ -1793,7 +1793,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     )}
                     <div className="flex items-center gap-2">
                       <button
-                        className="rounded-full border border-dashed border-white/25 px-3 py-1 text-white/70 transition hover:bg-white/10"
+                        className="rounded-full border border-dashed border-line-standard px-3 py-1 text-body transition hover:bg-fill-hover"
                         onClick={() => void pickPresentationImage()}
                         type="button"
                       >
@@ -1806,9 +1806,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                             className="h-9 w-9 rounded-md object-cover"
                             src={presentationRef.previewUrl}
                           />
-                          <span className="text-[10px] text-white/35">参考风格/展现形式，不影响角色形象</span>
+                          <span className="text-[10px] text-faint">参考风格/展现形式，不影响角色形象</span>
                           <button
-                            className="ml-auto text-white/40 transition hover:text-white"
+                            className="ml-auto text-muted transition hover:text-strong"
                             onClick={() => setPresentationRef(null)}
                             type="button"
                           >
@@ -1821,14 +1821,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <div className="flex gap-3">
                       <button
-                        className="text-white/60 transition hover:text-white disabled:opacity-40"
+                        className="text-body transition hover:text-strong disabled:opacity-40"
                         onClick={onBack}
                         type="button"
                       >
                         上一步
                       </button>
                       <button
-                        className="text-white/70 transition hover:text-white disabled:opacity-40"
+                        className="text-body transition hover:text-strong disabled:opacity-40"
                         disabled={avatarBusy || avatarUploading}
                         onClick={() => void regenerateAvatarPortrait()}
                         type="button"
@@ -1836,7 +1836,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         重新生成
                       </button>
                       <button
-                        className="rounded-full border border-white/25 px-3 py-1 text-white/80 transition hover:bg-white/10 disabled:opacity-40"
+                        className="rounded-full border border-line-standard px-3 py-1 text-strong transition hover:bg-fill-hover disabled:opacity-40"
                         disabled={avatarBusy || avatarUploading}
                         onClick={() => void uploadCustomAvatar()}
                         type="button"
@@ -1845,7 +1845,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                     </div>
                     <button
-                      className="inline-flex h-8 items-center justify-center rounded-lg bg-white px-4 text-xs font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
+                      className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-4 text-xs font-medium text-on-accent transition hover:bg-accent/85 disabled:pointer-events-none disabled:opacity-40"
                       disabled={activeAvatarId == null}
                       onClick={() => void confirmPortrait()}
                       type="button"
@@ -1869,13 +1869,13 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 <div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-[14px] font-medium text-white/90">确认全身立绘</p>
-                      <p className="mt-0.5 text-xs text-white/60">已为您生成正面立绘，可直接确认或输入要求微调重绘。</p>
+                      <p className="text-[14px] font-medium text-strong">确认全身立绘</p>
+                      <p className="mt-0.5 text-xs text-body">已为您生成正面立绘，可直接确认或输入要求微调重绘。</p>
                     </div>
                   </div>
 
                   <div
-                    className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/15 bg-black/40 group"
+                    className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-line-hairline bg-fill-trough group"
                     style={fullbodyRatio ? { aspectRatio: fullbodyRatio } : undefined}
                   >
                     {fullbodyFrontUrl ? (
@@ -1904,10 +1904,10 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       </button>
                     ) : (
                       <div className="p-4 text-center">
-                        <p className="mb-2 text-xs text-white/40">暂无预览图</p>
+                        <p className="mb-2 text-xs text-muted">暂无预览图</p>
                         {activeAvatarId && (
                           <button
-                            className="rounded-full bg-white/20 px-3 py-1 text-xs text-white hover:bg-white/30"
+                            className="rounded-full bg-fill-hover px-3 py-1 text-xs text-strong hover:bg-fill-active"
                             onClick={() => void generateFullbodyFrontDirect(activeAvatarId, 'cel_shading')}
                             type="button"
                           >
@@ -1943,7 +1943,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
                   <div className="mt-3 flex items-center justify-between text-xs">
                     <button
-                      className="text-white/60 transition hover:text-white"
+                      className="text-body transition hover:text-strong"
                       onClick={() => setPhase('portrait-avatar')}
                       type="button"
                     >
@@ -1951,7 +1951,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                     </button>
                     <div className="flex gap-3">
                       <button
-                        className="text-white/70 transition hover:text-white disabled:opacity-40"
+                        className="text-body transition hover:text-strong disabled:opacity-40"
                         disabled={fullbodyLoading}
                         onClick={() => void regenerateFullbodyFront()}
                         type="button"
@@ -1959,7 +1959,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                         微调重绘
                       </button>
                       <button
-                        className="inline-flex h-9 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
+                        className="inline-flex h-9 items-center justify-center rounded-lg bg-accent px-4 text-sm font-medium text-on-accent transition hover:bg-accent/85 disabled:pointer-events-none disabled:opacity-40"
                         disabled={fullbodyLoading || !fullbodyFrontUrl}
                         onClick={() => void confirmFullbodyFront()}
                         type="button"
@@ -1983,11 +1983,11 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
           {phase === 'voice' && voiceStage === 'catalog' && voice && (
             <div className="mt-1">
-              <p className="mb-3 text-[13px] text-white/70">挑一个我说话的声音吧，随时可以试听。</p>
-              <div className="mb-3 flex gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[10px]">
+              <p className="mb-3 text-[13px] text-body">挑一个我说话的声音吧，随时可以试听。</p>
+              <div className="mb-3 flex gap-1 rounded-full border border-line-hairline bg-surface-card p-1 text-[10px]">
                 {VOICE_LANGUAGE_TABS.map(tab => (
                   <button
-                    className={`flex-1 rounded-full px-2 py-1 transition ${voiceLangFilter === tab.id ? 'bg-white/90 text-black' : 'text-white/60 hover:text-white'}`}
+                    className={`flex-1 rounded-full px-2 py-1 transition ${voiceLangFilter === tab.id ? 'bg-accent text-on-accent' : 'text-body hover:text-strong'}`}
                     key={tab.id || 'all'}
                     onClick={() => void onVoiceLangTabClick(tab.id)}
                     type="button"
@@ -1997,18 +1997,18 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 ))}
               </div>
 
-              <div className="rounded-xl border border-white/25 bg-white/10 p-3">
-                <p className="mb-1 text-[10px] tracking-wide text-white/45">为你推荐</p>
-                <div className="flex items-start justify-between gap-3 text-xs text-white/85">
+              <div className="rounded-xl border border-line-hairline bg-surface-card p-3">
+                <p className="mb-1 text-[10px] tracking-wide text-muted">为你推荐</p>
+                <div className="flex items-start justify-between gap-3 text-xs text-strong">
                   <div className="min-w-0">
                     <p className="truncate font-medium">{voice.label}</p>
                     {voice.tags.length > 0 && (
-                      <p className="mt-0.5 truncate text-[10px] text-white/40">{voice.tags.join(' · ')}</p>
+                      <p className="mt-0.5 truncate text-[10px] text-muted">{voice.tags.join(' · ')}</p>
                     )}
                   </div>
                   <div className="flex shrink-0 gap-3">
                     <button
-                      className="transition hover:text-white disabled:opacity-40"
+                      className="transition hover:text-strong disabled:opacity-40"
                       disabled={voicePreparing}
                       onClick={() => previewVoice(voice.id, 'onboarding.voice.preview.try')}
                       type="button"
@@ -2016,7 +2016,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       试听
                     </button>
                     <button
-                      className="transition hover:text-white disabled:opacity-40"
+                      className="transition hover:text-strong disabled:opacity-40"
                       disabled={voicePreparing}
                       onClick={() => selectVoice(nextVoice(voice.id, voiceCandidates), 'onboarding.voice.preview.next')}
                       type="button"
@@ -2027,14 +2027,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 </div>
               </div>
 
-              <p className="mt-3 mb-1 text-[10px] tracking-wide text-white/45">浏览目录</p>
-              <div className="max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-white/5">
+              <p className="mt-3 mb-1 text-[10px] tracking-wide text-muted">浏览目录</p>
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-line-hairline bg-surface-card">
                 {otherVoices.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-[10px] text-white/35">没有更多音色可选</p>
+                  <p className="px-3 py-4 text-center text-[10px] text-faint">没有更多音色可选</p>
                 ) : (
                   otherVoices.map(v => (
                     <button
-                      className="flex w-full items-center justify-between gap-3 border-b border-white/5 px-3 py-2 text-left text-xs text-white/75 transition last:border-b-0 hover:bg-white/10 disabled:opacity-40"
+                      className="flex w-full items-center justify-between gap-3 border-b border-line-hairline px-3 py-2 text-left text-xs text-body transition last:border-b-0 hover:bg-fill-hover disabled:opacity-40"
                       disabled={voicePreparing}
                       key={v.id}
                       onClick={() => selectVoice(v, 'onboarding.voice.preview.try')}
@@ -2043,27 +2043,27 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                       <span className="min-w-0">
                         <span className="block truncate">{v.label}</span>
                         {v.tags.length > 0 && (
-                          <span className="block truncate text-[10px] text-white/35">{v.tags.join(' · ')}</span>
+                          <span className="block truncate text-[10px] text-faint">{v.tags.join(' · ')}</span>
                         )}
                       </span>
-                      <span className="shrink-0 text-[10px] text-white/35">试听并选择</span>
+                      <span className="shrink-0 text-[10px] text-faint">试听并选择</span>
                     </button>
                   ))
                 )}
               </div>
-              <p className="mt-1 text-[10px] text-white/40">
+              <p className="mt-1 text-[10px] text-muted">
                 {voiceCatalog.length} 个音色 · 先挑个差不多的就行，以后随时能在设置里调。
               </p>
               <div className="mt-3 flex items-center justify-between gap-3 text-xs">
                 <button
-                  className="text-white/60 transition hover:text-white"
+                  className="text-body transition hover:text-strong"
                   onClick={() => setVoiceStage('describe')}
                   type="button"
                 >
                   上一步
                 </button>
                 <button
-                  className="h-9 flex-1 rounded-lg bg-white text-sm font-medium text-black transition hover:bg-white/85 disabled:pointer-events-none disabled:opacity-40"
+                  className="h-9 flex-1 rounded-lg bg-accent text-sm font-medium text-on-accent transition hover:bg-accent/85 disabled:pointer-events-none disabled:opacity-40"
                   onClick={confirmVoice}
                   type="button"
                 >
@@ -2073,14 +2073,14 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             </div>
           )}
 
-          {phase === 'finishing' && <p className="py-6 text-center text-sm text-white/80">正在记住您…</p>}
+          {phase === 'finishing' && <p className="py-6 text-center text-sm text-strong">正在记住您…</p>}
 
           {phase === 'greeting' && (
             <div className="mt-4">
-              <p className="text-center text-sm text-white/90">
+              <p className="text-center text-sm text-strong">
                 您好，我是{answers.name?.trim() || '您的伙伴'}。很高兴见到您！
               </p>
-              {hint && <p className="mt-1 text-center text-[10px] text-white/40">{hint}</p>}
+              {hint && <p className="mt-1 text-center text-[10px] text-muted">{hint}</p>}
             </div>
           )}
         </div>

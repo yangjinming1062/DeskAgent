@@ -42,7 +42,7 @@ export function InteractionPage(): React.ReactElement {
   return (
     <SettingsPage hint="伙伴怎么回应你、什么时候可以打扰你。" title="交互">
       <section>
-        <h3 className="text-xs font-medium text-white/80">对话回应方式</h3>
+        <h3 className="text-xs font-medium text-strong">对话回应方式</h3>
         <div className="mt-2.5 max-w-xs">
           <Segmented<ResponseMode>
             onChange={setResponseMode}
@@ -56,21 +56,21 @@ export function InteractionPage(): React.ReactElement {
       </section>
 
       <section className="mt-6">
-        <h3 className="text-xs font-medium text-white/80">打扰档位</h3>
+        <h3 className="text-xs font-medium text-strong">打扰档位</h3>
         <p className={cn(HINT_TEXT, 'mt-1')}>只约束伙伴的主动行为，你发起的交互不受限。</p>
-        <div className="mt-2.5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
+        <div className="mt-2.5 overflow-hidden rounded-xl border border-line-hairline bg-surface-card">
           {DISTURBANCE_TIERS.map(t => (
             <button
               className={cn(
-                'flex w-full items-center justify-between border-b border-white/5 px-3.5 py-2.5 text-left text-xs transition last:border-b-0 hover:bg-white/5',
+                'flex w-full items-center justify-between border-b border-line-hairline px-3.5 py-2.5 text-left text-xs transition last:border-b-0 hover:bg-fill-hover',
                 tier === t.id && 'bg-accent-soft'
               )}
               key={t.id}
               onClick={() => selectTier(t.id)}
               type="button"
             >
-              <span className={cn('font-medium', tier === t.id ? 'text-white' : 'text-white/80')}>{t.label}</span>
-              <span className="flex items-center gap-1.5 text-white/40">
+              <span className={cn('font-medium', tier === t.id ? 'text-strong' : 'text-body')}>{t.label}</span>
+              <span className="flex items-center gap-1.5 text-muted">
                 {t.hint}
                 {tier === t.id && <Check className="size-3.5 text-accent" />}
               </span>
@@ -80,9 +80,9 @@ export function InteractionPage(): React.ReactElement {
       </section>
 
       <section className="mt-6">
-        <h3 className="text-xs font-medium text-white/80">智能反应与自主行为</h3>
+        <h3 className="text-xs font-medium text-strong">智能反应与自主行为</h3>
         <p className={cn(HINT_TEXT, 'mt-1')}>让伙伴具备更智能的思考与决策能力；关闭可降低 LLM 调用消耗。</p>
-        <div className="mt-2.5 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
+        <div className="mt-2.5 divide-y divide-line-hairline overflow-hidden rounded-xl border border-line-hairline bg-surface-card">
           <SettingRow
             description="戳击时由 LLM 生成反应文案与表情（关闭使用预制反馈）；拖拽始终使用本地预制反馈"
             label="戳击思考回应"

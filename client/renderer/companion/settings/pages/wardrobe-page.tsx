@@ -92,13 +92,13 @@ export function WardrobePage(): React.JSX.Element {
   return (
     <div className="flex min-h-0 flex-1">
       {/* 左：外观列表（方形大图卡——统一方形取景框，任意比例立绘 contain 完整呈现，文字收缩到图下方两行） */}
-      <div className="flex w-60 shrink-0 flex-col border-r border-white/10">
+      <div className="flex w-60 shrink-0 flex-col border-r border-line-hairline">
         <div className="px-3 pt-3.5 pb-2">
-          <h2 className="text-sm font-semibold text-white">衣柜</h2>
+          <h2 className="text-sm font-semibold text-strong">衣柜</h2>
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-2.5 pb-3">
           {outfits.length === 0 ? (
-            <p className="px-1 pt-2 text-xs text-white/40">还没有就绪的 2D 形象，生成 2D 动画资产后即可换装。</p>
+            <p className="px-1 pt-2 text-xs text-muted">还没有就绪的 2D 形象，生成 2D 动画资产后即可换装。</p>
           ) : (
             outfits.map(outfit => {
               const statusLabel = STATUS_LABELS[outfit.status] ?? ''
@@ -110,7 +110,7 @@ export function WardrobePage(): React.JSX.Element {
                   className={`group relative cursor-pointer overflow-hidden rounded-xl border text-left transition ${
                     isActiveCard
                       ? 'border-accent-line bg-accent-soft'
-                      : 'border-white/8 bg-surface-card hover:border-white/16'
+                      : 'border-line-hairline bg-surface-card hover:border-line-strong'
                   }`}
                   key={outfit.id}
                   onClick={() => {
@@ -118,7 +118,7 @@ export function WardrobePage(): React.JSX.Element {
                     setSelectedId(outfit.id)
                   }}
                 >
-                  <div className="relative aspect-square w-full bg-black/35">
+                  <div className="relative aspect-square w-full bg-fill-trough">
                     {outfit.fullbodyUrl && (
                       <img
                         alt={outfit.name}
@@ -134,7 +134,7 @@ export function WardrobePage(): React.JSX.Element {
                       </span>
                     )}
                     {statusLabel && (
-                      <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-white/75">
+                      <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
                         {statusLabel}
                       </span>
                     )}
@@ -209,8 +209,8 @@ export function WardrobePage(): React.JSX.Element {
                   </div>
 
                   <div className="px-2.5 py-2">
-                    <p className="truncate text-[11px] font-medium text-white/90">{outfit.name}</p>
-                    <p className="mt-0.5 truncate text-[10px] text-white/40">
+                    <p className="truncate text-[11px] font-medium text-strong">{outfit.name}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-muted">
                       {outfit.status === 'splitting' && outfit.pendingWear ? '切分完成后自动穿上' : outfit.description}
                     </p>
                   </div>
@@ -231,7 +231,7 @@ export function WardrobePage(): React.JSX.Element {
           {previewUrl ? (
             <div className="absolute inset-4 grid place-items-center">
               <button
-                className="block aspect-square h-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-white/10 bg-black/30"
+                className="block aspect-square h-full max-w-full cursor-zoom-in overflow-hidden rounded-xl border border-line-hairline bg-fill-trough"
                 onClick={() => setZoomUrl(previewUrl)}
                 type="button"
               >
@@ -241,10 +241,10 @@ export function WardrobePage(): React.JSX.Element {
           ) : (
             <div className="absolute inset-4 grid place-items-center text-center">
               <div>
-                <div className="text-xs text-white/50">
+                <div className="text-xs text-body">
                   {designing ? '描述想要的着装，生成后在这里预览' : '选择左侧外观查看大图，或开始设计新外观'}
                 </div>
-                <div className="mt-1 text-[10px] text-white/30">服装、发型、配饰都可以换；五官与体型保持不变</div>
+                <div className="mt-1 text-[10px] text-faint">服装、发型、配饰都可以换；五官与体型保持不变</div>
               </div>
             </div>
           )}
@@ -252,16 +252,16 @@ export function WardrobePage(): React.JSX.Element {
           {designing && session.busy && (
             <div className="absolute inset-4 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/40">
               <Spinner className="size-5" />
-              <span className="text-xs text-white/60">生成中…</span>
+              <span className="text-xs text-white">生成中…</span>
             </div>
           )}
         </div>
 
-        <div className="flex h-56 shrink-0 flex-col border-t border-white/10">
+        <div className="flex h-56 shrink-0 flex-col border-t border-line-hairline">
           {!designing ? (
             <div className="grid flex-1 place-items-center px-6 text-center">
               <div>
-                <p className="text-xs text-white/50">用一段描述（可附参考图）让伙伴换上新装</p>
+                <p className="text-xs text-body">用一段描述（可附参考图）让伙伴换上新装</p>
                 <button className={cn(BTN_PRIMARY, 'mt-3')} onClick={startDesign} type="button">
                   开始新设计
                 </button>
@@ -271,18 +271,18 @@ export function WardrobePage(): React.JSX.Element {
             <>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3 text-xs" ref={messagesRef}>
                 {session.messages.length === 0 && (
-                  <p className="text-white/35">
+                  <p className="text-faint">
                     描述想要的着装，例如「水手服换成米白色针织毛衣和棕色长裙，发型改为低马尾」；也可以附一张参考图。每小时最多生成一套。
                   </p>
                 )}
                 {session.messages.map(m =>
                   m.role === 'user' ? (
                     <div className="flex justify-end" key={m.id}>
-                      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent/25 px-3 py-1.5 text-white/90">
+                      <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent/20 px-3 py-1.5 text-strong">
                         {m.imageUrl && (
                           <img
                             alt="参考图"
-                            className="mb-1 size-16 rounded-lg border border-white/15 object-cover"
+                            className="mb-1 size-16 rounded-lg border border-line-hairline object-cover"
                             src={m.imageUrl}
                           />
                         )}
@@ -296,7 +296,7 @@ export function WardrobePage(): React.JSX.Element {
                           'max-w-[85%] rounded-2xl rounded-bl-sm border px-3 py-1.5',
                           m.tone === 'error'
                             ? 'border-rose-400/25 bg-rose-500/10 text-rose-200'
-                            : 'border-white/10 bg-white/5 text-white/70'
+                            : 'border-line-hairline bg-surface-card text-body'
                         )}
                       >
                         {m.text}
@@ -307,7 +307,7 @@ export function WardrobePage(): React.JSX.Element {
               </div>
 
               {session.draft && (
-                <div className="flex items-center gap-2 border-t border-white/8 px-4 py-2">
+                <div className="flex items-center gap-2 border-t border-line-hairline px-4 py-2">
                   <button
                     className={cn(BTN_PRIMARY, 'h-7')}
                     disabled={session.busy}
@@ -331,15 +331,15 @@ export function WardrobePage(): React.JSX.Element {
               )}
 
               {session.refImage && !session.draft && (
-                <div className="flex items-center gap-2 border-t border-white/8 px-4 py-1.5 text-[11px] text-white/60">
+                <div className="flex items-center gap-2 border-t border-line-hairline px-4 py-1.5 text-[11px] text-body">
                   <img
                     alt="参考图"
-                    className="size-8 rounded border border-white/15 object-cover"
+                    className="size-8 rounded border border-line-hairline object-cover"
                     src={session.refImage.previewUrl}
                   />
                   已附参考图
                   <button
-                    className="text-white/40 transition hover:text-white"
+                    className="text-muted transition hover:text-strong"
                     onClick={session.clearRefImage}
                     type="button"
                   >
@@ -348,7 +348,7 @@ export function WardrobePage(): React.JSX.Element {
                 </div>
               )}
 
-              <div className="flex items-end gap-2 border-t border-white/10 p-3">
+              <div className="flex items-end gap-2 border-t border-line-hairline p-3">
                 <textarea
                   className={cn(INPUT_CLASS, 'min-h-[38px] flex-1 resize-none')}
                   disabled={session.busy}

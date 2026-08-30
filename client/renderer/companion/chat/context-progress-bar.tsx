@@ -60,7 +60,7 @@ export function ContextProgressBar(): React.JSX.Element {
   const isWarning = !isInactive && !isHealthy && pct < thresholdPct * 0.88
 
   const barColor = isInactive
-    ? 'bg-fill-faint0'
+    ? 'bg-fill-faint'
     : isHealthy
       ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.35)]'
       : isWarning
@@ -130,8 +130,7 @@ export function ContextProgressBar(): React.JSX.Element {
             <>
               <span>
                 上下文：<strong className="font-mono text-strong">{totalTokens.toLocaleString()}</strong> /{' '}
-                <span className="font-mono text-muted">{contextLimit.toLocaleString()}</span> Tokens (
-                {pct.toFixed(1)}%)
+                <span className="font-mono text-muted">{contextLimit.toLocaleString()}</span> Tokens ({pct.toFixed(1)}%)
               </span>
               <span className="text-faint">·</span>
               <span className="text-accent font-medium">压缩节点: {Math.round(thresholdPct)}%</span>

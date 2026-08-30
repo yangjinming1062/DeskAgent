@@ -816,8 +816,8 @@ html[data-theme='lilac-glass'] .sa-slider::-moz-range-thumb {
 /* 科技点阵背景 */
 .tech-grid {
   background-image:
-    linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+    linear-gradient(to right, var(--ui-line-hairline) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--ui-line-hairline) 1px, transparent 1px);
   background-size: 16px 16px;
 }
 

@@ -286,9 +286,7 @@ export function Seed3dWizard({
         <>
           {meta.title}
           {supportsMultiview && (
-            <span className="ml-1.5 text-[11px] font-normal text-faint">
-              {stage === 'front' ? '1 / 2' : '2 / 2'}
-            </span>
+            <span className="ml-1.5 text-[11px] font-normal text-faint">{stage === 'front' ? '1 / 2' : '2 / 2'}</span>
           )}
         </>
       }
@@ -315,9 +313,7 @@ export function Seed3dWizard({
           <div className="text-xs text-faint">暂无立绘</div>
         ) : (
           <div className="flex flex-col items-center gap-3 px-4">
-            <div className="text-xs text-muted">
-              {stage === 'front' ? '尚未生成 3D 正面立绘' : '尚未生成背面立绘'}
-            </div>
+            <div className="text-xs text-muted">{stage === 'front' ? '尚未生成 3D 正面立绘' : '尚未生成背面立绘'}</div>
             <button className={BTN_PRIMARY} onClick={() => generate(stage, '')} type="button">
               {stage === 'front' ? '生成 3D 正面立绘' : '生成背面立绘'}
             </button>

@@ -201,8 +201,8 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
       {(canFork || canUndo) && (
         <div
           className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
-                     rounded-md border border-line-standard bg-black/55 px-1.5 py-1
-                     backdrop-blur-sm opacity-0 shadow-md shadow-black/30
+                     rounded-md border border-line-standard bg-surface-panel/90 px-1.5 py-1
+                     backdrop-blur-glass opacity-0 shadow-lg
                      transition-opacity duration-150
                      group-hover/message:opacity-100"
         >

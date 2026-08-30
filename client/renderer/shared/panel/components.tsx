@@ -134,9 +134,7 @@ export function SettingsNav({
             <item.icon
               className={cn(
                 'shrink-0 size-4 transition-colors',
-                isActive
-                  ? 'text-accent drop-shadow-[0_0_6px_var(--ui-accent)]'
-                  : 'text-muted group-hover:text-strong'
+                isActive ? 'text-accent drop-shadow-[0_0_6px_var(--ui-accent)]' : 'text-muted group-hover:text-strong'
               )}
             />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -223,7 +221,7 @@ export function Toggle({
       aria-label={ariaLabel}
       className={cn(
         'relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:pointer-events-none disabled:opacity-40',
-        checked ? 'border-transparent bg-accent' : 'border-line-strong bg-fill-hover'
+        checked ? 'border-transparent bg-accent' : 'border-line-strong bg-fill-faint'
       )}
       disabled={disabled}
       onClick={() => onChange(!checked)}
@@ -232,8 +230,8 @@ export function Toggle({
     >
       <span
         className={cn(
-          'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-inverse-surface transition-[left] duration-150',
-          checked ? 'left-[calc(100%-1.125rem)]' : 'left-0.5'
+          'absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-[left,background-color] duration-150',
+          checked ? 'left-[calc(100%-1.125rem)] bg-on-accent' : 'left-0.5 bg-text-muted'
         )}
       />
     </button>
@@ -453,9 +451,7 @@ export function PanelSelect<T extends string>({
               aria-selected={o.value === value}
               className={cn(
                 'flex h-7 w-full items-center rounded-lg px-2.5 text-left text-xs transition',
-                o.value === value
-                  ? 'bg-accent-soft font-medium text-accent'
-                  : 'text-muted hover:bg-fill-hover'
+                o.value === value ? 'bg-accent-soft font-medium text-accent' : 'text-muted hover:bg-fill-hover'
               )}
               key={o.value}
               onClick={() => {

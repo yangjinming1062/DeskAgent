@@ -13,7 +13,7 @@ import { createRoot } from 'react-dom/client'
 
 import { $spriteEmotion, setGazeTarget } from '@/companion/companion-store'
 import { $mesh2dHitmap } from '@/companion/mesh2d/mesh2d-store'
-import { $puppetInfo, $puppetReady } from '@/companion/puppet/puppet-store'
+import { $puppetInfo } from '@/companion/puppet/puppet-store'
 import type { Rig } from '@/companion/puppet/puppet-types'
 import { PuppetCanvas, type PuppetCanvasHandle } from '@/companion/puppet/PuppetCanvas'
 import { PuppetStage } from '@/companion/puppet/PuppetStage'
@@ -29,7 +29,6 @@ function PuppetStageApp() {
         contentHash: 'stage-test',
         error: null
       })
-      $puppetReady.set(true)
 
       let hit: ((nx: number, ny: number) => { region: string } | null) | null = null
 

@@ -62,6 +62,7 @@ import { emitVfx } from '@/companion/vfx'
 import { hydrateWardrobe } from '@/companion/wardrobe/wardrobe-store'
 import { log } from '@/shared/lib/log'
 import { sleep } from '@/shared/lib/utils'
+import { $auth } from '@/shared/store/auth'
 import { $gateway } from '@/shared/store/gateway'
 import { notify } from '@/shared/store/notifications'
 import type { ChatMediaItem, RpcEvent, SessionMessage } from '@/shared/types/spiritagent'
@@ -179,6 +180,15 @@ function applySpatialCue(locale?: string, target?: string): void {
 }
 
 export function handleCompanionEvent(event: RpcEvent): void {
+  // 仅在明确登出态丢弃事件：'pending'（冷启动 hydrateAuth 未完成 / token 刷新中）继续处理，
+  // 否则登出 race 时到达的 message.complete / model.ready / companion.2d.ready 会被静默吞掉——
+  // 流式 chat 卡 thinking，model.ready 漏掉让用户重登后看到旧 model。
+  if ($auth.get().kind === 'unauthenticated') {
+    log.warn('events', 'Discarded event during unauthenticated state:', event.type)
+
+    return
+  }
+
   if ($devMode.get()) {
     pushDevLog(event.type, JSON.stringify(event.payload ?? {}))
   }

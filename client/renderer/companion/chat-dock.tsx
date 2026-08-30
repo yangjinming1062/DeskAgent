@@ -1109,7 +1109,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             <div className="flex items-center gap-0.5">
               <button
                 aria-label="关闭对话"
-                className={cn(BTN_ICON, 'hover:border hover:border-line-strong hover:bg-rose-500/15 hover:text-rose-300')}
+                className={cn(
+                  BTN_ICON,
+                  'hover:border hover:border-line-strong hover:bg-rose-500/15 hover:text-rose-300'
+                )}
                 onClick={onClose}
                 type="button"
               >
@@ -1129,9 +1132,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
             {showTyping && (
               <div className="flex justify-start">
                 <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-line-hairline bg-surface-card px-3.5 py-2.5">
-                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:0ms]" />
-                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:150ms]" />
-                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:300ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint [animation-delay:0ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint [animation-delay:150ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint [animation-delay:300ms]" />
                 </span>
               </div>
             )}
@@ -1390,7 +1393,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     </button>
 
                     {attachMenuOpen && (
-                      <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+                      <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-surface-card p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
                         <button
                           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
                           onClick={() => void pickFile()}

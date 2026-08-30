@@ -98,7 +98,7 @@ export function VoicePage(): React.ReactElement {
   if (catalog.voices.length === 0) {
     return (
       <SettingsPage title="音色">
-        <p className="text-xs text-white/40">未配置 TTS 引擎，使用默认音色。</p>
+        <p className="text-xs text-muted">未配置 TTS 引擎，使用默认音色。</p>
       </SettingsPage>
     )
   }
@@ -116,7 +116,7 @@ export function VoicePage(): React.ReactElement {
             {lang ? (LANGUAGE_LABELS[lang] ?? lang) : '全部'}
           </button>
         ))}
-        <span className="mx-1 text-white/20">|</span>
+        <span className="mx-1 text-faint">|</span>
         {GENDER_OPTIONS.map(g => (
           <button
             className={genderFilter === g.id ? CHIP_FILTER_ACTIVE : CHIP_FILTER}
@@ -129,22 +129,22 @@ export function VoicePage(): React.ReactElement {
         ))}
       </div>
 
-      <div className="mt-3 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
+      <div className="mt-3 divide-y divide-line-hairline overflow-hidden rounded-xl border border-line-hairline bg-surface-card">
         {filteredVoices.map(v => {
           const inUse = currentVoice === v.id
 
           return (
             <div className="flex items-center justify-between gap-3 px-3.5 py-2.5" key={v.id}>
               <div className="min-w-0">
-                <p className={cn('text-xs', inUse ? 'font-medium text-white' : 'text-white/90')}>
+                <p className={cn('text-xs', inUse ? 'font-medium text-strong' : 'text-strong')}>
                   {v.label}
                   {inUse && <Check className="ml-1.5 inline size-3.5 text-emerald-400" />}
                 </p>
-                <p className="mt-0.5 text-[11px] text-white/40">{v.tags.join(' · ')}</p>
+                <p className="mt-0.5 text-[11px] text-muted">{v.tags.join(' · ')}</p>
               </div>
               <div className="flex shrink-0 gap-1.5">
                 <button
-                  className="rounded-lg px-2.5 py-1 text-xs text-white/60 transition hover:bg-white/10 hover:text-white"
+                  className="rounded-lg px-2.5 py-1 text-xs text-body transition hover:bg-fill-hover hover:text-strong"
                   onClick={() =>
                     void speakScripted(sampleLine(persona?.name ?? ''), v.id || undefined, 'voice.preview')
                   }
@@ -165,14 +165,14 @@ export function VoicePage(): React.ReactElement {
           )
         })}
         {filteredVoices.length === 0 && (
-          <p className="px-3.5 py-6 text-center text-xs text-white/35">当前筛选无匹配音色。</p>
+          <p className="px-3.5 py-6 text-center text-xs text-faint">当前筛选无匹配音色。</p>
         )}
       </div>
 
       {catalog.supportsVoiceDesign && (
         <section className="mt-5">
           <p className={cn(SECTION_TITLE, 'mb-2')}>设计专属音色</p>
-          <div className="rounded-xl border border-white/8 bg-surface-card p-3.5">
+          <div className="rounded-xl border border-line-hairline bg-surface-card p-3.5">
             {catalog.voiceDesignGuide && (
               <p className={cn(HINT_TEXT, 'whitespace-pre-line')}>{catalog.voiceDesignGuide}</p>
             )}
@@ -195,7 +195,7 @@ export function VoicePage(): React.ReactElement {
               {designPreview && (
                 <>
                   <button
-                    className="rounded-lg px-2.5 py-1 text-xs text-white/60 transition hover:bg-white/10 hover:text-white"
+                    className="rounded-lg px-2.5 py-1 text-xs text-body transition hover:bg-fill-hover hover:text-strong"
                     onClick={() => playDataUrl(designPreview.trialAudioDataUrl)}
                     type="button"
                   >

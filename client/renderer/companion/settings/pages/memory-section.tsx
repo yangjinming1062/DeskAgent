@@ -173,10 +173,10 @@ export function MemorySection(): React.ReactElement {
       {hint && <p className="mb-2 text-xs text-amber-300/90">{hint}</p>}
 
       {loading ? (
-        <p className="text-xs text-white/40">加载中…</p>
+        <p className="text-xs text-muted">加载中…</p>
       ) : tab === 'recall' ? (
         rows.length === 0 ? (
-          <p className="text-xs text-white/40">还没有召回记忆。精灵会在对话中主动写下。</p>
+          <p className="text-xs text-muted">还没有召回记忆。精灵会在对话中主动写下。</p>
         ) : (
           <div className="space-y-2.5">
             {rows.map(r => {
@@ -186,7 +186,7 @@ export function MemorySection(): React.ReactElement {
               const saving = !!savingById[r.id]
 
               return (
-                <div className="rounded-xl border border-white/8 bg-surface-card p-3" key={r.id}>
+                <div className="rounded-xl border border-line-hairline bg-surface-card p-3" key={r.id}>
                   <textarea
                     className={cn(INPUT_CLASS, 'resize-none')}
                     disabled={saving}
@@ -236,9 +236,9 @@ export function MemorySection(): React.ReactElement {
             const saving = !!row && !!savingById[row.id]
 
             return (
-              <div className="rounded-xl border border-white/8 bg-surface-card p-3" key={slot.context}>
-                <p className="text-[11px] font-medium text-white/80">{slot.label}</p>
-                <p className="mb-1.5 mt-0.5 text-[10px] text-white/40">{slot.hint}</p>
+              <div className="rounded-xl border border-line-hairline bg-surface-card p-3" key={slot.context}>
+                <p className="text-[11px] font-medium text-strong">{slot.label}</p>
+                <p className="mb-1.5 mt-0.5 text-[10px] text-muted">{slot.hint}</p>
                 {row ? (
                   <>
                     <textarea
@@ -266,7 +266,7 @@ export function MemorySection(): React.ReactElement {
                     </div>
                   </>
                 ) : (
-                  <p className="text-[10px] text-white/30">（空）让精灵在对话中自然填入</p>
+                  <p className="text-[10px] text-faint">（空）让精灵在对话中自然填入</p>
                 )}
               </div>
             )

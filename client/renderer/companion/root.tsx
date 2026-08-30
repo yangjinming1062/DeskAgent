@@ -12,7 +12,7 @@ import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interac
 import { $renderMode, hydrateMesh2D } from '@/companion/mesh2d/mesh2d-store'
 import { hydratePersona } from '@/companion/persona-store'
 import { hydratePortrait, hydratePortraitHistory } from '@/companion/portrait-store'
-import { $puppetInfo, hydratePuppet } from '@/companion/puppet/puppet-store'
+import { $puppetReady, hydratePuppet } from '@/companion/puppet/puppet-store'
 import { initSpatial, resetToHomePosition } from '@/companion/spatial'
 import { NotificationStack } from '@/shared'
 import { $auth, applyAuthBroadcast, hydrateAuth, logout } from '@/shared/store/auth'
@@ -71,12 +71,13 @@ export function CompanionRoot(): React.JSX.Element {
   const lifecycle = useStore($companionLifecycle)
   const chatOpen = useStore($chatOpen)
   const renderMode = useStore($renderMode)
-  const puppet = useStore($puppetInfo)
+  const puppetReady = useStore($puppetReady)
   const modelInfo = useStore($modelInfo)
   const glbLoadFailed = useStore($glbLoadFailed)
   const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [activationOpen, setActivationOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const hasHydratedRef = useRef(false)
   const { requestGateway } = useGatewayRequest()
 
   // 精灵窗口的 dock 互斥——打开一个就关掉其他，避免弹层堆叠。
@@ -137,19 +138,6 @@ export function CompanionRoot(): React.JSX.Element {
 
     return () => off?.()
   }, [])
-
-  // 登出 / 反激活时释放 3D 模板缓存的 GPU 资源。GLB 缓存归伙伴层自管
-  // （shared → companion 是禁用方向，auth store 不反向依赖渲染层）；动态导入
-  // 避免把 three 拉进启动 chunk，且只在确有模型资产时才值得加载该模块。
-  useEffect(
-    () =>
-      $auth.listen(state => {
-        if (state.kind === 'unauthenticated' && $modelInfo.get().asset_url) {
-          void import('./3d/gltf-instance-cache').then(m => m.clearAllGltf())
-        }
-      }),
-    []
-  )
 
   // 托盘「激活...」入口的对偶：主进程只调 showMainWindow() 不够——
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
@@ -290,15 +278,14 @@ export function CompanionRoot(): React.JSX.Element {
   // 抽到 useMemo 避免每次渲染重建闭包。2D = PSD 链（puppet，Phase 6）；puppet 装配失败
   // 写 error 熄灭 $puppetReady 后落 3D（CharacterController 内部有程序化蛋兜底）。
   const renderLayer = useMemo<'puppet' | 'companion3d'>(() => {
-    const puppetReady = Boolean(puppet.psdUrl) && !puppet.error
     const modelFailed = glbLoadFailed || modelInfo.status === 'failed'
-    const modelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
+    const isModelReady = renderMode === '3d' && !modelFailed && modelInfo.status === 'succeeded'
 
     if (renderMode === '2d' && puppetReady) {
       return 'puppet'
     }
 
-    if (modelReady) {
+    if (isModelReady) {
       return 'companion3d'
     }
 
@@ -309,30 +296,48 @@ export function CompanionRoot(): React.JSX.Element {
 
     // 双方都未就绪：选 3D 路径，CharacterController 内部会走程序化蛋兜底
     return 'companion3d'
-  }, [renderMode, puppet.psdUrl, puppet.error, glbLoadFailed, modelInfo.status])
+  }, [renderMode, puppetReady, glbLoadFailed, modelInfo.status])
 
   useEffect(() => {
-    if (lifecycle !== 'ready') {
+    if (auth.kind !== 'authenticated' || lifecycle !== 'ready') {
+      hasHydratedRef.current = false
+
       return
     }
 
+    let cancelled = false
     const onKey = () => reportUserActivity()
     window.addEventListener('keydown', onKey)
 
     const stopActivity = startActivityMonitor()
-    void Promise.all([
-      hydratePersona(),
-      hydrateModel(),
-      hydrateExpressions(),
-      // puppet 分流依赖 mesh2d 行的 manifest 内容，串在其后
-      hydrateMesh2D().then(() => hydratePuppet())
-    ])
+
+    if (!hasHydratedRef.current) {
+      // 在异步 hydrate 启动 *之前* 标记；StrictMode 第一次 cleanup 会清回 false，
+      // re-mount 时重新跑 hydrate——dev 下 persona/model/mesh2d/puppet 不会被吞。
+      hasHydratedRef.current = true
+
+      void (async () => {
+        if (cancelled || $auth.get().kind !== 'authenticated') {
+          return
+        }
+
+        await Promise.all([hydratePersona(), hydrateModel(), hydrateExpressions(), hydrateMesh2D()])
+
+        if (!cancelled && $auth.get().kind === 'authenticated') {
+          await hydratePuppet()
+        }
+      })()
+    }
 
     return () => {
+      cancelled = true
       window.removeEventListener('keydown', onKey)
       stopActivity()
+      // StrictMode dev double-invoke 兼容：cleanup 把 ref 复位，让 re-mount 重新水合。
+      // 生产环境不会触发（无 cleanup → 无 re-mount），同 effect 不重复跑。
+      hasHydratedRef.current = false
     }
-  }, [lifecycle])
+  }, [auth.kind, lifecycle])
 
   // 检测云端目录里已经下架的伙伴 voice id（供应商裁剪 / 改名，或换了供应商）。
   // 后端对未知 id 是宽容的，这里只是一次性提示，不是硬错误。

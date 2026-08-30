@@ -129,7 +129,7 @@ export function FloatingPanel({
   return (
     <div className="pointer-events-none fixed inset-0 z-50">
       <div
-        className="relative flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-surface-panel text-white shadow-2xl border-beam-container"
+        className="relative flex flex-col overflow-hidden rounded-2xl border border-line-standard bg-surface-panel text-strong shadow-2xl border-beam-container"
         ref={panelRef}
         style={{
           position: 'fixed',

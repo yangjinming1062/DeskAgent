@@ -248,7 +248,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
           <button className={BTN_GHOST} disabled={step === 0 || saving} onClick={prev} type="button">
             上一步
           </button>
-          <span className="ml-auto text-[10px] text-white/40">
+          <span className="ml-auto text-[10px] text-muted">
             {step + 1} / {totalSteps}
           </span>
           {!isReview ? (
@@ -270,7 +270,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
 
       {!isReview ? (
         <div className="space-y-2.5">
-          <p className="text-[11px] text-white/60">
+          <p className="text-[11px] text-body">
             第 {step + 1} 步 · {STEPS[step].title}
           </p>
           {STEPS[step].fields.map(field => (
@@ -279,8 +279,8 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
         </div>
       ) : (
         <div className="space-y-2">
-          <p className="text-[11px] text-white/60">第 {step + 1} 步 · 回顾</p>
-          <dl className="space-y-1 rounded-xl border border-white/8 bg-surface-card p-3 text-[11px]">
+          <p className="text-[11px] text-body">第 {step + 1} 步 · 回顾</p>
+          <dl className="space-y-1 rounded-xl border border-line-hairline bg-surface-card p-3 text-[11px]">
             {REVIEW_ROWS.map(row => (
               <Row key={row.key} label={row.label} value={values[row.key] || row.fallback || ''} />
             ))}
@@ -306,7 +306,7 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
 
   return (
     <label className="block">
-      <span className="mb-1 block text-[11px] text-white/50">{field.label}</span>
+      <span className="mb-1 block text-[11px] text-body">{field.label}</span>
       {field.multiline ? (
         <textarea
           className={cn(INPUT_CLASS, 'resize-none')}
@@ -349,8 +349,8 @@ function Field({ field, value, onChange }: FieldProps): React.ReactElement {
 function Row({ label, value }: { label: string; value: string }): React.ReactElement {
   return (
     <div className="flex gap-2">
-      <dt className="w-20 shrink-0 text-white/50">{label}</dt>
-      <dd className="flex-1 text-white/90">{value || '—'}</dd>
+      <dt className="w-20 shrink-0 text-muted">{label}</dt>
+      <dd className="flex-1 text-strong">{value || '—'}</dd>
     </div>
   )
 }

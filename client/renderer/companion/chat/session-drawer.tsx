@@ -314,7 +314,9 @@ function SessionRow({
   return (
     <div
       className={`group flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
-        isActive ? 'border-accent-line bg-accent-soft' : 'border-transparent hover:border-line-standard hover:bg-fill-faint'
+        isActive
+          ? 'border-accent-line bg-accent-soft'
+          : 'border-transparent hover:border-line-standard hover:bg-fill-faint'
       }`}
       onClick={() => {
         if (!editing) {

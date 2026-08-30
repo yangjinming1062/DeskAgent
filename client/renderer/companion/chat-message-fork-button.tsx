@@ -63,7 +63,8 @@ export function ChatMessageForkButton({
   } else if (otherBusy) {
     icon = <Copy size={12} />
     label = '另一条正在派生'
-    styleClass = 'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
+    styleClass =
+      'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
   } else {
     icon = <Copy size={12} />
     label = '从这条消息派生新对话'

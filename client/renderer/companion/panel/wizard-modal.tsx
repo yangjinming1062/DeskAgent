@@ -55,11 +55,11 @@ export function WizardModal({
       ref={overlayRef}
     >
       <div
-        className={`flex max-h-[85vh] w-full ${widthClass} flex-col overflow-hidden rounded-2xl border border-white/12 bg-surface-panel text-white shadow-2xl`}
+        className={`flex max-h-[85vh] w-full ${widthClass} flex-col overflow-hidden rounded-2xl border border-line-standard bg-surface-panel text-strong shadow-2xl`}
       >
         <PanelHeader onClose={onClose} title={title} />
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <div className="flex items-center gap-2 border-t border-white/10 px-4 py-3">{footer}</div>}
+        {footer && <div className="flex items-center gap-2 border-t border-line-hairline px-4 py-3">{footer}</div>}
       </div>
     </div>
   )

@@ -92,7 +92,8 @@ export function ChatMessagePlayButton({
   } else if (voicePreparing && otherBusy) {
     icon = '⏳'
     label = '正在准备语音'
-    styleClass = 'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
+    styleClass =
+      'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
   } else if (voicePreparing) {
     // 自己正在准备（gen 已占但 playDataUrl 还没 resolve）—— 显示 loading。
     label = '正在准备语音'

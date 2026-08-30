@@ -97,17 +97,17 @@ export function PersonaSection(): React.JSX.Element {
     return (
       <section>
         <p className={cn(SECTION_TITLE, 'mb-1.5')}>角色</p>
-        <TechCard className="p-4 space-y-2 border-white/12" tilt>
+        <TechCard className="p-4 space-y-2 border-line-standard" tilt>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="size-2 rounded-full bg-accent animate-pulse shadow-[0_0_6px_var(--ui-accent)]" />
-              <p className="font-semibold text-sm text-white">{persona?.name ?? '伙伴'}</p>
+              <p className="font-semibold text-sm text-strong">{persona?.name ?? '伙伴'}</p>
             </div>
-            <span className="font-mono text-[9px] text-white/30 tracking-widest">[PERSONA.CORE]</span>
+            <span className="font-mono text-[9px] text-faint tracking-widest">[PERSONA.CORE]</span>
           </div>
-          <p className="text-xs text-white/70">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
+          <p className="text-xs text-body">{tags.length ? tags.join(' · ') : '还没设定性格'}</p>
           {persona?.appearance && (
-            <p className="text-[11px] text-white/45 bg-white/[0.03] p-2 rounded-lg border border-white/5 font-mono">
+            <p className="text-[11px] text-muted bg-fill-faint p-2 rounded-lg border border-line-hairline font-mono">
               {persona.appearance}
             </p>
           )}

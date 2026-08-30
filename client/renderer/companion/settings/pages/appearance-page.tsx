@@ -58,7 +58,7 @@ export function AppearancePage(): React.ReactElement {
     <>
       <SettingsPage title="形象">
         <section>
-          <h3 className="text-xs font-medium text-white/80">渲染模式</h3>
+          <h3 className="text-xs font-medium text-strong">渲染模式</h3>
           <p className={cn(HINT_TEXT, 'mt-1')}>
             切到 3D 会先在向导内逐张生成 3D
             正面立绘（多视角供应商再补一张背面立绘），每张均需手动点按触发；全部确认后触发云端 3D 模型生成（1~3
@@ -77,8 +77,8 @@ export function AppearancePage(): React.ReactElement {
 
           {/* DESIGN §5.5：2D 切分失败（或尚无 2D 资产）时提供重试入口 */}
           {renderMode === '2d' && mesh2dRetryable && (
-            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-white/8 bg-surface-card px-3.5 py-2.5">
-              <span className="text-xs text-white/60">
+            <div className="mt-2.5 flex items-center justify-between rounded-xl border border-line-hairline bg-surface-card px-3.5 py-2.5">
+              <span className="text-xs text-body">
                 {mesh2dInfo.status === 'failed' ? '2D 动画资产生成失败' : '2D 动画资产尚未生成'}
               </span>
               <button
@@ -93,7 +93,7 @@ export function AppearancePage(): React.ReactElement {
         </section>
 
         <section className="mt-6">
-          <h3 className="text-xs font-medium text-white/80">形象大小</h3>
+          <h3 className="text-xs font-medium text-strong">形象大小</h3>
           <p className={cn(HINT_TEXT, 'mt-1')}>精灵在桌面上的默认显示比例。</p>
           <div className="mt-3 flex max-w-sm items-center gap-3">
             <Slider
@@ -104,7 +104,7 @@ export function AppearancePage(): React.ReactElement {
               step={0.05}
               value={defaultScale}
             />
-            <span className="w-11 shrink-0 text-right text-xs tabular-nums text-white/70">
+            <span className="w-11 shrink-0 text-right text-xs tabular-nums text-body">
               {String(Number(defaultScale.toFixed(2)))}×
             </span>
           </div>

@@ -1,7 +1,12 @@
 import { atom, map } from 'nanostores'
 
 import { setSpriteState } from '@/companion/companion-store'
-import { persistString, storedString } from '@/shared/lib/storage'
+import {
+  persistString,
+  registerCompanionStorageKey,
+  registerStorageClearHandler,
+  storedString
+} from '@/shared/lib/storage'
 import { sleep } from '@/shared/lib/utils'
 import { $gateway } from '@/shared/store/gateway'
 import type { ChatAttachment, ChatMediaItem, SessionMessage, SessionRuntimeInfo } from '@/shared/types/spiritagent'
@@ -34,7 +39,9 @@ export const $lastAssistantStreaming = atom<boolean>(false)
 export const $chatStreamingTick = atom<number>(0)
 // 持久化上次活跃会话 id：重启后启动流程直接 resume 回原会话（已被删除时由
 // resume 失败回退主会话），而不是每次都回到空白的主会话。
-export const $chatSessionId = atom<string | null>(storedString('da.companion.chatSessionId'))
+const CHAT_SESSION_ID_KEY = registerCompanionStorageKey('da.companion.chatSessionId')
+
+export const $chatSessionId = atom<string | null>(storedString(CHAT_SESSION_ID_KEY))
 export const $chatOpen = atom(false)
 // IM 守卫与语音入口的权威 kind 源：写值由 hydrate 把服务端 info.kind 注入。
 export const $chatSessionKind = atom<string>('standard')
@@ -168,7 +175,7 @@ export function setChatSession(id: string | null): void {
   $chatTurnInFlight.set(false)
   $turnHadBubbleBreak.set(false)
   $chatSessionId.set(id)
-  persistString('da.companion.chatSessionId', id)
+  persistString(CHAT_SESSION_ID_KEY, id)
   // setChatSession 是无 info 的重置路径；后续 hydrate 会以服务端权威 kind 覆盖此值。
   $chatSessionKind.set('standard')
 }
@@ -294,6 +301,11 @@ export function setProactiveBubble(state: ProactiveBubbleState | null): void {
 // 媒体送达的轻提示气泡：聊天窗关闭时提示点击查看，8 秒未点击自动消失。
 let mediaHintTimer: ReturnType<typeof setTimeout> | null = null
 
+// 连发消息的合并窗口（在窗口内合并为一次 prompt.submit）。
+// 提前到所有 handler 引用之前声明，避免 TDZ ReferenceError。
+const FLUSH_DEBOUNCE_MS = 4000
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
 export function showMediaHint(text: string, sessionId?: string): void {
   if (mediaHintTimer) {
     clearTimeout(mediaHintTimer)
@@ -399,13 +411,42 @@ export interface ChatUndoDraft {
 // 撤回落草稿总线：undo 成功后由 session-list-store 写入；多窗口订阅需按 session_id 过滤，避免 A 撤回落到 B 的输入框。
 export const $chatDraftFromUndo = atom<ChatUndoDraft | null>(null)
 
+registerStorageClearHandler(() => {
+  $chatSessionId.set(null)
+  $chatMessageList.set([])
+  $chatMessageBodies.set({})
+  $lastAssistantStreaming.set(false)
+  $chatStreamingTick.set(0)
+  $chatOpen.set(false)
+  $chatSessionKind.set('standard')
+  $sessionSettings.set({})
+  $sessionContextUsage.set({
+    completionTokens: 0,
+    contextLimit: DEFAULT_CONTEXT_LIMIT,
+    promptTokens: 0,
+    totalTokens: 0
+  })
+  $proactiveBubble.set(null)
+  $pendingExternalAttachment.set(null)
+  $pendingPromptBatch.set([])
+  $chatTurnInFlight.set(false)
+  $turnHadBubbleBreak.set(false)
+  $chatDraftFromUndo.set(null)
+
+  if (flushTimer) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+
+  if (mediaHintTimer) {
+    clearTimeout(mediaHintTimer)
+    mediaHintTimer = null
+  }
+})
+
 export function setTurnHadBubbleBreak(v: boolean): void {
   $turnHadBubbleBreak.set(v)
 }
-
-// 连发消息的合并窗口（在窗口内合并为一次 prompt.submit）。
-const FLUSH_DEBOUNCE_MS = 4000
-let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 export function schedulePendingFlush(): void {
   if (flushTimer) {

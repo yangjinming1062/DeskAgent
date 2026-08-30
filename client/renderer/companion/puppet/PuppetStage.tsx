@@ -8,7 +8,7 @@
  * - 说话：TTS 振幅接管 mouthOpen，静默后交还合成说话；
  * - 情绪：$spriteEmotion → 眉/嘴型/眼参数映射（mesh2d 无面部通道，puppet 独有）；
  * - 动作/交互：$spriteAction 通用语义子集 → 定时包络；hover 发区 → hairImpulse。
- * 装配失败调 setPuppetError 熄灭 $puppetReady，root 渲染级联落 mesh2d / 3D / 蛋。
+ * 装配失败调 setPuppetError 熄灭 $puppetReady，root 渲染级联落 3D / 蛋兜底。
  */
 
 import { useStore } from '@nanostores/react'
@@ -18,6 +18,7 @@ import { registerAmplitudeSink } from '@/companion/audio-track'
 import { $gazeTarget, $spriteAction, $spriteActionQueue, $spriteEmotion } from '@/companion/companion-store'
 import { probeInteractiveRegions } from '@/companion/interactive-regions'
 import { setMesh2DHitmap } from '@/companion/mesh2d/mesh2d-store'
+import { fetchPsdWithCache } from '@/companion/mesh2d/psd-opfs-cache'
 import {
   $edgeDockSide,
   $isEdgeDocked,
@@ -398,33 +399,19 @@ export function PuppetStage(): React.JSX.Element {
       return
     }
 
-    let cancelled = false
+    const abortController = new AbortController()
 
     void (async () => {
       try {
-        // psdUrl 是相对后端的签名 URL——渲染进程 origin（dev 的 vite / 打包后的 file://）
-        // 解析不了（vite 会回退 index.html，ag-psd 报 Invalid signature），须走主进程桥
-        // 按 baseUrl 重写并带鉴权取字节；无桥环境（puppet 调试台 ?stage=1）注入的是
-        // 同源资产 URL，直连 fetch 即可。
-        let buffer: ArrayBuffer
+        const buffer = await fetchPsdWithCache(puppet.psdUrl!, puppet.contentHash, abortController.signal)
 
-        if (typeof window.spiritagent?.apiAssetBuffer === 'function') {
-          buffer = (await window.spiritagent.apiAssetBuffer({ url: puppet.psdUrl! })).slice().buffer
-        } else {
-          // 无桥分支（puppet 调试台 ?stage=1 的纯浏览器上下文）：注入的是同源 vite 资产 URL。
-          // eslint-disable-next-line no-restricted-syntax -- 非 Electron 调试上下文，URL 是同源资产而非后端相对路径
-          const res = await fetch(puppet.psdUrl!)
-
-          if (!res.ok) {
-            throw new Error(`psd fetch failed: ${res.status}`)
-          }
-
-          buffer = await res.arrayBuffer()
+        if (abortController.signal.aborted) {
+          return
         }
 
         const rig = await handleRef.current?.loadPsd(buffer)
 
-        if (!rig || cancelled) {
+        if (!rig || abortController.signal.aborted) {
           return
         }
 
@@ -475,19 +462,23 @@ export function PuppetStage(): React.JSX.Element {
           log.info('puppet-stage', `psd rigged: ${rig.layers.length} parts, tier=${rt.rigTier()}`)
         }
       } catch (err) {
-        log.warn('puppet-stage', 'psd load failed; cascade to mesh2d', err)
+        if (abortController.signal.aborted) {
+          return
+        }
+
+        log.warn('puppet-stage', 'psd load failed; cascade to 3D / egg', err)
         setPuppetError(err instanceof Error ? err.message : String(err))
       }
     })()
 
     return () => {
-      cancelled = true
+      abortController.abort()
       hitmapRef.current = null
       setMesh2DHitmap(null)
       $spriteContentRect.set(null)
       probeInteractiveRegions()
     }
-  }, [puppet.psdUrl])
+  }, [puppet.psdUrl, puppet.contentHash])
 
   // 驱动层：视线 / TTS / 情绪 / 动作 / hover 冲量 / 动作包络推进
   useEffect(() => {

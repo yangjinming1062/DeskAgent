@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
 
 import { log } from '@/shared/lib/log'
+import { registerStorageClearHandler } from '@/shared/lib/storage'
 
 /**
  * 客户端 GLB 模板缓存与资源所有权管理。
@@ -330,6 +331,10 @@ export function clearAllGltf(force = false): void {
     _pendingTemplates.clear()
   }
 }
+
+registerStorageClearHandler(() => {
+  clearAllGltf(true)
+})
 
 /** 获取模板缓存状态快照。 */
 function _gltfCacheStats(): { activeRefs: number; keys: string[]; totalBytes: number; totalHits: number } {

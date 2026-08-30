@@ -35,7 +35,7 @@ export function SlashCommandPopover({
 
   return (
     <div
-      className="absolute bottom-full left-0 right-0 z-40 mb-1 max-h-72 overflow-y-auto rounded-xl border border-line-standard bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
+      className="absolute bottom-full left-0 right-0 z-40 mb-1 max-h-72 overflow-y-auto rounded-xl border border-line-standard bg-surface-card p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-100"
       role="listbox"
     >
       <div className="px-2 pt-1 pb-1 text-[9px] uppercase tracking-wider text-faint">命令</div>

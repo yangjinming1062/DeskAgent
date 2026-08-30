@@ -1,6 +1,7 @@
 import { atom, computed } from 'nanostores'
 
-import { persistString, storedString } from '@/shared/lib/storage'
+import { log } from '@/shared/lib/log'
+import { definePersistedEnum, registerStorageClearHandler } from '@/shared/lib/storage'
 
 // 伙伴生命周期决定精灵窗口渲染的内容。渲染层按
 // unauthed → onboarding（向导进行中）→ ready（向导完成后）流转。
@@ -44,7 +45,16 @@ export const BUILTIN_EMOTIONS: ReadonlySet<string> = new Set([
   'relieved'
 ])
 
-export const $companionLifecycle = atom<CompanionLifecycle>('unauthed')
+const lifecyclePersisted = definePersistedEnum<CompanionLifecycle>({
+  allowed: ['unauthed', 'ready', 'onboarding'] as const,
+  fallback: 'unauthed',
+  key: 'da.companion.lifecycle'
+})
+
+export const $companionLifecycle = lifecyclePersisted.$atom
+export const setCompanionLifecycle = lifecyclePersisted.set
+export const resetCompanionLifecycle = lifecyclePersisted.reset
+
 export const $spriteState = atom<SpriteStateName>('idle')
 export const $spriteEmotion = atom<SpriteEmotion | null>(null)
 // 可选的结构化动作提示（如 turn_away），用于细化情绪片段。
@@ -58,27 +68,27 @@ export const $clipOverride = atom<string | null>(null)
 // 三档：still（静止，停止一切主动 LLM 调用与分析，仅响应交互）、
 // normal（常规，仅气泡/表情等原地轻互动）、autonomous（自主，全能力开放）。
 // 用户主动行为永不被门控——只门控主动外发（companion.message）与主动推理发起。
-//
-// 双 atom 模型：
-// - ``$userPreferredTier`` ——用户在设置界面手动选择的档位，
-//   持久化到 localStorage，作为唯一真源。活动监视器在决定是否覆盖时读取它。
-// - ``$effectiveTierOverride`` ——活动监视器在用户处于沉浸式 / 全屏专注上下文时设置。
-//   ``null`` 表示「无覆盖；生效值 = 用户偏好」。
-// - ``$effectiveTier`` ——由以上两个推导而来。渲染层其余部分读取它来
-//   决定是否门控主动通道；settings-overlay / chat-dock 上的标签仍展示
-//   user_preferred，反映用户实际选择而非瞬时覆盖。
 export type DisturbanceTier = 'still' | 'normal' | 'autonomous'
 
-// 将所选档位持久化到 localStorage，避免 Desktop 重启时悄悄把用户
-// 重置为更聒噪的默认档。后端有自己进程内的缓存
-// （services/companion/disturbance.py），但桌面端才是真源——
-// 每次变更及网关开启时都把档位回传给后端。
-const _rawTier = typeof window === 'undefined' ? null : storedString('da.companion.disturbanceTier')
+const userPreferredTierPersisted = definePersistedEnum<DisturbanceTier>({
+  allowed: ['still', 'normal', 'autonomous'] as const,
+  fallback: 'normal',
+  key: 'da.companion.disturbanceTier',
+  preserveOnLogout: true
+})
 
-const _validStored: DisturbanceTier | null =
-  _rawTier === 'still' || _rawTier === 'normal' || _rawTier === 'autonomous' ? (_rawTier as DisturbanceTier) : null
+export const $userPreferredTier = userPreferredTierPersisted.$atom
 
-export const $userPreferredTier = atom<DisturbanceTier>(_validStored ?? 'normal')
+export function setDisturbanceTier(tier: DisturbanceTier): void {
+  userPreferredTierPersisted.set(tier)
+
+  try {
+    window.spiritagent?.prefs?.set({ key: 'companion.disturbance_preference', value: tier })
+  } catch (err) {
+    log.warn('companion-store', 'Failed to persist disturbance preference', err)
+  }
+}
+
 // ``null`` 表示「当前无覆盖；生效档位回退到 user_preferred」。
 // 只有活动监视器（activity.ts）会写它。
 export const $effectiveTierOverride = atom<DisturbanceTier | null>(null)
@@ -92,13 +102,13 @@ export const $effectiveTier = computed([$userPreferredTier, $effectiveTierOverri
 
 const STATE_PRIORITY: Record<SpriteStateName, number> = {
   disconnected: 100,
+  emotional: 35,
+  idle: 10,
   interacting: 80,
-  working: 70,
+  listening: 40,
   speaking: 60,
   thinking: 50,
-  listening: 40,
-  emotional: 35,
-  idle: 10
+  working: 70
 }
 
 // 这些状态通过 ``$previousState`` 与下方计时器自动恢复。
@@ -109,13 +119,9 @@ const TRANSIENT_STATES: ReadonlySet<SpriteStateName> = new Set(['emotional', 'in
 
 let transientTimer: ReturnType<typeof setTimeout> | null = null
 
-export function setCompanionLifecycle(next: CompanionLifecycle): void {
-  $companionLifecycle.set(next)
-}
-
 export function setSpriteState(
   name: SpriteStateName,
-  options?: { emotion?: SpriteEmotion; action?: string | null; durationMs?: number; force?: boolean }
+  options?: { action?: string | null; durationMs?: number; emotion?: SpriteEmotion; force?: boolean }
 ): void {
   const current = $spriteState.get()
 
@@ -236,14 +242,32 @@ export function reportUserActivity(): void {
   }, 10000)
 }
 
-export function setDisturbanceTier(tier: DisturbanceTier): void {
-  $userPreferredTier.set(tier)
-  persistString('da.companion.disturbanceTier', tier)
-  window.spiritagent?.prefs?.set({ key: 'companion.disturbance_preference', value: tier })
-}
-
 // 生效档位（含活动覆盖）经配置管道上云，是后端闸门（主动消息 / cron / 情绪与空间推理）
 // 的唯一档位来源；与用户偏好分键——生效值是设备派生的，不回写本地偏好。
 export function pushEffectiveDisturbanceTier(tier: DisturbanceTier): void {
   window.spiritagent?.prefs?.set({ key: 'companion.disturbance_tier', value: tier })
 }
+
+// 清掉所有瞬态/活动计时器与排队状态——登出后 orphan 计时器在新会话里会写 $spriteState。
+// 必须在文件末尾：闭包按引用捕获 transientTimer / activityResetTimer / activityCounter / $previousState /
+// $clipOverride / $effectiveTierOverride，提前声明会在 HMR 同步调用时撞 TDZ。
+registerStorageClearHandler(() => {
+  if (transientTimer) {
+    clearTimeout(transientTimer)
+    transientTimer = null
+  }
+
+  if (activityResetTimer) {
+    clearTimeout(activityResetTimer)
+    activityResetTimer = null
+  }
+
+  activityCounter = 0
+  $spriteEmotion.set(null)
+  $spriteAction.set(null)
+  $spriteActionQueue.set([])
+  $spriteState.set('idle')
+  $previousState.set('idle')
+  $clipOverride.set(null)
+  $effectiveTierOverride.set(null)
+})
