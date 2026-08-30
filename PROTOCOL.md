@@ -257,6 +257,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 |---|---|---|---|---|
 | `clear` | 清空 / reset | 是 | 是 | 清空消息保留会话行，写 `status_cleared` marker；system_preset 也允许执行 |
 | `compress` | 压缩 / ctx | 是 | 否 | 复用 `session.compress_context` 强制压缩路径 |
+| `remember` | 记住 / 记忆 / remind / memo / memory | 否 | 否 | 主动将指定内容写入长期记忆（`recall:manual`）并生成向量嵌入，参与后续 Hybrid Recall |
 
 **拦截与歧义处理**（契约级）：
 - `//xxx` 视为普通文本（注释 / 路径引用场景）

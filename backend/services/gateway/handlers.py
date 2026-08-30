@@ -20,6 +20,7 @@ from components import (
     JSONRPC_SLASH_CONFIRM_REQUIRED,
     JSONRPC_SLASH_GENERIC,
     MAX_ATTACHMENTS_PER_TURN,
+    MAX_RECALL_CONTENT_CHARS,
     MAX_VOICE_DESIGN_PROMPT_CHARS,
     REQUEST_ID_HEADER,
     SESSION_HISTORY_PRE_BUFFER,
@@ -36,6 +37,7 @@ from components import (
 from fastapi import WebSocket, WebSocketDisconnect
 from modules.auth import ChatRequestClientContext
 from modules.conversation import Conversation, Message
+from modules.memory import Memory
 from modules.system import ChatMessageRequest, ChatRequest, PromptPresetListResponse, PromptPresetSummary
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,6 +63,7 @@ from services.companion import (
     AvatarGenerationError,
     ModelGenerationError,
     PersonaValidationError,
+    backfill_memory_embeddings,
     check_affect,
     delete_memory,
     design_voice,
@@ -90,7 +93,7 @@ from services.conversation.fork import ForkNotAllowedError, SourceNotFoundError,
 from services.disturbance import is_still
 from services.llm import MissingLlmConfigError, compress_history_if_needed, resolve_user_llm_config, scale_temperature
 from services.media import prune_videos_in_range
-from services.tools import REGISTRY
+from services.tools import REGISTRY, normalize_recall_context
 
 from . import (
     MANAGER,
@@ -608,6 +611,49 @@ async def _slash_compress(ctx: SlashCommandContext) -> SlashCommandResult:
         message=f"已压缩 {result['replaced_count']} 条早期消息",
         hydrate=True,
         payload=result,
+    )
+
+
+@register_slash_command(
+    name="remember",
+    aliases=("记住", "记忆", "remind", "memo", "memory"),
+    description="主动记住指定内容到长期记忆",
+    requires_confirmation=False,
+)
+async def _slash_remember(ctx: SlashCommandContext) -> SlashCommandResult:
+    """``/记住`` 命令 handler：主动将指定内容持久化写入长期记忆并触发向量化。"""
+    content = " ".join(ctx.args).strip()
+    if not content:
+        return SlashCommandResult(
+            status="ok",
+            message="请提供要记住的内容，例如：/记住 我喜欢喝无糖乌龙茶",
+            hydrate=False,
+        )
+
+    norm_content = content[:MAX_RECALL_CONTENT_CHARS]
+    context = normalize_recall_context("manual")
+    tags = json.dumps(["user_preference"])
+    importance = 1.5
+
+    async with SESSION_LOCAL() as db:
+        mem = Memory(
+            user_id=ctx.user_id,
+            content=norm_content,
+            context=context,
+            tags=tags,
+            importance=importance,
+        )
+        db.add(mem)
+        await db.commit()
+
+    await backfill_memory_embeddings(ctx.user_id, [(mem.id, mem.content)])
+
+    display_content = norm_content if len(norm_content) <= 60 else f"{norm_content[:57]}..."
+    return SlashCommandResult(
+        status="ok",
+        message=f"已记住：{display_content}",
+        hydrate=False,
+        payload={"memory_id": mem.id, "content": norm_content},
     )
 
 

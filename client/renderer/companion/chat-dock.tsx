@@ -750,11 +750,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       return
     }
 
-    // Slash 命令拦截：文本以 `/` 开头 + 后跟 ASCII 字母或中文 → 改走 command.dispatch。
-    // 注：弹层在 textarea 上方的浮层，本函数 send() 仅做"无弹层时按 Enter 也直接发"的兜底；
-    // 当 slashPopoverOpen 为 true 时，textarea 的 onKeyDown 已经吃掉 Enter/Tab 走选中路径，
-    // 不会落进 send()。这里只是防御性兜底：万一 future change 漏处理也能正确路由。
-    if (slashPopoverOpen) {
+    // Slash 命令拦截：无论弹层是否开启，以 `/` 开头的命令格式文本均改走 command.dispatch。
+    const parsed = parseSlashInput(trimmed)
+
+    if (parsed) {
       const preCheck = slashPreCheck(pending, sending)
 
       if (preCheck) {
@@ -763,9 +762,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         return
       }
 
-      const parsed = parseSlashInput(trimmed)
-
-      if (parsed && parsed.command) {
+      if (parsed.command) {
         const cmd = parsed.command
 
         await executeSlashCommand(cmd, parsed.args, {
@@ -782,11 +779,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
       // 命中 `/foo` 但未识别本地命令：toast 提示，**保留** 输入文本让用户修改。
       // 不退回 prompt.submit，避免 `/foo` 被 LLM 当真发出去消耗 token。
-      if (parsed && !parsed.command) {
-        setAssistantError(`未知命令: /${parsed.name}。试试 /help 查看可用命令。`)
+      setAssistantError(`未知命令: /${parsed.name}。试试 /help 查看可用命令。`)
 
-        return
-      }
+      return
     }
 
     setSending(true)
@@ -1169,6 +1164,13 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                           const parsed = parseSlashInput(text.trim())
                           const args = parsed?.args ?? []
 
+                          if (item.cmd.name === 'remember' && args.length === 0) {
+                            setText(`/${item.cmd.name} `)
+                            inputRef.current?.focus()
+
+                            return
+                          }
+
                           const preCheck = slashPreCheck(pending, sending)
 
                           if (preCheck) {
@@ -1218,6 +1220,14 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     onSelect={cmd => {
                       const parsed = parseSlashInput(text.trim())
                       const args = parsed?.args ?? []
+
+                      if (cmd.name === 'remember' && args.length === 0) {
+                        setText(`/${cmd.name} `)
+                        inputRef.current?.focus()
+
+                        return
+                      }
+
                       const preCheck = slashPreCheck(pending, sending)
 
                       if (preCheck) {
