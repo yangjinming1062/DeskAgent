@@ -1,13 +1,20 @@
+import { $auth } from '@/shared/store/auth'
+
 import { log } from './log'
+import { currentClearEpoch } from './storage'
 
 const SCHEMA_VERSION = 1
 const META_SUFFIX = '.meta.json'
 const DEFAULT_MAX_FILES = 10
 const DEFAULT_MAX_BYTES = 512 * 1024 * 1024
 
+/** v1 元数据：仅保留 LRU 必需三件套（version / size / writtenAt）。
+ * `contentHash` 早期版本曾作为字段写入，2026-08 后被剔除——filename `<hash>.meta.json` 已经
+ * 是其唯一来源，再写一份是冗余。旧版 meta.json 仍带 contentHash 字段，新代码 touchInternal
+ * 直接 JSON.stringify 旧对象回写，contentHash 字段会被原样保留；功能不受影响，旧条目最终
+ * 通过 LRU 自然淘汰，无需主动迁移。 */
 interface MetaFile {
   version: number
-  contentHash: string
   writtenAt: number
   size: number
 }
@@ -20,6 +27,26 @@ export interface OpfsBlobCacheOptions {
   logTag: string
 }
 
+interface InFlightFetch {
+  controller: AbortController
+  epoch: number
+  promise: Promise<ArrayBuffer | null>
+}
+
+export interface FetchWithCacheOptions {
+  url: string
+  contentHash?: string | null
+  signal?: AbortSignal
+  /** 真正执行拉取的回调（主进程 IPC / spiritagent-media:// / 同源 fetch）。
+   * 必须自行吞掉 abort 情况：abort 时返回 null（不要抛 DOMException）。
+   * 非 abort 错误可抛，由 throwOnError 决定 fetchWithCache 是否吞掉。 */
+  fetcher: (signal: AbortSignal) => Promise<ArrayBuffer | null>
+  /** 字节级校验（如 PSD 魔术字节）。失败时调度 delete 并跳过缓存写。 */
+  validate?: (buffer: ArrayBuffer) => boolean
+  /** true：abort / fetch 错误直接抛（保留 PSD 旧契约）。false：吞掉并返回 null（GLB 旧契约）。 */
+  throwOnError?: boolean
+}
+
 export class OpfsBlobCache {
   private readonly dirName: string
   private readonly blobSuffix: string
@@ -28,6 +55,7 @@ export class OpfsBlobCache {
   private readonly logTag: string
   private queue: Promise<unknown> = Promise.resolve()
   private readonly lastTouched = new Map<string, number>()
+  private readonly inFlightFetches = new Map<string, InFlightFetch>()
 
   constructor(options: OpfsBlobCacheOptions) {
     this.dirName = options.dirName
@@ -117,7 +145,6 @@ export class OpfsBlobCache {
 
       if (
         meta.version !== SCHEMA_VERSION ||
-        meta.contentHash !== contentHash ||
         typeof meta.size !== 'number' ||
         !Number.isFinite(meta.size) ||
         meta.size < 0 ||
@@ -134,7 +161,13 @@ export class OpfsBlobCache {
           await dir.removeEntry(this.blobKey(contentHash))
         } catch {}
 
-        this.lastTouched.delete(contentHash)
+        // lastTouched 走 runSerialized：与 writeInternal / pruneInternal 的 set 操作保持 FIFO，
+        // 避免 read 的同步 delete 落到 writeInternal 的 set 之后把刚写入的条目抹掉。
+        void this.runSerialized(() => {
+          this.lastTouched.delete(contentHash)
+
+          return Promise.resolve()
+        })
 
         return null
       }
@@ -153,7 +186,13 @@ export class OpfsBlobCache {
           await dir.removeEntry(this.metaKey(contentHash))
         } catch {}
 
-        this.lastTouched.delete(contentHash)
+        // 理由同上：lastTouched.delete 必须排在 writeInternal.set 之后执行，否则会把
+        // 同期 writeInternal 已写入的新条目抹掉，造成下一轮 touch 误判 LRU 顺序。
+        void this.runSerialized(() => {
+          this.lastTouched.delete(contentHash)
+
+          return Promise.resolve()
+        })
 
         return null
       }
@@ -209,6 +248,16 @@ export class OpfsBlobCache {
   }
 
   async clear(): Promise<void> {
+    // 先同步废掉所有进行中 fetch：abort 让 fetcher 内部的 await 早退。
+    // 注意：若 IIFE 已经过了 write 闸门并调度了 `void this.write(...)`，controller abort 已晚，
+    // writeInternal 仍会跑（写完被后续的 clear-task 清掉）——这是浪费的 I/O，不是正确性问题。
+    // 写入不会污染新用户：clearEpoch 已被 clearCompanionStorage 推进，下次 read 会拒掉过期 hash。
+    for (const item of this.inFlightFetches.values()) {
+      item.controller.abort()
+    }
+
+    this.inFlightFetches.clear()
+
     await this.runSerialized(async () => {
       const dir = await this.getDir()
 
@@ -227,7 +276,8 @@ export class OpfsBlobCache {
 
         for (const name of entries) {
           try {
-            await dir.removeEntry(name, { recursive: true })
+            // recursive: false —— 缓存目录约定 flat，不允许子目录被静默清空。
+            await dir.removeEntry(name, { recursive: false })
           } catch {}
         }
 
@@ -237,6 +287,118 @@ export class OpfsBlobCache {
         log.warn(this.logTag, `Failed to clear cache directory ${this.dirName}:`, err)
       }
     })
+  }
+
+  /** 通用「OPFS 缓存 + 远端拉取」包装：epoch 闸门、读侧校验、in-flight dedupe、写侧三道闸门。
+   * 单一来源替代 glb-opfs-cache.ts / psd-opfs-cache.ts 各 ~140 行 twin 实现。 */
+  async fetchWithCache(opts: FetchWithCacheOptions): Promise<ArrayBuffer | null> {
+    const { contentHash, fetcher, signal, throwOnError = false, url, validate } = opts
+
+    const failOrThrow = (): null => {
+      if (throwOnError) {
+        throw new DOMException('Aborted', 'AbortError')
+      }
+
+      return null
+    }
+
+    if (signal?.aborted) {
+      return failOrThrow()
+    }
+
+    // 登出 race：clearCompanionStorage 可能在本 fetch 启动后才推进 epoch。
+    // 用快照 epoch 在 commit 前对照 currentClearEpoch()，把过期 fetch 拦下来。
+    const fetchEpoch = currentClearEpoch()
+
+    if (contentHash && currentClearEpoch() === fetchEpoch) {
+      const cached = await this.read(contentHash)
+
+      if (currentClearEpoch() !== fetchEpoch) {
+        return failOrThrow()
+      }
+
+      if (cached) {
+        if (validate && !validate(cached)) {
+          // 读侧校验失败：清掉条目但不让 read() 抛 —— 让上层走正常 fetch 路径。
+          void this.delete(contentHash)
+        } else if (signal?.aborted) {
+          return failOrThrow()
+        } else {
+          log.info(this.logTag, 'OPFS hit:', contentHash)
+
+          return cached
+        }
+      }
+    }
+
+    if (signal?.aborted) {
+      return failOrThrow()
+    }
+
+    const dedupeKey = contentHash || url
+    let inFlight = this.inFlightFetches.get(dedupeKey)
+
+    if (!inFlight) {
+      const controller = new AbortController()
+
+      const promise = (async () => {
+        try {
+          const buffer = await fetcher(controller.signal)
+
+          if (!buffer) {
+            // fetcher 在内部检测到 signal 中止时返回 null：throwOnError=true 时（PSD 旧契约）
+            // 抛 DOMException，调用方的 try/catch 就能识别为「干净的取消」而非错误。
+            if (throwOnError) {
+              throw new DOMException('Aborted', 'AbortError')
+            }
+
+            return null
+          }
+
+          if (validate && !validate(buffer)) {
+            throw new Error(`Downloaded asset failed validation (${this.logTag})`)
+          }
+
+          // 三道闸门：clearEpoch 未变 + authed + 未被 abort，避免过期 fetch 复活刚清空的 OPFS
+          if (
+            contentHash &&
+            buffer &&
+            currentClearEpoch() === fetchEpoch &&
+            $auth.get().kind === 'authenticated' &&
+            !controller.signal.aborted
+          ) {
+            void this.write(contentHash, buffer)
+          }
+
+          return buffer
+        } catch (err) {
+          // throwOnError=true（PSD 旧契约）：把错误原样抛给调用方，不在本层吞。
+          // throwOnError=false（GLB 旧契约）：吞掉并返回 null。
+          if (throwOnError) {
+            throw err
+          }
+
+          if (!controller.signal.aborted) {
+            log.warn(this.logTag, 'Fetch failed:', err)
+          }
+
+          return null
+        } finally {
+          this.inFlightFetches.delete(dedupeKey)
+        }
+      })()
+
+      inFlight = { controller, epoch: fetchEpoch, promise }
+      this.inFlightFetches.set(dedupeKey, inFlight)
+    }
+
+    const result = await inFlight.promise
+
+    if (signal?.aborted) {
+      return failOrThrow()
+    }
+
+    return result
   }
 
   private async touchInternal(dir: FileSystemDirectoryHandle, contentHash: string): Promise<void> {
@@ -260,7 +422,7 @@ export class OpfsBlobCache {
       const metaFile = await metaHandle.getFile()
       const meta = JSON.parse(await metaFile.text()) as Partial<MetaFile>
 
-      if (meta.version !== SCHEMA_VERSION || meta.contentHash !== contentHash) {
+      if (meta.version !== SCHEMA_VERSION) {
         return
       }
 
@@ -298,7 +460,6 @@ export class OpfsBlobCache {
       blobWritten = true
 
       const meta: MetaFile = {
-        contentHash,
         size: bytes.byteLength,
         version: SCHEMA_VERSION,
         writtenAt: Date.now()
@@ -371,7 +532,6 @@ export class OpfsBlobCache {
 
               if (
                 meta.version === SCHEMA_VERSION &&
-                meta.contentHash === hash &&
                 typeof meta.size === 'number' &&
                 Number.isFinite(meta.size) &&
                 typeof meta.writtenAt === 'number' &&
@@ -379,7 +539,7 @@ export class OpfsBlobCache {
                 meta.size >= 0
               ) {
                 metaEntries.push({
-                  hash: meta.contentHash,
+                  hash,
                   size: meta.size,
                   writtenAt: meta.writtenAt
                 })

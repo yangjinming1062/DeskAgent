@@ -121,42 +121,6 @@ export interface PersistedAtomResult<T> {
   get: () => T
 }
 
-/** 统一定义持久化 Atom：自动加载本地缓存、瞬态不冲刷持久层、登出自动重置内存与持久化。 */
-export function definePersistedAtom<T extends object>(options: PersistedAtomOptions<T>): PersistedAtomResult<T> {
-  const { fallback, isPersistable, key, preserveOnLogout = false } = options
-  registerCompanionStorageKey(key, { preserveOnLogout })
-
-  const initial = storedJson<T>(key, fallback, isPersistable)
-  const $atom = atom<T>(initial)
-
-  function set(next: T | Partial<T>): void {
-    const updated =
-      typeof next === 'object' && next !== null && !Array.isArray(next) ? { ...$atom.get(), ...next } : (next as T)
-
-    $atom.set(updated)
-
-    if (!isPersistable || isPersistable(updated)) {
-      persistString(key, JSON.stringify(updated))
-    }
-  }
-
-  function reset(): void {
-    $atom.set(fallback)
-    persistString(key, null)
-  }
-
-  if (!preserveOnLogout) {
-    registerStorageClearHandler(reset)
-  }
-
-  return {
-    $atom,
-    get: () => $atom.get(),
-    reset,
-    set
-  }
-}
-
 export interface PersistedEnumOptions<T extends string> {
   key: string
   allowed: readonly T[]
@@ -171,17 +135,34 @@ export interface PersistedEnumResult<T extends string> {
   get: () => T
 }
 
-/** 统一定义持久化枚举：严格字面量类型校验、单一来源注册与登出生命周期绑定。 */
-export function definePersistedEnum<T extends string>(options: PersistedEnumOptions<T>): PersistedEnumResult<T> {
-  const { allowed, fallback, key, preserveOnLogout = false } = options
+/** Persisted Atom/Enum 共享骨架：把「注册 key + 加载 + 写时持久化 + 登出自动重置」四件套折叠到一处。
+ * 外部保留两条入口（definePersistedAtom / definePersistedEnum）只为类型签名清晰；行为不再分叉。
+ *
+ * 设计意图：「registerStorageClearHandler(reset) 把内存 atom + localStorage 一起清」；
+ * preserveOnLogout=true 的 key 跳过该注册——是为了跨登出保留偏好（窗口尺寸、面板偏移等），
+ * 但仍保留在注册 key 清单内，applyAuthBroadcast 那条清空路径会跳过它们。
+ * 想做「登出时清缓存但保留偏好」的复合语义：另起一个 key，不要复用本 helper。 */
+function createPersisted<T>(opts: {
+  key: string
+  fallback: T
+  preserveOnLogout: boolean
+  load: () => T
+  /** merge：把 next 当 Partial<T> 合进 current；replace：直接覆盖。 */
+  apply: (current: T, next: T) => T
+  /** isPersistable 守门：返回 false 时不落 localStorage（瞬态值保留在内存）。 */
+  persist: (val: T) => void
+}): { $atom: WritableAtom<T>; get: () => T; set: (next: T) => void; reset: () => void } {
+  const { apply, fallback, key, load, persist, preserveOnLogout } = opts
   registerCompanionStorageKey(key, { preserveOnLogout })
 
-  const initial = storedEnum<T>(key, allowed, fallback)
+  const initial = load()
   const $atom = atom<T>(initial)
 
   function set(next: T): void {
-    $atom.set(next)
-    persistString(key, next)
+    const updated = apply($atom.get(), next)
+
+    $atom.set(updated)
+    persist(updated)
   }
 
   function reset(): void {
@@ -199,6 +180,50 @@ export function definePersistedEnum<T extends string>(options: PersistedEnumOpti
     reset,
     set
   }
+}
+
+/** 统一定义持久化 Atom：自动加载本地缓存、瞬态不冲刷持久层、登出自动重置内存与持久化。 */
+export function definePersistedAtom<T extends object>(options: PersistedAtomOptions<T>): PersistedAtomResult<T> {
+  const { fallback, isPersistable, key, preserveOnLogout = false } = options
+
+  const base = createPersisted<T>({
+    // T extends object 兼容 array / 类数组：!Array.isArray 守卫保证 next 是数组时走 replace
+    // 分支（数组被解构成 {0:'a',1:'b'} 对象是隐式 bug）。
+    apply: (current, next) => (!Array.isArray(next) ? { ...current, ...next } : next),
+    fallback,
+    key,
+    load: () => storedJson<T>(key, fallback, isPersistable),
+    persist: val => {
+      if (!isPersistable || isPersistable(val)) {
+        persistString(key, JSON.stringify(val))
+      }
+    },
+    preserveOnLogout
+  })
+
+  // 入口签名差异只在 set：Atom 接受 Partial<T>，内部仍规约为 T 后交给 base.set。
+  return {
+    $atom: base.$atom,
+    get: base.get,
+    reset: base.reset,
+    set: next => base.set(next as T)
+  }
+}
+
+/** 统一定义持久化枚举：严格字面量类型校验、单一来源注册与登出生命周期绑定。 */
+export function definePersistedEnum<T extends string>(options: PersistedEnumOptions<T>): PersistedEnumResult<T> {
+  const { allowed, fallback, key, preserveOnLogout = false } = options
+
+  const base = createPersisted<T>({
+    apply: (_current, next) => next,
+    fallback,
+    key,
+    load: () => storedEnum<T>(key, allowed, fallback),
+    persist: val => persistString(key, val),
+    preserveOnLogout
+  })
+
+  return base
 }
 
 export async function clearCompanionStorage(): Promise<void> {
