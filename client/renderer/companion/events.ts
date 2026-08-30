@@ -32,6 +32,7 @@ import {
   pushAffectTraceMessage,
   pushMediaMessage,
   pushProactiveMessage,
+  pushStatusPill,
   setAssistantError,
   setAssistantTool,
   setChatOpen,
@@ -784,6 +785,17 @@ export function handleCompanionEvent(event: RpcEvent): void {
         if (Array.isArray(messages)) {
           hydrateChatMessages(messages as SessionMessage[])
         }
+      }
+
+      break
+    }
+
+    case 'compress.completed': {
+      // 自动压缩单行插入；手动 /压缩 走 command.result + hydrate=true，互斥互补（PROTOCOL §1.3）。
+      const p = event.payload as { subtype?: string; text?: string; message_id?: number } | undefined
+
+      if (p?.subtype === 'compress_summary' && typeof p.text === 'string') {
+        pushStatusPill('compress_summary', p.text)
       }
 
       break

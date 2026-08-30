@@ -12,6 +12,7 @@ _TRANSLATED: dict[str, str] = {
     "tool_start": "tool.start",
     "tool_end": "tool.complete",
     "error": "error",
+    "compress.completed": "compress.completed",
 }
 
 
@@ -54,6 +55,13 @@ class JsonRpcEmitter:
                 **({"affect": data["affect"]} if isinstance(data.get("affect"), dict) else {}),
                 **({"media": data["media"]} if isinstance(data.get("media"), list) else {}),
                 **({"usage": usage} if isinstance(usage, dict) else {}),
+            }
+        if raw_type == "compress.completed":
+            # text 与持久化 Message.content 同源；message_id 给客户端挂载 backendMessageId 留口子。
+            return {
+                "subtype": data.get("subtype", "compress_summary"),
+                "text": data.get("text", ""),
+                **({"message_id": data["message_id"]} if isinstance(data.get("message_id"), int) else {}),
             }
         # 兜底：message.start / bubble.break 均为空载荷。
         return {}

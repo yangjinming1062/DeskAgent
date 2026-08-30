@@ -92,8 +92,18 @@ async def run_chat_turn(
             )
             db.add(checkpoint)
             await db.commit()
+            checkpoint_id = checkpoint.id
             # 检查点之前的视频不会再进读路径，磁盘是死重量；清理并改写历史行 part。
-            await prune_videos_in_range(db, conv.id, hi=checkpoint.id)
+            await prune_videos_in_range(db, conv.id, hi=checkpoint_id)
+        # 自动压缩单行插入；手动 /压缩 走 command.result + hydrate=true，互斥互补。
+        await emitter.send_json(
+            {
+                "type": "compress.completed",
+                "subtype": "compress_summary",
+                "text": checkpoint.content,
+                "message_id": checkpoint_id,
+            },
+        )
     current_context = truncate_responses_context(compressed_context)
     # 视频内联在截断之后：窗口外的老视频已被占位替换，内联只处理幸存者（每请求上限 2 个）。
     current_context["input"] = await inline_video_parts(current_context["input"])

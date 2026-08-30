@@ -90,6 +90,7 @@
 | channel.status | IM 通道绑定状态变化（connected / login_required / error 等，载荷 {channel, status, account_name?, error?}） | Client 通知/toast；Hub 状态以 REST 读为准（Hub 窗口无 WS） |
 | channel.peer_request | 陌生对端首次来信触发配对审批（载荷 {channel, peer_id, peer_name, preview}） | Client 通知引导主人到通道设置审批 |
 | `command.result` | Slash 命令执行结果（载荷 `{command, result:{status, message, payload?, hydrate?}}`）；必带 `session_id`（从 command.dispatch 调用中隐式继承）。客户端用 `hydrate=true` 替换本地消息列表（payload.messages），用 `hydrate=false` 仅插一条 status pill。**幂等**：同一调用会同时下发 RPC result + 此事件，前端接住任意一路即可触发渲染 | Client 聊天窗：hydrate 替换消息列表、push status pill（`status_cleared` / `compress_summary` 等） |
+| `compress.completed` | 自动上下文压缩（orchestrator 命中阈值）完成后下发；载荷 `{subtype:'compress_summary', text, message_id}`，`text` 与持久化 `Message.content` 同源；必带 `session_id`。手动 `/压缩` 仍走 `command.result`+`hydrate=true` 替换整列，二者语义互补（自动 = 单行插入不打断流；手动 = 替换列表强一致） | Client 聊天窗：`pushStatusPill('compress_summary', text)` 单行插入，渲染端走 `compress_summary` 分界线式可折叠卡片分支（详见 `chat-dock-message-bubble.tsx` 的 `COMPRESS_CARD_SUBTYPES`） |
 
 **事件投递范围（session_id 语义）**：session_id 就是 conversation_id 的字符串形式（见 §6）。聊天会话事件（message.* / tool.start / tool.complete / error）必带 session_id、只属于该会话，渲染端必须按 session_id 过滤；outbox 事件（上表）不带 session_id，投递到该用户的 desktop、与打开哪个会话无关，照常处理（video_gen.completed 的 session_id 在载荷内部，渲染端自行比对决定落卡还是提示跳转）。
 
@@ -279,6 +280,7 @@ REST 端点异常路径返回统一结构：error（短码）+ reason（分类�
 - 拦截逻辑 / 弹层 → [client/renderer/companion/chat-dock.tsx](client/renderer/companion/chat-dock.tsx) + [client/renderer/companion/chat/slash-command-popover.tsx](client/renderer/companion/chat/slash-command-popover.tsx)
 - 错误码 → [backend/components/constants.py](backend/components/constants.py) + [backend/components/__init__.py](backend/components/__init__.py) + 客户端 `slashErrorToMessage`（chat-dock.tsx）
 - 状态 pill 渲染 → `status_command_result` 加入 `chat-dock-message-bubble.tsx` 的 status 渲染分支
+- 自动压缩事件 → [backend/services/chat/orchestrator.py](backend/services/chat/orchestrator.py)（orchestrator 命中阈值后 push）+ [backend/services/gateway/emitter.py](backend/services/gateway/emitter.py)（`_TRANSLATED` 表 + `_translate`）+ [client/renderer/companion/events.ts](client/renderer/companion/events.ts)（`compress.completed` switch）+ `chat-dock-message-bubble.tsx` 的 `COMPRESS_CARD_SUBTYPES` 折叠卡片分支 + 本文档 §1.3
 
 ---
 

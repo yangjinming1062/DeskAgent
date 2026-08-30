@@ -1,5 +1,8 @@
 import { useStore } from '@nanostores/react'
-import { memo } from 'react'
+import { memo, useState } from 'react'
+
+import { ChevronDown } from '@/shared/lib/icons'
+import { cn } from '@/shared/lib/utils'
 
 import { ChatMediaCard } from './chat-media-card'
 import { ChatMessageForkButton } from './chat-message-fork-button'
@@ -12,10 +15,13 @@ const SYSTEM_PILL_SUBTYPES = new Set([
   'hint',
   'tool_summary',
   'daily_summary',
-  'compress_summary',
   'status_cleared',
   'status_command_result'
 ])
+
+// 上下文压缩检查点：居中的分界线式可折叠卡片，默认折叠、点击展开摘要全文。
+// 走独立分支而不是 pill —— 视觉权重要让用户意识到这是个有信息量的节点。
+const COMPRESS_CARD_SUBTYPES = new Set(['compress_summary'])
 
 // 戳 / 拖拽追踪：侧对齐但视觉上弱化。
 const STATUS_TRACE_SUBTYPES = new Set(['status_interaction', 'status_reaction'])
@@ -41,8 +47,51 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   const bodies = useStore($chatMessageBodies, { keys: [message.id], deps: [message.id] })
   const body: ChatMessageBody | undefined = bodies[message.id]
 
+  // 压缩卡片折叠态：组件局部 useState，不持久化、不入 store；多窗口各自独立展开。
+  // 提到顶层以保证 hooks 顺序不破规则。
+  const [compressExpanded, setCompressExpanded] = useState(false)
+
   if (!body) {
     return <></>
+  }
+
+  if (COMPRESS_CARD_SUBTYPES.has(subtype)) {
+    // 解析 content：第一行 "[🗜️ 对话压缩 — N 条早期消息已压缩]" 是胶囊标题，剩余为摘要 body。
+    const rawText = body.text
+    const newlineIdx = rawText.indexOf('\n')
+    const title = newlineIdx === -1 ? rawText : rawText.slice(0, newlineIdx)
+    const summary = newlineIdx === -1 ? '' : rawText.slice(newlineIdx + 1)
+    const cardId = `compress-card-${message.id}`
+
+    return (
+      <div className="relative my-3 flex items-center gap-3 px-1">
+        <div className="h-px flex-1 bg-white/15" />
+        <button
+          aria-controls={cardId}
+          aria-expanded={compressExpanded}
+          className={cn(
+            'group inline-flex max-w-[60%] items-center gap-1.5 truncate rounded-full border border-white/10 bg-surface-card/80 px-3 py-1 text-xs text-white/70 backdrop-blur-glass transition hover:bg-white/10 hover:text-white/85',
+            'animate-in fade-in zoom-in-95 duration-150'
+          )}
+          onClick={() => setCompressExpanded(o => !o)}
+          type="button"
+        >
+          <span className="truncate">{title}</span>
+          <ChevronDown className={cn('size-3 shrink-0 transition-transform', compressExpanded && 'rotate-180')} />
+        </button>
+        <div className="h-px flex-1 bg-white/15" />
+        {compressExpanded && (
+          <div
+            className="absolute left-1/2 top-full z-10 mt-2 w-[min(560px,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-surface-card/95 p-3.5 text-[13px] leading-relaxed text-white/80 shadow-lg backdrop-blur-glass"
+            id={cardId}
+          >
+            <div className="whitespace-pre-wrap break-words">
+              {summary || <span className="text-white/40">（无摘要内容）</span>}
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
