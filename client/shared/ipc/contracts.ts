@@ -89,10 +89,10 @@ export interface SpiritAgentConnection {
   wsUrl: string
 }
 
-export type SpiritAgentUiTheme = 'classic' | 'cyber-glass' | 'holo'
+export type SpiritAgentUiTheme = 'classic' | 'classic-light' | 'cyber-glass' | 'lilac-glass' | 'holo'
 
 // 主进程侧校验白名单——契约是跨进程唯一真理源，渲染层 registry 只扩展元数据。
-export const SPIRITAGENT_UI_THEMES = ['classic', 'cyber-glass', 'holo'] as const satisfies readonly SpiritAgentUiTheme[]
+export const SPIRITAGENT_UI_THEMES = ['classic', 'classic-light', 'cyber-glass', 'lilac-glass', 'holo'] as const satisfies readonly SpiritAgentUiTheme[]
 
 export interface DesktopUiThemeBroadcast {
   theme: SpiritAgentUiTheme

@@ -16,14 +16,14 @@ import { strings } from '@/shared/strings'
 
 // toast 属于瞬时浮层——两个窗口共用同一套玻璃样式（--ui-* token，随主题换肤）。
 const tone: Record<NotificationKind, { icon: IconComponent; iconClass: string }> = {
-  error: { icon: AlertCircle, iconClass: 'text-rose-400' },
-  warning: { icon: AlertTriangle, iconClass: 'text-amber-300' },
-  info: { icon: Info, iconClass: 'text-white/50' },
-  success: { icon: CheckCircle2, iconClass: 'text-emerald-400' }
+  error: { icon: AlertCircle, iconClass: 'text-danger-fg' },
+  warning: { icon: AlertTriangle, iconClass: 'text-amber-400' },
+  info: { icon: Info, iconClass: 'text-muted' },
+  success: { icon: CheckCircle2, iconClass: 'text-success' }
 }
 
 const STACK_SURFACE =
-  'pointer-events-auto rounded-xl border border-white/12 bg-glass text-white shadow-xl backdrop-blur-glass'
+  'pointer-events-auto rounded-xl border border-line-standard bg-glass text-strong shadow-xl backdrop-blur-glass'
 
 // regionRef 把 portal 容器的 DOM 引用交给调用方——精灵透明窗口需要借此把
 // toast 矩形注册进交互区域登记处（shared 不得反向依赖 companion，所以经 props 透传）。
@@ -82,14 +82,14 @@ export function NotificationStack({ regionRef }: { regionRef?: Ref<HTMLDivElemen
       {overflowCount > 0 && (
         <div className={cn(STACK_SURFACE, 'flex min-h-8 items-center justify-between px-3 text-xs')}>
           <button
-            className="-ml-1.5 rounded-md px-1.5 py-0.5 font-medium text-white/80 transition hover:bg-white/10 hover:text-white"
+            className="-ml-1.5 rounded-md px-1.5 py-0.5 font-medium text-body transition hover:bg-fill-hover hover:text-strong"
             onClick={() => setExpanded(v => !v)}
             type="button"
           >
             {expanded ? copy.hide : copy.show} {copy.more(overflowCount)}
           </button>
           <button
-            className="-mr-1.5 rounded-md px-1.5 py-0.5 text-white/60 transition hover:bg-white/10 hover:text-white"
+            className="-mr-1.5 rounded-md px-1.5 py-0.5 text-muted transition hover:bg-fill-hover hover:text-strong"
             onClick={clearNotifications}
             type="button"
           >
@@ -121,9 +121,9 @@ function NotificationItem({ notification }: { notification: AppNotification }): 
       <Icon className={cn('mt-0.5 size-4 shrink-0', styles.iconClass)} />
       <div className="col-start-2 min-w-0">
         {notification.title && (
-          <div className="text-xs font-medium tracking-tight text-white">{notification.title}</div>
+          <div className="text-xs font-medium tracking-tight text-strong">{notification.title}</div>
         )}
-        <div className="grid justify-items-start gap-1 text-[11px] leading-relaxed text-white/70">
+        <div className="grid justify-items-start gap-1 text-[11px] leading-relaxed text-muted">
           <p className="m-0">{notification.message}</p>
           {hasDetail && <NotificationDetail detail={notification.detail || ''} />}
           {notification.action && (
@@ -142,7 +142,7 @@ function NotificationItem({ notification }: { notification: AppNotification }): 
       </div>
       <button
         aria-label={copy.dismiss}
-        className="col-start-3 mt-0.5 inline-flex size-6 items-center justify-center rounded-md text-white/40 transition hover:bg-white/10 hover:text-white"
+        className="col-start-3 mt-0.5 inline-flex size-6 items-center justify-center rounded-md text-faint transition hover:bg-fill-hover hover:text-strong"
         onClick={() => dismissNotification(notification.id)}
         type="button"
       >
@@ -157,10 +157,10 @@ function NotificationDetail({ detail }: { detail: string }): React.JSX.Element {
   const copy = t.notifications
 
   return (
-    <details className="text-xs text-white/60">
-      <summary className="select-none font-medium text-white/60 hover:text-white">{copy.details}</summary>
-      <div className="mt-1 rounded-md bg-white/5 p-2">
-        <pre className="max-h-32 whitespace-pre-wrap wrap-break-word font-mono text-[0.6875rem] leading-relaxed text-white/70">
+    <details className="text-xs text-muted">
+      <summary className="select-none font-medium text-muted hover:text-strong">{copy.details}</summary>
+      <div className="mt-1 rounded-md bg-fill-faint p-2">
+        <pre className="max-h-32 whitespace-pre-wrap wrap-break-word font-mono text-[0.6875rem] leading-relaxed text-muted">
           {detail}
         </pre>
         <CopyDetailButton label={copy.copyDetail} text={detail} />
@@ -196,7 +196,7 @@ function CopyDetailButton({ label, text }: { label: string; text: string }): Rea
 
   return (
     <button
-      className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-white/60 transition hover:bg-white/10 hover:text-white"
+      className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6875rem] text-muted transition hover:bg-fill-hover hover:text-strong"
       onClick={onClick}
       type="button"
     >
@@ -231,8 +231,8 @@ export function InlineNotice({
     >
       <Icon className={cn('mt-0.5 size-4 shrink-0', styles.iconClass)} />
       <div className="col-start-2 min-w-0">
-        {title && <div className="font-medium tracking-tight text-white">{title}</div>}
-        <div className={cn('text-[11px] leading-relaxed text-white/70', !title && 'row-start-1')}>{children}</div>
+        {title && <div className="font-medium tracking-tight text-strong">{title}</div>}
+        <div className={cn('text-[11px] leading-relaxed text-muted', !title && 'row-start-1')}>{children}</div>
       </div>
     </div>
   )

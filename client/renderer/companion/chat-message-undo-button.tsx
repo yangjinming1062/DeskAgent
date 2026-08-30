@@ -62,16 +62,16 @@ export function ChatMessageUndoButton({
     icon = <Loader2 className="animate-spin" size={12} />
     label = '正在撤回…'
     styleClass =
-      'rounded-md border border-white/30 bg-white/10 px-2 py-1 text-xs text-white transition hover:bg-white/20'
+      'rounded-md border border-line-strong bg-fill-hover px-2 py-1 text-xs text-strong transition hover:bg-fill-hover'
   } else if (otherBusy) {
     icon = <ArrowBackUp size={12} />
     label = '另一条正在撤回'
-    styleClass = 'rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/20 cursor-not-allowed'
+    styleClass = 'rounded-md border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
   } else {
     icon = <ArrowBackUp size={12} />
     label = '撤回此条消息'
     styleClass =
-      'rounded-md border border-white/20 bg-white/5 px-2 py-1 text-xs text-white/50 transition hover:bg-white/15 hover:text-white'
+      'rounded-md border border-line-strong bg-fill-faint px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong'
   }
 
   return (

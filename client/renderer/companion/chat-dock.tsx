@@ -306,14 +306,14 @@ function PendingImageThumb({ path }: { path: string }): React.JSX.Element {
 
   return (
     <button
-      className="block h-16 w-16 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-white/12 bg-black/30 p-0 transition hover:border-white/30"
+      className="block h-16 w-16 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-line-standard bg-fill-trough p-0 transition hover:border-line-strong"
       onClick={() => openMediaViewer({ type: 'image', url: path })}
       type="button"
     >
       {src ? (
         <img alt="待发送图片" className="block h-full w-full object-cover" src={src} />
       ) : (
-        <span className="flex h-full w-full items-center justify-center text-[10px] text-white/40">加载中…</span>
+        <span className="flex h-full w-full items-center justify-center text-[10px] text-faint">加载中…</span>
       )}
     </button>
   )
@@ -995,7 +995,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   return (
     <div className="fixed inset-0 z-40 pointer-events-none">
       <div
-        className="relative flex flex-row overflow-hidden rounded-2xl border border-white/15 bg-surface-panel text-white shadow-2xl border-beam-container"
+        className="relative flex flex-row overflow-hidden rounded-2xl border border-line-strong bg-surface-panel text-strong shadow-2xl border-beam-container"
         onDragOver={e => e.preventDefault()}
         onDrop={e => void onDrop(e)}
         ref={panelRef}
@@ -1021,14 +1021,14 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
         {/* Left Column: Visual Anchor, Character Emotion & Session Parameters (Draggable) */}
         <div
-          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-white/10 bg-surface-chrome p-3 select-none active:cursor-grabbing"
+          className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-line-standard bg-surface-chrome p-3 select-none active:cursor-grabbing"
           {...dragBind}
           title="拖动以移动对话框"
         >
           <div className="flex flex-col items-center w-full min-h-0 overflow-y-auto no-scrollbar">
             {/* Character Avatar with subtle glow and framing */}
             <div className="relative group mt-0.5">
-              <div className="relative h-28 w-28 overflow-hidden rounded-2xl border border-white/12 bg-white/5 shadow-xl transition duration-300 group-hover:border-white/25">
+              <div className="relative h-28 w-28 overflow-hidden rounded-2xl border border-line-standard bg-fill-faint shadow-xl transition duration-300 group-hover:border-line-strong">
                 {(expressionAvatar?.dataUrl ?? portraitUrl) ? (
                   <img
                     alt="角色形象"
@@ -1037,13 +1037,13 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   />
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center bg-linear-to-b from-white/10 to-white/5 p-4 text-center">
-                    <Sparkles className="size-7 animate-pulse text-white/30" />
-                    <span className="mt-2 text-[11px] text-white/40">伙伴形象</span>
+                    <Sparkles className="size-7 animate-pulse text-faint" />
+                    <span className="mt-2 text-[11px] text-faint">伙伴形象</span>
                   </div>
                 )}
               </div>
               {/* Status Badge floating at bottom of avatar */}
-              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-white/12 bg-surface-panel px-2.5 py-0.5 text-[10px] text-white/90 shadow-md whitespace-nowrap">
+              <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-line-standard bg-surface-panel px-2.5 py-0.5 text-[10px] text-strong shadow-md whitespace-nowrap">
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
                     spriteState === 'thinking'
@@ -1069,7 +1069,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
             {/* Current Emotion Status Display */}
             <div className="mt-4 flex flex-col items-center text-center w-full px-1">
-              <div className="flex items-center gap-1.5 rounded-full border border-white/12 bg-white/5 px-2.5 py-0.5 text-xs text-white/90 shadow-sm">
+              <div className="flex items-center gap-1.5 rounded-full border border-line-standard bg-fill-faint px-2.5 py-0.5 text-xs text-strong shadow-sm">
                 <span className="text-sm">{currentMood.icon}</span>
                 <span className="font-medium tracking-wide text-[11px]">{currentMood.label}</span>
               </div>
@@ -1077,9 +1077,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           </div>
 
           {/* Bottom Section: Session Parameters & Status Hint */}
-          <div className="w-full flex flex-col items-center gap-2 pt-2 border-t border-white/5 shrink-0">
+          <div className="w-full flex flex-col items-center gap-2 pt-2 border-t border-line-hairline shrink-0">
             <ChatParamsPanel />
-            <p className="text-[10px] text-white/35 pt-0.5">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
+            <p className="text-[10px] text-faint pt-0.5">{gatewayState === 'open' ? '随时倾听中' : '网络连接中…'}</p>
           </div>
         </div>
 
@@ -1087,29 +1087,29 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         <div className="flex flex-1 flex-col min-w-0 bg-surface-panel">
           {/* Header Bar */}
           <div
-            className="flex cursor-grab items-center justify-between gap-2 border-b border-white/10 px-3 py-2 active:cursor-grabbing"
+            className="flex cursor-grab items-center justify-between gap-2 border-b border-line-standard px-3 py-2 active:cursor-grabbing"
             {...dragBind}
             title="拖动以移动对话框"
           >
             <div className="flex min-w-0 items-center gap-1.5">
               <button
                 aria-label="切换对话"
-                className={cn(BTN_ICON, sessionListOpen && 'bg-white/10 text-white')}
+                className={cn(BTN_ICON, sessionListOpen && 'bg-fill-hover text-strong')}
                 onClick={() => setSessionListOpen(!sessionListOpen)}
                 title="切换历史对话"
                 type="button"
               >
                 <PanelLeft />
               </button>
-              <span className="truncate text-sm font-medium text-white/90">{currentSessionTitle}</span>
-              <span className="hidden font-mono text-[9px] text-white/30 uppercase tracking-widest sm:inline-block">
+              <span className="truncate text-sm font-medium text-strong">{currentSessionTitle}</span>
+              <span className="hidden font-mono text-[9px] text-faint uppercase tracking-widest sm:inline-block">
                 [CONSOLE: ONLINE]
               </span>
             </div>
             <div className="flex items-center gap-0.5">
               <button
                 aria-label="关闭对话"
-                className={cn(BTN_ICON, 'hover:border hover:border-white/15 hover:bg-rose-500/15 hover:text-rose-300')}
+                className={cn(BTN_ICON, 'hover:border hover:border-line-strong hover:bg-rose-500/15 hover:text-rose-300')}
                 onClick={onClose}
                 type="button"
               >
@@ -1121,17 +1121,17 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           {/* Messages Area */}
           <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4" ref={scrollRef}>
             {list.length === 0 && !sending && (
-              <p className="mt-8 text-center text-sm text-white/40">说点什么，或发送文件/图片/视频给我看看～</p>
+              <p className="mt-8 text-center text-sm text-faint">说点什么，或发送文件/图片/视频给我看看～</p>
             )}
             {list.map(item => (
               <MessageBubble key={item.id} message={item} />
             ))}
             {showTyping && (
               <div className="flex justify-start">
-                <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-white/8 bg-surface-card px-3.5 py-2.5">
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:0ms]" />
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:150ms]" />
-                  <i className="size-1.5 animate-bounce rounded-full bg-white/40 [animation-delay:300ms]" />
+                <span className="flex items-center gap-1 rounded-2xl rounded-bl-sm border border-line-hairline bg-surface-card px-3.5 py-2.5">
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:0ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:150ms]" />
+                  <i className="size-1.5 animate-bounce rounded-full bg-fill-faint0 [animation-delay:300ms]" />
                 </span>
               </div>
             )}
@@ -1139,15 +1139,15 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           </div>
 
           {/* Input Area: Two-row Card Layout */}
-          <div className="border-t border-white/10 p-3 pt-2.5 flex flex-col gap-1.5">
+          <div className="border-t border-line-standard p-3 pt-2.5 flex flex-col gap-1.5">
             {gatewayState !== 'open' && <p className="mb-1 text-center text-xs text-amber-300/70">正在连接…</p>}
-            {isReadOnlySession && <p className="mb-1 text-center text-xs text-white/40">IM 对话 · 只读</p>}
+            {isReadOnlySession && <p className="mb-1 text-center text-xs text-faint">IM 对话 · 只读</p>}
 
-            <div className="relative flex flex-col gap-2 rounded-xl border border-white/12 bg-white/[0.04] p-2.5 transition focus-within:border-accent/60 focus-within:bg-white/[0.06] shadow-sm">
+            <div className="relative flex flex-col gap-2 rounded-xl border border-line-standard bg-fill-faint p-2.5 transition focus-within:border-accent/60 focus-within:bg-fill-hover shadow-sm">
               {/* Row 1: Multiline Textarea & Slash Popover */}
               <div className="relative w-full">
                 <textarea
-                  className="max-h-32 min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-white outline-none placeholder:text-white/30 disabled:pointer-events-none disabled:opacity-40"
+                  className="max-h-32 min-h-[42px] w-full resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-strong outline-none placeholder:text-faint disabled:pointer-events-none disabled:opacity-40"
                   disabled={isReadOnlySession}
                   onChange={e => {
                     setText(e.target.value)
@@ -1277,15 +1277,15 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
               {/* Pending Attachments inside card */}
               {pending?.type === 'image' && (
-                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
                   <PendingImageThumb path={pending.value} />
-                  <span className="truncate flex-1 text-[11px] text-white/80">
+                  <span className="truncate flex-1 text-[11px] text-body">
                     {sending ? '图片发送中…' : pending.fileName || '已附加图片'}
                   </span>
                   {!sending && (
                     <button
                       aria-label="移除附加图片"
-                      className="rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      className="rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
                       onClick={() => setPending(null)}
                       type="button"
                     >
@@ -1295,10 +1295,10 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 </div>
               )}
               {pending?.type === 'video' && (
-                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
                   <Video className="size-3.5 shrink-0 text-rose-400" />
-                  <span className="max-w-40 shrink truncate text-[11px] text-white/80">{pending.fileName}</span>
-                  {pending.status === 'uploading' && <span className="text-[10px] text-white/40">上传中…</span>}
+                  <span className="max-w-40 shrink truncate text-[11px] text-body">{pending.fileName}</span>
+                  {pending.status === 'uploading' && <span className="text-[10px] text-faint">上传中…</span>}
                   {pending.status === 'ready' && <span className="text-[10px] text-emerald-400">已就绪</span>}
                   {pending.status === 'error' && (
                     <>
@@ -1306,7 +1306,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                         {pending.error}
                       </span>
                       <button
-                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-white/50 transition hover:bg-white/10 hover:text-white"
+                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-fill-hover hover:text-strong"
                         onClick={() => void attachVideoFile(pending.path, setPending)}
                         type="button"
                       >
@@ -1317,7 +1317,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   {!sending && (
                     <button
                       aria-label="移除附加视频"
-                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
                       onClick={() => setPending(null)}
                       type="button"
                     >
@@ -1327,18 +1327,18 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 </div>
               )}
               {pending?.type === 'file' && (
-                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
                   <FileText className="size-3.5 shrink-0 text-accent" />
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[11px] font-medium text-white/90" title={pending.path}>
+                    <span className="truncate text-[11px] font-medium text-strong" title={pending.path}>
                       {pending.fileName}
                     </span>
                   </div>
-                  <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] text-white/40">文件</span>
+                  <span className="rounded bg-fill-hover px-1 py-0.2 text-[9px] text-faint">文件</span>
                   {!sending && (
                     <button
                       aria-label="移除附加文件"
-                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
                       onClick={() => setPending(null)}
                       type="button"
                     >
@@ -1348,18 +1348,18 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                 </div>
               )}
               {pending?.type === 'folder' && (
-                <div className="flex items-center gap-2 rounded-lg bg-white/5 border border-white/8 px-2.5 py-1 text-xs text-white/70">
+                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
                   <FolderOpen className="size-3.5 shrink-0 text-amber-400" />
                   <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[11px] font-medium text-white/90" title={pending.path}>
+                    <span className="truncate text-[11px] font-medium text-strong" title={pending.path}>
                       {pending.folderName}
                     </span>
                   </div>
-                  <span className="rounded bg-white/10 px-1 py-0.2 text-[9px] text-white/40">文件夹</span>
+                  <span className="rounded bg-fill-hover px-1 py-0.2 text-[9px] text-faint">文件夹</span>
                   {!sending && (
                     <button
                       aria-label="移除附加文件夹"
-                      className="shrink-0 rounded-md p-1 text-white/40 transition hover:bg-white/10 hover:text-white"
+                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
                       onClick={() => setPending(null)}
                       type="button"
                     >
@@ -1370,7 +1370,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
               )}
 
               {/* Row 2: Bottom Toolbar */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-white/5">
+              <div className="flex items-center justify-between gap-2 pt-1 border-t border-line-hairline">
                 {/* Left corner: Attachment & Slash command */}
                 <div className="flex items-center gap-1 shrink-0">
                   {/* Attachment menu trigger */}
@@ -1378,8 +1378,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     <button
                       aria-label="添加附件"
                       className={cn(
-                        'inline-flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40',
-                        attachMenuOpen && 'bg-white/15 text-white'
+                        'inline-flex size-7 items-center justify-center rounded-lg text-muted transition hover:bg-fill-hover hover:text-strong disabled:pointer-events-none disabled:opacity-40',
+                        attachMenuOpen && 'bg-fill-hover text-strong'
                       )}
                       disabled={isReadOnlySession}
                       onClick={() => setAttachMenuOpen(!attachMenuOpen)}
@@ -1390,9 +1390,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     </button>
 
                     {attachMenuOpen && (
-                      <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-white/12 bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
+                      <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-neutral-900/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
                         <button
-                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
                           onClick={() => void pickFile()}
                           type="button"
                         >
@@ -1400,7 +1400,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                           <span>添加文件</span>
                         </button>
                         <button
-                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
                           onClick={() => void pickFolder()}
                           type="button"
                         >
@@ -1408,7 +1408,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                           <span>添加文件夹</span>
                         </button>
                         <button
-                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
                           onClick={() => void pickImage()}
                           type="button"
                         >
@@ -1416,7 +1416,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                           <span>添加图片</span>
                         </button>
                         <button
-                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-white/80 transition hover:bg-white/10 hover:text-white text-left"
+                          className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
                           onClick={() => void pickVideo()}
                           type="button"
                         >
@@ -1430,7 +1430,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                   {/* Slash command button */}
                   <button
                     aria-label="快捷命令"
-                    className="inline-flex size-7 items-center justify-center rounded-lg text-white/60 transition hover:bg-white/10 hover:text-white disabled:pointer-events-none disabled:opacity-40"
+                    className="inline-flex size-7 items-center justify-center rounded-lg text-muted transition hover:bg-fill-hover hover:text-strong disabled:pointer-events-none disabled:opacity-40"
                     disabled={isReadOnlySession}
                     onClick={() => {
                       if (!text.startsWith('/')) {
@@ -1459,7 +1459,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                       'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-40',
                       recording
                         ? 'border border-rose-400/70 bg-rose-500/25 text-rose-200 animate-pulse'
-                        : 'text-white/60 hover:bg-white/10 hover:text-white'
+                        : 'text-muted hover:bg-fill-hover hover:text-strong'
                     )}
                     disabled={isReadOnlySession}
                     onMouseDown={() => void startRecording()}
@@ -1488,8 +1488,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     className={cn(
                       'inline-flex size-7 items-center justify-center rounded-full transition disabled:pointer-events-none disabled:opacity-30',
                       isGenerating
-                        ? 'bg-rose-500/90 hover:bg-rose-600 text-white shadow-xs'
-                        : 'bg-accent hover:bg-accent/85 text-white shadow-xs'
+                        ? 'bg-rose-500/90 hover:bg-rose-600 text-on-accent shadow-xs'
+                        : 'bg-accent hover:bg-accent/85 text-on-accent shadow-xs'
                     )}
                     disabled={
                       isReadOnlySession ||

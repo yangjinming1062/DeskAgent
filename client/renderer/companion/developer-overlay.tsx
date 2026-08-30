@@ -55,12 +55,12 @@ export function DeveloperOverlay(): React.JSX.Element | null {
       <div className="flex items-center justify-between border-b border-emerald-500/20 bg-emerald-950/40 px-3 py-1.5">
         <span className="font-semibold text-emerald-300">Developer Debug Mode</span>
         <div className="flex items-center gap-2">
-          <button className="text-emerald-400 hover:text-white" onClick={() => setMinimized(!minimized)} type="button">
+          <button className="text-emerald-400 hover:text-strong" onClick={() => setMinimized(!minimized)} type="button">
             {minimized ? '展开' : '折叠'}
           </button>
           <button
             aria-label="关闭调试面板"
-            className="text-emerald-400 hover:text-white"
+            className="text-emerald-400 hover:text-strong"
             onClick={() => $devMode.set(false)}
             type="button"
           >
@@ -76,7 +76,7 @@ export function DeveloperOverlay(): React.JSX.Element | null {
               State: <span className="text-white font-bold">{spriteState}</span>
             </div>
             <div>
-              Emotion: <span className="text-white">{emotion || 'none'}</span>
+              Emotion: <span className="text-strong">{emotion || 'none'}</span>
             </div>
             <div>
               Render: <span className="text-white font-bold">{backend ?? '…'}</span>
@@ -93,7 +93,7 @@ export function DeveloperOverlay(): React.JSX.Element | null {
               <div className="leading-tight" key={idx}>
                 <span className="text-emerald-600">[{log.time}]</span>{' '}
                 <span className="font-semibold text-emerald-300">{log.type}:</span>{' '}
-                <span className="text-white/80">{log.details}</span>
+                <span className="text-body">{log.details}</span>
               </div>
             ))}
           </div>

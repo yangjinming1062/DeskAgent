@@ -117,16 +117,16 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
   const regularSessions = sessions.filter(s => !isSpecialSession(s) && !s.pinned)
 
   return (
-    <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-white/10 bg-surface-chrome">
+    <aside className="sa-drawer-in flex w-64 shrink-0 flex-col border-r border-line-standard bg-surface-chrome">
       <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-3">
-        <h3 className="text-xs font-semibold text-white/80">对话</h3>
+        <h3 className="text-xs font-semibold text-body">对话</h3>
         <div className="flex items-center gap-1">
           {SORT_OPTIONS.map(({ icon: Icon, label, value }) => (
             <button
               aria-label={label}
               className={cn(
                 'rounded-md p-1 transition',
-                value === sort ? 'bg-accent-soft text-accent' : 'text-white/35 hover:bg-white/10 hover:text-white'
+                value === sort ? 'bg-accent-soft text-accent' : 'text-faint hover:bg-fill-hover hover:text-strong'
               )}
               key={value}
               onClick={() => setSessionSort(value)}
@@ -199,7 +199,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
               />
             ))}
             {pinnedSessions.length > 0 && regularSessions.length > 0 && (
-              <div className="my-1.5 border-t border-white/10" />
+              <div className="my-1.5 border-t border-line-standard" />
             )}
             {regularSessions.map(s => (
               <SessionRow
@@ -233,9 +233,9 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
         )}
       </div>
 
-      <div className="border-t border-white/10 px-2 py-1.5">
+      <div className="border-t border-line-standard px-2 py-1.5">
         <button
-          className="flex w-full items-center justify-between rounded-md px-1.5 py-1 text-[11px] text-white/50 transition hover:bg-white/5 hover:text-white/80"
+          className="flex w-full items-center justify-between rounded-md px-1.5 py-1 text-[11px] text-muted transition hover:bg-fill-faint hover:text-body"
           onClick={() => $archiveOpen.set(!archiveOpen)}
           type="button"
         >
@@ -314,7 +314,7 @@ function SessionRow({
   return (
     <div
       className={`group flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 transition ${
-        isActive ? 'border-accent-line bg-accent-soft' : 'border-transparent hover:border-white/10 hover:bg-white/5'
+        isActive ? 'border-accent-line bg-accent-soft' : 'border-transparent hover:border-line-standard hover:bg-fill-faint'
       }`}
       onClick={() => {
         if (!editing) {
@@ -327,7 +327,7 @@ function SessionRow({
           <PresetIconBadge iconKey={session.system_preset_icon_key} />
         </span>
       ) : (
-        <MessageCircle className="size-3.5 shrink-0 text-white/35" />
+        <MessageCircle className="size-3.5 shrink-0 text-faint" />
       )}
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -340,19 +340,19 @@ function SessionRow({
             }}
           />
         ) : (
-          <p className={cn('truncate text-xs', isActive ? 'font-medium text-white' : 'text-white/85')}>
+          <p className={cn('truncate text-xs', isActive ? 'font-medium text-strong' : 'text-strong')}>
             {session.title || (isSpecial ? (presetName ?? '系统对话') : '新建对话')}
-            {session.pinned && <Pin className="ml-1 inline size-3 text-white/30" />}
+            {session.pinned && <Pin className="ml-1 inline size-3 text-faint" />}
           </p>
         )}
-        {session.preview && <p className="mt-0.5 truncate text-[10px] text-white/35">{session.preview}</p>}
+        {session.preview && <p className="mt-0.5 truncate text-[10px] text-faint">{session.preview}</p>}
       </div>
       {!isSpecial && session.system_preset_icon_key && (
         <span className="shrink-0" title={presetName ?? ''}>
           <PresetIconBadge iconKey={session.system_preset_icon_key} />
         </span>
       )}
-      {badge && <span className="shrink-0 rounded bg-white/10 px-1 py-0.5 text-[9px] text-white/50">{badge}</span>}
+      {badge && <span className="shrink-0 rounded bg-fill-hover px-1 py-0.5 text-[9px] text-muted">{badge}</span>}
       <div className="flex shrink-0 items-center">
         {canRename && !editing && (
           <RowAction
@@ -432,8 +432,8 @@ function RowAction({
     <button
       aria-label={label}
       className={cn(
-        'rounded-md p-1 text-white/35 opacity-0 transition group-hover:opacity-100',
-        danger ? 'hover:bg-rose-500/15 hover:text-rose-300' : 'hover:bg-white/10 hover:text-white'
+        'rounded-md p-1 text-faint opacity-0 transition group-hover:opacity-100',
+        danger ? 'hover:bg-rose-500/15 hover:text-rose-300' : 'hover:bg-fill-hover hover:text-strong'
       )}
       onClick={onClick}
       title={label}
@@ -445,7 +445,7 @@ function RowAction({
 }
 
 function EmptyHint({ text }: { text: string }): React.JSX.Element {
-  return <div className="py-6 text-center text-xs text-white/40">{text}</div>
+  return <div className="py-6 text-center text-xs text-faint">{text}</div>
 }
 
 function stopThen(e: React.MouseEvent, fn: () => void): void {

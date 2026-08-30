@@ -66,12 +66,12 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
 
     return (
       <div className="relative my-3 flex items-center gap-3 px-1">
-        <div className="h-px flex-1 bg-white/15" />
+        <div className="h-px flex-1 bg-line-strong" />
         <button
           aria-controls={cardId}
           aria-expanded={compressExpanded}
           className={cn(
-            'group inline-flex max-w-[60%] items-center gap-1.5 truncate rounded-full border border-white/10 bg-surface-card/80 px-3 py-1 text-xs text-white/70 backdrop-blur-glass transition hover:bg-white/10 hover:text-white/85',
+            'group inline-flex max-w-[60%] items-center gap-1.5 truncate rounded-full border border-line-standard bg-surface-card/80 px-3 py-1 text-xs text-muted backdrop-blur-glass transition hover:bg-fill-hover hover:text-strong',
             'animate-in fade-in zoom-in-95 duration-150'
           )}
           onClick={() => setCompressExpanded(o => !o)}
@@ -80,14 +80,14 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
           <span className="truncate">{title}</span>
           <ChevronDown className={cn('size-3 shrink-0 transition-transform', compressExpanded && 'rotate-180')} />
         </button>
-        <div className="h-px flex-1 bg-white/15" />
+        <div className="h-px flex-1 bg-line-strong" />
         {compressExpanded && (
           <div
-            className="absolute left-1/2 top-full z-10 mt-2 w-[min(560px,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-white/10 bg-surface-card/95 p-3.5 text-[13px] leading-relaxed text-white/80 shadow-lg backdrop-blur-glass"
+            className="absolute left-1/2 top-full z-10 mt-2 w-[min(560px,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-line-standard bg-surface-card/95 p-3.5 text-[13px] leading-relaxed text-body shadow-lg backdrop-blur-glass"
             id={cardId}
           >
             <div className="whitespace-pre-wrap break-words">
-              {summary || <span className="text-white/40">（无摘要内容）</span>}
+              {summary || <span className="text-faint">（无摘要内容）</span>}
             </div>
           </div>
         )}
@@ -98,7 +98,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (SYSTEM_PILL_SUBTYPES.has(subtype)) {
     return (
       <div className="my-1.5 flex justify-center px-2">
-        <div className="max-w-[90%] rounded-full border border-white/10 bg-glass px-3 py-1 text-center text-xs leading-relaxed text-white/50 backdrop-blur-glass">
+        <div className="max-w-[90%] rounded-full border border-line-standard bg-glass px-3 py-1 text-center text-xs leading-relaxed text-muted backdrop-blur-glass">
           {body.text}
         </div>
       </div>
@@ -108,7 +108,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (STATUS_TRACE_SUBTYPES.has(subtype)) {
     return (
       <div className={`my-0.5 flex ${isUser ? 'justify-end' : 'justify-start'} px-2`}>
-        <div className="max-w-[80%] text-[11px] italic text-white/40">{body.text}</div>
+        <div className="max-w-[80%] text-[11px] italic text-faint">{body.text}</div>
       </div>
     )
   }
@@ -116,7 +116,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
   if (subtype === AFFECT_TRACE_SUBTYPE) {
     return (
       <div className="my-0.5 flex justify-start px-2">
-        <div className="max-w-[80%] text-[11px] italic text-white/40">用表情/动作回应了</div>
+        <div className="max-w-[80%] text-[11px] italic text-faint">用表情/动作回应了</div>
       </div>
     )
   }
@@ -164,14 +164,14 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
           <div
             className={`relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${
               isUser
-                ? 'rounded-br-sm bg-accent text-white shadow-md shadow-accent/15 border border-white/10'
-                : 'rounded-bl-sm border border-white/10 bg-surface-card text-white/90 shadow-sm'
+                ? 'rounded-br-sm bg-accent text-on-accent shadow-md shadow-accent/15 border border-line-hairline'
+                : 'rounded-bl-sm border border-line-hairline bg-surface-card text-strong shadow-sm'
             }`}
           >
             {body.error ? (
-              <span className="text-amber-300/90">{body.error}</span>
+              <span className="text-amber-500">{body.error}</span>
             ) : body.cancelled ? (
-              <span className="text-white/50">已停止</span>
+              <span className="text-muted">已停止</span>
             ) : body.toolName ? (
               <span className="inline-flex items-center gap-1.5 font-mono text-xs text-accent">
                 <span className="size-1.5 animate-ping rounded-full bg-accent" />
@@ -183,7 +183,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
                 {body.streaming && <span className="animate-caret-pulse" />}
               </>
             ) : (
-              <span className="animate-pulse text-white/40">…</span>
+              <span className="animate-pulse text-faint">…</span>
             )}
           </div>
         )}
@@ -201,7 +201,7 @@ function MessageBubbleInner({ message }: { message: ChatMessageListItem }): Reac
       {(canFork || canUndo) && (
         <div
           className="pointer-events-auto absolute -top-3 right-2 z-10 flex items-center gap-1
-                     rounded-md border border-white/10 bg-black/55 px-1.5 py-1
+                     rounded-md border border-line-standard bg-black/55 px-1.5 py-1
                      backdrop-blur-sm opacity-0 shadow-md shadow-black/30
                      transition-opacity duration-150
                      group-hover/message:opacity-100"

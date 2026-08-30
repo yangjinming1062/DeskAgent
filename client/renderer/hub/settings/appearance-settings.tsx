@@ -12,7 +12,7 @@ import { SettingsContent } from './primitives'
 
 function ThemePreview({ preview }: { preview: ThemeDefinition['preview'] }): React.JSX.Element {
   return (
-    <span className="flex h-10 w-[4.5rem] shrink-0 overflow-hidden rounded-lg border border-white/12">
+    <span className="flex h-10 w-[4.5rem] shrink-0 overflow-hidden rounded-lg border border-line-standard">
       <span className="flex flex-1 flex-col">
         <span className="flex-1" style={{ background: preview.chrome }} />
         <span className="flex-1" style={{ background: preview.panel }} />
@@ -31,8 +31,8 @@ export function AppearanceSettings(): React.JSX.Element {
   return (
     <SettingsContent>
       <div className="pt-1 pb-4">
-        <h2 className="text-sm font-semibold text-white">{a.heading}</h2>
-        <p className="mt-1 text-[11px] leading-relaxed text-white/40">{a.hint}</p>
+        <h2 className="text-sm font-semibold text-strong">{a.heading}</h2>
+        <p className="mt-1 text-[11px] leading-relaxed text-faint">{a.hint}</p>
       </div>
       <SettingCard>
         {THEMES.map(theme => {
@@ -42,7 +42,7 @@ export function AppearanceSettings(): React.JSX.Element {
             <button
               className={cn(
                 'flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left transition',
-                isActive ? 'bg-accent-soft' : 'hover:bg-white/5'
+                isActive ? 'bg-accent-soft' : 'hover:bg-fill-hover'
               )}
               key={theme.id}
               onClick={() => {
@@ -52,11 +52,11 @@ export function AppearanceSettings(): React.JSX.Element {
               type="button"
             >
               <span className="min-w-0">
-                <span className="flex items-center gap-1.5 text-xs font-medium text-white">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-strong">
                   {isActive && <IconCheck className="size-3.5 shrink-0 text-accent" />}
                   {theme.label}
                 </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-white/40">{theme.description}</span>
+                <span className="mt-0.5 block text-[11px] leading-relaxed text-faint">{theme.description}</span>
               </span>
               <ThemePreview preview={theme.preview} />
             </button>

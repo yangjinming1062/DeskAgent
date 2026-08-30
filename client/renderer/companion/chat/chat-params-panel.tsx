@@ -115,22 +115,22 @@ export function ChatParamsPanel(): React.JSX.Element {
   const thresholdPct = Math.round(threshold * 100)
 
   return (
-    <div className="w-full flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.03] p-2.5 text-left shadow-inner">
+    <div className="w-full flex flex-col gap-2 rounded-xl border border-line-hairline bg-fill-faint p-2.5 text-left shadow-inner">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-white/70">
+        <div className="flex items-center gap-1.5 text-body">
           <SlidersHorizontal className="size-3.5 text-accent" />
           <span className="text-[11px] font-medium tracking-wide">对话参数</span>
         </div>
-        <span className="text-[9px] text-white/30">当前会话</span>
+        <span className="text-[9px] text-faint">当前会话</span>
       </div>
 
       {/* 温度调节 */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-white/60" title="较低更严谨精准，较高更具创造力">
+          <span className="text-muted" title="较低更严谨精准，较高更具创造力">
             采样温度
           </span>
-          <span className="font-mono text-white/90 font-medium">{temp.toFixed(2)}</span>
+          <span className="font-mono text-strong font-medium">{temp.toFixed(2)}</span>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -150,10 +150,10 @@ export function ChatParamsPanel(): React.JSX.Element {
       {/* 压缩阈值调节 */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-white/60" title="上下文占用到该比例时触发历史自动压缩">
+          <span className="text-muted" title="上下文占用到该比例时触发历史自动压缩">
             压缩阈值
           </span>
-          <span className="font-mono text-white/90 font-medium">{thresholdPct}%</span>
+          <span className="font-mono text-strong font-medium">{thresholdPct}%</span>
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -173,14 +173,14 @@ export function ChatParamsPanel(): React.JSX.Element {
       {/* 推理等级调节 */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center justify-between text-[10px]">
-          <span className="text-white/60" title="模型思考链推理强度。none 关闭，low/medium/high 逐级加深">
+          <span className="text-muted" title="模型思考链推理强度。none 关闭，low/medium/high 逐级加深">
             推理等级
           </span>
-          <span className="text-white/90 font-medium text-[10px]">
+          <span className="text-strong font-medium text-[10px]">
             {REASONING_OPTIONS.find(o => o.value === reasoning)?.label ?? '关闭'}
           </span>
         </div>
-        <div className="grid grid-cols-4 gap-0.5 rounded-lg border border-white/10 bg-white/5 p-0.5">
+        <div className="grid grid-cols-4 gap-0.5 rounded-lg border border-line-standard bg-fill-faint p-0.5">
           {REASONING_OPTIONS.map(opt => {
             const active = reasoning === opt.value
 
@@ -188,7 +188,7 @@ export function ChatParamsPanel(): React.JSX.Element {
               <button
                 className={cn(
                   'rounded-md py-0.5 text-[10px] font-medium transition cursor-pointer text-center',
-                  active ? 'bg-accent text-white shadow-xs' : 'text-white/50 hover:bg-white/10 hover:text-white/90'
+                  active ? 'bg-accent text-on-accent shadow-xs' : 'text-muted hover:bg-fill-hover hover:text-strong'
                 )}
                 key={opt.value}
                 onClick={() => handleReasoningChange(opt.value)}

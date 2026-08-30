@@ -47,7 +47,7 @@ export function OverlayView({
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-white tech-grid">
+    <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-strong tech-grid">
       <HudCorners size={8} />
       <PanelHeader closeLabel={closeLabel} dragRegion icon={icon} onClose={closeOverlay} title={title} />
       <div className="min-h-0 flex flex-1 flex-col">{children}</div>

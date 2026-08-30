@@ -212,7 +212,7 @@ export function ChannelsSettings(): React.JSX.Element {
             }
           />
           {loginFlowActive ? (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-5">
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-line-standard bg-fill-faint px-4 py-5">
               {login.state === 'wait' && qrImage ? (
                 isDataImage(qrImage) ? (
                   <img
@@ -226,7 +226,7 @@ export function ChannelsSettings(): React.JSX.Element {
                   </div>
                 )
               ) : null}
-              <div className="text-xs text-white/60">
+              <div className="text-xs text-muted">
                 {login.state === 'wait' ? t.weixin.qrPrompt : null}
                 {login.state === 'scaned' ? t.weixin.scanedPrompt : null}
                 {login.state === 'expired' ? t.weixin.expiredPrompt : null}

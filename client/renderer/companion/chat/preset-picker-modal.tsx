@@ -71,12 +71,12 @@ export function PresetPickerModal({ presets, loading, onConfirm, onClose }: Pres
       title={strings.chat.presetPicker.title}
       widthClass="max-w-lg"
     >
-      <p className="mb-3 text-[11px] leading-relaxed text-white/55">{strings.chat.presetPicker.intro}</p>
+      <p className="mb-3 text-[11px] leading-relaxed text-muted">{strings.chat.presetPicker.intro}</p>
       <div className="space-y-2">
         {loading || (!fetched && presets.length === 0) ? (
-          <div className="py-6 text-center text-xs text-white/40">{strings.common.loading}</div>
+          <div className="py-6 text-center text-xs text-faint">{strings.common.loading}</div>
         ) : presets.length === 0 ? (
-          <div className="py-6 text-center text-xs text-white/40">{strings.chat.presetPicker.fetchFailed}</div>
+          <div className="py-6 text-center text-xs text-faint">{strings.chat.presetPicker.fetchFailed}</div>
         ) : (
           presets.map(p => {
             const selected = selectedId === p.id
@@ -87,7 +87,7 @@ export function PresetPickerModal({ presets, loading, onConfirm, onClose }: Pres
                 className={`flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
                   selected
                     ? 'border-accent-line bg-accent-soft'
-                    : 'border-white/10 hover:border-white/20 hover:bg-white/5'
+                    : 'border-line-standard hover:border-line-strong hover:bg-fill-faint'
                 }`}
                 key={p.id}
                 onClick={() => setSelectedId(p.id)}
@@ -95,14 +95,14 @@ export function PresetPickerModal({ presets, loading, onConfirm, onClose }: Pres
               >
                 <span
                   className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                    selected ? 'bg-white/15 text-white' : 'bg-white/5 text-white/55'
+                    selected ? 'bg-fill-hover text-strong' : 'bg-fill-faint text-muted'
                   }`}
                 >
                   <PresetIcon iconKey={p.icon_key} />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-xs font-medium text-white">{p.name}</span>
-                  <span className="mt-0.5 block text-[11px] leading-relaxed text-white/55 line-clamp-2">
+                  <span className="block text-xs font-medium text-strong">{p.name}</span>
+                  <span className="mt-0.5 block text-[11px] leading-relaxed text-muted line-clamp-2">
                     {p.description}
                   </span>
                 </span>

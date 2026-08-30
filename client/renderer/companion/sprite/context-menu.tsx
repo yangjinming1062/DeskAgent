@@ -15,7 +15,7 @@ interface ContextMenuProps {
 }
 
 const MENU_ITEM_CLASS =
-  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-medium text-white/85 transition-colors hover:bg-white/10 focus:bg-white/10 focus:outline-none'
+  'flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-left text-xs font-medium text-body transition-colors hover:bg-fill-hover focus:bg-fill-hover focus:outline-none'
 
 function MenuItem({
   icon: Icon,
@@ -35,14 +35,14 @@ function MenuItem({
       }}
       type="button"
     >
-      <Icon className="size-4 shrink-0 text-white/45" />
+      <Icon className="size-4 shrink-0 text-muted" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
     </button>
   )
 }
 
 function MenuDivider(): React.JSX.Element {
-  return <div className="-mx-1.5 my-1 h-px bg-white/8" />
+  return <div className="-mx-1.5 my-1 h-px bg-line-hairline" />
 }
 
 // 精灵右键菜单（瞬时浮层·轻玻璃档）：始终挂载、visibility 切换（避免 mount/unmount DOM），
@@ -124,7 +124,7 @@ export function SpriteContextMenu({
       }}
     >
       <div
-        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-white/12 bg-glass p-1.5 text-xs text-white shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
+        className="fixed z-50 min-w-48 origin-top-left overflow-hidden rounded-xl border border-line-standard bg-glass p-1.5 text-xs text-strong shadow-2xl backdrop-blur-glass select-none transition-[opacity,transform] duration-150 ease-out"
         onPointerDown={e => {
           e.stopPropagation()
         }}

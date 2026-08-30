@@ -21,6 +21,16 @@
   --color-accent-line: var(--ui-accent-line);
   --color-focus-line: var(--ui-focus-line);
   --color-success: var(--ui-success);
+  --color-on-accent: var(--ui-on-accent);
+  --color-fill-hover: var(--ui-fill-hover);
+  --color-fill-trough: var(--ui-fill-trough);
+  --color-inverse-surface: var(--ui-inverse-surface);
+  --color-inverse-surface-hover: var(--ui-inverse-surface-hover);
+  --color-inverse-fg: var(--ui-inverse-fg);
+  --color-danger-fg: var(--ui-danger-fg);
+  --color-danger-bg: var(--ui-danger-bg);
+  --color-danger-bg-hover: var(--ui-danger-bg-hover);
+  --color-danger-line: var(--ui-danger-line);
 
   --font-sans: var(--ui-font-sans);
   --font-mono: var(--ui-font-mono);
@@ -72,6 +82,17 @@
     --ui-focus-line: rgb(108 138 255 / 0.7);
     --ui-success: rgb(52 211 153);
 
+    --ui-on-accent: rgb(255 255 255);
+    --ui-fill-hover: rgb(255 255 255 / 0.08);
+    --ui-fill-trough: rgb(0 0 0 / 0.3);
+    --ui-inverse-surface: rgb(255 255 255);
+    --ui-inverse-surface-hover: rgb(235 235 235);
+    --ui-inverse-fg: rgb(0 0 0);
+    --ui-danger-fg: rgb(253 164 175);
+    --ui-danger-bg: rgb(244 63 94 / 0.1);
+    --ui-danger-bg-hover: rgb(244 63 94 / 0.2);
+    --ui-danger-line: rgb(251 113 133 / 0.3);
+
     --ui-font-sans:
       'Segoe WPC', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif,
       'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', emoji;
@@ -102,6 +123,8 @@
     --ui-line-standard: rgb(139 158 255 / 0.2);
     --ui-line-strong: rgb(168 184 255 / 0.32);
     --ui-fill-faint: rgb(140 155 255 / 0.07);
+    --ui-fill-hover: rgb(140 155 255 / 0.14);
+    --ui-fill-trough: rgb(0 0 0 / 0.3);
     --ui-text-strong: rgb(238 242 255 / 0.95);
     --ui-text-body: rgb(232 238 255 / 0.8);
     --ui-text-muted: rgb(226 234 255 / 0.52);
@@ -117,6 +140,85 @@
     --ui-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
   }
 
+  /* 经典浅色：与 classic 暗色结构对位的白底镜像，浅蓝强调，纸感白面板。 */
+  html[data-theme='classic-light'] {
+    color-scheme: light;
+
+    --ui-app-bg: #fafafa;
+    --ui-surface-chrome: #f4f4f5;
+    --ui-surface-panel: #ffffff;
+    --ui-surface-card: #ffffff;
+    --ui-glass-bg: rgb(255 255 255 / 0.7);
+    --ui-glass-blur: 0.75rem;
+    --ui-line-hairline: rgb(0 0 0 / 0.06);
+    --ui-line-standard: rgb(0 0 0 / 0.1);
+    --ui-line-strong: rgb(0 0 0 / 0.18);
+    --ui-fill-faint: rgb(0 0 0 / 0.04);
+    --ui-fill-hover: rgb(0 0 0 / 0.08);
+    --ui-fill-trough: rgb(0 0 0 / 0.06);
+    --ui-text-strong: rgb(15 18 28 / 0.92);
+    --ui-text-body: rgb(15 18 28 / 0.78);
+    --ui-text-muted: rgb(15 18 28 / 0.55);
+    --ui-text-faint: rgb(15 18 28 / 0.36);
+    --ui-accent: #3a5cff;
+    --ui-accent-soft: rgb(58 92 255 / 0.12);
+    --ui-accent-line: rgb(58 92 255 / 0.45);
+    --ui-focus-line: rgb(58 92 255 / 0.65);
+    --ui-success: rgb(20 145 90);
+
+    --ui-on-accent: rgb(255 255 255);
+    --ui-inverse-surface: rgb(20 22 28);
+    --ui-inverse-surface-hover: rgb(40 42 50);
+    --ui-inverse-fg: rgb(255 255 255);
+    --ui-danger-fg: rgb(190 18 60);
+    --ui-danger-bg: rgb(225 29 72 / 0.1);
+    --ui-danger-bg-hover: rgb(225 29 72 / 0.16);
+    --ui-danger-line: rgb(225 29 72 / 0.3);
+  }
+
+  /* 浅紫玻璃：cyber-glass 的光面版——极浅紫粉底、深紫文字、淡紫蓝渐变 + 玻璃模糊 + 弱噪点。
+     表面带 alpha，工具窗 body 由 linear-gradient 兜底不漏底色。 */
+  html[data-theme='lilac-glass'] {
+    color-scheme: light;
+
+    --ui-app-bg: linear-gradient(160deg, #f6f1fb, #f3eaf6 55%, #efe6f4);
+    --ui-surface-chrome: rgb(252 250 255 / 0.78);
+    --ui-surface-panel: rgb(255 252 255 / 0.7);
+    --ui-surface-card: rgb(255 252 255 / 0.78);
+    --ui-glass-bg: rgb(255 250 255 / 0.6);
+    --ui-glass-blur: 1.25rem;
+    --ui-line-hairline: rgb(120 90 170 / 0.14);
+    --ui-line-standard: rgb(120 90 170 / 0.2);
+    --ui-line-strong: rgb(120 90 170 / 0.32);
+    --ui-fill-faint: rgb(120 90 170 / 0.06);
+    --ui-fill-hover: rgb(120 90 170 / 0.14);
+    --ui-fill-trough: rgb(120 90 170 / 0.12);
+    --ui-text-strong: rgb(40 30 70 / 0.95);
+    --ui-text-body: rgb(40 30 70 / 0.78);
+    --ui-text-muted: rgb(60 45 95 / 0.55);
+    --ui-text-faint: rgb(60 45 95 / 0.38);
+    --ui-accent: #8b5cf6;
+    --ui-accent-soft: rgb(139 92 246 / 0.16);
+    --ui-accent-line: rgb(139 92 246 / 0.5);
+    --ui-focus-line: rgb(139 92 246 / 0.7);
+    --ui-success: rgb(28 145 110);
+
+    --ui-on-accent: rgb(255 255 255);
+    --ui-inverse-surface: rgb(40 30 70);
+    --ui-inverse-surface-hover: rgb(60 50 92);
+    --ui-inverse-fg: rgb(255 250 255);
+    --ui-danger-fg: rgb(162 28 100);
+    --ui-danger-bg: rgb(192 38 110 / 0.12);
+    --ui-danger-bg-hover: rgb(192 38 110 / 0.18);
+    --ui-danger-line: rgb(192 38 110 / 0.32);
+
+    --ui-grad-a: rgb(167 139 250 / 0.18);
+    --ui-grad-b: rgb(244 167 220 / 0.14);
+    --ui-glow: rgb(167 139 250 / 0.22);
+    --ui-glow-line: rgb(167 139 250 / 0.32);
+    --ui-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+  }
+
   /* 全息 HUD：青色细线勾勒模块、扫描线、扫掠光带与呼吸发光，近不透明深青黑底。 */
   html[data-theme='holo'] {
     --ui-app-bg: #060d12;
@@ -129,6 +231,8 @@
     --ui-line-standard: rgb(77 232 255 / 0.24);
     --ui-line-strong: rgb(77 232 255 / 0.4);
     --ui-fill-faint: rgb(77 232 255 / 0.06);
+    --ui-fill-hover: rgb(77 232 255 / 0.14);
+    --ui-fill-trough: rgb(0 0 0 / 0.35);
     --ui-text-strong: rgb(224 252 255 / 0.95);
     --ui-text-body: rgb(226 240 255 / 0.8);
     --ui-text-muted: rgb(220 236 248 / 0.52);
@@ -198,6 +302,15 @@
     background: rgb(255 210 74 / 0.38);
     color: inherit;
   }
+
+  /* 浅色主题选区：默认黄底在白底上几乎不可见，换成低透明度的强调色。 */
+  html[data-theme='classic-light'] *::selection {
+    background: rgb(58 92 255 / 0.22);
+  }
+
+  html[data-theme='lilac-glass'] *::selection {
+    background: rgb(139 92 246 / 0.26);
+  }
 }
 
 /* ── 主题特效层 ──────────────────────────────────────────────────────────────
@@ -219,6 +332,21 @@ html[data-theme='cyber-glass'] .bg-surface-chrome {
 }
 
 html[data-theme='cyber-glass'] .bg-surface-card {
+  background-image: var(--ui-noise);
+}
+
+html[data-theme='lilac-glass'] .bg-surface-panel,
+html[data-theme='lilac-glass'] .bg-surface-chrome {
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.15);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(1.15);
+  background-image: var(--ui-noise), linear-gradient(135deg, var(--ui-grad-a), var(--ui-grad-b) 60%, transparent);
+  background-repeat: repeat, no-repeat;
+  box-shadow:
+    0 0 0 1px var(--ui-glow-line),
+    0 0.5rem 2rem -0.75rem var(--ui-glow);
+}
+
+html[data-theme='lilac-glass'] .bg-surface-card {
   background-image: var(--ui-noise);
 }
 
@@ -571,6 +699,46 @@ canvas {
   border-radius: 9999px;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+
+/* 浅色主题：slider 拖动条默认 track 是白透明 + 白色 thumb，在白底上消失。
+   覆写成深色低透明 track + 深色 thumb，保留强调色填充的视觉信号。 */
+html[data-theme='classic-light'] .sa-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--ui-accent) 0,
+    var(--ui-accent) var(--sa-slider-fill, 0%),
+    rgb(0 0 0 / 0.12) var(--sa-slider-fill, 0%),
+    rgb(0 0 0 / 0.12) 100%
+  );
+}
+html[data-theme='classic-light'] .sa-slider::-webkit-slider-thumb {
+  background: rgb(15 18 28);
+}
+html[data-theme='classic-light'] .sa-slider::-moz-range-track {
+  background: rgb(0 0 0 / 0.12);
+}
+html[data-theme='classic-light'] .sa-slider::-moz-range-thumb {
+  background: rgb(15 18 28);
+}
+
+html[data-theme='lilac-glass'] .sa-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--ui-accent) 0,
+    var(--ui-accent) var(--sa-slider-fill, 0%),
+    rgb(120 90 170 / 0.22) var(--sa-slider-fill, 0%),
+    rgb(120 90 170 / 0.22) 100%
+  );
+}
+html[data-theme='lilac-glass'] .sa-slider::-webkit-slider-thumb {
+  background: rgb(40 30 70);
+}
+html[data-theme='lilac-glass'] .sa-slider::-moz-range-track {
+  background: rgb(120 90 170 / 0.22);
+}
+html[data-theme='lilac-glass'] .sa-slider::-moz-range-thumb {
+  background: rgb(40 30 70);
 }
 
 /* ── 现代科技感与全息控制台增强动效 ─────────────────────────────────────── */

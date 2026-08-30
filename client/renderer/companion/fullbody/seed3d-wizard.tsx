@@ -286,7 +286,7 @@ export function Seed3dWizard({
         <>
           {meta.title}
           {supportsMultiview && (
-            <span className="ml-1.5 text-[11px] font-normal text-white/40">
+            <span className="ml-1.5 text-[11px] font-normal text-faint">
               {stage === 'front' ? '1 / 2' : '2 / 2'}
             </span>
           )}
@@ -294,10 +294,10 @@ export function Seed3dWizard({
       }
       widthClass="max-w-sm"
     >
-      <p className="text-[11px] leading-relaxed text-white/55">{meta.hint}</p>
+      <p className="text-[11px] leading-relaxed text-muted">{meta.hint}</p>
 
       <div
-        className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-white/12 bg-black/40 group"
+        className="relative mx-auto mt-3 flex aspect-[9/16] max-h-[320px] w-auto items-center justify-center overflow-hidden rounded-xl border border-line-standard bg-black/40 group"
         style={frameRatio ? { aspectRatio: frameRatio } : undefined}
       >
         {current.previewUrl ? (
@@ -310,12 +310,12 @@ export function Seed3dWizard({
             <img alt={meta.alt} className="h-full w-full object-contain" src={current.previewUrl ?? undefined} />
           </button>
         ) : current.loading ? (
-          <div className="text-xs text-white/40">{meta.loadFail}</div>
+          <div className="text-xs text-faint">{meta.loadFail}</div>
         ) : current.failed ? (
-          <div className="text-xs text-white/40">暂无立绘</div>
+          <div className="text-xs text-faint">暂无立绘</div>
         ) : (
           <div className="flex flex-col items-center gap-3 px-4">
-            <div className="text-xs text-white/45">
+            <div className="text-xs text-muted">
               {stage === 'front' ? '尚未生成 3D 正面立绘' : '尚未生成背面立绘'}
             </div>
             <button className={BTN_PRIMARY} onClick={() => generate(stage, '')} type="button">
@@ -350,8 +350,8 @@ export function Seed3dWizard({
       {hint && <p className="mt-2 text-xs text-rose-300/90">{hint}</p>}
 
       {current.failed && !current.previewUrl && (
-        <div className="mt-3 flex items-center justify-between rounded-xl border border-white/8 bg-surface-card px-3 py-2">
-          <span className="text-white/60">{stage === 'front' ? '3D 正面立绘生成失败' : '背面立绘生成失败'}</span>
+        <div className="mt-3 flex items-center justify-between rounded-xl border border-line-hairline bg-surface-card px-3 py-2">
+          <span className="text-muted">{stage === 'front' ? '3D 正面立绘生成失败' : '背面立绘生成失败'}</span>
           <div className="flex gap-2">
             <button
               className={cn(BTN_SUBTLE, 'h-7 px-3')}
@@ -372,7 +372,7 @@ export function Seed3dWizard({
 
       <div className="mt-4 flex items-center justify-between">
         <button
-          className="rounded-lg px-2 py-1 text-xs text-white/60 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+          className="rounded-lg px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong disabled:opacity-40"
           disabled={current.loading}
           onClick={stage === 'back' ? () => setStage('front') : onCancel}
           type="button"
@@ -381,7 +381,7 @@ export function Seed3dWizard({
         </button>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg px-2 py-1 text-xs text-white/70 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+            className="rounded-lg px-2 py-1 text-xs text-body transition hover:bg-fill-hover hover:text-strong disabled:opacity-40"
             disabled={current.loading || !current.previewUrl}
             onClick={() => regenerate(stage)}
             type="button"

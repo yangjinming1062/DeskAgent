@@ -349,8 +349,8 @@ export function ShortcutRecorder({
             recording
               ? 'border-accent bg-accent/10 ring-1 ring-accent'
               : error
-                ? 'border-rose-400/40 bg-rose-500/10 hover:border-rose-400/60'
-                : 'border-line-standard bg-fill-faint hover:border-white/20 hover:bg-white/10',
+                ? 'border-danger-line bg-danger-bg hover:border-danger-line'
+                : 'border-line-standard bg-fill-faint hover:border-line-strong hover:bg-fill-hover',
             disabled && 'pointer-events-none opacity-40'
           )}
           disabled={disabled}
@@ -367,7 +367,7 @@ export function ShortcutRecorder({
               heldModifiers.length > 0 ? (
                 heldModifiers.map((mod, i) => (
                   <kbd
-                    className="inline-flex h-5 items-center rounded border border-accent/40 bg-accent/20 px-1.5 font-mono text-[11px] font-medium text-white shadow-xs"
+                    className="inline-flex h-5 items-center rounded border border-accent/40 bg-accent/20 px-1.5 font-mono text-[11px] font-medium text-accent shadow-xs"
                     key={i}
                   >
                     {formatKeyLabel(mod)}
@@ -381,27 +381,27 @@ export function ShortcutRecorder({
             ) : tokens.length > 0 ? (
               tokens.map((token, i) => (
                 <kbd
-                  className="inline-flex h-5 items-center rounded border border-white/15 bg-white/10 px-1.5 font-mono text-[11px] font-medium text-white/90 shadow-xs"
+                  className="inline-flex h-5 items-center rounded border border-line-strong bg-fill-hover px-1.5 font-mono text-[11px] font-medium text-strong shadow-xs"
                   key={i}
                 >
                   {formatKeyLabel(token)}
                 </kbd>
               ))
             ) : (
-              <span className="text-[11px] text-white/40">未设置</span>
+              <span className="text-[11px] text-faint">未设置</span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 pl-2 text-white/40 group-hover:text-white/70">
+          <div className="flex items-center gap-1.5 pl-2 text-faint group-hover:text-muted">
             {recording ? (
-              <span className="text-[10px] text-white/40">Esc 取消</span>
+              <span className="text-[10px] text-faint">Esc 取消</span>
             ) : (
               <>
                 {value &&
                   (registered && !error ? (
-                    <Check className="size-3.5 text-emerald-400/80" title="已成功注册全局热键" />
+                    <Check className="size-3.5 text-success" title="已成功注册全局热键" />
                   ) : (
-                    <AlertCircle className="size-3.5 text-rose-400" title={error || '热键注册失败'} />
+                    <AlertCircle className="size-3.5 text-danger-fg" title={error || '热键注册失败'} />
                   ))}
                 <Pencil className="size-3 opacity-0 transition group-hover:opacity-100" />
               </>
@@ -412,7 +412,7 @@ export function ShortcutRecorder({
         {value && !recording && (
           <button
             aria-label="清空快捷键"
-            className={cn(BTN_ICON, 'size-8 text-white/40 hover:text-white')}
+            className={cn(BTN_ICON, 'size-8 text-faint hover:text-strong')}
             disabled={disabled}
             onClick={() => onChange('')}
             title="禁用 / 清空快捷键"
@@ -425,7 +425,7 @@ export function ShortcutRecorder({
         {isCustomized && defaultValue && !recording && (
           <button
             aria-label="恢复默认快捷键"
-            className={cn(BTN_GHOST, 'h-8 px-2 text-white/50 hover:text-white')}
+            className={cn(BTN_GHOST, 'h-8 px-2 text-muted hover:text-strong')}
             disabled={disabled}
             onClick={() => onChange(defaultValue)}
             title={`恢复为默认值 (${defaultValue})`}
@@ -438,7 +438,7 @@ export function ShortcutRecorder({
       </div>
 
       {error && !recording && (
-        <div className="flex items-center gap-1 text-[11px] text-rose-400/90">
+        <div className="flex items-center gap-1 text-[11px] text-danger-fg">
           <AlertCircle className="size-3.5 shrink-0" />
           <span>{error}</span>
         </div>

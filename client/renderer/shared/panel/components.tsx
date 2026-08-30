@@ -72,7 +72,7 @@ export function TechCard({
     cardRef.current.style.transform = `perspective(800px) rotateX(${-dy * 4}deg) rotateY(${dx * 4}deg)`
 
     if (shineRef.current) {
-      shineRef.current.style.background = `radial-gradient(280px circle at ${x}px ${y}px, rgba(255,255,255,0.12), transparent 80%)`
+      shineRef.current.style.background = `radial-gradient(280px circle at ${x}px ${y}px, color-mix(in srgb, var(--ui-text-strong) 12%, transparent), transparent 80%)`
       shineRef.current.style.opacity = '1'
     }
   }
@@ -136,7 +136,7 @@ export function SettingsNav({
                 'shrink-0 size-4 transition-colors',
                 isActive
                   ? 'text-accent drop-shadow-[0_0_6px_var(--ui-accent)]'
-                  : 'text-white/40 group-hover:text-white/70'
+                  : 'text-muted group-hover:text-strong'
               )}
             />
             <span className="min-w-0 flex-1 truncate">{item.label}</span>
@@ -161,7 +161,7 @@ export function SettingsPage({
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <header className="px-5 pb-3 pt-4">
-        <h2 className="text-sm font-semibold text-white">{title}</h2>
+        <h2 className="text-sm font-semibold text-strong">{title}</h2>
         {hint && <p className={cn('mt-1', HINT_TEXT)}>{hint}</p>}
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{children}</div>
@@ -172,7 +172,7 @@ export function SettingsPage({
 // 卡片行容器：多行 SettingRow 之间用 hairline 分隔。
 export function SettingCard({ children }: { children: ReactNode }): React.JSX.Element {
   return (
-    <div className="divide-y divide-white/5 overflow-hidden rounded-xl border border-white/8 bg-surface-card">
+    <div className="divide-line-hairline overflow-hidden rounded-xl border border-line-hairline bg-surface-card">
       {children}
     </div>
   )
@@ -198,8 +198,8 @@ export function SettingRow({
       )}
     >
       <div className="min-w-0">
-        <div className="text-xs font-medium text-white/90">{label}</div>
-        {description && <div className="mt-0.5 text-[11px] leading-relaxed text-white/40">{description}</div>}
+        <div className="text-xs font-medium text-strong">{label}</div>
+        {description && <div className="mt-0.5 text-[11px] leading-relaxed text-faint">{description}</div>}
       </div>
       <div className={cn('min-w-0', !stacked && 'sm:justify-self-end')}>{children}</div>
     </div>
@@ -223,7 +223,7 @@ export function Toggle({
       aria-label={ariaLabel}
       className={cn(
         'relative h-5 w-9 shrink-0 rounded-full border transition-colors disabled:pointer-events-none disabled:opacity-40',
-        checked ? 'border-transparent bg-accent' : 'border-white/15 bg-white/10'
+        checked ? 'border-transparent bg-accent' : 'border-line-strong bg-fill-hover'
       )}
       disabled={disabled}
       onClick={() => onChange(!checked)}
@@ -232,7 +232,7 @@ export function Toggle({
     >
       <span
         className={cn(
-          'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-white transition-[left] duration-150',
+          'absolute top-1/2 size-4 -translate-y-1/2 rounded-full bg-inverse-surface transition-[left] duration-150',
           checked ? 'left-[calc(100%-1.125rem)]' : 'left-0.5'
         )}
       />
@@ -250,12 +250,12 @@ export function Segmented<T extends string>({
   onChange: (next: T) => void
 }): React.JSX.Element {
   return (
-    <div className="flex gap-0.5 rounded-xl border border-white/10 bg-black/30 p-0.5">
+    <div className="flex gap-0.5 rounded-xl border border-line-standard bg-fill-trough p-0.5">
       {options.map(o => (
         <button
           className={cn(
             'flex-1 rounded-[0.625rem] px-3 py-1.5 text-xs whitespace-nowrap transition',
-            value === o.value ? 'bg-white/12 font-medium text-white' : 'text-white/55 hover:text-white'
+            value === o.value ? 'bg-surface-card font-medium text-strong shadow-xs' : 'text-muted hover:text-strong'
           )}
           key={o.value}
           onClick={() => onChange(o.value)}
@@ -268,7 +268,7 @@ export function Segmented<T extends string>({
   )
 }
 
-// 数值滑杆：品牌蓝已填充段（--sa-slider-fill 由内联注入）+ 白色圆钮，皮肤在 styles.css 的 .sa-slider。
+// 数值滑杆：品牌蓝已填充段（--sa-slider-fill 由内联注入）+ 圆钮，皮肤在 styles.css 的 .sa-slider。
 export function Slider({
   value,
   min,
@@ -324,7 +324,7 @@ export function PanelHeader({
   return (
     <div
       className={cn(
-        'relative flex items-center justify-between gap-2 border-b border-white/10 px-4 py-2.5 bg-white/[0.02]',
+        'relative flex items-center justify-between gap-2 border-b border-line-standard px-4 py-2.5 bg-fill-faint',
         dragBind && 'cursor-grab active:cursor-grabbing',
         dragRegion && '[-webkit-app-region:drag]'
       )}
@@ -333,13 +333,13 @@ export function PanelHeader({
     >
       <div className="flex items-center gap-2.5">
         {Icon && (
-          <div className="flex size-6 items-center justify-center rounded-md border border-white/10 bg-white/5 shadow-[inset_0_0_8px_rgba(255,255,255,0.05)]">
+          <div className="flex size-6 items-center justify-center rounded-md border border-line-standard bg-fill-hover">
             <Icon className="size-3.5 text-accent drop-shadow-[0_0_6px_var(--ui-accent)]" />
           </div>
         )}
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold tracking-wide text-white">{title}</h2>
-          <span className="hidden font-mono text-[9px] text-white/25 uppercase tracking-widest sm:inline-block">
+          <h2 className="text-sm font-semibold tracking-wide text-strong">{title}</h2>
+          <span className="hidden font-mono text-[9px] text-faint uppercase tracking-widest sm:inline-block">
             [SYS.PANEL]
           </span>
         </div>
@@ -348,7 +348,7 @@ export function PanelHeader({
         aria-label={closeLabel}
         className={cn(
           BTN_ICON,
-          'hover:border hover:border-white/15 hover:bg-rose-500/15 hover:text-rose-300',
+          'hover:border hover:border-line-strong hover:bg-danger-bg hover:text-danger-fg',
           dragRegion && '[-webkit-app-region:no-drag]'
         )}
         onClick={onClose}
@@ -361,7 +361,7 @@ export function PanelHeader({
 }
 
 export function Spinner({ className }: { className?: string }): React.JSX.Element {
-  return <Loader2 className={cn('size-4 animate-spin text-white/40', className)} />
+  return <Loader2 className={cn('size-4 animate-spin text-faint', className)} />
 }
 
 export function EmptyState({
@@ -376,8 +376,8 @@ export function EmptyState({
   return (
     <div className="grid min-h-36 place-items-center px-4 py-8 text-center">
       <div className="max-w-sm">
-        <div className="text-xs font-medium text-white/70">{title}</div>
-        {description && <div className="mt-1 text-[11px] leading-relaxed text-white/40">{description}</div>}
+        <div className="text-xs font-medium text-muted">{title}</div>
+        {description && <div className="mt-1 text-[11px] leading-relaxed text-faint">{description}</div>}
         {action && <div className="mt-3 flex justify-center">{action}</div>}
       </div>
     </div>
@@ -438,22 +438,24 @@ export function PanelSelect<T extends string>({
         aria-expanded={open}
         aria-haspopup="listbox"
         aria-label={ariaLabel}
-        className="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-white/12 bg-white/5 px-3 text-xs text-white transition hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
+        className="flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-line-standard bg-fill-faint px-3 text-xs text-strong transition hover:bg-fill-hover disabled:pointer-events-none disabled:opacity-40"
         disabled={disabled}
         onClick={() => setOpen(o => !o)}
         type="button"
       >
         <span className="truncate">{selected?.label ?? value}</span>
-        <ChevronDown className={cn('size-3.5 shrink-0 text-white/40 transition-transform', open && 'rotate-180')} />
+        <ChevronDown className={cn('size-3.5 shrink-0 text-faint transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-1 min-w-full overflow-hidden rounded-xl border border-white/12 bg-surface-panel p-1 shadow-2xl">
+        <div className="absolute right-0 z-50 mt-1 min-w-full overflow-hidden rounded-xl border border-line-standard bg-surface-panel p-1 shadow-2xl">
           {options.map(o => (
             <button
               aria-selected={o.value === value}
               className={cn(
                 'flex h-7 w-full items-center rounded-lg px-2.5 text-left text-xs transition',
-                o.value === value ? 'bg-accent-soft font-medium text-white' : 'text-white/70 hover:bg-white/5'
+                o.value === value
+                  ? 'bg-accent-soft font-medium text-accent'
+                  : 'text-muted hover:bg-fill-hover'
               )}
               key={o.value}
               onClick={() => {
@@ -480,16 +482,16 @@ export function SearchField({
 }: {
   value: string
   onChange: (next: string) => void
-  placeholder: string
+  placeholder?: string
   ariaLabel?: string
 }): React.JSX.Element {
   return (
     <div className="relative w-full max-w-sm">
-      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-white/35" />
+      <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
       <input
         aria-label={ariaLabel}
         className={cn(INPUT_CLASS, 'py-1.5 pl-8 pr-8')}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => onChange(e.currentTarget.value)}
         placeholder={placeholder}
         type="text"
         value={value}
@@ -497,7 +499,7 @@ export function SearchField({
       {value && (
         <button
           aria-label="清空搜索"
-          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-white/40 transition hover:bg-white/10 hover:text-white"
+          className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-faint transition hover:bg-fill-hover hover:text-strong"
           onClick={() => onChange('')}
           type="button"
         >
@@ -510,7 +512,7 @@ export function SearchField({
 
 export function LoadingBlock({ label }: { label?: string }): React.JSX.Element {
   return (
-    <div className="flex items-center justify-center gap-2 py-12 text-xs text-white/40">
+    <div className="flex items-center justify-center gap-2 py-12 text-xs text-faint">
       <Spinner />
       {label}
     </div>
@@ -572,9 +574,9 @@ export function ConfirmDialog({
         }
       }}
     >
-      <div className="w-full max-w-md rounded-2xl border border-white/12 bg-surface-panel p-5 text-white shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-line-strong bg-surface-panel p-5 text-strong shadow-2xl">
         <h3 className="text-sm font-semibold">{title}</h3>
-        {description && <p className="mt-2 text-xs leading-relaxed text-white/60">{description}</p>}
+        {description && <p className="mt-2 text-xs leading-relaxed text-muted">{description}</p>}
         <div className="mt-5 flex justify-end gap-2">
           <button className={BTN_SUBTLE} disabled={busy} onClick={() => onOpenChange(false)} type="button">
             {cancelLabel}

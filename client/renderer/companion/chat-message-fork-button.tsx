@@ -59,16 +59,16 @@ export function ChatMessageForkButton({
     icon = <Loader2 className="animate-spin" size={12} />
     label = '正在派生新对话…'
     styleClass =
-      'rounded-full border border-white/30 bg-white/10 px-2 py-1 text-xs text-white transition hover:bg-white/20'
+      'rounded-full border border-line-strong bg-fill-hover px-2 py-1 text-xs text-strong transition hover:bg-fill-hover'
   } else if (otherBusy) {
     icon = <Copy size={12} />
     label = '另一条正在派生'
-    styleClass = 'rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/20 cursor-not-allowed'
+    styleClass = 'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
   } else {
     icon = <Copy size={12} />
     label = '从这条消息派生新对话'
     styleClass =
-      'rounded-full border border-white/20 bg-white/5 px-2 py-1 text-xs text-white/50 transition hover:bg-white/15 hover:text-white'
+      'rounded-full border border-line-strong bg-fill-faint px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong'
   }
 
   return (

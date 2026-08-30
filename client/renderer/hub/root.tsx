@@ -48,8 +48,8 @@ export function ToolRoot(): React.JSX.Element {
   // 在认证前没有内容可显示。
   if (auth.kind !== 'authenticated') {
     return (
-      <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-white backdrop-blur-md">
-        <Loader2 className="size-8 animate-spin text-white/40" />
+      <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-strong backdrop-blur-md">
+        <Loader2 className="size-8 animate-spin text-faint" />
       </div>
     )
   }
@@ -60,8 +60,8 @@ export function ToolRoot(): React.JSX.Element {
     <>
       <Suspense
         fallback={
-          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-white backdrop-blur-md">
-            <Loader2 className="size-8 animate-spin text-white/40" />
+          <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-black/60 text-strong backdrop-blur-md">
+            <Loader2 className="size-8 animate-spin text-faint" />
           </div>
         }
       >

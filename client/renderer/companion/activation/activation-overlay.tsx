@@ -69,17 +69,17 @@ export function ActivationOverlay({ onClose }: { onClose: () => void }): React.J
       ref={overlayRef}
     >
       <form
-        className="relative w-full max-w-lg rounded-2xl border border-white/12 bg-surface-panel p-7 text-white shadow-2xl"
+        className="relative w-full max-w-lg rounded-2xl border border-line-standard bg-surface-panel p-7 text-strong shadow-2xl"
         onSubmit={onSubmit}
       >
         <div className="mb-5 flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex size-10 items-center justify-center rounded-xl border border-white/12 bg-white/5 text-white">
+            <div className="flex size-10 items-center justify-center rounded-xl border border-line-standard bg-fill-faint text-accent">
               <Sparkles className="size-5" />
             </div>
             <div>
               <h2 className="text-lg font-semibold tracking-tight">激活 SpiritAgent</h2>
-              <p className="text-sm text-white/40">粘贴您收到的激活码以开始使用。</p>
+              <p className="text-sm text-faint">粘贴您收到的激活码以开始使用。</p>
             </div>
           </div>
           <button aria-label="关闭" className={BTN_ICON} disabled={busy} onClick={onClose} type="button">

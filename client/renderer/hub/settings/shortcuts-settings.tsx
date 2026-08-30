@@ -104,7 +104,7 @@ export function ShortcutsSettings(): React.JSX.Element {
         </SettingCard>
 
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-          <div className="flex items-center gap-1.5 text-white/40">
+          <div className="flex items-center gap-1.5 text-faint">
             <Sparkles className="size-3.5 shrink-0 text-accent" />
             <p className={HINT_TEXT}>{t.pressKeysHint}</p>
           </div>

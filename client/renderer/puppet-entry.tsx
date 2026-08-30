@@ -73,7 +73,7 @@ function PuppetStageApp() {
   return (
     <div className="relative h-screen w-screen bg-neutral-950">
       <PuppetStage />
-      <span className="absolute top-2 left-4 z-10 text-xs text-white/70">{status}</span>
+      <span className="absolute top-2 left-4 z-10 text-xs text-body">{status}</span>
     </div>
   )
 }
@@ -93,7 +93,7 @@ function Slider({
 }) {
   return (
     <label className="flex items-center gap-2 text-xs">
-      <span className="w-24 shrink-0 text-white/60">{label}</span>
+      <span className="w-24 shrink-0 text-muted">{label}</span>
       <input
         className="flex-1 accent-rose-500"
         max={max}
@@ -455,10 +455,10 @@ function PuppetDevApp() {
         }
       }}
     >
-      <header className="flex items-baseline gap-3 border-b border-white/10 px-4 py-2">
+      <header className="flex items-baseline gap-3 border-b border-line-standard px-4 py-2">
         <h1 className="text-sm font-semibold text-white">Puppet 调试台</h1>
-        <span className="text-xs text-white/40">{status}</span>
-        <span className="ml-auto text-[10px] text-white/30">
+        <span className="text-xs text-faint">{status}</span>
+        <span className="ml-auto text-[10px] text-faint">
           {rig ? `${rig.layers.length} parts / ${rig.warnings.length} warnings` : ''}
         </span>
       </header>
@@ -471,14 +471,14 @@ function PuppetDevApp() {
         >
           <PuppetCanvas onRig={onRig} ref={handleRef} />
         </div>
-        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-white/10 p-4">
+        <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-l border-line-standard p-4">
           <button
             className="rounded bg-rose-700 px-3 py-1.5 text-xs text-white hover:bg-rose-600"
             onClick={() => fileRef.current?.click()}
           >
             选择 PSD 文件
           </button>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-white/60">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted">
             {(['idle', 'rand', 'blink', 'talk', 'gaze'] as const).map(key => (
               <label className="flex items-center gap-1" key={key}>
                 <input checked={autos[key]} onChange={toggleAuto(key)} type="checkbox" />
@@ -572,7 +572,7 @@ function PuppetDevApp() {
             }}
             value={mouthOpen}
           />
-          <p className="mt-auto text-[10px] leading-relaxed text-white/30">
+          <p className="mt-auto text-[10px] leading-relaxed text-faint">
             在画布区移动鼠标：角色视线会跟随光标（眼先动、头跟随）。
           </p>
         </aside>

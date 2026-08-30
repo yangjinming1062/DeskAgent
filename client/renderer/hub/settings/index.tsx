@@ -50,7 +50,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
   return (
     <OverlayView closeLabel={t.settings.closeSettings} icon={Settings} onClose={onClose} title={t.settings.title}>
       <div className="flex min-h-0 flex-1">
-        <aside className={cn(SURFACE_CHROME, 'flex w-52 shrink-0 flex-col border-r border-white/10 p-2.5')}>
+        <aside className={cn(SURFACE_CHROME, 'flex w-52 shrink-0 flex-col border-r border-line-standard p-2.5')}>
           <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsViewId)} />
         </aside>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

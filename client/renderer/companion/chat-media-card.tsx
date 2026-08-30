@@ -9,7 +9,7 @@ export function ChatMediaCard({ item }: { item: ChatMediaItem }): React.JSX.Elem
 
   if (!src) {
     return (
-      <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-xs text-white/40">
+      <div className="flex h-24 w-40 items-center justify-center rounded-lg border border-line-standard bg-fill-faint text-xs text-faint">
         {item.type === 'image' ? '图片加载中…' : '视频加载中…'}
       </div>
     )
@@ -17,7 +17,7 @@ export function ChatMediaCard({ item }: { item: ChatMediaItem }): React.JSX.Elem
 
   return (
     <button
-      className="block cursor-zoom-in overflow-hidden rounded-lg border border-white/10 bg-black/30 p-0 transition hover:border-white/30"
+      className="block cursor-zoom-in overflow-hidden rounded-lg border border-line-standard bg-fill-trough p-0 transition hover:border-line-strong"
       onClick={() => openMediaViewer(item)}
       type="button"
     >

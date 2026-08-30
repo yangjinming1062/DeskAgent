@@ -36,7 +36,7 @@ export function TemperatureSection({
               step={0.01}
               value={state.chat_temperature}
             />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-white/70">
+            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
               {state.chat_temperature.toFixed(2)}
             </span>
           </div>
@@ -56,7 +56,7 @@ export function TemperatureSection({
               step={0.01}
               value={state.title_generation_temperature}
             />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-white/70">
+            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
               {state.title_generation_temperature.toFixed(2)}
             </span>
           </div>
@@ -76,7 +76,7 @@ export function TemperatureSection({
               step={0.01}
               value={state.compression_temperature}
             />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-white/70">
+            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
               {state.compression_temperature.toFixed(2)}
             </span>
           </div>

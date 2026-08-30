@@ -173,7 +173,7 @@ export function EggStage({ size = 280, onTap }: EggStageProps): React.JSX.Elemen
       </svg>
 
       {promptVisible && (
-        <div className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-white/70 animate-pulse">
+        <div className="pointer-events-none absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-body animate-pulse">
           戳一戳，让我醒来
         </div>
       )}

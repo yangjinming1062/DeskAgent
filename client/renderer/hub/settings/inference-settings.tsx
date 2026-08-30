@@ -198,11 +198,11 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
 
       <AgentDefaultsSection disabled={isSaving} state={agent} t={a.agentDefaults} update={updateAgent} />
 
-      <div className="my-4 h-px bg-white/10" />
+      <div className="my-4 h-px bg-line-standard" />
 
       <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
 
-      <div className="my-4 h-px bg-white/10" />
+      <div className="my-4 h-px bg-line-standard" />
 
       <TemperatureSection disabled={isSaving} state={temperature} t={a.temperature} update={updateTemperature} />
 

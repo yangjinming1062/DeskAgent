@@ -83,21 +83,21 @@ export function ChatMessagePlayButton({
   let icon = '🔊'
 
   let styleClass =
-    'rounded-full border border-white/20 bg-white/5 px-2 py-1 text-xs text-white/50 transition hover:bg-white/15 hover:text-white'
+    'rounded-full border border-line-strong bg-fill-faint px-2 py-1 text-xs text-muted transition hover:bg-fill-hover hover:text-strong'
 
   if (isMinePlaying) {
     label = '停止播放'
     styleClass =
-      'rounded-full border border-white/30 bg-white/10 px-2 py-1 text-xs text-white transition hover:bg-white/20'
+      'rounded-full border border-line-strong bg-fill-hover px-2 py-1 text-xs text-strong transition hover:bg-fill-hover'
   } else if (voicePreparing && otherBusy) {
     icon = '⏳'
     label = '正在准备语音'
-    styleClass = 'rounded-full border border-white/10 bg-white/5 px-2 py-1 text-xs text-white/20 cursor-not-allowed'
+    styleClass = 'rounded-full border border-line-standard bg-fill-faint px-2 py-1 text-xs text-faint cursor-not-allowed'
   } else if (voicePreparing) {
     // 自己正在准备（gen 已占但 playDataUrl 还没 resolve）—— 显示 loading。
     label = '正在准备语音'
     styleClass =
-      'rounded-full border border-white/20 bg-white/5 px-2 py-1 text-xs text-white/30 cursor-progress animate-pulse'
+      'rounded-full border border-line-strong bg-fill-faint px-2 py-1 text-xs text-faint cursor-progress animate-pulse'
   }
 
   return (

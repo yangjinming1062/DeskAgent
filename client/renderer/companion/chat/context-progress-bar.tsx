@@ -60,7 +60,7 @@ export function ContextProgressBar(): React.JSX.Element {
   const isWarning = !isInactive && !isHealthy && pct < thresholdPct * 0.88
 
   const barColor = isInactive
-    ? 'bg-white/20'
+    ? 'bg-fill-faint0'
     : isHealthy
       ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.35)]'
       : isWarning
@@ -120,7 +120,7 @@ export function ContextProgressBar(): React.JSX.Element {
     >
       {/* 悬停浮层提示信息 */}
       {hovered && (
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-md border border-white/12 bg-neutral-900/95 px-2.5 py-1 text-[10px] text-white/90 shadow-lg backdrop-blur-sm whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 rounded-md border border-line-standard bg-neutral-900/95 px-2.5 py-1 text-[10px] text-strong shadow-lg backdrop-blur-sm whitespace-nowrap pointer-events-none animate-in fade-in zoom-in-95 duration-150">
           {compressing ? (
             <div className="flex items-center gap-1.5 text-accent">
               <Loader2 className="size-3 animate-spin" />
@@ -129,14 +129,14 @@ export function ContextProgressBar(): React.JSX.Element {
           ) : (
             <>
               <span>
-                上下文：<strong className="font-mono text-white">{totalTokens.toLocaleString()}</strong> /{' '}
-                <span className="font-mono text-white/60">{contextLimit.toLocaleString()}</span> Tokens (
+                上下文：<strong className="font-mono text-strong">{totalTokens.toLocaleString()}</strong> /{' '}
+                <span className="font-mono text-muted">{contextLimit.toLocaleString()}</span> Tokens (
                 {pct.toFixed(1)}%)
               </span>
-              <span className="text-white/30">·</span>
+              <span className="text-faint">·</span>
               <span className="text-accent font-medium">压缩节点: {Math.round(thresholdPct)}%</span>
-              <span className="text-white/30">·</span>
-              <span className="text-white/60 font-sans flex items-center gap-0.5">
+              <span className="text-faint">·</span>
+              <span className="text-muted font-sans flex items-center gap-0.5">
                 <Sparkles className="size-2.5 text-amber-300" />
                 点击立即压缩
               </span>
@@ -149,7 +149,7 @@ export function ContextProgressBar(): React.JSX.Element {
       <button
         aria-label="手动压缩上下文"
         className={cn(
-          'relative h-1.5 w-full overflow-visible rounded-full bg-white/10 transition group cursor-pointer block border-0 p-0',
+          'relative h-1.5 w-full overflow-visible rounded-full bg-fill-hover transition group cursor-pointer block border-0 p-0',
           compressing && 'cursor-wait animate-pulse'
         )}
         disabled={compressing}
@@ -165,11 +165,11 @@ export function ContextProgressBar(): React.JSX.Element {
 
         {/* 压缩阈值节点标识 (Node Marker) */}
         <div
-          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-[2px] rounded-full bg-white/70 shadow-xs transition group-hover:bg-white group-hover:h-3.5"
+          className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 h-2.5 w-[2px] rounded-full bg-line-strong shadow-xs transition group-hover:h-3.5"
           style={{ left: `${thresholdPct}%` }}
           title={`压缩阈值节点 (${Math.round(thresholdPct)}%)`}
         >
-          <div className="absolute -top-1 left-1/2 -translate-x-1/2 size-1 rounded-full bg-white/80" />
+          <div className="absolute -top-1 left-1/2 -translate-x-1/2 size-1 rounded-full bg-line-strong" />
         </div>
       </button>
     </div>

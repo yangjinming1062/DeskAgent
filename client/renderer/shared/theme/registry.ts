@@ -20,10 +20,22 @@ export const THEMES: readonly ThemeDefinition[] = [
     preview: { chrome: '#0f0f11', panel: '#141416', card: '#1c1c21', accent: '#6c8aff' }
   },
   {
+    id: 'classic-light',
+    label: '经典浅色',
+    description: '石墨分层对位的白底版本，干净稳重。',
+    preview: { chrome: '#f4f4f5', panel: '#ffffff', card: '#ffffff', accent: '#3a5cff' }
+  },
+  {
     id: 'cyber-glass',
     label: '赛博玻璃',
     description: '玻璃拟态半透面板，蓝紫渐变、像素噪点与发光描边。',
     preview: { chrome: '#0a0c18', panel: '#101324', card: '#181c34', accent: '#7d9bff' }
+  },
+  {
+    id: 'lilac-glass',
+    label: '浅紫玻璃',
+    description: '柔和高质感浅紫玻璃面板，渐变与像素噪点。',
+    preview: { chrome: '#efe6f4', panel: '#f7eef9', card: '#fff8ff', accent: '#8b5cf6' }
   },
   {
     id: 'holo',

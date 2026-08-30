@@ -11,7 +11,7 @@ export function SettingsContent({ children }: { children: ReactNode }): React.JS
   return (
     <section className="min-h-0 overflow-hidden">
       <div className={cn('h-full min-h-0 overflow-y-auto pb-20', PAGE_INSET_X)}>
-        <div className="mx-auto w-full max-w-4xl text-white">{children}</div>
+        <div className="mx-auto w-full max-w-4xl text-strong">{children}</div>
       </div>
     </section>
   )
@@ -29,7 +29,7 @@ export function Pill({
 
 export function SectionHeading({ title, meta }: { title: string; meta?: string }): React.JSX.Element {
   return (
-    <div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-white/90">
+    <div className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-strong">
       <span className="size-1.5 rounded-full bg-accent shadow-[0_0_4px_var(--ui-accent)]" />
       <span>{title}</span>
       {meta && <Pill>{meta}</Pill>}
@@ -48,10 +48,10 @@ export function SettingsSubsection({
 }): React.JSX.Element {
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-white/85">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-strong">
         <span>{title}</span>
       </div>
-      {intro ? <p className="text-[10px] text-white/40">{intro}</p> : null}
+      {intro ? <p className="text-[10px] text-faint">{intro}</p> : null}
       <div className="space-y-2">{children}</div>
     </div>
   )
@@ -73,13 +73,13 @@ export function ListRow({
   return (
     <div
       className={cn(
-        'group relative grid gap-3 rounded-xl border border-white/6 bg-white/[0.02] p-3 transition-all duration-150 hover:border-white/12 hover:bg-white/[0.04] sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center',
+        'group relative grid gap-3 rounded-xl border border-line-hairline bg-fill-faint p-3 transition-all duration-150 hover:border-line-strong hover:bg-fill-hover sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center',
         wide && 'sm:grid-cols-1 sm:items-start'
       )}
     >
       <div className="min-w-0">
-        <div className="text-xs font-medium text-white/90">{title}</div>
-        {description && <div className="mt-1 text-[11px] leading-relaxed text-white/45">{description}</div>}
+        <div className="text-xs font-medium text-strong">{title}</div>
+        {description && <div className="mt-1 text-[11px] leading-relaxed text-muted">{description}</div>}
         {below}
       </div>
       {action && <div className={cn('min-w-0', !wide && 'sm:justify-self-end')}>{action}</div>}
@@ -95,8 +95,8 @@ export function EmptyState({ title, description }: { title: string; description:
   return (
     <div className="grid min-h-48 place-items-center text-center">
       <div>
-        <div className="text-sm font-medium text-white/80">{title}</div>
-        <div className="mt-1 text-xs text-white/40">{description}</div>
+        <div className="text-sm font-medium text-strong">{title}</div>
+        <div className="mt-1 text-xs text-faint">{description}</div>
       </div>
     </div>
   )

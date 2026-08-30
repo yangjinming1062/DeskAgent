@@ -199,8 +199,8 @@ export function SkillsSettings(): React.JSX.Element {
                   <h3
                     className={
                       isUserCategory(categoryKey)
-                        ? 'text-xs font-medium text-white/80 capitalize'
-                        : 'text-xs font-medium text-white/80'
+                        ? 'text-xs font-medium text-body capitalize'
+                        : 'text-xs font-medium text-body'
                     }
                   >
                     {categoryLabel(categoryKey, sk.other)}

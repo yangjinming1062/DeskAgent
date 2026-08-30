@@ -165,12 +165,12 @@ export function ToolsetsSettings(): React.JSX.Element {
           const toolNames = roster?.toolNames ?? []
 
           return (
-            <div className="rounded-xl border border-white/8 bg-surface-card p-4" key={catalog.id}>
+            <div className="rounded-xl border border-line-hairline bg-surface-card p-4" key={catalog.id}>
               <div className="flex items-start gap-3">
-                <Icon className="mt-0.5 size-5 shrink-0 text-white/50" />
+                <Icon className="mt-0.5 size-5 shrink-0 text-muted" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium text-white/90">{label || catalog.id}</div>
-                  <div className="mt-1 text-[10px] leading-relaxed text-white/40">{description}</div>
+                  <div className="text-xs font-medium text-strong">{label || catalog.id}</div>
+                  <div className="mt-1 text-[10px] leading-relaxed text-faint">{description}</div>
                 </div>
                 <Toggle
                   checked={enabled}
@@ -182,7 +182,7 @@ export function ToolsetsSettings(): React.JSX.Element {
                 <div className="mt-3 flex flex-wrap gap-1.5 pl-8">
                   {toolNames.map(name => (
                     <span
-                      className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[0.65rem] text-white/70"
+                      className="rounded-md border border-line-standard bg-fill-faint px-1.5 py-0.5 font-mono text-[0.65rem] text-muted"
                       key={name}
                     >
                       {name}

@@ -59,7 +59,7 @@ export function ContextCompressionSection({
               step={THRESHOLD_STEP}
               value={state.context_compression_threshold}
             />
-            <span className="w-12 shrink-0 text-right font-mono text-xs text-white/70">{thresholdPct}%</span>
+            <span className="w-12 shrink-0 text-right font-mono text-xs text-body">{thresholdPct}%</span>
           </div>
         }
         description={t.thresholdDesc}
