@@ -120,7 +120,7 @@ export function CompanionRoot(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    const off = window.spiritagent.onAuthChanged(payload => applyAuthBroadcast(payload))
+    const off = window.spiritagent.onAuthChanged(payload => void applyAuthBroadcast(payload))
 
     return () => off()
   }, [])

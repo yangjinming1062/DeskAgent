@@ -32,8 +32,12 @@ function isValidPsdBuffer(buffer: ArrayBuffer): boolean {
 
 /** PSD fetcher：apiAssetBuffer IPC（生产路径），puppet.html 调试页 fallback 到同源 fetch。
  *  abort 时返回 null，错误抛给上层走 throwOnError=true 原样抛给调用方（保留旧契约）。 */
- 
-async function psdFetcher(url: string, contentHash: string | null | undefined, signal: AbortSignal): Promise<ArrayBuffer | null> {
+
+async function psdFetcher(
+  url: string,
+  contentHash: string | null | undefined,
+  signal: AbortSignal
+): Promise<ArrayBuffer | null> {
   if (typeof window.spiritagent?.apiAssetBuffer === 'function') {
     const u8 = await window.spiritagent.apiAssetBuffer({
       contentHash: contentHash || undefined,

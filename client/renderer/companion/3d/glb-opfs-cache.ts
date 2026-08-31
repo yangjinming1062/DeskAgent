@@ -17,8 +17,12 @@ registerStorageClearHandler(clearGlbCache)
 
 /** GLB fetcher：优先走 spiritagent-media:// URL 桥（主进程命中磁盘缓存可直接 200），fallback 走
  *  apiAssetBuffer 字节 IPC（旧版兼容）。abort 时返回 null，错误抛给上层走 throwOnError=false 吞掉。 */
- 
-async function glbFetcher(url: string, contentHash: string | null | undefined, signal: AbortSignal): Promise<ArrayBuffer | null> {
+
+async function glbFetcher(
+  url: string,
+  contentHash: string | null | undefined,
+  signal: AbortSignal
+): Promise<ArrayBuffer | null> {
   if (typeof window.spiritagent?.apiAssetModelUrl === 'function') {
     const mediaUrl = await window.spiritagent.apiAssetModelUrl({
       url,
