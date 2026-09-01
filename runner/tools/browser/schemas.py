@@ -48,16 +48,17 @@ BROWSER_SNAPSHOT_SCHEMA: dict[str, Any] = {
 BROWSER_CLICK_SCHEMA: dict[str, Any] = {
     "name": "browser_click",
     "description": (
-        "Click on an element identified by its ref ID from the snapshot (e.g., '@e5'). "
-        "The ref IDs are shown in square brackets in the snapshot output. Requires browser_navigate "
-        "and browser_snapshot to be called first."
+        "Click on an element identified by its ref ID from the snapshot (e.g., '@e5'), visual Set-of-Marks badge number, "
+        "or directly by physical viewport coordinates 'x,y' (e.g. '150,300'). Self-healing enabled. "
+        "Requires browser_navigate and browser_snapshot to be called first."
     ),
     "parameters": {
         "type": "object",
-        "properties": {"ref": {"type": "string", "description": "The element reference from the snapshot (e.g., '@e5', '@e12')"}},
+        "properties": {"ref": {"type": "string", "description": "Element reference (e.g., '@e5', '@e12'), or physical coordinates 'x,y' (e.g. '240,480')"}},
         "required": ["ref"],
     },
 }
+
 
 BROWSER_TYPE_SCHEMA: dict[str, Any] = {
     "name": "browser_type",
@@ -351,7 +352,8 @@ BROWSER_VISION_SCHEMA: dict[str, Any] = {
     "description": (
         "Take a screenshot of the current page and attach it to your context so you can inspect it visually on your next turn. "
         "Use this when you need to understand what the page looks like - especially for CAPTCHAs, visual verification challenges, "
-        "complex layouts, or cases where the text snapshot misses important visual information. "
+        "Canvas/WebGL graphics, complex layouts, or cases where the text snapshot misses important visual information. "
+        "Set annotate=true to inject high-contrast Set-of-Marks [N] visual badges on all interactive elements. "
         "Includes a screenshot_path that you can share with the user by including MEDIA:<screenshot_path> in your response. "
         "Requires browser_navigate to be called first."
     ),
@@ -361,12 +363,13 @@ BROWSER_VISION_SCHEMA: dict[str, Any] = {
             "annotate": {
                 "type": "boolean",
                 "default": False,
-                "description": "If true, overlay numbered [N] labels on interactive elements. Each [N] maps to ref @eN for subsequent browser commands. Useful for QA and spatial reasoning about page layout.",
+                "description": "If true, overlay high-contrast numbered [N] badges on all interactive elements and return structured coordinate index table. Each [N] maps to ref @vN for subsequent click/type commands. AXTree-based refs (@eN) coexist separately and are produced by browser_snapshot.",
             },
         },
         "required": [],
     },
 }
+
 
 BROWSER_CONSOLE_SCHEMA: dict[str, Any] = {
     "name": "browser_console",
@@ -531,5 +534,40 @@ BROWSER_CDP_SCHEMA: dict[str, Any] = {
             "timeout": {"type": "number", "description": "Timeout in seconds (default 30, max 300).", "default": 30},
         },
         "required": ["method"],
+    },
+}
+
+BROWSER_BATCH_SCHEMA: dict[str, Any] = {
+    "name": "browser_batch",
+    "description": (
+        "Execute a sequence of browser actions in a single round trip to minimize latency. "
+        "Supported actions: 'click' (by ref, badge [N], or 'x,y'), 'type' (text into input), "
+        "'press' (key like Enter/Tab), 'hover', 'scroll' (direction/pixels), 'wait' (seconds), 'select' (dropdown). "
+        "Executes actions sequentially with configurable inter-action pauses (wait_between_ms) and a final post-batch page settlement check. "
+        "Returns execution details and optional post-batch snapshot."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "actions": {
+                "type": "array",
+                "description": (
+                    "List of action objects to execute in order. "
+                    "Examples: [{'action': 'click', 'ref': '@e2'}, {'action': 'type', 'ref': '@e3', 'text': 'search'}, {'action': 'press', 'key': 'Enter'}]."
+                ),
+                "items": {"type": "object"},
+            },
+            "return_snapshot": {
+                "type": "boolean",
+                "default": True,
+                "description": "If true (default), returns a fresh compact page snapshot after all actions complete.",
+            },
+            "wait_between_ms": {
+                "type": "integer",
+                "default": 100,
+                "description": "Milliseconds to pause between consecutive actions (default 100).",
+            },
+        },
+        "required": ["actions"],
     },
 }

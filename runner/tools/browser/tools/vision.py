@@ -28,16 +28,19 @@ def browser_vision(annotate: bool = False, task_id: str | None = None) -> dict[s
         screenshots_dir.mkdir(parents=True, exist_ok=True)
         screenshot_path = str(screenshots_dir / f"browser_screenshot_{uuid.uuid4().hex[:8]}.png")
 
-        shot_res = supervisor.screenshot(path=screenshot_path)
+        shot_res = supervisor.screenshot(path=screenshot_path, annotate=annotate)
         if not shot_res.get("ok"):
             return json.dumps({"success": False, "error": shot_res.get("error", "Failed to capture screenshot")})
 
-        annotation_context = ""
+        annotation_context = shot_res.get("annotation_context", "")
         if annotate:
             try:
                 snap_res = supervisor.snapshot_axtree(interactive_only=True)
-                if snap_res.get("ok"):
-                    annotation_context = f"\n\nAccessibility tree (element refs for interaction):\n{snap_res.get('snapshot', '')[:3000]}"
+                snapshot_text = snap_res.get("snapshot", "") if snap_res.get("ok") else ""
+                if not annotation_context:
+                    annotation_context = f"\n\nAccessibility tree (element refs for interaction):\n{snapshot_text[:3000]}"
+                else:
+                    annotation_context = f"{annotation_context}\n\nAccessibility tree (element refs for interaction):\n{snapshot_text[:3000]}"
             except Exception as exc:
                 logger.debug("Failed to obtain snapshot for vision annotation: %s", exc)
 

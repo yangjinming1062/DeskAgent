@@ -1,4 +1,5 @@
 from . import (
+    batch,
     capture,
     cdp,
     cookies,
@@ -13,6 +14,7 @@ from . import (
 )
 
 __all__ = [
+    "batch",
     "capture",
     "cdp",
     "cookies",
