@@ -30,28 +30,25 @@ interface FocusContext {
 export const $focusContext = atom<FocusContext | null>(null)
 
 const POLL_INTERVAL_MS = 30_000
-
-// 空闲触发的上下文 affect（ARCHITECTURE.md §7.6）。当用户闲置时间超过
-// IDLE_THRESHOLD_SECONDS 且冷却窗口已过，向后端的 `companion.check_affect`
-// RPC 发起探测，让 LLM 结合人格（长期记忆）推理伙伴是否应表达一个
-// 上下文相关的情绪。客户端掌握触发时机；后端掌握情绪推理。
 const IDLE_THRESHOLD_SECONDS = 30 * 60
 const CHECK_COOLDOWN_MS = 60 * 60 * 1000
+const STATS_POST_THRESHROTTLE_MS = 60_000
 
-// 打扰档位推送去重：只有当生效档位值变化时才往后端推；轮询节拍
-// (POLL_INTERVAL_MS, 30 秒) 远大于任何合理的节流阈值，
-// 所以单凭值去重就够了。
 let timer: ReturnType<typeof setInterval> | null = null
 let lastAffectCheckAt = 0
 let lastTierPushed: DisturbanceTier | null = null
-
-// Runner 网关状态。轮询只在 bridge 达到 `running` 后才发起 `runnerInvoke`；
-// 否则每个周期 `pollOnce` 都会在主进程里记四次 "Runner is not connected"
-// 拒绝，毫无意义。bridge 生命周期写在共享的 `$runnerPhase` atom 里
-// （见 `@/shared/store/runner-status`）；本模块订阅其状态变化，
-// 并把布尔值本地缓存供 setInterval tick 网关使用。
 let runnerReady = false
 let offPhaseSub: (() => void) | null = null
+
+const _localStatsCounters: Record<'poke' | 'chat_turn', number> = {
+  poke: 0,
+  chat_turn: 0
+}
+
+const _lastStatsSentAt: Record<'poke' | 'chat_turn', number> = {
+  poke: 0,
+  chat_turn: 0
+}
 
 function maybeTriggerAffectCheck(idleSeconds: number, locked: boolean): void {
   // 静止档不发起任何主动 LLM 推理——情境化情绪探测一并停（DESIGN §6.2）。
@@ -401,19 +398,6 @@ function stopActivityMonitor(): void {
 // 在不损失有意义的聚合粒度的前提下限制越过阈值后的 DB 写入频率。
 // 后端的 ``record_interaction`` 仍会增加内存计数器，
 // 因此客户端短暂丢事件不会让 ``threshold_met`` 退回 false
-// （计数器只在 UTC 日切换时重置）。
-const STATS_POST_THRESHROTTLE_MS = 60_000
-
-const _localStatsCounters: Record<'poke' | 'chat_turn', number> = {
-  poke: 0,
-  chat_turn: 0
-}
-
-const _lastStatsSentAt: Record<'poke' | 'chat_turn', number> = {
-  poke: 0,
-  chat_turn: 0
-}
-
 export function reportInteractionStat(kind: 'poke' | 'chat_turn'): void {
   const gateway = $gateway.get()
 

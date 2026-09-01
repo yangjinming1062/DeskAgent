@@ -27,7 +27,7 @@ export function PersonaSection(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
 
-  const startEdit = () => {
+  const startEdit = (): void => {
     setName(persona?.name ?? '')
     setRelationship(persona?.relationship ?? '')
     setPersonality(persona?.personality ?? '')
@@ -35,7 +35,7 @@ export function PersonaSection(): React.JSX.Element {
     setEditing(true)
   }
 
-  const save = async () => {
+  const save = async (): Promise<void> => {
     const trimmed = name.trim()
 
     if (!trimmed) {

@@ -297,7 +297,7 @@ export function SpriteStage({
     })
   }
 
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     if (hidden) {
       return
     }
@@ -345,7 +345,7 @@ export function SpriteStage({
     }, LONG_PRESS_MS)
   }
 
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
     if (hidden) {
       return
     }
@@ -411,7 +411,7 @@ export function SpriteStage({
     }
   }
 
-  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>): void => {
     if (hidden) {
       return
     }

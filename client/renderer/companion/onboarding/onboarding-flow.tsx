@@ -499,7 +499,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
   // 仅存内存：是临时性的重生辅助，不是持久化的身份资产。
   const [presentationRef, setPresentationRef] = useState<PickedImage | null>(null)
 
-  const updateRefImage = (img: PickedImage | null) => {
+  const updateRefImage = (img: PickedImage | null): void => {
     setRefImage(img)
     void saveDraftRefImage(img)
   }
@@ -704,7 +704,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     return nextAnswers
   }
 
-  const advance = (updatedAnswers?: OnboardingAnswers) => {
+  const advance = (updatedAnswers?: OnboardingAnswers): void => {
     const currentAnswers = updatedAnswers ?? answers
 
     // Voice describe 只有一道题；点下一题会切到 catalog，由下面的 useEffect 加载。
@@ -751,7 +751,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     })()
   }, [phase, voiceStage, requestGateway, answers.voice, answers.name])
 
-  const onSend = () => {
+  const onSend = (): void => {
     const q = currentList[qIndex]
 
     if (q?.required && !input.trim()) {
@@ -770,7 +770,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     advance(nextAnswers)
   }
 
-  const onSkip = () => {
+  const onSkip = (): void => {
     if (question?.required) {
       return
     }
@@ -779,7 +779,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     advance(nextAnswers)
   }
 
-  const onBack = () => {
+  const onBack = (): void => {
     // 形象确认后 3D 已启动,任何返回路径都禁用——纯函数 ``computeBackTransition`` 在 imageSealed 时直接返 null。
     const intent = computeBackTransition({ phase, qIndex, voiceStage, imageSealed }, CHARACTER_QUESTIONS.length)
 
@@ -800,7 +800,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const enterPortraitStage = async (currentAnswers?: OnboardingAnswers) => {
+  const enterPortraitStage = async (currentAnswers?: OnboardingAnswers): Promise<void> => {
     // 形象已锁死时不应再进入头像/全身图阶段。深度防御:onBack 守卫 + 此处显式短路,即使上游误调也无效。
     if (imageSealed) {
       return
@@ -832,7 +832,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setPhase('portrait-choose')
   }
 
-  const startAiHatching = async (imageOverride?: PickedImage | null) => {
+  const startAiHatching = async (imageOverride?: PickedImage | null): Promise<void> => {
     if (imageSealed) {
       return
     }
@@ -871,7 +871,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     void playOnboardingAudio(url ? 'onboarding.portrait.ok' : 'onboarding.portrait.failed')
   }
 
-  const generateFullbodyFrontDirect = async (avatarId: number, styleId = 'cel_shading') => {
+  const generateFullbodyFrontDirect = async (avatarId: number, styleId = 'cel_shading'): Promise<void> => {
     setFullbodyLoading(true)
     setFullbodyLoadingText('正在为您生成正面全身立绘…')
     setFullbodyHint(null)
@@ -1152,7 +1152,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     [portraitHistory]
   )
 
-  const pickReferenceImage = async () => {
+  const pickReferenceImage = async (): Promise<void> => {
     const picked = await pickAvatarImage('选择一张参考图')
 
     if (!picked) {
@@ -1169,7 +1169,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
   }
 
-  const uploadCustomAvatar = async () => {
+  const uploadCustomAvatar = async (): Promise<void> => {
     const picked = await pickAvatarImage('选择一张头像图片')
 
     if (!picked) {
@@ -1216,7 +1216,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const pickPresentationImage = async () => {
+  const pickPresentationImage = async (): Promise<void> => {
     const picked = await pickAvatarImage('选择一张风格参考图')
 
     if (!picked) {
@@ -1233,7 +1233,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
   }
 
-  const confirmPortrait = async () => {
+  const confirmPortrait = async (): Promise<void> => {
     try {
       await window.spiritagent.api({
         path: '/api/companion/portrait/confirm',
@@ -1301,7 +1301,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     [fullbodyHistories, fullbodyStyle]
   )
 
-  const regenerateFullbodyFront = async () => {
+  const regenerateFullbodyFront = async (): Promise<void> => {
     if (!activeAvatarId || !fullbodyStyle || fullbodyLoading) {
       return
     }
@@ -1375,7 +1375,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const confirmFullbodyFront = async () => {
+  const confirmFullbodyFront = async (): Promise<void> => {
     if (!activeAvatarId || !fullbodyStyle || fullbodyLoading) {
       return
     }
@@ -1431,17 +1431,17 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const previewVoice = (id: string, context: string) =>
+  const previewVoice = (id: string, context: string): void =>
     void speakScripted(sampleLine(answers.name || ''), id || undefined, context)
 
   // 选中时总要试听：标签本身说明不了声音听起来什么样。
-  const selectVoice = (next: VoiceOption, context: string) => {
+  const selectVoice = (next: VoiceOption, context: string): void => {
     setVoice(next)
     setCompanionVoiceId(next.id)
     previewVoice(next.id, context)
   }
 
-  const onVoiceLangTabClick = async (lang: VoiceLanguageFilter) => {
+  const onVoiceLangTabClick = async (lang: VoiceLanguageFilter): Promise<void> => {
     setVoiceLangFilter(lang)
     const r = await fetchVoiceCatalogRaw(requestGateway, lang)
     const voices = r.ok ? r.catalog.voices : []
@@ -1459,7 +1459,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     }
   }
 
-  const confirmVoice = () => {
+  const confirmVoice = (): void => {
     if (voice) {
       const vName = voice.label || voice.id
       setAnswers(prev => ({ ...prev, voice: vName }))
@@ -1473,7 +1473,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
     setHint(null)
   }
 
-  const finish = async (currentAnswers?: OnboardingAnswers) => {
+  const finish = async (currentAnswers?: OnboardingAnswers): Promise<void> => {
     const ans = { ...answers, ...(currentAnswers ?? {}) }
 
     if (voice && !ans.voice) {
@@ -1535,6 +1535,9 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
 
     return list.map(item => ({ url: item.previewUrl }))
   }, [fullbodyHistories, fullbodyStyle])
+
+  const canGoBack =
+    computeBackTransition({ phase, qIndex, voiceStage, imageSealed }, CHARACTER_QUESTIONS.length) !== null
 
   return (
     <div className="fixed inset-0 z-50 pointer-events-none" style={{ pointerEvents: 'none' }}>
@@ -1650,7 +1653,7 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
                 <div className="mt-4 flex items-center justify-between text-xs">
                   <button
                     className="text-body transition hover:text-strong disabled:opacity-30"
-                    disabled={imageSealed || (phase === 'q-character' && qIndex === 0)}
+                    disabled={!canGoBack}
                     onClick={onBack}
                     type="button"
                   >

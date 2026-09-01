@@ -26,38 +26,37 @@ interface BackIntent {
   voiceStage?: BackVoiceStage
 }
 
-/** 返回 null 表示 onBack 在该状态下不产生任何变化。形象锁死后所有返回路径都被截断。 */
 export function computeBackTransition(state: BackState, characterQuestionsCount: number): BackIntent | null {
+  if (state.phase === 'q-user') {
+    return state.qIndex > 0 ? { phase: 'q-user', qIndex: state.qIndex - 1 } : { phase: 'voice', voiceStage: 'catalog' }
+  }
+
+  if (state.phase === 'voice') {
+    if (state.voiceStage === 'catalog') {
+      return { phase: 'voice', voiceStage: 'describe' }
+    }
+
+    return state.imageSealed ? null : { phase: 'fullbody' }
+  }
+
   if (state.imageSealed) {
     return null
   }
 
-  if (state.phase === 'q-character') {
-    return state.qIndex > 0 ? { phase: 'q-character', qIndex: state.qIndex - 1 } : null
-  }
-
-  if (state.phase === 'portrait-choose') {
-    return { phase: 'q-character', qIndex: characterQuestionsCount - 1 }
+  if (state.phase === 'fullbody') {
+    return { phase: 'portrait-avatar' }
   }
 
   if (state.phase === 'portrait-avatar') {
     return { phase: 'portrait-choose' }
   }
 
-  if (state.phase === 'voice') {
-    if (state.voiceStage === 'describe') {
-      return { phase: 'q-character', qIndex: characterQuestionsCount - 1 }
-    }
-
-    return null
+  if (state.phase === 'portrait-choose') {
+    return { phase: 'q-character', qIndex: characterQuestionsCount - 1 }
   }
 
-  if (state.phase === 'q-user') {
-    if (state.qIndex > 0) {
-      return { phase: 'q-user', qIndex: state.qIndex - 1 }
-    }
-
-    return { phase: 'voice', voiceStage: 'catalog' }
+  if (state.phase === 'q-character') {
+    return state.qIndex > 0 ? { phase: 'q-character', qIndex: state.qIndex - 1 } : null
   }
 
   return null

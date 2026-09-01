@@ -110,7 +110,7 @@ export function SessionDrawer({ onClose }: { onClose: () => void }): React.JSX.E
     onClose()
   }
 
-  const isSpecialSession = (s: SessionInfo): boolean => s.kind === 'special' || s.kind === 'main'
+  const isSpecialSession = (s: SessionInfo): boolean => s.kind === 'special'
 
   // 服务端排序保证系统预设 + 手动置顶项是结果前缀，这里按谓词分组即可，不重排。
   const pinnedSessions = sessions.filter(s => isSpecialSession(s) || s.pinned)
@@ -304,7 +304,7 @@ function SessionRow({
   badge?: string
   onSwitch: (id: string) => Promise<void> | void
 }): React.JSX.Element {
-  const isSpecial = session.kind === 'special' || session.kind === 'main'
+  const isSpecial = session.kind === 'special'
   const canRename = !isSpecial && session.kind !== 'im'
   const [editing, setEditing] = useState(false)
   const presets = useStore($systemPresets)

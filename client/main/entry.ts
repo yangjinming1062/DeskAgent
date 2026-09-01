@@ -203,7 +203,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-function registerMediaProtocol() {
+function registerMediaProtocol(): void {
   protocol.handle(MEDIA_PROTOCOL, async request => {
     let resolvedPath: string
 
@@ -235,6 +235,7 @@ let spriteBoundsListenerInstalled = false
 const RENDERER_RELOAD_WINDOW_MS = 60_000
 const RENDERER_RELOAD_MAX = 3
 let rendererReloadTimes: number[] = []
+let powerResumeRegistered = false
 
 const desktopLogger = createDesktopLogger({
   spiritagentHome: SPIRITAGENT_HOME,
@@ -611,7 +612,11 @@ function getNativeOverlayWidth(): number {
   return IS_MAC ? 0 : NATIVE_OVERLAY_BUTTON_WIDTH
 }
 
-function getWindowState() {
+function getWindowState(): {
+  isFullscreen: boolean
+  nativeOverlayWidth: number
+  windowButtonPosition: { x: number; y: number } | null
+} {
   return {
     isFullscreen: Boolean(mainWindow?.isFullScreen?.()),
     nativeOverlayWidth: getNativeOverlayWidth(),
@@ -629,8 +634,6 @@ function sameWindowButtonPosition(
 function sendPowerResume(): void {
   sendToMain(mainWindow, IPC.event.powerResume)
 }
-
-let powerResumeRegistered = false
 
 function registerPowerResumeListeners(): void {
   if (powerResumeRegistered) {

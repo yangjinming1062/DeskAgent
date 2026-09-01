@@ -362,7 +362,7 @@ export function CompanionRoot(): React.JSX.Element {
     })
   }, [lifecycle, gatewayState, requestGateway, openDock])
 
-  const onTap = (nx?: number, ny?: number) => {
+  const onTap = (nx?: number, ny?: number): void => {
     if (authed) {
       if (lifecycle === 'onboarding') {
         setOnboardingOpen(true)
@@ -390,7 +390,7 @@ export function CompanionRoot(): React.JSX.Element {
   }
 
   // DESIGN §6.1：双击 ready 状态的伙伴打开 Chat。
-  const onDoubleTap = () => {
+  const onDoubleTap = (): void => {
     if (authed) {
       if (lifecycle === 'onboarding') {
         setOnboardingOpen(true)
@@ -408,7 +408,7 @@ export function CompanionRoot(): React.JSX.Element {
 
   // onboarding 完成触发 3D 模型生成（base_texture 供应商是即时的——
   // 3D 生成触发在 confirm-front 成功回调里完成——onboarding 流程只负责"展示与完成"，不再触发 3D 任务。
-  const onOnboardingComplete = () => {
+  const onOnboardingComplete = (): void => {
     setOnboardingOpen(false)
     setCompanionLifecycle('ready')
   }

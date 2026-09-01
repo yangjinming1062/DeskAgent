@@ -118,6 +118,8 @@ const STATE_PRIORITY: Record<SpriteStateName, number> = {
 const TRANSIENT_STATES: ReadonlySet<SpriteStateName> = new Set(['emotional', 'interacting'])
 
 let transientTimer: ReturnType<typeof setTimeout> | null = null
+let activityCounter = 0
+let activityResetTimer: ReturnType<typeof setTimeout> | null = null
 
 export function setSpriteState(
   name: SpriteStateName,
@@ -209,9 +211,6 @@ export function setGazeTarget(target: { nx: number; ny: number }): void {
 export function clearGazeTarget(): void {
   $gazeTarget.set(null)
 }
-
-let activityCounter = 0
-let activityResetTimer: ReturnType<typeof setTimeout> | null = null
 
 export function reportUserActivity(): void {
   const current = $spriteState.get()

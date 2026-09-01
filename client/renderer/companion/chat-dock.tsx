@@ -594,7 +594,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [list])
 
-  const onPaste = async (e: React.ClipboardEvent) => {
+  const onPaste = async (e: React.ClipboardEvent): Promise<void> => {
     const items = e.clipboardData?.items
 
     if (!items) {
@@ -635,7 +635,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   // DESIGN §6.1「支持拖拽文件」：面板本体也是投喂入口——解析真实路径后走与
   // 精灵投喂同一条附件管线（首个媒体进附件槽、其余随 send() 提交）。
-  const onDrop = async (e: React.DragEvent) => {
+  const onDrop = async (e: React.DragEvent): Promise<void> => {
     const files = Array.from(e.dataTransfer?.files ?? [])
 
     if (files.length === 0) {
@@ -760,7 +760,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     }
   }
 
-  const send = async () => {
+  const send = async (): Promise<void> => {
     if (isReadOnlySession) {
       return
     }
@@ -924,7 +924,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   const isGenerating = gatewayState === 'open' && (isTurnPendingOrInFlight || lastAssistantStreaming)
 
-  const handleStop = async () => {
+  const handleStop = async (): Promise<void> => {
     cancelAutoVoice()
     // 用户主动停止是合并窗口的收尾信号（DESIGN §6.6）——排队的连发消息立即提交，
     // 不能丢弃；中断只针对当前生成回合。in-flight 标记先清，冲刷才会真正发出。

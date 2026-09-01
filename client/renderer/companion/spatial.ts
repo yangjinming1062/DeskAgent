@@ -81,6 +81,23 @@ interface ViewportSize {
 
 export const $viewport = atom<ViewportSize>({ width: window.innerWidth, height: window.innerHeight })
 
+let rafId: number | null = null
+let moveStart: { x: number; y: number } | null = null
+let moveTarget: { x: number; y: number } | null = null
+let moveStartTime = 0
+let moveDuration = 0
+let moveOnArrive: (() => void) | null = null
+
+let scaleRafId: number | null = null
+let scaleStartVal = 1
+let scaleTargetVal = 1
+let scaleStartTime = 0
+let perchScaleLimit: number | null = null
+
+let userInteracted = false
+let roamTimer: ReturnType<typeof setTimeout> | null = null
+let roaming = false
+
 function getHomePosition(): { x: number; y: number } {
   // home 是休息落点，scale 恒为用户默认比例（瞬时放大只在互动中发生）；
   // 脚底贴视口底（站在任务栏上沿），右侧留呼吸间距。
@@ -198,13 +215,6 @@ function easeInOut(t: number): number {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
 }
 
-let rafId: number | null = null
-let moveStart: { x: number; y: number } | null = null
-let moveTarget: { x: number; y: number } | null = null
-let moveStartTime = 0
-let moveDuration = 0
-let moveOnArrive: (() => void) | null = null
-
 function tick(now: number): void {
   if (!moveStart || !moveTarget) {
     rafId = null
@@ -273,14 +283,6 @@ export function cancelMovement(): void {
 
   cb?.()
 }
-
-let scaleRafId: number | null = null
-let scaleStartVal = 1
-let scaleTargetVal = 1
-let scaleStartTime = 0
-
-// 栖息空间不足时的缩身上限（DESIGN §3.3）；仅 perch 场所生效，离开栖息即解除。
-let perchScaleLimit: number | null = null
 
 function tickScale(now: number): void {
   const t = Math.min(1, (now - scaleStartTime) / SCALE_TRANSITION_MS)
@@ -398,8 +400,6 @@ export function setLocale(
   }
 }
 
-let userInteracted = false
-
 export function updateSpatialDecision(): void {
   // 贴边趴姿锁定、拖拽中均冻结空间决策
   if ($spatialLocomotion.get() === 'drag' || $chatOpen.get() || $isEdgeDocked.get()) {
@@ -463,9 +463,6 @@ export function updateSpatialDecision(): void {
     setLocale('home')
   }
 }
-
-let roamTimer: ReturnType<typeof setTimeout> | null = null
-let roaming = false
 
 function generateRoamWaypoint(): { x: number; y: number } {
   const vw = window.innerWidth

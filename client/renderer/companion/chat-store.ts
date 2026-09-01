@@ -31,16 +31,22 @@ export interface ChatMessageBody {
   media?: ChatMediaItem[]
 }
 
+const DEFAULT_CONTEXT_LIMIT = 1_000_000
+const CHAT_SESSION_ID_KEY = registerCompanionStorageKey('da.companion.chatSessionId')
+const FLUSH_DEBOUNCE_MS = 4000
+
+let idCounter = 0
+const nextId = (): string => `m${++idCounter}`
+
+let mediaHintTimer: ReturnType<typeof setTimeout> | null = null
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+
 export const $chatMessageList = atom<ChatMessageListItem[]>([])
 export const $chatMessageBodies = map<Record<string, ChatMessageBody>>({})
 // 尾部助手消息是否处于流式中。ChatDock 借此感知生成状态，无需全量订阅 bodies。
 export const $lastAssistantStreaming = atom<boolean>(false)
 // 流式增量递增计数器，供 ChatScrollAutoFollow 独立订阅触发滚动，不重渲染 ChatDock 容器。
 export const $chatStreamingTick = atom<number>(0)
-// 持久化上次活跃会话 id：重启后启动流程直接 resume 回原会话（已被删除时由
-// resume 失败回退主会话），而不是每次都回到空白的主会话。
-const CHAT_SESSION_ID_KEY = registerCompanionStorageKey('da.companion.chatSessionId')
-
 export const $chatSessionId = atom<string | null>(storedString(CHAT_SESSION_ID_KEY))
 export const $chatOpen = atom(false)
 // IM 守卫与语音入口的权威 kind 源：写值由 hydrate 把服务端 info.kind 注入。
@@ -74,8 +80,6 @@ export interface SessionContextUsage {
   totalTokens: number
   contextLimit: number
 }
-
-const DEFAULT_CONTEXT_LIMIT = 1_000_000
 
 export const $sessionContextUsage = atom<SessionContextUsage>({
   promptTokens: 0,
@@ -161,9 +165,6 @@ export function pushExternalAttachment(paths: string[]): void {
 export function clearExternalAttachment(): void {
   $pendingExternalAttachment.set(null)
 }
-
-let idCounter = 0
-const nextId = () => `m${++idCounter}`
 
 export function setChatOpen(open: boolean): void {
   $chatOpen.set(open)
@@ -297,14 +298,6 @@ function omitUndefined(attachments: ChatAttachment[] | undefined): { attachments
 export function setProactiveBubble(state: ProactiveBubbleState | null): void {
   $proactiveBubble.set(state)
 }
-
-// 媒体送达的轻提示气泡：聊天窗关闭时提示点击查看，8 秒未点击自动消失。
-let mediaHintTimer: ReturnType<typeof setTimeout> | null = null
-
-// 连发消息的合并窗口（在窗口内合并为一次 prompt.submit）。
-// 提前到所有 handler 引用之前声明，避免 TDZ ReferenceError。
-const FLUSH_DEBOUNCE_MS = 4000
-let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 export function showMediaHint(text: string, sessionId?: string): void {
   if (mediaHintTimer) {

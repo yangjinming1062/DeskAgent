@@ -164,10 +164,10 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
   const totalSteps = STEPS.length + 1
   const isReview = step === STEPS.length
 
-  const next = () => setStep(s => Math.min(s + 1, totalSteps - 1))
-  const prev = () => setStep(s => Math.max(s - 1, 0))
+  const next = (): void => setStep(s => Math.min(s + 1, totalSteps - 1))
+  const prev = (): void => setStep(s => Math.max(s - 1, 0))
 
-  const save = async () => {
+  const save = async (): Promise<void> => {
     const trimmed = name.trim()
 
     if (!trimmed) {
