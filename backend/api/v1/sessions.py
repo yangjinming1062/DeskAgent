@@ -17,12 +17,15 @@ from modules.auth import LoginRecord, User, get_current_session
 from modules.conversation import (
     Conversation,
     DesktopSessionForkRequest,
+    DesktopSessionForkResponse,
     DesktopSessionInfo,
     DesktopSessionListResponse,
     DesktopSessionMessagesResponse,
+    DesktopSessionOperationResponse,
     DesktopSessionPatchRequest,
     DesktopSessionSearchResponse,
     DesktopSessionUndoRequest,
+    DesktopSessionUndoResponse,
     Message,
 )
 from services.chat import build_session_messages
@@ -289,8 +292,13 @@ async def get_session_messages(
     return DesktopSessionMessagesResponse(session_id=str(conv.id), messages=result)
 
 
-@router.patch("/{session_id}")
-async def patch_session(session_id: str, body: DesktopSessionPatchRequest, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+@router.patch("/{session_id}", response_model=DesktopSessionOperationResponse)
+async def patch_session(
+    session_id: str,
+    body: DesktopSessionPatchRequest,
+    current: tuple[User, object] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> DesktopSessionOperationResponse:
     user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == SPECIAL_KIND or not conv.is_renamable:
@@ -308,16 +316,16 @@ async def patch_session(session_id: str, body: DesktopSessionPatchRequest, curre
         else:
             conv.archived_at = None
     await db.commit()
-    return {"ok": True}
+    return DesktopSessionOperationResponse(ok=True)
 
 
-@router.post("/{session_id}/fork")
+@router.post("/{session_id}/fork", response_model=DesktopSessionForkResponse)
 async def fork_session(
     session_id: str,
     body: DesktopSessionForkRequest,
     current: tuple[User, object] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> DesktopSessionForkResponse:
     """从源会话派生新会话：复制 1..source_message_id 共 N 条消息到 kind='standard' 的新会话（复制行按已发送历史对待）；返回 SessionResumeResult 形态（session_id/messages/message_count）。"""
     user, _ = current
     try:
@@ -326,15 +334,15 @@ async def fork_session(
         raise HTTPException(status_code=403, detail=str(e))
     except SourceNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return result
+    return DesktopSessionForkResponse(**result)
 
 
-@router.post("/{session_id}/undo-to-message")
+@router.post("/{session_id}/undo-to-message", response_model=DesktopSessionUndoResponse)
 async def undo_to_message(
     session_id: str,
     body: DesktopSessionUndoRequest,
     current: tuple[User, object] = Depends(get_current_session),
-) -> dict:
+) -> DesktopSessionUndoResponse:
     """就地截断会话：硬删除 ``Message.id >= source_message_id`` 的全部行（含锚点本身），并把锚点载荷以 ``anchor`` 字段返回，供客户端落回输入框作为草稿。
 
     需要 ``confirmed=true``（与 ``session.clear_messages`` 同源约定）。返回 ``{session_id, deleted_count, anchor, messages}``，与 WS RPC 形态一致。
@@ -344,21 +352,26 @@ async def undo_to_message(
     if not body.confirmed:
         raise HTTPException(status_code=400, detail="confirmed=true required")
     try:
-        return await do_session_undo(
+        result = await do_session_undo(
             user.id,
             session_id,
             body.source_message_id,
             runtime_sessions=MANAGER.get_runtime_sessions(user.id),
             dispatcher=MANAGER.get_dispatcher(user.id),
         )
+        return DesktopSessionUndoResponse(**result)
     except JsonRpcError as e:
         if e.code == JSONRPC_INVALID_PARAMS:
             raise HTTPException(status_code=400, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/{session_id}")
-async def delete_session(session_id: str, current: tuple[User, object] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+@router.delete("/{session_id}", response_model=DesktopSessionOperationResponse)
+async def delete_session(
+    session_id: str,
+    current: tuple[User, object] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> DesktopSessionOperationResponse:
     user, _ = current
     conv = await _get_conversation_or_404(db, user, session_id)
     if conv.kind == SPECIAL_KIND or not conv.is_deletable:
@@ -375,4 +388,4 @@ async def delete_session(session_id: str, current: tuple[User, object] = Depends
         temp_files_gc_session(str(deleted_id))
     except Exception:
         logger.warning("temp_files_gc failed for session %s", deleted_id, exc_info=True)
-    return {"ok": True}
+    return DesktopSessionOperationResponse(ok=True)

@@ -1,15 +1,6 @@
-from pydantic import BaseModel
+from modules.companion import VoiceEntry
 
 from .providers import ServiceType, TTSProvider, try_resolve
-
-
-class VoiceEntry(BaseModel):
-    id: str
-    label: str
-    gender: str  # "female" | "male" | "neutral"
-    language: str = ""  # "zh" | "en" | "multi" | ""
-    tags: list[str]
-    description: str = ""
 
 
 def _provider_class(provider_name: str) -> type[TTSProvider] | None:

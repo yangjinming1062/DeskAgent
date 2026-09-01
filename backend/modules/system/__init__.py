@@ -2,6 +2,7 @@ from .schemas import (
     AgentPromptConfig,
     ChatMessageRequest,
     ChatRequest,
+    CompletionResponse,
     DesktopConfigPutRequest,
     DesktopConfigResponse,
     MessageResponse,
@@ -9,6 +10,8 @@ from .schemas import (
     PromptPresetBlock,
     PromptPresetListResponse,
     PromptPresetSummary,
+    ReleaseManifestFileItem,
+    ReleaseManifestResponse,
     StatusResponse,
 )
 
@@ -16,6 +19,7 @@ __all__ = [
     "AgentPromptConfig",
     "ChatMessageRequest",
     "ChatRequest",
+    "CompletionResponse",
     "DesktopConfigPutRequest",
     "DesktopConfigResponse",
     "MessageResponse",
@@ -23,5 +27,7 @@ __all__ = [
     "PromptPresetBlock",
     "PromptPresetListResponse",
     "PromptPresetSummary",
+    "ReleaseManifestFileItem",
+    "ReleaseManifestResponse",
     "StatusResponse",
 ]

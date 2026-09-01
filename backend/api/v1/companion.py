@@ -18,12 +18,15 @@ from modules.companion import (
     Companion2DModelResponse,
     Companion3DModelResponse,
     CompanionExpression,
+    CompanionOperationResponse,
     ExpressionAvatarRequest,
     ExpressionAvatarResponse,
+    ExpressionsListResponse,
     Fullbody2dFrontGenerateRequest,
     Fullbody3dSeedGenerateRequest,
     FullbodyConfirmFrontRequest,
     ModelGenerateRequest,
+    OnboardingStateResponse,
     OutfitCreateRequest,
     OutfitListResponse,
     OutfitRegenerateRequest,
@@ -32,6 +35,7 @@ from modules.companion import (
     PersonaResponse,
     PersonaUpdate,
     RenderModeRequest,
+    VoicesListResponse,
 )
 from services.companion import (
     ALLOWED_AVATAR_UPLOAD_MIME_TYPES,
@@ -116,10 +120,14 @@ async def _resolve_persona_definition(db: AsyncSession, user_id: int) -> dict[st
     return draft if isinstance(draft, dict) else {}
 
 
-@router.get("/onboarding/state")
-async def get_onboarding_state_route(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+@router.get("/onboarding/state", response_model=OnboardingStateResponse)
+async def get_onboarding_state_route(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> OnboardingStateResponse:
     user, _ = auth
-    return await get_onboarding_state(db, user.id)
+    result = await get_onboarding_state(db, user.id)
+    return OnboardingStateResponse(**result)
 
 
 @router.get("/persona", response_model=PersonaResponse)
@@ -154,8 +162,11 @@ async def put_persona(body: PersonaUpdate, auth: tuple[User, LoginRecord] = Depe
     )
 
 
-@router.post("/portrait/confirm")
-async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+@router.post("/portrait/confirm", response_model=CompanionOperationResponse)
+async def post_portrait_confirm(
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> CompanionOperationResponse:
     user, _ = auth
     try:
         await finalize_avatar(db, user.id)
@@ -163,34 +174,38 @@ async def post_portrait_confirm(auth: tuple[User, LoginRecord] = Depends(get_cur
         raise HTTPException(status_code=409, detail={"error": "形象草稿已过期，请重新生成头像", "reason": str(exc)})
     # 仅在 finalize 成功后确认 portrait；避免 is_portrait_confirmed=True 但头像文件已丢失的污染状态。
     await confirm_portrait(db, user.id)
-    return {"ok": True}
+    return CompanionOperationResponse(ok=True)
 
 
-@router.get("/expressions")
-async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict[str, list[dict]]:
+@router.get("/expressions", response_model=ExpressionsListResponse)
+async def get_expressions(auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> ExpressionsListResponse:
     user, _ = auth
     rows = (await db.execute(select(CompanionExpression).where(CompanionExpression.user_id == user.id))).scalars().all()
-    exprs = []
-    for r in rows:
-        exprs.append(
-            {
-                "id": r.id,
-                "name": r.name,
-                "label": r.label,
-                "valence": r.valence,
-                "description": r.description,
-                "icon": r.icon,
-                "tags": safe_json_loads(r.tags_json or "[]", default=[]),
-            },
-        )
-    return {"expressions": exprs}
+    exprs = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "label": r.label,
+            "valence": r.valence,
+            "description": r.description,
+            "icon": r.icon,
+            "tags": safe_json_loads(r.tags_json or "[]", default=[]),
+        }
+        for r in rows
+    ]
+    return ExpressionsListResponse(expressions=exprs)
 
 
 # Hub 无 gateway；此 REST 接口镜像 gateway 的 tts.list_voices 方法。
-@router.get("/voices")
-async def list_voices(language: str | None = None, auth: tuple[User, LoginRecord] = Depends(get_current_session), db: AsyncSession = Depends(get_db)) -> dict:
+@router.get("/voices", response_model=VoicesListResponse)
+async def list_voices(
+    language: str | None = None,
+    auth: tuple[User, LoginRecord] = Depends(get_current_session),
+    db: AsyncSession = Depends(get_db),
+) -> VoicesListResponse:
     user, _ = auth
-    return await list_tts_voices(db, user.id, language=normalize_voice_language(language))
+    result = await list_tts_voices(db, user.id, language=normalize_voice_language(language))
+    return VoicesListResponse(**result)
 
 
 @router.get("/avatar", response_model=AvatarAssetResponse)
@@ -604,18 +619,18 @@ async def put_outfit_activate(
     return outfit_response(outfit)
 
 
-@router.delete("/outfits/{outfit_id}")
+@router.delete("/outfits/{outfit_id}", response_model=CompanionOperationResponse)
 async def delete_outfit_route(
     outfit_id: int,
     auth: tuple[User, LoginRecord] = Depends(get_current_session),
     db: AsyncSession = Depends(get_db),
-) -> dict:
+) -> CompanionOperationResponse:
     user, _ = auth
     try:
         await delete_outfit(db, user.id, outfit_id)
     except OutfitError as exc:
         raise _outfit_http_error(exc)
-    return {"ok": True}
+    return CompanionOperationResponse(ok=True)
 
 
 @router.post("/expression-avatar", response_model=ExpressionAvatarResponse)

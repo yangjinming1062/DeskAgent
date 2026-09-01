@@ -77,7 +77,7 @@ from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from components import get_logger, safe_json_loads
-from modules.companion import Persona
+from modules.companion import Persona, normalize_persona_aliases
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .llm_client import MissingLlmConfigError, client_for_config, provider_for_service, provider_from_config
@@ -98,10 +98,11 @@ def _strip_markdown_fence(raw: str) -> str:
     return cleaned
 
 
-def _persona_payload(persona: Persona) -> dict:
-    """回退到 ``{}``，使未填写完成的 persona 仍能产出 prompt。"""
+def _persona_payload(persona: Persona) -> dict[str, str]:
+    """回退到 ``{}`` 并归一化别名，使未填写完成的 persona 仍能产出 prompt。"""
     raw = getattr(persona, "definition_json", None) or "{}"
-    return safe_json_loads(raw, default={})
+    data = safe_json_loads(raw, default={})
+    return normalize_persona_aliases(data) if isinstance(data, dict) else {}
 
 
 def _persona_visual_payload(persona: Persona, feedback: str | None) -> dict[str, str]:

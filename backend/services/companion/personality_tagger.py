@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import ProviderConfig
 
+from .persona_service import normalize_persona_aliases
+
 logger = get_logger(__name__)
 
 # 按骨骼类型分类的初始种子词汇表（与客户端 PERSONALITY_TAG_SEED_BY_RIG 一致）。
@@ -102,11 +104,10 @@ async def analyze_personality_tags(
 ) -> list[str]:
     """LLM 分析 persona 设定，返回 3-10 个去重后的性格标签；不过滤自创标签。"""
     try:
-        data = safe_json_loads(definition_json, default={})
-        if not isinstance(data, dict):
-            data = {}
+        raw_data = safe_json_loads(definition_json, default={})
+        data = normalize_persona_aliases(raw_data) if isinstance(raw_data, dict) else {}
 
-        char_species = species or data.get("biological_type") or data.get("species") or "人类"
+        char_species = species or data.get("biological_type", "人类")
         char_rig = rig_type or "biped"
 
         rig_seeds = _TAG_SEEDS_BY_RIG.get(char_rig, _TAG_SEEDS_BY_RIG["biped"])

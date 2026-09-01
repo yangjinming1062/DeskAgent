@@ -4,12 +4,13 @@ import random
 import time
 from collections.abc import Awaitable, Callable
 
-from components import SESSION_LOCAL, get_logger, safe_json_loads
+from components import SESSION_LOCAL, get_logger
 from modules.companion import Persona
 from sqlalchemy import select, update
 
 from services.llm import MissingLlmConfigError, chat, resolve_provider_chain
 
+from .persona_service import load_persona_definition
 from .personality_tagger import analyze_personality_tags
 
 logger = get_logger(__name__)
@@ -73,8 +74,8 @@ async def _refresh_personality_tags(persona_id: int, user_id: int) -> None:
             persona = (await db.execute(select(Persona).where(Persona.id == persona_id))).scalar_one_or_none()
             if persona is None:
                 return  # 行已消失（用户被删？），无事可做
-            definition = safe_json_loads(persona.definition_json, default={})
-            species = definition.get("biological_type") if isinstance(definition, dict) else None
+            definition = load_persona_definition(persona)
+            species = definition.get("biological_type")
             chain = await resolve_provider_chain(db, user_id, "llm")
             definition_json = persona.definition_json
         tag_provider = chain[0] if chain else None

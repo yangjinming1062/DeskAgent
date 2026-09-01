@@ -27,6 +27,26 @@ class DesktopConfigPutRequest(BaseModel):
     config: dict
 
 
+class CompletionResponse(BaseModel):
+    content: str
+    usage: dict[str, Any] | None = None
+
+
+class ReleaseManifestFileItem(BaseModel):
+    url: str
+    sha512: str
+    size: int
+
+
+class ReleaseManifestResponse(BaseModel):
+    version: str
+    releaseDate: str
+    releaseNotes: str = ""
+    path: str
+    sha512: str
+    files: list[ReleaseManifestFileItem] = Field(default_factory=list)
+
+
 class ChatMessageRequest(BaseModel):
     role: str = Field(pattern="^(user|tool)$")
     content: str

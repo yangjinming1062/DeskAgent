@@ -35,7 +35,7 @@ from .avatar_service import (
     load_avatar_bytes_as_data_uri,
     resolve_uploaded_avatar_path,
 )
-from .persona_service import get_or_create_persona
+from .persona_service import get_or_create_persona, load_persona_definition
 
 logger = get_logger(__name__)
 
@@ -154,9 +154,7 @@ async def _outfit_generation_context(db: AsyncSession, user_id: int) -> tuple[Av
     persona = await get_or_create_persona(db, user_id)
     if not persona.is_complete:
         raise OutfitStateError("请先完成 onboarding 再设计外观")
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    if not isinstance(definition, dict):
-        definition = {}
+    definition = load_persona_definition(persona)
     prompt_payload = safe_json_loads(avatar.prompt_json or "{}", default={})
     style = (prompt_payload.get("fullbody_style") if isinstance(prompt_payload, dict) else None) or mesh2d.style or "cel_shading"
     species = str(definition.get("biological_type") or "").strip()

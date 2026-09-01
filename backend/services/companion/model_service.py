@@ -1,13 +1,13 @@
 """3D 模型 controller：建行 + 调度 in-process 管道。所有 download / poll / SPEC 校验 / 落库 都在 ``pipeline`` 内完成。"""
 
-from components import get_logger, safe_json_loads
+from components import get_logger
 from modules.companion import AvatarAsset, Companion3DModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from services.llm import is_preset_species, resolve_fullbody_style
 
-from .persona_service import get_or_create_persona
+from .persona_service import get_or_create_persona, load_persona_definition
 from .pipeline import (
     IN_FLIGHT_STATUSES,
     RETRYABLE_DOWNLOAD_STATUSES,
@@ -68,8 +68,8 @@ async def generate_companion_model(
 ) -> Companion3DModel:
     """生成 3D 模型：已有生效且成功的模型在非 force 时复用；新请求创建新记录行并将旧记录置为非激活。"""
     persona = await get_or_create_persona(db, user_id)
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
-    species = species_override or (definition.get("biological_type", "人类") if isinstance(definition, dict) else "人类")
+    definition = load_persona_definition(persona)
+    species = species_override or definition.get("biological_type", "人类")
 
     async with get_model_job_lock(user_id):
         in_flight = (

@@ -29,7 +29,7 @@ from ..llm import (
 )
 from ..tools.builtin import first_image_url, image_generation_tool
 from .asset_store import build_data_uri, build_signed_avatar_url
-from .persona_service import get_or_create_persona
+from .persona_service import get_or_create_persona, load_persona_definition
 from .rig_type_selector import classify_species, select_rig_type
 
 logger = get_logger(__name__)
@@ -797,9 +797,9 @@ async def _fetch_fullbody_target(
 
 def _fullbody_identity_fields(persona: Persona) -> tuple[str, str, str]:
     """全身提示词身份三元组，按（物种、外貌、性格）排序。"""
-    definition = safe_json_loads(persona.definition_json or "{}", default={})
+    definition = load_persona_definition(persona)
     return (
-        (definition.get("biological_type") or "").strip(),
+        str(definition.get("biological_type") or "").strip(),
         str(definition.get("appearance") or "").strip(),
         str(definition.get("personality") or "").strip(),
     )

@@ -2,7 +2,7 @@ import json
 from typing import Any
 
 from components import DEFAULT_LANGUAGE, resolve_prompt_text, safe_json_loads
-from modules.companion import AvatarAsset, Persona
+from modules.companion import AvatarAsset, Persona, normalize_persona_aliases
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -56,6 +56,15 @@ class PersonaValidationError(ValueError):
         self.field = field
 
 
+def load_persona_definition(persona: Persona | None) -> dict[str, str]:
+    """从 Persona 实例读取 definition_json 并做别名归一化。"""
+    if persona is None:
+        return {}
+    raw = getattr(persona, "definition_json", None) or "{}"
+    draft = safe_json_loads(raw, default={})
+    return normalize_persona_aliases(draft) if isinstance(draft, dict) else {}
+
+
 def _validate_definition(definition: dict[str, Any]) -> dict[str, str]:
     if not isinstance(definition, dict):
         raise PersonaValidationError("persona definition must be an object")
@@ -89,13 +98,13 @@ async def update_persona(db: AsyncSession, user_id: int, definition: dict[str, A
     if not isinstance(definition, dict):
         raise PersonaValidationError("persona definition must be an object")
     user_profile = extract_user_profile(definition)
-    persona_def = {k: v for k, v in definition.items() if not k.startswith("user_")}
+    persona_def = normalize_persona_aliases({k: v for k, v in definition.items() if not k.startswith("user_")})
     cleaned = _validate_definition(persona_def)
 
     async def _dual_write() -> Persona:
         await record_user_profile(db, user_id, user_profile)
         persona = await get_or_create_persona(db, user_id)
-        current_draft = _load_draft(persona)
+        current_draft = load_persona_definition(persona)
         if current_draft.get("voice"):
             cleaned["voice"] = current_draft["voice"]
         # DESIGN §5.4 形象锁定：形象确认后物种/性别/基础外貌不可再改——
@@ -144,7 +153,7 @@ def build_system_prompt_extras(persona: Persona | None, *, language: str = DEFAU
     """
     if persona is None or not persona.is_complete:
         return ""
-    definition = _load_draft(persona)
+    definition = load_persona_definition(persona)
     if not definition:
         return ""
     return render_extras(definition, language=language)
@@ -159,9 +168,14 @@ def render_extras(definition: dict[str, str], *, language: str = DEFAULT_LANGUAG
     return "\n".join(lines)
 
 
-def _load_draft(persona: Persona) -> dict[str, str]:
-    draft = safe_json_loads(persona.definition_json or "{}", default={})
-    return draft if isinstance(draft, dict) else {}
+def _onboarding_answers(draft: dict[str, str]) -> dict[str, str]:
+    """供 onboarding 状态恢复用：从规范字段名向 onboarding 别名字段名反向镜像，使客户端无论读哪个键都能恢复。"""
+    res = dict(draft)
+    if "biological_type" in res:
+        res.setdefault("species", res["biological_type"])
+    if "gender" in res:
+        res.setdefault("character_gender", res["gender"])
+    return res
 
 
 def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, Any]:
@@ -171,10 +185,10 @@ def _state(answers: dict, next_field: str | None, complete: bool) -> dict[str, A
 async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]:
     """从数据库恢复引导进度；complete 以立绘确认、全身确认、音色与用户资料字段共同为门槛。"""
     persona = await get_or_create_persona(db, user_id)
+    draft = load_persona_definition(persona)
     if persona.is_complete:
-        draft = _load_draft(persona)
         user_profile = await read_user_profile(db, user_id)
-        merged = {**draft, **user_profile}
+        merged = _onboarding_answers({**draft, **user_profile})
         if not persona.is_portrait_confirmed:
             return _state(merged, "portrait", False)
         avatar = (await db.execute(select(AvatarAsset).where(AvatarAsset.user_id == user_id, AvatarAsset.active.is_(True)))).scalar_one_or_none()
@@ -187,11 +201,11 @@ async def get_onboarding_state(db: AsyncSession, user_id: int) -> dict[str, Any]
             next_field = "voice" if voice_missing else missing_users[0]
             return _state(merged, next_field, False)
         return _state({}, None, True)
-    draft = _load_draft(persona)
-    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
+    answers = _onboarding_answers(draft)
+    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not answers.get(f)), None)
     if missing_character is not None:
-        return _state(draft, missing_character, False)
-    return _state(draft, "portrait", False)
+        return _state(answers, missing_character, False)
+    return _state(answers, "portrait", False)
 
 
 async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, value: str | None) -> dict[str, Any]:
@@ -206,25 +220,28 @@ async def submit_onboarding_field(db: AsyncSession, user_id: int, field: str, va
                 await record_user_profile(db, user_id, {field: value.strip()[:_ONBOARDING_MAX_LEN]})
                 await db.commit()
             # 传空值不动 Memory 行：清除 user_* 条目只能经 memory_forget 撤回
-            return _state(_load_draft(persona), None, True)
+            return _state(_onboarding_answers(load_persona_definition(persona)), None, True)
         # voice 不是人设字段，故此处只动草稿
         if field == "voice":
-            draft = _load_draft(persona)
+            draft = load_persona_definition(persona)
             if value and value.strip():
                 draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
             else:
                 draft.pop(field, None)
             persona.definition_json = json.dumps(draft, ensure_ascii=False)
             await db.commit()
-            return _state(draft, None, True)
+            return _state(_onboarding_answers(draft), None, True)
         raise PersonaValidationError(f"onboarding field {field!r} cannot be edited after persona is finalized; use PUT /api/companion/persona", field)
-    draft = _load_draft(persona)
+    draft = load_persona_definition(persona)
+    norm_key = "biological_type" if field == "species" else ("gender" if field == "character_gender" else field)
     if value and value.strip():
-        draft[field] = value.strip()[:_ONBOARDING_MAX_LEN]
+        draft[norm_key] = value.strip()[:_ONBOARDING_MAX_LEN]
     else:
+        draft.pop(norm_key, None)
         draft.pop(field, None)
     persona.definition_json = json.dumps(draft, ensure_ascii=False)
     await db.commit()
-    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not draft.get(f)), None)
+    answers = _onboarding_answers(draft)
+    missing_character = next((f for f in _CHARACTER_ONBOARDING_FIELDS if not answers.get(f)), None)
     next_field = missing_character if missing_character is not None else "portrait"
-    return _state(draft, next_field, False)
+    return _state(answers, next_field, False)

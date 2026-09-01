@@ -10,6 +10,7 @@ from components import apply_partial, get_db, sha512_b64
 from fastapi import Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from modules.auth import get_current_admin_token
+from modules.system import MessageResponse, ReleaseManifestResponse
 from modules.update import UpdateVersion, UpdateVersionItem, UpdateVersionListResponse, UpdateVersionUpdate
 from services.update import ALLOWED_ARCHIVE_SUFFIXES, CHUNK_SIZE, DOWNLOAD_SUFFIXES, VERSIONS_DIR, build_manifest
 from sqlalchemy import select
@@ -35,16 +36,16 @@ def _pick_asset(versions_dir: Path, *patterns: str) -> Path | None:
     return sorted([m for m in matches if not m.name.startswith(".tmp.")])[-1] if matches else None
 
 
-@router.get("/latest.yml")
-async def get_latest_yml(db: AsyncSession = Depends(get_db)) -> dict:
+@router.get("/latest.yml", response_model=ReleaseManifestResponse)
+async def get_latest_yml(db: AsyncSession = Depends(get_db)) -> ReleaseManifestResponse:
     latest = await _get_latest(db)
-    return build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size)
+    return ReleaseManifestResponse(**build_manifest(latest, latest.exe_filename, latest.exe_sha512, latest.exe_size))
 
 
-@router.get("/latest-mac.yml")
-async def get_latest_mac_yml(db: AsyncSession = Depends(get_db)) -> dict:
+@router.get("/latest-mac.yml", response_model=ReleaseManifestResponse)
+async def get_latest_mac_yml(db: AsyncSession = Depends(get_db)) -> ReleaseManifestResponse:
     latest = await _get_latest(db)
-    return build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size)
+    return ReleaseManifestResponse(**build_manifest(latest, latest.mac_filename, latest.mac_sha512, latest.mac_size))
 
 
 @router.get("/latest-runner.yml", response_class=FileResponse)
@@ -174,15 +175,15 @@ async def update_version(id: int, payload: UpdateVersionUpdate, _admin: str = De
     return UpdateVersionItem.model_validate(record)
 
 
-@router.delete("/versions/{id}")
-async def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> dict:
+@router.delete("/versions/{id}", response_model=MessageResponse)
+async def delete_version(id: int, _admin: str = Depends(get_current_admin_token), db: AsyncSession = Depends(get_db)) -> MessageResponse:
     record = await get_or_404(db, UpdateVersion, id=id, detail="Version not found")
     versions_dir = VERSIONS_DIR / record.version
     if versions_dir.exists():
         shutil.rmtree(versions_dir)
     await db.delete(record)
     await db.commit()
-    return {"message": "Version deleted"}
+    return MessageResponse(message="Version deleted")
 
 
 @router.get("/{filename:path}", response_class=FileResponse)

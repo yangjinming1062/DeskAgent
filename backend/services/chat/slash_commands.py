@@ -69,7 +69,7 @@ def register(
     aliases: tuple[str, ...] | list[str] = (),
     description: str = "",
     requires_confirmation: bool = False,
-):
+) -> Callable[[SlashCommandHandler], SlashCommandHandler]:
     """装饰器：把协程包装成 SlashCommand 并塞进 ``SLASH_COMMANDS``。
 
     主名与所有别名共享同一个 SlashCommand 实例（别名只是 key 镜像，调用 resolve() 时无差别）。

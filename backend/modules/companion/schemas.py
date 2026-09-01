@@ -1,9 +1,26 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 # Persona blob 整体作为 JSON 字符串传输；32 KiB 在 HTTP 边界把 DoS 封顶，同时给最大 persona 字段（2000 字符）+ user_* 字段 + JSON 开销留余量。
 _PERSONA_JSON_MAX_LEN: int = 32 * 1024
+
+
+def normalize_persona_aliases(d: dict[str, Any]) -> dict[str, Any]:
+    """将 species 归一化为 biological_type，character_gender 归一化为 gender。
+
+    若别名与规范名共存，弹出并丢弃别名，保留规范名。
+    """
+    res = dict(d)
+    if "species" in res:
+        species_val = res.pop("species")
+        if "biological_type" not in res:
+            res["biological_type"] = species_val
+    if "character_gender" in res:
+        gender_val = res.pop("character_gender")
+        if "gender" not in res:
+            res["gender"] = gender_val
+    return res
 
 
 class PersonaUpdate(BaseModel):
@@ -172,3 +189,34 @@ class OutfitResponse(BaseModel):
 
 class OutfitListResponse(BaseModel):
     outfits: list[OutfitResponse]
+
+
+class VoiceEntry(BaseModel):
+    id: str
+    label: str
+    gender: str
+    language: str = ""
+    tags: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class VoicesListResponse(BaseModel):
+    provider: str = ""
+    voices: list[VoiceEntry] = Field(default_factory=list)
+    default_voice: VoiceEntry
+    supports_voice_design: bool = False
+    voice_design_guide: str = ""
+
+
+class OnboardingStateResponse(BaseModel):
+    answers: dict[str, str] = Field(default_factory=dict)
+    next_field: str | None = None
+    complete: bool = False
+
+
+class ExpressionsListResponse(BaseModel):
+    expressions: list[dict] = Field(default_factory=list)
+
+
+class CompanionOperationResponse(BaseModel):
+    ok: bool = True

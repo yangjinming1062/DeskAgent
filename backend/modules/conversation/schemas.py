@@ -65,3 +65,20 @@ class DesktopSessionUndoRequest(BaseModel):
 
     source_message_id: int = Field(ge=0)
     confirmed: bool = False
+
+
+class DesktopSessionOperationResponse(BaseModel):
+    ok: bool = True
+
+
+class DesktopSessionForkResponse(BaseModel):
+    session_id: str
+    messages: list[dict]
+    message_count: int
+
+
+class DesktopSessionUndoResponse(BaseModel):
+    session_id: str
+    deleted_count: int
+    anchor: dict
+    messages: list[dict]

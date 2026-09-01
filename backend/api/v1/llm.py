@@ -4,6 +4,7 @@ from common import get_router
 from components import SESSION_LOCAL, SETTINGS, get_logger
 from fastapi import Depends, HTTPException, Request
 from modules.auth import LoginRecord, User, get_current_session
+from modules.system import CompletionResponse
 from pydantic import BaseModel
 from services.llm import MissingLlmConfigError, ServiceType, call_with_retry, classify_api_error, execute_with_fallback, resolve_context_tokens, resolve_provider_chain
 from services.rate_limit import limiter
@@ -24,14 +25,14 @@ class CompletionRequest(BaseModel):
     max_output_tokens: int | None = None
 
 
-@router.post("/completion")
+@router.post("/completion", response_model=CompletionResponse)
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_minute}/minute")
 @limiter.limit(f"{SETTINGS.llm_completion_rate_limit_per_ip_per_minute}/minute", key_func=get_remote_address)
-async def create_completion(req: CompletionRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session)) -> dict[str, Any]:
+async def create_completion(req: CompletionRequest, request: Request, current: tuple[User, LoginRecord] = Depends(get_current_session)) -> CompletionResponse:
     """Desktop Runner 代理 LLM 调用的无状态补全端点：错误响应走非泄露分类信封（异常细节留在服务端日志，renderer 只看到 {error, reason, status}，reason 为稳定 FailoverReason 枚举值，对应 ARCHITECTURE.md §3.1 的 -32603 约束）；调用走 provider 链路，首个供应商遇鉴权/计费/模型不存在错误时自动透明切换下一家。"""
     user, _login_record = current
 
-    async def _call(provider):
+    async def _call(provider: Any) -> Any:
         client = provider.raw_client()
         if client is None:
             raise RuntimeError(f"provider {provider.provider_name} does not expose the Responses API")
@@ -65,4 +66,4 @@ async def create_completion(req: CompletionRequest, request: Request, current: t
         raise classified_http_exception(classify_api_error(RuntimeError("LLM returned no output"), model=req.model or ""))
     usage = response.usage.model_dump() if response.usage else None
 
-    return {"content": content, "usage": usage}
+    return CompletionResponse(content=content, usage=usage)
