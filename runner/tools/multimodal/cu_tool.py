@@ -316,7 +316,7 @@ def _capture_response(cap: CaptureResult, max_elements: int = 100) -> Any:
     total = len(cap.elements)
     visible = cap.elements[:max_elements]
     truncated = max(0, total - len(visible))
-    element_index = _format_elements(visible)
+    element_index = _format_elements(visible, max_lines=max_elements)
     summary_lines = [
         f"capture mode={cap.mode} {cap.width}x{cap.height}"
         + (f" app={cap.app}" if cap.app else "")
@@ -425,6 +425,7 @@ def _format_elements(elements: list[UIElement], max_lines: int = 40) -> list[str
         out.append(f"  #{e.index} {e.role} {label!r} @ {e.bounds}{app_suffix}")
     if len(elements) > max_lines:
         out.append(f"  ... +{len(elements) - max_lines} more (call capture with app= to narrow)")
+    return out
 
 
 def _computer_use_available() -> bool:

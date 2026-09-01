@@ -349,16 +349,16 @@ def _focus_windows() -> dict[str, Any]:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return {}
-        # 跳过 explorer 容器 — 它们有真实 hwnd, 但并非用户真正交互的对象。
-        for _ in range(4):
+        # 跳过 explorer 容器与不可见系统窗口 — 向后遍历 Z-order 找到用户实际交互的顶层可见窗口。
+        for _ in range(8):
             buf = ctypes.create_unicode_buffer(256)
             user32.GetClassNameW(hwnd, buf, 256)
-            if buf.value not in ("Shell_TrayWnd", "WorkerW", "Progman"):
+            if buf.value not in ("Shell_TrayWnd", "WorkerW", "Progman") and user32.IsWindowVisible(hwnd):
                 break
-            # 继续走到真正的前台窗口。
-            hwnd = user32.GetForegroundWindow()
-            if not hwnd:
-                return {}
+            next_hwnd = user32.GetWindow(hwnd, 2)  # GW_HWNDNEXT = 2
+            if not next_hwnd:
+                break
+            hwnd = next_hwnd
 
         # GetGUIThreadInfo: 读前台线程上真正 focus 的 hwnd(用户实际输入窗口, 而非最顶层 shell 容器)。
         class _GuiThreadInfo(ctypes.Structure):
@@ -378,8 +378,8 @@ def _focus_windows() -> dict[str, Any]:
         info = _GuiThreadInfo(cbSize=ctypes.sizeof(_GuiThreadInfo))
         user32.GetGUIThreadInfo(tid, ctypes.byref(info))
         real_hwnd = info.hwndFocus or info.hwndActive or hwnd
-        # 取焦点窗口的顶层 owner。
-        top = user32.GetAncestor(real_hwnd, 2)  # GA_ROOT = 2
+        # 取焦点窗口的顶层 owner (GA_ROOT = 2)，若返回 0 则兜底回退到 real_hwnd / hwnd。
+        top = user32.GetAncestor(real_hwnd, 2) or real_hwnd or hwnd
 
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(top, ctypes.byref(pid))

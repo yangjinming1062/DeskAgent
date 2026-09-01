@@ -241,11 +241,11 @@ def camofox_navigate(url: str, task_id: str | None = None) -> str:
             result["element_count"] = snap_data.get("refsCount", 0)
         except Exception:
             pass
-        return json.dumps(result)
+        return json.dumps(result, ensure_ascii=False)
     except httpx.HTTPStatusError as e:
         return tool_error(f"Navigation failed: {e}", success=False)
     except (httpx.ConnectError, httpx.RequestError):
-        return json.dumps({"success": False, "error": f"Cannot connect to Camofox at {get_camofox_url()}. Is the server running? Start it first."})
+        return json.dumps({"success": False, "error": f"Cannot connect to Camofox at {get_camofox_url()}. Is the server running? Start it first."}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -260,7 +260,7 @@ def camofox_snapshot(full: bool = False, task_id: str | None = None, user_task: 
         snapshot = data.get("snapshot", "")
         if len(snapshot) > SNAPSHOT_SUMMARIZE_THRESHOLD:
             snapshot = _extract_relevant_content(snapshot, user_task) if user_task else _truncate_snapshot(snapshot)
-        return json.dumps({"success": True, "snapshot": snapshot, "element_count": data.get("refsCount", 0)})
+        return json.dumps({"success": True, "snapshot": snapshot, "element_count": data.get("refsCount", 0)}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -273,7 +273,7 @@ def camofox_click(ref: str, task_id: str | None = None) -> str:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         clean_ref = ref.lstrip("@")
         data = _post(f"/tabs/{session['tab_id']}/click", {"userId": session["user_id"], "ref": clean_ref})
-        return json.dumps({"success": True, "clicked": clean_ref, "url": data.get("url", "")})
+        return json.dumps({"success": True, "clicked": clean_ref, "url": data.get("url", "")}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -286,7 +286,7 @@ def camofox_type(ref: str, text: str, task_id: str | None = None) -> str:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         clean_ref = ref.lstrip("@")
         _post(f"/tabs/{session['tab_id']}/type", {"userId": session["user_id"], "ref": clean_ref, "text": text})
-        return json.dumps({"success": True, "typed": text, "element": clean_ref})
+        return json.dumps({"success": True, "typed": text, "element": clean_ref}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -298,7 +298,7 @@ def camofox_scroll(direction: str, task_id: str | None = None) -> str:
         if not session["tab_id"]:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         _post(f"/tabs/{session['tab_id']}/scroll", {"userId": session["user_id"], "direction": direction})
-        return json.dumps({"success": True, "scrolled": direction})
+        return json.dumps({"success": True, "scrolled": direction}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -310,7 +310,7 @@ def camofox_back(task_id: str | None = None) -> str:
         if not session["tab_id"]:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         data = _post(f"/tabs/{session['tab_id']}/back", {"userId": session["user_id"]})
-        return json.dumps({"success": True, "url": data.get("url", "")})
+        return json.dumps({"success": True, "url": data.get("url", "")}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -322,7 +322,7 @@ def camofox_press(key: str, task_id: str | None = None) -> str:
         if not session["tab_id"]:
             return tool_error("No browser session. Call browser_navigate first.", success=False)
         _post(f"/tabs/{session['tab_id']}/press", {"userId": session["user_id"], "key": key})
-        return json.dumps({"success": True, "pressed": key})
+        return json.dumps({"success": True, "pressed": key}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
@@ -342,7 +342,7 @@ def camofox_get_images(task_id: str | None = None) -> str:
                 src = m.group(1) if i + 1 < len(lines) and (m := re.search(r"/url:\s*(\S+)", lines[i + 1].strip())) else ""
                 if alt or src:
                     images.append({"src": src, "alt": alt})
-        return json.dumps({"success": True, "images": images, "count": len(images)})
+        return json.dumps({"success": True, "images": images, "count": len(images)}, ensure_ascii=False)
     except Exception as e:
         return tool_error(str(e), success=False)
 
