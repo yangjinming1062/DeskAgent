@@ -16,6 +16,7 @@ def browser_batch(
     return_snapshot: bool = True,
     wait_between_ms: int = 100,
     task_id: str | None = None,
+    cancel_token: Any = None,
 ) -> str:
     """在当前浏览器会话中连续批量执行一组原子动作。
 
@@ -27,11 +28,14 @@ def browser_batch(
     if not actions or not isinstance(actions, list):
         return json.dumps({"success": False, "error": "actions parameter must be a non-empty list of action objects"})
 
+    if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+        return json.dumps({"success": False, "error": "Caller cancelled before batch", "cancelled": True})
+
     with browser_session(task_id) as (supervisor, _):
         if supervisor is None:
             return no_supervisor()
 
-        batch_res = supervisor.execute_batch(actions, wait_between_ms=wait_between_ms)
+        batch_res = supervisor.execute_batch(actions, wait_between_ms=wait_between_ms, cancel_token=cancel_token)
         if not batch_res.get("ok"):
             return json.dumps(
                 {
@@ -66,5 +70,6 @@ registry.register_tool("browser_batch", check_fn=check_browser_native_requiremen
         return_snapshot=args.get("return_snapshot", True),
         wait_between_ms=args.get("wait_between_ms", 100),
         task_id=kw.get("task_id"),
+        cancel_token=kw.get("cancel_token"),
     ),
 )

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import secrets
+from typing import Any
 
 from utils import get_spiritagent_home
 
@@ -13,7 +14,7 @@ from ..schemas import (
     BROWSER_PDF_SCHEMA,
     BROWSER_SCREENSHOT_ELEMENT_SCHEMA,
 )
-from ._common import browser_session, camofox_unsupported, no_supervisor
+from ._common import browser_session, camofox_unsupported, guard_browser_url, no_supervisor
 
 
 def browser_screenshot_element(ref: str, save_as: str | None = None, task_id: str | None = None) -> str:
@@ -69,18 +70,24 @@ def browser_pdf(
         return json.dumps({"success": True, "path": str(out_path), "sha256": sha})
 
 
-def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: float = 30.0, task_id: str | None = None) -> str:
+def browser_download(ref_or_url: str, save_as: str | None = None, timeout_s: float = 30.0, task_id: str | None = None, cancel_token: Any = None) -> str:
     """通过点击 ref 链接或导航至下载 URL 触发并等待文件下载。"""
     if is_camofox_mode():
         return camofox_unsupported("browser_download")
+
+    if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+        return json.dumps({"success": False, "error": "Caller cancelled before download", "cancelled": True}, ensure_ascii=False)
 
     with browser_session(task_id) as (supervisor, _):
         if supervisor is None:
             return no_supervisor()
 
         if ref_or_url.startswith(("http://", "https://")):
+            safe_url, url_err = guard_browser_url(ref_or_url)
+            if url_err is not None:
+                return url_err
             try:
-                supervisor.navigate(ref_or_url, timeout=5.0)
+                supervisor.navigate(safe_url, timeout=5.0)
             except Exception as exc:
                 return json.dumps({"success": False, "error": f"Download navigate failed: {exc}"}, ensure_ascii=False)
         else:
@@ -121,5 +128,6 @@ registry.register_tool("browser_download", check_fn=check_browser_native_require
         save_as=args.get("save_as"),
         timeout_s=args.get("timeout_s", 30.0),
         task_id=kw.get("task_id"),
+        cancel_token=kw.get("cancel_token"),
     ),
 )

@@ -126,12 +126,21 @@ def iter_skills_files(container_base: str = "/root/.spiritagent") -> list[dict[s
     base = container_base.rstrip("/")
     dirs = [(spiritagent_home / "skills", f"{base}/skills")] if (spiritagent_home / "skills").is_dir() else []
     dirs.extend((ext_dir, f"{base}/external_skills/{idx}") for idx, ext_dir in enumerate(get_external_skills_dirs()) if ext_dir.is_dir())
-    return [
-        {"host_path": str(item), "container_path": f"{c_root}/{item.relative_to(s_dir)}"}
-        for s_dir, c_root in dirs
-        for item in s_dir.rglob("*")
-        if not item.is_symlink() and item.is_file()
-    ]
+    out: list[dict[str, str]] = []
+    for s_dir, c_root in dirs:
+        # ``follow_symlinks=False`` 防止 rglob 钻进 symlinked 子目录; 否则 ``item.relative_to(s_dir)``
+        # 会抛 ValueError 把整个 mount 流程拖垮, 且会无意识地泄露 skills 之外的文件。
+        for item in s_dir.rglob("*", follow_symlinks=False):
+            if item.is_symlink() or item.is_dir():
+                continue
+            if not item.is_file():
+                continue
+            try:
+                rel = item.relative_to(s_dir)
+            except ValueError:
+                continue
+            out.append({"host_path": str(item), "container_path": f"{c_root}/{rel}"})
+    return out
 
 
 _CACHE_DIRS: list[tuple[str, str]] = [

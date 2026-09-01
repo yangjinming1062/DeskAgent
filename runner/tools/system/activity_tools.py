@@ -148,10 +148,13 @@ def _cursor_pos_handler(args: dict[str, Any], **kw: Any) -> str:
 
 
 def _click_at_handler(args: dict[str, Any], **kw: Any) -> str:
-    x = int(args.get("x", 0))
-    y = int(args.get("y", 0))
+    try:
+        x = int(args.get("x", 0))
+        y = int(args.get("y", 0))
+        clicks = int(args.get("clicks", 1))
+    except (TypeError, ValueError) as e:
+        return json.dumps({"clicked": False, "error": f"x/y/clicks must be integers: {e}"}, ensure_ascii=False)
     button = str(args.get("button", "left"))
-    clicks = int(args.get("clicks", 1))
     return json.dumps(click_at(x, y, button, clicks))
 
 

@@ -38,20 +38,37 @@ class SSHEnvironment(BaseEnvironment):
         self.control_dir.mkdir(parents=True, exist_ok=True)
         _socket_id = hashlib.sha256(f"{user}@{host}:{port}".encode()).hexdigest()[:16]
         self.control_socket = self.control_dir / f"{_socket_id}.sock"
-        self._askpass = self._create_askpass()
-        _ensure_ssh_available()
-        self._establish_connection()
-        self._remote_home = self._detect_remote_home()
-        self._ensure_remote_dirs()
-        self._sync_manager = FileSyncManager(
-            get_files_fn=lambda: iter_sync_files(f"{self._remote_home}/.spiritagent"),
-            upload_fn=self._scp_upload,
-            delete_fn=self._ssh_delete,
-            bulk_upload_fn=self._ssh_bulk_upload,
-            bulk_download_fn=self._ssh_bulk_download,
-        )
-        self._sync_manager.sync(force=True)
-        self.init_session()
+        # 默认占位 None; ``_create_askpass`` 在连通性验证后才会写入明文密码到磁盘,
+        # 且若后续任意一步抛错, ``finally`` 会立即把临时脚本删掉, 不让 askpass 残留。
+        self._askpass: Path | None = None
+        try:
+            _ensure_ssh_available()
+            self._askpass = self._create_askpass()
+            self._establish_connection()
+            self._remote_home = self._detect_remote_home()
+            self._ensure_remote_dirs()
+            self._sync_manager = FileSyncManager(
+                get_files_fn=lambda: iter_sync_files(f"{self._remote_home}/.spiritagent"),
+                upload_fn=self._scp_upload,
+                delete_fn=self._ssh_delete,
+                bulk_upload_fn=self._ssh_bulk_upload,
+                bulk_download_fn=self._ssh_bulk_download,
+            )
+            self._sync_manager.sync(force=True)
+            self.init_session()
+        except Exception:
+            self._cleanup_askpass_on_init_failure()
+            raise
+
+    def _cleanup_askpass_on_init_failure(self) -> None:
+        """``__init__`` 失败时回收 askpass 脚本与 control socket, 防止明文密码残留在 ``tempfile.gettempdir()``。"""
+        if self._askpass is not None:
+            with contextlib.suppress(OSError):
+                self._askpass.unlink(missing_ok=True)
+            self._askpass = None
+        if getattr(self, "control_socket", None) is not None:
+            with contextlib.suppress(OSError):
+                self.control_socket.unlink(missing_ok=True)
 
     def _create_askpass(self) -> Path | None:
         """密码模式生成一次性 askpass 脚本；密钥认证（优先）或无密码时返回 None。"""
@@ -208,23 +225,27 @@ class SSHEnvironment(BaseEnvironment):
         return _popen_bash(cmd, stdin_data, env=self._ssh_env())
 
     def cleanup(self) -> None:
-        if self._sync_manager:
+        # 同步清理须容错: 部分 ``__init__`` 失败的实例没有 ``_sync_manager`` 属性。
+        sync_mgr = getattr(self, "_sync_manager", None)
+        if sync_mgr is not None:
             logger.info("SSH: syncing files from sandbox...")
             try:
-                self._sync_manager.sync_back()
+                sync_mgr.sync_back()
             except Exception as e:
                 logger.warning("SSH: sync_back failed: %s", e)
-        if self._askpass is not None:
+        askpass = getattr(self, "_askpass", None)
+        if askpass is not None:
             with contextlib.suppress(OSError):
-                self._askpass.unlink()
-        if self.control_socket.exists():
+                Path(askpass).unlink(missing_ok=True)
+        control_socket = getattr(self, "control_socket", None)
+        if control_socket is not None and Path(control_socket).exists():
             with contextlib.suppress(Exception):
                 subprocess.run(
-                    ["ssh", "-o", f"ControlPath={self.control_socket}", "-O", "exit", f"{self.user}@{self.host}"],
+                    ["ssh", "-o", f"ControlPath={control_socket}", "-O", "exit", f"{self.user}@{self.host}"],
                     capture_output=True,
                     timeout=5,
                     stdin=subprocess.DEVNULL,
                     **_NO_WINDOW,
                 )
             with contextlib.suppress(OSError):
-                self.control_socket.unlink()
+                Path(control_socket).unlink(missing_ok=True)

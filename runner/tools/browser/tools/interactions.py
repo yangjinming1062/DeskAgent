@@ -132,14 +132,17 @@ def browser_wait_for(
     timeout_s: float = 10.0,
     return_snapshot: bool = True,
     task_id: str | None = None,
+    cancel_token: Any = None,
 ) -> str:
     if is_camofox_mode():
         return camofox_unsupported("browser_wait_for")
 
+    if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+        return json.dumps({"success": False, "error": "Caller cancelled before wait_for", "cancelled": True})
     with browser_session(task_id) as (supervisor, _):
         if supervisor is None:
             return no_supervisor()
-        res = supervisor.wait_for(selector=selector, text=text, timeout_s=timeout_s)
+        res = supervisor.wait_for(selector=selector, text=text, timeout_s=timeout_s, cancel_token=cancel_token)
         if not res.get("ok"):
             return json.dumps({"success": False, "error": res.get("error", "wait_for timed out")})
 
@@ -209,6 +212,7 @@ registry.register_tool("browser_wait_for", check_fn=check_browser_native_require
         timeout_s=args.get("timeout_s", 10.0),
         return_snapshot=args.get("return_snapshot", True),
         task_id=kw.get("task_id"),
+        cancel_token=kw.get("cancel_token"),
     ),
 )
 

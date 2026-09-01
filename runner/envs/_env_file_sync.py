@@ -163,7 +163,12 @@ class FileSyncManager:
                         raise KeyboardInterrupt
 
     def _sync_back_locked(self, lock_path: Path) -> None:
-        with open(lock_path, "w", encoding="utf-8") as f:
+        # Windows 的 ``msvcrt.locking`` 锁区段必须已存在 — 在 0 字节文件上 ``LK_LOCK, 1`` 会抛 ``Errno 22``。
+        # 显式写入 1 字节占位, 锁解锁后再清理。
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(lock_path, "w+b") as f:
+            f.write(b"\x00")
+            f.flush()
             try:
                 if sys.platform == "win32":
                     msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)

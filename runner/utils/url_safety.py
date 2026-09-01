@@ -80,10 +80,16 @@ def normalize_url_for_request(url: str) -> str:
 
 
 def _global_allow_private_urls() -> bool:
-    """实时从配置读取（不缓存，因为该值会通过 ``spiritagent.config.update`` 变更）。"""
+    """仅读取 ``security.allow_private_urls`` (跨工具的 SSRF 全局闸门).
+
+    历史原因曾把 ``browser.allow_private_urls`` 也 OR 进来 — 但 ``browser.*`` 是开发者本地调试 localhost 的逃生口,
+    让它顺带关掉 vision_analyze / webhook 等所有 HTTP 工具的 SSRF 是危险的设计耦合。现在两者作用域独立:
+    本函数专门管全局 HTTP 闸门, 浏览器本地访问由 ``_allow_private_urls()`` 在 ``browser/session.py`` 单独判读。
+    """
     try:
         cfg = load_config()
-        return any(isinstance(d, dict) and is_truthy_value(d.get("allow_private_urls"), default=False) for d in (cfg.get("security"), cfg.get("browser")))
+        security = cfg.get("security")
+        return isinstance(security, dict) and is_truthy_value(security.get("allow_private_urls"), default=False)
     except Exception:
         return False
 
@@ -93,8 +99,24 @@ def _is_always_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> boo
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    if isinstance(ip, ipaddress.IPv6Address) and (mapped := ip.ipv4_mapped) is not None:
-        ip = mapped
+    if isinstance(ip, ipaddress.IPv6Address):
+        # 把所有 IPv4-in-IPv6 变体映射成 IPv4 再判定; Python 默认只识别 ``::ffff:a.b.c.d`` 一种。
+        # NAT64 (``64:ff9b::/96``)、6to4 (``2002::/16``)、deprecated IPv4-compat (``::a.b.c.d``) 都不映射,
+        # 会让 ``169.254.169.254`` 通过 ``64:ff9b::169.254.169.254`` 绕开元数据端点拦截。
+        if (mapped := ip.ipv4_mapped) is not None:
+            ip = mapped
+        elif ip.sixtofour:  # 2002:WWXX:YYZZ:... -> a.b.c.d
+            ip = ip.sixtofour
+        elif (nat64_prefix := ipaddress.IPv6Network("64:ff9b::/96", False)) and ip in nat64_prefix:
+            tail = int(ip) & 0xFFFFFFFF
+            ip = ipaddress.IPv4Address(tail)
+        else:
+            # deprecated ``::a.b.c.d`` IPv4-compatible IPv6 address (RFC 4291 §2.5.5.1)
+            try:
+                if ip.ipv4_compat is not None:
+                    ip = ip.ipv4_compat  # type: ignore[attr-defined]
+            except (AttributeError, ValueError):
+                pass
     return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified or ip in _CGNAT_NETWORK
 
 

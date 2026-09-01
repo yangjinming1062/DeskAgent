@@ -112,8 +112,13 @@ def browser_storage_get(key: str, origin: str, kind: str = "localStorage", task_
             return json.dumps({"success": False, "error": res.get("error", "unknown error")}, ensure_ascii=False)
         items = res.get("result", {}).get("entries", [])
         for entry in items:
+            # CDP ``entries`` 是 list 数组而非强类型 ``[key, value]`` tuple; 长度为 0 或 1 的项(空 value)
+            # 必须跳过, 否则 ``entry[1]`` 直接抛 IndexError 拖垮整次调用。
+            if not isinstance(entry, list) or len(entry) < 1:
+                continue
             if entry[0] == key:
-                return json.dumps({"success": True, "key": key, "value": entry[1], "kind": kind, "found": True}, ensure_ascii=False)
+                value = entry[1] if len(entry) >= 2 else None
+                return json.dumps({"success": True, "key": key, "value": value, "kind": kind, "found": True}, ensure_ascii=False)
         return json.dumps({"success": True, "key": key, "value": None, "kind": kind, "found": False}, ensure_ascii=False)
 
 

@@ -24,6 +24,7 @@ from utils import (
     is_interrupted,
     load_config,
     pid_exists,
+    redact_sensitive_text,
     resolve_safe_cwd,
     sanitize_subprocess_env,
     terminate_tree,
@@ -744,15 +745,22 @@ class ProcessRegistry:
         logger.info("Reconciled session %s: direct child exited with code %s but reader was still blocked (orphaned pipe). Flipped to exited.", session.id, rc)
         self._move_to_finished(session)
 
-    def poll(self, session_id: str) -> dict:
+    def poll(self, session_id: str, cancel_token: Any = None) -> dict:
         """查询后台进程的状态与最新输出。"""
+        if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+            return {"status": "interrupted", "note": "Caller cancelled before reading"}
         session = self.get(session_id)
         if session is None:
             return {"status": "not_found", "error": f"No process with ID {session_id}"}
         # 先对账真实子进程状态, 防止孤儿 pipe 让 reader 卡死。
         self._reconcile_local_exit(session)
+        # ``output_preview`` 受 ``registry.get_max_result_size()`` 兜底: 一行 2KB 的日志乘以多行也可能远超上限。
+        max_chars = registry.get_max_result_size()
         with session._lock:
-            output_preview = clean_output(session.output_buffer[-1000:]) if session.output_buffer else ""
+            preview_raw = clean_output(session.output_buffer[-1000:]) if session.output_buffer else ""
+        preview_raw = redact_sensitive_text(preview_raw) if preview_raw else ""
+        truncated = len(preview_raw) > max_chars
+        output_preview = preview_raw[:max_chars] if truncated else preview_raw
         result = {
             "session_id": session.id,
             "command": session.command,
@@ -761,6 +769,8 @@ class ProcessRegistry:
             "uptime_seconds": int(time.time() - session.started_at),
             "output_preview": output_preview,
         }
+        if truncated:
+            result["output_truncated"] = True
         if session.exited:
             result["exit_code"] = session.exit_code
             self._completion_consumed.add(session_id)
@@ -779,18 +789,27 @@ class ProcessRegistry:
         lines = full_output.splitlines()
         total_lines = len(lines)
         selected = lines[-limit:] if offset == 0 and limit > 0 else lines[offset : offset + limit]
+        joined = redact_sensitive_text("\n".join(selected))
+        # 末尾再按 ``registry.get_max_result_size()`` 兜底截断: 一行 2KB 的 JSON 日志乘以 200 行可能远超上限。
+        max_chars = registry.get_max_result_size()
+        truncated = len(joined) > max_chars
+        if truncated:
+            joined = joined[:max_chars]
         result = {
             "session_id": session.id,
             "status": "exited" if session.exited else "running",
-            "output": "\n".join(selected),
+            "output": joined,
             "total_lines": total_lines,
             "showing": f"{len(selected)} lines",
         }
+        if truncated:
+            result["truncated"] = True
+            result["hint"] = f"Output exceeded {max_chars} chars; truncated. Use offset to page through earlier lines."
         if session.exited:
             self._completion_consumed.add(session_id)
         return result
 
-    def wait(self, session_id: str, timeout: int | None = None) -> dict:
+    def wait(self, session_id: str, timeout: int | None = None, cancel_token: Any = None) -> dict:
         """阻塞直到进程退出、超时或被取消; 超时上限用 config.terminal.timeout 防模型设了巨值。"""
         try:
             default_timeout = int(cfg_get(load_config(), "terminal", "timeout", default=180))
@@ -818,8 +837,8 @@ class ProcessRegistry:
                 if timeout_note:
                     result["timeout_note"] = timeout_note
                 return result
-            if is_interrupted():
-                result = {"status": "interrupted", "output": clean_output(session.output_buffer[-1000:]), "note": "User sent a new message -- wait interrupted"}
+            if is_interrupted() or (cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)()):
+                result = {"status": "interrupted", "output": clean_output(session.output_buffer[-1000:]), "note": "Caller cancelled the wait"}
                 if timeout_note:
                     result["timeout_note"] = timeout_note
                 return result
@@ -1201,22 +1220,39 @@ PROCESS_SCHEMA = {
 }
 
 
+def _coerce_int(value: Any, default: int, *, field: str) -> int:
+    """LLM 可能把 ``offset`` / ``limit`` / ``timeout`` 发成字符串。强制 ``int`` 并返回错误信封字符串。"""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{field} must be an integer, got {type(value).__name__}: {value!r}")
+
+
 def _handle_process(args: dict[str, Any], **kw: Any) -> str:
     task_id = kw.get("task_id")
+    cancel_token = kw.get("cancel_token")
     action = args.get("action", "")
     # Coerce to string — some models send session_id as an integer
     session_id = str(args.get("session_id", "")) if args.get("session_id") is not None else ""
+    try:
+        offset = _coerce_int(args.get("offset"), 0, field="offset")
+        limit = _coerce_int(args.get("limit"), 200, field="limit")
+        timeout = _coerce_int(args.get("timeout"), 0, field="timeout") if args.get("timeout") is not None else None
+    except ValueError as e:
+        return tool_error(str(e))
     match action:
         case "list":
             return json.dumps({"processes": process_registry.list_sessions(task_id=task_id)}, ensure_ascii=False)
         case "poll" | "log" | "wait" | "kill" | "write" | "submit" | "close" if not session_id:
             return tool_error(f"session_id is required for {action}")
         case "poll":
-            return json.dumps(process_registry.poll(session_id), ensure_ascii=False)
+            return json.dumps(process_registry.poll(session_id, cancel_token=cancel_token), ensure_ascii=False)
         case "log":
-            return json.dumps(process_registry.read_log(session_id, offset=args.get("offset", 0), limit=args.get("limit", 200)), ensure_ascii=False)
+            return json.dumps(process_registry.read_log(session_id, offset=offset, limit=limit), ensure_ascii=False)
         case "wait":
-            return json.dumps(process_registry.wait(session_id, timeout=args.get("timeout")), ensure_ascii=False)
+            return json.dumps(process_registry.wait(session_id, timeout=timeout, cancel_token=cancel_token), ensure_ascii=False)
         case "kill":
             return json.dumps(process_registry.kill_process(session_id), ensure_ascii=False)
         case "write":

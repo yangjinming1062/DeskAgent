@@ -447,9 +447,17 @@ class CuaDriverBackend(ComputerUseBackend):
     def __init__(self) -> None:
         self._bridge = _AsyncBridge()
         self._session = _CuaDriverSession(self._bridge)
+        # ``_state_lock`` 守住 ``_active_pid`` / ``_active_window_id`` / ``_last_app`` 三个字段的并发读写;
+        # 之前没有任何锁, 并发 ``computer_use`` 调用会让 ``click`` 落到错的进程。
+        self._state_lock = threading.RLock()
         self._active_pid = None
         self._active_window_id = None
         self._last_app = None
+
+    def _active_target(self) -> tuple[int | None, int | None]:
+        """锁内原子读取 ``_active_pid`` 与 ``_active_window_id``, 防 click/type 期间被 capture 改写。"""
+        with self._state_lock:
+            return self._active_pid, self._active_window_id
 
     def start(self) -> None:
         self._session.start()
@@ -514,9 +522,10 @@ class CuaDriverBackend(ComputerUseBackend):
                 )
 
         target = next((w for w in windows if not w.get("off_screen", False)), windows[0])
-        self._active_pid, self._active_window_id, app_name = (target["pid"], target["window_id"], target["app_name"])
-        if app or not self._last_app:
-            self._last_app = app_name
+        with self._state_lock:
+            self._active_pid, self._active_window_id, app_name = (target["pid"], target["window_id"], target["app_name"])
+            if app or not self._last_app:
+                self._last_app = app_name
 
         png_b64, elements, width, height, window_title, image_mime_type = (None, [], 0, 0, "", None)
         if mode == "vision":
@@ -569,14 +578,15 @@ class CuaDriverBackend(ComputerUseBackend):
         click_count: int = 1,
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        if (pid := self._active_pid) is None:
+        pid, window_id = self._active_target()
+        if pid is None:
             return ActionResult(ok=False, action="click", message="No active window — call capture() first.")
         tool = "right_click" if button == "right" else "double_click" if click_count == 2 else "click"
         args = {"pid": pid}
         if element is not None:
-            if self._active_window_id is None:
+            if window_id is None:
                 return ActionResult(ok=False, action=tool, message="No active window_id for element_index click.")
-            args |= {"element_index": element, "window_id": self._active_window_id}
+            args |= {"element_index": element, "window_id": window_id}
         elif x is not None and y is not None:
             args |= {"x": x, "y": y}
         else:
@@ -595,13 +605,14 @@ class CuaDriverBackend(ComputerUseBackend):
         button: str = "left",
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        if (pid := self._active_pid) is None:
+        pid, window_id = self._active_target()
+        if pid is None:
             return ActionResult(ok=False, action="drag", message="No active window — call capture() first.")
         args = {"pid": pid}
         if from_element is not None and to_element is not None:
-            if self._active_window_id is None:
+            if window_id is None:
                 return ActionResult(ok=False, action="drag", message="No active window_id for element-based drag.")
-            args |= {"from_element": from_element, "to_element": to_element, "window_id": self._active_window_id}
+            args |= {"from_element": from_element, "to_element": to_element, "window_id": window_id}
         elif from_xy is not None and to_xy is not None:
             args |= {"from_x": int(from_xy[0]), "from_y": int(from_xy[1]), "to_x": int(to_xy[0]), "to_y": int(to_xy[1])}
         else:
@@ -618,22 +629,25 @@ class CuaDriverBackend(ComputerUseBackend):
         y: int | None = None,
         modifiers: list[str] | None = None,
     ) -> ActionResult:
-        if (pid := self._active_pid) is None:
+        pid, window_id = self._active_target()
+        if pid is None:
             return ActionResult(ok=False, action="scroll", message="No active window — call capture() first.")
         args = {"pid": pid, "direction": direction, "amount": max(1, min(50, amount))}
-        if element is not None and self._active_window_id is not None:
-            args |= {"element_index": element, "window_id": self._active_window_id}
+        if element is not None and window_id is not None:
+            args |= {"element_index": element, "window_id": window_id}
         elif x is not None and y is not None:
             args |= {"x": x, "y": y}
         return self._action("scroll", args)
 
     def type_text(self, text: str) -> ActionResult:
-        if (pid := self._active_pid) is None:
+        pid, _ = self._active_target()
+        if pid is None:
             return ActionResult(ok=False, action="type_text", message="No active window — call capture() first.")
         return self._action("type_text", {"pid": pid, "text": text})
 
     def key(self, keys: str) -> ActionResult:
-        if (pid := self._active_pid) is None:
+        pid, _ = self._active_target()
+        if pid is None:
             return ActionResult(ok=False, action="key", message="No active window — call capture() first.")
         key_name, modifiers = _parse_key_combo(keys)
         if not key_name:
@@ -643,7 +657,8 @@ class CuaDriverBackend(ComputerUseBackend):
         return res
 
     def set_value(self, value: str, element: int | None = None) -> ActionResult:
-        pid, window_id = self._active_pid, self._active_window_id
+        with self._state_lock:
+            pid, window_id = self._active_pid, self._active_window_id
         if pid is None or window_id is None:
             return ActionResult(ok=False, action="set_value", message="No active window — call capture() first.")
         if element is None:
@@ -679,7 +694,8 @@ class CuaDriverBackend(ComputerUseBackend):
         app_lower = app.lower()
         if matched := [w for w in windows if app_lower in w["app_name"].lower()]:
             target = matched[0]
-            self._active_pid, self._active_window_id, self._last_app = (target["pid"], target["window_id"], target["app_name"])
+            with self._state_lock:
+                self._active_pid, self._active_window_id, self._last_app = (target["pid"], target["window_id"], target["app_name"])
             return ActionResult(
                 ok=True,
                 action="focus_app",

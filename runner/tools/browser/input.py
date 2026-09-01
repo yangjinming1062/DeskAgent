@@ -258,6 +258,7 @@ class InputDispatch:
         sid = self._session_id_provider()
         modifier_mask = {"shift": 1, "ctrl": 2, "alt": 4}.get((hold_key or "").lower(), 0)
         first_error: dict[str, Any] | None = None
+        mouse_released = False
         if modifier_mask:
             res = self._send_cdp(
                 "Input.dispatchKeyEvent",
@@ -289,6 +290,7 @@ class InputDispatch:
                 time.sleep(0.02)
 
             res = self._send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": tx, "y": ty, "button": "left", "clickCount": 1}, session_id=sid)
+            mouse_released = True
             if not res.get("ok") and first_error is None:
                 first_error = res
             if first_error is not None:
@@ -297,7 +299,8 @@ class InputDispatch:
         finally:
             # 鼠标释放 + 修饰键抬起 必须放在同一 finally 里，保证中途异常时
             # 也确保按钮不会被卡在按下状态、修饰键不会被卡在按下状态。
-            if first_error is not None:
+            # 注意: happy path 已经在主体里调用过一次 mouseReleased; 这里只在没释放过的情况下补发。
+            if not mouse_released:
                 with contextlib.suppress(Exception):
                     self._send_cdp(
                         "Input.dispatchMouseEvent",
@@ -305,21 +308,25 @@ class InputDispatch:
                         session_id=sid,
                     )
             if modifier_mask:
-                self._send_cdp(
-                    "Input.dispatchKeyEvent",
-                    {
-                        "type": "keyUp",
-                        "modifiers": modifier_mask,
-                        "key": hold_key,
-                        "code": f"{hold_key.title()}Left",
-                        "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
-                    },
-                    session_id=sid,
-                )
+                with contextlib.suppress(Exception):
+                    self._send_cdp(
+                        "Input.dispatchKeyEvent",
+                        {
+                            "type": "keyUp",
+                            "modifiers": modifier_mask,
+                            "key": hold_key,
+                            "code": f"{hold_key.title()}Left",
+                            "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
+                        },
+                        session_id=sid,
+                    )
 
     def press_key(self, key: str, modifiers: int = 0) -> dict[str, Any]:
         sid = self._session_id_provider()
-        vk = KEY_CODE_MAP.get(key.lower(), 0)
+        # 未在 ``KEY_CODE_MAP`` 命中的 key 不再静默成功: 静默成功会让模型误以为表单已提交, 是 agent loop 里最糟的失败模式。
+        if key.lower() not in KEY_CODE_MAP:
+            return {"ok": False, "error": f"Unknown key {key!r}: not in KEY_CODE_MAP. Use a browser_press variant or check supported keys."}
+        vk = KEY_CODE_MAP[key.lower()]
         down = self._send_cdp("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": vk, "modifiers": modifiers, "key": key}, session_id=sid)
         if not down.get("ok"):
             return {"ok": False, "error": down.get("error", "Input.dispatchKeyEvent rawKeyDown failed")}
@@ -328,12 +335,15 @@ class InputDispatch:
             return {"ok": False, "error": up.get("error", "Input.dispatchKeyEvent keyUp failed")}
         return {"ok": True, "pressed": key}
 
-    def wait_for(self, *, selector: str | None = None, text: str | None = None, timeout_s: float = 10.0) -> dict[str, Any]:
+    def wait_for(self, *, selector: str | None = None, text: str | None = None, timeout_s: float = 10.0, cancel_token: Any = None) -> dict[str, Any]:
         if not selector and not text:
             return {"ok": False, "error": "At least one of `selector` or `text` must be provided"}
 
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
+            # 取消令牌触发时立刻退出轮询, 不等下一次 sleep。
+            if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+                return {"ok": False, "error": "Caller cancelled wait_for", "cancelled": True}
             last_error: dict[str, Any] | None = None
             if selector:
                 safe_sel = json.dumps(selector)

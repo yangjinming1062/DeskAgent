@@ -731,7 +731,7 @@ register_env_cleanup_hook(clear_file_ops_cache)
 # 若 worktree 切换确实改变了符号链接，需显式调用 _resolve_absolute_path.cache_clear()。
 
 
-def list_directory_tool(path: str, task_id: str = "default") -> str:
+def list_directory_tool(path: str, task_id: str = "default", cancel_token: Any = None) -> str:
     """列出目录内容。"""
     if not path:
         return json.dumps({"error": "list_directory: missing 'path'."})
@@ -756,12 +756,22 @@ def list_directory_tool(path: str, task_id: str = "default") -> str:
             stat = p.stat()
             entries.append({"name": p.name + ("/" if p.is_dir() else ""), "is_dir": p.is_dir(), "size": stat.st_size, "mtime": stat.st_mtime})
         entries.sort(key=lambda x: (not x["is_dir"], x["name"]))
-        return json.dumps({"path": str(_resolved), "entries": entries})
+        # 结果大小截断: ``iterdir`` 上限按 ``registry.get_max_result_size()`` 估计 (每条 ~120 字符)
+        # 提前截断避免一次列 10K+ 条目时撑爆模型上下文。
+        max_entries = max(50, registry.get_max_result_size() // 120)
+        truncated = len(entries) > max_entries
+        if truncated:
+            entries = entries[:max_entries]
+        result: dict[str, Any] = {"path": str(_resolved), "entries": entries}
+        if truncated:
+            result["truncated"] = True
+            result["hint"] = f"Directory has more than {max_entries} entries; use search_files to filter."
+        return json.dumps(result)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
 
-def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default") -> str:
+def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default", cancel_token: Any = None) -> str:
     """带分页与行号读取文件。"""
     if not path:
         return json.dumps({"error": "read_file: missing 'path'."})
@@ -1031,7 +1041,7 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
     return None
 
 
-def write_file_tool(path: str, content: str, task_id: str = "default", cross_profile: bool = False) -> str:
+def write_file_tool(path: str, content: str, task_id: str = "default", cross_profile: bool = False, cancel_token: Any = None) -> str:
     """把内容写入文件。
 
     ``cross_profile`` 用于绕过跨 SpiritAgent profile 软守卫。该守卫只在
@@ -1103,6 +1113,7 @@ def patch_tool(
     patch: str | None = None,
     task_id: str = "default",
     cross_profile: bool = False,
+    cancel_token: Any = None,
 ) -> str:
     """以 replace 模式或 V4A 补丁格式修改文件。
 
@@ -1276,6 +1287,7 @@ def search_tool(
     output_mode: str = "content",
     context: int = 0,
     task_id: str = "default",
+    cancel_token: Any = None,
 ) -> str:
     """搜索内容或文件名。"""
     try:
@@ -1451,11 +1463,11 @@ SEARCH_FILES_SCHEMA = {
 
 
 def _handle_list_directory(args: dict[str, Any], **kw: Any) -> str:
-    return list_directory_tool(args.get("path", ""), kw.get("task_id", "default"))
+    return list_directory_tool(args.get("path", ""), kw.get("task_id", "default"), kw.get("cancel_token"))
 
 
 def _handle_read_file(args: dict[str, Any], **kw: Any) -> str:
-    return read_file_tool(args.get("path", ""), args.get("offset", 1), args.get("limit", 500), kw.get("task_id", "default"))
+    return read_file_tool(args.get("path", ""), args.get("offset", 1), args.get("limit", 500), kw.get("task_id", "default"), kw.get("cancel_token"))
 
 
 def _handle_write_file(args: dict[str, Any], **kw: Any) -> str:
@@ -1465,7 +1477,7 @@ def _handle_write_file(args: dict[str, Any], **kw: Any) -> str:
         return tool_error("write_file: missing 'content'.")
     if not isinstance(content := args["content"], str):
         return tool_error(f"write_file: 'content' must be string, got {type(content).__name__}.")
-    return write_file_tool(path, content, kw.get("task_id", "default"), bool(args.get("cross_profile")))
+    return write_file_tool(path, content, kw.get("task_id", "default"), bool(args.get("cross_profile")), kw.get("cancel_token"))
 
 
 def _handle_patch(args: dict[str, Any], **kw: Any) -> str:
@@ -1478,6 +1490,7 @@ def _handle_patch(args: dict[str, Any], **kw: Any) -> str:
         args.get("patch"),
         kw.get("task_id", "default"),
         bool(args.get("cross_profile")),
+        kw.get("cancel_token"),
     )
 
 
@@ -1493,6 +1506,7 @@ def _handle_search_files(args: dict[str, Any], **kw: Any) -> str:
         args.get("output_mode", "content"),
         args.get("context", 0),
         kw.get("task_id", "default"),
+        kw.get("cancel_token"),
     )
 
 

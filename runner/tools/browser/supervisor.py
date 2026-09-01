@@ -602,7 +602,7 @@ class CDPSupervisor:
                     except Exception as cleanup_exc:
                         logger.debug("SoM cleanup exception: %s", cleanup_exc)
 
-    def execute_batch(self, actions: list[dict[str, Any]], wait_between_ms: int = 100) -> dict[str, Any]:
+    def execute_batch(self, actions: list[dict[str, Any]], wait_between_ms: int = 100, cancel_token: Any = None) -> dict[str, Any]:
         """按序连续执行一组浏览器操作，并在操作间执行沉降等待与错误拦截。"""
         if not actions or not isinstance(actions, list):
             return {"ok": False, "error": "actions must be a non-empty list"}
@@ -616,6 +616,9 @@ class CDPSupervisor:
         results = []
         failed: dict[str, Any] | None = None
         for i, act in enumerate(actions):
+            # 取消令牌触发时立刻跳出整个 batch, 不再执行后续动作, 不浪费 IPC 帧。
+            if cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)():
+                return {"ok": False, "error": "Caller cancelled batch", "cancelled": True, "step": i, "completed": results}
             if not isinstance(act, dict):
                 failed = {"ok": False, "error": f"Action at index {i} must be a dict", "step": i, "completed": results}
                 break
@@ -1241,20 +1244,34 @@ class SupervisorRegistry:
         dialog_timeout_s: float = DEFAULT_DIALOG_TIMEOUT_S,
         timeout: float = 15.0,
     ) -> CDPSupervisor:
-        with self._lock:
-            existing = self._supervisors.get(task_id)
-            if existing is not None and existing._active:
-                return existing
+        # 先在锁外确认现有 supervisor 的活性, 避免对正在运行的实例误判为已死。
+        # 锁内只做 dict 替换 + 必要时的 stop() 抢占, 不在锁内调阻塞 start().
+        existing = self._supervisors.get(task_id)
+        if existing is not None and existing._active:
+            return existing
 
-            sup = CDPSupervisor(
-                task_id=task_id,
-                cdp_url=cdp_url,
-                launch_handle=launch_handle,
-                auto_owned=auto_owned,
-                dialog_policy=dialog_policy,
-                dialog_timeout_s=dialog_timeout_s,
-            )
+        stale = existing
+        sup = CDPSupervisor(
+            task_id=task_id,
+            cdp_url=cdp_url,
+            launch_handle=launch_handle,
+            auto_owned=auto_owned,
+            dialog_policy=dialog_policy,
+            dialog_timeout_s=dialog_timeout_s,
+        )
+        with self._lock:
+            # 重新确认: 拿到锁前可能已有别的线程把活的塞回去。
+            live = self._supervisors.get(task_id)
+            if live is not None and live._active:
+                return live
             self._supervisors[task_id] = sup
+
+        # 锁外先回收 stale 实例, 再启动新的 — 防止旧 WS / Chromium 进程泄漏。
+        if stale is not None:
+            try:
+                stale.stop()
+            except Exception as e:
+                logger.debug("Error stopping stale supervisor %s: %s", task_id, e)
 
         sup.start(timeout=timeout)
         return sup

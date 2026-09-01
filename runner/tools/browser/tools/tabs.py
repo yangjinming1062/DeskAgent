@@ -1,12 +1,4 @@
 import json
-from urllib.parse import unquote
-
-from utils import (
-    SECRET_PREFIX_RE,
-    check_website_access,
-    is_always_blocked_url,
-    normalize_url_for_request,
-)
 
 from ...registry import registry
 from ..camofox import is_camofox_mode
@@ -17,24 +9,18 @@ from ..schemas import (
     BROWSER_TAB_NEW_SCHEMA,
     BROWSER_TAB_SWITCH_SCHEMA,
 )
-from ._common import browser_session, camofox_unsupported, no_supervisor
+from ._common import browser_session, camofox_unsupported, guard_browser_url, no_supervisor
 
 
 def browser_tab_new(url: str | None = None, task_id: str | None = None) -> str:
     if is_camofox_mode():
         return camofox_unsupported("browser_tab_new")
 
-    target_url = (url or "").strip()
-    if target_url and target_url != "about:blank":
-        if SECRET_PREFIX_RE.search(target_url) or SECRET_PREFIX_RE.search(unquote(target_url)):
-            return json.dumps({"success": False, "error": "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."}, ensure_ascii=False)
-        target_url = normalize_url_for_request(target_url)
-        if is_always_blocked_url(target_url):
-            return json.dumps({"success": False, "error": "Blocked: URL targets a cloud metadata endpoint"}, ensure_ascii=False)
-        blocked = check_website_access(target_url)
-        if blocked:
-            return json.dumps({"success": False, "error": blocked.message}, ensure_ascii=False)
-    else:
+    raw_url = (url or "").strip()
+    target_url, url_err = guard_browser_url(raw_url)
+    if url_err is not None:
+        return url_err
+    if not target_url or target_url == "about:blank":
         target_url = "about:blank"
 
     with browser_session(task_id) as (supervisor, _):

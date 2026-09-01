@@ -22,6 +22,7 @@ from utils import (
 
 from ..registry import registry, tool_error
 from .helpers import get_disabled_skill_names, get_spiritagent_metadata, is_excluded_skill_path, iter_skill_index_files, parse_frontmatter
+from .skill_manager_tool import MAX_SKILL_FILE_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +375,17 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
             if inj:
                 warns.append("skill content contains patterns that may indicate prompt injection")
             logger.warning("Skill security warning for '%s': %s", name, "; ".join(warns))
+            # 不可信 skill 在 view 阶段必须硬阻断, 不能只警告: 一个 community skill 若已绕过安装期扫描,
+            # 后续 view 不再防御就是把注入内容直灌 LLM 上下文。Builtin / 内部 skill 只警告不阻断。
+            if outside or inj:
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": f"Skill '{name}' blocked by skill_view security gate: " + "; ".join(warns),
+                        "skill_source": "external" if outside else "internal-but-suspicious",
+                    },
+                    ensure_ascii=False,
+                )
 
         parsed_frontmatter = {}
         with contextlib.suppress(Exception):
@@ -427,6 +439,17 @@ def skill_view(name: str, file_path: str | None = None, task_id: str | None = No
                     ensure_ascii=False,
                 )
             try:
+                # 读端也要套同一道闸: 写端 1 MiB 上限不能让 view 端绕过, 否则攻击者可以塞超过模型上下文上限的链接文件撑爆对话。
+                file_size = target_file.stat().st_size
+                if file_size > MAX_SKILL_FILE_BYTES:
+                    return json.dumps(
+                        {
+                            "success": False,
+                            "error": f"File '{file_path}' is {file_size} bytes, exceeds {MAX_SKILL_FILE_BYTES}-byte skill-file read cap.",
+                            "hint": "Link a smaller excerpt via patch or split the file outside the skill bundle.",
+                        },
+                        ensure_ascii=False,
+                    )
                 f_content = target_file.read_text(encoding="utf-8")
                 return json.dumps({"success": True, "name": name, "file": file_path, "content": f_content, "file_type": target_file.suffix}, ensure_ascii=False)
             except UnicodeDecodeError:

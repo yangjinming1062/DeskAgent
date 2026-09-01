@@ -1,4 +1,5 @@
 import logging
+import re
 import subprocess
 import time
 from typing import Any
@@ -106,14 +107,37 @@ def get_windows() -> dict[str, Any]:
     return {"windows": []}
 
 
+_APP_NAME_FORBIDDEN_CHARS = frozenset("&|<>^\"'$()\\;{}\n\r\t")
+_APP_NAME_FORBIDDEN_RE = re.compile(r"\.\.|/ (?= )")
+
+
+def _sanitize_app_name(name: str) -> str | None:
+    """拒绝含 cmd.exe / shell 元字符的应用名, 防 ``start`` / ``open -a`` 被拼接注入。"""
+    if not name:
+        return None
+    stripped = name.strip()
+    if not stripped:
+        return None
+    if any(ch in _APP_NAME_FORBIDDEN_CHARS for ch in stripped):
+        return None
+    if _APP_NAME_FORBIDDEN_RE.search(stripped):
+        return None
+    return stripped
+
+
 def open_application(name: str) -> dict[str, Any]:
     """启动 *name*(可执行名 / app 名 / 路径), 返回 ``{opened, name}``。"""
+    if not name or not str(name).strip():
+        return {"opened": False, "error": "application name is required"}
+    safe_name = _sanitize_app_name(name)
+    if safe_name is None:
+        return {"opened": False, "error": "application name contains forbidden shell metacharacters"}
     try:
         if IS_WINDOWS:
-            subprocess.Popen(["cmd", "/c", "start", "", name])
+            subprocess.Popen(["cmd", "/c", "start", "", safe_name])
         elif IS_MACOS:
-            subprocess.Popen(["open", "-a", name])
-        return {"opened": True, "name": name}
+            subprocess.Popen(["open", "-a", safe_name])
+        return {"opened": True, "name": safe_name}
     except Exception as e:
         logger.debug("open_application failed: %s", e)
         return {"opened": False, "error": str(e)}

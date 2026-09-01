@@ -49,6 +49,20 @@ def set_local_interrupt(req_id: str | None, active: bool) -> None:
             _local_interrupts.pop(rid, None)
 
 
+def _prune_dead_interrupted_tids() -> None:
+    """回收已死线程的 tid: ``set_interrupt(True)`` 加进 set 的 tid 在该线程退出后不会自动清除。
+
+    公开的 ``set_interrupt(active=False)`` 只有在调用方主动传入原 tid 时才会清, 漏调用方就漏清。
+    每次 ``is_interrupted()`` 命中热路径时回收一次 — 比定期后台扫描轻, 也避免 set 无限增长。
+    """
+    if not _interrupted_threads:
+        return
+    live = {t.ident for t in threading.enumerate()}
+    dead = _interrupted_threads - live
+    if dead:
+        _interrupted_threads.difference_update(dead)
+
+
 def is_interrupted(req_id: str | None = None) -> bool:
     """无参调用仍可用 — 通过 ContextVar 拿到当前 req_id, 老工具调用点零修改。"""
     rid = req_id if req_id is not None else _current_req_id.get()
@@ -59,7 +73,12 @@ def is_interrupted(req_id: str | None = None) -> bool:
             ev = _local_interrupts.get(rid)
             if ev is not None and ev.is_set():
                 return True
-        return threading.current_thread().ident in _interrupted_threads
+        current_tid = threading.current_thread().ident
+        is_in = current_tid in _interrupted_threads
+        # 在持锁状态下做轻量回收, 避免 hot path 上 set 线性增长。
+        if not is_in:
+            _prune_dead_interrupted_tids()
+        return is_in
 
 
 def set_interrupt(active: bool, thread_id: int | None = None) -> None:

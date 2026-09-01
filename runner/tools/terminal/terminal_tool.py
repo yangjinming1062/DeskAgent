@@ -21,7 +21,7 @@ from envs import (
     start_cleanup_thread,
     task_env_overrides,
 )
-from utils import cfg_get, clean_output, load_config
+from utils import cfg_get, clean_output, is_interrupted, load_config, redact_sensitive_text
 
 from ..process import process_registry
 from ..registry import registry
@@ -272,8 +272,14 @@ def terminal_tool(
     pty: bool = False,
     notify_on_complete: bool = False,
     watch_patterns: list[str] | None = None,
+    cancel_token: Any = None,
 ) -> str:
-    """在对应 task 的终端环境中执行单条 shell 命令——前台/后台互斥分支，复用 / 必要时懒创建环境。"""
+    """在对应 task 的终端环境中执行单条 shell 命令——前台/后台互斥分支，复用 / 必要时懒创建环境。
+
+    ``cancel_token``: 调用方注入的一次性取消令牌；工具函数在执行 / 等待 / 重试的关键阻塞点
+    调用 ``is_interrupted()`` 兜底（基于 ``ContextVar`` 的 thread-id 中断位），覆盖 ``set_local_interrupt``
+    之外的本地线程取消触发。
+    """
     try:
         if not isinstance(command, str):
             logger.warning("Rejected invalid terminal command value: %s", type(command).__name__)
@@ -489,6 +495,9 @@ def terminal_tool(
             retry_count = 0
             result = None
             while retry_count <= max_retries:
+                # ``cancel_token`` 触发 / 本线程被 ``set_localinterrupt`` 时立刻退出, 不再等下一次 sleep。
+                if (cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)()) or is_interrupted():
+                    return json.dumps({"output": "", "exit_code": 130, "error": "Command interrupted", "status": "cancelled"}, ensure_ascii=False)
                 try:
                     execute_kwargs = {"timeout": effective_timeout, "cwd": _resolve_command_cwd(workdir=workdir, env=env, default_cwd=cwd)}
                     result = env.execute(command, **execute_kwargs)
@@ -499,6 +508,8 @@ def terminal_tool(
                     if retry_count < max_retries:
                         retry_count += 1
                         wait_time = 2**retry_count
+                        if (cancel_token is not None and getattr(cancel_token, "is_set", lambda: False)()) or is_interrupted():
+                            return json.dumps({"output": "", "exit_code": 130, "error": "Command interrupted during retry wait", "status": "cancelled"}, ensure_ascii=False)
                         logger.warning(
                             "Execution error, retrying in %ds (attempt %d/%d) - Command: %s - Error: %s: %s - Task: %s, Backend: %s",
                             wait_time,
@@ -534,6 +545,9 @@ def terminal_tool(
                 truncated_notice = f"\n\n... [OUTPUT TRUNCATED - {omitted} chars omitted out of {len(output)} total] ...\n\n"
                 output = output[:head_chars] + truncated_notice + output[-tail_chars:]
             output = clean_output(output.strip()) if output else ""
+            # 再过一道 ``redact_sensitive_text``: 终端输出常常含 ``curl -H "Authorization: Bearer ..."`` / ``env`` / ``cat ~/.aws/credentials`` 等敏感凭据;
+            # ``clean_output`` 只剥 ANSI, 必须额外走脱敏, 否则模型会拿到明文 token。
+            output = redact_sensitive_text(output) if output else ""
             exit_note = _interpret_exit_code(command, returncode)
             error_msg = result.get("error")
             if not error_msg and returncode != 0:
@@ -543,9 +557,11 @@ def terminal_tool(
                 result_dict["exit_code_meaning"] = exit_note
             return json.dumps(result_dict, ensure_ascii=False)
     except Exception as e:
+        # 不要把 ``traceback.format_exc()`` 回灌给模型: 含 runner 内部绝对路径 / 行号 / 用户代码路径,
+        # 远超出 LLM 该看的范围。完整 traceback 留 ``logger.error`` 服务端诊断。
         tb_str = traceback.format_exc()
         logger.error("terminal_tool exception:\n%s", tb_str)
-        return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {e!s}", "traceback": tb_str, "status": "error"}, ensure_ascii=False)
+        return json.dumps({"output": "", "exit_code": -1, "error": f"Failed to execute command: {type(e).__name__}: {e}", "status": "error"}, ensure_ascii=False)
 
 
 _TERMINAL_SCHEMA_TEMPLATE = {
@@ -612,6 +628,7 @@ def _handle_terminal(args: dict[str, Any], **kw: Any) -> str:
         pty=args.get("pty", False),
         notify_on_complete=args.get("notify_on_complete", False),
         watch_patterns=args.get("watch_patterns"),
+        cancel_token=kw.get("cancel_token"),
     )
 
 

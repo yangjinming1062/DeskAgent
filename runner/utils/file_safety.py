@@ -1,3 +1,4 @@
+import concurrent.futures
 import contextlib
 import ctypes
 import os
@@ -35,7 +36,7 @@ def _spiritagent_home_path() -> Path:
         return Path("~/.spiritagent").expanduser()
 
 
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 _denied_paths_cache: tuple[str, frozenset[str]] | None = None
 _denied_prefixes_cache: tuple[str, tuple[str, ...]] | None = None
 _denied_prefixes_norm_cache: tuple[str, tuple[str, ...]] | None = None
@@ -50,8 +51,22 @@ def build_write_denied_paths(home: str) -> frozenset[str]:
         if _denied_paths_cache and _denied_paths_cache[0] == home:
             return _denied_paths_cache[1]
         spiritagent, p_home = _spiritagent_home_path(), Path(home)
+
+        def _safe_resolve(p: Path) -> str:
+            # ``Path.resolve()`` 在受限 Windows shell 下会卡死, 用裸 ``Thread`` + ``join(timeout)`` 兜底。
+            holder: dict[str, str] = {}
+
+            def _runner() -> None:
+                with contextlib.suppress(Exception):
+                    holder["v"] = str(p.resolve())
+
+            t = threading.Thread(target=_runner, daemon=True)
+            t.start()
+            t.join(timeout=0.5)
+            return holder.get("v") or os.path.normpath(str(p))
+
         result = frozenset(
-            str(Path(p).resolve())
+            _safe_resolve(p)
             for p in [
                 p_home / ".ssh/authorized_keys",
                 p_home / ".ssh/id_rsa",
@@ -114,7 +129,23 @@ def build_write_denied_prefixes(home: str) -> tuple[str, ...]:
             p_home / "AppData/Local/Microsoft",
         ]
         sources = [*posix_prefixes, *windows_prefixes] if IS_WINDOWS else posix_prefixes
-        result = tuple(str(Path(p).resolve()) + os.sep for p in sources if str(p))
+
+        def _safe_resolve(p: Path) -> str:
+            # ``Path.resolve()`` 在 Windows 上走 ``GetFinalPathNameByHandleW``, 在受限 shell 下会挂死。
+            # 用裸 ``Thread`` + ``join(timeout)`` 兜底: ``ThreadPoolExecutor`` 的 ``__exit__`` 默认 ``wait=True``
+            # 会让本调用在 ``shutdown`` 上阻塞, 必须用裸 ``Thread``。
+            holder: dict[str, str] = {}
+
+            def _runner() -> None:
+                with contextlib.suppress(Exception):
+                    holder["v"] = str(p.resolve())
+
+            t = threading.Thread(target=_runner, daemon=True)
+            t.start()
+            t.join(timeout=0.5)
+            return holder.get("v") or os.path.normpath(str(p))
+
+        result = tuple(_safe_resolve(p) + os.sep for p in sources if str(p))
         _denied_prefixes_cache = (home, result)
         return result
 
@@ -225,33 +256,48 @@ def _split_ads_stream(path_str: str) -> tuple[str, str]:
 
 
 def _get_final_path_by_handle(path_str: str) -> str | None:
-    """通过 Win32 GetFinalPathNameByHandleW（动态缓冲）解析权威规范化路径。"""
+    """通过 Win32 GetFinalPathNameByHandleW（动态缓冲）解析权威规范化路径。
+
+    受限 shell / 沙箱下 ``CreateFileW`` 可能挂死(对网络挂载点 / junction 等),
+    整路径以工作线程 ``join(timeout=...)`` 兜底: 超时后直接返回 ``None`` 走 ``Path.resolve()`` 退化路径,
+    不让单点卡住让上层调用方也跟着死锁。
+    """
     if not IS_WINDOWS:
         return None
-    try:
-        h = kernel32.CreateFileW(
-            path_str,
-            _FILE_READ_ATTRIBUTES,
-            _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
-            None,
-            _OPEN_EXISTING,
-            _FILE_FLAG_BACKUP_SEMANTICS,
-            None,
-        )
-        if h == wintypes.HANDLE(-1).value or h == -1:
-            return None
+
+    def _impl() -> str | None:
         try:
-            req_len = kernel32.GetFinalPathNameByHandleW(h, None, 0, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
-            if req_len == 0:
+            h = kernel32.CreateFileW(
+                path_str,
+                _FILE_READ_ATTRIBUTES,
+                _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE,
+                None,
+                _OPEN_EXISTING,
+                _FILE_FLAG_BACKUP_SEMANTICS,
+                None,
+            )
+            if h == wintypes.HANDLE(-1).value or h == -1:
                 return None
-            buf = ctypes.create_unicode_buffer(req_len + 1)
-            ret = kernel32.GetFinalPathNameByHandleW(h, buf, req_len + 1, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
-            if ret > 0:
-                return _strip_device_prefix(buf.value)
+            try:
+                req_len = kernel32.GetFinalPathNameByHandleW(h, None, 0, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
+                if req_len == 0:
+                    return None
+                buf = ctypes.create_unicode_buffer(req_len + 1)
+                actual = kernel32.GetFinalPathNameByHandleW(h, buf, req_len + 1, _VOLUME_NAME_DOS | _FILE_NAME_NORMALIZED)
+                if actual == 0:
+                    return None
+                return buf.value
+            finally:
+                with contextlib.suppress(Exception):
+                    kernel32.CloseHandle(h)
+        except Exception:
             return None
-        finally:
-            kernel32.CloseHandle(h)
-    except Exception:
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            fut = ex.submit(_impl)
+            return fut.result(timeout=1.0)
+    except (concurrent.futures.TimeoutError, Exception):
         return None
 
 
@@ -268,7 +314,12 @@ def canonicalize_path(path: str) -> str:
 
     norm = os.path.normpath(base_path)
 
-    resolved = _get_final_path_by_handle(norm)
+    try:
+        resolved = _get_final_path_by_handle(norm)
+    except Exception:
+        # 某些受限环境(沙箱 / 受限 shell)对 ``CreateFileW`` + ``GetFinalPathNameByHandleW`` 的调用会卡死或抛错;
+        # 退回 ``Path.resolve()`` 让上层仍能拿到合理的规范化结果, 不让单点故障影响整条调用链。
+        resolved = None
     if resolved:
         return resolved + stream_suffix
 
@@ -279,7 +330,10 @@ def canonicalize_path(path: str) -> str:
         if not parent or parent == cur:
             break
         tail_parts.insert(0, os.path.basename(cur))
-        resolved_parent = _get_final_path_by_handle(parent)
+        try:
+            resolved_parent = _get_final_path_by_handle(parent)
+        except Exception:
+            resolved_parent = None
         if resolved_parent:
             joined = os.path.join(resolved_parent, *tail_parts)
             return _strip_device_prefix(joined) + stream_suffix
@@ -296,6 +350,12 @@ def is_write_denied(path: str) -> bool:
         return True
 
     base_resolved, stream_suffix = _split_ads_stream(resolved)
+    # ``canonicalize_path`` 解析到的实路径可能带 ``\\?\`` 设备前缀（仅对存在路径），不存在的路径回退到 normpath / realpath 时无前缀；
+    # 比对时双侧统一剥离, 不让 ``\\?\C:\...`` 与 ``C:\...`` 漏判。
+    if IS_WINDOWS:
+        resolved = _strip_device_prefix(resolved)
+        base_resolved = _strip_device_prefix(base_resolved)
+        home = _strip_device_prefix(home)
 
     # Windows 上路径和前缀匹配都忽略大小写与斜杠方向；两侧统一归一化后，``C:\Windows\System32``、``c:/windows/system32``、``~/.BASHRC`` 等都能命中黑名单。
     resolved_norm = resolved.replace("\\", "/").lower() if IS_WINDOWS else resolved
@@ -303,7 +363,7 @@ def is_write_denied(path: str) -> bool:
 
     denied_paths = build_write_denied_paths(home)
     if IS_WINDOWS:
-        denied_paths_lower = {p.replace("\\", "/").lower() for p in denied_paths}
+        denied_paths_lower = {_strip_device_prefix(p).replace("\\", "/").lower() for p in denied_paths}
         if resolved_norm in denied_paths_lower or base_resolved_norm in denied_paths_lower:
             return True
     else:
@@ -312,10 +372,12 @@ def is_write_denied(path: str) -> bool:
 
     if IS_WINDOWS:
         normalized_prefixes = _build_normalized_prefixes(home)
-        if any(resolved_norm.startswith(p) or base_resolved_norm.startswith(p) for p in normalized_prefixes):
+        normalized_prefixes_clean = tuple(_strip_device_prefix(p) for p in normalized_prefixes)
+        normalized_prefixes_norm = tuple(p.replace("\\", "/").lower() for p in normalized_prefixes_clean)
+        if any(resolved_norm.startswith(p) or base_resolved_norm.startswith(p) for p in normalized_prefixes_norm):
             return True
         # 同时阻断目录流的元数据写入（如 ::$INDEX_ALLOCATION）。
-        if stream_suffix and any(base_resolved_norm == p.rstrip("/") for p in normalized_prefixes):
+        if stream_suffix and any(base_resolved_norm == p.rstrip("/") for p in normalized_prefixes_norm):
             return True
     elif any(resolved.startswith(p) or base_resolved.startswith(p) for p in build_write_denied_prefixes(home)):
         return True
