@@ -92,16 +92,20 @@ SOM_INJECT_SCRIPT = r"""
     }
   }
 
-  // 按垂直视口位置从上到下、从左到右排序（复用已获取的 rect，无需重新触发 Layout Reflow）
+  // 按垂直视口位置从上到下、从左到右排序（复用已获取的 rect，无需重新触发 Layout Reflow）。
+  // 阈值 5px（而不是 10）：跨行元素 vertical gap 通常 ≥10px，否则会把相邻行错排到同一行。
   validItems.sort((a, b) => {
-    if (Math.abs(a.rect.top - b.rect.top) > 10) return a.rect.top - b.rect.top;
+    if (Math.abs(a.rect.top - b.rect.top) > 5) return a.rect.top - b.rect.top;
     return a.rect.left - b.rect.left;
   });
 
   const results = [];
   const container = document.createElement('div');
   container.id = 'spiritagent-som-container';
-  container.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; pointer-events: none !important; z-index: 2147483647 !important; overflow: hidden !important;';
+  // overflow: visible 而非 hidden：full_page 截图模式下，captureBeyondViewport
+  // 会渲染视口外内容；保留容器固定 100vw×100vh 仍是定位基准，但 badge
+  // 在 top>100vh 时不被裁剪，会出现在正确的文档坐标上。
+  container.style.cssText = 'position: fixed !important; top: 0 !important; left: 0 !important; width: 100vw !important; height: 100vh !important; pointer-events: none !important; z-index: 2147483647 !important; overflow: visible !important;';
 
   const scrollX = window.pageXOffset || document.documentElement.scrollLeft || 0;
   const scrollY = window.pageYOffset || document.documentElement.scrollTop || 0;
@@ -227,6 +231,10 @@ DOM_SETTLE_SCRIPT = r"""
       done(false);
       return;
     }
+    // 初始防抖定时器：若页面本身已处于静默稳定状态（无新 mutation），
+    // debounceMs 后立即以 true 结算，无需硬等完整个 maxWaitMs。
+    timer = setTimeout(() => done(true), debounceMs);
+    // 超时看门狗：若 DOM 变动持续不断超过 maxWaitMs，以 false 超时退出。
     maxTimer = setTimeout(() => done(false), maxWaitMs);
   };
 

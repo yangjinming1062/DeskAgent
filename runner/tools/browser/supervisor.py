@@ -1,12 +1,9 @@
 import asyncio
 import base64
 import contextlib
-import copy
 import json
 import logging
 import random
-import re
-import sys
 import tempfile
 import threading
 import time
@@ -19,70 +16,36 @@ from urllib.parse import parse_qs, urlparse
 import websockets
 from utils import safe_schedule_threadsafe
 
+from .dialog_manager import (
+    _VALID_POLICIES,
+    DEFAULT_DIALOG_POLICY,
+    DEFAULT_DIALOG_TIMEOUT_S,
+    DialogManager,
+    DialogRecord,
+    PendingDialog,
+)
 from .engine import (
     DOM_SETTLE_SCRIPT,
     SOM_INJECT_SCRIPT,
     SOM_REMOVE_SCRIPT,
-    build_snapshot_text,
     format_som_annotation_context,
     parse_som_results,
     select_option_with_eval,
 )
+from .input import InputDispatch, parse_numeric_unit
+from .refs import Refs, SessionIds
 
 logger = logging.getLogger(__name__)
 
 
 _CDP_BACKOFF_MAX = 10.0
 
-DIALOG_POLICY_MUST_RESPOND = "must_respond"
-DIALOG_POLICY_AUTO_DISMISS = "auto_dismiss"
-DIALOG_POLICY_AUTO_ACCEPT = "auto_accept"
-
-_VALID_POLICIES = frozenset({DIALOG_POLICY_MUST_RESPOND, DIALOG_POLICY_AUTO_DISMISS, DIALOG_POLICY_AUTO_ACCEPT})
-
-DEFAULT_DIALOG_POLICY = DIALOG_POLICY_MUST_RESPOND
-DEFAULT_DIALOG_TIMEOUT_S = 300.0
+_UNSET: Any = object()
 
 CONSOLE_HISTORY_MAX = 50
-RECENT_DIALOGS_MAX = 20
 
 DIALOG_BRIDGE_HOST = "spiritagent-dialog-bridge.invalid"
 DIALOG_BRIDGE_URL_PATTERN = f"http://{DIALOG_BRIDGE_HOST}/*"
-
-# snapshot_axtree 精准清空 AXTree 注入 ref 用，避免误删 SoM 视觉 ref；视觉 ref 走 `is_visual` 标签。
-AX_REF_PATTERN = re.compile(r"^@?e\d+$")
-COORD_REF_PATTERN = re.compile(r"^@?(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$")
-
-
-def _parse_numeric_unit(
-    raw_val: Any,
-    default: float,
-    *,
-    valid_units: tuple[str, ...] = ("s", "ms"),
-    allow_negative: bool = False,
-) -> float:
-    """安全解析带单位数值字符串（支持 s, ms, px 等），返回浮点数。"""
-    if raw_val is None:
-        return default
-    if isinstance(raw_val, bool):
-        raise ValueError("Boolean value is not a valid numeric value")
-    if isinstance(raw_val, int | float):
-        return float(raw_val if allow_negative else abs(raw_val))
-
-    if isinstance(raw_val, str) and raw_val.strip():
-        unit_pat = "|".join(re.escape(u) for u in valid_units)
-        sign_pat = "[-+]?" if allow_negative else ""
-        pattern = rf"^\s*({sign_pat}\d+(?:\.\d+)?)\s*(?:{unit_pat})?\s*$"
-        m = re.fullmatch(pattern, raw_val.strip(), re.IGNORECASE)
-        if not m:
-            raise ValueError(f"Invalid numeric value '{raw_val}'")
-        parsed = float(m.group(1))
-        if not allow_negative:
-            parsed = abs(parsed)
-        if raw_val.strip().lower().endswith("ms"):
-            parsed = parsed / 1000.0
-        return parsed
-    return default
 
 
 _DIALOG_BRIDGE_SCRIPT = r"""
@@ -127,92 +90,9 @@ _DIALOG_BRIDGE_SCRIPT = r"""
 })();
 """
 
-KEY_CODE_MAP: dict[str, int] = {
-    "enter": 13,
-    "tab": 9,
-    "escape": 27,
-    "esc": 27,
-    "backspace": 8,
-    "delete": 46,
-    "space": 32,
-    "arrowup": 38,
-    "up": 38,
-    "arrowdown": 40,
-    "down": 40,
-    "arrowleft": 37,
-    "left": 37,
-    "arrowright": 39,
-    "right": 39,
-    "pageup": 33,
-    "pagedown": 34,
-    "home": 36,
-    "end": 35,
-    "f1": 112,
-    "f2": 113,
-    "f3": 114,
-    "f4": 115,
-    "f5": 116,
-    "f6": 117,
-    "f7": 118,
-    "f8": 119,
-    "f9": 120,
-    "f10": 121,
-    "f11": 122,
-    "f12": 123,
-}
-
 
 class NavigationError(Exception):
     """CDP 导航返回错误。"""
-
-
-@dataclass
-class PendingDialog:
-    id: str
-    type: str
-    message: str
-    default_prompt: str
-    opened_at: float
-    cdp_session_id: str
-    frame_id: str | None = None
-    bridge_request_id: str | None = None
-    # must_respond 策略下超时截止时间（Unix 秒），None 表示无限或未启用看门狗。
-    deadline: float | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        out: dict[str, Any] = {
-            "id": self.id,
-            "type": self.type,
-            "message": self.message,
-            "default_prompt": self.default_prompt,
-            "opened_at": self.opened_at,
-            "frame_id": self.frame_id,
-        }
-        if self.deadline is not None:
-            out["deadline"] = self.deadline
-        return out
-
-
-@dataclass
-class DialogRecord:
-    id: str
-    type: str
-    message: str
-    opened_at: float
-    closed_at: float
-    closed_by: str
-    frame_id: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "type": self.type,
-            "message": self.message,
-            "opened_at": self.opened_at,
-            "closed_at": self.closed_at,
-            "closed_by": self.closed_by,
-            "frame_id": self.frame_id,
-        }
 
 
 @dataclass
@@ -281,19 +161,13 @@ class CDPSupervisor:
         self.dialog_timeout_s = float(dialog_timeout_s)
 
         self._state_lock = threading.Lock()
-        self._som_lock = threading.Lock()
-        self._pending_dialogs: dict[str, PendingDialog] = {}
+        self._som_lock = threading.Lock()  # 序列化并发 annotated screenshot（注入→截图→清理）
 
-        self._recent_dialogs: list[DialogRecord] = []
         self._frames: dict[str, FrameInfo] = {}
         self._console_events: list[ConsoleEvent] = []
         self._active = False
 
         self._pending_downloads: dict[str, dict[str, Any]] = {}
-        self._last_refs: dict[str, dict[str, Any]] = {}
-        self._last_navigated_url: str = ""
-        self._root_doc_generation: int = 0
-        self._refs_doc_generation: int = -1
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
@@ -304,18 +178,41 @@ class CDPSupervisor:
         self._ws: Any = None
         self._next_call_id = 1
         self._pending_calls: dict[int, asyncio.Future] = {}
-        self._page_session_id: str | None = None
-        self._active_session_id: str | None = None
-        self._root_frame_id: str = ""
+        # 锁 #5：仅保护 _session_ids tuple 的原子替换。读路径走 _current_sids() 无锁。
+        self._session_lock = threading.Lock()
+        self._session_ids: SessionIds = SessionIds(active=None, page=None, root_frame="")
         self._attached_targets: dict[str, dict[str, str]] = {}
         self._child_sessions: dict[str, str] = {}
-        self._dialog_seq = 0
-        self._dialog_watchdogs: dict[str, asyncio.TimerHandle] = {}
-        self._bg_tasks: set[asyncio.Task] = set()
 
         # 事件回调钩子（供 navigate 等一次性等待使用）
-        self._frame_navigated_handlers: list[Any] = []
-        self._lifecycle_event_handlers: list[Any] = []
+        # 一次性等待 future：dict 按 frame_id / (frame_id, name) 索引；
+        # 单 loop 线程访问（_await_* 在 loop 线程跑，_on_event 在 loop 线程触发）。
+        self._frame_navigated_waiters: dict[str, list[asyncio.Future]] = {}
+        self._lifecycle_waiters: dict[tuple[str, str], list[asyncio.Future]] = {}
+
+        # DialogManager 和 Refs 在 _cdp 绑定为 bound method 之后才能取，
+        # 故用 lambda 延迟到首次调用时取。
+        self._dialog_manager = DialogManager(
+            policy=dialog_policy,
+            timeout_s=dialog_timeout_s,
+            cdp_send=self._cdp,
+            loop_provider=lambda: self._loop,
+            session_id_provider=lambda: (sids := self._current_sids()).active or sids.page,
+        )
+        self._refs = Refs(
+            cdp_send_async=self._cdp,
+            send_cdp_sync=self.send_cdp,
+            evaluate_runtime=self.evaluate_runtime,
+            loop_provider=lambda: self._loop,
+            session_ids_provider=self._current_sids,
+        )
+        self._input = InputDispatch(
+            send_cdp=self.send_cdp,
+            evaluate_runtime=self.evaluate_runtime,
+            resolve_ref=self._refs._resolve_ref_center,
+            session_id_provider=lambda: (sids := self._current_sids()).active or sids.page,
+            wait_for_page_stable=self.wait_for_page_stable,
+        )
 
     def start(self, timeout: float = 15.0) -> None:
         with self._state_lock:
@@ -338,6 +235,13 @@ class CDPSupervisor:
     def stop(self) -> None:
         self._stop_requested = True
         loop = self._loop
+        if self._dialog_manager is not None:
+            # 先取消所有看门狗、对未决 bridge dialog 发 dismiss，避免页面端 XHR 卡死。
+            self._dialog_manager.shutdown()
+            # 再 cancel-and-await 所有 DialogManager 后台任务（gather+return_exceptions），
+            # 然后才关闭 loop，避免协程在 Event loop is closed 状态下退出。
+            if loop is not None and loop.is_running():
+                self._dialog_manager.bg.drain(loop)
         if loop is not None and loop.is_running():
             with contextlib.suppress(Exception):
                 loop.call_soon_threadsafe(loop.stop)
@@ -355,9 +259,9 @@ class CDPSupervisor:
                 logger.debug("Error terminating launch_handle: %s", e)
 
     def snapshot(self) -> SupervisorSnapshot:
+        # DialogManager.snapshot 单独加锁（锁 #2），不与 _state_lock 嵌套以避免锁序倒置。
+        pending, recent = self._dialog_manager.snapshot()
         with self._state_lock:
-            pending = tuple(self._pending_dialogs.values())
-            recent = tuple(self._recent_dialogs)
             console_errors = tuple(e for e in self._console_events if e.level in ("error", "exception"))
             active = self._active
             ft = self._build_frame_tree_locked()
@@ -389,12 +293,31 @@ class CDPSupervisor:
             return frame, frame.cdp_session_id
 
     def set_active_session_id(self, session_id: str | None) -> None:
-        with self._state_lock:
-            self._active_session_id = session_id
+        self._set_session(active=session_id)
 
     def get_attached_targets(self) -> tuple[str | None, dict[str, dict[str, str]]]:
         with self._state_lock:
-            return self._active_session_id, dict(self._attached_targets)
+            return self._current_sids().active, dict(self._attached_targets)
+
+    def _current_sids(self) -> SessionIds:
+        """原子读取会话标识三元组。单属性读取在 CPython 下原子，无需持锁。"""
+        return self._session_ids
+
+    def _set_session(
+        self,
+        *,
+        active: str | None | object = _UNSET,
+        page: str | None | object = _UNSET,
+        root_frame: str | object = _UNSET,
+    ) -> None:
+        """原子写入会话标识三元组（仅修改传入字段，未传字段保持原值）。"""
+        with self._session_lock:
+            cur = self._session_ids
+            self._session_ids = SessionIds(
+                active=cur.active if active is _UNSET else active,  # type: ignore[arg-type]
+                page=cur.page if page is _UNSET else page,  # type: ignore[arg-type]
+                root_frame=cur.root_frame if root_frame is _UNSET else root_frame,  # type: ignore[arg-type]
+            )
 
     def list_tabs(self) -> dict[str, Any]:
         return self.send_cdp("Target.getTargets")
@@ -413,10 +336,10 @@ class CDPSupervisor:
         with self._state_lock:
             if tab_id is None:
                 for tid, info in self._attached_targets.items():
-                    if info.get("session_id") == self._active_session_id:
+                    if info.get("session_id") == self._current_sids().active:
                         tab_id = tid
                         break
-            closing_active = tab_id is not None and self._attached_targets.get(tab_id, {}).get("session_id") == self._active_session_id
+            closing_active = tab_id is not None and self._attached_targets.get(tab_id, {}).get("session_id") == self._current_sids().active
 
         if tab_id is None:
             return {"ok": False, "error": "no tab to close (no active session)"}
@@ -425,7 +348,7 @@ class CDPSupervisor:
         with self._state_lock:
             self._attached_targets.pop(tab_id, None)
             if closing_active:
-                self._active_session_id = self._page_session_id
+                self._set_session(active=self._current_sids().page)
         return result if not result.get("ok") else {"ok": True, "tab_id": tab_id}
 
     def send_cdp(self, method: str, params: dict[str, Any] | None = None, *, timeout: float = 10.0, session_id: str | None = None) -> dict[str, Any]:
@@ -433,7 +356,7 @@ class CDPSupervisor:
         if loop is None or not loop.is_running():
             return {"ok": False, "error": "supervisor loop is not running"}
 
-        sid = session_id or self._active_session_id or self._page_session_id
+        sid = session_id or (sids := self._current_sids()).active or sids.page
 
         async def _do_send() -> dict[str, Any]:
             return await self._cdp(method, params, session_id=sid, timeout=timeout)
@@ -489,67 +412,45 @@ class CDPSupervisor:
             raise RuntimeError("Supervisor loop is not running")
 
         async def _do_nav() -> dict[str, Any]:
-            sid = self._active_session_id or self._page_session_id
-            target_frame_id = self._root_frame_id
+            sid = (sids := self._current_sids()).active or sids.page
+            target_frame_id = sids.root_frame
 
-            navigated_fut: asyncio.Future = loop.create_future()
-            idle_fut: asyncio.Future = loop.create_future()
+            navigated_fut = self._await_frame_navigated(target_frame_id)
+            idle_fut = self._await_lifecycle(target_frame_id, "networkIdle")
 
-            def on_frame_navigated(params: dict[str, Any], session_id: str | None) -> None:
-                fid = params.get("frame", {}).get("id")
-                if fid == target_frame_id and not navigated_fut.done():
-                    with self._state_lock:
-                        self._last_refs.clear()
-                    navigated_fut.set_result(params)
+            nav_resp = await self._cdp("Page.navigate", {"url": url}, session_id=sid, timeout=timeout)
+            if "result" in nav_resp and nav_resp["result"].get("errorText"):
+                err_text = nav_resp["result"]["errorText"]
+                raise NavigationError(f"{err_text}: {url}")
 
-            def on_lifecycle(params: dict[str, Any], session_id: str | None) -> None:
-                name = params.get("name")
-                fid = params.get("frameId")
-                if fid == target_frame_id and name == "networkIdle" and not idle_fut.done():
-                    idle_fut.set_result(params)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(navigated_fut, timeout=min(timeout, 20.0))
 
-            self._frame_navigated_handlers.append(on_frame_navigated)
-            self._lifecycle_event_handlers.append(on_lifecycle)
-
-            try:
-                nav_resp = await self._cdp("Page.navigate", {"url": url}, session_id=sid, timeout=timeout)
-                if "result" in nav_resp and nav_resp["result"].get("errorText"):
-                    err_text = nav_resp["result"]["errorText"]
-                    raise NavigationError(f"{err_text}: {url}")
-
+            if wait_until == "networkIdle":
                 with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(navigated_fut, timeout=min(timeout, 20.0))
+                    await asyncio.wait_for(idle_fut, timeout=min(timeout, 5.0))
 
-                if wait_until == "networkIdle":
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(idle_fut, timeout=min(timeout, 5.0))
+            title = ""
+            with contextlib.suppress(Exception):
+                title_resp = await self._cdp(
+                    "Runtime.evaluate",
+                    {"expression": "document.title", "returnByValue": True},
+                    session_id=sid,
+                    timeout=5.0,
+                )
+                title = title_resp.get("result", {}).get("result", {}).get("value", "")
 
-                title = ""
-                with contextlib.suppress(Exception):
-                    title_resp = await self._cdp(
-                        "Runtime.evaluate",
-                        {"expression": "document.title", "returnByValue": True},
-                        session_id=sid,
-                        timeout=5.0,
-                    )
-                    title = title_resp.get("result", {}).get("result", {}).get("value", "")
+            final_url = url
+            with contextlib.suppress(Exception):
+                url_resp = await self._cdp(
+                    "Runtime.evaluate",
+                    {"expression": "window.location.href", "returnByValue": True},
+                    session_id=sid,
+                    timeout=5.0,
+                )
+                final_url = url_resp.get("result", {}).get("result", {}).get("value", url)
 
-                final_url = url
-                with contextlib.suppress(Exception):
-                    url_resp = await self._cdp(
-                        "Runtime.evaluate",
-                        {"expression": "window.location.href", "returnByValue": True},
-                        session_id=sid,
-                        timeout=5.0,
-                    )
-                    final_url = url_resp.get("result", {}).get("result", {}).get("value", url)
-
-                return {"ok": True, "frameId": target_frame_id, "url": final_url, "title": title}
-            finally:
-                if on_frame_navigated in self._frame_navigated_handlers:
-                    self._frame_navigated_handlers.remove(on_frame_navigated)
-                if on_lifecycle in self._lifecycle_event_handlers:
-                    self._lifecycle_event_handlers.remove(on_lifecycle)
+            return {"ok": True, "frameId": target_frame_id, "url": final_url, "title": title}
 
         fut = safe_schedule_threadsafe(_do_nav(), loop)
         if fut is None:
@@ -566,7 +467,7 @@ class CDPSupervisor:
         debounce_ms = min(200, max(50, int(round(max_wait_ms / 3))))
 
         async def _do_wait() -> bool:
-            sid = self._active_session_id or self._page_session_id
+            sid = (sids := self._current_sids()).active or sids.page
             try:
                 res = await self._cdp(
                     "Runtime.evaluate",
@@ -597,452 +498,42 @@ class CDPSupervisor:
 
     def snapshot_axtree(self, *, full: bool = False, interactive_only: bool = False, max_depth: int = 50) -> dict[str, Any]:
         """抓取 AXTree 并生成 [ref=eN] 文本快照，同步在 DOM 中注入 aria-ref 属性。"""
-        loop = self._loop
-        if loop is None or not loop.is_running():
-            return {"ok": False, "error": "Supervisor loop is not running"}
-
-        async def _do_snapshot() -> dict[str, Any]:
-            sid = self._active_session_id or self._page_session_id
-            ax_resp = await self._cdp("Accessibility.getFullAXTree", {}, session_id=sid, timeout=15.0)
-            nodes = ax_resp.get("result", {}).get("nodes", [])
-
-            text, refs = build_snapshot_text(nodes, interactive_only=interactive_only, max_depth=max_depth)
-            with self._state_lock:
-                self._last_refs = {k: v for k, v in self._last_refs.items() if not AX_REF_PATTERN.match(str(k))}
-                self._last_refs.update(refs)
-                self._refs_doc_generation = self._root_doc_generation
-
-            await self._inject_aria_refs_async(refs, session_id=sid)
-
-            return {"ok": True, "snapshot": text, "refs": refs, "element_count": len(refs) // 2 if refs else 0}
-
-        try:
-            fut = safe_schedule_threadsafe(_do_snapshot(), loop)
-            if fut is None:
-                return {"ok": False, "error": "Supervisor loop unavailable"}
-            return fut.result(timeout=20.0)
-        except Exception as exc:
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        return self._refs.snapshot_axtree(full=full, interactive_only=interactive_only, max_depth=max_depth)
 
     async def _inject_aria_refs_async(self, refs_map: dict[str, dict[str, Any]], session_id: str | None) -> None:
-        """根据 ref 映射通过 CDP 并发注入 aria-ref 属性并在可能时缓存物理中心坐标（通过信号量限制并发度）。"""
-        seen_backends = set()
-        tasks = []
-        sem = asyncio.Semaphore(16)
-
-        async def _inject_one(ref_key: str, backend_id: int) -> None:
-            async with sem:
-                try:
-                    obj = await self._cdp("DOM.resolveNode", {"backendNodeId": backend_id}, session_id=session_id, timeout=2.0)
-                    object_id = obj.get("result", {}).get("object", {}).get("objectId")
-                    if object_id:
-                        safe_ref = json.dumps(ref_key)
-                        await self._cdp(
-                            "Runtime.callFunctionOn",
-                            {
-                                "objectId": object_id,
-                                "functionDeclaration": f"function() {{ this.setAttribute('aria-ref', {safe_ref}); }}",
-                                "returnByValue": True,
-                            },
-                            session_id=session_id,
-                            timeout=2.0,
-                        )
-                        try:
-                            box = await self._cdp("DOM.getBoxModel", {"objectId": object_id}, session_id=session_id, timeout=1.0)
-                            scroll_res = await self._cdp(
-                                "Runtime.evaluate",
-                                {
-                                    "expression": "({x: window.pageXOffset||0, y: window.pageYOffset||0})",
-                                    "returnByValue": True,
-                                },
-                                session_id=session_id,
-                                timeout=1.0,
-                            )
-                            content = box.get("result", {}).get("model", {}).get("content", [])
-                            if len(content) >= 8:
-                                cx = round((content[0] + content[2]) / 2.0)
-                                cy = round((content[1] + content[5]) / 2.0)
-                                scroll_obj = scroll_res.get("result", {}).get("result", {}).get("value", {})
-                                page_cx = (content[0] + content[2]) // 2 + int(scroll_obj.get("x", 0))
-                                page_cy = (content[1] + content[5]) // 2 + int(scroll_obj.get("y", 0))
-                                with self._state_lock:
-                                    for key in (ref_key, f"@{ref_key}"):
-                                        if key in self._last_refs:
-                                            entry = self._last_refs[key]
-                                            entry["cx"] = cx
-                                            entry["cy"] = cy
-                                            entry["page_cx"] = page_cx
-                                            entry["page_cy"] = page_cy
-                                            entry["scroll_x"] = int(scroll_obj.get("x", 0))
-                                            entry["scroll_y"] = int(scroll_obj.get("y", 0))
-                        except Exception:
-                            pass
-                except Exception as e:
-                    logger.debug("aria-ref inject failed for %s: %s", ref_key, e)
-
-        for ref_key, info in refs_map.items():
-            if ref_key.startswith("@"):
-                continue
-            backend_id = info.get("backendNodeId")
-            if not backend_id or backend_id in seen_backends:
-                continue
-            seen_backends.add(backend_id)
-            tasks.append(_inject_one(ref_key, backend_id))
-
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await self._refs._inject_aria_refs_async(refs_map, session_id)
 
     def _resolve_ref_center(self, ref: str, *, scroll_into_view: bool = True) -> tuple[float, float, str | None]:
         """根据 ref、视觉角标序号或视口物理坐标定位并返回 (center_x, center_y, object_id)。"""
-        ref_str = str(ref).strip()
-        if not ref_str:
-            raise ValueError("Empty ref string")
-
-        # Coordinate ref ("x,y" / "@x,y") takes precedence over any cached named ref;
-        # a stale cache entry must not silently consume an explicit coord call.
-        coord_m = COORD_REF_PATTERN.match(ref_str)
-        if coord_m:
-            cx = max(0.0, float(coord_m.group(1)))
-            cy = max(0.0, float(coord_m.group(2)))
-            return cx, cy, None
-
-        normalized = ref_str if not ref_str.startswith("@") else ref_str[1:]
-        with self._state_lock:
-            info = self._last_refs.get(ref_str) or self._last_refs.get(normalized) or self._last_refs.get(f"@{normalized}")
-
-        cached_cx = info.get("cx") if info else None
-        cached_cy = info.get("cy") if info else None
-        backend_id = info.get("backendNodeId") if info else None
-        sid = self._active_session_id or self._page_session_id
-
-        if backend_id:
-            res = self.send_cdp("DOM.resolveNode", {"backendNodeId": backend_id}, session_id=sid, timeout=3.0)
-            if res.get("ok"):
-                obj_id = res["result"].get("object", {}).get("objectId")
-                if obj_id:
-                    if scroll_into_view:
-                        self.send_cdp(
-                            "Runtime.callFunctionOn",
-                            {
-                                "objectId": obj_id,
-                                "functionDeclaration": "function() { try { this.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {} }",
-                                "returnByValue": True,
-                            },
-                            session_id=sid,
-                        )
-                    box = self.send_cdp("DOM.getBoxModel", {"objectId": obj_id}, session_id=sid)
-                    if box.get("ok"):
-                        content = box["result"].get("model", {}).get("content", [])
-                        if len(content) >= 8:
-                            cx = (content[0] + content[2]) / 2.0
-                            cy = (content[1] + content[5]) / 2.0
-                            return cx, cy, obj_id
-
-        safe_ref = json.dumps(normalized)
-        eval_res = self.send_cdp(
-            "Runtime.evaluate",
-            {
-                "expression": f"document.querySelector('[aria-ref=' + {safe_ref} + ']') || document.querySelector('[data-spiritagent-som=' + {safe_ref} + ']')",
-                "returnByValue": False,
-            },
-            session_id=sid,
-            timeout=3.0,
-        )
-        if eval_res.get("ok"):
-            res_val = eval_res.get("result", {}).get("result", {})
-            obj_id = res_val.get("objectId")
-            subtype = res_val.get("subtype")
-            if obj_id and subtype != "null":
-                if scroll_into_view:
-                    self.send_cdp(
-                        "Runtime.callFunctionOn",
-                        {
-                            "objectId": obj_id,
-                            "functionDeclaration": "function() { try { this.scrollIntoView({block: 'center', inline: 'center'}); } catch(e) {} }",
-                            "returnByValue": True,
-                        },
-                        session_id=sid,
-                    )
-                box = self.send_cdp("DOM.getBoxModel", {"objectId": obj_id}, session_id=sid)
-                if box.get("ok"):
-                    content = box["result"].get("model", {}).get("content", [])
-                    if len(content) >= 8:
-                        cx = (content[0] + content[2]) / 2.0
-                        cy = (content[1] + content[5]) / 2.0
-                        return cx, cy, obj_id
-
-        cur_sx, cur_sy = 0.0, 0.0
-        scroll_eval_ok = False
-        try:
-            scroll_res = self.evaluate_runtime("({x: window.pageXOffset||0, y: window.pageYOffset||0})")
-            if isinstance(scroll_res, dict) and scroll_res.get("ok") and isinstance(scroll_res.get("result"), dict):
-                cur_sx = float(scroll_res["result"].get("x", 0))
-                cur_sy = float(scroll_res["result"].get("y", 0))
-                scroll_eval_ok = True
-        except Exception as exc:
-            logger.debug("Scroll adjustment evaluation error: %s", exc)
-
-        if info and "page_cx" in info and "page_cy" in info:
-            if not scroll_eval_ok:
-                raise ValueError(f"Element '{ref}' coordinate fallback failed: unable to evaluate page scroll offset")
-            adj_cx = float(info["page_cx"]) - cur_sx
-            adj_cy = float(info["page_cy"]) - cur_sy
-            logger.debug(
-                "Self-healing fallback: using page coordinates (%s, %s) with scroll (%s, %s) -> (%s, %s) for %s",
-                info["page_cx"],
-                info["page_cy"],
-                cur_sx,
-                cur_sy,
-                adj_cx,
-                adj_cy,
-                ref_str,
-            )
-            return adj_cx, adj_cy, None
-
-        if cached_cx is not None and cached_cy is not None:
-            if not scroll_eval_ok:
-                raise ValueError(f"Element '{ref}' coordinate fallback failed: unable to evaluate page scroll offset")
-            init_sx = float(info.get("scroll_x", 0)) if info else 0.0
-            init_sy = float(info.get("scroll_y", 0)) if info else 0.0
-            adj_cx = float(cached_cx) + (init_sx - cur_sx)
-            adj_cy = float(cached_cy) + (init_sy - cur_sy)
-            logger.debug("Self-healing fallback: using cached viewport coordinates (%s, %s) adjusted to (%s, %s) for %s", cached_cx, cached_cy, adj_cx, adj_cy, ref_str)
-            return adj_cx, adj_cy, None
-
-        raise ValueError(f"Element {ref} not found in DOM or coordinate cache")
+        return self._refs._resolve_ref_center(ref, scroll_into_view=scroll_into_view)
 
     def click_ref(self, ref: str, *, wait_stable: bool = True, timeout_s: float = 0.2) -> dict[str, Any]:
-        try:
-            cx, cy, _ = self._resolve_ref_center(ref)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-        sid = self._active_session_id or self._page_session_id
-        self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "clickCount": 1}, session_id=sid)
-        self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "clickCount": 1}, session_id=sid)
-        if wait_stable:
-            self.wait_for_page_stable(timeout_s=timeout_s)
-        return {"ok": True, "clicked": ref}
+        return self._input.click_ref(ref, wait_stable=wait_stable, timeout_s=timeout_s)
 
     def type_ref(self, ref: str, text: str, *, wait_stable: bool = True, timeout_s: float = 0.2) -> dict[str, Any]:
         """先聚焦并清空元素，再输入新文本。"""
-
-        try:
-            cx, cy, obj_id = self._resolve_ref_center(ref)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-        sid = self._active_session_id or self._page_session_id
-
-        js_cleared = False
-        if obj_id:
-            eval_clear = self.send_cdp(
-                "Runtime.callFunctionOn",
-                {
-                    "objectId": obj_id,
-                    "functionDeclaration": (
-                        "function() {"
-                        "  this.focus();"
-                        "  if (typeof this.select === 'function') { this.select(); return true; }"
-                        "  if ('value' in this) { this.value = ''; return true; }"
-                        "  if (this.isContentEditable) {"
-                        "    const r = document.createRange(); r.selectNodeContents(this);"
-                        "    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);"
-                        "    document.execCommand('delete', false); return true;"
-                        "  }"
-                        "  return false;"
-                        "}"
-                    ),
-                    "returnByValue": True,
-                },
-                session_id=sid,
-            )
-            if eval_clear.get("ok"):
-                js_cleared = bool(eval_clear["result"].get("result", {}).get("value"))
-
-        if not js_cleared:
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": cx, "y": cy, "button": "left", "clickCount": 1}, session_id=sid)
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": cx, "y": cy, "button": "left", "clickCount": 1}, session_id=sid)
-
-            if not obj_id:
-                eval_active = self.send_cdp(
-                    "Runtime.evaluate",
-                    {
-                        "expression": (
-                            "(() => {"
-                            "  const el = document.activeElement;"
-                            "  if (!el || el === document.body || el === document.documentElement) return false;"
-                            "  const tag = el.tagName.toLowerCase();"
-                            "  if (['input', 'textarea'].includes(tag)) return true;"
-                            "  if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') return true;"
-                            "  const role = (el.getAttribute('role') || '').toLowerCase();"
-                            "  return ['textbox', 'searchbox', 'combobox'].includes(role);"
-                            "})()"
-                        ),
-                        "returnByValue": True,
-                    },
-                    session_id=sid,
-                )
-                is_active_input = bool(eval_active.get("result", {}).get("result", {}).get("value"))
-                if not is_active_input:
-                    return {"ok": False, "error": f"Target at '{ref}' did not focus an editable input field"}
-
-            # macOS 用 Meta (Command)，其它平台用 Ctrl
-            modifiers = 4 if sys.platform == "darwin" else 2
-            self.send_cdp("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 65, "modifiers": modifiers, "key": "a"}, session_id=sid)
-            self.send_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 65, "modifiers": modifiers, "key": "a"}, session_id=sid)
-            self.send_cdp("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": 8, "key": "Backspace"}, session_id=sid)
-            self.send_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": 8, "key": "Backspace"}, session_id=sid)
-
-        if text:
-            ins = self.send_cdp("Input.insertText", {"text": text}, session_id=sid)
-            if not ins.get("ok"):
-                return {"ok": False, "error": ins.get("error", "Input.insertText failed")}
-
-        if wait_stable:
-            self.wait_for_page_stable(timeout_s=timeout_s)
-        return {"ok": True, "typed": text, "ref": ref}
+        return self._input.type_ref(ref, text, wait_stable=wait_stable, timeout_s=timeout_s)
 
     def scroll_page(self, direction: str = "down", pixels: int = 500) -> dict[str, Any]:
-        sid = self._active_session_id or self._page_session_id
-        d = (direction or "down").strip().lower()
-        amount = max(0, min(int(pixels), 5000))
-        if d == "up":
-            delta_x, delta_y = 0, -amount
-        elif d == "left":
-            delta_x, delta_y = -amount, 0
-        elif d == "right":
-            delta_x, delta_y = amount, 0
-        elif d == "down":
-            delta_x, delta_y = 0, amount
-        else:
-            return {"ok": False, "error": f"Invalid scroll direction '{direction}' (expected down/up/left/right)"}
-        res = self.send_cdp(
-            "Input.dispatchMouseEvent",
-            {"type": "mouseWheel", "x": 100, "y": 100, "deltaX": delta_x, "deltaY": delta_y},
-            session_id=sid,
-        )
-        return {"ok": res.get("ok", False), "direction": d, "pixels": amount}
+        return self._input.scroll_page(direction, pixels)
 
     def hover_ref(self, ref: str) -> dict[str, Any]:
-        try:
-            cx, cy, _ = self._resolve_ref_center(ref)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-        sid = self._active_session_id or self._page_session_id
-        res = self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy}, session_id=sid)
-        return {"ok": res.get("ok", False), "hovered": ref}
+        return self._input.hover_ref(ref)
 
     def drag_refs(self, from_ref: str, to_ref: str, *, hold_key: str | None = None, steps: int = 10) -> dict[str, Any]:
-        try:
-            fx, fy, _ = self._resolve_ref_center(from_ref)
-            tx, ty, _ = self._resolve_ref_center(to_ref)
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-
-        sid = self._active_session_id or self._page_session_id
-        # hold_key 按下顺序：keyDown → mouseDown → moves → mouseUp → keyUp。失败的 keyUp 也会走，
-        # 不让修饰键卡在按下状态（影响后续操作）。
-        # CDP 修饰键位掩码：1=Shift 2=Ctrl 4=Alt 8=Meta。
-        modifier_mask = {"shift": 1, "ctrl": 2, "alt": 4}.get((hold_key or "").lower(), 0)
-        if modifier_mask:
-            self.send_cdp(
-                "Input.dispatchKeyEvent",
-                {
-                    "type": "keyDown",
-                    "modifiers": modifier_mask,
-                    "key": hold_key,
-                    "code": f"{hold_key.title()}Left",
-                    "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
-                },
-                session_id=sid,
-            )
-        try:
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": fx, "y": fy}, session_id=sid)
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mousePressed", "x": fx, "y": fy, "button": "left", "clickCount": 1}, session_id=sid)
-
-            for i in range(1, steps + 1):
-                curr_x = fx + (tx - fx) * (i / steps)
-                curr_y = fy + (ty - fy) * (i / steps)
-                self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": curr_x, "y": curr_y, "button": "left"}, session_id=sid)
-                time.sleep(0.02)
-
-            self.send_cdp("Input.dispatchMouseEvent", {"type": "mouseReleased", "x": tx, "y": ty, "button": "left", "clickCount": 1}, session_id=sid)
-            return {"ok": True, "from": from_ref, "to": to_ref}
-        finally:
-            if modifier_mask:
-                self.send_cdp(
-                    "Input.dispatchKeyEvent",
-                    {
-                        "type": "keyUp",
-                        "modifiers": modifier_mask,
-                        "key": hold_key,
-                        "code": f"{hold_key.title()}Left",
-                        "windowsVirtualKeyCode": {"shift": 16, "ctrl": 17, "alt": 18}.get(hold_key.lower()),
-                    },
-                    session_id=sid,
-                )
+        return self._input.drag_refs(from_ref, to_ref, hold_key=hold_key, steps=steps)
 
     def press_key(self, key: str, modifiers: int = 0) -> dict[str, Any]:
-        sid = self._active_session_id or self._page_session_id
-        vk = KEY_CODE_MAP.get(key.lower(), 0)
-        self.send_cdp("Input.dispatchKeyEvent", {"type": "rawKeyDown", "windowsVirtualKeyCode": vk, "modifiers": modifiers, "key": key}, session_id=sid)
-        self.send_cdp("Input.dispatchKeyEvent", {"type": "keyUp", "windowsVirtualKeyCode": vk, "modifiers": modifiers, "key": key}, session_id=sid)
-        return {"ok": True, "pressed": key}
+        return self._input.press_key(key, modifiers)
 
     def find_by_text(self, query: str, *, ref_only: bool = True, cap: int = 200) -> dict[str, Any]:
-        safe_q = json.dumps(query.lower())
-        js = (
-            "(function(){"
-            f"const q = {safe_q};"
-            "const results = [];"
-            "const treeWalker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);"
-            "while(treeWalker.nextNode()) {"
-            "  const el = treeWalker.currentNode;"
-            "  if (el.offsetParent !== null && (el.textContent || '').toLowerCase().includes(q)) {"
-            "    const ref = el.getAttribute('aria-ref') || '';"
-            "    results.push({ref: ref, tag: el.tagName.toLowerCase(), text: (el.textContent || '').trim().slice(0, 100)});"
-            f"   if (results.length >= {cap}) break;"
-            "  }"
-            "}"
-            "return results;"
-            "})()"
-        )
-        res = self.evaluate_runtime(js)
-        if not res.get("ok"):
-            return {"ok": False, "error": res.get("error", "DOM search failed")}
-        items = res.get("result", [])
-        if ref_only and isinstance(items, list):
-            items = [item.get("ref") for item in items if isinstance(item, dict) and item.get("ref")]
-        return {"ok": True, "matches": items}
+        return self._refs.find_by_text(query, ref_only=ref_only, cap=cap)
 
     def wait_for(self, *, selector: str | None = None, text: str | None = None, timeout_s: float = 10.0) -> dict[str, Any]:
-        if not selector and not text:
-            return {"ok": False, "error": "At least one of `selector` or `text` must be provided"}
-
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if selector:
-                safe_sel = json.dumps(selector)
-                res = self.evaluate_runtime(f"Boolean(document.querySelector({safe_sel}))")
-                if res.get("ok") and res.get("result"):
-                    return {"ok": True, "matched": "selector", "value": selector}
-                if res.get("ok") is False:
-                    return {"ok": False, "error": res.get("error", "selector eval failed")}
-            if text:
-                safe_txt = json.dumps(text.lower())
-                res = self.evaluate_runtime(f"(document.body.innerText || '').toLowerCase().includes({safe_txt})")
-                if res.get("ok") and res.get("result"):
-                    return {"ok": True, "matched": "text", "value": text}
-                if res.get("ok") is False:
-                    return {"ok": False, "error": res.get("error", "text eval failed")}
-            time.sleep(0.2)
-
-        return {"ok": False, "error": f"wait_for timed out after {timeout_s}s"}
+        return self._input.wait_for(selector=selector, text=text, timeout_s=timeout_s)
 
     def back(self) -> dict[str, Any]:
-        sid = self._active_session_id or self._page_session_id
+        sid = (sids := self._current_sids()).active or sids.page
         res = self.send_cdp("Page.getNavigationHistory", {}, session_id=sid)
         if not res.get("ok"):
             return res
@@ -1055,18 +546,7 @@ class CDPSupervisor:
         return {"ok": False, "error": "No back history entry available"}
 
     def get_images(self) -> dict[str, Any]:
-        js = (
-            "(function(){"
-            "return Array.from(document.querySelectorAll('img')).map(img => ({"
-            "  src: img.src || '',"
-            "  alt: img.alt || '',"
-            "  width: img.naturalWidth || img.width || 0,"
-            "  height: img.naturalHeight || img.height || 0,"
-            "  ref: img.getAttribute('aria-ref') || ''"
-            "}));"
-            "})()"
-        )
-        return self.evaluate_runtime(js)
+        return self._refs.get_images()
 
     def console_messages(self, *, clear: bool = False) -> list[dict[str, Any]]:
         with self._state_lock:
@@ -1076,7 +556,7 @@ class CDPSupervisor:
         return events
 
     def screenshot(self, path: str | Path | None = None, *, full_page: bool = False, annotate: bool = False) -> dict[str, Any]:
-        sid = self._active_session_id or self._page_session_id
+        sid = (sids := self._current_sids()).active or sids.page
         elements = []
         annotation_context = ""
 
@@ -1090,16 +570,9 @@ class CDPSupervisor:
                     raw_som = inject_res.get("result", "")
                     elements = parse_som_results(raw_som)
                     annotation_context = format_som_annotation_context(elements)
-                    # 每个 ref 键（ref_raw / ref / str(index)）写入独立 dict，避免下游对单一键的 mutation 误改其余两份。
-                    with self._state_lock:
-                        self._last_refs = {k: v for k, v in self._last_refs.items() if not (isinstance(v, dict) and v.get("is_visual"))}
-                        for el in elements:
-                            if isinstance(el, dict) and "ref_raw" in el and "ref" in el:
-                                for key in (el["ref_raw"], el["ref"], str(el.get("index"))):
-                                    entry = copy.deepcopy(el)
-                                    entry["is_visual"] = True
-                                    self._last_refs[key] = entry
-                        self._refs_doc_generation = self._root_doc_generation
+                    # 每个 ref 键（ref_raw / ref）写入独立 dict，避免下游对单一键的 mutation 误改其余两份。
+                    # 不写 str(index)：会与 AXTree 的 eN 命名空间冲突。
+                    self._refs.record_som(elements)
 
                 params: dict[str, Any] = {"format": "png", "captureBeyondViewport": full_page}
                 res = self.send_cdp("Page.captureScreenshot", params, session_id=sid, timeout=15.0)
@@ -1173,7 +646,7 @@ class CDPSupervisor:
                 elif act_type == "scroll":
                     direction = str(act.get("direction", "down"))
                     try:
-                        pixels = int(round(_parse_numeric_unit(act.get("pixels"), 500, valid_units=("px",))))
+                        pixels = int(round(parse_numeric_unit(act.get("pixels"), 500, valid_units=("px",))))
                     except ValueError:
                         res.update({"ok": False, "error": f"Invalid scroll pixels '{act.get('pixels')}' at step {i}"})
                         results.append(res)
@@ -1183,7 +656,7 @@ class CDPSupervisor:
                 elif act_type == "wait":
                     raw_wait = act.get("seconds", act.get("time"))
                     try:
-                        wait_s = _parse_numeric_unit(raw_wait, 1.0, valid_units=("s", "ms"))
+                        wait_s = parse_numeric_unit(raw_wait, 1.0, valid_units=("s", "ms"))
                     except ValueError:
                         res.update({"ok": False, "error": f"Invalid wait duration '{raw_wait}' at step {i}"})
                         results.append(res)
@@ -1210,7 +683,7 @@ class CDPSupervisor:
                         failed = {"ok": False, "error": f"'select' action at step {i} requires one of 'value', 'label', 'index'", "step": i, "completed": results}
                         break
                     try:
-                        open_delay = _parse_numeric_unit(act.get("open_delay_s"), 0.5, valid_units=("s", "ms"))
+                        open_delay = parse_numeric_unit(act.get("open_delay_s"), 0.5, valid_units=("s", "ms"))
                     except ValueError:
                         res.update({"ok": False, "error": f"Invalid open_delay_s '{act.get('open_delay_s')}' at step {i}"})
                         results.append(res)
@@ -1269,7 +742,7 @@ class CDPSupervisor:
                 "error": f"Element '{ref}' could not be resolved to a DOM element (coordinate-based refs or elements no longer in the DOM cannot be used for screenshot_element)",
             }
 
-        sid = self._active_session_id or self._page_session_id
+        sid = (sids := self._current_sids()).active or sids.page
         box = self.send_cdp("DOM.getBoxModel", {"objectId": obj_id}, session_id=sid)
         if not box.get("ok"):
             return {"ok": False, "error": f"Failed to get box model for {ref}"}
@@ -1303,7 +776,7 @@ class CDPSupervisor:
         return {"ok": True, "path": str(out_path), "bytes": len(raw_bytes)}
 
     def print_pdf(self, path: str | Path, *, landscape: bool = False, print_background: bool = True, paper_width: float = 8.5, paper_height: float = 11.0) -> dict[str, Any]:
-        sid = self._active_session_id or self._page_session_id
+        sid = (sids := self._current_sids()).active or sids.page
         params = {
             "landscape": landscape,
             "printBackground": print_background,
@@ -1393,8 +866,7 @@ class CDPSupervisor:
             reader_task = asyncio.create_task(self._read_loop(), name="cdp-reader")
             try:
                 with self._state_lock:
-                    self._page_session_id = None
-                    self._active_session_id = None
+                    self._set_session(page=None, active=None)
                     self._attached_targets.clear()
                     self._child_sessions.clear()
 
@@ -1447,15 +919,15 @@ class CDPSupervisor:
             target_id = page_target["targetId"]
 
         attach = await self._cdp("Target.attachToTarget", {"targetId": target_id, "flatten": True})
-        self._page_session_id = attach["result"]["sessionId"]
+        page_sid = attach["result"]["sessionId"]
         with self._state_lock:
-            self._active_session_id = self._page_session_id
-            self._attached_targets[target_id] = {"session_id": self._page_session_id, "title": ""}
+            self._set_session(page=page_sid, active=page_sid)
+            self._attached_targets[target_id] = {"session_id": page_sid, "title": ""}
 
-        sid = self._page_session_id
+        sid = page_sid
 
         ft_resp = await self._cdp("Page.getFrameTree", session_id=sid)
-        self._root_frame_id = ft_resp.get("result", {}).get("frameTree", {}).get("frame", {}).get("id", "")
+        self._set_session(root_frame=ft_resp.get("result", {}).get("frameTree", {}).get("frame", {}).get("id", ""))
 
         await self._cdp("Page.enable", session_id=sid)
         await self._cdp("Page.setLifecycleEventsEnabled", {"enabled": True}, session_id=sid)
@@ -1526,10 +998,9 @@ class CDPSupervisor:
     async def _on_event(self, method: str, params: dict[str, Any], session_id: str | None) -> None:
         if method == "Page.frameNavigated":
             self._on_frame_navigated(params, session_id)
+            self._dispatch_frame_navigated(params, session_id)
         elif method == "Page.lifecycleEvent":
-            for handler in list(self._lifecycle_event_handlers):
-                with contextlib.suppress(Exception):
-                    handler(params, session_id)
+            self._dispatch_lifecycle(params, session_id)
         elif method == "Page.javascriptDialogOpening":
             await self._on_dialog_opening(params, session_id)
         elif method == "Page.javascriptDialogClosed":
@@ -1553,46 +1024,81 @@ class CDPSupervisor:
         elif method == "Browser.downloadProgress":
             self._on_download_progress(params)
 
+    def _await_frame_navigated(self, frame_id: str) -> asyncio.Future:
+        loop = self._loop
+        fut: asyncio.Future = loop.create_future()
+        bucket = self._frame_navigated_waiters.setdefault(frame_id, [])
+        bucket.append(fut)
+        fut.add_done_callback(lambda f, fid=frame_id: self._pop_waiter(self._frame_navigated_waiters, fid, f))
+        return fut
+
+    def _await_lifecycle(self, frame_id: str, name: str) -> asyncio.Future:
+        loop = self._loop
+        fut: asyncio.Future = loop.create_future()
+        key = (frame_id, name)
+        bucket = self._lifecycle_waiters.setdefault(key, [])
+        bucket.append(fut)
+        fut.add_done_callback(lambda f, k=key: self._pop_waiter(self._lifecycle_waiters, k, f))
+        return fut
+
+    def _pop_waiter(self, store: dict[Any, list[asyncio.Future]], key: Any, fut: asyncio.Future) -> None:
+        bucket = store.get(key)
+        if bucket is None:
+            return
+        if fut in bucket:
+            bucket.remove(fut)
+        if not bucket:
+            store.pop(key, None)
+
+    def _dispatch_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
+        fid = params.get("frame", {}).get("id", "")
+        waiters = self._frame_navigated_waiters.pop(fid, ()) or ()
+        for fut in waiters:
+            if not fut.done():
+                fut.set_result(params)
+
+    def _dispatch_lifecycle(self, params: dict[str, Any], _session_id: str | None) -> None:
+        name = params.get("name", "")
+        fid = params.get("frameId", "")
+        waiters = self._lifecycle_waiters.pop((fid, name), ()) or ()
+        for fut in waiters:
+            if not fut.done():
+                fut.set_result(params)
+
     def _on_frame_navigated(self, params: dict[str, Any], session_id: str | None) -> None:
         frame = params.get("frame", {})
         fid = frame.get("id", "")
         url = frame.get("url", "") or ""
         if fid:
             parent_id = frame.get("parentId")
+            # 先原子取 sids 再进入 state_lock，避免跨锁读 sids 后又持 _state_lock。
+            sids = self._current_sids()
             with self._state_lock:
                 # Only adopt as the main root if no root is set yet OR the existing root
                 # belongs to the same page session. Popup windows opened via window.open()
                 # also have parentId unset and would otherwise clobber the main root.
-                is_page_session = session_id == self._page_session_id
-                if not parent_id and (not self._root_frame_id or is_page_session):
-                    self._root_frame_id = fid
+                is_page_session = session_id == sids.page
+                if not parent_id and (not sids.root_frame or is_page_session):
+                    self._set_session(root_frame=fid)
+                sids = self._current_sids()
                 self._frames[fid] = FrameInfo(
                     frame_id=fid,
                     url=url,
                     origin=frame.get("securityOrigin", ""),
                     parent_frame_id=parent_id,
-                    is_oopif=session_id != self._page_session_id and session_id is not None,
+                    is_oopif=session_id != sids.page and session_id is not None,
                     cdp_session_id=session_id,
                     name=frame.get("name", ""),
                 )
         # Root frame 每次导航（包括同 URL reload）都使 _root_doc_generation 自增；
         # 与 refs 缓存记录的 _refs_doc_generation 不一致即清空 ref。子/iframe 不影响主页面 ref。
+        # 必须在 _state_lock 释放前捕获 root_frame 快照：释放后任何 set_active_session_id /
+        # 其它 _on_frame_navigated 都可能改写 _session_ids.root_frame，造成 TOCTOU 误判。
+        is_root = not frame.get("parentId")
         with self._state_lock:
-            is_root = not frame.get("parentId")
-            is_main_root = is_root and fid == self._root_frame_id
-            normalized = url.split("#", 1)[0] if url else ""
-            previous = self._last_navigated_url
-            url_changed = normalized and normalized != "about:blank" and normalized != previous
-            if is_main_root:
-                self._root_doc_generation += 1
-                if url_changed:
-                    self._last_navigated_url = normalized
-                if self._root_doc_generation != self._refs_doc_generation:
-                    self._refs_doc_generation = self._root_doc_generation
-                    self._last_refs.clear()
-        for handler in list(self._frame_navigated_handlers):
-            with contextlib.suppress(Exception):
-                handler(params, session_id)
+            current_root_frame = self._current_sids().root_frame
+        is_main_root = is_root and fid == current_root_frame
+        self._refs.note_navigation(url, is_main_root=is_main_root)
 
     def _on_frame_attached(self, params: dict[str, Any], session_id: str | None) -> None:
         fid = params.get("frameId", "")
@@ -1673,114 +1179,19 @@ class CDPSupervisor:
                     entry["event"].set()
 
     async def _on_dialog_opening(self, params: dict[str, Any], session_id: str | None) -> None:
-        self._dialog_seq += 1
         dialog = PendingDialog(
-            id=f"d-{self._dialog_seq}",
+            id=self._dialog_manager.next_id(),
             type=str(params.get("type") or ""),
             message=str(params.get("message") or ""),
             default_prompt=str(params.get("defaultPrompt") or ""),
             opened_at=time.time(),
-            cdp_session_id=session_id or self._page_session_id or "",
+            cdp_session_id=session_id or self._current_sids().page or "",
             frame_id=params.get("frameId"),
         )
-        if self.dialog_policy == DIALOG_POLICY_AUTO_DISMISS:
-            with self._state_lock:
-                self._archive_dialog_locked(dialog, "auto_policy")
-            t = asyncio.create_task(self._auto_handle_dialog(dialog, accept=False, prompt_text=""))
-            self._bg_tasks.add(t)
-            t.add_done_callback(self._bg_tasks.discard)
-        elif self.dialog_policy == DIALOG_POLICY_AUTO_ACCEPT:
-            with self._state_lock:
-                self._archive_dialog_locked(dialog, "auto_policy")
-            t = asyncio.create_task(self._auto_handle_dialog(dialog, accept=True, prompt_text=dialog.default_prompt))
-            self._bg_tasks.add(t)
-            t.add_done_callback(self._bg_tasks.discard)
-        else:
-            # must_respond：安排 dialog_timeout_s 后兜底自动 dismiss（防卡死），
-            # 模型在 dialog_deadline 字段里能看到截止时刻。
-            with self._state_lock:
-                self._pending_dialogs[dialog.id] = dialog
-            if self.dialog_timeout_s > 0 and self._loop is not None:
-                try:
-                    handle = self._loop.call_later(
-                        self.dialog_timeout_s,
-                        lambda d=dialog: self._expire_dialog_watchdog(d),
-                    )
-                    self._dialog_watchdogs[dialog.id] = handle
-                except RuntimeError:
-                    pass
-            dialog.deadline = time.time() + self.dialog_timeout_s if self.dialog_timeout_s > 0 else None
-
-    async def _auto_handle_dialog(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:
-        params: dict[str, Any] = {"accept": accept}
-        if dialog.type == "prompt":
-            params["promptText"] = prompt_text
-        with contextlib.suppress(Exception):
-            await self._cdp("Page.handleJavaScriptDialog", params, session_id=dialog.cdp_session_id or None, timeout=5.0)
-
-    def _archive_dialog_locked(self, dialog: PendingDialog, closed_by: str) -> None:
-        record = DialogRecord(
-            id=dialog.id,
-            type=dialog.type,
-            message=dialog.message,
-            opened_at=dialog.opened_at,
-            closed_at=time.time(),
-            closed_by=closed_by,
-            frame_id=dialog.frame_id,
-        )
-        self._recent_dialogs.append(record)
-        if len(self._recent_dialogs) > RECENT_DIALOGS_MAX * 2:
-            self._recent_dialogs = self._recent_dialogs[-RECENT_DIALOGS_MAX:]
-
-    def _bridge_dialog_expired(self, dialog: PendingDialog) -> None:
-        """Bridge-dialog watchdog expiry: drop from pending and archive, but do NOT
-        call _expire_dialog_watchdog (that dispatches Page.handleJavaScriptDialog
-        which is for JS dialogs, not Fetch-paused bridge dialogs)."""
-        with self._state_lock:
-            if dialog.id not in self._pending_dialogs:
-                return
-            self._pending_dialogs.pop(dialog.id, None)
-            self._archive_dialog_locked(dialog, "timeout")
-        handle = self._dialog_watchdogs.pop(dialog.id, None)
-        if handle is not None:
-            handle.cancel()
+        self._dialog_manager.open(dialog)
 
     async def _on_dialog_closed(self, params: dict[str, Any], session_id: str | None) -> None:
-        with self._state_lock:
-            candidates = [d.id for d in self._pending_dialogs.values() if d.cdp_session_id == session_id and d.bridge_request_id is None]
-            if candidates:
-                did = candidates[0]
-                d = self._pending_dialogs.pop(did, None)
-                if d is not None:
-                    self._archive_dialog_locked(d, "remote")
-                handle = self._dialog_watchdogs.pop(did, None)
-                if handle is not None:
-                    handle.cancel()
-
-    def _cancel_dialog_watchdog(self, dialog_id: str) -> None:
-        handle = self._dialog_watchdogs.pop(dialog_id, None)
-        if handle is not None:
-            handle.cancel()
-
-    def _expire_dialog_watchdog(self, dialog: PendingDialog) -> None:
-        """dialog_timeout_s 看门狗触发：自动 dismiss 并归档到 recent（不丢审计）。"""
-        with self._state_lock:
-            if dialog.id not in self._pending_dialogs:
-                return  # 已被主动响应
-            self._pending_dialogs.pop(dialog.id, None)
-            self._archive_dialog_locked(dialog, "timeout")
-        handle = self._dialog_watchdogs.pop(dialog.id, None)
-        if handle is not None:
-            handle.cancel()
-        # 异步发送 dismiss，不阻塞调用线程。
-        if self._loop is not None and self._loop.is_running():
-            t = asyncio.run_coroutine_threadsafe(
-                self._auto_handle_dialog(dialog, accept=False, prompt_text=""),
-                self._loop,
-            )
-            fut = asyncio.wrap_future(t)
-            fut.add_done_callback(self._bg_tasks.discard)
-            self._bg_tasks.add(fut)
+        self._dialog_manager.on_remote_closed(session_id)
 
     async def _on_fetch_paused(self, params: dict[str, Any], session_id: str | None) -> None:
         url = str(params.get("request", {}).get("url") or "")
@@ -1790,119 +1201,24 @@ class CDPSupervisor:
 
         parsed = urlparse(url)
         qs = parse_qs(parsed.query)
-        kind = qs.get("kind", ["alert"])[0]
-        msg = qs.get("message", [""])[0]
-        def_prompt = qs.get("default_prompt", [""])[0]
-
-        self._dialog_seq += 1
         dialog = PendingDialog(
-            id=f"d-{self._dialog_seq}",
-            type=kind,
-            message=msg,
-            default_prompt=def_prompt,
+            id=self._dialog_manager.next_id(),
+            type=qs.get("kind", ["alert"])[0],
+            message=qs.get("message", [""])[0],
+            default_prompt=qs.get("default_prompt", [""])[0],
             opened_at=time.time(),
-            cdp_session_id=session_id or self._page_session_id or "",
+            cdp_session_id=session_id or self._current_sids().page or "",
             bridge_request_id=request_id,
         )
-
-        if self.dialog_policy == DIALOG_POLICY_AUTO_DISMISS:
-            with self._state_lock:
-                self._archive_dialog_locked(dialog, "auto_policy")
-            await self._fulfill_bridge_request(dialog, accept=False, prompt_text="")
-        elif self.dialog_policy == DIALOG_POLICY_AUTO_ACCEPT:
-            with self._state_lock:
-                self._archive_dialog_locked(dialog, "auto_policy")
-            await self._fulfill_bridge_request(dialog, accept=True, prompt_text=def_prompt)
-        else:
-            with self._state_lock:
-                self._pending_dialogs[dialog.id] = dialog
-            if self.dialog_timeout_s > 0 and self._loop is not None:
-                # Bridge dialogs are paused via Fetch.requestPaused; the watchdog must
-                # resume the request (Fetch.fulfillRequest), NOT call Page.handleJavaScriptDialog
-                # which targets a JS dialog that does not exist.
-                def _expire_bridge(d: PendingDialog) -> None:
-                    if d.bridge_request_id:
-                        fut = asyncio.run_coroutine_threadsafe(
-                            self._fulfill_bridge_request(d, accept=False, prompt_text=""),
-                            self._loop,
-                        )
-                        wrapped = asyncio.wrap_future(fut)
-                        wrapped.add_done_callback(self._bg_tasks.discard)
-                        self._bg_tasks.add(wrapped)
-                    self._bridge_dialog_expired(d)
-
-                try:
-                    handle = self._loop.call_later(self.dialog_timeout_s, _expire_bridge, dialog)
-                    self._dialog_watchdogs[dialog.id] = handle
-                except RuntimeError:
-                    pass
-            dialog.deadline = time.time() + self.dialog_timeout_s if self.dialog_timeout_s > 0 else None
-
-    async def _fulfill_bridge_request(self, dialog: PendingDialog, *, accept: bool, prompt_text: str) -> None:
-        if not dialog.bridge_request_id:
-            return
-        body = json.dumps({"accept": accept, "prompt_text": prompt_text})
-        body_b64 = base64.b64encode(body.encode("utf-8")).decode("ascii")
-        try:
-            await self._cdp(
-                "Fetch.fulfillRequest",
-                {
-                    "requestId": dialog.bridge_request_id,
-                    "responseCode": 200,
-                    "responseHeaders": [{"name": "Content-Type", "value": "application/json"}],
-                    "body": body_b64,
-                },
-                session_id=dialog.cdp_session_id or None,
-                timeout=5.0,
-            )
-        except Exception as e:
-            logger.debug("fulfill bridge request failed: %s", e)
+        self._dialog_manager.open(dialog)
 
     def respond_to_dialog(self, action: str, prompt_text: str | None = None, dialog_id: str | None = None) -> dict[str, Any]:
-        with self._state_lock:
-            if not self._pending_dialogs:
-                return {"ok": False, "error": "No pending dialog to respond to."}
-            if dialog_id:
-                dialog = self._pending_dialogs.get(dialog_id)
-                if not dialog:
-                    return {"ok": False, "error": f"Dialog {dialog_id} not found."}
-            else:
-                # 多 dialog 同时挂起时优先取当前 active session 的 dialog，避免
-                # FIFO 误关。> 1 个 dialog 时仍可任选其一（兼容简单情况），但模型
-                # 应通过 browser_snapshot 看到 pending_dialogs 后用 dialog_id 显式指定。
-                active_sid = self._active_session_id or self._page_session_id
-                matched = [d for d in self._pending_dialogs.values() if d.cdp_session_id == active_sid] if active_sid else []
-                dialog = matched[0] if matched else next(iter(self._pending_dialogs.values()))
-
-        accept = action == "accept"
-        pt = prompt_text or ""
-
-        loop = self._loop
-        if loop is None or not loop.is_running():
-            return {"ok": False, "error": "Supervisor loop is not running"}
-
-        async def _do_respond() -> None:
-            if dialog.bridge_request_id:
-                await self._fulfill_bridge_request(dialog, accept=accept, prompt_text=pt)
-            else:
-                params = {"accept": accept}
-                if dialog.type == "prompt":
-                    params["promptText"] = pt
-                await self._cdp("Page.handleJavaScriptDialog", params, session_id=dialog.cdp_session_id or None, timeout=5.0)
-
-            with self._state_lock:
-                if dialog.id in self._pending_dialogs:
-                    self._pending_dialogs.pop(dialog.id, None)
-                    self._archive_dialog_locked(dialog, "agent")
-
-        try:
-            fut = safe_schedule_threadsafe(_do_respond(), loop)
-            if fut is not None:
-                fut.result(timeout=5.0)
-            self._cancel_dialog_watchdog(dialog.id)
-            return {"ok": True, "dialog": dialog.to_dict()}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        return self._dialog_manager.respond(
+            action,
+            prompt_text,
+            dialog_id,
+            active_session_id=(sids := self._current_sids()).active or sids.page,
+        )
 
 
 class SupervisorRegistry:

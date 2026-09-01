@@ -1,3 +1,4 @@
+import contextlib
 import json
 import time
 from collections.abc import Callable
@@ -42,6 +43,7 @@ def select_option_with_eval(
         "el.dispatchEvent(new Event('change',{bubbles:true}));"
         "return{_:'native',value:el.value,text:el.options[el.selectedIndex]?.text||''};"
         "}"
+        "window.__sa_select_trigger=el;"
         "el.click();"
         "return{_:'clicked'};"
         "})()"
@@ -68,7 +70,15 @@ def select_option_with_eval(
     if result.get("_") == "native":
         return {"success": True, "selected": result.get("value"), "text": result.get("text"), "method": "native"}
     if result.get("_") == "native_no_match":
-        return {"success": False, "error": f"browser_select: no option matched {label_query!r} in native <select>"}
+        # 用真实传入参数构造错误信息：index= 与 value/label 区分开，
+        # 模型能区分「index=3 不存在」与「value=foo 没匹配」。
+        if value is not None:
+            ident = f"value={value!r}"
+        elif label is not None:
+            ident = f"label={label!r}"
+        else:
+            ident = f"index={index!r}"
+        return {"success": False, "error": f"browser_select: no option matched {ident} in native <select>"}
     if result.get("_") == "not_found":
         return {"success": False, "error": f"browser_select: element {ref} not found. Run browser_snapshot first."}
 
@@ -81,7 +91,15 @@ def select_option_with_eval(
 
     kb_js = (
         "(function(){"
-        'const opts=document.querySelectorAll(\'[role="option"], [class*="option"], [class*="item"], li\');'
+        "const trigger=window.__sa_select_trigger;"
+        "if(!trigger)return{_:'no_trigger'};"
+        "const ctrlId=trigger.getAttribute('aria-controls')||trigger.getAttribute('aria-owns');"
+        "const ctrl=ctrlId?document.getElementById(ctrlId):null;"
+        'const container=trigger.closest(\'[role="listbox"],[role="menu"],ul,ol,.dropdown-menu,[class*="dropdown"],[class*="menu"],[class*="select"],[class*="listbox"]\');'
+        "let opts=[];"
+        'if(ctrl)opts=Array.from(ctrl.querySelectorAll(\'[role="option"], [class*="option"], [class*="item"], li\'));'
+        'if(!opts.length&&container)opts=Array.from(container.querySelectorAll(\'[role="option"], [class*="option"], [class*="item"], li\'));'
+        'if(!opts.length)opts=Array.from(document.querySelectorAll(\'[role="option"], [class*="option"], [class*="item"], li\'));'
         "const q=" + json.dumps(label_query.lower()) + ";"
         "for(let i=0;i<opts.length;i++){const o=opts[i];" + custom_match_js + "}"
         "return{_:'no_match'};"
@@ -89,18 +107,26 @@ def select_option_with_eval(
     )
 
     kb_raw = eval_fn(kb_js)
-    if isinstance(kb_raw, str):
-        try:
-            kb_parsed = json.loads(kb_raw)
-        except Exception:
-            return {"success": False, "error": "browser_select: failed to parse custom dropdown result"}
-    elif isinstance(kb_raw, dict):
-        kb_parsed = kb_raw
-    else:
-        kb_parsed = {}
+    # 所有出口（成功 / no_match / parse 失败 / 未匹配）都清掉 window 上的强引用，
+    # 防止被引用 DOM 节点驻留。每次 select 都重新设置，不依赖上一次的状态。
+    try:
+        if isinstance(kb_raw, str):
+            try:
+                kb_parsed = json.loads(kb_raw)
+            except Exception:
+                return {"success": False, "error": "browser_select: failed to parse custom dropdown result"}
+        elif isinstance(kb_raw, dict):
+            kb_parsed = kb_raw
+        else:
+            kb_parsed = {}
 
-    kb_result = kb_parsed.get("result", kb_parsed) if isinstance(kb_parsed, dict) else {}
-    if isinstance(kb_result, dict) and kb_result.get("_") == "custom":
-        return {"success": True, "selected": kb_result.get("text"), "method": "custom_click"}
+        kb_result = kb_parsed.get("result", kb_parsed) if isinstance(kb_parsed, dict) else {}
+        if isinstance(kb_result, dict) and kb_result.get("_") == "custom":
+            return {"success": True, "selected": kb_result.get("text"), "method": "custom_click"}
+        if isinstance(kb_result, dict) and kb_result.get("_") == "no_trigger":
+            return {"success": False, "error": "browser_select: dropdown trigger reference lost between clicks (page may have reloaded)"}
 
-    return {"success": False, "error": f"browser_select: option matching {label_query!r} not found in custom dropdown"}
+        return {"success": False, "error": f"browser_select: option matching {label_query!r} not found in custom dropdown"}
+    finally:
+        with contextlib.suppress(Exception):
+            eval_fn("delete window.__sa_select_trigger;")
