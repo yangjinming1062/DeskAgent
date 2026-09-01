@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js'
+import { clone } from 'three/addons/utils/SkeletonUtils.js'
 
 import { log } from '@/shared/lib/log'
 import { registerStorageClearHandler } from '@/shared/lib/storage'
@@ -257,7 +257,7 @@ export function takeGltfClone(key: string): GltfLease | null {
   cached.lastUsed = Date.now()
   cached.refCount++
 
-  const clonedScene = cloneSkeleton(cached.scene) as THREE.Group
+  const clonedScene = clone(cached.scene) as THREE.Group
   const clonedAnimations = cached.animations.map(clip => clip.clone())
 
   let released = false

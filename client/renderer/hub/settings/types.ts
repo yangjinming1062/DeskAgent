@@ -1,4 +1,4 @@
-export type SettingsView =
+export type SettingsTab =
   | 'about'
   | 'appearance'
   | 'channels'

@@ -1,10 +1,10 @@
-import { type PointerEvent as ReactPointerEvent, useMemo, useRef } from 'react'
+import { type PointerEvent, useMemo, useRef } from 'react'
 
 interface PanelDragBind {
-  onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void
-  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
-  onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void
-  onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void
+  onPointerCancel: (e: PointerEvent<HTMLElement>) => void
+  onPointerDown: (e: PointerEvent<HTMLElement>) => void
+  onPointerMove: (e: PointerEvent<HTMLElement>) => void
+  onPointerUp: (e: PointerEvent<HTMLElement>) => void
 }
 
 // 精灵窗口面板的标题栏拖拽：translate3d（每次移动不触发重渲染），
@@ -43,7 +43,7 @@ export function usePanelDrag(
   const offsetRef = useRef<{ dx: number; dy: number }>(storedOffset ?? { dx: 0, dy: 0 })
   const dragRef = useRef<{ startX: number; startY: number; baseDx: number; baseDy: number } | null>(null)
 
-  const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+  const onPointerDown = (e: PointerEvent<HTMLElement>) => {
     // 仅响应左键拖拽；忽略中键/右键点击以及带修饰键的拖拽。
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
       return
@@ -63,7 +63,7 @@ export function usePanelDrag(
     }
   }
 
-  const onPointerMove = (e: ReactPointerEvent<HTMLElement>) => {
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
     const d = dragRef.current
 
     if (!d) {
@@ -80,7 +80,7 @@ export function usePanelDrag(
     }
   }
 
-  const endDrag = (e: ReactPointerEvent<HTMLElement>) => {
+  const endDrag = (e: PointerEvent<HTMLElement>) => {
     if (!dragRef.current) {
       return
     }

@@ -1,7 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 
-import { spiritagentHome as resolveSpiritAgentHome } from '../security/paths'
+import { spiritagentHome } from '../security/paths'
 
 import * as store from './lib/runner-config-store'
 import { buildSkillSummaries } from './lib/skill-index'
@@ -34,8 +34,8 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
   const nodeVersion = options.nodeVersion ?? process.versions?.node ?? null
   const desktopVersion = options.desktopVersion ?? 'unknown'
   const userAgent = options.userAgent ?? null
-  const spiritagentHome = options.spiritagentHome ?? resolveSpiritAgentHome()
-  const skillsRoot = options.skillsRoot ?? (spiritagentHome ? path.join(spiritagentHome, 'skills') : '')
+  const home = options.spiritagentHome ?? spiritagentHome()
+  const skillsRoot = options.skillsRoot ?? (home ? path.join(home, 'skills') : '')
   const listSkills = options.listSkills ?? buildSkillSummaries
 
   const lines = [
@@ -43,7 +43,7 @@ export function buildClientContext(options: BuildClientContextOptions = {}): Cli
     `arch=${arch}`,
     desktopVersion !== 'unknown' ? `spiritagent-desktop=${desktopVersion}` : null,
     nodeVersion ? `node=${nodeVersion}` : null,
-    spiritagentHome ? `spiritagent_home=${spiritagentHome}` : null
+    home ? `spiritagent_home=${home}` : null
   ].filter(Boolean)
 
   const enabledNames = listSkills(skillsRoot, store.getDisabledSet())

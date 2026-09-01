@@ -73,7 +73,7 @@ export function PersonaMemoryPage(): React.ReactElement {
                 重新对话微调性格
               </button>
               <p className={cn(HINT_TEXT, 'mt-1.5')}>
-                以对话方式分步调整名字、性格与你的信息（不清除现有长期记忆，不改说话风格）
+                以对话方式分步调整名字、性格、说话风格与你的信息（保留现有长期记忆）
               </p>
             </section>
           )}

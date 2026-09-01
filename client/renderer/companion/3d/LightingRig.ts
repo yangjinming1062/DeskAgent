@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { PMREMGenerator as WebGPUPMREMGenerator, WebGPURenderer } from 'three/webgpu'
+import { PMREMGenerator, WebGPURenderer } from 'three/webgpu'
 
 /** Three-point lighting + PMREM environment for PBR material reflections.
  * Tuned for a realistic character bust/half-body framing. */
@@ -28,7 +28,7 @@ export class LightingRig {
     // PMREM 环境贴图为 PBR 材质提供真实的环境反射，
     // 无需额外的 HDRI 文件。
     if (renderer instanceof WebGPURenderer) {
-      const pmrem = new WebGPUPMREMGenerator(renderer)
+      const pmrem = new PMREMGenerator(renderer)
       const target = pmrem.fromScene(new RoomEnvironment(), 0.04)
       this.envTexture = target.texture
       this.disposeEnvTarget = () => target.dispose()

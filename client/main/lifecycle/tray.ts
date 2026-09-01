@@ -56,7 +56,7 @@ function sendToMainWindow<C extends IpcEventChannel>(channel: C, ...payload: Ipc
   }
 }
 
-export function buildTrayMenu() {
+export function buildTrayMenu(): Menu | null {
   if (!trayDeps) {
     return null
   }

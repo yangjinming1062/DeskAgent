@@ -1,4 +1,4 @@
-import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { type PointerEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 export type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 
@@ -26,10 +26,10 @@ export function usePanelResize({
 }: UsePanelResizeOptions): {
   size: PanelSize
   getResizeHandleProps: (dir: ResizeDirection) => {
-    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void
-    onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void
-    onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void
-    onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void
+    onPointerCancel: (e: PointerEvent<HTMLElement>) => void
+    onPointerDown: (e: PointerEvent<HTMLElement>) => void
+    onPointerMove: (e: PointerEvent<HTMLElement>) => void
+    onPointerUp: (e: PointerEvent<HTMLElement>) => void
   }
 } {
   const initialSize = useMemo(() => {
@@ -91,7 +91,7 @@ export function usePanelResize({
     }
   }
 
-  const handlePointerDown = (dir: ResizeDirection, e: ReactPointerEvent<HTMLElement>) => {
+  const handlePointerDown = (dir: ResizeDirection, e: PointerEvent<HTMLElement>) => {
     if (e.button !== 0) {
       return
     }
@@ -113,7 +113,7 @@ export function usePanelResize({
     }
   }
 
-  const handlePointerMove = (e: ReactPointerEvent<HTMLElement>) => {
+  const handlePointerMove = (e: PointerEvent<HTMLElement>) => {
     const state = resizeStateRef.current
 
     if (!state) {
@@ -156,7 +156,7 @@ export function usePanelResize({
     sizeRef.current = { width: newWidth, height: newHeight }
   }
 
-  const handlePointerUp = (e: ReactPointerEvent<HTMLElement>) => {
+  const handlePointerUp = (e: PointerEvent<HTMLElement>) => {
     const state = resizeStateRef.current
 
     if (!state) {
@@ -196,7 +196,7 @@ export function usePanelResize({
   }
 
   const getResizeHandleProps = (dir: ResizeDirection) => ({
-    onPointerDown: (e: ReactPointerEvent<HTMLElement>) => handlePointerDown(dir, e),
+    onPointerDown: (e: PointerEvent<HTMLElement>) => handlePointerDown(dir, e),
     onPointerMove: handlePointerMove,
     onPointerUp: handlePointerUp,
     onPointerCancel: handlePointerUp

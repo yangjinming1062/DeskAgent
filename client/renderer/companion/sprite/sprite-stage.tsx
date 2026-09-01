@@ -307,10 +307,6 @@ export function SpriteStage({
       return
     }
 
-    if ($isEdgeDocked.get()) {
-      undockFromEdge()
-    }
-
     const now = performance.now()
     dragRef.current = {
       startX: e.clientX,
@@ -449,6 +445,12 @@ export function SpriteStage({
 
     // 只有左键松开触发 tap / double-tap；右键打开右键菜单且不触发戳击反应
     if (e.button !== 0) {
+      return
+    }
+
+    if ($isEdgeDocked.get()) {
+      undockFromEdge()
+
       return
     }
 

@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web'
+import type { ReadableStream } from 'node:stream/web'
 
 const MAX_CACHE_FILES = 20
 const MAX_CACHE_BYTES = 1024 * 1024 * 1024 // 1 GB
@@ -232,7 +232,7 @@ export function createModelDiskCache({
       let readableNodeStream: Readable
 
       if (bodyStream && typeof (bodyStream as { getReader?: unknown }).getReader === 'function') {
-        readableNodeStream = Readable.fromWeb(bodyStream as unknown as NodeReadableStream)
+        readableNodeStream = Readable.fromWeb(bodyStream as unknown as ReadableStream)
       } else if (bodyStream && Symbol.asyncIterator in bodyStream) {
         readableNodeStream = Readable.from(bodyStream)
       } else {

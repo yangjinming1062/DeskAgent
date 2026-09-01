@@ -17,7 +17,7 @@ import { RunnerSettings } from './runner-settings'
 import { ShortcutsSettings } from './shortcuts-settings'
 import { SkillsToolsTabs } from './skills-tools-tabs'
 import { SpeechSettings } from './speech-settings'
-import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
+import type { SettingsPageProps, SettingsTab } from './types'
 
 const SETTINGS_VIEWS = [
   'inference',
@@ -28,7 +28,7 @@ const SETTINGS_VIEWS = [
   'runner',
   'skills',
   'about'
-] as const satisfies readonly SettingsViewId[]
+] as const satisfies readonly SettingsTab[]
 
 // 配置云端真源 + 自动同步（PROTOCOL §2.4）后，导入/导出/恢复默认三按钮按设计移除：
 // 修改即时上云、跨端经水合收敛，文件搬运与本地重置入口不再需要。
@@ -51,7 +51,7 @@ export function SettingsView({ onClose, onConfigSaved }: SettingsPageProps): Rea
     <OverlayView closeLabel={t.settings.closeSettings} icon={Settings} onClose={onClose} title={t.settings.title}>
       <div className="flex min-h-0 flex-1">
         <aside className={cn(SURFACE_CHROME, 'flex w-52 shrink-0 flex-col border-r border-line-standard p-2.5')}>
-          <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsViewId)} />
+          <SettingsNav activeId={activeView} items={navItems} onSelect={id => setActiveView(id as SettingsTab)} />
         </aside>
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {activeView === 'inference' ? (

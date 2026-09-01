@@ -1073,10 +1073,12 @@ export function OnboardingFlow({ onCompleted }: OnboardingFlowProps): React.JSX.
             }
           } else if (nextField === 'voice') {
             // next_field==='voice' 意味着描述句本身还没回答——落在 describe 上，而不是 catalog。
+            setImageSealed(true)
             setPhase('voice')
             setVoiceStage('describe')
             setQIndex(0)
           } else if (nextField && POST_CHARACTER_FIELDS.has(nextField)) {
+            setImageSealed(true)
             const idx = USER_QUESTIONS.findIndex(q => q.key === nextField)
             setPhase('q-user')
             setQIndex(Math.max(0, idx))

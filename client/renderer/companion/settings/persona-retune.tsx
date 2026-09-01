@@ -239,6 +239,7 @@ export function PersonaRetune({ initial, onClose }: PersonaRetuneProps): React.R
     }
 
     setSaving(false)
+    onClose()
   }
 
   return (
