@@ -104,8 +104,6 @@ from .observability import (
     RPC_REQUESTS_TOTAL,
     WS_CONNECTIONS_ACTIVE,
     async_trace_span,
-    get_current_span_id,
-    get_current_trace_id,
     render_metrics_response,
     sync_trace_span,
 )
@@ -214,8 +212,6 @@ __all__ = [
     "format_day_marker",
     "format_local_date_str",
     "format_message_timestamp",
-    "get_current_span_id",
-    "get_current_trace_id",
     "get_db",
     "get_file_path",
     "get_logger",

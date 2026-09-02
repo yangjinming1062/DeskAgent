@@ -20,8 +20,7 @@ _CURRENT_TRACE_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("
 _CURRENT_SPAN_ID: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_span_id", default=None)
 
 
-def get_current_trace_id() -> str:
-    """返回当前 trace_id；缺失时现场 mint 一个。"""
+def _ensure_trace_id() -> str:
     tid = _CURRENT_TRACE_ID.get()
     if not tid:
         tid = secrets.token_hex(16)
@@ -29,15 +28,10 @@ def get_current_trace_id() -> str:
     return tid
 
 
-def get_current_span_id() -> str | None:
-    """返回当前 span_id（无则 None）。"""
-    return _CURRENT_SPAN_ID.get()
-
-
 @asynccontextmanager
 async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) -> AsyncIterator[dict[str, Any]]:
     """async 上下文管理器：记录 trace span 并上报 JSON-RPC 指标。"""
-    trace_id = get_current_trace_id()
+    trace_id = _ensure_trace_id()
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
     start_time = time.monotonic()
@@ -60,7 +54,7 @@ async def async_trace_span(name: str, attributes: dict[str, Any] | None = None) 
 @contextmanager
 def sync_trace_span(name: str, attributes: dict[str, Any] | None = None) -> Iterator[dict[str, Any]]:
     """sync 上下文管理器：记录 trace span。"""
-    trace_id = get_current_trace_id()
+    trace_id = _ensure_trace_id()
     span_id = secrets.token_hex(8)
     token_span = _CURRENT_SPAN_ID.set(span_id)
     span_context = {"name": name, "trace_id": trace_id, "span_id": span_id, "attributes": attributes or {}}

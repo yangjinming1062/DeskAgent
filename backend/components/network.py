@@ -167,11 +167,6 @@ class _SafeOutboundAsyncBackend(httpcore._backends.auto.AutoBackend):
         return await self._backend.connect_unix_socket(path, timeout=timeout, socket_options=socket_options)
 
 
-def _swap_pool_backend(pool: Any, backend: Any) -> None:
-    """替换 httpcore ConnectionPool 的 NetworkBackend；保持现有连接池其余配置不变。"""
-    pool._network_backend = backend
-
-
 class _SafeOutboundAsyncTransport(httpx.AsyncHTTPTransport):
     """挂载了 ``_SafeOutboundAsyncBackend`` 的异步 httpx 传输层。
 
@@ -181,7 +176,8 @@ class _SafeOutboundAsyncTransport(httpx.AsyncHTTPTransport):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        _swap_pool_backend(self._pool, _SafeOutboundAsyncBackend())
+        # httpcore 私有属性；连接池其余配置（limits / ssl_context）由 super 接管，不重置。
+        self._pool._network_backend = _SafeOutboundAsyncBackend()
 
 
 def safe_outbound_async_client(**kwargs: Any) -> httpx.AsyncClient:
