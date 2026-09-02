@@ -129,6 +129,7 @@ from .pipeline import (
     emit_companion_assets_updated,
     get_active_model,
     recover_stuck_model_generations,
+    resume_inflight_pipelines,
     signed_model_url,
 )
 from .prompt_runtime import run_prompt_json
@@ -248,6 +249,7 @@ __all__ = [
     "render_extras",
     "request_model_download_retry",
     "resolve_companion_asset_path",
+    "resume_inflight_pipelines",
     "resolve_companion_model_path",
     "resolve_expression_avatar",
     "resolve_self_reference_data_uri",

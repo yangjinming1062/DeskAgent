@@ -25,9 +25,8 @@ from fastapi import FastAPI, Header, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from services.channels import start_channel_manager, stop_channel_manager
-from services.companion import recover_stuck_model_generations
+from services.companion import recover_stuck_model_generations, resume_inflight_pipelines
 from services.companion.persona_background import drain as _persona_drain
-from services.companion.pipeline import _resume_inflight_pipelines
 from services.gateway import start_ws_event_loop, stop_ws_event_loop
 from services.gateway.connection import drain as _conn_drain
 from services.gateway.handlers import drain as _handlers_drain
@@ -79,7 +78,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await resume_pending_video_jobs()
     await recover_stuck_model_generations()
     # 3D 模型管道并入 web 后：从持久状态（companion_3d_models.status IN FLIGHT）重启尚未完成的 task。
-    await _resume_inflight_pipelines()
+    await resume_inflight_pipelines()
 
     async def _cleanup_loop():
         while True:

@@ -44,7 +44,7 @@ _PHASE_PROGRESS: dict[str, tuple[str, int, int]] = {
     "animate": ("animate_binding", 92, 96),
 }
 
-# web 进程内 asyncio 任务句柄,``recover_stuck_model_generations`` + ``_resume_inflight_pipelines`` 启动时负责回收与重派。
+# web 进程内 asyncio 任务句柄,``recover_stuck_model_generations`` + ``resume_inflight_pipelines`` 启动时负责回收与重派。
 _inflight_tasks: dict[int, asyncio.Task] = {}
 
 # 防止两个并发请求同时通过检查(TOCTOU)而起两条流水线
@@ -611,7 +611,7 @@ def _launch_pipeline_task(*, model_id: int, user_id: int, **kwargs: object) -> N
 
 
 async def recover_stuck_model_generations() -> None:
-    """启动时把 generating 行判 failed（未完成 submit）；in-flight 行留给 _resume_inflight_pipelines 接续。"""
+    """启动时把 generating 行判 failed（未完成 submit）；in-flight 行留给 resume_inflight_pipelines 接续。"""
     async with SESSION_LOCAL() as db:
         await db.execute(
             update(Companion3DModel).where(Companion3DModel.status == "generating").values(status="failed", error="interrupted by server restart", active=False),
@@ -619,7 +619,7 @@ async def recover_stuck_model_generations() -> None:
         await db.commit()
 
 
-async def _resume_inflight_pipelines() -> None:
+async def resume_inflight_pipelines() -> None:
     """web 进程启动时扫描仍处于 in-flight 状态的行，交给 run_capability_chain 自驱接续。"""
     async with SESSION_LOCAL() as db:
         rows = (await db.execute(select(Companion3DModel).where(Companion3DModel.status.in_(IN_FLIGHT_STATUSES)))).scalars().all()
