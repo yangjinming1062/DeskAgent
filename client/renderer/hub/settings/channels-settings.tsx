@@ -25,8 +25,18 @@ import { EmptyState, ListRow, Pill, SectionHeading, SettingsContent, SettingsSub
 const WEIXIN_CHANNEL = 'weixin_ilink'
 const LOGIN_POLL_INTERVAL_MS = 2000
 
+const RAW_PREFIX_TO_MIME: ReadonlyArray<[RegExp, string]> = [
+  [/^iVBORw0KGgo/, 'png'],
+  [/^\/9j\//, 'jpeg'],
+  [/^PHN2Zy/, 'svg+xml']
+]
+
 function isDataImage(content: string): boolean {
-  return /^data:image\//i.test(content) || /^(iVBORw0KGgo|\/9j\/|PHN2Zy)/.test(content)
+  if (/^data:image\//i.test(content)) {
+    return true
+  }
+
+  return RAW_PREFIX_TO_MIME.some(([re]) => re.test(content))
 }
 
 function normalizeDataImage(content: string): string {
@@ -34,16 +44,10 @@ function normalizeDataImage(content: string): string {
     return content
   }
 
-  if (/^iVBORw0KGgo/.test(content)) {
-    return `data:image/png;base64,${content}`
-  }
-
-  if (/^\/9j\//.test(content)) {
-    return `data:image/jpeg;base64,${content}`
-  }
-
-  if (/^PHN2Zy/.test(content)) {
-    return `data:image/svg+xml;base64,${content}`
+  for (const [re, mime] of RAW_PREFIX_TO_MIME) {
+    if (re.test(content)) {
+      return `data:image/${mime};base64,${content}`
+    }
   }
 
   return content

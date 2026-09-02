@@ -56,9 +56,7 @@ export const $llmReactions = llmReactionsPref.$atom
 export const $llmAffect = llmAffectPref.$atom
 export const $llmAutonomy = llmAutonomyPref.$atom
 
-export const setLlmReactions = llmReactionsPref.set
-export const setLlmAffect = llmAffectPref.set
-export const setLlmAutonomy = llmAutonomyPref.set
+export { llmAffectPref, llmAutonomyPref, llmReactionsPref }
 
 // 云端水合应用：只接受类型匹配的键，坏值静默跳过（fail-open）。
 // 借道既有 setter 落 localStorage + atom；回写的 prefs:set 上报在主进程侧
@@ -74,15 +72,15 @@ export function initCompanionPrefsSync(): () => void {
     }
 
     if (typeof companion.llm_reactions === 'boolean') {
-      setLlmReactions(companion.llm_reactions)
+      llmReactionsPref.set(companion.llm_reactions)
     }
 
     if (typeof companion.llm_affect === 'boolean') {
-      setLlmAffect(companion.llm_affect)
+      llmAffectPref.set(companion.llm_affect)
     }
 
     if (typeof companion.llm_autonomy === 'boolean') {
-      setLlmAutonomy(companion.llm_autonomy)
+      llmAutonomyPref.set(companion.llm_autonomy)
     }
 
     // 打扰档位：只回写用户偏好（跨端恢复）；生效档位（companion.disturbance_tier）是设备

@@ -1,6 +1,6 @@
 import { $screenLocked } from '@/companion/activity'
 import { $chatOpen } from '@/companion/chat-store'
-import { $spriteAction, clearGazeTarget, setGazeTarget, setSpriteState } from '@/companion/companion-store'
+import { $gazeTarget, $spriteAction, lockGazeToPoint, setSpriteState } from '@/companion/companion-store'
 import { speakProactive } from '@/companion/proactive/proactive'
 import {
   $defaultScale,
@@ -109,7 +109,7 @@ export async function performRitualWalk<T>(
 
   // 飞行途中视线锁定目标窗口中心；抵达后按方位抬手指向，再接 click 触碰
   const targetCenter = { x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }
-  setGazeTarget(gazeTowardsPoint(targetCenter))
+  lockGazeToPoint(gazeTowardsPoint(targetCenter))
 
   try {
     const dist = Math.hypot(perch.x - $spatialPos.get().x, perch.y - $spatialPos.get().y)
@@ -144,7 +144,7 @@ export async function performRitualWalk<T>(
     return result
   } finally {
     // gaze 泄漏会让精灵永远盯着最后的目标；异常路径同样要解锁
-    clearGazeTarget()
+    $gazeTarget.set(null)
     await sleep(800)
     updateSpatialDecision()
   }

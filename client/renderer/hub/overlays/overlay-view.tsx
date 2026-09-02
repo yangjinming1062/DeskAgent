@@ -22,7 +22,7 @@ export function OverlayView({
   onClose,
   closeLabel = strings.common.close
 }: OverlayViewProps): React.JSX.Element {
-  const closeOverlay = () => {
+  const handleClose = (): void => {
     triggerHaptic('close')
     onClose()
   }
@@ -37,8 +37,7 @@ export function OverlayView({
       }
 
       event.preventDefault()
-      triggerHaptic('close')
-      onClose()
+      handleClose()
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -49,7 +48,7 @@ export function OverlayView({
   return (
     <div className="fixed inset-0 flex min-h-0 flex-col overflow-hidden bg-surface-panel text-strong tech-grid">
       <HudCorners size={8} />
-      <PanelHeader closeLabel={closeLabel} dragRegion icon={icon} onClose={closeOverlay} title={title} />
+      <PanelHeader closeLabel={closeLabel} dragRegion icon={icon} onClose={handleClose} title={title} />
       <div className="min-h-0 flex flex-1 flex-col">{children}</div>
     </div>
   )

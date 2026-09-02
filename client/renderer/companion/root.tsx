@@ -6,6 +6,7 @@ import { startActivityMonitor } from '@/companion/activity'
 import { BootFailureOverlay } from '@/companion/boot/boot-failure-overlay'
 import { useGatewayBoot } from '@/companion/boot/use-gateway-boot'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
+import { useMainProcessListener } from '@/companion/boot/use-main-process-listener'
 import { $chatOpen, setChatOpen } from '@/companion/chat-store'
 import { $companionLifecycle, reportUserActivity, setCompanionLifecycle } from '@/companion/companion-store'
 import { useInteractiveRegion, useWindowMouseCapture } from '@/companion/interactive-regions'
@@ -119,45 +120,29 @@ export function CompanionRoot(): React.JSX.Element {
     void hydrateRunnerStatus()
   }, [])
 
-  useEffect(() => {
-    const off = window.spiritagent.onAuthChanged(payload => void applyAuthBroadcast(payload))
+  useMainProcessListener('onAuthChanged', payload => void applyAuthBroadcast(payload), [])
 
-    return () => off()
-  }, [])
-
-  useEffect(() => {
-    const off = window.spiritagent.onSessionExpired(() => void logout())
-
-    return () => off()
-  }, [])
+  useMainProcessListener('onSessionExpired', () => void logout(), [])
 
   // 托盘菜单的「登出」入口会触发这个桥；主进程侧登出也会在下一次会话检查时
   // 触发 `onSessionExpired`，但显式路由能让用户在点托盘项时 UI 更跟手。
-  useEffect(() => {
-    const off = window.spiritagent.onTrayLogout?.(() => void logout())
-
-    return () => off?.()
-  }, [])
+  useMainProcessListener('onTrayLogout', () => void logout(), [])
 
   // 托盘「激活...」入口的对偶：主进程只调 showMainWindow() 不够——
   // 激活浮层是 React state，关掉之后必须显式翻回来，否则就是死锁。
-  useEffect(() => {
-    const off = window.spiritagent.onTrayActivate?.(() => setActivationOpen(true))
-
-    return () => off?.()
-  }, [])
+  useMainProcessListener('onTrayActivate', () => setActivationOpen(true), [])
 
   // 托盘「打开对话」（DESIGN §6.1 对话模式触发源）：聊天面板同样要走
   // openDock 的 dock 互斥，不能直接 setChatOpen。
-  useEffect(() => {
-    const off = window.spiritagent.onTrayOpenChat?.(() => {
+  useMainProcessListener(
+    'onTrayOpenChat',
+    () => {
       if (auth.kind === 'authenticated') {
         openDock('chat')
       }
-    })
-
-    return () => off?.()
-  }, [auth.kind, openDock])
+    },
+    [auth.kind, openDock]
+  )
 
   // 全局快捷键「打开/关闭对话」：已打开时收起；未打开时已登录开对话、未登录开激活。
   useEffect(() => {
@@ -175,13 +160,13 @@ export function CompanionRoot(): React.JSX.Element {
   }, [auth.kind, chatOpen, openDock])
 
   // 托盘「一键归位」：将精灵落位与状态重置回默认 Home 位置
-  useEffect(() => {
-    const off = window.spiritagent.onTrayResetPosition?.(() => {
+  useMainProcessListener(
+    'onTrayResetPosition',
+    () => {
       resetToHomePosition()
-    })
-
-    return () => off?.()
-  }, [])
+    },
+    []
+  )
 
   // 未鉴权时自动开激活浮层：首次 hydrateAuth 完成（pending → unauthenticated）、
   // 以及反激活之后。原先只能戳精灵触发，但未鉴权时精灵实体本身不可见、戳不到，

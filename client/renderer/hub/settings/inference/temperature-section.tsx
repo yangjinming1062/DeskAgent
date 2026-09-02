@@ -7,9 +7,19 @@ type TemperatureCopy = (typeof strings)['settings']['inference']['temperature']
 
 export interface TemperatureFormState {
   chat_temperature: number
-  title_generation_temperature: number
   compression_temperature: number
+  title_generation_temperature: number
 }
+
+const FIELDS: ReadonlyArray<{
+  descKey: 'chatTemperatureDesc' | 'compressionTemperatureDesc' | 'titleTemperatureDesc'
+  field: keyof TemperatureFormState
+  labelKey: 'chatTemperature' | 'compressionTemperature' | 'titleTemperature'
+}> = [
+  { field: 'chat_temperature', labelKey: 'chatTemperature', descKey: 'chatTemperatureDesc' },
+  { field: 'title_generation_temperature', labelKey: 'titleTemperature', descKey: 'titleTemperatureDesc' },
+  { field: 'compression_temperature', labelKey: 'compressionTemperature', descKey: 'compressionTemperatureDesc' }
+]
 
 export function TemperatureSection({
   disabled,
@@ -24,66 +34,27 @@ export function TemperatureSection({
 }): React.JSX.Element {
   return (
     <SettingsSubsection intro={t.intro} title={t.heading}>
-      <ListRow
-        action={
-          <div className="flex w-full items-center gap-3">
-            <Slider
-              ariaLabel={t.chatTemperature}
-              disabled={disabled}
-              max={1}
-              min={0}
-              onChange={value => update({ chat_temperature: Math.round(value * 100) / 100 })}
-              step={0.01}
-              value={state.chat_temperature}
-            />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
-              {state.chat_temperature.toFixed(2)}
-            </span>
-          </div>
-        }
-        description={t.chatTemperatureDesc}
-        title={t.chatTemperature}
-      />
-      <ListRow
-        action={
-          <div className="flex w-full items-center gap-3">
-            <Slider
-              ariaLabel={t.titleTemperature}
-              disabled={disabled}
-              max={1}
-              min={0}
-              onChange={value => update({ title_generation_temperature: Math.round(value * 100) / 100 })}
-              step={0.01}
-              value={state.title_generation_temperature}
-            />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
-              {state.title_generation_temperature.toFixed(2)}
-            </span>
-          </div>
-        }
-        description={t.titleTemperatureDesc}
-        title={t.titleTemperature}
-      />
-      <ListRow
-        action={
-          <div className="flex w-full items-center gap-3">
-            <Slider
-              ariaLabel={t.compressionTemperature}
-              disabled={disabled}
-              max={1}
-              min={0}
-              onChange={value => update({ compression_temperature: Math.round(value * 100) / 100 })}
-              step={0.01}
-              value={state.compression_temperature}
-            />
-            <span className="w-8 shrink-0 text-right font-mono text-xs text-body">
-              {state.compression_temperature.toFixed(2)}
-            </span>
-          </div>
-        }
-        description={t.compressionTemperatureDesc}
-        title={t.compressionTemperature}
-      />
+      {FIELDS.map(({ field, labelKey, descKey }) => (
+        <ListRow
+          action={
+            <div className="flex w-full items-center gap-3">
+              <Slider
+                ariaLabel={t[labelKey]}
+                disabled={disabled}
+                max={1}
+                min={0}
+                onChange={value => update({ [field]: Math.round(value * 100) / 100 } as Partial<TemperatureFormState>)}
+                step={0.01}
+                value={state[field]}
+              />
+              <span className="w-8 shrink-0 text-right font-mono text-xs text-body">{state[field].toFixed(2)}</span>
+            </div>
+          }
+          description={t[descKey]}
+          key={field}
+          title={t[labelKey]}
+        />
+      ))}
     </SettingsSubsection>
   )
 }

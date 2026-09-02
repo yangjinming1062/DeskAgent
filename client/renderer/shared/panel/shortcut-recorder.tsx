@@ -83,6 +83,28 @@ function parseAcceleratorTokens(accelerator: string): string[] {
     .filter(Boolean)
 }
 
+function modifiersFromEvent(e: KeyboardEvent): string[] {
+  const held: string[] = []
+
+  if (e.ctrlKey) {
+    held.push(IS_MAC ? 'Control' : 'CommandOrControl')
+  }
+
+  if (e.altKey) {
+    held.push('Alt')
+  }
+
+  if (e.shiftKey) {
+    held.push('Shift')
+  }
+
+  if (e.metaKey) {
+    held.push(IS_MAC ? 'CommandOrControl' : 'Super')
+  }
+
+  return held
+}
+
 function normalizeCodeToBaseKey(e: KeyboardEvent): string | null {
   const code = e.code
   const key = e.key
@@ -239,24 +261,7 @@ export function ShortcutRecorder({
         return
       }
 
-      const currentHeld: string[] = []
-
-      if (e.ctrlKey) {
-        currentHeld.push(IS_MAC ? 'Control' : 'CommandOrControl')
-      }
-
-      if (e.altKey) {
-        currentHeld.push('Alt')
-      }
-
-      if (e.shiftKey) {
-        currentHeld.push('Shift')
-      }
-
-      if (e.metaKey) {
-        currentHeld.push(IS_MAC ? 'CommandOrControl' : 'Super')
-      }
-
+      const currentHeld = modifiersFromEvent(e)
       const baseKey = normalizeCodeToBaseKey(e)
 
       if (!baseKey) {
@@ -290,24 +295,7 @@ export function ShortcutRecorder({
         return
       }
 
-      const currentHeld: string[] = []
-
-      if (e.ctrlKey) {
-        currentHeld.push(IS_MAC ? 'Control' : 'CommandOrControl')
-      }
-
-      if (e.altKey) {
-        currentHeld.push('Alt')
-      }
-
-      if (e.shiftKey) {
-        currentHeld.push('Shift')
-      }
-
-      if (e.metaKey) {
-        currentHeld.push(IS_MAC ? 'CommandOrControl' : 'Super')
-      }
-
+      const currentHeld = modifiersFromEvent(e)
       setHeldModifiers(currentHeld)
     },
     [recording]

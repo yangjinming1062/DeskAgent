@@ -141,6 +141,10 @@ type ToggleableViewportKey = {
 export function toggleViewportOption(key: ToggleableViewportKey): void {
   const opts = $viewportOptions.get()
   $viewportOptions.setKey(key, !opts[key])
+
+  if (key === 'showBones' || key === 'showJoints') {
+    syncHologramWithRig()
+  }
 }
 
 /**
@@ -152,23 +156,6 @@ function syncHologramWithRig(): void {
   const opts = $viewportOptions.get()
   $viewportOptions.setKey('showHologram', opts.showBones || opts.showJoints)
 }
-
-export const toggleSkeleton = (): void => toggleViewportOption('showSkeleton')
-
-export const toggleBones = (): void => {
-  toggleViewportOption('showBones')
-  syncHologramWithRig()
-}
-
-export const toggleJoints = (): void => {
-  toggleViewportOption('showJoints')
-  syncHologramWithRig()
-}
-
-export const toggleHologram = (): void => toggleViewportOption('showHologram')
-export const toggleGrid = (): void => toggleViewportOption('showGrid')
-export const toggleAxes = (): void => toggleViewportOption('showAxes')
-export const toggleWireframe = (): void => toggleViewportOption('showWireframe')
 
 export function setTransformMode(mode: TransformMode): void {
   $transformMode.set(mode)

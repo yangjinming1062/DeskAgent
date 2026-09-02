@@ -11,8 +11,9 @@ import './styles.css'
 import { StrictMode, useCallback, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import { $spriteEmotion, setGazeTarget } from '@/companion/companion-store'
+import { $gazeTarget, $spriteEmotion } from '@/companion/companion-store'
 import { $mesh2dHitmap } from '@/companion/mesh2d/mesh2d-store'
+import type { PuppetRuntime } from '@/companion/puppet/puppet-runtime'
 import { $puppetInfo } from '@/companion/puppet/puppet-store'
 import type { Rig } from '@/companion/puppet/puppet-types'
 import { PuppetCanvas, type PuppetCanvasHandle } from '@/companion/puppet/PuppetCanvas'
@@ -64,7 +65,7 @@ function PuppetStageApp() {
 
       // 情绪 + 显式视线注入（$gazeTarget 走生产驱动路径）
       $spriteEmotion.set('happy')
-      setGazeTarget({ nx: 0.9, ny: 0.1 })
+      $gazeTarget.set({ nx: 0.9, ny: 0.1 })
       setStatus(`STAGE_OK regions=${[...regions].join('|')}`)
     })()
   }, [])
@@ -120,6 +121,24 @@ const AUTO_LABEL: Record<AutoKey, string> = {
 function PuppetDevApp(): React.JSX.Element {
   const handleRef = useRef<PuppetCanvasHandle>(null)
   const stageRef = useRef<HTMLDivElement>(null)
+
+  const loadBuiltinPsd = async (): Promise<{ rig: Rig; runtime: PuppetRuntime }> => {
+    const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`)
+    }
+
+    const rig = (await handleRef.current?.loadPsd(await res.arrayBuffer())) ?? null
+    const runtime = handleRef.current?.runtime ?? null
+
+    if (!rig || !runtime) {
+      throw new Error('runtime 未就绪')
+    }
+
+    return { rig, runtime }
+  }
+
   const [status, setStatus] = useState('拖入或选择 see-through 产出的 PSD')
   const [rig, setRig] = useState<Rig | null>(null)
   const [angleX, setAngleX] = useState(0)
@@ -175,18 +194,7 @@ function PuppetDevApp(): React.JSX.Element {
       setStatus('载入内置测试 PSD …')
 
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-
-        const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
-        const rt = handleRef.current?.runtime
-
-        if (!r || !rt) {
-          throw new Error('runtime 未就绪')
-        }
+        const { rig: r, runtime: rt } = await loadBuiltinPsd()
 
         let eyeMin = 1
         let blinkSeen = false
@@ -278,18 +286,7 @@ function PuppetDevApp(): React.JSX.Element {
       setStatus(`姿态定格 ax=${ax} ay=${ay} az=${az} …`)
 
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-
-        const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
-        const rt = handleRef.current?.runtime
-
-        if (!r || !rt) {
-          throw new Error('runtime 未就绪')
-        }
+        const { rig: r, runtime: rt } = await loadBuiltinPsd()
 
         for (const key of Object.keys(rt.auto) as (keyof typeof rt.auto)[]) {
           rt.auto[key] = false
@@ -318,18 +315,7 @@ function PuppetDevApp(): React.JSX.Element {
       setStatus('13 姿态安全验证 …')
 
       try {
-        const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
-
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`)
-        }
-
-        const r = await handleRef.current?.loadPsd(await res.arrayBuffer())
-        const rt = handleRef.current?.runtime
-
-        if (!r || !rt) {
-          throw new Error('runtime 未就绪')
-        }
+        const { runtime: rt } = await loadBuiltinPsd()
 
         const POSES: [number, number, number][] = [
           [0, 0, 0],
@@ -495,13 +481,7 @@ function PuppetDevApp(): React.JSX.Element {
                 setStatus('载入内置测试 PSD …')
 
                 try {
-                  const res = await fetch(`${import.meta.env.BASE_URL}assets/seethrough_output.psd`)
-
-                  if (!res.ok) {
-                    throw new Error(`HTTP ${res.status}`)
-                  }
-
-                  await handleRef.current?.loadPsd(await res.arrayBuffer())
+                  await loadBuiltinPsd()
                   setStatus('内置 PSD 已装配')
                 } catch (err) {
                   setStatus(`失败: ${err instanceof Error ? err.message : String(err)}`)

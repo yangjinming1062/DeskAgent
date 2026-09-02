@@ -12,6 +12,7 @@ import { AgentDefaultsSection, type AgentFormState } from './inference/agent-def
 import { type ChatFormState, ContextCompressionSection } from './inference/context-compression-section'
 import { type TemperatureFormState, TemperatureSection } from './inference/temperature-section'
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
+import { useFormSection } from './use-form-section'
 
 const REASONING_OPTIONS = ['none', 'low', 'medium', 'high'] as const
 
@@ -60,12 +61,10 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [originalAgent, setOriginalAgent] = useState<AgentFormState>(EMPTY_AGENT)
-  const [originalChat, setOriginalChat] = useState<ChatFormState>(EMPTY_CHAT)
-  const [originalTemperature, setOriginalTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
-  const [agent, setAgent] = useState<AgentFormState>(EMPTY_AGENT)
-  const [chat, setChat] = useState<ChatFormState>(EMPTY_CHAT)
-  const [temperature, setTemperature] = useState<TemperatureFormState>(EMPTY_TEMPERATURE)
+
+  const agent = useFormSection(EMPTY_AGENT, readAgentState)
+  const chat = useFormSection(EMPTY_CHAT, readChatState)
+  const temperature = useFormSection(EMPTY_TEMPERATURE, readTemperatureState)
 
   useEffect(() => {
     let cancelled = false
@@ -78,15 +77,9 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
           return
         }
 
-        const nextAgent = readAgentState(config)
-        const nextChat = readChatState(config)
-        const nextTemperature = readTemperatureState(config)
-        setOriginalAgent(nextAgent)
-        setOriginalChat(nextChat)
-        setOriginalTemperature(nextTemperature)
-        setAgent(nextAgent)
-        setChat(nextChat)
-        setTemperature(nextTemperature)
+        agent.reset(config)
+        chat.reset(config)
+        temperature.reset(config)
         setLoadError(null)
       } catch (err) {
         if (!cancelled) {
@@ -104,32 +97,7 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
     }
   }, [])
 
-  const isAgentDirty =
-    agent.reasoning_effort !== originalAgent.reasoning_effort ||
-    agent.enable_background_review !== originalAgent.enable_background_review
-
-  const isChatDirty =
-    chat.enable_context_compression !== originalChat.enable_context_compression ||
-    chat.context_compression_threshold !== originalChat.context_compression_threshold
-
-  const isTemperatureDirty =
-    temperature.chat_temperature !== originalTemperature.chat_temperature ||
-    temperature.title_generation_temperature !== originalTemperature.title_generation_temperature ||
-    temperature.compression_temperature !== originalTemperature.compression_temperature
-
-  const isDirty = isAgentDirty || isChatDirty || isTemperatureDirty
-
-  const updateAgent = (patch: Partial<AgentFormState>) => {
-    setAgent(prev => ({ ...prev, ...patch }))
-  }
-
-  const updateChat = (patch: Partial<ChatFormState>) => {
-    setChat(prev => ({ ...prev, ...patch }))
-  }
-
-  const updateTemperature = (patch: Partial<TemperatureFormState>) => {
-    setTemperature(prev => ({ ...prev, ...patch }))
-  }
+  const isDirty = agent.isDirty || chat.isDirty || temperature.isDirty
 
   const handleSave = async () => {
     try {
@@ -137,27 +105,21 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
 
       const { config } = await saveSpiritAgentConfig({
         agent: {
-          enable_background_review: agent.enable_background_review,
-          reasoning_effort: agent.reasoning_effort,
-          temperature: temperature.chat_temperature
+          enable_background_review: agent.state.enable_background_review,
+          reasoning_effort: agent.state.reasoning_effort,
+          temperature: temperature.state.chat_temperature
         },
         chat: {
-          enable_context_compression: chat.enable_context_compression,
-          context_compression_threshold: chat.context_compression_threshold,
-          title_generation_temperature: temperature.title_generation_temperature,
-          compression_temperature: temperature.compression_temperature
+          enable_context_compression: chat.state.enable_context_compression,
+          context_compression_threshold: chat.state.context_compression_threshold,
+          title_generation_temperature: temperature.state.title_generation_temperature,
+          compression_temperature: temperature.state.compression_temperature
         }
       })
 
-      const nextAgent = readAgentState(config)
-      const nextChat = readChatState(config)
-      const nextTemperature = readTemperatureState(config)
-      setOriginalAgent(nextAgent)
-      setOriginalChat(nextChat)
-      setOriginalTemperature(nextTemperature)
-      setAgent(nextAgent)
-      setChat(nextChat)
-      setTemperature(nextTemperature)
+      agent.reset(config)
+      chat.reset(config)
+      temperature.reset(config)
       triggerHaptic('success')
       notify({ kind: 'success', title: a.heading, message: a.saved })
       onConfigSaved?.()
@@ -196,15 +158,15 @@ export function InferenceSettings({ onConfigSaved }: { onConfigSaved?: () => voi
     <SettingsContent>
       <SectionHeading title={a.heading} />
 
-      <AgentDefaultsSection disabled={isSaving} state={agent} t={a.agentDefaults} update={updateAgent} />
+      <AgentDefaultsSection disabled={isSaving} state={agent.state} t={a.agentDefaults} update={agent.set} />
 
       <div className="my-4 h-px bg-line-standard" />
 
-      <ContextCompressionSection disabled={isSaving} state={chat} t={a.contextCompression} update={updateChat} />
+      <ContextCompressionSection disabled={isSaving} state={chat.state} t={a.contextCompression} update={chat.set} />
 
       <div className="my-4 h-px bg-line-standard" />
 
-      <TemperatureSection disabled={isSaving} state={temperature} t={a.temperature} update={updateTemperature} />
+      <TemperatureSection disabled={isSaving} state={temperature.state} t={a.temperature} update={temperature.set} />
 
       <div className="mt-8 flex justify-end">
         <button className={BTN_PRIMARY} disabled={isSaving || !isDirty} onClick={() => void handleSave()} type="button">

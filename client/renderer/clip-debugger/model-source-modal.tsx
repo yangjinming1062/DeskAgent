@@ -32,6 +32,29 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
   const customGlb = useStore($customGlbBuffer)
   const modelStats = useStore($modelStats)
 
+  const runWithStatus = async <T,>(
+    fn: () => Promise<T>,
+    successMsg: string | ((result: T) => string),
+    errorMsg: string,
+    closeAfterMs?: number
+  ): Promise<void> => {
+    try {
+      setLoading(true)
+      setErrorMsg(null)
+      setSuccessMsg(null)
+      const result = await fn()
+      setSuccessMsg(typeof successMsg === 'function' ? successMsg(result) : successMsg)
+
+      if (closeAfterMs) {
+        setTimeout(() => onClose(), closeAfterMs)
+      }
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : errorMsg)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!isOpen) {
     return null
   }
@@ -57,28 +80,24 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
       return
     }
 
-    try {
-      setLoading(true)
-      setErrorMsg(null)
-      setSuccessMsg(null)
+    localStorage.setItem('spiritagent_clip_activation_code', trimmedCode)
 
-      localStorage.setItem('spiritagent_clip_activation_code', trimmedCode)
-
-      if (overrideHost) {
-        localStorage.setItem('spiritagent_clip_override_host', overrideHost.trim())
-      }
-
-      const res = await fetchBackendCompanion3DModelWithActivationCode(trimmedCode, overrideHost.trim() || undefined)
-
-      $customGlbBuffer.set({ buffer: res.buffer, name: res.name })
-
-      setSuccessMsg(`成功拉取并载入伴侣模型: ${res.name}`)
-      setTimeout(() => onClose(), 800)
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '获取后端模型失败')
-    } finally {
-      setLoading(false)
+    if (overrideHost) {
+      localStorage.setItem('spiritagent_clip_override_host', overrideHost.trim())
     }
+
+    await runWithStatus(
+      async () => {
+        const res = await fetchBackendCompanion3DModelWithActivationCode(trimmedCode, overrideHost.trim() || undefined)
+
+        $customGlbBuffer.set({ buffer: res.buffer, name: res.name })
+
+        return res
+      },
+      res => `成功拉取并载入伴侣模型: ${res.name}`,
+      '获取后端模型失败',
+      800
+    )
   }
 
   const handleFetchDirectUrl = async () => {
@@ -86,21 +105,17 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
       return
     }
 
-    try {
-      setLoading(true)
-      setErrorMsg(null)
-      setSuccessMsg(null)
+    await runWithStatus(
+      async () => {
+        const res = await fetchGlbFromUrl(directUrl.trim())
+        $customGlbBuffer.set(res)
 
-      const res = await fetchGlbFromUrl(directUrl.trim())
-      $customGlbBuffer.set(res)
-
-      setSuccessMsg(`成功载入模型: ${res.name}`)
-      setTimeout(() => onClose(), 800)
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '下载并解析模型 URL 失败')
-    } finally {
-      setLoading(false)
-    }
+        return res
+      },
+      res => `成功载入模型: ${res.name}`,
+      '下载并解析模型 URL 失败',
+      800
+    )
   }
 
   // 本地文件选择
@@ -108,18 +123,17 @@ export function ModelSourceModal({ isOpen, onClose }: ModelSourceModalProps): Re
     const file = e.target.files?.[0]
 
     if (file) {
-      try {
-        setLoading(true)
-        setErrorMsg(null)
-        const res = await readGlbFile(file)
-        $customGlbBuffer.set(res)
-        setSuccessMsg(`成功载入本地模型: ${file.name}`)
-        setTimeout(() => onClose(), 600)
-      } catch (err) {
-        setErrorMsg(err instanceof Error ? err.message : '解析本地模型失败')
-      } finally {
-        setLoading(false)
-      }
+      await runWithStatus(
+        async () => {
+          const res = await readGlbFile(file)
+          $customGlbBuffer.set(res)
+
+          return res
+        },
+        res => `成功载入本地模型: ${res.name}`,
+        '解析本地模型失败',
+        600
+      )
     }
   }
 

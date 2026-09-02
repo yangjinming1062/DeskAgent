@@ -204,12 +204,19 @@ export function playSpriteActionSequence(actions: readonly string[]): void {
 // （ritual walk 飞行途中锁定目标窗口中心）；null = 回到指针跟随。
 export const $gazeTarget = atom<{ nx: number; ny: number } | null>(null)
 
-export function setGazeTarget(target: { nx: number; ny: number }): void {
-  $gazeTarget.set(target)
-}
+let gazeResetTimer: ReturnType<typeof setTimeout> | null = null
 
-export function clearGazeTarget(): void {
-  $gazeTarget.set(null)
+/** 锁定视线到一个点，durationMs 后自动回到指针跟随。 */
+export function lockGazeToPoint(point: { nx: number; ny: number }, durationMs = 6000): void {
+  if (gazeResetTimer) {
+    clearTimeout(gazeResetTimer)
+  }
+
+  $gazeTarget.set(point)
+  gazeResetTimer = setTimeout(() => {
+    $gazeTarget.set(null)
+    gazeResetTimer = null
+  }, durationMs)
 }
 
 export function reportUserActivity(): void {

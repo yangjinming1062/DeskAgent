@@ -45,9 +45,8 @@ import {
 import {
   $effectiveTier,
   $spriteState,
-  clearGazeTarget,
+  lockGazeToPoint,
   playSpriteActionSequence,
-  setGazeTarget,
   setSpriteState,
   type SpriteEmotion
 } from '@/companion/companion-store'
@@ -166,8 +165,7 @@ function applySpatialCue(locale?: string, target?: string): void {
       }
 
       // 与仪式行走同规则：飞行与栖息途中视线锁定目标窗口，数秒后交还指针跟随
-      setGazeTarget(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
-      setTimeout(() => clearGazeTarget(), 6000)
+      lockGazeToPoint(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
       setLocale('perch', { position: perch.pos, scaleLimit: perch.scale, locomotion: 'fly' })
     } else if (locale === 'home' && !$chatOpen.get()) {
       setLocale('home', { locomotion: 'fly' })
@@ -186,6 +184,8 @@ export function handleCompanionEvent(event: RpcEvent): void {
   // 看到旧 model。跨会话污染由事件本身的 session_id 闸门（下方 session_id 过滤段）兜底。
   // 写持久化原子的副作用分支（model.ready / companion.2d.ready）在自己内部用 $auth.kind
   // 二次防御，避免 OPFS / localStorage 串味。
+  const authed = (): boolean => $auth.get().kind === 'authenticated'
+
   if ($auth.get().kind === 'pending') {
     log.warn('events', 'Discarded event during pending auth:', event.type)
 
@@ -492,7 +492,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 二次 auth 防御：上方顶层 guard 只挡 'pending'，'unauthenticated' 的事件正常落地
       // 是为了 message.complete 不卡 thinking。但 model.ready 写持久化 atom（isPersistable
       // 通过 → localStorage），登出 race 里到达会污染下一位用户的冷启动读数。这里显式再挡一次。
-      if ($auth.get().kind !== 'authenticated') {
+      if (!authed()) {
         break
       }
 
@@ -572,7 +572,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       //
       // 二次 auth 防御：与 model.ready 同理，hydrateMesh2D 走 authedApi + 写持久化 atom，
       // 登出 race 里到达会把旧 session 的 manifest 写进 localStorage。这里早返回避免污染。
-      if ($auth.get().kind !== 'authenticated') {
+      if (!authed()) {
         break
       }
 
@@ -654,7 +654,7 @@ export function handleCompanionEvent(event: RpcEvent): void {
       // 定义了 Persisted atom 的 clear handler，登出 race 里触发会把刚清空的 localStorage
       // 又把 in-memory atom 写回 fallback（语义无害但与 clearCompanionStorage 重叠），
       // 之后的 hydrateMesh2D 在已登出窗口写持久化。这里同样加显式 auth 二次防御。
-      if ($auth.get().kind !== 'authenticated') {
+      if (!authed()) {
         break
       }
 

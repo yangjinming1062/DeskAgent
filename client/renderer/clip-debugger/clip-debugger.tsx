@@ -7,21 +7,29 @@ import { readGlbFile } from './model-loader'
 import { ModelSourceModal } from './model-source-modal'
 import { MorphInspector } from './morph-inspector'
 import { PlaybackBar } from './playback-bar'
-import {
-  $customGlbBuffer,
-  $modelStats,
-  $viewportOptions,
-  setBackground,
-  toggleAxes,
-  toggleBones,
-  toggleGrid,
-  toggleHologram,
-  toggleJoints,
-  toggleSkeleton,
-  toggleWireframe
-} from './store'
+import { $customGlbBuffer, $modelStats, $viewportOptions, setBackground, toggleViewportOption } from './store'
 import type { ViewportBackground } from './types'
 import { Viewport3D } from './viewport-3d'
+
+const VIEWPORT_TOGGLES: ReadonlyArray<{
+  emoji: string
+  key: 'showAxes' | 'showBones' | 'showGrid' | 'showHologram' | 'showJoints' | 'showSkeleton' | 'showWireframe'
+  label: string
+  title: string
+}> = [
+  { key: 'showSkeleton', emoji: '🦴', label: '骨架', title: '骨骼骨架线 (SkeletonHelper)' },
+  { key: 'showBones', emoji: '🦿', label: '骨段', title: '实体骨段（锥形骨头，自动切换模型为全息半透明）' },
+  {
+    key: 'showJoints',
+    emoji: '⚪',
+    label: '关节',
+    title: '关节球（左蓝 / 右橙 / 中轴绿 / 根骨粉，自动切换模型为全息半透明）'
+  },
+  { key: 'showHologram', emoji: '🔷', label: '全息', title: '全息半透明风格（透视观察内部骨骼与关节位置）' },
+  { key: 'showGrid', emoji: '📐', label: '网格', title: '地面网格 (Grid)' },
+  { key: 'showAxes', emoji: '🧭', label: '轴线', title: '坐标轴 (Axes)' },
+  { key: 'showWireframe', emoji: '💡', label: '线框', title: '材质线框模式 (Wireframe)' }
+]
 
 export function ClipDebugger(): React.JSX.Element {
   const [showMorphPanel, setShowMorphPanel] = useState(false)
@@ -113,82 +121,19 @@ export function ClipDebugger(): React.JSX.Element {
 
           {/* 辅助显示开关 */}
           <div className="flex items-center rounded-lg border border-slate-800 bg-slate-950/80 p-0.5">
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showSkeleton ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleSkeleton}
-              title="骨骼骨架线 (SkeletonHelper)"
-              type="button"
-            >
-              🦴 骨架
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showBones ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleBones}
-              title="实体骨段（锥形骨头，自动切换模型为全息半透明）"
-              type="button"
-            >
-              🦿 骨段
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showJoints ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleJoints}
-              title="关节球（左蓝 / 右橙 / 中轴绿 / 根骨粉，自动切换模型为全息半透明）"
-              type="button"
-            >
-              ⚪ 关节
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showHologram ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleHologram}
-              title="全息半透明风格（透视观察内部骨骼与关节位置）"
-              type="button"
-            >
-              🔷 全息
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showGrid ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleGrid}
-              title="地面网格 (Grid)"
-              type="button"
-            >
-              📐 网格
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showAxes ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleAxes}
-              title="坐标轴 (Axes)"
-              type="button"
-            >
-              🧭 轴线
-            </button>
-
-            <button
-              className={`rounded px-2 py-1 text-xs font-medium transition-all ${
-                viewportOpts.showWireframe ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
-              }`}
-              onClick={toggleWireframe}
-              title="材质线框模式 (Wireframe)"
-              type="button"
-            >
-              💡 线框
-            </button>
+            {VIEWPORT_TOGGLES.map(({ key, emoji, label, title }) => (
+              <button
+                className={`rounded px-2 py-1 text-xs font-medium transition-all ${
+                  viewportOpts[key] ? 'bg-sky-500 text-white' : 'text-slate-400 hover:text-slate-200'
+                }`}
+                key={key}
+                onClick={() => toggleViewportOption(key)}
+                title={title}
+                type="button"
+              >
+                {emoji} {label}
+              </button>
+            ))}
           </div>
 
           {/* 背景选择 */}

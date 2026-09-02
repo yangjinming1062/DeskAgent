@@ -15,6 +15,8 @@ import {
 } from './store'
 import type { PlaybackLoopMode } from './types'
 
+const SPEEDS = [0.1, 0.25, 0.5, 1.0, 1.5, 2.0]
+
 export function PlaybackBar(): React.JSX.Element {
   const playback = useStore($playbackState)
   const activeClip = useStore($activeClip)
@@ -54,8 +56,6 @@ export function PlaybackBar(): React.JSX.Element {
     setLocalScrubVal(val)
     triggerScrub(val)
   }
-
-  const speeds = [0.1, 0.25, 0.5, 1.0, 1.5, 2.0]
 
   return (
     <div className="absolute right-4 bottom-4 left-4 z-30 flex flex-col gap-2 rounded-2xl border border-slate-700/80 bg-slate-900/90 p-3.5 shadow-2xl shadow-slate-950/80 backdrop-blur-xl transition-all">
@@ -123,7 +123,7 @@ export function PlaybackBar(): React.JSX.Element {
         {/* 中间：播放倍速 (支持 0.1x 慢动作排查) */}
         <div className="flex items-center gap-1 rounded-lg bg-slate-950/60 p-1 border border-slate-800/80">
           <span className="px-1.5 text-[11px] text-slate-400">倍速:</span>
-          {speeds.map(spd => {
+          {SPEEDS.map(spd => {
             const isSelected = playback.speed === spd
 
             return (

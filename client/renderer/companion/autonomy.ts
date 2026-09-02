@@ -3,7 +3,7 @@ import { $runnerPhase } from '@/shared/store/runner-status'
 
 import { $focusContext, $lastIdleSeconds, $screenLocked } from './activity'
 import { $chatOpen } from './chat-store'
-import { $effectiveTier, clearGazeTarget, setGazeTarget } from './companion-store'
+import { $effectiveTier, lockGazeToPoint } from './companion-store'
 import { $llmAutonomy } from './prefs'
 import { gazeTowardsPoint } from './ritual-walk'
 import {
@@ -76,8 +76,7 @@ function executeApproach(): void {
     const perch = computePerchPlacement(geom, $defaultScale.get())
 
     if (perch) {
-      setGazeTarget(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
-      setTimeout(() => clearGazeTarget(), 6000)
+      lockGazeToPoint(gazeTowardsPoint({ x: geom.x + geom.w / 2, y: geom.y + geom.h / 2 }))
       setLocale('perch', {
         position: perch.pos,
         scaleLimit: perch.scale,
@@ -99,8 +98,7 @@ function executeApproach(): void {
     y: Math.max(24, Math.min(vh - h - 24, vh * 0.6))
   }
 
-  setGazeTarget(gazeTowardsPoint(point))
-  setTimeout(() => clearGazeTarget(), 6000)
+  lockGazeToPoint(gazeTowardsPoint(point))
   moveTo(point, approachLocomotion(point))
 }
 

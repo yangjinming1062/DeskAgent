@@ -18,17 +18,23 @@ import {
 } from './store'
 import type { TransformMode } from './types'
 
+const MODES: ReadonlyArray<{ key: TransformMode; label: string; icon: string; title: string }> = [
+  { key: 'view', label: '视角', icon: '🖐️', title: '视角旋转与漫游（鼠标右键平移/左键旋转/滚轮缩放）' },
+  { key: 'translate', label: '移动', icon: '↔️', title: '显示 3D 位移坐标轴，可直接拖拽调整位置' },
+  { key: 'rotate', label: '旋转', icon: '🔄', title: '显示 3D 旋转手柄，可直接拖拽调整朝向角度' },
+  { key: 'scale', label: '缩放', icon: '📐', title: '显示 3D 缩放手柄，可直接拖拽调整模型大小' }
+]
+
+const AXES = ['x', 'y', 'z'] as const
+type Axis = (typeof AXES)[number]
+
+const AXIS_LABELS: Record<Axis, string> = { x: 'X', y: 'Y', z: 'Z' }
+const AXIS_COLORS: Record<Axis, string> = { x: 'text-red-400', y: 'text-emerald-400', z: 'text-sky-400' }
+
 export function TransformToolbar(): React.JSX.Element {
   const mode = useStore($transformMode)
   const transform = useStore($modelTransform)
   const [showDrawer, setShowDrawer] = useState(false)
-
-  const modes: { key: TransformMode; label: string; icon: string; title: string }[] = [
-    { key: 'view', label: '视角', icon: '🖐️', title: '视角旋转与漫游（鼠标右键平移/左键旋转/滚轮缩放）' },
-    { key: 'translate', label: '移动', icon: '↔️', title: '显示 3D 位移坐标轴，可直接拖拽调整位置' },
-    { key: 'rotate', label: '旋转', icon: '🔄', title: '显示 3D 旋转手柄，可直接拖拽调整朝向角度' },
-    { key: 'scale', label: '缩放', icon: '📐', title: '显示 3D 缩放手柄，可直接拖拽调整模型大小' }
-  ]
 
   return (
     <div className="absolute top-4 left-4 z-20 flex flex-col items-start gap-2">
@@ -36,7 +42,7 @@ export function TransformToolbar(): React.JSX.Element {
       <div className="flex items-center gap-1.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-1.5 shadow-xl backdrop-blur-md">
         {/* 模式选择按钮组 */}
         <div className="flex items-center rounded-lg bg-slate-950/80 p-0.5">
-          {modes.map(m => (
+          {MODES.map(m => (
             <button
               className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-all ${
                 mode === m.key
@@ -146,42 +152,24 @@ export function TransformToolbar(): React.JSX.Element {
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-medium text-slate-400">位置偏移 (Position X/Y/Z, 米)</span>
             <div className="grid grid-cols-3 gap-1.5">
-              <div>
-                <label className="text-[10px] text-red-400">X:</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelPosition(parseFloat(e.target.value) || 0, transform.position.y, transform.position.z)
-                  }
-                  step={0.05}
-                  type="number"
-                  value={Number(transform.position.x.toFixed(3))}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-emerald-400">Y (高度):</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelPosition(transform.position.x, parseFloat(e.target.value) || 0, transform.position.z)
-                  }
-                  step={0.05}
-                  type="number"
-                  value={Number(transform.position.y.toFixed(3))}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-sky-400">Z:</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelPosition(transform.position.x, transform.position.y, parseFloat(e.target.value) || 0)
-                  }
-                  step={0.05}
-                  type="number"
-                  value={Number(transform.position.z.toFixed(3))}
-                />
-              </div>
+              {AXES.map(axis => (
+                <div key={axis}>
+                  <label className={`text-[10px] ${AXIS_COLORS[axis]}`}>{AXIS_LABELS[axis]}:</label>
+                  <input
+                    className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    onChange={e =>
+                      setModelPosition(
+                        axis === 'x' ? parseFloat(e.target.value) || 0 : transform.position.x,
+                        axis === 'y' ? parseFloat(e.target.value) || 0 : transform.position.y,
+                        axis === 'z' ? parseFloat(e.target.value) || 0 : transform.position.z
+                      )
+                    }
+                    step={0.05}
+                    type="number"
+                    value={Number(transform.position[axis].toFixed(3))}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 
@@ -189,42 +177,24 @@ export function TransformToolbar(): React.JSX.Element {
           <div className="flex flex-col gap-1.5">
             <span className="text-[11px] font-medium text-slate-400">旋转角度 (Rotation X/Y/Z, 度)</span>
             <div className="grid grid-cols-3 gap-1.5">
-              <div>
-                <label className="text-[10px] text-red-400">X (俯仰):</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelRotation(parseFloat(e.target.value) || 0, transform.rotation.y, transform.rotation.z)
-                  }
-                  step={15}
-                  type="number"
-                  value={Math.round(transform.rotation.x)}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-emerald-400">Y (航向):</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelRotation(transform.rotation.x, parseFloat(e.target.value) || 0, transform.rotation.z)
-                  }
-                  step={15}
-                  type="number"
-                  value={Math.round(transform.rotation.y)}
-                />
-              </div>
-              <div>
-                <label className="text-[10px] text-sky-400">Z (翻滚):</label>
-                <input
-                  className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
-                  onChange={e =>
-                    setModelRotation(transform.rotation.x, transform.rotation.y, parseFloat(e.target.value) || 0)
-                  }
-                  step={15}
-                  type="number"
-                  value={Math.round(transform.rotation.z)}
-                />
-              </div>
+              {AXES.map(axis => (
+                <div key={axis}>
+                  <label className={`text-[10px] ${AXIS_COLORS[axis]}`}>{AXIS_LABELS[axis]}:</label>
+                  <input
+                    className="w-full rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-xs text-slate-100 focus:border-sky-500 focus:outline-none"
+                    onChange={e =>
+                      setModelRotation(
+                        axis === 'x' ? parseFloat(e.target.value) || 0 : transform.rotation.x,
+                        axis === 'y' ? parseFloat(e.target.value) || 0 : transform.rotation.y,
+                        axis === 'z' ? parseFloat(e.target.value) || 0 : transform.rotation.z
+                      )
+                    }
+                    step={15}
+                    type="number"
+                    value={Math.round(transform.rotation[axis])}
+                  />
+                </div>
+              ))}
             </div>
           </div>
 

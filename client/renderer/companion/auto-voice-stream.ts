@@ -68,6 +68,17 @@ function maybePrefetch(run: AutoVoiceRun): void {
   }
 }
 
+function enqueueSegments(run: AutoVoiceRun, segs: string[]): void {
+  if (segs.length === 0) {
+    return
+  }
+
+  run.pending.push(...segs)
+  trimBacklog(run.pending)
+  maybePrefetch(run)
+  wakePump(run)
+}
+
 function finishRun(run: AutoVoiceRun): void {
   if (currentRun === run) {
     currentRun = null
@@ -143,14 +154,7 @@ export function feedAutoVoiceDelta(delta: string): void {
     return
   }
 
-  const segs = currentRun.segmenter.feed(delta)
-
-  if (segs.length > 0) {
-    currentRun.pending.push(...segs)
-    trimBacklog(currentRun.pending)
-    maybePrefetch(currentRun)
-    wakePump(currentRun)
-  }
+  enqueueSegments(currentRun, currentRun.segmenter.feed(delta))
 }
 
 export function flushAutoVoiceSegments(): void {
@@ -158,14 +162,7 @@ export function flushAutoVoiceSegments(): void {
     return
   }
 
-  const segs = currentRun.segmenter.flush()
-
-  if (segs.length > 0) {
-    currentRun.pending.push(...segs)
-    trimBacklog(currentRun.pending)
-    maybePrefetch(currentRun)
-    wakePump(currentRun)
-  }
+  enqueueSegments(currentRun, currentRun.segmenter.flush())
 }
 
 export function endAutoVoiceTurn(): void {
@@ -173,14 +170,7 @@ export function endAutoVoiceTurn(): void {
     return
   }
 
-  const segs = currentRun.segmenter.flush()
-
-  if (segs.length > 0) {
-    currentRun.pending.push(...segs)
-    trimBacklog(currentRun.pending)
-    maybePrefetch(currentRun)
-  }
-
+  enqueueSegments(currentRun, currentRun.segmenter.flush())
   currentRun.closed = true
   wakePump(currentRun)
 }

@@ -14,10 +14,10 @@ import {
   $llmAutonomy,
   $llmReactions,
   $responseMode,
+  llmAffectPref,
+  llmAutonomyPref,
+  llmReactionsPref,
   type ResponseMode,
-  setLlmAffect,
-  setLlmAutonomy,
-  setLlmReactions,
   setResponseMode
 } from '@/companion/prefs'
 import { Check } from '@/shared/lib/icons'
@@ -87,13 +87,13 @@ export function InteractionPage(): React.ReactElement {
             description="戳击时由 LLM 生成反应文案与表情（关闭使用预制反馈）；拖拽始终使用本地预制反馈"
             label="戳击思考回应"
           >
-            <Toggle ariaLabel="戳击思考回应" checked={llmReactions} onChange={setLlmReactions} />
+            <Toggle ariaLabel="戳击思考回应" checked={llmReactions} onChange={llmReactionsPref.set} />
           </SettingRow>
           <SettingRow description="空闲 30 分钟以上时由 LLM 决定是否触发情境化表情" label="空闲情境情绪">
-            <Toggle ariaLabel="空闲情境情绪" checked={llmAffect} onChange={setLlmAffect} />
+            <Toggle ariaLabel="空闲情境情绪" checked={llmAffect} onChange={llmAffectPref.set} />
           </SettingRow>
           <SettingRow description="自主档下由 LLM 决定漫游/栖身（关闭按本地规则）" label="自主空间决策">
-            <Toggle ariaLabel="自主空间决策" checked={llmAutonomy} onChange={setLlmAutonomy} />
+            <Toggle ariaLabel="自主空间决策" checked={llmAutonomy} onChange={llmAutonomyPref.set} />
           </SettingRow>
         </div>
       </section>

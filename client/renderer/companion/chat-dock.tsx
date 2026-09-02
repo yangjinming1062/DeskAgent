@@ -64,6 +64,7 @@ import type { ChatAttachment, SessionMessage } from '@/shared/types/spiritagent'
 import { MessageBubble } from './chat-dock-message-bubble'
 import { useResolvedMediaSrc } from './chat-media-src'
 import { ChatParamsPanel } from './chat/chat-params-panel'
+import { basename } from './chat/chat-path'
 import { ContextProgressBar } from './chat/context-progress-bar'
 import { SessionDrawer } from './chat/session-drawer'
 import { SlashCommandPopover } from './chat/slash-command-popover'
@@ -234,7 +235,7 @@ async function attachVideoFile(
   path: string,
   setPending: React.Dispatch<React.SetStateAction<PendingAttachment | null>>
 ): Promise<void> {
-  const fileName = path.split(/[\\/]/).pop() ?? path
+  const fileName = basename(path)
 
   setPending({ type: 'video', fileName, path, status: 'uploading' })
 
@@ -530,17 +531,17 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       if (first && VIDEO_EXT.test(first)) {
         void attachVideoFile(first, setPending)
       } else if (first) {
-        setPending({ type: 'image', value: first, fileName: first.split(/[\\/]/).pop() ?? first })
+        setPending({ type: 'image', value: first, fileName: basename(first) })
       }
 
       externalPathsRef.current = [...mediaPaths.slice(1), ...otherPaths]
     } else if (otherPaths.length === 1) {
       const first = otherPaths[0]
-      const fileName = first.split(/[\\/]/).pop() ?? first
+      const fileName = basename(first)
       setPending({ type: 'file', fileName, path: first })
       externalPathsRef.current = []
     } else {
-      const names = otherPaths.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
+      const names = otherPaths.map(basename).join('、')
       setText(t => (t ? `${t}\n${names}` : names))
       externalPathsRef.current = []
     }
@@ -621,7 +622,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           const path = await window.spiritagent.saveClipboardImage()
 
           if (path) {
-            setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
+            setPending({ type: 'image', value: path, fileName: basename(path) })
           }
         } catch {
           /* 忽略剪贴板读取失败 */
@@ -678,9 +679,9 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       if (VIDEO_EXT.test(path)) {
         await attachVideoFile(path, setPending)
       } else if (IMAGE_EXT.test(path)) {
-        setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
+        setPending({ type: 'image', value: path, fileName: basename(path) })
       } else {
-        const fileName = path.split(/[\\/]/).pop() ?? path
+        const fileName = basename(path)
         setPending({ type: 'file', fileName, path })
       }
     } catch {
@@ -702,7 +703,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         return
       }
 
-      const folderName = path.split(/[\\/]/).filter(Boolean).pop() ?? path
+      const folderName = basename(path)
       setPending({ type: 'folder', folderName, path })
     } catch {
       /* 用户取消或读取失败 */
@@ -728,7 +729,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         return
       }
 
-      setPending({ type: 'image', value: path, fileName: path.split(/[\\/]/).pop() ?? path })
+      setPending({ type: 'image', value: path, fileName: basename(path) })
     } catch {
       /* 用户取消或读取失败 */
     }
@@ -867,7 +868,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       const extra = externalPathsRef.current
 
       if (extra.length > 0) {
-        const names = extra.map(p => p.split(/[\\/]/).pop() ?? p).join('、')
+        const names = extra.map(basename).join('、')
         fullText = fullText ? `${fullText}\n附件：${names}` : `附件：${names}`
         const extraDirectives = extra.map(p => `@file:${p}`).join('\n')
         promptText = promptText ? `${promptText}\n${extraDirectives}` : extraDirectives
