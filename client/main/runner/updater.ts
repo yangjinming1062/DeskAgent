@@ -81,7 +81,7 @@ export class RunnerUpdater {
 
     for (let attempt = 1; attempt <= MANIFEST_FETCH_ATTEMPTS; attempt++) {
       try {
-        const text = await this._fetchText(`${updateBaseUrl}/api/update/latest-runner.yml`)
+        const text = await this.fetchText(`${updateBaseUrl}/api/update/latest-runner.yml`)
         manifest = YAML.parse(text)
         primaryErr = null
 
@@ -103,7 +103,7 @@ export class RunnerUpdater {
       throw new Error('manifest missing required fields')
     }
 
-    const manifestSignatureOk = this._verifySignature({
+    const manifestSignatureOk = this.verifySignature({
       payload: `${manifest.path}|${manifest.sha512}`,
       publicKeyPath,
       signatureB64: manifest.signature
@@ -119,8 +119,8 @@ export class RunnerUpdater {
     const serverPyStagingPath = path.join(stagingDir, 'server.py')
 
     await Promise.all([
-      this._fetchToFile(wheelUrl, wheelStagingPath),
-      this._fetchToFile(serverPyUrlFinal, serverPyStagingPath)
+      this.fetchToFile(wheelUrl, wheelStagingPath),
+      this.fetchToFile(serverPyUrlFinal, serverPyStagingPath)
     ])
 
     const wheelHash = (await hashOfFile(wheelStagingPath, 'sha512')).toUpperCase()
@@ -183,7 +183,7 @@ export class RunnerUpdater {
     let startedNew = false
 
     const fail = async (reason: string, error?: unknown) => {
-      await this._bumpAttempt(sentinel, sentinelPath, reason)
+      await this.bumpAttempt(sentinel, sentinelPath, reason)
       this.log?.('error', `[updater] install failed: ${reason}`, error)
 
       return { error: reason, ok: false }
@@ -201,7 +201,7 @@ export class RunnerUpdater {
         return await fail('venv-missing')
       }
 
-      const [stopRes, venvOk] = await Promise.all([stopIfBridged(), this._probeVenvIntegrity(venvPython)])
+      const [stopRes, venvOk] = await Promise.all([stopIfBridged(), this.probeVenvIntegrity(venvPython)])
       stopResult = stopRes
 
       if (!venvOk) {
@@ -313,7 +313,7 @@ export class RunnerUpdater {
     }
   }
 
-  async _probeVenvIntegrity(venvPython: string): Promise<boolean> {
+  private async probeVenvIntegrity(venvPython: string): Promise<boolean> {
     try {
       await execFileP(
         venvPython,
@@ -330,7 +330,7 @@ export class RunnerUpdater {
     }
   }
 
-  async _bumpAttempt(sentinel: PendingRunnerSentinel, sentinelPath: string, reason: string): Promise<void> {
+  private async bumpAttempt(sentinel: PendingRunnerSentinel, sentinelPath: string, reason: string): Promise<void> {
     sentinel.attempt_count = (sentinel.attempt_count || 0) + 1
     sentinel.last_error = reason
 
@@ -341,7 +341,7 @@ export class RunnerUpdater {
     }
   }
 
-  _verifySignature({
+  private verifySignature({
     payload,
     publicKeyPath,
     signatureB64
@@ -366,7 +366,7 @@ export class RunnerUpdater {
     }
   }
 
-  async _fetchText(url: string): Promise<string> {
+  private async fetchText(url: string): Promise<string> {
     const res = await this.fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(30_000) })
 
     if (!res.ok) {
@@ -376,7 +376,7 @@ export class RunnerUpdater {
     return res.text()
   }
 
-  async _fetchToFile(url: string, dest: string): Promise<void> {
+  private async fetchToFile(url: string, dest: string): Promise<void> {
     const res = await this.fetchImpl(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) })
 
     if (!res.ok) {
