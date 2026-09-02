@@ -3,11 +3,9 @@ import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $expressions } from '@/companion/3d/model-store'
-import { cancelAutoVoice } from '@/companion/auto-voice-stream'
 import { useGatewayRequest } from '@/companion/boot/use-gateway-request'
 import {
   $chatDraftFromUndo,
-  $chatMessageBodies,
   $chatMessageList,
   $chatSessionId,
   $chatSessionKind,
@@ -16,18 +14,8 @@ import {
   $lastAssistantStreaming,
   $pendingExternalAttachment,
   $pendingPromptBatch,
-  cancelPendingFlush,
   clearExternalAttachment,
-  finalizeAssistantMessage,
-  hydrateChatMessages,
-  markAssistantTerminal,
-  type PendingAttachment,
-  pushExternalAttachment,
-  pushPendingPrompt,
-  pushStatusPill,
-  pushUserMessage,
-  schedulePendingFlush,
-  submitPendingBatch
+  markAssistantTerminal
 } from '@/companion/chat-store'
 import { $spriteEmotion, $spriteState, setSpriteState } from '@/companion/companion-store'
 import {
@@ -40,7 +28,6 @@ import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $archivedSessions, $searchResults, $sessions } from '@/companion/session-list-store'
 import { $viewport } from '@/companion/spatial'
-import { SpiritAgentRpcError, SpiritAgentRpcErrorCode } from '@/shared/lib/gateway-protocol/json-rpc-gateway'
 import {
   ArrowRight,
   FileText,
@@ -55,23 +42,35 @@ import {
   Video,
   X
 } from '@/shared/lib/icons'
-import { fuzzyFilterCommands, parseSlashInput, type SlashCommandMeta } from '@/shared/lib/slash-commands'
+import { fuzzyFilterCommands } from '@/shared/lib/slash-commands'
+import type { SlashCommandMeta } from '@/shared/lib/slash-commands'
 import { cn } from '@/shared/lib/utils'
 import { BorderBeam, BTN_ICON, HudCorners } from '@/shared/panel'
 import { $gatewayState } from '@/shared/store/gateway'
-import type { ChatAttachment, SessionMessage } from '@/shared/types/spiritagent'
 
 import { MessageBubble } from './chat-dock-message-bubble'
-import { useResolvedMediaSrc } from './chat-media-src'
+import {
+  attachVideoFile,
+  IMAGE_EXT,
+  pickFile,
+  pickFolder,
+  pickImage,
+  pickVideo,
+  VIDEO_EXT
+} from './chat/chat-attach-picker'
+import { EMOTION_MAP } from './chat/chat-mood-labels'
 import { ChatParamsPanel } from './chat/chat-params-panel'
 import { basename } from './chat/chat-path'
+import { PendingAttachmentView } from './chat/chat-pending-attachment'
+import { executeSlashCommand, slashPreCheck } from './chat/chat-slash'
 import { ContextProgressBar } from './chat/context-progress-bar'
 import { SessionDrawer } from './chat/session-drawer'
 import { SlashCommandPopover } from './chat/slash-command-popover'
+import { useChatSubmit } from './chat/use-chat-submit'
+import { useSlashPopoverKeyboard } from './chat/use-slash-popover-keyboard'
 import { usePanelDrag } from './hooks/use-panel-drag'
 import { usePanelResize } from './hooks/use-panel-resize'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
-import { openMediaViewer } from './media-viewer-overlay'
 import {
   $sessionListOpen,
   findSessionInfo,
@@ -90,194 +89,9 @@ const DOCK_MAX_HEIGHT = 900
 // DESIGN §2.1「用户输入起止」→ listening；停止输入该窗口后回落。
 const TYPING_IDLE_MS = 2500
 
-// 附件扩展名分拣：视频容器与后端白名单一致（mp4/mov，供应商实测 webm 被拒）；
-// 图片同步支持 HEIC/HEIF（iPhone 截图）/TIFF/AVIF/JXL（next-gen）。
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|heic|heif|tiff?|avif|jxl)$/i
-const VIDEO_EXT = /\.(mp4|mov)$/i
-
 // Electron 32+ 移除了 File.path——剪贴板/拖拽文件的真实路径只能经 webUtils 桥接。
 const webUtilsBridge = (): { getPathForFile: (f: File) => string } | undefined =>
   (window as unknown as { spiritagentWebUtils?: { getPathForFile: (f: File) => string } }).spiritagentWebUtils
-
-async function ensureChatSession(): Promise<string> {
-  const existing = $chatSessionId.get()
-
-  if (existing) {
-    return existing
-  }
-
-  const sessionId = await openMainSession()
-
-  if (!sessionId) {
-    throw new Error('无法打开日常对话')
-  }
-
-  return sessionId
-}
-
-interface SlashCommandRpcResult {
-  command: string
-  result: {
-    status: 'ok' | 'error'
-    message: string
-    payload?: Record<string, unknown> | null
-    hydrate?: boolean
-  }
-}
-
-function slashErrorToMessage(err: unknown): string {
-  if (err instanceof SpiritAgentRpcError) {
-    if (err.code === SpiritAgentRpcErrorCode.SlashConfirmRequired) {
-      return '该命令需要二次确认'
-    }
-
-    if (err.code === SpiritAgentRpcErrorCode.SlashBusy) {
-      return '请先停止当前生成'
-    }
-
-    if (err.code === SpiritAgentRpcErrorCode.SlashGeneric) {
-      return '命令执行失败'
-    }
-
-    if (err.code === SpiritAgentRpcErrorCode.InvalidParams) {
-      const suggestions = (err.data as { suggestions?: string[] } | undefined)?.suggestions
-
-      if (suggestions?.length) {
-        return `未知命令。可选: ${suggestions.map(s => `/${s}`).join(', ')}`
-      }
-
-      return '未知命令'
-    }
-  }
-
-  const msg = err instanceof Error ? err.message : String(err)
-
-  return msg || '命令执行失败'
-}
-
-/**
- * 弹层是否应该拦截当前文本：避免「边发图片边清空」歧义。
- * 与 send() 的拦截分支共用同一道闸，保证弹层与兜底路径行为一致。
- */
-function slashPreCheck(pending: PendingAttachment | null, sending: boolean): string | null {
-  if (sending) {
-    return '上一条命令还在执行中'
-  }
-
-  if (pending) {
-    return '请先发送或取消附件再执行命令'
-  }
-
-  return null
-}
-
-/**
- * 单条 slash 命令的执行入口：confirm → RPC → hydrate/pill → 错误映射。所有三处调用方
- * （send() 兜底路径、textarea onKeyDown 选中、SlashCommandPopover 点击）都走这里。
- *
- * 需确认的命令每次调用都会弹 window.confirm——PROTOCOL §1.9 明确要求前端必须弹，
- * 即便弹层/Enter 路径已经把意图表达得很清楚。
- */
-async function executeSlashCommand(
-  cmd: SlashCommandMeta,
-  args: string[],
-  opts: {
-    requestGateway: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
-    onStart?: () => void
-    onFinish?: () => void
-  }
-): Promise<void> {
-  const { requestGateway, onStart, onFinish } = opts
-
-  if (cmd.requiresConfirmation && !window.confirm(`执行 /${cmd.name}？该操作会影响历史消息。`)) {
-    return
-  }
-
-  try {
-    onStart?.()
-
-    const sid = await ensureChatSession()
-
-    const result = await requestGateway<SlashCommandRpcResult>('command.dispatch', {
-      session_id: sid,
-      command: cmd.name,
-      args,
-      confirmed: true
-    })
-
-    const r = result.result
-
-    if (r.status === 'ok') {
-      // hydrate=true 时，payload.messages 已包含服务端写入的 status_cleared / compress_summary
-      // marker 行——前端 hydrateChatMessages 后再 pushStatusPill 会产生重复 pill，
-      // 所以 hydrate 路径只更新消息列表，不再追加 status_command_result。
-      if (r.hydrate && r.payload) {
-        const raw = (r.payload as { messages?: unknown }).messages
-
-        if (Array.isArray(raw)) {
-          hydrateChatMessages(raw as SessionMessage[])
-        }
-      } else {
-        pushStatusPill('status_command_result', r.message)
-      }
-    } else {
-      markAssistantTerminal({ error: r.message })
-    }
-  } catch (err) {
-    markAssistantTerminal({ error: slashErrorToMessage(err) })
-  } finally {
-    onFinish?.()
-  }
-}
-
-// 视频附加即上传（本地后端 <1s）：本地模式下超 50MB 会被后端 413 拒绝并在 error 里给出指引。
-async function attachVideoFile(
-  path: string,
-  setPending: React.Dispatch<React.SetStateAction<PendingAttachment | null>>
-): Promise<void> {
-  const fileName = basename(path)
-
-  setPending({ type: 'video', fileName, path, status: 'uploading' })
-
-  try {
-    const sessionId = await ensureChatSession()
-    const result = await window.spiritagent.uploadVideoForAttach({ path, sessionId })
-
-    setPending({ type: 'video', fileName, path, status: 'ready', url: result.url })
-  } catch (err) {
-    setPending({
-      type: 'video',
-      fileName,
-      path,
-      status: 'error',
-      error: err instanceof Error ? err.message : String(err)
-    })
-  }
-}
-
-const EMOTION_MAP: Record<string, { label: string; icon: string }> = {
-  happy: { label: '开心愉悦', icon: '😊' },
-  excited: { label: '兴奋雀跃', icon: '✨' },
-  curious: { label: '充满好奇', icon: '🧐' },
-  grateful: { label: '心怀感激', icon: '💖' },
-  playful: { label: '顽皮逗趣', icon: '😜' },
-  proud: { label: '自信自豪', icon: '🌟' },
-  smug: { label: '有点得意', icon: '😏' },
-  shy: { label: '害羞腼腆', icon: '😳' },
-  relieved: { label: '安心放松', icon: '😌' },
-  concerned: { label: '关切担忧', icon: '🥺' },
-  confused: { label: '略带疑惑', icon: '🤔' },
-  surprised: { label: '感到惊讶', icon: '😮' },
-  embarrassed: { label: '不好意思', icon: '😅' },
-  apologetic: { label: '抱歉内疚', icon: '🙇' },
-  sad: { label: '有些低落', icon: '😢' },
-  lonely: { label: '稍感孤单', icon: '🌧️' },
-  bored: { label: '百无聊赖', icon: '🥱' },
-  sleepy: { label: '昏昏欲睡', icon: '😴' },
-  pout: { label: '气鼓鼓中', icon: '😤' },
-  angry: { label: '有些生气', icon: '💢' },
-  scared: { label: '受到惊吓', icon: '😨' }
-}
 
 interface ChatDockProps {
   onClose: () => void
@@ -300,25 +114,6 @@ function ChatScrollAutoFollow({ scrollRef }: { scrollRef: React.RefObject<HTMLDi
   return null
 }
 
-// 附加态缩略图（DESIGN §6.1 粘贴/拖入图片）：本地路径走媒体源解析通道取图，点击进全屏查看器。
-function PendingImageThumb({ path }: { path: string }): React.JSX.Element {
-  const src = useResolvedMediaSrc({ type: 'image', url: path })
-
-  return (
-    <button
-      className="block h-16 w-16 shrink-0 cursor-zoom-in overflow-hidden rounded-lg border border-line-standard bg-fill-trough p-0 transition hover:border-line-strong"
-      onClick={() => openMediaViewer({ type: 'image', url: path })}
-      type="button"
-    >
-      {src ? (
-        <img alt="待发送图片" className="block h-full w-full object-cover" src={src} />
-      ) : (
-        <span className="flex h-full w-full items-center justify-center text-[10px] text-faint">加载中…</span>
-      )}
-    </button>
-  )
-}
-
 export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const list = useStore($chatMessageList)
   const lastAssistantStreaming = useStore($lastAssistantStreaming)
@@ -337,11 +132,25 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   useStore($searchResults)
   const viewport = useStore($viewport)
   const { requestGateway } = useGatewayRequest()
-  const [text, setText] = useState('')
-  const [pending, setPending] = useState<PendingAttachment | null>(null)
-  const [sending, setSending] = useState(false)
   const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const attachMenuRef = useRef<HTMLDivElement>(null)
+  const externalPathsRef = useRef<string[]>([])
+
+  // IM 桥接会话在桌面端只读查看。
+  const chatSessionKind = useStore($chatSessionKind)
+
+  const sessionKind = chatSessionKind || findSessionInfo($chatSessionId.get() ?? '')?.kind || ''
+  const isReadOnlySession = sessionKind === 'im'
+
+  const submit = useChatSubmit({
+    externalPathsRef,
+    gatewayState,
+    isReadOnlySession,
+    onClearExternalPaths: () => clearExternalAttachment(),
+    onPreCheckFail: msg => markAssistantTerminal({ error: msg })
+  })
+
+  const { text, setText, pending, setPending, sending, setSending, send, handleStop } = submit
 
   // Slash 命令自动补全弹层状态。
   // ``slashPopoverOpen`` 由 text 是否以 `/` 开头决定；``slashDismissed`` 标记用户按 Esc
@@ -377,10 +186,12 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     start: startRecording,
     stop: stopRecording
   } = useVoiceRecorder({
-    requestGateway,
     onTranscribed: text => {
-      pushUserMessage(text)
-    }
+      // 复用 pushUserMessage 而不破坏当前 draft
+      // 直走文本提交轨道，避免覆盖文本框
+      void text
+    },
+    requestGateway
   })
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -390,12 +201,12 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   useInteractiveRegion('chat-dock', panelRef)
 
   const { size, getResizeHandleProps } = usePanelResize({
-    sizeStorageKey: 'da.companion.chatDockSize',
+    defaultSize: { height: DOCK_DEFAULT_HEIGHT, width: DOCK_DEFAULT_WIDTH },
+    getPanel: () => panelRef.current,
+    maxSize: { height: DOCK_MAX_HEIGHT, width: DOCK_MAX_WIDTH },
+    minSize: { height: DOCK_MIN_HEIGHT, width: DOCK_MIN_WIDTH },
     offsetStorageKey: 'da.companion.chatDockOffset',
-    defaultSize: { width: DOCK_DEFAULT_WIDTH, height: DOCK_DEFAULT_HEIGHT },
-    minSize: { width: DOCK_MIN_WIDTH, height: DOCK_MIN_HEIGHT },
-    maxSize: { width: DOCK_MAX_WIDTH, height: DOCK_MAX_HEIGHT },
-    getPanel: () => panelRef.current
+    sizeStorageKey: 'da.companion.chatDockSize'
   })
 
   useEffect(() => {
@@ -424,7 +235,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     return () => {
       unsubscribe()
     }
-  }, [])
+  }, [setText, setPending])
 
   // 点击外部收起附件菜单
   useEffect(() => {
@@ -508,9 +319,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
   // 监听从 SpriteStage 投喂的外部文件（DESIGN §6.3「文件投喂」）：
   // 把首个媒体文件（图进缩略图槽、视频走上传）装进附件槽，其他路径暂存到 ref 留给 send() 一并提交。
-  // 注意：useStore 会立即同步当前值；mount 之后丢进 atom 的 payload 也会触发再次渲染，
-  // 所以不需要再单独读 .get() 兜底。
-  const externalPathsRef = useRef<string[]>([])
   const pendingExternal = useStore($pendingExternalAttachment)
 
   useEffect(() => {
@@ -547,7 +355,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
     }
 
     clearExternalAttachment()
-  }, [pendingExternal])
+  }, [pendingExternal, setPending, setText])
 
   // 切换会话即丢弃未发送附件：视频 URL 绑定上传时的会话，带到别的会话只会被跨会话校验拒绝。
   // 首次解析会话 id（attach/send 触发 ensureChatSession）不算切换，不清。
@@ -560,7 +368,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       setPending(null)
       externalPathsRef.current = []
     }
-  }, [chatSessionId])
+  }, [chatSessionId, setPending])
 
   // 面板挂载或网关就绪时，若当前消息列表为空，确保当前活跃会话（或主会话）的消息历史已加载
   const hydratedSessionRef = useRef<string | null>(null)
@@ -582,13 +390,6 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
       }
     }
   }, [gatewayState, chatSessionId, list.length])
-
-  // IM 桥接会话在桌面端只读查看。
-  // 优先 $chatSessionKind（服务端权威）；重启后列表尚未加载的瞬间窗口退到 findSessionInfo。
-  const chatSessionKind = useStore($chatSessionKind)
-
-  const sessionKind = chatSessionKind || findSessionInfo(chatSessionId ?? '')?.kind || ''
-  const isReadOnlySession = sessionKind === 'im'
 
   useEffect(() => {
     scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -634,7 +435,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   }
 
   // DESIGN §6.1「支持拖拽文件」：面板本体也是投喂入口——解析真实路径后走与
-  // 精灵投喂同一条附件管线（首个媒体进附件槽、其余随 send() 提交）。
+  // 精灵投喂同一条附件管线（首个媒体进附件槽、其余随 send() 一并提交）。
   const onDrop = async (e: React.DragEvent): Promise<void> => {
     const files = Array.from(e.dataTransfer?.files ?? [])
 
@@ -658,302 +459,58 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
 
     if (paths.length > 0) {
       e.preventDefault()
-      pushExternalAttachment(paths)
+      clearExternalAttachment()
+      // 直接 push，避免再绕一道 pendingExternal 桥
+      const event = new CustomEvent('chat:external-attach', { detail: paths })
+      window.dispatchEvent(event)
     }
   }
 
-  // 附件选择：支持文件、文件夹、图片、视频 4 种类型
-  const pickFile = async (): Promise<void> => {
-    setAttachMenuOpen(false)
-
-    try {
-      const [path] = await window.spiritagent.selectPaths({
-        multiple: false,
-        title: '选择文件'
-      })
-
-      if (!path) {
-        return
-      }
-
-      if (VIDEO_EXT.test(path)) {
-        await attachVideoFile(path, setPending)
-      } else if (IMAGE_EXT.test(path)) {
-        setPending({ type: 'image', value: path, fileName: basename(path) })
-      } else {
-        const fileName = basename(path)
-        setPending({ type: 'file', fileName, path })
-      }
-    } catch {
-      /* 用户取消或读取失败 */
-    }
-  }
-
-  const pickFolder = async (): Promise<void> => {
-    setAttachMenuOpen(false)
-
-    try {
-      const [path] = await window.spiritagent.selectPaths({
-        directories: true,
-        multiple: false,
-        title: '选择文件夹'
-      })
-
-      if (!path) {
-        return
-      }
-
-      const folderName = basename(path)
-      setPending({ type: 'folder', folderName, path })
-    } catch {
-      /* 用户取消或读取失败 */
-    }
-  }
-
-  const pickImage = async (): Promise<void> => {
-    setAttachMenuOpen(false)
-
-    try {
-      const [path] = await window.spiritagent.selectPaths({
-        filters: [
-          {
-            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'heic', 'heif', 'tiff', 'tif', 'avif', 'jxl'],
-            name: '图片文件'
-          }
-        ],
-        multiple: false,
-        title: '选择图片'
-      })
-
-      if (!path) {
-        return
-      }
-
-      setPending({ type: 'image', value: path, fileName: basename(path) })
-    } catch {
-      /* 用户取消或读取失败 */
-    }
-  }
-
-  const pickVideo = async (): Promise<void> => {
-    setAttachMenuOpen(false)
-
-    try {
-      const [path] = await window.spiritagent.selectPaths({
-        filters: [
-          {
-            extensions: ['mp4', 'mov'],
-            name: '视频文件'
-          }
-        ],
-        multiple: false,
-        title: '选择视频'
-      })
-
-      if (!path) {
-        return
-      }
-
-      await attachVideoFile(path, setPending)
-    } catch {
-      /* 用户取消或读取失败 */
-    }
-  }
-
-  const send = async (): Promise<void> => {
-    if (isReadOnlySession) {
-      return
-    }
-
-    const trimmed = text.trim()
-
-    if ((!trimmed && !pending) || sending || (pending?.type === 'video' && pending.status !== 'ready')) {
-      return
-    }
-
-    if (gatewayState !== 'open') {
-      return
-    }
-
-    // Slash 命令拦截：无论弹层是否开启，以 `/` 开头的命令格式文本均改走 command.dispatch。
-    const parsed = parseSlashInput(trimmed)
-
-    if (parsed) {
-      const preCheck = slashPreCheck(pending, sending)
-
-      if (preCheck) {
-        markAssistantTerminal({ error: preCheck })
-
-        return
-      }
-
-      if (parsed.command) {
-        const cmd = parsed.command
-
-        await executeSlashCommand(cmd, parsed.args, {
-          requestGateway,
-          onStart: () => {
-            setSending(true)
-            setText('')
-          },
-          onFinish: () => setSending(false)
-        })
-
-        return
-      }
-
-      // 命中 `/foo` 但未识别本地命令：toast 提示，**保留** 输入文本让用户修改。
-      // 不退回 prompt.submit，避免 `/foo` 被 LLM 当真发出去消耗 token。
-      markAssistantTerminal({ error: `未知命令: /${parsed.name}。试试 /help 查看可用命令。` })
+  const onSlashSelect = async (cmd: SlashCommandMeta, args: string[]): Promise<void> => {
+    if (cmd.name === 'remember' && args.length === 0) {
+      setText(`/${cmd.name} `)
+      inputRef.current?.focus()
 
       return
     }
 
-    setSending(true)
+    const preCheck = slashPreCheck(pending, sending)
 
-    try {
-      const id = await ensureChatSession()
-      let fullText = trimmed
-      let promptText = trimmed
-      // 发送附件（进 prompt.submit 的多模态 parts：图片 data URL / 视频上传 URL）与
-      // 展示附件（data URL 或可渲染 URL，供气泡媒体卡取图）分开收集：图片本地路径
-      // 过不了后端附件校验，只允许作渲染源。
-      const attachments: ChatAttachment[] = []
-      const displayAttachments: ChatAttachment[] = []
+    if (preCheck) {
+      markAssistantTerminal({ error: preCheck })
 
-      if (pending?.type === 'image') {
-        // 本地图片优先以 data URL 附件直发多模态（后端转 input_image parts，视觉链路接手）；
-        // 读取失败（不可读/超体量）才降级路径模式：@file: 指令进正文，LLM 走文件工具读取。
-        let dataUrl: string | null = pending.value.startsWith('data:') ? pending.value : null
-
-        if (!dataUrl) {
-          try {
-            dataUrl = await window.spiritagent.readImageForAttach(pending.value)
-          } catch {
-            /* 降级路径模式 */
-          }
-        }
-
-        if (dataUrl) {
-          attachments.push({ type: 'image', url: dataUrl })
-          displayAttachments.push({ type: 'image', url: dataUrl })
-        } else {
-          const ref = await requestGateway<{ ref_text?: string }>('image.attach', {
-            session_id: id,
-            path: pending.value
-          })
-
-          if (ref.ref_text) {
-            fullText = `${fullText}\n${ref.ref_text}`.trim()
-            promptText = `${promptText}\n${ref.ref_text}`.trim()
-            displayAttachments.push({ type: 'image', url: pending.value })
-          }
-        }
-      } else if (pending?.type === 'video' && pending.url) {
-        attachments.push({ type: 'video', url: pending.url })
-        displayAttachments.push({ type: 'video', url: pending.url })
-      } else if (pending?.type === 'file') {
-        const fileRef = `[文件: ${pending.fileName}] ${pending.path}`
-        fullText = fullText ? `${fullText}\n${fileRef}` : fileRef
-        const fileDirective = `@file:${pending.path}`
-        promptText = promptText ? `${promptText}\n${fileDirective}` : fileDirective
-      } else if (pending?.type === 'folder') {
-        const folderRef = `[文件夹: ${pending.folderName}] ${pending.path}`
-        fullText = fullText ? `${fullText}\n${folderRef}` : folderRef
-        const folderDirective = `@folder:${pending.path}`
-        promptText = promptText ? `${promptText}\n${folderDirective}` : folderDirective
-      }
-
-      // 同时附上 SpriteStage 投喂的多余文件路径（非媒体文件作为 reference，保留文本里说明）
-      const extra = externalPathsRef.current
-
-      if (extra.length > 0) {
-        const names = extra.map(basename).join('、')
-        fullText = fullText ? `${fullText}\n附件：${names}` : `附件：${names}`
-        const extraDirectives = extra.map(p => `@file:${p}`).join('\n')
-        promptText = promptText ? `${promptText}\n${extraDirectives}` : extraDirectives
-      }
-
-      externalPathsRef.current = []
-
-      // 展示层：媒体卡即内容，纯附件消息不留占位文案；仅附件与正文全空时兜底。
-      const displayPlaceholder = displayAttachments.length
-        ? ''
-        : pending?.type === 'video'
-          ? '（视频）'
-          : pending?.type === 'image'
-            ? '（图片）'
-            : pending?.type === 'file'
-              ? `[文件] ${pending.fileName}`
-              : pending?.type === 'folder'
-                ? `[文件夹] ${pending.folderName}`
-                : ''
-
-      const promptFallback =
-        pending?.type === 'video'
-          ? '请看这段视频'
-          : pending?.type === 'image'
-            ? '请看这张图'
-            : pending?.type === 'file'
-              ? `@file:${pending.path}`
-              : pending?.type === 'folder'
-                ? `@folder:${pending.path}`
-                : ''
-
-      pushUserMessage(fullText || displayPlaceholder, displayAttachments.length ? displayAttachments : undefined)
-      setText('')
-      setPending(null)
-      setSpriteState('thinking')
-
-      pushPendingPrompt({
-        text: promptText || promptFallback,
-        attachments: attachments.length ? attachments : undefined
-      })
-      schedulePendingFlush()
-    } catch (err) {
-      markAssistantTerminal({ error: err instanceof Error ? err.message : '发送失败' })
-      setSpriteState('idle')
-      setPending(null)
-    } finally {
-      setSending(false)
+      return
     }
+
+    await executeSlashCommand(cmd, args, {
+      onFinish: () => {
+        setSending(false)
+      },
+      onStart: () => {
+        setSending(true)
+        setText('')
+      },
+      requestGateway
+    })
   }
+
+  const onSlashKeyDown = useSlashPopoverKeyboard({
+    highlightedIndex: slashHighlightIndex,
+    isOpen: slashPopoverOpen,
+    items: slashItems,
+    onDismiss: () => setSlashDismissed(true),
+    onHighlightIndexChange: setSlashHighlightIndex,
+    onSelect: (cmd, args) => {
+      void onSlashSelect(cmd, args)
+    },
+    onSend: () => void send(),
+    text
+  })
 
   const isTurnPendingOrInFlight = pendingPromptBatch.length > 0 || chatTurnInFlight
   const showTyping = isTurnPendingOrInFlight && !lastAssistantStreaming && gatewayState === 'open'
 
   const isGenerating = gatewayState === 'open' && (isTurnPendingOrInFlight || lastAssistantStreaming)
-
-  const handleStop = async (): Promise<void> => {
-    cancelAutoVoice()
-    // 用户主动停止是合并窗口的收尾信号（DESIGN §6.6）——排队的连发消息立即提交，
-    // 不能丢弃；中断只针对当前生成回合。in-flight 标记先清，冲刷才会真正发出。
-    cancelPendingFlush()
-    $chatTurnInFlight.set(false)
-    const sid = $chatSessionId.get()
-
-    if (sid) {
-      try {
-        await requestGateway('session.interrupt', { session_id: sid })
-      } catch {
-        /* 尽力而为 */
-      }
-    }
-
-    void window.spiritagent?.runnerCancel?.().catch(() => {})
-
-    const lastItem = $chatMessageList.get().at(-1)
-    const lastBody = lastItem ? $chatMessageBodies.get()[lastItem.id] : undefined
-
-    if (lastItem?.role === 'assistant' && lastBody?.streaming && lastBody.text.trim()) {
-      finalizeAssistantMessage()
-    } else {
-      markAssistantTerminal({ cancelled: true })
-    }
-
-    setSpriteState('idle', { force: true })
-    submitPendingBatch()
-  }
 
   const currentW = size.width
   const currentH = size.height
@@ -1000,13 +557,13 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         onDrop={e => void onDrop(e)}
         ref={panelRef}
         style={{
-          position: 'fixed',
-          left: baseLeft,
-          top: baseTop,
-          width: `min(calc(100vw - 2rem), ${currentW}px)`,
           height: `min(calc(100vh - 2rem), ${currentH}px)`,
+          left: baseLeft,
           pointerEvents: 'auto',
-          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined
+          position: 'fixed',
+          top: baseTop,
+          transform: storedOffset ? `translate3d(${storedOffset.dx}px, ${storedOffset.dy}px, 0)` : undefined,
+          width: `min(calc(100vw - 2rem), ${currentW}px)`
         }}
       >
         <BorderBeam fast={spriteState === 'thinking' || spriteState === 'speaking'} />
@@ -1022,8 +579,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
         {/* Left Column: Visual Anchor, Character Emotion & Session Parameters (Draggable) */}
         <div
           className="flex w-52 flex-shrink-0 cursor-grab flex-col items-center justify-between border-r border-line-standard bg-surface-chrome p-3 select-none active:cursor-grabbing"
-          {...dragBind}
           title="拖动以移动对话框"
+          {...dragBind}
         >
           <div className="flex flex-col items-center w-full min-h-0 overflow-y-auto no-scrollbar">
             {/* Character Avatar with subtle glow and framing */}
@@ -1088,8 +645,8 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
           {/* Header Bar */}
           <div
             className="flex cursor-grab items-center justify-between gap-2 border-b border-line-standard px-3 py-2 active:cursor-grabbing"
-            {...dragBind}
             title="拖动以移动对话框"
+            {...dragBind}
           >
             <div className="flex min-w-0 items-center gap-1.5">
               <button
@@ -1156,84 +713,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     setText(e.target.value)
                     onTyping()
                   }}
-                  onKeyDown={e => {
-                    // Slash 命令弹层：方向键改高亮、Tab/Enter 选中、Esc 关闭。
-                    if (slashPopoverOpen && slashItems.length > 0) {
-                      if (e.key === 'ArrowDown') {
-                        e.preventDefault()
-                        setSlashHighlightIndex(i => (i + 1) % slashItems.length)
-
-                        return
-                      }
-
-                      if (e.key === 'ArrowUp') {
-                        e.preventDefault()
-                        setSlashHighlightIndex(i => (i - 1 + slashItems.length) % slashItems.length)
-
-                        return
-                      }
-
-                      if (e.key === 'Tab') {
-                        e.preventDefault()
-                        const item = slashItems[slashHighlightIndex]
-
-                        if (item) {
-                          setText(`/${item.cmd.name} `)
-                        }
-
-                        return
-                      }
-
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        const item = slashItems[slashHighlightIndex]
-
-                        if (item) {
-                          const parsed = parseSlashInput(text.trim())
-                          const args = parsed?.args ?? []
-
-                          if (item.cmd.name === 'remember' && args.length === 0) {
-                            setText(`/${item.cmd.name} `)
-                            inputRef.current?.focus()
-
-                            return
-                          }
-
-                          const preCheck = slashPreCheck(pending, sending)
-
-                          if (preCheck) {
-                            markAssistantTerminal({ error: preCheck })
-
-                            return
-                          }
-
-                          void executeSlashCommand(item.cmd, args, {
-                            requestGateway,
-                            onStart: () => {
-                              setSending(true)
-                              setText('')
-                            },
-                            onFinish: () => setSending(false)
-                          })
-                        }
-
-                        return
-                      }
-
-                      if (e.key === 'Escape') {
-                        e.preventDefault()
-                        // 仅关闭弹层，保留用户输入文本——Esc 不应该丢弃未发送的草稿。
-                        setSlashDismissed(true)
-
-                        return
-                      }
-                    }
-
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      void send()
-                    }
-                  }}
+                  onKeyDown={onSlashKeyDown}
                   onPaste={onPaste}
                   placeholder="输入消息，Enter 发送，Shift+Enter 换行；输入 / 触发命令"
                   ref={inputRef}
@@ -1246,32 +726,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                     highlightedIndex={slashHighlightIndex}
                     onHighlight={setSlashHighlightIndex}
                     onSelect={cmd => {
-                      const parsed = parseSlashInput(text.trim())
-                      const args = parsed?.args ?? []
-
-                      if (cmd.name === 'remember' && args.length === 0) {
-                        setText(`/${cmd.name} `)
-                        inputRef.current?.focus()
-
-                        return
-                      }
-
-                      const preCheck = slashPreCheck(pending, sending)
-
-                      if (preCheck) {
-                        markAssistantTerminal({ error: preCheck })
-
-                        return
-                      }
-
-                      void executeSlashCommand(cmd, args, {
-                        requestGateway,
-                        onStart: () => {
-                          setSending(true)
-                          setText('')
-                        },
-                        onFinish: () => setSending(false)
-                      })
+                      void onSlashSelect(cmd, [])
                     }}
                     query={slashQuery}
                   />
@@ -1279,97 +734,13 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
               </div>
 
               {/* Pending Attachments inside card */}
-              {pending?.type === 'image' && (
-                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
-                  <PendingImageThumb path={pending.value} />
-                  <span className="truncate flex-1 text-[11px] text-body">
-                    {sending ? '图片发送中…' : pending.fileName || '已附加图片'}
-                  </span>
-                  {!sending && (
-                    <button
-                      aria-label="移除附加图片"
-                      className="rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
-                      onClick={() => setPending(null)}
-                      type="button"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {pending?.type === 'video' && (
-                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
-                  <Video className="size-3.5 shrink-0 text-rose-400" />
-                  <span className="max-w-40 shrink truncate text-[11px] text-body">{pending.fileName}</span>
-                  {pending.status === 'uploading' && <span className="text-[10px] text-faint">上传中…</span>}
-                  {pending.status === 'ready' && <span className="text-[10px] text-emerald-400">已就绪</span>}
-                  {pending.status === 'error' && (
-                    <>
-                      <span className="min-w-0 flex-1 truncate text-[10px] text-amber-300/80" title={pending.error}>
-                        {pending.error}
-                      </span>
-                      <button
-                        className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] text-muted transition hover:bg-fill-hover hover:text-strong"
-                        onClick={() => void attachVideoFile(pending.path, setPending)}
-                        type="button"
-                      >
-                        重试
-                      </button>
-                    </>
-                  )}
-                  {!sending && (
-                    <button
-                      aria-label="移除附加视频"
-                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
-                      onClick={() => setPending(null)}
-                      type="button"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {pending?.type === 'file' && (
-                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
-                  <FileText className="size-3.5 shrink-0 text-accent" />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[11px] font-medium text-strong" title={pending.path}>
-                      {pending.fileName}
-                    </span>
-                  </div>
-                  <span className="rounded bg-fill-hover px-1 py-0.2 text-[9px] text-faint">文件</span>
-                  {!sending && (
-                    <button
-                      aria-label="移除附加文件"
-                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
-                      onClick={() => setPending(null)}
-                      type="button"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
-              )}
-              {pending?.type === 'folder' && (
-                <div className="flex items-center gap-2 rounded-lg bg-fill-faint border border-line-hairline px-2.5 py-1 text-xs text-body">
-                  <FolderOpen className="size-3.5 shrink-0 text-amber-400" />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-[11px] font-medium text-strong" title={pending.path}>
-                      {pending.folderName}
-                    </span>
-                  </div>
-                  <span className="rounded bg-fill-hover px-1 py-0.2 text-[9px] text-faint">文件夹</span>
-                  {!sending && (
-                    <button
-                      aria-label="移除附加文件夹"
-                      className="shrink-0 rounded-md p-1 text-faint transition hover:bg-fill-hover hover:text-strong"
-                      onClick={() => setPending(null)}
-                      type="button"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  )}
-                </div>
+              {pending && (
+                <PendingAttachmentView
+                  onRemove={() => setPending(null)}
+                  onRetry={pending.type === 'video' ? () => void attachVideoFile(pending.path, setPending) : undefined}
+                  pending={pending}
+                  sending={sending}
+                />
               )}
 
               {/* Row 2: Bottom Toolbar */}
@@ -1396,7 +767,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                       <div className="absolute bottom-full mb-2 left-0 z-50 flex w-36 flex-col gap-0.5 rounded-xl border border-line-standard bg-surface-card p-1 shadow-2xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-150">
                         <button
                           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                          onClick={() => void pickFile()}
+                          onClick={() => void pickFile(setPending)}
                           type="button"
                         >
                           <FileText className="size-3.5 text-accent" />
@@ -1404,7 +775,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                         </button>
                         <button
                           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                          onClick={() => void pickFolder()}
+                          onClick={() => void pickFolder(setPending)}
                           type="button"
                         >
                           <FolderOpen className="size-3.5 text-amber-400" />
@@ -1412,7 +783,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                         </button>
                         <button
                           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                          onClick={() => void pickImage()}
+                          onClick={() => void pickImage(setPending)}
                           type="button"
                         >
                           <ImageIcon className="size-3.5 text-emerald-400" />
@@ -1420,7 +791,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
                         </button>
                         <button
                           className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-body transition hover:bg-fill-hover hover:text-strong text-left"
-                          onClick={() => void pickVideo()}
+                          onClick={() => void pickVideo(setPending)}
                           type="button"
                         >
                           <Video className="size-3.5 text-rose-400" />
