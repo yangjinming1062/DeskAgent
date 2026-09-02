@@ -6,6 +6,7 @@ import { useEffect, useRef } from 'react'
 import { usePanelDrag } from '@/companion/hooks/use-panel-drag'
 import { type ResizeDirection, usePanelResize } from '@/companion/hooks/use-panel-resize'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
+import { centeredPanelPosition } from '@/companion/panel/panel-position'
 import { $viewport } from '@/companion/spatial'
 import type { IconComponent } from '@/shared/lib/icons'
 import { BorderBeam, HudCorners, PanelHeader } from '@/shared/panel'
@@ -117,8 +118,7 @@ export function FloatingPanel({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const left = Math.max(16, Math.round((viewport.width - Math.min(viewport.width - 32, size.width)) / 2))
-  const top = Math.max(16, Math.round((viewport.height - Math.min(viewport.height - 32, size.height)) / 2))
+  const { left, top } = centeredPanelPosition(viewport, size)
 
   // 历史拖拽偏移可能把居中面板整个推出视口（只余一角）——渲染期钳制，
   // 保证面板在屏幕内至少保留 160px 宽 / 64px 高的可见条带。

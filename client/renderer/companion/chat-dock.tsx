@@ -26,6 +26,7 @@ import {
 } from '@/companion/expression-avatar/expression-avatar-store'
 import { useInteractiveRegion } from '@/companion/interactive-regions'
 import { RESIZE_HANDLES } from '@/companion/panel/floating-panel'
+import { centeredPanelPosition } from '@/companion/panel/panel-position'
 import { $portraitUrl } from '@/companion/portrait-store'
 import { $viewport } from '@/companion/spatial'
 import { resolveDroppedFiles } from '@/shared/lib/file-drop'
@@ -486,8 +487,7 @@ export function ChatDock({ onClose }: ChatDockProps): React.ReactElement {
   const currentW = size.width
   const currentH = size.height
 
-  const baseLeft = Math.max(16, Math.round((viewport.width - Math.min(viewport.width - 32, currentW)) / 2))
-  const baseTop = Math.max(16, Math.round((viewport.height - Math.min(viewport.height - 32, currentH)) / 2))
+  const { left: baseLeft, top: baseTop } = centeredPanelPosition(viewport, { width: currentW, height: currentH })
 
   const { bind: dragBind, storedOffset } = usePanelDrag('da.companion.chatDockOffset', () => panelRef.current)
 
